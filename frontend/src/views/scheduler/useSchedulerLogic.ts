@@ -781,15 +781,6 @@ export function useSchedulerLogic() {
       case 'NoAction':
         newPowerAction = PowerIn.signal.NO_ACTION
         break
-      case 'KillSelf':
-        newPowerAction = PowerIn.signal.KILL_SELF
-        break
-      case 'Sleep':
-        newPowerAction = PowerIn.signal.SLEEP
-        break
-      case 'Hibernate':
-        newPowerAction = PowerIn.signal.HIBERNATE
-        break
       case 'Shutdown':
         newPowerAction = PowerIn.signal.SHUTDOWN
         break
@@ -798,6 +789,15 @@ export function useSchedulerLogic() {
         break
       case 'Reboot':
         newPowerAction = PowerIn.signal.REBOOT
+        break
+      case 'Hibernate':
+        newPowerAction = PowerIn.signal.HIBERNATE
+        break
+      case 'Sleep':
+        newPowerAction = PowerIn.signal.SLEEP
+        break
+      case 'KillSelf':
+        newPowerAction = PowerIn.signal.KILL_SELF
         break
       default:
         logger.warn('未知的PowerSign值:', powerSign)
@@ -876,12 +876,12 @@ export function useSchedulerLogic() {
         // 将后端返回的 PowerOut.signal 转换为 PowerIn.signal
         const signalMap: Record<string, PowerIn.signal> = {
           'NoAction': PowerIn.signal.NO_ACTION,
-          'KillSelf': PowerIn.signal.KILL_SELF,
-          'Sleep': PowerIn.signal.SLEEP,
-          'Hibernate': PowerIn.signal.HIBERNATE,
           'Shutdown': PowerIn.signal.SHUTDOWN,
           'ShutdownForce': PowerIn.signal.SHUTDOWN_FORCE,
           'Reboot': PowerIn.signal.REBOOT,
+          'Hibernate': PowerIn.signal.HIBERNATE,
+          'Sleep': PowerIn.signal.SLEEP,
+          'KillSelf': PowerIn.signal.KILL_SELF,
         }
         const mappedSignal = signalMap[response.signal]
         if (mappedSignal) {

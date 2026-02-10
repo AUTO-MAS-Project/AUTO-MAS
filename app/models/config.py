@@ -174,11 +174,12 @@ class QueueConfig(ConfigBase):
             OptionsValidator(
                 [
                     "NoAction",
-                    "KillSelf",
-                    "Sleep",
-                    "Hibernate",
                     "Shutdown",
                     "ShutdownForce",
+                    "Reboot",
+                    "Hibernate",
+                    "Sleep",
+                    "KillSelf",
                 ]
             ),
         )
