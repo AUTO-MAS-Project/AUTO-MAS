@@ -350,17 +350,29 @@ const getPlanCurrentConfig = (planData: any) => {
     logger.debug('计划表周模式调试:', {
       东4区星期几: todayWeekday,
       星期: today,
-      计划数据: planData,
+      计划数据: JSON.parse(JSON.stringify(planData)),
     })
 
     // 优先使用今天的配置，如果没有或为空则使用ALL配置
     const todayConfig = planData[today]
-    if (todayConfig && Object.keys(todayConfig).length > 0) {
+    logger.debug('今日配置检查:', {
+      today,
+      todayConfig: JSON.parse(JSON.stringify(todayConfig)),
+      todayConfigType: typeof todayConfig,
+      isObject: todayConfig && typeof todayConfig === 'object',
+    })
+
+    if (todayConfig && typeof todayConfig === 'object' && Object.keys(todayConfig).length > 0) {
+      logger.debug('使用今日配置:', JSON.parse(JSON.stringify(todayConfig)))
       return todayConfig
     }
-    return planData.ALL || null
+
+    const allConfig = planData.ALL || null
+    logger.debug('使用ALL配置:', JSON.parse(JSON.stringify(allConfig)))
+    return allConfig
   }
 
+  logger.debug('计划模式未知，返回null')
   return null
 }
 
@@ -1087,24 +1099,37 @@ onMounted(() => {
     async newStageMode => {
       if (newStageMode === 'Fixed') {
         // 切换到固定模式，清除计划配置
+        logger.debug('切换到固定模式')
         planModeConfig.value = null
       } else if (newStageMode && newStageMode !== '') {
         // 切换到计划模式，加载计划配置
+        logger.debug('开始加载计划配置:', newStageMode)
         try {
           const response = await getPlans(newStageMode)
+          logger.debug('getPlans响应:', {
+            response: response,
+            hasData: !!response?.data,
+            hasPlan: !!response?.data?.[newStageMode],
+          })
 
           if (response && response.code === 200 && response.data[newStageMode]) {
             const planData = response.data[newStageMode]
+            logger.debug('获取到计划数据:', JSON.parse(JSON.stringify(planData)))
+
             const currentConfig = getPlanCurrentConfig(planData)
+            logger.debug('getPlanCurrentConfig返回:', JSON.parse(JSON.stringify(currentConfig)))
+
             planModeConfig.value = currentConfig
+            logger.debug('planModeConfig.value已更新')
 
             // 新增：保存完整的计划数据用于悬浮提示
             fullPlanData.value = planData
+            logger.debug('fullPlanData.value已更新')
 
             logger.info('计划配置加载成功:', {
               planId: newStageMode,
-              currentConfig,
-              planModeConfigValue: planModeConfig.value,
+              currentConfig: JSON.parse(JSON.stringify(currentConfig)),
+              planModeConfigValue: JSON.parse(JSON.stringify(planModeConfig.value)),
             })
 
             // 从stageModeOptions中查找对应的计划名称
@@ -1113,11 +1138,19 @@ onMounted(() => {
 
             message.success(`已切换到计划模式：${planName}`)
           } else {
+            logger.warn('计划配置响应不完整:', { response, newStageMode })
             message.warning('计划配置加载失败，请检查计划是否存在')
             planModeConfig.value = null
           }
         } catch (error) {
-          logger.error('加载计划配置失败:', error)
+          // 只记录可序列化的错误信息，避免 "An object could not be cloned" 错误
+          const errorInfo = {
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            type: typeof error,
+            name: error instanceof Error ? error.name : error?.constructor?.name,
+          }
+          logger.error('加载计划配置失败:', errorInfo)
           message.error('加载计划配置时发生错误')
           planModeConfig.value = null
         }
