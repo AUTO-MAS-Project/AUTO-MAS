@@ -275,7 +275,7 @@ const refreshEmulatorConfig = async (uuid?: string) => {
         // 更新特定模拟器的数据
         const updatedIndex = response.index as EmulatorConfigIndexItem[]
         const updatedData = response.data as Record<string, any>
-        
+
         if (updatedIndex.length > 0 && updatedData[uuid]) {
           // 找到并更新 index 中的对应项
           const indexItem = emulatorIndex.value.find(item => item.uid === uuid)
@@ -283,10 +283,10 @@ const refreshEmulatorConfig = async (uuid?: string) => {
             // 更新 type
             indexItem.type = updatedIndex[0].type
           }
-          
+
           // 更新或添加 data
           emulatorData.value[uuid] = updatedData[uuid]
-          
+
           // 更新编辑数据
           const configData = updatedData[uuid]
           const bossKeys = safeJsonParse(configData?.Data?.BossKey, [])
