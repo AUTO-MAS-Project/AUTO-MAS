@@ -18,6 +18,6 @@ export type QueueConfig_Info = {
     /**
      * 完成后操作
      */
-    AfterAccomplish?: ('NoAction' | 'Shutdown' | 'ShutdownForce' | 'Reboot' | 'KillSelf' | 'Sleep' | 'Hibernate' | null);
+    AfterAccomplish?: ('NoAction' | 'Shutdown' | 'ShutdownForce' | 'Reboot' | 'Hibernate' | 'Sleep' | 'KillSelf' | null);
 };
 
