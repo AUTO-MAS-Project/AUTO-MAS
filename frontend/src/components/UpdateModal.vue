@@ -1,10 +1,21 @@
 <template>
-  <a-modal v-model:open="visible" :title="`发现新版本 ${latestVersion || ''}`" :width="800" :footer="null"
-    :mask-closable="false" :z-index="9999" class="update-modal">
+  <a-modal
+    v-model:open="visible"
+    :title="`发现新版本 ${latestVersion || ''}`"
+    :width="800"
+    :footer="null"
+    :mask-closable="false"
+    :z-index="9999"
+    class="update-modal"
+  >
     <div class="update-container">
       <!-- 更新内容展示 -->
       <div class="update-content">
-        <div ref="markdownContentRef" class="markdown-content" v-html="renderMarkdown(updateContent)"></div>
+        <div
+          ref="markdownContentRef"
+          class="markdown-content"
+          v-html="renderMarkdown(updateContent)"
+        ></div>
       </div>
 
       <!-- 操作按钮 -->
@@ -18,9 +29,14 @@
   </a-modal>
 
   <!-- 独立的下载窗口 -->
-  <UpdateDownloadModal v-model:visible="showDownloadModal" :latest-version="latestVersion" :update-data="updateData"
-    @completed="handleDownloadCompleted" @cancelled="handleDownloadCancelled"
-    @install-requested="handleInstallRequested" />
+  <UpdateDownloadModal
+    v-model:visible="showDownloadModal"
+    :latest-version="latestVersion"
+    :update-data="updateData"
+    @completed="handleDownloadCompleted"
+    @cancelled="handleDownloadCancelled"
+    @install-requested="handleInstallRequested"
+  />
 </template>
 
 <script setup lang="ts">
@@ -46,6 +62,7 @@ const emit = defineEmits<{
 
 // 内部状态
 const hasUpdate = ref(false)
+const markdownContentRef = ref<HTMLElement | null>(null)
 const showDownloadModal = ref(false)
 
 // 计算最新版本号
@@ -118,11 +135,12 @@ if (props.updateData && Object.keys(props.updateData).length > 0) {
 // 处理下载按钮点击
 const handleDownload = () => {
   logger.info('[UpdateModal] 点击下载按钮')
-  logger.info('[UpdateModal] 当前props:', {
-    updateData: props.updateData,
-    latestVersion: props.latestVersion,
-    visible: props.visible,
-  })
+
+  // 避免直接记录 Vue 响应式对象（Electron logger 在序列化 Proxy 时可能抛错）
+  logger.info(
+    `[UpdateModal] 当前状态: visible=${props.visible}, latestVersion=${props.latestVersion || 'unknown'}, updateSections=${Object.keys(props.updateData || {}).length}`
+  )
+
   // 关闭当前窗口，显示下载窗口
   visible.value = false
   showDownloadModal.value = true

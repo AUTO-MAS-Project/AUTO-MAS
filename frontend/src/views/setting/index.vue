@@ -203,19 +203,15 @@ const openDevTools = () => (window as any).electronAPI?.openDevTools?.()
 // 更新检查 - 使用全局更新检查器
 const checkUpdate = async () => {
   logger.info('[Setting] 使用全局更新检查器进行手动检查')
-  logger.info('[Setting] 检查前状态:', {
-    updateVisible: updateVisible.value,
-    updateData: updateData.value,
-    latestVersion: latestVersion.value,
-  })
+  logger.info(
+    `[Setting] 检查前状态: updateVisible=${updateVisible.value}, latestVersion=${latestVersion.value || 'unknown'}, updateSections=${Object.keys(updateData.value || {}).length}`
+  )
 
   try {
     await globalCheckUpdate(false, true) // silent=false, forceCheck=true
-    logger.info('[Setting] 全局更新检查完成，状态:', {
-      updateVisible: updateVisible.value,
-      updateData: updateData.value,
-      latestVersion: latestVersion.value,
-    })
+    logger.info(
+      `[Setting] 全局更新检查完成: updateVisible=${updateVisible.value}, latestVersion=${latestVersion.value || 'unknown'}, updateSections=${Object.keys(updateData.value || {}).length}`
+    )
   } catch (error) {
     logger.error('[Setting] 全局更新检查失败:', error)
   }
