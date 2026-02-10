@@ -272,7 +272,13 @@ class QueueConfig_Info(BaseModel):
     StartUpEnabled: Optional[bool] = Field(default=None, description="是否启动时运行")
     AfterAccomplish: Optional[
         Literal[
-            "NoAction", "KillSelf", "Sleep", "Hibernate", "Shutdown", "ShutdownForce"
+            "NoAction",
+            "Shutdown",
+            "ShutdownForce",
+            "Reboot",
+            "Hibernate",
+            "Sleep",
+            "KillSelf",
         ]
     ] = Field(default=None, description="完成后操作")
 
@@ -956,13 +962,25 @@ class WebSocketMessage(BaseModel):
 
 class PowerIn(BaseModel):
     signal: Literal[
-        "NoAction", "Shutdown", "ShutdownForce", "Reboot", "Hibernate", "Sleep", "KillSelf"
+        "NoAction",
+        "Shutdown",
+        "ShutdownForce",
+        "Reboot",
+        "Hibernate",
+        "Sleep",
+        "KillSelf",
     ] = Field(..., description="电源操作信号")
 
 
 class PowerOut(OutBase):
     signal: Literal[
-        "NoAction", "Shutdown", "ShutdownForce", "Reboot", "Hibernate", "Sleep", "KillSelf"
+        "NoAction",
+        "Shutdown",
+        "ShutdownForce",
+        "Reboot",
+        "Hibernate",
+        "Sleep",
+        "KillSelf",
     ] = Field(..., description="电源操作信号")
 
 
