@@ -270,25 +270,60 @@ const refreshEmulatorConfig = async (uuid?: string) => {
   try {
     const response = await Service.getEmulatorApiEmulatorGetPost({ emulatorId: uuid || null })
     if (response.code === 200 && 'index' in response && 'data' in response) {
-      emulatorIndex.value = (response.index as EmulatorConfigIndexItem[]) || []
-      emulatorData.value = (response.data as Record<string, any>) || {}
-
-      // 更新编辑数据
-      emulatorIndex.value.forEach(item => {
-        const configData = emulatorData.value[item.uid]
-        const bossKeys = safeJsonParse(configData?.Data?.BossKey, [])
-        editingDataMap.value.set(item.uid, {
-          name: configData?.Info?.Name || '',
-          type: configData?.Data?.Type || '',
-          path: configData?.Info?.Path || '',
-          max_wait_time: configData?.Data?.MaxWaitTime || 60,
-          boss_keys: bossKeys,
-        })
-        // 同步 boss_keys 到输入框显示
-        if (bossKeys.length > 0) {
-          bossKeyInputMap.value[item.uid] = bossKeys[0]
+      // 如果指定了 uuid，只更新特定模拟器的数据，而不是替换整个列表
+      if (uuid) {
+        // 更新特定模拟器的数据
+        const updatedIndex = response.index as EmulatorConfigIndexItem[]
+        const updatedData = response.data as Record<string, any>
+        
+        if (updatedIndex.length > 0 && updatedData[uuid]) {
+          // 找到并更新 index 中的对应项
+          const indexItem = emulatorIndex.value.find(item => item.uid === uuid)
+          if (indexItem) {
+            // 更新 type
+            indexItem.type = updatedIndex[0].type
+          }
+          
+          // 更新或添加 data
+          emulatorData.value[uuid] = updatedData[uuid]
+          
+          // 更新编辑数据
+          const configData = updatedData[uuid]
+          const bossKeys = safeJsonParse(configData?.Data?.BossKey, [])
+          editingDataMap.value.set(uuid, {
+            name: configData?.Info?.Name || '',
+            type: configData?.Data?.Type || '',
+            path: configData?.Info?.Path || '',
+            max_wait_time: configData?.Data?.MaxWaitTime || 60,
+            boss_keys: bossKeys,
+          })
+          // 同步 boss_keys 到输入框显示
+          if (bossKeys.length > 0) {
+            bossKeyInputMap.value[uuid] = bossKeys[0]
+          }
         }
-      })
+      } else {
+        // 没有指定 uuid，刷新所有模拟器
+        emulatorIndex.value = (response.index as EmulatorConfigIndexItem[]) || []
+        emulatorData.value = (response.data as Record<string, any>) || {}
+
+        // 更新编辑数据
+        emulatorIndex.value.forEach(item => {
+          const configData = emulatorData.value[item.uid]
+          const bossKeys = safeJsonParse(configData?.Data?.BossKey, [])
+          editingDataMap.value.set(item.uid, {
+            name: configData?.Info?.Name || '',
+            type: configData?.Data?.Type || '',
+            path: configData?.Info?.Path || '',
+            max_wait_time: configData?.Data?.MaxWaitTime || 60,
+            boss_keys: bossKeys,
+          })
+          // 同步 boss_keys 到输入框显示
+          if (bossKeys.length > 0) {
+            bossKeyInputMap.value[item.uid] = bossKeys[0]
+          }
+        })
+      }
     }
   } catch (e) {
     logger.error('刷新模拟器配置失败', e)
