@@ -342,9 +342,6 @@ class MaaUserConfig_Info(BaseModel):
 
 class MaaUserConfig_Data(BaseModel):
     LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
-    LastAnnihilationDate: Optional[str] = Field(
-        default=None, description="上次剿灭日期"
-    )
     LastSklandDate: Optional[str] = Field(
         default=None, description="上次森空岛签到日期"
     )
@@ -417,8 +414,8 @@ class MaaConfig_Run(BaseModel):
         default=None, description="剿灭超时限制"
     )
     RoutineTimeLimit: Optional[int] = Field(default=None, description="日常超时限制")
-    AnnihilationWeeklyLimit: Optional[bool] = Field(
-        default=None, description="剿灭每周仅代理至上限"
+    AnnihilationAvoidWaste: Optional[bool] = Field(
+        default=None, description="剿灭避免无代理卡浪费理智"
     )
 
 
