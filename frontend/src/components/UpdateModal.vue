@@ -117,16 +117,16 @@ if (props.updateData && Object.keys(props.updateData).length > 0) {
 
 // 处理下载按钮点击
 const handleDownload = () => {
-  logger.info('[UpdateModal] 点击下载按钮')
-  logger.info('[UpdateModal] 当前props:', {
+  logger.info('点击下载按钮')
+  logger.info(`当前props: ${JSON.stringify({
     updateData: props.updateData,
     latestVersion: props.latestVersion,
     visible: props.visible,
-  })
+  })}`)
   // 关闭当前窗口，显示下载窗口
   visible.value = false
   showDownloadModal.value = true
-  logger.info('[UpdateModal] 设置showDownloadModal为true:', showDownloadModal.value)
+  logger.info(`设置showDownloadModal为true: ${showDownloadModal.value}`)
 }
 
 // 关闭弹窗

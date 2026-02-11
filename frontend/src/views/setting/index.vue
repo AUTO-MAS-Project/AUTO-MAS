@@ -112,8 +112,9 @@ const loadSettings = async () => {
         })
         logger.info('后端配置已同步到 Electron')
       }
-    } catch (e) {
-      logger.error('同步配置到 Electron 失败', e)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`同步配置到 Electron 失败: ${errorMsg}`)
     }
   }
 }
@@ -128,8 +129,9 @@ const saveSettings = async (category: keyof GlobalConfig, changes: any): Promise
       return false
     }
     return true
-  } catch (e) {
-    logger.error('设置保存失败', e)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`设置保存失败: ${errorMsg}`)
     message.error('设置保存失败')
     return false
   }
@@ -159,8 +161,9 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
       if ((window as any).electronAPI?.updateTraySettings) {
         await (window as any).electronAPI.updateTraySettings({ [key]: value })
       }
-    } catch (e) {
-      logger.error('更新托盘失败', e)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`更新托盘失败: ${errorMsg}`)
       message.error('托盘设置更新失败')
     }
   }
@@ -173,8 +176,9 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
           Start: { [key]: value },
         })
       }
-    } catch (e) {
-      logger.error('同步启动配置失败', e)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`同步启动配置失败: ${errorMsg}`)
       message.error('启动配置同步失败')
     }
   }
@@ -182,8 +186,9 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
   if (category === 'Update' && key === 'IfAutoUpdate') {
     try {
       await restartPolling()
-    } catch (e) {
-      logger.error('重启更新检查失败', e)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`重启更新检查失败: ${errorMsg}`)
       message.error('更新检查设置变更失败')
     }
   }
@@ -202,22 +207,23 @@ const openDevTools = () => (window as any).electronAPI?.openDevTools?.()
 
 // 更新检查 - 使用全局更新检查器
 const checkUpdate = async () => {
-  logger.info('[Setting] 使用全局更新检查器进行手动检查')
-  logger.info('[Setting] 检查前状态:', {
-    updateVisible: updateVisible.value,
-    updateData: updateData.value,
-    latestVersion: latestVersion.value,
-  })
+  logger.info('使用全局更新检查器进行手动检查')
+  logger.info(`检查前状态:{
+    updateVisible: ${updateVisible.value},
+    updateData: ${updateData.value},
+    latestVersion: ${latestVersion.value},
+  }`)
 
   try {
     await globalCheckUpdate(false, true) // silent=false, forceCheck=true
-    logger.info('[Setting] 全局更新检查完成，状态:', {
+    logger.info(`全局更新检查完成，状态: ${JSON.stringify({
       updateVisible: updateVisible.value,
       updateData: updateData.value,
       latestVersion: latestVersion.value,
-    })
+    })}`)
   } catch (error) {
-    logger.error('[Setting] 全局更新检查失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`全局更新检查失败: ${errorMsg}`)
   }
 }
 
@@ -227,8 +233,9 @@ const checkUpdate = async () => {
 const getBackendVersion = async () => {
   try {
     backendUpdateInfo.value = await Service.getGitVersionApiInfoVersionPost()
-  } catch (e) {
-    logger.error('获取后端版本失败', e)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`获取后端版本失败: ${errorMsg}`)
   }
 }
 
@@ -240,8 +247,9 @@ const testNotify = async () => {
     const res = await Service.testNotifyApiSettingTestNotifyPost()
     if (res?.code && res.code !== 200) message.warning(res?.message || '测试通知发送结果未知')
     else message.success('测试通知已发送')
-  } catch (e) {
-    logger.error('测试通知发送失败', e)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`测试通知发送失败: ${errorMsg}`)
     message.error('测试通知发送失败')
   } finally {
     testingNotify.value = false

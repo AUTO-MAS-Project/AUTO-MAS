@@ -235,10 +235,10 @@ const startDownload = async () => {
 
     logger.info('调用下载API')
     const res = await Service.downloadUpdateApiUpdateDownloadPost()
-    logger.debug('API响应:', res)
+    logger.debug(`API响应: ${JSON.stringify(res)}`)
 
     if (res.code !== 200) {
-      logger.error('下载请求失败:', res.message)
+      logger.error(`下载请求失败: ${res.message}`)
       downloadFailed.value = true
       isDownloading.value = false
       failureReason.value = res.message || '下载请求失败'
@@ -264,7 +264,8 @@ const startDownload = async () => {
       )
     }
   } catch (err) {
-    logger.error('启动下载失败:', err)
+    const errorMsg = err instanceof Error ? err.message : String(err)
+    logger.error(`启动下载失败: ${errorMsg}`)
     downloadFailed.value = true
     isDownloading.value = false
     failureReason.value = '网络请求失败，请检查网络连接'
@@ -308,7 +309,8 @@ const handleInstall = async () => {
       message.error(res.message || '启动安装失败')
     }
   } catch (err) {
-    logger.error('安装失败:', err)
+    const errorMsg = err instanceof Error ? err.message : String(err)
+    logger.error(`安装失败: ${errorMsg}`)
     message.error('启动安装失败')
   } finally {
     isInstalling.value = false
@@ -321,7 +323,7 @@ const handleUpdateMessage = (wsMessage: any) => {
   if (wsMessage.id === 'Update') {
     if (wsMessage.type === 'Update') {
       // 更新下载进度
-      logger.debug('更新下载进度:', wsMessage.data)
+      logger.debug(`更新下载进度: ${JSON.stringify(wsMessage.data)}`)
       const { downloaded_size, file_size, speed } = wsMessage.data
 
       // 使用Object.assign确保响应式更新
@@ -333,16 +335,16 @@ const handleUpdateMessage = (wsMessage: any) => {
 
       // 强制触发Vue的响应式更新
       nextTick(() => {
-        logger.debug('进度更新后状态:', {
+        logger.debug(`进度更新后状态: ${JSON.stringify({
           进度: downloadProgress.value,
           百分比: downloadProgressPercent.value.toFixed(2) + '%',
           正在下载: isDownloading.value,
           订阅ID: updateSubscriptionId,
           时间戳: new Date().toISOString(),
-        })
+        })}`)
       })
     } else if (wsMessage.type === 'Signal') {
-      logger.debug('收到Signal消息:', wsMessage.data)
+      logger.debug(`收到Signal消息: ${JSON.stringify(wsMessage.data)}`)
 
       // 清除下载超时
       if (downloadTimeout) {
@@ -359,7 +361,7 @@ const handleUpdateMessage = (wsMessage: any) => {
         cancelWebSocketSubscription()
       } else if (wsMessage.data.Failed) {
         // 下载失败 - 取消WebSocket订阅
-        logger.error('下载失败:', wsMessage.data.Failed)
+        logger.error(`下载失败: ${JSON.stringify(wsMessage.data.Failed)}`)
         isDownloading.value = false
         downloadFailed.value = true
         failureReason.value = wsMessage.data.Failed
@@ -367,7 +369,7 @@ const handleUpdateMessage = (wsMessage: any) => {
         cancelWebSocketSubscription()
       }
     } else if (wsMessage.type === 'Info') {
-      logger.debug('收到Info消息:', wsMessage.data)
+      logger.debug(`收到Info消息: ${JSON.stringify(wsMessage.data)}`)
       if (wsMessage.data.Error) {
         // 安装过程中的错误
         isInstalling.value = false
@@ -383,15 +385,16 @@ const ensureWebSocketSubscription = () => {
     logger.info('创建WebSocket订阅')
     try {
       updateSubscriptionId = subscribe({ id: 'Update' }, handleUpdateMessage)
-      logger.debug('WebSocket订阅ID:', updateSubscriptionId)
+      logger.debug(`WebSocket订阅ID: ${updateSubscriptionId}`)
 
       // 添加测试消息处理函数来验证订阅是否工作
       logger.debug('订阅创建完成，等待WebSocket消息...')
     } catch (error) {
-      logger.error('创建WebSocket订阅失败:', error)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`创建WebSocket订阅失败: ${errorMsg}`)
     }
   } else {
-    logger.debug('WebSocket订阅已存在:', updateSubscriptionId)
+    logger.debug(`WebSocket订阅已存在: ${updateSubscriptionId}`)
     // 验证订阅是否仍然有效
     logger.debug('验证现有订阅是否有效')
   }
@@ -400,11 +403,12 @@ const ensureWebSocketSubscription = () => {
 // 取消WebSocket订阅
 const cancelWebSocketSubscription = () => {
   if (updateSubscriptionId) {
-    logger.info('取消WebSocket订阅:', updateSubscriptionId)
+    logger.info(`取消WebSocket订阅: ${updateSubscriptionId}`)
     try {
       unsubscribe(updateSubscriptionId)
     } catch (error) {
-      logger.error('取消WebSocket订阅失败:', error)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`取消WebSocket订阅失败: ${errorMsg}`)
     }
     updateSubscriptionId = ''
   }
@@ -418,7 +422,7 @@ const startWebSocketHealthCheck = () => {
   logger.info('启动WebSocket健康检查')
   wsHealthCheckInterval = setInterval(() => {
     if (isDownloading.value) {
-      logger.debug('WebSocket健康检查 - 订阅ID:', updateSubscriptionId)
+      logger.debug(`WebSocket健康检查 - 订阅ID: ${updateSubscriptionId}`)
       // 如果订阅丢失了，重新创建
       if (!updateSubscriptionId) {
         logger.warn('检测到WebSocket订阅丢失，重新创建')
@@ -441,12 +445,12 @@ const stopWebSocketHealthCheck = () => {
 watch(
   () => props.visible,
   newVisible => {
-    logger.debug('visible变化:', newVisible)
-    logger.debug('当前props:', {
+    logger.debug(`visible变化: ${newVisible}`)
+    logger.debug(`当前props: ${JSON.stringify({
       visible: props.visible,
       latestVersion: props.latestVersion,
       updateData: props.updateData,
-    })
+    })}`)
 
     if (newVisible) {
       logger.info('窗口显示，确保WebSocket订阅并开始下载')

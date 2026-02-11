@@ -68,7 +68,7 @@ export class RepositoryService {
                 details: {}
             })
             const checkResult = await this.checkRepository()
-            logger.info('仓库检查结果:', checkResult)
+            logger.info(`仓库检查结果: ${JSON.stringify(checkResult)}`)
 
             // 上报检查结果
             onProgress?.({
@@ -132,7 +132,7 @@ export class RepositoryService {
             return deployResult
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error)
-            logger.error('源码拉取失败:', errorMsg)
+            logger.error(`源码拉取失败: ${errorMsg}`)
             return { success: false, error: errorMsg }
         }
     }
@@ -167,13 +167,14 @@ export class RepositoryService {
                 logger.info(`本地仓库健康，当前分支: ${currentBranch}`)
                 return { exists: true, isGitRepo: true, isHealthy: true, currentBranch }
             } else {
-                logger.warn('⚠️ 本地仓库存在问题，需要清理')
+                logger.warn('本地仓库存在问题，需要清理')
                 // 清理有问题的仓库
                 fs.rmSync(this.repoPath, { recursive: true, force: true })
                 return { exists: false, isGitRepo: false, isHealthy: false }
             }
         } catch (error) {
-            logger.error('检查仓库健康状态失败:', error)
+            const errorMsg = error instanceof Error ? error.message : String(error)
+            logger.error(`检查仓库健康状态失败: ${errorMsg}`)
             // 清理有问题的仓库
             fs.rmSync(this.repoPath, { recursive: true, force: true })
             return { exists: false, isGitRepo: false, isHealthy: false }
@@ -304,7 +305,7 @@ export class RepositoryService {
             return { success: true }
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error)
-            logger.error('更新仓库失败:', errorMsg)
+            logger.error(`更新仓库失败: ${errorMsg}`)
             return { success: false, error: errorMsg }
         }
     }
@@ -335,7 +336,7 @@ export class RepositoryService {
             return { success: true }
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error)
-            logger.error('克隆仓库失败:', errorMsg)
+            logger.error(`克隆仓库失败: ${errorMsg}`)
             return { success: false, error: errorMsg }
         }
     }
@@ -351,7 +352,7 @@ export class RepositoryService {
 
             // 设置 30 秒超时
             const timeout = setTimeout(() => {
-                logger.warn('⚠️ 检查远程分支超时，终止进程')
+                logger.warn('检查远程分支超时，终止进程')
                 proc.kill()
                 resolve(false)
             }, 30000)
@@ -454,13 +455,13 @@ export class RepositoryService {
 
             // 设置 60 秒超时（fetch 可能需要更长时间）
             const timeout = setTimeout(() => {
-                logger.warn('⚠️ 拉取最新提交超时，终止进程')
+                logger.warn('拉取最新提交超时，终止进程')
                 proc.kill()
                 reject(new Error('拉取最新提交超时'))
             }, 60000)
 
             proc.stdout?.on('data', (data) => {
-                logger.info('fetch:', data.toString().trim())
+                logger.info(`fetch: ${data.toString().trim()}`)
             })
 
             proc.on('close', (code) => {
@@ -527,13 +528,13 @@ export class RepositoryService {
 
             // 设置 120 秒超时（clone 可能需要较长时间）
             const timeout = setTimeout(() => {
-                logger.warn('⚠️ 克隆仓库超时，终止进程')
+                logger.warn('克隆仓库超时，终止进程')
                 proc.kill()
                 reject(new Error('克隆仓库超时'))
             }, 120000)
 
             proc.stdout?.on('data', (data) => {
-                logger.info('clone:', data.toString().trim())
+                logger.info(`clone: ${data.toString().trim()}`)
             })
 
             proc.on('close', (code) => {
@@ -575,7 +576,7 @@ export class RepositoryService {
             return { success: true }
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error)
-            logger.error('部署仓库失败:', errorMsg)
+            logger.error(`部署仓库失败: ${errorMsg}`)
             return { success: false, error: errorMsg }
         }
     }
@@ -622,7 +623,7 @@ export class RepositoryService {
             const dstPath = path.join(this.appRoot, item)
 
             if (!fs.existsSync(srcPath)) {
-                logger.warn(`⚠️ 源文件不存在，跳过: ${item}`)
+                logger.warn(`源文件不存在，跳过: ${item}`)
                 continue
             }
 
@@ -645,7 +646,8 @@ export class RepositoryService {
 
                 logger.info(`复制完成: ${item}`)
             } catch (error) {
-                logger.error(`❌ 复制失败: ${item}`, error)
+                const errorMsg = error instanceof Error ? error.message : String(error)
+                logger.error(`复制失败: ${item}, 错误信息: ${errorMsg}`)
                 throw error
             }
         }

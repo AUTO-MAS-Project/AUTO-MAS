@@ -125,7 +125,8 @@ export function useHistoryLogic() {
         message.error(response.message || '搜索失败')
       }
     } catch (error) {
-      logger.error('搜索历史记录失败:', error)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`搜索历史记录失败: ${errorMsg}`)
       message.error('搜索历史记录失败')
     } finally {
       searchLoading.value = false
@@ -190,7 +191,8 @@ export function useHistoryLogic() {
         currentDetail.value = null
       }
     } catch (error) {
-      logger.error('获取历史记录详情失败:', error)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`获取历史记录详情失败: ${errorMsg}`)
       message.error('获取历史记录详情失败')
       currentDetail.value = null
     } finally {
@@ -214,8 +216,9 @@ export function useHistoryLogic() {
         message.error('当前环境不支持打开文件功能')
       }
     } catch (error) {
-      logger.error('打开日志文件失败:', error)
-      message.error(`打开日志文件失败: ${error}`)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`打开日志文件失败: ${errorMsg}`)
+      message.error(`打开日志文件失败: ${errorMsg}`)
     }
   }
 
@@ -235,8 +238,9 @@ export function useHistoryLogic() {
         message.error('当前环境不支持打开目录功能')
       }
     } catch (error) {
-      logger.error('打开日志文件目录失败:', error)
-      message.error(`打开日志文件目录失败: ${error}`)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`打开日志文件目录失败: ${errorMsg}`)
+      message.error(`打开日志文件目录失败: ${errorMsg}`)
     }
   }
 

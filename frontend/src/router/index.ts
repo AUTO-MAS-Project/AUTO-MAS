@@ -137,7 +137,7 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to, from, next) => {
-  logger.info('路由守卫：', { to: to.path, from: from.path })
+  logger.info(`路由守卫：${JSON.stringify({ to: to.path, from: from.path })}`)
 
   // 声明跳过的路由：直接放行
   if ((to.meta as any)?.skipGuard) {
@@ -155,7 +155,7 @@ router.beforeEach(async (to, from, next) => {
   if (isDev) return next()
 
   const { isInitialized } = useAppInitialization()
-  logger.info('检查初始化状态：', isInitialized.value)
+  logger.info(`检查初始化状态：${JSON.stringify({ isInitialized: isInitialized.value })}`)
   if (!isInitialized.value) {
     needInitLanding = false
     next('/initialization')

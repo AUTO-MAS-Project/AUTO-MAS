@@ -409,9 +409,10 @@ const handleFieldSave = async (key: string, value: any) => {
     await updateUser(scriptId, userId, userData)
     // 刷新数据
     await loadUserData()
-    logger.info('用户配置已保存:', key)
+    logger.info(`用户配置已保存: ${key}`)
   } catch (error) {
-    logger.error('保存失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存失败: ${errorMsg}`)
   } finally {
     isSaving.value = false
   }
@@ -433,7 +434,8 @@ const saveFullUserData = async () => {
     await updateUser(scriptId, userId, userData)
     logger.info('用户配置已保存')
   } catch (error) {
-    logger.error('保存失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存失败: ${errorMsg}`)
   } finally {
     isSaving.value = false
   }
@@ -460,7 +462,8 @@ const loadScriptInfo = async () => {
       handleCancel()
     }
   } catch (error) {
-    logger.error('加载脚本信息失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载脚本信息失败: ${errorMsg}`)
     message.error('加载脚本信息失败')
   }
 }
@@ -477,7 +480,7 @@ const createUserImmediately = async () => {
         name: route.name || undefined,
         params: { ...route.params, userId: result.userId },
       })
-      logger.info('用户已创建，ID:', result.userId)
+      logger.info(`用户已创建，ID: ${result.userId}`)
       // 加载新创建用户的数据
       await loadUserData()
     } else {
@@ -485,7 +488,8 @@ const createUserImmediately = async () => {
       handleCancel()
     }
   } catch (error) {
-    logger.error('创建用户失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`创建用户失败: ${errorMsg}`)
     message.error('创建用户失败')
     handleCancel()
   }
@@ -528,7 +532,8 @@ const loadUserData = async () => {
       handleCancel()
     }
   } catch (error) {
-    logger.error('加载用户数据失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载用户数据失败: ${errorMsg}`)
     message.error('加载用户数据失败')
   }
 }
@@ -560,16 +565,16 @@ const handleGeneralConfig = async () => {
       mode: TaskCreateIn.mode.SCRIPT_CONFIG,
     })
 
-    logger.debug('通用配置 start 接口返回:', response)
+    logger.debug(`通用配置 start 接口返回: ${response}`)
     if (response && response.taskId) {
       const wsId = response.taskId
 
-      logger.debug('订阅 websocketId:', wsId)
+      logger.debug(`订阅 websocketId: ${wsId}`)
 
       // 订阅 websocket
       const subscriptionId = subscribe({ id: wsId }, (wsMessage: any) => {
         if (wsMessage.type === 'error') {
-          logger.error(`用户 ${formData.userName} 通用配置错误:`, wsMessage.data)
+          logger.error(`用户 ${formData.userName} 通用配置错误: ${wsMessage.data}`)
           message.error(`通用配置连接失败: ${wsMessage.data}`)
           unsubscribe(subscriptionId)
           generalSubscriptionId.value = null
@@ -585,7 +590,7 @@ const handleGeneralConfig = async () => {
 
         // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
         if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
-          logger.error(`用户 ${formData.userName} 通用配置异常:`, wsMessage.data.Error)
+          logger.error(`用户 ${formData.userName} 通用配置异常: ${wsMessage.data.Error}`)
           message.error(`通用配置失败: ${wsMessage.data.Error}`)
           // 不取消订阅，等待Signal类型的Accomplish消息
           return
@@ -643,7 +648,8 @@ const handleGeneralConfig = async () => {
                 message.error(response?.message || '自动保存配置失败，请手动保存')
               }
             } catch (error) {
-              logger.error('超时自动保存配置失败:', error)
+              const errorMsg = error instanceof Error ? error.message : String(error)
+              logger.error(`超时自动保存配置失败: ${errorMsg}`)
               message.error('自动保存配置失败，请手动保存')
               // 失败时保留按钮让用户手动操作
               configTimedOut.value = true
@@ -658,7 +664,8 @@ const handleGeneralConfig = async () => {
       showGeneralConfigMask.value = false
     }
   } catch (error) {
-    logger.error('启动通用配置失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`启动通用配置失败: ${errorMsg}`)
     message.error('启动通用配置失败')
     showGeneralConfigMask.value = false
   } finally {
@@ -692,7 +699,8 @@ const handleSaveGeneralConfig = async () => {
       message.error(response.message || '保存配置失败')
     }
   } catch (error) {
-    logger.error('保存通用配置失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存通用配置失败: ${errorMsg}`)
     message.error('保存通用配置失败')
   }
 }
@@ -712,7 +720,8 @@ const selectScriptBeforeTask = async () => {
       await handleFieldSave('Info.ScriptBeforeTask', path[0])
     }
   } catch (error) {
-    logger.error('选择任务前脚本失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`选择任务前脚本失败: ${errorMsg}`)
     message.error('选择文件失败')
   }
 }
@@ -731,7 +740,8 @@ const selectScriptAfterTask = async () => {
       await handleFieldSave('Info.ScriptAfterTask', path[0])
     }
   } catch (error) {
-    logger.error('选择任务后脚本失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`选择任务后脚本失败: ${errorMsg}`)
     message.error('选择文件失败')
   }
 }
@@ -739,7 +749,7 @@ const selectScriptAfterTask = async () => {
 // 处理 Webhook 变化
 const handleWebhookChange = () => {
   // Webhook 有自己的保存逻辑，这里只记录日志
-  logger.info('User webhooks changed:', formData.Notify.CustomWebhooks)
+  logger.info(`User webhooks changed: ${JSON.stringify(formData.Notify.CustomWebhooks)}`)
 }
 
 const handleCancel = () => {
