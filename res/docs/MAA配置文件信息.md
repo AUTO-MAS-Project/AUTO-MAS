@@ -11,6 +11,7 @@
 | Start.MinimizeDirectly                  | 全局   | bool                                                         | 启动 MAA 后直接最小化                                        |
 | Start.RunDirectly                       | 子配置 | bool                                                         | 启动 MAA 后直接运行                                          |
 | Start.OpenEmulatorAfterLaunch           | 全局   | bool                                                         | 启动 MAA 后自动开启模拟器                                    |
+| GUI.Localization                        | 全局   | "zh-cn"                                                      | 语言                                                         |
 | GUI.UseTray                             | 全局   | bool                                                         | 显示托盘图标                                                 |
 | GUI.MinimizeToTray                      | 全局   | bool                                                         | 最小化时隐藏至托盘                                           |
 | VersionUpdate.package                   | 全局   | FileName                                                     | 更新包标识                                                   |

@@ -362,20 +362,24 @@ class AutoProxyTask(TaskExecuteBase):
         global_set = gui_set["Global"]
         default_set = gui_set["Configurations"]["Default"]
 
+        # 使用简体中文
+        global_set["GUI.Localization"] = "zh-cn"
+
         task_set = {}
         # 每个任务类型匹配第一个配置作为配置基础
-        for task_type in MAA_TASKS:
+        for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
 
             for task_item in gui_new_set["Configurations"]["Default"]["TaskQueue"]:
-                if task_item.get("TaskType", "") == task_type:
-                    task_set[task_type] = task_item
+                if task_item.get("TaskType", "") == en_task:
+                    task_set[en_task] = task_item
+                    task_set[en_task]["Name"] = zh_task
                     break
             else:
-                task_set[task_type] = {
-                    "$type": f"{task_type}Task",
-                    "Name": f"{task_type} - 默认配置",
+                task_set[en_task] = {
+                    "$type": f"{en_task}Task",
+                    "Name": zh_task,
                     "IsEnable": False,
-                    "TaskType": task_type,
+                    "TaskType": en_task,
                 }
 
         # 关闭所有定时
@@ -570,14 +574,18 @@ class AutoProxyTask(TaskExecuteBase):
 
         if "未选择任务" in log:
             self.cur_user_log.status = "MAA 未选择任何任务"
-        elif "任务出错: StartUp" in log or "任务出错: 开始唤醒" in log:
+        elif "任务出错: 开始唤醒" in log:
             self.cur_user_log.status = "MAA 未能正确登录 PRTS"
         elif "任务已全部完成！" in log:
 
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
-
-                if f"完成任务: {en_task}" in log or f"完成任务: {zh_task}" in log:
+                if f"完成任务: {zh_task}" in log:
                     self.task_dict[en_task] = False
+
+            if self.mode == "Annihilation" and "完成任务: 剿灭作战" in log:
+                self.task_dict["Fight"] = False
+            elif self.mode == "Routine" and "任务出错: 剩余理智" in log:
+                self.task_dict["Fight"] = True
 
             if any(self.task_dict.values()):
                 self.cur_user_log.status = "MAA 部分任务执行失败"
