@@ -303,10 +303,6 @@ class MaaUserConfig(ConfigBase):
         self.Data_LastProxyDate = ConfigItem(
             "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
         )
-        ## 上次剿灭日期
-        self.Data_LastAnnihilationDate = ConfigItem(
-            "Data", "LastAnnihilationDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
-        )
         ## 上次森空岛签到日期
         self.Data_LastSklandDate = ConfigItem(
             "Data", "LastSklandDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
@@ -461,9 +457,9 @@ class MaaConfig(ConfigBase):
         self.Run_RoutineTimeLimit = ConfigItem(
             "Run", "RoutineTimeLimit", 10, RangeValidator(1, 9999)
         )
-        ## 是否限制剿灭每周一次
-        self.Run_AnnihilationWeeklyLimit = ConfigItem(
-            "Run", "AnnihilationWeeklyLimit", True, BoolValidator()
+        ## 剿灭避免无代理卡浪费理智
+        self.Run_AnnihilationAvoidWaste = ConfigItem(
+            "Run", "AnnihilationAvoidWaste", False, BoolValidator()
         )
 
         self.UserData = MultipleConfig([MaaUserConfig])
