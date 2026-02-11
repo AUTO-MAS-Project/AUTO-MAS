@@ -400,9 +400,7 @@ import type { OCRScreenshotIn } from '@/api/models/OCRScreenshotIn'
 import type { OCRScreenshotOut } from '@/api/models/OCRScreenshotOut'
 import type { ADBScreenshotIn } from '@/api/models/ADBScreenshotIn'
 import type { ADBScreenshotOut } from '@/api/models/ADBScreenshotOut'
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('OCR调试')
+const logger = window.electronAPI.getLogger('OCR调试')
 
 // 当前激活的标签页
 const activeTab = ref('screenshot')
@@ -442,8 +440,9 @@ const handleScreenshot = async () => {
       message.error(response.message || '截图失败')
     }
   } catch (error) {
-    logger.error('获取截图失败:', error)
-    message.error(`获取截图失败: ${error}`)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`获取截图失败: ${errorMsg}`)
+    message.error(`获取截图失败: ${errorMsg}`)
   } finally {
     screenshotLoading.value = false
   }
@@ -495,8 +494,9 @@ const handleADBScreenshot = async () => {
       message.error(response.message || 'ADB 截图失败')
     }
   } catch (error) {
-    logger.error('获取 ADB 截图失败:', error)
-    message.error(`获取 ADB 截图失败: ${error}`)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`获取 ADB 截图失败: ${errorMsg}`)
+    message.error(`获取 ADB 截图失败: ${errorMsg}`)
   } finally {
     adbScreenshotLoading.value = false
   }
@@ -590,8 +590,9 @@ const handleCheck = async () => {
       message.error(response.message || '图像检查失败')
     }
   } catch (error) {
-    logger.error('图像检查失败:', error)
-    message.error(`图像检查失败: ${error}`)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`图像检查失败: ${errorMsg}`)
+    message.error(`图像检查失败: ${errorMsg}`)
   } finally {
     checkLoading.value = false
   }
@@ -671,8 +672,9 @@ const handleClick = async () => {
       message.error(response.message || '点击操作失败')
     }
   } catch (error) {
-    logger.error('点击操作失败:', error)
-    message.error(`点击操作失败: ${error}`)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`点击操作失败: ${errorMsg}`)
+    message.error(`点击操作失败: ${errorMsg}`)
   } finally {
     clickLoading.value = false
   }

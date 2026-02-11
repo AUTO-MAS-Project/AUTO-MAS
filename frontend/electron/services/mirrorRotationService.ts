@@ -6,16 +6,9 @@
 import { MirrorSource } from './mirrorService'
 
 // 导入日志服务
-import { logService } from './logService'
 
-// 使用日志服务的日志记录器
-const logger = {
-    error: (message: string, ...args: any[]) => logService.error('镜像轮替服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
-    warn: (message: string, ...args: any[]) => logService.warn('镜像轮替服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
-    info: (message: string, ...args: any[]) => logService.info('镜像轮替服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
-    debug: (message: string, ...args: any[]) => logService.debug('镜像轮替服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`),
-    log: (message: string, ...args: any[]) => logService.info('镜像轮替服务', `${message} ${args.length > 0 ? JSON.stringify(args) : ''}`)
-}
+import { getLogger } from './logger'
+const logger = getLogger('镜像轮替服务')
 
 // ==================== 类型定义 ====================
 
@@ -105,16 +98,16 @@ export class MirrorRotationService {
                         usedMirror: mirror
                     }
                 } else {
-                    logger.warn(`⚠️ 镜像源 ${mirror.name} 操作失败: ${result.error}`)
+                    logger.warn(`镜像源 ${mirror.name} 操作失败: ${result.error}`)
                 }
             } catch (error) {
                 const errorMsg = error instanceof Error ? error.message : String(error)
-                logger.error(`❌ 镜像源 ${mirror.name} 发生异常: ${errorMsg}`)
+                logger.error(`镜像源 ${mirror.name} 发生异常: ${errorMsg}`)
             }
         }
 
         // 所有镜像源都失败
-        logger.error('❌ 所有镜像源都尝试失败')
+        logger.error('所有镜像源都尝试失败')
         return {
             success: false,
             error: preferredMirrorName

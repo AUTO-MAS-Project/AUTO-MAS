@@ -1,42 +1,32 @@
 <template>
   <div class="test-container">
-    <h2>¶Ô»°¿ò²âÊÔÒ³Ãæ</h2>
+    <h2>æµ‹è¯•è·¯ç”±é¡µé¢</h2>
 
     <div class="test-section">
-      <h3>²âÊÔÓ¦ÓÃÄÚµ¯´°</h3>
-      <p>µã»÷ÏÂÃæµÄ°´Å¥²âÊÔ²»Í¬ÀàĞÍµÄ¶Ô»°¿ò</p>
+      <h3>åº”ç”¨å¯¹è¯æ¡†</h3>
+      <p>ç‚¹å‡»æŒ‰é’®è§¦å‘ä¸åŒç±»å‹çš„å¯¹è¯æ¡†</p>
 
       <div class="button-group">
-        <Button type="primary" @click="testBasicDialog">»ù´¡¶Ô»°¿ò</Button>
-        <Button type="primary" @click="testCustomDialog">×Ô¶¨ÒåÑ¡Ïî</Button>
-        <Button type="primary" @click="testLongMessage">³¤ÏûÏ¢²âÊÔ</Button>
+        <Button type="primary" @click="testBasicDialog">åŸºæœ¬ç¡®è®¤</Button>
+        <Button type="primary" @click="testCustomDialog">è‡ªå®šä¹‰é€‰é¡¹</Button>
+        <Button type="primary" @click="testLongMessage">é•¿ä¿¡æ¯å¯¹è¯æ¡†</Button>
       </div>
 
       <div v-if="lastResult !== null" class="result">
-        <h4>ÉÏ´ÎÑ¡Ôñ½á¹û£º</h4>
+        <h4>ä¸Šæ¬¡é€‰æ‹©ç»“æœ</h4>
         <p :class="lastResult ? 'success' : 'cancel'">
-          {{ lastResult ? ' È·ÈÏ' : ' È¡Ïû' }}
+          {{ lastResult ? 'ç¡®è®¤' : 'å–æ¶ˆ' }}
         </p>
       </div>
     </div>
 
-    <!-- Ó¦ÓÃÄÚµ¯´° -->
-    <Modal
-      v-model:open="isModalOpen"
-      :title="modalTitle"
-      :closable="false"
-      :maskClosable="false"
-      :keyboard="true"
-      centered
-    >
+    <!-- åº”ç”¨å¯¹è¯æ¡† -->
+    <Modal v-model:open="isModalOpen" :title="modalTitle" :closable="false" :maskClosable="false" :keyboard="true"
+      centered>
       <p class="modal-message">{{ modalMessage }}</p>
       <template #footer>
-        <Button
-          v-for="(option, index) in modalOptions"
-          :key="index"
-          :type="index === 0 ? 'primary' : 'default'"
-          @click="handleChoice(index === 0)"
-        >
+        <Button v-for="(option, index) in modalOptions" :key="index" :type="index === 0 ? 'primary' : 'default'"
+          @click="handleChoice(index === 0)">
           {{ option }}
         </Button>
       </template>
@@ -47,13 +37,13 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { Modal, Button } from 'ant-design-vue'
-import { getLogger } from '@/utils/logger'
+
 
 defineOptions({
   name: 'TestRouterView',
 })
 
-const logger = getLogger('²âÊÔÂ·ÓÉ')
+const logger = window.electronAPI.getLogger('æµ‹è¯•è·¯ç”±')
 const lastResult = ref<boolean | null>(null)
 
 // Modal ×´Ì¬
@@ -63,7 +53,7 @@ const modalMessage = ref('')
 const modalOptions = ref<string[]>([])
 let resolvePromise: ((value: boolean) => void) | null = null
 
-// ÏÔÊ¾µ¯´°²¢·µ»Ø Promise
+// ï¿½ï¿½Ê¾ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Promise
 const showModal = (options: {
   title: string
   message: string
@@ -72,13 +62,13 @@ const showModal = (options: {
   return new Promise(resolve => {
     modalTitle.value = options.title
     modalMessage.value = options.message
-    modalOptions.value = options.buttonOptions || ['È·¶¨', 'È¡Ïû']
+    modalOptions.value = options.buttonOptions || ['È·ï¿½ï¿½', 'È¡ï¿½ï¿½']
     resolvePromise = resolve
     isModalOpen.value = true
   })
 }
 
-// ´¦ÀíÓÃ»§Ñ¡Ôñ
+// ï¿½ï¿½ï¿½ï¿½ï¿½Ã»ï¿½Ñ¡ï¿½ï¿½
 const handleChoice = (choice: boolean) => {
   isModalOpen.value = false
   if (resolvePromise) {
@@ -90,47 +80,49 @@ const handleChoice = (choice: boolean) => {
 const testBasicDialog = async () => {
   try {
     const result = await showModal({
-      title: '»ù´¡È·ÈÏ',
-      message: 'ÕâÊÇÒ»¸ö»ù´¡µÄÈ·ÈÏ¶Ô»°¿ò',
-      buttonOptions: ['È·¶¨', 'È¡Ïû'],
+      title: 'åŸºæœ¬ç¡®è®¤',
+      message: 'è¿™æ˜¯ä¸€ä¸ªåŸºæœ¬çš„ç¡®è®¤å¯¹è¯æ¡†',
+      buttonOptions: ['ç¡®è®¤', 'å–æ¶ˆ'],
     })
     lastResult.value = result
-    logger.info('»ù´¡¶Ô»°¿ò½á¹û:', result)
+    logger.info(`åŸºæœ¬ç¡®è®¤å¯¹è¯æ¡†ç»“æœ: ${result}`)
   } catch (error) {
-    logger.error('ÏÔÊ¾¶Ô»°¿òÊ§°Ü:', error)
+    logger.error(`æ˜¾ç¤ºåŸºæœ¬ç¡®è®¤å¯¹è¯æ¡†å¤±è´¥: ${error}`)
   }
 }
 
 const testCustomDialog = async () => {
   try {
     const result = await showModal({
-      title: '×Ô¶¨ÒåÑ¡Ïî',
-      message: 'ÊÇ·ñÒª±£´æ¸ü¸Ä£¿',
-      buttonOptions: ['±£´æ', '²»±£´æ'],
+      title: 'è‡ªå®šä¹‰é€‰é¡¹',
+      message: 'æ˜¯å¦è¦ä½¿ç”¨è‡ªå®šä¹‰æ¨¡æ¿',
+      buttonOptions: ['ä½¿ç”¨', 'å–æ¶ˆ'],
     })
     lastResult.value = result
-    logger.info('×Ô¶¨Òå¶Ô»°¿ò½á¹û:', result)
+    logger.info(`è‡ªå®šä¹‰é€‰é¡¹å¯¹è¯æ¡†ç»“æœ: ${result}`)
   } catch (error) {
-    logger.error('ÏÔÊ¾¶Ô»°¿òÊ§°Ü:', error)
+    logger.error(`æ˜¾ç¤ºè‡ªå®šä¹‰é€‰é¡¹å¯¹è¯æ¡†å¤±è´¥: ${error}`)
   }
 }
 
 const testLongMessage = async () => {
   try {
     const result = await showModal({
-      title: '³¤ÏûÏ¢²âÊÔ',
-      message: `ÕâÊÇÒ»¸ö°üº¬½Ï³¤ÏûÏ¢µÄ¶Ô»°¿ò²âÊÔ¡£
+      title: 'é•¿ä¿¡æ¯å¯¹è¯æ¡†',
+      message: `è¿™æ˜¯ä¸€ä¸ªé•¿ä¿¡æ¯å¯¹è¯æ¡†ï¼Œç”¨äºæµ‹è¯•æ˜¾ç¤ºé•¿æ–‡æœ¬å†…å®¹çš„æ•ˆæœã€‚
 
-ÏûÏ¢¿ÉÒÔ°üº¬¶àĞĞÎÄ±¾£¬
-ÓÃÓÚÏÔÊ¾¸üÏêÏ¸µÄĞÅÏ¢¡£
+è¿™æ˜¯ä¸€ä¸ªé•¿ä¿¡æ¯å¯¹è¯æ¡†ï¼Œç”¨äºæµ‹è¯•æ˜¾ç¤ºé•¿æ–‡æœ¬å†…å®¹çš„æ•ˆæœã€‚
 
-ÊÇ·ñÒª¼ÌĞøÖ´ĞĞ´Ë²Ù×÷£¿`,
-      buttonOptions: ['¼ÌĞø', 'È¡Ïû'],
+ä¿¡æ¯å†…å®¹å¯ä»¥åŒ…å«å¤šè¡Œæ–‡æœ¬
+å¹¶ä¸”å¯ä»¥æ˜¾ç¤ºè¯¦ç»†çš„è¯´æ˜ä¿¡æ¯
+
+æ˜¯å¦è¦ç»§ç»­æ‰§è¡Œæ­¤æ“ä½œ`,
+      buttonOptions: ['ç»§ç»­', 'å–æ¶ˆ'],
     })
     lastResult.value = result
-    logger.info('³¤ÏûÏ¢¶Ô»°¿ò½á¹û:', result)
+    logger.info(`é•¿ä¿¡æ¯å¯¹è¯æ¡†ç»“æœ: ${result}`)
   } catch (error) {
-    logger.error('ÏÔÊ¾¶Ô»°¿òÊ§°Ü:', error)
+    logger.error(`æ˜¾ç¤ºé•¿ä¿¡æ¯å¯¹è¯æ¡†å¤±è´¥: ${error}`)
   }
 }
 </script>
@@ -208,7 +200,7 @@ p {
   color: #ff4d4f;
 }
 
-/* °µÉ«Ä£Ê½Ö§³Ö */
+/* ï¿½ï¿½É«Ä£Ê½Ö§ï¿½ï¿½ */
 @media (prefers-color-scheme: dark) {
   h2 {
     color: #ffffff;

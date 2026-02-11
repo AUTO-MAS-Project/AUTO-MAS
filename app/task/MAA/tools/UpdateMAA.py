@@ -65,10 +65,6 @@ async def update_maa(maa_path: Path):
     maa_set["Global"]["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
     maa_set["Global"]["VersionUpdate.AutoInstallUpdatePackage"] = "True"
 
-    # 任务配置
-    for task in MAA_TASKS:
-        maa_set["Configurations"]["Default"][f"TaskQueue.{task}.IsChecked"] = "False"
-
     (maa_path / "config/gui.json").write_text(
         json.dumps(maa_set, ensure_ascii=False, indent=4), encoding="utf-8"
     )

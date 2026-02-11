@@ -23,7 +23,7 @@
               {
                 'custom-stage-selected': isCustomStage((record as any)[column.key]),
               },
-            ]" allow-clear :bordered="false" :disabled="isColumnDisabled(column.key as string)"
+            ]" :allow-clear="false" :bordered="false" :disabled="isColumnDisabled(column.key as string)"
               @update:value="updateConfigValue(record.key, column.key as TimeKey, $event)">
               <a-select-option v-for="option in getSelectOptions(
                 column.key as string,

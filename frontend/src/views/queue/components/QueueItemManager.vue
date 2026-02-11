@@ -60,9 +60,7 @@ import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
 import { Service } from '@/api'
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('队列项管理')
+const logger = window.electronAPI.getLogger('队列项管理')
 
 // Props
 interface Props {
@@ -123,18 +121,19 @@ const loadOptions = async () => {
     logger.info('开始加载脚本选项...')
     // 使用正确的API获取脚本下拉框选项
     const scriptsResponse = await Service.getScriptComboxApiInfoComboxScriptPost()
-    logger.debug('脚本API响应:', scriptsResponse)
+    logger.debug(`脚本API响应: ${JSON.stringify(scriptsResponse)}`)
 
     if (scriptsResponse.code === 200) {
-      logger.debug('脚本API响应数据:', scriptsResponse.data)
+      logger.debug(`脚本API响应数据: ${JSON.stringify(scriptsResponse.data)}`)
       // 直接使用接口返回的combox选项
       scriptOptions.value = scriptsResponse.data || []
-      logger.debug('处理后的脚本选项:', scriptOptions.value)
+      logger.debug(`处理后的脚本选项: ${JSON.stringify(scriptOptions.value)}`)
     } else {
-      logger.error('脚本API响应错误:', scriptsResponse)
+      logger.error(`脚本API响应错误: ${JSON.stringify(scriptsResponse)}`)
     }
   } catch (error) {
-    logger.error('加载脚本选项失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载脚本选项失败: ${errorMsg}`)
   }
 }
 
@@ -159,8 +158,9 @@ const updateQueueItemScript = async (record: any) => {
       message.error('脚本更新失败: ' + (response.message || '未知错误'))
     }
   } catch (error: any) {
-    logger.error('更新脚本失败:', error)
-    message.error('更新脚本失败: ' + (error?.message || '网络错误'))
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`更新脚本失败: ${errorMsg}`)
+    message.error(`更新脚本失败: ${errorMsg}`)
   } finally {
     loading.value = false
   }
@@ -182,8 +182,9 @@ const addQueueItem = async () => {
       message.error('任务添加失败: ' + (createResponse.message || '未知错误'))
     }
   } catch (error: any) {
-    logger.error('添加任务失败:', error)
-    message.error('添加任务失败: ' + (error?.message || '网络错误'))
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`添加任务失败: ${errorMsg}`)
+    message.error(`添加任务失败: ${errorMsg}`)
   } finally {
     loading.value = false
   }
@@ -204,8 +205,9 @@ const deleteQueueItem = async (itemId: string) => {
       message.error('删除队列项失败: ' + (response.message || '未知错误'))
     }
   } catch (error: any) {
-    logger.error('删除队列项失败:', error)
-    message.error('删除队列项失败: ' + (error?.message || '网络错误'))
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`删除队列项失败: ${errorMsg}`)
+    message.error(`删除队列项失败: ${errorMsg}`)
   }
 }
 
@@ -237,8 +239,9 @@ const onDragEnd = async (evt: any) => {
       emit('refresh')
     }
   } catch (error: any) {
-    logger.error('拖拽排序失败:', error)
-    message.error('更新任务顺序失败: ' + (error?.message || '网络错误'))
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`拖拽排序失败: ${errorMsg}`)
+    message.error(`更新任务顺序失败: ${errorMsg}`)
     // 如果失败，刷新数据恢复原状态
     emit('refresh')
   } finally {

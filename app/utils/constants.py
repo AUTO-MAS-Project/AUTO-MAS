@@ -42,17 +42,30 @@ TYPE_BOOK = {"MaaConfig": "MAA", "GeneralConfig": "通用"}
 MAA_RUN_MOOD_BOOK = {"Annihilation": "剿灭", "Routine": "日常"}
 """MAA运行模式映射表"""
 
-MAA_TASKS = [
-    "WakeUp",
-    "Recruiting",
-    "Base",
-    "Combat",
-    "Mission",
-    "Mall",
-    "AutoRoguelike",
-    "Reclamation",
+MAA_TASKS = ["StartUp", "Fight", "Infrast", "Recruit", "Mall", "Award", "Roguelike"]
+"""MAA任务列表"""
+
+MAA_TASKS_ZH = [
+    "开始唤醒",
+    "理智作战",
+    "基建换班",
+    "自动公招",
+    "信用收支",
+    "领取奖励",
+    "自动肉鸽",
 ]
 """MAA任务列表"""
+
+MAA_STAGE_KEY = [
+    "MedicineNumb",
+    "SeriesNumb",
+    "Stage",
+    "Stage_1",
+    "Stage_2",
+    "Stage_3",
+    "Stage_Remain",
+]
+"""MAA关卡键表"""
 
 ARKNIGHTS_PACKAGE_NAME = {
     "Official": "com.hypergryph.arknights",
@@ -70,6 +83,92 @@ MAA_TASK_TRANSITION_METHOD_BOOK = {
     "ExitEmulator": "9",
 }
 """MAA任务切换方式映射表"""
+
+MAA_STARTUP_BASE = {
+    "$type": "StartUpTask",
+    "AccountName": "",
+    "Name": "开始唤醒",
+    "IsEnable": True,
+    "TaskType": "StartUp",
+}
+"""MAA开始唤醒基础配置"""
+
+MAA_ANNIHILATION_FIGHT_BASE = {
+    "$type": "FightTask",
+    "UseMedicine": False,
+    "MedicineCount": 0,
+    "UseStone": False,
+    "StoneCount": 0,
+    "EnableTargetDrop": False,
+    "DropId": "",
+    "DropCount": 0,
+    "EnableTimesLimit": False,
+    "TimesLimit": 999,
+    "Series": 0,
+    "StagePlan": ["Annihilation"],
+    "IsDrGrandet": False,
+    "UseExpiringMedicine": True,
+    "UseCustomAnnihilation": True,
+    "AnnihilationStage": "Annihilation",
+    "HideUnavailableStage": True,
+    "IsStageManually": False,
+    "UseOptionalStage": False,
+    "UseStoneAllowSave": False,
+    "HideSeries": False,
+    "UseWeeklySchedule": False,
+    "WeeklySchedule": {
+        "Sunday": True,
+        "Monday": True,
+        "Tuesday": True,
+        "Wednesday": True,
+        "Thursday": True,
+        "Friday": True,
+        "Saturday": True,
+    },
+    "Name": "剿灭作战",
+    "IsEnable": True,
+    "TaskType": "Fight",
+}
+"""MAA剿灭作战基础配置"""
+
+
+MAA_REMAIN_FIGHT_BASE = {
+    "$type": "FightTask",
+    "UseMedicine": False,
+    "MedicineCount": 0,
+    "UseStone": False,
+    "StoneCount": 0,
+    "EnableTargetDrop": False,
+    "DropId": "",
+    "DropCount": 0,
+    "EnableTimesLimit": False,
+    "TimesLimit": 999,
+    "Series": 0,
+    "StagePlan": [""],
+    "IsDrGrandet": False,
+    "UseExpiringMedicine": False,
+    "UseCustomAnnihilation": False,
+    "AnnihilationStage": "Annihilation",
+    "HideUnavailableStage": True,
+    "IsStageManually": True,
+    "UseOptionalStage": False,
+    "UseStoneAllowSave": False,
+    "HideSeries": False,
+    "UseWeeklySchedule": False,
+    "WeeklySchedule": {
+        "Sunday": True,
+        "Monday": True,
+        "Tuesday": True,
+        "Wednesday": True,
+        "Thursday": True,
+        "Friday": True,
+        "Saturday": True,
+    },
+    "Name": "剩余理智",
+    "IsEnable": True,
+    "TaskType": "Fight",
+}
+"""MAA剩余理智作战基础配置"""
 
 EMULATOR_PATH_BOOK = {
     "mumu": {
@@ -130,7 +229,8 @@ EMULATOR_PATH_BOOK = {
 """模拟器文件常规路径信息"""
 
 RESOURCE_STAGE_INFO = [
-    {"value": "-", "text": "当前/上次", "days": [1, 2, 3, 4, 5, 6, 7]},
+    {"value": "-", "text": "禁用", "days": [1, 2, 3, 4, 5, 6, 7]},
+    {"value": "*", "text": "当前/上次", "days": [1, 2, 3, 4, 5, 6, 7]},
     {"value": "1-7", "text": "1-7", "days": [1, 2, 3, 4, 5, 6, 7]},
     {"value": "R8-11", "text": "R8-11", "days": [1, 2, 3, 4, 5, 6, 7]},
     {"value": "12-17-HARD", "text": "12-17-HARD", "days": [1, 2, 3, 4, 5, 6, 7]},
@@ -352,6 +452,7 @@ POWER_SIGN_MAP = {
     "NoAction": "无动作",
     "Shutdown": "关机",
     "ShutdownForce": "强制关机",
+    "Reboot": "重启",
     "Hibernate": "休眠",
     "Sleep": "睡眠",
     "KillSelf": "退出程序",

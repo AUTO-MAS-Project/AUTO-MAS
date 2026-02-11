@@ -7,6 +7,7 @@ import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   DeleteOutlined,
+  EyeOutlined,
   FolderOpenOutlined,
   PlayCircleOutlined,
   PlusOutlined,
@@ -16,9 +17,7 @@ import {
 } from '@ant-design/icons-vue'
 import type { EmulatorConfigIndexItem, EmulatorSearchResult } from '@/api'
 import { Service } from '@/api'
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('模拟器管理')
+const logger = window.electronAPI.getLogger('模拟器管理')
 
 // 编辑数据接口
 interface EmulatorInfo {
@@ -35,7 +34,8 @@ const safeJsonParse = (jsonString: string | null | undefined, fallback: any = []
   try {
     return JSON.parse(jsonString)
   } catch (e) {
-    logger.error('JSON 解析失败:', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`JSON 解析失败: ${errorMsg}`)
     return fallback
   }
 }
@@ -74,6 +74,7 @@ const devicesData = ref<Record<string, Record<string, Record<string, any>>>>({})
 const loadingDevices = ref<Set<string>>(new Set())
 const startingDevices = ref<Set<string>>(new Set())
 const stoppingDevices = ref<Set<string>>(new Set())
+const showingDevices = ref<Set<string>>(new Set())
 
 // 轮询相关状态
 const pollingTimer = ref<ReturnType<typeof setTimeout> | null>(null)
@@ -104,7 +105,8 @@ const pollDevicesStatus = async () => {
     }
   } catch (e) {
     // 轮询时的错误静默处理，避免频繁弹错误提示
-    logger.warn('轮询设备状态时出错:', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.warn(`轮询设备状态时出错: ${errorMsg}`)
   }
 }
 
@@ -239,7 +241,8 @@ const loadEmulators = async () => {
       message.error(response.message || '加载模拟器配置失败')
     }
   } catch (e) {
-    logger.error('加载模拟器配置失败', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`加载模拟器配置失败: ${errorMsg}`)
     message.error('加载模拟器配置失败')
   } finally {
     loading.value = false
@@ -260,7 +263,8 @@ const handleAdd = async () => {
       message.error(response.message || '添加失败')
     }
   } catch (e) {
-    logger.error('添加模拟器失败', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`添加模拟器失败: ${errorMsg}`)
     message.error('添加模拟器失败')
   }
 }
@@ -270,28 +274,64 @@ const refreshEmulatorConfig = async (uuid?: string) => {
   try {
     const response = await Service.getEmulatorApiEmulatorGetPost({ emulatorId: uuid || null })
     if (response.code === 200 && 'index' in response && 'data' in response) {
-      emulatorIndex.value = (response.index as EmulatorConfigIndexItem[]) || []
-      emulatorData.value = (response.data as Record<string, any>) || {}
+      // 如果指定了 uuid，只更新特定模拟器的数据，而不是替换整个列表
+      if (uuid) {
+        // 更新特定模拟器的数据
+        const updatedIndex = response.index as EmulatorConfigIndexItem[]
+        const updatedData = response.data as Record<string, any>
 
-      // 更新编辑数据
-      emulatorIndex.value.forEach(item => {
-        const configData = emulatorData.value[item.uid]
-        const bossKeys = safeJsonParse(configData?.Data?.BossKey, [])
-        editingDataMap.value.set(item.uid, {
-          name: configData?.Info?.Name || '',
-          type: configData?.Data?.Type || '',
-          path: configData?.Info?.Path || '',
-          max_wait_time: configData?.Data?.MaxWaitTime || 60,
-          boss_keys: bossKeys,
-        })
-        // 同步 boss_keys 到输入框显示
-        if (bossKeys.length > 0) {
-          bossKeyInputMap.value[item.uid] = bossKeys[0]
+        if (updatedIndex.length > 0 && updatedData[uuid]) {
+          // 找到并更新 index 中的对应项
+          const indexItem = emulatorIndex.value.find(item => item.uid === uuid)
+          if (indexItem) {
+            // 更新 type
+            indexItem.type = updatedIndex[0].type
+          }
+
+          // 更新或添加 data
+          emulatorData.value[uuid] = updatedData[uuid]
+
+          // 更新编辑数据
+          const configData = updatedData[uuid]
+          const bossKeys = safeJsonParse(configData?.Data?.BossKey, [])
+          editingDataMap.value.set(uuid, {
+            name: configData?.Info?.Name || '',
+            type: configData?.Data?.Type || '',
+            path: configData?.Info?.Path || '',
+            max_wait_time: configData?.Data?.MaxWaitTime || 60,
+            boss_keys: bossKeys,
+          })
+          // 同步 boss_keys 到输入框显示
+          if (bossKeys.length > 0) {
+            bossKeyInputMap.value[uuid] = bossKeys[0]
+          }
         }
-      })
+      } else {
+        // 没有指定 uuid，刷新所有模拟器
+        emulatorIndex.value = (response.index as EmulatorConfigIndexItem[]) || []
+        emulatorData.value = (response.data as Record<string, any>) || {}
+
+        // 更新编辑数据
+        emulatorIndex.value.forEach(item => {
+          const configData = emulatorData.value[item.uid]
+          const bossKeys = safeJsonParse(configData?.Data?.BossKey, [])
+          editingDataMap.value.set(item.uid, {
+            name: configData?.Info?.Name || '',
+            type: configData?.Data?.Type || '',
+            path: configData?.Info?.Path || '',
+            max_wait_time: configData?.Data?.MaxWaitTime || 60,
+            boss_keys: bossKeys,
+          })
+          // 同步 boss_keys 到输入框显示
+          if (bossKeys.length > 0) {
+            bossKeyInputMap.value[item.uid] = bossKeys[0]
+          }
+        })
+      }
     }
   } catch (e) {
-    logger.error('刷新模拟器配置失败', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`刷新模拟器配置失败: ${errorMsg}`)
   }
 }
 
@@ -330,7 +370,8 @@ const handleSaveChange = async (uuid: string, key: string, value: any) => {
       message.error(response.message || '保存失败')
     }
   } catch (e) {
-    logger.error('保存模拟器配置失败', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`保存模拟器配置失败: ${errorMsg}`)
     message.error('保存模拟器配置失败')
   } finally {
     savingMap.value.set(uuid, false)
@@ -365,7 +406,8 @@ const handleDelete = async (uuid: string) => {
       message.error(response.message || '删除失败')
     }
   } catch (e) {
-    logger.error('删除模拟器失败', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`删除模拟器失败: ${errorMsg}`)
     message.error('删除模拟器失败')
   }
 }
@@ -387,7 +429,8 @@ const handleSearch = async () => {
       message.error(response.message || '搜索失败')
     }
   } catch (e) {
-    logger.error('搜索模拟器失败', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`搜索模拟器失败: ${errorMsg}`)
     message.error('搜索模拟器失败')
   } finally {
     searching.value = false
@@ -425,7 +468,8 @@ const handleImportFromSearch = async (result: EmulatorSearchResult) => {
       message.error(response.message || '导入失败')
     }
   } catch (e) {
-    logger.error('导入模拟器失败', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`导入模拟器失败: ${errorMsg}`)
     message.error('导入模拟器失败')
   }
 }
@@ -455,7 +499,8 @@ const loadDevices = async (uuid: string) => {
       message.error(response.message || '获取设备信息失败')
     }
   } catch (e) {
-    logger.error('获取设备信息失败', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`获取设备信息失败: ${errorMsg}`)
     message.error('获取设备信息失败')
   } finally {
     loadingDevices.value.delete(uuid)
@@ -486,7 +531,8 @@ const startEmulator = async (uuid: string, index: string) => {
       message.error(response.message || '启动失败')
     }
   } catch (e) {
-    logger.error('启动模拟器失败', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`启动模拟器失败: ${errorMsg}`)
     message.error('启动模拟器失败')
   } finally {
     startingDevices.value.delete(deviceKey)
@@ -515,11 +561,40 @@ const stopEmulator = async (uuid: string, index: string) => {
       message.error(response.message || '关闭失败')
     }
   } catch (e) {
-    logger.error('关闭模拟器失败', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`关闭模拟器失败: ${errorMsg}`)
     message.error('关闭模拟器失败')
   } finally {
     stoppingDevices.value.delete(deviceKey)
     stoppingDevices.value = new Set(stoppingDevices.value)
+  }
+}
+
+// 显示模拟器
+const showEmulator = async (uuid: string, index: string) => {
+  const deviceKey = `${uuid}-${index}`
+  showingDevices.value.add(deviceKey)
+  showingDevices.value = new Set(showingDevices.value)
+
+  try {
+    const response = await Service.operationEmulatorApiEmulatorOperatePost({
+      emulatorId: uuid,
+      operate: 'show' as any,
+      index: index,
+    })
+
+    if (response.code === 200) {
+      message.success(response.message || `模拟器 ${index} 窗口已显示`)
+    } else {
+      message.error(response.message || '显示失败')
+    }
+  } catch (e) {
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`显示模拟器失败: ${errorMsg}`)
+    message.error('显示模拟器失败')
+  } finally {
+    showingDevices.value.delete(deviceKey)
+    showingDevices.value = new Set(showingDevices.value)
   }
 }
 
@@ -553,7 +628,8 @@ const selectEmulatorPath = async (uuid: string) => {
       }
     }
   } catch (error) {
-    logger.error('选择模拟器路径失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`选择模拟器路径失败: ${errorMsg}`)
     message.error('选择文件失败')
   }
 }
@@ -924,7 +1000,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                           key: 'adb_address',
                           ellipsis: true,
                         },
-                        { title: '操作', key: 'action', width: 100 },
+                        { title: '操作', key: 'action', width: 160 },
                       ]" :pagination="false" size="small" :scroll="{ x: 'max-content', y: 'calc(100vh - 560px)' }">
                       <template #bodyCell="{ column, record }">
                         <template v-if="column.key === 'status'">
@@ -933,19 +1009,26 @@ const handleBossKeyInputChange = (uuid: string) => {
                           </a-tag>
                         </template>
                         <template v-else-if="column.key === 'action'">
-                          <a-button v-if="canStartDevice(record.status)" type="primary" :icon="h(PlayCircleOutlined)"
-                            :loading="startingDevices.has(`${element.uid}-${record.index}`)"
-                            @click="startEmulator(element.uid, String(record.index))">
-                            启动
-                          </a-button>
-                          <a-button v-else-if="canStopDevice(record.status)" danger :icon="h(StopOutlined)"
-                            :loading="stoppingDevices.has(`${element.uid}-${record.index}`)"
-                            @click="stopEmulator(element.uid, String(record.index))">
-                            关闭
-                          </a-button>
-                          <a-button v-else disabled>
-                            {{ getDeviceStatusInfo(record.status).text }}
-                          </a-button>
+                          <a-space :size="4">
+                            <a-button :icon="h(EyeOutlined)" :disabled="record.status !== 0"
+                              :loading="showingDevices.has(`${element.uid}-${record.index}`)"
+                              @click="showEmulator(element.uid, String(record.index))">
+                              显示
+                            </a-button>
+                            <a-button v-if="canStartDevice(record.status)" type="primary" :icon="h(PlayCircleOutlined)"
+                              :loading="startingDevices.has(`${element.uid}-${record.index}`)"
+                              @click="startEmulator(element.uid, String(record.index))">
+                              启动
+                            </a-button>
+                            <a-button v-else-if="canStopDevice(record.status)" danger :icon="h(StopOutlined)"
+                              :loading="stoppingDevices.has(`${element.uid}-${record.index}`)"
+                              @click="stopEmulator(element.uid, String(record.index))">
+                              关闭
+                            </a-button>
+                            <a-button v-else disabled>
+                              {{ getDeviceStatusInfo(record.status).text }}
+                            </a-button>
+                          </a-space>
                         </template>
                       </template>
                     </a-table>

@@ -6,19 +6,19 @@ export type MaaUserConfig_Task = {
     /**
      * 开始唤醒
      */
-    IfWakeUp?: (boolean | null);
+    IfStartUp?: (boolean | null);
     /**
      * 自动公招
      */
-    IfRecruiting?: (boolean | null);
+    IfRecruit?: (boolean | null);
     /**
      * 基建换班
      */
-    IfBase?: (boolean | null);
+    IfInfrast?: (boolean | null);
     /**
      * 理智作战
      */
-    IfCombat?: (boolean | null);
+    IfFight?: (boolean | null);
     /**
      * 信用收支
      */
@@ -26,11 +26,11 @@ export type MaaUserConfig_Task = {
     /**
      * 领取奖励
      */
-    IfMission?: (boolean | null);
+    IfAward?: (boolean | null);
     /**
      * 自动肉鸽
      */
-    IfAutoRoguelike?: (boolean | null);
+    IfRoguelike?: (boolean | null);
     /**
      * 生息演算
      */

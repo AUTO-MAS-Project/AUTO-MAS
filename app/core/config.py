@@ -78,7 +78,7 @@ except ImportError:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.0.3"
+    VERSION = "v5.0.4"
 
     def __init__(self) -> None:
         super().__init__()
@@ -117,7 +117,13 @@ class AppConfig(GlobalConfig):
         self.server: Optional[uvicorn.Server] = None
         self.websocket: Optional[WebSocket] = None
         self.power_sign: Literal[
-            "NoAction", "Shutdown", "ShutdownForce", "Hibernate", "Sleep", "KillSelf"
+            "NoAction",
+            "Shutdown",
+            "ShutdownForce",
+            "Reboot",
+            "Hibernate",
+            "Sleep",
+            "KillSelf",
         ] = "NoAction"
         self.temp_task: List[asyncio.Task] = []
 
@@ -144,7 +150,7 @@ class AppConfig(GlobalConfig):
             db = sqlite3.connect(self.database_path)
             cur = db.cursor()
             cur.execute("CREATE TABLE version(v text)")
-            cur.execute("INSERT INTO version VALUES(?)", ("v1.10",))
+            cur.execute("INSERT INTO version VALUES(?)", ("v1.11",))
             db.commit()
             cur.close()
             db.close()
@@ -155,7 +161,7 @@ class AppConfig(GlobalConfig):
         cur.execute("SELECT * FROM version WHERE True")
         version = cur.fetchall()
 
-        if version[0][0] != "v1.10":
+        if version[0][0] != "v1.11":
             logger.info(
                 "数据文件版本更新开始",
             )
@@ -421,6 +427,30 @@ class AppConfig(GlobalConfig):
 
                 cur.execute("DELETE FROM version WHERE v = ?", ("v1.9",))
                 cur.execute("INSERT INTO version VALUES(?)", ("v1.10",))
+                db.commit()
+            # v1.10-->v1.11
+            if version[0][0] == "v1.10" or if_streaming:
+                logger.info(
+                    "数据文件版本更新: v1.10-->v1.11",
+                )
+                if_streaming = True
+
+                if (Path.cwd() / "config/ScriptConfig.json").exists():
+                    data = (Path.cwd() / "config/ScriptConfig.json").read_text(
+                        encoding="utf-8"
+                    )
+                    data.replace("IfWakeUp", "IfStartUp")
+                    data.replace("IfAutoRoguelike", "IfRoguelike")
+                    data.replace("IfBase", "IfInfrast")
+                    data.replace("IfCombat", "IfFight")
+                    data.replace("IfMission", "IfAward")
+                    data.replace("IfRecruiting", "IfRecruit")
+                    (Path.cwd() / "config/ScriptConfig.json").write_text(
+                        data, encoding="utf-8"
+                    )
+
+                cur.execute("DELETE FROM version WHERE v = ?", ("v1.10",))
+                cur.execute("INSERT INTO version VALUES(?)", ("v1.11",))
                 db.commit()
 
             cur.close()
@@ -1407,6 +1437,7 @@ class AppConfig(GlobalConfig):
     async def get_stage_info(
         self,
         type: Literal[
+            "User",
             "Today",
             "ALL",
             "Monday",
@@ -1441,15 +1472,17 @@ class AppConfig(GlobalConfig):
                 "Activity": json.loads(self.get("Data", "Stage")).get("Info", []),
                 "Resource": res_stage_info,
             }
-        elif type == "Today":
-            data = json.loads(self.get("Data", "Stage")).get(
-                datetime.now(tz=UTC4).strftime("%A"), []
-            )
+        elif type == "User":
+            data = json.loads(self.get("Data", "Stage")).get("ALL", [])
             for combox in data:
                 combox["label"] = RESOURCE_STAGE_DATE_TEXT.get(
                     combox["value"], combox["label"]
                 )
             return data
+        elif type == "Today":
+            return json.loads(self.get("Data", "Stage")).get(
+                datetime.now(tz=UTC4).strftime("%A"), []
+            )
         else:
             return json.loads(self.get("Data", "Stage")).get(type, [])
 
@@ -1807,26 +1840,16 @@ class AppConfig(GlobalConfig):
         # 查找所有Fight任务的开始和结束位置
         fight_tasks = []
         for i, line in enumerate(logs):
-            if (
-                "开始任务: Fight" in line
-                or "开始任务: 刷理智" in line
-                or "开始任务: 理智作战" in line
-            ):
+            if "开始任务: Fight" in line or "开始任务: 理智作战" in line:
                 # 查找对应的任务结束位置
                 end_index = -1
                 for j in range(i + 1, len(logs)):
-                    if (
-                        "完成任务: Fight" in logs[j]
-                        or "完成任务: 刷理智" in logs[j]
-                        or "完成任务: 理智作战" in logs[j]
-                    ):
+                    if "完成任务: Fight" in logs[j] or "完成任务: 理智作战" in logs[j]:
                         end_index = j
                         break
                     # 如果遇到新的Fight任务开始, 则当前任务没有正常结束
                     if j < len(logs) and (
-                        "开始任务: Fight" in logs[j]
-                        or "开始任务: 刷理智" in logs[j]
-                        or "开始任务: 理智作战" in logs[j]
+                        "开始任务: Fight" in logs[j] or "开始任务: 理智作战" in logs[j]
                     ):
                         break
 

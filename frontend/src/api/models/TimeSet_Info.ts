@@ -8,6 +8,10 @@ export type TimeSet_Info = {
      */
     Enabled?: (boolean | null);
     /**
+     * 执行周期, 可多选
+     */
+    Days?: (Array<'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday'> | null);
+    /**
      * 时间设置, 格式为HH:MM
      */
     Time?: (string | null);

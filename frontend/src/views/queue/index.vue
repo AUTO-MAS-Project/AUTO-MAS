@@ -143,20 +143,17 @@
         </div>
         <a-divider />
 
-        <!-- 定时项与队列项并排布局 -->
-        <a-row :gutter="24" class="managers-row">
-          <!-- 定时项管理 -->
-          <a-col :span="12" class="manager-col">
-            <TimeSetManager v-if="activeQueueId && currentQueueData" :queue-id="activeQueueId"
-              :time-sets="currentTimeSets" style="font-size: 14px" @refresh="refreshTimeSets" />
-          </a-col>
+        <!-- 定时项管理 -->
+        <a-col :span="24" class="manager-col">
+          <TimeSetManager v-if="activeQueueId && currentQueueData" :queue-id="activeQueueId"
+            :time-sets="currentTimeSets" style="font-size: 14px" @refresh="refreshTimeSets" />
+        </a-col>
 
-          <!-- 队列项管理 -->
-          <a-col :span="12" class="manager-col">
-            <QueueItemManager v-if="activeQueueId && currentQueueData" :queue-id="activeQueueId"
-              :queue-items="currentQueueItems" style="font-size: 14px" @refresh="refreshQueueItems" />
-          </a-col>
-        </a-row>
+        <!-- 队列项管理 -->
+        <a-col :span="24" class="manager-col">
+          <QueueItemManager v-if="activeQueueId && currentQueueData" :queue-id="activeQueueId"
+            :queue-items="currentQueueItems" style="font-size: 14px" @refresh="refreshQueueItems" />
+        </a-col>
       </a-card>
     </div>
   </div>
@@ -173,11 +170,10 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
-import { getLogger } from '@/utils/logger'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { nextTick, onMounted, ref, watch } from 'vue'
 
-const logger = getLogger('调度队列')
+const logger = window.electronAPI.getLogger('调度队列')
 const { playSound } = useAudioPlayer()
 
 // 队列列表和当前选中的队列
@@ -199,11 +195,12 @@ const isEditingQueueName = ref<boolean>(false)
 // 完成后操作选项
 const afterAccomplishOptions = [
   { label: '无操作', value: 'NoAction' },
-  { label: '退出软件', value: 'KillSelf' },
-  { label: '睡眠', value: 'Sleep' },
-  { label: '休眠', value: 'Hibernate' },
   { label: '关机', value: 'Shutdown' },
   { label: '强制关机', value: 'ShutdownForce' },
+  { label: '重启', value: 'Reboot' },
+  { label: '休眠', value: 'Hibernate' },
+  { label: '睡眠', value: 'Sleep' },
+  { label: '退出软件', value: 'KillSelf' },
 ]
 
 // 当前队列的定时项和队列项
@@ -219,7 +216,7 @@ const fetchQueues = async () => {
     const response = await Service.getQueuesApiQueueGetPost({})
     if (response.code === 200) {
       // 处理队列数据
-      logger.debug('API Response:', response) // 调试日志
+      logger.debug(`API Response: ${JSON.stringify(response)}`) // 调试日志
 
       if (response.index && response.index.length > 0) {
         queueList.value = response.index.map((item: any, index: number) => {
@@ -227,13 +224,14 @@ const fetchQueues = async () => {
             // API响应格式: {"uid": "xxx", "type": "QueueConfig"}
             const queueId = item.uid
             const queueName = response.data[queueId]?.Info?.Name || `新调度队列`
-            logger.debug('Queue ID:', queueId, 'Name:', queueName, 'Type:', typeof queueId) // 调试日志
+            logger.debug(`Queue ID: ${queueId}, Name: ${queueName}, Type: ${typeof queueId}`) // 调试日志
             return {
               id: queueId,
               name: queueName,
             }
           } catch (itemError) {
-            logger.warn('解析队列项失败:', itemError, item)
+            const errorMsg = itemError instanceof Error ? itemError.message : String(itemError)
+            logger.warn(`解析队列项失败: ${errorMsg}, item: ${JSON.stringify(item)}`)
             return {
               id: `queue_${index}`,
               name: `新调度队列`,
@@ -244,26 +242,29 @@ const fetchQueues = async () => {
         // 如果有队列且没有选中的队列，默认选中第一个
         if (queueList.value.length > 0 && !activeQueueId.value) {
           activeQueueId.value = queueList.value[0].id
-          logger.debug('Selected queue ID:', activeQueueId.value) // 调试日志
+          logger.debug(`Selected queue ID: ${activeQueueId.value}`) // 调试日志
           // 使用nextTick确保DOM更新后再加载数据
           nextTick(() => {
             loadQueueData(activeQueueId.value).catch(error => {
-              logger.error('加载队列数据失败:', error)
+              const errorMsg = error instanceof Error ? error.message : String(error)
+              logger.error(`加载队列数据失败: ${errorMsg}`)
             })
           })
         }
       } else {
-        logger.debug('No queues found in response') // 调试日志
+        logger.debug('队列列表为空') // 调试日志
         queueList.value = []
         currentQueueData.value = null
       }
     } else {
-      logger.error('API响应错误:', response)
+      const errorMsg = response instanceof Error ? response.message : String(response)
+      logger.error(`API响应错误: ${errorMsg}`)
       queueList.value = []
       currentQueueData.value = null
     }
   } catch (error) {
-    logger.error('获取队列列表失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`获取队列列表失败: ${errorMsg}`)
     queueList.value = []
     currentQueueData.value = null
   } finally {
@@ -303,17 +304,20 @@ const loadQueueData = async (queueId: string) => {
       try {
         await refreshTimeSets()
       } catch (timeError) {
-        logger.error('刷新定时项失败:', timeError)
+        const errorMsg = timeError instanceof Error ? timeError.message : String(timeError)
+        logger.error(`刷新定时项失败: ${errorMsg}`)
       }
 
       try {
         await refreshQueueItems()
       } catch (itemError) {
-        logger.error('刷新队列项失败:', itemError)
+        const errorMsg = itemError instanceof Error ? itemError.message : String(itemError)
+        logger.error(`刷新队列项失败: ${errorMsg}`)
       }
     }
   } catch (error) {
-    logger.error('加载队列数据失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载队列数据失败: ${errorMsg}`)
     // 不显示错误消息，避免干扰用户体验
   }
 }
@@ -332,7 +336,7 @@ const refreshTimeSets = async () => {
     })
 
     if (response.code !== 200) {
-      logger.error('获取定时项数据失败:', response)
+      logger.error(`获取定时项数据失败: ${JSON.stringify(response)}`)
       // 不清空数组，避免骨架屏闪现
       return
     }
@@ -361,10 +365,12 @@ const refreshTimeSets = async () => {
               id: timeSetId,
               time: timeString,
               enabled: Boolean(timeSetData.Info.Enabled),
+              days: timeSetData.Info.Days || [],
             })
           }
         } catch (itemError) {
-          logger.warn('解析单个定时项失败:', itemError, item)
+          const errorMsg = itemError instanceof Error ? itemError.message : String(itemError)
+          logger.warn(`解析单个定时项失败: ${errorMsg}, item: ${JSON.stringify(item)}`)
         }
       })
     }
@@ -373,9 +379,10 @@ const refreshTimeSets = async () => {
     await nextTick()
     // 直接替换数组内容，而不是清空再赋值，避免骨架屏闪现
     currentTimeSets.value.splice(0, currentTimeSets.value.length, ...timeSets)
-    logger.debug('刷新后的定时项数据:', timeSets) // 调试日志
+    logger.debug(`刷新后的定时项数据: ${JSON.stringify(timeSets)}`) // 调试日志
   } catch (error) {
-    logger.error('刷新定时项列表失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`刷新定时项列表失败: ${errorMsg}`)
     // 不清空数组，避免骨架屏闪现
   }
 }
@@ -394,7 +401,7 @@ const refreshQueueItems = async () => {
     })
 
     if (response.code !== 200) {
-      logger.error('获取队列项数据失败:', response)
+      logger.error(`获取队列项数据失败: ${JSON.stringify(response)}`)
       // 不清空数组，避免骨架屏闪现
       return
     }
@@ -416,7 +423,8 @@ const refreshQueueItems = async () => {
             })
           }
         } catch (itemError) {
-          logger.warn('解析单个队列项失败:', itemError, item)
+          const errorMsg = itemError instanceof Error ? itemError.message : String(itemError)
+          logger.warn(`解析单个队列项失败: ${errorMsg}, item: ${JSON.stringify(item)}`)
         }
       })
     }
@@ -425,9 +433,10 @@ const refreshQueueItems = async () => {
     await nextTick()
     // 直接替换数组内容，而不是清空再赋值，避免骨架屏闪现
     currentQueueItems.value.splice(0, currentQueueItems.value.length, ...queueItems)
-    logger.debug('刷新后的队列项数据:', queueItems) // 调试日志
+    logger.debug(`刷新后的队列项数据: ${JSON.stringify(queueItems)}`) // 调试日志
   } catch (error) {
-    logger.error('刷新队列项列表失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`刷新队列项列表失败: ${errorMsg}`)
     // 不清空数组，避免骨架屏闪现
   }
 }
@@ -501,8 +510,9 @@ const handleAddQueue = async () => {
       message.error('队列创建失败: ' + (response.message || '未知错误'))
     }
   } catch (error) {
-    logger.error('添加队列失败:', error)
-    message.error('添加队列失败: ' + (error instanceof Error ? error.message : '网络错误'))
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`添加队列失败: ${errorMsg}`)
+    message.error(`添加队列失败: ${errorMsg}`)
   }
 }
 
@@ -534,8 +544,9 @@ const handleRemoveQueue = async (queueId: string) => {
       message.error('删除队列失败: ' + (response.message || '未知错误'))
     }
   } catch (error) {
-    logger.error('删除队列失败:', error)
-    message.error('删除队列失败: ' + (error instanceof Error ? error.message : '网络错误'))
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`删除队列失败: ${errorMsg}`)
+    message.error(`删除队列失败: ${errorMsg}`)
   }
 }
 
@@ -552,7 +563,8 @@ const onQueueChange = async (queueId: string) => {
 
     await loadQueueData(queueId)
   } catch (error) {
-    logger.error('队列切换失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`队列切换失败: ${errorMsg}`)
   }
 }
 
@@ -581,7 +593,8 @@ const refreshQueueConfig = async () => {
       }
     }
   } catch (error) {
-    logger.error('刷新队列配置失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`刷新队列配置失败: ${errorMsg}`)
   }
 }
 
@@ -609,8 +622,9 @@ const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
     await refreshQueueConfig()
     return true
   } catch (error) {
-    logger.error('保存队列数据失败:', error)
-    message.error('保存队列数据失败')
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存队列数据失败: ${errorMsg}`)
+    message.error(`保存队列数据失败: ${errorMsg}`)
     return false
   }
 }
@@ -622,7 +636,8 @@ onMounted(async () => {
   try {
     await fetchQueues()
   } catch (error) {
-    logger.error('初始化失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`初始化失败: ${errorMsg}`)
     loading.value = false
   }
 })
@@ -873,7 +888,7 @@ onMounted(async () => {
   margin-bottom: 12px;
 }
 
-/* 定时项与队列项并排布局 */
+/* 定时项与队列项上下布局 */
 .managers-row {
   margin-bottom: 24px;
 }
@@ -881,7 +896,6 @@ onMounted(async () => {
 .manager-col {
   display: flex;
   flex-direction: column;
-  height: 100%;
 }
 
 /* 垂直排列的表单项 */

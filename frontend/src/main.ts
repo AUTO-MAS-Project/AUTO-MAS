@@ -9,7 +9,7 @@ import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 
 // 导入日志系统
-import { logger } from '@/utils/logger'
+const logger = window.electronAPI.getLogger('前端主入口')
 
 // 导入WebSocket消息监听组件
 import WebSocketMessageListener from '@/components/WebSocketMessageListener.vue'
@@ -27,7 +27,8 @@ if (window.electronAPI?.getApiEndpoint) {
       logger.info(`API基础URL: ${OpenAPI.BASE}`)
     })
     .catch(error => {
-      logger.error('获取 API 端点失败，使用默认值:', error)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`获取 API 端点失败，使用默认值: ${errorMsg}`)
       OpenAPI.BASE = 'http://localhost:36163'
       logger.info(`API基础URL (默认): ${OpenAPI.BASE}`)
     })
@@ -47,7 +48,8 @@ app.use(router)
 
 // 全局错误处理
 app.config.errorHandler = (err, instance, info) => {
-  logger.error('Vue应用错误:', err, '组件信息:', info)
+  const errorMsg = err instanceof Error ? err.message : String(err)
+  logger.error(`Vue应用错误: ${errorMsg}, 组件信息: ${info}`)
 }
 
 // 挂载应用

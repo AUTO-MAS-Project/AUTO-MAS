@@ -3,9 +3,7 @@
  */
 
 import { ref } from 'vue'
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('应用初始化')
+const logger = window.electronAPI.getLogger('应用初始化')
 
 // 全局初始化状态 - 在所有组件间共享
 const isInitialized = ref(false)

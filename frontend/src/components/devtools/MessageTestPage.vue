@@ -32,38 +32,18 @@
       <div class="custom-form">
         <div class="form-group">
           <label>标题:</label>
-          <input
-            v-model="customMessage.title"
-            type="text"
-            placeholder="请输入弹窗标题"
-            class="form-input"
-          />
+          <input v-model="customMessage.title" type="text" placeholder="请输入弹窗标题" class="form-input" />
         </div>
         <div class="form-group">
           <label>消息内容:</label>
-          <textarea
-            v-model="customMessage.message"
-            placeholder="请输入消息内容"
-            class="form-textarea"
-            rows="3"
-          ></textarea>
+          <textarea v-model="customMessage.message" placeholder="请输入消息内容" class="form-textarea" rows="3"></textarea>
         </div>
         <div class="form-group">
           <label>发送数量:</label>
-          <input
-            v-model.number="sendCount"
-            type="number"
-            min="1"
-            max="10"
-            class="form-input"
-            style="width: 80px"
-          />
+          <input v-model.number="sendCount" type="number" min="1" max="10" class="form-input" style="width: 80px" />
         </div>
-        <button
-          class="test-btn primary"
-          :disabled="!customMessage.title || !customMessage.message"
-          @click="sendCustomMessage"
-        >
+        <button class="test-btn primary" :disabled="!customMessage.title || !customMessage.message"
+          @click="sendCustomMessage">
           发送自定义弹窗
         </button>
       </div>
@@ -88,7 +68,8 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useWebSocket } from '@/composables/useWebSocket'
-import { logger } from '@/utils/logger'
+
+const logger = window.electronAPI.getLogger('弹窗测试页面')
 
 const { subscribe, unsubscribe, getConnectionInfo } = useWebSocket()
 
@@ -183,16 +164,16 @@ const triggerModalViaDebugApi = (messageData: {
   message_id?: string
 }) => {
   const debugShowQuestion = (window as any).__debugShowQuestion
-  
+
   if (!debugShowQuestion) {
-    logger.warn('[调试工具] 调试接口不可用，WebSocketMessageListener 可能未挂载')
+    logger.warn('调试接口不可用，WebSocketMessageListener 可能未挂载')
     lastResponse.value = '错误: 调试接口不可用'
     addTestHistory('触发失败', '调试接口不可用')
     return null
   }
 
   const messageId = messageData.message_id || generateId()
-  
+
   const questionData = {
     title: messageData.title,
     message: messageData.message,
@@ -200,13 +181,13 @@ const triggerModalViaDebugApi = (messageData: {
     message_id: messageId,
   }
 
-  logger.info('[调试工具] 通过调试接口触发弹窗:', questionData)
-  
+  logger.info(`通过调试接口触发弹窗: ${JSON.stringify(questionData)}`)
+
   // 直接调用 WebSocketMessageListener 的 showQuestion 函数
   debugShowQuestion(questionData)
-  
+
   addTestHistory(`触发弹窗: ${messageData.title}`, `ID: ${messageId.slice(-6)}`)
-  
+
   return messageId
 }
 
@@ -304,7 +285,7 @@ const sendCustomMessage = () => {
   isTesting.value = true
 
   const count = Math.min(Math.max(sendCount.value, 1), 10)
-  
+
   for (let i = 0; i < count; i++) {
     const title = count > 1 ? `${customMessage.value.title} (${i + 1}/${count})` : customMessage.value.title
     triggerModalViaDebugApi({
@@ -314,8 +295,8 @@ const sendCustomMessage = () => {
     })
   }
 
-  lastResponse.value = count > 1 
-    ? `已触发 ${count} 个自定义弹窗` 
+  lastResponse.value = count > 1
+    ? `已触发 ${count} 个自定义弹窗`
     : `已触发自定义弹窗: ${customMessage.value.title}`
 
   setTimeout(() => {
@@ -325,7 +306,7 @@ const sendCustomMessage = () => {
 
 // 监听响应消息
 const handleResponseMessage = (message: any) => {
-  logger.info('[调试工具] 收到响应消息:', message)
+  logger.info('收到响应消息:', message)
 
   if (message.data && message.data.choice !== undefined) {
     const choice = message.data.choice ? '确认' : '取消'
@@ -336,7 +317,7 @@ const handleResponseMessage = (message: any) => {
 
 // 组件挂载时订阅响应消息
 onMounted(() => {
-  logger.info('[调试工具] 初始化消息测试页面')
+  logger.info('初始化消息测试页面')
 
   // 订阅Response类型的消息来监听用户的选择结果
   responseSubscriptionId = subscribe({ type: 'Response' }, handleResponseMessage)
@@ -347,7 +328,7 @@ onMounted(() => {
   // 定期更新连接状态
   const statusTimer = setInterval(updateConnectionStatus, 2000)
 
-  logger.info('[调试工具] 已订阅Response消息，订阅ID:', responseSubscriptionId)
+  logger.info('已订阅Response消息，订阅ID:', responseSubscriptionId)
 
   // 清理定时器
   onUnmounted(() => {
@@ -359,7 +340,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (responseSubscriptionId) {
     unsubscribe(responseSubscriptionId)
-    logger.info('[调试工具] 已取消Response消息订阅')
+    logger.info('已取消Response消息订阅')
   }
   // 清理延时触发定时器
   if (delayTimer) {
@@ -700,6 +681,7 @@ onUnmounted(() => {
 
 /* 减少动画模式适配 */
 @media (prefers-reduced-motion: reduce) {
+
   .test-btn,
   .form-input,
   .form-textarea,

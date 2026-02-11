@@ -1,45 +1,27 @@
 <template>
   <a-layout style="flex: 1; min-height: 0; overflow: hidden">
-    <a-layout-sider
-      :width="SIDER_WIDTH"
-      :theme="isDark ? 'dark' : 'light'"
-      :style="{
-        background: 'var(--ant-color-bg-elevated)',
-        borderRight: '1px solid var(--ant-color-border)',
-      }"
-    >
+    <a-layout-sider :width="SIDER_WIDTH" :theme="isDark ? 'dark' : 'light'" :style="{
+      background: 'var(--ant-color-bg-elevated)',
+      borderRight: '1px solid var(--ant-color-border)',
+    }">
       <div class="sider-content">
-        <a-menu
-          v-model:selected-keys="selectedKeys"
-          mode="inline"
-          :theme="isDark ? 'dark' : 'light'"
-          :items="mainMenuItems"
-          @click="onMenuClick"
-        />
+        <a-menu v-model:selected-keys="selectedKeys" mode="inline" :theme="isDark ? 'dark' : 'light'"
+          :items="mainMenuItems" @click="onMenuClick" />
         <!-- 测试路由分隔区域 -->
-        <a-menu
-          v-if="isDevelopment"
-          v-model:selected-keys="selectedKeys"
-          mode="inline"
-          :theme="isDark ? 'dark' : 'light'"
-          class="dev-menu"
-          :items="devMenuItems"
-          @click="onMenuClick"
-        />
-        <a-menu
-          v-model:selected-keys="selectedKeys"
-          mode="inline"
-          :theme="isDark ? 'dark' : 'light'"
-          class="bottom-menu"
-          :items="bottomMenuItems"
-          @click="onMenuClick"
-        />
+        <a-menu v-if="isDevelopment" v-model:selected-keys="selectedKeys" mode="inline"
+          :theme="isDark ? 'dark' : 'light'" class="dev-menu" :items="devMenuItems" @click="onMenuClick" />
+        <a-menu v-model:selected-keys="selectedKeys" mode="inline" :theme="isDark ? 'dark' : 'light'"
+          class="bottom-menu" :items="bottomMenuItems" @click="onMenuClick" />
       </div>
     </a-layout-sider>
 
     <a-layout style="flex: 1; min-width: 0">
       <a-layout-content class="content-area">
-        <router-view />
+        <router-view v-slot="{ Component, route }">
+          <keep-alive :include="['Scheduler']">
+            <component :is="Component" :key="route.path" />
+          </keep-alive>
+        </router-view>
       </a-layout-content>
     </a-layout>
   </a-layout>
@@ -101,7 +83,6 @@ const devMenuItems = [
 
 const bottomMenuItems = [
   { key: '/history', label: '历史记录', icon: icon(HistoryOutlined) },
-  { key: '/logs', label: '日志', icon: icon(FileSearchOutlined) },
   { key: '/settings', label: '设置', icon: icon(SettingOutlined) },
 ]
 
@@ -148,15 +129,19 @@ const onMenuClick: MenuProps['onClick'] = info => {
 /* 菜单项外框居中（左右留空），内容左对齐 */
 .sider-content :deep(.ant-menu .ant-menu-item) {
   color: var(--ant-color-text);
-  margin: 2px auto; /* 水平居中 */
-  width: calc(100% - 16px); /* 两侧各留 8px 空隙 */
+  margin: 2px auto;
+  /* 水平居中 */
+  width: calc(100% - 16px);
+  /* 两侧各留 8px 空隙 */
   border-radius: 6px;
-  padding: 5px 16px !important; /* 左右内边距 */
+  padding: 5px 16px !important;
+  /* 左右内边距 */
   line-height: 36px;
   height: 40px;
   display: flex;
   align-items: center;
-  justify-content: flex-start; /* 左对齐图标与文字 */
+  justify-content: flex-start;
+  /* 左对齐图标与文字 */
   gap: 6px;
   transition:
     background 0.16s ease,

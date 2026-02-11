@@ -85,7 +85,7 @@ const {
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">静默模式</span>
-              <a-tooltip title="将各代理窗口置于后台运行，减少对前台的干扰">
+              <a-tooltip title="启用后将各代理窗口置于后台运行，减少对前台的干扰。反馈问题、故障排查时，请关闭此功能以便检查相关窗口情况。">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>

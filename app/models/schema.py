@@ -59,6 +59,7 @@ class ComboBoxOut(OutBase):
 
 class GetStageIn(BaseModel):
     type: Literal[
+        "User",
         "Today",
         "ALL",
         "Monday",
@@ -245,6 +246,19 @@ class QueueItem(BaseModel):
 
 class TimeSet_Info(BaseModel):
     Enabled: Optional[bool] = Field(default=None, description="是否启用")
+    Days: Optional[
+        List[
+            Literal[
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ]
+        ]
+    ] = Field(default=None, description="执行周期, 可多选")
     Time: Optional[str] = Field(default=None, description="时间设置, 格式为HH:MM")
 
 
@@ -258,7 +272,13 @@ class QueueConfig_Info(BaseModel):
     StartUpEnabled: Optional[bool] = Field(default=None, description="是否启动时运行")
     AfterAccomplish: Optional[
         Literal[
-            "NoAction", "KillSelf", "Sleep", "Hibernate", "Shutdown", "ShutdownForce"
+            "NoAction",
+            "Shutdown",
+            "ShutdownForce",
+            "Reboot",
+            "Hibernate",
+            "Sleep",
+            "KillSelf",
         ]
     ] = Field(default=None, description="完成后操作")
 
@@ -322,9 +342,6 @@ class MaaUserConfig_Info(BaseModel):
 
 class MaaUserConfig_Data(BaseModel):
     LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
-    LastAnnihilationDate: Optional[str] = Field(
-        default=None, description="上次剿灭日期"
-    )
     LastSklandDate: Optional[str] = Field(
         default=None, description="上次森空岛签到日期"
     )
@@ -333,13 +350,13 @@ class MaaUserConfig_Data(BaseModel):
 
 
 class MaaUserConfig_Task(BaseModel):
-    IfWakeUp: Optional[bool] = Field(default=None, description="开始唤醒")
-    IfRecruiting: Optional[bool] = Field(default=None, description="自动公招")
-    IfBase: Optional[bool] = Field(default=None, description="基建换班")
-    IfCombat: Optional[bool] = Field(default=None, description="理智作战")
+    IfStartUp: Optional[bool] = Field(default=None, description="开始唤醒")
+    IfRecruit: Optional[bool] = Field(default=None, description="自动公招")
+    IfInfrast: Optional[bool] = Field(default=None, description="基建换班")
+    IfFight: Optional[bool] = Field(default=None, description="理智作战")
     IfMall: Optional[bool] = Field(default=None, description="信用收支")
-    IfMission: Optional[bool] = Field(default=None, description="领取奖励")
-    IfAutoRoguelike: Optional[bool] = Field(default=None, description="自动肉鸽")
+    IfAward: Optional[bool] = Field(default=None, description="领取奖励")
+    IfRoguelike: Optional[bool] = Field(default=None, description="自动肉鸽")
     IfReclamation: Optional[bool] = Field(default=None, description="生息演算")
 
 
@@ -397,8 +414,8 @@ class MaaConfig_Run(BaseModel):
         default=None, description="剿灭超时限制"
     )
     RoutineTimeLimit: Optional[int] = Field(default=None, description="日常超时限制")
-    AnnihilationWeeklyLimit: Optional[bool] = Field(
-        default=None, description="剿灭每周仅代理至上限"
+    AnnihilationAvoidWaste: Optional[bool] = Field(
+        default=None, description="剿灭避免无代理卡浪费理智"
     )
 
 
@@ -697,7 +714,7 @@ class EmulatorReorderIn(BaseModel):
 
 class EmulatorOperateIn(BaseModel):
     emulatorId: str = Field(..., description="模拟器 ID")
-    operate: Literal["open", "close"] = Field(..., description="操作类型")
+    operate: Literal["open", "close", "show"] = Field(..., description="操作类型")
     index: str = Field(..., description="模拟器索引")
 
 
@@ -942,13 +959,25 @@ class WebSocketMessage(BaseModel):
 
 class PowerIn(BaseModel):
     signal: Literal[
-        "NoAction", "Shutdown", "ShutdownForce", "Hibernate", "Sleep", "KillSelf"
+        "NoAction",
+        "Shutdown",
+        "ShutdownForce",
+        "Reboot",
+        "Hibernate",
+        "Sleep",
+        "KillSelf",
     ] = Field(..., description="电源操作信号")
 
 
 class PowerOut(OutBase):
     signal: Literal[
-        "NoAction", "Shutdown", "ShutdownForce", "Hibernate", "Sleep", "KillSelf"
+        "NoAction",
+        "Shutdown",
+        "ShutdownForce",
+        "Reboot",
+        "Hibernate",
+        "Sleep",
+        "KillSelf",
     ] = Field(..., description="电源操作信号")
 
 

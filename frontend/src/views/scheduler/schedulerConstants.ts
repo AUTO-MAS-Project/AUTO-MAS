@@ -43,13 +43,13 @@ export const TASK_MODE_OPTIONS = [
 // 电源操作映射
 export const POWER_ACTION_TEXT: Record<PowerIn.signal, string> = {
   [PowerIn.signal.NO_ACTION]: '无动作',
-  [PowerIn.signal.KILL_SELF]: '退出软件',
-  [PowerIn.signal.SLEEP]: '睡眠',
-  [PowerIn.signal.HIBERNATE]: '休眠',
   [PowerIn.signal.SHUTDOWN]: '关机',
   [PowerIn.signal.SHUTDOWN_FORCE]: '强制关机',
+  [PowerIn.signal.REBOOT]: '重启',
+  [PowerIn.signal.HIBERNATE]: '休眠',
+  [PowerIn.signal.SLEEP]: '睡眠',
+  [PowerIn.signal.KILL_SELF]: '退出软件'
 }
-
 export const getPowerActionText = (action: PowerIn.signal) => POWER_ACTION_TEXT[action] || '无动作'
 
 // 日志相关

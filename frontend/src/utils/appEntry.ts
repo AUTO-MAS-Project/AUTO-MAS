@@ -4,9 +4,8 @@ import { connectAfterBackendStart, forceConnectWebSocket } from '@/composables/u
 import { startTitlebarVersionCheck } from '@/composables/useVersionService'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
 import { markAsInitialized } from '@/composables/useAppInitialization'
-import { getLogger } from '@/utils/logger'
 
-const logger = getLogger('应用入口')
+const logger = window.electronAPI.getLogger('应用入口')
 
 // 标记版本服务是否已启动，避免重复启动
 let versionServicesStarted = false
@@ -36,9 +35,10 @@ async function startVersionServices() {
     logger.info('版本更新检查服务已启动（每4小时检查一次）')
 
     versionServicesStarted = true
-    logger.info('🎉 所有版本检查服务启动完成')
+    logger.info('所有版本检查服务启动完成')
   } catch (error) {
-    logger.error('启动版本检查服务失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`启动版本检查服务失败: ${errorMsg}`)
   }
 }
 
@@ -65,7 +65,8 @@ export async function enterApp(
       logger.warn(`${reason}：WebSocket连接建立失败`)
     }
   } catch (error) {
-    logger.error(`${reason}：WebSocket连接尝试失败:`, error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`${reason}：WebSocket连接尝试失败: ${errorMsg}`)
   }
 
   // 决定是否进入应用
@@ -99,8 +100,8 @@ export async function enterApp(
  * @param reason 进入原因
  */
 export async function forceEnterApp(reason: string = '强行进入'): Promise<void> {
-  logger.info(`🚀 ${reason}：跳过初始化流程开始`)
-  logger.info(`📡 ${reason}：尝试强制建立WebSocket连接...`)
+  logger.info(`${reason}：跳过初始化流程开始`)
+  logger.info(`${reason}：尝试强制建立WebSocket连接...`)
 
   try {
     // 使用强制连接模式
@@ -108,23 +109,24 @@ export async function forceEnterApp(reason: string = '强行进入'): Promise<vo
     if (wsConnected) {
       logger.info(`${reason}：强制WebSocket连接成功！`)
     } else {
-      logger.warn(`⚠️  ${reason}：强制WebSocket连接失败，但继续进入应用`)
+      logger.warn(`${reason}：强制WebSocket连接失败，但继续进入应用`)
     }
 
     // 等待一下确保连接状态稳定
     await new Promise(resolve => setTimeout(resolve, 500))
   } catch (error) {
-    logger.error(`❌ ${reason}：强制WebSocket连接异常:`, error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`${reason}：强制WebSocket连接异常: ${errorMsg}`)
   }
 
   // 无论WebSocket是否成功，都进入应用
-  logger.info(`🏠 ${reason}：跳转到主页...`)
+  logger.info(`${reason}：跳转到主页...`)
 
   // 标记应用已初始化完成，触发其他组件挂载
   markAsInitialized()
 
   router.push('/home')
-  logger.info(`✨ ${reason}：已跳过初始化`)
+  logger.info(`${reason}：已跳过初始化`)
 
   // 启动版本检查服务
   await startVersionServices()
@@ -147,7 +149,7 @@ export async function normalEnterApp(reason: string = '正常进入'): Promise<b
  * 静默加载调度中心逻辑
  */
 async function preloadSchedulerView(reason: string) {
-  logger.info(`调度中心初始化...`)
+  logger.info(`${reason}：调度中心初始化...`)
 
   try {
     // 动态导入并初始化调度中心逻辑
@@ -156,9 +158,10 @@ async function preloadSchedulerView(reason: string) {
 
     if (initialize) {
       initialize()
-      logger.info(`调度中心就绪`)
+      logger.info(`${reason}：调度中心就绪`)
     }
   } catch (error) {
-    logger.error(`调度中心初始化失败:`, error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`${reason}：调度中心初始化失败: ${errorMsg}`)
   }
 }

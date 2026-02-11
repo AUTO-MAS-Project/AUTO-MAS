@@ -173,7 +173,13 @@ class _SystemHandler:
     async def set_power(
         self,
         mode: Literal[
-            "NoAction", "Shutdown", "ShutdownForce", "Hibernate", "Sleep", "KillSelf"
+            "NoAction",
+            "Shutdown",
+            "ShutdownForce",
+            "Reboot",
+            "Hibernate",
+            "Sleep",
+            "KillSelf",
         ],
         from_frontend: bool = False,
     ) -> None:
@@ -198,6 +204,12 @@ class _SystemHandler:
             elif mode == "ShutdownForce":
                 logger.info("执行强制关机操作")
                 subprocess.run(["shutdown", "/s", "/t", "0", "/f"])
+
+            elif mode == "Reboot":
+
+                await self.kill_emulator_processes()
+                logger.info("执行重启操作")
+                subprocess.run(["shutdown", "/r", "/t", "0"])
 
             elif mode == "Hibernate":
 
@@ -231,6 +243,11 @@ class _SystemHandler:
                 logger.info("执行关机操作")
                 subprocess.run(["shutdown", "-h", "now"])
 
+            elif mode == "Reboot":
+
+                logger.info("执行重启操作")
+                subprocess.run(["shutdown", "-r", "now"])
+
             elif mode == "Hibernate":
 
                 logger.info("执行休眠操作")
@@ -253,7 +270,13 @@ class _SystemHandler:
     async def _power_task(
         self,
         power_sign: Literal[
-            "NoAction", "Shutdown", "ShutdownForce", "Hibernate", "Sleep", "KillSelf"
+            "NoAction",
+            "Shutdown",
+            "ShutdownForce",
+            "Reboot",
+            "Hibernate",
+            "Sleep",
+            "KillSelf",
         ],
     ) -> None:
         """电源任务"""

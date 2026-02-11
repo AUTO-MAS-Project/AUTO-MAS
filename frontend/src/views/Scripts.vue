@@ -208,9 +208,7 @@ import { usePlanApi } from '@/composables/usePlanApi'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import MarkdownIt from 'markdown-it'
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('脚本管理')
+const logger = window.electronAPI.getLogger('脚本管理')
 
 const router = useRouter()
 const { addScript, deleteScript, getScriptsWithUsers } = useScriptApi()
@@ -289,8 +287,9 @@ const loadScripts = async () => {
       createTime: new Date().toLocaleString(),
     }))
   } catch (error) {
-    logger.error('加载脚本列表失败:', error)
-    message.error('加载脚本列表失败')
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载脚本列表失败: ${errorMsg}`)
+    message.error(`加载脚本列表失败: ${errorMsg}`)
   } finally {
     // 首次加载结束（不论成功失败）后置位，避免初始闪烁
     loadedOnce.value = true
@@ -306,7 +305,8 @@ const loadCurrentPlan = async () => {
       allPlansData.value = response.data
     }
   } catch (error) {
-    logger.error('加载计划表数据失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载计划表数据失败: ${errorMsg}`)
     // 不显示错误消息，因为计划表数据是可选的
   }
 }
@@ -343,7 +343,8 @@ const handleConfirmAddScript = async () => {
       })
     }
   } catch (error) {
-    logger.error('添加脚本失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`添加脚本失败: ${errorMsg}`)
   } finally {
     addLoading.value = false
   }
@@ -374,7 +375,8 @@ const handleConfirmGeneralMode = async () => {
         })
       }
     } catch (error) {
-      logger.error('添加脚本失败:', error)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`添加脚本失败: ${errorMsg}`)
     } finally {
       addLoading.value = false
     }
@@ -387,7 +389,8 @@ const loadTemplates = async () => {
     templates.value = await getWebConfigTemplates()
     selectedTemplate.value = null
   } catch (error) {
-    logger.error('加载模板列表失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载模板列表失败: ${errorMsg}`)
   } finally {
     templateLoading.value = false
   }
@@ -425,7 +428,9 @@ const handleConfirmTemplate = async () => {
       router.push(`/scripts/${createResult.scriptId}/edit/general`)
     }
   } catch (error) {
-    logger.error('使用模板创建脚本失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`使用模板创建脚本失败: ${errorMsg}`)
+    message.error(`使用模板创建脚本失败: ${errorMsg}`)
   } finally {
     templateLoading.value = false
   }
@@ -522,8 +527,9 @@ const handleStartMAAConfig = async (script: Script) => {
       const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
         // 处理错误消息
         if (wsMessage.type === 'error') {
-          logger.error(`脚本 ${script.name} 连接错误:`, wsMessage.data)
-          message.error(`MAA配置连接失败: ${wsMessage.data}`)
+          const errorMsg = wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
+          logger.error(`脚本 ${script.name} 连接错误: ${errorMsg}`)
+          message.error(`MAA配置连接失败: ${errorMsg}`)
           activeConnections.value.delete(script.id)
           // 连接错误时隐藏遮罩
           showMAAConfigMask.value = false
@@ -533,14 +539,19 @@ const handleStartMAAConfig = async (script: Script) => {
 
         // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
         if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
-          logger.error(`脚本 ${script.name} 配置异常:`, wsMessage.data.Error)
-          message.error(`MAA配置失败: ${wsMessage.data.Error}`)
+          const errorMsg = wsMessage.data.Error instanceof Error ? wsMessage.data.Error.message : String(wsMessage.data.Error)
+          logger.error(`脚本 ${script.name} 配置异常: ${errorMsg}`)
+          message.error(`MAA配置失败: ${errorMsg}`)
           // 不取消订阅，等待Signal类型的Accomplish消息
           return
         }
 
         // 处理任务结束消息（Signal类型且包含Accomplish字段）
-        if (wsMessage.type === 'Signal' && wsMessage.data && wsMessage.data.Accomplish !== undefined) {
+        if (
+          wsMessage.type === 'Signal' &&
+          wsMessage.data &&
+          wsMessage.data.Accomplish !== undefined
+        ) {
           logger.info(`脚本 ${script.name} 配置任务已结束`)
           // 根据结果显示不同消息
           const result = wsMessage.data.Accomplish
@@ -583,8 +594,9 @@ const handleStartMAAConfig = async (script: Script) => {
       message.error(response.message || '启动MAA配置失败')
     }
   } catch (error) {
-    logger.error('启动MAA配置失败:', error)
-    message.error('启动MAA配置失败')
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`启动MAA配置失败: ${errorMsg}`)
+    message.error(`启动MAA配置失败: ${errorMsg}`)
   }
 }
 
@@ -615,8 +627,9 @@ const handleSaveMAAConfig = async (script: Script) => {
       message.error(response.message || '保存配置失败')
     }
   } catch (error) {
-    logger.error('保存MAA配置失败:', error)
-    message.error('保存MAA配置失败')
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存MAA配置失败: ${errorMsg}`)
+    message.error(`保存MAA配置失败: ${errorMsg}`)
   }
 }
 
@@ -644,8 +657,9 @@ const handleToggleUserStatus = async (user: User) => {
       user.Info.Status = newStatus
     }
   } catch (error) {
-    logger.error('更新用户状态失败:', error)
-    message.error('更新用户状态失败')
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`更新用户状态失败: ${errorMsg}`)
+    message.error(`更新用户状态失败: ${errorMsg}`)
   }
 }
 </script>

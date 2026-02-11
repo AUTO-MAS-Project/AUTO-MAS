@@ -162,7 +162,7 @@ class GeneralDeviceManager(DeviceBase):
         if "|" not in idx:
             raise ValueError("缺少 '|' 分隔符")
 
-        cmd_part, addr_part = idx.split("|", 1)
+        cmd_part, addr_part = idx.rsplit("|", 1)
         args = shlex.split(cmd_part.strip())
 
         addr = addr_part.replace("：", ":").replace("。", ".")
