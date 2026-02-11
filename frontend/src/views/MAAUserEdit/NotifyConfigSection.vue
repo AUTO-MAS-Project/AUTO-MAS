@@ -86,7 +86,7 @@ const emitSave = (key: string, value: any) => {
 // 处理 Webhook 变化
 const handleWebhookChange = () => {
   // Webhook 有自己的保存逻辑，这里只记录日志
-  logger.info('User webhooks changed for script:', props.scriptId, 'user:', props.userId)
+  logger.info(`Webhook changed for script: ${props.scriptId}, user: ${props.userId}`)
 }
 </script>
 

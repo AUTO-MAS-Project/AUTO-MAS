@@ -97,7 +97,8 @@ export function useAudioPlayer() {
       })
 
       audio.addEventListener('error', e => {
-        logger.error(`音频播放失败: ${fileName}`, e)
+        const errorMsg = e instanceof Error ? e.message : String(e)
+        logger.error(`音频播放失败: ${fileName} - ${errorMsg}`)
         message.error(`音频播放失败: ${fileName}`)
         isPlaying.value = false
         currentAudio.value = null
@@ -107,7 +108,8 @@ export function useAudioPlayer() {
       await audio.play()
       return true
     } catch (error) {
-      logger.error(`播放音频时发生错误: ${fileName}`, error)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`播放音频时发生错误: ${fileName} - ${errorMsg}`)
       message.error('音频播放失败，请检查网络连接')
       isPlaying.value = false
       currentAudio.value = null

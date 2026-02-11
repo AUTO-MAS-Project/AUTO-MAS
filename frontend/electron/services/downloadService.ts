@@ -75,7 +75,7 @@ export class SmartDownloader {
             }
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error)
-            logger.error('❌ 下载失败:', errorMsg)
+            logger.error(`❌ 下载失败: ${errorMsg}`)
             return { success: false, error: errorMsg }
         }
     }
@@ -197,7 +197,7 @@ export class SmartDownloader {
                 })
 
                 response.on('error', (err) => {
-                    logger.error('响应流错误:', err.message)
+                    logger.error(`响应流错误: ${err.message}`)
                     req.destroy()
                     file.close()
                     if (fs.existsSync(savePath)) {
@@ -228,7 +228,7 @@ export class SmartDownloader {
                 })
 
                 file.on('error', (err) => {
-                    logger.error('文件写入错误:', err.message)
+                    logger.error(`文件写入错误: ${err.message}`)
                     req.destroy()
                     file.close()
                     if (fs.existsSync(savePath)) {
@@ -239,7 +239,7 @@ export class SmartDownloader {
             })
 
             req.on('error', (err) => {
-                logger.error('请求错误:', err.message)
+                logger.error(`请求错误: ${err.message}`)
                 file.close()
                 if (fs.existsSync(savePath)) {
                     fs.unlinkSync(savePath)
@@ -365,12 +365,12 @@ export class SmartDownloader {
                 clearInterval(progressInterval)
 
                 const errorMsg = downloadError instanceof Error ? downloadError.message : String(downloadError)
-                logger.error('❌ 分片下载失败:', errorMsg)
+                logger.error(`❌ 分片下载失败: ${errorMsg}`)
                 throw downloadError
             }
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error)
-            logger.error('❌ 多线程下载失败:', errorMsg)
+            logger.error(`❌ 多线程下载失败: ${errorMsg}`)
 
             // 清理不完整的文件
             if (fs.existsSync(savePath)) {
@@ -426,14 +426,14 @@ export class SmartDownloader {
                 })
 
                 response.on('error', (err) => {
-                    logger.error(`分片 ${chunk.index} 响应错误:`, err.message)
+                    logger.error(`分片 ${chunk.index} 响应错误: ${err.message}`)
                     req.destroy()
                     reject(new Error(`分片 ${chunk.index} 网络错误: ${err.message}`))
                 })
             })
 
             req.on('error', (err) => {
-                logger.error(`分片 ${chunk.index} 请求错误:`, err.message)
+                logger.error(`分片 ${chunk.index} 请求错误: ${err.message}`)
                 reject(new Error(`分片 ${chunk.index} 网络连接错误: ${err.message}`))
             })
 

@@ -27,7 +27,7 @@ async function getConfigInternal(): Promise<FrontendConfig> {
     // 优先从文件读取配置
     const fileConfig = await window.electronAPI.loadConfig()
     if (fileConfig) {
-      logger.info('从文件加载配置:', fileConfig)
+      logger.info(`从文件加载配置: ${JSON.stringify(fileConfig)}`)
       return { ...DEFAULT_CONFIG, ...fileConfig }
     }
 
@@ -40,19 +40,20 @@ async function getConfigInternal(): Promise<FrontendConfig> {
     if (localConfig) {
       const parsed = JSON.parse(localConfig)
       config = { ...config, ...parsed }
-      logger.info('从localStorage迁移配置:', parsed)
+      logger.info(`从localStorage迁移配置: ${JSON.stringify(parsed)}`)
     }
 
     if (themeConfig) {
       const parsed = JSON.parse(themeConfig)
       config.themeMode = parsed.themeMode || 'system'
       config.themeColor = parsed.themeColor || 'blue'
-      logger.info('从localStorage迁移主题配置:', parsed)
+      logger.info(`从localStorage迁移主题配置: ${JSON.stringify(parsed)}`)
     }
 
     return config
   } catch (error) {
-    logger.error('读取配置失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`读取配置失败: ${errorMsg}`)
     return { ...DEFAULT_CONFIG }
   }
 }
@@ -72,7 +73,8 @@ export async function getConfig(): Promise<FrontendConfig> {
       localStorage.removeItem('app-initialized')
       logger.info('配置已从localStorage迁移到文件')
     } catch (error) {
-      logger.error('迁移配置失败:', error)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`迁移配置失败: ${errorMsg}`)
     }
   }
 
@@ -82,14 +84,15 @@ export async function getConfig(): Promise<FrontendConfig> {
 // 保存配置
 export async function saveConfig(config: Partial<FrontendConfig>): Promise<void> {
   try {
-    logger.info('开始保存配置:', config)
+    logger.info(`开始保存配置: ${JSON.stringify(config)}`)
     const currentConfig = await getConfigInternal() // 使用内部函数避免递归
     const newConfig = { ...currentConfig, ...config }
-    logger.info('合并后的配置:', newConfig)
+    logger.info(`合并后的配置: ${JSON.stringify(newConfig)}`)
     await window.electronAPI.saveConfig(newConfig)
     logger.info('配置保存成功')
   } catch (error) {
-    logger.error('保存配置失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存配置失败: ${errorMsg}`)
     throw error
   }
 }
@@ -102,7 +105,8 @@ export async function resetConfig(): Promise<void> {
     localStorage.removeItem('theme-settings')
     localStorage.removeItem('app-initialized')
   } catch (error) {
-    logger.error('重置配置失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`重置配置失败: ${errorMsg}`)
   }
 }
 

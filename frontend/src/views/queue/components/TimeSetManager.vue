@@ -217,8 +217,9 @@ const addTimeSet = async () => {
       message.error('创建定时项失败: ' + (createResponse.message || '未知错误'))
     }
   } catch (error: any) {
-    logger.error('添加定时项失败:', error)
-    message.error('添加定时项失败: ' + (error?.message || '网络错误'))
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`添加定时项失败: ${errorMsg}`)
+    message.error(`添加定时项失败: ${errorMsg}`)
   } finally {
     loading.value = false
   }
@@ -248,8 +249,9 @@ const updateTimeSetTime = async (timeSet: any) => {
       timeSet.timeValue = parseTimeString(timeSet.time)
     }
   } catch (error: any) {
-    logger.error('更新时间失败:', error)
-    message.error('更新时间失败: ' + (error?.message || '网络错误'))
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`更新时间失败: ${errorMsg}`)
+    message.error(`更新时间失败: ${errorMsg}`)
     // 回滚时间值
     timeSet.timeValue = parseTimeString(timeSet.time)
   }
@@ -276,8 +278,9 @@ const updateTimeSetStatus = async (timeSet: any) => {
       timeSet.enabled = !timeSet.enabled
     }
   } catch (error: any) {
-    logger.error('更新状态失败:', error)
-    message.error('更新状态失败: ' + (error?.message || '网络错误'))
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`更新状态失败: ${errorMsg}`)
+    message.error(`更新状态失败: ${errorMsg}`)
     // 回滚状态
     timeSet.enabled = !timeSet.enabled
   }
@@ -306,8 +309,9 @@ const updateTimeSetDays = async (timeSet: any) => {
       message.error('执行周期更新失败: ' + (response.message || '未知错误'))
     }
   } catch (error: any) {
-    logger.error('更新执行周期失败:', error)
-    message.error('更新执行周期失败: ' + (error?.message || '网络错误'))
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`更新执行周期失败: ${errorMsg}`)
+    message.error(`更新执行周期失败: ${errorMsg}`)
   }
 }
 
@@ -326,8 +330,9 @@ const deleteTimeSet = async (timeSetId: string) => {
       message.error('删除定时项失败: ' + (response.message || '未知错误'))
     }
   } catch (error: any) {
-    logger.error('删除定时项失败:', error)
-    message.error('删除定时项失败: ' + (error?.message || '网络错误'))
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`删除定时项失败: ${errorMsg}`)
+    message.error(`删除定时项失败: ${errorMsg}`)
   }
 }
 
@@ -359,8 +364,9 @@ const onDragEnd = async (evt: any) => {
       emit('refresh')
     }
   } catch (error: any) {
-    logger.error('拖拽排序失败:', error)
-    message.error('更新定时顺序失败: ' + (error?.message || '网络错误'))
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`拖拽排序失败: ${errorMsg}`)
+    message.error(`更新定时顺序失败: ${errorMsg}`)
     // 如果失败，刷新数据恢复原状态
     emit('refresh')
   } finally {

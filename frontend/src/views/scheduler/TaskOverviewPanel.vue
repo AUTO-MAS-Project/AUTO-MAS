@@ -83,7 +83,7 @@ const handleWSMessage = (message: WSMessage) => {
     // 处理 task_info 数据（完整的脚本和用户数据）
     if (message.data?.task_info && Array.isArray(message.data.task_info)) {
       const { scriptCount, userCount } = getTaskInfoStats(message.data.task_info)
-      logger.debug('更新任务数据 (task_info): 脚本数=%d, 用户数=%d', scriptCount, userCount)
+      logger.debug(`更新任务数据 : 脚本数=${scriptCount}, 用户数=${userCount}`)
 
       // 转换后端的 task_info 格式到前端的 Script 格式
       const newTaskData = message.data.task_info.map((task: any, index: number) => ({
@@ -98,7 +98,7 @@ const handleWSMessage = (message: WSMessage) => {
         logger.debug('数据发生实际变化，更新组件')
         taskData.value = newTaskData
         const { scriptCount, userCount } = getScriptStats(taskData.value)
-        logger.debug('设置后的 taskData: 脚本数=%d, 用户数=%d', scriptCount, userCount)
+        logger.debug(`设置后的 taskData: 脚本数=${scriptCount}, 用户数=${userCount}`)
       } else {
         logger.debug('数据内容完全相同，跳过更新')
       }

@@ -59,11 +59,11 @@ export function useUserApi() {
 
       logger.debug('发送更新用户请求')
       const response = await Service.updateUserApiScriptsUserUpdatePost(requestData)
-      logger.debug('更新用户响应:', response)
+      logger.debug(`更新用户响应: ${JSON.stringify(response)}`)
 
       if (response.code !== 200) {
         const errorMsg = response.message || '更新用户失败'
-        logger.error('更新用户失败:', errorMsg)
+        logger.error(`更新用户失败: ${errorMsg}`)
         message.error(errorMsg)
         throw new Error(errorMsg)
       }

@@ -32,7 +32,8 @@ const getAppVersion = async () => {
         updateInfo.value = ver
         return ver
     } catch (error) {
-        logger.error('获取前端版本失败:', error)
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.error(`获取前端版本失败: ${errorMsg}`)
         return null
     }
 }
@@ -44,7 +45,8 @@ const getBackendVersion = async () => {
     try {
         backendUpdateInfo.value = await Service.getGitVersionApiInfoVersionPost()
     } catch (error) {
-        logger.error('获取后端版本失败:', error)
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.error(`获取后端版本失败: ${errorMsg}`)
     }
 }
 
@@ -59,10 +61,12 @@ const pollTitlebarVersionOnce = async () => {
         const [appRes, backendRes] = await Promise.allSettled([getAppVersion(), getBackendVersion()])
 
         if (appRes.status === 'rejected') {
-            logger.error('获取前端版本失败:', appRes.reason)
+            const errorMsg = appRes.reason instanceof Error ? appRes.reason.message : String(appRes.reason)
+            logger.error(`获取前端版本失败: ${errorMsg}`)
         }
         if (backendRes.status === 'rejected') {
-            logger.error('获取后端版本失败:', backendRes.reason)
+            const errorMsg = backendRes.reason instanceof Error ? backendRes.reason.message : String(backendRes.reason)
+            logger.error(`获取后端版本失败: ${errorMsg}`)
         }
     } finally {
         isTitlebarPolling.value = false

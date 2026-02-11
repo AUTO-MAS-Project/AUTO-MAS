@@ -104,11 +104,12 @@ export async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]
       stageOptionsCache.value[timeKey] = response.data
       return response.data
     } else {
-      logger.error(`[关卡选项] 加载失败 (${timeKey}):`, response.message)
+      logger.error(`加载失败 (${timeKey}): ${response.message}`)
       return []
     }
   } catch (error) {
-    logger.error(`[关卡选项] 加载异常 (${timeKey}):`, error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载异常 (${timeKey}): ${errorMsg}`)
     return []
   }
 }
@@ -117,13 +118,13 @@ export async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]
 export async function preloadAllStageOptions(): Promise<void> {
   const loadPromises = TIME_KEYS.map(timeKey => loadStageOptions(timeKey))
   await Promise.all(loadPromises)
-  logger.info('[关卡选项] 预加载完成')
+  logger.info('关卡选项预加载完成')
 }
 
 // 清除缓存（用于刷新数据）
 export function clearStageOptionsCache(): void {
   stageOptionsCache.value = {}
-  logger.info('[关卡选项] 缓存已清除')
+  logger.info('关卡选项缓存已清除')
 }
 
 // 获取缓存的关卡选项
@@ -240,8 +241,7 @@ export function usePlanDataCoordinator() {
 
       if (inferredStages.size > 0) {
         logger.info(
-          `[自定义关卡] 从配置数据推断出 ${inferredStages.size} 个关卡:`,
-          Array.from(inferredStages)
+          `从配置数据推断出 ${inferredStages.size} 个自定义关卡: ${Array.from(inferredStages).join(', ')}`
         )
       }
     } else {
@@ -270,7 +270,7 @@ export function usePlanDataCoordinator() {
         })
 
         planData.value.customStageDefinitions = currentDefinitions
-        logger.info(`[自定义关卡] 添加新发现的关卡:`, newStages)
+        logger.info(`添加新发现的自定义关卡: ${newStages.join(', ')}`)
       }
     }
   }
@@ -512,7 +512,7 @@ export function usePlanDataCoordinator() {
 
     // 只在开发环境输出排序日志
     if (process.env.NODE_ENV === 'development') {
-      logger.debug(`[关卡排序] ${timeKey}:`, sortedStages.join(' → '))
+      logger.debug(`关卡排序 ${timeKey}: ${sortedStages.join(' → ')}`)
     }
   }
 
@@ -521,7 +521,7 @@ export function usePlanDataCoordinator() {
     const key = `custom_stage_${index}` as keyof typeof planData.value.customStageDefinitions
     const oldName = planData.value.customStageDefinitions[key]
 
-    logger.info(`[自定义关卡] 更新关卡-${index}: "${oldName}" -> "${name}"`)
+    logger.info(`更新自定义关卡-${index}: "${oldName}" -> "${name}"`)
 
     planData.value.customStageDefinitions[key] = name
 

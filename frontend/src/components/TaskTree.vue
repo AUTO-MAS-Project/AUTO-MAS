@@ -135,11 +135,7 @@ const updateExpandedScripts = () => {
     }
   })
   logger.debug(
-    '更新展开脚本: 脚本数=%d, 新增=%d, 展开数=%d (原展开数=%d)',
-    props.taskData.length,
-    addedCount,
-    expandedScripts.value.size,
-    previousExpandedCount
+    `更新展开脚本: 脚本数=${props.taskData.length}, 新增=${addedCount}, 展开数=${expandedScripts.value.size} (原展开数=${previousExpandedCount})`
   )
 }
 
@@ -154,11 +150,7 @@ watch(
 
     if (newScriptCount !== oldScriptCount || newUserCount !== oldUserCount) {
       logger.debug(
-        'TaskData 变化: 脚本数=%d (原=%d), 用户数=%d (原=%d)',
-        newScriptCount,
-        oldScriptCount,
-        newUserCount,
-        oldUserCount
+        `TaskData 变化: 脚本数=${newScriptCount} (原=${oldScriptCount}), 用户数=${newUserCount} (原=${oldUserCount})`
       )
     }
 

@@ -65,7 +65,8 @@ const hasRunningTasks = (): boolean => {
       }
     }
   } catch (error) {
-    logger.warn('检查运行任务状态失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`检查运行任务状态失败: ${errorMsg}`)
   }
   return false
 }
@@ -112,7 +113,7 @@ const handleBackendUpdateClick = () => {
         if (result.success) {
           logger.info('后端已成功关闭')
         } else {
-          logger.warn('后端关闭失败:', result.error)
+          logger.warn(`后端关闭失败: ${String(result.error)}`)
         }
 
         // 2. 重置初始化状态
@@ -125,7 +126,8 @@ const handleBackendUpdateClick = () => {
         await router.push('/initialization')
         logger.info('已跳转到初始化页面')
       } catch (error) {
-        logger.error('更新后端失败:', error)
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.error(`更新后端失败: ${errorMsg}`)
       }
     },
   })
@@ -135,7 +137,8 @@ const minimizeWindow = async () => {
   try {
     await window.electronAPI?.windowMinimize()
   } catch (error) {
-    logger.error('Failed to minimize window:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`最小化窗口失败: ${errorMsg}`)
   }
 }
 
@@ -144,7 +147,8 @@ const toggleMaximize = async () => {
     await window.electronAPI?.windowMaximize()
     isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
   } catch (error) {
-    logger.error('Failed to toggle maximize:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`切换最大化状态失败: ${errorMsg}`)
   }
 }
 
@@ -160,7 +164,8 @@ const doCloseWindow = async () => {
     logger.info('正在退出应用...')
     await window.electronAPI?.appQuit()
   } catch (error) {
-    logger.error('关闭应用失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`关闭应用失败: ${errorMsg}`)
   }
 }
 
@@ -188,7 +193,8 @@ onMounted(async () => {
   try {
     isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
   } catch (error) {
-    logger.error('Failed to get window state:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`获取窗口状态失败: ${errorMsg}`)
   }
 })
 </script>

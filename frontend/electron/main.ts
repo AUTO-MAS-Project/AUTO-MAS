@@ -29,9 +29,9 @@ async function forceKillRelatedProcesses(): Promise<void> {
   try {
     const { killAllRelatedProcesses } = await import('./utils/processManager')
     await killAllRelatedProcesses()
-    logger.info('进程管理', '所有相关进程已清理')
+    logger.info('所有相关进程已清理')
   } catch (error) {
-    logger.error('进程管理', `清理进程时出错: ${error}`)
+    logger.error(`清理进程时出错: ${error}`)
 
     // 备用清理方法
     if (process.platform === 'win32') {
@@ -42,9 +42,9 @@ async function forceKillRelatedProcesses(): Promise<void> {
         // 使用更简单的命令强制结束相关进程
         exec(`taskkill /f /im python.exe`, error => {
           if (error) {
-            logger.warn('进程管理', `备用清理方法失败: ${error.message}`)
+            logger.warn(`备用清理方法失败: ${error.message}`)
           } else {
-            logger.info('进程管理', '备用清理方法执行成功')
+            logger.info('备用清理方法执行成功')
           }
           resolve()
         })
@@ -145,7 +145,7 @@ function loadConfig(): AppConfig {
       return { ...defaultConfig, ...config }
     }
   } catch (error) {
-    logger.error('配置管理', '加载配置失败')
+    logger.error('加载配置失败')
   }
   return defaultConfig
 }
@@ -163,7 +163,7 @@ function saveConfig(config: AppConfig) {
 
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
   } catch (error) {
-    logger.error('配置管理', '保存配置失败')
+    logger.error('保存配置失败')
   }
 }
 
@@ -187,7 +187,7 @@ function createTray() {
       if (fs.existsSync(iconPath)) {
         trayIcon = nativeImage.createFromPath(iconPath)
         if (!trayIcon.isEmpty()) {
-          logger.info('托盘管理', `成功加载托盘图标: ${iconPath}`)
+          logger.info(`成功加载托盘图标: ${iconPath}`)
           break
         }
       }
@@ -195,11 +195,11 @@ function createTray() {
 
     // 如果所有路径都失败，创建一个默认图标
     if (!trayIcon || trayIcon.isEmpty()) {
-      logger.warn('托盘管理', '无法加载托盘图标，使用默认图标')
+      logger.warn('无法加载托盘图标，使用默认图标')
       trayIcon = nativeImage.createEmpty()
     }
   } catch (error) {
-    logger.error('托盘管理', '加载托盘图标失败')
+    logger.error('加载托盘图标失败')
     trayIcon = nativeImage.createEmpty()
   }
 
@@ -295,15 +295,15 @@ function updateTrayVisibility(config: AppConfig) {
   // 特殊情况：如果没有窗口显示且没有托盘，强制显示托盘避免程序成为幽灵
   if (!shouldShowTray && (!mainWindow || !mainWindow.isVisible()) && !tray) {
     shouldShowTray = true
-    logger.warn('托盘管理', '防幽灵机制：强制显示托盘图标')
+    logger.warn('防幽灵机制：强制显示托盘图标')
   }
 
   if (shouldShowTray && !tray) {
     createTray()
-    logger.info('托盘管理', '托盘图标已创建')
+    logger.info('托盘图标已创建')
   } else if (!shouldShowTray && tray) {
     destroyTray()
-    logger.info('托盘管理', '托盘图标已销毁')
+    logger.info('托盘图标已销毁')
   }
 }
 
@@ -311,7 +311,7 @@ let mainWindow: Electron.BrowserWindow | null = null
 let logWindow: Electron.BrowserWindow | null = null
 
 function createWindow() {
-  logger.info('窗口管理', '开始创建主窗口')
+  logger.info('开始创建主窗口')
 
   const config = loadConfig()
 
@@ -369,7 +369,7 @@ function createWindow() {
     // 根据配置决定是否显示窗口
     if (!config.Start.IfMinimizeDirectly) {
       win.show()
-      logger.info('窗口管理', '页面加载完成，窗口已显示')
+      logger.info('页面加载完成，窗口已显示')
     }
   })
 
@@ -411,11 +411,11 @@ function createWindow() {
   win.setMenuBarVisibility(false)
   const devServer = process.env.VITE_DEV_SERVER_URL
   if (devServer) {
-    logger.info('窗口管理', `加载开发服务器: ${devServer}`)
+    logger.info(`加载开发服务器: ${devServer}`)
     win.loadURL(devServer)
   } else {
     const indexHtmlPath = path.join(app.getAppPath(), 'dist', 'index.html')
-    logger.info('窗口管理', `加载生产环境页面: ${indexHtmlPath}`)
+    logger.info(`加载生产环境页面: ${indexHtmlPath}`)
     win.loadFile(indexHtmlPath)
   }
 
@@ -428,7 +428,7 @@ function createWindow() {
       win.hide()
       win.setSkipTaskbar(true)
       updateTrayVisibility(currentConfig)
-      logger.info('窗口管理', '窗口已最小化到托盘，任务栏图标已隐藏')
+      logger.info('窗口已最小化到托盘，任务栏图标已隐藏')
     } else {
       // 立即保存窗口状态，不使用防抖
       if (!win.isDestroyed()) {
@@ -444,16 +444,16 @@ function createWindow() {
           config.UI.maximized = isMaximized
 
           saveConfig(config)
-          logger.info('窗口管理', '窗口状态已保存')
+          logger.info('窗口状态已保存')
         } catch (error) {
-          logger.error('窗口管理', '保存窗口状态失败')
+          logger.error('保存窗口状态失败')
         }
       }
     }
   })
 
   win.on('closed', () => {
-    logger.info('窗口管理', '主窗口已关闭')
+    logger.info('主窗口已关闭')
     // 清理监听（可选）
     screen.removeListener('display-metrics-changed', recomputeMinSize)
     // 置空模块级引用
@@ -461,12 +461,12 @@ function createWindow() {
 
     // 如果是正在退出，立即执行进程清理
     if (isQuitting) {
-      logger.info('窗口管理', '窗口关闭，执行最终清理')
+      logger.info('窗口关闭，执行最终清理')
       setTimeout(async () => {
         try {
           await forceKillRelatedProcesses()
         } catch (e) {
-          logger.error('窗口管理', '最终清理失败')
+          logger.error('最终清理失败')
         }
         process.exit(0)
       }, 100)
@@ -479,7 +479,7 @@ function createWindow() {
       win.hide()
       win.setSkipTaskbar(true)
       updateTrayVisibility(currentConfig)
-      logger.info('窗口管理', '窗口已最小化到托盘，任务栏图标已隐藏')
+      logger.info('窗口已最小化到托盘，任务栏图标已隐藏')
     }
   })
 
@@ -487,14 +487,14 @@ function createWindow() {
     const currentConfig = loadConfig()
     win.setSkipTaskbar(false)
     updateTrayVisibility(currentConfig)
-    logger.info('窗口管理', '窗口已显示，任务栏图标已恢复')
+    logger.info('窗口已显示，任务栏图标已恢复')
   })
 
   win.on('hide', () => {
     const currentConfig = loadConfig()
     if (currentConfig.UI.IfToTray) {
       win.setSkipTaskbar(true)
-      logger.info('窗口管理', '窗口已隐藏，任务栏图标已隐藏')
+      logger.info('窗口已隐藏，任务栏图标已隐藏')
     }
     updateTrayVisibility(currentConfig)
   })
@@ -518,9 +518,9 @@ function createWindow() {
           config.UI.maximized = isMaximized
 
           saveConfig(config)
-          logger.info('窗口管理', '窗口状态已自动保存')
+          logger.info('窗口状态已自动保存')
         } catch (error) {
-          logger.error('窗口管理', '保存窗口状态失败')
+          logger.error('保存窗口状态失败')
         }
       }
     }, 500)
@@ -530,11 +530,11 @@ function createWindow() {
   win.on('move', debounceSaveState)
 
   // 主窗口创建完成
-  logger.info('窗口管理', '主窗口创建完成')
+  logger.info('主窗口创建完成')
 
   // 注册初始化处理器
   registerInitializationHandlers(win)
-  logger.info('应用初始化', '初始化处理器已注册')
+  logger.info('应用初始化处理器已注册')
 
   // 初始托盘配置（使用文件配置）
   updateTrayVisibility(config)
@@ -552,10 +552,10 @@ function createWindow() {
       if (currentConfig.UI.IfToTray) {
         win.hide()
         win.setSkipTaskbar(true)
-        logger.info('应用启动', '应用初次启动后直接最小化到托盘')
+        logger.info('应用初次启动后直接最小化到托盘')
       } else {
         win.minimize()
-        logger.info('应用启动', '应用初次启动后直接最小化')
+        logger.info('应用初次启动后直接最小化')
       }
       updateTrayVisibility(currentConfig)
     }
@@ -573,7 +573,7 @@ function createLogWindow() {
     return
   }
 
-  logger.info('窗口管理', '创建日志窗口')
+  logger.info('创建日志窗口')
 
   logWindow = new BrowserWindow({
     width: 1200,
@@ -601,7 +601,7 @@ function createLogWindow() {
   })
 
   logWindow.on('closed', () => {
-    logger.info('窗口管理', '日志窗口已关闭')
+    logger.info('日志窗口已关闭')
     logWindow = null
   })
 }
@@ -676,13 +676,13 @@ ipcMain.handle('log:export', async () => {
 
       if (stat.isFile()) {
         zip.addLocalFile(filePath)
-        logger.info('日志管理', `添加文件到压缩包: ${file}`)
+        logger.info(`添加文件到压缩包: ${file}`)
       }
     }
 
     // 保存 ZIP 文件
     zip.writeZip(zipPath)
-    logger.info('日志管理', `日志压缩包已导出: ${zipPath}`)
+    logger.info(`日志压缩包已导出: ${zipPath}`)
 
     return {
       success: true,
@@ -690,7 +690,7 @@ ipcMain.handle('log:export', async () => {
       zipPath: zipPath
     }
   } catch (error) {
-    logger.error('日志管理', '导出日志失败:', error)
+    logger.error('导出日志失败:', error)
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error)
@@ -718,7 +718,7 @@ ipcMain.handle('log:getContent', async (_event, lines?: number, fileName?: strin
     const allLines = content.split('\n')
     return allLines.slice(-lines).join('\n')
   } catch (error) {
-    logger.error('日志管理', '读取日志内容失败:', error)
+    logger.error('读取日志内容失败:', error)
     return ''
   }
 })
@@ -728,7 +728,7 @@ ipcMain.handle('log:openWindow', async () => {
     createLogWindow()
     return { success: true }
   } catch (error) {
-    logger.error('日志管理', '打开日志窗口失败:', error)
+    logger.error('打开日志窗口失败:', error)
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error)
@@ -785,7 +785,7 @@ ipcMain.handle('window-focus', () => {
 
 // 添加应用重启处理器
 ipcMain.handle('app-restart', () => {
-  logger.info('应用控制', '重启应用程序...')
+  logger.info('重启应用程序...')
   isQuitting = true
   app.relaunch()
   app.exit(0)
@@ -803,7 +803,7 @@ ipcMain.handle('get-related-processes', async () => {
     const { getRelatedProcesses } = await import('./utils/processManager')
     return await getRelatedProcesses()
   } catch (error) {
-    logger.error('进程管理', '获取进程信息失败')
+    logger.error('获取进程信息失败')
     return []
   }
 })
@@ -813,7 +813,7 @@ ipcMain.handle('kill-all-processes', async () => {
     await forceKillRelatedProcesses()
     return { success: true }
   } catch (error) {
-    logger.error('进程管理', '强制清理进程失败')
+    logger.error('强制清理进程失败')
     return { success: false, error: error instanceof Error ? error.message : String(error) }
   }
 })
@@ -848,10 +848,10 @@ ipcMain.handle('open-url', async (_event, url: string) => {
     return { success: true }
   } catch (error) {
     if (error instanceof Error) {
-      logger.error('文件系统', `打开链接失败: ${error.message}`)
+      logger.error(`打开链接失败: ${error.message}`)
       return { success: false, error: error.message }
     } else {
-      logger.error('文件系统', `未知错误: ${error}`)
+      logger.error(`未知错误: ${error}`)
       return { success: false, error: String(error) }
     }
   }
@@ -862,7 +862,7 @@ ipcMain.handle('open-file', async (_event, filePath: string) => {
   try {
     await shell.openPath(filePath)
   } catch (error) {
-    logger.error('文件系统', `打开文件失败: ${error}`)
+    logger.error(`打开文件失败: ${error}`)
     throw error
   }
 })
@@ -872,7 +872,7 @@ ipcMain.handle('show-item-in-folder', async (_event, filePath: string) => {
   try {
     shell.showItemInFolder(filePath)
   } catch (error) {
-    logger.error('文件系统', `显示文件所在目录失败: ${error}`)
+    logger.error(`显示文件所在目录失败: ${error}`)
     throw error
   }
 })
@@ -911,10 +911,10 @@ ipcMain.handle('check-critical-files', async () => {
       mainPyExists,
     }
 
-    logger.info('环境检查', '关键文件检查结果')
+    logger.info('关键文件检查结果')
     return result
   } catch (error) {
-    logger.error('环境检查', '检查关键文件失败')
+    logger.error('检查关键文件失败')
     return {
       pythonExists: false,
       pipExists: false,
@@ -944,7 +944,7 @@ ipcMain.handle('get-theme-info', async () => {
         themeMode = config.themeMode || 'system'
         themeColor = config.themeColor || 'blue'
       } catch (error) {
-        logger.warn('主题管理', '读取主题配置失败，使用默认值')
+        logger.warn('读取主题配置失败，使用默认值')
       }
     }
 
@@ -982,7 +982,7 @@ ipcMain.handle('get-theme-info', async () => {
       primaryColor: themeColors[themeColor] || themeColors.blue,
     }
   } catch (error) {
-    logger.error('主题管理', '获取主题信息失败')
+    logger.error('获取主题信息失败')
     return {
       themeMode: 'system',
       themeColor: 'blue',
@@ -999,7 +999,7 @@ ipcMain.handle('get-app-path', async (_event, name: any) => {
   try {
     return app.getPath(name)
   } catch (error) {
-    logger.error('文件系统', `获取路径 ${name} 失败`)
+    logger.error(`获取路径 ${name} 失败`)
     return ''
   }
 })
@@ -1019,7 +1019,7 @@ ipcMain.handle('get-theme', async () => {
         const config = JSON.parse(configData)
         themeMode = config.themeMode || 'system'
       } catch (error) {
-        logger.warn('主题管理', '读取主题配置失败，使用默认值')
+        logger.warn('读取主题配置失败，使用默认值')
       }
     }
 
@@ -1034,7 +1034,7 @@ ipcMain.handle('get-theme', async () => {
 
     return actualTheme
   } catch (error) {
-    logger.error('主题管理', '获取对话框主题失败')
+    logger.error('获取对话框主题失败')
     return nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
   }
 })
@@ -1058,14 +1058,14 @@ ipcMain.handle('save-config', async (_event, config) => {
     }
 
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
-    logger.info('配置管理', `配置已保存到: ${configPath}`)
+    logger.info(`配置已保存到: ${configPath}`)
 
     // 如果是UI配置更新，需要更新托盘状态
     if (config.UI) {
       updateTrayVisibility(config)
     }
   } catch (error) {
-    logger.error('配置管理', '保存配置文件失败')
+    logger.error('保存配置文件失败')
     throw error
   }
 })
@@ -1081,10 +1081,10 @@ ipcMain.handle('update-tray-settings', async (_event, uiSettings) => {
     // 立即更新托盘状态
     updateTrayVisibility(currentConfig)
 
-    logger.info('托盘管理', '托盘设置已更新')
+    logger.info('托盘设置已更新')
     return true
   } catch (error) {
-    logger.error('托盘管理', '更新托盘设置失败')
+    logger.error('更新托盘设置失败')
     throw error
   }
 })
@@ -1110,10 +1110,10 @@ ipcMain.handle('sync-backend-config', async (_event, backendSettings) => {
     // 更新托盘状态
     updateTrayVisibility(currentConfig)
 
-    logger.info('配置管理', '后端配置已同步')
+    logger.info('后端配置已同步')
     return true
   } catch (error) {
-    logger.error('配置管理', '同步后端配置失败')
+    logger.error('同步后端配置失败')
     throw error
   }
 })
@@ -1125,13 +1125,13 @@ ipcMain.handle('load-config', async () => {
 
     if (fs.existsSync(configPath)) {
       const config = fs.readFileSync(configPath, 'utf8')
-      logger.info('配置管理', `从文件加载配置: ${configPath}`)
+      logger.info(`从文件加载配置: ${configPath}`)
       return JSON.parse(config)
     }
 
     return null
   } catch (error) {
-    logger.error('配置管理', '加载配置文件失败')
+    logger.error('加载配置文件失败')
     return null
   }
 })
@@ -1143,10 +1143,10 @@ ipcMain.handle('reset-config', async () => {
 
     if (fs.existsSync(configPath)) {
       fs.unlinkSync(configPath)
-      logger.info('配置管理', `配置文件已删除: ${configPath}`)
+      logger.info(`配置文件已删除: ${configPath}`)
     }
   } catch (error) {
-    logger.error('配置管理', '重置配置文件失败')
+    logger.error('重置配置文件失败')
     throw error
   }
 })
@@ -1191,7 +1191,7 @@ app.on('before-quit', async event => {
     event.preventDefault()
     isQuitting = true
 
-    logger.info('应用生命周期', '应用准备退出')
+    logger.info('应用准备退出')
 
     // 清理定时器
     if (saveWindowStateTimeout) {
@@ -1205,13 +1205,13 @@ app.on('before-quit', async event => {
     // 清理初始化资源
     try {
       await cleanupInitializationResources()
-      logger.info('应用生命周期', '初始化资源清理完成')
+      logger.info('初始化资源清理完成')
     } catch (e) {
-      logger.error('应用生命周期', '资源清理失败')
+      logger.error('资源清理失败')
     }
 
     // 立即开始强制清理，不等待优雅关闭
-    logger.info('应用生命周期', '开始强制清理所有相关进程')
+    logger.info('开始强制清理所有相关进程')
 
     try {
       // 并行执行多种清理方法
@@ -1253,12 +1253,12 @@ app.on('before-quit', async event => {
       const timeoutPromise = new Promise(resolve => setTimeout(resolve, 3000))
       await Promise.race([Promise.all(cleanupPromises), timeoutPromise])
 
-      logger.info('应用生命周期', '进程清理完成')
+      logger.info('进程清理完成')
     } catch (e) {
-      logger.error('应用生命周期', '进程清理时出错')
+      logger.error('进程清理时出错')
     }
 
-    logger.info('应用生命周期', '应用强制退出')
+    logger.info('应用强制退出')
 
     // 使用 process.exit 而不是 app.exit，更加强制
     setTimeout(() => {
@@ -1270,18 +1270,18 @@ app.on('before-quit', async event => {
 app.whenReady().then(async () => {
 
 
-  logger.info('应用启动', `应用版本: ${app.getVersion()}`)
-  logger.info('应用启动', `Electron版本: ${process.versions.electron}`)
-  logger.info('应用启动', `Node版本: ${process.versions.node}`)
-  logger.info('应用启动', `平台: ${process.platform}`)
+  logger.info(`应用版本: ${app.getVersion()}`)
+  logger.info(`Electron版本: ${process.versions.electron}`)
+  logger.info(`Node版本: ${process.versions.node}`)
+  logger.info(`平台: ${process.platform}`)
 
   // 检查管理员权限
   if (!isRunningAsAdmin()) {
-    logger.warn('应用启动', '应用未以管理员权限运行')
+    logger.warn('应用未以管理员权限运行')
     // 在生产环境中，可以选择是否强制要求管理员权限
     // 这里先创建窗口，让用户选择是否重新启动
   } else {
-    logger.info('应用启动', '应用以管理员权限运行')
+    logger.info('应用以管理员权限运行')
   }
 
   createWindow()

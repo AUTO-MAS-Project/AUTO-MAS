@@ -330,7 +330,8 @@ const handleChange = async (category: string, key: string, value: any) => {
       await refreshScript()
     }
   } catch (error) {
-    logger.error('保存失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存失败: ${errorMsg}`)
   } finally {
     isSaving.value = false
   }
@@ -345,7 +346,8 @@ const refreshScript = async () => {
       formData.name = scriptDetail.name
     }
   } catch (error) {
-    logger.error('刷新配置失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`刷新配置失败: ${errorMsg}`)
   }
 }
 
@@ -393,7 +395,8 @@ const loadScript = async () => {
       }
     }
   } catch (error) {
-    logger.error('加载脚本失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载脚本失败: ${errorMsg}`)
     message.error('加载脚本失败')
     router.push('/scripts')
   } finally {
@@ -416,7 +419,8 @@ const loadEmulatorOptions = async () => {
       message.error('加载模拟器选项失败')
     }
   } catch (error) {
-    logger.error('加载模拟器选项失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载模拟器选项失败: ${errorMsg}`)
     message.error('加载模拟器选项失败')
   } finally {
     emulatorLoading.value = false
@@ -437,7 +441,8 @@ const loadEmulatorDeviceOptions = async (emulatorId: string) => {
       message.error('加载模拟器实例选项失败')
     }
   } catch (error) {
-    logger.error('加载模拟器实例选项失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载模拟器实例选项失败: ${errorMsg}`)
     message.error('加载模拟器实例选项失败')
   } finally {
     emulatorDeviceLoading.value = false
@@ -464,7 +469,8 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
       await refreshScript()
     }
   } catch (error) {
-    logger.error('保存模拟器配置失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存模拟器配置失败: ${errorMsg}`)
   } finally {
     isSaving.value = false
   }
@@ -491,7 +497,8 @@ const selectMAAPath = async () => {
       message.success('MAA路径选择成功')
     }
   } catch (error) {
-    logger.error('选择MAA路径失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`选择MAA路径失败: ${errorMsg}`)
     message.error('选择文件夹失败')
   }
 }

@@ -365,7 +365,8 @@ const fetchActivityData = async () => {
       error.value = response.message || '获取数据失败'
     }
   } catch (err) {
-    logger.error('获取数据失败:', err)
+    const errorMsg = err instanceof Error ? err.message : String(err)
+    logger.error(`获取数据失败: ${errorMsg}`)
     error.value = '网络请求失败，请检查连接'
   } finally {
     loading.value = false
@@ -407,10 +408,11 @@ const fetchNoticeData = async () => {
         await playSound('announcement_display')
       }
     } else {
-      logger.warn('获取公告失败:', response.message)
+      logger.warn(`获取公告失败: ${response.message}`)
     }
   } catch (error) {
-    logger.error('获取公告失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`获取公告失败: ${errorMsg}`)
   }
 }
 
@@ -439,7 +441,8 @@ const showNotice = async () => {
       message.error(response.message || '获取公告失败')
     }
   } catch (error) {
-    logger.error('显示公告失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`显示公告失败: ${errorMsg}`)
     message.error('显示公告失败，请稍后重试')
   } finally {
     noticeLoading.value = false

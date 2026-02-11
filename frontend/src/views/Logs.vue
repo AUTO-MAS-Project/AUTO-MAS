@@ -96,7 +96,8 @@ const loadLogs = async (silent = false) => {
         }
     } catch (error) {
         if (!silent) {
-            logger.error('加载日志失败', error)
+            const errorMsg = error instanceof Error ? error.message : String(error)
+            logger.error(`加载日志失败: ${errorMsg}`)
             message.error('加载日志失败')
         }
     } finally {
@@ -150,19 +151,20 @@ const exportLogsZip = async () => {
 
         if (result?.success) {
             message.success(result.message || '日志压缩包导出成功')
-            logger.info('日志导出成功', result.zipPath)
+            logger.info(`日志导出成功: ${result.zipPath}`)
             // 打开文件夹并定位到压缩包
             if (result.zipPath) {
                 await (window as any).electronAPI?.showItemInFolder?.(result.zipPath)
             }
         } else {
             const errorMsg = result?.error || '日志导出失败'
+            logger.error(`导出日志失败: ${errorMsg}`)
             message.error(errorMsg)
-            logger.error('导出日志失败', errorMsg)
         }
     } catch (error) {
-        logger.error('导出日志失败', error)
-        message.error(`导出日志异常: ${error instanceof Error ? error.message : String(error)}`)
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.error(`导出日志失败: ${errorMsg}`)
+        message.error(`导出日志异常: ${errorMsg}`)
     } finally {
         exporting.value = false
     }

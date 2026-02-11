@@ -34,7 +34,8 @@ const safeJsonParse = (jsonString: string | null | undefined, fallback: any = []
   try {
     return JSON.parse(jsonString)
   } catch (e) {
-    logger.error('JSON 解析失败:', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`JSON 解析失败: ${errorMsg}`)
     return fallback
   }
 }
@@ -104,7 +105,8 @@ const pollDevicesStatus = async () => {
     }
   } catch (e) {
     // 轮询时的错误静默处理，避免频繁弹错误提示
-    logger.warn('轮询设备状态时出错:', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.warn(`轮询设备状态时出错: ${errorMsg}`)
   }
 }
 
@@ -239,7 +241,8 @@ const loadEmulators = async () => {
       message.error(response.message || '加载模拟器配置失败')
     }
   } catch (e) {
-    logger.error('加载模拟器配置失败', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`加载模拟器配置失败: ${errorMsg}`)
     message.error('加载模拟器配置失败')
   } finally {
     loading.value = false
@@ -260,7 +263,8 @@ const handleAdd = async () => {
       message.error(response.message || '添加失败')
     }
   } catch (e) {
-    logger.error('添加模拟器失败', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`添加模拟器失败: ${errorMsg}`)
     message.error('添加模拟器失败')
   }
 }
@@ -326,7 +330,8 @@ const refreshEmulatorConfig = async (uuid?: string) => {
       }
     }
   } catch (e) {
-    logger.error('刷新模拟器配置失败', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`刷新模拟器配置失败: ${errorMsg}`)
   }
 }
 
@@ -365,7 +370,8 @@ const handleSaveChange = async (uuid: string, key: string, value: any) => {
       message.error(response.message || '保存失败')
     }
   } catch (e) {
-    logger.error('保存模拟器配置失败', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`保存模拟器配置失败: ${errorMsg}`)
     message.error('保存模拟器配置失败')
   } finally {
     savingMap.value.set(uuid, false)
@@ -400,7 +406,8 @@ const handleDelete = async (uuid: string) => {
       message.error(response.message || '删除失败')
     }
   } catch (e) {
-    logger.error('删除模拟器失败', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`删除模拟器失败: ${errorMsg}`)
     message.error('删除模拟器失败')
   }
 }
@@ -422,7 +429,8 @@ const handleSearch = async () => {
       message.error(response.message || '搜索失败')
     }
   } catch (e) {
-    logger.error('搜索模拟器失败', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`搜索模拟器失败: ${errorMsg}`)
     message.error('搜索模拟器失败')
   } finally {
     searching.value = false
@@ -460,7 +468,8 @@ const handleImportFromSearch = async (result: EmulatorSearchResult) => {
       message.error(response.message || '导入失败')
     }
   } catch (e) {
-    logger.error('导入模拟器失败', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`导入模拟器失败: ${errorMsg}`)
     message.error('导入模拟器失败')
   }
 }
@@ -490,7 +499,8 @@ const loadDevices = async (uuid: string) => {
       message.error(response.message || '获取设备信息失败')
     }
   } catch (e) {
-    logger.error('获取设备信息失败', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`获取设备信息失败: ${errorMsg}`)
     message.error('获取设备信息失败')
   } finally {
     loadingDevices.value.delete(uuid)
@@ -521,7 +531,8 @@ const startEmulator = async (uuid: string, index: string) => {
       message.error(response.message || '启动失败')
     }
   } catch (e) {
-    logger.error('启动模拟器失败', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`启动模拟器失败: ${errorMsg}`)
     message.error('启动模拟器失败')
   } finally {
     startingDevices.value.delete(deviceKey)
@@ -550,7 +561,8 @@ const stopEmulator = async (uuid: string, index: string) => {
       message.error(response.message || '关闭失败')
     }
   } catch (e) {
-    logger.error('关闭模拟器失败', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`关闭模拟器失败: ${errorMsg}`)
     message.error('关闭模拟器失败')
   } finally {
     stoppingDevices.value.delete(deviceKey)
@@ -577,7 +589,8 @@ const showEmulator = async (uuid: string, index: string) => {
       message.error(response.message || '显示失败')
     }
   } catch (e) {
-    logger.error('显示模拟器失败', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`显示模拟器失败: ${errorMsg}`)
     message.error('显示模拟器失败')
   } finally {
     showingDevices.value.delete(deviceKey)
@@ -615,7 +628,8 @@ const selectEmulatorPath = async (uuid: string) => {
       }
     }
   } catch (error) {
-    logger.error('选择模拟器路径失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`选择模拟器路径失败: ${errorMsg}`)
     message.error('选择文件失败')
   }
 }

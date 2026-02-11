@@ -98,16 +98,16 @@ export class MirrorRotationService {
                         usedMirror: mirror
                     }
                 } else {
-                    logger.warn(`⚠️ 镜像源 ${mirror.name} 操作失败: ${result.error}`)
+                    logger.warn(`镜像源 ${mirror.name} 操作失败: ${result.error}`)
                 }
             } catch (error) {
                 const errorMsg = error instanceof Error ? error.message : String(error)
-                logger.error(`❌ 镜像源 ${mirror.name} 发生异常: ${errorMsg}`)
+                logger.error(`镜像源 ${mirror.name} 发生异常: ${errorMsg}`)
             }
         }
 
         // 所有镜像源都失败
-        logger.error('❌ 所有镜像源都尝试失败')
+        logger.error('所有镜像源都尝试失败')
         return {
             success: false,
             error: preferredMirrorName

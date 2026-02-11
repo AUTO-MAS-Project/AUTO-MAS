@@ -29,7 +29,8 @@ const checkAutoUpdateEnabled = async (): Promise<boolean> => {
       return response.data.Update?.IfAutoUpdate || false
     }
   } catch (error) {
-    logger.warn('[useUpdateChecker] 获取自动更新设置失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`获取自动更新设置失败: ${errorMsg}`)
   }
   return false
 }
@@ -42,7 +43,7 @@ export function useUpdateChecker() {
     // 检查自动更新设置是否开启
     const autoUpdateEnabled = await checkAutoUpdateEnabled()
     if (!autoUpdateEnabled) {
-      logger.info('[useUpdateChecker] 自动检查更新已关闭，跳过定时检查')
+      logger.info('自动检查更新已关闭，跳过定时检查')
       return
     }
 
@@ -77,7 +78,8 @@ export function useUpdateChecker() {
         }
       }
     } catch (error: any) {
-      logger.error('[useUpdateChecker] 定时更新检查失败:', error?.message)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`更新检查失败: ${errorMsg}`)
     } finally {
       isPolling.value = false
     }
@@ -112,7 +114,8 @@ export function useUpdateChecker() {
         }
       }
     } catch (error: any) {
-      logger.error('[useUpdateChecker] 手动更新检查失败:', error?.message)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`手动更新检查失败: ${errorMsg}`)
       if (!silent) {
         message.error('获取更新失败！')
       }
@@ -129,17 +132,17 @@ export function useUpdateChecker() {
     // 检查自动更新设置是否开启
     const autoUpdateEnabled = await checkAutoUpdateEnabled()
     if (!autoUpdateEnabled) {
-      logger.info('[useUpdateChecker] 自动检查更新已关闭，不启动定时任务')
+      logger.info('自动检查更新已关闭，不启动定时任务')
       return
     }
 
     // 如果已经在检查中，则不重复启动
     if (updateCheckTimer) {
-      logger.info('[useUpdateChecker] 定时任务已存在，跳过启动')
+      logger.info('定时任务已存在，跳过启动')
       return
     }
 
-    logger.info('[useUpdateChecker] 启动定时版本检查任务')
+    logger.info('启动定时版本检查任务')
 
     // 延迟3秒后再执行首次检查，确保后端已经完全启动
     setTimeout(async () => {
@@ -155,13 +158,13 @@ export function useUpdateChecker() {
     if (updateCheckTimer) {
       clearInterval(updateCheckTimer)
       updateCheckTimer = null
-      logger.info('[useUpdateChecker] 停止定时版本检查任务')
+      logger.info('停止定时版本检查任务')
     }
   }
 
   // 重新启动定时检查器（当设置变更时调用）
   const restartPolling = async () => {
-    logger.info('[useUpdateChecker] 重新启动定时检查任务')
+    logger.info('重新启动定时检查任务')
     stopPolling() // 先停止现有任务
     await startPolling() // 再根据设置重新启动
   }

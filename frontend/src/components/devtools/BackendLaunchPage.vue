@@ -314,7 +314,7 @@ const testWsMessage = () => {
     },
   }
 
-  logger.info('[后端调试] 发送测试消息:', message)
+  logger.info(`发送测试消息: ${JSON.stringify(message)}`)
   sendRaw('message', message.data)
   addLog('发送测试消息: ' + message.data.title, 'info')
 }

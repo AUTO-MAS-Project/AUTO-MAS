@@ -291,7 +291,7 @@ export class InitializationService {
             }
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error)
-            logger.error('初始化失败:', errorMsg)
+            logger.error(`初始化失败: ${errorMsg}`)
 
             return {
                 success: false,
@@ -391,7 +391,7 @@ export class InitializationService {
             }
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error)
-            logger.error('更新失败:', errorMsg)
+            logger.error(`更新失败: ${errorMsg}`)
 
             return {
                 success: false,

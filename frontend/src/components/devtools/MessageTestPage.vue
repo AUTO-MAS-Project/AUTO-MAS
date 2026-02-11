@@ -166,7 +166,7 @@ const triggerModalViaDebugApi = (messageData: {
   const debugShowQuestion = (window as any).__debugShowQuestion
 
   if (!debugShowQuestion) {
-    logger.warn('[调试工具] 调试接口不可用，WebSocketMessageListener 可能未挂载')
+    logger.warn('调试接口不可用，WebSocketMessageListener 可能未挂载')
     lastResponse.value = '错误: 调试接口不可用'
     addTestHistory('触发失败', '调试接口不可用')
     return null
@@ -181,7 +181,7 @@ const triggerModalViaDebugApi = (messageData: {
     message_id: messageId,
   }
 
-  logger.info('[调试工具] 通过调试接口触发弹窗:', questionData)
+  logger.info(`通过调试接口触发弹窗: ${JSON.stringify(questionData)}`)
 
   // 直接调用 WebSocketMessageListener 的 showQuestion 函数
   debugShowQuestion(questionData)
@@ -306,7 +306,7 @@ const sendCustomMessage = () => {
 
 // 监听响应消息
 const handleResponseMessage = (message: any) => {
-  logger.info('[调试工具] 收到响应消息:', message)
+  logger.info('收到响应消息:', message)
 
   if (message.data && message.data.choice !== undefined) {
     const choice = message.data.choice ? '确认' : '取消'
@@ -317,7 +317,7 @@ const handleResponseMessage = (message: any) => {
 
 // 组件挂载时订阅响应消息
 onMounted(() => {
-  logger.info('[调试工具] 初始化消息测试页面')
+  logger.info('初始化消息测试页面')
 
   // 订阅Response类型的消息来监听用户的选择结果
   responseSubscriptionId = subscribe({ type: 'Response' }, handleResponseMessage)
@@ -328,7 +328,7 @@ onMounted(() => {
   // 定期更新连接状态
   const statusTimer = setInterval(updateConnectionStatus, 2000)
 
-  logger.info('[调试工具] 已订阅Response消息，订阅ID:', responseSubscriptionId)
+  logger.info('已订阅Response消息，订阅ID:', responseSubscriptionId)
 
   // 清理定时器
   onUnmounted(() => {
@@ -340,7 +340,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (responseSubscriptionId) {
     unsubscribe(responseSubscriptionId)
-    logger.info('[调试工具] 已取消Response消息订阅')
+    logger.info('已取消Response消息订阅')
   }
   // 清理延时触发定时器
   if (delayTimer) {

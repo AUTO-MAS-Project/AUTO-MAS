@@ -118,7 +118,8 @@ const handleAddPlan = async (planType: string = 'MaaPlanConfig') => {
       message.success(`已创建新的${getPlanTypeLabel(planType)}："${uniqueName}"`)
     }
   } catch (error) {
-    logger.error('添加计划失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`添加计划失败: ${errorMsg}`)
   }
 }
 
@@ -138,7 +139,8 @@ const handleRemovePlan = async (planId: string) => {
       }
     }
   } catch (error) {
-    logger.error('删除计划失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`删除计划失败: ${errorMsg}`)
   }
 }
 
@@ -149,11 +151,12 @@ const savePlanField = async (changes: Record<string, any>): Promise<boolean> => 
   }
 
   try {
-    logger.debug(`保存字段 (${activePlanId.value}):`, changes)
+    logger.debug(`保存字段 (${activePlanId.value}): ${JSON.stringify(changes)}`)
     await updatePlan(activePlanId.value, changes)
     return true
   } catch (error) {
-    logger.error('保存计划字段失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存计划字段失败: ${errorMsg}`)
     return false
   }
 }
@@ -178,7 +181,8 @@ const refreshPlanData = async () => {
       }
     }
   } catch (error) {
-    logger.error('刷新计划数据失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`刷新计划数据失败: ${errorMsg}`)
   }
 }
 
@@ -221,7 +225,8 @@ const onPlanChange = async (planId: string) => {
     activePlanId.value = planId
     await loadPlanData(planId)
   } catch (error) {
-    logger.error('切换计划失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`切换计划失败: ${errorMsg}`)
   }
 }
 
@@ -301,7 +306,8 @@ const loadPlanData = async (planId: string) => {
       tableData.value = { ...planData, _isInitialLoad: true }
     }
   } catch (error) {
-    logger.error('加载计划数据失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载计划数据失败: ${errorMsg}`)
   }
 }
 
@@ -360,7 +366,8 @@ const initPlans = async () => {
       currentPlanData.value = null
     }
   } catch (error) {
-    logger.error('初始化计划失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`初始化计划失败: ${errorMsg}`)
     currentPlanData.value = null
   } finally {
     loading.value = false

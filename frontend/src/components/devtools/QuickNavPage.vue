@@ -113,10 +113,11 @@ const openDevtool = () => {
       ; (window as any).electronAPI.openDevTools()
       logger.info('开发者工具已打开')
     } else {
-      logger.warn('⚠️ 开发者工具API不可用')
+      logger.warn('开发者工具API不可用')
     }
   } catch (error) {
-    logger.error('❌ 打开开发者工具失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`打开开发者工具失败: ${errorMsg}`)
   }
 }
 
@@ -135,34 +136,37 @@ const clearStorage = () => {
       alert('本地存储已清除，建议刷新页面')
     }
   } catch (error) {
-    logger.error('❌ 清除存储失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`清除存储失败: ${errorMsg}`)
   }
 }
 
 // 重新加载页面
 const reloadPage = () => {
   try {
-    logger.info('🔄 页面重新加载中...')
+    logger.info('页面重新加载中...')
     window.location.reload()
   } catch (error) {
-    logger.error('❌ 页面重载失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`页面重载失败: ${errorMsg}`)
   }
 }
 
 // 切换控制台（显示有用的调试信息）
 const toggleConsole = () => {
   try {
-    logger.info('当前URL:', window.location.href)
-    logger.info('用户代理:', navigator.userAgent)
-    logger.info('开发模式:', process.env.NODE_ENV === 'development')
-    logger.info('Vue版本:', getCurrentInstance()?.appContext.app.version || 'Unknown')
-    logger.info('localStorage项目数:', Object.keys(localStorage).length)
-    logger.info('sessionStorage项目数:', Object.keys(sessionStorage).length)
+    logger.info(`当前URL: ${window.location.href}`)
+    logger.info(`用户代理: ${navigator.userAgent}`)
+    logger.info(`开发模式: ${process.env.NODE_ENV === 'development'}`)
+    logger.info(`Vue版本: ${getCurrentInstance()?.appContext.app.version || 'Unknown'}`)
+    logger.info(`localStorage项目数: ${Object.keys(localStorage).length}`)
+    logger.info(`sessionStorage项目数: ${Object.keys(sessionStorage).length}`)
     if ((window as any).wsDebug) {
-      logger.info('WebSocket调试:', (window as any).wsDebug)
+      logger.info(`WebSocket调试: ${(window as any).wsDebug}`)
     }
   } catch (error) {
-    logger.error('❌ 获取调试信息失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`获取调试信息失败: ${errorMsg}`)
   }
 }
 
