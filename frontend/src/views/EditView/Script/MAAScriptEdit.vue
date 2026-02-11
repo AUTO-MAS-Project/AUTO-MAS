@@ -170,15 +170,16 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="每周剿灭达到上限后，本周剩余时间不在执行剿灭任务，本功能存在误判可能，请谨慎使用">
+                  <a-tooltip
+                    title="当剿灭已打满但无法全权代理时，MAA 仍会继续执行代理任务导致理智浪费。开启本项后，将把单次剿灭关卡代理次数限制为 1 次，规避理智浪费，但可能需要数日才能打满剿灭。建议使用代理卡代理保全派驻的用户开启本项。">
                     <span class="form-label">
-                      每周剿灭仅执行到上限
+                      剿灭避免无代理卡时浪费理智
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="maaConfig.Run.AnnihilationWeeklyLimit" size="large"
-                  @change="handleChange('Run', 'AnnihilationWeeklyLimit', $event)">
+                <a-select v-model:value="maaConfig.Run.AnnihilationAvoidWaste" size="large"
+                  @change="handleChange('Run', 'AnnihilationAvoidWaste', $event)">
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -244,7 +245,6 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
-import { getLogger } from '@/utils/logger'
 import type { MAAScriptConfig, ScriptType } from '../../../types/script.ts'
 import { useScriptApi } from '../../../composables/useScriptApi.ts'
 import { Service, type ComboBoxItem } from '../../../api'
@@ -254,7 +254,7 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 
-const logger = getLogger('MAA脚本编辑')
+const logger = window.electronAPI.getLogger('MAA脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
@@ -290,7 +290,7 @@ const maaConfig = reactive<MAAScriptConfig>({
     RunTimesLimit: 3,
     AnnihilationTimeLimit: 40,
     RoutineTimeLimit: 10,
-    AnnihilationWeeklyLimit: true,
+    AnnihilationAvoidWaste: false,
   },
   Emulator: {
     Id: '',
@@ -331,7 +331,8 @@ const handleChange = async (category: string, key: string, value: any) => {
       await refreshScript()
     }
   } catch (error) {
-    logger.error('保存失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存失败: ${errorMsg}`)
   } finally {
     isSaving.value = false
   }
@@ -346,7 +347,8 @@ const refreshScript = async () => {
       formData.name = scriptDetail.name
     }
   } catch (error) {
-    logger.error('刷新配置失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`刷新配置失败: ${errorMsg}`)
   }
 }
 
@@ -394,7 +396,8 @@ const loadScript = async () => {
       }
     }
   } catch (error) {
-    logger.error('加载脚本失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载脚本失败: ${errorMsg}`)
     message.error('加载脚本失败')
     router.push('/scripts')
   } finally {
@@ -417,7 +420,8 @@ const loadEmulatorOptions = async () => {
       message.error('加载模拟器选项失败')
     }
   } catch (error) {
-    logger.error('加载模拟器选项失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载模拟器选项失败: ${errorMsg}`)
     message.error('加载模拟器选项失败')
   } finally {
     emulatorLoading.value = false
@@ -438,7 +442,8 @@ const loadEmulatorDeviceOptions = async (emulatorId: string) => {
       message.error('加载模拟器实例选项失败')
     }
   } catch (error) {
-    logger.error('加载模拟器实例选项失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载模拟器实例选项失败: ${errorMsg}`)
     message.error('加载模拟器实例选项失败')
   } finally {
     emulatorDeviceLoading.value = false
@@ -465,7 +470,8 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
       await refreshScript()
     }
   } catch (error) {
-    logger.error('保存模拟器配置失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存模拟器配置失败: ${errorMsg}`)
   } finally {
     isSaving.value = false
   }
@@ -492,7 +498,8 @@ const selectMAAPath = async () => {
       message.success('MAA路径选择成功')
     }
   } catch (error) {
-    logger.error('选择MAA路径失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`选择MAA路径失败: ${errorMsg}`)
     message.error('选择文件夹失败')
   }
 }

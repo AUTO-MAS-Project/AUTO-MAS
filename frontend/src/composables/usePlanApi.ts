@@ -2,10 +2,9 @@ import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import type { PlanCreateIn, PlanDeleteIn, PlanGetIn, PlanReorderIn, PlanUpdateIn } from '@/api'
 import { Service } from '@/api'
-import { getLogger } from '@/utils/logger'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
-const logger = getLogger('计划API')
+const logger = window.electronAPI.getLogger('计划API')
 
 export function usePlanApi() {
   const loading = ref(false)
@@ -17,7 +16,8 @@ export function usePlanApi() {
       const params: PlanGetIn = planId ? { planId } : {}
       return await Service.getPlanApiPlanGetPost(params)
     } catch (error) {
-      logger.error('获取计划失败:', error)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`获取计划失败: ${errorMsg}`)
       message.error('获取计划失败')
       throw error
     } finally {
@@ -41,7 +41,8 @@ export function usePlanApi() {
 
       return response
     } catch (error) {
-      logger.error('创建计划失败:', error)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`创建计划失败: ${errorMsg}`)
       message.error('创建计划失败')
       throw error
     } finally {
@@ -57,7 +58,8 @@ export function usePlanApi() {
 
       return await Service.updatePlanApiPlanUpdatePost(params)
     } catch (error) {
-      logger.error('更新计划失败:', error)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`更新计划失败: ${errorMsg}`)
       message.error('更新计划失败')
       throw error
     } finally {
@@ -78,7 +80,8 @@ export function usePlanApi() {
 
       return response
     } catch (error) {
-      logger.error('删除计划失败:', error)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`删除计划失败: ${errorMsg}`)
       message.error('删除计划失败')
       throw error
     } finally {
@@ -95,7 +98,8 @@ export function usePlanApi() {
 
       return response
     } catch (error) {
-      logger.error('重新排序失败:', error)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`重新排序失败: ${errorMsg}`)
       message.error('重新排序失败')
       throw error
     } finally {

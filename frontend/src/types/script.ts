@@ -16,7 +16,7 @@ export interface MAAScriptConfig {
     RunTimesLimit: number
     AnnihilationTimeLimit: number
     RoutineTimeLimit: number
-    AnnihilationWeeklyLimit: boolean
+    AnnihilationAvoidWaste: boolean
   }
   Emulator: {
     Id: string
@@ -92,7 +92,6 @@ export interface User {
   name: string
   Data: {
     IfPassCheck: boolean
-    LastAnnihilationDate: string
     LastProxyDate: string
     LastSklandDate: string
     ProxyTimes: number
@@ -142,14 +141,14 @@ export interface User {
     ToAddress: string
   }
   Task: {
-    IfAutoRoguelike: boolean
-    IfBase: boolean
-    IfCombat: boolean
+    IfRoguelike: boolean
+    IfInfrast: boolean
+    IfFight: boolean
     IfMall: boolean
-    IfMission: boolean
+    IfAward: boolean
     IfReclamation: boolean
-    IfRecruiting: boolean
-    IfWakeUp: boolean
+    IfRecruit: boolean
+    IfStartUp: boolean
   }
   QFluentWidgets: {
     ThemeColor: string

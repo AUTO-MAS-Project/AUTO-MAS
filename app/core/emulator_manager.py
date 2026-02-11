@@ -78,13 +78,13 @@ class _EmulatorManager:
             raise ValueError(f"不支持的模拟器类型: {config.get('Data', 'Type')}")
 
     async def operate_emulator(
-        self, operate: Literal["open", "close"], emulator_id: str, index: str
+        self, operate: Literal["open", "close", "show"], emulator_id: str, index: str
     ):
 
         asyncio.create_task(self.operate_emulator_task(operate, emulator_id, index))
 
     async def operate_emulator_task(
-        self, operate: Literal["open", "close"], emulator_id: str, index: str
+        self, operate: Literal["open", "close", "show"], emulator_id: str, index: str
     ):
 
         try:
@@ -96,6 +96,8 @@ class _EmulatorManager:
                 await temp_emulator.open(index)
             elif operate == "close":
                 await temp_emulator.close(index)
+            elif operate == "show":
+                await temp_emulator.setVisible(index, True)
         except Exception as e:
             await Config.send_websocket_message(
                 id="EmulatorManager",

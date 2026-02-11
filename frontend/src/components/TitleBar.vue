@@ -9,11 +9,12 @@
         <span class="title-text">AUTO-MAS</span>
         <span class="version-text">
           {{ version }}
-          <span v-if="updateInfo?.if_need_update" class="update-hint" :title="getUpdateTooltip()">
+          <span v-if="updateInfo?.if_need_update" class="update-hint">
             检测到更新 {{ updateInfo.latest_version }} 请尽快更新
           </span>
-          <span v-if="backendUpdateInfo?.if_need_update" class="update-hint" :title="getUpdateTooltip()">
-            检测到更新后端有更新。请重启软件即可自动完成更新
+          <span v-if="backendUpdateInfo?.if_need_update" class="update-hint clickable"
+            @click="handleBackendUpdateClick">
+            检测到后端更新，点击以更新后端
           </span>
         </span>
       </div>
@@ -43,12 +44,15 @@
 import { useAppClosing } from '@/composables/useAppClosing'
 import { useTheme } from '@/composables/useTheme'
 import { updateInfo, backendUpdateInfo } from '@/composables/useVersionService'
-import { getLogger } from '@/utils/logger'
+import { useAppInitialization } from '@/composables/useAppInitialization'
 import { BorderOutlined, CloseOutlined, MinusOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import { onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
-const logger = getLogger('标题栏')
+const logger = window.electronAPI.getLogger('标题栏')
+const router = useRouter()
+const { resetInitializationStatus } = useAppInitialization()
 
 // 检查是否有运行中的队列任务
 const hasRunningTasks = (): boolean => {
@@ -61,7 +65,8 @@ const hasRunningTasks = (): boolean => {
       }
     }
   } catch (error) {
-    logger.warn('检查运行任务状态失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`检查运行任务状态失败: ${errorMsg}`)
   }
   return false
 }
@@ -90,11 +95,50 @@ const getUpdateTooltip = () => {
   return updateDetails.join('\n')
 }
 
+// 处理后端更新点击
+const handleBackendUpdateClick = () => {
+  Modal.confirm({
+    title: '重启后端以更新',
+    content: '即将更新后端，这需要重启后端程序，您当前正在运行的任务将会被中断。确认继续？',
+    okText: '确认',
+    cancelText: '取消',
+    centered: true,
+    onOk: async () => {
+      try {
+        logger.info('开始更新后端')
+
+        // 1. 先关闭后端
+        logger.info('正在关闭后端...')
+        const result = await window.electronAPI.stopBackend()
+        if (result.success) {
+          logger.info('后端已成功关闭')
+        } else {
+          logger.warn(`后端关闭失败: ${String(result.error)}`)
+        }
+
+        // 2. 重置初始化状态
+        resetInitializationStatus()
+
+        // 3. 清理 sessionStorage 中的状态
+        sessionStorage.clear()
+
+        // 4. 跳转到初始化页面
+        await router.push('/initialization')
+        logger.info('已跳转到初始化页面')
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.error(`更新后端失败: ${errorMsg}`)
+      }
+    },
+  })
+}
+
 const minimizeWindow = async () => {
   try {
     await window.electronAPI?.windowMinimize()
   } catch (error) {
-    logger.error('Failed to minimize window:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`最小化窗口失败: ${errorMsg}`)
   }
 }
 
@@ -103,7 +147,8 @@ const toggleMaximize = async () => {
     await window.electronAPI?.windowMaximize()
     isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
   } catch (error) {
-    logger.error('Failed to toggle maximize:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`切换最大化状态失败: ${errorMsg}`)
   }
 }
 
@@ -119,7 +164,8 @@ const doCloseWindow = async () => {
     logger.info('正在退出应用...')
     await window.electronAPI?.appQuit()
   } catch (error) {
-    logger.error('关闭应用失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`关闭应用失败: ${errorMsg}`)
   }
 }
 
@@ -147,7 +193,8 @@ onMounted(async () => {
   try {
     isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
   } catch (error) {
-    logger.error('Failed to get window state:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`获取窗口状态失败: ${errorMsg}`)
   }
 })
 </script>
@@ -334,6 +381,20 @@ onMounted(async () => {
   line-height: 1.2;
   padding: 2px 4px;
   border-radius: 4px;
+}
+
+.update-hint.clickable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.update-hint.clickable:hover {
+  transform: scale(1.05);
+  filter: drop-shadow(0 0 10px rgba(255, 64, 129, 0.8));
+}
+
+.update-hint.clickable:active {
+  transform: scale(0.98);
 }
 
 .update-hint:hover {

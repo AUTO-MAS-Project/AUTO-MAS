@@ -30,14 +30,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { message } from 'ant-design-vue'
-import { getLogger } from '@/utils/logger'
 import { enterApp, forceEnterApp } from '@/utils/appEntry.ts'
 import { markAsInitialized } from '@/composables/useAppInitialization'
 import StepPanel from './components/StepPanel.vue'
 import BackendStartStep from './components/BackendStartStep.vue'
 import type { MirrorConfig } from '@/types/mirror'
 
-const logger = getLogger('初始化流程')
+const logger = window.electronAPI.getLogger('初始化流程')
 
 // ==================== 步骤定义 ====================
 const steps = [
@@ -323,7 +322,7 @@ async function executeStep(stepKey: string): Promise<boolean> {
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`步骤 ${stepKey} 失败:`, errorMsg)
+    logger.error(`步骤 ${stepKey} 失败: ${errorMsg}`)
 
     state.status = 'failed'
     state.message = errorMsg
@@ -365,7 +364,7 @@ async function startInitialization() {
     logger.info('初始化流程执行完成，等待后端启动完成...')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error('❌ 初始化失败:', errorMsg)
+    logger.error(`初始化失败: ${errorMsg}`)
     stepStatus.value = 'error'
     message.error('初始化失败')
   }
@@ -420,7 +419,7 @@ async function handleSkip() {
 
     // 如果跳过的步骤是后端步骤，或者我们已经完成了所有步骤
     if (stepKey === 'backend' || currentStepIndex.value === steps.length - 1) {
-      logger.info('Backend step skipped or all steps completed. Entering app...')
+      logger.info('后端步骤已跳过或所有步骤已完成，准备进入应用')
       handleLocalEnterApp()
     } else {
       // 所有步骤完成
@@ -499,7 +498,7 @@ async function handleBackendComplete() {
 
 // 处理后端启动错误
 function handleBackendError(error: string) {
-  logger.error('后端启动失败:', error)
+  logger.error(`后端启动失败: ${error}`)
   const state = stepStates.value.backend
   state.status = 'failed'
   state.message = error
@@ -546,7 +545,8 @@ async function handleLocalEnterApp() {
       await forceEnterApp('初始化完成后强制进入')
     }
   } catch (error) {
-    logger.error('进入应用失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`进入应用失败: ${errorMsg}`)
     // 发生异常时强制进入
     await forceEnterApp('初始化失败后强制进入')
   }
@@ -590,15 +590,16 @@ async function loadMirrorConfigs() {
     stepStates.value.dependency.mirrors = pipMirrors.map(convertMirror)
 
     logger.info('镜像源配置加载完成')
-    logger.info('Python 镜像源:', stepStates.value.python.mirrors.map(m => m.name))
-    logger.info('Pip 镜像源:', stepStates.value.pip.mirrors.map(m => m.name))
-    logger.info('Git 镜像源:', stepStates.value.git.mirrors.map(m => m.name))
-    logger.info('Repository 镜像源:', stepStates.value.repository.mirrors.map(m => m.name))
-    logger.info('Dependency 镜像源:', stepStates.value.dependency.mirrors.map(m => m.name))
+    logger.info(`Python 镜像源: ${stepStates.value.python.mirrors.map(m => m.name)}`)
+    logger.info(`Pip 镜像源: ${stepStates.value.pip.mirrors.map(m => m.name)}`)
+    logger.info(`Git 镜像源: ${stepStates.value.git.mirrors.map(m => m.name)}`)
+    logger.info(`Repository 镜像源: ${stepStates.value.repository.mirrors.map(m => m.name)}`)
+    logger.info(`Dependency 镜像源: ${stepStates.value.dependency.mirrors.map(m => m.name)}`)
   } catch (error) {
-    logger.error('❌ 加载镜像源配置失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载镜像源配置失败: ${errorMsg}`)
     // 镜像源配置由 Electron MirrorService 管理，如果失败则使用其默认配置
-    logger.warn('⚠️ 镜像源配置加载失败，将使用 Electron MirrorService 的默认配置')
+    logger.warn('镜像源配置加载失败，将使用 Electron MirrorService 的默认配置')
   }
 }
 
@@ -618,7 +619,7 @@ onMounted(async () => {
   api.onDependencyProgress?.((progress: any) => handleProgress('dependency', progress))
 
   api.onBackendStatus?.((status: any) => {
-    logger.info(`[Backend] 状态更新: ${status.isRunning ? '运行中' : '已停止'}`)
+    logger.info(`后端状态更新: ${status.isRunning ? '运行中' : '已停止'}`)
     if (status.isRunning) {
       const state = stepStates.value.backend
       state.status = 'success'

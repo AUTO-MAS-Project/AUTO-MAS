@@ -77,18 +77,16 @@ export interface ElectronAPI {
   syncBackendConfig: (backendSettings: any) => Promise<boolean>
 
   // 日志文件操作
-  getLogPath: () => Promise<string>
-  getLogFiles: () => Promise<string[]>
+  exportLogs: () => Promise<{ success: boolean; path?: string; sourceDir?: string; error?: string }>
   getLogs: (lines?: number, fileName?: string) => Promise<string>
-  clearLogs: (fileName?: string) => Promise<void>
-  cleanOldLogs: (daysToKeep?: number) => Promise<void>
 
-  // 日志写入
-  logWrite: (level: string, module: string, message: string) => Promise<void>
-
-  // 日志解析
-  parseBackendLog: (logLine: string) => Promise<any>
-  processLogColors: (logContent: string, enableColorHighlight: boolean) => Promise<string>
+  // 获取模块化日志器（使用主进程配置）
+  getLogger: (moduleName: string) => {
+    debug: (...args: any[]) => Promise<void>
+    info: (...args: any[]) => Promise<void>
+    warn: (...args: any[]) => Promise<void>
+    error: (...args: any[]) => Promise<void>
+  }
 
   // 保留原有方法以兼容现有代码
   saveLogsToFile: (logs: string) => Promise<void>
@@ -97,6 +95,7 @@ export interface ElectronAPI {
   // 文件系统操作
   openFile: (filePath: string) => Promise<void>
   showItemInFolder: (filePath: string) => Promise<void>
+  readFile: (filePath: string) => Promise<string>
 
   // 主题信息获取
   getThemeInfo: () => Promise<{

@@ -92,14 +92,8 @@
 
                         <!-- 用户详细信息 - MAA脚本用户 -->
                         <div v-if="script.type === 'MAA'" class="user-info-tags">
-                          <!-- 剿灭模式 -->
-                          <a-tag v-if="
-                            user.Info.Annihilation &&
-                            user.Info.Annihilation !== '-' &&
-                            user.Info.Annihilation !== ''
-                          " class="info-tag"
-                            :color="getAnnihilationTagColor(user.Info.Annihilation, user.Data?.LastAnnihilationDate)">
-                            剿灭：{{ getAnnihilationDisplayText(user.Info.Annihilation, user.Data?.LastAnnihilationDate) }}
+                          <a-tag v-if="user.Data?.IfPassCheck === false" class="info-tag" color="red">
+                            人工排查未通过
                           </a-tag>
 
                           <!-- 日常代理 -->
@@ -125,8 +119,8 @@
                             user.Info.InfrastMode &&
                             user.Info.InfrastMode !== '-' &&
                             user.Info.InfrastMode !== ''
-                          " class="info-tag" :color="user.Task.IfBase ? 'purple' : 'red'">
-                            基建: {{ user.Task.IfBase ? getInfrastDisplayText(user) : '关闭' }}
+                          " class="info-tag" :color="user.Task.IfInfrast ? 'purple' : 'red'">
+                            基建: {{ user.Task.IfInfrast ? getInfrastDisplayText(user) : '关闭' }}
                           </a-tag>
 
                           <!-- 关卡信息 - 根据是否使用计划表配置显示不同内容 -->
@@ -537,29 +531,6 @@ const getInfrastDisplayText = (user: User): string => {
 
   // 非自定义模式，返回标准显示名称
   return getInfrastModeDisplayName(mode)
-}
-
-// 检查是否完成了本周剿灭
-const isAnnihilationCompletedThisWeek = (lastAnnihilationDate: string): boolean => {
-  if (!lastAnnihilationDate) return false
-
-  // 使用东4区时区获取本周一的Date对象
-  const mondayDate = getWeekStartInTimezone(4)
-
-  // 检查最后剿灭日期是否 >= 本周一（基于Date对象比较）
-  return isDateInRange(lastAnnihilationDate, mondayDate, new Date(), 4)
-}
-
-// 获取剿灭标签颜色
-const getAnnihilationTagColor = (annihilation: string, lastAnnihilationDate?: string): string => {
-  if (annihilation === 'Close') return 'red'
-  return isAnnihilationCompletedThisWeek(lastAnnihilationDate || '') ? 'green' : 'orange'
-}
-
-// 获取剿灭显示文本
-const getAnnihilationDisplayText = (annihilation: string, lastAnnihilationDate?: string): string => {
-  if (annihilation === 'Close') return '关闭'
-  return isAnnihilationCompletedThisWeek(lastAnnihilationDate || '') ? '已完成' : '未完成'
 }
 
 // 检查是否完成了今日日常代理

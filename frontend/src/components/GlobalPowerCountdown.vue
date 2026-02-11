@@ -1,17 +1,7 @@
 <template>
   <!-- 电源操作倒计时弹窗 - 使用 Ant Design Vue Modal -->
-  <a-modal
-    v-model:open="visible"
-    :title="null"
-    :footer="null"
-    :closable="false"
-    :keyboard="false"
-    :mask-closable="false"
-    :mask="{ blur: true }"
-    :width="480"
-    centered
-    wrap-class-name="power-countdown-modal"
-  >
+  <a-modal v-model:open="visible" :title="null" :footer="null" :closable="false" :keyboard="false"
+    :mask-closable="false" :mask="{ blur: true }" :width="480" centered wrap-class-name="power-countdown-modal">
     <div class="countdown-content">
       <div class="warning-icon">⚠️</div>
       <h2 class="countdown-title">{{ title }}</h2>
@@ -23,14 +13,9 @@
       <div v-else class="countdown-timer">
         <span class="countdown-text">等待后端倒计时...</span>
       </div>
-      <a-progress
-        v-if="countdown !== undefined"
-        :percent="Math.max(0, Math.min(100, ((60 - countdown) / 60) * 100))"
-        :show-info="false"
-        :stroke-color="(countdown || 0) <= 10 ? '#ff4d4f' : '#1890ff'"
-        :stroke-width="8"
-        class="countdown-progress"
-      />
+      <a-progress v-if="countdown !== undefined" :percent="Math.max(0, Math.min(100, ((60 - countdown) / 60) * 100))"
+        :show-info="false" :stroke-color="(countdown || 0) <= 10 ? '#ff4d4f' : '#1890ff'" :stroke-width="8"
+        class="countdown-progress" />
       <div class="countdown-actions">
         <a-button type="primary" size="large" class="cancel-button" @click="handleCancel">
           取消操作
@@ -44,9 +29,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { Service } from '@/api'
 import { subscribe, unsubscribe } from '@/composables/useWebSocket'
-import { getLogger } from '@/utils/logger'
-
-const powerCountdownLogger = getLogger('全局电源倒计时')
+const logger = window.electronAPI.getLogger('全局电源倒计时')
 
 // 响应式状态
 const visible = ref(false)
@@ -64,16 +47,17 @@ const focusWindow = async () => {
   try {
     if (window.electronAPI?.windowFocus) {
       await window.electronAPI.windowFocus()
-      powerCountdownLogger.info('[GlobalPowerCountdown] 窗口已激活到前台')
+      logger.info('窗口已激活到前台')
     }
   } catch (error) {
-    powerCountdownLogger.warn('[GlobalPowerCountdown] 激活窗口失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`激活窗口失败: ${errorMsg}`)
   }
 }
 
 // 启动倒计时
 const startCountdown = (data: any) => {
-  powerCountdownLogger.info('[GlobalPowerCountdown] 启动倒计时:', data)
+  logger.info(`启动倒计时: ${JSON.stringify(data)}`)
 
   // 清除之前的计时器
   if (countdownTimer) {
@@ -96,7 +80,7 @@ const startCountdown = (data: any) => {
   countdownTimer = setInterval(() => {
     if (countdown.value !== undefined && countdown.value > 0) {
       countdown.value--
-      powerCountdownLogger.debug('[GlobalPowerCountdown] 倒计时:', countdown.value)
+      logger.debug(`倒计时: ${countdown.value}`)
 
       // 倒计时结束
       if (countdown.value <= 0) {
@@ -105,7 +89,7 @@ const startCountdown = (data: any) => {
           countdownTimer = null
         }
         visible.value = false
-        powerCountdownLogger.info('[GlobalPowerCountdown] 倒计时结束，弹窗关闭')
+        logger.info('倒计时结束，弹窗关闭')
       }
     }
   }, 1000)
@@ -113,7 +97,7 @@ const startCountdown = (data: any) => {
 
 // 取消电源操作
 const handleCancel = async () => {
-  powerCountdownLogger.info('[GlobalPowerCountdown] 用户取消电源操作')
+  logger.info('用户取消电源操作')
 
   // 清除倒计时器
   if (countdownTimer) {
@@ -127,9 +111,14 @@ const handleCancel = async () => {
   // 调用取消电源操作的API
   try {
     await Service.cancelPowerTaskApiDispatchCancelPowerPost()
-    powerCountdownLogger.info('[GlobalPowerCountdown] 电源操作已取消')
+    logger.info('电源操作已取消')
+
+    // 触发全局事件，通知调度中心刷新电源状态
+    window.dispatchEvent(new CustomEvent('power-state-changed'))
+    logger.info('已发送电源状态变更事件')
   } catch (error) {
-    powerCountdownLogger.error('[GlobalPowerCountdown] 取消电源操作失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`取消电源操作失败: ${errorMsg}`)
   }
 }
 
@@ -154,17 +143,17 @@ onMounted(() => {
     const { type, data } = msg
 
     if (type === 'Message' && data && data.type === 'Countdown') {
-      powerCountdownLogger.info('[GlobalPowerCountdown] 收到倒计时消息:', data)
+      logger.info(`收到倒计时消息: ${JSON.stringify(data)}`)
       startCountdown(data)
     }
   })
 
-  powerCountdownLogger.info('[GlobalPowerCountdown] 全局电源倒计时组件已挂载, subscriptionId:', subscriptionId)
+  logger.info(`全局电源倒计时组件已挂载, subscriptionId: ${subscriptionId}`)
 })
 
 onUnmounted(() => {
   cleanup()
-  powerCountdownLogger.info('[GlobalPowerCountdown] 全局电源倒计时组件已卸载')
+  logger.info('全局电源倒计时组件已卸载')
 })
 </script>
 
@@ -253,10 +242,12 @@ onUnmounted(() => {
 
 /* 动画效果 */
 @keyframes pulse {
+
   0%,
   100% {
     transform: scale(1);
   }
+
   50% {
     transform: scale(1.1);
   }

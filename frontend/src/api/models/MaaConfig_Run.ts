@@ -24,8 +24,8 @@ export type MaaConfig_Run = {
      */
     RoutineTimeLimit?: (number | null);
     /**
-     * 剿灭每周仅代理至上限
+     * 剿灭避免无代理卡浪费理智
      */
-    AnnihilationWeeklyLimit?: (boolean | null);
+    AnnihilationAvoidWaste?: (boolean | null);
 };
 

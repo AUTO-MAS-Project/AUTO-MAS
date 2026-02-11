@@ -2,10 +2,9 @@ import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { Service } from '@/api'
 import type { UserInBase, UserCreateOut, UserUpdateIn, UserDeleteIn, UserGetIn, UserReorderIn } from '@/api'
-import { getLogger } from '@/utils/logger'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
-const logger = getLogger('用户API')
+const logger = window.electronAPI.getLogger('用户API')
 
 export function useUserApi() {
   const loading = ref(false)
@@ -60,11 +59,11 @@ export function useUserApi() {
 
       logger.debug('发送更新用户请求')
       const response = await Service.updateUserApiScriptsUserUpdatePost(requestData)
-      logger.debug('更新用户响应:', response)
+      logger.debug(`更新用户响应: ${JSON.stringify(response)}`)
 
       if (response.code !== 200) {
         const errorMsg = response.message || '更新用户失败'
-        logger.error('更新用户失败:', errorMsg)
+        logger.error(`更新用户失败: ${errorMsg}`)
         message.error(errorMsg)
         throw new Error(errorMsg)
       }
