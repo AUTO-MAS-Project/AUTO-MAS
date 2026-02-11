@@ -420,7 +420,6 @@ const getDefaultMAAUserData = () => ({
   },
   Data: {
     IfPassCheck: false,
-    LastAnnihilationDate: '',
     LastProxyDate: '',
     LastSklandDate: '',
     ProxyTimes: 0,

@@ -16,7 +16,7 @@ export interface MAAScriptConfig {
     RunTimesLimit: number
     AnnihilationTimeLimit: number
     RoutineTimeLimit: number
-    AnnihilationWeeklyLimit: boolean
+    AnnihilationAvoidWaste: boolean
   }
   Emulator: {
     Id: string
@@ -92,7 +92,6 @@ export interface User {
   name: string
   Data: {
     IfPassCheck: boolean
-    LastAnnihilationDate: string
     LastProxyDate: string
     LastSklandDate: string
     ProxyTimes: number

@@ -155,7 +155,6 @@ export function useScriptApi() {
               CustomWebhooks: any
             }
             Data: {
-              LastAnnihilationDate: any
               LastProxyDate: any
               LastSklandDate: any
               IfPassCheck: any
@@ -359,10 +358,6 @@ export function useScriptApi() {
                             : [],
                       },
                       Data: {
-                        LastAnnihilationDate:
-                          maaUserData.Data?.LastAnnihilationDate !== undefined
-                            ? maaUserData.Data.LastAnnihilationDate
-                            : '',
                         LastProxyDate:
                           maaUserData.Data?.LastProxyDate !== undefined
                             ? maaUserData.Data.LastProxyDate

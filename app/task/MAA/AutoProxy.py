@@ -121,7 +121,6 @@ class AutoProxyTask(TaskExecuteBase):
         self.run_book = {
             "Annihilation": self.cur_user_config.get("Info", "Annihilation") == "Close",
             "Routine": False,
-            "IfAnnihilationAccomplish": False,
         }
 
     async def main_task(self):
@@ -203,22 +202,6 @@ class AutoProxyTask(TaskExecuteBase):
         # 执行剿灭 + 日常
         for self.mode in ["Annihilation", "Routine"]:
             if self.run_book[self.mode]:
-                continue
-            if (
-                self.mode == "Annihilation"
-                and self.script_config.get("Run", "AnnihilationWeeklyLimit")
-                and datetime.strptime(
-                    self.cur_user_config.get("Data", "LastAnnihilationDate"),
-                    "%Y-%m-%d",
-                )
-                .replace(tzinfo=UTC4)
-                .isocalendar()[:2]
-                == datetime.strptime(self.curdate, "%Y-%m-%d").isocalendar()[:2]
-            ):
-                logger.info(
-                    f"用户: {self.cur_user_uid} - 本周剿灭模式已达上限, 跳过执行剿灭任务"
-                )
-                self.run_book[self.mode] = True
                 continue
 
             self.cur_user_item.status = f"运行 - {MAA_RUN_MOOD_BOOK[self.mode]}"
@@ -464,6 +447,9 @@ class AutoProxyTask(TaskExecuteBase):
                 plan_data.get("MedicineNumb", 0) != 0
             )
             task_set["Fight"]["MedicineCount"] = plan_data.get("MedicineNumb", 0)
+            if self.script_config.get("Run", "AnnihilationAvoidWaste"):
+                task_set["Fight"]["EnableTimesLimit"] = True
+                task_set["Fight"]["TimesLimit"] = 1
             task_set["Fight"]["AnnihilationStage"] = self.cur_user_config.get(
                 "Info", "Annihilation"
             )
@@ -582,9 +568,6 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_log.content = log_content
         self.script_info.log = log
 
-        if self.mode == "Annihilation" and "任务出错: 理智作战" in log:
-            self.run_book["IfAnnihilationAccomplish"] = True
-
         if "未选择任务" in log:
             self.cur_user_log.status = "MAA 未选择任何任务"
         elif "任务出错: StartUp" in log or "任务出错: 开始唤醒" in log:
@@ -595,8 +578,6 @@ class AutoProxyTask(TaskExecuteBase):
 
                 if f"完成任务: {en_task}" in log or f"完成任务: {zh_task}" in log:
                     self.task_dict[en_task] = False
-                if self.mode == "Annihilation" and "任务出错: 理智作战" in log:
-                    self.task_dict["Fight"] = False
 
             if any(self.task_dict.values()):
                 self.cur_user_log.status = "MAA 部分任务执行失败"
@@ -657,9 +638,6 @@ class AutoProxyTask(TaskExecuteBase):
 
             if await Config.save_maa_log(log_path, log_item.content, log_item.status):
                 if_six_star = True
-
-        if self.run_book["IfAnnihilationAccomplish"]:
-            await self.cur_user_config.set("Data", "LastAnnihilationDate", self.curdate)
 
         statistics = await Config.merge_statistic_info(user_logs_list)
         statistics["user_info"] = self.cur_user_item.name
