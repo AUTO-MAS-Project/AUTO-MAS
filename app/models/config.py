@@ -19,7 +19,6 @@
 #   Contact: DLmaster_361@163.com
 
 
-import re
 import uuid
 import json
 import calendar
@@ -34,6 +33,7 @@ from .ConfigBase import (
     MultipleUIDValidator,
     BoolValidator,
     OptionsValidator,
+    MultipleOptionsValidator,
     RangeValidator,
     VirtualConfigValidator,
     FileValidator,
@@ -137,8 +137,15 @@ class TimeSet(ConfigBase):
 
         ## Info ------------------------------------------------------------
         ## 是否启用
-        self.Info_Enabled = ConfigItem("Info", "Enabled", False, BoolValidator())
-        ## 时间点
+        self.Info_Enabled = ConfigItem("Info", "Enabled", True, BoolValidator())
+        ## 执行周期
+        self.Info_Days = ConfigItem(
+            "Info",
+            "Days",
+            list(calendar.day_name),
+            MultipleOptionsValidator(list(calendar.day_name)),
+        )
+        ## 执行时间
         self.Info_Time = ConfigItem("Info", "Time", "00:00", DateTimeValidator("%H:%M"))
 
 
@@ -167,11 +174,12 @@ class QueueConfig(ConfigBase):
             OptionsValidator(
                 [
                     "NoAction",
-                    "KillSelf",
-                    "Sleep",
-                    "Hibernate",
                     "Shutdown",
                     "ShutdownForce",
+                    "Reboot",
+                    "Hibernate",
+                    "Sleep",
+                    "KillSelf",
                 ]
             ),
         )
@@ -295,10 +303,6 @@ class MaaUserConfig(ConfigBase):
         self.Data_LastProxyDate = ConfigItem(
             "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
         )
-        ## 上次剿灭日期
-        self.Data_LastAnnihilationDate = ConfigItem(
-            "Data", "LastAnnihilationDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
-        )
         ## 上次森空岛签到日期
         self.Data_LastSklandDate = ConfigItem(
             "Data", "LastSklandDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
@@ -315,23 +319,21 @@ class MaaUserConfig(ConfigBase):
         )
 
         ## Task ------------------------------------------------------------
-        ## 是否 自动唤醒
-        self.Task_IfWakeUp = ConfigItem("Task", "IfWakeUp", True, BoolValidator())
-        ## 是否公招
-        self.Task_IfRecruiting = ConfigItem(
-            "Task", "IfRecruiting", True, BoolValidator()
-        )
-        ## 是否基建
-        self.Task_IfBase = ConfigItem("Task", "IfBase", True, BoolValidator())
-        ## 是否刷图
-        self.Task_IfCombat = ConfigItem("Task", "IfCombat", True, BoolValidator())
-        ## 是否商店
+        ## 是否自动唤醒
+        self.Task_IfStartUp = ConfigItem("Task", "IfStartUp", True, BoolValidator())
+        ## 是否理智作战
+        self.Task_IfFight = ConfigItem("Task", "IfFight", True, BoolValidator())
+        ## 是否基建换班
+        self.Task_IfInfrast = ConfigItem("Task", "IfInfrast", True, BoolValidator())
+        ## 是否公开招募
+        self.Task_IfRecruit = ConfigItem("Task", "IfRecruit", True, BoolValidator())
+        ## 是否信用收支
         self.Task_IfMall = ConfigItem("Task", "IfMall", True, BoolValidator())
-        ## 是否任务
-        self.Task_IfMission = ConfigItem("Task", "IfMission", True, BoolValidator())
+        ## 是否领取奖励
+        self.Task_IfAward = ConfigItem("Task", "IfAward", True, BoolValidator())
         ## 是否自动肉鸽
-        self.Task_IfAutoRoguelike = ConfigItem(
-            "Task", "IfAutoRoguelike", False, BoolValidator()
+        self.Task_IfRoguelike = ConfigItem(
+            "Task", "IfRoguelike", False, BoolValidator()
         )
         ## 是否生息演算
         self.Task_IfReclamation = ConfigItem(
@@ -455,9 +457,9 @@ class MaaConfig(ConfigBase):
         self.Run_RoutineTimeLimit = ConfigItem(
             "Run", "RoutineTimeLimit", 10, RangeValidator(1, 9999)
         )
-        ## 是否限制剿灭每周一次
-        self.Run_AnnihilationWeeklyLimit = ConfigItem(
-            "Run", "AnnihilationWeeklyLimit", True, BoolValidator()
+        ## 剿灭避免无代理卡浪费理智
+        self.Run_AnnihilationAvoidWaste = ConfigItem(
+            "Run", "AnnihilationAvoidWaste", False, BoolValidator()
         )
 
         self.UserData = MultipleConfig([MaaUserConfig])
@@ -479,16 +481,7 @@ class MaaPlanConfig(ConfigBase):
 
         self.config_item_dict: dict[str, dict[str, ConfigItem]] = {}
 
-        for group in [
-            "ALL",
-            "Monday",
-            "Tuesday",
-            "Wednesday",
-            "Thursday",
-            "Friday",
-            "Saturday",
-            "Sunday",
-        ]:
+        for group in ["ALL", *calendar.day_name]:
             self.config_item_dict[group] = {}
 
             ## 理智药数量

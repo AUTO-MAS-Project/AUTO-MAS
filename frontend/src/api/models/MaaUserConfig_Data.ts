@@ -8,10 +8,6 @@ export type MaaUserConfig_Data = {
      */
     LastProxyDate?: (string | null);
     /**
-     * 上次剿灭日期
-     */
-    LastAnnihilationDate?: (string | null);
-    /**
      * 上次森空岛签到日期
      */
     LastSklandDate?: (string | null);

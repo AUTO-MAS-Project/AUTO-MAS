@@ -88,6 +88,25 @@ class OptionsValidator(ConfigValidator):
         return value if self.validate(value) else self.options[0]
 
 
+class MultipleOptionsValidator(ConfigValidator):
+    """多选选项验证器"""
+
+    def __init__(self, options: list):
+        if not options:
+            raise ValueError("可选项不能为空")
+
+        self.options = options
+
+    def validate(self, value: Any) -> bool:
+        if not isinstance(value, list):
+            return False
+
+        return all(item in self.options for item in value)
+
+    def correct(self, value: Any) -> Any:
+        return value if self.validate(value) else []
+
+
 class UUIDValidator(ConfigValidator):
     """UUID验证器"""
 

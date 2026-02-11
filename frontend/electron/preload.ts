@@ -64,19 +64,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('sync-backend-config', backendSettings),
 
   // 日志文件操作
-  getLogPath: () => ipcRenderer.invoke('log:getPath'),
-  getLogFiles: () => ipcRenderer.invoke('log:getFiles'),
+  exportLogs: () => ipcRenderer.invoke('log:export'),
   getLogs: (lines?: number, fileName?: string) => ipcRenderer.invoke('log:getContent', lines, fileName),
-  clearLogs: (fileName?: string) => ipcRenderer.invoke('log:clear', fileName),
-  cleanOldLogs: (daysToKeep?: number) => ipcRenderer.invoke('log:cleanOldLogs'),
-  exportLogs: () => ipcRenderer.invoke('export-logs'),
+  openLogWindow: () => ipcRenderer.invoke('log:openWindow'),
 
-  // 日志写入
-  logWrite: (level: string, module: string, message: string) => ipcRenderer.invoke('log:write', level, module, message),
-
-  // 日志解析
-  parseBackendLog: (logLine: string) => ipcRenderer.invoke('log:parseBackendLog', logLine),
-  processLogColors: (logContent: string, enableColorHighlight: boolean) => ipcRenderer.invoke('log:processLogColors', logContent, enableColorHighlight),
+  // 获取模块化日志器（使用 electron-log）
+  getLogger: (moduleName: string) => ({
+    debug: (...args: any[]) => ipcRenderer.invoke('log:write', 'debug', moduleName, ...args),
+    info: (...args: any[]) => ipcRenderer.invoke('log:write', 'info', moduleName, ...args),
+    warn: (...args: any[]) => ipcRenderer.invoke('log:write', 'warn', moduleName, ...args),
+    error: (...args: any[]) => ipcRenderer.invoke('log:write', 'error', moduleName, ...args),
+  }),
 
   // 日志管理服务
   logManagement: {
@@ -135,6 +133,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 文件系统操作
   openFile: (filePath: string) => ipcRenderer.invoke('open-file', filePath),
   showItemInFolder: (filePath: string) => ipcRenderer.invoke('show-item-in-folder', filePath),
+  readFile: (filePath: string) => ipcRenderer.invoke('read-file', filePath),
 
   // 主题信息获取
   getThemeInfo: () => ipcRenderer.invoke('get-theme-info'),

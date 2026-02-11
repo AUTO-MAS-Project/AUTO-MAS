@@ -1,8 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { useAppInitialization } from '@/composables/useAppInitialization'
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('路由管理')
+const logger = window.electronAPI.getLogger('路由管理')
 
 // 异步按需加载调度中心，避免弹窗窗口提前执行相关逻辑
 const SchedulerView = () => import('../views/scheduler/index.vue')
@@ -90,7 +88,10 @@ const routes = [
     path: '/scheduler',
     name: 'Scheduler',
     component: SchedulerView,
-    meta: { title: '调度中心' },
+    meta: {
+      title: '调度中心',
+      keepAlive: true // 启用 keep-alive，保持组件存活
+    },
   },
   {
     path: '/TestRouter',
@@ -126,7 +127,7 @@ const routes = [
     path: '/logs',
     name: 'Logs',
     component: () => import('../views/Logs.vue'),
-    meta: { title: '日志查看' },
+    meta: { title: '日志查看', skipGuard: true },
   },
 ]
 
@@ -136,7 +137,7 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to, from, next) => {
-  logger.info('路由守卫：', { to: to.path, from: from.path })
+  logger.info(`路由守卫：${JSON.stringify({ to: to.path, from: from.path })}`)
 
   // 声明跳过的路由：直接放行
   if ((to.meta as any)?.skipGuard) {
@@ -154,7 +155,7 @@ router.beforeEach(async (to, from, next) => {
   if (isDev) return next()
 
   const { isInitialized } = useAppInitialization()
-  logger.info('检查初始化状态：', isInitialized.value)
+  logger.info(`检查初始化状态：${JSON.stringify({ isInitialized: isInitialized.value })}`)
   if (!isInitialized.value) {
     needInitLanding = false
     next('/initialization')

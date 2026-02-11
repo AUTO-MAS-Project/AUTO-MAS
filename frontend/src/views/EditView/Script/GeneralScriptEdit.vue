@@ -318,37 +318,10 @@
           </a-row>
 
           <a-row :gutter="24">
-            <a-col :span="6">
-              <a-form-item name="logTimeStart" :rules="rules.logTimeStart">
-                <template #label>
-                  <a-tooltip title="脚本日志时间戳起始位置">
-                    <span class="form-label">
-                      日志时间戳起始位置
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-number v-model:value="formData.logTimeStart" :min="1" :max="9999" size="large"
-                  class="modern-number-input" style="width: 100%"
-                  @blur="handleChange('Script', 'LogTimeStart', formData.logTimeStart)" />
-              </a-form-item>
+            <a-col :span="12">
+              <LogTimestampSelector :form-data="formData" :log-file-path="formData.logPath"
+                :handle-change="handleChange" :rules="rules" />
             </a-col>
-            <a-col :span="6">
-              <a-form-item name="logTimeEnd" :rules="rules.logTimeEnd">
-                <template #label>
-                  <a-tooltip title="脚本日志时间戳结束位置">
-                    <span class="form-label">
-                      日志时间戳结束位置
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-number v-model:value="formData.logTimeEnd" :min="1" :max="9999" size="large"
-                  class="modern-number-input" style="width: 100%"
-                  @blur="handleChange('Script', 'LogTimeEnd', formData.logTimeEnd)" />
-              </a-form-item>
-            </a-col>
-
             <a-col :span="12">
               <a-form-item name="logTimeFormat" :rules="rules.logTimeFormat">
                 <template #label>
@@ -693,7 +666,6 @@ import type { MAAScriptConfig } from '../../../types/script.ts'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
-import { getLogger } from '@/utils/logger'
 import type { GeneralScriptConfig, ScriptType } from '../../../types/script.ts'
 import { useScriptApi } from '../../../composables/useScriptApi.ts'
 import { Service, type ComboBoxItem } from '../../../api'
@@ -705,12 +677,13 @@ import {
   FolderOpenOutlined,
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
+import LogTimestampSelector from '@/components/LogTimestampSelector.vue'
 
-const logger = getLogger('通用脚本编辑')
+const logger = window.electronAPI.getLogger('通用脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript, loading } = useScriptApi()
+const { getScript, updateScript } = useScriptApi()
 
 const formRef = ref<FormInstance>()
 const uploadFormRef = ref<FormInstance>()
@@ -1139,7 +1112,8 @@ const setupConfigPathModeWatcher = () => {
               await refreshScript()
             }
           } catch (error) {
-            logger.error('保存配置路径失败:', error)
+            const errorMsg = error instanceof Error ? error.message : String(error)
+            logger.error(`保存配置路径失败: ${errorMsg}`)
           } finally {
             isSaving.value = false
           }
@@ -1165,7 +1139,8 @@ const handleChange = async (category: string, key: string, value: any) => {
       await refreshScript()
     }
   } catch (error) {
-    logger.error('保存失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存失败: ${errorMsg}`)
   } finally {
     isSaving.value = false
   }
@@ -1180,7 +1155,8 @@ const refreshScript = async () => {
       formData.name = scriptDetail.name
     }
   } catch (error) {
-    logger.error('刷新配置失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`刷新配置失败: ${errorMsg}`)
   }
 }
 
@@ -1211,7 +1187,8 @@ onMounted(async () => {
     try {
       appDataPath.value = await window.electronAPI.getAppPath('appData')
     } catch (error) {
-      logger.error('获取 AppData 路径失败:', error)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`获取 AppData 路径失败: ${errorMsg}`)
     }
   }
 
@@ -1269,7 +1246,8 @@ const loadScript = async () => {
       }
     }
   } catch (error) {
-    logger.error('加载脚本失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载脚本失败: ${errorMsg}`)
     message.error('加载脚本失败')
     router.push('/scripts')
   } finally {
@@ -1295,7 +1273,8 @@ const loadEmulatorOptions = async () => {
       message.error('加载模拟器选项失败')
     }
   } catch (error) {
-    logger.error('加载模拟器选项失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载模拟器选项失败: ${errorMsg}`)
     message.error('加载模拟器选项失败')
   } finally {
     emulatorLoading.value = false
@@ -1316,7 +1295,8 @@ const loadEmulatorDeviceOptions = async (emulatorId: string) => {
       message.error('加载模拟器实例选项失败')
     }
   } catch (error) {
-    logger.error('加载模拟器实例选项失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载模拟器实例选项失败: ${errorMsg}`)
     message.error('加载模拟器实例选项失败')
   } finally {
     emulatorDeviceLoading.value = false
@@ -1343,7 +1323,8 @@ const handleEmulatorChange = async (emulatorId: string) => {
       await refreshScript()
     }
   } catch (error) {
-    logger.error('保存模拟器配置失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存模拟器配置失败: ${errorMsg}`)
   } finally {
     isSaving.value = false
   }
@@ -1420,7 +1401,8 @@ const handleGameTypeChange = async (gameType: string) => {
       await refreshScript()
     }
   } catch (error) {
-    logger.error('保存游戏配置失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存游戏配置失败: ${errorMsg}`)
   } finally {
     isSaving.value = false
   }
@@ -1481,7 +1463,8 @@ const selectRootPath = async () => {
             await refreshScript()
           }
         } catch (error) {
-          logger.error('保存路径失败:', error)
+          const errorMsg = error instanceof Error ? error.message : String(error)
+          logger.error(`保存路径失败: ${errorMsg}`)
         } finally {
           isSaving.value = false
         }
@@ -1493,7 +1476,8 @@ const selectRootPath = async () => {
       }
     }
   } catch (error) {
-    logger.error('选择根路径失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`选择根路径失败: ${errorMsg}`)
     message.error('选择文件夹失败')
   }
 }
@@ -1516,7 +1500,8 @@ const selectGamePath = async () => {
       message.success('游戏路径选择成功')
     }
   } catch (error) {
-    logger.error('选择游戏路径失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`选择游戏路径失败: ${errorMsg}`)
     message.error('选择文件失败')
   }
 }
@@ -1546,7 +1531,8 @@ const selectScriptPath = async () => {
       }
     }
   } catch (error) {
-    logger.error('选择脚本路径失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`选择脚本路径失败: ${errorMsg}`)
     message.error('选择文件失败')
   }
 }
@@ -1574,7 +1560,8 @@ const selectTrackProcessExe = async () => {
       }
     }
   } catch (error) {
-    logger.error('选择被追踪进程可执行文件失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`选择被追踪进程可执行文件失败: ${errorMsg}`)
     message.error('选择文件失败')
   }
 }
@@ -1620,7 +1607,8 @@ const selectConfigPath = async () => {
       }
     }
   } catch (error) {
-    logger.error('选择配置路径失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`选择配置路径失败: ${errorMsg}`)
     const typeText = generalConfig.Script.ConfigPathMode === 'Folder' ? '文件夹' : '文件'
     message.error(`选择${typeText}失败`)
   }
@@ -1648,7 +1636,8 @@ const selectLogPath = async () => {
       }
     }
   } catch (error) {
-    logger.error('选择日志路径失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`选择日志路径失败: ${errorMsg}`)
     message.error('选择文件失败')
   }
 }
@@ -1706,7 +1695,8 @@ const handleUpload = async () => {
     uploadForm.author = ''
     uploadForm.description = ''
   } catch (error) {
-    logger.error('上传失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`上传失败: ${errorMsg}`)
     message.error('上传失败，请检查网络连接或稍后重试')
   } finally {
     uploadLoading.value = false

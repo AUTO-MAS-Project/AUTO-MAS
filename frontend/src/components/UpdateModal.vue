@@ -1,21 +1,10 @@
 <template>
-  <a-modal
-    v-model:open="visible"
-    :title="`发现新版本 ${latestVersion || ''}`"
-    :width="800"
-    :footer="null"
-    :mask-closable="false"
-    :z-index="9999"
-    class="update-modal"
-  >
+  <a-modal v-model:open="visible" :title="`发现新版本 ${latestVersion || ''}`" :width="800" :footer="null"
+    :mask-closable="false" :z-index="9999" class="update-modal">
     <div class="update-container">
       <!-- 更新内容展示 -->
       <div class="update-content">
-        <div
-          ref="markdownContentRef"
-          class="markdown-content"
-          v-html="renderMarkdown(updateContent)"
-        ></div>
+        <div ref="markdownContentRef" class="markdown-content" v-html="renderMarkdown(updateContent)"></div>
       </div>
 
       <!-- 操作按钮 -->
@@ -29,23 +18,16 @@
   </a-modal>
 
   <!-- 独立的下载窗口 -->
-  <UpdateDownloadModal
-    v-model:visible="showDownloadModal"
-    :latest-version="latestVersion"
-    :update-data="updateData"
-    @completed="handleDownloadCompleted"
-    @cancelled="handleDownloadCancelled"
-    @install-requested="handleInstallRequested"
-  />
+  <UpdateDownloadModal v-model:visible="showDownloadModal" :latest-version="latestVersion" :update-data="updateData"
+    @completed="handleDownloadCompleted" @cancelled="handleDownloadCancelled"
+    @install-requested="handleInstallRequested" />
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import MarkdownIt from 'markdown-it'
 import UpdateDownloadModal from './UpdateDownloadModal.vue'
-import { getLogger } from '@/utils/logger'
-
-const logger = getLogger('更新模态框')
+const logger = window.electronAPI.getLogger('更新模态框')
 
 // Props 定义
 interface Props {
@@ -135,16 +117,16 @@ if (props.updateData && Object.keys(props.updateData).length > 0) {
 
 // 处理下载按钮点击
 const handleDownload = () => {
-  logger.info('[UpdateModal] 点击下载按钮')
-  logger.info('[UpdateModal] 当前props:', {
+  logger.info('点击下载按钮')
+  logger.info(`当前props: ${JSON.stringify({
     updateData: props.updateData,
     latestVersion: props.latestVersion,
     visible: props.visible,
-  })
+  })}`)
   // 关闭当前窗口，显示下载窗口
   visible.value = false
   showDownloadModal.value = true
-  logger.info('[UpdateModal] 设置showDownloadModal为true:', showDownloadModal.value)
+  logger.info(`设置showDownloadModal为true: ${showDownloadModal.value}`)
 }
 
 // 关闭弹窗
@@ -188,32 +170,39 @@ const handleInstallRequested = () => {
   overflow-y: auto;
   padding-right: 12px;
 }
+
 /* Firefox：细滚动条 & 低对比 */
 :deep(.update-content) {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.14) transparent; /* 拇指颜色 / 轨道颜色 */
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+  /* 拇指颜色 / 轨道颜色 */
 }
 
 /* WebKit（Chrome/Edge）：细、半透明、悬停时稍亮 */
 :deep(.update-content::-webkit-scrollbar) {
-  width: 8px; /* 滚动条更细 */
+  width: 8px;
+  /* 滚动条更细 */
 }
 
 :deep(.update-content::-webkit-scrollbar-track) {
-  background: transparent; /* 轨道透明，不显眼 */
+  background: transparent;
+  /* 轨道透明，不显眼 */
 }
 
 :deep(.update-content::-webkit-scrollbar-thumb) {
-  background: rgba(255, 255, 255, 0.12); /* 深色模式下更淡 */
+  background: rgba(255, 255, 255, 0.12);
+  /* 深色模式下更淡 */
   border-radius: 8px;
   border: 2px solid transparent;
-  background-clip: padding-box; /* 让边缘更柔和 */
+  background-clip: padding-box;
+  /* 让边缘更柔和 */
 }
 
 /* 悬停时略微提升对比度，便于发现 */
 :deep(.update-content:hover::-webkit-scrollbar-thumb) {
   background: rgba(255, 255, 255, 0.22);
 }
+
 .markdown-content {
   line-height: 1.6;
   color: var(--ant-color-text);
