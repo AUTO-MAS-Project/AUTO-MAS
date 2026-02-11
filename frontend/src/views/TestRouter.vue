@@ -1,26 +1,26 @@
 <template>
   <div class="test-container">
-    <h2>�Ի������ҳ��</h2>
+    <h2>测试路由页面</h2>
 
     <div class="test-section">
-      <h3>����Ӧ���ڵ���</h3>
-      <p>�������İ�ť���Բ�ͬ���͵ĶԻ���</p>
+      <h3>应用对话框</h3>
+      <p>点击按钮触发不同类型的对话框</p>
 
       <div class="button-group">
-        <Button type="primary" @click="testBasicDialog">�����Ի���</Button>
-        <Button type="primary" @click="testCustomDialog">�Զ���ѡ��</Button>
-        <Button type="primary" @click="testLongMessage">����Ϣ����</Button>
+        <Button type="primary" @click="testBasicDialog">基本确认</Button>
+        <Button type="primary" @click="testCustomDialog">自定义选项</Button>
+        <Button type="primary" @click="testLongMessage">长信息对话框</Button>
       </div>
 
       <div v-if="lastResult !== null" class="result">
-        <h4>�ϴ�ѡ������</h4>
+        <h4>上次选择结果</h4>
         <p :class="lastResult ? 'success' : 'cancel'">
-          {{ lastResult ? ' ȷ��' : ' ȡ��' }}
+          {{ lastResult ? '确认' : '取消' }}
         </p>
       </div>
     </div>
 
-    <!-- Ӧ���ڵ��� -->
+    <!-- 应用对话框 -->
     <Modal v-model:open="isModalOpen" :title="modalTitle" :closable="false" :maskClosable="false" :keyboard="true"
       centered>
       <p class="modal-message">{{ modalMessage }}</p>
@@ -80,47 +80,49 @@ const handleChoice = (choice: boolean) => {
 const testBasicDialog = async () => {
   try {
     const result = await showModal({
-      title: '����ȷ��',
-      message: '����һ��������ȷ�϶Ի���',
-      buttonOptions: ['ȷ��', 'ȡ��'],
+      title: '基本确认',
+      message: '这是一个基本的确认对话框',
+      buttonOptions: ['确认', '取消'],
     })
     lastResult.value = result
-    logger.info('�����Ի�����:', result)
+    logger.info(`基本确认对话框结果: ${result}`)
   } catch (error) {
-    logger.error('��ʾ�Ի���ʧ��:', error)
+    logger.error(`显示基本确认对话框失败: ${error}`)
   }
 }
 
 const testCustomDialog = async () => {
   try {
     const result = await showModal({
-      title: '�Զ���ѡ��',
-      message: '�Ƿ�Ҫ������ģ�',
-      buttonOptions: ['����', '������'],
+      title: '自定义选项',
+      message: '是否要使用自定义模板',
+      buttonOptions: ['使用', '取消'],
     })
     lastResult.value = result
-    logger.info('�Զ���Ի�����:', result)
+    logger.info(`自定义选项对话框结果: ${result}`)
   } catch (error) {
-    logger.error('��ʾ�Ի���ʧ��:', error)
+    logger.error(`显示自定义选项对话框失败: ${error}`)
   }
 }
 
 const testLongMessage = async () => {
   try {
     const result = await showModal({
-      title: '����Ϣ����',
-      message: `����һ�������ϳ���Ϣ�ĶԻ�����ԡ�
+      title: '长信息对话框',
+      message: `这是一个长信息对话框，用于测试显示长文本内容的效果。
 
-��Ϣ���԰��������ı���
-������ʾ����ϸ����Ϣ��
+这是一个长信息对话框，用于测试显示长文本内容的效果。
 
-�Ƿ�Ҫ����ִ�д˲�����`,
-      buttonOptions: ['����', 'ȡ��'],
+信息内容可以包含多行文本
+并且可以显示详细的说明信息
+
+是否要继续执行此操作`,
+      buttonOptions: ['继续', '取消'],
     })
     lastResult.value = result
-    logger.info('����Ϣ�Ի�����:', result)
+    logger.info(`长信息对话框结果: ${result}`)
   } catch (error) {
-    logger.error('��ʾ�Ի���ʧ��:', error)
+    logger.error(`显示长信息对话框失败: ${error}`)
   }
 }
 </script>

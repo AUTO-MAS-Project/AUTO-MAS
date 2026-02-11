@@ -93,7 +93,8 @@ const confirmNotices = async () => {
       message.error(response.message || '确认公告失败')
     }
   } catch (error) {
-    logger.error('确认公告失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`确认公告失败: ${errorMsg}`)
     message.error('确认公告失败，请重试')
   } finally {
     confirming.value = false
@@ -112,7 +113,7 @@ const handleLinkClick = async (event: MouseEvent) => {
         if (window.electronAPI && window.electronAPI.openUrl) {
           const result = await window.electronAPI.openUrl(url)
           if (!result.success) {
-            logger.error('打开链接失败:', result.error)
+            logger.error(`打开链接失败: ${String(result.error)}`)
             message.error('打开链接失败，请手动复制链接地址')
           }
         } else {
@@ -120,7 +121,8 @@ const handleLinkClick = async (event: MouseEvent) => {
           window.open(url, '_blank')
         }
       } catch (error) {
-        logger.error('打开链接失败:', error)
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.error(`打开链接失败: ${errorMsg}`)
         message.error('打开链接失败，请手动复制链接地址')
       }
     }

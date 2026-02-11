@@ -217,7 +217,8 @@ export class MirrorService {
                 }
             }
         } catch (error) {
-            logger.warn('⚠️ 检查云端配置失败:', error)
+            const errorMsg = error instanceof Error ? error.message : String(error)
+            logger.warn(`检查云端配置失败: ${errorMsg}`)
             if (!localCache) {
                 logger.info('使用默认镜像源配置')
             }
@@ -303,7 +304,8 @@ export class MirrorService {
                                 etag: newEtag
                             })
                         } catch (error) {
-                            logger.error('解析云端配置失败:', error)
+                            const errorMsg = error instanceof Error ? error.message : String(error)
+                            logger.error(`解析云端配置失败: ${errorMsg}`)
                             resolve({ status: 'error' })
                         }
                     })
@@ -316,7 +318,8 @@ export class MirrorService {
             })
 
             req.on('error', (error) => {
-                logger.warn('云端配置请求失败:', error.message)
+                const errorMsg = error instanceof Error ? error.message : String(error)
+                logger.error(`云端配置请求错误: ${errorMsg}`)
                 resolve({ status: 'error' })
             })
 
@@ -347,7 +350,8 @@ export class MirrorService {
             fs.writeFileSync(this.localConfigPath, JSON.stringify(cache, null, 2), 'utf-8')
             logger.info('镜像源配置已保存到本地')
         } catch (error) {
-            logger.error('保存本地配置失败:', error)
+            const errorMsg = error instanceof Error ? error.message : String(error)
+            logger.error(`保存本地配置失败: ${errorMsg}`)
         }
     }
 
@@ -373,7 +377,8 @@ export class MirrorService {
 
             return parsed as LocalConfigCache
         } catch (error) {
-            logger.error('加载本地配置失败:', error)
+            const errorMsg = error instanceof Error ? error.message : String(error)
+            logger.error(`加载本地配置失败: ${errorMsg}`)
             return null
         }
     }

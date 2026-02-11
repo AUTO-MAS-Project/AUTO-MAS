@@ -103,12 +103,14 @@ export function handleTaskManagerMessage(wsMessage: any) {
             queueId: queueId
           })
         } catch (e) {
-          logger.warn('[SchedulerHandlers] onNewTab handler error:', e)
+          const errorMsg = e instanceof Error ? e.message : String(e)
+          logger.warn(`onNewTab handler error: ${errorMsg}`)
         }
       }
     }
   } catch (e) {
-    logger.warn('[SchedulerHandlers] handleTaskManagerMessage error:', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.warn(`handleTaskManagerMessage error: ${errorMsg}`)
   }
 }
 
@@ -127,7 +129,8 @@ export function handleMainMessage(wsMessage: any) {
         try {
           uiHooks.onCountdown(data)
         } catch (e) {
-          logger.warn('[SchedulerHandlers] onCountdown handler error:', e)
+          const errorMsg = e instanceof Error ? e.message : String(e)
+          logger.warn(`onCountdown handler error: ${errorMsg}`)
         }
       }
     } else if (type === 'Update' && data && data.PowerSign !== undefined) {
@@ -135,7 +138,8 @@ export function handleMainMessage(wsMessage: any) {
       savePowerAction(String(data.PowerSign))
     }
   } catch (e) {
-    logger.warn('[SchedulerHandlers] handleMainMessage error:', e)
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.warn(`handleMainMessage error: ${errorMsg}`)
   }
 }
 

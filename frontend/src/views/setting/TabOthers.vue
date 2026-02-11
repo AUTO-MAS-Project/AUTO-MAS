@@ -22,8 +22,9 @@ const copyAllInfo = async () => {
 
     await navigator.clipboard.writeText(copyText)
     message.success('版本信息已复制到剪贴板')
-  } catch (err) {
-    logger.error('复制失败:', err)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`复制失败: ${errorMsg}`)
     // 降级方案：创建临时input元素
     const textArea = document.createElement('textarea')
     textArea.value = [
@@ -36,8 +37,9 @@ const copyAllInfo = async () => {
     try {
       document.execCommand('copy')
       message.success('版本信息已复制到剪贴板')
-    } catch (fallbackErr) {
-      logger.error('降级复制也失败:', fallbackErr)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`降级复制也失败: ${errorMsg}`)
       message.error('复制失败')
     }
     document.body.removeChild(textArea)

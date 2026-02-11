@@ -35,10 +35,10 @@ onMounted(async () => {
   logger.info('App组件已挂载')
   initTheme()
   logger.info('主题初始化完成')
-  logger.info('初始化状态:', {
-    isInitializationPage: isInitializationPage.value,
-    isInitialized: isInitialized.value
-  })
+  logger.info(`初始化状态:
+    isInitializationPage: ${isInitializationPage.value},
+    isInitialized: ${isInitialized.value}
+  `)
 
   // 注意：版本检查服务已在 appEntry.ts 中统一启动，此处不再重复启动
 
@@ -47,9 +47,7 @@ onMounted(async () => {
     logger.info('准备播放欢迎音频')
     await playSound('welcome_back')
   } else {
-    logger.info('跳过欢迎音频播放', {
-      reason: isInitializationPage.value ? '当前是初始化页面' : '应用未初始化'
-    })
+    logger.info(`跳过欢迎音频播放, 原因: ${isInitializationPage.value ? '当前是初始化页面' : '应用未初始化'}`)
   }
 })
 </script>

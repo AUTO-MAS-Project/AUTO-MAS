@@ -96,7 +96,7 @@ export class DependencyService {
                 return { success: true, skipped: true }
             }
 
-            logger.info('依赖检查结果:', checkResult)
+            logger.info(`依赖检查结果: ${JSON.stringify(checkResult)}`)
 
             // 第二步：安装依赖
             // 不在这里发送 progress: 0，避免进度条跳回0
@@ -131,7 +131,7 @@ export class DependencyService {
             return { success: true }
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : String(error)
-            logger.error('依赖安装失败:', errorMsg)
+            logger.error(`依赖安装失败: ${errorMsg}`)
             return { success: false, error: errorMsg }
         }
     }
@@ -185,7 +185,7 @@ export class DependencyService {
             }
             return fs.readFileSync(this.hashFilePath, 'utf-8').trim()
         } catch (error) {
-            logger.warn('读取哈希文件失败:', error)
+            logger.warn(`读取哈希文件失败: ${error}`)
             return null
         }
     }
@@ -202,7 +202,7 @@ export class DependencyService {
             fs.writeFileSync(this.hashFilePath, hash, 'utf-8')
             logger.info('哈希值已保存')
         } catch (error) {
-            logger.warn('保存哈希文件失败:', error)
+            logger.warn(`保存哈希文件失败: ${error}`)
         }
     }
 
@@ -290,11 +290,11 @@ export class DependencyService {
             })
 
             proc.stdout?.on('data', (data) => {
-                logger.info('setuptools/wheel:', data.toString().trim())
+                logger.info(`setuptools/wheel: ${data.toString().trim()}`)
             })
 
             proc.stderr?.on('data', (data) => {
-                logger.info('setuptools/wheel error:', data.toString().trim())
+                logger.info(`setuptools/wheel error: ${data.toString().trim()}`)
             })
 
             proc.on('close', (code) => {
@@ -309,7 +309,7 @@ export class DependencyService {
             })
 
             proc.on('error', (error) => {
-                logger.warn('基础工具安装进程错误:', error)
+                logger.warn(`基础工具安装进程错误: ${error}`)
                 resolve()
             })
         })
@@ -377,7 +377,7 @@ export class DependencyService {
             proc.stdout?.on('data', (data) => {
                 const output = data.toString().trim()
                 stdoutData += output
-                logger.info('pip install:', output)
+                logger.info(`pip install: ${output}`)
 
                 // 解析pip输出，统计安装进度
                 // 匹配 "Collecting xxx" 来统计总包数
@@ -409,7 +409,7 @@ export class DependencyService {
             proc.stderr?.on('data', (data) => {
                 const output = data.toString().trim()
                 stderrData += output
-                logger.info('pip install error:', output)
+                logger.info(`pip install error: ${output}`)
             })
 
             proc.on('close', (code) => {

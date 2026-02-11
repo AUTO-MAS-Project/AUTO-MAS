@@ -165,7 +165,8 @@ async function startBackend() {
         throw new Error('后端服务未在运行状态')
       }
     } catch (error) {
-      logger.warn('后端连接验证失败，但继续执行:', error)
+      const errMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(`后端连接验证失败，但继续执行: ${errMsg}`)
     }
 
     progress.value = 100
@@ -186,7 +187,7 @@ async function startBackend() {
 
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error)
-    logger.error('后端启动失败:', errMsg)
+    logger.error(`后端启动失败: ${errMsg}`)
 
     status.value = 'failed'
     emit('update:status', 'failed')
@@ -211,7 +212,7 @@ onMounted(() => {
   const api = window.electronAPI as any
 
   api.onBackendStatus?.((status: any) => {
-    logger.debug('后端启动步骤', `收到后端状态: ${JSON.stringify(status)}`)
+    logger.debug(`收到后端状态: ${JSON.stringify(status)}`)
   })
 
   // 自动开始启动

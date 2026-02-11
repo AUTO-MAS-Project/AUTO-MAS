@@ -479,7 +479,8 @@ export function useScriptApi() {
               }
             }
           } catch (err) {
-            logger.warn(`获取脚本 ${script.uid} 的用户数据失败:`, err)
+            const errorMsg = err instanceof Error ? err.message : String(err)
+            logger.warn(`获取脚本 ${script.uid} 的用户数据失败: ${errorMsg}`)
             return {
               ...script,
               users: [],

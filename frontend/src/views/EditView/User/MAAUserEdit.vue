@@ -347,28 +347,22 @@ const getPlanCurrentConfig = (planData: any) => {
     const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
     const today = weekdays[todayWeekday]
 
-    logger.debug('计划表周模式调试:', {
-      东4区星期几: todayWeekday,
-      星期: today,
-      计划数据: JSON.parse(JSON.stringify(planData)),
-    })
+    logger.debug(`计划表周模式调试: 
+      东4区星期几: ${todayWeekday},
+      星期: ${today},
+      计划数据: ${JSON.stringify(planData)}`
+    )
 
     // 优先使用今天的配置，如果没有或为空则使用ALL配置
     const todayConfig = planData[today]
-    logger.debug('今日配置检查:', {
-      today,
-      todayConfig: JSON.parse(JSON.stringify(todayConfig)),
-      todayConfigType: typeof todayConfig,
-      isObject: todayConfig && typeof todayConfig === 'object',
-    })
 
     if (todayConfig && typeof todayConfig === 'object' && Object.keys(todayConfig).length > 0) {
-      logger.debug('使用今日配置:', JSON.parse(JSON.stringify(todayConfig)))
+      logger.debug(`使用今日配置: ${JSON.stringify(todayConfig)}`)
       return todayConfig
     }
 
     const allConfig = planData.ALL || null
-    logger.debug('使用ALL配置:', JSON.parse(JSON.stringify(allConfig)))
+    logger.debug(`使用ALL配置: ${JSON.stringify(allConfig)}`)
     return allConfig
   }
 
@@ -521,9 +515,10 @@ const handleFieldSave = async (key: string, value: any) => {
     await updateUser(scriptId, userId, userData)
     // 刷新数据
     await loadUserData()
-    logger.info('用户配置已保存:', key)
+    logger.info(`用户配置已保存: ${key}`)
   } catch (error) {
-    logger.error('保存失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存失败: ${errorMsg}`)
   } finally {
     isSaving.value = false
   }
@@ -549,7 +544,8 @@ const saveFullUserData = async () => {
     await updateUser(scriptId, userId, userData)
     logger.info('用户配置已保存')
   } catch (error) {
-    logger.error('保存失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存失败: ${errorMsg}`)
   } finally {
     isSaving.value = false
   }
@@ -576,7 +572,8 @@ const loadScriptInfo = async () => {
       handleCancel()
     }
   } catch (error) {
-    logger.error('加载脚本信息失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载脚本信息失败: ${errorMsg}`)
     message.error('加载脚本信息失败')
   }
 }
@@ -593,7 +590,7 @@ const createUserImmediately = async () => {
         name: route.name || undefined,
         params: { ...route.params, userId: result.userId },
       })
-      logger.info('用户已创建，ID:', result.userId)
+      logger.info(`用户已创建，ID: ${result.userId}`)
       // 加载新创建用户的数据
       await loadUserData()
     } else {
@@ -601,7 +598,8 @@ const createUserImmediately = async () => {
       handleCancel()
     }
   } catch (error) {
-    logger.error('创建用户失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`创建用户失败: ${errorMsg}`)
     message.error('创建用户失败')
     handleCancel()
   }
@@ -666,7 +664,8 @@ const loadUserData = async () => {
       handleCancel()
     }
   } catch (error) {
-    logger.error('加载用户数据失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载用户数据失败: ${errorMsg}`)
     message.error('加载用户数据失败')
   }
 }
@@ -683,7 +682,8 @@ const loadStageOptions = async () => {
       }))
     }
   } catch (error) {
-    logger.error('加载关卡选项失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载关卡选项失败: ${errorMsg}`)
   }
 }
 
@@ -694,7 +694,8 @@ const loadStageModeOptions = async () => {
       stageModeOptions.value = response.data
     }
   } catch (error) {
-    logger.error('加载关卡配置模式选项失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载关卡配置模式选项失败: ${errorMsg}`)
     // 保持默认的固定选项
   }
 }
@@ -739,7 +740,8 @@ const selectAndImportInfrastructureConfig = async () => {
       }
     }
   } catch (error) {
-    logger.error('基建配置导入失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`基建配置导入失败: ${errorMsg}`)
     message.error('基建配置导入失败')
   } finally {
     infrastructureImporting.value = false
@@ -764,7 +766,8 @@ const loadInfrastructureOptions = async () => {
       }))
     }
   } catch (error) {
-    logger.error('加载基建配置选项失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载基建配置选项失败: ${errorMsg}`)
   } finally {
     infrastructureOptionsLoading.value = false
   }
@@ -800,8 +803,7 @@ const handleMAAConfig = async () => {
       const subscriptionId = subscribe({ id: wsId }, (wsMessage: any) => {
         if (wsMessage.type === 'error') {
           logger.error(
-            `用户 ${formData.Info?.Name || formData.userName} MAA配置错误:`,
-            wsMessage.data
+            `用户 ${formData.Info?.Name || formData.userName} MAA配置错误:${wsMessage.data}`
           )
           message.error(`MAA配置连接失败: ${wsMessage.data}`)
           unsubscribe(subscriptionId)
@@ -818,8 +820,7 @@ const handleMAAConfig = async () => {
         // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
         if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
           logger.error(
-            `用户 ${formData.Info?.Name || formData.userName} MAA配置异常:`,
-            wsMessage.data.Error
+            `用户 ${formData.Info?.Name || formData.userName} MAA配置异常:${wsMessage.data.Error}`
           )
           message.error(`MAA配置失败: ${wsMessage.data.Error}`)
           // 不取消订阅，等待Signal类型的Accomplish消息
@@ -871,7 +872,8 @@ const handleMAAConfig = async () => {
       message.error(response?.message || '启动MAA配置失败')
     }
   } catch (error) {
-    logger.error('启动MAA配置失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`启动MAA配置失败: ${errorMsg}`)
     message.error('启动MAA配置失败')
   } finally {
     maaConfigLoading.value = false
@@ -903,7 +905,8 @@ const handleSaveMAAConfig = async () => {
       message.error(response.message || '保存配置失败')
     }
   } catch (error) {
-    logger.error('保存MAA配置失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存MAA配置失败: ${errorMsg}`)
     message.error('保存MAA配置失败')
   }
 }
@@ -1103,21 +1106,16 @@ onMounted(() => {
         planModeConfig.value = null
       } else if (newStageMode && newStageMode !== '') {
         // 切换到计划模式，加载计划配置
-        logger.debug('开始加载计划配置:', newStageMode)
+        logger.debug(`开始加载计划配置: ${newStageMode}`)
         try {
           const response = await getPlans(newStageMode)
-          logger.debug('getPlans响应:', {
-            response: response,
-            hasData: !!response?.data,
-            hasPlan: !!response?.data?.[newStageMode],
-          })
 
           if (response && response.code === 200 && response.data[newStageMode]) {
             const planData = response.data[newStageMode]
-            logger.debug('获取到计划数据:', JSON.parse(JSON.stringify(planData)))
+            logger.debug(`获取到计划数据: ${JSON.stringify(planData)}`)
 
             const currentConfig = getPlanCurrentConfig(planData)
-            logger.debug('getPlanCurrentConfig返回:', JSON.parse(JSON.stringify(currentConfig)))
+            logger.debug(`getPlanCurrentConfig返回: ${JSON.stringify(currentConfig)}`)
 
             planModeConfig.value = currentConfig
             logger.debug('planModeConfig.value已更新')
@@ -1126,11 +1124,11 @@ onMounted(() => {
             fullPlanData.value = planData
             logger.debug('fullPlanData.value已更新')
 
-            logger.info('计划配置加载成功:', {
+            logger.info(`计划配置加载成功:${JSON.stringify({
               planId: newStageMode,
               currentConfig: JSON.parse(JSON.stringify(currentConfig)),
               planModeConfigValue: JSON.parse(JSON.stringify(planModeConfig.value)),
-            })
+            })}`)
 
             // 从stageModeOptions中查找对应的计划名称
             const planOption = stageModeOptions.value.find(option => option.value === newStageMode)
@@ -1138,7 +1136,7 @@ onMounted(() => {
 
             message.success(`已切换到计划模式：${planName}`)
           } else {
-            logger.warn('计划配置响应不完整:', { response, newStageMode })
+            logger.warn(`计划配置响应不完整: ${JSON.stringify({ response, newStageMode })}`)
             message.warning('计划配置加载失败，请检查计划是否存在')
             planModeConfig.value = null
           }
@@ -1150,7 +1148,7 @@ onMounted(() => {
             type: typeof error,
             name: error instanceof Error ? error.name : error?.constructor?.name,
           }
-          logger.error('加载计划配置失败:', errorInfo)
+          logger.error(`加载计划配置失败: ${JSON.stringify(errorInfo)}`)
           message.error('加载计划配置时发生错误')
           planModeConfig.value = null
         }

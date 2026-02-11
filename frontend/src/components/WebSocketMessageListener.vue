@@ -55,14 +55,15 @@ const focusWindow = async () => {
       logger.info('窗口已激活到前台')
     }
   } catch (error) {
-    logger.warn('激活窗口失败:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`激活窗口失败: ${errorMsg}`)
   }
 }
 
 // 发送用户选择结果到后端
 const sendResponse = (messageId: string, choice: boolean) => {
   const response = { choice: choice }
-  logger.info('发送用户选择结果:', { messageId, response })
+  logger.info(`发送用户选择结果: ${JSON.stringify({ messageId, response })}`)
 
   // 发送响应消息到后端
   sendRaw('Response', response, messageId)
@@ -82,7 +83,7 @@ const handleCancel = () => {
 const handleChoice = (choice: boolean) => {
   if (currentModal.value) {
     sendResponse(currentModal.value.messageId, choice)
-    logger.info('弹窗已处理:', currentModal.value.messageId)
+    logger.info(`弹窗已处理: ${currentModal.value.messageId}`)
   }
 
   // 关闭当前弹窗
@@ -98,7 +99,7 @@ const showNextModal = async () => {
   if (modalQueue.value.length > 0) {
     // 从队列头部取出下一个弹窗
     const nextModal = modalQueue.value.shift()!
-    logger.info('显示队列中的下一个弹窗:', nextModal.messageId, `剩余队列: ${modalQueue.value.length}`)
+    logger.info(`显示队列中的下一个弹窗: ${nextModal.messageId}, 剩余队列: ${modalQueue.value.length}`)
 
     // 激活窗口
     await focusWindow()
@@ -123,11 +124,11 @@ const showQuestion = async (questionData: any) => {
     options,
   }
 
-  logger.info('收到弹窗请求:', modalData.messageId)
+  logger.info(`收到弹窗请求: ${modalData.messageId}`)
 
   // 如果当前没有显示弹窗，直接显示
   if (!isModalOpen.value && !currentModal.value) {
-    logger.info('直接显示弹窗:', modalData.messageId)
+    logger.info(`直接显示弹窗: ${modalData.messageId}`)
 
     // 激活窗口
     await focusWindow()
@@ -138,7 +139,7 @@ const showQuestion = async (questionData: any) => {
   } else {
     // 否则加入队列
     modalQueue.value.push(modalData)
-    logger.info('弹窗已加入队列:', modalData.messageId, `当前队列长度: ${modalQueue.value.length}`)
+    logger.info(`弹窗已加入队列: ${modalData.messageId}, 当前队列长度: ${modalQueue.value.length}`)
   }
 }
 
@@ -147,18 +148,11 @@ const handleMessage = (message: WebSocketBaseMessage) => {
   try {
     // 只打印摘要信息，避免打印完整消息内容
     const dataSize = message.data ? (typeof message.data === 'string' ? message.data.length : JSON.stringify(message.data).length) : 0
-    logger.info('收到Message类型消息:', {
+    logger.info(`收到Message类型消息: ${JSON.stringify({
       type: message.type,
       id: message.id,
       dataSize: `${dataSize} bytes`
-    })
-
-    // 打印详细信息
-    logger.debug('消息详情:', {
-      type: message.type,
-      id: message.id,
-      data: message.data
-    })
+    })}`)
 
     // 解析消息数据
     if (message.data) {
@@ -180,21 +174,19 @@ const handleMessage = (message: WebSocketBaseMessage) => {
     // 这里可以添加具体的业务逻辑
     // 例如：更新状态、触发事件、显示通知等
   } catch (error) {
-    logger.error('处理消息时发生错误:', error)
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`处理消息时发生错误: ${errorMsg}`)
   }
 }
 
 // 处理对象类型的消息
 const handleObjectMessage = (data: any) => {
   // 打印完整对象内容
-  logger.debug('处理对象消息:', data)
+  logger.debug(`处理对象消息: ${JSON.stringify(data)}`)
 
   // 检查是否为Question类型的消息
   logger.debug(
-    '检查消息类型 - data.type:',
-    data.type,
-    'data.message_id:',
-    data.message_id
+    `检查消息类型 - data.type: ${data.type}, data.message_id: ${data.message_id}`
   )
 
   if (data.type === 'Question') {
@@ -208,7 +200,7 @@ const handleObjectMessage = (data: any) => {
       logger.warn('Question消息缺少message_id字段')
       // 即使缺少message_id，也尝试显示对话框，使用当前时间戳作为ID
       const fallbackId = 'fallback_' + Date.now()
-      logger.info('使用备用ID显示弹窗:', fallbackId)
+      logger.info(`使用备用ID显示弹窗: ${fallbackId}`)
       showQuestion({
         ...data,
         message_id: fallbackId,
@@ -219,15 +211,15 @@ const handleObjectMessage = (data: any) => {
 
   // 根据对象的属性进行不同处理
   if (data.action) {
-    logger.debug('消息动作:', data.action)
+    logger.debug(`消息动作: ${data.action}`)
   }
 
   if (data.status) {
-    logger.debug('消息状态:', data.status)
+    logger.debug(`消息状态: ${data.status}`)
   }
 
   if (data.content) {
-    logger.debug('消息内容:', data.content)
+    logger.debug(`消息内容: ${data.content}`)
   }
 
   // 可以根据具体需求添加更多处理逻辑
@@ -236,22 +228,22 @@ const handleObjectMessage = (data: any) => {
 // 处理字符串类型的消息
 const handleStringMessage = (data: string) => {
   // 记录字符串消息
-  logger.debug('处理字符串消息:', data)
+  logger.debug(`处理字符串消息: ${data}`)
 
   try {
     // 尝试解析JSON字符串
     const parsed = JSON.parse(data)
-    logger.debug('解析后的JSON:', parsed)
+    logger.debug(`解析后的JSON: ${JSON.stringify(parsed)}`)
     handleObjectMessage(parsed)
   } catch (error) {
     // 不是JSON格式，作为普通字符串处理
-    logger.debug('普通字符串消息:', data)
+    logger.debug(`普通字符串消息: ${data}`)
   }
 }
 
 // 处理其他类型的消息
 const handleOtherMessage = (data: any) => {
-  logger.debug('处理其他类型消息:', typeof data, data)
+  logger.debug(`处理其他类型消息: ${typeof data}, ${JSON.stringify(data)}`)
 }
 
 // 组件挂载时订阅消息
@@ -261,8 +253,8 @@ onMounted(() => {
   // 使用新的 subscribe API，订阅 Message 类型的消息（注意大写M）
   subscriptionId = subscribe({ type: 'Message' }, handleMessage)
 
-  logger.info('订阅ID:', subscriptionId)
-  logger.info('订阅过滤器:', { type: 'Message' })
+  logger.info(`订阅ID: ${subscriptionId}`)
+  logger.info(`订阅过滤器: ${JSON.stringify({ type: 'Message' })}`)
 
     // 暴露调试接口到 window 对象（仅用于开发调试）
     ; (window as any).__debugShowQuestion = showQuestion
