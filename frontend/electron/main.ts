@@ -1151,6 +1151,30 @@ ipcMain.handle('reset-config', async () => {
   }
 })
 
+// 应用初始化状态管理
+ipcMain.handle('get-app-initialized', async () => {
+  try {
+    const config = loadConfig()
+    return config.appInitialized ?? false
+  } catch (error) {
+    logger.error('读取初始化状态失败', error)
+    return false
+  }
+})
+
+ipcMain.handle('set-app-initialized', async (_event, value: boolean) => {
+  try {
+    const config = loadConfig()
+    config.appInitialized = value
+    saveConfig(config)
+    logger.info(`初始化状态已保存: ${value}`)
+    return true
+  } catch (error) {
+    logger.error('保存初始化状态失败', error)
+    return false
+  }
+})
+
 
 // 管理员权限相关
 ipcMain.handle('check-admin', () => {
