@@ -31,12 +31,15 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { enterApp, forceEnterApp } from '@/utils/appEntry.ts'
-import { markAsInitialized } from '@/composables/useAppInitialization'
+import { useAppInitialization } from '@/composables/useAppInitialization'
 import StepPanel from './components/StepPanel.vue'
 import BackendStartStep from './components/BackendStartStep.vue'
 import type { MirrorConfig } from '@/types/mirror'
 
 const logger = window.electronAPI.getLogger('初始化流程')
+
+// 使用 composable 获取初始化状态
+const { isInitialized, markAsInitialized } = useAppInitialization()
 
 // ==================== 步骤定义 ====================
 const steps = [
@@ -605,6 +608,13 @@ async function loadMirrorConfigs() {
 
 onMounted(async () => {
   logger.info('初始化界面已加载')
+
+  // 已初始化用户直接进入应用
+  if (isInitialized.value) {
+    logger.info('已初始化，跳过初始化流程，直接进入应用')
+    await handleLocalEnterApp()
+    return
+  }
 
   const api = window.electronAPI as any
 
