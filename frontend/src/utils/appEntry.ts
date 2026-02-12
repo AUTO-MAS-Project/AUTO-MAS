@@ -3,7 +3,6 @@ import router from '@/router'
 import { connectAfterBackendStart, forceConnectWebSocket } from '@/composables/useWebSocket'
 import { startTitlebarVersionCheck } from '@/composables/useVersionService'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
-import { markAsInitialized } from '@/composables/useAppInitialization'
 
 const logger = window.electronAPI.getLogger('应用入口')
 
@@ -75,9 +74,6 @@ export async function enterApp(
       logger.warn(`${reason}：WebSocket连接失败，但强制进入应用`)
     }
 
-    // 标记应用已初始化完成，触发其他组件挂载
-    markAsInitialized()
-
     // 预加载调度中心
     preloadSchedulerView(reason)
 
@@ -121,9 +117,6 @@ export async function forceEnterApp(reason: string = '强行进入'): Promise<vo
 
   // 无论WebSocket是否成功，都进入应用
   logger.info(`${reason}：跳转到主页...`)
-
-  // 标记应用已初始化完成，触发其他组件挂载
-  markAsInitialized()
 
   router.push('/home')
   logger.info(`${reason}：已跳过初始化`)
