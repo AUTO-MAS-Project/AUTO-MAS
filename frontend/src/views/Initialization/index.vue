@@ -39,7 +39,7 @@ import type { MirrorConfig } from '@/types/mirror'
 const logger = window.electronAPI.getLogger('初始化流程')
 
 // 使用 composable 获取初始化状态
-const { isInitialized, markAsInitialized } = useAppInitialization()
+const { isInitialized } = useAppInitialization()
 
 // ==================== 步骤定义 ====================
 const steps = [
@@ -535,11 +535,7 @@ async function handleForceEnterConfirm() {
 
 async function handleLocalEnterApp() {
   try {
-    // 先标记应用已初始化完成
-    markAsInitialized()
-    logger.info('标记应用为已初始化完成')
-
-    // 尝试正常进入应用（会建立WebSocket连接）
+    // 尝试正常进入应用（会建立WebSocket连接，同时标记初始化完成）
     logger.info('准备正常进入应用...')
     const success = await enterApp('初始化完成后进入', true)
 
@@ -608,6 +604,13 @@ async function loadMirrorConfigs() {
 
 onMounted(async () => {
   logger.info('初始化界面已加载')
+
+  // 开发模式直接跳过初始化
+  if (isDev) {
+    logger.info('开发环境，跳过初始化流程')
+    await handleLocalEnterApp()
+    return
+  }
 
   // 已初始化用户直接进入应用
   if (isInitialized.value) {
