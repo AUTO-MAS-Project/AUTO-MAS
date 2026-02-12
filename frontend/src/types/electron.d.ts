@@ -72,6 +72,10 @@ export interface ElectronAPI {
   loadConfig: () => Promise<any>
   resetConfig: () => Promise<void>
 
+  // 应用初始化状态
+  getAppInitialized: () => Promise<boolean>
+  setAppInitialized: (value: boolean) => Promise<boolean>
+
   // 托盘设置
   updateTraySettings: (uiSettings: any) => Promise<boolean>
   syncBackendConfig: (backendSettings: any) => Promise<boolean>

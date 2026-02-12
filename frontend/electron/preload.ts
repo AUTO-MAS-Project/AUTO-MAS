@@ -56,6 +56,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadConfig: () => ipcRenderer.invoke('load-config'),
   resetConfig: () => ipcRenderer.invoke('reset-config'),
 
+  // 应用初始化状态
+  getAppInitialized: () => ipcRenderer.invoke('get-app-initialized'),
+  setAppInitialized: (value: boolean) => ipcRenderer.invoke('set-app-initialized', value),
+
   // 托盘设置实时更新
   updateTraySettings: (uiSettings: any) => ipcRenderer.invoke('update-tray-settings', uiSettings),
 
