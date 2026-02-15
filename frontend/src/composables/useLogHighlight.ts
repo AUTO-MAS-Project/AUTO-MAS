@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useTheme } from './useTheme'
 
 // 日志高亮颜色配置接口
@@ -228,10 +228,10 @@ export function useLogHighlight() {
   const { isDark } = useTheme()
 
   // 当前使用的颜色（根据主题）
-  const currentColors = computed(() => isDark.value ? darkColors.value : lightColors.value)
+  const currentColors = computed(() => (isDark.value ? darkColors.value : lightColors.value))
 
   // 计算当前使用的主题名称
-  const editorTheme = computed(() => isDark.value ? 'log-dark' : 'log-light')
+  const editorTheme = computed(() => (isDark.value ? 'log-dark' : 'log-light'))
 
   // 生成字体样式字符串
   const getFontStyle = (isBold: boolean, isUnderline: boolean = false) => {
@@ -259,10 +259,16 @@ export function useLogHighlight() {
           tokenizer: {
             root: [
               // UUID
-              [/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/, 'uuid'],
+              [
+                /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/,
+                'uuid',
+              ],
 
               // 时间戳 (各种格式)
-              [/\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2}(\.\d{1,6})?([+-]\d{2}:?\d{2}|Z)?/, 'timestamp'],
+              [
+                /\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2}(\.\d{1,6})?([+-]\d{2}:?\d{2}|Z)?/,
+                'timestamp',
+              ],
               [/\d{2}:\d{2}:\d{2}(\.\d{1,6})?/, 'timestamp'],
               [/\[\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2}(\.\d{1,6})?\]/, 'timestamp'],
 
@@ -323,10 +329,16 @@ export function useLogHighlight() {
               [/-?\b\d+(\.\d+)?([eE][+-]?\d+)?\b/, 'log-number'],
 
               // 异常和错误关键词
-              [/\b(Exception|Error|Failed|Failure|Timeout|Abort|Rejected|Denied|Invalid|Illegal)\b/i, 'log-error-keyword'],
+              [
+                /\b(Exception|Error|Failed|Failure|Timeout|Abort|Rejected|Denied|Invalid|Illegal)\b/i,
+                'log-error-keyword',
+              ],
 
               // 成功关键词
-              [/\b(Success|Successful|Complete|Completed|OK|Done|Finished|Passed|Accepted|Approved)\b/i, 'log-success'],
+              [
+                /\b(Success|Successful|Complete|Completed|OK|Done|Finished|Passed|Accepted|Approved)\b/i,
+                'log-success',
+              ],
 
               // 操作符
               [/[=<>!]+/, 'operator'],
@@ -342,17 +354,37 @@ export function useLogHighlight() {
         base: 'vs',
         inherit: true,
         rules: [
-          { token: 'timestamp', foreground: lightColors.value.timestamp, fontStyle: getFontStyle(s.timestampBold) },
+          {
+            token: 'timestamp',
+            foreground: lightColors.value.timestamp,
+            fontStyle: getFontStyle(s.timestampBold),
+          },
           { token: 'date', foreground: lightColors.value.date },
-          { token: 'log-error', foreground: lightColors.value.error, fontStyle: getFontStyle(s.levelBold) },
-          { token: 'log-warning', foreground: lightColors.value.warning, fontStyle: getFontStyle(s.levelBold) },
-          { token: 'log-info', foreground: lightColors.value.info, fontStyle: getFontStyle(s.levelBold) },
+          {
+            token: 'log-error',
+            foreground: lightColors.value.error,
+            fontStyle: getFontStyle(s.levelBold),
+          },
+          {
+            token: 'log-warning',
+            foreground: lightColors.value.warning,
+            fontStyle: getFontStyle(s.levelBold),
+          },
+          {
+            token: 'log-info',
+            foreground: lightColors.value.info,
+            fontStyle: getFontStyle(s.levelBold),
+          },
           { token: 'log-debug', foreground: lightColors.value.debug },
           { token: 'log-trace', foreground: lightColors.value.trace },
           { token: 'log-module', foreground: lightColors.value.module },
           { token: 'bracket', foreground: lightColors.value.bracket },
           { token: 'log-ip', foreground: lightColors.value.ip },
-          { token: 'log-url', foreground: lightColors.value.url, fontStyle: getFontStyle(false, s.urlUnderline) },
+          {
+            token: 'log-url',
+            foreground: lightColors.value.url,
+            fontStyle: getFontStyle(false, s.urlUnderline),
+          },
           { token: 'port', foreground: lightColors.value.port },
           { token: 'log-path', foreground: lightColors.value.path },
           { token: 'filename', foreground: lightColors.value.filename },
@@ -360,8 +392,16 @@ export function useLogHighlight() {
           { token: 'string', foreground: lightColors.value.string },
           { token: 'boolean', foreground: lightColors.value.boolean },
           { token: 'uuid', foreground: lightColors.value.uuid },
-          { token: 'log-error-keyword', foreground: lightColors.value.errorKeyword, fontStyle: getFontStyle(s.keywordBold) },
-          { token: 'log-success', foreground: lightColors.value.success, fontStyle: getFontStyle(s.keywordBold) },
+          {
+            token: 'log-error-keyword',
+            foreground: lightColors.value.errorKeyword,
+            fontStyle: getFontStyle(s.keywordBold),
+          },
+          {
+            token: 'log-success',
+            foreground: lightColors.value.success,
+            fontStyle: getFontStyle(s.keywordBold),
+          },
           { token: 'stack-trace', foreground: lightColors.value.stackTrace },
           { token: 'json', foreground: lightColors.value.json },
           { token: 'variable', foreground: lightColors.value.variable },
@@ -374,17 +414,37 @@ export function useLogHighlight() {
         base: 'vs-dark',
         inherit: true,
         rules: [
-          { token: 'timestamp', foreground: darkColors.value.timestamp, fontStyle: getFontStyle(s.timestampBold) },
+          {
+            token: 'timestamp',
+            foreground: darkColors.value.timestamp,
+            fontStyle: getFontStyle(s.timestampBold),
+          },
           { token: 'date', foreground: darkColors.value.date },
-          { token: 'log-error', foreground: darkColors.value.error, fontStyle: getFontStyle(s.levelBold) },
-          { token: 'log-warning', foreground: darkColors.value.warning, fontStyle: getFontStyle(s.levelBold) },
-          { token: 'log-info', foreground: darkColors.value.info, fontStyle: getFontStyle(s.levelBold) },
+          {
+            token: 'log-error',
+            foreground: darkColors.value.error,
+            fontStyle: getFontStyle(s.levelBold),
+          },
+          {
+            token: 'log-warning',
+            foreground: darkColors.value.warning,
+            fontStyle: getFontStyle(s.levelBold),
+          },
+          {
+            token: 'log-info',
+            foreground: darkColors.value.info,
+            fontStyle: getFontStyle(s.levelBold),
+          },
           { token: 'log-debug', foreground: darkColors.value.debug },
           { token: 'log-trace', foreground: darkColors.value.trace },
           { token: 'log-module', foreground: darkColors.value.module },
           { token: 'bracket', foreground: darkColors.value.bracket },
           { token: 'log-ip', foreground: darkColors.value.ip },
-          { token: 'log-url', foreground: darkColors.value.url, fontStyle: getFontStyle(false, s.urlUnderline) },
+          {
+            token: 'log-url',
+            foreground: darkColors.value.url,
+            fontStyle: getFontStyle(false, s.urlUnderline),
+          },
           { token: 'port', foreground: darkColors.value.port },
           { token: 'log-path', foreground: darkColors.value.path },
           { token: 'filename', foreground: darkColors.value.filename },
@@ -392,8 +452,16 @@ export function useLogHighlight() {
           { token: 'string', foreground: darkColors.value.string },
           { token: 'boolean', foreground: darkColors.value.boolean },
           { token: 'uuid', foreground: darkColors.value.uuid },
-          { token: 'log-error-keyword', foreground: darkColors.value.errorKeyword, fontStyle: getFontStyle(s.keywordBold) },
-          { token: 'log-success', foreground: darkColors.value.success, fontStyle: getFontStyle(s.keywordBold) },
+          {
+            token: 'log-error-keyword',
+            foreground: darkColors.value.errorKeyword,
+            fontStyle: getFontStyle(s.keywordBold),
+          },
+          {
+            token: 'log-success',
+            foreground: darkColors.value.success,
+            fontStyle: getFontStyle(s.keywordBold),
+          },
           { token: 'stack-trace', foreground: darkColors.value.stackTrace },
           { token: 'json', foreground: darkColors.value.json },
           { token: 'variable', foreground: darkColors.value.variable },
