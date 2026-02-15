@@ -4,7 +4,11 @@
       <h3>日志</h3>
       <div class="log-controls">
         <a-space size="small">
-          <a-button size="small" :type="logMode === 'follow' ? 'primary' : 'default'" @click="toggleLogMode">
+          <a-button
+            size="small"
+            :type="logMode === 'follow' ? 'primary' : 'default'"
+            @click="toggleLogMode"
+          >
             {{ logMode === 'follow' ? '保持最新' : '自由浏览' }}
           </a-button>
         </a-space>
@@ -19,8 +23,14 @@
         </div>
       </div>
       <div v-else class="monaco-container">
-        <vue-monaco-editor :value="logContent" language="logfile" :theme="editorTheme" :options="editorOptions"
-          @before-mount="handleBeforeMount" @mount="handleEditorMount" />
+        <vue-monaco-editor
+          :value="logContent"
+          language="logfile"
+          :theme="editorTheme"
+          :options="editorOptions"
+          @before-mount="handleBeforeMount"
+          @mount="handleEditorMount"
+        />
       </div>
     </div>
   </div>
@@ -39,8 +49,8 @@ interface Props {
 }
 
 interface Emits {
-  (e: 'scroll', isAtBottom: boolean): void
-  (e: 'setRef', el: HTMLElement | null, key: string): void
+  (_e: 'scroll', _isAtBottom: boolean): void
+  (_e: 'setRef', _el: HTMLElement | null, _key: string): void
 }
 
 // 日志显示模式类型
@@ -50,7 +60,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
 // 解构 props 以便在模板中直接使用（保持响应性）
-const { logContent, tabKey } = toRefs(props)
+const { logContent, tabKey: _tabKey } = toRefs(props)
 
 // 使用日志高亮 composable
 const { registerLogLanguage, editorTheme, editorConfig } = useLogHighlight()
@@ -67,7 +77,7 @@ const logMode = ref<LogMode>('follow')
 // 监听外部控制的日志模式变化
 watch(
   () => props.externalLogMode,
-  (newMode) => {
+  newMode => {
     if (newMode && logMode.value !== newMode) {
       logMode.value = newMode
       if (newMode === 'follow') {

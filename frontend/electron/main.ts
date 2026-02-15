@@ -1,23 +1,13 @@
 import { exec, spawn } from 'child_process'
-import {
-  app,
-  BrowserWindow,
-  dialog,
-  ipcMain,
-  Menu,
-  nativeImage,
-  nativeTheme,
-  screen,
-  shell,
-  Tray,
-} from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray, } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
-import AdmZip = require('adm-zip')
 import { checkEnvironment, getAppRoot } from './services/environmentService'
-import { registerInitializationHandlers, cleanupInitializationResources } from './ipc/initializationHandlers'
+import { cleanupInitializationResources, registerInitializationHandlers, } from './ipc/initializationHandlers'
+import { registerFileHandlers } from './ipc/fileHandlers'
 
 import { getLogger, initializeLogger } from './services/logger'
+import AdmZip = require('adm-zip')
 
 // 初始化日志系统（必须在创建 logger 之前）
 initializeLogger()
@@ -607,33 +597,36 @@ function createLogWindow() {
 }
 
 // 日志系统 IPC 处理器
-ipcMain.handle('log:write', async (_event, level: string, moduleName: string, ...args: unknown[]) => {
-  try {
-    const rendererLogger = getLogger(moduleName)
-    const message = args.map(arg =>
-      typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-    ).join(' ')
+ipcMain.handle(
+  'log:write',
+  async (_event, level: string, moduleName: string, ...args: unknown[]) => {
+    try {
+      const rendererLogger = getLogger(moduleName)
+      const message = args
+        .map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg)))
+        .join(' ')
 
-    switch (level) {
-      case 'debug':
-        rendererLogger.debug(message)
-        break
-      case 'info':
-        rendererLogger.info(message)
-        break
-      case 'warn':
-        rendererLogger.warn(message)
-        break
-      case 'error':
-        rendererLogger.error(message)
-        break
-      default:
-        rendererLogger.info(message)
+      switch (level) {
+        case 'debug':
+          rendererLogger.debug(message)
+          break
+        case 'info':
+          rendererLogger.info(message)
+          break
+        case 'warn':
+          rendererLogger.warn(message)
+          break
+        case 'error':
+          rendererLogger.error(message)
+          break
+        default:
+          rendererLogger.info(message)
+      }
+    } catch (error) {
+      console.error('写入日志失败:', error)
     }
-  } catch (error) {
-    console.error('写入日志失败:', error)
   }
-})
+)
 
 ipcMain.handle('log:export', async () => {
   try {
@@ -650,7 +643,7 @@ ipcMain.handle('log:export', async () => {
     const result = await dialog.showSaveDialog(mainWindow, {
       title: '导出日志',
       defaultPath: `logs-${new Date().toISOString().slice(0, 10)}.zip`,
-      filters: [{ name: 'ZIP文件', extensions: ['zip'] }]
+      filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
     })
 
     if (result.canceled || !result.filePath) {
@@ -687,13 +680,13 @@ ipcMain.handle('log:export', async () => {
     return {
       success: true,
       message: '日志压缩包导出成功',
-      zipPath: zipPath
+      zipPath: zipPath,
     }
   } catch (error) {
     logger.error('导出日志失败:', error)
     return {
       success: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     }
   }
 })
@@ -731,7 +724,7 @@ ipcMain.handle('log:openWindow', async () => {
     logger.error('打开日志窗口失败:', error)
     return {
       success: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     }
   }
 })
@@ -1151,7 +1144,6 @@ ipcMain.handle('reset-config', async () => {
   }
 })
 
-
 // 管理员权限相关
 ipcMain.handle('check-admin', () => {
   return isRunningAsAdmin()
@@ -1268,12 +1260,14 @@ app.on('before-quit', async event => {
 })
 
 app.whenReady().then(async () => {
-
-
   logger.info(`应用版本: ${app.getVersion()}`)
   logger.info(`Electron版本: ${process.versions.electron}`)
   logger.info(`Node版本: ${process.versions.node}`)
   logger.info(`平台: ${process.platform}`)
+
+  // 注册文件操作处理器（在窗口创建之前注册）
+  registerFileHandlers()
+  logger.info('文件操作处理器已注册')
 
   // 检查管理员权限
   if (!isRunningAsAdmin()) {

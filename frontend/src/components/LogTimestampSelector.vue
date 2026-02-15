@@ -82,7 +82,16 @@
             :data-line-index="index"
           >
             <span class="line-number">{{ index + 1 }}</span>
-            <span class="line-content" v-html="formatLogLine(line)"></span>
+            <span class="line-content-wrapper">
+              <!-- 位置高亮框 -->
+              <span
+                v-if="selection.valid && line.length > selection.startPos"
+                class="position-highlight"
+                :style="getHighlightStyle(line)"
+              ></span>
+              <!-- 日志内容 -->
+              <span class="line-content">{{ line }}</span>
+            </span>
           </div>
         </div>
 
@@ -111,7 +120,7 @@ interface Props {
     logFilePath?: string
   }
   logFilePath?: string
-  handleChange: (section: string, key: string, value: any) => void
+  handleChange: (_section: string, _key: string, _value: any) => void
   rules: Record<string, any>
 }
 
@@ -159,13 +168,18 @@ watch(
 )
 
 // 当模式切换时，确保数据同步
-const onViewModeChange = (mode: 'input' | 'visual') => {
+const onViewModeChange = (e: any) => {
+  const mode = e?.target?.value || e
+  console.log('[LogTimestampSelector] onViewModeChange:', { mode, formData: props.formData })
+
   if (mode === 'visual') {
     // 切换到可视化模式时，将表单数据同步到选择状态
     selection.startPos = props.formData.logTimeStart ? props.formData.logTimeStart - 1 : 0
     selection.endPos = props.formData.logTimeEnd ? props.formData.logTimeEnd - 1 : 0
     selection.valid = !!props.formData.logTimeStart && !!props.formData.logTimeEnd
   }
+  // 切换到输入模式时不需要特别处理，因为 formData 是通过 props 绑定的，
+  // watch 会自动同步 selection 到 formData 的变化
 }
 
 // 计算属性
@@ -181,30 +195,26 @@ const selectedText = computed(() => {
   return line.substring(start, end + 1)
 })
 
-// 格式化日志行，应用基本的颜色高亮
-const formatLogLine = (line: string) => {
-  // 对常见日志模式进行高亮
-  let formattedLine = line
+// 计算高亮框的样式（基于等宽字体的字符宽度）
+const getHighlightStyle = (line: string) => {
+  if (!selection.valid) return {}
 
-  // 高亮时间戳 (YYYY-MM-DD HH:MM:SS 或类似格式)
-  formattedLine = formattedLine.replace(
-    /(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2}(?:\.\d{3})?)/g,
-    '<span style="color: #1890ff; font-weight: bold;">$1</span>'
-  )
+  const start = Math.min(selection.startPos, selection.endPos)
+  const end = Math.max(selection.startPos, selection.endPos)
 
-  // 高亮日志级别 (INFO, WARN, ERROR, DEBUG, TRACE, etc.)
-  formattedLine = formattedLine.replace(
-    /\b(INFO|WARN|ERROR|DEBUG|TRACE|CRITICAL|FATAL)\b/gi,
-    '<span style="color: #52c41a; font-weight: bold; background-color: #f6ffed; padding: 1px 4px; border-radius: 2px;">$1</span>'
-  )
+  // 确保不超出当前行的长度
+  const actualEnd = Math.min(end, line.length - 1)
+  if (start >= line.length) return { display: 'none' }
 
-  // 高亮模块名 (通常在方括号中)
-  formattedLine = formattedLine.replace(
-    /\[([^\]]+)\]/g,
-    '<span style="color: #1890ff; background-color: #f0f5ff; padding: 1px 4px; border-radius: 2px;">[$1]</span>'
-  )
+  // 使用 ch 单位（等宽字体中一个字符的宽度）
+  const charWidth = 1 // 1ch
+  const left = start * charWidth
+  const width = (actualEnd - start + 1) * charWidth
 
-  return formattedLine
+  return {
+    left: `${left}ch`,
+    width: `${width}ch`,
+  }
 }
 
 // 鼠标抬起事件处理，获取文本选择范围
@@ -216,7 +226,6 @@ const handleMouseUp = () => {
     // 获取选择的起始和结束位置
     const range = selectionObj.getRangeAt(0)
     const startContainer = range.startContainer
-    const endContainer = range.endContainer
 
     // 获取包含选择的行
     let startLineElement = startContainer.parentElement
@@ -224,78 +233,48 @@ const handleMouseUp = () => {
       startLineElement = startLineElement.parentElement
     }
 
-    let endLineElement = endContainer.parentElement
-    while (endLineElement && !endLineElement.classList.contains('log-line')) {
-      endLineElement = endLineElement.parentElement
-    }
-
-    if (startLineElement && endLineElement) {
+    if (startLineElement) {
       const startLineIndex = parseInt(startLineElement.getAttribute('data-line-index') || '-1')
-      const endLineIndex = parseInt(endLineElement.getAttribute('data-line-index') || '-1')
 
-      // 只处理同一行的选择
-      if (
-        startLineIndex >= 0 &&
-        startLineIndex < logLines.value.length &&
-        endLineIndex >= 0 &&
-        endLineIndex < logLines.value.length &&
-        startLineIndex === endLineIndex
-      ) {
+      if (startLineIndex >= 0 && startLineIndex < logLines.value.length) {
         const lineContentElement = startLineElement.querySelector('.line-content')
-        if (lineContentElement) {
-          // 获取原始文本（没有 HTML 标签的纯文本）
-          const fullText = logLines.value[startLineIndex]
-          const renderedText = lineContentElement.textContent || ''
-
-          console.log('[LogTimestampSelector] 选择信息:', {
-            selectedText,
-            fullText,
-            renderedText,
-            'range.startOffset': range.startOffset,
-            'range.endOffset': range.endOffset,
-          })
-
-          // 创建一个临时 range 来计算从行首到选择起点的偏移
-          const tempRange = document.createRange()
-          tempRange.selectNodeContents(lineContentElement)
-          tempRange.setEnd(range.startContainer, range.startOffset)
-          const startOffset = tempRange.toString().length
-
-          // 计算结束偏移
-          tempRange.setEnd(range.endContainer, range.endOffset)
-          const endOffset = tempRange.toString().length
-
-          console.log('[LogTimestampSelector] 计算的偏移量:', {
-            startOffset,
-            endOffset,
-            'selected length': endOffset - startOffset,
-            'actual selected length': selectedText.length,
-          })
-
-          // 验证选择的文本
-          const extractedText = renderedText.substring(startOffset, endOffset)
-          if (extractedText === selectedText) {
-            selection.startLineIndex = startLineIndex
-            selection.endLineIndex = startLineIndex
-            selection.startPos = startOffset
-            selection.endPos = endOffset - 1
-            selection.valid = true
-
-            console.log('[LogTimestampSelector] 选择有效:', {
-              'selection.startPos': selection.startPos,
-              'selection.endPos': selection.endPos,
-              'selected text': extractedText,
-            })
-          } else {
-            console.warn('[LogTimestampSelector] 选择文本不匹配:', {
-              expected: selectedText,
-              actual: extractedText,
-            })
-            selection.valid = false
-          }
+        if (!lineContentElement) {
+          selection.valid = false
+          return
         }
+
+        // 获取原始文本
+        const fullText = logLines.value[startLineIndex]
+
+        // 使用 Range API 计算在渲染文本中的位置
+        const tempRange = document.createRange()
+        tempRange.selectNodeContents(lineContentElement)
+        tempRange.setEnd(range.startContainer, range.startOffset)
+        const startOffset = tempRange.toString().length
+        const endOffset = startOffset + selectedText.length
+
+        console.log('[LogTimestampSelector] 选择信息:', {
+          selectedText,
+          fullText,
+          startOffset,
+          endOffset,
+          lineIndex: startLineIndex,
+        })
+
+        // 直接使用 DOM 计算的偏移量（纯文本模式下最精确）
+        selection.startLineIndex = startLineIndex
+        selection.endLineIndex = startLineIndex
+        selection.startPos = startOffset
+        selection.endPos = endOffset - 1
+        selection.valid = true
+
+        console.log('[LogTimestampSelector] 选择有效:', {
+          'selection.startPos': selection.startPos,
+          'selection.endPos': selection.endPos,
+          'selected text': selectedText,
+          'verified text': fullText.substring(selection.startPos, selection.endPos + 1),
+        })
       } else {
-        // 如果跨行选择，重置选择
         selection.valid = false
       }
     }
@@ -311,7 +290,9 @@ const handleMouseLeave = () => {
 
 // 加载日志文件
 const loadLogFile = async () => {
-  if (!props.logFilePath) {
+  const targetPath = props.logFilePath
+
+  if (!targetPath || targetPath.trim() === '') {
     message.warning('请先选择日志文件路径')
     return
   }
@@ -322,7 +303,13 @@ const loadLogFile = async () => {
     // 使用Electron API读取文件
     if (window.electronAPI) {
       // 使用Electron API读取文件
-      const content = await window.electronAPI.readFile(props.logFilePath)
+      const content = await window.electronAPI.readFile(targetPath)
+
+      if (!content) {
+        message.warning('日志文件为空或无法读取')
+        return
+      }
+
       // 按行分割，但保持每行不换行显示
       logLines.value = content.split('\n').slice(0, 100) // 只加载前100行以提高性能
 
@@ -429,9 +416,25 @@ const applySelection = async () => {
   user-select: none;
 }
 
+.line-content-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.position-highlight {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background-color: rgba(24, 144, 255, 0.2);
+  pointer-events: none;
+  z-index: 0;
+}
+
 .line-content {
+  position: relative;
   color: #333;
   white-space: nowrap;
+  z-index: 1;
 }
 
 .selection-info {
