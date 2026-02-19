@@ -534,6 +534,7 @@ class AutoProxyTask(TaskExecuteBase):
         # 导出任务配置
         self.task_dict["StartUp"] = True
         task_queue = gui_new_set["Configurations"]["Default"]["TaskQueue"] = []
+        gui_new_set["Configurations"]["Default"]["TaskSelectedIndex"] = 1
         for task_type in MAA_TASKS:
 
             task_set[task_type]["IsEnable"] = self.task_dict[task_type]
