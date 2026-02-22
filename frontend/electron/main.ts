@@ -827,7 +827,7 @@ ipcMain.handle('select-folder', async () => {
 ipcMain.handle('select-file', async (event, filters = []) => {
   if (!mainWindow) return []
   const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openFile'],
+    properties: ['openFile', 'multiSelections'],
     title: '选择文件',
     filters: filters.length > 0 ? filters : [{ name: '所有文件', extensions: ['*'] }],
   })

@@ -367,7 +367,6 @@ class MaaUserConfig(ConfigBase):
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
     def getInfrastName(self, v) -> str:
-
         if self.get("Info", "InfrastMode") != "Custom":
             return "未使用自定义基建模式"
 
@@ -385,7 +384,6 @@ class MaaUserConfig(ConfigBase):
             return "未命名自定义基建"
 
     def getInfrastIndex(self, v) -> str:
-
         if self.get("Info", "InfrastMode") != "Custom":
             return "-1"
 
@@ -395,7 +393,6 @@ class MaaUserConfig(ConfigBase):
             return "-1"
 
         for i, plan in enumerate(infrast_data.get("plans", [])):
-
             for t in plan.get("period", []):
                 if (
                     datetime.strptime(t[0], "%H:%M").time()
@@ -526,7 +523,6 @@ class MaaPlanConfig(ConfigBase):
             return self.config_item_dict["ALL"][name]
 
         elif self.get("Info", "Mode") == "Weekly":
-
             today = datetime.now(tz=UTC4).strftime("%A")
 
             if today in self.config_item_dict:
@@ -678,6 +674,8 @@ class GeneralConfig(ConfigBase):
         self.Script_SuccessLog = ConfigItem("Script", "SuccessLog", "")
         ## 错误日志匹配
         self.Script_ErrorLog = ConfigItem("Script", "ErrorLog", "")
+        ## Hook 文件列表（按顺序加载）
+        self.Script_HookList = ConfigItem("Script", "HookList", [])
 
         ## Game ------------------------------------------------------------
         ## 是否启用游戏
@@ -751,7 +749,6 @@ def getStage(raw) -> str:
                 )
 
                 if "SSReopen" not in stage["Display"]:
-
                     if stage["Drop"] in MATERIALS_MAP:
                         drop_id = stage["Drop"]
                     elif "玉" in stage["Drop"]:
