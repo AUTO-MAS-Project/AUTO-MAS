@@ -486,15 +486,15 @@
                     选择 Hook 文件(.py)
                   </a-button>
 
-                  <a-button size="large" @click="refreshHookMeta" :loading="hookMetaLoading">
+                  <a-button size="large" :loading="hookMetaLoading" @click="refreshHookMeta">
                     刷新元信息
                   </a-button>
 
                   <a-button
                     size="large"
                     danger
-                    @click="clearHookList"
                     :disabled="!generalConfig.Script.HookList?.length"
+                    @click="clearHookList"
                   >
                     清空
                   </a-button>
@@ -523,14 +523,14 @@
                           <a-space>
                             <a-button
                               size="small"
-                              @click="moveHookUp(index)"
                               :disabled="index === 0"
+                              @click="moveHookUp(index)"
                               >上移</a-button
                             >
                             <a-button
                               size="small"
-                              @click="moveHookDown(index)"
                               :disabled="index === generalConfig.Script.HookList.length - 1"
+                              @click="moveHookDown(index)"
                             >
                               下移
                             </a-button>
@@ -968,13 +968,12 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch, nextTick } from 'vue'
-import type { MAAScriptConfig } from '../../../types/script.ts'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
 import type { GeneralScriptConfig, ScriptType } from '../../../types/script.ts'
 import { useScriptApi } from '../../../composables/useScriptApi.ts'
-import { OpenAPI, Service, type ComboBoxItem } from '../../../api'
+import { Service, HookService, type ComboBoxItem, type HookMetaItem } from '../../../api'
 import type { ScriptUploadIn } from '../../../api'
 import {
   ArrowLeftOutlined,
@@ -1465,6 +1464,98 @@ const refreshScript = async () => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`刷新配置失败: ${errorMsg}`)
   }
+}
+
+// ========== Hook 配置 ==========
+
+const hookMetaLoading = ref(false)
+const hookMetaList = ref<HookMetaItem[]>([])
+
+const getHookMeta = (filePath: string): HookMetaItem | undefined => {
+  return hookMetaList.value.find(m => m.path === filePath)
+}
+
+const refreshHookMeta = async () => {
+  const paths = generalConfig.Script.HookList
+  if (!paths || paths.length === 0) {
+    hookMetaList.value = []
+    return
+  }
+  hookMetaLoading.value = true
+  try {
+    const resp = await HookService.getHookMetaApiHooksMetaPost({ hookPaths: paths })
+    if (resp.code === 200 && Array.isArray(resp.data)) {
+      hookMetaList.value = resp.data
+    }
+  } catch (e) {
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.error(`获取 Hook 元信息失败: ${errorMsg}`)
+  } finally {
+    hookMetaLoading.value = false
+  }
+}
+
+const persistHookList = async () => {
+  await handleChange('Script', 'HookList', [...generalConfig.Script.HookList])
+  await refreshHookMeta()
+}
+
+const selectHookFiles = async () => {
+  try {
+    if (!window.electronAPI) {
+      message.error('文件选择功能不可用，请在 Electron 环境中运行')
+      return
+    }
+    const paths = await (window.electronAPI as any).selectFile([
+      { name: 'Python 文件', extensions: ['py'] },
+      { name: '所有文件', extensions: ['*'] },
+    ])
+    if (paths && paths.length > 0) {
+      const existing = new Set(generalConfig.Script.HookList)
+      let added = 0
+      for (const p of paths) {
+        if (!existing.has(p)) {
+          generalConfig.Script.HookList.push(p)
+          existing.add(p)
+          added++
+        }
+      }
+      if (added > 0) {
+        await persistHookList()
+        message.success(`已添加 ${added} 个 Hook 文件`)
+      } else {
+        message.info('所选文件已在列表中')
+      }
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`选择 Hook 文件失败: ${errorMsg}`)
+    message.error('选择文件失败')
+  }
+}
+
+const removeHook = async (index: number) => {
+  generalConfig.Script.HookList.splice(index, 1)
+  await persistHookList()
+}
+
+const clearHookList = async () => {
+  generalConfig.Script.HookList.splice(0, generalConfig.Script.HookList.length)
+  await persistHookList()
+}
+
+const moveHookUp = async (index: number) => {
+  if (index <= 0) return
+  const list = generalConfig.Script.HookList
+  ;[list[index - 1], list[index]] = [list[index], list[index - 1]]
+  await persistHookList()
+}
+
+const moveHookDown = async (index: number) => {
+  const list = generalConfig.Script.HookList
+  if (index >= list.length - 1) return
+  ;[list[index], list[index + 1]] = [list[index + 1], list[index]]
+  await persistHookList()
 }
 
 // 监听根目录变化，自动调整其他路径以保持相对关系
