@@ -183,7 +183,24 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
     }
   }
 
+  // 处理自动更新配置 - 同时同步到 Electron skipUpdate 配置
   if (category === 'Update' && key === 'IfAutoUpdate') {
+    // 先同步到 Electron 的 skipUpdate 配置
+    try {
+      // 先同步到 Electron 的 skipUpdate 配置
+      const isAutoUpdateEnabled = Boolean(value)
+      // 自动更新为 true 时，skipUpdate 为 false（启用初始化）
+      // 自动更新为 false 时，skipUpdate 为 true（跳过初始化）
+      const skipUpdate = !isAutoUpdateEnabled
+      await (window as any).electronAPI?.setSkipUpdate?.(skipUpdate)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`更新自动更新配置失败: ${errorMsg}`)
+      message.error('自动更新配置同步失败')
+      return
+    }
+
+    // 再重启更新检查轮询
     try {
       await restartPolling()
     } catch (error) {
