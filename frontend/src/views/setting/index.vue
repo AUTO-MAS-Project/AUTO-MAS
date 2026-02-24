@@ -238,7 +238,9 @@ const checkUpdate = async () => {
     if (api.updateOnly) {
       const updateResult = await api.updateOnly('dev')
       if (updateResult.success) {
-        logger.info('后端更新完成')
+        logger.info('后端更新完成，刷新后端版本状态')
+        // 刷新后端版本状态，消除标题栏更新提示
+        getBackendVersion()
       } else {
         logger.warn(`后端更新失败: ${updateResult.error}`)
       }
