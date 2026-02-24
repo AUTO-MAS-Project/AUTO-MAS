@@ -142,9 +142,12 @@ class ManualReviewTask(TaskExecuteBase):
                     f"用户: {self.cur_user_item.user_id} - 模拟器启动失败: {e}"
                 )
                 self.script_info.log = f"模拟器启动失败: {e}\n正在中止相关程序"
-                await self.emulator_manager.close(
-                    self.script_config.get("Emulator", "Index")
-                )
+                try:
+                    await self.emulator_manager.close(
+                        self.script_config.get("Emulator", "Index")
+                    )
+                except Exception as e:
+                    logger.exception(f"关闭模拟器失败: {e}")
 
                 uid = str(uuid.uuid4())
                 await Config.send_websocket_message(
@@ -191,9 +194,12 @@ class ManualReviewTask(TaskExecuteBase):
                 self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
 
                 await self.maa_process_manager.kill()
-                await self.emulator_manager.close(
-                    self.script_config.get("Emulator", "Index")
-                )
+                try:
+                    await self.emulator_manager.close(
+                        self.script_config.get("Emulator", "Index")
+                    )
+                except Exception as e:
+                    logger.exception(f"关闭模拟器失败: {e}")
                 await System.kill_process(self.maa_exe_path)
 
                 uid = str(uuid.uuid4())
@@ -214,9 +220,12 @@ class ManualReviewTask(TaskExecuteBase):
 
         if self.run_book["SignIn"]:
 
-            await self.emulator_manager.setVisible(
-                self.script_config.get("Emulator", "Index"), True
-            )
+            try:
+                await self.emulator_manager.setVisible(
+                    self.script_config.get("Emulator", "Index"), True
+                )
+            except Exception as e:
+                logger.exception(f"模拟器显示失败: {e}")
             uid = str(uuid.uuid4())
             await Config.send_websocket_message(
                 id=self.task_info.task_id,

@@ -265,12 +265,15 @@ class AutoProxyTask(TaskExecuteBase):
                     ]
                     self.cur_user_log.status = "模拟器启动失败"
 
-                    if isinstance(self.game_manager, ProcessManager):
-                        await self.game_manager.kill()
-                    elif isinstance(self.game_manager, DeviceBase):
-                        await self.game_manager.close(
-                            self.script_config.get("Game", "EmulatorIndex")
-                        )
+                    try:
+                        if isinstance(self.game_manager, ProcessManager):
+                            await self.game_manager.kill()
+                        elif isinstance(self.game_manager, DeviceBase):
+                            await self.game_manager.close(
+                                self.script_config.get("Game", "EmulatorIndex")
+                            )
+                    except Exception as e:
+                        logger.exception(f"模拟器关闭失败: {e}")
 
                     await Notify.push_plyer(
                         "用户自动代理出现异常！",
@@ -413,16 +416,19 @@ class AutoProxyTask(TaskExecuteBase):
         await System.kill_process(self.script_exe_path)
         if self.game_manager is not None:
             logger.info("中止游戏/模拟器进程")
-            if isinstance(self.game_manager, ProcessManager):
-                await self.game_manager.kill()
-                if self.script_config.get(
-                    "Game", "Type"
-                ) == "Client" and self.script_config.get("Game", "IfForceClose"):
-                    await System.kill_process(self.game_path)
-            elif isinstance(self.game_manager, DeviceBase):
-                await self.game_manager.close(
-                    self.script_config.get("Game", "EmulatorIndex"),
-                )
+            try:
+                if isinstance(self.game_manager, ProcessManager):
+                    await self.game_manager.kill()
+                    if self.script_config.get(
+                        "Game", "Type"
+                    ) == "Client" and self.script_config.get("Game", "IfForceClose"):
+                        await System.kill_process(self.game_path)
+                elif isinstance(self.game_manager, DeviceBase):
+                    await self.game_manager.close(
+                        self.script_config.get("Game", "EmulatorIndex"),
+                    )
+            except Exception as e:
+                logger.exception(f"关闭游戏/模拟器失败: {e}")
 
     async def set_general(self) -> None:
         """配置通用脚本运行参数"""
@@ -495,13 +501,16 @@ class AutoProxyTask(TaskExecuteBase):
         del self.general_process_manager
         del self.general_log_monitor
         if self.game_manager is not None:
-            if isinstance(self.game_manager, ProcessManager):
-                await self.game_manager.kill()
-            elif isinstance(self.game_manager, DeviceBase):
-                await self.game_manager.close(
-                    self.script_config.get("Game", "EmulatorIndex"),
-                )
-            del self.game_manager
+            try:
+                if isinstance(self.game_manager, ProcessManager):
+                    await self.game_manager.kill()
+                elif isinstance(self.game_manager, DeviceBase):
+                    await self.game_manager.close(
+                        self.script_config.get("Game", "EmulatorIndex"),
+                    )
+                del self.game_manager
+            except Exception as e:
+                logger.exception(f"结束游戏/模拟器进程失败: {e}")
 
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
