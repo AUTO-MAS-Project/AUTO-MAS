@@ -232,6 +232,19 @@ const checkUpdate = async () => {
   }`)
 
   try {
+    // 同时触发后端更新（源码拉取 + 依赖安装）
+    logger.info('手动检查更新，同时触发后端更新')
+    const api = window.electronAPI as any
+    if (api.updateOnly) {
+      const updateResult = await api.updateOnly('dev')
+      if (updateResult.success) {
+        logger.info('后端更新完成')
+      } else {
+        logger.warn(`后端更新失败: ${updateResult.error}`)
+      }
+    }
+
+    // 检查前端更新
     await globalCheckUpdate(false, true) // silent=false, forceCheck=true
     logger.info(`全局更新检查完成，状态: ${JSON.stringify({
       updateVisible: updateVisible.value,
