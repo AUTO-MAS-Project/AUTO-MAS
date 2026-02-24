@@ -605,21 +605,22 @@ async function loadMirrorConfigs() {
 onMounted(async () => {
   logger.info('初始化界面已加载')
 
+  const api = window.electronAPI as any
+
+  // 检查是否启用跳过更新开关
+  const skipUpdate = await api.getSkipUpdate?.()
+  if (skipUpdate) {
+    logger.info('已启用跳过更新开关，跳过初始化流程')
+    await handleLocalEnterApp()
+    return
+  }
+
   // 开发模式直接跳过初始化
   if (isDev) {
     logger.info('开发环境，跳过初始化流程')
     await handleLocalEnterApp()
     return
   }
-
-  // 已初始化用户直接进入应用
-  if (isInitialized.value) {
-    logger.info('已初始化，跳过初始化流程，直接进入应用')
-    await handleLocalEnterApp()
-    return
-  }
-
-  const api = window.electronAPI as any
 
   // 加载镜像源配置
   await loadMirrorConfigs()

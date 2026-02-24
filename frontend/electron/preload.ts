@@ -60,6 +60,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppInitialized: () => ipcRenderer.invoke('get-app-initialized'),
   setAppInitialized: (value: boolean) => ipcRenderer.invoke('set-app-initialized', value),
 
+  // 跳过更新开关
+  getSkipUpdate: () => ipcRenderer.invoke('get-skip-update'),
+  setSkipUpdate: (value: boolean) => ipcRenderer.invoke('set-skip-update', value),
+
   // 托盘设置实时更新
   updateTraySettings: (uiSettings: any) => ipcRenderer.invoke('update-tray-settings', uiSettings),
 
