@@ -121,6 +121,8 @@ const defaultConfig: AppConfig = {
     IfMinimizeDirectly: false,
     IfSelfStart: false,
   },
+  // 跳过更新开关：启用后会同时“跳过初始化流程”和“关闭前端自动更新”（名称为 skipUpdate，但同时控制这两个行为）
+  skipUpdate: false,
 }
 
 // 加载配置
@@ -1164,6 +1166,30 @@ ipcMain.handle('set-app-initialized', async (_event, value: boolean) => {
     return true
   } catch (error) {
     logger.error('保存初始化状态失败', error)
+    return false
+  }
+})
+
+// 跳过更新开关管理
+ipcMain.handle('get-skip-update', async () => {
+  try {
+    const config = loadConfig()
+    return config.skipUpdate ?? false
+  } catch (error) {
+    logger.error('读取跳过更新设置失败', error)
+    return false
+  }
+})
+
+ipcMain.handle('set-skip-update', async (_event, value: boolean) => {
+  try {
+    const config = loadConfig()
+    config.skipUpdate = value
+    saveConfig(config)
+    logger.info(`跳过更新设置已保存: ${value}`)
+    return true
+  } catch (error) {
+    logger.error('保存跳过更新设置失败', error)
     return false
   }
 })

@@ -24,6 +24,13 @@ let lastShownVersion: string | null = null
 // 检查自动更新设置是否开启
 const checkAutoUpdateEnabled = async (): Promise<boolean> => {
   try {
+    // 先检查跳过更新开关
+    const skipUpdate = await (window.electronAPI as any)?.getSkipUpdate?.()
+    if (skipUpdate) {
+      logger.info('已启用跳过更新开关，禁用自动检查更新')
+      return false
+    }
+
     const response = await Service.getScriptsApiSettingGetPost()
     if (response.code === 200 && response.data) {
       return response.data.Update?.IfAutoUpdate || false
