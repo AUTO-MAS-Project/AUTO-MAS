@@ -713,7 +713,7 @@ class AutoProxyTask(TaskExecuteBase):
 
             if self.cur_user_config.get("Info", "InfrastIndex") != "-1":
                 await self.cur_user_config.set(
-                    "Info",
+                    "Data",
                     "InfrastIndex",
                     str(
                         (int(self.cur_user_config.get("Info", "InfrastIndex")) + 1)

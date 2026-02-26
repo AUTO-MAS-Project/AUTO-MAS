@@ -242,7 +242,6 @@ class GeneralManager(TaskExecuteBase):
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())
-            await Config.ScriptConfig.save()
 
             error_user = [
                 u.name for u in self.script_info.user_list if u.status == "异常"
