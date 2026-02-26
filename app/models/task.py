@@ -191,7 +191,6 @@ class TaskExecuteBase(ABC):
             await self.main_task()
         except Exception as e:
             await self.on_crash(e)
-            raise
         finally:
             self._task_group = None
             try:
