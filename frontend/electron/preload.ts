@@ -56,9 +56,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadConfig: () => ipcRenderer.invoke('load-config'),
   resetConfig: () => ipcRenderer.invoke('reset-config'),
 
-  // 应用初始化状态
-  getAppInitialized: () => ipcRenderer.invoke('get-app-initialized'),
-  setAppInitialized: (value: boolean) => ipcRenderer.invoke('set-app-initialized', value),
+  // 应用初始化版本（保存前端版本号用于比对）
+  getInitializedVersion: () => ipcRenderer.invoke('get-initialized-version'),
+  setInitializedVersion: (version: string) => ipcRenderer.invoke('set-initialized-version', version),
 
   // 跳过更新开关
   getSkipUpdate: () => ipcRenderer.invoke('get-skip-update'),

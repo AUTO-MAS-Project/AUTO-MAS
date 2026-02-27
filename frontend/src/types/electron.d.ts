@@ -72,9 +72,9 @@ export interface ElectronAPI {
   loadConfig: () => Promise<any>
   resetConfig: () => Promise<void>
 
-  // 应用初始化状态
-  getAppInitialized: () => Promise<boolean>
-  setAppInitialized: (value: boolean) => Promise<boolean>
+  // 应用初始化版本（保存前端版本号用于比对）
+  getInitializedVersion: () => Promise<string | null>
+  setInitializedVersion: (version: string) => Promise<boolean>
 
   // 跳过更新开关
   getSkipUpdate: () => Promise<boolean>
