@@ -1146,26 +1146,26 @@ ipcMain.handle('reset-config', async () => {
   }
 })
 
-// 应用初始化状态管理
-ipcMain.handle('get-app-initialized', async () => {
+// 应用初始化版本管理（保存前端版本号，版本号不一致时需要重新初始化）
+ipcMain.handle('get-initialized-version', async () => {
   try {
     const config = loadConfig()
-    return config.appInitialized ?? false
+    return config.initializedVersion ?? null
   } catch (error) {
-    logger.error('读取初始化状态失败', error)
-    return false
+    logger.error('读取初始化版本失败', error)
+    return null
   }
 })
 
-ipcMain.handle('set-app-initialized', async (_event, value: boolean) => {
+ipcMain.handle('set-initialized-version', async (_event, version: string) => {
   try {
     const config = loadConfig()
-    config.appInitialized = value
+    config.initializedVersion = version
     saveConfig(config)
-    logger.info(`初始化状态已保存: ${value}`)
+    logger.info(`初始化版本已保存: ${version}`)
     return true
   } catch (error) {
-    logger.error('保存初始化状态失败', error)
+    logger.error('保存初始化版本失败', error)
     return false
   }
 })
