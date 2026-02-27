@@ -31,15 +31,12 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { enterApp, forceEnterApp } from '@/utils/appEntry.ts'
-import { useAppInitialization } from '@/composables/useAppInitialization'
+import { getBackendVersion } from '@/composables/useVersionService'
 import StepPanel from './components/StepPanel.vue'
 import BackendStartStep from './components/BackendStartStep.vue'
 import type { MirrorConfig } from '@/types/mirror'
 
 const logger = window.electronAPI.getLogger('初始化流程')
-
-// 使用 composable 获取初始化状态
-const { isInitialized } = useAppInitialization()
 
 // ==================== 步骤定义 ====================
 const steps = [
@@ -486,6 +483,15 @@ async function handleBackendComplete() {
   stepStatus.value = 'finish'
   message.success('初始化完成')
 
+  // 保存初始化版本号（问题1：完成后保存版本号用于比对）
+  const api = window.electronAPI as any
+  await api.setInitializedVersion?.(appVersion)
+  logger.info(`初始化版本号已保存: ${appVersion}`)
+
+  // 问题3：初始化完成后刷新后端版本状态，消除标题栏更新提示
+  await getBackendVersion()
+  logger.info('后端版本状态已刷新')
+
   logger.info('等待后端服务完全稳定...')
 
   // 延迟进入应用，确保：
@@ -607,6 +613,13 @@ onMounted(async () => {
 
   const api = window.electronAPI as any
 
+  // 开发环境下跳过初始化流程，直接使用本地代码启动后端
+  if (isDev) {
+    logger.info('开发环境，跳过初始化流程，直接进入应用')
+    await handleLocalEnterApp()
+    return
+  }
+
   // 检查是否启用跳过更新开关
   const skipUpdate = await api.getSkipUpdate?.()
   if (skipUpdate) {
@@ -615,12 +628,14 @@ onMounted(async () => {
     return
   }
 
-  // 开发模式直接跳过初始化
-  if (isDev) {
-    logger.info('开发环境，跳过初始化流程')
+  // 检查初始化版本号是否与当前前端版本一致
+  const savedVersion = await api.getInitializedVersion?.()
+  if (savedVersion === appVersion) {
+    logger.info(`初始化版本号一致（${appVersion}），跳过初始化流程`)
     await handleLocalEnterApp()
     return
   }
+  logger.info(`初始化版本号不一致：当前${appVersion} vs 保存${savedVersion}，执行初始化流程`)
 
   // 加载镜像源配置
   await loadMirrorConfigs()
