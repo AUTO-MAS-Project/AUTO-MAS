@@ -1831,13 +1831,16 @@ class AppConfig(GlobalConfig):
                 # 如果已经找到了关卡, 处理掉落物
                 if current_stage:
                     item_match: List[str] = re.findall(
-                        r"^(?!\[)(\S+?)\s*:\s*([\d,]+)(?:\s*\(\+[\d,]+\))?",
+                        r"^(?!\[)(\S+?)\s*:\s*([\d,]+[kK]?)(?:\s*\(\+[\d,]+[kK]?\))?",
                         line,
                         re.M,
                     )
                     for item, total in item_match:
-                        # 解析数值时去掉逗号 （如 2,160 -> 2160）
-                        total = int(total.replace(",", ""))
+                        total = total.replace(",", "")
+                        if total.lower().endswith("k"):
+                            total = int(total[:-1]) * 1000
+                        else:
+                            total = int(total)
 
                         # 黑名单
                         if item not in [
