@@ -483,11 +483,6 @@ async function handleBackendComplete() {
   stepStatus.value = 'finish'
   message.success('初始化完成')
 
-  // 保存初始化版本号（问题1：完成后保存版本号用于比对）
-  const api = window.electronAPI as any
-  await api.setInitializedVersion?.(appVersion)
-  logger.info(`初始化版本号已保存: ${appVersion}`)
-
   // 问题3：初始化完成后刷新后端版本状态，消除标题栏更新提示
   await getBackendVersion()
   logger.info('后端版本状态已刷新')
@@ -612,30 +607,34 @@ onMounted(async () => {
   logger.info('初始化界面已加载')
 
   const api = window.electronAPI as any
+  // 统一跳过原因，避免多个分支重复调用 handleLocalEnterApp
+  let skipReason: string | null = null
 
   // 开发环境下跳过初始化流程，直接使用本地代码启动后端
   if (isDev) {
-    logger.info('开发环境，跳过初始化流程，直接进入应用')
-    await handleLocalEnterApp()
-    return
+    skipReason = '开发环境，跳过初始化流程，直接进入应用'
+  } else {
+    // 检查是否启用跳过更新开关
+    const skipUpdate = await api.getSkipUpdate?.()
+    if (skipUpdate) {
+      skipReason = '已启用跳过更新开关，跳过初始化流程'
+    } else {
+      // 检查初始化版本号是否与当前前端版本一致
+      const savedVersion = await api.getInitializedVersion?.()
+      if (savedVersion === appVersion) {
+        skipReason = `初始化版本号一致（${appVersion}），跳过初始化流程`
+      } else {
+        logger.info(`初始化版本号不一致：当前${appVersion} vs 保存${savedVersion}，执行初始化流程`)
+      }
+    }
   }
 
-  // 检查是否启用跳过更新开关
-  const skipUpdate = await api.getSkipUpdate?.()
-  if (skipUpdate) {
-    logger.info('已启用跳过更新开关，跳过初始化流程')
+  // 单一出口：满足任一跳过条件即进入应用
+  if (skipReason) {
+    logger.info(skipReason)
     await handleLocalEnterApp()
     return
   }
-
-  // 检查初始化版本号是否与当前前端版本一致
-  const savedVersion = await api.getInitializedVersion?.()
-  if (savedVersion === appVersion) {
-    logger.info(`初始化版本号一致（${appVersion}），跳过初始化流程`)
-    await handleLocalEnterApp()
-    return
-  }
-  logger.info(`初始化版本号不一致：当前${appVersion} vs 保存${savedVersion}，执行初始化流程`)
 
   // 加载镜像源配置
   await loadMirrorConfigs()

@@ -30,6 +30,7 @@ const {
 // 活动标签
 const activeKey = ref('basic')
 const version = (import.meta as any).env?.VITE_APP_VERSION || '获取版本失败！'
+const appVersion = (import.meta as any).env?.VITE_APP_VERSION || '1.0.0'
 const backendUpdateInfo = ref<VersionOut | null>(null)
 
 // 设置数据 - 从API获取，不再使用硬编码初值
@@ -146,14 +147,47 @@ const refreshSettings = async () => {
 }
 
 const handleSettingChange = async (category: keyof GlobalConfig, key: string, value: any) => {
+  // IfAutoUpdate 与 skipUpdate 是互斥映射关系：
+  // IfAutoUpdate=true  => skipUpdate=false（执行初始化/启用自动检查）
+  // IfAutoUpdate=false => skipUpdate=true（跳过初始化/禁用自动检查）
+  const isAutoUpdateToggle = category === 'Update' && key === 'IfAutoUpdate'
+  let rollbackSkipUpdate: boolean | null = null
+
+  if (isAutoUpdateToggle) {
+    const previousAutoUpdateEnabled = Boolean(settings.Update?.IfAutoUpdate)
+    const nextAutoUpdateEnabled = Boolean(value)
+    const nextSkipUpdate = !nextAutoUpdateEnabled
+    rollbackSkipUpdate = !previousAutoUpdateEnabled
+
+    try {
+      await (window as any).electronAPI?.setSkipUpdate?.(nextSkipUpdate)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`更新自动更新配置失败: ${errorMsg}`)
+      message.error('自动更新配置同步失败')
+      return
+    }
+  }
+
   // 只发送修改的字段
   const changes = { [key]: value }
   const success = await saveSettings(category, changes)
 
-  // 更新成功后重新获取最新配置
-  if (success) {
-    await refreshSettings()
+  // 后端设置保存失败时回滚 skipUpdate，保证前后端配置语义一致
+  if (!success) {
+    if (isAutoUpdateToggle && rollbackSkipUpdate !== null) {
+      try {
+        await (window as any).electronAPI?.setSkipUpdate?.(rollbackSkipUpdate)
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.warn(`回滚 skipUpdate 失败: ${errorMsg}`)
+      }
+    }
+    return
   }
+
+  // 更新成功后重新获取最新配置
+  await refreshSettings()
 
   // 处理托盘相关配置
   if (category === 'UI' && (key === 'IfShowTray' || key === 'IfToTray')) {
@@ -183,23 +217,8 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
     }
   }
 
-  // 处理自动更新配置 - 同时同步到 Electron skipUpdate 配置
-  if (category === 'Update' && key === 'IfAutoUpdate') {
-    // 先同步到 Electron 的 skipUpdate 配置
-    try {
-      // 先同步到 Electron 的 skipUpdate 配置
-      const isAutoUpdateEnabled = Boolean(value)
-      // 自动更新为 true 时，skipUpdate 为 false（启用初始化）
-      // 自动更新为 false 时，skipUpdate 为 true（跳过初始化）
-      const skipUpdate = !isAutoUpdateEnabled
-      await (window as any).electronAPI?.setSkipUpdate?.(skipUpdate)
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`更新自动更新配置失败: ${errorMsg}`)
-      message.error('自动更新配置同步失败')
-      return
-    }
-
+  // 处理自动更新配置 - 重启更新检查轮询
+  if (isAutoUpdateToggle) {
     // 再重启更新检查轮询
     try {
       await restartPolling()
@@ -234,9 +253,11 @@ const checkUpdate = async () => {
   try {
     // 同时触发后端更新（源码拉取 + 依赖安装）
     logger.info('手动检查更新，同时触发后端更新')
+    // 与初始化流程保持一致：开发环境固定 dev，生产环境按 release/${version}
+    const targetBranch = import.meta.env.DEV ? 'dev' : `release/${appVersion}`
     const api = window.electronAPI as any
     if (api.updateOnly) {
-      const updateResult = await api.updateOnly('dev')
+      const updateResult = await api.updateOnly(targetBranch)
       if (updateResult.success) {
         logger.info('后端更新完成，刷新后端版本状态')
         // 刷新后端版本状态，消除标题栏更新提示
