@@ -46,7 +46,7 @@ async def connect_websocket(websocket: WebSocket):
     last_ping = time.monotonic()
     data = {}
 
-    await TaskManager.start_startup_queue()
+    asyncio.create_task(TaskManager.start_startup_queue())
 
     while True:
 
