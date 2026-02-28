@@ -3,7 +3,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, sc
 import * as fs from 'fs'
 import * as path from 'path'
 import { checkEnvironment, getAppRoot } from './services/environmentService'
-import { cleanupInitializationResources, registerInitializationHandlers, } from './ipc/initializationHandlers'
+import { registerInitializationHandlers, cleanupInitializationResources } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
 
 import { getLogger, initializeLogger } from './services/logger'
@@ -525,6 +525,10 @@ function createWindow() {
   // 注册初始化处理器
   registerInitializationHandlers(win)
   logger.info('应用初始化处理器已注册')
+
+  // 注册文件处理器
+  registerFileHandlers()
+  logger.info('文件处理器已注册')
 
   // 初始托盘配置（使用文件配置）
   updateTrayVisibility(config)
