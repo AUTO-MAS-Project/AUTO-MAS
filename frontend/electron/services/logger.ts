@@ -160,7 +160,10 @@ function hookConsole(): void {
  */
 function formatConsoleArgs(args: any[]): any[] {
     return args.map(arg => {
-        if (typeof arg === 'object' && arg !== null) {
+        if (arg instanceof Error) {
+            // 特殊处理 Error 对象
+            return `${arg.name}: ${arg.message}\n${arg.stack || ''}`
+        } else if (typeof arg === 'object' && arg !== null) {
             try {
                 return JSON.stringify(arg, null, 2)
             } catch {
