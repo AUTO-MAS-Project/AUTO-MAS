@@ -306,6 +306,8 @@ class _TaskManager:
     async def start_startup_queue(self):
         """开始运行启动时运行的调度队列"""
 
+        await asyncio.sleep(10)
+
         logger.info("开始运行启动时任务")
         for uid, queue in Config.QueueConfig.items():
 
