@@ -33,6 +33,32 @@ logger = get_logger("主业务定时器")
 
 class _MainTimer:
 
+    def __init__(self):
+        self.started = False
+
+    async def start(self):
+        """启动定时器"""
+
+        if self.started:
+            logger.warning("主业务定时器仅能启动一次，无法重复启动")
+            return
+
+        self.second_timer = asyncio.create_task(MainTimer.second_task())
+        self.hour_timer = asyncio.create_task(MainTimer.hour_task())
+        self.started = True
+        logger.info("主业务定时器启动")
+
+    async def stop(self):
+        """停止定时器"""
+
+        self.second_timer.cancel()
+        self.hour_timer.cancel()
+        try:
+            await self.second_timer
+            await self.hour_timer
+        except asyncio.CancelledError:
+            logger.info("主业务定时器已关闭")
+
     async def second_task(self):
         """每秒定期任务"""
         logger.info("每秒定期任务启动")
