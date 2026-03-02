@@ -30,7 +30,6 @@ const {
 // 活动标签
 const activeKey = ref('basic')
 const version = (import.meta as any).env?.VITE_APP_VERSION || '获取版本失败！'
-const appVersion = (import.meta as any).env?.VITE_APP_VERSION || '1.0.0'
 const backendUpdateInfo = ref<VersionOut | null>(null)
 
 // 设置数据 - 从API获取，不再使用硬编码初值
@@ -110,6 +109,7 @@ const loadSettings = async () => {
         await (window as any).electronAPI.syncBackendConfig({
           UI: data.UI,
           Start: data.Start,
+          Update: data.Update,
         })
         logger.info('后端配置已同步到 Electron')
       }
@@ -143,53 +143,37 @@ const refreshSettings = async () => {
   const data = await getSettings()
   if (data) {
     Object.assign(settings, data)
+
+    // 同步所有配置到 Electron
+    try {
+      if ((window as any).electronAPI?.syncBackendConfig) {
+        await (window as any).electronAPI.syncBackendConfig({
+          UI: data.UI,
+          Start: data.Start,
+          Update: data.Update,
+        })
+        logger.info('所有配置已同步到 Electron')
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`同步配置到 Electron 失败: ${errorMsg}`)
+    }
   }
 }
 
 const handleSettingChange = async (category: keyof GlobalConfig, key: string, value: any) => {
-  // IfAutoUpdate 与 skipUpdate 是互斥映射关系：
-  // IfAutoUpdate=true  => skipUpdate=false（执行初始化/启用自动检查）
-  // IfAutoUpdate=false => skipUpdate=true（跳过初始化/禁用自动检查）
-  const isAutoUpdateToggle = category === 'Update' && key === 'IfAutoUpdate'
-  let rollbackSkipUpdate: boolean | null = null
-
-  if (isAutoUpdateToggle) {
-    const previousAutoUpdateEnabled = Boolean(settings.Update?.IfAutoUpdate)
-    const nextAutoUpdateEnabled = Boolean(value)
-    const nextSkipUpdate = !nextAutoUpdateEnabled
-    rollbackSkipUpdate = !previousAutoUpdateEnabled
-
-    try {
-      await (window as any).electronAPI?.setSkipUpdate?.(nextSkipUpdate)
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`更新自动更新配置失败: ${errorMsg}`)
-      message.error('自动更新配置同步失败')
-      return
-    }
-  }
-
   // 只发送修改的字段
   const changes = { [key]: value }
   const success = await saveSettings(category, changes)
 
-  // 后端设置保存失败时回滚 skipUpdate，保证前后端配置语义一致
   if (!success) {
-    if (isAutoUpdateToggle && rollbackSkipUpdate !== null) {
-      try {
-        await (window as any).electronAPI?.setSkipUpdate?.(rollbackSkipUpdate)
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.warn(`回滚 skipUpdate 失败: ${errorMsg}`)
-      }
-    }
     return
   }
 
-  // 更新成功后重新获取最新配置
+  // 更新成功后重新获取最新配置（会自动同步到 Electron）
   await refreshSettings()
 
-  // 处理托盘相关配置
+  // 处理托盘相关配置（需要额外的实时更新调用）
   if (category === 'UI' && (key === 'IfShowTray' || key === 'IfToTray')) {
     try {
       if ((window as any).electronAPI?.updateTraySettings) {
@@ -202,24 +186,8 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
     }
   }
 
-  // 处理启动配置
-  if (category === 'Start' && key === 'IfMinimizeDirectly') {
-    try {
-      if ((window as any).electronAPI?.syncBackendConfig) {
-        await (window as any).electronAPI.syncBackendConfig({
-          Start: { [key]: value },
-        })
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`同步启动配置失败: ${errorMsg}`)
-      message.error('启动配置同步失败')
-    }
-  }
-
   // 处理自动更新配置 - 重启更新检查轮询
-  if (isAutoUpdateToggle) {
-    // 再重启更新检查轮询
+  if (category === 'Update' && key === 'IfAutoUpdate') {
     try {
       await restartPolling()
     } catch (error) {
@@ -251,23 +219,6 @@ const checkUpdate = async () => {
   }`)
 
   try {
-    // 同时触发后端更新（源码拉取 + 依赖安装）
-    logger.info('手动检查更新，同时触发后端更新')
-    // 与初始化流程保持一致：开发环境固定 dev，生产环境按 release/${version}
-    const targetBranch = import.meta.env.DEV ? 'dev' : `release/${appVersion}`
-    const api = window.electronAPI as any
-    if (api.updateOnly) {
-      const updateResult = await api.updateOnly(targetBranch)
-      if (updateResult.success) {
-        logger.info('后端更新完成，刷新后端版本状态')
-        // 刷新后端版本状态，消除标题栏更新提示
-        getBackendVersion()
-      } else {
-        logger.warn(`后端更新失败: ${updateResult.error}`)
-      }
-    }
-
-    // 检查前端更新
     await globalCheckUpdate(false, true) // silent=false, forceCheck=true
     logger.info(`全局更新检查完成，状态: ${JSON.stringify({
       updateVisible: updateVisible.value,
