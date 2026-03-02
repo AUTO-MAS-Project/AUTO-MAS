@@ -26,3 +26,25 @@ uv.lock
 /debug/
 /history/
 /script/
+
+# Frontend dependencies & caches
+/frontend/node_modules/
+/frontend/.yarn/cache/
+/frontend/.yarn/unplugged/
+/frontend/.pnp.*
+
+# Frontend build artifacts
+/frontend/dist/
+/frontend/dist-electron/
+/frontend/.vite/
+
+# Frontend runtime/user data (generated when running electron from frontend)
+/frontend/config/
+/frontend/data/
+/frontend/debug/
+/frontend/history/
+/frontend/repo/
+/frontend/res
+/frontend/app
+# Local AI/agent metadata
+/.claude/
