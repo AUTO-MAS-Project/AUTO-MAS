@@ -151,7 +151,7 @@ router.beforeEach(async (to, from, next) => {
     return
   }
 
-  const isDev = import.meta.env.VITE_APP_ENV === 'dev'
+  const isDev = import.meta.env.DEV
   if (isDev) return next()
 
   const { isInitialized } = useAppInitialization()

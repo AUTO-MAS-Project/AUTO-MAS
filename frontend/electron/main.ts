@@ -1,4 +1,4 @@
-import { exec, spawn } from 'child_process'
+﻿import { exec, spawn } from 'child_process'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray, } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -104,6 +104,9 @@ interface AppConfig {
     IfMinimizeDirectly: boolean
     IfSelfStart: boolean
   }
+  Update: {
+    IfAutoUpdate: boolean
+  }
 
   [key: string]: any
 }
@@ -121,9 +124,12 @@ const defaultConfig: AppConfig = {
     IfMinimizeDirectly: false,
     IfSelfStart: false,
   },
+  Update: {
+    IfAutoUpdate: false,
+  },
 }
 
-// 加载配置
+//加载配置
 function loadConfig(): AppConfig {
   try {
     const appRoot = getAppRoot()
@@ -1101,6 +1107,11 @@ ipcMain.handle('sync-backend-config', async (_event, backendSettings) => {
       currentConfig.Start = { ...currentConfig.Start, ...backendSettings.Start }
     }
 
+    // 同步Update配置
+    if (backendSettings.Update) {
+      currentConfig.Update = { ...currentConfig.Update, ...backendSettings.Update }
+    }
+
     // 保存到前端配置文件
     saveConfig(currentConfig)
 
@@ -1145,6 +1156,30 @@ ipcMain.handle('reset-config', async () => {
   } catch (error) {
     logger.error('重置配置文件失败')
     throw error
+  }
+})
+
+// 应用初始化版本管理（保存前端版本号，版本号不一致时需要重新初始化）
+ipcMain.handle('get-initialized-version', async () => {
+  try {
+    const config = loadConfig()
+    return config.initializedVersion ?? null
+  } catch (error) {
+    logger.error('读取初始化版本失败', error)
+    return null
+  }
+})
+
+ipcMain.handle('set-initialized-version', async (_event, version: string) => {
+  try {
+    const config = loadConfig()
+    config.initializedVersion = version
+    saveConfig(config)
+    logger.info(`初始化版本已保存: ${version}`)
+    return true
+  } catch (error) {
+    logger.error('保存初始化版本失败', error)
+    return false
   }
 })
 

@@ -72,6 +72,10 @@ export interface ElectronAPI {
   loadConfig: () => Promise<any>
   resetConfig: () => Promise<void>
 
+  // 应用初始化版本（保存前端版本号用于比对）
+  getInitializedVersion: () => Promise<string | null>
+  setInitializedVersion: (version: string) => Promise<boolean>
+
   // 托盘设置
   updateTraySettings: (uiSettings: any) => Promise<boolean>
   syncBackendConfig: (backendSettings: any) => Promise<boolean>
