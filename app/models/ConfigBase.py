@@ -26,6 +26,7 @@ import os
 import json
 import uuid
 import shlex
+import inspect
 import asyncio
 import win32com.client
 from copy import deepcopy
@@ -36,9 +37,10 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Type, TypeVar, Generic, Callable, Coroutine
 
-
-from app.utils import dpapi_encrypt, dpapi_decrypt
+from app.utils import get_logger, dpapi_encrypt, dpapi_decrypt
 from app.utils.constants import RESERVED_NAMES, ILLEGAL_CHARS, DEFAULT_DATETIME
+
+logger = get_logger("配置基类")
 
 
 class ValidatorBase(ABC):
@@ -478,6 +480,7 @@ class ConfigItem:
             else None
         )
         self.is_locked = False
+        self._slots: list[Callable[[Any], Any]] = []
 
         if not self.validator.validate(self.value):
             raise ValueError(
@@ -519,6 +522,9 @@ class ConfigItem:
         if not self.validator.validate(self.value):
             self.value = self.validator.correct(self.value)
 
+        if len(self._slots) > 0:
+            asyncio.create_task(self._emit_signal(self.value))
+
     def getValue(self, if_decrypt: bool = True) -> Any:
         """
         获取配置项值
@@ -533,6 +539,54 @@ class ConfigItem:
         if isinstance(self.validator, EncryptValidator) and if_decrypt:
             return dpapi_decrypt(v)
         return v
+
+    def connect(self, slot: Callable[[Any], Any]):
+        """
+        连接槽函数到配置项修改信号
+
+        Parameters
+        ----------
+        slot: Callable[[Any], Any]
+            槽函数，接收新值作为参数，支持同步和异步函数
+        """
+        if not callable(slot):
+            raise TypeError(f"槽函数必须是可调用对象")
+
+        if slot not in self._slots:
+            self._slots.append(slot)
+
+    def disconnect(self, slot: Callable[[Any], Any]):
+        """
+        断开槽函数连接
+
+        Parameters
+        ----------
+        slot: Callable[[Any], Any]
+            要断开的槽函数
+        """
+        if slot in self._slots:
+            self._slots.remove(slot)
+
+    def disconnect_all(self):
+        """断开所有槽函数连接"""
+        self._slots.clear()
+
+    @logger.catch
+    async def _emit_signal(self, value: Any) -> None:
+        """
+        执行所有连接的槽函数, 将新值作为参数传递
+
+        Parameters
+        ----------
+        value: Any
+            新值, 已经过验证和修正
+        """
+
+        for slot in self._slots:
+            if inspect.iscoroutinefunction(slot):
+                await slot(value)
+            else:
+                slot(value)
 
     def lock(self):
         """
@@ -721,6 +775,50 @@ class ConfigBase(ABC):
             await self.save()
 
         await asyncio.gather(*(_() for _ in self._save_methods))
+
+    def bind(self, group: str, name: str, slot: Callable[[Any], Any]):
+        """
+        连接槽函数到配置项修改信号
+
+        Parameters
+        ----------
+        group: str
+            配置项分组名称
+        name: str
+            配置项名称
+        slot: Callable[[Any], Any]
+            槽函数，接收新值作为参数，支持同步和异步函数
+        """
+
+        if not self._config_item_index.get(group, {}).get(name):
+            raise AttributeError(f"配置项 '{group}.{name}' 不存在")
+
+        if self.is_locked:
+            raise ValueError("配置已锁定, 无法修改")
+
+        self._config_item_index[group][name].connect(slot)
+
+    def unbind(self, group: str, name: str, slot: Callable[[Any], Any]):
+        """
+        断开槽函数连接
+
+        Parameters
+        ----------
+        group: str
+            配置项分组名称
+        name: str
+            配置项名称
+        slot: Callable[[Any], Any]
+            要断开的槽函数
+        """
+
+        if not self._config_item_index.get(group, {}).get(name):
+            raise AttributeError(f"配置项 '{group}.{name}' 不存在")
+
+        if self.is_locked:
+            raise ValueError("配置已锁定, 无法修改")
+
+        self._config_item_index[group][name].disconnect(slot)
 
     async def save(self) -> None:
         """保存配置"""
