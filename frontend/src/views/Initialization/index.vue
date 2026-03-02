@@ -45,7 +45,7 @@ const steps = [
   { key: 'git', title: 'Git 安装', canSkip: false },
   { key: 'repository', title: '源码拉取', canSkip: true },
   { key: 'dependency', title: '依赖安装', canSkip: true },
-  { key: 'backend', title: '后端启动', canSkip: false },
+  { key: 'backend', title: '后端启动', canSkip: true },
 ]
 
 // ==================== 状态管理 ====================
@@ -381,11 +381,6 @@ async function handleSkip() {
   const stepKey = currentStep.value.key
   const state = stepStates.value[stepKey]
 
-  if (stepKey === 'backend') {
-    message.warning('后端启动步骤不允许跳过')
-    return
-  }
-
   logger.info(`跳过步骤: ${stepKey}`)
 
   if (state) {
@@ -488,6 +483,12 @@ async function handleBackendComplete() {
   stepStatus.value = 'finish'
   message.success('初始化完成')
 
+  // 保存初始化版本号，用于下次启动时比对
+  const api = window.electronAPI as any
+  await api.setInitializedVersion?.(appVersion)
+  logger.info(`初始化版本号已保存: ${appVersion}`)
+
+  // 初始化完成后刷新后端版本状态，消除标题栏更新提示
   await getBackendVersion()
   logger.info('后端版本状态已刷新')
 
@@ -613,38 +614,41 @@ onMounted(async () => {
   const api = window.electronAPI as any
   let startFromIndex = 0
 
-  // 开发环境下跳过初始化流程，直接使用本地代码启动后端
+  // 开发环境：完全跳过初始化流程
   if (isDev) {
     logger.info('开发环境，跳过初始化流程，直接进入应用')
     await handleLocalEnterApp()
     return
-  } else {
-    // 检查是否启用跳过更新开关
-    const skipUpdate = await api.getSkipUpdate?.()
-    if (!skipUpdate) {
-      logger.info('自动更新已开启，执行完整初始化流程')
-    } else {
-      logger.info('自动更新已关闭，按初始化版本号判定是否跳过前置步骤')
-      // 检查初始化版本号是否与当前前端版本一致
-      const savedVersion = await api.getInitializedVersion?.()
-      if (savedVersion === appVersion) {
-        logger.info(`初始化版本号一致（${appVersion}），跳过前置步骤，仅执行后端启动`)
-        startFromIndex = steps.length - 1
+  }
 
-        // 仅跳过前 5 步，后端启动步骤仍执行
-        for (let i = 0; i < steps.length - 1; i++) {
-          const stepKey = steps[i].key
-          const state = stepStates.value[stepKey]
-          state.status = 'success'
-          state.progress = 100
-          state.message = '已跳过'
-          state.showMirrorSelection = false
-          state.countdown = 0
-        }
-      } else {
-        logger.info(`初始化版本号不一致：当前${appVersion} vs 保存${savedVersion}，执行完整初始化流程`)
+  // 检查是否启用跳过更新开关（自动更新）
+  const skipUpdate = await api.getSkipUpdate?.()
+
+  if (skipUpdate) {
+    // 自动更新关闭：检查版本号
+    const savedVersion = await api.getInitializedVersion?.()
+    if (savedVersion === appVersion) {
+      // 版本号相同：跳过前5步，从后端步骤开始
+      logger.info(`自动更新已关闭，初始化版本号一致（${appVersion}），跳过安装步骤，启动后端`)
+      startFromIndex = steps.length - 1
+
+      // 跳过前 5 步（python, pip, git, repository, dependency），只启动后端
+      for (let i = 0; i < steps.length - 1; i++) {
+        const stepKey = steps[i].key
+        const state = stepStates.value[stepKey]
+        state.status = 'success'
+        state.progress = 100
+        state.message = '已跳过'
+        state.showMirrorSelection = false
+        state.countdown = 0
       }
+    } else {
+      // 版本号不同或无记录：执行完整初始化流程
+      logger.info(`自动更新已关闭，初始化版本号不一致（当前${appVersion} vs 保存${savedVersion}），执行完整初始化流程`)
     }
+  } else {
+    // 自动更新开启：无条件执行完整初始化流程
+    logger.info('自动更新已开启，执行完整初始化流程')
   }
 
   // 加载镜像源配置
