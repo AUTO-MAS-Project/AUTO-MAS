@@ -76,10 +76,6 @@ export interface ElectronAPI {
   getInitializedVersion: () => Promise<string | null>
   setInitializedVersion: (version: string) => Promise<boolean>
 
-  // 跳过更新开关
-  getSkipUpdate: () => Promise<boolean>
-  setSkipUpdate: (value: boolean) => Promise<boolean>
-
   // 托盘设置
   updateTraySettings: (uiSettings: any) => Promise<boolean>
   syncBackendConfig: (backendSettings: any) => Promise<boolean>
