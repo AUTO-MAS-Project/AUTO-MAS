@@ -140,6 +140,13 @@ class AppConfig(GlobalConfig):
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
 
+        from app.services import System
+
+        self.bind("Start", "IfSelfStart", System.set_SelfStart)
+        self.bind("Function", "IfAllowSleep", System.set_Sleep)
+        await System.set_SelfStart(self.get("Start", "IfSelfStart"))
+        await System.set_Sleep(self.get("Function", "IfAllowSleep"))
+
         logger.info("程序初始化完成")
 
     async def check_data(self) -> None:

@@ -76,14 +76,11 @@ def main():
         @asynccontextmanager
         async def lifespan(app: FastAPI):
             from app.core import Config, MainTimer, TaskManager
-            from app.services import System
 
             await Config.init_config()
             await Config.get_stage()
             await Config.clean_old_history()
             await MainTimer.start()
-            await System.set_Sleep()
-            await System.set_SelfStart()
 
             # 初始化 Koishi 系统客户端（如果已启用）
             if Config.get("Notify", "IfKoishiSupport"):
