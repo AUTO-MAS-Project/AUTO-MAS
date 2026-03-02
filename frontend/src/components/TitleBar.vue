@@ -119,10 +119,18 @@ const handleBackendUpdateClick = () => {
         // 2. 重置初始化状态
         resetInitializationStatus()
 
-        // 3. 清理 sessionStorage 中的状态
-        sessionStorage.clear()
+        // 3. 设置强制后端更新标志（在清理 sessionStorage 之前）
+        sessionStorage.setItem('forceBackendUpdate', 'true')
+        logger.info('已设置强制后端更新标志')
 
-        // 4. 跳转到初始化页面
+        // 4. 清理 sessionStorage 中的其他状态（保留 forceBackendUpdate）
+        const forceUpdateFlag = sessionStorage.getItem('forceBackendUpdate')
+        sessionStorage.clear()
+        if (forceUpdateFlag) {
+          sessionStorage.setItem('forceBackendUpdate', forceUpdateFlag)
+        }
+
+        // 5. 跳转到初始化页面
         await router.push('/initialization')
         logger.info('已跳转到初始化页面')
       } catch (error) {
