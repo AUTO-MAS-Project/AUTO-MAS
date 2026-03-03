@@ -54,7 +54,6 @@ class EmulatorConfig(ConfigBase):
     """模拟器配置"""
 
     def __init__(self) -> None:
-
         ## Info ------------------------------------------------------------
         ## 模拟器名称
         self.Info_Name = ConfigItem("Info", "Name", "新模拟器")
@@ -92,7 +91,6 @@ class Webhook(ConfigBase):
     """Webhook 配置"""
 
     def __init__(self) -> None:
-
         ## Info ------------------------------------------------------------
         ## Webhook 名称
         self.Info_Name = ConfigItem("Info", "Name", "新自定义 Webhook 通知")
@@ -120,7 +118,6 @@ class QueueItem(ConfigBase):
     related_config: dict[str, MultipleConfig] = {}
 
     def __init__(self) -> None:
-
         ## Info ------------------------------------------------------------
         ## 脚本 ID
         self.Info_ScriptId = ConfigItem(
@@ -137,7 +134,6 @@ class TimeSet(ConfigBase):
     """时间设置配置"""
 
     def __init__(self) -> None:
-
         ## Info ------------------------------------------------------------
         ## 是否启用
         self.Info_Enabled = ConfigItem("Info", "Enabled", True, BoolValidator())
@@ -158,7 +154,6 @@ class QueueConfig(ConfigBase):
     """队列配置"""
 
     def __init__(self) -> None:
-
         ## Info ------------------------------------------------------------
         ## 队列名称
         self.Info_Name = ConfigItem("Info", "Name", "新队列")
@@ -209,7 +204,6 @@ class MaaUserConfig(ConfigBase):
     related_config: dict[str, MultipleConfig] = {}
 
     def __init__(self) -> None:
-
         ## Info ------------------------------------------------------------
         ## 用户名称
         self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
@@ -422,7 +416,6 @@ class MaaConfig(ConfigBase):
     related_config: dict[str, MultipleConfig] = {}
 
     def __init__(self) -> None:
-
         ## Info ------------------------------------------------------------
         ## MAA 脚本名称
         self.Info_Name = ConfigItem("Info", "Name", "新 MAA 脚本")
@@ -478,7 +471,6 @@ class MaaPlanConfig(ConfigBase):
     """MAA计划表配置"""
 
     def __init__(self) -> None:
-
         ## Info ------------------------------------------------------------
         ## 计划表名称
         self.Info_Name = ConfigItem("Info", "Name", "新 MAA 计划表")
@@ -551,7 +543,6 @@ class GeneralUserConfig(ConfigBase):
     """通用脚本用户配置"""
 
     def __init__(self) -> None:
-
         ## Info ------------------------------------------------------------
         ## 用户名称
         self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
@@ -621,7 +612,6 @@ class GeneralConfig(ConfigBase):
     related_config: dict[str, MultipleConfig] = {}
 
     def __init__(self) -> None:
-
         ## Info ------------------------------------------------------------
         ## 脚本名称
         self.Info_Name = ConfigItem("Info", "Name", "新通用脚本")
@@ -744,7 +734,6 @@ class GlobalConfig(ConfigBase):
     """全局配置"""
 
     def __init__(self):
-
         ## Function ---------------------------------------------------------
         ## 历史记录保留时间（天）
         self.Function_HistoryRetentionTime = ConfigItem(
@@ -967,7 +956,6 @@ class GlobalConfig(ConfigBase):
                         )
 
                         if "SSReopen" not in stage["Display"]:
-
                             if stage["Drop"] in MATERIALS_MAP:
                                 drop_id = stage["Drop"]
                             elif "玉" in stage["Drop"]:
@@ -986,7 +974,7 @@ class GlobalConfig(ConfigBase):
                                     "Activity": side_story["Activity"],
                                 }
                             )
-        except:
+        except:  # noqa: E722
             return "{ }"
 
         stage_data = {"Info": activity_stage_drop_info}

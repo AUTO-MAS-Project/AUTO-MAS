@@ -247,12 +247,12 @@ class GeneralManager(TaskExecuteBase):
 
             await self.spawn(task)
 
-    async def final_task(self):
+    async def final_task(self) -> None:
         """运行结束后的收尾工作"""
 
         if self.check_result != "Pass":
             self.script_info.status = "异常"
-            return self.check_result
+            return
 
         logger.info("通用脚本任务已结束, 开始执行后续操作")
         await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
