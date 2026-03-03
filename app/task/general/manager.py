@@ -126,25 +126,6 @@ class GeneralManager(TaskExecuteBase):
             ):
                 return "未完成URL配置, 请检查脚本配置中的URL和进程名称设置！"
 
-        config_path = Path(
-            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                "Script", "ConfigPath"
-            )
-        )
-        config_mode = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-            "Script", "ConfigPathMode"
-        )
-        if config_mode == "File" and not config_path.is_file():
-            return (
-                f"脚本配置文件路径无效或不是文件: {config_path}, "
-                "请检查脚本配置中的 ConfigPath 设置！"
-            )
-        if config_mode == "Folder" and not config_path.is_dir():
-            return (
-                f"脚本配置文件夹路径无效或不是文件夹: {config_path}, "
-                "请检查脚本配置中的 ConfigPath 设置！"
-            )
-
         return "Pass"
 
     async def prepare(self):
@@ -181,16 +162,13 @@ class GeneralManager(TaskExecuteBase):
         # 备份原始配置
         logger.info(f"记录通用脚本配置文件: {self.script_config_path}")
         self.temp_path.mkdir(parents=True, exist_ok=True)
-        if (
-            self.script_config.get("Script", "ConfigPathMode") == "Folder"
-            and self.script_config_path.is_dir()
-        ):
-            shutil.copytree(self.script_config_path, self.temp_path, dirs_exist_ok=True)
-        elif (
-            self.script_config.get("Script", "ConfigPathMode") == "File"
-            and self.script_config_path.is_file()
-        ):
-            shutil.copy(self.script_config_path, self.temp_path / "config.temp")
+        if self.script_config_path.exists():
+            if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+                shutil.copytree(
+                    self.script_config_path, self.temp_path, dirs_exist_ok=True
+                )
+            elif self.script_config.get("Script", "ConfigPathMode") == "File":
+                shutil.copy(self.script_config_path, self.temp_path / "config.temp")
 
         # 构建用户列表
         if self.task_info.mode == "ScriptConfig":
@@ -213,6 +191,7 @@ class GeneralManager(TaskExecuteBase):
         )
 
     async def main_task(self):
+
         self.check_result = await self.check()
         if self.check_result != "Pass":
             logger.error(f"未通过配置检查: {self.check_result}")
@@ -259,6 +238,7 @@ class GeneralManager(TaskExecuteBase):
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode == "AutoProxy":
+
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())
@@ -319,6 +299,7 @@ class GeneralManager(TaskExecuteBase):
         self.script_info.status = "完成"
 
     async def on_crash(self, e: Exception):
+
         self.script_info.status = "异常"
         logger.exception(f"通用脚本任务出现异常: {e}")
         await Config.send_websocket_message(

@@ -68,7 +68,6 @@ export interface GeneralScriptConfig {
     LogTimeFormat: string
     ScriptPath: string
     SuccessLog: string
-    HookList: string[]
     UpdateConfigMode: string
   }
   SubConfigsInfo: {

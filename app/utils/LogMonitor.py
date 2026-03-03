@@ -79,8 +79,9 @@ class LogMonitor:
         if_log_start = False
         offset = 0
         log_contents = []
-        log_stat = None
+
         while True:
+
             # 检查文件是否仍然存在
             if not log_file_path.exists():
                 logger.warning(f"日志文件不存在: {log_file_path}")
@@ -102,8 +103,6 @@ class LogMonitor:
 
             # 尝试读取文件
             try:
-                if not log_stat:
-                    continue
 
                 if (
                     log_stat.st_ino != log_file_path.stat().st_ino
@@ -116,6 +115,7 @@ class LogMonitor:
                 log_stat = log_file_path.stat()
 
                 if log_stat.st_size <= offset:
+
                     # 日志无变化超时调用回调
                     if datetime.now() - self.last_callback_time > timedelta(minutes=1):
                         await self.do_callback()
@@ -168,6 +168,7 @@ class LogMonitor:
         self.log_contents = []
 
         while True:
+
             try:
                 bline = await asyncio.wait_for(process.stdout.readline(), timeout=60)
             except asyncio.TimeoutError:
@@ -191,6 +192,7 @@ class LogMonitor:
             logger.error(f"回调函数执行失败: {e}")
 
     async def update_latest_timestamp(self, log: str, if_init: bool = False) -> None:
+
         if if_init:
             self.last_log = log
             self.latest_time = datetime.now()

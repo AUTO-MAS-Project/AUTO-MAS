@@ -125,7 +125,6 @@ def main():
             update_router,
             ocr_router,
             ws_debug_router,
-            hooks_router,
         )
 
         app = FastAPI(
@@ -155,7 +154,6 @@ def main():
         app.include_router(update_router)
         app.include_router(ocr_router)
         app.include_router(ws_debug_router)
-        app.include_router(hooks_router)
 
         app.mount(
             "/api/res/materials",
