@@ -230,6 +230,69 @@ const handleWebhookChange = async () => {
 
     <div class="form-section">
       <div class="section-header">
+        <h3>ntfy通知</h3>
+        <a href="https://ntfy.sh/" class="section-doc-link" title="查看ntfy官网" @click="handleExternalLink">
+          文档
+        </a>
+      </div>
+      <a-row :gutter="24">
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">启用ntfy通知</span>
+              <a-tooltip>
+                <template #title>
+                  <div>使用ntfy自建服务器推送通知</div>
+                </template>
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-select :value="settings.Notify?.IfNtfy" size="large" style="width: 100%"
+              @change="(checked: any) => handleSettingChange('Notify', 'IfNtfy', checked)">
+              <a-select-option :value="true">是</a-select-option>
+              <a-select-option :value="false">否</a-select-option>
+            </a-select>
+          </div>
+        </a-col>
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">ntfy服务器地址</span>
+              <a-tooltip>
+                <template #title>
+                  <div>ntfy服务器地址，如 ntfy.sh 或自建服务器</div>
+                </template>
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-input :value="settings.Notify?.NtfyServer" :disabled="!settings.Notify?.IfNtfy"
+              placeholder="请输入ntfy服务器地址" size="large"
+              @blur="(e: any) => handleSettingChange('Notify', 'NtfyServer', e.target.value)" />
+          </div>
+        </a-col>
+      </a-row>
+      <a-row :gutter="24">
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">ntfy Topic</span>
+              <a-tooltip>
+                <template #title>
+                  <div>ntfy Topic，用于标识通知主题</div>
+                </template>
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-input :value="settings.Notify?.NtfyTopic" :disabled="!settings.Notify?.IfNtfy"
+              placeholder="请输入ntfy Topic" size="large"
+              @blur="(e: any) => handleSettingChange('Notify', 'NtfyTopic', e.target.value)" />
+          </div>
+        </a-col>
+      </a-row>
+    </div>
+
+    <div class="form-section">
+      <div class="section-header">
         <h3>Koishi通知</h3>
       </div>
       <a-row :gutter="24">

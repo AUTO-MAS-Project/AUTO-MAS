@@ -184,6 +184,79 @@ class Notification:
         else:
             raise Exception(f"ServerChan 推送通知失败: {response.text}")
 
+    async def ntfy_push(
+        self, title: str, message: str, server: str, topic: str
+    ) -> None:
+        """
+        使用 ntfy 推送通知
+
+        Parameters
+        ----------
+        title: str
+            通知标题
+        message: str
+            通知内容
+        server: str
+            ntfy 服务器地址（如 ntfy.sh）
+        topic: str
+            ntfy Topic
+        """
+
+        if not server:
+            raise ValueError("ntfy 服务器地址不能为空")
+        if not topic:
+            raise ValueError("ntfy Topic 不能为空")
+
+        # 构造 URL
+        url = f"https://{server}/{topic}"
+
+        # 请求体
+        content = message.encode("utf-8")
+
+        # 请求头 - 单独处理避免编码问题
+        headers = {}
+        headers["Content-Type"] = "text/plain; charset=utf-8"
+
+        # 将标题放到URL查询参数中，避免header编码问题
+        import urllib.parse
+        encoded_title = urllib.parse.quote(title)
+        full_url = f"{url}?title={encoded_title}"
+
+        try:
+            # 使用 urllib 避免 httpx 的 header 编码问题
+            import urllib.request
+            import ssl
+
+            req = urllib.request.Request(
+                full_url,
+                data=content,
+                headers=headers,
+                method="POST"
+            )
+
+            # 创建 SSL 上下文
+            context = ssl.create_default_context()
+
+            # 处理代理
+            proxy = Config.proxy
+            if proxy:
+                # 设置代理
+                proxy_handler = urllib.request.ProxyHandler({'https': proxy})
+                opener = urllib.request.build_opener(proxy_handler, urllib.request.HTTPSHandler(context=context))
+                with opener.open(req, timeout=10) as response:
+                    response_status = response.status
+            else:
+                with urllib.request.urlopen(req, timeout=10, context=context) as response:
+                    response_status = response.status
+
+        except Exception as e:
+            raise Exception(f"ntfy 请求失败: {e}")
+
+        if response_status == 200:
+            logger.success(f"ntfy 推送通知成功: {title}")
+        else:
+            raise Exception(f"ntfy 推送通知失败: HTTP {response_status}")
+
     async def WebhookPush(self, title: str, content: str, webhook: Webhook) -> None:
         """
         Webhook 推送通知
@@ -468,6 +541,15 @@ class Notification:
         if Config.get("Notify", "IfKoishiSupport"):
             await self.send_koishi(
                 "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！"
+            )
+
+        # 发送ntfy通知
+        if Config.get("Notify", "IfNtfy"):
+            await self.ntfy_push(
+                "AUTO-MAS测试通知",
+                "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！",
+                Config.get("Notify", "NtfyServer"),
+                Config.get("Notify", "NtfyTopic"),
             )
 
         logger.success("测试通知发送完成")
