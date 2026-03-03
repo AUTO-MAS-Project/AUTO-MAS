@@ -334,6 +334,12 @@
                 </template>
                 <a-input v-model:value="formData.logTimeFormat" placeholder="请输入脚本日志时间戳格式" size="large"
                   class="modern-input" @blur="handleChange('Script', 'LogTimeFormat', formData.logTimeFormat)" />
+                <div class="format-preview">
+                  示例：<span class="format-preview-value">{{ logTimeFormatPreview }}</span>
+                </div>
+                <div v-if="hasFractionalSecondToken" class="format-preview-tip">
+                  提示：%f 同时支持 3 位毫秒（如 123）和 6 位微秒（如 123456），会按日志中的位数自动识别。
+                </div>
               </a-form-item>
             </a-col>
           </a-row>
@@ -661,7 +667,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch, nextTick } from 'vue'
+import { computed, onMounted, reactive, ref, watch, nextTick } from 'vue'
 import type { MAAScriptConfig } from '../../../types/script.ts'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
@@ -1056,6 +1062,37 @@ const rules = {
   logTimeFormat: [{ required: true, message: '请输入日志时间戳格式', trigger: 'blur' }],
   errorLog: [{ required: true, message: '请输入任务失败日志', trigger: 'blur' }],
 }
+
+const logTimeFormatPreview = computed(() => {
+  const format = formData.logTimeFormat || ''
+  if (!format.trim()) {
+    return '请输入日志时间戳格式后查看示例'
+  }
+
+  const tokenMap: Record<string, string> = {
+    '%Y': '2025',
+    '%m': '07',
+    '%d': '16',
+    '%H': '14',
+    '%M': '30',
+    '%S': '45',
+    '%f': '123456',
+    '%A': 'Wednesday',
+    '%a': 'Wed',
+    '%B': 'July',
+    '%b': 'Jul',
+  }
+
+  return format
+    .replace(/%%/g, '__PERCENT__')
+    .replace(/%[YmdHMSfAabB]/g, token => tokenMap[token] ?? token)
+    .replace(/__PERCENT__/g, '%')
+})
+
+const hasFractionalSecondToken = computed(() => {
+  const format = formData.logTimeFormat || ''
+  return /(^|[^%])%f/.test(format)
+})
 
 // 模拟器相关状态
 const emulatorLoading = ref(false)
@@ -2083,4 +2120,23 @@ const handleUpload = async () => {
   width: 60px;
   height: 60px;
 }
+
+.format-preview {
+  margin-top: 8px;
+  color: #8c8c8c;
+  font-size: 13px;
+}
+
+.format-preview-value {
+  color: #262626;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+
+.format-preview-tip {
+  margin-top: 4px;
+  color: #595959;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 </style>
