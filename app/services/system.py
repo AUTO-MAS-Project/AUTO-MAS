@@ -47,10 +47,17 @@ class _SystemHandler:
     def __init__(self) -> None:
         self.power_task: Optional[asyncio.Task] = None
 
-    async def set_Sleep(self) -> None:
-        """同步系统休眠状态"""
+    async def set_Sleep(self, if_allow_sleep: bool) -> None:
+        """
+        设置系统休眠
 
-        if Config.get("Function", "IfAllowSleep"):
+        Parameters
+        ----------
+        if_allow_sleep: bool
+            是否允许系统休眠
+        """
+
+        if if_allow_sleep:
             # 设置系统电源状态
             ctypes.windll.kernel32.SetThreadExecutionState(
                 self.ES_CONTINUOUS | self.ES_SYSTEM_REQUIRED
@@ -59,10 +66,17 @@ class _SystemHandler:
             # 恢复系统电源状态
             ctypes.windll.kernel32.SetThreadExecutionState(self.ES_CONTINUOUS)
 
-    async def set_SelfStart(self) -> None:
-        """同步开机自启"""
+    async def set_SelfStart(self, if_self_start: bool) -> None:
+        """
+        设置程序开机自启
 
-        if Config.get("Start", "IfSelfStart") and not await self.is_startup():
+        Parameters
+        ----------
+        if_self_start: bool
+            程序是否开机自启
+        """
+
+        if if_self_start and not await self.is_startup():
 
             # 创建任务计划
 
@@ -152,7 +166,7 @@ class _SystemHandler:
                 with suppress(Exception):
                     Path(xml_file).unlink()
 
-        elif not Config.get("Start", "IfSelfStart") and await self.is_startup():
+        elif not if_self_start and await self.is_startup():
 
             try:
 

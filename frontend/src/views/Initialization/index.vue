@@ -31,7 +31,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { enterApp, forceEnterApp } from '@/utils/appEntry.ts'
-import { markAsInitialized } from '@/composables/useAppInitialization'
+import { getBackendVersion } from '@/composables/useVersionService'
 import StepPanel from './components/StepPanel.vue'
 import BackendStartStep from './components/BackendStartStep.vue'
 import type { MirrorConfig } from '@/types/mirror'
@@ -54,8 +54,8 @@ const stepStatus = ref<'wait' | 'process' | 'finish' | 'error'>('process')
 const initCompleted = ref(false)
 const forceEnterVisible = ref(false)
 const isDev = import.meta.env.DEV
-const appVersion = import.meta.env.VITE_APP_VERSION
-const targetBranch = ref(isDev ? 'dev' : `release/${appVersion}`)
+const version = import.meta.env.VITE_APP_VERSION
+const targetBranch = ref(isDev ? 'dev' : `release/${version}`)
 
 logger.info(`当前环境: ${isDev ? '开发环境' : '生产环境'}, 目标分支: ${targetBranch.value}`)
 
@@ -336,12 +336,12 @@ async function executeStep(stepKey: string): Promise<boolean> {
 }
 
 // 开始初始化流程
-async function startInitialization() {
+async function startInitialization(startIndex: number = 0) {
   logger.info('开始初始化流程...')
 
   try {
     // 依次执行每个步骤
-    for (let i = 0; i < steps.length; i++) {
+    for (let i = startIndex; i < steps.length; i++) {
       const step = steps[i]
       currentStepIndex.value = i
 
@@ -483,6 +483,15 @@ async function handleBackendComplete() {
   stepStatus.value = 'finish'
   message.success('初始化完成')
 
+  // 保存初始化版本号，用于下次启动时比对
+  const api = window.electronAPI as any
+  await api.setInitializedVersion?.(version)
+  logger.info(`初始化版本号已保存: ${version}`)
+
+  // 初始化完成后刷新后端版本状态，消除标题栏更新提示
+  await getBackendVersion()
+  logger.info('后端版本状态已刷新')
+
   logger.info('等待后端服务完全稳定...')
 
   // 延迟进入应用，确保：
@@ -532,11 +541,7 @@ async function handleForceEnterConfirm() {
 
 async function handleLocalEnterApp() {
   try {
-    // 先标记应用已初始化完成
-    markAsInitialized()
-    logger.info('标记应用为已初始化完成')
-
-    // 尝试正常进入应用（会建立WebSocket连接）
+    // 尝试正常进入应用（会建立WebSocket连接，同时标记初始化完成）
     logger.info('准备正常进入应用...')
     const success = await enterApp('初始化完成后进入', true)
 
@@ -607,6 +612,77 @@ onMounted(async () => {
   logger.info('初始化界面已加载')
 
   const api = window.electronAPI as any
+  let startFromIndex = 0
+
+  // 开发环境：完全跳过初始化流程
+  if (isDev) {
+    logger.info('开发环境，跳过初始化流程，直接进入应用')
+    await handleLocalEnterApp()
+    return
+  }
+
+  // 检查是否为强制后端更新模式（从标题栏触发）
+  const forceBackendUpdate = sessionStorage.getItem('forceBackendUpdate') === 'true'
+  if (forceBackendUpdate) {
+    logger.info('检测到强制后端更新标志，将从第4步（源码拉取）开始执行')
+    sessionStorage.removeItem('forceBackendUpdate')
+  }
+
+  // 检查自动更新开关（从 electron 配置中读取）
+  let IfAutoUpdate = false
+  try {
+    const config = await api.loadConfig?.()
+    if (config?.Update?.IfAutoUpdate !== undefined) {
+      IfAutoUpdate = config.Update.IfAutoUpdate
+      logger.info(`从配置读取到 IfAutoUpdate: ${IfAutoUpdate}`)
+    } else {
+      logger.warn('配置中未找到 IfAutoUpdate，默认为 false')
+    }
+  } catch (error) {
+    logger.warn('读取配置失败，默认执行完整初始化')
+  }
+
+  if (forceBackendUpdate) {
+    // 强制后端更新模式：从第4步开始（repository, dependency, backend）
+    logger.info('强制后端更新模式：跳过前3步，从源码拉取开始')
+    startFromIndex = 3 // 从第4步（索引3）开始
+
+    // 跳过前 3 步（python, pip, git），标记为成功
+    for (let i = 0; i < 3; i++) {
+      const stepKey = steps[i].key
+      const state = stepStates.value[stepKey]
+      state.status = 'success'
+      state.progress = 100
+      state.message = '已跳过'
+      state.showMirrorSelection = false
+      state.countdown = 0
+    }
+  } else if (!IfAutoUpdate) {
+    // 自动更新关闭：检查版本号
+    const savedVersion = await api.getInitializedVersion?.()
+    if (savedVersion === version) {
+      // 版本号相同：跳过前5步，从后端步骤开始
+      logger.info(`自动更新已关闭，初始化版本号一致（${version}），跳过安装步骤，启动后端`)
+      startFromIndex = steps.length - 1
+
+      // 跳过前 5 步（python, pip, git, repository, dependency），只启动后端
+      for (let i = 0; i < steps.length - 1; i++) {
+        const stepKey = steps[i].key
+        const state = stepStates.value[stepKey]
+        state.status = 'success'
+        state.progress = 100
+        state.message = '已跳过'
+        state.showMirrorSelection = false
+        state.countdown = 0
+      }
+    } else {
+      // 版本号不同或无记录：执行完整初始化流程
+      logger.info(`自动更新已关闭，初始化版本号不一致（当前${version} vs 保存${savedVersion}），执行完整初始化流程`)
+    }
+  } else if (!forceBackendUpdate) {
+    // 自动更新开启且非强制更新：无条件执行完整初始化流程
+    logger.info('自动更新已开启，执行完整初始化流程')
+  }
 
   // 加载镜像源配置
   await loadMirrorConfigs()
@@ -630,7 +706,7 @@ onMounted(async () => {
 
   // 延迟启动初始化
   setTimeout(() => {
-    startInitialization()
+    startInitialization(startFromIndex)
   }, 500)
 })
 

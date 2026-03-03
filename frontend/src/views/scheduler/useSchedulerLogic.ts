@@ -66,16 +66,20 @@ const saveTabsToStorage = (tabs: SchedulerTab[]) => {
   }
 }
 
-export function useSchedulerLogic() {
-  // 核心状态 - 从本地存储加载或使用默认值
-  const schedulerTabs = ref<SchedulerTab[]>(loadTabsFromStorage())
+// ============================================
+// 单例模式：模块级别共享状态
+// 确保预挂载和组件挂载使用相同的状态实例
+// ============================================
 
-  const activeSchedulerTab = ref(schedulerTabs.value[0]?.key || 'main')
-  const logRefs = ref(new Map<string, HTMLElement>())
-  const overviewRefs = ref(new Map<string, any>()) // 任务总览面板引用
+// 核心状态 - 模块级别单例
+const schedulerTabs = ref<SchedulerTab[]>(loadTabsFromStorage())
+const activeSchedulerTab = ref(schedulerTabs.value[0]?.key || 'main')
+const logRefs = ref(new Map<string, HTMLElement>())
+const overviewRefs = ref(new Map<string, any>()) // 任务总览面板引用
 
-  // 从现有调度台中计算最大编号，确保新建调度台编号不重复
-  let tabCounter = 1
+// 从现有调度台中计算最大编号
+let tabCounter = 1
+const initTabCounter = () => {
   if (schedulerTabs.value.length > 1) {
     const tabNumbers = schedulerTabs.value
       .filter(tab => tab.key.startsWith('tab-'))
@@ -86,29 +90,36 @@ export function useSchedulerLogic() {
       logger.info(`从现有调度台恢复 tabCounter: ${tabCounter}`)
     }
   }
+}
+initTabCounter()
 
-  // 任务选项
-  const taskOptionsLoading = ref(false)
-  const taskOptions = ref<ComboBoxItem[]>([])
+// 任务选项
+const taskOptionsLoading = ref(false)
+const taskOptions = ref<ComboBoxItem[]>([])
 
-  // 电源操作状态
-  const powerAction = ref<PowerIn.signal>(PowerIn.signal.NO_ACTION)
-  // 注意：电源倒计时弹窗已移至全局组件 GlobalPowerCountdown.vue
-  // 这里保留引用以避免破坏现有代码，但实际功能由全局组件处理
-  const powerCountdownVisible = ref(false)
-  const powerCountdownData = ref<{
-    title?: string
-    message?: string
-    countdown?: number
-  }>({})
-  // 前端自己的60秒倒计时 - 已移至全局组件
-  let powerCountdownTimer: ReturnType<typeof setInterval> | null = null
+// 电源操作状态
+const powerAction = ref<PowerIn.signal>(PowerIn.signal.NO_ACTION)
+// 注意：电源倒计时弹窗已移至全局组件 GlobalPowerCountdown.vue
+// 这里保留引用以避免破坏现有代码，但实际功能由全局组件处理
+const powerCountdownVisible = ref(false)
+const powerCountdownData = ref<{
+  title?: string
+  message?: string
+  countdown?: number
+}>({})
+// 前端自己的60秒倒计时 - 已移至全局组件
+let powerCountdownTimer: ReturnType<typeof setInterval> | null = null
 
-  // 消息弹窗
-  const messageModalVisible = ref(false)
-  const currentMessage = ref<TaskMessage | null>(null)
-  const messageResponse = ref('')
+// 消息弹窗
+const messageModalVisible = ref(false)
+const currentMessage = ref<TaskMessage | null>(null)
+const messageResponse = ref('')
 
+// 初始化标志 - 确保某些操作只执行一次
+let _initialized = false
+let _watchInitialized = false
+
+export function useSchedulerLogic() {
   // WebSocket 实例
   const ws = useWebSocket()
 
@@ -164,8 +175,10 @@ export function useSchedulerLogic() {
     return schedulerTabs.value.find(tab => tab.key === activeSchedulerTab.value)
   })
 
-  // 监听调度台变化并保存到本地存储
+  // 监听调度台变化并保存到本地存储（只初始化一次）
   const watchTabsChanges = () => {
+    if (_watchInitialized) return
+    _watchInitialized = true
     // 使用Vue的watch API来监听数组变化，而不是重写原生方法
     watch(
       schedulerTabs,
@@ -913,52 +926,69 @@ export function useSchedulerLogic() {
     getPowerState()
   }
 
-  // 初始化函数
+  // 初始化函数 - 使用单例标志确保核心初始化只执行一次
   const initialize = () => {
-    // 设置全局WebSocket的消息处理函数
-    // 通过 import 的 ExternalWSHandlers 直接注册处理函数，保证导入方能够永久引用并调用
-    ExternalWSHandlers.taskManagerMessage = handleTaskManagerMessage
-    ExternalWSHandlers.mainMessage = handleMainMessage
-    logger.info('已设置全局WebSocket消息处理函数')
+    // 核心初始化只执行一次
+    if (!_initialized) {
+      _initialized = true
+      logger.info('调度中心首次初始化开始')
+
+      // 设置全局WebSocket的消息处理函数
+      // 通过 import 的 ExternalWSHandlers 直接注册处理函数，保证导入方能够永久引用并调用
+      ExternalWSHandlers.taskManagerMessage = handleTaskManagerMessage
+      ExternalWSHandlers.mainMessage = handleMainMessage
+      logger.info('已设置全局WebSocket消息处理函数')
+
+      // 监听电源状态变更事件（从 GlobalPowerCountdown 组件触发）
+      window.addEventListener('power-state-changed', handlePowerStateChanged)
+      logger.info('已注册电源状态变更事件监听器')
+
+      // 注册 UI hooks 到 schedulerHandlers，使其能在 schedulerHandlers 检测到 pending 时回放到当前 UI
+      try {
+        schedulerHandlers.registerSchedulerUI({
+          onNewTab: tab => {
+            try {
+              // 创建并订阅新调度台
+              const newTab = addSchedulerTab({
+                title: tab.title,
+                status: '运行',
+                websocketId: tab.websocketId,
+                selectedTaskId: tab.queueId,
+              })
+              subscribeToTask(newTab)
+              saveTabsToStorage(schedulerTabs.value)
+            } catch (e) {
+              const errorMsg = e instanceof Error ? e.message : String(e)
+              logger.warn(`registerSchedulerUI onNewTab error: ${errorMsg}`)
+            }
+          },
+          onCountdown: data => {
+            try {
+              // 倒计时已移至全局组件处理，这里不再处理
+              logger.info(`倒计时消息由全局组件处理: ${JSON.stringify(data)}`)
+            } catch (e) {
+              const errorMsg = e instanceof Error ? e.message : String(e)
+              logger.warn(`registerSchedulerUI onCountdown error: ${errorMsg}`)
+            }
+          },
+        })
+      } catch (e) {
+        const errorMsg = e instanceof Error ? e.message : String(e)
+        logger.warn(`schedulerHandlers registration failed: ${errorMsg}`)
+      }
+
+      logger.info('调度中心首次初始化完成')
+    } else {
+      logger.info('调度中心重复初始化跳过（单例模式）')
+    }
+
+    // 以下操作每次 initialize 调用都可以执行
 
     // 获取后端当前的电源状态
     getPowerState()
 
-    // 监听电源状态变更事件（从 GlobalPowerCountdown 组件触发）
-    window.addEventListener('power-state-changed', handlePowerStateChanged)
-    logger.info('已注册电源状态变更事件监听器')
-
-    // 注册 UI hooks 到 schedulerHandlers，使其能在 schedulerHandlers 检测到 pending 时回放到当前 UI
+    // 回放 pending tabs（如果有的话）- 会被 consume 掉，所以多次调用是安全的
     try {
-      schedulerHandlers.registerSchedulerUI({
-        onNewTab: tab => {
-          try {
-            // 创建并订阅新调度台
-            const newTab = addSchedulerTab({
-              title: tab.title,
-              status: '运行',
-              websocketId: tab.websocketId,
-              selectedTaskId: tab.queueId,
-            })
-            subscribeToTask(newTab)
-            saveTabsToStorage(schedulerTabs.value)
-          } catch (e) {
-            const errorMsg = e instanceof Error ? e.message : String(e)
-            logger.warn(`registerSchedulerUI onNewTab error: ${errorMsg}`)
-          }
-        },
-        onCountdown: data => {
-          try {
-            // 倒计时已移至全局组件处理，这里不再处理
-            logger.info(`倒计时消息由全局组件处理: ${JSON.stringify(data)}`)
-          } catch (e) {
-            const errorMsg = e instanceof Error ? e.message : String(e)
-            logger.warn(`registerSchedulerUI onCountdown error: ${errorMsg}`)
-          }
-        },
-      })
-
-      // 回放 pending tabs（如果有的话）
       const pending = schedulerHandlers.consumePendingTabIds()
       if (pending && pending.length > 0) {
         pending.forEach((item: any) => {
@@ -994,10 +1024,10 @@ export function useSchedulerLogic() {
       }
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e)
-      logger.warn(`schedulerHandlers registration failed: ${errorMsg}`)
+      logger.warn(`pending回放时出现问题: ${errorMsg}`)
     }
 
-    // 新增：为已有的"运行"标签恢复 WebSocket 订阅，防止路由切换返回后不再更新
+    // 为已有的"运行"标签恢复 WebSocket 订阅，防止路由切换返回后不再更新
     // 注意：subscribeToTask 内部会检查订阅是否已存在，避免重复订阅
     try {
       schedulerTabs.value.forEach(tab => {

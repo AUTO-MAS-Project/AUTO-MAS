@@ -26,7 +26,11 @@ const checkAutoUpdateEnabled = async (): Promise<boolean> => {
   try {
     const response = await Service.getScriptsApiSettingGetPost()
     if (response.code === 200 && response.data) {
-      return response.data.Update?.IfAutoUpdate || false
+      const isEnabled = response.data.Update?.IfAutoUpdate || false
+      if (!isEnabled) {
+        logger.info('自动更新已关闭，禁用自动检查更新')
+      }
+      return isEnabled
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)

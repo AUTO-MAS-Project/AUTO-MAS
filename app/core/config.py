@@ -78,7 +78,7 @@ except ImportError:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.0.4"
+    VERSION = "v5.0.5-beta.1"
 
     def __init__(self) -> None:
         super().__init__()
@@ -139,6 +139,13 @@ class AppConfig(GlobalConfig):
         await self.PlanConfig.connect(self.config_path / "PlanConfig.json")
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
+
+        from app.services import System
+
+        self.bind("Start", "IfSelfStart", System.set_SelfStart)
+        self.bind("Function", "IfAllowSleep", System.set_Sleep)
+        await System.set_SelfStart(self.get("Start", "IfSelfStart"))
+        await System.set_Sleep(self.get("Function", "IfAllowSleep"))
 
         logger.info("程序初始化完成")
 
@@ -237,8 +244,6 @@ class AppConfig(GlobalConfig):
                             plan_dict[MaaPlanConfig.name] = str(uid)
 
                             await pc.load(maa_plan_config)
-
-                    await self.PlanConfig.save()
 
                 script_dict: Dict[str, Optional[str]] = {"禁用": None}
 
@@ -351,8 +356,6 @@ class AppConfig(GlobalConfig):
                                             / f"data/{uid}/{user_uid}/ConfigFile",
                                         )
 
-                await self.ScriptConfig.save()
-
                 if (Path.cwd() / "config/QueueConfig").exists():
                     for QueueConfig in (Path.cwd() / "config/QueueConfig").glob(
                         "*.json"
@@ -387,7 +390,6 @@ class AppConfig(GlobalConfig):
                                     }
                                 }
                             )
-                    await self.QueueConfig.save()
 
                 if (Path.cwd() / "config/QueueConfig").exists():
                     shutil.rmtree(Path.cwd() / "config/QueueConfig")
@@ -557,8 +559,6 @@ class AppConfig(GlobalConfig):
             for name, value in items.items():
                 await self.ScriptConfig[uid].set(group, name, value)
 
-        await self.ScriptConfig.save()
-
     async def del_script(self, script_id: str) -> None:
         """删除脚本配置"""
 
@@ -605,7 +605,6 @@ class AppConfig(GlobalConfig):
 
         data = json.loads(file_path.read_text(encoding="utf-8"))
         await self.ScriptConfig[uid].load(data)
-        await self.ScriptConfig.save()
 
         logger.success(f"{script_id} 配置加载成功")
 
@@ -624,10 +623,8 @@ class AppConfig(GlobalConfig):
             logger.error(f"{script_id} 不是通用脚本配置")
             raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
 
-        temp = await self.ScriptConfig[uid].toDict(
-            ignore_multi_config=True, if_decrypt=False
-        )
-
+        temp = await self.ScriptConfig[uid].toDict(if_decrypt=False)
+        temp.pop("SubConfigsInfo", None)
         temp = await self.remove_privacy_info(temp, Path(file_path).stem)
 
         file_path.write_text(
@@ -669,7 +666,6 @@ class AppConfig(GlobalConfig):
                 raise ConnectionError(f"无法从 AUTO-MAS 服务器获取配置内容: {e}")
 
         await self.ScriptConfig[uid].load(data)
-        await self.ScriptConfig.save()
 
         logger.success(f"{script_id} 配置加载成功")
 
@@ -689,10 +685,8 @@ class AppConfig(GlobalConfig):
             logger.error(f"{script_id} 不是通用脚本配置")
             raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
 
-        temp = await self.ScriptConfig[uid].toDict(
-            ignore_multi_config=True, if_decrypt=False
-        )
-
+        temp = await self.ScriptConfig[uid].toDict(if_decrypt=False)
+        temp.pop("SubConfigsInfo", None)
         temp = await self.remove_privacy_info(temp, config_name)
 
         files = {
@@ -785,7 +779,6 @@ class AppConfig(GlobalConfig):
         else:
             raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 
-        await self.ScriptConfig.save()
         return uid, config
 
     async def update_user(
@@ -806,8 +799,6 @@ class AppConfig(GlobalConfig):
                     .set(group, name, value)
                 )
 
-        await self.ScriptConfig.save()
-
     async def del_user(self, script_id: str, user_id: str) -> None:
         """删除用户配置"""
 
@@ -817,7 +808,6 @@ class AppConfig(GlobalConfig):
         user_uid = uuid.UUID(user_id)
 
         await self.ScriptConfig[script_uid].UserData.remove(user_uid)
-        await self.ScriptConfig.save()
         if (Path.cwd() / f"data/{script_id}/{user_id}").exists():
             shutil.rmtree(Path.cwd() / f"data/{script_id}/{user_id}")
 
@@ -831,7 +821,6 @@ class AppConfig(GlobalConfig):
         await self.ScriptConfig[script_uid].UserData.setOrder(
             list(map(uuid.UUID, index_list))
         )
-        await self.ScriptConfig.save()
 
     async def set_infrastructure(
         self, script_id: str, user_id: str, jsonFile: str
@@ -860,7 +849,6 @@ class AppConfig(GlobalConfig):
         await self.ScriptConfig[script_uid].UserData[user_uid].set(
             "Data", "CustomInfrast", json.dumps(infrast_data, ensure_ascii=False)
         )
-        await self.ScriptConfig.save()
 
     async def get_user_combox_infrastructure(
         self, script_id: str, user_id: str
@@ -923,8 +911,6 @@ class AppConfig(GlobalConfig):
             for name, value in items.items():
                 await self.PlanConfig[plan_uid].set(group, name, value)
 
-        await self.PlanConfig.save()
-
     async def del_plan(self, plan_id: str) -> None:
         """删除计划表配置"""
 
@@ -973,7 +959,6 @@ class AppConfig(GlobalConfig):
         logger.info("添加全局emulator配置")
 
         uid, config = await self.EmulatorConfig.add(EmulatorConfig)
-        await self.EmulatorConfig.save()
         return uid, config
 
     async def update_emulator(
@@ -1006,8 +991,6 @@ class AppConfig(GlobalConfig):
         for group, items in data.items():
             for name, value in items.items():
                 await self.EmulatorConfig[emulator_uid].set(group, name, value)
-
-        await self.EmulatorConfig.save()
 
     async def del_emulator(self, emulator_id: str) -> None:
         """删除 emulator 配置"""
@@ -1043,7 +1026,6 @@ class AppConfig(GlobalConfig):
                 await script.set("Game", "EmulatorId", "-")
 
         await self.EmulatorConfig.remove(emulator_uid)
-        await self.EmulatorConfig.save()
 
     async def reorder_emulator(self, index_list: list[str]) -> None:
         """重新排序 emulator"""
@@ -1051,7 +1033,6 @@ class AppConfig(GlobalConfig):
         logger.info(f"重新排序全局 emulator: {index_list}")
 
         await self.EmulatorConfig.setOrder(list(map(uuid.UUID, index_list)))
-        await self.EmulatorConfig.save()
 
     async def add_queue(self) -> tuple[uuid.UUID, QueueConfig]:
         """添加调度队列"""
@@ -1085,8 +1066,6 @@ class AppConfig(GlobalConfig):
         for group, items in data.items():
             for name, value in items.items():
                 await self.QueueConfig[queue_uid].set(group, name, value)
-
-        await self.QueueConfig.save()
 
     async def del_queue(self, queue_id: str) -> None:
         """删除调度队列配置"""
@@ -1127,7 +1106,6 @@ class AppConfig(GlobalConfig):
         queue_uid = uuid.UUID(queue_id)
         uid, config = await self.QueueConfig[queue_uid].TimeSet.add(TimeSet)
 
-        await self.QueueConfig.save()
         return uid, config
 
     async def update_time_set(
@@ -1148,8 +1126,6 @@ class AppConfig(GlobalConfig):
                     .set(group, name, value)
                 )
 
-        await self.QueueConfig.save()
-
     async def del_time_set(self, queue_id: str, time_set_id: str) -> None:
         """删除时间设置配置"""
 
@@ -1159,7 +1135,6 @@ class AppConfig(GlobalConfig):
         time_set_uid = uuid.UUID(time_set_id)
 
         await self.QueueConfig[queue_uid].TimeSet.remove(time_set_uid)
-        await self.QueueConfig.save()
 
     async def reorder_time_set(self, queue_id: str, index_list: list[str]) -> None:
         """重新排序时间设置"""
@@ -1171,7 +1146,6 @@ class AppConfig(GlobalConfig):
         await self.QueueConfig[queue_uid].TimeSet.setOrder(
             list(map(uuid.UUID, index_list))
         )
-        await self.QueueConfig.save()
 
     async def get_queue_item(
         self, queue_id: str, queue_item_id: Optional[str]
@@ -1200,7 +1174,7 @@ class AppConfig(GlobalConfig):
         queue_uid = uuid.UUID(queue_id)
 
         uid, config = await self.QueueConfig[queue_uid].QueueItem.add(QueueItem)
-        await self.QueueConfig.save()
+
         return uid, config
 
     async def update_queue_item(
@@ -1221,8 +1195,6 @@ class AppConfig(GlobalConfig):
                     .set(group, name, value)
                 )
 
-        await self.QueueConfig.save()
-
     async def del_queue_item(self, queue_id: str, queue_item_id: str) -> None:
         """删除队列项配置"""
 
@@ -1232,7 +1204,6 @@ class AppConfig(GlobalConfig):
         queue_item_uid = uuid.UUID(queue_item_id)
 
         await self.QueueConfig[queue_uid].QueueItem.remove(queue_item_uid)
-        await self.QueueConfig.save()
 
     async def reorder_queue_item(self, queue_id: str, index_list: list[str]) -> None:
         """重新排序队列项"""
@@ -1244,14 +1215,13 @@ class AppConfig(GlobalConfig):
         await self.QueueConfig[queue_uid].QueueItem.setOrder(
             list(map(uuid.UUID, index_list))
         )
-        await self.QueueConfig.save()
 
     async def get_setting(self) -> Dict[str, Any]:
         """获取全局设置"""
 
         logger.info("获取全局设置")
 
-        return await self.toDict(ignore_multi_config=True)
+        return await self.toDict()
 
     async def update_setting(self, data: Dict[str, Dict[str, Any]]) -> None:
         """更新全局设置"""
@@ -1311,7 +1281,6 @@ class AppConfig(GlobalConfig):
             logger.info("添加全局webhook配置")
 
             uid, config = await self.Notify_CustomWebhooks.add(Webhook)
-            await self.save()
             return uid, config
 
         else:
@@ -1325,7 +1294,6 @@ class AppConfig(GlobalConfig):
                 .UserData[user_uid]
                 .Notify_CustomWebhooks.add(Webhook)
             )
-            await self.ScriptConfig.save()
             return uid, config
 
     async def update_webhook(
@@ -1348,8 +1316,6 @@ class AppConfig(GlobalConfig):
                         group, name, value
                     )
 
-            await self.save()
-
         else:
             logger.info(f"更新 webhook 配置: {script_id} - {user_id} - {webhook_id}")
 
@@ -1365,8 +1331,6 @@ class AppConfig(GlobalConfig):
                         .set(group, name, value)
                     )
 
-            await self.ScriptConfig.save()
-
     async def del_webhook(
         self, script_id: Optional[str], user_id: Optional[str], webhook_id: str
     ) -> None:
@@ -1378,7 +1342,6 @@ class AppConfig(GlobalConfig):
             logger.info(f"删除全局 webhook 配置: {webhook_id}")
 
             await self.Notify_CustomWebhooks.remove(webhook_uid)
-            await self.save()
 
         else:
             logger.info(f"删除 webhook 配置: {script_id} - {user_id} - {webhook_id}")
@@ -1391,7 +1354,6 @@ class AppConfig(GlobalConfig):
                 .UserData[user_uid]
                 .Notify_CustomWebhooks.remove(webhook_uid)
             )
-            await self.ScriptConfig.save()
 
     async def reorder_webhook(
         self, script_id: Optional[str], user_id: Optional[str], index_list: list[str]
@@ -1402,7 +1364,6 @@ class AppConfig(GlobalConfig):
             logger.info(f"重新排序全局 webhook: {index_list}")
 
             await self.Notify_CustomWebhooks.setOrder(list(map(uuid.UUID, index_list)))
-            await self.save()
 
         else:
             logger.info(f"重新排序 webhook: {script_id} - {user_id} - {index_list}")
@@ -1415,7 +1376,6 @@ class AppConfig(GlobalConfig):
                 .UserData[user_uid]
                 .Notify_CustomWebhooks.setOrder(list(map(uuid.UUID, index_list)))
             )
-            await self.ScriptConfig.save()
 
     @property
     def proxy(self) -> Optional[httpx.Proxy]:
@@ -1565,7 +1525,7 @@ class AppConfig(GlobalConfig):
                     )
                     await self.set(
                         "Data",
-                        "Stage",
+                        "StageData",
                         json.dumps(
                             response.json()
                             .get("Official", {})
@@ -1878,13 +1838,16 @@ class AppConfig(GlobalConfig):
                 # 如果已经找到了关卡, 处理掉落物
                 if current_stage:
                     item_match: List[str] = re.findall(
-                        r"^(?!\[)(\S+?)\s*:\s*([\d,]+)(?:\s*\(\+[\d,]+\))?",
+                        r"^(?!\[)(\S+?)\s*:\s*([\d,]+[kK]?)(?:\s*\(\+[\d,]+[kK]?\))?",
                         line,
                         re.M,
                     )
                     for item, total in item_match:
-                        # 解析数值时去掉逗号 （如 2,160 -> 2160）
-                        total = int(total.replace(",", ""))
+                        total = total.replace(",", "")
+                        if total.lower().endswith("k"):
+                            total = int(total[:-1]) * 1000
+                        else:
+                            total = int(total)
 
                         # 黑名单
                         if item not in [

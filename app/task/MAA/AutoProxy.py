@@ -251,9 +251,12 @@ class AutoProxyTask(TaskExecuteBase):
                     ]
                     self.cur_user_log.status = "模拟器启动失败"
 
-                    await self.emulator_manager.close(
-                        self.script_config.get("Emulator", "Index")
-                    )
+                    try:
+                        await self.emulator_manager.close(
+                            self.script_config.get("Emulator", "Index")
+                        )
+                    except Exception as e:
+                        logger.exception(f"关闭模拟器失败: {e}")
 
                     await Notify.push_plyer(
                         "用户自动代理出现异常！",
@@ -264,9 +267,12 @@ class AutoProxyTask(TaskExecuteBase):
                     continue
 
                 if Config.get("Function", "IfSilence"):
-                    await self.emulator_manager.setVisible(
-                        self.script_config.get("Emulator", "Index"), False
-                    )
+                    try:
+                        await self.emulator_manager.setVisible(
+                            self.script_config.get("Emulator", "Index"), False
+                        )
+                    except Exception as e:
+                        logger.exception(f"模拟器隐藏失败: {e}")
 
                 await self.set_maa(emulator_info)
 
@@ -295,9 +301,12 @@ class AutoProxyTask(TaskExecuteBase):
                     )
 
                     await self.maa_process_manager.kill()
-                    await self.emulator_manager.close(
-                        self.script_config.get("Emulator", "Index")
-                    )
+                    try:
+                        await self.emulator_manager.close(
+                            self.script_config.get("Emulator", "Index")
+                        )
+                    except Exception as e:
+                        logger.exception(f"关闭模拟器失败: {e}")
                     await System.kill_process(self.maa_exe_path)
 
                     await Notify.push_plyer(
@@ -626,9 +635,12 @@ class AutoProxyTask(TaskExecuteBase):
         await agree_bilibili(self.maa_tasks_path, False)
         if self.script_config.get("Run", "TaskTransitionMethod") == "ExitEmulator":
             logger.info("用户任务结束, 关闭模拟器")
-            await self.emulator_manager.close(
-                self.script_config.get("Emulator", "Index")
-            )
+            try:
+                await self.emulator_manager.close(
+                    self.script_config.get("Emulator", "Index")
+                )
+            except Exception as e:
+                logger.exception(f"关闭模拟器失败: {e}")
 
         user_logs_list = []
         if_six_star = False
@@ -701,7 +713,7 @@ class AutoProxyTask(TaskExecuteBase):
 
             if self.cur_user_config.get("Info", "InfrastIndex") != "-1":
                 await self.cur_user_config.set(
-                    "Info",
+                    "Data",
                     "InfrastIndex",
                     str(
                         (int(self.cur_user_config.get("Info", "InfrastIndex")) + 1)

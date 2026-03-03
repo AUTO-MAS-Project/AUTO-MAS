@@ -80,11 +80,6 @@ async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
         data = script.data.model_dump(exclude_unset=True)
         await Config.update_setting(data)
 
-        if data.get("Start", {}).get("IfSelfStart", None) is not None:
-            await System.set_SelfStart()
-        if data.get("Function", {}).get("IfAllowSleep", None) is not None:
-            await System.set_Sleep()
-
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"

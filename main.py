@@ -76,15 +76,11 @@ def main():
         @asynccontextmanager
         async def lifespan(app: FastAPI):
             from app.core import Config, MainTimer, TaskManager
-            from app.services import System
 
             await Config.init_config()
             await Config.get_stage()
             await Config.clean_old_history()
-            second_timer = asyncio.create_task(MainTimer.second_task())
-            hour_timer = asyncio.create_task(MainTimer.hour_task())
-            await System.set_Sleep()
-            await System.set_SelfStart()
+            await MainTimer.start()
 
             # 初始化 Koishi 系统客户端（如果已启用）
             if Config.get("Notify", "IfKoishiSupport"):
@@ -106,13 +102,8 @@ def main():
             yield
 
             await TaskManager.stop_task("ALL")
-            second_timer.cancel()
-            hour_timer.cancel()
-            try:
-                await second_timer
-                await hour_timer
-            except asyncio.CancelledError:
-                logger.info("主业务定时器已关闭")
+
+            await MainTimer.stop()
 
             from app.services import Matomo
 
@@ -134,6 +125,7 @@ def main():
             update_router,
             ocr_router,
             ws_debug_router,
+            hooks_router,
         )
 
         app = FastAPI(
@@ -163,6 +155,7 @@ def main():
         app.include_router(update_router)
         app.include_router(ocr_router)
         app.include_router(ws_debug_router)
+        app.include_router(hooks_router)
 
         app.mount(
             "/api/res/materials",

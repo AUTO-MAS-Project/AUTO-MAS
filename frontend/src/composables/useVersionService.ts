@@ -41,7 +41,7 @@ const getAppVersion = async () => {
 /**
  * 获取后端版本信息（用于标题栏显示）
  */
-const getBackendVersion = async () => {
+export const getBackendVersion = async () => {
     try {
         backendUpdateInfo.value = await Service.getGitVersionApiInfoVersionPost()
     } catch (error) {
