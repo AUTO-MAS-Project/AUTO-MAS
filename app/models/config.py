@@ -42,6 +42,7 @@ from .ConfigBase import (
     UUIDValidator,
     DateTimeValidator,
     JSONValidator,
+    ListValidator,
     URLValidator,
     UserNameValidator,
     ArgumentValidator,
@@ -687,7 +688,7 @@ class GeneralConfig(ConfigBase):
         ## 错误日志匹配
         self.Script_ErrorLog = ConfigItem("Script", "ErrorLog", "")
         ## Hook 文件列表（按顺序加载）
-        self.Script_HookList = ConfigItem("Script", "HookList", [])
+        self.Script_HookList = ConfigItem("Script", "HookList", [], ListValidator())
 
         ## Game ------------------------------------------------------------
         ## 是否启用游戏

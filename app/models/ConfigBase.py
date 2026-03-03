@@ -261,6 +261,16 @@ class BoolValidator(ValidatorBase):
         return value if self.validate(value) else False
 
 
+class ListValidator(ValidatorBase):
+    """列表验证器"""
+
+    def validate(self, value):
+        return isinstance(value, list)
+
+    def correct(self, value):
+        return value if self.validate(value) else []
+
+
 class FileValidator(ValidatorBase):
     """文件路径验证器"""
 
