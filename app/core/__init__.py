@@ -27,6 +27,7 @@ __license__ = "GPL-3.0 license"
 from .broadcast import Broadcast
 from .config import Config, MaaConfig, GeneralConfig, MaaUserConfig, GeneralUserConfig
 from .emulator_manager import EmulatorManager
+from .hook import hookable, HookScope, HookPoint
 from .task_manager import TaskManager
 
 from .timer import MainTimer
@@ -38,6 +39,9 @@ __all__ = [
     "GeneralConfig",
     "MaaUserConfig",
     "GeneralUserConfig",
+    "HookPoint",
+    "HookScope",
+    "hookable",
     "MainTimer",
     "TaskManager",
     "EmulatorManager",

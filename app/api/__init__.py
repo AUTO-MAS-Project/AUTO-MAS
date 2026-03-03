@@ -36,6 +36,7 @@ from .setting import router as setting_router
 from .update import router as update_router
 from .ocr import router as ocr_router
 from .ws_debug import router as ws_debug_router
+from .hooks import router as hooks_router
 
 __all__ = [
     "core_router",
@@ -50,4 +51,5 @@ __all__ = [
     "update_router",
     "ocr_router",
     "ws_debug_router",
+    "hooks_router",
 ]
