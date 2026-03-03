@@ -486,6 +486,7 @@ class AutoProxyTask(TaskExecuteBase):
             ]
             task_set["Fight"]["IsStageManually"] = True
             task_set["Fight"]["UseOptionalStage"] = True
+            task_set["Fight"]["UseWeeklySchedule"] = False
 
             # 简洁模式下托管的配置
             if self.cur_user_config.get("Info", "Mode") == "简洁":
