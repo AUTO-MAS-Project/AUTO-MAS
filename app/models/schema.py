@@ -31,6 +31,24 @@ class OutBase(BaseModel):
     message: str = Field(default="操作成功", description="操作消息")
 
 
+class HookMetaItem(BaseModel):
+    path: str = Field(..., description="Hook 文件路径")
+    name: Optional[str] = Field(default=None, description="Hook 名称")
+    description: Optional[str] = Field(default=None, description="Hook 描述")
+    status: Literal["ok", "warning"] = Field(default="ok", description="元数据读取状态")
+    warning: Optional[str] = Field(default=None, description="警告/错误信息")
+
+
+class HookMetaIn(BaseModel):
+    hookPaths: List[str] = Field(default_factory=list, description="Hook 文件路径列表")
+
+
+class HookMetaOut(OutBase):
+    data: List[HookMetaItem] = Field(
+        default_factory=list, description="Hook 元数据列表"
+    )
+
+
 class InfoOut(OutBase):
     data: Dict[str, Any] = Field(..., description="收到的服务器数据")
 
@@ -488,6 +506,10 @@ class GeneralConfig_Script(BaseModel):
     LogTimeFormat: Optional[str] = Field(default=None, description="日志时间戳格式")
     SuccessLog: Optional[str] = Field(default=None, description="成功时日志")
     ErrorLog: Optional[str] = Field(default=None, description="错误时日志")
+    HookList: Optional[List[str]] = Field(
+        default=None,
+        description="Hook 文件路径列表（按顺序加载；加载/注册失败将被降级为警告并继续）",
+    )
 
 
 class GeneralConfig_Game(BaseModel):
@@ -609,7 +631,7 @@ class ScriptGetOut(OutBase):
 
 class ScriptUpdateIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
-    data: Union[MaaConfig, GeneralConfig] = Field(..., description="脚本更新数据")
+    data: MaaConfig | GeneralConfig = Field(..., description="脚本更新数据")
 
 
 class ScriptDeleteIn(BaseModel):

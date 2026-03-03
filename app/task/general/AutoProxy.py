@@ -24,11 +24,16 @@ import uuid
 import shlex
 import shutil
 import asyncio
+import importlib.util
+import inspect
+import sys
+from types import ModuleType
+from hashlib import sha1
 from pathlib import Path
 from contextlib import suppress
 from datetime import datetime, timedelta
 
-from app.core import Config
+from app.core import Config, HookScope, hookable
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import GeneralConfig, GeneralUserConfig
@@ -39,6 +44,59 @@ from app.utils.constants import UTC4
 from .tools import execute_script_task
 
 logger = get_logger("通用脚本自动代理")
+
+
+def _build_hook_logger(module: ModuleType, raw_path: str):
+    """为 Hook 模块构建专属 logger（优先使用 HOOK_META.name）。"""
+    hook_name: str | None = None
+    meta = getattr(module, "HOOK_META", None)
+    if isinstance(meta, dict):
+        name = meta.get("name")
+        if isinstance(name, str) and name.strip():
+            hook_name = name.strip()
+
+    if not hook_name:
+        stem = Path(raw_path).stem.strip()
+        hook_name = stem or getattr(module, "__name__", "unknown_hook")
+
+    return get_logger(f"Hook:{hook_name}")
+
+
+def _load_hook_module_from_path(file_path: str) -> tuple[ModuleType | None, str | None]:
+    """从 .py 文件路径动态加载模块。
+
+    返回 (module, warning)。失败时 module 为 None，warning 为说明文本。
+    """
+    p = Path(file_path)
+    if not p.exists() or not p.is_file():
+        return None, "文件不存在或不是文件"
+    if p.suffix.lower() != ".py":
+        return None, "仅支持 .py 文件"
+
+    try:
+        resolved = p.resolve()
+    except Exception:
+        resolved = p
+
+    # 生成稳定且尽量不冲突的模块名（避免重复 import 相互覆盖）
+    digest = sha1(str(resolved).encode("utf-8", errors="ignore")).hexdigest()[:12]
+    module_name = f"auto_mas_hook_{p.stem}_{digest}"
+
+    # 每次任务运行都重新加载一份，避免被上次运行的模块状态污染。
+    if module_name in sys.modules:
+        sys.modules.pop(module_name, None)
+
+    spec = importlib.util.spec_from_file_location(module_name, str(resolved))
+    if spec is None or spec.loader is None:
+        return None, "无法创建模块加载器"
+
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as e:
+        return None, f"导入失败: {type(e).__name__}: {e}"
+
+    return module, None
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -65,16 +123,102 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
         self.check_result = "-"
+        self._hook_scope: HookScope | None = None
+        self._hook_warnings: list[str] = []
+
+    async def _ensure_hook_scope_loaded(self) -> None:
+        """加载并激活 HookScope（范围 A：覆盖整个 AutoProxyTask 生命周期）。
+
+        - HookList 读取自脚本配置 Script.HookList
+        - 按列表顺序加载每个 hook 文件
+        - 任意 hook 加载/注册失败：记录 warning，继续下一个
+        """
+        if self._hook_scope is not None:
+            return
+
+        # Script.HookList：允许缺省/None
+        hook_list = self.script_config.get("Script", "HookList")
+        if hook_list in (None, ""):
+            hook_paths: list[str] = []
+        elif isinstance(hook_list, list):
+            hook_paths = [str(p) for p in hook_list if str(p).strip()]
+        else:
+            # 允许用户误填为单个字符串
+            hook_paths = [str(hook_list)]
+
+        self._hook_warnings = []
+        self._hook_scope = HookScope()
+        await self._hook_scope.__aenter__()
+
+        if not hook_paths:
+            return
+
+        for raw_path in hook_paths:
+            module, warn = _load_hook_module_from_path(raw_path)
+            if warn:
+                msg = f"Hook 加载警告 [{raw_path}]: {warn}"
+                self._hook_warnings.append(msg)
+                logger.warning(msg)
+                continue
+
+            assert module is not None
+            hook_logger = _build_hook_logger(module, raw_path)
+            # 向 Hook 模块注入可复用 logger，便于 Hook 内统一记录日志而非 print。
+            setattr(module, "HOOK_LOGGER", hook_logger)
+
+            set_logger = getattr(module, "set_logger", None)
+            if callable(set_logger):
+                try:
+                    set_logger(hook_logger)
+                except Exception as e:
+                    msg = f"Hook 日志注入警告 [{raw_path}]: {type(e).__name__}: {e}"
+                    self._hook_warnings.append(msg)
+                    logger.warning(msg)
+
+            register = getattr(module, "register", None)
+            if not callable(register):
+                msg = f"Hook 加载警告 [{raw_path}]: 未找到可调用的 register(scope, target_cls)"
+                self._hook_warnings.append(msg)
+                logger.warning(msg)
+                continue
+
+            try:
+                # 兼容两种签名：
+                # - register(scope, target_cls)
+                # - register(scope, target_cls, hook_logger)
+                sig = inspect.signature(register)
+                params = list(sig.parameters.values())
+                positional_count = len(
+                    [
+                        p
+                        for p in params
+                        if p.kind
+                        in (
+                            inspect.Parameter.POSITIONAL_ONLY,
+                            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                        )
+                    ]
+                )
+                has_varargs = any(
+                    p.kind == inspect.Parameter.VAR_POSITIONAL for p in params
+                )
+
+                if has_varargs or positional_count >= 3:
+                    register(self._hook_scope, self.__class__, hook_logger)
+                else:
+                    register(self._hook_scope, self.__class__)
+            except Exception as e:
+                msg = f"Hook 注册警告 [{raw_path}]: {type(e).__name__}: {e}"
+                self._hook_warnings.append(msg)
+                logger.warning(msg)
+                continue
 
     async def check(self) -> str:
-
         if self.script_config.get(
             "Run", "ProxyTimesLimit"
         ) != 0 and self.cur_user_config.get(
             "Data", "ProxyTimes"
-        ) >= self.script_config.get(
-            "Run", "ProxyTimesLimit"
-        ):
+        ) >= self.script_config.get("Run", "ProxyTimesLimit"):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
 
@@ -88,8 +232,10 @@ class AutoProxyTask(TaskExecuteBase):
             )
         return "Pass"
 
+    @hookable(name="AutoProxyTask.prepare", allow={"after", "error"})
     async def prepare(self):
-
+        # HookScope 的加载与激活在 main_task 里进行（以便 hook 也能作用于本次 prepare 调用）。
+        self.hook = self.script_config.get("Script", "HookList")
         self.general_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
@@ -171,6 +317,11 @@ class AutoProxyTask(TaskExecuteBase):
             self.check_log,
         )
 
+        async def Hook_AutoProxyTask_perpare(self):
+            return self
+
+        self = await Hook_AutoProxyTask_perpare(self)
+
         self.run_book = False
 
     async def main_task(self):
@@ -193,6 +344,9 @@ class AutoProxyTask(TaskExecuteBase):
                     },
                 )
             return
+
+        # 加载 hooks 并进入作用域（范围 A：直到 final_task/on_crash 退出）
+        await self._ensure_hook_scope_loaded()
 
         await self.prepare()
 
@@ -217,12 +371,11 @@ class AutoProxyTask(TaskExecuteBase):
                     "脚本前任务",
                 )
 
-            self.script_info.log = f"正在启动游戏 / 模拟器"
+            self.script_info.log = "正在启动游戏 / 模拟器"
             # 启动游戏/模拟器
             if self.game_manager is not None:
                 try:
                     if isinstance(self.game_manager, ProcessManager):
-
                         if self.script_config.get("Game", "Type") == "URL":
                             logger.info(
                                 f"启动游戏: {self.game_process_name}, 参数{self.game_url}"
@@ -300,7 +453,6 @@ class AutoProxyTask(TaskExecuteBase):
             self.script_info.log = "正在等待脚本日志文件生成"
             if_get_file = False
             while datetime.now() - t < timedelta(minutes=1):
-
                 for log_file in self.script_log_path.parent.iterdir():
                     if log_file.is_file():
                         with suppress(ValueError):
@@ -393,7 +545,6 @@ class AutoProxyTask(TaskExecuteBase):
             await asyncio.sleep(3)
 
     async def update_config(self):
-
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
             shutil.copytree(
                 self.script_config_path,
@@ -432,7 +583,7 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def set_general(self) -> None:
         """配置通用脚本运行参数"""
-        logger.info(f"开始配置脚本运行参数: 自动代理")
+        logger.info("开始配置脚本运行参数: 自动代理")
 
         # 配置前关闭可能未正常退出的脚本进程
         await System.kill_process(self.script_exe_path)
@@ -453,7 +604,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.script_config_path,
             )
 
-        logger.info(f"脚本运行参数配置完成: 自动代理")
+        logger.info("脚本运行参数配置完成: 自动代理")
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调"""
@@ -490,9 +641,15 @@ class AutoProxyTask(TaskExecuteBase):
             self.wait_event.set()
 
     async def final_task(self):
-
         if self.check_result != "Pass":
             return
+
+        # 退出 HookScope，避免 ContextVar 泄漏到外层。
+        if self._hook_scope is not None:
+            try:
+                await self._hook_scope.__aexit__(None, None, None)
+            finally:
+                self._hook_scope = None
 
         # 结束各子任务
         await self.general_log_monitor.stop()
@@ -514,7 +671,6 @@ class AutoProxyTask(TaskExecuteBase):
 
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
-
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
             log_path = (
                 Path.cwd()
@@ -559,6 +715,13 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.status = "异常"
 
     async def on_crash(self, e: Exception):
+        # 崩溃时也要确保退出 HookScope
+        if self._hook_scope is not None:
+            try:
+                await self._hook_scope.__aexit__(type(e), e, e.__traceback__)
+            finally:
+                self._hook_scope = None
+
         self.cur_user_item.status = "异常"
         logger.exception(f"自动代理任务出现异常: {e}")
         await Config.send_websocket_message(
