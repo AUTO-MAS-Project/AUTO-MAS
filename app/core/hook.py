@@ -253,7 +253,14 @@ class HookScope:
 
     async def __aexit__(self, *exc_info: Any) -> None:
         if self._token is not None:
-            _current_scope.reset(self._token)
+            try:
+                _current_scope.reset(self._token)
+            except ValueError:
+                # 可能发生在“进入 scope 与退出 scope 发生在不同 Context”
+                # （例如取消/屏蔽取消等复杂调度路径）。
+                # 此时 reset 会报错：Token was created in a different Context。
+                # 退化处理：仅跳过 reset，避免二次异常影响任务收尾。
+                pass
             self._token = None
 
     # ------------------------------------------------------------------
