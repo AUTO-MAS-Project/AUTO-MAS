@@ -90,7 +90,7 @@ const routes = [
     component: SchedulerView,
     meta: {
       title: '调度中心',
-      keepAlive: true // 启用 keep-alive，保持组件存活
+      keepAlive: true, // 启用 keep-alive，保持组件存活
     },
   },
   {
@@ -110,6 +110,12 @@ const routes = [
     name: 'WSdev',
     component: () => import('../views/WSdev.vue'),
     meta: { title: 'WSdev' },
+  },
+  {
+    path: '/OverlayMaskDev',
+    name: 'OverlayMaskDev',
+    component: () => import('../views/OverlayMaskDev.vue'),
+    meta: { title: '遮罩彩蛋测试' },
   },
   {
     path: '/history',
