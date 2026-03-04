@@ -1,17 +1,39 @@
 <template>
   <a-layout style="flex: 1; min-height: 0; overflow: hidden">
-    <a-layout-sider :width="SIDER_WIDTH" :theme="isDark ? 'dark' : 'light'" :style="{
-      background: 'var(--ant-color-bg-elevated)',
-      borderRight: '1px solid var(--ant-color-border)',
-    }">
+    <a-layout-sider
+      :width="SIDER_WIDTH"
+      :theme="isDark ? 'dark' : 'light'"
+      :style="{
+        background: 'var(--ant-color-bg-elevated)',
+        borderRight: '1px solid var(--ant-color-border)',
+      }"
+    >
       <div class="sider-content">
-        <a-menu v-model:selected-keys="selectedKeys" mode="inline" :theme="isDark ? 'dark' : 'light'"
-          :items="mainMenuItems" @click="onMenuClick" />
+        <a-menu
+          v-model:selected-keys="selectedKeys"
+          mode="inline"
+          :theme="isDark ? 'dark' : 'light'"
+          :items="mainMenuItems"
+          @click="onMenuClick"
+        />
         <!-- 测试路由分隔区域 -->
-        <a-menu v-if="isDevelopment" v-model:selected-keys="selectedKeys" mode="inline"
-          :theme="isDark ? 'dark' : 'light'" class="dev-menu" :items="devMenuItems" @click="onMenuClick" />
-        <a-menu v-model:selected-keys="selectedKeys" mode="inline" :theme="isDark ? 'dark' : 'light'"
-          class="bottom-menu" :items="bottomMenuItems" @click="onMenuClick" />
+        <a-menu
+          v-if="isDevelopment"
+          v-model:selected-keys="selectedKeys"
+          mode="inline"
+          :theme="isDark ? 'dark' : 'light'"
+          class="dev-menu"
+          :items="devMenuItems"
+          @click="onMenuClick"
+        />
+        <a-menu
+          v-model:selected-keys="selectedKeys"
+          mode="inline"
+          :theme="isDark ? 'dark' : 'light'"
+          class="bottom-menu"
+          :items="bottomMenuItems"
+          @click="onMenuClick"
+        />
       </div>
     </a-layout-sider>
 
@@ -33,7 +55,6 @@ import {
   CalendarOutlined,
   ControlOutlined,
   DatabaseOutlined,
-  FileSearchOutlined,
   FileTextOutlined,
   HistoryOutlined,
   HomeOutlined,
@@ -79,6 +100,7 @@ const devMenuItems = [
   { key: '/TestRouter', label: '测试路由', icon: icon(SettingOutlined) },
   { key: '/OCRdev', label: 'OCR测试', icon: icon(SettingOutlined) },
   { key: '/WSdev', label: 'WebSocket测试', icon: icon(ApiOutlined) },
+  { key: '/OverlayMaskDev', label: '遮罩彩蛋测试', icon: icon(SettingOutlined) },
 ]
 
 const bottomMenuItems = [
