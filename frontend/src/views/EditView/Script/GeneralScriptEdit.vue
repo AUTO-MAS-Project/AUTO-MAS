@@ -2123,20 +2123,24 @@ const handleUpload = async () => {
 
 .format-preview {
   margin-top: 8px;
-  color: #8c8c8c;
+  color: var(--ant-color-text-secondary);
   font-size: 13px;
 }
 
 .format-preview-value {
-  color: #262626;
+  color: var(--ant-color-text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
 }
 
 .format-preview-tip {
-  margin-top: 4px;
-  color: #595959;
+  margin-top: 8px;
+  color: var(--ant-color-text-secondary);
   font-size: 12px;
   line-height: 1.5;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border-left: 3px solid var(--ant-color-primary);
+  background: var(--ant-color-primary-bg);
 }
 
 </style>
