@@ -391,4 +391,39 @@ onUnmounted(() => {
         border: 1px solid rgba(0, 0, 0, 0.15);
     }
 }
+
+/* Tab 内容区域滚动条样式 */
+.settings-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar {
+    width: 8px !important;
+    height: 8px !important;
+    display: block !important;
+}
+
+.settings-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-track {
+    background: var(--ant-color-bg-container);
+    border-radius: 4px;
+}
+
+.settings-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 4px;
+    transition: background 0.2s ease;
+}
+
+.settings-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.25);
+}
+
+/* 深色模式下的滚动条样式 */
+:root.dark .settings-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-track {
+    background: var(--ant-color-bg-elevated);
+}
+
+:root.dark .settings-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+:root.dark .settings-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
 </style>

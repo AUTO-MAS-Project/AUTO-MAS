@@ -22,6 +22,7 @@
 
 import os
 import sys
+import time
 import ctypes
 import psutil
 import asyncio
@@ -293,6 +294,7 @@ class PlaySkill(CustomAction):
             pyautogui.click()
             busy_wait(17)
             pyautogui.click(x, y)
+            time.sleep(0.2)
 
         except Exception as e:
             logger.exception(f"执行战斗时释放技能动作时出错: {e}")
@@ -318,6 +320,7 @@ class PauseSkill(CustomAction):
             pyautogui.click(cur_x, cur_y)
             busy_wait(17)
             pyautogui.click(x, y)
+            time.sleep(0.2)
 
         except Exception as e:
             logger.exception(f"执行暂停时释放技能动作时出错: {e}")
@@ -340,6 +343,7 @@ class PlayRetreat(CustomAction):
             pyautogui.click()
             busy_wait(17)
             pyautogui.click(x, y)
+            time.sleep(0.2)
 
         except Exception as e:
             logger.exception(f"执行战斗时撤退干员动作时出错: {e}")
@@ -365,6 +369,7 @@ class PauseRetreat(CustomAction):
             pyautogui.click(cur_x, cur_y)
             busy_wait(17)
             pyautogui.click(x, y)
+            time.sleep(0.2)
 
         except Exception as e:
             logger.exception(f"执行暂停时撤退干员动作时出错: {e}")
@@ -412,18 +417,11 @@ class NextFrame_1x(CustomAction):
             cur_x, cur_y = pyautogui.position()
             x, y = ArknightWin32Toolkit.get_pause_position()
 
-            t1 = time.perf_counter()
             pyautogui.click(x, y)
-            t2 = time.perf_counter()
             busy_wait(32)
-            t3 = time.perf_counter()
             pyautogui.click(x, y)
-            t4 = time.perf_counter()
             busy_wait(17)
-            t5 = time.perf_counter()
             pyautogui.moveTo(cur_x, cur_y)
-            t6 = time.perf_counter()
-            logger.info(f"{t2-t1} {t3-t2} {t4-t3} {t5-t4} {t6-t5}")
 
         except Exception as e:
             logger.exception(f"执行1倍速下一帧动作时出错: {e}")
