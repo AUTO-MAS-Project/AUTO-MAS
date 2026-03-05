@@ -374,9 +374,10 @@ const applySelection = async () => {
 }
 
 .visual-mode-container {
-  border: 1px solid #d9d9d9;
-  border-radius: 6px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
   padding: 16px;
+  background: var(--ant-color-bg-container);
 }
 
 .log-preview-header {
@@ -384,18 +385,45 @@ const applySelection = async () => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
+  color: var(--ant-color-text);
+  font-weight: 500;
 }
 
 .log-preview-area {
   position: relative;
   height: 300px;
   overflow: auto;
-  border: 1px solid #d9d9d9;
-  border-radius: 4px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 6px;
   padding: 8px;
-  background-color: #fafafa;
+  background-color: var(--ant-color-bg-layout);
   font-family: monospace;
   user-select: text; /* 启用文本选择 */
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ant-color-border) var(--ant-color-bg-layout);
+}
+
+.log-preview-area::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+  display: block !important;
+}
+
+.log-preview-area::-webkit-scrollbar-track {
+  background: var(--ant-color-bg-layout) !important;
+  border-radius: 8px;
+}
+
+.log-preview-area::-webkit-scrollbar-thumb {
+  background: var(--ant-color-border) !important;
+  border-radius: 8px;
+}
+
+.log-preview-area::-webkit-scrollbar-thumb:hover {
+  background: var(--ant-color-border-secondary) !important;
 }
 
 .log-line {
@@ -407,11 +435,11 @@ const applySelection = async () => {
 }
 
 .log-line:hover {
-  background-color: #e6f7ff;
+  background-color: var(--ant-color-primary-bg);
 }
 
 .line-number {
-  color: #ccc;
+  color: var(--ant-color-text-tertiary);
   margin-right: 8px;
   user-select: none;
 }
@@ -425,14 +453,15 @@ const applySelection = async () => {
   position: absolute;
   top: 0;
   bottom: 0;
-  background-color: rgba(24, 144, 255, 0.2);
+  background-color: var(--ant-color-primary-bg);
+  border-radius: 2px;
   pointer-events: none;
   z-index: 0;
 }
 
 .line-content {
   position: relative;
-  color: #333;
+  color: var(--ant-color-text);
   white-space: nowrap;
   z-index: 1;
 }
@@ -442,9 +471,17 @@ const applySelection = async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--ant-color-bg-layout);
+  border: 1px solid var(--ant-color-border);
 }
 
 .current-selection {
-  color: #666;
+  color: var(--ant-color-text-secondary);
+}
+
+.current-selection span {
+  color: var(--ant-color-text);
 }
 </style>
