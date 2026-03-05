@@ -23,7 +23,7 @@
 
 from fastapi import APIRouter, Body
 from app.core import Config
-from app.services import System, Notify
+from app.services import Notify
 from app.models.schema import (
     SettingGetOut,
     GlobalConfig,

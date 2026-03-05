@@ -32,6 +32,7 @@ from .emulator import router as emulator_router
 from .queue import router as queue_router
 from .dispatch import router as dispatch_router
 from .history import router as history_router
+from .tools import router as tools_router
 from .setting import router as setting_router
 from .update import router as update_router
 from .ocr import router as ocr_router
@@ -46,6 +47,7 @@ __all__ = [
     "queue_router",
     "dispatch_router",
     "history_router",
+    "tools_router",
     "setting_router",
     "update_router",
     "ocr_router",

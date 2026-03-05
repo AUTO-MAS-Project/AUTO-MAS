@@ -124,6 +124,12 @@ const routes = [
     meta: { title: '历史记录' },
   },
   {
+    path: '/tools',
+    name: 'Tools',
+    component: () => import('../views/tools/index.vue'),
+    meta: { title: '工具' },
+  },
+  {
     path: '/settings',
     name: 'Settings',
     component: () => import('../views/setting/index.vue'),

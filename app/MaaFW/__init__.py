@@ -1,7 +1,5 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2024-2025 DLmaster361
-#   Copyright © 2025 MoeSnowyFox
-#   Copyright © 2025-2026 AUTO-MAS Team
+#   Copyright © 2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -18,29 +16,14 @@
 #   You should have received a copy of the GNU General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
+
 #   Contact: DLmaster_361@163.com
 
 __version__ = "5.0.0"
 __author__ = "DLmaster361 <DLmaster_361@163.com>"
 __license__ = "GPL-3.0 license"
 
-from .broadcast import Broadcast
-from .config import Config, MaaConfig, GeneralConfig, MaaUserConfig, GeneralUserConfig
-from .emulator_manager import EmulatorManager
-from .task_manager import TaskManager
-from .maa_manager import MaaFWManager
 
-from .timer import MainTimer
+from .ArknightWin32 import ArknightWin32Toolkit
 
-__all__ = [
-    "Broadcast",
-    "Config",
-    "MaaConfig",
-    "GeneralConfig",
-    "MaaUserConfig",
-    "GeneralUserConfig",
-    "MainTimer",
-    "TaskManager",
-    "EmulatorManager",
-    "MaaFWManager",
-]
+__all__ = ["ArknightWin32Toolkit"]

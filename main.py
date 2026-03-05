@@ -76,10 +76,12 @@ def main():
         @asynccontextmanager
         async def lifespan(app: FastAPI):
             from app.core import Config, MainTimer, TaskManager
+            from app.MaaFW import ArknightWin32Toolkit
 
             await Config.init_config()
             await Config.get_stage()
             await Config.clean_old_history()
+            await ArknightWin32Toolkit.init()
             await MainTimer.start()
 
             # 初始化 Koishi 系统客户端（如果已启用）
@@ -121,6 +123,7 @@ def main():
             queue_router,
             dispatch_router,
             history_router,
+            tools_router,
             setting_router,
             update_router,
             ocr_router,
@@ -150,6 +153,7 @@ def main():
         app.include_router(queue_router)
         app.include_router(dispatch_router)
         app.include_router(history_router)
+        app.include_router(tools_router)
         app.include_router(setting_router)
         app.include_router(update_router)
         app.include_router(ocr_router)

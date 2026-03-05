@@ -100,3 +100,13 @@ a:hover {
   height: 0 !important;
   display: none !important;
 }
+
+/* 全局统一 Tag 边框样式 */
+.ant-tag {
+  border: 1px solid rgba(0, 0, 0, 0.15) !important;
+}
+
+/* 深色模式下调整边框透明度 */
+:root.dark .ant-tag {
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+}
