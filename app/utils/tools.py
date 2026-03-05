@@ -20,6 +20,9 @@
 #   Contact: DLmaster_361@163.com
 
 
+import time
+
+
 from .constants import ENCODINGS
 
 
@@ -43,3 +46,16 @@ def decode_bytes(data: bytes) -> str:
             continue
     else:
         return data.decode("latin1", errors="replace")
+
+
+def busy_wait(ms: float) -> None:
+    """
+    高精度忙等待, 高 CPU 占用, 目标精度 ±0.1ms
+
+    Args:
+        ms(float): 毫秒数
+    """
+
+    end = time.perf_counter() + ms / 1000.0
+    while time.perf_counter() < end:
+        pass

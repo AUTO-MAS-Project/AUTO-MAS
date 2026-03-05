@@ -1,39 +1,17 @@
 <template>
   <a-layout style="flex: 1; min-height: 0; overflow: hidden">
-    <a-layout-sider
-      :width="SIDER_WIDTH"
-      :theme="isDark ? 'dark' : 'light'"
-      :style="{
-        background: 'var(--ant-color-bg-elevated)',
-        borderRight: '1px solid var(--ant-color-border)',
-      }"
-    >
+    <a-layout-sider :width="SIDER_WIDTH" :theme="isDark ? 'dark' : 'light'" :style="{
+      background: 'var(--ant-color-bg-elevated)',
+      borderRight: '1px solid var(--ant-color-border)',
+    }">
       <div class="sider-content">
-        <a-menu
-          v-model:selected-keys="selectedKeys"
-          mode="inline"
-          :theme="isDark ? 'dark' : 'light'"
-          :items="mainMenuItems"
-          @click="onMenuClick"
-        />
+        <a-menu v-model:selected-keys="selectedKeys" mode="inline" :theme="isDark ? 'dark' : 'light'"
+          :items="mainMenuItems" @click="onMenuClick" />
         <!-- 测试路由分隔区域 -->
-        <a-menu
-          v-if="isDevelopment"
-          v-model:selected-keys="selectedKeys"
-          mode="inline"
-          :theme="isDark ? 'dark' : 'light'"
-          class="dev-menu"
-          :items="devMenuItems"
-          @click="onMenuClick"
-        />
-        <a-menu
-          v-model:selected-keys="selectedKeys"
-          mode="inline"
-          :theme="isDark ? 'dark' : 'light'"
-          class="bottom-menu"
-          :items="bottomMenuItems"
-          @click="onMenuClick"
-        />
+        <a-menu v-if="isDevelopment" v-model:selected-keys="selectedKeys" mode="inline"
+          :theme="isDark ? 'dark' : 'light'" class="dev-menu" :items="devMenuItems" @click="onMenuClick" />
+        <a-menu v-model:selected-keys="selectedKeys" mode="inline" :theme="isDark ? 'dark' : 'light'"
+          class="bottom-menu" :items="bottomMenuItems" @click="onMenuClick" />
       </div>
     </a-layout-sider>
 
@@ -59,6 +37,7 @@ import {
   HistoryOutlined,
   HomeOutlined,
   SettingOutlined,
+  ToolOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
 import { computed, h } from 'vue'
@@ -105,6 +84,7 @@ const devMenuItems = [
 
 const bottomMenuItems = [
   { key: '/history', label: '历史记录', icon: icon(HistoryOutlined) },
+  { key: '/tools', label: '工具', icon: icon(ToolOutlined) },
   { key: '/settings', label: '设置', icon: icon(SettingOutlined) },
 ]
 

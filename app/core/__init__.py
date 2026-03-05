@@ -28,6 +28,7 @@ from .broadcast import Broadcast
 from .config import Config, MaaConfig, GeneralConfig, MaaUserConfig, GeneralUserConfig
 from .emulator_manager import EmulatorManager
 from .task_manager import TaskManager
+from .maa_manager import MaaFWManager
 
 from .timer import MainTimer
 
@@ -41,4 +42,5 @@ __all__ = [
     "MainTimer",
     "TaskManager",
     "EmulatorManager",
+    "MaaFWManager",
 ]

@@ -24,6 +24,7 @@ import json
 import calendar
 from pathlib import Path
 from datetime import datetime
+from typing import Callable
 
 from app.utils.constants import UTC4, UTC8, MATERIALS_MAP, RESOURCE_STAGE_INFO
 from .ConfigBase import (
@@ -44,9 +45,11 @@ from .ConfigBase import (
     JSONValidator,
     URLValidator,
     UserNameValidator,
+    KeyValidator,
     ArgumentValidator,
     AdvancedArgumentValidator,
 )
+from .schema import TagItem
 
 
 class EmulatorConfig(ConfigBase):
@@ -741,6 +744,78 @@ class GeneralConfig(ConfigBase):
         super().__init__()
 
 
+class ToolsConfig(ConfigBase):
+    """工具配置"""
+
+    def __init__(self) -> None:
+
+        self.ArknightsPC_Enabled = ConfigItem(
+            "ArknightsPC", "Enabled", False, BoolValidator()
+        )
+        self.ArknightsPC_PauseKey = ConfigItem(
+            "ArknightsPC", "PauseKey", "f10", KeyValidator("f10")
+        )
+        self.ArknightsPC_SelectDeployedKey = ConfigItem(
+            "ArknightsPC", "SelectDeployedKey", "w", KeyValidator("w")
+        )
+        self.ArknightsPC_UseSkillKey = ConfigItem(
+            "ArknightsPC", "UseSkillKey", "r", KeyValidator("r")
+        )
+        self.ArknightsPC_RetreatKey = ConfigItem(
+            "ArknightsPC", "RetreatKey", "t", KeyValidator("t")
+        )
+        self.ArknightsPC_NextFrameKey = ConfigItem(
+            "ArknightsPC", "NextFrameKey", "f", KeyValidator("f")
+        )
+        self.ArknightsPC_AnotherQuitKey = ConfigItem(
+            "ArknightsPC", "AnotherQuitKey", "space", KeyValidator("space")
+        )
+        self.ArknightsPC_Status = ConfigItem(
+            "ArknightsPC",
+            "Status",
+            "-",
+            VirtualConfigValidator(self.arknights_pc_status),
+        )
+
+        self.arknights_pc_running = False
+        self.arknights_pc_get_connected: Callable[[], bool] = lambda: False
+
+        super().__init__()
+
+    @property
+    def arknights_pc_connected(self) -> bool:
+
+        return self.arknights_pc_get_connected()
+
+    def arknights_pc_status(self) -> str:
+
+        if not self.get("ArknightsPC", "Enabled"):
+            return TagItem(text="未启用", color="gray").model_dump_json()
+        else:
+            if self.arknights_pc_running:
+                if self.arknights_pc_connected:
+                    return TagItem(text="运行中", color="green").model_dump_json()
+                else:
+                    return TagItem(text="未连接", color="red").model_dump_json()
+            else:
+                return TagItem(text="已暂停", color="yellow").model_dump_json()
+
+    @property
+    def arknights_pc_keys(self) -> list[str]:
+        """获取明日方舟 PC 按键配置"""
+
+        return [
+            self.get("ArknightsPC", _)
+            for _ in (
+                "SelectDeployedKey",
+                "UseSkillKey",
+                "RetreatKey",
+                "NextFrameKey",
+                "AnotherQuitKey",
+            )
+        ]
+
+
 class GlobalConfig(ConfigBase):
     """全局配置"""
 
@@ -937,6 +1012,8 @@ class GlobalConfig(ConfigBase):
         self.ScriptConfig = MultipleConfig([MaaConfig, GeneralConfig])
         ## 队列配置列表
         self.QueueConfig = MultipleConfig([QueueConfig])
+        ## 工具箱配置
+        self.ToolsConfig = ToolsConfig()
 
         MaaConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig

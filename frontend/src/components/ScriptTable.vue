@@ -993,6 +993,7 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   font-size: 12px;
   font-weight: 500;
   border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
 }
 
 .header-actions {
@@ -1092,12 +1093,14 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   font-weight: 500;
   border-radius: 4px;
   margin: 0;
+  border: 1px solid rgba(0, 0, 0, 0.15);
 }
 
 .server-tag {
   font-size: 11px;
   font-weight: 500;
   border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
 }
 
 .user-controls {
@@ -1270,6 +1273,7 @@ const onUserDragEnd = async (evt: any, script: Script) => {
     cursor: pointer;
     user-select: none;
     transition: all 0.2s ease;
+    border: 1px solid rgba(0, 0, 0, 0.15);
   }
 
   .clickable-tag:hover {

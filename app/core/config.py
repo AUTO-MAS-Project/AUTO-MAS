@@ -139,6 +139,7 @@ class AppConfig(GlobalConfig):
         await self.PlanConfig.connect(self.config_path / "PlanConfig.json")
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
+        await self.ToolsConfig.connect(self.config_path / "ToolsConfig.json")
 
         from app.services import System
 
@@ -146,6 +147,8 @@ class AppConfig(GlobalConfig):
         self.bind("Function", "IfAllowSleep", System.set_Sleep)
         await System.set_SelfStart(self.get("Start", "IfSelfStart"))
         await System.set_Sleep(self.get("Function", "IfAllowSleep"))
+
+        self.loop = asyncio.get_running_loop()
 
         logger.info("程序初始化完成")
 
@@ -483,8 +486,6 @@ class AppConfig(GlobalConfig):
     async def get_git_version(self) -> tuple[bool, str, str]:
         """获取Git版本信息，如果Git不可用则返回默认值"""
 
-        loop = asyncio.get_event_loop()
-
         def _get_git_info():
 
             if self.repo is None:
@@ -514,7 +515,7 @@ class AppConfig(GlobalConfig):
             return is_latest, commit_hash, commit_time.strftime("%Y-%m-%d %H:%M:%S")
 
         # 在线程池中执行 Git 操作
-        is_latest, commit_hash, commit_time = await loop.run_in_executor(
+        is_latest, commit_hash, commit_time = await self.loop.run_in_executor(
             None, _get_git_info
         )
         return is_latest, commit_hash, commit_time
@@ -1215,6 +1216,24 @@ class AppConfig(GlobalConfig):
         await self.QueueConfig[queue_uid].QueueItem.setOrder(
             list(map(uuid.UUID, index_list))
         )
+
+    async def get_tools(self) -> Dict[str, Any]:
+        """获取工具设置"""
+
+        logger.debug("获取工具设置")
+
+        return await self.ToolsConfig.toDict()
+
+    async def update_tools(self, data: Dict[str, Dict[str, Any]]) -> None:
+        """更新工具设置"""
+
+        logger.info("更新工具设置")
+
+        for group, items in data.items():
+            for name, value in items.items():
+                await self.ToolsConfig.set(group, name, value)
+
+        logger.success("工具设置更新成功")
 
     async def get_setting(self) -> Dict[str, Any]:
         """获取全局设置"""
