@@ -63,6 +63,8 @@ import type { TimeSetGetIn } from '../models/TimeSetGetIn';
 import type { TimeSetGetOut } from '../models/TimeSetGetOut';
 import type { TimeSetReorderIn } from '../models/TimeSetReorderIn';
 import type { TimeSetUpdateIn } from '../models/TimeSetUpdateIn';
+import type { ToolsGetOut } from '../models/ToolsGetOut';
+import type { ToolsUpdateIn } from '../models/ToolsUpdateIn';
 import type { UpdateCheckIn } from '../models/UpdateCheckIn';
 import type { UpdateCheckOut } from '../models/UpdateCheckOut';
 import type { UserCreateOut } from '../models/UserCreateOut';
@@ -1253,6 +1255,38 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/history/data',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询工具配置
+     * 查询工具配置
+     * @returns ToolsGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getToolsApiToolsGetPost(): CancelablePromise<ToolsGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/get',
+        });
+    }
+    /**
+     * 更新工具配置
+     * 更新工具配置
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updateToolsApiToolsUpdatePost(
+        requestBody: ToolsUpdateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/update',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

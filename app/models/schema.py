@@ -48,6 +48,25 @@ class NoticeOut(OutBase):
     )
 
 
+class TagItem(BaseModel):
+    text: str = Field(..., description="标签文本")
+    color: Literal[
+        "red",
+        "blue",
+        "green",
+        "yellow",
+        "orange",
+        "purple",
+        "pink",
+        "brown",
+        "black",
+        "white",
+        "gray",
+        "silver",
+        "gold",
+    ] = Field(..., description="标签颜色")
+
+
 class ComboBoxItem(BaseModel):
     label: str = Field(..., description="展示值")
     value: Optional[str] = Field(..., description="实际值")
@@ -99,6 +118,25 @@ class EmulatorConfig(BaseModel):
     )
     Data: Optional[EmulatorConfig_Data] = Field(
         default=None, description="模拟器配置数据"
+    )
+
+
+class ToolsConfig_ArknightsPC(BaseModel):
+    Enabled: bool | None = Field(default=None, description="是否启用 ArknightsPC 工具")
+    PauseKey: str | None = Field(default=None, description="暂停键位")
+    SelectDeployedKey: str | None = Field(
+        default=None, description="选中已部署干员键位"
+    )
+    UseSkillKey: str | None = Field(default=None, description="释放技能键位")
+    RetreatKey: str | None = Field(default=None, description="撤退键位")
+    NextFrameKey: str | None = Field(default=None, description="下一帧键位")
+    AnotherQuitKey: str | None = Field(default=None, description="自定义退出、暂停键位")
+    Status: str | None = Field(default=None, description="工具状态 Tag")
+
+
+class ToolsConfig(BaseModel):
+    ArknightsPC: ToolsConfig_ArknightsPC | None = Field(
+        default=None, description="明日方舟PC工具配置"
     )
 
 
@@ -1000,6 +1038,14 @@ class HistoryDataGetIn(BaseModel):
 
 class HistoryDataGetOut(OutBase):
     data: HistoryData = Field(..., description="历史记录数据")
+
+
+class ToolsGetOut(OutBase):
+    data: ToolsConfig = Field(..., description="工具配置数据")
+
+
+class ToolsUpdateIn(BaseModel):
+    data: ToolsConfig = Field(..., description="工具配置需要更新的数据")
 
 
 class SettingGetOut(OutBase):

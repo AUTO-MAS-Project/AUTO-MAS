@@ -35,6 +35,7 @@ import type { ScriptGetOut } from '../models/ScriptGetOut';
 import type { SettingGetOut } from '../models/SettingGetOut';
 import type { TimeSetGetIn } from '../models/TimeSetGetIn';
 import type { TimeSetGetOut } from '../models/TimeSetGetOut';
+import type { ToolsGetOut } from '../models/ToolsGetOut';
 import type { UpdateCheckIn } from '../models/UpdateCheckIn';
 import type { UpdateCheckOut } from '../models/UpdateCheckOut';
 import type { UserDeleteIn } from '../models/UserDeleteIn';
@@ -422,6 +423,18 @@ export class GetService {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 查询工具配置
+     * 查询工具配置
+     * @returns ToolsGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getToolsApiToolsGetPost(): CancelablePromise<ToolsGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/get',
         });
     }
     /**

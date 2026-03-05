@@ -18,6 +18,7 @@ import type { ScriptUrlIn } from '../models/ScriptUrlIn';
 import type { SettingUpdateIn } from '../models/SettingUpdateIn';
 import type { TimeSetReorderIn } from '../models/TimeSetReorderIn';
 import type { TimeSetUpdateIn } from '../models/TimeSetUpdateIn';
+import type { ToolsUpdateIn } from '../models/ToolsUpdateIn';
 import type { UserReorderIn } from '../models/UserReorderIn';
 import type { UserSetIn } from '../models/UserSetIn';
 import type { UserUpdateIn } from '../models/UserUpdateIn';
@@ -381,6 +382,26 @@ export class UpdateService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/queue/item/order',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 更新工具配置
+     * 更新工具配置
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updateToolsApiToolsUpdatePost(
+        requestBody: ToolsUpdateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/update',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

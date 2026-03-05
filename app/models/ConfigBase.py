@@ -28,6 +28,7 @@ import uuid
 import shlex
 import inspect
 import asyncio
+import pyautogui
 import win32com.client
 from copy import deepcopy
 from urllib.parse import urlparse
@@ -235,12 +236,15 @@ class EncryptValidator(ValidatorBase):
 class VirtualConfigValidator(ValidatorBase):
     """虚拟配置验证器"""
 
-    def __init__(self, function: Callable[[], str], default: str = "-"):
+    def __init__(self, function: Callable[[], str]):
         self.function = function
-        self.default = default
+        self.if_init = False
 
     def validate(self, value):
-        return value == self.default
+        if not self.if_init:
+            self.if_init = True
+            return True
+        return False
 
     def correct(self, value):
         try:
@@ -356,6 +360,19 @@ class UserNameValidator(ValidatorBase):
             value = value[:255]
 
         return value
+
+
+class KeyValidator(ValidatorBase):
+    """键盘按键格式验证器"""
+
+    def __init__(self, default: str = ""):
+        self.default = default
+
+    def validate(self, value: Any) -> bool:
+        return value in pyautogui.KEYBOARD_KEYS
+
+    def correct(self, value: Any) -> Any:
+        return value if self.validate(value) else self.default
 
 
 class URLValidator(ValidatorBase):
