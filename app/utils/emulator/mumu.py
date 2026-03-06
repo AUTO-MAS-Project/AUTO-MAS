@@ -49,7 +49,7 @@ class MumuManager(DeviceBase):
                 f"MuMuManager.exe文件不存在: {config.get('Info', 'Path')}"
             )
 
-        if config.get("Data", "Type") != "mumu":
+        if config.get("Info", "Type") != "mumu":
             raise ValueError("配置的模拟器类型不是mumu")
 
         self.config = config
@@ -64,7 +64,7 @@ class MumuManager(DeviceBase):
         status = DeviceStatus.UNKNOWN  # 初始化status变量
         t = datetime.now()
         while datetime.now() - t < timedelta(
-            seconds=self.config.get("Data", "MaxWaitTime")
+            seconds=self.config.get("Info", "MaxWaitTime")
         ):
             status = await self.getStatus(idx)
             if status == DeviceStatus.ONLINE:
@@ -85,7 +85,7 @@ class MumuManager(DeviceBase):
             idx,
             "launch",
             *(["-pkg", package_name] if package_name else []),
-            timeout=self.config.get("Data", "MaxWaitTime"),
+            timeout=self.config.get("Info", "MaxWaitTime"),
             if_merge_std=True,
         )
         # 参考命令 MuMuManager.exe control -v 2 launch
@@ -95,7 +95,7 @@ class MumuManager(DeviceBase):
 
         t = datetime.now()
         while datetime.now() - t < timedelta(
-            seconds=self.config.get("Data", "MaxWaitTime")
+            seconds=self.config.get("Info", "MaxWaitTime")
         ):
             status = await self.getStatus(idx)
             if if_close_mumu_nx:
@@ -106,7 +106,7 @@ class MumuManager(DeviceBase):
                 await asyncio.sleep(
                     30
                     if package_name != ""
-                    and self.config.get("Data", "MaxWaitTime") > 60
+                    and self.config.get("Info", "MaxWaitTime") > 60
                     else 3
                 )  # 等待模拟器的 ADB 等服务完全启动, 低性能设备额外等待应用启动
                 return (await self.getInfo(idx))[idx]
@@ -128,7 +128,7 @@ class MumuManager(DeviceBase):
             "-v",
             idx,
             "shutdown",
-            timeout=self.config.get("Data", "MaxWaitTime"),
+            timeout=self.config.get("Info", "MaxWaitTime"),
             if_merge_std=True,
         )
         # 参考命令 MuMuManager.exe control -v 2 shutdown
@@ -138,7 +138,7 @@ class MumuManager(DeviceBase):
 
         t = datetime.now()
         while datetime.now() - t < timedelta(
-            seconds=self.config.get("Data", "MaxWaitTime")
+            seconds=self.config.get("Info", "MaxWaitTime")
         ):
             status = await self.getStatus(idx)
             if status == DeviceStatus.OFFLINE:
@@ -224,7 +224,7 @@ class MumuManager(DeviceBase):
             "-v",
             idx,
             "show_window" if is_visible else "hide_window",
-            timeout=self.config.get("Data", "MaxWaitTime"),
+            timeout=self.config.get("Info", "MaxWaitTime"),
             if_merge_std=True,
         )
         if result.returncode != 0:
@@ -238,7 +238,7 @@ class MumuManager(DeviceBase):
             "info",
             "-v",
             idx,
-            timeout=self.config.get("Data", "MaxWaitTime"),
+            timeout=self.config.get("Info", "MaxWaitTime"),
             if_merge_std=True,
         )
         if result.returncode != 0:

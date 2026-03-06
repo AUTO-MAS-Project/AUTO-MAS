@@ -50,12 +50,12 @@ class _EmulatorManager:
         config = EmulatorConfig()
         await config.load(await Config.EmulatorConfig[emulator_uid].toDict())
 
-        if config.get("Data", "Type") in EMULATOR_TYPE_BOOK:
+        if config.get("Info", "Type") in EMULATOR_TYPE_BOOK:
 
             # 设置模拟器广告
             with suppress(Exception):
-                if config.get("Data", "Type") in EMULATOR_SPLASH_ADS_PATH_BOOK:
-                    ads_path = EMULATOR_SPLASH_ADS_PATH_BOOK[config.get("Data", "Type")]
+                if config.get("Info", "Type") in EMULATOR_SPLASH_ADS_PATH_BOOK:
+                    ads_path = EMULATOR_SPLASH_ADS_PATH_BOOK[config.get("Info", "Type")]
                     if Config.get("Function", "IfBlockAd"):
                         if ads_path.is_dir():
                             shutil.rmtree(ads_path)
@@ -64,18 +64,18 @@ class _EmulatorManager:
                     else:
                         if ads_path.is_file():
                             ads_path.unlink()
-                if config.get("Data", "Type") == "ldplayer":
+                if config.get("Info", "Type") == "ldplayer":
                     await ProcessRunner.run_process(
                         Path(config.get("Info", "Path")),
                         "globalsetting",
                         "--cleanmode",
                         "1" if Config.get("Function", "IfBlockAd") else "0",
-                        timeout=config.get("Data", "MaxWaitTime"),
+                        timeout=config.get("Info", "MaxWaitTime"),
                     )
 
-            return EMULATOR_TYPE_BOOK[config.get("Data", "Type")](config)
+            return EMULATOR_TYPE_BOOK[config.get("Info", "Type")](config)
         else:
-            raise ValueError(f"不支持的模拟器类型: {config.get('Data', 'Type')}")
+            raise ValueError(f"不支持的模拟器类型: {config.get('Info', 'Type')}")
 
     async def operate_emulator(
         self, operate: Literal["open", "close", "show"], emulator_id: str, index: str

@@ -39,7 +39,12 @@ from pathlib import Path
 from typing import Any, Type, TypeVar, Generic, Callable, Coroutine
 
 from app.utils import get_logger, dpapi_encrypt, dpapi_decrypt
-from app.utils.constants import RESERVED_NAMES, ILLEGAL_CHARS, DEFAULT_DATETIME
+from app.utils.constants import (
+    RESERVED_NAMES,
+    ILLEGAL_CHARS,
+    DEFAULT_DATETIME,
+    EMULATOR_PATH_BOOK,
+)
 
 logger = get_logger("配置基类")
 
@@ -322,6 +327,143 @@ class FolderValidator(ValidatorBase):
         return Path(value).resolve().as_posix()
 
 
+class EmulatorPathValidator(FileValidator):
+    """模拟器管理器路径验证器"""
+
+    def __init__(self, emulator_type: ConfigItem) -> None:
+        super().__init__()
+
+        self.emulator_type = emulator_type
+
+    def validate(self, value):
+        if not isinstance(value, str):
+            return False
+        # 允许空字符串(表示未设置路径)
+        if value == "":
+            return True
+        if not Path(value).is_absolute():
+            return False
+        if Path(value).suffix == ".lnk":
+            return False
+
+        path = Path(value)
+
+        if not path.is_file() or not os.access(path, os.X_OK):
+            return False
+
+        if (
+            self.emulator_type.getValue() in EMULATOR_PATH_BOOK
+            and path.name
+            != EMULATOR_PATH_BOOK[self.emulator_type.getValue()]["executables"][0]
+        ):
+            return False
+
+        return True
+
+    def correct(self, value):
+
+        if not isinstance(value, str):
+            value = str(Path.cwd())
+        # 空字符串直接返回
+        if value == "":
+            return ""
+        if "%APPDATA%" in value:
+            value = value.replace("%APPDATA%", os.getenv("APPDATA") or "")
+        if not Path(value).is_absolute():
+            value = Path(value).resolve().as_posix()
+        if Path(value).suffix == ".lnk":
+            try:
+                shell = win32com.client.Dispatch("WScript.Shell")
+                shortcut = shell.CreateShortcut(value)
+                value = shortcut.TargetPath
+            except:
+                pass
+
+        # 不支持矫正的模拟器类型直接返回路径字符串
+        if self.emulator_type.getValue() not in EMULATOR_PATH_BOOK:
+            return Path(value).resolve().as_posix()
+
+        # 从给定路径向上或向下搜索模拟器主管理器程序的完整路径
+        path = Path(value)
+
+        # 获取模拟器配置信息
+        config = EMULATOR_PATH_BOOK[self.emulator_type.getValue()]
+        executables = config["executables"]
+
+        # 第一个可执行文件是主管理器程序（优先级最高）
+        primary_exe = executables[0]
+
+        # 如果输入的是文件,先获取其父目录
+        if path.is_file():
+            path = path.parent
+
+        # 1. 首先检查当前目录是否直接包含主管理器程序
+        # 如果用户给的就是正确的主程序路径，直接返回
+        primary_exe_path = path / primary_exe
+        if primary_exe_path.exists():
+            result = str(primary_exe_path)
+            return result
+
+        # 2. 向上搜索父目录，找到直接包含主管理器程序的目录（最多3层）
+        candidates = []
+        current = path
+        for level in range(3):
+            parent = current.parent
+            if parent == current:  # 已到达根目录
+                break
+
+            # 只接受直接包含主管理器程序的目录
+            parent_exe_path = parent / primary_exe
+            if parent_exe_path.exists():
+                candidates.append(
+                    {
+                        "path": parent,
+                        "exe_path": parent_exe_path,
+                        "depth": len(parent.parts),
+                        "level": level + 1,
+                    }
+                )
+
+            current = parent
+
+        # 如果找到了候选目录，选择最优的（深度最小的，即最接近根目录的）
+        if candidates:
+            # 排序策略：深度越小越好（越靠近根目录）
+            candidates.sort(key=lambda x: x["depth"])
+
+            best_candidate = candidates[0]
+            result = str(best_candidate["exe_path"])
+
+            return result
+
+        # 3. 如果向上没找到，尝试向下搜索子目录（仅1层，且必须直接包含主管理器程序）
+        try:
+            for subdir in path.iterdir():
+                if subdir.is_dir():
+                    subdir_exe_path = subdir / primary_exe
+                    # 只接受直接包含主管理器程序的子目录
+                    if subdir_exe_path.exists():
+                        result = str(subdir_exe_path)
+                        return result
+        except PermissionError:
+            pass
+
+        # 4. 检查兄弟目录（必须直接包含主管理器程序）
+        if path.parent != path:
+            try:
+                for sibling in path.parent.iterdir():
+                    if sibling.is_dir() and sibling != path:
+                        sibling_exe_path = sibling / primary_exe
+                        # 只接受直接包含主管理器程序的兄弟目录
+                        if sibling_exe_path.exists():
+                            result = str(sibling_exe_path)
+                            return result
+            except PermissionError:
+                pass
+
+        return Path(value).resolve().as_posix()
+
+
 class UserNameValidator(ValidatorBase):
     """用户名验证器"""
 
@@ -557,7 +699,7 @@ class ConfigItem:
             return dpapi_decrypt(v)
         return v
 
-    def connect(self, slot: Callable[[Any], Any]):
+    def bind(self, slot: Callable[[Any], Any]):
         """
         连接槽函数到配置项修改信号
 
@@ -572,7 +714,7 @@ class ConfigItem:
         if slot not in self._slots:
             self._slots.append(slot)
 
-    def disconnect(self, slot: Callable[[Any], Any]):
+    def unbind(self, slot: Callable[[Any], Any]):
         """
         断开槽函数连接
 
@@ -584,7 +726,7 @@ class ConfigItem:
         if slot in self._slots:
             self._slots.remove(slot)
 
-    def disconnect_all(self):
+    def unbind_all(self):
         """断开所有槽函数连接"""
         self._slots.clear()
 
@@ -813,7 +955,7 @@ class ConfigBase(ABC):
         if self.is_locked:
             raise ValueError("配置已锁定, 无法修改")
 
-        self._config_item_index[group][name].connect(slot)
+        self._config_item_index[group][name].bind(slot)
 
     def unbind(self, group: str, name: str, slot: Callable[[Any], Any]):
         """
@@ -835,7 +977,7 @@ class ConfigBase(ABC):
         if self.is_locked:
             raise ValueError("配置已锁定, 无法修改")
 
-        self._config_item_index[group][name].disconnect(slot)
+        self._config_item_index[group][name].unbind(slot)
 
     async def save(self) -> None:
         """保存配置"""

@@ -101,23 +101,17 @@ class EmulatorConfigIndexItem(BaseModel):
 
 class EmulatorConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="模拟器名称")
+    Type: Optional[Literal["general", "mumu", "ldplayer"]] = Field(
+        default=None, description="模拟器类型"
+    )
     Path: Optional[str] = Field(default=None, description="模拟器路径")
-
-
-class EmulatorConfig_Data(BaseModel):
-    Type: Optional[
-        Literal["general", "mumu", "ldplayer", "nox", "memu", "blueStacks"]
-    ] = Field(default=None, description="模拟器类型")
-    BossKey: Optional[str] = Field(default=None, description="模拟器老板键")
-    MaxWaitTime: Optional[int] = Field(default=None, description="最大等待时间")
+    BossKey: Optional[str] = Field(default=None, description="老板键快捷键配置")
+    MaxWaitTime: Optional[int] = Field(default=None, description="最大等待时间（秒）")
 
 
 class EmulatorConfig(BaseModel):
     Info: Optional[EmulatorConfig_Info] = Field(
         default=None, description="模拟器基础信息"
-    )
-    Data: Optional[EmulatorConfig_Data] = Field(
-        default=None, description="模拟器配置数据"
     )
 
 

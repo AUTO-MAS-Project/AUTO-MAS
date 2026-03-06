@@ -39,6 +39,7 @@ from .ConfigBase import (
     VirtualConfigValidator,
     FileValidator,
     FolderValidator,
+    EmulatorPathValidator,
     EncryptValidator,
     UUIDValidator,
     DateTimeValidator,
@@ -60,13 +61,9 @@ class EmulatorConfig(ConfigBase):
         ## Info ------------------------------------------------------------
         ## 模拟器名称
         self.Info_Name = ConfigItem("Info", "Name", "新模拟器")
-        ## 模拟器路径
-        self.Info_Path = ConfigItem("Info", "Path", "", FileValidator())
-
-        ## Data ------------------------------------------------------------
         ## 模拟器类型
-        self.Data_Type = ConfigItem(
-            "Data",
+        self.Info_Type = ConfigItem(
+            "Info",
             "Type",
             "general",
             OptionsValidator(
@@ -79,12 +76,19 @@ class EmulatorConfig(ConfigBase):
                     # "blueStacks",
                 ]
             ),
+            legacy_group="Data",
+        )
+        ## 模拟器路径
+        self.Info_Path = ConfigItem(
+            "Info", "Path", "", EmulatorPathValidator(self.Info_Type)
         )
         ## 老板键快捷键配置
-        self.Data_BossKey = ConfigItem("Data", "BossKey", "[ ]", JSONValidator(list))
+        self.Info_BossKey = ConfigItem(
+            "Info", "BossKey", "[ ]", JSONValidator(list), legacy_group="Data"
+        )
         ## 最大等待时间（秒）
-        self.Data_MaxWaitTime = ConfigItem(
-            "Data", "MaxWaitTime", 60, RangeValidator(1, 9999)
+        self.Info_MaxWaitTime = ConfigItem(
+            "Info", "MaxWaitTime", 60, RangeValidator(1, 9999), legacy_group="Data"
         )
 
         super().__init__()

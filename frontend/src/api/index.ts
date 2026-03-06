@@ -21,7 +21,6 @@ export type { ComboBoxOut } from './models/ComboBoxOut';
 export type { DeviceInfo } from './models/DeviceInfo';
 export type { DispatchIn } from './models/DispatchIn';
 export type { EmulatorConfig } from './models/EmulatorConfig';
-export type { EmulatorConfig_Data } from './models/EmulatorConfig_Data';
 export type { EmulatorConfig_Info } from './models/EmulatorConfig_Info';
 export type { EmulatorConfigIndexItem } from './models/EmulatorConfigIndexItem';
 export type { EmulatorCreateOut } from './models/EmulatorCreateOut';

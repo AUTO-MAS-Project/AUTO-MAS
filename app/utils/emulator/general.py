@@ -48,7 +48,7 @@ class GeneralDeviceManager(DeviceBase):
         if not Path(config.get("Info", "Path")).exists():
             raise FileNotFoundError(f"模拟器文件不存在: {config.get('Info', 'Path')}")
 
-        if config.get("Data", "Type") != "general":
+        if config.get("Info", "Type") != "general":
             raise ValueError("配置的模拟器类型不是通用类型")
 
         self.config = config
@@ -74,7 +74,7 @@ class GeneralDeviceManager(DeviceBase):
         await self.process_managers[idx].open_process(self.emulator_path, *args)
 
         # 等待进程启动
-        await asyncio.sleep(self.config.get("Data", "MaxWaitTime"))
+        await asyncio.sleep(self.config.get("Info", "MaxWaitTime"))
 
         return (await self.getInfo(idx))[idx]
 
@@ -91,7 +91,7 @@ class GeneralDeviceManager(DeviceBase):
         # 等待进程完全停止
         t = datetime.now()
         while datetime.now() - t < timedelta(
-            seconds=self.config.get("Data", "MaxWaitTime")
+            seconds=self.config.get("Info", "MaxWaitTime")
         ):
             if not await self.process_managers[idx].is_running():
                 return DeviceStatus.OFFLINE
@@ -132,7 +132,7 @@ class GeneralDeviceManager(DeviceBase):
 
         t = datetime.now()
         while datetime.now() - t < timedelta(
-            seconds=self.config.get("Data", "MaxWaitTime")
+            seconds=self.config.get("Info", "MaxWaitTime")
         ):
 
             # 检查窗口可见性是否符合预期
@@ -146,7 +146,7 @@ class GeneralDeviceManager(DeviceBase):
                 keyboard.press_and_release(
                     "+".join(
                         _.strip().lower()
-                        for _ in json.loads(self.config.get("Data", "BossKey"))
+                        for _ in json.loads(self.config.get("Info", "BossKey"))
                     )
                 )  # 老板键
             except Exception as e:
