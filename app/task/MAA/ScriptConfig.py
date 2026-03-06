@@ -148,6 +148,11 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
 
+        shutil.rmtree(
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile",
+            ignore_errors=True,
+        )
         (
             Path.cwd()
             / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
