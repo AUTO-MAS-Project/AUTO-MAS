@@ -123,19 +123,16 @@ class _MainTimer:
                     and curtime[11:16] == time_set.get("Info", "Time")
                 ):
                     logger.info(f"定时唤起任务：{uid}")
-                    task_id = await TaskManager.add_task("AutoProxy", str(uid))
-                    await queue.set("Data", "LastTimedStart", curtime)
-
-                    await Config.send_websocket_message(
-                        id="TaskManager",
-                        type="Signal",
-                        data={
-                            "newTask": str(task_id),
+                    await TaskManager.add_task(
+                        "AutoProxy",
+                        str(uid),
+                        new_task_info={
                             "queueId": str(uid),
                             "taskName": f"队列 - {queue.get('Info', 'Name')}",
                             "taskType": "定时代理",
                         },
                     )
+                    await queue.set("Data", "LastTimedStart", curtime)
 
 
 MainTimer = _MainTimer()

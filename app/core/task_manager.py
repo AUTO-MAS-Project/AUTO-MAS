@@ -188,7 +188,10 @@ class _TaskManager:
         self.task_handler: Dict[uuid.UUID, Task] = {}
 
     async def add_task(
-        self, mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"], id: str
+        self,
+        mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"],
+        id: str,
+        new_task_info: dict = {},
     ) -> uuid.UUID:
         """
         添加任务, 根据 id 值搜索实际指向的任务配置
@@ -196,6 +199,7 @@ class _TaskManager:
         Args:
             mode (str): 任务模式
             id (str): 任务项对应的配置 ID
+            new_task_info (dict): 新任务项信息. Defaults to {}.
 
         Returns:
             uuid.UUID: 任务 UID
@@ -238,6 +242,11 @@ class _TaskManager:
             )
 
         logger.info(f"创建任务: {task_uid}, 模式: {mode}")
+        if new_task_info:
+            new_task_info["newTask"] = str(task_uid)
+            await Config.send_websocket_message(
+                id="TaskManager", type="Signal", data=new_task_info
+            )
         self.task_info[task_uid] = TaskInfo(
             mode=mode,
             task_id=str(task_uid),
@@ -313,12 +322,10 @@ class _TaskManager:
 
             if queue.get("Info", "StartUpEnabled"):
                 logger.info(f"启动时需要运行的队列：{uid}")
-                task_id = await TaskManager.add_task("AutoProxy", str(uid))
-                await Config.send_websocket_message(
-                    id="TaskManager",
-                    type="Signal",
-                    data={
-                        "newTask": str(task_id),
+                await TaskManager.add_task(
+                    "AutoProxy",
+                    str(uid),
+                    new_task_info={
                         "queueId": str(uid),
                         "taskName": f"队列 - {queue.get('Info', 'Name')}",
                         "taskType": "启动时代理",
