@@ -154,6 +154,11 @@ class ScriptConfigTask(TaskExecuteBase):
         await System.kill_process(self.script_set_exe_path)
         del self.general_process_manager
 
+        shutil.rmtree(
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile",
+            ignore_errors=True,
+        )
         (
             Path.cwd()
             / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
