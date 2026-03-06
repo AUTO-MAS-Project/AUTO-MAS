@@ -62,7 +62,6 @@ from app.utils.constants import (
     RESOURCE_STAGE_DATE_TEXT,
 )
 from app.utils import get_logger
-from app.utils.emulator import find_emulator_root_path
 
 logger = get_logger("配置管理")
 
@@ -944,8 +943,8 @@ class AppConfig(GlobalConfig):
         await self.PlanConfig.setOrder(list(map(uuid.UUID, index_list)))
 
     async def get_emulator(self, emulator_id: Optional[str]) -> tuple[list, dict]:
-        """获取emulator配置"""
-        logger.info(f"获取全局emulator设置: {emulator_id}")
+        """获取模拟器配置"""
+        logger.info(f"获取全局模拟器设置: {emulator_id}")
 
         if emulator_id is None:
             data = await self.EmulatorConfig.toDict()
@@ -956,8 +955,8 @@ class AppConfig(GlobalConfig):
         return list(index), data
 
     async def add_emulator(self) -> tuple[uuid.UUID, EmulatorConfig]:
-        """添加emulator配置"""
-        logger.info("添加全局emulator配置")
+        """添加模拟器配置"""
+        logger.info("添加全局模拟器配置")
 
         uid, config = await self.EmulatorConfig.add(EmulatorConfig)
         return uid, config
@@ -965,40 +964,22 @@ class AppConfig(GlobalConfig):
     async def update_emulator(
         self, emulator_id: str, data: Dict[str, Dict[str, Any]]
     ) -> None:
-        """更新 emulator 配置"""
+        """更新模拟器配置"""
 
         emulator_uid = uuid.UUID(emulator_id)
 
-        logger.info(f"更新 emulator 配置: {emulator_id}")
-
-        # 如果路径被修改, 尝试自动搜索模拟器根目录
-        if data.get("Info", {}).get("Path", None) is not None:
-            input_path = data["Info"]["Path"]
-
-            # 获取模拟器类型
-            emulator_type = data.get("Data", {}).get(
-                "Type", None
-            ) or self.EmulatorConfig[emulator_uid].get("Data", "Type")
-
-            logger.info(f"检测到路径修改: {input_path}, 模拟器类型: {emulator_type}")
-            # 搜索并调整为正确的根目录
-            found_path = await find_emulator_root_path(input_path, emulator_type)
-            if found_path != input_path:
-                logger.info(f"路径已自动调整: {input_path} -> {found_path}")
-                data["Info"]["Path"] = found_path
-            else:
-                logger.debug(f"路径未调整, 保持原值: {input_path}")
+        logger.info(f"更新模拟器配置: {emulator_id}")
 
         for group, items in data.items():
             for name, value in items.items():
                 await self.EmulatorConfig[emulator_uid].set(group, name, value)
 
     async def del_emulator(self, emulator_id: str) -> None:
-        """删除 emulator 配置"""
+        """删除模拟器配置"""
 
         emulator_uid = uuid.UUID(emulator_id)
 
-        logger.info(f"删除全局 emulator 配置: {emulator_id}")
+        logger.info(f"删除全局模拟器配置: {emulator_id}")
 
         script_list = []
 
@@ -1010,7 +991,7 @@ class AppConfig(GlobalConfig):
                             f"脚本 {script.get('Info','Name')} 正在使用此模拟器且被锁定, 无法完成删除"
                         )
                     script_list.append(script)
-            if isinstance(script, GeneralConfig):
+            elif isinstance(script, GeneralConfig):
                 if script.get("Game", "Type") == "Emulator" and script.get(
                     "Game", "EmulatorId"
                 ) == str(emulator_id):
@@ -1029,9 +1010,9 @@ class AppConfig(GlobalConfig):
         await self.EmulatorConfig.remove(emulator_uid)
 
     async def reorder_emulator(self, index_list: list[str]) -> None:
-        """重新排序 emulator"""
+        """重新排序模拟器"""
 
-        logger.info(f"重新排序全局 emulator: {index_list}")
+        logger.info(f"重新排序模拟器: {index_list}")
 
         await self.EmulatorConfig.setOrder(list(map(uuid.UUID, index_list)))
 
@@ -1625,7 +1606,7 @@ class AppConfig(GlobalConfig):
 
         logger.info("开始获取模拟器下拉框信息")
 
-        if self.EmulatorConfig[uuid.UUID(emulator_id)].get("Data", "Type") == "general":
+        if self.EmulatorConfig[uuid.UUID(emulator_id)].get("Info", "Type") == "general":
             logger.info("通用模拟器不支持扫描多开实例, 返回空列表")
             return []
 

@@ -60,7 +60,7 @@ class LDManager(DeviceBase):
                 f"LDPlayerManager.exe文件不存在: {config.get('Info', 'Path')}"
             )
 
-        if config.get("Data", "Type") != "ldplayer":
+        if config.get("Info", "Type") != "ldplayer":
             raise ValueError("配置的模拟器类型不是ldplayer")
 
         self.config = config
@@ -73,7 +73,7 @@ class LDManager(DeviceBase):
         status = DeviceStatus.UNKNOWN  # 初始化status变量
         t = datetime.now()
         while datetime.now() - t < timedelta(
-            seconds=self.config.get("Data", "MaxWaitTime")
+            seconds=self.config.get("Info", "MaxWaitTime")
         ):
             status = await self.getStatus(idx)
             if status == DeviceStatus.ONLINE:
@@ -91,7 +91,7 @@ class LDManager(DeviceBase):
             "--index",
             idx,
             *(["--packagename", f'"{package_name}"'] if package_name else []),
-            timeout=self.config.get("Data", "MaxWaitTime"),
+            timeout=self.config.get("Info", "MaxWaitTime"),
             if_merge_std=True,
         )
         # 参考命令 dnconsole.exe launch --index 0
@@ -101,14 +101,14 @@ class LDManager(DeviceBase):
 
         t = datetime.now()
         while datetime.now() - t < timedelta(
-            seconds=self.config.get("Data", "MaxWaitTime")
+            seconds=self.config.get("Info", "MaxWaitTime")
         ):
             status = await self.getStatus(idx)
             if status == DeviceStatus.ONLINE:
                 await asyncio.sleep(
                     30
                     if package_name != ""
-                    and self.config.get("Data", "MaxWaitTime") > 60
+                    and self.config.get("Info", "MaxWaitTime") > 60
                     else 3
                 )  # 等待模拟器的 ADB 等服务完全启动, 低性能设备额外等待应用启动
                 return (await self.getInfo(idx))[idx]
@@ -130,7 +130,7 @@ class LDManager(DeviceBase):
             "quit",
             "--index",
             idx,
-            timeout=self.config.get("Data", "MaxWaitTime"),
+            timeout=self.config.get("Info", "MaxWaitTime"),
             if_merge_std=True,
         )
         # 参考命令 dnconsole.exe quit --index 0
@@ -139,7 +139,7 @@ class LDManager(DeviceBase):
             raise RuntimeError(f"命令执行失败: {result.stdout}")
         t = datetime.now()
         while datetime.now() - t < timedelta(
-            seconds=self.config.get("Data", "MaxWaitTime")
+            seconds=self.config.get("Info", "MaxWaitTime")
         ):
             status = await self.getStatus(idx)
             if status == DeviceStatus.OFFLINE:
@@ -204,7 +204,7 @@ class LDManager(DeviceBase):
 
         t = datetime.now()
         while datetime.now() - t < timedelta(
-            seconds=self.config.get("Data", "MaxWaitTime")
+            seconds=self.config.get("Info", "MaxWaitTime")
         ):
             # 检查窗口可见性是否符合预期
             if win32gui.IsWindowVisible(result.top_hwnd) == is_visible:
@@ -214,7 +214,7 @@ class LDManager(DeviceBase):
                 keyboard.press_and_release(
                     "+".join(
                         _.strip().lower()
-                        for _ in json.loads(self.config.get("Data", "BossKey"))
+                        for _ in json.loads(self.config.get("Info", "BossKey"))
                     )
                 )  # 老板键
             except Exception as e:
@@ -231,7 +231,7 @@ class LDManager(DeviceBase):
         result = await ProcessRunner.run_process(
             self.emulator_path,
             "list2",
-            timeout=self.config.get("Data", "MaxWaitTime"),
+            timeout=self.config.get("Info", "MaxWaitTime"),
             if_merge_std=True,
         )
 

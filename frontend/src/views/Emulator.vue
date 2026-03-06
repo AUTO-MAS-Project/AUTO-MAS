@@ -193,10 +193,10 @@ const getEditingData = (uuid: string): EmulatorInfo => {
     const configData = emulatorData.value[uuid]
     editingDataMap.value.set(uuid, {
       name: configData?.Info?.Name || '',
-      type: configData?.Data?.Type || '',
+      type: configData?.Info?.Type || '',
       path: configData?.Info?.Path || '',
-      max_wait_time: configData?.Data?.MaxWaitTime || 60,
-      boss_keys: safeJsonParse(configData?.Data?.BossKey, []),
+      max_wait_time: configData?.Info?.MaxWaitTime || 60,
+      boss_keys: safeJsonParse(configData?.Info?.BossKey, []),
     })
   }
   return editingDataMap.value.get(uuid)!
@@ -224,12 +224,12 @@ const loadEmulators = async () => {
       // 初始化所有模拟器的编辑数据
       emulatorIndex.value.forEach(item => {
         const configData = emulatorData.value[item.uid]
-        const bossKeys = safeJsonParse(configData?.Data?.BossKey, [])
+        const bossKeys = safeJsonParse(configData?.Info?.BossKey, [])
         editingDataMap.value.set(item.uid, {
           name: configData?.Info?.Name || '',
-          type: configData?.Data?.Type || '',
+          type: configData?.Info?.Type || '',
           path: configData?.Info?.Path || '',
-          max_wait_time: configData?.Data?.MaxWaitTime || 60,
+          max_wait_time: configData?.Info?.MaxWaitTime || 60,
           boss_keys: bossKeys,
         })
         // 同步 boss_keys 到输入框显示
@@ -293,12 +293,12 @@ const refreshEmulatorConfig = async (uuid?: string) => {
 
           // 更新编辑数据
           const configData = updatedData[uuid]
-          const bossKeys = safeJsonParse(configData?.Data?.BossKey, [])
+          const bossKeys = safeJsonParse(configData?.Info?.BossKey, [])
           editingDataMap.value.set(uuid, {
             name: configData?.Info?.Name || '',
-            type: configData?.Data?.Type || '',
+            type: configData?.Info?.Type || '',
             path: configData?.Info?.Path || '',
-            max_wait_time: configData?.Data?.MaxWaitTime || 60,
+            max_wait_time: configData?.Info?.MaxWaitTime || 60,
             boss_keys: bossKeys,
           })
           // 同步 boss_keys 到输入框显示
@@ -314,12 +314,12 @@ const refreshEmulatorConfig = async (uuid?: string) => {
         // 更新编辑数据
         emulatorIndex.value.forEach(item => {
           const configData = emulatorData.value[item.uid]
-          const bossKeys = safeJsonParse(configData?.Data?.BossKey, [])
+          const bossKeys = safeJsonParse(configData?.Info?.BossKey, [])
           editingDataMap.value.set(item.uid, {
             name: configData?.Info?.Name || '',
-            type: configData?.Data?.Type || '',
+            type: configData?.Info?.Type || '',
             path: configData?.Info?.Path || '',
-            max_wait_time: configData?.Data?.MaxWaitTime || 60,
+            max_wait_time: configData?.Info?.MaxWaitTime || 60,
             boss_keys: bossKeys,
           })
           // 同步 boss_keys 到输入框显示
@@ -349,12 +349,12 @@ const handleSaveChange = async (uuid: string, key: string, value: any) => {
       configData = { Info: { Path: value } }
     } else if (key === 'type') {
       configData = {
-        Data: { Type: value as 'general' | 'mumu' | 'ldplayer' | 'nox' | 'memu' | 'blueStacks' },
+        Info: { Type: value as 'general' | 'mumu' | 'ldplayer' },
       }
     } else if (key === 'max_wait_time') {
-      configData = { Data: { MaxWaitTime: value } }
+      configData = { Info: { MaxWaitTime: value } }
     } else if (key === 'boss_keys') {
-      configData = { Data: { BossKey: JSON.stringify(value) } }
+      configData = { Info: { BossKey: JSON.stringify(value) } }
     }
 
     const response = await Service.updateEmulatorApiEmulatorUpdatePost({
@@ -448,10 +448,8 @@ const handleImportFromSearch = async (result: EmulatorSearchResult) => {
         data: {
           Info: {
             Name: result.name,
+            Type: result.type as 'general' | 'mumu' | 'ldplayer',
             Path: result.path,
-          },
-          Data: {
-            Type: result.type as 'general' | 'mumu' | 'ldplayer' | 'nox' | 'memu' | 'blueStacks',
             MaxWaitTime: 60,
             BossKey: JSON.stringify([]),
           },
