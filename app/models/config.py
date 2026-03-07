@@ -26,7 +26,13 @@ from pathlib import Path
 from datetime import datetime
 from typing import Callable
 
-from app.utils.constants import UTC4, UTC8, MATERIALS_MAP, RESOURCE_STAGE_INFO
+from app.utils.constants import (
+    UTC4,
+    UTC8,
+    MATERIALS_MAP,
+    RESOURCE_STAGE_INFO,
+    MAA_STAGE_KEY,
+)
 from .ConfigBase import (
     ConfigBase,
     MultipleConfig,
@@ -308,6 +314,10 @@ class MaaUserConfig(ConfigBase):
         self.Info_SklandToken = ConfigItem(
             "Info", "SklandToken", "", EncryptValidator()
         )
+        ## 用户标签信息（虚拟字段，供前端显示）
+        self.Info_Tag = ConfigItem(
+            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
+        )
 
         ## Data ------------------------------------------------------------
         ## 上次代理日期
@@ -424,6 +434,146 @@ class MaaUserConfig(ConfigBase):
         else:
             return self.get("Data", "InfrastIndex") or "0"
 
+    def getTags(self) -> str:
+        """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
+        tags = []
+
+        # 人工排查状态标签
+        if not self.get("Data", "IfPassCheck"):
+            tags.append({"text": "人工排查未通过", "color": "red"})
+
+        # 日常代理标签（使用东4区时间）
+        if (
+            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
+            == datetime.now(tz=UTC4).date()
+        ):
+            tags.append(
+                {
+                    "text": f"日常：已代理{self.get('Data', 'ProxyTimes')}次",
+                    "color": "green",
+                }
+            )
+        else:
+            tags.append({"text": "日常：未代理", "color": "orange"})
+
+        # 森空岛签到标签（使用东8区时间）
+        if self.get("Info", "IfSkland"):
+            if (
+                datetime.strptime(self.get("Data", "LastSklandDate"), "%Y-%m-%d").date()
+                == datetime.now(tz=UTC8).date()
+            ):
+                tags.append({"text": "森空岛：已签到", "color": "green"})
+            else:
+                tags.append({"text": "森空岛：未签到", "color": "orange"})
+        else:
+            tags.append({"text": "森空岛：禁用", "color": "red"})
+
+        # 剩余天数标签
+        remained_day = self.get("Info", "RemainedDay")
+        if remained_day == -1:
+            tag_color = "gold"
+        elif remained_day == 0:
+            tag_color = "red"
+        elif remained_day <= 3:
+            tag_color = "orange"
+        elif remained_day <= 7:
+            tag_color = "yellow"
+        elif remained_day <= 30:
+            tag_color = "blue"
+        else:
+            tag_color = "green"
+        tags.append(
+            {
+                "text": (
+                    f"剩余天数：{remained_day}天"
+                    if remained_day >= 0
+                    else "剩余天数：无期限"
+                ),
+                "color": tag_color,
+            }
+        )
+
+        # 基建模式标签
+        infrast_mode = self.get("Info", "InfrastMode")
+        if self.get("Task", "IfInfrast"):
+            if infrast_mode == "Normal":
+                infrast_text = "基建：常规"
+            elif infrast_mode == "Rotation":
+                infrast_text = "基建：轮换"
+            elif infrast_mode == "Custom":
+                infrast_text = f"基建：{self.getInfrastName()}"
+            else:
+                infrast_text = "基建：开启"
+            tags.append({"text": infrast_text, "color": "purple"})
+        else:
+            tags.append({"text": "基建：关闭", "color": "red"})
+
+        # 关卡信息标签
+        if self.get("Info", "StageMode") == "Fixed":
+            plan_data = {
+                stage_key: self.get_stage_zh(self.get("Info", stage_key))
+                for stage_key in MAA_STAGE_KEY[2:]
+            }
+            tag_color = "blue"
+        else:
+            plan = self.related_config["PlanConfig"][
+                uuid.UUID(self.get("Info", "StageMode"))
+            ]
+            if isinstance(plan, MaaPlanConfig):
+                plan_data = {
+                    stage_key: self.get_stage_zh(
+                        plan.get_current_info(stage_key).getValue()
+                    )
+                    for stage_key in MAA_STAGE_KEY[2:]
+                }
+                tag_color = "green"
+        # 主关卡
+        tags.append({"text": f"主关卡：{plan_data['Stage']}", "color": tag_color})
+        # 备选关卡（合并显示）
+        backup_stages = [
+            plan_data[f"Stage_{i}"]
+            for i in range(1, 4)
+            if plan_data[f"Stage_{i}"] != "禁用"
+        ]
+        if backup_stages:
+            tags.append(
+                {"text": f"备选：{', '.join(backup_stages)}", "color": tag_color}
+            )
+        # 剩余关卡
+        if plan_data["Stage_Remain"] != "禁用":
+            tags.append(
+                {"text": f"剩余：{plan_data['Stage_Remain']}", "color": tag_color}
+            )
+
+        # 备注标签
+        notes = self.get("Info", "Notes")
+        tags.append(
+            {
+                "text": (
+                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
+                ),
+                "color": "pink",
+            }
+        )
+
+        return json.dumps(tags, ensure_ascii=False)
+
+    @staticmethod
+    def get_stage_zh(stage: str) -> str:
+
+        for stage_info in RESOURCE_STAGE_INFO:
+            if stage_info.get("value") == stage:
+                return (
+                    stage_info.get("text", stage)
+                    .replace("经验-6/5", "经验")
+                    .replace("龙门币-6/5", "龙门币")
+                    .replace("红票-5", "红票")
+                    .replace("技能-5", "技能")
+                    .replace("碳-5", "碳")
+                )
+        else:
+            return stage
+
 
 class MaaConfig(ConfigBase):
     """MAA配置"""
@@ -512,28 +662,13 @@ class MaaPlanConfig(ConfigBase):
                 "0",
                 OptionsValidator(["0", "6", "5", "4", "3", "2", "1", "-1"]),
             )
-            ## 关卡
-            self.config_item_dict[group]["Stage"] = ConfigItem(group, "Stage", "-")
-            ## 关卡 1
-            self.config_item_dict[group]["Stage_1"] = ConfigItem(group, "Stage_1", "-")
-            ## 关卡 2
-            self.config_item_dict[group]["Stage_2"] = ConfigItem(group, "Stage_2", "-")
-            ## 关卡 3
-            self.config_item_dict[group]["Stage_3"] = ConfigItem(group, "Stage_3", "-")
-            ## 备用关卡
-            self.config_item_dict[group]["Stage_Remain"] = ConfigItem(
-                group, "Stage_Remain", "-"
-            )
 
-            for name in [
-                "MedicineNumb",
-                "SeriesNumb",
-                "Stage",
-                "Stage_1",
-                "Stage_2",
-                "Stage_3",
-                "Stage_Remain",
-            ]:
+            ## 理智关卡
+            for name in MAA_STAGE_KEY[2:]:
+                # Stage、Stage_1、Stage_2、Stage_3、Stage_Remain
+                self.config_item_dict[group][name] = ConfigItem(group, name, "-")
+
+            for name in MAA_STAGE_KEY:
                 setattr(self, f"{group}_{name}", self.config_item_dict[group][name])
 
         super().__init__()
@@ -589,6 +724,10 @@ class GeneralUserConfig(ConfigBase):
         )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        ## 用户标签信息
+        self.Info_Tag = ConfigItem(
+            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
+        )
 
         ## Data ------------------------------------------------------------
         ## 上次代理日期
@@ -623,6 +762,62 @@ class GeneralUserConfig(ConfigBase):
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
         super().__init__()
+
+    def getTags(self) -> str:
+        """生成通用用户标签列表"""
+        tags = []
+
+        # 任务代理标签（使用东4区时间）
+        if (
+            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
+            == datetime.now(tz=UTC4).date()
+        ):
+            tags.append(
+                {
+                    "text": f"任务：已代理{self.get('Data', 'ProxyTimes')}次",
+                    "color": "green",
+                }
+            )
+        else:
+            tags.append({"text": "任务：未代理", "color": "orange"})
+
+        # 剩余天数标签
+        remained_day = self.get("Info", "RemainedDay")
+        if remained_day == -1:
+            tag_color = "gold"
+        elif remained_day == 0:
+            tag_color = "red"
+        elif remained_day <= 3:
+            tag_color = "orange"
+        elif remained_day <= 7:
+            tag_color = "yellow"
+        elif remained_day <= 30:
+            tag_color = "blue"
+        else:
+            tag_color = "green"
+        tags.append(
+            {
+                "text": (
+                    f"剩余天数：{remained_day}天"
+                    if remained_day >= 0
+                    else "剩余天数：无期限"
+                ),
+                "color": tag_color,
+            }
+        )
+
+        # 备注标签
+        notes = self.get("Info", "Notes")
+        tags.append(
+            {
+                "text": (
+                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
+                ),
+                "color": "pink",
+            }
+        )
+
+        return json.dumps(tags, ensure_ascii=False)
 
 
 class GeneralConfig(ConfigBase):

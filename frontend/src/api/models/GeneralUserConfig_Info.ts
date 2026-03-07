@@ -35,5 +35,9 @@ export type GeneralUserConfig_Info = {
      * 备注
      */
     Notes?: (string | null);
+    /**
+     * 用户标签列表（JSON字符串，TagItem的dict列表）
+     */
+    Tag?: (string | null);
 };
 

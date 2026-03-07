@@ -370,14 +370,10 @@ class MaaUserConfig_Info(BaseModel):
     Stage_Remain: Optional[str] = Field(default=None, description="剩余理智关卡")
     IfSkland: Optional[bool] = Field(default=None, description="是否启用森空岛签到")
     SklandToken: Optional[str] = Field(default=None, description="SklandToken")
+    Tag: Optional[str] = Field(default=None, description="状态标签列表")
 
 
 class MaaUserConfig_Data(BaseModel):
-    LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
-    LastSklandDate: Optional[str] = Field(
-        default=None, description="上次森空岛签到日期"
-    )
-    ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
     IfPassCheck: Optional[bool] = Field(default=None, description="是否通过人工排查")
 
 
@@ -472,6 +468,9 @@ class GeneralUserConfig_Info(BaseModel):
     )
     ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
     Notes: Optional[str] = Field(default=None, description="备注")
+    Tag: Optional[str] = Field(
+        default=None, description="用户标签列表（JSON字符串，TagItem的dict列表）"
+    )
 
 
 class GeneralUserConfig_Data(BaseModel):

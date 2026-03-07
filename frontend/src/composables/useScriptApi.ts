@@ -292,6 +292,7 @@ export function useScriptApi() {
                           maaUserData.Info?.SklandToken !== undefined
                             ? maaUserData.Info.SklandToken
                             : '',
+                        Tag: maaUserData.Info?.Tag !== undefined ? maaUserData.Info.Tag : null,
                       },
                       Task: {
                         IfStartUp:
@@ -414,6 +415,7 @@ export function useScriptApi() {
                           generalUserData.Info?.Notes !== undefined
                             ? generalUserData.Info.Notes
                             : '',
+                        Tag: generalUserData.Info?.Tag !== undefined ? generalUserData.Info.Tag : null,
                       },
                       Notify: {
                         Enabled:
