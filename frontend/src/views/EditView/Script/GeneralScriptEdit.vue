@@ -1248,15 +1248,28 @@ const loadScript = async () => {
     // 检查是否有通过路由状态传递的数据（新建脚本时）
     const routeState = history.state as any
     if (routeState?.scriptData) {
-      // 使用API返回的新建脚本数据
+      // 有路由状态数据时，先使用它快速渲染，但仍然从API重新加载以确保数据完整性
       const scriptData = routeState.scriptData
       const config = scriptData.config as GeneralScriptConfig
       formData.name = config.Info.Name || '新建通用脚本'
       Object.assign(generalConfig, config)
-      // 如果名称为空，设置默认名称
-      if (!generalConfig.Info.Name) {
-        generalConfig.Info.Name = '新建通用脚本'
-        formData.name = '新建通用脚本'
+      
+      // 从API重新加载完整数据（确保包含所有必要的配置）
+      const scriptDetail = await getScript(scriptId)
+      if (scriptDetail) {
+        formData.type = scriptDetail.type
+        formData.name = scriptDetail.name
+        Object.assign(generalConfig, scriptDetail.config as GeneralScriptConfig)
+      }
+      
+      // 对于 General 类型，在加载完成后初始化相对路径关系
+      setTimeout(() => {
+        updatePathRelations()
+      }, 100)
+
+      // 如果已经有选择的模拟器，且游戏类型为模拟器，则加载对应的设备选项
+      if (generalConfig.Game?.Type === 'Emulator' && generalConfig.Game?.EmulatorId) {
+        await loadEmulatorDeviceOptions(generalConfig.Game.EmulatorId)
       }
     } else {
       // 编辑现有脚本时，从API获取数据

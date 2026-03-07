@@ -618,6 +618,9 @@ class ScriptCreateIn(BaseModel):
     type: Literal["MAA", "General"] = Field(
         ..., description="脚本类型: MAA脚本, 通用脚本"
     )
+    scriptId: str | None = Field(
+        default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
+    )
 
 
 class ScriptCreateOut(OutBase):
