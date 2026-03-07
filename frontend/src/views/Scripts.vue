@@ -54,7 +54,7 @@
   <ScriptTable :scripts="scripts" :active-connections="activeConnections" :all-plans-data="allPlansData"
     @edit="handleEditScript" @delete="handleDeleteScript" @add-user="handleAddUser" @edit-user="handleEditUser"
     @delete-user="handleDeleteUser" @start-maa-config="handleStartMAAConfig" @save-maa-config="handleSaveMAAConfig"
-    @toggle-user-status="handleToggleUserStatus" />
+    @toggle-user-status="handleToggleUserStatus" @pass-check-user="handlePassCheckUser" />
 
   <!-- 脚本类型选择弹窗 -->
   <a-modal v-model:open="typeSelectVisible" title="选择脚本类型" :confirm-loading="addLoading" class="type-select-modal"
@@ -660,6 +660,34 @@ const handleToggleUserStatus = async (user: User) => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新用户状态失败: ${errorMsg}`)
     message.error(`更新用户状态失败: ${errorMsg}`)
+  }
+}
+
+const handlePassCheckUser = async (user: User) => {
+  try {
+    // 找到该用户对应的脚本
+    const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
+    if (!script) {
+      message.error('找不到对应的脚本')
+      return
+    }
+
+    // 调用 updateUser API，更新 Data.IfPassCheck 为 true
+    const result = await updateUser(script.id, user.id, {
+      Data: {
+        IfPassCheck: true,
+      },
+    })
+
+    if (result) {
+      message.success('已标记为「通过人工排查」')
+      // 刷新脚本配置
+      await loadScripts()
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`更新人工排查状态失败: ${errorMsg}`)
+    message.error(`更新人工排查状态失败: ${errorMsg}`)
   }
 }
 </script>

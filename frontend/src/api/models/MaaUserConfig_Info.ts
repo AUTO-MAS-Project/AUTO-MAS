@@ -91,5 +91,9 @@ export type MaaUserConfig_Info = {
      * SklandToken
      */
     SklandToken?: (string | null);
+    /**
+     * 状态标签列表
+     */
+    Tag?: (string | null);
 };
 
