@@ -10,14 +10,15 @@ export function useScriptApi() {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  // 添加脚本
-  const addScript = async (type: ScriptType) => {
+  // 添加脚本（支持从已有脚本复制创建）
+  const addScript = async (type: ScriptType, scriptId?: string) => {
     loading.value = true
     error.value = null
 
     try {
       const requestData: ScriptCreateIn = {
         type: type === 'MAA' ? ScriptCreateIn.type.MAA : ScriptCreateIn.type.GENERAL,
+        scriptId: scriptId || null,
       }
 
       const response = await Service.addScriptApiScriptsAddPost(requestData)

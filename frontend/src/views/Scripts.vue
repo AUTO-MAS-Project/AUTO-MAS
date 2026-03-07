@@ -56,6 +56,73 @@
     @delete-user="handleDeleteUser" @start-maa-config="handleStartMAAConfig" @save-maa-config="handleSaveMAAConfig"
     @toggle-user-status="handleToggleUserStatus" @pass-check-user="handlePassCheckUser" />
 
+  <!-- 创建方式选择弹窗 -->
+  <a-modal v-model:open="createModeSelectVisible" title="选择创建方式" :confirm-loading="addLoading"
+    class="create-mode-modal" width="600px" ok-text="确定" cancel-text="取消" @ok="handleConfirmCreateMode"
+    @cancel="createModeSelectVisible = false">
+    <div class="mode-selection">
+      <a-radio-group v-model:value="selectedCreateMode" class="mode-radio-group">
+        <a-radio-button value="copy" class="mode-option">
+          <div class="mode-content">
+            <div class="mode-icon">
+              <FileTextOutlined />
+            </div>
+            <div class="mode-info">
+              <div class="mode-title">复制已有脚本</div>
+              <div class="mode-description">从现有脚本复制配置，快速创建相似脚本</div>
+            </div>
+          </div>
+        </a-radio-button>
+        <a-radio-button value="new" class="mode-option">
+          <div class="mode-content">
+            <div class="mode-icon">
+              <PlusOutlined />
+            </div>
+            <div class="mode-info">
+              <div class="mode-title">创建全新脚本</div>
+              <div class="mode-description">从头开始创建一个全新的脚本实例</div>
+            </div>
+          </div>
+        </a-radio-button>
+      </a-radio-group>
+    </div>
+  </a-modal>
+
+  <!-- 脚本选择弹窗 -->
+  <a-modal v-model:open="scriptSelectVisible" title="选择要复制的脚本" :confirm-loading="addLoading"
+    class="script-select-modal" width="800px" ok-text="确定复制" cancel-text="返回"
+    :ok-button-props="{ disabled: !selectedScriptId }" @ok="handleConfirmScriptSelect"
+    @cancel="() => { scriptSelectVisible = false; createModeSelectVisible = true }">
+    <div class="script-selection">
+      <div v-if="scripts.length === 0" class="no-scripts">
+        <p>暂无可用脚本</p>
+      </div>
+      <div v-else class="scripts-list">
+        <div v-for="script in scripts" :key="script.id" :class="[
+          'script-item',
+          { selected: selectedScriptId === script.id },
+        ]" @click="selectedScriptId = script.id">
+          <div class="script-item-content">
+            <div class="script-icon">
+              <img v-if="script.type === 'MAA'" src="@/assets/MAA.png" alt="MAA" class="type-icon" />
+              <img v-else src="@/assets/AUTO-MAS.ico" alt="General" class="type-icon" />
+            </div>
+            <div class="script-info">
+              <div class="script-name">{{ script.name }}</div>
+              <div class="script-meta">
+                <span class="script-type">{{ script.type === 'MAA' ? 'MAA脚本' : '通用脚本' }}</span>
+                <span class="script-users">
+                  <UserOutlined />
+                  {{ script.users?.length || 0 }} 个用户
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </a-modal>
+
   <!-- 脚本类型选择弹窗 -->
   <a-modal v-model:open="typeSelectVisible" title="选择脚本类型" :confirm-loading="addLoading" class="type-select-modal"
     width="500px" ok-text="确定" cancel-text="取消" @ok="handleConfirmAddScript" @cancel="typeSelectVisible = false">
@@ -229,9 +296,13 @@ const scripts = ref<Script[]>([])
 const loadedOnce = ref(false)
 // 所有计划表数据 (planId -> planData)
 const allPlansData = ref<Record<string, Record<string, any>>>({})
+const createModeSelectVisible = ref(false) // 创建方式选择弹窗（复制已有 vs 创建新脚本）
+const scriptSelectVisible = ref(false) // 脚本列表选择弹窗
 const typeSelectVisible = ref(false)
 const generalModeSelectVisible = ref(false)
 const templateSelectVisible = ref(false)
+const selectedCreateMode = ref('new') // 'copy' or 'new'
+const selectedScriptId = ref<string | null>(null) // 选中要复制的脚本ID
 const selectedType = ref<ScriptType>('MAA')
 const selectedGeneralMode = ref('template')
 const selectedTemplate = ref<WebConfigTemplate | null>(null)
@@ -312,8 +383,70 @@ const loadCurrentPlan = async () => {
 }
 
 const handleAddScript = () => {
-  selectedType.value = 'MAA'
-  typeSelectVisible.value = true
+  // 如果当前没有脚本，直接进入类型选择
+  if (scripts.value.length === 0) {
+    selectedType.value = 'MAA'
+    typeSelectVisible.value = true
+    return
+  }
+
+  // 如果有脚本，显示创建方式选择弹窗
+  selectedCreateMode.value = 'new'
+  createModeSelectVisible.value = true
+}
+
+const handleConfirmCreateMode = () => {
+  if (selectedCreateMode.value === 'copy') {
+    // 复制已有脚本 - 打开脚本选择弹窗
+    createModeSelectVisible.value = false
+    selectedScriptId.value = null
+    scriptSelectVisible.value = true
+  } else {
+    // 创建新脚本 - 进入类型选择
+    createModeSelectVisible.value = false
+    selectedType.value = 'MAA'
+    typeSelectVisible.value = true
+  }
+}
+
+const handleConfirmScriptSelect = async () => {
+  if (!selectedScriptId.value) {
+    message.warning('请先选择一个脚本')
+    return
+  }
+
+  // 获取选中的脚本信息
+  const selectedScript = scripts.value.find(s => s.id === selectedScriptId.value)
+  if (!selectedScript) {
+    message.error('所选脚本不存在')
+    return
+  }
+
+  addLoading.value = true
+  try {
+    // 使用选中的脚本ID调用addScript，传入scriptId进行复制创建
+    const result = await addScript(selectedScript.type, selectedScriptId.value)
+    if (result) {
+      scriptSelectVisible.value = false
+      // 跳转到编辑页面
+      const editPath = selectedScript.type === 'MAA' ? 'maa' : 'general'
+      router.push({
+        path: `/scripts/${result.scriptId}/edit/${editPath}`,
+        state: {
+          scriptData: {
+            id: result.scriptId,
+            type: selectedScript.type,
+            config: result.data,
+          },
+        },
+      })
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`复制脚本失败: ${errorMsg}`)
+  } finally {
+    addLoading.value = false
+  }
 }
 
 const handleConfirmAddScript = async () => {
@@ -1155,5 +1288,163 @@ const handlePassCheckUser = async (user: User) => {
   font-size: 12px;
   color: var(--ant-color-text-tertiary);
   margin-top: 4px;
+}
+
+/* 创建方式选择弹窗样式 */
+.create-mode-modal {
+  text-align: left;
+}
+
+.create-mode-modal :deep(.ant-modal-header) {
+  border-bottom: 2px solid var(--ant-color-border-secondary);
+  padding: 20px 24px;
+}
+
+.create-mode-modal :deep(.ant-modal-title) {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.create-mode-modal :deep(.ant-modal-body) {
+  padding: 24px;
+}
+
+.create-mode-modal :deep(.ant-modal-footer) {
+  padding: 16px 24px;
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+
+/* 脚本选择弹窗样式 */
+.script-select-modal {
+  text-align: left;
+}
+
+.script-select-modal :deep(.ant-modal-header) {
+  border-bottom: 2px solid var(--ant-color-border-secondary);
+  padding: 20px 24px;
+}
+
+.script-select-modal :deep(.ant-modal-title) {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.script-select-modal :deep(.ant-modal-body) {
+  padding: 24px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.script-select-modal :deep(.ant-modal-footer) {
+  padding: 16px 24px;
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+
+.script-selection {
+  margin-top: 8px;
+}
+
+.scripts-list {
+  max-height: 450px;
+  overflow-y: auto;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 6px;
+  background: var(--ant-color-bg-container);
+}
+
+.script-item {
+  padding: 16px;
+  border-bottom: 1px solid var(--ant-color-border);
+  cursor: pointer;
+  transition:
+    background-color 0.2s,
+    border-left-color 0.2s;
+  background: var(--ant-color-bg-container);
+  position: relative;
+  border-left: 3px solid transparent;
+}
+
+.script-item:last-child {
+  border-bottom: none;
+}
+
+.script-item:hover {
+  background: var(--ant-color-primary-bg);
+  border-left-color: var(--ant-color-primary-hover);
+}
+
+.script-item.selected {
+  background: var(--ant-color-primary-bg);
+  border-left-color: var(--ant-color-primary);
+}
+
+.script-item.selected .script-name {
+  color: var(--ant-color-primary);
+  font-weight: 600;
+}
+
+.script-item-content {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.script-icon {
+  width: 48px;
+  height: 48px;
+  margin-right: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--ant-color-primary-bg);
+  flex-shrink: 0;
+}
+
+.type-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.script-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.script-name {
+  font-size: 16px;
+  font-weight: 500;
+  margin: 0 0 6px;
+  color: var(--ant-color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.2s;
+}
+
+.script-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--ant-color-text-secondary);
+}
+
+.script-type {
+  font-weight: 500;
+}
+
+.script-users {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.no-scripts {
+  text-align: center;
+  padding: 48px 16px;
+  color: var(--ant-color-text-secondary);
 }
 </style>

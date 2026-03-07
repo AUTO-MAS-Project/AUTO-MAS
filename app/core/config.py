@@ -520,13 +520,32 @@ class AppConfig(GlobalConfig):
         return is_latest, commit_hash, commit_time
 
     async def add_script(
-        self, script: Literal["MAA", "General"]
+        self, script: Literal["MAA", "General"], script_id: str | None = None
     ) -> tuple[uuid.UUID, Union[MaaConfig, GeneralConfig]]:
         """添加脚本配置"""
 
-        logger.info(f"添加脚本配置: {script}")
+        logger.info(f"添加脚本配置: {script}, 从 {script_id} 复制")
 
-        return await self.ScriptConfig.add(CLASS_BOOK[script])
+        if script_id is None:
+            return await self.ScriptConfig.add(CLASS_BOOK[script])
+        else:
+            script_uid = uuid.UUID(script_id)
+
+            if not isinstance(self.ScriptConfig[script_uid], CLASS_BOOK[script]):
+                raise TypeError(f"脚本配置类型不匹配: {script_id} {script}")
+
+            new_uid, new_config = await self.ScriptConfig.add(CLASS_BOOK[script])
+
+            await new_config.load(await self.ScriptConfig[script_uid].toDict())
+
+            if (Path.cwd() / f"data/{script_id}").exists():
+                shutil.copytree(
+                    Path.cwd() / f"data/{script_id}",
+                    Path.cwd() / f"data/{new_uid}",
+                    dirs_exist_ok=True,
+                )
+
+            return new_uid, new_config
 
     async def get_script(self, script_id: Optional[str]) -> tuple[list, dict]:
         """获取脚本配置"""
