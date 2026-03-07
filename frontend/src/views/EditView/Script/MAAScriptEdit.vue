@@ -365,15 +365,23 @@ const loadScript = async () => {
     // 检查是否有通过路由状态传递的数据（新建脚本时）
     const routeState = history.state as any
     if (routeState?.scriptData) {
-      // 使用API返回的新建脚本数据
+      // 有路由状态数据时，先使用它快速渲染，但仍然从API重新加载以确保数据完整性
       const scriptData = routeState.scriptData
       const config = scriptData.config as MAAScriptConfig
       formData.name = config.Info.Name || '新建MAA脚本'
       Object.assign(maaConfig, config)
-      // 如果名称为空，设置默认名称
-      if (!maaConfig.Info.Name) {
-        maaConfig.Info.Name = '新建MAA脚本'
-        formData.name = '新建MAA脚本'
+      
+      // 从API重新加载完整数据（确保包含所有必要的配置）
+      const scriptDetail = await getScript(scriptId)
+      if (scriptDetail) {
+        formData.type = scriptDetail.type
+        formData.name = scriptDetail.name
+        Object.assign(maaConfig, scriptDetail.config as MAAScriptConfig)
+      }
+      
+      // 如果已经有选择的模拟器，加载对应的设备选项
+      if (maaConfig.Emulator?.Id) {
+        await loadEmulatorDeviceOptions(maaConfig.Emulator.Id)
       }
     } else {
       // 编辑现有脚本时，从API获取数据

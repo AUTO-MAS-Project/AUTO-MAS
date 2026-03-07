@@ -44,7 +44,7 @@ USER_BOOK = {"MaaConfig": MaaUserConfig, "GeneralConfig": GeneralUserConfig}
 async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
 
     try:
-        uid, config = await Config.add_script(script.type)
+        uid, config = await Config.add_script(script.type, script.scriptId)
         data = SCRIPT_BOOK[type(config).__name__](**(await config.toDict()))
     except Exception as e:
         return ScriptCreateOut(
