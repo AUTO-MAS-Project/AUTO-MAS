@@ -109,7 +109,9 @@ export function parseStatusTagList(
     statusList: string | string[] | null | undefined,
     defaultTags: StatusTag[] = []
 ): StatusTag[] {
-    if (!statusList) return defaultTags
+    if (!statusList) {
+        return defaultTags
+    }
 
     try {
         // 如果是字符串，尝试解析
@@ -144,7 +146,6 @@ export function parseStatusTagList(
 
         return defaultTags
     } catch (error) {
-        console.error('解析状态标签列表失败:', error, 'statusList=', statusList)
         return defaultTags
     }
 }

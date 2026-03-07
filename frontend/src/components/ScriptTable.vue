@@ -92,95 +92,19 @@
 
                         <!-- 用户详细信息 - MAA脚本用户 -->
                         <div v-if="script.type === 'MAA'" class="user-info-tags">
-                          <a-tag v-if="user.Data?.IfPassCheck === false" class="info-tag" color="red">
-                            人工排查未通过
-                          </a-tag>
-
-                          <!-- 日常代理 -->
-                          <a-tag class="info-tag" :color="getRoutineTagColor(user.Data?.LastProxyDate)">
-                            日常：{{ getRoutineDisplayText(user.Data?.LastProxyDate, user.Data?.ProxyTimes) }}
-                          </a-tag>
-
-                          <!-- 森空岛签到 -->
-                          <a-tag v-if="user.Info.IfSkland !== undefined && user.Info.IfSkland !== null" class="info-tag"
-                            :color="getSklandTagColor(user.Info.IfSkland, user.Data?.LastSklandDate)">
-                            森空岛: {{ getSklandDisplayText(user.Info.IfSkland, user.Data?.LastSklandDate) }}
-                          </a-tag>
-
-                          <!-- 剩余天数 -->
-                          <a-tag v-if="
-                            user.Info.RemainedDay !== undefined && user.Info.RemainedDay !== null
-                          " class="info-tag" :color="getRemainingDayColor(user.Info.RemainedDay)">
-                            {{ getRemainingDayText(user.Info.RemainedDay) }}
-                          </a-tag>
-
-                          <!-- 基建模式 -->
-                          <a-tag v-if="
-                            user.Info.InfrastMode &&
-                            user.Info.InfrastMode !== '-' &&
-                            user.Info.InfrastMode !== ''
-                          " class="info-tag" :color="user.Task.IfInfrast ? 'purple' : 'red'">
-                            基建: {{ user.Task.IfInfrast ? getInfrastDisplayText(user) : '关闭' }}
-                          </a-tag>
-
-                          <!-- 关卡信息 - 根据是否使用计划表配置显示不同内容 -->
-                          <template v-if="user.Info.StageMode && user.Info.StageMode !== 'Fixed'">
-                            <!-- 主关卡 -->
-                            <a-tag v-if="getUserPlanMainStageDisplay(user)" class="info-tag" color="green">
-                              主关卡: {{ getUserPlanMainStageDisplay(user) }}
-                            </a-tag>
-
-                            <!-- 备选关卡（合并显示） -->
-                            <a-tag v-if="getUserPlanBackupStages(user).length > 0" class="info-tag" color="green">
-                              备选: {{ getUserPlanBackupStages(user).join(', ') }}
-                            </a-tag>
-
-                            <!-- 剩余关卡 -->
-                            <a-tag v-if="getUserPlanRemainStageDisplay(user)" class="info-tag" color="green">
-                              剩余: {{ getUserPlanRemainStageDisplay(user) }}
-                            </a-tag>
-
-                            <!-- 如果没有配置任何关卡，显示提示 -->
-                            <a-tag
-                              v-if="!getUserPlanMainStageDisplay(user) && getUserPlanBackupStages(user).length === 0 && !getUserPlanRemainStageDisplay(user)"
-                              class="info-tag" color="green">
-                              主关卡: 计划表未配置
-                            </a-tag>
-                          </template>
-
-                          <!-- 固定模式的关卡显示 -->
-                          <template v-else>
-                            <!-- 主关卡 -->
-                            <a-tag v-if="getMainStageDisplay(user)" class="info-tag" color="blue">
-                              主关卡: {{ getMainStageDisplay(user) }}
-                            </a-tag>
-
-                            <!-- 备选关卡（合并显示） -->
-                            <a-tag v-if="getBackupStages(user).length > 0" class="info-tag" color="blue">
-                              备选: {{ getBackupStages(user).join(', ') }}
-                            </a-tag>
-
-                            <!-- 剩余关卡 -->
-                            <a-tag v-if="getRemainStageDisplay(user)" class="info-tag" color="blue">
-                              剩余: {{ getRemainStageDisplay(user) }}
-                            </a-tag>
-                          </template>
-
-                          <a-tag class="info-tag" color="magenta">
-                            备注: {{ truncateText(user.Info.Notes) }}
+                          <!-- 直接使用后端提供的Tag字段 -->
+                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
+                            :class="['info-tag', { 'clickable-tag': tag.text === '人工排查未通过' }]" :color="tag.color"
+                            @click="tag.text === '人工排查未通过' ? handlePassCheck(user) : undefined">
+                            {{ tag.text }}
                           </a-tag>
                         </div>
                         <!-- 用户详细信息 - 通用脚本用户 -->
                         <div v-if="script.type === 'General'" class="user-info-tags">
-                          <!-- 剩余天数 -->
-                          <a-tag v-if="
-                            user.Info.RemainedDay !== undefined && user.Info.RemainedDay !== null
-                          " class="info-tag" :color="getRemainingDayColor(user.Info.RemainedDay)">
-                            {{ getRemainingDayText(user.Info.RemainedDay) }}
-                          </a-tag>
-
-                          <a-tag class="info-tag" color="magenta">
-                            备注: {{ truncateText(user.Info.Notes) }}
+                          <!-- 直接使用后端提供的Tag字段 -->
+                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index" class="info-tag"
+                            :color="tag.color">
+                            {{ tag.text }}
                           </a-tag>
                         </div>
                       </div>
@@ -237,20 +161,18 @@ import type { Script, User } from '../types/script'
 import {
   DeleteOutlined,
   EditOutlined,
-  SaveOutlined,
   SettingOutlined,
   UserAddOutlined,
 } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
 import { ref, watch } from 'vue'
 import { Service } from '@/api'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
+import { parseStatusTagList } from '@/composables/useStatusTag'
 import {
-  getWeekStartInTimezone,
   getTodayInTimezone,
-  isDateInRange,
   isDateEqual,
   getWeekdayInTimezone
 } from '@/utils/dateUtils'
@@ -278,6 +200,8 @@ interface Emits {
   (e: 'saveMaaConfig', script: Script): void
 
   (e: 'toggleUserStatus', user: User): void
+
+  (e: 'passCheckUser', user: User): void
 
   (e: 'scriptsReordered', scripts: Script[]): void
 }
@@ -356,6 +280,18 @@ const handleSaveMAAConfig = (script: Script) => {
 
 const handleToggleUserStatus = (user: User) => {
   emit('toggleUserStatus', user)
+}
+
+const handlePassCheck = (user: User) => {
+  Modal.confirm({
+    title: '确认操作',
+    content: `确定要将用户 ${user.Info.Name} 标记为「已通过人工排查」吗？`,
+    okText: '确定',
+    cancelText: '取消',
+    onOk: () => {
+      emit('passCheckUser', user)
+    },
+  })
 }
 
 const truncateText = (text: string, maxLength: number = 10): string => {
