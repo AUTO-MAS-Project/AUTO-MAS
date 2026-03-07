@@ -54,7 +54,7 @@
                   </a-tooltip>
                 </template>
                 <a-input v-model:value="formData.name" placeholder="请输入脚本名称" size="large" class="modern-input"
-                         @blur="handleChange('Info', 'Name', formData.name)" />
+                  @blur="handleChange('Info', 'Name', formData.name)" />
               </a-form-item>
             </a-col>
             <a-col :span="16">
@@ -69,7 +69,7 @@
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input v-model:value="formData.rootPath" placeholder="请选择脚本根目录" size="large" class="path-input"
-                           readonly />
+                    readonly />
                   <a-button size="large" class="path-button" @click="selectRootPath">
                     <template #icon>
                       <FolderOpenOutlined />
@@ -100,7 +100,7 @@
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input v-model:value="formData.scriptPath" placeholder="请选择脚本主程序文件" size="large" class="path-input"
-                           readonly />
+                    readonly />
                   <a-button size="large" class="path-button" @click="selectScriptPath">
                     <template #icon>
                       <FileOutlined />
@@ -121,7 +121,7 @@
                   </a-tooltip>
                 </template>
                 <a-input v-model:value="generalConfig.Script.Arguments" placeholder="请输入脚本启动参数" size="large"
-                         class="modern-input" @blur="handleChange('Script', 'Arguments', generalConfig.Script.Arguments)" />
+                  class="modern-input" @blur="handleChange('Script', 'Arguments', generalConfig.Script.Arguments)" />
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -135,7 +135,7 @@
                   </a-tooltip>
                 </template>
                 <a-select v-model:value="generalConfig.Script.IfTrackProcess" size="large"
-                          @change="handleChange('Script', 'IfTrackProcess', $event)">
+                  @change="handleChange('Script', 'IfTrackProcess', $event)">
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -155,7 +155,7 @@
                   </a-tooltip>
                 </template>
                 <a-input v-model:value="generalConfig.Script.TrackProcessName" placeholder="请输入要追踪的进程名称" size="large"
-                         class="modern-input" @blur="
+                  class="modern-input" @blur="
                     handleChange(
                       'Script',
                       'TrackProcessName',
@@ -176,7 +176,7 @@
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input v-model:value="generalConfig.Script.TrackProcessExe" placeholder="请选择进程可执行文件路径" size="large"
-                           class="path-input" readonly />
+                    class="path-input" readonly />
                   <a-button size="large" class="path-button" @click="selectTrackProcessExe">
                     <template #icon>
                       <FileOutlined />
@@ -198,7 +198,7 @@
                   </a-tooltip>
                 </template>
                 <a-input v-model:value="generalConfig.Script.TrackProcessCmdline" placeholder="请输入进程启动命令行参数"
-                         size="large" class="modern-input" @blur="
+                  size="large" class="modern-input" @blur="
                     handleChange(
                       'Script',
                       'TrackProcessCmdline',
@@ -250,7 +250,7 @@
                   </a-tooltip>
                 </template>
                 <a-select v-model:value="generalConfig.Script.ConfigPathMode" size="large"
-                          @change="handleChange('Script', 'ConfigPathMode', $event)">
+                  @change="handleChange('Script', 'ConfigPathMode', $event)">
                   <a-select-option value="File">单文件</a-select-option>
                   <a-select-option value="Folder">文件夹</a-select-option>
                 </a-select>
@@ -267,7 +267,7 @@
                   </a-tooltip>
                 </template>
                 <a-select v-model:value="generalConfig.Script.UpdateConfigMode" size="large"
-                          @change="handleChange('Script', 'UpdateConfigMode', $event)">
+                  @change="handleChange('Script', 'UpdateConfigMode', $event)">
                   <a-select-option value="Never">从不</a-select-option>
                   <a-select-option value="Success">成功时</a-select-option>
                   <a-select-option value="Failure">失败时</a-select-option>
@@ -289,7 +289,7 @@
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input v-model:value="formData.logPath" placeholder="请选择日志文件" size="large" class="path-input"
-                           readonly />
+                    readonly />
                   <a-button size="large" class="path-button" @click="selectLogPath">
                     <template #icon>
                       <FolderOpenOutlined />
@@ -310,7 +310,7 @@
                   </a-tooltip>
                 </template>
                 <a-input v-model:value="generalConfig.Script.LogPathFormat" placeholder="日志文件名格式，文件名固定时留空" size="large"
-                         class="modern-input" @blur="
+                  class="modern-input" @blur="
                     handleChange('Script', 'LogPathFormat', generalConfig.Script.LogPathFormat)
                     " />
               </a-form-item>
@@ -320,7 +320,7 @@
           <a-row :gutter="24">
             <a-col :span="12">
               <LogTimestampSelector :form-data="formData" :log-file-path="formData.logPath"
-                                    :handle-change="handleChange" :rules="rules" />
+                :handle-change="handleChange" :rules="rules" />
             </a-col>
             <a-col :span="12">
               <a-form-item name="logTimeFormat" :rules="rules.logTimeFormat">
@@ -333,7 +333,7 @@
                   </a-tooltip>
                 </template>
                 <a-input v-model:value="formData.logTimeFormat" placeholder="请输入脚本日志时间戳格式" size="large"
-                         class="modern-input" @blur="handleChange('Script', 'LogTimeFormat', formData.logTimeFormat)" />
+                  class="modern-input" @blur="handleChange('Script', 'LogTimeFormat', formData.logTimeFormat)" />
                 <div class="format-preview">
                   示例：<span class="format-preview-value">{{ logTimeFormatPreview }}</span>
                 </div>
@@ -357,7 +357,7 @@
                   </a-tooltip>
                 </template>
                 <a-input v-model:value="generalConfig.Script.SuccessLog" placeholder="请输入脚本成功日志，以「 | 」进行分割" size="large"
-                         class="modern-input" @blur="handleChange('Script', 'SuccessLog', generalConfig.Script.SuccessLog)" />
+                  class="modern-input" @blur="handleChange('Script', 'SuccessLog', generalConfig.Script.SuccessLog)" />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -371,7 +371,7 @@
                   </a-tooltip>
                 </template>
                 <a-input v-model:value="formData.errorLog" placeholder="请输入脚本失败日志，以「 | 」进行分割" size="large"
-                         class="modern-input" @blur="handleChange('Script', 'ErrorLog', formData.errorLog)" />
+                  class="modern-input" @blur="handleChange('Script', 'ErrorLog', formData.errorLog)" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -394,7 +394,7 @@
                   </a-tooltip>
                 </template>
                 <a-select v-model:value="generalConfig.Game.Enabled" size="large"
-                          @change="handleChange('Game', 'Enabled', $event)">
+                  @change="handleChange('Game', 'Enabled', $event)">
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -430,7 +430,7 @@
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input v-model:value="generalConfig.Game.Path" placeholder="请选择游戏的可执行文件" size="large"
-                           class="path-input" readonly />
+                    class="path-input" readonly />
                   <a-button size="large" class="path-button" @click="selectGamePath">
                     <template #icon>
                       <FileOutlined />
@@ -452,7 +452,7 @@
                   </a-tooltip>
                 </template>
                 <a-select v-model:value="generalConfig.Game.EmulatorId" size="large" placeholder="请选择模拟器"
-                          :loading="emulatorLoading" @change="handleEmulatorChange">
+                  :loading="emulatorLoading" @change="handleEmulatorChange">
                   <a-select-option v-for="item in emulatorOptions" :key="item.value" :value="item.value">
                     {{ item.label }}
                   </a-select-option>
@@ -472,7 +472,7 @@
                 </template>
                 <a-input-group class="path-input-group">
                   <a-input v-model:value="generalConfig.Game.URL" placeholder="请输入URL参数，如：starward://startgame/xxxx"
-                           size="large" @blur="handleChange('Game', 'URL', generalConfig.Game.URL)" />
+                    size="large" @blur="handleChange('Game', 'URL', generalConfig.Game.URL)" />
                 </a-input-group>
               </a-form-item>
             </a-col>
@@ -496,12 +496,12 @@
                   !emulatorDeviceLoading &&
                   generalConfig.Game.EmulatorId
                 " v-model:value="generalConfig.Game.EmulatorIndex" size="large" placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
-                         class="modern-input"
-                         @blur="handleChange('Game', 'EmulatorIndex', generalConfig.Game.EmulatorIndex)" />
+                  class="modern-input"
+                  @blur="handleChange('Game', 'EmulatorIndex', generalConfig.Game.EmulatorIndex)" />
                 <!-- 正常情况下显示下拉框 -->
                 <a-select v-else v-model:value="generalConfig.Game.EmulatorIndex" size="large" placeholder="请先选择模拟器"
-                          :loading="emulatorDeviceLoading" :disabled="!generalConfig.Game.EmulatorId"
-                          @change="handleChange('Game', 'EmulatorIndex', $event)">
+                  :loading="emulatorDeviceLoading" :disabled="!generalConfig.Game.EmulatorId"
+                  @change="handleChange('Game', 'EmulatorIndex', $event)">
                   <a-select-option v-for="item in emulatorDeviceOptions" :key="item.value" :value="item.value">
                     {{ item.label }}
                   </a-select-option>
@@ -523,7 +523,7 @@
                   </a-tooltip>
                 </template>
                 <a-input v-model:value="generalConfig.Game.Arguments" placeholder="请输入启动参数" size="large"
-                         class="modern-input" @blur="handleChange('Game', 'Arguments', generalConfig.Game.Arguments)" />
+                  class="modern-input" @blur="handleChange('Game', 'Arguments', generalConfig.Game.Arguments)" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -537,8 +537,8 @@
                   </a-tooltip>
                 </template>
                 <a-input-number v-model:value="generalConfig.Game.WaitTime" :min="0" :max="300" size="large"
-                                class="modern-number-input" style="width: 100%"
-                                @blur="handleChange('Game', 'WaitTime', generalConfig.Game.WaitTime)" />
+                  class="modern-number-input" style="width: 100%"
+                  @blur="handleChange('Game', 'WaitTime', generalConfig.Game.WaitTime)" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -552,7 +552,7 @@
                   </a-tooltip>
                 </template>
                 <a-select v-model:value="generalConfig.Game.IfForceClose" size="large"
-                          @change="handleChange('Game', 'IfForceClose', $event)">
+                  @change="handleChange('Game', 'IfForceClose', $event)">
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -574,7 +574,7 @@
                 </a-tooltip>
               </template>
               <a-input v-model:value="generalConfig.Game.ProcessName" placeholder="比如 StarRail.exe" size="large"
-                       class="modern-input" @blur="handleChange('Game', 'ProcessName', generalConfig.Game.ProcessName)" />
+                class="modern-input" @blur="handleChange('Game', 'ProcessName', generalConfig.Game.ProcessName)" />
             </a-form-item>
           </a-col>
         </a-row>
@@ -595,8 +595,8 @@
                   </a-tooltip>
                 </template>
                 <a-input-number v-model:value="generalConfig.Run.ProxyTimesLimit" :min="0" :max="999" size="large"
-                                class="modern-number-input" style="width: 100%"
-                                @blur="handleChange('Run', 'ProxyTimesLimit', generalConfig.Run.ProxyTimesLimit)" />
+                  class="modern-number-input" style="width: 100%"
+                  @blur="handleChange('Run', 'ProxyTimesLimit', generalConfig.Run.ProxyTimesLimit)" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -610,8 +610,8 @@
                   </a-tooltip>
                 </template>
                 <a-input-number v-model:value="generalConfig.Run.RunTimesLimit" :min="1" :max="10" size="large"
-                                class="modern-number-input" style="width: 100%"
-                                @blur="handleChange('Run', 'RunTimesLimit', generalConfig.Run.RunTimesLimit)" />
+                  class="modern-number-input" style="width: 100%"
+                  @blur="handleChange('Run', 'RunTimesLimit', generalConfig.Run.RunTimesLimit)" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -625,8 +625,8 @@
                   </a-tooltip>
                 </template>
                 <a-input-number v-model:value="generalConfig.Run.RunTimeLimit" :min="1" :max="300" size="large"
-                                class="modern-number-input" style="width: 100%"
-                                @blur="handleChange('Run', 'RunTimeLimit', generalConfig.Run.RunTimeLimit)" />
+                  class="modern-number-input" style="width: 100%"
+                  @blur="handleChange('Run', 'RunTimeLimit', generalConfig.Run.RunTimeLimit)" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -637,21 +637,21 @@
 
   <!-- 上传脚本弹窗 -->
   <a-modal v-model:open="uploadModalVisible" title="上传脚本配置到云端" :confirm-loading="uploadLoading" width="600px"
-           :mask-closable="false" @ok="handleUpload" @cancel="handleUploadCancel">
+    :mask-closable="false" @ok="handleUpload" @cancel="handleUploadCancel">
     <a-form ref="uploadFormRef" :model="uploadForm" :rules="uploadRules" layout="vertical" class="upload-form">
       <a-form-item name="config_name" label="配置名称">
         <a-input v-model:value="uploadForm.config_name" placeholder="为您的脚本配置起一个易于识别的名称" size="large" :maxlength="50"
-                 show-count class="modern-input" />
+          show-count class="modern-input" />
       </a-form-item>
 
       <a-form-item name="author" label="作者">
         <a-input v-model:value="uploadForm.author" placeholder="请输入作者名称" size="large" :maxlength="30" show-count
-                 class="modern-input" />
+          class="modern-input" />
       </a-form-item>
 
       <a-form-item name="description" label="描述">
         <a-textarea v-model:value="uploadForm.description" placeholder="请简要描述该脚本配置的功能、适用场景等信息" size="large" :rows="4"
-                    :maxlength="200" show-count class="modern-textarea" />
+          :maxlength="200" show-count class="modern-textarea" />
       </a-form-item>
 
       <a-alert message="分享说明" type="info">
@@ -1253,7 +1253,7 @@ const loadScript = async () => {
       const config = scriptData.config as GeneralScriptConfig
       formData.name = config.Info.Name || '新建通用脚本'
       Object.assign(generalConfig, config)
-      
+
       // 从API重新加载完整数据（确保包含所有必要的配置）
       const scriptDetail = await getScript(scriptId)
       if (scriptDetail) {
@@ -1261,7 +1261,7 @@ const loadScript = async () => {
         formData.name = scriptDetail.name
         Object.assign(generalConfig, scriptDetail.config as GeneralScriptConfig)
       }
-      
+
       // 对于 General 类型，在加载完成后初始化相对路径关系
       setTimeout(() => {
         updatePathRelations()
@@ -2155,5 +2155,4 @@ const handleUpload = async () => {
   border-left: 3px solid var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
 }
-
 </style>

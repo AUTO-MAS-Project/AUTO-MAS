@@ -370,7 +370,7 @@ const loadScript = async () => {
       const config = scriptData.config as MAAScriptConfig
       formData.name = config.Info.Name || '新建MAA脚本'
       Object.assign(maaConfig, config)
-      
+
       // 从API重新加载完整数据（确保包含所有必要的配置）
       const scriptDetail = await getScript(scriptId)
       if (scriptDetail) {
@@ -378,7 +378,7 @@ const loadScript = async () => {
         formData.name = scriptDetail.name
         Object.assign(maaConfig, scriptDetail.config as MAAScriptConfig)
       }
-      
+
       // 如果已经有选择的模拟器，加载对应的设备选项
       if (maaConfig.Emulator?.Id) {
         await loadEmulatorDeviceOptions(maaConfig.Emulator.Id)

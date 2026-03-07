@@ -57,9 +57,8 @@
     @toggle-user-status="handleToggleUserStatus" @pass-check-user="handlePassCheckUser" />
 
   <!-- 创建方式选择弹窗 -->
-  <a-modal v-model:open="createModeSelectVisible" title="选择创建方式" :confirm-loading="addLoading"
-    class="create-mode-modal" width="600px" ok-text="确定" cancel-text="取消" @ok="handleConfirmCreateMode"
-    @cancel="createModeSelectVisible = false">
+  <a-modal v-model:open="createModeSelectVisible" title="选择创建方式" :confirm-loading="addLoading" class="create-mode-modal"
+    width="600px" ok-text="确定" cancel-text="取消" @ok="handleConfirmCreateMode" @cancel="createModeSelectVisible = false">
     <div class="mode-selection">
       <a-radio-group v-model:value="selectedCreateMode" class="mode-radio-group">
         <a-radio-button value="copy" class="mode-option">
@@ -89,10 +88,9 @@
   </a-modal>
 
   <!-- 脚本选择弹窗 -->
-  <a-modal v-model:open="scriptSelectVisible" title="选择要复制的脚本" :confirm-loading="addLoading"
-    class="script-select-modal" width="800px" ok-text="确定复制" cancel-text="返回"
-    :ok-button-props="{ disabled: !selectedScriptId }" @ok="handleConfirmScriptSelect"
-    @cancel="() => { scriptSelectVisible = false; createModeSelectVisible = true }">
+  <a-modal v-model:open="scriptSelectVisible" title="选择要复制的脚本" :confirm-loading="addLoading" class="script-select-modal"
+    width="800px" ok-text="确定复制" cancel-text="返回" :ok-button-props="{ disabled: !selectedScriptId }"
+    @ok="handleConfirmScriptSelect" @cancel="() => { scriptSelectVisible = false; createModeSelectVisible = true }">
     <div class="script-selection">
       <div v-if="scripts.length === 0" class="no-scripts">
         <p>暂无可用脚本</p>
