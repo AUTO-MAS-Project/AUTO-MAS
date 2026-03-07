@@ -14,6 +14,7 @@ import DevDebugPanel from './components/DevDebugPanel.vue'
 import GlobalPowerCountdown from './components/GlobalPowerCountdown.vue'
 import WebSocketMessageListener from './components/WebSocketMessageListener.vue'
 import AppClosingOverlay from './components/AppClosingOverlay.vue'
+import BackendStartupOverlay from './components/BackendStartupOverlay.vue'
 import zhCN from 'ant-design-vue/es/locale/zh_CN'
 
 const logger = window.electronAPI.getLogger('App组件')
@@ -23,7 +24,7 @@ const { antdTheme, initTheme } = useTheme()
 const { updateVisible, updateData, latestVersion, onUpdateConfirmed } = useUpdateModal()
 const { isClosing } = useAppClosing()
 const { playSound } = useAudioPlayer()
-const { isInitialized } = useAppInitialization()
+const { isInitialized, isBootstrapping, isAppReady } = useAppInitialization()
 
 // 判断是否为初始化页面
 const isInitializationPage = computed(() => route.name === 'Initialization')
@@ -47,7 +48,9 @@ onMounted(async () => {
     logger.info('准备播放欢迎音频')
     await playSound('welcome_back')
   } else {
-    logger.info(`跳过欢迎音频播放, 原因: ${isInitializationPage.value ? '当前是初始化页面' : '应用未初始化'}`)
+    logger.info(
+      `跳过欢迎音频播放, 原因: ${isInitializationPage.value ? '当前是初始化页面' : '应用未初始化'}`
+    )
   }
 })
 </script>
@@ -66,7 +69,7 @@ onMounted(async () => {
       <router-view />
     </div>
     <!-- 其他页面使用带标题栏的应用布局 - 仅在初始化完成后挂载 -->
-    <div v-else-if="isInitialized" class="app-container">
+    <div v-else-if="isAppReady" class="app-container">
       <TitleBar />
       <AppLayout />
     </div>
@@ -77,8 +80,12 @@ onMounted(async () => {
     <!-- 以下组件仅在初始化完成后挂载 -->
     <template v-if="isInitialized">
       <!-- 全局更新模态框 -->
-      <UpdateModal v-model:visible="updateVisible" :update-data="updateData" :latest-version="latestVersion"
-        @confirmed="onUpdateConfirmed" />
+      <UpdateModal
+        v-model:visible="updateVisible"
+        :update-data="updateData"
+        :latest-version="latestVersion"
+        @confirmed="onUpdateConfirmed"
+      />
 
       <!-- 全局电源倒计时弹窗 -->
       <GlobalPowerCountdown />
@@ -89,6 +96,7 @@ onMounted(async () => {
 
     <!-- 应用关闭遮罩 - 始终可用 -->
     <AppClosingOverlay :visible="isClosing" />
+    <BackendStartupOverlay :visible="isBootstrapping" />
   </ConfigProvider>
 </template>
 
@@ -120,7 +128,6 @@ onMounted(async () => {
   -ms-overflow-style: none;
   /* IE/Edge */
 }
-
 
 .standalone-container {
   height: 100vh;
