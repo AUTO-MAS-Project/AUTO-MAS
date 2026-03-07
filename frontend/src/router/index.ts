@@ -1,5 +1,7 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { useAppInitialization } from '@/composables/useAppInitialization'
+import { getInitializationDecision } from '@/utils/initializationDecision'
+import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
 const logger = window.electronAPI.getLogger('路由管理')
 
 // 异步按需加载调度中心，避免弹窗窗口提前执行相关逻辑
@@ -151,6 +153,8 @@ const router = createRouter({
 router.beforeEach(async (to, from, next) => {
   logger.info(`路由守卫：${JSON.stringify({ to: to.path, from: from.path })}`)
 
+  const { isInitialized, isBootstrapping } = useAppInitialization()
+
   // 声明跳过的路由：直接放行
   if ((to.meta as any)?.skipGuard) {
     next()
@@ -158,6 +162,18 @@ router.beforeEach(async (to, from, next) => {
   }
 
   if (to.path === '/initialization') {
+    if (!isInitialized.value && !isBootstrapping.value) {
+      const decision = await getInitializationDecision()
+      if (decision.mode === 'skip-home') {
+        needInitLanding = false
+        logger.info(`命中跳过初始化条件，直接进入主页: ${JSON.stringify(decision)}`)
+        void startSkippedInitializationStartup()
+        next('/home')
+        return
+      }
+    }
+
+    sessionStorage.removeItem('disableInitializationSkip')
     needInitLanding = false
     next()
     return
@@ -166,8 +182,19 @@ router.beforeEach(async (to, from, next) => {
   const isDev = import.meta.env.DEV
   if (isDev) return next()
 
-  const { isInitialized } = useAppInitialization()
-  logger.info(`检查初始化状态：${JSON.stringify({ isInitialized: isInitialized.value })}`)
+  logger.info(
+    `检查初始化状态：${JSON.stringify({ isInitialized: isInitialized.value, isBootstrapping: isBootstrapping.value })}`
+  )
+  if (isBootstrapping.value) {
+    needInitLanding = false
+    if (to.path !== '/home') {
+      next('/home')
+      return
+    }
+    next()
+    return
+  }
+
   if (!isInitialized.value) {
     needInitLanding = false
     next('/initialization')
