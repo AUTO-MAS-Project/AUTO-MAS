@@ -536,14 +536,25 @@ class AppConfig(GlobalConfig):
 
             new_uid, new_config = await self.ScriptConfig.add(CLASS_BOOK[script])
 
-            await new_config.load(await self.ScriptConfig[script_uid].toDict())
+            await new_config.load(
+                await self.ScriptConfig[script_uid].toDict(regenerate_uuids=True)
+            )
 
+            # 复制用户数据
             if (Path.cwd() / f"data/{script_id}").exists():
                 shutil.copytree(
                     Path.cwd() / f"data/{script_id}",
                     Path.cwd() / f"data/{new_uid}",
                     dirs_exist_ok=True,
                 )
+                for old_user, new_user in zip(
+                    self.ScriptConfig[script_uid].UserData.keys(),
+                    new_config.UserData.keys(),
+                ):
+                    if (Path.cwd() / f"data/{new_uid}/{old_user}").exists():
+                        (Path.cwd() / f"data/{new_uid}/{old_user}").rename(
+                            Path.cwd() / f"data/{new_uid}/{new_user}"
+                        )
 
             return new_uid, new_config
 

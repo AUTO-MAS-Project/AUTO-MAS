@@ -884,7 +884,9 @@ class ConfigBase(ABC):
 
         await asyncio.gather(*(_() for _ in self._save_methods))
 
-    async def toDict(self, if_decrypt: bool = True) -> dict[str, Any]:
+    async def toDict(
+        self, if_decrypt: bool = True, regenerate_uuids: bool = False
+    ) -> dict[str, Any]:
         """将配置项转换为字典"""
 
         data = {}
@@ -896,7 +898,9 @@ class ConfigBase(ABC):
         for name, item in self._multiple_config_index.items():
             if not data.get("SubConfigsInfo"):
                 data["SubConfigsInfo"] = {}
-            data["SubConfigsInfo"][name] = await item.toDict(if_decrypt)
+            data["SubConfigsInfo"][name] = await item.toDict(
+                if_decrypt, regenerate_uuids
+            )
 
         return data
 
@@ -1165,20 +1169,40 @@ class MultipleConfig(Generic[T]):
 
         await asyncio.gather(*(_() for _ in self._save_methods))
 
-    async def toDict(self, if_decrypt: bool = True) -> dict[str, list | dict]:
+    async def toDict(
+        self, if_decrypt: bool = True, regenerate_uuids: bool = False
+    ) -> dict[str, list | dict]:
         """
         将配置项转换为字典
 
-        返回一个字典, 包含所有配置项的 UID 和类型, 以及每个配置项的具体数据。
+        Arguments
+        ----------
+        if_decrypt: bool
+            是否解密数据, 默认为 True
+        regenerate_uuids: bool
+            是否重新生成 UUID, 默认为 False
+
+        Returns
+        -------
+        Dict[str, Union[list, dict]]
+            配置项数据字典
         """
+
+        uuid_book: dict[uuid.UUID, uuid.UUID] = {
+            _: uuid.uuid4() if regenerate_uuids else _ for _ in self.order
+        }
 
         data: dict[str, list | dict] = {
             "instances": [
-                {"uid": str(_), "type": type(self.data[_]).__name__} for _ in self.order
+                {"uid": str(uuid_book[_]), "type": type(self.data[_]).__name__}
+                for _ in self.order
             ]
         }
         for uid, config in self.items():
-            data[str(uid)] = await config.toDict(if_decrypt)
+            data[str(uuid_book[uid])] = await config.toDict(
+                if_decrypt, regenerate_uuids
+            )
+
         return data
 
     async def get(self, uid: uuid.UUID) -> dict[str, list | dict]:
