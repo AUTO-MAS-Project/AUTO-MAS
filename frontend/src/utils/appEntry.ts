@@ -82,7 +82,9 @@ export async function enterApp(
     preloadSchedulerView(reason)
 
     // 跳转到主页
-    router.push('/home')
+    if (router.currentRoute.value.path !== '/home') {
+      router.push('/home')
+    }
     logger.info(`${reason}：已进入应用`)
 
     // 启动版本检查服务
@@ -125,7 +127,9 @@ export async function forceEnterApp(reason: string = '强行进入'): Promise<vo
   // 标记应用已初始化完成
   await markAsInitialized()
 
-  router.push('/home')
+  if (router.currentRoute.value.path !== '/home') {
+    router.push('/home')
+  }
   logger.info(`${reason}：已跳过初始化`)
 
   // 启动版本检查服务
