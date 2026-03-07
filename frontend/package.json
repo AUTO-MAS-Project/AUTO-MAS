@@ -20,7 +20,8 @@
     "release:lite": "vite build && yarn build:main && electron-builder --win --publish always --config build-json/electron-builder-lite.json",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "format": "prettier . --write"
+    "format": "prettier . --write",
+    "openapi": "openapi --input http://127.0.0.1:36163/openapi.json --output ./src/api --client axios"
   },
   "build": {
     "asar": true,
