@@ -211,16 +211,19 @@ class Notification:
         if not normalized_server.startswith(("http://", "https://")):
             normalized_server = f"https://{normalized_server}"
 
-        # ntfy JSON 发布接口应发送到服务根路径，并在 JSON 内带 topic。
-        # 如果把 JSON 发到 /{topic}，客户端会把它当作纯文本显示。
+        # ntfy JSON publish API：POST 到服务根路径并在 JSON body 中携带 topic 字段。
+        # 不手动指定 Content-Type，由 httpx json= 参数自动设置为 application/json，
+        # 避免携带 charset 参数导致 ntfy 无法识别 JSON 格式而将 body 当作纯文本处理。
         payload = {"topic": topic, "title": title, "message": message}
 
-        async with httpx.AsyncClient(proxy=Config.proxy, timeout=10) as client:
-            response = await client.post(
-                normalized_server,
-                json=payload,
-                headers={"Content-Type": "application/json; charset=utf-8"},
-            )
+        try:
+            async with httpx.AsyncClient(proxy=Config.proxy, timeout=10) as client:
+                response = await client.post(
+                    normalized_server,
+                    json=payload,
+                )
+        except Exception as e:
+            raise Exception(f"ntfy 请求失败: {e}") from e
 
         if response.status_code in (200, 202):
             logger.success(f"ntfy 推送通知成功: {title}")
