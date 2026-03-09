@@ -444,6 +444,17 @@ MATERIALS_MAP = {
 }
 """掉落物索引表"""
 
+STARRAIL_PACKAGE_NAME = {
+    "CN-Official": "com.miHoYo.hkrpg",
+    "CN-Bilibili": "com.miHoYo.hkrpg.bilibili",
+    "VN-Official": "com.HoYoverse.hkrpgvn",
+    "OVERSEA-America": "com.HoYoverse.hkrpgoversea",
+    "OVERSEA-Asia": "com.HoYoverse.hkrpgoversea",
+    "OVERSEA-Europe": "com.HoYoverse.hkrpgoversea",
+    "OVERSEA-TWHKMO": "com.HoYoverse.hkrpgoversea",
+}
+"""崩坏·星穹铁道包名映射表"""
+
 
 TIME_FIELDS = {
     "%Y": "year",

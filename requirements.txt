@@ -22,6 +22,6 @@ pyautogui==0.9.54
 pynput==1.8.1
 numpy==2.3.4
 opencv-python==4.10.0.84
-maafw==5.4.2
+maafw==5.8.1
 mss==9.0.2
 fastapi-mcp==0.4.0

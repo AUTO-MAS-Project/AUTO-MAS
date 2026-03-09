@@ -1,0 +1,70 @@
+{
+    "interface_version": 2,
+    "name": "AUTO-MAS MaaFW Toolkit",
+    "icon": "res/icons/AUTO-MAS.ico",
+    "mirrorchyan_multiplatform": false,
+    "github": "https://github.com/AUTO-MAS-Project/AUTO-MAS",
+    "version": "5.1.0",
+    "contact": "https://auto-mas.top/",
+    "license": "GPL-3.0",
+    "controller": [
+        {
+            "name": "明日方舟PC端",
+            "type": "Win32",
+            "permission_required": true,
+            "win32": {
+                "window_regex": "明日方舟"
+            }
+        },
+        {
+            "name": "星穹铁道模拟器",
+            "type": "Adb",
+            "permission_required": true
+        }
+    ],
+    "resource": [
+        {
+            "name": "AUTO-MAS MaaFW Toolkit Resource",
+            "path": [
+                "res/MaaFW"
+            ]
+        }
+    ],
+    "task": [
+        {
+            "name": "明日方舟PC端-选中已部署干员",
+            "entry": "选中已部署干员",
+            "controller": [
+                "明日方舟PC端"
+            ]
+        },
+        {
+            "name": "明日方舟PC端-释放技能",
+            "entry": "释放技能",
+            "controller": [
+                "明日方舟PC端"
+            ]
+        },
+        {
+            "name": "明日方舟PC端-撤退干员",
+            "entry": "撤退干员",
+            "controller": [
+                "明日方舟PC端"
+            ]
+        },
+        {
+            "name": "明日方舟PC端-下一帧",
+            "entry": "下一帧",
+            "controller": [
+                "明日方舟PC端"
+            ]
+        },
+        {
+            "name": "星穹铁道模拟器-切换账号",
+            "entry": "切换账号",
+            "controller": [
+                "星穹铁道模拟器"
+            ]
+        }
+    ]
+}
