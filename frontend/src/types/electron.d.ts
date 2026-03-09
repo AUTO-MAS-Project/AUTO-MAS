@@ -31,7 +31,7 @@ export interface ElectronAPI {
   installDependencies: (mirror?: string) => Promise<any>
   cloneBackend: (repoUrl?: string) => Promise<any>
   updateBackend: (repoUrl?: string) => Promise<any>
-  startBackend: () => Promise<{ success: boolean; error?: string }>
+  startBackend: () => Promise<{ success: boolean; error?: string; logs?: string }>
   stopBackend: () => Promise<{ success: boolean; error?: string }>
 
   // 快速安装相关
@@ -123,8 +123,13 @@ export interface ElectronAPI {
   installPython: (selectedMirror?: string) => Promise<{ success: boolean; error?: string }>
   installPip: (selectedMirror?: string) => Promise<{ success: boolean; error?: string }>
   installGit: (selectedMirror?: string) => Promise<{ success: boolean; error?: string }>
-  pullRepository: (targetBranch?: string, selectedMirror?: string) => Promise<{ success: boolean; error?: string }>
-  installDependencies: (selectedMirror?: string) => Promise<{ success: boolean; error?: string; skipped?: boolean }>
+  pullRepository: (
+    targetBranch?: string,
+    selectedMirror?: string
+  ) => Promise<{ success: boolean; error?: string }>
+  installDependencies: (
+    selectedMirror?: string
+  ) => Promise<{ success: boolean; error?: string; skipped?: boolean }>
   getMirrors: (type: string) => Promise<any[]>
 
   // API 端点获取
@@ -132,7 +137,10 @@ export interface ElectronAPI {
   getApiEndpoints: () => Promise<{ local: string; websocket: string }>
 
   // 完整初始化流程（保留用于兼容）
-  initialize: (targetBranch?: string, startBackend?: boolean) => Promise<{
+  initialize: (
+    targetBranch?: string,
+    startBackend?: boolean
+  ) => Promise<{
     success: boolean
     error?: string
     completedStages: string[]
@@ -148,9 +156,9 @@ export interface ElectronAPI {
   }>
 
   // 后端服务管理
-  backendStart: () => Promise<{ success: boolean; error?: string }>
+  backendStart: () => Promise<{ success: boolean; error?: string; logs?: string }>
   backendStop: () => Promise<{ success: boolean; error?: string }>
-  backendRestart: () => Promise<{ success: boolean; error?: string }>
+  backendRestart: () => Promise<{ success: boolean; error?: string; logs?: string }>
   backendStatus: () => Promise<{
     isRunning: boolean
     pid?: number
@@ -176,24 +184,28 @@ export interface ElectronAPI {
   removeDependencyProgressListener?: () => void
 
   // 监听初始化进度（保留用于兼容）
-  onInitializationProgress: (callback: (progress: {
-    stage: string
-    stageIndex: number
-    totalStages: number
-    progress: number
-    message: string
-  }) => void) => void
+  onInitializationProgress: (
+    callback: (progress: {
+      stage: string
+      stageIndex: number
+      totalStages: number
+      progress: number
+      message: string
+    }) => void
+  ) => void
   removeInitializationProgressListener?: () => void
 
   // 监听后端状态
-  onBackendStatus: (callback: (status: {
-    isRunning: boolean
-    pid?: number
-    startTime?: Date
-    wsConnected: boolean
-    lastPingTime?: Date
-    error?: string
-  }) => void) => void
+  onBackendStatus: (
+    callback: (status: {
+      isRunning: boolean
+      pid?: number
+      startTime?: Date
+      wsConnected: boolean
+      lastPingTime?: Date
+      error?: string
+    }) => void
+  ) => void
   removeBackendStatusListener?: () => void
 }
 

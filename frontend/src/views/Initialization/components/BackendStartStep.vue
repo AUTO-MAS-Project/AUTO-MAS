@@ -39,7 +39,11 @@
 
       <!-- 完成状态 -->
       <div v-else-if="status === 'success'" class="completed-status">
-        <a-result status="success" title="后端启动成功" sub-title="应用已准备就绪，即将进入主界面" />
+        <a-result
+          status="success"
+          title="后端启动成功"
+          sub-title="应用已准备就绪，即将进入主界面"
+        />
       </div>
 
       <!-- 失败状态 -->
@@ -52,6 +56,10 @@
             </a-space>
           </template>
         </a-result>
+
+        <a-card v-if="backendLogs" title="后端日志" size="small" class="failed-log-card">
+          <pre class="backend-log-output">{{ backendLogs }}</pre>
+        </a-card>
       </div>
     </div>
   </div>
@@ -68,15 +76,15 @@ interface Props {
   showSkipButton?: boolean
 }
 
-const props = withDefaults(defineProps<Props>(), {
-  showSkipButton: false
+withDefaults(defineProps<Props>(), {
+  showSkipButton: false,
 })
 
 const emit = defineEmits<{
   'update:status': [status: 'waiting' | 'starting' | 'running' | 'success' | 'failed']
-  'complete': []
-  'error': [error: string]
-  'skip': []
+  complete: []
+  error: [error: string]
+  skip: []
 }>()
 
 // ==================== 状态管理 ====================
@@ -85,6 +93,7 @@ const statusMessage = ref('准备启动后端服务...')
 const progress = ref(0)
 const progressStatus = ref<'normal' | 'exception' | 'success'>('normal')
 const errorMessage = ref('')
+const backendLogs = ref('')
 
 const backendPid = ref<number>()
 const wsConnected = ref(false)
@@ -101,6 +110,7 @@ const { startPolling } = useUpdateChecker()
 async function startBackend() {
   status.value = 'starting'
   emit('update:status', 'starting')
+  backendLogs.value = ''
 
   try {
     // 第一步：启动后端进程
@@ -110,6 +120,7 @@ async function startBackend() {
     const result = await (window.electronAPI as any).backendStart()
 
     if (!result.success) {
+      backendLogs.value = result.logs || ''
       throw new Error(result.error || '后端启动失败')
     }
 
@@ -178,13 +189,14 @@ async function startBackend() {
     progressStatus.value = 'success'
 
     // 合并完成信息到一行日志
-    logger.info(`后端服务启动完成 - PID: ${backendPid.value}, WebSocket: ${wsConnected.value ? '已连接' : '未连接'}, 版本检查: ${pollingStarted.value ? '已启动' : '未启动'}`)
+    logger.info(
+      `后端服务启动完成 - PID: ${backendPid.value}, WebSocket: ${wsConnected.value ? '已连接' : '未连接'}, 版本检查: ${pollingStarted.value ? '已启动' : '未启动'}`
+    )
 
     // 延迟1秒后通知完成，让用户看到成功状态
     setTimeout(() => {
       emit('complete')
     }, 1000)
-
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error)
     logger.error(`后端启动失败: ${errMsg}`)
@@ -202,6 +214,7 @@ async function startBackend() {
  */
 async function handleRetry() {
   errorMessage.value = ''
+  backendLogs.value = ''
   progress.value = 0
   progressStatus.value = 'normal'
   await startBackend()
@@ -305,11 +318,36 @@ onUnmounted(() => {
   color: var(--ant-color-text);
 }
 
-.completed-status,
-.failed-status {
+.completed-status {
   display: flex;
   justify-content: center;
   align-items: center;
   min-height: 200px;
+}
+
+.failed-status {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 200px;
+}
+
+.failed-log-card {
+  width: 100%;
+}
+
+.backend-log-output {
+  margin: 0;
+  max-height: 360px;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--ant-color-fill-quaternary);
+  color: var(--ant-color-text);
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 </style>
