@@ -207,55 +207,25 @@ class Notification:
         if not topic:
             raise ValueError("ntfy Topic 不能为空")
 
-        # 构造 URL
-        url = f"https://{server}/{topic}"
+        normalized_server = server.strip().rstrip("/")
+        if not normalized_server.startswith(("http://", "https://")):
+            normalized_server = f"https://{normalized_server}"
 
-        # 请求体
-        content = message.encode("utf-8")
+        # ntfy JSON 发布接口应发送到服务根路径，并在 JSON 内带 topic。
+        # 如果把 JSON 发到 /{topic}，客户端会把它当作纯文本显示。
+        payload = {"topic": topic, "title": title, "message": message}
 
-        # 请求头 - 单独处理避免编码问题
-        headers = {}
-        headers["Content-Type"] = "text/plain; charset=utf-8"
-
-        # 将标题放到URL查询参数中，避免header编码问题
-        import urllib.parse
-        encoded_title = urllib.parse.quote(title)
-        full_url = f"{url}?title={encoded_title}"
-
-        try:
-            # 使用 urllib 避免 httpx 的 header 编码问题
-            import urllib.request
-            import ssl
-
-            req = urllib.request.Request(
-                full_url,
-                data=content,
-                headers=headers,
-                method="POST"
+        async with httpx.AsyncClient(proxy=Config.proxy, timeout=10) as client:
+            response = await client.post(
+                normalized_server,
+                json=payload,
+                headers={"Content-Type": "application/json; charset=utf-8"},
             )
 
-            # 创建 SSL 上下文
-            context = ssl.create_default_context()
-
-            # 处理代理
-            proxy = Config.proxy
-            if proxy:
-                # 设置代理
-                proxy_handler = urllib.request.ProxyHandler({'https': proxy})
-                opener = urllib.request.build_opener(proxy_handler, urllib.request.HTTPSHandler(context=context))
-                with opener.open(req, timeout=10) as response:
-                    response_status = response.status
-            else:
-                with urllib.request.urlopen(req, timeout=10, context=context) as response:
-                    response_status = response.status
-
-        except Exception as e:
-            raise Exception(f"ntfy 请求失败: {e}")
-
-        if response_status == 200:
+        if response.status_code in (200, 202):
             logger.success(f"ntfy 推送通知成功: {title}")
         else:
-            raise Exception(f"ntfy 推送通知失败: HTTP {response_status}")
+            raise Exception(f"ntfy 推送通知失败: HTTP {response.status_code} {response.text}")
 
     async def WebhookPush(self, title: str, content: str, webhook: Webhook) -> None:
         """

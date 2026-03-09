@@ -1,8 +1,29 @@
 <script setup lang="ts">
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined, SyncOutlined } from '@ant-design/icons-vue'
+import { message } from 'ant-design-vue'
 import type { GlobalConfig } from '@/api'
 import WebhookManager from '@/components/WebhookManager.vue'
 import { handleExternalLink } from '@/utils/openExternal'
+
+// 生成随机订阅名
+const generateRandomTopic = () => {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
+  const prefix = 'auto-mas'
+  return prefix + Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+}
+
+// 处理 Topic 自动生成
+const handleGenerateTopic = async () => {
+  const randomTopic = generateRandomTopic()
+  await handleSettingChange('Notify', 'NtfyTopic', randomTopic)
+
+  try {
+    await navigator.clipboard.writeText(randomTopic)
+    message.success('已复制随机 Topic')
+  } catch {
+    message.warning('随机 Topic 已生成，复制失败，请手动复制')
+  }
+}
 
 const props = defineProps<{
   settings: GlobalConfig
@@ -231,7 +252,7 @@ const handleWebhookChange = async () => {
     <div class="form-section">
       <div class="section-header">
         <h3>ntfy通知</h3>
-        <a href="https://ntfy.sh/" class="section-doc-link" title="查看ntfy官网" @click="handleExternalLink">
+        <a href="https://doc.auto-mas.top/docs/advanced-features/notification.html#ntfy-邮件推送渠道" class="section-doc-link" title="查看ntfy配置文档" @click="handleExternalLink">
           文档
         </a>
       </div>
@@ -242,7 +263,7 @@ const handleWebhookChange = async () => {
               <span class="form-label">启用ntfy通知</span>
               <a-tooltip>
                 <template #title>
-                  <div>使用ntfy自建服务器推送通知</div>
+                  <div>使用ntfy推送通知。ntfy是一个开源的自托管通知服务，可在网页或APP上订阅接收推送</div>
                 </template>
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
@@ -260,7 +281,7 @@ const handleWebhookChange = async () => {
               <span class="form-label">ntfy服务器地址</span>
               <a-tooltip>
                 <template #title>
-                  <div>ntfy服务器地址，如 ntfy.sh 或自建服务器</div>
+                  <div>ntfy服务器地址。使用官方服务请填写 ntfy.sh，自建服务器请填写您的服务器地址</div>
                 </template>
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
@@ -278,14 +299,23 @@ const handleWebhookChange = async () => {
               <span class="form-label">ntfy Topic</span>
               <a-tooltip>
                 <template #title>
-                  <div>ntfy Topic，用于标识通知主题</div>
+                  <div>ntfy Topic名称，用于标识通知主题。请在ntfy客户端（APP/网页）中填写此名称以订阅接收通知</div>
                 </template>
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-input :value="settings.Notify?.NtfyTopic" :disabled="!settings.Notify?.IfNtfy"
-              placeholder="请输入ntfy Topic" size="large"
-              @blur="(e: any) => handleSettingChange('Notify', 'NtfyTopic', e.target.value)" />
+            <a-input-search
+              :value="settings.Notify?.NtfyTopic"
+              :disabled="!settings.Notify?.IfNtfy"
+              placeholder="请输入ntfy Topic"
+              size="large"
+              @search="handleGenerateTopic"
+              @blur="(e: any) => handleSettingChange('Notify', 'NtfyTopic', e.target.value)"
+            >
+              <template #enterButton>
+                <SyncOutlined />
+              </template>
+            </a-input-search>
           </div>
         </a-col>
       </a-row>
