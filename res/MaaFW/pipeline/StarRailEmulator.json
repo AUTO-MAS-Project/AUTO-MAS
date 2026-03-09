@@ -1,0 +1,377 @@
+{
+    "登出": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "StarRailEmulator/登出.png"
+                ],
+                "roi": [
+                    1175,
+                    425,
+                    60,
+                    100
+                ]
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "next": [
+            "识别切换账号"
+        ]
+    },
+    "确认切换账号": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "确认"
+                ],
+                "roi": [
+                    656,
+                    359,
+                    237,
+                    83
+                ],
+                "model": "zh_cn"
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "next": [
+            "登录下拉框展开"
+        ]
+    },
+    "识别切换账号": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "确认切换账号"
+                ],
+                "roi": [
+                    525,
+                    270,
+                    220,
+                    60
+                ],
+                "model": "zh_cn"
+            }
+        },
+        "next": [
+            "确认切换账号"
+        ]
+    },
+    "登录其他账号": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "登录其他账号"
+                ],
+                "roi": [
+                    550,
+                    500,
+                    180,
+                    45
+                ],
+                "model": "zh_cn"
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "next": [
+            "账号密码"
+        ]
+    },
+    "账号密码": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "账号密码"
+                ],
+                "roi": [
+                    420,
+                    585,
+                    110,
+                    40
+                ],
+                "model": "zh_cn"
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "next": [
+            "点击账号框"
+        ]
+    },
+    "点击账号框": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "输入手机号/邮箱",
+                    "手机号",
+                    "邮箱"
+                ],
+                "roi": [
+                    390,
+                    225,
+                    230,
+                    50
+                ],
+                "model": "zh_cn"
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "next": [
+            "输入账号"
+        ]
+    },
+    "输入账号": {
+        "action": {
+            "type": "InputText",
+            "param": {
+                "input_text": "账号"
+            }
+        },
+        "next": [
+            "点击密码框"
+        ]
+    },
+    "点击密码框": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "输入密码",
+                    "密码"
+                ],
+                "roi": [
+                    390,
+                    320,
+                    140,
+                    50
+                ],
+                "model": "zh_cn"
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "next": [
+            "输入密码"
+        ]
+    },
+    "输入密码": {
+        "action": {
+            "type": "InputText",
+            "param": {
+                "input_text": "密码"
+            }
+        },
+        "next": [
+            "同意协议",
+            "已同意协议"
+        ]
+    },
+    "同意协议": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "StarRailEmulator/未同意复选框.png"
+                ]
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "next": [
+            "已同意协议"
+        ]
+    },
+    "已同意协议": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "StarRailEmulator/已同意复选框.png"
+                ]
+            }
+        },
+        "next": [
+            "进入游戏-低"
+        ]
+    },
+    "进入游戏-低": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "进入游戏"
+                ],
+                "roi": [
+                    560,
+                    480,
+                    150,
+                    50
+                ],
+                "model": "zh_cn"
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        }
+    },
+    "切换账号": {
+        "action": {
+            "type": "StartApp",
+            "param": {
+                "package": "包名"
+            }
+        },
+        "timeout": 600000,
+        "next": [
+            "登出",
+            "登录下拉框展开"
+        ]
+    },
+    "登录下拉框展开": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "StarRailEmulator/登录下拉框展开.png"
+                ],
+                "roi": [
+                    825,
+                    260,
+                    75,
+                    75
+                ]
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "next": [
+            "选中账号",
+            "下拉账号列表"
+        ]
+    },
+    "选中账号": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "账号-正则"
+                ],
+                "roi": [
+                    374,
+                    357,
+                    533,
+                    331
+                ],
+                "model": "en_us"
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "next": [
+            "进入游戏-高"
+        ]
+    },
+    "下拉账号列表": {
+        "action": {
+            "type": "Swipe",
+            "param": {
+                "begin": [
+                    630,
+                    530,
+                    30,
+                    30
+                ],
+                "end": [
+                    [
+                        630,
+                        400,
+                        30,
+                        30
+                    ]
+                ]
+            }
+        },
+        "max_hit": 20,
+        "timeout": 5000,
+        "next": [
+            "选中账号",
+            "下拉账号列表"
+        ],
+        "on_error": [
+            "登录下拉框折叠"
+        ]
+    },
+    "登录下拉框折叠": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "StarRailEmulator/登录下拉框折叠.png"
+                ],
+                "roi": [
+                    825,
+                    260,
+                    75,
+                    75
+                ]
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "next": [
+            "登录其他账号"
+        ]
+    },
+    "进入游戏-高": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "进入游戏"
+                ],
+                "roi": [
+                    565,
+                    415,
+                    150,
+                    50
+                ],
+                "model": "zh_cn"
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        }
+    }
+}
