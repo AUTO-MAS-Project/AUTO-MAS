@@ -75,7 +75,7 @@ def main():
 
         @asynccontextmanager
         async def lifespan(app: FastAPI):
-            from app.core import Config, MainTimer, TaskManager
+            from app.core import Config, MainTimer, TaskManager, PluginManager
             from app.MaaFW import ArknightWin32Toolkit
 
             await Config.init_config()
@@ -83,6 +83,7 @@ def main():
             await Config.clean_old_history()
             await ArknightWin32Toolkit.init()
             await MainTimer.start()
+            await PluginManager.start()
 
             # 初始化 Koishi 系统客户端（如果已启用）
             if Config.get("Notify", "IfKoishiSupport"):
@@ -100,10 +101,10 @@ def main():
                     (Path.cwd() / "AUTO_MAA.exe").unlink()
                 except Exception as e:
                     logger.error(f"删除AUTO_MAA.exe失败: {e}")
-
             yield
 
             await TaskManager.stop_task("ALL")
+            await PluginManager.stop()
 
             await MainTimer.stop()
 
