@@ -48,17 +48,23 @@
 
       <!-- 失败状态 -->
       <div v-else-if="status === 'failed'" class="failed-status">
-        <a-result status="error" title="后端启动失败" :sub-title="errorMessage">
-          <template #extra>
-            <a-space>
-              <a-button v-if="showSkipButton" @click="emit('skip')">跳过此步骤</a-button>
-              <a-button type="primary" @click="handleRetry">重试</a-button>
-            </a-space>
-          </template>
-        </a-result>
+        <div class="failed-summary">
+          <div class="failed-copy">
+            <h4 class="failed-title">后端启动失败</h4>
+            <p class="help-message rgb-text">如果需要帮助，请截图下方完整日志寻求帮助</p>
+          </div>
 
-        <a-card v-if="backendLogs" title="后端日志" size="small" class="failed-log-card">
-          <pre class="backend-log-output">{{ backendLogs }}</pre>
+          <a-space class="failed-actions">
+            <a-button type="primary" danger class="doc-button" @click="handleOpenDocumentation"
+              >点此查看文档</a-button
+            >
+            <a-button v-if="showSkipButton" @click="emit('skip')">跳过此步骤</a-button>
+            <a-button type="primary" @click="handleRetry">重试</a-button>
+          </a-space>
+        </div>
+
+        <a-card v-if="backendLogs" size="small" class="failed-log-card">
+          <pre ref="backendLogRef" class="backend-log-output">{{ backendLogs }}</pre>
         </a-card>
       </div>
     </div>
@@ -66,7 +72,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { connectAfterBackendStart } from '@/composables/useWebSocket'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
 const logger = window.electronAPI.getLogger('后端启动步骤')
@@ -98,11 +104,42 @@ const backendLogs = ref('')
 const backendPid = ref<number>()
 const wsConnected = ref(false)
 const pollingStarted = ref(false)
+const backendLogRef = ref<HTMLElement | null>(null)
+
+const backendStartFailureDocUrl =
+  'https://doc.auto-mas.top/docs/FAQ.html#%E5%90%8E%E7%AB%AF%E5%90%AF%E5%8A%A8%E5%A4%B1%E8%B4%A5-%E8%B7%B3%E8%BF%87%E5%90%8E%E5%BA%94%E7%94%A8%E5%86%85%E4%B8%8D%E5%81%9C%E6%8A%A5%E9%94%99-network-error'
 
 // 初始化更新检查器
 const { startPolling } = useUpdateChecker()
 
 // ==================== 方法 ====================
+
+function scrollLogToBottom() {
+  const logElement = backendLogRef.value
+  if (!logElement) return
+
+  logElement.scrollTop = logElement.scrollHeight
+}
+
+function queueScrollLogToBottom() {
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      scrollLogToBottom()
+    })
+  })
+}
+
+async function handleOpenDocumentation() {
+  try {
+    const result = await window.electronAPI.openUrl(backendStartFailureDocUrl)
+    if (!result.success) {
+      logger.error(`打开后端启动失败文档失败: ${String(result.error)}`)
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`打开后端启动失败文档失败: ${errorMsg}`)
+  }
+}
 
 /**
  * 启动后端服务
@@ -206,6 +243,7 @@ async function startBackend() {
     progressStatus.value = 'exception'
     errorMessage.value = errMsg
     emit('error', errMsg)
+    queueScrollLogToBottom()
   }
 }
 
@@ -327,27 +365,184 @@ onUnmounted(() => {
 
 .failed-status {
   display: flex;
+  flex: 1;
   flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  padding-bottom: 4px;
+}
+
+.failed-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 16px;
-  min-height: 200px;
+  padding: 16px 18px;
+  border: 1px solid var(--ant-color-error-border);
+  border-radius: 14px;
+  background: var(--ant-color-error-bg);
+}
+
+.failed-copy {
+  min-width: 0;
+}
+
+.failed-eyebrow {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ant-color-error);
+  letter-spacing: 0.02em;
+}
+
+.failed-title {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.2;
+  color: var(--ant-color-text);
+}
+
+.help-message {
+  margin: 10px 0 0;
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.rgb-text {
+  background: linear-gradient(90deg, #ff4d4f, #faad14, #52c41a, #1677ff, #eb2f96, #ff4d4f);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: rgb-flow 5s linear infinite;
+}
+
+.failed-actions {
+  flex-shrink: 0;
+}
+
+.doc-button {
+  position: relative;
+  overflow: hidden;
+  border: none;
+  background: linear-gradient(135deg, #ff4d4f, #fa541c, #faad14, #eb2f96) !important;
+  background-size: 240% 240% !important;
+  box-shadow: 0 10px 24px rgba(255, 77, 79, 0.28);
+  animation: rgb-button-flow 4s linear infinite;
+}
+
+.doc-button:hover,
+.doc-button:focus {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(255, 77, 79, 0.34);
+}
+
+.doc-button::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  background: linear-gradient(
+    120deg,
+    rgba(255, 255, 255, 0.28),
+    transparent 42%,
+    rgba(255, 255, 255, 0.14)
+  );
+  pointer-events: none;
+}
+
+@keyframes rgb-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 220% 50%;
+  }
+}
+
+@keyframes rgb-button-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 220% 50%;
+  }
 }
 
 .failed-log-card {
+  display: flex;
   width: 100%;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.failed-log-card :deep(.ant-card-head) {
+  min-height: 44px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.failed-log-card :deep(.ant-card-body) {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  padding: 0;
 }
 
 .backend-log-output {
   margin: 0;
-  max-height: 360px;
+  min-height: 280px;
+  height: 100%;
+  width: 100%;
   overflow: auto;
-  padding: 12px;
-  border-radius: 8px;
-  background: var(--ant-color-fill-quaternary);
+  padding: 16px 18px 18px;
+  background: var(--ant-color-bg-container);
   color: var(--ant-color-text);
   font-family: Consolas, 'Courier New', monospace;
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 130, 150, 0.65) rgba(255, 255, 255, 0.06);
+}
+
+.backend-log-output::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.backend-log-output::-webkit-scrollbar-track {
+  background: rgba(127, 127, 127, 0.08);
+  border-radius: 999px;
+}
+
+.backend-log-output::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(120, 130, 150, 0.58);
+  background-clip: padding-box;
+}
+
+.backend-log-output::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.78);
+  background-clip: padding-box;
+}
+
+@media (max-width: 768px) {
+  .failed-summary {
+    flex-direction: column;
+  }
+
+  .failed-actions {
+    width: 100%;
+  }
+
+  .backend-log-output {
+    min-height: 220px;
+  }
 }
 </style>
