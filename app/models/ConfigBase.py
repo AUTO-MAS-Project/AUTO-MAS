@@ -383,85 +383,88 @@ class EmulatorPathValidator(FileValidator):
         if self.emulator_type.getValue() not in EMULATOR_PATH_BOOK:
             return Path(value).resolve().as_posix()
 
-        # 从给定路径向上或向下搜索模拟器主管理器程序的完整路径
-        path = Path(value)
-
-        # 获取模拟器配置信息
-        config = EMULATOR_PATH_BOOK[self.emulator_type.getValue()]
-        executables = config["executables"]
-
-        # 第一个可执行文件是主管理器程序（优先级最高）
-        primary_exe = executables[0]
-
-        # 如果输入的是文件,先获取其父目录
-        if path.is_file():
-            path = path.parent
-
-        # 1. 首先检查当前目录是否直接包含主管理器程序
-        # 如果用户给的就是正确的主程序路径，直接返回
-        primary_exe_path = path / primary_exe
-        if primary_exe_path.exists():
-            result = str(primary_exe_path)
-            return result
-
-        # 2. 向上搜索父目录，找到直接包含主管理器程序的目录（最多3层）
-        candidates = []
-        current = path
-        for level in range(3):
-            parent = current.parent
-            if parent == current:  # 已到达根目录
-                break
-
-            # 只接受直接包含主管理器程序的目录
-            parent_exe_path = parent / primary_exe
-            if parent_exe_path.exists():
-                candidates.append(
-                    {
-                        "path": parent,
-                        "exe_path": parent_exe_path,
-                        "depth": len(parent.parts),
-                        "level": level + 1,
-                    }
-                )
-
-            current = parent
-
-        # 如果找到了候选目录，选择最优的（深度最小的，即最接近根目录的）
-        if candidates:
-            # 排序策略：深度越小越好（越靠近根目录）
-            candidates.sort(key=lambda x: x["depth"])
-
-            best_candidate = candidates[0]
-            result = str(best_candidate["exe_path"])
-
-            return result
-
-        # 3. 如果向上没找到，尝试向下搜索子目录（仅1层，且必须直接包含主管理器程序）
         try:
-            for subdir in path.iterdir():
-                if subdir.is_dir():
-                    subdir_exe_path = subdir / primary_exe
-                    # 只接受直接包含主管理器程序的子目录
-                    if subdir_exe_path.exists():
-                        result = str(subdir_exe_path)
-                        return result
-        except PermissionError:
-            pass
+            # 从给定路径向上或向下搜索模拟器主管理器程序的完整路径
+            path = Path(value)
 
-        # 4. 检查兄弟目录（必须直接包含主管理器程序）
-        if path.parent != path:
+            # 获取模拟器配置信息
+            config = EMULATOR_PATH_BOOK[self.emulator_type.getValue()]
+            executables = config["executables"]
+
+            # 第一个可执行文件是主管理器程序（优先级最高）
+            primary_exe = executables[0]
+
+            # 如果输入的是文件,先获取其父目录
+            if path.is_file():
+                path = path.parent
+
+            # 1. 首先检查当前目录是否直接包含主管理器程序
+            # 如果用户给的就是正确的主程序路径，直接返回
+            primary_exe_path = path / primary_exe
+            if primary_exe_path.exists():
+                result = str(primary_exe_path)
+                return result
+
+            # 2. 向上搜索父目录，找到直接包含主管理器程序的目录（最多3层）
+            candidates = []
+            current = path
+            for level in range(3):
+                parent = current.parent
+                if parent == current:  # 已到达根目录
+                    break
+
+                # 只接受直接包含主管理器程序的目录
+                parent_exe_path = parent / primary_exe
+                if parent_exe_path.exists():
+                    candidates.append(
+                        {
+                            "path": parent,
+                            "exe_path": parent_exe_path,
+                            "depth": len(parent.parts),
+                            "level": level + 1,
+                        }
+                    )
+
+                current = parent
+
+            # 如果找到了候选目录，选择最优的（深度最小的，即最接近根目录的）
+            if candidates:
+                # 排序策略：深度越小越好（越靠近根目录）
+                candidates.sort(key=lambda x: x["depth"])
+
+                best_candidate = candidates[0]
+                result = str(best_candidate["exe_path"])
+
+                return result
+
+            # 3. 如果向上没找到，尝试向下搜索子目录（仅1层，且必须直接包含主管理器程序）
             try:
-                for sibling in path.parent.iterdir():
-                    if sibling.is_dir() and sibling != path:
-                        sibling_exe_path = sibling / primary_exe
-                        # 只接受直接包含主管理器程序的兄弟目录
-                        if sibling_exe_path.exists():
-                            result = str(sibling_exe_path)
+                for subdir in path.iterdir():
+                    if subdir.is_dir():
+                        subdir_exe_path = subdir / primary_exe
+                        # 只接受直接包含主管理器程序的子目录
+                        if subdir_exe_path.exists():
+                            result = str(subdir_exe_path)
                             return result
             except PermissionError:
                 pass
 
-        return Path(value).resolve().as_posix()
+            # 4. 检查兄弟目录（必须直接包含主管理器程序）
+            if path.parent != path:
+                try:
+                    for sibling in path.parent.iterdir():
+                        if sibling.is_dir() and sibling != path:
+                            sibling_exe_path = sibling / primary_exe
+                            # 只接受直接包含主管理器程序的兄弟目录
+                            if sibling_exe_path.exists():
+                                result = str(sibling_exe_path)
+                                return result
+                except PermissionError:
+                    pass
+
+            return Path(value).resolve().as_posix()
+        except Exception:
+            return Path(value).resolve().as_posix()
 
 
 class UserNameValidator(ValidatorBase):
