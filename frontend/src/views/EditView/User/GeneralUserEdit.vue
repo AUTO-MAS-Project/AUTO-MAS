@@ -355,7 +355,7 @@ const getDefaultGeneralUserData = () => ({
     ServerChanChannel: '',
     ServerChanTag: '',
     IfNtfy: false,
-    NtfyServer: '',
+    NtfyServer: 'ntfy.sh',
     NtfyTopic: '',
     CustomWebhooks: [],
   },
