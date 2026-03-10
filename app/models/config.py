@@ -371,6 +371,12 @@ class MaaUserConfig(ConfigBase):
         )
         ## Server 酱密钥
         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 是否启用 ntfy
+        self.Notify_IfNtfy = ConfigItem("Notify", "IfNtfy", False, BoolValidator())
+        ## ntfy 服务器地址
+        self.Notify_NtfyServer = ConfigItem("Notify", "NtfyServer", "ntfy.sh")
+        ## ntfy Topic
+        self.Notify_NtfyTopic = ConfigItem("Notify", "NtfyTopic", "")
         ## 自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
@@ -612,6 +618,12 @@ class GeneralUserConfig(ConfigBase):
         )
         ## Server 酱密钥
         self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 是否启用 ntfy
+        self.Notify_IfNtfy = ConfigItem("Notify", "IfNtfy", False, BoolValidator())
+        ## ntfy 服务器地址
+        self.Notify_NtfyServer = ConfigItem("Notify", "NtfyServer", "ntfy.sh")
+        ## ntfy Topic
+        self.Notify_NtfyTopic = ConfigItem("Notify", "NtfyTopic", "")
         ## 自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 

@@ -56,6 +56,23 @@
       </a-col>
     </a-row>
 
+    <!-- ntfy通知 -->
+    <a-row :gutter="24" style="margin-top: 16px">
+      <a-col :span="6">
+        <a-checkbox v-model:checked="formData.Notify.IfNtfy" :disabled="loading || !formData.Notify.Enabled"
+          @change="emitSave('Notify.IfNtfy', formData.Notify.IfNtfy)">ntfy
+        </a-checkbox>
+      </a-col>
+      <a-col :span="18" style="display: flex; flex-direction: column; gap: 8px">
+        <a-input v-model:value="formData.Notify.NtfyServer" placeholder="ntfy服务器地址，如 ntfy.sh"
+          :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfNtfy" size="large"
+          @blur="emitSave('Notify.NtfyServer', formData.Notify.NtfyServer)" />
+        <a-input v-model:value="formData.Notify.NtfyTopic" placeholder="ntfy Topic"
+          :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfNtfy" size="large"
+          @blur="emitSave('Notify.NtfyTopic', formData.Notify.NtfyTopic)" />
+      </a-col>
+    </a-row>
+
     <!-- 自定义 Webhook 通知 -->
     <div style="margin-top: 16px">
       <WebhookManager mode="user" :script-id="props.scriptId" :user-id="props.userId" @change="handleWebhookChange" />

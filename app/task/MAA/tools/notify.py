@@ -65,6 +65,15 @@ async def push_notification(
         # 发送Koishi通知
         if Config.get("Notify", "IfKoishiSupport"):
             await Notify.send_koishi(f"{title}\n\n{message_text}\nAUTO-MAS 敬上")
+
+        # 发送ntfy通知
+        if Config.get("Notify", "IfNtfy"):
+            await Notify.ntfy_push(
+                title,
+                f"{message_text}\nAUTO-MAS 敬上",
+                Config.get("Notify", "NtfyServer"),
+                Config.get("Notify", "NtfyTopic"),
+            )
     elif mode == "统计信息":
         formatted = []
         if "drop_statistics" in message:
@@ -109,6 +118,15 @@ async def push_notification(
             # 发送Koishi通知
             if Config.get("Notify", "IfKoishiSupport"):
                 await Notify.send_koishi(f"{title}\n\n{message_text}\nAUTO-MAS 敬上")
+
+            # 发送ntfy通知
+            if Config.get("Notify", "IfNtfy"):
+                await Notify.ntfy_push(
+                    title,
+                    f"{message_text}\nAUTO-MAS 敬上",
+                    Config.get("Notify", "NtfyServer"),
+                    Config.get("Notify", "NtfyTopic"),
+                )
         if (
             user_config is not None
             and user_config.get("Notify", "Enabled")
@@ -131,6 +149,22 @@ async def push_notification(
                 await Notify.WebhookPush(
                     title, f"{message_text}\nAUTO-MAS 敬上", webhook
                 )
+
+            # 发送ntfy通知
+            if user_config.get("Notify", "IfNtfy"):
+                if user_config.get("Notify", "NtfyServer") and user_config.get(
+                    "Notify", "NtfyTopic"
+                ):
+                    await Notify.ntfy_push(
+                        title,
+                        f"{message_text}\nAUTO-MAS 敬上",
+                        user_config.get("Notify", "NtfyServer"),
+                        user_config.get("Notify", "NtfyTopic"),
+                    )
+                else:
+                    logger.error(
+                        "用户ntfy配置不完整, 无法发送用户单独的ntfy通知"
+                    )
     elif mode == "公招六星":
         template = Config.notify_env.get_template("MAA_six_star.html")
         message_html = template.render(message)
@@ -151,6 +185,15 @@ async def push_notification(
             # 发送Koishi通知
             if Config.get("Notify", "IfKoishiSupport"):
                 await Notify.send_koishi(f"{title}\n\n好羡慕~\nAUTO-MAS 敬上")
+
+            # 发送ntfy通知
+            if Config.get("Notify", "IfNtfy"):
+                await Notify.ntfy_push(
+                    title,
+                    "好羡慕~\nAUTO-MAS 敬上",
+                    Config.get("Notify", "NtfyServer"),
+                    Config.get("Notify", "NtfyTopic"),
+                )
         if (
             user_config is not None
             and user_config.get("Notify", "Enabled")
@@ -171,3 +214,19 @@ async def push_notification(
                 )
             for webhook in user_config.Notify_CustomWebhooks.values():
                 await Notify.WebhookPush(title, "好羡慕~\nAUTO-MAS 敬上", webhook)
+
+            # 发送ntfy通知
+            if user_config.get("Notify", "IfNtfy"):
+                if user_config.get("Notify", "NtfyServer") and user_config.get(
+                    "Notify", "NtfyTopic"
+                ):
+                    await Notify.ntfy_push(
+                        title,
+                        "好羡慕~\nAUTO-MAS 敬上",
+                        user_config.get("Notify", "NtfyServer"),
+                        user_config.get("Notify", "NtfyTopic"),
+                    )
+                else:
+                    logger.error(
+                        "用户ntfy配置不完整, 无法发送用户单独的ntfy通知"
+                    )

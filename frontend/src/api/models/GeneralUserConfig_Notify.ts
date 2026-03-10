@@ -27,5 +27,17 @@ export type GeneralUserConfig_Notify = {
      * ServerChanKey
      */
     ServerChanKey?: (string | null);
+    /**
+     * 是否使用ntfy推送
+     */
+    IfNtfy?: (boolean | null);
+    /**
+     * ntfy服务器地址
+     */
+    NtfyServer?: (string | null);
+    /**
+     * ntfy Topic
+     */
+    NtfyTopic?: (string | null);
 };
 

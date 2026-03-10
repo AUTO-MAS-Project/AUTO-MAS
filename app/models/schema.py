@@ -375,6 +375,9 @@ class MaaUserConfig_Notify(BaseModel):
         default=None, description="是否使用Server酱推送"
     )
     ServerChanKey: Optional[str] = Field(default=None, description="ServerChanKey")
+    IfNtfy: Optional[bool] = Field(default=None, description="是否使用ntfy推送")
+    NtfyServer: Optional[str] = Field(default=None, description="ntfy服务器地址")
+    NtfyTopic: Optional[str] = Field(default=None, description="ntfy Topic")
 
 
 class GeneralUserConfig_Notify(BaseModel):
@@ -388,6 +391,9 @@ class GeneralUserConfig_Notify(BaseModel):
         default=None, description="是否使用Server酱推送"
     )
     ServerChanKey: Optional[str] = Field(default=None, description="ServerChanKey")
+    IfNtfy: Optional[bool] = Field(default=None, description="是否使用ntfy推送")
+    NtfyServer: Optional[str] = Field(default=None, description="ntfy服务器地址")
+    NtfyTopic: Optional[str] = Field(default=None, description="ntfy Topic")
 
 
 class MaaUserConfig(BaseModel):
