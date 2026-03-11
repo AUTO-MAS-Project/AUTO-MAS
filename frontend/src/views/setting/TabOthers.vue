@@ -109,7 +109,7 @@ const copyAllInfo = async () => {
           </div>
           <div class="info-item">
             <span class="info-label">许可证：</span>
-            <span class="info-value">GPL-3.0 license</span>
+            <span class="info-value">AGPL-3.0 license</span>
           </div>
         </div>
         <div class="app-info-right">
