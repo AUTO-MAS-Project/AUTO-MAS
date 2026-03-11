@@ -4,6 +4,7 @@
 /* eslint-disable */
 import type { GeneralUserConfig } from './GeneralUserConfig';
 import type { MaaUserConfig } from './MaaUserConfig';
+import type { SrcUserConfig } from './SrcUserConfig';
 import type { UserIndexItem } from './UserIndexItem';
 export type UserGetOut = {
     /**
@@ -25,6 +26,6 @@ export type UserGetOut = {
     /**
      * 用户数据字典, key来自于index列表的uid
      */
-    data: Record<string, (MaaUserConfig | GeneralUserConfig)>;
+    data: Record<string, (MaaUserConfig | SrcUserConfig | GeneralUserConfig)>;
 };
 

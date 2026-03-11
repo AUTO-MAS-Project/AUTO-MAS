@@ -5,16 +5,16 @@
 #   This file is part of AUTO-MAS.
 
 #   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU General Public License as published
-#   by the Free Software Foundation, either version 3 of the License,
-#   or (at your option) any later version.
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
 
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU General Public License for more details.
+#   the GNU Affero General Public License for more details.
 
-#   You should have received a copy of the GNU General Public License
+#   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
@@ -23,6 +23,7 @@ import asyncio
 from datetime import datetime
 
 from app.services import Matomo
+from app.MaaFW import ArknightWin32Toolkit
 from app.utils import get_logger
 from .config import Config
 from .task_manager import TaskManager
@@ -33,6 +34,32 @@ logger = get_logger("主业务定时器")
 
 class _MainTimer:
 
+    def __init__(self):
+        self.started = False
+
+    async def start(self):
+        """启动定时器"""
+
+        if self.started:
+            logger.warning("主业务定时器仅能启动一次，无法重复启动")
+            return
+
+        self.second_timer = asyncio.create_task(MainTimer.second_task())
+        self.hour_timer = asyncio.create_task(MainTimer.hour_task())
+        self.started = True
+        logger.info("主业务定时器启动")
+
+    async def stop(self):
+        """停止定时器"""
+
+        self.second_timer.cancel()
+        self.hour_timer.cancel()
+        try:
+            await self.second_timer
+            await self.hour_timer
+        except asyncio.CancelledError:
+            logger.info("主业务定时器已关闭")
+
     async def second_task(self):
         """每秒定期任务"""
         logger.info("每秒定期任务启动")
@@ -40,6 +67,9 @@ class _MainTimer:
         while True:
 
             await self.timed_start()
+
+            if Config.ToolsConfig.get("ArknightsPC", "Enabled"):
+                await ArknightWin32Toolkit.scheduled_task()
 
             await asyncio.sleep(1)
 
@@ -93,20 +123,16 @@ class _MainTimer:
                     and curtime[11:16] == time_set.get("Info", "Time")
                 ):
                     logger.info(f"定时唤起任务：{uid}")
-                    task_id = await TaskManager.add_task("AutoProxy", str(uid))
-                    await queue.set("Data", "LastTimedStart", curtime)
-                    await Config.QueueConfig.save()
-
-                    await Config.send_websocket_message(
-                        id="TaskManager",
-                        type="Signal",
-                        data={
-                            "newTask": str(task_id),
+                    await TaskManager.add_task(
+                        "AutoProxy",
+                        str(uid),
+                        new_task_info={
                             "queueId": str(uid),
                             "taskName": f"队列 - {queue.get('Info', 'Name')}",
                             "taskType": "定时代理",
                         },
                     )
+                    await queue.set("Data", "LastTimedStart", curtime)
 
 
 MainTimer = _MainTimer()
