@@ -51,27 +51,27 @@ The software stores multiple configurations for multiple scripts and implements 
 
 ## 重要声明 / Important Notice
 
-本开发团队承诺，不会主动修改游戏本体与相关配置文件。本项目使用GPL开源，相关细则如下：
+本开发团队承诺，不会主动修改游戏本体与相关配置文件。本项目使用AGPL开源，相关细则如下：
 
 - **作者：** AUTO-MAS 项目作者为 AUTO-MAS Team，AUTO-MAS Team 的所有权利均授权给 [DLmaster (@DLmaster361)](https://github.com/DLmaster361)，仅该被授权人能代表 AUTO-MAS Team 行使全部权利。
-- **使用：** AUTO-MAS 使用者可以按自己的意愿自由使用本软件。依据GPL，对于由此可能产生的损失，AUTO-MAS Team 不负任何责任。
-- **分发：** AUTO-MAS 允许任何人自由分发本软件，包括进行商业活动牟利。若为直接分发本软件，必须遵循 GPL 向接收者提供本软件项目地址、完整的软件源码与 GPL 协议原文（件）；若为修改软件后进行分发，必须遵循 GPL 向接收者提供本软件项目地址、修改前的完整软件源码副本与 GPL 协议原文（件），违反者可能会被追究法律责任。使用本项目进行商业活动的，必须自行建立客户社群，自行向客户提供售后服务，不得将客户引导到由 AUTO-MAS 项目组维护运营的官方社群。利用开源社群资源牟利的，将被列入黑名单并进行公示。
+- **使用：** AUTO-MAS 使用者可以按自己的意愿自由使用本软件。依据AGPL，对于由此可能产生的损失，AUTO-MAS Team 不负任何责任。
+- **分发：** AUTO-MAS 允许任何人自由分发本软件，包括进行商业活动牟利。若为直接分发本软件，必须遵循 AGPL 向接收者提供本软件项目地址、完整的软件源码与 AGPL 协议原文（件）；若为修改软件后进行分发，必须遵循 AGPL 向接收者提供本软件项目地址、修改前的完整软件源码副本与 AGPL 协议原文（件），违反者可能会被追究法律责任。使用本项目进行商业活动的，必须自行建立客户社群，自行向客户提供售后服务，不得将客户引导到由 AUTO-MAS 项目组维护运营的官方社群。利用开源社群资源牟利的，将被列入黑名单并进行公示。
 - **传播：** AUTO-MAS 原则上允许传播者自由传播本软件，但无论在何种传播过程中，不得删除原有版权声明，不得隐瞒 AUTO-MAS Team 的存在。由于软件性质，AUTO-MAS Team 不希望发现任何人在游戏官方媒体（包括官方媒体账号与官方社区等）或游戏相关内容（包括同好群、线下活动与游戏内容讨论等）下提及 AUTO-MAS 或相关自动化软件，希望各位理解。
-- **衍生：** AUTO-MAS 允许任何人对软件本体或软件部分代码进行二次开发或利用。但依据GPL，相关成果再次分发时也必须使用GPL或兼容的协议开源。
+- **衍生：** AUTO-MAS 允许任何人对软件本体或软件部分代码进行二次开发或利用。但依据AGPL，相关成果再次分发时也必须使用AGPL或兼容的协议开源。
 - **图像：** `AUTO-MAS 图标` 并不适用开源协议，著作权归 [NARINpopo](https://space.bilibili.com/1877154) 画师所有，商业使用权归 [DLmaster (@DLmaster361)](https://github.com/DLmaster361) 所有，软件用户仅拥有非商业使用权。不得以开源协议已授权为由在未经授权的情况下使用 `AUTO-MAS 图标`，不得在未经授权的情况下将 `AUTO-MAS 图标` 用于任何商业用途。
 
-以上细则是本项目对GPL的相关补充与强调。未提及的以 GPL 为准，发生冲突的以本细则为准。如有不清楚的部分，请发 Issues 询问。若发生纠纷，相关内容也没有在 Issues 上提及的，AUTO-MAS Team 拥有最终解释权。
+以上细则是本项目对AGPL的相关补充与强调。未提及的以 AGPL 为准，发生冲突的以本细则为准。如有不清楚的部分，请发 Issues 询问。若发生纠纷，相关内容也没有在 Issues 上提及的，AUTO-MAS Team 拥有最终解释权。
 
-The development team commits to never actively modifying the game client or its configuration files. This project is open-sourced under the GPL license, with the following clarifications:
+The development team commits to never actively modifying the game client or its configuration files. This project is open-sourced under the AGPL license, with the following clarifications:
 
 - **Authorship**: The author of the AUTO-MAS project is the AUTO-MAS Team. All rights of the AUTO-MAS Team are exclusively granted to [DLmaster (@DLmaster361)](https://github.com/DLmaster361), who alone may represent the team in exercising all rights.
-- **Usage**: Users may freely use this software at their own discretion. Per the GPL, the AUTO-MAS Team bears no liability for any potential damages arising from its use.
-- **Distribution**: Anyone may freely redistribute this software, including for commercial profit. Direct redistribution requires providing recipients with the project URL, full source code, and a copy of the GPL license text as mandated by the GPL. Modified redistributions must additionally include the original unmodified source code. Violators may face legal action. Commercial users must establish their own customer communities and provide their own after-sales support—they may not redirect customers to the official AUTO-MAS community. Those exploiting the open-source community for profit will be blacklisted and publicly disclosed.
+- **Usage**: Users may freely use this software at their own discretion. Per the AGPL, the AUTO-MAS Team bears no liability for any potential damages arising from its use.
+- **Distribution**: Anyone may freely redistribute this software, including for commercial profit. Direct redistribution requires providing recipients with the project URL, full source code, and a copy of the AGPL license text as mandated by the AGPL. Modified redistributions must additionally include the original unmodified source code. Violators may face legal action. Commercial users must establish their own customer communities and provide their own after-sales support—they may not redirect customers to the official AUTO-MAS community. Those exploiting the open-source community for profit will be blacklisted and publicly disclosed.
 - **Promotion**: Redistribution is generally permitted, provided that original copyright notices remain intact and the existence of the AUTO-MAS Team is not concealed. Due to the nature of this software, the AUTO-MAS Team requests that no one mention AUTO-MAS or related automation tools in official game media (including official accounts and communities) or game-related content (such as fan groups, offline events, or gameplay discussions). Your understanding is appreciated.
-- **Derivative Works**: Anyone may create derivative works based on the software or parts of its code. However, per the GPL, any redistributed derivatives must also be open-sourced under the GPL or a compatible license.
+- **Derivative Works**: Anyone may create derivative works based on the software or parts of its code. However, per the AGPL, any redistributed derivatives must also be open-sourced under the AGPL or a compatible license.
 - **Artwork**: The `AUTO-MAS icon` is not covered by open-source licenses. Copyright belongs to artist [NARINpopo](https://space.bilibili.com/1877154), and commercial usage rights belong to [DLmaster (@DLmaster361)](https://github.com/DLmaster361). Users are granted non-commercial use only. Unauthorized use of the icon—whether claiming open-source license coverage or for commercial purposes—is strictly prohibited.
 
-These terms supplement and emphasize specific aspects of the GPL. Where unspecified, the GPL governs; in case of conflict, these terms prevail. For clarification, please open an Issue. In disputes involving unaddressed matters, the AUTO-MAS Team reserves final interpretation rights.
+These terms supplement and emphasize specific aspects of the AGPL. Where unspecified, the AGPL governs; in case of conflict, these terms prevail. For clarification, please open an Issue. In disputes involving unaddressed matters, the AUTO-MAS Team reserves final interpretation rights.
 
 ## 使用方法 / How to Use
 
