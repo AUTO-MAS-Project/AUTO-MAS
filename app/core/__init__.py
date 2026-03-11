@@ -22,7 +22,15 @@
 
 
 from .broadcast import Broadcast
-from .config import Config, MaaConfig, GeneralConfig, MaaUserConfig, GeneralUserConfig
+from .config import (
+    Config,
+    MaaConfig,
+    MaaEndConfig,
+    GeneralConfig,
+    MaaUserConfig,
+    MaaEndUserConfig,
+    GeneralUserConfig,
+)
 from .emulator_manager import EmulatorManager
 from .task_manager import TaskManager
 from .maa_manager import MaaFWManager
@@ -33,8 +41,10 @@ __all__ = [
     "Broadcast",
     "Config",
     "MaaConfig",
+    "MaaEndConfig",
     "GeneralConfig",
     "MaaUserConfig",
+    "MaaEndUserConfig",
     "GeneralUserConfig",
     "MainTimer",
     "TaskManager",
