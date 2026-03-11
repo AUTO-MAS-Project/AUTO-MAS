@@ -5,6 +5,7 @@
 import type { GeneralConfig } from './GeneralConfig';
 import type { MaaConfig } from './MaaConfig';
 import type { ScriptIndexItem } from './ScriptIndexItem';
+import type { SrcConfig } from './SrcConfig';
 export type ScriptGetOut = {
     /**
      * 状态码
@@ -25,6 +26,6 @@ export type ScriptGetOut = {
     /**
      * 脚本数据字典, key来自于index列表的uid
      */
-    data: Record<string, (MaaConfig | GeneralConfig)>;
+    data: Record<string, (MaaConfig | SrcConfig | GeneralConfig)>;
 };
 

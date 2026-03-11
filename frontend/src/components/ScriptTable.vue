@@ -11,11 +11,12 @@
               <div class="script-info">
                 <div class="script-logo-container">
                   <img v-if="script.type === 'MAA'" src="@/assets/MAA.png" alt="MAA" class="script-logo" />
+                  <img v-else-if="script.type === 'SRC'" src="@/assets/SRC.png" alt="SRC" class="script-logo" />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
                   <h3 class="script-name">{{ script.name }}</h3>
-                  <a-tag :color="script.type === 'MAA' ? 'blue' : 'green'" class="script-type">
+                  <a-tag :color="script.type === 'MAA' ? 'blue' : script.type === 'SRC' ? 'purple' : 'green'" class="script-type">
                     {{ script.type }}
                   </a-tag>
                 </div>
@@ -29,6 +30,20 @@
                   配置MAA
                 </a-button>
                 <a-button v-if="script.type === 'MAA' && props.activeConnections.has(script.id)" type="default"
+                  size="middle" disabled style="color: #52c41a; border-color: #52c41a">
+                  <template #icon>
+                    <SettingOutlined />
+                  </template>
+                  正在配置
+                </a-button>
+                <a-button v-if="script.type === 'SRC' && !props.activeConnections.has(script.id)" type="primary" ghost
+                  size="middle" @click="handleStartSRCConfig(script)">
+                  <template #icon>
+                    <SettingOutlined />
+                  </template>
+                  配置SRC
+                </a-button>
+                <a-button v-if="script.type === 'SRC' && props.activeConnections.has(script.id)" type="default"
                   size="middle" disabled style="color: #52c41a; border-color: #52c41a">
                   <template #icon>
                     <SettingOutlined />
@@ -71,27 +86,27 @@
                       <div class="user-details-row">
                         <div class="user-name-section">
                           <span class="user-name">{{ user.Info.Name }}</span>
-                          <!-- 只有MAA脚本才显示服务器标签 -->
-                          <a-tag v-if="script.type === 'MAA'" :color="getServerTagColor(user.Info.Server)"
+                          <!-- 只有MAA和SRC脚本才显示服务器标签 -->
+                          <a-tag v-if="script.type === 'MAA' || script.type === 'SRC'" :color="getServerTagColor(user.Info.Server)"
                             class="server-tag">
                             {{ getServerDisplayName(user.Info.Server) }}
                           </a-tag>
 
                           <!-- 账号标签 -->
-                          <a-tag v-if="script.type === 'MAA'" :color="getServerTagColor(user.Info.Server)"
+                          <a-tag v-if="script.type === 'MAA' || script.type === 'SRC'" :color="getServerTagColor(user.Info.Server)"
                             class="clickable-tag" @click="handleUserIdClick(user)">
                             {{ getUserIdDisplayText(user) }}
                           </a-tag>
 
                           <!-- 密码标签 -->
-                          <a-tag v-if="script.type === 'MAA'" :color="getServerTagColor(user.Info.Server)"
+                          <a-tag v-if="script.type === 'MAA' || script.type === 'SRC'" :color="getServerTagColor(user.Info.Server)"
                             class="clickable-tag" @click="handlePasswordClick(user)">
                             {{ getPasswordDisplayText(user) }}
                           </a-tag>
                         </div>
 
-                        <!-- 用户详细信息 - MAA脚本用户 -->
-                        <div v-if="script.type === 'MAA'" class="user-info-tags">
+                        <!-- 用户详细信息 - MAA和SRC脚本用户 -->
+                        <div v-if="script.type === 'MAA' || script.type === 'SRC'" class="user-info-tags">
                           <!-- 直接使用后端提供的Tag字段 -->
                           <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
                             :class="['info-tag', { 'clickable-tag': tag.text === '人工排查未通过' }]" :color="tag.color"
@@ -199,6 +214,10 @@ interface Emits {
 
   (e: 'saveMaaConfig', script: Script): void
 
+  (e: 'startSrcConfig', script: Script): void
+
+  (e: 'saveSrcConfig', script: Script): void
+
   (e: 'toggleUserStatus', user: User): void
 
   (e: 'passCheckUser', user: User): void
@@ -276,6 +295,14 @@ const handleStartMAAConfig = (script: Script) => {
 
 const handleSaveMAAConfig = (script: Script) => {
   emit('saveMaaConfig', script)
+}
+
+const handleStartSRCConfig = (script: Script) => {
+  emit('startSrcConfig', script)
+}
+
+const handleSaveSRCConfig = (script: Script) => {
+  emit('saveSrcConfig', script)
 }
 
 const handleToggleUserStatus = (user: User) => {
@@ -399,6 +426,7 @@ const getStageTagColor = (stage: string, stageMode?: string): string => {
 // 获取服务器标签颜色
 const getServerTagColor = (server: string): string => {
   switch (server) {
+    // MAA服务器
     case 'Official':
       return 'blue'
     case 'Bilibili':
@@ -411,6 +439,21 @@ const getServerTagColor = (server: string): string => {
       return 'orange'
     case 'txwy':
       return 'gold'
+    // SRC服务器
+    case 'CN-Official':
+      return 'blue'
+    case 'CN-Bilibili':
+      return 'purple'
+    case 'VN-Official':
+      return 'cyan'
+    case 'OVERSEA-America':
+      return 'green'
+    case 'OVERSEA-Asia':
+      return 'orange'
+    case 'OVERSEA-Europe':
+      return 'geekblue'
+    case 'OVERSEA-TWHKMO':
+      return 'gold'
     default:
       return 'gray'
   }
@@ -419,6 +462,7 @@ const getServerTagColor = (server: string): string => {
 // 获取服务器显示名称
 const getServerDisplayName = (server: string): string => {
   switch (server) {
+    // MAA服务器
     case 'Official':
       return '官服'
     case 'Bilibili':
@@ -431,6 +475,21 @@ const getServerDisplayName = (server: string): string => {
       return '韩服'
     case 'txwy':
       return '繁中服'
+    // SRC服务器
+    case 'CN-Official':
+      return '官服'
+    case 'CN-Bilibili':
+      return 'B服'
+    case 'VN-Official':
+      return '越南服'
+    case 'OVERSEA-America':
+      return '美服'
+    case 'OVERSEA-Asia':
+      return '亚服'
+    case 'OVERSEA-Europe':
+      return '欧服'
+    case 'OVERSEA-TWHKMO':
+      return '港澳台服'
     default:
       return server || '未知'
   }

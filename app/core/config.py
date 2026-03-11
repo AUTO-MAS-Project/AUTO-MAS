@@ -6,16 +6,16 @@
 #   This file is part of AUTO-MAS.
 
 #   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU General Public License as published
-#   by the Free Software Foundation, either version 3 of the License,
-#   or (at your option) any later version.
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
 
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU General Public License for more details.
+#   the GNU Affero General Public License for more details.
 
-#   You should have received a copy of the GNU General Public License
+#   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
@@ -41,10 +41,12 @@ import json
 from app.models.config import (
     GeneralConfig,
     MaaConfig,
+    SrcConfig,
     MaaPlanConfig,
     QueueConfig,
     QueueItem,
     MaaUserConfig,
+    SrcUserConfig,
     GeneralUserConfig,
     GlobalConfig,
     CLASS_BOOK,
@@ -77,7 +79,7 @@ except ImportError:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.1.0-beta.1"
+    VERSION = "v5.1.0-beta.2"
 
     def __init__(self) -> None:
         super().__init__()
@@ -520,8 +522,8 @@ class AppConfig(GlobalConfig):
         return is_latest, commit_hash, commit_time
 
     async def add_script(
-        self, script: Literal["MAA", "General"], script_id: str | None = None
-    ) -> tuple[uuid.UUID, Union[MaaConfig, GeneralConfig]]:
+        self, script: Literal["MAA", "SRC", "General"], script_id: str | None = None
+    ) -> tuple[uuid.UUID, MaaConfig | SrcConfig | GeneralConfig]:
         """添加脚本配置"""
 
         logger.info(f"添加脚本配置: {script}, 从 {script_id} 复制")
@@ -558,7 +560,7 @@ class AppConfig(GlobalConfig):
 
             return new_uid, new_config
 
-    async def get_script(self, script_id: Optional[str]) -> tuple[list, dict]:
+    async def get_script(self, script_id: str | None) -> tuple[list, dict]:
         """获取脚本配置"""
 
         logger.info(f"获取脚本配置: {script_id}")
@@ -794,7 +796,7 @@ class AppConfig(GlobalConfig):
 
     async def add_user(
         self, script_id: str
-    ) -> tuple[uuid.UUID, Union[MaaUserConfig, GeneralUserConfig]]:
+    ) -> tuple[uuid.UUID, MaaUserConfig | SrcUserConfig | GeneralUserConfig]:
         """添加用户配置"""
 
         logger.info(f"{script_id} 添加用户配置")
@@ -804,6 +806,8 @@ class AppConfig(GlobalConfig):
         # 根据脚本类型选择添加对应用户配置
         if isinstance(script_config, MaaConfig):
             uid, config = await script_config.UserData.add(MaaUserConfig)
+        elif isinstance(script_config, SrcConfig):
+            uid, config = await script_config.UserData.add(SrcUserConfig)
         elif isinstance(script_config, GeneralConfig):
             uid, config = await script_config.UserData.add(GeneralUserConfig)
         else:
@@ -1758,14 +1762,12 @@ class AppConfig(GlobalConfig):
         """
         保存MAA日志并生成对应统计数据
 
-        :param log_path: 日志文件保存路径
-        :type log_path: Path
-        :param logs: 日志内容列表
-        :type logs: list
-        :param maa_result: MAA 结果
-        :type maa_result: str
-        :return: 是否包含6★招募
-        :rtype: bool
+        Args:
+            log_path (Path): 日志文件保存路径
+            logs (list): 日志列表
+            maa_result (str): MAA任务结果
+        Returns:
+            bool: 是否存在高资
         """
 
         logger.info(f"开始处理 MAA 日志, 日志长度: {len(logs)}, 日志标记: {maa_result}")
@@ -1914,6 +1916,29 @@ class AppConfig(GlobalConfig):
 
         return if_six_star
 
+    async def save_src_log(self, log_path: Path, logs: list, src_result: str) -> None:
+        """
+        保存SRC日志并生成对应统计数据
+
+        Args:
+            log_path (Path): 日志文件保存路径
+            logs (list): 日志内容列表
+            src_result (str): 待保存的日志结果信息
+        """
+
+        logger.info(f"开始处理SRC日志, 日志长度: {len(logs)}, 日志标记: {src_result}")
+
+        data: Dict[str, str] = {"src_result": src_result}
+
+        # 保存日志
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
+        log_path.with_suffix(".json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
+
+        logger.success(f"SRC日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
+
     async def save_general_log(
         self, log_path: Path, logs: list, general_result: str
     ) -> None:
@@ -1944,11 +1969,12 @@ class AppConfig(GlobalConfig):
         """
         合并指定数据统计信息文件
 
-        :param statistic_path_list: 需要合并的统计信息文件路径列表
-        :return: 合并后的统计信息字典
-        """
+        Args:
+            statistic_path_list (List[Path]): 数据统计信息文件列表
 
-        logger.info(f"开始合并统计信息文件, 共计 {len(statistic_path_list)} 个文件")
+        Returns:
+            dict: 合并后的数据统计信息
+        """
 
         data: Dict[str, Any] = {"index": {}}
 
@@ -1988,7 +2014,7 @@ class AppConfig(GlobalConfig):
                     data[key] = single_data[key]
 
                 # 录入运行结果
-                elif key in ["maa_result", "general_result"]:
+                elif key in ["maa_result", "src_result", "general_result"]:
                     actual_date = (
                         datetime.strptime(
                             f"{json_file.parent.parent.name} {json_file.stem}",
@@ -2014,8 +2040,6 @@ class AppConfig(GlobalConfig):
                     }
 
         data["index"] = [data["index"][_] for _ in sorted(data["index"])]
-
-        logger.success(f"统计信息合并完成, 共计 {len(data['index'])} 条记录")
 
         # 确保返回的字典始终包含 index 字段，即使为空
         result = {k: v for k, v in data.items() if v}
@@ -2114,7 +2138,7 @@ class AppConfig(GlobalConfig):
                 ):
                     shutil.rmtree(date_folder, ignore_errors=True)
                     deleted_count += 1
-                    logger.info(f"已删除超期日志目录: {date_folder}")
+                    logger.debug(f"已删除超期日志目录: {date_folder}")
             except ValueError:
                 logger.warning(f"非日期格式的目录: {date_folder}")
 

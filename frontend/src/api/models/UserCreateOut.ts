@@ -4,6 +4,7 @@
 /* eslint-disable */
 import type { GeneralUserConfig } from './GeneralUserConfig';
 import type { MaaUserConfig } from './MaaUserConfig';
+import type { SrcUserConfig } from './SrcUserConfig';
 export type UserCreateOut = {
     /**
      * 状态码
@@ -24,6 +25,6 @@ export type UserCreateOut = {
     /**
      * 用户配置数据
      */
-    data: (MaaUserConfig | GeneralUserConfig);
+    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig);
 };
 
