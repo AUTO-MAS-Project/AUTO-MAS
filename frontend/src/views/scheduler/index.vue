@@ -9,8 +9,17 @@
       <div class="header-actions">
         <a-space size="middle">
           <span class="power-label">任务完成后电源操作：</span>
-          <a-select v-model:value="powerAction" style="width: 140px" size="large" @change="onPowerActionChange">
-            <a-select-option v-for="(text, signal) in POWER_ACTION_TEXT" :key="signal" :value="signal">
+          <a-select
+            v-model:value="powerAction"
+            style="width: 140px"
+            size="large"
+            @change="onPowerActionChange"
+          >
+            <a-select-option
+              v-for="(text, signal) in POWER_ACTION_TEXT"
+              :key="signal"
+              :value="signal"
+            >
               {{ text }}
             </a-select-option>
           </a-select>
@@ -20,19 +29,29 @@
 
     <!-- 调度台标签页 -->
     <div class="scheduler-tabs">
-      <a-tabs v-model:active-key="activeSchedulerTab" type="editable-card" :hide-add="true" @edit="onSchedulerTabEdit">
+      <a-tabs
+        v-model:active-key="activeSchedulerTab"
+        type="editable-card"
+        :hide-add="true"
+        @edit="onSchedulerTabEdit"
+      >
         <template #tabBarExtraContent>
           <div class="tab-actions">
             <a-tooltip title="添加新的调度台" placement="top">
-              <a-button class="tab-action-btn tab-add-btn" size="default" @click="addSchedulerTab">
+              <a-button class="tab-action-btn tab-add-btn" size="middle" @click="addSchedulerTab">
                 <template #icon>
                   <PlusOutlined />
                 </template>
               </a-button>
             </a-tooltip>
             <a-tooltip title="删除所有空闲的调度台" placement="top">
-              <a-button class="tab-action-btn tab-remove-btn" size="default" :disabled="!hasNonRunningTabs" danger
-                @click="removeAllNonRunningTabs">
+              <a-button
+                class="tab-action-btn tab-remove-btn"
+                size="middle"
+                :disabled="!hasNonRunningTabs"
+                danger
+                @click="removeAllNonRunningTabs"
+              >
                 <template #icon>
                   <MinusOutlined />
                 </template>
@@ -40,8 +59,12 @@
             </a-tooltip>
           </div>
         </template>
-        <a-tab-pane v-for="tab in schedulerTabs" :key="tab.key" :closable="tab.closable && tab.status !== '运行'"
-          :data-tab-key="tab.key">
+        <a-tab-pane
+          v-for="tab in schedulerTabs"
+          :key="tab.key"
+          :closable="tab.closable && tab.status !== '运行'"
+          :data-tab-key="tab.key"
+        >
           <template #tab>
             <div class="tab-content">
               <span class="tab-title">{{ tab.title }}</span>
@@ -54,11 +77,19 @@
           <!-- 任务控制与状态内容 -->
           <div class="task-unified-card" :class="`status-${tab.status}`">
             <!-- 任务控制栏 -->
-            <SchedulerTaskControl v-model:selected-task-id="tab.selectedTaskId" v-model:selected-mode="tab.selectedMode"
-              v-model:running-task-label="tab.runningTaskLabel" v-model:running-mode-label="tab.runningModeLabel"
-              :task-options="taskOptions" :task-options-loading="taskOptionsLoading" :status="tab.status"
-              :disabled="tab.status === '运行'" @start="startTask(tab)" @stop="stopTask(tab)"
-              @refresh-tasks="loadTaskOptions" />
+            <SchedulerTaskControl
+              v-model:selected-task-id="tab.selectedTaskId"
+              v-model:selected-mode="tab.selectedMode"
+              v-model:running-task-label="tab.runningTaskLabel"
+              v-model:running-mode-label="tab.runningModeLabel"
+              :task-options="taskOptions"
+              :task-options-loading="taskOptionsLoading"
+              :status="tab.status"
+              :disabled="tab.status === '运行'"
+              @start="onStartTaskClick(tab)"
+              @stop="stopTask(tab)"
+              @refresh-tasks="loadTaskOptions"
+            />
 
             <!-- 状态展示区域 -->
             <div class="status-container">
@@ -66,9 +97,14 @@
                 <TaskOverviewPanel :ref="el => setOverviewRef(el, tab.key)" />
               </div>
               <div class="log-panel-container">
-                <SchedulerLogPanel :log-content="tab.lastLogContent" :tab-key="tab.key"
-                  :is-log-at-bottom="tab.isLogAtBottom" :external-log-mode="tab.logMode"
-                  @scroll="(isAtBottom: boolean) => onLogScroll(isAtBottom, tab)" @set-ref="setLogRef" />
+                <SchedulerLogPanel
+                  :log-content="tab.lastLogContent"
+                  :tab-key="tab.key"
+                  :is-log-at-bottom="tab.isLogAtBottom"
+                  :external-log-mode="tab.logMode"
+                  @scroll="(isAtBottom: boolean) => onLogScroll(isAtBottom, tab)"
+                  @set-ref="setLogRef"
+                />
               </div>
             </div>
           </div>
@@ -84,15 +120,29 @@
     </div>
 
     <!-- 消息对话框 -->
-    <a-modal v-model:open="messageModalVisible" :title="currentMessage?.title || '系统消息'" @ok="sendMessageResponse"
-      @cancel="cancelMessage">
+    <a-modal
+      v-model:open="messageModalVisible"
+      :title="currentMessage?.title || '系统消息'"
+      @ok="sendMessageResponse"
+      @cancel="cancelMessage"
+    >
       <div v-if="currentMessage">
         <p>{{ currentMessage.content }}</p>
-        <a-input v-if="currentMessage.needInput" v-model:value="messageResponse" placeholder="请输入回复内容" />
+        <a-input
+          v-if="currentMessage.needInput"
+          v-model:value="messageResponse"
+          placeholder="请输入回复内容"
+        />
       </div>
     </a-modal>
 
     <!-- 电源操作倒计时弹窗已移至全局组件 GlobalPowerCountdown.vue -->
+    <OverlayRainMask
+      v-model="aprilFoolsMaskVisible"
+      :opacity="0.75"
+      :block-size="128"
+      @stopped="onAprilFoolsStopped"
+    />
   </div>
 </template>
 
@@ -103,13 +153,15 @@ export default {
 </script>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, onActivated, onDeactivated, computed } from 'vue'
+import { onMounted, onUnmounted, onActivated, onDeactivated, computed, ref } from 'vue'
 import { MinusOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { POWER_ACTION_TEXT, TAB_STATUS_COLOR } from './schedulerConstants'
 import { useSchedulerLogic } from './useSchedulerLogic'
 import SchedulerTaskControl from './SchedulerTaskControl.vue'
 import SchedulerLogPanel from './SchedulerLogPanel.vue'
 import TaskOverviewPanel from './TaskOverviewPanel.vue'
+import OverlayRainMask from '@/components/OverlayRainMask.vue'
+import type { SchedulerTab } from './schedulerConstants'
 const logger = window.electronAPI.getLogger('调度中心')
 
 // 使用业务逻辑层
@@ -123,9 +175,6 @@ const {
   messageModalVisible,
   currentMessage,
   messageResponse,
-
-  // 计算属性
-  canChangePowerAction,
 
   // Tab 管理
   addSchedulerTab,
@@ -155,6 +204,54 @@ const {
   // 新增：任务总览面板引用管理
   setOverviewRef,
 } = useSchedulerLogic()
+
+const aprilFoolsMaskVisible = ref(false)
+const APRIL_FOOLS_STORAGE_PREFIX = 'scheduler-april-fools-triggered-'
+
+const getUtc8DateParts = () => {
+  const now = new Date()
+  const utc8 = new Date(now.getTime() + 8 * 60 * 60 * 1000)
+  return {
+    year: utc8.getUTCFullYear(),
+    month: utc8.getUTCMonth() + 1,
+    day: utc8.getUTCDate(),
+  }
+}
+
+const isAprilFoolsDayInUtc8 = () => {
+  const { month, day } = getUtc8DateParts()
+  return month === 4 && day === 1
+}
+
+const getAprilFoolsStorageKey = () => {
+  const { year } = getUtc8DateParts()
+  return `${APRIL_FOOLS_STORAGE_PREFIX}${year}`
+}
+
+const tryTriggerAprilFoolsMask = () => {
+  if (!isAprilFoolsDayInUtc8()) return
+
+  const storageKey = getAprilFoolsStorageKey()
+  try {
+    if (window.localStorage.getItem(storageKey) === '1') return
+    window.localStorage.setItem(storageKey, '1')
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`读取/写入彩蛋本地标记失败: ${errorMsg}`)
+    return
+  }
+
+  aprilFoolsMaskVisible.value = true
+}
+
+const onStartTaskClick = async (tab: SchedulerTab) => {
+  tryTriggerAprilFoolsMask()
+  await startTask(tab)
+}
+
+const onAprilFoolsStopped = () => {
+  logger.info('愚人节彩蛋已触顶停机')
+}
 
 // 计算属性：检查是否有可删除的调度台
 const hasNonRunningTabs = computed(() => {

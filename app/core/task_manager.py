@@ -5,16 +5,16 @@
 #   This file is part of AUTO-MAS.
 
 #   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU General Public License as published
-#   by the Free Software Foundation, either version 3 of the License,
-#   or (at your option) any later version.
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
 
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU General Public License for more details.
+#   the GNU Affero General Public License for more details.
 
-#   You should have received a copy of the GNU General Public License
+#   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
@@ -24,11 +24,11 @@ import uuid
 import asyncio
 from typing import Dict, Literal
 
-from .config import Config, MaaConfig, GeneralConfig
+from .config import Config, MaaConfig, SrcConfig, GeneralConfig
 from app.services import System
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
 from app.utils import get_logger
-from app.task import MaaManager, GeneralManager
+from app.task import MaaManager, SrcManager, GeneralManager
 from app.utils.constants import POWER_SIGN_MAP
 
 
@@ -133,6 +133,8 @@ class Task(TaskExecuteBase):
 
             if isinstance(Config.ScriptConfig[current_script_uid], MaaConfig):
                 task_item = MaaManager(script_item)
+            elif isinstance(Config.ScriptConfig[current_script_uid], SrcConfig):
+                task_item = SrcManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], GeneralConfig):
                 task_item = GeneralManager(script_item)
             else:
@@ -188,7 +190,10 @@ class _TaskManager:
         self.task_handler: Dict[uuid.UUID, Task] = {}
 
     async def add_task(
-        self, mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"], id: str
+        self,
+        mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"],
+        id: str,
+        new_task_info: dict = {},
     ) -> uuid.UUID:
         """
         添加任务, 根据 id 值搜索实际指向的任务配置
@@ -196,6 +201,7 @@ class _TaskManager:
         Args:
             mode (str): 任务模式
             id (str): 任务项对应的配置 ID
+            new_task_info (dict): 新任务项信息. Defaults to {}.
 
         Returns:
             uuid.UUID: 任务 UID
@@ -238,6 +244,11 @@ class _TaskManager:
             )
 
         logger.info(f"创建任务: {task_uid}, 模式: {mode}")
+        if new_task_info:
+            new_task_info["newTask"] = str(task_uid)
+            await Config.send_websocket_message(
+                id="TaskManager", type="Signal", data=new_task_info
+            )
         self.task_info[task_uid] = TaskInfo(
             mode=mode,
             task_id=str(task_uid),
@@ -306,17 +317,17 @@ class _TaskManager:
     async def start_startup_queue(self):
         """开始运行启动时运行的调度队列"""
 
+        await asyncio.sleep(10)
+
         logger.info("开始运行启动时任务")
         for uid, queue in Config.QueueConfig.items():
 
             if queue.get("Info", "StartUpEnabled"):
                 logger.info(f"启动时需要运行的队列：{uid}")
-                task_id = await TaskManager.add_task("AutoProxy", str(uid))
-                await Config.send_websocket_message(
-                    id="TaskManager",
-                    type="Signal",
-                    data={
-                        "newTask": str(task_id),
+                await TaskManager.add_task(
+                    "AutoProxy",
+                    str(uid),
+                    new_task_info={
                         "queueId": str(uid),
                         "taskName": f"队列 - {queue.get('Info', 'Name')}",
                         "taskType": "启动时代理",

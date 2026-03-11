@@ -6,16 +6,16 @@
 #   This file is part of AUTO-MAS.
 
 #   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU General Public License as published
-#   by the Free Software Foundation, either version 3 of the License,
-#   or (at your option) any later version.
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
 
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU General Public License for more details.
+#   the GNU Affero General Public License for more details.
 
-#   You should have received a copy of the GNU General Public License
+#   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
@@ -23,7 +23,7 @@
 
 from fastapi import APIRouter, Body
 from app.core import Config
-from app.services import System, Notify
+from app.services import Notify
 from app.models.schema import (
     SettingGetOut,
     GlobalConfig,
@@ -79,11 +79,6 @@ async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
     try:
         data = script.data.model_dump(exclude_unset=True)
         await Config.update_setting(data)
-
-        if data.get("Start", {}).get("IfSelfStart", None) is not None:
-            await System.set_SelfStart()
-        if data.get("Function", {}).get("IfAllowSleep", None) is not None:
-            await System.set_Sleep()
 
     except Exception as e:
         return OutBase(

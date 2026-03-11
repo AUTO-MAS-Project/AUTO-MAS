@@ -11,11 +11,12 @@
               <div class="script-info">
                 <div class="script-logo-container">
                   <img v-if="script.type === 'MAA'" src="@/assets/MAA.png" alt="MAA" class="script-logo" />
+                  <img v-else-if="script.type === 'SRC'" src="@/assets/SRC.png" alt="SRC" class="script-logo" />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
                   <h3 class="script-name">{{ script.name }}</h3>
-                  <a-tag :color="script.type === 'MAA' ? 'blue' : 'green'" class="script-type">
+                  <a-tag :color="script.type === 'MAA' ? 'blue' : script.type === 'SRC' ? 'purple' : 'green'" class="script-type">
                     {{ script.type }}
                   </a-tag>
                 </div>
@@ -29,6 +30,20 @@
                   配置MAA
                 </a-button>
                 <a-button v-if="script.type === 'MAA' && props.activeConnections.has(script.id)" type="default"
+                  size="middle" disabled style="color: #52c41a; border-color: #52c41a">
+                  <template #icon>
+                    <SettingOutlined />
+                  </template>
+                  正在配置
+                </a-button>
+                <a-button v-if="script.type === 'SRC' && !props.activeConnections.has(script.id)" type="primary" ghost
+                  size="middle" @click="handleStartSRCConfig(script)">
+                  <template #icon>
+                    <SettingOutlined />
+                  </template>
+                  配置SRC
+                </a-button>
+                <a-button v-if="script.type === 'SRC' && props.activeConnections.has(script.id)" type="default"
                   size="middle" disabled style="color: #52c41a; border-color: #52c41a">
                   <template #icon>
                     <SettingOutlined />
@@ -71,116 +86,40 @@
                       <div class="user-details-row">
                         <div class="user-name-section">
                           <span class="user-name">{{ user.Info.Name }}</span>
-                          <!-- 只有MAA脚本才显示服务器标签 -->
-                          <a-tag v-if="script.type === 'MAA'" :color="getServerTagColor(user.Info.Server)"
+                          <!-- 只有MAA和SRC脚本才显示服务器标签 -->
+                          <a-tag v-if="script.type === 'MAA' || script.type === 'SRC'" :color="getServerTagColor(user.Info.Server)"
                             class="server-tag">
                             {{ getServerDisplayName(user.Info.Server) }}
                           </a-tag>
 
                           <!-- 账号标签 -->
-                          <a-tag v-if="script.type === 'MAA'" :color="getServerTagColor(user.Info.Server)"
+                          <a-tag v-if="script.type === 'MAA' || script.type === 'SRC'" :color="getServerTagColor(user.Info.Server)"
                             class="clickable-tag" @click="handleUserIdClick(user)">
                             {{ getUserIdDisplayText(user) }}
                           </a-tag>
 
                           <!-- 密码标签 -->
-                          <a-tag v-if="script.type === 'MAA'" :color="getServerTagColor(user.Info.Server)"
+                          <a-tag v-if="script.type === 'MAA' || script.type === 'SRC'" :color="getServerTagColor(user.Info.Server)"
                             class="clickable-tag" @click="handlePasswordClick(user)">
                             {{ getPasswordDisplayText(user) }}
                           </a-tag>
                         </div>
 
-                        <!-- 用户详细信息 - MAA脚本用户 -->
-                        <div v-if="script.type === 'MAA'" class="user-info-tags">
-                          <a-tag v-if="user.Data?.IfPassCheck === false" class="info-tag" color="red">
-                            人工排查未通过
-                          </a-tag>
-
-                          <!-- 日常代理 -->
-                          <a-tag class="info-tag" :color="getRoutineTagColor(user.Data?.LastProxyDate)">
-                            日常：{{ getRoutineDisplayText(user.Data?.LastProxyDate, user.Data?.ProxyTimes) }}
-                          </a-tag>
-
-                          <!-- 森空岛签到 -->
-                          <a-tag v-if="user.Info.IfSkland !== undefined && user.Info.IfSkland !== null" class="info-tag"
-                            :color="getSklandTagColor(user.Info.IfSkland, user.Data?.LastSklandDate)">
-                            森空岛: {{ getSklandDisplayText(user.Info.IfSkland, user.Data?.LastSklandDate) }}
-                          </a-tag>
-
-                          <!-- 剩余天数 -->
-                          <a-tag v-if="
-                            user.Info.RemainedDay !== undefined && user.Info.RemainedDay !== null
-                          " class="info-tag" :color="getRemainingDayColor(user.Info.RemainedDay)">
-                            {{ getRemainingDayText(user.Info.RemainedDay) }}
-                          </a-tag>
-
-                          <!-- 基建模式 -->
-                          <a-tag v-if="
-                            user.Info.InfrastMode &&
-                            user.Info.InfrastMode !== '-' &&
-                            user.Info.InfrastMode !== ''
-                          " class="info-tag" :color="user.Task.IfInfrast ? 'purple' : 'red'">
-                            基建: {{ user.Task.IfInfrast ? getInfrastDisplayText(user) : '关闭' }}
-                          </a-tag>
-
-                          <!-- 关卡信息 - 根据是否使用计划表配置显示不同内容 -->
-                          <template v-if="user.Info.StageMode && user.Info.StageMode !== 'Fixed'">
-                            <!-- 主关卡 -->
-                            <a-tag v-if="getUserPlanMainStageDisplay(user)" class="info-tag" color="green">
-                              主关卡: {{ getUserPlanMainStageDisplay(user) }}
-                            </a-tag>
-
-                            <!-- 备选关卡（合并显示） -->
-                            <a-tag v-if="getUserPlanBackupStages(user).length > 0" class="info-tag" color="green">
-                              备选: {{ getUserPlanBackupStages(user).join(', ') }}
-                            </a-tag>
-
-                            <!-- 剩余关卡 -->
-                            <a-tag v-if="getUserPlanRemainStageDisplay(user)" class="info-tag" color="green">
-                              剩余: {{ getUserPlanRemainStageDisplay(user) }}
-                            </a-tag>
-
-                            <!-- 如果没有配置任何关卡，显示提示 -->
-                            <a-tag
-                              v-if="!getUserPlanMainStageDisplay(user) && getUserPlanBackupStages(user).length === 0 && !getUserPlanRemainStageDisplay(user)"
-                              class="info-tag" color="green">
-                              主关卡: 计划表未配置
-                            </a-tag>
-                          </template>
-
-                          <!-- 固定模式的关卡显示 -->
-                          <template v-else>
-                            <!-- 主关卡 -->
-                            <a-tag v-if="getMainStageDisplay(user)" class="info-tag" color="blue">
-                              主关卡: {{ getMainStageDisplay(user) }}
-                            </a-tag>
-
-                            <!-- 备选关卡（合并显示） -->
-                            <a-tag v-if="getBackupStages(user).length > 0" class="info-tag" color="blue">
-                              备选: {{ getBackupStages(user).join(', ') }}
-                            </a-tag>
-
-                            <!-- 剩余关卡 -->
-                            <a-tag v-if="getRemainStageDisplay(user)" class="info-tag" color="blue">
-                              剩余: {{ getRemainStageDisplay(user) }}
-                            </a-tag>
-                          </template>
-
-                          <a-tag class="info-tag" color="magenta">
-                            备注: {{ truncateText(user.Info.Notes) }}
+                        <!-- 用户详细信息 - MAA和SRC脚本用户 -->
+                        <div v-if="script.type === 'MAA' || script.type === 'SRC'" class="user-info-tags">
+                          <!-- 直接使用后端提供的Tag字段 -->
+                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
+                            :class="['info-tag', { 'clickable-tag': tag.text === '人工排查未通过' }]" :color="tag.color"
+                            @click="tag.text === '人工排查未通过' ? handlePassCheck(user) : undefined">
+                            {{ tag.text }}
                           </a-tag>
                         </div>
                         <!-- 用户详细信息 - 通用脚本用户 -->
                         <div v-if="script.type === 'General'" class="user-info-tags">
-                          <!-- 剩余天数 -->
-                          <a-tag v-if="
-                            user.Info.RemainedDay !== undefined && user.Info.RemainedDay !== null
-                          " class="info-tag" :color="getRemainingDayColor(user.Info.RemainedDay)">
-                            {{ getRemainingDayText(user.Info.RemainedDay) }}
-                          </a-tag>
-
-                          <a-tag class="info-tag" color="magenta">
-                            备注: {{ truncateText(user.Info.Notes) }}
+                          <!-- 直接使用后端提供的Tag字段 -->
+                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index" class="info-tag"
+                            :color="tag.color">
+                            {{ tag.text }}
                           </a-tag>
                         </div>
                       </div>
@@ -237,20 +176,18 @@ import type { Script, User } from '../types/script'
 import {
   DeleteOutlined,
   EditOutlined,
-  SaveOutlined,
   SettingOutlined,
   UserAddOutlined,
 } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
 import { ref, watch } from 'vue'
 import { Service } from '@/api'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
+import { parseStatusTagList } from '@/composables/useStatusTag'
 import {
-  getWeekStartInTimezone,
   getTodayInTimezone,
-  isDateInRange,
   isDateEqual,
   getWeekdayInTimezone
 } from '@/utils/dateUtils'
@@ -277,7 +214,13 @@ interface Emits {
 
   (e: 'saveMaaConfig', script: Script): void
 
+  (e: 'startSrcConfig', script: Script): void
+
+  (e: 'saveSrcConfig', script: Script): void
+
   (e: 'toggleUserStatus', user: User): void
+
+  (e: 'passCheckUser', user: User): void
 
   (e: 'scriptsReordered', scripts: Script[]): void
 }
@@ -354,8 +297,28 @@ const handleSaveMAAConfig = (script: Script) => {
   emit('saveMaaConfig', script)
 }
 
+const handleStartSRCConfig = (script: Script) => {
+  emit('startSrcConfig', script)
+}
+
+const handleSaveSRCConfig = (script: Script) => {
+  emit('saveSrcConfig', script)
+}
+
 const handleToggleUserStatus = (user: User) => {
   emit('toggleUserStatus', user)
+}
+
+const handlePassCheck = (user: User) => {
+  Modal.confirm({
+    title: '确认操作',
+    content: `确定要将用户 ${user.Info.Name} 标记为「已通过人工排查」吗？`,
+    okText: '确定',
+    cancelText: '取消',
+    onOk: () => {
+      emit('passCheckUser', user)
+    },
+  })
 }
 
 const truncateText = (text: string, maxLength: number = 10): string => {
@@ -463,6 +426,7 @@ const getStageTagColor = (stage: string, stageMode?: string): string => {
 // 获取服务器标签颜色
 const getServerTagColor = (server: string): string => {
   switch (server) {
+    // MAA服务器
     case 'Official':
       return 'blue'
     case 'Bilibili':
@@ -475,6 +439,21 @@ const getServerTagColor = (server: string): string => {
       return 'orange'
     case 'txwy':
       return 'gold'
+    // SRC服务器
+    case 'CN-Official':
+      return 'blue'
+    case 'CN-Bilibili':
+      return 'purple'
+    case 'VN-Official':
+      return 'cyan'
+    case 'OVERSEA-America':
+      return 'green'
+    case 'OVERSEA-Asia':
+      return 'orange'
+    case 'OVERSEA-Europe':
+      return 'geekblue'
+    case 'OVERSEA-TWHKMO':
+      return 'gold'
     default:
       return 'gray'
   }
@@ -483,6 +462,7 @@ const getServerTagColor = (server: string): string => {
 // 获取服务器显示名称
 const getServerDisplayName = (server: string): string => {
   switch (server) {
+    // MAA服务器
     case 'Official':
       return '官服'
     case 'Bilibili':
@@ -495,6 +475,21 @@ const getServerDisplayName = (server: string): string => {
       return '韩服'
     case 'txwy':
       return '繁中服'
+    // SRC服务器
+    case 'CN-Official':
+      return '官服'
+    case 'CN-Bilibili':
+      return 'B服'
+    case 'VN-Official':
+      return '越南服'
+    case 'OVERSEA-America':
+      return '美服'
+    case 'OVERSEA-Asia':
+      return '亚服'
+    case 'OVERSEA-Europe':
+      return '欧服'
+    case 'OVERSEA-TWHKMO':
+      return '港澳台服'
     default:
       return server || '未知'
   }
@@ -993,6 +988,7 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   font-size: 12px;
   font-weight: 500;
   border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
 }
 
 .header-actions {
@@ -1092,12 +1088,14 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   font-weight: 500;
   border-radius: 4px;
   margin: 0;
+  border: 1px solid rgba(0, 0, 0, 0.15);
 }
 
 .server-tag {
   font-size: 11px;
   font-weight: 500;
   border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
 }
 
 .user-controls {
@@ -1270,6 +1268,7 @@ const onUserDragEnd = async (evt: any, script: Script) => {
     cursor: pointer;
     user-select: none;
     transition: all 0.2s ease;
+    border: 1px solid rgba(0, 0, 0, 0.15);
   }
 
   .clickable-tag:hover {

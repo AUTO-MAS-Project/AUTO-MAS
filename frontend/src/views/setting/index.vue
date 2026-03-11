@@ -109,6 +109,7 @@ const loadSettings = async () => {
         await (window as any).electronAPI.syncBackendConfig({
           UI: data.UI,
           Start: data.Start,
+          Update: data.Update,
         })
         logger.info('后端配置已同步到 Electron')
       }
@@ -142,6 +143,21 @@ const refreshSettings = async () => {
   const data = await getSettings()
   if (data) {
     Object.assign(settings, data)
+
+    // 同步所有配置到 Electron
+    try {
+      if ((window as any).electronAPI?.syncBackendConfig) {
+        await (window as any).electronAPI.syncBackendConfig({
+          UI: data.UI,
+          Start: data.Start,
+          Update: data.Update,
+        })
+        logger.info('所有配置已同步到 Electron')
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`同步配置到 Electron 失败: ${errorMsg}`)
+    }
   }
 }
 
@@ -150,12 +166,14 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
   const changes = { [key]: value }
   const success = await saveSettings(category, changes)
 
-  // 更新成功后重新获取最新配置
-  if (success) {
-    await refreshSettings()
+  if (!success) {
+    return
   }
 
-  // 处理托盘相关配置
+  // 更新成功后重新获取最新配置（会自动同步到 Electron）
+  await refreshSettings()
+
+  // 处理托盘相关配置（需要额外的实时更新调用）
   if (category === 'UI' && (key === 'IfShowTray' || key === 'IfToTray')) {
     try {
       if ((window as any).electronAPI?.updateTraySettings) {
@@ -168,21 +186,7 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
     }
   }
 
-  // 处理启动配置
-  if (category === 'Start' && key === 'IfMinimizeDirectly') {
-    try {
-      if ((window as any).electronAPI?.syncBackendConfig) {
-        await (window as any).electronAPI.syncBackendConfig({
-          Start: { [key]: value },
-        })
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`同步启动配置失败: ${errorMsg}`)
-      message.error('启动配置同步失败')
-    }
-  }
-
+  // 处理自动更新配置 - 重启更新检查轮询
   if (category === 'Update' && key === 'IfAutoUpdate') {
     try {
       await restartPolling()

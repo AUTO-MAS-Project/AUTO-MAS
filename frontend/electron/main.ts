@@ -1,23 +1,13 @@
-import { exec, spawn } from 'child_process'
-import {
-  app,
-  BrowserWindow,
-  dialog,
-  ipcMain,
-  Menu,
-  nativeImage,
-  nativeTheme,
-  screen,
-  shell,
-  Tray,
-} from 'electron'
+﻿import { exec, spawn } from 'child_process'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray, } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
-import AdmZip = require('adm-zip')
 import { checkEnvironment, getAppRoot } from './services/environmentService'
 import { registerInitializationHandlers, cleanupInitializationResources } from './ipc/initializationHandlers'
+import { registerFileHandlers } from './ipc/fileHandlers'
 
 import { getLogger, initializeLogger } from './services/logger'
+import AdmZip = require('adm-zip')
 
 // 初始化日志系统（必须在创建 logger 之前）
 initializeLogger()
@@ -114,6 +104,9 @@ interface AppConfig {
     IfMinimizeDirectly: boolean
     IfSelfStart: boolean
   }
+  Update: {
+    IfAutoUpdate: boolean
+  }
 
   [key: string]: any
 }
@@ -131,9 +124,12 @@ const defaultConfig: AppConfig = {
     IfMinimizeDirectly: false,
     IfSelfStart: false,
   },
+  Update: {
+    IfAutoUpdate: false,
+  },
 }
 
-// 加载配置
+//加载配置
 function loadConfig(): AppConfig {
   try {
     const appRoot = getAppRoot()
@@ -536,6 +532,10 @@ function createWindow() {
   registerInitializationHandlers(win)
   logger.info('应用初始化处理器已注册')
 
+  // 注册文件处理器
+  registerFileHandlers()
+  logger.info('文件处理器已注册')
+
   // 初始托盘配置（使用文件配置）
   updateTrayVisibility(config)
 
@@ -607,33 +607,36 @@ function createLogWindow() {
 }
 
 // 日志系统 IPC 处理器
-ipcMain.handle('log:write', async (_event, level: string, moduleName: string, ...args: unknown[]) => {
-  try {
-    const rendererLogger = getLogger(moduleName)
-    const message = args.map(arg =>
-      typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-    ).join(' ')
+ipcMain.handle(
+  'log:write',
+  async (_event, level: string, moduleName: string, ...args: unknown[]) => {
+    try {
+      const rendererLogger = getLogger(moduleName)
+      const message = args
+        .map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg)))
+        .join(' ')
 
-    switch (level) {
-      case 'debug':
-        rendererLogger.debug(message)
-        break
-      case 'info':
-        rendererLogger.info(message)
-        break
-      case 'warn':
-        rendererLogger.warn(message)
-        break
-      case 'error':
-        rendererLogger.error(message)
-        break
-      default:
-        rendererLogger.info(message)
+      switch (level) {
+        case 'debug':
+          rendererLogger.debug(message)
+          break
+        case 'info':
+          rendererLogger.info(message)
+          break
+        case 'warn':
+          rendererLogger.warn(message)
+          break
+        case 'error':
+          rendererLogger.error(message)
+          break
+        default:
+          rendererLogger.info(message)
+      }
+    } catch (error) {
+      console.error('写入日志失败:', error)
     }
-  } catch (error) {
-    console.error('写入日志失败:', error)
   }
-})
+)
 
 ipcMain.handle('log:export', async () => {
   try {
@@ -650,7 +653,7 @@ ipcMain.handle('log:export', async () => {
     const result = await dialog.showSaveDialog(mainWindow, {
       title: '导出日志',
       defaultPath: `logs-${new Date().toISOString().slice(0, 10)}.zip`,
-      filters: [{ name: 'ZIP文件', extensions: ['zip'] }]
+      filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
     })
 
     if (result.canceled || !result.filePath) {
@@ -687,13 +690,13 @@ ipcMain.handle('log:export', async () => {
     return {
       success: true,
       message: '日志压缩包导出成功',
-      zipPath: zipPath
+      zipPath: zipPath,
     }
   } catch (error) {
     logger.error('导出日志失败:', error)
     return {
       success: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     }
   }
 })
@@ -731,7 +734,7 @@ ipcMain.handle('log:openWindow', async () => {
     logger.error('打开日志窗口失败:', error)
     return {
       success: false,
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
     }
   }
 })
@@ -1104,6 +1107,11 @@ ipcMain.handle('sync-backend-config', async (_event, backendSettings) => {
       currentConfig.Start = { ...currentConfig.Start, ...backendSettings.Start }
     }
 
+    // 同步Update配置
+    if (backendSettings.Update) {
+      currentConfig.Update = { ...currentConfig.Update, ...backendSettings.Update }
+    }
+
     // 保存到前端配置文件
     saveConfig(currentConfig)
 
@@ -1151,6 +1159,29 @@ ipcMain.handle('reset-config', async () => {
   }
 })
 
+// 应用初始化版本管理（保存前端版本号，版本号不一致时需要重新初始化）
+ipcMain.handle('get-initialized-version', async () => {
+  try {
+    const config = loadConfig()
+    return config.initializedVersion ?? null
+  } catch (error) {
+    logger.error('读取初始化版本失败', error)
+    return null
+  }
+})
+
+ipcMain.handle('set-initialized-version', async (_event, version: string) => {
+  try {
+    const config = loadConfig()
+    config.initializedVersion = version
+    saveConfig(config)
+    logger.info(`初始化版本已保存: ${version}`)
+    return true
+  } catch (error) {
+    logger.error('保存初始化版本失败', error)
+    return false
+  }
+})
 
 // 管理员权限相关
 ipcMain.handle('check-admin', () => {
@@ -1268,12 +1299,14 @@ app.on('before-quit', async event => {
 })
 
 app.whenReady().then(async () => {
-
-
   logger.info(`应用版本: ${app.getVersion()}`)
   logger.info(`Electron版本: ${process.versions.electron}`)
   logger.info(`Node版本: ${process.versions.node}`)
   logger.info(`平台: ${process.platform}`)
+
+  // 注册文件操作处理器（在窗口创建之前注册）
+  registerFileHandlers()
+  logger.info('文件操作处理器已注册')
 
   // 检查管理员权限
   if (!isRunningAsAdmin()) {

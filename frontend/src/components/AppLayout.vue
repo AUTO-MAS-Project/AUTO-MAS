@@ -33,11 +33,11 @@ import {
   CalendarOutlined,
   ControlOutlined,
   DatabaseOutlined,
-  FileSearchOutlined,
   FileTextOutlined,
   HistoryOutlined,
   HomeOutlined,
   SettingOutlined,
+  ToolOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
 import { computed, h } from 'vue'
@@ -79,10 +79,12 @@ const devMenuItems = [
   { key: '/TestRouter', label: '测试路由', icon: icon(SettingOutlined) },
   { key: '/OCRdev', label: 'OCR测试', icon: icon(SettingOutlined) },
   { key: '/WSdev', label: 'WebSocket测试', icon: icon(ApiOutlined) },
+  { key: '/OverlayMaskDev', label: '遮罩彩蛋测试', icon: icon(SettingOutlined) },
 ]
 
 const bottomMenuItems = [
   { key: '/history', label: '历史记录', icon: icon(HistoryOutlined) },
+  { key: '/tools', label: '工具', icon: icon(ToolOutlined) },
   { key: '/settings', label: '设置', icon: icon(SettingOutlined) },
 ]
 
