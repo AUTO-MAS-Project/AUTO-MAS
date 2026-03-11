@@ -24,11 +24,11 @@ import uuid
 import asyncio
 from typing import Dict, Literal
 
-from .config import Config, MaaConfig, GeneralConfig
+from .config import Config, MaaConfig, GeneralConfig, MaaEndConfig
 from app.services import System
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
 from app.utils import get_logger
-from app.task import MaaManager, GeneralManager
+from app.task import MaaManager, GeneralManager, MaaEndManager
 from app.utils.constants import POWER_SIGN_MAP
 
 
@@ -135,6 +135,8 @@ class Task(TaskExecuteBase):
                 task_item = MaaManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], GeneralConfig):
                 task_item = GeneralManager(script_item)
+            elif isinstance(Config.ScriptConfig[current_script_uid], MaaEndConfig):
+                task_item = MaaEndManager(script_item)
             else:
                 logger.error(
                     f"不支持的脚本类型: {type(Config.ScriptConfig[current_script_uid]).__name__}"
