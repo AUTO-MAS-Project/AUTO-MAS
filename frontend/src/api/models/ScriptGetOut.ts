@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { GeneralConfig } from './GeneralConfig';
+import type { MaaEndConfig } from './MaaEndConfig';
 import type { MaaConfig } from './MaaConfig';
 import type { ScriptIndexItem } from './ScriptIndexItem';
 export type ScriptGetOut = {
@@ -25,6 +26,6 @@ export type ScriptGetOut = {
     /**
      * 脚本数据字典, key来自于index列表的uid
      */
-    data: Record<string, (MaaConfig | GeneralConfig)>;
+    data: Record<string, (MaaConfig | GeneralConfig | MaaEndConfig)>;
 };
 

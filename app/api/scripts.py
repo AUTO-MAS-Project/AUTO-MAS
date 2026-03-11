@@ -30,8 +30,16 @@ from app.models.schema import *
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 
 
-SCRIPT_BOOK = {"MaaConfig": MaaConfig, "GeneralConfig": GeneralConfig}
-USER_BOOK = {"MaaConfig": MaaUserConfig, "GeneralConfig": GeneralUserConfig}
+SCRIPT_BOOK = {
+    "MaaConfig": MaaConfig,
+    "GeneralConfig": GeneralConfig,
+    "MaaEndConfig": MaaEndConfig,
+}
+USER_BOOK = {
+    "MaaConfig": MaaUserConfig,
+    "GeneralConfig": GeneralUserConfig,
+    "MaaEndConfig": MaaEndUserConfig,
+}
 
 
 @router.post(
