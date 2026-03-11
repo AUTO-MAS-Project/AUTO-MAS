@@ -20,24 +20,21 @@
 #   Contact: DLmaster_361@163.com
 
 
-import json
 import uuid
 import asyncio
-import shutil
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from app.core import Config, Broadcast
-from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
+from app.models.task import TaskExecuteBase, ScriptItem
 from app.models.ConfigBase import MultipleConfig
-from app.models.config import MaaConfig, MaaUserConfig
-from app.models.emulator import DeviceInfo, DeviceBase
-from app.services import System
-from app.utils import get_logger, LogMonitor, ProcessManager
-from app.utils.constants import UTC4, MAA_STARTUP_BASE, ARKNIGHTS_PACKAGE_NAME
-from .tools import agree_bilibili
+from app.models.config import SrcConfig, SrcUserConfig
+from app.models.emulator import DeviceBase
+from app.utils import get_logger
+from app.utils.constants import STARRAIL_PACKAGE_NAME, UTC4
+from .tools import login
 
-logger = get_logger("MAA 人工排查")
+logger = get_logger("SRC 人工排查")
 
 
 class ManualReviewTask(TaskExecuteBase):
@@ -46,8 +43,8 @@ class ManualReviewTask(TaskExecuteBase):
     def __init__(
         self,
         script_info: ScriptItem,
-        script_config: MaaConfig,
-        user_config: MultipleConfig[MaaUserConfig],
+        script_config: SrcConfig,
+        user_config: MultipleConfig[SrcUserConfig],
         emulator_manager: DeviceBase,
     ):
         super().__init__()
@@ -75,23 +72,20 @@ class ManualReviewTask(TaskExecuteBase):
             ).exists()
         ):
             self.cur_user_item.status = "异常"
-            return "未找到用户的 MAA 配置文件，请先在用户配置页完成 「MAA配置」 步骤"
+            return "未找到用户的 SRC 配置文件，请先在用户配置页完成 「SRC配置」 步骤"
         return "Pass"
 
     async def prepare(self):
 
-        self.maa_process_manager = ProcessManager()
-        self.maa_log_monitor = LogMonitor((1, 20), "%Y-%m-%d %H:%M:%S", self.check_log)
         self.message_queue = asyncio.Queue()
         await Broadcast.subscribe(self.message_queue)
         self.wait_event = asyncio.Event()
         self.log_start_time = datetime.now()
 
-        self.maa_root_path = Path(self.script_config.get("Info", "Path"))
-        self.maa_set_path = self.maa_root_path / "config"
-        self.maa_log_path = self.maa_root_path / "debug/gui.log"
-        self.maa_exe_path = self.maa_root_path / "MAA.exe"
-        self.maa_tasks_path = self.maa_root_path / "resource/tasks/tasks.json"
+        self.src_root_path = Path(self.script_config.get("Info", "Path"))
+        self.src_exe_path = self.src_root_path / "src.exe"
+        self.src_set_path = self.src_root_path / "config"
+        self.src_log_path = self.src_root_path / "log/2000-01-01_src.txt"
 
         self.run_book = {"SignIn": False, "PassCheck": False}
 
@@ -127,7 +121,7 @@ class ManualReviewTask(TaskExecuteBase):
                 self.script_info.log = "正在启动模拟器"
                 emulator_info = await self.emulator_manager.open(
                     self.script_config.get("Emulator", "Index"),
-                    ARKNIGHTS_PACKAGE_NAME[self.cur_user_config.get("Info", "Server")],
+                    STARRAIL_PACKAGE_NAME[self.cur_user_config.get("Info", "Server")],
                 )
             except Exception as e:
 
@@ -161,41 +155,29 @@ class ManualReviewTask(TaskExecuteBase):
                     break
                 continue
 
-            await self.set_maa(emulator_info)
-
-            logger.info(f"启动MAA进程: {self.maa_exe_path}")
-            self.log_start_time = datetime.now()
-
-            self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log = (
-                LogRecord()
+            self.script_info.log = (
+                "正在启动模拟器\n模拟器已启动，正在登录「崩坏·星穹铁道」..."
             )
-            self.wait_event.clear()
-            await self.maa_process_manager.open_process(self.maa_exe_path)
-            await asyncio.sleep(1)  # 等待 MAA 处理日志文件
-            await self.maa_log_monitor.start_monitor_file(
-                self.maa_log_path, self.log_start_time
-            )
-            await self.wait_event.wait()
-            await self.maa_log_monitor.stop()
-
-            if self.cur_user_log.status == "Success!":
+            if self.cur_user_config.get("Info", "Id") == "" or await login(
+                emulator_info,
+                STARRAIL_PACKAGE_NAME[self.cur_user_config.get("Info", "Server")],
+                self.cur_user_config.get("Info", "Id"),
+                self.cur_user_config.get("Info", "Password"),
+            ):
                 self.run_book["SignIn"] = True
                 break
             else:
-
                 logger.error(
-                    f"用户: {self.cur_user_item.user_id} - MAA进程异常: {self.cur_user_log.status}"
+                    f"用户: {self.cur_user_item.user_id} - 「崩坏·星穹铁道」登录失败"
                 )
-                self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
+                self.script_info.log = "正在启动模拟器\n模拟器已启动，正在登录「崩坏·星穹铁道」...\n「崩坏·星穹铁道」登录失败\n正在中止相关程序"
 
-                await self.maa_process_manager.kill()
                 try:
                     await self.emulator_manager.close(
                         self.script_config.get("Emulator", "Index")
                     )
                 except Exception as e:
                     logger.exception(f"关闭模拟器失败: {e}")
-                await System.kill_process(self.maa_exe_path)
 
                 uid = str(uuid.uuid4())
                 await Config.send_websocket_message(
@@ -205,7 +187,7 @@ class ManualReviewTask(TaskExecuteBase):
                         "message_id": uid,
                         "type": "Question",
                         "title": "操作提示",
-                        "message": "MAA未能正确登录到PRTS, 是否重试？",
+                        "message": "未能正确登录到「崩坏·星穹铁道」, 是否重试？",
                         "options": ["是", "否"],
                     },
                 )
@@ -249,145 +231,10 @@ class ManualReviewTask(TaskExecuteBase):
             else:
                 self.message_queue.task_done()
 
-    async def set_maa(self, emulator_info: DeviceInfo):
-        """配置MAA运行参数"""
-        logger.info(f"开始配置MAA运行参数: 人工排查")
-
-        await self.maa_process_manager.kill()
-        await System.kill_process(self.maa_exe_path)
-
-        if self.cur_user_config.get("Info", "Server") == "Bilibili":
-            await agree_bilibili(self.maa_tasks_path, True)
-        else:
-            await agree_bilibili(self.maa_tasks_path, False)
-
-        if self.cur_user_config.get("Info", "Mode") == "简洁":
-            shutil.copytree(
-                (Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"),
-                self.maa_set_path,
-                dirs_exist_ok=True,
-            )
-        elif self.cur_user_config.get("Info", "Mode") == "详细":
-            shutil.copytree(
-                (
-                    Path.cwd()
-                    / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-                ),
-                self.maa_set_path,
-                dirs_exist_ok=True,
-            )
-
-        gui_set = json.loads(
-            (self.maa_set_path / "gui.json").read_text(encoding="utf-8")
-        )
-        gui_new_set = json.loads(
-            (self.maa_set_path / "gui.new.json").read_text(encoding="utf-8")
-        )
-
-        # 多配置使用默认配置
-        if gui_set["Current"] != "Default":
-            gui_set["Configurations"]["Default"] = gui_set["Configurations"][
-                gui_set["Current"]
-            ]
-            gui_new_set["Configurations"]["Default"] = gui_new_set["Configurations"][
-                gui_set["Current"]
-            ]
-            gui_set["Current"] = "Default"
-
-        # 各配置部分的引用
-        global_set = gui_set["Global"]
-        default_set = gui_set["Configurations"]["Default"]
-
-        # 关闭所有定时
-        for i in range(1, 9):
-            global_set[f"Timer.Timer{i}"] = "False"
-
-        # 矫正 ADB 地址
-        if emulator_info.adb_address != "Unknown":
-            default_set["Connect.Address"] = emulator_info.adb_address
-
-        # 任务间切换方式
-        default_set["MainFunction.PostActions"] = "8"
-
-        # 直接运行任务
-        default_set["Start.StartGame"] = "True"
-        default_set["Start.RunDirectly"] = "True"
-        default_set["Start.OpenEmulatorAfterLaunch"] = "False"
-
-        # 更新配置
-        global_set["VersionUpdate.ScheduledUpdateCheck"] = "False"
-        global_set["VersionUpdate.AutoDownloadUpdatePackage"] = "False"
-        global_set["VersionUpdate.AutoInstallUpdatePackage"] = "False"
-
-        # 静默模式相关配置
-        global_set["GUI.UseTray"] = "True"
-        global_set["GUI.MinimizeToTray"] = "True"
-        global_set["Start.MinimizeDirectly"] = "True"
-
-        # 服务器与账号切换
-        default_set["Start.ClientType"] = self.cur_user_config.get("Info", "Server")
-        startup = MAA_STARTUP_BASE.copy()
-        if self.cur_user_config.get("Info", "Server") == "Official":
-            startup["AccountName"] = (
-                f"{self.cur_user_config.get('Info', 'Id')[:3]}****{self.cur_user_config.get('Info', 'Id')[7:]}"
-                if len(self.cur_user_config.get("Info", "Id")) == 11
-                else self.cur_user_config.get("Info", "Id")
-            )
-        elif self.cur_user_config.get("Info", "Server") == "Bilibili":
-            startup["AccountName"] = self.cur_user_config.get("Info", "Id")
-
-        # 导出任务配置
-        gui_new_set["Configurations"]["Default"]["TaskQueue"] = [startup]
-
-        (self.maa_set_path / "gui.json").write_text(
-            json.dumps(gui_set, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
-        (self.maa_set_path / "gui.new.json").write_text(
-            json.dumps(gui_new_set, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
-        logger.success("MAA运行参数配置完成: 人工排查")
-
-    async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
-        """日志回调"""
-
-        log = "".join(log_content)
-        self.cur_user_log.content = log_content
-        self.script_info.log = log
-
-        if "未选择任务" in log:
-            self.cur_user_log.status = "MAA 未选择任何任务"
-        elif "完成任务: StartUp" in log or "完成任务: 开始唤醒" in log:
-            self.cur_user_log.status = "Success!"
-        elif "请 ｢检查连接设置｣ → ｢尝试重启模拟器与 ADB｣ → ｢重启电脑｣" in log:
-            self.cur_user_log.status = "MAA 的 ADB 连接异常"
-        elif "未检测到任何模拟器" in log:
-            self.cur_user_log.status = "MAA 未检测到任何模拟器"
-        elif "已停止" in log:
-            self.cur_user_log.status = "MAA 在完成任务前中止"
-        elif (
-            "MaaAssistantArknights GUI exited" in log
-            or not await self.maa_process_manager.is_running()
-        ):
-            self.cur_user_log.status = "MAA 在完成任务前退出"
-        elif datetime.now() - latest_time > timedelta(minutes=10):
-            self.cur_user_log.status = "MAA 进程超时"
-        else:
-            self.cur_user_log.status = "MAA 正常运行中"
-
-        logger.debug(f"MAA 日志分析结果: {self.cur_user_log.status}")
-        if self.cur_user_log.status != "MAA 正常运行中":
-            logger.info(f"MAA 任务结果: {self.cur_user_log.status}, 日志锁已释放")
-            self.wait_event.set()
-
     async def final_task(self):
 
         if self.check_result != "Pass":
             return
-
-        await self.maa_log_monitor.stop()
-        await self.maa_process_manager.kill()
-        await System.kill_process(self.maa_exe_path)
-        await agree_bilibili(self.maa_tasks_path, False)
 
         if self.run_book["SignIn"] and self.run_book["PassCheck"]:
             logger.info(f"用户 {self.cur_user_uid} 通过人工排查")

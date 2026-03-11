@@ -20,7 +20,7 @@
 
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import IntEnum
 
 
@@ -50,6 +50,7 @@ class DeviceInfo:
 
 
 class DeviceBase(ABC):
+    """模拟器管理基类"""
 
     @abstractmethod
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
