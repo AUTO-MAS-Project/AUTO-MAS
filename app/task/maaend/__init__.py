@@ -1,7 +1,5 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2024-2025 DLmaster361
-#   Copyright © 2025 MoeSnowyFox
-#   Copyright © 2025-2026 AUTO-MAS Team
+#   Copyright (C) 2025-2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -18,11 +16,6 @@
 #   You should have received a copy of the GNU General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-#   Contact: DLmaster_361@163.com
+from .manager import MaaEndManager
 
-
-from .general import GeneralManager
-from .MAA import MaaManager
-from .maaend import MaaEndManager
-
-__all__ = ["GeneralManager", "MaaManager", "MaaEndManager"]
+__all__ = ["MaaEndManager"]
