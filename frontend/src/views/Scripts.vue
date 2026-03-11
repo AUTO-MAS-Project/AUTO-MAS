@@ -20,6 +20,27 @@
     </div>
   </div>
 
+  <!-- SRC配置遮罩层 -->
+  <div v-if="showSRCConfigMask" class="maa-config-mask">
+    <div class="mask-content">
+      <div class="mask-icon">
+        <SettingOutlined :style="{ fontSize: '48px', color: '#722ed1' }" />
+      </div>
+      <h2 class="mask-title">正在进行SRC配置</h2>
+      <p class="mask-description">
+        当前正在配置SRC脚本，请在SRC配置界面完成相关设置。
+        <br />
+        配置完成后，请点击"保存配置"按钮来解除页面锁定。
+      </p>
+      <div class="mask-actions">
+        <a-button v-if="currentConfigScript" type="primary" size="large"
+          @click="handleSaveSRCConfig(currentConfigScript)">
+          保存配置
+        </a-button>
+      </div>
+    </div>
+  </div>
+
   <!-- 主要内容 -->
   <div class="scripts-header">
     <div class="header-left">
@@ -54,6 +75,7 @@
   <ScriptTable :scripts="scripts" :active-connections="activeConnections" :all-plans-data="allPlansData"
     @edit="handleEditScript" @delete="handleDeleteScript" @add-user="handleAddUser" @edit-user="handleEditUser"
     @delete-user="handleDeleteUser" @start-maa-config="handleStartMAAConfig" @save-maa-config="handleSaveMAAConfig"
+    @start-src-config="handleStartSRCConfig" @save-src-config="handleSaveSRCConfig"
     @toggle-user-status="handleToggleUserStatus" @pass-check-user="handlePassCheckUser" />
 
   <!-- 创建方式选择弹窗 -->
@@ -108,7 +130,7 @@
             <div class="script-info">
               <div class="script-name">{{ script.name }}</div>
               <div class="script-meta">
-                <span class="script-type">{{ script.type === 'MAA' ? 'MAA脚本' : '通用脚本' }}</span>
+                <span class="script-type">{{ script.type === 'MAA' ? 'MAA脚本' : script.type === 'SRC' ? 'SRC脚本' : '通用脚本' }}</span>
                 <span class="script-users">
                   <UserOutlined />
                   {{ script.users?.length || 0 }} 个用户
@@ -134,6 +156,17 @@
             <div class="type-info">
               <div class="type-title">MAA脚本</div>
               <div class="type-description">明日方舟自动化脚本，支持多账号日常代理等功能</div>
+            </div>
+          </div>
+        </a-radio-button>
+        <a-radio-button value="SRC" class="type-option">
+          <div class="type-content">
+            <div class="type-logo-container">
+              <img src="@/assets/SRC.png" alt="SRC" class="type-logo" />
+            </div>
+            <div class="type-info">
+              <div class="type-title">SRC脚本</div>
+              <div class="type-description">崩坏星穹铁道自动化脚本，支持多账号日常代理等功能</div>
             </div>
           </div>
         </a-radio-button>
@@ -309,6 +342,7 @@ const addLoading = ref(false)
 const templateLoading = ref(false)
 const searchKeyword = ref('')
 const showMAAConfigMask = ref(false) // 控制MAA配置遮罩层的显示
+const showSRCConfigMask = ref(false) // 控制SRC配置遮罩层的显示
 const currentConfigScript = ref<Script | null>(null) // 当前正在配置的脚本
 
 // WebSocket连接管理
@@ -455,15 +489,16 @@ const handleConfirmAddScript = async () => {
     return
   }
 
-  // MAA脚本直接创建
+  // MAA和SRC脚本直接创建
   addLoading.value = true
   try {
     const result = await addScript(selectedType.value)
     if (result) {
       typeSelectVisible.value = false
       // 跳转到编辑页面，传递API返回的数据
+      const editPath = selectedType.value === 'MAA' ? 'maa' : selectedType.value === 'SRC' ? 'src' : 'general'
       router.push({
-        path: `/scripts/${result.scriptId}/edit/maa`,
+        path: `/scripts/${result.scriptId}/edit/${editPath}`,
         state: {
           scriptData: {
             id: result.scriptId,
@@ -578,6 +613,8 @@ const handleEditScript = (script: Script) => {
   // 根据脚本类型跳转到对应的编辑页面
   if (script.type === 'MAA') {
     router.push(`/scripts/${script.id}/edit/maa`)
+  } else if (script.type === 'SRC') {
+    router.push(`/scripts/${script.id}/edit/src`)
   } else {
     router.push(`/scripts/${script.id}/edit/general`)
   }
@@ -591,11 +628,13 @@ const handleDeleteScript = async (script: Script) => {
 }
 
 const handleAddUser = (script: Script) => {
-  // 根据条件判断跳转到 MAA 还是通用用户添加页面
+  // 根据脚本类型跳转到对应的用户添加页面
   if (script.type === 'MAA') {
-    router.push(`/scripts/${script.id}/users/add/maa`) // 跳转到 MAA 用户添加页面
+    router.push(`/scripts/${script.id}/users/add/maa`)
+  } else if (script.type === 'SRC') {
+    router.push(`/scripts/${script.id}/users/add/src`)
   } else {
-    router.push(`/scripts/${script.id}/users/add/general`) // 跳转到通用用户添加页面
+    router.push(`/scripts/${script.id}/users/add/general`)
   }
 }
 
@@ -603,12 +642,12 @@ const handleEditUser = (user: User) => {
   // 从用户数据中找到对应的脚本
   const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
   if (script) {
-    // 判断是 MAA 用户还是通用用户
-    if (user.Info.Server) {
-      // 跳转到 MAA 用户编辑页面
+    // 根据脚本类型跳转到对应的用户编辑页面
+    if (script.type === 'MAA') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/maa`)
+    } else if (script.type === 'SRC') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/src`)
     } else {
-      // 跳转到通用用户编辑页面
       router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
     }
   } else {
@@ -761,6 +800,136 @@ const handleSaveMAAConfig = async (script: Script) => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存MAA配置失败: ${errorMsg}`)
     message.error(`保存MAA配置失败: ${errorMsg}`)
+  }
+}
+
+const handleStartSRCConfig = async (script: Script) => {
+  try {
+    // 检查是否已有连接
+    const existingConnection = activeConnections.value.get(script.id)
+    if (existingConnection) {
+      message.warning('该脚本已在配置中，请先保存配置')
+      return
+    }
+
+    // 调用启动配置任务API
+    const response = await Service.addTaskApiDispatchStartPost({
+      taskId: script.id,
+      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+    })
+
+    if (response.code === 200) {
+      // 显示遮罩层
+      showSRCConfigMask.value = true
+      currentConfigScript.value = script
+
+      // 订阅WebSocket消息
+      const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
+        // 处理错误消息
+        if (wsMessage.type === 'error') {
+          const errorMsg = wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
+          logger.error(`脚本 ${script.name} 连接错误: ${errorMsg}`)
+          message.error(`SRC配置连接失败: ${errorMsg}`)
+          activeConnections.value.delete(script.id)
+          // 连接错误时隐藏遮罩
+          showSRCConfigMask.value = false
+          currentConfigScript.value = null
+          return
+        }
+
+        // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
+        if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
+          const errorMsg = wsMessage.data.Error instanceof Error ? wsMessage.data.Error.message : String(wsMessage.data.Error)
+          logger.error(`脚本 ${script.name} 配置异常: ${errorMsg}`)
+          message.error(`SRC配置失败: ${errorMsg}`)
+          // 不取消订阅，等待Signal类型的Accomplish消息
+          return
+        }
+
+        // 处理任务结束消息（Signal类型且包含Accomplish字段）
+        if (
+          wsMessage.type === 'Signal' &&
+          wsMessage.data &&
+          wsMessage.data.Accomplish !== undefined
+        ) {
+          logger.info(`脚本 ${script.name} 配置任务已结束`)
+          // 根据结果显示不同消息
+          const result = wsMessage.data.Accomplish
+          if (result && !result.includes('异常') && !result.includes('错误')) {
+            message.success(`${script.name} 配置已完成`)
+          }
+          // 清理连接
+          unsubscribe(subscriptionId)
+          activeConnections.value.delete(script.id)
+          showSRCConfigMask.value = false
+          currentConfigScript.value = null
+        }
+      })
+
+      // 记录连接和subscriptionId
+      activeConnections.value.set(script.id, {
+        subscriptionId,
+        websocketId: response.taskId,
+      })
+      message.success(`已启动 ${script.name} 的SRC配置`)
+
+      // 设置自动断开连接的定时器（30分钟后）
+      setTimeout(
+        () => {
+          if (activeConnections.value.has(script.id)) {
+            const connection = activeConnections.value.get(script.id)
+            if (connection) {
+              unsubscribe(connection.subscriptionId)
+            }
+            activeConnections.value.delete(script.id)
+            // 超时时隐藏遮罩
+            showSRCConfigMask.value = false
+            currentConfigScript.value = null
+            message.info(`${script.name} 配置会话已超时断开`)
+          }
+        },
+        30 * 60 * 1000
+      ) // 30分钟
+    } else {
+      message.error(response.message || '启动SRC配置失败')
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`启动SRC配置失败: ${errorMsg}`)
+    message.error(`启动SRC配置失败: ${errorMsg}`)
+  }
+}
+
+const handleSaveSRCConfig = async (script: Script) => {
+  try {
+    const connection = activeConnections.value.get(script.id)
+    if (!connection) {
+      message.error('未找到活动的配置会话')
+      return
+    }
+
+    // 调用停止配置任务API
+    const response = await Service.stopTaskApiDispatchStopPost({
+      taskId: connection.websocketId,
+    })
+
+    if (response.code === 200) {
+      // 取消订阅
+      unsubscribe(connection.subscriptionId)
+      activeConnections.value.delete(script.id)
+
+      // 隐藏遮罩
+      showSRCConfigMask.value = false
+      currentConfigScript.value = null
+
+      message.success(`${script.name} 的配置已保存`)
+    } else {
+      message.error(response.message || '保存配置失败')
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存SRC配置失败: ${errorMsg}`)
+    message.error(`保存SRC配置失败: ${errorMsg}`)
   }
 }
 

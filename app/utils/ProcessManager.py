@@ -23,11 +23,14 @@
 import os
 import psutil
 import asyncio
+import win32gui
+import win32con
+import win32process
+
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-
 
 from .tools import decode_bytes
 from .constants import CREATION_FLAGS
@@ -66,6 +69,32 @@ def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
     return True
 
 
+def get_window_handles(pid: int) -> list[int]:
+    """获取指定进程的所有窗口句柄"""
+
+    window_handles = []
+
+    def enum_callback(hwnd: int, lparam: int) -> bool:
+        """枚举窗口的回调函数"""
+        _, process_id = win32process.GetWindowThreadProcessId(hwnd)
+        if process_id == pid:
+            window_handles.append(hwnd)
+        return True
+
+    win32gui.EnumWindows(enum_callback, 0)
+    return window_handles
+
+
+def get_main_window_handle(pid: int) -> int | None:
+    """获取指定进程的主窗口句柄（可见的第一个窗口）"""
+
+    handles = get_window_handles(pid)
+    for hwnd in handles:
+        if win32gui.IsWindowVisible(hwnd):
+            return hwnd
+    return handles[0] if handles else None
+
+
 class ProcessManager:
     """进程监视器类, 用于跟踪主进程及其所有子进程的状态"""
 
@@ -94,6 +123,14 @@ class ProcessManager:
         if self.process is not None:
             return self.process
         return None
+
+    @property
+    def main_hwnd(self) -> int | None:
+        """主进程的主窗口句柄"""
+
+        if self.main_pid is None:
+            return None
+        return get_main_window_handle(self.main_pid)
 
     async def open_process(
         self,
@@ -235,6 +272,56 @@ class ProcessManager:
 
         self.process = None
         self.target_process = None
+
+    async def is_visible(self) -> bool:
+        """检查主进程窗口是否可见
+
+        Returns:
+            bool: 窗口是否可见
+        """
+
+        if self.main_hwnd is None:
+            return False
+
+        try:
+            return bool(win32gui.IsWindowVisible(self.main_hwnd))
+        except Exception:
+            return False
+
+    async def show_window(self) -> bool:
+        """显示主进程窗口
+
+        Returns:
+            bool: 操作是否成功
+        """
+
+        if self.main_hwnd is None:
+            return False
+
+        try:
+            await asyncio.get_running_loop().run_in_executor(
+                None, win32gui.ShowWindow, self.main_hwnd, win32con.SW_SHOW
+            )
+            return True
+        except Exception:
+            return False
+
+    async def hide_window(self) -> bool:
+        """隐藏主进程窗口
+
+        Returns:
+            bool: 操作是否成功
+        """
+        if self.main_hwnd is None:
+            return False
+
+        try:
+            await asyncio.get_running_loop().run_in_executor(
+                None, win32gui.ShowWindow, self.main_hwnd, win32con.SW_HIDE
+            )
+            return True
+        except Exception:
+            return False
 
 
 class ProcessRunner:

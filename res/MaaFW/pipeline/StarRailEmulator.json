@@ -4,7 +4,7 @@
             "type": "TemplateMatch",
             "param": {
                 "template": [
-                    "StarRailEmulator/登出.png"
+                    "StarRailEmulator/登出登入.png"
                 ],
                 "roi": [
                     1175,
@@ -237,7 +237,11 @@
         "action": {
             "type": "Click",
             "param": {}
-        }
+        },
+        "timeout": 60000,
+        "next": [
+            "识别公告"
+        ]
     },
     "切换账号": {
         "action": {
@@ -249,6 +253,7 @@
         "timeout": 600000,
         "next": [
             "登出",
+            "登入",
             "登录下拉框展开"
         ]
     },
@@ -273,7 +278,7 @@
         },
         "next": [
             "选中账号",
-            "下拉账号列表"
+            "下滑账号列表"
         ]
     },
     "选中账号": {
@@ -300,7 +305,7 @@
             "进入游戏-高"
         ]
     },
-    "下拉账号列表": {
+    "下滑账号列表": {
         "action": {
             "type": "Swipe",
             "param": {
@@ -324,7 +329,7 @@
         "timeout": 5000,
         "next": [
             "选中账号",
-            "下拉账号列表"
+            "下滑账号列表"
         ],
         "on_error": [
             "登录下拉框折叠"
@@ -372,6 +377,49 @@
         "action": {
             "type": "Click",
             "param": {}
+        },
+        "timeout": 60000,
+        "next": [
+            "识别公告"
+        ]
+    },
+    "登入": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "StarRailEmulator/登出登入.png"
+                ],
+                "roi": [
+                    1175,
+                    100,
+                    60,
+                    100
+                ]
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "next": [
+            "登录下拉框展开"
+        ]
+    },
+    "识别公告": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "StarRailEmulator/公告.png"
+                ],
+                "roi": [
+                    1175,
+                    20,
+                    60,
+                    100
+                ]
+            }
         }
     }
 }

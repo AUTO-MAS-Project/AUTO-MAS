@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type ScriptCreateIn = {
     /**
-     * 脚本类型: MAA脚本, 通用脚本
+     * 脚本类型: MAA脚本, 通用脚本, SRC脚本
      */
     type: ScriptCreateIn.type;
     /**
@@ -14,10 +14,11 @@ export type ScriptCreateIn = {
 };
 export namespace ScriptCreateIn {
     /**
-     * 脚本类型: MAA脚本, 通用脚本
+     * 脚本类型: MAA脚本, 通用脚本, SRC脚本
      */
     export enum type {
         MAA = 'MAA',
+        SRC = 'SRC',
         GENERAL = 'General',
     }
 }

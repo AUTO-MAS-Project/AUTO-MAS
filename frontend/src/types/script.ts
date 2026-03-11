@@ -1,7 +1,7 @@
 // 脚本类型定义
-import type { MaaConfig, GeneralConfig } from '@/api'
+import type { MaaConfig, GeneralConfig, SrcConfig } from '@/api'
 
-export type ScriptType = 'MAA' | 'General'
+export type ScriptType = 'MAA' | 'General' | 'SRC'
 
 // MAA脚本配置
 export interface MAAScriptConfig {
@@ -77,12 +77,30 @@ export interface GeneralScriptConfig {
   }
 }
 
+// SRC脚本配置
+export interface SRCScriptConfig {
+  Info: {
+    Name: string
+    Path: string
+  }
+  Run: {
+    TaskTransitionMethod: string
+    ProxyTimesLimit: number
+    RunTimesLimit: number
+    RunTimeLimit: number
+  }
+  Emulator: {
+    Id: string
+    Index: string
+  }
+}
+
 // 脚本基础信息
 export interface Script {
   id: string
   type: ScriptType
   name: string
-  config: MaaConfig | GeneralConfig
+  config: MaaConfig | GeneralConfig | SrcConfig
   users: User[]
 }
 
@@ -163,13 +181,13 @@ export interface AddScriptResponse {
   status: string
   message: string
   scriptId: string
-  data: MAAScriptConfig | GeneralScriptConfig
+  data: MAAScriptConfig | GeneralScriptConfig | SRCScriptConfig
 }
 
 // 脚本索引项
 export interface ScriptIndexItem {
   uid: string
-  type: 'MaaConfig' | 'GeneralConfig'
+  type: 'MaaConfig' | 'GeneralConfig' | 'SrcConfig'
 }
 
 // 获取脚本API响应
