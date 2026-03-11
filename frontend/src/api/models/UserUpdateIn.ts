@@ -4,6 +4,7 @@
 /* eslint-disable */
 import type { GeneralUserConfig } from './GeneralUserConfig';
 import type { MaaUserConfig } from './MaaUserConfig';
+import type { SrcUserConfig } from './SrcUserConfig';
 export type UserUpdateIn = {
     /**
      * 所属脚本ID
@@ -16,6 +17,6 @@ export type UserUpdateIn = {
     /**
      * 用户更新数据
      */
-    data: (MaaUserConfig | GeneralUserConfig);
+    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig);
 };
 

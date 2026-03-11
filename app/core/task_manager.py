@@ -24,11 +24,11 @@ import uuid
 import asyncio
 from typing import Dict, Literal
 
-from .config import Config, MaaConfig, GeneralConfig
+from .config import Config, MaaConfig, SrcConfig, GeneralConfig
 from app.services import System
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
 from app.utils import get_logger
-from app.task import MaaManager, GeneralManager
+from app.task import MaaManager, SrcManager, GeneralManager
 from app.utils.constants import POWER_SIGN_MAP
 
 
@@ -133,6 +133,8 @@ class Task(TaskExecuteBase):
 
             if isinstance(Config.ScriptConfig[current_script_uid], MaaConfig):
                 task_item = MaaManager(script_item)
+            elif isinstance(Config.ScriptConfig[current_script_uid], SrcConfig):
+                task_item = SrcManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], GeneralConfig):
                 task_item = GeneralManager(script_item)
             else:

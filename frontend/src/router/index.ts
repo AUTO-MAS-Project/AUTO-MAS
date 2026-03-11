@@ -39,6 +39,12 @@ const routes = [
     meta: { title: '编辑MAA脚本' },
   },
   {
+    path: '/scripts/:id/edit/src',
+    name: 'SRCScriptEdit',
+    component: () => import('../views/EditView/Script/SRCScriptEdit.vue'),
+    meta: { title: '编辑SRC脚本' },
+  },
+  {
     path: '/scripts/:id/edit/general',
     name: 'GeneralScriptEdit',
     component: () => import('../views/EditView/Script/GeneralScriptEdit.vue'),
@@ -55,6 +61,18 @@ const routes = [
     name: 'MAAUserEdit',
     component: () => import('../views/EditView/User/MAAUserEdit.vue'),
     meta: { title: '编辑MAA用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/add/src',
+    name: 'SRCUserAdd',
+    component: () => import('../views/EditView/User/SRCUserEdit.vue'),
+    meta: { title: '添加SRC用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/src',
+    name: 'SRCUserEdit',
+    component: () => import('../views/EditView/User/SRCUserEdit.vue'),
+    meta: { title: '编辑SRC用户' },
   },
   {
     path: '/scripts/:scriptId/users/add/general',
