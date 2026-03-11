@@ -17,26 +17,15 @@
     </div>
 
     <a-space size="middle">
-      <a-button
-        v-if="userMode !== '简洁' && !showSrcConfigMask"
-        type="primary"
-        ghost
-        size="large"
-        :loading="srcConfigLoading"
-        @click="$emit('handleSRCConfig')"
-      >
+      <a-button v-if="userMode !== '简洁' && !showSrcConfigMask" type="primary" ghost size="large"
+        :loading="srcConfigLoading" @click="$emit('handleSRCConfig')">
         <template #icon>
           <SettingOutlined />
         </template>
         SRC配置
       </a-button>
-      <a-button
-        v-if="userMode !== '简洁' && showSrcConfigMask"
-        type="default"
-        size="large"
-        disabled
-        style="color: #52c41a; border-color: #52c41a"
-      >
+      <a-button v-if="userMode !== '简洁' && showSrcConfigMask" type="default" size="large" disabled
+        style="color: #52c41a; border-color: #52c41a">
         <template #icon>
           <SettingOutlined />
         </template>

@@ -6,7 +6,7 @@
     "github": "https://github.com/AUTO-MAS-Project/AUTO-MAS",
     "version": "5.1.0",
     "contact": "https://auto-mas.top/",
-    "license": "GPL-3.0",
+    "license": "AGPL-3.0",
     "controller": [
         {
             "name": "明日方舟PC端",

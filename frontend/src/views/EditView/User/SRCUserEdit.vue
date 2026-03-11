@@ -430,7 +430,7 @@ const saveNewUser = async () => {
     if (result && result.userId) {
       userId = result.userId
       isEdit.value = true
-      
+
       // 再更新用户数据
       const success = await updateUser(scriptId, userId, userData)
       if (success) {
