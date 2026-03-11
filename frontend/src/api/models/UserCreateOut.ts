@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { GeneralUserConfig } from './GeneralUserConfig';
+import type { MaaEndUserConfig } from './MaaEndUserConfig';
 import type { MaaUserConfig } from './MaaUserConfig';
 export type UserCreateOut = {
     /**
@@ -24,6 +25,6 @@ export type UserCreateOut = {
     /**
      * 用户配置数据
      */
-    data: (MaaUserConfig | GeneralUserConfig);
+    data: (MaaUserConfig | GeneralUserConfig | MaaEndUserConfig);
 };
 
