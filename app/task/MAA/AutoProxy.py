@@ -5,16 +5,16 @@
 #   This file is part of AUTO-MAS.
 
 #   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU General Public License as published
-#   by the Free Software Foundation, either version 3 of the License,
-#   or (at your option) any later version.
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
 
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU General Public License for more details.
+#   the GNU Affero General Public License for more details.
 
-#   You should have received a copy of the GNU General Public License
+#   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
@@ -251,9 +251,12 @@ class AutoProxyTask(TaskExecuteBase):
                     ]
                     self.cur_user_log.status = "模拟器启动失败"
 
-                    await self.emulator_manager.close(
-                        self.script_config.get("Emulator", "Index")
-                    )
+                    try:
+                        await self.emulator_manager.close(
+                            self.script_config.get("Emulator", "Index")
+                        )
+                    except Exception as e:
+                        logger.exception(f"关闭模拟器失败: {e}")
 
                     await Notify.push_plyer(
                         "用户自动代理出现异常！",
@@ -264,9 +267,12 @@ class AutoProxyTask(TaskExecuteBase):
                     continue
 
                 if Config.get("Function", "IfSilence"):
-                    await self.emulator_manager.setVisible(
-                        self.script_config.get("Emulator", "Index"), False
-                    )
+                    try:
+                        await self.emulator_manager.setVisible(
+                            self.script_config.get("Emulator", "Index"), False
+                        )
+                    except Exception as e:
+                        logger.exception(f"模拟器隐藏失败: {e}")
 
                 await self.set_maa(emulator_info)
 
@@ -295,9 +301,12 @@ class AutoProxyTask(TaskExecuteBase):
                     )
 
                     await self.maa_process_manager.kill()
-                    await self.emulator_manager.close(
-                        self.script_config.get("Emulator", "Index")
-                    )
+                    try:
+                        await self.emulator_manager.close(
+                            self.script_config.get("Emulator", "Index")
+                        )
+                    except Exception as e:
+                        logger.exception(f"关闭模拟器失败: {e}")
                     await System.kill_process(self.maa_exe_path)
 
                     await Notify.push_plyer(
@@ -477,6 +486,7 @@ class AutoProxyTask(TaskExecuteBase):
             ]
             task_set["Fight"]["IsStageManually"] = True
             task_set["Fight"]["UseOptionalStage"] = True
+            task_set["Fight"]["UseWeeklySchedule"] = False
 
             # 简洁模式下托管的配置
             if self.cur_user_config.get("Info", "Mode") == "简洁":
@@ -626,9 +636,12 @@ class AutoProxyTask(TaskExecuteBase):
         await agree_bilibili(self.maa_tasks_path, False)
         if self.script_config.get("Run", "TaskTransitionMethod") == "ExitEmulator":
             logger.info("用户任务结束, 关闭模拟器")
-            await self.emulator_manager.close(
-                self.script_config.get("Emulator", "Index")
-            )
+            try:
+                await self.emulator_manager.close(
+                    self.script_config.get("Emulator", "Index")
+                )
+            except Exception as e:
+                logger.exception(f"关闭模拟器失败: {e}")
 
         user_logs_list = []
         if_six_star = False
@@ -701,7 +714,7 @@ class AutoProxyTask(TaskExecuteBase):
 
             if self.cur_user_config.get("Info", "InfrastIndex") != "-1":
                 await self.cur_user_config.set(
-                    "Info",
+                    "Data",
                     "InfrastIndex",
                     str(
                         (int(self.cur_user_config.get("Info", "InfrastIndex")) + 1)

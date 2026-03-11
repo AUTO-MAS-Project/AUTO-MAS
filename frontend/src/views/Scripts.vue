@@ -20,6 +20,27 @@
     </div>
   </div>
 
+  <!-- SRC配置遮罩层 -->
+  <div v-if="showSRCConfigMask" class="maa-config-mask">
+    <div class="mask-content">
+      <div class="mask-icon">
+        <SettingOutlined :style="{ fontSize: '48px', color: '#722ed1' }" />
+      </div>
+      <h2 class="mask-title">正在进行SRC配置</h2>
+      <p class="mask-description">
+        当前正在配置SRC脚本，请在SRC配置界面完成相关设置。
+        <br />
+        配置完成后，请点击"保存配置"按钮来解除页面锁定。
+      </p>
+      <div class="mask-actions">
+        <a-button v-if="currentConfigScript" type="primary" size="large"
+          @click="handleSaveSRCConfig(currentConfigScript)">
+          保存配置
+        </a-button>
+      </div>
+    </div>
+  </div>
+
   <!-- 主要内容 -->
   <div class="scripts-header">
     <div class="header-left">
@@ -54,7 +75,73 @@
   <ScriptTable :scripts="scripts" :active-connections="activeConnections" :all-plans-data="allPlansData"
     @edit="handleEditScript" @delete="handleDeleteScript" @add-user="handleAddUser" @edit-user="handleEditUser"
     @delete-user="handleDeleteUser" @start-maa-config="handleStartMAAConfig" @save-maa-config="handleSaveMAAConfig"
-    @toggle-user-status="handleToggleUserStatus" />
+    @start-src-config="handleStartSRCConfig" @save-src-config="handleSaveSRCConfig"
+    @toggle-user-status="handleToggleUserStatus" @pass-check-user="handlePassCheckUser" />
+
+  <!-- 创建方式选择弹窗 -->
+  <a-modal v-model:open="createModeSelectVisible" title="选择创建方式" :confirm-loading="addLoading" class="create-mode-modal"
+    width="600px" ok-text="确定" cancel-text="取消" @ok="handleConfirmCreateMode" @cancel="createModeSelectVisible = false">
+    <div class="mode-selection">
+      <a-radio-group v-model:value="selectedCreateMode" class="mode-radio-group">
+        <a-radio-button value="copy" class="mode-option">
+          <div class="mode-content">
+            <div class="mode-icon">
+              <FileTextOutlined />
+            </div>
+            <div class="mode-info">
+              <div class="mode-title">复制已有脚本</div>
+              <div class="mode-description">从现有脚本复制配置，快速创建相似脚本</div>
+            </div>
+          </div>
+        </a-radio-button>
+        <a-radio-button value="new" class="mode-option">
+          <div class="mode-content">
+            <div class="mode-icon">
+              <PlusOutlined />
+            </div>
+            <div class="mode-info">
+              <div class="mode-title">创建全新脚本</div>
+              <div class="mode-description">从头开始创建一个全新的脚本实例</div>
+            </div>
+          </div>
+        </a-radio-button>
+      </a-radio-group>
+    </div>
+  </a-modal>
+
+  <!-- 脚本选择弹窗 -->
+  <a-modal v-model:open="scriptSelectVisible" title="选择要复制的脚本" :confirm-loading="addLoading" class="script-select-modal"
+    width="800px" ok-text="确定复制" cancel-text="返回" :ok-button-props="{ disabled: !selectedScriptId }"
+    @ok="handleConfirmScriptSelect" @cancel="() => { scriptSelectVisible = false; createModeSelectVisible = true }">
+    <div class="script-selection">
+      <div v-if="scripts.length === 0" class="no-scripts">
+        <p>暂无可用脚本</p>
+      </div>
+      <div v-else class="scripts-list">
+        <div v-for="script in scripts" :key="script.id" :class="[
+          'script-item',
+          { selected: selectedScriptId === script.id },
+        ]" @click="selectedScriptId = script.id">
+          <div class="script-item-content">
+            <div class="script-icon">
+              <img v-if="script.type === 'MAA'" src="@/assets/MAA.png" alt="MAA" class="type-icon" />
+              <img v-else src="@/assets/AUTO-MAS.ico" alt="General" class="type-icon" />
+            </div>
+            <div class="script-info">
+              <div class="script-name">{{ script.name }}</div>
+              <div class="script-meta">
+                <span class="script-type">{{ script.type === 'MAA' ? 'MAA脚本' : script.type === 'SRC' ? 'SRC脚本' : '通用脚本' }}</span>
+                <span class="script-users">
+                  <UserOutlined />
+                  {{ script.users?.length || 0 }} 个用户
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </a-modal>
 
   <!-- 脚本类型选择弹窗 -->
   <a-modal v-model:open="typeSelectVisible" title="选择脚本类型" :confirm-loading="addLoading" class="type-select-modal"
@@ -69,6 +156,17 @@
             <div class="type-info">
               <div class="type-title">MAA脚本</div>
               <div class="type-description">明日方舟自动化脚本，支持多账号日常代理等功能</div>
+            </div>
+          </div>
+        </a-radio-button>
+        <a-radio-button value="SRC" class="type-option">
+          <div class="type-content">
+            <div class="type-logo-container">
+              <img src="@/assets/SRC.png" alt="SRC" class="type-logo" />
+            </div>
+            <div class="type-info">
+              <div class="type-title">SRC脚本</div>
+              <div class="type-description">崩坏星穹铁道自动化脚本，支持多账号日常代理等功能</div>
             </div>
           </div>
         </a-radio-button>
@@ -229,9 +327,13 @@ const scripts = ref<Script[]>([])
 const loadedOnce = ref(false)
 // 所有计划表数据 (planId -> planData)
 const allPlansData = ref<Record<string, Record<string, any>>>({})
+const createModeSelectVisible = ref(false) // 创建方式选择弹窗（复制已有 vs 创建新脚本）
+const scriptSelectVisible = ref(false) // 脚本列表选择弹窗
 const typeSelectVisible = ref(false)
 const generalModeSelectVisible = ref(false)
 const templateSelectVisible = ref(false)
+const selectedCreateMode = ref('new') // 'copy' or 'new'
+const selectedScriptId = ref<string | null>(null) // 选中要复制的脚本ID
 const selectedType = ref<ScriptType>('MAA')
 const selectedGeneralMode = ref('template')
 const selectedTemplate = ref<WebConfigTemplate | null>(null)
@@ -240,6 +342,7 @@ const addLoading = ref(false)
 const templateLoading = ref(false)
 const searchKeyword = ref('')
 const showMAAConfigMask = ref(false) // 控制MAA配置遮罩层的显示
+const showSRCConfigMask = ref(false) // 控制SRC配置遮罩层的显示
 const currentConfigScript = ref<Script | null>(null) // 当前正在配置的脚本
 
 // WebSocket连接管理
@@ -312,8 +415,70 @@ const loadCurrentPlan = async () => {
 }
 
 const handleAddScript = () => {
-  selectedType.value = 'MAA'
-  typeSelectVisible.value = true
+  // 如果当前没有脚本，直接进入类型选择
+  if (scripts.value.length === 0) {
+    selectedType.value = 'MAA'
+    typeSelectVisible.value = true
+    return
+  }
+
+  // 如果有脚本，显示创建方式选择弹窗
+  selectedCreateMode.value = 'new'
+  createModeSelectVisible.value = true
+}
+
+const handleConfirmCreateMode = () => {
+  if (selectedCreateMode.value === 'copy') {
+    // 复制已有脚本 - 打开脚本选择弹窗
+    createModeSelectVisible.value = false
+    selectedScriptId.value = null
+    scriptSelectVisible.value = true
+  } else {
+    // 创建新脚本 - 进入类型选择
+    createModeSelectVisible.value = false
+    selectedType.value = 'MAA'
+    typeSelectVisible.value = true
+  }
+}
+
+const handleConfirmScriptSelect = async () => {
+  if (!selectedScriptId.value) {
+    message.warning('请先选择一个脚本')
+    return
+  }
+
+  // 获取选中的脚本信息
+  const selectedScript = scripts.value.find(s => s.id === selectedScriptId.value)
+  if (!selectedScript) {
+    message.error('所选脚本不存在')
+    return
+  }
+
+  addLoading.value = true
+  try {
+    // 使用选中的脚本ID调用addScript，传入scriptId进行复制创建
+    const result = await addScript(selectedScript.type, selectedScriptId.value)
+    if (result) {
+      scriptSelectVisible.value = false
+      // 跳转到编辑页面
+      const editPath = selectedScript.type === 'MAA' ? 'maa' : 'general'
+      router.push({
+        path: `/scripts/${result.scriptId}/edit/${editPath}`,
+        state: {
+          scriptData: {
+            id: result.scriptId,
+            type: selectedScript.type,
+            config: result.data,
+          },
+        },
+      })
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`复制脚本失败: ${errorMsg}`)
+  } finally {
+    addLoading.value = false
+  }
 }
 
 const handleConfirmAddScript = async () => {
@@ -324,15 +489,16 @@ const handleConfirmAddScript = async () => {
     return
   }
 
-  // MAA脚本直接创建
+  // MAA和SRC脚本直接创建
   addLoading.value = true
   try {
     const result = await addScript(selectedType.value)
     if (result) {
       typeSelectVisible.value = false
       // 跳转到编辑页面，传递API返回的数据
+      const editPath = selectedType.value === 'MAA' ? 'maa' : selectedType.value === 'SRC' ? 'src' : 'general'
       router.push({
-        path: `/scripts/${result.scriptId}/edit/maa`,
+        path: `/scripts/${result.scriptId}/edit/${editPath}`,
         state: {
           scriptData: {
             id: result.scriptId,
@@ -447,6 +613,8 @@ const handleEditScript = (script: Script) => {
   // 根据脚本类型跳转到对应的编辑页面
   if (script.type === 'MAA') {
     router.push(`/scripts/${script.id}/edit/maa`)
+  } else if (script.type === 'SRC') {
+    router.push(`/scripts/${script.id}/edit/src`)
   } else {
     router.push(`/scripts/${script.id}/edit/general`)
   }
@@ -460,11 +628,13 @@ const handleDeleteScript = async (script: Script) => {
 }
 
 const handleAddUser = (script: Script) => {
-  // 根据条件判断跳转到 MAA 还是通用用户添加页面
+  // 根据脚本类型跳转到对应的用户添加页面
   if (script.type === 'MAA') {
-    router.push(`/scripts/${script.id}/users/add/maa`) // 跳转到 MAA 用户添加页面
+    router.push(`/scripts/${script.id}/users/add/maa`)
+  } else if (script.type === 'SRC') {
+    router.push(`/scripts/${script.id}/users/add/src`)
   } else {
-    router.push(`/scripts/${script.id}/users/add/general`) // 跳转到通用用户添加页面
+    router.push(`/scripts/${script.id}/users/add/general`)
   }
 }
 
@@ -472,12 +642,12 @@ const handleEditUser = (user: User) => {
   // 从用户数据中找到对应的脚本
   const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
   if (script) {
-    // 判断是 MAA 用户还是通用用户
-    if (user.Info.Server) {
-      // 跳转到 MAA 用户编辑页面
+    // 根据脚本类型跳转到对应的用户编辑页面
+    if (script.type === 'MAA') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/maa`)
+    } else if (script.type === 'SRC') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/src`)
     } else {
-      // 跳转到通用用户编辑页面
       router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
     }
   } else {
@@ -633,6 +803,136 @@ const handleSaveMAAConfig = async (script: Script) => {
   }
 }
 
+const handleStartSRCConfig = async (script: Script) => {
+  try {
+    // 检查是否已有连接
+    const existingConnection = activeConnections.value.get(script.id)
+    if (existingConnection) {
+      message.warning('该脚本已在配置中，请先保存配置')
+      return
+    }
+
+    // 调用启动配置任务API
+    const response = await Service.addTaskApiDispatchStartPost({
+      taskId: script.id,
+      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+    })
+
+    if (response.code === 200) {
+      // 显示遮罩层
+      showSRCConfigMask.value = true
+      currentConfigScript.value = script
+
+      // 订阅WebSocket消息
+      const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
+        // 处理错误消息
+        if (wsMessage.type === 'error') {
+          const errorMsg = wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
+          logger.error(`脚本 ${script.name} 连接错误: ${errorMsg}`)
+          message.error(`SRC配置连接失败: ${errorMsg}`)
+          activeConnections.value.delete(script.id)
+          // 连接错误时隐藏遮罩
+          showSRCConfigMask.value = false
+          currentConfigScript.value = null
+          return
+        }
+
+        // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
+        if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
+          const errorMsg = wsMessage.data.Error instanceof Error ? wsMessage.data.Error.message : String(wsMessage.data.Error)
+          logger.error(`脚本 ${script.name} 配置异常: ${errorMsg}`)
+          message.error(`SRC配置失败: ${errorMsg}`)
+          // 不取消订阅，等待Signal类型的Accomplish消息
+          return
+        }
+
+        // 处理任务结束消息（Signal类型且包含Accomplish字段）
+        if (
+          wsMessage.type === 'Signal' &&
+          wsMessage.data &&
+          wsMessage.data.Accomplish !== undefined
+        ) {
+          logger.info(`脚本 ${script.name} 配置任务已结束`)
+          // 根据结果显示不同消息
+          const result = wsMessage.data.Accomplish
+          if (result && !result.includes('异常') && !result.includes('错误')) {
+            message.success(`${script.name} 配置已完成`)
+          }
+          // 清理连接
+          unsubscribe(subscriptionId)
+          activeConnections.value.delete(script.id)
+          showSRCConfigMask.value = false
+          currentConfigScript.value = null
+        }
+      })
+
+      // 记录连接和subscriptionId
+      activeConnections.value.set(script.id, {
+        subscriptionId,
+        websocketId: response.taskId,
+      })
+      message.success(`已启动 ${script.name} 的SRC配置`)
+
+      // 设置自动断开连接的定时器（30分钟后）
+      setTimeout(
+        () => {
+          if (activeConnections.value.has(script.id)) {
+            const connection = activeConnections.value.get(script.id)
+            if (connection) {
+              unsubscribe(connection.subscriptionId)
+            }
+            activeConnections.value.delete(script.id)
+            // 超时时隐藏遮罩
+            showSRCConfigMask.value = false
+            currentConfigScript.value = null
+            message.info(`${script.name} 配置会话已超时断开`)
+          }
+        },
+        30 * 60 * 1000
+      ) // 30分钟
+    } else {
+      message.error(response.message || '启动SRC配置失败')
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`启动SRC配置失败: ${errorMsg}`)
+    message.error(`启动SRC配置失败: ${errorMsg}`)
+  }
+}
+
+const handleSaveSRCConfig = async (script: Script) => {
+  try {
+    const connection = activeConnections.value.get(script.id)
+    if (!connection) {
+      message.error('未找到活动的配置会话')
+      return
+    }
+
+    // 调用停止配置任务API
+    const response = await Service.stopTaskApiDispatchStopPost({
+      taskId: connection.websocketId,
+    })
+
+    if (response.code === 200) {
+      // 取消订阅
+      unsubscribe(connection.subscriptionId)
+      activeConnections.value.delete(script.id)
+
+      // 隐藏遮罩
+      showSRCConfigMask.value = false
+      currentConfigScript.value = null
+
+      message.success(`${script.name} 的配置已保存`)
+    } else {
+      message.error(response.message || '保存配置失败')
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存SRC配置失败: ${errorMsg}`)
+    message.error(`保存SRC配置失败: ${errorMsg}`)
+  }
+}
+
 const handleToggleUserStatus = async (user: User) => {
   try {
     // 找到该用户对应的脚本
@@ -660,6 +960,34 @@ const handleToggleUserStatus = async (user: User) => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新用户状态失败: ${errorMsg}`)
     message.error(`更新用户状态失败: ${errorMsg}`)
+  }
+}
+
+const handlePassCheckUser = async (user: User) => {
+  try {
+    // 找到该用户对应的脚本
+    const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
+    if (!script) {
+      message.error('找不到对应的脚本')
+      return
+    }
+
+    // 调用 updateUser API，更新 Data.IfPassCheck 为 true
+    const result = await updateUser(script.id, user.id, {
+      Data: {
+        IfPassCheck: true,
+      },
+    })
+
+    if (result) {
+      message.success('已标记为「通过人工排查」')
+      // 刷新脚本配置
+      await loadScripts()
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`更新人工排查状态失败: ${errorMsg}`)
+    message.error(`更新人工排查状态失败: ${errorMsg}`)
   }
 }
 </script>
@@ -1127,5 +1455,163 @@ const handleToggleUserStatus = async (user: User) => {
   font-size: 12px;
   color: var(--ant-color-text-tertiary);
   margin-top: 4px;
+}
+
+/* 创建方式选择弹窗样式 */
+.create-mode-modal {
+  text-align: left;
+}
+
+.create-mode-modal :deep(.ant-modal-header) {
+  border-bottom: 2px solid var(--ant-color-border-secondary);
+  padding: 20px 24px;
+}
+
+.create-mode-modal :deep(.ant-modal-title) {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.create-mode-modal :deep(.ant-modal-body) {
+  padding: 24px;
+}
+
+.create-mode-modal :deep(.ant-modal-footer) {
+  padding: 16px 24px;
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+
+/* 脚本选择弹窗样式 */
+.script-select-modal {
+  text-align: left;
+}
+
+.script-select-modal :deep(.ant-modal-header) {
+  border-bottom: 2px solid var(--ant-color-border-secondary);
+  padding: 20px 24px;
+}
+
+.script-select-modal :deep(.ant-modal-title) {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.script-select-modal :deep(.ant-modal-body) {
+  padding: 24px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.script-select-modal :deep(.ant-modal-footer) {
+  padding: 16px 24px;
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+
+.script-selection {
+  margin-top: 8px;
+}
+
+.scripts-list {
+  max-height: 450px;
+  overflow-y: auto;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 6px;
+  background: var(--ant-color-bg-container);
+}
+
+.script-item {
+  padding: 16px;
+  border-bottom: 1px solid var(--ant-color-border);
+  cursor: pointer;
+  transition:
+    background-color 0.2s,
+    border-left-color 0.2s;
+  background: var(--ant-color-bg-container);
+  position: relative;
+  border-left: 3px solid transparent;
+}
+
+.script-item:last-child {
+  border-bottom: none;
+}
+
+.script-item:hover {
+  background: var(--ant-color-primary-bg);
+  border-left-color: var(--ant-color-primary-hover);
+}
+
+.script-item.selected {
+  background: var(--ant-color-primary-bg);
+  border-left-color: var(--ant-color-primary);
+}
+
+.script-item.selected .script-name {
+  color: var(--ant-color-primary);
+  font-weight: 600;
+}
+
+.script-item-content {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.script-icon {
+  width: 48px;
+  height: 48px;
+  margin-right: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--ant-color-primary-bg);
+  flex-shrink: 0;
+}
+
+.type-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.script-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.script-name {
+  font-size: 16px;
+  font-weight: 500;
+  margin: 0 0 6px;
+  color: var(--ant-color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.2s;
+}
+
+.script-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--ant-color-text-secondary);
+}
+
+.script-type {
+  font-weight: 500;
+}
+
+.script-users {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.no-scripts {
+  text-align: center;
+  padding: 48px 16px;
+  color: var(--ant-color-text-secondary);
 }
 </style>

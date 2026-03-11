@@ -3,7 +3,13 @@
     <a-typography-title>{{ greeting }}</a-typography-title>
     <!-- 右上角公告按钮 -->
     <div class="header-actions">
-      <a-button type="primary" ghost :loading="noticeLoading" class="notice-button" @click="showNotice">
+      <a-button
+        type="primary"
+        ghost
+        :loading="noticeLoading"
+        class="notice-button"
+        @click="showNotice"
+      >
         <template #icon>
           <BellOutlined />
         </template>
@@ -13,11 +19,20 @@
   </div>
 
   <!-- 公告模态框 -->
-  <NoticeModal v-model:visible="noticeVisible" :notice-data="noticeData" @confirmed="onNoticeConfirmed" />
+  <NoticeModal
+    v-model:visible="noticeVisible"
+    :notice-data="noticeData"
+    @confirmed="onNoticeConfirmed"
+  />
 
   <div class="content">
     <!-- 当期活动关卡 -->
-    <a-card v-if="activityData?.length" title="当期活动关卡" class="activity-card" :loading="loading">
+    <a-card
+      v-if="activityData?.length"
+      title="当期活动关卡"
+      class="activity-card"
+      :loading="loading"
+    >
       <div v-if="error" class="error-message">
         <a-alert :message="error" type="error" show-icon closable @close="error = ''" />
       </div>
@@ -39,25 +54,42 @@
 
           <div class="activity-right">
             <!-- 活动已结束时显示提示 -->
-            <a-statistic-countdown v-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'ended'" title=""
-              :value="getCountdownValue(currentActivity.UtcExpireTime)" format="活动已结束" :value-style="{
+            <a-statistic-countdown
+              v-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'ended'"
+              title=""
+              :value="getCountdownValue(currentActivity.UtcExpireTime)"
+              format="活动已结束"
+              :value-style="{
                 color: '#ff4d4f',
                 fontWeight: 'bold',
                 fontSize: '18px',
-              }" @finish="onCountdownFinish" />
+              }"
+              @finish="onCountdownFinish"
+            />
 
             <!-- 剩余时间小于两天时显示炫彩倒计时 -->
-            <a-statistic-countdown v-else-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'warning'"
-              title="当期活动剩余时间" :value="getCountdownValue(currentActivity.UtcExpireTime)"
-              format="D 天 H 时 m 分 ss 秒 SSS 毫秒" class="rainbow-text" @finish="onCountdownFinish" />
+            <a-statistic-countdown
+              v-else-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'warning'"
+              title="当期活动剩余时间"
+              :value="getCountdownValue(currentActivity.UtcExpireTime)"
+              format="D 天 H 时 m 分 ss 秒 SSS 毫秒"
+              class="rainbow-text"
+              @finish="onCountdownFinish"
+            />
 
             <!-- 剩余时间大于等于两天时显示常规倒计时 -->
-            <a-statistic-countdown v-else title="当期活动剩余时间" :value="getCountdownValue(currentActivity.UtcExpireTime)"
-              format="D 天 H 时 m 分" :value-style="{
+            <a-statistic-countdown
+              v-else
+              title="当期活动剩余时间"
+              :value="getCountdownValue(currentActivity.UtcExpireTime)"
+              format="D 天 H 时 m 分"
+              :value-style="{
                 color: 'var(--ant-color-text)',
                 fontWeight: '600',
                 fontSize: '20px',
-              }" @finish="onCountdownFinish" />
+              }"
+              @finish="onCountdownFinish"
+            />
           </div>
         </div>
       </div>
@@ -70,8 +102,12 @@
 
           <div class="drop-info">
             <div class="drop-image">
-              <img v-if="getMaterialImage(item.Drop)" :src="getMaterialImage(item.Drop)" :alt="item.DropName"
-                @error="handleImageError" />
+              <img
+                v-if="getMaterialImage(item.Drop)"
+                :src="getMaterialImage(item.Drop)"
+                :alt="item.DropName"
+                @error="handleImageError"
+              />
             </div>
 
             <div class="drop-details">
@@ -98,8 +134,12 @@
 
           <div class="drop-info">
             <div class="drop-image">
-              <img v-if="getMaterialImage(item.Drop)" :src="getMaterialImage(item.Drop)" :alt="item.DropName"
-                @error="handleImageError" />
+              <img
+                v-if="getMaterialImage(item.Drop)"
+                :src="getMaterialImage(item.Drop)"
+                :alt="item.DropName"
+                @error="handleImageError"
+              />
             </div>
 
             <div class="drop-details">
@@ -140,7 +180,10 @@
               <div class="proxy-stats">
                 <!-- 第一行：最后代理时间，独占一行 -->
                 <div class="stat-item full-width">
-                  <a-statistic title="最后代理时间" :value="formatProxyDisplay(proxy.LastProxyDate)" />
+                  <a-statistic
+                    title="最后代理时间"
+                    :value="formatProxyDisplay(proxy.LastProxyDate)"
+                  />
                 </div>
 
                 <!-- 第二行：代理次数 和 错误次数 -->
@@ -148,8 +191,11 @@
                   <a-statistic title="代理次数" :value="proxy.ProxyTimes" />
                 </div>
                 <div class="stat-item half-width">
-                  <a-statistic title="错误次数" :value="proxy.ErrorTimes"
-                    :value-style="{ color: proxy.ErrorTimes > 0 ? '#ff4d4f' : undefined }" />
+                  <a-statistic
+                    title="错误次数"
+                    :value="proxy.ErrorTimes"
+                    :value-style="{ color: proxy.ErrorTimes > 0 ? '#ff4d4f' : undefined }"
+                  />
                 </div>
               </div>
 
@@ -185,12 +231,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { ClockCircleOutlined, UserOutlined, BellOutlined } from '@ant-design/icons-vue'
 import { Service } from '@/api/services/Service'
 import NoticeModal from '@/components/NoticeModal.vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import { useAppInitialization } from '@/composables/useAppInitialization'
 import dayjs from 'dayjs'
 import { OpenAPI } from '@/api'
 const logger = window.electronAPI.getLogger('首页')
@@ -247,6 +294,7 @@ const proxyData = ref<Record<string, ProxyInfo>>({})
 const noticeVisible = ref(false)
 const noticeData = ref<Record<string, string>>({})
 const noticeLoading = ref(false)
+const { isBootstrapping } = useAppInitialization()
 
 // 音频播放器
 const { playSound } = useAudioPlayer()
@@ -310,11 +358,7 @@ const getProxyTimestamp = (dateStr: string) => {
   // 处理后端返回的中文日期格式: "2025年11月05日 16:02:00"
   try {
     // 将中文日期格式转换为标准格式
-    const standardFormat = dateStr
-      .replace(/年/g, '-')
-      .replace(/月/g, '-')
-      .replace(/日/g, '')
-      .trim()
+    const standardFormat = dateStr.replace(/年/g, '-').replace(/月/g, '-').replace(/日/g, '').trim()
 
     const t = new Date(standardFormat).getTime()
     return Number.isNaN(t) ? Date.now() : t
@@ -449,9 +493,28 @@ const showNotice = async () => {
   }
 }
 
-onMounted(() => {
+const loadHomeData = () => {
   fetchActivityData()
   fetchNoticeData()
+}
+
+onMounted(() => {
+  if (isBootstrapping.value) {
+    loading.value = true
+    noticeLoading.value = true
+
+    const stopWatching = watch(isBootstrapping, bootstrapping => {
+      if (bootstrapping) {
+        return
+      }
+
+      stopWatching()
+      loadHomeData()
+    })
+    return
+  }
+
+  loadHomeData()
 })
 </script>
 
@@ -725,7 +788,6 @@ onMounted(() => {
 
 /* 响应式设计 */
 @media (max-width: 1500px) {
-
   .activity-list,
   .resource-list {
     grid-template-columns: repeat(4, 1fr);
@@ -733,7 +795,6 @@ onMounted(() => {
 }
 
 @media (max-width: 1240px) {
-
   .activity-list,
   .resource-list {
     grid-template-columns: repeat(3, 1fr);

@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "v5.0.4",
+  "version": "v5.1.0-beta.2",
   "description": "A Multi-Script, Multi-Config Management and Automation Software",
   "author": "AUTO-MAS Team",
   "main": "dist-electron/main.js",
@@ -20,7 +20,8 @@
     "release:lite": "vite build && yarn build:main && electron-builder --win --publish always --config build-json/electron-builder-lite.json",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "format": "prettier . --write"
+    "format": "prettier . --write",
+    "openapi": "openapi --input http://127.0.0.1:36163/openapi.json --output ./src/api --client axios"
   },
   "build": {
     "asar": true,
@@ -71,6 +72,7 @@
     "electron-log": "^5.4.3",
     "form-data": "^4.0.4",
     "markdown-it": "^14.1.0",
+    "matter-js": "^0.20.0",
     "monaco-editor": "^0.54.0",
     "pinia": "^3.0.3",
     "vue": "^3.5.17",
@@ -79,6 +81,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.37.0",
+    "@types/matter-js": "^0",
     "@types/node": "22.17.1",
     "@typescript-eslint/eslint-plugin": "^8.38.0",
     "@typescript-eslint/parser": "^8.38.0",

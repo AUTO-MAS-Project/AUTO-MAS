@@ -1055,6 +1055,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/matter-js@npm:^0":
+  version: 0.20.2
+  resolution: "@types/matter-js@npm:0.20.2"
+  checksum: 10c0/da953eb54e3c0595ee4d9c36a95568161d41bdc42ae6fca0d479c0f0855e84c92925059d4bdb64a03d16ee5b7eca55af645bd26d2dfc581d574a42519ff1d345
+  languageName: node
+  linkType: hard
+
 "@types/mdurl@npm:^2":
   version: 2.0.0
   resolution: "@types/mdurl@npm:2.0.0"
@@ -3095,6 +3102,7 @@ __metadata:
     "@guolao/vue-monaco-editor": "npm:^1.6.0"
     "@types/adm-zip": "npm:^0.5.7"
     "@types/markdown-it": "npm:^14.1.2"
+    "@types/matter-js": "npm:^0"
     "@types/node": "npm:22.17.1"
     "@typescript-eslint/eslint-plugin": "npm:^8.38.0"
     "@typescript-eslint/parser": "npm:^8.38.0"
@@ -3117,6 +3125,7 @@ __metadata:
     form-data: "npm:^4.0.4"
     globals: "npm:^16.4.0"
     markdown-it: "npm:^14.1.0"
+    matter-js: "npm:^0.20.0"
     monaco-editor: "npm:^0.54.0"
     openapi-typescript-codegen: "npm:^0.29.0"
     pinia: "npm:^3.0.3"
@@ -4039,6 +4048,13 @@ __metadata:
   version: 1.1.0
   resolution: "math-intrinsics@npm:1.1.0"
   checksum: 10c0/7579ff94e899e2f76ab64491d76cf606274c874d8f2af4a442c016bd85688927fcfca157ba6bf74b08e9439dc010b248ce05b96cc7c126a354c3bae7fcb48b7f
+  languageName: node
+  linkType: hard
+
+"matter-js@npm:^0.20.0":
+  version: 0.20.0
+  resolution: "matter-js@npm:0.20.0"
+  checksum: 10c0/95d58f407205ad24c96422109c959999f474ef29af79b4c2ad7550bca97cdcdac99df31ebe35ab858d9863c8f6cd5205339fbbff70909b56a3e2a6a57200c51b
   languageName: node
   linkType: hard
 

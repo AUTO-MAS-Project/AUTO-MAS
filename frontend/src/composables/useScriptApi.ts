@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { type GeneralConfig, type MaaConfig, ScriptCreateIn, type ScriptReorderIn, Service } from '@/api'
+import { type GeneralConfig, type MaaConfig, type SrcConfig, ScriptCreateIn, type ScriptReorderIn, Service } from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
@@ -10,14 +10,15 @@ export function useScriptApi() {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  // 添加脚本
-  const addScript = async (type: ScriptType) => {
+  // 添加脚本（支持从已有脚本复制创建）
+  const addScript = async (type: ScriptType, scriptId?: string) => {
     loading.value = true
     error.value = null
 
     try {
       const requestData: ScriptCreateIn = {
-        type: type === 'MAA' ? ScriptCreateIn.type.MAA : ScriptCreateIn.type.GENERAL,
+        type: type === 'MAA' ? ScriptCreateIn.type.MAA : type === 'SRC' ? ScriptCreateIn.type.SRC : ScriptCreateIn.type.GENERAL,
+        scriptId: scriptId || null,
       }
 
       const response = await Service.addScriptApiScriptsAddPost(requestData)
@@ -57,7 +58,7 @@ export function useScriptApi() {
       uid: string
       type: string
       name: string
-      config: MaaConfig | GeneralConfig
+      config: MaaConfig | GeneralConfig | SrcConfig
     }[]
   > => {
     if (manageLoading) {
@@ -80,7 +81,7 @@ export function useScriptApi() {
       // 将API响应转换为ScriptDetail数组
       return response.index.map(indexItem => ({
         uid: indexItem.uid,
-        type: indexItem.type === 'MaaConfig' ? 'MAA' : 'General',
+        type: indexItem.type === 'MaaConfig' ? 'MAA' : indexItem.type === 'SrcConfig' ? 'SRC' : 'General',
         name: response.data[indexItem.uid]?.Info?.Name || `${indexItem.type}脚本`,
         config: response.data[indexItem.uid],
       }))
@@ -292,6 +293,7 @@ export function useScriptApi() {
                           maaUserData.Info?.SklandToken !== undefined
                             ? maaUserData.Info.SklandToken
                             : '',
+                        Tag: maaUserData.Info?.Tag !== undefined ? maaUserData.Info.Tag : null,
                       },
                       Task: {
                         IfStartUp:
@@ -376,6 +378,111 @@ export function useScriptApi() {
                             : 0,
                       },
                     }
+                  } else if (userIndex.type === 'SrcUserConfig' && userData) {
+                    const srcUserData = userData as any
+                    return {
+                      id: userIndex.uid,
+                      name: srcUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name:
+                          srcUserData.Info?.Name !== undefined
+                            ? srcUserData.Info.Name
+                            : `用户${userIndex.uid}`,
+                        Id: srcUserData.Info?.Id !== undefined ? srcUserData.Info.Id : '',
+                        Password:
+                          srcUserData.Info?.Password !== undefined ? srcUserData.Info.Password : '',
+                        Mode: srcUserData.Info?.Mode !== undefined ? srcUserData.Info.Mode : '简洁',
+                        Server:
+                          srcUserData.Info?.Server !== undefined
+                            ? srcUserData.Info.Server
+                            : 'CN-Official',
+                        Status:
+                          srcUserData.Info?.Status !== undefined ? srcUserData.Info.Status : true,
+                        RemainedDay:
+                          srcUserData.Info?.RemainedDay !== undefined
+                            ? srcUserData.Info.RemainedDay
+                            : -1,
+                        Notes: srcUserData.Info?.Notes !== undefined ? srcUserData.Info.Notes : '',
+                        Tag: srcUserData.Info?.Tag !== undefined ? srcUserData.Info.Tag : null,
+                      },
+                      Stage: {
+                        Channel:
+                          srcUserData.Stage?.Channel !== undefined
+                            ? srcUserData.Stage.Channel
+                            : 'Relic',
+                        Relic: srcUserData.Stage?.Relic !== undefined ? srcUserData.Stage.Relic : '-',
+                        Materials:
+                          srcUserData.Stage?.Materials !== undefined
+                            ? srcUserData.Stage.Materials
+                            : '-',
+                        Ornament:
+                          srcUserData.Stage?.Ornament !== undefined
+                            ? srcUserData.Stage.Ornament
+                            : '-',
+                        ExtractReservedTrailblazePower:
+                          srcUserData.Stage?.ExtractReservedTrailblazePower !== undefined
+                            ? srcUserData.Stage.ExtractReservedTrailblazePower
+                            : false,
+                        UseFuel:
+                          srcUserData.Stage?.UseFuel !== undefined
+                            ? srcUserData.Stage.UseFuel
+                            : false,
+                        FuelReserve:
+                          srcUserData.Stage?.FuelReserve !== undefined
+                            ? srcUserData.Stage.FuelReserve
+                            : 5,
+                        EchoOfWar:
+                          srcUserData.Stage?.EchoOfWar !== undefined
+                            ? srcUserData.Stage.EchoOfWar
+                            : '-',
+                        SimulatedUniverseWorld:
+                          srcUserData.Stage?.SimulatedUniverseWorld !== undefined
+                            ? srcUserData.Stage.SimulatedUniverseWorld
+                            : '-',
+                      },
+                      Notify: {
+                        Enabled:
+                          srcUserData.Notify?.Enabled !== undefined
+                            ? srcUserData.Notify.Enabled
+                            : false,
+                        IfSendStatistic:
+                          srcUserData.Notify?.IfSendStatistic !== undefined
+                            ? srcUserData.Notify.IfSendStatistic
+                            : false,
+                        IfSendMail:
+                          srcUserData.Notify?.IfSendMail !== undefined
+                            ? srcUserData.Notify.IfSendMail
+                            : false,
+                        ToAddress:
+                          srcUserData.Notify?.ToAddress !== undefined
+                            ? srcUserData.Notify.ToAddress
+                            : '',
+                        IfServerChan:
+                          srcUserData.Notify?.IfServerChan !== undefined
+                            ? srcUserData.Notify.IfServerChan
+                            : false,
+                        ServerChanKey:
+                          srcUserData.Notify?.ServerChanKey !== undefined
+                            ? srcUserData.Notify.ServerChanKey
+                            : '',
+                        CustomWebhooks:
+                          srcUserData.Notify?.CustomWebhooks !== undefined
+                            ? srcUserData.Notify.CustomWebhooks
+                            : [],
+                      },
+                      Data: {
+                        LastProxyDate:
+                          srcUserData.Data?.LastProxyDate !== undefined
+                            ? srcUserData.Data.LastProxyDate
+                            : '',
+                        ProxyTimes:
+                          srcUserData.Data?.ProxyTimes !== undefined ? srcUserData.Data.ProxyTimes : 0,
+                        IfPassCheck:
+                          srcUserData.Data?.IfPassCheck !== undefined
+                            ? srcUserData.Data.IfPassCheck
+                            : false,
+                      },
+                    }
                   } else if (userIndex.type === 'GeneralUserConfig' && userData) {
                     const generalUserData = userData as any
                     return {
@@ -414,6 +521,7 @@ export function useScriptApi() {
                           generalUserData.Info?.Notes !== undefined
                             ? generalUserData.Info.Notes
                             : '',
+                        Tag: generalUserData.Info?.Tag !== undefined ? generalUserData.Info.Tag : null,
                       },
                       Notify: {
                         Enabled:
@@ -518,7 +626,7 @@ export function useScriptApi() {
 
       const item = response.index[0]
       const config = response.data[item.uid]
-      const scriptType: ScriptType = item.type === 'MaaConfig' ? 'MAA' : 'General'
+      const scriptType: ScriptType = item.type === 'MaaConfig' ? 'MAA' : item.type === 'SrcConfig' ? 'SRC' : 'General'
 
       return {
         uid: item.uid,

@@ -6,16 +6,16 @@
 #   This file is part of AUTO-MAS.
 
 #   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU General Public License as published
-#   by the Free Software Foundation, either version 3 of the License,
-#   or (at your option) any later version.
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
 
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU General Public License for more details.
+#   the GNU Affero General Public License for more details.
 
-#   You should have received a copy of the GNU General Public License
+#   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
@@ -76,15 +76,13 @@ def main():
         @asynccontextmanager
         async def lifespan(app: FastAPI):
             from app.core import Config, MainTimer, TaskManager
-            from app.services import System
+            from app.MaaFW import ArknightWin32Toolkit
 
             await Config.init_config()
             await Config.get_stage()
             await Config.clean_old_history()
-            second_timer = asyncio.create_task(MainTimer.second_task())
-            hour_timer = asyncio.create_task(MainTimer.hour_task())
-            await System.set_Sleep()
-            await System.set_SelfStart()
+            await ArknightWin32Toolkit.init()
+            await MainTimer.start()
 
             # 初始化 Koishi 系统客户端（如果已启用）
             if Config.get("Notify", "IfKoishiSupport"):
@@ -106,13 +104,8 @@ def main():
             yield
 
             await TaskManager.stop_task("ALL")
-            second_timer.cancel()
-            hour_timer.cancel()
-            try:
-                await second_timer
-                await hour_timer
-            except asyncio.CancelledError:
-                logger.info("主业务定时器已关闭")
+
+            await MainTimer.stop()
 
             from app.services import Matomo
 
@@ -130,6 +123,7 @@ def main():
             queue_router,
             dispatch_router,
             history_router,
+            tools_router,
             setting_router,
             update_router,
             ocr_router,
@@ -159,6 +153,7 @@ def main():
         app.include_router(queue_router)
         app.include_router(dispatch_router)
         app.include_router(history_router)
+        app.include_router(tools_router)
         app.include_router(setting_router)
         app.include_router(update_router)
         app.include_router(ocr_router)

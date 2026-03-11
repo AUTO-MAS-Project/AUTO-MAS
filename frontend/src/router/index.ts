@@ -1,5 +1,7 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { useAppInitialization } from '@/composables/useAppInitialization'
+import { getInitializationDecision } from '@/utils/initializationDecision'
+import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
 const logger = window.electronAPI.getLogger('路由管理')
 
 // 异步按需加载调度中心，避免弹窗窗口提前执行相关逻辑
@@ -37,6 +39,12 @@ const routes = [
     meta: { title: '编辑MAA脚本' },
   },
   {
+    path: '/scripts/:id/edit/src',
+    name: 'SRCScriptEdit',
+    component: () => import('../views/EditView/Script/SRCScriptEdit.vue'),
+    meta: { title: '编辑SRC脚本' },
+  },
+  {
     path: '/scripts/:id/edit/general',
     name: 'GeneralScriptEdit',
     component: () => import('../views/EditView/Script/GeneralScriptEdit.vue'),
@@ -53,6 +61,18 @@ const routes = [
     name: 'MAAUserEdit',
     component: () => import('../views/EditView/User/MAAUserEdit.vue'),
     meta: { title: '编辑MAA用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/add/src',
+    name: 'SRCUserAdd',
+    component: () => import('../views/EditView/User/SRCUserEdit.vue'),
+    meta: { title: '添加SRC用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/src',
+    name: 'SRCUserEdit',
+    component: () => import('../views/EditView/User/SRCUserEdit.vue'),
+    meta: { title: '编辑SRC用户' },
   },
   {
     path: '/scripts/:scriptId/users/add/general',
@@ -90,7 +110,7 @@ const routes = [
     component: SchedulerView,
     meta: {
       title: '调度中心',
-      keepAlive: true // 启用 keep-alive，保持组件存活
+      keepAlive: true, // 启用 keep-alive，保持组件存活
     },
   },
   {
@@ -112,10 +132,22 @@ const routes = [
     meta: { title: 'WSdev' },
   },
   {
+    path: '/OverlayMaskDev',
+    name: 'OverlayMaskDev',
+    component: () => import('../views/OverlayMaskDev.vue'),
+    meta: { title: '遮罩彩蛋测试' },
+  },
+  {
     path: '/history',
     name: 'History',
     component: () => import('../views/history/index.vue'),
     meta: { title: '历史记录' },
+  },
+  {
+    path: '/tools',
+    name: 'Tools',
+    component: () => import('../views/tools/index.vue'),
+    meta: { title: '工具' },
   },
   {
     path: '/settings',
@@ -139,6 +171,8 @@ const router = createRouter({
 router.beforeEach(async (to, from, next) => {
   logger.info(`路由守卫：${JSON.stringify({ to: to.path, from: from.path })}`)
 
+  const { isInitialized, isBootstrapping } = useAppInitialization()
+
   // 声明跳过的路由：直接放行
   if ((to.meta as any)?.skipGuard) {
     next()
@@ -146,16 +180,39 @@ router.beforeEach(async (to, from, next) => {
   }
 
   if (to.path === '/initialization') {
+    if (!isInitialized.value && !isBootstrapping.value) {
+      const decision = await getInitializationDecision()
+      if (decision.mode === 'skip-home') {
+        needInitLanding = false
+        logger.info(`命中跳过初始化条件，直接进入主页: ${JSON.stringify(decision)}`)
+        void startSkippedInitializationStartup()
+        next('/home')
+        return
+      }
+    }
+
+    sessionStorage.removeItem('disableInitializationSkip')
     needInitLanding = false
     next()
     return
   }
 
-  const isDev = import.meta.env.VITE_APP_ENV === 'dev'
+  const isDev = import.meta.env.DEV
   if (isDev) return next()
 
-  const { isInitialized } = useAppInitialization()
-  logger.info(`检查初始化状态：${JSON.stringify({ isInitialized: isInitialized.value })}`)
+  logger.info(
+    `检查初始化状态：${JSON.stringify({ isInitialized: isInitialized.value, isBootstrapping: isBootstrapping.value })}`
+  )
+  if (isBootstrapping.value) {
+    needInitLanding = false
+    if (to.path !== '/home') {
+      next('/home')
+      return
+    }
+    next()
+    return
+  }
+
   if (!isInitialized.value) {
     needInitLanding = false
     next('/initialization')
