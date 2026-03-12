@@ -78,7 +78,7 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
         index, data = await Config.get_script(script.scriptId)
         index = [ScriptIndexItem(**_) for _ in index]
         data = {
-            uid: SCRIPT_BOOK[next((_.type for _ in index if _.uid == uid), "General")](
+            uid: SCRIPT_BOOK[next((_.type for _ in index if _.uid == uid), "GeneralConfig")](
                 **cfg
             )
             for uid, cfg in data.items()
