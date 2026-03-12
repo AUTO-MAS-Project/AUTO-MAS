@@ -28,6 +28,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.services import System
 from app.utils import get_logger, ProcessManager
+from .runtime_bridge import build_runtime_config
 
 
 logger = get_logger("MaaEnd ScriptConfig")
@@ -128,15 +129,10 @@ class ScriptConfigTask(TaskExecuteBase):
                 await self.script_config.set("MaaEnd", "PresetTask", preset_name)
 
                 if self.cur_user_item.user_id != "Default":
-                    try:
-                        user_uid = uuid.UUID(self.cur_user_item.user_id)
-                        await self.user_config[user_uid].set(
-                            "Task", "PresetOverride", preset_name
-                        )
-                    except (ValueError, KeyError):
-                        logger.warning(
-                            f"User id is not available for preset override: {self.cur_user_item.user_id}"
-                        )
+                    user_uid = uuid.UUID(self.cur_user_item.user_id)
+                    await self.user_config[user_uid].set(
+                        "Task", "PresetOverride", preset_name
+                    )
 
             if resource_name:
                 await self.script_config.set("MaaEnd", "ResourceProfile", resource_name)
@@ -158,6 +154,17 @@ class ScriptConfigTask(TaskExecuteBase):
 
         self.user_config_cache_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(self.maaend_config_path, self.user_config_cache_path)
+
+        if self.cur_user_item.user_id != "Default":
+            runtime_user_cfg = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
+            runtime_path = build_runtime_config(
+                self.script_info.script_id,
+                self.cur_user_item.user_id,
+                self.script_config,
+                runtime_user_cfg,
+            )
+            logger.info(f"MaaEnd runtime config generated: {runtime_path}")
+
         self.cur_user_item.status = "完成"
 
     async def on_crash(self, e: Exception):
