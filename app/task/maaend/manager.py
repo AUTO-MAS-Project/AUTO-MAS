@@ -1,15 +1,19 @@
-import shutil
+﻿import shutil
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 from app.core import Config
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.services import Notify
 from app.utils import get_logger
+from app.utils.constants import TASK_MODE_ZH
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
+from .tools import push_notification
 
 
 logger = get_logger("MaaEnd 调度器")
@@ -33,6 +37,7 @@ class MaaEndManager(TaskExecuteBase):
         self.script_info = script_info
 
         self.check_result = "-"
+        self.begin_time = "-"
 
         self.prepared_ok = False
         self.config_locked = False
@@ -56,7 +61,7 @@ class MaaEndManager(TaskExecuteBase):
         maaend_root_path = Path(script_config.get("Info", "Path"))
         maaend_exe_path = maaend_root_path / "MaaEnd.exe"
         if not maaend_exe_path.exists():
-            return f"MaaEnd.exe文件不存在, 请检查MaaEnd路径设置！({maaend_exe_path})"
+            return f"MaaEnd.exe文件不存在, 请检查MaaEnd路径设置！（{maaend_exe_path}）"
 
         return "Pass"
 
@@ -103,6 +108,7 @@ class MaaEndManager(TaskExecuteBase):
             )
             return
 
+        self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await self.prepare()
 
         if not isinstance(self.script_config, MaaEndConfig):
@@ -119,6 +125,7 @@ class MaaEndManager(TaskExecuteBase):
     async def final_task(self):
         if self.check_result != "Pass":
             self.script_info.status = "异常"
+            return self.check_result
 
         if self.config_locked:
             await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
@@ -128,6 +135,38 @@ class MaaEndManager(TaskExecuteBase):
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())
+
+        if self.task_info.mode == "AutoProxy":
+            error_user = [u.name for u in self.script_info.user_list if u.status == "异常"]
+            over_user = [u.name for u in self.script_info.user_list if u.status == "完成"]
+            wait_user = [u.name for u in self.script_info.user_list if u.status == "等待"]
+
+            title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
+            result = {
+                "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
+                "script_name": self.script_info.name or "空白",
+                "start_time": self.begin_time,
+                "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "completed_count": len(over_user),
+                "uncompleted_count": len(error_user) + len(wait_user),
+                "result": self.script_info.result,
+            }
+
+            await Notify.push_plyer(
+                title.replace("报告", "已完成！"),
+                f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
+                f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
+                10,
+            )
+            try:
+                await push_notification("代理结果", title, result, None)
+            except Exception as e:
+                logger.exception(f"推送代理结果时出现异常: {e}")
+                await Config.send_websocket_message(
+                    id=self.task_info.task_id,
+                    type="Info",
+                    data={"Error": f"推送代理结果时出现异常: {e}"},
+                )
 
         if self.backup_created and self.backup_path.exists():
             if self.maaend_config_dir.exists():
