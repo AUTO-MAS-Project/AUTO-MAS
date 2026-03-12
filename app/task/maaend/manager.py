@@ -9,7 +9,7 @@ from app.utils import get_logger
 from .ScriptConfig import ScriptConfigTask
 
 
-logger = get_logger("MaaEnd Manager")
+logger = get_logger("MaaEnd 调度器")
 
 METHOD_BOOK: dict[str, type[ScriptConfigTask]] = {
     "ScriptConfig": ScriptConfigTask,
@@ -17,13 +17,13 @@ METHOD_BOOK: dict[str, type[ScriptConfigTask]] = {
 
 
 class MaaEndManager(TaskExecuteBase):
-    """MaaEnd manager."""
+    """MaaEnd 控制器"""
 
     def __init__(self, script_info: ScriptItem):
         super().__init__()
 
         if script_info.task_info is None:
-            raise RuntimeError("ScriptItem is not bound to TaskItem")
+            raise RuntimeError("ScriptItem 未绑定到 TaskItem")
 
         self.task_info = script_info.task_info
         self.script_info = script_info
@@ -31,16 +31,16 @@ class MaaEndManager(TaskExecuteBase):
 
     async def check(self) -> str:
         if self.task_info.mode not in METHOD_BOOK:
-            return "Unsupported task mode, please check task config"
+            return "不支持的任务模式, 请检查任务配置！"
 
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         if not isinstance(script_config, MaaEndConfig):
-            return "Script config type error: not MaaEnd"
+            return "脚本配置类型错误, 不是 MaaEnd 脚本类型"
 
         maaend_root_path = Path(script_config.get("Info", "Path"))
         maaend_exe_path = maaend_root_path / "MaaEnd.exe"
         if not maaend_exe_path.exists():
-            return f"MaaEnd executable not found: {maaend_exe_path}"
+            return f"MaaEnd.exe文件不存在, 请检查MaaEnd路径设置！({maaend_exe_path})"
 
         return "Pass"
 
@@ -62,7 +62,7 @@ class MaaEndManager(TaskExecuteBase):
 
         self.check_result = await self.check()
         if self.check_result != "Pass":
-            logger.error(f"MaaEnd check failed: {self.check_result}")
+            logger.error(f"未通过配置检查: {self.check_result}")
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
                 type="Info",
@@ -73,7 +73,7 @@ class MaaEndManager(TaskExecuteBase):
         await self.prepare()
 
         if not isinstance(self.script_config, MaaEndConfig):
-            raise RuntimeError("Script config type error: not MaaEnd")
+            raise RuntimeError("脚本配置类型错误, 不是 MaaEnd 脚本类型")
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
             task = METHOD_BOOK[self.task_info.mode](
@@ -99,9 +99,9 @@ class MaaEndManager(TaskExecuteBase):
     async def on_crash(self, e: Exception):
 
         self.script_info.status = "异常"
-        logger.exception(f"MaaEnd task failed: {e}")
+        logger.exception(f"MaaEnd 任务出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",
-            data={"Error": f"MaaEnd task failed: {e}"},
+            data={"Error": f"MaaEnd 任务出现异常: {e}"},
         )
