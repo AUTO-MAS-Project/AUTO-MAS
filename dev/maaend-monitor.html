@@ -1,178 +1,774 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MaaEnd 临时监视器</title>
+  <title>MaaEnd I01-I08 验收控制台</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 16px; }
-    .row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-    input { padding: 6px; min-width: 240px; }
-    button { padding: 6px 10px; }
-    #log { width: 100%; height: 420px; white-space: pre-wrap; font-family: Consolas, monospace; }
-    .hint { color: #666; font-size: 12px; }
+    :root {
+      --bg: #f4f6fb;
+      --panel: #ffffff;
+      --line: #d7ddeb;
+      --text: #1e2637;
+      --muted: #5d6b85;
+      --brand: #0f6cbd;
+      --brand-dark: #0a4f8b;
+      --ok: #167c3a;
+      --warn: #b85f00;
+      --err: #c02929;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(1200px 500px at 10% -10%, #dde9ff 0%, transparent 60%),
+        radial-gradient(900px 400px at 90% 0%, #e8f1ff 0%, transparent 60%),
+        var(--bg);
+    }
+
+    .wrap { max-width: 1360px; margin: 20px auto; padding: 0 14px 24px; }
+    .head {
+      border: 1px solid var(--line);
+      background: linear-gradient(125deg, #0f6cbd 0%, #154f9e 60%, #243f72 100%);
+      color: #fff;
+      border-radius: 14px;
+      padding: 16px 18px;
+      margin-bottom: 14px;
+    }
+    .head h1 { margin: 0 0 8px; font-size: 22px; }
+    .head p { margin: 0; opacity: 0.93; font-size: 14px; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 12px;
+      padding: 12px;
+      box-shadow: 0 1px 4px rgba(23, 40, 77, 0.06);
+    }
+
+    .span-12 { grid-column: span 12; }
+    .span-8 { grid-column: span 8; }
+    .span-6 { grid-column: span 6; }
+    .span-4 { grid-column: span 4; }
+
+    .title {
+      font-size: 14px;
+      font-weight: 700;
+      margin: 0 0 10px;
+      color: #1a2a49;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .hint { color: var(--muted); font-size: 12px; margin: 0 0 10px; }
+
+    .row {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 8px;
+      align-items: center;
+    }
+
+    .f-2 { grid-column: span 2; }`r`n    .f-1 { grid-column: span 1; }
+    .f-3 { grid-column: span 3; }
+    .f-4 { grid-column: span 4; }
+    .f-5 { grid-column: span 5; }
+    .f-6 { grid-column: span 6; }
+    .f-8 { grid-column: span 8; }
+    .f-9 { grid-column: span 9; }
+    .f-12 { grid-column: span 12; }
+
+    label { font-size: 12px; color: #3a4a68; }
+
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid #c9d2e5;
+      border-radius: 8px;
+      padding: 7px 9px;
+      background: #fff;
+      color: #1a2438;
+      font-size: 13px;
+    }
+
+    textarea { min-height: 78px; resize: vertical; }
+
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 12px;
+      color: #fff;
+      background: var(--brand);
+      cursor: pointer;
+    }
+    button:hover { background: var(--brand-dark); }
+    button.ghost {
+      background: #edf3fb;
+      color: #22436f;
+      border: 1px solid #bfd0ea;
+    }
+    button.ghost:hover { background: #e2ebf8; }
+
+    .chip {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 9px;
+      font-size: 11px;
+      margin-right: 6px;
+      margin-bottom: 6px;
+      border: 1px solid;
+    }
+    .ok { color: var(--ok); border-color: #89d0a3; background: #ecfaf1; }
+    .warn { color: var(--warn); border-color: #f0c38b; background: #fff6e8; }
+
+    .mono {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.35;
+    }
+
+    #wsLog, #apiLog {
+      height: 220px;
+      overflow: auto;
+      border: 1px solid #d5dced;
+      border-radius: 8px;
+      padding: 8px;
+      background: #fafcff;
+    }
+
+    #historyList {
+      max-height: 220px;
+      overflow: auto;
+      border: 1px solid #d5dced;
+      border-radius: 8px;
+      padding: 8px;
+      background: #fafcff;
+    }
+
+    .history-item {
+      border: 1px solid #d5dced;
+      border-radius: 8px;
+      padding: 8px;
+      margin-bottom: 8px;
+      background: #fff;
+    }
+
+    .kvs {
+      display: grid;
+      grid-template-columns: 145px 1fr;
+      gap: 4px 10px;
+      font-size: 12px;
+      margin-top: 8px;
+    }
+    .kvs div:nth-child(odd) { color: #556280; }
+
+    @media (max-width: 980px) {
+      .span-8, .span-6, .span-4 { grid-column: span 12; }
+    }
   </style>
 </head>
 <body>
-  <h2>MaaEnd 临时监视器</h2>
+  <div class="wrap">
+    <div class="head">
+      <h1>MaaEnd I01-I08 验收控制台</h1>
+      <p>覆盖：I01 模型接入 / I02 API兼容 / I03 ScriptConfig回读 / I04-I07 执行链路 / I08 WebSocket+历史+通知。</p>
+    </div>
 
-  <div class="row">
-    <input id="backend" value="http://127.0.0.1:8000" placeholder="后端地址" />
-    <button id="connectWs">连接 WS</button>
-    <button id="loadScripts">加载脚本</button>
-    <button id="loadUsers">加载用户</button>
+    <div class="grid">
+      <section class="card span-12">
+        <h2 class="title">0. 连接与验收步骤</h2>
+        <div class="row">
+          <label class="f-2">Backend</label>
+          <input class="f-4" id="backend" value="http://127.0.0.1:36163" />
+          <button class="f-2" id="btnVersion">版本探活</button>
+          <button class="f-2" id="btnConnectWs">连接 WS</button>
+          <button class="f-2 ghost" id="btnClearLog">清空日志</button>
+        </div>
+        <p class="hint">建议顺序：1) 找到/创建 MaaEnd 脚本 -> 2) 编辑脚本&用户配置 -> 3) 启动 ScriptConfig 并回读关键字段 -> 4) 启动 AutoProxy 看 WS -> 5) 查历史 -> 6) 触发通知测试。</p>
+        <div>
+          <span class="chip ok">I01/I02: /api/scripts + /api/scripts/user</span>
+          <span class="chip ok">I03: ScriptConfig + 回读字段</span>
+          <span class="chip warn">I04-I07: AutoProxy 运行链路与状态</span>
+          <span class="chip ok">I08: /api/core/ws + /api/history + /api/setting/test_notify</span>
+        </div>
+      </section>
+
+      <section class="card span-8">
+        <h2 class="title">1. MaaEnd 脚本（I01/I02）</h2>
+        <div class="row">
+          <button class="f-2" id="btnLoadScripts">加载脚本</button>
+          <button class="f-2" id="btnCreateScript">新建 MaaEnd</button>
+          <label class="f-2">脚本选择</label>
+          <select class="f-6" id="scriptSelect"></select>
+        </div>
+
+        <div class="row">
+          <label class="f-2">ScriptId</label>
+          <input class="f-10" id="scriptId" readonly />
+        </div>
+
+        <div class="row">
+          <label class="f-2">Info.Name</label>
+          <input class="f-4" id="scriptName" placeholder="脚本名称" />
+          <label class="f-2">Info.Path</label>
+          <input class="f-4" id="scriptPath" placeholder="MaaEnd 安装路径" />
+        </div>
+
+        <div class="row">
+          <label class="f-2">Run.Timeout</label>
+          <input class="f-2" id="runTimeout" type="number" value="10" />
+          <label class="f-2">Run.Retry</label>
+          <input class="f-2" id="runRetry" type="number" value="3" />
+          <label class="f-2">Run.RunTimesLimit</label>
+          <input class="f-2" id="runTimes" type="number" value="3" />
+          <label class="f-2">Run.ControllerType</label>
+          <select class="f-2" id="controllerType">
+            <option>Win32</option>
+            <option>ADB</option>
+            <option>PlayCover</option>
+          </select>
+        </div>
+
+        <div class="row">
+          <label class="f-2">MaaEnd.ResourceProfile</label>
+          <input class="f-4" id="resourceProfile" placeholder="MaaEnd" />
+          <label class="f-2">MaaEnd.PresetTask</label>
+          <input class="f-4" id="presetTask" placeholder="预设任务名" />
+        </div>
+
+        <div class="row">
+          <label class="f-2">MaaEnd.LogPath</label>
+          <input class="f-10" id="logPath" placeholder="日志路径" />
+        </div>
+
+        <div class="row">
+          <label class="f-2">SuccessPattern</label>
+          <input class="f-4" id="successPattern" placeholder="成功关键字，可用 | 分隔" />
+          <label class="f-2">ErrorPattern</label>
+          <input class="f-4" id="errorPattern" placeholder="失败关键字，可用 | 分隔" />
+        </div>
+
+        <div class="row">
+          <button class="f-2" id="btnRefreshScript">刷新详情</button>
+          <button class="f-2" id="btnUpdateScript">更新脚本</button>
+          <button class="f-2 ghost" id="btnReadback">回读关键字段</button>
+        </div>
+      </section>
+
+      <section class="card span-4">
+        <h2 class="title">2. 用户配置（I01/I02）</h2>
+        <div class="row">
+          <button class="f-3" id="btnLoadUsers">加载用户</button>
+          <button class="f-3" id="btnAddUser">新增用户</button>
+          <label class="f-2">用户</label>
+          <select class="f-4" id="userSelect"></select>
+        </div>
+
+        <div class="row">
+          <label class="f-3">UserId</label>
+          <input class="f-9" id="userId" readonly />
+        </div>
+
+        <div class="row">
+          <label class="f-3">Info.Name</label>
+          <input class="f-9" id="userName" />
+        </div>
+
+        <div class="row">
+          <label class="f-3">Info.Status</label>
+          <select class="f-3" id="userStatus"><option value="true">true</option><option value="false">false</option></select>
+          <label class="f-3">RemainedDay</label>
+          <input class="f-3" id="remainedDay" type="number" value="-1" />
+        </div>
+
+        <div class="row">
+          <label class="f-3">PresetOverride</label>
+          <input class="f-9" id="presetOverride" placeholder="可选" />
+        </div>
+
+        <div class="row">
+          <label class="f-3">OptionOverride(JSON)</label>
+          <textarea class="f-9" id="optionOverride">{}</textarea>
+        </div>
+
+        <div class="row">
+          <button class="f-3" id="btnRefreshUser">刷新用户</button>
+          <button class="f-3" id="btnUpdateUser">更新用户</button>
+        </div>
+      </section>
+
+      <section class="card span-6">
+        <h2 class="title">3. 调度执行（I03-I07）</h2>
+        <div class="row">
+          <button class="f-3" id="btnStartScriptConfig">启动 ScriptConfig</button>
+          <button class="f-3" id="btnStartAutoProxy">启动 AutoProxy</button>
+          <button class="f-3" id="btnStopTask">停止任务</button>
+          <input class="f-3" id="lastTaskId" placeholder="最近 TaskId" />
+        </div>
+        <p class="hint">ScriptConfig 用于触发外部配置与回读；AutoProxy 用于验证 I04-I07 运行链路与日志判定。</p>
+        <div id="wsLog" class="mono"></div>
+      </section>
+
+      <section class="card span-6">
+        <h2 class="title">4. 历史与通知（I08）</h2>
+        <div class="row">
+          <label class="f-2">模式</label>
+          <select class="f-2" id="historyMode"><option>DAILY</option><option>WEEKLY</option><option>MONTHLY</option></select>
+          <label class="f-2">开始</label>
+          <input class="f-3" id="historyStart" type="date" />
+          <label class="f-1">结束</label>
+          <input class="f-2" id="historyEnd" type="date" />
+        </div>
+        <div class="row">
+          <button class="f-3" id="btnSearchHistory">搜索历史</button>
+          <button class="f-3" id="btnTestNotify">测试通知</button>
+        </div>
+        <div id="historyList" class="mono"></div>
+        <div id="historyDetail" class="mono" style="margin-top:8px; max-height:150px; overflow:auto; border:1px solid #d5dced; border-radius:8px; padding:8px; background:#fafcff;"></div>
+      </section>
+
+      <section class="card span-12">
+        <h2 class="title">5. API 调用日志</h2>
+        <div id="apiLog" class="mono"></div>
+      </section>
+    </div>
   </div>
-
-  <div class="row">
-    <input id="scriptId" placeholder="MaaEnd ScriptId" />
-    <input id="userId" placeholder="UserId（ScriptConfig 可选）" />
-  </div>
-
-  <div class="row">
-    <input id="maaendPath" placeholder="MaaEnd 安装路径（例如 D:\\MaaEnd）" />
-    <button id="setPath">写入 Info.Path</button>
-  </div>
-
-  <div class="row">
-    <button id="startScriptConfig">启动 ScriptConfig</button>
-    <button id="startAutoProxy">启动 AutoProxy</button>
-    <button id="stopTask">停止最近任务</button>
-    <input id="lastTaskId" placeholder="最近 TaskId" />
-  </div>
-
-  <div class="hint">说明：先“加载脚本”自动填充 MaaEnd ScriptId，再写入路径，然后启动任务。</div>
-
-  <textarea id="log" readonly></textarea>
 
   <script>
     const $ = (id) => document.getElementById(id);
-    let ws = null;
-
-    function log(msg, obj) {
-      const ts = new Date().toISOString();
-      const line = `[${ts}] ${msg}` + (obj ? `\n${JSON.stringify(obj, null, 2)}` : '');
-      $('log').value += line + '\n\n';
-      $('log').scrollTop = $('log').scrollHeight;
-    }
+    const state = {
+      ws: null,
+      scripts: [],
+      scriptData: {},
+      users: [],
+      userData: {},
+      wsCount: 0,
+    };
 
     function backendUrl() {
-      return $('backend').value.replace(/\/$/, '');
+      return $("backend").value.trim().replace(/\/$/, "");
     }
 
-    async function post(path, body) {
-      const res = await fetch(`${backendUrl()}${path}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+    function nowISO() {
+      return new Date().toISOString();
+    }
+
+    function appendLog(targetId, msg, data) {
+      const box = $(targetId);
+      const payload = data === undefined ? "" : `\n${JSON.stringify(data, null, 2)}`;
+      box.textContent += `[${nowISO()}] ${msg}${payload}\n\n`;
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function logApi(msg, data) {
+      appendLog("apiLog", msg, data);
+    }
+
+    function logWs(msg, data) {
+      appendLog("wsLog", msg, data);
+    }
+
+    function toBool(v) {
+      return String(v) === "true";
+    }
+
+    async function apiPost(path, body) {
+      const url = `${backendUrl()}${path}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body || {}),
       });
-      const data = await res.json();
-      if (!res.ok || (data && data.code && data.code !== 200)) {
-        throw new Error(`HTTP ${res.status}: ${JSON.stringify(data)}`);
+      let data;
+      try {
+        data = await res.json();
+      } catch (e) {
+        throw new Error(`接口返回非JSON: ${url}`);
       }
+      if (!res.ok || (data && data.code && data.code !== 200)) {
+        throw new Error(`接口失败 ${path}: ${JSON.stringify(data)}`);
+      }
+      logApi(`POST ${path}`, data);
       return data;
     }
 
-    $('connectWs').onclick = () => {
-      if (ws) {
-        ws.close();
+    function renderScriptSelect() {
+      const select = $("scriptSelect");
+      select.innerHTML = "";
+      const maaend = state.scripts.filter((x) => x.type === "MaaEndConfig");
+      if (!maaend.length) {
+        const op = document.createElement("option");
+        op.value = "";
+        op.textContent = "(未找到 MaaEnd 脚本)";
+        select.appendChild(op);
+        return;
       }
-      const wsUrl = backendUrl().replace('http://', 'ws://').replace('https://', 'wss://') + '/api/core/ws';
-      ws = new WebSocket(wsUrl);
-      ws.onopen = () => log('WS 已连接: ' + wsUrl);
-      ws.onclose = () => log('WS 已断开');
-      ws.onerror = (e) => log('WS 错误', e);
-      ws.onmessage = (e) => {
+      for (const item of maaend) {
+        const op = document.createElement("option");
+        op.value = item.uid;
+        op.textContent = `${item.name} [${item.uid.slice(0, 8)}]`;
+        select.appendChild(op);
+      }
+      select.value = maaend[0].uid;
+      onScriptChanged();
+    }
+
+    function loadScriptToForm(scriptId) {
+      const cfg = state.scriptData[scriptId];
+      if (!cfg) return;
+      $("scriptId").value = scriptId;
+      $("scriptName").value = cfg?.Info?.Name || "";
+      $("scriptPath").value = cfg?.Info?.Path || "";
+      $("runTimeout").value = cfg?.Run?.Timeout ?? 10;
+      $("runRetry").value = cfg?.Run?.Retry ?? 3;
+      $("runTimes").value = cfg?.Run?.RunTimesLimit ?? 3;
+      $("controllerType").value = cfg?.Run?.ControllerType || "Win32";
+      $("resourceProfile").value = cfg?.MaaEnd?.ResourceProfile || "";
+      $("presetTask").value = cfg?.MaaEnd?.PresetTask || "";
+      $("logPath").value = cfg?.MaaEnd?.LogPath || "";
+      $("successPattern").value = cfg?.MaaEnd?.SuccessPattern || "";
+      $("errorPattern").value = cfg?.MaaEnd?.ErrorPattern || "";
+    }
+
+    function renderUserSelect() {
+      const select = $("userSelect");
+      select.innerHTML = "";
+      if (!state.users.length) {
+        const op = document.createElement("option");
+        op.value = "";
+        op.textContent = "(无用户)";
+        select.appendChild(op);
+        return;
+      }
+      for (const item of state.users) {
+        const op = document.createElement("option");
+        op.value = item.uid;
+        op.textContent = `${item.name} [${item.uid.slice(0, 8)}]`;
+        select.appendChild(op);
+      }
+      select.value = state.users[0].uid;
+      onUserChanged();
+    }
+
+    function loadUserToForm(userId) {
+      const cfg = state.userData[userId];
+      if (!cfg) return;
+      $("userId").value = userId;
+      $("userName").value = cfg?.Info?.Name || "";
+      $("userStatus").value = String(cfg?.Info?.Status ?? true);
+      $("remainedDay").value = cfg?.Info?.RemainedDay ?? -1;
+      $("presetOverride").value = cfg?.Task?.PresetOverride || "";
+      $("optionOverride").value = cfg?.Task?.OptionOverride || "{}";
+    }
+
+    async function loadScripts() {
+      const res = await apiPost("/api/scripts/get", { scriptId: null });
+      state.scripts = res.index || [];
+      state.scriptData = res.data || {};
+      renderScriptSelect();
+    }
+
+    async function refreshCurrentScript() {
+      const sid = $("scriptId").value || $("scriptSelect").value;
+      if (!sid) throw new Error("请先选择脚本");
+      const res = await apiPost("/api/scripts/get", { scriptId: sid });
+      state.scripts = res.index || state.scripts;
+      state.scriptData = { ...(state.scriptData || {}), ...(res.data || {}) };
+      loadScriptToForm(sid);
+    }
+
+    async function loadUsers() {
+      const sid = $("scriptId").value || $("scriptSelect").value;
+      if (!sid) throw new Error("请先选择脚本");
+      const res = await apiPost("/api/scripts/user/get", { scriptId: sid, userId: null });
+      state.users = res.index || [];
+      state.userData = res.data || {};
+      renderUserSelect();
+    }
+
+    async function refreshCurrentUser() {
+      const sid = $("scriptId").value || $("scriptSelect").value;
+      const uid = $("userId").value || $("userSelect").value;
+      if (!sid || !uid) throw new Error("请先选择脚本和用户");
+      const res = await apiPost("/api/scripts/user/get", { scriptId: sid, userId: uid });
+      state.userData = { ...(state.userData || {}), ...(res.data || {}) };
+      loadUserToForm(uid);
+    }
+
+    function onScriptChanged() {
+      const sid = $("scriptSelect").value;
+      loadScriptToForm(sid);
+      $("userSelect").innerHTML = "";
+      $("userId").value = "";
+      $("userName").value = "";
+      state.users = [];
+      state.userData = {};
+    }
+
+    function onUserChanged() {
+      const uid = $("userSelect").value;
+      loadUserToForm(uid);
+    }
+
+    function connectWs() {
+      if (state.ws) {
+        state.ws.close();
+        state.ws = null;
+      }
+      const wsUrl = `${backendUrl().replace("http://", "ws://").replace("https://", "wss://")}/api/core/ws`;
+      const ws = new WebSocket(wsUrl);
+      state.ws = ws;
+      ws.onopen = () => logWs(`WS 已连接: ${wsUrl}`);
+      ws.onclose = () => logWs("WS 已断开");
+      ws.onerror = (e) => logWs("WS 错误", e?.message || e);
+      ws.onmessage = (event) => {
+        let data;
         try {
-          const data = JSON.parse(e.data);
-          if (data?.type === 'Signal' && data?.data?.Ping) {
-            ws.send(JSON.stringify({ id: 'Main', type: 'Signal', data: { Pong: 'dev monitor' } }));
-            return;
-          }
-          log('WS 消息', data);
+          data = JSON.parse(event.data);
         } catch {
-          log('WS 原始消息: ' + e.data);
+          logWs("WS 原始消息", event.data);
+          return;
         }
+        if (data?.type === "Signal" && data?.data?.Ping) {
+          ws.send(JSON.stringify({ id: "Main", type: "Signal", data: { Pong: "maaend-dev" } }));
+          return;
+        }
+        state.wsCount += 1;
+        logWs(`#${state.wsCount} ${data.id || "?"} ${data.type || "?"}`, data);
+        const newTask = data?.data?.newTask;
+        if (newTask) $("lastTaskId").value = newTask;
       };
-    };
+    }
 
-    $('loadScripts').onclick = async () => {
-      try {
-        const data = await post('/api/scripts/get', { scriptId: null });
-        const list = data.index || [];
-        const target = list.find((x) => x.type === 'MaaEndConfig');
-        if (target) {
-          $('scriptId').value = target.uid;
-          log('已选中第一个 MaaEnd 脚本', target);
-        } else {
-          log('未找到 MaaEnd 脚本，请先在系统中创建。', data);
-        }
-      } catch (e) {
-        log('加载脚本失败: ' + e.message);
+    function renderHistoryResult(result) {
+      const box = $("historyList");
+      box.innerHTML = "";
+      const data = result?.data || {};
+      const dateKeys = Object.keys(data);
+      if (!dateKeys.length) {
+        box.textContent = "无历史记录";
+        return;
       }
-    };
 
-    $('loadUsers').onclick = async () => {
-      try {
-        const sid = $('scriptId').value.trim();
-        if (!sid) throw new Error('请先填写 ScriptId');
-        const data = await post('/api/scripts/user/get', { scriptId: sid, userId: null });
-        log('用户列表', data);
-      } catch (e) {
-        log('加载用户失败: ' + e.message);
-      }
-    };
+      dateKeys.forEach((dateKey) => {
+        const users = data[dateKey] || {};
+        Object.keys(users).forEach((userName) => {
+          const rec = users[userName];
+          const item = document.createElement("div");
+          item.className = "history-item";
 
-    $('setPath').onclick = async () => {
-      try {
-        const sid = $('scriptId').value.trim();
-        const p = $('maaendPath').value.trim();
-        if (!sid || !p) throw new Error('ScriptId 和 MaaEnd 路径都不能为空');
-        const data = await post('/api/scripts/update', {
-          scriptId: sid,
-          data: { Info: { Path: p } },
+          const indexes = rec?.index || [];
+          const first = indexes[0];
+          item.innerHTML = `
+            <div><b>${dateKey}</b> / <b>${userName}</b></div>
+            <div class="kvs">
+              <div>记录条数</div><div>${indexes.length}</div>
+              <div>失败条数</div><div>${rec?.error_info ? Object.keys(rec.error_info).length : 0}</div>
+              <div>示例json</div><div>${first ? first.jsonFile : "-"}</div>
+            </div>
+          `;
+
+          if (first?.jsonFile) {
+            const btn = document.createElement("button");
+            btn.textContent = "加载首条详情";
+            btn.className = "ghost";
+            btn.style.marginTop = "8px";
+            btn.onclick = async () => {
+              try {
+                const detail = await apiPost("/api/history/data", { jsonPath: first.jsonFile });
+                $("historyDetail").textContent = JSON.stringify(detail, null, 2);
+              } catch (e) {
+                $("historyDetail").textContent = e.message;
+              }
+            };
+            item.appendChild(btn);
+          }
+
+          box.appendChild(item);
         });
-        log('已写入 Info.Path', data);
+      });
+    }
+
+    function today(offset) {
+      const d = new Date();
+      d.setDate(d.getDate() + offset);
+      return d.toISOString().slice(0, 10);
+    }
+
+    async function run(fn, label) {
+      try {
+        await fn();
       } catch (e) {
-        log('写入路径失败: ' + e.message);
+        logApi(`${label} 失败`, { error: e.message || String(e) });
       }
+    }
+
+    $("scriptSelect").addEventListener("change", onScriptChanged);
+    $("userSelect").addEventListener("change", onUserChanged);
+
+    $("btnClearLog").onclick = () => {
+      $("apiLog").textContent = "";
+      $("wsLog").textContent = "";
+      $("historyList").textContent = "";
+      $("historyDetail").textContent = "";
     };
 
-    $('startScriptConfig').onclick = async () => {
-      try {
-        const sid = $('scriptId').value.trim();
-        const uid = $('userId').value.trim();
-        const taskId = uid || sid;
-        if (!taskId) throw new Error('请先填写 ScriptId（可选 UserId）');
-        const data = await post('/api/dispatch/start', { mode: 'ScriptConfig', taskId });
-        $('lastTaskId').value = data.taskId || '';
-        log('已启动 ScriptConfig', data);
-      } catch (e) {
-        log('启动 ScriptConfig 失败: ' + e.message);
-      }
-    };
+    $("btnVersion").onclick = () => run(async () => {
+      await apiPost("/api/info/version", {});
+    }, "版本探活");
 
-    $('startAutoProxy').onclick = async () => {
-      try {
-        const sid = $('scriptId').value.trim();
-        if (!sid) throw new Error('请先填写 ScriptId');
-        const data = await post('/api/dispatch/start', { mode: 'AutoProxy', taskId: sid });
-        $('lastTaskId').value = data.taskId || '';
-        log('已启动 AutoProxy', data);
-      } catch (e) {
-        log('启动 AutoProxy 失败: ' + e.message);
-      }
-    };
+    $("btnConnectWs").onclick = () => connectWs();
 
-    $('stopTask').onclick = async () => {
+    $("btnLoadScripts").onclick = () => run(async () => {
+      await loadScripts();
+    }, "加载脚本");
+
+    $("btnCreateScript").onclick = () => run(async () => {
+      await apiPost("/api/scripts/add", { type: "MaaEnd", scriptId: null });
+      await loadScripts();
+    }, "新建 MaaEnd");
+
+    $("btnRefreshScript").onclick = () => run(async () => {
+      await refreshCurrentScript();
+    }, "刷新脚本");
+
+    $("btnUpdateScript").onclick = () => run(async () => {
+      const sid = $("scriptId").value || $("scriptSelect").value;
+      if (!sid) throw new Error("请先选择脚本");
+      await apiPost("/api/scripts/update", {
+        scriptId: sid,
+        data: {
+          Info: {
+            Name: $("scriptName").value,
+            Path: $("scriptPath").value,
+          },
+          Run: {
+            Timeout: Number($("runTimeout").value),
+            Retry: Number($("runRetry").value),
+            RunTimesLimit: Number($("runTimes").value),
+            ControllerType: $("controllerType").value,
+          },
+          MaaEnd: {
+            ResourceProfile: $("resourceProfile").value,
+            PresetTask: $("presetTask").value,
+            LogPath: $("logPath").value,
+            SuccessPattern: $("successPattern").value,
+            ErrorPattern: $("errorPattern").value,
+          },
+        },
+      });
+      await refreshCurrentScript();
+    }, "更新脚本");
+
+    $("btnReadback").onclick = () => run(async () => {
+      await refreshCurrentScript();
+      const sid = $("scriptId").value;
+      const cfg = state.scriptData[sid] || {};
+      logApi("回读关键字段", {
+        ControllerType: cfg?.Run?.ControllerType,
+        ResourceProfile: cfg?.MaaEnd?.ResourceProfile,
+        PresetTask: cfg?.MaaEnd?.PresetTask,
+      });
+    }, "回读关键字段");
+
+    $("btnLoadUsers").onclick = () => run(async () => {
+      await loadUsers();
+    }, "加载用户");
+
+    $("btnAddUser").onclick = () => run(async () => {
+      const sid = $("scriptId").value || $("scriptSelect").value;
+      if (!sid) throw new Error("请先选择脚本");
+      await apiPost("/api/scripts/user/add", { scriptId: sid });
+      await loadUsers();
+    }, "新增用户");
+
+    $("btnRefreshUser").onclick = () => run(async () => {
+      await refreshCurrentUser();
+    }, "刷新用户");
+
+    $("btnUpdateUser").onclick = () => run(async () => {
+      const sid = $("scriptId").value || $("scriptSelect").value;
+      const uid = $("userId").value || $("userSelect").value;
+      if (!sid || !uid) throw new Error("请先选择脚本和用户");
+
       try {
-        const tid = $('lastTaskId').value.trim();
-        if (!tid) throw new Error('请先填写 TaskId');
-        const data = await post('/api/dispatch/stop', { taskId: tid });
-        log('已停止任务', data);
-      } catch (e) {
-        log('停止任务失败: ' + e.message);
+        JSON.parse($("optionOverride").value || "{}");
+      } catch {
+        throw new Error("OptionOverride 必须是合法 JSON");
       }
-    };
+
+      await apiPost("/api/scripts/user/update", {
+        scriptId: sid,
+        userId: uid,
+        data: {
+          Info: {
+            Name: $("userName").value,
+            Status: toBool($("userStatus").value),
+            RemainedDay: Number($("remainedDay").value),
+          },
+          Task: {
+            PresetOverride: $("presetOverride").value,
+            OptionOverride: $("optionOverride").value,
+          },
+        },
+      });
+      await refreshCurrentUser();
+    }, "更新用户");
+
+    $("btnStartScriptConfig").onclick = () => run(async () => {
+      const sid = $("scriptId").value || $("scriptSelect").value;
+      const uid = $("userId").value || $("userSelect").value;
+      if (!sid) throw new Error("请先选择脚本");
+      const taskId = uid || sid;
+      const out = await apiPost("/api/dispatch/start", { mode: "ScriptConfig", taskId });
+      $("lastTaskId").value = out.taskId || "";
+    }, "启动 ScriptConfig");
+
+    $("btnStartAutoProxy").onclick = () => run(async () => {
+      const sid = $("scriptId").value || $("scriptSelect").value;
+      if (!sid) throw new Error("请先选择脚本");
+      const out = await apiPost("/api/dispatch/start", { mode: "AutoProxy", taskId: sid });
+      $("lastTaskId").value = out.taskId || "";
+    }, "启动 AutoProxy");
+
+    $("btnStopTask").onclick = () => run(async () => {
+      const tid = $("lastTaskId").value.trim();
+      if (!tid) throw new Error("请填写 TaskId");
+      await apiPost("/api/dispatch/stop", { taskId: tid });
+    }, "停止任务");
+
+    $("btnSearchHistory").onclick = () => run(async () => {
+      const out = await apiPost("/api/history/search", {
+        mode: $("historyMode").value,
+        start_date: $("historyStart").value,
+        end_date: $("historyEnd").value,
+      });
+      renderHistoryResult(out);
+    }, "搜索历史");
+
+    $("btnTestNotify").onclick = () => run(async () => {
+      await apiPost("/api/setting/test_notify", {});
+    }, "测试通知");
+
+    (function init() {
+      $("historyStart").value = today(-7);
+      $("historyEnd").value = today(0);
+      logApi("页面初始化", { backend: backendUrl() });
+    })();
   </script>
 </body>
 </html>
+

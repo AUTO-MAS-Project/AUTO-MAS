@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import json
 import shutil
 import uuid
@@ -9,8 +9,9 @@ from app.core import Config
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
-from app.services import System
+from app.services import Notify, System
 from app.utils import LogMonitor, ProcessManager, get_logger
+from app.utils.constants import UTC4
 
 from .runtime_bridge import build_runtime_config
 
@@ -255,6 +256,32 @@ class AutoProxyTask(TaskExecuteBase):
         await self.maaend_log_monitor.stop()
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
+
+        for t, log_item in self.cur_user_item.log_record.items():
+            dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
+            log_path = (
+                Path.cwd()
+                / f"history/{dt.strftime('%Y-%m-%d')}/{self.cur_user_item.name}/{dt.strftime('%H-%M-%S')}.log"
+            )
+
+            if log_item.status == "MaaEnd 正常运行中":
+                log_item.status = "任务被用户手动中止"
+
+            if len(log_item.content) == 0:
+                log_item.content = ["未捕获到任何日志内容"]
+                log_item.status = "未捕获到日志"
+
+            await Config.save_general_log(log_path, log_item.content, log_item.status)
+
+        if self.run_success:
+            await Notify.push_plyer(
+                "成功完成一个自动代理任务！",
+                f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
+                f"已完成 {self.cur_user_item.name} 的自动代理任务",
+                3,
+            )
+        else:
+            self.cur_user_item.status = "异常"
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
