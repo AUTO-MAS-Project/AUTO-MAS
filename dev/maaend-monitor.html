@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MaaEnd 临时监视器</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 16px; }
+    .row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+    input { padding: 6px; min-width: 240px; }
+    button { padding: 6px 10px; }
+    #log { width: 100%; height: 420px; white-space: pre-wrap; font-family: Consolas, monospace; }
+    .hint { color: #666; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h2>MaaEnd 临时监视器</h2>
+
+  <div class="row">
+    <input id="backend" value="http://127.0.0.1:8000" placeholder="后端地址" />
+    <button id="connectWs">连接 WS</button>
+    <button id="loadScripts">加载脚本</button>
+    <button id="loadUsers">加载用户</button>
+  </div>
+
+  <div class="row">
+    <input id="scriptId" placeholder="MaaEnd ScriptId" />
+    <input id="userId" placeholder="UserId（ScriptConfig 可选）" />
+  </div>
+
+  <div class="row">
+    <input id="maaendPath" placeholder="MaaEnd 安装路径（例如 D:\\MaaEnd）" />
+    <button id="setPath">写入 Info.Path</button>
+  </div>
+
+  <div class="row">
+    <button id="startScriptConfig">启动 ScriptConfig</button>
+    <button id="startAutoProxy">启动 AutoProxy</button>
+    <button id="stopTask">停止最近任务</button>
+    <input id="lastTaskId" placeholder="最近 TaskId" />
+  </div>
+
+  <div class="hint">说明：先“加载脚本”自动填充 MaaEnd ScriptId，再写入路径，然后启动任务。</div>
+
+  <textarea id="log" readonly></textarea>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let ws = null;
+
+    function log(msg, obj) {
+      const ts = new Date().toISOString();
+      const line = `[${ts}] ${msg}` + (obj ? `\n${JSON.stringify(obj, null, 2)}` : '');
+      $('log').value += line + '\n\n';
+      $('log').scrollTop = $('log').scrollHeight;
+    }
+
+    function backendUrl() {
+      return $('backend').value.replace(/\/$/, '');
+    }
+
+    async function post(path, body) {
+      const res = await fetch(`${backendUrl()}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok || (data && data.code && data.code !== 200)) {
+        throw new Error(`HTTP ${res.status}: ${JSON.stringify(data)}`);
+      }
+      return data;
+    }
+
+    $('connectWs').onclick = () => {
+      if (ws) {
+        ws.close();
+      }
+      const wsUrl = backendUrl().replace('http://', 'ws://').replace('https://', 'wss://') + '/api/core/ws';
+      ws = new WebSocket(wsUrl);
+      ws.onopen = () => log('WS 已连接: ' + wsUrl);
+      ws.onclose = () => log('WS 已断开');
+      ws.onerror = (e) => log('WS 错误', e);
+      ws.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data?.type === 'Signal' && data?.data?.Ping) {
+            ws.send(JSON.stringify({ id: 'Main', type: 'Signal', data: { Pong: 'dev monitor' } }));
+            return;
+          }
+          log('WS 消息', data);
+        } catch {
+          log('WS 原始消息: ' + e.data);
+        }
+      };
+    };
+
+    $('loadScripts').onclick = async () => {
+      try {
+        const data = await post('/api/scripts/get', { scriptId: null });
+        const list = data.index || [];
+        const target = list.find((x) => x.type === 'MaaEndConfig');
+        if (target) {
+          $('scriptId').value = target.uid;
+          log('已选中第一个 MaaEnd 脚本', target);
+        } else {
+          log('未找到 MaaEnd 脚本，请先在系统中创建。', data);
+        }
+      } catch (e) {
+        log('加载脚本失败: ' + e.message);
+      }
+    };
+
+    $('loadUsers').onclick = async () => {
+      try {
+        const sid = $('scriptId').value.trim();
+        if (!sid) throw new Error('请先填写 ScriptId');
+        const data = await post('/api/scripts/user/get', { scriptId: sid, userId: null });
+        log('用户列表', data);
+      } catch (e) {
+        log('加载用户失败: ' + e.message);
+      }
+    };
+
+    $('setPath').onclick = async () => {
+      try {
+        const sid = $('scriptId').value.trim();
+        const p = $('maaendPath').value.trim();
+        if (!sid || !p) throw new Error('ScriptId 和 MaaEnd 路径都不能为空');
+        const data = await post('/api/scripts/update', {
+          scriptId: sid,
+          data: { Info: { Path: p } },
+        });
+        log('已写入 Info.Path', data);
+      } catch (e) {
+        log('写入路径失败: ' + e.message);
+      }
+    };
+
+    $('startScriptConfig').onclick = async () => {
+      try {
+        const sid = $('scriptId').value.trim();
+        const uid = $('userId').value.trim();
+        const taskId = uid || sid;
+        if (!taskId) throw new Error('请先填写 ScriptId（可选 UserId）');
+        const data = await post('/api/dispatch/start', { mode: 'ScriptConfig', taskId });
+        $('lastTaskId').value = data.taskId || '';
+        log('已启动 ScriptConfig', data);
+      } catch (e) {
+        log('启动 ScriptConfig 失败: ' + e.message);
+      }
+    };
+
+    $('startAutoProxy').onclick = async () => {
+      try {
+        const sid = $('scriptId').value.trim();
+        if (!sid) throw new Error('请先填写 ScriptId');
+        const data = await post('/api/dispatch/start', { mode: 'AutoProxy', taskId: sid });
+        $('lastTaskId').value = data.taskId || '';
+        log('已启动 AutoProxy', data);
+      } catch (e) {
+        log('启动 AutoProxy 失败: ' + e.message);
+      }
+    };
+
+    $('stopTask').onclick = async () => {
+      try {
+        const tid = $('lastTaskId').value.trim();
+        if (!tid) throw new Error('请先填写 TaskId');
+        const data = await post('/api/dispatch/stop', { taskId: tid });
+        log('已停止任务', data);
+      } catch (e) {
+        log('停止任务失败: ' + e.message);
+      }
+    };
+  </script>
+</body>
+</html>

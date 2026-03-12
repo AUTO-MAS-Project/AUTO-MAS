@@ -8,12 +8,14 @@ from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.utils import get_logger
 
+from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
 
 
 logger = get_logger("MaaEnd 调度器")
 
-METHOD_BOOK: dict[str, type[ScriptConfigTask]] = {
+METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
+    "AutoProxy": AutoProxyTask,
     "ScriptConfig": ScriptConfigTask,
 }
 
@@ -65,9 +67,6 @@ class MaaEndManager(TaskExecuteBase):
         self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         await self.user_config.load(await self.script_config.UserData.toDict())
 
-        if not isinstance(self.script_config, MaaEndConfig):
-            raise RuntimeError("脚本配置类型错误, 不是 MaaEnd 脚本类型")
-
         self.maaend_config_dir = Path(self.script_config.get("Info", "Path")) / "config"
         self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
         self.backup_path = self.temp_path / "MaaEndConfigBackup"
@@ -83,6 +82,12 @@ class MaaEndManager(TaskExecuteBase):
         if self.task_info.mode == "ScriptConfig":
             self.script_info.user_list = [
                 UserItem(user_id=self.task_info.user_id or "Default", name="", status="等待")
+            ]
+        else:
+            self.script_info.user_list = [
+                UserItem(user_id=str(uid), name=config.get("Info", "Name"), status="等待")
+                for uid, config in self.user_config.items()
+                if config.get("Info", "Status") and config.get("Info", "RemainedDay") != 0
             ]
 
         self.prepared_ok = True
@@ -136,7 +141,6 @@ class MaaEndManager(TaskExecuteBase):
 
         if self.script_info.status != "异常":
             self.script_info.status = "完成"
-
 
     async def on_crash(self, e: Exception):
         self.script_info.status = "异常"
