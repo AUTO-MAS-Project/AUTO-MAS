@@ -75,7 +75,15 @@ class ScriptConfigTask(TaskExecuteBase):
         logger.info(f"Start MaaEnd config process: {self.maaend_exe_path}")
         self.wait_event.clear()
         await self.process_manager.open_process(self.maaend_exe_path)
-        await self.wait_event.wait()
+        await self._wait_for_exit_or_confirm()
+
+    async def _wait_for_exit_or_confirm(self):
+        while True:
+            if self.wait_event.is_set():
+                return
+            if not await self.process_manager.is_running():
+                return
+            await asyncio.sleep(0.5)
 
     async def set_maaend(self):
         """Prepare MaaEnd local config before opening the external config UI."""
