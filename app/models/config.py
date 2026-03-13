@@ -699,8 +699,15 @@ class MaaEndConfig(ConfigBase):
         self.Run_ControllerType = ConfigItem(
             "Run",
             "ControllerType",
-            "Win32",
-            OptionsValidator(["Win32", "ADB", "PlayCover"]),
+            "Win32-Window",
+            OptionsValidator(
+                [
+                    "Win32-Window",
+                    "Win32-Front",
+                    "Win32-Window-Background",
+                    "ADB",
+                ]
+            ),
         )
 
         ## MaaEnd ----------------------------------------------------------
