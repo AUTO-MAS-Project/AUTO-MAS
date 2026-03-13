@@ -587,7 +587,14 @@ class MaaEndConfig_Run(BaseModel):
     Timeout: Optional[int] = Field(default=None, description="运行超时时间")
     Retry: Optional[int] = Field(default=None, description="重试次数")
     RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
-    ControllerType: Optional[Literal["Win32", "ADB", "PlayCover"]] = Field(
+    ControllerType: Optional[
+        Literal[
+            "Win32-Window",
+            "Win32-Window-Background",
+            "Win32-Front",
+            "ADB",
+        ]
+    ] = Field(
         default=None, description="控制器类型"
     )
 

@@ -59,16 +59,7 @@ def _apply_controller_and_resource(instance: dict[str, Any], script_config: MaaE
     if not controller_type:
         return
 
-    controller_name = str(instance.get("controllerName", "")).strip()
-    if not controller_name:
-        instance["controllerName"] = controller_type
-        return
-
-    if "-" in controller_name:
-        _, suffix = controller_name.split("-", 1)
-        instance["controllerName"] = f"{controller_type}-{suffix}"
-    else:
-        instance["controllerName"] = controller_type
+    instance["controllerName"] = controller_type
 
 
 def _collect_override_items(
