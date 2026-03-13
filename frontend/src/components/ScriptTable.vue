@@ -12,11 +12,12 @@
                 <div class="script-logo-container">
                   <img v-if="script.type === 'MAA'" src="@/assets/MAA.png" alt="MAA" class="script-logo" />
                   <img v-else-if="script.type === 'SRC'" src="@/assets/SRC.png" alt="SRC" class="script-logo" />
+                  <img v-else-if="script.type === 'MaaEnd'" src="@/assets/MAA.png" alt="MaaEnd" class="script-logo" />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
                   <h3 class="script-name">{{ script.name }}</h3>
-                  <a-tag :color="script.type === 'MAA' ? 'blue' : script.type === 'SRC' ? 'purple' : 'green'" class="script-type">
+                  <a-tag :color="script.type === 'MAA' ? 'blue' : script.type === 'SRC' ? 'purple' : script.type === 'MaaEnd' ? 'orange' : 'green'" class="script-type">
                     {{ script.type }}
                   </a-tag>
                 </div>
@@ -115,7 +116,7 @@
                           </a-tag>
                         </div>
                         <!-- 用户详细信息 - 通用脚本用户 -->
-                        <div v-if="script.type === 'General'" class="user-info-tags">
+                        <div v-if="script.type === 'General' || script.type === 'MaaEnd'" class="user-info-tags">
                           <!-- 直接使用后端提供的Tag字段 -->
                           <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index" class="info-tag"
                             :color="tag.color">

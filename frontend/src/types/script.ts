@@ -1,7 +1,7 @@
 // 脚本类型定义
-import type { MaaConfig, GeneralConfig, SrcConfig } from '@/api'
+import type { MaaConfig, GeneralConfig, SrcConfig, MaaEndConfig } from '@/api'
 
-export type ScriptType = 'MAA' | 'General' | 'SRC'
+export type ScriptType = 'MAA' | 'General' | 'SRC' | 'MaaEnd'
 
 // MAA脚本配置
 export interface MAAScriptConfig {
@@ -100,7 +100,7 @@ export interface Script {
   id: string
   type: ScriptType
   name: string
-  config: MaaConfig | GeneralConfig | SrcConfig
+  config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
   users: User[]
 }
 
@@ -181,13 +181,13 @@ export interface AddScriptResponse {
   status: string
   message: string
   scriptId: string
-  data: MAAScriptConfig | GeneralScriptConfig | SRCScriptConfig
+  data: MAAScriptConfig | GeneralScriptConfig | SRCScriptConfig | MaaEndConfig
 }
 
 // 脚本索引项
 export interface ScriptIndexItem {
   uid: string
-  type: 'MaaConfig' | 'GeneralConfig' | 'SrcConfig'
+  type: 'MaaConfig' | 'GeneralConfig' | 'SrcConfig' | 'MaaEndConfig'
 }
 
 // 获取脚本API响应
@@ -196,7 +196,7 @@ export interface GetScriptsResponse {
   status: string
   message: string
   index: ScriptIndexItem[]
-  data: Record<string, MAAScriptConfig | GeneralScriptConfig>
+  data: Record<string, MAAScriptConfig | GeneralScriptConfig | SRCScriptConfig | MaaEndConfig>
 }
 
 // 脚本详情（用于前端展示）

@@ -51,6 +51,12 @@ const routes = [
     meta: { title: '编辑通用脚本' },
   },
   {
+    path: '/scripts/:id/edit/maaend',
+    name: 'MaaEndScriptEdit',
+    component: () => import('../views/EditView/Script/MaaEndScriptEdit.vue'),
+    meta: { title: '编辑MaaEnd脚本' },
+  },
+  {
     path: '/scripts/:scriptId/users/add/maa',
     name: 'MAAUserAdd',
     component: () => import('../views/EditView/User/MAAUserEdit.vue'),
@@ -85,6 +91,18 @@ const routes = [
     name: 'GeneralUserEdit',
     component: () => import('../views/EditView/User/GeneralUserEdit.vue'),
     meta: { title: '编辑通用用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/add/maaend',
+    name: 'MaaEndUserAdd',
+    component: () => import('../views/EditView/User/MaaEndUserEdit.vue'),
+    meta: { title: '添加MaaEnd用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/maaend',
+    name: 'MaaEndUserEdit',
+    component: () => import('../views/EditView/User/MaaEndUserEdit.vue'),
+    meta: { title: '编辑MaaEnd用户' },
   },
   {
     path: '/plans',

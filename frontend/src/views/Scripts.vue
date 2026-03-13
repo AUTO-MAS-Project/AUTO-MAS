@@ -125,12 +125,14 @@
           <div class="script-item-content">
             <div class="script-icon">
               <img v-if="script.type === 'MAA'" src="@/assets/MAA.png" alt="MAA" class="type-icon" />
+              <img v-else-if="script.type === 'SRC'" src="@/assets/SRC.png" alt="SRC" class="type-icon" />
+              <img v-else-if="script.type === 'MaaEnd'" src="@/assets/MAA.png" alt="MaaEnd" class="type-icon" />
               <img v-else src="@/assets/AUTO-MAS.ico" alt="General" class="type-icon" />
             </div>
             <div class="script-info">
               <div class="script-name">{{ script.name }}</div>
               <div class="script-meta">
-                <span class="script-type">{{ script.type === 'MAA' ? 'MAA脚本' : script.type === 'SRC' ? 'SRC脚本' : '通用脚本' }}</span>
+                <span class="script-type">{{ script.type === 'MAA' ? 'MAA脚本' : script.type === 'SRC' ? 'SRC脚本' : script.type === 'MaaEnd' ? 'MaaEnd脚本' : '通用脚本' }}</span>
                 <span class="script-users">
                   <UserOutlined />
                   {{ script.users?.length || 0 }} 个用户
@@ -167,6 +169,17 @@
             <div class="type-info">
               <div class="type-title">SRC脚本</div>
               <div class="type-description">崩坏星穹铁道自动化脚本，支持多账号日常代理等功能</div>
+            </div>
+          </div>
+        </a-radio-button>
+        <a-radio-button value="MaaEnd" class="type-option">
+          <div class="type-content">
+            <div class="type-logo-container">
+              <img src="@/assets/MAA.png" alt="MaaEnd" class="type-logo" />
+            </div>
+            <div class="type-info">
+              <div class="type-title">MaaEnd脚本</div>
+              <div class="type-description">MaaFramework End minimal integration script with config-flow and runtime entry.</div>
             </div>
           </div>
         </a-radio-button>
@@ -496,7 +509,7 @@ const handleConfirmAddScript = async () => {
     if (result) {
       typeSelectVisible.value = false
       // 跳转到编辑页面，传递API返回的数据
-      const editPath = selectedType.value === 'MAA' ? 'maa' : selectedType.value === 'SRC' ? 'src' : 'general'
+      const editPath = selectedType.value === 'MAA' ? 'maa' : selectedType.value === 'SRC' ? 'src' : selectedType.value === 'MaaEnd' ? 'maaend' : 'general'
       router.push({
         path: `/scripts/${result.scriptId}/edit/${editPath}`,
         state: {
@@ -615,6 +628,8 @@ const handleEditScript = (script: Script) => {
     router.push(`/scripts/${script.id}/edit/maa`)
   } else if (script.type === 'SRC') {
     router.push(`/scripts/${script.id}/edit/src`)
+  } else if (script.type === 'MaaEnd') {
+    router.push(`/scripts/${script.id}/edit/maaend`)
   } else {
     router.push(`/scripts/${script.id}/edit/general`)
   }
@@ -633,6 +648,8 @@ const handleAddUser = (script: Script) => {
     router.push(`/scripts/${script.id}/users/add/maa`)
   } else if (script.type === 'SRC') {
     router.push(`/scripts/${script.id}/users/add/src`)
+  } else if (script.type === 'MaaEnd') {
+    router.push(`/scripts/${script.id}/users/add/maaend`)
   } else {
     router.push(`/scripts/${script.id}/users/add/general`)
   }
@@ -647,6 +664,8 @@ const handleEditUser = (user: User) => {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/maa`)
     } else if (script.type === 'SRC') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/src`)
+    } else if (script.type === 'MaaEnd') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/maaend`)
     } else {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
     }
