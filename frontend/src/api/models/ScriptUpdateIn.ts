@@ -13,6 +13,5 @@ export type ScriptUpdateIn = {
     /**
      * 脚本更新数据
      */
-    data: (MaaConfig | SrcConfig | GeneralConfig);
+    data: (MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig);
 };
-

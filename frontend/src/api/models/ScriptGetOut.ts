@@ -26,6 +26,5 @@ export type ScriptGetOut = {
     /**
      * 脚本数据字典, key来自于index列表的uid
      */
-    data: Record<string, (MaaConfig | SrcConfig | GeneralConfig)>;
+    data: Record<string, (MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig)>;
 };
-

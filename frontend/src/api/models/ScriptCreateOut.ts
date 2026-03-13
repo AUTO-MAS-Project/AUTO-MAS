@@ -25,6 +25,5 @@ export type ScriptCreateOut = {
     /**
      * 脚本配置数据
      */
-    data: (MaaConfig | SrcConfig | GeneralConfig);
+    data: (MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig);
 };
-
