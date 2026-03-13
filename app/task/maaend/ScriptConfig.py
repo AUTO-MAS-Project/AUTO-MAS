@@ -98,12 +98,14 @@ class ScriptConfigTask(TaskExecuteBase):
     @staticmethod
     def _normalize_controller_type(controller_name: str) -> str | None:
         controller_name = controller_name.lower()
-        if controller_name.startswith("win32"):
-            return "Win32"
+        if controller_name.startswith("win32-window-background"):
+            return "Win32-Window-Background"
+        if controller_name.startswith("win32-window"):
+            return "Win32-Window"
+        if controller_name.startswith("win32-front"):
+            return "Win32-Front"
         if controller_name.startswith("adb"):
             return "ADB"
-        if controller_name.startswith("playcover"):
-            return "PlayCover"
         return None
 
     async def _readback_config(self):
