@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { type GeneralConfig, type MaaConfig, type SrcConfig, ScriptCreateIn, type ScriptReorderIn, Service } from '@/api'
+import { type GeneralConfig, type MaaConfig, type MaaEndConfig, type SrcConfig, ScriptCreateIn, type ScriptReorderIn, Service } from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
@@ -17,7 +17,14 @@ export function useScriptApi() {
 
     try {
       const requestData: ScriptCreateIn = {
-        type: type === 'MAA' ? ScriptCreateIn.type.MAA : type === 'SRC' ? ScriptCreateIn.type.SRC : ScriptCreateIn.type.GENERAL,
+        type:
+          type === 'MAA'
+            ? ScriptCreateIn.type.MAA
+            : type === 'SRC'
+              ? ScriptCreateIn.type.SRC
+              : type === 'MaaEnd'
+                ? ScriptCreateIn.type.MAA_END
+                : ScriptCreateIn.type.GENERAL,
         scriptId: scriptId || null,
       }
 
@@ -58,7 +65,7 @@ export function useScriptApi() {
       uid: string
       type: string
       name: string
-      config: MaaConfig | GeneralConfig | SrcConfig
+      config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
     }[]
   > => {
     if (manageLoading) {
@@ -81,7 +88,14 @@ export function useScriptApi() {
       // 将API响应转换为ScriptDetail数组
       return response.index.map(indexItem => ({
         uid: indexItem.uid,
-        type: indexItem.type === 'MaaConfig' ? 'MAA' : indexItem.type === 'SrcConfig' ? 'SRC' : 'General',
+        type:
+          indexItem.type === 'MaaConfig'
+            ? 'MAA'
+            : indexItem.type === 'SrcConfig'
+              ? 'SRC'
+              : indexItem.type === 'MaaEndConfig'
+                ? 'MaaEnd'
+                : 'General',
         name: response.data[indexItem.uid]?.Info?.Name || `${indexItem.type}脚本`,
         config: response.data[indexItem.uid],
       }))
@@ -106,7 +120,7 @@ export function useScriptApi() {
         uid: string
         type: string
         name: string
-        config: MaaConfig | GeneralConfig
+        config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
         users: (
           | {
             id: string
@@ -189,12 +203,12 @@ export function useScriptApi() {
           | null
         )[]
       }
-      | { uid: string; type: string; name: string; config: MaaConfig | GeneralConfig; users: any[] }
+      | { uid: string; type: string; name: string; config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig; users: any[] }
       | {
         uid: string
         type: string
         name: string
-        config: MaaConfig | GeneralConfig
+        config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
         users: any[]
       }
     >[]
@@ -483,6 +497,47 @@ export function useScriptApi() {
                             : false,
                       },
                     }
+                  } else if (userIndex.type === 'MaaEndUserConfig' && userData) {
+                    const maaEndUserData = userData as any
+                    return {
+                      id: userIndex.uid,
+                      name: maaEndUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name:
+                          maaEndUserData.Info?.Name !== undefined
+                            ? maaEndUserData.Info.Name
+                            : `用户${userIndex.uid}`,
+                        Status:
+                          maaEndUserData.Info?.Status !== undefined
+                            ? maaEndUserData.Info.Status
+                            : true,
+                        RemainedDay:
+                          maaEndUserData.Info?.RemainedDay !== undefined
+                            ? maaEndUserData.Info.RemainedDay
+                            : -1,
+                        Tag: null,
+                      },
+                      Task: {
+                        PresetOverride:
+                          maaEndUserData.Task?.PresetOverride !== undefined
+                            ? maaEndUserData.Task.PresetOverride
+                            : '',
+                        OptionOverride:
+                          maaEndUserData.Task?.OptionOverride !== undefined
+                            ? maaEndUserData.Task.OptionOverride
+                            : '',
+                      },
+                      Data: {
+                        LastProxyDate:
+                          maaEndUserData.Data?.LastRun !== undefined
+                            ? maaEndUserData.Data.LastRun
+                            : '',
+                        ProxyTimes:
+                          maaEndUserData.Data?.RunTimes !== undefined
+                            ? maaEndUserData.Data.RunTimes
+                            : 0,
+                      },
+                    }
                   } else if (userIndex.type === 'GeneralUserConfig' && userData) {
                     const generalUserData = userData as any
                     return {
@@ -626,7 +681,14 @@ export function useScriptApi() {
 
       const item = response.index[0]
       const config = response.data[item.uid]
-      const scriptType: ScriptType = item.type === 'MaaConfig' ? 'MAA' : item.type === 'SrcConfig' ? 'SRC' : 'General'
+      const scriptType: ScriptType =
+        item.type === 'MaaConfig'
+          ? 'MAA'
+          : item.type === 'SrcConfig'
+            ? 'SRC'
+            : item.type === 'MaaEndConfig'
+              ? 'MaaEnd'
+              : 'General'
 
       return {
         uid: item.uid,
