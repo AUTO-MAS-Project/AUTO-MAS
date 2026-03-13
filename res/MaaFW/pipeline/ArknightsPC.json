@@ -1,0 +1,341 @@
+{
+    "选中已部署干员": {
+        "post_delay": 0,
+        "next": [
+            "暂停选中已部署干员",
+            "战斗选中已部署干员"
+        ]
+    },
+    "暂停选中已部署干员": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [
+                    1186,
+                    38,
+                    42,
+                    34
+                ],
+                "template": "ArknightsPC/pause.png"
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "Pause Select Deployed"
+            }
+        },
+        "pre_delay": 0
+    },
+    "战斗选中已部署干员": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [
+                    1186,
+                    38,
+                    42,
+                    34
+                ],
+                "template": "ArknightsPC/play.png"
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "Play Select Deployed"
+            }
+        },
+        "pre_delay": 0
+    },
+    "释放技能": {
+        "post_delay": 0,
+        "next": [
+            "暂停释放技能",
+            "战斗释放技能"
+        ]
+    },
+    "暂停释放技能": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [
+                    1186,
+                    38,
+                    42,
+                    34
+                ],
+                "template": "ArknightsPC/pause.png"
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "Pause Skill"
+            }
+        },
+        "pre_delay": 0,
+        "post_delay": 0,
+        "timeout": 1000,
+        "next": [
+            "点击技能"
+        ]
+    },
+    "战斗释放技能": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [
+                    1186,
+                    38,
+                    42,
+                    34
+                ],
+                "template": "ArknightsPC/play.png"
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "Play Skill"
+            }
+        },
+        "pre_delay": 0,
+        "post_delay": 0,
+        "timeout": 1000,
+        "next": [
+            "点击技能"
+        ]
+    },
+    "点击技能": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "ArknightsPC/skill.png",
+                "roi": [
+                    750,
+                    400,
+                    200,
+                    200
+                ],
+                "threshold": 0.3
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target_offset": [
+                    10,
+                    -40,
+                    0,
+                    0
+                ]
+            }
+        },
+        "pre_delay": 0
+    },
+    "撤退干员": {
+        "post_delay": 0,
+        "next": [
+            "暂停撤退干员",
+            "战斗撤退干员"
+        ]
+    },
+    "暂停撤退干员": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [
+                    1186,
+                    38,
+                    42,
+                    34
+                ],
+                "template": "ArknightsPC/pause.png"
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "Pause Retreat"
+            }
+        },
+        "pre_delay": 0,
+        "timeout": 1000,
+        "next": [
+            "点击撤退"
+        ]
+    },
+    "战斗撤退干员": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [
+                    1186,
+                    38,
+                    42,
+                    34
+                ],
+                "template": "ArknightsPC/play.png"
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "Play Retreat"
+            }
+        },
+        "pre_delay": 0,
+        "timeout": 1000,
+        "next": [
+            "点击撤退"
+        ]
+    },
+    "点击撤退": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "ArknightsPC/retreat.png",
+                "roi": [
+                    500,
+                    125,
+                    200,
+                    175
+                ],
+                "threshold": 0.3
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "pre_delay": 0
+    },
+    "下一帧": {
+        "post_delay": 0,
+        "next": [
+            "0.2x下一帧",
+            "1x下一帧",
+            "2x下一帧"
+        ]
+    },
+    "0.2x下一帧": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [
+                    1072,
+                    28,
+                    50,
+                    53
+                ],
+                "template": "ArknightsPC/0.2x.png"
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "Next Frame 0.2x"
+            }
+        },
+        "pre_delay": 0
+    },
+    "1x下一帧": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [
+                    1072,
+                    28,
+                    50,
+                    53
+                ],
+                "template": "ArknightsPC/1x.png"
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "Next Frame 1x"
+            }
+        },
+        "pre_delay": 0
+    },
+    "2x下一帧": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [
+                    1072,
+                    28,
+                    50,
+                    53
+                ],
+                "template": "ArknightsPC/2x.png"
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "Next Frame 2x"
+            }
+        },
+        "pre_delay": 0
+    },
+    "识别暂停": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [
+                    1186,
+                    38,
+                    42,
+                    34
+                ],
+                "template": "ArknightsPC/pause.png"
+            }
+        }
+    },
+    "识别继续": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [
+                    1186,
+                    38,
+                    42,
+                    34
+                ],
+                "template": "ArknightsPC/play.png"
+            }
+        }
+    },
+    "识别1x": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [
+                    1072,
+                    28,
+                    50,
+                    53
+                ],
+                "template": "ArknightsPC/1x.png"
+            }
+        }
+    },
+    "识别2x": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [
+                    1072,
+                    28,
+                    50,
+                    53
+                ],
+                "template": "ArknightsPC/2x.png"
+            }
+        }
+    }
+}

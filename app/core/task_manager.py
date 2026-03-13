@@ -5,16 +5,16 @@
 #   This file is part of AUTO-MAS.
 
 #   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU General Public License as published
-#   by the Free Software Foundation, either version 3 of the License,
-#   or (at your option) any later version.
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
 
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU General Public License for more details.
+#   the GNU Affero General Public License for more details.
 
-#   You should have received a copy of the GNU General Public License
+#   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
@@ -24,11 +24,11 @@ import uuid
 import asyncio
 from typing import Dict, Literal
 
-from .config import Config, MaaConfig, GeneralConfig, MaaEndConfig
+from .config import Config, MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig
 from app.services import System
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
 from app.utils import get_logger
-from app.task import MaaManager, GeneralManager, MaaEndManager
+from app.task import MaaManager, SrcManager, GeneralManager, MaaEndManager
 from app.utils.constants import POWER_SIGN_MAP
 
 
@@ -133,6 +133,8 @@ class Task(TaskExecuteBase):
 
             if isinstance(Config.ScriptConfig[current_script_uid], MaaConfig):
                 task_item = MaaManager(script_item)
+            elif isinstance(Config.ScriptConfig[current_script_uid], SrcConfig):
+                task_item = SrcManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], GeneralConfig):
                 task_item = GeneralManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], MaaEndConfig):

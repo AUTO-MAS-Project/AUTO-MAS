@@ -5,16 +5,16 @@
 #   This file is part of AUTO-MAS.
 
 #   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU General Public License as published
-#   by the Free Software Foundation, either version 3 of the License,
-#   or (at your option) any later version.
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
 
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU General Public License for more details.
+#   the GNU Affero General Public License for more details.
 
-#   You should have received a copy of the GNU General Public License
+#   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
@@ -36,7 +36,7 @@ from app.models.emulator import DeviceBase
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager, ProcessInfo, strptime
 from app.utils.constants import UTC4
-from .tools import execute_script_task
+from .tools import execute_script_task, push_notification
 
 logger = get_logger("通用脚本自动代理")
 
@@ -252,35 +252,7 @@ class AutoProxyTask(TaskExecuteBase):
                             self.script_config.get("Game", "EmulatorIndex")
                         )
                 except Exception as e:
-                    logger.exception(
-                        f"用户: {self.cur_user_uid} - 游戏/模拟器启动失败: {e}"
-                    )
-                    await Config.send_websocket_message(
-                        id=self.task_info.task_id,
-                        type="Info",
-                        data={"Error": f"启动游戏/模拟器时出现异常: {e}"},
-                    )
-                    self.cur_user_log.content = [
-                        "游戏/模拟器启动失败, 通用脚本未实际运行, 无日志记录"
-                    ]
-                    self.cur_user_log.status = "模拟器启动失败"
-
-                    try:
-                        if isinstance(self.game_manager, ProcessManager):
-                            await self.game_manager.kill()
-                        elif isinstance(self.game_manager, DeviceBase):
-                            await self.game_manager.close(
-                                self.script_config.get("Game", "EmulatorIndex")
-                            )
-                    except Exception as e:
-                        logger.exception(f"模拟器关闭失败: {e}")
-
-                    await Notify.push_plyer(
-                        "用户自动代理出现异常！",
-                        f"用户 {self.cur_user_item.name} 自动代理时模拟器启动失败",
-                        f"{self.cur_user_item.name}的自动代理出现异常",
-                        3,
-                    )
+                    await self.handle_pre_script_error("游戏/模拟器启动失败", e)
                     continue
 
             await self.set_general()
@@ -317,22 +289,7 @@ class AutoProxyTask(TaskExecuteBase):
                 if if_get_file:
                     break
             else:
-                logger.error(f"用户: {self.cur_user_uid} - 未找到日志文件")
-                await Config.send_websocket_message(
-                    id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": "未找到指定日志文件"},
-                )
-                self.cur_user_log.content = ["未找到日志文件, 无日志记录"]
-                self.cur_user_log.status = "未找到日志文件"
-
-                await self.close_script_process()
-                await Notify.push_plyer(
-                    "用户自动代理出现异常！",
-                    f"用户 {self.cur_user_item.name} 自动代理时未找到日志文件",
-                    f"{self.cur_user_item.name}的自动代理出现异常",
-                    3,
-                )
+                await self.handle_pre_script_error("未找到日志文件")
                 continue
 
             await self.general_log_monitor.start_monitor_file(
@@ -348,8 +305,7 @@ class AutoProxyTask(TaskExecuteBase):
                     "检测到通用脚本进程完成代理任务\n正在等待相关程序结束"
                 )
 
-                # 中止相关程序
-                await self.close_script_process()
+                await self.kill_managed_process()
 
                 await asyncio.sleep(10)
 
@@ -366,8 +322,7 @@ class AutoProxyTask(TaskExecuteBase):
                 )
                 self.script_info.log = f"{self.cur_user_log.status}\n正在中止相关程序"
 
-                # 中止相关程序
-                await self.close_script_process()
+                await self.kill_managed_process()
 
                 await Notify.push_plyer(
                     "用户自动代理出现异常！",
@@ -392,6 +347,36 @@ class AutoProxyTask(TaskExecuteBase):
                 )
             await asyncio.sleep(3)
 
+    async def handle_pre_script_error(
+        self, error_message: str, e: Exception | None = None
+    ):
+
+        if e is None:
+            logger.error(f"用户: {self.cur_user_uid} - {error_message}")
+            await Config.send_websocket_message(
+                id=self.task_info.task_id,
+                type="Info",
+                data={"Error": error_message},
+            )
+        else:
+            logger.exception(f"用户: {self.cur_user_uid} - {error_message}: {e}")
+            await Config.send_websocket_message(
+                id=self.task_info.task_id,
+                type="Info",
+                data={"Error": f"{error_message}: {e}"},
+            )
+        self.cur_user_log.content = [f"{error_message}, 无日志记录"]
+        self.cur_user_log.status = error_message
+
+        await self.kill_managed_process()
+
+        await Notify.push_plyer(
+            "用户自动代理出现异常！",
+            f"用户 {self.cur_user_item.name} 自动代理时{error_message}",
+            f"{self.cur_user_item.name}的自动代理出现异常",
+            3,
+        )
+
     async def update_config(self):
 
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
@@ -410,10 +395,15 @@ class AutoProxyTask(TaskExecuteBase):
             )
         logger.success("通用脚本配置文件已更新")
 
-    async def close_script_process(self):
-        logger.info(f"中止相关程序: {self.script_exe_path}")
-        await self.general_process_manager.kill()
-        await System.kill_process(self.script_exe_path)
+    async def kill_managed_process(self):
+        """中止关联进程"""
+
+        try:
+            logger.info(f"中止通用脚本进程: {self.script_exe_path}")
+            await self.general_process_manager.kill()
+            await System.kill_process(self.script_exe_path)
+        except Exception as e:
+            logger.exception(f"中止通用脚本进程失败: {e}")
         if self.game_manager is not None:
             logger.info("中止游戏/模拟器进程")
             try:
@@ -496,21 +486,9 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 结束各子任务
         await self.general_log_monitor.stop()
-        await self.general_process_manager.kill()
-        await System.kill_process(self.script_exe_path)
+        await self.kill_managed_process()
         del self.general_process_manager
         del self.general_log_monitor
-        if self.game_manager is not None:
-            try:
-                if isinstance(self.game_manager, ProcessManager):
-                    await self.game_manager.kill()
-                elif isinstance(self.game_manager, DeviceBase):
-                    await self.game_manager.close(
-                        self.script_config.get("Game", "EmulatorIndex"),
-                    )
-                del self.game_manager
-            except Exception as e:
-                logger.exception(f"结束游戏/模拟器进程失败: {e}")
 
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
@@ -530,6 +508,32 @@ class AutoProxyTask(TaskExecuteBase):
                 log_item.status = "未捕获到日志"
 
             await Config.save_general_log(log_path, log_item.content, log_item.status)
+
+        statistics = await Config.merge_statistic_info(user_logs_list)
+        statistics["user_info"] = self.cur_user_item.name
+        statistics["start_time"] = self.user_start_time.strftime("%Y-%m-%d %H:%M:%S")
+        statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        statistics["user_result"] = (
+            "代理任务全部完成" if self.run_book else self.cur_user_item.result
+        )
+
+        # 判断是否成功
+        success_symbol = "√" if self.run_book else "X"
+
+        try:
+            await push_notification(
+                "统计信息",
+                f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
+                statistics,
+                self.cur_user_config,
+            )
+        except Exception as e:
+            logger.exception(f"推送通知时出现异常: {e}")
+            await Config.send_websocket_message(
+                id=self.task_info.task_id,
+                type="Info",
+                data={"Error": f"推送通知时出现异常: {e}"},
+            )
 
         if self.run_book:
             if (

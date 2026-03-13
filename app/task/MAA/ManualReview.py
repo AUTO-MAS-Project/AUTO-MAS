@@ -5,16 +5,16 @@
 #   This file is part of AUTO-MAS.
 
 #   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU General Public License as published
-#   by the Free Software Foundation, either version 3 of the License,
-#   or (at your option) any later version.
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
 
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU General Public License for more details.
+#   the GNU Affero General Public License for more details.
 
-#   You should have received a copy of the GNU General Public License
+#   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
@@ -34,12 +34,7 @@ from app.models.config import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceInfo, DeviceBase
 from app.services import System
 from app.utils import get_logger, LogMonitor, ProcessManager
-from app.utils.constants import (
-    UTC4,
-    MAA_TASKS,
-    MAA_STARTUP_BASE,
-    ARKNIGHTS_PACKAGE_NAME,
-)
+from app.utils.constants import UTC4, MAA_STARTUP_BASE, ARKNIGHTS_PACKAGE_NAME
 from .tools import agree_bilibili
 
 logger = get_logger("MAA 人工排查")
@@ -90,8 +85,6 @@ class ManualReviewTask(TaskExecuteBase):
         self.message_queue = asyncio.Queue()
         await Broadcast.subscribe(self.message_queue)
         self.wait_event = asyncio.Event()
-        self.maa_logs: list[str] = []
-        self.user_start_time = datetime.now()
         self.log_start_time = datetime.now()
 
         self.maa_root_path = Path(self.script_config.get("Info", "Path"))
@@ -141,7 +134,9 @@ class ManualReviewTask(TaskExecuteBase):
                 logger.exception(
                     f"用户: {self.cur_user_item.user_id} - 模拟器启动失败: {e}"
                 )
-                self.script_info.log = f"模拟器启动失败: {e}\n正在中止相关程序"
+                self.script_info.log = (
+                    f"正在启动模拟器\n模拟器启动失败: {e}\n正在中止相关程序"
+                )
                 try:
                     await self.emulator_manager.close(
                         self.script_config.get("Emulator", "Index")

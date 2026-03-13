@@ -3,8 +3,8 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { GeneralConfig } from './GeneralConfig';
-import type { MaaEndConfig } from './MaaEndConfig';
 import type { MaaConfig } from './MaaConfig';
+import type { SrcConfig } from './SrcConfig';
 export type ScriptCreateOut = {
     /**
      * 状态码
@@ -25,6 +25,5 @@ export type ScriptCreateOut = {
     /**
      * 脚本配置数据
      */
-    data: (MaaConfig | GeneralConfig | MaaEndConfig);
+    data: (MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig);
 };
-
