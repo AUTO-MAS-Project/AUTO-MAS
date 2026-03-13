@@ -256,11 +256,7 @@ interface MaaEndScriptConfigLocal {
     Timeout: number
     Retry: number
     RunTimesLimit: number
-    ControllerType:
-      | 'Win32-Window'
-      | 'Win32-Window-Background'
-      | 'Win32-Front'
-      | 'ADB'
+    ControllerType: 'Win32-Window' | 'Win32-Window-Background' | 'Win32-Front' | 'ADB'
   }
   MaaEnd: {
     ResourceProfile: string
@@ -424,17 +420,19 @@ const loadPresetOptions = async () => {
     const parsed = JSON.parse(content)
     const instances = Array.isArray(parsed?.instances) ? parsed.instances : []
 
-    const names = Array.from(
-      new Set(
-        instances
-          .map((item: any) => String(item?.name || '').trim())
-          .filter((name: string) => name.length > 0)
-      )
-    )
+    const optionMap = new Map<string, string>()
+    for (const item of instances) {
+      const id = String(item?.id || '').trim()
+      const name = String(item?.name || '').trim()
+      if (!id || !name || optionMap.has(id)) {
+        continue
+      }
+      optionMap.set(id, name)
+    }
 
-    presetOptions.value = names.map(name => ({
+    presetOptions.value = Array.from(optionMap.entries()).map(([id, name]) => ({
       label: name,
-      value: name,
+      value: id,
     }))
   } catch (error) {
     presetOptions.value = []
