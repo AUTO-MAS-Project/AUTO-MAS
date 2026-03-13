@@ -27,14 +27,21 @@ def _select_instance(
     if not instances:
         raise RuntimeBridgeError("No MaaEnd instances in mxu-MaaEnd.json")
 
-    preset_name = str(user_config.get("Task", "PresetOverride")).strip()
-    if not preset_name:
-        preset_name = str(script_config.get("MaaEnd", "PresetTask")).strip()
+    preset_ref = str(user_config.get("Task", "PresetOverride")).strip()
+    if not preset_ref:
+        preset_ref = str(script_config.get("MaaEnd", "PresetTask")).strip()
 
     selected_instance = None
-    if preset_name:
+    if preset_ref:
         selected_instance = next(
-            (item for item in instances if str(item.get("name", "")).strip() == preset_name),
+            (item for item in instances if str(item.get("id", "")).strip() == preset_ref),
+            None,
+        )
+
+    # Backward compatibility for historical name-based preset values.
+    if selected_instance is None and preset_ref:
+        selected_instance = next(
+            (item for item in instances if str(item.get("name", "")).strip() == preset_ref),
             None,
         )
 
@@ -143,6 +150,12 @@ def build_runtime_config(
     instance_id = selected_instance.get("id")
     if instance_id:
         config_data["lastActiveInstanceId"] = instance_id
+        settings = config_data.get("settings")
+        if not isinstance(settings, dict):
+            settings = {}
+            config_data["settings"] = settings
+        settings["autoStartInstanceId"] = instance_id
+        settings["autoRunOnLaunch"] = True
 
     runtime_path = Path.cwd() / f"data/{script_id}/{user_id}/Runtime/mxu-MaaEnd.runtime.json"
     runtime_path.parent.mkdir(parents=True, exist_ok=True)

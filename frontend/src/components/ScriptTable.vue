@@ -51,6 +51,20 @@
                   </template>
                   正在配置
                 </a-button>
+                <a-button v-if="script.type === 'MaaEnd' && !props.activeConnections.has(script.id)" type="primary" ghost
+                  size="middle" @click="handleStartMaaEndConfig(script)">
+                  <template #icon>
+                    <SettingOutlined />
+                  </template>
+                  配置MaaEnd
+                </a-button>
+                <a-button v-if="script.type === 'MaaEnd' && props.activeConnections.has(script.id)" type="default"
+                  size="middle" disabled style="color: #52c41a; border-color: #52c41a">
+                  <template #icon>
+                    <SettingOutlined />
+                  </template>
+                  正在配置
+                </a-button>
                 <a-button type="default" size="middle" @click="handleEdit(script)">
                   <template #icon>
                     <EditOutlined />
@@ -219,6 +233,8 @@ interface Emits {
 
   (e: 'saveSrcConfig', script: Script): void
 
+  (e: 'startMaaEndConfig', script: Script): void
+
   (e: 'toggleUserStatus', user: User): void
 
   (e: 'passCheckUser', user: User): void
@@ -304,6 +320,10 @@ const handleStartSRCConfig = (script: Script) => {
 
 const handleSaveSRCConfig = (script: Script) => {
   emit('saveSrcConfig', script)
+}
+
+const handleStartMaaEndConfig = (script: Script) => {
+  emit('startMaaEndConfig', script)
 }
 
 const handleToggleUserStatus = (user: User) => {
