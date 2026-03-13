@@ -61,7 +61,17 @@ class AutoProxyTask(TaskExecuteBase):
         self.maaend_exe_path = self.maaend_root_path / "MaaEnd.exe"
         self.maaend_config_path = self.maaend_root_path / "config" / "mxu-MaaEnd.json"
 
-        self.log_path = self.maaend_root_path / "debug" / "maa.log"
+        default_log_path = self.maaend_root_path / "debug" / "go-service.log"
+        configured_log_path = str(self.script_config.get("MaaEnd", "LogPath")).strip()
+
+        if configured_log_path:
+            log_path = Path(configured_log_path)
+            if not log_path.is_absolute():
+                log_path = self.maaend_root_path / log_path
+            self.log_path = log_path
+        else:
+            self.log_path = default_log_path
+
         self.timeout_minutes = self.script_config.get("Run", "Timeout")
         self.retry_times = self.script_config.get("Run", "Retry")
 
