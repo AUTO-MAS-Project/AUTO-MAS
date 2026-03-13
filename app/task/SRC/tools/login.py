@@ -19,6 +19,10 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
+from contextlib import suppress
+
+
 from app.models.emulator import DeviceInfo, DeviceStatus
 from app.utils import get_logger
 
@@ -47,29 +51,69 @@ async def login(
 
     logger.info(f"开始登录: {emulator_info.title} - {package_name}")
 
-    from app.core import MaaFWManager
+    from app.core import Config, MaaFWManager
 
-    if "*" in id or password == "":
+    if (package_name == "com.miHoYo.hkrpg" and "*" in id) or password == "":
         logger.info("账号密码不完整，禁用通过输入账号密码登录")
         pipeline_override = {
-            "切换账号": {"action": {"param": {"package": package_name}}},
+            "切换账号-星穹铁道": {"action": {"param": {"package": package_name}}},
+            "启动游戏": {"action": {"param": {"package": package_name}}},
+            "Bilibili隐私政策": {"enabled": Config.get("Function", "IfAgreeBilibili")},
             "下滑账号列表": {"on_error": []},
+            "下滑账号列表-B服": {"on_error": []},
+            "识别登录下拉框禁用": {"on_error": []},
             "选中账号": {
                 "recognition": {
                     "param": {"expected": [f"^{id[:3]}[a-zA-Z0-9 *]*{id[-2:]}$"]}
+                }
+            },
+            "验证当前账号": {
+                "recognition": {
+                    "param": {"expected": [f"^{id[:3]}[a-zA-Z0-9 *]*{id[-2:]}$"]}
+                }
+            },
+            "选中账号-B服": {
+                "recognition": {
+                    "param": {
+                        "expected": [id.split("|")[0].strip() if "|" in id else id],
+                        "model": "en_us" if id.isascii() else "zh_cn",
+                    }
                 }
             },
         }
     else:
         pipeline_override = {
-            "切换账号": {"action": {"param": {"package": package_name}}},
+            "切换账号-星穹铁道": {"action": {"param": {"package": package_name}}},
+            "启动游戏": {"action": {"param": {"package": package_name}}},
+            "Bilibili隐私政策": {"enabled": Config.get("Function", "IfAgreeBilibili")},
             "选中账号": {
                 "recognition": {
                     "param": {"expected": [f"^{id[:3]}[a-zA-Z0-9 *]*{id[-2:]}$"]}
                 }
             },
+            "验证当前账号": {
+                "recognition": {
+                    "param": {"expected": [f"^{id[:3]}[a-zA-Z0-9 *]*{id[-2:]}$"]}
+                }
+            },
+            "选中账号-B服": {
+                "recognition": {
+                    "param": {
+                        "expected": [id.split("|")[0].strip() if "|" in id else id],
+                        "model": "en_us" if id.isascii() else "zh_cn",
+                    }
+                }
+            },
             "输入账号": {"action": {"param": {"input_text": id}}},
             "输入密码": {"action": {"param": {"input_text": password}}},
+            "输入账号-B服": {
+                "action": {
+                    "param": {
+                        "input_text": id.split("|")[1].strip() if "|" in id else id
+                    }
+                }
+            },
+            "输入密码-B服": {"action": {"param": {"input_text": password}}},
         }
 
     try:
@@ -79,8 +123,12 @@ async def login(
         return False
 
     try:
-        await MaaFWManager.do_job(tasker.post_task("切换账号", pipeline_override))
+        await MaaFWManager.do_job(
+            tasker.post_task("切换账号-星穹铁道", pipeline_override)
+        )
         logger.success(f"模拟器{emulator_info.title}登录成功")
+        del tasker
+        await asyncio.sleep(10)  # 等待资源释放
         return True
     except Exception as e:
         errorMsg = str(e)
@@ -89,4 +137,10 @@ async def login(
         if password:
             errorMsg = errorMsg.replace(password, "password***")
         logger.error(f"模拟器{emulator_info.title}切换账号时出现异常: {errorMsg}")
+        del tasker
         return False
+    except asyncio.CancelledError:
+        with suppress(Exception):
+            await MaaFWManager.do_job(tasker.post_stop())
+            del tasker
+        raise

@@ -26,8 +26,12 @@ from typing import Any
 
 
 from maa.tasker import Tasker
+from maa.context import Context
 from maa.toolkit import Toolkit
 from maa.resource import Resource
+from maa.custom_action import CustomAction
+
+# from maa.define import LoggingLevelEnum
 from maa.controller import (
     AdbController,
     Win32Controller,
@@ -255,3 +259,43 @@ class _MaaFWManager:
 
 
 MaaFWManager = _MaaFWManager()
+
+
+@MaaFWManager.resource.custom_action("DisableLog")
+class DisableLog(CustomAction):
+
+    def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
+        """
+        自定义动作: 临时禁用日志输出
+
+        Args:
+            context(Context): 任务上下文对象，可以用于执行其他操作
+            argv(CustomAction.RunArg): 包含任务详情、节点名、自定义动作名、自定义动作参数、前序识别详情和前序识别位置的参数对象
+
+        Returns:
+            bool: 动作是否执行成功
+        """
+        # 临时关闭日志输出
+        # Tasker.set_log_dir("")
+        # Tasker.set_stdout_level(LoggingLevelEnum.Off)
+        return True
+
+
+@MaaFWManager.resource.custom_action("EnableLog")
+class EnableLog(CustomAction):
+
+    def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
+        """
+        自定义动作: 启用日志输出
+
+        Args:
+            context(Context): 任务上下文对象，可以用于执行其他操作
+            argv(CustomAction.RunArg): 包含任务详情、节点名、自定义动作名、自定义动作参数、前序识别详情和前序识别位置的参数对象
+
+        Returns:
+            bool: 动作是否执行成功
+        """
+        # 恢复日志输出
+        # Tasker.set_log_dir("./debug")
+        # Tasker.set_stdout_level(LoggingLevelEnum.Error)
+        return True
