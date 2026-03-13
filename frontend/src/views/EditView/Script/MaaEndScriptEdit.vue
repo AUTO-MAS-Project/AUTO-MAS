@@ -99,9 +99,10 @@
                   size="large"
                   @change="handleChange('Run', 'ControllerType', $event)"
                 >
-                  <a-select-option value="Win32">Win32</a-select-option>
-                  <a-select-option value="ADB">ADB</a-select-option>
-                  <a-select-option value="PlayCover">PlayCover</a-select-option>
+                  <a-select-option value="Win32-Window">电脑端-默认</a-select-option>
+                  <a-select-option value="Win32-Window-Background">电脑端-后台</a-select-option>
+                  <a-select-option value="Win32-Front">电脑端-前台</a-select-option>
+                  <a-select-option value="ADB">安卓端</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
@@ -166,12 +167,14 @@
                 <template #label>
                   <span class="form-label">资源配置</span>
                 </template>
-                <a-input
+                <a-select
                   v-model:value="config.MaaEnd.ResourceProfile"
-                  placeholder="例如：MaaEnd"
+                  mode="combobox"
+                  :options="resourceProfileOptions"
+                  placeholder="请选择或输入资源配置"
                   size="large"
                   class="modern-input"
-                  @blur="handleChange('MaaEnd', 'ResourceProfile', config.MaaEnd.ResourceProfile)"
+                  @change="handleChange('MaaEnd', 'ResourceProfile', config.MaaEnd.ResourceProfile)"
                 />
               </a-form-item>
             </a-col>
@@ -230,7 +233,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
@@ -253,7 +256,11 @@ interface MaaEndScriptConfigLocal {
     Timeout: number
     Retry: number
     RunTimesLimit: number
-    ControllerType: 'Win32' | 'ADB' | 'PlayCover'
+    ControllerType:
+      | 'Win32-Window'
+      | 'Win32-Window-Background'
+      | 'Win32-Front'
+      | 'ADB'
   }
   MaaEnd: {
     ResourceProfile: string
@@ -285,7 +292,7 @@ const config = reactive<MaaEndScriptConfigLocal>({
     Timeout: 10,
     Retry: 3,
     RunTimesLimit: 3,
-    ControllerType: 'Win32',
+    ControllerType: 'Win32-Window',
   },
   MaaEnd: {
     ResourceProfile: 'MaaEnd',
@@ -312,6 +319,30 @@ const rules = {
   path: [{ required: true, message: '请选择 MaaEnd 路径', trigger: 'blur' }],
 }
 
+const normalizeControllerType = (
+  value: string | null | undefined
+): 'Win32-Window' | 'Win32-Window-Background' | 'Win32-Front' | 'ADB' => {
+  if (
+    value === 'Win32-Window' ||
+    value === 'Win32-Window-Background' ||
+    value === 'Win32-Front' ||
+    value === 'ADB'
+  ) {
+    return value
+  }
+
+  return 'Win32-Window'
+}
+
+const resourceProfileOptions = computed(() => {
+  const options = ['MaaEnd']
+  const current = (config.MaaEnd.ResourceProfile || '').trim()
+  if (current && !options.includes(current)) {
+    options.unshift(current)
+  }
+  return options.map(value => ({ label: value, value }))
+})
+
 const applyConfig = (rawConfig: any, nameFallback = '新建MaaEnd脚本') => {
   config.Info.Name = rawConfig?.Info?.Name ?? nameFallback
   config.Info.Path = rawConfig?.Info?.Path ?? '.'
@@ -319,7 +350,7 @@ const applyConfig = (rawConfig: any, nameFallback = '新建MaaEnd脚本') => {
   config.Run.Timeout = rawConfig?.Run?.Timeout ?? 10
   config.Run.Retry = rawConfig?.Run?.Retry ?? 3
   config.Run.RunTimesLimit = rawConfig?.Run?.RunTimesLimit ?? 3
-  config.Run.ControllerType = rawConfig?.Run?.ControllerType ?? 'Win32'
+  config.Run.ControllerType = normalizeControllerType(rawConfig?.Run?.ControllerType)
 
   config.MaaEnd.ResourceProfile = rawConfig?.MaaEnd?.ResourceProfile ?? 'MaaEnd'
   config.MaaEnd.PresetTask = rawConfig?.MaaEnd?.PresetTask ?? ''
