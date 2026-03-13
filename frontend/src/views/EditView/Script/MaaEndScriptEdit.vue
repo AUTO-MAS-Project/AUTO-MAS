@@ -180,7 +180,18 @@
                 <template #label>
                   <span class="form-label">预设任务</span>
                 </template>
+                <a-select
+                  v-if="presetOptions.length > 0"
+                  v-model:value="config.MaaEnd.PresetTask"
+                  size="large"
+                  show-search
+                  allow-clear
+                  placeholder="请选择预设任务"
+                  :options="presetOptions"
+                  @change="handleChange('MaaEnd', 'PresetTask', $event || '')"
+                />
                 <a-input
+                  v-else
                   v-model:value="config.MaaEnd.PresetTask"
                   placeholder="请输入预设任务"
                   size="large"
@@ -225,7 +236,11 @@ import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
 import type { ScriptType } from '@/types/script'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { ArrowLeftOutlined, FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import {
+  ArrowLeftOutlined,
+  FolderOpenOutlined,
+  QuestionCircleOutlined,
+} from '@ant-design/icons-vue'
 
 const logger = window.electronAPI.getLogger('MaaEnd脚本编辑')
 
@@ -257,6 +272,7 @@ const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
 const isInitializing = ref(true)
 const isSaving = ref(false)
+const presetOptions = ref<Array<{ label: string; value: string }>>([])
 
 const scriptId = route.params.id as string
 
@@ -357,6 +373,44 @@ const handleNameBlur = async () => {
   await handleChange('Info', 'Name', formData.name)
 }
 
+const resolveMaaEndConfigPath = () => {
+  const base = String(config.Info.Path || '').trim()
+  if (!base) {
+    return ''
+  }
+  return `${base.replace(/[\\/]+$/, '')}/config/mxu-MaaEnd.json`
+}
+
+const loadPresetOptions = async () => {
+  const configPath = resolveMaaEndConfigPath()
+  if (!configPath || !window.electronAPI?.readFile) {
+    presetOptions.value = []
+    return
+  }
+
+  try {
+    const content = await window.electronAPI.readFile(configPath)
+    const parsed = JSON.parse(content)
+    const instances = Array.isArray(parsed?.instances) ? parsed.instances : []
+
+    const names = Array.from(
+      new Set(
+        instances
+          .map((item: any) => String(item?.name || '').trim())
+          .filter((name: string) => name.length > 0)
+      )
+    )
+
+    presetOptions.value = names.map(name => ({
+      label: name,
+      value: name,
+    }))
+  } catch (error) {
+    presetOptions.value = []
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`加载 MaaEnd 预设任务选项失败: ${errorMsg}`)
+  }
+}
 const loadScript = async () => {
   pageLoading.value = true
   try {
@@ -406,6 +460,7 @@ const selectMaaEndPath = async () => {
     config.Info.Path = path
     formData.path = path
     await handleChange('Info', 'Path', path)
+    await loadPresetOptions()
     message.success('MaaEnd 路径选择成功')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -443,6 +498,7 @@ const handleCancel = () => {
 
 onMounted(async () => {
   await loadScript()
+  await loadPresetOptions()
   isInitializing.value = false
 })
 </script>
