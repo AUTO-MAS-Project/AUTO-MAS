@@ -1,0 +1,86 @@
+{
+    "version": 1,
+    "instances": [
+        {
+            "id": "smoke_test:00001",
+            "plugin": "smoke_test",
+            "enabled": true,
+            "name": "123456",
+            "config": {
+                "enable": true,
+                "message": "smoke_test 已按 Schema 加载",
+                "retry_count": 2,
+                "channels": [
+                    "console",
+                    "webhook"
+                ],
+                "meta": {
+                    "env": "dev",
+                    "owner": "tester"
+                },
+                "table_data": [
+                    {
+                        "id": 1,
+                        "name": "row-1",
+                        "status": "ok",
+                        "dynamic_col": "row-1"
+                    },
+                    {
+                        "id": 2,
+                        "dynamic_col": "value",
+                        "name": "row-1",
+                        "status": "row-1"
+                    },
+                    {
+                        "id": "3",
+                        "name": "row-1",
+                        "status": "row-1",
+                        "dynamic_col": "row-1"
+                    }
+                ],
+                "api_token": "1231231231231231"
+            }
+        },
+        {
+            "id": "smoke_test:21be9",
+            "plugin": "smoke_test",
+            "enabled": true,
+            "name": "smoke_test 实例",
+            "config": {
+                "enable": true,
+                "message": "Hello AUTO-MAS",
+                "retry_count": 3,
+                "channels": [
+                    "console"
+                ],
+                "meta": {},
+                "table_data": [],
+                "api_token": ""
+            }
+        },
+        {
+            "id": "smtp_notify:447bb",
+            "plugin": "smtp_notify",
+            "enabled": true,
+            "name": "smtp_notify 实例",
+            "config": {
+                "enable": true,
+                "smtp_host": "smtp.example.com",
+                "smtp_port": 587,
+                "smtp_username": "",
+                "smtp_password": "",
+                "smtp_use_ssl": false,
+                "smtp_use_starttls": true,
+                "sender_email": "",
+                "target_email": "receiver@example.com",
+                "subject": "AUTO-MAS 通知",
+                "message": "任务状态已更新",
+                "events": [
+                    "script.success"
+                ],
+                "include_payload": true,
+                "timeout_seconds": 15
+            }
+        }
+    ]
+}
