@@ -25,6 +25,5 @@ export type UserCreateOut = {
     /**
      * 用户配置数据
      */
-    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig);
+    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | MaaEndUserConfig);
 };
-

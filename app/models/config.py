@@ -634,6 +634,96 @@ class MaaConfig(ConfigBase):
         super().__init__()
 
 
+class MaaEndUserConfig(ConfigBase):
+    """MaaEnd用户配置"""
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## 用户名称
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
+        ## 是否启用
+        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        ## 剩余天数
+        self.Info_RemainedDay = ConfigItem(
+            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+
+        ## Task ------------------------------------------------------------
+        ## 预设覆盖
+        self.Task_PresetOverride = ConfigItem("Task", "PresetOverride", "")
+        ## 任务选项覆盖
+        self.Task_OptionOverride = ConfigItem(
+            "Task", "OptionOverride", "{ }", JSONValidator()
+        )
+
+        ## Data ------------------------------------------------------------
+        ## 上次运行时间
+        self.Data_LastRun = ConfigItem(
+            "Data",
+            "LastRun",
+            "2000-01-01 00:00:00",
+            DateTimeValidator("%Y-%m-%d %H:%M:%S"),
+        )
+        ## 运行次数
+        self.Data_RunTimes = ConfigItem("Data", "RunTimes", 0, RangeValidator(0, 9999))
+        ## 上次运行状态
+        self.Data_LastStatus = ConfigItem("Data", "LastStatus", "-")
+
+        super().__init__()
+
+
+class MaaEndConfig(ConfigBase):
+    """MaaEnd配置"""
+
+    related_config: dict[str, MultipleConfig] = {}
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## MaaEnd 脚本名称
+        self.Info_Name = ConfigItem("Info", "Name", "新 MaaEnd 脚本")
+        ## MaaEnd 路径
+        self.Info_Path = ConfigItem("Info", "Path", str(Path.cwd()), FolderValidator())
+
+        ## Run -------------------------------------------------------------
+        ## 运行超时时间
+        self.Run_Timeout = ConfigItem("Run", "Timeout", 10, RangeValidator(0, 9999))
+        ## 重试次数
+        self.Run_Retry = ConfigItem("Run", "Retry", 3, RangeValidator(0, 9999))
+        ## 运行次数限制
+        self.Run_RunTimesLimit = ConfigItem(
+            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
+        )
+        ## 控制器类型
+        self.Run_ControllerType = ConfigItem(
+            "Run",
+            "ControllerType",
+            "Win32",
+            OptionsValidator(["Win32", "ADB", "PlayCover"]),
+        )
+
+        ## MaaEnd ----------------------------------------------------------
+        ## 资源配置
+        self.MaaEnd_ResourceProfile = ConfigItem(
+            "MaaEnd", "ResourceProfile", "MaaEnd"
+        )
+        ## 预设任务
+        self.MaaEnd_PresetTask = ConfigItem("MaaEnd", "PresetTask", "")
+        ## 日志路径
+        self.MaaEnd_LogPath = ConfigItem(
+            "MaaEnd", "LogPath", str(Path.cwd() / "debug/MaaEnd.log"), FileValidator()
+        )
+        ## 成功日志匹配
+        self.MaaEnd_SuccessPattern = ConfigItem("MaaEnd", "SuccessPattern", "")
+        ## 失败日志匹配
+        self.MaaEnd_ErrorPattern = ConfigItem("MaaEnd", "ErrorPattern", "")
+
+        self.UserData = MultipleConfig([MaaEndUserConfig])
+
+        super().__init__()
+
+
 class SrcUserConfig(ConfigBase):
     """SRC用户配置"""
 
@@ -1598,7 +1688,9 @@ class GlobalConfig(ConfigBase):
         ## 计划表配置列表
         self.PlanConfig = MultipleConfig([MaaPlanConfig])
         ## 脚本配置列表
-        self.ScriptConfig = MultipleConfig([MaaConfig, SrcConfig, GeneralConfig])
+        self.ScriptConfig = MultipleConfig(
+            [MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig]
+        )
         ## 队列配置列表
         self.QueueConfig = MultipleConfig([QueueConfig])
         ## 工具箱配置
@@ -1677,6 +1769,7 @@ CLASS_BOOK = {
     "MAA": MaaConfig,
     "MaaPlan": MaaPlanConfig,
     "SRC": SrcConfig,
+    "MaaEnd": MaaEndConfig,
     "General": GeneralConfig,
 }
 """配置类映射表"""

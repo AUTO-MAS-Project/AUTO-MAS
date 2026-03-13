@@ -17,6 +17,5 @@ export type UserUpdateIn = {
     /**
      * 用户更新数据
      */
-    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig);
+    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | MaaEndUserConfig);
 };
-
