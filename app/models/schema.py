@@ -6,16 +6,16 @@
 #   This file is part of AUTO-MAS.
 
 #   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU General Public License as published
-#   by the Free Software Foundation, either version 3 of the License,
-#   or (at your option) any later version.
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
 
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU General Public License for more details.
+#   the GNU Affero General Public License for more details.
 
-#   You should have received a copy of the GNU General Public License
+#   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
@@ -321,16 +321,16 @@ class QueueConfig(BaseModel):
 
 class ScriptIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: Literal["MaaConfig", "GeneralConfig", "MaaEndConfig"] = Field(
+    type: Literal["MaaConfig", "GeneralConfig", "SrcConfig", "MaaEndConfig"] = Field(
         ..., description="配置类型"
     )
 
 
 class UserIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: Literal["MaaUserConfig", "GeneralUserConfig", "MaaEndUserConfig"] = Field(
-        ..., description="配置类型"
-    )
+    type: Literal[
+        "MaaUserConfig", "GeneralUserConfig", "SrcUserConfig", "MaaEndUserConfig"
+    ] = Field(..., description="配置类型")
 
 
 class MaaUserConfig_Info(BaseModel):
@@ -488,29 +488,6 @@ class GeneralUserConfig(BaseModel):
     )
 
 
-class MaaEndUserConfig_Info(BaseModel):
-    Name: Optional[str] = Field(default=None, description="用户名")
-    Status: Optional[bool] = Field(default=None, description="用户状态")
-    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
-
-
-class MaaEndUserConfig_Task(BaseModel):
-    PresetOverride: Optional[str] = Field(default=None, description="预设覆盖")
-    OptionOverride: Optional[str] = Field(default=None, description="任务选项覆盖")
-
-
-class MaaEndUserConfig_Data(BaseModel):
-    LastRun: Optional[str] = Field(default=None, description="上次运行时间")
-    RunTimes: Optional[int] = Field(default=None, description="运行次数")
-    LastStatus: Optional[str] = Field(default=None, description="上次运行状态")
-
-
-class MaaEndUserConfig(BaseModel):
-    Info: Optional[MaaEndUserConfig_Info] = Field(default=None, description="用户信息")
-    Task: Optional[MaaEndUserConfig_Task] = Field(default=None, description="任务配置")
-    Data: Optional[MaaEndUserConfig_Data] = Field(default=None, description="用户数据")
-
-
 class GeneralConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="脚本名称")
     RootPath: Optional[str] = Field(default=None, description="脚本根目录")
@@ -578,6 +555,29 @@ class GeneralConfig(BaseModel):
     Run: Optional[GeneralConfig_Run] = Field(default=None, description="运行配置")
 
 
+class MaaEndUserConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="用户名")
+    Status: Optional[bool] = Field(default=None, description="用户状态")
+    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+
+
+class MaaEndUserConfig_Task(BaseModel):
+    PresetOverride: Optional[str] = Field(default=None, description="预设覆盖")
+    OptionOverride: Optional[str] = Field(default=None, description="任务选项覆盖")
+
+
+class MaaEndUserConfig_Data(BaseModel):
+    LastRun: Optional[str] = Field(default=None, description="上次运行时间")
+    RunTimes: Optional[int] = Field(default=None, description="运行次数")
+    LastStatus: Optional[str] = Field(default=None, description="上次运行状态")
+
+
+class MaaEndUserConfig(BaseModel):
+    Info: Optional[MaaEndUserConfig_Info] = Field(default=None, description="用户信息")
+    Task: Optional[MaaEndUserConfig_Task] = Field(default=None, description="任务配置")
+    Data: Optional[MaaEndUserConfig_Data] = Field(default=None, description="用户数据")
+
+
 class MaaEndConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="脚本名称")
     Path: Optional[str] = Field(default=None, description="脚本路径")
@@ -606,6 +606,203 @@ class MaaEndConfig(BaseModel):
     MaaEnd: Optional[MaaEndConfig_MaaEnd] = Field(
         default=None, description="MaaEnd 配置"
     )
+
+
+class SrcUserConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="用户名称")
+    Status: Optional[bool] = Field(default=None, description="是否启用")
+    Id: Optional[str] = Field(default=None, description="用户ID")
+    Password: Optional[str] = Field(default=None, description="密码")
+    Mode: Optional[Literal["简洁", "详细"]] = Field(
+        default=None, description="脚本模式"
+    )
+    Server: Optional[
+        Literal[
+            "CN-Official",
+            "CN-Bilibili",
+            "VN-Official",
+            "OVERSEA-America",
+            "OVERSEA-Asia",
+            "OVERSEA-Europe",
+            "OVERSEA-TWHKMO",
+        ]
+    ] = Field(default=None, description="游戏服务器")
+    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    Notes: Optional[str] = Field(default=None, description="备注")
+    Tag: Optional[str] = Field(default=None, description="用户标签信息")
+
+
+class SrcUserConfig_Stage(BaseModel):
+    Channel: Literal["Relic", "Materials", "Ornament"] | None = Field(
+        default=None, description="关卡通道"
+    )
+    Relic: (
+        Literal[
+            "-",
+            "Cavern_of_Corrosion_Path_of_Possession",
+            "Cavern_of_Corrosion_Path_of_Hidden_Salvation",
+            "Cavern_of_Corrosion_Path_of_Thundersurge",
+            "Cavern_of_Corrosion_Path_of_Aria",
+            "Cavern_of_Corrosion_Path_of_Uncertainty",
+            "Cavern_of_Corrosion_Path_of_Cavalier",
+            "Cavern_of_Corrosion_Path_of_Dreamdive"
+            "Cavern_of_Corrosion_Path_of_Darkness",
+            "Cavern_of_Corrosion_Path_of_Elixir_Seekers",
+            "Cavern_of_Corrosion_Path_of_Conflagration",
+            "Cavern_of_Corrosion_Path_of_Holy_Hymn",
+            "Cavern_of_Corrosion_Path_of_Providence",
+            "Cavern_of_Corrosion_Path_of_Drifting",
+            "Cavern_of_Corrosion_Path_of_Jabbing_Punch",
+            "Cavern_of_Corrosion_Path_of_Gelid_Wind",
+        ]
+        | None
+    ) = Field(default=None, description="遗器关卡")
+    Materials: (
+        Literal[
+            "-",
+            "Calyx_Golden_Memories_Planarcadia",
+            "Calyx_Golden_Aether_Planarcadia",
+            "Calyx_Golden_Treasures_Planarcadia",
+            "Calyx_Golden_Memories_Amphoreus",
+            "Calyx_Golden_Aether_Amphoreus",
+            "Calyx_Golden_Treasures_Amphoreus",
+            "Calyx_Golden_Memories_Penacony",
+            "Calyx_Golden_Aether_Penacony",
+            "Calyx_Golden_Treasures_Penacony",
+            "Calyx_Golden_Memories_The_Xianzhou_Luofu",
+            "Calyx_Golden_Aether_The_Xianzhou_Luofu",
+            "Calyx_Golden_Treasures_The_Xianzhou_Luofu",
+            "Calyx_Golden_Memories_Jarilo_VI",
+            "Calyx_Golden_Aether_Jarilo_VI",
+            "Calyx_Golden_Treasures_Jarilo_VI",
+            "Calyx_Crimson_Destruction_Herta_StorageZone",
+            "Calyx_Crimson_Destruction_Luofu_ScalegorgeWaterscape",
+            "Calyx_Crimson_Preservation_Herta_SupplyZone",
+            "Calyx_Crimson_Preservation_Penacony_ClockStudiosThemePark",
+            "Calyx_Crimson_The_Hunt_Jarilo_OutlyingSnowPlains",
+            "Calyx_Crimson_The_Hunt_Penacony_SoulGladScorchsandAuditionVenue",
+            "Calyx_Crimson_The_Hunt_Amphoreus_MemortisShoreRuinsofTime",
+            "Calyx_Crimson_Abundance_Jarilo_BackwaterPass",
+            "Calyx_Crimson_Abundance_Luofu_FyxestrollGarden",
+            "Calyx_Crimson_Erudition_Jarilo_RivetTown",
+            "Calyx_Crimson_Erudition_Penacony_PenaconyGrandTheater",
+            "Calyx_Crimson_Harmony_Jarilo_RobotSettlement",
+            "Calyx_Crimson_Harmony_Penacony_TheReverieDreamscape",
+            "Calyx_Crimson_Nihility_Jarilo_GreatMine",
+            "Calyx_Crimson_Nihility_Luofu_AlchemyCommission",
+            "Calyx_Crimson_Remembrance_Amphoreus_StrifeRuinsCastrumKremnos",
+            "Calyx_Crimson_Elation_Planarcadia_WorldEndTavern",
+            "Stagnant_Shadow_Quanta",
+            "Stagnant_Shadow_Gust",
+            "Stagnant_Shadow_Fulmination",
+            "Stagnant_Shadow_Blaze",
+            "Stagnant_Shadow_Spike",
+            "Stagnant_Shadow_Rime",
+            "Stagnant_Shadow_Mirage",
+            "Stagnant_Shadow_Icicle",
+            "Stagnant_Shadow_Doom",
+            "Stagnant_Shadow_Puppetry",
+            "Stagnant_Shadow_Abomination",
+            "Stagnant_Shadow_Scorch",
+            "Stagnant_Shadow_Celestial",
+            "Stagnant_Shadow_Perdition",
+            "Stagnant_Shadow_Nectar",
+            "Stagnant_Shadow_Roast",
+            "Stagnant_Shadow_Ire",
+            "Stagnant_Shadow_Duty",
+            "Stagnant_Shadow_Timbre",
+            "Stagnant_Shadow_Mechwolf",
+            "Stagnant_Shadow_Gloam",
+            "Stagnant_Shadow_Sloggyre",
+            "Stagnant_Shadow_Gelidmoon",
+            "Stagnant_Shadow_Deepsheaf",
+            "Stagnant_Shadow_Cinders",
+            "Stagnant_Shadow_Sirens",
+            "Stagnant_Shadow_Ashes",
+            "Stagnant_Shadow_Soundburst",
+        ]
+        | None
+    ) = Field(default=None, description="材料关卡")
+    Ornament: (
+        Literal[
+            "-",
+            "Divergent_Universe_Within_the_West_Wind",
+            "Divergent_Universe_Moonlit_Blood",
+            "Divergent_Universe_Unceasing_Strife",
+            "Divergent_Universe_Famished_Worker",
+            "Divergent_Universe_Eternal_Comedy",
+            "Divergent_Universe_To_Sweet_Dreams",
+            "Divergent_Universe_Pouring_Blades",
+            "Divergent_Universe_Fruit_of_Evil",
+            "Divergent_Universe_Permafrost",
+            "Divergent_Universe_Gentle_Words",
+            "Divergent_Universe_Smelted_Heart",
+            "Divergent_Universe_Untoppled_Walls",
+        ]
+        | None
+    ) = Field(default=None, description="饰品关卡")
+    ExtractReservedTrailblazePower: Optional[bool] = Field(
+        default=None, description="使用储备开拓力"
+    )
+    UseFuel: Optional[bool] = Field(default=None, description="使用燃料")
+    FuelReserve: Optional[int] = Field(default=None, description="保留的燃料数量")
+    EchoOfWar: Optional[str] = Field(default=None, description="历战余响关卡")
+    SimulatedUniverseWorld: Optional[str] = Field(
+        default=None, description="模拟宇宙关卡"
+    )
+
+
+class SrcUserConfig_Data(BaseModel):
+    LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
+    ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
+    IfPassCheck: Optional[bool] = Field(default=None, description="是否通过检查")
+
+
+class SrcUserConfig_Notify(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
+    IfSendStatistic: Optional[bool] = Field(
+        default=None, description="是否发送统计信息"
+    )
+    IfSendMail: Optional[bool] = Field(default=None, description="是否发送邮件")
+    ToAddress: Optional[str] = Field(default=None, description="收件地址")
+    IfServerChan: Optional[bool] = Field(default=None, description="是否启用Server酱")
+    ServerChanKey: Optional[str] = Field(default=None, description="Server酱密钥")
+
+
+class SrcUserConfig(BaseModel):
+    Info: Optional[SrcUserConfig_Info] = Field(default=None, description="基础信息")
+    Stage: Optional[SrcUserConfig_Stage] = Field(default=None, description="关卡配置")
+    Data: Optional[SrcUserConfig_Data] = Field(default=None, description="用户数据")
+    Notify: Optional[SrcUserConfig_Notify] = Field(default=None, description="单独通知")
+
+
+class SrcConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="SRC脚本名称")
+    Path: Optional[str] = Field(default=None, description="SRC路径")
+
+
+class SrcConfig_Emulator(BaseModel):
+    Id: Optional[str] = Field(default=None, description="模拟器ID")
+    Index: Optional[str] = Field(default=None, description="模拟器索引")
+
+
+class SrcConfig_Run(BaseModel):
+    TaskTransitionMethod: Optional[Literal["ExitGame", "ExitEmulator"]] = Field(
+        default=None, description="任务切换方式"
+    )
+    ProxyTimesLimit: Optional[int] = Field(default=None, description="代理次数限制")
+    RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
+    RunTimeLimit: Optional[int] = Field(
+        default=None, description="运行时间限制（分钟）"
+    )
+
+
+class SrcConfig(BaseModel):
+    Info: Optional[SrcConfig_Info] = Field(default=None, description="脚本基础信息")
+    Emulator: Optional[SrcConfig_Emulator] = Field(
+        default=None, description="模拟器配置"
+    )
+    Run: Optional[SrcConfig_Run] = Field(default=None, description="脚本运行配置")
 
 
 class PlanIndexItem(BaseModel):
@@ -670,8 +867,8 @@ class HistoryData(BaseModel):
 
 
 class ScriptCreateIn(BaseModel):
-    type: Literal["MAA", "General", "MaaEnd"] = Field(
-        ..., description="脚本类型: MAA脚本, 通用脚本, MaaEnd脚本"
+    type: Literal["MAA", "SRC", "General", "MaaEnd"] = Field(
+        ..., description="脚本类型: MAA脚本, 通用脚本, SRC脚本, MaaEnd脚本"
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -680,7 +877,7 @@ class ScriptCreateIn(BaseModel):
 
 class ScriptCreateOut(OutBase):
     scriptId: str = Field(..., description="新创建的脚本ID")
-    data: Union[MaaConfig, GeneralConfig, MaaEndConfig] = Field(
+    data: Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig] = Field(
         ..., description="脚本配置数据"
     )
 
@@ -693,14 +890,14 @@ class ScriptGetIn(BaseModel):
 
 class ScriptGetOut(OutBase):
     index: List[ScriptIndexItem] = Field(..., description="脚本索引列表")
-    data: Dict[str, Union[MaaConfig, GeneralConfig, MaaEndConfig]] = Field(
+    data: Dict[str, Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig]] = Field(
         ..., description="脚本数据字典, key来自于index列表的uid"
     )
 
 
 class ScriptUpdateIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
-    data: Union[MaaConfig, GeneralConfig, MaaEndConfig] = Field(
+    data: Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig] = Field(
         ..., description="脚本更新数据"
     )
 
@@ -742,21 +939,21 @@ class UserGetIn(UserInBase):
 
 class UserGetOut(OutBase):
     index: List[UserIndexItem] = Field(..., description="用户索引列表")
-    data: Dict[str, Union[MaaUserConfig, GeneralUserConfig, MaaEndUserConfig]] = Field(
-        ..., description="用户数据字典, key来自于index列表的uid"
-    )
+    data: Dict[
+        str, Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig]
+    ] = Field(..., description="用户数据字典, key来自于index列表的uid")
 
 
 class UserCreateOut(OutBase):
     userId: str = Field(..., description="新创建的用户ID")
-    data: Union[MaaUserConfig, GeneralUserConfig, MaaEndUserConfig] = Field(
+    data: Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig] = Field(
         ..., description="用户配置数据"
     )
 
 
 class UserUpdateIn(UserInBase):
     userId: str = Field(..., description="用户ID")
-    data: Union[MaaUserConfig, GeneralUserConfig, MaaEndUserConfig] = Field(
+    data: Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig] = Field(
         ..., description="用户更新数据"
     )
 
