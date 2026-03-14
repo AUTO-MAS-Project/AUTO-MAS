@@ -709,6 +709,8 @@ class MaaEndConfig(ConfigBase):
                 ]
             ),
         )
+        ## Endfield 路径（Win32 preAction）
+        self.Run_GamePath = ConfigItem("Run", "GamePath", "", FileValidator())
 
         ## MaaEnd ----------------------------------------------------------
         ## 资源配置

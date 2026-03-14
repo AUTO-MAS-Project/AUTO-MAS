@@ -79,6 +79,30 @@
               </a-form-item>
             </a-col>
           </a-row>
+          <a-row :gutter="24">
+            <a-col v-if="config.Run.ControllerType !== 'ADB'" :span="12">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">Endfield 路径（Win32）</span>
+                </template>
+                <a-input-group compact class="path-input-group">
+                  <a-input
+                    v-model:value="config.Run.GamePath"
+                    placeholder="请选择 Endfield.exe"
+                    size="large"
+                    class="path-input"
+                    @blur="handleChange('Run', 'GamePath', config.Run.GamePath)"
+                  />
+                  <a-button size="large" class="path-button" @click="selectGamePath">
+                    <template #icon>
+                      <FolderOpenOutlined />
+                    </template>
+                    选择
+                  </a-button>
+                </a-input-group>
+              </a-form-item>
+            </a-col>
+          </a-row>
         </div>
 
         <div class="form-section">
@@ -256,6 +280,7 @@ interface MaaEndScriptConfigLocal {
     Timeout: number
     Retry: number
     RunTimesLimit: number
+    GamePath: string
     ControllerType: 'Win32-Window' | 'Win32-Window-Background' | 'Win32-Front' | 'ADB'
   }
   MaaEnd: {
@@ -288,6 +313,7 @@ const config = reactive<MaaEndScriptConfigLocal>({
     Timeout: 10,
     Retry: 3,
     RunTimesLimit: 3,
+    GamePath: '',
     ControllerType: 'Win32-Window',
   },
   MaaEnd: {
@@ -346,6 +372,7 @@ const applyConfig = (rawConfig: any, nameFallback = '新建MaaEnd脚本') => {
   config.Run.Timeout = rawConfig?.Run?.Timeout ?? 10
   config.Run.Retry = rawConfig?.Run?.Retry ?? 3
   config.Run.RunTimesLimit = rawConfig?.Run?.RunTimesLimit ?? 3
+  config.Run.GamePath = rawConfig?.Run?.GamePath ?? ''
   config.Run.ControllerType = normalizeControllerType(rawConfig?.Run?.ControllerType)
 
   config.MaaEnd.ResourceProfile = rawConfig?.MaaEnd?.ResourceProfile ?? 'MaaEnd'
@@ -518,6 +545,32 @@ const selectLogPath = async () => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择日志路径失败: ${errorMsg}`)
     message.error('选择日志路径失败')
+  }
+}
+
+const selectGamePath = async () => {
+  try {
+    if (!window.electronAPI) {
+      message.error('文件选择功能不可用，请在 Electron 环境中运行')
+      return
+    }
+
+    const selected = await (window.electronAPI as any).selectFile([
+      { name: '可执行文件', extensions: ['exe'] },
+      { name: '所有文件', extensions: ['*'] },
+    ])
+    const path = Array.isArray(selected) ? selected[0] : selected
+    if (!path) {
+      return
+    }
+
+    config.Run.GamePath = path
+    await handleChange('Run', 'GamePath', path)
+    message.success('Endfield 路径选择成功')
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`选择 Endfield 路径失败: ${errorMsg}`)
+    message.error('选择 Endfield 路径失败')
   }
 }
 
