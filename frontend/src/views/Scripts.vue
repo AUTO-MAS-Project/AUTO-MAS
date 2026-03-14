@@ -201,7 +201,7 @@
             </div>
             <div class="type-info">
               <div class="type-title">MaaEnd脚本</div>
-              <div class="type-description">MaaFramework End minimal integration script with config-flow and runtime entry.</div>
+              <div class="type-description">明日方舟:终末地自动化控制脚本，支持预设任务、Win32/ADB 控制器、自动添加启动前置动作等功能</div>
             </div>
           </div>
         </a-radio-button>

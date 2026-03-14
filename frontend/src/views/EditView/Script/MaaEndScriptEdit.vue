@@ -110,7 +110,7 @@
             <h3>运行配置</h3>
           </div>
           <a-row :gutter="24">
-            <a-col :span="6">
+            <a-col :span="8">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
@@ -130,7 +130,7 @@
                 </a-select>
               </a-form-item>
             </a-col>
-            <a-col :span="6">
+            <a-col :span="8">
               <a-form-item>
                 <template #label>
                   <span class="form-label">超时（分钟）</span>
@@ -146,7 +146,7 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="6">
+            <a-col :span="8">
               <a-form-item>
                 <template #label>
                   <span class="form-label">重试次数</span>
@@ -162,7 +162,9 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="6">
+          </a-row>
+          <a-row :gutter="24">
+            <a-col :span="8">
               <a-form-item>
                 <template #label>
                   <span class="form-label">运行次数限制</span>
@@ -178,15 +180,19 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col v-if="config.Run.ControllerType !== 'ADB'" :span="6">
+            <a-col v-if="config.Run.ControllerType !== 'ADB'" :span="8">
               <a-form-item>
                 <template #label>
                   <span class="form-label">结束后关闭 Endfield</span>
                 </template>
-                <a-switch
-                  v-model:checked="config.Run.CloseGameOnFinish"
+                <a-select
+                  v-model:value="config.Run.CloseGameOnFinish"
+                  size="large"
                   @change="handleChange('Run', 'CloseGameOnFinish', $event)"
-                />
+                >
+                  <a-select-option :value="true">是</a-select-option>
+                  <a-select-option :value="false">否</a-select-option>
+                </a-select>
               </a-form-item>
             </a-col>
           </a-row>
