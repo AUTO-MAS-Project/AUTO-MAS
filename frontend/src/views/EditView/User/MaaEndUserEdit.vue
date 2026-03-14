@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="user-edit-container">
     <div class="user-edit-header">
       <div class="header-nav">
@@ -29,7 +29,13 @@
 
     <div class="user-edit-content">
       <a-card class="config-card">
-        <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
+        <a-form
+          ref="formRef"
+          :model="formData"
+          :rules="rules"
+          layout="vertical"
+          class="config-form"
+        >
           <div class="form-section">
             <div class="section-header">
               <h3>基本信息</h3>
@@ -107,14 +113,26 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="覆盖脚本级预设任务名称">
+                    <a-tooltip title="覆盖脚本级预设任务实例">
                       <span class="form-label">
                         预设覆盖
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
                   </template>
+                  <a-select
+                    v-if="presetOptions.length > 0"
+                    v-model:value="formData.Task.PresetOverride"
+                    size="large"
+                    show-search
+                    allow-clear
+                    placeholder="留空表示沿用脚本预设"
+                    :options="presetOptions"
+                    :disabled="loading"
+                    @change="handleFieldSave('Task.PresetOverride', $event || '')"
+                  />
                   <a-input
+                    v-else
                     v-model:value="formData.Task.PresetOverride"
                     placeholder="留空表示沿用脚本预设"
                     :disabled="loading"
@@ -189,11 +207,13 @@ const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
 const isInitializing = ref(true)
 const isSaving = ref(false)
+const presetOptions = ref<Array<{ label: string; value: string }>>([])
 
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId)
 const scriptName = ref('')
+const scriptPath = ref('')
 
 const getDefaultMaaEndUserData = () => ({
   Info: {
@@ -293,10 +313,52 @@ const loadScriptInfo = async () => {
     const scriptDetail = await getScript(scriptId)
     if (scriptDetail) {
       scriptName.value = scriptDetail.name
+      scriptPath.value = scriptDetail?.config?.Info?.Path || ''
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
+  }
+}
+
+const resolveMaaEndConfigPath = () => {
+  const base = String(scriptPath.value || '').trim()
+  if (!base) {
+    return ''
+  }
+  return `${base.replace(/[\\/]+$/, '')}/config/mxu-MaaEnd.json`
+}
+
+const loadPresetOptions = async () => {
+  const configPath = resolveMaaEndConfigPath()
+  if (!configPath || !window.electronAPI?.readFile) {
+    presetOptions.value = []
+    return
+  }
+
+  try {
+    const content = await window.electronAPI.readFile(configPath)
+    const parsed = JSON.parse(content)
+    const instances = Array.isArray(parsed?.instances) ? parsed.instances : []
+
+    const optionMap = new Map<string, string>()
+    for (const item of instances) {
+      const id = String(item?.id || '').trim()
+      const name = String(item?.name || '').trim()
+      if (!id || !name || optionMap.has(id)) {
+        continue
+      }
+      optionMap.set(id, name)
+    }
+
+    presetOptions.value = Array.from(optionMap.entries()).map(([id, name]) => ({
+      label: name,
+      value: id,
+    }))
+  } catch (error) {
+    presetOptions.value = []
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`加载 MaaEnd 预设任务选项失败: ${errorMsg}`)
   }
 }
 
@@ -350,6 +412,7 @@ const handleCancel = () => {
 
 onMounted(async () => {
   await loadScriptInfo()
+  await loadPresetOptions()
 
   if (!userId) {
     const result = await addUser(scriptId)

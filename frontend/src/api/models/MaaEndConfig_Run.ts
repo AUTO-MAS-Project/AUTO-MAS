@@ -33,8 +33,9 @@ export namespace MaaEndConfig_Run {
      * 控制器类型
      */
     export enum ControllerType {
-        WIN32 = 'Win32',
+        WIN32_WINDOW = 'Win32-Window',
+        WIN32_WINDOW_BACKGROUND = 'Win32-Window-Background',
+        WIN32_FRONT = 'Win32-Front',
         ADB = 'ADB',
-        PLAY_COVER = 'PlayCover',
     }
 }

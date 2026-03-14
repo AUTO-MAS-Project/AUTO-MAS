@@ -9,8 +9,11 @@ class RuntimeBridgeError(ValueError):
     pass
 
 
-def _load_source_config(script_config: MaaEndConfig) -> dict[str, Any]:
-    source_path = Path(script_config.get("Info", "Path")) / "config" / "mxu-MaaEnd.json"
+def _load_source_config(
+    script_config: MaaEndConfig, source_path: Path | None = None
+) -> dict[str, Any]:
+    if source_path is None:
+        source_path = Path(script_config.get("Info", "Path")) / "config" / "mxu-MaaEnd.json"
     if not source_path.exists():
         raise RuntimeBridgeError(f"MaaEnd config file not found: {source_path}")
 
@@ -155,8 +158,9 @@ def build_runtime_config(
     user_id: str,
     script_config: MaaEndConfig,
     user_config: MaaEndUserConfig,
+    source_path: Path | None = None,
 ) -> Path:
-    config_data = _load_source_config(script_config)
+    config_data = _load_source_config(script_config, source_path)
     selected_instance = _select_instance(config_data, user_config, script_config)
     _apply_controller_and_resource(selected_instance, script_config)
     _apply_pre_action(selected_instance, script_config)

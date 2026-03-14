@@ -87,6 +87,12 @@ class AutoProxyTask(TaskExecuteBase):
             / "debug"
             / f"mxu-web-{datetime.now().strftime('%Y-%m-%d')}.log"
         )
+        self.runtime_source_config_path = (
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/Runtime/mxu-MaaEnd.source.json"
+        )
+        self.runtime_source_config_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(self.maaend_config_path, self.runtime_source_config_path)
 
         self.timeout_minutes = self.script_config.get("Run", "Timeout")
         self.retry_times = self.script_config.get("Run", "Retry")
@@ -120,6 +126,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.user_id,
             self.script_config,
             self.cur_user_config,
+            source_path=self.runtime_source_config_path,
         )
         self.maaend_config_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(runtime_path, self.maaend_config_path)
