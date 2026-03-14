@@ -27,14 +27,14 @@ def _select_instance(
     if not instances:
         raise RuntimeBridgeError("No MaaEnd instances in mxu-MaaEnd.json")
 
-    preset_name = str(user_config.get("Task", "PresetOverride")).strip()
-    if not preset_name:
-        preset_name = str(script_config.get("MaaEnd", "PresetTask")).strip()
+    preset_ref = str(user_config.get("Task", "PresetOverride")).strip()
+    if not preset_ref:
+        preset_ref = str(script_config.get("MaaEnd", "PresetTask")).strip()
 
     selected_instance = None
-    if preset_name:
+    if preset_ref:
         selected_instance = next(
-            (item for item in instances if str(item.get("name", "")).strip() == preset_name),
+            (item for item in instances if str(item.get("id", "")).strip() == preset_ref),
             None,
         )
 
@@ -59,16 +59,28 @@ def _apply_controller_and_resource(instance: dict[str, Any], script_config: MaaE
     if not controller_type:
         return
 
-    controller_name = str(instance.get("controllerName", "")).strip()
-    if not controller_name:
-        instance["controllerName"] = controller_type
+    instance["controllerName"] = controller_type
+
+
+def _apply_pre_action(instance: dict[str, Any], script_config: MaaEndConfig):
+    controller_type = str(script_config.get("Run", "ControllerType")).strip()
+    if not controller_type.startswith("Win32"):
         return
 
-    if "-" in controller_name:
-        _, suffix = controller_name.split("-", 1)
-        instance["controllerName"] = f"{controller_type}-{suffix}"
-    else:
-        instance["controllerName"] = controller_type
+    game_path = str(script_config.get("Run", "GamePath")).strip()
+    if not game_path:
+        return
+
+    pre_action = instance.get("preAction")
+    if not isinstance(pre_action, dict):
+        pre_action = {}
+        instance["preAction"] = pre_action
+
+    pre_action["enabled"] = True
+    pre_action["program"] = game_path
+    pre_action["args"] = ""
+    pre_action["waitForExit"] = False
+    pre_action["skipIfRunning"] = True
 
 
 def _collect_override_items(
@@ -147,11 +159,18 @@ def build_runtime_config(
     config_data = _load_source_config(script_config)
     selected_instance = _select_instance(config_data, user_config, script_config)
     _apply_controller_and_resource(selected_instance, script_config)
+    _apply_pre_action(selected_instance, script_config)
     _apply_option_override(selected_instance, user_config)
 
     instance_id = selected_instance.get("id")
     if instance_id:
         config_data["lastActiveInstanceId"] = instance_id
+        settings = config_data.get("settings")
+        if not isinstance(settings, dict):
+            settings = {}
+            config_data["settings"] = settings
+        settings["autoStartInstanceId"] = instance_id
+        settings["autoRunOnLaunch"] = True
 
     runtime_path = Path.cwd() / f"data/{script_id}/{user_id}/Runtime/mxu-MaaEnd.runtime.json"
     runtime_path.parent.mkdir(parents=True, exist_ok=True)

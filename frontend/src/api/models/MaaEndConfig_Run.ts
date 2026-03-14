@@ -16,6 +16,14 @@ export type MaaEndConfig_Run = {
      */
     RunTimesLimit?: (number | null);
     /**
+     * Endfield 客户端路径
+     */
+    GamePath?: (string | null);
+    /**
+     * 任务结束后是否关闭 Endfield
+     */
+    CloseGameOnFinish?: (boolean | null);
+    /**
      * 控制器类型
      */
     ControllerType?: (MaaEndConfig_Run.ControllerType | null);

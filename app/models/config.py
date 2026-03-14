@@ -699,8 +699,20 @@ class MaaEndConfig(ConfigBase):
         self.Run_ControllerType = ConfigItem(
             "Run",
             "ControllerType",
-            "Win32",
-            OptionsValidator(["Win32", "ADB", "PlayCover"]),
+            "Win32-Window",
+            OptionsValidator(
+                [
+                    "Win32-Window",
+                    "Win32-Front",
+                    "Win32-Window-Background",
+                    "ADB",
+                ]
+            ),
+        )
+        ## Endfield 路径（Win32 preAction）
+        self.Run_GamePath = ConfigItem("Run", "GamePath", "", FileValidator())
+        self.Run_CloseGameOnFinish = ConfigItem(
+            "Run", "CloseGameOnFinish", True, BoolValidator()
         )
 
         ## MaaEnd ----------------------------------------------------------
@@ -712,7 +724,7 @@ class MaaEndConfig(ConfigBase):
         self.MaaEnd_PresetTask = ConfigItem("MaaEnd", "PresetTask", "")
         ## 日志路径
         self.MaaEnd_LogPath = ConfigItem(
-            "MaaEnd", "LogPath", str(Path.cwd() / "debug/MaaEnd.log"), FileValidator()
+            "MaaEnd", "LogPath", str(Path.cwd() / "debug/go-service.log"), FileValidator()
         )
         ## 成功日志匹配
         self.MaaEnd_SuccessPattern = ConfigItem("MaaEnd", "SuccessPattern", "")
