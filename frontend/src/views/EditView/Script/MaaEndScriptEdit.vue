@@ -178,6 +178,17 @@
                 />
               </a-form-item>
             </a-col>
+            <a-col v-if="config.Run.ControllerType !== 'ADB'" :span="6">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">结束后关闭 Endfield</span>
+                </template>
+                <a-switch
+                  v-model:checked="config.Run.CloseGameOnFinish"
+                  @change="handleChange('Run', 'CloseGameOnFinish', $event)"
+                />
+              </a-form-item>
+            </a-col>
           </a-row>
         </div>
 
@@ -281,6 +292,7 @@ interface MaaEndScriptConfigLocal {
     Retry: number
     RunTimesLimit: number
     GamePath: string
+    CloseGameOnFinish: boolean
     ControllerType: 'Win32-Window' | 'Win32-Window-Background' | 'Win32-Front' | 'ADB'
   }
   MaaEnd: {
@@ -314,6 +326,7 @@ const config = reactive<MaaEndScriptConfigLocal>({
     Retry: 3,
     RunTimesLimit: 3,
     GamePath: '',
+    CloseGameOnFinish: true,
     ControllerType: 'Win32-Window',
   },
   MaaEnd: {
@@ -341,21 +354,6 @@ const rules = {
   path: [{ required: true, message: '请选择 MaaEnd 路径', trigger: 'blur' }],
 }
 
-const normalizeControllerType = (
-  value: string | null | undefined
-): 'Win32-Window' | 'Win32-Window-Background' | 'Win32-Front' | 'ADB' => {
-  if (
-    value === 'Win32-Window' ||
-    value === 'Win32-Window-Background' ||
-    value === 'Win32-Front' ||
-    value === 'ADB'
-  ) {
-    return value
-  }
-
-  return 'Win32-Window'
-}
-
 const resourceProfileOptions = computed(() => {
   const options = ['MaaEnd']
   const current = (config.MaaEnd.ResourceProfile || '').trim()
@@ -373,7 +371,8 @@ const applyConfig = (rawConfig: any, nameFallback = '新建MaaEnd脚本') => {
   config.Run.Retry = rawConfig?.Run?.Retry ?? 3
   config.Run.RunTimesLimit = rawConfig?.Run?.RunTimesLimit ?? 3
   config.Run.GamePath = rawConfig?.Run?.GamePath ?? ''
-  config.Run.ControllerType = normalizeControllerType(rawConfig?.Run?.ControllerType)
+  config.Run.CloseGameOnFinish = rawConfig?.Run?.CloseGameOnFinish ?? true
+  config.Run.ControllerType = rawConfig?.Run?.ControllerType ?? 'Win32-Window'
 
   config.MaaEnd.ResourceProfile = rawConfig?.MaaEnd?.ResourceProfile ?? 'MaaEnd'
   config.MaaEnd.PresetTask = rawConfig?.MaaEnd?.PresetTask ?? ''

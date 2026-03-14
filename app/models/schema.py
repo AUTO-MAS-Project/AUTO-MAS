@@ -598,6 +598,9 @@ class MaaEndConfig_Run(BaseModel):
         default=None, description="控制器类型"
     )
     GamePath: Optional[str] = Field(default=None, description="Endfield 客户端路径")
+    CloseGameOnFinish: Optional[bool] = Field(
+        default=None, description="任务结束后是否关闭 Endfield"
+    )
 
 
 class MaaEndConfig_MaaEnd(BaseModel):
