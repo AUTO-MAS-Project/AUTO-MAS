@@ -722,14 +722,6 @@ class MaaEndConfig(ConfigBase):
         )
         ## 预设任务
         self.MaaEnd_PresetTask = ConfigItem("MaaEnd", "PresetTask", "")
-        ## 日志路径
-        self.MaaEnd_LogPath = ConfigItem(
-            "MaaEnd", "LogPath", str(Path.cwd() / "debug/go-service.log"), FileValidator()
-        )
-        ## 成功日志匹配
-        self.MaaEnd_SuccessPattern = ConfigItem("MaaEnd", "SuccessPattern", "")
-        ## 失败日志匹配
-        self.MaaEnd_ErrorPattern = ConfigItem("MaaEnd", "ErrorPattern", "")
 
         self.UserData = MultipleConfig([MaaEndUserConfig])
 
