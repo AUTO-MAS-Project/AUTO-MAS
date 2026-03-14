@@ -1,8 +1,9 @@
 ﻿import asyncio
-import json
+import re
 import shutil
 import uuid
-from datetime import datetime, timedelta
+from collections import deque
+from datetime import datetime
 from pathlib import Path
 
 from app.core import Config
@@ -17,6 +18,12 @@ from .runtime_bridge import build_runtime_config
 
 
 logger = get_logger("MaaEnd 自动代理")
+TASK_ID_RE = re.compile(
+    r'"?task_id"?\s*[:=]\s*"?([^\s,\]\}\""]+)"?', re.IGNORECASE
+)
+TASK_IDS_RE = re.compile(r"task_ids?\s*[:=]\s*\[([^\]]*)\]", re.IGNORECASE)
+INSTANCE_ID_RE = re.compile(r"instance_id\s*[:=]\s*([^\s,\]]+)", re.IGNORECASE)
+STOP_GRACE_SECONDS = 2.0
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -45,9 +52,21 @@ class AutoProxyTask(TaskExecuteBase):
         self.check_result = "-"
         self.run_success = False
         self.last_status = "-"
-
-    def _split_patterns(self, value: str) -> list[str]:
-        return [item.strip() for item in value.split("|") if item.strip()]
+        self.instance_id: str | None = None
+        self.session_task_ids: set[str] = set()
+        self.task_results: dict[str, str] = {}
+        self.tauri_tasks_seeded = False
+        self.instance_stopped = False
+        self.session_started_at: datetime | None = None
+        self.session_first_task_id: str | None = None
+        self.session_id: str | None = None
+        self.session_closed = False
+        self.session_settle_task: asyncio.Task | None = None
+        self.display_log_lines: deque[str] = deque(maxlen=400)
+        self.tauri_log_cursor = 0
+        self.maa_log_cursor = 0
+        self.maa_bak_log_cursor = 0
+        self.web_log_cursor = 0
 
     async def check(self) -> str:
         if self.script_config.get("Run", "RunTimesLimit") <= 0:
@@ -60,48 +79,40 @@ class AutoProxyTask(TaskExecuteBase):
         self.maaend_root_path = Path(self.script_config.get("Info", "Path"))
         self.maaend_exe_path = self.maaend_root_path / "MaaEnd.exe"
         self.maaend_config_path = self.maaend_root_path / "config" / "mxu-MaaEnd.json"
+        self.tauri_log_path = self.maaend_root_path / "debug" / "mxu-tauri.log"
+        self.maa_log_path = self.maaend_root_path / "debug" / "maa.log"
+        self.maa_bak_log_path = self.maaend_root_path / "debug" / "maa.bak.log"
+        self.web_log_path = (
+            self.maaend_root_path
+            / "debug"
+            / f"mxu-web-{datetime.now().strftime('%Y-%m-%d')}.log"
+        )
 
-        self.log_path = self.maaend_root_path / "debug" / "maa.log"
         self.timeout_minutes = self.script_config.get("Run", "Timeout")
         self.retry_times = self.script_config.get("Run", "Retry")
 
-        self.success_patterns = self._split_patterns(
-            str(self.script_config.get("MaaEnd", "SuccessPattern"))
-        )
-        self.error_patterns = self._split_patterns(
-            str(self.script_config.get("MaaEnd", "ErrorPattern"))
-        )
-
         self.wait_event = asyncio.Event()
         self.maaend_process_manager = ProcessManager()
-        self.maaend_log_monitor = LogMonitor(
+        self.tauri_log_monitor = LogMonitor(
+            (1, 21),
+            "%Y-%m-%d][%H:%M:%S",
+            self.check_tauri_log,
+        )
+        self.maa_log_monitor = LogMonitor(
             (1, 20),
             "%Y-%m-%d %H:%M:%S",
-            self.check_log,
+            self.check_maa_log,
         )
-
-        self.is_realtime_task = False
-
-    def _detect_realtime_task(self, runtime_path: Path) -> bool:
-        runtime_data = json.loads(runtime_path.read_text(encoding="utf-8"))
-        instances = runtime_data.get("instances", [])
-        if not instances:
-            return False
-
-        active_id = runtime_data.get("lastActiveInstanceId")
-        selected_instance = next(
-            (item for item in instances if item.get("id") == active_id), None
+        self.maa_bak_log_monitor = LogMonitor(
+            (1, 20),
+            "%Y-%m-%d %H:%M:%S",
+            self.check_maa_bak_log,
         )
-        if selected_instance is None:
-            selected_instance = instances[0]
-
-        for task in selected_instance.get("tasks", []):
-            if not isinstance(task, dict):
-                continue
-            if task.get("taskName") == "RealTimeTask" and bool(task.get("enabled")):
-                return True
-
-        return False
+        self.web_log_monitor = LogMonitor(
+            (0, 19),
+            "%Y-%m-%d %H:%M:%S",
+            self.check_web_log,
+        )
 
     async def _prepare_runtime_config(self) -> Path:
         runtime_path = build_runtime_config(
@@ -121,10 +132,26 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
         self.log_start_time = datetime.now()
+        self.instance_id = None
+        self.session_task_ids.clear()
+        self.task_results.clear()
+        self.tauri_tasks_seeded = False
+        self.instance_stopped = False
+        self.session_started_at = self.log_start_time
+        self.session_first_task_id = None
+        self.session_id = None
+        self.session_closed = False
+        if self.session_settle_task is not None and not self.session_settle_task.done():
+            self.session_settle_task.cancel()
+        self.session_settle_task = None
+        self.display_log_lines.clear()
+        self.tauri_log_cursor = 0
+        self.maa_log_cursor = 0
+        self.maa_bak_log_cursor = 0
+        self.web_log_cursor = 0
         self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log = LogRecord()
 
-        runtime_path = await self._prepare_runtime_config()
-        self.is_realtime_task = self._detect_realtime_task(runtime_path)
+        await self._prepare_runtime_config()
 
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
@@ -132,10 +159,32 @@ class AutoProxyTask(TaskExecuteBase):
         self.wait_event.clear()
         await self.maaend_process_manager.open_process(self.maaend_exe_path)
         await asyncio.sleep(1)
-        await self.maaend_log_monitor.start_monitor_file(self.log_path, self.log_start_time)
-
-        await self.wait_event.wait()
-        await self.maaend_log_monitor.stop()
+        await self.tauri_log_monitor.start_monitor_file(
+            self.tauri_log_path, self.log_start_time
+        )
+        await self.maa_log_monitor.start_monitor_file(self.maa_log_path, self.log_start_time)
+        await self.maa_bak_log_monitor.start_monitor_file(
+            self.maa_bak_log_path, self.log_start_time
+        )
+        await self.web_log_monitor.start_monitor_file(self.web_log_path, self.log_start_time)
+        if self.timeout_minutes > 0:
+            try:
+                await asyncio.wait_for(
+                    self.wait_event.wait(), timeout=self.timeout_minutes * 60
+                )
+            except asyncio.TimeoutError:
+                self.cur_user_log.status = "Timeout"
+                self.session_closed = True
+                self.wait_event.set()
+        else:
+            await self.wait_event.wait()
+        await self.tauri_log_monitor.stop()
+        await self.maa_log_monitor.stop()
+        await self.maa_bak_log_monitor.stop()
+        await self.web_log_monitor.stop()
+        if self.session_settle_task is not None and not self.session_settle_task.done():
+            self.session_settle_task.cancel()
+        self.session_settle_task = None
 
         if self.cur_user_log.status == "Success!":
             return True
@@ -143,6 +192,110 @@ class AutoProxyTask(TaskExecuteBase):
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
         return False
+
+    @staticmethod
+    def _extract_task_id(log_line: str) -> str | None:
+        match = TASK_ID_RE.search(log_line)
+        if match is None:
+            return None
+        task_id = match.group(1).strip()
+        return task_id or None
+
+    def _append_incremental_log(
+        self, log_content: list[str], cursor_attr: str, source: str | None = None
+    ) -> list[str]:
+        cursor = getattr(self, cursor_attr, 0)
+        if len(log_content) < cursor:
+            cursor = 0
+        if len(log_content) == cursor:
+            return []
+
+        new_lines = log_content[cursor:]
+
+        if source is not None:
+            for line in new_lines:
+                text = line.rstrip("\r\n")
+                if not text:
+                    continue
+                self.display_log_lines.append(f"[{source}] {text}")
+
+            joined = "\n".join(self.display_log_lines)
+            self.script_info.log = joined
+            self.cur_user_log.content = list(self.display_log_lines)
+
+        setattr(self, cursor_attr, len(log_content))
+        return new_lines
+
+    def _refresh_session_id(self) -> None:
+        if self.session_started_at is None:
+            self.session_started_at = datetime.now()
+        if self.session_id is not None:
+            return
+        start_text = self.session_started_at.strftime("%Y%m%d%H%M%S")
+        instance_text = self.instance_id or "unknown"
+        first_task = self.session_first_task_id or "none"
+        self.session_id = f"{start_text}-{instance_text}-{first_task}"
+
+    def _track_task(self, task_id: str | None, from_tauri: bool = False) -> None:
+        if not task_id:
+            return
+        if from_tauri:
+            self.tauri_tasks_seeded = True
+        self.session_task_ids.add(task_id)
+        if self.session_first_task_id is None:
+            self.session_first_task_id = task_id
+        self._refresh_session_id()
+
+    def _all_tasks_terminal(self) -> bool:
+        if not self.tauri_tasks_seeded:
+            return False
+        if not self.session_task_ids:
+            return False
+        return all(
+            self.task_results.get(task_id) in {"Succeeded", "Failed"}
+            for task_id in self.session_task_ids
+        )
+
+    def _all_tasks_succeeded(self) -> bool:
+        if not self.session_task_ids:
+            return False
+        return all(
+            self.task_results.get(task_id) == "Succeeded"
+            for task_id in self.session_task_ids
+        )
+
+    def _schedule_settlement(self, reason: str, delay_seconds: float) -> None:
+        if self.session_closed:
+            return
+        if self.session_settle_task is not None and not self.session_settle_task.done():
+            self.session_settle_task.cancel()
+        self.session_settle_task = asyncio.create_task(
+            self._settle_after_delay(reason, delay_seconds)
+        )
+
+    async def _settle_after_delay(self, reason: str, delay_seconds: float) -> None:
+        try:
+            if delay_seconds > 0:
+                await asyncio.sleep(delay_seconds)
+            await self._finalize_session(reason)
+        except asyncio.CancelledError:
+            return
+
+    async def _finalize_session(self, reason: str) -> None:
+        if self.session_closed:
+            return
+        self.session_closed = True
+        self._refresh_session_id()
+
+        if self._all_tasks_succeeded():
+            self.cur_user_log.status = "Success!"
+        else:
+            self.cur_user_log.status = "InstanceStoppedOrFailed"
+
+        logger.info(
+            f"MaaEnd 会话结算: session_id={self.session_id}, reason={reason}, status={self.cur_user_log.status}"
+        )
+        self.wait_event.set()
 
     async def main_task(self):
         self.check_result = await self.check()
@@ -162,7 +315,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         attempts = self.script_config.get("Run", "RunTimesLimit")
         self.run_success = False
-        self.last_status = "ExitCode"
+        self.last_status = "Crash"
 
         for run_idx in range(attempts):
             for retry_idx in range(self.retry_times + 1):
@@ -172,12 +325,10 @@ class AutoProxyTask(TaskExecuteBase):
                     self.last_status = "Success"
                     break
 
-                if self.cur_user_log.status.startswith("PatternError"):
-                    self.last_status = "PatternError"
-                elif self.cur_user_log.status == "Timeout":
+                if self.cur_user_log.status == "Timeout":
                     self.last_status = "Timeout"
-                elif self.cur_user_log.status.startswith("ExitCode"):
-                    self.last_status = "ExitCode"
+                elif self.cur_user_log.status.startswith("InstanceStoppedOrFailed"):
+                    self.last_status = "TaskFailed"
                 else:
                     self.last_status = "Crash"
 
@@ -212,50 +363,125 @@ class AutoProxyTask(TaskExecuteBase):
                 },
             )
 
-    async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
-        log = "".join(log_content)
-        self.cur_user_log.content = log_content
-        self.script_info.log = log
+    async def check_tauri_log(self, log_content: list[str], _latest_time: datetime) -> None:
+        if self.session_closed:
+            return
+        new_lines = self._append_incremental_log(log_content, "tauri_log_cursor")
 
-        for pattern in self.error_patterns:
-            if pattern in log:
-                self.cur_user_log.status = f"PatternError:{pattern}"
-                self.wait_event.set()
-                return
+        for line in new_lines:
+            if "maa_start_tasks" in line:
+                instance_match = INSTANCE_ID_RE.search(line)
+                if instance_match:
+                    start_instance_id = instance_match.group(1).strip().strip("'\"")
+                    if (
+                        self.instance_id is not None
+                        and start_instance_id == self.instance_id
+                        and self.session_task_ids
+                    ):
+                        # 同实例新一轮启动，先结算上一轮
+                        self._schedule_settlement("next_round", 0.0)
+                    self.instance_id = start_instance_id
+                    self._refresh_session_id()
 
-        for pattern in self.success_patterns:
-            if pattern in log:
-                self.cur_user_log.status = "Success!"
-                self.wait_event.set()
-                return
+            if "post_task returned task_id" in line:
+                task_id = self._extract_task_id(line)
+                self._track_task(task_id, from_tauri=True)
 
-        if (
-            not self.is_realtime_task
-            and self.timeout_minutes > 0
-            and datetime.now() - latest_time > timedelta(minutes=self.timeout_minutes)
-        ):
-            self.cur_user_log.status = "Timeout"
-            self.wait_event.set()
+            task_ids_match = TASK_IDS_RE.search(line)
+            if task_ids_match:
+                task_ids = [
+                    task_id.strip().strip("'\"")
+                    for task_id in task_ids_match.group(1).split(",")
+                    if task_id.strip()
+                ]
+                for task_id in task_ids:
+                    self._track_task(task_id, from_tauri=True)
+
+            if "maa_stop_agent called for instance" in line:
+                if self.instance_id is None:
+                    self.instance_stopped = True
+                elif self.instance_id in line:
+                    self.instance_stopped = True
+                if self.instance_stopped:
+                    self._schedule_settlement("stop_agent", STOP_GRACE_SECONDS)
+
+    def _parse_maa_lines(self, lines: list[str]) -> None:
+        if self.session_closed:
+            return
+        for line in lines:
+            if "msg=Tasker.Task.Succeeded" in line:
+                task_id = self._extract_task_id(line)
+                if task_id is not None:
+                    self._track_task(task_id)
+                    self.task_results[task_id] = "Succeeded"
+                continue
+
+            if "msg=Tasker.Task.Failed" in line:
+                task_id = self._extract_task_id(line)
+                if task_id is not None:
+                    self._track_task(task_id)
+                    self.task_results[task_id] = "Failed"
+                continue
+            if "task end:" in line:
+                task_id = self._extract_task_id(line)
+                if task_id is None:
+                    continue
+                self._track_task(task_id)
+                if "ret=true" in line:
+                    self.task_results[task_id] = "Succeeded"
+                elif "ret=false" in line:
+                    self.task_results[task_id] = "Failed"
+
+        if self._all_tasks_terminal():
+            self._schedule_settlement("all_terminal", 0.0)
+
+    async def check_maa_log(self, log_content: list[str], _latest_time: datetime) -> None:
+        if self.session_closed:
+            return
+        new_lines = self._append_incremental_log(log_content, "maa_log_cursor")
+        self._parse_maa_lines(new_lines)
+
+        if not self.wait_event.is_set():
+            self.cur_user_log.status = "MaaEnd 运行中"
+
+    async def check_maa_bak_log(
+        self, log_content: list[str], _latest_time: datetime
+    ) -> None:
+        if self.session_closed:
+            return
+        new_lines = self._append_incremental_log(
+            log_content, "maa_bak_log_cursor"
+        )
+        self._parse_maa_lines(new_lines)
+
+        if not self.wait_event.is_set():
+            self.cur_user_log.status = "MaaEnd 运行中"
+
+    async def check_web_log(self, log_content: list[str], _latest_time: datetime) -> None:
+        self._append_incremental_log(log_content, "web_log_cursor", "mxu-web")
+
+    async def _close_game_if_needed(self) -> None:
+        close_game = bool(self.script_config.get("Run", "CloseGameOnFinish"))
+        if not close_game:
             return
 
-        process = self.maaend_process_manager.process
-        if process is not None and process.returncode is not None:
-            if process.returncode == 0:
-                self.cur_user_log.status = "Success!"
-            else:
-                self.cur_user_log.status = f"ExitCode:{process.returncode}"
-            self.wait_event.set()
+        game_path = str(self.script_config.get("Run", "GamePath")).strip()
+        if not game_path:
             return
 
-        self.cur_user_log.status = "MaaEnd 正常运行中"
+        await System.kill_process(Path(game_path))
 
     async def final_task(self):
         if self.check_result != "Pass":
             return
 
-        await self.maaend_log_monitor.stop()
+        await self.tauri_log_monitor.stop()
+        await self.maa_log_monitor.stop()
+        await self.maa_bak_log_monitor.stop()
+        await self.web_log_monitor.stop()
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
+        await self._close_game_if_needed()
 
         for t, log_item in self.cur_user_item.log_record.items():
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
@@ -264,7 +490,7 @@ class AutoProxyTask(TaskExecuteBase):
                 / f"history/{dt.strftime('%Y-%m-%d')}/{self.cur_user_item.name}/{dt.strftime('%H-%M-%S')}.log"
             )
 
-            if log_item.status == "MaaEnd 正常运行中":
+            if log_item.status == "MaaEnd 运行中":
                 log_item.status = "任务被用户手动中止"
 
             if len(log_item.content) == 0:
@@ -295,3 +521,4 @@ class AutoProxyTask(TaskExecuteBase):
             type="Info",
             data={"Error": f"MaaEnd 自动代理任务出现异常: {e}"},
         )
+

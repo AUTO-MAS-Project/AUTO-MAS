@@ -587,8 +587,19 @@ class MaaEndConfig_Run(BaseModel):
     Timeout: Optional[int] = Field(default=None, description="运行超时时间")
     Retry: Optional[int] = Field(default=None, description="重试次数")
     RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
-    ControllerType: Optional[Literal["Win32", "ADB", "PlayCover"]] = Field(
+    ControllerType: Optional[
+        Literal[
+            "Win32-Window",
+            "Win32-Window-Background",
+            "Win32-Front",
+            "ADB",
+        ]
+    ] = Field(
         default=None, description="控制器类型"
+    )
+    GamePath: Optional[str] = Field(default=None, description="Endfield 客户端路径")
+    CloseGameOnFinish: Optional[bool] = Field(
+        default=None, description="任务结束后是否关闭 Endfield"
     )
 
 

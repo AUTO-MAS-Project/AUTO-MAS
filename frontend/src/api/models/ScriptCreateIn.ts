@@ -20,5 +20,6 @@ export namespace ScriptCreateIn {
         MAA = 'MAA',
         SRC = 'SRC',
         GENERAL = 'General',
+        MAA_END = 'MaaEnd',
     }
 }

@@ -63,6 +63,15 @@ class MaaEndManager(TaskExecuteBase):
         if not maaend_exe_path.exists():
             return f"MaaEnd.exe文件不存在, 请检查MaaEnd路径设置！（{maaend_exe_path}）"
 
+        if self.task_info.mode == "AutoProxy":
+            controller_type = str(script_config.get("Run", "ControllerType")).strip()
+            if controller_type.startswith("Win32"):
+                game_path = str(script_config.get("Run", "GamePath")).strip()
+                if not game_path:
+                    return "Win32 控制器需要配置 Endfield.exe 路径（Run.GamePath）"
+                if not Path(game_path).exists():
+                    return f"Endfield.exe 路径不存在: {game_path}"
+
         return "Pass"
 
     async def prepare(self):

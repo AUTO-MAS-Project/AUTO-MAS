@@ -97,13 +97,14 @@ class ScriptConfigTask(TaskExecuteBase):
 
     @staticmethod
     def _normalize_controller_type(controller_name: str) -> str | None:
-        controller_name = controller_name.lower()
-        if controller_name.startswith("win32"):
-            return "Win32"
-        if controller_name.startswith("adb"):
+        if controller_name == "Win32-Window-Background":
+            return "Win32-Window-Background"
+        if controller_name == "Win32-Window":
+            return "Win32-Window"
+        if controller_name == "Win32-Front":
+            return "Win32-Front"
+        if controller_name == "ADB":
             return "ADB"
-        if controller_name.startswith("playcover"):
-            return "PlayCover"
         return None
 
     async def _readback_config(self):
@@ -124,7 +125,7 @@ class ScriptConfigTask(TaskExecuteBase):
         if selected_instance is None:
             selected_instance = instances[0]
 
-        preset_name = str(selected_instance.get("name", "")).strip()
+        preset_id = str(selected_instance.get("id", "")).strip()
         resource_name = str(selected_instance.get("resourceName", "")).strip()
         controller_name = str(selected_instance.get("controllerName", "")).strip()
         controller_type = self._normalize_controller_type(controller_name)
@@ -133,13 +134,13 @@ class ScriptConfigTask(TaskExecuteBase):
         if was_locked:
             await self.script_config.unlock()
         try:
-            if preset_name:
-                await self.script_config.set("MaaEnd", "PresetTask", preset_name)
+            if preset_id:
+                await self.script_config.set("MaaEnd", "PresetTask", preset_id)
 
                 if self.cur_user_item.user_id != "Default":
                     user_uid = uuid.UUID(self.cur_user_item.user_id)
                     await self.user_config[user_uid].set(
-                        "Task", "PresetOverride", preset_name
+                        "Task", "PresetOverride", preset_id
                     )
 
             if resource_name:
