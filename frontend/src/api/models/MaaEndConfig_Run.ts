@@ -16,6 +16,10 @@ export type MaaEndConfig_Run = {
      */
     RunTimesLimit?: (number | null);
     /**
+     * Endfield 客户端路径
+     */
+    GamePath?: (string | null);
+    /**
      * 控制器类型
      */
     ControllerType?: (MaaEndConfig_Run.ControllerType | null);

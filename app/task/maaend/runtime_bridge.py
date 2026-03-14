@@ -69,6 +69,27 @@ def _apply_controller_and_resource(instance: dict[str, Any], script_config: MaaE
     instance["controllerName"] = controller_type
 
 
+def _apply_pre_action(instance: dict[str, Any], script_config: MaaEndConfig):
+    controller_type = str(script_config.get("Run", "ControllerType")).strip()
+    if not controller_type.startswith("Win32"):
+        return
+
+    game_path = str(script_config.get("Run", "GamePath")).strip()
+    if not game_path:
+        return
+
+    pre_action = instance.get("preAction")
+    if not isinstance(pre_action, dict):
+        pre_action = {}
+        instance["preAction"] = pre_action
+
+    pre_action["enabled"] = True
+    pre_action["program"] = game_path
+    pre_action["args"] = ""
+    pre_action["waitForExit"] = False
+    pre_action["skipIfRunning"] = True
+
+
 def _collect_override_items(
     override_data: dict[str, Any] | list[Any],
 ) -> list[tuple[str, Any]]:
@@ -145,6 +166,7 @@ def build_runtime_config(
     config_data = _load_source_config(script_config)
     selected_instance = _select_instance(config_data, user_config, script_config)
     _apply_controller_and_resource(selected_instance, script_config)
+    _apply_pre_action(selected_instance, script_config)
     _apply_option_override(selected_instance, user_config)
 
     instance_id = selected_instance.get("id")

@@ -597,6 +597,7 @@ class MaaEndConfig_Run(BaseModel):
     ] = Field(
         default=None, description="控制器类型"
     )
+    GamePath: Optional[str] = Field(default=None, description="Endfield 客户端路径")
 
 
 class MaaEndConfig_MaaEnd(BaseModel):
