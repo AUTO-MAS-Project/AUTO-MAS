@@ -238,28 +238,6 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">日志路径</span>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="config.MaaEnd.LogPath"
-                    placeholder="请选择日志文件"
-                    size="large"
-                    class="path-input"
-                    @blur="handleChange('MaaEnd', 'LogPath', config.MaaEnd.LogPath)"
-                  />
-                  <a-button size="large" class="path-button" @click="selectLogPath">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    选择
-                  </a-button>
-                </a-input-group>
-              </a-form-item>
-            </a-col>
           </a-row>
         </div>
       </a-form>
@@ -298,9 +276,6 @@ interface MaaEndScriptConfigLocal {
   MaaEnd: {
     ResourceProfile: string
     PresetTask: string
-    LogPath: string
-    SuccessPattern: string
-    ErrorPattern: string
   }
 }
 
@@ -332,9 +307,6 @@ const config = reactive<MaaEndScriptConfigLocal>({
   MaaEnd: {
     ResourceProfile: 'MaaEnd',
     PresetTask: '',
-    LogPath: '',
-    SuccessPattern: '',
-    ErrorPattern: '',
   },
 })
 
@@ -376,9 +348,6 @@ const applyConfig = (rawConfig: any, nameFallback = '新建MaaEnd脚本') => {
 
   config.MaaEnd.ResourceProfile = rawConfig?.MaaEnd?.ResourceProfile ?? 'MaaEnd'
   config.MaaEnd.PresetTask = rawConfig?.MaaEnd?.PresetTask ?? ''
-  config.MaaEnd.LogPath = rawConfig?.MaaEnd?.LogPath ?? ''
-  config.MaaEnd.SuccessPattern = rawConfig?.MaaEnd?.SuccessPattern ?? ''
-  config.MaaEnd.ErrorPattern = rawConfig?.MaaEnd?.ErrorPattern ?? ''
 
   formData.name = config.Info.Name
 }
@@ -521,29 +490,6 @@ const selectMaaEndPath = async () => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`选择 MaaEnd 路径失败: ${errorMsg}`)
     message.error('选择文件夹失败')
-  }
-}
-
-const selectLogPath = async () => {
-  try {
-    if (!window.electronAPI) {
-      message.error('文件选择功能不可用，请在 Electron 环境中运行')
-      return
-    }
-
-    const selected = await (window.electronAPI as any).selectFile()
-    const path = Array.isArray(selected) ? selected[0] : selected
-    if (!path) {
-      return
-    }
-
-    config.MaaEnd.LogPath = path
-    await handleChange('MaaEnd', 'LogPath', path)
-    message.success('日志路径选择成功')
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`选择日志路径失败: ${errorMsg}`)
-    message.error('选择日志路径失败')
   }
 }
 

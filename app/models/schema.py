@@ -606,9 +606,6 @@ class MaaEndConfig_Run(BaseModel):
 class MaaEndConfig_MaaEnd(BaseModel):
     ResourceProfile: Optional[str] = Field(default=None, description="资源配置")
     PresetTask: Optional[str] = Field(default=None, description="预设任务")
-    LogPath: Optional[str] = Field(default=None, description="日志路径")
-    SuccessPattern: Optional[str] = Field(default=None, description="成功日志匹配")
-    ErrorPattern: Optional[str] = Field(default=None, description="失败日志匹配")
 
 
 class MaaEndConfig(BaseModel):
