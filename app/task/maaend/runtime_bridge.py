@@ -38,13 +38,6 @@ def _select_instance(
             None,
         )
 
-    # Backward compatibility for historical name-based preset values.
-    if selected_instance is None and preset_ref:
-        selected_instance = next(
-            (item for item in instances if str(item.get("name", "")).strip() == preset_ref),
-            None,
-        )
-
     if selected_instance is None:
         active_id = config_data.get("lastActiveInstanceId")
         selected_instance = next(

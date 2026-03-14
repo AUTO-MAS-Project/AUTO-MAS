@@ -97,14 +97,13 @@ class ScriptConfigTask(TaskExecuteBase):
 
     @staticmethod
     def _normalize_controller_type(controller_name: str) -> str | None:
-        controller_name = controller_name.lower()
-        if controller_name.startswith("win32-window-background"):
+        if controller_name == "Win32-Window-Background":
             return "Win32-Window-Background"
-        if controller_name.startswith("win32-window"):
+        if controller_name == "Win32-Window":
             return "Win32-Window"
-        if controller_name.startswith("win32-front"):
+        if controller_name == "Win32-Front":
             return "Win32-Front"
-        if controller_name.startswith("adb"):
+        if controller_name == "ADB":
             return "ADB"
         return None
 

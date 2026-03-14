@@ -460,6 +460,17 @@ class AutoProxyTask(TaskExecuteBase):
     async def check_web_log(self, log_content: list[str], _latest_time: datetime) -> None:
         self._append_incremental_log(log_content, "web_log_cursor", "mxu-web")
 
+    async def _close_game_if_needed(self) -> None:
+        close_game = bool(self.script_config.get("Run", "CloseGameOnFinish"))
+        if not close_game:
+            return
+
+        game_path = str(self.script_config.get("Run", "GamePath")).strip()
+        if not game_path:
+            return
+
+        await System.kill_process(Path(game_path))
+
     async def final_task(self):
         if self.check_result != "Pass":
             return
@@ -470,6 +481,7 @@ class AutoProxyTask(TaskExecuteBase):
         await self.web_log_monitor.stop()
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
+        await self._close_game_if_needed()
 
         for t, log_item in self.cur_user_item.log_record.items():
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)

@@ -711,6 +711,9 @@ class MaaEndConfig(ConfigBase):
         )
         ## Endfield 路径（Win32 preAction）
         self.Run_GamePath = ConfigItem("Run", "GamePath", "", FileValidator())
+        self.Run_CloseGameOnFinish = ConfigItem(
+            "Run", "CloseGameOnFinish", True, BoolValidator()
+        )
 
         ## MaaEnd ----------------------------------------------------------
         ## 资源配置
