@@ -114,6 +114,10 @@ class _MaaFWManager:
             RuntimeError: 如果无法连接到指定窗口或初始化 MaaFW 失败，则抛出异常，异常信息包含相关的错误信息
         """
 
+        logger.info(
+            f"正在连接窗口: {hwnd}, 使用的屏幕捕获方法: {screencap_method}, 鼠标输入方法: {mouse_method}, 键盘输入方法: {keyboard_method}"
+        )
+
         controller = Win32Controller(
             hwnd, screencap_method, mouse_method, keyboard_method
         )
@@ -170,6 +174,10 @@ class _MaaFWManager:
 
         adb_path, address = await self.convert_adb(device_info)
 
+        logger.info(
+            f"正在连接设备: {device_info.title}, ADB 路径: {adb_path}, 设备地址: {address}, 屏幕捕获方法: {screencap_methods}, 输入方法: {input_methods}"
+        )
+
         controller = AdbController(
             adb_path, address, screencap_methods, input_methods, config
         )
@@ -204,6 +212,10 @@ class _MaaFWManager:
         Raises:
             RuntimeError: 如果无法连接到指定窗口或初始化 MaaFW 失败，则抛出异常，异常信息包含相关的错误信息
         """
+
+        logger.info(
+            f"正在重新连接窗口: {hwnd}, 屏幕捕获方法: {screencap_method}, 鼠标输入方法: {mouse_method}, 键盘输入方法: {keyboard_method}"
+        )
 
         controller = Win32Controller(
             hwnd, screencap_method, mouse_method, keyboard_method
@@ -242,6 +254,10 @@ class _MaaFWManager:
         """
 
         adb_path, address = await self.convert_adb(device_info)
+
+        logger.info(
+            f"正在重新连接设备: {device_info.title}, ADB 路径: {adb_path}, 设备地址: {address}, 屏幕捕获方法: {screencap_methods}, 输入方法: {input_methods}"
+        )
 
         controller = AdbController(
             adb_path, address, screencap_methods, input_methods, config
