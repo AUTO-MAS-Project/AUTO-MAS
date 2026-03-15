@@ -91,8 +91,19 @@ class AutoProxyTask(TaskExecuteBase):
             Path.cwd()
             / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/Runtime/mxu-MaaEnd.source.json"
         )
+        self.user_config_cache_path = (
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile/mxu-MaaEnd.json"
+        )
+        self.default_config_cache_path = (
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/Default/ConfigFile/mxu-MaaEnd.json"
+        )
         self.runtime_source_config_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(self.maaend_config_path, self.runtime_source_config_path)
+        if self.user_config_cache_path.exists():
+            shutil.copy(self.user_config_cache_path, self.runtime_source_config_path)
+        elif self.default_config_cache_path.exists():
+            shutil.copy(self.default_config_cache_path, self.runtime_source_config_path)
 
         self.timeout_minutes = self.script_config.get("Run", "Timeout")
         self.retry_times = self.script_config.get("Run", "Retry")
