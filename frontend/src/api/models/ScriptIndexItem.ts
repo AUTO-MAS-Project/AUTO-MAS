@@ -20,6 +20,6 @@ export namespace ScriptIndexItem {
         MAA_CONFIG = 'MaaConfig',
         GENERAL_CONFIG = 'GeneralConfig',
         SRC_CONFIG = 'SrcConfig',
+        MAA_END_CONFIG = 'MaaEndConfig',
     }
 }
-
