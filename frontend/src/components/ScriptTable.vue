@@ -115,7 +115,7 @@
                   <template #icon>
                     <SettingOutlined />
                   </template>
-                  配置MaaEnd
+                  {{ getMaaEndConfigActionText(script) }}
                 </a-button>
                 <a-button
                   v-if="script.type === 'MaaEnd' && props.activeConnections.has(script.id)"
@@ -174,7 +174,7 @@
                 chosen-class="user-chosen"
                 drag-class="user-drag"
                 class="users-list"
-                @end="(evt: any) => onUserDragEnd(evt, script)"
+                @end="() => onUserDragEnd(script)"
               >
                 <template #item="{ element: user }">
                   <div :key="user.id" class="user-item">
@@ -320,86 +320,37 @@ import {
   SettingOutlined,
   UserAddOutlined,
 } from '@ant-design/icons-vue'
-import draggable from 'vuedraggable'
-import { ref, watch } from 'vue'
-import { Service } from '@/api'
 import { message, Modal } from 'ant-design-vue'
+import { ref, watch } from 'vue'
+import draggable from 'vuedraggable'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { useUserApi } from '@/composables/useUserApi'
 import { parseStatusTagList } from '@/composables/useStatusTag'
-import { getTodayInTimezone, isDateEqual, getWeekdayInTimezone } from '@/utils/dateUtils'
+import { useUserApi } from '@/composables/useUserApi'
 
 interface Props {
   scripts: Script[]
   activeConnections: Map<string, { subscriptionId: string; websocketId: string }>
-  allPlansData?: Record<string, Record<string, any>>
-  currentPlanData?: Record<string, any>
-}
-
-interface Emits {
-  (e: 'edit', script: Script): void
-
-  (e: 'delete', script: Script): void
-
-  (e: 'addUser', script: Script): void
-
-  (e: 'editUser', user: User): void
-
-  (e: 'deleteUser', user: User): void
-
-  (e: 'startMaaConfig', script: Script): void
-
-  (e: 'saveMaaConfig', script: Script): void
-
-  (e: 'startSrcConfig', script: Script): void
-
-  (e: 'saveSrcConfig', script: Script): void
-
-  (e: 'startMaaEndConfig', script: Script): void
-
-  (e: 'toggleUserStatus', user: User): void
-
-  (e: 'passCheckUser', user: User): void
-
-  (e: 'scriptsReordered', scripts: Script[]): void
-}
-
-const ANNIHILATION_MAP: Record<string, string> = {
-  Annihilation: '当期剿灭',
-  'Chernobog@Annihilation': '切尔诺伯格',
-  'LungmenOutskirts@Annihilation': '龙门外环',
-  'LungmenDowntown@Annihilation': '龙门市区',
-  Close: '关闭',
-}
-
-// 常见资源关卡映射
-const STAGE_NAME_MAP: Record<string, string> = {
-  'LS-6': '经验',
-  'CE-6': '龙门币',
-  'AP-5': '红票',
-  'CA-5': '技能',
-  'SK-5': '碳',
-  'PR-A-1': '奶/盾芯片',
-  'PR-A-2': '奶/盾芯片组',
-  'PR-B-1': '术/狙芯片',
-  'PR-B-2': '术/狙芯片组',
-  'PR-C-1': '先/辅芯片',
-  'PR-C-2': '先/辅芯片组',
-  'PR-D-1': '近/特芯片',
-  'PR-D-2': '近/特芯片组',
 }
 
 const props = defineProps<Props>()
-const emit = defineEmits<Emits>()
+const emit = defineEmits([
+  'edit',
+  'delete',
+  'addUser',
+  'editUser',
+  'deleteUser',
+  'startMaaConfig',
+  'startSrcConfig',
+  'startMaaEndConfig',
+  'toggleUserStatus',
+  'passCheckUser',
+  'scriptsReordered',
+])
 
-// 本地脚本列表状态
 const localScripts = ref<Script[]>([])
-
-// 账号信息展开状态管理 - 使用用户ID作为key
 const expandedUserIds = ref<Set<string>>(new Set())
 const expandedUserPasswords = ref<Set<string>>(new Set())
 
-// 监听props变化，更新本地状态
 watch(
   () => props.scripts,
   newScripts => {
@@ -432,20 +383,20 @@ const handleStartMAAConfig = (script: Script) => {
   emit('startMaaConfig', script)
 }
 
-const handleSaveMAAConfig = (script: Script) => {
-  emit('saveMaaConfig', script)
-}
-
 const handleStartSRCConfig = (script: Script) => {
   emit('startSrcConfig', script)
 }
 
-const handleSaveSRCConfig = (script: Script) => {
-  emit('saveSrcConfig', script)
-}
-
 const handleStartMaaEndConfig = (script: Script) => {
   emit('startMaaEndConfig', script)
+}
+
+const getMaaEndConfigActionText = (script: Script): string => {
+  if (script.type !== 'MaaEnd') {
+    return '配置MaaEnd'
+  }
+
+  return '维护MaaEnd配置'
 }
 
 const handleToggleUserStatus = (user: User) => {
@@ -464,151 +415,101 @@ const handlePassCheck = (user: User) => {
   })
 }
 
-const truncateText = (text: string, maxLength: number = 10): string => {
-  if (!text || text.length === 0) return '无'
-  return text.length > maxLength ? text.substring(0, maxLength) + '...' : text
-}
-
-// 处理账号ID点击
-const handleUserIdClick = async (user: any) => {
+const handleUserIdClick = async (user: User) => {
   const userId = user.id
   const userIdValue = user.Info.Id || ''
 
-  // 切换展开状态
   if (expandedUserIds.value.has(userId)) {
     expandedUserIds.value.delete(userId)
   } else {
     expandedUserIds.value.add(userId)
   }
 
-  // 只有在有值的情况下才复制到剪贴板
-  if (userIdValue) {
-    try {
-      await navigator.clipboard.writeText(userIdValue)
-      message.success('账号已复制到剪贴板')
-    } catch (error) {
-      message.error('复制失败')
-    }
+  if (!userIdValue) {
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(userIdValue)
+    message.success('账号已复制到剪贴板')
+  } catch {
+    message.error('复制失败')
   }
 }
 
-// 处理密码点击
-const handlePasswordClick = async (user: any) => {
+const handlePasswordClick = async (user: User) => {
   const userId = user.id
   const passwordValue = user.Info.Password || ''
 
-  // 切换展开状态
   if (expandedUserPasswords.value.has(userId)) {
     expandedUserPasswords.value.delete(userId)
   } else {
     expandedUserPasswords.value.add(userId)
   }
 
-  // 只有在有值的情况下才复制到剪贴板
-  if (passwordValue) {
-    try {
-      await navigator.clipboard.writeText(passwordValue)
-      message.success('密码已复制到剪贴板')
-    } catch (error) {
-      message.error('复制失败')
-    }
+  if (!passwordValue) {
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(passwordValue)
+    message.success('密码已复制到剪贴板')
+  } catch {
+    message.error('复制失败')
   }
 }
 
-// 获取账号ID显示文本
-const getUserIdDisplayText = (user: any): string => {
-  const userId = user.id
-  const userIdValue = user.Info.Id || ''
-
-  if (expandedUserIds.value.has(userId)) {
-    // 展开状态：显示完整内容或未设置
-    return userIdValue ? `账号: ${userIdValue}` : '账号: 未设置'
-  } else {
-    // 隐藏状态：只显示标题
-    return '账号'
+const getUserIdDisplayText = (user: User): string => {
+  if (expandedUserIds.value.has(user.id)) {
+    return user.Info.Id ? `账号: ${user.Info.Id}` : '账号: 未设置'
   }
+
+  return '账号'
 }
 
-// 获取密码显示文本
-const getPasswordDisplayText = (user: any): string => {
-  const userId = user.id
-  const passwordValue = user.Info.Password || ''
-
-  if (expandedUserPasswords.value.has(userId)) {
-    // 展开状态：显示完整内容或未设置
-    return passwordValue ? `密码: ${passwordValue}` : '密码: 未设置'
-  } else {
-    // 隐藏状态：只显示标题
-    return '密码'
+const getPasswordDisplayText = (user: User): string => {
+  if (expandedUserPasswords.value.has(user.id)) {
+    return user.Info.Password ? `密码: ${user.Info.Password}` : '密码: 未设置'
   }
+
+  return '密码'
 }
 
-// 获取剩余天数的颜色
-const getRemainingDayColor = (remainedDay: number): string => {
-  if (remainedDay === -1) return 'gold'
-  if (remainedDay === 0) return 'red'
-  if (remainedDay <= 3) return 'orange'
-  if (remainedDay <= 7) return 'yellow'
-  if (remainedDay <= 30) return 'blue'
-  return 'green'
-}
-
-// 将关卡代码转换为中文名称（如果有映射的话）
-const convertStageNameToChinese = (stageName: string): string => {
-  if (!stageName) return stageName
-  return STAGE_NAME_MAP[stageName] || stageName
-}
-
-// 获取关卡标签颜色
-const getStageTagColor = (stage: string, stageMode?: string): string => {
-  // 如果使用计划表模式（stageMode不是'Fixed'），用绿色
-  if (stageMode && stageMode !== 'Fixed') return 'green'
-  return 'blue' // 自定义关卡用蓝色
-}
-
-// 获取服务器标签颜色
 const getServerTagColor = (server: string): string => {
   switch (server) {
-    // MAA服务器
     case 'Official':
+    case 'CN-Official':
       return 'blue'
     case 'Bilibili':
+    case 'CN-Bilibili':
       return 'purple'
     case 'YoStarEN':
+    case 'OVERSEA-America':
       return 'green'
     case 'YoStarJP':
       return 'red'
     case 'YoStarKR':
-      return 'orange'
-    case 'txwy':
-      return 'gold'
-    // SRC服务器
-    case 'CN-Official':
-      return 'blue'
-    case 'CN-Bilibili':
-      return 'purple'
-    case 'VN-Official':
-      return 'cyan'
-    case 'OVERSEA-America':
-      return 'green'
     case 'OVERSEA-Asia':
       return 'orange'
-    case 'OVERSEA-Europe':
-      return 'geekblue'
+    case 'txwy':
     case 'OVERSEA-TWHKMO':
       return 'gold'
+    case 'VN-Official':
+      return 'cyan'
+    case 'OVERSEA-Europe':
+      return 'geekblue'
     default:
       return 'gray'
   }
 }
 
-// 获取服务器显示名称
 const getServerDisplayName = (server: string): string => {
   switch (server) {
-    // MAA服务器
     case 'Official':
+    case 'CN-Official':
       return '官服'
     case 'Bilibili':
+    case 'CN-Bilibili':
       return 'B服'
     case 'YoStarEN':
       return '国际服'
@@ -618,11 +519,6 @@ const getServerDisplayName = (server: string): string => {
       return '韩服'
     case 'txwy':
       return '繁中服'
-    // SRC服务器
-    case 'CN-Official':
-      return '官服'
-    case 'CN-Bilibili':
-      return 'B服'
     case 'VN-Official':
       return '越南服'
     case 'OVERSEA-America':
@@ -638,358 +534,20 @@ const getServerDisplayName = (server: string): string => {
   }
 }
 
-// 获取基建模式显示名称
-const getInfrastModeDisplayName = (mode: string): string => {
-  switch (mode) {
-    case 'Normal':
-      return '常规'
-    case 'Rotation':
-      return '轮休'
-    case 'Custom':
-      return '自定义'
-    default:
-      return mode || '未知'
-  }
-}
-
-// 获取基建显示文本
-const getInfrastDisplayText = (user: User): string => {
-  const mode = user.Info.InfrastMode
-
-  // 如果是自定义模式，只显示当前排班号
-  if (mode === 'Custom') {
-    // 显示排班索引
-    if (user.Info.InfrastIndex && user.Info.InfrastIndex !== '') {
-      return `排班 ${user.Info.InfrastIndex}`
-    }
-
-    // 没有排班信息时返回'自定义'
-    return '自定义'
-  }
-
-  // 非自定义模式，返回标准显示名称
-  return getInfrastModeDisplayName(mode)
-}
-
-// 检查是否完成了今日日常代理
-const isSklandCompletedToday = (lastSklandDate: string): boolean => {
-  if (!lastSklandDate) return false
-
-  // 森空岛使用东8区时间（UTC+8）
-  const todayUTC8 = getTodayInTimezone(8)
-
-  // 基于Date对象比较
-  return isDateEqual(lastSklandDate, todayUTC8, 8)
-}
-
-// 获取森空岛标签颜色
-const getSklandTagColor = (ifSkland: boolean, lastSklandDate?: string): string => {
-  if (!ifSkland) return 'red'
-  return isSklandCompletedToday(lastSklandDate || '') ? 'green' : 'orange'
-}
-
-// 获取森空岛显示文本
-const getSklandDisplayText = (ifSkland: boolean, lastSklandDate?: string): string => {
-  if (!ifSkland) return '关闭'
-  return isSklandCompletedToday(lastSklandDate || '') ? '已签到' : '未签到'
-}
-
-// 检查是否完成了今日日常代理
-const isRoutineCompletedToday = (lastProxyDate: string): boolean => {
-  if (!lastProxyDate) return false
-
-  // 使用东4区时区获取今日的Date对象
-  const todayEast4 = getTodayInTimezone(4)
-
-  // 基于Date对象比较
-  return isDateEqual(lastProxyDate, todayEast4, 4)
-}
-
-// 获取日常代理标签颜色
-const getRoutineTagColor = (lastProxyDate?: string): string => {
-  return isRoutineCompletedToday(lastProxyDate || '') ? 'green' : 'orange'
-}
-
-// 获取日常代理显示文本
-const getRoutineDisplayText = (lastProxyDate?: string, proxyTimes?: number): string => {
-  if (isRoutineCompletedToday(lastProxyDate || '')) {
-    const times = proxyTimes || 0
-    return `已代理${times}次`
-  } else {
-    return '未代理'
-  }
-}
-
-// 获取主关卡显示文本
-const getMainStageDisplay = (user: any): string => {
-  // 如果使用计划表模式
-  if (user.Info.StageMode && user.Info.StageMode !== 'Fixed' && props.currentPlanData) {
-    const planStage = getCurrentPlanStage()
-    if (planStage && planStage !== '-') {
-      return convertStageNameToChinese(planStage)
-    }
-    return '计划表配置'
-  }
-
-  // 固定模式，显示用户自定义关卡
-  if (user.Info.Stage && user.Info.Stage !== '-' && user.Info.Stage !== '') {
-    return convertStageNameToChinese(user.Info.Stage)
-  }
-
-  return ''
-}
-
-// 获取备选关卡列表（过滤掉无效值）
-const getBackupStages = (user: any): string[] => {
-  const stages = [user.Info.Stage_1, user.Info.Stage_2, user.Info.Stage_3]
-  return stages
-    .filter(
-      stage =>
-        stage &&
-        stage !== '-' &&
-        stage !== '' &&
-        stage !== '当前' &&
-        stage !== '上次' &&
-        stage !== '未选择'
-    )
-    .map(stage => convertStageNameToChinese(stage))
-}
-
-// 获取剩余关卡显示文本
-const getRemainStageDisplay = (user: any): string => {
-  if (
-    user.Info.Stage_Remain &&
-    user.Info.Stage_Remain !== '-' &&
-    user.Info.Stage_Remain !== '' &&
-    user.Info.Stage_Remain !== '当前' &&
-    user.Info.Stage_Remain !== '上次' &&
-    user.Info.Stage_Remain !== '未选择'
-  ) {
-    return convertStageNameToChinese(user.Info.Stage_Remain)
-  }
-  return ''
-}
-
-// 获取统一的关卡显示标签
-const getStageDisplayLabel = (originalLabel: string): string => {
-  switch (originalLabel) {
-    case '关卡':
-      return '主关卡'
-    case '关卡1':
-    case '关卡2':
-    case '关卡3':
-      return '备选'
-    case '剩余关卡':
-      return '剩余'
-    default:
-      return originalLabel
-  }
-}
-
-// 获取剩余天数的显示文本
-const getRemainingDayText = (remainedDay: number): string => {
-  if (remainedDay === -1) return '剩余天数: 长期有效'
-  if (remainedDay === 0) return '剩余天数: 已到期'
-  return `剩余天数: ${remainedDay}天`
-}
-
-// 获取关卡的显示文本
-const getDisplayStage = (stage: string, stageMode?: string): string => {
-  if (stage === '-') return '未选择'
-
-  // 如果使用计划表模式且有计划表数据，显示计划表中的实际关卡
-  if (stageMode && stageMode !== 'Fixed' && props.currentPlanData) {
-    const planStage = getCurrentPlanStage()
-    if (planStage && planStage !== '-') {
-      return planStage
-    }
-    return '使用计划表配置'
-  }
-
-  return stage
-}
-
-// 获取用户对应的计划表数据
-const getUserPlanData = (user: any): Record<string, any> | null => {
-  if (!user.Info.StageMode || user.Info.StageMode === 'Fixed') {
-    return null
-  }
-
-  // StageMode 存储的就是计划表的ID
-  const planId = user.Info.StageMode
-
-  // 从 allPlansData 中获取对应的计划表数据
-  if (props.allPlansData && props.allPlansData[planId]) {
-    return props.allPlansData[planId]
-  }
-
-  return null
-}
-
-// 从计划表获取当前关卡
-const getCurrentPlanStage = (): string => {
-  if (!props.currentPlanData) return ''
-
-  // 根据当前时间确定使用哪个时间段的配置
-  const planMode = props.currentPlanData.Info?.Mode || 'ALL'
-  let timeKey = 'ALL'
-
-  if (planMode === 'Weekly') {
-    // 如果是周模式，根据东4区时区的当前星期几获取对应配置
-    const today = getWeekdayInTimezone(4) // 0=Sunday, 1=Monday, ...
-    const dayMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-    timeKey = dayMap[today]
-  }
-
-  // 从计划表获取关卡配置
-  const timeConfig = props.currentPlanData[timeKey]
-  if (!timeConfig) return ''
-
-  // 获取主要关卡
-  if (timeConfig.Stage && timeConfig.Stage !== '-') {
-    return timeConfig.Stage
-  }
-
-  // 如果主要关卡为空，尝试获取第一个备选关卡
-  const backupStages = [timeConfig.Stage_1, timeConfig.Stage_2, timeConfig.Stage_3]
-  for (const stage of backupStages) {
-    if (stage && stage !== '-') {
-      return stage
-    }
-  }
-
-  return ''
-}
-
-// 从用户的计划表获取主关卡显示文本
-const getUserPlanMainStageDisplay = (user: any): string => {
-  const planData = getUserPlanData(user)
-  if (!planData) return ''
-
-  // 根据当前时间确定使用哪个时间段的配置
-  const planMode = planData.Info?.Mode || 'ALL'
-  let timeKey = 'ALL'
-
-  if (planMode === 'Weekly') {
-    const today = getWeekdayInTimezone(4)
-    const dayMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-    timeKey = dayMap[today]
-  }
-
-  const timeConfig = planData[timeKey]
-  if (!timeConfig) return ''
-
-  if (timeConfig.Stage && timeConfig.Stage !== '-') {
-    return convertStageNameToChinese(timeConfig.Stage)
-  }
-  return ''
-}
-
-// 从用户的计划表获取备选关卡列表
-const getUserPlanBackupStages = (user: any): string[] => {
-  const planData = getUserPlanData(user)
-  if (!planData) return []
-
-  // 根据当前时间确定使用哪个时间段的配置
-  const planMode = planData.Info?.Mode || 'ALL'
-  let timeKey = 'ALL'
-
-  if (planMode === 'Weekly') {
-    const today = getWeekdayInTimezone(4)
-    const dayMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-    timeKey = dayMap[today]
-  }
-
-  const timeConfig = planData[timeKey]
-  if (!timeConfig) return []
-
-  const backupStages: string[] = []
-
-  if (timeConfig.Stage_1 && timeConfig.Stage_1 !== '-') {
-    backupStages.push(convertStageNameToChinese(timeConfig.Stage_1))
-  }
-  if (timeConfig.Stage_2 && timeConfig.Stage_2 !== '-') {
-    backupStages.push(convertStageNameToChinese(timeConfig.Stage_2))
-  }
-  if (timeConfig.Stage_3 && timeConfig.Stage_3 !== '-') {
-    backupStages.push(convertStageNameToChinese(timeConfig.Stage_3))
-  }
-
-  return backupStages
-}
-
-// 从用户的计划表获取剩余关卡显示文本
-const getUserPlanRemainStageDisplay = (user: any): string => {
-  const planData = getUserPlanData(user)
-  if (!planData) return ''
-
-  // 根据当前时间确定使用哪个时间段的配置
-  const planMode = planData.Info?.Mode || 'ALL'
-  let timeKey = 'ALL'
-
-  if (planMode === 'Weekly') {
-    const today = getWeekdayInTimezone(4)
-    const dayMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-    timeKey = dayMap[today]
-  }
-
-  const timeConfig = planData[timeKey]
-  if (!timeConfig) return ''
-
-  if (timeConfig.Stage_Remain && timeConfig.Stage_Remain !== '-') {
-    return convertStageNameToChinese(timeConfig.Stage_Remain)
-  }
-  return ''
-}
-
-// 从计划表获取当前关卡
-const getCurrentPlanStageOld = (): string => {
-  if (!props.currentPlanData) return ''
-
-  // 根据当前时间确定使用哪个时间段的配置
-  const planMode = props.currentPlanData.Info?.Mode || 'ALL'
-  let timeKey = 'ALL'
-
-  if (planMode === 'Weekly') {
-    // 如果是周模式，根据东4区时区的当前星期几获取对应配置
-    const today = getWeekdayInTimezone(4) // 0=Sunday, 1=Monday, ...
-    const dayMap = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-    timeKey = dayMap[today]
-  }
-
-  // 从计划表获取关卡配置
-  const timeConfig = props.currentPlanData[timeKey]
-  if (!timeConfig) return ''
-
-  // 获取主要关卡
-  if (timeConfig.Stage && timeConfig.Stage !== '-') {
-    return timeConfig.Stage
-  }
-
-  // 如果主要关卡为空，尝试获取第一个备选关卡
-  const backupStages = [timeConfig.Stage_1, timeConfig.Stage_2, timeConfig.Stage_3]
-  for (const stage of backupStages) {
-    if (stage && stage !== '-') {
-      return stage
-    }
-  }
-
-  return ''
-}
 const { reorderScript } = useScriptApi()
 const { reorderUser } = useUserApi()
 
 const onScriptDragEnd = async () => {
-  const scriptIds = localScripts.value.map(s => s.id)
+  const scriptIds = localScripts.value.map(script => script.id)
   const success = await reorderScript(scriptIds)
   if (success) {
     emit('scriptsReordered', localScripts.value)
   }
 }
 
-const onUserDragEnd = async (evt: any, script: Script) => {
-  const userIds = script.users.map(u => u.id)
-  const success = await reorderUser(script.id, userIds)
+const onUserDragEnd = async (script: Script) => {
+  const userIds = script.users.map(user => user.id)
+  await reorderUser(script.id, userIds)
 }
 </script>
 

@@ -541,10 +541,6 @@ export function useScriptApi() {
                         Tag: null,
                       },
                       Task: {
-                        PresetOverride:
-                          maaEndUserData.Task?.PresetOverride !== undefined
-                            ? maaEndUserData.Task.PresetOverride
-                            : '',
                         OptionOverride:
                           maaEndUserData.Task?.OptionOverride !== undefined
                             ? maaEndUserData.Task.OptionOverride

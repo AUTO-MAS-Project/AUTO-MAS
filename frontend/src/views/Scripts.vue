@@ -454,6 +454,11 @@ import { usePlanApi } from '@/composables/usePlanApi'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import MarkdownIt from 'markdown-it'
+
+defineOptions({
+  name: 'ScriptsView',
+})
+
 const logger = window.electronAPI.getLogger('脚本管理')
 
 const router = useRouter()
@@ -1225,6 +1230,7 @@ const handleSaveMaaEndConfig = async (script: Script) => {
       // 隐藏遮罩
       showMaaEndConfigMask.value = false
       currentConfigScript.value = null
+      await loadScripts()
 
       message.success(`${script.name} 的配置已保存`)
     } else {

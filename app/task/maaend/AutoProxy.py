@@ -15,6 +15,11 @@ from app.utils import LogMonitor, ProcessManager, get_logger
 from app.utils.constants import UTC4
 
 from .runtime_bridge import build_runtime_config
+from .paths import (
+    LOCAL_CONFIG_NAME,
+    managed_default_config_path,
+    managed_user_config_path,
+)
 
 
 logger = get_logger("MaaEnd 自动代理")
@@ -24,6 +29,8 @@ TASK_ID_RE = re.compile(
 TASK_IDS_RE = re.compile(r"task_ids?\s*[:=]\s*\[([^\]]*)\]", re.IGNORECASE)
 INSTANCE_ID_RE = re.compile(r"instance_id\s*[:=]\s*([^\s,\]]+)", re.IGNORECASE)
 STOP_GRACE_SECONDS = 2.0
+GAME_START_WAIT_SECONDS = 90
+GAME_START_WAIT_INTERVAL = 1.0
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -73,13 +80,17 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.status = "异常"
             return "RunTimesLimit 必须大于 0"
 
+        if not bool(self.script_config.get("MaaEnd", "ConfigLocked")):
+            self.cur_user_item.status = "异常"
+            return "MaaEnd 配置未锁定，请先执行 ScriptConfig 完成配置并保存"
+
         return "Pass"
 
     async def prepare(self):
         self.maaend_root_path = Path(self.script_config.get("Info", "Path"))
         self.maaend_exe_path = self.maaend_root_path / "MaaEnd.exe"
         self.game_exe_path = Path(str(self.script_config.get("Run", "GamePath")).strip())
-        self.maaend_config_path = self.maaend_root_path / "config" / "mxu-MaaEnd.json"
+        self.maaend_config_path = self.maaend_root_path / "config" / LOCAL_CONFIG_NAME
         self.tauri_log_path = self.maaend_root_path / "debug" / "mxu-tauri.log"
         self.maa_log_path = self.maaend_root_path / "debug" / "maa.log"
         self.maa_bak_log_path = self.maaend_root_path / "debug" / "maa.bak.log"
@@ -90,23 +101,25 @@ class AutoProxyTask(TaskExecuteBase):
         )
         self.runtime_source_config_path = (
             Path.cwd()
-            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/Runtime/mxu-MaaEnd.source.json"
+            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/Runtime/AUTO-MAS.source.json"
         )
-        self.user_config_cache_path = (
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile/mxu-MaaEnd.json"
+        self.user_config_cache_path = managed_user_config_path(
+            self.script_info.script_id, self.cur_user_item.user_id
         )
-        self.default_config_cache_path = (
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/Default/ConfigFile/mxu-MaaEnd.json"
+        self.default_config_cache_path = managed_default_config_path(
+            self.script_info.script_id
         )
         self.runtime_source_config_path.parent.mkdir(parents=True, exist_ok=True)
         if self.user_config_cache_path.exists():
-            shutil.copy(self.user_config_cache_path, self.runtime_source_config_path)
+            source_path = self.user_config_cache_path
         elif self.default_config_cache_path.exists():
-            shutil.copy(self.default_config_cache_path, self.runtime_source_config_path)
+            source_path = self.default_config_cache_path
         else:
-            shutil.copy(self.maaend_config_path, self.runtime_source_config_path)
+            raise FileNotFoundError(
+                f"MaaEnd managed config not found: {self.user_config_cache_path} "
+                f"(fallback {self.default_config_cache_path})"
+            )
+        shutil.copy(source_path, self.runtime_source_config_path)
 
         self.timeout_minutes = self.script_config.get("Run", "Timeout")
         self.retry_times = self.script_config.get("Run", "Retry")
@@ -147,13 +160,70 @@ class AutoProxyTask(TaskExecuteBase):
         shutil.copy(runtime_path, self.maaend_config_path)
         return runtime_path
 
+    def _push_debug_line(self, message: str) -> None:
+        line = f"[AUTO-MAS] {message}"
+        self.display_log_lines.append(line)
+        joined = "\n".join(self.display_log_lines)
+        self.script_info.log = joined
+        self.cur_user_log.content = list(self.display_log_lines)
+        logger.info(line)
+
+    def _set_stage_message(self, title: str, detail: str | None = None) -> None:
+        if detail:
+            self._push_debug_line(f"{title}: {detail}")
+            return
+        self._push_debug_line(title)
+
+    async def _ensure_game_running(self) -> bool:
+        game_running = len(await System.search_pids(self.game_exe_path)) > 0
+        if game_running:
+            self._set_stage_message("检测到 Endfield 已在运行", str(self.game_exe_path))
+            return True
+
+        self._set_stage_message("正在启动 Endfield", str(self.game_exe_path))
+        await self.game_process_manager.open_process(self.game_exe_path)
+        for elapsed in range(1, GAME_START_WAIT_SECONDS + 1, int(GAME_START_WAIT_INTERVAL)):
+            game_running = len(await System.search_pids(self.game_exe_path)) > 0
+            if game_running:
+                self._set_stage_message(
+                    "Endfield 进程已启动",
+                    f"{self.game_exe_path}，耗时约 {elapsed} 秒",
+                )
+                return True
+            await asyncio.sleep(GAME_START_WAIT_INTERVAL)
+
+        self._set_stage_message(
+            "启动 Endfield 失败",
+            f"{GAME_START_WAIT_SECONDS} 秒内未检测到进程: {self.game_exe_path}",
+        )
+        return False
+
     def _mark_account_switch_placeholder(self, run_idx: int, retry_idx: int) -> None:
         message = "切号功能暂为占位实现，当前运行将跳过实际切换账号"
         logger.warning(f"用户 {self.cur_user_item.name} {message}")
+        self._push_debug_line(message)
         self.script_info.log = (
             f"用户 {self.cur_user_item.name} 执行中：轮次 {run_idx + 1}"
-            f"，重试 {retry_idx}/{self.retry_times}\n{message}"
+            f"，重试 {retry_idx}/{self.retry_times}\n"
+            f"{self.script_info.log}"
         )
+
+    async def _prepare_before_maaend(self, run_idx: int, retry_idx: int) -> bool:
+        controller_type = str(self.script_config.get("Run", "ControllerType")).strip()
+        if not controller_type.startswith("Win32"):
+            return True
+
+        if not await self._ensure_game_running():
+            return False
+
+        if self.script_config.get("Run", "IfAccountSwitch"):
+            account_switch_method = str(
+                self.script_config.get("Run", "AccountSwitchMethod")
+            ).strip()
+            if account_switch_method != "NoAction":
+                self._mark_account_switch_placeholder(run_idx, retry_idx)
+
+        return True
 
     async def _run_once(self, run_idx: int, retry_idx: int) -> bool:
         self.script_info.log = (
@@ -185,24 +255,14 @@ class AutoProxyTask(TaskExecuteBase):
 
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
-
-        controller_type = str(self.script_config.get("Run", "ControllerType")).strip()
-        if controller_type.startswith("Win32"):
-            game_running = len(await System.search_pids(self.game_exe_path)) > 0
-            if not game_running:
-                self.script_info.log = (
-                    f"用户 {self.cur_user_item.name} 执行中：轮次 {run_idx + 1}"
-                    f"，重试 {retry_idx}/{self.retry_times}\n正在启动 Endfield"
-                )
-                await self.game_process_manager.open_process(self.game_exe_path)
-                await asyncio.sleep(1)
-
-        if self.script_config.get("Run", "IfAccountSwitch"):
-            account_switch_method = self.script_config.get("Run", "AccountSwitchMethod")
-            if account_switch_method != "NoAction":
-                self._mark_account_switch_placeholder(run_idx, retry_idx)
+        self._set_stage_message(
+            "已生成运行时配置", str(self.runtime_source_config_path.parent)
+        )
+        if not await self._prepare_before_maaend(run_idx, retry_idx):
+            return False
 
         self.wait_event.clear()
+        self._set_stage_message("正在启动 MaaEnd", str(self.maaend_exe_path))
         await self.maaend_process_manager.open_process(self.maaend_exe_path)
         await asyncio.sleep(1)
 
@@ -413,7 +473,9 @@ class AutoProxyTask(TaskExecuteBase):
     async def check_tauri_log(self, log_content: list[str], _latest_time: datetime) -> None:
         if self.session_closed:
             return
-        new_lines = self._append_incremental_log(log_content, "tauri_log_cursor")
+        new_lines = self._append_incremental_log(
+            log_content, "tauri_log_cursor", "mxu-tauri"
+        )
 
         for line in new_lines:
             if "maa_start_tasks" in line:
@@ -485,7 +547,7 @@ class AutoProxyTask(TaskExecuteBase):
     async def check_maa_log(self, log_content: list[str], _latest_time: datetime) -> None:
         if self.session_closed:
             return
-        new_lines = self._append_incremental_log(log_content, "maa_log_cursor")
+        new_lines = self._append_incremental_log(log_content, "maa_log_cursor", "maa")
         self._parse_maa_lines(new_lines)
 
         if not self.wait_event.is_set():
@@ -497,7 +559,7 @@ class AutoProxyTask(TaskExecuteBase):
         if self.session_closed:
             return
         new_lines = self._append_incremental_log(
-            log_content, "maa_bak_log_cursor"
+            log_content, "maa_bak_log_cursor", "maa.bak"
         )
         self._parse_maa_lines(new_lines)
 

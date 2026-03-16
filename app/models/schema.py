@@ -564,7 +564,6 @@ class MaaEndUserConfig_Info(BaseModel):
 
 
 class MaaEndUserConfig_Task(BaseModel):
-    PresetOverride: Optional[str] = Field(default=None, description="预设覆盖")
     OptionOverride: Optional[str] = Field(default=None, description="任务选项覆盖")
 
 
@@ -611,7 +610,7 @@ class MaaEndConfig_Run(BaseModel):
 
 class MaaEndConfig_MaaEnd(BaseModel):
     ResourceProfile: Optional[str] = Field(default=None, description="资源配置")
-    PresetTask: Optional[str] = Field(default=None, description="预设任务")
+    ConfigLocked: Optional[bool] = Field(default=None, description="配置是否锁定")
 
 
 class MaaEndConfig(BaseModel):

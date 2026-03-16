@@ -655,7 +655,6 @@ class MaaEndUserConfig(ConfigBase):
 
         ## Task ------------------------------------------------------------
         ## 预设覆盖
-        self.Task_PresetOverride = ConfigItem("Task", "PresetOverride", "")
         ## 任务选项覆盖
         self.Task_OptionOverride = ConfigItem(
             "Task", "OptionOverride", "{ }", JSONValidator()
@@ -735,8 +734,10 @@ class MaaEndConfig(ConfigBase):
         self.MaaEnd_ResourceProfile = ConfigItem(
             "MaaEnd", "ResourceProfile", "MaaEnd"
         )
-        ## 预设任务
-        self.MaaEnd_PresetTask = ConfigItem("MaaEnd", "PresetTask", "")
+        ## 配置是否已锁定（仅允许 ScriptConfig 流程回写）
+        self.MaaEnd_ConfigLocked = ConfigItem(
+            "MaaEnd", "ConfigLocked", False, BoolValidator()
+        )
 
         self.UserData = MultipleConfig([MaaEndUserConfig])
 

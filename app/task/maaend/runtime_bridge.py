@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any
 
 from app.models.config import MaaEndConfig, MaaEndUserConfig
+from .paths import managed_default_config_path
 
 
 class RuntimeBridgeError(ValueError):
@@ -13,7 +14,13 @@ def _load_source_config(
     script_config: MaaEndConfig, source_path: Path | None = None
 ) -> dict[str, Any]:
     if source_path is None:
-        source_path = Path(script_config.get("Info", "Path")) / "config" / "mxu-MaaEnd.json"
+        script_uid = getattr(script_config, "uid", None)
+        if script_uid is not None:
+            source_path = managed_default_config_path(str(script_uid))
+        else:
+            raise RuntimeBridgeError(
+                "Managed config uid not found, source_path is required for runtime bridge"
+            )
     if not source_path.exists():
         raise RuntimeBridgeError(f"MaaEnd config file not found: {source_path}")
 
@@ -23,33 +30,16 @@ def _load_source_config(
         raise RuntimeBridgeError(f"Invalid MaaEnd config json: {e}") from e
 
 
-def _select_instance(
-    config_data: dict[str, Any], user_config: MaaEndUserConfig, script_config: MaaEndConfig
-) -> dict[str, Any]:
+def _select_instance(config_data: dict[str, Any]) -> dict[str, Any]:
     instances = config_data.get("instances", [])
     if not instances:
-        raise RuntimeBridgeError("No MaaEnd instances in mxu-MaaEnd.json")
-
-    preset_ref = str(user_config.get("Task", "PresetOverride")).strip()
-    if not preset_ref:
-        preset_ref = str(script_config.get("MaaEnd", "PresetTask")).strip()
-
-    selected_instance = None
-    if preset_ref:
-        selected_instance = next(
-            (item for item in instances if str(item.get("id", "")).strip() == preset_ref),
-            None,
-        )
-
-    if selected_instance is None:
-        active_id = config_data.get("lastActiveInstanceId")
-        selected_instance = next(
-            (item for item in instances if item.get("id") == active_id), None
-        )
-
+        raise RuntimeBridgeError("No MaaEnd instances in managed config")
+    active_id = config_data.get("lastActiveInstanceId")
+    selected_instance = next(
+        (item for item in instances if item.get("id") == active_id), None
+    )
     if selected_instance is None:
         selected_instance = instances[0]
-
     return selected_instance
 
 
@@ -158,7 +148,7 @@ def build_runtime_config(
     source_path: Path | None = None,
 ) -> Path:
     config_data = _load_source_config(script_config, source_path)
-    selected_instance = _select_instance(config_data, user_config, script_config)
+    selected_instance = _select_instance(config_data)
     _apply_controller_and_resource(selected_instance, script_config)
     _apply_pre_action(selected_instance, script_config)
     _apply_option_override(selected_instance, user_config)

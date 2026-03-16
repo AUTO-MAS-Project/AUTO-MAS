@@ -1,14 +1,14 @@
-<template>
+﻿<template>
   <div class="script-edit-header">
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
-          <router-link to="/scripts" class="breadcrumb-link">鑴氭湰绠＄悊</router-link>
+          <router-link to="/scripts" class="breadcrumb-link">脚本管理</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
             <img src="../../../assets/MAA.png" alt="MaaEnd" class="breadcrumb-logo" />
-            缂栬緫鑴氭湰
+            编辑脚本
           </div>
         </a-breadcrumb-item>
       </a-breadcrumb>
@@ -19,13 +19,13 @@
         <template #icon>
           <ArrowLeftOutlined />
         </template>
-        杩斿�?
+        返回
       </a-button>
     </a-space>
   </div>
 
   <div class="script-edit-content">
-    <a-card title="MaaEnd 鑴氭湰閰嶇疆" :loading="pageLoading" class="config-card">
+    <a-card title="MaaEnd 脚本配置" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="orange" class="type-tag">MaaEnd</a-tag>
       </template>
@@ -33,20 +33,20 @@
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
           <div class="section-header">
-            <h3>鍩烘湰淇℃伅</h3>
+            <h3>基本信息</h3>
           </div>
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
                   <span class="form-label">
-                    鑴氭湰鍚嶇�?
+                    脚本名称
                     <QuestionCircleOutlined class="help-icon" />
                   </span>
                 </template>
                 <a-input
                   v-model:value="formData.name"
-                  placeholder="璇疯緭鍏ヨ剼鏈悕绉?
+                  placeholder="请输入脚本名称"
                   size="large"
                   class="modern-input"
                   @blur="handleNameBlur"
@@ -57,14 +57,14 @@
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
                   <span class="form-label">
-                    MaaEnd 璺�?
+                    MaaEnd 路径
                     <QuestionCircleOutlined class="help-icon" />
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="formData.path"
-                    placeholder="璇烽€夋�?MaaEnd 鎵€鍦ㄧ洰褰?
+                    placeholder="请选择 MaaEnd 所在目录"
                     size="large"
                     class="path-input"
                     readonly
@@ -73,7 +73,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    閫夋嫨鏂囦欢�?
+                    选择文件夹
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -83,12 +83,12 @@
             <a-col v-if="config.Run.ControllerType !== 'ADB'" :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">Endfield 璺緞锛圵in32�?/span>
+                  <span class="form-label">Endfield 路径（Win32）</span>
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="config.Run.GamePath"
-                    placeholder="璇烽€夋�?Endfield.exe"
+                    placeholder="请选择 Endfield.exe"
                     size="large"
                     class="path-input"
                     @blur="handleChange('Run', 'GamePath', config.Run.GamePath)"
@@ -97,7 +97,7 @@
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
-                    閫夋�?
+                    选择
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -107,14 +107,14 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>杩愯閰嶇疆</h3>
+            <h3>运行配置</h3>
           </div>
           <a-row :gutter="24">
-            <a-col :span="8">
+            <a-col :span="6">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    鎺у埗鍣ㄧ被鍨?
+                    控制器类型
                     <QuestionCircleOutlined class="help-icon" />
                   </span>
                 </template>
@@ -123,17 +123,17 @@
                   size="large"
                   @change="handleChange('Run', 'ControllerType', $event)"
                 >
-                  <a-select-option value="Win32-Window">鐢佃剳绔?榛樿�?/a-select-option>
-                  <a-select-option value="Win32-Window-Background">鐢佃剳绔?鍚庡�?/a-select-option>
-                  <a-select-option value="Win32-Front">鐢佃剳绔?鍓嶅�?/a-select-option>
-                  <a-select-option value="ADB">瀹夊崜绔?/a-select-option>
+                  <a-select-option value="Win32-Window">电脑端-默认</a-select-option>
+                  <a-select-option value="Win32-Window-Background">电脑端-后台</a-select-option>
+                  <a-select-option value="Win32-Front">电脑端-前台</a-select-option>
+                  <a-select-option value="ADB">安卓端</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">瓒呮椂锛堝垎閽燂�?/span>
+                  <span class="form-label">超时（分钟）</span>
                 </template>
                 <a-input-number
                   v-model:value="config.Run.Timeout"
@@ -146,10 +146,10 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">閲嶈瘯娆℃暟</span>
+                  <span class="form-label">重试次数</span>
                 </template>
                 <a-input-number
                   v-model:value="config.Run.Retry"
@@ -162,12 +162,10 @@
                 />
               </a-form-item>
             </a-col>
-          </a-row>
-          <a-row :gutter="24">
-            <a-col :span="8">
+            <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">杩愯娆℃暟闄愬�?/span>
+                  <span class="form-label">运行次数限制</span>
                 </template>
                 <a-input-number
                   v-model:value="config.Run.RunTimesLimit"
@@ -180,51 +178,28 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">鏄惁鍚敤鍒囧�?/span>
-                </template>
-                <a-select
-                  v-model:value="config.Run.IfAccountSwitch"
-                  size="large"
-                  @change="handleChange('Run', 'IfAccountSwitch', $event)"
-                >
-                  <a-select-option :value="true">�?/a-select-option>
-                  <a-select-option :value="false">�?/a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">鍒囧彿鏂瑰紡</span>
-                </template>
-                <a-select
-                  v-model:value="config.Run.AccountSwitchMethod"
-                  size="large"
-                  @change="handleChange('Run', 'AccountSwitchMethod', $event)"
-                >
-                  <a-select-option value="NoAction">涓嶅垏鎹?/a-select-option>
-                  <a-select-option value="ExitGame">閲嶅惎娓告垙</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
           </a-row>
+        </div>
+
+        <div class="form-section">
+          <div class="section-header">
+            <h3>MaaEnd 配置</h3>
+          </div>
           <a-row :gutter="24">
-            <a-col v-if="config.Run.ControllerType !== 'ADB'" :span="8">
+            <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">缁撴潫鍚庡叧�?Endfield</span>
+                  <span class="form-label">资源配置</span>
                 </template>
                 <a-select
-                  v-model:value="config.Run.CloseGameOnFinish"
+                  v-model:value="config.MaaEnd.ResourceProfile"
+                  mode="combobox"
+                  :options="resourceProfileOptions"
+                  placeholder="请选择或输入资源配置"
                   size="large"
-                  @change="handleChange('Run', 'CloseGameOnFinish', $event)"
-                >
-                  <a-select-option :value="true">�?/a-select-option>
-                  <a-select-option :value="false">�?/a-select-option>
-                </a-select>
+                  class="modern-input"
+                  @change="handleChange('MaaEnd', 'ResourceProfile', config.MaaEnd.ResourceProfile)"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -232,51 +207,14 @@
 
         <div class="form-section">
           <div class="section-header">
-            <h3>MaaEnd 閰嶇�?/h3>
+            <h3>任务具体配置</h3>
           </div>
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">璧勬簮閰嶇疆</span>
-                </template>
-                <a-select
-                  v-model:value="config.MaaEnd.ResourceProfile"
-                  mode="combobox"
-                  :options="resourceProfileOptions"
-                  placeholder="璇烽€夋嫨鎴栬緭鍏ヨ祫婧愰厤�?
-                  size="large"
-                  class="modern-input"
-                  @change="handleChange('MaaEnd', 'ResourceProfile', config.MaaEnd.ResourceProfile)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">棰勮浠诲姟</span>
-                </template>
-                <a-select
-                  v-if="presetOptions.length > 0"
-                  v-model:value="config.MaaEnd.PresetTask"
-                  size="large"
-                  show-search
-                  allow-clear
-                  placeholder="璇烽€夋嫨棰勮浠诲�?
-                  :options="presetOptions"
-                  @change="handleChange('MaaEnd', 'PresetTask', $event || '')"
-                />
-                <a-input
-                  v-else
-                  v-model:value="config.MaaEnd.PresetTask"
-                  placeholder="璇疯緭鍏ラ璁句换鍔?
-                  size="large"
-                  class="modern-input"
-                  @blur="handleChange('MaaEnd', 'PresetTask', config.MaaEnd.PresetTask)"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
+          <a-alert
+            message="功能开发中"
+            description="任务具体配置区域预留，后续版本接入。"
+            type="info"
+            show-icon
+          />
         </div>
       </a-form>
     </a-card>
@@ -296,7 +234,7 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 
-const logger = window.electronAPI.getLogger('MaaEnd鑴氭湰缂栬緫')
+const logger = window.electronAPI.getLogger('MaaEnd脚本编辑')
 
 interface MaaEndScriptConfigLocal {
   Info: {
@@ -307,15 +245,16 @@ interface MaaEndScriptConfigLocal {
     Timeout: number
     Retry: number
     RunTimesLimit: number
-    IfAccountSwitch: boolean
-    AccountSwitchMethod: 'ExitGame' | 'NoAction'
     GamePath: string
-    CloseGameOnFinish: boolean
     ControllerType: 'Win32-Window' | 'Win32-Window-Background' | 'Win32-Front' | 'ADB'
   }
   MaaEnd: {
     ResourceProfile: string
     PresetTask: string
+    ConfigLocked: boolean
+    LogPath: string
+    SuccessPattern: string
+    ErrorPattern: string
   }
 }
 
@@ -327,7 +266,6 @@ const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
 const isInitializing = ref(true)
 const isSaving = ref(false)
-const presetOptions = ref<Array<{ label: string; value: string }>>([])
 
 const scriptId = route.params.id as string
 
@@ -340,15 +278,16 @@ const config = reactive<MaaEndScriptConfigLocal>({
     Timeout: 10,
     Retry: 3,
     RunTimesLimit: 3,
-    IfAccountSwitch: false,
-    AccountSwitchMethod: 'NoAction',
     GamePath: '',
-    CloseGameOnFinish: true,
     ControllerType: 'Win32-Window',
   },
   MaaEnd: {
     ResourceProfile: 'MaaEnd',
     PresetTask: '',
+    ConfigLocked: false,
+    LogPath: '',
+    SuccessPattern: '',
+    ErrorPattern: '',
   },
 })
 
@@ -364,8 +303,23 @@ const formData = reactive({
 })
 
 const rules = {
-  name: [{ required: true, message: '璇疯緭鍏ヨ剼鏈悕绉?, trigger: 'blur' }],
-  path: [{ required: true, message: '璇烽€夋�?MaaEnd 璺�?, trigger: 'blur' }],
+  name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
+  path: [{ required: true, message: '请选择 MaaEnd 路径', trigger: 'blur' }],
+}
+
+const normalizeControllerType = (
+  value: string | null | undefined
+): 'Win32-Window' | 'Win32-Window-Background' | 'Win32-Front' | 'ADB' => {
+  if (
+    value === 'Win32-Window' ||
+    value === 'Win32-Window-Background' ||
+    value === 'Win32-Front' ||
+    value === 'ADB'
+  ) {
+    return value
+  }
+
+  return 'Win32-Window'
 }
 
 const resourceProfileOptions = computed(() => {
@@ -377,21 +331,22 @@ const resourceProfileOptions = computed(() => {
   return options.map(value => ({ label: value, value }))
 })
 
-const applyConfig = (rawConfig: any, nameFallback = '鏂板缓MaaEnd鑴氭�?) => {
+const applyConfig = (rawConfig: any, nameFallback = '新建MaaEnd脚本') => {
   config.Info.Name = rawConfig?.Info?.Name ?? nameFallback
   config.Info.Path = rawConfig?.Info?.Path ?? '.'
 
   config.Run.Timeout = rawConfig?.Run?.Timeout ?? 10
   config.Run.Retry = rawConfig?.Run?.Retry ?? 3
   config.Run.RunTimesLimit = rawConfig?.Run?.RunTimesLimit ?? 3
-  config.Run.IfAccountSwitch = rawConfig?.Run?.IfAccountSwitch ?? false
-  config.Run.AccountSwitchMethod = rawConfig?.Run?.AccountSwitchMethod ?? 'NoAction'
   config.Run.GamePath = rawConfig?.Run?.GamePath ?? ''
-  config.Run.CloseGameOnFinish = rawConfig?.Run?.CloseGameOnFinish ?? true
-  config.Run.ControllerType = rawConfig?.Run?.ControllerType ?? 'Win32-Window'
+  config.Run.ControllerType = normalizeControllerType(rawConfig?.Run?.ControllerType)
 
   config.MaaEnd.ResourceProfile = rawConfig?.MaaEnd?.ResourceProfile ?? 'MaaEnd'
   config.MaaEnd.PresetTask = rawConfig?.MaaEnd?.PresetTask ?? ''
+  config.MaaEnd.ConfigLocked = rawConfig?.MaaEnd?.ConfigLocked ?? false
+  config.MaaEnd.LogPath = rawConfig?.MaaEnd?.LogPath ?? ''
+  config.MaaEnd.SuccessPattern = rawConfig?.MaaEnd?.SuccessPattern ?? ''
+  config.MaaEnd.ErrorPattern = rawConfig?.MaaEnd?.ErrorPattern ?? ''
 
   formData.name = config.Info.Name
 }
@@ -402,12 +357,12 @@ const refreshScript = async () => {
     return
   }
   if (scriptDetail.type !== 'MaaEnd') {
-    message.error('鑴氭湰绫诲瀷涓嶅尮�?)
+    message.error('脚本类型不匹配')
     router.push('/scripts')
     return
   }
   formData.type = scriptDetail.type
-  applyConfig(scriptDetail.config, scriptDetail.name || '鏂板缓MaaEnd鑴氭�?)
+  applyConfig(scriptDetail.config, scriptDetail.name || '新建MaaEnd脚本')
 }
 
 const handleChange = async (category: string, key: string, value: any) => {
@@ -424,9 +379,11 @@ const handleChange = async (category: string, key: string, value: any) => {
     }
     const success = await updateScript(scriptId, updateData)
     if (success) {
-      logger.info(`閰嶇疆宸蹭繚�? ${category}.${key}`)
+      logger.info(`配置已保存: ${category}.${key}`)
     }
-    logger.error(`淇濆瓨澶辫触: ${errorMsg}`)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存失败: ${errorMsg}`)
   } finally {
     isSaving.value = false
   }
@@ -435,60 +392,6 @@ const handleChange = async (category: string, key: string, value: any) => {
 const handleNameBlur = async () => {
   config.Info.Name = formData.name
   await handleChange('Info', 'Name', formData.name)
-}
-
-const resolveMaaEndConfigPaths = () => {
-  const candidates: string[] = [`data/${scriptId}/Default/ConfigFile/mxu-MaaEnd.json`]
-  const base = String(config.Info.Path || '').trim()
-  if (base) {
-    candidates.push(`${base.replace(/[\\/]+$/, '')}/config/mxu-MaaEnd.json`)
-  }
-  return Array.from(new Set(candidates))
-}
-
-const parsePresetOptions = (content: string) => {
-  const parsed = JSON.parse(content)
-  const instances = Array.isArray(parsed?.instances) ? parsed.instances : []
-
-  const optionMap = new Map<string, string>()
-  for (const item of instances) {
-    const id = String(item?.id || '').trim()
-    const name = String(item?.name || '').trim()
-    if (!id || !name || optionMap.has(id)) {
-      continue
-    }
-    optionMap.set(id, name)
-  }
-
-  return Array.from(optionMap.entries()).map(([id, name]) => ({
-    label: name,
-    value: id,
-  }))
-}
-
-const loadPresetOptions = async () => {
-  const configPaths = resolveMaaEndConfigPaths()
-  if (configPaths.length === 0 || !window.electronAPI?.readFile) {
-    presetOptions.value = []
-    return
-  }
-
-  let lastError: unknown = null
-  for (const configPath of configPaths) {
-    try {
-      const content = await window.electronAPI.readFile(configPath)
-      presetOptions.value = parsePresetOptions(content)
-      return
-    } catch (error) {
-      lastError = error
-    }
-  }
-
-  presetOptions.value = []
-  if (lastError) {
-    const errorMsg = lastError instanceof Error ? lastError.message : String(lastError)
-    logger.warn(`���� MaaEnd Ԥ������ѡ��ʧ��: ${errorMsg}`)
-  }
 }
 
 const loadScript = async () => {
@@ -503,22 +406,22 @@ const loadScript = async () => {
 
     const scriptDetail = await getScript(scriptId)
     if (!scriptDetail) {
-      message.error('鑴氭湰涓嶅瓨鍦ㄦ垨鍔犺浇澶辫�?)
+      message.error('脚本不存在或加载失败')
       router.push('/scripts')
       return
     }
     if (scriptDetail.type !== 'MaaEnd') {
-      message.error('鑴氭湰绫诲瀷涓嶅尮�?)
+      message.error('脚本类型不匹配')
       router.push('/scripts')
       return
     }
 
     formData.type = scriptDetail.type
-    applyConfig(scriptDetail.config, scriptDetail.name || '鏂板缓MaaEnd鑴氭�?)
+    applyConfig(scriptDetail.config, scriptDetail.name || '新建MaaEnd脚本')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`鍔犺浇鑴氭湰澶辫�? ${errorMsg}`)
-    message.error('鍔犺浇鑴氭湰澶辫�?)
+    logger.error(`加载脚本失败: ${errorMsg}`)
+    message.error('加载脚本失败')
     router.push('/scripts')
   } finally {
     pageLoading.value = false
@@ -528,7 +431,7 @@ const loadScript = async () => {
 const selectMaaEndPath = async () => {
   try {
     if (!window.electronAPI) {
-      message.error('鏂囦欢閫夋嫨鍔熻兘涓嶅彲鐢紝璇峰湪 Electron 鐜涓繍�?)
+      message.error('文件选择功能不可用，请在 Electron 环境中运行')
       return
     }
 
@@ -540,25 +443,24 @@ const selectMaaEndPath = async () => {
     config.Info.Path = path
     formData.path = path
     await handleChange('Info', 'Path', path)
-    await loadPresetOptions()
-    message.success('MaaEnd 璺緞閫夋嫨鎴愬�?)
+    message.success('MaaEnd 路径选择成功')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`閫夋�?MaaEnd 璺緞澶辫触: ${errorMsg}`)
-    message.error('閫夋嫨鏂囦欢澶瑰け璐?)
+    logger.error(`选择 MaaEnd 路径失败: ${errorMsg}`)
+    message.error('选择文件夹失败')
   }
 }
 
 const selectGamePath = async () => {
   try {
     if (!window.electronAPI) {
-      message.error('鏂囦欢閫夋嫨鍔熻兘涓嶅彲鐢紝璇峰湪 Electron 鐜涓繍�?)
+      message.error('文件选择功能不可用，请在 Electron 环境中运行')
       return
     }
 
     const selected = await (window.electronAPI as any).selectFile([
-      { name: '鍙墽琛屾枃�?, extensions: ['exe'] },
-      { name: '鎵€鏈夋枃浠?, extensions: ['*'] },
+      { name: '可执行文件', extensions: ['exe'] },
+      { name: '所有文件', extensions: ['*'] },
     ])
     const path = Array.isArray(selected) ? selected[0] : selected
     if (!path) {
@@ -567,11 +469,11 @@ const selectGamePath = async () => {
 
     config.Run.GamePath = path
     await handleChange('Run', 'GamePath', path)
-    message.success('Endfield 璺緞閫夋嫨鎴愬�?)
+    message.success('Endfield 路径选择成功')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`閫夋�?Endfield 璺緞澶辫触: ${errorMsg}`)
-    message.error('閫夋�?Endfield 璺緞澶辫触')
+    logger.error(`选择 Endfield 路径失败: ${errorMsg}`)
+    message.error('选择 Endfield 路径失败')
   }
 }
 
@@ -581,7 +483,6 @@ const handleCancel = () => {
 
 onMounted(async () => {
   await loadScript()
-  await loadPresetOptions()
   isInitializing.value = false
 })
 </script>
@@ -658,4 +559,3 @@ onMounted(async () => {
   }
 }
 </style>
-
