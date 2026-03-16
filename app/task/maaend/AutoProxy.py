@@ -78,6 +78,7 @@ class AutoProxyTask(TaskExecuteBase):
     async def prepare(self):
         self.maaend_root_path = Path(self.script_config.get("Info", "Path"))
         self.maaend_exe_path = self.maaend_root_path / "MaaEnd.exe"
+        self.game_exe_path = Path(str(self.script_config.get("Run", "GamePath")).strip())
         self.maaend_config_path = self.maaend_root_path / "config" / "mxu-MaaEnd.json"
         self.tauri_log_path = self.maaend_root_path / "debug" / "mxu-tauri.log"
         self.maa_log_path = self.maaend_root_path / "debug" / "maa.log"
@@ -104,12 +105,15 @@ class AutoProxyTask(TaskExecuteBase):
             shutil.copy(self.user_config_cache_path, self.runtime_source_config_path)
         elif self.default_config_cache_path.exists():
             shutil.copy(self.default_config_cache_path, self.runtime_source_config_path)
+        else:
+            shutil.copy(self.maaend_config_path, self.runtime_source_config_path)
 
         self.timeout_minutes = self.script_config.get("Run", "Timeout")
         self.retry_times = self.script_config.get("Run", "Retry")
 
         self.wait_event = asyncio.Event()
         self.maaend_process_manager = ProcessManager()
+        self.game_process_manager = ProcessManager()
         self.tauri_log_monitor = LogMonitor(
             (1, 21),
             "%Y-%m-%d][%H:%M:%S",
@@ -143,6 +147,14 @@ class AutoProxyTask(TaskExecuteBase):
         shutil.copy(runtime_path, self.maaend_config_path)
         return runtime_path
 
+    def _mark_account_switch_placeholder(self, run_idx: int, retry_idx: int) -> None:
+        message = "切号功能暂为占位实现，当前运行将跳过实际切换账号"
+        logger.warning(f"用户 {self.cur_user_item.name} {message}")
+        self.script_info.log = (
+            f"用户 {self.cur_user_item.name} 执行中：轮次 {run_idx + 1}"
+            f"，重试 {retry_idx}/{self.retry_times}\n{message}"
+        )
+
     async def _run_once(self, run_idx: int, retry_idx: int) -> bool:
         self.script_info.log = (
             f"用户 {self.cur_user_item.name} 执行中：轮次 {run_idx + 1}"
@@ -174,9 +186,26 @@ class AutoProxyTask(TaskExecuteBase):
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
+        controller_type = str(self.script_config.get("Run", "ControllerType")).strip()
+        if controller_type.startswith("Win32"):
+            game_running = len(await System.search_pids(self.game_exe_path)) > 0
+            if not game_running:
+                self.script_info.log = (
+                    f"用户 {self.cur_user_item.name} 执行中：轮次 {run_idx + 1}"
+                    f"，重试 {retry_idx}/{self.retry_times}\n正在启动 Endfield"
+                )
+                await self.game_process_manager.open_process(self.game_exe_path)
+                await asyncio.sleep(1)
+
+        if self.script_config.get("Run", "IfAccountSwitch"):
+            account_switch_method = self.script_config.get("Run", "AccountSwitchMethod")
+            if account_switch_method != "NoAction":
+                self._mark_account_switch_placeholder(run_idx, retry_idx)
+
         self.wait_event.clear()
         await self.maaend_process_manager.open_process(self.maaend_exe_path)
         await asyncio.sleep(1)
+
         await self.tauri_log_monitor.start_monitor_file(
             self.tauri_log_path, self.log_start_time
         )
@@ -497,6 +526,7 @@ class AutoProxyTask(TaskExecuteBase):
         await self.maa_log_monitor.stop()
         await self.maa_bak_log_monitor.stop()
         await self.web_log_monitor.stop()
+        await self.game_process_manager.kill()
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
         await self._close_game_if_needed()
@@ -539,4 +569,3 @@ class AutoProxyTask(TaskExecuteBase):
             type="Info",
             data={"Error": f"MaaEnd 自动代理任务出现异常: {e}"},
         )
-

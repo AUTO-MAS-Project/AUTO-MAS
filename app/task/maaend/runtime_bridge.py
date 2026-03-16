@@ -70,20 +70,17 @@ def _apply_pre_action(instance: dict[str, Any], script_config: MaaEndConfig):
     if not controller_type.startswith("Win32"):
         return
 
-    game_path = str(script_config.get("Run", "GamePath")).strip()
-    if not game_path:
-        return
-
+    # Endfield 启动由 AUTO-MAS 统一管理，不再由 MaaEnd preAction 拉起
     pre_action = instance.get("preAction")
     if not isinstance(pre_action, dict):
         pre_action = {}
         instance["preAction"] = pre_action
 
-    pre_action["enabled"] = True
-    pre_action["program"] = game_path
+    pre_action["enabled"] = False
+    pre_action["program"] = ""
     pre_action["args"] = ""
     pre_action["waitForExit"] = False
-    pre_action["skipIfRunning"] = True
+    pre_action["skipIfRunning"] = False
 
 
 def _collect_override_items(
