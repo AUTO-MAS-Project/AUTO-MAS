@@ -1,0 +1,282 @@
+{
+    "切换账号-调出登录框[EndFieldPC]": {
+        "timeout": 600000,
+        "next": [
+            "登出[EndFieldPC]"
+        ]
+    },
+    "切换账号-账号登录[EndFieldPC]": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "密码登录"
+                ],
+                "model": "zh_cn",
+                "roi": [
+                    610,
+                    488,
+                    60,
+                    20
+                ]
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "next": [
+            "点击账号框[EndFieldPC]"
+        ]
+    },
+    "同意协议[EndFieldPC]": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [
+                    481,
+                    409,
+                    13,
+                    13
+                ],
+                "template": [
+                    "EndFieldPC/未同意复选框.png"
+                ]
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "next": [
+            "已同意协议[EndFieldPC]"
+        ]
+    },
+    "已同意协议[EndFieldPC]": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [
+                    481,
+                    409,
+                    13,
+                    13
+                ],
+                "template": [
+                    "EndFieldPC/已同意复选框.png"
+                ]
+            }
+        },
+        "next": [
+            "登录[EndFieldPC]"
+        ]
+    },
+    "恢复日志-密码[EndFieldPC]": {
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "EnableLog"
+            }
+        },
+        "next": [
+            "同意协议[EndFieldPC]",
+            "已同意协议[EndFieldPC]"
+        ]
+    },
+    "恢复日志-账号[EndFieldPC]": {
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "EnableLog"
+            }
+        },
+        "next": [
+            "点击密码框[EndFieldPC]"
+        ]
+    },
+    "点击密码框[EndFieldPC]": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "请输入密码",
+                    "密码"
+                ],
+                "model": "zh_cn",
+                "roi": [
+                    510,
+                    355,
+                    70,
+                    25
+                ]
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "next": [
+            "禁用日志-密码[EndFieldPC]"
+        ]
+    },
+    "点击账号框[EndFieldPC]": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "请输入账号",
+                    "账号"
+                ],
+                "model": "zh_cn",
+                "roi": [
+                    510,
+                    305,
+                    70,
+                    25
+                ]
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "next": [
+            "禁用日志-账号[EndFieldPC]"
+        ]
+    },
+    "登出[EndFieldPC]": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [
+                    1220,
+                    140,
+                    55,
+                    45
+                ],
+                "template": [
+                    "EndFieldPC/登出.png"
+                ]
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        },
+        "max_hit": 10,
+        "timeout": 5000,
+        "next": [
+            "识别登出[EndFieldPC]"
+        ],
+        "on_error": [
+            "切换账号-调出登录框[EndFieldPC]"
+        ]
+    },
+    "登录[EndFieldPC]": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "登录"
+                ],
+                "model": "zh_cn",
+                "roi": [
+                    620,
+                    463,
+                    40,
+                    20
+                ]
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        }
+    },
+    "确认登出[EndFieldPC]": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "确认"
+                ],
+                "model": "zh_cn",
+                "roi": [
+                    705,
+                    420,
+                    50,
+                    20
+                ]
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {}
+        }
+    },
+    "禁用日志-密码[EndFieldPC]": {
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DisableLog"
+            }
+        },
+        "next": [
+            "输入密码[EndFieldPC]"
+        ]
+    },
+    "禁用日志-账号[EndFieldPC]": {
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DisableLog"
+            }
+        },
+        "next": [
+            "输入账号[EndFieldPC]"
+        ]
+    },
+    "识别登出[EndFieldPC]": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "是否确认退出当前账号",
+                    "退出当前账号"
+                ],
+                "model": "zh_cn",
+                "roi": [
+                    550,
+                    325,
+                    175,
+                    40
+                ]
+            }
+        },
+        "next": [
+            "确认登出[EndFieldPC]"
+        ]
+    },
+    "输入密码[EndFieldPC]": {
+        "action": {
+            "type": "InputText",
+            "param": {
+                "input_text": "密码"
+            }
+        },
+        "next": [
+            "恢复日志-密码[EndFieldPC]"
+        ]
+    },
+    "输入账号[EndFieldPC]": {
+        "action": {
+            "type": "InputText",
+            "param": {
+                "input_text": "账号"
+            }
+        },
+        "next": [
+            "恢复日志-账号[EndFieldPC]"
+        ]
+    }
+}

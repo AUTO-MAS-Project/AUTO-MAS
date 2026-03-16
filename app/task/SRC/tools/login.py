@@ -56,23 +56,29 @@ async def login(
     if (package_name == "com.miHoYo.hkrpg" and "*" in id) or password == "":
         logger.info("账号密码不完整，禁用通过输入账号密码登录")
         pipeline_override = {
-            "切换账号-星穹铁道": {"action": {"param": {"package": package_name}}},
-            "启动游戏": {"action": {"param": {"package": package_name}}},
-            "Bilibili隐私政策": {"enabled": Config.get("Function", "IfAgreeBilibili")},
-            "下滑账号列表": {"on_error": []},
-            "下滑账号列表-B服": {"on_error": []},
-            "识别登录下拉框禁用": {"on_error": []},
-            "选中账号": {
+            "切换账号[StarRailEmulator]": {
+                "action": {"param": {"package": package_name}}
+            },
+            "启动游戏[StarRailEmulator]": {
+                "action": {"param": {"package": package_name}}
+            },
+            "Bilibili隐私政策[StarRailEmulator]": {
+                "enabled": Config.get("Function", "IfAgreeBilibili")
+            },
+            "下滑账号列表[StarRailEmulator]": {"on_error": []},
+            "下滑账号列表-B服[StarRailEmulator]": {"on_error": []},
+            "识别登录下拉框禁用[StarRailEmulator]": {"on_error": []},
+            "选中账号[StarRailEmulator]": {
                 "recognition": {
                     "param": {"expected": [f"^{id[:3]}[a-zA-Z0-9 *]*{id[-2:]}$"]}
                 }
             },
-            "验证当前账号": {
+            "验证当前账号[StarRailEmulator]": {
                 "recognition": {
                     "param": {"expected": [f"^{id[:3]}[a-zA-Z0-9 *]*{id[-2:]}$"]}
                 }
             },
-            "选中账号-B服": {
+            "选中账号-B服[StarRailEmulator]": {
                 "recognition": {
                     "param": {
                         "expected": [id.split("|")[0].strip() if "|" in id else id],
@@ -83,20 +89,26 @@ async def login(
         }
     else:
         pipeline_override = {
-            "切换账号-星穹铁道": {"action": {"param": {"package": package_name}}},
-            "启动游戏": {"action": {"param": {"package": package_name}}},
-            "Bilibili隐私政策": {"enabled": Config.get("Function", "IfAgreeBilibili")},
-            "选中账号": {
+            "切换账号[StarRailEmulator]": {
+                "action": {"param": {"package": package_name}}
+            },
+            "启动游戏[StarRailEmulator]": {
+                "action": {"param": {"package": package_name}}
+            },
+            "Bilibili隐私政策[StarRailEmulator]": {
+                "enabled": Config.get("Function", "IfAgreeBilibili")
+            },
+            "选中账号[StarRailEmulator]": {
                 "recognition": {
                     "param": {"expected": [f"^{id[:3]}[a-zA-Z0-9 *]*{id[-2:]}$"]}
                 }
             },
-            "验证当前账号": {
+            "验证当前账号[StarRailEmulator]": {
                 "recognition": {
                     "param": {"expected": [f"^{id[:3]}[a-zA-Z0-9 *]*{id[-2:]}$"]}
                 }
             },
-            "选中账号-B服": {
+            "选中账号-B服[StarRailEmulator]": {
                 "recognition": {
                     "param": {
                         "expected": [id.split("|")[0].strip() if "|" in id else id],
@@ -104,16 +116,20 @@ async def login(
                     }
                 }
             },
-            "输入账号": {"action": {"param": {"input_text": id}}},
-            "输入密码": {"action": {"param": {"input_text": password}}},
-            "输入账号-B服": {
+            "输入账号[StarRailEmulator]": {"action": {"param": {"input_text": id}}},
+            "输入密码[StarRailEmulator]": {
+                "action": {"param": {"input_text": password}}
+            },
+            "输入账号-B服[StarRailEmulator]": {
                 "action": {
                     "param": {
                         "input_text": id.split("|")[1].strip() if "|" in id else id
                     }
                 }
             },
-            "输入密码-B服": {"action": {"param": {"input_text": password}}},
+            "输入密码-B服[StarRailEmulator]": {
+                "action": {"param": {"input_text": password}}
+            },
         }
 
     try:
@@ -124,7 +140,7 @@ async def login(
 
     try:
         await MaaFWManager.do_job(
-            tasker.post_task("切换账号-星穹铁道", pipeline_override)
+            tasker.post_task("切换账号[StarRailEmulator]", pipeline_override)
         )
         logger.success(f"模拟器{emulator_info.title}登录成功")
         del tasker

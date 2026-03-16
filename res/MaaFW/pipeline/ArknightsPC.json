@@ -1,12 +1,12 @@
 {
-    "选中已部署干员": {
+    "选中已部署干员[ArknightsPC]": {
         "post_delay": 0,
         "next": [
-            "暂停选中已部署干员",
-            "战斗选中已部署干员"
+            "暂停选中已部署干员[ArknightsPC]",
+            "战斗选中已部署干员[ArknightsPC]"
         ]
     },
-    "暂停选中已部署干员": {
+    "暂停选中已部署干员[ArknightsPC]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -22,12 +22,12 @@
         "action": {
             "type": "Custom",
             "param": {
-                "custom_action": "Pause Select Deployed"
+                "custom_action": "PauseSelectDeployed[ArknightsPC]"
             }
         },
         "pre_delay": 0
     },
-    "战斗选中已部署干员": {
+    "战斗选中已部署干员[ArknightsPC]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -43,19 +43,19 @@
         "action": {
             "type": "Custom",
             "param": {
-                "custom_action": "Play Select Deployed"
+                "custom_action": "PlaySelectDeployed[ArknightsPC]"
             }
         },
         "pre_delay": 0
     },
-    "释放技能": {
+    "释放技能[ArknightsPC]": {
         "post_delay": 0,
         "next": [
-            "暂停释放技能",
-            "战斗释放技能"
+            "暂停释放技能[ArknightsPC]",
+            "战斗释放技能[ArknightsPC]"
         ]
     },
-    "暂停释放技能": {
+    "暂停释放技能[ArknightsPC]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -71,17 +71,17 @@
         "action": {
             "type": "Custom",
             "param": {
-                "custom_action": "Pause Skill"
+                "custom_action": "PauseSkill[ArknightsPC]"
             }
         },
         "pre_delay": 0,
         "post_delay": 0,
         "timeout": 1000,
         "next": [
-            "点击技能"
+            "点击技能[ArknightsPC]"
         ]
     },
-    "战斗释放技能": {
+    "战斗释放技能[ArknightsPC]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -97,17 +97,17 @@
         "action": {
             "type": "Custom",
             "param": {
-                "custom_action": "Play Skill"
+                "custom_action": "PlaySkill[ArknightsPC]"
             }
         },
         "pre_delay": 0,
         "post_delay": 0,
         "timeout": 1000,
         "next": [
-            "点击技能"
+            "点击技能[ArknightsPC]"
         ]
     },
-    "点击技能": {
+    "点击技能[ArknightsPC]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -134,14 +134,14 @@
         },
         "pre_delay": 0
     },
-    "撤退干员": {
+    "撤退干员[ArknightsPC]": {
         "post_delay": 0,
         "next": [
-            "暂停撤退干员",
-            "战斗撤退干员"
+            "暂停撤退干员[ArknightsPC]",
+            "战斗撤退干员[ArknightsPC]"
         ]
     },
-    "暂停撤退干员": {
+    "暂停撤退干员[ArknightsPC]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -157,16 +157,16 @@
         "action": {
             "type": "Custom",
             "param": {
-                "custom_action": "Pause Retreat"
+                "custom_action": "PauseRetreat[ArknightsPC]"
             }
         },
         "pre_delay": 0,
         "timeout": 1000,
         "next": [
-            "点击撤退"
+            "点击撤退[ArknightsPC]"
         ]
     },
-    "战斗撤退干员": {
+    "战斗撤退干员[ArknightsPC]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -182,16 +182,16 @@
         "action": {
             "type": "Custom",
             "param": {
-                "custom_action": "Play Retreat"
+                "custom_action": "PlayRetreat[ArknightsPC]"
             }
         },
         "pre_delay": 0,
         "timeout": 1000,
         "next": [
-            "点击撤退"
+            "点击撤退[ArknightsPC]"
         ]
     },
-    "点击撤退": {
+    "点击撤退[ArknightsPC]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -211,15 +211,15 @@
         },
         "pre_delay": 0
     },
-    "下一帧": {
+    "下一帧[ArknightsPC]": {
         "post_delay": 0,
         "next": [
-            "0.2x下一帧",
-            "1x下一帧",
-            "2x下一帧"
+            "0.2x下一帧[ArknightsPC]",
+            "1x下一帧[ArknightsPC]",
+            "2x下一帧[ArknightsPC]"
         ]
     },
-    "0.2x下一帧": {
+    "0.2x下一帧[ArknightsPC]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -235,12 +235,12 @@
         "action": {
             "type": "Custom",
             "param": {
-                "custom_action": "Next Frame 0.2x"
+                "custom_action": "NextFrame-0.2x[ArknightsPC]"
             }
         },
         "pre_delay": 0
     },
-    "1x下一帧": {
+    "1x下一帧[ArknightsPC]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -256,12 +256,12 @@
         "action": {
             "type": "Custom",
             "param": {
-                "custom_action": "Next Frame 1x"
+                "custom_action": "NextFrame-1x[ArknightsPC]"
             }
         },
         "pre_delay": 0
     },
-    "2x下一帧": {
+    "2x下一帧[ArknightsPC]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -277,12 +277,12 @@
         "action": {
             "type": "Custom",
             "param": {
-                "custom_action": "Next Frame 2x"
+                "custom_action": "NextFrame-2x[ArknightsPC]"
             }
         },
         "pre_delay": 0
     },
-    "识别暂停": {
+    "识别暂停[ArknightsPC]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -296,7 +296,7 @@
             }
         }
     },
-    "识别继续": {
+    "识别继续[ArknightsPC]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -310,7 +310,7 @@
             }
         }
     },
-    "识别1x": {
+    "识别1x[ArknightsPC]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -324,7 +324,7 @@
             }
         }
     },
-    "识别2x": {
+    "识别2x[ArknightsPC]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
