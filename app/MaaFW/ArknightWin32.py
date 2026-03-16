@@ -412,8 +412,6 @@ class NextFrame_1x(CustomAction):
         logger.info("开始执行1倍速下一帧动作")
 
         try:
-            import time
-
             cur_x, cur_y = pyautogui.position()
             x, y = ArknightWin32Toolkit.get_pause_position()
 

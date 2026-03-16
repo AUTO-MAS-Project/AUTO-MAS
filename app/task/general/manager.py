@@ -286,6 +286,7 @@ class GeneralManager(TaskExecuteBase):
             and self.temp_path.exists()
         ):
             logger.info(f"复原通用脚本配置文件: {self.temp_path}")
+            shutil.rmtree(self.script_config_path, ignore_errors=True)
             shutil.copytree(self.temp_path, self.script_config_path, dirs_exist_ok=True)
             shutil.rmtree(self.temp_path)
         elif (

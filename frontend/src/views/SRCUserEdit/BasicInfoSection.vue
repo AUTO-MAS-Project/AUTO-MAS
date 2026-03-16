@@ -41,7 +41,14 @@
       <a-col :span="12">
         <a-form-item :name="['Info', 'Id']">
           <template #label>
-            <a-tooltip title="用于切换账号，仅支持官服，官服输入 11 位手机号，若输入手机号中包含「*」则切换账号时将仅通过识别已登录账号列表登录，无需切换则留空">
+            <a-tooltip>
+              <template #title>
+                <div style="max-width: 520px; line-height: 1.6; white-space: normal;">
+                  用于切换账号，无需切换则留空。<br />
+                  官服输入 11 位手机号，若输入手机号中包含「*」则切换账号时将仅通过识别已登录账号列表登录。<br />
+                  B 服输入用户名片段，允许同时输入 B 站账号/邮箱号/手机号，中间使用「|」分隔，通过账号密码登录时将优先使用 B 站账号/邮箱号/手机号。
+                </div>
+              </template>
               <span class="form-label">
                 账号
                 <QuestionCircleOutlined class="help-icon" />
