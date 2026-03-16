@@ -558,6 +558,8 @@ class GeneralConfig(BaseModel):
 class MaaEndUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
+    Account: Optional[str] = Field(default=None, description="账号")
+    Password: Optional[str] = Field(default=None, description="密码")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
 
 

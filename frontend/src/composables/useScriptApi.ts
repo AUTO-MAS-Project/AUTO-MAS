@@ -511,6 +511,14 @@ export function useScriptApi() {
                           maaEndUserData.Info?.Status !== undefined
                             ? maaEndUserData.Info.Status
                             : true,
+                        Account:
+                          maaEndUserData.Info?.Account !== undefined
+                            ? maaEndUserData.Info.Account
+                            : '',
+                        Password:
+                          maaEndUserData.Info?.Password !== undefined
+                            ? maaEndUserData.Info.Password
+                            : '',
                         RemainedDay:
                           maaEndUserData.Info?.RemainedDay !== undefined
                             ? maaEndUserData.Info.RemainedDay

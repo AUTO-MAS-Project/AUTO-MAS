@@ -644,6 +644,10 @@ class MaaEndUserConfig(ConfigBase):
         self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
         ## 是否启用
         self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        ## 账号
+        self.Info_Account = ConfigItem("Info", "Account", "")
+        ## 密码
+        self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 剩余天数
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)

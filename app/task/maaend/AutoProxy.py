@@ -15,6 +15,7 @@ from app.utils import LogMonitor, ProcessManager, get_logger
 from app.utils.constants import UTC4
 
 from .runtime_bridge import build_runtime_config
+from .tools.login import login as maaend_login
 
 
 logger = get_logger("MaaEnd 自动代理")
@@ -24,6 +25,10 @@ TASK_ID_RE = re.compile(
 TASK_IDS_RE = re.compile(r"task_ids?\s*[:=]\s*\[([^\]]*)\]", re.IGNORECASE)
 INSTANCE_ID_RE = re.compile(r"instance_id\s*[:=]\s*([^\s,\]]+)", re.IGNORECASE)
 STOP_GRACE_SECONDS = 2.0
+GAME_START_WAIT_SECONDS = 90
+GAME_START_WAIT_INTERVAL = 1.0
+WINDOW_READY_WAIT_SECONDS = 45
+WINDOW_READY_WAIT_INTERVAL = 0.5
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -78,10 +83,10 @@ class AutoProxyTask(TaskExecuteBase):
     async def prepare(self):
         self.maaend_root_path = Path(self.script_config.get("Info", "Path"))
         self.maaend_exe_path = self.maaend_root_path / "MaaEnd.exe"
+        self.game_exe_path = Path(str(self.script_config.get("Run", "GamePath")).strip())
         self.maaend_config_path = self.maaend_root_path / "config" / "mxu-MaaEnd.json"
         self.tauri_log_path = self.maaend_root_path / "debug" / "mxu-tauri.log"
         self.maa_log_path = self.maaend_root_path / "debug" / "maa.log"
-        self.maa_bak_log_path = self.maaend_root_path / "debug" / "maa.bak.log"
         self.web_log_path = (
             self.maaend_root_path
             / "debug"
@@ -93,6 +98,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         self.wait_event = asyncio.Event()
         self.maaend_process_manager = ProcessManager()
+        self.game_process_manager = ProcessManager()
         self.tauri_log_monitor = LogMonitor(
             (1, 21),
             "%Y-%m-%d][%H:%M:%S",
@@ -102,11 +108,6 @@ class AutoProxyTask(TaskExecuteBase):
             (1, 20),
             "%Y-%m-%d %H:%M:%S",
             self.check_maa_log,
-        )
-        self.maa_bak_log_monitor = LogMonitor(
-            (1, 20),
-            "%Y-%m-%d %H:%M:%S",
-            self.check_maa_bak_log,
         )
         self.web_log_monitor = LogMonitor(
             (0, 19),
@@ -124,6 +125,73 @@ class AutoProxyTask(TaskExecuteBase):
         self.maaend_config_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(runtime_path, self.maaend_config_path)
         return runtime_path
+
+    async def _ensure_game_running(self) -> bool:
+        if not str(self.game_exe_path).strip():
+            self.script_info.log = "未配置 Endfield 路径，无法执行切号前启动"
+            return False
+
+        game_running = len(await System.search_pids(self.game_exe_path)) > 0
+        if game_running:
+            return True
+
+        await self.game_process_manager.open_process(self.game_exe_path)
+        for _ in range(
+            1, GAME_START_WAIT_SECONDS + 1, int(GAME_START_WAIT_INTERVAL)
+        ):
+            game_running = len(await System.search_pids(self.game_exe_path)) > 0
+            if game_running:
+                return True
+            await asyncio.sleep(GAME_START_WAIT_INTERVAL)
+
+        self.script_info.log = (
+            f"{GAME_START_WAIT_SECONDS} 秒内未检测到 Endfield 进程，切号前拉起失败"
+        )
+        return False
+
+    @staticmethod
+    def _find_window_handle(window_keyword: str) -> int | None:
+        try:
+            import win32gui  # type: ignore
+        except Exception:
+            return None
+
+        hwnd = win32gui.FindWindow(None, window_keyword)
+        if hwnd:
+            return hwnd
+
+        matched: list[int] = []
+
+        def _enum_cb(handle: int, _param):
+            if not win32gui.IsWindowVisible(handle):
+                return
+            title = (win32gui.GetWindowText(handle) or "").strip()
+            if window_keyword.lower() in title.lower():
+                matched.append(handle)
+
+        win32gui.EnumWindows(_enum_cb, None)
+        return matched[0] if matched else None
+
+    async def _wait_and_focus_window(self, window_keyword: str) -> bool:
+        try:
+            import win32gui  # type: ignore
+        except Exception:
+            return False
+
+        for _ in range(
+            1, int(WINDOW_READY_WAIT_SECONDS / WINDOW_READY_WAIT_INTERVAL) + 1
+        ):
+            hwnd = self._find_window_handle(window_keyword)
+            if hwnd:
+                try:
+                    # 9 = SW_RESTORE
+                    win32gui.ShowWindow(hwnd, 9)
+                    win32gui.SetForegroundWindow(hwnd)
+                except Exception:
+                    pass
+                return True
+            await asyncio.sleep(WINDOW_READY_WAIT_INTERVAL)
+        return False
 
     async def _run_once(self, run_idx: int, retry_idx: int) -> bool:
         self.script_info.log = (
@@ -156,6 +224,40 @@ class AutoProxyTask(TaskExecuteBase):
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
+        controller_type = str(self.script_config.get("Run", "ControllerType")).strip()
+        if controller_type.startswith("Win32"):
+            account = ""
+            password = ""
+            try:
+                account = str(self.cur_user_config.get("Info", "Account") or "").strip()
+                password = str(self.cur_user_config.get("Info", "Password") or "").strip()
+            except Exception:
+                account = ""
+                password = ""
+
+            if account and password:
+                if not await self._ensure_game_running():
+                    return False
+                if not await self._wait_and_focus_window("Endfield"):
+                    self.script_info.log = (
+                        f"用户 {self.cur_user_item.name} 执行中：轮次 {run_idx + 1}"
+                        f"，重试 {retry_idx}/{self.retry_times}\n"
+                        f"Endfield 窗口未就绪，取消自动登录"
+                    )
+                    return False
+                self.script_info.log = (
+                    f"用户 {self.cur_user_item.name} 执行中：轮次 {run_idx + 1}"
+                    f"，重试 {retry_idx}/{self.retry_times}\n"
+                    f"检测到账号密码，尝试自动登录 Endfield"
+                )
+                if not await maaend_login(account, password):
+                    self.script_info.log = (
+                        f"用户 {self.cur_user_item.name} 执行中：轮次 {run_idx + 1}"
+                        f"，重试 {retry_idx}/{self.retry_times}\n"
+                        f"自动登录 Endfield 失败"
+                    )
+                    return False
+
         self.wait_event.clear()
         await self.maaend_process_manager.open_process(self.maaend_exe_path)
         await asyncio.sleep(1)
@@ -163,9 +265,6 @@ class AutoProxyTask(TaskExecuteBase):
             self.tauri_log_path, self.log_start_time
         )
         await self.maa_log_monitor.start_monitor_file(self.maa_log_path, self.log_start_time)
-        await self.maa_bak_log_monitor.start_monitor_file(
-            self.maa_bak_log_path, self.log_start_time
-        )
         await self.web_log_monitor.start_monitor_file(self.web_log_path, self.log_start_time)
         if self.timeout_minutes > 0:
             try:
@@ -180,7 +279,6 @@ class AutoProxyTask(TaskExecuteBase):
             await self.wait_event.wait()
         await self.tauri_log_monitor.stop()
         await self.maa_log_monitor.stop()
-        await self.maa_bak_log_monitor.stop()
         await self.web_log_monitor.stop()
         if self.session_settle_task is not None and not self.session_settle_task.done():
             self.session_settle_task.cancel()
@@ -444,19 +542,6 @@ class AutoProxyTask(TaskExecuteBase):
         if not self.wait_event.is_set():
             self.cur_user_log.status = "MaaEnd 运行中"
 
-    async def check_maa_bak_log(
-        self, log_content: list[str], _latest_time: datetime
-    ) -> None:
-        if self.session_closed:
-            return
-        new_lines = self._append_incremental_log(
-            log_content, "maa_bak_log_cursor"
-        )
-        self._parse_maa_lines(new_lines)
-
-        if not self.wait_event.is_set():
-            self.cur_user_log.status = "MaaEnd 运行中"
-
     async def check_web_log(self, log_content: list[str], _latest_time: datetime) -> None:
         self._append_incremental_log(log_content, "web_log_cursor", "mxu-web")
 
@@ -477,7 +562,6 @@ class AutoProxyTask(TaskExecuteBase):
 
         await self.tauri_log_monitor.stop()
         await self.maa_log_monitor.stop()
-        await self.maa_bak_log_monitor.stop()
         await self.web_log_monitor.stop()
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)

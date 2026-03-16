@@ -29,7 +29,13 @@
 
     <div class="user-edit-content">
       <a-card class="config-card">
-        <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
+        <a-form
+          ref="formRef"
+          :model="formData"
+          :rules="rules"
+          layout="vertical"
+          class="config-form"
+        >
           <div class="form-section">
             <div class="section-header">
               <h3>基本信息</h3>
@@ -93,6 +99,47 @@
                     size="large"
                     style="width: 100%"
                     @blur="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="用于任务开始前自动登录">
+                      <span class="form-label">
+                        账号
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input
+                    v-model:value="formData.Info.Account"
+                    placeholder="请输入账号"
+                    :disabled="loading"
+                    size="large"
+                    class="modern-input"
+                    @blur="handleFieldSave('Info.Account', formData.Info.Account)"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="用于任务开始前自动登录">
+                      <span class="form-label">
+                        密码
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-password
+                    v-model:value="formData.Info.Password"
+                    placeholder="请输入密码"
+                    :disabled="loading"
+                    size="large"
+                    @blur="handleFieldSave('Info.Password', formData.Info.Password)"
                   />
                 </a-form-item>
               </a-col>
@@ -199,6 +246,8 @@ const getDefaultMaaEndUserData = () => ({
   Info: {
     Name: '',
     Status: true,
+    Account: '',
+    Password: '',
     RemainedDay: -1,
   },
   Task: {

@@ -12,6 +12,14 @@ export type MaaEndUserConfig_Info = {
      */
     Status?: (boolean | null);
     /**
+     * 账号
+     */
+    Account?: (string | null);
+    /**
+     * 密码
+     */
+    Password?: (string | null);
+    /**
      * 剩余天数
      */
     RemainedDay?: (number | null);
