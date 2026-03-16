@@ -12,8 +12,12 @@
         配置完成后，请点击"保存配置"按钮来解除页面锁定。
       </p>
       <div class="mask-actions">
-        <a-button v-if="currentConfigScript" type="primary" size="large"
-          @click="handleSaveMAAConfig(currentConfigScript)">
+        <a-button
+          v-if="currentConfigScript"
+          type="primary"
+          size="large"
+          @click="handleSaveMAAConfig(currentConfigScript)"
+        >
           保存配置
         </a-button>
       </div>
@@ -33,8 +37,12 @@
         配置完成后，请点击"保存配置"按钮来解除页面锁定。
       </p>
       <div class="mask-actions">
-        <a-button v-if="currentConfigScript" type="primary" size="large"
-          @click="handleSaveSRCConfig(currentConfigScript)">
+        <a-button
+          v-if="currentConfigScript"
+          type="primary"
+          size="large"
+          @click="handleSaveSRCConfig(currentConfigScript)"
+        >
           保存配置
         </a-button>
       </div>
@@ -54,8 +62,12 @@
         配置完成后，请点击"保存配置"按钮来解除页面锁定。
       </p>
       <div class="mask-actions">
-        <a-button v-if="currentConfigScript" type="primary" size="large"
-          @click="handleSaveMaaEndConfig(currentConfigScript)">
+        <a-button
+          v-if="currentConfigScript"
+          type="primary"
+          size="large"
+          @click="handleSaveMaaEndConfig(currentConfigScript)"
+        >
           保存配置
         </a-button>
       </div>
@@ -93,16 +105,36 @@
     </div>
   </div>
 
-  <ScriptTable :scripts="scripts" :active-connections="activeConnections" :all-plans-data="allPlansData"
-    @edit="handleEditScript" @delete="handleDeleteScript" @add-user="handleAddUser" @edit-user="handleEditUser"
-    @delete-user="handleDeleteUser" @start-maa-config="handleStartMAAConfig" @save-maa-config="handleSaveMAAConfig"
-    @start-src-config="handleStartSRCConfig" @save-src-config="handleSaveSRCConfig"
+  <ScriptTable
+    :scripts="scripts"
+    :active-connections="activeConnections"
+    :all-plans-data="allPlansData"
+    @edit="handleEditScript"
+    @delete="handleDeleteScript"
+    @add-user="handleAddUser"
+    @edit-user="handleEditUser"
+    @delete-user="handleDeleteUser"
+    @start-maa-config="handleStartMAAConfig"
+    @save-maa-config="handleSaveMAAConfig"
+    @start-src-config="handleStartSRCConfig"
+    @save-src-config="handleSaveSRCConfig"
     @start-maa-end-config="handleStartMaaEndConfig"
-    @toggle-user-status="handleToggleUserStatus" @pass-check-user="handlePassCheckUser" />
+    @toggle-user-status="handleToggleUserStatus"
+    @pass-check-user="handlePassCheckUser"
+  />
 
   <!-- 创建方式选择弹窗 -->
-  <a-modal v-model:open="createModeSelectVisible" title="选择创建方式" :confirm-loading="addLoading" class="create-mode-modal"
-    width="600px" ok-text="确定" cancel-text="取消" @ok="handleConfirmCreateMode" @cancel="createModeSelectVisible = false">
+  <a-modal
+    v-model:open="createModeSelectVisible"
+    title="选择创建方式"
+    :confirm-loading="addLoading"
+    class="create-mode-modal"
+    width="600px"
+    ok-text="确定"
+    cancel-text="取消"
+    @ok="handleConfirmCreateMode"
+    @cancel="createModeSelectVisible = false"
+  >
     <div class="mode-selection">
       <a-radio-group v-model:value="selectedCreateMode" class="mode-radio-group">
         <a-radio-button value="copy" class="mode-option">
@@ -132,29 +164,68 @@
   </a-modal>
 
   <!-- 脚本选择弹窗 -->
-  <a-modal v-model:open="scriptSelectVisible" title="选择要复制的脚本" :confirm-loading="addLoading" class="script-select-modal"
-    width="800px" ok-text="确定复制" cancel-text="返回" :ok-button-props="{ disabled: !selectedScriptId }"
-    @ok="handleConfirmScriptSelect" @cancel="() => { scriptSelectVisible = false; createModeSelectVisible = true }">
+  <a-modal
+    v-model:open="scriptSelectVisible"
+    title="选择要复制的脚本"
+    :confirm-loading="addLoading"
+    class="script-select-modal"
+    width="800px"
+    ok-text="确定复制"
+    cancel-text="返回"
+    :ok-button-props="{ disabled: !selectedScriptId }"
+    @ok="handleConfirmScriptSelect"
+    @cancel="
+      () => {
+        scriptSelectVisible = false
+        createModeSelectVisible = true
+      }
+    "
+  >
     <div class="script-selection">
       <div v-if="scripts.length === 0" class="no-scripts">
         <p>暂无可用脚本</p>
       </div>
       <div v-else class="scripts-list">
-        <div v-for="script in scripts" :key="script.id" :class="[
-          'script-item',
-          { selected: selectedScriptId === script.id },
-        ]" @click="selectedScriptId = script.id">
+        <div
+          v-for="script in scripts"
+          :key="script.id"
+          :class="['script-item', { selected: selectedScriptId === script.id }]"
+          @click="selectedScriptId = script.id"
+        >
           <div class="script-item-content">
             <div class="script-icon">
-              <img v-if="script.type === 'MAA'" src="@/assets/MAA.png" alt="MAA" class="type-icon" />
-              <img v-else-if="script.type === 'SRC'" src="@/assets/SRC.png" alt="SRC" class="type-icon" />
-              <img v-else-if="script.type === 'MaaEnd'" src="@/assets/MAA.png" alt="MaaEnd" class="type-icon" />
+              <img
+                v-if="script.type === 'MAA'"
+                src="@/assets/MAA.png"
+                alt="MAA"
+                class="type-icon"
+              />
+              <img
+                v-else-if="script.type === 'SRC'"
+                src="@/assets/SRC.png"
+                alt="SRC"
+                class="type-icon"
+              />
+              <img
+                v-else-if="script.type === 'MaaEnd'"
+                src="@/assets/MAA.png"
+                alt="MaaEnd"
+                class="type-icon"
+              />
               <img v-else src="@/assets/AUTO-MAS.ico" alt="General" class="type-icon" />
             </div>
             <div class="script-info">
               <div class="script-name">{{ script.name }}</div>
               <div class="script-meta">
-                <span class="script-type">{{ script.type === 'MAA' ? 'MAA脚本' : script.type === 'SRC' ? 'SRC脚本' : script.type === 'MaaEnd' ? 'MaaEnd脚本' : '通用脚本' }}</span>
+                <span class="script-type">{{
+                  script.type === 'MAA'
+                    ? 'MAA脚本'
+                    : script.type === 'SRC'
+                      ? 'SRC脚本'
+                      : script.type === 'MaaEnd'
+                        ? 'MaaEnd脚本'
+                        : '通用脚本'
+                }}</span>
                 <span class="script-users">
                   <UserOutlined />
                   {{ script.users?.length || 0 }} 个用户
@@ -168,8 +239,17 @@
   </a-modal>
 
   <!-- 脚本类型选择弹窗 -->
-  <a-modal v-model:open="typeSelectVisible" title="选择脚本类型" :confirm-loading="addLoading" class="type-select-modal"
-    width="500px" ok-text="确定" cancel-text="取消" @ok="handleConfirmAddScript" @cancel="typeSelectVisible = false">
+  <a-modal
+    v-model:open="typeSelectVisible"
+    title="选择脚本类型"
+    :confirm-loading="addLoading"
+    class="type-select-modal"
+    width="500px"
+    ok-text="确定"
+    cancel-text="取消"
+    @ok="handleConfirmAddScript"
+    @cancel="typeSelectVisible = false"
+  >
     <div class="type-selection">
       <a-radio-group v-model:value="selectedType" class="type-radio-group">
         <a-radio-button value="MAA" class="type-option">
@@ -201,7 +281,10 @@
             </div>
             <div class="type-info">
               <div class="type-title">MaaEnd脚本</div>
-              <div class="type-description">明日方舟:终末地自动化控制脚本，支持预设任务、Win32/ADB 控制器、自动添加启动前置动作等功能</div>
+              <div class="type-description">
+                明日方舟:终末地自动化控制脚本，支持预设任务、Win32/ADB
+                控制器、自动添加启动前置动作等功能
+              </div>
             </div>
           </div>
         </a-radio-button>
@@ -221,9 +304,17 @@
   </a-modal>
 
   <!-- 通用脚本创建方式选择弹窗 -->
-  <a-modal v-model:open="generalModeSelectVisible" title="选择创建方式" :confirm-loading="addLoading"
-    class="general-mode-modal" width="600px" ok-text="确定" cancel-text="返回" @ok="handleConfirmGeneralMode"
-    @cancel="generalModeSelectVisible = false">
+  <a-modal
+    v-model:open="generalModeSelectVisible"
+    title="选择创建方式"
+    :confirm-loading="addLoading"
+    class="general-mode-modal"
+    width="600px"
+    ok-text="确定"
+    cancel-text="返回"
+    @ok="handleConfirmGeneralMode"
+    @cancel="generalModeSelectVisible = false"
+  >
     <div class="mode-selection">
       <a-radio-group v-model:value="selectedGeneralMode" class="mode-radio-group">
         <a-radio-button value="template" class="mode-option">
@@ -253,9 +344,18 @@
   </a-modal>
 
   <!-- 模板选择弹窗 -->
-  <a-modal v-model:open="templateSelectVisible" title="选择配置模板" :confirm-loading="templateLoading"
-    class="template-select-modal" width="1000px" ok-text="使用此模板" cancel-text="返回"
-    :ok-button-props="{ disabled: !selectedTemplate }" @ok="handleConfirmTemplate" @cancel="handleCancelTemplate">
+  <a-modal
+    v-model:open="templateSelectVisible"
+    title="选择配置模板"
+    :confirm-loading="templateLoading"
+    class="template-select-modal"
+    width="1000px"
+    ok-text="使用此模板"
+    cancel-text="返回"
+    :ok-button-props="{ disabled: !selectedTemplate }"
+    @ok="handleConfirmTemplate"
+    @cancel="handleCancelTemplate"
+  >
     <div class="template-selection">
       <a-spin :spinning="templateLoading">
         <div v-if="templates.length === 0 && !templateLoading" class="no-templates">
@@ -272,7 +372,12 @@
               <span class="count-text">个可用模板</span>
             </div>
             <div class="search-container">
-              <a-input v-model:value="searchKeyword" placeholder="搜索模板名称、作者或描述..." allow-clear class="template-search">
+              <a-input
+                v-model:value="searchKeyword"
+                placeholder="搜索模板名称、作者或描述..."
+                allow-clear
+                class="template-search"
+              >
                 <template #prefix>
                   <FileSearchOutlined />
                 </template>
@@ -285,10 +390,15 @@
               <p>未找到匹配的模板</p>
               <p class="no-results-tip">请尝试其他关键词</p>
             </div>
-            <div v-for="template in filteredTemplates" :key="template.configName" :class="[
-              'template-item',
-              { selected: selectedTemplate?.configName === template.configName },
-            ]" @click="selectedTemplate = template">
+            <div
+              v-for="template in filteredTemplates"
+              :key="template.configName"
+              :class="[
+                'template-item',
+                { selected: selectedTemplate?.configName === template.configName },
+              ]"
+              @click="selectedTemplate = template"
+            >
               <div class="template-content">
                 <div class="template-header">
                   <div class="template-info">
@@ -309,7 +419,10 @@
                   <!--                  </div>-->
                 </div>
 
-                <div class="template-description" v-html="parseMarkdown(template.description)"></div>
+                <div
+                  class="template-description"
+                  v-html="parseMarkdown(template.description)"
+                ></div>
               </div>
             </div>
           </div>
@@ -532,7 +645,14 @@ const handleConfirmAddScript = async () => {
     if (result) {
       typeSelectVisible.value = false
       // 跳转到编辑页面，传递API返回的数据
-      const editPath = selectedType.value === 'MAA' ? 'maa' : selectedType.value === 'SRC' ? 'src' : selectedType.value === 'MaaEnd' ? 'maaend' : 'general'
+      const editPath =
+        selectedType.value === 'MAA'
+          ? 'maa'
+          : selectedType.value === 'SRC'
+            ? 'src'
+            : selectedType.value === 'MaaEnd'
+              ? 'maaend'
+              : 'general'
       router.push({
         path: `/scripts/${result.scriptId}/edit/${editPath}`,
         state: {
@@ -739,7 +859,8 @@ const handleStartMAAConfig = async (script: Script) => {
       const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
         // 处理错误消息
         if (wsMessage.type === 'error') {
-          const errorMsg = wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
+          const errorMsg =
+            wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
           logger.error(`脚本 ${script.name} 连接错误: ${errorMsg}`)
           message.error(`MAA配置连接失败: ${errorMsg}`)
           activeConnections.value.delete(script.id)
@@ -751,7 +872,10 @@ const handleStartMAAConfig = async (script: Script) => {
 
         // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
         if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
-          const errorMsg = wsMessage.data.Error instanceof Error ? wsMessage.data.Error.message : String(wsMessage.data.Error)
+          const errorMsg =
+            wsMessage.data.Error instanceof Error
+              ? wsMessage.data.Error.message
+              : String(wsMessage.data.Error)
           logger.error(`脚本 ${script.name} 配置异常: ${errorMsg}`)
           message.error(`MAA配置失败: ${errorMsg}`)
           // 不取消订阅，等待Signal类型的Accomplish消息
@@ -869,7 +993,8 @@ const handleStartSRCConfig = async (script: Script) => {
       const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
         // 处理错误消息
         if (wsMessage.type === 'error') {
-          const errorMsg = wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
+          const errorMsg =
+            wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
           logger.error(`脚本 ${script.name} 连接错误: ${errorMsg}`)
           message.error(`SRC配置连接失败: ${errorMsg}`)
           activeConnections.value.delete(script.id)
@@ -881,7 +1006,10 @@ const handleStartSRCConfig = async (script: Script) => {
 
         // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
         if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
-          const errorMsg = wsMessage.data.Error instanceof Error ? wsMessage.data.Error.message : String(wsMessage.data.Error)
+          const errorMsg =
+            wsMessage.data.Error instanceof Error
+              ? wsMessage.data.Error.message
+              : String(wsMessage.data.Error)
           logger.error(`脚本 ${script.name} 配置异常: ${errorMsg}`)
           message.error(`SRC配置失败: ${errorMsg}`)
           // 不取消订阅，等待Signal类型的Accomplish消息
@@ -999,7 +1127,8 @@ const handleStartMaaEndConfig = async (script: Script) => {
       const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
         // 处理错误消息
         if (wsMessage.type === 'error') {
-          const errorMsg = wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
+          const errorMsg =
+            wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
           logger.error(`脚本 ${script.name} 连接错误: ${errorMsg}`)
           message.error(`MaaEnd配置连接失败: ${errorMsg}`)
           activeConnections.value.delete(script.id)
@@ -1011,7 +1140,10 @@ const handleStartMaaEndConfig = async (script: Script) => {
 
         // 处理Info类型的错误消息（显示错误但不取消订阅，等待Signal消息）
         if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
-          const errorMsg = wsMessage.data.Error instanceof Error ? wsMessage.data.Error.message : String(wsMessage.data.Error)
+          const errorMsg =
+            wsMessage.data.Error instanceof Error
+              ? wsMessage.data.Error.message
+              : String(wsMessage.data.Error)
           logger.error(`脚本 ${script.name} 配置异常: ${errorMsg}`)
           message.error(`MaaEnd配置失败: ${errorMsg}`)
           // 不取消订阅，等待Signal类型的Accomplish消息
