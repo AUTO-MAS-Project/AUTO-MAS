@@ -83,6 +83,7 @@ async def login(
             raise
 
         try:
+            await asyncio.sleep(3) # 提高鲁棒性，若Form还没打开就卡死了
             hwnd = win32gui.FindWindow(None, "Form")
             tasker = await MaaFWManager.get_win32_tasker(
                 hwnd=hwnd,
