@@ -558,6 +558,8 @@ class GeneralConfig(BaseModel):
 class MaaEndUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
+    Account: Optional[str] = Field(default=None, description="账号")
+    Password: Optional[str] = Field(default=None, description="密码")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
 
 
@@ -596,6 +598,10 @@ class MaaEndConfig_Run(BaseModel):
         ]
     ] = Field(
         default=None, description="控制器类型"
+    )
+    IfAccountSwitch: Optional[bool] = Field(default=None, description="是否启用切号")
+    AccountSwitchMethod: Optional[Literal["ExitGame", "NoAction"]] = Field(
+        default=None, description="切号方式"
     )
     GamePath: Optional[str] = Field(default=None, description="Endfield 客户端路径")
     CloseGameOnFinish: Optional[bool] = Field(

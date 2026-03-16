@@ -4,15 +4,23 @@
 /* eslint-disable */
 export type MaaEndUserConfig_Info = {
     /**
-     * 用户名
+     * 鐢ㄦ埛鍚?
      */
     Name?: (string | null);
     /**
-     * 用户状态
+     * 鐢ㄦ埛鐘舵€?
      */
     Status?: (boolean | null);
     /**
-     * 剩余天数
+     * 璐﹀彿
+     */
+    Account?: (string | null);
+    /**
+     * 瀵嗙爜
+     */
+    Password?: (string | null);
+    /**
+     * 鍓╀綑澶╂暟
      */
     RemainedDay?: (number | null);
 };

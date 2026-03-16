@@ -4,38 +4,53 @@
 /* eslint-disable */
 export type MaaEndConfig_Run = {
     /**
-     * 运行超时时间
+     * 杩愯瓒呮椂鏃堕棿
      */
     Timeout?: (number | null);
     /**
-     * 重试次数
+     * 閲嶈瘯娆℃暟
      */
     Retry?: (number | null);
     /**
-     * 运行次数限制
+     * 杩愯娆℃暟闄愬埗
      */
     RunTimesLimit?: (number | null);
     /**
-     * Endfield 客户端路径
+     * 鏄惁鍚敤鍒囧彿
+     */
+    IfAccountSwitch?: (boolean | null);
+    /**
+     * 鍒囧彿鏂瑰紡
+     */
+    AccountSwitchMethod?: (MaaEndConfig_Run.AccountSwitchMethod | null);
+    /**
+     * Endfield 瀹㈡埛绔矾寰?
      */
     GamePath?: (string | null);
     /**
-     * 任务结束后是否关闭 Endfield
+     * 浠诲姟缁撴潫鍚庢槸鍚﹀叧闂?Endfield
      */
     CloseGameOnFinish?: (boolean | null);
     /**
-     * 控制器类型
+     * 鎺у埗鍣ㄧ被鍨?
      */
     ControllerType?: (MaaEndConfig_Run.ControllerType | null);
 };
 export namespace MaaEndConfig_Run {
     /**
-     * 控制器类型
+     * 鎺у埗鍣ㄧ被鍨?
      */
     export enum ControllerType {
         WIN32_WINDOW = 'Win32-Window',
         WIN32_WINDOW_BACKGROUND = 'Win32-Window-Background',
         WIN32_FRONT = 'Win32-Front',
         ADB = 'ADB',
+    }
+    /**
+     * 鍒囧彿鏂瑰紡
+     */
+    export enum AccountSwitchMethod {
+        EXIT_GAME = 'ExitGame',
+        NO_ACTION = 'NoAction',
     }
 }

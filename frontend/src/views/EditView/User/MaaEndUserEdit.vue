@@ -44,9 +44,9 @@
               <a-col :span="12">
                 <a-form-item name="userName" required>
                   <template #label>
-                    <a-tooltip title="用于识别用户的显示名称">
+                    <a-tooltip title="用于识别用户的显示名�?>
                       <span class="form-label">
-                        用户名
+                        用户�?
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
@@ -64,9 +64,9 @@
               <a-col :span="6">
                 <a-form-item name="status">
                   <template #label>
-                    <a-tooltip title="是否启用该用户">
+                    <a-tooltip title="是否启用该用�?>
                       <span class="form-label">
-                        启用状态
+                        启用状�?
                         <QuestionCircleOutlined class="help-icon" />
                       </span>
                     </a-tooltip>
@@ -76,15 +76,15 @@
                     size="large"
                     @change="handleFieldSave('Info.Status', formData.Info.Status)"
                   >
-                    <a-select-option :value="true">是</a-select-option>
-                    <a-select-option :value="false">否</a-select-option>
+                    <a-select-option :value="true">�?/a-select-option>
+                    <a-select-option :value="false">�?/a-select-option>
                   </a-select>
                 </a-form-item>
               </a-col>
               <a-col :span="6">
                 <a-form-item name="remainedDay">
                   <template #label>
-                    <a-tooltip title="账号剩余的有效天数，「-1」表示无限">
+                    <a-tooltip title="账号剩余的有效天数，�?1」表示无�?>
                       <span class="form-label">
                         剩余天数
                         <QuestionCircleOutlined class="help-icon" />
@@ -103,6 +103,47 @@
                 </a-form-item>
               </a-col>
             </a-row>
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="用于任务开始前自动切换账号">
+                      <span class="form-label">
+                        账号
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input
+                    v-model:value="formData.Info.Account"
+                    placeholder="请输入账�?
+                    :disabled="loading"
+                    size="large"
+                    class="modern-input"
+                    @blur="handleFieldSave('Info.Account', formData.Info.Account)"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="用于任务开始前自动登录">
+                      <span class="form-label">
+                        密码
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-password
+                    v-model:value="formData.Info.Password"
+                    placeholder="请输入密�?
+                    :disabled="loading"
+                    size="large"
+                    @blur="handleFieldSave('Info.Password', formData.Info.Password)"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
           </div>
 
           <div class="form-section">
@@ -113,7 +154,7 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="覆盖脚本级预设任务实例">
+                    <a-tooltip title="覆盖脚本级预设任务实�?>
                       <span class="form-label">
                         预设覆盖
                         <QuestionCircleOutlined class="help-icon" />
@@ -145,7 +186,7 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip title="任务选项覆盖 JSON，对应 MaaEnd tasks 选项">
+                    <a-tooltip title="任务选项覆盖 JSON，对�?MaaEnd tasks 选项">
                       <span class="form-label">
                         任务选项覆盖
                         <QuestionCircleOutlined class="help-icon" />
@@ -167,7 +208,7 @@
 
           <div class="form-section">
             <div class="section-header">
-              <h3>运行状态</h3>
+              <h3>运行状�?/h3>
             </div>
             <a-descriptions bordered :column="3" size="small">
               <a-descriptions-item label="上次运行时间">
@@ -176,7 +217,7 @@
               <a-descriptions-item label="运行次数">
                 {{ formData.Data.RunTimes ?? 0 }}
               </a-descriptions-item>
-              <a-descriptions-item label="上次运行状态">
+              <a-descriptions-item label="上次运行状�?>
                 {{ formData.Data.LastStatus || '-' }}
               </a-descriptions-item>
             </a-descriptions>
@@ -219,6 +260,8 @@ const getDefaultMaaEndUserData = () => ({
   Info: {
     Name: '',
     Status: true,
+    Account: '',
+    Password: '',
     RemainedDay: -1,
   },
   Task: {
@@ -241,7 +284,7 @@ const rules = computed(() => {
   const baseRules: Record<string, Rule[]> = {
     userName: [
       { required: true, message: '请输入用户名', trigger: 'blur' },
-      { min: 1, max: 50, message: '用户名长度应在1-50个字符之间', trigger: 'blur' },
+      { min: 1, max: 50, message: '用户名长度应�?-50个字符之�?, trigger: 'blur' },
     ],
   }
   return baseRules
@@ -261,7 +304,7 @@ const validateOptionOverride = (value: string): boolean => {
     JSON.parse(trimmed)
     return true
   } catch {
-    message.error('任务选项覆盖必须是合法 JSON')
+    message.error('任务选项覆盖必须是合�?JSON')
     return false
   }
 }
@@ -269,7 +312,7 @@ const validateOptionOverride = (value: string): boolean => {
 const handleFieldSave = async (key: string, value: any) => {
   if (isInitializing.value || isSaving.value || !userId) {
     logger.debug(
-      `跳过保存: 初始化=${isInitializing.value}, 保存中=${isSaving.value}, userId=${userId}`
+      `跳过保存: 初始�?${isInitializing.value}, 保存�?${isSaving.value}, userId=${userId}`
     )
     return
   }
@@ -298,7 +341,7 @@ const handleFieldSave = async (key: string, value: any) => {
 
     const success = await updateUser(scriptId, userId, userData)
     if (success) {
-      logger.info(`字段已保存: ${key}`)
+      logger.info(`字段已保�? ${key}`)
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -321,44 +364,63 @@ const loadScriptInfo = async () => {
   }
 }
 
-const resolveMaaEndConfigPath = () => {
-  const base = String(scriptPath.value || '').trim()
-  if (!base) {
-    return ''
+const resolveMaaEndConfigPaths = () => {
+  const candidates: string[] = []
+  const currentUserId = String(userId || '').trim()
+  if (currentUserId) {
+    candidates.push(`data/${scriptId}/${currentUserId}/ConfigFile/mxu-MaaEnd.json`)
   }
-  return `${base.replace(/[\\/]+$/, '')}/config/mxu-MaaEnd.json`
+  candidates.push(`data/${scriptId}/Default/ConfigFile/mxu-MaaEnd.json`)
+
+  const base = String(scriptPath.value || '').trim()
+  if (base) {
+    candidates.push(`${base.replace(/[\\/]+$/, '')}/config/mxu-MaaEnd.json`)
+  }
+  return Array.from(new Set(candidates))
+}
+
+const parsePresetOptions = (content: string) => {
+  const parsed = JSON.parse(content)
+  const instances = Array.isArray(parsed?.instances) ? parsed.instances : []
+
+  const optionMap = new Map<string, string>()
+  for (const item of instances) {
+    const id = String(item?.id || '').trim()
+    const name = String(item?.name || '').trim()
+    if (!id || !name || optionMap.has(id)) {
+      continue
+    }
+    optionMap.set(id, name)
+  }
+
+  return Array.from(optionMap.entries()).map(([id, name]) => ({
+    label: name,
+    value: id,
+  }))
 }
 
 const loadPresetOptions = async () => {
-  const configPath = resolveMaaEndConfigPath()
-  if (!configPath || !window.electronAPI?.readFile) {
+  const configPaths = resolveMaaEndConfigPaths()
+  if (configPaths.length === 0 || !window.electronAPI?.readFile) {
     presetOptions.value = []
     return
   }
 
-  try {
-    const content = await window.electronAPI.readFile(configPath)
-    const parsed = JSON.parse(content)
-    const instances = Array.isArray(parsed?.instances) ? parsed.instances : []
-
-    const optionMap = new Map<string, string>()
-    for (const item of instances) {
-      const id = String(item?.id || '').trim()
-      const name = String(item?.name || '').trim()
-      if (!id || !name || optionMap.has(id)) {
-        continue
-      }
-      optionMap.set(id, name)
+  let lastError: unknown = null
+  for (const configPath of configPaths) {
+    try {
+      const content = await window.electronAPI.readFile(configPath)
+      presetOptions.value = parsePresetOptions(content)
+      return
+    } catch (error) {
+      lastError = error
     }
+  }
 
-    presetOptions.value = Array.from(optionMap.entries()).map(([id, name]) => ({
-      label: name,
-      value: id,
-    }))
-  } catch (error) {
-    presetOptions.value = []
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.warn(`加载 MaaEnd 预设任务选项失败: ${errorMsg}`)
+  presetOptions.value = []
+  if (lastError) {
+    const errorMsg = lastError instanceof Error ? lastError.message : String(lastError)
+    logger.warn(`���� MaaEnd Ԥ������ѡ��ʧ��: ${errorMsg}`)
   }
 }
 
@@ -374,13 +436,13 @@ const loadUserData = async () => {
 
     const userIndex = userResponse.index.find((index: any) => index.uid === userId)
     if (!userIndex || !userResponse.data[userId]) {
-      message.error('用户不存在')
+      message.error('用户不存�?)
       router.push('/scripts')
       return
     }
 
     if (userIndex.type !== 'MaaEndUserConfig') {
-      message.error('用户类型不匹配')
+      message.error('用户类型不匹�?)
       router.push('/scripts')
       return
     }
@@ -412,21 +474,21 @@ const handleCancel = () => {
 
 onMounted(async () => {
   await loadScriptInfo()
-  await loadPresetOptions()
 
   if (!userId) {
     const result = await addUser(scriptId)
     if (result && result.userId) {
       userId = result.userId
       isEdit.value = true
-      logger.info(`新建用户，获取userId: ${userId}`)
+      logger.info(`�½��û�����ȡ�� userId: ${userId}`)
     } else {
-      message.error('创建用户失败')
+      message.error('�����û�ʧ��')
       router.push('/scripts')
       return
     }
   }
 
+  await loadPresetOptions()
   await loadUserData()
   await nextTick()
   isInitializing.value = false

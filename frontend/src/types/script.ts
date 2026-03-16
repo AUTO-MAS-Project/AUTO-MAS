@@ -137,7 +137,7 @@ export interface User {
     Stage_3: string
     Stage_Remain: string
     Status: boolean
-    Tag?: string | null  // 用户标签列表（JSON字符串，TagItem的dict列表）
+    Tag?: string | null // 用户标签列表（JSON字符串，TagItem的dict列表）
   }
   Notify: {
     Enabled: boolean
