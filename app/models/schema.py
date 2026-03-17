@@ -572,10 +572,24 @@ class MaaEndUserConfig_Data(BaseModel):
     LastStatus: Optional[str] = Field(default=None, description="上次运行状态")
 
 
+class MaaEndUserConfig_Notify(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
+    IfSendStatistic: Optional[bool] = Field(
+        default=None, description="是否发送统计信息"
+    )
+    IfSendMail: Optional[bool] = Field(default=None, description="是否发送邮件")
+    ToAddress: Optional[str] = Field(default=None, description="收件地址")
+    IfServerChan: Optional[bool] = Field(default=None, description="是否启用Server酱")
+    ServerChanKey: Optional[str] = Field(default=None, description="Server酱密钥")
+
+
 class MaaEndUserConfig(BaseModel):
     Info: Optional[MaaEndUserConfig_Info] = Field(default=None, description="用户信息")
     Task: Optional[MaaEndUserConfig_Task] = Field(default=None, description="任务配置")
     Data: Optional[MaaEndUserConfig_Data] = Field(default=None, description="用户数据")
+    Notify: Optional[MaaEndUserConfig_Notify] = Field(
+        default=None, description="单独通知"
+    )
 
 
 class MaaEndConfig_Info(BaseModel):
@@ -606,9 +620,6 @@ class MaaEndConfig_Run(BaseModel):
 class MaaEndConfig_MaaEnd(BaseModel):
     ResourceProfile: Optional[str] = Field(default=None, description="资源配置")
     PresetTask: Optional[str] = Field(default=None, description="预设任务")
-    LogPath: Optional[str] = Field(default=None, description="日志路径")
-    SuccessPattern: Optional[str] = Field(default=None, description="成功日志匹配")
-    ErrorPattern: Optional[str] = Field(default=None, description="失败日志匹配")
 
 
 class MaaEndConfig(BaseModel):

@@ -1,4 +1,25 @@
-﻿import json
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+
+import json
 from pathlib import Path
 from typing import Any
 
@@ -155,6 +176,7 @@ def build_runtime_config(
     user_id: str,
     script_config: MaaEndConfig,
     user_config: MaaEndUserConfig,
+    auto_run_on_launch: bool = True,
 ) -> Path:
     config_data = _load_source_config(script_config)
     selected_instance = _select_instance(config_data, user_config, script_config)
@@ -170,7 +192,7 @@ def build_runtime_config(
             settings = {}
             config_data["settings"] = settings
         settings["autoStartInstanceId"] = instance_id
-        settings["autoRunOnLaunch"] = True
+        settings["autoRunOnLaunch"] = auto_run_on_launch
 
     runtime_path = Path.cwd() / f"data/{script_id}/{user_id}/Runtime/mxu-MaaEnd.runtime.json"
     runtime_path.parent.mkdir(parents=True, exist_ok=True)

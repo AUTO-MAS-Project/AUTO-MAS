@@ -1,20 +1,22 @@
-﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright (C) 2025-2026 AUTO-MAS Team
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
 #   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU General Public License as published
-#   by the Free Software Foundation, either version 3 of the License,
-#   or (at your option) any later version.
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
 
 #   AUTO-MAS is distributed in the hope that it will be useful,
 #   but WITHOUT ANY WARRANTY; without even the implied warranty
 #   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU General Public License for more details.
+#   the GNU Affero General Public License for more details.
 
-#   You should have received a copy of the GNU General Public License
+#   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
 
 import json
 import uuid
@@ -57,7 +59,6 @@ class ScriptConfigTask(TaskExecuteBase):
     async def prepare(self):
 
         self.process_manager = ProcessManager()
-        self.wait_event = asyncio.Event()
 
         self.maaend_root_path = Path(self.script_config.get("Info", "Path"))
         self.maaend_exe_path = self.maaend_root_path / "MaaEnd.exe"
@@ -73,16 +74,11 @@ class ScriptConfigTask(TaskExecuteBase):
 
         await self.set_maaend()
         logger.info(f"Start MaaEnd config process: {self.maaend_exe_path}")
-        self.wait_event.clear()
         await self.process_manager.open_process(self.maaend_exe_path)
-        await self._wait_for_exit_or_confirm()
+        await self._wait_for_exit()
 
-    async def _wait_for_exit_or_confirm(self):
-        while True:
-            if self.wait_event.is_set():
-                return
-            if not await self.process_manager.is_running():
-                return
+    async def _wait_for_exit(self):
+        while await self.process_manager.is_running():
             await asyncio.sleep(0.5)
 
     async def set_maaend(self):
@@ -97,15 +93,13 @@ class ScriptConfigTask(TaskExecuteBase):
 
     @staticmethod
     def _normalize_controller_type(controller_name: str) -> str | None:
-        if controller_name == "Win32-Window-Background":
-            return "Win32-Window-Background"
-        if controller_name == "Win32-Window":
-            return "Win32-Window"
-        if controller_name == "Win32-Front":
-            return "Win32-Front"
-        if controller_name == "ADB":
-            return "ADB"
-        return None
+        allowed = {
+            "Win32-Window-Background",
+            "Win32-Window",
+            "Win32-Front",
+            "ADB",
+        }
+        return controller_name if controller_name in allowed else None
 
     async def _readback_config(self):
         if not self.maaend_config_path.exists():
@@ -171,6 +165,7 @@ class ScriptConfigTask(TaskExecuteBase):
                 self.cur_user_item.user_id,
                 self.script_config,
                 runtime_user_cfg,
+                auto_run_on_launch=False,  # ScriptConfig mode should not auto-run tasks.
             )
             logger.info(f"MaaEnd runtime config generated: {runtime_path}")
 
