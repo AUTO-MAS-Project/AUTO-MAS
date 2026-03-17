@@ -2080,12 +2080,12 @@ class AppConfig(GlobalConfig):
                     continue  # 只统计在范围内的日期
 
                 if mode == "DAILY":
-                    date_name = date.strftime("%Y年 %m月 %d日")
+                    date_name = f"{date.year}年 {date.month:02d}月 {date.day:02d}日"
                 elif mode == "WEEKLY":
                     year, week, _ = date.isocalendar()
                     date_name = f"{year}年 第{week}周"
                 elif mode == "MONTHLY":
-                    date_name = date.strftime("%Y年 %m月")
+                    date_name = f"{date.year}年 {date.month:02d}月"
                 else:
                     raise ValueError("无效的合并模式")
 
@@ -2106,7 +2106,7 @@ class AppConfig(GlobalConfig):
                         )
 
             except ValueError:
-                logger.warning(f"非日期格式的目录: {date_folder}")
+                logger.exception(f"非日期格式的目录: {date_folder}")
 
         logger.success(f"历史记录搜索完成, 共计 {len(history_dict)} 条记录")
 
