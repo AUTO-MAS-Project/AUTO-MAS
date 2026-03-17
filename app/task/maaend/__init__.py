@@ -1,6 +1,4 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2024-2025 DLmaster361
-#   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
@@ -20,10 +18,6 @@
 
 #   Contact: DLmaster_361@163.com
 
+from .manager import MaaEndManager
 
-from .MAA import MaaManager
-from .maaend import MaaEndManager
-from .SRC import SrcManager
-from .general import GeneralManager
-
-__all__ = ["MaaManager", "SrcManager", "GeneralManager", "MaaEndManager"]
+__all__ = ["MaaEndManager"]

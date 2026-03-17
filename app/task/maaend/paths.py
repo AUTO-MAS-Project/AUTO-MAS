@@ -1,6 +1,4 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2024-2025 DLmaster361
-#   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
@@ -21,9 +19,18 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .MAA import MaaManager
-from .maaend import MaaEndManager
-from .SRC import SrcManager
-from .general import GeneralManager
+from pathlib import Path
 
-__all__ = ["MaaManager", "SrcManager", "GeneralManager", "MaaEndManager"]
+
+MANAGED_CONFIG_NAME = "AUTO-MAS.json"
+LOCAL_CONFIG_NAME = "mxu-MaaEnd.json"
+
+
+def managed_user_config_path(script_id: str, user_id: str) -> Path:
+    return (
+        Path.cwd() / f"data/{script_id}/{user_id}/ConfigFile/{MANAGED_CONFIG_NAME}"
+    )
+
+
+def managed_default_config_path(script_id: str) -> Path:
+    return Path.cwd() / f"data/{script_id}/Default/ConfigFile/{MANAGED_CONFIG_NAME}"
