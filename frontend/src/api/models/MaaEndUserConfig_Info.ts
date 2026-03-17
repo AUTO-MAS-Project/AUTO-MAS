@@ -20,7 +20,28 @@ export type MaaEndUserConfig_Info = {
      */
     Password?: (string | null);
     /**
+     * 脚本模式
+     */
+    Mode?: (MaaEndUserConfig_Info.Mode | null);
+    /**
      * 剩余天数
      */
     RemainedDay?: (number | null);
+    /**
+     * 备注
+     */
+    Notes?: (string | null);
+    /**
+     * 用户标签信息
+     */
+    Tag?: (string | null);
 };
+export namespace MaaEndUserConfig_Info {
+    /**
+     * 脚本模式
+     */
+    export enum Mode {
+        简洁 = '简洁',
+        详细 = '详细',
+    }
+}

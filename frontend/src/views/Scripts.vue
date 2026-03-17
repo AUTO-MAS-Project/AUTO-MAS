@@ -791,6 +791,15 @@ const handleDeleteScript = async (script: Script) => {
 }
 
 const handleAddUser = (script: Script) => {
+  if (script.type === 'MaaEnd') {
+    const ifAccountSwitch = Boolean((script.config as any)?.Run?.IfAccountSwitch)
+    const userCount = Array.isArray(script.users) ? script.users.length : 0
+    if (!ifAccountSwitch && userCount >= 1) {
+      message.warning('未启用切号时，每个 MAAEND 脚本仅允许添加 1 个用户')
+      return
+    }
+  }
+
   // 根据脚本类型跳转到对应的用户添加页面
   if (script.type === 'MAA') {
     router.push(`/scripts/${script.id}/users/add/maa`)

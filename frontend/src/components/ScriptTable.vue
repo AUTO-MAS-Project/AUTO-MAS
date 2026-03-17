@@ -47,12 +47,20 @@
                         : script.type === 'SRC'
                           ? 'purple'
                           : script.type === 'MaaEnd'
-                            ? 'orange'
+                            ? 'geekblue'
                             : 'green'
                     "
                     class="script-type"
                   >
-                    {{ script.type }}
+                    {{
+                      script.type === 'MAA'
+                        ? 'MAA'
+                        : script.type === 'SRC'
+                          ? 'SRC'
+                          : script.type === 'MaaEnd'
+                            ? 'MAAEND'
+                            : 'GENERAL'
+                    }}
                   </a-tag>
                 </div>
               </div>
@@ -193,18 +201,26 @@
 
                           <!-- 账号标签 -->
                           <a-tag
-                            v-if="script.type === 'MAA' || script.type === 'SRC'"
-                            :color="getServerTagColor(user.Info.Server)"
+                            v-if="
+                              script.type === 'MAA' ||
+                              script.type === 'SRC' ||
+                              script.type === 'MaaEnd'
+                            "
+                            color="blue"
                             class="clickable-tag"
                             @click="handleUserIdClick(user)"
                           >
-                            {{ getUserIdDisplayText(user) }}
+                            {{ getUserIdDisplayText(user, script.type) }}
                           </a-tag>
 
                           <!-- 密码标签 -->
                           <a-tag
-                            v-if="script.type === 'MAA' || script.type === 'SRC'"
-                            :color="getServerTagColor(user.Info.Server)"
+                            v-if="
+                              script.type === 'MAA' ||
+                              script.type === 'SRC' ||
+                              script.type === 'MaaEnd'
+                            "
+                            color="blue"
                             class="clickable-tag"
                             @click="handlePasswordClick(user)"
                           >
@@ -396,7 +412,7 @@ const getMaaEndConfigActionText = (script: Script): string => {
     return '配置MaaEnd'
   }
 
-  return '维护MaaEnd配置'
+  return '配置MAAEND'
 }
 
 const handleToggleUserStatus = (user: User) => {
@@ -459,9 +475,12 @@ const handlePasswordClick = async (user: User) => {
   }
 }
 
-const getUserIdDisplayText = (user: User): string => {
+const getUserIdDisplayText = (user: User, scriptType?: ScriptType): string => {
+  const accountText =
+    scriptType === 'MaaEnd' ? ((user as any)?.Info?.Account ?? '') : ((user as any)?.Info?.Id ?? '')
+
   if (expandedUserIds.value.has(user.id)) {
-    return user.Info.Id ? `账号: ${user.Info.Id}` : '账号: 未设置'
+    return accountText ? `账号: ${accountText}` : '账号: 未设置'
   }
 
   return '账号'

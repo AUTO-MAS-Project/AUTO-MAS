@@ -8,9 +8,9 @@ export type MaaEndConfig_Run = {
      */
     Timeout?: (number | null);
     /**
-     * 重试次数
+     * 每日代理次数限制
      */
-    Retry?: (number | null);
+    ProxyTimesLimit?: (number | null);
     /**
      * 运行次数限制
      */

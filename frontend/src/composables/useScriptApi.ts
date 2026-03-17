@@ -534,17 +534,30 @@ export function useScriptApi() {
                           maaEndUserData.Info?.Password !== undefined
                             ? maaEndUserData.Info.Password
                             : '',
+                        Mode:
+                          maaEndUserData.Info?.Mode !== undefined
+                            ? maaEndUserData.Info.Mode
+                            : '简洁',
                         RemainedDay:
                           maaEndUserData.Info?.RemainedDay !== undefined
                             ? maaEndUserData.Info.RemainedDay
                             : -1,
-                        Tag: null,
+                        Notes:
+                          maaEndUserData.Info?.Notes !== undefined ? maaEndUserData.Info.Notes : '',
+                        Tag:
+                          maaEndUserData.Info?.Tag !== undefined
+                            ? maaEndUserData.Info.Tag
+                            : null,
                       },
                       Task: {
                         OptionOverride:
                           maaEndUserData.Task?.OptionOverride !== undefined
                             ? maaEndUserData.Task.OptionOverride
                             : '',
+                        ResourceProfile:
+                          maaEndUserData.Task?.ResourceProfile !== undefined
+                            ? maaEndUserData.Task.ResourceProfile
+                            : '官服',
                       },
                       Data: {
                         LastProxyDate:

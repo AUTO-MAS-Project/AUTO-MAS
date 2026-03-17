@@ -648,9 +648,19 @@ class MaaEndUserConfig(ConfigBase):
         self.Info_Account = ConfigItem("Info", "Account", "")
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
+        ## 脚本模式
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+        )
         ## 剩余天数
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        ## 备注
+        self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        ## 用户标签信息
+        self.Info_Tag = ConfigItem(
+            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
         )
 
         ## Task ------------------------------------------------------------
@@ -658,6 +668,10 @@ class MaaEndUserConfig(ConfigBase):
         ## 任务选项覆盖
         self.Task_OptionOverride = ConfigItem(
             "Task", "OptionOverride", "{ }", JSONValidator()
+        )
+        ## 资源配置
+        self.Task_ResourceProfile = ConfigItem(
+            "Task", "ResourceProfile", "官服", OptionsValidator(["官服", "B服"])
         )
 
         ## Data ------------------------------------------------------------
@@ -697,6 +711,60 @@ class MaaEndUserConfig(ConfigBase):
 
         super().__init__()
 
+    def getTags(self) -> str:
+        """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
+        tags = []
+
+        # 日常代理标签（使用东4区时间）
+        last_run = str(self.get("Data", "LastRun") or "").strip()
+        if last_run.startswith(datetime.now(tz=UTC4).strftime("%Y-%m-%d")):
+            tags.append(
+                {
+                    "text": f"日常：已代理{self.get('Data', 'RunTimes')}次",
+                    "color": "green",
+                }
+            )
+        else:
+            tags.append({"text": "日常：未代理", "color": "orange"})
+
+        # 剩余天数标签
+        remained_day = self.get("Info", "RemainedDay")
+        if remained_day == -1:
+            tag_color = "gold"
+        elif remained_day == 0:
+            tag_color = "red"
+        elif remained_day <= 3:
+            tag_color = "orange"
+        elif remained_day <= 7:
+            tag_color = "yellow"
+        elif remained_day <= 30:
+            tag_color = "blue"
+        else:
+            tag_color = "green"
+        tags.append(
+            {
+                "text": (
+                    f"剩余天数：{remained_day}天"
+                    if remained_day >= 0
+                    else "剩余天数：无期限"
+                ),
+                "color": tag_color,
+            }
+        )
+
+        # 备注标签
+        notes = self.get("Info", "Notes")
+        tags.append(
+            {
+                "text": (
+                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
+                ),
+                "color": "pink",
+            }
+        )
+
+        return json.dumps(tags, ensure_ascii=False)
+
 
 class MaaEndConfig(ConfigBase):
     """MaaEnd配置"""
@@ -714,8 +782,10 @@ class MaaEndConfig(ConfigBase):
         ## Run -------------------------------------------------------------
         ## 运行超时时间
         self.Run_Timeout = ConfigItem("Run", "Timeout", 10, RangeValidator(0, 9999))
-        ## 重试次数
-        self.Run_Retry = ConfigItem("Run", "Retry", 3, RangeValidator(0, 9999))
+        ## 每日代理次数限制（0 表示不限制）
+        self.Run_ProxyTimesLimit = ConfigItem(
+            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
+        )
         ## 运行次数限制
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
@@ -754,7 +824,7 @@ class MaaEndConfig(ConfigBase):
         ## MaaEnd ----------------------------------------------------------
         ## 资源配置
         self.MaaEnd_ResourceProfile = ConfigItem(
-            "MaaEnd", "ResourceProfile", "MaaEnd"
+            "MaaEnd", "ResourceProfile", ""
         )
         ## 配置是否已锁定（仅允许 ScriptConfig 流程回写）
         self.MaaEnd_ConfigLocked = ConfigItem(

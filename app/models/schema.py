@@ -560,11 +560,19 @@ class MaaEndUserConfig_Info(BaseModel):
     Status: Optional[bool] = Field(default=None, description="用户状态")
     Account: Optional[str] = Field(default=None, description="账号")
     Password: Optional[str] = Field(default=None, description="密码")
+    Mode: Optional[Literal["简洁", "详细"]] = Field(
+        default=None, description="脚本模式"
+    )
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    Notes: Optional[str] = Field(default=None, description="备注")
+    Tag: Optional[str] = Field(default=None, description="用户标签信息")
 
 
 class MaaEndUserConfig_Task(BaseModel):
     OptionOverride: Optional[str] = Field(default=None, description="任务选项覆盖")
+    ResourceProfile: Optional[Literal["官服", "B服"]] = Field(
+        default=None, description="资源配置"
+    )
 
 
 class MaaEndUserConfig_Data(BaseModel):
@@ -600,7 +608,7 @@ class MaaEndConfig_Info(BaseModel):
 
 class MaaEndConfig_Run(BaseModel):
     Timeout: Optional[int] = Field(default=None, description="运行超时时间")
-    Retry: Optional[int] = Field(default=None, description="重试次数")
+    ProxyTimesLimit: Optional[int] = Field(default=None, description="每日代理次数限制")
     RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
     ControllerType: Optional[
         Literal[

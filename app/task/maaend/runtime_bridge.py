@@ -64,8 +64,12 @@ def _select_instance(config_data: dict[str, Any]) -> dict[str, Any]:
     return selected_instance
 
 
-def _apply_controller_and_resource(instance: dict[str, Any], script_config: MaaEndConfig):
-    resource_profile = str(script_config.get("MaaEnd", "ResourceProfile")).strip()
+def _apply_controller_and_resource(
+    instance: dict[str, Any], script_config: MaaEndConfig, user_config: MaaEndUserConfig
+):
+    resource_profile = str(user_config.get("Task", "ResourceProfile")).strip()
+    if not resource_profile:
+        resource_profile = str(script_config.get("MaaEnd", "ResourceProfile")).strip()
     if resource_profile:
         instance["resourceName"] = resource_profile
 
@@ -171,7 +175,7 @@ def build_runtime_config(
 ) -> Path:
     config_data = _load_source_config(script_config, source_path)
     selected_instance = _select_instance(config_data)
-    _apply_controller_and_resource(selected_instance, script_config)
+    _apply_controller_and_resource(selected_instance, script_config, user_config)
     _apply_pre_action(selected_instance, script_config)
     _apply_option_override(selected_instance, user_config)
 

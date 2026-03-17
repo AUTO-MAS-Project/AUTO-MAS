@@ -102,10 +102,24 @@ class ScriptConfigTask(TaskExecuteBase):
             shutil.rmtree(self.maaend_config_dir, ignore_errors=True)
         self.maaend_config_dir.mkdir(parents=True, exist_ok=True)
 
-        seed_candidates = [
-            self.user_managed_config_path,
-            self.default_managed_config_path,
-        ]
+        mode = "简洁"
+        if self.cur_user_item.user_id != "Default":
+            mode = str(
+                self.user_config[uuid.UUID(self.cur_user_item.user_id)].get(
+                    "Info", "Mode"
+                )
+                or "简洁"
+            ).strip()
+        if mode == "详细":
+            seed_candidates = [
+                self.user_managed_config_path,
+                self.default_managed_config_path,
+            ]
+        else:
+            seed_candidates = [
+                self.default_managed_config_path,
+                self.user_managed_config_path,
+            ]
         for seed_path in seed_candidates:
             if seed_path.exists():
                 shutil.copy(seed_path, self.maaend_config_path)
@@ -195,8 +209,10 @@ class ScriptConfigTask(TaskExecuteBase):
             selected_instance = instances[0]
 
         resource_name = str(selected_instance.get("resourceName", "")).strip()
-        controller_name = str(selected_instance.get("controllerName", "")).strip()
-        controller_type = self._normalize_controller_type(controller_name)
+        configured_controller = str(
+            self.script_config.get("Run", "ControllerType") or ""
+        ).strip()
+        controller_type = self._normalize_controller_type(configured_controller)
 
         was_locked = self.script_config.is_locked
         if was_locked:
@@ -205,10 +221,18 @@ class ScriptConfigTask(TaskExecuteBase):
             if resource_name:
                 await self.script_config.set("MaaEnd", "ResourceProfile", resource_name)
 
+            # 控制器类型以 MAS 前端配置为准：配置阶段也强制回写到 MaaEnd 托管配置
             if controller_type is not None:
-                await self.script_config.set("Run", "ControllerType", controller_type)
-            elif controller_name:
-                logger.warning(f"Unsupported MaaEnd controllerName: {controller_name}")
+                selected_instance["controllerName"] = controller_type
+                config_data["instances"] = instances
+                self.maaend_config_path.write_text(
+                    json.dumps(config_data, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+            elif configured_controller:
+                logger.warning(
+                    f"Unsupported MAS controller type in script config: {configured_controller}"
+                )
         finally:
             if was_locked:
                 await self.script_config.lock()
@@ -221,14 +245,23 @@ class ScriptConfigTask(TaskExecuteBase):
         self._normalize_to_single_managed_instance()
         await self._readback_config()
 
-        self.user_managed_config_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(self.maaend_config_path, self.user_managed_config_path)
-        self._prune_cache_dir(self.user_managed_config_path)
+        user_mode = "简洁"
+        if self.cur_user_item.user_id != "Default":
+            user_mode = str(
+                self.user_config[uuid.UUID(self.cur_user_item.user_id)].get(
+                    "Info", "Mode"
+                )
+                or "简洁"
+            ).strip()
 
-        if self.cur_user_item.user_id == "Default":
+        if self.cur_user_item.user_id == "Default" or user_mode == "简洁":
             self.default_managed_config_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(self.maaend_config_path, self.default_managed_config_path)
             self._prune_cache_dir(self.default_managed_config_path)
+        elif user_mode == "详细":
+            self.user_managed_config_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(self.maaend_config_path, self.user_managed_config_path)
+            self._prune_cache_dir(self.user_managed_config_path)
 
         was_locked = self.script_config.is_locked
         if was_locked:
@@ -241,11 +274,17 @@ class ScriptConfigTask(TaskExecuteBase):
 
         if self.cur_user_item.user_id != "Default":
             runtime_user_cfg = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
+            runtime_source_path = (
+                self.user_managed_config_path
+                if user_mode == "详细"
+                else self.default_managed_config_path
+            )
             runtime_path = build_runtime_config(
                 self.script_info.script_id,
                 self.cur_user_item.user_id,
                 self.script_config,
                 runtime_user_cfg,
+                source_path=runtime_source_path,
             )
             logger.info(f"MaaEnd runtime config generated: {runtime_path}")
 

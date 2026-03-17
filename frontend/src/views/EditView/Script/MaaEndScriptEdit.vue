@@ -27,7 +27,7 @@
   <div class="script-edit-content">
     <a-card title="MaaEnd 脚本配置" :loading="pageLoading" class="config-card">
       <template #extra>
-        <a-tag color="orange" class="type-tag">MaaEnd</a-tag>
+        <a-tag color="geekblue" class="type-tag">MAAEND</a-tag>
       </template>
 
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
@@ -110,7 +110,7 @@
             <h3>运行配置</h3>
           </div>
           <a-row :gutter="24">
-            <a-col :span="6">
+            <a-col :span="12">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
@@ -130,7 +130,7 @@
                 </a-select>
               </a-form-item>
             </a-col>
-            <a-col :span="6">
+            <a-col :span="12">
               <a-form-item>
                 <template #label>
                   <span class="form-label">超时（分钟）</span>
@@ -146,26 +146,38 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="6">
+          </a-row>
+          <a-row :gutter="24">
+            <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">重试次数</span>
+                  <a-tooltip title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限">
+                    <span class="form-label">
+                      用户单日代理次数上限
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
                 </template>
                 <a-input-number
-                  v-model:value="config.Run.Retry"
+                  v-model:value="config.Run.ProxyTimesLimit"
                   :min="0"
                   :max="9999"
                   size="large"
                   class="modern-number-input"
                   style="width: 100%"
-                  @blur="handleChange('Run', 'Retry', config.Run.Retry)"
+                  @blur="handleChange('Run', 'ProxyTimesLimit', config.Run.ProxyTimesLimit)"
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="6">
+            <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">运行次数限制</span>
+                  <a-tooltip title="若重试超过该次数限制仍未完成代理，视为代理失败">
+                    <span class="form-label">
+                      代理重试次数限制
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
                 </template>
                 <a-input-number
                   v-model:value="config.Run.RunTimesLimit"
@@ -179,53 +191,38 @@
               </a-form-item>
             </a-col>
           </a-row>
-        </div>
-
-        <div class="form-section">
-          <div class="section-header">
-            <h3>MaaEnd 配置</h3>
-          </div>
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">资源配置</span>
+                  <a-tooltip title="开启后在执行多用户流程时进入切号逻辑">
+                    <span class="form-label">
+                      启用切号
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
                 </template>
-                <a-select
-                  v-model:value="config.MaaEnd.ResourceProfile"
-                  mode="combobox"
-                  :options="resourceProfileOptions"
-                  placeholder="请选择或输入资源配置"
-                  size="large"
-                  class="modern-input"
-                  @change="handleChange('MaaEnd', 'ResourceProfile', config.MaaEnd.ResourceProfile)"
+                <a-switch
+                  :checked="config.Run.IfAccountSwitch"
+                  checked-children="启用"
+                  un-checked-children="关闭"
+                  @change="handleAccountSwitchToggle"
                 />
               </a-form-item>
             </a-col>
           </a-row>
         </div>
 
-        <div class="form-section">
-          <div class="section-header">
-            <h3>任务具体配置</h3>
-          </div>
-          <a-alert
-            message="功能开发中"
-            description="任务具体配置区域预留，后续版本接入。"
-            type="info"
-            show-icon
-          />
-        </div>
       </a-form>
     </a-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import type { ScriptType } from '@/types/script'
 import { useScriptApi } from '@/composables/useScriptApi'
 import {
@@ -243,8 +240,9 @@ interface MaaEndScriptConfigLocal {
   }
   Run: {
     Timeout: number
-    Retry: number
+    ProxyTimesLimit: number
     RunTimesLimit: number
+    IfAccountSwitch: boolean
     GamePath: string
     ControllerType: 'Win32-Window' | 'Win32-Window-Background' | 'Win32-Front' | 'ADB'
   }
@@ -276,13 +274,14 @@ const config = reactive<MaaEndScriptConfigLocal>({
   },
   Run: {
     Timeout: 10,
-    Retry: 3,
+    ProxyTimesLimit: 0,
     RunTimesLimit: 3,
+    IfAccountSwitch: false,
     GamePath: '',
     ControllerType: 'Win32-Window',
   },
   MaaEnd: {
-    ResourceProfile: 'MaaEnd',
+    ResourceProfile: '',
     PresetTask: '',
     ConfigLocked: false,
     LogPath: '',
@@ -322,26 +321,18 @@ const normalizeControllerType = (
   return 'Win32-Window'
 }
 
-const resourceProfileOptions = computed(() => {
-  const options = ['MaaEnd']
-  const current = (config.MaaEnd.ResourceProfile || '').trim()
-  if (current && !options.includes(current)) {
-    options.unshift(current)
-  }
-  return options.map(value => ({ label: value, value }))
-})
-
 const applyConfig = (rawConfig: any, nameFallback = '新建MaaEnd脚本') => {
   config.Info.Name = rawConfig?.Info?.Name ?? nameFallback
   config.Info.Path = rawConfig?.Info?.Path ?? '.'
 
   config.Run.Timeout = rawConfig?.Run?.Timeout ?? 10
-  config.Run.Retry = rawConfig?.Run?.Retry ?? 3
+  config.Run.ProxyTimesLimit = rawConfig?.Run?.ProxyTimesLimit ?? 0
   config.Run.RunTimesLimit = rawConfig?.Run?.RunTimesLimit ?? 3
+  config.Run.IfAccountSwitch = rawConfig?.Run?.IfAccountSwitch ?? false
   config.Run.GamePath = rawConfig?.Run?.GamePath ?? ''
   config.Run.ControllerType = normalizeControllerType(rawConfig?.Run?.ControllerType)
 
-  config.MaaEnd.ResourceProfile = rawConfig?.MaaEnd?.ResourceProfile ?? 'MaaEnd'
+  config.MaaEnd.ResourceProfile = rawConfig?.MaaEnd?.ResourceProfile ?? ''
   config.MaaEnd.PresetTask = rawConfig?.MaaEnd?.PresetTask ?? ''
   config.MaaEnd.ConfigLocked = rawConfig?.MaaEnd?.ConfigLocked ?? false
   config.MaaEnd.LogPath = rawConfig?.MaaEnd?.LogPath ?? ''
@@ -392,6 +383,33 @@ const handleChange = async (category: string, key: string, value: any) => {
 const handleNameBlur = async () => {
   config.Info.Name = formData.name
   await handleChange('Info', 'Name', formData.name)
+}
+
+const handleAccountSwitchToggle = (checked: boolean) => {
+  if (isInitializing.value) {
+    return
+  }
+
+  if (!checked) {
+    config.Run.IfAccountSwitch = false
+    void handleChange('Run', 'IfAccountSwitch', false)
+    return
+  }
+
+  Modal.confirm({
+    title: '启用切号授权说明',
+    content:
+      '启用切号即表示您授权 AUTO-MAS 在自动化流程中代您同意鹰角网络相关用户协议并执行切号登录操作。是否继续？',
+    okText: '同意并启用',
+    cancelText: '取消',
+    onOk: async () => {
+      config.Run.IfAccountSwitch = true
+      await handleChange('Run', 'IfAccountSwitch', true)
+    },
+    onCancel: () => {
+      config.Run.IfAccountSwitch = false
+    },
+  })
 }
 
 const loadScript = async () => {

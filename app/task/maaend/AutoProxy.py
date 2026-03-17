@@ -100,6 +100,16 @@ class AutoProxyTask(TaskExecuteBase):
         self.web_log_cursor = 0
 
     async def check(self) -> str:
+        if self.script_config.get(
+            "Run", "ProxyTimesLimit"
+        ) != 0 and self.cur_user_config.get(
+            "Data", "RunTimes"
+        ) >= self.script_config.get(
+            "Run", "ProxyTimesLimit"
+        ):
+            self.cur_user_item.status = "跳过"
+            return "今日代理次数已达上限, 跳过该用户"
+
         if self.script_config.get("Run", "RunTimesLimit") <= 0:
             self.cur_user_item.status = "异常"
             return "RunTimesLimit 必须大于 0"
@@ -107,6 +117,16 @@ class AutoProxyTask(TaskExecuteBase):
         if not bool(self.script_config.get("MaaEnd", "ConfigLocked")):
             self.cur_user_item.status = "异常"
             return "MaaEnd 配置未锁定，请先执行 ScriptConfig 完成配置并保存"
+
+        user_config_cache_path = managed_user_config_path(
+            self.script_info.script_id, self.cur_user_item.user_id
+        )
+        if (
+            self.cur_user_config.get("Info", "Mode") == "详细"
+            and not user_config_cache_path.exists()
+        ):
+            self.cur_user_item.status = "异常"
+            return "未找到用户专属 MaaEnd 配置，请先在用户配置页完成「MaaEnd 配置」步骤"
 
         return "Pass"
 
@@ -133,20 +153,30 @@ class AutoProxyTask(TaskExecuteBase):
             self.script_info.script_id
         )
         self.runtime_source_config_path.parent.mkdir(parents=True, exist_ok=True)
-        if self.user_config_cache_path.exists():
-            source_path = self.user_config_cache_path
-        elif self.default_config_cache_path.exists():
-            source_path = self.default_config_cache_path
+        mode = str(self.cur_user_config.get("Info", "Mode") or "简洁").strip()
+        if mode == "详细":
+            if self.user_config_cache_path.exists():
+                source_path = self.user_config_cache_path
+            elif self.default_config_cache_path.exists():
+                source_path = self.default_config_cache_path
+            else:
+                raise FileNotFoundError(
+                    f"MaaEnd managed config not found: {self.user_config_cache_path} "
+                    f"(fallback {self.default_config_cache_path})"
+                )
         else:
-            raise FileNotFoundError(
-                f"MaaEnd managed config not found: {self.user_config_cache_path} "
-                f"(fallback {self.default_config_cache_path})"
-            )
+            if self.default_config_cache_path.exists():
+                source_path = self.default_config_cache_path
+            elif self.user_config_cache_path.exists():
+                source_path = self.user_config_cache_path
+            else:
+                raise FileNotFoundError(
+                    f"MaaEnd managed config not found: {self.default_config_cache_path} "
+                    f"(fallback {self.user_config_cache_path})"
+                )
         shutil.copy(source_path, self.runtime_source_config_path)
 
         self.timeout_minutes = self.script_config.get("Run", "Timeout")
-        self.retry_times = self.script_config.get("Run", "Retry")
-
         self.wait_event = asyncio.Event()
         self.maaend_process_manager = ProcessManager()
         self.game_process_manager = ProcessManager()
@@ -259,30 +289,32 @@ class AutoProxyTask(TaskExecuteBase):
             await asyncio.sleep(WINDOW_READY_WAIT_INTERVAL)
         return False
 
-    def _mark_account_switch_placeholder(self, run_idx: int, retry_idx: int) -> None:
+    def _mark_account_switch_placeholder(self, run_idx: int) -> None:
         message = "切号功能暂为占位实现，当前运行将跳过实际切换账号"
         logger.warning(f"用户 {self.cur_user_item.name} {message}")
         self._push_debug_line(message)
         self.script_info.log = (
             f"用户 {self.cur_user_item.name} 执行中：轮次 {run_idx + 1}"
-            f"，重试 {retry_idx}/{self.retry_times}\n"
             f"{self.script_info.log}"
         )
 
-    async def _prepare_before_maaend(self, run_idx: int, retry_idx: int) -> bool:
+    async def _prepare_before_maaend(self, run_idx: int) -> bool:
         controller_type = str(self.script_config.get("Run", "ControllerType")).strip()
         if not controller_type.startswith("Win32"):
             return True
-
-        if not await self._ensure_game_running():
-            return False
 
         if self.script_config.get("Run", "IfAccountSwitch"):
             account_switch_method = str(
                 self.script_config.get("Run", "AccountSwitchMethod")
             ).strip()
-            if account_switch_method != "NoAction":
-                self._mark_account_switch_placeholder(run_idx, retry_idx)
+            if account_switch_method == "ExitGame":
+                self._set_stage_message("切号模式为 ExitGame，正在重启 Endfield")
+                await System.kill_process(self.game_exe_path)
+            elif account_switch_method != "NoAction":
+                self._mark_account_switch_placeholder(run_idx)
+
+        if not await self._ensure_game_running():
+            return False
 
         account = ""
         password = ""
@@ -304,11 +336,8 @@ class AutoProxyTask(TaskExecuteBase):
 
         return True
 
-    async def _run_once(self, run_idx: int, retry_idx: int) -> bool:
-        self.script_info.log = (
-            f"用户 {self.cur_user_item.name} 执行中：轮次 {run_idx + 1}"
-            f"，重试 {retry_idx}/{self.retry_times}"
-        )
+    async def _run_once(self, run_idx: int) -> bool:
+        self.script_info.log = f"用户 {self.cur_user_item.name} 执行中：轮次 {run_idx + 1}"
 
         self.log_start_time = datetime.now()
         self.instance_id = None
@@ -336,7 +365,7 @@ class AutoProxyTask(TaskExecuteBase):
         self._set_stage_message(
             "已生成运行时配置", str(self.runtime_source_config_path.parent)
         )
-        if not await self._prepare_before_maaend(run_idx, retry_idx):
+        if not await self._prepare_before_maaend(run_idx):
             return False
 
         self.wait_event.clear()
@@ -476,6 +505,12 @@ class AutoProxyTask(TaskExecuteBase):
         self.wait_event.set()
 
     async def main_task(self):
+        # 初始化每日代理状态
+        curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+        last_run = str(self.cur_user_config.get("Data", "LastRun") or "").strip()
+        if not last_run.startswith(curdate):
+            await self.cur_user_config.set("Data", "RunTimes", 0)
+
         self.check_result = await self.check()
         if self.check_result != "Pass":
             if self.cur_user_item.status == "异常":
@@ -497,29 +532,26 @@ class AutoProxyTask(TaskExecuteBase):
         self.last_status = "Crash"
 
         for run_idx in range(attempts):
-            for retry_idx in range(self.retry_times + 1):
-                self.run_success = await self._run_once(run_idx, retry_idx)
-
-                if self.run_success:
-                    self.last_status = "Success"
-                    break
-
-                if self.cur_user_log.status == "Timeout":
-                    self.last_status = "Timeout"
-                elif self.cur_user_log.status.startswith("InstanceStoppedOrFailed"):
-                    self.last_status = "TaskFailed"
-                else:
-                    self.last_status = "Crash"
+            self.run_success = await self._run_once(run_idx)
 
             if self.run_success:
+                self.last_status = "Success"
                 break
+
+            if self.cur_user_log.status == "Timeout":
+                self.last_status = "Timeout"
+            elif self.cur_user_log.status.startswith("InstanceStoppedOrFailed"):
+                self.last_status = "TaskFailed"
+            else:
+                self.last_status = "Crash"
 
         await self.cur_user_config.set(
             "Data", "LastRun", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         )
-        await self.cur_user_config.set(
-            "Data", "RunTimes", self.cur_user_config.get("Data", "RunTimes") + 1
-        )
+        if self.run_success:
+            await self.cur_user_config.set(
+                "Data", "RunTimes", self.cur_user_config.get("Data", "RunTimes") + 1
+            )
         await self.cur_user_config.set("Data", "LastStatus", self.last_status)
 
         if self.run_success:

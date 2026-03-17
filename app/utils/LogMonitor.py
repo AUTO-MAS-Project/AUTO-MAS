@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
@@ -76,6 +76,7 @@ class LogMonitor:
         await self.update_latest_timestamp("", if_init=True)
 
         if_mtime_checked = False
+        warned_mtime_date: date | None = None
         if_log_start = False
         offset = 0
         log_contents = []
@@ -90,13 +91,14 @@ class LogMonitor:
                 continue
 
             if not if_mtime_checked:
-                if date.fromtimestamp(log_file_path.stat().st_mtime) == date.today():
+                file_mtime_date = date.fromtimestamp(log_file_path.stat().st_mtime)
+                if file_mtime_date == date.today():
                     log_stat = log_file_path.stat()
                     if_mtime_checked = True
                 else:
-                    logger.warning(
-                        f"日志文件今天未被修改: {date.fromtimestamp(log_file_path.stat().st_mtime)}"
-                    )
+                    if warned_mtime_date != file_mtime_date:
+                        logger.warning(f"日志文件今天未被修改: {file_mtime_date}")
+                        warned_mtime_date = file_mtime_date
                     await self.do_callback()
                     await asyncio.sleep(1)
                     continue

@@ -18,31 +18,6 @@
       </div>
 
       <a-space size="middle">
-        <a-button
-          v-if="!showMaaEndConfigMask"
-          type="primary"
-          ghost
-          size="large"
-          :loading="maaEndConfigLoading"
-          @click="handleMaaEndConfig"
-        >
-          <template #icon>
-            <SettingOutlined />
-          </template>
-          MaaEnd 配置
-        </a-button>
-        <a-button
-          v-if="showMaaEndConfigMask"
-          type="default"
-          size="large"
-          disabled
-          style="color: #52c41a; border-color: #52c41a"
-        >
-          <template #icon>
-            <SettingOutlined />
-          </template>
-          正在配置
-        </a-button>
         <a-button size="large" class="cancel-button" @click="handleCancel">
           <template #icon>
             <ArrowLeftOutlined />
@@ -53,7 +28,7 @@
     </div>
 
     <teleport to="body">
-      <div v-if="showMaaEndConfigMask" class="maaend-config-mask">
+      <div v-if="isDetailedMode && showMaaEndConfigMask" class="maaend-config-mask">
         <div class="mask-content">
           <div class="mask-icon">
             <SettingOutlined :style="{ fontSize: '48px', color: '#1890ff' }" />
@@ -158,6 +133,57 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
+                    <a-tooltip title="简洁：复用脚本配置；详细：使用用户配置">
+                      <span class="form-label">
+                        脚本模式
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-select
+                    v-model:value="formData.Info.Mode"
+                    size="large"
+                    @change="handleFieldSave('Info.Mode', formData.Info.Mode)"
+                  >
+                    <a-select-option value="简洁">简洁</a-select-option>
+                    <a-select-option value="详细">详细</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+              <a-col v-if="isDetailedMode" :span="12">
+                <a-form-item label="MaaEnd 配置">
+                  <a-button
+                    v-if="!showMaaEndConfigMask"
+                    type="primary"
+                    ghost
+                    size="large"
+                    :loading="maaEndConfigLoading"
+                    @click="handleMaaEndConfig"
+                  >
+                    <template #icon>
+                      <SettingOutlined />
+                    </template>
+                    打开配置
+                  </a-button>
+                  <a-button
+                    v-else
+                    type="default"
+                    size="large"
+                    disabled
+                    style="color: #52c41a; border-color: #52c41a"
+                  >
+                    <template #icon>
+                      <SettingOutlined />
+                    </template>
+                    正在配置
+                  </a-button>
+                </a-form-item>
+              </a-col>
+            </a-row>
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
                     <a-tooltip title="用于任务开始前自动登录">
                       <span class="form-label">
                         账号
@@ -191,6 +217,28 @@
                     :disabled="loading"
                     size="large"
                     @blur="handleFieldSave('Info.Password', formData.Info.Password)"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+            <a-row :gutter="24">
+              <a-col :span="24">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="用户备注信息，仅用于展示与区分账号">
+                      <span class="form-label">
+                        备注
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input
+                    v-model:value="formData.Info.Notes"
+                    placeholder="请输入备注信息"
+                    :disabled="loading"
+                    size="large"
+                    class="modern-input"
+                    @blur="handleFieldSave('Info.Notes', formData.Info.Notes)"
                   />
                 </a-form-item>
               </a-col>
@@ -232,7 +280,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
@@ -253,6 +301,7 @@ const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
+const isDetailedMode = computed(() => formData.Info.Mode === '详细')
 const isInitializing = ref(true)
 const isSaving = ref(false)
 
@@ -271,12 +320,16 @@ const getDefaultMaaEndUserData = () => ({
   Info: {
     Name: '',
     Status: true,
+    Mode: '简洁',
     Account: '',
     Password: '',
     RemainedDay: -1,
+    Notes: '无',
   },
   Task: {
     OptionOverride: '{ }',
+    // 当前由系统托管为官服，保留字段以便后续扩展 i18n（en/fr/jp 等）资源配置
+    ResourceProfile: '官服',
   },
   Data: {
     LastRun: '2000-01-01 00:00:00',
@@ -432,6 +485,11 @@ const loadUserData = async () => {
 }
 
 const handleMaaEndConfig = async () => {
+  if (!isDetailedMode.value) {
+    message.info('简洁模式复用脚本配置，无需单独配置 MaaEnd')
+    return
+  }
+
   if (!userId) {
     message.error('请先创建用户')
     return
@@ -473,10 +531,6 @@ const handleMaaEndConfig = async () => {
         wsMessage.data &&
         wsMessage.data.Accomplish !== undefined
       ) {
-        const result = String(wsMessage.data.Accomplish ?? '')
-        if (result && !result.includes('异常') && !result.includes('错误')) {
-          message.success(`用户 ${formData.Info?.Name || formData.userName} 的配置已完成`)
-        }
         cleanupConfigSession()
         await loadUserData()
       }
@@ -553,6 +607,15 @@ onMounted(async () => {
   await nextTick()
   isInitializing.value = false
 })
+
+watch(
+  () => formData.Info.Mode,
+  mode => {
+    if (mode !== '详细' && showMaaEndConfigMask.value) {
+      cleanupConfigSession()
+    }
+  }
+)
 
 onUnmounted(() => {
   cleanupConfigSession()
