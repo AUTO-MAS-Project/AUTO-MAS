@@ -23,6 +23,7 @@
 import os
 import re
 import sys
+import ast
 import httpx
 import shutil
 import asyncio
@@ -75,6 +76,88 @@ try:
     from git import Repo
 except ImportError:
     Repo = None
+
+
+def _read_hook_meta_static(file_path: str) -> dict[str, Any]:
+    """静态读取 Hook 元信息（不执行 hook 代码）。"""
+
+    p = Path(file_path)
+    item: dict[str, Any] = {
+        "path": str(p),
+        "name": None,
+        "description": None,
+        "status": "ok",
+        "warning": None,
+    }
+
+    if not p.exists() or not p.is_file():
+        item["status"] = "warning"
+        item["warning"] = "文件不存在或不是文件"
+        return item
+
+    try:
+        source = p.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        try:
+            source = p.read_text(encoding="gbk")
+        except Exception as e:
+            item["status"] = "warning"
+            item["warning"] = f"读取失败: {type(e).__name__}: {e}"
+            return item
+    except Exception as e:
+        item["status"] = "warning"
+        item["warning"] = f"读取失败: {type(e).__name__}: {e}"
+        return item
+
+    try:
+        tree = ast.parse(source, filename=str(p))
+    except SyntaxError as e:
+        item["status"] = "warning"
+        item["warning"] = f"语法错误: {e.msg} (line {e.lineno})"
+        return item
+    except Exception as e:
+        item["status"] = "warning"
+        item["warning"] = f"解析失败: {type(e).__name__}: {e}"
+        return item
+
+    hook_meta_value = None
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name) and t.id == "HOOK_META":
+                    hook_meta_value = node.value
+                    break
+
+    if hook_meta_value is None:
+        item["status"] = "warning"
+        item["warning"] = "未找到 HOOK_META（需定义为字面量 dict）"
+        return item
+
+    try:
+        meta = ast.literal_eval(hook_meta_value)
+    except Exception as e:
+        item["status"] = "warning"
+        item["warning"] = f"HOOK_META 不是可静态求值的字面量: {type(e).__name__}: {e}"
+        return item
+
+    if not isinstance(meta, dict):
+        item["status"] = "warning"
+        item["warning"] = "HOOK_META 必须是 dict"
+        return item
+
+    name = meta.get("name")
+    description = meta.get("description")
+
+    if isinstance(name, str):
+        item["name"] = name
+    if isinstance(description, str):
+        item["description"] = description
+
+    if item["name"] is None or item["description"] is None:
+        item["status"] = "warning"
+        item["warning"] = "HOOK_META 需要包含字符串字段: name, description"
+
+    return item
 
 
 class AppConfig(GlobalConfig):
@@ -479,6 +562,11 @@ class AppConfig(GlobalConfig):
             await Config.websocket.send_json(
                 WebSocketMessage(id=id, type=type, data=data).model_dump()
             )
+
+    async def get_hook_meta(self, hook_paths: list[str]) -> list[dict[str, Any]]:
+        """读取 Hook 元数据（静态解析，不执行 hook 代码）。"""
+
+        return [_read_hook_meta_static(path) for path in hook_paths]
 
     async def get_git_version(self) -> tuple[bool, str, str]:
         """获取Git版本信息，如果Git不可用则返回默认值"""

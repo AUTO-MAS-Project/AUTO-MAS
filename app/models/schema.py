@@ -35,7 +35,9 @@ class HookMetaItem(BaseModel):
     path: str = Field(..., description="Hook 文件路径")
     name: Optional[str] = Field(default=None, description="Hook 名称")
     description: Optional[str] = Field(default=None, description="Hook 描述")
-    status: Literal["ok", "warning"] = Field(default="ok", description="元数据读取状态")
+    status: Optional[Literal["ok", "warning"]] = Field(
+        default=None, description="元数据读取状态"
+    )
     warning: Optional[str] = Field(default=None, description="警告/错误信息")
 
 
@@ -506,7 +508,7 @@ class GeneralConfig_Script(BaseModel):
     LogTimeFormat: Optional[str] = Field(default=None, description="日志时间戳格式")
     SuccessLog: Optional[str] = Field(default=None, description="成功时日志")
     ErrorLog: Optional[str] = Field(default=None, description="错误时日志")
-    HookList: Optional[List[str]] = Field(
+    HookList: Optional[str] = Field(
         default=None,
         description="Hook 文件路径列表（按顺序加载；加载/注册失败将被降级为警告并继续）",
     )

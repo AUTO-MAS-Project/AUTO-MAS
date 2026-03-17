@@ -83,15 +83,7 @@ class AutoProxyTask(TaskExecuteBase):
         if self._hook_scope is not None:
             return
 
-        # Script.HookList：允许缺省/None
-        hook_list = self.script_config.get("Script", "HookList")
-        if hook_list in (None, ""):
-            hook_paths: list[str] = []
-        elif isinstance(hook_list, list):
-            hook_paths = [str(p) for p in hook_list if str(p).strip()]
-        else:
-            # 允许用户误填为单个字符串
-            hook_paths = [str(hook_list)]
+        hook_paths = self.script_config.get_hook_list()
 
         self._hook_warnings = []
         self._hook_scope = HookScope()
@@ -127,7 +119,7 @@ class AutoProxyTask(TaskExecuteBase):
     @hookable(name="AutoProxyTask.prepare", allow={"after", "error"})
     async def prepare(self):
         # HookScope 的加载与激活在 main_task 里进行（以便 hook 也能作用于本次 prepare 调用）。
-        self.hook = self.script_config.get("Script", "HookList")
+        self.hook = self.script_config.get_hook_list()
         self.general_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
@@ -239,6 +231,12 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 加载 hooks 并进入作用域（范围 A：直到 final_task/on_crash 退出）
         await self._ensure_hook_scope_loaded()
+        for warning in self._hook_warnings:
+            await Config.send_websocket_message(
+                id=self.task_info.task_id,
+                type="Info",
+                data={"Warning": warning},
+            )
 
         await self.prepare()
 

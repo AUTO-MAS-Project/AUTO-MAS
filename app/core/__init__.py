@@ -31,6 +31,7 @@ from .hook import (
     hookable,
     HookScope,
     HookPoint,
+    HookError,
     load_hook_module,
 )
 from .task_manager import TaskManager
@@ -45,6 +46,7 @@ __all__ = [
     "MaaUserConfig",
     "GeneralUserConfig",
     "HookPoint",
+    "HookError",
     "HookScope",
     "hookable",
     "load_hook_module",

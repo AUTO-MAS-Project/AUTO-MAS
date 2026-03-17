@@ -104,6 +104,7 @@ __all__ = [
     "hookable",
     "HookScope",
     "HookPoint",
+    "HookError",
     "load_hook_module",
 ]
 
@@ -119,6 +120,17 @@ _current_scope: contextvars.ContextVar[HookScope | None] = contextvars.ContextVa
 )
 
 logger = get_logger("Hook管理器")
+
+
+class HookError(Exception):
+    """Hook 显式异常。
+
+    约定：
+    - Hook 回调中抛出 HookError：视作真实异常，继续向上抛出。
+    - Hook 回调中抛出其他异常：降级为 warning，不中断主流程。
+    """
+
+    pass
 
 
 def _build_hook_logger(module: ModuleType, raw_path: str):
@@ -250,6 +262,8 @@ def load_hook_module(
                 register(scope, target_cls, hook_logger)
             else:
                 register(scope, target_cls)
+        except HookError:
+            raise
         except Exception as e:
             msg = f"Hook 注册警告 [{raw_path}]: {type(e).__name__}: {e}"
             warnings.append(msg)
@@ -521,9 +535,22 @@ class HookScope:
     ) -> Any:
         """为指定 HookPoint 调度并执行围绕 *func* 的所有钩子。"""
 
+        point_name = point.name or point.qualname
+
+        def _warn_hook_exception(phase: str, cb: Callable[..., Any], exc: Exception) -> None:
+            logger.warning(
+                f"Hook 执行警告 [{point_name}] ({phase}) {cb!r}: "
+                f"{type(exc).__name__}: {exc}"
+            )
+
         # ---- before hooks（按注册顺序执行）-------------------------------
         for cb in self._before.get(point, ()):
-            await cb(*args, **kwargs)
+            try:
+                await cb(*args, **kwargs)
+            except HookError:
+                raise
+            except Exception as e:
+                _warn_hook_exception("before", cb, e)
 
         # ---- 构建 around 链（最后注册 = 最外层）---------------------------
         around_hooks = self._around.get(point, ())
@@ -540,7 +567,13 @@ class HookScope:
             async def _chained(
                 *a: Any, _cb: Any = _cb, _next: Any = _next, **kw: Any
             ) -> Any:
-                return await _cb(_next, *a, **kw)
+                try:
+                    return await _cb(_next, *a, **kw)
+                except HookError:
+                    raise
+                except Exception as e:
+                    _warn_hook_exception("around", _cb, e)
+                    return await _next(*a, **kw)
 
             call_next = _chained
 
@@ -550,11 +583,21 @@ class HookScope:
         except Exception as exc:
             # ---- error hooks（按注册顺序执行）--------------------------------
             for cb in self._error.get(point, ()):
-                await cb(exc, *args, **kwargs)
+                try:
+                    await cb(exc, *args, **kwargs)
+                except HookError:
+                    raise
+                except Exception as e:
+                    _warn_hook_exception("error", cb, e)
             raise
 
         # ---- after hooks（按注册顺序执行）--------------------------------
         for cb in self._after.get(point, ()):
-            await cb(result, *args, **kwargs)
+            try:
+                await cb(result, *args, **kwargs)
+            except HookError:
+                raise
+            except Exception as e:
+                _warn_hook_exception("after", cb, e)
 
         return result

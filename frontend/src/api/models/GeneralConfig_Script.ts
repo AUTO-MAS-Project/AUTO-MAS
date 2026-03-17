@@ -70,6 +70,6 @@ export type GeneralConfig_Script = {
     /**
      * Hook 文件路径列表（按顺序加载；加载/注册失败将被降级为警告并继续）
      */
-    HookList?: (Array<string> | null);
+    HookList?: (string | null);
 };
 

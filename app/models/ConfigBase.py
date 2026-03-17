@@ -211,9 +211,11 @@ class JSONValidator(ValidatorBase):
             return False
 
     def correct(self, value):
-        return (
-            value if self.validate(value) else ("{ }" if self.type == dict else "[ ]")
-        )
+        if self.validate(value):
+            return value
+        if isinstance(value, self.type):
+            return json.dumps(value, ensure_ascii=False)
+        return "{ }" if self.type == dict else "[ ]"
 
 
 class EncryptValidator(ValidatorBase):
@@ -259,16 +261,6 @@ class BoolValidator(ValidatorBase):
 
     def correct(self, value):
         return value if self.validate(value) else False
-
-
-class ListValidator(ValidatorBase):
-    """列表验证器"""
-
-    def validate(self, value):
-        return isinstance(value, list)
-
-    def correct(self, value):
-        return value if self.validate(value) else []
 
 
 class FileValidator(ValidatorBase):

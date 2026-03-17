@@ -18,7 +18,7 @@ export type HookMetaItem = {
     /**
      * 元数据读取状态
      */
-    status?: HookMetaItem.status;
+    status?: (HookMetaItem.status | null);
     /**
      * 警告/错误信息
      */

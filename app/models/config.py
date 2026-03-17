@@ -42,7 +42,6 @@ from .ConfigBase import (
     UUIDValidator,
     DateTimeValidator,
     JSONValidator,
-    ListValidator,
     URLValidator,
     UserNameValidator,
     ArgumentValidator,
@@ -678,7 +677,9 @@ class GeneralConfig(ConfigBase):
         ## 错误日志匹配
         self.Script_ErrorLog = ConfigItem("Script", "ErrorLog", "")
         ## Hook 文件列表（按顺序加载）
-        self.Script_HookList = ConfigItem("Script", "HookList", [], ListValidator())
+        self.Script_HookList = ConfigItem(
+            "Script", "HookList", "[ ]", JSONValidator(list)
+        )
 
         ## Game ------------------------------------------------------------
         ## 是否启用游戏
@@ -728,6 +729,23 @@ class GeneralConfig(ConfigBase):
         self.UserData = MultipleConfig([GeneralUserConfig])
 
         super().__init__()
+
+    def get_hook_list(self) -> list[str]:
+        """获取并解析 Hook 文件列表。"""
+
+        raw_hook_list = self.get("Script", "HookList")
+        if not isinstance(raw_hook_list, str):
+            return []
+
+        try:
+            data = json.loads(raw_hook_list)
+        except json.JSONDecodeError:
+            return []
+
+        if not isinstance(data, list):
+            return []
+
+        return [str(path).strip() for path in data if isinstance(path, str) and path.strip()]
 
 
 class GlobalConfig(ConfigBase):

@@ -1458,6 +1458,7 @@ const refreshScript = async () => {
     const scriptDetail = await getScript(scriptId)
     if (scriptDetail) {
       Object.assign(generalConfig, scriptDetail.config as GeneralScriptConfig)
+      normalizeHookListInConfig()
       formData.name = scriptDetail.name
     }
   } catch (error) {
@@ -1470,6 +1471,29 @@ const refreshScript = async () => {
 
 const hookMetaLoading = ref(false)
 const hookMetaList = ref<HookMetaItem[]>([])
+
+const parseHookList = (raw: unknown): string[] => {
+  if (Array.isArray(raw)) {
+    return raw.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+  }
+  if (typeof raw !== 'string' || !raw.trim()) {
+    return []
+  }
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+    return parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+  } catch {
+    return []
+  }
+}
+
+const normalizeHookListInConfig = () => {
+  const raw = (generalConfig as any)?.Script?.HookList
+  generalConfig.Script.HookList = parseHookList(raw)
+}
 
 const getHookMeta = (filePath: string): HookMetaItem | undefined => {
   return hookMetaList.value.find(m => m.path === filePath)
@@ -1496,7 +1520,7 @@ const refreshHookMeta = async () => {
 }
 
 const persistHookList = async () => {
-  await handleChange('Script', 'HookList', [...generalConfig.Script.HookList])
+  await handleChange('Script', 'HookList', JSON.stringify(generalConfig.Script.HookList))
   await refreshHookMeta()
 }
 
@@ -1615,6 +1639,7 @@ const loadScript = async () => {
       const config = scriptData.config as GeneralScriptConfig
       formData.name = config.Info.Name || '新建通用脚本'
       Object.assign(generalConfig, config)
+      normalizeHookListInConfig()
       // 如果名称为空，设置默认名称
       if (!generalConfig.Info.Name) {
         generalConfig.Info.Name = '新建通用脚本'
@@ -1634,6 +1659,7 @@ const loadScript = async () => {
       formData.name = scriptDetail.name
 
       Object.assign(generalConfig, scriptDetail.config as GeneralScriptConfig)
+      normalizeHookListInConfig()
       // 对于 General 类型，在加载完成后初始化相对路径关系
       setTimeout(() => {
         updatePathRelations()
