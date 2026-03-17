@@ -245,6 +245,7 @@ class SrcManager(TaskExecuteBase):
 
         # 还原配置
         if (self.temp_path).exists():
+            shutil.rmtree(self.src_set_path, ignore_errors=True)
             shutil.copytree(self.temp_path, self.src_set_path, dirs_exist_ok=True)
         shutil.rmtree(self.temp_path, ignore_errors=True)
 
