@@ -1,4 +1,25 @@
-﻿import asyncio
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+
+import asyncio
 import re
 import shutil
 import uuid
@@ -21,6 +42,7 @@ from .paths import (
     managed_user_config_path,
 )
 from .tools.login import login as maaend_login
+from .tools import push_notification
 
 
 logger = get_logger("MaaEnd 自动代理")
@@ -144,7 +166,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.check_web_log,
         )
 
-    async def _prepare_runtime_config(self) -> Path:
+    async def _prepare_runtime_config(self) -> None:
         runtime_path = build_runtime_config(
             self.script_info.script_id,
             self.cur_user_item.user_id,
@@ -154,7 +176,6 @@ class AutoProxyTask(TaskExecuteBase):
         )
         self.maaend_config_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(runtime_path, self.maaend_config_path)
-        return runtime_path
 
     def _push_debug_line(self, message: str) -> None:
         line = f"[AUTO-MAS] {message}"
@@ -339,9 +360,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.wait_event.set()
         else:
             await self.wait_event.wait()
-        await self.tauri_log_monitor.stop()
-        await self.maa_log_monitor.stop()
-        await self.web_log_monitor.stop()
+        await self._stop_monitors()
         if self.session_settle_task is not None and not self.session_settle_task.done():
             self.session_settle_task.cancel()
         self.session_settle_task = None
@@ -349,8 +368,7 @@ class AutoProxyTask(TaskExecuteBase):
         if self.cur_user_log.status == "Success!":
             return True
 
-        await self.maaend_process_manager.kill()
-        await System.kill_process(self.maaend_exe_path)
+        await self._terminate_runtime()
         return False
 
     @staticmethod
@@ -471,6 +489,7 @@ class AutoProxyTask(TaskExecuteBase):
             return
 
         await self.prepare()
+        self.user_start_time = datetime.now()
         self.cur_user_item.status = "运行"
 
         attempts = self.script_config.get("Run", "RunTimesLimit")
@@ -620,24 +639,31 @@ class AutoProxyTask(TaskExecuteBase):
 
         await System.kill_process(Path(game_path))
 
+    async def _stop_monitors(self) -> None:
+        await self.tauri_log_monitor.stop()
+        await self.maa_log_monitor.stop()
+        await self.web_log_monitor.stop()
+
+    async def _terminate_runtime(self) -> None:
+        await self.maaend_process_manager.kill()
+        await System.kill_process(self.maaend_exe_path)
+
     async def final_task(self):
         if self.check_result != "Pass":
             return
 
-        await self.tauri_log_monitor.stop()
-        await self.maa_log_monitor.stop()
-        await self.web_log_monitor.stop()
-        await self.game_process_manager.kill()
-        await self.maaend_process_manager.kill()
-        await System.kill_process(self.maaend_exe_path)
+        await self._stop_monitors()
+        await self._terminate_runtime()
         await self._close_game_if_needed()
 
+        user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
             log_path = (
                 Path.cwd()
                 / f"history/{dt.strftime('%Y-%m-%d')}/{self.cur_user_item.name}/{dt.strftime('%H-%M-%S')}.log"
             )
+            user_logs_list.append(log_path.with_suffix(".json"))
 
             if log_item.status == "MaaEnd 运行中":
                 log_item.status = "任务被用户手动中止"
@@ -647,6 +673,29 @@ class AutoProxyTask(TaskExecuteBase):
                 log_item.status = "未捕获到日志"
 
             await Config.save_general_log(log_path, log_item.content, log_item.status)
+
+        statistics = await Config.merge_statistic_info(user_logs_list)
+        statistics["user_info"] = self.cur_user_item.name
+        statistics["start_time"] = self.user_start_time.strftime("%Y-%m-%d %H:%M:%S")
+        statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        statistics["user_result"] = (
+            "代理任务全部完成" if self.run_success else self.cur_user_log.status
+        )
+        success_symbol = "√" if self.run_success else "X"
+        try:
+            await push_notification(
+                "统计信息",
+                f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
+                statistics,
+                self.cur_user_config,
+            )
+        except Exception as e:
+            logger.exception(f"推送通知时出现异常: {e}")
+            await Config.send_websocket_message(
+                id=self.task_info.task_id,
+                type="Info",
+                data={"Error": f"推送通知时出现异常: {e}"},
+            )
 
         if self.run_success:
             await Notify.push_plyer(
@@ -670,3 +719,5 @@ class AutoProxyTask(TaskExecuteBase):
             type="Info",
             data={"Error": f"MaaEnd 自动代理任务出现异常: {e}"},
         )
+
+

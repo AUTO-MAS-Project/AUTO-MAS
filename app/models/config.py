@@ -673,6 +673,28 @@ class MaaEndUserConfig(ConfigBase):
         ## 上次运行状态
         self.Data_LastStatus = ConfigItem("Data", "LastStatus", "-")
 
+        ## Notify ----------------------------------------------------------
+        ## 是否启用通知
+        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否发送统计信息
+        self.Notify_IfSendStatistic = ConfigItem(
+            "Notify", "IfSendStatistic", False, BoolValidator()
+        )
+        ## 是否发送邮件
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
+        ## 收件地址
+        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否启用 Server 酱
+        self.Notify_IfServerChan = ConfigItem(
+            "Notify", "IfServerChan", False, BoolValidator()
+        )
+        ## Server 酱密钥
+        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 自定义 Webhook 列表
+        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
+
         super().__init__()
 
 
@@ -738,7 +760,6 @@ class MaaEndConfig(ConfigBase):
         self.MaaEnd_ConfigLocked = ConfigItem(
             "MaaEnd", "ConfigLocked", False, BoolValidator()
         )
-
         self.UserData = MultipleConfig([MaaEndUserConfig])
 
         super().__init__()
