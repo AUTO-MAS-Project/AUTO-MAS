@@ -36,7 +36,12 @@ UTC4 = timezone(timedelta(hours=4))
 UTC8 = timezone(timedelta(hours=8))
 """东8区时区对象"""
 
-TYPE_BOOK = {"MaaConfig": "MAA", "SrcConfig": "SRC", "GeneralConfig": "通用"}
+TYPE_BOOK = {
+    "MaaConfig": "MAA",
+    "SrcConfig": "SRC",
+    "MaaEndConfig": "MaaEnd",
+    "GeneralConfig": "通用",
+}
 """配置类型映射表"""
 
 MAA_RUN_MOOD_BOOK = {"Annihilation": "剿灭", "Routine": "日常"}

@@ -634,6 +634,228 @@ class MaaConfig(ConfigBase):
         super().__init__()
 
 
+class MaaEndUserConfig(ConfigBase):
+    """MaaEnd用户配置"""
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## 用户名称
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
+        ## 是否启用
+        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        ## 账号
+        self.Info_Account = ConfigItem("Info", "Account", "")
+        ## 密码
+        self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
+        ## 脚本模式
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+        )
+        ## 剩余天数
+        self.Info_RemainedDay = ConfigItem(
+            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        ## 备注
+        self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        ## 用户标签信息
+        self.Info_Tag = ConfigItem(
+            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
+        )
+
+        ## Task ------------------------------------------------------------
+        ## 任务选项覆盖
+        self.Task_OptionOverride = ConfigItem(
+            "Task", "OptionOverride", "{ }", JSONValidator()
+        )
+        ## 资源配置
+        self.Task_ResourceProfile = ConfigItem(
+            "Task", "ResourceProfile", "官服", OptionsValidator(["官服", "B服"])
+        )
+        ## 拜访好友卡死保护模式
+        self.Task_VisitFriendsStallProtection = ConfigItem(
+            "Task",
+            "VisitFriendsStallProtection",
+            "Disabled",
+            OptionsValidator(["Disabled", "Enabled"]),
+        )
+        ## 拜访好友超时阈值（秒）
+        self.Task_VisitFriendsTimeoutSec = ConfigItem(
+            "Task", "VisitFriendsTimeoutSec", 180, RangeValidator(30, 3600)
+        )
+
+        ## Data ------------------------------------------------------------
+        ## 上次运行时间
+        self.Data_LastRun = ConfigItem(
+            "Data",
+            "LastRun",
+            "2000-01-01 00:00:00",
+            DateTimeValidator("%Y-%m-%d %H:%M:%S"),
+        )
+        ## 运行次数
+        self.Data_RunTimes = ConfigItem("Data", "RunTimes", 0, RangeValidator(0, 9999))
+        ## 上次运行状态
+        self.Data_LastStatus = ConfigItem("Data", "LastStatus", "-")
+        ## 当日禁用偷菜日期（东4区日期）
+        self.Data_VisitFriendsStealDisabledDate = ConfigItem(
+            "Data",
+            "VisitFriendsStealDisabledDate",
+            "2000-01-01",
+            DateTimeValidator("%Y-%m-%d"),
+        )
+
+        ## Notify ----------------------------------------------------------
+        ## 是否启用通知
+        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否发送统计信息
+        self.Notify_IfSendStatistic = ConfigItem(
+            "Notify", "IfSendStatistic", False, BoolValidator()
+        )
+        ## 是否发送邮件
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
+        ## 收件地址
+        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否启用 Server 酱
+        self.Notify_IfServerChan = ConfigItem(
+            "Notify", "IfServerChan", False, BoolValidator()
+        )
+        ## Server 酱密钥
+        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 自定义 Webhook 列表
+        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
+
+        super().__init__()
+
+    def getTags(self) -> str:
+        """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
+        tags = []
+
+        # 日常代理标签（使用东4区时间，显示今日次数）
+        today = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+        last_run = self.get("Data", "LastRun")
+        if last_run.startswith(today):
+            daily_run_times = self.get("Data", "RunTimes")
+        else:
+            daily_run_times = 0
+        if daily_run_times > 0:
+            tags.append(
+                {
+                    "text": f"日常：已代理{daily_run_times}次",
+                    "color": "green",
+                }
+            )
+        else:
+            tags.append({"text": "日常：未代理", "color": "orange"})
+
+        # 剩余天数标签
+        remained_day = self.get("Info", "RemainedDay")
+        if remained_day == -1:
+            tag_color = "gold"
+        elif remained_day == 0:
+            tag_color = "red"
+        elif remained_day <= 3:
+            tag_color = "orange"
+        elif remained_day <= 7:
+            tag_color = "yellow"
+        elif remained_day <= 30:
+            tag_color = "blue"
+        else:
+            tag_color = "green"
+        tags.append(
+            {
+                "text": (
+                    f"剩余天数：{remained_day}天"
+                    if remained_day >= 0
+                    else "剩余天数：无期限"
+                ),
+                "color": tag_color,
+            }
+        )
+
+        # 偷菜失败保护标签
+        if self.get("Task", "VisitFriendsStallProtection") == "Enabled":
+            tags.append({"text": "偷菜失败保护：开启", "color": "blue"})
+        else:
+            tags.append({"text": "偷菜失败保护：关闭", "color": "default"})
+
+        # 备注标签
+        notes = self.get("Info", "Notes")
+        note_text = notes if len(notes) <= 20 else f"{notes[:20]}..."
+        tags.append(
+            {
+                "text": f"备注：{note_text}",
+                "color": "pink",
+            }
+        )
+
+        return json.dumps(tags, ensure_ascii=False)
+
+
+class MaaEndConfig(ConfigBase):
+    """MaaEnd配置"""
+
+    related_config: dict[str, MultipleConfig] = {}
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## MaaEnd 脚本名称
+        self.Info_Name = ConfigItem("Info", "Name", "新 MaaEnd 脚本")
+        ## MaaEnd 路径
+        self.Info_Path = ConfigItem("Info", "Path", str(Path.cwd()), FolderValidator())
+
+        ## Run -------------------------------------------------------------
+        ## 运行超时时间
+        self.Run_Timeout = ConfigItem("Run", "Timeout", 10, RangeValidator(0, 9999))
+        ## 每日代理次数限制（0 表示不限制）
+        self.Run_ProxyTimesLimit = ConfigItem(
+            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
+        )
+        ## 运行次数限制
+        self.Run_RunTimesLimit = ConfigItem(
+            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
+        )
+        ## 控制器类型
+        self.Run_ControllerType = ConfigItem(
+            "Run",
+            "ControllerType",
+            "Win32-Window",
+            OptionsValidator(
+                [
+                    "Win32-Window",
+                    "Win32-Front",
+                    "Win32-Window-Background",
+                    "ADB",
+                ]
+            ),
+        )
+        ## 是否启用切号
+        self.Run_IfAccountSwitch = ConfigItem(
+            "Run", "IfAccountSwitch", False, BoolValidator()
+        )
+        ## 切号方式
+        self.Run_AccountSwitchMethod = ConfigItem(
+            "Run",
+            "AccountSwitchMethod",
+            "NoAction",
+            OptionsValidator(["ExitGame", "NoAction"]),
+        )
+        ## Endfield 路径（Win32 preAction）
+        self.Run_GamePath = ConfigItem("Run", "GamePath", "", FileValidator())
+        self.Run_CloseGameOnFinish = ConfigItem("Run", "CloseGameOnFinish", True, BoolValidator())
+
+        ## MaaEnd ----------------------------------------------------------
+        ## 资源配置
+        self.MaaEnd_ResourceProfile = ConfigItem("MaaEnd", "ResourceProfile", "")
+        ## 配置是否已锁定（仅允许 ScriptConfig 流程回写）
+        self.MaaEnd_ConfigLocked = ConfigItem("MaaEnd", "ConfigLocked", False, BoolValidator())
+        self.UserData = MultipleConfig([MaaEndUserConfig])
+
+        super().__init__()
+
+
 class SrcUserConfig(ConfigBase):
     """SRC用户配置"""
 
@@ -1598,7 +1820,7 @@ class GlobalConfig(ConfigBase):
         ## 计划表配置列表
         self.PlanConfig = MultipleConfig([MaaPlanConfig])
         ## 脚本配置列表
-        self.ScriptConfig = MultipleConfig([MaaConfig, SrcConfig, GeneralConfig])
+        self.ScriptConfig = MultipleConfig([MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig])
         ## 队列配置列表
         self.QueueConfig = MultipleConfig([QueueConfig])
         ## 工具箱配置
@@ -1677,6 +1899,7 @@ CLASS_BOOK = {
     "MAA": MaaConfig,
     "MaaPlan": MaaPlanConfig,
     "SRC": SrcConfig,
+    "MaaEnd": MaaEndConfig,
     "General": GeneralConfig,
 }
 """配置类映射表"""

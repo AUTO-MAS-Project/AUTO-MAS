@@ -321,14 +321,14 @@ class QueueConfig(BaseModel):
 
 class ScriptIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: Literal["MaaConfig", "GeneralConfig", "SrcConfig"] = Field(
+    type: Literal["MaaConfig", "GeneralConfig", "SrcConfig", "MaaEndConfig"] = Field(
         ..., description="配置类型"
     )
 
 
 class UserIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: Literal["MaaUserConfig", "GeneralUserConfig", "SrcUserConfig"] = Field(
+    type: Literal["MaaUserConfig", "GeneralUserConfig", "SrcUserConfig", "MaaEndUserConfig"] = Field(
         ..., description="配置类型"
     )
 
@@ -553,6 +553,94 @@ class GeneralConfig(BaseModel):
     Script: Optional[GeneralConfig_Script] = Field(default=None, description="脚本配置")
     Game: Optional[GeneralConfig_Game] = Field(default=None, description="游戏配置")
     Run: Optional[GeneralConfig_Run] = Field(default=None, description="运行配置")
+
+
+class MaaEndUserConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="用户名")
+    Status: Optional[bool] = Field(default=None, description="用户状态")
+    Account: Optional[str] = Field(default=None, description="账号")
+    Password: Optional[str] = Field(default=None, description="密码")
+    Mode: Optional[Literal["简洁", "详细"]] = Field(
+        default=None, description="脚本模式"
+    )
+    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    Notes: Optional[str] = Field(default=None, description="备注")
+    Tag: Optional[str] = Field(default=None, description="用户标签信息")
+
+
+class MaaEndUserConfig_Task(BaseModel):
+    OptionOverride: Optional[str] = Field(default=None, description="任务选项覆盖")
+    ResourceProfile: Optional[Literal["官服", "B服"]] = Field(
+        default=None, description="资源配置"
+    )
+    VisitFriendsStallProtection: Optional[Literal["Disabled", "Enabled"]] = Field(
+        default=None, description="拜访好友卡死保护模式"
+    )
+    VisitFriendsTimeoutSec: Optional[int] = Field(
+        default=None, description="拜访好友超时阈值（秒）"
+    )
+
+
+class MaaEndUserConfig_Data(BaseModel):
+    LastRun: Optional[str] = Field(default=None, description="上次运行时间")
+    RunTimes: Optional[int] = Field(default=None, description="运行次数")
+    LastStatus: Optional[str] = Field(default=None, description="上次运行状态")
+    VisitFriendsStealDisabledDate: Optional[str] = Field(
+        default=None, description="当日禁用偷菜日期"
+    )
+
+
+class MaaEndUserConfig_Notify(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
+    IfSendStatistic: Optional[bool] = Field(
+        default=None, description="是否发送统计信息"
+    )
+    IfSendMail: Optional[bool] = Field(default=None, description="是否发送邮件")
+    ToAddress: Optional[str] = Field(default=None, description="收件地址")
+    IfServerChan: Optional[bool] = Field(default=None, description="是否启用Server酱")
+    ServerChanKey: Optional[str] = Field(default=None, description="Server酱密钥")
+
+
+class MaaEndUserConfig(BaseModel):
+    Info: Optional[MaaEndUserConfig_Info] = Field(default=None, description="用户信息")
+    Task: Optional[MaaEndUserConfig_Task] = Field(default=None, description="任务配置")
+    Data: Optional[MaaEndUserConfig_Data] = Field(default=None, description="用户数据")
+    Notify: Optional[MaaEndUserConfig_Notify] = Field(
+        default=None, description="单独通知"
+    )
+
+
+class MaaEndConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="脚本名称")
+    Path: Optional[str] = Field(default=None, description="脚本路径")
+
+
+class MaaEndConfig_Run(BaseModel):
+    Timeout: Optional[int] = Field(default=None, description="运行超时时间")
+    ProxyTimesLimit: Optional[int] = Field(default=None, description="每日代理次数限制")
+    RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
+    ControllerType: Optional[
+        Literal["Win32-Window", "Win32-Window-Background", "Win32-Front", "ADB"]
+    ] = Field(default=None, description="控制器类型")
+    IfAccountSwitch: Optional[bool] = Field(default=None, description="是否启用切号")
+    AccountSwitchMethod: Optional[Literal["ExitGame", "NoAction"]] = Field(
+        default=None, description="切号方式"
+    )
+    GamePath: Optional[str] = Field(default=None, description="Endfield 客户端路径")
+    CloseGameOnFinish: Optional[bool] = Field(
+        default=None, description="任务结束后是否关闭 Endfield"
+    )
+
+
+class MaaEndConfig_MaaEnd(BaseModel):
+    ResourceProfile: Optional[str] = Field(default=None, description="资源配置")
+    ConfigLocked: Optional[bool] = Field(default=None, description="配置是否锁定")
+
+
+class MaaEndConfig(BaseModel):
+    Info: Optional[MaaEndConfig_Info] = Field(default=None, description="脚本基础信息")
+    Run: Optional[MaaEndConfig_Run] = Field(default=None, description="运行配置")
+    MaaEnd: Optional[MaaEndConfig_MaaEnd] = Field(default=None, description="MaaEnd 配置")
 
 
 class SrcUserConfig_Info(BaseModel):
@@ -814,8 +902,8 @@ class HistoryData(BaseModel):
 
 
 class ScriptCreateIn(BaseModel):
-    type: Literal["MAA", "SRC", "General"] = Field(
-        ..., description="脚本类型: MAA脚本, 通用脚本, SRC脚本"
+    type: Literal["MAA", "SRC", "General", "MaaEnd"] = Field(
+        ..., description="脚本类型: MAA脚本, 通用脚本, SRC脚本, MaaEnd脚本"
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -824,7 +912,7 @@ class ScriptCreateIn(BaseModel):
 
 class ScriptCreateOut(OutBase):
     scriptId: str = Field(..., description="新创建的脚本ID")
-    data: Union[MaaConfig, SrcConfig, GeneralConfig] = Field(
+    data: Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig] = Field(
         ..., description="脚本配置数据"
     )
 
@@ -837,14 +925,14 @@ class ScriptGetIn(BaseModel):
 
 class ScriptGetOut(OutBase):
     index: List[ScriptIndexItem] = Field(..., description="脚本索引列表")
-    data: Dict[str, Union[MaaConfig, SrcConfig, GeneralConfig]] = Field(
+    data: Dict[str, Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig]] = Field(
         ..., description="脚本数据字典, key来自于index列表的uid"
     )
 
 
 class ScriptUpdateIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
-    data: Union[MaaConfig, SrcConfig, GeneralConfig] = Field(
+    data: Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig] = Field(
         ..., description="脚本更新数据"
     )
 
@@ -886,21 +974,21 @@ class UserGetIn(UserInBase):
 
 class UserGetOut(OutBase):
     index: List[UserIndexItem] = Field(..., description="用户索引列表")
-    data: Dict[str, Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig]] = Field(
+    data: Dict[str, Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig]] = Field(
         ..., description="用户数据字典, key来自于index列表的uid"
     )
 
 
 class UserCreateOut(OutBase):
     userId: str = Field(..., description="新创建的用户ID")
-    data: Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig] = Field(
+    data: Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig] = Field(
         ..., description="用户配置数据"
     )
 
 
 class UserUpdateIn(UserInBase):
     userId: str = Field(..., description="用户ID")
-    data: Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig] = Field(
+    data: Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig] = Field(
         ..., description="用户更新数据"
     )
 
