@@ -31,7 +31,7 @@
           <div class="record-status-bar" :class="record.status === 'DONE' ? 'success' : 'error'" />
           <div class="record-content">
             <div class="record-main">
-              <span class="record-time">{{ record.date }}</span>
+              <span class="record-time">{{ formatRecordTime(record.date) }}</span>
               <a-tag :color="record.status === 'DONE' ? 'success' : 'error'" size="small" class="status-tag">
                 <CheckCircleOutlined v-if="record.status === 'DONE'" />
                 <CloseCircleOutlined v-else />
@@ -61,6 +61,7 @@ import {
   RightOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
+import { formatBackendDateTime } from '@/utils/dateDisplay'
 
 interface RecordItem {
   date: string
@@ -79,6 +80,8 @@ defineProps<Props>()
 defineEmits<{
   (e: 'select', index: number, record: RecordItem): void
 }>()
+
+const formatRecordTime = (date: string) => formatBackendDateTime(date)
 </script>
 
 <style scoped>
