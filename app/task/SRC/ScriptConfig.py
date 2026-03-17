@@ -98,7 +98,7 @@ class ScriptConfigTask(TaskExecuteBase):
             )
 
         if not (self.src_set_path / "src.json").exists():
-            for json_path in self.src_root_path.glob("*.json"):
+            for json_path in self.src_set_path.glob("*.json"):
                 if json_path.name != "template.json":
                     shutil.copy(json_path, self.src_set_path / "src.json")
                     break

@@ -238,8 +238,8 @@ import { Service } from '@/api/services/Service'
 import NoticeModal from '@/components/NoticeModal.vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { useAppInitialization } from '@/composables/useAppInitialization'
-import dayjs from 'dayjs'
 import { OpenAPI } from '@/api'
+import { formatBackendDateTime } from '@/utils/dateDisplay'
 const logger = window.electronAPI.getLogger('首页')
 
 interface ActivityInfo {
@@ -306,8 +306,10 @@ const currentActivity = computed(() => {
 })
 
 const formatProxyDisplay = (dateStr: string) => {
-  const ts = getProxyTimestamp(dateStr)
-  return dayjs(ts).format('YYYY-MM-DD HH:mm:ss') // 需要别的格式可改这里
+  if (dateStr === '暂无代理数据') {
+    return dateStr
+  }
+  return formatBackendDateTime(dateStr)
 }
 
 // 格式化时间显示 - 直接使用给定时间，不进行时区转换
@@ -348,24 +350,6 @@ const getActivityTimeStatus = (expireTime: string): 'normal' | 'warning' | 'ende
     return 'normal'
   } catch {
     return 'ended'
-  }
-}
-
-// 获取代理时间戳 - 解析后端返回的中文日期格式
-const getProxyTimestamp = (dateStr: string) => {
-  if (!dateStr) return Date.now()
-
-  // 处理后端返回的中文日期格式: "2025年11月05日 16:02:00"
-  try {
-    // 将中文日期格式转换为标准格式
-    const standardFormat = dateStr.replace(/年/g, '-').replace(/月/g, '-').replace(/日/g, '').trim()
-
-    const t = new Date(standardFormat).getTime()
-    return Number.isNaN(t) ? Date.now() : t
-  } catch {
-    // 兜底：尝试让浏览器自己解析
-    const t = new Date(dateStr).getTime()
-    return Number.isNaN(t) ? Date.now() : t
   }
 }
 
