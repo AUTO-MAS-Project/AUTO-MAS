@@ -1488,12 +1488,12 @@ class AppConfig(GlobalConfig):
         history_index = await self.search_history(
             "DAILY", datetime.now(tz=UTC4).date(), datetime.now(tz=UTC4).date()
         )
-        if datetime.now(tz=UTC4).strftime("%Y年 %m月 %d日") not in history_index:
+        if datetime.now(tz=UTC4).strftime("%Y-%m-%d") not in history_index:
             return {}
         history_data = {
             k: await self.merge_statistic_info(v)
             for k, v in history_index[
-                datetime.now(tz=UTC4).strftime("%Y年 %m月 %d日")
+                datetime.now(tz=UTC4).strftime("%Y-%m-%d")
             ].items()
         }
         overview = {}
@@ -1501,9 +1501,9 @@ class AppConfig(GlobalConfig):
             index_data = data.get("index", [])
             if index_data:
                 last_proxy_date = max(
-                    datetime.strptime(_["date"], "%Y年%m月%d日 %H:%M:%S")
+                    datetime.strptime(_["date"], "%Y-%m-%d %H:%M:%S")
                     for _ in index_data
-                ).strftime("%Y年%m月%d日 %H:%M:%S")
+                ).strftime("%Y-%m-%d %H:%M:%S")
             else:
                 last_proxy_date = "暂无代理数据"
             proxy_times = len(data.get("index", []))
@@ -2028,11 +2028,11 @@ class AppConfig(GlobalConfig):
                         if "error_info" not in data:
                             data["error_info"] = {}
                         data["error_info"][
-                            actual_date.strftime("%Y年%m月%d日 %H:%M:%S")
+                            actual_date.strftime("%Y-%m-%d %H:%M:%S")
                         ] = single_data[key]
 
                     data["index"][actual_date] = {
-                        "date": actual_date.strftime("%Y年%m月%d日 %H:%M:%S"),
+                        "date": actual_date.strftime("%Y-%m-%d %H:%M:%S"),
                         "status": (
                             "DONE" if single_data[key] == "Success!" else "ERROR"
                         ),
@@ -2080,12 +2080,11 @@ class AppConfig(GlobalConfig):
                     continue  # 只统计在范围内的日期
 
                 if mode == "DAILY":
-                    date_name = f"{date.year}年 {date.month:02d}月 {date.day:02d}日"
+                    date_name = date.strftime("%Y-%m-%d")
                 elif mode == "WEEKLY":
-                    year, week, _ = date.isocalendar()
-                    date_name = f"{year}年 第{week}周"
+                    date_name = date.strftime("%G-W%V")
                 elif mode == "MONTHLY":
-                    date_name = f"{date.year}年 {date.month:02d}月"
+                    date_name = date.strftime("%Y-%m")
                 else:
                     raise ValueError("无效的合并模式")
 

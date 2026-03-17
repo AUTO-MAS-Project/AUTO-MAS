@@ -55,6 +55,7 @@ import HistoryDetailPanel from './components/HistoryDetailPanel.vue'
 import HistoryLogModal from './components/HistoryLogModal.vue'
 import HistorySearchPanel from './components/HistorySearchPanel.vue'
 import { useHistoryLogic } from './useHistoryLogic'
+import { formatBackendDateTime } from '@/utils/dateDisplay'
 
 const {
   // 状态
@@ -97,7 +98,7 @@ const currentErrorMessage = ref('')
 
 // 选择记录时打开弹窗
 const handleSelectRecord = async (index: number, record: any) => {
-  currentRecordDate.value = record.date
+  currentRecordDate.value = formatBackendDateTime(record.date)
   currentRecordStatus.value = record.status
   // 获取错误信息
   const errorInfo = selectedUserData.value?.error_info

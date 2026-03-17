@@ -14,7 +14,7 @@
         <a-collapse-panel v-for="dateGroup in historyData" :key="dateGroup.date" class="date-panel">
           <template #header>
             <div class="date-header">
-              <span class="date-text">{{ dateGroup.date }}</span>
+              <span class="date-text">{{ formatDateGroup(dateGroup.date) }}</span>
             </div>
           </template>
 
@@ -46,6 +46,7 @@
 import type { HistoryData } from '@/api'
 import { CalendarOutlined, RightOutlined, UserOutlined } from '@ant-design/icons-vue'
 import { ref, watch } from 'vue'
+import { formatHistoryGroupLabel } from '@/utils/dateDisplay'
 import type { HistoryDateGroup } from '../useHistoryLogic.ts'
 
 interface Props {
@@ -74,6 +75,8 @@ const handleCollapseChange = (keys: string | string[]) => {
   const newKeys = Array.isArray(keys) ? keys : keys ? [keys] : []
   emit('update:activeKeys', newKeys)
 }
+
+const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
 </script>
 
 <style scoped>
