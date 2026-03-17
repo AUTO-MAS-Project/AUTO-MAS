@@ -230,6 +230,7 @@ class AutoProxyTask(TaskExecuteBase):
                             await self.game_manager.open_protocol(
                                 self.game_url, ProcessInfo(name=self.game_process_name)
                             )
+                            await asyncio.sleep(2)
                         else:
                             logger.info(
                                 f"启动游戏: {self.game_path}, 参数: {self.script_config.get('Game','Arguments')}"
