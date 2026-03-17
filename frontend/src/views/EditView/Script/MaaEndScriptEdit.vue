@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="script-edit-header">
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
@@ -110,7 +110,7 @@
             <h3>运行配置</h3>
           </div>
           <a-row :gutter="24">
-            <a-col :span="8">
+            <a-col :span="6">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
@@ -130,7 +130,7 @@
                 </a-select>
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="6">
               <a-form-item>
                 <template #label>
                   <span class="form-label">超时（分钟）</span>
@@ -146,7 +146,7 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="6">
               <a-form-item>
                 <template #label>
                   <span class="form-label">重试次数</span>
@@ -162,9 +162,7 @@
                 />
               </a-form-item>
             </a-col>
-          </a-row>
-          <a-row :gutter="24">
-            <a-col :span="8">
+            <a-col :span="6">
               <a-form-item>
                 <template #label>
                   <span class="form-label">运行次数限制</span>
@@ -180,21 +178,6 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col v-if="config.Run.ControllerType !== 'ADB'" :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">结束后关闭 Endfield</span>
-                </template>
-                <a-select
-                  v-model:value="config.Run.CloseGameOnFinish"
-                  size="large"
-                  @change="handleChange('Run', 'CloseGameOnFinish', $event)"
-                >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
           </a-row>
         </div>
 
@@ -203,7 +186,7 @@
             <h3>MaaEnd 配置</h3>
           </div>
           <a-row :gutter="24">
-            <a-col :span="8">
+            <a-col :span="12">
               <a-form-item>
                 <template #label>
                   <span class="form-label">资源配置</span>
@@ -219,32 +202,19 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">预设任务</span>
-                </template>
-                <a-select
-                  v-if="presetOptions.length > 0"
-                  v-model:value="config.MaaEnd.PresetTask"
-                  size="large"
-                  show-search
-                  allow-clear
-                  placeholder="请选择预设任务"
-                  :options="presetOptions"
-                  @change="handleChange('MaaEnd', 'PresetTask', $event || '')"
-                />
-                <a-input
-                  v-else
-                  v-model:value="config.MaaEnd.PresetTask"
-                  placeholder="请输入预设任务"
-                  size="large"
-                  class="modern-input"
-                  @blur="handleChange('MaaEnd', 'PresetTask', config.MaaEnd.PresetTask)"
-                />
-              </a-form-item>
-            </a-col>
           </a-row>
+        </div>
+
+        <div class="form-section">
+          <div class="section-header">
+            <h3>任务具体配置</h3>
+          </div>
+          <a-alert
+            message="功能开发中"
+            description="任务具体配置区域预留，后续版本接入。"
+            type="info"
+            show-icon
+          />
         </div>
       </a-form>
     </a-card>
@@ -276,12 +246,15 @@ interface MaaEndScriptConfigLocal {
     Retry: number
     RunTimesLimit: number
     GamePath: string
-    CloseGameOnFinish: boolean
     ControllerType: 'Win32-Window' | 'Win32-Window-Background' | 'Win32-Front' | 'ADB'
   }
   MaaEnd: {
     ResourceProfile: string
     PresetTask: string
+    ConfigLocked: boolean
+    LogPath: string
+    SuccessPattern: string
+    ErrorPattern: string
   }
 }
 
@@ -293,7 +266,6 @@ const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
 const isInitializing = ref(true)
 const isSaving = ref(false)
-const presetOptions = ref<Array<{ label: string; value: string }>>([])
 
 const scriptId = route.params.id as string
 
@@ -307,12 +279,15 @@ const config = reactive<MaaEndScriptConfigLocal>({
     Retry: 3,
     RunTimesLimit: 3,
     GamePath: '',
-    CloseGameOnFinish: true,
     ControllerType: 'Win32-Window',
   },
   MaaEnd: {
     ResourceProfile: 'MaaEnd',
     PresetTask: '',
+    ConfigLocked: false,
+    LogPath: '',
+    SuccessPattern: '',
+    ErrorPattern: '',
   },
 })
 
@@ -332,6 +307,21 @@ const rules = {
   path: [{ required: true, message: '请选择 MaaEnd 路径', trigger: 'blur' }],
 }
 
+const normalizeControllerType = (
+  value: string | null | undefined
+): 'Win32-Window' | 'Win32-Window-Background' | 'Win32-Front' | 'ADB' => {
+  if (
+    value === 'Win32-Window' ||
+    value === 'Win32-Window-Background' ||
+    value === 'Win32-Front' ||
+    value === 'ADB'
+  ) {
+    return value
+  }
+
+  return 'Win32-Window'
+}
+
 const resourceProfileOptions = computed(() => {
   const options = ['MaaEnd']
   const current = (config.MaaEnd.ResourceProfile || '').trim()
@@ -349,11 +339,14 @@ const applyConfig = (rawConfig: any, nameFallback = '新建MaaEnd脚本') => {
   config.Run.Retry = rawConfig?.Run?.Retry ?? 3
   config.Run.RunTimesLimit = rawConfig?.Run?.RunTimesLimit ?? 3
   config.Run.GamePath = rawConfig?.Run?.GamePath ?? ''
-  config.Run.CloseGameOnFinish = rawConfig?.Run?.CloseGameOnFinish ?? true
-  config.Run.ControllerType = rawConfig?.Run?.ControllerType ?? 'Win32-Window'
+  config.Run.ControllerType = normalizeControllerType(rawConfig?.Run?.ControllerType)
 
   config.MaaEnd.ResourceProfile = rawConfig?.MaaEnd?.ResourceProfile ?? 'MaaEnd'
   config.MaaEnd.PresetTask = rawConfig?.MaaEnd?.PresetTask ?? ''
+  config.MaaEnd.ConfigLocked = rawConfig?.MaaEnd?.ConfigLocked ?? false
+  config.MaaEnd.LogPath = rawConfig?.MaaEnd?.LogPath ?? ''
+  config.MaaEnd.SuccessPattern = rawConfig?.MaaEnd?.SuccessPattern ?? ''
+  config.MaaEnd.ErrorPattern = rawConfig?.MaaEnd?.ErrorPattern ?? ''
 
   formData.name = config.Info.Name
 }
@@ -401,46 +394,6 @@ const handleNameBlur = async () => {
   await handleChange('Info', 'Name', formData.name)
 }
 
-const resolveMaaEndConfigPath = () => {
-  const base = String(config.Info.Path || '').trim()
-  if (!base) {
-    return ''
-  }
-  return `${base.replace(/[\\/]+$/, '')}/config/mxu-MaaEnd.json`
-}
-
-const loadPresetOptions = async () => {
-  const configPath = resolveMaaEndConfigPath()
-  if (!configPath || !window.electronAPI?.readFile) {
-    presetOptions.value = []
-    return
-  }
-
-  try {
-    const content = await window.electronAPI.readFile(configPath)
-    const parsed = JSON.parse(content)
-    const instances = Array.isArray(parsed?.instances) ? parsed.instances : []
-
-    const optionMap = new Map<string, string>()
-    for (const item of instances) {
-      const id = String(item?.id || '').trim()
-      const name = String(item?.name || '').trim()
-      if (!id || !name || optionMap.has(id)) {
-        continue
-      }
-      optionMap.set(id, name)
-    }
-
-    presetOptions.value = Array.from(optionMap.entries()).map(([id, name]) => ({
-      label: name,
-      value: id,
-    }))
-  } catch (error) {
-    presetOptions.value = []
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.warn(`加载 MaaEnd 预设任务选项失败: ${errorMsg}`)
-  }
-}
 const loadScript = async () => {
   pageLoading.value = true
   try {
@@ -490,7 +443,6 @@ const selectMaaEndPath = async () => {
     config.Info.Path = path
     formData.path = path
     await handleChange('Info', 'Path', path)
-    await loadPresetOptions()
     message.success('MaaEnd 路径选择成功')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -531,7 +483,6 @@ const handleCancel = () => {
 
 onMounted(async () => {
   await loadScript()
-  await loadPresetOptions()
   isInitializing.value = false
 })
 </script>

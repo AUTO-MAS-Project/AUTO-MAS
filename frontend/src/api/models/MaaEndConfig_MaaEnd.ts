@@ -11,4 +11,8 @@ export type MaaEndConfig_MaaEnd = {
      * 预设任务
      */
     PresetTask?: (string | null);
+    /**
+     * 配置是否锁定
+     */
+    ConfigLocked?: (boolean | null);
 };

@@ -564,7 +564,6 @@ class MaaEndUserConfig_Info(BaseModel):
 
 
 class MaaEndUserConfig_Task(BaseModel):
-    PresetOverride: Optional[str] = Field(default=None, description="预设覆盖")
     OptionOverride: Optional[str] = Field(default=None, description="任务选项覆盖")
 
 
@@ -599,6 +598,10 @@ class MaaEndConfig_Run(BaseModel):
     ] = Field(
         default=None, description="控制器类型"
     )
+    IfAccountSwitch: Optional[bool] = Field(default=None, description="是否启用切号")
+    AccountSwitchMethod: Optional[Literal["ExitGame", "NoAction"]] = Field(
+        default=None, description="切号方式"
+    )
     GamePath: Optional[str] = Field(default=None, description="Endfield 客户端路径")
     CloseGameOnFinish: Optional[bool] = Field(
         default=None, description="任务结束后是否关闭 Endfield"
@@ -607,7 +610,7 @@ class MaaEndConfig_Run(BaseModel):
 
 class MaaEndConfig_MaaEnd(BaseModel):
     ResourceProfile: Optional[str] = Field(default=None, description="资源配置")
-    PresetTask: Optional[str] = Field(default=None, description="预设任务")
+    ConfigLocked: Optional[bool] = Field(default=None, description="配置是否锁定")
 
 
 class MaaEndConfig(BaseModel):

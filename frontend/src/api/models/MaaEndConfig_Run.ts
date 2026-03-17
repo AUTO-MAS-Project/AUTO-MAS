@@ -16,6 +16,14 @@ export type MaaEndConfig_Run = {
      */
     RunTimesLimit?: (number | null);
     /**
+     * 是否启用切号
+     */
+    IfAccountSwitch?: (boolean | null);
+    /**
+     * 切号方式
+     */
+    AccountSwitchMethod?: (MaaEndConfig_Run.AccountSwitchMethod | null);
+    /**
      * Endfield 客户端路径
      */
     GamePath?: (string | null);
@@ -33,8 +41,16 @@ export namespace MaaEndConfig_Run {
      * 控制器类型
      */
     export enum ControllerType {
-        WIN32 = 'Win32',
+        WIN32_WINDOW = 'Win32-Window',
+        WIN32_WINDOW_BACKGROUND = 'Win32-Window-Background',
+        WIN32_FRONT = 'Win32-Front',
         ADB = 'ADB',
-        PLAY_COVER = 'PlayCover',
+    }
+    /**
+     * 切号方式
+     */
+    export enum AccountSwitchMethod {
+        EXIT_GAME = 'ExitGame',
+        NO_ACTION = 'NoAction',
     }
 }

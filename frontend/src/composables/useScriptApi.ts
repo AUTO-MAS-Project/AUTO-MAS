@@ -1,6 +1,14 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { type GeneralConfig, type MaaConfig, type MaaEndConfig, type SrcConfig, ScriptCreateIn, type ScriptReorderIn, Service } from '@/api'
+import {
+  type GeneralConfig,
+  type MaaConfig,
+  type MaaEndConfig,
+  type SrcConfig,
+  ScriptCreateIn,
+  type ScriptReorderIn,
+  Service,
+} from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
@@ -117,100 +125,106 @@ export function useScriptApi() {
   const getScriptsWithUsers = async (): Promise<
     Awaited<
       | {
-        uid: string
-        type: string
-        name: string
-        config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
-        users: (
-          | {
-            id: string
-            name: any
-            Info: {
-              Name: any
-              Id: any
-              Mode: any
-              StageMode: any
-              Server: any
-              Status: any
-              RemainedDay: any
-              Annihilation: any
-              InfrastMode: any
-              InfrastName: any
-              InfrastIndex: any
-              Password: any
-              Notes: any
-              MedicineNumb: any
-              SeriesNumb: any
-              Stage: any
-              Stage_1: any
-              Stage_2: any
-              Stage_3: any
-              Stage_Remain: any
-              IfSkland: any
-              SklandToken: any
-            }
-            Task: {
-              IfStartUp: any
-              IfRecruit: any
-              IfInfrast: any
-              IfFight: any
-              IfMall: any
-              IfAward: any
-              IfRoguelike: any
-              IfReclamation: any
-            }
-            Notify: {
-              Enabled: any
-              IfSendStatistic: any
-              IfSendSixStar: any
-              IfSendMail: any
-              ToAddress: any
-              IfServerChan: any
-              ServerChanKey: any
-              CustomWebhooks: any
-            }
-            Data: {
-              LastProxyDate: any
-              LastSklandDate: any
-              IfPassCheck: any
-              ProxyTimes: any
-            }
-          }
-          | {
-            id: string
-            name: any
-            Info: {
-              Name: any
-              Status: any
-              RemainedDay: any
-              IfScriptBeforeTask: any
-              ScriptBeforeTask: any
-              IfScriptAfterTask: any
-              ScriptAfterTask: any
-              Notes: any
-            }
-            Notify: {
-              Enabled: any
-              IfSendStatistic: any
-              IfSendMail: any
-              ToAddress: any
-              IfServerChan: any
-              ServerChanKey: any
-              CustomWebhooks: any
-            }
-            Data: { LastProxyDate: any; ProxyTimes: any }
-          }
-          | null
-        )[]
-      }
-      | { uid: string; type: string; name: string; config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig; users: any[] }
+          uid: string
+          type: string
+          name: string
+          config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
+          users: (
+            | {
+                id: string
+                name: any
+                Info: {
+                  Name: any
+                  Id: any
+                  Mode: any
+                  StageMode: any
+                  Server: any
+                  Status: any
+                  RemainedDay: any
+                  Annihilation: any
+                  InfrastMode: any
+                  InfrastName: any
+                  InfrastIndex: any
+                  Password: any
+                  Notes: any
+                  MedicineNumb: any
+                  SeriesNumb: any
+                  Stage: any
+                  Stage_1: any
+                  Stage_2: any
+                  Stage_3: any
+                  Stage_Remain: any
+                  IfSkland: any
+                  SklandToken: any
+                }
+                Task: {
+                  IfStartUp: any
+                  IfRecruit: any
+                  IfInfrast: any
+                  IfFight: any
+                  IfMall: any
+                  IfAward: any
+                  IfRoguelike: any
+                  IfReclamation: any
+                }
+                Notify: {
+                  Enabled: any
+                  IfSendStatistic: any
+                  IfSendSixStar: any
+                  IfSendMail: any
+                  ToAddress: any
+                  IfServerChan: any
+                  ServerChanKey: any
+                  CustomWebhooks: any
+                }
+                Data: {
+                  LastProxyDate: any
+                  LastSklandDate: any
+                  IfPassCheck: any
+                  ProxyTimes: any
+                }
+              }
+            | {
+                id: string
+                name: any
+                Info: {
+                  Name: any
+                  Status: any
+                  RemainedDay: any
+                  IfScriptBeforeTask: any
+                  ScriptBeforeTask: any
+                  IfScriptAfterTask: any
+                  ScriptAfterTask: any
+                  Notes: any
+                }
+                Notify: {
+                  Enabled: any
+                  IfSendStatistic: any
+                  IfSendMail: any
+                  ToAddress: any
+                  IfServerChan: any
+                  ServerChanKey: any
+                  CustomWebhooks: any
+                }
+                Data: { LastProxyDate: any; ProxyTimes: any }
+              }
+            | null
+          )[]
+        }
       | {
-        uid: string
-        type: string
-        name: string
-        config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
-        users: any[]
-      }
+          uid: string
+          type: string
+          name: string
+          config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
+          users: any[]
+        }
+      | {
+          uid: string
+          type: string
+          name: string
+          config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
+          users: any[]
+        }
     >[]
   > => {
     loading.value = true
@@ -319,17 +333,15 @@ export function useScriptApi() {
                             ? maaUserData.Task.IfRecruit
                             : true,
                         IfInfrast:
-                          maaUserData.Task?.IfInfrast !== undefined ? maaUserData.Task.IfInfrast : true,
-                        IfFight:
-                          maaUserData.Task?.IfFight !== undefined
-                            ? maaUserData.Task.IfFight
+                          maaUserData.Task?.IfInfrast !== undefined
+                            ? maaUserData.Task.IfInfrast
                             : true,
+                        IfFight:
+                          maaUserData.Task?.IfFight !== undefined ? maaUserData.Task.IfFight : true,
                         IfMall:
                           maaUserData.Task?.IfMall !== undefined ? maaUserData.Task.IfMall : true,
                         IfAward:
-                          maaUserData.Task?.IfAward !== undefined
-                            ? maaUserData.Task.IfAward
-                            : true,
+                          maaUserData.Task?.IfAward !== undefined ? maaUserData.Task.IfAward : true,
                         IfRoguelike:
                           maaUserData.Task?.IfRoguelike !== undefined
                             ? maaUserData.Task.IfRoguelike
@@ -424,7 +436,8 @@ export function useScriptApi() {
                           srcUserData.Stage?.Channel !== undefined
                             ? srcUserData.Stage.Channel
                             : 'Relic',
-                        Relic: srcUserData.Stage?.Relic !== undefined ? srcUserData.Stage.Relic : '-',
+                        Relic:
+                          srcUserData.Stage?.Relic !== undefined ? srcUserData.Stage.Relic : '-',
                         Materials:
                           srcUserData.Stage?.Materials !== undefined
                             ? srcUserData.Stage.Materials
@@ -490,7 +503,9 @@ export function useScriptApi() {
                             ? srcUserData.Data.LastProxyDate
                             : '',
                         ProxyTimes:
-                          srcUserData.Data?.ProxyTimes !== undefined ? srcUserData.Data.ProxyTimes : 0,
+                          srcUserData.Data?.ProxyTimes !== undefined
+                            ? srcUserData.Data.ProxyTimes
+                            : 0,
                         IfPassCheck:
                           srcUserData.Data?.IfPassCheck !== undefined
                             ? srcUserData.Data.IfPassCheck
@@ -526,10 +541,6 @@ export function useScriptApi() {
                         Tag: null,
                       },
                       Task: {
-                        PresetOverride:
-                          maaEndUserData.Task?.PresetOverride !== undefined
-                            ? maaEndUserData.Task.PresetOverride
-                            : '',
                         OptionOverride:
                           maaEndUserData.Task?.OptionOverride !== undefined
                             ? maaEndUserData.Task.OptionOverride
@@ -584,7 +595,8 @@ export function useScriptApi() {
                           generalUserData.Info?.Notes !== undefined
                             ? generalUserData.Info.Notes
                             : '',
-                        Tag: generalUserData.Info?.Tag !== undefined ? generalUserData.Info.Tag : null,
+                        Tag:
+                          generalUserData.Info?.Tag !== undefined ? generalUserData.Info.Tag : null,
                       },
                       Notify: {
                         Enabled:

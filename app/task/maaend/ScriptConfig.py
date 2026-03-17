@@ -28,10 +28,17 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.services import System
 from app.utils import get_logger, ProcessManager
+from .paths import (
+    LOCAL_CONFIG_NAME,
+    managed_default_config_path,
+    managed_user_config_path,
+)
 from .runtime_bridge import build_runtime_config
 
 
 logger = get_logger("MaaEnd ScriptConfig")
+MANAGED_INSTANCE_ID = "AUTO-MAS"
+MANAGED_INSTANCE_NAME = "AUTO-MAS"
 
 
 class ScriptConfigTask(TaskExecuteBase):
@@ -61,10 +68,13 @@ class ScriptConfigTask(TaskExecuteBase):
 
         self.maaend_root_path = Path(self.script_config.get("Info", "Path"))
         self.maaend_exe_path = self.maaend_root_path / "MaaEnd.exe"
-        self.maaend_config_path = self.maaend_root_path / "config" / "mxu-MaaEnd.json"
-        self.user_config_cache_path = (
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile/mxu-MaaEnd.json"
+        self.maaend_config_dir = self.maaend_root_path / "config"
+        self.maaend_config_path = self.maaend_config_dir / LOCAL_CONFIG_NAME
+        self.user_managed_config_path = managed_user_config_path(
+            self.script_info.script_id, self.cur_user_item.user_id
+        )
+        self.default_managed_config_path = managed_default_config_path(
+            self.script_info.script_id
         )
 
     async def main_task(self):
@@ -91,9 +101,74 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
-        if self.user_config_cache_path.exists():
-            self.maaend_config_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy(self.user_config_cache_path, self.maaend_config_path)
+        # 配置接管：清理 MaaEnd 原有 config，再注入 AUTO-MAS 托管配置
+        if self.maaend_config_dir.exists():
+            shutil.rmtree(self.maaend_config_dir, ignore_errors=True)
+        self.maaend_config_dir.mkdir(parents=True, exist_ok=True)
+
+        seed_candidates = [
+            self.user_managed_config_path,
+            self.default_managed_config_path,
+        ]
+        for seed_path in seed_candidates:
+            if seed_path.exists():
+                shutil.copy(seed_path, self.maaend_config_path)
+                self._normalize_to_single_managed_instance()
+                return
+
+        self.maaend_config_path.write_text(
+            json.dumps({"instances": []}, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        self._normalize_to_single_managed_instance()
+
+    def _normalize_to_single_managed_instance(self):
+        """Force local MaaEnd config to a single managed instance."""
+
+        config_data: dict = {}
+        if self.maaend_config_path.exists():
+            try:
+                loaded = json.loads(self.maaend_config_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    config_data = loaded
+            except Exception:
+                config_data = {}
+
+        selected_instance: dict = {}
+        instances = config_data.get("instances", [])
+        if isinstance(instances, list):
+            active_id = str(config_data.get("lastActiveInstanceId", "")).strip()
+            if active_id:
+                for instance in instances:
+                    if isinstance(instance, dict) and str(instance.get("id", "")).strip() == active_id:
+                        selected_instance = dict(instance)
+                        break
+            if not selected_instance:
+                for instance in instances:
+                    if isinstance(instance, dict):
+                        selected_instance = dict(instance)
+                        break
+
+        selected_instance["id"] = MANAGED_INSTANCE_ID
+        selected_instance["name"] = MANAGED_INSTANCE_NAME
+        config_data["instances"] = [selected_instance]
+        config_data["lastActiveInstanceId"] = MANAGED_INSTANCE_ID
+        self.maaend_config_path.write_text(
+            json.dumps(config_data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+    @staticmethod
+    def _prune_cache_dir(managed_path: Path):
+        """Keep only managed config file in cache directory."""
+
+        cache_dir = managed_path.parent
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        for child in cache_dir.iterdir():
+            if child == managed_path:
+                continue
+            if child.is_file():
+                child.unlink(missing_ok=True)
+            elif child.is_dir():
+                shutil.rmtree(child, ignore_errors=True)
 
     @staticmethod
     def _normalize_controller_type(controller_name: str) -> str | None:
@@ -116,7 +191,7 @@ class ScriptConfigTask(TaskExecuteBase):
         config_data = json.loads(self.maaend_config_path.read_text(encoding="utf-8"))
         instances = config_data.get("instances", [])
         if not instances:
-            raise ValueError("No MaaEnd instances in mxu-MaaEnd.json")
+            raise ValueError("No MaaEnd instances in managed config")
 
         active_id = config_data.get("lastActiveInstanceId")
         selected_instance = next(
@@ -125,7 +200,6 @@ class ScriptConfigTask(TaskExecuteBase):
         if selected_instance is None:
             selected_instance = instances[0]
 
-        preset_id = str(selected_instance.get("id", "")).strip()
         resource_name = str(selected_instance.get("resourceName", "")).strip()
         controller_name = str(selected_instance.get("controllerName", "")).strip()
         controller_type = self._normalize_controller_type(controller_name)
@@ -134,15 +208,6 @@ class ScriptConfigTask(TaskExecuteBase):
         if was_locked:
             await self.script_config.unlock()
         try:
-            if preset_id:
-                await self.script_config.set("MaaEnd", "PresetTask", preset_id)
-
-                if self.cur_user_item.user_id != "Default":
-                    user_uid = uuid.UUID(self.cur_user_item.user_id)
-                    await self.user_config[user_uid].set(
-                        "Task", "PresetOverride", preset_id
-                    )
-
             if resource_name:
                 await self.script_config.set("MaaEnd", "ResourceProfile", resource_name)
 
@@ -159,10 +224,26 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
+        self._normalize_to_single_managed_instance()
         await self._readback_config()
 
-        self.user_config_cache_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(self.maaend_config_path, self.user_config_cache_path)
+        self.user_managed_config_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(self.maaend_config_path, self.user_managed_config_path)
+        self._prune_cache_dir(self.user_managed_config_path)
+
+        if self.cur_user_item.user_id == "Default":
+            self.default_managed_config_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(self.maaend_config_path, self.default_managed_config_path)
+            self._prune_cache_dir(self.default_managed_config_path)
+
+        was_locked = self.script_config.is_locked
+        if was_locked:
+            await self.script_config.unlock()
+        try:
+            await self.script_config.set("MaaEnd", "ConfigLocked", True)
+        finally:
+            if was_locked:
+                await self.script_config.lock()
 
         if self.cur_user_item.user_id != "Default":
             runtime_user_cfg = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
@@ -171,6 +252,7 @@ class ScriptConfigTask(TaskExecuteBase):
                 self.cur_user_item.user_id,
                 self.script_config,
                 runtime_user_cfg,
+                source_path=self.user_managed_config_path,
             )
             logger.info(f"MaaEnd runtime config generated: {runtime_path}")
 

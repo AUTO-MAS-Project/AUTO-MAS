@@ -655,7 +655,6 @@ class MaaEndUserConfig(ConfigBase):
 
         ## Task ------------------------------------------------------------
         ## 预设覆盖
-        self.Task_PresetOverride = ConfigItem("Task", "PresetOverride", "")
         ## 任务选项覆盖
         self.Task_OptionOverride = ConfigItem(
             "Task", "OptionOverride", "{ }", JSONValidator()
@@ -713,6 +712,17 @@ class MaaEndConfig(ConfigBase):
                 ]
             ),
         )
+        ## 是否启用切号
+        self.Run_IfAccountSwitch = ConfigItem(
+            "Run", "IfAccountSwitch", False, BoolValidator()
+        )
+        ## 切号方式
+        self.Run_AccountSwitchMethod = ConfigItem(
+            "Run",
+            "AccountSwitchMethod",
+            "NoAction",
+            OptionsValidator(["ExitGame", "NoAction"]),
+        )
         ## Endfield 路径（Win32 preAction）
         self.Run_GamePath = ConfigItem("Run", "GamePath", "", FileValidator())
         self.Run_CloseGameOnFinish = ConfigItem(
@@ -724,8 +734,10 @@ class MaaEndConfig(ConfigBase):
         self.MaaEnd_ResourceProfile = ConfigItem(
             "MaaEnd", "ResourceProfile", "MaaEnd"
         )
-        ## 预设任务
-        self.MaaEnd_PresetTask = ConfigItem("MaaEnd", "PresetTask", "")
+        ## 配置是否已锁定（仅允许 ScriptConfig 流程回写）
+        self.MaaEnd_ConfigLocked = ConfigItem(
+            "MaaEnd", "ConfigLocked", False, BoolValidator()
+        )
 
         self.UserData = MultipleConfig([MaaEndUserConfig])
 
