@@ -664,7 +664,6 @@ class MaaEndUserConfig(ConfigBase):
         )
 
         ## Task ------------------------------------------------------------
-        ## 预设覆盖
         ## 任务选项覆盖
         self.Task_OptionOverride = ConfigItem(
             "Task", "OptionOverride", "{ }", JSONValidator()
@@ -672,6 +671,17 @@ class MaaEndUserConfig(ConfigBase):
         ## 资源配置
         self.Task_ResourceProfile = ConfigItem(
             "Task", "ResourceProfile", "官服", OptionsValidator(["官服", "B服"])
+        )
+        ## 拜访好友卡死保护模式
+        self.Task_VisitFriendsStallProtection = ConfigItem(
+            "Task",
+            "VisitFriendsStallProtection",
+            "Disabled",
+            OptionsValidator(["Disabled", "Enabled"]),
+        )
+        ## 拜访好友超时阈值（秒）
+        self.Task_VisitFriendsTimeoutSec = ConfigItem(
+            "Task", "VisitFriendsTimeoutSec", 180, RangeValidator(30, 3600)
         )
 
         ## Data ------------------------------------------------------------
@@ -686,6 +696,13 @@ class MaaEndUserConfig(ConfigBase):
         self.Data_RunTimes = ConfigItem("Data", "RunTimes", 0, RangeValidator(0, 9999))
         ## 上次运行状态
         self.Data_LastStatus = ConfigItem("Data", "LastStatus", "-")
+        ## 当日禁用偷菜日期（东4区日期）
+        self.Data_VisitFriendsStealDisabledDate = ConfigItem(
+            "Data",
+            "VisitFriendsStealDisabledDate",
+            "2000-01-01",
+            DateTimeValidator("%Y-%m-%d"),
+        )
 
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
@@ -715,12 +732,14 @@ class MaaEndUserConfig(ConfigBase):
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
 
-        # 日常代理标签（使用东4区时间）
+        # 日常代理标签（使用东4区时间，显示今日次数）
+        today = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         last_run = str(self.get("Data", "LastRun") or "").strip()
-        if last_run.startswith(datetime.now(tz=UTC4).strftime("%Y-%m-%d")):
+        daily_run_times = int(self.get("Data", "RunTimes") or 0) if last_run.startswith(today) else 0
+        if daily_run_times > 0:
             tags.append(
                 {
-                    "text": f"日常：已代理{self.get('Data', 'RunTimes')}次",
+                    "text": f"日常：已代理{daily_run_times}次",
                     "color": "green",
                 }
             )
@@ -751,6 +770,12 @@ class MaaEndUserConfig(ConfigBase):
                 "color": tag_color,
             }
         )
+
+        # 偷菜失败保护标签
+        if str(self.get("Task", "VisitFriendsStallProtection") or "").strip() == "Enabled":
+            tags.append({"text": "偷菜失败保护：开启", "color": "blue"})
+        else:
+            tags.append({"text": "偷菜失败保护：关闭", "color": "default"})
 
         # 备注标签
         notes = self.get("Info", "Notes")

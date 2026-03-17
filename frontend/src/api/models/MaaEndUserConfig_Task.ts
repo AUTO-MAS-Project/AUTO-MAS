@@ -11,4 +11,12 @@ export type MaaEndUserConfig_Task = {
      * 资源配置
      */
     ResourceProfile?: ('官服' | 'B服' | null);
+    /**
+     * 拜访好友卡死保护模式
+     */
+    VisitFriendsStallProtection?: ('Disabled' | 'Enabled' | null);
+    /**
+     * 拜访好友超时阈值（秒）
+     */
+    VisitFriendsTimeoutSec?: (number | null);
 };

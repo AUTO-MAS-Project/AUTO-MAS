@@ -573,12 +573,21 @@ class MaaEndUserConfig_Task(BaseModel):
     ResourceProfile: Optional[Literal["官服", "B服"]] = Field(
         default=None, description="资源配置"
     )
+    VisitFriendsStallProtection: Optional[Literal["Disabled", "Enabled"]] = Field(
+        default=None, description="拜访好友卡死保护模式"
+    )
+    VisitFriendsTimeoutSec: Optional[int] = Field(
+        default=None, description="拜访好友超时阈值（秒）"
+    )
 
 
 class MaaEndUserConfig_Data(BaseModel):
     LastRun: Optional[str] = Field(default=None, description="上次运行时间")
     RunTimes: Optional[int] = Field(default=None, description="运行次数")
     LastStatus: Optional[str] = Field(default=None, description="上次运行状态")
+    VisitFriendsStealDisabledDate: Optional[str] = Field(
+        default=None, description="当日禁用偷菜日期"
+    )
 
 
 class MaaEndUserConfig_Notify(BaseModel):

@@ -249,12 +249,58 @@
             <div class="section-header">
               <h3>任务配置</h3>
             </div>
-            <a-alert
-              message="占位实现"
-              description="用户级任务具体配置区域预留，后续版本接入。"
-              type="info"
-              show-icon
-            />
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="开启后会在拜访好友超时卡死时自动重试，并在当天禁用偷菜模式">
+                      <span class="form-label">
+                        拜访好友卡死保护
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-select
+                    v-model:value="formData.Task.VisitFriendsStallProtection"
+                    :disabled="loading"
+                    size="large"
+                    @change="
+                      handleFieldSave(
+                        'Task.VisitFriendsStallProtection',
+                        formData.Task.VisitFriendsStallProtection
+                      )
+                    "
+                  >
+                    <a-select-option value="Disabled">关闭</a-select-option>
+                    <a-select-option value="Enabled">开启</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip title="卡死保护生效阈值，默认 180 秒">
+                      <span class="form-label">
+                        超时阈值（秒）
+                        <QuestionCircleOutlined class="help-icon" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-number
+                    v-model:value="formData.Task.VisitFriendsTimeoutSec"
+                    :min="30"
+                    :max="3600"
+                    :step="10"
+                    :disabled="loading || formData.Task.VisitFriendsStallProtection !== 'Enabled'"
+                    size="large"
+                    style="width: 100%"
+                    @blur="
+                      handleFieldSave('Task.VisitFriendsTimeoutSec', formData.Task.VisitFriendsTimeoutSec)
+                    "
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
           </div>
 
           <div class="form-section">
@@ -330,11 +376,14 @@ const getDefaultMaaEndUserData = () => ({
     OptionOverride: '{ }',
     // 当前由系统托管为官服，保留字段以便后续扩展 i18n（en/fr/jp 等）资源配置
     ResourceProfile: '官服',
+    VisitFriendsStallProtection: 'Disabled',
+    VisitFriendsTimeoutSec: 180,
   },
   Data: {
     LastRun: '2000-01-01 00:00:00',
     RunTimes: 0,
     LastStatus: '-',
+    VisitFriendsStealDisabledDate: '2000-01-01',
   },
 })
 
@@ -402,6 +451,14 @@ const handleFieldSave = async (key: string, value: any) => {
 
   if (key === 'Task.OptionOverride' && !validateOptionOverride(String(value ?? ''))) {
     return
+  }
+  if (key === 'Task.VisitFriendsTimeoutSec') {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed)) {
+      return
+    }
+    value = Math.max(30, Math.min(3600, Math.floor(parsed)))
+    formData.Task.VisitFriendsTimeoutSec = value
   }
 
   isSaving.value = true
@@ -472,6 +529,12 @@ const loadUserData = async () => {
 
     if (!formData.Task.OptionOverride || !String(formData.Task.OptionOverride).trim()) {
       formData.Task.OptionOverride = '{ }'
+    }
+    if (
+      formData.Task.VisitFriendsTimeoutSec === undefined ||
+      formData.Task.VisitFriendsTimeoutSec === null
+    ) {
+      formData.Task.VisitFriendsTimeoutSec = 180
     }
 
     await nextTick()

@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
@@ -20,6 +20,7 @@
 
 
 import asyncio
+import json
 import re
 import shutil
 import uuid
@@ -98,6 +99,9 @@ class AutoProxyTask(TaskExecuteBase):
         self.tauri_log_cursor = 0
         self.maa_log_cursor = 0
         self.web_log_cursor = 0
+        self.visit_friends_protection_enabled = False
+        self.visit_friends_timeout_sec = 180
+        self.runtime_has_visit_friends = False
 
     async def check(self) -> str:
         if self.script_config.get(
@@ -195,6 +199,55 @@ class AutoProxyTask(TaskExecuteBase):
             "%Y-%m-%d %H:%M:%S",
             self.check_web_log,
         )
+        self.visit_friends_protection_enabled = (
+            str(self.cur_user_config.get("Task", "VisitFriendsStallProtection")).strip()
+            == "Enabled"
+        )
+        timeout_sec = self.cur_user_config.get("Task", "VisitFriendsTimeoutSec")
+        try:
+            timeout_sec = int(timeout_sec)
+        except Exception:
+            timeout_sec = 180
+        self.visit_friends_timeout_sec = max(30, timeout_sec)
+
+    def _detect_visit_friends_enabled_in_runtime(self) -> bool:
+        try:
+            config_data = json.loads(self.maaend_config_path.read_text(encoding="utf-8"))
+        except Exception:
+            return False
+
+        instances = config_data.get("instances")
+        if not isinstance(instances, list) or not instances:
+            return False
+
+        active_id = config_data.get("lastActiveInstanceId")
+        selected_instance = next(
+            (
+                item
+                for item in instances
+                if isinstance(item, dict) and item.get("id") == active_id
+            ),
+            None,
+        )
+        if selected_instance is None:
+            selected_instance = next(
+                (item for item in instances if isinstance(item, dict)),
+                None,
+            )
+        if not isinstance(selected_instance, dict):
+            return False
+
+        tasks = selected_instance.get("tasks")
+        if not isinstance(tasks, list):
+            return False
+
+        for task in tasks:
+            if not isinstance(task, dict):
+                continue
+            if str(task.get("taskName", "")).strip() != "VisitFriends":
+                continue
+            return bool(task.get("enabled", True))
+        return False
 
     async def _prepare_runtime_config(self) -> None:
         runtime_path = build_runtime_config(
@@ -298,10 +351,16 @@ class AutoProxyTask(TaskExecuteBase):
             f"{self.script_info.log}"
         )
 
-    async def _prepare_before_maaend(self, run_idx: int) -> bool:
+    async def _prepare_before_maaend(
+        self, run_idx: int, skip_account_switch_and_login: bool = False
+    ) -> bool:
         controller_type = str(self.script_config.get("Run", "ControllerType")).strip()
         if not controller_type.startswith("Win32"):
             return True
+
+        if skip_account_switch_and_login:
+            self._set_stage_message("同账号重试：跳过切号与自动登录，仅重启 MaaEnd")
+            return await self._ensure_game_running()
 
         if self.script_config.get("Run", "IfAccountSwitch"):
             account_switch_method = str(
@@ -336,7 +395,12 @@ class AutoProxyTask(TaskExecuteBase):
 
         return True
 
-    async def _run_once(self, run_idx: int) -> bool:
+    async def _run_once(
+        self,
+        run_idx: int,
+        skip_account_switch_and_login: bool = False,
+        kill_game_on_visitfriends_timeout: bool = False,
+    ) -> bool:
         self.script_info.log = f"用户 {self.cur_user_item.name} 执行中：轮次 {run_idx + 1}"
 
         self.log_start_time = datetime.now()
@@ -359,13 +423,16 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log = LogRecord()
 
         await self._prepare_runtime_config()
+        self.runtime_has_visit_friends = self._detect_visit_friends_enabled_in_runtime()
 
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
         self._set_stage_message(
             "已生成运行时配置", str(self.runtime_source_config_path.parent)
         )
-        if not await self._prepare_before_maaend(run_idx):
+        if not await self._prepare_before_maaend(
+            run_idx, skip_account_switch_and_login=skip_account_switch_and_login
+        ):
             return False
 
         self.wait_event.clear()
@@ -378,17 +445,37 @@ class AutoProxyTask(TaskExecuteBase):
         )
         await self.maa_log_monitor.start_monitor_file(self.maa_log_path, self.log_start_time)
         await self.web_log_monitor.start_monitor_file(self.web_log_path, self.log_start_time)
-        if self.timeout_minutes > 0:
-            try:
-                await asyncio.wait_for(
-                    self.wait_event.wait(), timeout=self.timeout_minutes * 60
-                )
-            except asyncio.TimeoutError:
+        total_timeout_sec = int(self.timeout_minutes * 60) if self.timeout_minutes > 0 else 0
+        started_at = datetime.now()
+        while not self.wait_event.is_set():
+            elapsed_sec = (datetime.now() - started_at).total_seconds()
+
+            if total_timeout_sec > 0 and elapsed_sec >= total_timeout_sec:
                 self.cur_user_log.status = "Timeout"
                 self.session_closed = True
                 self.wait_event.set()
-        else:
-            await self.wait_event.wait()
+                break
+
+            if (
+                self.visit_friends_protection_enabled
+                and self.runtime_has_visit_friends
+                and elapsed_sec >= self.visit_friends_timeout_sec
+            ):
+                self.cur_user_log.status = "VisitFriendsTimeout"
+                self.session_closed = True
+                await self.cur_user_config.set(
+                    "Data",
+                    "VisitFriendsStealDisabledDate",
+                    datetime.now(tz=UTC4).strftime("%Y-%m-%d"),
+                )
+                self.wait_event.set()
+                self._set_stage_message(
+                    "检测到拜访好友疑似卡死",
+                    f"超时 {self.visit_friends_timeout_sec} 秒，今日禁用偷菜并重试",
+                )
+                break
+
+            await asyncio.sleep(1.0)
         await self._stop_monitors()
         if self.session_settle_task is not None and not self.session_settle_task.done():
             self.session_settle_task.cancel()
@@ -398,6 +485,12 @@ class AutoProxyTask(TaskExecuteBase):
             return True
 
         await self._terminate_runtime()
+        if (
+            self.cur_user_log.status == "VisitFriendsTimeout"
+            and kill_game_on_visitfriends_timeout
+        ):
+            self._set_stage_message("拜访好友超时后重置 Endfield 进程")
+            await System.kill_process(self.game_exe_path)
         return False
 
     @staticmethod
@@ -530,9 +623,16 @@ class AutoProxyTask(TaskExecuteBase):
         attempts = self.script_config.get("Run", "RunTimesLimit")
         self.run_success = False
         self.last_status = "Crash"
+        skip_account_switch_and_login = False
 
         for run_idx in range(attempts):
-            self.run_success = await self._run_once(run_idx)
+            is_last_attempt = run_idx + 1 >= attempts
+            self.run_success = await self._run_once(
+                run_idx,
+                skip_account_switch_and_login=skip_account_switch_and_login,
+                kill_game_on_visitfriends_timeout=is_last_attempt,
+            )
+            skip_account_switch_and_login = False
 
             if self.run_success:
                 self.last_status = "Success"
@@ -540,13 +640,17 @@ class AutoProxyTask(TaskExecuteBase):
 
             if self.cur_user_log.status == "Timeout":
                 self.last_status = "Timeout"
+            elif self.cur_user_log.status == "VisitFriendsTimeout":
+                self.last_status = "VisitFriendsTimeout"
+                if not is_last_attempt:
+                    skip_account_switch_and_login = True
             elif self.cur_user_log.status.startswith("InstanceStoppedOrFailed"):
                 self.last_status = "TaskFailed"
             else:
                 self.last_status = "Crash"
 
         await self.cur_user_config.set(
-            "Data", "LastRun", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "Data", "LastRun", datetime.now(tz=UTC4).strftime("%Y-%m-%d %H:%M:%S")
         )
         if self.run_success:
             await self.cur_user_config.set(
@@ -742,7 +846,7 @@ class AutoProxyTask(TaskExecuteBase):
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
         await self.cur_user_config.set(
-            "Data", "LastRun", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "Data", "LastRun", datetime.now(tz=UTC4).strftime("%Y-%m-%d %H:%M:%S")
         )
         await self.cur_user_config.set("Data", "LastStatus", "Crash")
         logger.exception(f"MaaEnd 自动代理任务出现异常: {e}")

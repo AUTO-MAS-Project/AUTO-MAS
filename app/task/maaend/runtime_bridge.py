@@ -20,10 +20,12 @@
 
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from app.models.config import MaaEndConfig, MaaEndUserConfig
+from app.utils.constants import UTC4
 from .paths import managed_default_config_path
 
 
@@ -165,6 +167,33 @@ def _apply_option_override(instance: dict[str, Any], user_config: MaaEndUserConf
             task["optionValues"].update(option_values)
 
 
+def _apply_visit_friends_steal_disable_today(
+    instance: dict[str, Any], user_config: MaaEndUserConfig
+) -> None:
+    disabled_date = str(
+        user_config.get("Data", "VisitFriendsStealDisabledDate") or ""
+    ).strip()
+    today = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+    if disabled_date != today:
+        return
+
+    tasks = instance.get("tasks", [])
+    if not isinstance(tasks, list):
+        return
+
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+        if str(task.get("taskName", "")).strip() != "VisitFriends":
+            continue
+        option_values = task.get("optionValues")
+        if not isinstance(option_values, dict):
+            option_values = {}
+            task["optionValues"] = option_values
+        option_values["PriorStealVegetables"] = {"type": "switch", "value": False}
+        return
+
+
 def build_runtime_config(
     script_id: str,
     user_id: str,
@@ -178,6 +207,7 @@ def build_runtime_config(
     _apply_controller_and_resource(selected_instance, script_config, user_config)
     _apply_pre_action(selected_instance, script_config)
     _apply_option_override(selected_instance, user_config)
+    _apply_visit_friends_steal_disable_today(selected_instance, user_config)
 
     instance_id = selected_instance.get("id")
     if instance_id:

@@ -558,6 +558,14 @@ export function useScriptApi() {
                           maaEndUserData.Task?.ResourceProfile !== undefined
                             ? maaEndUserData.Task.ResourceProfile
                             : '官服',
+                        VisitFriendsStallProtection:
+                          maaEndUserData.Task?.VisitFriendsStallProtection !== undefined
+                            ? maaEndUserData.Task.VisitFriendsStallProtection
+                            : 'Disabled',
+                        VisitFriendsTimeoutSec:
+                          maaEndUserData.Task?.VisitFriendsTimeoutSec !== undefined
+                            ? maaEndUserData.Task.VisitFriendsTimeoutSec
+                            : 180,
                       },
                       Data: {
                         LastProxyDate:
@@ -568,6 +576,10 @@ export function useScriptApi() {
                           maaEndUserData.Data?.RunTimes !== undefined
                             ? maaEndUserData.Data.RunTimes
                             : 0,
+                        VisitFriendsStealDisabledDate:
+                          maaEndUserData.Data?.VisitFriendsStealDisabledDate !== undefined
+                            ? maaEndUserData.Data.VisitFriendsStealDisabledDate
+                            : '2000-01-01',
                       },
                     }
                   } else if (userIndex.type === 'GeneralUserConfig' && userData) {

@@ -15,4 +15,8 @@ export type MaaEndUserConfig_Data = {
      * 上次运行状态
      */
     LastStatus?: (string | null);
+    /**
+     * 当日禁用偷菜日期
+     */
+    VisitFriendsStealDisabledDate?: (string | null);
 };
