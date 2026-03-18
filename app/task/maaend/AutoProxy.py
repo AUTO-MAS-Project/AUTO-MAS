@@ -358,11 +358,13 @@ class AutoProxyTask(TaskExecuteBase):
         if not controller_type.startswith("Win32"):
             return True
 
-        if skip_account_switch_and_login:
+        if_account_switch_enabled = bool(self.script_config.get("Run", "IfAccountSwitch"))
+
+        if skip_account_switch_and_login and if_account_switch_enabled:
             self._set_stage_message("同账号重试：跳过切号与自动登录，仅重启 MaaEnd")
             return await self._ensure_game_running()
 
-        if self.script_config.get("Run", "IfAccountSwitch"):
+        if if_account_switch_enabled:
             account_switch_method = str(
                 self.script_config.get("Run", "AccountSwitchMethod")
             ).strip()
@@ -375,6 +377,11 @@ class AutoProxyTask(TaskExecuteBase):
         if not await self._ensure_game_running():
             return False
 
+        self._set_stage_message("等待 Endfield 窗口就绪并置前")
+        if not await self._wait_and_focus_window("Endfield"):
+            self._set_stage_message("Endfield 窗口未就绪，取消启动 MaaEnd")
+            return False
+
         account = ""
         password = ""
         try:
@@ -384,10 +391,7 @@ class AutoProxyTask(TaskExecuteBase):
             account = ""
             password = ""
 
-        if account and password:
-            if not await self._wait_and_focus_window("Endfield"):
-                self._set_stage_message("Endfield 窗口未就绪，取消自动登录")
-                return False
+        if if_account_switch_enabled and account and password:
             self._set_stage_message("检测到账号密码，尝试自动登录 Endfield")
             if not await maaend_login(account, password):
                 self._set_stage_message("自动登录 Endfield 失败")
@@ -473,6 +477,13 @@ class AutoProxyTask(TaskExecuteBase):
                     "检测到拜访好友疑似卡死",
                     f"超时 {self.visit_friends_timeout_sec} 秒，今日禁用偷菜并重试",
                 )
+                break
+
+            if not await self.maaend_process_manager.is_running():
+                self.cur_user_log.status = "InstanceStoppedOrFailed"
+                self.session_closed = True
+                self.wait_event.set()
+                self._set_stage_message("检测到 MaaEnd 主进程退出", "任务在完成前终止")
                 break
 
             await asyncio.sleep(1.0)
@@ -621,6 +632,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item.status = "运行"
 
         attempts = self.script_config.get("Run", "RunTimesLimit")
+        if_account_switch_enabled = bool(self.script_config.get("Run", "IfAccountSwitch"))
         self.run_success = False
         self.last_status = "Crash"
         skip_account_switch_and_login = False
@@ -642,7 +654,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.last_status = "Timeout"
             elif self.cur_user_log.status == "VisitFriendsTimeout":
                 self.last_status = "VisitFriendsTimeout"
-                if not is_last_attempt:
+                if not is_last_attempt and if_account_switch_enabled:
                     skip_account_switch_and_login = True
             elif self.cur_user_log.status.startswith("InstanceStoppedOrFailed"):
                 self.last_status = "TaskFailed"
