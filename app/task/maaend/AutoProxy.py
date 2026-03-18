@@ -107,7 +107,7 @@ class AutoProxyTask(TaskExecuteBase):
         if self.script_config.get(
             "Run", "ProxyTimesLimit"
         ) != 0 and self.cur_user_config.get(
-            "Data", "RunTimes"
+            "Data", "ProxyTimes"
         ) >= self.script_config.get(
             "Run", "ProxyTimesLimit"
         ):
@@ -167,7 +167,7 @@ class AutoProxyTask(TaskExecuteBase):
             raise FileNotFoundError(f"未找到 MaaEnd 托管配置文件: {source_path}")
         shutil.copy(source_path, self.runtime_source_config_path)
 
-        self.timeout_minutes = self.script_config.get("Run", "Timeout")
+        self.timeout_minutes = self.script_config.get("Run", "RunTimeLimit")
         self.wait_event = asyncio.Event()
         self.maaend_process_manager = ProcessManager()
         self.game_process_manager = ProcessManager()
@@ -200,8 +200,8 @@ class AutoProxyTask(TaskExecuteBase):
     def _detect_visit_friends_enabled_in_runtime(self) -> bool:
         try:
             config_data = json.loads(self.maaend_config_path.read_text(encoding="utf-8"))
-        except Exception:
-            return False
+        except json.JSONDecodeError as e:
+            raise ValueError(f"MaaEnd 运行时配置不是合法 JSON: {self.maaend_config_path}") from e
 
         instances = config_data.get("instances")
         if not isinstance(instances, list) or not instances:
@@ -329,17 +329,8 @@ class AutoProxyTask(TaskExecuteBase):
             await asyncio.sleep(WINDOW_READY_WAIT_INTERVAL)
         return False
 
-    def _mark_account_switch_placeholder(self, run_idx: int) -> None:
-        message = "切号功能暂为占位实现，当前运行将跳过实际切换账号"
-        logger.warning(f"用户 {self.cur_user_item.name} {message}")
-        self._push_debug_line(message)
-        self.script_info.log = (
-            f"用户 {self.cur_user_item.name} 执行中：轮次 {run_idx + 1}"
-            f"{self.script_info.log}"
-        )
-
     async def _prepare_before_maaend(
-        self, run_idx: int, skip_account_switch_and_login: bool = False
+        self, skip_account_switch_and_login: bool = False
     ) -> bool:
         controller_type = str(self.script_config.get("Run", "ControllerType")).strip()
         if not controller_type.startswith("Win32"):
@@ -349,20 +340,17 @@ class AutoProxyTask(TaskExecuteBase):
             self._set_stage_message("同账号重试：跳过切号与自动登录，仅重启 MaaEnd")
             return await self._ensure_game_running()
 
-        if self.script_config.get("Run", "IfAccountSwitch"):
-            account_switch_method = str(
-                self.script_config.get("Run", "AccountSwitchMethod")
-            ).strip()
-            if account_switch_method == "ExitGame":
-                self._set_stage_message("切号模式为 ExitGame，正在重启 Endfield")
-                await System.kill_process(self.game_exe_path)
-            elif account_switch_method != "NoAction":
-                self._mark_account_switch_placeholder(run_idx)
+        task_transition_method = str(
+            self.script_config.get("Run", "TaskTransitionMethod")
+        ).strip()
+        if task_transition_method == "ExitGame":
+            self._set_stage_message("切号模式为 ExitGame，正在重启 Endfield")
+            await System.kill_process(self.game_exe_path)
 
         if not await self._ensure_game_running():
             return False
 
-        account = str(self.cur_user_config.get("Info", "Account") or "").strip()
+        account = str(self.cur_user_config.get("Info", "Id") or "").strip()
         password = str(self.cur_user_config.get("Info", "Password") or "").strip()
 
         if account and password:
@@ -412,7 +400,7 @@ class AutoProxyTask(TaskExecuteBase):
             "已生成运行时配置", str(self.runtime_source_config_path.parent)
         )
         if not await self._prepare_before_maaend(
-            run_idx, skip_account_switch_and_login=skip_account_switch_and_login
+            skip_account_switch_and_login=skip_account_switch_and_login
         ):
             return False
 
@@ -426,12 +414,12 @@ class AutoProxyTask(TaskExecuteBase):
         )
         await self.maa_log_monitor.start_monitor_file(self.maa_log_path, self.log_start_time)
         await self.web_log_monitor.start_monitor_file(self.web_log_path, self.log_start_time)
-        total_timeout_sec = int(self.timeout_minutes * 60) if self.timeout_minutes > 0 else 0
+        total_timeout_sec = int(self.timeout_minutes * 60)
         started_at = datetime.now()
         while not self.wait_event.is_set():
             elapsed_sec = (datetime.now() - started_at).total_seconds()
 
-            if total_timeout_sec > 0 and elapsed_sec >= total_timeout_sec:
+            if elapsed_sec >= total_timeout_sec:
                 self.cur_user_log.status = "Timeout"
                 self.session_closed = True
                 self.wait_event.set()
@@ -581,9 +569,12 @@ class AutoProxyTask(TaskExecuteBase):
     async def main_task(self):
         # 初始化每日代理状态
         curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
-        last_run = str(self.cur_user_config.get("Data", "LastRun") or "").strip()
-        if not last_run.startswith(curdate):
-            await self.cur_user_config.set("Data", "RunTimes", 0)
+        last_proxy_date = str(
+            self.cur_user_config.get("Data", "LastProxyDate") or ""
+        ).strip()
+        if last_proxy_date != curdate:
+            await self.cur_user_config.set("Data", "LastProxyDate", curdate)
+            await self.cur_user_config.set("Data", "ProxyTimes", 0)
 
         self.check_result = await self.check()
         if self.check_result != "Pass":
@@ -630,12 +621,11 @@ class AutoProxyTask(TaskExecuteBase):
             else:
                 self.last_status = "Crash"
 
-        await self.cur_user_config.set(
-            "Data", "LastRun", datetime.now(tz=UTC4).strftime("%Y-%m-%d %H:%M:%S")
-        )
         if self.run_success:
             await self.cur_user_config.set(
-                "Data", "RunTimes", self.cur_user_config.get("Data", "RunTimes") + 1
+                "Data",
+                "ProxyTimes",
+                self.cur_user_config.get("Data", "ProxyTimes") + 1,
             )
         await self.cur_user_config.set("Data", "LastStatus", self.last_status)
 
@@ -826,9 +816,6 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
-        await self.cur_user_config.set(
-            "Data", "LastRun", datetime.now(tz=UTC4).strftime("%Y-%m-%d %H:%M:%S")
-        )
         await self.cur_user_config.set("Data", "LastStatus", "Crash")
         logger.exception(f"MaaEnd 自动代理任务出现异常: {e}")
         await Config.send_websocket_message(

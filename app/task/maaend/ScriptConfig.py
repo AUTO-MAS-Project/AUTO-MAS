@@ -138,8 +138,10 @@ class ScriptConfigTask(TaskExecuteBase):
                 loaded = json.loads(self.maaend_config_path.read_text(encoding="utf-8"))
                 if isinstance(loaded, dict):
                     config_data = loaded
-            except Exception:
-                config_data = {}
+            except json.JSONDecodeError as e:
+                raise ValueError(
+                    f"MaaEnd 配置文件不是合法 JSON: {self.maaend_config_path}"
+                ) from e
 
         selected_instance: dict = {}
         instances = config_data.get("instances", [])
@@ -210,7 +212,6 @@ class ScriptConfigTask(TaskExecuteBase):
         if selected_instance is None:
             selected_instance = instances[0]
 
-        resource_name = str(selected_instance.get("resourceName", "")).strip()
         configured_controller = str(
             self.script_config.get("Run", "ControllerType") or ""
         ).strip()
@@ -220,9 +221,6 @@ class ScriptConfigTask(TaskExecuteBase):
         if was_locked:
             await self.script_config.unlock()
         try:
-            if resource_name:
-                await self.script_config.set("MaaEnd", "ResourceProfile", resource_name)
-
             if controller_type is not None:
                 selected_instance["controllerName"] = controller_type
                 config_data["instances"] = instances
