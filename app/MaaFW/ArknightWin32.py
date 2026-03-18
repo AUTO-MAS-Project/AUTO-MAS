@@ -186,16 +186,16 @@ class _ArknightWin32Toolkit:
 
         if k == Config.ToolsConfig.get("ArknightsPC", "SelectDeployedKey"):
             logger.info("触发选中已部署干员")
-            self.tasker.post_task("选中已部署干员")
+            self.tasker.post_task("选中已部署干员[ArknightsPC]")
         elif k == Config.ToolsConfig.get("ArknightsPC", "UseSkillKey"):
             logger.info("触发释放技能")
-            self.tasker.post_task("释放技能")
+            self.tasker.post_task("释放技能[ArknightsPC]")
         elif k == Config.ToolsConfig.get("ArknightsPC", "RetreatKey"):
             logger.info("触发撤退干员")
-            self.tasker.post_task("撤退干员")
+            self.tasker.post_task("撤退干员[ArknightsPC]")
         elif k == Config.ToolsConfig.get("ArknightsPC", "NextFrameKey"):
             logger.info("触发下一帧")
-            self.tasker.post_task("下一帧")
+            self.tasker.post_task("下一帧[ArknightsPC]")
         elif k == Config.ToolsConfig.get("ArknightsPC", "AnotherQuitKey"):
             logger.info("触发退出/暂停额外键位")
             asyncio.run_coroutine_threadsafe(self.click_pause_button(), Config.loop)
@@ -230,7 +230,7 @@ class _ArknightWin32Toolkit:
 ArknightWin32Toolkit = _ArknightWin32Toolkit()
 
 
-@MaaFWManager.resource.custom_action("Play Select Deployed")
+@MaaFWManager.resource.custom_action("PlaySelectDeployed[ArknightsPC]")
 class PlaySelectDeployed(CustomAction):
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
@@ -255,7 +255,7 @@ class PlaySelectDeployed(CustomAction):
         return True
 
 
-@MaaFWManager.resource.custom_action("Pause Select Deployed")
+@MaaFWManager.resource.custom_action("PauseSelectDeployed[ArknightsPC]")
 class PauseSelectDeployed(CustomAction):
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
@@ -282,7 +282,7 @@ class PauseSelectDeployed(CustomAction):
         return True
 
 
-@MaaFWManager.resource.custom_action("Play Skill")
+@MaaFWManager.resource.custom_action("PlaySkill[ArknightsPC]")
 class PlaySkill(CustomAction):
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
@@ -304,7 +304,7 @@ class PlaySkill(CustomAction):
         return True
 
 
-@MaaFWManager.resource.custom_action("Pause Skill")
+@MaaFWManager.resource.custom_action("PauseSkill[ArknightsPC]")
 class PauseSkill(CustomAction):
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
@@ -330,7 +330,7 @@ class PauseSkill(CustomAction):
         return True
 
 
-@MaaFWManager.resource.custom_action("Play Retreat")
+@MaaFWManager.resource.custom_action("PlayRetreat[ArknightsPC]")
 class PlayRetreat(CustomAction):
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
@@ -353,7 +353,7 @@ class PlayRetreat(CustomAction):
         return True
 
 
-@MaaFWManager.resource.custom_action("Pause Retreat")
+@MaaFWManager.resource.custom_action("PauseRetreat[ArknightsPC]")
 class PauseRetreat(CustomAction):
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
@@ -379,7 +379,7 @@ class PauseRetreat(CustomAction):
         return True
 
 
-@MaaFWManager.resource.custom_action("Next Frame 0.2x")
+@MaaFWManager.resource.custom_action("NextFrame-0.2x[ArknightsPC]")
 class NextFrame_0_2x(CustomAction):
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
@@ -404,7 +404,7 @@ class NextFrame_0_2x(CustomAction):
         return True
 
 
-@MaaFWManager.resource.custom_action("Next Frame 1x")
+@MaaFWManager.resource.custom_action("NextFrame-1x[ArknightsPC]")
 class NextFrame_1x(CustomAction):
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
@@ -429,7 +429,7 @@ class NextFrame_1x(CustomAction):
         return True
 
 
-@MaaFWManager.resource.custom_action("Next Frame 2x")
+@MaaFWManager.resource.custom_action("NextFrame-2x[ArknightsPC]")
 class NextFrame_2x(CustomAction):
 
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
