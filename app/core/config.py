@@ -697,6 +697,12 @@ class AppConfig(GlobalConfig):
                 logger.warning(f"无法从 AUTO-MAS 服务器获取配置内容: {e}")
                 raise ConnectionError(f"无法从 AUTO-MAS 服务器获取配置内容: {e}")
 
+        if data.get("code", 200) == 500:
+            logger.error(f"从 AUTO-MAS 服务器获取配置内容失败: {data.get('message')}")
+            raise ConnectionError(
+                f"从 AUTO-MAS 服务器获取配置内容失败: {data.get('message')}"
+            )
+
         await self.ScriptConfig[uid].load(data)
 
         logger.success(f"{script_id} 配置加载成功")
