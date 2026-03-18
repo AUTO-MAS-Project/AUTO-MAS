@@ -558,10 +558,13 @@ class GeneralConfig(BaseModel):
 class MaaEndUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名")
     Status: Optional[bool] = Field(default=None, description="用户状态")
-    Account: Optional[str] = Field(default=None, description="账号")
+    Id: Optional[str] = Field(default=None, description="用户ID")
     Password: Optional[str] = Field(default=None, description="密码")
     Mode: Optional[Literal["简洁", "详细"]] = Field(
         default=None, description="脚本模式"
+    )
+    Server: Optional[Literal["Official", "Bilibili"]] = Field(
+        default=None, description="服务器"
     )
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
     Notes: Optional[str] = Field(default=None, description="备注")
@@ -570,9 +573,6 @@ class MaaEndUserConfig_Info(BaseModel):
 
 class MaaEndUserConfig_Task(BaseModel):
     OptionOverride: Optional[str] = Field(default=None, description="任务选项覆盖")
-    ResourceProfile: Optional[Literal["官服", "B服"]] = Field(
-        default=None, description="资源配置"
-    )
     VisitFriendsStallProtection: Optional[Literal["Disabled", "Enabled"]] = Field(
         default=None, description="拜访好友卡死保护模式"
     )
@@ -582,8 +582,8 @@ class MaaEndUserConfig_Task(BaseModel):
 
 
 class MaaEndUserConfig_Data(BaseModel):
-    LastRun: Optional[str] = Field(default=None, description="上次运行时间")
-    RunTimes: Optional[int] = Field(default=None, description="运行次数")
+    LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
+    ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
     LastStatus: Optional[str] = Field(default=None, description="上次运行状态")
     VisitFriendsStealDisabledDate: Optional[str] = Field(
         default=None, description="当日禁用偷菜日期"
@@ -616,16 +616,17 @@ class MaaEndConfig_Info(BaseModel):
 
 
 class MaaEndConfig_Run(BaseModel):
-    Timeout: Optional[int] = Field(default=None, description="运行超时时间")
+    RunTimeLimit: Optional[int] = Field(
+        default=None, description="运行时间限制（分钟）"
+    )
     ProxyTimesLimit: Optional[int] = Field(default=None, description="每日代理次数限制")
     RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
+    TaskTransitionMethod: Optional[Literal["NoAction", "ExitGame"]] = Field(
+        default=None, description="任务切换方式"
+    )
     ControllerType: Optional[
         Literal["Win32-Window", "Win32-Window-Background", "Win32-Front", "ADB"]
     ] = Field(default=None, description="控制器类型")
-    IfAccountSwitch: Optional[bool] = Field(default=None, description="是否启用切号")
-    AccountSwitchMethod: Optional[Literal["ExitGame", "NoAction"]] = Field(
-        default=None, description="切号方式"
-    )
     GamePath: Optional[str] = Field(default=None, description="Endfield 客户端路径")
     CloseGameOnFinish: Optional[bool] = Field(
         default=None, description="任务结束后是否关闭 Endfield"
@@ -633,7 +634,6 @@ class MaaEndConfig_Run(BaseModel):
 
 
 class MaaEndConfig_MaaEnd(BaseModel):
-    ResourceProfile: Optional[str] = Field(default=None, description="资源配置")
     ConfigLocked: Optional[bool] = Field(default=None, description="配置是否锁定")
 
 

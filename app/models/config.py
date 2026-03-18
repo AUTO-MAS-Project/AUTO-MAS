@@ -644,13 +644,17 @@ class MaaEndUserConfig(ConfigBase):
         self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
         ## 是否启用
         self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
-        ## 账号
-        self.Info_Account = ConfigItem("Info", "Account", "")
+        ## 用户ID
+        self.Info_Id = ConfigItem("Info", "Id", "")
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 脚本模式
         self.Info_Mode = ConfigItem(
             "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+        )
+        ## 服务器
+        self.Info_Server = ConfigItem(
+            "Info", "Server", "Official", OptionsValidator(["Official", "Bilibili"])
         )
         ## 剩余天数
         self.Info_RemainedDay = ConfigItem(
@@ -668,10 +672,6 @@ class MaaEndUserConfig(ConfigBase):
         self.Task_OptionOverride = ConfigItem(
             "Task", "OptionOverride", "{ }", JSONValidator()
         )
-        ## 资源配置
-        self.Task_ResourceProfile = ConfigItem(
-            "Task", "ResourceProfile", "官服", OptionsValidator(["官服", "B服"])
-        )
         ## 拜访好友卡死保护模式
         self.Task_VisitFriendsStallProtection = ConfigItem(
             "Task",
@@ -685,15 +685,14 @@ class MaaEndUserConfig(ConfigBase):
         )
 
         ## Data ------------------------------------------------------------
-        ## 上次运行时间
-        self.Data_LastRun = ConfigItem(
-            "Data",
-            "LastRun",
-            "2000-01-01 00:00:00",
-            DateTimeValidator("%Y-%m-%d %H:%M:%S"),
+        ## 上次代理日期
+        self.Data_LastProxyDate = ConfigItem(
+            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
         )
-        ## 运行次数
-        self.Data_RunTimes = ConfigItem("Data", "RunTimes", 0, RangeValidator(0, 9999))
+        ## 代理次数
+        self.Data_ProxyTimes = ConfigItem(
+            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
+        )
         ## 上次运行状态
         self.Data_LastStatus = ConfigItem("Data", "LastStatus", "-")
         ## 当日禁用偷菜日期（东4区日期）
@@ -734,9 +733,8 @@ class MaaEndUserConfig(ConfigBase):
 
         # 日常代理标签（使用东4区时间，显示今日次数）
         today = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
-        last_run = self.get("Data", "LastRun")
-        if last_run.startswith(today):
-            daily_run_times = self.get("Data", "RunTimes")
+        if self.get("Data", "LastProxyDate") == today:
+            daily_run_times = self.get("Data", "ProxyTimes")
         else:
             daily_run_times = 0
         if daily_run_times > 0:
@@ -807,8 +805,10 @@ class MaaEndConfig(ConfigBase):
         self.Info_Path = ConfigItem("Info", "Path", str(Path.cwd()), FolderValidator())
 
         ## Run -------------------------------------------------------------
-        ## 运行超时时间
-        self.Run_Timeout = ConfigItem("Run", "Timeout", 10, RangeValidator(0, 9999))
+        ## 运行时间限制（分钟）
+        self.Run_RunTimeLimit = ConfigItem(
+            "Run", "RunTimeLimit", 10, RangeValidator(1, 9999)
+        )
         ## 每日代理次数限制（0 表示不限制）
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
@@ -816,6 +816,13 @@ class MaaEndConfig(ConfigBase):
         ## 运行次数限制
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
+        )
+        ## 任务切换方式
+        self.Run_TaskTransitionMethod = ConfigItem(
+            "Run",
+            "TaskTransitionMethod",
+            "NoAction",
+            OptionsValidator(["NoAction", "ExitGame"]),
         )
         ## 控制器类型
         self.Run_ControllerType = ConfigItem(
@@ -831,26 +838,17 @@ class MaaEndConfig(ConfigBase):
                 ]
             ),
         )
-        ## 是否启用切号
-        self.Run_IfAccountSwitch = ConfigItem(
-            "Run", "IfAccountSwitch", False, BoolValidator()
-        )
-        ## 切号方式
-        self.Run_AccountSwitchMethod = ConfigItem(
-            "Run",
-            "AccountSwitchMethod",
-            "NoAction",
-            OptionsValidator(["ExitGame", "NoAction"]),
-        )
         ## Endfield 路径（Win32 preAction）
         self.Run_GamePath = ConfigItem("Run", "GamePath", "", FileValidator())
-        self.Run_CloseGameOnFinish = ConfigItem("Run", "CloseGameOnFinish", True, BoolValidator())
+        self.Run_CloseGameOnFinish = ConfigItem(
+            "Run", "CloseGameOnFinish", True, BoolValidator()
+        )
 
         ## MaaEnd ----------------------------------------------------------
-        ## 资源配置
-        self.MaaEnd_ResourceProfile = ConfigItem("MaaEnd", "ResourceProfile", "")
         ## 配置是否已锁定（仅允许 ScriptConfig 流程回写）
-        self.MaaEnd_ConfigLocked = ConfigItem("MaaEnd", "ConfigLocked", False, BoolValidator())
+        self.MaaEnd_ConfigLocked = ConfigItem(
+            "MaaEnd", "ConfigLocked", False, BoolValidator()
+        )
         self.UserData = MultipleConfig([MaaEndUserConfig])
 
         super().__init__()
