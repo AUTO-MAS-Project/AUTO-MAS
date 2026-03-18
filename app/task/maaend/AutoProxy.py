@@ -340,9 +340,19 @@ class AutoProxyTask(TaskExecuteBase):
             self._set_stage_message("同账号重试：跳过切号与自动登录，仅重启 MaaEnd")
             return await self._ensure_game_running()
 
+        account = str(self.cur_user_config.get("Info", "Id") or "").strip()
+        password = str(self.cur_user_config.get("Info", "Password") or "").strip()
         task_transition_method = str(
             self.script_config.get("Run", "TaskTransitionMethod")
         ).strip()
+
+        if task_transition_method == "NoAction":
+            return await self._ensure_game_running()
+
+        if not account or not password:
+            self._set_stage_message("未配置账号或密码，跳过切号前置流程")
+            return await self._ensure_game_running()
+
         if task_transition_method == "ExitGame":
             self._set_stage_message("切号模式为 ExitGame，正在重启 Endfield")
             await System.kill_process(self.game_exe_path)
@@ -350,17 +360,14 @@ class AutoProxyTask(TaskExecuteBase):
         if not await self._ensure_game_running():
             return False
 
-        account = str(self.cur_user_config.get("Info", "Id") or "").strip()
-        password = str(self.cur_user_config.get("Info", "Password") or "").strip()
+        if not await self._wait_and_focus_window("Endfield"):
+            self._set_stage_message("Endfield 窗口未就绪，取消切号前置流程")
+            return False
 
-        if account and password:
-            if not await self._wait_and_focus_window("Endfield"):
-                self._set_stage_message("Endfield 窗口未就绪，取消自动登录")
-                return False
-            self._set_stage_message("检测到账号密码，尝试自动登录 Endfield")
-            if not await maaend_login(account, password):
-                self._set_stage_message("自动登录 Endfield 失败")
-                return False
+        self._set_stage_message("窗口就绪，执行切号前置与自动登录")
+        if not await maaend_login(account, password):
+            self._set_stage_message("自动登录 Endfield 失败")
+            return False
 
         return True
 
@@ -593,6 +600,9 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item.status = "运行"
 
         attempts = self.script_config.get("Run", "RunTimesLimit")
+        task_transition_method = str(
+            self.script_config.get("Run", "TaskTransitionMethod")
+        ).strip()
         self.run_success = False
         self.last_status = "Crash"
         skip_account_switch_and_login = False
@@ -615,7 +625,8 @@ class AutoProxyTask(TaskExecuteBase):
             elif self.cur_user_log.status == "VisitFriendsTimeout":
                 self.last_status = "VisitFriendsTimeout"
                 if not is_last_attempt:
-                    skip_account_switch_and_login = True
+                    # 切号模式开启时，失败重试应继续走完整切号流程。
+                    skip_account_switch_and_login = task_transition_method == "NoAction"
             elif self.cur_user_log.status.startswith("InstanceStoppedOrFailed"):
                 self.last_status = "TaskFailed"
             else:

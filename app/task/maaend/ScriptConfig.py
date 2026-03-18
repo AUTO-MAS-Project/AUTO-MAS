@@ -92,11 +92,43 @@ class ScriptConfigTask(TaskExecuteBase):
         while await self.process_manager.is_running():
             await asyncio.sleep(0.5)
 
+    @staticmethod
+    def _load_seed_config(path: Path) -> dict | None:
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            logger.warning(f"读取 seed 配置失败，跳过: {path} ({e})")
+            return None
+        if not isinstance(loaded, dict):
+            logger.warning(f"seed 配置根节点不是对象，跳过: {path}")
+            return None
+        return loaded
+
+    @staticmethod
+    def _is_usable_seed(config_data: dict) -> bool:
+        instances = config_data.get("instances")
+        if not isinstance(instances, list) or not instances:
+            return False
+
+        for instance in instances:
+            if not isinstance(instance, dict):
+                continue
+            resource_name = str(instance.get("resourceName", "")).strip()
+            tasks = instance.get("tasks")
+            if resource_name and isinstance(tasks, list):
+                return True
+        return False
+
     async def set_maaend(self):
         """打开 MaaEnd 配置界面前，先准备本地托管配置。"""
 
         await self.process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
+
+        # 先缓存一份现有本地配置，避免 seed 缺失时写入过瘦配置导致 MaaEnd 前端异常。
+        local_fallback_config: dict | None = None
+        if self.maaend_config_path.exists():
+            local_fallback_config = self._load_seed_config(self.maaend_config_path)
 
         # 配置接管：清理 MaaEnd 原有 config，再注入 AUTO-MAS 托管配置
         if self.maaend_config_dir.exists():
@@ -119,14 +151,58 @@ class ScriptConfigTask(TaskExecuteBase):
         else:
             seed_candidates = [self.default_managed_config_path]
         for seed_path in seed_candidates:
-            if seed_path.exists():
-                shutil.copy(seed_path, self.maaend_config_path)
-                self._normalize_to_single_managed_instance()
-                return
+            if not seed_path.exists():
+                continue
+            seed_data = self._load_seed_config(seed_path)
+            if seed_data is None:
+                continue
+            if not self._is_usable_seed(seed_data):
+                logger.warning(f"seed 配置结构不完整，跳过: {seed_path}")
+                continue
+            self.maaend_config_path.write_text(
+                json.dumps(seed_data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            self._normalize_to_single_managed_instance()
+            return
 
-        self.maaend_config_path.write_text(
-            json.dumps({"instances": []}, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        if local_fallback_config is not None and self._is_usable_seed(local_fallback_config):
+            self.maaend_config_path.write_text(
+                json.dumps(local_fallback_config, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        else:
+            # 保底配置至少提供实例与任务数组，避免 MaaEnd 前端在读取时访问 undefined.filter
+            server = "Official"
+            if self.cur_user_item.user_id != "Default":
+                server = str(
+                    self.user_config[uuid.UUID(self.cur_user_item.user_id)].get(
+                        "Info", "Server"
+                    )
+                    or "Official"
+                ).strip()
+            resource_name = "B服" if server == "Bilibili" else "官服"
+            self.maaend_config_path.write_text(
+                json.dumps(
+                    {
+                        "version": "1.0",
+                        "instances": [
+                            {
+                                "id": MANAGED_INSTANCE_ID,
+                                "name": MANAGED_INSTANCE_NAME,
+                                "controllerName": "Win32-Window",
+                                "resourceName": resource_name,
+                                "savedDevice": {"windowName": "Endfield"},
+                                "tasks": [],
+                            }
+                        ],
+                        "lastActiveInstanceId": MANAGED_INSTANCE_ID,
+                        "settings": {},
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
         self._normalize_to_single_managed_instance()
 
     def _normalize_to_single_managed_instance(self):
@@ -163,6 +239,8 @@ class ScriptConfigTask(TaskExecuteBase):
 
         selected_instance["id"] = MANAGED_INSTANCE_ID
         selected_instance["name"] = MANAGED_INSTANCE_NAME
+        if not isinstance(selected_instance.get("tasks"), list):
+            selected_instance["tasks"] = []
         config_data["instances"] = [selected_instance]
         config_data["lastActiveInstanceId"] = MANAGED_INSTANCE_ID
         self.maaend_config_path.write_text(
