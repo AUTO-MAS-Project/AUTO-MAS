@@ -55,14 +55,19 @@ def _select_instance(config_data: dict[str, Any]) -> dict[str, Any]:
     return selected_instance
 
 
+def _resolve_resource_name(user_config: MaaEndUserConfig) -> str:
+    server = str(user_config.get("Info", "Server") or "").strip()
+    if server == "Official":
+        return "官服"
+    if server == "Bilibili":
+        return "B服"
+    raise RuntimeBridgeError(f"不支持的 MaaEnd 服务器类型: {server}")
+
+
 def _apply_controller_and_resource(
     instance: dict[str, Any], script_config: MaaEndConfig, user_config: MaaEndUserConfig
 ):
-    resource_profile = str(user_config.get("Task", "ResourceProfile")).strip()
-    if not resource_profile:
-        resource_profile = str(script_config.get("MaaEnd", "ResourceProfile")).strip()
-    if resource_profile:
-        instance["resourceName"] = resource_profile
+    instance["resourceName"] = _resolve_resource_name(user_config)
 
     controller_type = str(script_config.get("Run", "ControllerType")).strip()
     if not controller_type:
