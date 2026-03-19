@@ -4,7 +4,7 @@
         {
             "id": "smoke_test:00001",
             "plugin": "smoke_test",
-            "enabled": true,
+            "enabled": false,
             "name": "123456",
             "config": {
                 "enable": true,
@@ -38,13 +38,21 @@
                         "dynamic_col": "row-1"
                     }
                 ],
-                "api_token": "1231231231231231"
+                "api_token": "1231231231231231",
+                "runtime_check_on_start": true,
+                "run_runtime_probe": true,
+                "runtime_probe_code": "import sys,platform; print(sys.executable); print(platform.platform())",
+                "python_executable": "",
+                "python_timeout_seconds": 15,
+                "include_payload": true,
+                "include_runtime_in_event_log": false,
+                "log_probe_stdout": true
             }
         },
         {
             "id": "smoke_test:21be9",
             "plugin": "smoke_test",
-            "enabled": true,
+            "enabled": false,
             "name": "smoke_test 实例",
             "config": {
                 "enable": true,
@@ -55,16 +63,24 @@
                 ],
                 "meta": {},
                 "table_data": [],
-                "api_token": ""
+                "api_token": "",
+                "runtime_check_on_start": true,
+                "run_runtime_probe": true,
+                "runtime_probe_code": "import sys,platform; print(sys.executable); print(platform.platform())",
+                "python_executable": "",
+                "python_timeout_seconds": 15,
+                "include_payload": true,
+                "include_runtime_in_event_log": false,
+                "log_probe_stdout": true
             }
         },
         {
             "id": "smtp_notify:447bb",
             "plugin": "smtp_notify",
-            "enabled": true,
+            "enabled": false,
             "name": "smtp_notify 实例",
             "config": {
-                "enable": true,
+                "enable": false,
                 "smtp_host": "smtp.example.com",
                 "smtp_port": 587,
                 "smtp_username": "",
@@ -80,6 +96,33 @@
                 ],
                 "include_payload": true,
                 "timeout_seconds": 15
+            }
+        },
+        {
+            "id": "smoke_test:m3demo",
+            "plugin": "smoke_test",
+            "enabled": true,
+            "name": "smoke_test M3 演示",
+            "config": {
+                "enable": true,
+                "message": "M3 runtime 演示事件",
+                "runtime_check_on_start": true,
+                "run_runtime_probe": true,
+                "runtime_probe_code": "import sys,platform; print(sys.executable); print(platform.platform())",
+                "python_executable": "",
+                "python_timeout_seconds": 15,
+                "include_payload": true,
+                "include_runtime_in_event_log": true,
+                "log_probe_stdout": true,
+                "api_token": "",
+                "retry_count": 1,
+                "channels": [
+                    "console"
+                ],
+                "meta": {
+                    "scenario": "m3-demo"
+                },
+                "table_data": []
             }
         }
     ]

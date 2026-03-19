@@ -13,6 +13,46 @@ schema = Schema.object(
         .required(False)
         .description("插件启动时使用的示例消息"),
 
+        "runtime_check_on_start": Schema.boolean()
+        .default(True)
+        .required(False)
+        .description("启动时检查并记录运行时解释器信息"),
+
+        "run_runtime_probe": Schema.boolean()
+        .default(True)
+        .required(False)
+        .description("启动时执行 runtime Python 探针"),
+
+        "runtime_probe_code": Schema.string()
+        .default("import sys,platform; print(sys.executable); print(platform.platform())")
+        .required(False)
+        .description("runtime 探针代码（由 runtime 执行）"),
+
+        "python_executable": Schema.string()
+        .default("")
+        .required(False)
+        .description("可选：指定探针使用的解释器路径，留空则走策略默认"),
+
+        "python_timeout_seconds": Schema.number()
+        .default(15)
+        .required(False)
+        .description("runtime 探针超时时间（秒）"),
+
+        "include_payload": Schema.boolean()
+        .default(True)
+        .required(False)
+        .description("事件日志中是否包含 payload"),
+
+        "include_runtime_in_event_log": Schema.boolean()
+        .default(False)
+        .required(False)
+        .description("事件日志中是否附加 runtime 信息"),
+
+        "log_probe_stdout": Schema.boolean()
+        .default(True)
+        .required(False)
+        .description("是否打印 runtime 探针标准输出"),
+
         "api_token": Schema.password()
         .default("")
         .required(False)
