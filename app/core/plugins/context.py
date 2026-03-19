@@ -11,12 +11,14 @@ class PluginContext:
         self,
         *,
         plugin_name: str,
+        instance_id: str | None = None,
         config: Dict[str, Any],
         logger,
         events,
         runtime,
     ) -> None:
         self.plugin_name = plugin_name
+        self.instance_id = instance_id or plugin_name
         self.config = config
         self.logger = logger
         self.events = events
