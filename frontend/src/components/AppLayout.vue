@@ -76,6 +76,7 @@ const mainMenuItems = [
 
 // 开发环境专用菜单项
 const devMenuItems = [
+  { key: '/plugins', label: '插件管理', icon: icon(ApiOutlined) },
   { key: '/TestRouter', label: '测试路由', icon: icon(SettingOutlined) },
   { key: '/OCRdev', label: 'OCR测试', icon: icon(SettingOutlined) },
   { key: '/WSdev', label: 'WebSocket测试', icon: icon(ApiOutlined) },
