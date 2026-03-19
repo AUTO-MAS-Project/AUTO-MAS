@@ -168,6 +168,12 @@ const routes = [
     meta: { title: '工具' },
   },
   {
+    path: '/plugins',
+    name: 'PluginDev',
+    component: () => import('../views/PluginDev.vue'),
+    meta: { title: '插件管理' },
+  },
+  {
     path: '/settings',
     name: 'Settings',
     component: () => import('../views/setting/index.vue'),
