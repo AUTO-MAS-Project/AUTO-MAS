@@ -23,12 +23,30 @@ class PluginInstanceModel(BaseModel):
     config: Dict[str, Any] = Field(default_factory=dict, description="插件配置")
 
 
+class PluginRuntimeStateModel(BaseModel):
+    instance_id: str = Field(..., description="实例ID")
+    plugin: str = Field(..., description="插件名")
+    status: str = Field(default="configured", description="运行状态")
+    created_at: Optional[str] = Field(default=None, description="记录创建时间")
+    discovered_at: Optional[str] = Field(default=None, description="发现时间")
+    loaded_at: Optional[str] = Field(default=None, description="代码加载时间")
+    activated_at: Optional[str] = Field(default=None, description="激活时间")
+    disposed_at: Optional[str] = Field(default=None, description="销毁时间")
+    unloaded_at: Optional[str] = Field(default=None, description="卸载时间")
+    last_error: Optional[str] = Field(default=None, description="最近错误")
+    last_error_at: Optional[str] = Field(default=None, description="最近错误时间")
+
+
 class PluginsGetOut(OutBase):
     version: int = Field(default=1, description="配置版本")
     discovered_plugins: List[str] = Field(default_factory=list, description="已发现插件")
     schemas: Dict[str, Dict[str, Any]] = Field(default_factory=dict, description="插件Schema映射")
     schema_errors: Dict[str, str] = Field(default_factory=dict, description="插件Schema加载错误")
     instances: List[PluginInstanceModel] = Field(default_factory=list, description="插件实例列表")
+    runtime_states: Dict[str, PluginRuntimeStateModel] = Field(
+        default_factory=dict,
+        description="插件实例运行态",
+    )
 
 
 class PluginAddIn(BaseModel):
@@ -62,17 +80,11 @@ class PluginReloadPluginIn(BaseModel):
     plugin: str = Field(..., description="插件名")
 
 
-def _discover_plugins(plugins_dir: Path) -> Dict[str, Path]:
-    discovered: Dict[str, Path] = {}
-    if not plugins_dir.exists():
-        return discovered
-
-    for item in sorted(plugins_dir.iterdir()):
-        if not item.is_dir():
-            continue
-        if (item / "plugin.py").exists():
-            discovered[item.name] = item
-    return discovered
+def _discover_plugins(plugins_dir: Path) -> Dict[str, Any]:
+    """发现插件（兼容本地目录与 PyPI Entry Point）。"""
+    loader = PluginManager.loader
+    loader.plugins_dir = plugins_dir
+    return loader.discover()
 
 
 def _build_instances(root: Dict[str, Any]) -> List[PluginInstanceModel]:
@@ -84,16 +96,56 @@ def _build_instances(root: Dict[str, Any]) -> List[PluginInstanceModel]:
     return instances
 
 
-def _build_schemas(discovered: Dict[str, Path]) -> tuple[Dict[str, Dict[str, Any]], Dict[str, str]]:
+def _build_schemas(discovered: Dict[str, Any]) -> tuple[Dict[str, Dict[str, Any]], Dict[str, str]]:
     schemas: Dict[str, Dict[str, Any]] = {}
     errors: Dict[str, str] = {}
-    for plugin_name, plugin_path in discovered.items():
+    for plugin_name, plugin_source in discovered.items():
+        plugin_path = getattr(plugin_source, "path", None)
         try:
             schemas[plugin_name] = config_store.load_schema(plugin_name, plugin_path)
         except Exception as e:
             schemas[plugin_name] = {}
             errors[plugin_name] = f"{type(e).__name__}: {e}"
     return schemas, errors
+
+
+def _build_runtime_states(root: Dict[str, Any]) -> Dict[str, PluginRuntimeStateModel]:
+    """构建插件实例运行态快照。
+
+    优先返回运行中记录（来自 PluginLoader），若实例尚未加载则返回 configured 状态。
+    """
+    result: Dict[str, PluginRuntimeStateModel] = {}
+
+    records = getattr(PluginManager.loader, "records", {})
+    for instance_id, record in records.items():
+        result[str(instance_id)] = PluginRuntimeStateModel(
+            instance_id=str(record.instance_id),
+            plugin=str(record.plugin_name),
+            status=str(record.status),
+            created_at=record.created_at,
+            discovered_at=record.discovered_at,
+            loaded_at=record.loaded_at,
+            activated_at=record.activated_at,
+            disposed_at=record.disposed_at,
+            unloaded_at=record.unloaded_at,
+            last_error=record.last_error,
+            last_error_at=record.last_error_at,
+        )
+
+    for item in root.get("instances", []):
+        if not isinstance(item, dict):
+            continue
+        instance_id = str(item.get("id") or "")
+        if not instance_id or instance_id in result:
+            continue
+        plugin_name = str(item.get("plugin") or "")
+        result[instance_id] = PluginRuntimeStateModel(
+            instance_id=instance_id,
+            plugin=plugin_name,
+            status="configured",
+        )
+
+    return result
 
 
 @router.post(
@@ -107,7 +159,7 @@ async def get_plugins() -> PluginsGetOut:
     try:
         plugins_dir = Path.cwd() / "plugins"
         discovered = _discover_plugins(plugins_dir)
-        root = config_store.get_root(
+        root = await config_store.get_root(
             plugins_dir,
             discovered,
             auto_create_missing=False,
@@ -119,6 +171,7 @@ async def get_plugins() -> PluginsGetOut:
             schemas=schemas,
             schema_errors=schema_errors,
             instances=_build_instances(root),
+            runtime_states=_build_runtime_states(root),
         )
     except Exception as e:
         return PluginsGetOut(
@@ -130,6 +183,7 @@ async def get_plugins() -> PluginsGetOut:
             schemas={},
             schema_errors={},
             instances=[],
+            runtime_states={},
         )
 
 
@@ -194,13 +248,14 @@ async def add_plugin_instance(data: PluginAddIn = Body(...)) -> PluginAddOut:
             raise ValueError(f"未发现插件: {data.plugin}")
 
         # 先校验配置是否合法（包含默认值注入）
+        plugin_path = getattr(discovered[data.plugin], "path", None)
         effective_config = config_store.load_effective_config(
             data.plugin,
-            discovered[data.plugin],
+            plugin_path,
             data.config,
         )
 
-        root = config_store.get_root(
+        root = await config_store.get_root(
             plugins_dir,
             discovered,
             auto_create_missing=False,
@@ -213,7 +268,10 @@ async def add_plugin_instance(data: PluginAddIn = Body(...)) -> PluginAddOut:
             "config": effective_config,
         }
         root.setdefault("instances", []).append(instance)
-        config_store.save_root(plugins_dir, root)
+        await config_store.save_root(plugins_dir, root)
+
+        if PluginManager.started and data.enabled:
+            await PluginManager.reload_instance(instance["id"])
 
         return PluginAddOut(instance=PluginInstanceModel(**instance))
     except Exception as e:
@@ -236,7 +294,7 @@ async def update_plugin_instance(data: PluginUpdateIn = Body(...)) -> OutBase:
     try:
         plugins_dir = Path.cwd() / "plugins"
         discovered = _discover_plugins(plugins_dir)
-        root = config_store.get_root(
+        root = await config_store.get_root(
             plugins_dir,
             discovered,
             auto_create_missing=False,
@@ -257,9 +315,10 @@ async def update_plugin_instance(data: PluginUpdateIn = Body(...)) -> OutBase:
             raise ValueError(f"未发现插件: {next_plugin}")
 
         next_config = data.config if data.config is not None else target.get("config", {})
+        plugin_path = getattr(discovered[next_plugin], "path", None)
         effective_config = config_store.load_effective_config(
             next_plugin,
-            discovered[next_plugin],
+            plugin_path,
             next_config,
         )
 
@@ -270,7 +329,11 @@ async def update_plugin_instance(data: PluginUpdateIn = Body(...)) -> OutBase:
         if data.enabled is not None:
             target["enabled"] = data.enabled
 
-        config_store.save_root(plugins_dir, root)
+        await config_store.save_root(plugins_dir, root)
+
+        if PluginManager.started:
+            await PluginManager.reload_instance(data.instanceId)
+
         return OutBase()
     except Exception as e:
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
@@ -287,7 +350,7 @@ async def delete_plugin_instance(data: PluginDeleteIn = Body(...)) -> OutBase:
     try:
         plugins_dir = Path.cwd() / "plugins"
         discovered = _discover_plugins(plugins_dir)
-        root = config_store.get_root(
+        root = await config_store.get_root(
             plugins_dir,
             discovered,
             auto_create_missing=False,
@@ -303,8 +366,11 @@ async def delete_plugin_instance(data: PluginDeleteIn = Body(...)) -> OutBase:
         if len(new_instances) == len(old_instances):
             raise ValueError(f"未找到插件实例: {data.instanceId}")
 
+        if PluginManager.started:
+            await PluginManager.loader.unload_instance(data.instanceId)
+
         root["instances"] = new_instances
-        config_store.save_root(plugins_dir, root)
+        await config_store.save_root(plugins_dir, root)
         return OutBase()
     except Exception as e:
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")

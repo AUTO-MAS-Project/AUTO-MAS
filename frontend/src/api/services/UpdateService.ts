@@ -7,6 +7,7 @@ import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
 import type { OutBase } from '../models/OutBase';
 import type { PlanReorderIn } from '../models/PlanReorderIn';
 import type { PlanUpdateIn } from '../models/PlanUpdateIn';
+import type { PluginUpdateIn } from '../models/PluginUpdateIn';
 import type { QueueItemReorderIn } from '../models/QueueItemReorderIn';
 import type { QueueItemUpdateIn } from '../models/QueueItemUpdateIn';
 import type { QueueReorderIn } from '../models/QueueReorderIn';
@@ -460,6 +461,25 @@ export class UpdateService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/webhook/order',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 更新插件实例
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updatePluginInstanceApiPluginsUpdatePost(
+        requestBody: PluginUpdateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugins/update',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
