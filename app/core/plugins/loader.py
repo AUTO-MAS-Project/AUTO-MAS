@@ -5,17 +5,24 @@ import importlib.util
 import inspect
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Callable, Dict, Iterable, Optional
 
 from app.utils import get_logger
+from app.utils.constants import UTC8
 
 from .context import PluginContext
 from .runtime_api import RuntimeAPI
 
 
 logger = get_logger("插件加载器")
+
+
+def _utc8_now_iso() -> str:
+    """返回当前 UTC+8 时间的 ISO8601 字符串。"""
+    return datetime.now(tz=UTC8).isoformat()
 
 
 class PluginDefinitionError(Exception):
