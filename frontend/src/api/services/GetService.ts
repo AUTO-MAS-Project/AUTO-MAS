@@ -25,6 +25,7 @@ import type { OCRScreenshotIn } from '../models/OCRScreenshotIn';
 import type { OCRScreenshotOut } from '../models/OCRScreenshotOut';
 import type { PlanGetIn } from '../models/PlanGetIn';
 import type { PlanGetOut } from '../models/PlanGetOut';
+import type { PluginsGetOut } from '../models/PluginsGetOut';
 import type { PowerOut } from '../models/PowerOut';
 import type { QueueGetIn } from '../models/QueueGetIn';
 import type { QueueGetOut } from '../models/QueueGetOut';
@@ -642,6 +643,17 @@ export class GetService {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 获取插件实例配置
+     * @returns PluginsGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getPluginsApiPluginsGetPost(): CancelablePromise<PluginsGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugins/get',
         });
     }
 }
