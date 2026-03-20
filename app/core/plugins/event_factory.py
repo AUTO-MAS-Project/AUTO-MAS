@@ -5,6 +5,9 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from app.utils import get_logger
+from app.utils.constants import UTC8
+
+from .event_contract import EVENT_CONTRACT_VERSION, is_script_event, is_valid_source
 
 
 logger = get_logger("插件事件工厂")
@@ -44,6 +47,7 @@ class PluginEventFactory:
         """
         payload: Dict[str, Any] = {
             "event": event,
+            "event_version": EVENT_CONTRACT_VERSION,
             "source": source,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
@@ -64,6 +68,9 @@ class PluginEventFactory:
 
         业务模块可通过该方法直接发送非脚本领域事件，避免携带无关字段。
         """
+        if not is_valid_source(source):
+            logger.warning(f"事件来源格式不规范: source={source}, event={event}")
+
         payload = PluginEventFactory.build_envelope(event=event, source=source, data=data)
         return PluginEventFactory._emit_payload(event=event, payload=payload)
 
@@ -122,6 +129,12 @@ class PluginEventFactory:
 
         适用于 task_manager 等脚本生命周期场景。
         """
+        if not is_valid_source(source):
+            logger.warning(f"脚本事件来源格式不规范: source={source}, event={event}")
+
+        if not is_script_event(event):
+            logger.warning(f"非标准脚本事件名: event={event}")
+
         payload = PluginEventFactory.build_script_payload(
             event=event,
             source=source,
@@ -135,59 +148,3 @@ class PluginEventFactory:
             data=data,
         )
         return PluginEventFactory._emit_payload(event=event, payload=payload)
-
-    @staticmethod
-    def build_payload(
-        *,
-        event: str,
-        source: str,
-        task_id: Optional[str] = None,
-        script_id: Optional[str] = None,
-        script_name: Optional[str] = None,
-        mode: Optional[str] = None,
-        status: Optional[str] = None,
-        error: Optional[str] = None,
-        result: Optional[str] = None,
-        data: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        """兼容旧接口：构建事件载荷。
-
-        保留该方法用于兼容历史调用，内部转发到脚本事件载荷构建方法。
-        """
-        return PluginEventFactory.build_script_payload(
-            event=event,
-            source=source,
-            task_id=task_id,
-            script_id=script_id,
-            script_name=script_name,
-            mode=mode,
-            status=status,
-            error=error,
-            result=result,
-            data=data,
-        )
-
-    @staticmethod
-    def emit(*, event: str, source: str, **kwargs: Any) -> Dict[str, Any]:
-        """兼容旧接口：发送事件。
-
-        - 若仅传 data（或不传脚本字段），按通用事件发送。
-        - 若传入 task/script 字段，按脚本事件发送。
-        """
-        script_keys = {
-            "task_id",
-            "script_id",
-            "script_name",
-            "mode",
-            "status",
-            "error",
-            "result",
-        }
-        if any(key in kwargs for key in script_keys):
-            return PluginEventFactory.emit_script_event(event=event, source=source, **kwargs)
-
-        return PluginEventFactory.emit_event(
-            event=event,
-            source=source,
-            data=kwargs.get("data"),
-        )
