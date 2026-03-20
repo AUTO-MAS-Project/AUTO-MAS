@@ -2,10 +2,13 @@
 #   Copyright © 2025-2026 AUTO-MAS Team
 
 import copy
+import importlib
 import importlib.util
 import json
 from pathlib import Path
 from typing import Any, Dict
+
+from .pypi_site import iter_plugin_entry_points
 
 
 class PluginSchemaError(Exception):
@@ -18,19 +21,79 @@ class PluginSchemaManager:
     SUPPORTED_TYPES = {"boolean", "string", "number", "list", "key_value", "table"}
     LIST_ITEM_TYPES = {"string", "number", "boolean", "any"}
 
-    def load_schema(self, plugin_name: str, plugin_path: Path) -> Dict[str, Dict[str, Any]]:
-        schema_py = plugin_path / "schema.py"
-        schema_json = plugin_path / "schema.json"
+    def load_schema(self, plugin_name: str, plugin_path: Path | None) -> Dict[str, Dict[str, Any]]:
+        """加载插件 Schema。
 
-        if schema_py.exists():
-            schema = self._load_schema_from_py(plugin_name, schema_py)
-        elif schema_json.exists():
-            schema = self._load_schema_from_json(plugin_name, schema_json)
-        else:
+        优先读取本地插件目录中的 schema.py/schema.json；
+        若不存在，则尝试从 PyPI Entry Point 对应模块中读取 schema/get_schema。
+        """
+        schema: Dict[str, Dict[str, Any]] = {}
+        if plugin_path is not None:
+            schema_py = plugin_path / "schema.py"
+            schema_json = plugin_path / "schema.json"
+
+            if schema_py.exists():
+                schema = self._load_schema_from_py(plugin_name, schema_py)
+            elif schema_json.exists():
+                schema = self._load_schema_from_json(plugin_name, schema_json)
+
+        if not schema:
+            schema = self._load_schema_from_entry_point(plugin_name)
+
+        if not schema:
             return {}
 
         self._validate_schema_definition(plugin_name, schema)
         return schema
+
+    def _extract_schema_from_module(self, plugin_name: str, module: Any) -> Dict[str, Dict[str, Any]]:
+        """从模块对象中提取 schema 定义。"""
+        if module is None:
+            return {}
+
+        if hasattr(module, "schema"):
+            schema = self._normalize_schema_object(getattr(module, "schema"))
+        elif callable(getattr(module, "get_schema", None)):
+            schema = self._normalize_schema_object(module.get_schema())
+        else:
+            return {}
+
+        if not isinstance(schema, dict):
+            raise PluginSchemaError(f"插件 Schema 必须是对象: {plugin_name}")
+        return schema
+
+    def _load_schema_from_entry_point(self, plugin_name: str) -> Dict[str, Dict[str, Any]]:
+        """从 PyPI Entry Point 对应模块加载 schema。"""
+        for entry_point in iter_plugin_entry_points():
+            if str(getattr(entry_point, "name", "")).strip() != plugin_name:
+                continue
+
+            try:
+                loaded = entry_point.load()
+            except Exception as e:
+                raise PluginSchemaError(
+                    f"加载插件入口失败: {plugin_name}, error={type(e).__name__}: {e}"
+                ) from e
+
+            if hasattr(loaded, "__dict__") and not callable(loaded):
+                schema = self._extract_schema_from_module(plugin_name, loaded)
+                if schema:
+                    return schema
+
+            if callable(loaded):
+                module_name = getattr(loaded, "__module__", "")
+                if module_name:
+                    try:
+                        module = importlib.import_module(module_name)
+                    except Exception as e:
+                        raise PluginSchemaError(
+                            f"导入插件模块失败: {plugin_name}, module={module_name}, error={type(e).__name__}: {e}"
+                        ) from e
+                    schema = self._extract_schema_from_module(plugin_name, module)
+                    if schema:
+                        return schema
+
+        return {}
 
     def _load_schema_from_py(
         self,

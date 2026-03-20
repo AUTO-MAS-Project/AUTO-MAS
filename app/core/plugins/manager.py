@@ -2,6 +2,9 @@
 #   Copyright © 2025-2026 AUTO-MAS Team
 
 from pathlib import Path
+import asyncio
+import subprocess
+import sys
 from typing import Any, Dict
 import uuid
 
@@ -36,6 +39,76 @@ class _PluginManager:
     def _discover_plugins(self) -> Dict[str, Any]:
         """发现插件（兼容本地目录与 PyPI Entry Point）。"""
         return self.loader.discover()
+
+    async def _run_subprocess(self, command: list[str]) -> subprocess.CompletedProcess[str]:
+        """在线程池中执行子进程命令，避免阻塞事件循环。"""
+        return await asyncio.to_thread(
+            subprocess.run,
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    async def _update_pypi_plugin(
+        self,
+        plugin_name: str,
+        discovered: Dict[str, Any],
+        update_source: str = "directory",
+    ) -> None:
+        """重载前更新 PyPI 插件包。
+
+        当前策略：
+        - 当插件来源为 pypi 时，优先从 plugins/<plugin_name> 本地目录执行安装更新。
+        - 若本地目录不存在，则跳过并保留现有包版本。
+
+        预留策略：
+        - update_source="pip-index" 为未来在线源更新入口（当前仅记录日志）。
+        """
+        plugin_source = discovered.get(plugin_name)
+        if plugin_source is None or getattr(plugin_source, "source", "") != "pypi":
+            return
+
+        if update_source == "pip-index":
+            logger.info(f"预留更新策略（待实现）: plugin={plugin_name}, source=pip-index")
+            return
+
+        package_dir = self.plugins_dir / plugin_name
+        pyproject_path = package_dir / "pyproject.toml"
+        if not package_dir.exists() or not pyproject_path.exists():
+            logger.info(
+                f"PyPI 插件未找到本地包目录，跳过目录更新: plugin={plugin_name}, path={package_dir}"
+            )
+            return
+
+        target_dir = self.plugins_dir / "pypi" / "site-packages"
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        command = [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            str(package_dir),
+            "--target",
+            str(target_dir),
+            "--upgrade",
+        ]
+        completed = await self._run_subprocess(command)
+        if completed.returncode != 0:
+            stderr = (completed.stderr or "").strip()
+            stdout = (completed.stdout or "").strip()
+            detail = stderr or stdout or "未知错误"
+            raise RuntimeError(f"更新 PyPI 插件失败: plugin={plugin_name}, detail={detail}")
+
+        logger.info(f"PyPI 插件目录更新完成: plugin={plugin_name}, path={package_dir}")
+
+    async def _update_all_pypi_plugins(self, discovered: Dict[str, Any]) -> None:
+        """批量更新已发现的 PyPI 插件。"""
+        for plugin_name, plugin_source in discovered.items():
+            if getattr(plugin_source, "source", "") != "pypi":
+                continue
+            await self._update_pypi_plugin(plugin_name, discovered)
 
     def _list_scripts(self) -> list[Dict[str, Any]]:
         try:
@@ -180,6 +253,9 @@ class _PluginManager:
         }
 
     async def reload(self) -> None:
+        discovered = self._discover_plugins()
+        self.loader.discovered_plugins = discovered
+        await self._update_all_pypi_plugins(discovered)
         if self.started:
             await self.stop()
         await self.start()
@@ -196,6 +272,8 @@ class _PluginManager:
         if target is None:
             raise ValueError(f"未找到插件实例: {instance_id}")
 
+        await self._update_pypi_plugin(target.plugin, discovered)
+
         await self.loader.unload_instance(instance_id)
         if target.enabled:
             await self.loader.load_instance(
@@ -208,6 +286,7 @@ class _PluginManager:
     async def reload_plugin(self, plugin_name: str) -> None:
         discovered = self._discover_plugins()
         self.loader.discovered_plugins = discovered
+        await self._update_pypi_plugin(plugin_name, discovered)
         instances = await self.config_store.load_instances(
             self.plugins_dir,
             discovered,
