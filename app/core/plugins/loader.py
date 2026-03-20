@@ -4,6 +4,7 @@
 import importlib.util
 import inspect
 import json
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -166,6 +167,31 @@ class PluginLoader:
 
         raise PluginDefinitionError(f"插件 Entry Point 返回了不支持的对象: {plugin_name}")
 
+    def _clear_cached_pypi_module(self, plugin_name: str, plugin_source: PluginSource) -> None:
+        """清理 PyPI 插件模块缓存，确保重载使用最新代码。"""
+        if plugin_source.source != "pypi":
+            return
+
+        module_name = str(plugin_source.module_name or "").strip()
+        if not module_name:
+            entry_point = plugin_source.entry_point
+            module_name = str(getattr(entry_point, "module", "") or "").strip()
+        if not module_name:
+            return
+
+        target_keys = [
+            key
+            for key in list(sys.modules.keys())
+            if key == module_name or key.startswith(f"{module_name}.")
+        ]
+        for key in target_keys:
+            sys.modules.pop(key, None)
+
+        if target_keys:
+            logger.info(
+                f"已清理 PyPI 插件模块缓存: plugin={plugin_name}, modules={len(target_keys)}"
+            )
+
     def _resolve_plugin_module_and_setup(
         self,
         plugin_name: str,
@@ -186,6 +212,7 @@ class PluginLoader:
 
         if plugin_source.entry_point is None:
             raise PluginDefinitionError(f"PyPI 插件缺少 Entry Point: {plugin_name}")
+        self._clear_cached_pypi_module(plugin_name, plugin_source)
         return self._load_setup_from_entry_point(plugin_name, plugin_source.entry_point)
 
     async def _call_dispose(self, dispose: Callable[[], Any]) -> None:
@@ -377,7 +404,8 @@ class PluginLoader:
 
     async def load_instances(self, instances: Iterable[Any]) -> Dict[str, PluginRecord]:
         """批量加载插件实例，并记录启动失败状态供上层修复配置。"""
-        self.discover()
+        if not self.discovered_plugins:
+            self.discover()
         self.startup_failed_instances = {}
         self.startup_missing_instances = set()
 
