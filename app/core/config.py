@@ -143,6 +143,7 @@ class AppConfig(GlobalConfig):
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
         await self.ToolsConfig.connect(self.config_path / "ToolsConfig.json")
+        await self.PluginConfig.connect(self.config_path / "PluginConfig.json")
 
         from app.services import System
 

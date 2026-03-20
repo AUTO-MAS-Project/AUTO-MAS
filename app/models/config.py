@@ -22,6 +22,7 @@
 import uuid
 import json
 import calendar
+import re
 from pathlib import Path
 from datetime import datetime
 from typing import Callable
@@ -53,6 +54,7 @@ from .ConfigBase import (
     UUIDValidator,
     DateTimeValidator,
     JSONValidator,
+    StringValidator,
     URLValidator,
     UserNameValidator,
     KeyValidator,
@@ -1694,6 +1696,128 @@ class ToolsConfig(ConfigBase):
         ]
 
 
+class PluginConfig(ConfigBase):
+    """插件系统独立配置。"""
+
+    class PluginNameValidator(StringValidator):
+        """插件名称验证器。"""
+
+        _pattern = re.compile(r"^[a-zA-Z0-9_][a-zA-Z0-9_-]*$")
+
+        def validate(self, value):
+            """校验插件名称是否合法。"""
+            return isinstance(value, str) and bool(self._pattern.fullmatch(value))
+
+        def correct(self, value):
+            """修正非法插件名称。"""
+            if isinstance(value, str):
+                fixed = re.sub(r"[^a-zA-Z0-9_-]", "", value.strip())
+                if fixed and fixed[0].isalnum() or (fixed and fixed[0] == "_"):
+                    return fixed
+            return "unknown_plugin"
+
+    class PluginInstanceIdValidator(StringValidator):
+        """插件实例号验证器。"""
+
+        _pattern = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+
+        def validate(self, value):
+            """校验插件实例号是否合法。"""
+            return isinstance(value, str) and bool(self._pattern.fullmatch(value))
+
+        def correct(self, value):
+            """修正非法插件实例号。"""
+            if isinstance(value, str):
+                fixed = re.sub(r"[^a-zA-Z0-9_-]", "", value.strip())
+                if fixed:
+                    return fixed[:64]
+            return uuid.uuid4().hex[:5]
+
+    class PluginInstanceConfig(ConfigBase):
+        """插件实例配置，固定元数据使用独立字段，业务配置使用虚拟校验字段。"""
+
+        def __init__(self) -> None:
+            ## Info --------------------------------------------------------
+            ## 插件名称
+            self.Info_Plugin = ConfigItem(
+                "Info",
+                "Plugin",
+                "unknown_plugin",
+                PluginConfig.PluginNameValidator(),
+            )
+            ## 插件实例号（不含插件名前缀）
+            self.Info_Id = ConfigItem(
+                "Info",
+                "Id",
+                uuid.uuid4().hex[:5],
+                PluginConfig.PluginInstanceIdValidator(),
+            )
+            ## 是否启用
+            self.Info_Enabled = ConfigItem("Info", "Enabled", True, BoolValidator())
+            ## 实例名称
+            self.Info_Name = ConfigItem("Info", "Name", "插件实例", StringValidator())
+
+            ## Data --------------------------------------------------------
+            ## 原始配置（JSON 字符串）
+            self.Data_ConfigRaw = ConfigItem(
+                "Data",
+                "ConfigRaw",
+                "{ }",
+                JSONValidator(),
+                legacy_name="Config",
+            )
+            ## 虚拟配置字段（按 schema 校验后的配置）
+            self.Data_Config = ConfigItem(
+                "Data",
+                "Config",
+                "{ }",
+                VirtualConfigValidator(self.get_validated_config),
+            )
+
+            super().__init__()
+
+        def get_validated_config(self) -> str:
+            """获取经过插件 Schema 校验并补默认值后的配置 JSON。"""
+            try:
+                raw = self.get("Data", "ConfigRaw")
+                raw_config = json.loads(raw) if isinstance(raw, str) else {}
+                if not isinstance(raw_config, dict):
+                    raw_config = {}
+            except Exception:
+                raw_config = {}
+
+            plugin_name = self.get("Info", "Plugin")
+            if not isinstance(plugin_name, str) or not plugin_name:
+                return json.dumps(raw_config, ensure_ascii=False)
+
+            try:
+                from app.core.plugins.schema import PluginSchemaManager
+
+                plugin_path = Path.cwd() / "plugins" / plugin_name
+                schema_manager = PluginSchemaManager()
+                schema = schema_manager.load_schema(plugin_name, plugin_path)
+                if not schema:
+                    return json.dumps(raw_config, ensure_ascii=False)
+
+                validated = schema_manager.apply_defaults_and_validate(
+                    plugin_name,
+                    schema,
+                    raw_config,
+                )
+                return json.dumps(validated, ensure_ascii=False)
+            except Exception:
+                return json.dumps(raw_config, ensure_ascii=False)
+
+    def __init__(self) -> None:
+        ## Data -------------------------------------------------------------
+        ## 插件配置版本
+        self.Data_Version = ConfigItem("Data", "Version", 1, RangeValidator(1, 9999))
+        ## 插件实例集合
+        self.PluginInstances = MultipleConfig([PluginConfig.PluginInstanceConfig])
+
+        super().__init__()
+
+
 class GlobalConfig(ConfigBase):
     """全局配置"""
 
@@ -1894,6 +2018,8 @@ class GlobalConfig(ConfigBase):
         self.QueueConfig = MultipleConfig([QueueConfig])
         ## 工具箱配置
         self.ToolsConfig = ToolsConfig()
+        ## 插件系统独立配置
+        self.PluginConfig = PluginConfig()
 
         MaaConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaEndConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
