@@ -39,7 +39,70 @@ logger = get_logger("业务调度")
 
 class TaskInfo(TaskItem):
 
+    def _has_meaningful_current_log(self) -> bool:
+        """判断当前脚本日志是否包含有效内容。"""
+        if not (0 <= self.current_index < len(self.script_list)):
+            return False
+
+        log_text = self.script_list[self.current_index].log
+        if not isinstance(log_text, str):
+            return False
+
+        return bool(log_text.strip())
+
+    def _emit_task_progress(self) -> None:
+        """发送 task.progress 事件，避免重复发送相同快照。"""
+        if 0 <= self.current_index < len(self.script_list):
+            if not self._has_meaningful_current_log():
+                return
+
+        progress_data = PluginEventFactory.build_task_progress_data(self)
+        signature = repr(progress_data)
+        if getattr(self, "_last_progress_signature", None) == signature:
+            return
+
+        self._last_progress_signature = signature
+        PluginEventFactory.emit_event(
+            event=PluginEventNames.TASK_PROGRESS,
+            source="core.task_manager",
+            data=progress_data,
+        )
+
+    def _emit_task_log(self) -> None:
+        """发送 task.log 事件，提供当前脚本日志内容。"""
+        if not (0 <= self.current_index < len(self.script_list)):
+            return
+        if not self._has_meaningful_current_log():
+            return
+
+        script_item = self.script_list[self.current_index]
+        log_text = script_item.log or ""
+        signature = (self.current_index, log_text)
+        if getattr(self, "_last_log_signature", None) == signature:
+            return
+
+        self._last_log_signature = signature
+        tail_chars = 2000
+        is_truncated = len(log_text) > tail_chars
+        PluginEventFactory.emit_event(
+            event=PluginEventNames.TASK_LOG,
+            source="core.task_manager",
+            data={
+                "task_id": self.task_id,
+                "mode": self.mode,
+                "script_id": script_item.script_id,
+                "script_name": script_item.name,
+                "script_status": script_item.status,
+                "current_script_index": self.current_index,
+                "log": log_text,
+                "log_tail": log_text[-tail_chars:],
+                "log_length": len(log_text),
+                "truncated_for_tail": is_truncated,
+            },
+        )
+
     async def on_change(self):
+        """任务状态变更时，同步推送前端并广播插件事件。"""
         await Config.send_websocket_message(
             id=self.task_id,
             type="Update",
@@ -52,6 +115,9 @@ class TaskInfo(TaskItem):
                 data={"log": self.script_list[self.current_index].log},
             )
 
+        self._emit_task_progress()
+        self._emit_task_log()
+
 
 class Task(TaskExecuteBase):
 
@@ -59,6 +125,60 @@ class Task(TaskExecuteBase):
         super().__init__()
         self.task_info = task_info
         self.is_closing = False
+        self._exit_result = "success"
+        self._exit_error: str | None = None
+
+    def _emit_task_start(self) -> None:
+        """发送 task.start 事件，提供插件所需的任务标识和可操作入口。"""
+        PluginEventFactory.emit_event(
+            event=PluginEventNames.TASK_START,
+            source="core.task_manager",
+            data={
+                "task_id": self.task_info.task_id,
+                "mode": self.task_info.mode,
+                "queue_id": self.task_info.queue_id,
+                "script_id": self.task_info.script_id,
+                "user_id": self.task_info.user_id,
+                "script_total": len(self.task_info.script_list),
+                "scripts": [
+                    {
+                        "script_id": item.script_id,
+                        "script_name": item.name,
+                        "status": item.status,
+                    }
+                    for item in self.task_info.script_list
+                ],
+                "actions": {
+                    "stop_task": {
+                        "api": "/api/dispatch/stop",
+                        "method": "POST",
+                        "body": {"taskId": self.task_info.task_id},
+                    },
+                    "stop_all_tasks": {
+                        "api": "/api/dispatch/stop",
+                        "method": "POST",
+                        "body": {"taskId": "ALL"},
+                    },
+                },
+            },
+        )
+
+    def _emit_task_exit(self) -> None:
+        """发送 task.exit 事件，告知任务最终结果。"""
+        PluginEventFactory.emit_event(
+            event=PluginEventNames.TASK_EXIT,
+            source="core.task_manager",
+            data={
+                "task_id": self.task_info.task_id,
+                "mode": self.task_info.mode,
+                "queue_id": self.task_info.queue_id,
+                "script_id": self.task_info.script_id,
+                "user_id": self.task_info.user_id,
+                "result": self._exit_result,
+                "error": self._exit_error,
+                "summary": self.task_info.result,
+            },
+        )
 
     async def prepare(self):
 
@@ -94,6 +214,8 @@ class Task(TaskExecuteBase):
     async def main_task(self):
 
         await self.prepare()
+        self._emit_task_start()
+        self.task_info._emit_task_progress()
 
         logger.info(
             f"开始运行任务: {self.task_info.task_id}, 模式: {self.task_info.mode}"
@@ -166,6 +288,8 @@ class Task(TaskExecuteBase):
                 await self.spawn(task_item)
             except asyncio.CancelledError:
                 error_text = "CancelledError: 任务执行被取消"
+                self._exit_result = "cancelled"
+                self._exit_error = error_text
                 PluginEventFactory.emit_script_event(
                     event=PluginEventNames.SCRIPT_CANCELLED,
                     source="core.task_manager",
@@ -191,6 +315,8 @@ class Task(TaskExecuteBase):
                 raise
             except Exception as e:
                 error_text = f"{type(e).__name__}: {e}"
+                self._exit_result = "error"
+                self._exit_error = error_text
                 PluginEventFactory.emit_script_event(
                     event=PluginEventNames.SCRIPT_ERROR,
                     source="core.task_manager",
@@ -223,6 +349,8 @@ class Task(TaskExecuteBase):
                 result_error = None
                 if result_event == PluginEventNames.SCRIPT_ERROR:
                     result_error = "脚本状态非完成"
+                    self._exit_result = "error"
+                    self._exit_error = result_error
 
                 PluginEventFactory.emit_script_event(
                     event=result_event,
@@ -257,6 +385,9 @@ class Task(TaskExecuteBase):
             data={"Accomplish": self.task_info.result},
         )
 
+        self.task_info._emit_task_progress()
+        self._emit_task_exit()
+
         if self.task_info.mode == "AutoProxy" and self.task_info.queue_id is not None:
 
             if Config.power_sign == "NoAction":
@@ -268,6 +399,11 @@ class Task(TaskExecuteBase):
                 )
 
     async def on_crash(self, e: Exception) -> None:
+        """处理任务异常并记录退出状态。"""
+        if self._exit_result == "success":
+            self._exit_result = "error"
+            self._exit_error = f"{type(e).__name__}: {e}"
+
         logger.exception(f"任务 {self.task_info.task_id} 出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
