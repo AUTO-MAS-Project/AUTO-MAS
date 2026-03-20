@@ -33,17 +33,9 @@ class _PluginManager:
             plugins_dir=self.plugins_dir,
         )
 
-    def _discover_plugins(self) -> Dict[str, Path]:
-        discovered: Dict[str, Path] = {}
-        if not self.plugins_dir.exists():
-            return discovered
-
-        for item in sorted(self.plugins_dir.iterdir()):
-            if not item.is_dir():
-                continue
-            if (item / "plugin.py").exists():
-                discovered[item.name] = item
-        return discovered
+    def _discover_plugins(self) -> Dict[str, Any]:
+        """发现插件（兼容本地目录与 PyPI Entry Point）。"""
+        return self.loader.discover()
 
     def _list_scripts(self) -> list[Dict[str, Any]]:
         try:
@@ -89,10 +81,79 @@ class _PluginManager:
 
         discovered = self._discover_plugins()
         self.loader.discovered_plugins = discovered
-        instances = self.config_store.load_instances(self.plugins_dir, discovered)
+        instances = await self.config_store.load_instances(
+            self.plugins_dir,
+            discovered,
+            auto_create_missing=False,
+        )
         await self.loader.load_instances(instances)
+        await self._repair_invalid_instances_after_start(discovered)
         self.started = True
         logger.info("插件系统启动完成")
+
+    async def _repair_invalid_instances_after_start(self, discovered: Dict[str, Any]) -> None:
+        """启动后修复失效插件实例配置。"""
+        failed = dict(getattr(self.loader, "startup_failed_instances", {}) or {})
+        if not failed:
+            return
+
+        missing_ids = set(getattr(self.loader, "startup_missing_instances", set()) or set())
+
+        try:
+            root = await self.config_store.get_root(
+                self.plugins_dir,
+                discovered,
+                auto_create_missing=False,
+            )
+        except Exception as e:
+            logger.error(f"读取插件配置失败，跳过失效实例修复: {type(e).__name__}: {e}")
+            return
+
+        instances = root.get("instances", [])
+        if not isinstance(instances, list):
+            return
+
+        changed = False
+        removed_ids: list[str] = []
+        disabled_ids: list[str] = []
+        new_instances = []
+
+        for item in instances:
+            if not isinstance(item, dict):
+                new_instances.append(item)
+                continue
+
+            instance_id = str(item.get("id") or "")
+            if not instance_id:
+                new_instances.append(item)
+                continue
+
+            if instance_id in missing_ids:
+                removed_ids.append(instance_id)
+                changed = True
+                continue
+
+            if instance_id in failed and bool(item.get("enabled", False)):
+                item["enabled"] = False
+                disabled_ids.append(instance_id)
+                changed = True
+
+            new_instances.append(item)
+
+        if not changed:
+            return
+
+        root["instances"] = new_instances
+        try:
+            await self.config_store.save_root(self.plugins_dir, root)
+        except Exception as e:
+            logger.error(f"保存插件配置失败，失效实例修复未落盘: {type(e).__name__}: {e}")
+            return
+
+        if removed_ids:
+            logger.warning(f"已删除未发现插件的实例配置: {', '.join(removed_ids)}")
+        if disabled_ids:
+            logger.warning(f"已自动禁用启动失败的插件实例: {', '.join(disabled_ids)}")
 
     async def stop(self) -> None:
         if not self.started:
@@ -126,7 +187,11 @@ class _PluginManager:
     async def reload_instance(self, instance_id: str) -> None:
         discovered = self._discover_plugins()
         self.loader.discovered_plugins = discovered
-        instances = self.config_store.load_instances(self.plugins_dir, discovered)
+        instances = await self.config_store.load_instances(
+            self.plugins_dir,
+            discovered,
+            auto_create_missing=False,
+        )
         target = next((item for item in instances if item.id == instance_id), None)
         if target is None:
             raise ValueError(f"未找到插件实例: {instance_id}")
@@ -143,7 +208,11 @@ class _PluginManager:
     async def reload_plugin(self, plugin_name: str) -> None:
         discovered = self._discover_plugins()
         self.loader.discovered_plugins = discovered
-        instances = self.config_store.load_instances(self.plugins_dir, discovered)
+        instances = await self.config_store.load_instances(
+            self.plugins_dir,
+            discovered,
+            auto_create_missing=False,
+        )
         matched = [item for item in instances if item.plugin == plugin_name]
         if not matched:
             raise ValueError(f"未找到插件实例: {plugin_name}")
