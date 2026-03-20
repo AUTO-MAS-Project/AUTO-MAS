@@ -56,6 +56,22 @@
 }
 ```
 
+### `task.start`
+
+任务完成初始化并开始进入调度流程时触发。
+
+### `task.progress`
+
+任务状态发生变化时触发（脚本状态、用户状态、当前索引等变更）。
+
+### `task.log`
+
+当前执行脚本日志发生变化时触发。
+
+### `task.exit`
+
+任务执行流程退出时触发（成功 / 失败 / 取消统一收口）。
+
 ### `script.start`
 
 脚本被调度并标记为运行时触发。
@@ -84,9 +100,133 @@
 - `script.cancelled`
 - `script.exit`
 
+任务生命周期标准事件集合：
+
+- `task.start`
+- `task.progress`
+- `task.log`
+- `task.exit`
+
 ## 4. 典型 payload 示例
 
-### 4.1 script.start
+### 4.1 task.start
+
+```json
+{
+  "event": "task.start",
+  "event_version": "1",
+  "source": "core.task_manager",
+  "timestamp": "2026-03-20T03:21:15.123456+00:00",
+  "data": {
+    "task_id": "xxxx",
+    "mode": "AutoProxy",
+    "queue_id": "xxxx",
+    "script_id": null,
+    "user_id": null,
+    "script_total": 3,
+    "scripts": [
+      {
+        "script_id": "xxxx",
+        "script_name": "日常任务",
+        "status": "等待"
+      }
+    ],
+    "actions": {
+      "stop_task": {
+        "api": "/api/dispatch/stop",
+        "method": "POST",
+        "body": {
+          "taskId": "xxxx"
+        }
+      },
+      "stop_all_tasks": {
+        "api": "/api/dispatch/stop",
+        "method": "POST",
+        "body": {
+          "taskId": "ALL"
+        }
+      }
+    }
+  }
+}
+```
+
+### 4.2 task.progress
+
+```json
+{
+  "event": "task.progress",
+  "event_version": "1",
+  "source": "core.task_manager",
+  "timestamp": "2026-03-20T03:21:20.123456+00:00",
+  "data": {
+    "task_id": "xxxx",
+    "mode": "AutoProxy",
+    "queue_id": "xxxx",
+    "script_id": null,
+    "user_id": null,
+    "current_script_index": 0,
+    "script_total": 3,
+    "script_completed": 1,
+    "user_total": 12,
+    "user_completed": 4,
+    "task_info": [],
+    "current_script": {
+      "script_id": "xxxx",
+      "script_name": "日常任务",
+      "status": "运行",
+      "current_user_index": 1,
+      "user_count": 4
+    }
+  }
+}
+```
+
+### 4.3 task.log
+
+```json
+{
+  "event": "task.log",
+  "event_version": "1",
+  "source": "core.task_manager",
+  "timestamp": "2026-03-20T03:21:21.123456+00:00",
+  "data": {
+    "task_id": "xxxx",
+    "mode": "AutoProxy",
+    "script_id": "xxxx",
+    "script_name": "日常任务",
+    "script_status": "运行",
+    "current_script_index": 0,
+    "log": "...完整日志...",
+    "log_tail": "...末尾日志...",
+    "log_length": 12345,
+    "truncated_for_tail": true
+  }
+}
+```
+
+### 4.4 task.exit
+
+```json
+{
+  "event": "task.exit",
+  "event_version": "1",
+  "source": "core.task_manager",
+  "timestamp": "2026-03-20T03:22:00.123456+00:00",
+  "data": {
+    "task_id": "xxxx",
+    "mode": "AutoProxy",
+    "queue_id": "xxxx",
+    "script_id": null,
+    "user_id": null,
+    "result": "success",
+    "error": null,
+    "summary": "任务摘要..."
+  }
+}
+```
+
+### 4.5 script.start
 
 ```json
 {
@@ -102,7 +242,7 @@
 }
 ```
 
-### 4.2 script.error
+### 4.6 script.error
 
 ```json
 {
@@ -120,7 +260,7 @@
 }
 ```
 
-### 4.3 script.exit（收口）
+### 4.7 script.exit（收口）
 
 ```json
 {
@@ -140,6 +280,9 @@
 
 ## 5. 插件侧建议
 
+- 推荐以 `task.start` 建立任务上下文，以 `task_id` 作为主键贯穿全流程。
+- 推荐监听 `task.progress` 获取任务级进度，监听 `task.log` 获取实时日志。
+- 推荐使用 `task.exit` 作为任务级统一收口事件。
 - 推荐优先监听 `script.exit` 作为统一处理入口。
 - 若需细分逻辑，可同时监听 `script.success` / `script.error` / `script.cancelled`。
 - 处理函数应容错，不应抛出未捕获异常。
