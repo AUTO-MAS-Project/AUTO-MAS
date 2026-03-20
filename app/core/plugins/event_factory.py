@@ -1,7 +1,7 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, Optional
 
 from app.utils import get_logger
@@ -49,7 +49,7 @@ class PluginEventFactory:
             "event": event,
             "event_version": EVENT_CONTRACT_VERSION,
             "source": source,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(tz=UTC8).isoformat(),
         }
 
         if isinstance(data, dict) and data:
