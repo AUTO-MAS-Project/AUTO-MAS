@@ -17,6 +17,51 @@ class PluginEventFactory:
     """统一构建并发送插件事件。"""
 
     @staticmethod
+    def build_task_progress_data(task_info: Any) -> Dict[str, Any]:
+        """构建任务进度事件数据。
+
+        该方法接收任务对象并输出标准化的 task.progress 载荷，
+        让调度器只负责调用工厂而不处理具体组装逻辑。
+        """
+        total_scripts = len(task_info.script_list)
+        completed_scripts = sum(
+            1 for item in task_info.script_list if item.status == "完成"
+        )
+        total_users = sum(len(item.user_list) for item in task_info.script_list)
+        completed_users = sum(
+            1
+            for script_item in task_info.script_list
+            for user_item in script_item.user_list
+            if user_item.status == "完成"
+        )
+
+        current_script = None
+        if 0 <= task_info.current_index < total_scripts:
+            item = task_info.script_list[task_info.current_index]
+            current_script = {
+                "script_id": item.script_id,
+                "script_name": item.name,
+                "status": item.status,
+                "current_user_index": item.current_index,
+                "user_count": len(item.user_list),
+            }
+
+        return {
+            "task_id": task_info.task_id,
+            "mode": task_info.mode,
+            "queue_id": task_info.queue_id,
+            "script_id": task_info.script_id,
+            "user_id": task_info.user_id,
+            "current_script_index": task_info.current_index,
+            "script_total": total_scripts,
+            "script_completed": completed_scripts,
+            "user_total": total_users,
+            "user_completed": completed_users,
+            "task_info": task_info.asdict,
+            "current_script": current_script,
+        }
+
+    @staticmethod
     def _emit_payload(*, event: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         """发送已构建好的事件载荷。
 

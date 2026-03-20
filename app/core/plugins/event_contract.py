@@ -14,6 +14,11 @@ CORE_SOURCE_PREFIX: Final[str] = "core."
 class PluginEventNames:
     """插件系统约定的标准事件名。"""
 
+    TASK_START: Final[str] = "task.start"
+    TASK_PROGRESS: Final[str] = "task.progress"
+    TASK_LOG: Final[str] = "task.log"
+    TASK_EXIT: Final[str] = "task.exit"
+
     SCRIPT_START: Final[str] = "script.start"
     SCRIPT_SUCCESS: Final[str] = "script.success"
     SCRIPT_ERROR: Final[str] = "script.error"
