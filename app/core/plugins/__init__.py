@@ -2,6 +2,7 @@
 #   Copyright © 2025-2026 AUTO-MAS Team
 
 from .context import PluginContext
+from .cache_store import PluginCacheManager, JsonPluginCache
 from .config_store import PluginConfigStore
 from .event_bus import EventBus
 from .event_contract import (
@@ -26,6 +27,8 @@ from .runtime_api import RuntimeAPI
 
 __all__ = [
     "PluginContext",
+    "PluginCacheManager",
+    "JsonPluginCache",
     "PluginConfigStore",
     "EventBus",
     "EVENT_CONTRACT_VERSION",
