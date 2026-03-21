@@ -1,7 +1,10 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
+from pathlib import Path
 from typing import Any, Dict
+
+from .cache_store import PluginCacheManager
 
 
 class PluginContext:
@@ -23,3 +26,9 @@ class PluginContext:
         self.logger = logger
         self.events = events
         self.runtime = runtime
+        self.cache = PluginCacheManager(
+            plugin_name=self.plugin_name,
+            instance_id=self.instance_id,
+            data_root=Path.cwd() / "data",
+            logger=self.logger,
+        )
