@@ -592,7 +592,7 @@ class SrcUserConfig_Stage(BaseModel):
             "Cavern_of_Corrosion_Path_of_Aria",
             "Cavern_of_Corrosion_Path_of_Uncertainty",
             "Cavern_of_Corrosion_Path_of_Cavalier",
-            "Cavern_of_Corrosion_Path_of_Dreamdive"
+            "Cavern_of_Corrosion_Path_of_Dreamdive",
             "Cavern_of_Corrosion_Path_of_Darkness",
             "Cavern_of_Corrosion_Path_of_Elixir_Seekers",
             "Cavern_of_Corrosion_Path_of_Conflagration",
