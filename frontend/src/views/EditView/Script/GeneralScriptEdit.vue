@@ -183,6 +183,9 @@
                     </template>
                     选择文件
                   </a-button>
+                  <a-button size="large" class="path-button path-button-clear" @click="clearTrackProcessExe">
+                    清空
+                  </a-button>
                 </a-input-group>
               </a-form-item>
             </a-col>
@@ -880,6 +883,7 @@ const pathRelations = reactive({
   scriptPathRelative: '',
   configPathRelative: '',
   logPathRelative: '',
+  trackProcessExeRelative: '',
 })
 
 // 更新相对路径关系
@@ -889,6 +893,7 @@ const updatePathRelations = () => {
     pathRelations.scriptPathRelative = ''
     pathRelations.configPathRelative = ''
     pathRelations.logPathRelative = ''
+    pathRelations.trackProcessExeRelative = ''
     return
   }
 
@@ -910,6 +915,13 @@ const updatePathRelations = () => {
     pathRelations.logPathRelative = pathUtils.getRelativePath(
       rootPath,
       generalConfig.Script.LogPath
+    )
+  }
+
+  if (generalConfig.Script.TrackProcessExe && generalConfig.Script.TrackProcessExe !== '.') {
+    pathRelations.trackProcessExeRelative = pathUtils.getRelativePath(
+      rootPath,
+      generalConfig.Script.TrackProcessExe
     )
   }
 }
@@ -944,6 +956,18 @@ const updatePathsBasedOnRoot = (newRootPath: string) => {
     const newLogPath = pathUtils.resolvePath(newRootPath, pathRelations.logPathRelative)
     const normalizedLogPath = pathUtils.normalizePath(newLogPath)
     generalConfig.Script.LogPath = normalizedLogPath
+  }
+
+  if (
+    pathRelations.trackProcessExeRelative &&
+    isInternalPath(pathRelations.trackProcessExeRelative)
+  ) {
+    const newTrackProcessExePath = pathUtils.resolvePath(
+      newRootPath,
+      pathRelations.trackProcessExeRelative
+    )
+    const normalizedTrackProcessExePath = pathUtils.normalizePath(newTrackProcessExePath)
+    generalConfig.Script.TrackProcessExe = normalizedTrackProcessExePath
   }
 }
 const pageLoading = ref(false)
@@ -1616,6 +1640,13 @@ const selectTrackProcessExe = async () => {
   }
 }
 
+const clearTrackProcessExe = async () => {
+  generalConfig.Script.TrackProcessExe = ''
+  updatePathRelations()
+  await handleChange('Script', 'TrackProcessExe', '')
+  message.success('被追踪进程可执行文件路径已清空')
+}
+
 const selectConfigPath = async () => {
   try {
     if (!window.electronAPI) {
@@ -1989,6 +2020,10 @@ const handleUpload = async () => {
   background: var(--ant-color-primary);
   color: white;
   transform: none;
+}
+
+.path-button-clear {
+  border-left: 1px solid var(--ant-color-border-secondary);
 }
 
 /* 表单项间距 */
