@@ -11,18 +11,42 @@ ENTRY_POINT_GROUPS = ("auto_mas.plugins", "automas.plugins")
 
 
 def get_pypi_root(plugins_dir: Path | None = None) -> Path:
-    """获取插件 PyPI 根目录路径。"""
+    """
+    返回插件本地 PyPI 工作根目录路径。
+
+    Args:
+        plugins_dir (Path | None): 插件根目录；为 None 时使用当前工作目录下的 plugins。
+
+    Returns:
+        Path: plugins/pypi 目录路径。
+    """
     base_plugins_dir = plugins_dir or (Path.cwd() / "plugins")
     return base_plugins_dir / "pypi"
 
 
 def get_pypi_site_packages_dir(plugins_dir: Path | None = None) -> Path:
-    """获取插件 PyPI site-packages 目录路径。"""
+    """
+    返回插件本地 PyPI 的 site-packages 目录路径。
+
+    Args:
+        plugins_dir (Path | None): 插件根目录；为 None 时使用默认 plugins 目录。
+
+    Returns:
+        Path: plugins/pypi/site-packages 目录路径。
+    """
     return get_pypi_root(plugins_dir) / "site-packages"
 
 
 def ensure_pypi_site_packages_on_syspath(plugins_dir: Path | None = None) -> Path:
-    """确保 plugins/pypi/site-packages 目录存在并加入 sys.path。"""
+    """
+    确保插件 site-packages 目录存在并加入当前进程的 sys.path。
+
+    Args:
+        plugins_dir (Path | None): 插件根目录；为 None 时使用默认 plugins 目录。
+
+    Returns:
+        Path: 最终加入 sys.path 的 site-packages 目录路径。
+    """
     site_dir = get_pypi_site_packages_dir(plugins_dir)
     site_dir.mkdir(parents=True, exist_ok=True)
 
@@ -34,7 +58,15 @@ def ensure_pypi_site_packages_on_syspath(plugins_dir: Path | None = None) -> Pat
 
 
 def iter_plugin_entry_points(plugins_dir: Path | None = None) -> List[importlib_metadata.EntryPoint]:
-    """仅扫描 plugins/pypi/site-packages 下分发包的插件入口点。"""
+    """
+    枚举本地插件 site-packages 中声明的插件入口点。
+
+    Args:
+        plugins_dir (Path | None): 插件根目录；为 None 时使用默认 plugins 目录。
+
+    Returns:
+        List[importlib_metadata.EntryPoint]: 去重后的插件入口点列表。
+    """
     site_dir = ensure_pypi_site_packages_on_syspath(plugins_dir)
     result: list[importlib_metadata.EntryPoint] = []
     seen: set[tuple[str, str, str]] = set()

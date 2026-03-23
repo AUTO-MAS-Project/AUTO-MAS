@@ -118,7 +118,16 @@ class JsonPluginCache:
         return payload
 
     def set(self, key: str, value: Any) -> None:
-        """写入单个键值，必要时触发超限清理。"""
+        """
+        写入单个缓存键值并在必要时执行超限清理。
+
+        Args:
+            key (str): 缓存键。
+            value (Any): 缓存值。
+
+        Returns:
+            None: 无返回值。
+        """
         safe_key = str(key)
         with self._lock:
             payload = self._read_store()
@@ -132,7 +141,16 @@ class JsonPluginCache:
             self._write_store(payload)
 
     def get(self, key: str, default: Any = None) -> Any:
-        """读取单个键值，不存在时返回默认值。"""
+        """
+        读取单个缓存键值，不存在时返回默认值。
+
+        Args:
+            key (str): 缓存键。
+            default (Any): 默认返回值。
+
+        Returns:
+            Any: 命中时返回缓存值，未命中时返回 default。
+        """
         safe_key = str(key)
         with self._lock:
             payload = self._read_store()
@@ -142,7 +160,15 @@ class JsonPluginCache:
             return item.get("value", default)
 
     def delete(self, key: str) -> bool:
-        """删除键值并返回是否实际删除。"""
+        """
+        删除指定缓存键并返回是否删除成功。
+
+        Args:
+            key (str): 缓存键。
+
+        Returns:
+            bool: 删除了现有键返回 True，否则返回 False。
+        """
         safe_key = str(key)
         with self._lock:
             payload = self._read_store()
@@ -155,14 +181,33 @@ class JsonPluginCache:
             return True
 
     def exists(self, key: str) -> bool:
-        """判断键是否存在。"""
+        """
+        判断指定缓存键是否存在。
+
+        Args:
+            key (str): 缓存键。
+
+        Returns:
+            bool: 缓存键存在返回 True，否则返回 False。
+        """
         safe_key = str(key)
         with self._lock:
             payload = self._read_store()
             return safe_key in payload.get("items", {})
 
     def update(self, mapping: Dict[str, Any]) -> None:
-        """批量更新键值并执行一次清理。"""
+        """
+        批量写入缓存键值并执行一次统一清理。
+
+        Args:
+            mapping (Dict[str, Any]): 待更新的键值映射。
+
+        Returns:
+            None: 无返回值。
+
+        Raises:
+            ValueError: mapping 不是字典时抛出。
+        """
         if not isinstance(mapping, dict):
             raise ValueError("mapping 必须是字典")
         with self._lock:
@@ -179,7 +224,12 @@ class JsonPluginCache:
             self._write_store(payload)
 
     def all(self) -> Dict[str, Any]:
-        """返回当前缓存中的全部键值。"""
+        """
+        返回当前缓存中的全部键值。
+
+        Returns:
+            Dict[str, Any]: 键值映射，不包含内部元数据。
+        """
         with self._lock:
             payload = self._read_store()
             result: Dict[str, Any] = {}
@@ -189,12 +239,22 @@ class JsonPluginCache:
             return result
 
     def clear(self) -> None:
-        """清空缓存数据。"""
+        """
+        清空当前缓存中的所有数据。
+
+        Returns:
+            None: 无返回值。
+        """
         with self._lock:
             self._write_store({"items": {}, "updated_at": _utc_now_iso()})
 
     def stats(self) -> Dict[str, Any]:
-        """返回缓存统计信息。"""
+        """
+        返回当前缓存统计信息。
+
+        Returns:
+            Dict[str, Any]: 包含缓存名称、限制策略、条目数量和文件大小等统计信息。
+        """
         with self._lock:
             payload = self._read_store()
             serialized = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -290,14 +350,28 @@ class PluginCacheManager:
         limit_mode: LimitMode = "count",
         limit_unit: LimitUnit = "b",
     ) -> JsonPluginCache:
-        """注册缓存并返回可直接 CRUD 的缓存实例。
+        """
+        注册缓存并返回可执行 CRUD 操作的缓存实例。
 
-        参数说明：
-        - cache_name: 缓存名称；同实例内唯一。
-        - backend: 缓存后端类型，当前支持 json。
-        - limit: 必填阈值（数量或字节）。
-        - limit_mode: 阈值模式，count 表示条目数，bytes 表示字节大小。
-        - limit_unit: 字节单位（b/kb/mb/gb），仅在 bytes 模式生效。
+        Args:
+            cache_name (str): 缓存名称；在同一实例内需唯一。
+            backend (CacheBackendType): 缓存后端类型，当前仅支持 json。
+            limit (int | float | str): 缓存阈值，含义由 limit_mode 决定。
+            limit_mode (LimitMode): 阈值模式，count 表示条目数，bytes 表示字节数。
+            limit_unit (LimitUnit): 字节单位（b/kb/mb/gb），仅在 bytes 模式生效。
+
+        Returns:
+            JsonPluginCache: 已注册或复用的缓存实例。
+
+        Raises:
+            ValueError: 在以下场景抛出：
+                1) limit_mode 不在 count/bytes 范围内；
+                2) limit_unit 不在 b/kb/mb/gb 范围内；
+                3) limit 无法按模式解析为有效正值；
+                4) 同名缓存已存在且 limit 或 limit_mode 与历史注册参数不一致。
+            NotImplementedError: 在以下场景抛出：
+                1) backend 不是 json；
+                2) 请求了当前版本尚未实现的数据库后端。
         """
         if limit_mode not in {"count", "bytes"}:
             raise ValueError("limit_mode 仅支持 count 或 bytes")
@@ -339,11 +413,24 @@ class PluginCacheManager:
         return store
 
     def get_registered(self, cache_name: str = "default") -> JsonPluginCache | None:
-        """获取已注册缓存，若不存在返回 None。"""
+        """
+        获取已注册缓存实例。
+
+        Args:
+            cache_name (str): 缓存名称，默认为 default。
+
+        Returns:
+            JsonPluginCache | None: 命中时返回缓存实例，否则返回 None。
+        """
         return self._stores.get(self._build_store_key(cache_name))
 
     def list_registered(self) -> Dict[str, Dict[str, Any]]:
-        """列出当前实例已注册缓存及其统计信息。"""
+        """
+        列出当前实例已注册缓存及其统计信息。
+
+        Returns:
+            Dict[str, Dict[str, Any]]: 键为缓存名，值为对应缓存统计信息。
+        """
         result: Dict[str, Dict[str, Any]] = {}
         for key, store in self._stores.items():
             result[key] = store.stats()
@@ -351,5 +438,10 @@ class PluginCacheManager:
 
     @property
     def instance_cache_dir(self) -> Path:
-        """返回当前实例缓存目录路径。"""
+        """
+        获取当前实例的缓存目录路径。
+
+        Returns:
+            Path: 当前实例缓存目录。
+        """
         return self._instance_dir
