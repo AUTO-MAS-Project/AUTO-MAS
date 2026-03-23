@@ -4,7 +4,15 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { checkEnvironment, getAppRoot } from './services/environmentService'
 import { registerInitializationHandlers, cleanupInitializationResources } from './ipc/initializationHandlers'
+import { registerUpdateHandlers, cleanupUpdateResources } from './ipc/updateHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
+import {
+  type FrontendAppConfig as AppConfig,
+  defaultFrontendConfig,
+  getConfigPaths,
+  loadEffectiveFrontendConfig,
+  saveFrontendConfig,
+} from './services/frontendConfigService'
 
 import { getLogger, initializeLogger } from './services/logger'
 import AdmZip = require('adm-zip')
@@ -91,73 +99,20 @@ let isQuitting = false
 let saveWindowStateTimeout: NodeJS.Timeout | null = null
 let isInitialStartup = true // 标记是否为初次启动
 
-// 配置接口
-interface AppConfig {
-  UI: {
-    IfShowTray: boolean
-    IfToTray: boolean
-    location: string
-    maximized: boolean
-    size: string
-  }
-  Start: {
-    IfMinimizeDirectly: boolean
-    IfSelfStart: boolean
-  }
-  Update: {
-    IfAutoUpdate: boolean
-  }
-
-  [key: string]: any
-}
-
-// 默认配置
-const defaultConfig: AppConfig = {
-  UI: {
-    IfShowTray: false,
-    IfToTray: false,
-    location: '100,100',
-    maximized: false,
-    size: '1600,1000',
-  },
-  Start: {
-    IfMinimizeDirectly: false,
-    IfSelfStart: false,
-  },
-  Update: {
-    IfAutoUpdate: false,
-  },
-}
-
 //加载配置
 function loadConfig(): AppConfig {
   try {
-    const appRoot = getAppRoot()
-    const configPath = path.join(appRoot, 'config', 'frontend_config.json')
-
-    if (fs.existsSync(configPath)) {
-      const configData = fs.readFileSync(configPath, 'utf8')
-      const config = JSON.parse(configData)
-      return { ...defaultConfig, ...config }
-    }
+    return loadEffectiveFrontendConfig(getAppRoot())
   } catch (error) {
     logger.error('加载配置失败')
   }
-  return defaultConfig
+  return defaultFrontendConfig
 }
 
 // 保存配置
 function saveConfig(config: AppConfig) {
   try {
-    const appRoot = getAppRoot()
-    const configDir = path.join(appRoot, 'config')
-    const configPath = path.join(configDir, 'frontend_config.json')
-
-    if (!fs.existsSync(configDir)) {
-      fs.mkdirSync(configDir, { recursive: true })
-    }
-
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
+    saveFrontendConfig(getAppRoot(), config)
   } catch (error) {
     logger.error('保存配置失败')
   }
@@ -531,6 +486,10 @@ function createWindow() {
   // 注册初始化处理器
   registerInitializationHandlers(win)
   logger.info('应用初始化处理器已注册')
+
+  // 注册更新处理器
+  registerUpdateHandlers(win)
+  logger.info('应用更新处理器已注册')
 
   // 注册文件处理器
   registerFileHandlers()
@@ -1052,16 +1011,9 @@ ipcMain.handle('get-theme', async () => {
 ipcMain.handle('save-config', async (_event, config) => {
   try {
     const appRoot = getAppRoot()
-    const configDir = path.join(appRoot, 'config')
-    const configPath = path.join(configDir, 'frontend_config.json')
-
-    // 确保config目录存在
-    if (!fs.existsSync(configDir)) {
-      fs.mkdirSync(configDir, { recursive: true })
-    }
-
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
-    logger.info(`配置已保存到: ${configPath}`)
+    const { frontendConfigPath } = getConfigPaths(appRoot)
+    saveFrontendConfig(appRoot, config)
+    logger.info(`配置已保存到: ${frontendConfigPath}`)
 
     // 如果是UI配置更新，需要更新托盘状态
     if (config.UI) {
@@ -1129,15 +1081,10 @@ ipcMain.handle('sync-backend-config', async (_event, backendSettings) => {
 ipcMain.handle('load-config', async () => {
   try {
     const appRoot = getAppRoot()
-    const configPath = path.join(appRoot, 'config', 'frontend_config.json')
-
-    if (fs.existsSync(configPath)) {
-      const config = fs.readFileSync(configPath, 'utf8')
-      logger.info(`从文件加载配置: ${configPath}`)
-      return JSON.parse(config)
-    }
-
-    return null
+    const { frontendConfigPath } = getConfigPaths(appRoot)
+    const config = loadEffectiveFrontendConfig(appRoot)
+    logger.info(`从文件加载配置: ${frontendConfigPath}`)
+    return config
   } catch (error) {
     logger.error('加载配置文件失败')
     return null
@@ -1239,6 +1186,14 @@ app.on('before-quit', async event => {
       logger.info('初始化资源清理完成')
     } catch (e) {
       logger.error('资源清理失败')
+    }
+
+    // 清理更新资源
+    try {
+      await cleanupUpdateResources()
+      logger.info('更新资源清理完成')
+    } catch (e) {
+      logger.error('更新资源清理失败')
     }
 
     // 立即开始强制清理，不等待优雅关闭

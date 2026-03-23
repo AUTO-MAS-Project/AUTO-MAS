@@ -25,10 +25,7 @@ const isTitlebarPolling = ref(false)
  */
 const getAppVersion = async () => {
     try {
-        const ver = await Service.checkUpdateApiUpdateCheckPost({
-            current_version: version,
-            if_force: false,
-        })
+        const ver = await window.electronAPI.checkAppUpdate(version, false)
         updateInfo.value = ver
         return ver
     } catch (error) {

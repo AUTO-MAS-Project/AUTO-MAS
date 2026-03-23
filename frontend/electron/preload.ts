@@ -183,6 +183,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   backendRestart: () => ipcRenderer.invoke('backend-restart'),
   backendStatus: () => ipcRenderer.invoke('backend-status'),
 
+  // 应用更新（前端单端）
+  checkAppUpdate: (currentVersion: string, ifForce: boolean = false) =>
+    ipcRenderer.invoke('app-update:check', currentVersion, ifForce),
+  downloadAppUpdate: (targetVersion: string) =>
+    ipcRenderer.invoke('app-update:download', targetVersion),
+  installAppUpdate: () => ipcRenderer.invoke('app-update:install'),
+  getAppUpdateStatus: () => ipcRenderer.invoke('app-update:status'),
+  cancelAppUpdate: () => ipcRenderer.invoke('app-update:cancel'),
+
   // 清理资源
   cleanup: () => ipcRenderer.invoke('cleanup'),
 
@@ -236,6 +245,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   removeBackendStatusListener: () => {
     ipcRenderer.removeAllListeners('backend-status')
+  },
+
+  // 监听应用更新事件
+  onAppUpdateEvent: (callback: (event: any) => void) => {
+    ipcRenderer.on('app-update:event', (_, event) => callback(event))
+  },
+  removeAppUpdateEventListener: () => {
+    ipcRenderer.removeAllListeners('app-update:event')
   },
 
   // 监听日志管理服务事件

@@ -1,4 +1,7 @@
-export type InitializationDecisionMode = 'skip-home' | 'full-init' | 'force-backend-update'
+import {
+  decideInitializationMode,
+  type InitializationDecisionMode,
+} from '@/utils/initializationPolicy'
 
 export interface InitializationDecision {
   mode: InitializationDecisionMode
@@ -10,41 +13,20 @@ export interface InitializationDecision {
 
 const logger = window.electronAPI.getLogger('初始化决策')
 
+/**
+ * dev 模式是否进入初始化：
+ * - 默认 false（dev 不进入初始化）
+ * - 仅当 VITE_DEV_ENTER_INITIALIZATION 严格等于 "true" 时进入初始化
+ */
+export function shouldEnterInitializationInDev(): boolean {
+  return (import.meta as any).env?.VITE_DEV_ENTER_INITIALIZATION === 'true'
+}
+
 export async function getInitializationDecision(): Promise<InitializationDecision> {
   const api = window.electronAPI as any
   const currentVersion = import.meta.env.VITE_APP_VERSION
   const forceBackendUpdate = sessionStorage.getItem('forceBackendUpdate') === 'true'
   const disableSkip = sessionStorage.getItem('disableInitializationSkip') === 'true'
-
-  if (forceBackendUpdate) {
-    return {
-      mode: 'force-backend-update',
-      currentVersion,
-      savedVersion: null,
-      autoUpdateEnabled: false,
-      forceBackendUpdate,
-    }
-  }
-
-  if (disableSkip) {
-    return {
-      mode: 'full-init',
-      currentVersion,
-      savedVersion: null,
-      autoUpdateEnabled: false,
-      forceBackendUpdate,
-    }
-  }
-
-  if (import.meta.env.DEV) {
-    return {
-      mode: 'skip-home',
-      currentVersion,
-      savedVersion: currentVersion,
-      autoUpdateEnabled: false,
-      forceBackendUpdate,
-    }
-  }
 
   let autoUpdateEnabled = false
   try {
@@ -63,18 +45,18 @@ export async function getInitializationDecision(): Promise<InitializationDecisio
     logger.warn(`读取初始化版本失败，回退为完整初始化: ${errorMsg}`)
   }
 
-  if (!autoUpdateEnabled && savedVersion === currentVersion) {
-    return {
-      mode: 'skip-home',
-      currentVersion,
-      savedVersion,
-      autoUpdateEnabled,
-      forceBackendUpdate,
-    }
-  }
+  const mode = decideInitializationMode({
+    isDev: import.meta.env.DEV,
+    devEnterInitialization: shouldEnterInitializationInDev(),
+    currentVersion,
+    savedVersion,
+    autoUpdateEnabled,
+    forceBackendUpdate,
+    disableSkip,
+  })
 
   return {
-    mode: 'full-init',
+    mode,
     currentVersion,
     savedVersion,
     autoUpdateEnabled,
