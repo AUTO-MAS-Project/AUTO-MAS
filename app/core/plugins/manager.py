@@ -148,6 +148,12 @@ class _PluginManager:
             return ""
 
     async def start(self) -> None:
+        """
+        启动插件系统并按配置加载实例。
+
+        Returns:
+            None: 无返回值。
+        """
         if self.started:
             logger.warning("插件系统已启动，忽略重复启动")
             return
@@ -229,6 +235,12 @@ class _PluginManager:
             logger.warning(f"已自动禁用启动失败的插件实例: {', '.join(disabled_ids)}")
 
     async def stop(self) -> None:
+        """
+        停止插件系统并卸载全部实例。
+
+        Returns:
+            None: 无返回值。
+        """
         if not self.started:
             return
 
@@ -238,21 +250,67 @@ class _PluginManager:
         logger.info("插件系统已关闭")
 
     def on(self, event: str, handler) -> None:
+        """
+        注册插件系统事件监听器。
+
+        Args:
+            event (str): 事件名。
+            handler: 事件处理函数。
+
+        Returns:
+            None: 无返回值。
+        """
         self.events.on(event, handler)
 
     def off(self, event: str, handler) -> None:
+        """
+        移除插件系统事件监听器。
+
+        Args:
+            event (str): 事件名。
+            handler: 需要移除的事件处理函数。
+
+        Returns:
+            None: 无返回值。
+        """
         self.events.off(event, handler)
 
     def emit(self, event: str, payload: Any = None) -> None:
+        """
+        向插件系统广播事件。
+
+        Args:
+            event (str): 事件名。
+            payload (Any): 事件载荷，默认为 None。
+
+        Returns:
+            None: 无返回值。
+        """
         self.events.emit(event, payload)
 
     def list_plugins(self) -> Dict[str, str]:
+        """
+        列出当前已加载插件实例及其状态。
+
+        Returns:
+            Dict[str, str]: 键为实例 ID，值为实例状态。
+        """
         return {
             instance_id: record.status
             for instance_id, record in self.loader.records.items()
         }
 
     async def reload(self) -> None:
+        """
+        重载插件系统并重新加载所有可用实例。
+
+        Returns:
+            None: 无返回值。
+
+        Raises:
+            RuntimeError: 更新某个 PyPI 插件包失败时抛出（pip 安装命令返回非 0）。
+            ValueError: 重启过程中读取或校验插件实例配置失败时抛出。
+        """
         discovered = self._discover_plugins()
         self.loader.discovered_plugins = discovered
         await self._update_all_pypi_plugins(discovered)
@@ -261,6 +319,21 @@ class _PluginManager:
         await self.start()
 
     async def reload_instance(self, instance_id: str) -> None:
+        """
+        重载指定插件实例。
+
+        Args:
+            instance_id (str): 目标实例 ID。
+
+        Returns:
+            None: 无返回值。
+
+        Raises:
+            ValueError: 在以下场景抛出：
+                1) 未找到目标实例；
+                2) 实例配置读取后校验失败。
+            RuntimeError: 目标实例对应 PyPI 插件更新失败时抛出。
+        """
         discovered = self._discover_plugins()
         self.loader.discovered_plugins = discovered
         instances = await self.config_store.load_instances(
@@ -284,6 +357,21 @@ class _PluginManager:
             )
 
     async def reload_plugin(self, plugin_name: str) -> None:
+        """
+        重载指定插件的全部实例。
+
+        Args:
+            plugin_name (str): 插件名。
+
+        Returns:
+            None: 无返回值。
+
+        Raises:
+            ValueError: 在以下场景抛出：
+                1) 未找到该插件对应实例；
+                2) 插件实例配置读取后校验失败。
+            RuntimeError: 目标 PyPI 插件更新失败时抛出。
+        """
         discovered = self._discover_plugins()
         self.loader.discovered_plugins = discovered
         await self._update_pypi_plugin(plugin_name, discovered)

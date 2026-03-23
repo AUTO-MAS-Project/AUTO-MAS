@@ -85,7 +85,12 @@ class PluginLoader:
             return []
 
     def discover(self) -> Dict[str, PluginSource]:
-        """发现插件（本地目录优先，同时兼容 PyPI Entry Point）。"""
+        """
+        扫描并发现可用插件来源（本地目录优先，兼容 PyPI Entry Point）。
+
+        Returns:
+            Dict[str, PluginSource]: 键为插件名、值为插件来源描述的映射。
+        """
         ensure_pypi_site_packages_on_syspath(self.plugins_dir)
         discovered: Dict[str, PluginLoader.PluginSource] = {}
 
@@ -247,6 +252,18 @@ class PluginLoader:
         record.status = "error"
 
     async def load_plugin(self, plugin_name: str) -> PluginRecord:
+        """
+        按插件名加载单个插件并激活默认实例。
+
+        Args:
+            plugin_name (str): 插件名。
+
+        Returns:
+            PluginRecord: 插件加载记录，包含状态、上下文和错误信息。
+
+        Raises:
+            KeyError: 重试扫描后仍未发现目标插件时抛出。
+        """
         if not self.discovered_plugins:
             self.discover()
 
@@ -321,7 +338,18 @@ class PluginLoader:
         instance_name: str,
         config: Dict[str, Any],
     ) -> PluginRecord:
-        """加载单个插件实例，不抛出实例级故障到上层。"""
+        """
+        加载单个插件实例并返回实例记录。
+
+        Args:
+            instance_id (str): 插件实例 ID。
+            plugin_name (str): 插件名。
+            instance_name (str): 实例显示名。
+            config (Dict[str, Any]): 实例配置。
+
+        Returns:
+            PluginRecord: 实例加载记录；失败信息会写入记录而非向上抛出。
+        """
         if not self.discovered_plugins:
             self.discover()
 
@@ -397,13 +425,27 @@ class PluginLoader:
         return record
 
     async def load_all(self) -> Dict[str, PluginRecord]:
+        """
+        加载当前发现到的全部插件。
+
+        Returns:
+            Dict[str, PluginRecord]: 全部实例记录映射。
+        """
         self.discover()
         for plugin_name in list(self.discovered_plugins.keys()):
             await self.load_plugin(plugin_name)
         return self.records
 
     async def load_instances(self, instances: Iterable[Any]) -> Dict[str, PluginRecord]:
-        """批量加载插件实例，并记录启动失败状态供上层修复配置。"""
+        """
+        批量加载插件实例，并记录启动失败信息。
+
+        Args:
+            instances (Iterable[Any]): 待加载的实例对象集合。
+
+        Returns:
+            Dict[str, PluginRecord]: 当前全部实例记录映射。
+        """
         if not self.discovered_plugins:
             self.discover()
         self.startup_failed_instances = {}
@@ -436,6 +478,15 @@ class PluginLoader:
         return self.records
 
     async def unload_plugin(self, plugin_name: str) -> None:
+        """
+        卸载单个插件实例并执行其释放逻辑。
+
+        Args:
+            plugin_name (str): 目标实例 ID（兼容插件名作为默认实例 ID）。
+
+        Returns:
+            None: 无返回值。
+        """
         record = self.records.get(plugin_name)
         if record is None:
             return
@@ -455,8 +506,23 @@ class PluginLoader:
         logger.info(f"插件已卸载: {plugin_name}")
 
     async def unload_instance(self, instance_id: str) -> None:
+        """
+        卸载指定插件实例。
+
+        Args:
+            instance_id (str): 目标实例 ID。
+
+        Returns:
+            None: 无返回值。
+        """
         await self.unload_plugin(instance_id)
 
     async def unload_all(self) -> None:
+        """
+        卸载当前已加载的全部插件实例。
+
+        Returns:
+            None: 无返回值。
+        """
         for plugin_name in list(self.records.keys()):
             await self.unload_plugin(plugin_name)
