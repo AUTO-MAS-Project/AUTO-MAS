@@ -79,6 +79,15 @@ class RuntimeAPI:
         return max(1, min(timeout, 300))
 
     def get_runtime_info(self, force_refresh: bool = False) -> Dict[str, Any]:
+        """
+        获取当前插件实例的运行时环境信息。
+
+        Args:
+            force_refresh (bool): 是否强制刷新缓存信息，默认为 False。
+
+        Returns:
+            Dict[str, Any]: 运行时信息字典，包含解释器路径及检查结果。
+        """
         if self._cached_runtime_info is not None and not force_refresh:
             return self._cached_runtime_info
 
@@ -96,6 +105,15 @@ class RuntimeAPI:
         return info
 
     def check_interpreter(self, python_executable: Optional[str] = None) -> Dict[str, Any]:
+        """
+        校验目标 Python 解释器是否可用。
+
+        Args:
+            python_executable (Optional[str]): 指定解释器路径；为 None 时按配置与默认值解析。
+
+        Returns:
+            Dict[str, Any]: 检查结果字典，包含是否可用、路径及失败原因/版本信息。
+        """
         target = self._resolve_interpreter(python_executable)
         timeout = self._resolve_timeout(default=8)
 
@@ -151,6 +169,15 @@ class RuntimeAPI:
         return result
 
     def list_scripts(self) -> Any:
+        """
+        获取宿主暴露的脚本列表。
+
+        Returns:
+            Any: 脚本列表数据；当能力未注册时返回空列表。
+
+        Raises:
+            Exception: 调用宿主能力函数失败时透传异常。
+        """
         func = self.runtime_capabilities.get("list_scripts")
         if not callable(func):
             self._audit("list_scripts", "ok", {"source": "empty"})
@@ -165,6 +192,19 @@ class RuntimeAPI:
             raise
 
     def get_script_log(self, script_id: str, limit: int = 200) -> Any:
+        """
+        获取指定脚本的日志文本。
+
+        Args:
+            script_id (str): 脚本唯一标识。
+            limit (int): 返回的最大行数限制，默认为 200。
+
+        Returns:
+            Any: 脚本日志数据；当能力未注册时返回空字符串。
+
+        Raises:
+            Exception: 调用宿主能力函数失败时透传异常。
+        """
         func = self.runtime_capabilities.get("get_script_log")
         if not callable(func):
             self._audit("get_script_log", "ok", {"source": "empty", "script_id": script_id})
@@ -189,6 +229,17 @@ class RuntimeAPI:
         python_executable: Optional[str] = None,
         timeout_seconds: Optional[int] = None,
     ) -> Dict[str, Any]:
+        """
+        使用指定解释器执行一段 Python 代码并返回执行结果。
+
+        Args:
+            code (str): 待执行的 Python 代码片段。
+            python_executable (Optional[str]): 可选解释器路径；为 None 时按配置解析。
+            timeout_seconds (Optional[int]): 可选超时时间（秒）；为 None 时使用默认策略。
+
+        Returns:
+            Dict[str, Any]: 执行结果字典，包含成功状态、返回码、标准输出、标准错误和解释器路径。
+        """
         target = self._resolve_interpreter(python_executable)
         timeout = self._resolve_timeout(timeout_seconds)
 

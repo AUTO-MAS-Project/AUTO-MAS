@@ -22,10 +22,22 @@ class PluginSchemaManager:
     LIST_ITEM_TYPES = {"string", "number", "boolean", "any"}
 
     def load_schema(self, plugin_name: str, plugin_path: Path | None) -> Dict[str, Dict[str, Any]]:
-        """加载插件 Schema。
+        """
+        加载并校验插件 Schema 定义。
 
-        优先读取本地插件目录中的 schema.py/schema.json；
-        若不存在，则尝试从 PyPI Entry Point 对应模块中读取 schema/get_schema。
+        Args:
+            plugin_name (str): 插件名。
+            plugin_path (Path | None): 插件本地目录路径；为 None 时仅尝试 Entry Point。
+
+        Returns:
+            Dict[str, Dict[str, Any]]: 通过校验后的 Schema 字段定义字典；不存在时返回空字典。
+
+        Raises:
+            PluginSchemaError: 在以下场景抛出：
+                1) schema.py 或 schema.json 加载失败；
+                2) Entry Point 加载失败或模块导入失败；
+                3) Schema 顶层不是对象；
+                4) 字段定义格式错误（类型不支持、required/description/item_type 不合法等）。
         """
         schema: Dict[str, Dict[str, Any]] = {}
         if plugin_path is not None:
@@ -196,6 +208,24 @@ class PluginSchemaManager:
         schema: Dict[str, Dict[str, Any]],
         config: Dict[str, Any],
     ) -> Dict[str, Any]:
+        """
+        对配置应用默认值并按 Schema 进行类型校验。
+
+        Args:
+            plugin_name (str): 插件名。
+            schema (Dict[str, Dict[str, Any]]): 插件 Schema 定义。
+            config (Dict[str, Any]): 原始配置对象。
+
+        Returns:
+            Dict[str, Any]: 合并默认值并通过校验后的配置对象。
+
+        Raises:
+            PluginSchemaError: 在以下场景抛出：
+                1) config 不是对象；
+                2) 缺少 required=true 的必填字段且无默认值；
+                3) 任一字段值不满足声明类型（含 list/item_type、key_value、table 约束）；
+                4) 字段值为 None 且字段未声明 nullable。
+        """
         if not isinstance(config, dict):
             raise PluginSchemaError(f"插件配置必须是对象: {plugin_name}")
 

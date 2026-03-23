@@ -164,12 +164,17 @@ class PluginConfigStore:
 
         await Config.PluginConfig.load(payload)
 
-    def _generate_instance_id(self, plugin_name: str) -> str:
-        return f"{plugin_name}:{uuid.uuid4().hex[:5]}"
-
     def generate_instance_id(self, plugin_name: str) -> str:
-        """生成插件实例 ID。"""
-        return self._generate_instance_id(plugin_name)
+        """
+        生成插件实例 ID。
+
+        Args:
+            plugin_name (str): 插件名。
+
+        Returns:
+            str: 形如 plugin_name:xxxxx 的实例 ID。
+        """
+        return f"{plugin_name}:{uuid.uuid4().hex[:5]}"
 
     async def get_root(
         self,
@@ -177,7 +182,17 @@ class PluginConfigStore:
         discovered_plugins,
         auto_create_missing: bool = False,
     ) -> Dict[str, Any]:
-        """读取并补全统一插件配置根对象。"""
+        """
+        读取统一插件配置根对象，并按需补齐缺失实例。
+
+        Args:
+            plugins_dir: 插件目录路径（当前实现中仅用于接口兼容）。
+            discovered_plugins: 已发现插件映射。
+            auto_create_missing (bool): 是否自动创建缺失插件的默认实例。
+
+        Returns:
+            Dict[str, Any]: 统一插件配置根对象。
+        """
         return await self.ensure_instances(
             plugins_dir,
             discovered_plugins,
@@ -185,7 +200,21 @@ class PluginConfigStore:
         )
 
     async def save_root(self, plugins_dir, root: Dict[str, Any]) -> None:
-        """保存统一插件配置根对象。"""
+        """
+        保存统一插件配置根对象到持久化配置。
+
+        Args:
+            plugins_dir: 插件目录路径（当前实现中仅用于接口兼容）。
+            root (Dict[str, Any]): 待保存的配置根对象。
+
+        Returns:
+            None: 无返回值。
+
+        Raises:
+            ValueError: 在以下场景抛出：
+                1) root 不是字典对象；
+                2) root.instances 缺失或不是列表。
+        """
         if not isinstance(root, dict):
             raise ValueError("插件统一配置根对象必须是字典")
         instances = root.get("instances")
@@ -200,6 +229,17 @@ class PluginConfigStore:
         discovered_plugins,
         auto_create_missing: bool = False,
     ) -> Dict[str, Any]:
+        """
+        确保统一配置中的实例列表满足当前发现结果。
+
+        Args:
+            plugins_dir: 插件目录路径（当前实现中仅用于接口兼容）。
+            discovered_plugins: 已发现插件映射。
+            auto_create_missing (bool): 是否为缺失插件自动创建默认实例。
+
+        Returns:
+            Dict[str, Any]: 更新后的统一插件配置根对象。
+        """
         root = await self._read_root()
         instances: List[Dict[str, Any]] = root.get("instances", [])
 
@@ -237,9 +277,25 @@ class PluginConfigStore:
         discovered_plugins,
         auto_create_missing: bool = False,
     ) -> List[PluginInstance]:
-        """读取插件实例列表。
+        """
+        读取并校验插件实例列表。
 
-        默认不自动创建实例，确保插件实例仅由用户手动创建。
+        Args:
+            plugins_dir: 插件目录路径（当前实现中仅用于接口兼容）。
+            discovered_plugins: 已发现插件映射。
+            auto_create_missing (bool): 是否自动创建缺失插件实例。
+
+        Returns:
+            List[PluginInstance]: 校验通过的插件实例对象列表。
+
+        Raises:
+            ValueError: 在以下场景抛出：
+                1) instances 中存在非对象项；
+                2) 实例 id 为空或不是字符串；
+                3) 实例 id 重复；
+                4) plugin 字段无效；
+                5) enabled 字段不是布尔值；
+                6) config 字段不是对象。
         """
         root = await self.ensure_instances(
             plugins_dir,
@@ -284,12 +340,34 @@ class PluginConfigStore:
         return result
 
     def normalize_raw_config(self, plugin_name: str, raw_config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        规范化并深拷贝原始配置对象。
+
+        Args:
+            plugin_name (str): 插件名。
+            raw_config (Dict[str, Any]): 原始配置对象。
+
+        Returns:
+            Dict[str, Any]: 规范化后的配置副本。
+
+        Raises:
+            ValueError: 原始配置不是字典时抛出。
+        """
         if not isinstance(raw_config, dict):
             raise ValueError(f"插件配置必须是对象: {plugin_name}")
         return copy.deepcopy(raw_config)
 
     def load_schema(self, plugin_name: str, plugin_path: Path | None) -> Dict[str, Dict[str, Any]]:
-        """加载插件 Schema，兼容本地路径与 PyPI 安装模块。"""
+        """
+        加载插件 Schema，兼容本地路径与 PyPI 安装模块。
+
+        Args:
+            plugin_name (str): 插件名。
+            plugin_path (Path | None): 插件本地目录路径。
+
+        Returns:
+            Dict[str, Dict[str, Any]]: 插件 Schema 字段定义字典。
+        """
         return self.schema_manager.load_schema(plugin_name, plugin_path)
 
     def load_effective_config(
@@ -298,7 +376,24 @@ class PluginConfigStore:
         plugin_path: Path | None,
         raw_config: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """基于 Schema 生成并校验插件有效配置。"""
+        """
+        基于 Schema 生成并校验插件有效配置。
+
+        Args:
+            plugin_name (str): 插件名。
+            plugin_path (Path | None): 插件本地目录路径。
+            raw_config (Dict[str, Any]): 原始配置对象。
+
+        Returns:
+            Dict[str, Any]: 通过校验并补齐默认值的有效配置。
+
+        Raises:
+            ValueError: 插件未声明 Schema 但 raw_config 含有配置项时抛出。
+            PluginSchemaError: 在以下场景抛出：
+                1) Schema 加载失败或定义不合法；
+                2) 配置缺失必填项；
+                3) 配置项类型与 Schema 声明不匹配。
+        """
         schema = self.load_schema(plugin_name, plugin_path)
         normalized_config = self.normalize_raw_config(plugin_name, raw_config)
 

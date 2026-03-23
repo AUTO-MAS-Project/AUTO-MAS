@@ -37,16 +37,27 @@ SCRIPT_LIFECYCLE_EVENTS: Final[set[str]] = {
 
 
 def is_script_event(event: str) -> bool:
-    """判断事件是否属于脚本生命周期标准事件。"""
+    """
+    判断给定事件名是否属于脚本生命周期标准事件集合。
+
+    Args:
+        event (str): 待判断的事件名。
+
+    Returns:
+        bool: 若事件名属于标准脚本生命周期事件则返回 True，否则返回 False。
+    """
     return event in SCRIPT_LIFECYCLE_EVENTS
 
 
 def is_valid_source(source: str) -> bool:
-    """校验事件来源字符串格式。
+    """
+    校验事件来源字符串是否满足基础格式约束。
 
-    约束：
-    - 非空字符串
-    - 建议使用点分格式（如 core.task_manager）
+    Args:
+        source (str): 事件来源字符串，建议使用点分格式（例如 core.task_manager）。
+
+    Returns:
+        bool: 来源格式合法返回 True，否则返回 False。
     """
     if not isinstance(source, str):
         return False

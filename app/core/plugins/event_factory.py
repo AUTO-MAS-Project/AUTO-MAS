@@ -18,10 +18,14 @@ class PluginEventFactory:
 
     @staticmethod
     def build_task_progress_data(task_info: Any) -> Dict[str, Any]:
-        """构建任务进度事件数据。
+        """
+        将任务对象转换为标准化的任务进度事件数据。
 
-        该方法接收任务对象并输出标准化的 task.progress 载荷，
-        让调度器只负责调用工厂而不处理具体组装逻辑。
+        Args:
+            task_info (Any): 任务运行信息对象，需包含脚本列表与当前进度字段。
+
+        Returns:
+            Dict[str, Any]: 适用于 task.progress 事件的结构化载荷。
         """
         total_scripts = len(task_info.script_list)
         completed_scripts = sum(
@@ -85,10 +89,16 @@ class PluginEventFactory:
         source: str,
         data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """构建通用事件包。
+        """
+        构建通用插件事件包。
 
-        通用事件仅包含基础字段（event/source/timestamp）和可选 data，
-        适用于 backend.start 这类非脚本领域事件。
+        Args:
+            event (str): 事件名。
+            source (str): 事件来源标识。
+            data (Optional[Dict[str, Any]]): 可选业务数据字典。
+
+        Returns:
+            Dict[str, Any]: 包含基础契约字段的事件载荷。
         """
         payload: Dict[str, Any] = {
             "event": event,
@@ -109,9 +119,16 @@ class PluginEventFactory:
         source: str,
         data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """发送通用事件。
+        """
+        构建并发送通用事件。
 
-        业务模块可通过该方法直接发送非脚本领域事件，避免携带无关字段。
+        Args:
+            event (str): 事件名。
+            source (str): 事件来源标识。
+            data (Optional[Dict[str, Any]]): 可选业务数据字典。
+
+        Returns:
+            Dict[str, Any]: 已发送的事件载荷。
         """
         if not is_valid_source(source):
             logger.warning(f"事件来源格式不规范: source={source}, event={event}")
@@ -133,9 +150,23 @@ class PluginEventFactory:
         result: Optional[str] = None,
         data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """构建脚本领域事件载荷。
+        """
+        构建脚本领域事件载荷。
 
-        该方法在通用事件包基础上，补充 task/script 相关字段。
+        Args:
+            event (str): 事件名。
+            source (str): 事件来源标识。
+            task_id (Optional[str]): 任务 ID。
+            script_id (Optional[str]): 脚本 ID。
+            script_name (Optional[str]): 脚本名称。
+            mode (Optional[str]): 运行模式。
+            status (Optional[str]): 状态信息。
+            error (Optional[str]): 错误信息。
+            result (Optional[str]): 结果信息。
+            data (Optional[Dict[str, Any]]): 可选业务数据字典。
+
+        Returns:
+            Dict[str, Any]: 合并脚本上下文字段后的事件载荷。
         """
         payload = PluginEventFactory.build_envelope(event=event, source=source, data=data)
 
@@ -170,9 +201,23 @@ class PluginEventFactory:
         result: Optional[str] = None,
         data: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """发送脚本领域事件。
+        """
+        构建并发送脚本领域事件。
 
-        适用于 task_manager 等脚本生命周期场景。
+        Args:
+            event (str): 事件名。
+            source (str): 事件来源标识。
+            task_id (Optional[str]): 任务 ID。
+            script_id (Optional[str]): 脚本 ID。
+            script_name (Optional[str]): 脚本名称。
+            mode (Optional[str]): 运行模式。
+            status (Optional[str]): 状态信息。
+            error (Optional[str]): 错误信息。
+            result (Optional[str]): 结果信息。
+            data (Optional[Dict[str, Any]]): 可选业务数据字典。
+
+        Returns:
+            Dict[str, Any]: 已发送的脚本事件载荷。
         """
         if not is_valid_source(source):
             logger.warning(f"脚本事件来源格式不规范: source={source}, event={event}")
