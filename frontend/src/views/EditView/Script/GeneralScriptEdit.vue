@@ -183,8 +183,10 @@
                     </template>
                     选择文件
                   </a-button>
-                  <a-button size="large" class="path-button path-button-clear" @click="clearTrackProcessExe">
-                    清空
+                  <a-button size="large" class="path-clear-icon-btn" aria-label="清空路径" @click="clearTrackProcessExe">
+                    <template #icon>
+                      <DeleteOutlined />
+                    </template>
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -682,6 +684,7 @@ import type { ScriptUploadIn } from '../../../api'
 import {
   ArrowLeftOutlined,
   CloudUploadOutlined,
+  DeleteOutlined,
   FileOutlined,
   FolderOpenOutlined,
   QuestionCircleOutlined,
@@ -1523,6 +1526,12 @@ const selectRootPath = async () => {
         if (generalConfig.Script.LogPath && generalConfig.Script.LogPath !== '.') {
           scriptPathUpdates.LogPath = generalConfig.Script.LogPath
         }
+        if (
+          generalConfig.Script.TrackProcessExe &&
+          generalConfig.Script.TrackProcessExe !== '.'
+        ) {
+          scriptPathUpdates.TrackProcessExe = generalConfig.Script.TrackProcessExe
+        }
 
         // 保存所有更改
         isSaving.value = true
@@ -2022,8 +2031,36 @@ const handleUpload = async () => {
   transform: none;
 }
 
-.path-button-clear {
+.path-clear-icon-btn {
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 0;
   border-left: 1px solid var(--ant-color-border-secondary);
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-error);
+  transition: all 0.3s ease;
+}
+
+.path-clear-icon-btn:hover {
+  background: var(--ant-color-error) !important;
+  color: white !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.path-clear-icon-btn :deep(.anticon) {
+  font-size: 16px;
+  color: inherit;
+}
+
+.path-clear-icon-btn :deep(.anticon svg) {
+  fill: currentColor;
+  stroke: currentColor;
 }
 
 /* 表单项间距 */
