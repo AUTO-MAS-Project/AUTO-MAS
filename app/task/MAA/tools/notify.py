@@ -115,18 +115,26 @@ async def push_notification(
             and user_config.get("Notify", "IfSendStatistic")
         ):
             if user_config.get("Notify", "IfSendMail"):
-                await Notify.send_mail(
-                    "网页",
-                    title,
-                    message_html,
-                    user_config.get("Notify", "ToAddress"),
-                )
+                if user_config.get("Notify", "ToAddress"):
+                    await Notify.send_mail(
+                        "网页",
+                        title,
+                        message_html,
+                        user_config.get("Notify", "ToAddress"),
+                    )
+                else:
+                    logger.error("用户邮箱地址为空, 无法发送用户单独的邮件通知")
             if user_config.get("Notify", "IfServerChan"):
-                await Notify.ServerChanPush(
-                    title,
-                    f"{serverchan_message}\nAUTO-MAS 敬上",
-                    user_config.get("Notify", "ServerChanKey"),
-                )
+                if user_config.get("Notify", "ServerChanKey"):
+                    await Notify.ServerChanPush(
+                        title,
+                        f"{serverchan_message}\nAUTO-MAS 敬上",
+                        user_config.get("Notify", "ServerChanKey"),
+                    )
+                else:
+                    logger.error(
+                        "用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知"
+                    )
             for webhook in user_config.Notify_CustomWebhooks.values():
                 await Notify.WebhookPush(
                     title, f"{message_text}\nAUTO-MAS 敬上", webhook
@@ -157,17 +165,25 @@ async def push_notification(
             and user_config.get("Notify", "IfSendSixStar")
         ):
             if user_config.get("Notify", "IfSendMail"):
-                await Notify.send_mail(
-                    "网页",
-                    title,
-                    message_html,
-                    user_config.get("Notify", "ToAddress"),
-                )
+                if user_config.get("Notify", "ToAddress"):
+                    await Notify.send_mail(
+                        "网页",
+                        title,
+                        message_html,
+                        user_config.get("Notify", "ToAddress"),
+                    )
+                else:
+                    logger.error("用户邮箱地址为空, 无法发送用户单独的邮件通知")
             if user_config.get("Notify", "IfServerChan"):
-                await Notify.ServerChanPush(
-                    title,
-                    "好羡慕~\nAUTO-MAS 敬上",
-                    user_config.get("Notify", "ServerChanKey"),
-                )
+                if user_config.get("Notify", "ServerChanKey"):
+                    await Notify.ServerChanPush(
+                        title,
+                        "好羡慕~\nAUTO-MAS 敬上",
+                        user_config.get("Notify", "ServerChanKey"),
+                    )
+                else:
+                    logger.error(
+                        "用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知"
+                    )
             for webhook in user_config.Notify_CustomWebhooks.values():
                 await Notify.WebhookPush(title, "好羡慕~\nAUTO-MAS 敬上", webhook)
