@@ -800,7 +800,9 @@ class AppConfig(GlobalConfig):
 
     async def add_user(
         self, script_id: str
-    ) -> tuple[uuid.UUID, MaaUserConfig | SrcUserConfig | GeneralUserConfig | MaaEndUserConfig]:
+    ) -> tuple[
+        uuid.UUID, MaaUserConfig | SrcUserConfig | GeneralUserConfig | MaaEndUserConfig
+    ]:
         """添加用户配置"""
 
         logger.info(f"{script_id} 添加用户配置")
@@ -1922,6 +1924,33 @@ class AppConfig(GlobalConfig):
 
         return if_six_star
 
+    async def save_maaend_log(
+        self, log_path: Path, logs: list[str], maaend_result: str
+    ) -> None:
+        """
+        Save MaaEnd logs and generate basic statistics data.
+
+        Args:
+            log_path (Path): Target log file path.
+            logs (list[str]): Log lines.
+            maaend_result (str): Result label for this run.
+        """
+
+        logger.info(
+            f"开始处理MaaEnd日志, 日志长度: {len(logs)}, 日志标记: {maaend_result}"
+        )
+
+        data: Dict[str, str] = {"maaend_result": maaend_result}
+
+        # 保存日志
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
+        log_path.with_suffix(".json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
+
+        logger.success(f"MaaEnd日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
+
     async def save_src_log(self, log_path: Path, logs: list, src_result: str) -> None:
         """
         保存SRC日志并生成对应统计数据
@@ -2020,7 +2049,12 @@ class AppConfig(GlobalConfig):
                     data[key] = single_data[key]
 
                 # 录入运行结果
-                elif key in ["maa_result", "src_result", "general_result"]:
+                elif key in [
+                    "maa_result",
+                    "maaend_result",
+                    "src_result",
+                    "general_result",
+                ]:
                     actual_date = (
                         datetime.strptime(
                             f"{json_file.parent.parent.name} {json_file.stem}",

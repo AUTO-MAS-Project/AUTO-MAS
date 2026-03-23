@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { GeneralUserConfig } from './GeneralUserConfig';
+import type { MaaEndUserConfig } from './MaaEndUserConfig';
 import type { MaaUserConfig } from './MaaUserConfig';
 import type { SrcUserConfig } from './SrcUserConfig';
 export type UserUpdateIn = {
@@ -17,6 +18,6 @@ export type UserUpdateIn = {
     /**
      * 用户更新数据
      */
-    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig);
+    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | MaaEndUserConfig);
 };
 

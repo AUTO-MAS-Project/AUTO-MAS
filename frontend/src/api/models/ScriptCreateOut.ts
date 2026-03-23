@@ -4,6 +4,7 @@
 /* eslint-disable */
 import type { GeneralConfig } from './GeneralConfig';
 import type { MaaConfig } from './MaaConfig';
+import type { MaaEndConfig } from './MaaEndConfig';
 import type { SrcConfig } from './SrcConfig';
 export type ScriptCreateOut = {
     /**
@@ -25,6 +26,6 @@ export type ScriptCreateOut = {
     /**
      * 脚本配置数据
      */
-    data: (MaaConfig | SrcConfig | GeneralConfig);
+    data: (MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig);
 };
 

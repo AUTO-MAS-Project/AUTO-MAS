@@ -175,6 +175,19 @@ MAA_REMAIN_FIGHT_BASE = {
 }
 """MAA剩余理智作战基础配置"""
 
+MAAEND_KILLPROC_TASK = {
+    "id": "jobstop",
+    "taskName": "__MXU_KILLPROC__",
+    "enabled": True,
+    "optionValues": {
+        "__MXU_KILLPROC_SELF_OPTION__": {"type": "switch", "value": True},
+        "__MXU_KILLPROC_NAME_OPTION__": {
+            "type": "input",
+            "values": {"process_name": ""},
+        },
+    },
+}
+
 EMULATOR_PATH_BOOK = {
     "mumu": {
         "name": "MuMu模拟器",

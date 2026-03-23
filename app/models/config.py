@@ -31,6 +31,7 @@ from app.utils.constants import (
     UTC8,
     MATERIALS_MAP,
     RESOURCE_STAGE_INFO,
+    MAA_TASKS,
     MAA_STAGE_KEY,
     STARRAIL_STAGE_BOOK,
 )
@@ -502,7 +503,7 @@ class MaaUserConfig(ConfigBase):
             elif infrast_mode == "Rotation":
                 infrast_text = "基建：轮换"
             elif infrast_mode == "Custom":
-                infrast_text = f"基建：{self.getInfrastName()}"
+                infrast_text = f"基建：{self.getInfrastName() if len(self.getInfrastName()) < 10 else self.getInfrastName()[:10] + '...'}"
             else:
                 infrast_text = "基建：开启"
             tags.append({"text": infrast_text, "color": "purple"})
@@ -648,13 +649,13 @@ class MaaEndUserConfig(ConfigBase):
         self.Info_Id = ConfigItem("Info", "Id", "")
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
-        ## 脚本模式
+        ## 配置模式
         self.Info_Mode = ConfigItem(
             "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
         )
-        ## 服务器
-        self.Info_Server = ConfigItem(
-            "Info", "Server", "Official", OptionsValidator(["Official", "Bilibili"])
+        ## 资源名称
+        self.Info_Resource = ConfigItem(
+            "Info", "Resource", "官服", OptionsValidator(["官服"])
         )
         ## 剩余天数
         self.Info_RemainedDay = ConfigItem(
@@ -668,20 +669,46 @@ class MaaEndUserConfig(ConfigBase):
         )
 
         ## Task ------------------------------------------------------------
-        ## 任务选项覆盖
-        self.Task_OptionOverride = ConfigItem(
-            "Task", "OptionOverride", "{ }", JSONValidator()
-        )
-        ## 拜访好友卡死保护模式
-        self.Task_VisitFriendsStallProtection = ConfigItem(
+        ## 协议空间选项
+        self.Task_ProtocolSpaceTab = ConfigItem(
             "Task",
-            "VisitFriendsStallProtection",
-            "Disabled",
-            OptionsValidator(["Disabled", "Enabled"]),
+            "ProtocolSpaceTab",
+            "OperatorProgression",
+            OptionsValidator(
+                ["OperatorProgression", "WeaponProgression", "CrisisDrills"]
+            ),
         )
-        ## 拜访好友超时阈值（秒）
-        self.Task_VisitFriendsTimeoutSec = ConfigItem(
-            "Task", "VisitFriendsTimeoutSec", 180, RangeValidator(30, 3600)
+        self.Task_OperatorProgression = ConfigItem(
+            "Task",
+            "OperatorProgression",
+            "OperatorEXP",
+            OptionsValidator(["OperatorEXP", "Promotions", "T-Creds", "SkillUp"]),
+        )
+        self.Task_WeaponProgression = ConfigItem(
+            "Task",
+            "WeaponProgression",
+            "WeaponEXP",
+            OptionsValidator(["WeaponEXP", "WeaponTune"]),
+        )
+        self.Task_CrisisDrills = ConfigItem(
+            "Task",
+            "CrisisDrills",
+            "AdvancedProgression1",
+            OptionsValidator(
+                [
+                    "AdvancedProgression1",
+                    "AdvancedProgression2",
+                    "AdvancedProgression3",
+                    "AdvancedProgression4",
+                    "AdvancedProgression5",
+                ]
+            ),
+        )
+        self.Task_RewardsSetOption = ConfigItem(
+            "Task",
+            "RewardsSetOption",
+            "RewardsSetA",
+            OptionsValidator(["RewardsSetA", "RewardsSetB"]),
         )
 
         ## Data ------------------------------------------------------------
@@ -693,15 +720,15 @@ class MaaEndUserConfig(ConfigBase):
         self.Data_ProxyTimes = ConfigItem(
             "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
         )
-        ## 上次运行状态
-        self.Data_LastStatus = ConfigItem("Data", "LastStatus", "-")
-        ## 当日禁用偷菜日期（东4区日期）
-        self.Data_VisitFriendsStealDisabledDate = ConfigItem(
+        ## 上次代理状态
+        self.Data_LastProxyStatus = ConfigItem(
             "Data",
-            "VisitFriendsStealDisabledDate",
-            "2000-01-01",
-            DateTimeValidator("%Y-%m-%d"),
+            "LastProxyStatus",
+            "未知",
+            OptionsValidator(["未知", "成功", "失败"]),
         )
+        ## 是否通过检查
+        self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
 
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
@@ -730,17 +757,28 @@ class MaaEndUserConfig(ConfigBase):
     def getTags(self) -> str:
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
+        # 人工排查状态标签
+        if not self.get("Data", "IfPassCheck"):
+            tags.append({"text": "人工排查未通过", "color": "red"})
 
-        # 日常代理标签（使用东4区时间，显示今日次数）
-        today = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
-        if self.get("Data", "LastProxyDate") == today:
-            daily_run_times = self.get("Data", "ProxyTimes")
-        else:
-            daily_run_times = 0
-        if daily_run_times > 0:
+        # 上次代理标签
+        tags.append(
+            {
+                "text": f"上次：{self.get('Data', 'LastProxyStatus')}",
+                "color": (
+                    "red" if self.get("Data", "LastProxyStatus") == "失败" else "green"
+                ),
+            }
+        )
+
+        # 日常代理标签（使用东4区时间）
+        if (
+            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
+            == datetime.now(tz=UTC4).date()
+        ):
             tags.append(
                 {
-                    "text": f"日常：已代理{daily_run_times}次",
+                    "text": f"日常：已代理{self.get('Data', 'ProxyTimes')}次",
                     "color": "green",
                 }
             )
@@ -772,18 +810,13 @@ class MaaEndUserConfig(ConfigBase):
             }
         )
 
-        # 偷菜失败保护标签
-        if self.get("Task", "VisitFriendsStallProtection") == "Enabled":
-            tags.append({"text": "偷菜失败保护：开启", "color": "blue"})
-        else:
-            tags.append({"text": "偷菜失败保护：关闭", "color": "default"})
-
         # 备注标签
         notes = self.get("Info", "Notes")
-        note_text = notes if len(notes) <= 20 else f"{notes[:20]}..."
         tags.append(
             {
-                "text": f"备注：{note_text}",
+                "text": (
+                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
+                ),
                 "color": "pink",
             }
         )
@@ -805,11 +838,11 @@ class MaaEndConfig(ConfigBase):
         self.Info_Path = ConfigItem("Info", "Path", str(Path.cwd()), FolderValidator())
 
         ## Run -------------------------------------------------------------
-        ## 运行时间限制（分钟）
+        ## 运行超时阈值
         self.Run_RunTimeLimit = ConfigItem(
             "Run", "RunTimeLimit", 10, RangeValidator(1, 9999)
         )
-        ## 每日代理次数限制（0 表示不限制）
+        ## 每日代理次数限制
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
         )
@@ -817,16 +850,11 @@ class MaaEndConfig(ConfigBase):
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
         )
-        ## 任务切换方式
-        self.Run_TaskTransitionMethod = ConfigItem(
-            "Run",
-            "TaskTransitionMethod",
-            "NoAction",
-            OptionsValidator(["NoAction", "ExitGame"]),
-        )
+
+        ## Game ------------------------------------------------------------
         ## 控制器类型
-        self.Run_ControllerType = ConfigItem(
-            "Run",
+        self.Game_ControllerType = ConfigItem(
+            "Game",
             "ControllerType",
             "Win32-Window",
             OptionsValidator(
@@ -838,17 +866,26 @@ class MaaEndConfig(ConfigBase):
                 ]
             ),
         )
-        ## Endfield 路径（Win32 preAction）
-        self.Run_GamePath = ConfigItem("Run", "GamePath", "", FileValidator())
-        self.Run_CloseGameOnFinish = ConfigItem(
-            "Run", "CloseGameOnFinish", True, BoolValidator()
+        ## 终末地游戏路径
+        self.Game_Path = ConfigItem("Game", "Path", str(Path.cwd()), FileValidator())
+        ## 终末地游戏启动参数
+        self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
+        ## 等待时间（秒）
+        self.Game_WaitTime = ConfigItem("Game", "WaitTime", 0, RangeValidator(0, 9999))
+        ## 模拟器 ID
+        self.Game_EmulatorId = ConfigItem(
+            "Game",
+            "EmulatorId",
+            "-",
+            MultipleUIDValidator("-", self.related_config, "EmulatorConfig"),
+        )
+        ## 模拟器索引
+        self.Game_EmulatorIndex = ConfigItem("Game", "EmulatorIndex", "-")
+        ## 结束后是否关闭游戏
+        self.Game_CloseOnFinish = ConfigItem(
+            "Game", "CloseOnFinish", True, BoolValidator()
         )
 
-        ## MaaEnd ----------------------------------------------------------
-        ## 配置是否已锁定（仅允许 ScriptConfig 流程回写）
-        self.MaaEnd_ConfigLocked = ConfigItem(
-            "MaaEnd", "ConfigLocked", False, BoolValidator()
-        )
         self.UserData = MultipleConfig([MaaEndUserConfig])
 
         super().__init__()
@@ -1818,13 +1855,16 @@ class GlobalConfig(ConfigBase):
         ## 计划表配置列表
         self.PlanConfig = MultipleConfig([MaaPlanConfig])
         ## 脚本配置列表
-        self.ScriptConfig = MultipleConfig([MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig])
+        self.ScriptConfig = MultipleConfig(
+            [MaaConfig, MaaEndConfig, SrcConfig, GeneralConfig]
+        )
         ## 队列配置列表
         self.QueueConfig = MultipleConfig([QueueConfig])
         ## 工具箱配置
         self.ToolsConfig = ToolsConfig()
 
         MaaConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
+        MaaEndConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         SrcConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
