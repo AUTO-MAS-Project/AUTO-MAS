@@ -70,6 +70,6 @@ async def update_maa(maa_path: Path):
     )
 
     try:
-        await ProcessRunner.run_process(maa_path / "MAA.exe", timeout=10)
+        await ProcessRunner.run_process(maa_path / "MAA.exe", timeout=60)
     except Exception as e:
         logger.info(f"MAA 更新任务结束: {e}")
