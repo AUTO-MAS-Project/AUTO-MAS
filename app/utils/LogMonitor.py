@@ -25,7 +25,7 @@ from contextlib import suppress
 from datetime import datetime, timedelta, date
 from copy import copy
 from pathlib import Path
-from typing import Callable, Optional, List, Awaitable
+from typing import Callable, Optional, Awaitable
 
 from .constants import TIME_FIELDS, ANSI_ESCAPE_RE
 from .logger import get_logger
@@ -55,8 +55,9 @@ class LogMonitor:
         self,
         time_stamp_range: tuple[int, int],
         time_format: str,
-        callback: Callable[[List[str], datetime], Awaitable[None]],
-        except_logs: Optional[List[str]] = None,
+        callback: Callable[[list[str], datetime], Awaitable[None]],
+        except_logs: list[str] | None = None,
+        parse_log: Callable[[list[str]], list[str]] | None = None,
     ):
         self.time_start = time_stamp_range[0]
         self.time_end = time_stamp_range[1]
@@ -64,12 +65,13 @@ class LogMonitor:
         self.callback = callback
         self.except_logs = except_logs or []
         self.last_callback_time: datetime = datetime.now()
-        self.log_contents: List[str] = []
+        self.log_contents: list[str] = []
         self.latest_time = datetime.now()
         self.task: Optional[asyncio.Task] = None
+        self.parse_log: Callable[[list[str]], list[str]] | None = parse_log
 
     async def monitor_file(self, log_file_path: Path, log_start_time: datetime):
-        """监控日志文件的主循环"""
+        """监控日志文件"""
 
         logger.info(f"开始监控日志文件: {log_file_path}")
 
@@ -158,7 +160,7 @@ class LogMonitor:
             await asyncio.sleep(1)
 
     async def monitor_process(self, process: asyncio.subprocess.Process):
-        """监控日志文件的主循环"""
+        """监控进程日志"""
 
         logger.info(f"开始监控进程日志: {process.pid}")
 
@@ -189,7 +191,10 @@ class LogMonitor:
         """安全调用回调函数"""
         self.last_callback_time = datetime.now()
         try:
-            await self.callback(self.log_contents, self.latest_time)
+            if self.parse_log is None:
+                await self.callback(self.log_contents, self.latest_time)
+            else:
+                await self.callback(self.parse_log(self.log_contents), self.latest_time)
         except Exception as e:
             logger.error(f"回调函数执行失败: {e}")
 

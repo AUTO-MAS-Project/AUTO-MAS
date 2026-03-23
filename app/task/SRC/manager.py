@@ -135,6 +135,7 @@ class SrcManager(TaskExecuteBase):
         )
 
         # 备份原始配置
+        shutil.rmtree(self.temp_path, ignore_errors=True)
         self.temp_path.mkdir(parents=True, exist_ok=True)
         if self.src_set_path.exists():
             shutil.copytree(self.src_set_path, self.temp_path, dirs_exist_ok=True)
@@ -175,7 +176,7 @@ class SrcManager(TaskExecuteBase):
         await self.prepare()
 
         if not isinstance(self.script_config, SrcConfig):
-            raise RuntimeError("脚本配置类型错误, 不是SRC脚本类型")
+            raise RuntimeError("脚本配置类型错误, 不是 SRC 脚本类型")
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
             task = METHOD_BOOK[self.task_info.mode](

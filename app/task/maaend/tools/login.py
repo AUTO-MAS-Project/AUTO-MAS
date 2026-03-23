@@ -67,17 +67,20 @@ async def login(
             logger.error(f"获取终末地的 win32 控制器时出现异常: {e}")
             return False
 
-        try:
-            await MaaFWManager.do_job(
-                tasker.post_task("切换账号-调出登录框[EndFieldPC]", pipeline_override)
-            )
-        except Exception as e:
-            logger.error(f"终末地调出登录框时出现异常: {e}")
-            return False
-        except asyncio.CancelledError:
-            with suppress(Exception):
-                await MaaFWManager.do_job(tasker.post_stop())
-            raise
+        if win32gui.FindWindow(None, "Form") == 0:
+            try:
+                await MaaFWManager.do_job(
+                    tasker.post_task(
+                        "切换账号-调出登录框[EndFieldPC]", pipeline_override
+                    )
+                )
+            except Exception as e:
+                logger.error(f"终末地调出登录框时出现异常: {e}")
+                return False
+            except asyncio.CancelledError:
+                with suppress(Exception):
+                    await MaaFWManager.do_job(tasker.post_stop())
+                raise
 
         try:
             # 稍等登录表单弹出，避免窗口尚未创建时直接卡死。
