@@ -9,16 +9,16 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "密码登录"
-                ],
-                "model": "zh_cn",
                 "roi": [
                     610,
                     488,
                     60,
                     20
-                ]
+                ],
+                "expected": [
+                    "密码登录"
+                ],
+                "model": "zh_cn"
             }
         },
         "action": {
@@ -98,17 +98,17 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "请输入密码",
-                    "密码"
-                ],
-                "model": "zh_cn",
                 "roi": [
                     510,
                     355,
                     70,
                     25
-                ]
+                ],
+                "expected": [
+                    "请输入密码",
+                    "密码"
+                ],
+                "model": "zh_cn"
             }
         },
         "action": {
@@ -123,17 +123,17 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "请输入账号",
-                    "账号"
-                ],
-                "model": "zh_cn",
                 "roi": [
                     510,
                     305,
                     70,
                     25
-                ]
+                ],
+                "expected": [
+                    "请输入账号",
+                    "账号"
+                ],
+                "model": "zh_cn"
             }
         },
         "action": {
@@ -145,6 +145,7 @@
         ]
     },
     "登出[EndFieldPC]": {
+        "max_hit": 10,
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -163,7 +164,6 @@
             "type": "Click",
             "param": {}
         },
-        "max_hit": 10,
         "timeout": 5000,
         "next": [
             "识别登出[EndFieldPC]"
@@ -176,16 +176,16 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "登录"
-                ],
-                "model": "zh_cn",
                 "roi": [
                     620,
                     463,
                     40,
                     20
-                ]
+                ],
+                "expected": [
+                    "登录"
+                ],
+                "model": "zh_cn"
             }
         },
         "action": {
@@ -194,25 +194,33 @@
         }
     },
     "确认登出[EndFieldPC]": {
+        "max_hit": 10,
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "确认"
-                ],
-                "model": "zh_cn",
                 "roi": [
                     705,
                     420,
                     50,
                     20
-                ]
+                ],
+                "expected": [
+                    "确认"
+                ],
+                "model": "zh_cn"
             }
         },
         "action": {
             "type": "Click",
             "param": {}
-        }
+        },
+        "timeout": 5000,
+        "next": [
+            "识别已登出[EndFieldPC]"
+        ],
+        "on_error": [
+            "识别登出[EndFieldPC]"
+        ]
     },
     "禁用日志-密码[EndFieldPC]": {
         "action": {
@@ -240,17 +248,17 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "是否确认退出当前账号",
-                    "退出当前账号"
-                ],
-                "model": "zh_cn",
                 "roi": [
                     550,
                     325,
                     175,
                     40
-                ]
+                ],
+                "expected": [
+                    "是否确认退出当前账号",
+                    "退出当前账号"
+                ],
+                "model": "zh_cn"
             }
         },
         "next": [
@@ -278,5 +286,22 @@
         "next": [
             "恢复日志-账号[EndFieldPC]"
         ]
+    },
+    "识别已登出[EndFieldPC]": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [
+                    1220,
+                    140,
+                    55,
+                    45
+                ],
+                "template": [
+                    "EndFieldPC/登出.png"
+                ]
+            }
+        },
+        "inverse": true
     }
 }
