@@ -259,5 +259,15 @@ export interface ElectronAPI {
 declare global {
   interface Window {
     electronAPI: ElectronAPI
+    electronAppUpdateAPI?: Pick<
+      ElectronAPI,
+      | 'checkAppUpdate'
+      | 'downloadAppUpdate'
+      | 'installAppUpdate'
+      | 'getAppUpdateStatus'
+      | 'cancelAppUpdate'
+      | 'onAppUpdateEvent'
+      | 'removeAppUpdateEventListener'
+    >
   }
 }

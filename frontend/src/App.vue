@@ -3,7 +3,7 @@ import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ConfigProvider } from 'ant-design-vue'
 import { useTheme } from './composables/useTheme.ts'
-import { useUpdateModal } from './composables/useUpdateChecker.ts'
+import { useUpdateModal } from '@/composables/useUpdateChecker.ts'
 import { useAppClosing } from './composables/useAppClosing.ts'
 import { useAudioPlayer } from './composables/useAudioPlayer.ts'
 import { useAppInitialization } from './composables/useAppInitialization.ts'
@@ -77,16 +77,17 @@ onMounted(async () => {
     <!-- 开发环境调试面板 - 开发工具始终可用 -->
     <DevDebugPanel />
 
+    <!-- 全局更新模态框在应用可交互后即可挂载，避免启动过渡态下丢失手动检查更新结果 -->
+    <UpdateModal
+      v-if="isAppReady"
+      v-model:visible="updateVisible"
+      :update-data="updateData"
+      :latest-version="latestVersion"
+      @confirmed="onUpdateConfirmed"
+    />
+
     <!-- 以下组件仅在初始化完成后挂载 -->
     <template v-if="isInitialized">
-      <!-- 全局更新模态框 -->
-      <UpdateModal
-        v-model:visible="updateVisible"
-        :update-data="updateData"
-        :latest-version="latestVersion"
-        @confirmed="onUpdateConfirmed"
-      />
-
       <!-- 全局电源倒计时弹窗 -->
       <GlobalPowerCountdown />
 

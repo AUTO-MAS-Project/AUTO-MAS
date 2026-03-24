@@ -92,6 +92,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { message } from 'ant-design-vue'
+import { getElectronAppUpdateAPI } from '@/utils/electronAppUpdate'
 const logger = window.electronAPI.getLogger('更新下载模态框')
 
 // Props 定义
@@ -227,7 +228,7 @@ const startDownload = async () => {
 
     if (!targetVersion) {
       logger.info('没有版本信息，先检查更新')
-      const checkResult = await window.electronAPI.checkAppUpdate(
+      const checkResult = await getElectronAppUpdateAPI().checkAppUpdate(
         (import.meta as any).env?.VITE_APP_VERSION || '1.0.0',
         false
       )
@@ -243,7 +244,7 @@ const startDownload = async () => {
     }
 
     logger.info(`调用下载API，目标版本: ${targetVersion}`)
-    const res = await window.electronAPI.downloadAppUpdate(targetVersion || '')
+    const res = await getElectronAppUpdateAPI().downloadAppUpdate(targetVersion || '')
     logger.debug(`API响应: ${JSON.stringify(res)}`)
 
     if (res.code !== 200) {
@@ -302,7 +303,7 @@ const handleLater = () => {
 const handleInstall = async () => {
   isInstalling.value = true
   try {
-    const res = await window.electronAPI.installAppUpdate()
+    const res = await getElectronAppUpdateAPI().installAppUpdate()
     if (res.code === 200) {
       message.success('安装程序已启动')
       visible.value = false
@@ -370,7 +371,7 @@ const ensureAppUpdateListener = () => {
     return
   }
 
-  window.electronAPI.onAppUpdateEvent(handleUpdateMessage)
+  getElectronAppUpdateAPI().onAppUpdateEvent(handleUpdateMessage)
   hasAppUpdateListener = true
 }
 
@@ -379,7 +380,7 @@ const removeAppUpdateListener = () => {
     return
   }
 
-  window.electronAPI.removeAppUpdateEventListener?.()
+  getElectronAppUpdateAPI().removeAppUpdateEventListener?.()
   hasAppUpdateListener = false
 }
 

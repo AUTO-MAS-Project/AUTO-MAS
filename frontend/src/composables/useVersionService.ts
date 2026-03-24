@@ -7,6 +7,7 @@
 
 import { ref } from 'vue'
 import { Service, type UpdateCheckOut, type VersionOut } from '@/api'
+import { getElectronAppUpdateAPI } from '@/utils/electronAppUpdate'
 const logger = window.electronAPI.getLogger('版本服务')
 
 // 获取版本号
@@ -25,7 +26,7 @@ const isTitlebarPolling = ref(false)
  */
 const getAppVersion = async () => {
     try {
-        const ver = await window.electronAPI.checkAppUpdate(version, false)
+        const ver = await getElectronAppUpdateAPI().checkAppUpdate(version, false)
         updateInfo.value = ver
         return ver
     } catch (error) {

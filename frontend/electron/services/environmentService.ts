@@ -19,6 +19,11 @@ const logger = getLogger('环境服务')
 
 // 获取应用根目录
 export function getAppRoot(): string {
+  const overriddenAppRoot = process.env.AUTO_MAS_APP_ROOT?.trim()
+  if (overriddenAppRoot) {
+    return path.resolve(overriddenAppRoot)
+  }
+
   // 在测试环境中，app可能未定义，直接使用当前工作目录
   if (process.env.NODE_ENV === 'development' || !app) {
     return process.cwd()

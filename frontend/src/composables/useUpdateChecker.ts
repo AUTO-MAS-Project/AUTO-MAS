@@ -1,6 +1,7 @@
 import { ref, onUnmounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import { getElectronAppUpdateAPI } from '@/utils/electronAppUpdate'
 
 const logger = window.electronAPI.getLogger('更新检查器')
 
@@ -51,7 +52,8 @@ export function useUpdateChecker() {
     isPolling.value = true
 
     try {
-      const response = await window.electronAPI.checkAppUpdate(version, false)
+      const appUpdateApi = getElectronAppUpdateAPI()
+      const response = await appUpdateApi.checkAppUpdate(version, false)
 
       if (response.code === 200) {
         if (response.if_need_update) {
@@ -87,7 +89,8 @@ export function useUpdateChecker() {
   const checkUpdate = async (silent = false, forceCheck = false) => {
     const { playSound } = useAudioPlayer()
     try {
-      const response = await window.electronAPI.checkAppUpdate(version, forceCheck)
+      const appUpdateApi = getElectronAppUpdateAPI()
+      const response = await appUpdateApi.checkAppUpdate(version, forceCheck)
 
       if (response.code === 200) {
         if (response.if_need_update) {

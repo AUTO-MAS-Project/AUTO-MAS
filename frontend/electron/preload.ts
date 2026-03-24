@@ -279,3 +279,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('log-stats-update')
   },
 })
+
+contextBridge.exposeInMainWorld('electronAppUpdateAPI', {
+  checkAppUpdate: (currentVersion: string, ifForce: boolean = false) =>
+    ipcRenderer.invoke('app-update:check', currentVersion, ifForce),
+  downloadAppUpdate: (targetVersion: string) =>
+    ipcRenderer.invoke('app-update:download', targetVersion),
+  installAppUpdate: () => ipcRenderer.invoke('app-update:install'),
+  getAppUpdateStatus: () => ipcRenderer.invoke('app-update:status'),
+  cancelAppUpdate: () => ipcRenderer.invoke('app-update:cancel'),
+  onAppUpdateEvent: (callback: (event: any) => void) => {
+    ipcRenderer.on('app-update:event', (_, event) => callback(event))
+  },
+  removeAppUpdateEventListener: () => {
+    ipcRenderer.removeAllListeners('app-update:event')
+  },
+})
