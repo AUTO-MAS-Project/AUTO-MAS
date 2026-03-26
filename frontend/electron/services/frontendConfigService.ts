@@ -27,7 +27,7 @@ export interface FrontendAppConfig {
   [key: string]: any
 }
 
-export interface BackendConfigLike {
+export interface BackendConfigWithUpdate {
   Update?: Record<string, any>
   [key: string]: any
 }
@@ -69,7 +69,7 @@ function mergeSection<T extends Record<string, any>>(
 
 export function mergeFrontendConfig(
   frontendConfig?: Partial<FrontendAppConfig> | null,
-  backendConfig?: BackendConfigLike | null
+  backendConfig?: BackendConfigWithUpdate | null
 ): FrontendAppConfig {
   const merged: FrontendAppConfig = {
     ...defaultFrontendConfig,
@@ -105,16 +105,14 @@ export function saveFrontendConfig(appRoot: string, config: FrontendAppConfig) {
   fs.writeFileSync(frontendConfigPath, JSON.stringify(config, null, 2), 'utf8')
 }
 
-export function loadFrontendConfigFile(
-  appRoot: string
-): Partial<FrontendAppConfig> | null {
+export function loadFrontendConfigFile(appRoot: string): Partial<FrontendAppConfig> | null {
   const { frontendConfigPath } = getConfigPaths(appRoot)
   return readJsonFile<Partial<FrontendAppConfig>>(frontendConfigPath)
 }
 
-export function loadBackendConfigFile(appRoot: string): BackendConfigLike | null {
+export function loadBackendConfigFile(appRoot: string): BackendConfigWithUpdate | null {
   const { backendConfigPath } = getConfigPaths(appRoot)
-  return readJsonFile<BackendConfigLike>(backendConfigPath)
+  return readJsonFile<BackendConfigWithUpdate>(backendConfigPath)
 }
 
 export function loadEffectiveFrontendConfig(appRoot: string): FrontendAppConfig {
