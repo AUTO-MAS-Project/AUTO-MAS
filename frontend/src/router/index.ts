@@ -176,7 +176,9 @@ router.beforeEach(async (to, from, next) => {
       devEnterInitialization: shouldEnterInitializationInDev(),
     })
   ) {
-    logger.info('dev 模式默认放行路由守卫（可通过 VITE_DEV_ENTER_INITIALIZATION=true 开启初始化链路）')
+    logger.info(
+      'dev 模式默认放行路由守卫（可通过 VITE_DEV_ENTER_INITIALIZATION=true 开启初始化链路）'
+    )
     next()
     return
   }

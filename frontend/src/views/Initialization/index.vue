@@ -7,7 +7,7 @@
     </div>
 
     <a-steps :current="currentStepIndex" :status="stepStatus" class="init-steps">
-      <a-step v-for="step in steps" :key="step.key" :title="step.title" />
+      <a-step v-for="step in initializationSteps" :key="step.key" :title="step.title" />
     </a-steps>
 
     <div class="step-content">
@@ -26,22 +26,6 @@
     <!-- 步骤操作按钮区域 - 后端启动完成后会自动进入应用，不需要手动按钮 -->
     <div class="step-actions"></div>
   </div>
-
-  <!-- 跳过初始化弹窗 -->
-  <a-modal
-    v-model:open="forceEnterVisible"
-    title="警告"
-    ok-text="我知道我在做什么"
-    cancel-text="取消"
-    @ok="handleForceEnterConfirm"
-  >
-    <a-alert
-      message="注意"
-      description="你正在尝试跳过初始化流程，可能导致程序无法正常运行。请确保你已经手动完成了所有配置。"
-      type="warning"
-      show-icon
-    />
-  </a-modal>
 </template>
 
 <script setup lang="ts">
@@ -53,174 +37,38 @@ import { shouldEnterInitializationInDev } from '@/utils/initializationDecision'
 import { shouldSkipInitializationViewInDev } from '@/utils/initializationPolicy'
 import StepPanel from './components/StepPanel.vue'
 import BackendStartStep from './components/BackendStartStep.vue'
-import type { MirrorConfig } from '@/types/mirror'
+import {
+  BACKEND_STABILIZATION_DELAY_MS,
+  BACKEND_UPDATE_START_INDEX,
+  createInitialStepStates,
+  initializationSteps,
+  INITIALIZATION_START_DELAY_MS,
+  RETRY_COUNTDOWN_SECONDS,
+  type InitializationStepKey,
+} from './config'
+
+defineOptions({
+  name: 'InitializationPage',
+})
 
 const logger = window.electronAPI.getLogger('初始化流程')
-
-// ==================== 步骤定义 ====================
-const steps = [
-  { key: 'python', title: 'Python 安装', canSkip: false },
-  { key: 'pip', title: 'Pip 安装', canSkip: false },
-  { key: 'git', title: 'Git 安装', canSkip: false },
-  { key: 'repository', title: '源码拉取', canSkip: true },
-  { key: 'dependency', title: '依赖安装', canSkip: true },
-  { key: 'backend', title: '后端启动', canSkip: true },
-]
 
 // ==================== 状态管理 ====================
 const currentStepIndex = ref(0)
 const stepStatus = ref<'wait' | 'process' | 'finish' | 'error'>('process')
-const initCompleted = ref(false)
-const forceEnterVisible = ref(false)
 const isDev = import.meta.env.DEV
 const version = import.meta.env.VITE_APP_VERSION
 const targetBranch = ref(isDev ? 'dev' : `release/${version}`)
 
 logger.info(`当前环境: ${isDev ? '开发环境' : '生产环境'}, 目标分支: ${targetBranch.value}`)
 
-// 各步骤状态
-interface StepState {
-  status: 'waiting' | 'processing' | 'success' | 'failed'
-  message: string
-  progress: number
-  showMirrorSelection: boolean
-  mirrors: MirrorConfig[]
-  selectedMirror: string
-  countdown: number
-  currentMirror: string
-  downloadSpeed: string
-  downloadSize: string
-  installMessage: string
-  installProgress: number
-  deployMessage: string
-  deployProgress: number
-  operationDesc: string
-  checkInfo?: {
-    exeExists?: boolean
-    canRun?: boolean
-    version?: string
-    exists?: boolean
-    isGitRepo?: boolean
-    isHealthy?: boolean
-    requirementsExists?: boolean
-    needsInstall?: boolean
-  }
-  mirrorProgress?: {
-    current: number
-    total: number
-  }
-}
-
-const stepStates = ref<Record<string, StepState>>({
-  python: {
-    status: 'waiting',
-    message: '',
-    progress: 0,
-    showMirrorSelection: false,
-    mirrors: [],
-    selectedMirror: '',
-    countdown: 0,
-    currentMirror: '',
-    downloadSpeed: '',
-    downloadSize: '',
-    installMessage: '',
-    installProgress: 0,
-    deployMessage: '',
-    deployProgress: 0,
-    operationDesc: '',
-  },
-  pip: {
-    status: 'waiting',
-    message: '',
-    progress: 0,
-    showMirrorSelection: false,
-    mirrors: [],
-    selectedMirror: '',
-    countdown: 0,
-    currentMirror: '',
-    downloadSpeed: '',
-    downloadSize: '',
-    installMessage: '',
-    installProgress: 0,
-    deployMessage: '',
-    deployProgress: 0,
-    operationDesc: '',
-  },
-  git: {
-    status: 'waiting',
-    message: '',
-    progress: 0,
-    showMirrorSelection: false,
-    mirrors: [],
-    selectedMirror: '',
-    countdown: 0,
-    currentMirror: '',
-    downloadSpeed: '',
-    downloadSize: '',
-    installMessage: '',
-    installProgress: 0,
-    deployMessage: '',
-    deployProgress: 0,
-    operationDesc: '',
-  },
-  repository: {
-    status: 'waiting',
-    message: '',
-    progress: 0,
-    showMirrorSelection: false,
-    mirrors: [],
-    selectedMirror: '',
-    countdown: 0,
-    currentMirror: '',
-    downloadSpeed: '',
-    downloadSize: '',
-    installMessage: '',
-    installProgress: 0,
-    deployMessage: '',
-    deployProgress: 0,
-    operationDesc: '',
-  },
-  dependency: {
-    status: 'waiting',
-    message: '',
-    progress: 0,
-    showMirrorSelection: false,
-    mirrors: [],
-    selectedMirror: '',
-    countdown: 0,
-    currentMirror: '',
-    downloadSpeed: '',
-    downloadSize: '',
-    installMessage: '',
-    installProgress: 0,
-    deployMessage: '',
-    deployProgress: 0,
-    operationDesc: '',
-  },
-  backend: {
-    status: 'waiting',
-    message: '',
-    progress: 0,
-    showMirrorSelection: false,
-    mirrors: [],
-    selectedMirror: '',
-    countdown: 0,
-    currentMirror: '',
-    downloadSpeed: '',
-    downloadSize: '',
-    installMessage: '',
-    installProgress: 0,
-    deployMessage: '',
-    deployProgress: 0,
-    operationDesc: '',
-  },
-})
+const stepStates = ref(createInitialStepStates())
 
 // 倒计时定时器
-let countdownTimer: NodeJS.Timeout | null = null
+let countdownTimer: ReturnType<typeof setInterval> | null = null
 
 // ==================== 计算属性 ====================
-const currentStep = computed(() => steps[currentStepIndex.value])
+const currentStep = computed(() => initializationSteps[currentStepIndex.value])
 
 const currentStepComponent = computed(() => {
   // 后端启动步骤使用专门的组件
@@ -294,8 +142,27 @@ function formatSize(bytes: number): string {
   }
 }
 
+function markStepAsSkipped(stepKey: InitializationStepKey, messageText: string = '已跳过') {
+  const state = stepStates.value[stepKey]
+  state.status = 'success'
+  state.progress = 100
+  state.message = messageText
+  state.showMirrorSelection = false
+  state.countdown = 0
+  state.currentMirror = ''
+  state.downloadSpeed = ''
+  state.downloadSize = ''
+  state.installMessage = ''
+  state.installProgress = 0
+  state.deployMessage = ''
+  state.deployProgress = 0
+  state.operationDesc = ''
+  state.checkInfo = undefined
+  state.mirrorProgress = undefined
+}
+
 // 处理进度更新
-function handleProgress(stepKey: string, progressData: any) {
+function handleProgress(stepKey: InitializationStepKey, progressData: any) {
   const state = stepStates.value[stepKey]
   if (!state) return
 
@@ -382,7 +249,7 @@ function handleProgress(stepKey: string, progressData: any) {
 }
 
 // 执行单个步骤
-async function executeStep(stepKey: string): Promise<boolean> {
+async function executeStep(stepKey: InitializationStepKey): Promise<boolean> {
   const state = stepStates.value[stepKey]
   state.status = 'processing'
   state.progress = 0
@@ -462,11 +329,11 @@ async function startInitialization(startIndex: number = 0) {
 
   try {
     // 依次执行每个步骤
-    for (let i = startIndex; i < steps.length; i++) {
-      const step = steps[i]
+    for (let i = startIndex; i < initializationSteps.length; i++) {
+      const step = initializationSteps[i]
       currentStepIndex.value = i
 
-      logger.info(`执行步骤 ${i + 1}/${steps.length}: ${step.title}`)
+      logger.info(`执行步骤 ${i + 1}/${initializationSteps.length}: ${step.title}`)
 
       const success = await executeStep(step.key)
 
@@ -511,12 +378,7 @@ async function handleSkip() {
       countdownTimer = null
     }
 
-    // 标记为已跳过
-    state.status = 'success'
-    state.progress = 100
-    state.message = '已跳过'
-    state.showMirrorSelection = false
-    state.countdown = 0
+    markStepAsSkipped(stepKey, '已跳过')
 
     message.warning(`已跳过 ${currentStep.value.title}`)
 
@@ -524,11 +386,11 @@ async function handleSkip() {
     await new Promise(resolve => setTimeout(resolve, 500))
 
     // 继续执行后续步骤
-    for (let i = currentStepIndex.value + 1; i < steps.length; i++) {
-      const step = steps[i]
+    for (let i = currentStepIndex.value + 1; i < initializationSteps.length; i++) {
+      const step = initializationSteps[i]
       currentStepIndex.value = i
 
-      logger.info(`执行步骤 ${i + 1}/${steps.length}: ${step.title}`)
+      logger.info(`执行步骤 ${i + 1}/${initializationSteps.length}: ${step.title}`)
 
       const stepSuccess = await executeStep(step.key)
 
@@ -539,7 +401,7 @@ async function handleSkip() {
     }
 
     // 如果跳过的步骤是后端步骤，或者我们已经完成了所有步骤
-    if (stepKey === 'backend' || currentStepIndex.value === steps.length - 1) {
+    if (stepKey === 'backend' || currentStepIndex.value === initializationSteps.length - 1) {
       logger.info('后端步骤已跳过或所有步骤已完成，准备进入应用')
       handleLocalEnterApp()
     } else {
@@ -571,11 +433,11 @@ async function handleRetry() {
 
     if (success) {
       // 继续执行后续步骤
-      for (let i = currentStepIndex.value + 1; i < steps.length; i++) {
-        const step = steps[i]
+      for (let i = currentStepIndex.value + 1; i < initializationSteps.length; i++) {
+        const step = initializationSteps[i]
         currentStepIndex.value = i
 
-        logger.info(`执行步骤 ${i + 1}/${steps.length}: ${step.title}`)
+        logger.info(`执行步骤 ${i + 1}/${initializationSteps.length}: ${step.title}`)
 
         const stepSuccess = await executeStep(step.key)
 
@@ -599,8 +461,6 @@ async function handleBackendComplete() {
   state.progress = 100
   state.message = '后端服务启动成功'
 
-  // 标记初始化完成
-  initCompleted.value = true
   stepStatus.value = 'finish'
   message.success('初始化完成')
 
@@ -620,7 +480,7 @@ async function handleBackendComplete() {
   // 2. WebSocket 连接已建立
   // 3. 版本检查任务已启动
   // 4. 所有初始化工作已完成
-  await new Promise(resolve => setTimeout(resolve, 2000))
+  await new Promise(resolve => setTimeout(resolve, BACKEND_STABILIZATION_DELAY_MS))
 
   logger.info('准备进入主应用界面')
   handleLocalEnterApp()
@@ -635,11 +495,11 @@ function handleBackendError(error: string) {
   stepStatus.value = 'error'
 }
 
-function startCountdown(stepKey: string) {
+function startCountdown(stepKey: InitializationStepKey) {
   const state = stepStates.value[stepKey]
   if (!state) return
 
-  state.countdown = 60
+  state.countdown = RETRY_COUNTDOWN_SECONDS
 
   countdownTimer = setInterval(() => {
     state.countdown--
@@ -652,12 +512,6 @@ function startCountdown(stepKey: string) {
       handleRetry()
     }
   }, 1000)
-}
-
-async function handleForceEnterConfirm() {
-  forceEnterVisible.value = false
-  logger.info('用户确认跳过初始化')
-  await forceEnterApp('初始化-强行进入确认')
 }
 
 async function handleLocalEnterApp() {
@@ -690,13 +544,14 @@ async function loadMirrorConfigs() {
     await api.initMirrors()
 
     // 并行获取所有镜像源配置
-    const [pythonMirrors, getPipMirrors, gitMirrors, repoMirrors, pipMirrors] = await Promise.all([
-      api.getMirrors('python'), // Python 安装包
-      api.getMirrors('get_pip'), // get-pip.py 脚本
-      api.getMirrors('git'), // Git 安装包
-      api.getMirrors('repo'), // Git 仓库
-      api.getMirrors('pip_mirror'), // PyPI 镜像源
-    ])
+    const [pythonMirrors, pipBootstrapMirrors, gitMirrors, repositoryMirrors, dependencyMirrors] =
+      await Promise.all([
+        api.getMirrors('python'), // Python 安装包
+        api.getMirrors('get_pip'), // get-pip.py 脚本
+        api.getMirrors('git'), // Git 安装包
+        api.getMirrors('repo'), // Git 仓库
+        api.getMirrors('pip_mirror'), // PyPI 镜像源
+      ])
 
     // 转换后端镜像源格式为前端格式
     const convertMirror = (mirror: any) => ({
@@ -710,10 +565,10 @@ async function loadMirrorConfigs() {
 
     // 设置各步骤的镜像源配置
     stepStates.value.python.mirrors = pythonMirrors.map(convertMirror)
-    stepStates.value.pip.mirrors = getPipMirrors.map(convertMirror)
+    stepStates.value.pip.mirrors = pipBootstrapMirrors.map(convertMirror)
     stepStates.value.git.mirrors = gitMirrors.map(convertMirror)
-    stepStates.value.repository.mirrors = repoMirrors.map(convertMirror)
-    stepStates.value.dependency.mirrors = pipMirrors.map(convertMirror)
+    stepStates.value.repository.mirrors = repositoryMirrors.map(convertMirror)
+    stepStates.value.dependency.mirrors = dependencyMirrors.map(convertMirror)
 
     logger.info('镜像源配置加载完成')
     logger.info(`Python 镜像源: ${stepStates.value.python.mirrors.map(m => m.name)}`)
@@ -740,6 +595,7 @@ onMounted(async () => {
     await handleLocalEnterApp()
     return
   }
+
   logger.info('初始化界面已加载')
 
   const api = window.electronAPI as any
@@ -753,51 +609,39 @@ onMounted(async () => {
   }
 
   // 检查自动更新开关（从 electron 配置中读取）
-  let IfAutoUpdate = false
+  let autoUpdateEnabled = false
   try {
     const config = await api.loadConfig?.()
     if (config?.Update?.IfAutoUpdate !== undefined) {
-      IfAutoUpdate = config.Update.IfAutoUpdate
-      logger.info(`从配置读取到 IfAutoUpdate: ${IfAutoUpdate}`)
+      autoUpdateEnabled = config.Update.IfAutoUpdate
+      logger.info(`从配置读取到 IfAutoUpdate: ${autoUpdateEnabled}`)
     } else {
       logger.warn('配置中未找到 IfAutoUpdate，默认为 false')
     }
-  } catch (error) {
+  } catch {
     logger.warn('读取配置失败，默认执行完整初始化')
   }
 
   if (forceBackendUpdate) {
     // 强制后端更新模式：从第4步开始（repository, dependency, backend）
     logger.info('强制后端更新模式：跳过前3步，从源码拉取开始')
-    startFromIndex = 3 // 从第4步（索引3）开始
+    startFromIndex = BACKEND_UPDATE_START_INDEX
 
     // 跳过前 3 步（python, pip, git），标记为成功
-    for (let i = 0; i < 3; i++) {
-      const stepKey = steps[i].key
-      const state = stepStates.value[stepKey]
-      state.status = 'success'
-      state.progress = 100
-      state.message = '已跳过'
-      state.showMirrorSelection = false
-      state.countdown = 0
+    for (let i = 0; i < BACKEND_UPDATE_START_INDEX; i++) {
+      markStepAsSkipped(initializationSteps[i].key)
     }
-  } else if (!IfAutoUpdate) {
+  } else if (!autoUpdateEnabled) {
     // 自动更新关闭：检查版本号
     const savedVersion = await api.getInitializedVersion?.()
     if (savedVersion === version) {
       // 版本号相同：跳过前5步，从后端步骤开始
       logger.info(`自动更新已关闭，初始化版本号一致（${version}），跳过安装步骤，启动后端`)
-      startFromIndex = steps.length - 1
+      startFromIndex = initializationSteps.length - 1
 
       // 跳过前 5 步（python, pip, git, repository, dependency），只启动后端
-      for (let i = 0; i < steps.length - 1; i++) {
-        const stepKey = steps[i].key
-        const state = stepStates.value[stepKey]
-        state.status = 'success'
-        state.progress = 100
-        state.message = '已跳过'
-        state.showMirrorSelection = false
-        state.countdown = 0
+      for (let i = 0; i < initializationSteps.length - 1; i++) {
+        markStepAsSkipped(initializationSteps[i].key)
       }
     } else {
       // 版本号不同或无记录：执行完整初始化流程
@@ -833,7 +677,7 @@ onMounted(async () => {
   // 延迟启动初始化
   setTimeout(() => {
     startInitialization(startFromIndex)
-  }, 500)
+  }, INITIALIZATION_START_DELAY_MS)
 })
 
 onUnmounted(() => {
