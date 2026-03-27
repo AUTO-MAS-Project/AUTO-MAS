@@ -513,7 +513,9 @@ def _build_auxiliary_data(root_dir: Path) -> AuxiliaryData:
     for path in (config_path, tauri_path, go_service_path):
         if path.is_file():
             stat = path.stat()
-            cache_key_parts.append((str(path.resolve()), stat.st_mtime_ns, stat.st_size))
+            cache_key_parts.append(
+                (str(path.resolve()), stat.st_mtime_ns, stat.st_size)
+            )
         else:
             cache_key_parts.append((str(path.resolve()), -1, -1))
     cache_key = tuple(cache_key_parts)
@@ -637,7 +639,9 @@ def _collect_runtime_task_starts(lines: list[str]) -> tuple[RuntimeTaskStart, ..
     return tuple(task_starts)
 
 
-def _score_batch(batch: Batch, run_context: RunContext, task_id_to_entry: dict[str, str]) -> float:
+def _score_batch(
+    batch: Batch, run_context: RunContext, task_id_to_entry: dict[str, str]
+) -> float:
     """综合 task_id、entry 和时间，找出最像本次运行的批次。"""
 
     batch_task_ids = {task.task_id for task in batch.tasks if task.task_id}
@@ -655,7 +659,9 @@ def _score_batch(batch: Batch, run_context: RunContext, task_id_to_entry: dict[s
                 score += 60.0
 
     if run_context.first_timestamp is not None and batch.started_at is not None:
-        delta_seconds = abs((batch.started_at - run_context.first_timestamp).total_seconds())
+        delta_seconds = abs(
+            (batch.started_at - run_context.first_timestamp).total_seconds()
+        )
         score -= min(delta_seconds / 60.0, 500.0)
         if batch.started_at <= run_context.first_timestamp:
             score += 3.0
@@ -712,7 +718,9 @@ def _score_snapshot(snapshot: Snapshot, batch: Batch) -> tuple[int, int, int]:
     return (score, source_rank, recency)
 
 
-def _select_best_snapshot(batch: Batch, snapshots: tuple[Snapshot, ...]) -> Snapshot | None:
+def _select_best_snapshot(
+    batch: Batch, snapshots: tuple[Snapshot, ...]
+) -> Snapshot | None:
     """选择最能解释本批次 entry 顺序的配置快照。"""
 
     best_snapshot: Snapshot | None = None
@@ -789,6 +797,28 @@ def _build_global_task_id_mapping(
     return task_id_to_selected_task_id
 
 
+def _build_selected_task_name_mapping(
+    snapshots: tuple[Snapshot, ...],
+) -> dict[str, str]:
+    """构建 selected_task_id -> taskName 映射，优先使用当前实例快照。"""
+
+    selected_task_name_mapping: dict[str, str] = {}
+
+    for snapshot in snapshots:
+        if snapshot.source != "instance":
+            continue
+        for task in snapshot.tasks:
+            selected_task_name_mapping[task.id] = task.task_name
+
+    for snapshot in snapshots:
+        if snapshot.source == "instance":
+            continue
+        for task in snapshot.tasks:
+            selected_task_name_mapping.setdefault(task.id, task.task_name)
+
+    return selected_task_name_mapping
+
+
 def _build_runtime_start_fallback_mapping(
     runtime_task_starts: tuple[RuntimeTaskStart, ...],
     snapshots: tuple[Snapshot, ...],
@@ -798,7 +828,9 @@ def _build_runtime_start_fallback_mapping(
     if not runtime_task_starts:
         return {}
 
-    instance_snapshots = [snapshot for snapshot in snapshots if snapshot.source == "instance"]
+    instance_snapshots = [
+        snapshot for snapshot in snapshots if snapshot.source == "instance"
+    ]
     candidate_snapshots = instance_snapshots if instance_snapshots else list(snapshots)
 
     best_snapshot: Snapshot | None = None
@@ -958,6 +990,9 @@ def parse_log(root_dir: Path, lines: list[str]) -> list[str]:
         auxiliary_data.snapshots,
         auxiliary_data.task_id_to_entry,
     )
+    selected_task_name_mapping = _build_selected_task_name_mapping(
+        auxiliary_data.snapshots
+    )
     for task_id, selected_task_id in _build_runtime_start_fallback_mapping(
         runtime_task_starts,
         auxiliary_data.snapshots,
@@ -1014,15 +1049,12 @@ def parse_log(root_dir: Path, lines: list[str]) -> list[str]:
         wrapped_agent_match = WRAPPED_AGENT_RE.match(line)
         if wrapped_agent_match is not None:
             line = _decode_wrapped_line(wrapped_agent_match)
-        elif (
-            INLINE_INSTANCE_RE.search(line) is not None
-            and not (
-                FULL_TS_RE.match(line)
-                or ISO_TS_RE.match(line)
-                or SIMPLE_JSON_RE.match(line)
-                or EVENT_RE.match(line)
-                or PANEL_TS_RE.match(line)
-            )
+        elif INLINE_INSTANCE_RE.search(line) is not None and not (
+            FULL_TS_RE.match(line)
+            or ISO_TS_RE.match(line)
+            or SIMPLE_JSON_RE.match(line)
+            or EVENT_RE.match(line)
+            or PANEL_TS_RE.match(line)
         ):
             # 纯实例包装行不直接参与展示，但不要误伤带业务内容的行。
             continue
@@ -1102,7 +1134,9 @@ def parse_log(root_dir: Path, lines: list[str]) -> list[str]:
             if details is None:
                 continue
 
-            event_name = details.get("event") if isinstance(details.get("event"), str) else ""
+            event_name = (
+                details.get("event") if isinstance(details.get("event"), str) else ""
+            )
             task_id = _extract_task_id(details, simple_json_match.group(2))
             entry = _extract_entry(details, simple_json_match.group(2))
             if task_id:
@@ -1121,7 +1155,12 @@ def parse_log(root_dir: Path, lines: list[str]) -> list[str]:
 
             if event_name in TASK_EVENT_TEXT:
                 message = TASK_EVENT_TEXT[event_name]
-                if entry:
+                display_task_name = selected_task_name_mapping.get(
+                    current_selected_task_id, ""
+                )
+                if display_task_name:
+                    message += f": {display_task_name}"
+                elif entry:
                     message += f": {entry}"
                 message = _append_unresolved_diagnosis(
                     message=message,
@@ -1229,26 +1268,40 @@ def parse_log(root_dir: Path, lines: list[str]) -> list[str]:
         message = ""
         if event_name in TASK_EVENT_TEXT:
             message = TASK_EVENT_TEXT[event_name]
-            if entry:
+            display_task_name = selected_task_name_mapping.get(
+                current_selected_task_id, ""
+            )
+            if display_task_name:
+                message += f": {display_task_name}"
+            elif entry:
                 message += f": {entry}"
         elif event_name in RESOURCE_EVENT_TEXT:
             if event_name == "Resource.Loading.Starting":
                 current_selected_task_id = ""
-            path_text = details.get("path") if isinstance(details.get("path"), str) else ""
+            path_text = (
+                details.get("path") if isinstance(details.get("path"), str) else ""
+            )
             message = RESOURCE_EVENT_TEXT[event_name]
             if path_text:
                 message += f": {path_text}"
         elif event_name in CONTROLLER_EVENT_TEXT:
-            action_text = details.get("action") if isinstance(details.get("action"), str) else ""
+            action_text = (
+                details.get("action") if isinstance(details.get("action"), str) else ""
+            )
             param_action_text = ""
             if isinstance(details.get("param"), dict):
                 param_action = details["param"].get("action")
                 if isinstance(param_action, str):
                     param_action_text = param_action
-            if action_text.lower() != "connect" and param_action_text.lower() != "connect":
+            if (
+                str(action_text).lower() != "connect"
+                and param_action_text.lower() != "connect"
+            ):
                 continue
             message = CONTROLLER_EVENT_TEXT[event_name]
-            target_text = details.get("target") if isinstance(details.get("target"), str) else ""
+            target_text = (
+                details.get("target") if isinstance(details.get("target"), str) else ""
+            )
             if target_text:
                 message += f": {target_text}"
         else:

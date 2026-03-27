@@ -139,6 +139,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item.status = "运行"
 
         self.task_dict: dict[str, bool] | None = None
+        self.unique_task: dict[str, str] = {}
 
         for i in range(self.script_config.get("Run", "RunTimesLimit")):
             if self.run_book:
@@ -363,6 +364,17 @@ class AutoProxyTask(TaskExecuteBase):
             for task in maaend_tasks:
                 task["enabled"] = self.task_dict[task["id"]]
 
+        # 记录启用的无重复任务项以便简化判定
+        self.unique_task = {}
+        duplicate_task = set()
+        for task in maaend_tasks:
+            if task["enabled"] and task["id"] in self.task_dict:
+                if task["taskName"] in self.unique_task:
+                    self.unique_task.pop(task["taskName"])
+                    duplicate_task.add(task["taskName"])
+                elif task["taskName"] not in duplicate_task:
+                    self.unique_task[task["taskName"]] = task["id"]
+
         # 配置协议空间
         for task in maaend_tasks:
             if task["taskName"] == "ProtocolSpace":
@@ -409,12 +421,11 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_log.status = "MaaEnd 未加载任何任务"
             else:
                 for id in self.task_dict.keys():
-                    if any(
-                        f"{id} - 任务完成" in line
-                        or (f"{id} [task_id=" in line and " - 任务完成" in line)
-                        for line in log_content
-                    ):
+                    if f"{id} - 任务完成" in log:
                         self.task_dict[id] = False
+                for task_name, task_id in self.unique_task.items():
+                    if f"任务完成: {task_name}" in log:
+                        self.task_dict[task_id] = False
                 if any(self.task_dict.values()):
                     self.cur_user_log.status = "MaaEnd 部分任务执行失败"
                 else:
