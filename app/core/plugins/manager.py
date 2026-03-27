@@ -19,7 +19,7 @@ logger = get_logger("插件管理器")
 
 
 class _PluginManager:
-    """Coordinates plugin lifecycle and exposes event APIs for MAS core."""
+    """协调插件的生命周期并为 MAS 核心提供事件 API。"""
 
     def __init__(self) -> None:
         self.started = False
