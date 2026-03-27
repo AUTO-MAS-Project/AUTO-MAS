@@ -33,7 +33,7 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
 from app.utils.constants import UTC4, MAAEND_KILLPROC_TASK
-from .tools import login, parse_log, push_notification
+from .tools import login, parse_log, push_notification, wait_and_focus_window
 from .ScriptConfig import CONFIG_FILE_NAME, _keep_single_instance, _replace_config_dir
 
 logger = get_logger("MaaEnd 自动代理")
@@ -179,6 +179,12 @@ class AutoProxyTask(TaskExecuteBase):
             self.script_info.log = (
                 "正在启动游戏...\n游戏启动成功\n正在登录「明日方舟：终末地」..."
             )
+            if self.emulator_manager is None and not await wait_and_focus_window(
+                "Endfield"
+            ):
+                await self.handle_pre_maaend_error("未检测到 Endfield 窗口")
+                continue
+
             if self.cur_user_config.get("Info", "Id") == "" or await login(
                 self.cur_user_config.get("Info", "Id"),
                 self.cur_user_config.get("Info", "Password"),

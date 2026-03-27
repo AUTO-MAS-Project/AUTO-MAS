@@ -182,13 +182,21 @@
                       <div class="user-details-row">
                         <div class="user-name-section">
                           <span class="user-name">{{ user.Info.Name }}</span>
-                          <!-- 只有MAA和SRC脚本才显示服务器标签 -->
+                          <!-- MAA、SRC 和 MaaEnd 脚本显示服务器标签 -->
                           <a-tag
-                            v-if="script.type === 'MAA' || script.type === 'SRC'"
-                            :color="getServerTagColor(user.Info.Server)"
+                            v-if="
+                              script.type === 'MAA' ||
+                              script.type === 'SRC' ||
+                              script.type === 'MaaEnd'
+                            "
+                            :color="
+                              script.type === 'MaaEnd'
+                                ? getMaaEndResourceTagColor(user)
+                                : getServerTagColor(user.Info.Server)
+                            "
                             class="server-tag"
                           >
-                            {{ getServerDisplayName(user.Info.Server) }}
+                            {{ script.type === 'MaaEnd' ? getMaaEndResourceLabel(user) : getServerDisplayName(user.Info.Server) }}
                           </a-tag>
 
                           <!-- 账号标签 -->
@@ -252,6 +260,22 @@
                           >
                             {{ tag.text }}
                           </a-tag>
+
+                          <template v-if="script.type === 'MaaEnd'">
+                            <a-tag class="info-tag" color="blue">
+                              协议空间: {{ getMaaEndProtocolSpaceLabel(user) }}
+                            </a-tag>
+                            <a-tag class="info-tag" color="blue">
+                              {{ getMaaEndTaskTagLabel(user) }}
+                            </a-tag>
+                            <a-tag
+                              v-if="isMaaEndRewardGroupEnabled(user)"
+                              class="info-tag"
+                              color="blue"
+                            >
+                              奖励组: {{ getMaaEndRewardGroupLabel(user) }}
+                            </a-tag>
+                          </template>
                         </div>
                         <!-- 用户详细信息 - 通用脚本用户 -->
                         <div v-if="script.type === 'General'" class="user-info-tags">
@@ -564,6 +588,89 @@ const getPasswordDisplayText = (user: any): string => {
     // 隐藏状态：只显示标题
     return '密码'
   }
+}
+
+const getMaaEndResourceLabel = (user: any): string => {
+  return user.Info?.Resource || '官服'
+}
+
+const getMaaEndResourceTagColor = (user: any): string => {
+  switch (getMaaEndResourceLabel(user)) {
+    case '官服':
+    default:
+      return 'blue'
+  }
+}
+
+const getMaaEndProtocolSpaceLabel = (user: any): string => {
+  switch (user.Task?.ProtocolSpaceTab) {
+    case 'WeaponProgression':
+      return '武器养成'
+    case 'CrisisDrills':
+      return '危境预演'
+    case 'OperatorProgression':
+    default:
+      return '干员养成'
+  }
+}
+
+const getMaaEndTaskLabel = (user: any): string => {
+  const taskLabels: Record<string, string> = {
+    OperatorEXP: '干员经验',
+    Promotions: '干员进阶',
+    'T-Creds': '钱币收集',
+    SkillUp: '技能提升',
+    WeaponEXP: '武器经验',
+    WeaponTune: '武器进阶',
+    AdvancedProgression1: '高阶培养 I',
+    AdvancedProgression2: '高阶培养 II',
+    AdvancedProgression3: '高阶培养 III',
+    AdvancedProgression4: '高阶培养 IV',
+    AdvancedProgression5: '高阶培养 V',
+  }
+
+  const fieldMap: Record<string, string> = {
+    OperatorProgression: 'OperatorProgression',
+    WeaponProgression: 'WeaponProgression',
+    CrisisDrills: 'CrisisDrills',
+  }
+
+  const protocolSpaceTab = user.Task?.ProtocolSpaceTab || 'OperatorProgression'
+  const field = fieldMap[protocolSpaceTab] || 'OperatorProgression'
+  return taskLabels[user.Task?.[field]] || '未设置'
+}
+
+const getMaaEndTaskTagLabel = (user: any): string => {
+  switch (user.Task?.ProtocolSpaceTab) {
+    case 'WeaponProgression':
+      return `武器养成: ${getMaaEndTaskLabel(user)}`
+    case 'CrisisDrills':
+      return `危境预演: ${getMaaEndTaskLabel(user)}`
+    case 'OperatorProgression':
+    default:
+      return `干员养成: ${getMaaEndTaskLabel(user)}`
+  }
+}
+
+const isMaaEndRewardGroupEnabled = (user: any): boolean => {
+  const rewardEnabledTasks = new Set([
+    'OperatorEXP',
+    'Promotions',
+    'SkillUp',
+    'WeaponTune',
+  ])
+  const fieldMap: Record<string, string> = {
+    OperatorProgression: 'OperatorProgression',
+    WeaponProgression: 'WeaponProgression',
+    CrisisDrills: 'CrisisDrills',
+  }
+  const protocolSpaceTab = user.Task?.ProtocolSpaceTab || 'OperatorProgression'
+  const field = fieldMap[protocolSpaceTab] || 'OperatorProgression'
+  return rewardEnabledTasks.has(user.Task?.[field])
+}
+
+const getMaaEndRewardGroupLabel = (user: any): string => {
+  return user.Task?.RewardsSetOption === 'RewardsSetB' ? '奖励组 B' : '奖励组 A'
 }
 
 // 获取剩余天数的颜色

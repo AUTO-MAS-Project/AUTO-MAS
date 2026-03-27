@@ -19,9 +19,23 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .login import login
-from .notify import push_notification
-from .parse_log import parse_log
-from .window import wait_and_focus_window
+import asyncio
 
-__all__ = ["login", "push_notification", "parse_log", "wait_and_focus_window"]
+import win32gui
+
+WINDOW_READY_TIMEOUT_SECONDS = 45
+
+
+async def wait_and_focus_window(window_title: str) -> bool:
+    deadline = asyncio.get_running_loop().time() + WINDOW_READY_TIMEOUT_SECONDS
+    while asyncio.get_running_loop().time() < deadline:
+        hwnd = win32gui.FindWindow(None, window_title)
+        if hwnd:
+            try:
+                win32gui.ShowWindow(hwnd, 9)
+                win32gui.SetForegroundWindow(hwnd)
+            except Exception:
+                pass
+            return True
+        await asyncio.sleep(0.5)
+    return False
