@@ -23,6 +23,7 @@ import json
 import shutil
 import asyncio
 from pathlib import Path
+from typing import Any
 
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem
@@ -33,6 +34,65 @@ from app.services import System
 from app.utils import get_logger, ProcessManager
 
 logger = get_logger("MaaEnd 脚本设置")
+CONFIG_FILE_NAME = "mxu-MaaEnd.json"
+
+
+def _load_config(config_path: Path) -> dict[str, Any]:
+    return json.loads(config_path.read_text(encoding="utf-8"))
+
+
+def _dump_config(config_path: Path, data: dict[str, Any]) -> None:
+    config_path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+    )
+
+
+def _keep_single_instance(config_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    data = _load_config(config_path)
+
+    instances = data.get("instances", [])
+
+    selected_instance: dict[str, Any] | None = None
+
+    for instance in instances:
+        if instance.get("name") == "AUTO-MAS":
+            selected_instance = dict(instance)
+            break
+
+    if selected_instance is None:
+        active_id = str(data.get("lastActiveInstanceId", "")).strip()
+        if active_id:
+            for instance in instances:
+                if str(instance.get("id", "")).strip() == active_id:
+                    selected_instance = dict(instance)
+                    break
+
+    if selected_instance is None:
+        for instance in instances:
+            selected_instance = dict(instance)
+            break
+
+    if selected_instance is None:
+        selected_instance = {"id": "", "name": "AUTO-MAS", "tasks": []}
+
+    if "tasks" not in selected_instance:
+        selected_instance["tasks"] = []
+    if not str(selected_instance.get("id", "")).strip():
+        selected_instance["id"] = "AUTO-MAS"
+
+    selected_instance["name"] = "AUTO-MAS"
+    data["instances"] = [selected_instance]
+    data["lastActiveInstanceId"] = selected_instance["id"]
+
+    data.setdefault("settings", {})
+
+    _dump_config(config_path, data)
+    return data, selected_instance
+
+
+def _replace_config_dir(source_dir: Path, target_dir: Path) -> None:
+    shutil.rmtree(target_dir, ignore_errors=True)
+    shutil.copytree(source_dir, target_dir)
 
 
 class ScriptConfigTask(TaskExecuteBase):
@@ -88,26 +148,17 @@ class ScriptConfigTask(TaskExecuteBase):
         await System.kill_process(self.maaend_exe_path)
 
         if self.config_file_path.exists():
-            shutil.copytree(
-                self.config_file_path, self.maaend_set_path, dirs_exist_ok=True
-            )
+            config_path = self.config_file_path / CONFIG_FILE_NAME
+            if config_path.exists():
+                _keep_single_instance(config_path)
+            _replace_config_dir(self.config_file_path, self.maaend_set_path)
 
-        maaend_set = json.loads(
-            (self.maaend_set_path / "mxu-MaaEnd.json").read_text(encoding="utf-8")
+        maaend_set, maaend_instance = _keep_single_instance(
+            self.maaend_set_path / CONFIG_FILE_NAME
         )
 
-        for instance in maaend_set["instances"]:
-            if instance["name"] == "AUTO-MAS":
-                instance["id"] = "automas"
-                break
-        else:
-            maaend_set["instances"].insert(
-                0, {"id": "automas", "name": "AUTO-MAS", "tasks": []}
-            )
-        maaend_set["lastActiveInstanceId"] = "automas"
-
         # 不直接运行任务
-        maaend_set["settings"]["autoStartInstanceId"] = "automas"
+        maaend_set["settings"]["autoStartInstanceId"] = maaend_instance["id"]
         maaend_set["settings"]["autoRunOnLaunch"] = False
 
         (self.maaend_set_path / "mxu-MaaEnd.json").write_text(
@@ -122,9 +173,9 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
+        _keep_single_instance(self.maaend_set_path / CONFIG_FILE_NAME)
         shutil.rmtree(self.config_file_path, ignore_errors=True)
-        self.config_file_path.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(self.maaend_set_path, self.config_file_path, dirs_exist_ok=True)
+        shutil.copytree(self.maaend_set_path, self.config_file_path)
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"

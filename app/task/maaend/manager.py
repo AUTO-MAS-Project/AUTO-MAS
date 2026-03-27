@@ -68,7 +68,7 @@ class MaaEndManager(TaskExecuteBase):
             return "脚本配置类型错误, 不是 MaaEnd 脚本类型"
 
         if not (Path(script_config.get("Info", "Path")) / "MaaEnd.exe").exists():
-            return f"MaaEnd.exe文件不存在, 请检查MaaEnd路径设置！"
+            return "MaaEnd.exe文件不存在, 请检查MaaEnd路径设置！"
 
         if (script_config.get("Game", "ControllerType") == "ADB") and (
             script_config.get("Game", "EmulatorId") == "-"
@@ -88,7 +88,6 @@ class MaaEndManager(TaskExecuteBase):
             ).exists()
         ):
             return "MaaEnd default config is missing, please configure MaaEnd first."
-
         return "Pass"
 
     async def prepare(self):
