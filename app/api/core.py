@@ -21,6 +21,7 @@
 #   Contact: DLmaster_361@163.com
 
 
+import os
 import time
 import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -29,8 +30,17 @@ from app.core import Config, Broadcast, TaskManager
 from app.services import System
 from app.models.schema import *
 from app.api.ws_command import ws_command
+from app.utils import get_logger
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])
+logger = get_logger("DEV")
+
+
+def is_backend_dev_mode() -> bool:
+    """判断后端是否处于开发模式。"""
+
+    raw = str(os.getenv("AUTO_MAS_DEV", "")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 @router.websocket("/ws")
@@ -80,7 +90,10 @@ async def connect_websocket(websocket: WebSocket):
             break
 
     Config.websocket = None
-    await System.set_power("KillSelf", from_frontend=True)
+    if is_backend_dev_mode():
+        logger.warning("后端开发模式下检测到 WS 断链，跳过 KillSelf 自动退出")
+    else:
+        await System.set_power("KillSelf", from_frontend=True)
 
 
 @ws_command("core.close")
