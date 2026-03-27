@@ -21,12 +21,14 @@ class PluginContext:
         events,
         runtime_capabilities: Optional[Dict[str, Callable[..., Any]]] = None,
     ) -> None:
+        # 基础必要属性
         self.plugin_name = plugin_name
         self.instance_id = instance_id or plugin_name
         self.config = config
         self.logger = logger
         self.events = events
         
+        # 解释器能力函数集合
         self.runtime_api = RuntimeAPI(
             plugin_name=self.plugin_name,
             instance_id=self.instance_id,
@@ -35,6 +37,8 @@ class PluginContext:
             runtime_capabilities=runtime_capabilities,
         )
         self.runtime = RuntimeFacade(self.runtime_api)
+
+        # 缓存管理器
         self.cache = PluginCacheManager(
             plugin_name=self.plugin_name,
             instance_id=self.instance_id,
