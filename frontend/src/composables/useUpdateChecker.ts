@@ -4,6 +4,7 @@ import { message } from 'ant-design-vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
 const logger = window.electronAPI.getLogger('更新检查器')
+const isDev = import.meta.env.DEV
 
 // 获取版本号，优先使用环境变量，否则使用一个测试版本
 const version = (import.meta as any).env.VITE_APP_VERSION || '1.0.0'
@@ -23,6 +24,12 @@ let lastShownVersion: string | null = null
 
 // 检查自动更新设置是否开启
 const checkAutoUpdateEnabled = async (): Promise<boolean> => {
+  // 开发环境不触发任何版本更新相关请求。
+  if (isDev) {
+    logger.info('开发环境：跳过自动更新配置读取')
+    return false
+  }
+
   try {
     const response = await Service.getScriptsApiSettingGetPost()
     if (response.code === 200 && response.data) {
@@ -42,6 +49,11 @@ const checkAutoUpdateEnabled = async (): Promise<boolean> => {
 export function useUpdateChecker() {
   // 执行一次更新检查 - 完全参考顶栏的 pollOnce 逻辑
   const pollOnce = async () => {
+    if (isDev) {
+      logger.info('开发环境：跳过定时版本检查')
+      return
+    }
+
     if (isPolling.value) return
 
     // 检查自动更新设置是否开启
@@ -91,6 +103,14 @@ export function useUpdateChecker() {
 
   // 手动检查更新（用于设置页面按钮）
   const checkUpdate = async (silent = false, forceCheck = false) => {
+    if (isDev) {
+      logger.info('开发环境：跳过手动更新检查')
+      if (!silent) {
+        message.info('开发环境已禁用版本检查')
+      }
+      return
+    }
+
     const { playSound } = useAudioPlayer()
     try {
       const response = await Service.checkUpdateApiUpdateCheckPost({
@@ -133,6 +153,11 @@ export function useUpdateChecker() {
 
   // 启动定时检查器
   const startPolling = async () => {
+    if (isDev) {
+      logger.info('开发环境：不启动版本检查定时任务')
+      return
+    }
+
     // 检查自动更新设置是否开启
     const autoUpdateEnabled = await checkAutoUpdateEnabled()
     if (!autoUpdateEnabled) {

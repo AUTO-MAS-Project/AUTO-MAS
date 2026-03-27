@@ -8,6 +8,7 @@
 import { ref } from 'vue'
 import { Service, type UpdateCheckOut, type VersionOut } from '@/api'
 const logger = window.electronAPI.getLogger('版本服务')
+const isDev = import.meta.env.DEV
 
 // 获取版本号
 const version = (import.meta as any).env.VITE_APP_VERSION || '1.0.0'
@@ -24,6 +25,11 @@ const isTitlebarPolling = ref(false)
  * 获取前端版本和更新信息（用于标题栏显示）
  */
 const getAppVersion = async () => {
+    if (isDev) {
+        logger.info('开发环境：跳过前端版本信息获取')
+        return null
+    }
+
     try {
         const ver = await Service.checkUpdateApiUpdateCheckPost({
             current_version: version,
@@ -42,6 +48,11 @@ const getAppVersion = async () => {
  * 获取后端版本信息（用于标题栏显示）
  */
 export const getBackendVersion = async () => {
+    if (isDev) {
+        logger.info('开发环境：跳过后端版本信息获取')
+        return
+    }
+
     try {
         backendUpdateInfo.value = await Service.getGitVersionApiInfoVersionPost()
     } catch (error) {
@@ -77,6 +88,11 @@ const pollTitlebarVersionOnce = async () => {
  * 启动标题栏版本信息定时检查（10分钟一次）
  */
 export const startTitlebarVersionCheck = async () => {
+    if (isDev) {
+        logger.info('开发环境：不启动标题栏版本检查定时器')
+        return
+    }
+
     if (titlebarPollTimer) {
         logger.warn('标题栏版本检查定时器已存在，跳过启动')
         return

@@ -207,6 +207,14 @@ const resetState = () => {
 const startDownload = async () => {
   logger.info('开始下载流程')
 
+  if (import.meta.env.DEV) {
+    logger.info('开发环境：跳过更新下载流程与版本检查请求')
+    downloadFailed.value = true
+    isDownloading.value = false
+    failureReason.value = '开发环境已禁用更新下载'
+    return
+  }
+
   // 确保WebSocket订阅已建立
   ensureWebSocketSubscription()
 

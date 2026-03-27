@@ -236,6 +236,11 @@ const checkUpdate = async () => {
 
 // 后端版本
 const getBackendVersion = async () => {
+  if (import.meta.env.DEV) {
+    logger.info('开发环境：跳过设置页后端版本查询')
+    return
+  }
+
   try {
     backendUpdateInfo.value = await Service.getGitVersionApiInfoVersionPost()
   } catch (error) {
