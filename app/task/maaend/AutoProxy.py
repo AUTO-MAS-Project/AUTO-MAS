@@ -21,7 +21,6 @@
 
 import uuid
 import json
-import shutil
 import asyncio
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -35,6 +34,7 @@ from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
 from app.utils.constants import UTC4, MAAEND_KILLPROC_TASK
 from .tools import login, parse_log, push_notification
+from .ScriptConfig import CONFIG_FILE_NAME, _keep_single_instance, _replace_config_dir
 
 logger = get_logger("MaaEnd 自动代理")
 
@@ -302,42 +302,38 @@ class AutoProxyTask(TaskExecuteBase):
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
+        source_config_path = None
         if self.cur_user_config.get("Info", "Mode") == "简洁":
-            shutil.copytree(
-                (Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"),
-                self.maaend_set_path,
-                dirs_exist_ok=True,
+            source_config_path = (
+                Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
             )
         elif self.cur_user_config.get("Info", "Mode") == "详细":
-            shutil.copytree(
-                (
-                    Path.cwd()
-                    / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-                ),
-                self.maaend_set_path,
-                dirs_exist_ok=True,
+            source_config_path = (
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
             )
 
-        maaend_set = json.loads(
-            (self.maaend_set_path / "mxu-MaaEnd.json").read_text(encoding="utf-8")
+        if source_config_path is None:
+            raise RuntimeError("未找到 MaaEnd 配置目录")
+
+        source_config_file = source_config_path / CONFIG_FILE_NAME
+        if source_config_file.exists():
+            _keep_single_instance(source_config_file)
+        _replace_config_dir(source_config_path, self.maaend_set_path)
+
+        maaend_set, maaend_instance = _keep_single_instance(
+            self.maaend_set_path / CONFIG_FILE_NAME
         )
+        maaend_tasks = maaend_instance["tasks"]
 
-        for instance in maaend_set["instances"]:
-            if instance["name"] == "AUTO-MAS":
-                instance["id"] = "automas"
-                maaend_instance = instance
-                maaend_tasks = instance["tasks"]
-                break
-        else:
-            maaend_set["instances"].insert(
-                0, {"id": "automas", "name": "AUTO-MAS", "tasks": []}
-            )
-            maaend_instance = maaend_set["instances"][0]
-        maaend_set["lastActiveInstanceId"] = "automas"
+        settings = maaend_set.get("settings")
+        if not isinstance(settings, dict):
+            settings = {}
+            maaend_set["settings"] = settings
 
         # 直接运行任务
-        maaend_set["settings"]["autoStartInstanceId"] = "automas"
-        maaend_set["settings"]["autoRunOnLaunch"] = True
+        settings["autoStartInstanceId"] = maaend_instance["id"]
+        settings["autoRunOnLaunch"] = True
 
         # 模拟器相关配置
         maaend_instance["controllerName"] = self.script_config.get(
