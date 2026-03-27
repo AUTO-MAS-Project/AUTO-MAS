@@ -16,7 +16,6 @@ from app.utils.constants import UTC8
 
 from .context import PluginContext
 from .pypi_site import ensure_pypi_site_packages_on_syspath, iter_plugin_entry_points
-from .runtime_api import RuntimeAPI
 
 
 logger = get_logger("插件加载器")
@@ -28,7 +27,7 @@ def _utc8_now_iso() -> str:
 
 
 class PluginDefinitionError(Exception):
-    """Expected plugin authoring errors that should not print traceback."""
+    """预期的插件编写错误，不应打印追溯信息。"""
 
 
 @dataclass
@@ -226,6 +225,13 @@ class PluginLoader:
         if inspect.isawaitable(result):
             await result
 
+    async def _call_setup(self, setup: Callable[[PluginContext], Any], context: PluginContext) -> Any:
+        """调用插件 setup，并兼容同步与异步返回值。"""
+        result = setup(context)
+        if inspect.isawaitable(result):
+            return await result
+        return result
+
     def _mark_status(self, record: PluginRecord, status: str) -> None:
         """更新插件实例状态并记录对应时间戳。"""
         record.status = status
@@ -291,17 +297,6 @@ class PluginLoader:
 
             plugin_logger = get_logger(f"插件:{plugin_name}")
             plugin_config = self._load_plugin_config(plugin_name, plugin_source)
-            runtime_api = RuntimeAPI(
-                plugin_name=plugin_name,
-                instance_id=plugin_name,
-                config=plugin_config,
-                logger=plugin_logger,
-                runtime_capabilities=self.runtime,
-            )
-            runtime_info = runtime_api.get_runtime_info()
-            if not runtime_info.get("interpreter_check", {}).get("ok", False):
-                reason = runtime_info.get("interpreter_check", {}).get("reason", "解释器检查失败")
-                raise PluginDefinitionError(f"插件解释器不可用: {reason}")
 
             record.context = PluginContext(
                 plugin_name=plugin_name,
@@ -309,10 +304,10 @@ class PluginLoader:
                 config=plugin_config,
                 logger=plugin_logger,
                 events=self.events,
-                runtime=runtime_api,
+                runtime_capabilities=self.runtime,
             )
 
-            dispose = setup(record.context)
+            dispose = await self._call_setup(setup, record.context)
             if dispose is not None and not callable(dispose):
                 raise PluginDefinitionError(
                     f"插件 {plugin_name} 返回的 dispose 不可调用"
@@ -385,28 +380,16 @@ class PluginLoader:
             self._mark_status(record, "loaded")
 
             plugin_logger = get_logger(f"插件:{instance_id}")
-            runtime_api = RuntimeAPI(
-                plugin_name=plugin_name,
-                instance_id=instance_id,
-                config=config,
-                logger=plugin_logger,
-                runtime_capabilities=self.runtime,
-            )
-            runtime_info = runtime_api.get_runtime_info()
-            if not runtime_info.get("interpreter_check", {}).get("ok", False):
-                reason = runtime_info.get("interpreter_check", {}).get("reason", "解释器检查失败")
-                raise PluginDefinitionError(f"插件解释器不可用: {reason}")
-
             record.context = PluginContext(
                 plugin_name=plugin_name,
                 instance_id=instance_id,
                 config=config,
                 logger=plugin_logger,
                 events=self.events,
-                runtime=runtime_api,
+                runtime_capabilities=self.runtime,
             )
 
-            dispose = setup(record.context)
+            dispose = await self._call_setup(setup, record.context)
             if dispose is not None and not callable(dispose):
                 raise PluginDefinitionError(
                     f"插件实例 {instance_id} 返回的 dispose 不可调用"
