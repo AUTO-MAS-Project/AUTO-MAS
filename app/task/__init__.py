@@ -22,7 +22,7 @@
 
 
 from .MAA import MaaManager
-from .MaaEnd import MaaEndManager
+from .maaend import MaaEndManager
 from .SRC import SrcManager
 from .general import GeneralManager
 
