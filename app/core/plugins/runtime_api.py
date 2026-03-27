@@ -2,8 +2,10 @@
 #   Copyright © 2026 AUTO-MAS Team
 
 import json
+import asyncio
 import subprocess
 import sys
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
@@ -33,6 +35,24 @@ class RuntimeAPI:
             return runtime
         return {}
 
+    def set_runtime_options(self, options: Dict[str, Any]) -> Dict[str, Any]:
+        """更新 runtime 配置并返回最新配置。"""
+        if not isinstance(options, dict):
+            raise ValueError("runtime options 必须是字典")
+
+        runtime = self.config.get("runtime")
+        if not isinstance(runtime, dict):
+            runtime = {}
+            self.config["runtime"] = runtime
+
+        for key, value in options.items():
+            runtime[key] = value
+
+        # runtime 配置变更后清理缓存，确保 info 结果反映最新参数。
+        self._cached_runtime_info = None
+        self._audit("set_runtime_options", "ok", {"keys": list(options.keys())})
+        return dict(runtime)
+
     def _audit(self, action: str, status: str, detail: Optional[Dict[str, Any]] = None) -> None:
         payload = {
             "plugin": self.plugin_name,
@@ -42,7 +62,7 @@ class RuntimeAPI:
         }
         if detail:
             payload.update(detail)
-        self.logger.info(f"[runtime] {json.dumps(payload, ensure_ascii=False)}")
+        self.logger.debug(f"[runtime] {json.dumps(payload, ensure_ascii=False, indent=2)}")
 
     def _resolve_interpreter(self, override: Optional[str] = None) -> str:
         runtime_options = self._runtime_options()
@@ -222,7 +242,7 @@ class RuntimeAPI:
             )
             raise
 
-    def run_python_snippet(
+    async def run_python_snippet(
         self,
         code: str,
         *,
@@ -244,14 +264,19 @@ class RuntimeAPI:
         timeout = self._resolve_timeout(timeout_seconds)
 
         try:
-            completed = subprocess.run(
-                [target, "-c", code],
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
+            process = await asyncio.create_subprocess_exec(
+                target,
+                "-c",
+                code,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-        except subprocess.TimeoutExpired:
+            stdout_raw, stderr_raw = await asyncio.wait_for(process.communicate(), timeout=timeout)
+            stdout = stdout_raw.decode("utf-8", errors="replace")
+            stderr = stderr_raw.decode("utf-8", errors="replace")
+        except asyncio.TimeoutError:
+            with suppress(Exception):
+                process.kill()
             result = {
                 "ok": False,
                 "returncode": -1,
@@ -273,16 +298,16 @@ class RuntimeAPI:
             return result
 
         result = {
-            "ok": completed.returncode == 0,
-            "returncode": completed.returncode,
-            "stdout": completed.stdout,
-            "stderr": completed.stderr,
+            "ok": process.returncode == 0,
+            "returncode": process.returncode,
+            "stdout": stdout,
+            "stderr": stderr,
             "python": target,
         }
 
         self._audit(
             "run_python_snippet",
-            "ok" if completed.returncode == 0 else "error",
-            {"python": target, "returncode": completed.returncode},
+            "ok" if process.returncode == 0 else "error",
+            {"python": target, "returncode": process.returncode},
         )
         return result
