@@ -46,7 +46,7 @@ async def login(
         bool: 登录是否成功
     """
     if emulator_info is None:
-        logger.info(f"开始登录: 终末地PC端")
+        logger.info("开始登录: 终末地PC端")
 
         from app.core import MaaFWManager
 
@@ -100,7 +100,7 @@ async def login(
             await MaaFWManager.do_job(
                 tasker.post_task("切换账号-账号登录[EndFieldPC]", pipeline_override)
             )
-            logger.success(f"终末地登录成功")
+            logger.success("终末地登录成功")
             await asyncio.sleep(10)  # 等待资源释放
             return True
         except Exception as e:

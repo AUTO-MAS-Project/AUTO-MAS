@@ -54,7 +54,7 @@
           <template #label>
             <span class="form-label">
               账号ID
-              <a-tooltip title="用于切换账号，无需切换时可留空">
+              <a-tooltip title="用于 Endfield PC 端自动登录">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
@@ -73,14 +73,14 @@
           <template #label>
             <span class="form-label">
               密码
-              <a-tooltip title="用户密码，仅用于存储以防遗忘，此外无任何作用">
+              <a-tooltip title="用于 Endfield PC 端自动登录">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
           </template>
           <a-input-password
             v-model:value="formData.Info.Password"
-            placeholder="密码仅用于存储以防遗忘，此外无任何作用"
+            placeholder="请输入用于 Endfield PC 端自动登录的密码"
             :disabled="loading"
             size="large"
             @blur="emitSave('Info.Password', formData.Info.Password)"
