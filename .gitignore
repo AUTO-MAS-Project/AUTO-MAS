@@ -50,3 +50,4 @@ uv.lock
 /.claude/
 
 /plugins
+/app/core/plugins/_generated/
