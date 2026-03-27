@@ -284,16 +284,31 @@ class PluginCacheManager:
         self.instance_id = instance_id
         self.logger = logger
         self._instance_dir = data_root / _safe_instance_dir_name(instance_id) / "plugin_cache"
-        self._instance_dir.mkdir(parents=True, exist_ok=True)
+        # 懒创建：仅在首次真正注册缓存时创建目录，避免未使用缓存的插件产生空目录。
         self._stores: Dict[str, JsonPluginCache] = {}
 
     def _build_store_key(self, cache_name: str) -> str:
-        """构建缓存唯一键。"""
+        """构建缓存唯一键（内存键，不做字符清洗）。
+
+        说明：
+        - 该 key 仅用于当前进程内 `_stores` 的索引。
+        - 推荐调用方直接使用英文规范名，避免同义键的命名歧义。
+        - 推荐格式：`[a-zA-Z0-9_.-]+`，示例：`default`、`test_cache`、`runtime.v1`。
+        """
         safe_name = str(cache_name or "default").strip() or "default"
         return safe_name
 
     def _build_json_path(self, cache_name: str) -> Path:
-        """计算 JSON 缓存文件路径。"""
+        """计算 JSON 缓存文件路径（文件名会做安全化处理）。
+
+        当前规则：
+        - 允许字符：`a-zA-Z0-9_.-`
+        - 其余字符（含中文、空格和大多数特殊符号）会被替换为 `_`
+        - 清洗后为空时回退为 `default`
+
+        这意味着中文 cache_name 可以使用，但落盘文件名可能被转换成连续下划线，
+        可读性较差。若需要稳定可读文件名，建议使用英文规范名。
+        """
         safe_name = re.sub(r"[^a-zA-Z0-9_.-]", "_", cache_name)
         safe_name = safe_name or "default"
         return self._instance_dir / f"{safe_name}.json"
@@ -355,6 +370,9 @@ class PluginCacheManager:
 
         Args:
             cache_name (str): 缓存名称；在同一实例内需唯一。
+                建议使用英文规范名：`[a-zA-Z0-9_.-]+`。
+                推荐示例：`auto_mas`, `test_cache`。
+                若使用中文或特殊字符，系统会在生成文件名时自动替换为 `_`。
             backend (CacheBackendType): 缓存后端类型，当前仅支持 json。
             limit (int | float | str): 缓存阈值，含义由 limit_mode 决定。
             limit_mode (LimitMode): 阈值模式，count 表示条目数，bytes 表示字节数。
@@ -399,6 +417,8 @@ class PluginCacheManager:
             raise NotImplementedError(
                 "数据库后端接口已预留，当前版本仅实现 json。"
             )
+
+        self._instance_dir.mkdir(parents=True, exist_ok=True)
 
         store = JsonPluginCache(
             cache_name=key,
