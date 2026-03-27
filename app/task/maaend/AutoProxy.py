@@ -95,12 +95,6 @@ class AutoProxyTask(TaskExecuteBase):
         self.maaend_process_manager = ProcessManager()
         if self.emulator_manager is None:
             self.game_process_manager = ProcessManager()
-        self.maaend_log_monitor = LogMonitor(
-            (1, 23),
-            "%Y-%m-%d %H:%M:%S.%f",
-            self.check_log,
-            parse_log=parse_log,
-        )
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
         self.log_start_time = datetime.now()
@@ -109,6 +103,13 @@ class AutoProxyTask(TaskExecuteBase):
         self.maaend_exe_path = self.maaend_root_path / "MaaEnd.exe"
         self.maaend_set_path = self.maaend_root_path / "config"
         self.maaend_log_path = self.maaend_root_path / "debug/maa.log"
+
+        self.maaend_log_monitor = LogMonitor(
+            (1, 23),
+            "%Y-%m-%d %H:%M:%S.%f",
+            self.check_log,
+            parse_log=lambda logs: parse_log(self.maaend_root_path, logs),
+        )
 
         self.run_book = False
 
@@ -207,7 +208,9 @@ class AutoProxyTask(TaskExecuteBase):
 
             await asyncio.sleep(1)
             await self.maaend_log_monitor.start_monitor_file(
-                self.maaend_log_path, self.log_start_time
+                self.maaend_log_path,
+                self.log_start_time,
+                self.maaend_log_path.with_name("maa.bak.log"),
             )
             await self.wait_event.wait()
             await self.maaend_log_monitor.stop()
@@ -352,8 +355,13 @@ class AutoProxyTask(TaskExecuteBase):
         if self.task_dict is None:
             # 任务列表为空则记录任务
             self.task_dict = {}
+            task = {}
             for task in maaend_tasks:
                 self.task_dict[task["id"]] = task["enabled"]
+            if task.get("taskName") == "__MXU_KILLPROC__" and task.get(
+                "optionValues", {}
+            ).get("__MXU_KILLPROC_SELF_OPTION__", {}).get("value", False):
+                self.task_dict.popitem()
         else:
             # 任务列表不为空则配置任务
             for task in maaend_tasks:
@@ -405,7 +413,11 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_log.status = "MaaEnd 未加载任何任务"
             else:
                 for id in self.task_dict.keys():
-                    if f"任务完成: {id}" in log:
+                    if any(
+                        f"{id} - 任务完成" in line
+                        or (f"{id} [task_id=" in line and " - 任务完成" in line)
+                        for line in log_content
+                    ):
                         self.task_dict[id] = False
                 if any(self.task_dict.values()):
                     self.cur_user_log.status = "MaaEnd 部分任务执行失败"
