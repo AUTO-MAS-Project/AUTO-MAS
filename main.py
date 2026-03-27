@@ -77,6 +77,10 @@ def main():
         async def lifespan(app: FastAPI):
             from app.core import Config, MainTimer, TaskManager, PluginManager
             from app.MaaFW import ArknightWin32Toolkit
+            from app.core.plugins.dev_stub_generator import (
+                generate_plugin_context_stubs,
+                is_dev_stub_generation_enabled,
+            )
 
             await Config.init_config()
             await Config.get_stage()
@@ -84,6 +88,18 @@ def main():
             await ArknightWin32Toolkit.init()
             await MainTimer.start()
             await PluginManager.start()
+
+            if is_dev_stub_generation_enabled():
+                try:
+                    result = generate_plugin_context_stubs()
+                    logger.info(
+                        "插件上下文类型提示生成完成: "
+                        f"changed={len(result.get('changed_files', []))}, "
+                        f"unchanged={len(result.get('unchanged_files', []))}, "
+                        f"dir={result.get('output_dir', '')}"
+                    )
+                except Exception as e:
+                    logger.warning(f"插件上下文类型提示生成失败（已忽略）: {type(e).__name__}: {e}")
 
             # 初始化 Koishi 系统客户端（如果已启用）
             if Config.get("Notify", "IfKoishiSupport"):
