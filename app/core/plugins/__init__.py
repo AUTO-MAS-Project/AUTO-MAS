@@ -1,18 +1,22 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
-from .context import PluginContext, PluginConfigProxy, RuntimeFacade
+from .context import PluginContext, PluginConfigProxy, RuntimeFacade, PluginEventFacade
 from .cache_store import PluginCacheManager, JsonPluginCache
 from .config_store import PluginConfigStore
 from .event_bus import EventBus
 from .event_contract import (
     EVENT_CONTRACT_VERSION,
+    EVENT_DISPATCH_MODEL,
     CORE_SOURCE_PREFIX,
     PluginEventNames,
     SCRIPT_LIFECYCLE_EVENTS,
+    EventScope,
+    EventErrorPolicy,
     is_script_event,
     is_valid_source,
 )
+from .decorators import on_event, EventSubscription
 from .event_factory import PluginEventFactory
 from .loader import PluginLoader, PluginRecord
 from .manager import PluginManager
@@ -28,17 +32,23 @@ from .runtime_api import RuntimeAPI
 __all__ = [
     "PluginContext",
     "PluginConfigProxy",
+    "PluginEventFacade",
     "RuntimeFacade",
     "PluginCacheManager",
     "JsonPluginCache",
     "PluginConfigStore",
     "EventBus",
     "EVENT_CONTRACT_VERSION",
+    "EVENT_DISPATCH_MODEL",
     "CORE_SOURCE_PREFIX",
     "PluginEventNames",
     "SCRIPT_LIFECYCLE_EVENTS",
+    "EventScope",
+    "EventErrorPolicy",
     "is_script_event",
     "is_valid_source",
+    "on_event",
+    "EventSubscription",
     "PluginEventFactory",
     "PluginLoader",
     "PluginRecord",

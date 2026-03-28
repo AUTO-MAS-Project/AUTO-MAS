@@ -50,7 +50,7 @@ class TaskInfo(TaskItem):
 
         return bool(log_text.strip())
 
-    def _emit_task_progress(self) -> None:
+    async def _emit_task_progress(self) -> None:
         """发送 task.progress 事件，避免重复发送相同快照。"""
         if 0 <= self.current_index < len(self.script_list):
             if not self._has_meaningful_current_log():
@@ -62,13 +62,13 @@ class TaskInfo(TaskItem):
             return
 
         self._last_progress_signature = signature
-        PluginEventFactory.emit_event(
+        await PluginEventFactory.emit_event_async(
             event=PluginEventNames.TASK_PROGRESS,
             source="core.task_manager",
             data=progress_data,
         )
 
-    def _emit_task_log(self) -> None:
+    async def _emit_task_log(self) -> None:
         """发送 task.log 事件，提供当前脚本日志内容。"""
         if not (0 <= self.current_index < len(self.script_list)):
             return
@@ -84,7 +84,7 @@ class TaskInfo(TaskItem):
         self._last_log_signature = signature
         tail_chars = 2000
         is_truncated = len(log_text) > tail_chars
-        PluginEventFactory.emit_event(
+        await PluginEventFactory.emit_event_async(
             event=PluginEventNames.TASK_LOG,
             source="core.task_manager",
             data={
@@ -115,8 +115,8 @@ class TaskInfo(TaskItem):
                 data={"log": self.script_list[self.current_index].log},
             )
 
-        self._emit_task_progress()
-        self._emit_task_log()
+        await self._emit_task_progress()
+        await self._emit_task_log()
 
 
 class Task(TaskExecuteBase):
@@ -128,9 +128,9 @@ class Task(TaskExecuteBase):
         self._exit_result = "success"
         self._exit_error: str | None = None
 
-    def _emit_task_start(self) -> None:
+    async def _emit_task_start(self) -> None:
         """发送 task.start 事件，提供插件所需的任务标识和可操作入口。"""
-        PluginEventFactory.emit_event(
+        await PluginEventFactory.emit_event_async(
             event=PluginEventNames.TASK_START,
             source="core.task_manager",
             data={
@@ -163,9 +163,9 @@ class Task(TaskExecuteBase):
             },
         )
 
-    def _emit_task_exit(self) -> None:
+    async def _emit_task_exit(self) -> None:
         """发送 task.exit 事件，告知任务最终结果。"""
-        PluginEventFactory.emit_event(
+        await PluginEventFactory.emit_event_async(
             event=PluginEventNames.TASK_EXIT,
             source="core.task_manager",
             data={
@@ -214,8 +214,8 @@ class Task(TaskExecuteBase):
     async def main_task(self):
 
         await self.prepare()
-        self._emit_task_start()
-        self.task_info._emit_task_progress()
+        await self._emit_task_start()
+        await self.task_info._emit_task_progress()
 
         logger.info(
             f"开始运行任务: {self.task_info.task_id}, 模式: {self.task_info.mode}"
@@ -254,7 +254,7 @@ class Task(TaskExecuteBase):
             # 标记为运行中
             script_item.status = "运行"
             logger.info(f"任务开始: {current_script_uid}")
-            PluginEventFactory.emit_script_event(
+            await PluginEventFactory.emit_script_event_async(
                 event=PluginEventNames.SCRIPT_START,
                 source="core.task_manager",
                 task_id=self.task_info.task_id,
@@ -290,7 +290,7 @@ class Task(TaskExecuteBase):
                 error_text = "CancelledError: 任务执行被取消"
                 self._exit_result = "cancelled"
                 self._exit_error = error_text
-                PluginEventFactory.emit_script_event(
+                await PluginEventFactory.emit_script_event_async(
                     event=PluginEventNames.SCRIPT_CANCELLED,
                     source="core.task_manager",
                     task_id=self.task_info.task_id,
@@ -301,7 +301,7 @@ class Task(TaskExecuteBase):
                     error=error_text,
                     result=PluginEventNames.SCRIPT_CANCELLED,
                 )
-                PluginEventFactory.emit_script_event(
+                await PluginEventFactory.emit_script_event_async(
                     event=PluginEventNames.SCRIPT_EXIT,
                     source="core.task_manager",
                     task_id=self.task_info.task_id,
@@ -317,7 +317,7 @@ class Task(TaskExecuteBase):
                 error_text = f"{type(e).__name__}: {e}"
                 self._exit_result = "error"
                 self._exit_error = error_text
-                PluginEventFactory.emit_script_event(
+                await PluginEventFactory.emit_script_event_async(
                     event=PluginEventNames.SCRIPT_ERROR,
                     source="core.task_manager",
                     task_id=self.task_info.task_id,
@@ -328,7 +328,7 @@ class Task(TaskExecuteBase):
                     error=error_text,
                     result=PluginEventNames.SCRIPT_ERROR,
                 )
-                PluginEventFactory.emit_script_event(
+                await PluginEventFactory.emit_script_event_async(
                     event=PluginEventNames.SCRIPT_EXIT,
                     source="core.task_manager",
                     task_id=self.task_info.task_id,
@@ -352,7 +352,7 @@ class Task(TaskExecuteBase):
                     self._exit_result = "error"
                     self._exit_error = result_error
 
-                PluginEventFactory.emit_script_event(
+                await PluginEventFactory.emit_script_event_async(
                     event=result_event,
                     source="core.task_manager",
                     task_id=self.task_info.task_id,
@@ -363,7 +363,7 @@ class Task(TaskExecuteBase):
                     error=result_error,
                     result=result_event,
                 )
-                PluginEventFactory.emit_script_event(
+                await PluginEventFactory.emit_script_event_async(
                     event=PluginEventNames.SCRIPT_EXIT,
                     source="core.task_manager",
                     task_id=self.task_info.task_id,
@@ -385,8 +385,8 @@ class Task(TaskExecuteBase):
             data={"Accomplish": self.task_info.result},
         )
 
-        self.task_info._emit_task_progress()
-        self._emit_task_exit()
+        await self.task_info._emit_task_progress()
+        await self._emit_task_exit()
 
         if self.task_info.mode == "AutoProxy" and self.task_info.queue_id is not None:
 
