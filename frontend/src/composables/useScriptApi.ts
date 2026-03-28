@@ -1,6 +1,14 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { type GeneralConfig, type MaaConfig, type SrcConfig, ScriptCreateIn, type ScriptReorderIn, Service } from '@/api'
+import {
+  type GeneralConfig,
+  type MaaConfig,
+  type MaaEndConfig,
+  type SrcConfig,
+  ScriptCreateIn,
+  type ScriptReorderIn,
+  Service,
+} from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
@@ -17,7 +25,14 @@ export function useScriptApi() {
 
     try {
       const requestData: ScriptCreateIn = {
-        type: type === 'MAA' ? ScriptCreateIn.type.MAA : type === 'SRC' ? ScriptCreateIn.type.SRC : ScriptCreateIn.type.GENERAL,
+        type:
+          type === 'MAA'
+            ? ScriptCreateIn.type.MAA
+            : type === 'SRC'
+              ? ScriptCreateIn.type.SRC
+              : type === 'MaaEnd'
+                ? ScriptCreateIn.type.MAA_END
+                : ScriptCreateIn.type.GENERAL,
         scriptId: scriptId || null,
       }
 
@@ -58,7 +73,7 @@ export function useScriptApi() {
       uid: string
       type: string
       name: string
-      config: MaaConfig | GeneralConfig | SrcConfig
+      config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
     }[]
   > => {
     if (manageLoading) {
@@ -81,7 +96,14 @@ export function useScriptApi() {
       // 将API响应转换为ScriptDetail数组
       return response.index.map(indexItem => ({
         uid: indexItem.uid,
-        type: indexItem.type === 'MaaConfig' ? 'MAA' : indexItem.type === 'SrcConfig' ? 'SRC' : 'General',
+        type:
+          indexItem.type === 'MaaConfig'
+            ? 'MAA'
+            : indexItem.type === 'SrcConfig'
+              ? 'SRC'
+              : indexItem.type === 'MaaEndConfig'
+                ? 'MaaEnd'
+                : 'General',
         name: response.data[indexItem.uid]?.Info?.Name || `${indexItem.type}脚本`,
         config: response.data[indexItem.uid],
       }))
@@ -103,100 +125,106 @@ export function useScriptApi() {
   const getScriptsWithUsers = async (): Promise<
     Awaited<
       | {
-        uid: string
-        type: string
-        name: string
-        config: MaaConfig | GeneralConfig
-        users: (
-          | {
-            id: string
-            name: any
-            Info: {
-              Name: any
-              Id: any
-              Mode: any
-              StageMode: any
-              Server: any
-              Status: any
-              RemainedDay: any
-              Annihilation: any
-              InfrastMode: any
-              InfrastName: any
-              InfrastIndex: any
-              Password: any
-              Notes: any
-              MedicineNumb: any
-              SeriesNumb: any
-              Stage: any
-              Stage_1: any
-              Stage_2: any
-              Stage_3: any
-              Stage_Remain: any
-              IfSkland: any
-              SklandToken: any
-            }
-            Task: {
-              IfStartUp: any
-              IfRecruit: any
-              IfInfrast: any
-              IfFight: any
-              IfMall: any
-              IfAward: any
-              IfRoguelike: any
-              IfReclamation: any
-            }
-            Notify: {
-              Enabled: any
-              IfSendStatistic: any
-              IfSendSixStar: any
-              IfSendMail: any
-              ToAddress: any
-              IfServerChan: any
-              ServerChanKey: any
-              CustomWebhooks: any
-            }
-            Data: {
-              LastProxyDate: any
-              LastSklandDate: any
-              IfPassCheck: any
-              ProxyTimes: any
-            }
-          }
-          | {
-            id: string
-            name: any
-            Info: {
-              Name: any
-              Status: any
-              RemainedDay: any
-              IfScriptBeforeTask: any
-              ScriptBeforeTask: any
-              IfScriptAfterTask: any
-              ScriptAfterTask: any
-              Notes: any
-            }
-            Notify: {
-              Enabled: any
-              IfSendStatistic: any
-              IfSendMail: any
-              ToAddress: any
-              IfServerChan: any
-              ServerChanKey: any
-              CustomWebhooks: any
-            }
-            Data: { LastProxyDate: any; ProxyTimes: any }
-          }
-          | null
-        )[]
-      }
-      | { uid: string; type: string; name: string; config: MaaConfig | GeneralConfig; users: any[] }
+          uid: string
+          type: string
+          name: string
+          config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
+          users: (
+            | {
+                id: string
+                name: any
+                Info: {
+                  Name: any
+                  Id: any
+                  Mode: any
+                  StageMode: any
+                  Server: any
+                  Status: any
+                  RemainedDay: any
+                  Annihilation: any
+                  InfrastMode: any
+                  InfrastName: any
+                  InfrastIndex: any
+                  Password: any
+                  Notes: any
+                  MedicineNumb: any
+                  SeriesNumb: any
+                  Stage: any
+                  Stage_1: any
+                  Stage_2: any
+                  Stage_3: any
+                  Stage_Remain: any
+                  IfSkland: any
+                  SklandToken: any
+                }
+                Task: {
+                  IfStartUp: any
+                  IfRecruit: any
+                  IfInfrast: any
+                  IfFight: any
+                  IfMall: any
+                  IfAward: any
+                  IfRoguelike: any
+                  IfReclamation: any
+                }
+                Notify: {
+                  Enabled: any
+                  IfSendStatistic: any
+                  IfSendSixStar: any
+                  IfSendMail: any
+                  ToAddress: any
+                  IfServerChan: any
+                  ServerChanKey: any
+                  CustomWebhooks: any
+                }
+                Data: {
+                  LastProxyDate: any
+                  LastSklandDate: any
+                  IfPassCheck: any
+                  ProxyTimes: any
+                }
+              }
+            | {
+                id: string
+                name: any
+                Info: {
+                  Name: any
+                  Status: any
+                  RemainedDay: any
+                  IfScriptBeforeTask: any
+                  ScriptBeforeTask: any
+                  IfScriptAfterTask: any
+                  ScriptAfterTask: any
+                  Notes: any
+                }
+                Notify: {
+                  Enabled: any
+                  IfSendStatistic: any
+                  IfSendMail: any
+                  ToAddress: any
+                  IfServerChan: any
+                  ServerChanKey: any
+                  CustomWebhooks: any
+                }
+                Data: { LastProxyDate: any; ProxyTimes: any }
+              }
+            | null
+          )[]
+        }
       | {
-        uid: string
-        type: string
-        name: string
-        config: MaaConfig | GeneralConfig
-        users: any[]
-      }
+          uid: string
+          type: string
+          name: string
+          config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
+          users: any[]
+        }
+      | {
+          uid: string
+          type: string
+          name: string
+          config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
+          users: any[]
+        }
     >[]
   > => {
     loading.value = true
@@ -305,17 +333,15 @@ export function useScriptApi() {
                             ? maaUserData.Task.IfRecruit
                             : true,
                         IfInfrast:
-                          maaUserData.Task?.IfInfrast !== undefined ? maaUserData.Task.IfInfrast : true,
-                        IfFight:
-                          maaUserData.Task?.IfFight !== undefined
-                            ? maaUserData.Task.IfFight
+                          maaUserData.Task?.IfInfrast !== undefined
+                            ? maaUserData.Task.IfInfrast
                             : true,
+                        IfFight:
+                          maaUserData.Task?.IfFight !== undefined ? maaUserData.Task.IfFight : true,
                         IfMall:
                           maaUserData.Task?.IfMall !== undefined ? maaUserData.Task.IfMall : true,
                         IfAward:
-                          maaUserData.Task?.IfAward !== undefined
-                            ? maaUserData.Task.IfAward
-                            : true,
+                          maaUserData.Task?.IfAward !== undefined ? maaUserData.Task.IfAward : true,
                         IfRoguelike:
                           maaUserData.Task?.IfRoguelike !== undefined
                             ? maaUserData.Task.IfRoguelike
@@ -410,7 +436,8 @@ export function useScriptApi() {
                           srcUserData.Stage?.Channel !== undefined
                             ? srcUserData.Stage.Channel
                             : 'Relic',
-                        Relic: srcUserData.Stage?.Relic !== undefined ? srcUserData.Stage.Relic : '-',
+                        Relic:
+                          srcUserData.Stage?.Relic !== undefined ? srcUserData.Stage.Relic : '-',
                         Materials:
                           srcUserData.Stage?.Materials !== undefined
                             ? srcUserData.Stage.Materials
@@ -476,7 +503,9 @@ export function useScriptApi() {
                             ? srcUserData.Data.LastProxyDate
                             : '',
                         ProxyTimes:
-                          srcUserData.Data?.ProxyTimes !== undefined ? srcUserData.Data.ProxyTimes : 0,
+                          srcUserData.Data?.ProxyTimes !== undefined
+                            ? srcUserData.Data.ProxyTimes
+                            : 0,
                         IfPassCheck:
                           srcUserData.Data?.IfPassCheck !== undefined
                             ? srcUserData.Data.IfPassCheck
@@ -521,7 +550,8 @@ export function useScriptApi() {
                           generalUserData.Info?.Notes !== undefined
                             ? generalUserData.Info.Notes
                             : '',
-                        Tag: generalUserData.Info?.Tag !== undefined ? generalUserData.Info.Tag : null,
+                        Tag:
+                          generalUserData.Info?.Tag !== undefined ? generalUserData.Info.Tag : null,
                       },
                       Notify: {
                         Enabled:
@@ -562,6 +592,121 @@ export function useScriptApi() {
                           generalUserData.Data?.ProxyTimes !== undefined
                             ? generalUserData.Data.ProxyTimes
                             : 0,
+                      },
+                    }
+                  } else if (userIndex.type === 'MaaEndUserConfig' && userData) {
+                    const maaEndUserData = userData as any
+                    return {
+                      id: userIndex.uid,
+                      name: maaEndUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name:
+                          maaEndUserData.Info?.Name !== undefined
+                            ? maaEndUserData.Info.Name
+                            : `用户${userIndex.uid}`,
+                        Id: maaEndUserData.Info?.Id !== undefined ? maaEndUserData.Info.Id : '',
+                        Password:
+                          maaEndUserData.Info?.Password !== undefined
+                            ? maaEndUserData.Info.Password
+                            : '',
+                        Mode:
+                          maaEndUserData.Info?.Mode !== undefined
+                            ? maaEndUserData.Info.Mode
+                            : '简洁',
+                        Resource:
+                          maaEndUserData.Info?.Resource !== undefined
+                            ? maaEndUserData.Info.Resource
+                            : '',
+                        Status:
+                          maaEndUserData.Info?.Status !== undefined
+                            ? maaEndUserData.Info.Status
+                            : true,
+                        RemainedDay:
+                          maaEndUserData.Info?.RemainedDay !== undefined
+                            ? maaEndUserData.Info.RemainedDay
+                            : -1,
+                        IfSkland:
+                          maaEndUserData.Info?.IfSkland !== undefined
+                            ? maaEndUserData.Info.IfSkland
+                            : false,
+                        SklandToken:
+                          maaEndUserData.Info?.SklandToken !== undefined
+                            ? maaEndUserData.Info.SklandToken
+                            : '',
+                        Notes:
+                          maaEndUserData.Info?.Notes !== undefined ? maaEndUserData.Info.Notes : '',
+                        Tag:
+                          maaEndUserData.Info?.Tag !== undefined ? maaEndUserData.Info.Tag : null,
+                      },
+                      Task: {
+                        ProtocolSpaceTab:
+                          maaEndUserData.Task?.ProtocolSpaceTab !== undefined
+                            ? maaEndUserData.Task.ProtocolSpaceTab
+                            : 'OperatorProgression',
+                        OperatorProgression:
+                          maaEndUserData.Task?.OperatorProgression !== undefined
+                            ? maaEndUserData.Task.OperatorProgression
+                            : 'OperatorEXP',
+                        WeaponProgression:
+                          maaEndUserData.Task?.WeaponProgression !== undefined
+                            ? maaEndUserData.Task.WeaponProgression
+                            : 'WeaponEXP',
+                        CrisisDrills:
+                          maaEndUserData.Task?.CrisisDrills !== undefined
+                            ? maaEndUserData.Task.CrisisDrills
+                            : 'AdvancedProgression1',
+                        RewardsSetOption:
+                          maaEndUserData.Task?.RewardsSetOption !== undefined
+                            ? maaEndUserData.Task.RewardsSetOption
+                            : 'RewardsSetA',
+                      },
+                      Notify: {
+                        Enabled:
+                          maaEndUserData.Notify?.Enabled !== undefined
+                            ? maaEndUserData.Notify.Enabled
+                            : false,
+                        IfSendStatistic:
+                          maaEndUserData.Notify?.IfSendStatistic !== undefined
+                            ? maaEndUserData.Notify.IfSendStatistic
+                            : false,
+                        IfSendMail:
+                          maaEndUserData.Notify?.IfSendMail !== undefined
+                            ? maaEndUserData.Notify.IfSendMail
+                            : false,
+                        ToAddress:
+                          maaEndUserData.Notify?.ToAddress !== undefined
+                            ? maaEndUserData.Notify.ToAddress
+                            : '',
+                        IfServerChan:
+                          maaEndUserData.Notify?.IfServerChan !== undefined
+                            ? maaEndUserData.Notify.IfServerChan
+                            : false,
+                        ServerChanKey:
+                          maaEndUserData.Notify?.ServerChanKey !== undefined
+                            ? maaEndUserData.Notify.ServerChanKey
+                            : '',
+                        CustomWebhooks:
+                          maaEndUserData.Notify?.CustomWebhooks !== undefined
+                            ? maaEndUserData.Notify.CustomWebhooks
+                            : [],
+                      },
+                      Data: {
+                        LastProxyDate:
+                          maaEndUserData.Data?.LastProxyDate !== undefined
+                            ? maaEndUserData.Data.LastProxyDate
+                            : '',
+                        LastSklandDate:
+                          maaEndUserData.Data?.LastSklandDate !== undefined
+                            ? maaEndUserData.Data.LastSklandDate
+                            : '',
+                        ProxyTimes:
+                          maaEndUserData.Data?.ProxyTimes !== undefined
+                            ? maaEndUserData.Data.ProxyTimes
+                            : 0,
+                        IfPassCheck:
+                          maaEndUserData.Data?.IfPassCheck !== undefined
+                            ? maaEndUserData.Data.IfPassCheck
+                            : false,
                       },
                     }
                   }
@@ -626,7 +771,14 @@ export function useScriptApi() {
 
       const item = response.index[0]
       const config = response.data[item.uid]
-      const scriptType: ScriptType = item.type === 'MaaConfig' ? 'MAA' : item.type === 'SrcConfig' ? 'SRC' : 'General'
+      const scriptType: ScriptType =
+        item.type === 'MaaConfig'
+          ? 'MAA'
+          : item.type === 'SrcConfig'
+            ? 'SRC'
+            : item.type === 'MaaEndConfig'
+              ? 'MaaEnd'
+              : 'General'
 
       return {
         uid: item.uid,

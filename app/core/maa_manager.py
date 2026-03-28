@@ -27,7 +27,7 @@ from typing import Any
 
 from maa.tasker import Tasker
 from maa.context import Context
-from maa.toolkit import Toolkit
+from maa.toolkit import Toolkit, AdbDevice
 from maa.resource import Resource
 from maa.custom_action import CustomAction
 
@@ -131,7 +131,7 @@ class _MaaFWManager:
         return tasker
 
     @staticmethod
-    async def convert_adb(raw_info: DeviceInfo) -> tuple[Path, str]:
+    async def convert_adb(raw_info: DeviceInfo) -> AdbDevice:
         """
         将设备信息转换为ADB连接所需的地址格式
 
@@ -139,7 +139,7 @@ class _MaaFWManager:
             raw_info(DeviceInfo): 包含设备信息的对象
 
         Returns:
-            Tuple[Path, str]: 包含 ADB 连接地址和 ADB 路径的元组
+            AdbDevice: 表示 ADB 设备的对象
 
         Raises:
             RuntimeError: 如果无法找到指定设备，则抛出异常，异常信息包含相关的错误信息
@@ -147,7 +147,7 @@ class _MaaFWManager:
 
         for emulator in Toolkit.find_adb_devices():
             if raw_info.adb_address == emulator.address:
-                return emulator.adb_path, emulator.address
+                return emulator
         else:
             raise RuntimeError("无法找到指定设备")
 
@@ -172,14 +172,18 @@ class _MaaFWManager:
             RuntimeError: 如果无法连接到指定设备或初始化 MaaFW 失败，则抛出异常，异常信息包含相关的错误信息
         """
 
-        adb_path, address = await self.convert_adb(device_info)
+        adb_device = await self.convert_adb(device_info)
 
         logger.info(
-            f"正在连接设备: {device_info.title}, ADB 路径: {adb_path}, 设备地址: {address}, 屏幕捕获方法: {screencap_methods}, 输入方法: {input_methods}"
+            f"正在连接设备: {device_info.title}, ADB 路径: {adb_device.adb_path}, 设备地址: {adb_device.address}, 屏幕捕获方法: {screencap_methods}, 输入方法: {input_methods}"
         )
 
         controller = AdbController(
-            adb_path, address, screencap_methods, input_methods, config
+            adb_device.adb_path,
+            adb_device.address,
+            screencap_methods,
+            input_methods,
+            config,
         )
         await self.do_job(controller.post_connection())
 
@@ -253,14 +257,18 @@ class _MaaFWManager:
             RuntimeError: 如果无法连接到指定设备或初始化 MaaFW 失败，则抛出异常，异常信息包含相关的错误信息
         """
 
-        adb_path, address = await self.convert_adb(device_info)
+        adb_device = await self.convert_adb(device_info)
 
         logger.info(
-            f"正在重新连接设备: {device_info.title}, ADB 路径: {adb_path}, 设备地址: {address}, 屏幕捕获方法: {screencap_methods}, 输入方法: {input_methods}"
+            f"正在重新连接设备: {device_info.title}, ADB 路径: {adb_device.adb_path}, 设备地址: {adb_device.address}, 屏幕捕获方法: {screencap_methods}, 输入方法: {input_methods}"
         )
 
         controller = AdbController(
-            adb_path, address, screencap_methods, input_methods, config
+            adb_device.adb_path,
+            adb_device.address,
+            screencap_methods,
+            input_methods,
+            config,
         )
         await self.do_job(controller.post_connection())
 

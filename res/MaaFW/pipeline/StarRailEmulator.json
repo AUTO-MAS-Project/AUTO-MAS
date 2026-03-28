@@ -1,5 +1,5 @@
 {
-    "禁用日志-密码": {
+    "禁用日志-密码[StarRailEmulator]": {
         "action": {
             "type": "Custom",
             "param": {
@@ -7,10 +7,10 @@
             }
         },
         "next": [
-            "输入密码"
+            "输入密码[StarRailEmulator]"
         ]
     },
-    "禁用日志-账号": {
+    "禁用日志-账号[StarRailEmulator]": {
         "action": {
             "type": "Custom",
             "param": {
@@ -18,10 +18,10 @@
             }
         },
         "next": [
-            "输入账号"
+            "输入账号[StarRailEmulator]"
         ]
     },
-    "禁用日志-账号-B服": {
+    "禁用日志-账号-B服[StarRailEmulator]": {
         "action": {
             "type": "Custom",
             "param": {
@@ -29,10 +29,10 @@
             }
         },
         "next": [
-            "输入账号-B服"
+            "输入账号-B服[StarRailEmulator]"
         ]
     },
-    "禁用日志-密码-B服": {
+    "禁用日志-密码-B服[StarRailEmulator]": {
         "action": {
             "type": "Custom",
             "param": {
@@ -40,10 +40,10 @@
             }
         },
         "next": [
-            "输入密码-B服"
+            "输入密码-B服[StarRailEmulator]"
         ]
     },
-    "恢复日志-密码": {
+    "恢复日志-密码[StarRailEmulator]": {
         "action": {
             "type": "Custom",
             "param": {
@@ -51,11 +51,11 @@
             }
         },
         "next": [
-            "同意协议",
-            "已同意协议"
+            "同意协议[StarRailEmulator]",
+            "已同意协议[StarRailEmulator]"
         ]
     },
-    "恢复日志-账号-B服": {
+    "恢复日志-账号-B服[StarRailEmulator]": {
         "action": {
             "type": "Custom",
             "param": {
@@ -63,10 +63,10 @@
             }
         },
         "next": [
-            "点击密码框-B服"
+            "点击密码框-B服[StarRailEmulator]"
         ]
     },
-    "恢复日志-密码-B服": {
+    "恢复日志-密码-B服[StarRailEmulator]": {
         "action": {
             "type": "Custom",
             "param": {
@@ -74,10 +74,10 @@
             }
         },
         "next": [
-            "进入游戏-B服-低"
+            "进入游戏-B服-低[StarRailEmulator]"
         ]
     },
-    "恢复日志-账号": {
+    "恢复日志-账号[StarRailEmulator]": {
         "action": {
             "type": "Custom",
             "param": {
@@ -85,10 +85,10 @@
             }
         },
         "next": [
-            "点击密码框"
+            "点击密码框[StarRailEmulator]"
         ]
     },
-    "Bilibili隐私政策": {
+    "Bilibili隐私政策[StarRailEmulator]": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -107,10 +107,10 @@
         },
         "enabled": false,
         "next": [
-            "同意Bilibili隐私政策"
+            "同意Bilibili隐私政策[StarRailEmulator]"
         ]
     },
-    "同意Bilibili隐私政策": {
+    "同意Bilibili隐私政策[StarRailEmulator]": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -132,12 +132,12 @@
         },
         "timeout": 600000,
         "next": [
-            "登出",
-            "登入",
-            "登录下拉框展开-B服"
+            "登出[StarRailEmulator]",
+            "登入[StarRailEmulator]",
+            "登录下拉框展开-B服[StarRailEmulator]"
         ]
     },
-    "登录下拉框展开-B服": {
+    "登录下拉框展开-B服[StarRailEmulator]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -157,11 +157,11 @@
             "param": {}
         },
         "next": [
-            "选中账号-B服",
-            "下滑账号列表-B服"
+            "选中账号-B服[StarRailEmulator]",
+            "下滑账号列表-B服[StarRailEmulator]"
         ]
     },
-    "登入": {
+    "登入[StarRailEmulator]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -181,12 +181,12 @@
             "param": {}
         },
         "next": [
-            "登录下拉框展开",
-            "登录下拉框展开-B服",
-            "识别登录下拉框禁用"
+            "登录下拉框展开[StarRailEmulator]",
+            "登录下拉框展开-B服[StarRailEmulator]",
+            "识别登录下拉框禁用[StarRailEmulator]"
         ]
     },
-    "下滑账号列表-B服": {
+    "下滑账号列表-B服[StarRailEmulator]": {
         "action": {
             "type": "Swipe",
             "param": {
@@ -209,14 +209,14 @@
         "timeout": 5000,
         "max_hit": 20,
         "next": [
-            "选中账号-B服",
-            "下滑账号列表-B服"
+            "选中账号-B服[StarRailEmulator]",
+            "下滑账号列表-B服[StarRailEmulator]"
         ],
         "on_error": [
-            "登录下拉框折叠-B服"
+            "登录下拉框折叠-B服[StarRailEmulator]"
         ]
     },
-    "选中账号-B服": {
+    "选中账号-B服[StarRailEmulator]": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -237,10 +237,10 @@
             "param": {}
         },
         "next": [
-            "进入游戏-B服-高"
+            "进入游戏-B服-高[StarRailEmulator]"
         ]
     },
-    "进入游戏-B服-高": {
+    "进入游戏-B服-高[StarRailEmulator]": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -262,10 +262,10 @@
         },
         "timeout": 60000,
         "next": [
-            "识别公告"
+            "识别公告[StarRailEmulator]"
         ]
     },
-    "登录下拉框折叠-B服": {
+    "登录下拉框折叠-B服[StarRailEmulator]": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -286,10 +286,10 @@
             "param": {}
         },
         "next": [
-            "切换其他账号"
+            "切换其他账号[StarRailEmulator]"
         ]
     },
-    "切换其他账号": {
+    "切换其他账号[StarRailEmulator]": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -310,11 +310,11 @@
             "param": {}
         },
         "next": [
-            "同意协议-B服",
-            "已同意协议-B服"
+            "同意协议-B服[StarRailEmulator]",
+            "已同意协议-B服[StarRailEmulator]"
         ]
     },
-    "账号密码-B服": {
+    "账号密码-B服[StarRailEmulator]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -334,10 +334,10 @@
             "param": {}
         },
         "next": [
-            "点击账号框-B服"
+            "点击账号框-B服[StarRailEmulator]"
         ]
     },
-    "已同意协议-B服": {
+    "已同意协议-B服[StarRailEmulator]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -353,10 +353,10 @@
             }
         },
         "next": [
-            "账号密码-B服"
+            "账号密码-B服[StarRailEmulator]"
         ]
     },
-    "点击账号框-B服": {
+    "点击账号框-B服[StarRailEmulator]": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -380,10 +380,10 @@
             "param": {}
         },
         "next": [
-            "禁用日志-账号-B服"
+            "禁用日志-账号-B服[StarRailEmulator]"
         ]
     },
-    "输入账号-B服": {
+    "输入账号-B服[StarRailEmulator]": {
         "action": {
             "type": "InputText",
             "param": {
@@ -391,10 +391,10 @@
             }
         },
         "next": [
-            "恢复日志-账号-B服"
+            "恢复日志-账号-B服[StarRailEmulator]"
         ]
     },
-    "输入密码-B服": {
+    "输入密码-B服[StarRailEmulator]": {
         "action": {
             "type": "InputText",
             "param": {
@@ -402,10 +402,10 @@
             }
         },
         "next": [
-            "恢复日志-密码-B服"
+            "恢复日志-密码-B服[StarRailEmulator]"
         ]
     },
-    "点击密码框-B服": {
+    "点击密码框-B服[StarRailEmulator]": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -427,10 +427,10 @@
             "param": {}
         },
         "next": [
-            "禁用日志-密码-B服"
+            "禁用日志-密码-B服[StarRailEmulator]"
         ]
     },
-    "进入游戏-B服-低": {
+    "进入游戏-B服-低[StarRailEmulator]": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -452,10 +452,10 @@
         },
         "timeout": 60000,
         "next": [
-            "识别公告"
+            "识别公告[StarRailEmulator]"
         ]
     },
-    "登出": {
+    "登出[StarRailEmulator]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -475,10 +475,10 @@
             "param": {}
         },
         "next": [
-            "识别切换账号"
+            "识别切换账号[StarRailEmulator]"
         ]
     },
-    "确认切换账号": {
+    "确认切换账号[StarRailEmulator]": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -499,12 +499,12 @@
             "param": {}
         },
         "next": [
-            "登录下拉框展开",
-            "识别登录下拉框禁用",
-            "登录下拉框展开-B服"
+            "登录下拉框展开[StarRailEmulator]",
+            "识别登录下拉框禁用[StarRailEmulator]",
+            "登录下拉框展开-B服[StarRailEmulator]"
         ]
     },
-    "识别切换账号": {
+    "识别切换账号[StarRailEmulator]": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -521,10 +521,10 @@
             }
         },
         "next": [
-            "确认切换账号"
+            "确认切换账号[StarRailEmulator]"
         ]
     },
-    "登录其他账号": {
+    "登录其他账号[StarRailEmulator]": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -545,10 +545,10 @@
             "param": {}
         },
         "next": [
-            "账号密码"
+            "账号密码[StarRailEmulator]"
         ]
     },
-    "账号密码": {
+    "账号密码[StarRailEmulator]": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -569,10 +569,10 @@
             "param": {}
         },
         "next": [
-            "点击账号框"
+            "点击账号框[StarRailEmulator]"
         ]
     },
-    "点击账号框": {
+    "点击账号框[StarRailEmulator]": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -595,10 +595,10 @@
             "param": {}
         },
         "next": [
-            "禁用日志-账号"
+            "禁用日志-账号[StarRailEmulator]"
         ]
     },
-    "输入账号": {
+    "输入账号[StarRailEmulator]": {
         "action": {
             "type": "InputText",
             "param": {
@@ -606,10 +606,10 @@
             }
         },
         "next": [
-            "恢复日志-账号"
+            "恢复日志-账号[StarRailEmulator]"
         ]
     },
-    "点击密码框": {
+    "点击密码框[StarRailEmulator]": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -631,10 +631,10 @@
             "param": {}
         },
         "next": [
-            "禁用日志-密码"
+            "禁用日志-密码[StarRailEmulator]"
         ]
     },
-    "输入密码": {
+    "输入密码[StarRailEmulator]": {
         "action": {
             "type": "InputText",
             "param": {
@@ -642,10 +642,10 @@
             }
         },
         "next": [
-            "恢复日志-密码"
+            "恢复日志-密码[StarRailEmulator]"
         ]
     },
-    "同意协议": {
+    "同意协议[StarRailEmulator]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -665,10 +665,10 @@
             "param": {}
         },
         "next": [
-            "已同意协议"
+            "已同意协议[StarRailEmulator]"
         ]
     },
-    "已同意协议": {
+    "已同意协议[StarRailEmulator]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -684,10 +684,10 @@
             }
         },
         "next": [
-            "进入游戏-低"
+            "进入游戏-低[StarRailEmulator]"
         ]
     },
-    "进入游戏-低": {
+    "进入游戏-低[StarRailEmulator]": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -709,10 +709,10 @@
         },
         "timeout": 60000,
         "next": [
-            "识别公告"
+            "识别公告[StarRailEmulator]"
         ]
     },
-    "启动游戏": {
+    "启动游戏[StarRailEmulator]": {
         "action": {
             "type": "StartApp",
             "param": {
@@ -721,15 +721,15 @@
         },
         "timeout": 600000,
         "next": [
-            "登出",
-            "登入",
-            "登录下拉框展开",
-            "识别登录下拉框禁用",
-            "登录下拉框展开-B服",
-            "Bilibili隐私政策"
+            "登出[StarRailEmulator]",
+            "登入[StarRailEmulator]",
+            "登录下拉框展开[StarRailEmulator]",
+            "识别登录下拉框禁用[StarRailEmulator]",
+            "登录下拉框展开-B服[StarRailEmulator]",
+            "Bilibili隐私政策[StarRailEmulator]"
         ]
     },
-    "登录下拉框展开": {
+    "登录下拉框展开[StarRailEmulator]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -749,11 +749,11 @@
             "param": {}
         },
         "next": [
-            "选中账号",
-            "下滑账号列表"
+            "选中账号[StarRailEmulator]",
+            "下滑账号列表[StarRailEmulator]"
         ]
     },
-    "选中账号": {
+    "选中账号[StarRailEmulator]": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -774,10 +774,10 @@
             "param": {}
         },
         "next": [
-            "进入游戏-高"
+            "进入游戏-高[StarRailEmulator]"
         ]
     },
-    "下滑账号列表": {
+    "下滑账号列表[StarRailEmulator]": {
         "action": {
             "type": "Swipe",
             "param": {
@@ -800,14 +800,14 @@
         "max_hit": 20,
         "timeout": 5000,
         "next": [
-            "选中账号",
-            "下滑账号列表"
+            "选中账号[StarRailEmulator]",
+            "下滑账号列表[StarRailEmulator]"
         ],
         "on_error": [
-            "登录下拉框折叠"
+            "登录下拉框折叠[StarRailEmulator]"
         ]
     },
-    "登录下拉框折叠": {
+    "登录下拉框折叠[StarRailEmulator]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -827,10 +827,10 @@
             "param": {}
         },
         "next": [
-            "登录其他账号"
+            "登录其他账号[StarRailEmulator]"
         ]
     },
-    "进入游戏-高": {
+    "进入游戏-高[StarRailEmulator]": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -852,10 +852,10 @@
         },
         "timeout": 60000,
         "next": [
-            "识别公告"
+            "识别公告[StarRailEmulator]"
         ]
     },
-    "识别公告": {
+    "识别公告[StarRailEmulator]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -871,7 +871,7 @@
             }
         }
     },
-    "同意协议-B服": {
+    "同意协议-B服[StarRailEmulator]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -891,10 +891,10 @@
             "param": {}
         },
         "next": [
-            "已同意协议-B服"
+            "已同意协议-B服[StarRailEmulator]"
         ]
     },
-    "识别登录下拉框禁用": {
+    "识别登录下拉框禁用[StarRailEmulator]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
@@ -911,13 +911,13 @@
         },
         "timeout": 5000,
         "next": [
-            "验证当前账号"
+            "验证当前账号[StarRailEmulator]"
         ],
         "on_error": [
-            "登录其他账号"
+            "登录其他账号[StarRailEmulator]"
         ]
     },
-    "验证当前账号": {
+    "验证当前账号[StarRailEmulator]": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -934,10 +934,10 @@
             }
         },
         "next": [
-            "进入游戏-高"
+            "进入游戏-高[StarRailEmulator]"
         ]
     },
-    "切换账号-星穹铁道": {
+    "切换账号[StarRailEmulator]": {
         "action": {
             "type": "StopApp",
             "param": {
@@ -945,7 +945,7 @@
             }
         },
         "next": [
-            "启动游戏"
+            "启动游戏[StarRailEmulator]"
         ]
     }
 }

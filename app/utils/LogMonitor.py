@@ -25,7 +25,7 @@ from contextlib import suppress
 from datetime import datetime, timedelta, date
 from copy import copy
 from pathlib import Path
-from typing import Callable, Optional, List, Awaitable
+from typing import Callable, Optional, Awaitable
 
 from .constants import TIME_FIELDS, ANSI_ESCAPE_RE
 from .logger import get_logger
@@ -55,27 +55,35 @@ class LogMonitor:
         self,
         time_stamp_range: tuple[int, int],
         time_format: str,
-        callback: Callable[[List[str], datetime], Awaitable[None]],
-        except_logs: List[str] = [],
+        callback: Callable[[list[str], datetime], Awaitable[None]],
+        except_logs: list[str] | None = None,
+        parse_log: Callable[[list[str]], list[str]] | None = None,
     ):
         self.time_start = time_stamp_range[0]
         self.time_end = time_stamp_range[1]
         self.time_format = time_format
         self.callback = callback
-        self.except_logs = except_logs
+        self.except_logs = except_logs or []
+        self.parse_log = parse_log
         self.last_callback_time: datetime = datetime.now()
-        self.log_contents: List[str] = []
+        self.log_contents: list[str] = []
         self.latest_time = datetime.now()
         self.task: Optional[asyncio.Task] = None
 
-    async def monitor_file(self, log_file_path: Path, log_start_time: datetime):
-        """监控日志文件的主循环"""
+    async def monitor_file(
+        self,
+        log_file_path: Path,
+        log_start_time: datetime,
+        bak_log_path: Path | None = None,
+    ):
+        """监控日志文件"""
 
         logger.info(f"开始监控日志文件: {log_file_path}")
 
         await self.update_latest_timestamp("", if_init=True)
 
         if_mtime_checked = False
+        warned_mtime_date: date | None = None
         if_log_start = False
         offset = 0
         log_contents = []
@@ -90,13 +98,14 @@ class LogMonitor:
                 continue
 
             if not if_mtime_checked:
-                if date.fromtimestamp(log_file_path.stat().st_mtime) == date.today():
+                file_mtime_date = date.fromtimestamp(log_file_path.stat().st_mtime)
+                if file_mtime_date == date.today():
                     log_stat = log_file_path.stat()
                     if_mtime_checked = True
                 else:
-                    logger.warning(
-                        f"日志文件今天未被修改: {date.fromtimestamp(log_file_path.stat().st_mtime)}"
-                    )
+                    if warned_mtime_date != file_mtime_date:
+                        logger.warning(f"日志文件今天未被修改: {file_mtime_date}")
+                        warned_mtime_date = file_mtime_date
                     await self.do_callback()
                     await asyncio.sleep(1)
                     continue
@@ -104,6 +113,7 @@ class LogMonitor:
             # 尝试读取文件
             try:
 
+                # 发生日志轮转或文件被替换，重置监控状态并加载被轮换的旧日志
                 if (
                     log_stat.st_ino != log_file_path.stat().st_ino
                     or log_stat.st_size > log_file_path.stat().st_size
@@ -111,6 +121,22 @@ class LogMonitor:
                     offset = 0
                     log_contents = []
                     if_log_start = False
+                    if bak_log_path is not None and bak_log_path.exists():
+                        async with aiofiles.open(bak_log_path, "rb") as f:
+                            async for bline in f:
+                                line = decode_bytes(bline)
+                                if not if_log_start:
+                                    with suppress(IndexError, ValueError):
+                                        entry_time = strptime(
+                                            line[self.time_start : self.time_end],
+                                            self.time_format,
+                                            self.last_callback_time,
+                                        )
+                                        if entry_time > log_start_time:
+                                            if_log_start = True
+                                            log_contents.append(line)
+                                else:
+                                    log_contents.append(line)
 
                 log_stat = log_file_path.stat()
 
@@ -156,7 +182,7 @@ class LogMonitor:
             await asyncio.sleep(1)
 
     async def monitor_process(self, process: asyncio.subprocess.Process):
-        """监控日志文件的主循环"""
+        """监控进程日志"""
 
         logger.info(f"开始监控进程日志: {process.pid}")
 
@@ -187,7 +213,15 @@ class LogMonitor:
         """安全调用回调函数"""
         self.last_callback_time = datetime.now()
         try:
-            await self.callback(self.log_contents, self.latest_time)
+            if self.parse_log is None:
+                await self.callback(self.log_contents, self.latest_time)
+            else:
+                await self.callback(
+                    await asyncio.get_running_loop().run_in_executor(
+                        None, self.parse_log, self.log_contents
+                    ),
+                    self.latest_time,
+                )
         except Exception as e:
             logger.error(f"回调函数执行失败: {e}")
 
@@ -212,7 +246,10 @@ class LogMonitor:
                 self.last_log = log_text
 
     async def start_monitor_file(
-        self, log_file_path: Path, start_time: datetime
+        self,
+        log_file_path: Path,
+        start_time: datetime,
+        bak_log_path: Path | None = None,
     ) -> None:
         """
         开始监控日志文件
@@ -228,7 +265,9 @@ class LogMonitor:
         if self.task is not None and not self.task.done():
             await self.stop()
 
-        self.task = asyncio.create_task(self.monitor_file(log_file_path, start_time))
+        self.task = asyncio.create_task(
+            self.monitor_file(log_file_path, start_time, bak_log_path)
+        )
         logger.info(f"日志文件监控已启动: {log_file_path}")
 
     async def start_monitor_process(self, process: asyncio.subprocess.Process) -> None:
