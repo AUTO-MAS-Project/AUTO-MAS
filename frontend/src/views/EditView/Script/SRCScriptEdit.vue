@@ -87,7 +87,7 @@
                 <template #label>
                   <a-tooltip title="选择要使用的模拟器">
                     <span class="form-label">
-                      模拟器选择
+                      模拟器
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -161,7 +161,7 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="srcConfig.Run.ProxyTimesLimit" :min="0" :max="999" size="large"
+                <a-input-number v-model:value="srcConfig.Run.ProxyTimesLimit" :min="0" :max="9999" size="large"
                   class="modern-number-input" style="width: 100%"
                   @blur="handleChange('Run', 'ProxyTimesLimit', srcConfig.Run.ProxyTimesLimit)" />
               </a-form-item>

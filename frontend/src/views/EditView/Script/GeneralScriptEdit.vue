@@ -446,7 +446,7 @@
                 <template #label>
                   <a-tooltip title="选择要使用的模拟器">
                     <span class="form-label">
-                      模拟器选择
+                      模拟器
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -536,7 +536,7 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="generalConfig.Game.WaitTime" :min="0" :max="300" size="large"
+                <a-input-number v-model:value="generalConfig.Game.WaitTime" :min="0" :max="9999" size="large"
                   class="modern-number-input" style="width: 100%"
                   @blur="handleChange('Game', 'WaitTime', generalConfig.Game.WaitTime)" />
               </a-form-item>
@@ -594,7 +594,7 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="generalConfig.Run.ProxyTimesLimit" :min="0" :max="999" size="large"
+                <a-input-number v-model:value="generalConfig.Run.ProxyTimesLimit" :min="0" :max="9999" size="large"
                   class="modern-number-input" style="width: 100%"
                   @blur="handleChange('Run', 'ProxyTimesLimit', generalConfig.Run.ProxyTimesLimit)" />
               </a-form-item>
@@ -609,7 +609,7 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="generalConfig.Run.RunTimesLimit" :min="1" :max="10" size="large"
+                <a-input-number v-model:value="generalConfig.Run.RunTimesLimit" :min="1" :max="9999" size="large"
                   class="modern-number-input" style="width: 100%"
                   @blur="handleChange('Run', 'RunTimesLimit', generalConfig.Run.RunTimesLimit)" />
               </a-form-item>
@@ -624,7 +624,7 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="generalConfig.Run.RunTimeLimit" :min="1" :max="300" size="large"
+                <a-input-number v-model:value="generalConfig.Run.RunTimeLimit" :min="1" :max="9999" size="large"
                   class="modern-number-input" style="width: 100%"
                   @blur="handleChange('Run', 'RunTimeLimit', generalConfig.Run.RunTimeLimit)" />
               </a-form-item>
@@ -668,7 +668,6 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch, nextTick } from 'vue'
-import type { MAAScriptConfig } from '../../../types/script.ts'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'

@@ -50,7 +50,7 @@
                 </div>
               </template>
               <span class="form-label">
-                账号
+                账号ID
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
@@ -69,7 +69,7 @@
               </span>
             </a-tooltip>
           </template>
-          <a-input-password v-model:value="formData.Info.Password" placeholder="密码" :disabled="loading" size="large"
+          <a-input-password v-model:value="formData.Info.Password" placeholder="请输入密码" :disabled="loading" size="large"
             @blur="emitSave('Info.Password', formData.Info.Password)" />
         </a-form-item>
       </a-col>

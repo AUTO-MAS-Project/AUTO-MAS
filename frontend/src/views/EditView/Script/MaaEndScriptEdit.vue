@@ -46,13 +46,8 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input
-                  v-model:value="formData.name"
-                  placeholder="请输入脚本名称"
-                  size="large"
-                  class="modern-input"
-                  @blur="handleChange('Info', 'Name', formData.name)"
-                />
+                <a-input v-model:value="formData.name" placeholder="请输入脚本名称" size="large" class="modern-input"
+                  @blur="handleChange('Info', 'Name', formData.name)" />
               </a-form-item>
             </a-col>
             <a-col :span="16">
@@ -66,13 +61,8 @@
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.path"
-                    placeholder="请选择 MaaEnd.exe 所在目录"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
+                  <a-input v-model:value="formData.path" placeholder="请选择 MaaEnd.exe 所在目录" size="large"
+                    class="path-input" readonly />
                   <a-button size="large" class="path-button" @click="selectMaaEndPath">
                     <template #icon>
                       <FolderOpenOutlined />
@@ -91,40 +81,32 @@
           </div>
 
           <a-row :gutter="24">
-            <a-col :span="8">
+            <a-col :span="12">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
                     控制器
-                    <a-tooltip title="选择运行方式">
+                    <a-tooltip title="选择游戏控制方式">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
-                <a-select
-                  v-model:value="maaEndConfig.Game.ControllerType"
-                  size="large"
-                  :options="controllerOptions"
-                  @change="handleControllerTypeChange"
-                />
+                <a-select v-model:value="maaEndConfig.Game.ControllerType" size="large" :options="controllerOptions"
+                  @change="handleControllerTypeChange" />
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="12">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    完成后关闭游戏
-                    <a-tooltip title="执行完成后是否关闭游戏">
+                    任务结束后关闭游戏
+                    <a-tooltip title="自动登录任务结束后是否关闭游戏">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
-                <a-select
-                  v-model:value="maaEndConfig.Game.CloseOnFinish"
-                  size="large"
-                  :options="booleanOptions"
-                  @change="handleChange('Game', 'CloseOnFinish', $event)"
-                />
+                <a-select v-model:value="maaEndConfig.Game.CloseOnFinish" size="large" :options="booleanOptions"
+                  @change="handleChange('Game', 'CloseOnFinish', $event)" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -135,19 +117,14 @@
                 <template #label>
                   <span class="form-label">
                     游戏路径
-                    <a-tooltip title="仅电脑端控制器需要配置">
+                    <a-tooltip title="选择游戏本体可执行文件的路径">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="maaEndConfig.Game.Path"
-                    placeholder="请选择游戏可执行文件"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
+                  <a-input v-model:value="maaEndConfig.Game.Path" placeholder="请选择游戏可执行文件" size="large"
+                    class="path-input" readonly />
                   <a-button size="large" class="path-button" @click="selectGamePath">
                     <template #icon>
                       <FolderOpenOutlined />
@@ -167,13 +144,8 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input
-                  v-model:value="maaEndConfig.Game.Arguments"
-                  placeholder="可选"
-                  size="large"
-                  class="modern-input"
-                  @blur="handleChange('Game', 'Arguments', maaEndConfig.Game.Arguments)"
-                />
+                <a-input v-model:value="maaEndConfig.Game.Arguments" placeholder="可选" size="large" class="modern-input"
+                  @blur="handleChange('Game', 'Arguments', maaEndConfig.Game.Arguments)" />
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -186,14 +158,8 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input-number
-                  v-model:value="maaEndConfig.Game.WaitTime"
-                  :min="0"
-                  :max="999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Game', 'WaitTime', maaEndConfig.Game.WaitTime)"
-                />
+                <a-input-number v-model:value="maaEndConfig.Game.WaitTime" :min="0" :max="9999" size="large"
+                  style="width: 100%" @blur="handleChange('Game', 'WaitTime', maaEndConfig.Game.WaitTime)" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -203,24 +169,15 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    模拟器 ID
-                    <a-tooltip title="安卓端只配置模拟器 ID 与实例 ID">
+                    模拟器
+                    <a-tooltip title="选择要使用的模拟器">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
-                <a-select
-                  v-model:value="maaEndConfig.Game.EmulatorId"
-                  size="large"
-                  placeholder="请选择模拟器"
-                  :loading="emulatorLoading"
-                  @change="handleEmulatorSelectChange"
-                >
-                  <a-select-option
-                    v-for="item in emulatorOptions"
-                    :key="item.value"
-                    :value="item.value"
-                  >
+                <a-select v-model:value="maaEndConfig.Game.EmulatorId" size="large" placeholder="请选择模拟器"
+                  :loading="emulatorLoading" @change="handleEmulatorSelectChange">
+                  <a-select-option v-for="item in emulatorOptions" :key="item.value" :value="item.value">
                     {{ item.label }}
                   </a-select-option>
                 </a-select>
@@ -230,34 +187,20 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    实例 ID
-                    <a-tooltip title="自动扫描不到时可手动输入">
+                    模拟器实例
+                    <a-tooltip
+                      :title="emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading ? '不支持自动扫描实例的模拟器，请手动输入实例信息' : '选择模拟器的具体实例'">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input
-                  v-if="showManualEmulatorIndexInput"
-                  v-model:value="maaEndConfig.Game.EmulatorIndex"
-                  size="large"
-                  class="modern-input"
-                  placeholder="请输入实例 ID 或 ADB 地址"
-                  @blur="handleChange('Game', 'EmulatorIndex', maaEndConfig.Game.EmulatorIndex)"
-                />
-                <a-select
-                  v-else
-                  v-model:value="maaEndConfig.Game.EmulatorIndex"
-                  size="large"
-                  placeholder="请选择实例"
-                  :loading="emulatorDeviceLoading"
-                  :disabled="!maaEndConfig.Game.EmulatorId"
-                  @change="handleChange('Game', 'EmulatorIndex', $event)"
-                >
-                  <a-select-option
-                    v-for="item in emulatorDeviceOptions"
-                    :key="item.value"
-                    :value="item.value"
-                  >
+                <a-input v-if="showManualEmulatorIndexInput" v-model:value="maaEndConfig.Game.EmulatorIndex"
+                  size="large" class="modern-input" placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
+                  @blur="handleChange('Game', 'EmulatorIndex', maaEndConfig.Game.EmulatorIndex)" />
+                <a-select v-else v-model:value="maaEndConfig.Game.EmulatorIndex" size="large" placeholder="请选择实例"
+                  :loading="emulatorDeviceLoading" :disabled="!maaEndConfig.Game.EmulatorId"
+                  @change="handleChange('Game', 'EmulatorIndex', $event)">
+                  <a-select-option v-for="item in emulatorDeviceOptions" :key="item.value" :value="item.value">
                     {{ item.label }}
                   </a-select-option>
                 </a-select>
@@ -276,19 +219,14 @@
                 <template #label>
                   <span class="form-label">
                     单日代理次数上限
-                    <a-tooltip title="达到后跳过该用户，0 表示不限制">
+                    <a-tooltip title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input-number
-                  v-model:value="maaEndConfig.Run.ProxyTimesLimit"
-                  :min="0"
-                  :max="999"
-                  size="large"
+                <a-input-number v-model:value="maaEndConfig.Run.ProxyTimesLimit" :min="0" :max="9999" size="large"
                   style="width: 100%"
-                  @blur="handleChange('Run', 'ProxyTimesLimit', maaEndConfig.Run.ProxyTimesLimit)"
-                />
+                  @blur="handleChange('Run', 'ProxyTimesLimit', maaEndConfig.Run.ProxyTimesLimit)" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -296,39 +234,27 @@
                 <template #label>
                   <span class="form-label">
                     重试次数限制
-                    <a-tooltip title="任务失败后的最大重试次数">
+                    <a-tooltip title="若重试超过该次数限制仍未完成代理，视为代理失败">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input-number
-                  v-model:value="maaEndConfig.Run.RunTimesLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', maaEndConfig.Run.RunTimesLimit)"
-                />
+                <a-input-number v-model:value="maaEndConfig.Run.RunTimesLimit" :min="1" :max="9999" size="large"
+                  style="width: 100%" @blur="handleChange('Run', 'RunTimesLimit', maaEndConfig.Run.RunTimesLimit)" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    运行超时限制
-                    <a-tooltip title="日志长时间无变化时判定为超时，单位分钟">
+                    代理超时限制（分钟）
+                    <a-tooltip title="执行代理任务时，脚本日志无变化时间超过该阀值视为超时">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input-number
-                  v-model:value="maaEndConfig.Run.RunTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimeLimit', maaEndConfig.Run.RunTimeLimit)"
-                />
+                <a-input-number v-model:value="maaEndConfig.Run.RunTimeLimit" :min="1" :max="9999" size="large"
+                  style="width: 100%" @blur="handleChange('Run', 'RunTimeLimit', maaEndConfig.Run.RunTimeLimit)" />
               </a-form-item>
             </a-col>
           </a-row>
@@ -511,16 +437,16 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
     const gamePayload =
       value === 'ADB'
         ? {
-            ControllerType: value,
-            Path: '',
-            Arguments: '',
-            WaitTime: 15,
-          }
+          ControllerType: value,
+          Path: '',
+          Arguments: '',
+          WaitTime: 15,
+        }
         : {
-            ControllerType: value,
-            EmulatorId: '',
-            EmulatorIndex: '',
-          }
+          ControllerType: value,
+          EmulatorId: '',
+          EmulatorIndex: '',
+        }
 
     if (value !== 'ADB') {
       emulatorDeviceOptions.value = []
