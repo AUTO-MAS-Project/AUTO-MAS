@@ -24,11 +24,11 @@ import uuid
 import asyncio
 from typing import Dict, Literal
 
-from .config import Config, MaaConfig, SrcConfig, GeneralConfig
+from .config import Config, MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig
 from app.services import System
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
 from app.utils import get_logger
-from app.task import MaaManager, SrcManager, GeneralManager
+from app.task import MaaManager, SrcManager, GeneralManager, MaaEndManager
 from app.utils.constants import POWER_SIGN_MAP
 
 
@@ -137,6 +137,8 @@ class Task(TaskExecuteBase):
                 task_item = SrcManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], GeneralConfig):
                 task_item = GeneralManager(script_item)
+            elif isinstance(Config.ScriptConfig[current_script_uid], MaaEndConfig):
+                task_item = MaaEndManager(script_item)
             else:
                 logger.error(
                     f"不支持的脚本类型: {type(Config.ScriptConfig[current_script_uid]).__name__}"
@@ -193,7 +195,7 @@ class _TaskManager:
         self,
         mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"],
         id: str,
-        new_task_info: dict = {},
+        new_task_info: dict | None = None,
     ) -> uuid.UUID:
         """
         添加任务, 根据 id 值搜索实际指向的任务配置

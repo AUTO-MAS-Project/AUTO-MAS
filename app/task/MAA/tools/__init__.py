@@ -23,7 +23,6 @@
 
 from .bilibili import agree_bilibili
 from .notify import push_notification
-from .skland import skland_sign_in
 from .UpdateMAA import update_maa
 
-__all__ = ["agree_bilibili", "push_notification", "skland_sign_in", "update_maa"]
+__all__ = ["agree_bilibili", "push_notification", "update_maa"]

@@ -42,11 +42,13 @@ from app.models.config import (
     GeneralConfig,
     MaaConfig,
     SrcConfig,
+    MaaEndConfig,
     MaaPlanConfig,
     QueueConfig,
     QueueItem,
     MaaUserConfig,
     SrcUserConfig,
+    MaaEndUserConfig,
     GeneralUserConfig,
     GlobalConfig,
     CLASS_BOOK,
@@ -522,8 +524,10 @@ class AppConfig(GlobalConfig):
         return is_latest, commit_hash, commit_time
 
     async def add_script(
-        self, script: Literal["MAA", "SRC", "General"], script_id: str | None = None
-    ) -> tuple[uuid.UUID, MaaConfig | SrcConfig | GeneralConfig]:
+        self,
+        script: Literal["MAA", "SRC", "General", "MaaEnd"],
+        script_id: str | None = None,
+    ) -> tuple[uuid.UUID, MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig]:
         """添加脚本配置"""
 
         logger.info(f"添加脚本配置: {script}, 从 {script_id} 复制")
@@ -802,7 +806,9 @@ class AppConfig(GlobalConfig):
 
     async def add_user(
         self, script_id: str
-    ) -> tuple[uuid.UUID, MaaUserConfig | SrcUserConfig | GeneralUserConfig]:
+    ) -> tuple[
+        uuid.UUID, MaaUserConfig | SrcUserConfig | GeneralUserConfig | MaaEndUserConfig
+    ]:
         """添加用户配置"""
 
         logger.info(f"{script_id} 添加用户配置")
@@ -816,6 +822,8 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(SrcUserConfig)
         elif isinstance(script_config, GeneralConfig):
             uid, config = await script_config.UserData.add(GeneralUserConfig)
+        elif isinstance(script_config, MaaEndConfig):
+            uid, config = await script_config.UserData.add(MaaEndUserConfig)
         else:
             raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 
@@ -1922,6 +1930,33 @@ class AppConfig(GlobalConfig):
 
         return if_six_star
 
+    async def save_maaend_log(
+        self, log_path: Path, logs: list[str], maaend_result: str
+    ) -> None:
+        """
+        Save MaaEnd logs and generate basic statistics data.
+
+        Args:
+            log_path (Path): Target log file path.
+            logs (list[str]): Log lines.
+            maaend_result (str): Result label for this run.
+        """
+
+        logger.info(
+            f"开始处理MaaEnd日志, 日志长度: {len(logs)}, 日志标记: {maaend_result}"
+        )
+
+        data: Dict[str, str] = {"maaend_result": maaend_result}
+
+        # 保存日志
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
+        log_path.with_suffix(".json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
+
+        logger.success(f"MaaEnd日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
+
     async def save_src_log(self, log_path: Path, logs: list, src_result: str) -> None:
         """
         保存SRC日志并生成对应统计数据
@@ -2020,7 +2055,12 @@ class AppConfig(GlobalConfig):
                     data[key] = single_data[key]
 
                 # 录入运行结果
-                elif key in ["maa_result", "src_result", "general_result"]:
+                elif key in [
+                    "maa_result",
+                    "maaend_result",
+                    "src_result",
+                    "general_result",
+                ]:
                     actual_date = (
                         datetime.strptime(
                             f"{json_file.parent.parent.name} {json_file.stem}",
