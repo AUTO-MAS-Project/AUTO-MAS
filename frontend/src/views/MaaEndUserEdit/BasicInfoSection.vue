@@ -16,14 +16,8 @@
               </a-tooltip>
             </span>
           </template>
-          <a-input
-            v-model:value="formData.userName"
-            placeholder="请输入用户名"
-            :disabled="loading"
-            size="large"
-            class="modern-input"
-            @blur="emitSave('userName', formData.userName)"
-          />
+          <a-input v-model:value="formData.userName" placeholder="请输入用户名" :disabled="loading" size="large"
+            class="modern-input" @blur="emitSave('userName', formData.userName)" />
         </a-form-item>
       </a-col>
       <a-col :span="12">
@@ -36,11 +30,8 @@
               </a-tooltip>
             </span>
           </template>
-          <a-select
-            v-model:value="formData.Info.Status"
-            size="large"
-            @change="emitSave('Info.Status', formData.Info.Status)"
-          >
+          <a-select v-model:value="formData.Info.Status" size="large"
+            @change="emitSave('Info.Status', formData.Info.Status)">
             <a-select-option :value="true">是</a-select-option>
             <a-select-option :value="false">否</a-select-option>
           </a-select>
@@ -54,18 +45,13 @@
           <template #label>
             <span class="form-label">
               账号ID
-              <a-tooltip title="用于 Endfield PC 端自动登录">
+              <a-tooltip title="用于切换账号，无需切换则留空。官服输入 11 位手机号。模拟器暂不支持账号切换">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
           </template>
-          <a-input
-            v-model:value="formData.Info.Id"
-            placeholder="请输入账号ID"
-            :disabled="loading"
-            size="large"
-            @blur="emitSave('Info.Id', formData.Info.Id)"
-          />
+          <a-input v-model:value="formData.Info.Id" placeholder="请输入账号ID" :disabled="loading" size="large"
+            @blur="emitSave('Info.Id', formData.Info.Id)" />
         </a-form-item>
       </a-col>
       <a-col :span="12">
@@ -73,18 +59,13 @@
           <template #label>
             <span class="form-label">
               密码
-              <a-tooltip title="用于 Endfield PC 端自动登录">
+              <a-tooltip title="用户密码，PC 端需要切换账号时必须填写，模拟器暂不支持账号切换">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
           </template>
-          <a-input-password
-            v-model:value="formData.Info.Password"
-            placeholder="请输入用于 Endfield PC 端自动登录的密码"
-            :disabled="loading"
-            size="large"
-            @blur="emitSave('Info.Password', formData.Info.Password)"
-          />
+          <a-input-password v-model:value="formData.Info.Password" placeholder="请输入密码" :disabled="loading" size="large"
+            @blur="emitSave('Info.Password', formData.Info.Password)" />
         </a-form-item>
       </a-col>
     </a-row>
@@ -100,35 +81,24 @@
               </a-tooltip>
             </span>
           </template>
-          <a-select
-            v-model:value="formData.Info.Mode"
-            size="large"
-            :options="[
-              { label: '简洁', value: '简洁' },
-              { label: '详细', value: '详细' },
-            ]"
-            @change="emitSave('Info.Mode', formData.Info.Mode)"
-          />
+          <a-select v-model:value="formData.Info.Mode" size="large" :options="[
+            { label: '简洁', value: '简洁' },
+            { label: '详细', value: '详细' },
+          ]" @change="emitSave('Info.Mode', formData.Info.Mode)" />
         </a-form-item>
       </a-col>
       <a-col :span="8">
         <a-form-item>
           <template #label>
             <span class="form-label">
-              资源选择
+              游戏资源
               <a-tooltip title="选择当前用户使用的游戏资源">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
           </template>
-          <a-select
-            v-model:value="formData.Info.Resource"
-            placeholder="请选择资源"
-            :disabled="loading"
-            size="large"
-            :options="resourceOptions"
-            @change="emitSave('Info.Resource', formData.Info.Resource)"
-          />
+          <a-select v-model:value="formData.Info.Resource" placeholder="请选择资源" :disabled="loading" size="large"
+            :options="resourceOptions" @change="emitSave('Info.Resource', formData.Info.Resource)" />
         </a-form-item>
       </a-col>
       <a-col :span="8">
@@ -136,20 +106,13 @@
           <template #label>
             <span class="form-label">
               剩余天数
-              <a-tooltip title="账号剩余的有效天数，-1 表示无限期">
+              <a-tooltip title="账号剩余的有效天数，「-1」表示无限">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
           </template>
-          <a-input-number
-            v-model:value="formData.Info.RemainedDay"
-            :min="-1"
-            :max="9999"
-            :disabled="loading"
-            size="large"
-            style="width: 100%"
-            @blur="emitSave('Info.RemainedDay', formData.Info.RemainedDay)"
-          />
+          <a-input-number v-model:value="formData.Info.RemainedDay" :min="-1" :max="9999" :disabled="loading"
+            size="large" style="width: 100%" @blur="emitSave('Info.RemainedDay', formData.Info.RemainedDay)" />
         </a-form-item>
       </a-col>
     </a-row>
@@ -163,14 +126,8 @@
           </a-tooltip>
         </span>
       </template>
-      <a-textarea
-        v-model:value="formData.Info.Notes"
-        placeholder="请输入备注"
-        :rows="4"
-        :disabled="loading"
-        class="modern-input"
-        @blur="emitSave('Info.Notes', formData.Info.Notes)"
-      />
+      <a-textarea v-model:value="formData.Info.Notes" placeholder="请输入备注" :rows="4" :disabled="loading"
+        class="modern-input" @blur="emitSave('Info.Notes', formData.Info.Notes)" />
     </a-form-item>
   </div>
 </template>
