@@ -19,12 +19,12 @@
                 <div class="script-details">
                   <h3 class="script-name">{{ script.name }}</h3>
                   <a-tag :color="script.type === 'MAA'
-                      ? 'blue'
-                      : script.type === 'SRC'
-                        ? 'purple'
-                        : script.type === 'MaaEnd'
-                          ? 'blue'
-                          : 'green'
+                    ? 'blue'
+                    : script.type === 'SRC'
+                      ? 'purple'
+                      : script.type === 'MaaEnd'
+                        ? 'blue'
+                        : 'green'
                     " class="script-type">
                     {{ script.type }}
                   </a-tag>
@@ -115,11 +115,11 @@
                             script.type === 'SRC' ||
                             script.type === 'MaaEnd'
                           " :color="script.type === 'MaaEnd'
-                                ? getMaaEndResourceTagColor(user)
-                                : getServerTagColor(user.Info.Server)
-                              " class="server-tag">
+                            ? getMaaEndResourceTagColor(user)
+                            : getServerTagColor(user.Info.Server)
+                            " class="server-tag">
                             {{ script.type === 'MaaEnd' ? getMaaEndResourceLabel(user) :
-                            getServerDisplayName(user.Info.Server) }}
+                              getServerDisplayName(user.Info.Server) }}
                           </a-tag>
 
                           <!-- 账号标签 -->
@@ -128,9 +128,9 @@
                             script.type === 'SRC' ||
                             script.type === 'MaaEnd'
                           " :color="script.type === 'MaaEnd'
-                                ? 'blue'
-                                : getServerTagColor(user.Info.Server)
-                              " class="clickable-tag" @click="handleUserIdClick(user)">
+                            ? 'blue'
+                            : getServerTagColor(user.Info.Server)
+                            " class="clickable-tag" @click="handleUserIdClick(user)">
                             {{ getUserIdDisplayText(user) }}
                           </a-tag>
 
@@ -140,9 +140,9 @@
                             script.type === 'SRC' ||
                             script.type === 'MaaEnd'
                           " :color="script.type === 'MaaEnd'
-                                ? 'blue'
-                                : getServerTagColor(user.Info.Server)
-                              " class="clickable-tag" @click="handlePasswordClick(user)">
+                            ? 'blue'
+                            : getServerTagColor(user.Info.Server)
+                            " class="clickable-tag" @click="handlePasswordClick(user)">
                             {{ getPasswordDisplayText(user) }}
                           </a-tag>
                         </div>
@@ -154,20 +154,17 @@
                           script.type === 'MaaEnd'
                         " class="user-info-tags">
                           <!-- 直接使用后端提供的Tag字段 -->
-                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index" :class="[
-                            'info-tag',
-                            { 'clickable-tag': tag.text === '人工排查未通过' },
-                          ]" :color="tag.color" @click="
-                              tag.text === '人工排查未通过' ? handlePassCheck(user) : undefined
-                              ">
+                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
+                            :title="tag.text" :class="['info-tag', { 'clickable-tag': tag.text === '人工排查未通过' }]"
+                            :color="tag.color" @click="tag.text === '人工排查未通过' ? handlePassCheck(user) : undefined">
                             {{ tag.text }}
                           </a-tag>
                         </div>
                         <!-- 用户详细信息 - 通用脚本用户 -->
                         <div v-if="script.type === 'General'" class="user-info-tags">
                           <!-- 直接使用后端提供的Tag字段 -->
-                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index" class="info-tag"
-                            :color="tag.color">
+                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
+                            :title="tag.text" class="info-tag" :color="tag.color">
                             {{ tag.text }}
                           </a-tag>
                         </div>
@@ -1154,11 +1151,16 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 }
 
 .info-tag {
+  display: inline-block;
+  max-width: 120px;
   font-size: 11px;
   font-weight: 500;
   border-radius: 4px;
   margin: 0;
   border: 1px solid rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .server-tag {
@@ -1332,6 +1334,7 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 
   .info-tag {
     font-size: 10px;
+    max-width: 100px;
   }
 
   .clickable-tag {
