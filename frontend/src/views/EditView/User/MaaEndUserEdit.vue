@@ -53,6 +53,7 @@
             @save="handleFieldSave"
           />
           <TaskConfigSection :form-data="formData" @save="handleFieldSave" />
+          <SkylandConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
           <NotifyConfigSection
             :form-data="formData"
             :loading="loading"
@@ -81,6 +82,7 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import MaaEndUserEditHeader from '../../MaaEndUserEdit/MaaEndUserEditHeader.vue'
 import BasicInfoSection from '../../MaaEndUserEdit/BasicInfoSection.vue'
 import TaskConfigSection from '../../MaaEndUserEdit/TaskConfigSection.vue'
+import SkylandConfigSection from '../../MaaEndUserEdit/SkylandConfigSection.vue'
 import NotifyConfigSection from '../../MaaEndUserEdit/NotifyConfigSection.vue'
 
 const logger = window.electronAPI.getLogger('MaaEnd用户编辑')
@@ -117,6 +119,8 @@ const getDefaultMaaEndUserData = () => ({
     Mode: '简洁',
     Resource: '官服',
     RemainedDay: -1,
+    IfSkland: false,
+    SklandToken: '',
     Notes: '',
     Tag: '',
   },
@@ -134,6 +138,12 @@ const getDefaultMaaEndUserData = () => ({
     ToAddress: '',
     IfServerChan: false,
     ServerChanKey: '',
+  },
+  Data: {
+    LastProxyDate: '',
+    LastSklandDate: '',
+    ProxyTimes: 0,
+    IfPassCheck: false,
   },
 })
 
@@ -212,6 +222,7 @@ const loadUserData = async () => {
       Info: { ...getDefaultMaaEndUserData().Info, ...userData.Info },
       Task: { ...getDefaultMaaEndUserData().Task, ...userData.Task },
       Notify: { ...getDefaultMaaEndUserData().Notify, ...userData.Notify },
+      Data: { ...getDefaultMaaEndUserData().Data, ...userData.Data },
     })
 
     await nextTick()

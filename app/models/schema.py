@@ -566,6 +566,8 @@ class MaaEndUserConfig_Info(BaseModel):
     Resource: Optional[Literal["官服"]] = Field(default=None, description="资源名称")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
     Notes: Optional[str] = Field(default=None, description="备注")
+    IfSkland: Optional[bool] = Field(default=None, description="是否启用森空岛签到")
+    SklandToken: Optional[str] = Field(default=None, description="SklandToken")
     Tag: Optional[str] = Field(default=None, description="用户标签信息")
 
 
