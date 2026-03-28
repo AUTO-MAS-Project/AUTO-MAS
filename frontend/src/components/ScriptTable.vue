@@ -12,11 +12,20 @@
                 <div class="script-logo-container">
                   <img v-if="script.type === 'MAA'" src="@/assets/MAA.png" alt="MAA" class="script-logo" />
                   <img v-else-if="script.type === 'SRC'" src="@/assets/SRC.png" alt="SRC" class="script-logo" />
+                  <img v-else-if="script.type === 'MaaEnd'" src="@/assets/MaaEnd.png" alt="MaaEnd"
+                    class="script-logo" />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
                   <h3 class="script-name">{{ script.name }}</h3>
-                  <a-tag :color="script.type === 'MAA' ? 'blue' : script.type === 'SRC' ? 'purple' : 'green'" class="script-type">
+                  <a-tag :color="script.type === 'MAA'
+                    ? 'blue'
+                    : script.type === 'SRC'
+                      ? 'purple'
+                      : script.type === 'MaaEnd'
+                        ? 'blue'
+                        : 'green'
+                    " class="script-type">
                     {{ script.type }}
                   </a-tag>
                 </div>
@@ -44,6 +53,20 @@
                   配置SRC
                 </a-button>
                 <a-button v-if="script.type === 'SRC' && props.activeConnections.has(script.id)" type="default"
+                  size="middle" disabled style="color: #52c41a; border-color: #52c41a">
+                  <template #icon>
+                    <SettingOutlined />
+                  </template>
+                  正在配置
+                </a-button>
+                <a-button v-if="script.type === 'MaaEnd' && !props.activeConnections.has(script.id)" type="primary"
+                  ghost size="middle" @click="handleStartMaaEndConfig(script)">
+                  <template #icon>
+                    <SettingOutlined />
+                  </template>
+                  配置MaaEnd
+                </a-button>
+                <a-button v-if="script.type === 'MaaEnd' && props.activeConnections.has(script.id)" type="default"
                   size="middle" disabled style="color: #52c41a; border-color: #52c41a">
                   <template #icon>
                     <SettingOutlined />
@@ -86,41 +109,62 @@
                       <div class="user-details-row">
                         <div class="user-name-section">
                           <span class="user-name">{{ user.Info.Name }}</span>
-                          <!-- 只有MAA和SRC脚本才显示服务器标签 -->
-                          <a-tag v-if="script.type === 'MAA' || script.type === 'SRC'" :color="getServerTagColor(user.Info.Server)"
-                            class="server-tag">
-                            {{ getServerDisplayName(user.Info.Server) }}
+                          <!-- MAA、SRC 和 MaaEnd 脚本显示服务器标签 -->
+                          <a-tag v-if="
+                            script.type === 'MAA' ||
+                            script.type === 'SRC' ||
+                            script.type === 'MaaEnd'
+                          " :color="script.type === 'MaaEnd'
+                            ? getMaaEndResourceTagColor(user)
+                            : getServerTagColor(user.Info.Server)
+                            " class="server-tag">
+                            {{ script.type === 'MaaEnd' ? getMaaEndResourceLabel(user) :
+                              getServerDisplayName(user.Info.Server) }}
                           </a-tag>
 
                           <!-- 账号标签 -->
-                          <a-tag v-if="script.type === 'MAA' || script.type === 'SRC'" :color="getServerTagColor(user.Info.Server)"
-                            class="clickable-tag" @click="handleUserIdClick(user)">
+                          <a-tag v-if="
+                            script.type === 'MAA' ||
+                            script.type === 'SRC' ||
+                            script.type === 'MaaEnd'
+                          " :color="script.type === 'MaaEnd'
+                            ? 'blue'
+                            : getServerTagColor(user.Info.Server)
+                            " class="clickable-tag" @click="handleUserIdClick(user)">
                             {{ getUserIdDisplayText(user) }}
                           </a-tag>
 
                           <!-- 密码标签 -->
-                          <a-tag v-if="script.type === 'MAA' || script.type === 'SRC'" :color="getServerTagColor(user.Info.Server)"
-                            class="clickable-tag" @click="handlePasswordClick(user)">
+                          <a-tag v-if="
+                            script.type === 'MAA' ||
+                            script.type === 'SRC' ||
+                            script.type === 'MaaEnd'
+                          " :color="script.type === 'MaaEnd'
+                            ? 'blue'
+                            : getServerTagColor(user.Info.Server)
+                            " class="clickable-tag" @click="handlePasswordClick(user)">
                             {{ getPasswordDisplayText(user) }}
                           </a-tag>
                         </div>
 
                         <!-- 用户详细信息 - MAA和SRC脚本用户 -->
-                        <div v-if="script.type === 'MAA' || script.type === 'SRC'" class="user-info-tags">
+                        <div v-if="
+                          script.type === 'MAA' ||
+                          script.type === 'SRC' ||
+                          script.type === 'MaaEnd'
+                        " class="user-info-tags">
                           <!-- 直接使用后端提供的Tag字段 -->
                           <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
-                            :title="tag.text"
-                            :class="['info-tag', { 'clickable-tag': tag.text === '人工排查未通过' }]" :color="tag.color"
-                            @click="tag.text === '人工排查未通过' ? handlePassCheck(user) : undefined">
+                            :title="tag.text" :class="['info-tag', { 'clickable-tag': tag.text === '人工排查未通过' }]"
+                            :color="tag.color" @click="tag.text === '人工排查未通过' ? handlePassCheck(user) : undefined">
                             {{ tag.text }}
                           </a-tag>
                         </div>
                         <!-- 用户详细信息 - 通用脚本用户 -->
                         <div v-if="script.type === 'General'" class="user-info-tags">
                           <!-- 直接使用后端提供的Tag字段 -->
-                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index" :title="tag.text"
-                            class="info-tag"
-                            :color="tag.color">
+                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
+                            :title="tag.text" class="info-tag" :color="tag.color">
                             {{ tag.text }}
                           </a-tag>
                         </div>
@@ -188,11 +232,7 @@ import { message, Modal } from 'ant-design-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { parseStatusTagList } from '@/composables/useStatusTag'
-import {
-  getTodayInTimezone,
-  isDateEqual,
-  getWeekdayInTimezone
-} from '@/utils/dateUtils'
+import { getTodayInTimezone, isDateEqual, getWeekdayInTimezone } from '@/utils/dateUtils'
 
 interface Props {
   scripts: Script[]
@@ -219,6 +259,10 @@ interface Emits {
   (e: 'startSrcConfig', script: Script): void
 
   (e: 'saveSrcConfig', script: Script): void
+
+  (e: 'startMaaEndConfig', script: Script): void
+
+  (e: 'saveMaaEndConfig', script: Script): void
 
   (e: 'toggleUserStatus', user: User): void
 
@@ -305,6 +349,14 @@ const handleStartSRCConfig = (script: Script) => {
 
 const handleSaveSRCConfig = (script: Script) => {
   emit('saveSrcConfig', script)
+}
+
+const handleStartMaaEndConfig = (script: Script) => {
+  emit('startMaaEndConfig', script)
+}
+
+const handleSaveMaaEndConfig = (script: Script) => {
+  emit('saveMaaEndConfig', script)
 }
 
 const handleToggleUserStatus = (user: User) => {
@@ -399,6 +451,18 @@ const getPasswordDisplayText = (user: any): string => {
   } else {
     // 隐藏状态：只显示标题
     return '密码'
+  }
+}
+
+const getMaaEndResourceLabel = (user: any): string => {
+  return user.Info?.Resource || '官服'
+}
+
+const getMaaEndResourceTagColor = (user: any): string => {
+  switch (getMaaEndResourceLabel(user)) {
+    case '官服':
+    default:
+      return 'blue'
   }
 }
 
@@ -602,13 +666,14 @@ const getMainStageDisplay = (user: any): string => {
 const getBackupStages = (user: any): string[] => {
   const stages = [user.Info.Stage_1, user.Info.Stage_2, user.Info.Stage_3]
   return stages
-    .filter(stage =>
-      stage &&
-      stage !== '-' &&
-      stage !== '' &&
-      stage !== '当前' &&
-      stage !== '上次' &&
-      stage !== '未选择'
+    .filter(
+      stage =>
+        stage &&
+        stage !== '-' &&
+        stage !== '' &&
+        stage !== '当前' &&
+        stage !== '上次' &&
+        stage !== '未选择'
     )
     .map(stage => convertStageNameToChinese(stage))
 }

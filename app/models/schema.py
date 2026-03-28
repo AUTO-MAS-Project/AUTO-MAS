@@ -321,16 +321,16 @@ class QueueConfig(BaseModel):
 
 class ScriptIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: Literal["MaaConfig", "GeneralConfig", "SrcConfig"] = Field(
+    type: Literal["MaaConfig", "GeneralConfig", "SrcConfig", "MaaEndConfig"] = Field(
         ..., description="配置类型"
     )
 
 
 class UserIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: Literal["MaaUserConfig", "GeneralUserConfig", "SrcUserConfig"] = Field(
-        ..., description="配置类型"
-    )
+    type: Literal[
+        "MaaUserConfig", "GeneralUserConfig", "SrcUserConfig", "MaaEndUserConfig"
+    ] = Field(..., description="配置类型")
 
 
 class MaaUserConfig_Info(BaseModel):
@@ -553,6 +553,96 @@ class GeneralConfig(BaseModel):
     Script: Optional[GeneralConfig_Script] = Field(default=None, description="脚本配置")
     Game: Optional[GeneralConfig_Game] = Field(default=None, description="游戏配置")
     Run: Optional[GeneralConfig_Run] = Field(default=None, description="运行配置")
+
+
+class MaaEndUserConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="用户名")
+    Status: Optional[bool] = Field(default=None, description="用户状态")
+    Id: Optional[str] = Field(default=None, description="用户ID")
+    Password: Optional[str] = Field(default=None, description="密码")
+    Mode: Optional[Literal["简洁", "详细"]] = Field(
+        default=None, description="配置模式"
+    )
+    Resource: Optional[Literal["官服"]] = Field(default=None, description="资源名称")
+    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    Notes: Optional[str] = Field(default=None, description="备注")
+    IfSkland: Optional[bool] = Field(default=None, description="是否启用森空岛签到")
+    SklandToken: Optional[str] = Field(default=None, description="SklandToken")
+    Tag: Optional[str] = Field(default=None, description="用户标签信息")
+
+
+class MaaEndUserConfig_Task(BaseModel):
+    ProtocolSpaceTab: Optional[
+        Literal["OperatorProgression", "WeaponProgression", "CrisisDrills"]
+    ] = Field(default=None, description="协议空间选项卡")
+    OperatorProgression: Optional[
+        Literal["OperatorEXP", "Promotions", "T-Creds", "SkillUp"]
+    ] = Field(default=None, description="干员养成任务")
+    WeaponProgression: Optional[Literal["WeaponEXP", "WeaponTune"]] = Field(
+        default=None, description="武器养成任务"
+    )
+    CrisisDrills: Optional[
+        Literal[
+            "AdvancedProgression1",
+            "AdvancedProgression2",
+            "AdvancedProgression3",
+            "AdvancedProgression4",
+            "AdvancedProgression5",
+        ]
+    ] = Field(default=None, description="危境预演任务")
+    RewardsSetOption: Optional[Literal["RewardsSetA", "RewardsSetB"]] = Field(
+        default=None, description="奖励套组选项"
+    )
+
+
+class MaaEndUserConfig_Notify(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
+    IfSendStatistic: Optional[bool] = Field(
+        default=None, description="是否发送统计信息"
+    )
+    IfSendMail: Optional[bool] = Field(default=None, description="是否发送邮件")
+    ToAddress: Optional[str] = Field(default=None, description="收件地址")
+    IfServerChan: Optional[bool] = Field(default=None, description="是否启用Server酱")
+    ServerChanKey: Optional[str] = Field(default=None, description="Server酱密钥")
+
+
+class MaaEndUserConfig(BaseModel):
+    Info: Optional[MaaEndUserConfig_Info] = Field(default=None, description="用户信息")
+    Task: Optional[MaaEndUserConfig_Task] = Field(default=None, description="任务配置")
+    Notify: Optional[MaaEndUserConfig_Notify] = Field(
+        default=None, description="通知配置"
+    )
+
+
+class MaaEndConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="脚本名称")
+    Path: Optional[str] = Field(default=None, description="脚本路径")
+
+
+class MaaEndConfig_Run(BaseModel):
+    RunTimeLimit: Optional[int] = Field(
+        default=None, description="运行时间限制（分钟）"
+    )
+    ProxyTimesLimit: Optional[int] = Field(default=None, description="每日代理次数限制")
+    RunTimesLimit: Optional[int] = Field(default=None, description="重试次数限制")
+
+
+class MaaEndConfig_Game(BaseModel):
+    ControllerType: Optional[
+        Literal["Win32-Window", "Win32-Window-Background", "Win32-Front", "ADB"]
+    ] = Field(default=None, description="控制器类型")
+    Path: Optional[str] = Field(default=None, description="终末地客户端路径")
+    Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
+    WaitTime: Optional[int] = Field(default=None, description="游戏等待时间")
+    EmulatorId: Optional[str] = Field(default=None, description="模拟器ID")
+    EmulatorIndex: Optional[str] = Field(default=None, description="模拟器索引")
+    CloseOnFinish: Optional[bool] = Field(default=None, description="结束后关闭游戏")
+
+
+class MaaEndConfig(BaseModel):
+    Info: Optional[MaaEndConfig_Info] = Field(default=None, description="脚本信息")
+    Run: Optional[MaaEndConfig_Run] = Field(default=None, description="运行配置")
+    Game: Optional[MaaEndConfig_Game] = Field(default=None, description="游戏配置")
 
 
 class SrcUserConfig_Info(BaseModel):
@@ -814,8 +904,8 @@ class HistoryData(BaseModel):
 
 
 class ScriptCreateIn(BaseModel):
-    type: Literal["MAA", "SRC", "General"] = Field(
-        ..., description="脚本类型: MAA脚本, 通用脚本, SRC脚本"
+    type: Literal["MAA", "SRC", "General", "MaaEnd"] = Field(
+        ..., description="脚本类型: MAA脚本, 通用脚本, SRC脚本, MaaEnd脚本"
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -824,7 +914,7 @@ class ScriptCreateIn(BaseModel):
 
 class ScriptCreateOut(OutBase):
     scriptId: str = Field(..., description="新创建的脚本ID")
-    data: Union[MaaConfig, SrcConfig, GeneralConfig] = Field(
+    data: Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig] = Field(
         ..., description="脚本配置数据"
     )
 
@@ -837,14 +927,14 @@ class ScriptGetIn(BaseModel):
 
 class ScriptGetOut(OutBase):
     index: List[ScriptIndexItem] = Field(..., description="脚本索引列表")
-    data: Dict[str, Union[MaaConfig, SrcConfig, GeneralConfig]] = Field(
+    data: Dict[str, Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig]] = Field(
         ..., description="脚本数据字典, key来自于index列表的uid"
     )
 
 
 class ScriptUpdateIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
-    data: Union[MaaConfig, SrcConfig, GeneralConfig] = Field(
+    data: Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig] = Field(
         ..., description="脚本更新数据"
     )
 
@@ -886,22 +976,22 @@ class UserGetIn(UserInBase):
 
 class UserGetOut(OutBase):
     index: List[UserIndexItem] = Field(..., description="用户索引列表")
-    data: Dict[str, Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig]] = Field(
-        ..., description="用户数据字典, key来自于index列表的uid"
-    )
+    data: Dict[
+        str, Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig]
+    ] = Field(..., description="用户数据字典, key来自于index列表的uid")
 
 
 class UserCreateOut(OutBase):
     userId: str = Field(..., description="新创建的用户ID")
-    data: Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig] = Field(
-        ..., description="用户配置数据"
+    data: Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig] = (
+        Field(..., description="用户配置数据")
     )
 
 
 class UserUpdateIn(UserInBase):
     userId: str = Field(..., description="用户ID")
-    data: Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig] = Field(
-        ..., description="用户更新数据"
+    data: Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig] = (
+        Field(..., description="用户更新数据")
     )
 
 

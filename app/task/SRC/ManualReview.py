@@ -80,12 +80,6 @@ class ManualReviewTask(TaskExecuteBase):
         self.message_queue = asyncio.Queue()
         await Broadcast.subscribe(self.message_queue)
         self.wait_event = asyncio.Event()
-        self.log_start_time = datetime.now()
-
-        self.src_root_path = Path(self.script_config.get("Info", "Path"))
-        self.src_exe_path = self.src_root_path / "src.exe"
-        self.src_set_path = self.src_root_path / "config"
-        self.src_log_path = self.src_root_path / "log/2000-01-01_src.txt"
 
         self.run_book = {"SignIn": False, "PassCheck": False}
 

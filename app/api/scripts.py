@@ -33,11 +33,13 @@ router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 SCRIPT_BOOK = {
     "MaaConfig": MaaConfig,
     "SrcConfig": SrcConfig,
+    "MaaEndConfig": MaaEndConfig,
     "GeneralConfig": GeneralConfig,
 }
 USER_BOOK = {
     "MaaConfig": MaaUserConfig,
     "SrcConfig": SrcUserConfig,
+    "MaaEndConfig": MaaEndUserConfig,
     "GeneralConfig": GeneralUserConfig,
 }
 
