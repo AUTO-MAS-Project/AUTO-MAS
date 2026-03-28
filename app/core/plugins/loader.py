@@ -5,6 +5,7 @@ import importlib.util
 import inspect
 import json
 import sys
+from functools import wraps
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +16,7 @@ from app.utils import get_logger
 from app.utils.constants import UTC8
 
 from .context import PluginContext
+from .decorators import EventSubscription, get_event_subscriptions
 from .pypi_site import ensure_pypi_site_packages_on_syspath, iter_plugin_entry_points
 
 
@@ -49,6 +51,8 @@ class PluginRecord:
     unloaded_at: Optional[str] = None
     last_error: Optional[str] = None
     last_error_at: Optional[str] = None
+    listener_ids: list[str] = field(default_factory=list)
+    plugin_instance: Any = None
 
 
 class PluginLoader:
@@ -257,6 +261,145 @@ class PluginLoader:
         record.last_error_at = _utc8_now_iso()
         record.status = "error"
 
+    @staticmethod
+    def _invoke_with_context(handler: Callable[..., Any], payload: Any, context: PluginContext) -> Any:
+        """
+        按监听器签名将事件 payload 与上下文注入到处理函数。
+
+        Args:
+            handler (Callable[..., Any]): 原始监听器函数或方法。
+            payload (Any): 事件载荷。
+            context (PluginContext): 插件上下文。
+
+        Returns:
+            Any: 监听器返回值。
+
+        Raises:
+            TypeError: 监听器参数签名不满足允许形式时抛出。
+        """
+        signature = inspect.signature(handler)
+        params = list(signature.parameters.values())
+
+        if not params:
+            raise TypeError("事件监听器至少需要一个参数用于接收 payload")
+
+        has_var_keyword = any(item.kind == inspect.Parameter.VAR_KEYWORD for item in params)
+        has_ctx_keyword = has_var_keyword or "ctx" in signature.parameters
+        positional_params = [
+            item
+            for item in params
+            if item.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+        ]
+
+        if len(positional_params) >= 2:
+            return handler(payload, context)
+
+        if has_ctx_keyword:
+            return handler(payload, ctx=context)
+
+        if len(positional_params) == 1:
+            return handler(payload)
+
+        raise TypeError("事件监听器参数签名不支持，请使用 (payload) 或 (payload, ctx)")
+
+    def _build_context_bound_handler(
+        self,
+        *,
+        handler: Callable[..., Any],
+        context: PluginContext,
+    ) -> Callable[[Any], Any]:
+        """
+        构建自动注入 `ctx` 的监听器包装函数。
+
+        Args:
+            handler (Callable[..., Any]): 原始监听器。
+            context (PluginContext): 插件上下文。
+
+        Returns:
+            Callable[[Any], Any]: 仅接收 payload 的包装监听器。
+        """
+        if inspect.iscoroutinefunction(handler):
+            @wraps(handler)
+            async def async_wrapper(payload: Any) -> Any:
+                result = self._invoke_with_context(handler, payload, context)
+                if inspect.isawaitable(result):
+                    return await result
+                return result
+
+            return async_wrapper
+
+        @wraps(handler)
+        def sync_wrapper(payload: Any) -> Any:
+            return self._invoke_with_context(handler, payload, context)
+
+        return sync_wrapper
+
+    @staticmethod
+    def _iter_decorated_members(target: Any) -> list[tuple[Callable[..., Any], EventSubscription]]:
+        """遍历对象成员并提取 `@on_event` 声明。"""
+        result: list[tuple[Callable[..., Any], EventSubscription]] = []
+        for _, member in inspect.getmembers(target):
+            if not (inspect.isfunction(member) or inspect.ismethod(member)):
+                continue
+
+            subscriptions = get_event_subscriptions(member)
+            for subscription in subscriptions:
+                result.append((member, subscription))
+        return result
+
+    def _register_decorated_handlers(
+        self,
+        *,
+        record: PluginRecord,
+        target: Any,
+    ) -> list[str]:
+        """
+        将对象上的装饰器监听器注册到事件总线。
+
+        Args:
+            record (PluginRecord): 插件记录对象。
+            target (Any): 模块对象或插件实例对象。
+
+        Returns:
+            list[str]: 新增监听器 ID 列表。
+
+        Raises:
+            TypeError: 监听器参数签名非法时抛出。
+            ValueError: 监听器作用域为 instance 但实例 ID 缺失时抛出。
+        """
+        if record.context is None:
+            return []
+
+        created_ids: list[str] = []
+        members = self._iter_decorated_members(target)
+        for member, subscription in members:
+            if subscription.scope == "instance" and not record.instance_id:
+                raise ValueError("instance 作用域监听器需要实例 ID")
+
+            wrapped = self._build_context_bound_handler(
+                handler=member,
+                context=record.context,
+            )
+            listener_id = self.events.on(
+                subscription.event,
+                wrapped,
+                priority=subscription.priority,
+                scope=subscription.scope,
+                once=subscription.once,
+                error_policy=subscription.error_policy,
+                owner_plugin_name=record.plugin_name,
+                owner_instance_id=record.instance_id,
+            )
+            created_ids.append(listener_id)
+
+        return created_ids
+
+    def _unregister_record_listeners(self, record: PluginRecord) -> None:
+        """移除插件记录关联的全部监听器。"""
+        if record.instance_id:
+            self.events.off_by_instance(record.instance_id)
+        record.listener_ids.clear()
+
     async def load_plugin(self, plugin_name: str) -> PluginRecord:
         """
         按插件名加载单个插件并激活默认实例。
@@ -307,19 +450,31 @@ class PluginLoader:
                 runtime_capabilities=self.runtime,
             )
 
-            dispose = await self._call_setup(setup, record.context)
-            if dispose is not None and not callable(dispose):
-                raise PluginDefinitionError(
-                    f"插件 {plugin_name} 返回的 dispose 不可调用"
+            if record.module is not None:
+                record.listener_ids.extend(
+                    self._register_decorated_handlers(record=record, target=record.module)
                 )
 
-            record.dispose = dispose
+            dispose = await self._call_setup(setup, record.context)
+            if dispose is not None and not callable(dispose):
+                record.plugin_instance = dispose
+                record.listener_ids.extend(
+                    self._register_decorated_handlers(record=record, target=record.plugin_instance)
+                )
+                dispose_method = getattr(record.plugin_instance, "dispose", None)
+                if callable(dispose_method):
+                    record.dispose = dispose_method
+            else:
+                record.dispose = dispose
+
             self._mark_status(record, "active")
             logger.info(f"插件已激活: {plugin_name}")
         except PluginDefinitionError as e:
+            self._unregister_record_listeners(record)
             self._mark_error(record, str(e))
             logger.error(f"插件加载失败: {plugin_name}, error={e}")
         except Exception as e:
+            self._unregister_record_listeners(record)
             self._mark_error(record, f"{type(e).__name__}: {e}")
             logger.exception(f"插件加载失败: {plugin_name}, error={e}")
 
@@ -389,19 +544,31 @@ class PluginLoader:
                 runtime_capabilities=self.runtime,
             )
 
-            dispose = await self._call_setup(setup, record.context)
-            if dispose is not None and not callable(dispose):
-                raise PluginDefinitionError(
-                    f"插件实例 {instance_id} 返回的 dispose 不可调用"
+            if record.module is not None:
+                record.listener_ids.extend(
+                    self._register_decorated_handlers(record=record, target=record.module)
                 )
 
-            record.dispose = dispose
+            dispose = await self._call_setup(setup, record.context)
+            if dispose is not None and not callable(dispose):
+                record.plugin_instance = dispose
+                record.listener_ids.extend(
+                    self._register_decorated_handlers(record=record, target=record.plugin_instance)
+                )
+                dispose_method = getattr(record.plugin_instance, "dispose", None)
+                if callable(dispose_method):
+                    record.dispose = dispose_method
+            else:
+                record.dispose = dispose
+
             self._mark_status(record, "active")
             logger.info(f"插件实例已激活: {instance_id} ({plugin_name})")
         except PluginDefinitionError as e:
+            self._unregister_record_listeners(record)
             self._mark_error(record, str(e))
             logger.error(f"插件实例加载失败: {instance_id}, error={e}")
         except Exception as e:
+            self._unregister_record_listeners(record)
             self._mark_error(record, f"{type(e).__name__}: {e}")
             logger.error(f"插件实例加载失败: {instance_id}, error={type(e).__name__}: {e}")
 
@@ -473,6 +640,8 @@ class PluginLoader:
         record = self.records.get(plugin_name)
         if record is None:
             return
+
+        self._unregister_record_listeners(record)
 
         if record.dispose is not None:
             try:

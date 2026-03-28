@@ -66,10 +66,33 @@ class PluginEventFactory:
         }
 
     @staticmethod
-    def _emit_payload(*, event: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """发送已构建好的事件载荷。
+    async def _emit_payload_async(*, event: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """异步发送已构建好的事件载荷。
 
         该方法统一处理事件发送异常，避免业务链路被插件系统影响。
+        """
+        try:
+            from app.core import PluginManager
+
+            await PluginManager.emit_async(event, payload)
+        except Exception as e:
+            logger.warning(
+                f"插件事件广播失败: event={event}, source={payload.get('source')}, error={e}"
+            )
+
+        return payload
+
+    @staticmethod
+    def _emit_payload(*, event: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        同步桥接发送已构建好的事件载荷。
+
+        Args:
+            event (str): 事件名。
+            payload (Dict[str, Any]): 事件载荷。
+
+        Returns:
+            Dict[str, Any]: 原始事件载荷。
         """
         try:
             from app.core import PluginManager
@@ -113,7 +136,7 @@ class PluginEventFactory:
         return payload
 
     @staticmethod
-    def emit_event(
+    async def emit_event_async(
         *,
         event: str,
         source: str,
@@ -121,6 +144,30 @@ class PluginEventFactory:
     ) -> Dict[str, Any]:
         """
         构建并发送通用事件。
+
+        Args:
+            event (str): 事件名。
+            source (str): 事件来源标识。
+            data (Optional[Dict[str, Any]]): 可选业务数据字典。
+
+        Returns:
+            Dict[str, Any]: 已发送的事件载荷。
+        """
+        if not is_valid_source(source):
+            logger.warning(f"事件来源格式不规范: source={source}, event={event}")
+
+        payload = PluginEventFactory.build_envelope(event=event, source=source, data=data)
+        return await PluginEventFactory._emit_payload_async(event=event, payload=payload)
+
+    @staticmethod
+    def emit_event(
+        *,
+        event: str,
+        source: str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        构建并发送通用事件（同步桥接）。
 
         Args:
             event (str): 事件名。
@@ -188,7 +235,7 @@ class PluginEventFactory:
         return payload
 
     @staticmethod
-    def emit_script_event(
+    async def emit_script_event_async(
         *,
         event: str,
         source: str,
@@ -203,6 +250,58 @@ class PluginEventFactory:
     ) -> Dict[str, Any]:
         """
         构建并发送脚本领域事件。
+
+        Args:
+            event (str): 事件名。
+            source (str): 事件来源标识。
+            task_id (Optional[str]): 任务 ID。
+            script_id (Optional[str]): 脚本 ID。
+            script_name (Optional[str]): 脚本名称。
+            mode (Optional[str]): 运行模式。
+            status (Optional[str]): 状态信息。
+            error (Optional[str]): 错误信息。
+            result (Optional[str]): 结果信息。
+            data (Optional[Dict[str, Any]]): 可选业务数据字典。
+
+        Returns:
+            Dict[str, Any]: 已发送的脚本事件载荷。
+        """
+        if not is_valid_source(source):
+            logger.warning(f"脚本事件来源格式不规范: source={source}, event={event}")
+
+        if not is_script_event(event):
+            logger.warning(f"非标准脚本事件名: event={event}")
+
+        payload = PluginEventFactory.build_script_payload(
+            event=event,
+            source=source,
+            task_id=task_id,
+            script_id=script_id,
+            script_name=script_name,
+            mode=mode,
+            status=status,
+            error=error,
+            result=result,
+            data=data,
+        )
+        return await PluginEventFactory._emit_payload_async(event=event, payload=payload)
+
+    @staticmethod
+    def emit_script_event(
+        *,
+        event: str,
+        source: str,
+        task_id: Optional[str] = None,
+        script_id: Optional[str] = None,
+        script_name: Optional[str] = None,
+        mode: Optional[str] = None,
+        status: Optional[str] = None,
+        error: Optional[str] = None,
+        result: Optional[str] = None,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        构建并发送脚本领域事件（同步桥接）。
 
         Args:
             event (str): 事件名。

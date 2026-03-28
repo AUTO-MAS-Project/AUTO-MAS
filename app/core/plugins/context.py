@@ -4,9 +4,210 @@
 from pathlib import Path
 from copy import deepcopy
 from typing import Any, Dict, Callable, Optional, Iterator
+import asyncio
 
 from .cache_store import PluginCacheManager
+from .event_contract import EventErrorPolicy, EventScope
 from .runtime_api import RuntimeAPI
+
+
+class PluginEventFacade:
+    """插件事件门面，统一提供监听、取消监听与事件发射能力。"""
+
+    def __init__(
+        self,
+        *,
+        plugin_name: str,
+        instance_id: str,
+        events,
+    ) -> None:
+        """
+        初始化插件事件门面。
+
+        Args:
+            plugin_name (str): 插件名。
+            instance_id (str): 插件实例 ID。
+            events: 底层事件总线对象。
+
+        Returns:
+            None: 无返回值。
+
+        Raises:
+            TypeError: `plugin_name` 不是字符串时抛出。
+            ValueError: `plugin_name` 为空字符串时抛出。
+            TypeError: `instance_id` 不是字符串时抛出。
+            ValueError: `instance_id` 为空字符串时抛出。
+            AttributeError: `events` 缺少 `on/off/emit` 任意方法时抛出。
+        """
+        if not isinstance(plugin_name, str):
+            raise TypeError("plugin_name 必须是字符串")
+        if not plugin_name.strip():
+            raise ValueError("plugin_name 不能为空字符串")
+        if not isinstance(instance_id, str):
+            raise TypeError("instance_id 必须是字符串")
+        if not instance_id.strip():
+            raise ValueError("instance_id 不能为空字符串")
+
+        for method_name in ("on", "off", "emit"):
+            if not hasattr(events, method_name):
+                raise AttributeError(f"events 缺少必要方法: {method_name}")
+
+        self._plugin_name = plugin_name
+        self._instance_id = instance_id
+        self._events = events
+
+    def on(
+        self,
+        event: str,
+        handler: Callable[[Any], Any],
+        *,
+        priority: int = 0,
+        scope: EventScope = "global",
+        once: bool = False,
+        error_policy: EventErrorPolicy | None = None,
+    ) -> str:
+        """
+        注册事件监听器。
+
+        Args:
+            event (str): 事件名。
+            handler (Callable[[Any], Any]): 事件处理函数。
+            priority (int): 监听优先级，数值越大越先执行。
+            scope (EventScope): 监听作用域，支持 global 或 instance。
+            once (bool): 是否触发一次后自动解绑。
+            error_policy (EventErrorPolicy | None): 监听器级错误策略。
+
+        Returns:
+            str: 监听器 ID。
+
+        Raises:
+            TypeError: `event` 或 `handler` 类型不合法时抛出。
+            ValueError: `event` 或策略参数不合法时抛出。
+        """
+        return self._events.on(
+            event,
+            handler,
+            priority=priority,
+            scope=scope,
+            once=once,
+            error_policy=error_policy,
+            owner_plugin_name=self._plugin_name,
+            owner_instance_id=self._instance_id,
+        )
+
+    def off(
+        self,
+        event: str,
+        handler: Callable[[Any], Any] | None = None,
+        *,
+        listener_id: str | None = None,
+    ) -> None:
+        """
+        取消事件监听。
+
+        Args:
+            event (str): 事件名。
+            handler (Callable[[Any], Any] | None): 监听函数对象。
+            listener_id (str | None): 监听器 ID。
+
+        Returns:
+            None: 无返回值。
+
+        Raises:
+            ValueError: `handler` 与 `listener_id` 同时为空时抛出。
+        """
+        self._events.off(event, handler, listener_id=listener_id)
+
+    async def emit_async(
+        self,
+        event: str,
+        payload: Any = None,
+        *,
+        scope: EventScope = "instance",
+        error_policy: EventErrorPolicy = "continue",
+    ) -> None:
+        """
+        异步发送事件。
+
+        默认使用 instance 作用域，并自动附带当前实例 ID 作为来源。
+
+        Args:
+            event (str): 事件名。
+            payload (Any): 事件载荷。
+            scope (EventScope): 事件作用域。
+            error_policy (EventErrorPolicy): 事件错误策略。
+
+        Returns:
+            None: 无返回值。
+
+        Raises:
+            ValueError: 底层事件总线校验参数失败时抛出。
+            Exception: 在 `error_policy="raise"` 且监听器失败时向上抛出。
+        """
+        kwargs: Dict[str, Any] = {
+            "scope": scope,
+            "error_policy": error_policy,
+        }
+        if scope == "instance":
+            kwargs["source_instance_id"] = self._instance_id
+
+        await self._events.emit(event, payload, **kwargs)
+
+    def emit(
+        self,
+        event: str,
+        payload: Any = None,
+        *,
+        scope: EventScope = "instance",
+        error_policy: EventErrorPolicy = "continue",
+    ) -> None:
+        """
+        同步桥接发送事件。
+
+        Args:
+            event (str): 事件名。
+            payload (Any): 事件载荷。
+            scope (EventScope): 事件作用域。
+            error_policy (EventErrorPolicy): 事件错误策略。
+
+        Returns:
+            None: 无返回值。
+
+        Raises:
+            ValueError: 底层事件总线校验参数失败时抛出。
+            Exception: 在 `error_policy="raise"` 且监听器失败时向上抛出。
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(
+                self.emit_async(
+                    event,
+                    payload,
+                    scope=scope,
+                    error_policy=error_policy,
+                )
+            )
+            return
+
+        loop.create_task(
+            self.emit_async(
+                event,
+                payload,
+                scope=scope,
+                error_policy=error_policy,
+            )
+        )
+
+    def off_all(self) -> None:
+        """
+        取消当前实例注册的全部监听器。
+
+        Returns:
+            None: 无返回值。
+        """
+        if hasattr(self._events, "off_by_instance"):
+            self._events.off_by_instance(self._instance_id)
 
 
 class PluginContext:
@@ -27,7 +228,13 @@ class PluginContext:
         self.instance_id = instance_id or plugin_name
         self.config = PluginConfigProxy(config)
         self.logger = logger
-        self.events = events
+        self.event = PluginEventFacade(
+            plugin_name=self.plugin_name,
+            instance_id=self.instance_id,
+            events=events,
+        )
+        # 兼容历史代码：ctx.events 继续可用，但建议新代码使用 ctx.event。
+        self.events = self.event
         
         # 解释器能力函数集合
         self.runtime_api = RuntimeAPI(
