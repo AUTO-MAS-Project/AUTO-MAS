@@ -38,6 +38,16 @@ import sys
 import argparse
 
 
+def build_cnb_headers(token: str) -> dict[str, str]:
+    """统一构建 CNB API 请求头。"""
+    return {
+        "Accept": "application/vnd.cnb.api+json",
+        "Authorization": token,
+        "Content-Type": "application/json",
+        "User-Agent": "CNB-API-Client/1.0.0",
+    }
+
+
 def trigger_build(
     token,
     branch="main",
@@ -64,13 +74,7 @@ def trigger_build(
     """
     url = f"https://api.cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/build/start"
 
-    headers = {
-        "Accept": "application/json",
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-        "Host": "api.cnb.cool",
-        "Connection": "keep-alive",
-    }
+    headers = build_cnb_headers(token)
 
     data: dict[str, object] = {"branch": branch, "event": event}
 

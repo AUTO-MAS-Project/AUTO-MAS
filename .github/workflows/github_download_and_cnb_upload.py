@@ -296,7 +296,6 @@ def create_cnb_config(
     """
     normalized_version = version_tag.lstrip("vV")
 
-    make_latest = not is_prerelease
     body = sanitize_release_body(release_body)
     body = body if body else f"AUTO-MAS v{normalized_version} 自动发布"
 
@@ -312,7 +311,7 @@ def create_cnb_config(
             "draft": False,
             "prerelease": is_prerelease,
             "target_commitish": target_commitish,
-            "make_latest": make_latest,
+            "make_latest": str(not is_prerelease).lower(),
         },
         "asset_files": files,
     }
