@@ -31,6 +31,12 @@ class PluginRuntimeStateModel(BaseModel):
     instance_id: str = Field(..., description="实例ID")
     plugin: str = Field(..., description="插件名")
     status: str = Field(default="configured", description="运行状态")
+    generation: int = Field(default=0, description="实例代际（每次重载成功后递增）")
+    lifecycle_phase: str = Field(default="configured", description="生命周期阶段")
+    lifecycle_updated_at: Optional[str] = Field(default=None, description="生命周期阶段更新时间")
+    reload_count: int = Field(default=0, description="成功重载次数")
+    last_reload_reason: Optional[str] = Field(default=None, description="最近重载原因")
+    last_reload_at: Optional[str] = Field(default=None, description="最近重载时间")
     created_at: Optional[str] = Field(default=None, description="记录创建时间")
     discovered_at: Optional[str] = Field(default=None, description="发现时间")
     loaded_at: Optional[str] = Field(default=None, description="代码加载时间")
@@ -136,6 +142,12 @@ def _build_runtime_states(root: Dict[str, Any]) -> Dict[str, PluginRuntimeStateM
             instance_id=str(record.instance_id),
             plugin=str(record.plugin_name),
             status=str(record.status),
+            generation=int(getattr(record, "generation", 0) or 0),
+            lifecycle_phase=str(getattr(record, "lifecycle_phase", record.status) or record.status),
+            lifecycle_updated_at=getattr(record, "lifecycle_updated_at", None),
+            reload_count=int(getattr(record, "reload_count", 0) or 0),
+            last_reload_reason=getattr(record, "last_reload_reason", None),
+            last_reload_at=getattr(record, "last_reload_at", None),
             created_at=record.created_at,
             discovered_at=record.discovered_at,
             loaded_at=record.loaded_at,
@@ -157,6 +169,8 @@ def _build_runtime_states(root: Dict[str, Any]) -> Dict[str, PluginRuntimeStateM
             instance_id=instance_id,
             plugin=plugin_name,
             status="configured",
+            generation=0,
+            lifecycle_phase="configured",
         )
 
     return result

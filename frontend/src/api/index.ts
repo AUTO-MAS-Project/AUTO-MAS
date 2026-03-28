@@ -93,6 +93,8 @@ export type { PlanUpdateIn } from './models/PlanUpdateIn';
 export type { PluginAddIn } from './models/PluginAddIn';
 export type { PluginAddOut } from './models/PluginAddOut';
 export type { PluginDeleteIn } from './models/PluginDeleteIn';
+export type { PluginDevRebuildCtxStubIn } from './models/PluginDevRebuildCtxStubIn';
+export type { PluginDevRebuildCtxStubOut } from './models/PluginDevRebuildCtxStubOut';
 export type { PluginInstanceModel } from './models/PluginInstanceModel';
 export type { PluginReloadInstanceIn } from './models/PluginReloadInstanceIn';
 export type { PluginReloadPluginIn } from './models/PluginReloadPluginIn';

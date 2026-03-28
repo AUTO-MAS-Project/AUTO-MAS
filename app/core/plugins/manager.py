@@ -374,14 +374,17 @@ class _PluginManager:
 
         await self._update_pypi_plugin(target.plugin, discovered)
 
-        await self.loader.unload_instance(instance_id)
         if target.enabled:
-            await self.loader.load_instance(
+            await self.loader.reload_instance(
                 instance_id=target.id,
                 plugin_name=target.plugin,
                 instance_name=target.name,
                 config=target.config,
+                reason="manager.reload_instance",
             )
+            return
+
+        await self.loader.unload_instance(instance_id)
 
     async def reload_plugin(self, plugin_name: str) -> None:
         """
@@ -412,16 +415,15 @@ class _PluginManager:
             raise ValueError(f"未找到插件实例: {plugin_name}")
 
         for item in matched:
-            await self.loader.unload_instance(item.id)
-
-        for item in matched:
             if not item.enabled:
+                await self.loader.unload_instance(item.id)
                 continue
-            await self.loader.load_instance(
+            await self.loader.reload_instance(
                 instance_id=item.id,
                 plugin_name=item.plugin,
                 instance_name=item.name,
                 config=item.config,
+                reason="manager.reload_plugin",
             )
 
 
