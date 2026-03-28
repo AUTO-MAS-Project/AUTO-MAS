@@ -325,7 +325,7 @@ jobs:
           prerelease: ${{ needs.build.outputs.is_prerelease }}
 
   cnb:
-    name: 触发 CNB 上传
+    name: 发布 CNB 发行版
     runs-on: ubuntu-latest
     needs: build
     if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' && (github.ref_name == 'main' || github.ref_name == 'dev')
