@@ -28,6 +28,7 @@ from .pypi_site import (
     iter_plugin_entry_points,
 )
 from .runtime_api import RuntimeAPI
+from .lifecycle import PluginLifecycle, REQUIRED_LIFECYCLE_METHODS
 
 __all__ = [
     "PluginContext",
@@ -53,6 +54,8 @@ __all__ = [
     "PluginLoader",
     "PluginRecord",
     "RuntimeAPI",
+    "PluginLifecycle",
+    "REQUIRED_LIFECYCLE_METHODS",
     "PluginManager",
     "ENTRY_POINT_GROUPS",
     "get_pypi_root",

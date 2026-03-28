@@ -44,6 +44,18 @@
                 </div>
                 <div class="instance-plugin">{{ item.plugin }}</div>
                 <div class="instance-id">{{ item.id }}</div>
+                <div class="instance-runtime" v-if="getRuntimeState(item.id)">
+                  <a-space size="6" wrap>
+                    <a-tag :color="getStatusTagColor(getRuntimeState(item.id)?.status)">
+                      {{ getRuntimeState(item.id)?.status || 'unknown' }}
+                    </a-tag>
+                    <a-tag :color="getPhaseTagColor(getRuntimeState(item.id)?.lifecycle_phase)">
+                      {{ getRuntimeState(item.id)?.lifecycle_phase || 'idle' }}
+                    </a-tag>
+                    <a-tag color="blue">g{{ getRuntimeState(item.id)?.generation ?? 0 }}</a-tag>
+                    <a-tag color="purple">reload {{ getRuntimeState(item.id)?.reload_count ?? 0 }}</a-tag>
+                  </a-space>
+                </div>
               </div>
             </div>
           </a-card>
@@ -97,6 +109,35 @@
               message="该插件未声明 schema，可能非预期行为或插件本身无需配置"
               style="margin-bottom: 12px"
             />
+
+            <a-card v-if="selectedRuntimeState" size="small" class="runtime-observer-card" title="运行态观测", v-show="">
+              <a-descriptions :column="2" size="small" bordered>
+                <a-descriptions-item label="运行状态">
+                  <a-tag :color="getStatusTagColor(selectedRuntimeState.status)">
+                    {{ selectedRuntimeState.status }}
+                  </a-tag>
+                </a-descriptions-item>
+                <a-descriptions-item label="生命周期阶段">
+                  <a-tag :color="getPhaseTagColor(selectedRuntimeState.lifecycle_phase)">
+                    {{ selectedRuntimeState.lifecycle_phase }}
+                  </a-tag>
+                </a-descriptions-item>
+                <a-descriptions-item label="代际">g{{ selectedRuntimeState.generation }}</a-descriptions-item>
+                <a-descriptions-item label="重载次数">{{ selectedRuntimeState.reload_count }}</a-descriptions-item>
+                <a-descriptions-item label="最近重载原因">
+                  {{ selectedRuntimeState.last_reload_reason || '-' }}
+                </a-descriptions-item>
+                <a-descriptions-item label="最近重载时间">
+                  {{ formatRuntimeTime(selectedRuntimeState.last_reload_at) }}
+                </a-descriptions-item>
+                <a-descriptions-item label="阶段更新时间">
+                  {{ formatRuntimeTime(selectedRuntimeState.lifecycle_updated_at) }}
+                </a-descriptions-item>
+                <a-descriptions-item label="最近错误">
+                  {{ selectedRuntimeState.last_error || '-' }}
+                </a-descriptions-item>
+              </a-descriptions>
+            </a-card>
 
             <a-form layout="vertical">
               <a-form-item label="实例名称">
@@ -335,6 +376,27 @@ interface PluginsGetResponse {
   schemas: Record<string, Record<string, PluginSchemaField>>
   schema_errors: Record<string, string>
   instances: PluginInstance[]
+  runtime_states: Record<string, PluginRuntimeState>
+}
+
+interface PluginRuntimeState {
+  instance_id: string
+  plugin: string
+  status: string
+  generation: number
+  lifecycle_phase: string
+  lifecycle_updated_at?: string | null
+  reload_count: number
+  last_reload_reason?: string | null
+  last_reload_at?: string | null
+  created_at?: string | null
+  discovered_at?: string | null
+  loaded_at?: string | null
+  activated_at?: string | null
+  disposed_at?: string | null
+  unloaded_at?: string | null
+  last_error?: string | null
+  last_error_at?: string | null
 }
 
 interface ListRow {
@@ -370,6 +432,7 @@ const discoveredPlugins = ref<string[]>([])
 const schemaMap = ref<Record<string, Record<string, PluginSchemaField>>>({})
 const schemaErrors = ref<Record<string, string>>({})
 const instances = ref<PluginInstance[]>([])
+const runtimeStates = ref<Record<string, PluginRuntimeState>>({})
 const selectedInstanceId = ref('')
 const editSnapshot = ref('')
 
@@ -404,6 +467,13 @@ const editForm = reactive({
 const selectedInstance = computed(() =>
   instances.value.find(item => item.id === selectedInstanceId.value)
 )
+
+const selectedRuntimeState = computed(() => {
+  if (!selectedInstanceId.value) {
+    return null
+  }
+  return runtimeStates.value[selectedInstanceId.value] || null
+})
 
 const activeSchema = computed(() => {
   const pluginName = editForm.plugin || selectedInstance.value?.plugin
@@ -481,6 +551,63 @@ const parseConfigText = (text: string): Record<string, unknown> => {
     throw new Error('配置必须是 JSON 对象')
   }
   return parsed as Record<string, unknown>
+}
+
+const getRuntimeState = (instanceId: string) => runtimeStates.value[instanceId]
+
+const getStatusTagColor = (status?: string) => {
+  if (!status) {
+    return 'default'
+  }
+  if (status === 'active') {
+    return 'success'
+  }
+  if (status === 'error') {
+    return 'error'
+  }
+  if (status === 'loaded') {
+    return 'processing'
+  }
+  if (status === 'disposed' || status === 'unloaded') {
+    return 'default'
+  }
+  if (status === 'configured' || status === 'discovered') {
+    return 'warning'
+  }
+  return 'default'
+}
+
+const getPhaseTagColor = (phase?: string) => {
+  if (!phase) {
+    return 'default'
+  }
+  if (phase === 'active') {
+    return 'green'
+  }
+  if (phase === 'reload_failed' || phase === 'on_reload_rollback') {
+    return 'red'
+  }
+  if (phase === 'on_reload_prepare' || phase === 'on_reload_commit') {
+    return 'cyan'
+  }
+  if (phase === 'on_load' || phase === 'on_start') {
+    return 'blue'
+  }
+  if (phase === 'on_stop' || phase === 'on_unload' || phase === 'disposed' || phase === 'unloaded') {
+    return 'default'
+  }
+  return 'geekblue'
+}
+
+const formatRuntimeTime = (value?: string | null) => {
+  if (!value) {
+    return '-'
+  }
+  const ts = Date.parse(value)
+  if (Number.isNaN(ts)) {
+    return value
+  }
+  return new Date(ts).toLocaleString()
 }
 
 const getConfigObjectFromText = () => parseConfigText(editForm.configText)
@@ -834,6 +961,7 @@ const fetchData = async () => {
     schemaMap.value = data.schemas || {}
     schemaErrors.value = data.schema_errors || {}
     instances.value = data.instances
+    runtimeStates.value = data.runtime_states || {}
 
     if (!selectedInstanceId.value && instances.value.length > 0) {
       selectInstance(instances.value[0].id)
@@ -1169,6 +1297,14 @@ onMounted(() => {
 .instance-id {
   font-size: 12px;
   color: var(--ant-color-text-secondary);
+}
+
+.instance-runtime {
+  margin-top: 8px;
+}
+
+.runtime-observer-card {
+  margin-bottom: 12px;
 }
 
 .detail-title {

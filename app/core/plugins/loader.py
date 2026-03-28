@@ -17,6 +17,7 @@ from app.utils.constants import UTC8
 
 from .context import PluginContext
 from .decorators import EventSubscription, get_event_subscriptions
+from .lifecycle import REQUIRED_LIFECYCLE_METHODS
 from .pypi_site import ensure_pypi_site_packages_on_syspath, iter_plugin_entry_points
 
 
@@ -41,8 +42,13 @@ class PluginRecord:
     status: str = "discovered"
     module: Optional[ModuleType] = None
     context: Optional[PluginContext] = None
-    dispose: Optional[Callable[[], Any]] = None
     error: Optional[str] = None
+    generation: int = 1
+    lifecycle_phase: str = "idle"
+    lifecycle_updated_at: str = field(default_factory=_utc8_now_iso)
+    reload_count: int = 0
+    last_reload_reason: Optional[str] = None
+    last_reload_at: Optional[str] = None
     created_at: str = field(default_factory=_utc8_now_iso)
     discovered_at: str = field(default_factory=_utc8_now_iso)
     loaded_at: Optional[str] = None
@@ -160,20 +166,31 @@ class PluginLoader:
         spec.loader.exec_module(module)
         return module
 
-    def _load_setup_from_entry_point(self, plugin_name: str, entry_point: Any) -> tuple[Optional[ModuleType], Callable[..., Any]]:
-        """从 PyPI Entry Point 加载插件 setup。"""
+    def _load_plugin_class_from_entry_point(self, plugin_name: str, entry_point: Any) -> tuple[Optional[ModuleType], type[Any]]:
+        """从 PyPI Entry Point 加载插件类入口。
+
+        Args:
+            plugin_name (str): 插件名。
+            entry_point (Any): 插件 Entry Point。
+
+        Returns:
+            tuple[Optional[ModuleType], type[Any]]: 模块对象与插件类对象。
+
+        Raises:
+            PluginDefinitionError: 当入口返回值既不是模块也不是类，或模块缺少 Plugin 类时抛出。
+        """
         loaded = entry_point.load()
         if inspect.ismodule(loaded):
-            setup = getattr(loaded, "setup", None)
-            if callable(setup):
-                return loaded, setup
-            raise PluginDefinitionError(f"插件缺少可调用入口 setup(ctx): {plugin_name}")
+            plugin_class = getattr(loaded, "Plugin", None)
+            if inspect.isclass(plugin_class):
+                return loaded, plugin_class
+            raise PluginDefinitionError(f"插件缺少类入口 Plugin: {plugin_name}")
 
-        if callable(loaded):
+        if inspect.isclass(loaded):
             module = inspect.getmodule(loaded)
             return module, loaded
 
-        raise PluginDefinitionError(f"插件 Entry Point 返回了不支持的对象: {plugin_name}")
+        raise PluginDefinitionError(f"插件 Entry Point 返回了不支持的对象（需要模块或类）: {plugin_name}")
 
     def _clear_cached_pypi_module(self, plugin_name: str, plugin_source: PluginSource) -> None:
         """清理 PyPI 插件模块缓存，确保重载使用最新代码。"""
@@ -200,41 +217,122 @@ class PluginLoader:
                 f"已清理 PyPI 插件模块缓存: plugin={plugin_name}, modules={len(target_keys)}"
             )
 
-    def _resolve_plugin_module_and_setup(
+    def _resolve_plugin_module_and_class(
         self,
         plugin_name: str,
         plugin_source: PluginSource,
-    ) -> tuple[Optional[ModuleType], Callable[..., Any]]:
-        """解析插件模块与 setup 入口。"""
+    ) -> tuple[Optional[ModuleType], type[Any]]:
+        """解析插件模块与类入口。
+
+        Args:
+            plugin_name (str): 插件名。
+            plugin_source (PluginSource): 插件来源描述。
+
+        Returns:
+            tuple[Optional[ModuleType], type[Any]]: 模块对象与插件类。
+
+        Raises:
+            PluginDefinitionError: 当插件路径缺失、缺少 Entry Point、或未导出 Plugin 类时抛出。
+        """
         if plugin_source.source == "local":
             if plugin_source.path is None:
                 raise PluginDefinitionError(f"本地插件路径缺失: {plugin_name}")
             plugin_py = plugin_source.path / "plugin.py"
             module = self._import_local_plugin_module(plugin_name, plugin_py)
-            setup = getattr(module, "setup", None)
-            if not callable(setup):
+            plugin_class = getattr(module, "Plugin", None)
+            if not inspect.isclass(plugin_class):
                 raise PluginDefinitionError(
-                    f"插件缺少可调用入口 setup(ctx): {plugin_name}"
+                    f"插件缺少类入口 Plugin: {plugin_name}"
                 )
-            return module, setup
+            return module, plugin_class
 
         if plugin_source.entry_point is None:
             raise PluginDefinitionError(f"PyPI 插件缺少 Entry Point: {plugin_name}")
         self._clear_cached_pypi_module(plugin_name, plugin_source)
-        return self._load_setup_from_entry_point(plugin_name, plugin_source.entry_point)
+        return self._load_plugin_class_from_entry_point(plugin_name, plugin_source.entry_point)
 
-    async def _call_dispose(self, dispose: Callable[[], Any]) -> None:
-        """调用插件 dispose，并兼容异步返回值。"""
-        result = dispose()
+    @staticmethod
+    def _ensure_required_lifecycle_methods(plugin_name: str, instance: Any) -> None:
+        """校验插件实例是否完整实现生命周期方法。
+
+        Args:
+            plugin_name (str): 插件名。
+            instance (Any): 插件实例。
+
+        Returns:
+            None: 无返回值。
+
+        Raises:
+            PluginDefinitionError: 当缺失生命周期方法或方法不可调用时抛出。
+        """
+        missing: list[str] = []
+        invalid: list[str] = []
+        for method_name in REQUIRED_LIFECYCLE_METHODS:
+            method = getattr(instance, method_name, None)
+            if method is None:
+                missing.append(method_name)
+                continue
+            if not callable(method):
+                invalid.append(method_name)
+
+        if missing:
+            raise PluginDefinitionError(
+                f"插件生命周期方法缺失: plugin={plugin_name}, missing={','.join(missing)}"
+            )
+        if invalid:
+            raise PluginDefinitionError(
+                f"插件生命周期方法不可调用: plugin={plugin_name}, invalid={','.join(invalid)}"
+            )
+
+    async def _call_lifecycle_method(self, instance: Any, method_name: str, *args: Any) -> None:
+        """调用插件生命周期方法，并兼容同步/异步实现。
+
+        Args:
+            instance (Any): 插件实例对象。
+            method_name (str): 生命周期方法名。
+            *args (Any): 生命周期方法参数。
+
+        Returns:
+            None: 无返回值。
+
+        Raises:
+            AttributeError: 目标方法不存在时抛出。
+            TypeError: 目标属性存在但不可调用时抛出。
+            Exception: 生命周期方法执行失败时透传原始异常。
+        """
+        method = getattr(instance, method_name, None)
+        if method is None:
+            raise AttributeError(f"生命周期方法不存在: {method_name}")
+        if not callable(method):
+            raise TypeError(f"生命周期方法不可调用: {method_name}")
+
+        result = method(*args)
         if inspect.isawaitable(result):
             await result
 
-    async def _call_setup(self, setup: Callable[[PluginContext], Any], context: PluginContext) -> Any:
-        """调用插件 setup，并兼容同步与异步返回值。"""
-        result = setup(context)
-        if inspect.isawaitable(result):
-            return await result
-        return result
+    def _create_plugin_instance(self, plugin_name: str, plugin_class: type[Any], context: PluginContext) -> Any:
+        """构建插件实例并校验生命周期契约。
+
+        Args:
+            plugin_name (str): 插件名。
+            plugin_class (type[Any]): 插件类。
+            context (PluginContext): 插件上下文。
+
+        Returns:
+            Any: 插件实例对象。
+
+        Raises:
+            PluginDefinitionError: 插件构造失败、缺失生命周期方法、或生命周期方法不可调用时抛出。
+        """
+        try:
+            instance = plugin_class(context)
+        except Exception as e:
+            raise PluginDefinitionError(
+                f"插件实例构造失败: plugin={plugin_name}, error={type(e).__name__}: {e}"
+            ) from e
+
+        self._ensure_required_lifecycle_methods(plugin_name, instance)
+        return instance
 
     def _mark_status(self, record: PluginRecord, status: str) -> None:
         """更新插件实例状态并记录对应时间戳。"""
@@ -253,6 +351,30 @@ class PluginLoader:
 
         if status in {"active", "unloaded"}:
             record.error = None
+
+    def _mark_lifecycle_phase(self, record: PluginRecord, phase: str) -> None:
+        """更新插件生命周期阶段并刷新时间戳。
+
+        Args:
+            record (PluginRecord): 插件运行记录。
+            phase (str): 生命周期阶段名称。
+
+        Returns:
+            None: 无返回值。
+
+        Raises:
+            TypeError: 当 phase 不是字符串时抛出。
+            ValueError: 当 phase 为空字符串时抛出。
+        """
+        if not isinstance(phase, str):
+            raise TypeError("phase 必须是字符串")
+
+        normalized = phase.strip()
+        if not normalized:
+            raise ValueError("phase 不能为空字符串")
+
+        record.lifecycle_phase = normalized
+        record.lifecycle_updated_at = _utc8_now_iso()
 
     def _mark_error(self, record: PluginRecord, message: str) -> None:
         """记录插件错误并切换为 error 状态。"""
@@ -429,14 +551,16 @@ class PluginLoader:
             display_name=plugin_name,
         )
         self._mark_status(record, "discovered")
+        self._mark_lifecycle_phase(record, "discovered")
         self.records[record.instance_id] = record
 
         try:
-            record.module, setup = self._resolve_plugin_module_and_setup(
+            record.module, plugin_class = self._resolve_plugin_module_and_class(
                 plugin_name,
                 plugin_source,
             )
             self._mark_status(record, "loaded")
+            self._mark_lifecycle_phase(record, "loaded")
 
             plugin_logger = get_logger(f"插件:{plugin_name}")
             plugin_config = self._load_plugin_config(plugin_name, plugin_source)
@@ -455,19 +579,21 @@ class PluginLoader:
                     self._register_decorated_handlers(record=record, target=record.module)
                 )
 
-            dispose = await self._call_setup(setup, record.context)
-            if dispose is not None and not callable(dispose):
-                record.plugin_instance = dispose
-                record.listener_ids.extend(
-                    self._register_decorated_handlers(record=record, target=record.plugin_instance)
-                )
-                dispose_method = getattr(record.plugin_instance, "dispose", None)
-                if callable(dispose_method):
-                    record.dispose = dispose_method
-            else:
-                record.dispose = dispose
+            record.plugin_instance = self._create_plugin_instance(
+                plugin_name=plugin_name,
+                plugin_class=plugin_class,
+                context=record.context,
+            )
+            record.listener_ids.extend(
+                self._register_decorated_handlers(record=record, target=record.plugin_instance)
+            )
+            self._mark_lifecycle_phase(record, "on_load")
+            await self._call_lifecycle_method(record.plugin_instance, "on_load", record.context)
+            self._mark_lifecycle_phase(record, "on_start")
+            await self._call_lifecycle_method(record.plugin_instance, "on_start")
 
             self._mark_status(record, "active")
+            self._mark_lifecycle_phase(record, "active")
             logger.info(f"插件已激活: {plugin_name}")
         except PluginDefinitionError as e:
             self._unregister_record_listeners(record)
@@ -525,14 +651,16 @@ class PluginLoader:
             display_name=instance_name or instance_id,
         )
         self._mark_status(record, "discovered")
+        self._mark_lifecycle_phase(record, "discovered")
         self.records[instance_id] = record
 
         try:
-            record.module, setup = self._resolve_plugin_module_and_setup(
+            record.module, plugin_class = self._resolve_plugin_module_and_class(
                 plugin_name,
                 plugin_source,
             )
             self._mark_status(record, "loaded")
+            self._mark_lifecycle_phase(record, "loaded")
 
             plugin_logger = get_logger(f"插件:{instance_id}")
             record.context = PluginContext(
@@ -549,19 +677,21 @@ class PluginLoader:
                     self._register_decorated_handlers(record=record, target=record.module)
                 )
 
-            dispose = await self._call_setup(setup, record.context)
-            if dispose is not None and not callable(dispose):
-                record.plugin_instance = dispose
-                record.listener_ids.extend(
-                    self._register_decorated_handlers(record=record, target=record.plugin_instance)
-                )
-                dispose_method = getattr(record.plugin_instance, "dispose", None)
-                if callable(dispose_method):
-                    record.dispose = dispose_method
-            else:
-                record.dispose = dispose
+            record.plugin_instance = self._create_plugin_instance(
+                plugin_name=plugin_name,
+                plugin_class=plugin_class,
+                context=record.context,
+            )
+            record.listener_ids.extend(
+                self._register_decorated_handlers(record=record, target=record.plugin_instance)
+            )
+            self._mark_lifecycle_phase(record, "on_load")
+            await self._call_lifecycle_method(record.plugin_instance, "on_load", record.context)
+            self._mark_lifecycle_phase(record, "on_start")
+            await self._call_lifecycle_method(record.plugin_instance, "on_start")
 
             self._mark_status(record, "active")
+            self._mark_lifecycle_phase(record, "active")
             logger.info(f"插件实例已激活: {instance_id} ({plugin_name})")
         except PluginDefinitionError as e:
             self._unregister_record_listeners(record)
@@ -641,20 +771,23 @@ class PluginLoader:
         if record is None:
             return
 
-        self._unregister_record_listeners(record)
-
-        if record.dispose is not None:
-            try:
-                await self._call_dispose(record.dispose)
-                self._mark_status(record, "disposed")
-            except Exception as e:
-                self._mark_error(record, f"{type(e).__name__}: {e}")
-                logger.exception(f"插件卸载失败: {plugin_name}, error={e}")
-                return
-        else:
+        try:
+            if record.plugin_instance is not None:
+                self._mark_lifecycle_phase(record, "on_stop")
+                await self._call_lifecycle_method(record.plugin_instance, "on_stop", "stop")
+                self._mark_lifecycle_phase(record, "on_unload")
+                await self._call_lifecycle_method(record.plugin_instance, "on_unload")
             self._mark_status(record, "disposed")
+            self._mark_lifecycle_phase(record, "disposed")
+        except Exception as e:
+            self._mark_error(record, f"{type(e).__name__}: {e}")
+            logger.exception(f"插件卸载失败: {plugin_name}, error={e}")
+            return
+        finally:
+            self._unregister_record_listeners(record)
 
         self._mark_status(record, "unloaded")
+        self._mark_lifecycle_phase(record, "unloaded")
         logger.info(f"插件已卸载: {plugin_name}")
 
     async def unload_instance(self, instance_id: str) -> None:
@@ -668,6 +801,81 @@ class PluginLoader:
             None: 无返回值。
         """
         await self.unload_plugin(instance_id)
+
+    async def reload_instance(
+        self,
+        *,
+        instance_id: str,
+        plugin_name: str,
+        instance_name: str,
+        config: Dict[str, Any],
+        reason: str = "manual",
+    ) -> PluginRecord:
+        """重载指定插件实例。
+
+        当前实现为基础事务雏形：
+        1. 若存在旧实例，先调用 `on_reload_prepare`；
+        2. 卸载旧实例；
+        3. 加载新实例；
+        4. 新实例激活后调用 `on_reload_commit`；
+        5. 若加载失败且新实例存在，调用 `on_reload_rollback`。
+
+        Args:
+            instance_id (str): 插件实例 ID。
+            plugin_name (str): 插件名。
+            instance_name (str): 实例展示名。
+            config (Dict[str, Any]): 实例配置。
+            reason (str): 重载触发原因。
+
+        Returns:
+            PluginRecord: 重载后的实例记录。
+
+        Raises:
+            Exception: 生命周期方法或加载流程异常时透传。
+        """
+        old_record = self.records.get(instance_id)
+        if old_record is not None and old_record.plugin_instance is not None:
+            old_record.last_reload_reason = reason
+            old_record.last_reload_at = _utc8_now_iso()
+            self._mark_lifecycle_phase(old_record, "on_reload_prepare")
+            await self._call_lifecycle_method(old_record.plugin_instance, "on_reload_prepare")
+            self._mark_lifecycle_phase(old_record, "on_stop")
+            await self._call_lifecycle_method(old_record.plugin_instance, "on_stop", f"reload:{reason}")
+
+        await self.unload_instance(instance_id)
+        new_record = await self.load_instance(
+            instance_id=instance_id,
+            plugin_name=plugin_name,
+            instance_name=instance_name,
+            config=config,
+        )
+
+        if new_record.status == "error":
+            new_record.last_reload_reason = reason
+            new_record.last_reload_at = _utc8_now_iso()
+            self._mark_lifecycle_phase(new_record, "reload_failed")
+            if new_record.plugin_instance is not None:
+                error = RuntimeError(str(new_record.error or "未知错误"))
+                await self._call_lifecycle_method(
+                    new_record.plugin_instance,
+                    "on_reload_rollback",
+                    error,
+                )
+            return new_record
+
+        previous_generation = 0
+        if old_record is not None:
+            previous_generation = int(getattr(old_record, "generation", 1) or 1)
+        new_record.generation = previous_generation + 1
+        new_record.reload_count = (old_record.reload_count + 1) if old_record is not None else 1
+        new_record.last_reload_reason = reason
+        new_record.last_reload_at = _utc8_now_iso()
+
+        if new_record.plugin_instance is not None:
+            self._mark_lifecycle_phase(new_record, "on_reload_commit")
+            await self._call_lifecycle_method(new_record.plugin_instance, "on_reload_commit")
+        self._mark_lifecycle_phase(new_record, "active")
+        return new_record
 
     async def unload_all(self) -> None:
         """
