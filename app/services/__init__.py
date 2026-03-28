@@ -23,6 +23,5 @@
 from .matomo import Matomo
 from .notification import Notify
 from .system import System
-from .update import Updater
 
-__all__ = ["Matomo", "Notify", "System", "Updater"]
+__all__ = ["Matomo", "Notify", "System"]

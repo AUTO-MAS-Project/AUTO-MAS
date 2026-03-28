@@ -168,6 +168,43 @@ export interface ElectronAPI {
     error?: string
   }>
 
+  // 应用更新（前端单端）
+  checkAppUpdate: (
+    currentVersion: string,
+    ifForce?: boolean
+  ) => Promise<{
+    code: number
+    status: 'success' | 'error'
+    message: string
+    if_need_update: boolean
+    latest_version: string
+    update_info: Record<string, string[]>
+  }>
+  downloadAppUpdate: (targetVersion: string) => Promise<{
+    code: number
+    status: 'success' | 'error'
+    message: string
+    data?: {
+      path?: string
+    }
+  }>
+  installAppUpdate: () => Promise<{
+    code: number
+    status: 'success' | 'error'
+    message: string
+  }>
+  getAppUpdateStatus: () => Promise<{
+    isDownloading: boolean
+    isInstalling: boolean
+    lastCheckTime?: string
+    remoteVersion?: string
+  }>
+  cancelAppUpdate: () => Promise<{
+    code: number
+    status: 'success' | 'error'
+    message: string
+  }>
+
   // 清理资源
   cleanup: () => Promise<{ success: boolean }>
 
@@ -207,10 +244,30 @@ export interface ElectronAPI {
     }) => void
   ) => void
   removeBackendStatusListener?: () => void
+
+  // 监听应用更新事件
+  onAppUpdateEvent: (
+    callback: (event: {
+      id: 'Update'
+      type: 'Update' | 'Signal' | 'Info'
+      data: Record<string, any>
+    }) => void
+  ) => void
+  removeAppUpdateEventListener?: () => void
 }
 
 declare global {
   interface Window {
     electronAPI: ElectronAPI
+    electronAppUpdateAPI?: Pick<
+      ElectronAPI,
+      | 'checkAppUpdate'
+      | 'downloadAppUpdate'
+      | 'installAppUpdate'
+      | 'getAppUpdateStatus'
+      | 'cancelAppUpdate'
+      | 'onAppUpdateEvent'
+      | 'removeAppUpdateEventListener'
+    >
   }
 }

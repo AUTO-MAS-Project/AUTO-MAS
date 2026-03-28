@@ -1,6 +1,7 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { useAppInitialization } from '@/composables/useAppInitialization'
-import { getInitializationDecision } from '@/utils/initializationDecision'
+import { getInitializationDecision, shouldEnterInitializationInDev } from '@/utils/initializationDecision'
+import { shouldBypassInitializationGuardInDev } from '@/utils/initializationPolicy'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
 const logger = window.electronAPI.getLogger('路由管理')
 
@@ -187,6 +188,18 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to, from, next) => {
+  if (
+    shouldBypassInitializationGuardInDev({
+      isDev: import.meta.env.DEV,
+      devEnterInitialization: shouldEnterInitializationInDev(),
+    })
+  ) {
+    logger.info(
+      'dev 模式默认放行路由守卫（可通过 VITE_DEV_ENTER_INITIALIZATION=true 开启初始化链路）'
+    )
+    next()
+    return
+  }
   logger.info(`路由守卫：${JSON.stringify({ to: to.path, from: from.path })}`)
 
   const { isInitialized, isBootstrapping } = useAppInitialization()
@@ -216,7 +229,10 @@ router.beforeEach(async (to, from, next) => {
   }
 
   const isDev = import.meta.env.DEV
-  if (isDev) return next()
+  const devEnterInitialization = shouldEnterInitializationInDev()
+  if (isDev && !devEnterInitialization) {
+    logger.info('dev 模式默认跳过初始化（可通过 VITE_DEV_ENTER_INITIALIZATION=true 开启）')
+  }
 
   logger.info(
     `检查初始化状态：${JSON.stringify({ isInitialized: isInitialized.value, isBootstrapping: isBootstrapping.value })}`

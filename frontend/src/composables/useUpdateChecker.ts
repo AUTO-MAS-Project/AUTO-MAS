@@ -1,7 +1,7 @@
 import { ref, onUnmounted } from 'vue'
-import { Service } from '@/api'
 import { message } from 'ant-design-vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import { getElectronAppUpdateAPI } from '@/utils/electronAppUpdate'
 
 const logger = window.electronAPI.getLogger('更新检查器')
 
@@ -24,14 +24,12 @@ let lastShownVersion: string | null = null
 // 检查自动更新设置是否开启
 const checkAutoUpdateEnabled = async (): Promise<boolean> => {
   try {
-    const response = await Service.getScriptsApiSettingGetPost()
-    if (response.code === 200 && response.data) {
-      const isEnabled = response.data.Update?.IfAutoUpdate || false
-      if (!isEnabled) {
-        logger.info('自动更新已关闭，禁用自动检查更新')
-      }
-      return isEnabled
+    const config = await window.electronAPI.loadConfig()
+    const isEnabled = config?.Update?.IfAutoUpdate || false
+    if (!isEnabled) {
+      logger.info('自动更新已关闭，禁用自动检查更新')
     }
+    return isEnabled
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.warn(`获取自动更新设置失败: ${errorMsg}`)
@@ -54,10 +52,8 @@ export function useUpdateChecker() {
     isPolling.value = true
 
     try {
-      const response = await Service.checkUpdateApiUpdateCheckPost({
-        current_version: version,
-        if_force: false, // 定时检查不强制获取，和顶栏一致
-      })
+      const appUpdateApi = getElectronAppUpdateAPI()
+      const response = await appUpdateApi.checkAppUpdate(version, false)
 
       if (response.code === 200) {
         if (response.if_need_update) {
@@ -93,10 +89,8 @@ export function useUpdateChecker() {
   const checkUpdate = async (silent = false, forceCheck = false) => {
     const { playSound } = useAudioPlayer()
     try {
-      const response = await Service.checkUpdateApiUpdateCheckPost({
-        current_version: version,
-        if_force: forceCheck,
-      })
+      const appUpdateApi = getElectronAppUpdateAPI()
+      const response = await appUpdateApi.checkAppUpdate(version, forceCheck)
 
       if (response.code === 200) {
         if (response.if_need_update) {

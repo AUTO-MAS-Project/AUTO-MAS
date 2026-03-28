@@ -76,3 +76,11 @@ export {
     BackendStartOptions,
     BackendStatusCallback
 } from './backendService'
+
+// 应用更新服务
+export {
+    AppUpdateService,
+    UpdateCheckOut,
+    OutBase,
+    AppUpdateStatus,
+} from './appUpdateService'
