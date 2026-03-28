@@ -1,7 +1,7 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
-from .context import PluginContext, RuntimeFacade
+from .context import PluginContext, PluginConfigProxy, RuntimeFacade
 from .cache_store import PluginCacheManager, JsonPluginCache
 from .config_store import PluginConfigStore
 from .event_bus import EventBus
@@ -27,6 +27,7 @@ from .runtime_api import RuntimeAPI
 
 __all__ = [
     "PluginContext",
+    "PluginConfigProxy",
     "RuntimeFacade",
     "PluginCacheManager",
     "JsonPluginCache",
