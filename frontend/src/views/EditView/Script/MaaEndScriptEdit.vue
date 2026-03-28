@@ -139,13 +139,13 @@
                 <template #label>
                   <span class="form-label">
                     启动参数
-                    <a-tooltip title="仅电脑端控制器需要配置">
+                    <a-tooltip title="启动游戏时的命令行参数">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input v-model:value="maaEndConfig.Game.Arguments" placeholder="可选" size="large" class="modern-input"
-                  @blur="handleChange('Game', 'Arguments', maaEndConfig.Game.Arguments)" />
+                <a-input v-model:value="maaEndConfig.Game.Arguments" placeholder="请输入启动参数" size="large"
+                  class="modern-input" @blur="handleChange('Game', 'Arguments', maaEndConfig.Game.Arguments)" />
               </a-form-item>
             </a-col>
             <a-col :span="6">

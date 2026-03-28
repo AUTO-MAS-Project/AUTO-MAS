@@ -175,6 +175,25 @@ MAA_REMAIN_FIGHT_BASE = {
 }
 """MAA剩余理智作战基础配置"""
 
+MAAEND_STAGE_BOOK = {
+    "OperatorEXP": "干员经验",
+    "Promotions": "干员进阶",
+    "T-Creds": "钱币收集",
+    "SkillUp": "技能提升",
+    "WeaponEXP": "武器经验",
+    "WeaponTune": "武器进阶",
+    "AdvancedProgression1": "高阶培养 I - D96钢样品四",
+    "AdvancedProgression2": "高阶培养 II - 超距辉映管",
+    "AdvancedProgression3": "高阶培养 III - 快子遴捡晶格",
+    "AdvancedProgression4": "高阶培养 IV - 象限拟合液",
+    "AdvancedProgression5": "高阶培养 V - 三相纳米片",
+}
+"""MAAEnd任务关卡中文映射表"""
+
+MAAEND_STAGE_WITH_AB = set(["OperatorEXP", "Promotions", "SkillUp", "WeaponTune"])
+"""MAAEnd任务包含AB关的关卡列表"""
+
+
 MAAEND_KILLPROC_TASK = {
     "id": "jobstop",
     "taskName": "__MXU_KILLPROC__",
@@ -187,6 +206,7 @@ MAAEND_KILLPROC_TASK = {
         },
     },
 }
+"""MAAEnd任务完成后退出任务配置"""
 
 EMULATOR_PATH_BOOK = {
     "mumu": {

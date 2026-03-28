@@ -31,8 +31,9 @@ from app.utils.constants import (
     UTC8,
     MATERIALS_MAP,
     RESOURCE_STAGE_INFO,
-    MAA_TASKS,
     MAA_STAGE_KEY,
+    MAAEND_STAGE_BOOK,
+    MAAEND_STAGE_WITH_AB,
     STARRAIL_STAGE_BOOK,
 )
 from .ConfigBase import (
@@ -809,6 +810,15 @@ class MaaEndUserConfig(ConfigBase):
                 "color": tag_color,
             }
         )
+
+        # 关卡信息标签
+        stage = self.get("Task", self.get("Task", "ProtocolSpaceTab"))
+        stage_ab = (
+            f" - {self.get("Task", "RewardsSetOption")[-1]}"
+            if stage in MAAEND_STAGE_WITH_AB
+            else ""
+        )
+        tags.append({"text": MAAEND_STAGE_BOOK[stage] + stage_ab, "color": "blue"})
 
         # 备注标签
         notes = self.get("Info", "Notes")

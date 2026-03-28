@@ -16,12 +16,8 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select
-            v-model:value="formData.Task.ProtocolSpaceTab"
-            :options="protocolSpaceOptions"
-            size="large"
-            @change="handleProtocolSpaceChange"
-          />
+          <a-select v-model:value="formData.Task.ProtocolSpaceTab" :options="protocolSpaceOptions" size="large"
+            @change="handleProtocolSpaceChange" />
         </a-form-item>
       </a-col>
 
@@ -35,12 +31,8 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select
-            v-model:value="currentTaskValue"
-            :options="currentTaskOptions"
-            size="large"
-            @change="handleTaskOptionChange"
-          />
+          <a-select v-model:value="currentTaskValue" :options="currentTaskOptions" size="large"
+            @change="handleTaskOptionChange" />
         </a-form-item>
       </a-col>
 
@@ -54,13 +46,9 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select
-            v-model:value="formData.Task.RewardsSetOption"
-            :options="rewardOptions"
-            :disabled="!rewardGroupEnabled"
-            size="large"
-            @change="emitSave('Task.RewardsSetOption', formData.Task.RewardsSetOption)"
-          />
+          <a-select v-model:value="formData.Task.RewardsSetOption" :options="rewardOptions"
+            :disabled="!rewardGroupEnabled" size="large"
+            @change="emitSave('Task.RewardsSetOption', formData.Task.RewardsSetOption)" />
         </a-form-item>
       </a-col>
     </a-row>
@@ -98,11 +86,11 @@ const taskOptionsMap: Record<string, Array<{ label: string; value: string; rewar
     { label: '武器进阶', value: 'WeaponTune', rewards: true },
   ],
   CrisisDrills: [
-    { label: '高阶培养 I', value: 'AdvancedProgression1', rewards: false },
-    { label: '高阶培养 II', value: 'AdvancedProgression2', rewards: false },
-    { label: '高阶培养 III', value: 'AdvancedProgression3', rewards: false },
-    { label: '高阶培养 IV', value: 'AdvancedProgression4', rewards: false },
-    { label: '高阶培养 V', value: 'AdvancedProgression5', rewards: false },
+    { label: '高阶培养 I - D96钢样品四', value: 'AdvancedProgression1', rewards: false },
+    { label: '高阶培养 II - 超距辉映管', value: 'AdvancedProgression2', rewards: false },
+    { label: '高阶培养 III - 快子遴捡晶格', value: 'AdvancedProgression3', rewards: false },
+    { label: '高阶培养 IV - 象限拟合液', value: 'AdvancedProgression4', rewards: false },
+    { label: '高阶培养 V - 三相纳米片', value: 'AdvancedProgression5', rewards: false },
   ],
 }
 

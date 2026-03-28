@@ -64,15 +64,38 @@ TAURI_POST_TASK_ID_RE = re.compile(r"post_task returned task_id:\s*([A-Za-z0-9._
 TEXT_TASK_ID_RE = re.compile(r"\btask_id\b\s*[:=]\s*\"?([A-Za-z0-9._-]+)\"?")
 TEXT_TASK_ID_ALT_RE = re.compile(r"\btask_id_\b\s*[:=]\s*\"?([A-Za-z0-9._-]+)\"?")
 
-ENTRY_TASK_NAME_ALIASES: dict[str, tuple[str, ...]] = {
-    "VisitFriendsMain": ("VisitFriends",),
-    "CreditShoppingMain": ("CreditShoppingN2", "CreditShopping"),
-    "DeliveryJobsMain": ("DeliveryJobs",),
-    "SellProductMain": ("SellProduct",),
-    "DailyRewardStart": ("DailyRewards", "DailyReward"),
-    "SeizeEntrustTaskMain": ("SeizeEntrustTask",),
-    "ProtocolSpaceEntry": ("ProtocolSpace",),
-    "MXU_KILLPROC": ("__MXU_KILLPROC__",),
+ENTRY_TASK_NAME_ALIASES: dict[str, str] = {
+    "AndroidOpenGame": "AndroidOpenGame",
+    "AutoCollectStart": "AutoCollect",
+    "AutoEcoFarmMain": "AutoEcoFarm",
+    "AutoEssenceMain": "AutoEssence",
+    "AutoStockpileMain": "AutoStockpile",
+    "BakerEntry": "BakerEntry",
+    "BatchAddFriendsMain": "BatchAddFriends",
+    "VisitFriendsMain": "VisitFriends",
+    "CreditShoppingMain": "CreditShoppingN2",
+    "DeliveryJobsMain": "DeliveryJobs",
+    "CraftingStart": "Crafting",
+    "DijiangRewards": "DijiangRewards",
+    "EnvironmentMonitoringMain": "EnvironmentMonitoring",
+    "EssenceFilterMain": "EssenceFilter",
+    "GearAssemblyStart": "GearAssembly",
+    "GiftOperatorMain": "GiftOperator",
+    "ImportBluePrints": "ImportBluePrints",
+    "ItemTransfer": "ItemTransfer",
+    "RealTimeTaskMain": "RealTimeTask",
+    "SellProductMain": "SellProduct",
+    "SimpleProductionBatchStart": "SimpleProductionBatchStart",
+    "DailyRewardStart": "DailyRewards",
+    "SeizeEntrustTaskMain": "SeizeEntrustTask",
+    "ProtocolSpaceEntry": "ProtocolSpace",
+    "WeaponUpgradeStart": "WeaponUpgrade",
+    "ResellMain": "AutoResell",
+    "AutoUseSpMedicationEntry": "AutoUseSpMedication",
+    "SimSpaceEntry": "ClaimSimulationRewards",
+    "WikiReadAll": "ReadAllWiki",
+    "ProdManualStart": "ReceiveProdManual",
+    "MXU_KILLPROC": "__MXU_KILLPROC__",
 }
 
 
@@ -299,9 +322,9 @@ def _entry_candidates(entry: str) -> tuple[str, ...]:
 
     candidates: list[str] = [entry]
 
-    aliases = ENTRY_TASK_NAME_ALIASES.get(entry)
-    if aliases is not None:
-        candidates.extend(aliases)
+    alias = ENTRY_TASK_NAME_ALIASES.get(entry)
+    if alias is not None:
+        candidates.append(alias)
 
     for suffix in ("Main", "Start", "Sub"):
         if entry.endswith(suffix) and len(entry) > len(suffix):
@@ -752,13 +775,20 @@ def _build_selected_task_mapping(
     limit = min(len(enabled_tasks), len(batch.tasks))
 
     for index in range(limit):
-        selected_task_id = enabled_tasks[index].id
+        selected_task = enabled_tasks[index]
+        selected_task_id = selected_task.id
         batch_task = batch.tasks[index]
-        if batch_task.entry:
+        if batch_task.entry and _task_name_matches(
+            selected_task.task_name, batch_task.entry
+        ):
             entry_to_selected_candidates.setdefault(batch_task.entry, []).append(
                 selected_task_id
             )
-        if batch_task.task_id:
+        if (
+            batch_task.task_id
+            and batch_task.entry
+            and _task_name_matches(selected_task.task_name, batch_task.entry)
+        ):
             task_id_to_selected_task_id[batch_task.task_id] = selected_task_id
 
     entry_to_selected_unique = {
@@ -885,13 +915,30 @@ def _resolve_selected_task_id(
     task_id: str,
     current_selected_task_id: str,
     task_id_to_selected_task_id: dict[str, str],
+    entry: str = "",
+    entry_to_selected_task_id: dict[str, str] | None = None,
+    active_snapshot: Snapshot | None = None,
 ) -> str:
-    """仅使用显式 task_id 映射还原 selected_task_id。"""
+    """优先用 task_id 还原，失败后允许按 entry 做稳定兜底。"""
 
     if task_id:
         selected_task_id = task_id_to_selected_task_id.get(task_id)
         if selected_task_id:
             return selected_task_id
+
+    if entry and entry_to_selected_task_id is not None:
+        selected_task_id = entry_to_selected_task_id.get(entry)
+        if selected_task_id:
+            return selected_task_id
+
+    if entry and active_snapshot is not None:
+        matched_selected_task_ids = [
+            task.id
+            for task in active_snapshot.tasks
+            if task.enabled and _task_name_matches(task.task_name, entry)
+        ]
+        if len(matched_selected_task_ids) == 1:
+            return matched_selected_task_ids[0]
 
     return current_selected_task_id
 
@@ -985,20 +1032,46 @@ def parse_log(root_dir: Path, lines: list[str]) -> list[str]:
     auxiliary_data = _build_auxiliary_data(root_dir)
     run_context = _collect_run_context(lines)
     runtime_task_starts = _collect_runtime_task_starts(lines)
-    task_id_to_selected_task_id = _build_global_task_id_mapping(
+    best_batch = _select_best_batch(
         auxiliary_data.batches,
-        auxiliary_data.snapshots,
+        run_context,
         auxiliary_data.task_id_to_entry,
     )
+    best_snapshot = (
+        _select_best_snapshot(best_batch, auxiliary_data.snapshots)
+        if best_batch is not None
+        else None
+    )
+    task_id_to_selected_task_id, entry_to_selected_task_id = (
+        _build_selected_task_mapping(
+            best_batch,
+            best_snapshot,
+            auxiliary_data.task_id_to_entry,
+        )
+    )
+    if not task_id_to_selected_task_id:
+        task_id_to_selected_task_id = _build_global_task_id_mapping(
+            auxiliary_data.batches,
+            auxiliary_data.snapshots,
+            auxiliary_data.task_id_to_entry,
+        )
+
     selected_task_name_mapping = _build_selected_task_name_mapping(
         auxiliary_data.snapshots
     )
+
     for task_id, selected_task_id in _build_runtime_start_fallback_mapping(
         runtime_task_starts,
         auxiliary_data.snapshots,
     ).items():
-        task_id_to_selected_task_id.setdefault(task_id, selected_task_id)
-    known_task_ids = set(task_id_to_selected_task_id)
+        task_id_to_selected_task_id[task_id] = selected_task_id
+
+    known_task_ids = {
+        task.task_id
+        for task in (best_batch.tasks if best_batch is not None else ())
+        if task.task_id
+    }
+    known_task_ids.update(task_id_to_selected_task_id)
     earliest_post_task_time = min(
         (
             task.posted_at
@@ -1104,6 +1177,8 @@ def parse_log(root_dir: Path, lines: list[str]) -> list[str]:
                     task_id=current_maa_task_id,
                     current_selected_task_id=current_selected_task_id,
                     task_id_to_selected_task_id=task_id_to_selected_task_id,
+                    entry_to_selected_task_id=entry_to_selected_task_id,
+                    active_snapshot=best_snapshot,
                 ),
                 task_id_to_selected_task_id=task_id_to_selected_task_id,
                 thread_selected_task_id=thread_selected_task_id,
@@ -1148,6 +1223,9 @@ def parse_log(root_dir: Path, lines: list[str]) -> list[str]:
                     task_id=current_maa_task_id,
                     current_selected_task_id=current_selected_task_id,
                     task_id_to_selected_task_id=task_id_to_selected_task_id,
+                    entry=entry,
+                    entry_to_selected_task_id=entry_to_selected_task_id,
+                    active_snapshot=best_snapshot,
                 ),
                 task_id_to_selected_task_id=task_id_to_selected_task_id,
                 thread_selected_task_id=thread_selected_task_id,
@@ -1209,6 +1287,9 @@ def parse_log(root_dir: Path, lines: list[str]) -> list[str]:
                     task_id=current_maa_task_id,
                     current_selected_task_id=current_selected_task_id,
                     task_id_to_selected_task_id=task_id_to_selected_task_id,
+                    entry=entry,
+                    entry_to_selected_task_id=entry_to_selected_task_id,
+                    active_snapshot=best_snapshot,
                 ),
                 task_id_to_selected_task_id=task_id_to_selected_task_id,
                 thread_selected_task_id=thread_selected_task_id,
@@ -1260,6 +1341,9 @@ def parse_log(root_dir: Path, lines: list[str]) -> list[str]:
                 task_id=current_maa_task_id,
                 current_selected_task_id=current_selected_task_id,
                 task_id_to_selected_task_id=task_id_to_selected_task_id,
+                entry=entry,
+                entry_to_selected_task_id=entry_to_selected_task_id,
+                active_snapshot=best_snapshot,
             ),
             task_id_to_selected_task_id=task_id_to_selected_task_id,
             thread_selected_task_id=thread_selected_task_id,
