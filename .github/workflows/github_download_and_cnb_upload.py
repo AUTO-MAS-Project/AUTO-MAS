@@ -294,16 +294,15 @@ def create_cnb_config(
     Returns:
         CNB配置字典
     """
-    normalized_version = version_tag.lstrip("vV")
 
     body = sanitize_release_body(release_body)
-    body = body if body else f"AUTO-MAS v{normalized_version} 自动发布"
+    body = body if body else f"AUTO-MAS {version_tag} 自动发布"
     prerelease = bool(is_prerelease)
 
     # 在配置生成阶段统一规范 release_data，后续流程直接透传使用。
     release_data = {
-        "tag_name": f"v{normalized_version}",
-        "name": f"v{normalized_version}",
+        "tag_name": version_tag,
+        "name": version_tag,
         "body": body,
         "draft": False,
         "prerelease": prerelease,
