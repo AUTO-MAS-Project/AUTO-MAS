@@ -625,6 +625,14 @@ export function useScriptApi() {
                           maaEndUserData.Info?.RemainedDay !== undefined
                             ? maaEndUserData.Info.RemainedDay
                             : -1,
+                        IfSkland:
+                          maaEndUserData.Info?.IfSkland !== undefined
+                            ? maaEndUserData.Info.IfSkland
+                            : false,
+                        SklandToken:
+                          maaEndUserData.Info?.SklandToken !== undefined
+                            ? maaEndUserData.Info.SklandToken
+                            : '',
                         Notes:
                           maaEndUserData.Info?.Notes !== undefined ? maaEndUserData.Info.Notes : '',
                         Tag:
@@ -683,9 +691,22 @@ export function useScriptApi() {
                             : [],
                       },
                       Data: {
-                        LastProxyDate: '',
-                        ProxyTimes: 0,
-                        IfPassCheck: false,
+                        LastProxyDate:
+                          maaEndUserData.Data?.LastProxyDate !== undefined
+                            ? maaEndUserData.Data.LastProxyDate
+                            : '',
+                        LastSklandDate:
+                          maaEndUserData.Data?.LastSklandDate !== undefined
+                            ? maaEndUserData.Data.LastSklandDate
+                            : '',
+                        ProxyTimes:
+                          maaEndUserData.Data?.ProxyTimes !== undefined
+                            ? maaEndUserData.Data.ProxyTimes
+                            : 0,
+                        IfPassCheck:
+                          maaEndUserData.Data?.IfPassCheck !== undefined
+                            ? maaEndUserData.Data.IfPassCheck
+                            : false,
                       },
                     }
                   }
