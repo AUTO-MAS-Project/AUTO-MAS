@@ -1,7 +1,0 @@
-﻿interface:
-  display_name: "AUTO-MAS 后端开发"
-  short_description: "按项目既有架构开发和排查 AUTO-MAS 后端。"
-  default_prompt: "使用 $auto-mas-backend-dev 修改、重构或排查 AUTO-MAS 后端代码，先按分层定位改动点，再完成最小闭环验证。"
-
-policy:
-  allow_implicit_invocation: true
