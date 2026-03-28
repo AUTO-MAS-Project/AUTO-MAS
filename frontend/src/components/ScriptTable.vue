@@ -1,16 +1,8 @@
 <template>
   <div class="scripts-grid">
     <!-- 使用vuedraggable包装脚本列表 -->
-    <draggable
-      v-model="localScripts"
-      item-key="id"
-      :animation="200"
-      ghost-class="script-ghost"
-      chosen-class="script-chosen"
-      drag-class="script-drag"
-      class="draggable-scripts"
-      @end="onScriptDragEnd"
-    >
+    <draggable v-model="localScripts" item-key="id" :animation="200" ghost-class="script-ghost"
+      chosen-class="script-chosen" drag-class="script-drag" class="draggable-scripts" @end="onScriptDragEnd">
       <template #item="{ element: script }">
         <div :key="script.id" class="script-wrapper">
           <a-card :hoverable="true" class="script-card" :body-style="{ padding: '0' }">
@@ -18,112 +10,64 @@
             <div class="script-header">
               <div class="script-info">
                 <div class="script-logo-container">
-                  <img
-                    v-if="script.type === 'MAA'"
-                    src="@/assets/MAA.png"
-                    alt="MAA"
-                    class="script-logo"
-                  />
-                  <img
-                    v-else-if="script.type === 'SRC'"
-                    src="@/assets/SRC.png"
-                    alt="SRC"
-                    class="script-logo"
-                  />
-                  <img
-                    v-else-if="script.type === 'MaaEnd'"
-                    src="@/assets/MaaEnd.png"
-                    alt="MaaEnd"
-                    class="script-logo"
-                  />
+                  <img v-if="script.type === 'MAA'" src="@/assets/MAA.png" alt="MAA" class="script-logo" />
+                  <img v-else-if="script.type === 'SRC'" src="@/assets/SRC.png" alt="SRC" class="script-logo" />
+                  <img v-else-if="script.type === 'MaaEnd'" src="@/assets/MaaEnd.png" alt="MaaEnd"
+                    class="script-logo" />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
                   <h3 class="script-name">{{ script.name }}</h3>
-                  <a-tag
-                    :color="
-                      script.type === 'MAA'
-                        ? 'blue'
-                        : script.type === 'SRC'
-                          ? 'purple'
-                          : script.type === 'MaaEnd'
-                            ? 'blue'
-                            : 'green'
-                    "
-                    class="script-type"
-                  >
+                  <a-tag :color="script.type === 'MAA'
+                      ? 'blue'
+                      : script.type === 'SRC'
+                        ? 'purple'
+                        : script.type === 'MaaEnd'
+                          ? 'blue'
+                          : 'green'
+                    " class="script-type">
                     {{ script.type }}
                   </a-tag>
                 </div>
               </div>
               <div class="header-actions">
-                <a-button
-                  v-if="script.type === 'MAA' && !props.activeConnections.has(script.id)"
-                  type="primary"
-                  ghost
-                  size="middle"
-                  @click="handleStartMAAConfig(script)"
-                >
+                <a-button v-if="script.type === 'MAA' && !props.activeConnections.has(script.id)" type="primary" ghost
+                  size="middle" @click="handleStartMAAConfig(script)">
                   <template #icon>
                     <SettingOutlined />
                   </template>
                   配置MAA
                 </a-button>
-                <a-button
-                  v-if="script.type === 'MAA' && props.activeConnections.has(script.id)"
-                  type="default"
-                  size="middle"
-                  disabled
-                  style="color: #52c41a; border-color: #52c41a"
-                >
+                <a-button v-if="script.type === 'MAA' && props.activeConnections.has(script.id)" type="default"
+                  size="middle" disabled style="color: #52c41a; border-color: #52c41a">
                   <template #icon>
                     <SettingOutlined />
                   </template>
                   正在配置
                 </a-button>
-                <a-button
-                  v-if="script.type === 'SRC' && !props.activeConnections.has(script.id)"
-                  type="primary"
-                  ghost
-                  size="middle"
-                  @click="handleStartSRCConfig(script)"
-                >
+                <a-button v-if="script.type === 'SRC' && !props.activeConnections.has(script.id)" type="primary" ghost
+                  size="middle" @click="handleStartSRCConfig(script)">
                   <template #icon>
                     <SettingOutlined />
                   </template>
                   配置SRC
                 </a-button>
-                <a-button
-                  v-if="script.type === 'SRC' && props.activeConnections.has(script.id)"
-                  type="default"
-                  size="middle"
-                  disabled
-                  style="color: #52c41a; border-color: #52c41a"
-                >
+                <a-button v-if="script.type === 'SRC' && props.activeConnections.has(script.id)" type="default"
+                  size="middle" disabled style="color: #52c41a; border-color: #52c41a">
                   <template #icon>
                     <SettingOutlined />
                   </template>
                   正在配置
                 </a-button>
-                <a-button
-                  v-if="script.type === 'MaaEnd' && !props.activeConnections.has(script.id)"
-                  type="primary"
-                  ghost
-                  size="middle"
-                  @click="handleStartMaaEndConfig(script)"
-                >
+                <a-button v-if="script.type === 'MaaEnd' && !props.activeConnections.has(script.id)" type="primary"
+                  ghost size="middle" @click="handleStartMaaEndConfig(script)">
                   <template #icon>
                     <SettingOutlined />
                   </template>
                   配置MaaEnd
                 </a-button>
-                <a-button
-                  v-if="script.type === 'MaaEnd' && props.activeConnections.has(script.id)"
-                  type="default"
-                  size="middle"
-                  disabled
-                  style="color: #52c41a; border-color: #52c41a"
-                >
+                <a-button v-if="script.type === 'MaaEnd' && props.activeConnections.has(script.id)" type="default"
+                  size="middle" disabled style="color: #52c41a; border-color: #52c41a">
                   <template #icon>
                     <SettingOutlined />
                   </template>
@@ -135,24 +79,14 @@
                   </template>
                   编辑脚本
                 </a-button>
-                <a-button
-                  type="default"
-                  size="middle"
-                  class="action-button add-button"
-                  @click="handleAddUser(script)"
-                >
+                <a-button type="default" size="middle" class="action-button add-button" @click="handleAddUser(script)">
                   <template #icon>
                     <UserAddOutlined />
                   </template>
                   添加用户
                 </a-button>
-                <a-popconfirm
-                  title="确定要删除这个脚本吗？"
-                  description="删除后将无法恢复，请谨慎操作"
-                  ok-text="确定"
-                  cancel-text="取消"
-                  @confirm="handleDelete(script)"
-                >
+                <a-popconfirm title="确定要删除这个脚本吗？" description="删除后将无法恢复，请谨慎操作" ok-text="确定" cancel-text="取消"
+                  @confirm="handleDelete(script)">
                   <a-button danger size="middle" class="action-button delete-button">
                     <template #icon>
                       <DeleteOutlined />
@@ -166,16 +100,9 @@
             <!-- 用户列表 -->
             <div v-if="script.users && script.users.length > 0" class="users-section">
               <!-- 使用vuedraggable包装用户列表 -->
-              <draggable
-                v-model="script.users"
-                item-key="id"
-                :animation="200"
-                ghost-class="user-ghost"
-                chosen-class="user-chosen"
-                drag-class="user-drag"
-                class="users-list"
-                @end="(evt: any) => onUserDragEnd(evt, script)"
-              >
+              <draggable v-model="script.users" item-key="id" :animation="200" ghost-class="user-ghost"
+                chosen-class="user-chosen" drag-class="user-drag" class="users-list"
+                @end="(evt: any) => onUserDragEnd(evt, script)">
                 <template #item="{ element: user }">
                   <div :key="user.id" class="user-item">
                     <div class="user-info">
@@ -183,109 +110,64 @@
                         <div class="user-name-section">
                           <span class="user-name">{{ user.Info.Name }}</span>
                           <!-- MAA、SRC 和 MaaEnd 脚本显示服务器标签 -->
-                          <a-tag
-                            v-if="
-                              script.type === 'MAA' ||
-                              script.type === 'SRC' ||
-                              script.type === 'MaaEnd'
-                            "
-                            :color="
-                              script.type === 'MaaEnd'
+                          <a-tag v-if="
+                            script.type === 'MAA' ||
+                            script.type === 'SRC' ||
+                            script.type === 'MaaEnd'
+                          " :color="script.type === 'MaaEnd'
                                 ? getMaaEndResourceTagColor(user)
                                 : getServerTagColor(user.Info.Server)
-                            "
-                            class="server-tag"
-                          >
-                            {{ script.type === 'MaaEnd' ? getMaaEndResourceLabel(user) : getServerDisplayName(user.Info.Server) }}
+                              " class="server-tag">
+                            {{ script.type === 'MaaEnd' ? getMaaEndResourceLabel(user) :
+                            getServerDisplayName(user.Info.Server) }}
                           </a-tag>
 
                           <!-- 账号标签 -->
-                          <a-tag
-                            v-if="
-                              script.type === 'MAA' ||
-                              script.type === 'SRC' ||
-                              script.type === 'MaaEnd'
-                            "
-                            :color="
-                              script.type === 'MaaEnd'
+                          <a-tag v-if="
+                            script.type === 'MAA' ||
+                            script.type === 'SRC' ||
+                            script.type === 'MaaEnd'
+                          " :color="script.type === 'MaaEnd'
                                 ? 'blue'
                                 : getServerTagColor(user.Info.Server)
-                            "
-                            class="clickable-tag"
-                            @click="handleUserIdClick(user)"
-                          >
+                              " class="clickable-tag" @click="handleUserIdClick(user)">
                             {{ getUserIdDisplayText(user) }}
                           </a-tag>
 
                           <!-- 密码标签 -->
-                          <a-tag
-                            v-if="
-                              script.type === 'MAA' ||
-                              script.type === 'SRC' ||
-                              script.type === 'MaaEnd'
-                            "
-                            :color="
-                              script.type === 'MaaEnd'
+                          <a-tag v-if="
+                            script.type === 'MAA' ||
+                            script.type === 'SRC' ||
+                            script.type === 'MaaEnd'
+                          " :color="script.type === 'MaaEnd'
                                 ? 'blue'
                                 : getServerTagColor(user.Info.Server)
-                            "
-                            class="clickable-tag"
-                            @click="handlePasswordClick(user)"
-                          >
+                              " class="clickable-tag" @click="handlePasswordClick(user)">
                             {{ getPasswordDisplayText(user) }}
                           </a-tag>
                         </div>
 
                         <!-- 用户详细信息 - MAA和SRC脚本用户 -->
-                        <div
-                          v-if="
-                            script.type === 'MAA' ||
-                            script.type === 'SRC' ||
-                            script.type === 'MaaEnd'
-                          "
-                          class="user-info-tags"
-                        >
+                        <div v-if="
+                          script.type === 'MAA' ||
+                          script.type === 'SRC' ||
+                          script.type === 'MaaEnd'
+                        " class="user-info-tags">
                           <!-- 直接使用后端提供的Tag字段 -->
-                          <a-tag
-                            v-for="(tag, index) in parseStatusTagList(user.Info.Tag)"
-                            :key="index"
-                            :class="[
-                              'info-tag',
-                              { 'clickable-tag': tag.text === '人工排查未通过' },
-                            ]"
-                            :color="tag.color"
-                            @click="
+                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index" :class="[
+                            'info-tag',
+                            { 'clickable-tag': tag.text === '人工排查未通过' },
+                          ]" :color="tag.color" @click="
                               tag.text === '人工排查未通过' ? handlePassCheck(user) : undefined
-                            "
-                          >
+                              ">
                             {{ tag.text }}
                           </a-tag>
-
-                          <template v-if="script.type === 'MaaEnd'">
-                            <a-tag class="info-tag" color="blue">
-                              协议空间: {{ getMaaEndProtocolSpaceLabel(user) }}
-                            </a-tag>
-                            <a-tag class="info-tag" color="blue">
-                              {{ getMaaEndTaskTagLabel(user) }}
-                            </a-tag>
-                            <a-tag
-                              v-if="isMaaEndRewardGroupEnabled(user)"
-                              class="info-tag"
-                              color="blue"
-                            >
-                              奖励组: {{ getMaaEndRewardGroupLabel(user) }}
-                            </a-tag>
-                          </template>
                         </div>
                         <!-- 用户详细信息 - 通用脚本用户 -->
                         <div v-if="script.type === 'General'" class="user-info-tags">
                           <!-- 直接使用后端提供的Tag字段 -->
-                          <a-tag
-                            v-for="(tag, index) in parseStatusTagList(user.Info.Tag)"
-                            :key="index"
-                            class="info-tag"
-                            :color="tag.color"
-                          >
+                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index" class="info-tag"
+                            :color="tag.color">
                             {{ tag.text }}
                           </a-tag>
                         </div>
@@ -294,36 +176,21 @@
 
                     <div class="user-controls">
                       <div class="user-status">
-                        <a-switch
-                          :checked="user.Info.Status"
-                          :checked-children="'启用'"
-                          :un-checked-children="'禁用'"
-                          class="status-switch"
-                          @click="handleToggleUserStatus(user)"
-                        />
+                        <a-switch :checked="user.Info.Status" :checked-children="'启用'" :un-checked-children="'禁用'"
+                          class="status-switch" @click="handleToggleUserStatus(user)" />
                       </div>
 
                       <div class="user-actions">
                         <a-tooltip title="编辑用户配置">
-                          <a-button
-                            type="default"
-                            size="middle"
-                            class="user-action-btn"
-                            @click="handleEditUser(user)"
-                          >
+                          <a-button type="default" size="middle" class="user-action-btn" @click="handleEditUser(user)">
                             <template #icon>
                               <EditOutlined />
                             </template>
                             编辑
                           </a-button>
                         </a-tooltip>
-                        <a-popconfirm
-                          title="确定要删除这个用户吗？"
-                          description="删除后将无法恢复"
-                          ok-text="确定"
-                          cancel-text="取消"
-                          @confirm="handleDeleteUser(user)"
-                        >
+                        <a-popconfirm title="确定要删除这个用户吗？" description="删除后将无法恢复" ok-text="确定" cancel-text="取消"
+                          @confirm="handleDeleteUser(user)">
                           <a-tooltip title="删除用户">
                             <a-button type="default" size="middle" danger class="user-action-btn">
                               <template #icon>
@@ -600,77 +467,6 @@ const getMaaEndResourceTagColor = (user: any): string => {
     default:
       return 'blue'
   }
-}
-
-const getMaaEndProtocolSpaceLabel = (user: any): string => {
-  switch (user.Task?.ProtocolSpaceTab) {
-    case 'WeaponProgression':
-      return '武器养成'
-    case 'CrisisDrills':
-      return '危境预演'
-    case 'OperatorProgression':
-    default:
-      return '干员养成'
-  }
-}
-
-const getMaaEndTaskLabel = (user: any): string => {
-  const taskLabels: Record<string, string> = {
-    OperatorEXP: '干员经验',
-    Promotions: '干员进阶',
-    'T-Creds': '钱币收集',
-    SkillUp: '技能提升',
-    WeaponEXP: '武器经验',
-    WeaponTune: '武器进阶',
-    AdvancedProgression1: '高阶培养 I',
-    AdvancedProgression2: '高阶培养 II',
-    AdvancedProgression3: '高阶培养 III',
-    AdvancedProgression4: '高阶培养 IV',
-    AdvancedProgression5: '高阶培养 V',
-  }
-
-  const fieldMap: Record<string, string> = {
-    OperatorProgression: 'OperatorProgression',
-    WeaponProgression: 'WeaponProgression',
-    CrisisDrills: 'CrisisDrills',
-  }
-
-  const protocolSpaceTab = user.Task?.ProtocolSpaceTab || 'OperatorProgression'
-  const field = fieldMap[protocolSpaceTab] || 'OperatorProgression'
-  return taskLabels[user.Task?.[field]] || '未设置'
-}
-
-const getMaaEndTaskTagLabel = (user: any): string => {
-  switch (user.Task?.ProtocolSpaceTab) {
-    case 'WeaponProgression':
-      return `武器养成: ${getMaaEndTaskLabel(user)}`
-    case 'CrisisDrills':
-      return `危境预演: ${getMaaEndTaskLabel(user)}`
-    case 'OperatorProgression':
-    default:
-      return `干员养成: ${getMaaEndTaskLabel(user)}`
-  }
-}
-
-const isMaaEndRewardGroupEnabled = (user: any): boolean => {
-  const rewardEnabledTasks = new Set([
-    'OperatorEXP',
-    'Promotions',
-    'SkillUp',
-    'WeaponTune',
-  ])
-  const fieldMap: Record<string, string> = {
-    OperatorProgression: 'OperatorProgression',
-    WeaponProgression: 'WeaponProgression',
-    CrisisDrills: 'CrisisDrills',
-  }
-  const protocolSpaceTab = user.Task?.ProtocolSpaceTab || 'OperatorProgression'
-  const field = fieldMap[protocolSpaceTab] || 'OperatorProgression'
-  return rewardEnabledTasks.has(user.Task?.[field])
-}
-
-const getMaaEndRewardGroupLabel = (user: any): string => {
-  return user.Task?.RewardsSetOption === 'RewardsSetB' ? '奖励组 B' : '奖励组 A'
 }
 
 // 获取剩余天数的颜色
