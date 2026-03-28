@@ -78,19 +78,6 @@ class CNBReleaseUploader:
         self.create_release_headers = create_release_headers or build_cnb_headers(token)
         self.headers = build_cnb_headers(token)
 
-    @staticmethod
-    def _to_bool(value: object) -> bool:
-        """将 bool/字符串/数字安全转换为布尔值。"""
-        if isinstance(value, bool):
-            return value
-        if value is None:
-            return False
-        if isinstance(value, (int, float)):
-            return value != 0
-        if isinstance(value, str):
-            return value.strip().lower() in {"true", "1", "yes", "y", "on"}
-        return bool(value)
-
     def create_release(self, project_path: str, release_data: Dict) -> Optional[Dict]:
         """
         创建一个新的release
@@ -107,20 +94,9 @@ class CNBReleaseUploader:
         # 按 CNB API 要求构造创建 release 的专用请求头
         create_release_headers = dict(self.create_release_headers)
 
-        # 按接口约定构造请求体，避免类型不匹配导致 invalid HTTP Body
-        request_body = {
-            "body": release_data.get("body", ""),
-            "draft": self._to_bool(release_data.get("draft", False)),
-            "make_latest": str(self._to_bool(release_data.get("make_latest", False))).lower(),
-            "name": release_data.get("name", ""),
-            "prerelease": self._to_bool(release_data.get("prerelease", False)),
-            "tag_name": release_data.get("tag_name", ""),
-            "target_commitish": release_data.get("target_commitish", "main"),
-        }
-
         try:
             response = requests.post(
-                url, headers=create_release_headers, json=request_body
+                url, headers=create_release_headers, json=release_data
             )
             response.raise_for_status()
 

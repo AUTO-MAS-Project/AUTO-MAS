@@ -298,21 +298,25 @@ def create_cnb_config(
 
     body = sanitize_release_body(release_body)
     body = body if body else f"AUTO-MAS v{normalized_version} 自动发布"
+    prerelease = bool(is_prerelease)
+
+    # 在配置生成阶段统一规范 release_data，后续流程直接透传使用。
+    release_data = {
+        "tag_name": f"v{normalized_version}",
+        "name": f"v{normalized_version}",
+        "body": body,
+        "draft": False,
+        "prerelease": prerelease,
+        "target_commitish": target_commitish,
+        "make_latest": str(not prerelease).lower(),
+    }
 
     config = {
         "token": token,
         "project_path": project_path,
         "base_url": "https://api.cnb.cool",
         "overwrite": True,
-        "release_data": {
-            "tag_name": f"v{normalized_version}",
-            "name": f"AUTO-MAS v{normalized_version}",
-            "body": body,
-            "draft": False,
-            "prerelease": is_prerelease,
-            "target_commitish": target_commitish,
-            "make_latest": str(not is_prerelease).lower(),
-        },
+        "release_data": release_data,
         "asset_files": files,
     }
 
