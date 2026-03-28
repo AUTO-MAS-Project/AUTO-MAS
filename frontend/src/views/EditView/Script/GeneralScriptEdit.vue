@@ -183,6 +183,11 @@
                     </template>
                     选择文件
                   </a-button>
+                  <a-button size="large" class="path-clear-icon-btn" aria-label="清空路径" @click="clearTrackProcessExe">
+                    <template #icon>
+                      <DeleteOutlined />
+                    </template>
+                  </a-button>
                 </a-input-group>
               </a-form-item>
             </a-col>
@@ -446,7 +451,7 @@
                 <template #label>
                   <a-tooltip title="选择要使用的模拟器">
                     <span class="form-label">
-                      模拟器选择
+                      模拟器
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
@@ -536,7 +541,7 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="generalConfig.Game.WaitTime" :min="0" :max="300" size="large"
+                <a-input-number v-model:value="generalConfig.Game.WaitTime" :min="0" :max="9999" size="large"
                   class="modern-number-input" style="width: 100%"
                   @blur="handleChange('Game', 'WaitTime', generalConfig.Game.WaitTime)" />
               </a-form-item>
@@ -594,7 +599,7 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="generalConfig.Run.ProxyTimesLimit" :min="0" :max="999" size="large"
+                <a-input-number v-model:value="generalConfig.Run.ProxyTimesLimit" :min="0" :max="9999" size="large"
                   class="modern-number-input" style="width: 100%"
                   @blur="handleChange('Run', 'ProxyTimesLimit', generalConfig.Run.ProxyTimesLimit)" />
               </a-form-item>
@@ -609,7 +614,7 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="generalConfig.Run.RunTimesLimit" :min="1" :max="10" size="large"
+                <a-input-number v-model:value="generalConfig.Run.RunTimesLimit" :min="1" :max="9999" size="large"
                   class="modern-number-input" style="width: 100%"
                   @blur="handleChange('Run', 'RunTimesLimit', generalConfig.Run.RunTimesLimit)" />
               </a-form-item>
@@ -624,7 +629,7 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="generalConfig.Run.RunTimeLimit" :min="1" :max="300" size="large"
+                <a-input-number v-model:value="generalConfig.Run.RunTimeLimit" :min="1" :max="9999" size="large"
                   class="modern-number-input" style="width: 100%"
                   @blur="handleChange('Run', 'RunTimeLimit', generalConfig.Run.RunTimeLimit)" />
               </a-form-item>
@@ -668,7 +673,6 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch, nextTick } from 'vue'
-import type { MAAScriptConfig } from '../../../types/script.ts'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
@@ -679,6 +683,7 @@ import type { ScriptUploadIn } from '../../../api'
 import {
   ArrowLeftOutlined,
   CloudUploadOutlined,
+  DeleteOutlined,
   FileOutlined,
   FolderOpenOutlined,
   QuestionCircleOutlined,
@@ -880,6 +885,7 @@ const pathRelations = reactive({
   scriptPathRelative: '',
   configPathRelative: '',
   logPathRelative: '',
+  trackProcessExeRelative: '',
 })
 
 // 更新相对路径关系
@@ -889,6 +895,7 @@ const updatePathRelations = () => {
     pathRelations.scriptPathRelative = ''
     pathRelations.configPathRelative = ''
     pathRelations.logPathRelative = ''
+    pathRelations.trackProcessExeRelative = ''
     return
   }
 
@@ -910,6 +917,13 @@ const updatePathRelations = () => {
     pathRelations.logPathRelative = pathUtils.getRelativePath(
       rootPath,
       generalConfig.Script.LogPath
+    )
+  }
+
+  if (generalConfig.Script.TrackProcessExe && generalConfig.Script.TrackProcessExe !== '.') {
+    pathRelations.trackProcessExeRelative = pathUtils.getRelativePath(
+      rootPath,
+      generalConfig.Script.TrackProcessExe
     )
   }
 }
@@ -944,6 +958,18 @@ const updatePathsBasedOnRoot = (newRootPath: string) => {
     const newLogPath = pathUtils.resolvePath(newRootPath, pathRelations.logPathRelative)
     const normalizedLogPath = pathUtils.normalizePath(newLogPath)
     generalConfig.Script.LogPath = normalizedLogPath
+  }
+
+  if (
+    pathRelations.trackProcessExeRelative &&
+    isInternalPath(pathRelations.trackProcessExeRelative)
+  ) {
+    const newTrackProcessExePath = pathUtils.resolvePath(
+      newRootPath,
+      pathRelations.trackProcessExeRelative
+    )
+    const normalizedTrackProcessExePath = pathUtils.normalizePath(newTrackProcessExePath)
+    generalConfig.Script.TrackProcessExe = normalizedTrackProcessExePath
   }
 }
 const pageLoading = ref(false)
@@ -1499,6 +1525,12 @@ const selectRootPath = async () => {
         if (generalConfig.Script.LogPath && generalConfig.Script.LogPath !== '.') {
           scriptPathUpdates.LogPath = generalConfig.Script.LogPath
         }
+        if (
+          generalConfig.Script.TrackProcessExe &&
+          generalConfig.Script.TrackProcessExe !== '.'
+        ) {
+          scriptPathUpdates.TrackProcessExe = generalConfig.Script.TrackProcessExe
+        }
 
         // 保存所有更改
         isSaving.value = true
@@ -1614,6 +1646,13 @@ const selectTrackProcessExe = async () => {
     logger.error(`选择被追踪进程可执行文件失败: ${errorMsg}`)
     message.error('选择文件失败')
   }
+}
+
+const clearTrackProcessExe = async () => {
+  generalConfig.Script.TrackProcessExe = ''
+  updatePathRelations()
+  await handleChange('Script', 'TrackProcessExe', '')
+  message.success('被追踪进程可执行文件路径已清空')
 }
 
 const selectConfigPath = async () => {
@@ -1989,6 +2028,38 @@ const handleUpload = async () => {
   background: var(--ant-color-primary);
   color: white;
   transform: none;
+}
+
+.path-clear-icon-btn {
+  width: 44px;
+  min-width: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 0;
+  border-left: 1px solid var(--ant-color-border-secondary);
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-error);
+  transition: all 0.3s ease;
+}
+
+.path-clear-icon-btn:hover {
+  background: var(--ant-color-error) !important;
+  color: white !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.path-clear-icon-btn :deep(.anticon) {
+  font-size: 16px;
+  color: inherit;
+}
+
+.path-clear-icon-btn :deep(.anticon svg) {
+  fill: currentColor;
+  stroke: currentColor;
 }
 
 /* 表单项间距 */

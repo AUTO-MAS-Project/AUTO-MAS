@@ -1,7 +1,7 @@
 // 脚本类型定义
-import type { MaaConfig, GeneralConfig, SrcConfig } from '@/api'
+import type { MaaConfig, GeneralConfig, SrcConfig, MaaEndConfig } from '@/api'
 
-export type ScriptType = 'MAA' | 'General' | 'SRC'
+export type ScriptType = 'MAA' | 'General' | 'SRC' | 'MaaEnd'
 
 // MAA脚本配置
 export interface MAAScriptConfig {
@@ -95,12 +95,34 @@ export interface SRCScriptConfig {
   }
 }
 
+// MaaEnd脚本配置
+export interface MaaEndScriptConfig {
+  Info: {
+    Name: string
+    Path: string
+  }
+  Run: {
+    RunTimeLimit: number
+    ProxyTimesLimit: number
+    RunTimesLimit: number
+  }
+  Game: {
+    ControllerType: 'Win32-Window' | 'Win32-Window-Background' | 'Win32-Front' | 'ADB' | null
+    Path: string
+    Arguments: string
+    WaitTime: number
+    EmulatorId: string
+    EmulatorIndex: string
+    CloseOnFinish: boolean
+  }
+}
+
 // 脚本基础信息
 export interface Script {
   id: string
   type: ScriptType
   name: string
-  config: MaaConfig | GeneralConfig | SrcConfig
+  config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
   users: User[]
 }
 
@@ -137,7 +159,7 @@ export interface User {
     Stage_3: string
     Stage_Remain: string
     Status: boolean
-    Tag?: string | null  // 用户标签列表（JSON字符串，TagItem的dict列表）
+    Tag?: string | null // 用户标签列表（JSON字符串，TagItem的dict列表）
   }
   Notify: {
     Enabled: boolean
@@ -181,13 +203,13 @@ export interface AddScriptResponse {
   status: string
   message: string
   scriptId: string
-  data: MAAScriptConfig | GeneralScriptConfig | SRCScriptConfig
+  data: MAAScriptConfig | GeneralScriptConfig | SRCScriptConfig | MaaEndScriptConfig
 }
 
 // 脚本索引项
 export interface ScriptIndexItem {
   uid: string
-  type: 'MaaConfig' | 'GeneralConfig' | 'SrcConfig'
+  type: 'MaaConfig' | 'GeneralConfig' | 'SrcConfig' | 'MaaEndConfig'
 }
 
 // 获取脚本API响应
@@ -196,7 +218,7 @@ export interface GetScriptsResponse {
   status: string
   message: string
   index: ScriptIndexItem[]
-  data: Record<string, MAAScriptConfig | GeneralScriptConfig>
+  data: Record<string, MAAScriptConfig | GeneralScriptConfig | SRCScriptConfig | MaaEndScriptConfig>
 }
 
 // 脚本详情（用于前端展示）
@@ -204,7 +226,7 @@ export interface ScriptDetail {
   uid: string
   type: ScriptType
   name: string
-  config: MaaConfig | GeneralConfig
+  config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
   users?: User[]
   createTime?: string
 }
