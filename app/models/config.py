@@ -663,6 +663,12 @@ class MaaEndUserConfig(ConfigBase):
         )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        ## 是否启用森空岛签到
+        self.Info_IfSkland = ConfigItem("Info", "IfSkland", False, BoolValidator())
+        ## 森空岛 Token
+        self.Info_SklandToken = ConfigItem(
+            "Info", "SklandToken", "", EncryptValidator()
+        )
         ## 用户标签信息
         self.Info_Tag = ConfigItem(
             "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
@@ -727,6 +733,10 @@ class MaaEndUserConfig(ConfigBase):
             "未知",
             OptionsValidator(["未知", "成功", "失败"]),
         )
+        ## 上次森空岛签到日期
+        self.Data_LastSklandDate = ConfigItem(
+            "Data", "LastSklandDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
         ## 是否通过检查
         self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
 
@@ -784,6 +794,18 @@ class MaaEndUserConfig(ConfigBase):
             )
         else:
             tags.append({"text": "日常：未代理", "color": "orange"})
+
+        # 森空岛签到标签（使用东8区时间）
+        if self.get("Info", "IfSkland"):
+            if (
+                datetime.strptime(self.get("Data", "LastSklandDate"), "%Y-%m-%d").date()
+                == datetime.now(tz=UTC8).date()
+            ):
+                tags.append({"text": "森空岛：已签到", "color": "green"})
+            else:
+                tags.append({"text": "森空岛：未签到", "color": "orange"})
+        else:
+            tags.append({"text": "森空岛：禁用", "color": "red"})
 
         # 剩余天数标签
         remained_day = self.get("Info", "RemainedDay")
