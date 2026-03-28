@@ -1,7 +1,0 @@
-﻿interface:
-  display_name: "AUTO-MAS 脚本适配后端"
-  short_description: "处理 MAA、SRC 等脚本接入与子任务闭环的后端开发。"
-  default_prompt: "使用 $auto-mas-script-backend-adapter 修改或扩展 AUTO-MAS 的脚本接入后端逻辑，沿着 manager、子任务、配置回滚和结果汇总完成完整检查。"
-
-policy:
-  allow_implicit_invocation: true
