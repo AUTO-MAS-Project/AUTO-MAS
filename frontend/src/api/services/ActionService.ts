@@ -8,6 +8,8 @@ import type { ClickTextIn } from '../models/ClickTextIn';
 import type { DispatchIn } from '../models/DispatchIn';
 import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
 import type { OutBase } from '../models/OutBase';
+import type { PluginDevRebuildCtxStubIn } from '../models/PluginDevRebuildCtxStubIn';
+import type { PluginDevRebuildCtxStubOut } from '../models/PluginDevRebuildCtxStubOut';
 import type { PluginReloadInstanceIn } from '../models/PluginReloadInstanceIn';
 import type { PluginReloadPluginIn } from '../models/PluginReloadPluginIn';
 import type { PowerIn } from '../models/PowerIn';
@@ -313,6 +315,37 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/plugins/reload_plugin',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 重建插件 ctx 类型提示文件
+     * 手动触发插件上下文 .pyi 重建。
+     *
+     * 该接口用于插件开发阶段快速刷新类型提示，便于 IDE 立即获得最新签名。
+     *
+     * Args:
+     * data (PluginDevRebuildCtxStubIn): 重建参数。
+     *
+     * Returns:
+     * PluginDevRebuildCtxStubOut: 重建结果摘要。
+     *
+     * Raises:
+     * 无。接口内部会捕获异常并转换为统一错误响应。
+     * @param requestBody
+     * @returns PluginDevRebuildCtxStubOut Successful Response
+     * @throws ApiError
+     */
+    public static rebuildPluginCtxStubApiPluginsDevRebuildCtxStubPost(
+        requestBody: PluginDevRebuildCtxStubIn,
+    ): CancelablePromise<PluginDevRebuildCtxStubOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugins/dev/rebuild_ctx_stub',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
