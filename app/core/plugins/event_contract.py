@@ -1,11 +1,20 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
-from typing import Final
+from typing import Final, Literal
 
 
 EVENT_CONTRACT_VERSION: Final[str] = "1"
 """插件事件契约版本。"""
+
+EVENT_DISPATCH_MODEL: Final[str] = "async"
+"""插件事件分发模型：固定为异步并发分发。"""
+
+EventScope = Literal["global", "instance"]
+"""事件作用域：global 表示全局广播，instance 表示实例内广播。"""
+
+EventErrorPolicy = Literal["continue", "raise"]
+"""事件错误策略：continue 表示继续分发，raise 表示抛出异常。"""
 
 CORE_SOURCE_PREFIX: Final[str] = "core."
 """约定的核心事件来源前缀。"""

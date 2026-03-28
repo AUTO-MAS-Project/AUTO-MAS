@@ -249,44 +249,71 @@ class _PluginManager:
         self.started = False
         logger.info("插件系统已关闭")
 
-    def on(self, event: str, handler) -> None:
+    def on(self, event: str, handler, **kwargs: Any) -> str:
         """
         注册插件系统事件监听器。
 
         Args:
             event (str): 事件名。
             handler: 事件处理函数。
+            **kwargs (Any): 附加注册参数（priority、scope、once、error_policy 等）。
 
         Returns:
-            None: 无返回值。
+            str: 注册后的监听器 ID。
         """
-        self.events.on(event, handler)
+        return self.events.on(event, handler, **kwargs)
 
-    def off(self, event: str, handler) -> None:
+    def off(self, event: str, handler=None, *, listener_id: str | None = None) -> None:
         """
         移除插件系统事件监听器。
 
         Args:
             event (str): 事件名。
             handler: 需要移除的事件处理函数。
+            listener_id (str | None): 监听器 ID。
 
         Returns:
             None: 无返回值。
         """
-        self.events.off(event, handler)
+        self.events.off(event, handler, listener_id=listener_id)
 
-    def emit(self, event: str, payload: Any = None) -> None:
+    async def emit_async(self, event: str, payload: Any = None, **kwargs: Any) -> None:
         """
-        向插件系统广播事件。
+        以异步方式向插件系统广播事件。
 
         Args:
             event (str): 事件名。
             payload (Any): 事件载荷，默认为 None。
+            **kwargs (Any): 透传给事件总线的附加参数。
 
         Returns:
             None: 无返回值。
         """
-        self.events.emit(event, payload)
+        await self.events.emit(event, payload, **kwargs)
+
+    def emit(self, event: str, payload: Any = None, **kwargs: Any) -> None:
+        """
+        同步桥接方式广播事件。
+
+        该方法用于过渡期兼容：
+        - 若存在运行中的事件循环，则创建后台任务异步发送。
+        - 若不存在运行中的事件循环，则直接 `asyncio.run` 完成发送。
+
+        Args:
+            event (str): 事件名。
+            payload (Any): 事件载荷，默认为 None。
+            **kwargs (Any): 透传给事件总线的附加参数。
+
+        Returns:
+            None: 无返回值。
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            asyncio.run(self.emit_async(event, payload, **kwargs))
+            return
+
+        loop.create_task(self.emit_async(event, payload, **kwargs))
 
     def list_plugins(self) -> Dict[str, str]:
         """
