@@ -36,9 +36,21 @@ import requests
 import json
 import sys
 import argparse
+import re
 
 
-def trigger_build(token, branch="main", event="api_trigger_one", runid=None):
+def is_valid_project_path(project_path: str) -> bool:
+    return bool(re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", project_path))
+
+
+def trigger_build(
+    token,
+    branch="main",
+    event="api_trigger_one",
+    runid=None,
+    version=None,
+    project_path="AUTO-MAS-Project/AUTO-MAS",
+):
     """
     触发构建请求
 
@@ -61,11 +73,22 @@ def trigger_build(token, branch="main", event="api_trigger_one", runid=None):
         "Connection": "keep-alive",
     }
 
+    if not branch:
+        print("错误: branch 不能为空")
+        return None
+
+    if not is_valid_project_path(project_path):
+        print(f"错误: 非法 project_path: {project_path}")
+        return None
+
     data: dict[str, object] = {"branch": branch, "event": event}
 
-    # 如果提供了runid，则添加到env中
+    env: dict[str, str] = {"PROJECT_PATH": project_path}
     if runid:
-        data["env"] = {"RUN_ID": runid}
+        env["RUN_ID"] = runid
+    if version:
+        env["VERSION"] = version
+    data["env"] = env
 
     try:
         print(f"正在发起构建请求...")
@@ -84,7 +107,11 @@ def trigger_build(token, branch="main", event="api_trigger_one", runid=None):
             return result
         else:
             print(f"请求失败: {response.status_code}")
-            print(f"错误信息: {response.text}")
+            try:
+                error_json = response.json()
+                print(f"错误信息(JSON): {json.dumps(error_json, indent=2, ensure_ascii=False)}")
+            except Exception:
+                print(f"错误信息: {response.text}")
             return None
 
     except requests.exceptions.RequestException as e:
@@ -104,6 +131,12 @@ def main():
         "--event", default="api_trigger_one", help="事件类型 (默认: api_trigger_one)"
     )
     parser.add_argument("--runid", help="运行ID (可选)")
+    parser.add_argument("--version", help="版本号 (可选，原样透传)")
+    parser.add_argument(
+        "--project-path",
+        default="AUTO-MAS-Project/AUTO-MAS",
+        help="CNB 项目路径，格式 owner/repo",
+    )
 
     args = parser.parse_args()
 
@@ -111,7 +144,14 @@ def main():
         print("错误: 必须提供token参数")
         sys.exit(1)
 
-    result = trigger_build(args.token, args.branch, args.event, args.runid)
+    result = trigger_build(
+        args.token,
+        args.branch,
+        args.event,
+        args.runid,
+        args.version,
+        args.project_path,
+    )
 
     if result is None:
         sys.exit(1)
