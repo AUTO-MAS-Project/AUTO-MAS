@@ -76,6 +76,23 @@ DEFAULT_ASSET_GLOB = "AUTO-MAS-*-x64.zip"
 DEFAULT_TARGET_COMMITISH = "main"
 
 
+def sanitize_release_body(release_body: Optional[str]) -> Optional[str]:
+    """移除 release body 首行的 HTML 注释，避免影响下游解析。"""
+    if release_body is None:
+        return None
+
+    lines = release_body.splitlines()
+    if not lines:
+        return release_body
+
+    first_line = lines[0].strip().lstrip("\ufeff")
+    if first_line.startswith("<!--") and first_line.endswith("-->"):
+        remaining = "\n".join(lines[1:]).lstrip("\n")
+        return remaining
+
+    return release_body
+
+
 class GitHubActionsDownloader:
     def __init__(self, token: Optional[str] = None):
         """
@@ -280,7 +297,8 @@ def create_cnb_config(
     normalized_version = version_tag.lstrip("vV")
 
     make_latest = not is_prerelease
-    body = release_body or f"AUTO-MAS v{normalized_version} 自动发布"
+    body = sanitize_release_body(release_body)
+    body = body if body else f"AUTO-MAS v{normalized_version} 自动发布"
 
     config = {
         "token": token,
