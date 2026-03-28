@@ -74,7 +74,7 @@ class CNBReleaseUploader:
         创建一个新的release
 
         Args:
-            project_path: 项目路径 (例如: "bettergi/better-genshin-impact")
+            project_path: 项目路径
             release_data: release数据
 
         Returns:

@@ -38,7 +38,15 @@ import sys
 import argparse
 
 
-def trigger_build(token, branch="main", event="api_trigger_one", runid=None):
+def trigger_build(
+    token,
+    branch="main",
+    event="api_trigger_one",
+    runid=None,
+    release_body=None,
+    version_tag=None,
+    is_prerelease=None,
+):
     """
     触发构建请求
 
@@ -47,6 +55,9 @@ def trigger_build(token, branch="main", event="api_trigger_one", runid=None):
         branch (str): 分支名称，默认为 main
         event (str): 事件类型，默认为api_trigger_one
         runid (str): 运行ID，可选参数
+        release_body (str): Release 描述正文，可选参数
+        version_tag (str): 版本号，可选参数
+        is_prerelease (str): 是否预发布(true/false)，可选参数
 
     Returns:
         dict: API响应结果
@@ -63,9 +74,17 @@ def trigger_build(token, branch="main", event="api_trigger_one", runid=None):
 
     data: dict[str, object] = {"branch": branch, "event": event}
 
-    # 如果提供了runid，则添加到env中
+    env: dict[str, str] = {}
     if runid:
-        data["env"] = {"RUN_ID": runid}
+        env["RUN_ID"] = runid
+    if release_body:
+        env["RELEASE_BODY"] = release_body
+    if version_tag:
+        env["VERSION_TAG"] = version_tag
+    if is_prerelease:
+        env["IS_PRERELEASE"] = is_prerelease
+    if env:
+        data["env"] = env
 
     try:
         print(f"正在发起构建请求...")
@@ -104,6 +123,11 @@ def main():
         "--event", default="api_trigger_one", help="事件类型 (默认: api_trigger_one)"
     )
     parser.add_argument("--runid", help="运行ID (可选)")
+    parser.add_argument("--release-body", help="Release 描述正文 (可选)")
+    parser.add_argument("--version-tag", help="版本号 (可选)")
+    parser.add_argument(
+        "--is-prerelease", choices=["true", "false"], help="是否预发布 (可选)"
+    )
 
     args = parser.parse_args()
 
@@ -111,7 +135,15 @@ def main():
         print("错误: 必须提供token参数")
         sys.exit(1)
 
-    result = trigger_build(args.token, args.branch, args.event, args.runid)
+    result = trigger_build(
+        args.token,
+        args.branch,
+        args.event,
+        args.runid,
+        args.release_body,
+        args.version_tag,
+        args.is_prerelease,
+    )
 
     if result is None:
         sys.exit(1)

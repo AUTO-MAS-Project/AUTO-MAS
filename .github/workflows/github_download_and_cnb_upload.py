@@ -36,10 +36,12 @@ GitHub Actions 构建物下载和上传脚本
 3. 调用 cnb_release.py 上传文件到 CNB
 
 使用方法：
-    python github_download_and_cnb_upload.py --cnb-token YOUR_CNB_TOKEN [--github-token YOUR_GITHUB_TOKEN] [--run-id RUN_ID] [--target-commitish BRANCH] [--release-body BODY]
+    python github_download_and_cnb_upload.py --cnb-token YOUR_CNB_TOKEN --version-tag VERSION_TAG --is-prerelease true|false [--github-token YOUR_GITHUB_TOKEN] [--run-id RUN_ID] [--target-commitish BRANCH] [--release-body BODY]
 
 参数说明：
     --cnb-token: CNB API Token (必需)
+    --version-tag: 版本号（来自上游参数传递，必需）
+    --is-prerelease: 是否预发布（true/false，来自上游参数传递，必需）
     --github-token: GitHub Personal Access Token (可选，用于提高API限制)
     --run-id: 指定 GitHub Actions 运行 ID (可选，默认获取最新运行)
     --target-commitish: Release 关联的目标分支或提交 (可选，默认 main)
@@ -57,7 +59,6 @@ import sys
 import json
 import requests
 import zipfile
-import re
 from pathlib import Path
 from typing import List, Dict, Optional
 from tqdm import tqdm
@@ -255,38 +256,10 @@ class GitHubActionsDownloader:
             return []
 
 
-def extract_version_from_filename(filename: str) -> Optional[str]:
-    """
-    从文件名中提取版本号
-
-    Args:
-        filename: 文件名
-
-    Returns:
-        版本号或None
-    """
-    # 去除扩展名
-    import os
-
-    filename_without_ext = os.path.splitext(filename)[0]
-
-    # 匹配版本号模式，如 v1.2.3, 1.2.3-alpha.1 等
-    patterns = [
-        r"v?([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)",
-        r"_v?([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)",
-    ]
-
-    for pattern in patterns:
-        match = re.search(pattern, filename_without_ext)
-        if match:
-            return match.group(1)
-
-    return None
-
-
 def create_cnb_config(
     files: List[str],
-    version: str,
+    version_tag: str,
+    is_prerelease: bool,
     token: str,
     project_path: str = DEFAULT_PROJECT_PATH,
     target_commitish: str = DEFAULT_TARGET_COMMITISH,
@@ -297,16 +270,15 @@ def create_cnb_config(
 
     Args:
         files: 要上传的文件列表
-        version: 版本号
+        version_tag: 版本号
+        is_prerelease: 是否预发布
         token: CNB token
 
     Returns:
         CNB配置字典
     """
-    normalized_version = version.lstrip("vV")
+    normalized_version = version_tag.lstrip("vV")
 
-    # 判断是否为预发布版本
-    is_prerelease = "-" in normalized_version
     make_latest = not is_prerelease
     body = release_body or f"AUTO-MAS v{normalized_version} 自动发布"
 
@@ -339,6 +311,15 @@ def main():
         "--run-id",
         type=str,
         help="指定 GitHub Actions 运行 ID，如果提供则不会获取最新运行",
+    )
+    parser.add_argument(
+        "--version-tag", required=True, help="版本号（来自上游参数传递）"
+    )
+    parser.add_argument(
+        "--is-prerelease",
+        required=True,
+        choices=["true", "false"],
+        help="是否预发布（true/false，来自上游参数传递）",
     )
     parser.add_argument("--owner", default=DEFAULT_OWNER, help="GitHub 仓库所有者")
     parser.add_argument("--repo", default=DEFAULT_REPO, help="GitHub 仓库名称")
@@ -411,7 +392,8 @@ def main():
 
     # 检查是否已存在解压后的文件
     all_files = []
-    version = None
+    version_tag = args.version_tag
+    is_prerelease = args.is_prerelease.lower() == "true"
 
     # 检查解压目录是否已存在且包含文件
     if extract_dir.exists():
@@ -426,14 +408,10 @@ def main():
             # build-app.yml 的 build-artifacts 产物内是 AUTO-MAS-*-x64.zip
             for file_path in artifact_extract_dir.rglob(DEFAULT_ASSET_GLOB):
                 existing_files.append(str(file_path))
-                if not version:
-                    extracted_version = extract_version_from_filename(file_path.name)
-                    if extracted_version:
-                        version = extracted_version
 
-        if existing_files and version:
+        if existing_files:
             print(f"✅ 发现已存在的构建物 ({len(existing_files)} 个文件)，跳过下载")
-            print(f"📋 检测到版本号: {version}")
+            print(f"📋 使用上游传入版本号: {version_tag}")
             all_files = existing_files
         else:
             print("⚠️  已存在目录但未找到有效文件，将重新下载")
@@ -496,19 +474,13 @@ def main():
             # 按本项目构筑产物格式筛选上传文件
             for file_path in (Path(artifact_extract_dir)).rglob(DEFAULT_ASSET_GLOB):
                 all_files.append(str(file_path))
-                if not version:
-                    extracted_version = extract_version_from_filename(file_path.name)
-                    if extracted_version:
-                        version = extracted_version
-                        print(f"📋 检测到版本号: {version}")
 
     if not all_files:
         print("❌ 错误: 没有找到可上传的文件")
         return 1
 
-    if not version:
-        print("❌ 错误: 无法从文件名中提取版本号")
-        return 1
+    print(f"📋 使用上游传入版本号: {version_tag}")
+    print(f"📋 使用上游传入预发布标记: {is_prerelease}")
 
     # 去重并过滤不存在文件，避免重复上传或路径异常
     normalized_files: List[str] = []
@@ -539,7 +511,8 @@ def main():
     print("\n⚙️  创建CNB配置...")
     cnb_config = create_cnb_config(
         files=all_files,
-        version=version,
+        version_tag=version_tag,
+        is_prerelease=is_prerelease,
         token=cnb_token,
         project_path=args.project_path,
         target_commitish=args.target_commitish,
