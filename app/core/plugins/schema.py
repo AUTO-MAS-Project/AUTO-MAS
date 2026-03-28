@@ -1,12 +1,19 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
+from __future__ import annotations
+
 import copy
 import importlib
 import importlib.util
+import inspect
 import json
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict
+from types import NoneType, UnionType
+from typing import Annotated, Any, Dict, Mapping, Union, get_args, get_origin
+
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from .pypi_site import iter_plugin_entry_points
 
@@ -15,11 +22,47 @@ class PluginSchemaError(Exception):
     """插件 Schema 与配置处理错误。"""
 
 
-class PluginSchemaManager:
-    """负责加载插件 Schema，并执行类型校验。"""
+class _FieldSpecModel(BaseModel):
+    """字段定义模型，用于约束字段元信息结构。"""
 
-    SUPPORTED_TYPES = {"boolean", "string", "number", "list", "key_value", "table"}
-    LIST_ITEM_TYPES = {"string", "number", "boolean", "any"}
+    model_config = ConfigDict(extra="allow")
+
+    type: Any
+    required: bool = False
+    nullable: bool = False
+    description: str | None = None
+    constraints: Dict[str, Any] = Field(default_factory=dict)
+
+
+@dataclass
+class _CompiledField:
+    """编译后的字段校验单元。"""
+
+    name: str
+    spec: _FieldSpecModel
+    adapter: TypeAdapter[Any]
+    required: bool
+    has_default: bool
+    default: Any
+
+
+class PluginSchemaManager:
+    """负责加载插件 Schema，并基于 Pydantic 执行配置校验。"""
+
+    _PRIMITIVE_TYPE_ALIASES: Dict[str, Any] = {
+        "any": Any,
+        "Any": Any,
+        "str": str,
+        "string": str,
+        "int": int,
+        "integer": int,
+        "float": float,
+        "number": float,
+        "bool": bool,
+        "boolean": bool,
+        "dict": dict[str, Any],
+        "list": list[Any],
+    }
 
     def load_schema(self, plugin_name: str, plugin_path: Path | None) -> Dict[str, Dict[str, Any]]:
         """
@@ -35,9 +78,10 @@ class PluginSchemaManager:
         Raises:
             PluginSchemaError: 在以下场景抛出：
                 1) schema.py 或 schema.json 加载失败；
-                2) Entry Point 加载失败或模块导入失败；
+                2) plugin.py 的 Config 声明加载失败；
+                3) Entry Point 加载失败或模块导入失败；
                 3) Schema 顶层不是对象；
-                4) 字段定义格式错误（类型不支持、required/description/item_type 不合法等）。
+                4) 字段定义格式错误（字段缺少 type、constraints 非对象等）。
         """
         schema: Dict[str, Dict[str, Any]] = {}
         if plugin_path is not None:
@@ -49,6 +93,11 @@ class PluginSchemaManager:
             elif schema_json.exists():
                 schema = self._load_schema_from_json(plugin_name, schema_json)
 
+            if not schema:
+                plugin_py = plugin_path / "plugin.py"
+                if plugin_py.exists():
+                    schema = self._load_schema_from_plugin_py(plugin_name, plugin_py)
+
         if not schema:
             schema = self._load_schema_from_entry_point(plugin_name)
 
@@ -59,11 +108,28 @@ class PluginSchemaManager:
         return schema
 
     def _extract_schema_from_module(self, plugin_name: str, module: Any) -> Dict[str, Dict[str, Any]]:
-        """从模块对象中提取 schema 定义。"""
+        """
+        从模块对象中提取 schema 定义。
+
+        Args:
+            plugin_name (str): 插件名。
+            module (Any): 待提取 schema 的模块对象。
+
+        Returns:
+            Dict[str, Dict[str, Any]]: 归一化后的 schema。
+
+        Raises:
+            PluginSchemaError: 模块中的 schema 不是对象结构时抛出。
+        """
         if module is None:
             return {}
 
-        if hasattr(module, "schema"):
+        if hasattr(module, "Config"):
+            schema = self._build_schema_from_config_declaration(
+                plugin_name,
+                getattr(module, "Config"),
+            )
+        elif hasattr(module, "schema"):
             schema = self._normalize_schema_object(getattr(module, "schema"))
         elif callable(getattr(module, "get_schema", None)):
             schema = self._normalize_schema_object(module.get_schema())
@@ -72,10 +138,78 @@ class PluginSchemaManager:
 
         if not isinstance(schema, dict):
             raise PluginSchemaError(f"插件 Schema 必须是对象: {plugin_name}")
-        return schema
+
+        return self._normalize_schema_fields(plugin_name, schema)
+
+    def _import_module_from_file(self, module_name: str, file_path: Path) -> Any:
+        """
+        从文件路径导入 Python 模块对象。
+
+        Args:
+            module_name (str): 模块名。
+            file_path (Path): 模块文件路径。
+
+        Returns:
+            Any: 导入后的模块对象。
+
+        Raises:
+            PluginSchemaError: 在以下场景抛出：
+                1) 无法创建模块规格；
+                2) 模块执行失败。
+        """
+        spec = importlib.util.spec_from_file_location(module_name, str(file_path))
+        if spec is None or spec.loader is None:
+            raise PluginSchemaError(f"无法加载 Python 模块: {file_path}")
+
+        module = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(module)
+        except Exception as e:
+            raise PluginSchemaError(
+                f"执行 Python 模块失败: {file_path.name}, error={type(e).__name__}: {e}"
+            ) from e
+        return module
+
+    def _load_schema_from_plugin_py(
+        self,
+        plugin_name: str,
+        plugin_py_path: Path,
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        从 plugin.py 中读取 `Config`/`schema`/`get_schema` 声明。
+
+        Args:
+            plugin_name (str): 插件名。
+            plugin_py_path (Path): plugin.py 文件路径。
+
+        Returns:
+            Dict[str, Dict[str, Any]]: 归一化后的 schema；不存在时返回空字典。
+
+        Raises:
+            PluginSchemaError: 在以下场景抛出：
+                1) plugin.py 模块导入失败；
+                2) `Config`/`schema`/`get_schema` 声明结构非法。
+        """
+        module_name = f"mas_plugin_module_{plugin_name}"
+        module = self._import_module_from_file(module_name, plugin_py_path)
+        return self._extract_schema_from_module(plugin_name, module)
 
     def _load_schema_from_entry_point(self, plugin_name: str) -> Dict[str, Dict[str, Any]]:
-        """从 PyPI Entry Point 对应模块加载 schema。"""
+        """
+        从 PyPI Entry Point 对应模块加载 schema。
+
+        Args:
+            plugin_name (str): 插件名。
+
+        Returns:
+            Dict[str, Dict[str, Any]]: 归一化后的 schema；不存在时返回空字典。
+
+        Raises:
+            PluginSchemaError: 在以下场景抛出：
+                1) Entry Point 加载失败；
+                2) callable 所在模块导入失败；
+                3) schema 结构非法。
+        """
         for entry_point in iter_plugin_entry_points():
             if str(getattr(entry_point, "name", "")).strip() != plugin_name:
                 continue
@@ -112,40 +246,249 @@ class PluginSchemaManager:
         plugin_name: str,
         schema_path: Path,
     ) -> Dict[str, Dict[str, Any]]:
+        """
+        从 schema.py 文件加载 schema 定义。
+
+        Args:
+            plugin_name (str): 插件名。
+            schema_path (Path): schema.py 文件路径。
+
+        Returns:
+            Dict[str, Dict[str, Any]]: 归一化后的 schema。
+
+        Raises:
+            PluginSchemaError: 在以下场景抛出：
+                1) schema.py 模块无法加载；
+                2) 缺少 `Config`/`schema`/`get_schema` 声明；
+                3) schema 结构非法。
+        """
         module_name = f"mas_plugin_schema_{plugin_name}"
-        spec = importlib.util.spec_from_file_location(module_name, str(schema_path))
-        if spec is None or spec.loader is None:
-            raise PluginSchemaError(f"无法加载 Schema 模块: {plugin_name}")
+        module = self._import_module_from_file(module_name, schema_path)
 
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-
-        if hasattr(module, "schema"):
+        if hasattr(module, "Config"):
+            schema = self._build_schema_from_config_declaration(
+                plugin_name,
+                getattr(module, "Config"),
+            )
+        elif hasattr(module, "schema"):
             schema = module.schema
         elif callable(getattr(module, "get_schema", None)):
             schema = module.get_schema()
         else:
             raise PluginSchemaError(
-                f"插件 Schema 缺少 schema 变量或 get_schema() 函数: {plugin_name}"
+                f"插件 Schema 缺少 Config/schema/get_schema 声明: {plugin_name}"
             )
 
         schema = self._normalize_schema_object(schema)
 
         if not isinstance(schema, dict):
             raise PluginSchemaError(f"插件 Schema 必须是对象: {plugin_name}")
-        return schema
+
+        return self._normalize_schema_fields(plugin_name, schema)
+
+    def _build_schema_from_config_declaration(
+        self,
+        plugin_name: str,
+        declaration: Any,
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        从 `Config` 声明构建 schema 字典。
+
+        Args:
+            plugin_name (str): 插件名。
+            declaration (Any): `Config` 声明对象，支持 BaseModel 子类、BaseModel 实例或返回上述对象的可调用对象。
+
+        Returns:
+            Dict[str, Dict[str, Any]]: 从 BaseModel 字段推导出的 schema。
+
+        Raises:
+            PluginSchemaError: 在以下场景抛出：
+                1) `Config` 是可调用对象但执行失败；
+                2) `Config` 返回值既不是 BaseModel 子类/实例，也不是字典；
+                3) BaseModel 字段默认值工厂执行失败。
+        """
+        target = declaration
+        if callable(declaration) and not (inspect.isclass(declaration) and issubclass(declaration, BaseModel)):
+            try:
+                target = declaration()
+            except Exception as e:
+                raise PluginSchemaError(
+                    f"执行 Config 声明失败: {plugin_name}, error={type(e).__name__}: {e}"
+                ) from e
+
+        if inspect.isclass(target) and issubclass(target, BaseModel):
+            return self._build_schema_from_model(plugin_name, target)
+
+        if isinstance(target, BaseModel):
+            return self._build_schema_from_model(plugin_name, type(target))
+
+        normalized = self._normalize_schema_object(target)
+        if isinstance(normalized, dict):
+            return self._normalize_schema_fields(plugin_name, normalized)
+
+        raise PluginSchemaError(
+            f"Config 声明不支持的返回类型: {plugin_name}, type={type(target).__name__}"
+        )
+
+    def _build_schema_from_model(
+        self,
+        plugin_name: str,
+        model_cls: type[BaseModel],
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        从 Pydantic BaseModel 类型推导 schema 字段定义。
+
+        Args:
+            plugin_name (str): 插件名。
+            model_cls (type[BaseModel]): Pydantic 配置模型类型。
+
+        Returns:
+            Dict[str, Dict[str, Any]]: 推导出的 schema 字段映射。
+
+        Raises:
+            PluginSchemaError: 在以下场景抛出：
+                1) 字段默认值工厂执行失败；
+                2) `json_schema_extra` 不是字典对象。
+        """
+        result: Dict[str, Dict[str, Any]] = {}
+        for field_name, field_info in model_cls.model_fields.items():
+            field_schema: Dict[str, Any] = {
+                "type": self._type_to_expr(field_info.annotation),
+                "required": bool(field_info.is_required()),
+            }
+
+            if field_info.description is not None:
+                field_schema["description"] = str(field_info.description)
+
+            if self._annotation_allows_none(field_info.annotation):
+                field_schema["nullable"] = True
+
+            if not field_info.is_required():
+                if field_info.default_factory is not None:
+                    try:
+                        field_schema["default"] = field_info.default_factory()
+                    except Exception as e:
+                        raise PluginSchemaError(
+                            f"Config 字段 default_factory 执行失败: {plugin_name}.{field_name}, "
+                            f"error={type(e).__name__}: {e}"
+                        ) from e
+                else:
+                    field_schema["default"] = copy.deepcopy(field_info.default)
+
+            extra = field_info.json_schema_extra
+            if extra is not None:
+                if not isinstance(extra, dict):
+                    raise PluginSchemaError(
+                        f"Config 字段 json_schema_extra 必须是对象: {plugin_name}.{field_name}"
+                    )
+                field_schema.update(copy.deepcopy(extra))
+
+            result[field_name] = field_schema
+
+        return result
+
+    def _annotation_allows_none(self, annotation: Any) -> bool:
+        """
+        判断类型注解是否允许 None。
+
+        Args:
+            annotation (Any): 待判断类型注解。
+
+        Returns:
+            bool: 允许 None 返回 True，否则返回 False。
+        """
+        if annotation in (NoneType, type(None)):
+            return True
+
+        origin = get_origin(annotation)
+        args = get_args(annotation)
+
+        if origin is Annotated and args:
+            return self._annotation_allows_none(args[0])
+
+        if origin in (Union, UnionType):
+            return any(self._annotation_allows_none(arg) for arg in args)
+
+        return False
 
     def _normalize_schema_object(self, schema: Any) -> Any:
-        """将 DSL 对象归一化为字典结构。"""
+        """
+        将 DSL 或 Pydantic 对象归一化为字典结构。
+
+        Args:
+            schema (Any): 原始 schema 对象。
+
+        Returns:
+            Any: 归一化后的对象。
+        """
         if hasattr(schema, "to_dict") and callable(schema.to_dict):
             return schema.to_dict()
+        if hasattr(schema, "model_dump") and callable(schema.model_dump):
+            return schema.model_dump()
         return schema
+
+    def _normalize_schema_fields(
+        self,
+        plugin_name: str,
+        schema: Mapping[str, Any],
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        归一化字段定义，确保字段值均为标准字典。
+
+        Args:
+            plugin_name (str): 插件名。
+            schema (Mapping[str, Any]): 原始字段映射。
+
+        Returns:
+            Dict[str, Dict[str, Any]]: 归一化后的字段映射。
+
+        Raises:
+            PluginSchemaError: 在以下场景抛出：
+                1) 字段名不是字符串；
+                2) 字段定义既不是字典，也没有 `to_dict/model_dump` 方法；
+                3) 字段定义归一化后不是对象。
+        """
+        normalized: Dict[str, Dict[str, Any]] = {}
+        for field_name, field_schema in schema.items():
+            if not isinstance(field_name, str):
+                raise PluginSchemaError(
+                    f"Schema 字段名必须是字符串: {plugin_name}.{field_name}"
+                )
+
+            value = field_schema
+            if hasattr(value, "to_dict") and callable(value.to_dict):
+                value = value.to_dict()
+            elif hasattr(value, "model_dump") and callable(value.model_dump):
+                value = value.model_dump()
+
+            if not isinstance(value, dict):
+                raise PluginSchemaError(
+                    f"Schema 字段定义必须是对象: {plugin_name}.{field_name}"
+                )
+            normalized[field_name] = value
+        return normalized
 
     def _load_schema_from_json(
         self,
         plugin_name: str,
         schema_path: Path,
     ) -> Dict[str, Dict[str, Any]]:
+        """
+        从 schema.json 文件加载 schema 定义。
+
+        Args:
+            plugin_name (str): 插件名。
+            schema_path (Path): schema.json 文件路径。
+
+        Returns:
+            Dict[str, Dict[str, Any]]: 归一化后的 schema。
+
+        Raises:
+            PluginSchemaError: 在以下场景抛出：
+                1) 读取 JSON 文件失败；
+                2) 顶层不是对象；
+                3) 字段结构非法。
+        """
         try:
             with schema_path.open("r", encoding="utf-8") as f:
                 schema = json.load(f)
@@ -154,53 +497,32 @@ class PluginSchemaManager:
 
         if not isinstance(schema, dict):
             raise PluginSchemaError(f"插件 Schema 必须是对象: {plugin_name}")
-        return schema
+
+        return self._normalize_schema_fields(plugin_name, schema)
 
     def _validate_schema_definition(
         self,
         plugin_name: str,
         schema: Dict[str, Dict[str, Any]],
     ) -> None:
-        for field_name, field_schema in schema.items():
-            if not isinstance(field_schema, dict):
-                raise PluginSchemaError(
-                    f"Schema 字段定义必须是对象: {plugin_name}.{field_name}"
-                )
+        """
+        校验 schema 定义合法性，并确保每个字段可被编译为 Pydantic 校验器。
 
-            field_type = field_schema.get("type")
-            if not isinstance(field_type, str) or field_type not in self.SUPPORTED_TYPES:
-                raise PluginSchemaError(
-                    f"Schema 字段类型不支持: {plugin_name}.{field_name}.type={field_type}"
-                )
+        Args:
+            plugin_name (str): 插件名。
+            schema (Dict[str, Dict[str, Any]]): schema 字段定义。
 
-            if "required" in field_schema and not isinstance(
-                field_schema["required"], bool
-            ):
-                raise PluginSchemaError(
-                    f"Schema 字段 required 必须是布尔值: {plugin_name}.{field_name}"
-                )
+        Returns:
+            None: 无返回值。
 
-            if "description" in field_schema and not isinstance(
-                field_schema["description"], str
-            ):
-                raise PluginSchemaError(
-                    f"Schema 字段 description 必须是字符串: {plugin_name}.{field_name}"
-                )
-
-            if field_type == "list" and "item_type" in field_schema:
-                item_type = field_schema["item_type"]
-                if item_type not in self.LIST_ITEM_TYPES:
-                    raise PluginSchemaError(
-                        f"Schema list.item_type 不支持: {plugin_name}.{field_name}"
-                    )
-
-            if "default" in field_schema:
-                self._validate_field_value(
-                    plugin_name,
-                    field_name,
-                    field_schema["default"],
-                    field_schema,
-                )
+        Raises:
+            PluginSchemaError: 在以下场景抛出：
+                1) 字段定义缺少 type；
+                2) required/nullable/description/constraints 类型非法；
+                3) type 表达式无法解析为有效 Python 注解；
+                4) constraints 无法构建 Pydantic Field。
+        """
+        self._compile_schema(plugin_name, schema)
 
     def apply_defaults_and_validate(
         self,
@@ -223,128 +545,339 @@ class PluginSchemaManager:
             PluginSchemaError: 在以下场景抛出：
                 1) config 不是对象；
                 2) 缺少 required=true 的必填字段且无默认值；
-                3) 任一字段值不满足声明类型（含 list/item_type、key_value、table 约束）；
+                3) 任一字段值不满足声明类型或约束；
                 4) 字段值为 None 且字段未声明 nullable。
         """
         if not isinstance(config, dict):
             raise PluginSchemaError(f"插件配置必须是对象: {plugin_name}")
 
+        compiled = self._compile_schema(plugin_name, schema)
         merged = copy.deepcopy(config)
 
-        for field_name, field_schema in schema.items():
-            required = bool(field_schema.get("required", False))
-
-            if field_name not in merged:
-                if "default" in field_schema:
-                    merged[field_name] = copy.deepcopy(field_schema["default"])
-                elif required:
-                    raise PluginSchemaError(
-                        f"缺少必填配置项: {plugin_name}.{field_name}"
-                    )
+        for item in compiled:
+            if item.name not in merged:
+                if item.has_default:
+                    merged[item.name] = copy.deepcopy(item.default)
+                elif item.required:
+                    raise PluginSchemaError(f"缺少必填配置项: {plugin_name}.{item.name}")
                 else:
                     continue
 
-            self._validate_field_value(
-                plugin_name,
-                field_name,
-                merged[field_name],
-                field_schema,
+            merged[item.name] = self._validate_field_value(
+                plugin_name=plugin_name,
+                field_name=item.name,
+                value=merged[item.name],
+                compiled=item,
             )
 
         return merged
+
+    def _compile_schema(
+        self,
+        plugin_name: str,
+        schema: Dict[str, Dict[str, Any]],
+    ) -> list[_CompiledField]:
+        """
+        将 schema 字段定义编译为可执行校验器。
+
+        Args:
+            plugin_name (str): 插件名。
+            schema (Dict[str, Dict[str, Any]]): 插件 schema。
+
+        Returns:
+            list[_CompiledField]: 编译后的字段校验单元列表。
+
+        Raises:
+            PluginSchemaError: 在以下场景抛出：
+                1) 字段元信息不满足模型约束；
+                2) type 字段缺失或无法解析；
+                3) constraints 非法导致无法构建 Field。
+        """
+        compiled: list[_CompiledField] = []
+        for field_name, raw_field in schema.items():
+            if "type" not in raw_field:
+                raise PluginSchemaError(f"Schema 字段缺少 type: {plugin_name}.{field_name}")
+
+            try:
+                spec = _FieldSpecModel.model_validate(raw_field)
+            except ValidationError as e:
+                raise PluginSchemaError(
+                    self._format_schema_error(plugin_name, field_name, e)
+                ) from e
+
+            annotation = self._parse_type_annotation(spec.type)
+            if spec.nullable:
+                annotation = annotation | None
+
+            constraints = spec.constraints or {}
+            if constraints:
+                try:
+                    annotation = Annotated[annotation, Field(**constraints)]
+                except Exception as e:
+                    raise PluginSchemaError(
+                        f"Schema 约束非法: {plugin_name}.{field_name}, error={type(e).__name__}: {e}"
+                    ) from e
+
+            try:
+                adapter = TypeAdapter(annotation)
+            except Exception as e:
+                raise PluginSchemaError(
+                    f"Schema 类型无法编译: {plugin_name}.{field_name}, type={spec.type}, error={type(e).__name__}: {e}"
+                ) from e
+
+            has_default = "default" in raw_field
+            default_value = raw_field.get("default")
+
+            compiled.append(
+                _CompiledField(
+                    name=field_name,
+                    spec=spec,
+                    adapter=adapter,
+                    required=bool(spec.required),
+                    has_default=has_default,
+                    default=default_value,
+                )
+            )
+
+            raw_field["type"] = self._type_to_expr(spec.type)
+        return compiled
 
     def _validate_field_value(
         self,
         plugin_name: str,
         field_name: str,
         value: Any,
-        field_schema: Dict[str, Any],
-    ) -> None:
-        field_type = field_schema["type"]
+        compiled: _CompiledField,
+    ) -> Any:
+        """
+        使用编译后的校验器验证单个字段值。
 
-        if value is None:
-            if field_schema.get("nullable", False):
-                return
+        Args:
+            plugin_name (str): 插件名。
+            field_name (str): 字段名。
+            value (Any): 待校验值。
+            compiled (_CompiledField): 编译后的字段校验信息。
+
+        Returns:
+            Any: 通过校验并经 Pydantic 规范化后的值。
+
+        Raises:
+            PluginSchemaError: 在以下场景抛出：
+                1) 值不满足字段类型；
+                2) 值不满足字段约束；
+                3) 字段为非 nullable 但值为 None。
+        """
+        if value is None and not compiled.spec.nullable:
+            raise PluginSchemaError(f"配置项不允许为 null: {plugin_name}.{field_name}")
+
+        try:
+            return compiled.adapter.validate_python(value, strict=True)
+        except ValidationError as e:
             raise PluginSchemaError(
-                f"配置项不允许为 null: {plugin_name}.{field_name}"
-            )
+                self._format_value_error(plugin_name, field_name, value, e)
+            ) from e
 
-        if field_type == "boolean":
-            if not isinstance(value, bool):
-                raise PluginSchemaError(
-                    f"配置项类型错误，应为 boolean: {plugin_name}.{field_name}"
-                )
-            return
+    def _parse_type_annotation(self, raw_type: Any) -> Any:
+        """
+        将 schema 中的类型描述解析为 Python 注解对象。
 
-        if field_type == "string":
-            if not isinstance(value, str):
-                raise PluginSchemaError(
-                    f"配置项类型错误，应为 string: {plugin_name}.{field_name}"
-                )
-            return
+        Args:
+            raw_type (Any): 原始类型描述，支持 Python 类型对象或字符串表达式。
 
-        if field_type == "number":
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise PluginSchemaError(
-                    f"配置项类型错误，应为 number: {plugin_name}.{field_name}"
-                )
-            return
+        Returns:
+            Any: 可供 Pydantic TypeAdapter 使用的类型注解。
 
-        if field_type == "list":
-            if not isinstance(value, list):
-                raise PluginSchemaError(
-                    f"配置项类型错误，应为 list: {plugin_name}.{field_name}"
-                )
-            self._validate_list_item_type(plugin_name, field_name, value, field_schema)
-            return
+        Raises:
+            PluginSchemaError: 在以下场景抛出：
+                1) 类型表达式为空字符串；
+                2) 类型表达式语法非法；
+                3) 类型别名不受支持。
+        """
+        if raw_type is Any:
+            return Any
 
-        if field_type == "key_value":
-            if not isinstance(value, dict):
-                raise PluginSchemaError(
-                    f"配置项类型错误，应为 key_value 对象: {plugin_name}.{field_name}"
-                )
-            for key in value.keys():
-                if not isinstance(key, str):
-                    raise PluginSchemaError(
-                        f"key_value 的键必须是字符串: {plugin_name}.{field_name}"
-                    )
-            return
+        if isinstance(raw_type, type):
+            return raw_type
 
-        if field_type == "table":
-            if not isinstance(value, list):
-                raise PluginSchemaError(
-                    f"配置项类型错误，应为 table 列表: {plugin_name}.{field_name}"
-                )
-            for row in value:
-                if not isinstance(row, (dict, list)):
-                    raise PluginSchemaError(
-                        f"table 行必须是对象或数组: {plugin_name}.{field_name}"
-                    )
-            return
+        origin = get_origin(raw_type)
+        if origin is not None:
+            return raw_type
 
-    def _validate_list_item_type(
+        if not isinstance(raw_type, str):
+            raise PluginSchemaError(f"Schema type 不支持: {type(raw_type).__name__}")
+
+        expr = raw_type.strip()
+        if not expr:
+            raise PluginSchemaError("Schema type 不能为空字符串")
+
+        return self._parse_type_expr(expr)
+
+    def _parse_type_expr(self, expr: str) -> Any:
+        """
+        解析字符串类型表达式。
+
+        Args:
+            expr (str): 类型表达式，例如 `int`、`list[str]`、`dict[str, int]`。
+
+        Returns:
+            Any: Python 类型注解。
+
+        Raises:
+            PluginSchemaError: 在以下场景抛出：
+                1) 泛型参数缺失或格式错误；
+                2) 未知类型别名；
+                3) 联合类型解析失败。
+        """
+        if expr in self._PRIMITIVE_TYPE_ALIASES:
+            return self._PRIMITIVE_TYPE_ALIASES[expr]
+
+        parts = self._split_top_level(expr, "|")
+        if len(parts) > 1:
+            annotation = self._parse_type_expr(parts[0])
+            for part in parts[1:]:
+                annotation = annotation | self._parse_type_expr(part)
+            return annotation
+
+        if expr.startswith("list[") and expr.endswith("]"):
+            inner = expr[5:-1].strip()
+            if not inner:
+                raise PluginSchemaError(f"非法 list 类型表达式: {expr}")
+            return list[self._parse_type_expr(inner)]
+
+        if expr.startswith("dict[") and expr.endswith("]"):
+            inner = expr[5:-1].strip()
+            items = self._split_top_level(inner, ",")
+            if len(items) != 2:
+                raise PluginSchemaError(f"非法 dict 类型表达式: {expr}")
+            key_type = self._parse_type_expr(items[0].strip())
+            value_type = self._parse_type_expr(items[1].strip())
+            return dict[key_type, value_type]
+
+        if expr.startswith("tuple[") and expr.endswith("]"):
+            inner = expr[6:-1].strip()
+            if not inner:
+                raise PluginSchemaError(f"非法 tuple 类型表达式: {expr}")
+            tuple_args = [self._parse_type_expr(item.strip()) for item in self._split_top_level(inner, ",")]
+            return tuple[tuple(tuple_args)]
+
+        if expr.startswith("Optional[") and expr.endswith("]"):
+            inner = expr[9:-1].strip()
+            if not inner:
+                raise PluginSchemaError(f"非法 Optional 类型表达式: {expr}")
+            return self._parse_type_expr(inner) | None
+
+        raise PluginSchemaError(f"不支持的 Schema type 表达式: {expr}")
+
+    def _split_top_level(self, expr: str, separator: str) -> list[str]:
+        """
+        按顶层分隔符切分表达式，忽略泛型中括号内部内容。
+
+        Args:
+            expr (str): 待切分表达式。
+            separator (str): 分隔符，仅支持单字符。
+
+        Returns:
+            list[str]: 切分结果。
+        """
+        result: list[str] = []
+        depth = 0
+        start = 0
+        for index, ch in enumerate(expr):
+            if ch == "[":
+                depth += 1
+            elif ch == "]":
+                depth = max(0, depth - 1)
+            elif ch == separator and depth == 0:
+                result.append(expr[start:index])
+                start = index + 1
+        result.append(expr[start:])
+        return [item.strip() for item in result if item.strip()]
+
+    def _format_schema_error(self, plugin_name: str, field_name: str, error: ValidationError) -> str:
+        """
+        格式化 schema 字段元信息错误。
+
+        Args:
+            plugin_name (str): 插件名。
+            field_name (str): 字段名。
+            error (ValidationError): Pydantic 校验错误对象。
+
+        Returns:
+            str: 中文错误消息。
+        """
+        first = error.errors()[0] if error.errors() else {"msg": str(error), "loc": ()}
+        loc = ".".join(str(item) for item in first.get("loc", ()))
+        suffix = f".{loc}" if loc else ""
+        return f"Schema 字段定义非法: {plugin_name}.{field_name}{suffix}, {first.get('msg', '未知错误')}"
+
+    def _format_value_error(
         self,
         plugin_name: str,
         field_name: str,
-        value: list,
-        field_schema: Dict[str, Any],
-    ) -> None:
-        item_type = field_schema.get("item_type", "any")
-        if item_type == "any":
-            return
+        value: Any,
+        error: ValidationError,
+    ) -> str:
+        """
+        格式化字段值校验错误。
 
-        for item in value:
-            if item_type == "string" and not isinstance(item, str):
-                raise PluginSchemaError(
-                    f"list 元素类型错误，应为 string: {plugin_name}.{field_name}"
-                )
-            if item_type == "boolean" and not isinstance(item, bool):
-                raise PluginSchemaError(
-                    f"list 元素类型错误，应为 boolean: {plugin_name}.{field_name}"
-                )
-            if item_type == "number" and (
-                isinstance(item, bool) or not isinstance(item, (int, float))
-            ):
-                raise PluginSchemaError(
-                    f"list 元素类型错误，应为 number: {plugin_name}.{field_name}"
-                )
+        Args:
+            plugin_name (str): 插件名。
+            field_name (str): 字段名。
+            value (Any): 待校验原始值。
+            error (ValidationError): Pydantic 校验错误对象。
+
+        Returns:
+            str: 中文错误消息。
+        """
+        first = error.errors()[0] if error.errors() else {"msg": str(error), "loc": ()}
+        loc = first.get("loc", ())
+        suffix = "" if not loc else "." + ".".join(str(item) for item in loc)
+
+        value_type = type(value).__name__
+        value_preview = repr(value)
+        if len(value_preview) > 120:
+            value_preview = value_preview[:117] + "..."
+
+        return (
+            f"配置项校验失败: {plugin_name}.{field_name}{suffix}, "
+            f"错误={first.get('msg', '未知错误')}, "
+            f"实际类型={value_type}, 实际值={value_preview}"
+        )
+
+    def _type_to_expr(self, raw_type: Any) -> str:
+        """
+        将类型对象或表达式转换为统一字符串，便于序列化到 API 输出。
+
+        Args:
+            raw_type (Any): 原始类型描述。
+
+        Returns:
+            str: 统一类型表达式字符串。
+        """
+        if isinstance(raw_type, str):
+            return raw_type.strip()
+
+        if raw_type is Any:
+            return "Any"
+
+        if raw_type in (str, int, float, bool):
+            return raw_type.__name__
+
+        origin = get_origin(raw_type)
+        args = get_args(raw_type)
+
+        if origin is list:
+            inner = self._type_to_expr(args[0] if args else Any)
+            return f"list[{inner}]"
+
+        if origin is dict:
+            key_type = self._type_to_expr(args[0] if len(args) > 0 else str)
+            value_type = self._type_to_expr(args[1] if len(args) > 1 else Any)
+            return f"dict[{key_type}, {value_type}]"
+
+        if origin is tuple:
+            if len(args) == 2 and args[1] is Ellipsis:
+                return f"tuple[{self._type_to_expr(args[0])}, ...]"
+            return "tuple[" + ", ".join(self._type_to_expr(arg) for arg in args) + "]"
+
+        return str(raw_type).replace("typing.", "")

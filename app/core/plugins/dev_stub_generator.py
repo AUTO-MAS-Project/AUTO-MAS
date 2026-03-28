@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, Literal, Optional, Union, get_args, get_origin
 
 from .cache_store import JsonPluginCache, PluginCacheManager
-from .context import PluginContext, RuntimeFacade
+from .context import PluginConfigProxy, PluginContext, RuntimeFacade
 from .runtime_api import RuntimeAPI
 
 
@@ -105,7 +105,7 @@ def _render_context_stub() -> str:
     class_attrs = {
         "plugin_name": "str",
         "instance_id": "str",
-        "config": "Dict[str, Any]",
+        "config": "PluginConfigProxy",
         "logger": "Any",
         "events": "Any",
         "runtime_api": "RuntimeAPI",
@@ -120,6 +120,7 @@ def _render_context_stub() -> str:
         "from typing import Any, Callable, Dict, Optional",
         "",
         "from .cache_store import PluginCacheManager",
+        "from .context import PluginConfigProxy",
         "from .runtime_api import RuntimeAPI",
         "",
     ]

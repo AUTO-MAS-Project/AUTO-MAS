@@ -94,7 +94,7 @@
               v-if="!currentSchemaError && activeSchemaEntries.length === 0"
               type="warning"
               show-icon
-              message="该插件未声明 schema，根据规则不可配置"
+              message="该插件未声明 schema，可能非预期行为或插件本身无需配置"
               style="margin-bottom: 12px"
             />
 
@@ -955,6 +955,7 @@ const reloadAll = async () => {
       throw new Error(data.message || '重载失败')
     }
     message.success('重载全部成功')
+    await fetchData()
   } catch (error) {
     message.error(`重载失败: ${String(error)}`)
   } finally {
@@ -969,6 +970,10 @@ const reloadInstance = async (instanceId: string) => {
       throw new Error(data.message || '重载实例失败')
     }
     message.success(`实例重载成功: ${instanceId}`)
+    await fetchData()
+    if (selectedInstanceId.value) {
+      selectInstance(selectedInstanceId.value)
+    }
   } catch (error) {
     message.error(`实例重载失败: ${String(error)}`)
   }
@@ -981,6 +986,10 @@ const reloadPlugin = async (plugin: string) => {
       throw new Error(data.message || '重载插件失败')
     }
     message.success(`插件重载成功: ${plugin}`)
+    await fetchData()
+    if (selectedInstanceId.value) {
+      selectInstance(selectedInstanceId.value)
+    }
   } catch (error) {
     message.error(`插件重载失败: ${String(error)}`)
   }
