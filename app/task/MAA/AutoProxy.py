@@ -33,7 +33,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceInfo, DeviceBase
 from app.services import Notify, System
-from app.utils import get_logger, LogMonitor, ProcessManager
+from app.utils import get_logger, LogMonitor, ProcessManager, skland_sign_in
 from app.utils.constants import (
     UTC4,
     UTC8,
@@ -46,7 +46,7 @@ from app.utils.constants import (
     MAA_RUN_MOOD_BOOK,
     MAA_TASK_TRANSITION_METHOD_BOOK,
 )
-from .tools import skland_sign_in, push_notification, agree_bilibili, update_maa
+from .tools import push_notification, agree_bilibili, update_maa
 
 logger = get_logger("MAA 自动代理")
 
@@ -158,7 +158,8 @@ class AutoProxyTask(TaskExecuteBase):
         ):
             self.script_info.log = "正在执行森空岛签到"
             skland_result = await skland_sign_in(
-                self.cur_user_config.get("Info", "SklandToken")
+                self.cur_user_config.get("Info", "SklandToken"),
+                app_code="arknights",
             )
             for t, user_list in skland_result.items():
                 if t != "总计" and len(user_list) > 0:
