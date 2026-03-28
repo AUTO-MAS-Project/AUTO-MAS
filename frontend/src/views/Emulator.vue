@@ -915,7 +915,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                         </a-tooltip>
                       </template>
                       <a-input-number v-model:value="getEditingData(element.uid).max_wait_time" placeholder="输入最大等待时间"
-                        size="small" :bordered="false" style="width: 100%" :min="10" :max="300" :step="5" suffix="秒"
+                        size="small" :bordered="false" style="width: 100%" :min="10" :max="9999" :step="5" suffix="秒"
                         @blur="handleSaveChange(element.uid, 'max_wait_time', getEditingData(element.uid).max_wait_time)" />
                     </a-descriptions-item>
                     <a-descriptions-item>

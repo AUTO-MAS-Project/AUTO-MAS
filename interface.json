@@ -17,6 +17,28 @@
             }
         },
         {
+            "name": "终末地PC端",
+            "type": "Win32",
+            "permission_required": true,
+            "win32": {
+                "window_regex": "Endfield",
+                "mouse": "PostMessageWithCursorPos",
+                "keyboard": "PostMessageWithCursorPos",
+                "screencap": "PrintWindow"
+            }
+        },
+        {
+            "name": "终末地PC端-登录表单",
+            "type": "Win32",
+            "permission_required": true,
+            "win32": {
+                "window_regex": "Form",
+                "mouse": "PostMessageWithCursorPos",
+                "keyboard": "PostMessageWithCursorPos",
+                "screencap": "PrintWindow"
+            }
+        },
+        {
             "name": "星穹铁道模拟器",
             "type": "Adb",
             "permission_required": true
@@ -33,35 +55,49 @@
     "task": [
         {
             "name": "明日方舟PC端-选中已部署干员",
-            "entry": "选中已部署干员",
+            "entry": "选中已部署干员[ArknightsPC]",
             "controller": [
                 "明日方舟PC端"
             ]
         },
         {
             "name": "明日方舟PC端-释放技能",
-            "entry": "释放技能",
+            "entry": "释放技能[ArknightsPC]",
             "controller": [
                 "明日方舟PC端"
             ]
         },
         {
             "name": "明日方舟PC端-撤退干员",
-            "entry": "撤退干员",
+            "entry": "撤退干员[ArknightsPC]",
             "controller": [
                 "明日方舟PC端"
             ]
         },
         {
             "name": "明日方舟PC端-下一帧",
-            "entry": "下一帧",
+            "entry": "下一帧[ArknightsPC]",
             "controller": [
                 "明日方舟PC端"
             ]
         },
         {
+            "name": "终末地PC端-切换账号-调出登录框",
+            "entry": "切换账号-调出登录框[EndFieldPC]",
+            "controller": [
+                "终末地PC端"
+            ]
+        },
+        {
+            "name": "终末地PC端-切换账号-账号登录",
+            "entry": "切换账号-账号登录[EndFieldPC]",
+            "controller": [
+                "终末地PC端-登录表单"
+            ]
+        },
+        {
             "name": "星穹铁道模拟器-切换账号",
-            "entry": "切换账号-星穹铁道",
+            "entry": "切换账号[StarRailEmulator]",
             "controller": [
                 "星穹铁道模拟器"
             ]

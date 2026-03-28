@@ -36,7 +36,12 @@ UTC4 = timezone(timedelta(hours=4))
 UTC8 = timezone(timedelta(hours=8))
 """东8区时区对象"""
 
-TYPE_BOOK = {"MaaConfig": "MAA", "SrcConfig": "SRC", "GeneralConfig": "通用"}
+TYPE_BOOK = {
+    "MaaConfig": "MAA",
+    "SrcConfig": "SRC",
+    "MaaEndConfig": "MaaEnd",
+    "GeneralConfig": "通用",
+}
 """配置类型映射表"""
 
 MAA_RUN_MOOD_BOOK = {"Annihilation": "剿灭", "Routine": "日常"}
@@ -169,6 +174,39 @@ MAA_REMAIN_FIGHT_BASE = {
     "TaskType": "Fight",
 }
 """MAA剩余理智作战基础配置"""
+
+MAAEND_STAGE_BOOK = {
+    "OperatorEXP": "干员经验",
+    "Promotions": "干员进阶",
+    "T-Creds": "钱币收集",
+    "SkillUp": "技能提升",
+    "WeaponEXP": "武器经验",
+    "WeaponTune": "武器进阶",
+    "AdvancedProgression1": "高阶培养 I - D96钢样品四",
+    "AdvancedProgression2": "高阶培养 II - 超距辉映管",
+    "AdvancedProgression3": "高阶培养 III - 快子遴捡晶格",
+    "AdvancedProgression4": "高阶培养 IV - 象限拟合液",
+    "AdvancedProgression5": "高阶培养 V - 三相纳米片",
+}
+"""MAAEnd任务关卡中文映射表"""
+
+MAAEND_STAGE_WITH_AB = set(["OperatorEXP", "Promotions", "SkillUp", "WeaponTune"])
+"""MAAEnd任务包含AB关的关卡列表"""
+
+
+MAAEND_KILLPROC_TASK = {
+    "id": "jobstop",
+    "taskName": "__MXU_KILLPROC__",
+    "enabled": True,
+    "optionValues": {
+        "__MXU_KILLPROC_SELF_OPTION__": {"type": "switch", "value": True},
+        "__MXU_KILLPROC_NAME_OPTION__": {
+            "type": "input",
+            "values": {"process_name": ""},
+        },
+    },
+}
+"""MAAEnd任务完成后退出任务配置"""
 
 EMULATOR_PATH_BOOK = {
     "mumu": {

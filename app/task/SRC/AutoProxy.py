@@ -143,11 +143,11 @@ class AutoProxyTask(TaskExecuteBase):
                 LogRecord()
             )
 
-            self.script_info.log = f"正在启动模拟器..."
+            self.script_info.log = "正在启动模拟器..."
             # 启动模拟器
             try:
                 logger.info(
-                    f"启动模拟器: {self.script_config.get("Emulator", "Index")}"
+                    f"启动模拟器: {self.script_config.get('Emulator', 'Index')}"
                 )
                 emulator_info = await self.emulator_manager.open(
                     self.script_config.get("Emulator", "Index"),
@@ -175,8 +175,8 @@ class AutoProxyTask(TaskExecuteBase):
             self.script_info.log = "正在启动模拟器...\n模拟器启动成功\n正在登录「崩坏·星穹铁道」\n「崩坏·星穹铁道」登录成功"
 
             await self.set_src(emulator_info)
-            logger.info(f"运行脚本任务: {self.src_exe_path}")
 
+            logger.info(f"运行脚本任务: {self.src_exe_path}")
             self.wait_event.clear()
             t = datetime.now()
             await self.src_process_manager.open_process(self.src_exe_path)
