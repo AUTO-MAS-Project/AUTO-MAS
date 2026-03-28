@@ -36,12 +36,14 @@ GitHub Actions 构建物下载和上传脚本
 3. 调用 cnb_release.py 上传文件到 CNB
 
 使用方法：
-    python github_download_and_cnb_upload.py --cnb-token YOUR_CNB_TOKEN [--github-token YOUR_GITHUB_TOKEN] [--run-id RUN_ID]
+    python github_download_and_cnb_upload.py --cnb-token YOUR_CNB_TOKEN [--github-token YOUR_GITHUB_TOKEN] [--run-id RUN_ID] [--target-commitish BRANCH] [--release-body BODY]
 
 参数说明：
     --cnb-token: CNB API Token (必需)
     --github-token: GitHub Personal Access Token (可选，用于提高API限制)
     --run-id: 指定 GitHub Actions 运行 ID (可选，默认获取最新运行)
+    --target-commitish: Release 关联的目标分支或提交 (可选，默认 main)
+    --release-body: Release 描述正文 (可选，默认自动生成)
 
 依赖：
 - requests: HTTP 请求库
@@ -70,6 +72,7 @@ DEFAULT_WORKFLOW_FILE = "build-app.yml"
 DEFAULT_PROJECT_PATH = "AUTO-MAS-Project/AUTO-MAS"
 DEFAULT_ARTIFACT_NAMES = ["build-artifacts"]
 DEFAULT_ASSET_GLOB = "AUTO-MAS-*-x64.zip"
+DEFAULT_TARGET_COMMITISH = "main"
 
 
 class GitHubActionsDownloader:
@@ -282,7 +285,12 @@ def extract_version_from_filename(filename: str) -> Optional[str]:
 
 
 def create_cnb_config(
-    files: List[str], version: str, token: str, project_path: str = DEFAULT_PROJECT_PATH
+    files: List[str],
+    version: str,
+    token: str,
+    project_path: str = DEFAULT_PROJECT_PATH,
+    target_commitish: str = DEFAULT_TARGET_COMMITISH,
+    release_body: Optional[str] = None,
 ) -> Dict:
     """
     创建CNB上传配置
@@ -295,9 +303,12 @@ def create_cnb_config(
     Returns:
         CNB配置字典
     """
+    normalized_version = version.lstrip("vV")
+
     # 判断是否为预发布版本
-    is_prerelease = "-" in version
+    is_prerelease = "-" in normalized_version
     make_latest = not is_prerelease
+    body = release_body or f"AUTO-MAS v{normalized_version} 自动发布"
 
     config = {
         "token": token,
@@ -305,12 +316,12 @@ def create_cnb_config(
         "base_url": "https://api.cnb.cool",
         "overwrite": True,
         "release_data": {
-            "tag_name": f"v{version}",
-            "name": f"AUTO-MAS v{version}",
-            "body": f"AUTO-MAS v{version} 自动发布",
+            "tag_name": f"v{normalized_version}",
+            "name": f"AUTO-MAS v{normalized_version}",
+            "body": body,
             "draft": False,
             "prerelease": is_prerelease,
-            "target_commitish": "main",
+            "target_commitish": target_commitish,
             "make_latest": make_latest,
         },
         "asset_files": files,
@@ -336,6 +347,17 @@ def main():
     )
     parser.add_argument(
         "--project-path", default=DEFAULT_PROJECT_PATH, help="CNB 项目路径"
+    )
+    parser.add_argument(
+        "--target-commitish",
+        default=DEFAULT_TARGET_COMMITISH,
+        help="Release 对应的目标分支或提交，默认 main",
+    )
+    parser.add_argument(
+        "--release-body",
+        type=str,
+        default=None,
+        help="Release 描述正文，不传则使用默认描述",
     )
     parser.add_argument(
         "--artifact-name",
@@ -488,6 +510,25 @@ def main():
         print("❌ 错误: 无法从文件名中提取版本号")
         return 1
 
+    # 去重并过滤不存在文件，避免重复上传或路径异常
+    normalized_files: List[str] = []
+    seen_files = set()
+    for file_path in all_files:
+        p = Path(file_path)
+        if not p.is_file():
+            continue
+        normalized = str(p.resolve())
+        if normalized in seen_files:
+            continue
+        seen_files.add(normalized)
+        normalized_files.append(normalized)
+
+    all_files = normalized_files
+
+    if not all_files:
+        print("❌ 错误: 可上传文件列表为空")
+        return 1
+
     print(f"\n📋 准备上传 {len(all_files)} 个文件:")
     for file_path in all_files:
         p = Path(file_path)
@@ -496,7 +537,14 @@ def main():
 
     # 创建CNB配置
     print("\n⚙️  创建CNB配置...")
-    cnb_config = create_cnb_config(all_files, version, cnb_token, args.project_path)
+    cnb_config = create_cnb_config(
+        files=all_files,
+        version=version,
+        token=cnb_token,
+        project_path=args.project_path,
+        target_commitish=args.target_commitish,
+        release_body=args.release_body,
+    )
 
     # 保存配置文件
     config_path = work_dir / "cnb_config.json"
