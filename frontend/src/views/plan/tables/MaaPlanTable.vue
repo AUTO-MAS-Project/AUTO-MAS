@@ -11,7 +11,7 @@
           </template>
 
           <template v-else-if="record.taskName === '吃理智药'">
-            <a-input-number :value="(record as any)[column.key]" size="small" :min="0" :max="999"
+            <a-input-number :value="(record as any)[column.key]" size="small" :min="0" :max="9999"
               class="config-input-number" :controls="false" :bordered="false"
               :disabled="isColumnDisabled(column.key as string)"
               @update:value="updateConfigValue(record.key, column.key as TimeKey, $event)" />
