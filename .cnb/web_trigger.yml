@@ -4,8 +4,8 @@
 #   This file incorporates work covered by the following copyright and
 #   permission notice:
 #
-#       git-sync Copyright © 2024-present cnb.cool
-#       https://cnb.cool/cnb/plugins/tencentcom/git-sync
+#       better-genshin-impact Copyright © 2023-2026 babalae
+#       https://github.com/babalae/better-genshin-impact
 
 #   This file is part of AUTO-MAS.
 
@@ -24,22 +24,8 @@
 
 #   Contact: DLmaster_361@163.com
 
-name: Sync to CNB
-on: [push]
-
-jobs:
-  sync:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-      
-      - name: Sync to CNB Repository
-        uses: docker://tencentcom/git-sync
-        env:
-          PLUGIN_TARGET_URL: "https://cnb.cool/AUTO-MAS-Project/AUTO-MAS.git"
-          PLUGIN_AUTH_TYPE: "https"
-          PLUGIN_USERNAME: "cnb"
-          PLUGIN_PASSWORD: ${{ secrets.GIT_PASSWORD }}
-          PLUGIN_FORCE: "true"
+branch:
+  - buttons:
+      - name: 触发上传
+        description: 上传测试版或者正式版
+        event: web_trigger_one
