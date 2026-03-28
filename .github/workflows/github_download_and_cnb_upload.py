@@ -546,6 +546,12 @@ def main():
         release_body=args.release_body,
     )
 
+    # 打印脱敏后的配置，便于排查参数传递问题
+    debug_config = dict(cnb_config)
+    debug_config["token"] = "***"
+    print("\n🧪 CNB 配置 JSON (调试):")
+    print(json.dumps(debug_config, indent=2, ensure_ascii=False))
+
     # 保存配置文件
     config_path = work_dir / "cnb_config.json"
     with config_path.open("w", encoding="utf-8") as f:
