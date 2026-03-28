@@ -413,4 +413,6 @@ jobs:
 
           python .github/workflows/cnb_trigger.py "$CNB_TOKEN" \
             --branch "${{ github.ref_name }}" \
-            --runid "${{ github.run_id }}"
+            --runid "${{ github.run_id }}" \
+            --version "${{ needs.build.outputs.version_tag }}" \
+            --project-path "AUTO-MAS-Project/AUTO-MAS"
