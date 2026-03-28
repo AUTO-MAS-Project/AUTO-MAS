@@ -405,6 +405,9 @@ jobs:
       - name: 触发 CNB 构建
         env:
           CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+          RELEASE_BODY: ${{ needs.build.outputs.version_changelog }}
+          VERSION_TAG: ${{ needs.build.outputs.version_tag }}
+          IS_PRERELEASE: ${{ needs.build.outputs.is_prerelease }}
         run: |
           if [ -z "$CNB_TOKEN" ]; then
             echo "CNB_TOKEN 未配置，跳过触发"
@@ -413,4 +416,7 @@ jobs:
 
           python .github/workflows/cnb_trigger.py "$CNB_TOKEN" \
             --branch "${{ github.ref_name }}" \
-            --runid "${{ github.run_id }}"
+            --runid "${{ github.run_id }}" \
+            --release-body "$RELEASE_BODY" \
+            --version-tag "$VERSION_TAG" \
+            --is-prerelease "$IS_PRERELEASE"
