@@ -1814,7 +1814,7 @@ class GlobalConfig(ConfigBase):
             "Update",
             "Source",
             "GitHub",
-            OptionsValidator(["GitHub", "MirrorChyan", "AutoSite"]),
+            OptionsValidator(["GitHub", "MirrorChyan", "AutoSite", "CNB"]),
         )
         ## 更新频道
         self.Update_Channel = ConfigItem(

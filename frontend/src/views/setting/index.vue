@@ -57,6 +57,7 @@ const updateSourceOptions = [
   { label: 'GitHub', value: 'GitHub' },
   { label: 'Mirror酱', value: 'MirrorChyan' },
   { label: '自建下载站', value: 'AutoSite' },
+  { label: 'CNB 镜像源', value: 'CNB' },
 ]
 
 const updateChannelOptions = [
