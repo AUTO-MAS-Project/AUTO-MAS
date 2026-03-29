@@ -406,10 +406,6 @@ jobs:
         env:
           CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
         run: |
-          if [ -z "$CNB_TOKEN" ]; then
-            echo "CNB_TOKEN 未配置，跳过触发"
-            exit 0
-          fi
 
           python .github/workflows/cnb_trigger.py "$CNB_TOKEN" \
             --branch "${{ github.ref_name }}" \
