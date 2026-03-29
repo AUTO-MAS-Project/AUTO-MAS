@@ -36,12 +36,16 @@ GitHub Actions 构建物下载和上传脚本
 3. 调用 cnb_release.py 上传文件到 CNB
 
 使用方法：
-    python github_download_and_cnb_upload.py --cnb-token YOUR_CNB_TOKEN [--github-token YOUR_GITHUB_TOKEN] [--run-id RUN_ID]
+    python github_download_and_cnb_upload.py --cnb-token YOUR_CNB_TOKEN --version-tag VERSION_TAG --is-prerelease true|false [--github-token YOUR_GITHUB_TOKEN] [--run-id RUN_ID] [--target-commitish BRANCH] [--release-body BODY]
 
 参数说明：
     --cnb-token: CNB API Token (必需)
+    --version-tag: 版本号（来自上游参数传递，必需）
+    --is-prerelease: 是否预发布（true/false，来自上游参数传递，必需）
     --github-token: GitHub Personal Access Token (可选，用于提高API限制)
     --run-id: 指定 GitHub Actions 运行 ID (可选，默认获取最新运行)
+    --target-commitish: Release 关联的目标分支或提交 (可选，默认 main)
+    --release-body: Release 描述正文 (可选，默认自动生成)
 
 依赖：
 - requests: HTTP 请求库
@@ -55,7 +59,6 @@ import sys
 import json
 import requests
 import zipfile
-import re
 from pathlib import Path
 from typing import List, Dict, Optional
 from tqdm import tqdm
@@ -70,6 +73,24 @@ DEFAULT_WORKFLOW_FILE = "build-app.yml"
 DEFAULT_PROJECT_PATH = "AUTO-MAS-Project/AUTO-MAS"
 DEFAULT_ARTIFACT_NAMES = ["build-artifacts"]
 DEFAULT_ASSET_GLOB = "AUTO-MAS-*-x64.zip"
+DEFAULT_TARGET_COMMITISH = "main"
+
+
+def sanitize_release_body(release_body: Optional[str]) -> Optional[str]:
+    """移除 release body 首行的 HTML 注释，避免影响下游解析。"""
+    if release_body is None:
+        return None
+
+    lines = release_body.splitlines()
+    if not lines:
+        return release_body
+
+    first_line = lines[0].strip().lstrip("\ufeff")
+    if first_line.startswith("<!--") and first_line.endswith("-->"):
+        remaining = "\n".join(lines[1:]).lstrip("\n")
+        return remaining
+
+    return release_body
 
 
 class GitHubActionsDownloader:
@@ -252,67 +273,49 @@ class GitHubActionsDownloader:
             return []
 
 
-def extract_version_from_filename(filename: str) -> Optional[str]:
-    """
-    从文件名中提取版本号
-
-    Args:
-        filename: 文件名
-
-    Returns:
-        版本号或None
-    """
-    # 去除扩展名
-    import os
-
-    filename_without_ext = os.path.splitext(filename)[0]
-
-    # 匹配版本号模式，如 v1.2.3, 1.2.3-alpha.1 等
-    patterns = [
-        r"v?([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)",
-        r"_v?([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)",
-    ]
-
-    for pattern in patterns:
-        match = re.search(pattern, filename_without_ext)
-        if match:
-            return match.group(1)
-
-    return None
-
-
 def create_cnb_config(
-    files: List[str], version: str, token: str, project_path: str = DEFAULT_PROJECT_PATH
+    files: List[str],
+    version_tag: str,
+    is_prerelease: bool,
+    token: str,
+    project_path: str = DEFAULT_PROJECT_PATH,
+    target_commitish: str = DEFAULT_TARGET_COMMITISH,
+    release_body: Optional[str] = None,
 ) -> Dict:
     """
     创建CNB上传配置
 
     Args:
         files: 要上传的文件列表
-        version: 版本号
+        version_tag: 版本号
+        is_prerelease: 是否预发布
         token: CNB token
 
     Returns:
         CNB配置字典
     """
-    # 判断是否为预发布版本
-    is_prerelease = "-" in version
-    make_latest = not is_prerelease
+
+    body = sanitize_release_body(release_body)
+    body = body if body else f"AUTO-MAS {version_tag} 自动发布"
+    prerelease = bool(is_prerelease)
+
+    # 在配置生成阶段统一规范 release_data，后续流程直接透传使用。
+    release_data = {
+        "tag_name": version_tag,
+        "name": version_tag,
+        "body": body,
+        "draft": False,
+        "prerelease": prerelease,
+        "target_commitish": target_commitish,
+        "make_latest": str(not prerelease).lower(),
+    }
 
     config = {
         "token": token,
         "project_path": project_path,
         "base_url": "https://api.cnb.cool",
         "overwrite": True,
-        "release_data": {
-            "tag_name": f"v{version}",
-            "name": f"AUTO-MAS v{version}",
-            "body": f"AUTO-MAS v{version} 自动发布",
-            "draft": False,
-            "prerelease": is_prerelease,
-            "target_commitish": "main",
-            "make_latest": make_latest,
-        },
+        "release_data": release_data,
         "asset_files": files,
     }
 
@@ -329,6 +332,15 @@ def main():
         type=str,
         help="指定 GitHub Actions 运行 ID，如果提供则不会获取最新运行",
     )
+    parser.add_argument(
+        "--version-tag", required=True, help="版本号（来自上游参数传递）"
+    )
+    parser.add_argument(
+        "--is-prerelease",
+        required=True,
+        choices=["true", "false"],
+        help="是否预发布（true/false，来自上游参数传递）",
+    )
     parser.add_argument("--owner", default=DEFAULT_OWNER, help="GitHub 仓库所有者")
     parser.add_argument("--repo", default=DEFAULT_REPO, help="GitHub 仓库名称")
     parser.add_argument(
@@ -336,6 +348,17 @@ def main():
     )
     parser.add_argument(
         "--project-path", default=DEFAULT_PROJECT_PATH, help="CNB 项目路径"
+    )
+    parser.add_argument(
+        "--target-commitish",
+        default=DEFAULT_TARGET_COMMITISH,
+        help="Release 对应的目标分支或提交，默认 main",
+    )
+    parser.add_argument(
+        "--release-body",
+        type=str,
+        default=None,
+        help="Release 描述正文，不传则使用默认描述",
     )
     parser.add_argument(
         "--artifact-name",
@@ -389,7 +412,8 @@ def main():
 
     # 检查是否已存在解压后的文件
     all_files = []
-    version = None
+    version_tag = args.version_tag
+    is_prerelease = args.is_prerelease.lower() == "true"
 
     # 检查解压目录是否已存在且包含文件
     if extract_dir.exists():
@@ -404,14 +428,10 @@ def main():
             # build-app.yml 的 build-artifacts 产物内是 AUTO-MAS-*-x64.zip
             for file_path in artifact_extract_dir.rglob(DEFAULT_ASSET_GLOB):
                 existing_files.append(str(file_path))
-                if not version:
-                    extracted_version = extract_version_from_filename(file_path.name)
-                    if extracted_version:
-                        version = extracted_version
 
-        if existing_files and version:
+        if existing_files:
             print(f"✅ 发现已存在的构建物 ({len(existing_files)} 个文件)，跳过下载")
-            print(f"📋 检测到版本号: {version}")
+            print(f"📋 使用上游传入版本号: {version_tag}")
             all_files = existing_files
         else:
             print("⚠️  已存在目录但未找到有效文件，将重新下载")
@@ -474,18 +494,31 @@ def main():
             # 按本项目构筑产物格式筛选上传文件
             for file_path in (Path(artifact_extract_dir)).rglob(DEFAULT_ASSET_GLOB):
                 all_files.append(str(file_path))
-                if not version:
-                    extracted_version = extract_version_from_filename(file_path.name)
-                    if extracted_version:
-                        version = extracted_version
-                        print(f"📋 检测到版本号: {version}")
 
     if not all_files:
         print("❌ 错误: 没有找到可上传的文件")
         return 1
 
-    if not version:
-        print("❌ 错误: 无法从文件名中提取版本号")
+    print(f"📋 使用上游传入版本号: {version_tag}")
+    print(f"📋 使用上游传入预发布标记: {is_prerelease}")
+
+    # 去重并过滤不存在文件，避免重复上传或路径异常
+    normalized_files: List[str] = []
+    seen_files = set()
+    for file_path in all_files:
+        p = Path(file_path)
+        if not p.is_file():
+            continue
+        normalized = str(p.resolve())
+        if normalized in seen_files:
+            continue
+        seen_files.add(normalized)
+        normalized_files.append(normalized)
+
+    all_files = normalized_files
+
+    if not all_files:
+        print("❌ 错误: 可上传文件列表为空")
         return 1
 
     print(f"\n📋 准备上传 {len(all_files)} 个文件:")
@@ -496,7 +529,21 @@ def main():
 
     # 创建CNB配置
     print("\n⚙️  创建CNB配置...")
-    cnb_config = create_cnb_config(all_files, version, cnb_token, args.project_path)
+    cnb_config = create_cnb_config(
+        files=all_files,
+        version_tag=version_tag,
+        is_prerelease=is_prerelease,
+        token=cnb_token,
+        project_path=args.project_path,
+        target_commitish=args.target_commitish,
+        release_body=args.release_body,
+    )
+
+    # 打印脱敏后的配置，便于排查参数传递问题
+    debug_config = dict(cnb_config)
+    debug_config["token"] = "***"
+    print("\n🧪 CNB 配置 JSON (调试):")
+    print(json.dumps(debug_config, indent=2, ensure_ascii=False))
 
     # 保存配置文件
     config_path = work_dir / "cnb_config.json"
