@@ -20,7 +20,7 @@
 
 
 from app.core import Config
-from app.models.config import MaaEndUserConfig
+from app.models import MaaEndUserConfig
 from app.services import Notify
 from app.utils import get_logger
 
@@ -124,7 +124,9 @@ async def push_notification(
                         user_config.get("Notify", "ServerChanKey"),
                     )
                 else:
-                    logger.error("用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知")
+                    logger.error(
+                        "用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知"
+                    )
 
             for webhook in user_config.Notify_CustomWebhooks.values():
                 await Notify.WebhookPush(

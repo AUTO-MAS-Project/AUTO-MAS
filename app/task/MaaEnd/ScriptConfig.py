@@ -27,8 +27,7 @@ from typing import Any
 
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem
-from app.models.ConfigBase import MultipleConfig
-from app.models.config import MaaEndConfig, MaaEndUserConfig
+from app.models import MaaEndConfig, MaaEndUserConfig, MultipleConfig
 from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
@@ -117,7 +116,6 @@ class ScriptConfigTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
 
     async def prepare(self):
-
         self.maaend_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
 
@@ -130,7 +128,6 @@ class ScriptConfigTask(TaskExecuteBase):
         )
 
     async def main_task(self):
-
         await self.prepare()
 
         await self.set_maaend()
@@ -169,7 +166,6 @@ class ScriptConfigTask(TaskExecuteBase):
         )
 
     async def final_task(self):
-
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 

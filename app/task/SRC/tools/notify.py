@@ -21,7 +21,7 @@
 from app.core import Config
 from app.services import Notify
 from app.utils import get_logger
-from app.models.config import SrcUserConfig
+from app.models import SrcUserConfig
 
 logger = get_logger("SRC通知工具")
 

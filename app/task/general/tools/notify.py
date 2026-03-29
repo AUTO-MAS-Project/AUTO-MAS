@@ -22,7 +22,7 @@
 from app.core import Config
 from app.services import Notify
 from app.utils import get_logger
-from app.models.config import GeneralUserConfig
+from app.models import GeneralUserConfig
 
 logger = get_logger("通用通知工具")
 

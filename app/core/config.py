@@ -19,6 +19,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
+# pyright: reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportInvalidTypeForm=false, reportGeneralTypeIssues=false
 
 import os
 import re
@@ -28,17 +29,18 @@ import shutil
 import asyncio
 import uvicorn
 import sqlite3
+import tomllib
 import truststore
 from pathlib import Path
 from fastapi import WebSocket
 from collections import defaultdict
 from jinja2 import Environment, FileSystemLoader
 from datetime import datetime, timedelta, date
-from typing import Literal, Optional, Union, Dict, Any, List
+from typing import Literal, Optional, Dict, Any, List
 import uuid
 import json
 
-from app.models.config import (
+from app.models import (
     GeneralConfig,
     MaaConfig,
     SrcConfig,
@@ -51,12 +53,12 @@ from app.models.config import (
     MaaEndUserConfig,
     GeneralUserConfig,
     GlobalConfig,
-    CLASS_BOOK,
     Webhook,
     TimeSet,
     EmulatorConfig,
+    dump_toml,
 )
-from app.models.schema import WebSocketMessage
+from app.models.dto import WebSocketMessage
 from app.utils.constants import (
     UTC4,
     UTC8,
@@ -68,6 +70,11 @@ from app.utils.constants import (
 from app.utils import get_logger
 
 logger = get_logger("配置管理")
+
+ScriptConfigClass = (
+    type[MaaConfig] | type[SrcConfig] | type[GeneralConfig] | type[MaaEndConfig]
+)
+ScriptConfigData = MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig
 
 if (Path.cwd() / "environment/git/bin/git.exe").exists():
     os.environ["GIT_PYTHON_GIT_EXECUTABLE"] = str(
@@ -128,21 +135,49 @@ class AppConfig(GlobalConfig):
             "Sleep",
             "KillSelf",
         ] = "NoAction"
-        self.temp_task: List[asyncio.Task] = []
+        self.temp_task: List[asyncio.Task[Any]] = []
 
         truststore.inject_into_ssl()
+
+    def _resolve_config_path(self, stem: str) -> Path:
+        """优先返回 TOML 配置路径；若仅存在 JSON，则返回 JSON。"""
+
+        toml_path = self.config_path / f"{stem}.toml"
+        json_path = self.config_path / f"{stem}.json"
+        if toml_path.exists() or not json_path.exists():
+            return toml_path
+        return json_path
+
+    async def _connect_runtime_configs(self) -> None:
+        """连接运行期主配置文件。"""
+
+        await self.connect(self._resolve_config_path("Config"))
+        await self.EmulatorConfig.connect(self._resolve_config_path("EmulatorConfig"))
+        await self.PlanConfig.connect(self._resolve_config_path("PlanConfig"))
+        await self.ScriptConfig.connect(self._resolve_config_path("ScriptConfig"))
+        await self.QueueConfig.connect(self._resolve_config_path("QueueConfig"))
+        await self.ToolsConfig.connect(self._resolve_config_path("ToolsConfig"))
+
+    def _read_mapping_config(self, path: Path) -> dict[str, Any]:
+        text = path.read_text(encoding="utf-8")
+        if path.suffix == ".toml":
+            return tomllib.loads(text) if text.strip() else {}
+        return json.loads(text)
+
+    def _write_mapping_config(self, path: Path, data: dict[str, Any]) -> None:
+        if path.suffix == ".toml":
+            path.write_text(dump_toml(data), encoding="utf-8")
+        else:
+            path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+            )
 
     async def init_config(self) -> None:
         """初始化配置管理"""
 
         await self.check_data()
 
-        await self.connect(self.config_path / "Config.json")
-        await self.EmulatorConfig.connect(self.config_path / "EmulatorConfig.json")
-        await self.PlanConfig.connect(self.config_path / "PlanConfig.json")
-        await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
-        await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
-        await self.ToolsConfig.connect(self.config_path / "ToolsConfig.json")
+        await self._connect_runtime_configs()
 
         from app.services import System
 
@@ -221,15 +256,17 @@ class AppConfig(GlobalConfig):
                 )
                 if_streaming = True
 
-                await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
-                await self.PlanConfig.connect(self.config_path / "PlanConfig.json")
-                await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
+                await self.ScriptConfig.connect(
+                    self._resolve_config_path("ScriptConfig")
+                )
+                await self.PlanConfig.connect(self._resolve_config_path("PlanConfig"))
+                await self.QueueConfig.connect(self._resolve_config_path("QueueConfig"))
 
                 if (Path.cwd() / "config/config.json").exists():
                     (Path.cwd() / "config/config.json").rename(
                         Path.cwd() / "config/Config.json"
                     )
-                await self.connect(self.config_path / "Config.json")
+                await self.connect(self._resolve_config_path("Config"))
 
                 plan_dict = {"固定": "Fixed"}
 
@@ -376,8 +413,8 @@ class AppConfig(GlobalConfig):
                         await qc.load(queue_config)
 
                         for i in range(10):
-                            item_uid, item = await self.add_queue_item(str(uid))
-                            time_uid, time = await self.add_time_set(str(uid))
+                            _, item = await self.add_queue_item(str(uid))
+                            _, time = await self.add_time_set(str(uid))
 
                             await time.load(
                                 {
@@ -420,18 +457,15 @@ class AppConfig(GlobalConfig):
                 )
                 if_streaming = True
 
-                if (Path.cwd() / "config/Config.json").exists():
-                    data = json.loads(
-                        (Path.cwd() / "config/Config.json").read_text(encoding="utf-8")
-                    )
+                global_config_path = self._resolve_config_path("Config")
+                if global_config_path.exists():
+                    data = self._read_mapping_config(global_config_path)
                     data["Data"]["LastStageUpdated"] = ""
                     data["Data"]["Stage"] = "{ }"
                     data["Function"]["IfBlockAd"] = data["Function"].get(
                         "IfSkipMumuSplashAds", False
                     )
-                    (Path.cwd() / "config/Config.json").write_text(
-                        json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
-                    )
+                    self._write_mapping_config(global_config_path, data)
 
                 cur.execute("DELETE FROM version WHERE v = ?", ("v1.9",))
                 cur.execute("INSERT INTO version VALUES(?)", ("v1.10",))
@@ -443,19 +477,16 @@ class AppConfig(GlobalConfig):
                 )
                 if_streaming = True
 
-                if (Path.cwd() / "config/ScriptConfig.json").exists():
-                    data = (Path.cwd() / "config/ScriptConfig.json").read_text(
-                        encoding="utf-8"
-                    )
-                    data.replace("IfWakeUp", "IfStartUp")
-                    data.replace("IfAutoRoguelike", "IfRoguelike")
-                    data.replace("IfBase", "IfInfrast")
-                    data.replace("IfCombat", "IfFight")
-                    data.replace("IfMission", "IfAward")
-                    data.replace("IfRecruiting", "IfRecruit")
-                    (Path.cwd() / "config/ScriptConfig.json").write_text(
-                        data, encoding="utf-8"
-                    )
+                script_config_path = self._resolve_config_path("ScriptConfig")
+                if script_config_path.exists():
+                    data = script_config_path.read_text(encoding="utf-8")
+                    data = data.replace("IfWakeUp", "IfStartUp")
+                    data = data.replace("IfAutoRoguelike", "IfRoguelike")
+                    data = data.replace("IfBase", "IfInfrast")
+                    data = data.replace("IfCombat", "IfFight")
+                    data = data.replace("IfMission", "IfAward")
+                    data = data.replace("IfRecruiting", "IfRecruit")
+                    script_config_path.write_text(data, encoding="utf-8")
 
                 cur.execute("DELETE FROM version WHERE v = ?", ("v1.10",))
                 cur.execute("INSERT INTO version VALUES(?)", ("v1.11",))
@@ -465,7 +496,7 @@ class AppConfig(GlobalConfig):
             db.close()
             logger.success("数据文件版本更新完成")
 
-    async def send_json(self, data: dict) -> None:
+    async def send_json(self, data: dict[str, Any]) -> None:
         """通过WebSocket发送JSON数据"""
         if Config.websocket is None:
             logger.warning("WebSocket 未连接")
@@ -490,7 +521,6 @@ class AppConfig(GlobalConfig):
         """获取Git版本信息，如果Git不可用则返回默认值"""
 
         def _get_git_info():
-
             if self.repo is None:
                 logger.warning("Git仓库不可用，返回默认版本信息")
                 return False, "unknown", "unknown"
@@ -532,15 +562,25 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"添加脚本配置: {script}, 从 {script_id} 复制")
 
+        script_class_map: dict[
+            Literal["MAA", "SRC", "General", "MaaEnd"], ScriptConfigClass
+        ] = {
+            "MAA": MaaConfig,
+            "SRC": SrcConfig,
+            "General": GeneralConfig,
+            "MaaEnd": MaaEndConfig,
+        }
+        script_class = script_class_map[script]
+
         if script_id is None:
-            return await self.ScriptConfig.add(CLASS_BOOK[script])
+            return await self.ScriptConfig.add(script_class)
         else:
             script_uid = uuid.UUID(script_id)
 
-            if not isinstance(self.ScriptConfig[script_uid], CLASS_BOOK[script]):
+            if type(self.ScriptConfig[script_uid]) is not script_class:
                 raise TypeError(f"脚本配置类型不匹配: {script_id} {script}")
 
-            new_uid, new_config = await self.ScriptConfig.add(CLASS_BOOK[script])
+            new_uid, new_config = await self.ScriptConfig.add(script_class)
 
             await new_config.load(
                 await self.ScriptConfig[script_uid].toDict(regenerate_uuids=True)
@@ -564,7 +604,9 @@ class AppConfig(GlobalConfig):
 
             return new_uid, new_config
 
-    async def get_script(self, script_id: str | None) -> tuple[list, dict]:
+    async def get_script(
+        self, script_id: str | None
+    ) -> tuple[list[dict[str, str]], dict[str, Any]]:
         """获取脚本配置"""
 
         logger.info(f"获取脚本配置: {script_id}")
@@ -761,7 +803,9 @@ class AppConfig(GlobalConfig):
                 logger.error(f"无法上传配置到 AUTO-MAS 服务器: {e}")
                 raise ConnectionError(f"无法上传配置到 AUTO-MAS 服务器: {e}")
 
-    async def remove_privacy_info(self, confg: dict, name: str) -> dict:
+    async def remove_privacy_info(
+        self, confg: dict[str, Any], name: str
+    ) -> dict[str, Any]:
         """移除配置中可能存在的隐私信息"""
 
         confg["Info"]["Name"] = name
@@ -778,16 +822,16 @@ class AppConfig(GlobalConfig):
             if sys.platform == "win32" and Path(confg["Script"][path]).is_relative_to(
                 Path(os.environ["APPDATA"])
             ):
-                confg["Script"][
-                    path
-                ] = f"%APPDATA%/{Path(confg["Script"][path]).relative_to(Path(os.environ["APPDATA"]))}"
+                confg["Script"][path] = (
+                    f"%APPDATA%/{Path(confg["Script"][path]).relative_to(Path(os.environ["APPDATA"]))}"
+                )
         confg["Info"]["RootPath"] = str(Path(r"C:/脚本根目录"))
 
         return confg
 
     async def get_user(
         self, script_id: str, user_id: Optional[str]
-    ) -> tuple[list, dict]:
+    ) -> tuple[list[dict[str, str]], dict[str, Any]]:
         """获取用户配置"""
 
         logger.info(f"获取用户配置: {script_id} - {user_id}")
@@ -822,10 +866,8 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(SrcUserConfig)
         elif isinstance(script_config, GeneralConfig):
             uid, config = await script_config.UserData.add(GeneralUserConfig)
-        elif isinstance(script_config, MaaEndConfig):
-            uid, config = await script_config.UserData.add(MaaEndUserConfig)
         else:
-            raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
+            uid, config = await script_config.UserData.add(MaaEndUserConfig)
 
         return uid, config
 
@@ -894,13 +936,15 @@ class AppConfig(GlobalConfig):
         if infrast_data.get("title", "文件标题") == "文件标题":
             infrast_data["title"] = json_path.stem
 
-        await self.ScriptConfig[script_uid].UserData[user_uid].set(
-            "Data", "CustomInfrast", json.dumps(infrast_data, ensure_ascii=False)
+        await (
+            self.ScriptConfig[script_uid]
+            .UserData[user_uid]
+            .set("Data", "CustomInfrast", json.dumps(infrast_data, ensure_ascii=False))
         )
 
     async def get_user_combox_infrastructure(
         self, script_id: str, user_id: str
-    ) -> list[dict]:
+    ) -> list[dict[str, str]]:
         logger.info(f"获取用户自定义基建排班下拉框信息: {script_id} - {user_id}")
 
         script_uid = uuid.UUID(script_id)
@@ -933,9 +977,11 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"添加计划表: {script}")
 
-        return await self.PlanConfig.add(CLASS_BOOK[script])
+        return await self.PlanConfig.add(MaaPlanConfig)
 
-    async def get_plan(self, plan_id: Optional[str]) -> tuple[list, dict]:
+    async def get_plan(
+        self, plan_id: Optional[str]
+    ) -> tuple[list[dict[str, str]], dict[str, Any]]:
         """获取计划表配置"""
 
         logger.info(f"获取计划表配置: {plan_id}")
@@ -990,7 +1036,9 @@ class AppConfig(GlobalConfig):
 
         await self.PlanConfig.setOrder(list(map(uuid.UUID, index_list)))
 
-    async def get_emulator(self, emulator_id: Optional[str]) -> tuple[list, dict]:
+    async def get_emulator(
+        self, emulator_id: Optional[str]
+    ) -> tuple[list[dict[str, str]], dict[str, Any]]:
         """获取模拟器配置"""
         logger.info(f"获取全局模拟器设置: {emulator_id}")
 
@@ -1071,7 +1119,9 @@ class AppConfig(GlobalConfig):
 
         return await self.QueueConfig.add(QueueConfig)
 
-    async def get_queue(self, queue_id: Optional[str]) -> tuple[list, dict]:
+    async def get_queue(
+        self, queue_id: Optional[str]
+    ) -> tuple[list[dict[str, str]], dict[str, Any]]:
         """获取调度队列配置"""
 
         logger.info(f"获取调度队列配置: {queue_id}")
@@ -1113,7 +1163,7 @@ class AppConfig(GlobalConfig):
 
     async def get_time_set(
         self, queue_id: str, time_set_id: Optional[str]
-    ) -> tuple[list, dict]:
+    ) -> tuple[list[dict[str, str]], dict[str, Any]]:
         """获取时间设置配置"""
 
         logger.info(f"获取队列的时间配置: {queue_id} - {time_set_id}")
@@ -1179,7 +1229,7 @@ class AppConfig(GlobalConfig):
 
     async def get_queue_item(
         self, queue_id: str, queue_item_id: Optional[str]
-    ) -> tuple[list, dict]:
+    ) -> tuple[list[dict[str, str]], dict[str, Any]]:
         """获取队列项配置"""
 
         logger.info(f"获取队列的队列项配置: {queue_id} - {queue_item_id}")
@@ -1287,7 +1337,7 @@ class AppConfig(GlobalConfig):
         script_id: Optional[str],
         user_id: Optional[str],
         webhook_id: Optional[str],
-    ) -> tuple[list, dict]:
+    ) -> tuple[list[dict[str, str]], dict[str, Any]]:
         """获取webhook配置"""
 
         if script_id is None and user_id is None:
@@ -1471,8 +1521,10 @@ class AppConfig(GlobalConfig):
             today = datetime.now(tz=UTC4).isoweekday()
             res_stage_info = []
             for stage in RESOURCE_STAGE_INFO:
+                days = stage.get("days")
                 if (
-                    today in stage["days"]
+                    isinstance(days, list)
+                    and today in days
                     and stage["value"] in RESOURCE_STAGE_DROP_INFO
                 ):
                     res_stage_info.append(RESOURCE_STAGE_DROP_INFO[stage["value"]])
@@ -1772,7 +1824,9 @@ class AppConfig(GlobalConfig):
 
         return remote_web_config
 
-    async def save_maa_log(self, log_path: Path, logs: list, maa_result: str) -> bool:
+    async def save_maa_log(
+        self, log_path: Path, logs: list[str], maa_result: str
+    ) -> bool:
         """
         保存MAA日志并生成对应统计数据
 
@@ -1786,7 +1840,7 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"开始处理 MAA 日志, 日志长度: {len(logs)}, 日志标记: {maa_result}")
 
-        data = {
+        data: dict[str, Any] = {
             "recruit_statistics": defaultdict(int),
             "drop_statistics": defaultdict(dict),
             "sanity": 0,
@@ -1841,7 +1895,7 @@ class AppConfig(GlobalConfig):
 
         # 掉落统计
         # 存储所有关卡的掉落统计
-        all_stage_drops = {}
+        all_stage_drops: dict[str, dict[str, int]] = {}
 
         # 查找所有Fight任务的开始和结束位置
         fight_tasks = []
@@ -1957,7 +2011,9 @@ class AppConfig(GlobalConfig):
 
         logger.success(f"MaaEnd日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
 
-    async def save_src_log(self, log_path: Path, logs: list, src_result: str) -> None:
+    async def save_src_log(
+        self, log_path: Path, logs: list[str], src_result: str
+    ) -> None:
         """
         保存SRC日志并生成对应统计数据
 
@@ -1981,7 +2037,7 @@ class AppConfig(GlobalConfig):
         logger.success(f"SRC日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
 
     async def save_general_log(
-        self, log_path: Path, logs: list, general_result: str
+        self, log_path: Path, logs: list[str], general_result: str
     ) -> None:
         """
         保存通用日志并生成对应统计数据
@@ -2006,7 +2062,9 @@ class AppConfig(GlobalConfig):
 
         logger.success(f"通用日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
 
-    async def merge_statistic_info(self, statistic_path_list: List[Path]) -> dict:
+    async def merge_statistic_info(
+        self, statistic_path_list: List[Path]
+    ) -> dict[str, Any]:
         """
         合并指定数据统计信息文件
 
@@ -2099,7 +2157,7 @@ class AppConfig(GlobalConfig):
         mode: Literal["DAILY", "WEEKLY", "MONTHLY"],
         start_date: date,
         end_date: date,
-    ) -> dict:
+    ) -> dict[str, dict[str, list[Path]]]:
         """
         搜索指定时间范围内的历史记录
 
@@ -2113,7 +2171,7 @@ class AppConfig(GlobalConfig):
             f"开始搜索历史记录, 合并模式: {mode}, 日期范围: {start_date} 至 {end_date}"
         )
 
-        history_dict = {}
+        history_dict: dict[str, dict[str, list[Path]]] = {}
 
         for date_folder in self.history_path.iterdir():
             if not date_folder.is_dir():
@@ -2157,7 +2215,7 @@ class AppConfig(GlobalConfig):
 
         return {
             k: v
-            for k, v in sorted(history_dict.items(), key=lambda x: x[0], reverse=True)
+            for k, v in sorted(history_dict.items(), key=lambda kv: kv[0], reverse=True)
         }
 
     async def clean_old_history(self):

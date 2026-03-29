@@ -22,7 +22,6 @@
 
 
 from __future__ import annotations
-
 # pyright: reportMissingParameterType=false, reportUnknownParameterType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownLambdaType=false, reportDeprecated=false, reportInvalidTypeForm=false, reportGeneralTypeIssues=false
 import os
 import json
@@ -136,16 +135,12 @@ def dump_toml(data: dict[str, Any]) -> str:
     return _dump_toml(data)
 
 
-def _load_config_with_legacy_migration(
-    path: Path,
-) -> tuple[dict[str, Any], Path | None]:
+def _load_config_with_legacy_migration(path: Path) -> tuple[dict[str, Any], Path | None]:
     legacy_json_file = path.with_suffix(".json")
 
     if legacy_json_file.exists() and (not path.exists() or path.stat().st_size == 0):
         try:
-            return json.loads(
-                legacy_json_file.read_text(encoding="utf-8")
-            ), legacy_json_file
+            return json.loads(legacy_json_file.read_text(encoding="utf-8")), legacy_json_file
         except json.JSONDecodeError:
             return {}, legacy_json_file
 
@@ -153,20 +148,14 @@ def _load_config_with_legacy_migration(
         return {}, legacy_json_file if legacy_json_file.exists() else None
 
     try:
-        return _load_toml_with_pydantic_settings(
-            path
-        ), legacy_json_file if legacy_json_file.exists() else None
+        return _load_toml_with_pydantic_settings(path), legacy_json_file if legacy_json_file.exists() else None
     except Exception:
         with suppress(Exception):
-            return tomllib.loads(
-                path.read_text(encoding="utf-8")
-            ), legacy_json_file if legacy_json_file.exists() else None
+            return tomllib.loads(path.read_text(encoding="utf-8")), legacy_json_file if legacy_json_file.exists() else None
         return {}, legacy_json_file if legacy_json_file.exists() else None
 
 
-def _backup_legacy_json_if_needed(
-    current_file: Path, legacy_json_file: Path | None
-) -> None:
+def _backup_legacy_json_if_needed(current_file: Path, legacy_json_file: Path | None) -> None:
     if legacy_json_file is None or not legacy_json_file.exists():
         return
     if not current_file.exists() or current_file.stat().st_size == 0:
@@ -332,7 +321,9 @@ class DateTimeValidator(ValidatorBase):
 
 
 class JSONValidator(ValidatorBase):
-    def __init__(self, tpye: type[dict[str, Any]] | type[list[Any]] = dict) -> None:
+    def __init__(
+        self, tpye: type[dict[str, Any]] | type[list[Any]] = dict
+    ) -> None:
         self.type = tpye
 
     def validate(self, value):
@@ -492,6 +483,7 @@ class EmulatorPathValidator(FileValidator):
         return True
 
     def correct(self, value):
+
         if not isinstance(value, str):
             value = str(Path.cwd())
         # 空字符串直接返回
@@ -699,6 +691,7 @@ class URLValidator(ValidatorBase):
 
 
 class ArgumentValidator(ValidatorBase):
+
     def validate(self, value):
         if not isinstance(value, str):
             return False
@@ -709,10 +702,12 @@ class ArgumentValidator(ValidatorBase):
             return False
 
     def correct(self, value):
+
         return value if self.validate(value) else ""
 
 
 class AdvancedArgumentValidator(ValidatorBase):
+
     def validate(self, value):
         if not isinstance(value, str):
             return False
@@ -728,6 +723,7 @@ class AdvancedArgumentValidator(ValidatorBase):
             return False
 
     def correct(self, value):
+
         return value if self.validate(value) else ""
 
 

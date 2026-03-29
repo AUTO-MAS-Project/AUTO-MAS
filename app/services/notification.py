@@ -35,14 +35,13 @@ from pathlib import Path
 from typing import Literal
 
 from app.core import Config
-from app.models.config import Webhook
+from app.models import Webhook
 from app.utils import get_logger, ImageUtils
 
 logger = get_logger("通知服务")
 
 
 class Notification:
-
     async def push_plyer(self, title: str, message: str, ticker: str, t: int) -> None:
         """
         推送系统通知
@@ -211,7 +210,6 @@ class Notification:
 
         # 替换模板变量
         try:
-
             # 准备模板变量
             template_vars = {
                 "title": title,

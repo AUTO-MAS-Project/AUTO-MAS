@@ -25,8 +25,7 @@ from datetime import datetime
 from pathlib import Path
 
 from app.core import Config, EmulatorManager
-from app.models.ConfigBase import MultipleConfig
-from app.models.config import MaaEndConfig, MaaEndUserConfig
+from app.models import MaaEndConfig, MaaEndUserConfig, MultipleConfig
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify
 from app.utils import get_logger
@@ -91,7 +90,6 @@ class MaaEndManager(TaskExecuteBase):
         return "Pass"
 
     async def prepare(self):
-
         # 锁定脚本配置并加载用户配置
         await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].lock()
         self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
@@ -137,7 +135,6 @@ class MaaEndManager(TaskExecuteBase):
         )
 
     async def main_task(self):
-
         self.check_result = await self.check()
         if self.check_result != "Pass":
             logger.error(f"未通过配置检查: {self.check_result}")
@@ -164,7 +161,6 @@ class MaaEndManager(TaskExecuteBase):
             await self.spawn(task)
 
     async def final_task(self):
-
         if self.check_result != "Pass":
             self.script_info.status = "异常"
             return
@@ -174,7 +170,6 @@ class MaaEndManager(TaskExecuteBase):
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode in ["AutoProxy", "ManualReview"]:
-
             if self.emulator_manager is not None:
                 await self.emulator_manager.close(
                     self.script_config.get("Game", "EmulatorIndex")

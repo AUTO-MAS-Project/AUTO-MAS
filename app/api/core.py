@@ -24,11 +24,12 @@
 import os
 import time
 import asyncio
+from typing import Any, cast
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.core import Config, Broadcast, TaskManager
 from app.services import System
-from app.models.schema import *
+from app.models.dto import OutBase, WebSocketMessage
 from app.api.ws_command import ws_command
 from app.utils import get_logger
 
@@ -45,7 +46,6 @@ def is_backend_dev_mode() -> bool:
 
 @router.websocket("/ws")
 async def connect_websocket(websocket: WebSocket):
-
     if Config.websocket is not None:
         await websocket.close(code=1000, reason="已有连接")
         return
@@ -54,15 +54,16 @@ async def connect_websocket(websocket: WebSocket):
     Config.websocket = websocket
     last_pong = time.monotonic()
     last_ping = time.monotonic()
-    data = {}
+    data: dict[str, Any] = {}
 
     asyncio.create_task(TaskManager.start_startup_queue())
 
     while True:
-
         try:
-
-            data = await asyncio.wait_for(websocket.receive_json(), timeout=15.0)
+            payload = await asyncio.wait_for(websocket.receive_json(), timeout=15.0)
+            if not isinstance(payload, dict):
+                continue
+            data = cast(dict[str, Any], payload)
             if data.get("type") == "Signal" and "Pong" in data.get("data", {}):
                 last_pong = time.monotonic()
             elif data.get("type") == "Signal" and "Ping" in data.get("data", {}):
@@ -75,7 +76,6 @@ async def connect_websocket(websocket: WebSocket):
                 await Broadcast.put(data)
 
         except asyncio.TimeoutError:
-
             if last_pong < last_ping:
                 await websocket.close(code=1000, reason="Ping超时")
                 break

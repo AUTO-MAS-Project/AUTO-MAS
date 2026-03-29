@@ -23,7 +23,7 @@
 
 from fastapi import APIRouter, Body
 from app.core import Config
-from app.models.schema import ToolsGetOut, ToolsConfig, OutBase, ToolsUpdateIn
+from app.models.dto import ToolsGetOut, ToolsConfig, OutBase, ToolsUpdateIn
 
 router = APIRouter(prefix="/api/tools", tags=["工具设置"])
 

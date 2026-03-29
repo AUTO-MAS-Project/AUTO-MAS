@@ -29,7 +29,7 @@ from io import BytesIO
 
 from app.utils.OCR.OCRtool import OCRTool
 from app.utils import get_logger
-from app.models.schema import OutBase
+from app.models.dto import OutBase
 
 logger = get_logger("OCR API")
 
@@ -159,11 +159,6 @@ async def get_screenshot(params: OCRScreenshotIn = Body(...)) -> OCRScreenshotOu
         OCRScreenshotOut: 包含Base64编码的截图和区域信息
     """
     try:
-        # 初始化OCRTool
-        ocr_tool = OCRTool(
-            width=params.aspect_ratio_width, height=params.aspect_ratio_height
-        )
-
         # 获取截图区域（如果没有提供自定义区域）
         if params.region is None:
             region = OCRTool.get_screenshot_region(

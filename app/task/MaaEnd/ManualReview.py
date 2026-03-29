@@ -26,8 +26,7 @@ from datetime import datetime
 
 from app.core import Broadcast, Config
 from app.models.task import TaskExecuteBase, ScriptItem
-from app.models.ConfigBase import MultipleConfig
-from app.models.config import MaaEndConfig, MaaEndUserConfig
+from app.models import MaaEndConfig, MaaEndUserConfig, MultipleConfig
 from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
@@ -63,7 +62,6 @@ class ManualReviewTask(TaskExecuteBase):
         self.check_result = "-"
 
     async def check(self) -> str:
-
         if (
             self.cur_user_config.get("Info", "Mode") == "详细"
             and not (
@@ -82,7 +80,6 @@ class ManualReviewTask(TaskExecuteBase):
         return "Pass"
 
     async def prepare(self):
-
         if self.emulator_manager is None:
             self.game_process_manager = ProcessManager()
         self.message_queue = asyncio.Queue()
@@ -117,7 +114,6 @@ class ManualReviewTask(TaskExecuteBase):
         self.cur_user_item.status = "运行"
 
         while True:
-
             try:
                 self.script_info.log = "正在启动游戏..."
                 if self.emulator_manager is None:
@@ -139,7 +135,6 @@ class ManualReviewTask(TaskExecuteBase):
                         "com.hypergryph.endfield",
                     )
             except Exception as e:
-
                 logger.exception(f"用户 {self.cur_user_item.user_id} 游戏启动失败: {e}")
                 self.script_info.log = (
                     f"正在启动模拟器\n模拟器启动失败: {e}\n正在中止相关程序"
@@ -198,7 +193,6 @@ class ManualReviewTask(TaskExecuteBase):
                     break
 
         if self.run_book["SignIn"]:
-
             try:
                 if self.emulator_manager is not None:
                     await self.emulator_manager.setVisible(
@@ -249,7 +243,6 @@ class ManualReviewTask(TaskExecuteBase):
             logger.exception(f"关闭游戏失败: {e}")
 
     async def final_task(self):
-
         if self.check_result != "Pass":
             return
 

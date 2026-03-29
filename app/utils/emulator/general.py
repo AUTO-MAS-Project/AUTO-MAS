@@ -32,7 +32,7 @@ from typing import Dict, Any
 
 from app.utils.ProcessManager import ProcessManager
 from app.models.emulator import DeviceStatus, DeviceBase, DeviceInfo
-from app.models.config import EmulatorConfig
+from app.models import EmulatorConfig
 from app.utils import get_logger
 
 logger = get_logger("通用模拟器管理")
@@ -44,7 +44,6 @@ class GeneralDeviceManager(DeviceBase):
     """
 
     def __init__(self, config: EmulatorConfig) -> None:
-
         if not Path(config.get("Info", "Path")).exists():
             raise FileNotFoundError(f"模拟器文件不存在: {config.get('Info', 'Path')}")
 
@@ -57,7 +56,6 @@ class GeneralDeviceManager(DeviceBase):
         self.device_info: Dict[str, Dict[str, Any]] = {}
 
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
-
         # 检查是否已经在运行
         current_status = await self.getStatus(idx)
         if current_status == DeviceStatus.ONLINE:
@@ -79,7 +77,6 @@ class GeneralDeviceManager(DeviceBase):
         return (await self.getInfo(idx))[idx]
 
     async def close(self, idx: str) -> DeviceStatus:
-
         status = await self.getStatus(idx)
         if status == DeviceStatus.OFFLINE:
             logger.warning(f"设备{idx}未在线，当前状态: {status}")
@@ -101,7 +98,6 @@ class GeneralDeviceManager(DeviceBase):
             raise RuntimeError(f"关闭设备{idx}超时")
 
     async def getStatus(self, idx: str) -> DeviceStatus:
-
         if idx not in self.process_managers:
             return DeviceStatus.OFFLINE
 
@@ -111,7 +107,6 @@ class GeneralDeviceManager(DeviceBase):
             return DeviceStatus.OFFLINE
 
     async def getInfo(self, idx: str | None) -> Dict[str, DeviceInfo]:
-
         data = {}
         for index in self.process_managers:
             if idx is not None and index != idx:
@@ -124,7 +119,6 @@ class GeneralDeviceManager(DeviceBase):
         return data
 
     async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
-
         status = await self.getStatus(idx)
         if status != DeviceStatus.ONLINE:
             logger.warning(f"设备{idx}未在线，当前状态码: {status}")
@@ -134,7 +128,6 @@ class GeneralDeviceManager(DeviceBase):
         while datetime.now() - t < timedelta(
             seconds=self.config.get("Info", "MaxWaitTime")
         ):
-
             # 检查窗口可见性是否符合预期
             if self.process_managers[idx].main_pid is not None and (
                 win32gui.IsWindowVisible(self.process_managers[idx].main_pid)
@@ -158,7 +151,6 @@ class GeneralDeviceManager(DeviceBase):
             raise RuntimeError(f"隐藏设备{idx}窗口超时")
 
     def parse_index(self, idx: str):
-
         if "|" not in idx:
             raise ValueError("缺少 '|' 分隔符")
 
