@@ -25,13 +25,18 @@
 #   Contact: DLmaster_361@163.com
 
 name: Sync to CNB
-on: [push]
+on:
+  push:
+  create:
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
       
       - name: Sync to CNB Repository
         uses: docker://tencentcom/git-sync
