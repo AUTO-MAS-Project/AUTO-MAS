@@ -31,9 +31,7 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+      - uses: actions/checkout@v4
       
       - name: Sync to CNB Repository
         uses: docker://tencentcom/git-sync
@@ -42,4 +40,5 @@ jobs:
           PLUGIN_AUTH_TYPE: "https"
           PLUGIN_USERNAME: "cnb"
           PLUGIN_PASSWORD: ${{ secrets.GIT_PASSWORD }}
+          PLUGIN_PUSH_TAGS: "true"
           PLUGIN_FORCE: "true"
