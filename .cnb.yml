@@ -27,7 +27,9 @@
 main:
   # 自定义按钮可触发的事件
   web_trigger_one:
-    - docker:
+    - runner:
+        cpus: 1
+      docker:
         image: python:3.11
       imports:
         - https://cnb.cool/AUTO-MAS-Project/secret/-/blob/main/env.yml
@@ -39,7 +41,9 @@ main:
               python github_download_and_cnb_upload.py --cnb-token $CNB_TOKEN --github-token $GITHUB_TOKEN --version-tag "$VERSION_TAG" --is-prerelease "$IS_PRERELEASE" --target-commitish main --release-body "$RELEASE_BODY"
               echo done!
   api_trigger_one:
-    - docker:
+    - runner:
+        cpus: 1
+      docker:
         image: python:3.11
       imports:
         - https://cnb.cool/AUTO-MAS-Project/secret/-/blob/main/env.yml
@@ -55,7 +59,9 @@ main:
 dev:
   # 自定义按钮可触发的事件
   web_trigger_one:
-    - docker:
+    - runner:
+        cpus: 1
+      docker:
         image: python:3.11
       imports:
         - https://cnb.cool/AUTO-MAS-Project/secret/-/blob/main/env.yml
@@ -67,7 +73,9 @@ dev:
               python github_download_and_cnb_upload.py --cnb-token $CNB_TOKEN --github-token $GITHUB_TOKEN --version-tag "$VERSION_TAG" --is-prerelease "$IS_PRERELEASE" --target-commitish dev --release-body "$RELEASE_BODY"
               echo done!
   api_trigger_one:
-    - docker:
+    - runner:
+        cpus: 1
+      docker:
         image: python:3.11
       imports:
         - https://cnb.cool/AUTO-MAS-Project/secret/-/blob/main/env.yml
