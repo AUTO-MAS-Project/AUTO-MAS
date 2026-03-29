@@ -36,7 +36,7 @@ from fastapi import WebSocket
 from collections import defaultdict
 from jinja2 import Environment, FileSystemLoader
 from datetime import datetime, timedelta, date
-from typing import Literal, Optional, Dict, Any, List
+from typing import Literal, Optional, Dict, Any, List, ClassVar
 import uuid
 import json
 
@@ -88,7 +88,7 @@ except ImportError:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.2.0-beta.1"
+    VERSION: ClassVar[str] = "v5.2.0-beta.1"
 
     def __init__(self) -> None:
         super().__init__()
@@ -140,13 +140,9 @@ class AppConfig(GlobalConfig):
         truststore.inject_into_ssl()
 
     def _resolve_config_path(self, stem: str) -> Path:
-        """优先返回 TOML 配置路径；若仅存在 JSON，则返回 JSON。"""
+        """返回 TOML 配置路径（内部会自动处理同名 JSON 的迁移兼容）。"""
 
-        toml_path = self.config_path / f"{stem}.toml"
-        json_path = self.config_path / f"{stem}.json"
-        if toml_path.exists() or not json_path.exists():
-            return toml_path
-        return json_path
+        return self.config_path / f"{stem}.toml"
 
     async def _connect_runtime_configs(self) -> None:
         """连接运行期主配置文件。"""
