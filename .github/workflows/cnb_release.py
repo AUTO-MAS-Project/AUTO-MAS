@@ -49,8 +49,23 @@ from pathlib import Path
 from tqdm import tqdm
 
 
+def build_cnb_headers(token: str) -> Dict[str, str]:
+    """统一构建 CNB API 请求头。"""
+    return {
+        "Accept": "application/vnd.cnb.api+json",
+        "Authorization": token,
+        "Content-Type": "application/json",
+        "User-Agent": "CNB-Release-Uploader/1.0.0",
+    }
+
+
 class CNBReleaseUploader:
-    def __init__(self, token: str, base_url: str = "https://api.cnb.cool"):
+    def __init__(
+        self,
+        token: str,
+        base_url: str = "https://api.cnb.cool",
+        create_release_headers: Optional[Dict[str, str]] = None,
+    ):
         """
         初始化CNB Release上传器
 
@@ -60,21 +75,15 @@ class CNBReleaseUploader:
         """
         self.token = token
         self.base_url = base_url
-        self.headers = {
-            "Accept": "application/json",
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "User-Agent": "CNB-Release-Uploader/1.0.0",
-            "Host": "api.cnb.cool",
-            "Connection": "keep-alive",
-        }
+        self.create_release_headers = create_release_headers or build_cnb_headers(token)
+        self.headers = build_cnb_headers(token)
 
     def create_release(self, project_path: str, release_data: Dict) -> Optional[Dict]:
         """
         创建一个新的release
 
         Args:
-            project_path: 项目路径 (例如: "bettergi/better-genshin-impact")
+            project_path: 项目路径
             release_data: release数据
 
         Returns:
@@ -82,13 +91,13 @@ class CNBReleaseUploader:
         """
         url = f"{self.base_url}/{project_path}/-/releases"
 
-        # 打印请求信息
-        print("\n📋 请求头 (Headers):")
-        for key, value in self.headers.items():
-            print(f"  {key}: {value}")
+        # 按 CNB API 要求构造创建 release 的专用请求头
+        create_release_headers = dict(self.create_release_headers)
 
         try:
-            response = requests.post(url, headers=self.headers, json=release_data)
+            response = requests.post(
+                url, headers=create_release_headers, json=release_data
+            )
             response.raise_for_status()
 
             release_info = response.json()
@@ -165,8 +174,9 @@ class CNBReleaseUploader:
             return False
 
         upload_headers = {
-            "Accept": "application/json",
-            "Authorization": f"Bearer {self.token}",
+            "Accept": "application/vnd.cnb.api+json",
+            "Authorization": self.token,
+            "User-Agent": "CNB-Release-Uploader/1.0.0",
         }
 
         file_size = os.path.getsize(file_path)
@@ -442,6 +452,7 @@ def main():
         uploader = CNBReleaseUploader(
             token=config["token"],
             base_url=config.get("base_url", "https://api.cnb.cool"),
+            create_release_headers=config.get("create_release_headers"),
         )
 
         # 1. 创建release
