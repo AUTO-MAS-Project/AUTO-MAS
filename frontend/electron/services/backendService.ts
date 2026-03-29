@@ -74,7 +74,7 @@ export class BackendService {
         options?.pythonPath || path.join(this.appRoot, 'environment', 'python', 'python.exe')
       const mainPy = options?.mainPyPath || path.join(this.appRoot, 'main.py')
       const cwd = options?.cwd || this.appRoot
-      const timeout = options?.timeout || 30000
+      const timeout = options?.timeout || 60000
 
       // 检查文件是否存在
       if (!fs.existsSync(pythonExe)) {

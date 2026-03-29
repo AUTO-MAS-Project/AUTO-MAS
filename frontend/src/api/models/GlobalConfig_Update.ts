@@ -10,7 +10,7 @@ export type GlobalConfig_Update = {
     /**
       * 更新源: GitHub源, Mirror酱源, 自建源, CNB源
      */
-     Source?: ('GitHub' | 'MirrorChyan' | 'AutoSite' | 'CNB' | null);
+    Source?: ('GitHub' | 'MirrorChyan' | 'AutoSite' | 'CNB' | null);
     /**
      * 更新渠道: 稳定版, 测试版
      */
