@@ -28,9 +28,9 @@ from pathlib import Path
 from typing import Dict, Literal
 
 from .config import Config
-from app.models.config import EmulatorConfig
+from app.models import EmulatorConfig
 from app.models.emulator import DeviceBase
-from app.models.schema import DeviceInfo as SchemaDeviceInfo
+from app.models.dto import DeviceInfo as SchemaDeviceInfo
 from app.utils import ProcessRunner, EMULATOR_TYPE_BOOK
 from app.utils.constants import EMULATOR_SPLASH_ADS_PATH_BOOK
 
@@ -44,14 +44,12 @@ class _EmulatorManager:
     """模拟器实例管理器"""
 
     async def get_emulator_instance(self, emulator_id: str) -> DeviceBase:
-
         emulator_uid = uuid.UUID(emulator_id)
 
         config = EmulatorConfig()
         await config.load(await Config.EmulatorConfig[emulator_uid].toDict())
 
         if config.get("Info", "Type") in EMULATOR_TYPE_BOOK:
-
             # 设置模拟器广告
             with suppress(Exception):
                 if config.get("Info", "Type") in EMULATOR_SPLASH_ADS_PATH_BOOK:
@@ -80,13 +78,11 @@ class _EmulatorManager:
     async def operate_emulator(
         self, operate: Literal["open", "close", "show"], emulator_id: str, index: str
     ):
-
         asyncio.create_task(self.operate_emulator_task(operate, emulator_id, index))
 
     async def operate_emulator_task(
         self, operate: Literal["open", "close", "show"], emulator_id: str, index: str
     ):
-
         try:
             temp_emulator = await self.get_emulator_instance(emulator_id)
             if temp_emulator is None:
@@ -108,7 +104,6 @@ class _EmulatorManager:
     async def get_status(
         self, emulator_id: str | None = None
     ) -> Dict[str, Dict[str, SchemaDeviceInfo]]:
-
         if emulator_id is None:
             emulator_range = list(map(str, Config.EmulatorConfig.keys()))
         else:

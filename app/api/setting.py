@@ -24,7 +24,7 @@
 from fastapi import APIRouter, Body
 from app.core import Config
 from app.services import Notify
-from app.models.schema import (
+from app.models.dto import (
     SettingGetOut,
     GlobalConfig,
     OutBase,
@@ -39,7 +39,7 @@ from app.models.schema import (
     WebhookReorderIn,
     WebhookTestIn,
 )
-from app.models.config import Webhook as WebhookConfig
+from app.models import Webhook as WebhookConfig
 
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
 

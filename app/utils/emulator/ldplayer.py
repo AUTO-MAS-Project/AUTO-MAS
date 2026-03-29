@@ -30,7 +30,7 @@ from pydantic import BaseModel
 from pathlib import Path
 
 from app.models.emulator import DeviceStatus, DeviceInfo, DeviceBase
-from app.models.config import EmulatorConfig
+from app.models import EmulatorConfig
 from app.utils import ProcessRunner, get_logger
 
 logger = get_logger("雷电模拟器管理")

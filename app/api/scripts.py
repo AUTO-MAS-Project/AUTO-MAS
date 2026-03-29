@@ -25,7 +25,49 @@ import uuid
 from fastapi import APIRouter, Body
 
 from app.core import Config
-from app.models.schema import *
+from app.models.dto import (
+    ComboBoxItem,
+    ComboBoxOut,
+    GeneralConfig,
+    GeneralUserConfig,
+    MaaConfig,
+    MaaEndConfig,
+    MaaEndUserConfig,
+    MaaUserConfig,
+    OutBase,
+    ScriptCreateIn,
+    ScriptCreateOut,
+    ScriptDeleteIn,
+    ScriptFileIn,
+    ScriptGetIn,
+    ScriptGetOut,
+    ScriptIndexItem,
+    ScriptReorderIn,
+    ScriptUpdateIn,
+    ScriptUploadIn,
+    ScriptUrlIn,
+    SrcConfig,
+    SrcUserConfig,
+    UserCreateOut,
+    UserDeleteIn,
+    UserGetIn,
+    UserGetOut,
+    UserInBase,
+    UserIndexItem,
+    UserReorderIn,
+    UserSetIn,
+    UserUpdateIn,
+    Webhook,
+    WebhookCreateOut,
+    WebhookDeleteIn,
+    WebhookGetIn,
+    WebhookGetOut,
+    WebhookInBase,
+    WebhookIndexItem,
+    WebhookReorderIn,
+    WebhookTestIn,
+    WebhookUpdateIn,
+)
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 
@@ -52,7 +94,6 @@ USER_BOOK = {
     status_code=200,
 )
 async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
-
     try:
         uid, config = await Config.add_script(script.type, script.scriptId)
         data = SCRIPT_BOOK[type(config).__name__](**(await config.toDict()))
@@ -75,7 +116,6 @@ async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
     status_code=200,
 )
 async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
-
     try:
         index, data = await Config.get_script(script.scriptId)
         index = [ScriptIndexItem(**_) for _ in index]
@@ -104,7 +144,6 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
     status_code=200,
 )
 async def update_script(script: ScriptUpdateIn = Body(...)) -> OutBase:
-
     try:
         await Config.update_script(
             script.scriptId, script.data.model_dump(exclude_unset=True)
@@ -124,7 +163,6 @@ async def update_script(script: ScriptUpdateIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def delete_script(script: ScriptDeleteIn = Body(...)) -> OutBase:
-
     try:
         await Config.del_script(script.scriptId)
     except Exception as e:
@@ -142,7 +180,6 @@ async def delete_script(script: ScriptDeleteIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def reorder_script(script: ScriptReorderIn = Body(...)) -> OutBase:
-
     try:
         await Config.reorder_script(script.indexList)
     except Exception as e:
@@ -160,7 +197,6 @@ async def reorder_script(script: ScriptReorderIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def import_script_from_file(script: ScriptFileIn = Body(...)) -> OutBase:
-
     try:
         await Config.import_script_from_file(script.scriptId, script.jsonFile)
     except Exception as e:
@@ -178,7 +214,6 @@ async def import_script_from_file(script: ScriptFileIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def export_script_to_file(script: ScriptFileIn = Body(...)) -> OutBase:
-
     try:
         await Config.export_script_to_file(script.scriptId, script.jsonFile)
     except Exception as e:
@@ -196,7 +231,6 @@ async def export_script_to_file(script: ScriptFileIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def import_script_from_web(script: ScriptUrlIn = Body(...)) -> OutBase:
-
     try:
         await Config.import_script_from_web(script.scriptId, script.url)
     except Exception as e:
@@ -214,7 +248,6 @@ async def import_script_from_web(script: ScriptUrlIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def upload_script_to_web(script: ScriptUploadIn = Body(...)) -> OutBase:
-
     try:
         await Config.upload_script_to_web(
             script.scriptId, script.config_name, script.author, script.description
@@ -234,7 +267,6 @@ async def upload_script_to_web(script: ScriptUploadIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
-
     try:
         index, data = await Config.get_user(user.scriptId, user.userId)
         index = [UserIndexItem(**_) for _ in index]
@@ -263,7 +295,6 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
     status_code=200,
 )
 async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
-
     try:
         uid, config = await Config.add_user(user.scriptId)
         data = USER_BOOK[type(Config.ScriptConfig[uuid.UUID(user.scriptId)]).__name__](
@@ -288,7 +319,6 @@ async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
     status_code=200,
 )
 async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
-
     try:
         await Config.update_user(
             user.scriptId, user.userId, user.data.model_dump(exclude_unset=True)
@@ -308,7 +338,6 @@ async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def delete_user(user: UserDeleteIn = Body(...)) -> OutBase:
-
     try:
         await Config.del_user(user.scriptId, user.userId)
     except Exception as e:
@@ -326,7 +355,6 @@ async def delete_user(user: UserDeleteIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def reorder_user(user: UserReorderIn = Body(...)) -> OutBase:
-
     try:
         await Config.reorder_user(user.scriptId, user.indexList)
     except Exception as e:
@@ -344,7 +372,6 @@ async def reorder_user(user: UserReorderIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def import_infrastructure(user: UserSetIn = Body(...)) -> OutBase:
-
     try:
         await Config.set_infrastructure(user.scriptId, user.userId, user.jsonFile)
     except Exception as e:
@@ -362,7 +389,6 @@ async def import_infrastructure(user: UserSetIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def get_user_combox_infrastructure(user: UserDeleteIn = Body(...)) -> ComboBoxOut:
-
     try:
         raw_data = await Config.get_user_combox_infrastructure(
             user.scriptId, user.userId
@@ -383,7 +409,6 @@ async def get_user_combox_infrastructure(user: UserDeleteIn = Body(...)) -> Comb
     status_code=200,
 )
 async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
-
     try:
         index, data = await Config.get_webhook(
             webhook.scriptId, webhook.userId, webhook.webhookId
@@ -409,7 +434,6 @@ async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
     status_code=200,
 )
 async def add_webhook(webhook: WebhookInBase = Body(...)) -> WebhookCreateOut:
-
     try:
         uid, config = await Config.add_webhook(webhook.scriptId, webhook.userId)
         data = Webhook(**(await config.toDict()))
@@ -432,7 +456,6 @@ async def add_webhook(webhook: WebhookInBase = Body(...)) -> WebhookCreateOut:
     status_code=200,
 )
 async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
-
     try:
         await Config.update_webhook(
             webhook.scriptId,
@@ -455,7 +478,6 @@ async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
-
     try:
         await Config.del_webhook(webhook.scriptId, webhook.userId, webhook.webhookId)
     except Exception as e:
@@ -473,7 +495,6 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
-
     try:
         await Config.reorder_webhook(
             webhook.scriptId, webhook.userId, webhook.indexList

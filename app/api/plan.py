@@ -24,7 +24,18 @@
 from fastapi import APIRouter, Body
 
 from app.core import Config
-from app.models.schema import *
+from app.models.dto import (
+    MaaPlanConfig,
+    OutBase,
+    PlanCreateIn,
+    PlanCreateOut,
+    PlanDeleteIn,
+    PlanGetIn,
+    PlanGetOut,
+    PlanIndexItem,
+    PlanReorderIn,
+    PlanUpdateIn,
+)
 
 router = APIRouter(prefix="/api/plan", tags=["计划管理"])
 
@@ -37,7 +48,6 @@ router = APIRouter(prefix="/api/plan", tags=["计划管理"])
     status_code=200,
 )
 async def add_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
-
     try:
         uid, config = await Config.add_plan(plan.type)
         data = MaaPlanConfig(**(await config.toDict()))
@@ -60,7 +70,6 @@ async def add_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
     status_code=200,
 )
 async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
-
     try:
         index, data = await Config.get_plan(plan.planId)
         index = [PlanIndexItem(**_) for _ in index]
@@ -84,7 +93,6 @@ async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
     status_code=200,
 )
 async def update_plan(plan: PlanUpdateIn = Body(...)) -> OutBase:
-
     try:
         await Config.update_plan(plan.planId, plan.data.model_dump(exclude_unset=True))
     except Exception as e:
@@ -102,7 +110,6 @@ async def update_plan(plan: PlanUpdateIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def delete_plan(plan: PlanDeleteIn = Body(...)) -> OutBase:
-
     try:
         await Config.del_plan(plan.planId)
     except Exception as e:
@@ -120,7 +127,6 @@ async def delete_plan(plan: PlanDeleteIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def reorder_plan(plan: PlanReorderIn = Body(...)) -> OutBase:
-
     try:
         await Config.reorder_plan(plan.indexList)
     except Exception as e:

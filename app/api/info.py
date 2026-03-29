@@ -21,12 +21,46 @@
 #   Contact: DLmaster_361@163.com
 
 
+from typing import Any, cast
+
 from fastapi import APIRouter, Body
 
 from app.core import Config
-from app.models.schema import *
+from app.models.dto import (
+    ComboBoxItem,
+    ComboBoxOut,
+    EmulatorDeleteIn,
+    GetStageIn,
+    InfoOut,
+    NoticeOut,
+    OutBase,
+    VersionOut,
+)
 
 router = APIRouter(prefix="/api/info", tags=["信息获取"])
+
+
+def _to_combobox_items(raw_data: object) -> list[ComboBoxItem]:
+    if not isinstance(raw_data, list):
+        return []
+
+    items: list[ComboBoxItem] = []
+    for item_any in cast(list[object], raw_data):
+        if not isinstance(item_any, dict):
+            continue
+        item = cast(dict[str, Any], item_any)
+        label = item.get("label")
+        if not isinstance(label, str):
+            continue
+        value_raw = item.get("value")
+        value: str | None
+        if isinstance(value_raw, str) or value_raw is None:
+            value = value_raw
+        else:
+            value = str(value_raw)
+        items.append(ComboBoxItem(label=label, value=value))
+
+    return items
 
 
 @router.post(
@@ -37,7 +71,6 @@ router = APIRouter(prefix="/api/info", tags=["信息获取"])
     status_code=200,
 )
 async def get_git_version() -> VersionOut:
-
     try:
         is_latest, commit_hash, commit_time = await Config.get_git_version()
     except Exception as e:
@@ -64,16 +97,11 @@ async def get_git_version() -> VersionOut:
     status_code=200,
 )
 async def get_stage_combox(
-    stage: GetStageIn = Body(..., description="关卡号类型")
+    stage: GetStageIn = Body(..., description="关卡号类型"),
 ) -> ComboBoxOut:
-
     try:
-        raw_data = await Config.get_stage_info(stage.type)
-        data = (
-            [ComboBoxItem(**item) for item in raw_data if isinstance(item, dict)]
-            if raw_data
-            else []
-        )
+        raw_data = cast(object, await Config.get_stage_info(stage.type))
+        data = _to_combobox_items(raw_data)
     except Exception as e:
         return ComboBoxOut(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
@@ -89,10 +117,9 @@ async def get_stage_combox(
     status_code=200,
 )
 async def get_script_combox() -> ComboBoxOut:
-
     try:
         raw_data = await Config.get_script_combox()
-        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
+        data = _to_combobox_items(raw_data)
     except Exception as e:
         return ComboBoxOut(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
@@ -108,10 +135,9 @@ async def get_script_combox() -> ComboBoxOut:
     status_code=200,
 )
 async def get_task_combox() -> ComboBoxOut:
-
     try:
         raw_data = await Config.get_task_combox()
-        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
+        data = _to_combobox_items(raw_data)
     except Exception as e:
         return ComboBoxOut(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
@@ -127,10 +153,9 @@ async def get_task_combox() -> ComboBoxOut:
     status_code=200,
 )
 async def get_plan_combox() -> ComboBoxOut:
-
     try:
         raw_data = await Config.get_plan_combox()
-        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
+        data = _to_combobox_items(raw_data)
     except Exception as e:
         return ComboBoxOut(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
@@ -146,10 +171,9 @@ async def get_plan_combox() -> ComboBoxOut:
     status_code=200,
 )
 async def get_emulator_combox() -> ComboBoxOut:
-
     try:
         raw_data = await Config.get_emulator_combox()
-        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
+        data = _to_combobox_items(raw_data)
     except Exception as e:
         return ComboBoxOut(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
@@ -168,8 +192,10 @@ async def get_emulator_devices_combox(
     emulator: EmulatorDeleteIn = Body(...),
 ) -> ComboBoxOut:
     try:
-        raw_data = await Config.get_emulator_devices_combox(emulator.emulatorId)
-        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
+        raw_data = cast(
+            object, await Config.get_emulator_devices_combox(emulator.emulatorId)
+        )
+        data = _to_combobox_items(raw_data)
     except Exception as e:
         return ComboBoxOut(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
@@ -185,7 +211,6 @@ async def get_emulator_devices_combox(
     status_code=200,
 )
 async def get_notice_info() -> NoticeOut:
-
     try:
         if_need_show, data = await Config.get_notice()
     except Exception as e:
@@ -207,7 +232,6 @@ async def get_notice_info() -> NoticeOut:
     status_code=200,
 )
 async def confirm_notice() -> OutBase:
-
     try:
         await Config.set("Data", "IfShowNotice", False)
     except Exception as e:
@@ -239,7 +263,6 @@ async def confirm_notice() -> OutBase:
     status_code=200,
 )
 async def get_web_config() -> InfoOut:
-
     try:
         data = await Config.get_web_config()
     except Exception as e:
@@ -258,7 +281,9 @@ async def get_web_config() -> InfoOut:
 )
 async def get_overview() -> InfoOut:
     try:
-        stage = await Config.get_stage_info("Info")
+        raw_stage = cast(object, await Config.get_stage_info("Info"))
+        stage = cast(dict[str, Any], raw_stage if isinstance(raw_stage, dict) else {})
+
         proxy = await Config.get_proxy_overview()
     except Exception as e:
         return InfoOut(

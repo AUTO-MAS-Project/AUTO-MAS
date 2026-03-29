@@ -27,8 +27,7 @@ from datetime import datetime, timedelta
 
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
-from app.models.ConfigBase import MultipleConfig
-from app.models.config import MaaEndConfig, MaaEndUserConfig
+from app.models import MaaEndConfig, MaaEndUserConfig, MultipleConfig
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager, skland_sign_in
@@ -65,14 +64,11 @@ class AutoProxyTask(TaskExecuteBase):
         self.check_result = "-"
 
     async def check(self) -> str:
-
         if self.script_config.get(
             "Run", "ProxyTimesLimit"
         ) != 0 and self.cur_user_config.get(
             "Data", "ProxyTimes"
-        ) >= self.script_config.get(
-            "Run", "ProxyTimesLimit"
-        ):
+        ) >= self.script_config.get("Run", "ProxyTimesLimit"):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
 
@@ -91,7 +87,6 @@ class AutoProxyTask(TaskExecuteBase):
         return "Pass"
 
     async def prepare(self):
-
         self.maaend_process_manager = ProcessManager()
         if self.emulator_manager is None:
             self.game_process_manager = ProcessManager()
@@ -303,7 +298,6 @@ class AutoProxyTask(TaskExecuteBase):
     async def handle_pre_maaend_error(
         self, error_message: str, e: Exception | None = None
     ):
-
         if e is None:
             logger.error(f"用户: {self.cur_user_uid} - {error_message}")
             await Config.send_websocket_message(
@@ -399,7 +393,6 @@ class AutoProxyTask(TaskExecuteBase):
             "Game", "ControllerType"
         )
         if device_info is not None:
-
             from app.core import MaaFWManager
 
             maaend_instance["savedDevice"] = {
@@ -474,7 +467,6 @@ class AutoProxyTask(TaskExecuteBase):
         if "资源加载失败" in log:
             self.cur_user_log.status = "MaaEnd 资源加载失败"
         elif not await self.maaend_process_manager.is_running():
-
             if self.task_dict is None:
                 self.cur_user_log.status = "MaaEnd 未加载任何任务"
             else:
@@ -502,7 +494,6 @@ class AutoProxyTask(TaskExecuteBase):
             self.wait_event.set()
 
     async def final_task(self):
-
         if self.check_result != "Pass":
             return
 
@@ -523,7 +514,6 @@ class AutoProxyTask(TaskExecuteBase):
 
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
-
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
             log_path = (
                 Path.cwd()

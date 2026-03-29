@@ -26,7 +26,14 @@ from pathlib import Path
 from fastapi import APIRouter, Body
 
 from app.core import Config
-from app.models.schema import *
+from app.models.dto import (
+    HistoryData,
+    HistoryDataGetIn,
+    HistoryDataGetOut,
+    HistoryIndexItem,
+    HistorySearchIn,
+    HistorySearchOut,
+)
 
 router = APIRouter(prefix="/api/history", tags=["历史记录"])
 
@@ -39,7 +46,6 @@ router = APIRouter(prefix="/api/history", tags=["历史记录"])
     status_code=200,
 )
 async def search_history(history: HistorySearchIn) -> HistorySearchOut:
-
     try:
         data = await Config.search_history(
             history.mode,
@@ -73,7 +79,6 @@ async def search_history(history: HistorySearchIn) -> HistorySearchOut:
     status_code=200,
 )
 async def get_history_data(history: HistoryDataGetIn = Body(...)) -> HistoryDataGetOut:
-
     try:
         path = Path(history.jsonPath)
         data = await Config.merge_statistic_info([path])

@@ -27,8 +27,7 @@ from datetime import datetime
 
 from app.core import Config, EmulatorManager
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem
-from app.models.ConfigBase import MultipleConfig
-from app.models.config import GeneralConfig, GeneralUserConfig
+from app.models import GeneralConfig, GeneralUserConfig, MultipleConfig
 from app.services import Notify
 from app.utils import get_logger, ProcessManager
 from app.utils.constants import TASK_MODE_ZH
@@ -191,7 +190,6 @@ class GeneralManager(TaskExecuteBase):
         )
 
     async def main_task(self):
-
         self.check_result = await self.check()
         if self.check_result != "Pass":
             logger.error(f"未通过配置检查: {self.check_result}")
@@ -238,7 +236,6 @@ class GeneralManager(TaskExecuteBase):
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode == "AutoProxy":
-
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())
@@ -300,7 +297,6 @@ class GeneralManager(TaskExecuteBase):
         self.script_info.status = "完成"
 
     async def on_crash(self, e: Exception):
-
         self.script_info.status = "异常"
         logger.exception(f"通用脚本任务出现异常: {e}")
         await Config.send_websocket_message(

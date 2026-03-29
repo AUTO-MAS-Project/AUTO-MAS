@@ -26,8 +26,7 @@ from pathlib import Path
 
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem
-from app.models.ConfigBase import MultipleConfig
-from app.models.config import MaaConfig, MaaUserConfig
+from app.models import MaaConfig, MaaUserConfig, MultipleConfig
 from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
@@ -58,7 +57,6 @@ class ScriptConfigTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
 
     async def prepare(self):
-
         self.maa_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
 
@@ -67,7 +65,6 @@ class ScriptConfigTask(TaskExecuteBase):
         self.maa_exe_path = self.maa_root_path / "MAA.exe"
 
     async def main_task(self):
-
         await self.prepare()
 
         await self.set_maa()
@@ -144,7 +141,6 @@ class ScriptConfigTask(TaskExecuteBase):
         logger.success(f"MAA运行参数配置完成: 设置脚本 {self.cur_user_item.user_id}")
 
     async def final_task(self):
-
         await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
 

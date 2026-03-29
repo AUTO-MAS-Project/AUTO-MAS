@@ -23,7 +23,7 @@
 
 from fastapi import APIRouter, Body
 from app.core import Config, EmulatorManager
-from app.models.schema import (
+from app.models.dto import (
     OutBase,
     EmulatorConfig,
     EmulatorGetIn,

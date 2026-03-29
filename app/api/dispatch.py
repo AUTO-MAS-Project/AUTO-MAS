@@ -25,7 +25,14 @@ from fastapi import APIRouter, Body
 
 from app.core import Config, TaskManager
 from app.services import System
-from app.models.schema import *
+from app.models.dto import (
+    DispatchIn,
+    OutBase,
+    PowerIn,
+    PowerOut,
+    TaskCreateIn,
+    TaskCreateOut,
+)
 
 router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
 
@@ -38,7 +45,6 @@ router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
     status_code=200,
 )
 async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
-
     try:
         task_id = await TaskManager.add_task(task.mode, task.taskId)
     except Exception as e:
@@ -56,7 +62,6 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
     status_code=200,
 )
 async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
-
     try:
         await TaskManager.stop_task(task.taskId)
     except Exception as e:
@@ -74,7 +79,6 @@ async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def get_power() -> PowerOut:
-
     try:
         signal = Config.power_sign
     except Exception as e:
@@ -95,7 +99,6 @@ async def get_power() -> PowerOut:
     status_code=200,
 )
 async def set_power(task: PowerIn = Body(...)) -> OutBase:
-
     try:
         Config.power_sign = task.signal
     except Exception as e:
@@ -113,7 +116,6 @@ async def set_power(task: PowerIn = Body(...)) -> OutBase:
     status_code=200,
 )
 async def cancel_power_task() -> OutBase:
-
     try:
         await System.cancel_power_task()
     except Exception as e:

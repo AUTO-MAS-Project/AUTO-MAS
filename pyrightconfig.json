@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/pyright/main/packages/pyright/schema/pyrightconfig.schema.json",
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "strict",
+  "include": [
+    "app",
+    "main.py"
+  ],
+  "exclude": [
+    "frontend",
+    "data",
+    "history",
+    "debug",
+    "__pycache__",
+    "test"
+  ],
+  "reportMissingTypeStubs": "warning",
+  "reportUnknownVariableType": "warning",
+  "reportUnknownMemberType": "warning",
+  "reportUnknownArgumentType": "warning",
+  "reportUnknownLambdaType": "warning",
+  "reportUnknownParameterType": "warning",
+  "reportUnknownReturnType": "warning"
+}

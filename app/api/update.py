@@ -26,7 +26,7 @@ from fastapi import APIRouter, Body
 
 from app.core import Config
 from app.services import Updater
-from app.models.schema import *
+from app.models.dto import OutBase, UpdateCheckIn, UpdateCheckOut
 
 router = APIRouter(prefix="/api/update", tags=["软件更新"])
 
@@ -39,7 +39,6 @@ router = APIRouter(prefix="/api/update", tags=["软件更新"])
     status_code=200,
 )
 async def check_update(version: UpdateCheckIn = Body(...)) -> UpdateCheckOut:
-
     try:
         if_need, latest_version, update_info = await Updater.check_update(
             current_version=version.current_version, if_force=version.if_force
@@ -66,7 +65,6 @@ async def check_update(version: UpdateCheckIn = Body(...)) -> UpdateCheckOut:
     status_code=200,
 )
 async def download_update() -> OutBase:
-
     try:
         task = asyncio.create_task(Updater.download_update())
         Config.temp_task.append(task)
@@ -86,7 +84,6 @@ async def download_update() -> OutBase:
     status_code=200,
 )
 async def install_update() -> OutBase:
-
     try:
         task = asyncio.create_task(Updater.install_update())
         Config.temp_task.append(task)
