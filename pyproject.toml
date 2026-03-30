@@ -1,6 +1,6 @@
 [tool.ruff]
 line-length = 88
-target-version = "py311"
+target-version = "py312"
 exclude = ["frontend", "data", "history", "debug", "__pycache__", "test"]
 
 [tool.ruff.lint]
