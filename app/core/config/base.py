@@ -22,7 +22,6 @@
 
 
 from __future__ import annotations
-
 # pyright: reportMissingParameterType=false, reportUnknownParameterType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownLambdaType=false, reportDeprecated=false, reportInvalidTypeForm=false, reportGeneralTypeIssues=false
 import os
 import json
@@ -41,8 +40,6 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from collections.abc import Callable, Coroutine
 from typing import Any, Protocol, TypeVar, Generic
-from pydantic import TypeAdapter
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.utils import get_logger, dpapi_encrypt, dpapi_decrypt
 from app.utils.constants import (
@@ -55,97 +52,114 @@ from app.utils.constants import (
 logger = get_logger("配置基类")
 
 
-def _load_toml_with_pydantic_settings(path: Path) -> dict[str, Any]:
-    """使用 pydantic-settings 校验 TOML 内容并返回 dict。"""
+PRIMARY_CONFIG_SUFFIX = ".toml"
+LEGACY_CONFIG_SUFFIX = ".json"
 
-    raw_text = path.read_text(encoding="utf-8")
-    if raw_text.strip() == "":
-        return {}
 
-    raw_data = tomllib.loads(raw_text)
+def dump_json(data: dict[str, Any]) -> str:
+    """公共 JSON 序列化入口。"""
 
-    dynamic_settings_cls = type(
-        "DynamicTomlSettings",
-        (BaseSettings,),
-        {
-            "model_config": SettingsConfigDict(extra="allow"),
-        },
-    )
+    return json.dumps(data, ensure_ascii=False, indent=4)
 
-    loaded = dynamic_settings_cls.model_validate(raw_data)
-    data = loaded.model_dump(mode="python")
-    extra = getattr(loaded, "__pydantic_extra__", None)
-    if isinstance(extra, dict):
-        data.update(extra)
 
-    return TypeAdapter(dict[str, Any]).validate_python(data)
+def _toml_key(key: str) -> str:
+    """生成兼容 UUID 等特殊字符的 TOML 键名。"""
+
+    return json.dumps(str(key), ensure_ascii=False)
+
+
+def _toml_path(path: tuple[str, ...]) -> str:
+    """生成 TOML 表头路径。"""
+
+    return ".".join(_toml_key(part) for part in path)
 
 
 def _toml_scalar(value: Any) -> str:
+    """序列化 TOML 标量值。"""
+
     if isinstance(value, bool):
         return "true" if value else "false"
-    if isinstance(value, (int, float)):
+    if isinstance(value, int):
         return str(value)
+    if isinstance(value, float):
+        return repr(value)
     if value is None:
         return '""'
     return json.dumps(str(value), ensure_ascii=False)
 
 
 def _toml_inline(value: Any) -> str:
+    """序列化内联 TOML 值，支持数组和内联表。"""
+
+    if isinstance(value, dict):
+        items = ", ".join(
+            f"{_toml_key(str(key))} = {_toml_inline(item)}"
+            for key, item in value.items()
+        )
+        return "{ " + items + " }"
     if isinstance(value, list):
         return "[" + ", ".join(_toml_inline(item) for item in value) + "]"
     return _toml_scalar(value)
 
 
-def _dump_toml(data: dict[str, Any]) -> str:
+def dump_toml(data: dict[str, Any]) -> str:
+    """公共 TOML 序列化入口。"""
+
     lines: list[str] = []
 
-    def emit_table(prefix: str, obj: dict[str, Any]) -> None:
+    def emit_table(path: tuple[str, ...], obj: dict[str, Any]) -> None:
         scalars: list[tuple[str, Any]] = []
         children: list[tuple[str, dict[str, Any]]] = []
 
         for key, value in obj.items():
             if isinstance(value, dict):
-                children.append((key, value))
+                children.append((str(key), value))
             else:
-                scalars.append((key, value))
+                scalars.append((str(key), value))
 
-        if prefix:
-            lines.append(f"[{prefix}]")
+        if path:
+            lines.append(f"[{_toml_path(path)}]")
 
         for key, value in scalars:
-            lines.append(f"{key} = {_toml_inline(value)}")
+            lines.append(f"{_toml_key(key)} = {_toml_inline(value)}")
 
         if scalars and children:
             lines.append("")
 
         for index, (key, child) in enumerate(children):
-            child_prefix = f"{prefix}.{key}" if prefix else key
-            emit_table(child_prefix, child)
+            emit_table((*path, key), child)
             if index != len(children) - 1:
                 lines.append("")
 
-    emit_table("", data)
+    emit_table((), data)
     content = "\n".join(lines).strip()
     return f"{content}\n" if content else ""
 
 
-def dump_toml(data: dict[str, Any]) -> str:
-    """公共 TOML 序列化入口。"""
+def _load_json_config(path: Path) -> dict[str, Any]:
+    raw_text = path.read_text(encoding="utf-8")
+    if raw_text.strip() == "":
+        return {}
 
-    return _dump_toml(data)
+    loaded = json.loads(raw_text)
+    return loaded if isinstance(loaded, dict) else {}
 
 
-def _load_config_with_legacy_migration(
-    path: Path,
-) -> tuple[dict[str, Any], Path | None]:
-    legacy_json_file = path.with_suffix(".json")
+def _load_toml_config(path: Path) -> dict[str, Any]:
+    raw_text = path.read_text(encoding="utf-8")
+    if raw_text.strip() == "":
+        return {}
+
+    loaded = tomllib.loads(raw_text)
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _load_config_with_legacy_migration(path: Path) -> tuple[dict[str, Any], Path | None]:
+    legacy_json_file = path.with_suffix(LEGACY_CONFIG_SUFFIX)
 
     if legacy_json_file.exists() and (not path.exists() or path.stat().st_size == 0):
         try:
-            return json.loads(
-                legacy_json_file.read_text(encoding="utf-8")
-            ), legacy_json_file
+            return _load_json_config(legacy_json_file), legacy_json_file
         except json.JSONDecodeError:
             return {}, legacy_json_file
 
@@ -153,28 +167,25 @@ def _load_config_with_legacy_migration(
         return {}, legacy_json_file if legacy_json_file.exists() else None
 
     try:
-        return _load_toml_with_pydantic_settings(
-            path
-        ), legacy_json_file if legacy_json_file.exists() else None
-    except Exception:
-        with suppress(Exception):
-            return tomllib.loads(
-                path.read_text(encoding="utf-8")
-            ), legacy_json_file if legacy_json_file.exists() else None
+        return _load_toml_config(path), legacy_json_file if legacy_json_file.exists() else None
+    except tomllib.TOMLDecodeError:
+        if legacy_json_file.exists():
+            with suppress(json.JSONDecodeError):
+                return _load_json_config(legacy_json_file), legacy_json_file
         return {}, legacy_json_file if legacy_json_file.exists() else None
 
 
-def _backup_legacy_json_if_needed(
-    current_file: Path, legacy_json_file: Path | None
+def _backup_legacy_config_if_needed(
+    current_file: Path, legacy_file: Path | None
 ) -> None:
-    if legacy_json_file is None or not legacy_json_file.exists():
+    if legacy_file is None or not legacy_file.exists():
         return
     if not current_file.exists() or current_file.stat().st_size == 0:
         return
 
-    legacy_backup = legacy_json_file.with_suffix(".json.bak")
+    legacy_backup = legacy_file.with_suffix(f"{legacy_file.suffix}.bak")
     if not legacy_backup.exists():
-        legacy_json_file.replace(legacy_backup)
+        legacy_file.replace(legacy_backup)
 
 
 class ValidatorBase(ABC):
@@ -332,7 +343,9 @@ class DateTimeValidator(ValidatorBase):
 
 
 class JSONValidator(ValidatorBase):
-    def __init__(self, tpye: type[dict[str, Any]] | type[list[Any]] = dict) -> None:
+    def __init__(
+        self, tpye: type[dict[str, Any]] | type[list[Any]] = dict
+    ) -> None:
         self.type = tpye
 
     def validate(self, value):
@@ -492,6 +505,7 @@ class EmulatorPathValidator(FileValidator):
         return True
 
     def correct(self, value):
+
         if not isinstance(value, str):
             value = str(Path.cwd())
         # 空字符串直接返回
@@ -699,6 +713,7 @@ class URLValidator(ValidatorBase):
 
 
 class ArgumentValidator(ValidatorBase):
+
     def validate(self, value):
         if not isinstance(value, str):
             return False
@@ -709,10 +724,12 @@ class ArgumentValidator(ValidatorBase):
             return False
 
     def correct(self, value):
+
         return value if self.validate(value) else ""
 
 
 class AdvancedArgumentValidator(ValidatorBase):
+
     def validate(self, value):
         if not isinstance(value, str):
             return False
@@ -728,6 +745,7 @@ class AdvancedArgumentValidator(ValidatorBase):
             return False
 
     def correct(self, value):
+
         return value if self.validate(value) else ""
 
 
@@ -928,10 +946,10 @@ class ConfigBase:
         Parameters
         ----------
         path: Path
-            配置文件路径, 必须为 JSON 文件, 如果不存在则会创建
+            配置文件路径, 必须为 TOML 文件, 如果不存在则会创建
         """
 
-        if path.suffix != ".toml":
+        if path.suffix != PRIMARY_CONFIG_SUFFIX:
             raise ValueError("配置文件必须是扩展名为 '.toml' 的 TOML 文件")
 
         if self.is_locked:
@@ -942,13 +960,13 @@ class ConfigBase:
         if not self.file.exists():
             self.file.parent.mkdir(parents=True, exist_ok=True)
             self.file.touch()
-        data, legacy_json_file = _load_config_with_legacy_migration(self.file)
+        data, legacy_file = _load_config_with_legacy_migration(self.file)
 
         await self.load(data)
 
         await self.add_save_method(self.save)
 
-        _backup_legacy_json_if_needed(self.file, legacy_json_file)
+        _backup_legacy_config_if_needed(self.file, legacy_file)
 
     async def add_save_method(
         self, save_method: Callable[[], Coroutine[Any, Any, None]]
@@ -962,7 +980,7 @@ class ConfigBase:
             保存方法
         """
 
-        if save_method != self.save:
+        if save_method != self.save and save_method not in self._save_methods:
             self._save_methods.append(save_method)
 
         for sub_config in self._multiple_config_index.values():
@@ -1118,7 +1136,7 @@ class ConfigBase:
 
         self.file.parent.mkdir(parents=True, exist_ok=True)
         self.file.write_text(
-            _dump_toml(await self.toDict(if_decrypt=False)),
+            dump_toml(await self.toDict(if_decrypt=False)),
             encoding="utf-8",
         )
 
@@ -1175,7 +1193,7 @@ class MultipleConfig(Generic[T]):
     """
     多配置项管理类
 
-    这个类允许管理多个配置项实例, 可以添加、删除、修改配置项, 并将其保存到 JSON 文件中。
+    这个类允许管理多个配置项实例, 可以添加、删除、修改配置项, 并将其保存到 TOML 文件中。
     允许通过 `config[uuid]` 访问配置项, 使用 `uuid in config` 检查是否存在配置项, 使用 `len(config)` 获取配置项数量。
 
     Parameters
@@ -1226,10 +1244,10 @@ class MultipleConfig(Generic[T]):
         Parameters
         ----------
         path: Path
-            配置文件路径, 必须为 JSON 文件, 如果不存在则会创建
+            配置文件路径, 必须为 TOML 文件, 如果不存在则会创建
         """
 
-        if path.suffix != ".toml":
+        if path.suffix != PRIMARY_CONFIG_SUFFIX:
             raise ValueError("配置文件必须是带有 '.toml' 扩展名的 TOML 文件。")
 
         if self.is_locked:
@@ -1240,13 +1258,13 @@ class MultipleConfig(Generic[T]):
         if not self.file.exists():
             self.file.parent.mkdir(parents=True, exist_ok=True)
             self.file.touch()
-        data, legacy_json_file = _load_config_with_legacy_migration(self.file)
+        data, legacy_file = _load_config_with_legacy_migration(self.file)
 
         await self.load(data)
 
         await self.add_save_method(self.save)
 
-        _backup_legacy_json_if_needed(self.file, legacy_json_file)
+        _backup_legacy_config_if_needed(self.file, legacy_file)
 
     async def add_save_method(
         self, save_method: Callable[[], Coroutine[Any, Any, None]]
@@ -1260,7 +1278,7 @@ class MultipleConfig(Generic[T]):
             保存方法, 必须是一个协程函数, 无参数, 无返回值
         """
 
-        if save_method != self.save:
+        if save_method != self.save and save_method not in self._save_methods:
             self._save_methods.append(save_method)
 
         for sub_config in self.data.values():
@@ -1385,7 +1403,7 @@ class MultipleConfig(Generic[T]):
 
         self.file.parent.mkdir(parents=True, exist_ok=True)
         self.file.write_text(
-            _dump_toml(await self.toDict(if_decrypt=False)),
+            dump_toml(await self.toDict(if_decrypt=False)),
             encoding="utf-8",
         )
 

@@ -25,7 +25,8 @@ from datetime import datetime
 from pathlib import Path
 
 from app.core import Config, EmulatorManager
-from app.models import MaaEndConfig, MaaEndUserConfig, MultipleConfig
+from app.core.config.base import MultipleConfig
+from app.models import MaaEndConfig, MaaEndUserConfig
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify
 from app.utils import get_logger

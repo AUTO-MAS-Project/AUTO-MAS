@@ -26,7 +26,8 @@ from pathlib import Path
 
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem
-from app.models import SrcConfig, SrcUserConfig, MultipleConfig
+from app.core.config.base import MultipleConfig
+from app.models import SrcConfig, SrcUserConfig
 from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager

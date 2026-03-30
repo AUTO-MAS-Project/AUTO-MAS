@@ -27,7 +27,8 @@ from datetime import datetime
 
 from app.core import Config, Broadcast
 from app.models.task import TaskExecuteBase, ScriptItem
-from app.models import SrcConfig, SrcUserConfig, MultipleConfig
+from app.core.config.base import MultipleConfig
+from app.models import SrcConfig, SrcUserConfig
 from app.models.emulator import DeviceBase
 from app.utils import get_logger
 from app.utils.constants import STARRAIL_PACKAGE_NAME, UTC4

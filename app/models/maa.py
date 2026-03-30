@@ -8,11 +8,11 @@ from typing import Any, ClassVar, Callable, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.config.base import MultipleConfig
+from app.core.config.pydantic import PydanticConfigBase
+from app.core.config.types import EncryptedString, JsonDictString
 from app.utils.constants import MAA_STAGE_KEY, RESOURCE_STAGE_INFO, UTC4, UTC8
-from .config_base import MultipleConfig
 from .common import Webhook
-from .pydantic_base import PydanticConfigBase
-from .type import EncryptedString, JsonDictString
 
 
 class _ValueProxy:

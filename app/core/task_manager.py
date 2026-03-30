@@ -24,7 +24,8 @@ import uuid
 import asyncio
 from typing import Dict, Literal
 
-from .config import Config, MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig
+from app.models import GeneralConfig, MaaConfig, MaaEndConfig, SrcConfig
+from .config import Config
 from app.services import System
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
 from app.utils import get_logger

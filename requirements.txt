@@ -1,7 +1,6 @@
 loguru==0.7.3
 fastapi==0.116.1
 pydantic==2.11.7
-pydantic-settings==2.10.1
 uvicorn==0.35.0
 websockets==15.0.1
 aiofiles==24.1.0
@@ -26,4 +25,3 @@ opencv-python==4.10.0.84
 maafw==5.8.1
 mss==9.0.2
 fastapi-mcp==0.4.0
-tomli-w==1.2.0

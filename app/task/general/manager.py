@@ -27,7 +27,8 @@ from datetime import datetime
 
 from app.core import Config, EmulatorManager
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem
-from app.models import GeneralConfig, GeneralUserConfig, MultipleConfig
+from app.core.config.base import MultipleConfig
+from app.models import GeneralConfig, GeneralUserConfig
 from app.services import Notify
 from app.utils import get_logger, ProcessManager
 from app.utils.constants import TASK_MODE_ZH

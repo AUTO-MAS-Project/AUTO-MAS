@@ -140,7 +140,7 @@ class AppConfig(GlobalConfig):
         truststore.inject_into_ssl()
 
     def _resolve_config_path(self, stem: str) -> Path:
-        """返回 TOML 配置路径（内部会自动处理同名 JSON 的迁移兼容）。"""
+        """返回运行期 TOML 配置路径。"""
 
         return self.config_path / f"{stem}.toml"
 
@@ -155,18 +155,25 @@ class AppConfig(GlobalConfig):
         await self.ToolsConfig.connect(self._resolve_config_path("ToolsConfig"))
 
     def _read_mapping_config(self, path: Path) -> dict[str, Any]:
+        if not path.exists():
+            return {}
+
         text = path.read_text(encoding="utf-8")
+        if not text.strip():
+            return {}
+
         if path.suffix == ".toml":
-            return tomllib.loads(text) if text.strip() else {}
-        return json.loads(text)
+            data = tomllib.loads(text)
+        else:
+            data = json.loads(text)
+        return data if isinstance(data, dict) else {}
 
     def _write_mapping_config(self, path: Path, data: dict[str, Any]) -> None:
         if path.suffix == ".toml":
             path.write_text(dump_toml(data), encoding="utf-8")
-        else:
-            path.write_text(
-                json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
-            )
+            return
+
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8")
 
     async def init_config(self) -> None:
         """初始化配置管理"""
@@ -819,7 +826,7 @@ class AppConfig(GlobalConfig):
                 Path(os.environ["APPDATA"])
             ):
                 confg["Script"][path] = (
-                    f"%APPDATA%/{Path(confg["Script"][path]).relative_to(Path(os.environ["APPDATA"]))}"
+                    f"%APPDATA%/{Path(confg['Script'][path]).relative_to(Path(os.environ['APPDATA']))}"
                 )
         confg["Info"]["RootPath"] = str(Path(r"C:/脚本根目录"))
 
