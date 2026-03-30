@@ -30,7 +30,8 @@ from datetime import datetime, timedelta
 
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
-from app.models import SrcConfig, SrcUserConfig, MultipleConfig
+from app.core.config.base import MultipleConfig
+from app.models import SrcConfig, SrcUserConfig
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager, strptime

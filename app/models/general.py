@@ -9,10 +9,10 @@ from typing import Any, ClassVar, Literal
 from pydantic import BaseModel, Field, field_validator
 
 from app.utils.constants import UTC4
-from .config_base import MultipleConfig
+from app.core.config.base import MultipleConfig
+from app.core.config.pydantic import PydanticConfigBase
+from app.core.config.types import UrlString
 from .common import Webhook
-from .pydantic_base import PydanticConfigBase
-from .type import UrlString
 
 
 class GeneralUserConfig(PydanticConfigBase):

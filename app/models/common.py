@@ -1,5 +1,4 @@
 from __future__ import annotations
-# pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportGeneralTypeIssues=false
 
 import calendar
 import uuid
@@ -7,9 +6,15 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from .config_base import MultipleConfig
-from .pydantic_base import PydanticConfigBase
-from .type import HHMMString, JsonDictString, JsonListString, UrlString, YmdHmString
+from app.core.config.base import MultipleConfig
+from app.core.config.pydantic import PydanticConfigBase
+from app.core.config.types import (
+    HHMMString,
+    JsonDictString,
+    JsonListString,
+    UrlString,
+    YmdHmString,
+)
 
 
 DAY_NAMES = tuple(calendar.day_name)
@@ -135,9 +140,8 @@ class QueueConfig(PydanticConfigBase):
 
     def __init__(self, **data: Any):
         super().__init__(**data)
-        # MultipleConfig 目前约束 T 继承 ConfigBase；这里保持运行时兼容。
-        self.TimeSet = MultipleConfig([TimeSet])  # pyright: ignore[reportArgumentType]
-        self.QueueItem = MultipleConfig([QueueItem])  # pyright: ignore[reportArgumentType]
+        self.TimeSet: MultipleConfig[TimeSet] = MultipleConfig([TimeSet])
+        self.QueueItem: MultipleConfig[QueueItem] = MultipleConfig([QueueItem])
 
 
 __all__ = ["EmulatorConfig", "Webhook", "QueueItem", "TimeSet", "QueueConfig"]

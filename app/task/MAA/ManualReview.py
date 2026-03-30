@@ -29,7 +29,8 @@ from datetime import datetime, timedelta
 
 from app.core import Config, Broadcast
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
-from app.models import MaaConfig, MaaUserConfig, MultipleConfig
+from app.core.config.base import MultipleConfig
+from app.models import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceInfo, DeviceBase
 from app.services import System
 from app.utils import get_logger, LogMonitor, ProcessManager

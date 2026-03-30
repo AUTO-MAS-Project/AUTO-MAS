@@ -1,5 +1,4 @@
 from __future__ import annotations
-# pyright: reportPrivateUsage=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false
 
 import asyncio
 import inspect
@@ -7,11 +6,11 @@ from pathlib import Path
 from collections.abc import Callable, Coroutine
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 
-from .config_base import (
+from .base import (
     MultipleConfig,
-    _backup_legacy_json_if_needed,
+    _backup_legacy_config_if_needed,
     _load_config_with_legacy_migration,
     dump_toml,
 )
@@ -27,13 +26,10 @@ class PydanticConfigBase(BaseModel):
     model_config = ConfigDict(extra="allow", validate_assignment=True)
 
     LEGACY_FIELD_MAP: ClassVar[dict[tuple[str, str], tuple[str, str]]] = {}
-
-    def __init__(self, **data: Any):
-        super().__init__(**data)
-        self._file: Path | None = None
-        self._is_locked = False
-        self._save_methods: list[SaveMethod] = []
-        self._bindings: dict[tuple[str, str], list[Slot]] = {}
+    _file: Path | None = PrivateAttr(default=None)
+    _is_locked: bool = PrivateAttr(default=False)
+    _save_methods: list[SaveMethod] = PrivateAttr(default_factory=list)
+    _bindings: dict[tuple[str, str], list[Slot]] = PrivateAttr(default_factory=dict)
 
     @property
     def file(self) -> Path | None:
@@ -74,10 +70,10 @@ class PydanticConfigBase(BaseModel):
             self._file.parent.mkdir(parents=True, exist_ok=True)
             self._file.touch()
 
-        data, legacy_json_file = _load_config_with_legacy_migration(self._file)
+        data, legacy_file = _load_config_with_legacy_migration(self._file)
         await self.load(data)
         await self.add_save_method(self.save)
-        _backup_legacy_json_if_needed(self._file, legacy_json_file)
+        _backup_legacy_config_if_needed(self._file, legacy_file)
 
     async def add_save_method(self, save_method: SaveMethod):
         if save_method != self.save and save_method not in self._save_methods:

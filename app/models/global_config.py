@@ -8,16 +8,9 @@ from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.utils.constants import MATERIALS_MAP, RESOURCE_STAGE_INFO, UTC8
-from .config_base import MultipleConfig
-from .dto import TagItem
-from .common import EmulatorConfig, QueueConfig, QueueItem, Webhook
-from .general import GeneralConfig
-from .maa import MaaConfig, MaaPlanConfig, MaaUserConfig
-from .maaend import MaaEndConfig
-from .pydantic_base import PydanticConfigBase
-from .src import SrcConfig
-from .type import (
+from app.core.config.base import MultipleConfig
+from app.core.config.pydantic import PydanticConfigBase
+from app.core.config.types import (
     EncryptedString,
     JsonDictString,
     JsonListString,
@@ -25,6 +18,13 @@ from .type import (
     UrlString,
     YmdHmsString,
 )
+from app.utils.constants import MATERIALS_MAP, RESOURCE_STAGE_INFO, UTC8
+from app.models.dto import TagItem
+from .common import EmulatorConfig, QueueConfig, QueueItem, Webhook
+from .general import GeneralConfig
+from .maa import MaaConfig, MaaPlanConfig, MaaUserConfig
+from .maaend import MaaEndConfig
+from .src import SrcConfig
 
 
 class ToolsConfig(PydanticConfigBase):
@@ -179,13 +179,17 @@ class GlobalConfig(PydanticConfigBase):
     def __init__(self, **data: Any):
         super().__init__(**data)
 
-        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
-        self.EmulatorConfig = MultipleConfig([EmulatorConfig])
-        self.PlanConfig = MultipleConfig([MaaPlanConfig])
-        self.ScriptConfig = MultipleConfig(
+        self.Notify_CustomWebhooks: MultipleConfig[Webhook] = MultipleConfig([Webhook])
+        self.EmulatorConfig: MultipleConfig[EmulatorConfig] = MultipleConfig(
+            [EmulatorConfig]
+        )
+        self.PlanConfig: MultipleConfig[MaaPlanConfig] = MultipleConfig([MaaPlanConfig])
+        self.ScriptConfig: MultipleConfig[
+            MaaConfig | MaaEndConfig | SrcConfig | GeneralConfig
+        ] = MultipleConfig(
             [MaaConfig, MaaEndConfig, SrcConfig, GeneralConfig]
         )
-        self.QueueConfig = MultipleConfig([QueueConfig])
+        self.QueueConfig: MultipleConfig[QueueConfig] = MultipleConfig([QueueConfig])
         self.ToolsConfig = ToolsConfig()
 
         MaaConfig.related_config["EmulatorConfig"] = self.EmulatorConfig

@@ -26,7 +26,8 @@ from datetime import datetime
 
 from app.core import Broadcast, Config
 from app.models.task import TaskExecuteBase, ScriptItem
-from app.models import MaaEndConfig, MaaEndUserConfig, MultipleConfig
+from app.core.config.base import MultipleConfig
+from app.models import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager

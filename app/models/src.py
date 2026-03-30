@@ -8,11 +8,11 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.config.base import MultipleConfig
+from app.core.config.pydantic import PydanticConfigBase
+from app.core.config.types import EncryptedString
 from app.utils.constants import STARRAIL_STAGE_BOOK, UTC4
-from .config_base import MultipleConfig
 from .common import Webhook
-from .pydantic_base import PydanticConfigBase
-from .type import EncryptedString
 
 
 RELIC_OPTIONS: tuple[str, ...] = (
