@@ -24,12 +24,15 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import tomllib
 import uuid
-from contextlib import suppress
+import weakref
+from contextlib import asynccontextmanager, suppress
+from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Callable, Coroutine
+from collections.abc import AsyncIterator, Callable, Coroutine
 from typing import Any, Generic, Protocol, TypeVar
 
 
@@ -201,6 +204,89 @@ class _ConfigLike(Protocol):
 T = TypeVar("T", bound=_ConfigLike)
 
 
+CollectionEventSlot = Callable[[Any], Any] | Callable[[Any], Coroutine[Any, Any, Any]]
+
+
+@dataclass(slots=True)
+class MultipleConfigAddEvent(Generic[T]):
+    """新增配置项事件。"""
+
+    collection: "MultipleConfig[T]"
+    uid: uuid.UUID
+    config: T
+
+
+@dataclass(slots=True)
+class MultipleConfigDeleteEvent(Generic[T]):
+    """删除配置项事件。"""
+
+    collection: "MultipleConfig[T]"
+    uid: uuid.UUID
+    config: T
+
+
+@dataclass(slots=True)
+class MultipleConfigReorderEvent(Generic[T]):
+    """重排配置项事件。"""
+
+    collection: "MultipleConfig[T]"
+    order: list[uuid.UUID]
+
+
+def _callback_identity(callback: CollectionEventSlot) -> object:
+    """生成回调唯一标识。"""
+
+    if inspect.ismethod(callback) and getattr(callback, "__self__", None) is not None:
+        return (id(callback.__self__), callback.__func__)
+    return callback
+
+
+@dataclass(slots=True)
+class _WeakCallbackSlot:
+    """容器事件弱引用回调槽。"""
+
+    identity: object
+    callback: CollectionEventSlot | None = None
+    weak_method: weakref.WeakMethod[Any] | None = None
+
+    @classmethod
+    def build(cls, callback: CollectionEventSlot) -> "_WeakCallbackSlot":
+        if inspect.ismethod(callback) and getattr(callback, "__self__", None) is not None:
+            return cls(
+                identity=_callback_identity(callback),
+                weak_method=weakref.WeakMethod(callback),
+            )
+        return cls(identity=_callback_identity(callback), callback=callback)
+
+    def resolve(self) -> CollectionEventSlot | None:
+        if self.weak_method is not None:
+            resolved = self.weak_method()
+            if resolved is None:
+                return None
+            return resolved
+        return self.callback
+
+
+async def _emit_collection_slots(
+    slots: list[_WeakCallbackSlot], event: Any
+) -> None:
+    """依次触发容器事件回调，并清理失效弱引用。"""
+
+    alive_slots: list[_WeakCallbackSlot] = []
+
+    for slot in slots:
+        callback = slot.resolve()
+        if callback is None:
+            continue
+
+        alive_slots.append(slot)
+        result = callback(event)
+        if inspect.isawaitable(result):
+            await result
+
+    slots[:] = alive_slots
+
+
 class MultipleConfig(Generic[T]):
     """
     多配置项管理类。
@@ -220,6 +306,13 @@ class MultipleConfig(Generic[T]):
         self.data: dict[uuid.UUID, T] = {}
         self.is_locked = False
         self._save_methods: list[Callable[[], Coroutine[Any, Any, None]]] = []
+        self._transaction_depth = 0
+        self._pending_save = False
+        self._pending_sync = False
+        self._on_add_slots: list[_WeakCallbackSlot] = []
+        self._on_before_del_slots: list[_WeakCallbackSlot] = []
+        self._on_del_slots: list[_WeakCallbackSlot] = []
+        self._on_reorder_slots: list[_WeakCallbackSlot] = []
 
     def __getitem__(self, key: uuid.UUID) -> T:
         if key not in self.data:
@@ -274,6 +367,34 @@ class MultipleConfig(Generic[T]):
         for sub_config in self.data.values():
             await sub_config.add_save_method(save_method)
 
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator["MultipleConfig[T]"]:
+        """开启一个延迟保存事务。"""
+
+        self._transaction_depth += 1
+        try:
+            yield self
+        finally:
+            self._transaction_depth -= 1
+            if self._transaction_depth == 0:
+                await self._flush_pending_changes()
+
+    async def _flush_pending_changes(self) -> None:
+        """提交事务期间累积的保存请求。"""
+
+        if self._pending_save and self.file:
+            self._pending_save = False
+            self.file.parent.mkdir(parents=True, exist_ok=True)
+            self.file.write_text(
+                dump_toml(await self.toDict(if_decrypt=False)),
+                encoding="utf-8",
+            )
+
+        if self._pending_sync:
+            self._pending_sync = False
+            if self._save_methods:
+                await asyncio.gather(*(_() for _ in self._save_methods))
+
     async def load(self, data: dict[str, Any]) -> None:
         """从字典加载多实例配置数据。"""
 
@@ -308,6 +429,8 @@ class MultipleConfig(Generic[T]):
                 continue
 
             config = self.sub_config_type[type_name]()
+            if hasattr(config, "_bind_owner_collection"):
+                config._bind_owner_collection(self, uid)
             self.order.append(uid)
             self.data[uid] = config
             await config.load(instance_data)
@@ -363,6 +486,10 @@ class MultipleConfig(Generic[T]):
         if not self.file:
             raise ValueError("文件路径未设置, 请先调用 `connect` 方法连接配置文件")
 
+        if self._transaction_depth > 0:
+            self._pending_save = True
+            return
+
         self.file.parent.mkdir(parents=True, exist_ok=True)
         self.file.write_text(
             dump_toml(await self.toDict(if_decrypt=False)),
@@ -379,6 +506,8 @@ class MultipleConfig(Generic[T]):
 
         uid = uuid.uuid4()
         config = config_type()
+        if hasattr(config, "_bind_owner_collection"):
+            config._bind_owner_collection(self, uid)
         self.order.append(uid)
         self.data[uid] = config
 
@@ -389,8 +518,14 @@ class MultipleConfig(Generic[T]):
             await config.add_save_method(self.save)
             await self.save()
 
-        if self._save_methods:
+        if self._transaction_depth > 0:
+            self._pending_sync = self._pending_sync or bool(self._save_methods)
+        elif self._save_methods:
             await asyncio.gather(*(_() for _ in self._save_methods))
+
+        await _emit_collection_slots(
+            self._on_add_slots, MultipleConfigAddEvent(self, uid, config)
+        )
 
         return uid, config
 
@@ -404,14 +539,25 @@ class MultipleConfig(Generic[T]):
         if self.data[uid].is_locked:
             raise ValueError(f"配置项 '{uid}' 已锁定, 无法移除")
 
+        config = self.data[uid]
+        await _emit_collection_slots(
+            self._on_before_del_slots, MultipleConfigDeleteEvent(self, uid, config)
+        )
+
         self.data.pop(uid)
         self.order.remove(uid)
 
         if self.file:
             await self.save()
 
-        if self._save_methods:
+        if self._transaction_depth > 0:
+            self._pending_sync = self._pending_sync or bool(self._save_methods)
+        elif self._save_methods:
             await asyncio.gather(*(_() for _ in self._save_methods))
+
+        await _emit_collection_slots(
+            self._on_del_slots, MultipleConfigDeleteEvent(self, uid, config)
+        )
 
     async def setOrder(self, order: list[uuid.UUID]) -> None:  # noqa: N802
         """设置子配置实例顺序。"""
@@ -426,8 +572,14 @@ class MultipleConfig(Generic[T]):
         if self.file:
             await self.save()
 
-        if self._save_methods:
+        if self._transaction_depth > 0:
+            self._pending_sync = self._pending_sync or bool(self._save_methods)
+        elif self._save_methods:
             await asyncio.gather(*(_() for _ in self._save_methods))
+
+        await _emit_collection_slots(
+            self._on_reorder_slots, MultipleConfigReorderEvent(self, list(order))
+        )
 
     async def lock(self) -> None:
         """锁定当前管理器及全部子配置。"""
@@ -446,16 +598,84 @@ class MultipleConfig(Generic[T]):
     def keys(self):
         """返回全部 UID。"""
 
-        return iter(self.order)
+        return iter(tuple(self.order))
 
     def values(self):
         """按顺序返回全部子配置实例。"""
 
         if not self.data:
             return iter(())
-        return (self.data[uid] for uid in self.order)
+        order_snapshot = tuple(self.order)
+        return iter(tuple(self.data[uid] for uid in order_snapshot if uid in self.data))
 
     def items(self):
         """按顺序返回 `(uid, config)` 对。"""
 
-        return zip(self.keys(), self.values())
+        order_snapshot = tuple(self.order)
+        return iter(
+            tuple((uid, self.data[uid]) for uid in order_snapshot if uid in self.data)
+        )
+
+    def bind_add(self, slot: CollectionEventSlot) -> None:
+        """绑定新增事件。"""
+
+        identity = _callback_identity(slot)
+        if any(item.identity == identity for item in self._on_add_slots):
+            return
+        self._on_add_slots.append(_WeakCallbackSlot.build(slot))
+
+    def bind_before_del(self, slot: CollectionEventSlot) -> None:
+        """绑定删除前事件。"""
+
+        identity = _callback_identity(slot)
+        if any(item.identity == identity for item in self._on_before_del_slots):
+            return
+        self._on_before_del_slots.append(_WeakCallbackSlot.build(slot))
+
+    def bind_del(self, slot: CollectionEventSlot) -> None:
+        """绑定删除后事件。"""
+
+        identity = _callback_identity(slot)
+        if any(item.identity == identity for item in self._on_del_slots):
+            return
+        self._on_del_slots.append(_WeakCallbackSlot.build(slot))
+
+    def bind_reorder(self, slot: CollectionEventSlot) -> None:
+        """绑定重排事件。"""
+
+        identity = _callback_identity(slot)
+        if any(item.identity == identity for item in self._on_reorder_slots):
+            return
+        self._on_reorder_slots.append(_WeakCallbackSlot.build(slot))
+
+    def unbind_add(self, slot: CollectionEventSlot) -> None:
+        """解绑新增事件。"""
+
+        identity = _callback_identity(slot)
+        self._on_add_slots = [
+            item for item in self._on_add_slots if item.identity != identity
+        ]
+
+    def unbind_before_del(self, slot: CollectionEventSlot) -> None:
+        """解绑删除前事件。"""
+
+        identity = _callback_identity(slot)
+        self._on_before_del_slots = [
+            item for item in self._on_before_del_slots if item.identity != identity
+        ]
+
+    def unbind_del(self, slot: CollectionEventSlot) -> None:
+        """解绑删除后事件。"""
+
+        identity = _callback_identity(slot)
+        self._on_del_slots = [
+            item for item in self._on_del_slots if item.identity != identity
+        ]
+
+    def unbind_reorder(self, slot: CollectionEventSlot) -> None:
+        """解绑重排事件。"""
+
+        identity = _callback_identity(slot)
+        self._on_reorder_slots = [
+            item for item in self._on_reorder_slots if item.identity != identity
+        ]

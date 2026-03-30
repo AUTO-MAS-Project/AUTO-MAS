@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import json
-import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Annotated, Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.config.base import MultipleConfig
+from app.core.config.fields import RefField, VirtualField
 from app.core.config.pydantic import PydanticConfigBase
 from app.core.config.types import EncryptedString
 from app.utils.constants import STARRAIL_STAGE_BOOK, UTC4
@@ -158,7 +158,25 @@ class SrcUserConfig(PydanticConfigBase):
         ] = "CN-Official"
         RemainedDay: int = Field(default=-1, ge=-1, le=9999)
         Notes: str = "无"
-        Tag: str = "[ ]"
+        Tag: Annotated[
+            str,
+            VirtualField(
+                "getTags",
+                depends_on=(
+                    ("Data", "IfPassCheck"),
+                    ("Data", "LastProxyDate"),
+                    ("Data", "ProxyTimes"),
+                    ("Info", "RemainedDay"),
+                    ("Stage", "Channel"),
+                    ("Stage", "Relic"),
+                    ("Stage", "Materials"),
+                    ("Stage", "Ornament"),
+                    ("Stage", "EchoOfWar"),
+                    ("Stage", "SimulatedUniverseWorld"),
+                    ("Info", "Notes"),
+                ),
+            ),
+        ] = "[ ]"
 
     class StageModel(BaseModel):
         Channel: Literal["Relic", "Materials", "Ornament"] = "Relic"
@@ -232,26 +250,6 @@ class SrcUserConfig(PydanticConfigBase):
     def __init__(self, **data: Any):
         super().__init__(**data)
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
-
-    def _normalize_value(self, group: str, name: str, value: Any) -> Any:
-        value = super()._normalize_value(group, name, value)
-        if (group, name) == ("Info", "Tag"):
-            return self.getTags()
-        return value
-
-    def get(self, group: str, name: str) -> Any:
-        if (group, name) == ("Info", "Tag"):
-            return self.getTags()
-        return super().get(group, name)
-
-    async def toDict(
-        self, if_decrypt: bool = True, regenerate_uuids: bool = False
-    ) -> dict[str, Any]:
-        data = await super().toDict(if_decrypt, regenerate_uuids)
-        info = data.get("Info")
-        if isinstance(info, dict):
-            info["Tag"] = self.getTags()
-        return data
 
     def getTags(self) -> str:  # noqa: N802
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
@@ -337,7 +335,15 @@ class SrcConfig(PydanticConfigBase):
         Path: str = str(Path.cwd())
 
     class EmulatorModel(BaseModel):
-        Id: str = "-"
+        Id: Annotated[
+            str,
+            RefField(
+                "EmulatorConfig",
+                default="-",
+                allow_values=("-",),
+                on_delete="set_default",
+            ),
+        ] = "-"
         Index: str = "-"
 
     class RunModel(BaseModel):
@@ -353,27 +359,6 @@ class SrcConfig(PydanticConfigBase):
     def __init__(self, **data: Any):
         super().__init__(**data)
         self.UserData = MultipleConfig([SrcUserConfig])
-
-    def _normalize_value(self, group: str, name: str, value: Any) -> Any:
-        value = super()._normalize_value(group, name, value)
-
-        if (group, name) != ("Emulator", "Id"):
-            return value
-
-        if value == "-":
-            return "-"
-        if not isinstance(value, str):
-            return "-"
-        try:
-            uid = uuid.UUID(value)
-        except (TypeError, ValueError):
-            return "-"
-
-        emulator_config = self.related_config.get("EmulatorConfig")
-        if emulator_config is None or uid not in emulator_config:
-            return "-"
-
-        return str(uid)
 
 
 __all__ = ["SrcUserConfig", "SrcConfig"]
