@@ -150,8 +150,7 @@ def _load_toml_config(path: Path) -> dict[str, Any]:
     if raw_text.strip() == "":
         return {}
 
-    loaded = tomllib.loads(raw_text)
-    return loaded if isinstance(loaded, dict) else {}
+    return tomllib.loads(raw_text)
 
 
 def _load_config_with_legacy_migration(path: Path) -> tuple[dict[str, Any], Path | None]:
@@ -186,6 +185,22 @@ def _backup_legacy_config_if_needed(
     legacy_backup = legacy_file.with_suffix(f"{legacy_file.suffix}.bak")
     if not legacy_backup.exists():
         legacy_file.replace(legacy_backup)
+
+
+def load_config_with_legacy_migration(
+    path: Path,
+) -> tuple[dict[str, Any], Path | None]:
+    """公开的兼容加载入口，供其他模块调用。"""
+
+    return _load_config_with_legacy_migration(path)
+
+
+def backup_legacy_config_if_needed(
+    current_file: Path, legacy_file: Path | None
+) -> None:
+    """公开的旧版配置备份入口，供其他模块调用。"""
+
+    _backup_legacy_config_if_needed(current_file, legacy_file)
 
 
 class ValidatorBase(ABC):

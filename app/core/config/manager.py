@@ -56,8 +56,8 @@ from app.models import (
     Webhook,
     TimeSet,
     EmulatorConfig,
-    dump_toml,
 )
+from .base import dump_toml
 from app.models.dto import WebSocketMessage
 from app.utils.constants import (
     UTC4,
@@ -1715,7 +1715,7 @@ class AppConfig(GlobalConfig):
 
         data = [{"label": "未选择", "value": "-"}]
 
-        from .emulator_manager import EmulatorManager
+        from ..emulator_manager import EmulatorManager
 
         for index, device in (
             await (await EmulatorManager.get_emulator_instance(emulator_id)).getInfo(

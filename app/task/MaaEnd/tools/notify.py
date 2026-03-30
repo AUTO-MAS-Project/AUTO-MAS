@@ -18,6 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
+from typing import Any, cast
 
 from app.core import Config
 from app.models import MaaEndUserConfig
@@ -28,10 +29,14 @@ logger = get_logger("MaaEnd 通知工具")
 
 
 async def push_notification(
-    mode: str, title: str, message: dict, user_config: MaaEndUserConfig | None
+    mode: str,
+    title: str,
+    message: dict[str, Any],
+    user_config: MaaEndUserConfig | None,
 ) -> None:
     """通过所有渠道推送通知。"""
 
+    config = cast(Any, Config)
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
     if mode == "代理结果" and (
@@ -46,8 +51,9 @@ async def push_notification(
             f"已完成数: {message['completed_count']}, 未完成数: {message['uncompleted_count']}\n\n"
             f"{message['result']}"
         )
-        template = Config.notify_env.get_template("general_result.html")
-        message_html = template.render(message)
+        notify_env = config.notify_env
+        template = notify_env.get_template("general_result.html")
+        message_html = str(template.render(message))
         serverchan_message = message_text.replace("\n", "\n\n")
 
         if Config.get("Notify", "IfSendMail"):
@@ -75,8 +81,9 @@ async def push_notification(
             f"MaaEnd执行结果: {message['user_result']}\n\n"
         )
 
-        template = Config.notify_env.get_template("general_statistics.html")
-        message_html = template.render(message)
+        notify_env = config.notify_env
+        template = notify_env.get_template("general_statistics.html")
+        message_html = str(template.render(message))
         serverchan_message = message_text.replace("\n", "\n\n")
 
         if Config.get("Notify", "IfSendStatistic"):
