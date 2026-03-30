@@ -71,7 +71,7 @@
           </template>
           <template #extra>
             <a-space v-if="selectedInstance" wrap>
-              <a-button type="primary" :loading="submitting" :disabled="!canEditBySchema" @click="submitEdit">
+              <a-button type="primary" :loading="submitting" @click="submitEdit">
                 保存配置
               </a-button>
               <a-button :disabled="!isDirty" @click="resetEdit">重置改动</a-button>
@@ -110,7 +110,7 @@
               style="margin-bottom: 12px"
             />
 
-            <a-card v-if="selectedRuntimeState" size="small" class="runtime-observer-card" title="运行态观测", v-show="">
+            <a-card v-if="selectedRuntimeState" size="small" class="runtime-observer-card" title="运行态观测">
               <a-descriptions :column="2" size="small" bordered>
                 <a-descriptions-item label="运行状态">
                   <a-tag :color="getStatusTagColor(selectedRuntimeState.status)">
@@ -297,7 +297,15 @@
                     </template>
                   </a-form-item>
                 </template>
-                <a-empty v-else description="暂无可渲染字段" />
+                <template v-else>
+                  <a-form-item label="配置 JSON（Schema 不可用时可直接编辑）" style="margin-bottom: 0">
+                    <a-textarea
+                      v-model:value="editForm.configText"
+                      :rows="12"
+                      placeholder="请输入 JSON 对象配置"
+                    />
+                  </a-form-item>
+                </template>
               </a-card>
             </a-form>
           </template>
@@ -506,8 +514,6 @@ const currentSchemaError = computed(() => {
   }
   return schemaErrors.value[editForm.plugin] || ''
 })
-
-const canEditBySchema = computed(() => !currentSchemaError.value && activeSchemaEntries.value.length > 0)
 
 const filteredInstances = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
@@ -1029,9 +1035,6 @@ const resetEdit = () => {
 const submitEdit = async () => {
   submitting.value = true
   try {
-    if (!canEditBySchema.value) {
-      throw new Error('当前插件不可通过 schema 配置')
-    }
     const config = parseConfigText(editForm.configText)
     if (hasEnableSchema(editForm.plugin)) {
       config.enable = editForm.enabled
