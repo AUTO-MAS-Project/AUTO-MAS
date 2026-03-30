@@ -1488,9 +1488,6 @@ const handlePassCheckUser = async (user: User) => {
   border-radius: 12px;
   margin-bottom: 12px;
   cursor: pointer;
-  transition:
-    border-color 0.2s,
-    background-color 0.2s;
   background: var(--ant-color-bg-container);
   position: relative;
   overflow: hidden;
@@ -1499,7 +1496,6 @@ const handlePassCheckUser = async (user: User) => {
 .type-option:hover,
 .mode-option:hover {
   border-color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
 }
 
 .type-option:deep(.ant-radio-button-input:checked + .ant-radio-button-wrapper),
@@ -1547,7 +1543,6 @@ const handlePassCheckUser = async (user: User) => {
   justify-content: center;
   border-radius: 8px;
   background: var(--ant-color-primary-bg);
-  transition: background-color 0.2s;
   flex-shrink: 0;
 }
 
@@ -1642,9 +1637,6 @@ const handlePassCheckUser = async (user: User) => {
   padding: 16px;
   border-bottom: 1px solid var(--ant-color-border);
   cursor: pointer;
-  transition:
-    background-color 0.2s,
-    border-left-color 0.2s;
   background: var(--ant-color-bg-container);
   position: relative;
   border-left: 3px solid transparent;
@@ -1655,7 +1647,6 @@ const handlePassCheckUser = async (user: User) => {
 }
 
 .template-item:hover {
-  background: var(--ant-color-primary-bg);
   border-left-color: var(--ant-color-primary-hover);
 }
 
@@ -1811,9 +1802,6 @@ const handlePassCheckUser = async (user: User) => {
   padding: 16px;
   border-bottom: 1px solid var(--ant-color-border);
   cursor: pointer;
-  transition:
-    background-color 0.2s,
-    border-left-color 0.2s;
   background: var(--ant-color-bg-container);
   position: relative;
   border-left: 3px solid transparent;
@@ -1824,7 +1812,6 @@ const handlePassCheckUser = async (user: User) => {
 }
 
 .script-item:hover {
-  background: var(--ant-color-primary-bg);
   border-left-color: var(--ant-color-primary-hover);
 }
 
@@ -1874,7 +1861,6 @@ const handlePassCheckUser = async (user: User) => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: color 0.2s;
 }
 
 .script-meta {
