@@ -6,7 +6,7 @@
       @end="onScriptDragEnd">
       <template #item="{ element: script }">
         <div :key="script.id" class="script-wrapper">
-          <a-card :hoverable="true" class="script-card" :body-style="{ padding: '0' }">
+          <a-card :hoverable="false" class="script-card" :body-style="{ padding: '0' }">
             <!-- 脚本头部信息 -->
             <div class="script-header">
               <div class="script-info">
@@ -938,6 +938,7 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 
 .script-wrapper {
   width: 100%;
+  cursor: auto;
 }
 
 .script-ghost {
@@ -948,7 +949,7 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 }
 
 .script-chosen {
-  cursor: grabbing !important;
+  cursor: move !important;
 }
 
 .script-drag {
@@ -956,6 +957,11 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
   z-index: 1000;
   opacity: 1 !important;
+  cursor: all-scroll !important;
+}
+
+.script-drag * {
+  cursor: all-scroll !important;
 }
 
 .script-drag .script-card {
@@ -975,7 +981,7 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 }
 
 .user-chosen {
-  cursor: grabbing !important;
+  cursor: move !important;
   background: var(--ant-color-primary-bg) !important;
 }
 
@@ -985,6 +991,27 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   z-index: 999;
   background: var(--ant-color-bg-container) !important;
   opacity: 1 !important;
+  cursor: all-scroll !important;
+}
+
+.user-drag * {
+  cursor: all-scroll !important;
+}
+
+.script-drag .script-drag-handle {
+  cursor: grabbing !important;
+}
+
+.script-drag .script-drag-handle * {
+  cursor: grabbing !important;
+}
+
+.user-drag .user-drag-handle {
+  cursor: grabbing !important;
+}
+
+.user-drag .user-drag-handle * {
+  cursor: grabbing !important;
 }
 
 /* 拖拽时禁用某些交互 */
@@ -1004,7 +1031,6 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   border-radius: 16px;
   border: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-container);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
   height: 100%;
   display: flex;
@@ -1014,8 +1040,6 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 
 .script-card:hover {
   border-color: var(--ant-color-primary);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-  transform: translateY(-2px);
 }
 
 /* 脚本头部 */
@@ -1043,17 +1067,13 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   color: var(--ant-color-text-tertiary);
   background: transparent;
   border: none;
-  cursor: grab;
+  cursor: move;
   flex-shrink: 0;
   user-select: none;
 }
 
-.script-drag-handle:hover {
-  color: var(--ant-color-text-secondary);
-}
-
 .script-drag-handle:active {
-  cursor: grabbing;
+  cursor: move;
 }
 
 .script-drag-dots {
@@ -1064,10 +1084,6 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   background-size: 5px 5px;
   background-position: 0 0;
   opacity: 0.65;
-}
-
-.script-drag-handle:hover .script-drag-dots {
-  opacity: 0.85;
 }
 
 .script-logo-container {
@@ -1087,7 +1103,6 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   width: 36px;
   height: 36px;
   object-fit: contain;
-  transition: all 0.3s ease;
 }
 
 .script-details {
@@ -1121,13 +1136,7 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 .action-button {
   border-radius: 8px;
   font-weight: 500;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.action-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .add-button {
@@ -1158,7 +1167,6 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   gap: 12px;
   padding: 16px 20px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
-  transition: all 0.2s ease;
   min-height: 80px;
 }
 
@@ -1171,17 +1179,13 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   color: var(--ant-color-text-tertiary);
   background: transparent;
   border: none;
-  cursor: grab;
+  cursor: move;
   flex-shrink: 0;
   user-select: none;
 }
 
-.user-drag-handle:hover {
-  color: var(--ant-color-text-secondary);
-}
-
 .user-drag-handle:active {
-  cursor: grabbing;
+  cursor: move;
 }
 
 .user-drag-handle:hover .script-drag-dots {
@@ -1190,10 +1194,6 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 
 .user-item:last-child {
   border-bottom: none;
-}
-
-.user-item:hover {
-  background: var(--ant-color-bg-layout);
 }
 
 .user-info {
@@ -1282,26 +1282,14 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 .user-action-btn {
   border-radius: 6px;
   font-weight: 500;
-  transition: all 0.3s ease;
   min-width: 60px;
   border: 1px solid var(--ant-color-border);
   background: var(--ant-color-bg-container);
 }
 
-.user-action-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  border-color: var(--ant-color-primary);
-}
-
 .user-action-btn.ant-btn-dangerous {
   border-color: var(--ant-color-error);
   color: var(--ant-color-error);
-}
-
-.user-action-btn.ant-btn-dangerous:hover {
-  border-color: var(--ant-color-error-hover);
-  background: var(--ant-color-error-bg);
 }
 
 /* 空状态 */
@@ -1419,17 +1407,7 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   .clickable-tag {
     cursor: pointer;
     user-select: none;
-    transition: all 0.2s ease;
     border: 1px solid rgba(0, 0, 0, 0.15);
-  }
-
-  .clickable-tag:hover {
-    transform: scale(1.05);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  }
-
-  .clickable-tag:active {
-    transform: scale(0.95);
   }
 }
 </style>
