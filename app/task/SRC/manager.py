@@ -191,7 +191,7 @@ class SrcManager(TaskExecuteBase):
 
         if self.check_result != "Pass":
             self.script_info.status = "异常"
-            return self.check_result
+            return
 
         logger.info("SRC 主任务已结束, 开始执行后续操作")
         await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()

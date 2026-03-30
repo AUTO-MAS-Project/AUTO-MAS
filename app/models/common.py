@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import calendar
 import uuid
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, cast
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -17,7 +17,7 @@ from app.core.config.types import (
 )
 
 
-DAY_NAMES = tuple(calendar.day_name)
+DAY_NAMES: tuple[str, ...] = tuple(calendar.day_name)
 EMULATOR_TYPES = Literal["general", "mumu", "ldplayer"]
 AFTER_ACCOMPLISH_OPTIONS = Literal[
     "NoAction",
@@ -113,10 +113,12 @@ class TimeSet(PydanticConfigBase):
         def _validate_days(cls, value: Any) -> list[str]:
             if not isinstance(value, list):
                 return []
-            days: list[str] = [item for item in value if isinstance(item, str)]
+            raw_days = cast(list[object], value)
+            days: list[str] = [item for item in raw_days if isinstance(item, str)]
             return (
                 days
-                if len(days) == len(value) and all(item in DAY_NAMES for item in days)
+                if len(days) == len(raw_days)
+                and all(item in DAY_NAMES for item in days)
                 else []
             )
 
