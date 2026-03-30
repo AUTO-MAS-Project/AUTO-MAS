@@ -4,11 +4,12 @@ import json
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, ClassVar, Callable, Literal
+from typing import Annotated, Any, ClassVar, Callable, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.config.base import MultipleConfig
+from app.core.config.fields import RefField, VirtualField
 from app.core.config.pydantic import PydanticConfigBase
 from app.core.config.types import EncryptedString, JsonDictString
 from app.utils.constants import MAA_STAGE_KEY, RESOURCE_STAGE_INFO, UTC4, UTC8
@@ -33,7 +34,15 @@ class MaaUserConfig(PydanticConfigBase):
         Id: str = ""
         Password: EncryptedString = ""
         Mode: Literal["简洁", "详细"] = "简洁"
-        StageMode: str = "Fixed"
+        StageMode: Annotated[
+            str,
+            RefField(
+                "PlanConfig",
+                default="Fixed",
+                allow_values=("Fixed",),
+                on_delete="set_default",
+            ),
+        ] = "Fixed"
         Server: Literal[
             "Official", "Bilibili", "YoStarEN", "YoStarJP", "YoStarKR", "txwy"
         ] = "Official"
@@ -47,8 +56,24 @@ class MaaUserConfig(PydanticConfigBase):
             "LungmenDowntown@Annihilation",
         ] = "Annihilation"
         InfrastMode: Literal["Normal", "Rotation", "Custom"] = "Normal"
-        InfrastName: str = "-"
-        InfrastIndex: str = "-"
+        InfrastName: Annotated[
+            str,
+            VirtualField(
+                "getInfrastName",
+                depends_on=(("Info", "InfrastMode"), ("Data", "CustomInfrast")),
+            ),
+        ] = "-"
+        InfrastIndex: Annotated[
+            str,
+            VirtualField(
+                "getInfrastIndex",
+                depends_on=(
+                    ("Info", "InfrastMode"),
+                    ("Data", "CustomInfrast"),
+                    ("Data", "InfrastIndex"),
+                ),
+            ),
+        ] = "-"
         Notes: str = "无"
         MedicineNumb: int = Field(default=0, ge=0, le=9999)
         SeriesNumb: Literal["0", "6", "5", "4", "3", "2", "1", "-1"] = "0"
@@ -59,7 +84,31 @@ class MaaUserConfig(PydanticConfigBase):
         Stage_Remain: str = "-"
         IfSkland: bool = False
         SklandToken: EncryptedString = ""
-        Tag: str = "[ ]"
+        Tag: Annotated[
+            str,
+            VirtualField(
+                "getTags",
+                depends_on=(
+                    ("Data", "IfPassCheck"),
+                    ("Data", "LastProxyDate"),
+                    ("Data", "ProxyTimes"),
+                    ("Info", "IfSkland"),
+                    ("Data", "LastSklandDate"),
+                    ("Info", "RemainedDay"),
+                    ("Task", "IfInfrast"),
+                    ("Info", "InfrastMode"),
+                    ("Data", "CustomInfrast"),
+                    ("Data", "InfrastIndex"),
+                    ("Info", "StageMode"),
+                    ("Info", "Stage"),
+                    ("Info", "Stage_1"),
+                    ("Info", "Stage_2"),
+                    ("Info", "Stage_3"),
+                    ("Info", "Stage_Remain"),
+                    ("Info", "Notes"),
+                ),
+            ),
+        ] = "[ ]"
 
     class DataModel(BaseModel):
         LastProxyDate: str = "2000-01-01"
@@ -110,52 +159,6 @@ class MaaUserConfig(PydanticConfigBase):
     def __init__(self, **data: Any):
         super().__init__(**data)
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
-
-    def _normalize_value(self, group: str, name: str, value: Any) -> Any:
-        value = super()._normalize_value(group, name, value)
-
-        if (group, name) == ("Info", "StageMode"):
-            if value == "Fixed":
-                return "Fixed"
-            if not isinstance(value, str):
-                return "Fixed"
-            try:
-                uid = uuid.UUID(value)
-            except (TypeError, ValueError):
-                return "Fixed"
-            plan_config = self.related_config.get("PlanConfig")
-            if plan_config is None or uid not in plan_config:
-                return "Fixed"
-            return str(uid)
-
-        if (group, name) == ("Info", "InfrastName"):
-            return self.getInfrastName()
-        if (group, name) == ("Info", "InfrastIndex"):
-            return self.getInfrastIndex()
-        if (group, name) == ("Info", "Tag"):
-            return self.getTags()
-
-        return value
-
-    def get(self, group: str, name: str) -> Any:
-        if (group, name) == ("Info", "InfrastName"):
-            return self.getInfrastName()
-        if (group, name) == ("Info", "InfrastIndex"):
-            return self.getInfrastIndex()
-        if (group, name) == ("Info", "Tag"):
-            return self.getTags()
-        return super().get(group, name)
-
-    async def toDict(
-        self, if_decrypt: bool = True, regenerate_uuids: bool = False
-    ) -> dict[str, Any]:
-        data = await super().toDict(if_decrypt, regenerate_uuids)
-        info = data.get("Info")
-        if isinstance(info, dict):
-            info["InfrastName"] = self.getInfrastName()
-            info["InfrastIndex"] = self.getInfrastIndex()
-            info["Tag"] = self.getTags()
-        return data
 
     def getInfrastName(self) -> str:  # noqa: N802
         if self.get("Info", "InfrastMode") != "Custom":
@@ -334,7 +337,15 @@ class MaaConfig(PydanticConfigBase):
         Path: str = str(Path.cwd())
 
     class EmulatorModel(BaseModel):
-        Id: str = "-"
+        Id: Annotated[
+            str,
+            RefField(
+                "EmulatorConfig",
+                default="-",
+                allow_values=("-",),
+                on_delete="set_default",
+            ),
+        ] = "-"
         Index: str = "-"
 
     class RunModel(BaseModel):
@@ -354,27 +365,6 @@ class MaaConfig(PydanticConfigBase):
     def __init__(self, **data: Any):
         super().__init__(**data)
         self.UserData = MultipleConfig([MaaUserConfig])
-
-    def _normalize_value(self, group: str, name: str, value: Any) -> Any:
-        value = super()._normalize_value(group, name, value)
-
-        if (group, name) != ("Emulator", "Id"):
-            return value
-
-        if value == "-":
-            return "-"
-        if not isinstance(value, str):
-            return "-"
-        try:
-            uid = uuid.UUID(value)
-        except (TypeError, ValueError):
-            return "-"
-
-        emulator_config = self.related_config.get("EmulatorConfig")
-        if emulator_config is None or uid not in emulator_config:
-            return "-"
-
-        return str(uid)
 
 
 class MaaPlanConfig(PydanticConfigBase):

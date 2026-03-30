@@ -636,9 +636,7 @@ class AppConfig(GlobalConfig):
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.ScriptConfig[uid].set(group, name, value)
+        await self.ScriptConfig[uid].set_many(data)
 
     async def del_script(self, script_id: str) -> None:
         """删除脚本配置"""
@@ -649,12 +647,6 @@ class AppConfig(GlobalConfig):
 
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法删除")
-
-        # 删除脚本相关的队列项
-        for queue in self.QueueConfig.values():
-            for key, value in queue.QueueItem.items():
-                if value.get("Info", "ScriptId") == str(uid):
-                    await queue.QueueItem.remove(key)
 
         await self.ScriptConfig.remove(uid)
         if (Path.cwd() / f"data/{uid}").exists():
@@ -884,13 +876,7 @@ class AppConfig(GlobalConfig):
         script_uid = uuid.UUID(script_id)
         user_uid = uuid.UUID(user_id)
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await (
-                    self.ScriptConfig[script_uid]
-                    .UserData[user_uid]
-                    .set(group, name, value)
-                )
+        await self.ScriptConfig[script_uid].UserData[user_uid].set_many(data)
 
     async def del_user(self, script_id: str, user_id: str) -> None:
         """删除用户配置"""
@@ -1004,9 +990,7 @@ class AppConfig(GlobalConfig):
 
         plan_uid = uuid.UUID(plan_id)
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.PlanConfig[plan_uid].set(group, name, value)
+        await self.PlanConfig[plan_uid].set_many(data)
 
     async def del_plan(self, plan_id: str) -> None:
         """删除计划表配置"""
@@ -1014,21 +998,6 @@ class AppConfig(GlobalConfig):
         logger.info(f"删除计划表配置: {plan_id}")
 
         plan_uid = uuid.UUID(plan_id)
-
-        user_list = []
-
-        for script in self.ScriptConfig.values():
-            if isinstance(script, MaaConfig):
-                for user in script.UserData.values():
-                    if user.get("Info", "StageMode") == str(plan_uid):
-                        if user.is_locked:
-                            raise RuntimeError(
-                                f"用户 {user.get('Info','Name')} 正在使用此计划表且被锁定, 无法完成删除"
-                            )
-                        user_list.append(user)
-
-        for user in user_list:
-            await user.set("Info", "StageMode", "Fixed")
 
         await self.PlanConfig.remove(plan_uid)
 
@@ -1069,9 +1038,7 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"更新模拟器配置: {emulator_id}")
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.EmulatorConfig[emulator_uid].set(group, name, value)
+        await self.EmulatorConfig[emulator_uid].set_many(data)
 
     async def del_emulator(self, emulator_id: str) -> None:
         """删除模拟器配置"""
@@ -1079,32 +1046,6 @@ class AppConfig(GlobalConfig):
         emulator_uid = uuid.UUID(emulator_id)
 
         logger.info(f"删除全局模拟器配置: {emulator_id}")
-
-        script_list = []
-
-        for script in self.ScriptConfig.values():
-            if isinstance(script, MaaConfig):
-                if script.get("Emulator", "Id") == str(emulator_id):
-                    if script.is_locked:
-                        raise RuntimeError(
-                            f"脚本 {script.get('Info','Name')} 正在使用此模拟器且被锁定, 无法完成删除"
-                        )
-                    script_list.append(script)
-            elif isinstance(script, GeneralConfig):
-                if script.get("Game", "Type") == "Emulator" and script.get(
-                    "Game", "EmulatorId"
-                ) == str(emulator_id):
-                    if script.is_locked:
-                        raise RuntimeError(
-                            f"脚本 {script.get('Info','Name')} 正在使用此模拟器且被锁定, 无法完成删除"
-                        )
-                    script_list.append(script)
-
-        for script in script_list:
-            if isinstance(script, MaaConfig):
-                await script.set("Emulator", "Id", "-")
-            elif isinstance(script, GeneralConfig):
-                await script.set("Game", "EmulatorId", "-")
 
         await self.EmulatorConfig.remove(emulator_uid)
 
@@ -1146,9 +1087,7 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.QueueConfig[queue_uid].set(group, name, value)
+        await self.QueueConfig[queue_uid].set_many(data)
 
     async def del_queue(self, queue_id: str) -> None:
         """删除调度队列配置"""
@@ -1201,13 +1140,7 @@ class AppConfig(GlobalConfig):
         queue_uid = uuid.UUID(queue_id)
         time_set_uid = uuid.UUID(time_set_id)
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await (
-                    self.QueueConfig[queue_uid]
-                    .TimeSet[time_set_uid]
-                    .set(group, name, value)
-                )
+        await self.QueueConfig[queue_uid].TimeSet[time_set_uid].set_many(data)
 
     async def del_time_set(self, queue_id: str, time_set_id: str) -> None:
         """删除时间设置配置"""
@@ -1270,13 +1203,7 @@ class AppConfig(GlobalConfig):
         queue_uid = uuid.UUID(queue_id)
         queue_item_uid = uuid.UUID(queue_item_id)
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await (
-                    self.QueueConfig[queue_uid]
-                    .QueueItem[queue_item_uid]
-                    .set(group, name, value)
-                )
+        await self.QueueConfig[queue_uid].QueueItem[queue_item_uid].set_many(data)
 
     async def del_queue_item(self, queue_id: str, queue_item_id: str) -> None:
         """删除队列项配置"""
@@ -1311,9 +1238,7 @@ class AppConfig(GlobalConfig):
 
         logger.info("更新工具设置")
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.ToolsConfig.set(group, name, value)
+        await self.ToolsConfig.set_many(data)
 
         logger.success("工具设置更新成功")
 
@@ -1329,9 +1254,7 @@ class AppConfig(GlobalConfig):
 
         logger.info("更新全局设置")
 
-        for group, items in data.items():
-            for name, value in items.items():
-                await self.set(group, name, value)
+        await self.set_many(data)
 
         logger.success("全局设置更新成功")
 
@@ -1411,11 +1334,7 @@ class AppConfig(GlobalConfig):
         if script_id is None and user_id is None:
             logger.info(f"更新 webhook 全局配置: {webhook_id}")
 
-            for group, items in data.items():
-                for name, value in items.items():
-                    await self.Notify_CustomWebhooks[webhook_uid].set(
-                        group, name, value
-                    )
+            await self.Notify_CustomWebhooks[webhook_uid].set_many(data)
 
         else:
             logger.info(f"更新 webhook 配置: {script_id} - {user_id} - {webhook_id}")
@@ -1423,14 +1342,12 @@ class AppConfig(GlobalConfig):
             script_uid = uuid.UUID(script_id)
             user_uid = uuid.UUID(user_id)
 
-            for group, items in data.items():
-                for name, value in items.items():
-                    await (
-                        self.ScriptConfig[script_uid]
-                        .UserData[user_uid]
-                        .Notify_CustomWebhooks[webhook_uid]
-                        .set(group, name, value)
-                    )
+            await (
+                self.ScriptConfig[script_uid]
+                .UserData[user_uid]
+                .Notify_CustomWebhooks[webhook_uid]
+                .set_many(data)
+            )
 
     async def del_webhook(
         self, script_id: Optional[str], user_id: Optional[str], webhook_id: str

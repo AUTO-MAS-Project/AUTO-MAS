@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import calendar
-import uuid
-from typing import Any, ClassVar, Literal, cast
+from typing import Annotated, Any, ClassVar, Literal, cast
 
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.config.base import MultipleConfig
+from app.core.config.fields import RefField
 from app.core.config.pydantic import PydanticConfigBase
 from app.core.config.types import (
     HHMMString,
@@ -73,31 +73,17 @@ class QueueItem(PydanticConfigBase):
     related_config: ClassVar[dict[str, MultipleConfig[Any]]] = {}
 
     class InfoModel(BaseModel):
-        ScriptId: str = "-"
+        ScriptId: Annotated[
+            str,
+            RefField(
+                "ScriptConfig",
+                default="-",
+                allow_values=("-",),
+                on_delete="cascade",
+            ),
+        ] = "-"
 
     Info: InfoModel = Field(default_factory=InfoModel)
-
-    def _normalize_value(self, group: str, name: str, value: Any) -> Any:
-        value = super()._normalize_value(group, name, value)
-
-        if (group, name) != ("Info", "ScriptId"):
-            return value
-
-        if value == "-":
-            return "-"
-        if not isinstance(value, str):
-            return "-"
-
-        try:
-            uid = uuid.UUID(value)
-        except (TypeError, ValueError):
-            return "-"
-
-        script_config = self.related_config.get("ScriptConfig")
-        if script_config is None or uid not in script_config:
-            return "-"
-
-        return str(uid)
 
 
 class TimeSet(PydanticConfigBase):

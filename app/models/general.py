@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import json
-import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Annotated, Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 from app.utils.constants import UTC4
 from app.core.config.base import MultipleConfig
+from app.core.config.fields import RefField, VirtualField
 from app.core.config.pydantic import PydanticConfigBase
 from app.core.config.types import UrlString
 from .common import Webhook
@@ -27,7 +27,18 @@ class GeneralUserConfig(PydanticConfigBase):
         IfScriptAfterTask: bool = False
         ScriptAfterTask: str = str(Path.cwd())
         Notes: str = "无"
-        Tag: str = "[ ]"
+        Tag: Annotated[
+            str,
+            VirtualField(
+                "getTags",
+                depends_on=(
+                    ("Data", "LastProxyDate"),
+                    ("Data", "ProxyTimes"),
+                    ("Info", "RemainedDay"),
+                    ("Info", "Notes"),
+                ),
+            ),
+        ] = "[ ]"
 
     class DataModel(BaseModel):
         LastProxyDate: str = "2000-01-01"
@@ -58,26 +69,6 @@ class GeneralUserConfig(PydanticConfigBase):
     def __init__(self, **data: Any):
         super().__init__(**data)
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
-
-    def _normalize_value(self, group: str, name: str, value: Any) -> Any:
-        value = super()._normalize_value(group, name, value)
-        if (group, name) == ("Info", "Tag"):
-            return self.getTags()
-        return value
-
-    def get(self, group: str, name: str) -> Any:
-        if (group, name) == ("Info", "Tag"):
-            return self.getTags()
-        return super().get(group, name)
-
-    async def toDict(
-        self, if_decrypt: bool = True, regenerate_uuids: bool = False
-    ) -> dict[str, Any]:
-        data = await super().toDict(if_decrypt, regenerate_uuids)
-        info = data.get("Info")
-        if isinstance(info, dict):
-            info["Tag"] = self.getTags()
-        return data
 
     def getTags(self) -> str:  # noqa: N802
         """生成通用用户标签列表"""
@@ -167,7 +158,15 @@ class GeneralConfig(PydanticConfigBase):
         Arguments: str = ""
         WaitTime: int = Field(default=0, ge=0, le=9999)
         IfForceClose: bool = False
-        EmulatorId: str = "-"
+        EmulatorId: Annotated[
+            str,
+            RefField(
+                "EmulatorConfig",
+                default="-",
+                allow_values=("-",),
+                on_delete="set_default",
+            ),
+        ] = "-"
         EmulatorIndex: str = "-"
 
     class RunModel(BaseModel):
@@ -183,27 +182,6 @@ class GeneralConfig(PydanticConfigBase):
     def __init__(self, **data: Any):
         super().__init__(**data)
         self.UserData = MultipleConfig([GeneralUserConfig])
-
-    def _normalize_value(self, group: str, name: str, value: Any) -> Any:
-        value = super()._normalize_value(group, name, value)
-
-        if (group, name) != ("Game", "EmulatorId"):
-            return value
-
-        if value == "-":
-            return "-"
-        if not isinstance(value, str):
-            return "-"
-        try:
-            uid = uuid.UUID(value)
-        except (TypeError, ValueError):
-            return "-"
-
-        emulator_config = self.related_config.get("EmulatorConfig")
-        if emulator_config is None or uid not in emulator_config:
-            return "-"
-
-        return str(uid)
 
 
 __all__ = ["GeneralUserConfig", "GeneralConfig"]

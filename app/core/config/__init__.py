@@ -1,4 +1,11 @@
-from .base import MultipleConfig, dump_toml
+from .base import (
+    MultipleConfig,
+    MultipleConfigAddEvent,
+    MultipleConfigDeleteEvent,
+    MultipleConfigReorderEvent,
+    dump_toml,
+)
+from .fields import RefField, VirtualField
 from .manager import AppConfig, Config
 from .pydantic import PydanticConfigBase
 from .types import (
@@ -16,7 +23,12 @@ from .types import (
 
 __all__ = [
     "MultipleConfig",
+    "MultipleConfigAddEvent",
+    "MultipleConfigDeleteEvent",
+    "MultipleConfigReorderEvent",
     "dump_toml",
+    "RefField",
+    "VirtualField",
     "PydanticConfigBase",
     "JsonDictString",
     "JsonListString",
