@@ -14,6 +14,7 @@ from .base import (
     dump_toml,
     load_config_with_legacy_migration,
 )
+from .types import _EncryptedFieldMarker, decrypt_encrypted_string
 
 
 SaveMethod = Callable[[], Coroutine[Any, Any, None]]
@@ -35,6 +36,36 @@ def _normalize_mapping(value: Any) -> dict[str, Any]:
         return {}
     mapping = cast(dict[object, Any], value)
     return {str(key): item for key, item in mapping.items()}
+
+
+def _is_encrypted_field(group_model: BaseModel, field_name: str) -> bool:
+    """判断字段是否为对外需要自动解密的字符串字段。"""
+
+    field = type(group_model).model_fields.get(field_name)
+    if field is None:
+        return False
+    return any(isinstance(item, _EncryptedFieldMarker) for item in field.metadata)
+
+
+def _export_group_model(group_model: BaseModel, if_decrypt: bool) -> dict[str, Any]:
+    """将分组模型导出为字典，并按需解密加密字段。"""
+
+    data: dict[str, Any] = {}
+
+    for field_name in type(group_model).model_fields:
+        value = getattr(group_model, field_name)
+
+        if isinstance(value, BaseModel):
+            data[field_name] = _export_group_model(value, if_decrypt)
+            continue
+
+        if if_decrypt and _is_encrypted_field(group_model, field_name):
+            data[field_name] = decrypt_encrypted_string(str(value))
+            continue
+
+        data[field_name] = value
+
+    return data
 
 
 class PydanticConfigBase(BaseModel):
@@ -155,7 +186,7 @@ class PydanticConfigBase(BaseModel):
         data: dict[str, Any] = {}
 
         for group_name, group_model in self._group_index().items():
-            data[group_name] = group_model.model_dump(mode="python")
+            data[group_name] = _export_group_model(group_model, if_decrypt)
 
         for name, item in self._multiple_config_index().items():
             if "SubConfigsInfo" not in data:
@@ -170,7 +201,11 @@ class PydanticConfigBase(BaseModel):
         group_model = self._group_index().get(group)
         if group_model is None or not hasattr(group_model, name):
             raise AttributeError(f"配置项 '{group}.{name}' 不存在")
-        return getattr(group_model, name)
+
+        value = getattr(group_model, name)
+        if _is_encrypted_field(group_model, name):
+            return decrypt_encrypted_string(str(value))
+        return value
 
     async def set(self, group: str, name: str, value: Any) -> None:
         group_model = self._group_index().get(group)

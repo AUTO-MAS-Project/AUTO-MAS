@@ -22,44 +22,19 @@
 
 
 from __future__ import annotations
-# pyright: reportMissingParameterType=false, reportUnknownParameterType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownLambdaType=false, reportDeprecated=false, reportInvalidTypeForm=false, reportGeneralTypeIssues=false
-import os
+
+import asyncio
 import json
 import tomllib
 import uuid
-import shlex
-import inspect
-import asyncio
-import pyautogui
-import win32com.client
-from copy import deepcopy
-from urllib.parse import urlparse
-from datetime import datetime
 from contextlib import suppress
-from abc import ABC, abstractmethod
 from pathlib import Path
 from collections.abc import Callable, Coroutine
-from typing import Any, Protocol, TypeVar, Generic
-
-from app.utils import get_logger, dpapi_encrypt, dpapi_decrypt
-from app.utils.constants import (
-    RESERVED_NAMES,
-    ILLEGAL_CHARS,
-    DEFAULT_DATETIME,
-    EMULATOR_PATH_BOOK,
-)
-
-logger = get_logger("配置基类")
+from typing import Any, Generic, Protocol, TypeVar
 
 
 PRIMARY_CONFIG_SUFFIX = ".toml"
 LEGACY_CONFIG_SUFFIX = ".json"
-
-
-def dump_json(data: dict[str, Any]) -> str:
-    """公共 JSON 序列化入口。"""
-
-    return json.dumps(data, ensure_ascii=False, indent=4)
 
 
 def _toml_key(key: str) -> str:
@@ -150,7 +125,8 @@ def _load_toml_config(path: Path) -> dict[str, Any]:
     if raw_text.strip() == "":
         return {}
 
-    return tomllib.loads(raw_text)
+    loaded = tomllib.loads(raw_text)
+    return loaded if isinstance(loaded, dict) else {}
 
 
 def _load_config_with_legacy_migration(path: Path) -> tuple[dict[str, Any], Path | None]:
@@ -203,985 +179,6 @@ def backup_legacy_config_if_needed(
     _backup_legacy_config_if_needed(current_file, legacy_file)
 
 
-class ValidatorBase(ABC):
-    """基础配置验证器"""
-
-    @abstractmethod
-    def validate(self, value: Any) -> bool:
-        """验证值是否合法"""
-        pass
-
-    @abstractmethod
-    def correct(self, value: Any) -> Any:
-        """修正非法值"""
-        pass
-
-
-class StringValidator(ValidatorBase):
-    """字符串验证器"""
-
-    def validate(self, value):
-        return isinstance(value, str)
-
-    def correct(self, value):
-        return value if self.validate(value) else ""
-
-
-class RangeValidator(ValidatorBase):
-    """范围验证器"""
-
-    def __init__(self, min: int | float, max: int | float):
-        self.min = min
-        self.max = max
-        self.range = (min, max)
-
-    def validate(self, value):
-        if not isinstance(value, (int, float)):
-            return False
-        return self.min <= value <= self.max
-
-    def correct(self, value):
-        if not isinstance(value, (int, float)):
-            try:
-                value = float(value)
-            except TypeError:
-                return self.min
-        return min(max(self.min, value), self.max)
-
-
-class OptionsValidator(ValidatorBase):
-    """选项验证器"""
-
-    def __init__(self, options: list[Any]):
-        if not options:
-            raise ValueError("可选项不能为空")
-
-        self.options = options
-
-    def validate(self, value):
-        return value in self.options
-
-    def correct(self, value):
-        return value if self.validate(value) else self.options[0]
-
-
-class MultipleOptionsValidator(ValidatorBase):
-    """多选选项验证器"""
-
-    def __init__(self, options: list[Any]):
-        if not options:
-            raise ValueError("可选项不能为空")
-
-        self.options = options
-
-    def validate(self, value):
-        if not isinstance(value, list):
-            return False
-
-        return all(item in self.options for item in value)
-
-    def correct(self, value):
-        return value if self.validate(value) else []
-
-
-class UUIDValidator(ValidatorBase):
-    """UUID验证器"""
-
-    def validate(self, value):
-        try:
-            uuid.UUID(value)
-            return True
-        except (TypeError, ValueError):
-            return False
-
-    def correct(self, value):
-        return value if self.validate(value) else str(uuid.uuid4())
-
-
-class MultipleUIDValidator(ValidatorBase):
-    """多配置管理类UID验证器"""
-
-    def __init__(
-        self,
-        default: Any,
-        related_config: dict[str, "MultipleConfig[Any]"],
-        config_name: str,
-    ):
-        self.default = default
-        self.related_config = related_config
-        self.config_name = config_name
-
-    def validate(self, value):
-        if value == self.default:
-            return True
-        if not isinstance(value, str):
-            return False
-        try:
-            uid = uuid.UUID(value)
-        except (TypeError, ValueError):
-            return False
-        if uid in self.related_config.get(self.config_name, {}):
-            return True
-        return False
-
-    def correct(self, value):
-        if self.validate(value):
-            return value
-        return self.default
-
-
-class DateTimeValidator(ValidatorBase):
-    """日期时间验证器"""
-
-    def __init__(self, date_format: str) -> None:
-        if not date_format:
-            raise ValueError("日期时间格式不能为空")
-        self.date_format = date_format
-
-    def validate(self, value):
-        if not isinstance(value, str):
-            return False
-        try:
-            datetime.strptime(value, self.date_format)
-            return True
-        except ValueError:
-            return False
-
-    def correct(self, value):
-        if not isinstance(value, str):
-            return DEFAULT_DATETIME.strftime(self.date_format)
-        try:
-            datetime.strptime(value, self.date_format)
-            return value
-        except ValueError:
-            return DEFAULT_DATETIME.strftime(self.date_format)
-
-
-class JSONValidator(ValidatorBase):
-    def __init__(
-        self, tpye: type[dict[str, Any]] | type[list[Any]] = dict
-    ) -> None:
-        self.type = tpye
-
-    def validate(self, value):
-        if not isinstance(value, str):
-            return False
-        try:
-            data = json.loads(value)
-            if isinstance(data, self.type):
-                return True
-            else:
-                return False
-        except json.JSONDecodeError:
-            return False
-
-    def correct(self, value):
-        return (
-            value if self.validate(value) else ("{ }" if self.type is dict else "[ ]")
-        )
-
-
-class EncryptValidator(ValidatorBase):
-    """加密数据验证器"""
-
-    def validate(self, value):
-        if not isinstance(value, str):
-            return False
-        try:
-            dpapi_decrypt(value)
-            return True
-        except Exception:
-            return False
-
-    def correct(self, value: Any) -> Any:
-        return value if self.validate(value) else dpapi_encrypt("数据损坏, 请重新设置")
-
-
-class VirtualConfigValidator(ValidatorBase):
-    """虚拟配置验证器"""
-
-    def __init__(self, function: Callable[[], str]):
-        self.function = function
-        self.if_init = False
-
-    def validate(self, value):
-        if not self.if_init:
-            self.if_init = True
-            return True
-        return False
-
-    def correct(self, value):
-        try:
-            return self.function()
-        except Exception as e:
-            return str(e)
-
-
-class BoolValidator(ValidatorBase):
-    """布尔值验证器"""
-
-    def validate(self, value):
-        if not isinstance(value, bool):
-            return False
-        return True
-
-    def correct(self, value):
-        return value if self.validate(value) else False
-
-
-class FileValidator(ValidatorBase):
-    """文件路径验证器"""
-
-    def validate(self, value):
-        if not isinstance(value, str):
-            return False
-        # 允许空字符串(表示未设置路径)
-        if value == "":
-            return True
-        if not Path(value).is_absolute():
-            return False
-        if Path(value).suffix == ".lnk":
-            return False
-        return True
-
-    def correct(self, value):
-        if not isinstance(value, str):
-            value = str(Path.cwd())
-        # 空字符串直接返回
-        if value == "":
-            return ""
-        if "%APPDATA%" in value:
-            value = value.replace("%APPDATA%", os.getenv("APPDATA") or "")
-        if not Path(value).is_absolute():
-            value = Path(value).resolve().as_posix()
-        if Path(value).suffix == ".lnk":
-            try:
-                shell = win32com.client.Dispatch("WScript.Shell")
-                shortcut = shell.CreateShortcut(value)
-                value = shortcut.TargetPath
-            except Exception:
-                pass
-        return Path(value).resolve().as_posix()
-
-
-class FolderValidator(ValidatorBase):
-    """文件夹路径验证器"""
-
-    def validate(self, value):
-        if not isinstance(value, str):
-            return False
-        if not Path(value).is_absolute():
-            return False
-        if not Path(value).is_dir():
-            return False
-        return True
-
-    def correct(self, value):
-        if not isinstance(value, str):
-            value = str(Path.cwd())
-        if "%APPDATA%" in value:
-            value = value.replace("%APPDATA%", os.getenv("APPDATA") or "")
-        if not Path(value).is_dir():
-            value = Path(value).with_suffix("")
-        return Path(value).resolve().as_posix()
-
-
-class EmulatorPathValidator(FileValidator):
-    """模拟器管理器路径验证器"""
-
-    def __init__(self, emulator_type: ConfigItem) -> None:
-        super().__init__()
-
-        self.emulator_type = emulator_type
-
-    def validate(self, value):
-        if not isinstance(value, str):
-            return False
-        # 允许空字符串(表示未设置路径)
-        if value == "":
-            return True
-        if not Path(value).is_absolute():
-            return False
-        if Path(value).suffix == ".lnk":
-            return False
-
-        path = Path(value)
-
-        if not path.is_file() or not os.access(path, os.X_OK):
-            return False
-
-        if (
-            self.emulator_type.getValue() in EMULATOR_PATH_BOOK
-            and path.name
-            != EMULATOR_PATH_BOOK[self.emulator_type.getValue()]["executables"][0]
-        ):
-            return False
-
-        return True
-
-    def correct(self, value):
-
-        if not isinstance(value, str):
-            value = str(Path.cwd())
-        # 空字符串直接返回
-        if value == "":
-            return ""
-        if "%APPDATA%" in value:
-            value = value.replace("%APPDATA%", os.getenv("APPDATA") or "")
-        if not Path(value).is_absolute():
-            value = Path(value).resolve().as_posix()
-        if Path(value).suffix == ".lnk":
-            try:
-                shell = win32com.client.Dispatch("WScript.Shell")
-                shortcut = shell.CreateShortcut(value)
-                value = shortcut.TargetPath
-            except Exception:
-                pass
-
-        # 不支持矫正的模拟器类型直接返回路径字符串
-        if self.emulator_type.getValue() not in EMULATOR_PATH_BOOK:
-            return Path(value).resolve().as_posix()
-
-        try:
-            # 从给定路径向上或向下搜索模拟器主管理器程序的完整路径
-            path = Path(value)
-
-            # 获取模拟器配置信息
-            config = EMULATOR_PATH_BOOK[self.emulator_type.getValue()]
-            executables = config["executables"]
-
-            # 第一个可执行文件是主管理器程序（优先级最高）
-            primary_exe = executables[0]
-
-            # 如果输入的是文件,先获取其父目录
-            if path.is_file():
-                path = path.parent
-
-            # 1. 首先检查当前目录是否直接包含主管理器程序
-            # 如果用户给的就是正确的主程序路径，直接返回
-            primary_exe_path = path / primary_exe
-            if primary_exe_path.exists():
-                result = str(primary_exe_path)
-                return result
-
-            # 2. 向上搜索父目录，找到直接包含主管理器程序的目录（最多3层）
-            candidates = []
-            current = path
-            for level in range(3):
-                parent = current.parent
-                if parent == current:  # 已到达根目录
-                    break
-
-                # 只接受直接包含主管理器程序的目录
-                parent_exe_path = parent / primary_exe
-                if parent_exe_path.exists():
-                    candidates.append(
-                        {
-                            "path": parent,
-                            "exe_path": parent_exe_path,
-                            "depth": len(parent.parts),
-                            "level": level + 1,
-                        }
-                    )
-
-                current = parent
-
-            # 如果找到了候选目录，选择最优的（深度最小的，即最接近根目录的）
-            if candidates:
-                # 排序策略：深度越小越好（越靠近根目录）
-                candidates.sort(key=lambda x: x["depth"])
-
-                best_candidate = candidates[0]
-                result = str(best_candidate["exe_path"])
-
-                return result
-
-            # 3. 如果向上没找到，尝试向下搜索子目录（仅1层，且必须直接包含主管理器程序）
-            try:
-                for subdir in path.iterdir():
-                    if subdir.is_dir():
-                        subdir_exe_path = subdir / primary_exe
-                        # 只接受直接包含主管理器程序的子目录
-                        if subdir_exe_path.exists():
-                            result = str(subdir_exe_path)
-                            return result
-            except PermissionError:
-                pass
-
-            # 4. 检查兄弟目录（必须直接包含主管理器程序）
-            if path.parent != path:
-                try:
-                    for sibling in path.parent.iterdir():
-                        if sibling.is_dir() and sibling != path:
-                            sibling_exe_path = sibling / primary_exe
-                            # 只接受直接包含主管理器程序的兄弟目录
-                            if sibling_exe_path.exists():
-                                result = str(sibling_exe_path)
-                                return result
-                except PermissionError:
-                    pass
-
-            return Path(value).resolve().as_posix()
-        except Exception:
-            return Path(value).resolve().as_posix()
-
-
-class UserNameValidator(ValidatorBase):
-    """用户名验证器"""
-
-    def validate(self, value):
-        if not isinstance(value, str):
-            return False
-
-        if not value or not value.strip():
-            return False
-
-        if value != value.strip() or value != value.strip("."):
-            return False
-
-        if any(char in ILLEGAL_CHARS for char in value):
-            return False
-
-        if value.upper() in RESERVED_NAMES:
-            return False
-        if len(value) > 255:
-            return False
-
-        return True
-
-    def correct(self, value):
-        if not isinstance(value, str):
-            value = "默认用户名"
-
-        value = value.strip().strip(".")
-
-        value = "".join(char for char in value if char not in ILLEGAL_CHARS)
-
-        if value.upper() in RESERVED_NAMES or not value:
-            value = "默认用户名"
-
-        if len(value) > 255:
-            value = value[:255]
-
-        return value
-
-
-class KeyValidator(ValidatorBase):
-    """键盘按键格式验证器"""
-
-    def __init__(self, default: str = ""):
-        self.default = default
-
-    def validate(self, value: Any) -> bool:
-        return value in pyautogui.KEYBOARD_KEYS
-
-    def correct(self, value: Any) -> Any:
-        return value if self.validate(value) else self.default
-
-
-class URLValidator(ValidatorBase):
-    """URL格式验证器"""
-
-    def __init__(
-        self,
-        schemes: list[str] | None = None,
-        require_netloc: bool = True,
-        default: str = "",
-    ):
-        """
-        :param schemes: 允许的协议列表, 若为 None 则允许任意协议
-        :param require_netloc: 是否要求必须包含网络位置, 如域名或IP
-        """
-        self.schemes = [s.lower() for s in schemes] if schemes else None
-        self.require_netloc = require_netloc
-        self.default = default
-
-    def validate(self, value):
-        if value == self.default:
-            return True
-
-        if not isinstance(value, str):
-            return False
-
-        try:
-            parsed = urlparse(value)
-        except Exception:
-            return False
-
-        # 检查协议
-        if self.schemes is not None:
-            if not parsed.scheme or parsed.scheme.lower() not in self.schemes:
-                return False
-        else:
-            # 不限制协议仍要求有 scheme
-            if not parsed.scheme:
-                return False
-
-        # 检查是否包含网络位置
-        if self.require_netloc and not parsed.netloc:
-            return False
-
-        return True
-
-    def correct(self, value):
-        return value if self.validate(value) else self.default
-
-
-class ArgumentValidator(ValidatorBase):
-
-    def validate(self, value):
-        if not isinstance(value, str):
-            return False
-        try:
-            shlex.split(value.strip())
-            return True
-        except ValueError:
-            return False
-
-    def correct(self, value):
-
-        return value if self.validate(value) else ""
-
-
-class AdvancedArgumentValidator(ValidatorBase):
-
-    def validate(self, value):
-        if not isinstance(value, str):
-            return False
-        try:
-            for segment in value.split("|"):
-                segment = segment.strip()
-                if not segment:
-                    continue
-                param_str = segment.split("%", 1)[-1].strip()
-                shlex.split(param_str)
-            return True
-        except ValueError:
-            return False
-
-    def correct(self, value):
-
-        return value if self.validate(value) else ""
-
-
-class ConfigItem:
-    """配置项"""
-
-    def __init__(
-        self,
-        group: str,
-        name: str,
-        default: Any,
-        validator: ValidatorBase = StringValidator(),
-        legacy_group: str | None = None,
-        legacy_name: str | None = None,
-    ):
-        """
-        Parameters
-        ----------
-        group: str
-            配置项分组名称
-
-        name: str
-            配置项字段名称
-
-        default: Any
-            配置项默认值
-
-        validator: ValidatorBase
-            配置项验证器, 默认为 None, 表示不进行验证
-        """
-        self.group = group
-        self.name = name
-        self.value: Any = default
-        self.validator = validator
-        self.legacy_group_name = (
-            (legacy_group or group, legacy_name or name)
-            if legacy_group or legacy_name
-            else None
-        )
-        self.is_locked = False
-        self._slots: list[Callable[[Any], Any]] = []
-
-        if not self.validator.validate(self.value):
-            raise ValueError(
-                f"配置项 '{self.group}.{self.name}' 的默认值 '{self.value}' 不合法"
-            )
-
-    def setValue(self, value: Any):
-        """
-        设置配置项值, 将自动进行验证和修正
-
-        Parameters
-        ----------
-        value: Any
-            要设置的值, 可以是任何合法类型
-        """
-
-        if (
-            dpapi_decrypt(self.value)
-            if isinstance(self.validator, EncryptValidator)
-            else self.value
-        ) == value:
-            return
-
-        if self.is_locked:
-            raise ValueError(f"配置项 '{self.group}.{self.name}' 已锁定, 无法修改")
-
-        # deepcopy new value
-        try:
-            self.value = deepcopy(value)
-        except Exception:
-            self.value = value
-
-        if isinstance(self.validator, EncryptValidator):
-            if self.validator.validate(self.value):
-                self.value = self.value
-            else:
-                self.value = dpapi_encrypt(self.value)
-
-        if not self.validator.validate(self.value):
-            self.value = self.validator.correct(self.value)
-
-        if len(self._slots) > 0:
-            asyncio.create_task(self._emit_signal(self.value))
-
-    def getValue(self, if_decrypt: bool = True) -> Any:
-        """
-        获取配置项值
-        """
-
-        v = (
-            self.value
-            if self.validator.validate(self.value)
-            else self.validator.correct(self.value)
-        )
-
-        if isinstance(self.validator, EncryptValidator) and if_decrypt:
-            return dpapi_decrypt(v)
-        return v
-
-    def bind(self, slot: Callable[[Any], Any]):
-        """
-        连接槽函数到配置项修改信号
-
-        Parameters
-        ----------
-        slot: Callable[[Any], Any]
-            槽函数，接收新值作为参数，支持同步和异步函数
-        """
-        if not callable(slot):
-            raise TypeError("槽函数必须是可调用对象")
-
-        if slot not in self._slots:
-            self._slots.append(slot)
-
-    def unbind(self, slot: Callable[[Any], Any]):
-        """
-        断开槽函数连接
-
-        Parameters
-        ----------
-        slot: Callable[[Any], Any]
-            要断开的槽函数
-        """
-        if slot in self._slots:
-            self._slots.remove(slot)
-
-    def unbind_all(self):
-        """断开所有槽函数连接"""
-        self._slots.clear()
-
-    @logger.catch
-    async def _emit_signal(self, value: Any) -> None:
-        """
-        执行所有连接的槽函数, 将新值作为参数传递
-
-        Parameters
-        ----------
-        value: Any
-            新值, 已经过验证和修正
-        """
-
-        for slot in self._slots:
-            if inspect.iscoroutinefunction(slot):
-                await slot(value)
-            else:
-                slot(value)
-
-    def lock(self):
-        """
-        锁定配置项, 锁定后无法修改配置项值
-        """
-        self.is_locked = True
-
-    def unlock(self):
-        """
-        解锁配置项, 解锁后可以修改配置项值
-        """
-        self.is_locked = False
-
-
-class ConfigBase:
-    """
-    配置基类
-
-    这个类提供了基本的配置项管理功能, 包括连接配置文件、加载配置数据、获取和设置配置项值等。
-
-    此类不支持直接实例化, 必须通过子类来实现具体的配置项,
-    请继承此类并在子类中定义具体的配置项, 并在定义完成后调用父类的 `__init__` 方法。
-    若将配置项设为类属性, 则所有实例都会共享同一份配置项数据。
-    若将配置项设为实例属性, 则每个实例都会有独立的配置项数据。
-    子配置项可以是 `MultipleConfig` 的实例。
-    """
-
-    def __init__(self):
-        self.file: Path | None = None
-        self.is_locked = False
-        self._save_methods: list[Callable[[], Coroutine[Any, Any, None]]] = []
-
-        # 配置项索引
-        self._config_item_index: dict[str, dict[str, ConfigItem]] = {}
-        self._multiple_config_index: dict[str, "MultipleConfig[Any]"] = {}
-        for name in dir(self):
-            item = getattr(self, name)
-
-            if isinstance(item, ConfigItem):
-                if not self._config_item_index.get(item.group):
-                    self._config_item_index[item.group] = {}
-                self._config_item_index[item.group][item.name] = item
-
-            elif isinstance(item, MultipleConfig):
-                self._multiple_config_index[name] = item
-
-    async def connect(self, path: Path):
-        """
-        将配置数据绑定到指定配置文件
-
-        Parameters
-        ----------
-        path: Path
-            配置文件路径, 必须为 TOML 文件, 如果不存在则会创建
-        """
-
-        if path.suffix != PRIMARY_CONFIG_SUFFIX:
-            raise ValueError("配置文件必须是扩展名为 '.toml' 的 TOML 文件")
-
-        if self.is_locked:
-            raise ValueError("配置已锁定, 无法修改")
-
-        self.file = path
-
-        if not self.file.exists():
-            self.file.parent.mkdir(parents=True, exist_ok=True)
-            self.file.touch()
-        data, legacy_file = _load_config_with_legacy_migration(self.file)
-
-        await self.load(data)
-
-        await self.add_save_method(self.save)
-
-        _backup_legacy_config_if_needed(self.file, legacy_file)
-
-    async def add_save_method(
-        self, save_method: Callable[[], Coroutine[Any, Any, None]]
-    ):
-        """
-        添加父配置项的保存方法
-
-        Parameters
-        ----------
-        save_method: Callable[[], Coroutine[Any, Any, None]]
-            保存方法
-        """
-
-        if save_method != self.save and save_method not in self._save_methods:
-            self._save_methods.append(save_method)
-
-        for sub_config in self._multiple_config_index.values():
-            await sub_config.add_save_method(save_method)
-
-    async def load(self, data: dict[str, Any]):
-        """
-        从字典加载配置数据
-
-        这个方法会遍历字典中的配置项, 并将其设置到对应的 ConfigItem 实例中。
-        如果字典中包含 "SubConfigsInfo" 键, 则会加载子配置项, 这些子配置项应该是 MultipleConfig 的实例。
-
-        Parameters
-        ----------
-        data: dict
-            配置数据字典
-        """
-
-        if self.is_locked:
-            raise ValueError("配置已锁定, 无法修改")
-
-        # 加载多配置项类型数据
-        sub_configs = data.pop("SubConfigsInfo", {})
-        if not isinstance(sub_configs, dict):
-            sub_configs = {}
-        for name, sub_config in self._multiple_config_index.items():
-            data_for_sub_config = sub_configs.get(name)
-            if isinstance(data_for_sub_config, dict):
-                await sub_config.load(data_for_sub_config)
-
-        for group, info in self._config_item_index.items():
-            for name, item in info.items():
-                try:
-                    item.setValue(data[group][name])
-                except Exception:
-                    if item.legacy_group_name is not None:
-                        with suppress(Exception):
-                            item.setValue(
-                                data[item.legacy_group_name[0]][
-                                    item.legacy_group_name[1]
-                                ]
-                            )
-
-        if self.file:
-            await self.save()
-
-        await asyncio.gather(*(_() for _ in self._save_methods))
-
-    async def toDict(
-        self, if_decrypt: bool = True, regenerate_uuids: bool = False
-    ) -> dict[str, Any]:
-        """将配置项转换为字典"""
-
-        data = {}
-
-        for group, info in self._config_item_index.items():
-            for name, item in info.items():
-                data.setdefault(group, {})[name] = item.getValue(if_decrypt)
-
-        for name, item in self._multiple_config_index.items():
-            if not data.get("SubConfigsInfo"):
-                data["SubConfigsInfo"] = {}
-            data["SubConfigsInfo"][name] = await item.toDict(
-                if_decrypt, regenerate_uuids
-            )
-
-        return data
-
-    def get(self, group: str, name: str) -> Any:
-        """获取配置项的值"""
-
-        if not self._config_item_index.get(group, {}).get(name):
-            raise AttributeError(f"配置项 '{group}.{name}' 不存在")
-
-        return self._config_item_index[group][name].getValue()
-
-    async def set(self, group: str, name: str, value: Any):
-        """
-        设置配置项的值
-
-        Parameters
-        ----------
-        group: str
-            配置项分组名称
-        name: str
-            配置项名称
-        value: Any
-            配置项新值
-        """
-
-        if not self._config_item_index.get(group, {}).get(name):
-            raise AttributeError(f"配置项 '{group}.{name}' 不存在")
-
-        if self.is_locked:
-            raise ValueError("配置已锁定, 无法修改")
-
-        self._config_item_index[group][name].setValue(value)
-
-        if self.file:
-            await self.save()
-
-        await asyncio.gather(*(_() for _ in self._save_methods))
-
-    def bind(self, group: str, name: str, slot: Callable[[Any], Any]):
-        """
-        连接槽函数到配置项修改信号
-
-        Parameters
-        ----------
-        group: str
-            配置项分组名称
-        name: str
-            配置项名称
-        slot: Callable[[Any], Any]
-            槽函数，接收新值作为参数，支持同步和异步函数
-        """
-
-        if not self._config_item_index.get(group, {}).get(name):
-            raise AttributeError(f"配置项 '{group}.{name}' 不存在")
-
-        if self.is_locked:
-            raise ValueError("配置已锁定, 无法修改")
-
-        self._config_item_index[group][name].bind(slot)
-
-    def unbind(self, group: str, name: str, slot: Callable[[Any], Any]):
-        """
-        断开槽函数连接
-
-        Parameters
-        ----------
-        group: str
-            配置项分组名称
-        name: str
-            配置项名称
-        slot: Callable[[Any], Any]
-            要断开的槽函数
-        """
-
-        if not self._config_item_index.get(group, {}).get(name):
-            raise AttributeError(f"配置项 '{group}.{name}' 不存在")
-
-        if self.is_locked:
-            raise ValueError("配置已锁定, 无法修改")
-
-        self._config_item_index[group][name].unbind(slot)
-
-    async def save(self) -> None:
-        """保存配置"""
-
-        if not self.file:
-            raise ValueError("文件路径未设置, 请先调用 `connect` 方法连接配置文件")
-
-        self.file.parent.mkdir(parents=True, exist_ok=True)
-        self.file.write_text(
-            dump_toml(await self.toDict(if_decrypt=False)),
-            encoding="utf-8",
-        )
-
-    async def lock(self):
-        """
-        锁定配置项, 锁定后无法修改配置项值
-        """
-
-        self.is_locked = True
-
-        for group in self._config_item_index.values():
-            for item in group.values():
-                item.lock()
-        for config in self._multiple_config_index.values():
-            await config.lock()
-
-    async def unlock(self):
-        """
-        解锁配置项, 解锁后可以修改配置项值
-        """
-
-        self.is_locked = False
-
-        for group in self._config_item_index.values():
-            for item in group.values():
-                item.unlock()
-        for config in self._multiple_config_index.values():
-            await config.unlock()
-
-
 class _ConfigLike(Protocol):
     @property
     def is_locked(self) -> bool: ...
@@ -1206,15 +203,9 @@ T = TypeVar("T", bound=_ConfigLike)
 
 class MultipleConfig(Generic[T]):
     """
-    多配置项管理类
+    多配置项管理类。
 
-    这个类允许管理多个配置项实例, 可以添加、删除、修改配置项, 并将其保存到 TOML 文件中。
-    允许通过 `config[uuid]` 访问配置项, 使用 `uuid in config` 检查是否存在配置项, 使用 `len(config)` 获取配置项数量。
-
-    Parameters
-    ----------
-    sub_config_type: List[type]
-        子配置项的类型列表, 必须是 ConfigBase 的子类
+    负责管理同一类或同一组配置实例，并统一提供加载、保存、增删改序等接口。
     """
 
     def __init__(self, sub_config_type: list[type[T]]):
@@ -1222,7 +213,7 @@ class MultipleConfig(Generic[T]):
             raise ValueError("子配置项类型列表不能为空")
 
         self.sub_config_type: dict[str, type[T]] = {
-            _.__name__: _ for _ in sub_config_type
+            config_type.__name__: config_type for config_type in sub_config_type
         }
         self.file: Path | None = None
         self.order: list[uuid.UUID] = []
@@ -1231,36 +222,29 @@ class MultipleConfig(Generic[T]):
         self._save_methods: list[Callable[[], Coroutine[Any, Any, None]]] = []
 
     def __getitem__(self, key: uuid.UUID) -> T:
-        """允许通过 config[uuid] 访问配置项"""
         if key not in self.data:
             raise KeyError(f"配置项 '{key}' 不存在")
         return self.data[key]
 
     def __contains__(self, key: uuid.UUID) -> bool:
-        """允许使用 uuid in config 检查是否存在"""
         return key in self.data
 
     def __len__(self) -> int:
-        """允许使用 len(config) 获取配置项数量"""
         return len(self.data)
 
     def __repr__(self) -> str:
-        """更好的字符串表示"""
-        return f"MultipleConfig(items={len(self.data)}, types={list(self.sub_config_type.keys())})"
+        return (
+            "MultipleConfig("
+            f"items={len(self.data)}, "
+            f"types={list(self.sub_config_type.keys())}"
+            ")"
+        )
 
     def __str__(self) -> str:
-        """用户友好的字符串表示"""
         return f"MultipleConfig with {len(self.data)} items"
 
-    async def connect(self, path: Path):
-        """
-        将配置文件连接到指定配置文件
-
-        Parameters
-        ----------
-        path: Path
-            配置文件路径, 必须为 TOML 文件, 如果不存在则会创建
-        """
+    async def connect(self, path: Path) -> None:
+        """将运行期配置连接到指定 TOML 文件。"""
 
         if path.suffix != PRIMARY_CONFIG_SUFFIX:
             raise ValueError("配置文件必须是带有 '.toml' 扩展名的 TOML 文件。")
@@ -1273,25 +257,16 @@ class MultipleConfig(Generic[T]):
         if not self.file.exists():
             self.file.parent.mkdir(parents=True, exist_ok=True)
             self.file.touch()
+
         data, legacy_file = _load_config_with_legacy_migration(self.file)
-
         await self.load(data)
-
         await self.add_save_method(self.save)
-
         _backup_legacy_config_if_needed(self.file, legacy_file)
 
     async def add_save_method(
         self, save_method: Callable[[], Coroutine[Any, Any, None]]
-    ):
-        """
-        添加父配置项的保存方法
-
-        Parameters
-        ----------
-        save_method: Callable[[], Coroutine[Any, Any, None]]
-            保存方法, 必须是一个协程函数, 无参数, 无返回值
-        """
+    ) -> None:
+        """为当前管理器及其子配置添加级联保存方法。"""
 
         if save_method != self.save and save_method not in self._save_methods:
             self._save_methods.append(save_method)
@@ -1299,19 +274,8 @@ class MultipleConfig(Generic[T]):
         for sub_config in self.data.values():
             await sub_config.add_save_method(save_method)
 
-    async def load(self, data: dict[str, Any]):
-        """
-        从字典加载配置数据
-
-        这个方法会遍历字典中的配置项, 并将其设置到对应的 ConfigBase 实例中。
-        如果字典中包含 "instances" 键, 则会加载子配置项, 这些子配置项应该是 ConfigBase 子类的实例。
-        如果字典中没有 "instances" 键, 则清空当前配置项。
-
-        Parameters
-        ----------
-        data: dict
-            配置数据字典
-        """
+    async def load(self, data: dict[str, Any]) -> None:
+        """从字典加载多实例配置数据。"""
 
         if self.is_locked:
             raise ValueError("配置已锁定, 无法修改")
@@ -1319,62 +283,57 @@ class MultipleConfig(Generic[T]):
         self.order = []
         self.data = {}
 
-        if not data.get("instances"):
+        instances = data.get("instances")
+        if not isinstance(instances, list):
             return
 
-        for instance in data["instances"]:
+        for instance in instances:
             if not isinstance(instance, dict):
                 continue
 
             uid_str = instance.get("uid")
-            if not isinstance(uid_str, str):
+            type_name = instance.get("type")
+            if not isinstance(uid_str, str) or not isinstance(type_name, str):
+                continue
+            if type_name not in self.sub_config_type:
                 continue
 
             instance_data = data.get(uid_str)
             if not isinstance(instance_data, dict):
                 continue
 
-            type_name = instance.get("type")
+            try:
+                uid = uuid.UUID(uid_str)
+            except (TypeError, ValueError):
+                continue
 
-            if type_name in self.sub_config_type:
-                self.order.append(uuid.UUID(uid_str))
-                self.data[self.order[-1]] = self.sub_config_type[type_name]()
-                await self.data[self.order[-1]].load(instance_data)
+            config = self.sub_config_type[type_name]()
+            self.order.append(uid)
+            self.data[uid] = config
+            await config.load(instance_data)
 
         if self.file:
             await self.save()
 
-        await asyncio.gather(*(_() for _ in self._save_methods))
+        if self._save_methods:
+            await asyncio.gather(*(_() for _ in self._save_methods))
 
     async def toDict(
         self, if_decrypt: bool = True, regenerate_uuids: bool = False
     ) -> dict[str, Any]:
-        """
-        将配置项转换为字典
-
-        Arguments
-        ----------
-        if_decrypt: bool
-            是否解密数据, 默认为 True
-        regenerate_uuids: bool
-            是否重新生成 UUID, 默认为 False
-
-        Returns
-        -------
-        Dict[str, Union[list, dict]]
-            配置项数据字典
-        """
+        """将全部子配置序列化为统一字典结构。"""
 
         uuid_book: dict[uuid.UUID, uuid.UUID] = {
-            _: uuid.uuid4() if regenerate_uuids else _ for _ in self.order
+            uid: uuid.uuid4() if regenerate_uuids else uid for uid in self.order
         }
 
         data: dict[str, Any] = {
             "instances": [
-                {"uid": str(uuid_book[_]), "type": type(self.data[_]).__name__}
-                for _ in self.order
+                {"uid": str(uuid_book[uid]), "type": type(self.data[uid]).__name__}
+                for uid in self.order
             ]
         }
+
         for uid, config in self.items():
             data[str(uuid_book[uid])] = await config.toDict(
                 if_decrypt, regenerate_uuids
@@ -1383,35 +342,23 @@ class MultipleConfig(Generic[T]):
         return data
 
     async def get(self, uid: uuid.UUID) -> dict[str, Any]:
-        """
-        获取指定 UID 的配置项
-
-        Parameters
-        ----------
-        uid: uuid.UUID
-            要获取的配置项的唯一标识符
-        Returns
-        -------
-        Dict[str, Union[list, dict]]
-            对应的配置项数据字典
-        """
+        """获取指定 UID 的单个配置。"""
 
         if uid not in self.data:
             raise ValueError(f"配置项 '{uid}' 不存在。")
 
         data: dict[str, Any] = {
             "instances": [
-                {"uid": str(_), "type": type(self.data[_]).__name__}
-                for _ in self.order
-                if _ == uid
+                {"uid": str(current_uid), "type": type(self.data[current_uid]).__name__}
+                for current_uid in self.order
+                if current_uid == uid
             ]
         }
         data[str(uid)] = await self.data[uid].toDict()
-
         return data
 
-    async def save(self):
-        """保存配置"""
+    async def save(self) -> None:
+        """保存当前多实例配置。"""
 
         if not self.file:
             raise ValueError("文件路径未设置, 请先调用 `connect` 方法连接配置文件")
@@ -1423,57 +370,37 @@ class MultipleConfig(Generic[T]):
         )
 
     async def add(self, config_type: type[T]) -> tuple[uuid.UUID, T]:
-        """
-        添加一个新的配置项
-
-        Parameters
-        ----------
-        config_type: type
-            配置项的类型, 必须是初始化时已声明的 ConfigBase 子类
-
-        Returns
-        -------
-        tuple[uuid.UUID, ConfigBase]
-            新创建的配置项的唯一标识符和实例
-        """
+        """新增一个指定类型的子配置实例。"""
 
         if config_type not in self.sub_config_type.values():
             raise ValueError(f"配置类型 {config_type.__name__} 不被允许")
-
         if self.is_locked:
             raise ValueError("配置已锁定, 无法修改")
 
         uid = uuid.uuid4()
+        config = config_type()
         self.order.append(uid)
-        self.data[uid] = config_type()
+        self.data[uid] = config
 
         for save_method in self._save_methods:
-            await self.data[uid].add_save_method(save_method)
+            await config.add_save_method(save_method)
 
         if self.file:
-            await self.data[uid].add_save_method(self.save)
+            await config.add_save_method(self.save)
             await self.save()
 
-        await asyncio.gather(*(_() for _ in self._save_methods))
+        if self._save_methods:
+            await asyncio.gather(*(_() for _ in self._save_methods))
 
-        return uid, self.data[uid]
+        return uid, config
 
-    async def remove(self, uid: uuid.UUID):
-        """
-        移除配置项
-
-        Parameters
-        ----------
-        uid: uuid.UUID
-            要移除的配置项的唯一标识符
-        """
+    async def remove(self, uid: uuid.UUID) -> None:
+        """移除一个子配置实例。"""
 
         if self.is_locked:
             raise ValueError("配置已锁定, 无法修改")
-
         if uid not in self.data:
             raise ValueError(f"配置项 '{uid}' 不存在")
-
         if self.data[uid].is_locked:
             raise ValueError(f"配置项 '{uid}' 已锁定, 无法移除")
 
@@ -1483,21 +410,14 @@ class MultipleConfig(Generic[T]):
         if self.file:
             await self.save()
 
-        await asyncio.gather(*(_() for _ in self._save_methods))
+        if self._save_methods:
+            await asyncio.gather(*(_() for _ in self._save_methods))
 
-    async def setOrder(self, order: list[uuid.UUID]):
-        """
-        设置配置项的顺序
-
-        Parameters
-        ----------
-        order: List[uuid.UUID]
-            新的配置项顺序
-        """
+    async def setOrder(self, order: list[uuid.UUID]) -> None:  # noqa: N802
+        """设置子配置实例顺序。"""
 
         if set(order) != set(self.data.keys()):
             raise ValueError("顺序与当前配置项不匹配")
-
         if self.is_locked:
             raise ValueError("配置已锁定, 无法修改")
 
@@ -1506,42 +426,36 @@ class MultipleConfig(Generic[T]):
         if self.file:
             await self.save()
 
-        await asyncio.gather(*(_() for _ in self._save_methods))
+        if self._save_methods:
+            await asyncio.gather(*(_() for _ in self._save_methods))
 
-    async def lock(self):
-        """
-        锁定配置项, 锁定后无法修改配置项值
-        """
+    async def lock(self) -> None:
+        """锁定当前管理器及全部子配置。"""
 
         self.is_locked = True
-
         for item in self.values():
             await item.lock()
 
-    async def unlock(self):
-        """
-        解锁配置项, 解锁后可以修改配置项值
-        """
+    async def unlock(self) -> None:
+        """解锁当前管理器及全部子配置。"""
 
         self.is_locked = False
-
         for item in self.values():
             await item.unlock()
 
     def keys(self):
-        """返回配置项的所有唯一标识符"""
+        """返回全部 UID。"""
 
         return iter(self.order)
 
     def values(self):
-        """返回配置项的所有实例"""
+        """按顺序返回全部子配置实例。"""
 
         if not self.data:
             return iter(())
-
-        return (self.data[_] for _ in self.order)
+        return (self.data[uid] for uid in self.order)
 
     def items(self):
-        """返回配置项的所有唯一标识符和实例的元组"""
+        """按顺序返回 `(uid, config)` 对。"""
 
         return zip(self.keys(), self.values())
