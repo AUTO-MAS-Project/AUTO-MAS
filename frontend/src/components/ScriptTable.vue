@@ -2,13 +2,17 @@
   <div class="scripts-grid">
     <!-- 使用vuedraggable包装脚本列表 -->
     <draggable v-model="localScripts" item-key="id" :animation="200" ghost-class="script-ghost"
-      chosen-class="script-chosen" drag-class="script-drag" class="draggable-scripts" @end="onScriptDragEnd">
+      chosen-class="script-chosen" drag-class="script-drag" handle=".script-drag-handle" class="draggable-scripts"
+      @end="onScriptDragEnd">
       <template #item="{ element: script }">
         <div :key="script.id" class="script-wrapper">
           <a-card :hoverable="true" class="script-card" :body-style="{ padding: '0' }">
             <!-- 脚本头部信息 -->
             <div class="script-header">
               <div class="script-info">
+                <span class="script-drag-handle" title="拖拽排序" aria-label="拖拽排序">
+                  <span class="script-drag-dots" aria-hidden="true"></span>
+                </span>
                 <div class="script-logo-container">
                   <img v-if="script.type === 'MAA'" src="@/assets/MAA.png" alt="MAA" class="script-logo" />
                   <img v-else-if="script.type === 'SRC'" src="@/assets/SRC.png" alt="SRC" class="script-logo" />
@@ -101,10 +105,13 @@
             <div v-if="script.users && script.users.length > 0" class="users-section">
               <!-- 使用vuedraggable包装用户列表 -->
               <draggable v-model="script.users" item-key="id" :animation="200" ghost-class="user-ghost"
-                chosen-class="user-chosen" drag-class="user-drag" class="users-list"
+                chosen-class="user-chosen" drag-class="user-drag" handle=".user-drag-handle" class="users-list"
                 @end="(evt: any) => onUserDragEnd(evt, script)">
                 <template #item="{ element: user }">
                   <div :key="user.id" class="user-item">
+                    <span class="user-drag-handle" title="拖拽排序" aria-label="拖拽排序">
+                      <span class="script-drag-dots" aria-hidden="true"></span>
+                    </span>
                     <div class="user-info">
                       <div class="user-details-row">
                         <div class="user-name-section">
@@ -934,8 +941,10 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 }
 
 .script-ghost {
-  opacity: 0.5;
-  transform: rotate(2deg);
+  opacity: 0 !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
 }
 
 .script-chosen {
@@ -946,6 +955,12 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   transform: rotate(2deg);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
   z-index: 1000;
+  opacity: 1 !important;
+}
+
+.script-drag .script-card {
+  opacity: 1 !important;
+  transition: none !important;
 }
 
 .users-list {
@@ -953,9 +968,10 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 }
 
 .user-ghost {
-  opacity: 0.5;
-  background: var(--ant-color-primary-bg) !important;
-  border: 2px dashed var(--ant-color-primary) !important;
+  opacity: 0 !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
 }
 
 .user-chosen {
@@ -968,6 +984,7 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
   z-index: 999;
   background: var(--ant-color-bg-container) !important;
+  opacity: 1 !important;
 }
 
 /* 拖拽时禁用某些交互 */
@@ -1015,6 +1032,42 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   align-items: center;
   gap: 12px;
   flex: 1;
+}
+
+.script-drag-handle {
+  width: 16px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ant-color-text-tertiary);
+  background: transparent;
+  border: none;
+  cursor: grab;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.script-drag-handle:hover {
+  color: var(--ant-color-text-secondary);
+}
+
+.script-drag-handle:active {
+  cursor: grabbing;
+}
+
+.script-drag-dots {
+  width: 10px;
+  height: 16px;
+  display: block;
+  background-image: radial-gradient(currentColor 1.2px, transparent 1.2px);
+  background-size: 5px 5px;
+  background-position: 0 0;
+  opacity: 0.65;
+}
+
+.script-drag-handle:hover .script-drag-dots {
+  opacity: 0.85;
 }
 
 .script-logo-container {
@@ -1107,6 +1160,32 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   border-bottom: 1px solid var(--ant-color-border-secondary);
   transition: all 0.2s ease;
   min-height: 80px;
+}
+
+.user-drag-handle {
+  width: 16px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ant-color-text-tertiary);
+  background: transparent;
+  border: none;
+  cursor: grab;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.user-drag-handle:hover {
+  color: var(--ant-color-text-secondary);
+}
+
+.user-drag-handle:active {
+  cursor: grabbing;
+}
+
+.user-drag-handle:hover .script-drag-dots {
+  opacity: 0.85;
 }
 
 .user-item:last-child {
