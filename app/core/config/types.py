@@ -12,6 +12,10 @@ from app.utils.constants import DEFAULT_DATETIME
 from app.utils.security import dpapi_decrypt, dpapi_encrypt
 
 
+class _EncryptedFieldMarker:
+    """标记需要在对外读取时自动解密的字段。"""
+
+
 def _to_string(value: Any) -> str:
     if isinstance(value, str):
         return value
@@ -116,7 +120,11 @@ YmdString = Annotated[str, AfterValidator(_validate_ymd_string)]
 YmdHmsString = Annotated[str, AfterValidator(_validate_ymd_hms_string)]
 UrlString = Annotated[str, AfterValidator(_validate_url_string)]
 KeyboardKeyString = Annotated[str, AfterValidator(_validate_keyboard_key)]
-EncryptedString = Annotated[str, AfterValidator(_normalize_encrypted_string)]
+EncryptedString = Annotated[
+    str,
+    _EncryptedFieldMarker(),
+    AfterValidator(_normalize_encrypted_string),
+]
 
 
 __all__ = [

@@ -1,4 +1,4 @@
-from .base import ConfigBase, ConfigItem, MultipleConfig, dump_json, dump_toml
+from .base import MultipleConfig, dump_toml
 from .manager import AppConfig, Config
 from .pydantic import PydanticConfigBase
 from .types import (
@@ -15,10 +15,7 @@ from .types import (
 )
 
 __all__ = [
-    "ConfigBase",
-    "ConfigItem",
     "MultipleConfig",
-    "dump_json",
     "dump_toml",
     "PydanticConfigBase",
     "JsonDictString",
