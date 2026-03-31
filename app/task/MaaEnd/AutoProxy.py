@@ -33,7 +33,7 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager, skland_sign_in
 from app.utils.constants import UTC4, UTC8, MAAEND_KILLPROC_TASK
-from .tools import login, parse_log, push_notification, wait_and_focus_window
+from .tools import login, push_notification, wait_and_focus_window
 from .ScriptConfig import CONFIG_FILE_NAME, _keep_single_instance, _replace_config_dir
 
 logger = get_logger("MaaEnd 自动代理")
@@ -105,10 +105,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.maaend_log_path = self.maaend_root_path / "debug/maa.log"
 
         self.maaend_log_monitor = LogMonitor(
-            (1, 23),
-            "%Y-%m-%d %H:%M:%S.%f",
-            self.check_log,
-            parse_log=lambda logs: parse_log(self.maaend_root_path, logs),
+            (1, 23), "%Y-%m-%d %H:%M:%S.%f", self.check_log
         )
 
         self.run_book = False
@@ -255,7 +252,11 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info(f"运行脚本任务: {self.maaend_exe_path}")
             self.wait_event.clear()
             t = datetime.now()
-            await self.maaend_process_manager.open_process(self.maaend_exe_path)
+            await self.maaend_process_manager.open_process(
+                self.maaend_exe_path,
+                "--log-mode=verbose",
+                stdout=asyncio.subprocess.PIPE,
+            )
 
             # 静默模式隐藏 MaaEnd 窗口
             if Config.get("Function", "IfSilence"):
@@ -266,11 +267,12 @@ class AutoProxyTask(TaskExecuteBase):
                     await asyncio.sleep(0.1)
 
             await asyncio.sleep(1)
-            await self.maaend_log_monitor.start_monitor_file(
-                self.maaend_log_path,
-                self.log_start_time,
-                self.maaend_log_path.with_name("maa.bak.log"),
-            )
+            if isinstance(
+                self.maaend_process_manager.main_process, asyncio.subprocess.Process
+            ):
+                await self.maaend_log_monitor.start_monitor_process(
+                    self.maaend_process_manager.main_process, "stdout"
+                )
             await self.wait_event.wait()
             await self.maaend_log_monitor.stop()
 
@@ -479,7 +481,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_log.status = "MaaEnd 未加载任何任务"
             else:
                 for id in self.task_dict.keys():
-                    if f"{id} - 任务完成" in log:
+                    if f"[{id}] 任务完成" in log:
                         self.task_dict[id] = False
                 for task_name, task_id in self.unique_task.items():
                     if f"任务完成: {task_name}" in log:
