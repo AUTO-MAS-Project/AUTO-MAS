@@ -21,7 +21,6 @@
 
 from .login import login
 from .notify import push_notification
-from .parse_log import parse_log
 from .window import wait_and_focus_window
 
-__all__ = ["login", "push_notification", "parse_log", "wait_and_focus_window"]
+__all__ = ["login", "push_notification", "wait_and_focus_window"]
