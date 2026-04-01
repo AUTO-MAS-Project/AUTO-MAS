@@ -73,9 +73,6 @@ class _UpdateHandler:
         logger.info("开始检查更新")
 
         # 使用 httpx 异步请求
-        if self.proxy:
-            logger.info(f"当前使用代理: {self.proxy}")
-
         async with httpx.AsyncClient(
             proxy=Config.proxy, follow_redirects=True
         ) as client:
@@ -215,9 +212,6 @@ class _UpdateHandler:
                 start_time = time.time()
 
                 # 使用 httpx 异步流式下载
-                if self.proxy:
-                    logger.info(f"当前使用代理: {self.proxy}")
-
                 async with httpx.AsyncClient(follow_redirects=True) as client:
                     async with client.stream(
                         "GET", download_url, timeout=30.0
