@@ -31,7 +31,8 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.services import Notify, System
-from app.utils import get_logger, LogMonitor, ProcessManager, skland_sign_in
+from app.utils import get_logger, LogMonitor, ProcessManager
+from app.tools import skland_sign_in
 from app.utils.constants import UTC4, UTC8, MAAEND_KILLPROC_TASK
 from .tools import login, parse_log, push_notification, wait_and_focus_window
 from .ScriptConfig import CONFIG_FILE_NAME, _keep_single_instance, _replace_config_dir
