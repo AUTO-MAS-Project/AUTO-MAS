@@ -175,6 +175,9 @@ class Notification:
         params = {"title": title, "desp": content}
         headers = {"Content-Type": "application/json;charset=utf-8"}
 
+        if self.proxy:
+            logger.info(f"当前使用代理: {self.proxy}")
+
         async with httpx.AsyncClient(proxy=Config.proxy) as client:
             response = await client.post(url, json=params, headers=headers)
             result = response.json()
@@ -279,6 +282,9 @@ class Notification:
         headers = {"Content-Type": "application/json"}
         headers.update(json.loads(webhook.get("Data", "Headers")))
 
+        if self.proxy:
+            logger.info(f"当前使用代理: {self.proxy}")
+
         async with httpx.AsyncClient(proxy=Config.proxy, timeout=10) as client:
             if webhook.get("Data", "Method") == "POST":
                 if isinstance(data, dict):
@@ -327,6 +333,9 @@ class Notification:
         content = f"{title}\n{content}"
         data = {"msgtype": "text", "text": {"content": content}}
 
+        if self.proxy:
+            logger.info(f"当前使用代理: {self.proxy}")
+
         async with httpx.AsyncClient(proxy=Config.proxy) as client:
             response = await client.post(url=webhook_url, json=data)
             info = response.json()
@@ -364,6 +373,9 @@ class Notification:
             "msgtype": "image",
             "image": {"base64": image_base64, "md5": image_md5},
         }
+
+        if self.proxy:
+            logger.info(f"当前使用代理: {self.proxy}")
 
         async with httpx.AsyncClient(proxy=Config.proxy) as client:
             response = await client.post(url=webhook_url, json=data)
