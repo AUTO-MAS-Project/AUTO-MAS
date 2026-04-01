@@ -212,10 +212,6 @@ async def get_device_id(proxy: str | None = None) -> str:
 
     devices_info_url = f"{SKLAND_SM_CONFIG['protocol']}://{SKLAND_SM_CONFIG['apiHost']}{SKLAND_SM_CONFIG['apiPath']}"
 
-    proxy_config = get_proxy(proxy)
-    if proxy_config:
-        logger.info(f"当前使用代理: {proxy_config.url}")
-
     async with httpx.AsyncClient(proxy=get_proxy(proxy)) as client:
         response = await client.post(
             devices_info_url,
@@ -350,10 +346,6 @@ async def skland_sign_in(
             "vName": "1.0.0",
         }
 
-        proxy_config = get_proxy(proxy)
-        if proxy_config:
-            logger.info(f"当前使用代理: {proxy_config.url}")
-
         async with httpx.AsyncClient(proxy=get_proxy(proxy)) as client:
             response = await client.post(
                 cred_code_url,
@@ -369,11 +361,6 @@ async def skland_sign_in(
 
     async def get_grant_code(token_value):
         """通过token获取grant code"""
-
-        proxy_config = get_proxy(proxy)
-        if proxy_config:
-            logger.info(f"当前使用代理: {proxy_config.url}")
-
         async with httpx.AsyncClient(proxy=get_proxy(proxy)) as client:
             response = await client.post(
                 grant_code_url,
@@ -390,11 +377,6 @@ async def skland_sign_in(
     async def get_binding_list(cred, sign_token):
         """查询已绑定的角色列表"""
         v = []
-
-        proxy_config = get_proxy(proxy)
-        if proxy_config:
-            logger.info(f"当前使用代理: {proxy_config.url}")
-
         async with httpx.AsyncClient(proxy=get_proxy(proxy)) as client:
             response = await client.get(
                 binding_url,
@@ -423,10 +405,6 @@ async def skland_sign_in(
         query_url = f"{arknights_sign_url}?uid={uid}&gameId={game_id}"
 
         try:
-            proxy_config = get_proxy(proxy)
-            if proxy_config:
-                logger.info(f"当前使用代理: {proxy_config.url}")
-
             async with httpx.AsyncClient(proxy=get_proxy(proxy)) as client:
                 response = await client.get(
                     query_url,
@@ -481,9 +459,6 @@ async def skland_sign_in(
             }
 
             try:
-                proxy_config = get_proxy(proxy)
-                if proxy_config:
-                    logger.info(f"当前使用代理: {proxy_config.url}")
                 async with httpx.AsyncClient(proxy=get_proxy(proxy)) as client:
                     sign_headers = await get_sign_header(
                         arknights_sign_url,
@@ -534,10 +509,6 @@ async def skland_sign_in(
                 "origin": "https://game.skland.com/",
             }
         )
-
-        proxy_config = get_proxy(proxy)
-        if proxy_config:
-            logger.info(f"当前使用代理: {proxy_config.url}")
 
         async with httpx.AsyncClient(proxy=get_proxy(proxy)) as client:
             response = await client.post(endfield_sign_url, headers=headers)
