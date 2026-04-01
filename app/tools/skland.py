@@ -47,19 +47,11 @@ from Crypto.Util.Padding import pad
 
 from typing import Dict, Any
 
-from .constants import SKLAND_SM_CONFIG, BROWSER_ENV, DES_RULE
-from .logger import get_logger
+from app.core import Config
+from app.utils.constants import SKLAND_SM_CONFIG, BROWSER_ENV, DES_RULE
+from app.utils.logger import get_logger
 
 logger = get_logger("森空岛签到任务")
-
-
-def get_proxy(proxy: str | None = None) -> str | None:
-    if proxy is not None:
-        return proxy
-
-    from app.core import Config
-
-    return Config.proxy
 
 
 def md5_hash(data: str) -> str:
@@ -212,7 +204,7 @@ async def get_device_id(proxy: str | None = None) -> str:
 
     devices_info_url = f"{SKLAND_SM_CONFIG['protocol']}://{SKLAND_SM_CONFIG['apiHost']}{SKLAND_SM_CONFIG['apiPath']}"
 
-    async with httpx.AsyncClient(proxy=get_proxy(proxy)) as client:
+    async with httpx.AsyncClient(proxy=Config.proxy) as client:
         response = await client.post(
             devices_info_url,
             json=body,
@@ -346,7 +338,7 @@ async def skland_sign_in(
             "vName": "1.0.0",
         }
 
-        async with httpx.AsyncClient(proxy=get_proxy(proxy)) as client:
+        async with httpx.AsyncClient(proxy=Config.proxy) as client:
             response = await client.post(
                 cred_code_url,
                 json={"code": grant, "kind": 1},
@@ -361,7 +353,7 @@ async def skland_sign_in(
 
     async def get_grant_code(token_value):
         """通过token获取grant code"""
-        async with httpx.AsyncClient(proxy=get_proxy(proxy)) as client:
+        async with httpx.AsyncClient(proxy=Config.proxy) as client:
             response = await client.post(
                 grant_code_url,
                 json={"appCode": "4ca99fa6b56cc2ba", "token": token_value, "type": 0},
@@ -377,7 +369,7 @@ async def skland_sign_in(
     async def get_binding_list(cred, sign_token):
         """查询已绑定的角色列表"""
         v = []
-        async with httpx.AsyncClient(proxy=get_proxy(proxy)) as client:
+        async with httpx.AsyncClient(proxy=Config.proxy) as client:
             response = await client.get(
                 binding_url,
                 headers=await get_sign_header(
@@ -405,7 +397,7 @@ async def skland_sign_in(
         query_url = f"{arknights_sign_url}?uid={uid}&gameId={game_id}"
 
         try:
-            async with httpx.AsyncClient(proxy=get_proxy(proxy)) as client:
+            async with httpx.AsyncClient(proxy=Config.proxy) as client:
                 response = await client.get(
                     query_url,
                     headers=await get_sign_header(
@@ -459,7 +451,7 @@ async def skland_sign_in(
             }
 
             try:
-                async with httpx.AsyncClient(proxy=get_proxy(proxy)) as client:
+                async with httpx.AsyncClient(proxy=Config.proxy) as client:
                     sign_headers = await get_sign_header(
                         arknights_sign_url,
                         "post",
@@ -510,7 +502,7 @@ async def skland_sign_in(
             }
         )
 
-        async with httpx.AsyncClient(proxy=get_proxy(proxy)) as client:
+        async with httpx.AsyncClient(proxy=Config.proxy) as client:
             response = await client.post(endfield_sign_url, headers=headers)
             return response.json()
 
@@ -533,7 +525,10 @@ async def skland_sign_in(
                     rsp = await do_sign_for_endfield(cred, sign_token, role)
                     if rsp.get("code") != 0:
                         message = rsp.get("message", "")
-                        if "请勿重复签到" in message or "Please do not sign in again!" in message:
+                        if (
+                            "请勿重复签到" in message
+                            or "Please do not sign in again!" in message
+                        ):
                             result["重复"].append(character_name)
                             logger.info(f"{character_name} 重复签到")
                         else:
