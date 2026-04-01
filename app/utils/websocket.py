@@ -24,6 +24,7 @@
 import time
 import asyncio
 import json
+import random
 from typing import Optional, Callable, Any, Dict, List
 
 from websockets.asyncio.client import connect, ClientConnection
@@ -490,6 +491,7 @@ class WSClientManager:
 
     # 系统客户端名称常量
     KOISHI_CLIENT_NAME = "Koishi"
+    FRONTEND_DEMO_CLIENT_NAME = "MAS-Frontend-System"
 
     def __init__(self):
         self._clients: Dict[str, WebSocketClient] = {}
@@ -498,7 +500,12 @@ class WSClientManager:
         self._message_history: Dict[str, List[Dict[str, Any]]] = {}
         self._max_history_per_client = 200
         self._debug_connections: List[Any] = []  # WebSocket 连接列表
+        self._frontend_demo_task: Optional[asyncio.Task] = None
         self._logger = get_logger("WS管理器")
+
+        # 前端系统级 WS 演示通道：用于展示后端主动推送到前端的实时能力
+        self._system_clients.add(self.FRONTEND_DEMO_CLIENT_NAME)
+        self._message_history[self.FRONTEND_DEMO_CLIENT_NAME] = []
 
     def get_client(self, name: str) -> Optional[WebSocketClient]:
         """获取客户端实例"""
@@ -585,6 +592,15 @@ class WSClientManager:
         self._clients[name] = client
         self._message_history[name] = []
 
+        await self._broadcast_event(
+            {
+                "event": "created",
+                "client": name,
+                "url": url,
+                "timestamp": time.time(),
+            }
+        )
+
         self._logger.info(f"已创建 WebSocket 客户端: {name} -> {url}")
         return client
 
@@ -670,8 +686,37 @@ class WSClientManager:
         if name in self._message_history:
             del self._message_history[name]
 
+        await self._broadcast_event(
+            {
+                "event": "removed",
+                "client": name,
+                "timestamp": time.time(),
+            }
+        )
+
         self._logger.info(f"已删除 WebSocket 客户端: {name}")
         return True
+
+    async def record_frontend_demo_number(self, value: int):
+        """
+        记录前端系统级 WS 演示数字，并广播到调试前端。
+
+        Args:
+            value: 后端生成并推送的随机数字。
+        """
+        await self._record_message(
+            self.FRONTEND_DEMO_CLIENT_NAME,
+            "received",
+            {"type": "demo_number", "value": value},
+        )
+        await self._broadcast(
+            {
+                "type": "demo_tick",
+                "channel": self.FRONTEND_DEMO_CLIENT_NAME,
+                "value": value,
+                "timestamp": time.time(),
+            }
+        )
 
     async def send_message(self, name: str, message: Dict[str, Any]) -> bool:
         """发送消息"""
@@ -721,8 +766,12 @@ class WSClientManager:
         await self._broadcast(message)
 
     async def _broadcast_event(self, event: Dict[str, Any]):
-        """广播事件给调试前端"""
-        message = {"type": "event", **event}
+        """广播事件给调试前端，并附带最新客户端列表快照。"""
+        message = {
+            "type": "event",
+            "clients": list(self.list_clients().values()),
+            **event,
+        }
         await self._broadcast(message)
 
     async def _broadcast(self, data: Dict[str, Any]):
@@ -774,13 +823,41 @@ class WSClientManager:
                 self._message_history[key] = []
 
     def add_debug_connection(self, ws: Any):
-        """添加调试前端连接"""
+        """
+        添加调试前端连接。
+
+        当首个调试前端建立连接时，自动启动前端系统级随机数推送任务。
+        """
         self._debug_connections.append(ws)
+        if not self._frontend_demo_task or self._frontend_demo_task.done():
+            self._frontend_demo_task = asyncio.create_task(self._frontend_demo_loop())
 
     def remove_debug_connection(self, ws: Any):
-        """移除调试前端连接"""
+        """
+        移除调试前端连接。
+
+        当所有调试前端断开后，停止前端系统级随机数推送任务。
+        """
         if ws in self._debug_connections:
             self._debug_connections.remove(ws)
+        if not self._debug_connections and self._frontend_demo_task:
+            self._frontend_demo_task.cancel()
+            self._frontend_demo_task = None
+
+    async def _frontend_demo_loop(self):
+        """
+        前端系统级 WS 演示循环任务：每3秒推送一个随机数。
+
+        Raises:
+            asyncio.CancelledError: 当没有调试前端连接时，任务会被取消。
+        """
+        try:
+            while self._debug_connections:
+                await self.record_frontend_demo_number(random.randint(0, 999))
+                await asyncio.sleep(3.0)
+        except asyncio.CancelledError:
+            self._logger.info("前端系统级 WS 演示任务已停止")
+            raise
 
     @staticmethod
     def http_to_ws_url(http_url: str) -> str:

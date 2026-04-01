@@ -479,10 +479,21 @@ async def websocket_live(websocket: WebSocket):
                     {"type": "message", "client": client_name, **msg}
                 )
 
+        # 告知前端当前系统级 WS 演示通道信息
+        await websocket.send_json(
+            {
+                "type": "system_channel",
+                "name": ws_client_manager.FRONTEND_DEMO_CLIENT_NAME,
+                "status": "connected",
+                "description": "后端每3秒推送随机数用于前端实时渲染示例",
+            }
+        )
+
         # 保持连接，接收心跳
         while True:
             try:
                 data = await websocket.receive_text()
+
                 # 处理心跳或其他命令
                 if data == "ping":
                     await websocket.send_text("pong")

@@ -202,6 +202,32 @@
 
       <!-- 右侧：消息记录 -->
       <a-col :span="14">
+        <a-card title="系统级前端 WS 通道演示" :bordered="false" class="demo-card" style="margin-bottom: 16px">
+          <a-row :gutter="12">
+            <a-col :span="8">
+              <a-statistic title="通道状态" :value="demoConnected ? '已连接' : '未连接'">
+                <template #prefix>
+                  <CheckCircleOutlined v-if="demoConnected" style="color: #52c41a" />
+                  <CloseCircleOutlined v-else style="color: #ff4d4f" />
+                </template>
+              </a-statistic>
+            </a-col>
+            <a-col :span="8">
+              <a-statistic title="当前随机数" :value="demoValue" />
+            </a-col>
+            <a-col :span="8">
+              <a-statistic title="累计推送" :value="demoSeries.length" />
+            </a-col>
+          </a-row>
+          <div class="demo-trend">
+            <div v-for="(point, index) in demoSeries" :key="index" class="demo-point">
+              <span class="demo-point-time">{{ formatTime(point.timestamp) }}</span>
+              <a-tag color="geekblue">{{ point.value }}</a-tag>
+            </div>
+            <a-empty v-if="demoSeries.length === 0" description="等待后端每3秒推送随机数" />
+          </div>
+        </a-card>
+
         <a-card title="消息记录" :bordered="false" class="message-card">
           <template #extra>
             <a-space>
@@ -333,7 +359,7 @@ import {
   LockOutlined,
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
-import { WebSocketService } from '@/api'
+import { OpenAPI, WebSocketService } from '@/api'
 
 // ============== 类型定义 ==============
 
@@ -356,6 +382,11 @@ interface MessageRecord {
   client: string
 }
 
+interface DemoPoint {
+  value: number
+  timestamp: number
+}
+
 // ============== 状态定义 ==============
 
 // 客户端列表
@@ -368,6 +399,9 @@ const messages = ref<MessageRecord[]>([])
 const messageFilter = ref<'all' | 'sent' | 'received'>('all')
 const autoScroll = ref(true)
 const messageContainer = ref<HTMLElement | null>(null)
+const demoConnected = ref(false)
+const demoValue = ref(0)
+const demoSeries = ref<DemoPoint[]>([])
 
 // 发送消息
 const sendMode = ref<'formatted' | 'raw' | 'auth'>('formatted')
@@ -547,7 +581,6 @@ async function createClient() {
     if (response.code === 200) {
       message.success(`客户端 [${createForm.value.name}] 创建成功`)
       createModalVisible.value = false
-      await refreshClientList()
       selectedClient.value = createForm.value.name
     } else {
       message.error(response.message || '创建失败')
@@ -570,7 +603,6 @@ async function connectClient(name: string) {
 
     if (response.code === 200) {
       message.success(`客户端 [${name}] 连接成功`)
-      await refreshClientList()
     } else {
       message.error(response.message || '连接失败')
     }
@@ -591,7 +623,6 @@ async function disconnectClient(name: string) {
 
     if (response.code === 200) {
       message.success(`客户端 [${name}] 已断开`)
-      await refreshClientList()
     } else {
       message.error(response.message || '断开失败')
     }
@@ -613,7 +644,6 @@ async function removeClient(name: string) {
       if (selectedClient.value === name) {
         selectedClient.value = null
       }
-      await refreshClientList()
     } else {
       message.error(response.message || '删除失败')
     }
@@ -734,13 +764,14 @@ function addMessage(record: MessageRecord) {
 
 // 建立实时 WebSocket 连接
 function connectLiveWs() {
-  const wsUrl = `ws://${window.location.host}/api/ws_debug/live`
+  const wsUrl = buildLiveWsUrl()
 
   try {
     liveWs = new WebSocket(wsUrl)
 
     liveWs.onopen = () => {
       console.log('实时消息连接已建立')
+      demoConnected.value = true
     }
 
     liveWs.onmessage = (event) => {
@@ -750,6 +781,7 @@ function connectLiveWs() {
         if (data.type === 'init') {
           // 初始化客户端列表
           clientList.value = data.clients || []
+          messages.value = []
         } else if (data.type === 'message') {
           // 添加消息记录
           addMessage({
@@ -759,9 +791,20 @@ function connectLiveWs() {
             client: data.client,
           })
         } else if (data.type === 'event') {
-          // 处理事件
-          if (data.event === 'connected' || data.event === 'disconnected') {
-            refreshClientList()
+          // 后端事件统一携带最新客户端快照
+          if (Array.isArray(data.clients)) {
+            clientList.value = data.clients
+          }
+        } else if (data.type === 'system_channel') {
+          demoConnected.value = data.status === 'connected'
+        } else if (data.type === 'demo_tick') {
+          demoValue.value = Number(data.value || 0)
+          demoSeries.value.push({
+            value: demoValue.value,
+            timestamp: Number(data.timestamp || Date.now() / 1000),
+          })
+          if (demoSeries.value.length > 20) {
+            demoSeries.value.shift()
           }
         }
       } catch (error) {
@@ -775,6 +818,7 @@ function connectLiveWs() {
 
     liveWs.onclose = () => {
       console.log('实时消息连接已关闭')
+      demoConnected.value = false
       liveWs = null
       // 5秒后重连
       setTimeout(connectLiveWs, 5000)
@@ -782,6 +826,25 @@ function connectLiveWs() {
   } catch (error) {
     console.error('创建实时消息连接失败:', error)
   }
+}
+
+// 根据 OpenAPI.BASE 构建 WS 地址，确保和 HTTP API 指向同一后端
+function buildLiveWsUrl(): string {
+  const base = (OpenAPI.BASE || '').trim()
+  if (base) {
+    if (base.startsWith('https://')) {
+      return `${base.replace('https://', 'wss://')}/api/ws_debug/live`
+    }
+    if (base.startsWith('http://')) {
+      return `${base.replace('http://', 'ws://')}/api/ws_debug/live`
+    }
+    if (base.startsWith('wss://') || base.startsWith('ws://')) {
+      return `${base}/api/ws_debug/live`
+    }
+  }
+
+  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+  return `${protocol}://${window.location.host}/api/ws_debug/live`
 }
 
 // 断开实时 WebSocket
@@ -792,33 +855,8 @@ function disconnectLiveWs() {
   }
 }
 
-// 加载历史消息
-async function loadHistory() {
-  try {
-    const response = await WebSocketService.getHistoryApiWsDebugHistoryGet()
-    if (response.code === 200 && response.data?.history) {
-      messages.value = []
-      const history = response.data.history
-      for (const clientName of Object.keys(history)) {
-        for (const msg of history[clientName]) {
-          messages.value.push({
-            ...msg,
-            client: clientName,
-          })
-        }
-      }
-      // 按时间排序
-      messages.value.sort((a, b) => a.timestamp - b.timestamp)
-    }
-  } catch (error: any) {
-    console.error('加载历史消息失败:', error)
-  }
-}
-
 // 页面加载时
 onMounted(async () => {
-  await refreshClientList()
-  await loadHistory()
   connectLiveWs()
 })
 
@@ -934,6 +972,33 @@ onUnmounted(() => {
   max-height: 400px;
   overflow-y: auto;
   padding: 8px;
+}
+
+.demo-trend {
+  margin-top: 16px;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.demo-point {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 4px;
+  border-bottom: 1px dashed var(--ant-color-border-secondary);
+}
+
+.demo-point:last-child {
+  border-bottom: none;
+}
+
+.demo-point-time {
+  font-family: 'Consolas', 'Monaco', monospace;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
 }
 
 .message-item {
