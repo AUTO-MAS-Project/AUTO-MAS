@@ -683,6 +683,9 @@ class AppConfig(GlobalConfig):
             raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
 
         # 使用 httpx 异步请求
+        if self.proxy:
+            logger.info(f"当前使用代理: {self.proxy}")
+
         async with httpx.AsyncClient(
             proxy=Config.proxy, follow_redirects=True
         ) as client:
@@ -739,6 +742,9 @@ class AppConfig(GlobalConfig):
             )
         }
         data = {"username": author, "description": description}
+
+        if self.proxy:
+            logger.info(f"当前使用代理: {self.proxy}")
 
         async with httpx.AsyncClient(
             proxy=Config.proxy, follow_redirects=True
@@ -1542,6 +1548,9 @@ class AppConfig(GlobalConfig):
 
         logger.info("开始获取活动关卡信息")
         try:
+            if self.proxy:
+                logger.info(f"当前使用代理获取活动关卡信息: {self.proxy}")
+
             async with httpx.AsyncClient(
                 proxy=self.proxy, follow_redirects=True
             ) as client:
@@ -1684,6 +1693,9 @@ class AppConfig(GlobalConfig):
 
         logger.info("开始从 AUTO-MAS 服务器获取公告信息")
         try:
+            if self.proxy:
+                logger.info(f"当前使用代理: {self.proxy}")
+
             async with httpx.AsyncClient(
                 proxy=self.proxy, follow_redirects=True
             ) as client:
@@ -1742,6 +1754,9 @@ class AppConfig(GlobalConfig):
         logger.info("开始从 AUTO-MAS 服务器获取配置分享中心信息")
 
         try:
+            if self.proxy:
+                logger.info(f"当前使用代理: {self.proxy}")
+
             async with httpx.AsyncClient(
                 proxy=self.proxy, follow_redirects=True
             ) as client:
