@@ -13,7 +13,7 @@
       </div>
     </div>
 
-    <a-row :gutter="16" class="main-layout">
+    <a-row :gutter="12" class="main-layout">
       <a-col :span="7">
         <div class="left-panel">
           <a-card :bordered="false" title="插件实例列表" class="section-card list-card">
@@ -85,7 +85,7 @@
           </template>
 
           <div class="detail-scroll" @wheel.stop>
-          <template v-if="selectedInstance">
+            <template v-if="selectedInstance">
             <a-alert
               v-if="isDirty"
               type="warning"
@@ -310,7 +310,7 @@
             </a-form>
           </template>
 
-          <a-empty v-else description="请选择左侧实例进行编辑" />
+            <a-empty v-else description="请选择左侧实例进行编辑" />
           </div>
         </a-card>
       </a-col>
@@ -1190,6 +1190,7 @@ onMounted(() => {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  align-items: stretch;
 }
 
 .main-layout :deep(.ant-col) {
@@ -1207,6 +1208,8 @@ onMounted(() => {
 
 .list-card {
   height: 100%;
+  border-radius: 12px;
+  overflow: hidden;
 }
 
 .list-card :deep(.ant-card-body) {
@@ -1217,7 +1220,7 @@ onMounted(() => {
 }
 
 .search-box {
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .instance-list {
@@ -1230,6 +1233,21 @@ onMounted(() => {
 .detail-card {
   height: 100%;
   min-width: 0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.detail-card :deep(.ant-card-head) {
+  min-height: 56px;
+  padding-inline: 16px;
+}
+
+.detail-card :deep(.ant-card-head-title) {
+  padding: 12px 0;
+}
+
+.detail-card :deep(.ant-card-extra) {
+  padding: 8px 0;
 }
 
 .detail-card :deep(.ant-card-body) {
@@ -1238,6 +1256,7 @@ onMounted(() => {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  padding: 16px;
 }
 
 .detail-scroll {
@@ -1245,7 +1264,7 @@ onMounted(() => {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-right: 6px;
+  padding-right: 2px;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -1278,11 +1297,20 @@ onMounted(() => {
   padding: 10px;
   margin-bottom: 10px;
   cursor: pointer;
+  background: var(--ant-color-bg-container);
+  transition: all 0.2s ease;
 }
 
 .instance-item.active {
   border-color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
+  background: linear-gradient(135deg, var(--ant-color-primary-bg), color-mix(in srgb, var(--ant-color-primary-bg) 80%, white));
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--ant-color-primary) 12%, transparent);
+}
+
+.instance-item:hover {
+  border-color: var(--ant-color-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
 }
 
 .instance-item-header {
@@ -1307,7 +1335,7 @@ onMounted(() => {
 }
 
 .runtime-observer-card {
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .detail-title {
@@ -1317,11 +1345,11 @@ onMounted(() => {
 }
 
 .editor-card {
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .schema-field-head {
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .type-tag {
@@ -1330,7 +1358,7 @@ onMounted(() => {
 
 .schema-item :deep(.ant-form-item-control-input-content) {
   border-radius: 8px;
-  padding: 8px;
+  padding: 6px 8px;
 }
 
 .schema-item-boolean :deep(.ant-form-item-control-input-content) {
@@ -1349,5 +1377,22 @@ onMounted(() => {
 .schema-item-key_value :deep(.ant-form-item-control-input-content),
 .schema-item-table :deep(.ant-form-item-control-input-content) {
   background: var(--ant-color-fill-tertiary);
+}
+
+.detail-card :deep(.ant-alert) {
+  border-radius: 10px;
+}
+
+.detail-card :deep(.ant-form-item) {
+  margin-bottom: 14px;
+}
+
+.detail-card :deep(.ant-table-wrapper) {
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.detail-card :deep(.ant-card-small > .ant-card-body) {
+  padding: 14px;
 }
 </style>
