@@ -28,7 +28,6 @@ from .pypi_site import (
     iter_plugin_entry_points,
 )
 from .runtime_api import RuntimeAPI
-from .scaffold import PluginScaffoldError, PluginScaffoldService, ScaffoldRequest, ScaffoldResult
 from .lifecycle import (
     PluginLifecycle,
     REQUIRED_LIFECYCLE_METHODS,
@@ -59,10 +58,6 @@ __all__ = [
     "PluginLoader",
     "PluginRecord",
     "RuntimeAPI",
-    "PluginScaffoldError",
-    "PluginScaffoldService",
-    "ScaffoldRequest",
-    "ScaffoldResult",
     "PluginLifecycle",
     "REQUIRED_LIFECYCLE_METHODS",
     "OPTIONAL_LIFECYCLE_METHODS",
