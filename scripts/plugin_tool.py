@@ -117,6 +117,7 @@ build-backend = "setuptools.build_meta"
 name = "automas_{plugin_name}"
 version = "0.1.0"
 description = "{escaped_description}"
+readme = {{ file = "README.md", content-type = "text/markdown" }}
 requires-python = ">=3.10"
 dependencies = ["pydantic>=2.0"]
 
