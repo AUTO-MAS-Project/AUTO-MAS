@@ -31,6 +31,7 @@ from app.services import System
 from app.models.schema import *
 from app.api.ws_command import ws_command
 from app.utils import get_logger
+from app.utils.websocket import ws_client_manager
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])
 logger = get_logger("DEV")
@@ -51,45 +52,27 @@ async def connect_websocket(websocket: WebSocket):
         return
 
     await websocket.accept()
-    Config.websocket = websocket
-    last_pong = time.monotonic()
-    last_ping = time.monotonic()
-    data = {}
-
-    asyncio.create_task(TaskManager.start_startup_queue())
-
-    while True:
-
-        try:
-
-            data = await asyncio.wait_for(websocket.receive_json(), timeout=15.0)
-            if data.get("type") == "Signal" and "Pong" in data.get("data", {}):
-                last_pong = time.monotonic()
-            elif data.get("type") == "Signal" and "Ping" in data.get("data", {}):
-                await websocket.send_json(
-                    WebSocketMessage(
-                        id="Main", type="Signal", data={"Pong": "无描述"}
-                    ).model_dump()
-                )
-            else:
-                await Broadcast.put(data)
-
-        except asyncio.TimeoutError:
-
-            if last_pong < last_ping:
-                await websocket.close(code=1000, reason="Ping超时")
-                break
-            await websocket.send_json(
-                WebSocketMessage(
-                    id="Main", type="Signal", data={"Ping": "无描述"}
-                ).model_dump()
-            )
-            last_ping = time.monotonic()
-
-        except WebSocketDisconnect:
-            break
-
     Config.websocket = None
+
+    async def on_message(data: dict):
+        await Broadcast.put(data)
+
+    async def on_disconnect():
+        Config.websocket = None
+
+    session = await ws_client_manager.openwsr(
+        name=ws_client_manager.MAIN_CLIENT_NAME,
+        websocket=websocket,
+        ping_interval=15.0,
+        ping_timeout=30.0,
+        on_message=on_message,
+        on_disconnect=on_disconnect,
+    )
+
+    Config.websocket = session
+    asyncio.create_task(TaskManager.start_startup_queue())
+    await session.wait_closed()
+
     if is_backend_dev_mode():
         logger.warning("后端开发模式下检测到 WS 断链，跳过 KillSelf 自动退出")
     else:
