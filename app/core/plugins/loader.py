@@ -95,7 +95,7 @@ class PluginLoader:
 
     def discover(self) -> Dict[str, PluginSource]:
         """
-        扫描并发现可用插件来源（本地目录优先，兼容 PyPI Entry Point）。
+        扫描并发现可用插件来源（PyPI Entry Point 优先，本地目录回退）。
 
         Returns:
             Dict[str, PluginSource]: 键为插件名、值为插件来源描述的映射。
@@ -103,21 +103,9 @@ class PluginLoader:
         ensure_pypi_site_packages_on_syspath(self.plugins_dir)
         discovered: Dict[str, PluginLoader.PluginSource] = {}
 
-        if self.plugins_dir.exists():
-            for item in sorted(self.plugins_dir.iterdir()):
-                plugin_py = item / "plugin.py"
-                if item.is_dir() and plugin_py.exists():
-                    discovered[item.name] = self.PluginSource(source="local", path=item)
-        else:
-            logger.info(f"插件目录不存在，仅扫描 PyPI 插件: {self.plugins_dir}")
-
         for ep in self._iter_entry_points():
             plugin_name = str(getattr(ep, "name", "") or "").strip()
             if not plugin_name:
-                continue
-
-            if plugin_name in discovered:
-                logger.warning(f"检测到同名 PyPI 插件，已忽略（本地优先）: {plugin_name}")
                 continue
 
             dist = getattr(ep, "dist", None)
@@ -131,6 +119,17 @@ class PluginLoader:
                 distribution=distribution,
                 version=version,
             )
+
+        if self.plugins_dir.exists():
+            for item in sorted(self.plugins_dir.iterdir()):
+                plugin_py = item / "plugin.py"
+                if item.is_dir() and plugin_py.exists():
+                    if item.name in discovered:
+                        logger.warning(f"检测到同名本地插件，已忽略（PyPI 优先）: {item.name}")
+                        continue
+                    discovered[item.name] = self.PluginSource(source="local", path=item)
+        else:
+            logger.info(f"插件目录不存在，仅扫描 PyPI 插件: {self.plugins_dir}")
 
         self.discovered_plugins = discovered
         logger.info(f"插件扫描完成，共发现 {len(discovered)} 个插件")
