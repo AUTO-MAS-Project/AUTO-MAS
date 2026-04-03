@@ -214,7 +214,6 @@ class LogMonitor:
                 continue
 
             self.log_contents.append(line)
-            logger.debug(f"监控到新日志: {line.strip()}")
             await self.update_latest_timestamp(line)
 
             if datetime.now() - self.last_callback_time > timedelta(seconds=0.1):
@@ -254,6 +253,7 @@ class LogMonitor:
                     self.time_format,
                     self.last_callback_time,
                 )
+                logger.debug(f"日志时间戳更新: {self.latest_time}")
                 self.last_log = log_text
 
     async def start_monitor_file(
