@@ -96,17 +96,6 @@ class Plugin:
         """生命周期：重载提交阶段。"""
         self.ctx.logger.info("[new_plugin] on_reload_commit")
 
-    async def on_reload_rollback(self, error: Exception) -> None:
-        """生命周期：重载回滚阶段。
-
-        Args:
-            error (Exception): 重载失败异常。
-
-        Returns:
-            None: 无返回值。
-        """
-        self.ctx.logger.error(f"[new_plugin] on_reload_rollback, error={type(error).__name__}: {error}")
-
     @on_event("demo.ping", scope="global", priority=10)
     async def on_ping(self, payload: dict, ctx: "PluginContext") -> None:
         """
