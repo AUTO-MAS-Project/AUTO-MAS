@@ -1702,7 +1702,7 @@ class PluginConfig(ConfigBase):
     class PluginNameValidator(StringValidator):
         """插件名称验证器。"""
 
-        _pattern = re.compile(r"^[a-zA-Z0-9_][a-zA-Z0-9_-]*$")
+        _pattern = re.compile(r"^[a-zA-Z0-9_][a-zA-Z0-9_@-]*$")
 
         def validate(self, value):
             """校验插件名称是否合法。"""
@@ -1711,7 +1711,7 @@ class PluginConfig(ConfigBase):
         def correct(self, value):
             """修正非法插件名称。"""
             if isinstance(value, str):
-                fixed = re.sub(r"[^a-zA-Z0-9_-]", "", value.strip())
+                fixed = re.sub(r"[^a-zA-Z0-9_@-]", "", value.strip())
                 if fixed and fixed[0].isalnum() or (fixed and fixed[0] == "_"):
                     return fixed
             return "unknown_plugin"

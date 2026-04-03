@@ -70,6 +70,7 @@ class PluginLoader:
 
         source: Literal["local", "pypi"]
         path: Optional[Path] = None
+        module_path: Optional[Path] = None
         entry_point: Any = None
         module_name: Optional[str] = None
         distribution: Optional[str] = None
@@ -93,9 +94,37 @@ class PluginLoader:
             logger.warning(f"读取本地 PyPI Entry Points 失败: {e}")
             return []
 
+    def _resolve_local_plugin_module_path(self, plugin_dir: Path) -> Optional[Path]:
+        """解析本地插件模块文件路径。
+
+        兼容两种本地目录形态：
+        1) `plugins/<name>/plugin.py`
+        2) `plugins/<name>/src/<name>/plugin.py`
+
+        Args:
+            plugin_dir (Path): 插件根目录。
+
+        Returns:
+            Optional[Path]: 匹配到的模块文件路径；未匹配时返回 None。
+        """
+        root_plugin = plugin_dir / "plugin.py"
+        if root_plugin.exists():
+            return root_plugin
+
+        src_plugin = plugin_dir / "src" / plugin_dir.name / "plugin.py"
+        if src_plugin.exists():
+            return src_plugin
+
+        return None
+
     def discover(self) -> Dict[str, PluginSource]:
         """
-        扫描并发现可用插件来源（PyPI Entry Point 优先，本地目录回退）。
+        扫描并发现可用插件来源（支持同名 local/pypi 共存）。
+
+        规则：
+        - PyPI Entry Point 仍以原插件名作为主键（如 `test`）。
+        - 本地插件支持 `plugins/<name>/plugin.py` 与 `plugins/<name>/src/<name>/plugin.py`。
+        - 若本地与 PyPI 同名，则本地以 `<name>@local` 追加，避免覆盖。
 
         Returns:
             Dict[str, PluginSource]: 键为插件名、值为插件来源描述的映射。
@@ -122,12 +151,29 @@ class PluginLoader:
 
         if self.plugins_dir.exists():
             for item in sorted(self.plugins_dir.iterdir()):
-                plugin_py = item / "plugin.py"
-                if item.is_dir() and plugin_py.exists():
-                    if item.name in discovered:
-                        logger.warning(f"检测到同名本地插件，已忽略（PyPI 优先）: {item.name}")
-                        continue
-                    discovered[item.name] = self.PluginSource(source="local", path=item)
+                if not item.is_dir():
+                    continue
+                plugin_py = self._resolve_local_plugin_module_path(item)
+                if plugin_py is None:
+                    continue
+
+                if item.name in discovered:
+                    local_key = f"{item.name}@local"
+                    discovered[local_key] = self.PluginSource(
+                        source="local",
+                        path=item,
+                        module_path=plugin_py,
+                    )
+                    logger.warning(
+                        f"检测到同名本地插件，已保留并重命名为 {local_key}（PyPI 仍使用主键 {item.name}）"
+                    )
+                    continue
+
+                discovered[item.name] = self.PluginSource(
+                    source="local",
+                    path=item,
+                    module_path=plugin_py,
+                )
         else:
             logger.info(f"插件目录不存在，仅扫描 PyPI 插件: {self.plugins_dir}")
 
@@ -236,7 +282,11 @@ class PluginLoader:
         if plugin_source.source == "local":
             if plugin_source.path is None:
                 raise PluginDefinitionError(f"本地插件路径缺失: {plugin_name}")
-            plugin_py = plugin_source.path / "plugin.py"
+            plugin_py = plugin_source.module_path or self._resolve_local_plugin_module_path(plugin_source.path)
+            if plugin_py is None:
+                raise PluginDefinitionError(
+                    f"本地插件缺少入口文件 plugin.py: {plugin_name}（支持根目录或 src/<name>/plugin.py）"
+                )
             module = self._import_local_plugin_module(plugin_name, plugin_py)
             plugin_class = getattr(module, "Plugin", None)
             if not inspect.isclass(plugin_class):

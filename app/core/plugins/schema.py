@@ -64,6 +64,55 @@ class PluginSchemaManager:
         "list": list[Any],
     }
 
+    def _canonical_plugin_name(self, plugin_name: str) -> str:
+        """将插件名规范化为基础名。
+
+        当插件名包含来源后缀（例如 `test@local`）时，
+        仅提取 `@` 前的基础插件名用于路径与入口点回退匹配。
+
+        Args:
+            plugin_name (str): 原始插件名。
+
+        Returns:
+            str: 规范化后的基础插件名。
+        """
+        normalized = str(plugin_name or "").strip()
+        if not normalized:
+            return ""
+        return normalized.split("@", 1)[0].strip() or normalized
+
+    def _resolve_local_plugin_py_path(self, plugin_name: str, plugin_path: Path) -> Path | None:
+        """解析本地插件入口文件路径。
+
+        兼容以下目录结构：
+        1) `plugins/<name>/plugin.py`
+        2) `plugins/<name>/src/<name>/plugin.py`
+        3) `plugins/<name>/src/<base_name>/plugin.py`（`<base_name>` 来自 `@` 前缀）
+
+        Args:
+            plugin_name (str): 插件名（允许包含来源后缀）。
+            plugin_path (Path): 本地插件根目录。
+
+        Returns:
+            Path | None: 匹配到的 plugin.py 路径；未匹配返回 None。
+        """
+        root_plugin = plugin_path / "plugin.py"
+        if root_plugin.exists():
+            return root_plugin
+
+        candidates = [plugin_path.name, self._canonical_plugin_name(plugin_name)]
+        seen: set[str] = set()
+        for candidate in candidates:
+            name = str(candidate or "").strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            src_plugin = plugin_path / "src" / name / "plugin.py"
+            if src_plugin.exists():
+                return src_plugin
+
+        return None
+
     def load_schema(self, plugin_name: str, plugin_path: Path | None) -> Dict[str, Dict[str, Any]]:
         """
         加载并校验插件 Schema 定义。
@@ -84,6 +133,7 @@ class PluginSchemaManager:
                 4) 字段定义格式错误（字段缺少 type、constraints 非对象等）。
         """
         schema: Dict[str, Dict[str, Any]] = {}
+        canonical_plugin_name = self._canonical_plugin_name(plugin_name)
         if plugin_path is not None:
             schema_py = plugin_path / "schema.py"
             schema_json = plugin_path / "schema.json"
@@ -94,12 +144,15 @@ class PluginSchemaManager:
                 schema = self._load_schema_from_json(plugin_name, schema_json)
 
             if not schema:
-                plugin_py = plugin_path / "plugin.py"
-                if plugin_py.exists():
+                plugin_py = self._resolve_local_plugin_py_path(plugin_name, plugin_path)
+                if plugin_py is not None and plugin_py.exists():
                     schema = self._load_schema_from_plugin_py(plugin_name, plugin_py)
 
         if not schema:
             schema = self._load_schema_from_entry_point(plugin_name)
+
+        if not schema and canonical_plugin_name != plugin_name:
+            schema = self._load_schema_from_entry_point(canonical_plugin_name)
 
         if not schema:
             return {}

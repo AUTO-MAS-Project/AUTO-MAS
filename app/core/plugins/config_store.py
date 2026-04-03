@@ -41,6 +41,29 @@ class PluginConfigStore:
         safe_suffix = str(suffix or "").strip() or uuid.uuid4().hex[:5]
         return f"{safe_plugin}:{safe_suffix}"
 
+    def _resolve_plugin_path(self, plugin_name: str) -> Path:
+        """根据插件名解析插件目录路径。
+
+        当插件名包含来源后缀（如 `test@local`）时，优先使用基础名目录
+        `plugins/test`；若不存在则回退 `plugins/test@local`。
+
+        Args:
+            plugin_name (str): 插件名。
+
+        Returns:
+            Path: 解析得到的插件目录路径。
+        """
+        plugins_root = Path.cwd() / "plugins"
+        raw_name = str(plugin_name or "").strip()
+        if not raw_name:
+            return plugins_root / "unknown_plugin"
+
+        base_name = raw_name.split("@", 1)[0].strip() or raw_name
+        base_path = plugins_root / base_name
+        if base_path.exists():
+            return base_path
+        return plugins_root / raw_name
+
     async def _read_root(self) -> Dict[str, Any]:
         """从插件独立配置读取统一配置根对象。"""
         from app.core import Config
@@ -127,7 +150,7 @@ class PluginConfigStore:
 
             effective_config = self.load_effective_config(
                 plugin_name,
-                Path.cwd() / "plugins" / plugin_name,
+                self._resolve_plugin_path(plugin_name),
                 config,
             )
 
