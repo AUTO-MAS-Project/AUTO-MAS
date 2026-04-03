@@ -114,7 +114,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "automas_{plugin_name}"
+name = "automas_plugin_{plugin_name}"
 version = "0.1.0"
 description = "{escaped_description}"
 readme = {{ file = "README.md", content-type = "text/markdown" }}
@@ -286,7 +286,7 @@ def main() -> int:
             if not interactive:
                 print("生成失败: 插件名不能为空")
                 return 1
-            input_name = prompt_non_empty("请输入插件名, 如demo_plugin,默认我们会给你加上automas_前缀, 无需自己写:")
+            input_name = prompt_non_empty("请输入插件名, 如demo_plugin,默认我们会给你加上automas_plugin_前缀, 无需自己写:")
         try:
             plugin_name = validate_plugin_name(input_name, plugins_dir)
             break
