@@ -310,6 +310,32 @@ class PluginLoader:
         if inspect.isawaitable(result):
             await result
 
+    async def _call_optional_lifecycle_method(self, instance: Any, method_name: str, *args: Any) -> bool:
+        """尝试调用可选生命周期方法。
+
+        Args:
+            instance (Any): 插件实例对象。
+            method_name (str): 生命周期方法名。
+            *args (Any): 生命周期方法参数。
+
+        Returns:
+            bool: 方法存在并执行时返回 True；方法不存在时返回 False。
+
+        Raises:
+            TypeError: 当生命周期属性存在但不可调用时抛出。
+            Exception: 生命周期方法执行失败时透传原始异常。
+        """
+        method = getattr(instance, method_name, None)
+        if method is None:
+            return False
+        if not callable(method):
+            raise TypeError(f"生命周期方法不可调用: {method_name}")
+
+        result = method(*args)
+        if inspect.isawaitable(result):
+            await result
+        return True
+
     def _create_plugin_instance(self, plugin_name: str, plugin_class: type[Any], context: PluginContext) -> Any:
         """构建插件实例并校验生命周期契约。
 
@@ -588,7 +614,7 @@ class PluginLoader:
                 self._register_decorated_handlers(record=record, target=record.plugin_instance)
             )
             self._mark_lifecycle_phase(record, "on_load")
-            await self._call_lifecycle_method(record.plugin_instance, "on_load", record.context)
+            await self._call_optional_lifecycle_method(record.plugin_instance, "on_load", record.context)
             self._mark_lifecycle_phase(record, "on_start")
             await self._call_lifecycle_method(record.plugin_instance, "on_start")
 
@@ -686,7 +712,7 @@ class PluginLoader:
                 self._register_decorated_handlers(record=record, target=record.plugin_instance)
             )
             self._mark_lifecycle_phase(record, "on_load")
-            await self._call_lifecycle_method(record.plugin_instance, "on_load", record.context)
+            await self._call_optional_lifecycle_method(record.plugin_instance, "on_load", record.context)
             self._mark_lifecycle_phase(record, "on_start")
             await self._call_lifecycle_method(record.plugin_instance, "on_start")
 
@@ -776,7 +802,7 @@ class PluginLoader:
                 self._mark_lifecycle_phase(record, "on_stop")
                 await self._call_lifecycle_method(record.plugin_instance, "on_stop", "stop")
                 self._mark_lifecycle_phase(record, "on_unload")
-                await self._call_lifecycle_method(record.plugin_instance, "on_unload")
+                await self._call_optional_lifecycle_method(record.plugin_instance, "on_unload")
             self._mark_status(record, "disposed")
             self._mark_lifecycle_phase(record, "disposed")
         except Exception as e:
@@ -818,7 +844,7 @@ class PluginLoader:
         2. 卸载旧实例；
         3. 加载新实例；
         4. 新实例激活后调用 `on_reload_commit`；
-        5. 若加载失败且新实例存在，调用 `on_reload_rollback`。
+        5. 若加载失败，直接关闭实例并保留错误状态。
 
         Args:
             instance_id (str): 插件实例 ID。
@@ -838,7 +864,7 @@ class PluginLoader:
             old_record.last_reload_reason = reason
             old_record.last_reload_at = _utc8_now_iso()
             self._mark_lifecycle_phase(old_record, "on_reload_prepare")
-            await self._call_lifecycle_method(old_record.plugin_instance, "on_reload_prepare")
+            await self._call_optional_lifecycle_method(old_record.plugin_instance, "on_reload_prepare")
             self._mark_lifecycle_phase(old_record, "on_stop")
             await self._call_lifecycle_method(old_record.plugin_instance, "on_stop", f"reload:{reason}")
 
@@ -854,13 +880,8 @@ class PluginLoader:
             new_record.last_reload_reason = reason
             new_record.last_reload_at = _utc8_now_iso()
             self._mark_lifecycle_phase(new_record, "reload_failed")
-            if new_record.plugin_instance is not None:
-                error = RuntimeError(str(new_record.error or "未知错误"))
-                await self._call_lifecycle_method(
-                    new_record.plugin_instance,
-                    "on_reload_rollback",
-                    error,
-                )
+            await self.unload_instance(instance_id)
+            self._mark_lifecycle_phase(new_record, "closed")
             return new_record
 
         previous_generation = 0
@@ -873,7 +894,7 @@ class PluginLoader:
 
         if new_record.plugin_instance is not None:
             self._mark_lifecycle_phase(new_record, "on_reload_commit")
-            await self._call_lifecycle_method(new_record.plugin_instance, "on_reload_commit")
+            await self._call_optional_lifecycle_method(new_record.plugin_instance, "on_reload_commit")
         self._mark_lifecycle_phase(new_record, "active")
         return new_record
 

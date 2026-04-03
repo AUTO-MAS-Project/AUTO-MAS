@@ -7,7 +7,12 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 
-from app.core.plugins import PluginConfigStore, PluginManager
+from app.core.plugins import (
+    PluginConfigStore,
+    PluginManager,
+    PluginScaffoldService,
+    ScaffoldRequest,
+)
 from app.core.plugins.dev_stub_generator import (
     generate_plugin_context_stubs,
     is_dev_stub_generation_enabled,
@@ -98,6 +103,21 @@ class PluginDevRebuildCtxStubOut(OutBase):
     output_dir: Optional[str] = Field(default=None, description="生成目录")
     changed_files: List[str] = Field(default_factory=list, description="已更新文件")
     unchanged_files: List[str] = Field(default_factory=list, description="未变更文件")
+
+
+class PluginDevScaffoldMinimalPypiIn(BaseModel):
+    pluginName: str = Field(..., description="插件名（小写蛇形）")
+    description: str = Field(..., description="插件简介")
+    initGit: bool = Field(default=False, description="是否初始化 Git 仓库")
+
+
+class PluginDevScaffoldMinimalPypiOut(OutBase):
+    target_dir: Optional[str] = Field(default=None, description="生成目录")
+    created_files: List[str] = Field(default_factory=list, description="已创建文件")
+    entry_point_group: Optional[str] = Field(default=None, description="Entry Point group")
+    entry_point_name: Optional[str] = Field(default=None, description="Entry Point name")
+    git_initialized: bool = Field(default=False, description="是否已初始化 Git")
+    warnings: List[str] = Field(default_factory=list, description="执行警告信息")
 
 
 def _discover_plugins(plugins_dir: Path) -> Dict[str, Any]:
@@ -311,6 +331,55 @@ async def rebuild_plugin_ctx_stub(
             output_dir=None,
             changed_files=[],
             unchanged_files=[],
+        )
+
+
+@router.post(
+    "/dev/scaffold_minimal_pypi",
+    tags=["Action"],
+    summary="生成最小 PyPI 插件模板",
+    response_model=PluginDevScaffoldMinimalPypiOut,
+    status_code=200,
+)
+async def scaffold_minimal_pypi_plugin(
+    data: PluginDevScaffoldMinimalPypiIn = Body(...),
+) -> PluginDevScaffoldMinimalPypiOut:
+    """生成最小 PyPI 插件模板。
+
+    Args:
+        data (PluginDevScaffoldMinimalPypiIn): 模板输入参数。
+
+    Returns:
+        PluginDevScaffoldMinimalPypiOut: 模板生成结果。
+
+    Raises:
+        无。接口内部会捕获异常并转换为统一错误响应。
+    """
+    try:
+        service = PluginScaffoldService(workspace_dir=Path.cwd())
+        result = service.create_minimal_pypi_plugin(
+            ScaffoldRequest(
+                plugin_name=data.pluginName,
+                description=data.description,
+                init_git=data.initGit,
+            )
+        )
+        payload = result.to_dict()
+        return PluginDevScaffoldMinimalPypiOut(
+            message="最小 PyPI 插件模板生成成功",
+            **payload,
+        )
+    except Exception as e:
+        return PluginDevScaffoldMinimalPypiOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            target_dir=None,
+            created_files=[],
+            entry_point_group=None,
+            entry_point_name=None,
+            git_initialized=False,
+            warnings=[],
         )
 
 
