@@ -2061,7 +2061,7 @@ class GlobalConfig(ConfigBase):
         self.PlanConfig = MultipleConfig([MaaPlanConfig])
         ## 脚本配置列表
         self.ScriptConfig = MultipleConfig(
-            [MaaConfig, MaaEndConfig, SrcConfig, GeneralConfig]
+            [MaaConfig, MaaEndConfig, SrcConfig, M9AConfig, GeneralConfig]
         )
         ## 队列配置列表
         self.QueueConfig = MultipleConfig([QueueConfig])
@@ -2071,6 +2071,7 @@ class GlobalConfig(ConfigBase):
         MaaConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaEndConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         SrcConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
+        M9AConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
@@ -2143,6 +2144,7 @@ CLASS_BOOK = {
     "MaaPlan": MaaPlanConfig,
     "SRC": SrcConfig,
     "MaaEnd": MaaEndConfig,
+    "M9A": M9AConfig,
     "General": GeneralConfig,
 }
 """配置类映射表"""
