@@ -121,7 +121,9 @@ async def _build_time_set_create_out(queue_id: str) -> TimeSetCreateOut:
 async def _update_time_set_config(
     queue_id: str, time_set_id: str, data: TimeSetPatch
 ) -> OutBase:
-    await Config.update_time_set(queue_id, time_set_id, data.model_dump(exclude_unset=True))
+    await Config.update_time_set(
+        queue_id, time_set_id, data.model_dump(exclude_unset=True)
+    )
     return OutBase()
 
 
@@ -215,7 +217,7 @@ async def create_queue() -> QueueCreateOut:
     },
 )
 async def reorder_queue(body: IndexOrderPatch = Body(...)) -> OutBase:
-    await Config.reorder_queue(body.indexList)
+    await Config.reorder_queue(body.index_list)
     return OutBase()
 
 
@@ -314,7 +316,7 @@ async def create_time_set(queue_id: QueueIdPath) -> TimeSetCreateOut:
 async def reorder_time_sets(
     queue_id: QueueIdPath, body: IndexOrderPatch = Body(...)
 ) -> OutBase:
-    await Config.reorder_time_set(queue_id, body.indexList)
+    await Config.reorder_time_set(queue_id, body.index_list)
     return OutBase()
 
 
@@ -366,9 +368,7 @@ async def update_time_set(
         "status_code": 200,
     },
 )
-async def delete_time_set(
-    queue_id: QueueIdPath, time_set_id: TimeSetIdPath
-) -> OutBase:
+async def delete_time_set(queue_id: QueueIdPath, time_set_id: TimeSetIdPath) -> OutBase:
     return await _delete_time_set_config(queue_id, time_set_id)
 
 
@@ -420,7 +420,7 @@ async def create_queue_item(queue_id: QueueIdPath) -> QueueItemCreateOut:
 async def reorder_queue_items(
     queue_id: QueueIdPath, body: IndexOrderPatch = Body(...)
 ) -> OutBase:
-    await Config.reorder_queue_item(queue_id, body.indexList)
+    await Config.reorder_queue_item(queue_id, body.index_list)
     return OutBase()
 
 

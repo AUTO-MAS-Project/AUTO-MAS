@@ -32,7 +32,7 @@ class MaaConfig(_MaaConfigReadBase):
 
 
 class MaaConfigPatch(_MaaConfigPatchBase):
-    type: Literal["MaaConfig"] | None = Field(default=None, description="配置类型")
+    type: Literal["MaaConfig"] = Field(default="MaaConfig", description="配置类型")
 
 
 class MaaUserConfig(_MaaUserConfigReadBase):
@@ -42,8 +42,8 @@ class MaaUserConfig(_MaaUserConfigReadBase):
 
 
 class MaaUserConfigPatch(_MaaUserConfigPatchBase):
-    type: Literal["MaaUserConfig"] | None = Field(
-        default=None, description="配置类型"
+    type: Literal["MaaUserConfig"] = Field(
+        default="MaaUserConfig", description="配置类型"
     )
 
 
@@ -54,8 +54,8 @@ class MaaPlanConfig(_MaaPlanConfigReadBase):
 
 
 class MaaPlanPatch(_MaaPlanPatchBase):
-    type: Literal["MaaPlanConfig"] | None = Field(
-        default=None, description="配置类型"
+    type: Literal["MaaPlanConfig"] = Field(
+        default="MaaPlanConfig", description="配置类型"
     )
 
 

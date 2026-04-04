@@ -28,8 +28,8 @@ class MaaEndConfig(_MaaEndConfigReadBase):
 
 
 class MaaEndConfigPatch(_MaaEndConfigPatchBase):
-    type: Literal["MaaEndConfig"] | None = Field(
-        default=None, description="配置类型"
+    type: Literal["MaaEndConfig"] = Field(
+        default="MaaEndConfig", description="配置类型"
     )
 
 
@@ -40,8 +40,8 @@ class MaaEndUserConfig(_MaaEndUserConfigReadBase):
 
 
 class MaaEndUserConfigPatch(_MaaEndUserConfigPatchBase):
-    type: Literal["MaaEndUserConfig"] | None = Field(
-        default=None, description="配置类型"
+    type: Literal["MaaEndUserConfig"] = Field(
+        default="MaaEndUserConfig", description="配置类型"
     )
 
 

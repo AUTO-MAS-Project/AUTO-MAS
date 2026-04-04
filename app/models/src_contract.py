@@ -26,7 +26,7 @@ class SrcConfig(_SrcConfigReadBase):
 
 
 class SrcConfigPatch(_SrcConfigPatchBase):
-    type: Literal["SrcConfig"] | None = Field(default=None, description="配置类型")
+    type: Literal["SrcConfig"] = Field(default="SrcConfig", description="配置类型")
 
 
 class SrcUserConfig(_SrcUserConfigReadBase):
@@ -36,8 +36,8 @@ class SrcUserConfig(_SrcUserConfigReadBase):
 
 
 class SrcUserConfigPatch(_SrcUserConfigPatchBase):
-    type: Literal["SrcUserConfig"] | None = Field(
-        default=None, description="配置类型"
+    type: Literal["SrcUserConfig"] = Field(
+        default="SrcUserConfig", description="配置类型"
     )
 
 
