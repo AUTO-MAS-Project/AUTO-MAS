@@ -27,6 +27,10 @@ class HistoryData(ApiModel):
     error_info: dict[str, str] | None = Field(
         default=None, description="报错信息, key为时间戳, value为错误描述"
     )
+    sanity: int | None = Field(default=None, description="当前理智值")
+    sanity_full_at: str | None = Field(
+        default=None, description="理智回满时间, 格式通常为 YYYY-MM-DD HH:MM:SS"
+    )
     log_content: str | None = Field(
         default=None, description="日志内容, 仅在提取单条历史记录数据时返回"
     )

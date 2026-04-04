@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any, Callable, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, AliasPath, BaseModel, Field, field_validator
 
 from app.core.config.base import MultipleConfig
 from app.core.config.fields import VirtualField
@@ -135,7 +135,10 @@ class GlobalConfig(PydanticConfigBase):
         LastStatisticsUpload: YmdHmsString = "2000-01-01 00:00:00"
         LastStageUpdated: YmdHmsString = "2000-01-01 00:00:00"
         StageETag: str = ""
-        StageData: JsonDictString = "{ }"
+        StageData: JsonDictString = Field(
+            default="{ }",
+            validation_alias=AliasChoices("StageData", AliasPath("Data", "Stage")),
+        )
         LastNoticeUpdated: YmdHmsString = "2000-01-01 00:00:00"
         NoticeETag: str = ""
         IfShowNotice: bool = True
@@ -164,8 +167,6 @@ class GlobalConfig(PydanticConfigBase):
     Update: UpdateModel = Field(default_factory=UpdateModel)
     Data: DataModel = Field(default_factory=DataModel)
 
-    LEGACY_FIELD_MAP = {("Data", "StageData"): ("Data", "Stage")}
-
     def __init__(self, **data: Any):
         super().__init__(**data)
 
@@ -176,9 +177,7 @@ class GlobalConfig(PydanticConfigBase):
         self.PlanConfig: MultipleConfig[MaaPlanConfig] = MultipleConfig([MaaPlanConfig])
         self.ScriptConfig: MultipleConfig[
             MaaConfig | MaaEndConfig | SrcConfig | GeneralConfig
-        ] = MultipleConfig(
-            [MaaConfig, MaaEndConfig, SrcConfig, GeneralConfig]
-        )
+        ] = MultipleConfig([MaaConfig, MaaEndConfig, SrcConfig, GeneralConfig])
         self.QueueConfig: MultipleConfig[QueueConfig] = MultipleConfig([QueueConfig])
         self.ToolsConfig = ToolsConfig()
 

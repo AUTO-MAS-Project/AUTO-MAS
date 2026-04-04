@@ -9,7 +9,7 @@ from collections.abc import Callable, Coroutine
 from collections.abc import AsyncIterator
 from typing import Any, ClassVar, TypeVar, cast
 
-from pydantic import BaseModel, ConfigDict, PrivateAttr
+from pydantic import AliasChoices, AliasPath, BaseModel, ConfigDict, PrivateAttr
 
 from .base import (
     MultipleConfig,
@@ -49,6 +49,74 @@ def _normalize_mapping(value: Any) -> dict[str, Any]:
         return {}
     mapping = cast(dict[object, Any], value)
     return {str(key): item for key, item in mapping.items()}
+
+
+def _resolve_alias_paths(validation_alias: Any) -> list[tuple[str, ...]]:
+    if validation_alias is None:
+        return []
+
+    if isinstance(validation_alias, str):
+        return [(validation_alias,)]
+
+    if isinstance(validation_alias, AliasPath):
+        path = tuple(
+            item
+            for item in validation_alias.path
+            if isinstance(item, str) and item != ""
+        )
+        return [path] if path else []
+
+    if isinstance(validation_alias, AliasChoices):
+        alias_paths: list[tuple[str, ...]] = []
+        for choice in validation_alias.choices:
+            alias_paths.extend(_resolve_alias_paths(choice))
+        return alias_paths
+
+    return []
+
+
+def _try_resolve_alias_value(
+    raw: dict[str, Any],
+    group_name: str,
+    group_data: dict[str, Any],
+    validation_alias: Any,
+) -> tuple[Any, bool]:
+    for alias_path in _resolve_alias_paths(validation_alias):
+        if not alias_path:
+            continue
+
+        if len(alias_path) == 1:
+            alias_key = alias_path[0]
+            if alias_key in group_data:
+                return group_data[alias_key], True
+            continue
+
+        current: Any
+        root_key = alias_path[0]
+        if root_key == group_name:
+            current = group_data
+            walk_keys = alias_path[1:]
+        else:
+            current = _normalize_mapping(raw.get(root_key, {}))
+            walk_keys = alias_path[1:]
+
+        matched = True
+        for key in walk_keys:
+            if not isinstance(current, dict):
+                matched = False
+                break
+
+            current_dict = cast(dict[str, Any], current)
+            if key not in current_dict:
+                matched = False
+                break
+
+            current = current_dict[key]
+
+        if matched:
+            return cast(Any, current), True
+
+    return None, False
 
 
 FieldMarkerT = TypeVar("FieldMarkerT")
@@ -459,6 +527,16 @@ class PydanticConfigBase(BaseModel):
                     candidate = group_data[field_name]
                     has_value = True
                 else:
+                    field_info = type(group_model).model_fields.get(field_name)
+                    if field_info is not None:
+                        candidate, has_value = _try_resolve_alias_value(
+                            raw,
+                            group_name,
+                            group_data,
+                            field_info.validation_alias,
+                        )
+
+                if not has_value:
                     legacy = self.LEGACY_FIELD_MAP.get((group_name, field_name))
                     if legacy is not None:
                         legacy_group, legacy_name = legacy
@@ -549,7 +627,10 @@ class PydanticConfigBase(BaseModel):
         if old_value != new_value:
             await self._queue_binding(group, name, new_value)
 
-        for (virtual_group, virtual_name), old_virtual_value in virtual_old_values.items():
+        for (
+            virtual_group,
+            virtual_name,
+        ), old_virtual_value in virtual_old_values.items():
             new_virtual_value = self.get(virtual_group, virtual_name)
             if old_virtual_value != new_virtual_value:
                 await self._queue_binding(

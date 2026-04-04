@@ -23,11 +23,11 @@
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any, cast
 from fastapi import APIRouter, Body
+from pydantic import TypeAdapter
 
 from app.core import Config
-from app.models.common_contract import project_model_list
+from app.api.common import error_out
 from app.models.history_contract import (
     HistoryData,
     HistoryDataGetIn,
@@ -39,21 +39,18 @@ from app.models.history_contract import (
 
 router = APIRouter(prefix="/api/history", tags=["历史记录"])
 
+HISTORY_INDEX_ADAPTER: TypeAdapter[list[HistoryIndexItem]] = TypeAdapter(
+    list[HistoryIndexItem]
+)
+
 
 def _build_history_data(raw: dict[str, object]) -> HistoryData:
-    index_data = raw.get("index", [])
-    raw["index"] = []
+    data = dict(raw)
+    index_data = data.get("index", [])
+    data["index"] = []
     if isinstance(index_data, list):
-        index_rows = [
-            cast(dict[str, Any], item)
-            for item in cast(list[object], index_data)
-            if isinstance(item, dict)
-        ]
-        raw["index"] = project_model_list(
-            HistoryIndexItem,
-            index_rows,
-        )
-    return HistoryData.model_validate(raw)
+        data["index"] = HISTORY_INDEX_ADAPTER.validate_python(index_data)
+    return HistoryData.model_validate(data)
 
 
 @router.post(
@@ -78,12 +75,7 @@ async def search_history(history: HistorySearchIn) -> HistorySearchOut:
                 current_users[user] = _build_history_data(record)
             data[date] = current_users
     except Exception as e:
-        return HistorySearchOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            data={},
-        )
+        return error_out(HistorySearchOut, e, data={})
     return HistorySearchOut(data=data)
 
 
@@ -102,10 +94,5 @@ async def get_history_data(history: HistoryDataGetIn = Body(...)) -> HistoryData
         raw_data["log_content"] = path.with_suffix(".log").read_text(encoding="utf-8")
         data = _build_history_data(raw_data)
     except Exception as e:
-        return HistoryDataGetOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            data=HistoryData(),
-        )
+        return error_out(HistoryDataGetOut, e, data=HistoryData())
     return HistoryDataGetOut(data=data)

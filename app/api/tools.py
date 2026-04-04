@@ -22,45 +22,50 @@
 
 
 from fastapi import APIRouter, Body
+
+from app.api.common import api_get, api_patch
 from app.core import Config
 from app.models.common_contract import OutBase, project_model
-from app.models.tools_contract import ToolsConfigRead, ToolsGetOut, ToolsUpdateIn
-from app.api.common import error_out
+from app.models.tools_contract import ToolsConfigPatch, ToolsConfigRead, ToolsGetOut
 
 router = APIRouter(prefix="/api/tools", tags=["工具设置"])
 
 
-@router.post(
-    "/get",
-    tags=["Get"],
-    summary="查询工具配置",
-    response_model=ToolsGetOut,
-    status_code=200,
+async def _build_tools_out() -> ToolsGetOut:
+    return ToolsGetOut(data=project_model(ToolsConfigRead, await Config.get_tools()))
+
+
+async def _update_tools_config(data: ToolsConfigPatch) -> OutBase:
+    await Config.update_tools(data.model_dump(exclude_unset=True))
+    return OutBase()
+
+
+@api_get(
+    router,
+    "",
+    model_cls=ToolsGetOut,
+    data=ToolsConfigRead(),
+    route_kwargs={
+        "tags": ["Get"],
+        "summary": "查询工具配置",
+        "response_model": ToolsGetOut,
+        "status_code": 200,
+    },
 )
 async def get_tools() -> ToolsGetOut:
-    """查询工具配置"""
-
-    try:
-        data = await Config.get_tools()
-    except Exception as e:
-        return error_out(ToolsGetOut, e, data=ToolsConfigRead())
-    return ToolsGetOut(data=project_model(ToolsConfigRead, data))
+    return await _build_tools_out()
 
 
-@router.post(
-    "/update",
-    tags=["Update"],
-    summary="更新工具配置",
-    response_model=OutBase,
-    status_code=200,
+@api_patch(
+    router,
+    "",
+    model_cls=OutBase,
+    route_kwargs={
+        "tags": ["Update"],
+        "summary": "更新工具配置",
+        "response_model": OutBase,
+        "status_code": 200,
+    },
 )
-async def update_tools(script: ToolsUpdateIn = Body(...)) -> OutBase:
-    """更新工具配置"""
-
-    try:
-        data = script.data.model_dump(exclude_unset=True)
-        await Config.update_tools(data)
-
-    except Exception as e:
-        return error_out(OutBase, e)
-    return OutBase()
+async def update_tools(data: ToolsConfigPatch = Body(...)) -> OutBase:
+    return await _update_tools_config(data)
