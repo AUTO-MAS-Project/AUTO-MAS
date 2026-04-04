@@ -24,15 +24,20 @@
 from fastapi import APIRouter, Body
 
 from app.core import Config
-from app.models.dto import (
+from app.models.common_contract import (
     OutBase,
-    QueueConfig,
+    project_model,
+    project_model_list,
+    project_model_map,
+)
+from app.models.queue_contract import (
+    QueueRead,
     QueueCreateOut,
     QueueDeleteIn,
     QueueGetIn,
     QueueGetOut,
     QueueIndexItem,
-    QueueItem,
+    QueueItemRead,
     QueueItemCreateOut,
     QueueItemDeleteIn,
     QueueItemGetIn,
@@ -43,7 +48,7 @@ from app.models.dto import (
     QueueReorderIn,
     QueueSetInBase,
     QueueUpdateIn,
-    TimeSet,
+    TimeSetRead,
     TimeSetCreateOut,
     TimeSetDeleteIn,
     TimeSetGetIn,
@@ -68,14 +73,14 @@ router = APIRouter(prefix="/api/queue", tags=["调度队列管理"])
 async def add_queue() -> QueueCreateOut:
     try:
         uid, config = await Config.add_queue()
-        data = QueueConfig(**(await config.toDict()))
+        data = project_model(QueueRead, await config.toDict())
     except Exception as e:
         return QueueCreateOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             queueId="",
-            data=QueueConfig(**{}),
+            data=QueueRead(),
         )
     return QueueCreateOut(queueId=str(uid), data=data)
 
@@ -91,8 +96,8 @@ async def add_queue() -> QueueCreateOut:
 async def get_queues(queue: QueueGetIn = Body(...)) -> QueueGetOut:
     try:
         index, config = await Config.get_queue(queue.queueId)
-        index = [QueueIndexItem(**_) for _ in index]
-        data = {uid: QueueConfig(**cfg) for uid, cfg in config.items()}
+        index = project_model_list(QueueIndexItem, index)
+        data = project_model_map(QueueRead, config)
     except Exception as e:
         return QueueGetOut(
             code=500,
@@ -167,8 +172,8 @@ async def reorder_queue(script: QueueReorderIn = Body(...)) -> OutBase:
 async def get_time_set(time: TimeSetGetIn = Body(...)) -> TimeSetGetOut:
     try:
         index, data = await Config.get_time_set(time.queueId, time.timeSetId)
-        index = [TimeSetIndexItem(**_) for _ in index]
-        data = {uid: TimeSet(**cfg) for uid, cfg in data.items()}
+        index = project_model_list(TimeSetIndexItem, index)
+        data = project_model_map(TimeSetRead, data)
     except Exception as e:
         return TimeSetGetOut(
             code=500,
@@ -189,7 +194,7 @@ async def get_time_set(time: TimeSetGetIn = Body(...)) -> TimeSetGetOut:
 )
 async def add_time_set(time: QueueSetInBase = Body(...)) -> TimeSetCreateOut:
     uid, config = await Config.add_time_set(time.queueId)
-    data = TimeSet(**(await config.toDict()))
+    data = project_model(TimeSetRead, await config.toDict())
     return TimeSetCreateOut(timeSetId=str(uid), data=data)
 
 
@@ -256,8 +261,8 @@ async def reorder_time_set(time: TimeSetReorderIn = Body(...)) -> OutBase:
 async def get_item(item: QueueItemGetIn = Body(...)) -> QueueItemGetOut:
     try:
         index, data = await Config.get_queue_item(item.queueId, item.queueItemId)
-        index = [QueueItemIndexItem(**_) for _ in index]
-        data = {uid: QueueItem(**cfg) for uid, cfg in data.items()}
+        index = project_model_list(QueueItemIndexItem, index)
+        data = project_model_map(QueueItemRead, data)
     except Exception as e:
         return QueueItemGetOut(
             code=500,
@@ -278,7 +283,7 @@ async def get_item(item: QueueItemGetIn = Body(...)) -> QueueItemGetOut:
 )
 async def add_item(item: QueueSetInBase = Body(...)) -> QueueItemCreateOut:
     uid, config = await Config.add_queue_item(item.queueId)
-    data = QueueItem(**(await config.toDict()))
+    data = project_model(QueueItemRead, await config.toDict())
     return QueueItemCreateOut(queueItemId=str(uid), data=data)
 
 

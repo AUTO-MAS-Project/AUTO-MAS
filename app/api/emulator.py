@@ -23,20 +23,25 @@
 
 from fastapi import APIRouter, Body
 from app.core import Config, EmulatorManager
-from app.models.dto import (
+from app.models.common_contract import (
     OutBase,
-    EmulatorConfig,
+    project_model,
+    project_model_list,
+    project_model_map,
+)
+from app.models.emulator_contract import (
+    EmulatorCreateOut,
+    EmulatorConfigIndexItem,
+    EmulatorDeleteIn,
     EmulatorGetIn,
     EmulatorGetOut,
-    EmulatorConfigIndexItem,
-    EmulatorCreateOut,
-    EmulatorUpdateIn,
-    EmulatorDeleteIn,
-    EmulatorReorderIn,
     EmulatorOperateIn,
-    EmulatorStatusOut,
-    EmulatorSearchOut,
+    EmulatorRead,
+    EmulatorReorderIn,
     EmulatorSearchResult,
+    EmulatorSearchOut,
+    EmulatorStatusOut,
+    EmulatorUpdateIn,
 )
 
 router = APIRouter(prefix="/api/emulator", tags=["模拟器管理"])
@@ -52,8 +57,8 @@ router = APIRouter(prefix="/api/emulator", tags=["模拟器管理"])
 async def get_emulator(emulator: EmulatorGetIn = Body(...)) -> EmulatorGetOut:
     try:
         index, data = await Config.get_emulator(emulator.emulatorId)
-        index = [EmulatorConfigIndexItem(**_) for _ in index]
-        data = {uid: EmulatorConfig(**cfg) for uid, cfg in data.items()}
+        index = project_model_list(EmulatorConfigIndexItem, index)
+        data = project_model_map(EmulatorRead, data)
     except Exception as e:
         return EmulatorGetOut(
             code=500,
@@ -75,14 +80,14 @@ async def get_emulator(emulator: EmulatorGetIn = Body(...)) -> EmulatorGetOut:
 async def add_emulator() -> EmulatorCreateOut:
     try:
         uid, config = await Config.add_emulator()
-        data = EmulatorConfig(**(await config.toDict()))
+        data = project_model(EmulatorRead, await config.toDict())
     except Exception as e:
         return EmulatorCreateOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             emulatorId="",
-            data=EmulatorConfig(**{}),
+            data=EmulatorRead(),
         )
     return EmulatorCreateOut(emulatorId=str(uid), data=data)
 
@@ -189,7 +194,7 @@ async def search_emulators() -> EmulatorSearchOut:
         from app.utils import search_all_emulators
 
         emulators = await search_all_emulators()
-        results = [EmulatorSearchResult(**emulator) for emulator in emulators]
+        results = project_model_list(EmulatorSearchResult, emulators)
     except Exception as e:
         return EmulatorSearchOut(
             code=500,

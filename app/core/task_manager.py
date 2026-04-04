@@ -196,7 +196,7 @@ class _TaskManager:
         self,
         mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"],
         id: str,
-        new_task_info: dict | None = None,
+        new_task_info: dict[str, str] | None = None,
     ) -> uuid.UUID:
         """
         添加任务, 根据 id 值搜索实际指向的任务配置

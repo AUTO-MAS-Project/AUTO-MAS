@@ -25,9 +25,9 @@ from fastapi import APIRouter, Body
 
 from app.core import Config, TaskManager
 from app.services import System
-from app.models.dto import (
+from app.models.common_contract import OutBase
+from app.models.dispatch_contract import (
     DispatchIn,
-    OutBase,
     PowerIn,
     PowerOut,
     TaskCreateIn,

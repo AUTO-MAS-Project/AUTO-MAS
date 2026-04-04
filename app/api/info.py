@@ -26,14 +26,11 @@ from typing import Any, cast
 from fastapi import APIRouter, Body
 
 from app.core import Config
-from app.models.dto import (
-    ComboBoxItem,
-    ComboBoxOut,
-    EmulatorDeleteIn,
+from app.models.common_contract import ComboBoxItem, ComboBoxOut, InfoOut, OutBase
+from app.models.emulator_contract import EmulatorDeleteIn
+from app.models.info_contract import (
     GetStageIn,
-    InfoOut,
     NoticeOut,
-    OutBase,
     VersionOut,
 )
 

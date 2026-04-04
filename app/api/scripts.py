@@ -25,16 +25,15 @@ import uuid
 from fastapi import APIRouter, Body
 
 from app.core import Config
-from app.models.dto import (
+from app.models.common_contract import (
     ComboBoxItem,
     ComboBoxOut,
-    GeneralConfig,
-    GeneralUserConfig,
-    MaaConfig,
-    MaaEndConfig,
-    MaaEndUserConfig,
-    MaaUserConfig,
     OutBase,
+    project_model,
+    project_model_list,
+    project_model_map,
+)
+from app.models.scripts_contract import (
     ScriptCreateIn,
     ScriptCreateOut,
     ScriptDeleteIn,
@@ -46,8 +45,6 @@ from app.models.dto import (
     ScriptUpdateIn,
     ScriptUploadIn,
     ScriptUrlIn,
-    SrcConfig,
-    SrcUserConfig,
     UserCreateOut,
     UserDeleteIn,
     UserGetIn,
@@ -57,33 +54,28 @@ from app.models.dto import (
     UserReorderIn,
     UserSetIn,
     UserUpdateIn,
-    Webhook,
+    project_script_model,
+    project_script_model_map,
+    project_user_model,
+    project_user_model_map,
+    script_contract_type_from_create,
+    script_contract_type_from_runtime,
+    user_contract_type_from_script,
+    validate_script_patch_data,
+    validate_user_patch_data,
+)
+from app.models.setting_contract import (
     WebhookCreateOut,
     WebhookDeleteIn,
     WebhookGetIn,
     WebhookGetOut,
     WebhookInBase,
     WebhookIndexItem,
+    WebhookRead,
     WebhookReorderIn,
-    WebhookTestIn,
     WebhookUpdateIn,
 )
-
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
-
-
-SCRIPT_BOOK = {
-    "MaaConfig": MaaConfig,
-    "SrcConfig": SrcConfig,
-    "MaaEndConfig": MaaEndConfig,
-    "GeneralConfig": GeneralConfig,
-}
-USER_BOOK = {
-    "MaaConfig": MaaUserConfig,
-    "SrcConfig": SrcUserConfig,
-    "MaaEndConfig": MaaEndUserConfig,
-    "GeneralConfig": GeneralUserConfig,
-}
 
 
 @router.post(
@@ -96,14 +88,20 @@ USER_BOOK = {
 async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
     try:
         uid, config = await Config.add_script(script.type, script.scriptId)
-        data = SCRIPT_BOOK[type(config).__name__](**(await config.toDict()))
+        data = project_script_model(
+            script_contract_type_from_runtime(type(config).__name__),
+            await config.toDict(),
+        )
     except Exception as e:
         return ScriptCreateOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             scriptId="",
-            data=GeneralConfig(**{}),
+            data=project_script_model(
+                script_contract_type_from_create(script.type),
+                {},
+            ),
         )
     return ScriptCreateOut(scriptId=str(uid), data=data)
 
@@ -118,13 +116,8 @@ async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
 async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
     try:
         index, data = await Config.get_script(script.scriptId)
-        index = [ScriptIndexItem(**_) for _ in index]
-        data = {
-            uid: SCRIPT_BOOK[next((_.type for _ in index if _.uid == uid), "General")](
-                **cfg
-            )
-            for uid, cfg in data.items()
-        }
+        index = project_model_list(ScriptIndexItem, index)
+        data = project_script_model_map(index, data)
     except Exception as e:
         return ScriptGetOut(
             code=500,
@@ -145,8 +138,11 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
 )
 async def update_script(script: ScriptUpdateIn = Body(...)) -> OutBase:
     try:
+        script_type = script_contract_type_from_runtime(
+            type(Config.ScriptConfig[uuid.UUID(script.scriptId)]).__name__
+        )
         await Config.update_script(
-            script.scriptId, script.data.model_dump(exclude_unset=True)
+            script.scriptId, validate_script_patch_data(script_type, script.data)
         )
     except Exception as e:
         return OutBase(
@@ -269,13 +265,8 @@ async def upload_script_to_web(script: ScriptUploadIn = Body(...)) -> OutBase:
 async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
     try:
         index, data = await Config.get_user(user.scriptId, user.userId)
-        index = [UserIndexItem(**_) for _ in index]
-        data = {
-            uid: USER_BOOK[
-                type(Config.ScriptConfig[uuid.UUID(user.scriptId)]).__name__
-            ](**cfg)
-            for uid, cfg in data.items()
-        }
+        index = project_model_list(UserIndexItem, index)
+        data = project_user_model_map(index, data)
     except Exception as e:
         return UserGetOut(
             code=500,
@@ -295,18 +286,26 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
     status_code=200,
 )
 async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
+    script_type = None
     try:
         uid, config = await Config.add_user(user.scriptId)
-        data = USER_BOOK[type(Config.ScriptConfig[uuid.UUID(user.scriptId)]).__name__](
-            **(await config.toDict())
+        script_type = script_contract_type_from_runtime(
+            type(Config.ScriptConfig[uuid.UUID(user.scriptId)]).__name__
         )
+        user_type = user_contract_type_from_script(script_type)
+        data = project_user_model(user_type, await config.toDict())
     except Exception as e:
+        user_type = (
+            user_contract_type_from_script(script_type)
+            if script_type is not None
+            else "GeneralUserConfig"
+        )
         return UserCreateOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             userId="",
-            data=GeneralUserConfig(**{}),
+            data=project_user_model(user_type, {}),
         )
     return UserCreateOut(userId=str(uid), data=data)
 
@@ -320,8 +319,14 @@ async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
 )
 async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
     try:
+        script_type = script_contract_type_from_runtime(
+            type(Config.ScriptConfig[uuid.UUID(user.scriptId)]).__name__
+        )
+        user_type = user_contract_type_from_script(script_type)
         await Config.update_user(
-            user.scriptId, user.userId, user.data.model_dump(exclude_unset=True)
+            user.scriptId,
+            user.userId,
+            validate_user_patch_data(user_type, user.data),
         )
     except Exception as e:
         return OutBase(
@@ -413,8 +418,8 @@ async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
         index, data = await Config.get_webhook(
             webhook.scriptId, webhook.userId, webhook.webhookId
         )
-        index = [WebhookIndexItem(**_) for _ in index]
-        data = {uid: Webhook(**cfg) for uid, cfg in data.items()}
+        index = project_model_list(WebhookIndexItem, index)
+        data = project_model_map(WebhookRead, data)
     except Exception as e:
         return WebhookGetOut(
             code=500,
@@ -436,14 +441,14 @@ async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
 async def add_webhook(webhook: WebhookInBase = Body(...)) -> WebhookCreateOut:
     try:
         uid, config = await Config.add_webhook(webhook.scriptId, webhook.userId)
-        data = Webhook(**(await config.toDict()))
+        data = project_model(WebhookRead, await config.toDict())
     except Exception as e:
         return WebhookCreateOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             webhookId="",
-            data=Webhook(**{}),
+            data=WebhookRead(),
         )
     return WebhookCreateOut(webhookId=str(uid), data=data)
 

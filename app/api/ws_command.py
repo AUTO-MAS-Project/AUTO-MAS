@@ -28,20 +28,26 @@ WebSocket 命令装饰器系统
 """
 
 import inspect
-from typing import Callable, Dict, Any, Optional
 from functools import wraps
+from typing import Any, Callable, ParamSpec, TypeAlias, TypeVar, cast
 from pydantic import BaseModel
 
 from app.utils.logger import get_logger
 
 logger = get_logger("WS命令")
 
+P = ParamSpec("P")
+R = TypeVar("R")
+RegisteredWsCommand: TypeAlias = Callable[..., Any]
+
 
 # 全局命令注册表
-_ws_command_registry: Dict[str, Callable] = {}
+_ws_command_registry: dict[str, RegisteredWsCommand] = {}
 
 
-def ws_command(endpoint: str):
+def ws_command(
+    endpoint: str,
+) -> Callable[[Callable[P, Any]], Callable[P, Any]]:
     """
     WebSocket 命令装饰器
 
@@ -68,24 +74,24 @@ def ws_command(endpoint: str):
         endpoint: 命令的唯一标识符，如 "ws.clone", "core.shutdown"
     """
 
-    def decorator(func: Callable):
+    def decorator(func: Callable[P, Any]) -> Callable[P, Any]:
         # 注册到全局命令表
         _ws_command_registry[endpoint] = func
         logger.debug(f"已注册 WebSocket 命令: {endpoint}")
 
         @wraps(func)
-        async def wrapper(*args, **kwargs):
+        async def wrapper(*args: P.args, **kwargs: P.kwargs):
             # 保持原函数功能不变
             return await func(*args, **kwargs)
 
-        return wrapper
+        return cast(Callable[P, Any], wrapper)
 
     return decorator
 
 
 async def execute_ws_command(
-    endpoint: str, params: Optional[Dict[str, Any]] = None
-) -> Dict[str, Any]:
+    endpoint: str, params: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """
     执行 WebSocket 命令
 
@@ -120,7 +126,7 @@ async def execute_ws_command(
             result = await func()
         else:
             # 检查第一个参数是否是 Pydantic Model
-            first_param = list(parameters.values())[0]
+            first_param = next(iter(parameters.values()))
             param_type = first_param.annotation
 
             if (
@@ -156,11 +162,12 @@ async def execute_ws_command(
                 "message": result_dict.get("message"),
             }
         elif isinstance(result, dict):
+            result_dict = cast(dict[str, Any], result)
             return {
-                "success": result.get("code", 200) == 200,
-                "data": result,
-                "code": result.get("code", 200),
-                "message": result.get("message"),
+                "success": result_dict.get("code", 200) == 200,
+                "data": result_dict,
+                "code": result_dict.get("code", 200),
+                "message": result_dict.get("message"),
             }
         else:
             return {"success": True, "data": result, "code": 200}
@@ -176,7 +183,7 @@ async def execute_ws_command(
         }
 
 
-def get_ws_command_registry() -> Dict[str, Callable]:
+def get_ws_command_registry() -> dict[str, RegisteredWsCommand]:
     """获取所有已注册的 WebSocket 命令"""
     return _ws_command_registry.copy()
 

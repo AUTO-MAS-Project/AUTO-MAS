@@ -1,4 +1,4 @@
-from . import dto, emulator, task
+from . import emulator, task
 from .common import EmulatorConfig, QueueConfig, QueueItem, TimeSet, Webhook
 from .general import GeneralConfig, GeneralUserConfig
 from .global_config import CLASS_BOOK, GlobalConfig, ToolsConfig
@@ -24,7 +24,6 @@ __all__ = [
     "ToolsConfig",
     "GlobalConfig",
     "CLASS_BOOK",
-    "dto",
     "emulator",
     "task",
 ]

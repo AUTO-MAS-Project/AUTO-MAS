@@ -1,21 +1,51 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from collections.abc import Awaitable, Callable
+from typing import TypeVar
+
+from app.models.common_contract import ComboBoxItem, ComboBoxOut, OutBase
 
 
-class OutBase(BaseModel):
-    code: int = Field(default=200, description="状态码")
-    status: str = Field(default="success", description="操作状态")
-    message: str = Field(default="操作成功", description="操作消息")
+OutT = TypeVar("OutT", bound=OutBase)
 
 
-class ComboBoxItem(BaseModel):
-    label: str = Field(..., description="展示值")
-    value: str | None = Field(..., description="实际值")
+def error_out(
+	model_cls: type[OutT],
+	exc: Exception,
+	*,
+	message: str | None = None,
+	**kwargs: object,
+) -> OutT:
+	return model_cls(
+		code=500,
+		status="error",
+		message=message or f"{type(exc).__name__}: {str(exc)}",
+		**kwargs,
+	)
 
 
-class ComboBoxOut(OutBase):
-    data: list[ComboBoxItem] = Field(..., description="下拉框选项")
+async def run_api(
+	success_factory: Callable[[], Awaitable[OutT]],
+	*,
+	model_cls: type[OutT],
+	message: str | None = None,
+	**fallback_kwargs: object,
+) -> OutT:
+	try:
+		return await success_factory()
+	except Exception as exc:
+		return error_out(
+			model_cls,
+			exc,
+			message=message,
+			**fallback_kwargs,
+		)
 
 
-__all__ = ["OutBase", "ComboBoxItem", "ComboBoxOut"]
+__all__ = [
+	"OutBase",
+	"ComboBoxItem",
+	"ComboBoxOut",
+	"error_out",
+	"run_api",
+]

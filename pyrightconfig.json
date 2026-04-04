@@ -1,6 +1,8 @@
 {
-  "$schema": "https://raw.githubusercontent.com/microsoft/pyright/main/packages/pyright/schema/pyrightconfig.schema.json",
   "pythonVersion": "3.12",
+  "pythonPlatform": "Windows",
+  "venvPath": ".",
+  "venv": ".venv",
   "typeCheckingMode": "strict",
   "include": [
     "app",
@@ -19,6 +21,5 @@
   "reportUnknownMemberType": "warning",
   "reportUnknownArgumentType": "warning",
   "reportUnknownLambdaType": "warning",
-  "reportUnknownParameterType": "warning",
-  "reportUnknownReturnType": "warning"
+  "reportUnknownParameterType": "warning"
 }

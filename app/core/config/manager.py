@@ -58,7 +58,7 @@ from app.models import (
     EmulatorConfig,
 )
 from .base import dump_toml
-from app.models.dto import WebSocketMessage
+from app.models.shared import WebSocketMessage
 from app.utils.constants import (
     UTC4,
     UTC8,

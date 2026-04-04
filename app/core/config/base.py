@@ -33,7 +33,7 @@ from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import AsyncIterator, Callable, Coroutine
-from typing import Any, Generic, Protocol, TypeVar
+from typing import Any, Generic, Protocol, TypeVar, cast
 
 
 PRIMARY_CONFIG_SUFFIX = ".toml"
@@ -70,13 +70,15 @@ def _toml_inline(value: Any) -> str:
     """序列化内联 TOML 值，支持数组和内联表。"""
 
     if isinstance(value, dict):
+        mapping = cast(dict[object, Any], value)
         items = ", ".join(
             f"{_toml_key(str(key))} = {_toml_inline(item)}"
-            for key, item in value.items()
+            for key, item in mapping.items()
         )
         return "{ " + items + " }"
     if isinstance(value, list):
-        return "[" + ", ".join(_toml_inline(item) for item in value) + "]"
+        items = cast(list[Any], value)
+        return "[" + ", ".join(_toml_inline(item) for item in items) + "]"
     return _toml_scalar(value)
 
 
@@ -91,7 +93,7 @@ def dump_toml(data: dict[str, Any]) -> str:
 
         for key, value in obj.items():
             if isinstance(value, dict):
-                children.append((str(key), value))
+                children.append((str(key), cast(dict[str, Any], value)))
             else:
                 scalars.append((str(key), value))
 
@@ -120,7 +122,11 @@ def _load_json_config(path: Path) -> dict[str, Any]:
         return {}
 
     loaded = json.loads(raw_text)
-    return loaded if isinstance(loaded, dict) else {}
+    if not isinstance(loaded, dict):
+        return {}
+
+    mapping = cast(dict[object, Any], loaded)
+    return {str(key): item for key, item in mapping.items()}
 
 
 def _load_toml_config(path: Path) -> dict[str, Any]:
@@ -129,7 +135,8 @@ def _load_toml_config(path: Path) -> dict[str, Any]:
         return {}
 
     loaded = tomllib.loads(raw_text)
-    return loaded if isinstance(loaded, dict) else {}
+    mapping = cast(dict[object, Any], loaded)
+    return {str(key): item for key, item in mapping.items()}
 
 
 def _load_config_with_legacy_migration(path: Path) -> tuple[dict[str, Any], Path | None]:
@@ -199,6 +206,10 @@ class _ConfigLike(Protocol):
     async def lock(self) -> None: ...
 
     async def unlock(self) -> None: ...
+
+    def bind_owner_collection(
+        self, collection: "MultipleConfig[Any]", uid: uuid.UUID
+    ) -> None: ...
 
 
 T = TypeVar("T", bound=_ConfigLike)
@@ -407,13 +418,15 @@ class MultipleConfig(Generic[T]):
         instances = data.get("instances")
         if not isinstance(instances, list):
             return
+        instances_list = cast(list[object], instances)
 
-        for instance in instances:
+        for instance in instances_list:
             if not isinstance(instance, dict):
                 continue
+            instance_dict = cast(dict[object, Any], instance)
 
-            uid_str = instance.get("uid")
-            type_name = instance.get("type")
+            uid_str = instance_dict.get("uid")
+            type_name = instance_dict.get("type")
             if not isinstance(uid_str, str) or not isinstance(type_name, str):
                 continue
             if type_name not in self.sub_config_type:
@@ -422,6 +435,7 @@ class MultipleConfig(Generic[T]):
             instance_data = data.get(uid_str)
             if not isinstance(instance_data, dict):
                 continue
+            instance_data_dict = cast(dict[str, Any], instance_data)
 
             try:
                 uid = uuid.UUID(uid_str)
@@ -429,11 +443,10 @@ class MultipleConfig(Generic[T]):
                 continue
 
             config = self.sub_config_type[type_name]()
-            if hasattr(config, "_bind_owner_collection"):
-                config._bind_owner_collection(self, uid)
+            config.bind_owner_collection(self, uid)
             self.order.append(uid)
             self.data[uid] = config
-            await config.load(instance_data)
+            await config.load(instance_data_dict)
 
         if self.file:
             await self.save()
@@ -506,8 +519,7 @@ class MultipleConfig(Generic[T]):
 
         uid = uuid.uuid4()
         config = config_type()
-        if hasattr(config, "_bind_owner_collection"):
-            config._bind_owner_collection(self, uid)
+        config.bind_owner_collection(self, uid)
         self.order.append(uid)
         self.data[uid] = config
 

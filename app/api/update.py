@@ -26,7 +26,8 @@ from fastapi import APIRouter, Body
 
 from app.core import Config
 from app.services import Updater
-from app.models.dto import OutBase, UpdateCheckIn, UpdateCheckOut
+from app.models.common_contract import OutBase
+from app.models.update_contract import UpdateCheckIn, UpdateCheckOut
 
 router = APIRouter(prefix="/api/update", tags=["软件更新"])
 

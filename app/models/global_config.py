@@ -20,7 +20,7 @@ from app.core.config.types import (
     YmdHmsString,
 )
 from app.utils.constants import MATERIALS_MAP, RESOURCE_STAGE_INFO, UTC8
-from app.models.dto import TagItem
+from app.models.shared import TagItem
 from .common import EmulatorConfig, QueueConfig, QueueItem, Webhook
 from .general import GeneralConfig
 from .maa import MaaConfig, MaaPlanConfig, MaaUserConfig

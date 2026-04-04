@@ -30,7 +30,7 @@ from typing import Dict, Literal
 from .config import Config
 from app.models import EmulatorConfig
 from app.models.emulator import DeviceBase
-from app.models.dto import DeviceInfo as SchemaDeviceInfo
+from app.models.shared import DeviceInfo as SchemaDeviceInfo
 from app.utils import ProcessRunner, EMULATOR_TYPE_BOOK
 from app.utils.constants import EMULATOR_SPLASH_ADS_PATH_BOOK
 
@@ -85,8 +85,6 @@ class _EmulatorManager:
     ):
         try:
             temp_emulator = await self.get_emulator_instance(emulator_id)
-            if temp_emulator is None:
-                raise KeyError(f"未找到UUID为 {emulator_id} 的模拟器配置")
 
             if operate == "open":
                 await temp_emulator.open(index)
@@ -109,13 +107,13 @@ class _EmulatorManager:
         else:
             emulator_range = [emulator_id]
 
-        data = {}
+        data: Dict[str, Dict[str, SchemaDeviceInfo]] = {}
         for emulator_id in emulator_range:
             temp_emulator = await self.get_emulator_instance(emulator_id)
             emulator_device_info = await temp_emulator.getInfo(None)
 
             # 转换 EmulatorDeviceInfo 到 SchemaDeviceInfo
-            converted_devices = {}
+            converted_devices: Dict[str, SchemaDeviceInfo] = {}
             for device_index, device_info in emulator_device_info.items():
                 converted_devices[device_index] = SchemaDeviceInfo(
                     title=device_info.title,

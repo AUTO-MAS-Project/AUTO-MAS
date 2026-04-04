@@ -12,7 +12,7 @@ from app.utils.constants import DEFAULT_DATETIME
 from app.utils.security import dpapi_decrypt, dpapi_encrypt
 
 
-class _EncryptedFieldMarker:
+class EncryptedFieldMarker:
     """标记需要在对外读取时自动解密的字段。"""
 
 
@@ -122,7 +122,7 @@ UrlString = Annotated[str, AfterValidator(_validate_url_string)]
 KeyboardKeyString = Annotated[str, AfterValidator(_validate_keyboard_key)]
 EncryptedString = Annotated[
     str,
-    _EncryptedFieldMarker(),
+    EncryptedFieldMarker(),
     AfterValidator(_normalize_encrypted_string),
 ]
 
@@ -137,5 +137,6 @@ __all__ = [
     "UrlString",
     "KeyboardKeyString",
     "EncryptedString",
+    "EncryptedFieldMarker",
     "decrypt_encrypted_string",
 ]

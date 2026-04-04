@@ -19,7 +19,7 @@ from .base import (
     load_config_with_legacy_migration,
 )
 from .fields import RefField, VirtualField
-from .types import _EncryptedFieldMarker, decrypt_encrypted_string
+from .types import EncryptedFieldMarker, decrypt_encrypted_string
 
 
 SaveMethod = Callable[[], Coroutine[Any, Any, None]]
@@ -32,6 +32,14 @@ def _default_save_methods() -> list[SaveMethod]:
 
 def _default_bindings() -> dict[tuple[str, str], list[Slot]]:
     return {}
+
+
+def _default_pending_bindings() -> dict[tuple[str, str], Any]:
+    return {}
+
+
+def _default_registered_ref_targets() -> set[str]:
+    return set()
 
 
 def _normalize_mapping(value: Any) -> dict[str, Any]:
@@ -65,7 +73,7 @@ def _get_field_marker(
 def _is_encrypted_field(group_model: BaseModel, field_name: str) -> bool:
     """判断字段是否为对外需要自动解密的字符串字段。"""
 
-    return _get_field_marker(group_model, field_name, _EncryptedFieldMarker) is not None
+    return _get_field_marker(group_model, field_name, EncryptedFieldMarker) is not None
 
 
 def _export_group_model(
@@ -81,7 +89,7 @@ def _export_group_model(
     for field_name in type(group_model).model_fields:
         virtual_field = _get_field_marker(group_model, field_name, VirtualField)
         if virtual_field is not None:
-            data[field_name] = owner._get_virtual_value(
+            data[field_name] = owner.get_virtual_value(
                 group_name, field_name, virtual_field
             )
             continue
@@ -107,6 +115,7 @@ class PydanticConfigBase(BaseModel):
     model_config = ConfigDict(extra="allow", validate_assignment=True)
 
     LEGACY_FIELD_MAP: ClassVar[dict[tuple[str, str], tuple[str, str]]] = {}
+    related_config: ClassVar[dict[str, MultipleConfig[Any]]] = {}
     _file: Path | None = PrivateAttr(default=None)
     _is_locked: bool = PrivateAttr(default=False)
     _save_methods: list[SaveMethod] = PrivateAttr(default_factory=_default_save_methods)
@@ -116,8 +125,12 @@ class PydanticConfigBase(BaseModel):
     _transaction_depth: int = PrivateAttr(default=0)
     _pending_save: bool = PrivateAttr(default=False)
     _pending_sync: bool = PrivateAttr(default=False)
-    _pending_bindings: dict[tuple[str, str], Any] = PrivateAttr(default_factory=dict)
-    _registered_ref_targets: set[str] = PrivateAttr(default_factory=set)
+    _pending_bindings: dict[tuple[str, str], Any] = PrivateAttr(
+        default_factory=_default_pending_bindings
+    )
+    _registered_ref_targets: set[str] = PrivateAttr(
+        default_factory=_default_registered_ref_targets
+    )
     _owner_collection: MultipleConfig[Any] | None = PrivateAttr(default=None)
     _owner_uid: uuid.UUID | None = PrivateAttr(default=None)
 
@@ -161,16 +174,21 @@ class PydanticConfigBase(BaseModel):
         self._owner_collection = collection
         self._owner_uid = uid
 
+    def bind_owner_collection(
+        self, collection: MultipleConfig[Any], uid: uuid.UUID
+    ) -> None:
+        """公开所属容器绑定入口，供 `MultipleConfig` 调用。"""
+
+        self._bind_owner_collection(collection, uid)
+
     def _resolve_related_collection(self, target: str) -> MultipleConfig[Any] | None:
         value = getattr(self, target, None)
         if isinstance(value, MultipleConfig):
-            return value
+            return cast(MultipleConfig[Any], value)
 
-        related = getattr(type(self), "related_config", None)
-        if isinstance(related, dict):
-            target_collection = related.get(target)
-            if isinstance(target_collection, MultipleConfig):
-                return target_collection
+        target_collection = type(self).related_config.get(target)
+        if isinstance(target_collection, MultipleConfig):
+            return target_collection
 
         return None
 
@@ -219,6 +237,13 @@ class PydanticConfigBase(BaseModel):
             raise TypeError(f"虚拟配置项 '{group}.{name}' 的 getter 不能是异步方法")
 
         return result
+
+    def get_virtual_value(
+        self, group: str, name: str, spec: VirtualField | None = None
+    ) -> Any:
+        """公开只读虚拟值访问入口，便于模块内辅助函数调用。"""
+
+        return self._get_virtual_value(group, name, spec)
 
     async def _set_virtual_value(self, group: str, name: str, value: Any) -> None:
         spec = self._get_virtual_field(group, name)
@@ -279,7 +304,7 @@ class PydanticConfigBase(BaseModel):
     async def _on_related_config_deleted(
         self, event: MultipleConfigDeleteEvent[Any]
     ) -> None:
-        matched_fields = []
+        matched_fields: list[tuple[str, str, RefField]] = []
 
         for group_name, field_name, ref_field in self._iter_ref_fields():
             target_collection = self._resolve_related_collection(ref_field.target)

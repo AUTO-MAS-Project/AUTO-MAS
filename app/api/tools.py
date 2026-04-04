@@ -23,7 +23,9 @@
 
 from fastapi import APIRouter, Body
 from app.core import Config
-from app.models.dto import ToolsGetOut, ToolsConfig, OutBase, ToolsUpdateIn
+from app.models.common_contract import OutBase, project_model
+from app.models.tools_contract import ToolsConfigRead, ToolsGetOut, ToolsUpdateIn
+from app.api.common import error_out
 
 router = APIRouter(prefix="/api/tools", tags=["工具设置"])
 
@@ -41,13 +43,8 @@ async def get_tools() -> ToolsGetOut:
     try:
         data = await Config.get_tools()
     except Exception as e:
-        return ToolsGetOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            data=ToolsConfig(**{}),
-        )
-    return ToolsGetOut(data=ToolsConfig(**data))
+        return error_out(ToolsGetOut, e, data=ToolsConfigRead())
+    return ToolsGetOut(data=project_model(ToolsConfigRead, data))
 
 
 @router.post(
@@ -65,7 +62,5 @@ async def update_tools(script: ToolsUpdateIn = Body(...)) -> OutBase:
         await Config.update_tools(data)
 
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return error_out(OutBase, e)
     return OutBase()
