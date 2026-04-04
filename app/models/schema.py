@@ -321,7 +321,7 @@ class QueueConfig(BaseModel):
 
 class ScriptIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: Literal["MaaConfig", "GeneralConfig", "SrcConfig", "MaaEndConfig"] = Field(
+    type: Literal["MaaConfig", "GeneralConfig", "SrcConfig", "MaaEndConfig", "M9AConfig"] = Field(
         ..., description="配置类型"
     )
 
@@ -329,7 +329,7 @@ class ScriptIndexItem(BaseModel):
 class UserIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
     type: Literal[
-        "MaaUserConfig", "GeneralUserConfig", "SrcUserConfig", "MaaEndUserConfig"
+        "MaaUserConfig", "GeneralUserConfig", "SrcUserConfig", "MaaEndUserConfig", "M9AUserConfig"
     ] = Field(..., description="配置类型")
 
 
@@ -842,6 +842,64 @@ class SrcConfig(BaseModel):
     Run: Optional[SrcConfig_Run] = Field(default=None, description="脚本运行配置")
 
 
+class M9AUserConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="用户名称")
+    Status: Optional[bool] = Field(default=None, description="是否启用")
+    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    Notes: Optional[str] = Field(default=None, description="备注")
+    Tag: Optional[str] = Field(default=None, description="用户标签信息")
+
+
+class M9AUserConfig_Task(BaseModel):
+    AvailableTasks: Optional[str] = Field(default=None, description="可用任务列表 JSON 数组字符串")
+    Queue: Optional[str] = Field(default=None, description="运行任务队列 JSON 数组字符串")
+
+class M9AUserConfig_Data(BaseModel):
+    LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
+    ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
+    IfPassCheck: Optional[bool] = Field(default=None, description="是否通过检查")
+
+
+class M9AUserConfig_Notify(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
+    IfSendStatistic: Optional[bool] = Field(
+        default=None, description="是否发送统计信息"
+    )
+    IfSendMail: Optional[bool] = Field(default=None, description="是否发送邮件")
+    ToAddress: Optional[str] = Field(default=None, description="收件地址")
+    IfServerChan: Optional[bool] = Field(default=None, description="是否启用 Server 酱")
+    ServerChanKey: Optional[str] = Field(default=None, description="Server 酱密钥")
+
+
+class M9AUserConfig(BaseModel):
+    Info: Optional[M9AUserConfig_Info] = Field(default=None, description="基础信息")
+    Task: Optional[M9AUserConfig_Task] = Field(default=None, description="任务配置")
+    Data: Optional[M9AUserConfig_Data] = Field(default=None, description="用户数据")
+    Notify: Optional[M9AUserConfig_Notify] = Field(default=None, description="单独通知")
+
+
+class M9AConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="M9A 脚本名称")
+    Path: Optional[str] = Field(default=None, description="M9A 路径")
+
+
+class M9AConfig_Emulator(BaseModel):
+    Id: Optional[str] = Field(default=None, description="模拟器 ID")
+    Index: Optional[str] = Field(default=None, description="模拟器索引")
+
+
+class M9AConfig_Run(BaseModel):
+    ProxyTimesLimit: Optional[int] = Field(default=None, description="代理次数限制")
+    RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
+    RunTimeLimit: Optional[int] = Field(default=None, description="运行时间限制（分钟）")
+
+
+class M9AConfig(BaseModel):
+    Info: Optional[M9AConfig_Info] = Field(default=None, description="脚本基础信息")
+    Emulator: Optional[M9AConfig_Emulator] = Field(default=None, description="模拟器配置")
+    Run: Optional[M9AConfig_Run] = Field(default=None, description="脚本运行配置")
+
+
 class PlanIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
     type: Literal["MaaPlanConfig"] = Field(..., description="配置类型")
@@ -904,8 +962,8 @@ class HistoryData(BaseModel):
 
 
 class ScriptCreateIn(BaseModel):
-    type: Literal["MAA", "SRC", "General", "MaaEnd"] = Field(
-        ..., description="脚本类型: MAA脚本, 通用脚本, SRC脚本, MaaEnd脚本"
+    type: Literal["MAA", "SRC", "General", "MaaEnd", "M9A"] = Field(
+        ..., description="脚本类型: MAA脚本, 通用脚本, SRC脚本, MaaEnd脚本, M9A脚本"
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -914,7 +972,7 @@ class ScriptCreateIn(BaseModel):
 
 class ScriptCreateOut(OutBase):
     scriptId: str = Field(..., description="新创建的脚本ID")
-    data: Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig] = Field(
+    data: Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig, M9AConfig] = Field(
         ..., description="脚本配置数据"
     )
 
@@ -927,14 +985,14 @@ class ScriptGetIn(BaseModel):
 
 class ScriptGetOut(OutBase):
     index: List[ScriptIndexItem] = Field(..., description="脚本索引列表")
-    data: Dict[str, Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig]] = Field(
+    data: Dict[str, Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig, M9AConfig]] = Field(
         ..., description="脚本数据字典, key来自于index列表的uid"
     )
 
 
 class ScriptUpdateIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
-    data: Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig] = Field(
+    data: Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig, M9AConfig] = Field(
         ..., description="脚本更新数据"
     )
 
@@ -977,20 +1035,20 @@ class UserGetIn(UserInBase):
 class UserGetOut(OutBase):
     index: List[UserIndexItem] = Field(..., description="用户索引列表")
     data: Dict[
-        str, Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig]
+        str, Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig, M9AUserConfig]
     ] = Field(..., description="用户数据字典, key来自于index列表的uid")
 
 
 class UserCreateOut(OutBase):
     userId: str = Field(..., description="新创建的用户ID")
-    data: Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig] = (
+    data: Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig, M9AUserConfig] = (
         Field(..., description="用户配置数据")
     )
 
 
 class UserUpdateIn(UserInBase):
     userId: str = Field(..., description="用户ID")
-    data: Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig] = (
+    data: Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig, M9AUserConfig] = (
         Field(..., description="用户更新数据")
     )
 
