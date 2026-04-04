@@ -1311,6 +1311,179 @@ class SrcConfig(ConfigBase):
 
         super().__init__()
 
+class M9AUserConfig(ConfigBase):
+    """M9A用户配置"""
+
+    related_config: dict[str, MultipleConfig] = {}
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## 用户名称
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
+        ## 是否启用
+        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        ## 剩余天数
+        self.Info_RemainedDay = ConfigItem(
+            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        ## 备注
+        self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        ## 用户标签信息
+        self.Info_Tag = ConfigItem(
+            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
+        )
+
+        ## Task -------------------------------------------------------------
+        ## 可用任务列表（从 M9A 配置文件读取）
+        self.Task_AvailableTasks = ConfigItem(
+            "Task", "AvailableTasks", "[]", JSONValidator(list)
+        )
+        ## 运行任务队列 (用户在可用任务列表中选择)
+        self.Task_Queue = ConfigItem(
+            "Task", "Queue", "[]", JSONValidator(list)
+        )
+ 
+
+        ## Data ------------------------------------------------------------
+        ## 上次代理日期
+        self.Data_LastProxyDate = ConfigItem(
+            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        ## 代理次数
+        self.Data_ProxyTimes = ConfigItem(
+            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
+        )
+        ## 是否通过检查
+        self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
+
+        ## Notify ----------------------------------------------------------
+        ## 是否启用通知
+        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否发送统计信息
+        self.Notify_IfSendStatistic = ConfigItem(
+            "Notify", "IfSendStatistic", False, BoolValidator()
+        )
+        ## 是否发送邮件
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
+        ## 收件地址
+        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否启用 Server 酱
+        self.Notify_IfServerChan = ConfigItem(
+            "Notify", "IfServerChan", False, BoolValidator()
+        )
+        ## Server 酱密钥
+        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 自定义 Webhook 列表
+        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
+
+        super().__init__()
+
+    def getTags(self) -> str:
+        """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
+        tags = []
+
+        # 人工排查状态标签
+        if not self.get("Data", "IfPassCheck"):
+            tags.append({"text": "人工排查未通过", "color": "red"})
+
+        # 日常代理标签（使用东4区时间）
+        if (
+            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
+            == datetime.now(tz=UTC4).date()
+        ):
+            tags.append(
+                {
+                    "text": f"日常：已代理{self.get('Data', 'ProxyTimes')}次",
+                    "color": "green",
+                }
+            )
+        else:
+            tags.append({"text": "日常：未代理", "color": "orange"})
+
+        # 剩余天数标签
+        remained_day = self.get("Info", "RemainedDay")
+        if remained_day == -1:
+            tag_color = "gold"
+        elif remained_day == 0:
+            tag_color = "red"
+        elif remained_day <= 3:
+            tag_color = "orange"
+        elif remained_day <= 7:
+            tag_color = "yellow"
+        elif remained_day <= 30:
+            tag_color = "blue"
+        else:
+            tag_color = "green"
+        tags.append(
+            {
+                "text": (
+                    f"剩余天数：{remained_day}天"
+                    if remained_day >= 0
+                    else "剩余天数：无期限"
+                ),
+                "color": tag_color,
+            }
+        )
+        # 备注标签
+        notes = self.get("Info", "Notes")
+        tags.append(
+            {
+                "text": (
+                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
+                ),
+                "color": "pink",
+            }
+        )
+
+        return json.dumps(tags, ensure_ascii=False)
+
+
+class M9AConfig(ConfigBase):
+    """M9A配置"""
+
+    related_config: dict[str, MultipleConfig] = {}
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## M9A 脚本名称
+        self.Info_Name = ConfigItem("Info", "Name", "新 M9A 脚本")
+        ## M9A 路径
+        self.Info_Path = ConfigItem("Info", "Path", str(Path.cwd()), FolderValidator())
+
+        ## Emulator --------------------------------------------------------
+        ## 模拟器 ID
+        self.Emulator_Id = ConfigItem(
+            "Emulator",
+            "Id",
+            "-",
+            MultipleUIDValidator("-", self.related_config, "EmulatorConfig"),
+        )
+        ## 模拟器索引
+        self.Emulator_Index = ConfigItem("Emulator", "Index", "-")
+
+        ## Run -------------------------------------------------------------
+        ## 代理次数限制
+        self.Run_ProxyTimesLimit = ConfigItem(
+            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
+        )
+        ## 运行次数限制
+        self.Run_RunTimesLimit = ConfigItem(
+            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
+        )
+        ## 运行时间限制（分钟）
+        self.Run_RunTimeLimit = ConfigItem(
+            "Run", "RunTimeLimit", 10, RangeValidator(1, 9999)
+        )
+
+        self.UserData = MultipleConfig([M9AUserConfig])
+
+        super().__init__()
+
+
 
 class MaaPlanConfig(ConfigBase):
     """MAA计划表配置"""
