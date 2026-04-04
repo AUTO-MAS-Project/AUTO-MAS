@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Annotated, Any, Literal, TypeAlias
+from typing import Annotated, Any, Literal
 
-from pydantic import Field, TypeAdapter
+from pydantic import Field
 
 from .common_contract import (
     ApiModel,
@@ -33,7 +33,6 @@ UserConfigType = Literal[
     "MaaUserConfig", "GeneralUserConfig", "SrcUserConfig", "MaaEndUserConfig"
 ]
 ScriptCreateType = Literal["MAA", "SRC", "General", "MaaEnd"]
-PatchPayload: TypeAlias = dict[str, object]
 
 ScriptModel = MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig
 UserModel = MaaUserConfig | SrcUserConfig | GeneralUserConfig | MaaEndUserConfig
@@ -104,7 +103,6 @@ SCRIPT_CONFIG_TO_USER_TYPE: dict[ScriptConfigType, UserConfigType] = {
     "SrcConfig": "SrcUserConfig",
     "MaaEndConfig": "MaaEndUserConfig",
 }
-PATCH_PAYLOAD_ADAPTER: TypeAdapter[PatchPayload] = TypeAdapter(dict[str, object])
 
 
 class ScriptIndexItem(ApiModel):
@@ -148,6 +146,26 @@ class ScriptUploadBody(ApiModel):
 UserGetOut = ResourceCollectionOut[UserIndexItem, UserReadData]
 UserDetailOut = ResourceItemOut[UserReadData]
 UserCreateOut = ResourceCreateOut[UserReadData]
+
+ScriptPatchData = Annotated[
+    MaaConfigPatch | SrcConfigPatch | GeneralConfigPatch | MaaEndConfigPatch,
+    Field(discriminator="type"),
+]
+UserPatchData = Annotated[
+    MaaUserConfigPatch
+    | SrcUserConfigPatch
+    | GeneralUserConfigPatch
+    | MaaEndUserConfigPatch,
+    Field(discriminator="type"),
+]
+
+
+class ScriptPatchBody(ApiModel):
+    data: ScriptPatchData = Field(..., description="脚本 Patch 数据")
+
+
+class UserPatchBody(ApiModel):
+    data: UserPatchData = Field(..., description="用户 Patch 数据")
 
 
 class InfrastructureImportBody(ApiModel):
@@ -208,31 +226,32 @@ def project_user_model_map(
     }
 
 
-def validate_script_patch_data(
-    script_type: ScriptConfigType, raw: Mapping[str, object]
+def dump_script_patch_data(
+    script_type: ScriptConfigType, data: ScriptPatchData
 ) -> dict[str, Any]:
-    normalized = PATCH_PAYLOAD_ADAPTER.validate_python(raw)
-    validated = SCRIPT_PATCH_BY_TYPE[script_type].model_validate(normalized)
-    return validated.model_dump(exclude_unset=True, exclude_none=True, exclude={"type"})
+    if data.type != script_type:
+        raise ValueError(f"Patch 类型不匹配: 期望 {script_type}, 实际 {data.type}")
+    return data.model_dump(exclude_unset=True, exclude_none=True, exclude={"type"})
 
 
-def validate_user_patch_data(
-    user_type: UserConfigType, raw: Mapping[str, object]
+def dump_user_patch_data(
+    user_type: UserConfigType, data: UserPatchData
 ) -> dict[str, Any]:
-    normalized = PATCH_PAYLOAD_ADAPTER.validate_python(raw)
-    validated = USER_PATCH_BY_TYPE[user_type].model_validate(normalized)
-    return validated.model_dump(exclude_unset=True, exclude_none=True, exclude={"type"})
+    if data.type != user_type:
+        raise ValueError(f"Patch 类型不匹配: 期望 {user_type}, 实际 {data.type}")
+    return data.model_dump(exclude_unset=True, exclude_none=True, exclude={"type"})
 
 
 __all__ = [
     "ScriptConfigType",
     "UserConfigType",
     "ScriptCreateType",
-    "PatchPayload",
     "ScriptModel",
     "UserModel",
     "ScriptReadData",
     "UserReadData",
+    "ScriptPatchData",
+    "UserPatchData",
     "SCRIPT_CONTRACT_BY_TYPE",
     "SCRIPT_PATCH_BY_TYPE",
     "USER_CONTRACT_BY_TYPE",
@@ -248,9 +267,11 @@ __all__ = [
     "ScriptFileBody",
     "ScriptUrlBody",
     "ScriptUploadBody",
+    "ScriptPatchBody",
     "UserGetOut",
     "UserDetailOut",
     "UserCreateOut",
+    "UserPatchBody",
     "InfrastructureImportBody",
     "script_contract_type_from_create",
     "script_contract_type_from_runtime",
@@ -259,6 +280,6 @@ __all__ = [
     "project_user_model",
     "project_script_model_map",
     "project_user_model_map",
-    "validate_script_patch_data",
-    "validate_user_patch_data",
+    "dump_script_patch_data",
+    "dump_user_patch_data",
 ]

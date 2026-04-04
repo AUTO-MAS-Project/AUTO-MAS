@@ -28,8 +28,8 @@ class GeneralConfig(_GeneralConfigReadBase):
 
 
 class GeneralConfigPatch(_GeneralConfigPatchBase):
-    type: Literal["GeneralConfig"] | None = Field(
-        default=None, description="配置类型"
+    type: Literal["GeneralConfig"] = Field(
+        default="GeneralConfig", description="配置类型"
     )
 
 
@@ -40,8 +40,8 @@ class GeneralUserConfig(_GeneralUserConfigReadBase):
 
 
 class GeneralUserConfigPatch(_GeneralUserConfigPatchBase):
-    type: Literal["GeneralUserConfig"] | None = Field(
-        default=None, description="配置类型"
+    type: Literal["GeneralUserConfig"] = Field(
+        default="GeneralUserConfig", description="配置类型"
     )
 
 

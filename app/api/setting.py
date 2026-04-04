@@ -54,7 +54,9 @@ WebhookIdPath = Annotated[str, Path(description="Webhook ID")]
 
 
 async def _build_setting_out() -> SettingGetOut:
-    return SettingGetOut(data=project_model(GlobalConfigRead, await Config.get_setting()))
+    return SettingGetOut(
+        data=project_model(GlobalConfigRead, await Config.get_setting())
+    )
 
 
 async def _update_setting_config(data: GlobalConfigPatch) -> OutBase:
@@ -85,7 +87,9 @@ async def _build_webhook_create_out() -> WebhookCreateOut:
 
 
 async def _update_webhook_config(webhook_id: str, data: WebhookPatch) -> OutBase:
-    await Config.update_webhook(None, None, webhook_id, data.model_dump(exclude_unset=True))
+    await Config.update_webhook(
+        None, None, webhook_id, data.model_dump(exclude_unset=True)
+    )
     return OutBase()
 
 
@@ -198,7 +202,7 @@ async def create_webhook() -> WebhookCreateOut:
     },
 )
 async def reorder_webhooks(body: IndexOrderPatch = Body(...)) -> OutBase:
-    await Config.reorder_webhook(None, None, body.indexList)
+    await Config.reorder_webhook(None, None, body.index_list)
     return OutBase()
 
 

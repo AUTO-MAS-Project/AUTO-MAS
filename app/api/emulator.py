@@ -27,7 +27,13 @@ from fastapi import APIRouter, Body, Path
 
 from app.api.common import api_delete, api_get, api_patch, api_post
 from app.core import Config, EmulatorManager
-from app.models.common_contract import IndexOrderPatch, OutBase, project_model, project_model_list, project_model_map
+from app.models.common_contract import (
+    IndexOrderPatch,
+    OutBase,
+    project_model,
+    project_model_list,
+    project_model_map,
+)
 from app.models.emulator_contract import (
     EmulatorActionBody,
     EmulatorConfigIndexItem,
@@ -147,7 +153,7 @@ async def create_emulator() -> EmulatorCreateOut:
     },
 )
 async def reorder_emulator(body: IndexOrderPatch = Body(...)) -> OutBase:
-    await Config.reorder_emulator(body.indexList)
+    await Config.reorder_emulator(body.index_list)
     return OutBase()
 
 

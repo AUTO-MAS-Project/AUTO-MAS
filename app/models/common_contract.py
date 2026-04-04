@@ -2,10 +2,28 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from functools import lru_cache
+import re
 from types import UnionType
-from typing import Annotated, Any, Generic, TypeAlias, TypeVar, Union, cast, get_args, get_origin
+from typing import (
+    Annotated,
+    Any,
+    Generic,
+    TypeAlias,
+    TypeVar,
+    Union,
+    cast,
+    get_args,
+    get_origin,
+)
 
-from pydantic import BaseModel, ConfigDict, Field, create_model
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    create_model,
+    model_validator,
+)
 
 from app.core.config.fields import VirtualField
 from app.core.config.pydantic import PydanticConfigBase
@@ -21,7 +39,42 @@ RawModelSource: TypeAlias = Mapping[str, Any] | BaseModel
 class ApiModel(BaseModel):
     """API Contract 的统一基线。"""
 
-    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        validate_assignment=True,
+        populate_by_name=True,
+        validate_by_alias=True,
+    )
+
+    @staticmethod
+    def _to_snake(name: str) -> str:
+        normalized = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
+        normalized = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", normalized)
+        return normalized.replace("-", "_").lower()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_input_keys(cls, data: Any) -> Any:
+        if not isinstance(data, Mapping):
+            return data
+
+        normalized: dict[str, Any] = {}
+        field_names = cls.model_fields.keys()
+        raw_mapping = cast(Mapping[object, Any], data)
+        for raw_key, value in raw_mapping.items():
+            key = str(raw_key)
+            if key in field_names:
+                normalized[key] = value
+                continue
+
+            snake_key = cls._to_snake(key)
+            if snake_key in field_names and snake_key not in normalized:
+                normalized[snake_key] = value
+                continue
+
+            normalized[key] = value
+
+        return normalized
 
 
 class OutBase(ApiModel):
@@ -57,7 +110,12 @@ class ResourceCreateOut(ResourceItemOut[DataT], Generic[DataT]):
 
 
 class IndexOrderPatch(ApiModel):
-    indexList: list[str] = Field(..., description="按新顺序排列的资源 ID 列表")
+    index_list: list[str] = Field(
+        ...,
+        validation_alias=AliasChoices("index_list", "indexList"),
+        serialization_alias="indexList",
+        description="按新顺序排列的资源 ID 列表",
+    )
 
 
 def _annotate(annotation: Any, metadata: tuple[object, ...]) -> Any:
@@ -136,7 +194,9 @@ def _model_field_definitions(
         elif field_info.is_required():
             default = ...
         else:
-            default = Field(default=field_info.default, description=field_info.description)
+            default = Field(
+                default=field_info.default, description=field_info.description
+            )
 
         field_definitions[field_name] = (annotated, default)
 
@@ -303,7 +363,9 @@ def _project_value(annotation: Any, value: Any) -> Any:
         if not isinstance(value, (list, tuple, set, frozenset)):
             return value
 
-        iterable_value = cast(list[Any] | tuple[Any, ...] | set[Any] | frozenset[Any], value)
+        iterable_value = cast(
+            list[Any] | tuple[Any, ...] | set[Any] | frozenset[Any], value
+        )
         items = [_project_value(item_annotation, item) for item in iterable_value]
         if origin is set:
             return set(items)
@@ -318,7 +380,9 @@ def _project_value(annotation: Any, value: Any) -> Any:
         tuple_value = cast(list[Any] | tuple[Any, ...], value)
         item_annotations = get_args(annotation)
         if len(item_annotations) == 2 and item_annotations[1] is Ellipsis:
-            return tuple(_project_value(item_annotations[0], item) for item in tuple_value)
+            return tuple(
+                _project_value(item_annotations[0], item) for item in tuple_value
+            )
 
         return tuple(
             _project_value(item_annotation, item)
@@ -334,9 +398,7 @@ def _project_value(annotation: Any, value: Any) -> Any:
 
         mapping_value = cast(Mapping[Any, Any], value)
         return {
-            _project_value(key_annotation, key): _project_value(
-                value_annotation, item
-            )
+            _project_value(key_annotation, key): _project_value(value_annotation, item)
             for key, item in mapping_value.items()
         }
 
@@ -354,9 +416,34 @@ def _project_model_data(
     projected: dict[str, Any] = {}
     for name in field_names:
         field = model_cls.model_fields.get(name)
-        if field is None or name not in source:
+        if field is None:
             continue
-        projected[name] = _project_value(field.annotation, source[name])
+
+        source_value: Any | None = None
+        has_value = False
+        if name in source:
+            source_value = source[name]
+            has_value = True
+        else:
+            if field.alias is not None and field.alias in source:
+                source_value = source[field.alias]
+                has_value = True
+            elif field.validation_alias is not None:
+                alias = field.validation_alias
+                if isinstance(alias, str) and alias in source:
+                    source_value = source[alias]
+                    has_value = True
+                elif isinstance(alias, AliasChoices):
+                    for candidate in alias.choices:
+                        if isinstance(candidate, str) and candidate in source:
+                            source_value = source[candidate]
+                            has_value = True
+                            break
+
+        if not has_value:
+            continue
+
+        projected[name] = _project_value(field.annotation, source_value)
 
     return projected
 

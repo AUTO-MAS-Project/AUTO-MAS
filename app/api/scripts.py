@@ -39,6 +39,7 @@ from app.models.common_contract import (
     project_model_map,
 )
 from app.models.scripts_contract import (
+    ScriptPatchBody,
     InfrastructureImportBody,
     ScriptCreateIn,
     ScriptCreateOut,
@@ -48,6 +49,7 @@ from app.models.scripts_contract import (
     ScriptIndexItem,
     ScriptUploadBody,
     ScriptUrlBody,
+    UserPatchBody,
     UserCreateOut,
     UserDetailOut,
     UserGetOut,
@@ -59,8 +61,8 @@ from app.models.scripts_contract import (
     script_contract_type_from_create,
     script_contract_type_from_runtime,
     user_contract_type_from_script,
-    validate_script_patch_data,
-    validate_user_patch_data,
+    dump_script_patch_data,
+    dump_user_patch_data,
 )
 from app.models.setting_contract import (
     WebhookCreateOut,
@@ -85,7 +87,9 @@ WebhookIdPath = Annotated[str, Path(description="Webhook ID")]
 async def _build_script_collection_out() -> ScriptGetOut:
     index, data = await Config.get_script(None)
     script_index = project_model_list(ScriptIndexItem, index)
-    return ScriptGetOut(index=script_index, data=project_script_model_map(script_index, data))
+    return ScriptGetOut(
+        index=script_index, data=project_script_model_map(script_index, data)
+    )
 
 
 async def _build_script_detail_out(script_id: str) -> ScriptDetailOut:
@@ -180,7 +184,7 @@ async def create_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
     },
 )
 async def reorder_scripts(body: IndexOrderPatch = Body(...)) -> OutBase:
-    await Config.reorder_script(body.indexList)
+    await Config.reorder_script(body.index_list)
     return OutBase()
 
 
@@ -221,12 +225,15 @@ async def get_script(script_id: ScriptIdPath) -> ScriptDetailOut:
     },
 )
 async def update_script(
-    script_id: ScriptIdPath, data: dict[str, object] = Body(...)
+    script_id: ScriptIdPath,
+    body: ScriptPatchBody = Body(...),
 ) -> OutBase:
     script_type = script_contract_type_from_runtime(
         type(Config.ScriptConfig[uuid.UUID(script_id)]).__name__
     )
-    await Config.update_script(script_id, validate_script_patch_data(script_type, data))
+    await Config.update_script(
+        script_id, dump_script_patch_data(script_type, body.data)
+    )
     return OutBase()
 
 
@@ -382,7 +389,7 @@ async def create_user(script_id: ScriptIdPath) -> UserCreateOut:
 async def reorder_users(
     script_id: ScriptIdPath, body: IndexOrderPatch = Body(...)
 ) -> OutBase:
-    await Config.reorder_user(script_id, body.indexList)
+    await Config.reorder_user(script_id, body.index_list)
     return OutBase()
 
 
@@ -426,13 +433,15 @@ async def get_user(script_id: ScriptIdPath, user_id: UserIdPath) -> UserDetailOu
 async def update_user(
     script_id: ScriptIdPath,
     user_id: UserIdPath,
-    data: dict[str, object] = Body(...),
+    body: UserPatchBody = Body(...),
 ) -> OutBase:
     script_type = script_contract_type_from_runtime(
         type(Config.ScriptConfig[uuid.UUID(script_id)]).__name__
     )
     user_type = user_contract_type_from_script(script_type)
-    await Config.update_user(script_id, user_id, validate_user_patch_data(user_type, data))
+    await Config.update_user(
+        script_id, user_id, dump_user_patch_data(user_type, body.data)
+    )
     return OutBase()
 
 
@@ -548,7 +557,7 @@ async def reorder_user_webhooks(
     user_id: UserIdPath,
     body: IndexOrderPatch = Body(...),
 ) -> OutBase:
-    await Config.reorder_webhook(script_id, user_id, body.indexList)
+    await Config.reorder_webhook(script_id, user_id, body.index_list)
     return OutBase()
 
 
