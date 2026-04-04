@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from functools import lru_cache
 from types import UnionType
-from typing import Any, TypeAlias, TypeVar, Union, cast, get_args, get_origin
+from typing import Annotated, Any, Generic, TypeAlias, TypeVar, Union, cast, get_args, get_origin
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, create_model
+
+from app.core.config.fields import VirtualField
+from app.core.config.pydantic import PydanticConfigBase
 
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 MapKeyT = TypeVar("MapKeyT")
+IndexT = TypeVar("IndexT")
+DataT = TypeVar("DataT")
 RawModelSource: TypeAlias = Mapping[str, Any] | BaseModel
 
 
@@ -35,6 +41,231 @@ class ComboBoxItem(ApiModel):
 
 class ComboBoxOut(OutBase):
     data: list[ComboBoxItem] = Field(..., description="下拉框选项")
+
+
+class ResourceCollectionOut(OutBase, Generic[IndexT, DataT]):
+    index: list[IndexT] = Field(..., description="资源索引列表")
+    data: dict[str, DataT] = Field(..., description="资源数据字典")
+
+
+class ResourceItemOut(OutBase, Generic[DataT]):
+    data: DataT = Field(..., description="资源数据")
+
+
+class ResourceCreateOut(ResourceItemOut[DataT], Generic[DataT]):
+    id: str = Field(..., description="新创建资源的唯一 ID")
+
+
+class IndexOrderPatch(ApiModel):
+    indexList: list[str] = Field(..., description="按新顺序排列的资源 ID 列表")
+
+
+def _annotate(annotation: Any, metadata: tuple[object, ...]) -> Any:
+    if not metadata:
+        return annotation
+    return cast(Any, Annotated)[(annotation, *metadata)]
+
+
+def _make_optional(annotation: Any) -> Any:
+    origin = get_origin(annotation)
+    if origin in (Union, UnionType) and type(None) in get_args(annotation):
+        return annotation
+    return annotation | None
+
+
+def _clone_field_annotation(
+    field_info: Any,
+    annotation: Any,
+    *,
+    keep_virtual: bool,
+) -> Any:
+    metadata = tuple(
+        item
+        for item in field_info.metadata
+        if keep_virtual or not isinstance(item, VirtualField)
+    )
+    field_kwargs: dict[str, Any] = {}
+    if field_info.description is not None:
+        field_kwargs["description"] = field_info.description
+    if field_info.validation_alias is not None:
+        field_kwargs["validation_alias"] = field_info.validation_alias
+    if field_info.serialization_alias is not None:
+        field_kwargs["serialization_alias"] = field_info.serialization_alias
+    if field_info.alias is not None:
+        field_kwargs["alias"] = field_info.alias
+    if field_info.json_schema_extra is not None:
+        field_kwargs["json_schema_extra"] = field_info.json_schema_extra
+    if field_info.discriminator is not None:
+        field_kwargs["discriminator"] = field_info.discriminator
+    if field_kwargs:
+        metadata = (*metadata, Field(**field_kwargs))
+    return _annotate(annotation, metadata)
+
+
+def _model_field_definitions(
+    model_cls: type[BaseModel],
+    *,
+    optional_fields: bool,
+    keep_virtual: bool,
+) -> dict[str, tuple[Any, Any]]:
+    field_definitions: dict[str, tuple[Any, Any]] = {}
+
+    for field_name, field_info in model_cls.model_fields.items():
+        if not keep_virtual and any(
+            isinstance(item, VirtualField) for item in field_info.metadata
+        ):
+            continue
+
+        annotation = field_info.annotation
+        if optional_fields:
+            annotation = _make_optional(annotation)
+
+        annotated = _clone_field_annotation(
+            field_info,
+            annotation,
+            keep_virtual=keep_virtual,
+        )
+
+        if optional_fields:
+            default = Field(default=None, description=field_info.description)
+        elif field_info.default_factory is not None:
+            default = Field(
+                default_factory=field_info.default_factory,
+                description=field_info.description,
+            )
+        elif field_info.is_required():
+            default = ...
+        else:
+            default = Field(default=field_info.default, description=field_info.description)
+
+        field_definitions[field_name] = (annotated, default)
+
+    return field_definitions
+
+
+@lru_cache(maxsize=None)
+def derive_group_read_model(
+    group_cls: type[BaseModel],
+    *,
+    model_name: str,
+) -> type[ApiModel]:
+    return create_model(
+        model_name,
+        __base__=ApiModel,
+        **cast(
+            dict[str, Any],
+            _model_field_definitions(
+                group_cls,
+                optional_fields=False,
+                keep_virtual=True,
+            ),
+        ),
+    )
+
+
+@lru_cache(maxsize=None)
+def derive_group_patch_model(
+    group_cls: type[BaseModel],
+    *,
+    model_name: str,
+) -> type[ApiModel]:
+    return create_model(
+        model_name,
+        __base__=ApiModel,
+        **cast(
+            dict[str, Any],
+            _model_field_definitions(
+                group_cls,
+                optional_fields=True,
+                keep_virtual=False,
+            ),
+        ),
+    )
+
+
+@lru_cache(maxsize=None)
+def derive_config_read_model(
+    config_cls: type[PydanticConfigBase],
+    *,
+    model_name: str,
+    include_groups: tuple[str, ...] | None = None,
+) -> type[ApiModel]:
+    field_definitions: dict[str, tuple[Any, Any]] = {}
+
+    allowed_groups = set(include_groups) if include_groups is not None else None
+    for group_name, field_info in config_cls.model_fields.items():
+        if allowed_groups is not None and group_name not in allowed_groups:
+            continue
+        group_cls = field_info.annotation
+        if not isinstance(group_cls, type) or not issubclass(group_cls, BaseModel):
+            continue
+        group_model = derive_group_read_model(
+            group_cls,
+            model_name=f"{model_name}{group_name}",
+        )
+        field_definitions[group_name] = (
+            group_model,
+            Field(default_factory=group_model, description=field_info.description),
+        )
+
+    return create_model(
+        model_name,
+        __base__=ApiModel,
+        **cast(dict[str, Any], field_definitions),
+    )
+
+
+@lru_cache(maxsize=None)
+def derive_config_patch_model(
+    config_cls: type[PydanticConfigBase],
+    *,
+    model_name: str,
+    include_groups: tuple[str, ...] | None = None,
+) -> type[ApiModel]:
+    field_definitions: dict[str, tuple[Any, Any]] = {}
+
+    allowed_groups = set(include_groups) if include_groups is not None else None
+    for group_name, field_info in config_cls.model_fields.items():
+        if allowed_groups is not None and group_name not in allowed_groups:
+            continue
+        group_cls = field_info.annotation
+        if not isinstance(group_cls, type) or not issubclass(group_cls, BaseModel):
+            continue
+        group_model = derive_group_patch_model(
+            group_cls,
+            model_name=f"{model_name}{group_name}",
+        )
+        field_definitions[group_name] = (
+            group_model | None,
+            Field(default=None, description=field_info.description),
+        )
+
+    return create_model(
+        model_name,
+        __base__=ApiModel,
+        **cast(dict[str, Any], field_definitions),
+    )
+
+
+def derive_config_contracts(
+    config_cls: type[PydanticConfigBase],
+    *,
+    read_name: str,
+    patch_name: str,
+    include_groups: tuple[str, ...] | None = None,
+) -> tuple[type[ApiModel], type[ApiModel]]:
+    return (
+        derive_config_read_model(
+            config_cls,
+            model_name=read_name,
+            include_groups=include_groups,
+        ),
+        derive_config_patch_model(
+            config_cls,
+            model_name=patch_name,
+            include_groups=include_groups,
+        ),
+    )
 
 
 def _normalize_source(raw: RawModelSource | None) -> dict[str, Any]:
@@ -178,6 +409,15 @@ __all__ = [
     "InfoOut",
     "ComboBoxItem",
     "ComboBoxOut",
+    "ResourceCollectionOut",
+    "ResourceItemOut",
+    "ResourceCreateOut",
+    "IndexOrderPatch",
+    "derive_group_read_model",
+    "derive_group_patch_model",
+    "derive_config_read_model",
+    "derive_config_patch_model",
+    "derive_config_contracts",
     "project_model",
     "project_model_list",
     "project_model_map",

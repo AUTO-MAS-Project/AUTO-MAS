@@ -3,7 +3,7 @@ from __future__ import annotations
 import calendar
 from typing import Annotated, Any, ClassVar, Literal, cast
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, AliasPath, BaseModel, Field, field_validator
 
 from app.core.config.base import MultipleConfig
 from app.core.config.fields import RefField
@@ -36,18 +36,25 @@ class EmulatorConfig(PydanticConfigBase):
 
     class InfoModel(BaseModel):
         Name: str = "新模拟器"
-        Type: EMULATOR_TYPES = "general"
+        Type: EMULATOR_TYPES = Field(
+            default="general",
+            validation_alias=AliasChoices("Type", AliasPath("Data", "Type")),
+        )
         Path: str = ""
-        BossKey: JsonListString = "[ ]"
-        MaxWaitTime: int = Field(default=60, ge=1, le=9999)
+        BossKey: JsonListString = Field(
+            default="[ ]",
+            validation_alias=AliasChoices("BossKey", AliasPath("Data", "BossKey")),
+        )
+        MaxWaitTime: int = Field(
+            default=60,
+            ge=1,
+            le=9999,
+            validation_alias=AliasChoices(
+                "MaxWaitTime", AliasPath("Data", "MaxWaitTime")
+            ),
+        )
 
     Info: InfoModel = Field(default_factory=InfoModel)
-
-    LEGACY_FIELD_MAP: ClassVar[dict[tuple[str, str], tuple[str, str]]] = {
-        ("Info", "Type"): ("Data", "Type"),
-        ("Info", "BossKey"): ("Data", "BossKey"),
-        ("Info", "MaxWaitTime"): ("Data", "MaxWaitTime"),
-    }
 
 
 class Webhook(PydanticConfigBase):

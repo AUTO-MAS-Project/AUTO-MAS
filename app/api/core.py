@@ -32,6 +32,7 @@ from app.services import System
 from app.models.common_contract import OutBase
 from app.models.shared import WebSocketMessage
 from app.api.ws_command import ws_command
+from app.api.common import error_out
 from app.utils import get_logger
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])
@@ -112,7 +113,5 @@ async def close() -> OutBase:
             await Config.websocket.close(code=1000, reason="正常关闭")
         await System.set_power("KillSelf", from_frontend=True)
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return error_out(OutBase, e)
     return OutBase()

@@ -45,6 +45,20 @@ RegisteredWsCommand: TypeAlias = Callable[..., Any]
 _ws_command_registry: dict[str, RegisteredWsCommand] = {}
 
 
+def _failed_result(message: str, code: int) -> dict[str, Any]:
+    return {"success": False, "message": message, "code": code}
+
+
+def _pack_result(data: dict[str, Any]) -> dict[str, Any]:
+    code = cast(int, data.get("code", 200))
+    return {
+        "success": code == 200,
+        "data": data,
+        "code": code,
+        "message": data.get("message"),
+    }
+
+
 def ws_command(
     endpoint: str,
 ) -> Callable[[Callable[P, Any]], Callable[P, Any]]:
@@ -111,7 +125,7 @@ async def execute_ws_command(
     # 检查命令是否存在
     if endpoint not in _ws_command_registry:
         logger.warning(f"未找到命令: {endpoint}")
-        return {"success": False, "message": f"未找到命令: {endpoint}", "code": 404}
+        return _failed_result(f"未找到命令: {endpoint}", 404)
 
     func = _ws_command_registry[endpoint]
 
@@ -140,11 +154,7 @@ async def execute_ws_command(
                     result = await func(param_instance)
                 except Exception as e:
                     logger.error(f"构建参数模型失败: {type(e).__name__}: {e}")
-                    return {
-                        "success": False,
-                        "message": f"参数错误: {str(e)}",
-                        "code": 400,
-                    }
+                    return _failed_result(f"参数错误: {str(e)}", 400)
             elif params:
                 # 普通参数，直接传递
                 result = await func(**params)
@@ -155,20 +165,10 @@ async def execute_ws_command(
         # 处理返回结果
         if isinstance(result, BaseModel):
             result_dict = result.model_dump()
-            return {
-                "success": result_dict.get("code", 200) == 200,
-                "data": result_dict,
-                "code": result_dict.get("code", 200),
-                "message": result_dict.get("message"),
-            }
+            return _pack_result(result_dict)
         elif isinstance(result, dict):
             result_dict = cast(dict[str, Any], result)
-            return {
-                "success": result_dict.get("code", 200) == 200,
-                "data": result_dict,
-                "code": result_dict.get("code", 200),
-                "message": result_dict.get("message"),
-            }
+            return _pack_result(result_dict)
         else:
             return {"success": True, "data": result, "code": 200}
 
@@ -176,11 +176,7 @@ async def execute_ws_command(
         logger.error(
             f"执行命令 {endpoint} 失败: {type(e).__name__}: {str(e)}", exc_info=True
         )
-        return {
-            "success": False,
-            "message": f"执行失败: {type(e).__name__}: {str(e)}",
-            "code": 500,
-        }
+        return _failed_result(f"执行失败: {type(e).__name__}: {str(e)}", 500)
 
 
 def get_ws_command_registry() -> dict[str, RegisteredWsCommand]:

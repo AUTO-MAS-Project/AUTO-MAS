@@ -50,6 +50,7 @@ from app.models.ws_contract import (
     WSClearHistoryIn,
     WSCommandsOut,
 )
+from app.api.common import run_api
 
 logger = get_logger("WS调试")
 
@@ -75,7 +76,8 @@ async def create_client(request: WSClientCreateIn) -> WSClientCreateOut:
     - **reconnect_interval**: 重连间隔
     - **max_reconnect_attempts**: 最大重连次数
     """
-    try:
+
+    async def _success() -> WSClientCreateOut:
         client = await ws_client_manager.create_client(
             name=request.name,
             url=request.url,
@@ -95,11 +97,13 @@ async def create_client(request: WSClientCreateIn) -> WSClientCreateOut:
                 "is_connected": client.is_connected,
             },
         )
-    except Exception as e:
-        logger.error(f"创建客户端失败: {type(e).__name__}: {e}")
-        return WSClientCreateOut(
-            code=500, status="error", message=f"创建客户端失败: {str(e)}"
-        )
+
+    return await run_api(
+        _success,
+        model_cls=WSClientCreateOut,
+        message="创建客户端失败",
+        on_error=lambda e: logger.error(f"创建客户端失败: {type(e).__name__}: {e}"),
+    )
 
 
 @router.post(
@@ -116,7 +120,7 @@ async def connect_client(request: WSClientConnectIn) -> WSClientStatusOut:
             code=404, status="error", message=f"客户端 [{request.name}] 不存在"
         )
 
-    try:
+    async def _success() -> WSClientStatusOut:
         success = await ws_client_manager.connect_client(request.name)
         client = ws_client_manager.get_client(request.name)
 
@@ -141,11 +145,13 @@ async def connect_client(request: WSClientConnectIn) -> WSClientStatusOut:
                     "is_connected": client.is_connected if client else False,
                 },
             )
-    except Exception as e:
-        logger.error(f"连接客户端失败: {type(e).__name__}: {e}")
-        return WSClientStatusOut(
-            code=500, status="error", message=f"连接失败: {str(e)}"
-        )
+
+    return await run_api(
+        _success,
+        model_cls=WSClientStatusOut,
+        message="连接失败",
+        on_error=lambda e: logger.error(f"连接客户端失败: {type(e).__name__}: {e}"),
+    )
 
 
 @router.post(
@@ -162,7 +168,7 @@ async def disconnect_client(request: WSClientDisconnectIn) -> WSClientStatusOut:
             code=404, status="error", message=f"客户端 [{request.name}] 不存在"
         )
 
-    try:
+    async def _success() -> WSClientStatusOut:
         await ws_client_manager.disconnect_client(request.name)
         return WSClientStatusOut(
             code=200,
@@ -170,11 +176,13 @@ async def disconnect_client(request: WSClientDisconnectIn) -> WSClientStatusOut:
             message=f"客户端 [{request.name}] 已断开",
             data={"name": request.name, "is_connected": False},
         )
-    except Exception as e:
-        logger.error(f"断开客户端失败: {type(e).__name__}: {e}")
-        return WSClientStatusOut(
-            code=500, status="error", message=f"断开失败: {str(e)}"
-        )
+
+    return await run_api(
+        _success,
+        model_cls=WSClientStatusOut,
+        message="断开失败",
+        on_error=lambda e: logger.error(f"断开客户端失败: {type(e).__name__}: {e}"),
+    )
 
 
 @router.post(
@@ -201,16 +209,18 @@ async def remove_client(request: WSClientRemoveIn) -> WSClientStatusOut:
             message=f"客户端 [{request.name}] 是系统客户端，不可删除",
         )
 
-    try:
+    async def _success() -> WSClientStatusOut:
         await ws_client_manager.remove_client(request.name)
         return WSClientStatusOut(
             code=200, status="success", message=f"客户端 [{request.name}] 已删除"
         )
-    except Exception as e:
-        logger.error(f"删除客户端失败: {type(e).__name__}: {e}")
-        return WSClientStatusOut(
-            code=500, status="error", message=f"删除失败: {str(e)}"
-        )
+
+    return await run_api(
+        _success,
+        model_cls=WSClientStatusOut,
+        message="删除失败",
+        on_error=lambda e: logger.error(f"删除客户端失败: {type(e).__name__}: {e}"),
+    )
 
 
 @router.post(
@@ -282,7 +292,7 @@ async def send_message(request: WSClientSendIn) -> WSClientStatusOut:
             code=400, status="error", message=f"客户端 [{request.name}] 未连接"
         )
 
-    try:
+    async def _success() -> WSClientStatusOut:
         success = await ws_client_manager.send_message(request.name, request.message)
         if success:
             return WSClientStatusOut(
@@ -293,11 +303,13 @@ async def send_message(request: WSClientSendIn) -> WSClientStatusOut:
             )
         else:
             return WSClientStatusOut(code=500, status="error", message="消息发送失败")
-    except Exception as e:
-        logger.error(f"发送消息失败: {type(e).__name__}: {e}")
-        return WSClientStatusOut(
-            code=500, status="error", message=f"发送失败: {str(e)}"
-        )
+
+    return await run_api(
+        _success,
+        model_cls=WSClientStatusOut,
+        message="发送失败",
+        on_error=lambda e: logger.error(f"发送消息失败: {type(e).__name__}: {e}"),
+    )
 
 
 @router.post(
@@ -322,7 +334,7 @@ async def send_json_message(request: WSClientSendJsonIn) -> WSClientStatusOut:
 
     message = {"id": request.msg_id, "type": request.msg_type, "data": request.data}
 
-    try:
+    async def _success() -> WSClientStatusOut:
         success = await ws_client_manager.send_message(request.name, message)
         if success:
             return WSClientStatusOut(
@@ -333,11 +345,13 @@ async def send_json_message(request: WSClientSendJsonIn) -> WSClientStatusOut:
             )
         else:
             return WSClientStatusOut(code=500, status="error", message="消息发送失败")
-    except Exception as e:
-        logger.error(f"发送消息失败: {type(e).__name__}: {e}")
-        return WSClientStatusOut(
-            code=500, status="error", message=f"发送失败: {str(e)}"
-        )
+
+    return await run_api(
+        _success,
+        model_cls=WSClientStatusOut,
+        message="发送失败",
+        on_error=lambda e: logger.error(f"发送消息失败: {type(e).__name__}: {e}"),
+    )
 
 
 @router.post(
@@ -365,7 +379,7 @@ async def send_auth(request: WSClientAuthIn) -> WSClientStatusOut:
             code=400, status="error", message=f"客户端 [{request.name}] 未连接"
         )
 
-    try:
+    async def _success() -> WSClientStatusOut:
         success = await ws_client_manager.send_auth(
             name=request.name,
             token=request.token,
@@ -381,11 +395,13 @@ async def send_auth(request: WSClientAuthIn) -> WSClientStatusOut:
             return WSClientStatusOut(
                 code=500, status="error", message="认证消息发送失败"
             )
-    except Exception as e:
-        logger.error(f"发送认证消息失败: {type(e).__name__}: {e}")
-        return WSClientStatusOut(
-            code=500, status="error", message=f"发送失败: {str(e)}"
-        )
+
+    return await run_api(
+        _success,
+        model_cls=WSClientStatusOut,
+        message="发送失败",
+        on_error=lambda e: logger.error(f"发送认证消息失败: {type(e).__name__}: {e}"),
+    )
 
 
 @router.get(

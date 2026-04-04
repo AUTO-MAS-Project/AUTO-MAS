@@ -24,10 +24,17 @@
 from typing import Any, cast
 
 from fastapi import APIRouter, Body
+from pydantic import Field, TypeAdapter
 
 from app.core import Config
-from app.models.common_contract import ComboBoxItem, ComboBoxOut, InfoOut, OutBase
-from app.models.emulator_contract import EmulatorDeleteIn
+from app.models.common_contract import (
+    ApiModel,
+    ComboBoxItem,
+    ComboBoxOut,
+    InfoOut,
+    OutBase,
+)
+from app.api.common import error_out
 from app.models.info_contract import (
     GetStageIn,
     NoticeOut,
@@ -37,27 +44,18 @@ from app.models.info_contract import (
 router = APIRouter(prefix="/api/info", tags=["信息获取"])
 
 
+class EmulatorIdBody(ApiModel):
+    emulatorId: str = Field(..., description="模拟器 ID")
+
+COMBOBOX_ITEMS_ADAPTER: TypeAdapter[list[ComboBoxItem]] = TypeAdapter(
+    list[ComboBoxItem]
+)
+
+
 def _to_combobox_items(raw_data: object) -> list[ComboBoxItem]:
-    if not isinstance(raw_data, list):
-        return []
-
-    items: list[ComboBoxItem] = []
-    for item_any in cast(list[object], raw_data):
-        if not isinstance(item_any, dict):
-            continue
-        item = cast(dict[str, Any], item_any)
-        label = item.get("label")
-        if not isinstance(label, str):
-            continue
-        value_raw = item.get("value")
-        value: str | None
-        if isinstance(value_raw, str) or value_raw is None:
-            value = value_raw
-        else:
-            value = str(value_raw)
-        items.append(ComboBoxItem(label=label, value=value))
-
-    return items
+    return COMBOBOX_ITEMS_ADAPTER.validate_python(
+        raw_data if isinstance(raw_data, list) else []
+    )
 
 
 @router.post(
@@ -71,10 +69,9 @@ async def get_git_version() -> VersionOut:
     try:
         is_latest, commit_hash, commit_time = await Config.get_git_version()
     except Exception as e:
-        return VersionOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
+        return error_out(
+            VersionOut,
+            e,
             if_need_update=False,
             current_time="unknown",
             current_hash="unknown",
@@ -100,9 +97,7 @@ async def get_stage_combox(
         raw_data = cast(object, await Config.get_stage_info(stage.type))
         data = _to_combobox_items(raw_data)
     except Exception as e:
-        return ComboBoxOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
-        )
+        return error_out(ComboBoxOut, e, data=[])
     return ComboBoxOut(data=data)
 
 
@@ -118,9 +113,7 @@ async def get_script_combox() -> ComboBoxOut:
         raw_data = await Config.get_script_combox()
         data = _to_combobox_items(raw_data)
     except Exception as e:
-        return ComboBoxOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
-        )
+        return error_out(ComboBoxOut, e, data=[])
     return ComboBoxOut(data=data)
 
 
@@ -136,9 +129,7 @@ async def get_task_combox() -> ComboBoxOut:
         raw_data = await Config.get_task_combox()
         data = _to_combobox_items(raw_data)
     except Exception as e:
-        return ComboBoxOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
-        )
+        return error_out(ComboBoxOut, e, data=[])
     return ComboBoxOut(data=data)
 
 
@@ -154,9 +145,7 @@ async def get_plan_combox() -> ComboBoxOut:
         raw_data = await Config.get_plan_combox()
         data = _to_combobox_items(raw_data)
     except Exception as e:
-        return ComboBoxOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
-        )
+        return error_out(ComboBoxOut, e, data=[])
     return ComboBoxOut(data=data)
 
 
@@ -172,9 +161,7 @@ async def get_emulator_combox() -> ComboBoxOut:
         raw_data = await Config.get_emulator_combox()
         data = _to_combobox_items(raw_data)
     except Exception as e:
-        return ComboBoxOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
-        )
+        return error_out(ComboBoxOut, e, data=[])
     return ComboBoxOut(data=data)
 
 
@@ -186,7 +173,7 @@ async def get_emulator_combox() -> ComboBoxOut:
     status_code=200,
 )
 async def get_emulator_devices_combox(
-    emulator: EmulatorDeleteIn = Body(...),
+    emulator: EmulatorIdBody = Body(...),
 ) -> ComboBoxOut:
     try:
         raw_data = cast(
@@ -194,9 +181,7 @@ async def get_emulator_devices_combox(
         )
         data = _to_combobox_items(raw_data)
     except Exception as e:
-        return ComboBoxOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
-        )
+        return error_out(ComboBoxOut, e, data=[])
     return ComboBoxOut(data=data)
 
 
@@ -211,13 +196,7 @@ async def get_notice_info() -> NoticeOut:
     try:
         if_need_show, data = await Config.get_notice()
     except Exception as e:
-        return NoticeOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            if_need_show=False,
-            data={},
-        )
+        return error_out(NoticeOut, e, if_need_show=False, data={})
     return NoticeOut(if_need_show=if_need_show, data=data)
 
 
@@ -232,9 +211,7 @@ async def confirm_notice() -> OutBase:
     try:
         await Config.set("Data", "IfShowNotice", False)
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return error_out(OutBase, e)
     return OutBase()
 
 
@@ -263,9 +240,7 @@ async def get_web_config() -> InfoOut:
     try:
         data = await Config.get_web_config()
     except Exception as e:
-        return InfoOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data={}
-        )
+        return error_out(InfoOut, e, data={})
     return InfoOut(data={"WebConfig": data})
 
 
@@ -283,10 +258,5 @@ async def get_overview() -> InfoOut:
 
         proxy = await Config.get_proxy_overview()
     except Exception as e:
-        return InfoOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            data={"Stage": [], "Proxy": []},
-        )
+        return error_out(InfoOut, e, data={"Stage": [], "Proxy": []})
     return InfoOut(data={"Stage": stage, "Proxy": proxy})

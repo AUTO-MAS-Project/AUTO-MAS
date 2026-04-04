@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, ClassVar, Callable, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, AliasPath, BaseModel, Field, field_validator
 
 from app.core.config.base import MultipleConfig
 from app.core.config.fields import RefField, VirtualField
@@ -116,7 +116,12 @@ class MaaUserConfig(PydanticConfigBase):
         ProxyTimes: int = Field(default=0, ge=0, le=9999)
         IfPassCheck: bool = True
         CustomInfrast: JsonDictString = "{ }"
-        InfrastIndex: str = "0"
+        InfrastIndex: str = Field(
+            default="0",
+            validation_alias=AliasChoices(
+                "InfrastIndex", AliasPath("Info", "InfrastIndex")
+            ),
+        )
 
         @field_validator("LastProxyDate", "LastSklandDate", mode="before")
         @classmethod
@@ -151,10 +156,6 @@ class MaaUserConfig(PydanticConfigBase):
     Data: DataModel = Field(default_factory=DataModel)
     Task: TaskModel = Field(default_factory=TaskModel)
     Notify: NotifyModel = Field(default_factory=NotifyModel)
-
-    LEGACY_FIELD_MAP: ClassVar[dict[tuple[str, str], tuple[str, str]]] = {
-        ("Data", "InfrastIndex"): ("Info", "InfrastIndex")
-    }
 
     def __init__(self, **data: Any):
         super().__init__(**data)

@@ -33,6 +33,7 @@ from app.models.dispatch_contract import (
     TaskCreateIn,
     TaskCreateOut,
 )
+from app.api.common import error_out
 
 router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
 
@@ -48,9 +49,7 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
     try:
         task_id = await TaskManager.add_task(task.mode, task.taskId)
     except Exception as e:
-        return TaskCreateOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", taskId=""
-        )
+        return error_out(TaskCreateOut, e, taskId="")
     return TaskCreateOut(taskId=str(task_id))
 
 
@@ -65,9 +64,7 @@ async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
     try:
         await TaskManager.stop_task(task.taskId)
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return error_out(OutBase, e)
     return OutBase()
 
 
@@ -82,12 +79,7 @@ async def get_power() -> PowerOut:
     try:
         signal = Config.power_sign
     except Exception as e:
-        return PowerOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            signal="NoAction",
-        )
+        return error_out(PowerOut, e, signal="NoAction")
     return PowerOut(signal=signal)
 
 
@@ -102,9 +94,7 @@ async def set_power(task: PowerIn = Body(...)) -> OutBase:
     try:
         Config.power_sign = task.signal
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return error_out(OutBase, e)
     return OutBase()
 
 
@@ -119,7 +109,5 @@ async def cancel_power_task() -> OutBase:
     try:
         await System.cancel_power_task()
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return error_out(OutBase, e)
     return OutBase()
