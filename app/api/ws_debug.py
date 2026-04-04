@@ -34,7 +34,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.utils.websocket import ws_client_manager
 from app.api.ws_command import list_ws_commands
 from app.utils.logger import get_logger
-from app.models.dto import (
+from app.models.ws_contract import (
     WSClientCreateIn,
     WSClientCreateOut,
     WSClientConnectIn,

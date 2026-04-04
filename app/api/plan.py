@@ -24,9 +24,14 @@
 from fastapi import APIRouter, Body
 
 from app.core import Config
-from app.models.dto import (
-    MaaPlanConfig,
+from app.models.common_contract import (
     OutBase,
+    project_model,
+    project_model_list,
+    project_model_map,
+)
+from app.models.plan_contract import (
+    MaaPlanRead,
     PlanCreateIn,
     PlanCreateOut,
     PlanDeleteIn,
@@ -36,6 +41,7 @@ from app.models.dto import (
     PlanReorderIn,
     PlanUpdateIn,
 )
+from app.api.common import error_out
 
 router = APIRouter(prefix="/api/plan", tags=["计划管理"])
 
@@ -50,15 +56,9 @@ router = APIRouter(prefix="/api/plan", tags=["计划管理"])
 async def add_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
     try:
         uid, config = await Config.add_plan(plan.type)
-        data = MaaPlanConfig(**(await config.toDict()))
+        data = project_model(MaaPlanRead, await config.toDict())
     except Exception as e:
-        return PlanCreateOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            planId="",
-            data=MaaPlanConfig(**{}),
-        )
+        return error_out(PlanCreateOut, e, planId="", data=MaaPlanRead())
     return PlanCreateOut(planId=str(uid), data=data)
 
 
@@ -72,16 +72,10 @@ async def add_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
 async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
     try:
         index, data = await Config.get_plan(plan.planId)
-        index = [PlanIndexItem(**_) for _ in index]
-        data = {uid: MaaPlanConfig(**cfg) for uid, cfg in data.items()}
+        index = project_model_list(PlanIndexItem, index)
+        data = project_model_map(MaaPlanRead, data)
     except Exception as e:
-        return PlanGetOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            index=[],
-            data={},
-        )
+        return error_out(PlanGetOut, e, index=[], data={})
     return PlanGetOut(index=index, data=data)
 
 
@@ -96,9 +90,7 @@ async def update_plan(plan: PlanUpdateIn = Body(...)) -> OutBase:
     try:
         await Config.update_plan(plan.planId, plan.data.model_dump(exclude_unset=True))
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return error_out(OutBase, e)
     return OutBase()
 
 
@@ -113,9 +105,7 @@ async def delete_plan(plan: PlanDeleteIn = Body(...)) -> OutBase:
     try:
         await Config.del_plan(plan.planId)
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return error_out(OutBase, e)
     return OutBase()
 
 
@@ -130,7 +120,5 @@ async def reorder_plan(plan: PlanReorderIn = Body(...)) -> OutBase:
     try:
         await Config.reorder_plan(plan.indexList)
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return error_out(OutBase, e)
     return OutBase()

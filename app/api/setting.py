@@ -24,22 +24,28 @@
 from fastapi import APIRouter, Body
 from app.core import Config
 from app.services import Notify
-from app.models.dto import (
-    SettingGetOut,
-    GlobalConfig,
+from app.models.common_contract import (
     OutBase,
+    project_model,
+    project_model_list,
+    project_model_map,
+)
+from app.models.setting_contract import (
+    GlobalConfigRead,
+    SettingGetOut,
     SettingUpdateIn,
+    WebhookCreateOut,
+    WebhookDeleteIn,
+    WebhookGetIn,
     WebhookGetOut,
     WebhookIndexItem,
-    Webhook,
-    WebhookGetIn,
-    WebhookCreateOut,
-    WebhookUpdateIn,
-    WebhookDeleteIn,
+    WebhookRead,
     WebhookReorderIn,
     WebhookTestIn,
+    WebhookUpdateIn,
 )
 from app.models import Webhook as WebhookConfig
+from app.api.common import error_out
 
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
 
@@ -57,13 +63,8 @@ async def get_scripts() -> SettingGetOut:
     try:
         data = await Config.get_setting()
     except Exception as e:
-        return SettingGetOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            data=GlobalConfig(**{}),
-        )
-    return SettingGetOut(data=GlobalConfig(**data))
+        return error_out(SettingGetOut, e, data=GlobalConfigRead())
+    return SettingGetOut(data=project_model(GlobalConfigRead, data))
 
 
 @router.post(
@@ -81,9 +82,7 @@ async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
         await Config.update_setting(data)
 
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return error_out(OutBase, e)
     return OutBase()
 
 
@@ -100,9 +99,7 @@ async def test_notify() -> OutBase:
     try:
         await Notify.send_test_notification()
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return error_out(OutBase, e)
     return OutBase()
 
 
@@ -116,16 +113,10 @@ async def test_notify() -> OutBase:
 async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
     try:
         index, data = await Config.get_webhook(None, None, webhook.webhookId)
-        index = [WebhookIndexItem(**_) for _ in index]
-        data = {uid: Webhook(**cfg) for uid, cfg in data.items()}
+        index = project_model_list(WebhookIndexItem, index)
+        data = project_model_map(WebhookRead, data)
     except Exception as e:
-        return WebhookGetOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            index=[],
-            data={},
-        )
+        return error_out(WebhookGetOut, e, index=[], data={})
     return WebhookGetOut(index=index, data=data)
 
 
@@ -139,15 +130,9 @@ async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
 async def add_webhook() -> WebhookCreateOut:
     try:
         uid, config = await Config.add_webhook(None, None)
-        data = Webhook(**(await config.toDict()))
+        data = project_model(WebhookRead, await config.toDict())
     except Exception as e:
-        return WebhookCreateOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            webhookId="",
-            data=Webhook(**{}),
-        )
+        return error_out(WebhookCreateOut, e, webhookId="", data=WebhookRead())
     return WebhookCreateOut(webhookId=str(uid), data=data)
 
 
@@ -164,9 +149,7 @@ async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
             None, None, webhook.webhookId, webhook.data.model_dump(exclude_unset=True)
         )
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return error_out(OutBase, e)
     return OutBase()
 
 
@@ -181,9 +164,7 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
     try:
         await Config.del_webhook(None, None, webhook.webhookId)
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return error_out(OutBase, e)
     return OutBase()
 
 
@@ -198,9 +179,7 @@ async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
     try:
         await Config.reorder_webhook(None, None, webhook.indexList)
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+        return error_out(OutBase, e)
     return OutBase()
 
 
@@ -216,12 +195,12 @@ async def test_webhook(webhook: WebhookTestIn = Body(...)) -> OutBase:
 
     try:
         webhook_config = WebhookConfig()
-        await webhook_config.load(webhook.data.model_dump())
+        await webhook_config.load(webhook.data.model_dump(exclude_unset=True))
         await Notify.WebhookPush(
             "AUTO-MAS Webhook测试",
             "这是一条测试消息，如果您收到此消息，说明Webhook配置正确！",
             webhook_config,
         )
     except Exception as e:
-        return OutBase(code=500, status="error", message=f"Webhook测试失败: {str(e)}")
+        return error_out(OutBase, e, message=f"Webhook测试失败: {str(e)}")
     return OutBase()

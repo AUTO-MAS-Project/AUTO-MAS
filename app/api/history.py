@@ -23,10 +23,12 @@
 
 from datetime import datetime
 from pathlib import Path
+from typing import Any, cast
 from fastapi import APIRouter, Body
 
 from app.core import Config
-from app.models.dto import (
+from app.models.common_contract import project_model_list
+from app.models.history_contract import (
     HistoryData,
     HistoryDataGetIn,
     HistoryDataGetOut,
@@ -38,6 +40,22 @@ from app.models.dto import (
 router = APIRouter(prefix="/api/history", tags=["历史记录"])
 
 
+def _build_history_data(raw: dict[str, object]) -> HistoryData:
+    index_data = raw.get("index", [])
+    raw["index"] = []
+    if isinstance(index_data, list):
+        index_rows = [
+            cast(dict[str, Any], item)
+            for item in cast(list[object], index_data)
+            if isinstance(item, dict)
+        ]
+        raw["index"] = project_model_list(
+            HistoryIndexItem,
+            index_rows,
+        )
+    return HistoryData.model_validate(raw)
+
+
 @router.post(
     "/search",
     tags=["Get"],
@@ -47,20 +65,18 @@ router = APIRouter(prefix="/api/history", tags=["历史记录"])
 )
 async def search_history(history: HistorySearchIn) -> HistorySearchOut:
     try:
-        data = await Config.search_history(
+        raw_data = await Config.search_history(
             history.mode,
             datetime.strptime(history.start_date, "%Y-%m-%d").date(),
             datetime.strptime(history.end_date, "%Y-%m-%d").date(),
         )
-        for date, users in data.items():
+        data: dict[str, dict[str, HistoryData]] = {}
+        for date, users in raw_data.items():
+            current_users: dict[str, HistoryData] = {}
             for user, records in users.items():
                 record = await Config.merge_statistic_info(records)
-                # 安全检查：确保 index 字段存在
-                if "index" not in record:
-                    record["index"] = []
-                record["index"] = [HistoryIndexItem(**_) for _ in record["index"]]
-                record = HistoryData(**record)
-                data[date][user] = record
+                current_users[user] = _build_history_data(record)
+            data[date] = current_users
     except Exception as e:
         return HistorySearchOut(
             code=500,
@@ -81,15 +97,15 @@ async def search_history(history: HistorySearchIn) -> HistorySearchOut:
 async def get_history_data(history: HistoryDataGetIn = Body(...)) -> HistoryDataGetOut:
     try:
         path = Path(history.jsonPath)
-        data = await Config.merge_statistic_info([path])
-        data.pop("index", None)
-        data["log_content"] = path.with_suffix(".log").read_text(encoding="utf-8")
-        data = HistoryData(**data)
+        raw_data = await Config.merge_statistic_info([path])
+        raw_data.pop("index", None)
+        raw_data["log_content"] = path.with_suffix(".log").read_text(encoding="utf-8")
+        data = _build_history_data(raw_data)
     except Exception as e:
         return HistoryDataGetOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
-            data=HistoryData(**{}),
+            data=HistoryData(),
         )
     return HistoryDataGetOut(data=data)

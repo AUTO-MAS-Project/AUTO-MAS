@@ -29,7 +29,7 @@ from io import BytesIO
 
 from app.utils.OCR.OCRtool import OCRTool
 from app.utils import get_logger
-from app.models.dto import OutBase
+from app.models.common_contract import OutBase
 
 logger = get_logger("OCR API")
 
