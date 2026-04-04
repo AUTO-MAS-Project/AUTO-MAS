@@ -34,12 +34,14 @@ SCRIPT_BOOK = {
     "MaaConfig": MaaConfig,
     "SrcConfig": SrcConfig,
     "MaaEndConfig": MaaEndConfig,
+    "M9AConfig": M9AConfig,
     "GeneralConfig": GeneralConfig,
 }
 USER_BOOK = {
     "MaaConfig": MaaUserConfig,
     "SrcConfig": SrcUserConfig,
     "MaaEndConfig": MaaEndUserConfig,
+    "M9AConfig": M9AUserConfig,
     "GeneralConfig": GeneralUserConfig,
 }
 
