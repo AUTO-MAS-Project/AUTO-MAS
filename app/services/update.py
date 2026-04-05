@@ -32,6 +32,13 @@ from packaging import version
 from datetime import datetime, timedelta
 from typing import Any, List, Dict, Optional, cast
 from pathlib import Path
+from tenacity import (
+    AsyncRetrying,
+    RetryCallState,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from app.core import Config
 from app.utils.constants import MIRROR_ERROR_INFO
@@ -41,9 +48,17 @@ from .system import System
 logger = get_logger("更新服务")
 
 
+def _log_retry_before_sleep(retry_state: RetryCallState) -> None:
+    """输出重试等待日志。"""
+
+    attempt = retry_state.attempt_number
+    reason = retry_state.outcome.exception() if retry_state.outcome else None
+    logger.warning(f"下载失败，准备第 {attempt + 1} 次重试，原因: {reason}")
+
+
 class _UpdateHandler:
     def __init__(self) -> None:
-        self.is_locked: bool = False
+        self._operation_lock = asyncio.Lock()
         self.remote_version: Optional[str] = None
         self.last_check_time: Optional[datetime] = None
         self.update_version_info: Optional[Dict[str, List[str]]] = None
@@ -52,6 +67,8 @@ class _UpdateHandler:
     async def check_update(
         self, current_version: str, if_force: bool = False
     ) -> tuple[bool, str, Dict[str, List[str]]]:
+        """检查更新并返回是否有新版本、远端版本号与变更摘要。"""
+
         if (
             not if_force
             and self.remote_version is not None
@@ -131,104 +148,93 @@ class _UpdateHandler:
             return False, current_version, {}
 
     async def download_update(self) -> None:
+        """下载更新包并通过 WebSocket 上报进度。"""
+
         logger.info("收到前端下载请求")
 
-        if self.is_locked:
+        if self._operation_lock.locked():
             await Config.send_websocket_message(
                 id="Update",
                 type="Signal",
                 data={"Failed": "已有更新任务在进行中, 请勿重复操作"},
             )
             return None
+        async with self._operation_lock:
+            if self.remote_version is None:
+                await Config.send_websocket_message(
+                    id="Update",
+                    type="Signal",
+                    data={"Failed": "未检测到可用的远程版本, 请先检查更新"},
+                )
+                return None
 
-        self.is_locked = True
+            if (Path.cwd() / f"UpdatePack_{self.remote_version}.zip").exists():
+                logger.info(
+                    f"更新包已存在: {Path.cwd() / f'UpdatePack_{self.remote_version}.zip'}"
+                )
+                await Config.send_websocket_message(
+                    id="Update",
+                    type="Signal",
+                    data={
+                        "Accomplish": str(
+                            Path.cwd() / f"UpdatePack_{self.remote_version}.zip"
+                        )
+                    },
+                )
+                return None
 
-        if self.remote_version is None:
-            await Config.send_websocket_message(
-                id="Update",
-                type="Signal",
-                data={"Failed": "未检测到可用的远程版本, 请先检查更新"},
-            )
-            self.is_locked = False
-            return None
+            if Config.get("Update", "Source") == "GitHub":
+                download_url = f"https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/{self.remote_version}/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
 
-        if (Path.cwd() / f"UpdatePack_{self.remote_version}.zip").exists():
-            logger.info(
-                f"更新包已存在: {Path.cwd() / f'UpdatePack_{self.remote_version}.zip'}"
-            )
-            await Config.send_websocket_message(
-                id="Update",
-                type="Signal",
-                data={
-                    "Accomplish": str(
-                        Path.cwd() / f"UpdatePack_{self.remote_version}.zip"
-                    )
-                },
-            )
-            self.is_locked = False
-            return None
+            elif Config.get("Update", "Source") == "MirrorChyan":
+                if self.mirror_chyan_download_url is None:
+                    logger.warning("MirrorChyan 未返回下载链接, 使用自建下载站")
+                    download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
+                else:
+                    download_url = self.mirror_chyan_download_url
 
-        if Config.get("Update", "Source") == "GitHub":
-            download_url = f"https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/{self.remote_version}/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
-
-        elif Config.get("Update", "Source") == "MirrorChyan":
-            if self.mirror_chyan_download_url is None:
-                logger.warning("MirrorChyan 未返回下载链接, 使用自建下载站")
+            elif Config.get("Update", "Source") == "AutoSite":
                 download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
+
             else:
-                download_url = self.mirror_chyan_download_url
+                await Config.send_websocket_message(
+                    id="Update",
+                    type="Signal",
+                    data={
+                        "Failed": f"未知的下载源: {Config.get('Update', 'Source')}, 请检查配置文件"
+                    },
+                )
+                return None
 
-        elif Config.get("Update", "Source") == "AutoSite":
-            download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
+            logger.info(f"开始下载: {download_url}")
 
-        else:
-            await Config.send_websocket_message(
-                id="Update",
-                type="Signal",
-                data={
-                    "Failed": f"未知的下载源: {Config.get('Update', 'Source')}, 请检查配置文件"
-                },
-            )
-            self.is_locked = False
-            return None
-
-        logger.info(f"开始下载: {download_url}")
-
-        check_times = 3
-        while check_times != 0:
-            try:
+            async def _download_once() -> None:
                 # 清理可能存在的临时文件
                 if (Path.cwd() / "download.temp").exists():
                     (Path.cwd() / "download.temp").unlink()
 
                 start_time = time.time()
+                downloaded_size = 0
 
-                # 使用 httpx 异步流式下载
                 async with httpx.AsyncClient(follow_redirects=True) as client:
                     async with client.stream(
                         "GET", download_url, timeout=30.0
                     ) as response:
                         status_code = response.status_code
-
                         if status_code not in [200, 206]:
-                            if check_times != -1:
-                                check_times -= 1
-
-                            logger.warning(
-                                f"连接失败: {download_url}, 状态码: {status_code}, 剩余重试次数: {check_times}"
+                            raise httpx.HTTPStatusError(
+                                f"下载响应状态码异常: {status_code}",
+                                request=response.request,
+                                response=response,
                             )
-                            await asyncio.sleep(1)
-                            continue
 
                         logger.info(f"连接成功: {download_url}, 状态码: {status_code}")
 
                         file_size = int(response.headers.get("content-length", 0) or 0)
-                        downloaded_size = 0
                         last_download_size = 0
-                        speed = 0
+                        speed = 0.0
                         last_time = time.time()
 
-                        # 使用 aiofiles 异步写入临时文件
                         async with aiofiles.open(
                             Path.cwd() / "download.temp", "wb"
                         ) as f:
@@ -238,7 +244,6 @@ class _UpdateHandler:
                                 await f.write(chunk)
                                 downloaded_size += len(chunk)
 
-                                # 更新指定线程的下载进度, 每秒更新一次
                                 if time.time() - last_time >= 1.0:
                                     elapsed = time.time() - last_time
                                     if elapsed <= 0:
@@ -259,7 +264,6 @@ class _UpdateHandler:
                                         },
                                     )
 
-                # 重命名临时文件为最终包
                 (Path.cwd() / "download.temp").rename(
                     Path.cwd() / f"UpdatePack_{self.remote_version}.zip"
                 )
@@ -276,28 +280,33 @@ class _UpdateHandler:
                         )
                     },
                 )
-                self.is_locked = False
-                break
 
-            except Exception as e:
-                if check_times != -1:
-                    check_times -= 1
-
-                logger.exception(
-                    f"下载出错: {download_url}, 错误信息: {e}, 剩余重试次数: {check_times}"
+            try:
+                async for attempt in AsyncRetrying(
+                    stop=stop_after_attempt(3),
+                    wait=wait_exponential(multiplier=1, min=1, max=10),
+                    retry=retry_if_exception_type(
+                        (httpx.HTTPError, OSError, asyncio.TimeoutError)
+                    ),
+                    before_sleep=_log_retry_before_sleep,
+                    reraise=True,
+                ):
+                    with attempt:
+                        await _download_once()
+            except (httpx.HTTPError, OSError, asyncio.TimeoutError) as e:
+                if (Path.cwd() / "download.temp").exists():
+                    (Path.cwd() / "download.temp").unlink()
+                logger.exception(f"下载出错: {download_url}, 错误信息: {e}")
+                await Config.send_websocket_message(
+                    id="Update",
+                    type="Signal",
+                    data={"Failed": f"下载失败: {download_url}"},
                 )
-                await asyncio.sleep(1)
-
-        else:
-            if (Path.cwd() / "download.temp").exists():
-                (Path.cwd() / "download.temp").unlink()
-            await Config.send_websocket_message(
-                id="Update", type="Signal", data={"Failed": f"下载失败: {download_url}"}
-            )
-            self.is_locked = False
 
     async def install_update(self):
-        if self.is_locked:
+        """解压并安装已下载的更新包。"""
+
+        if self._operation_lock.locked():
             await Config.send_websocket_message(
                 id="Update",
                 type="Signal",
@@ -305,77 +314,74 @@ class _UpdateHandler:
             )
             return None
 
-        logger.info("开始应用更新")
-        self.is_locked = True
+        async with self._operation_lock:
+            logger.info("开始应用更新")
 
-        versions = {
-            version.parse(match.group(1)): f.name
-            for f in Path.cwd().glob("UpdatePack_*.zip")
-            if (match := re.match(r"UpdatePack_(.+)\.zip$", f.name))
-        }
-        logger.info(f"检测到的更新包: {versions.values()}")
+            versions = {
+                version.parse(match.group(1)): f.name
+                for f in Path.cwd().glob("UpdatePack_*.zip")
+                if (match := re.match(r"UpdatePack_(.+)\.zip$", f.name))
+            }
+            logger.info(f"检测到的更新包: {versions.values()}")
 
-        if not versions:
-            await Config.send_websocket_message(
-                id="Update",
-                type="Signal",
-                data={"Failed": "未检测到更新包, 请先下载更新"},
+            if not versions:
+                await Config.send_websocket_message(
+                    id="Update",
+                    type="Signal",
+                    data={"Failed": "未检测到更新包, 请先下载更新"},
+                )
+                return None
+
+            update_package = Path.cwd() / versions[max(versions)]
+
+            logger.info(f"开始解压: {update_package} 到 {Path.cwd()}")
+
+            try:
+                with zipfile.ZipFile(update_package, "r") as zip_ref:
+                    zip_ref.extractall(Path.cwd())
+            except (OSError, zipfile.BadZipFile, RuntimeError) as e:
+                logger.error(f"解压失败, {type(e).__name__}: {e}")
+                await Config.send_websocket_message(
+                    id="Update",
+                    type="Info",
+                    data={"Error": f"解压失败, {type(e).__name__}: {e}"},
+                )
+                return None
+
+            logger.success(f"解压完成: {update_package} 到 {Path.cwd()}")
+
+            logger.info("正在删除临时文件与旧更新包文件")
+            if (Path.cwd() / "changes.json").exists():
+                (Path.cwd() / "changes.json").unlink()
+            for f in versions.values():
+                if (Path.cwd() / f).exists():
+                    (Path.cwd() / f).unlink()
+
+            logger.info("正在清理旧版本注册表项")
+            await ProcessRunner.run_process(
+                "reg",
+                "delete",
+                r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{D116A92A-E174-4699-B777-61C5FD837B19}_is1",
+                "/f",
             )
-            self.is_locked = False
-            return None
+            logger.success("清理完成")
 
-        update_package = Path.cwd() / versions[max(versions)]
-
-        logger.info(f"开始解压: {update_package} 到 {Path.cwd()}")
-
-        try:
-            with zipfile.ZipFile(update_package, "r") as zip_ref:
-                zip_ref.extractall(Path.cwd())
-        except Exception as e:
-            logger.error(f"解压失败, {type(e).__name__}: {e}")
-            await Config.send_websocket_message(
-                id="Update",
-                type="Info",
-                data={"Error": f"解压失败, {type(e).__name__}: {e}"},
+            logger.info("启动更新程序")
+            subprocess.Popen(
+                [
+                    Path.cwd() / "AUTO-MAS-Setup.exe",
+                    "/SP-",
+                    "/SILENT",
+                    "/NOCANCEL",
+                    "/FORCECLOSEAPPLICATIONS",
+                    "/LANG=Chinese",
+                    f"/DIR={Path.cwd()}",
+                ],
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+                | subprocess.DETACHED_PROCESS
+                | subprocess.CREATE_NO_WINDOW,
             )
-            self.is_locked = False
-            return None
-
-        logger.success(f"解压完成: {update_package} 到 {Path.cwd()}")
-
-        logger.info("正在删除临时文件与旧更新包文件")
-        if (Path.cwd() / "changes.json").exists():
-            (Path.cwd() / "changes.json").unlink()
-        for f in versions.values():
-            if (Path.cwd() / f).exists():
-                (Path.cwd() / f).unlink()
-
-        logger.info("正在清理旧版本注册表项")
-        await ProcessRunner.run_process(
-            "reg",
-            "delete",
-            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{D116A92A-E174-4699-B777-61C5FD837B19}_is1",
-            "/f",
-        )
-        logger.success("清理完成")
-
-        logger.info("启动更新程序")
-        self.is_locked = False
-        subprocess.Popen(
-            [
-                Path.cwd() / "AUTO-MAS-Setup.exe",
-                "/SP-",
-                "/SILENT",
-                "/NOCANCEL",
-                "/FORCECLOSEAPPLICATIONS",
-                "/LANG=Chinese",
-                f"/DIR={Path.cwd()}",
-            ],
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
-            | subprocess.DETACHED_PROCESS
-            | subprocess.CREATE_NO_WINDOW,
-        )
-        await System.set_power("KillSelf")
+            await System.set_power("KillSelf")
 
 
 Updater = _UpdateHandler()

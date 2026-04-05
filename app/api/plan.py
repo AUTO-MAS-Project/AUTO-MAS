@@ -25,7 +25,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Path
 
-from app.api.common import bind_api, error_out
+from app.api.common import RECOVERABLE_EXCEPTIONS, bind_api, error_out
 from app.core import Config
 from app.contracts.common_contract import (
     IndexOrderPatch,
@@ -76,7 +76,7 @@ async def create_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
     try:
         uid, config = await Config.add_plan(plan.type)
         data = project_model(MaaPlanRead, await config.toDict())
-    except Exception as e:
+    except RECOVERABLE_EXCEPTIONS as e:
         return error_out(PlanCreateOut, e, id="", data=MaaPlanRead())
     return PlanCreateOut(id=str(uid), data=data)
 
@@ -113,7 +113,7 @@ async def get_plan(plan_id: PlanIdPath) -> PlanDetailOut:
 async def update_plan(plan_id: PlanIdPath, body: PlanUpdateBody = Body(...)) -> OutBase:
     try:
         await Config.update_plan(plan_id, body.data.model_dump(exclude_unset=True))
-    except Exception as e:
+    except RECOVERABLE_EXCEPTIONS as e:
         return error_out(OutBase, e)
     return OutBase()
 
@@ -127,7 +127,7 @@ async def update_plan(plan_id: PlanIdPath, body: PlanUpdateBody = Body(...)) -> 
 async def delete_plan(plan_id: PlanIdPath) -> OutBase:
     try:
         await Config.del_plan(plan_id)
-    except Exception as e:
+    except RECOVERABLE_EXCEPTIONS as e:
         return error_out(OutBase, e)
     return OutBase()
 
@@ -141,6 +141,6 @@ async def delete_plan(plan_id: PlanIdPath) -> OutBase:
 async def reorder_plan(body: IndexOrderPatch = Body(...)) -> OutBase:
     try:
         await Config.reorder_plan(body.index_list)
-    except Exception as e:
+    except RECOVERABLE_EXCEPTIONS as e:
         return error_out(OutBase, e)
     return OutBase()

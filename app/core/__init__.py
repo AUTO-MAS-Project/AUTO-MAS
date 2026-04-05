@@ -21,13 +21,17 @@
 #   Contact: DLmaster_361@163.com
 
 
+from typing import TYPE_CHECKING
+
 from .broadcast import Broadcast
-from .config import Config
 from .emulator_manager import EmulatorManager
 from .task_manager import TaskManager
 from .maa_manager import MaaFWManager
 
 from .timer import MainTimer
+
+if TYPE_CHECKING:
+    from .config import Config as Config
 
 __all__ = [
     "Broadcast",
@@ -37,3 +41,11 @@ __all__ = [
     "EmulatorManager",
     "MaaFWManager",
 ]
+
+
+def __getattr__(name: str):
+    if name == "Config":
+        from .config import Config
+
+        return Config
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

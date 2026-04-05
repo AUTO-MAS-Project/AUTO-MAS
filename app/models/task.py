@@ -44,6 +44,10 @@ def _default_script_list() -> list[ScriptItem]:
     return []
 
 
+def _default_pending_tasks() -> set[asyncio.Task[Any]]:
+    return set()
+
+
 @dataclass
 class LogRecord:
     content: list[str] = field(default_factory=_default_content)
@@ -66,7 +70,7 @@ class UserItem:
         if name in ("user_id", "name", "status") and self._task_item_ref is not None:
             ti = self._task_item_ref()
             if ti is not None:
-                asyncio.create_task(ti.on_change())
+                ti.create_tracked_task(ti.on_change())
 
     @property
     def result(self) -> str:
@@ -102,7 +106,7 @@ class ScriptItem:
                 object.__setattr__(user, "_task_item_ref", self._task_item_ref)
 
         if name not in ("_task_item_ref",) and self.task_info is not None:
-            asyncio.create_task(self.task_info.on_change())
+            self.task_info.create_tracked_task(self.task_info.on_change())
 
     @property
     def task_info(self) -> Optional[TaskItem]:
@@ -133,6 +137,9 @@ class TaskItem(ABC):
         default_factory=_default_script_list
     )  # 脚本信息列表
     current_index: int = -1  # 当前执行的脚本索引，-1 表示未开始
+    _pending_tasks: set[asyncio.Task[Any]] = field(
+        default_factory=_default_pending_tasks, init=False
+    )
 
     def __setattr__(self, name: str, value: Any) -> None:
         super().__setattr__(name, value)
@@ -149,6 +156,31 @@ class TaskItem(ABC):
         # 绑定 user_list 中的每个 UserItem
         for user in item.user_list:
             object.__setattr__(user, "_task_item_ref", ti_ref)
+
+    def create_tracked_task(self, coro: Any) -> asyncio.Task[Any]:
+        """创建并跟踪异步任务，避免任务异常被静默吞掉。"""
+
+        task = asyncio.create_task(coro)
+        self._pending_tasks.add(task)
+
+        def _finalize(done_task: asyncio.Task[Any]) -> None:
+            self._pending_tasks.discard(done_task)
+            if done_task.cancelled():
+                return
+            exception = done_task.exception()
+            if exception is not None:
+                # 在事件循环中转抛，便于统一异常处理器捕获
+                loop = done_task.get_loop()
+                loop.call_exception_handler(
+                    {
+                        "message": "TaskItem 子任务执行失败",
+                        "exception": exception,
+                        "task": done_task,
+                    }
+                )
+
+        task.add_done_callback(_finalize)
+        return task
 
     @abstractmethod
     async def on_change(self) -> None:

@@ -49,17 +49,17 @@ def _validate_json_dict_string(value: Any) -> str:
     """
     text = _to_string(value)
     if not text:
-        return "{ }"
+        raise ValueError("JSON 字典字符串不能为空")
 
     try:
         parsed = json.loads(text)
         if not isinstance(parsed, dict):
             logger.warning(f"JSON 不是字典类型: {text[:50]}...")
-            return "{ }"
+            raise ValueError("JSON 不是字典类型")
         return text
     except json.JSONDecodeError as e:
         logger.warning(f"JSON 解析失败: {e}, 输入: {text[:50]}...")
-        return "{ }"
+        raise ValueError("JSON 字典字符串解析失败") from e
 
 
 def _validate_json_list_string(value: Any) -> str:
@@ -74,17 +74,17 @@ def _validate_json_list_string(value: Any) -> str:
     """
     text = _to_string(value)
     if not text:
-        return "[ ]"
+        raise ValueError("JSON 列表字符串不能为空")
 
     try:
         parsed = json.loads(text)
         if not isinstance(parsed, list):
             logger.warning(f"JSON 不是列表类型: {text[:50]}...")
-            return "[ ]"
+            raise ValueError("JSON 不是列表类型")
         return text
     except json.JSONDecodeError as e:
         logger.warning(f"JSON 解析失败: {e}, 输入: {text[:50]}...")
-        return "[ ]"
+        raise ValueError("JSON 列表字符串解析失败") from e
 
 
 def _validate_hhmm_string(value: Any) -> str:
@@ -163,17 +163,19 @@ def _validate_url_string(value: Any) -> str:
     """
     text = _to_string(value)
     if not text:
-        return ""
+        raise ValueError("URL 不能为空")
 
     try:
         parsed = urlparse(text)
         if not parsed.scheme or not parsed.netloc:
             logger.warning(f"URL 格式错误: {text}")
-            return ""
+            raise ValueError("URL 格式错误")
         return text
-    except Exception as e:
+    except ValueError:
+        raise
+    except TypeError as e:
         logger.warning(f"URL 解析失败: {e}, 输入: {text}")
-        return ""
+        raise ValueError("URL 解析失败") from e
 
 
 def _validate_keyboard_key(value: Any) -> str:
@@ -188,11 +190,11 @@ def _validate_keyboard_key(value: Any) -> str:
     """
     text = _to_string(value).lower()
     if not text:
-        return ""
+        raise ValueError("键盘按键不能为空")
 
     if text not in pyautogui.KEYBOARD_KEYS:
         logger.warning(f"无效的键盘按键: {text}")
-        return ""
+        raise ValueError(f"无效的键盘按键: {text}")
 
     return text
 
@@ -211,19 +213,19 @@ def _normalize_encrypted_string(value: Any) -> str:
     """
     text = _to_string(value)
     if not text:
-        return ""
+        raise ValueError("加密字段不能为空")
 
     try:
         # 尝试解密，如果成功说明已加密
         dpapi_decrypt(text)
         return text
-    except Exception:
+    except ValueError:
         # 解密失败，说明是明文，需要加密
         try:
             return dpapi_encrypt(text)
-        except Exception as e:
+        except (ValueError, TypeError) as e:
             logger.error(f"加密失败: {e}, 输入长度: {len(text)}")
-            return ""
+            raise ValueError("加密失败") from e
 
 
 def decrypt_encrypted_string(value: str) -> str:
@@ -241,9 +243,9 @@ def decrypt_encrypted_string(value: str) -> str:
 
     try:
         return dpapi_decrypt(value)
-    except Exception as e:
+    except ValueError as e:
         logger.error(f"解密失败: {e}")
-        return "数据损坏，请重新设置"
+        raise ValueError("数据损坏，请重新设置") from e
 
 
 # 类型别名定义

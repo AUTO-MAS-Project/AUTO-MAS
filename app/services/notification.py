@@ -25,19 +25,20 @@ import json
 import smtplib
 import httpx
 from datetime import datetime
-from plyer import notification  # pyright: ignore[reportMissingTypeStubs]
+from importlib import import_module
 from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from app.core import Config
 from app.models import Webhook
 from app.utils import get_logger, ImageUtils
 
 logger = get_logger("通知服务")
+notification = import_module("plyer").notification
 
 
 class Notification:
@@ -232,9 +233,14 @@ class Notification:
                 # 递归替换JSON对象中的变量
                 def replace_variables(obj: Any) -> Any:
                     if isinstance(obj, dict):
-                        return {k: replace_variables(v) for k, v in obj.items()}
+                        obj_mapping = cast(dict[str, Any], obj)
+                        return {
+                            key: replace_variables(value)
+                            for key, value in obj_mapping.items()
+                        }
                     elif isinstance(obj, list):
-                        return [replace_variables(item) for item in obj]
+                        obj_list = cast(list[Any], obj)
+                        return [replace_variables(item) for item in obj_list]
                     elif isinstance(obj, str):
                         result = obj
                         for key, value in template_vars.items():
@@ -283,8 +289,9 @@ class Notification:
             response: httpx.Response
             if webhook.get("Data", "Method") == "POST":
                 if isinstance(data, dict):
+                    payload = cast(dict[str, Any], data)
                     response = await client.post(
-                        url=webhook.get("Data", "Url"), json=data, headers=headers
+                        url=webhook.get("Data", "Url"), json=payload, headers=headers
                     )
                 elif isinstance(data, str):
                     response = await client.post(
@@ -300,7 +307,7 @@ class Notification:
                 if isinstance(data, dict):
                     # Flatten params to ensure all values are str or list of str
                     params: dict[str, str] = {}
-                    for k, v in data.items():
+                    for k, v in cast(dict[str, Any], data).items():
                         if isinstance(v, (dict, list)):
                             params[str(k)] = json.dumps(v, ensure_ascii=False)
                         else:

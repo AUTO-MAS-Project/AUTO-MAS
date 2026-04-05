@@ -32,6 +32,7 @@ from functools import wraps
 from typing import Any, Callable, ParamSpec, TypeAlias, TypeVar, cast
 from pydantic import BaseModel
 
+from app.api.common import RECOVERABLE_EXCEPTIONS
 from app.utils.logger import get_logger
 
 logger = get_logger("WS命令")
@@ -152,7 +153,7 @@ async def execute_ws_command(
                 try:
                     param_instance = param_type(**(params or {}))
                     result = await func(param_instance)
-                except Exception as e:
+                except RECOVERABLE_EXCEPTIONS as e:
                     logger.error(f"构建参数模型失败: {type(e).__name__}: {e}")
                     return _failed_result(f"参数错误: {str(e)}", 400)
             elif params:
@@ -172,7 +173,7 @@ async def execute_ws_command(
         else:
             return {"success": True, "data": result, "code": 200}
 
-    except Exception as e:
+    except RECOVERABLE_EXCEPTIONS as e:
         logger.error(
             f"执行命令 {endpoint} 失败: {type(e).__name__}: {str(e)}", exc_info=True
         )

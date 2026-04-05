@@ -5,7 +5,7 @@ import pyautogui
 from PIL import Image
 import win32con
 import win32gui
-from rapidocr_onnxruntime import RapidOCR  # pyright: ignore[reportMissingTypeStubs]
+from importlib import import_module
 from mss import mss
 import subprocess
 from pathlib import Path
@@ -38,6 +38,7 @@ from app.utils.exception import (
 # 你现在已经学会了OCR识别的基础知识了！快来试试吧！
 
 logger = get_logger("OCR模块")
+RapidOCR = cast(Any, import_module("rapidocr_onnxruntime")).RapidOCR
 
 
 class OCRTool:
@@ -101,13 +102,16 @@ class OCRTool:
         try:
             # 启用高 DPI 感知，避免始终返回 96
             try:
-                ctypes.windll.shcore.SetProcessDpiAwareness(2)  # type: ignore[attr-defined]
+                shcore = getattr(ctypes.windll, "shcore", None)
+                set_dpi_awareness = getattr(shcore, "SetProcessDpiAwareness", None)
+                if callable(set_dpi_awareness):
+                    set_dpi_awareness(2)
             except (AttributeError, OSError):
                 # Windows 8.1 以下系统没有该函数
                 pass
 
             # 获取主显示器 DC
-            hdc: Any = win32gui.GetDC(0)
+            hdc = cast(int, cast(Any, win32gui).GetDC(0))
             try:
                 # 使用 ctypes 直接调用 GetDeviceCaps
                 # LOGPIXELSX = 88
@@ -285,7 +289,7 @@ class OCRTool:
             if foreground_thread_id != target_thread_id and foreground_thread_id != 0:
                 try:
                     # 附着到前台窗口的输入线程
-                    win32process.AttachThreadInput(
+                    cast(Any, win32process).AttachThreadInput(
                         foreground_thread_id, target_thread_id, True
                     )
                     attached = True
@@ -320,7 +324,7 @@ class OCRTool:
                 # 分离输入线程（必须在 finally 中执行，确保一定会分离）
                 if attached:
                     try:
-                        win32process.AttachThreadInput(
+                        cast(Any, win32process).AttachThreadInput(
                             foreground_thread_id, target_thread_id, False
                         )
                         logger.debug("已分离输入线程")
@@ -342,7 +346,7 @@ class OCRTool:
         Returns:
             int | None: 找到的窗口句柄，未找到返回 None
         """
-        found_windows = []
+        found_windows: list[tuple[int, str]] = []
 
         def enum_callback(hwnd: int, results: list[tuple[int, str]]) -> None:
             if win32gui.IsWindowVisible(hwnd):

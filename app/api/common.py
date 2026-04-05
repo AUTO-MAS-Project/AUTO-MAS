@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Iterable
 from functools import wraps
 import inspect
+import asyncio
 from typing import Any, ParamSpec, TypeVar, cast
 
 from fastapi import APIRouter
@@ -12,6 +13,17 @@ from app.contracts.common_contract import ComboBoxItem, ComboBoxOut, OutBase
 
 OutT = TypeVar("OutT", bound=OutBase)
 P = ParamSpec("P")
+
+
+RECOVERABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
+    ValueError,
+    TypeError,
+    KeyError,
+    RuntimeError,
+    LookupError,
+    OSError,
+    asyncio.TimeoutError,
+)
 
 
 def _docstring_summary(func: Callable[..., Any]) -> str | None:
@@ -59,7 +71,7 @@ async def run_api(
 ) -> OutT:
     try:
         return await success_factory()
-    except Exception as exc:
+    except RECOVERABLE_EXCEPTIONS as exc:
         if on_error is not None:
             on_error(exc)
         return error_out(

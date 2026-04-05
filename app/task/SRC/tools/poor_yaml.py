@@ -25,68 +25,43 @@
 #   Contact: DLmaster_361@163.com
 
 
-import re
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from app.utils import decode_bytes
+from ruamel.yaml import YAML
+
+
+_YAML = YAML(typ="safe")
+_YAML.default_flow_style = False
+
+
+def _load_yaml_mapping(path: Path) -> dict[str, Any]:
+    loaded: Any = cast(Any, _YAML).load(path.read_text(encoding="utf-8"))
+    if loaded is None:
+        return {}
+    if not isinstance(loaded, dict):
+        raise ValueError(f"YAML 根节点必须是字典: {path}")
+    mapping = cast(dict[object, Any], loaded)
+    return {str(key): value for key, value in mapping.items()}
 
 
 def poor_yaml_read(file: Path) -> dict[str, Any]:
-    """
-    Poor implementation to load yaml without pyyaml dependency, but with re
+    """读取 YAML 文件并返回字典对象。"""
 
-    Args:
-        file (Path): yaml file path
-
-    Returns:
-        dict:
-    """
-    content = decode_bytes(file.read_bytes())
-    data: dict[str, Any] = {}
-    regex = re.compile(r"^(.*?):(.*?)$")
-    for line in content.splitlines():
-        line = line.strip("\n\r\t ").replace("\\", "/")
-        if line.startswith("#"):
-            continue
-        result = re.match(regex, line)
-        if result:
-            k, v = result.group(1), result.group(2).strip("\n\r\t' ")
-            if v:
-                if v.lower() == "null":
-                    v = None
-                elif v.lower() == "false":
-                    v = False
-                elif v.lower() == "true":
-                    v = True
-                elif v.isdigit():
-                    v = int(v)
-                data[k] = v
-
-    return data
+    return _load_yaml_mapping(file)
 
 
 def poor_yaml_write(
     data: dict[str, Any], file: Path, template_file: Path | None = None
 ) -> None:
-    """
-    Args:
-        data (dict):
-        file (Path): yaml file path
-        template_file (Path | None): template file path
-    """
-    if template_file is None:
-        template_file = file
-    text = decode_bytes(template_file.read_bytes())
-    text = text.replace("\\", "/")
+    """写入 YAML 文件；若提供模板则先加载模板并合并。"""
 
-    for key, value in data.items():
-        if value is None:
-            value = "null"
-        elif value is True:
-            value = "true"
-        elif value is False:
-            value = "false"
-        text = re.sub(f"{key}:.*?\n", f"{key}: {value}\n", text)
+    merged: dict[str, Any] = {}
+    if template_file is not None and template_file.exists():
+        merged = _load_yaml_mapping(template_file)
 
-    file.write_text(text, encoding="utf-8")
+    merged.update(data)
+
+    file.parent.mkdir(parents=True, exist_ok=True)
+    with file.open("w", encoding="utf-8") as output:
+        cast(Any, _YAML).dump(merged, output)
