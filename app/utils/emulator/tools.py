@@ -26,7 +26,7 @@ import subprocess
 from maa.toolkit import Toolkit
 from contextlib import suppress
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Any
 
 from app.utils.constants import EMULATOR_PATH_BOOK
 from app.utils import get_logger
@@ -98,7 +98,7 @@ async def search_all_emulators() -> List[Dict[str, str]]:
     return found_emulators
 
 
-async def _search_emulator(config: Dict) -> str:
+async def _search_emulator(config: Dict[str, Any]) -> str:
     """搜索单类模拟器"""
 
     # 1. 从注册表搜索

@@ -30,7 +30,7 @@ import aiofiles
 import subprocess
 from packaging import version
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+from typing import Any, List, Dict, Optional, cast
 from pathlib import Path
 
 from app.core import Config
@@ -42,7 +42,6 @@ logger = get_logger("更新服务")
 
 
 class _UpdateHandler:
-
     def __init__(self) -> None:
         self.is_locked: bool = False
         self.remote_version: Optional[str] = None
@@ -53,7 +52,6 @@ class _UpdateHandler:
     async def check_update(
         self, current_version: str, if_force: bool = False
     ) -> tuple[bool, str, Dict[str, List[str]]]:
-
         if (
             not if_force
             and self.remote_version is not None
@@ -71,6 +69,7 @@ class _UpdateHandler:
             )
 
         logger.info("开始检查更新")
+        version_info: dict[str, Any] = {}
 
         # 使用 httpx 异步请求
         async with httpx.AsyncClient(
@@ -80,9 +79,9 @@ class _UpdateHandler:
                 f"https://mirrorchyan.com/api/resources/AUTO_MAS/latest?user_agent=AutoMasGui&os=win&arch=x64&current_version={current_version}&cdk={Config.get('Update', 'MirrorChyanCDK') if Config.get('Update', 'Source') == 'MirrorChyan' else ''}&channel={Config.get('Update', 'Channel')}"
             )
         if response.status_code == 200:
-            version_info = response.json()
+            version_info = cast(dict[str, Any], response.json())
         else:
-            result = response.json()
+            result = cast(dict[str, Any], response.json())
 
             if result["code"] != 0:
                 if result["code"] in MIRROR_ERROR_INFO:
@@ -97,20 +96,21 @@ class _UpdateHandler:
         logger.success("获取版本信息成功")
         self.last_check_time = datetime.now()
 
-        self.remote_version = version_info["data"]["version_name"]
+        data = cast(dict[str, Any], version_info.get("data", {}))
+        version_name = data.get("version_name")
+        self.remote_version = str(version_name) if version_name is not None else None
         if self.remote_version is None:
             raise Exception("Mirror 酱未返回版本号, 请稍后重试")
-        if "url" in version_info["data"]:
-            self.mirror_chyan_download_url = version_info["data"]["url"]
+        if "url" in data:
+            self.mirror_chyan_download_url = cast(Optional[str], data.get("url"))
 
         if version.parse(self.remote_version) > version.parse(current_version):
-
             # 版本更新信息
             version_info_json: Dict[str, Dict[str, List[str]]] = json.loads(
                 re.sub(
                     r"^<!--\s*(.*?)\s*-->$",
                     r"\1",
-                    version_info["data"]["release_note"].splitlines()[0].strip(),
+                    str(data.get("release_note", "")).splitlines()[0].strip(),
                 )
             )
 
@@ -120,7 +120,6 @@ class _UpdateHandler:
                 for ver, info in version_info_json.items()
                 if version.parse(ver) > version.parse(current_version)
             ]:
-
                 for key, value in v_i.items():
                     if key not in self.update_version_info:
                         self.update_version_info[key] = []
@@ -132,7 +131,6 @@ class _UpdateHandler:
             return False, current_version, {}
 
     async def download_update(self) -> None:
-
         logger.info("收到前端下载请求")
 
         if self.is_locked:
@@ -171,11 +169,9 @@ class _UpdateHandler:
             return None
 
         if Config.get("Update", "Source") == "GitHub":
-
             download_url = f"https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/{self.remote_version}/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
 
         elif Config.get("Update", "Source") == "MirrorChyan":
-
             if self.mirror_chyan_download_url is None:
                 logger.warning("MirrorChyan 未返回下载链接, 使用自建下载站")
                 download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
@@ -200,7 +196,6 @@ class _UpdateHandler:
 
         check_times = 3
         while check_times != 0:
-
             try:
                 # 清理可能存在的临时文件
                 if (Path.cwd() / "download.temp").exists():
@@ -285,7 +280,6 @@ class _UpdateHandler:
                 break
 
             except Exception as e:
-
                 if check_times != -1:
                     check_times -= 1
 
@@ -295,7 +289,6 @@ class _UpdateHandler:
                 await asyncio.sleep(1)
 
         else:
-
             if (Path.cwd() / "download.temp").exists():
                 (Path.cwd() / "download.temp").unlink()
             await Config.send_websocket_message(
@@ -304,7 +297,6 @@ class _UpdateHandler:
             self.is_locked = False
 
     async def install_update(self):
-
         if self.is_locked:
             await Config.send_websocket_message(
                 id="Update",

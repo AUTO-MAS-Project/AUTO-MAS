@@ -3,7 +3,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 
 TASK_EVENT_TEXT = {
@@ -166,8 +166,8 @@ class RuntimeTaskStart:
     task_id: str
 
 
-_AUX_CACHE_KEY: tuple[tuple[str, int, int], ...] | None = None
-_AUX_CACHE_VALUE: AuxiliaryData | None = None
+_aux_cache_key: tuple[tuple[str, int, int], ...] | None = None
+_aux_cache_value: AuxiliaryData | None = None
 
 
 def _safe_load_json_dict(text: str) -> dict[str, Any] | None:
@@ -177,7 +177,7 @@ def _safe_load_json_dict(text: str) -> dict[str, Any] | None:
         data = json.loads(text)
     except json.JSONDecodeError:
         return None
-    return data if isinstance(data, dict) else None
+    return cast(dict[str, Any], data) if isinstance(data, dict) else None
 
 
 def _read_lines(path: Path) -> list[str]:
@@ -361,12 +361,14 @@ def _build_snapshot_tasks(raw_tasks: Any) -> tuple[SnapshotTask, ...]:
         return ()
 
     tasks: list[SnapshotTask] = []
-    for raw_task in raw_tasks:
+    raw_tasks_list = cast(list[Any], raw_tasks)
+    for raw_task in raw_tasks_list:
         if not isinstance(raw_task, dict):
             continue
-        task_id = raw_task.get("id")
-        task_name = raw_task.get("taskName")
-        enabled = raw_task.get("enabled")
+        raw_task_dict = cast(dict[str, Any], raw_task)
+        task_id = raw_task_dict.get("id")
+        task_name = raw_task_dict.get("taskName")
+        enabled = raw_task_dict.get("enabled")
         if isinstance(task_id, str) and isinstance(task_name, str):
             tasks.append(
                 SnapshotTask(
@@ -385,10 +387,12 @@ def _load_snapshots(config_data: dict[str, Any]) -> tuple[Snapshot, ...]:
 
     raw_instances = config_data.get("instances")
     if isinstance(raw_instances, list):
-        for raw_instance in raw_instances:
+        raw_instances_list = cast(list[Any], raw_instances)
+        for raw_instance in raw_instances_list:
             if not isinstance(raw_instance, dict):
                 continue
-            instance_id = raw_instance.get("id")
+            raw_instance_dict = cast(dict[str, Any], raw_instance)
+            instance_id = raw_instance_dict.get("id")
             if not isinstance(instance_id, str):
                 continue
             snapshots.append(
@@ -396,17 +400,19 @@ def _load_snapshots(config_data: dict[str, Any]) -> tuple[Snapshot, ...]:
                     instance_id=instance_id,
                     source="instance",
                     closed_at=None,
-                    tasks=_build_snapshot_tasks(raw_instance.get("tasks")),
+                    tasks=_build_snapshot_tasks(raw_instance_dict.get("tasks")),
                 )
             )
 
     raw_recently_closed = config_data.get("recentlyClosed")
     if isinstance(raw_recently_closed, list):
-        for raw_snapshot in raw_recently_closed:
+        raw_recently_closed_list = cast(list[Any], raw_recently_closed)
+        for raw_snapshot in raw_recently_closed_list:
             if not isinstance(raw_snapshot, dict):
                 continue
-            instance_id = raw_snapshot.get("id")
-            closed_at = raw_snapshot.get("closedAt")
+            raw_snapshot_dict = cast(dict[str, Any], raw_snapshot)
+            instance_id = raw_snapshot_dict.get("id")
+            closed_at = raw_snapshot_dict.get("closedAt")
             if not isinstance(instance_id, str):
                 continue
             snapshots.append(
@@ -414,7 +420,7 @@ def _load_snapshots(config_data: dict[str, Any]) -> tuple[Snapshot, ...]:
                     instance_id=instance_id,
                     source="recently_closed",
                     closed_at=closed_at if isinstance(closed_at, int) else None,
-                    tasks=_build_snapshot_tasks(raw_snapshot.get("tasks")),
+                    tasks=_build_snapshot_tasks(raw_snapshot_dict.get("tasks")),
                 )
             )
 
@@ -526,7 +532,7 @@ def _load_go_service_mapping(lines: list[str]) -> dict[str, str]:
 def _build_auxiliary_data(root_dir: Path) -> AuxiliaryData:
     """读取固定文件，并缓存批次/快照等不会频繁变化的上下文。"""
 
-    global _AUX_CACHE_KEY, _AUX_CACHE_VALUE
+    global _aux_cache_key, _aux_cache_value
 
     config_path = root_dir / "config" / "mxu-MaaEnd.json"
     tauri_path = root_dir / "debug" / "mxu-tauri.log"
@@ -543,8 +549,8 @@ def _build_auxiliary_data(root_dir: Path) -> AuxiliaryData:
             cache_key_parts.append((str(path.resolve()), -1, -1))
     cache_key = tuple(cache_key_parts)
 
-    if _AUX_CACHE_KEY == cache_key and _AUX_CACHE_VALUE is not None:
-        return _AUX_CACHE_VALUE
+    if _aux_cache_key == cache_key and _aux_cache_value is not None:
+        return _aux_cache_value
 
     config_data: dict[str, Any] | None = None
     if config_path.is_file():
@@ -561,8 +567,8 @@ def _build_auxiliary_data(root_dir: Path) -> AuxiliaryData:
         task_id_to_entry=_load_go_service_mapping(_read_lines(go_service_path)),
     )
 
-    _AUX_CACHE_KEY = cache_key
-    _AUX_CACHE_VALUE = auxiliary_data
+    _aux_cache_key = cache_key
+    _aux_cache_value = auxiliary_data
     return auxiliary_data
 
 
@@ -576,7 +582,7 @@ def _collect_run_context(lines: list[str]) -> RunContext:
 
     for raw_line in lines:
         line = raw_line.rstrip("\r\n")
-        thread_id = _extract_thread_id(line)
+        _extract_thread_id(line)
 
         wrapped_agent_match = WRAPPED_AGENT_RE.match(line)
         if wrapped_agent_match is not None:
@@ -1089,7 +1095,7 @@ def parse_log(root_dir: Path, lines: list[str]) -> list[str]:
         else ""
     )
     current_selected_task_id = ""
-    current_maa_task_id = ""
+    current_maa_task_id: str = ""
     thread_selected_task_id: dict[str, str] = {}
     pending_panel_time = ""
     pending_panel_lines: list[str] = []
@@ -1164,17 +1170,18 @@ def parse_log(root_dir: Path, lines: list[str]) -> list[str]:
             task_id_alt_match = TEXT_TASK_ID_ALT_RE.search(message)
             task_id = ""
             if task_id_match is not None:
-                task_id = task_id_match.group(1).strip()
+                task_id = cast(str, task_id_match.group(1).strip())
             elif task_id_alt_match is not None:
-                task_id = task_id_alt_match.group(1).strip()
+                task_id = cast(str, task_id_alt_match.group(1).strip())
 
             if task_id:
                 current_maa_task_id = task_id
+            current_maa_task_id_str: str = current_maa_task_id
             current_selected_task_id = _inherit_task_mapping_from_thread(
-                task_id=current_maa_task_id,
+                task_id=current_maa_task_id_str,
                 thread_id=thread_id,
                 current_selected_task_id=_resolve_selected_task_id(
-                    task_id=current_maa_task_id,
+                    task_id=current_maa_task_id_str,
                     current_selected_task_id=current_selected_task_id,
                     task_id_to_selected_task_id=task_id_to_selected_task_id,
                     entry_to_selected_task_id=entry_to_selected_task_id,
@@ -1186,11 +1193,11 @@ def parse_log(root_dir: Path, lines: list[str]) -> list[str]:
             message = _append_unresolved_diagnosis(
                 message=message,
                 timestamp_text=timestamp_text,
-                task_id=current_maa_task_id,
+                task_id=current_maa_task_id_str,
                 current_selected_task_id=current_selected_task_id,
                 known_task_ids=known_task_ids,
                 earliest_post_task_time=earliest_post_task_time,
-                should_diagnose=bool(current_maa_task_id),
+                should_diagnose=bool(current_maa_task_id_str),
             )
             last_emit_key, last_emit_time = _emit_log_line(
                 result,
@@ -1216,11 +1223,12 @@ def parse_log(root_dir: Path, lines: list[str]) -> list[str]:
             entry = _extract_entry(details, simple_json_match.group(2))
             if task_id:
                 current_maa_task_id = task_id
+            current_maa_task_id_str = current_maa_task_id
             current_selected_task_id = _inherit_task_mapping_from_thread(
-                task_id=current_maa_task_id,
+                task_id=current_maa_task_id_str,
                 thread_id=thread_id,
                 current_selected_task_id=_resolve_selected_task_id(
-                    task_id=current_maa_task_id,
+                    task_id=current_maa_task_id_str,
                     current_selected_task_id=current_selected_task_id,
                     task_id_to_selected_task_id=task_id_to_selected_task_id,
                     entry=entry,
@@ -1243,7 +1251,7 @@ def parse_log(root_dir: Path, lines: list[str]) -> list[str]:
                 message = _append_unresolved_diagnosis(
                     message=message,
                     timestamp_text=timestamp_text,
-                    task_id=current_maa_task_id,
+                    task_id=current_maa_task_id_str,
                     current_selected_task_id=current_selected_task_id,
                     known_task_ids=known_task_ids,
                     earliest_post_task_time=earliest_post_task_time,
@@ -1280,11 +1288,12 @@ def parse_log(root_dir: Path, lines: list[str]) -> list[str]:
             entry = _extract_entry(json_line, line)
             if task_id:
                 current_maa_task_id = task_id
+            current_maa_task_id_str = current_maa_task_id
             current_selected_task_id = _inherit_task_mapping_from_thread(
-                task_id=current_maa_task_id,
+                task_id=current_maa_task_id_str,
                 thread_id=thread_id,
                 current_selected_task_id=_resolve_selected_task_id(
-                    task_id=current_maa_task_id,
+                    task_id=current_maa_task_id_str,
                     current_selected_task_id=current_selected_task_id,
                     task_id_to_selected_task_id=task_id_to_selected_task_id,
                     entry=entry,
@@ -1304,7 +1313,7 @@ def parse_log(root_dir: Path, lines: list[str]) -> list[str]:
             message = _append_unresolved_diagnosis(
                 message=message,
                 timestamp_text=timestamp_text,
-                task_id=current_maa_task_id,
+                task_id=current_maa_task_id_str,
                 current_selected_task_id=current_selected_task_id,
                 known_task_ids=known_task_ids,
                 earliest_post_task_time=earliest_post_task_time,
@@ -1334,11 +1343,12 @@ def parse_log(root_dir: Path, lines: list[str]) -> list[str]:
         entry = _extract_entry(details, event_match.group(3))
         if task_id:
             current_maa_task_id = task_id
+        current_maa_task_id_str = current_maa_task_id
         current_selected_task_id = _inherit_task_mapping_from_thread(
-            task_id=current_maa_task_id,
+            task_id=current_maa_task_id_str,
             thread_id=thread_id,
             current_selected_task_id=_resolve_selected_task_id(
-                task_id=current_maa_task_id,
+                task_id=current_maa_task_id_str,
                 current_selected_task_id=current_selected_task_id,
                 task_id_to_selected_task_id=task_id_to_selected_task_id,
                 entry=entry,
@@ -1374,7 +1384,8 @@ def parse_log(root_dir: Path, lines: list[str]) -> list[str]:
             )
             param_action_text = ""
             if isinstance(details.get("param"), dict):
-                param_action = details["param"].get("action")
+                param_dict = cast(dict[str, Any], details["param"])
+                param_action = param_dict.get("action")
                 if isinstance(param_action, str):
                     param_action_text = param_action
             if (
@@ -1392,19 +1403,24 @@ def parse_log(root_dir: Path, lines: list[str]) -> list[str]:
             focus = details.get("focus")
             if not isinstance(focus, dict):
                 continue
-            focus_entry = focus.get(event_name)
+            focus_dict = cast(dict[str, Any], focus)
+            focus_entry = focus_dict.get(event_name)
             if isinstance(focus_entry, str):
                 message = focus_entry
             elif isinstance(focus_entry, dict):
-                content = focus_entry.get("content")
+                focus_entry_dict = cast(dict[str, Any], focus_entry)
+                content = focus_entry_dict.get("content")
                 if not isinstance(content, str) or not content:
                     continue
-                display = focus_entry.get("display")
+                display = focus_entry_dict.get("display")
                 display_list: list[str] = []
                 if isinstance(display, str):
                     display_list = [display]
                 elif isinstance(display, list):
-                    display_list = [item for item in display if isinstance(item, str)]
+                    display_items = cast(list[Any], display)
+                    display_list = [
+                        item for item in display_items if isinstance(item, str)
+                    ]
                 if display_list and not any(
                     item in ("log", "dialog", "modal") for item in display_list
                 ):
@@ -1425,7 +1441,7 @@ def parse_log(root_dir: Path, lines: list[str]) -> list[str]:
         message = _append_unresolved_diagnosis(
             message=message,
             timestamp_text=timestamp_text,
-            task_id=current_maa_task_id,
+            task_id=current_maa_task_id_str,
             current_selected_task_id=current_selected_task_id,
             known_task_ids=known_task_ids,
             earliest_post_task_time=earliest_post_task_time,

@@ -21,7 +21,7 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .constants import *
+from . import constants
 from .logger import get_logger
 from .ImageUtils import ImageUtils
 from .LogMonitor import LogMonitor, strptime

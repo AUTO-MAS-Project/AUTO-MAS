@@ -424,7 +424,7 @@ class AutoProxyTask(TaskExecuteBase):
                 else None
             ),
         )
-        logger.info(f"脚本运行参数配置完成: 自动代理")
+        logger.info("脚本运行参数配置完成: 自动代理")
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调"""

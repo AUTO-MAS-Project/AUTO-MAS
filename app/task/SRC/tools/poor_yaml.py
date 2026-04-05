@@ -27,11 +27,12 @@
 
 import re
 from pathlib import Path
+from typing import Any
 
 from app.utils import decode_bytes
 
 
-def poor_yaml_read(file: Path) -> dict:
+def poor_yaml_read(file: Path) -> dict[str, Any]:
     """
     Poor implementation to load yaml without pyyaml dependency, but with re
 
@@ -42,7 +43,7 @@ def poor_yaml_read(file: Path) -> dict:
         dict:
     """
     content = decode_bytes(file.read_bytes())
-    data = {}
+    data: dict[str, Any] = {}
     regex = re.compile(r"^(.*?):(.*?)$")
     for line in content.splitlines():
         line = line.strip("\n\r\t ").replace("\\", "/")
@@ -65,7 +66,9 @@ def poor_yaml_read(file: Path) -> dict:
     return data
 
 
-def poor_yaml_write(data: dict, file: Path, template_file: Path | None = None):
+def poor_yaml_write(
+    data: dict[str, Any], file: Path, template_file: Path | None = None
+) -> None:
     """
     Args:
         data (dict):

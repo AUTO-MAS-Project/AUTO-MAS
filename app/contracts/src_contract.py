@@ -5,8 +5,8 @@ from typing import Literal
 from pydantic import Field
 
 from .common_contract import derive_config_contracts
-from .src import SrcConfig as RuntimeSrcConfig
-from .src import SrcUserConfig as RuntimeSrcUserConfig
+from app.models.src import SrcConfig as RuntimeSrcConfig
+from app.models.src import SrcUserConfig as RuntimeSrcUserConfig
 
 
 _SrcConfigReadBase, _SrcConfigPatchBase = derive_config_contracts(

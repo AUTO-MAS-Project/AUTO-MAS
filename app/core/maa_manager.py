@@ -51,9 +51,7 @@ logger = get_logger("MaaFW管理")
 
 
 class _MaaFWManager:
-
     def __init__(self):
-
         self.resource = Resource()
 
         (Config.config_path / "maa_option.json").write_text(
@@ -90,8 +88,8 @@ class _MaaFWManager:
         if job.failed:
             if isinstance(result, JobWithResult):
                 raise RuntimeError(f"任务执行失败, 执行信息: {result.get()}")
-            elif isinstance(result, Job):
-                raise RuntimeError(f"任务执行失败")
+            else:
+                raise RuntimeError("任务执行失败")
 
     async def get_win32_tasker(
         self,
@@ -287,7 +285,6 @@ MaaFWManager = _MaaFWManager()
 
 @MaaFWManager.resource.custom_action("DisableLog")
 class DisableLog(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
         """
         自定义动作: 临时禁用日志输出
@@ -307,7 +304,6 @@ class DisableLog(CustomAction):
 
 @MaaFWManager.resource.custom_action("EnableLog")
 class EnableLog(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
         """
         自定义动作: 启用日志输出

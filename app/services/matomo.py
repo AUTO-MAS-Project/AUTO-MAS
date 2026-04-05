@@ -41,10 +41,9 @@ class _MatomoHandler:
     site_id = "3"
 
     def __init__(self):
-
         self.session = None
 
-    async def _get_session(self):
+    async def _get_session(self) -> aiohttp.ClientSession:
         """获取HTTP会话"""
 
         if self.session is None or self.session.closed:
@@ -103,8 +102,6 @@ class _MatomoHandler:
         """
         try:
             session = await self._get_session()
-            if session is None:
-                return
 
             params = self._build_base_params(custom_vars)
             params.update({"e_c": category, "e_a": action, "e_n": name, "e_v": value})

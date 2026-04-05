@@ -29,7 +29,6 @@ import asyncio
 import win32gui
 import pyautogui
 import pygetwindow
-from loguru import logger
 from pynput import keyboard
 
 from maa.tasker import Tasker
@@ -48,9 +47,7 @@ logger = get_logger("明日方舟PC工具")
 
 
 class _ArknightWin32Toolkit:
-
     def __init__(self):
-
         self.arknights_hwnd = -1
         self.arknights_window = None
 
@@ -64,7 +61,6 @@ class _ArknightWin32Toolkit:
         self.original_nice = self.p.nice()
 
     async def init(self) -> None:
-
         pyautogui.PAUSE = 0
         pyautogui.FAILSAFE = False
 
@@ -103,7 +99,6 @@ class _ArknightWin32Toolkit:
         new_hwnd = win32gui.FindWindow(None, "明日方舟")
 
         if self.arknights_hwnd != new_hwnd:
-
             self.arknights_hwnd = new_hwnd
 
             if new_hwnd == 0:
@@ -209,7 +204,6 @@ class _ArknightWin32Toolkit:
         pyautogui.moveTo(cur_x, cur_y)
 
     def get_pause_position(self):
-
         if not self.arknights_window:
             raise RuntimeError("未连接到明日方舟窗口")
 
@@ -232,9 +226,7 @@ ArknightWin32Toolkit = _ArknightWin32Toolkit()
 
 @MaaFWManager.resource.custom_action("PlaySelectDeployed[ArknightsPC]")
 class PlaySelectDeployed(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
-
         logger.info("开始执行战斗时选中已部署干员动作")
 
         try:
@@ -257,9 +249,7 @@ class PlaySelectDeployed(CustomAction):
 
 @MaaFWManager.resource.custom_action("PauseSelectDeployed[ArknightsPC]")
 class PauseSelectDeployed(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
-
         logger.info("开始执行暂停时选中已部署干员动作")
 
         try:
@@ -284,9 +274,7 @@ class PauseSelectDeployed(CustomAction):
 
 @MaaFWManager.resource.custom_action("PlaySkill[ArknightsPC]")
 class PlaySkill(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
-
         logger.info("开始执行战斗时释放技能动作")
         try:
             x, y = ArknightWin32Toolkit.get_pause_position()
@@ -306,9 +294,7 @@ class PlaySkill(CustomAction):
 
 @MaaFWManager.resource.custom_action("PauseSkill[ArknightsPC]")
 class PauseSkill(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
-
         logger.info("开始执行暂停时释放技能动作")
 
         try:
@@ -332,9 +318,7 @@ class PauseSkill(CustomAction):
 
 @MaaFWManager.resource.custom_action("PlayRetreat[ArknightsPC]")
 class PlayRetreat(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
-
         logger.info("开始执行战斗时撤退干员动作")
 
         try:
@@ -355,9 +339,7 @@ class PlayRetreat(CustomAction):
 
 @MaaFWManager.resource.custom_action("PauseRetreat[ArknightsPC]")
 class PauseRetreat(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
-
         logger.info("开始执行暂停时撤退干员动作")
 
         try:
@@ -381,9 +363,7 @@ class PauseRetreat(CustomAction):
 
 @MaaFWManager.resource.custom_action("NextFrame-0.2x[ArknightsPC]")
 class NextFrame_0_2x(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
-
         logger.info("开始执行0.2倍速下一帧动作")
 
         try:
@@ -406,9 +386,7 @@ class NextFrame_0_2x(CustomAction):
 
 @MaaFWManager.resource.custom_action("NextFrame-1x[ArknightsPC]")
 class NextFrame_1x(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
-
         logger.info("开始执行1倍速下一帧动作")
 
         try:
@@ -431,9 +409,7 @@ class NextFrame_1x(CustomAction):
 
 @MaaFWManager.resource.custom_action("NextFrame-2x[ArknightsPC]")
 class NextFrame_2x(CustomAction):
-
     def run(self, context: Context, argv: CustomAction.RunArg) -> bool:
-
         logger.info("开始执行2倍速下一帧动作")
 
         try:

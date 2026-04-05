@@ -67,7 +67,7 @@ class LDManager(DeviceBase):
 
         self.emulator_path = Path(config.get("Info", "Path"))
 
-    async def open(self, idx: str, package_name="") -> DeviceInfo:
+    async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
         logger.info(f"开始启动模拟器 {idx}  - {package_name}")
 
         status = DeviceStatus.UNKNOWN  # 初始化status变量

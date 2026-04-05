@@ -31,13 +31,13 @@ current_dir = Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
 
-from app.utils import get_logger, sanitize_log_message
+from app.utils import get_logger, sanitize_log_message  # noqa: E402
 
 logger = get_logger("主程序")
 
 
 class InterceptHandler(logging.Handler):
-    def emit(self, record):
+    def emit(self, record: logging.LogRecord) -> None:
         # 获取对应 loguru 的 level
         try:
             level = logger.level(record.levelname).name
@@ -64,7 +64,7 @@ def is_admin() -> bool:
 
 
 @logger.catch
-def main():
+def main() -> None:
     if is_admin():
         import asyncio
         import uvicorn

@@ -27,7 +27,7 @@ from fastapi import APIRouter, Body
 from pydantic import Field, TypeAdapter
 
 from app.core import Config
-from app.models.common_contract import (
+from app.contracts.common_contract import (
     ApiModel,
     ComboBoxItem,
     ComboBoxOut,
@@ -35,7 +35,7 @@ from app.models.common_contract import (
     OutBase,
 )
 from app.api.common import bind_api, error_out
-from app.models.info_contract import (
+from app.contracts.info_contract import (
     GetStageIn,
     NoticeOut,
     VersionOut,

@@ -28,7 +28,7 @@ from pydantic import TypeAdapter
 
 from app.core import Config
 from app.api.common import bind_api, error_out
-from app.models.history_contract import (
+from app.contracts.history_contract import (
     HistoryData,
     HistoryDataGetIn,
     HistoryDataGetOut,

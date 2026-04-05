@@ -4,7 +4,8 @@ from typing import Literal
 
 from pydantic import Field
 
-from .common import Webhook
+from app.models.common import Webhook
+from app.models.global_config import GlobalConfig
 from .common_contract import (
     ApiModel,
     ResourceCollectionOut,
@@ -12,7 +13,6 @@ from .common_contract import (
     ResourceItemOut,
     derive_config_contracts,
 )
-from .global_config import GlobalConfig
 
 
 _WebhookReadBase, _WebhookPatchBase = derive_config_contracts(

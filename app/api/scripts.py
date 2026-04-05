@@ -29,7 +29,7 @@ from pydantic import TypeAdapter
 
 from app.api.common import bind_api, error_out
 from app.core import Config
-from app.models.common_contract import (
+from app.contracts.common_contract import (
     ComboBoxItem,
     ComboBoxOut,
     IndexOrderPatch,
@@ -38,7 +38,7 @@ from app.models.common_contract import (
     project_model_list,
     project_model_map,
 )
-from app.models.scripts_contract import (
+from app.contracts.scripts_contract import (
     ScriptPatchBody,
     InfrastructureImportBody,
     ScriptCreateIn,
@@ -64,7 +64,7 @@ from app.models.scripts_contract import (
     dump_script_patch_data,
     dump_user_patch_data,
 )
-from app.models.setting_contract import (
+from app.contracts.setting_contract import (
     WebhookCreateOut,
     WebhookDetailOut,
     WebhookGetOut,

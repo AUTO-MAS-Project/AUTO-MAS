@@ -24,6 +24,7 @@ import uuid
 import asyncio
 from pathlib import Path
 from datetime import datetime
+from typing import Any, cast
 
 from app.core import Config, Broadcast
 from app.models.task import TaskExecuteBase, ScriptItem
@@ -75,7 +76,7 @@ class ManualReviewTask(TaskExecuteBase):
         return "Pass"
 
     async def prepare(self):
-        self.message_queue = asyncio.Queue()
+        self.message_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         await Broadcast.subscribe(self.message_queue)
         self.wait_event = asyncio.Event()
 
@@ -140,8 +141,13 @@ class ManualReviewTask(TaskExecuteBase):
                         "options": ["是", "否"],
                     },
                 )
-                result = await self._wait_for_user_response(uid)
-                if not result.get("data", {}).get("choice", False):
+                result: dict[str, Any] = await self._wait_for_user_response(uid)
+                data = result.get("data")
+                choice = False
+                if isinstance(data, dict):
+                    data_dict = cast(dict[str, Any], data)
+                    choice = bool(data_dict.get("choice"))
+                if not choice:
                     break
                 continue
 
@@ -181,8 +187,13 @@ class ManualReviewTask(TaskExecuteBase):
                         "options": ["是", "否"],
                     },
                 )
-                result = await self._wait_for_user_response(uid)
-                if not result.get("data", {}).get("choice", False):
+                result: dict[str, Any] = await self._wait_for_user_response(uid)
+                data = result.get("data")
+                choice = False
+                if isinstance(data, dict):
+                    data_dict = cast(dict[str, Any], data)
+                    choice = bool(data_dict.get("choice"))
+                if not choice:
                     break
 
         if self.run_book["SignIn"]:
@@ -204,15 +215,20 @@ class ManualReviewTask(TaskExecuteBase):
                     "options": ["是", "否"],
                 },
             )
-            result = await self._wait_for_user_response(uid)
-            if result.get("data", {}).get("choice", False):
+            result: dict[str, Any] = await self._wait_for_user_response(uid)
+            data = result.get("data")
+            choice = False
+            if isinstance(data, dict):
+                data_dict = cast(dict[str, Any], data)
+                choice = bool(data_dict.get("choice"))
+            if choice:
                 self.run_book["PassCheck"] = True
 
-    async def _wait_for_user_response(self, message_id: str):
+    async def _wait_for_user_response(self, message_id: str) -> dict[str, Any]:
         """等待用户交互响应"""
         logger.info(f"等待客户端回应消息: {message_id}")
         while True:
-            message = await self.message_queue.get()
+            message: dict[str, Any] = await self.message_queue.get()
             if message.get("id") == message_id and message.get("type") == "Response":
                 self.message_queue.task_done()
                 logger.success(f"收到客户端回应消息: {message_id}")

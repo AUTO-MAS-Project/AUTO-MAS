@@ -5,8 +5,8 @@ from typing import Literal
 from pydantic import Field
 
 from .common_contract import derive_config_contracts
-from .general import GeneralConfig as RuntimeGeneralConfig
-from .general import GeneralUserConfig as RuntimeGeneralUserConfig
+from app.models.general import GeneralConfig as RuntimeGeneralConfig
+from app.models.general import GeneralUserConfig as RuntimeGeneralUserConfig
 
 
 _GeneralConfigReadBase, _GeneralConfigPatchBase = derive_config_contracts(

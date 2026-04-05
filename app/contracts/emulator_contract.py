@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from .common import EmulatorConfig
+from app.models.common import EmulatorConfig
 from .common_contract import (
     ApiModel,
     ResourceCollectionOut,
@@ -12,7 +12,7 @@ from .common_contract import (
     ResourceItemOut,
     derive_config_contracts,
 )
-from .shared import DeviceInfo
+from app.models.shared import DeviceInfo
 
 
 _EmulatorReadBase, _EmulatorPatchBase = derive_config_contracts(
