@@ -25,7 +25,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Path
 
-from app.api.common import api_delete, api_get, api_patch, api_post, error_out
+from app.api.common import bind_api, error_out
 from app.core import Config
 from app.models.common_contract import (
     IndexOrderPatch,
@@ -45,6 +45,7 @@ from app.models.plan_contract import (
 )
 
 router = APIRouter(prefix="/api/plan", tags=["计划管理"])
+api = bind_api(router)
 
 PlanIdPath = Annotated[str, Path(description="计划 ID")]
 
@@ -63,18 +64,13 @@ async def _build_plan_detail_out(plan_id: str) -> PlanDetailOut:
     return PlanDetailOut(data=projected[plan_id])
 
 
-@api_post(
-    router,
+@api.post(
     "",
-    model_cls=PlanCreateOut,
+    tags=["Add"],
+    summary="创建计划表",
+    response_model=PlanCreateOut,
     id="",
     data=MaaPlanRead(),
-    route_kwargs={
-        "tags": ["Add"],
-        "summary": "创建计划表",
-        "response_model": PlanCreateOut,
-        "status_code": 200,
-    },
 )
 async def create_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
     try:
@@ -85,49 +81,34 @@ async def create_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
     return PlanCreateOut(id=str(uid), data=data)
 
 
-@api_get(
-    router,
+@api.get(
     "",
-    model_cls=PlanGetOut,
+    tags=["Get"],
+    summary="查询全部计划表",
+    response_model=PlanGetOut,
     index=[],
     data={},
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "查询全部计划表",
-        "response_model": PlanGetOut,
-        "status_code": 200,
-    },
 )
 async def list_plans() -> PlanGetOut:
     return await _build_plan_collection_out()
 
 
-@api_get(
-    router,
+@api.get(
     "/{plan_id}",
-    model_cls=PlanDetailOut,
+    tags=["Get"],
+    summary="查询单个计划表",
+    response_model=PlanDetailOut,
     data=MaaPlanRead(),
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "查询单个计划表",
-        "response_model": PlanDetailOut,
-        "status_code": 200,
-    },
 )
 async def get_plan(plan_id: PlanIdPath) -> PlanDetailOut:
     return await _build_plan_detail_out(plan_id)
 
 
-@api_patch(
-    router,
+@api.patch(
     "/{plan_id}",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Update"],
-        "summary": "更新计划表",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Update"],
+    summary="更新计划表",
+    response_model=OutBase,
 )
 async def update_plan(plan_id: PlanIdPath, body: PlanUpdateBody = Body(...)) -> OutBase:
     try:
@@ -137,16 +118,11 @@ async def update_plan(plan_id: PlanIdPath, body: PlanUpdateBody = Body(...)) -> 
     return OutBase()
 
 
-@api_delete(
-    router,
+@api.delete(
     "/{plan_id}",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Delete"],
-        "summary": "删除计划表",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Delete"],
+    summary="删除计划表",
+    response_model=OutBase,
 )
 async def delete_plan(plan_id: PlanIdPath) -> OutBase:
     try:
@@ -156,16 +132,11 @@ async def delete_plan(plan_id: PlanIdPath) -> OutBase:
     return OutBase()
 
 
-@api_patch(
-    router,
+@api.patch(
     "/order",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Update"],
-        "summary": "重新排序计划表",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Update"],
+    summary="重新排序计划表",
+    response_model=OutBase,
 )
 async def reorder_plan(body: IndexOrderPatch = Body(...)) -> OutBase:
     try:

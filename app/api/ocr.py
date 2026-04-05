@@ -31,11 +31,12 @@ from PIL import Image
 from app.utils.OCR.OCRtool import OCRTool
 from app.utils import get_logger
 from app.models.common_contract import ApiModel, OutBase
-from app.api.common import error_out, run_api
+from app.api.common import bind_api, error_out, run_api
 
 logger = get_logger("OCR API")
 
 router = APIRouter(prefix="/api/ocr", tags=["OCR识别"])
+api = bind_api(router)
 
 
 # ========== 截图相关模型 ==========
@@ -131,12 +132,11 @@ def _encode_image_base64(image: Image.Image) -> str:
 
 
 # ========== 截图接口 ==========
-@router.post(
+@api.post(
     "/screenshot",
     tags=["Get"],
     summary="获取窗口截图",
     response_model=OCRScreenshotOut,
-    status_code=200,
 )
 async def get_screenshot(params: OCRScreenshotIn = Body(...)) -> OCRScreenshotOut:
     """
@@ -194,12 +194,11 @@ async def get_screenshot(params: OCRScreenshotIn = Body(...)) -> OCRScreenshotOu
     )
 
 
-@router.post(
+@api.post(
     "/screenshot/adb",
     tags=["Get"],
     summary="通过ADB获取设备截图",
     response_model=ADBScreenshotOut,
-    status_code=200,
 )
 async def get_screenshot_adb(params: ADBScreenshotIn = Body(...)) -> ADBScreenshotOut:
     """
@@ -281,12 +280,11 @@ async def get_screenshot_adb(params: ADBScreenshotIn = Body(...)) -> ADBScreensh
 
 
 # ========== 测试接口：检查图像 ==========
-@router.post(
+@api.post(
     "/check/image",
     tags=["Get"],
     summary="检查是否存在指定图像",
     response_model=CheckImageOut,
-    status_code=200,
 )
 async def check_image(params: CheckImageIn = Body(...)) -> CheckImageOut:
     """
@@ -334,12 +332,11 @@ async def check_image(params: CheckImageIn = Body(...)) -> CheckImageOut:
     )
 
 
-@router.post(
+@api.post(
     "/check/image/any",
     tags=["Get"],
     summary="检查是否存在任意一个指定图像",
     response_model=CheckImageOut,
-    status_code=200,
 )
 async def check_image_any(params: CheckImageAnyIn = Body(...)) -> CheckImageOut:
     """
@@ -389,12 +386,11 @@ async def check_image_any(params: CheckImageAnyIn = Body(...)) -> CheckImageOut:
     )
 
 
-@router.post(
+@api.post(
     "/check/image/all",
     tags=["Get"],
     summary="检查是否存在所有指定图像",
     response_model=CheckImageOut,
-    status_code=200,
 )
 async def check_image_all(params: CheckImageAllIn = Body(...)) -> CheckImageOut:
     """
@@ -445,12 +441,11 @@ async def check_image_all(params: CheckImageAllIn = Body(...)) -> CheckImageOut:
 
 
 # ========== 测试接口：点击操作 ==========
-@router.post(
+@api.post(
     "/click/image",
     tags=["Action"],
     summary="点击指定图像位置",
     response_model=ClickOut,
-    status_code=200,
 )
 async def click_image(params: ClickImageIn = Body(...)) -> ClickOut:
     """
@@ -498,12 +493,11 @@ async def click_image(params: ClickImageIn = Body(...)) -> ClickOut:
     )
 
 
-@router.post(
+@api.post(
     "/click/text",
     tags=["Action"],
     summary="点击指定文字位置",
     response_model=ClickOut,
-    status_code=200,
 )
 async def click_text(params: ClickTextIn = Body(...)) -> ClickOut:
     """

@@ -27,7 +27,7 @@ from fastapi import APIRouter, Body
 from pydantic import TypeAdapter
 
 from app.core import Config
-from app.api.common import error_out
+from app.api.common import bind_api, error_out
 from app.models.history_contract import (
     HistoryData,
     HistoryDataGetIn,
@@ -38,6 +38,7 @@ from app.models.history_contract import (
 )
 
 router = APIRouter(prefix="/api/history", tags=["历史记录"])
+api = bind_api(router)
 
 HISTORY_INDEX_ADAPTER: TypeAdapter[list[HistoryIndexItem]] = TypeAdapter(
     list[HistoryIndexItem]
@@ -53,12 +54,11 @@ def _build_history_data(raw: dict[str, object]) -> HistoryData:
     return HistoryData.model_validate(data)
 
 
-@router.post(
+@api.post(
     "/search",
     tags=["Get"],
     summary="搜索历史记录总览信息",
     response_model=HistorySearchOut,
-    status_code=200,
 )
 async def search_history(history: HistorySearchIn) -> HistorySearchOut:
     try:
@@ -79,12 +79,11 @@ async def search_history(history: HistorySearchIn) -> HistorySearchOut:
     return HistorySearchOut(data=data)
 
 
-@router.post(
+@api.post(
     "/data",
     tags=["Get"],
     summary="从指定文件内获取历史记录数据",
     response_model=HistoryDataGetOut,
-    status_code=200,
 )
 async def get_history_data(history: HistoryDataGetIn = Body(...)) -> HistoryDataGetOut:
     try:

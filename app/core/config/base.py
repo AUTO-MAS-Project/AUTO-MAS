@@ -248,7 +248,7 @@ def _callback_identity(callback: CollectionEventSlot) -> object:
     """生成回调唯一标识。"""
 
     if inspect.ismethod(callback) and getattr(callback, "__self__", None) is not None:
-        return (id(callback.__self__), callback.__func__)
+        return id(callback.__self__), callback.__func__
     return callback
 
 
@@ -483,14 +483,11 @@ class MultipleConfig(Generic[T]):
         if uid not in self.data:
             raise ValueError(f"配置项 '{uid}' 不存在。")
 
-        data: dict[str, Any] = {
-            "instances": [
-                {"uid": str(current_uid), "type": type(self.data[current_uid]).__name__}
-                for current_uid in self.order
-                if current_uid == uid
-            ]
-        }
-        data[str(uid)] = await self.data[uid].toDict()
+        data: dict[str, Any] = {"instances": [
+            {"uid": str(current_uid), "type": type(self.data[current_uid]).__name__}
+            for current_uid in self.order
+            if current_uid == uid
+        ], str(uid): await self.data[uid].toDict()}
         return data
 
     async def save(self) -> None:
