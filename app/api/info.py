@@ -34,7 +34,7 @@ from app.models.common_contract import (
     InfoOut,
     OutBase,
 )
-from app.api.common import error_out
+from app.api.common import bind_api, error_out
 from app.models.info_contract import (
     GetStageIn,
     NoticeOut,
@@ -42,10 +42,12 @@ from app.models.info_contract import (
 )
 
 router = APIRouter(prefix="/api/info", tags=["信息获取"])
+api = bind_api(router)
 
 
 class EmulatorIdBody(ApiModel):
     emulatorId: str = Field(..., description="模拟器 ID")
+
 
 COMBOBOX_ITEMS_ADAPTER: TypeAdapter[list[ComboBoxItem]] = TypeAdapter(
     list[ComboBoxItem]
@@ -58,12 +60,11 @@ def _to_combobox_items(raw_data: object) -> list[ComboBoxItem]:
     )
 
 
-@router.post(
+@api.post(
     "/version",
     tags=["Get"],
     summary="获取后端git版本信息",
     response_model=VersionOut,
-    status_code=200,
 )
 async def get_git_version() -> VersionOut:
     try:
@@ -83,12 +84,11 @@ async def get_git_version() -> VersionOut:
     )
 
 
-@router.post(
+@api.post(
     "/combox/stage",
     tags=["Get"],
     summary="获取关卡号下拉框信息",
     response_model=ComboBoxOut,
-    status_code=200,
 )
 async def get_stage_combox(
     stage: GetStageIn = Body(..., description="关卡号类型"),
@@ -101,12 +101,11 @@ async def get_stage_combox(
     return ComboBoxOut(data=data)
 
 
-@router.post(
+@api.post(
     "/combox/script",
     tags=["Get"],
     summary="获取脚本下拉框信息",
     response_model=ComboBoxOut,
-    status_code=200,
 )
 async def get_script_combox() -> ComboBoxOut:
     try:
@@ -117,12 +116,11 @@ async def get_script_combox() -> ComboBoxOut:
     return ComboBoxOut(data=data)
 
 
-@router.post(
+@api.post(
     "/combox/task",
     tags=["Get"],
     summary="获取可选任务下拉框信息",
     response_model=ComboBoxOut,
-    status_code=200,
 )
 async def get_task_combox() -> ComboBoxOut:
     try:
@@ -133,12 +131,11 @@ async def get_task_combox() -> ComboBoxOut:
     return ComboBoxOut(data=data)
 
 
-@router.post(
+@api.post(
     "/combox/plan",
     tags=["Get"],
     summary="获取可选计划下拉框信息",
     response_model=ComboBoxOut,
-    status_code=200,
 )
 async def get_plan_combox() -> ComboBoxOut:
     try:
@@ -149,12 +146,11 @@ async def get_plan_combox() -> ComboBoxOut:
     return ComboBoxOut(data=data)
 
 
-@router.post(
+@api.post(
     "/combox/emulator",
     tags=["Get"],
     summary="获取可选模拟器下拉框信息",
     response_model=ComboBoxOut,
-    status_code=200,
 )
 async def get_emulator_combox() -> ComboBoxOut:
     try:
@@ -165,12 +161,11 @@ async def get_emulator_combox() -> ComboBoxOut:
     return ComboBoxOut(data=data)
 
 
-@router.post(
+@api.post(
     "/combox/emulator/devices",
     tags=["Get"],
     summary="获取可选模拟器多开实例下拉框信息",
     response_model=ComboBoxOut,
-    status_code=200,
 )
 async def get_emulator_devices_combox(
     emulator: EmulatorIdBody = Body(...),
@@ -185,12 +180,11 @@ async def get_emulator_devices_combox(
     return ComboBoxOut(data=data)
 
 
-@router.post(
+@api.post(
     "/notice/get",
     tags=["Get"],
     summary="获取通知信息",
     response_model=NoticeOut,
-    status_code=200,
 )
 async def get_notice_info() -> NoticeOut:
     try:
@@ -200,12 +194,11 @@ async def get_notice_info() -> NoticeOut:
     return NoticeOut(if_need_show=if_need_show, data=data)
 
 
-@router.post(
+@api.post(
     "/notice/confirm",
     tags=["Action"],
     summary="确认通知",
     response_model=OutBase,
-    status_code=200,
 )
 async def confirm_notice() -> OutBase:
     try:
@@ -229,12 +222,11 @@ async def confirm_notice() -> OutBase:
 #     return InfoOut(data=data)
 
 
-@router.post(
+@api.post(
     "/webconfig",
     tags=["Get"],
     summary="获取配置分享中心的配置信息",
     response_model=InfoOut,
-    status_code=200,
 )
 async def get_web_config() -> InfoOut:
     try:
@@ -244,12 +236,11 @@ async def get_web_config() -> InfoOut:
     return InfoOut(data={"WebConfig": data})
 
 
-@router.post(
+@api.post(
     "/get/overview",
     tags=["Get"],
     summary="信息总览",
     response_model=InfoOut,
-    status_code=200,
 )
 async def get_overview() -> InfoOut:
     try:

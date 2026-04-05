@@ -25,7 +25,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Path
 
-from app.api.common import api_delete, api_get, api_patch, api_post
+from app.api.common import bind_api
 from app.core import Config
 from app.models.common_contract import (
     IndexOrderPatch,
@@ -56,6 +56,7 @@ from app.models.queue_contract import (
 )
 
 router = APIRouter(prefix="/api/queue", tags=["调度队列管理"])
+api = bind_api(router)
 
 QueueIdPath = Annotated[str, Path(description="队列 ID")]
 TimeSetIdPath = Annotated[str, Path(description="时间设置 ID")]
@@ -170,148 +171,103 @@ async def _delete_queue_item_config(queue_id: str, queue_item_id: str) -> OutBas
     return OutBase()
 
 
-@api_get(
-    router,
+@api.get(
     "",
-    model_cls=QueueGetOut,
+    tags=["Get"],
+    summary="查询全部调度队列",
+    response_model=QueueGetOut,
     index=[],
     data={},
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "查询全部调度队列",
-        "response_model": QueueGetOut,
-        "status_code": 200,
-    },
 )
 async def list_queues() -> QueueGetOut:
     return await _build_queue_collection_out()
 
 
-@api_post(
-    router,
+@api.post(
     "",
     ws_endpoint="queue.add",
-    model_cls=QueueCreateOut,
+    tags=["Add"],
+    summary="创建调度队列",
+    response_model=QueueCreateOut,
     id="",
     data=QueueRead(),
-    route_kwargs={
-        "tags": ["Add"],
-        "summary": "创建调度队列",
-        "response_model": QueueCreateOut,
-        "status_code": 200,
-    },
 )
 async def create_queue() -> QueueCreateOut:
     return await _build_queue_create_out()
 
 
-@api_patch(
-    router,
+@api.patch(
     "/order",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Update"],
-        "summary": "重新排序调度队列",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Update"],
+    summary="重新排序调度队列",
+    response_model=OutBase,
 )
 async def reorder_queue(body: IndexOrderPatch = Body(...)) -> OutBase:
     await Config.reorder_queue(body.index_list)
     return OutBase()
 
 
-@api_get(
-    router,
+@api.get(
     "/{queue_id}",
     ws_endpoint="queue.get",
-    model_cls=QueueDetailOut,
+    tags=["Get"],
+    summary="查询单个调度队列",
+    response_model=QueueDetailOut,
     data=QueueRead(),
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "查询单个调度队列",
-        "response_model": QueueDetailOut,
-        "status_code": 200,
-    },
 )
 async def get_queue(queue_id: QueueIdPath) -> QueueDetailOut:
     return await _build_queue_detail_out(queue_id)
 
 
-@api_patch(
-    router,
+@api.patch(
     "/{queue_id}",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Update"],
-        "summary": "更新调度队列",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Update"],
+    summary="更新调度队列",
+    response_model=OutBase,
 )
 async def update_queue(queue_id: QueueIdPath, data: QueuePatch = Body(...)) -> OutBase:
     return await _update_queue_config(queue_id, data)
 
 
-@api_delete(
-    router,
+@api.delete(
     "/{queue_id}",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Delete"],
-        "summary": "删除调度队列",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Delete"],
+    summary="删除调度队列",
+    response_model=OutBase,
 )
 async def delete_queue(queue_id: QueueIdPath) -> OutBase:
     return await _delete_queue_config(queue_id)
 
 
-@api_get(
-    router,
+@api.get(
     "/{queue_id}/times",
-    model_cls=TimeSetGetOut,
+    tags=["Get"],
+    summary="查询队列下的全部定时项",
+    response_model=TimeSetGetOut,
     index=[],
     data={},
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "查询队列下的全部定时项",
-        "response_model": TimeSetGetOut,
-        "status_code": 200,
-    },
 )
 async def list_time_sets(queue_id: QueueIdPath) -> TimeSetGetOut:
     return await _build_time_set_collection_out(queue_id)
 
 
-@api_post(
-    router,
+@api.post(
     "/{queue_id}/times",
-    model_cls=TimeSetCreateOut,
+    tags=["Add"],
+    summary="创建定时项",
+    response_model=TimeSetCreateOut,
     id="",
     data=TimeSetRead(),
-    route_kwargs={
-        "tags": ["Add"],
-        "summary": "创建定时项",
-        "response_model": TimeSetCreateOut,
-        "status_code": 200,
-    },
 )
 async def create_time_set(queue_id: QueueIdPath) -> TimeSetCreateOut:
     return await _build_time_set_create_out(queue_id)
 
 
-@api_patch(
-    router,
+@api.patch(
     "/{queue_id}/times/order",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Update"],
-        "summary": "重新排序定时项",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Update"],
+    summary="重新排序定时项",
+    response_model=OutBase,
 )
 async def reorder_time_sets(
     queue_id: QueueIdPath, body: IndexOrderPatch = Body(...)
@@ -320,17 +276,12 @@ async def reorder_time_sets(
     return OutBase()
 
 
-@api_get(
-    router,
+@api.get(
     "/{queue_id}/times/{time_set_id}",
-    model_cls=TimeSetDetailOut,
+    tags=["Get"],
+    summary="查询单个定时项",
+    response_model=TimeSetDetailOut,
     data=TimeSetRead(),
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "查询单个定时项",
-        "response_model": TimeSetDetailOut,
-        "status_code": 200,
-    },
 )
 async def get_time_set(
     queue_id: QueueIdPath, time_set_id: TimeSetIdPath
@@ -338,16 +289,11 @@ async def get_time_set(
     return await _build_time_set_detail_out(queue_id, time_set_id)
 
 
-@api_patch(
-    router,
+@api.patch(
     "/{queue_id}/times/{time_set_id}",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Update"],
-        "summary": "更新定时项",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Update"],
+    summary="更新定时项",
+    response_model=OutBase,
 )
 async def update_time_set(
     queue_id: QueueIdPath,
@@ -357,65 +303,45 @@ async def update_time_set(
     return await _update_time_set_config(queue_id, time_set_id, data)
 
 
-@api_delete(
-    router,
+@api.delete(
     "/{queue_id}/times/{time_set_id}",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Delete"],
-        "summary": "删除定时项",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Delete"],
+    summary="删除定时项",
+    response_model=OutBase,
 )
 async def delete_time_set(queue_id: QueueIdPath, time_set_id: TimeSetIdPath) -> OutBase:
     return await _delete_time_set_config(queue_id, time_set_id)
 
 
-@api_get(
-    router,
+@api.get(
     "/{queue_id}/items",
-    model_cls=QueueItemGetOut,
+    tags=["Get"],
+    summary="查询队列下的全部队列项",
+    response_model=QueueItemGetOut,
     index=[],
     data={},
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "查询队列下的全部队列项",
-        "response_model": QueueItemGetOut,
-        "status_code": 200,
-    },
 )
 async def list_queue_items(queue_id: QueueIdPath) -> QueueItemGetOut:
     return await _build_queue_item_collection_out(queue_id)
 
 
-@api_post(
-    router,
+@api.post(
     "/{queue_id}/items",
-    model_cls=QueueItemCreateOut,
+    tags=["Add"],
+    summary="创建队列项",
+    response_model=QueueItemCreateOut,
     id="",
     data=QueueItemRead(),
-    route_kwargs={
-        "tags": ["Add"],
-        "summary": "创建队列项",
-        "response_model": QueueItemCreateOut,
-        "status_code": 200,
-    },
 )
 async def create_queue_item(queue_id: QueueIdPath) -> QueueItemCreateOut:
     return await _build_queue_item_create_out(queue_id)
 
 
-@api_patch(
-    router,
+@api.patch(
     "/{queue_id}/items/order",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Update"],
-        "summary": "重新排序队列项",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Update"],
+    summary="重新排序队列项",
+    response_model=OutBase,
 )
 async def reorder_queue_items(
     queue_id: QueueIdPath, body: IndexOrderPatch = Body(...)
@@ -424,17 +350,12 @@ async def reorder_queue_items(
     return OutBase()
 
 
-@api_get(
-    router,
+@api.get(
     "/{queue_id}/items/{queue_item_id}",
-    model_cls=QueueItemDetailOut,
+    tags=["Get"],
+    summary="查询单个队列项",
+    response_model=QueueItemDetailOut,
     data=QueueItemRead(),
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "查询单个队列项",
-        "response_model": QueueItemDetailOut,
-        "status_code": 200,
-    },
 )
 async def get_queue_item(
     queue_id: QueueIdPath, queue_item_id: QueueItemIdPath
@@ -442,16 +363,11 @@ async def get_queue_item(
     return await _build_queue_item_detail_out(queue_id, queue_item_id)
 
 
-@api_patch(
-    router,
+@api.patch(
     "/{queue_id}/items/{queue_item_id}",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Update"],
-        "summary": "更新队列项",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Update"],
+    summary="更新队列项",
+    response_model=OutBase,
 )
 async def update_queue_item(
     queue_id: QueueIdPath,
@@ -461,16 +377,11 @@ async def update_queue_item(
     return await _update_queue_item_config(queue_id, queue_item_id, data)
 
 
-@api_delete(
-    router,
+@api.delete(
     "/{queue_id}/items/{queue_item_id}",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Delete"],
-        "summary": "删除队列项",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Delete"],
+    summary="删除队列项",
+    response_model=OutBase,
 )
 async def delete_queue_item(
     queue_id: QueueIdPath, queue_item_id: QueueItemIdPath

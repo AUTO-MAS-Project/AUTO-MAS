@@ -25,7 +25,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Path
 
-from app.api.common import api_delete, api_get, api_patch, api_post
+from app.api.common import bind_api
 from app.core import Config
 from app.models import Webhook as WebhookConfig
 from app.models.common_contract import (
@@ -49,6 +49,7 @@ from app.models.setting_contract import (
 from app.services import Notify
 
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
+api = bind_api(router)
 
 WebhookIdPath = Annotated[str, Path(description="Webhook ID")]
 
@@ -109,144 +110,99 @@ async def _test_webhook_config(data: WebhookPatch) -> OutBase:
     return OutBase()
 
 
-@api_get(
-    router,
+@api.get(
     "",
-    model_cls=SettingGetOut,
+    tags=["Get"],
+    summary="查询全局配置",
+    response_model=SettingGetOut,
     data=GlobalConfigRead(),
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "查询全局配置",
-        "response_model": SettingGetOut,
-        "status_code": 200,
-    },
 )
 async def get_setting() -> SettingGetOut:
     return await _build_setting_out()
 
 
-@api_patch(
-    router,
+@api.patch(
     "",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Update"],
-        "summary": "更新全局配置",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Update"],
+    summary="更新全局配置",
+    response_model=OutBase,
 )
 async def update_setting(data: GlobalConfigPatch = Body(...)) -> OutBase:
     return await _update_setting_config(data)
 
 
-@api_post(
-    router,
+@api.post(
     "/actions/test-notify",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Action"],
-        "summary": "测试通知",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Action"],
+    summary="测试通知",
+    response_model=OutBase,
 )
 async def test_notify() -> OutBase:
     await Notify.send_test_notification()
     return OutBase()
 
 
-@api_get(
-    router,
+@api.get(
     "/webhooks",
-    model_cls=WebhookGetOut,
+    tags=["Get"],
+    summary="查询全部全局 Webhook 配置",
+    response_model=WebhookGetOut,
     index=[],
     data={},
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "查询全部全局 Webhook 配置",
-        "response_model": WebhookGetOut,
-        "status_code": 200,
-    },
 )
 async def list_webhooks() -> WebhookGetOut:
     return await _build_webhook_collection_out()
 
 
-@api_post(
-    router,
+@api.post(
     "/webhooks",
-    model_cls=WebhookCreateOut,
+    tags=["Add"],
+    summary="创建全局 Webhook 配置",
+    response_model=WebhookCreateOut,
     id="",
     data=WebhookRead(),
-    route_kwargs={
-        "tags": ["Add"],
-        "summary": "创建全局 Webhook 配置",
-        "response_model": WebhookCreateOut,
-        "status_code": 200,
-    },
 )
 async def create_webhook() -> WebhookCreateOut:
     return await _build_webhook_create_out()
 
 
-@api_patch(
-    router,
+@api.patch(
     "/webhooks/order",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Update"],
-        "summary": "重新排序全局 Webhook",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Update"],
+    summary="重新排序全局 Webhook",
+    response_model=OutBase,
 )
 async def reorder_webhooks(body: IndexOrderPatch = Body(...)) -> OutBase:
     await Config.reorder_webhook(None, None, body.index_list)
     return OutBase()
 
 
-@api_post(
-    router,
+@api.post(
     "/webhooks/test",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Action"],
-        "summary": "测试指定 Webhook 配置",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Action"],
+    summary="测试指定 Webhook 配置",
+    response_model=OutBase,
 )
 async def test_webhook(data: WebhookPatch = Body(...)) -> OutBase:
     return await _test_webhook_config(data)
 
 
-@api_get(
-    router,
+@api.get(
     "/webhooks/{webhook_id}",
-    model_cls=WebhookDetailOut,
+    tags=["Get"],
+    summary="查询单个全局 Webhook 配置",
+    response_model=WebhookDetailOut,
     data=WebhookRead(),
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "查询单个全局 Webhook 配置",
-        "response_model": WebhookDetailOut,
-        "status_code": 200,
-    },
 )
 async def get_webhook(webhook_id: WebhookIdPath) -> WebhookDetailOut:
     return await _build_webhook_detail_out(webhook_id)
 
 
-@api_patch(
-    router,
+@api.patch(
     "/webhooks/{webhook_id}",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Update"],
-        "summary": "更新全局 Webhook 配置",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Update"],
+    summary="更新全局 Webhook 配置",
+    response_model=OutBase,
 )
 async def update_webhook(
     webhook_id: WebhookIdPath, data: WebhookPatch = Body(...)
@@ -254,16 +210,11 @@ async def update_webhook(
     return await _update_webhook_config(webhook_id, data)
 
 
-@api_delete(
-    router,
+@api.delete(
     "/webhooks/{webhook_id}",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Delete"],
-        "summary": "删除全局 Webhook 配置",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Delete"],
+    summary="删除全局 Webhook 配置",
+    response_model=OutBase,
 )
 async def delete_webhook(webhook_id: WebhookIdPath) -> OutBase:
     return await _delete_webhook_config(webhook_id)

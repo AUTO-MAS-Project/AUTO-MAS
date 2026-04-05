@@ -23,12 +23,13 @@
 
 from fastapi import APIRouter, Body
 
-from app.api.common import api_get, api_patch
+from app.api.common import bind_api
 from app.core import Config
 from app.models.common_contract import OutBase, project_model
 from app.models.tools_contract import ToolsConfigPatch, ToolsConfigRead, ToolsGetOut
 
 router = APIRouter(prefix="/api/tools", tags=["工具设置"])
+api = bind_api(router)
 
 
 async def _build_tools_out() -> ToolsGetOut:
@@ -40,32 +41,22 @@ async def _update_tools_config(data: ToolsConfigPatch) -> OutBase:
     return OutBase()
 
 
-@api_get(
-    router,
+@api.get(
     "",
-    model_cls=ToolsGetOut,
+    tags=["Get"],
+    summary="查询工具配置",
+    response_model=ToolsGetOut,
     data=ToolsConfigRead(),
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "查询工具配置",
-        "response_model": ToolsGetOut,
-        "status_code": 200,
-    },
 )
 async def get_tools() -> ToolsGetOut:
     return await _build_tools_out()
 
 
-@api_patch(
-    router,
+@api.patch(
     "",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Update"],
-        "summary": "更新工具配置",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Update"],
+    summary="更新工具配置",
+    response_model=OutBase,
 )
 async def update_tools(data: ToolsConfigPatch = Body(...)) -> OutBase:
     return await _update_tools_config(data)

@@ -31,9 +31,10 @@ from app.core import Config
 from app.services import Updater
 from app.models.common_contract import OutBase
 from app.models.update_contract import UpdateCheckIn, UpdateCheckOut
-from app.api.common import api_get, api_post
+from app.api.common import bind_api
 
 router = APIRouter(prefix="/api/update", tags=["软件更新"])
+api = bind_api(router)
 
 
 QueryUpdateCheckIn = Annotated[UpdateCheckIn, Depends()]
@@ -60,52 +61,37 @@ async def _build_update_check_out(version: UpdateCheckIn) -> UpdateCheckOut:
     )
 
 
-@api_post(
-    router,
+@api.post(
     "/check",
-    model_cls=UpdateCheckOut,
+    tags=["Get"],
+    summary="检查更新",
+    response_model=UpdateCheckOut,
     if_need_update=False,
     latest_version="",
     update_info={},
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "检查更新",
-        "response_model": UpdateCheckOut,
-        "status_code": 200,
-    },
 )
 async def check_update(version: UpdateCheckIn = Body(...)) -> UpdateCheckOut:
     return await _build_update_check_out(version)
 
 
-@api_get(
-    router,
+@api.get(
     "/check",
-    model_cls=UpdateCheckOut,
+    tags=["Get"],
+    summary="按 REST 风格检查更新",
+    response_model=UpdateCheckOut,
     if_need_update=False,
     latest_version="",
     update_info={},
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "按 REST 风格检查更新",
-        "response_model": UpdateCheckOut,
-        "status_code": 200,
-    },
 )
 async def check_update_rest(version: QueryUpdateCheckIn) -> UpdateCheckOut:
     return await _build_update_check_out(version)
 
 
-@api_post(
-    router,
+@api.post(
     "/download",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Action"],
-        "summary": "下载更新",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Action"],
+    summary="下载更新",
+    response_model=OutBase,
 )
 async def download_update() -> OutBase:
     task = asyncio.create_task(Updater.download_update())
@@ -113,16 +99,11 @@ async def download_update() -> OutBase:
     return OutBase()
 
 
-@api_post(
-    router,
+@api.post(
     "/install",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Action"],
-        "summary": "安装更新",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Action"],
+    summary="安装更新",
+    response_model=OutBase,
 )
 async def install_update() -> OutBase:
     task = asyncio.create_task(Updater.install_update())

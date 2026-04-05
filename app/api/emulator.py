@@ -25,7 +25,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Body, Path
 
-from app.api.common import api_delete, api_get, api_patch, api_post
+from app.api.common import bind_api
 from app.core import Config, EmulatorManager
 from app.models.common_contract import (
     IndexOrderPatch,
@@ -49,6 +49,7 @@ from app.models.emulator_contract import (
 )
 
 router = APIRouter(prefix="/api/emulator", tags=["模拟器管理"])
+api = bind_api(router)
 
 EmulatorIdPath = Annotated[str, Path(description="模拟器 ID")]
 EmulatorActionPath = Annotated[
@@ -107,114 +108,79 @@ async def _build_emulator_search_out() -> EmulatorSearchOut:
     return EmulatorSearchOut(data=project_model_list(EmulatorSearchResult, emulators))
 
 
-@api_get(
-    router,
+@api.get(
     "",
-    model_cls=EmulatorGetOut,
+    tags=["Get"],
+    summary="查询全部模拟器配置",
+    response_model=EmulatorGetOut,
     index=[],
     data={},
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "查询全部模拟器配置",
-        "response_model": EmulatorGetOut,
-        "status_code": 200,
-    },
 )
 async def list_emulators() -> EmulatorGetOut:
     return await _build_emulator_collection_out()
 
 
-@api_post(
-    router,
+@api.post(
     "",
-    model_cls=EmulatorCreateOut,
+    tags=["Add"],
+    summary="创建模拟器配置",
+    response_model=EmulatorCreateOut,
     id="",
     data=EmulatorRead(),
-    route_kwargs={
-        "tags": ["Add"],
-        "summary": "创建模拟器配置",
-        "response_model": EmulatorCreateOut,
-        "status_code": 200,
-    },
 )
 async def create_emulator() -> EmulatorCreateOut:
     return await _build_emulator_create_out()
 
 
-@api_patch(
-    router,
+@api.patch(
     "/order",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Update"],
-        "summary": "重新排序模拟器",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Update"],
+    summary="重新排序模拟器",
+    response_model=OutBase,
 )
 async def reorder_emulator(body: IndexOrderPatch = Body(...)) -> OutBase:
     await Config.reorder_emulator(body.index_list)
     return OutBase()
 
 
-@api_get(
-    router,
+@api.get(
     "/detected",
-    model_cls=EmulatorSearchOut,
+    tags=["Get"],
+    summary="搜索已安装的模拟器",
+    response_model=EmulatorSearchOut,
     data=[],
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "搜索已安装的模拟器",
-        "response_model": EmulatorSearchOut,
-        "status_code": 200,
-    },
 )
 async def detect_emulators() -> EmulatorSearchOut:
     return await _build_emulator_search_out()
 
 
-@api_get(
-    router,
+@api.get(
     "/status",
-    model_cls=EmulatorStatusOut,
+    tags=["Get"],
+    summary="查询全部模拟器状态",
+    response_model=EmulatorStatusOut,
     data={},
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "查询全部模拟器状态",
-        "response_model": EmulatorStatusOut,
-        "status_code": 200,
-    },
 )
 async def get_emulator_statuses() -> EmulatorStatusOut:
     return await _build_emulator_status_out()
 
 
-@api_get(
-    router,
+@api.get(
     "/{emulator_id}",
-    model_cls=EmulatorDetailOut,
+    tags=["Get"],
+    summary="查询单个模拟器配置",
+    response_model=EmulatorDetailOut,
     data=EmulatorRead(),
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "查询单个模拟器配置",
-        "response_model": EmulatorDetailOut,
-        "status_code": 200,
-    },
 )
 async def get_emulator(emulator_id: EmulatorIdPath) -> EmulatorDetailOut:
     return await _build_emulator_detail_out(emulator_id)
 
 
-@api_patch(
-    router,
+@api.patch(
     "/{emulator_id}",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Update"],
-        "summary": "更新模拟器配置",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Update"],
+    summary="更新模拟器配置",
+    response_model=OutBase,
 )
 async def update_emulator(
     emulator_id: EmulatorIdPath, data: EmulatorPatch = Body(...)
@@ -222,47 +188,32 @@ async def update_emulator(
     return await _update_emulator_config(emulator_id, data)
 
 
-@api_delete(
-    router,
+@api.delete(
     "/{emulator_id}",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Delete"],
-        "summary": "删除模拟器配置",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Delete"],
+    summary="删除模拟器配置",
+    response_model=OutBase,
 )
 async def delete_emulator(emulator_id: EmulatorIdPath) -> OutBase:
     return await _delete_emulator_config(emulator_id)
 
 
-@api_get(
-    router,
+@api.get(
     "/{emulator_id}/status",
-    model_cls=EmulatorDeviceStatusOut,
+    tags=["Get"],
+    summary="查询单个模拟器状态",
+    response_model=EmulatorDeviceStatusOut,
     data={},
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "查询单个模拟器状态",
-        "response_model": EmulatorDeviceStatusOut,
-        "status_code": 200,
-    },
 )
 async def get_emulator_status(emulator_id: EmulatorIdPath) -> EmulatorDeviceStatusOut:
     return await _build_emulator_device_status_out(emulator_id)
 
 
-@api_post(
-    router,
+@api.post(
     "/{emulator_id}/actions/{action}",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Action"],
-        "summary": "执行模拟器动作",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Action"],
+    summary="执行模拟器动作",
+    response_model=OutBase,
 )
 async def operate_emulator(
     emulator_id: EmulatorIdPath,

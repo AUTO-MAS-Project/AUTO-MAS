@@ -33,17 +33,17 @@ from app.models.dispatch_contract import (
     TaskCreateIn,
     TaskCreateOut,
 )
-from app.api.common import error_out
+from app.api.common import bind_api, error_out
 
 router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
+api = bind_api(router)
 
 
-@router.post(
+@api.post(
     "/start",
     tags=["Action"],
     summary="添加任务",
     response_model=TaskCreateOut,
-    status_code=200,
 )
 async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
     try:
@@ -53,12 +53,11 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
     return TaskCreateOut(taskId=str(task_id))
 
 
-@router.post(
+@api.post(
     "/stop",
     tags=["Action"],
     summary="中止任务",
     response_model=OutBase,
-    status_code=200,
 )
 async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
     try:
@@ -68,12 +67,11 @@ async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
     return OutBase()
 
 
-@router.post(
+@api.post(
     "/get/power",
     tags=["Get"],
     summary="获取电源标志",
     response_model=PowerOut,
-    status_code=200,
 )
 async def get_power() -> PowerOut:
     try:
@@ -83,12 +81,11 @@ async def get_power() -> PowerOut:
     return PowerOut(signal=signal)
 
 
-@router.post(
+@api.post(
     "/set/power",
     tags=["Action"],
     summary="设置电源标志",
     response_model=OutBase,
-    status_code=200,
 )
 async def set_power(task: PowerIn = Body(...)) -> OutBase:
     try:
@@ -98,12 +95,11 @@ async def set_power(task: PowerIn = Body(...)) -> OutBase:
     return OutBase()
 
 
-@router.post(
+@api.post(
     "/cancel/power",
     tags=["Action"],
     summary="取消电源任务",
     response_model=OutBase,
-    status_code=200,
 )
 async def cancel_power_task() -> OutBase:
     try:

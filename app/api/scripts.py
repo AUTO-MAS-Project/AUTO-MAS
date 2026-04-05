@@ -27,7 +27,7 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Path
 from pydantic import TypeAdapter
 
-from app.api.common import api_delete, api_get, api_patch, api_post, error_out
+from app.api.common import bind_api, error_out
 from app.core import Config
 from app.models.common_contract import (
     ComboBoxItem,
@@ -78,6 +78,7 @@ COMBOBOX_ITEMS_ADAPTER: TypeAdapter[list[ComboBoxItem]] = TypeAdapter(
 )
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
+api = bind_api(router)
 
 ScriptIdPath = Annotated[str, Path(description="脚本 ID")]
 UserIdPath = Annotated[str, Path(description="用户 ID")]
@@ -128,29 +129,23 @@ async def _build_webhook_detail_out(
     return WebhookDetailOut(data=projected[webhook_id])
 
 
-@api_get(
-    router,
+@api.get(
     "",
-    model_cls=ScriptGetOut,
+    tags=["Get"],
+    summary="查询全部脚本",
+    response_model=ScriptGetOut,
     index=[],
     data={},
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "查询全部脚本",
-        "response_model": ScriptGetOut,
-        "status_code": 200,
-    },
 )
 async def list_scripts() -> ScriptGetOut:
     return await _build_script_collection_out()
 
 
-@router.post(
+@api.post(
     "",
     tags=["Add"],
     summary="创建脚本",
     response_model=ScriptCreateOut,
-    status_code=200,
 )
 async def create_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
     try:
@@ -172,28 +167,22 @@ async def create_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
     return ScriptCreateOut(id=str(uid), data=data)
 
 
-@api_patch(
-    router,
+@api.patch(
     "/order",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Update"],
-        "summary": "重新排序脚本",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Update"],
+    summary="重新排序脚本",
+    response_model=OutBase,
 )
 async def reorder_scripts(body: IndexOrderPatch = Body(...)) -> OutBase:
     await Config.reorder_script(body.index_list)
     return OutBase()
 
 
-@router.get(
+@api.get(
     "/{script_id}",
     tags=["Get"],
     summary="查询单个脚本",
     response_model=ScriptDetailOut,
-    status_code=200,
 )
 async def get_script(script_id: ScriptIdPath) -> ScriptDetailOut:
     try:
@@ -213,16 +202,11 @@ async def get_script(script_id: ScriptIdPath) -> ScriptDetailOut:
         )
 
 
-@api_patch(
-    router,
+@api.patch(
     "/{script_id}",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Update"],
-        "summary": "更新脚本配置",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Update"],
+    summary="更新脚本配置",
+    response_model=OutBase,
 )
 async def update_script(
     script_id: ScriptIdPath,
@@ -237,32 +221,22 @@ async def update_script(
     return OutBase()
 
 
-@api_delete(
-    router,
+@api.delete(
     "/{script_id}",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Delete"],
-        "summary": "删除脚本",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Delete"],
+    summary="删除脚本",
+    response_model=OutBase,
 )
 async def delete_script(script_id: ScriptIdPath) -> OutBase:
     await Config.del_script(script_id)
     return OutBase()
 
 
-@api_post(
-    router,
+@api.post(
     "/{script_id}/actions/import-file",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Action"],
-        "summary": "从文件导入脚本配置",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Action"],
+    summary="从文件导入脚本配置",
+    response_model=OutBase,
 )
 async def import_script_from_file(
     script_id: ScriptIdPath, body: ScriptFileBody = Body(...)
@@ -271,16 +245,11 @@ async def import_script_from_file(
     return OutBase()
 
 
-@api_post(
-    router,
+@api.post(
     "/{script_id}/actions/export-file",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Action"],
-        "summary": "导出脚本配置到文件",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Action"],
+    summary="导出脚本配置到文件",
+    response_model=OutBase,
 )
 async def export_script_to_file(
     script_id: ScriptIdPath, body: ScriptFileBody = Body(...)
@@ -289,16 +258,11 @@ async def export_script_to_file(
     return OutBase()
 
 
-@api_post(
-    router,
+@api.post(
     "/{script_id}/actions/import-web",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Action"],
-        "summary": "从网络导入脚本配置",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Action"],
+    summary="从网络导入脚本配置",
+    response_model=OutBase,
 )
 async def import_script_from_web(
     script_id: ScriptIdPath, body: ScriptUrlBody = Body(...)
@@ -307,16 +271,11 @@ async def import_script_from_web(
     return OutBase()
 
 
-@api_post(
-    router,
+@api.post(
     "/{script_id}/actions/upload-web",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Action"],
-        "summary": "上传脚本配置到网络",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Action"],
+    summary="上传脚本配置到网络",
+    response_model=OutBase,
 )
 async def upload_script_to_web(
     script_id: ScriptIdPath, body: ScriptUploadBody = Body(...)
@@ -327,29 +286,23 @@ async def upload_script_to_web(
     return OutBase()
 
 
-@api_get(
-    router,
+@api.get(
     "/{script_id}/users",
-    model_cls=UserGetOut,
+    tags=["Get"],
+    summary="查询脚本下的全部用户",
+    response_model=UserGetOut,
     index=[],
     data={},
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "查询脚本下的全部用户",
-        "response_model": UserGetOut,
-        "status_code": 200,
-    },
 )
 async def list_users(script_id: ScriptIdPath) -> UserGetOut:
     return await _build_user_collection_out(script_id)
 
 
-@router.post(
+@api.post(
     "/{script_id}/users",
     tags=["Add"],
     summary="创建用户",
     response_model=UserCreateOut,
-    status_code=200,
 )
 async def create_user(script_id: ScriptIdPath) -> UserCreateOut:
     script_type = None
@@ -375,16 +328,11 @@ async def create_user(script_id: ScriptIdPath) -> UserCreateOut:
     return UserCreateOut(id=str(uid), data=data)
 
 
-@api_patch(
-    router,
+@api.patch(
     "/{script_id}/users/order",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Update"],
-        "summary": "重新排序用户",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Update"],
+    summary="重新排序用户",
+    response_model=OutBase,
 )
 async def reorder_users(
     script_id: ScriptIdPath, body: IndexOrderPatch = Body(...)
@@ -393,12 +341,11 @@ async def reorder_users(
     return OutBase()
 
 
-@router.get(
+@api.get(
     "/{script_id}/users/{user_id}",
     tags=["Get"],
     summary="查询单个用户",
     response_model=UserDetailOut,
-    status_code=200,
 )
 async def get_user(script_id: ScriptIdPath, user_id: UserIdPath) -> UserDetailOut:
     try:
@@ -419,16 +366,11 @@ async def get_user(script_id: ScriptIdPath, user_id: UserIdPath) -> UserDetailOu
         )
 
 
-@api_patch(
-    router,
+@api.patch(
     "/{script_id}/users/{user_id}",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Update"],
-        "summary": "更新用户配置",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Update"],
+    summary="更新用户配置",
+    response_model=OutBase,
 )
 async def update_user(
     script_id: ScriptIdPath,
@@ -445,32 +387,22 @@ async def update_user(
     return OutBase()
 
 
-@api_delete(
-    router,
+@api.delete(
     "/{script_id}/users/{user_id}",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Delete"],
-        "summary": "删除用户",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Delete"],
+    summary="删除用户",
+    response_model=OutBase,
 )
 async def delete_user(script_id: ScriptIdPath, user_id: UserIdPath) -> OutBase:
     await Config.del_user(script_id, user_id)
     return OutBase()
 
 
-@api_post(
-    router,
+@api.post(
     "/{script_id}/users/{user_id}/actions/import-infrastructure",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Action"],
-        "summary": "导入基建配置文件",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Action"],
+    summary="导入基建配置文件",
+    response_model=OutBase,
 )
 async def import_infrastructure(
     script_id: ScriptIdPath,
@@ -481,12 +413,11 @@ async def import_infrastructure(
     return OutBase()
 
 
-@router.get(
+@api.get(
     "/{script_id}/users/{user_id}/infrastructure-options",
     tags=["Get"],
     summary="用户自定义基建排班可选项",
     response_model=ComboBoxOut,
-    status_code=200,
 )
 async def get_user_infrastructure_options(
     script_id: ScriptIdPath, user_id: UserIdPath
@@ -499,18 +430,13 @@ async def get_user_infrastructure_options(
     return ComboBoxOut(data=data)
 
 
-@api_get(
-    router,
+@api.get(
     "/{script_id}/users/{user_id}/webhooks",
-    model_cls=WebhookGetOut,
+    tags=["Get"],
+    summary="查询用户下的全部 Webhook",
+    response_model=WebhookGetOut,
     index=[],
     data={},
-    route_kwargs={
-        "tags": ["Get"],
-        "summary": "查询用户下的全部 Webhook",
-        "response_model": WebhookGetOut,
-        "status_code": 200,
-    },
 )
 async def list_user_webhooks(
     script_id: ScriptIdPath, user_id: UserIdPath
@@ -518,18 +444,13 @@ async def list_user_webhooks(
     return await _build_webhook_collection_out(script_id, user_id)
 
 
-@api_post(
-    router,
+@api.post(
     "/{script_id}/users/{user_id}/webhooks",
-    model_cls=WebhookCreateOut,
+    tags=["Add"],
+    summary="创建用户 Webhook",
+    response_model=WebhookCreateOut,
     id="",
     data=WebhookRead(),
-    route_kwargs={
-        "tags": ["Add"],
-        "summary": "创建用户 Webhook",
-        "response_model": WebhookCreateOut,
-        "status_code": 200,
-    },
 )
 async def create_user_webhook(
     script_id: ScriptIdPath, user_id: UserIdPath
@@ -541,16 +462,11 @@ async def create_user_webhook(
     )
 
 
-@api_patch(
-    router,
+@api.patch(
     "/{script_id}/users/{user_id}/webhooks/order",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Update"],
-        "summary": "重新排序用户 Webhook",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Update"],
+    summary="重新排序用户 Webhook",
+    response_model=OutBase,
 )
 async def reorder_user_webhooks(
     script_id: ScriptIdPath,
@@ -561,12 +477,11 @@ async def reorder_user_webhooks(
     return OutBase()
 
 
-@router.get(
+@api.get(
     "/{script_id}/users/{user_id}/webhooks/{webhook_id}",
     tags=["Get"],
     summary="查询单个用户 Webhook",
     response_model=WebhookDetailOut,
-    status_code=200,
 )
 async def get_user_webhook(
     script_id: ScriptIdPath,
@@ -579,16 +494,11 @@ async def get_user_webhook(
         return error_out(WebhookDetailOut, e, data=WebhookRead())
 
 
-@api_patch(
-    router,
+@api.patch(
     "/{script_id}/users/{user_id}/webhooks/{webhook_id}",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Update"],
-        "summary": "更新用户 Webhook",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Update"],
+    summary="更新用户 Webhook",
+    response_model=OutBase,
 )
 async def update_user_webhook(
     script_id: ScriptIdPath,
@@ -605,16 +515,11 @@ async def update_user_webhook(
     return OutBase()
 
 
-@api_delete(
-    router,
+@api.delete(
     "/{script_id}/users/{user_id}/webhooks/{webhook_id}",
-    model_cls=OutBase,
-    route_kwargs={
-        "tags": ["Delete"],
-        "summary": "删除用户 Webhook",
-        "response_model": OutBase,
-        "status_code": 200,
-    },
+    tags=["Delete"],
+    summary="删除用户 Webhook",
+    response_model=OutBase,
 )
 async def delete_user_webhook(
     script_id: ScriptIdPath,
