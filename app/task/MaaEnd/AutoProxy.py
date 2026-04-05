@@ -19,8 +19,11 @@
 #   Contact: DLmaster_361@163.com
 
 
+import re
 import uuid
 import json
+import json5
+import shutil
 import asyncio
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -34,7 +37,6 @@ from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager, skland_sign_in
 from app.utils.constants import UTC4, UTC8, MAAEND_KILLPROC_TASK
 from .tools import login, push_notification, wait_and_focus_window
-from .ScriptConfig import CONFIG_FILE_NAME, _keep_single_instance, _replace_config_dir
 
 logger = get_logger("MaaEnd 自动代理")
 
@@ -135,7 +137,7 @@ class AutoProxyTask(TaskExecuteBase):
         logger.info(f"开始代理用户 {self.cur_user_uid}")
         self.cur_user_item.status = "运行"
 
-        self.task_dict: dict[str, bool] | None = None
+        self.task_dict: dict[str, dict[str, bool]] | None = None
         self.unique_task: dict[str, str] = {}
 
         if (
@@ -253,9 +255,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.wait_event.clear()
             t = datetime.now()
             await self.maaend_process_manager.open_process(
-                self.maaend_exe_path,
-                "--log-mode=verbose",
-                stdout=asyncio.subprocess.PIPE,
+                self.maaend_exe_path, stdout=asyncio.subprocess.PIPE
             )
 
             # 静默模式隐藏 MaaEnd 窗口
@@ -363,28 +363,26 @@ class AutoProxyTask(TaskExecuteBase):
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
-        source_config_path = None
-        if self.cur_user_config.get("Info", "Mode") == "简洁":
-            source_config_path = (
-                Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
-            )
-        elif self.cur_user_config.get("Info", "Mode") == "详细":
-            source_config_path = (
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-            )
-
-        if source_config_path is None:
-            raise RuntimeError("未找到 MaaEnd 配置目录")
-
-        source_config_file = source_config_path / CONFIG_FILE_NAME
-        if source_config_file.exists():
-            _keep_single_instance(source_config_file)
-        _replace_config_dir(source_config_path, self.maaend_set_path)
-
-        maaend_set, maaend_instance = _keep_single_instance(
-            self.maaend_set_path / CONFIG_FILE_NAME
+        # 基础配置内容
+        maaend_config_path = (
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{'Default' if self.cur_user_config.get('Info', 'Mode') == '简洁' else self.cur_user_uid}/ConfigFile"
         )
+        shutil.rmtree(self.maaend_set_path, ignore_errors=True)
+        shutil.copytree(maaend_config_path, self.maaend_set_path)
+
+        # 初始化任务实例
+        maaend_set = json.loads(
+            (self.maaend_set_path / "mxu-MaaEnd.json").read_text(encoding="utf-8")
+        )
+
+        # 获取任务项单例
+        for instance in maaend_set["instances"]:
+            if instance.get("id") == "automas":
+                maaend_instance = instance
+                break
+        else:
+            maaend_instance = {"id": "automas", "name": "AUTO-MAS", "tasks": []}
         maaend_tasks = maaend_instance["tasks"]
 
         settings = maaend_set.get("settings")
@@ -393,7 +391,7 @@ class AutoProxyTask(TaskExecuteBase):
             maaend_set["settings"] = settings
 
         # 直接运行任务
-        settings["autoStartInstanceId"] = maaend_instance["id"]
+        settings["autoStartInstanceId"] = "automas"
         settings["autoRunOnLaunch"] = True
 
         # 模拟器相关配置
@@ -408,32 +406,47 @@ class AutoProxyTask(TaskExecuteBase):
                 "adbDeviceName": (await MaaFWManager.convert_adb(device_info)).name
             }
 
+        # 加载 i18n 配置
+        if settings["language"] == "system":
+            settings["language"] = "zh-CN"
+        maaend_i18n_raw = json.loads(
+            (
+                self.maaend_root_path
+                / f"locales/interface/{settings['language'].lower().replace('-', '_')}.json"
+            ).read_text(encoding="utf-8")
+        )
+        maaend_i18n = {}
+        for task_definition_file in self.maaend_root_path.glob("tasks/*.json"):
+            task_definition = json5.loads(  # type: ignore
+                task_definition_file.read_text(encoding="utf-8")
+            )["task"][0]
+            if task_definition["label"].startswith("$"):
+                maaend_i18n[task_definition["name"]] = maaend_i18n_raw[
+                    task_definition["label"].lstrip("$")
+                ]
+            else:
+                maaend_i18n[task_definition["name"]] = task_definition["label"]
+
         # 配置任务启用状态
         if self.task_dict is None:
             # 任务列表为空则记录任务
             self.task_dict = {}
             task = {}
             for task in maaend_tasks:
-                self.task_dict[task["id"]] = task["enabled"]
-            if task.get("taskName") == "__MXU_KILLPROC__" and task.get(
-                "optionValues", {}
-            ).get("__MXU_KILLPROC_SELF_OPTION__", {}).get("value", False):
-                self.task_dict.popitem()
+                if task.get("taskName") == "__MXU_KILLPROC__" and task.get(
+                    "optionValues", {}
+                ).get("__MXU_KILLPROC_SELF_OPTION__", {}).get("value", False):
+                    continue
+                task_name = maaend_i18n.get(task["taskName"], task["taskName"])
+                if task_name not in self.task_dict:
+                    self.task_dict[task_name] = {}
+                self.task_dict[task_name][task["id"]] = task["enabled"]
         else:
             # 任务列表不为空则配置任务
             for task in maaend_tasks:
-                task["enabled"] = self.task_dict[task["id"]]
-
-        # 记录启用的无重复任务项以便简化判定
-        self.unique_task = {}
-        duplicate_task = set()
-        for task in maaend_tasks:
-            if task["enabled"] and task["id"] in self.task_dict:
-                if task["taskName"] in self.unique_task:
-                    self.unique_task.pop(task["taskName"])
-                    duplicate_task.add(task["taskName"])
-                elif task["taskName"] not in duplicate_task:
-                    self.unique_task[task["taskName"]] = task["id"]
+                task_name = maaend_i18n.get(task["taskName"], task["taskName"])
+                if task_name in self.task_dict:
+                    task["enabled"] = self.task_dict[task_name][task["id"]]
 
         # 配置协议空间
         for task in maaend_tasks:
@@ -480,16 +493,34 @@ class AutoProxyTask(TaskExecuteBase):
             if self.task_dict is None:
                 self.cur_user_log.status = "MaaEnd 未加载任何任务"
             else:
-                for id in self.task_dict.keys():
-                    if f"[{id}] 任务完成" in log:
-                        self.task_dict[id] = False
-                for task_name, task_id in self.unique_task.items():
-                    if f"任务完成: {task_name}" in log:
-                        self.task_dict[task_id] = False
-                if any(self.task_dict.values()):
-                    self.cur_user_log.status = "MaaEnd 部分任务执行失败"
-                else:
-                    self.cur_user_log.status = "Success!"
+                try:
+                    task_name = ""
+                    task_index = {
+                        k: {"index": 0, "list": list(v.keys())}
+                        for k, v in self.task_dict.items()
+                    }
+                    for log_line in self.cur_user_log.content:
+                        match = re.search(r"任务开始:\s*(.+)", log_line)
+                        task_name = match.group(1) if match else task_name
+                        if (
+                            task_name in self.task_dict
+                            and f"任务完成: {task_name}" in log_line
+                        ):
+                            self.task_dict[task_name][
+                                task_index[task_name]["list"][
+                                    task_index[task_name]["index"]
+                                ]
+                            ] = False
+                            task_index[task_name]["index"] += 1
+                        elif f"任务失败: {task_name}" in log_line:
+                            task_index[task_name]["index"] += 1
+
+                    if any(any(_.values()) for _ in self.task_dict.values()):
+                        self.cur_user_log.status = "MaaEnd 部分任务执行失败"
+                    else:
+                        self.cur_user_log.status = "Success!"
+                except:
+                    self.cur_user_log.status = "MaaEnd 任务执行情况解析失败"
 
         elif datetime.now() - latest_time > timedelta(
             minutes=self.script_config.get("Run", "RunTimeLimit")
