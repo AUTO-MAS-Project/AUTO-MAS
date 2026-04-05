@@ -25,8 +25,8 @@ from fastapi import APIRouter, Body
 
 from app.api.common import bind_api
 from app.core import Config
-from app.models.common_contract import OutBase, project_model
-from app.models.tools_contract import ToolsConfigPatch, ToolsConfigRead, ToolsGetOut
+from app.contracts.common_contract import OutBase, project_model
+from app.contracts.tools_contract import ToolsConfigPatch, ToolsConfigRead, ToolsGetOut
 
 router = APIRouter(prefix="/api/tools", tags=["工具设置"])
 api = bind_api(router)

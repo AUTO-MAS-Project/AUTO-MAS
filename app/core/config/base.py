@@ -29,140 +29,153 @@ import json
 import tomllib
 import uuid
 import weakref
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import AsyncIterator, Callable, Coroutine
 from typing import Any, Generic, Protocol, TypeVar, cast
+
+import tomli_w  # pyright: ignore[reportMissingImports]
+from loguru import logger
 
 
 PRIMARY_CONFIG_SUFFIX = ".toml"
 LEGACY_CONFIG_SUFFIX = ".json"
 
 
-def _toml_key(key: str) -> str:
-    """生成兼容 UUID 等特殊字符的 TOML 键名。"""
-
-    return json.dumps(str(key), ensure_ascii=False)
-
-
-def _toml_path(path: tuple[str, ...]) -> str:
-    """生成 TOML 表头路径。"""
-
-    return ".".join(_toml_key(part) for part in path)
-
-
-def _toml_scalar(value: Any) -> str:
-    """序列化 TOML 标量值。"""
-
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, float):
-        return repr(value)
-    if value is None:
-        return '""'
-    return json.dumps(str(value), ensure_ascii=False)
-
-
-def _toml_inline(value: Any) -> str:
-    """序列化内联 TOML 值，支持数组和内联表。"""
-
-    if isinstance(value, dict):
-        mapping = cast(dict[object, Any], value)
-        items = ", ".join(
-            f"{_toml_key(str(key))} = {_toml_inline(item)}"
-            for key, item in mapping.items()
-        )
-        return "{ " + items + " }"
-    if isinstance(value, list):
-        items = cast(list[Any], value)
-        return "[" + ", ".join(_toml_inline(item) for item in items) + "]"
-    return _toml_scalar(value)
-
-
 def dump_toml(data: dict[str, Any]) -> str:
-    """公共 TOML 序列化入口。"""
+    """
+    使用 tomli-w 库序列化 TOML 数据。
 
-    lines: list[str] = []
+    Args:
+        data: 要序列化的字典数据
 
-    def emit_table(path: tuple[str, ...], obj: dict[str, Any]) -> None:
-        scalars: list[tuple[str, Any]] = []
-        children: list[tuple[str, dict[str, Any]]] = []
+    Returns:
+        TOML 格式的字符串
 
-        for key, value in obj.items():
-            if isinstance(value, dict):
-                children.append((str(key), cast(dict[str, Any], value)))
-            else:
-                scalars.append((str(key), value))
-
-        if path:
-            lines.append(f"[{_toml_path(path)}]")
-
-        for key, value in scalars:
-            lines.append(f"{_toml_key(key)} = {_toml_inline(value)}")
-
-        if scalars and children:
-            lines.append("")
-
-        for index, (key, child) in enumerate(children):
-            emit_table((*path, key), child)
-            if index != len(children) - 1:
-                lines.append("")
-
-    emit_table((), data)
-    content = "\n".join(lines).strip()
-    return f"{content}\n" if content else ""
+    Raises:
+        TypeError: 如果数据包含不可序列化的类型
+    """
+    try:
+        return cast(Any, tomli_w).dumps(data)
+    except (TypeError, ValueError) as e:
+        logger.error(f"TOML 序列化失败: {e}, 数据类型: {type(data)}")
+        raise
 
 
 def _load_json_config(path: Path) -> dict[str, Any]:
-    raw_text = path.read_text(encoding="utf-8")
-    if raw_text.strip() == "":
-        return {}
+    """
+    加载 JSON 配置文件。
 
-    loaded = json.loads(raw_text)
-    if not isinstance(loaded, dict):
-        return {}
+    Args:
+        path: 配置文件路径
 
-    mapping = cast(dict[object, Any], loaded)
-    return {str(key): item for key, item in mapping.items()}
+    Returns:
+        配置字典，如果文件为空或格式错误则返回空字典
+    """
+    try:
+        raw_text = path.read_text(encoding="utf-8")
+        if not raw_text.strip():
+            logger.debug(f"配置文件为空: {path}")
+            return {}
+
+        loaded = json.loads(raw_text)
+        if not isinstance(loaded, dict):
+            logger.warning(f"配置文件不是字典类型: {path}, 类型: {type(loaded)}")
+            return {}
+
+        mapping = cast(dict[object, Any], loaded)
+        return {str(key): item for key, item in mapping.items()}
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON 解析失败: {path}, 错误: {e}")
+        return {}
+    except Exception:
+        logger.exception(f"加载配置文件失败: {path}")
+        return {}
 
 
 def _load_toml_config(path: Path) -> dict[str, Any]:
-    raw_text = path.read_text(encoding="utf-8")
-    if raw_text.strip() == "":
+    """
+    加载 TOML 配置文件。
+
+    Args:
+        path: 配置文件路径
+
+    Returns:
+        配置字典，如果文件为空或格式错误则返回空字典
+    """
+    try:
+        raw_text = path.read_text(encoding="utf-8")
+        if not raw_text.strip():
+            logger.debug(f"配置文件为空: {path}")
+            return {}
+
+        loaded = tomllib.loads(raw_text)
+        mapping = cast(dict[object, Any], loaded)
+        return {str(key): item for key, item in mapping.items()}
+    except tomllib.TOMLDecodeError as e:
+        logger.error(f"TOML 解析失败: {path}, 错误: {e}")
+        return {}
+    except Exception:
+        logger.exception(f"加载配置文件失败: {path}")
         return {}
 
-    loaded = tomllib.loads(raw_text)
-    mapping = cast(dict[object, Any], loaded)
-    return {str(key): item for key, item in mapping.items()}
 
+def _load_config_with_legacy_migration(
+    path: Path,
+) -> tuple[dict[str, Any], Path | None]:
+    """
+    加载配置文件，支持从 JSON 迁移到 TOML。
 
-def _load_config_with_legacy_migration(path: Path) -> tuple[dict[str, Any], Path | None]:
+    优先级：
+    1. 如果存在 .json 文件且 .toml 文件不存在或为空，则加载 .json
+    2. 否则加载 .toml 文件
+    3. 如果 .toml 加载失败，回退到 .json
+
+    Args:
+        path: TOML 配置文件路径
+
+    Returns:
+        (配置字典, 旧版 JSON 文件路径或 None)
+    """
     legacy_json_file = path.with_suffix(LEGACY_CONFIG_SUFFIX)
 
+    # 情况 1: JSON 存在且 TOML 不存在或为空
     if legacy_json_file.exists() and (not path.exists() or path.stat().st_size == 0):
-        try:
-            return _load_json_config(legacy_json_file), legacy_json_file
-        except json.JSONDecodeError:
-            return {}, legacy_json_file
+        logger.info(f"从旧版 JSON 配置迁移: {legacy_json_file} -> {path}")
+        data = _load_json_config(legacy_json_file)
+        return data, legacy_json_file
 
+    # 情况 2: TOML 不存在
     if not path.exists():
+        logger.debug(f"配置文件不存在: {path}")
         return {}, legacy_json_file if legacy_json_file.exists() else None
 
-    try:
-        return _load_toml_config(path), legacy_json_file if legacy_json_file.exists() else None
-    except tomllib.TOMLDecodeError:
-        if legacy_json_file.exists():
-            with suppress(json.JSONDecodeError):
-                return _load_json_config(legacy_json_file), legacy_json_file
-        return {}, legacy_json_file if legacy_json_file.exists() else None
+    # 情况 3: 尝试加载 TOML
+    data = _load_toml_config(path)
+    if data or not legacy_json_file.exists():
+        return data, legacy_json_file if legacy_json_file.exists() else None
+
+    # 情况 4: TOML 加载失败，回退到 JSON
+    logger.warning(f"TOML 加载失败，回退到 JSON: {legacy_json_file}")
+    return _load_json_config(legacy_json_file), legacy_json_file
 
 
 def _backup_legacy_config_if_needed(
     current_file: Path, legacy_file: Path | None
 ) -> None:
+    """
+    备份旧版 JSON 配置文件。
+
+    仅在以下条件同时满足时备份：
+    1. 旧版文件存在
+    2. 新版文件存在且非空
+    3. 备份文件不存在
+
+    Args:
+        current_file: 当前 TOML 配置文件路径
+        legacy_file: 旧版 JSON 配置文件路径
+    """
     if legacy_file is None or not legacy_file.exists():
         return
     if not current_file.exists() or current_file.stat().st_size == 0:
@@ -170,7 +183,11 @@ def _backup_legacy_config_if_needed(
 
     legacy_backup = legacy_file.with_suffix(f"{legacy_file.suffix}.bak")
     if not legacy_backup.exists():
-        legacy_file.replace(legacy_backup)
+        try:
+            legacy_file.replace(legacy_backup)
+            logger.info(f"已备份旧版配置: {legacy_file} -> {legacy_backup}")
+        except Exception as e:
+            logger.error(f"备份旧版配置失败: {legacy_file}, 错误: {e}")
 
 
 def load_config_with_legacy_migration(
@@ -262,7 +279,10 @@ class _WeakCallbackSlot:
 
     @classmethod
     def build(cls, callback: CollectionEventSlot) -> "_WeakCallbackSlot":
-        if inspect.ismethod(callback) and getattr(callback, "__self__", None) is not None:
+        if (
+            inspect.ismethod(callback)
+            and getattr(callback, "__self__", None) is not None
+        ):
             return cls(
                 identity=_callback_identity(callback),
                 weak_method=weakref.WeakMethod(callback),
@@ -278,9 +298,7 @@ class _WeakCallbackSlot:
         return self.callback
 
 
-async def _emit_collection_slots(
-    slots: list[_WeakCallbackSlot], event: Any
-) -> None:
+async def _emit_collection_slots(slots: list[_WeakCallbackSlot], event: Any) -> None:
     """依次触发容器事件回调，并清理失效弱引用。"""
 
     alive_slots: list[_WeakCallbackSlot] = []
@@ -348,24 +366,38 @@ class MultipleConfig(Generic[T]):
         return f"MultipleConfig with {len(self.data)} items"
 
     async def connect(self, path: Path) -> None:
-        """将运行期配置连接到指定 TOML 文件。"""
+        """
+        将运行期配置连接到指定 TOML 文件。
 
+        Args:
+            path: 配置文件路径，必须以 .toml 结尾
+
+        Raises:
+            ValueError: 如果文件扩展名不是 .toml 或配置已锁定
+        """
         if path.suffix != PRIMARY_CONFIG_SUFFIX:
-            raise ValueError("配置文件必须是带有 '.toml' 扩展名的 TOML 文件。")
+            raise ValueError(f"配置文件必须是 .toml 格式，当前: {path.suffix}")
 
         if self.is_locked:
-            raise ValueError("配置已锁定, 无法修改")
+            raise ValueError("配置已锁定，无法修改")
 
+        logger.info(f"连接配置文件: {path}")
         self.file = path
 
         if not self.file.exists():
             self.file.parent.mkdir(parents=True, exist_ok=True)
             self.file.touch()
+            logger.debug(f"创建新配置文件: {self.file}")
 
-        data, legacy_file = _load_config_with_legacy_migration(self.file)
-        await self.load(data)
-        await self.add_save_method(self.save)
-        _backup_legacy_config_if_needed(self.file, legacy_file)
+        try:
+            data, legacy_file = _load_config_with_legacy_migration(self.file)
+            await self.load(data)
+            await self.add_save_method(self.save)
+            _backup_legacy_config_if_needed(self.file, legacy_file)
+            logger.info(f"配置加载成功: {path}, 项目数: {len(self.data)}")
+        except Exception:
+            logger.exception(f"配置加载失败: {path}")
+            raise
 
     async def add_save_method(
         self, save_method: Callable[[], Coroutine[Any, Any, None]]
@@ -483,42 +515,73 @@ class MultipleConfig(Generic[T]):
         if uid not in self.data:
             raise ValueError(f"配置项 '{uid}' 不存在。")
 
-        data: dict[str, Any] = {"instances": [
-            {"uid": str(current_uid), "type": type(self.data[current_uid]).__name__}
-            for current_uid in self.order
-            if current_uid == uid
-        ], str(uid): await self.data[uid].toDict()}
+        data: dict[str, Any] = {
+            "instances": [
+                {"uid": str(current_uid), "type": type(self.data[current_uid]).__name__}
+                for current_uid in self.order
+                if current_uid == uid
+            ],
+            str(uid): await self.data[uid].toDict(),
+        }
         return data
 
     async def save(self) -> None:
-        """保存当前多实例配置。"""
+        """
+        保存当前多实例配置到文件。
 
+        如果在事务中，则延迟保存；否则立即写入文件。
+
+        Raises:
+            ValueError: 如果文件路径未设置
+            OSError: 如果文件写入失败
+        """
         if not self.file:
-            raise ValueError("文件路径未设置, 请先调用 `connect` 方法连接配置文件")
+            raise ValueError("文件路径未设置，请先调用 connect() 方法")
 
         if self._transaction_depth > 0:
             self._pending_save = True
+            logger.debug(f"事务中，延迟保存: {self.file}")
             return
 
-        self.file.parent.mkdir(parents=True, exist_ok=True)
-        self.file.write_text(
-            dump_toml(await self.toDict(if_decrypt=False)),
-            encoding="utf-8",
-        )
+        try:
+            self.file.parent.mkdir(parents=True, exist_ok=True)
+            content = dump_toml(await self.toDict(if_decrypt=False))
+
+            # 原子写入：先写临时文件，再替换
+            temp_file = self.file.with_suffix(f"{self.file.suffix}.tmp")
+            temp_file.write_text(content, encoding="utf-8")
+            temp_file.replace(self.file)
+
+            logger.debug(f"配置保存成功: {self.file}, 大小: {len(content)} 字节")
+        except Exception:
+            logger.exception(f"配置保存失败: {self.file}")
+            raise
 
     async def add(self, config_type: type[T]) -> tuple[uuid.UUID, T]:
-        """新增一个指定类型的子配置实例。"""
+        """
+        新增一个指定类型的子配置实例。
 
+        Args:
+            config_type: 配置类型，必须在允许的类型列表中
+
+        Returns:
+            (新配置的 UUID, 配置实例)
+
+        Raises:
+            ValueError: 如果配置类型不被允许或配置已锁定
+        """
         if config_type not in self.sub_config_type.values():
             raise ValueError(f"配置类型 {config_type.__name__} 不被允许")
         if self.is_locked:
-            raise ValueError("配置已锁定, 无法修改")
+            raise ValueError("配置已锁定，无法修改")
 
         uid = uuid.uuid4()
         config = config_type()
         config.bind_owner_collection(self, uid)
         self.order.append(uid)
         self.data[uid] = config
+
+        logger.info(f"新增配置: {config_type.__name__}, UID: {uid}")
 
         for save_method in self._save_methods:
             await config.add_save_method(save_method)
@@ -539,16 +602,25 @@ class MultipleConfig(Generic[T]):
         return uid, config
 
     async def remove(self, uid: uuid.UUID) -> None:
-        """移除一个子配置实例。"""
+        """
+        移除一个子配置实例。
 
+        Args:
+            uid: 要移除的配置 UUID
+
+        Raises:
+            ValueError: 如果配置不存在、已锁定或父容器已锁定
+        """
         if self.is_locked:
-            raise ValueError("配置已锁定, 无法修改")
+            raise ValueError("配置已锁定，无法修改")
         if uid not in self.data:
             raise ValueError(f"配置项 '{uid}' 不存在")
         if self.data[uid].is_locked:
-            raise ValueError(f"配置项 '{uid}' 已锁定, 无法移除")
+            raise ValueError(f"配置项 '{uid}' 已锁定，无法移除")
 
         config = self.data[uid]
+        logger.info(f"移除配置: {type(config).__name__}, UID: {uid}")
+
         await _emit_collection_slots(
             self._on_before_del_slots, MultipleConfigDeleteEvent(self, uid, config)
         )

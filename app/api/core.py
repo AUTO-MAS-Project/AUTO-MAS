@@ -29,7 +29,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.core import Config, Broadcast, TaskManager
 from app.services import System
-from app.models.common_contract import OutBase
+from app.contracts.common_contract import OutBase
 from app.models.shared import WebSocketMessage
 from app.api.ws_command import ws_command
 from app.api.common import bind_api, error_out

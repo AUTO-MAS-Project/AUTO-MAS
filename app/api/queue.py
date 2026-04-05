@@ -27,14 +27,14 @@ from fastapi import APIRouter, Body, Path
 
 from app.api.common import bind_api
 from app.core import Config
-from app.models.common_contract import (
+from app.contracts.common_contract import (
     IndexOrderPatch,
     OutBase,
     project_model,
     project_model_list,
     project_model_map,
 )
-from app.models.queue_contract import (
+from app.contracts.queue_contract import (
     QueueCreateOut,
     QueueDetailOut,
     QueueGetOut,

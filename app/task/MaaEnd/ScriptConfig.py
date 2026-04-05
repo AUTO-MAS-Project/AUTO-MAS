@@ -90,9 +90,21 @@ def _keep_single_instance(config_path: Path) -> tuple[dict[str, Any], dict[str, 
     return data, selected_instance
 
 
+def keep_single_instance(config_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    """公开封装：保留单实例配置。"""
+
+    return _keep_single_instance(config_path)
+
+
 def _replace_config_dir(source_dir: Path, target_dir: Path) -> None:
     shutil.rmtree(target_dir, ignore_errors=True)
     shutil.copytree(source_dir, target_dir)
+
+
+def replace_config_dir(source_dir: Path, target_dir: Path) -> None:
+    """公开封装：替换配置目录。"""
+
+    _replace_config_dir(source_dir, target_dir)
 
 
 class ScriptConfigTask(TaskExecuteBase):

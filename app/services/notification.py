@@ -1,7 +1,6 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025-2026 AUTO-MAS Team
-import asyncio
 
 #   This file is part of AUTO-MAS.
 
@@ -26,13 +25,13 @@ import json
 import smtplib
 import httpx
 from datetime import datetime
-from plyer import notification
+from plyer import notification  # pyright: ignore[reportMissingTypeStubs]
 from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from app.core import Config
 from app.models import Webhook
@@ -114,10 +113,13 @@ class Notification:
             raise ValueError("邮件通知的接收邮箱格式错误或为空")
 
         # 定义邮件正文
+        message: MIMEText | MIMEMultipart
         if mode == "文本":
             message = MIMEText(content, "plain", "utf-8")
         elif mode == "网页":
             message = MIMEMultipart("alternative")
+        else:
+            raise ValueError(f"不支持的邮件模式: {mode}")
         message["From"] = formataddr(
             (
                 Header("AUTO-MAS通知服务", "utf-8").encode(),
@@ -228,7 +230,7 @@ class Notification:
                 template_obj = json.loads(template)
 
                 # 递归替换JSON对象中的变量
-                def replace_variables(obj):
+                def replace_variables(obj: Any) -> Any:
                     if isinstance(obj, dict):
                         return {k: replace_variables(v) for k, v in obj.items()}
                     elif isinstance(obj, list):
@@ -278,6 +280,7 @@ class Notification:
         headers.update(json.loads(webhook.get("Data", "Headers")))
 
         async with httpx.AsyncClient(proxy=Config.proxy, timeout=10) as client:
+            response: httpx.Response
             if webhook.get("Data", "Method") == "POST":
                 if isinstance(data, dict):
                     response = await client.post(
@@ -287,19 +290,29 @@ class Notification:
                     response = await client.post(
                         url=webhook.get("Data", "Url"), content=data, headers=headers
                     )
+                else:
+                    response = await client.post(
+                        url=webhook.get("Data", "Url"),
+                        content=str(data),
+                        headers=headers,
+                    )
             elif webhook.get("Data", "Method") == "GET":
                 if isinstance(data, dict):
                     # Flatten params to ensure all values are str or list of str
-                    params = {}
+                    params: dict[str, str] = {}
                     for k, v in data.items():
                         if isinstance(v, (dict, list)):
-                            params[k] = json.dumps(v, ensure_ascii=False)
+                            params[str(k)] = json.dumps(v, ensure_ascii=False)
                         else:
-                            params[k] = str(v)
+                            params[str(k)] = str(v)
                 else:
-                    params = {"message": str(data)}
+                    params: dict[str, str] = {"message": str(data)}
                 response = await client.get(
                     url=webhook.get("Data", "Url"), params=params, headers=headers
+                )
+            else:
+                raise ValueError(
+                    f"不支持的 Webhook 方法: {webhook.get('Data', 'Method')}"
                 )
 
         # 检查响应
@@ -310,7 +323,7 @@ class Notification:
         else:
             raise Exception(f"HTTP {response.status_code}: {response.text}")
 
-    async def _WebHookPush(self, title, content, webhook_url) -> None:
+    async def _WebHookPush(self, title: str, content: str, webhook_url: str) -> None:
         """
         WebHook 推送通知 (即将弃用)
 
@@ -420,7 +433,7 @@ class Notification:
         if success:
             logger.success(f"Koishi 通知推送成功: {message[:50]}")
         else:
-            logger.error(f"Koishi 通知推送失败: 发送消息失败")
+            logger.error("Koishi 通知推送失败: 发送消息失败")
 
         return success
 

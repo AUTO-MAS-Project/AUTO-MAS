@@ -20,7 +20,44 @@
 
 #   Contact: DLmaster_361@163.com
 
+"""
+API Contract 层
 
-from . import api, core, models, services, utils
+本模块包含所有 API 请求/响应模型，按领域拆分为独立文件。
 
-__all__ = ["api", "core", "models", "services", "utils"]
+设计原则：
+1. Contract 只负责 API 边界定义，不包含业务逻辑
+2. 使用 Read/Patch/Create 分离读写模型
+3. 所有 Contract 继承 ApiModel，获得统一配置
+4. 字段命名使用 snake_case，通过 alias 兼容前端
+"""
+
+from .common_contract import (
+    ApiModel,
+    ComboBoxItem,
+    ComboBoxOut,
+    IndexOrderPatch,
+    InfoOut,
+    OutBase,
+    ResourceCollectionOut,
+    ResourceCreateOut,
+    ResourceItemOut,
+    project_model,
+    project_model_list,
+    project_model_map,
+)
+
+__all__ = [
+    "ApiModel",
+    "OutBase",
+    "InfoOut",
+    "ComboBoxItem",
+    "ComboBoxOut",
+    "ResourceCollectionOut",
+    "ResourceItemOut",
+    "ResourceCreateOut",
+    "IndexOrderPatch",
+    "project_model",
+    "project_model_list",
+    "project_model_map",
+]

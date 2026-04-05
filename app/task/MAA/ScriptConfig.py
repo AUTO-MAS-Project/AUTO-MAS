@@ -31,7 +31,6 @@ from app.models import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
-from app.utils.constants import MAA_TASKS
 
 logger = get_logger("MAA 脚本设置")
 

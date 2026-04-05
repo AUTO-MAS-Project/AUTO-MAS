@@ -5,9 +5,9 @@ from typing import Literal
 from pydantic import Field
 
 from .common_contract import derive_config_contracts
-from .maa import MaaConfig as RuntimeMaaConfig
-from .maa import MaaPlanConfig as RuntimeMaaPlanConfig
-from .maa import MaaUserConfig as RuntimeMaaUserConfig
+from app.models.maa import MaaConfig as RuntimeMaaConfig
+from app.models.maa import MaaPlanConfig as RuntimeMaaPlanConfig
+from app.models.maa import MaaUserConfig as RuntimeMaaUserConfig
 
 
 _MaaConfigReadBase, _MaaConfigPatchBase = derive_config_contracts(

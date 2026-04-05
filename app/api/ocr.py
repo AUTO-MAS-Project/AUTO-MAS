@@ -30,7 +30,7 @@ from PIL import Image
 
 from app.utils.OCR.OCRtool import OCRTool
 from app.utils import get_logger
-from app.models.common_contract import ApiModel, OutBase
+from app.contracts.common_contract import ApiModel, OutBase
 from app.api.common import bind_api, error_out, run_api
 
 logger = get_logger("OCR API")

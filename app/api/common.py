@@ -7,7 +7,7 @@ from typing import Any, ParamSpec, TypeVar, cast
 
 from fastapi import APIRouter
 
-from app.models.common_contract import ComboBoxItem, ComboBoxOut, OutBase
+from app.contracts.common_contract import ComboBoxItem, ComboBoxOut, OutBase
 
 
 OutT = TypeVar("OutT", bound=OutBase)
@@ -122,7 +122,7 @@ def api_post(
 
 
 class ApiRegistrar:
-    """接近 FastAPI 原生声明风格的 API 装饰器注册器。"""
+    """API 装饰器注册器。"""
 
     def __init__(self, router: APIRouter):
         self.router = router

@@ -86,7 +86,7 @@ class WebSocketClient:
         self._last_ping = 0.0
         self._last_pong = 0.0
         self._reconnect_count = 0
-        self._tasks: list[asyncio.Task] = []
+        self._tasks: list[asyncio.Task[Any]] = []
         self._auth_token: Optional[str] = auth_token
 
     @property
@@ -128,7 +128,7 @@ class WebSocketClient:
             self.logger.error(f"WebSocket 连接失败: {type(e).__name__}: {e}")
             return False
 
-    async def disconnect(self):
+    async def disconnect(self) -> None:
         """断开 WebSocket 连接"""
         self._running = False
 
@@ -167,6 +167,10 @@ class WebSocketClient:
             self.logger.warning("WebSocket 未连接，无法发送消息")
             return False
 
+        if self._connection is None:
+            self.logger.warning("连接对象为空，无法发送消息")
+            return False
+
         try:
             await self._connection.send(json.dumps(message))
             return True
@@ -187,7 +191,7 @@ class WebSocketClient:
         await self.send(message)
         self.logger.debug("已发送 Pong")
 
-    async def _handle_message(self, raw_message: str):
+    async def _handle_message(self, raw_message: str) -> None:
         """
         处理接收到的消息
 
@@ -282,10 +286,16 @@ class WebSocketClient:
         """消息接收循环"""
         while self._running and self.is_connected:
             try:
+                conn = self._connection
+                if conn is None:
+                    break
                 message = await asyncio.wait_for(
-                    self._connection.recv(), timeout=self.ping_interval
+                    conn.recv(), timeout=self.ping_interval
                 )
-                await self._handle_message(message)
+                if isinstance(message, bytes):
+                    await self._handle_message(message.decode("utf-8", errors="ignore"))
+                else:
+                    await self._handle_message(message)
 
             except asyncio.TimeoutError:
                 # 接收超时，检查心跳状态
@@ -375,7 +385,7 @@ class WebSocketClient:
             self._tasks = [receive_task, heartbeat_task]
 
             # 等待任一任务结束
-            done, pending = await asyncio.wait(
+            _done, pending = await asyncio.wait(
                 self._tasks, return_when=asyncio.FIRST_COMPLETED
             )
 
@@ -439,7 +449,7 @@ class WebSocketClient:
         self._tasks = [receive_task, heartbeat_task]
 
         # 等待任一任务结束
-        done, pending = await asyncio.wait(
+        _done, pending = await asyncio.wait(
             self._tasks, return_when=asyncio.FIRST_COMPLETED
         )
 
@@ -494,7 +504,7 @@ class WSClientManager:
     def __init__(self):
         self._clients: Dict[str, WebSocketClient] = {}
         self._system_clients: set[str] = set()  # 系统客户端名称集合
-        self._tasks: Dict[str, asyncio.Task] = {}
+        self._tasks: Dict[str, asyncio.Task[Any]] = {}
         self._message_history: Dict[str, List[Dict[str, Any]]] = {}
         self._max_history_per_client = 200
         self._debug_connections: List[Any] = []  # WebSocket 连接列表
@@ -514,7 +524,7 @@ class WSClientManager:
 
     def list_clients(self) -> Dict[str, Dict[str, Any]]:
         """列出所有客户端及其状态"""
-        result = {}
+        result: Dict[str, Dict[str, Any]] = {}
         for name, client in self._clients.items():
             result[name] = {
                 "name": name,
@@ -727,7 +737,7 @@ class WSClientManager:
 
     async def _broadcast(self, data: Dict[str, Any]):
         """广播数据给所有调试前端"""
-        disconnected = []
+        disconnected: List[Any] = []
         for ws in self._debug_connections:
             try:
                 await ws.send_json(data)
@@ -818,7 +828,7 @@ class WSClientManager:
             return False
 
         ws_url = self.http_to_ws_url(http_url)
-        token = Config.get("Notify", "KoishiToken")
+        Config.get("Notify", "KoishiToken")
 
         self._logger.info(f"正在初始化 Koishi 系统客户端: {ws_url}")
 
@@ -844,7 +854,7 @@ class WSClientManager:
                 # 认证已在 on_connect 回调中自动处理
                 return True
             else:
-                self._logger.warning(f"Koishi 系统客户端连接失败，将在后台持续重连")
+                self._logger.warning("Koishi 系统客户端连接失败，将在后台持续重连")
                 return False
 
         except Exception as e:
@@ -860,7 +870,6 @@ class WSClientManager:
         Returns:
             bool: 是否成功更新
         """
-        from app.core import Config
 
         # 如果客户端存在，先断开
         if self.has_client(self.KOISHI_CLIENT_NAME):
@@ -885,7 +894,15 @@ async def create_ws_client(
     port: int = 5140,
     path: str = "/ws",
     use_ssl: bool = False,
-    **kwargs,
+    ping_interval: float = 15.0,
+    ping_timeout: float = 30.0,
+    reconnect_interval: float = 5.0,
+    max_reconnect_attempts: int = -1,
+    on_message: Optional[Callable[[Dict[str, Any]], Any]] = None,
+    on_connect: Optional[Callable[[], Any]] = None,
+    on_disconnect: Optional[Callable[[], Any]] = None,
+    name: Optional[str] = None,
+    auth_token: Optional[str] = None,
 ) -> WebSocketClient:
     """
     创建 WebSocket 客户端实例
@@ -895,14 +912,33 @@ async def create_ws_client(
         port: 服务器端口
         path: WebSocket 路径
         use_ssl: 是否使用 SSL
-        **kwargs: 传递给 WebSocketClient 的其他参数
+        ping_interval: 心跳间隔
+        ping_timeout: 心跳超时
+        reconnect_interval: 重连间隔
+        max_reconnect_attempts: 最大重连次数
+        on_message: 收到消息回调
+        on_connect: 连接成功回调
+        on_disconnect: 断开连接回调
+        name: 客户端名称
+        auth_token: 认证 token
 
     Returns:
         WebSocketClient: 客户端实例
     """
     protocol = "wss" if use_ssl else "ws"
     url = f"{protocol}://{host}:{port}{path}"
-    return WebSocketClient(url=url, **kwargs)
+    return WebSocketClient(
+        url=url,
+        ping_interval=ping_interval,
+        ping_timeout=ping_timeout,
+        reconnect_interval=reconnect_interval,
+        max_reconnect_attempts=max_reconnect_attempts,
+        on_message=on_message,
+        on_connect=on_connect,
+        on_disconnect=on_disconnect,
+        name=name,
+        auth_token=auth_token,
+    )
 
 
 # 使用示例
@@ -931,7 +967,9 @@ async def _example():
         # 等待客户端连接成功
         while not client1.is_connected:
             await asyncio.sleep(0.1)
-        await client1._authenticate(token="123456")
+        await client1.send(
+            {"id": "Client", "type": "auth", "data": {"token": "123456"}}
+        )
 
         # 发送测试消息
         for i in range(5):
@@ -945,7 +983,7 @@ async def _example():
             if success:
                 print(f"[发送成功] -> Server1: {message}")
             else:
-                print(f"[发送失败] -> Server1")
+                print("[发送失败] -> Server1")
 
             await asyncio.sleep(3)  # 每3秒发送一次
 

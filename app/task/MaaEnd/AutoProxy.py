@@ -34,7 +34,7 @@ from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager, skland_sign_in
 from app.utils.constants import UTC4, UTC8, MAAEND_KILLPROC_TASK
 from .tools import login, parse_log, push_notification, wait_and_focus_window
-from .ScriptConfig import CONFIG_FILE_NAME, _keep_single_instance, _replace_config_dir
+from .ScriptConfig import CONFIG_FILE_NAME, keep_single_instance, replace_config_dir
 
 logger = get_logger("MaaEnd 自动代理")
 
@@ -372,10 +372,10 @@ class AutoProxyTask(TaskExecuteBase):
 
         source_config_file = source_config_path / CONFIG_FILE_NAME
         if source_config_file.exists():
-            _keep_single_instance(source_config_file)
-        _replace_config_dir(source_config_path, self.maaend_set_path)
+            keep_single_instance(source_config_file)
+        replace_config_dir(source_config_path, self.maaend_set_path)
 
-        maaend_set, maaend_instance = _keep_single_instance(
+        maaend_set, maaend_instance = keep_single_instance(
             self.maaend_set_path / CONFIG_FILE_NAME
         )
         maaend_tasks = maaend_instance["tasks"]

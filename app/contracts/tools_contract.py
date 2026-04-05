@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .common_contract import ResourceItemOut, derive_config_contracts
-from .global_config import ToolsConfig
+from app.models.global_config import ToolsConfig
 
 
 _ToolsConfigReadBase, _ToolsConfigPatchBase = derive_config_contracts(

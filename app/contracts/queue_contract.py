@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from .common import QueueConfig, QueueItem, TimeSet
+from app.models.common import QueueConfig, QueueItem, TimeSet
 from .common_contract import (
     ApiModel,
     ResourceCollectionOut,
