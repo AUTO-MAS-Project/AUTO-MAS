@@ -21,10 +21,6 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .MAA import MaaManager
-from .MaaEnd import MaaEndManager
-from .SRC import SrcManager
-from .M9A import M9AManager
-from .general import GeneralManager
+from .notify import push_notification
 
-__all__ = ["MaaManager", "SrcManager", "M9AManager", "GeneralManager", "MaaEndManager"]
+__all__ = ["push_notification"]
