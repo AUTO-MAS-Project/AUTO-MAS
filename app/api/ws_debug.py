@@ -50,7 +50,7 @@ from app.contracts.ws_contract import (
     WSClearHistoryIn,
     WSCommandsOut,
 )
-from app.api.common import bind_api, run_api
+from app.api.common import RECOVERABLE_EXCEPTIONS, bind_api, run_api
 
 logger = get_logger("WS调试")
 
@@ -505,7 +505,7 @@ async def websocket_live(websocket: WebSocket):
                     await websocket.send_text("pong")
             except WebSocketDisconnect:
                 break
-            except Exception as e:
+            except RECOVERABLE_EXCEPTIONS as e:
                 logger.error(f"WebSocket 错误: {e}")
                 break
 

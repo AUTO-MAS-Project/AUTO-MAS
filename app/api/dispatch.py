@@ -33,7 +33,7 @@ from app.contracts.dispatch_contract import (
     TaskCreateIn,
     TaskCreateOut,
 )
-from app.api.common import bind_api, error_out
+from app.api.common import RECOVERABLE_EXCEPTIONS, bind_api, error_out
 
 router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
 api = bind_api(router)
@@ -48,7 +48,7 @@ api = bind_api(router)
 async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
     try:
         task_id = await TaskManager.add_task(task.mode, task.taskId)
-    except Exception as e:
+    except RECOVERABLE_EXCEPTIONS as e:
         return error_out(TaskCreateOut, e, taskId="")
     return TaskCreateOut(taskId=str(task_id))
 
@@ -62,7 +62,7 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
 async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
     try:
         await TaskManager.stop_task(task.taskId)
-    except Exception as e:
+    except RECOVERABLE_EXCEPTIONS as e:
         return error_out(OutBase, e)
     return OutBase()
 
@@ -76,7 +76,7 @@ async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
 async def get_power() -> PowerOut:
     try:
         signal = Config.power_sign
-    except Exception as e:
+    except RECOVERABLE_EXCEPTIONS as e:
         return error_out(PowerOut, e, signal="NoAction")
     return PowerOut(signal=signal)
 
@@ -90,7 +90,7 @@ async def get_power() -> PowerOut:
 async def set_power(task: PowerIn = Body(...)) -> OutBase:
     try:
         Config.power_sign = task.signal
-    except Exception as e:
+    except RECOVERABLE_EXCEPTIONS as e:
         return error_out(OutBase, e)
     return OutBase()
 
@@ -104,6 +104,6 @@ async def set_power(task: PowerIn = Body(...)) -> OutBase:
 async def cancel_power_task() -> OutBase:
     try:
         await System.cancel_power_task()
-    except Exception as e:
+    except RECOVERABLE_EXCEPTIONS as e:
         return error_out(OutBase, e)
     return OutBase()

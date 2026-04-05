@@ -14,6 +14,7 @@ from pydantic import AliasChoices, AliasPath, BaseModel, ConfigDict, PrivateAttr
 from .base import (
     MultipleConfig,
     MultipleConfigDeleteEvent,
+    atomic_write_text,
     backup_legacy_config_if_needed,
     dump_toml,
     load_config_with_legacy_migration,
@@ -201,6 +202,7 @@ class PydanticConfigBase(BaseModel):
     )
     _owner_collection: MultipleConfig[Any] | None = PrivateAttr(default=None)
     _owner_uid: uuid.UUID | None = PrivateAttr(default=None)
+    _mutex: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
 
     @property
     def file(self) -> Path | None:
@@ -463,16 +465,19 @@ class PydanticConfigBase(BaseModel):
 
         if self._pending_save and self._file:
             self._pending_save = False
-            self._file.parent.mkdir(parents=True, exist_ok=True)
-            self._file.write_text(
-                dump_toml(await self.toDict(if_decrypt=False)),
-                encoding="utf-8",
-            )
+            await self._save_unlocked()
 
         if self._pending_sync:
             self._pending_sync = False
             if self._save_methods:
                 await asyncio.gather(*(_() for _ in self._save_methods))
+
+    async def _save_unlocked(self) -> None:
+        if not self._file:
+            raise ValueError("文件路径未设置, 请先调用 `connect` 方法连接配置文件")
+
+        content = dump_toml(await self.toDict(if_decrypt=False))
+        atomic_write_text(self._file, content)
 
     async def connect(self, path: Path) -> None:
         if path.suffix != ".toml":
@@ -500,65 +505,67 @@ class PydanticConfigBase(BaseModel):
             await sub_config.add_save_method(save_method)
 
     async def load(self, data: dict[str, Any]) -> None:
-        if self._is_locked:
-            raise ValueError("配置已锁定, 无法修改")
+        async with self._mutex:
+            if self._is_locked:
+                raise ValueError("配置已锁定, 无法修改")
 
-        raw: dict[str, Any] = dict(data)
+            raw: dict[str, Any] = dict(data)
 
-        sub_configs = _normalize_mapping(raw.pop("SubConfigsInfo", {}))
+            sub_configs = _normalize_mapping(raw.pop("SubConfigsInfo", {}))
 
-        for name, sub_config in self._multiple_config_index().items():
-            data_for_sub = sub_configs.get(name)
-            if isinstance(data_for_sub, dict):
-                await sub_config.load(_normalize_mapping(data_for_sub))
+            for name, sub_config in self._multiple_config_index().items():
+                data_for_sub = sub_configs.get(name)
+                if isinstance(data_for_sub, dict):
+                    await sub_config.load(_normalize_mapping(data_for_sub))
 
-        for group_name, group_model in self._group_index().items():
-            group_data = _normalize_mapping(raw.get(group_name, {}))
+            for group_name, group_model in self._group_index().items():
+                group_data = _normalize_mapping(raw.get(group_name, {}))
 
-            default_group = type(group_model)()
-            for field_name in list(type(group_model).model_fields.keys()):
-                if self._get_virtual_field(group_name, field_name) is not None:
-                    continue
+                for field_name in list(type(group_model).model_fields.keys()):
+                    if self._get_virtual_field(group_name, field_name) is not None:
+                        continue
 
-                candidate: Any = None
-                has_value = False
+                    candidate: Any = None
+                    has_value = False
 
-                if field_name in group_data:
-                    candidate = group_data[field_name]
-                    has_value = True
-                else:
-                    field_info = type(group_model).model_fields.get(field_name)
-                    if field_info is not None:
-                        candidate, has_value = _try_resolve_alias_value(
-                            raw,
-                            group_name,
-                            group_data,
-                            field_info.validation_alias,
-                        )
+                    if field_name in group_data:
+                        candidate = group_data[field_name]
+                        has_value = True
+                    else:
+                        field_info = type(group_model).model_fields.get(field_name)
+                        if field_info is not None:
+                            candidate, has_value = _try_resolve_alias_value(
+                                raw,
+                                group_name,
+                                group_data,
+                                field_info.validation_alias,
+                            )
 
-                if not has_value:
-                    legacy = self.LEGACY_FIELD_MAP.get((group_name, field_name))
-                    if legacy is not None:
-                        legacy_group, legacy_name = legacy
-                        legacy_data = _normalize_mapping(raw.get(legacy_group, {}))
-                        if legacy_name in legacy_data:
-                            candidate = legacy_data[legacy_name]
-                            has_value = True
+                    if not has_value:
+                        legacy = self.LEGACY_FIELD_MAP.get((group_name, field_name))
+                        if legacy is not None:
+                            legacy_group, legacy_name = legacy
+                            legacy_data = _normalize_mapping(raw.get(legacy_group, {}))
+                            if legacy_name in legacy_data:
+                                candidate = legacy_data[legacy_name]
+                                has_value = True
 
-                if not has_value:
-                    continue
+                    if not has_value:
+                        continue
 
-                candidate = self._normalize_value(group_name, field_name, candidate)
-                try:
-                    setattr(group_model, field_name, candidate)
-                except Exception:
-                    setattr(group_model, field_name, getattr(default_group, field_name))
+                    candidate = self._normalize_value(group_name, field_name, candidate)
+                    try:
+                        setattr(group_model, field_name, candidate)
+                    except (TypeError, ValueError) as e:
+                        raise ValueError(
+                            f"加载配置项失败: {group_name}.{field_name}={candidate!r}"
+                        ) from e
 
-        if self._file:
-            await self.save()
+            if self._file:
+                await self._save_unlocked()
 
-        if self._save_methods:
-            await asyncio.gather(*(_() for _ in self._save_methods))
+            if self._save_methods:
+                await asyncio.gather(*(_() for _ in self._save_methods))
 
     async def toDict(
         self, if_decrypt: bool = True, regenerate_uuids: bool = False
@@ -594,56 +601,56 @@ class PydanticConfigBase(BaseModel):
         return value
 
     async def set(self, group: str, name: str, value: Any) -> None:
-        group_model = self._group_index().get(group)
-        if group_model is None or not hasattr(group_model, name):
-            raise AttributeError(f"配置项 '{group}.{name}' 不存在")
+        async with self._mutex:
+            group_model = self._group_index().get(group)
+            if group_model is None or not hasattr(group_model, name):
+                raise AttributeError(f"配置项 '{group}.{name}' 不存在")
 
-        if self._is_locked:
-            raise ValueError("配置已锁定, 无法修改")
+            if self._is_locked:
+                raise ValueError("配置已锁定, 无法修改")
 
-        virtual_field = self._get_virtual_field(group, name)
-        if virtual_field is not None:
-            await self._set_virtual_value(group, name, value)
-            return
+            virtual_field = self._get_virtual_field(group, name)
+            if virtual_field is not None:
+                await self._set_virtual_value(group, name, value)
+                return
 
-        old_value = getattr(group_model, name)
-        virtual_old_values = {
-            (virtual_group, virtual_name): self._get_virtual_value(
-                virtual_group, virtual_name, virtual_field
-            )
-            for virtual_group, virtual_name, virtual_field in self._iter_virtual_dependents(
-                (group, name)
-            )
-        }
-        value = self._normalize_value(group, name, value)
-
-        default_group = type(group_model)()
-        try:
-            setattr(group_model, name, value)
-        except Exception:
-            setattr(group_model, name, getattr(default_group, name))
-
-        new_value = getattr(group_model, name)
-        if old_value != new_value:
-            await self._queue_binding(group, name, new_value)
-
-        for (
-            virtual_group,
-            virtual_name,
-        ), old_virtual_value in virtual_old_values.items():
-            new_virtual_value = self.get(virtual_group, virtual_name)
-            if old_virtual_value != new_virtual_value:
-                await self._queue_binding(
-                    virtual_group, virtual_name, new_virtual_value
+            old_value = getattr(group_model, name)
+            virtual_old_values = {
+                (virtual_group, virtual_name): self._get_virtual_value(
+                    virtual_group, virtual_name, virtual_field
                 )
+                for virtual_group, virtual_name, virtual_field in self._iter_virtual_dependents(
+                    (group, name)
+                )
+            }
+            value = self._normalize_value(group, name, value)
 
-        if self._file:
-            await self.save()
+            try:
+                setattr(group_model, name, value)
+            except (TypeError, ValueError) as e:
+                raise ValueError(f"设置配置项失败: {group}.{name}={value!r}") from e
 
-        if self._transaction_depth > 0:
-            self._pending_sync = self._pending_sync or bool(self._save_methods)
-        elif self._save_methods:
-            await asyncio.gather(*(_() for _ in self._save_methods))
+            new_value = getattr(group_model, name)
+            if old_value != new_value:
+                await self._queue_binding(group, name, new_value)
+
+            for (
+                virtual_group,
+                virtual_name,
+            ), old_virtual_value in virtual_old_values.items():
+                new_virtual_value = self.get(virtual_group, virtual_name)
+                if old_virtual_value != new_virtual_value:
+                    await self._queue_binding(
+                        virtual_group, virtual_name, new_virtual_value
+                    )
+
+            if self._file:
+                await self._save_unlocked()
+
+            if self._transaction_depth > 0:
+                self._pending_sync = self._pending_sync or bool(self._save_methods)
+            elif self._save_methods:
+                await asyncio.gather(*(_() for _ in self._save_methods))
 
     async def set_many(self, values: dict[str, dict[str, Any]]) -> None:
         """批量更新多个配置项。"""
@@ -697,11 +704,8 @@ class PydanticConfigBase(BaseModel):
             self._pending_save = True
             return
 
-        self._file.parent.mkdir(parents=True, exist_ok=True)
-        self._file.write_text(
-            dump_toml(await self.toDict(if_decrypt=False)),
-            encoding="utf-8",
-        )
+        async with self._mutex:
+            await self._save_unlocked()
 
     async def lock(self) -> None:
         self._is_locked = True

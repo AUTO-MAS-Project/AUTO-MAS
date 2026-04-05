@@ -29,14 +29,19 @@ import json
 import tomllib
 import uuid
 import weakref
+import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import AsyncIterator, Callable, Coroutine
 from typing import Any, Generic, Protocol, TypeVar, cast
+from importlib import import_module
 
-import tomli_w  # pyright: ignore[reportMissingImports]
 from loguru import logger
+from filelock import FileLock, Timeout
+
+
+tomli_w = import_module("tomli_w")
 
 
 PRIMARY_CONFIG_SUFFIX = ".toml"
@@ -61,6 +66,44 @@ def dump_toml(data: dict[str, Any]) -> str:
     except (TypeError, ValueError) as e:
         logger.error(f"TOML 序列化失败: {e}, 数据类型: {type(data)}")
         raise
+
+
+def atomic_write_text(path: Path, content: str, encoding: str = "utf-8") -> None:
+    """原子写入文本文件，使用跨进程文件锁 + 写后校验。"""
+
+    temp_file = path.with_suffix(f"{path.suffix}.tmp")
+    lock_file = path.with_suffix(f"{path.suffix}.lock")
+    file_lock = FileLock(str(lock_file), timeout=10)
+    try:
+        with file_lock:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temp_file.write_text(content, encoding=encoding)
+
+            verify_content = temp_file.read_text(encoding=encoding)
+            if verify_content != content:
+                raise OSError(f"配置写入校验失败: {path}")
+
+            if os.name == "nt" and path.exists():
+                backup_file = path.with_suffix(f"{path.suffix}.bak")
+                try:
+                    path.replace(backup_file)
+                except OSError as backup_error:
+                    logger.warning(
+                        f"旧配置备份失败，尝试直接覆盖: {path}, 错误: {backup_error}"
+                    )
+
+            temp_file.replace(path)
+    except Timeout as e:
+        logger.error(f"获取配置文件锁超时: {path}, 错误: {e}")
+        raise
+    finally:
+        if temp_file.exists():
+            try:
+                temp_file.unlink()
+            except OSError as cleanup_error:
+                logger.warning(
+                    f"清理临时配置文件失败: {temp_file}, 错误: {cleanup_error}"
+                )
 
 
 def _load_json_config(path: Path) -> dict[str, Any]:
@@ -89,8 +132,8 @@ def _load_json_config(path: Path) -> dict[str, Any]:
     except json.JSONDecodeError as e:
         logger.error(f"JSON 解析失败: {path}, 错误: {e}")
         return {}
-    except Exception:
-        logger.exception(f"加载配置文件失败: {path}")
+    except OSError as e:
+        logger.error(f"读取 JSON 配置失败: {path}, 错误: {e}")
         return {}
 
 
@@ -116,8 +159,8 @@ def _load_toml_config(path: Path) -> dict[str, Any]:
     except tomllib.TOMLDecodeError as e:
         logger.error(f"TOML 解析失败: {path}, 错误: {e}")
         return {}
-    except Exception:
-        logger.exception(f"加载配置文件失败: {path}")
+    except OSError as e:
+        logger.error(f"读取 TOML 配置失败: {path}, 错误: {e}")
         return {}
 
 
@@ -186,7 +229,7 @@ def _backup_legacy_config_if_needed(
         try:
             legacy_file.replace(legacy_backup)
             logger.info(f"已备份旧版配置: {legacy_file} -> {legacy_backup}")
-        except Exception as e:
+        except OSError as e:
             logger.error(f"备份旧版配置失败: {legacy_file}, 错误: {e}")
 
 
@@ -342,6 +385,7 @@ class MultipleConfig(Generic[T]):
         self._on_before_del_slots: list[_WeakCallbackSlot] = []
         self._on_del_slots: list[_WeakCallbackSlot] = []
         self._on_reorder_slots: list[_WeakCallbackSlot] = []
+        self._mutex = asyncio.Lock()
 
     def __getitem__(self, key: uuid.UUID) -> T:
         if key not in self.data:
@@ -381,23 +425,24 @@ class MultipleConfig(Generic[T]):
         if self.is_locked:
             raise ValueError("配置已锁定，无法修改")
 
-        logger.info(f"连接配置文件: {path}")
-        self.file = path
+        async with self._mutex:
+            logger.info(f"连接配置文件: {path}")
+            self.file = path
 
-        if not self.file.exists():
-            self.file.parent.mkdir(parents=True, exist_ok=True)
-            self.file.touch()
-            logger.debug(f"创建新配置文件: {self.file}")
+            if not self.file.exists():
+                self.file.parent.mkdir(parents=True, exist_ok=True)
+                self.file.touch()
+                logger.debug(f"创建新配置文件: {self.file}")
 
-        try:
-            data, legacy_file = _load_config_with_legacy_migration(self.file)
-            await self.load(data)
-            await self.add_save_method(self.save)
-            _backup_legacy_config_if_needed(self.file, legacy_file)
-            logger.info(f"配置加载成功: {path}, 项目数: {len(self.data)}")
-        except Exception:
-            logger.exception(f"配置加载失败: {path}")
-            raise
+            try:
+                data, legacy_file = _load_config_with_legacy_migration(self.file)
+                await self.load(data)
+                await self.add_save_method(self.save)
+                _backup_legacy_config_if_needed(self.file, legacy_file)
+                logger.info(f"配置加载成功: {path}, 项目数: {len(self.data)}")
+            except (OSError, ValueError, TypeError) as e:
+                logger.error(f"配置加载失败: {path}, 错误: {e}")
+                raise
 
     async def add_save_method(
         self, save_method: Callable[[], Coroutine[Any, Any, None]]
@@ -427,64 +472,71 @@ class MultipleConfig(Generic[T]):
 
         if self._pending_save and self.file:
             self._pending_save = False
-            self.file.parent.mkdir(parents=True, exist_ok=True)
-            self.file.write_text(
-                dump_toml(await self.toDict(if_decrypt=False)),
-                encoding="utf-8",
-            )
+            await self._save_unlocked()
 
         if self._pending_sync:
             self._pending_sync = False
             if self._save_methods:
                 await asyncio.gather(*(_() for _ in self._save_methods))
 
+    async def _save_unlocked(self) -> None:
+        """在已持有互斥锁时保存配置。"""
+
+        if not self.file:
+            raise ValueError("文件路径未设置，请先调用 connect() 方法")
+
+        content = dump_toml(await self.toDict(if_decrypt=False))
+        atomic_write_text(self.file, content)
+        logger.debug(f"配置保存成功: {self.file}, 大小: {len(content)} 字节")
+
     async def load(self, data: dict[str, Any]) -> None:
         """从字典加载多实例配置数据。"""
 
-        if self.is_locked:
-            raise ValueError("配置已锁定, 无法修改")
+        async with self._mutex:
+            if self.is_locked:
+                raise ValueError("配置已锁定, 无法修改")
 
-        self.order = []
-        self.data = {}
+            self.order = []
+            self.data = {}
 
-        instances = data.get("instances")
-        if not isinstance(instances, list):
-            return
-        instances_list = cast(list[object], instances)
+            instances = data.get("instances")
+            if not isinstance(instances, list):
+                return
+            instances_list = cast(list[object], instances)
 
-        for instance in instances_list:
-            if not isinstance(instance, dict):
-                continue
-            instance_dict = cast(dict[object, Any], instance)
+            for instance in instances_list:
+                if not isinstance(instance, dict):
+                    continue
+                instance_dict = cast(dict[object, Any], instance)
 
-            uid_str = instance_dict.get("uid")
-            type_name = instance_dict.get("type")
-            if not isinstance(uid_str, str) or not isinstance(type_name, str):
-                continue
-            if type_name not in self.sub_config_type:
-                continue
+                uid_str = instance_dict.get("uid")
+                type_name = instance_dict.get("type")
+                if not isinstance(uid_str, str) or not isinstance(type_name, str):
+                    continue
+                if type_name not in self.sub_config_type:
+                    continue
 
-            instance_data = data.get(uid_str)
-            if not isinstance(instance_data, dict):
-                continue
-            instance_data_dict = cast(dict[str, Any], instance_data)
+                instance_data = data.get(uid_str)
+                if not isinstance(instance_data, dict):
+                    continue
+                instance_data_dict = cast(dict[str, Any], instance_data)
 
-            try:
-                uid = uuid.UUID(uid_str)
-            except (TypeError, ValueError):
-                continue
+                try:
+                    uid = uuid.UUID(uid_str)
+                except (TypeError, ValueError):
+                    continue
 
-            config = self.sub_config_type[type_name]()
-            config.bind_owner_collection(self, uid)
-            self.order.append(uid)
-            self.data[uid] = config
-            await config.load(instance_data_dict)
+                config = self.sub_config_type[type_name]()
+                config.bind_owner_collection(self, uid)
+                self.order.append(uid)
+                self.data[uid] = config
+                await config.load(instance_data_dict)
 
-        if self.file:
-            await self.save()
+            if self.file:
+                await self._save_unlocked()
 
-        if self._save_methods:
-            await asyncio.gather(*(_() for _ in self._save_methods))
+            if self._save_methods:
+                await asyncio.gather(*(_() for _ in self._save_methods))
 
     async def toDict(
         self, if_decrypt: bool = True, regenerate_uuids: bool = False
@@ -543,19 +595,12 @@ class MultipleConfig(Generic[T]):
             logger.debug(f"事务中，延迟保存: {self.file}")
             return
 
-        try:
-            self.file.parent.mkdir(parents=True, exist_ok=True)
-            content = dump_toml(await self.toDict(if_decrypt=False))
-
-            # 原子写入：先写临时文件，再替换
-            temp_file = self.file.with_suffix(f"{self.file.suffix}.tmp")
-            temp_file.write_text(content, encoding="utf-8")
-            temp_file.replace(self.file)
-
-            logger.debug(f"配置保存成功: {self.file}, 大小: {len(content)} 字节")
-        except Exception:
-            logger.exception(f"配置保存失败: {self.file}")
-            raise
+        async with self._mutex:
+            try:
+                await self._save_unlocked()
+            except (OSError, ValueError, TypeError) as e:
+                logger.error(f"配置保存失败: {self.file}, 错误: {e}")
+                raise
 
     async def add(self, config_type: type[T]) -> tuple[uuid.UUID, T]:
         """
@@ -570,36 +615,37 @@ class MultipleConfig(Generic[T]):
         Raises:
             ValueError: 如果配置类型不被允许或配置已锁定
         """
-        if config_type not in self.sub_config_type.values():
-            raise ValueError(f"配置类型 {config_type.__name__} 不被允许")
-        if self.is_locked:
-            raise ValueError("配置已锁定，无法修改")
+        async with self._mutex:
+            if config_type not in self.sub_config_type.values():
+                raise ValueError(f"配置类型 {config_type.__name__} 不被允许")
+            if self.is_locked:
+                raise ValueError("配置已锁定，无法修改")
 
-        uid = uuid.uuid4()
-        config = config_type()
-        config.bind_owner_collection(self, uid)
-        self.order.append(uid)
-        self.data[uid] = config
+            uid = uuid.uuid4()
+            config = config_type()
+            config.bind_owner_collection(self, uid)
+            self.order.append(uid)
+            self.data[uid] = config
 
-        logger.info(f"新增配置: {config_type.__name__}, UID: {uid}")
+            logger.info(f"新增配置: {config_type.__name__}, UID: {uid}")
 
-        for save_method in self._save_methods:
-            await config.add_save_method(save_method)
+            for save_method in self._save_methods:
+                await config.add_save_method(save_method)
 
-        if self.file:
-            await config.add_save_method(self.save)
-            await self.save()
+            if self.file:
+                await config.add_save_method(self.save)
+                await self._save_unlocked()
 
-        if self._transaction_depth > 0:
-            self._pending_sync = self._pending_sync or bool(self._save_methods)
-        elif self._save_methods:
-            await asyncio.gather(*(_() for _ in self._save_methods))
+            if self._transaction_depth > 0:
+                self._pending_sync = self._pending_sync or bool(self._save_methods)
+            elif self._save_methods:
+                await asyncio.gather(*(_() for _ in self._save_methods))
 
-        await _emit_collection_slots(
-            self._on_add_slots, MultipleConfigAddEvent(self, uid, config)
-        )
+            await _emit_collection_slots(
+                self._on_add_slots, MultipleConfigAddEvent(self, uid, config)
+            )
 
-        return uid, config
+            return uid, config
 
     async def remove(self, uid: uuid.UUID) -> None:
         """
@@ -611,56 +657,58 @@ class MultipleConfig(Generic[T]):
         Raises:
             ValueError: 如果配置不存在、已锁定或父容器已锁定
         """
-        if self.is_locked:
-            raise ValueError("配置已锁定，无法修改")
-        if uid not in self.data:
-            raise ValueError(f"配置项 '{uid}' 不存在")
-        if self.data[uid].is_locked:
-            raise ValueError(f"配置项 '{uid}' 已锁定，无法移除")
+        async with self._mutex:
+            if self.is_locked:
+                raise ValueError("配置已锁定，无法修改")
+            if uid not in self.data:
+                raise ValueError(f"配置项 '{uid}' 不存在")
+            if self.data[uid].is_locked:
+                raise ValueError(f"配置项 '{uid}' 已锁定，无法移除")
 
-        config = self.data[uid]
-        logger.info(f"移除配置: {type(config).__name__}, UID: {uid}")
+            config = self.data[uid]
+            logger.info(f"移除配置: {type(config).__name__}, UID: {uid}")
 
-        await _emit_collection_slots(
-            self._on_before_del_slots, MultipleConfigDeleteEvent(self, uid, config)
-        )
+            await _emit_collection_slots(
+                self._on_before_del_slots, MultipleConfigDeleteEvent(self, uid, config)
+            )
 
-        self.data.pop(uid)
-        self.order.remove(uid)
+            self.data.pop(uid)
+            self.order.remove(uid)
 
-        if self.file:
-            await self.save()
+            if self.file:
+                await self._save_unlocked()
 
-        if self._transaction_depth > 0:
-            self._pending_sync = self._pending_sync or bool(self._save_methods)
-        elif self._save_methods:
-            await asyncio.gather(*(_() for _ in self._save_methods))
+            if self._transaction_depth > 0:
+                self._pending_sync = self._pending_sync or bool(self._save_methods)
+            elif self._save_methods:
+                await asyncio.gather(*(_() for _ in self._save_methods))
 
-        await _emit_collection_slots(
-            self._on_del_slots, MultipleConfigDeleteEvent(self, uid, config)
-        )
+            await _emit_collection_slots(
+                self._on_del_slots, MultipleConfigDeleteEvent(self, uid, config)
+            )
 
     async def setOrder(self, order: list[uuid.UUID]) -> None:  # noqa: N802
         """设置子配置实例顺序。"""
 
-        if set(order) != set(self.data.keys()):
-            raise ValueError("顺序与当前配置项不匹配")
-        if self.is_locked:
-            raise ValueError("配置已锁定, 无法修改")
+        async with self._mutex:
+            if set(order) != set(self.data.keys()):
+                raise ValueError("顺序与当前配置项不匹配")
+            if self.is_locked:
+                raise ValueError("配置已锁定, 无法修改")
 
-        self.order = order
+            self.order = order
 
-        if self.file:
-            await self.save()
+            if self.file:
+                await self._save_unlocked()
 
-        if self._transaction_depth > 0:
-            self._pending_sync = self._pending_sync or bool(self._save_methods)
-        elif self._save_methods:
-            await asyncio.gather(*(_() for _ in self._save_methods))
+            if self._transaction_depth > 0:
+                self._pending_sync = self._pending_sync or bool(self._save_methods)
+            elif self._save_methods:
+                await asyncio.gather(*(_() for _ in self._save_methods))
 
-        await _emit_collection_slots(
-            self._on_reorder_slots, MultipleConfigReorderEvent(self, list(order))
-        )
+            await _emit_collection_slots(
+                self._on_reorder_slots, MultipleConfigReorderEvent(self, list(order))
+            )
 
     async def lock(self) -> None:
         """锁定当前管理器及全部子配置。"""

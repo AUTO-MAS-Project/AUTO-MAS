@@ -24,12 +24,33 @@
 import time
 import asyncio
 import json
-from typing import Optional, Callable, Any, Dict, List
+from collections import deque
+from typing import Optional, Callable, Any, Dict, Deque
 
 from websockets.asyncio.client import connect, ClientConnection
 from websockets.exceptions import ConnectionClosed
+from tenacity import (
+    AsyncRetrying,
+    RetryCallState,
+    retry_if_exception_type,
+    stop_after_attempt,
+    stop_never,
+    wait_exponential,
+)
 
 from app.utils.logger import get_logger
+
+
+_retry_logger = get_logger("WS重连")
+
+
+def _log_ws_retry_before_sleep(retry_state: RetryCallState) -> None:
+    """输出 WebSocket 重连重试日志。"""
+
+    attempt = retry_state.attempt_number
+    reason = retry_state.outcome.exception() if retry_state.outcome else None
+    _retry_logger.warning(f"连接失败，准备第 {attempt + 1} 次重试，原因: {reason}")
+
 
 # ============== WebSocket 客户端实例 ==============
 
@@ -85,7 +106,6 @@ class WebSocketClient:
         self._running = False
         self._last_ping = 0.0
         self._last_pong = 0.0
-        self._reconnect_count = 0
         self._tasks: list[asyncio.Task[Any]] = []
         self._auth_token: Optional[str] = auth_token
 
@@ -109,7 +129,6 @@ class WebSocketClient:
             )
             self._last_ping = time.monotonic()
             self._last_pong = time.monotonic()
-            self._reconnect_count = 0
 
             self.logger.info(f"WebSocket 连接成功: {self.url}")
 
@@ -337,47 +356,44 @@ class WebSocketClient:
                 self.logger.error(f"心跳循环异常: {type(e).__name__}: {e}")
                 break
 
-    def _get_backoff_delay(self) -> float:
-        """
-        计算指数退避延迟时间
+    async def _connect_or_raise(self) -> None:
+        """建立连接，失败时抛出异常以触发 tenacity 重试。"""
 
-        Returns:
-            float: 延迟时间（秒），最大60秒
-        """
-        # 指数退避: base_interval * 2^(reconnect_count - 1)
-        delay = self.reconnect_interval * (2 ** (self._reconnect_count - 1))
-        # 限制最大延迟为60秒
-        return min(delay, 60.0)
+        connected = await self.connect()
+        if not connected:
+            raise ConnectionError(f"连接失败: {self.url}")
 
     async def run(self):
         """
-        运行 WebSocket 客户端（包含自动重连，使用指数退避策略）
+        运行 WebSocket 客户端（包含自动重连，使用 tenacity 退避策略）
         """
         self._running = True
 
         while self._running:
-            # 尝试连接
-            if not await self.connect():
-                self._reconnect_count += 1
+            retry_stop = (
+                stop_never
+                if self.max_reconnect_attempts == -1
+                else stop_after_attempt(self.max_reconnect_attempts)
+            )
+            connected = False
+            async for attempt in AsyncRetrying(
+                stop=retry_stop,
+                wait=wait_exponential(
+                    multiplier=self.reconnect_interval,
+                    min=self.reconnect_interval,
+                    max=60,
+                ),
+                retry=retry_if_exception_type(ConnectionError),
+                before_sleep=_log_ws_retry_before_sleep,
+                reraise=False,
+            ):
+                with attempt:
+                    await self._connect_or_raise()
+                    connected = True
 
-                if (
-                    self.max_reconnect_attempts != -1
-                    and self._reconnect_count > self.max_reconnect_attempts
-                ):
-                    self.logger.error(
-                        f"已达到最大重连次数 ({self.max_reconnect_attempts})，停止重连"
-                    )
-                    break
-
-                delay = self._get_backoff_delay()
-                self.logger.info(
-                    f"{delay:.1f}秒后尝试重连... (第 {self._reconnect_count} 次)"
-                )
-                await asyncio.sleep(delay)
-                continue
-
-            # 连接成功，重置重连计数
-            self._reconnect_count = 0
+            if not connected:
+                self.logger.error("连接重试已耗尽，停止客户端")
+                break
 
             # 启动接收和心跳任务
             receive_task = asyncio.create_task(self._receive_loop())
@@ -415,22 +431,7 @@ class WebSocketClient:
             # 检查是否需要重连
             if not self._running:
                 break
-
-            self._reconnect_count += 1
-            if (
-                self.max_reconnect_attempts != -1
-                and self._reconnect_count > self.max_reconnect_attempts
-            ):
-                self.logger.error(
-                    f"已达到最大重连次数 ({self.max_reconnect_attempts})，停止重连"
-                )
-                break
-
-            delay = self._get_backoff_delay()
-            self.logger.info(
-                f"{delay:.1f}秒后尝试重连... (第 {self._reconnect_count} 次)"
-            )
-            await asyncio.sleep(delay)
+            self.logger.info("连接中断，将按重试策略重新建立连接")
 
         self.logger.info("WebSocket 客户端已停止")
 
@@ -505,9 +506,9 @@ class WSClientManager:
         self._clients: Dict[str, WebSocketClient] = {}
         self._system_clients: set[str] = set()  # 系统客户端名称集合
         self._tasks: Dict[str, asyncio.Task[Any]] = {}
-        self._message_history: Dict[str, List[Dict[str, Any]]] = {}
+        self._message_history: Dict[str, Deque[Dict[str, Any]]] = {}
         self._max_history_per_client = 200
-        self._debug_connections: List[Any] = []  # WebSocket 连接列表
+        self._debug_connections: list[Any] = []  # WebSocket 连接列表
         self._logger = get_logger("WS管理器")
 
     def get_client(self, name: str) -> Optional[WebSocketClient]:
@@ -593,7 +594,7 @@ class WSClientManager:
         )
 
         self._clients[name] = client
-        self._message_history[name] = []
+        self._message_history[name] = deque(maxlen=self._max_history_per_client)
 
         self._logger.info(f"已创建 WebSocket 客户端: {name} -> {url}")
         return client
@@ -712,15 +713,11 @@ class WSClientManager:
     async def _record_message(self, name: str, direction: str, data: Dict[str, Any]):
         """记录消息"""
         if name not in self._message_history:
-            self._message_history[name] = []
+            self._message_history[name] = deque(maxlen=self._max_history_per_client)
 
         record = {"direction": direction, "timestamp": time.time(), "data": data}
 
         self._message_history[name].append(record)
-
-        # 限制历史记录数量
-        if len(self._message_history[name]) > self._max_history_per_client:
-            self._message_history[name].pop(0)
 
         # 广播给调试前端
         await self._broadcast_message(name, record)
@@ -737,7 +734,7 @@ class WSClientManager:
 
     async def _broadcast(self, data: Dict[str, Any]):
         """广播数据给所有调试前端"""
-        disconnected: List[Any] = []
+        disconnected: list[Any] = []
         for ws in self._debug_connections:
             try:
                 await ws.send_json(data)
@@ -768,20 +765,23 @@ class WSClientManager:
 
     def get_message_history(
         self, name: Optional[str] = None
-    ) -> Dict[str, List[Dict[str, Any]]]:
+    ) -> Dict[str, list[Dict[str, Any]]]:
         """获取消息历史"""
         if name:
-            return {name: self._message_history.get(name, [])}
-        return self._message_history.copy()
+            return {name: list(self._message_history.get(name, deque()))}
+        return {
+            client_name: list(records)
+            for client_name, records in self._message_history.items()
+        }
 
     def clear_message_history(self, name: Optional[str] = None):
         """清空消息历史"""
         if name:
             if name in self._message_history:
-                self._message_history[name] = []
+                self._message_history[name].clear()
         else:
             for key in self._message_history:
-                self._message_history[key] = []
+                self._message_history[key].clear()
 
     def add_debug_connection(self, ws: Any):
         """添加调试前端连接"""

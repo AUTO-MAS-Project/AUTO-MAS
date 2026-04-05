@@ -32,7 +32,7 @@ from app.services import System
 from app.contracts.common_contract import OutBase
 from app.models.shared import WebSocketMessage
 from app.api.ws_command import ws_command
-from app.api.common import bind_api, error_out
+from app.api.common import RECOVERABLE_EXCEPTIONS, bind_api, error_out
 from app.utils import get_logger
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])
@@ -112,6 +112,6 @@ async def close() -> OutBase:
         if Config.websocket is not None:
             await Config.websocket.close(code=1000, reason="正常关闭")
         await System.set_power("KillSelf", from_frontend=True)
-    except Exception as e:
+    except RECOVERABLE_EXCEPTIONS as e:
         return error_out(OutBase, e)
     return OutBase()

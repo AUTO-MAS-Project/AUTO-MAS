@@ -27,7 +27,7 @@ from fastapi import APIRouter, Body
 from pydantic import TypeAdapter
 
 from app.core import Config
-from app.api.common import bind_api, error_out
+from app.api.common import RECOVERABLE_EXCEPTIONS, bind_api, error_out
 from app.contracts.history_contract import (
     HistoryData,
     HistoryDataGetIn,
@@ -74,7 +74,7 @@ async def search_history(history: HistorySearchIn) -> HistorySearchOut:
                 record = await Config.merge_statistic_info(records)
                 current_users[user] = _build_history_data(record)
             data[date] = current_users
-    except Exception as e:
+    except RECOVERABLE_EXCEPTIONS as e:
         return error_out(HistorySearchOut, e, data={})
     return HistorySearchOut(data=data)
 
@@ -92,6 +92,6 @@ async def get_history_data(history: HistoryDataGetIn = Body(...)) -> HistoryData
         raw_data.pop("index", None)
         raw_data["log_content"] = path.with_suffix(".log").read_text(encoding="utf-8")
         data = _build_history_data(raw_data)
-    except Exception as e:
+    except RECOVERABLE_EXCEPTIONS as e:
         return error_out(HistoryDataGetOut, e, data=HistoryData())
     return HistoryDataGetOut(data=data)

@@ -37,8 +37,9 @@ logger = get_logger("业务调度")
 
 
 class TaskInfo(TaskItem):
-
     async def on_change(self):
+        """任务状态变化后推送 WebSocket 增量更新。"""
+
         await Config.send_websocket_message(
             id=self.task_id,
             type="Update",
@@ -53,13 +54,13 @@ class TaskInfo(TaskItem):
 
 
 class Task(TaskExecuteBase):
-
     def __init__(self, task_info: TaskInfo):
         super().__init__()
         self.task_info = task_info
         self.is_closing = False
 
     async def prepare(self):
+        """根据任务模式解析脚本清单并初始化运行项。"""
 
         # 初始化任务列表
         script_ids = (
@@ -91,6 +92,7 @@ class Task(TaskExecuteBase):
         )
 
     async def main_task(self):
+        """串行执行任务中每个脚本项。"""
 
         await self.prepare()
 
@@ -155,6 +157,7 @@ class Task(TaskExecuteBase):
             await self.spawn(task_item)
 
     async def final_task(self) -> None:
+        """任务收尾：上报结果并处理电源动作信号。"""
 
         logger.info(f"任务结束: {self.task_info.task_id}")
 
@@ -165,7 +168,6 @@ class Task(TaskExecuteBase):
         )
 
         if self.task_info.mode == "AutoProxy" and self.task_info.queue_id is not None:
-
             if Config.power_sign == "NoAction":
                 Config.power_sign = Config.QueueConfig[
                     uuid.UUID(self.task_info.queue_id)
@@ -175,6 +177,8 @@ class Task(TaskExecuteBase):
                 )
 
     async def on_crash(self, e: Exception) -> None:
+        """任务异常回调：记录日志并向前端推送错误信息。"""
+
         logger.exception(f"任务 {self.task_info.task_id} 出现异常: {e}")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
@@ -191,6 +195,29 @@ class _TaskManager:
 
         self.task_info: Dict[uuid.UUID, TaskInfo] = {}
         self.task_handler: Dict[uuid.UUID, Task] = {}
+        self._mutex = asyncio.Lock()
+        self._background_tasks: set[asyncio.Task[None]] = set()
+
+    def _track_background_task(self, task: asyncio.Task[None]) -> None:
+        """跟踪后台任务，避免异常静默与任务泄漏。"""
+
+        self._background_tasks.add(task)
+
+        def _done(done_task: asyncio.Task[None]) -> None:
+            self._background_tasks.discard(done_task)
+            if done_task.cancelled():
+                return
+            exc = done_task.exception()
+            if exc is not None:
+                done_task.get_loop().call_exception_handler(
+                    {
+                        "message": "TaskManager 后台任务执行失败",
+                        "exception": exc,
+                        "task": done_task,
+                    }
+                )
+
+        task.add_done_callback(_done)
 
     async def add_task(
         self,
@@ -212,61 +239,61 @@ class _TaskManager:
 
         uid = uuid.UUID(id)
 
-        if mode == "ScriptConfig":
-            if uid in Config.ScriptConfig:
+        async with self._mutex:
+            if mode == "ScriptConfig":
+                if uid in Config.ScriptConfig:
+                    task_uid = uuid.uuid4()
+                    queue_id = None
+                    script_uid = uid
+                    user_uid = "Default"
+                else:
+                    for script_id, script in Config.ScriptConfig.items():
+                        if uid in script.UserData:
+                            task_uid = uuid.uuid4()
+                            queue_id = None
+                            script_uid = script_id
+                            user_uid = uid
+                            break
+                    else:
+                        raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
+            elif uid in Config.QueueConfig:
+                task_uid = uuid.uuid4()
+                queue_id = uid
+                script_uid = None
+                user_uid = None
+            elif uid in Config.ScriptConfig:
                 task_uid = uuid.uuid4()
                 queue_id = None
                 script_uid = uid
-                user_uid = "Default"
+                user_uid = None
             else:
-                for script_id, script in Config.ScriptConfig.items():
-                    if uid in script.UserData:
-                        task_uid = uuid.uuid4()
-                        queue_id = None
-                        script_uid = script_id
-                        user_uid = uid
-                        break
-                else:
-                    raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
-        elif uid in Config.QueueConfig:
-            task_uid = uuid.uuid4()
-            queue_id = uid
-            script_uid = None
-            user_uid = None
-        elif uid in Config.ScriptConfig:
-            task_uid = uuid.uuid4()
-            queue_id = None
-            script_uid = uid
-            user_uid = None
-        else:
-            raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
+                raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
 
-        if script_uid is not None and Config.ScriptConfig[script_uid].is_locked:
-            raise RuntimeError(
-                f"任务 {Config.ScriptConfig[script_uid].get('Info', 'Name')} 已在运行"
+            if script_uid is not None and Config.ScriptConfig[script_uid].is_locked:
+                raise RuntimeError(
+                    f"任务 {Config.ScriptConfig[script_uid].get('Info', 'Name')} 已在运行"
+                )
+
+            logger.info(f"创建任务: {task_uid}, 模式: {mode}")
+            if new_task_info:
+                new_task_info["newTask"] = str(task_uid)
+                await Config.send_websocket_message(
+                    id="TaskManager", type="Signal", data=new_task_info
+                )
+            self.task_info[task_uid] = TaskInfo(
+                mode=mode,
+                task_id=str(task_uid),
+                queue_id=str(queue_id) if queue_id else None,
+                script_id=str(script_uid) if script_uid else None,
+                user_id=str(user_uid) if user_uid else None,
             )
+            self.task_handler[task_uid] = Task(self.task_info[task_uid])
+            self.task_handler[task_uid].execute()
+            self._track_background_task(asyncio.create_task(self.clean_task(task_uid)))
 
-        logger.info(f"创建任务: {task_uid}, 模式: {mode}")
-        if new_task_info:
-            new_task_info["newTask"] = str(task_uid)
-            await Config.send_websocket_message(
-                id="TaskManager", type="Signal", data=new_task_info
-            )
-        self.task_info[task_uid] = TaskInfo(
-            mode=mode,
-            task_id=str(task_uid),
-            queue_id=str(queue_id) if queue_id else None,
-            script_id=str(script_uid) if script_uid else None,
-            user_id=str(user_uid) if user_uid else None,
-        )
-        self.task_handler[task_uid] = Task(self.task_info[task_uid])
-        self.task_handler[task_uid].execute()
-        asyncio.create_task(self.clean_task(task_uid))
-
-        return task_uid
+            return task_uid
 
     async def clean_task(self, task_uid: uuid.UUID) -> None:
-
         await self.task_handler[task_uid].accomplish.wait()
         power_enabled = bool(self.task_info[task_uid].mode != "ScriptConfig")
         self.task_info.pop(task_uid, None)
@@ -324,7 +351,6 @@ class _TaskManager:
 
         logger.info("开始运行启动时任务")
         for uid, queue in Config.QueueConfig.items():
-
             if queue.get("Info", "StartUpEnabled"):
                 logger.info(f"启动时需要运行的队列：{uid}")
                 await TaskManager.add_task(

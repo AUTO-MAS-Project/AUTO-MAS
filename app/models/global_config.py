@@ -231,7 +231,7 @@ class GlobalConfig(PydanticConfigBase):
                                     "Activity": side_story["Activity"],
                                 }
                             )
-        except Exception:
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             return "{ }"
 
         stage_data: dict[str, Any] = {"Info": activity_stage_drop_info}

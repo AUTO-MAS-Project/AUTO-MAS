@@ -27,7 +27,7 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Path
 from pydantic import TypeAdapter
 
-from app.api.common import bind_api, error_out
+from app.api.common import RECOVERABLE_EXCEPTIONS, bind_api, error_out
 from app.core import Config
 from app.contracts.common_contract import (
     ComboBoxItem,
@@ -154,7 +154,7 @@ async def create_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
             script_contract_type_from_runtime(type(config).__name__),
             await config.toDict(),
         )
-    except Exception as e:
+    except RECOVERABLE_EXCEPTIONS as e:
         return error_out(
             ScriptCreateOut,
             e,
@@ -187,13 +187,13 @@ async def reorder_scripts(body: IndexOrderPatch = Body(...)) -> OutBase:
 async def get_script(script_id: ScriptIdPath) -> ScriptDetailOut:
     try:
         return await _build_script_detail_out(script_id)
-    except Exception as e:
+    except RECOVERABLE_EXCEPTIONS as e:
         script_type = "GeneralConfig"
         try:
             script_type = script_contract_type_from_runtime(
                 type(Config.ScriptConfig[uuid.UUID(script_id)]).__name__
             )
-        except Exception:
+        except RECOVERABLE_EXCEPTIONS:
             pass
         return error_out(
             ScriptDetailOut,
@@ -313,7 +313,7 @@ async def create_user(script_id: ScriptIdPath) -> UserCreateOut:
         )
         user_type = user_contract_type_from_script(script_type)
         data = project_user_model(user_type, await config.toDict())
-    except Exception as e:
+    except RECOVERABLE_EXCEPTIONS as e:
         user_type = (
             user_contract_type_from_script(script_type)
             if script_type is not None
@@ -350,14 +350,14 @@ async def reorder_users(
 async def get_user(script_id: ScriptIdPath, user_id: UserIdPath) -> UserDetailOut:
     try:
         return await _build_user_detail_out(script_id, user_id)
-    except Exception as e:
+    except RECOVERABLE_EXCEPTIONS as e:
         user_type = "GeneralUserConfig"
         try:
             script_type = script_contract_type_from_runtime(
                 type(Config.ScriptConfig[uuid.UUID(script_id)]).__name__
             )
             user_type = user_contract_type_from_script(script_type)
-        except Exception:
+        except RECOVERABLE_EXCEPTIONS:
             pass
         return error_out(
             UserDetailOut,
@@ -425,7 +425,7 @@ async def get_user_infrastructure_options(
     try:
         raw_data = await Config.get_user_combox_infrastructure(script_id, user_id)
         data = COMBOBOX_ITEMS_ADAPTER.validate_python(raw_data or [])
-    except Exception as e:
+    except RECOVERABLE_EXCEPTIONS as e:
         return error_out(ComboBoxOut, e, data=[])
     return ComboBoxOut(data=data)
 
@@ -490,7 +490,7 @@ async def get_user_webhook(
 ) -> WebhookDetailOut:
     try:
         return await _build_webhook_detail_out(script_id, user_id, webhook_id)
-    except Exception as e:
+    except RECOVERABLE_EXCEPTIONS as e:
         return error_out(WebhookDetailOut, e, data=WebhookRead())
 
 

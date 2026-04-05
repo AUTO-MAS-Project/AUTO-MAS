@@ -19,7 +19,6 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 #   Contact: DLmaster_361@163.com
-# pyright: reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportInvalidTypeForm=false, reportGeneralTypeIssues=false
 
 import os
 import re
@@ -36,27 +35,16 @@ from fastapi import WebSocket
 from collections import defaultdict
 from jinja2 import Environment, FileSystemLoader
 from datetime import datetime, timedelta, date
-from typing import Literal, Optional, Dict, Any, List, ClassVar
+from typing import Literal, Optional, Dict, Any, List, ClassVar, cast
 import uuid
 import json
 
-from app.models import (
-    GeneralConfig,
-    MaaConfig,
-    SrcConfig,
-    MaaEndConfig,
-    MaaPlanConfig,
-    QueueConfig,
-    QueueItem,
-    MaaUserConfig,
-    SrcUserConfig,
-    MaaEndUserConfig,
-    GeneralUserConfig,
-    GlobalConfig,
-    Webhook,
-    TimeSet,
-    EmulatorConfig,
-)
+from app.models.common import EmulatorConfig, QueueConfig, QueueItem, TimeSet, Webhook
+from app.models.general import GeneralConfig, GeneralUserConfig
+from app.models.global_config import GlobalConfig
+from app.models.maa import MaaConfig, MaaPlanConfig, MaaUserConfig
+from app.models.maaend import MaaEndConfig, MaaEndUserConfig
+from app.models.src import SrcConfig, SrcUserConfig
 from .base import dump_toml
 from app.models.shared import WebSocketMessage
 from app.utils.constants import (
@@ -116,7 +104,7 @@ class AppConfig(GlobalConfig):
                 self.repo = Repo(Path.cwd())
             else:
                 self.repo = None
-        except Exception as e:
+        except (OSError, ValueError) as e:
             logger.warning(f"Git仓库初始化失败: {e}")
             self.repo = None
 
@@ -155,6 +143,8 @@ class AppConfig(GlobalConfig):
         await self.ToolsConfig.connect(self._resolve_config_path("ToolsConfig"))
 
     def _read_mapping_config(self, path: Path) -> dict[str, Any]:
+        """读取 TOML/JSON 字典配置文件并返回映射对象。"""
+
         if not path.exists():
             return {}
 
@@ -166,14 +156,20 @@ class AppConfig(GlobalConfig):
             data = tomllib.loads(text)
         else:
             data = json.loads(text)
-        return data if isinstance(data, dict) else {}
+        if isinstance(data, dict):
+            return cast(dict[str, Any], data)
+        return {}
 
     def _write_mapping_config(self, path: Path, data: dict[str, Any]) -> None:
+        """将字典配置写入 TOML/JSON 文件。"""
+
         if path.suffix == ".toml":
             path.write_text(dump_toml(data), encoding="utf-8")
             return
 
-        path.write_text(json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8")
+        path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
 
     async def init_config(self) -> None:
         """初始化配置管理"""
@@ -544,7 +540,7 @@ class AppConfig(GlobalConfig):
                     f"origin/{self.repo.active_branch.name}"
                 )
                 is_latest = bool(current_commit.hexsha == remote_commit.hexsha)
-            except Exception as e:
+            except (ValueError, OSError) as e:
                 logger.warning(f"无法获取远程分支信息: {e}")
                 is_latest = False
 
@@ -947,13 +943,16 @@ class AppConfig(GlobalConfig):
 
         logger.info("开始获取用户自定义基建排班下拉框信息")
 
-        data = []
+        data: list[dict[str, str]] = []
         for i, plan in enumerate(
             json.loads(
                 script_config.UserData[user_uid].get("Data", "CustomInfrast")
             ).get("plans", [])
         ):
-            data.append({"label": plan.get("name", f"排班 {i+1}"), "value": str(i)})
+            plan_mapping = cast(dict[str, Any], plan)
+            data.append(
+                {"label": str(plan_mapping.get("name", f"排班 {i+1}")), "value": str(i)}
+            )
 
         logger.success("用户自定义基建排班下拉框信息获取成功")
 
@@ -1408,7 +1407,7 @@ class AppConfig(GlobalConfig):
 
         try:
             return httpx.Proxy(proxy_addr)
-        except Exception as e:
+        except ValueError as e:
             logger.warning(f"代理配置无效: {proxy_addr}, 错误: {e}")
             return None
 
@@ -1427,19 +1426,25 @@ class AppConfig(GlobalConfig):
             "Sunday",
             "Info",
         ],
-    ):
+    ) -> dict[str, Any] | list[dict[str, str]]:
         """获取关卡信息"""
 
-        if json.loads(self.get("Data", "Stage")) != {}:
+        stage_cache = cast(dict[str, Any], json.loads(self.get("Data", "Stage")))
+        if stage_cache != {}:
             task = asyncio.create_task(self.get_stage())
             self.temp_task.append(task)
-            task.add_done_callback(lambda t: self.temp_task.remove(t))
+            task.add_done_callback(
+                lambda t: self.temp_task.remove(t) if t in self.temp_task else None
+            )
         else:
-            await self.get_stage()
+            refreshed = await self.get_stage()
+            stage_cache = cast(
+                dict[str, Any], refreshed if refreshed is not None else {}
+            )
 
         if type == "Info":
             today = datetime.now(tz=UTC4).isoweekday()
-            res_stage_info = []
+            res_stage_info: list[dict[str, Any]] = []
             for stage in RESOURCE_STAGE_INFO:
                 days = stage.get("days")
                 if (
@@ -1449,22 +1454,23 @@ class AppConfig(GlobalConfig):
                 ):
                     res_stage_info.append(RESOURCE_STAGE_DROP_INFO[stage["value"]])
             return {
-                "Activity": json.loads(self.get("Data", "Stage")).get("Info", []),
+                "Activity": stage_cache.get("Info", []),
                 "Resource": res_stage_info,
             }
         elif type == "User":
-            data = json.loads(self.get("Data", "Stage")).get("ALL", [])
+            data = cast(list[dict[str, str]], stage_cache.get("ALL", []))
             for combox in data:
                 combox["label"] = RESOURCE_STAGE_DATE_TEXT.get(
                     combox["value"], combox["label"]
                 )
             return data
         elif type == "Today":
-            return json.loads(self.get("Data", "Stage")).get(
-                datetime.now(tz=UTC4).strftime("%A"), []
+            return cast(
+                list[dict[str, str]],
+                stage_cache.get(datetime.now(tz=UTC4).strftime("%A"), []),
             )
         else:
-            return json.loads(self.get("Data", "Stage")).get(type, [])
+            return cast(list[dict[str, str]], stage_cache.get(type, []))
 
     async def get_proxy_overview(self) -> Dict[str, Any]:
         """获取代理情况概览信息"""
@@ -1476,13 +1482,15 @@ class AppConfig(GlobalConfig):
         )
         if datetime.now(tz=UTC4).strftime("%Y-%m-%d") not in history_index:
             return {}
+        today_records = history_index[datetime.now(tz=UTC4).strftime("%Y-%m-%d")]
+        merged_list = await asyncio.gather(
+            *(self.merge_statistic_info(v) for v in today_records.values())
+        )
         history_data = {
-            k: await self.merge_statistic_info(v)
-            for k, v in history_index[
-                datetime.now(tz=UTC4).strftime("%Y-%m-%d")
-            ].items()
+            user: merged
+            for user, merged in zip(today_records.keys(), merged_list, strict=False)
         }
-        overview = {}
+        overview: dict[str, dict[str, Any]] = {}
         for user, data in history_data.items():
             index_data = data.get("index", [])
             if index_data:
@@ -1555,7 +1563,7 @@ class AppConfig(GlobalConfig):
                     )
                 else:
                     logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
-        except Exception as e:
+        except (httpx.HTTPError, ValueError, json.JSONDecodeError) as e:
             logger.warning(f"无法从MAA服务器获取活动关卡信息: {e}")
 
         return json.loads(self.get("Data", "Stage"))
@@ -1621,7 +1629,9 @@ class AppConfig(GlobalConfig):
         logger.success("模拟器下拉框信息获取成功")
         return data
 
-    async def get_emulator_devices_combox(self, emulator_id: str):
+    async def get_emulator_devices_combox(
+        self, emulator_id: str
+    ) -> list[dict[str, str]]:
         """获取模拟器多开实例下拉框信息"""
 
         logger.info("开始获取模拟器下拉框信息")
@@ -1630,7 +1640,7 @@ class AppConfig(GlobalConfig):
             logger.info("通用模拟器不支持扫描多开实例, 返回空列表")
             return []
 
-        data = [{"label": "未选择", "value": "-"}]
+        data: list[dict[str, str]] = [{"label": "未选择", "value": "-"}]
 
         from ..emulator_manager import EmulatorManager
 
@@ -1694,7 +1704,7 @@ class AppConfig(GlobalConfig):
                     logger.warning(
                         f"无法从 AUTO-MAS 服务器获取公告信息:{response.text}"
                     )
-        except Exception as e:
+        except (httpx.HTTPError, ValueError, json.JSONDecodeError) as e:
             logger.warning(f"无法从 AUTO-MAS 服务器获取公告信息: {e}")
 
         return self.get("Data", "IfShowNotice"), json.loads(
@@ -1727,7 +1737,7 @@ class AppConfig(GlobalConfig):
                         f"无法从 AUTO-MAS 服务器获取配置分享中心信息:{response.text}"
                     )
                     remote_web_config = None
-        except Exception as e:
+        except (httpx.HTTPError, ValueError, json.JSONDecodeError) as e:
             logger.warning(f"无法从 AUTO-MAS 服务器获取配置分享中心信息: {e}")
             remote_web_config = None
 
@@ -1818,7 +1828,7 @@ class AppConfig(GlobalConfig):
         all_stage_drops: dict[str, dict[str, int]] = {}
 
         # 查找所有Fight任务的开始和结束位置
-        fight_tasks = []
+        fight_tasks: list[tuple[int, int]] = []
         for i, line in enumerate(logs):
             if "开始任务: Fight" in line or "开始任务: 理智作战" in line:
                 # 查找对应的任务结束位置
@@ -1843,7 +1853,7 @@ class AppConfig(GlobalConfig):
             task_logs = logs[start_idx : end_idx + 1]
 
             # 查找任务中的最后一次掉落统计
-            last_drop_stats = {}
+            last_drop_stats: dict[str, int] = {}
             current_stage = None
 
             for line in task_logs:
@@ -2000,7 +2010,7 @@ class AppConfig(GlobalConfig):
         for json_file in statistic_path_list:
             try:
                 single_data = json.loads(json_file.read_text(encoding="utf-8"))
-            except Exception as e:
+            except (OSError, json.JSONDecodeError) as e:
                 logger.warning(
                     f"无法解析文件 {json_file}, 错误信息: {type(e).__name__}: {str(e)}"
                 )
@@ -2128,8 +2138,8 @@ class AppConfig(GlobalConfig):
                             user_folder.with_suffix("").glob("*.json")
                         )
 
-            except ValueError:
-                logger.exception(f"非日期格式的目录: {date_folder}")
+            except ValueError as e:
+                logger.warning(f"非日期格式的目录: {date_folder}, 错误: {e}")
 
         logger.success(f"历史记录搜索完成, 共计 {len(history_dict)} 条记录")
 

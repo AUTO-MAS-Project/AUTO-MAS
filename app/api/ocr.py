@@ -31,7 +31,7 @@ from PIL import Image
 from app.utils.OCR.OCRtool import OCRTool
 from app.utils import get_logger
 from app.contracts.common_contract import ApiModel, OutBase
-from app.api.common import bind_api, error_out, run_api
+from app.api.common import RECOVERABLE_EXCEPTIONS, bind_api, error_out, run_api
 
 logger = get_logger("OCR API")
 
@@ -266,7 +266,7 @@ async def get_screenshot_adb(params: ADBScreenshotIn = Body(...)) -> ADBScreensh
             image_height=0,
             serial=params.serial,
         )
-    except Exception as e:
+    except RECOVERABLE_EXCEPTIONS as e:
         logger.error(f"ADB 截图失败: {type(e).__name__}: {str(e)}")
         return error_out(
             ADBScreenshotOut,

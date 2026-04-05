@@ -22,7 +22,7 @@
 
 import asyncio
 from copy import deepcopy
-from typing import Any, Set
+from typing import Any, Set, cast
 
 from app.utils import get_logger
 
@@ -45,8 +45,10 @@ class _Broadcast:
     async def put(self, item: Any) -> None:
         """向所有订阅者广播消息"""
         logger.debug(f"向所有订阅者广播消息: {item}")
+        should_copy = isinstance(item, (dict, list, set, tuple))
         for subscriber in self.__subscribers:
-            await subscriber.put(deepcopy(item))
+            payload = deepcopy(cast(Any, item)) if should_copy else item
+            await subscriber.put(payload)
 
 
 Broadcast = _Broadcast()
