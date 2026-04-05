@@ -94,9 +94,8 @@ class ScriptConfigTask(TaskExecuteBase):
         )
         maaend_instances = maaend_set["instances"]
 
-        selected_instance = None
-
         # 创建任务项单例
+        selected_instance = None
         for instance in maaend_instances:
             if instance.get("id") == "automas":
                 selected_instance = deepcopy(instance)
@@ -107,16 +106,13 @@ class ScriptConfigTask(TaskExecuteBase):
                     if instance.get("id") == maaend_set.get("lastActiveInstanceId"):
                         selected_instance = deepcopy(instance)
                         break
-                else:
-                    selected_instance = (
-                        deepcopy(maaend_instances[0])
-                        if len(maaend_instances) > 0
-                        else {"id": "automas", "name": "AUTO-MAS", "tasks": []}
-                    )
+        if selected_instance is None:
+            selected_instance = (
+                deepcopy(maaend_instances[0])
+                if len(maaend_instances) > 0
+                else {"id": "automas", "name": "AUTO-MAS", "tasks": []}
+            )
 
-        selected_instance = dict(
-            selected_instance or {"id": "automas", "name": "AUTO-MAS", "tasks": []}
-        )
         if "tasks" not in selected_instance:
             selected_instance["tasks"] = []
         selected_instance["id"] = "automas"
