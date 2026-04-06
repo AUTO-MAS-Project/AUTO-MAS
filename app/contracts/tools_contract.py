@@ -1,22 +1,17 @@
 from __future__ import annotations
 
-from .common_contract import ResourceItemOut, derive_config_contracts
+from .common_contract import ResourceItemOut, derive_config_contract_model
 from app.models.global_config import ToolsConfig
 
 
-_ToolsConfigReadBase, _ToolsConfigPatchBase = derive_config_contracts(
+_ToolsConfigBase = derive_config_contract_model(
     ToolsConfig,
-    read_name="ToolsConfigRead",
-    patch_name="ToolsConfigPatch",
+    model_name="ToolsConfigRead",
 )
 
 
-class ToolsConfigRead(_ToolsConfigReadBase):
-    pass
-
-
-class ToolsConfigPatch(_ToolsConfigPatchBase):
-    pass
+class ToolsConfigRead(_ToolsConfigBase):
+    """工具配置读取/写入模型。"""
 
 
 ToolsGetOut = ResourceItemOut[ToolsConfigRead]
@@ -24,6 +19,5 @@ ToolsGetOut = ResourceItemOut[ToolsConfigRead]
 
 __all__ = [
     "ToolsConfigRead",
-    "ToolsConfigPatch",
     "ToolsGetOut",
 ]

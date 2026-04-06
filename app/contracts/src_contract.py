@@ -4,38 +4,26 @@ from typing import Literal
 
 from pydantic import Field
 
-from .common_contract import derive_config_contracts
+from .common_contract import derive_config_contract_model
 from app.models.src import SrcConfig as RuntimeSrcConfig
 from app.models.src import SrcUserConfig as RuntimeSrcUserConfig
 
 
-_SrcConfigReadBase, _SrcConfigPatchBase = derive_config_contracts(
+_SrcConfigBase = derive_config_contract_model(
     RuntimeSrcConfig,
-    read_name="SrcConfig",
-    patch_name="SrcConfigPatch",
+    model_name="SrcConfig",
 )
-_SrcUserConfigReadBase, _SrcUserConfigPatchBase = derive_config_contracts(
+_SrcUserConfigBase = derive_config_contract_model(
     RuntimeSrcUserConfig,
-    read_name="SrcUserConfig",
-    patch_name="SrcUserConfigPatch",
+    model_name="SrcUserConfig",
 )
 
 
-class SrcConfig(_SrcConfigReadBase):
+class SrcConfig(_SrcConfigBase):
     type: Literal["SrcConfig"] = Field(default="SrcConfig", description="配置类型")
 
 
-class SrcConfigPatch(_SrcConfigPatchBase):
-    type: Literal["SrcConfig"] = Field(default="SrcConfig", description="配置类型")
-
-
-class SrcUserConfig(_SrcUserConfigReadBase):
-    type: Literal["SrcUserConfig"] = Field(
-        default="SrcUserConfig", description="配置类型"
-    )
-
-
-class SrcUserConfigPatch(_SrcUserConfigPatchBase):
+class SrcUserConfig(_SrcUserConfigBase):
     type: Literal["SrcUserConfig"] = Field(
         default="SrcUserConfig", description="配置类型"
     )
@@ -43,7 +31,5 @@ class SrcUserConfigPatch(_SrcUserConfigPatchBase):
 
 __all__ = [
     "SrcConfig",
-    "SrcConfigPatch",
     "SrcUserConfig",
-    "SrcUserConfigPatch",
 ]

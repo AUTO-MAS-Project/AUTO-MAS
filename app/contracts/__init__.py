@@ -27,7 +27,7 @@ API Contract 层
 
 设计原则：
 1. Contract 只负责 API 边界定义，不包含业务逻辑
-2. 使用 Read/Patch/Create 分离读写模型
+2. 使用单一 Contract 模型 + readOnly/writeOnly 字段标记
 3. 所有 Contract 继承 ApiModel，获得统一配置
 4. 字段命名使用 snake_case，通过 alias 兼容前端
 """
@@ -42,6 +42,7 @@ from .common_contract import (
     ResourceCollectionOut,
     ResourceCreateOut,
     ResourceItemOut,
+    dump_writable_data,
     project_model,
     project_model_list,
     project_model_map,
@@ -57,6 +58,7 @@ __all__ = [
     "ResourceItemOut",
     "ResourceCreateOut",
     "IndexOrderPatch",
+    "dump_writable_data",
     "project_model",
     "project_model_list",
     "project_model_map",

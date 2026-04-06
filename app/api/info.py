@@ -34,7 +34,7 @@ from app.contracts.common_contract import (
     InfoOut,
     OutBase,
 )
-from app.api.common import RECOVERABLE_EXCEPTIONS, bind_api, error_out
+from app.api.common import RECOVERABLE_EXCEPTIONS, error_out
 from app.contracts.info_contract import (
     GetStageIn,
     NoticeOut,
@@ -42,7 +42,6 @@ from app.contracts.info_contract import (
 )
 
 router = APIRouter(prefix="/api/info", tags=["信息获取"])
-api = bind_api(router)
 
 
 class EmulatorIdBody(ApiModel):
@@ -60,7 +59,7 @@ def _to_combobox_items(raw_data: object) -> list[ComboBoxItem]:
     )
 
 
-@api.post(
+@router.post(
     "/version",
     tags=["Get"],
     summary="获取后端git版本信息",
@@ -84,7 +83,7 @@ async def get_git_version() -> VersionOut:
     )
 
 
-@api.post(
+@router.post(
     "/combox/stage",
     tags=["Get"],
     summary="获取关卡号下拉框信息",
@@ -101,7 +100,7 @@ async def get_stage_combox(
     return ComboBoxOut(data=data)
 
 
-@api.post(
+@router.post(
     "/combox/script",
     tags=["Get"],
     summary="获取脚本下拉框信息",
@@ -116,7 +115,7 @@ async def get_script_combox() -> ComboBoxOut:
     return ComboBoxOut(data=data)
 
 
-@api.post(
+@router.post(
     "/combox/task",
     tags=["Get"],
     summary="获取可选任务下拉框信息",
@@ -131,7 +130,7 @@ async def get_task_combox() -> ComboBoxOut:
     return ComboBoxOut(data=data)
 
 
-@api.post(
+@router.post(
     "/combox/plan",
     tags=["Get"],
     summary="获取可选计划下拉框信息",
@@ -146,7 +145,7 @@ async def get_plan_combox() -> ComboBoxOut:
     return ComboBoxOut(data=data)
 
 
-@api.post(
+@router.post(
     "/combox/emulator",
     tags=["Get"],
     summary="获取可选模拟器下拉框信息",
@@ -161,7 +160,7 @@ async def get_emulator_combox() -> ComboBoxOut:
     return ComboBoxOut(data=data)
 
 
-@api.post(
+@router.post(
     "/combox/emulator/devices",
     tags=["Get"],
     summary="获取可选模拟器多开实例下拉框信息",
@@ -180,7 +179,7 @@ async def get_emulator_devices_combox(
     return ComboBoxOut(data=data)
 
 
-@api.post(
+@router.post(
     "/notice/get",
     tags=["Get"],
     summary="获取通知信息",
@@ -194,7 +193,7 @@ async def get_notice_info() -> NoticeOut:
     return NoticeOut(if_need_show=if_need_show, data=data)
 
 
-@api.post(
+@router.post(
     "/notice/confirm",
     tags=["Action"],
     summary="确认通知",
@@ -222,7 +221,7 @@ async def confirm_notice() -> OutBase:
 #     return InfoOut(data=data)
 
 
-@api.post(
+@router.post(
     "/webconfig",
     tags=["Get"],
     summary="获取配置分享中心的配置信息",
@@ -236,7 +235,7 @@ async def get_web_config() -> InfoOut:
     return InfoOut(data={"WebConfig": data})
 
 
-@api.post(
+@router.post(
     "/get/overview",
     tags=["Get"],
     summary="信息总览",

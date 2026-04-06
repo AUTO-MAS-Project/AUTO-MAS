@@ -26,17 +26,15 @@ from pydantic import Field
 from typing import Optional
 import base64
 from io import BytesIO
-from PIL import Image
 
 from app.utils.OCR.OCRtool import OCRTool
 from app.utils import get_logger
 from app.contracts.common_contract import ApiModel, OutBase
-from app.api.common import RECOVERABLE_EXCEPTIONS, bind_api, error_out, run_api
+from app.api.common import RECOVERABLE_EXCEPTIONS, error_out, run_api
 
 logger = get_logger("OCR API")
 
 router = APIRouter(prefix="/api/ocr", tags=["OCR识别"])
-api = bind_api(router)
 
 
 # ========== 截图相关模型 ==========
@@ -125,14 +123,8 @@ class ClickOut(OutBase):
     attempts: int = Field(..., description="实际尝试次数")
 
 
-def _encode_image_base64(image: Image.Image) -> str:
-    buffer = BytesIO()
-    image.save(buffer, format="PNG")
-    return base64.b64encode(buffer.getvalue()).decode("utf-8")
-
-
 # ========== 截图接口 ==========
-@api.post(
+@router.post(
     "/screenshot",
     tags=["Get"],
     summary="获取窗口截图",
@@ -170,7 +162,9 @@ async def get_screenshot(params: OCRScreenshotIn = Body(...)) -> OCRScreenshotOu
             region=region,
         )
 
-        image_base64 = _encode_image_base64(screenshot_image)
+        buffer = BytesIO()
+        screenshot_image.save(buffer, format="PNG")
+        image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
         logger.info(f"成功截取窗口 [{params.window_title}] 的截图，区域: {region}")
 
@@ -194,7 +188,7 @@ async def get_screenshot(params: OCRScreenshotIn = Body(...)) -> OCRScreenshotOu
     )
 
 
-@api.post(
+@router.post(
     "/screenshot/adb",
     tags=["Get"],
     summary="通过ADB获取设备截图",
@@ -280,7 +274,7 @@ async def get_screenshot_adb(params: ADBScreenshotIn = Body(...)) -> ADBScreensh
 
 
 # ========== 测试接口：检查图像 ==========
-@api.post(
+@router.post(
     "/check/image",
     tags=["Get"],
     summary="检查是否存在指定图像",
@@ -332,7 +326,7 @@ async def check_image(params: CheckImageIn = Body(...)) -> CheckImageOut:
     )
 
 
-@api.post(
+@router.post(
     "/check/image/any",
     tags=["Get"],
     summary="检查是否存在任意一个指定图像",
@@ -386,7 +380,7 @@ async def check_image_any(params: CheckImageAnyIn = Body(...)) -> CheckImageOut:
     )
 
 
-@api.post(
+@router.post(
     "/check/image/all",
     tags=["Get"],
     summary="检查是否存在所有指定图像",
@@ -441,7 +435,7 @@ async def check_image_all(params: CheckImageAllIn = Body(...)) -> CheckImageOut:
 
 
 # ========== 测试接口：点击操作 ==========
-@api.post(
+@router.post(
     "/click/image",
     tags=["Action"],
     summary="点击指定图像位置",
@@ -493,7 +487,7 @@ async def click_image(params: ClickImageIn = Body(...)) -> ClickOut:
     )
 
 
-@api.post(
+@router.post(
     "/click/text",
     tags=["Action"],
     summary="点击指定文字位置",

@@ -136,6 +136,8 @@ def _clone_field_annotation(
     annotation: Any,
     *,
     keep_virtual: bool,
+    read_only: bool = False,
+    write_only: bool = False,
 ) -> Any:
     metadata = tuple(
         item
@@ -151,8 +153,20 @@ def _clone_field_annotation(
         field_kwargs["serialization_alias"] = field_info.serialization_alias
     if field_info.alias is not None:
         field_kwargs["alias"] = field_info.alias
-    if field_info.json_schema_extra is not None:
-        field_kwargs["json_schema_extra"] = field_info.json_schema_extra
+    json_schema_extra: dict[str, Any] = {}
+    raw_schema_extra: Any = field_info.json_schema_extra
+    if isinstance(raw_schema_extra, Mapping):
+        schema_extra_mapping = cast(
+            Mapping[str, Any],
+            raw_schema_extra,
+        )
+        json_schema_extra.update(dict(schema_extra_mapping))
+    if read_only:
+        json_schema_extra["readOnly"] = True
+    if write_only:
+        json_schema_extra["writeOnly"] = True
+    if json_schema_extra:
+        field_kwargs["json_schema_extra"] = json_schema_extra
     if field_info.discriminator is not None:
         field_kwargs["discriminator"] = field_info.discriminator
     if field_kwargs:
@@ -165,6 +179,7 @@ def _model_field_definitions(
     *,
     optional_fields: bool,
     keep_virtual: bool,
+    mark_virtual_as_read_only: bool = False,
 ) -> dict[str, tuple[Any, Any]]:
     field_definitions: dict[str, tuple[Any, Any]] = {}
 
@@ -178,10 +193,13 @@ def _model_field_definitions(
         if optional_fields:
             annotation = _make_optional(annotation)
 
+        is_virtual = any(isinstance(item, VirtualField) for item in field_info.metadata)
+
         annotated = _clone_field_annotation(
             field_info,
             annotation,
             keep_virtual=keep_virtual,
+            read_only=mark_virtual_as_read_only and is_virtual,
         )
 
         if optional_fields:
@@ -204,27 +222,7 @@ def _model_field_definitions(
 
 
 @lru_cache(maxsize=None)
-def derive_group_read_model(
-    group_cls: type[BaseModel],
-    *,
-    model_name: str,
-) -> type[ApiModel]:
-    return create_model(
-        model_name,
-        __base__=ApiModel,
-        **cast(
-            dict[str, Any],
-            _model_field_definitions(
-                group_cls,
-                optional_fields=False,
-                keep_virtual=True,
-            ),
-        ),
-    )
-
-
-@lru_cache(maxsize=None)
-def derive_group_patch_model(
+def derive_group_contract_model(
     group_cls: type[BaseModel],
     *,
     model_name: str,
@@ -237,46 +235,33 @@ def derive_group_patch_model(
             _model_field_definitions(
                 group_cls,
                 optional_fields=True,
-                keep_virtual=False,
+                keep_virtual=True,
+                mark_virtual_as_read_only=True,
             ),
         ),
     )
 
 
 @lru_cache(maxsize=None)
-def derive_config_read_model(
-    config_cls: type[PydanticConfigBase],
+def derive_group_read_model(
+    group_cls: type[BaseModel],
     *,
     model_name: str,
-    include_groups: tuple[str, ...] | None = None,
 ) -> type[ApiModel]:
-    field_definitions: dict[str, tuple[Any, Any]] = {}
-
-    allowed_groups = set(include_groups) if include_groups is not None else None
-    for group_name, field_info in config_cls.model_fields.items():
-        if allowed_groups is not None and group_name not in allowed_groups:
-            continue
-        group_cls = field_info.annotation
-        if not isinstance(group_cls, type) or not issubclass(group_cls, BaseModel):
-            continue
-        group_model = derive_group_read_model(
-            group_cls,
-            model_name=f"{model_name}{group_name}",
-        )
-        field_definitions[group_name] = (
-            group_model,
-            Field(default_factory=group_model, description=field_info.description),
-        )
-
-    return create_model(
-        model_name,
-        __base__=ApiModel,
-        **cast(dict[str, Any], field_definitions),
-    )
+    return derive_group_contract_model(group_cls, model_name=model_name)
 
 
 @lru_cache(maxsize=None)
-def derive_config_patch_model(
+def derive_group_patch_model(
+    group_cls: type[BaseModel],
+    *,
+    model_name: str,
+) -> type[ApiModel]:
+    return derive_group_contract_model(group_cls, model_name=model_name)
+
+
+@lru_cache(maxsize=None)
+def derive_config_contract_model(
     config_cls: type[PydanticConfigBase],
     *,
     model_name: str,
@@ -291,7 +276,7 @@ def derive_config_patch_model(
         group_cls = field_info.annotation
         if not isinstance(group_cls, type) or not issubclass(group_cls, BaseModel):
             continue
-        group_model = derive_group_patch_model(
+        group_model = derive_group_contract_model(
             group_cls,
             model_name=f"{model_name}{group_name}",
         )
@@ -307,6 +292,34 @@ def derive_config_patch_model(
     )
 
 
+@lru_cache(maxsize=None)
+def derive_config_read_model(
+    config_cls: type[PydanticConfigBase],
+    *,
+    model_name: str,
+    include_groups: tuple[str, ...] | None = None,
+) -> type[ApiModel]:
+    return derive_config_contract_model(
+        config_cls,
+        model_name=model_name,
+        include_groups=include_groups,
+    )
+
+
+@lru_cache(maxsize=None)
+def derive_config_patch_model(
+    config_cls: type[PydanticConfigBase],
+    *,
+    model_name: str,
+    include_groups: tuple[str, ...] | None = None,
+) -> type[ApiModel]:
+    return derive_config_contract_model(
+        config_cls,
+        model_name=model_name,
+        include_groups=include_groups,
+    )
+
+
 def derive_config_contracts(
     config_cls: type[PydanticConfigBase],
     *,
@@ -314,18 +327,61 @@ def derive_config_contracts(
     patch_name: str,
     include_groups: tuple[str, ...] | None = None,
 ) -> tuple[type[ApiModel], type[ApiModel]]:
-    return (
-        derive_config_read_model(
-            config_cls,
-            model_name=read_name,
-            include_groups=include_groups,
-        ),
-        derive_config_patch_model(
-            config_cls,
-            model_name=patch_name,
-            include_groups=include_groups,
-        ),
+    model = derive_config_contract_model(
+        config_cls,
+        model_name=read_name,
+        include_groups=include_groups,
     )
+    return (model, model)
+
+
+def _extract_model_type(annotation: Any) -> type[BaseModel] | None:
+    origin = get_origin(annotation)
+    if origin is None:
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            return annotation
+        return None
+
+    if origin in (Union, UnionType):
+        for arg in get_args(annotation):
+            if arg is type(None):
+                continue
+            model_type = _extract_model_type(arg)
+            if model_type is not None:
+                return model_type
+    return None
+
+
+def _prune_read_only_data(
+    model_cls: type[BaseModel], payload: Mapping[str, Any]
+) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for field_name, raw_value in payload.items():
+        field_info = model_cls.model_fields.get(field_name)
+        if field_info is None:
+            continue
+
+        extras = field_info.json_schema_extra
+        if (
+            isinstance(extras, Mapping)
+            and cast(Mapping[str, Any], extras).get("readOnly") is True
+        ):
+            continue
+
+        value = raw_value
+        nested_model = _extract_model_type(field_info.annotation)
+        if nested_model is not None and isinstance(value, Mapping):
+            value = _prune_read_only_data(nested_model, cast(Mapping[str, Any], value))
+
+        result[field_name] = value
+    return result
+
+
+def dump_writable_data(data: BaseModel) -> dict[str, Any]:
+    """导出可写字段，自动剔除 readOnly 字段。"""
+
+    payload = data.model_dump(exclude_unset=True, exclude_none=True)
+    return _prune_read_only_data(type(data), payload)
 
 
 def _normalize_source(raw: RawModelSource | None) -> dict[str, Any]:
@@ -502,9 +558,12 @@ __all__ = [
     "IndexOrderPatch",
     "derive_group_read_model",
     "derive_group_patch_model",
+    "derive_group_contract_model",
     "derive_config_read_model",
     "derive_config_patch_model",
+    "derive_config_contract_model",
     "derive_config_contracts",
+    "dump_writable_data",
     "project_model",
     "project_model_list",
     "project_model_map",

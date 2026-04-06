@@ -10,25 +10,20 @@ from .common_contract import (
     ResourceCollectionOut,
     ResourceCreateOut,
     ResourceItemOut,
-    derive_config_contracts,
+    derive_config_contract_model,
 )
 from app.models.shared import DeviceInfo
 
 
-_EmulatorReadBase, _EmulatorPatchBase = derive_config_contracts(
+_EmulatorBase = derive_config_contract_model(
     EmulatorConfig,
-    read_name="EmulatorRead",
-    patch_name="EmulatorPatch",
+    model_name="EmulatorRead",
     include_groups=("Info",),
 )
 
 
-class EmulatorRead(_EmulatorReadBase):
-    pass
-
-
-class EmulatorPatch(_EmulatorPatchBase):
-    pass
+class EmulatorRead(_EmulatorBase):
+    """模拟器配置读取/写入模型。"""
 
 
 class EmulatorConfigIndexItem(ApiModel):
@@ -61,7 +56,6 @@ class EmulatorSearchOut(ResourceItemOut[list[EmulatorSearchResult]]):
 
 __all__ = [
     "EmulatorRead",
-    "EmulatorPatch",
     "EmulatorConfigIndexItem",
     "EmulatorGetOut",
     "EmulatorDetailOut",

@@ -4,42 +4,28 @@ from typing import Literal
 
 from pydantic import Field
 
-from .common_contract import derive_config_contracts
+from .common_contract import derive_config_contract_model
 from app.models.maaend import MaaEndConfig as RuntimeMaaEndConfig
 from app.models.maaend import MaaEndUserConfig as RuntimeMaaEndUserConfig
 
 
-_MaaEndConfigReadBase, _MaaEndConfigPatchBase = derive_config_contracts(
+_MaaEndConfigBase = derive_config_contract_model(
     RuntimeMaaEndConfig,
-    read_name="MaaEndConfig",
-    patch_name="MaaEndConfigPatch",
+    model_name="MaaEndConfig",
 )
-_MaaEndUserConfigReadBase, _MaaEndUserConfigPatchBase = derive_config_contracts(
+_MaaEndUserConfigBase = derive_config_contract_model(
     RuntimeMaaEndUserConfig,
-    read_name="MaaEndUserConfig",
-    patch_name="MaaEndUserConfigPatch",
+    model_name="MaaEndUserConfig",
 )
 
 
-class MaaEndConfig(_MaaEndConfigReadBase):
+class MaaEndConfig(_MaaEndConfigBase):
     type: Literal["MaaEndConfig"] = Field(
         default="MaaEndConfig", description="配置类型"
     )
 
 
-class MaaEndConfigPatch(_MaaEndConfigPatchBase):
-    type: Literal["MaaEndConfig"] = Field(
-        default="MaaEndConfig", description="配置类型"
-    )
-
-
-class MaaEndUserConfig(_MaaEndUserConfigReadBase):
-    type: Literal["MaaEndUserConfig"] = Field(
-        default="MaaEndUserConfig", description="配置类型"
-    )
-
-
-class MaaEndUserConfigPatch(_MaaEndUserConfigPatchBase):
+class MaaEndUserConfig(_MaaEndUserConfigBase):
     type: Literal["MaaEndUserConfig"] = Field(
         default="MaaEndUserConfig", description="配置类型"
     )
@@ -47,7 +33,5 @@ class MaaEndUserConfigPatch(_MaaEndUserConfigPatchBase):
 
 __all__ = [
     "MaaEndConfig",
-    "MaaEndConfigPatch",
     "MaaEndUserConfig",
-    "MaaEndUserConfigPatch",
 ]

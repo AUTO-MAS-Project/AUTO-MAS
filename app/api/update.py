@@ -31,10 +31,9 @@ from app.core import Config
 from app.services import Updater
 from app.contracts.common_contract import OutBase
 from app.contracts.update_contract import UpdateCheckIn, UpdateCheckOut
-from app.api.common import bind_api
+
 
 router = APIRouter(prefix="/api/update", tags=["软件更新"])
-api = bind_api(router)
 
 
 QueryUpdateCheckIn = Annotated[UpdateCheckIn, Depends()]
@@ -61,33 +60,27 @@ async def _build_update_check_out(version: UpdateCheckIn) -> UpdateCheckOut:
     )
 
 
-@api.post(
+@router.post(
     "/check",
     tags=["Get"],
     summary="检查更新",
     response_model=UpdateCheckOut,
-    if_need_update=False,
-    latest_version="",
-    update_info={},
 )
 async def check_update(version: UpdateCheckIn = Body(...)) -> UpdateCheckOut:
     return await _build_update_check_out(version)
 
 
-@api.get(
+@router.get(
     "/check",
     tags=["Get"],
     summary="按 REST 风格检查更新",
     response_model=UpdateCheckOut,
-    if_need_update=False,
-    latest_version="",
-    update_info={},
 )
 async def check_update_rest(version: QueryUpdateCheckIn) -> UpdateCheckOut:
     return await _build_update_check_out(version)
 
 
-@api.post(
+@router.post(
     "/download",
     tags=["Action"],
     summary="下载更新",
@@ -99,7 +92,7 @@ async def download_update() -> OutBase:
     return OutBase()
 
 
-@api.post(
+@router.post(
     "/install",
     tags=["Action"],
     summary="安装更新",

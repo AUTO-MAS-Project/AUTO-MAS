@@ -27,13 +27,14 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Path
 from pydantic import TypeAdapter
 
-from app.api.common import RECOVERABLE_EXCEPTIONS, bind_api, error_out
+from app.api.common import RECOVERABLE_EXCEPTIONS, error_out
 from app.core import Config
 from app.contracts.common_contract import (
     ComboBoxItem,
     ComboBoxOut,
     IndexOrderPatch,
     OutBase,
+    dump_writable_data,
     project_model,
     project_model_list,
     project_model_map,
@@ -69,7 +70,6 @@ from app.contracts.setting_contract import (
     WebhookDetailOut,
     WebhookGetOut,
     WebhookIndexItem,
-    WebhookPatch,
     WebhookRead,
 )
 
@@ -78,14 +78,19 @@ COMBOBOX_ITEMS_ADAPTER: TypeAdapter[list[ComboBoxItem]] = TypeAdapter(
 )
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
-api = bind_api(router)
 
 ScriptIdPath = Annotated[str, Path(description="脚本 ID")]
 UserIdPath = Annotated[str, Path(description="用户 ID")]
 WebhookIdPath = Annotated[str, Path(description="Webhook ID")]
 
 
-async def _build_script_collection_out() -> ScriptGetOut:
+@router.get(
+    "",
+    tags=["Get"],
+    summary="查询全部脚本",
+    response_model=ScriptGetOut,
+)
+async def list_scripts() -> ScriptGetOut:
     index, data = await Config.get_script(None)
     script_index = project_model_list(ScriptIndexItem, index)
     return ScriptGetOut(
@@ -93,55 +98,7 @@ async def _build_script_collection_out() -> ScriptGetOut:
     )
 
 
-async def _build_script_detail_out(script_id: str) -> ScriptDetailOut:
-    index, data = await Config.get_script(script_id)
-    script_index = project_model_list(ScriptIndexItem, index)
-    projected = project_script_model_map(script_index, data)
-    return ScriptDetailOut(data=projected[script_id])
-
-
-async def _build_user_collection_out(script_id: str) -> UserGetOut:
-    index, data = await Config.get_user(script_id, None)
-    user_index = project_model_list(UserIndexItem, index)
-    return UserGetOut(index=user_index, data=project_user_model_map(user_index, data))
-
-
-async def _build_user_detail_out(script_id: str, user_id: str) -> UserDetailOut:
-    index, data = await Config.get_user(script_id, user_id)
-    user_index = project_model_list(UserIndexItem, index)
-    projected = project_user_model_map(user_index, data)
-    return UserDetailOut(data=projected[user_id])
-
-
-async def _build_webhook_collection_out(script_id: str, user_id: str) -> WebhookGetOut:
-    index, data = await Config.get_webhook(script_id, user_id, None)
-    return WebhookGetOut(
-        index=project_model_list(WebhookIndexItem, index),
-        data=project_model_map(WebhookRead, data),
-    )
-
-
-async def _build_webhook_detail_out(
-    script_id: str, user_id: str, webhook_id: str
-) -> WebhookDetailOut:
-    _, data = await Config.get_webhook(script_id, user_id, webhook_id)
-    projected = project_model_map(WebhookRead, data)
-    return WebhookDetailOut(data=projected[webhook_id])
-
-
-@api.get(
-    "",
-    tags=["Get"],
-    summary="查询全部脚本",
-    response_model=ScriptGetOut,
-    index=[],
-    data={},
-)
-async def list_scripts() -> ScriptGetOut:
-    return await _build_script_collection_out()
-
-
-@api.post(
+@router.post(
     "",
     tags=["Add"],
     summary="创建脚本",
@@ -167,7 +124,7 @@ async def create_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
     return ScriptCreateOut(id=str(uid), data=data)
 
 
-@api.patch(
+@router.patch(
     "/order",
     tags=["Update"],
     summary="重新排序脚本",
@@ -178,7 +135,7 @@ async def reorder_scripts(body: IndexOrderPatch = Body(...)) -> OutBase:
     return OutBase()
 
 
-@api.get(
+@router.get(
     "/{script_id}",
     tags=["Get"],
     summary="查询单个脚本",
@@ -186,7 +143,10 @@ async def reorder_scripts(body: IndexOrderPatch = Body(...)) -> OutBase:
 )
 async def get_script(script_id: ScriptIdPath) -> ScriptDetailOut:
     try:
-        return await _build_script_detail_out(script_id)
+        index, data = await Config.get_script(script_id)
+        script_index = project_model_list(ScriptIndexItem, index)
+        projected = project_script_model_map(script_index, data)
+        return ScriptDetailOut(data=projected[script_id])
     except RECOVERABLE_EXCEPTIONS as e:
         script_type = "GeneralConfig"
         try:
@@ -202,7 +162,7 @@ async def get_script(script_id: ScriptIdPath) -> ScriptDetailOut:
         )
 
 
-@api.patch(
+@router.patch(
     "/{script_id}",
     tags=["Update"],
     summary="更新脚本配置",
@@ -221,7 +181,7 @@ async def update_script(
     return OutBase()
 
 
-@api.delete(
+@router.delete(
     "/{script_id}",
     tags=["Delete"],
     summary="删除脚本",
@@ -232,7 +192,7 @@ async def delete_script(script_id: ScriptIdPath) -> OutBase:
     return OutBase()
 
 
-@api.post(
+@router.post(
     "/{script_id}/actions/import-file",
     tags=["Action"],
     summary="从文件导入脚本配置",
@@ -245,7 +205,7 @@ async def import_script_from_file(
     return OutBase()
 
 
-@api.post(
+@router.post(
     "/{script_id}/actions/export-file",
     tags=["Action"],
     summary="导出脚本配置到文件",
@@ -258,7 +218,7 @@ async def export_script_to_file(
     return OutBase()
 
 
-@api.post(
+@router.post(
     "/{script_id}/actions/import-web",
     tags=["Action"],
     summary="从网络导入脚本配置",
@@ -271,7 +231,7 @@ async def import_script_from_web(
     return OutBase()
 
 
-@api.post(
+@router.post(
     "/{script_id}/actions/upload-web",
     tags=["Action"],
     summary="上传脚本配置到网络",
@@ -286,19 +246,19 @@ async def upload_script_to_web(
     return OutBase()
 
 
-@api.get(
+@router.get(
     "/{script_id}/users",
     tags=["Get"],
     summary="查询脚本下的全部用户",
     response_model=UserGetOut,
-    index=[],
-    data={},
 )
 async def list_users(script_id: ScriptIdPath) -> UserGetOut:
-    return await _build_user_collection_out(script_id)
+    index, data = await Config.get_user(script_id, None)
+    user_index = project_model_list(UserIndexItem, index)
+    return UserGetOut(index=user_index, data=project_user_model_map(user_index, data))
 
 
-@api.post(
+@router.post(
     "/{script_id}/users",
     tags=["Add"],
     summary="创建用户",
@@ -328,7 +288,7 @@ async def create_user(script_id: ScriptIdPath) -> UserCreateOut:
     return UserCreateOut(id=str(uid), data=data)
 
 
-@api.patch(
+@router.patch(
     "/{script_id}/users/order",
     tags=["Update"],
     summary="重新排序用户",
@@ -341,7 +301,7 @@ async def reorder_users(
     return OutBase()
 
 
-@api.get(
+@router.get(
     "/{script_id}/users/{user_id}",
     tags=["Get"],
     summary="查询单个用户",
@@ -349,7 +309,10 @@ async def reorder_users(
 )
 async def get_user(script_id: ScriptIdPath, user_id: UserIdPath) -> UserDetailOut:
     try:
-        return await _build_user_detail_out(script_id, user_id)
+        index, data = await Config.get_user(script_id, user_id)
+        user_index = project_model_list(UserIndexItem, index)
+        projected = project_user_model_map(user_index, data)
+        return UserDetailOut(data=projected[user_id])
     except RECOVERABLE_EXCEPTIONS as e:
         user_type = "GeneralUserConfig"
         try:
@@ -366,7 +329,7 @@ async def get_user(script_id: ScriptIdPath, user_id: UserIdPath) -> UserDetailOu
         )
 
 
-@api.patch(
+@router.patch(
     "/{script_id}/users/{user_id}",
     tags=["Update"],
     summary="更新用户配置",
@@ -387,7 +350,7 @@ async def update_user(
     return OutBase()
 
 
-@api.delete(
+@router.delete(
     "/{script_id}/users/{user_id}",
     tags=["Delete"],
     summary="删除用户",
@@ -398,7 +361,7 @@ async def delete_user(script_id: ScriptIdPath, user_id: UserIdPath) -> OutBase:
     return OutBase()
 
 
-@api.post(
+@router.post(
     "/{script_id}/users/{user_id}/actions/import-infrastructure",
     tags=["Action"],
     summary="导入基建配置文件",
@@ -413,7 +376,7 @@ async def import_infrastructure(
     return OutBase()
 
 
-@api.get(
+@router.get(
     "/{script_id}/users/{user_id}/infrastructure-options",
     tags=["Get"],
     summary="用户自定义基建排班可选项",
@@ -430,27 +393,27 @@ async def get_user_infrastructure_options(
     return ComboBoxOut(data=data)
 
 
-@api.get(
+@router.get(
     "/{script_id}/users/{user_id}/webhooks",
     tags=["Get"],
     summary="查询用户下的全部 Webhook",
     response_model=WebhookGetOut,
-    index=[],
-    data={},
 )
 async def list_user_webhooks(
     script_id: ScriptIdPath, user_id: UserIdPath
 ) -> WebhookGetOut:
-    return await _build_webhook_collection_out(script_id, user_id)
+    index, data = await Config.get_webhook(script_id, user_id, None)
+    return WebhookGetOut(
+        index=project_model_list(WebhookIndexItem, index),
+        data=project_model_map(WebhookRead, data),
+    )
 
 
-@api.post(
+@router.post(
     "/{script_id}/users/{user_id}/webhooks",
     tags=["Add"],
     summary="创建用户 Webhook",
     response_model=WebhookCreateOut,
-    id="",
-    data=WebhookRead(),
 )
 async def create_user_webhook(
     script_id: ScriptIdPath, user_id: UserIdPath
@@ -462,7 +425,7 @@ async def create_user_webhook(
     )
 
 
-@api.patch(
+@router.patch(
     "/{script_id}/users/{user_id}/webhooks/order",
     tags=["Update"],
     summary="重新排序用户 Webhook",
@@ -477,7 +440,7 @@ async def reorder_user_webhooks(
     return OutBase()
 
 
-@api.get(
+@router.get(
     "/{script_id}/users/{user_id}/webhooks/{webhook_id}",
     tags=["Get"],
     summary="查询单个用户 Webhook",
@@ -489,12 +452,14 @@ async def get_user_webhook(
     webhook_id: WebhookIdPath,
 ) -> WebhookDetailOut:
     try:
-        return await _build_webhook_detail_out(script_id, user_id, webhook_id)
+        _, data = await Config.get_webhook(script_id, user_id, webhook_id)
+        projected = project_model_map(WebhookRead, data)
+        return WebhookDetailOut(data=projected[webhook_id])
     except RECOVERABLE_EXCEPTIONS as e:
         return error_out(WebhookDetailOut, e, data=WebhookRead())
 
 
-@api.patch(
+@router.patch(
     "/{script_id}/users/{user_id}/webhooks/{webhook_id}",
     tags=["Update"],
     summary="更新用户 Webhook",
@@ -504,18 +469,18 @@ async def update_user_webhook(
     script_id: ScriptIdPath,
     user_id: UserIdPath,
     webhook_id: WebhookIdPath,
-    data: WebhookPatch = Body(...),
+    data: WebhookRead = Body(...),
 ) -> OutBase:
     await Config.update_webhook(
         script_id,
         user_id,
         webhook_id,
-        data.model_dump(exclude_unset=True, exclude_none=True),
+        dump_writable_data(data),
     )
     return OutBase()
 
 
-@api.delete(
+@router.delete(
     "/{script_id}/users/{user_id}/webhooks/{webhook_id}",
     tags=["Delete"],
     summary="删除用户 Webhook",

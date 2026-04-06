@@ -25,11 +25,12 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Body, Path
 
-from app.api.common import bind_api
+
 from app.core import Config, EmulatorManager
 from app.contracts.common_contract import (
     IndexOrderPatch,
     OutBase,
+    dump_writable_data,
     project_model,
     project_model_list,
     project_model_map,
@@ -41,7 +42,6 @@ from app.contracts.emulator_contract import (
     EmulatorDetailOut,
     EmulatorDeviceStatusOut,
     EmulatorGetOut,
-    EmulatorPatch,
     EmulatorRead,
     EmulatorSearchOut,
     EmulatorSearchResult,
@@ -49,7 +49,6 @@ from app.contracts.emulator_contract import (
 )
 
 router = APIRouter(prefix="/api/emulator", tags=["模拟器管理"])
-api = bind_api(router)
 
 EmulatorIdPath = Annotated[str, Path(description="模拟器 ID")]
 EmulatorActionPath = Annotated[
@@ -58,7 +57,13 @@ EmulatorActionPath = Annotated[
 ]
 
 
-async def _build_emulator_collection_out() -> EmulatorGetOut:
+@router.get(
+    "",
+    tags=["Get"],
+    summary="查询全部模拟器配置",
+    response_model=EmulatorGetOut,
+)
+async def list_emulators() -> EmulatorGetOut:
     index, data = await Config.get_emulator(None)
     return EmulatorGetOut(
         index=project_model_list(EmulatorConfigIndexItem, index),
@@ -66,13 +71,13 @@ async def _build_emulator_collection_out() -> EmulatorGetOut:
     )
 
 
-async def _build_emulator_detail_out(emulator_id: str) -> EmulatorDetailOut:
-    _, data = await Config.get_emulator(emulator_id)
-    projected = project_model_map(EmulatorRead, data)
-    return EmulatorDetailOut(data=projected[emulator_id])
-
-
-async def _build_emulator_create_out() -> EmulatorCreateOut:
+@router.post(
+    "",
+    tags=["Add"],
+    summary="创建模拟器配置",
+    response_model=EmulatorCreateOut,
+)
+async def create_emulator() -> EmulatorCreateOut:
     uid, config = await Config.add_emulator()
     return EmulatorCreateOut(
         id=str(uid),
@@ -80,59 +85,7 @@ async def _build_emulator_create_out() -> EmulatorCreateOut:
     )
 
 
-async def _update_emulator_config(emulator_id: str, data: EmulatorPatch) -> OutBase:
-    await Config.update_emulator(emulator_id, data.model_dump(exclude_unset=True))
-    return OutBase()
-
-
-async def _delete_emulator_config(emulator_id: str) -> OutBase:
-    await Config.del_emulator(emulator_id)
-    return OutBase()
-
-
-async def _build_emulator_status_out() -> EmulatorStatusOut:
-    return EmulatorStatusOut(data=await EmulatorManager.get_status(None))
-
-
-async def _build_emulator_device_status_out(
-    emulator_id: str,
-) -> EmulatorDeviceStatusOut:
-    statuses = await EmulatorManager.get_status(emulator_id)
-    return EmulatorDeviceStatusOut(data=statuses.get(emulator_id, {}))
-
-
-async def _build_emulator_search_out() -> EmulatorSearchOut:
-    from app.utils import search_all_emulators
-
-    emulators = await search_all_emulators()
-    return EmulatorSearchOut(data=project_model_list(EmulatorSearchResult, emulators))
-
-
-@api.get(
-    "",
-    tags=["Get"],
-    summary="查询全部模拟器配置",
-    response_model=EmulatorGetOut,
-    index=[],
-    data={},
-)
-async def list_emulators() -> EmulatorGetOut:
-    return await _build_emulator_collection_out()
-
-
-@api.post(
-    "",
-    tags=["Add"],
-    summary="创建模拟器配置",
-    response_model=EmulatorCreateOut,
-    id="",
-    data=EmulatorRead(),
-)
-async def create_emulator() -> EmulatorCreateOut:
-    return await _build_emulator_create_out()
-
-
-@api.patch(
+@router.patch(
     "/order",
     tags=["Update"],
     summary="重新排序模拟器",
@@ -143,73 +96,77 @@ async def reorder_emulator(body: IndexOrderPatch = Body(...)) -> OutBase:
     return OutBase()
 
 
-@api.get(
+@router.get(
     "/detected",
     tags=["Get"],
     summary="搜索已安装的模拟器",
     response_model=EmulatorSearchOut,
-    data=[],
 )
 async def detect_emulators() -> EmulatorSearchOut:
-    return await _build_emulator_search_out()
+    from app.utils import search_all_emulators
+
+    emulators = await search_all_emulators()
+    return EmulatorSearchOut(data=project_model_list(EmulatorSearchResult, emulators))
 
 
-@api.get(
+@router.get(
     "/status",
     tags=["Get"],
     summary="查询全部模拟器状态",
     response_model=EmulatorStatusOut,
-    data={},
 )
 async def get_emulator_statuses() -> EmulatorStatusOut:
-    return await _build_emulator_status_out()
+    return EmulatorStatusOut(data=await EmulatorManager.get_status(None))
 
 
-@api.get(
+@router.get(
     "/{emulator_id}",
     tags=["Get"],
     summary="查询单个模拟器配置",
     response_model=EmulatorDetailOut,
-    data=EmulatorRead(),
 )
 async def get_emulator(emulator_id: EmulatorIdPath) -> EmulatorDetailOut:
-    return await _build_emulator_detail_out(emulator_id)
+    _, data = await Config.get_emulator(emulator_id)
+    projected = project_model_map(EmulatorRead, data)
+    return EmulatorDetailOut(data=projected[emulator_id])
 
 
-@api.patch(
+@router.patch(
     "/{emulator_id}",
     tags=["Update"],
     summary="更新模拟器配置",
     response_model=OutBase,
 )
 async def update_emulator(
-    emulator_id: EmulatorIdPath, data: EmulatorPatch = Body(...)
+    emulator_id: EmulatorIdPath, data: EmulatorRead = Body(...)
 ) -> OutBase:
-    return await _update_emulator_config(emulator_id, data)
+    await Config.update_emulator(emulator_id, dump_writable_data(data))
+    return OutBase()
 
 
-@api.delete(
+@router.delete(
     "/{emulator_id}",
     tags=["Delete"],
     summary="删除模拟器配置",
     response_model=OutBase,
 )
 async def delete_emulator(emulator_id: EmulatorIdPath) -> OutBase:
-    return await _delete_emulator_config(emulator_id)
+    await Config.del_emulator(emulator_id)
+    return OutBase()
 
 
-@api.get(
+@router.get(
     "/{emulator_id}/status",
     tags=["Get"],
     summary="查询单个模拟器状态",
     response_model=EmulatorDeviceStatusOut,
-    data={},
 )
 async def get_emulator_status(emulator_id: EmulatorIdPath) -> EmulatorDeviceStatusOut:
-    return await _build_emulator_device_status_out(emulator_id)
+    statuses = await EmulatorManager.get_status(emulator_id)
+    return EmulatorDeviceStatusOut(data=statuses.get(emulator_id, {}))
 
 
-@api.post(
+@router.post(
     "/{emulator_id}/actions/{action}",
     tags=["Action"],
     summary="执行模拟器动作",
