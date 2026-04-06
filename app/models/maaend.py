@@ -8,13 +8,15 @@ from typing import Annotated, Any, ClassVar, Literal
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.config.base import MultipleConfig
-from app.core.config.fields import RefField, VirtualField
 from app.core.config.pydantic import PydanticConfigBase
-from app.core.config.types import EncryptedString
+from app.core.config.shortcuts import config, ref, sub_configs, virtual
+from app.core.config.types import DayCount, EncryptedString, NonNegativeInt, PositiveInt
 from app.utils.constants import MAAEND_STAGE_BOOK, MAAEND_STAGE_WITH_AB, UTC4, UTC8
 from .common import Webhook
 
 
+@config
+@sub_configs(Notify_CustomWebhooks=[Webhook])
 class MaaEndUserConfig(PydanticConfigBase):
     """MaaEnd用户配置"""
 
@@ -25,30 +27,13 @@ class MaaEndUserConfig(PydanticConfigBase):
         Password: EncryptedString = ""
         Mode: Literal["简洁", "详细"] = "简洁"
         Resource: Literal["官服"] = "官服"
-        RemainedDay: int = Field(default=-1, ge=-1, le=9999)
+        RemainedDay: DayCount = -1
         Notes: str = "无"
         IfSkland: bool = False
         SklandToken: EncryptedString = ""
         Tag: Annotated[
             str,
-            VirtualField(
-                "getTags",
-                depends_on=(
-                    ("Data", "IfPassCheck"),
-                    ("Data", "LastProxyStatus"),
-                    ("Data", "LastProxyDate"),
-                    ("Data", "ProxyTimes"),
-                    ("Info", "IfSkland"),
-                    ("Data", "LastSklandDate"),
-                    ("Info", "RemainedDay"),
-                    ("Task", "ProtocolSpaceTab"),
-                    ("Task", "OperatorProgression"),
-                    ("Task", "WeaponProgression"),
-                    ("Task", "CrisisDrills"),
-                    ("Task", "RewardsSetOption"),
-                    ("Info", "Notes"),
-                ),
-            ),
+            virtual("getTags"),
         ] = "[ ]"
 
     class TaskModel(BaseModel):
@@ -70,7 +55,7 @@ class MaaEndUserConfig(PydanticConfigBase):
 
     class DataModel(BaseModel):
         LastProxyDate: str = "2000-01-01"
-        ProxyTimes: int = Field(default=0, ge=0, le=9999)
+        ProxyTimes: NonNegativeInt = Field(default=0, le=9999)
         LastProxyStatus: Literal["未知", "成功", "失败"] = "未知"
         LastSklandDate: str = "2000-01-01"
         IfPassCheck: bool = True
@@ -97,10 +82,6 @@ class MaaEndUserConfig(PydanticConfigBase):
     Task: TaskModel = Field(default_factory=TaskModel)
     Data: DataModel = Field(default_factory=DataModel)
     Notify: NotifyModel = Field(default_factory=NotifyModel)
-
-    def __init__(self, **data: Any):
-        super().__init__(**data)
-        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
     def getTags(self) -> str:  # noqa: N802
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
@@ -185,6 +166,8 @@ class MaaEndUserConfig(PydanticConfigBase):
         return json.dumps(tags, ensure_ascii=False)
 
 
+@config
+@sub_configs(UserData=[MaaEndUserConfig])
 class MaaEndConfig(PydanticConfigBase):
     """MaaEnd配置"""
 
@@ -195,9 +178,9 @@ class MaaEndConfig(PydanticConfigBase):
         Path: str = str(Path.cwd())
 
     class RunModel(BaseModel):
-        RunTimeLimit: int = Field(default=10, ge=1, le=9999)
-        ProxyTimesLimit: int = Field(default=0, ge=0, le=9999)
-        RunTimesLimit: int = Field(default=3, ge=1, le=9999)
+        RunTimeLimit: PositiveInt = Field(default=10, le=9999)
+        ProxyTimesLimit: NonNegativeInt = Field(default=0, le=9999)
+        RunTimesLimit: PositiveInt = Field(default=3, le=9999)
 
     class GameModel(BaseModel):
         ControllerType: Literal[
@@ -205,10 +188,10 @@ class MaaEndConfig(PydanticConfigBase):
         ] = "Win32-Window"
         Path: str = str(Path.cwd())
         Arguments: str = ""
-        WaitTime: int = Field(default=0, ge=0, le=9999)
+        WaitTime: NonNegativeInt = Field(default=0, le=9999)
         EmulatorId: Annotated[
             str,
-            RefField(
+            ref(
                 "EmulatorConfig",
                 default="-",
                 allow_values=("-",),
@@ -221,10 +204,6 @@ class MaaEndConfig(PydanticConfigBase):
     Info: InfoModel = Field(default_factory=InfoModel)
     Run: RunModel = Field(default_factory=RunModel)
     Game: GameModel = Field(default_factory=GameModel)
-
-    def __init__(self, **data: Any):
-        super().__init__(**data)
-        self.UserData = MultipleConfig([MaaEndUserConfig])
 
 
 __all__ = ["MaaEndUserConfig", "MaaEndConfig"]

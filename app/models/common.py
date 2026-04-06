@@ -6,12 +6,13 @@ from typing import Annotated, Any, ClassVar, Literal, cast
 from pydantic import AliasChoices, AliasPath, BaseModel, Field, field_validator
 
 from app.core.config.base import MultipleConfig
-from app.core.config.fields import RefField
 from app.core.config.pydantic import PydanticConfigBase
+from app.core.config.shortcuts import config, ref, sub_configs
 from app.core.config.types import (
     HHMMString,
     JsonDictString,
     JsonListString,
+    PositiveInt,
     UrlString,
     YmdHmString,
 )
@@ -31,6 +32,7 @@ AFTER_ACCOMPLISH_OPTIONS = Literal[
 HTTP_METHOD = Literal["POST", "GET"]
 
 
+@config
 class EmulatorConfig(PydanticConfigBase):
     """模拟器配置"""
 
@@ -45,9 +47,8 @@ class EmulatorConfig(PydanticConfigBase):
             default="[ ]",
             validation_alias=AliasChoices("BossKey", AliasPath("Data", "BossKey")),
         )
-        MaxWaitTime: int = Field(
+        MaxWaitTime: PositiveInt = Field(
             default=60,
-            ge=1,
             le=9999,
             validation_alias=AliasChoices(
                 "MaxWaitTime", AliasPath("Data", "MaxWaitTime")
@@ -57,6 +58,7 @@ class EmulatorConfig(PydanticConfigBase):
     Info: InfoModel = Field(default_factory=InfoModel)
 
 
+@config
 class Webhook(PydanticConfigBase):
     """Webhook 配置"""
 
@@ -74,6 +76,7 @@ class Webhook(PydanticConfigBase):
     Data: DataModel = Field(default_factory=DataModel)
 
 
+@config
 class QueueItem(PydanticConfigBase):
     """队列项配置"""
 
@@ -82,7 +85,7 @@ class QueueItem(PydanticConfigBase):
     class InfoModel(BaseModel):
         ScriptId: Annotated[
             str,
-            RefField(
+            ref(
                 "ScriptConfig",
                 default="-",
                 allow_values=("-",),
@@ -93,6 +96,7 @@ class QueueItem(PydanticConfigBase):
     Info: InfoModel = Field(default_factory=InfoModel)
 
 
+@config
 class TimeSet(PydanticConfigBase):
     """时间设置配置"""
 
@@ -118,6 +122,8 @@ class TimeSet(PydanticConfigBase):
     Info: InfoModel = Field(default_factory=InfoModel)
 
 
+@config
+@sub_configs(TimeSet=[TimeSet], QueueItem=[QueueItem])
 class QueueConfig(PydanticConfigBase):
     """队列配置"""
 
@@ -132,11 +138,6 @@ class QueueConfig(PydanticConfigBase):
 
     Info: InfoModel = Field(default_factory=InfoModel)
     Data: DataModel = Field(default_factory=DataModel)
-
-    def __init__(self, **data: Any):
-        super().__init__(**data)
-        self.TimeSet: MultipleConfig[TimeSet] = MultipleConfig([TimeSet])
-        self.QueueItem: MultipleConfig[QueueItem] = MultipleConfig([QueueItem])
 
 
 __all__ = ["EmulatorConfig", "Webhook", "QueueItem", "TimeSet", "QueueConfig"]

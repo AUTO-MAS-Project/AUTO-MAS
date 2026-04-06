@@ -8,9 +8,9 @@ from typing import Annotated, Any, ClassVar, Literal
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.config.base import MultipleConfig
-from app.core.config.fields import RefField, VirtualField
 from app.core.config.pydantic import PydanticConfigBase
-from app.core.config.types import EncryptedString
+from app.core.config.shortcuts import config, ref, sub_configs, virtual
+from app.core.config.types import DayCount, EncryptedString, NonNegativeInt, PositiveInt
 from app.utils.constants import STARRAIL_STAGE_BOOK, UTC4
 from .common import Webhook
 
@@ -136,6 +136,8 @@ SIM_WORLD_OPTIONS: tuple[str, ...] = (
 )
 
 
+@config
+@sub_configs(Notify_CustomWebhooks=[Webhook])
 class SrcUserConfig(PydanticConfigBase):
     """SRC用户配置"""
 
@@ -156,26 +158,11 @@ class SrcUserConfig(PydanticConfigBase):
             "OVERSEA-Europe",
             "OVERSEA-TWHKMO",
         ] = "CN-Official"
-        RemainedDay: int = Field(default=-1, ge=-1, le=9999)
+        RemainedDay: DayCount = -1
         Notes: str = "无"
         Tag: Annotated[
             str,
-            VirtualField(
-                "getTags",
-                depends_on=(
-                    ("Data", "IfPassCheck"),
-                    ("Data", "LastProxyDate"),
-                    ("Data", "ProxyTimes"),
-                    ("Info", "RemainedDay"),
-                    ("Stage", "Channel"),
-                    ("Stage", "Relic"),
-                    ("Stage", "Materials"),
-                    ("Stage", "Ornament"),
-                    ("Stage", "EchoOfWar"),
-                    ("Stage", "SimulatedUniverseWorld"),
-                    ("Info", "Notes"),
-                ),
-            ),
+            virtual("getTags"),
         ] = "[ ]"
 
     class StageModel(BaseModel):
@@ -185,7 +172,7 @@ class SrcUserConfig(PydanticConfigBase):
         Ornament: str = "-"
         ExtractReservedTrailblazePower: bool = False
         UseFuel: bool = False
-        FuelReserve: int = Field(default=5, ge=0, le=9999)
+        FuelReserve: NonNegativeInt = Field(default=5, le=9999)
         EchoOfWar: str = "-"
         SimulatedUniverseWorld: str = "-"
 
@@ -221,7 +208,7 @@ class SrcUserConfig(PydanticConfigBase):
 
     class DataModel(BaseModel):
         LastProxyDate: str = "2000-01-01"
-        ProxyTimes: int = Field(default=0, ge=0, le=9999)
+        ProxyTimes: NonNegativeInt = Field(default=0, le=9999)
         IfPassCheck: bool = True
 
         @field_validator("LastProxyDate", mode="before")
@@ -246,10 +233,6 @@ class SrcUserConfig(PydanticConfigBase):
     Stage: StageModel = Field(default_factory=StageModel)
     Data: DataModel = Field(default_factory=DataModel)
     Notify: NotifyModel = Field(default_factory=NotifyModel)
-
-    def __init__(self, **data: Any):
-        super().__init__(**data)
-        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
     def getTags(self) -> str:  # noqa: N802
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
@@ -325,6 +308,8 @@ class SrcUserConfig(PydanticConfigBase):
         return json.dumps(tags, ensure_ascii=False)
 
 
+@config
+@sub_configs(UserData=[SrcUserConfig])
 class SrcConfig(PydanticConfigBase):
     """SRC配置"""
 
@@ -337,7 +322,7 @@ class SrcConfig(PydanticConfigBase):
     class EmulatorModel(BaseModel):
         Id: Annotated[
             str,
-            RefField(
+            ref(
                 "EmulatorConfig",
                 default="-",
                 allow_values=("-",),
@@ -348,17 +333,13 @@ class SrcConfig(PydanticConfigBase):
 
     class RunModel(BaseModel):
         TaskTransitionMethod: Literal["ExitGame", "ExitEmulator"] = "ExitGame"
-        ProxyTimesLimit: int = Field(default=0, ge=0, le=9999)
-        RunTimesLimit: int = Field(default=3, ge=1, le=9999)
-        RunTimeLimit: int = Field(default=10, ge=1, le=9999)
+        ProxyTimesLimit: NonNegativeInt = Field(default=0, le=9999)
+        RunTimesLimit: PositiveInt = Field(default=3, le=9999)
+        RunTimeLimit: PositiveInt = Field(default=10, le=9999)
 
     Info: InfoModel = Field(default_factory=InfoModel)
     Emulator: EmulatorModel = Field(default_factory=EmulatorModel)
     Run: RunModel = Field(default_factory=RunModel)
-
-    def __init__(self, **data: Any):
-        super().__init__(**data)
-        self.UserData = MultipleConfig([SrcUserConfig])
 
 
 __all__ = ["SrcUserConfig", "SrcConfig"]

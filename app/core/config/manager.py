@@ -556,7 +556,7 @@ class AppConfig(GlobalConfig):
         self,
         script: Literal["MAA", "SRC", "General", "MaaEnd"],
         script_id: str | None = None,
-    ) -> tuple[uuid.UUID, MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig]:
+    ) -> tuple[uuid.UUID, Any]:
         """添加脚本配置"""
 
         logger.info(f"添加脚本配置: {script}, 从 {script_id} 复制")
@@ -693,7 +693,7 @@ class AppConfig(GlobalConfig):
             raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
 
         temp = await self.ScriptConfig[uid].toDict(if_decrypt=False)
-        temp.pop("SubConfigsInfo", None)
+        temp.pop("sub_configs_info", None)
         temp = await self.remove_privacy_info(temp, Path(file_path).stem)
 
         file_path.write_text(
@@ -761,7 +761,7 @@ class AppConfig(GlobalConfig):
             raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
 
         temp = await self.ScriptConfig[uid].toDict(if_decrypt=False)
-        temp.pop("SubConfigsInfo", None)
+        temp.pop("sub_configs_info", None)
         temp = await self.remove_privacy_info(temp, config_name)
 
         files = {
@@ -799,24 +799,24 @@ class AppConfig(GlobalConfig):
     ) -> dict[str, Any]:
         """移除配置中可能存在的隐私信息"""
 
-        confg["Info"]["Name"] = name
-        for path in ["ScriptPath", "ConfigPath", "LogPath", "TrackProcessExe"]:
-            if Path(confg["Script"][path]).is_relative_to(
-                Path(confg["Info"]["RootPath"])
+        confg["info"]["name"] = name
+        for path in ["script_path", "config_path", "log_path", "track_process_exe"]:
+            if Path(confg["script"][path]).is_relative_to(
+                Path(confg["info"]["root_path"])
             ):
-                confg["Script"][path] = str(
+                confg["script"][path] = str(
                     Path(r"C:/脚本根目录")
-                    / Path(confg["Script"][path]).relative_to(
-                        Path(confg["Info"]["RootPath"])
+                    / Path(confg["script"][path]).relative_to(
+                        Path(confg["info"]["root_path"])
                     )
                 )
-            if sys.platform == "win32" and Path(confg["Script"][path]).is_relative_to(
+            if sys.platform == "win32" and Path(confg["script"][path]).is_relative_to(
                 Path(os.environ["APPDATA"])
             ):
-                confg["Script"][path] = (
-                    f"%APPDATA%/{Path(confg['Script'][path]).relative_to(Path(os.environ['APPDATA']))}"
+                confg["script"][path] = (
+                    f"%APPDATA%/{Path(confg['script'][path]).relative_to(Path(os.environ['APPDATA']))}"
                 )
-        confg["Info"]["RootPath"] = str(Path(r"C:/脚本根目录"))
+        confg["info"]["root_path"] = str(Path(r"C:/脚本根目录"))
 
         return confg
 
@@ -839,11 +839,7 @@ class AppConfig(GlobalConfig):
         index = data.pop("instances", [])
         return list(index), data
 
-    async def add_user(
-        self, script_id: str
-    ) -> tuple[
-        uuid.UUID, MaaUserConfig | SrcUserConfig | GeneralUserConfig | MaaEndUserConfig
-    ]:
+    async def add_user(self, script_id: str) -> tuple[uuid.UUID, Any]:
         """添加用户配置"""
 
         logger.info(f"{script_id} 添加用户配置")
