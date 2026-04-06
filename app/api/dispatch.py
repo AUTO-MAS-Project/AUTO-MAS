@@ -33,7 +33,6 @@ from app.contracts.dispatch_contract import (
     TaskCreateIn,
     TaskCreateOut,
 )
-from app.api.common import RECOVERABLE_EXCEPTIONS, error_out
 
 router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
 
@@ -45,10 +44,7 @@ router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
     response_model=TaskCreateOut,
 )
 async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
-    try:
-        task_id = await TaskManager.add_task(task.mode, task.taskId)
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(TaskCreateOut, e, taskId="")
+    task_id = await TaskManager.add_task(task.mode, task.taskId)
     return TaskCreateOut(taskId=str(task_id))
 
 
@@ -59,10 +55,7 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
     response_model=OutBase,
 )
 async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
-    try:
-        await TaskManager.stop_task(task.taskId)
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(OutBase, e)
+    await TaskManager.stop_task(task.taskId)
     return OutBase()
 
 
@@ -73,10 +66,7 @@ async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
     response_model=PowerOut,
 )
 async def get_power() -> PowerOut:
-    try:
-        signal = Config.power_sign
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(PowerOut, e, signal="NoAction")
+    signal = Config.power_sign
     return PowerOut(signal=signal)
 
 
@@ -87,10 +77,7 @@ async def get_power() -> PowerOut:
     response_model=OutBase,
 )
 async def set_power(task: PowerIn = Body(...)) -> OutBase:
-    try:
-        Config.power_sign = task.signal
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(OutBase, e)
+    Config.power_sign = task.signal
     return OutBase()
 
 
@@ -101,8 +88,5 @@ async def set_power(task: PowerIn = Body(...)) -> OutBase:
     response_model=OutBase,
 )
 async def cancel_power_task() -> OutBase:
-    try:
-        await System.cancel_power_task()
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(OutBase, e)
+    await System.cancel_power_task()
     return OutBase()

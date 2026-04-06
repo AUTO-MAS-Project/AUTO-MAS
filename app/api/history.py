@@ -27,7 +27,6 @@ from fastapi import APIRouter, Body
 from pydantic import TypeAdapter
 
 from app.core import Config
-from app.api.common import RECOVERABLE_EXCEPTIONS, error_out
 from app.contracts.history_contract import (
     HistoryData,
     HistoryDataGetIn,
@@ -60,21 +59,18 @@ def _build_history_data(raw: dict[str, object]) -> HistoryData:
     response_model=HistorySearchOut,
 )
 async def search_history(history: HistorySearchIn) -> HistorySearchOut:
-    try:
-        raw_data = await Config.search_history(
-            history.mode,
-            datetime.strptime(history.start_date, "%Y-%m-%d").date(),
-            datetime.strptime(history.end_date, "%Y-%m-%d").date(),
-        )
-        data: dict[str, dict[str, HistoryData]] = {}
-        for date, users in raw_data.items():
-            current_users: dict[str, HistoryData] = {}
-            for user, records in users.items():
-                record = await Config.merge_statistic_info(records)
-                current_users[user] = _build_history_data(record)
-            data[date] = current_users
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(HistorySearchOut, e, data={})
+    raw_data = await Config.search_history(
+        history.mode,
+        datetime.strptime(history.start_date, "%Y-%m-%d").date(),
+        datetime.strptime(history.end_date, "%Y-%m-%d").date(),
+    )
+    data: dict[str, dict[str, HistoryData]] = {}
+    for date, users in raw_data.items():
+        current_users: dict[str, HistoryData] = {}
+        for user, records in users.items():
+            record = await Config.merge_statistic_info(records)
+            current_users[user] = _build_history_data(record)
+        data[date] = current_users
     return HistorySearchOut(data=data)
 
 
@@ -85,12 +81,9 @@ async def search_history(history: HistorySearchIn) -> HistorySearchOut:
     response_model=HistoryDataGetOut,
 )
 async def get_history_data(history: HistoryDataGetIn = Body(...)) -> HistoryDataGetOut:
-    try:
-        path = Path(history.jsonPath)
-        raw_data = await Config.merge_statistic_info([path])
-        raw_data.pop("index", None)
-        raw_data["log_content"] = path.with_suffix(".log").read_text(encoding="utf-8")
-        data = _build_history_data(raw_data)
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(HistoryDataGetOut, e, data=HistoryData())
+    path = Path(history.jsonPath)
+    raw_data = await Config.merge_statistic_info([path])
+    raw_data.pop("index", None)
+    raw_data["log_content"] = path.with_suffix(".log").read_text(encoding="utf-8")
+    data = _build_history_data(raw_data)
     return HistoryDataGetOut(data=data)

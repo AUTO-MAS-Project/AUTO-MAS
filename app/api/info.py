@@ -34,7 +34,6 @@ from app.contracts.common_contract import (
     InfoOut,
     OutBase,
 )
-from app.api.common import RECOVERABLE_EXCEPTIONS, error_out
 from app.contracts.info_contract import (
     GetStageIn,
     NoticeOut,
@@ -66,16 +65,7 @@ def _to_combobox_items(raw_data: object) -> list[ComboBoxItem]:
     response_model=VersionOut,
 )
 async def get_git_version() -> VersionOut:
-    try:
-        is_latest, commit_hash, commit_time = await Config.get_git_version()
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(
-            VersionOut,
-            e,
-            if_need_update=False,
-            current_time="unknown",
-            current_hash="unknown",
-        )
+    is_latest, commit_hash, commit_time = await Config.get_git_version()
     return VersionOut(
         if_need_update=not is_latest,
         current_time=commit_time,
@@ -92,11 +82,8 @@ async def get_git_version() -> VersionOut:
 async def get_stage_combox(
     stage: GetStageIn = Body(..., description="关卡号类型"),
 ) -> ComboBoxOut:
-    try:
-        raw_data = cast(object, await Config.get_stage_info(stage.type))
-        data = _to_combobox_items(raw_data)
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(ComboBoxOut, e, data=[])
+    raw_data = cast(object, await Config.get_stage_info(stage.type))
+    data = _to_combobox_items(raw_data)
     return ComboBoxOut(data=data)
 
 
@@ -107,11 +94,8 @@ async def get_stage_combox(
     response_model=ComboBoxOut,
 )
 async def get_script_combox() -> ComboBoxOut:
-    try:
-        raw_data = await Config.get_script_combox()
-        data = _to_combobox_items(raw_data)
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(ComboBoxOut, e, data=[])
+    raw_data = await Config.get_script_combox()
+    data = _to_combobox_items(raw_data)
     return ComboBoxOut(data=data)
 
 
@@ -122,11 +106,8 @@ async def get_script_combox() -> ComboBoxOut:
     response_model=ComboBoxOut,
 )
 async def get_task_combox() -> ComboBoxOut:
-    try:
-        raw_data = await Config.get_task_combox()
-        data = _to_combobox_items(raw_data)
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(ComboBoxOut, e, data=[])
+    raw_data = await Config.get_task_combox()
+    data = _to_combobox_items(raw_data)
     return ComboBoxOut(data=data)
 
 
@@ -137,11 +118,8 @@ async def get_task_combox() -> ComboBoxOut:
     response_model=ComboBoxOut,
 )
 async def get_plan_combox() -> ComboBoxOut:
-    try:
-        raw_data = await Config.get_plan_combox()
-        data = _to_combobox_items(raw_data)
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(ComboBoxOut, e, data=[])
+    raw_data = await Config.get_plan_combox()
+    data = _to_combobox_items(raw_data)
     return ComboBoxOut(data=data)
 
 
@@ -152,11 +130,8 @@ async def get_plan_combox() -> ComboBoxOut:
     response_model=ComboBoxOut,
 )
 async def get_emulator_combox() -> ComboBoxOut:
-    try:
-        raw_data = await Config.get_emulator_combox()
-        data = _to_combobox_items(raw_data)
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(ComboBoxOut, e, data=[])
+    raw_data = await Config.get_emulator_combox()
+    data = _to_combobox_items(raw_data)
     return ComboBoxOut(data=data)
 
 
@@ -169,13 +144,10 @@ async def get_emulator_combox() -> ComboBoxOut:
 async def get_emulator_devices_combox(
     emulator: EmulatorIdBody = Body(...),
 ) -> ComboBoxOut:
-    try:
-        raw_data = cast(
-            object, await Config.get_emulator_devices_combox(emulator.emulatorId)
-        )
-        data = _to_combobox_items(raw_data)
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(ComboBoxOut, e, data=[])
+    raw_data = cast(
+        object, await Config.get_emulator_devices_combox(emulator.emulatorId)
+    )
+    data = _to_combobox_items(raw_data)
     return ComboBoxOut(data=data)
 
 
@@ -186,10 +158,7 @@ async def get_emulator_devices_combox(
     response_model=NoticeOut,
 )
 async def get_notice_info() -> NoticeOut:
-    try:
-        if_need_show, data = await Config.get_notice()
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(NoticeOut, e, if_need_show=False, data={})
+    if_need_show, data = await Config.get_notice()
     return NoticeOut(if_need_show=if_need_show, data=data)
 
 
@@ -200,10 +169,7 @@ async def get_notice_info() -> NoticeOut:
     response_model=OutBase,
 )
 async def confirm_notice() -> OutBase:
-    try:
-        await Config.set("Data", "IfShowNotice", False)
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(OutBase, e)
+    await Config.set("Data", "IfShowNotice", False)
     return OutBase()
 
 
@@ -228,10 +194,7 @@ async def confirm_notice() -> OutBase:
     response_model=InfoOut,
 )
 async def get_web_config() -> InfoOut:
-    try:
-        data = await Config.get_web_config()
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(InfoOut, e, data={})
+    data = await Config.get_web_config()
     return InfoOut(data={"WebConfig": data})
 
 
@@ -242,11 +205,8 @@ async def get_web_config() -> InfoOut:
     response_model=InfoOut,
 )
 async def get_overview() -> InfoOut:
-    try:
-        raw_stage = cast(object, await Config.get_stage_info("Info"))
-        stage = cast(dict[str, Any], raw_stage if isinstance(raw_stage, dict) else {})
+    raw_stage = cast(object, await Config.get_stage_info("Info"))
+    stage = cast(dict[str, Any], raw_stage if isinstance(raw_stage, dict) else {})
 
-        proxy = await Config.get_proxy_overview()
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(InfoOut, e, data={"Stage": [], "Proxy": []})
+    proxy = await Config.get_proxy_overview()
     return InfoOut(data={"Stage": stage, "Proxy": proxy})

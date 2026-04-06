@@ -27,7 +27,6 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Path
 from pydantic import TypeAdapter
 
-from app.api.common import RECOVERABLE_EXCEPTIONS, error_out
 from app.core import Config
 from app.contracts.common_contract import (
     ComboBoxItem,
@@ -59,7 +58,6 @@ from app.contracts.scripts_contract import (
     project_script_model_map,
     project_user_model,
     project_user_model_map,
-    script_contract_type_from_create,
     script_contract_type_from_runtime,
     user_contract_type_from_script,
     dump_script_patch_data,
@@ -105,22 +103,11 @@ async def list_scripts() -> ScriptGetOut:
     response_model=ScriptCreateOut,
 )
 async def create_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
-    try:
-        uid, config = await Config.add_script(script.type, script.copyFromId)
-        data = project_script_model(
-            script_contract_type_from_runtime(type(config).__name__),
-            await config.toDict(),
-        )
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(
-            ScriptCreateOut,
-            e,
-            id="",
-            data=project_script_model(
-                script_contract_type_from_create(script.type),
-                {},
-            ),
-        )
+    uid, config = await Config.add_script(script.type, script.copyFromId)
+    data = project_script_model(
+        script_contract_type_from_runtime(type(config).__name__),
+        await config.toDict(),
+    )
     return ScriptCreateOut(id=str(uid), data=data)
 
 
@@ -142,24 +129,10 @@ async def reorder_scripts(body: IndexOrderPatch = Body(...)) -> OutBase:
     response_model=ScriptDetailOut,
 )
 async def get_script(script_id: ScriptIdPath) -> ScriptDetailOut:
-    try:
-        index, data = await Config.get_script(script_id)
-        script_index = project_model_list(ScriptIndexItem, index)
-        projected = project_script_model_map(script_index, data)
-        return ScriptDetailOut(data=projected[script_id])
-    except RECOVERABLE_EXCEPTIONS as e:
-        script_type = "GeneralConfig"
-        try:
-            script_type = script_contract_type_from_runtime(
-                type(Config.ScriptConfig[uuid.UUID(script_id)]).__name__
-            )
-        except RECOVERABLE_EXCEPTIONS:
-            pass
-        return error_out(
-            ScriptDetailOut,
-            e,
-            data=project_script_model(script_type, {}),
-        )
+    index, data = await Config.get_script(script_id)
+    script_index = project_model_list(ScriptIndexItem, index)
+    projected = project_script_model_map(script_index, data)
+    return ScriptDetailOut(data=projected[script_id])
 
 
 @router.patch(
@@ -265,26 +238,12 @@ async def list_users(script_id: ScriptIdPath) -> UserGetOut:
     response_model=UserCreateOut,
 )
 async def create_user(script_id: ScriptIdPath) -> UserCreateOut:
-    script_type = None
-    try:
-        uid, config = await Config.add_user(script_id)
-        script_type = script_contract_type_from_runtime(
-            type(Config.ScriptConfig[uuid.UUID(script_id)]).__name__
-        )
-        user_type = user_contract_type_from_script(script_type)
-        data = project_user_model(user_type, await config.toDict())
-    except RECOVERABLE_EXCEPTIONS as e:
-        user_type = (
-            user_contract_type_from_script(script_type)
-            if script_type is not None
-            else "GeneralUserConfig"
-        )
-        return error_out(
-            UserCreateOut,
-            e,
-            id="",
-            data=project_user_model(user_type, {}),
-        )
+    uid, config = await Config.add_user(script_id)
+    script_type = script_contract_type_from_runtime(
+        type(Config.ScriptConfig[uuid.UUID(script_id)]).__name__
+    )
+    user_type = user_contract_type_from_script(script_type)
+    data = project_user_model(user_type, await config.toDict())
     return UserCreateOut(id=str(uid), data=data)
 
 
@@ -308,25 +267,10 @@ async def reorder_users(
     response_model=UserDetailOut,
 )
 async def get_user(script_id: ScriptIdPath, user_id: UserIdPath) -> UserDetailOut:
-    try:
-        index, data = await Config.get_user(script_id, user_id)
-        user_index = project_model_list(UserIndexItem, index)
-        projected = project_user_model_map(user_index, data)
-        return UserDetailOut(data=projected[user_id])
-    except RECOVERABLE_EXCEPTIONS as e:
-        user_type = "GeneralUserConfig"
-        try:
-            script_type = script_contract_type_from_runtime(
-                type(Config.ScriptConfig[uuid.UUID(script_id)]).__name__
-            )
-            user_type = user_contract_type_from_script(script_type)
-        except RECOVERABLE_EXCEPTIONS:
-            pass
-        return error_out(
-            UserDetailOut,
-            e,
-            data=project_user_model(user_type, {}),
-        )
+    index, data = await Config.get_user(script_id, user_id)
+    user_index = project_model_list(UserIndexItem, index)
+    projected = project_user_model_map(user_index, data)
+    return UserDetailOut(data=projected[user_id])
 
 
 @router.patch(
@@ -385,11 +329,8 @@ async def import_infrastructure(
 async def get_user_infrastructure_options(
     script_id: ScriptIdPath, user_id: UserIdPath
 ) -> ComboBoxOut:
-    try:
-        raw_data = await Config.get_user_combox_infrastructure(script_id, user_id)
-        data = COMBOBOX_ITEMS_ADAPTER.validate_python(raw_data or [])
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(ComboBoxOut, e, data=[])
+    raw_data = await Config.get_user_combox_infrastructure(script_id, user_id)
+    data = COMBOBOX_ITEMS_ADAPTER.validate_python(raw_data or [])
     return ComboBoxOut(data=data)
 
 
@@ -451,12 +392,9 @@ async def get_user_webhook(
     user_id: UserIdPath,
     webhook_id: WebhookIdPath,
 ) -> WebhookDetailOut:
-    try:
-        _, data = await Config.get_webhook(script_id, user_id, webhook_id)
-        projected = project_model_map(WebhookRead, data)
-        return WebhookDetailOut(data=projected[webhook_id])
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(WebhookDetailOut, e, data=WebhookRead())
+    _, data = await Config.get_webhook(script_id, user_id, webhook_id)
+    projected = project_model_map(WebhookRead, data)
+    return WebhookDetailOut(data=projected[webhook_id])
 
 
 @router.patch(
