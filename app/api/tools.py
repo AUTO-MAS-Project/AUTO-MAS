@@ -23,40 +23,30 @@
 
 from fastapi import APIRouter, Body
 
-from app.api.common import bind_api
+
 from app.core import Config
-from app.contracts.common_contract import OutBase, project_model
-from app.contracts.tools_contract import ToolsConfigPatch, ToolsConfigRead, ToolsGetOut
+from app.contracts.common_contract import OutBase, dump_writable_data, project_model
+from app.contracts.tools_contract import ToolsConfigRead, ToolsGetOut
 
 router = APIRouter(prefix="/api/tools", tags=["工具设置"])
-api = bind_api(router)
 
 
-async def _build_tools_out() -> ToolsGetOut:
-    return ToolsGetOut(data=project_model(ToolsConfigRead, await Config.get_tools()))
-
-
-async def _update_tools_config(data: ToolsConfigPatch) -> OutBase:
-    await Config.update_tools(data.model_dump(exclude_unset=True))
-    return OutBase()
-
-
-@api.get(
+@router.get(
     "",
     tags=["Get"],
     summary="查询工具配置",
     response_model=ToolsGetOut,
-    data=ToolsConfigRead(),
 )
 async def get_tools() -> ToolsGetOut:
-    return await _build_tools_out()
+    return ToolsGetOut(data=project_model(ToolsConfigRead, await Config.get_tools()))
 
 
-@api.patch(
+@router.patch(
     "",
     tags=["Update"],
     summary="更新工具配置",
     response_model=OutBase,
 )
-async def update_tools(data: ToolsConfigPatch = Body(...)) -> OutBase:
-    return await _update_tools_config(data)
+async def update_tools(data: ToolsConfigRead = Body(...)) -> OutBase:
+    await Config.update_tools(dump_writable_data(data))
+    return OutBase()

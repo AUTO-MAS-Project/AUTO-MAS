@@ -33,13 +33,12 @@ from app.contracts.dispatch_contract import (
     TaskCreateIn,
     TaskCreateOut,
 )
-from app.api.common import RECOVERABLE_EXCEPTIONS, bind_api, error_out
+from app.api.common import RECOVERABLE_EXCEPTIONS, error_out
 
 router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
-api = bind_api(router)
 
 
-@api.post(
+@router.post(
     "/start",
     tags=["Action"],
     summary="添加任务",
@@ -53,7 +52,7 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
     return TaskCreateOut(taskId=str(task_id))
 
 
-@api.post(
+@router.post(
     "/stop",
     tags=["Action"],
     summary="中止任务",
@@ -67,7 +66,7 @@ async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
     return OutBase()
 
 
-@api.post(
+@router.post(
     "/get/power",
     tags=["Get"],
     summary="获取电源标志",
@@ -81,7 +80,7 @@ async def get_power() -> PowerOut:
     return PowerOut(signal=signal)
 
 
-@api.post(
+@router.post(
     "/set/power",
     tags=["Action"],
     summary="设置电源标志",
@@ -95,7 +94,7 @@ async def set_power(task: PowerIn = Body(...)) -> OutBase:
     return OutBase()
 
 
-@api.post(
+@router.post(
     "/cancel/power",
     tags=["Action"],
     summary="取消电源任务",

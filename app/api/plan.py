@@ -25,11 +25,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Path
 
-from app.api.common import RECOVERABLE_EXCEPTIONS, bind_api, error_out
+from app.api.common import RECOVERABLE_EXCEPTIONS, error_out
 from app.core import Config
 from app.contracts.common_contract import (
     IndexOrderPatch,
     OutBase,
+    dump_writable_data,
     project_model,
     project_model_list,
     project_model_map,
@@ -45,32 +46,15 @@ from app.contracts.plan_contract import (
 )
 
 router = APIRouter(prefix="/api/plan", tags=["计划管理"])
-api = bind_api(router)
 
 PlanIdPath = Annotated[str, Path(description="计划 ID")]
 
 
-async def _build_plan_collection_out() -> PlanGetOut:
-    index, data = await Config.get_plan(None)
-    return PlanGetOut(
-        index=project_model_list(PlanIndexItem, index),
-        data=project_model_map(MaaPlanRead, data),
-    )
-
-
-async def _build_plan_detail_out(plan_id: str) -> PlanDetailOut:
-    _, data = await Config.get_plan(plan_id)
-    projected = project_model_map(MaaPlanRead, data)
-    return PlanDetailOut(data=projected[plan_id])
-
-
-@api.post(
+@router.post(
     "",
     tags=["Add"],
     summary="创建计划表",
     response_model=PlanCreateOut,
-    id="",
-    data=MaaPlanRead(),
 )
 async def create_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
     try:
@@ -81,30 +65,33 @@ async def create_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
     return PlanCreateOut(id=str(uid), data=data)
 
 
-@api.get(
+@router.get(
     "",
     tags=["Get"],
     summary="查询全部计划表",
     response_model=PlanGetOut,
-    index=[],
-    data={},
 )
 async def list_plans() -> PlanGetOut:
-    return await _build_plan_collection_out()
+    index, data = await Config.get_plan(None)
+    return PlanGetOut(
+        index=project_model_list(PlanIndexItem, index),
+        data=project_model_map(MaaPlanRead, data),
+    )
 
 
-@api.get(
+@router.get(
     "/{plan_id}",
     tags=["Get"],
     summary="查询单个计划表",
     response_model=PlanDetailOut,
-    data=MaaPlanRead(),
 )
 async def get_plan(plan_id: PlanIdPath) -> PlanDetailOut:
-    return await _build_plan_detail_out(plan_id)
+    _, data = await Config.get_plan(plan_id)
+    projected = project_model_map(MaaPlanRead, data)
+    return PlanDetailOut(data=projected[plan_id])
 
 
-@api.patch(
+@router.patch(
     "/{plan_id}",
     tags=["Update"],
     summary="更新计划表",
@@ -112,13 +99,13 @@ async def get_plan(plan_id: PlanIdPath) -> PlanDetailOut:
 )
 async def update_plan(plan_id: PlanIdPath, body: PlanUpdateBody = Body(...)) -> OutBase:
     try:
-        await Config.update_plan(plan_id, body.data.model_dump(exclude_unset=True))
+        await Config.update_plan(plan_id, dump_writable_data(body.data))
     except RECOVERABLE_EXCEPTIONS as e:
         return error_out(OutBase, e)
     return OutBase()
 
 
-@api.delete(
+@router.delete(
     "/{plan_id}",
     tags=["Delete"],
     summary="删除计划表",
@@ -132,7 +119,7 @@ async def delete_plan(plan_id: PlanIdPath) -> OutBase:
     return OutBase()
 
 
-@api.patch(
+@router.patch(
     "/order",
     tags=["Update"],
     summary="重新排序计划表",

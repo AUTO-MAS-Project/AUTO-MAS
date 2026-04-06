@@ -10,22 +10,19 @@ from .common_contract import (
     ResourceCollectionOut,
     ResourceCreateOut,
     ResourceItemOut,
+    dump_writable_data,
     project_model,
 )
 from .general_contract import (
     GeneralConfig,
-    GeneralConfigPatch,
     GeneralUserConfig,
-    GeneralUserConfigPatch,
 )
-from .maa_contract import MaaConfig, MaaConfigPatch, MaaUserConfig, MaaUserConfigPatch
+from .maa_contract import MaaConfig, MaaUserConfig
 from .maaend_contract import (
     MaaEndConfig,
-    MaaEndConfigPatch,
     MaaEndUserConfig,
-    MaaEndUserConfigPatch,
 )
-from .src_contract import SrcConfig, SrcConfigPatch, SrcUserConfig, SrcUserConfigPatch
+from .src_contract import SrcConfig, SrcUserConfig
 
 
 ScriptConfigType = Literal["MaaConfig", "GeneralConfig", "SrcConfig", "MaaEndConfig"]
@@ -45,18 +42,8 @@ UserModelClass = (
     | type[GeneralUserConfig]
     | type[MaaEndUserConfig]
 )
-ScriptPatchClass = (
-    type[MaaConfigPatch]
-    | type[SrcConfigPatch]
-    | type[GeneralConfigPatch]
-    | type[MaaEndConfigPatch]
-)
-UserPatchClass = (
-    type[MaaUserConfigPatch]
-    | type[SrcUserConfigPatch]
-    | type[GeneralUserConfigPatch]
-    | type[MaaEndUserConfigPatch]
-)
+ScriptPatchClass = ScriptModelClass
+UserPatchClass = UserModelClass
 
 ScriptReadData = Annotated[
     MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig,
@@ -74,10 +61,10 @@ SCRIPT_CONTRACT_BY_TYPE: dict[ScriptConfigType, ScriptModelClass] = {
     "MaaEndConfig": MaaEndConfig,
 }
 SCRIPT_PATCH_BY_TYPE: dict[ScriptConfigType, ScriptPatchClass] = {
-    "MaaConfig": MaaConfigPatch,
-    "GeneralConfig": GeneralConfigPatch,
-    "SrcConfig": SrcConfigPatch,
-    "MaaEndConfig": MaaEndConfigPatch,
+    "MaaConfig": MaaConfig,
+    "GeneralConfig": GeneralConfig,
+    "SrcConfig": SrcConfig,
+    "MaaEndConfig": MaaEndConfig,
 }
 USER_CONTRACT_BY_TYPE: dict[UserConfigType, UserModelClass] = {
     "MaaUserConfig": MaaUserConfig,
@@ -86,10 +73,10 @@ USER_CONTRACT_BY_TYPE: dict[UserConfigType, UserModelClass] = {
     "MaaEndUserConfig": MaaEndUserConfig,
 }
 USER_PATCH_BY_TYPE: dict[UserConfigType, UserPatchClass] = {
-    "MaaUserConfig": MaaUserConfigPatch,
-    "GeneralUserConfig": GeneralUserConfigPatch,
-    "SrcUserConfig": SrcUserConfigPatch,
-    "MaaEndUserConfig": MaaEndUserConfigPatch,
+    "MaaUserConfig": MaaUserConfig,
+    "GeneralUserConfig": GeneralUserConfig,
+    "SrcUserConfig": SrcUserConfig,
+    "MaaEndUserConfig": MaaEndUserConfig,
 }
 SCRIPT_CREATE_TO_CONFIG_TYPE: dict[ScriptCreateType, ScriptConfigType] = {
     "MAA": "MaaConfig",
@@ -148,14 +135,11 @@ UserDetailOut = ResourceItemOut[UserReadData]
 UserCreateOut = ResourceCreateOut[UserReadData]
 
 ScriptPatchData = Annotated[
-    MaaConfigPatch | SrcConfigPatch | GeneralConfigPatch | MaaEndConfigPatch,
+    MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig,
     Field(discriminator="type"),
 ]
 UserPatchData = Annotated[
-    MaaUserConfigPatch
-    | SrcUserConfigPatch
-    | GeneralUserConfigPatch
-    | MaaEndUserConfigPatch,
+    MaaUserConfig | SrcUserConfig | GeneralUserConfig | MaaEndUserConfig,
     Field(discriminator="type"),
 ]
 
@@ -231,7 +215,9 @@ def dump_script_patch_data(
 ) -> dict[str, Any]:
     if data.type != script_type:
         raise ValueError(f"Patch 类型不匹配: 期望 {script_type}, 实际 {data.type}")
-    return data.model_dump(exclude_unset=True, exclude_none=True, exclude={"type"})
+    writable = dump_writable_data(data)
+    writable.pop("type", None)
+    return writable
 
 
 def dump_user_patch_data(
@@ -239,7 +225,9 @@ def dump_user_patch_data(
 ) -> dict[str, Any]:
     if data.type != user_type:
         raise ValueError(f"Patch 类型不匹配: 期望 {user_type}, 实际 {data.type}")
-    return data.model_dump(exclude_unset=True, exclude_none=True, exclude={"type"})
+    writable = dump_writable_data(data)
+    writable.pop("type", None)
+    return writable
 
 
 __all__ = [

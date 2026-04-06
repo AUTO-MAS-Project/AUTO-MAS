@@ -11,37 +11,27 @@ from .common_contract import (
     ResourceCollectionOut,
     ResourceCreateOut,
     ResourceItemOut,
-    derive_config_contracts,
+    derive_config_contract_model,
 )
 
 
-_WebhookReadBase, _WebhookPatchBase = derive_config_contracts(
+_WebhookBase = derive_config_contract_model(
     Webhook,
-    read_name="WebhookRead",
-    patch_name="WebhookPatch",
+    model_name="WebhookRead",
 )
-_GlobalConfigReadBase, _GlobalConfigPatchBase = derive_config_contracts(
+_GlobalConfigBase = derive_config_contract_model(
     GlobalConfig,
-    read_name="GlobalConfigRead",
-    patch_name="GlobalConfigPatch",
+    model_name="GlobalConfigRead",
     include_groups=("Function", "Voice", "Start", "UI", "Notify", "Update"),
 )
 
 
-class WebhookRead(_WebhookReadBase):
-    pass
+class WebhookRead(_WebhookBase):
+    """Webhook 配置读取/写入模型。"""
 
 
-class WebhookPatch(_WebhookPatchBase):
-    pass
-
-
-class GlobalConfigRead(_GlobalConfigReadBase):
-    pass
-
-
-class GlobalConfigPatch(_GlobalConfigPatchBase):
-    pass
+class GlobalConfigRead(_GlobalConfigBase):
+    """全局配置读取/写入模型。"""
 
 
 class WebhookIndexItem(ApiModel):
@@ -57,9 +47,7 @@ SettingGetOut = ResourceItemOut[GlobalConfigRead]
 
 __all__ = [
     "WebhookRead",
-    "WebhookPatch",
     "GlobalConfigRead",
-    "GlobalConfigPatch",
     "WebhookIndexItem",
     "WebhookGetOut",
     "WebhookDetailOut",

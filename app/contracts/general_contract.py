@@ -4,42 +4,28 @@ from typing import Literal
 
 from pydantic import Field
 
-from .common_contract import derive_config_contracts
+from .common_contract import derive_config_contract_model
 from app.models.general import GeneralConfig as RuntimeGeneralConfig
 from app.models.general import GeneralUserConfig as RuntimeGeneralUserConfig
 
 
-_GeneralConfigReadBase, _GeneralConfigPatchBase = derive_config_contracts(
+_GeneralConfigBase = derive_config_contract_model(
     RuntimeGeneralConfig,
-    read_name="GeneralConfig",
-    patch_name="GeneralConfigPatch",
+    model_name="GeneralConfig",
 )
-_GeneralUserConfigReadBase, _GeneralUserConfigPatchBase = derive_config_contracts(
+_GeneralUserConfigBase = derive_config_contract_model(
     RuntimeGeneralUserConfig,
-    read_name="GeneralUserConfig",
-    patch_name="GeneralUserConfigPatch",
+    model_name="GeneralUserConfig",
 )
 
 
-class GeneralConfig(_GeneralConfigReadBase):
+class GeneralConfig(_GeneralConfigBase):
     type: Literal["GeneralConfig"] = Field(
         default="GeneralConfig", description="配置类型"
     )
 
 
-class GeneralConfigPatch(_GeneralConfigPatchBase):
-    type: Literal["GeneralConfig"] = Field(
-        default="GeneralConfig", description="配置类型"
-    )
-
-
-class GeneralUserConfig(_GeneralUserConfigReadBase):
-    type: Literal["GeneralUserConfig"] = Field(
-        default="GeneralUserConfig", description="配置类型"
-    )
-
-
-class GeneralUserConfigPatch(_GeneralUserConfigPatchBase):
+class GeneralUserConfig(_GeneralUserConfigBase):
     type: Literal["GeneralUserConfig"] = Field(
         default="GeneralUserConfig", description="配置类型"
     )
@@ -47,7 +33,5 @@ class GeneralUserConfigPatch(_GeneralUserConfigPatchBase):
 
 __all__ = [
     "GeneralConfig",
-    "GeneralConfigPatch",
     "GeneralUserConfig",
-    "GeneralUserConfigPatch",
 ]

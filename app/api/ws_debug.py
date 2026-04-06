@@ -50,18 +50,17 @@ from app.contracts.ws_contract import (
     WSClearHistoryIn,
     WSCommandsOut,
 )
-from app.api.common import RECOVERABLE_EXCEPTIONS, bind_api, run_api
+from app.api.common import RECOVERABLE_EXCEPTIONS, run_api
 
 logger = get_logger("WS调试")
 
 router = APIRouter(prefix="/api/ws_debug", tags=["WebSocket调试"])
-api = bind_api(router)
 
 
 # ============== API 路由 ==============
 
 
-@api.post(
+@router.post(
     "/client/create",
     summary="创建 WebSocket 客户端",
     response_model=WSClientCreateOut,
@@ -107,7 +106,7 @@ async def create_client(request: WSClientCreateIn) -> WSClientCreateOut:
     )
 
 
-@api.post(
+@router.post(
     "/client/connect",
     summary="连接 WebSocket 客户端",
     response_model=WSClientStatusOut,
@@ -155,7 +154,7 @@ async def connect_client(request: WSClientConnectIn) -> WSClientStatusOut:
     )
 
 
-@api.post(
+@router.post(
     "/client/disconnect",
     summary="断开 WebSocket 客户端",
     response_model=WSClientStatusOut,
@@ -186,7 +185,7 @@ async def disconnect_client(request: WSClientDisconnectIn) -> WSClientStatusOut:
     )
 
 
-@api.post(
+@router.post(
     "/client/remove",
     summary="删除 WebSocket 客户端",
     response_model=WSClientStatusOut,
@@ -224,7 +223,7 @@ async def remove_client(request: WSClientRemoveIn) -> WSClientStatusOut:
     )
 
 
-@api.post(
+@router.post(
     "/client/status",
     summary="获取客户端状态",
     response_model=WSClientStatusOut,
@@ -255,7 +254,7 @@ async def get_client_status(request: WSClientStatusIn) -> WSClientStatusOut:
     )
 
 
-@api.get(
+@router.get(
     "/client/list",
     summary="列出所有客户端",
     response_model=WSClientListOut,
@@ -273,7 +272,7 @@ async def list_clients() -> WSClientListOut:
     )
 
 
-@api.post(
+@router.post(
     "/message/send",
     summary="发送原始消息",
     response_model=WSClientStatusOut,
@@ -313,7 +312,7 @@ async def send_message(request: WSClientSendIn) -> WSClientStatusOut:
     )
 
 
-@api.post(
+@router.post(
     "/message/send_json",
     summary="发送格式化消息",
     response_model=WSClientStatusOut,
@@ -355,7 +354,7 @@ async def send_json_message(request: WSClientSendJsonIn) -> WSClientStatusOut:
     )
 
 
-@api.post(
+@router.post(
     "/message/auth",
     summary="发送认证消息",
     response_model=WSClientStatusOut,
@@ -405,7 +404,7 @@ async def send_auth(request: WSClientAuthIn) -> WSClientStatusOut:
     )
 
 
-@api.get(
+@router.get(
     "/history",
     summary="获取消息历史",
     response_model=WSMessageHistoryOut,
@@ -428,7 +427,7 @@ async def get_history(name: Optional[str] = None) -> WSMessageHistoryOut:
     )
 
 
-@api.post(
+@router.post(
     "/history/clear",
     summary="清空消息历史",
     response_model=WSClientStatusOut,
@@ -453,7 +452,7 @@ async def clear_history(request: WSClearHistoryIn) -> WSClientStatusOut:
         )
 
 
-@api.get(
+@router.get(
     "/commands",
     summary="获取可用 WS 命令",
     response_model=WSCommandsOut,

@@ -10,52 +10,37 @@ from .common_contract import (
     ResourceCollectionOut,
     ResourceCreateOut,
     ResourceItemOut,
-    derive_config_contracts,
+    derive_config_contract_model,
 )
 
 
-_QueueReadBase, _QueuePatchBase = derive_config_contracts(
+_QueueBase = derive_config_contract_model(
     QueueConfig,
-    read_name="QueueRead",
-    patch_name="QueuePatch",
+    model_name="QueueRead",
     include_groups=("Info",),
 )
-_TimeSetReadBase, _TimeSetPatchBase = derive_config_contracts(
+_TimeSetBase = derive_config_contract_model(
     TimeSet,
-    read_name="TimeSetRead",
-    patch_name="TimeSetPatch",
+    model_name="TimeSetRead",
     include_groups=("Info",),
 )
-_QueueItemReadBase, _QueueItemPatchBase = derive_config_contracts(
+_QueueItemBase = derive_config_contract_model(
     QueueItem,
-    read_name="QueueItemRead",
-    patch_name="QueueItemPatch",
+    model_name="QueueItemRead",
     include_groups=("Info",),
 )
 
 
-class QueueRead(_QueueReadBase):
-    pass
+class QueueRead(_QueueBase):
+    """队列配置读取/写入模型。"""
 
 
-class QueuePatch(_QueuePatchBase):
-    pass
+class TimeSetRead(_TimeSetBase):
+    """时间集合读取/写入模型。"""
 
 
-class TimeSetRead(_TimeSetReadBase):
-    pass
-
-
-class TimeSetPatch(_TimeSetPatchBase):
-    pass
-
-
-class QueueItemRead(_QueueItemReadBase):
-    pass
-
-
-class QueueItemPatch(_QueueItemPatchBase):
-    pass
+class QueueItemRead(_QueueItemBase):
+    """任务项读取/写入模型。"""
 
 
 class QueueIndexItem(ApiModel):
@@ -88,11 +73,8 @@ QueueItemGetOut = ResourceCollectionOut[QueueItemIndexItem, QueueItemRead]
 
 __all__ = [
     "QueueRead",
-    "QueuePatch",
     "TimeSetRead",
-    "TimeSetPatch",
     "QueueItemRead",
-    "QueueItemPatch",
     "QueueIndexItem",
     "QueueItemIndexItem",
     "TimeSetIndexItem",

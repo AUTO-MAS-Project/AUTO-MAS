@@ -4,56 +4,37 @@ from typing import Literal
 
 from pydantic import Field
 
-from .common_contract import derive_config_contracts
+from .common_contract import derive_config_contract_model
 from app.models.maa import MaaConfig as RuntimeMaaConfig
 from app.models.maa import MaaPlanConfig as RuntimeMaaPlanConfig
 from app.models.maa import MaaUserConfig as RuntimeMaaUserConfig
 
 
-_MaaConfigReadBase, _MaaConfigPatchBase = derive_config_contracts(
+_MaaConfigBase = derive_config_contract_model(
     RuntimeMaaConfig,
-    read_name="MaaConfig",
-    patch_name="MaaConfigPatch",
+    model_name="MaaConfig",
 )
-_MaaUserConfigReadBase, _MaaUserConfigPatchBase = derive_config_contracts(
+_MaaUserConfigBase = derive_config_contract_model(
     RuntimeMaaUserConfig,
-    read_name="MaaUserConfig",
-    patch_name="MaaUserConfigPatch",
+    model_name="MaaUserConfig",
 )
-_MaaPlanConfigReadBase, _MaaPlanPatchBase = derive_config_contracts(
+_MaaPlanConfigBase = derive_config_contract_model(
     RuntimeMaaPlanConfig,
-    read_name="MaaPlanConfig",
-    patch_name="MaaPlanPatch",
+    model_name="MaaPlanConfig",
 )
 
 
-class MaaConfig(_MaaConfigReadBase):
+class MaaConfig(_MaaConfigBase):
     type: Literal["MaaConfig"] = Field(default="MaaConfig", description="配置类型")
 
 
-class MaaConfigPatch(_MaaConfigPatchBase):
-    type: Literal["MaaConfig"] = Field(default="MaaConfig", description="配置类型")
-
-
-class MaaUserConfig(_MaaUserConfigReadBase):
+class MaaUserConfig(_MaaUserConfigBase):
     type: Literal["MaaUserConfig"] = Field(
         default="MaaUserConfig", description="配置类型"
     )
 
 
-class MaaUserConfigPatch(_MaaUserConfigPatchBase):
-    type: Literal["MaaUserConfig"] = Field(
-        default="MaaUserConfig", description="配置类型"
-    )
-
-
-class MaaPlanConfig(_MaaPlanConfigReadBase):
-    type: Literal["MaaPlanConfig"] = Field(
-        default="MaaPlanConfig", description="配置类型"
-    )
-
-
-class MaaPlanPatch(_MaaPlanPatchBase):
+class MaaPlanConfig(_MaaPlanConfigBase):
     type: Literal["MaaPlanConfig"] = Field(
         default="MaaPlanConfig", description="配置类型"
     )
@@ -61,9 +42,6 @@ class MaaPlanPatch(_MaaPlanPatchBase):
 
 __all__ = [
     "MaaConfig",
-    "MaaConfigPatch",
     "MaaUserConfig",
-    "MaaUserConfigPatch",
     "MaaPlanConfig",
-    "MaaPlanPatch",
 ]
