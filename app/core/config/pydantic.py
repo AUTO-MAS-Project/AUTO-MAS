@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import ast
+import difflib
 import inspect
 import re
 import textwrap
@@ -49,6 +50,10 @@ def _default_registered_ref_targets() -> set[str]:
 def _default_virtual_dependencies_cache() -> (
     dict[tuple[str, str], tuple[tuple[str, str], ...]]
 ):
+    return {}
+
+
+def _default_ref_validation_cache() -> dict[tuple[str, str, tuple[str, ...], str], Any]:
     return {}
 
 
@@ -179,6 +184,7 @@ def _export_group_model(
     group_name: str,
     group_model: BaseModel,
     if_decrypt: bool,
+    skip_virtual: bool,
 ) -> dict[str, Any]:
     """将分组模型导出为字典，并按需解密加密字段。"""
 
@@ -187,6 +193,8 @@ def _export_group_model(
     for field_name in type(group_model).model_fields:
         virtual_field = _get_field_marker(group_model, field_name, VirtualField)
         if virtual_field is not None:
+            if skip_virtual:
+                continue
             data[_to_snake_case(field_name)] = owner.get_virtual_value(
                 group_name, field_name, virtual_field
             )
@@ -196,7 +204,7 @@ def _export_group_model(
 
         if isinstance(value, BaseModel):
             data[_to_snake_case(field_name)] = _export_group_model(
-                owner, field_name, value, if_decrypt
+                owner, field_name, value, if_decrypt, skip_virtual
             )
             continue
 
@@ -216,6 +224,12 @@ class PydanticConfigBase(BaseModel):
 
     LEGACY_FIELD_MAP: ClassVar[dict[tuple[str, str], tuple[str, str]]] = {}
     related_config: ClassVar[dict[str, MultipleConfig[Any]]] = {}
+    _class_virtual_dependencies: ClassVar[
+        dict[
+            type["PydanticConfigBase"],
+            dict[tuple[str, str], tuple[tuple[str, str], ...]],
+        ]
+    ] = {}
     _file: Path | None = PrivateAttr(default=None)
     _is_locked: bool = PrivateAttr(default=False)
     _save_methods: list[SaveMethod] = PrivateAttr(default_factory=_default_save_methods)
@@ -235,10 +249,12 @@ class PydanticConfigBase(BaseModel):
     _owner_uid: uuid.UUID | None = PrivateAttr(default=None)
     _mutex: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
     _virtual_dependencies_cache: dict[tuple[str, str], tuple[tuple[str, str], ...]] = (
-        PrivateAttr(  # type: ignore[assignment]
-            default_factory=_default_virtual_dependencies_cache
-        )
+        PrivateAttr(default_factory=_default_virtual_dependencies_cache)
     )
+    _ref_validation_cache: dict[tuple[str, str, tuple[str, ...], str], Any] = (
+        PrivateAttr(default_factory=_default_ref_validation_cache)
+    )
+    _ref_validation_cache_enabled: bool = PrivateAttr(default=False)
 
     @property
     def file(self) -> Path | None:
@@ -251,6 +267,34 @@ class PydanticConfigBase(BaseModel):
     def model_post_init(self, __context: Any) -> None:
         self._build_virtual_dependency_cache()
         self._register_ref_bindings()
+
+    def _suggest_candidates(self, value: str, candidates: list[str]) -> list[str]:
+        if not candidates:
+            return []
+
+        snake = _to_snake_case(value)
+        exact_snake_matches = [
+            candidate for candidate in candidates if _to_snake_case(candidate) == snake
+        ]
+        if exact_snake_matches:
+            return exact_snake_matches[:3]
+
+        close_matches = difflib.get_close_matches(value, candidates, n=3, cutoff=0.5)
+        if close_matches:
+            return close_matches
+
+        snake_matches = difflib.get_close_matches(
+            snake,
+            [_to_snake_case(candidate) for candidate in candidates],
+            n=3,
+            cutoff=0.5,
+        )
+        mapped: list[str] = []
+        for snake_match in snake_matches:
+            for candidate in candidates:
+                if _to_snake_case(candidate) == snake_match and candidate not in mapped:
+                    mapped.append(candidate)
+        return mapped[:3]
 
     def _resolve_group_name(self, group: str) -> str:
         """将调用侧传入的分组名解析为模型中的真实分组名。
@@ -278,7 +322,14 @@ class PydanticConfigBase(BaseModel):
             if _to_snake_case(candidate) == snake:
                 return candidate
 
-        raise AttributeError(f"配置分组 '{group}' 不存在")
+        suggestions = self._suggest_candidates(group, list(groups.keys()))
+        if suggestions:
+            raise AttributeError(
+                f"配置分组 '{group}' 不存在。你可能想用: {', '.join(suggestions)}"
+            )
+        raise AttributeError(
+            f"配置分组 '{group}' 不存在。可用分组: {', '.join(groups.keys())}"
+        )
 
     def _resolve_field_name(self, group: str, name: str) -> str:
         """将字段名解析为指定分组中的真实字段名。
@@ -310,7 +361,17 @@ class PydanticConfigBase(BaseModel):
             if _to_snake_case(candidate) == snake:
                 return candidate
 
-        raise AttributeError(f"配置项 '{group}.{name}' 不存在")
+        field_candidates = list(fields.keys())
+        suggestions = self._suggest_candidates(name, field_candidates)
+        if suggestions:
+            raise AttributeError(
+                f"配置项 '{group}.{name}' 不存在。你可能想用: "
+                f"{resolved_group}.{suggestions[0]}"
+            )
+        raise AttributeError(
+            f"配置项 '{group}.{name}' 不存在。"
+            f"可用字段: {', '.join(field_candidates)}"
+        )
 
     def _normalize_dependency(self, dependency: tuple[str, str]) -> tuple[str, str]:
         """将虚拟字段依赖项规范化为真实 ``(group, field)`` 对。
@@ -414,7 +475,13 @@ class PydanticConfigBase(BaseModel):
         哪些虚拟字段需要重新计算并派发绑定事件。
         """
 
-        self._virtual_dependencies_cache = {}
+        cls = type(self)
+        class_cache = cls._class_virtual_dependencies.get(cls)
+        if class_cache is not None:
+            self._virtual_dependencies_cache = class_cache
+            return
+
+        class_cache = {}
 
         for group_name, group_model in self._group_index().items():
             for field_name in type(group_model).model_fields:
@@ -432,7 +499,10 @@ class PydanticConfigBase(BaseModel):
                 else:
                     deps = ()
 
-                self._virtual_dependencies_cache[(group_name, field_name)] = deps
+                class_cache[(group_name, field_name)] = deps
+
+        cls._class_virtual_dependencies[cls] = class_cache
+        self._virtual_dependencies_cache = class_cache
 
     def _multiple_config_index(self) -> dict[str, MultipleConfig[Any]]:
         result: dict[str, MultipleConfig[Any]] = {}
@@ -452,8 +522,24 @@ class PydanticConfigBase(BaseModel):
     def _normalize_value(self, group: str, name: str, value: Any) -> Any:
         ref_field = self._get_ref_field(group, name)
         if ref_field is not None:
+            if self._ref_validation_cache_enabled:
+                return self._normalize_ref_value_cached(ref_field, value)
             return self._normalize_ref_value(ref_field, value)
         return value
+
+    def _normalize_ref_value_cached(self, spec: RefField, value: Any) -> Any:
+        cache_key = (
+            spec.target,
+            str(spec.default),
+            tuple(str(item) for item in spec.allow_values),
+            str(value),
+        )
+        if cache_key in self._ref_validation_cache:
+            return self._ref_validation_cache[cache_key]
+
+        normalized = self._normalize_ref_value(spec, value)
+        self._ref_validation_cache[cache_key] = normalized
+        return normalized
 
     def _bind_owner_collection(
         self, collection: MultipleConfig[Any], uid: uuid.UUID
@@ -674,6 +760,11 @@ class PydanticConfigBase(BaseModel):
     async def transaction(self) -> AsyncIterator["PydanticConfigBase"]:
         """开启一个延迟保存事务。"""
 
+        is_outermost = self._transaction_depth == 0
+        if is_outermost:
+            self._ref_validation_cache_enabled = True
+            self._ref_validation_cache.clear()
+
         self._transaction_depth += 1
         try:
             yield self
@@ -681,6 +772,9 @@ class PydanticConfigBase(BaseModel):
             self._transaction_depth -= 1
             if self._transaction_depth == 0:
                 await self._flush_pending_changes()
+            if is_outermost:
+                self._ref_validation_cache_enabled = False
+                self._ref_validation_cache.clear()
 
     async def _flush_pending_changes(self) -> None:
         await self._flush_pending_bindings()
@@ -698,7 +792,7 @@ class PydanticConfigBase(BaseModel):
         if not self._file:
             raise ValueError("文件路径未设置, 请先调用 `connect` 方法连接配置文件")
 
-        content = dump_toml(await self.toDict(if_decrypt=False))
+        content = dump_toml(await self.toDict(if_decrypt=False, skip_virtual=True))
         atomic_write_text(self._file, content)
 
     async def connect(self, path: Path) -> None:
@@ -813,7 +907,10 @@ class PydanticConfigBase(BaseModel):
                 await asyncio.gather(*(_() for _ in self._save_methods))
 
     async def toDict(
-        self, if_decrypt: bool = True, regenerate_uuids: bool = False
+        self,
+        if_decrypt: bool = True,
+        regenerate_uuids: bool = False,
+        skip_virtual: bool = False,
     ) -> dict[str, Any]:
         """将当前配置导出为 snake_case 协议字典。
 
@@ -835,14 +932,14 @@ class PydanticConfigBase(BaseModel):
 
         for group_name, group_model in self._group_index().items():
             data[_to_snake_case(group_name)] = _export_group_model(
-                self, group_name, group_model, if_decrypt
+                self, group_name, group_model, if_decrypt, skip_virtual
             )
 
         for name, item in self._multiple_config_index().items():
             if "sub_configs_info" not in data:
                 data["sub_configs_info"] = {}
             data["sub_configs_info"][_to_snake_case(name)] = await item.toDict(
-                if_decrypt, regenerate_uuids
+                if_decrypt, regenerate_uuids, skip_virtual
             )
 
         return data

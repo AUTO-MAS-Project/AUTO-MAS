@@ -33,8 +33,8 @@ import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import AsyncIterator, Callable, Coroutine
-from typing import Any, Generic, Protocol, TypeVar, cast
+from collections.abc import AsyncIterator, Callable, Coroutine, Iterator
+from typing import Any, Generic, Protocol, TypeVar, cast, overload
 from importlib import import_module
 
 from loguru import logger
@@ -260,7 +260,10 @@ class _ConfigLike(Protocol):
     async def load(self, data: dict[str, Any]) -> None: ...
 
     async def toDict(
-        self, if_decrypt: bool = True, regenerate_uuids: bool = False
+        self,
+        if_decrypt: bool = True,
+        regenerate_uuids: bool = False,
+        skip_virtual: bool = False,
     ) -> dict[str, Any]: ...
 
     async def lock(self) -> None: ...
@@ -539,7 +542,10 @@ class MultipleConfig(Generic[T]):
                 await asyncio.gather(*(_() for _ in self._save_methods))
 
     async def toDict(
-        self, if_decrypt: bool = True, regenerate_uuids: bool = False
+        self,
+        if_decrypt: bool = True,
+        regenerate_uuids: bool = False,
+        skip_virtual: bool = False,
     ) -> dict[str, Any]:
         """将全部子配置序列化为统一字典结构。"""
 
@@ -556,13 +562,22 @@ class MultipleConfig(Generic[T]):
 
         for uid, config in self.items():
             data[str(uuid_book[uid])] = await config.toDict(
-                if_decrypt, regenerate_uuids
+                if_decrypt, regenerate_uuids, skip_virtual
             )
 
         return data
 
-    async def get(self, uid: uuid.UUID) -> dict[str, Any]:
+    @overload
+    async def get(self, uid: uuid.UUID) -> dict[str, Any]: ...
+
+    @overload
+    async def get(self, uid: None = None) -> dict[str, Any]: ...
+
+    async def get(self, uid: uuid.UUID | None = None) -> dict[str, Any]:
         """获取指定 UID 的单个配置。"""
+
+        if uid is None:
+            return await self.toDict()
 
         if uid not in self.data:
             raise ValueError(f"配置项 '{uid}' 不存在。")
@@ -724,12 +739,12 @@ class MultipleConfig(Generic[T]):
         for item in self.values():
             await item.unlock()
 
-    def keys(self):
+    def keys(self) -> Iterator[uuid.UUID]:
         """返回全部 UID。"""
 
         return iter(tuple(self.order))
 
-    def values(self):
+    def values(self) -> Iterator[T]:
         """按顺序返回全部子配置实例。"""
 
         if not self.data:
@@ -737,7 +752,7 @@ class MultipleConfig(Generic[T]):
         order_snapshot = tuple(self.order)
         return iter(tuple(self.data[uid] for uid in order_snapshot if uid in self.data))
 
-    def items(self):
+    def items(self) -> Iterator[tuple[uuid.UUID, T]]:
         """按顺序返回 `(uid, config)` 对。"""
 
         order_snapshot = tuple(self.order)
