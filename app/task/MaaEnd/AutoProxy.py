@@ -379,17 +379,16 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 获取任务项单例
         for instance in maaend_set["instances"]:
-            if instance.get("id") == "automas":
+            if instance["id"] == "automas":
                 maaend_instance = instance
                 break
         else:
             maaend_instance = {"id": "automas", "name": "AUTO-MAS", "tasks": []}
+        maaend_set["instances"] = [maaend_instance]
         maaend_tasks = maaend_instance["tasks"]
 
-        settings = maaend_set.get("settings")
-        if not isinstance(settings, dict):
-            settings = {}
-            maaend_set["settings"] = settings
+        # 建立全局设置引用
+        settings = maaend_set["settings"]
 
         # 直接运行任务
         settings["autoStartInstanceId"] = "automas"
@@ -434,9 +433,10 @@ class AutoProxyTask(TaskExecuteBase):
             self.task_dict = {}
             task = {}
             for task in maaend_tasks:
-                if task.get("taskName") == "__MXU_KILLPROC__" and task.get(
-                    "optionValues", {}
-                ).get("__MXU_KILLPROC_SELF_OPTION__", {}).get("value", False):
+                if (
+                    task["taskName"] == "__MXU_KILLPROC__"
+                    and task["optionValues"]["__MXU_KILLPROC_SELF_OPTION__"]["value"]
+                ):
                     continue
                 task_name = maaend_i18n.get(task["taskName"], task["taskName"])
                 if task_name not in self.task_dict:
@@ -452,25 +452,35 @@ class AutoProxyTask(TaskExecuteBase):
         # 配置协议空间
         for task in maaend_tasks:
             if task["taskName"] == "ProtocolSpace":
-                task["optionValues"]["ProtocolSpaceTab"] = self.cur_user_config.get(
-                    "Task", "ProtocolSpaceTab"
-                )
-                task["optionValues"]["OperatorProgression"] = self.cur_user_config.get(
-                    "Task", "OperatorProgression"
-                )
-                task["optionValues"]["WeaponProgression"] = self.cur_user_config.get(
-                    "Task", "WeaponProgression"
-                )
-                task["optionValues"]["CrisisDrills"] = self.cur_user_config.get(
-                    "Task", "CrisisDrills"
-                )
-                task["optionValues"]["RewardsSetOption"] = self.cur_user_config.get(
-                    "Task", "RewardsSetOption"
-                )
+                task["optionValues"]["ProtocolSpaceTab"] = {
+                    "type": "select",
+                    "caseName": self.cur_user_config.get("Task", "ProtocolSpaceTab"),
+                }
+                task["optionValues"]["OperatorProgression"] = {
+                    "type": "select",
+                    "caseName": self.cur_user_config.get("Task", "OperatorProgression"),
+                }
+                task["optionValues"]["WeaponProgression"] = {
+                    "type": "select",
+                    "caseName": self.cur_user_config.get("Task", "WeaponProgression"),
+                }
+                task["optionValues"]["CrisisDrills"] = {
+                    "type": "select",
+                    "caseName": self.cur_user_config.get("Task", "CrisisDrills"),
+                }
+                task["optionValues"]["RewardsSetOption"] = {
+                    "type": "select",
+                    "caseName": self.cur_user_config.get("Task", "RewardsSetOption"),
+                }
                 break
 
         # 完成任务后退出脚本
-        if maaend_tasks[-1]["taskName"] == "__MXU_KILLPROC__":
+        if (
+            maaend_tasks[-1]["taskName"] == "__MXU_KILLPROC__"
+            and maaend_tasks[-1]["optionValues"]["__MXU_KILLPROC_SELF_OPTION__"][
+                "value"
+            ]
+        ):
             maaend_tasks[-1] = MAAEND_KILLPROC_TASK
         else:
             maaend_tasks.append(MAAEND_KILLPROC_TASK)
