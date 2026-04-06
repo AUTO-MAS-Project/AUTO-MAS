@@ -21,20 +21,24 @@
 #   Contact: DLmaster_361@163.com
 
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, HTTPException
 from pydantic import Field
-from typing import Optional
+from typing import NoReturn, Optional
 import base64
 from io import BytesIO
 
 from app.utils.OCR.OCRtool import OCRTool
 from app.utils import get_logger
 from app.contracts.common_contract import ApiModel, OutBase
-from app.api.common import RECOVERABLE_EXCEPTIONS, error_out, run_api
 
 logger = get_logger("OCR API")
 
 router = APIRouter(prefix="/api/ocr", tags=["OCR识别"])
+
+
+def _raise_ocr_http_error(prefix: str, exc: Exception) -> NoReturn:
+    logger.error(f"{prefix}: {type(exc).__name__}: {exc}")
+    raise HTTPException(status_code=500, detail=f"{prefix}: {exc}") from exc
 
 
 # ========== 截图相关模型 ==========
@@ -176,16 +180,10 @@ async def get_screenshot(params: OCRScreenshotIn = Body(...)) -> OCRScreenshotOu
             image_height=screenshot_image.height,
         )
 
-    return await run_api(
-        _success,
-        model_cls=OCRScreenshotOut,
-        message="截图失败",
-        image_base64="",
-        region=(0, 0, 0, 0),
-        image_width=0,
-        image_height=0,
-        on_error=lambda e: logger.error(f"截图失败: {type(e).__name__}: {str(e)}"),
-    )
+    try:
+        return await _success()
+    except Exception as e:
+        _raise_ocr_http_error("截图失败", e)
 
 
 @router.post(
@@ -212,65 +210,35 @@ async def get_screenshot_adb(params: ADBScreenshotIn = Body(...)) -> ADBScreensh
         ADBScreenshotOut: 包含Base64编码的截图和设备信息
     """
     try:
-        # 使用 OCRTool 通过 ADB 获取截图
         screenshot_image = OCRTool.get_screenshot_with_adb(
             adb_path=params.adb_path,
             serial=params.serial,
             use_screencap=params.use_screencap,
         )
-
-        # 将PIL Image转换为Base64
-        buffer = BytesIO()
-        screenshot_image.save(buffer, format="PNG")
-        image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-
-        logger.info(
-            f"成功通过 ADB 截取设备 [{params.serial}] 的截图，尺寸: {screenshot_image.size}"
-        )
-
-        return ADBScreenshotOut(
-            code=200,
-            status="success",
-            message="ADB 截图成功",
-            image_base64=image_base64,
-            image_width=screenshot_image.width,
-            image_height=screenshot_image.height,
-            serial=params.serial,
-        )
-
     except FileNotFoundError as e:
         logger.error(f"ADB 文件未找到: {str(e)}")
-        return error_out(
-            ADBScreenshotOut,
-            e,
-            message=f"ADB 文件未找到: {str(e)}",
-            image_base64="",
-            image_width=0,
-            image_height=0,
-            serial=params.serial,
-        )
+        raise HTTPException(status_code=400, detail=f"ADB 文件未找到: {str(e)}") from e
     except RuntimeError as e:
         logger.error(f"ADB 截图运行时错误: {str(e)}")
-        return error_out(
-            ADBScreenshotOut,
-            e,
-            message=f"ADB 截图失败: {str(e)}",
-            image_base64="",
-            image_width=0,
-            image_height=0,
-            serial=params.serial,
-        )
-    except RECOVERABLE_EXCEPTIONS as e:
-        logger.error(f"ADB 截图失败: {type(e).__name__}: {str(e)}")
-        return error_out(
-            ADBScreenshotOut,
-            e,
-            message=f"ADB 截图失败: {type(e).__name__}: {str(e)}",
-            image_base64="",
-            image_width=0,
-            image_height=0,
-            serial=params.serial,
-        )
+        raise HTTPException(status_code=500, detail=f"ADB 截图失败: {str(e)}") from e
+
+    buffer = BytesIO()
+    screenshot_image.save(buffer, format="PNG")
+    image_base64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+    logger.info(
+        f"成功通过 ADB 截取设备 [{params.serial}] 的截图，尺寸: {screenshot_image.size}"
+    )
+
+    return ADBScreenshotOut(
+        code=200,
+        status="success",
+        message="ADB 截图成功",
+        image_base64=image_base64,
+        image_width=screenshot_image.width,
+        image_height=screenshot_image.height,
+        serial=params.serial,
+    )
 
 
 # ========== 测试接口：检查图像 ==========
@@ -316,14 +284,10 @@ async def check_image(params: CheckImageIn = Body(...)) -> CheckImageOut:
             attempts=params.retry_times,
         )
 
-    return await run_api(
-        _success,
-        model_cls=CheckImageOut,
-        message="图像检查失败",
-        found=False,
-        attempts=0,
-        on_error=lambda e: logger.error(f"图像检查失败: {type(e).__name__}: {str(e)}"),
-    )
+    try:
+        return await _success()
+    except Exception as e:
+        _raise_ocr_http_error("图像检查失败", e)
 
 
 @router.post(
@@ -368,16 +332,10 @@ async def check_image_any(params: CheckImageAnyIn = Body(...)) -> CheckImageOut:
             attempts=params.retry_times,
         )
 
-    return await run_api(
-        _success,
-        model_cls=CheckImageOut,
-        message="多图像检查失败",
-        found=False,
-        attempts=0,
-        on_error=lambda e: logger.error(
-            f"多图像检查（ANY）失败: {type(e).__name__}: {str(e)}"
-        ),
-    )
+    try:
+        return await _success()
+    except Exception as e:
+        _raise_ocr_http_error("多图像检查失败", e)
 
 
 @router.post(
@@ -422,16 +380,10 @@ async def check_image_all(params: CheckImageAllIn = Body(...)) -> CheckImageOut:
             attempts=params.retry_times,
         )
 
-    return await run_api(
-        _success,
-        model_cls=CheckImageOut,
-        message="多图像检查失败",
-        found=False,
-        attempts=0,
-        on_error=lambda e: logger.error(
-            f"多图像检查（ALL）失败: {type(e).__name__}: {str(e)}"
-        ),
-    )
+    try:
+        return await _success()
+    except Exception as e:
+        _raise_ocr_http_error("多图像检查失败", e)
 
 
 # ========== 测试接口：点击操作 ==========
@@ -477,14 +429,10 @@ async def click_image(params: ClickImageIn = Body(...)) -> ClickOut:
             attempts=params.retry_times,
         )
 
-    return await run_api(
-        _success,
-        model_cls=ClickOut,
-        message="图像点击失败",
-        success=False,
-        attempts=0,
-        on_error=lambda e: logger.error(f"图像点击失败: {type(e).__name__}: {str(e)}"),
-    )
+    try:
+        return await _success()
+    except Exception as e:
+        _raise_ocr_http_error("图像点击失败", e)
 
 
 @router.post(
@@ -525,11 +473,7 @@ async def click_text(params: ClickTextIn = Body(...)) -> ClickOut:
             attempts=params.retry_times,
         )
 
-    return await run_api(
-        _success,
-        model_cls=ClickOut,
-        message="文字点击失败",
-        success=False,
-        attempts=0,
-        on_error=lambda e: logger.error(f"文字点击失败: {type(e).__name__}: {str(e)}"),
-    )
+    try:
+        return await _success()
+    except Exception as e:
+        _raise_ocr_http_error("文字点击失败", e)

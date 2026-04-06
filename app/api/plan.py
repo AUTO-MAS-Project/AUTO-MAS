@@ -25,7 +25,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Body, Path
 
-from app.api.common import RECOVERABLE_EXCEPTIONS, error_out
 from app.core import Config
 from app.contracts.common_contract import (
     IndexOrderPatch,
@@ -57,11 +56,8 @@ PlanIdPath = Annotated[str, Path(description="计划 ID")]
     response_model=PlanCreateOut,
 )
 async def create_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
-    try:
-        uid, config = await Config.add_plan(plan.type)
-        data = project_model(MaaPlanRead, await config.toDict())
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(PlanCreateOut, e, id="", data=MaaPlanRead())
+    uid, config = await Config.add_plan(plan.type)
+    data = project_model(MaaPlanRead, await config.toDict())
     return PlanCreateOut(id=str(uid), data=data)
 
 
@@ -98,10 +94,7 @@ async def get_plan(plan_id: PlanIdPath) -> PlanDetailOut:
     response_model=OutBase,
 )
 async def update_plan(plan_id: PlanIdPath, body: PlanUpdateBody = Body(...)) -> OutBase:
-    try:
-        await Config.update_plan(plan_id, dump_writable_data(body.data))
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(OutBase, e)
+    await Config.update_plan(plan_id, dump_writable_data(body.data))
     return OutBase()
 
 
@@ -112,10 +105,7 @@ async def update_plan(plan_id: PlanIdPath, body: PlanUpdateBody = Body(...)) -> 
     response_model=OutBase,
 )
 async def delete_plan(plan_id: PlanIdPath) -> OutBase:
-    try:
-        await Config.del_plan(plan_id)
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(OutBase, e)
+    await Config.del_plan(plan_id)
     return OutBase()
 
 
@@ -126,8 +116,5 @@ async def delete_plan(plan_id: PlanIdPath) -> OutBase:
     response_model=OutBase,
 )
 async def reorder_plan(body: IndexOrderPatch = Body(...)) -> OutBase:
-    try:
-        await Config.reorder_plan(body.index_list)
-    except RECOVERABLE_EXCEPTIONS as e:
-        return error_out(OutBase, e)
+    await Config.reorder_plan(body.index_list)
     return OutBase()

@@ -68,10 +68,17 @@ def main() -> None:
     if is_admin():
         import asyncio
         import uvicorn
-        from fastapi import FastAPI
+        from fastapi import FastAPI, HTTPException, Request
+        from fastapi.exceptions import RequestValidationError
+        from fastapi.routing import APIRoute
         from fastapi_mcp import FastApiMCP
+        from fastapi.responses import JSONResponse
         from fastapi.staticfiles import StaticFiles
         from contextlib import asynccontextmanager
+        from typing import Any, cast, get_args, get_origin
+        from pydantic import BaseModel
+        from pydantic_core import PydanticUndefined
+        from app.contracts.common_contract import OutBase
 
         @asynccontextmanager
         async def lifespan(app: FastAPI):
@@ -136,6 +143,117 @@ def main() -> None:
             version="1.0.0",
             lifespan=lifespan,
         )
+
+        def _as_error_message(detail: object) -> str:
+            if isinstance(detail, str):
+                return detail
+            return str(detail)
+
+        def _annotation_fallback(annotation: Any) -> Any:
+            origin = get_origin(annotation)
+            args = get_args(annotation)
+
+            if origin is not None and type(None) in args:
+                return None
+
+            if origin in (list, set, tuple):
+                return []
+            if origin is dict:
+                return {}
+
+            if annotation is str:
+                return ""
+            if annotation is int:
+                return 0
+            if annotation is float:
+                return 0.0
+            if annotation is bool:
+                return False
+            if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+                return {}
+            return None
+
+        def _resolve_response_model(request: Request) -> type[OutBase]:
+            route = request.scope.get("route")
+            if isinstance(route, APIRoute):
+                model = route.response_model
+                if isinstance(model, type) and issubclass(model, OutBase):
+                    return model
+            return OutBase
+
+        def _build_error_payload(
+            request: Request,
+            *,
+            code: int,
+            message: str,
+        ) -> dict[str, Any]:
+            model_cls = _resolve_response_model(request)
+            if model_cls is OutBase:
+                return OutBase(code=code, status="error", message=message).model_dump()
+
+            payload: dict[str, Any] = {
+                "code": code,
+                "status": "error",
+                "message": message,
+            }
+
+            for field_name, field_info in model_cls.model_fields.items():
+                if field_name in payload:
+                    continue
+
+                if field_info.default is not PydanticUndefined:
+                    payload[field_name] = field_info.default
+                    continue
+
+                if field_info.default_factory is not None:
+                    payload[field_name] = field_info.get_default(
+                        call_default_factory=True,
+                        validated_data=payload,
+                    )
+                    continue
+
+                payload[field_name] = _annotation_fallback(field_info.annotation)
+
+            try:
+                return model_cls.model_validate(payload).model_dump()
+            except Exception:
+                return model_cls.model_construct(**payload).model_dump()
+
+        async def handle_http_exception(_: Request, exc: HTTPException) -> JSONResponse:
+            payload = _build_error_payload(
+                _,
+                code=exc.status_code,
+                message=_as_error_message(exc.detail),
+            )
+            return JSONResponse(status_code=200, content=payload)
+
+        async def handle_validation_exception(
+            _: Request, exc: RequestValidationError
+        ) -> JSONResponse:
+            payload = _build_error_payload(
+                _,
+                code=422,
+                message=f"RequestValidationError: {str(exc)}",
+            )
+            return JSONResponse(status_code=200, content=payload)
+
+        async def handle_unexpected_exception(
+            _: Request, exc: Exception
+        ) -> JSONResponse:
+            logger.exception("未处理异常", exc_info=exc)
+            payload = _build_error_payload(
+                _,
+                code=500,
+                message=f"{type(exc).__name__}: {str(exc)}",
+            )
+            return JSONResponse(status_code=200, content=payload)
+
+        app.add_exception_handler(HTTPException, cast(Any, handle_http_exception))
+        app.add_exception_handler(
+            RequestValidationError,
+            cast(Any, handle_validation_exception),
+        )
+        app.add_exception_handler(Exception, cast(Any, handle_unexpected_exception))
 
         app.add_middleware(
             CORSMiddleware,
