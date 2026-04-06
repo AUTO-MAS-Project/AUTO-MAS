@@ -34,16 +34,12 @@ from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
 from .tools import push_notification
 from .AutoProxy import AutoProxyTask
-from .ManualReview import ManualReviewTask
-from .ScriptConfig import ScriptConfigTask
 
 
 logger = get_logger("M9A 调度器")
 
-METHOD_BOOK: dict[str, type[AutoProxyTask | ManualReviewTask | ScriptConfigTask]] = {
-    "AutoProxy": AutoProxyTask,
-    "ManualReview": ManualReviewTask,
-    "ScriptConfig": ScriptConfigTask,
+METHOD_BOOK: dict[str, type[AutoProxyTask]] = {
+    "AutoProxy": AutoProxyTask
 }
 
 
@@ -97,23 +93,8 @@ class M9AManager(TaskExecuteBase):
                     / "config"
                 ).glob("*.json")
             )
-            and (
-                Path(
-                    Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                        "Info", "Path"
-                    )
-                )
-                / "config/deploy.yaml"
-            ).exists()
         ):
             return "M9A配置文件不存在或已损坏, 请检查M9A路径设置或检查配置文件情况！"
-        if (
-            self.task_info.mode != "ScriptConfig"
-            and not (
-                Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
-            ).exists()
-        ):
-            return "未完成 M9A 全局设置, 请先设置 M9A！"
         return "Pass"
 
     async def prepare(self):
@@ -126,7 +107,7 @@ class M9AManager(TaskExecuteBase):
         await self.user_config.load(await self.script_config.UserData.toDict())
         logger.success(f"{self.script_info.script_id}已锁定, M9A配置提取完成")
 
-        self.m9a_set_path = Path(self.script_config.get("Info", "Path")) / "config"
+        self.m9a_config_path = Path(self.script_config.get("Info", "Path")) / "config"
         self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
 
         # 初始化模拟器管理器
@@ -137,8 +118,8 @@ class M9AManager(TaskExecuteBase):
         # 备份原始配置
         shutil.rmtree(self.temp_path, ignore_errors=True)
         self.temp_path.mkdir(parents=True, exist_ok=True)
-        if self.m9a_set_path.exists():
-            shutil.copytree(self.m9a_set_path, self.temp_path, dirs_exist_ok=True)
+        if self.m9a_config_path.exists():
+            shutil.copytree(self.m9a_config_path, self.temp_path, dirs_exist_ok=True)
 
         # 构建用户列表
         if self.task_info.mode == "ScriptConfig":
@@ -198,7 +179,7 @@ class M9AManager(TaskExecuteBase):
         await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
-        if self.task_info.mode in ["AutoProxy", "ManualReview"]:
+        if self.task_info.mode in ["AutoProxy"]:
 
             await self.emulator_manager.close(
                 self.script_config.get("Emulator", "Index")
@@ -246,8 +227,8 @@ class M9AManager(TaskExecuteBase):
 
         # 还原配置
         if (self.temp_path).exists():
-            shutil.rmtree(self.m9a_set_path, ignore_errors=True)
-            shutil.copytree(self.temp_path, self.m9a_set_path, dirs_exist_ok=True)
+            shutil.rmtree(self.m9a_config_path, ignore_errors=True)
+            shutil.copytree(self.temp_path, self.m9a_config_path, dirs_exist_ok=True)
         shutil.rmtree(self.temp_path, ignore_errors=True)
 
         self.script_info.status = "完成"
