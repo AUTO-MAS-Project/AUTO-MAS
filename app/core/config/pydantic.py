@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import ast
 import inspect
+import re
+import textwrap
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -43,6 +46,12 @@ def _default_registered_ref_targets() -> set[str]:
     return set()
 
 
+def _default_virtual_dependencies_cache() -> (
+    dict[tuple[str, str], tuple[tuple[str, str], ...]]
+):
+    return {}
+
+
 def _normalize_mapping(value: Any) -> dict[str, Any]:
     """将任意映射值规范化为 `dict[str, Any]`。"""
 
@@ -50,6 +59,26 @@ def _normalize_mapping(value: Any) -> dict[str, Any]:
         return {}
     mapping = cast(dict[object, Any], value)
     return {str(key): item for key, item in mapping.items()}
+
+
+_SNAKE_1 = re.compile(r"(.)([A-Z][a-z]+)")
+_SNAKE_2 = re.compile(r"([a-z0-9])([A-Z])")
+
+
+def _to_snake_case(name: str) -> str:
+    """将 ``PascalCase``/``camelCase`` 名称转换为 ``snake_case``。
+
+    该函数用于统一配置协议键名输出，并在输入解析时做名称归一化匹配。
+
+    Args:
+        name: 原始名称。
+
+    Returns:
+        snake_case 格式名称。
+    """
+
+    first_pass = _SNAKE_1.sub(r"\1_\2", name)
+    return _SNAKE_2.sub(r"\1_\2", first_pass).lower()
 
 
 def _resolve_alias_paths(validation_alias: Any) -> list[tuple[str, ...]]:
@@ -158,7 +187,7 @@ def _export_group_model(
     for field_name in type(group_model).model_fields:
         virtual_field = _get_field_marker(group_model, field_name, VirtualField)
         if virtual_field is not None:
-            data[field_name] = owner.get_virtual_value(
+            data[_to_snake_case(field_name)] = owner.get_virtual_value(
                 group_name, field_name, virtual_field
             )
             continue
@@ -166,14 +195,16 @@ def _export_group_model(
         value = getattr(group_model, field_name)
 
         if isinstance(value, BaseModel):
-            data[field_name] = _export_group_model(owner, field_name, value, if_decrypt)
+            data[_to_snake_case(field_name)] = _export_group_model(
+                owner, field_name, value, if_decrypt
+            )
             continue
 
         if if_decrypt and _is_encrypted_field(group_model, field_name):
-            data[field_name] = decrypt_encrypted_string(str(value))
+            data[_to_snake_case(field_name)] = decrypt_encrypted_string(str(value))
             continue
 
-        data[field_name] = value
+        data[_to_snake_case(field_name)] = value
 
     return data
 
@@ -203,6 +234,11 @@ class PydanticConfigBase(BaseModel):
     _owner_collection: MultipleConfig[Any] | None = PrivateAttr(default=None)
     _owner_uid: uuid.UUID | None = PrivateAttr(default=None)
     _mutex: asyncio.Lock = PrivateAttr(default_factory=asyncio.Lock)
+    _virtual_dependencies_cache: dict[tuple[str, str], tuple[tuple[str, str], ...]] = (
+        PrivateAttr(  # type: ignore[assignment]
+            default_factory=_default_virtual_dependencies_cache
+        )
+    )
 
     @property
     def file(self) -> Path | None:
@@ -213,7 +249,190 @@ class PydanticConfigBase(BaseModel):
         return self._is_locked
 
     def model_post_init(self, __context: Any) -> None:
+        self._build_virtual_dependency_cache()
         self._register_ref_bindings()
+
+    def _resolve_group_name(self, group: str) -> str:
+        """将调用侧传入的分组名解析为模型中的真实分组名。
+
+        支持两类匹配：
+        - 精确匹配（如 ``Info``）
+        - snake_case 等价匹配（如 ``info``）
+
+        Args:
+            group: 外部输入的分组名。
+
+        Returns:
+            配置模型中的真实分组名。
+
+        Raises:
+            AttributeError: 分组不存在时抛出。
+        """
+
+        groups = self._group_index()
+        if group in groups:
+            return group
+
+        snake = _to_snake_case(group)
+        for candidate in groups:
+            if _to_snake_case(candidate) == snake:
+                return candidate
+
+        raise AttributeError(f"配置分组 '{group}' 不存在")
+
+    def _resolve_field_name(self, group: str, name: str) -> str:
+        """将字段名解析为指定分组中的真实字段名。
+
+        先解析分组，再在该分组下执行字段名精确匹配与 snake_case 等价匹配。
+
+        Args:
+            group: 分组名（可为原名或 snake_case）。
+            name: 字段名（可为原名或 snake_case）。
+
+        Returns:
+            配置模型中的真实字段名。
+
+        Raises:
+            AttributeError: 分组或字段不存在时抛出。
+        """
+
+        resolved_group = self._resolve_group_name(group)
+        group_model = self._group_index().get(resolved_group)
+        if group_model is None:
+            raise AttributeError(f"配置分组 '{group}' 不存在")
+
+        fields = type(group_model).model_fields
+        if name in fields:
+            return name
+
+        snake = _to_snake_case(name)
+        for candidate in fields:
+            if _to_snake_case(candidate) == snake:
+                return candidate
+
+        raise AttributeError(f"配置项 '{group}.{name}' 不存在")
+
+    def _normalize_dependency(self, dependency: tuple[str, str]) -> tuple[str, str]:
+        """将虚拟字段依赖项规范化为真实 ``(group, field)`` 对。
+
+        主要用于把手工声明依赖或自动推导依赖统一为内部可比较的标准形式。
+
+        Args:
+            dependency: 原始依赖项。
+
+        Returns:
+            规范化后的依赖项。
+        """
+
+        group, name = dependency
+        resolved_group = self._resolve_group_name(group)
+        resolved_name = self._resolve_field_name(resolved_group, name)
+        return resolved_group, resolved_name
+
+    def _infer_virtual_dependencies(self, getter: str) -> tuple[tuple[str, str], ...]:
+        """从虚拟字段 getter 源码中自动推导依赖字段。
+
+        推导策略：
+        - 解析方法 AST；
+        - 扫描 ``self.get("Group", "Field")`` 形式调用；
+        - 对提取结果执行名称归一化与去重。
+
+        注意：若源码不可获取、语法不可解析或调用参数非常量字符串，
+        对应依赖将被安全忽略。
+
+        Args:
+            getter: getter 方法名。
+
+        Returns:
+            推导出的依赖项元组。
+        """
+
+        method = getattr(type(self), getter, None)
+        if method is None:
+            return ()
+
+        try:
+            source = inspect.getsource(method)
+        except (OSError, TypeError):
+            return ()
+
+        try:
+            tree = ast.parse(textwrap.dedent(source))
+        except SyntaxError:
+            return ()
+
+        dependencies: list[tuple[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Attribute):
+                continue
+            if node.func.attr != "get":
+                continue
+            if (
+                not isinstance(node.func.value, ast.Name)
+                or node.func.value.id != "self"
+            ):
+                continue
+            if len(node.args) < 2:
+                continue
+
+            arg_group = node.args[0]
+            arg_name = node.args[1]
+            if not (
+                isinstance(arg_group, ast.Constant)
+                and isinstance(arg_group.value, str)
+                and isinstance(arg_name, ast.Constant)
+                and isinstance(arg_name.value, str)
+            ):
+                continue
+
+            try:
+                dep = self._normalize_dependency((arg_group.value, arg_name.value))
+            except AttributeError:
+                continue
+
+            if dep in seen:
+                continue
+            seen.add(dep)
+            dependencies.append(dep)
+
+        return tuple(dependencies)
+
+    def _build_virtual_dependency_cache(self) -> None:
+        """构建虚拟字段依赖缓存。
+
+        缓存键为 ``(group, field)``，值为该虚拟字段依赖列表。
+        规则：
+        - 优先使用显式 ``depends_on``；
+        - 否则对字符串 getter 执行自动推导；
+        - 其他情况依赖为空。
+
+        缓存在 ``model_post_init`` 阶段构建，用于 ``set`` 触发时高效判断
+        哪些虚拟字段需要重新计算并派发绑定事件。
+        """
+
+        self._virtual_dependencies_cache = {}
+
+        for group_name, group_model in self._group_index().items():
+            for field_name in type(group_model).model_fields:
+                virtual_field = _get_field_marker(group_model, field_name, VirtualField)
+                if virtual_field is None:
+                    continue
+
+                if virtual_field.depends_on:
+                    deps = tuple(
+                        self._normalize_dependency(dep)
+                        for dep in virtual_field.depends_on
+                    )
+                elif isinstance(virtual_field.getter, str):
+                    deps = self._infer_virtual_dependencies(virtual_field.getter)
+                else:
+                    deps = ()
+
+                self._virtual_dependencies_cache[(group_name, field_name)] = deps
 
     def _multiple_config_index(self) -> dict[str, MultipleConfig[Any]]:
         result: dict[str, MultipleConfig[Any]] = {}
@@ -287,7 +506,10 @@ class PydanticConfigBase(BaseModel):
                 virtual_field = _get_field_marker(group_model, field_name, VirtualField)
                 if virtual_field is None:
                     continue
-                if dependency in virtual_field.depends_on:
+                deps = self._virtual_dependencies_cache.get(
+                    (group_name, field_name), ()
+                )
+                if dependency in deps:
                     yield group_name, field_name, virtual_field
 
     def _get_virtual_value(
@@ -505,21 +727,41 @@ class PydanticConfigBase(BaseModel):
             await sub_config.add_save_method(save_method)
 
     async def load(self, data: dict[str, Any]) -> None:
+        """从外部字典加载配置，支持新旧命名协议混读。
+
+        支持内容：
+        - 分组与字段的 PascalCase / snake_case 双格式读取；
+        - ``sub_configs_info`` 与 ``SubConfigsInfo`` 兼容；
+        - 字段 ``validation_alias`` 回退解析；
+        - ``LEGACY_FIELD_MAP`` 旧字段映射回填。
+
+        加载完成后会触发持久化与级联保存方法，保证内存态与磁盘态一致。
+
+        Args:
+            data: 待加载的原始配置字典。
+        """
+
         async with self._mutex:
             if self._is_locked:
                 raise ValueError("配置已锁定, 无法修改")
 
             raw: dict[str, Any] = dict(data)
 
-            sub_configs = _normalize_mapping(raw.pop("SubConfigsInfo", {}))
+            sub_configs = _normalize_mapping(
+                raw.pop("sub_configs_info", raw.pop("SubConfigsInfo", {}))
+            )
 
             for name, sub_config in self._multiple_config_index().items():
-                data_for_sub = sub_configs.get(name)
+                data_for_sub = sub_configs.get(
+                    _to_snake_case(name), sub_configs.get(name)
+                )
                 if isinstance(data_for_sub, dict):
                     await sub_config.load(_normalize_mapping(data_for_sub))
 
             for group_name, group_model in self._group_index().items():
-                group_data = _normalize_mapping(raw.get(group_name, {}))
+                group_data = _normalize_mapping(
+                    raw.get(_to_snake_case(group_name), raw.get(group_name, {}))
+                )
 
                 for field_name in list(type(group_model).model_fields.keys()):
                     if self._get_virtual_field(group_name, field_name) is not None:
@@ -530,6 +772,9 @@ class PydanticConfigBase(BaseModel):
 
                     if field_name in group_data:
                         candidate = group_data[field_name]
+                        has_value = True
+                    elif _to_snake_case(field_name) in group_data:
+                        candidate = group_data[_to_snake_case(field_name)]
                         has_value = True
                     else:
                         field_info = type(group_model).model_fields.get(field_name)
@@ -570,69 +815,123 @@ class PydanticConfigBase(BaseModel):
     async def toDict(
         self, if_decrypt: bool = True, regenerate_uuids: bool = False
     ) -> dict[str, Any]:
+        """将当前配置导出为 snake_case 协议字典。
+
+        导出规则：
+        - 所有分组键与字段键均转换为 snake_case；
+        - 虚拟字段导出为实时计算值；
+        - 子配置统一放入 ``sub_configs_info``；
+        - 是否解密由 ``if_decrypt`` 控制。
+
+        Args:
+            if_decrypt: 是否在导出时自动解密加密字段。
+            regenerate_uuids: 透传给子配置容器的 UUID 重生参数。
+
+        Returns:
+            可序列化的配置字典。
+        """
+
         data: dict[str, Any] = {}
 
         for group_name, group_model in self._group_index().items():
-            data[group_name] = _export_group_model(
+            data[_to_snake_case(group_name)] = _export_group_model(
                 self, group_name, group_model, if_decrypt
             )
 
         for name, item in self._multiple_config_index().items():
-            if "SubConfigsInfo" not in data:
-                data["SubConfigsInfo"] = {}
-            data["SubConfigsInfo"][name] = await item.toDict(
+            if "sub_configs_info" not in data:
+                data["sub_configs_info"] = {}
+            data["sub_configs_info"][_to_snake_case(name)] = await item.toDict(
                 if_decrypt, regenerate_uuids
             )
 
         return data
 
     def get(self, group: str, name: str) -> Any:
-        group_model = self._group_index().get(group)
-        if group_model is None or not hasattr(group_model, name):
+        """读取单个配置项，支持 snake_case 与原字段名。
+
+        读取流程：
+        1. 解析分组和字段真实名称；
+        2. 若为虚拟字段，返回 getter 计算结果；
+        3. 若为加密字段，返回自动解密值；
+        4. 否则返回原值。
+
+        Args:
+            group: 分组名。
+            name: 字段名。
+
+        Returns:
+            配置值。
+        """
+
+        resolved_group = self._resolve_group_name(group)
+        resolved_name = self._resolve_field_name(resolved_group, name)
+
+        group_model = self._group_index().get(resolved_group)
+        if group_model is None or not hasattr(group_model, resolved_name):
             raise AttributeError(f"配置项 '{group}.{name}' 不存在")
 
-        virtual_field = self._get_virtual_field(group, name)
+        virtual_field = self._get_virtual_field(resolved_group, resolved_name)
         if virtual_field is not None:
-            return self._get_virtual_value(group, name, virtual_field)
+            return self._get_virtual_value(resolved_group, resolved_name, virtual_field)
 
-        value = getattr(group_model, name)
-        if _is_encrypted_field(group_model, name):
+        value = getattr(group_model, resolved_name)
+        if _is_encrypted_field(group_model, resolved_name):
             return decrypt_encrypted_string(str(value))
         return value
 
     async def set(self, group: str, name: str, value: Any) -> None:
+        """设置单个配置项，并联动依赖虚拟字段与绑定回调。
+
+        关键行为：
+        - 支持 snake_case 名称解析；
+        - 对引用字段执行归一化（UUID/默认值校验）；
+        - 计算受影响虚拟字段的前后值差异，按需触发绑定事件；
+        - 根据事务状态决定立即保存或延迟提交。
+
+        Args:
+            group: 分组名。
+            name: 字段名。
+            value: 新值。
+        """
+
         async with self._mutex:
-            group_model = self._group_index().get(group)
-            if group_model is None or not hasattr(group_model, name):
+            resolved_group = self._resolve_group_name(group)
+            resolved_name = self._resolve_field_name(resolved_group, name)
+
+            group_model = self._group_index().get(resolved_group)
+            if group_model is None or not hasattr(group_model, resolved_name):
                 raise AttributeError(f"配置项 '{group}.{name}' 不存在")
 
             if self._is_locked:
                 raise ValueError("配置已锁定, 无法修改")
 
-            virtual_field = self._get_virtual_field(group, name)
+            virtual_field = self._get_virtual_field(resolved_group, resolved_name)
             if virtual_field is not None:
-                await self._set_virtual_value(group, name, value)
+                await self._set_virtual_value(resolved_group, resolved_name, value)
                 return
 
-            old_value = getattr(group_model, name)
+            old_value = getattr(group_model, resolved_name)
             virtual_old_values = {
                 (virtual_group, virtual_name): self._get_virtual_value(
                     virtual_group, virtual_name, virtual_field
                 )
                 for virtual_group, virtual_name, virtual_field in self._iter_virtual_dependents(
-                    (group, name)
+                    (resolved_group, resolved_name)
                 )
             }
-            value = self._normalize_value(group, name, value)
+            value = self._normalize_value(resolved_group, resolved_name, value)
 
             try:
-                setattr(group_model, name, value)
+                setattr(group_model, resolved_name, value)
             except (TypeError, ValueError) as e:
-                raise ValueError(f"设置配置项失败: {group}.{name}={value!r}") from e
+                raise ValueError(
+                    f"设置配置项失败: {resolved_group}.{resolved_name}={value!r}"
+                ) from e
 
-            new_value = getattr(group_model, name)
+            new_value = getattr(group_model, resolved_name)
             if old_value != new_value:
-                await self._queue_binding(group, name, new_value)
+                await self._queue_binding(resolved_group, resolved_name, new_value)
 
             for (
                 virtual_group,
@@ -661,28 +960,34 @@ class PydanticConfigBase(BaseModel):
                     await self.set(group, name, value)
 
     def bind(self, group: str, name: str, slot: Slot) -> None:
-        group_model = self._group_index().get(group)
-        if group_model is None or not hasattr(group_model, name):
+        resolved_group = self._resolve_group_name(group)
+        resolved_name = self._resolve_field_name(resolved_group, name)
+
+        group_model = self._group_index().get(resolved_group)
+        if group_model is None or not hasattr(group_model, resolved_name):
             raise AttributeError(f"配置项 '{group}.{name}' 不存在")
 
         if self._is_locked:
             raise ValueError("配置已锁定, 无法修改")
 
-        key = (group, name)
+        key = (resolved_group, resolved_name)
         if key not in self._bindings:
             self._bindings[key] = []
         if slot not in self._bindings[key]:
             self._bindings[key].append(slot)
 
     def unbind(self, group: str, name: str, slot: Slot) -> None:
-        group_model = self._group_index().get(group)
-        if group_model is None or not hasattr(group_model, name):
+        resolved_group = self._resolve_group_name(group)
+        resolved_name = self._resolve_field_name(resolved_group, name)
+
+        group_model = self._group_index().get(resolved_group)
+        if group_model is None or not hasattr(group_model, resolved_name):
             raise AttributeError(f"配置项 '{group}.{name}' 不存在")
 
         if self._is_locked:
             raise ValueError("配置已锁定, 无法修改")
 
-        key = (group, name)
+        key = (resolved_group, resolved_name)
         if key in self._bindings and slot in self._bindings[key]:
             self._bindings[key].remove(slot)
 

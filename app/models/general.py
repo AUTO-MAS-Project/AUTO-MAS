@@ -9,19 +9,21 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.utils.constants import UTC4
 from app.core.config.base import MultipleConfig
-from app.core.config.fields import RefField, VirtualField
 from app.core.config.pydantic import PydanticConfigBase
-from app.core.config.types import UrlString
+from app.core.config.shortcuts import config, ref, sub_configs, virtual
+from app.core.config.types import DayCount, NonNegativeInt, PositiveInt, UrlString
 from .common import Webhook
 
 
+@config
+@sub_configs(Notify_CustomWebhooks=[Webhook])
 class GeneralUserConfig(PydanticConfigBase):
     """通用脚本用户配置"""
 
     class InfoModel(BaseModel):
         Name: str = "新用户"
         Status: bool = True
-        RemainedDay: int = Field(default=-1, ge=-1, le=9999)
+        RemainedDay: DayCount = -1
         IfScriptBeforeTask: bool = False
         ScriptBeforeTask: str = str(Path.cwd())
         IfScriptAfterTask: bool = False
@@ -29,20 +31,12 @@ class GeneralUserConfig(PydanticConfigBase):
         Notes: str = "无"
         Tag: Annotated[
             str,
-            VirtualField(
-                "getTags",
-                depends_on=(
-                    ("Data", "LastProxyDate"),
-                    ("Data", "ProxyTimes"),
-                    ("Info", "RemainedDay"),
-                    ("Info", "Notes"),
-                ),
-            ),
+            virtual("getTags"),
         ] = "[ ]"
 
     class DataModel(BaseModel):
         LastProxyDate: str = "2000-01-01"
-        ProxyTimes: int = Field(default=0, ge=0, le=9999)
+        ProxyTimes: NonNegativeInt = Field(default=0, le=9999)
 
         @field_validator("LastProxyDate", mode="before")
         @classmethod
@@ -65,10 +59,6 @@ class GeneralUserConfig(PydanticConfigBase):
     Info: InfoModel = Field(default_factory=InfoModel)
     Data: DataModel = Field(default_factory=DataModel)
     Notify: NotifyModel = Field(default_factory=NotifyModel)
-
-    def __init__(self, **data: Any):
-        super().__init__(**data)
-        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
     def getTags(self) -> str:  # noqa: N802
         """生成通用用户标签列表"""
@@ -122,6 +112,8 @@ class GeneralUserConfig(PydanticConfigBase):
         return json.dumps(tags, ensure_ascii=False)
 
 
+@config
+@sub_configs(UserData=[GeneralUserConfig])
 class GeneralConfig(PydanticConfigBase):
     """通用配置"""
 
@@ -143,8 +135,8 @@ class GeneralConfig(PydanticConfigBase):
         UpdateConfigMode: Literal["Never", "Success", "Failure", "Always"] = "Never"
         LogPath: str = str(Path.cwd())
         LogPathFormat: str = "%Y-%m-%d"
-        LogTimeStart: int = Field(default=1, ge=1, le=9999)
-        LogTimeEnd: int = Field(default=1, ge=1, le=9999)
+        LogTimeStart: PositiveInt = Field(default=1, le=9999)
+        LogTimeEnd: PositiveInt = Field(default=1, le=9999)
         LogTimeFormat: str = "%Y-%m-%d %H:%M:%S"
         SuccessLog: str = ""
         ErrorLog: str = ""
@@ -156,11 +148,11 @@ class GeneralConfig(PydanticConfigBase):
         URL: UrlString = ""
         ProcessName: str = ""
         Arguments: str = ""
-        WaitTime: int = Field(default=0, ge=0, le=9999)
+        WaitTime: NonNegativeInt = Field(default=0, le=9999)
         IfForceClose: bool = False
         EmulatorId: Annotated[
             str,
-            RefField(
+            ref(
                 "EmulatorConfig",
                 default="-",
                 allow_values=("-",),
@@ -170,18 +162,14 @@ class GeneralConfig(PydanticConfigBase):
         EmulatorIndex: str = "-"
 
     class RunModel(BaseModel):
-        ProxyTimesLimit: int = Field(default=0, ge=0, le=9999)
-        RunTimesLimit: int = Field(default=3, ge=1, le=9999)
-        RunTimeLimit: int = Field(default=10, ge=1, le=9999)
+        ProxyTimesLimit: NonNegativeInt = Field(default=0, le=9999)
+        RunTimesLimit: PositiveInt = Field(default=3, le=9999)
+        RunTimeLimit: PositiveInt = Field(default=10, le=9999)
 
     Info: InfoModel = Field(default_factory=InfoModel)
     Script: ScriptModel = Field(default_factory=ScriptModel)
     Game: GameModel = Field(default_factory=GameModel)
     Run: RunModel = Field(default_factory=RunModel)
-
-    def __init__(self, **data: Any):
-        super().__init__(**data)
-        self.UserData = MultipleConfig([GeneralUserConfig])
 
 
 __all__ = ["GeneralUserConfig", "GeneralConfig"]

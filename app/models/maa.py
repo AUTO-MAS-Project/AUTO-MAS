@@ -9,9 +9,15 @@ from typing import Annotated, Any, ClassVar, Callable, Literal
 from pydantic import AliasChoices, AliasPath, BaseModel, Field, field_validator
 
 from app.core.config.base import MultipleConfig
-from app.core.config.fields import RefField, VirtualField
 from app.core.config.pydantic import PydanticConfigBase
-from app.core.config.types import EncryptedString, JsonDictString
+from app.core.config.shortcuts import config, ref, sub_configs, virtual
+from app.core.config.types import (
+    DayCount,
+    EncryptedString,
+    JsonDictString,
+    NonNegativeInt,
+    PositiveInt,
+)
 from app.utils.constants import MAA_STAGE_KEY, RESOURCE_STAGE_INFO, UTC4, UTC8
 from .common import Webhook
 
@@ -24,6 +30,8 @@ class _ValueProxy:
         return self._value_getter()
 
 
+@config
+@sub_configs(Notify_CustomWebhooks=[Webhook])
 class MaaUserConfig(PydanticConfigBase):
     """MAA用户配置"""
 
@@ -36,7 +44,7 @@ class MaaUserConfig(PydanticConfigBase):
         Mode: Literal["简洁", "详细"] = "简洁"
         StageMode: Annotated[
             str,
-            RefField(
+            ref(
                 "PlanConfig",
                 default="Fixed",
                 allow_values=("Fixed",),
@@ -47,7 +55,7 @@ class MaaUserConfig(PydanticConfigBase):
             "Official", "Bilibili", "YoStarEN", "YoStarJP", "YoStarKR", "txwy"
         ] = "Official"
         Status: bool = True
-        RemainedDay: int = Field(default=-1, ge=-1, le=9999)
+        RemainedDay: DayCount = -1
         Annihilation: Literal[
             "Close",
             "Annihilation",
@@ -58,24 +66,14 @@ class MaaUserConfig(PydanticConfigBase):
         InfrastMode: Literal["Normal", "Rotation", "Custom"] = "Normal"
         InfrastName: Annotated[
             str,
-            VirtualField(
-                "getInfrastName",
-                depends_on=(("Info", "InfrastMode"), ("Data", "CustomInfrast")),
-            ),
+            virtual("getInfrastName"),
         ] = "-"
         InfrastIndex: Annotated[
             str,
-            VirtualField(
-                "getInfrastIndex",
-                depends_on=(
-                    ("Info", "InfrastMode"),
-                    ("Data", "CustomInfrast"),
-                    ("Data", "InfrastIndex"),
-                ),
-            ),
+            virtual("getInfrastIndex"),
         ] = "-"
         Notes: str = "无"
-        MedicineNumb: int = Field(default=0, ge=0, le=9999)
+        MedicineNumb: NonNegativeInt = 0
         SeriesNumb: Literal["0", "6", "5", "4", "3", "2", "1", "-1"] = "0"
         Stage: str = "-"
         Stage_1: str = "-"
@@ -86,34 +84,13 @@ class MaaUserConfig(PydanticConfigBase):
         SklandToken: EncryptedString = ""
         Tag: Annotated[
             str,
-            VirtualField(
-                "getTags",
-                depends_on=(
-                    ("Data", "IfPassCheck"),
-                    ("Data", "LastProxyDate"),
-                    ("Data", "ProxyTimes"),
-                    ("Info", "IfSkland"),
-                    ("Data", "LastSklandDate"),
-                    ("Info", "RemainedDay"),
-                    ("Task", "IfInfrast"),
-                    ("Info", "InfrastMode"),
-                    ("Data", "CustomInfrast"),
-                    ("Data", "InfrastIndex"),
-                    ("Info", "StageMode"),
-                    ("Info", "Stage"),
-                    ("Info", "Stage_1"),
-                    ("Info", "Stage_2"),
-                    ("Info", "Stage_3"),
-                    ("Info", "Stage_Remain"),
-                    ("Info", "Notes"),
-                ),
-            ),
+            virtual("getTags"),
         ] = "[ ]"
 
     class DataModel(BaseModel):
         LastProxyDate: str = "2000-01-01"
         LastSklandDate: str = "2000-01-01"
-        ProxyTimes: int = Field(default=0, ge=0, le=9999)
+        ProxyTimes: NonNegativeInt = 0
         IfPassCheck: bool = True
         CustomInfrast: JsonDictString = "{ }"
         InfrastIndex: str = Field(
@@ -156,10 +133,6 @@ class MaaUserConfig(PydanticConfigBase):
     Data: DataModel = Field(default_factory=DataModel)
     Task: TaskModel = Field(default_factory=TaskModel)
     Notify: NotifyModel = Field(default_factory=NotifyModel)
-
-    def __init__(self, **data: Any):
-        super().__init__(**data)
-        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
     def getInfrastName(self) -> str:  # noqa: N802
         if self.get("Info", "InfrastMode") != "Custom":
@@ -328,6 +301,8 @@ class MaaUserConfig(PydanticConfigBase):
         return stage
 
 
+@config
+@sub_configs(UserData=[MaaUserConfig])
 class MaaConfig(PydanticConfigBase):
     """MAA配置"""
 
@@ -340,7 +315,7 @@ class MaaConfig(PydanticConfigBase):
     class EmulatorModel(BaseModel):
         Id: Annotated[
             str,
-            RefField(
+            ref(
                 "EmulatorConfig",
                 default="-",
                 allow_values=("-",),
@@ -353,19 +328,15 @@ class MaaConfig(PydanticConfigBase):
         TaskTransitionMethod: Literal["NoAction", "ExitGame", "ExitEmulator"] = (
             "ExitEmulator"
         )
-        ProxyTimesLimit: int = Field(default=0, ge=0, le=9999)
-        RunTimesLimit: int = Field(default=3, ge=1, le=9999)
-        AnnihilationTimeLimit: int = Field(default=40, ge=1, le=9999)
-        RoutineTimeLimit: int = Field(default=10, ge=1, le=9999)
+        ProxyTimesLimit: NonNegativeInt = Field(default=0, le=9999)
+        RunTimesLimit: PositiveInt = Field(default=3, le=9999)
+        AnnihilationTimeLimit: PositiveInt = Field(default=40, le=9999)
+        RoutineTimeLimit: PositiveInt = Field(default=10, le=9999)
         AnnihilationAvoidWaste: bool = False
 
     Info: InfoModel = Field(default_factory=InfoModel)
     Emulator: EmulatorModel = Field(default_factory=EmulatorModel)
     Run: RunModel = Field(default_factory=RunModel)
-
-    def __init__(self, **data: Any):
-        super().__init__(**data)
-        self.UserData = MultipleConfig([MaaUserConfig])
 
 
 class MaaPlanConfig(PydanticConfigBase):
@@ -376,7 +347,7 @@ class MaaPlanConfig(PydanticConfigBase):
         Mode: Literal["ALL", "Weekly"] = "ALL"
 
     class DayPlanModel(BaseModel):
-        MedicineNumb: int = Field(default=0, ge=0, le=9999)
+        MedicineNumb: NonNegativeInt = Field(default=0, le=9999)
         SeriesNumb: Literal["0", "6", "5", "4", "3", "2", "1", "-1"] = "0"
         Stage: str = "-"
         Stage_1: str = "-"

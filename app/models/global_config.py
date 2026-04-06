@@ -9,8 +9,8 @@ from typing import Annotated, Any, Callable, Literal
 from pydantic import AliasChoices, AliasPath, BaseModel, Field, field_validator
 
 from app.core.config.base import MultipleConfig
-from app.core.config.fields import VirtualField
 from app.core.config.pydantic import PydanticConfigBase
+from app.core.config.shortcuts import virtual
 from app.core.config.types import (
     EncryptedString,
     JsonDictString,
@@ -41,10 +41,7 @@ class ToolsConfig(PydanticConfigBase):
         AnotherQuitKey: KeyboardKeyString = "space"
         Status: Annotated[
             str,
-            VirtualField(
-                "arknights_pc_status",
-                depends_on=(("ArknightsPC", "Enabled"),),
-            ),
+            virtual("arknights_pc_status"),
         ] = "-"
 
     ArknightsPC: ArknightsPCModel = Field(default_factory=ArknightsPCModel)
@@ -147,7 +144,7 @@ class GlobalConfig(PydanticConfigBase):
         WebConfig: JsonListString = "[ ]"
         Stage: Annotated[
             str,
-            VirtualField("getStage", depends_on=(("Data", "StageData"),)),
+            virtual("getStage"),
         ] = "-"
 
         @field_validator("UID", mode="before")
@@ -175,9 +172,9 @@ class GlobalConfig(PydanticConfigBase):
             [EmulatorConfig]
         )
         self.PlanConfig: MultipleConfig[MaaPlanConfig] = MultipleConfig([MaaPlanConfig])
-        self.ScriptConfig: MultipleConfig[
-            MaaConfig | MaaEndConfig | SrcConfig | GeneralConfig
-        ] = MultipleConfig([MaaConfig, MaaEndConfig, SrcConfig, GeneralConfig])
+        self.ScriptConfig: MultipleConfig[Any] = MultipleConfig(
+            [MaaConfig, MaaEndConfig, SrcConfig, GeneralConfig]
+        )
         self.QueueConfig: MultipleConfig[QueueConfig] = MultipleConfig([QueueConfig])
         self.ToolsConfig = ToolsConfig()
 

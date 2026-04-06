@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 
 import pyautogui
 from loguru import logger
-from pydantic import AfterValidator
+from pydantic import AfterValidator, Field
 
 from app.utils.constants import DEFAULT_DATETIME
 from app.utils.security import dpapi_decrypt, dpapi_encrypt
@@ -256,12 +256,19 @@ YmdHmString = Annotated[str, AfterValidator(_validate_ymd_hm_string)]
 YmdString = Annotated[str, AfterValidator(_validate_ymd_string)]
 YmdHmsString = Annotated[str, AfterValidator(_validate_ymd_hms_string)]
 UrlString = Annotated[str, AfterValidator(_validate_url_string)]
+""" URL 字符串类型 """
 KeyboardKeyString = Annotated[str, AfterValidator(_validate_keyboard_key)]
+""" 键盘按键字符串类型 (必须是 pyautogui 支持的按键) """
 EncryptedString = Annotated[
-    str,
-    EncryptedFieldMarker(),
-    AfterValidator(_normalize_encrypted_string),
+    str, EncryptedFieldMarker(), AfterValidator(_normalize_encrypted_string)
 ]
+""" 加密字符串类型 """
+NonNegativeInt = Annotated[int, Field(ge=0)]
+""" 非负整数类型(0及以上)"""
+PositiveInt = Annotated[int, Field(ge=1)]
+""" 正整数类型(1及以上)"""
+DayCount = Annotated[int, Field(ge=-1, le=9999)]
+""" 天数类型(-1为永久,0为今天)"""
 
 
 __all__ = [
@@ -274,6 +281,9 @@ __all__ = [
     "UrlString",
     "KeyboardKeyString",
     "EncryptedString",
+    "NonNegativeInt",
+    "PositiveInt",
+    "DayCount",
     "EncryptedFieldMarker",
     "decrypt_encrypted_string",
 ]
