@@ -88,6 +88,11 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
+        if self.config_file_path.exists():
+            shutil.copytree(
+                self.config_file_path, self.maaend_set_path, dirs_exist_ok=True
+            )
+
         # 初始化任务实例
         maaend_set = json.loads(
             (self.maaend_set_path / "mxu-MaaEnd.json").read_text(encoding="utf-8")
@@ -136,6 +141,7 @@ class ScriptConfigTask(TaskExecuteBase):
         await System.kill_process(self.maaend_exe_path)
 
         shutil.rmtree(self.config_file_path, ignore_errors=True)
+        self.config_file_path.mkdir(parents=True, exist_ok=True)
         shutil.copytree(self.maaend_set_path, self.config_file_path)
 
     async def on_crash(self, e: Exception):
