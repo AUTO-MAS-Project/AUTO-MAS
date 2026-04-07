@@ -37,6 +37,8 @@ from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
 from app.utils.constants import UTC4,UTC8
 from .tools import push_notification
+from .task_loader import M9ATaskLoader
+from .config_builder import M9AConfigBuilder
 
 logger = get_logger("M9A 自动代理")
 
@@ -72,6 +74,14 @@ class AutoProxyTask(TaskExecuteBase):
         self.m9a_log_path = self.m9a_root_path / "debug/maa.log"
         self.m9a_exe_path = self.m9a_root_path / "M9A.exe"
         self.m9a_tasks_path = self.m9a_config_path / "instances/default.json"
+
+        # 初始化任务加载器和配置构建器
+        self.m9a_task_loader = M9ATaskLoader(self.m9a_root_path)
+        self.m9a_config_builder = M9AConfigBuilder(self.m9a_root_path)
+
+        # 初始化任务加载器和配置构建器
+        self.m9a_task_loader = M9ATaskLoader(self.m9a_root_path)
+        self.m9a_config_builder = M9AConfigBuilder(self.m9a_root_path)
 
     async def check(self) -> str:
 
@@ -185,20 +195,45 @@ class AutoProxyTask(TaskExecuteBase):
 
             # 读取用户队列
             queue = self.cur_user_config.get("Task", "Queue")
+            logger.info(f"用户 {self.cur_user_uid} 的任务队列 (原始): {queue}, 类型: {type(queue)}")
+
+            # 确保 queue 是列表
+            if isinstance(queue, str):
+                import json
+                try:
+                    queue = json.loads(queue)
+                    logger.info(f"任务队列已从 JSON 字符串解析: {queue}")
+                except Exception as e:
+                    logger.error(f"任务队列 JSON 解析失败: {e}")
+                    queue = []
+
             if not queue:
-                logger.warning(f"用户 {self.cur_user_uid} 未配置任务队列")
+                logger.warning(f"用户 {self.cur_user_uid} 未配置任务队列或队列为空")
                 self.cur_user_item.status = "异常"
                 return
+
+            logger.info(f"用户 {self.cur_user_uid} 将执行 {len(queue)} 个任务: {queue}")
 
             
             # 写入M9A配置
             await self.write_m9a_config(queue, emulator_info)
 
-            # 启动M9A
-            logger.info(f"启动M9A进程: {self.m9a_exe_path}")
+            # 启动 M9A
+            logger.info(f"启动 M9A 进程：{self.m9a_exe_path}")
             self.wait_event.clear()
             await self.m9a_process_manager.open_process(self.m9a_exe_path)
             await asyncio.sleep(1)  # 等待 M9A 处理日志文件
+
+            # 等待一段时间让 M9A 初始化
+            logger.info("等待 M9A 初始化连接...")
+            await asyncio.sleep(5)
+            
+            # 检查 M9A 进程是否还在运行
+            if not await self.m9a_process_manager.is_running():
+                logger.error("M9A 进程启动后立即退出，可能是 ADB 连接或模拟器问题")
+                raise RuntimeError("M9A 进程启动失败，请检查模拟器和 ADB 连接")
+            
+            logger.info("M9A 进程正常运行中...")
             await self.m9a_log_monitor.start_monitor_file(
                 self.m9a_log_path, self.log_start_time
             )
@@ -237,25 +272,23 @@ class AutoProxyTask(TaskExecuteBase):
                 await asyncio.sleep(3)
 
     async def write_m9a_config(self, queue: list, emulator_info: DeviceInfo):
-        """写入M9A配置文件"""
-
-        logger.info(f"开始配置M9A运行参数: {self.mode}")
+        """写入M9A配置文件 - 后端兜底模式"""
+        logger.info(f"开始配置M9A运行参数")
 
         # 确保M9A进程已关闭
         await self.m9a_process_manager.kill()
         await System.kill_process(self.m9a_exe_path)
 
-
-        # 读取原配置
-        config = json.loads(self.m9a_tasks_path.read_text(encoding="utf-8"))
-
-        # 替换 CurrentTasks 和 TaskItems
-        config["CurrentTasks"] = self.build_current_tasks(queue)
-        config["TaskItems"] = self.build_task_items(queue)
-
-        # 设置 ADB 地址
-        if emulator_info.adb_address != "Unknown":
-            config["Connect.Address"] = emulator_info.adb_address
+        # 使用 config_builder 构建完整配置
+        try:
+            config = self.m9a_config_builder.build_config(
+                queue=queue,
+                task_loader=self.m9a_task_loader,
+                emulator_info=emulator_info
+            )
+        except Exception as e:
+            logger.error(f"构建 M9A 配置失败: {e}")
+            raise
 
         # 保存配置
         self.m9a_tasks_path.write_text(
@@ -264,17 +297,9 @@ class AutoProxyTask(TaskExecuteBase):
         )
         logger.info(f"已写入 M9A 配置：{self.m9a_tasks_path}")
 
-    def build_current_tasks(self, queue: list) -> list:
-        """构建 CurrentTasks 列表"""
-        return [f"{task}<|||>{task}" for task in queue]
-
-    def build_task_items(self, queue: list) -> list:
-        """构建 TaskItems 列表"""
-        return []
-
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
-        """日志回调"""
+        """日志回调 - M9A 专用版本（禁用敏感的错误检测，避免在游戏加载时误判）"""
 
         log = "".join(log_content)
         self.cur_user_log.content = log_content
@@ -283,12 +308,9 @@ class AutoProxyTask(TaskExecuteBase):
         # 判断任务完成
         if "任务已全部完成" in log or "All tasks completed" in log:
             self.cur_user_log.status = "Success!"
-        elif "错误" in log or "Error" in log or "Exception" in log:
-            self.cur_user_log.status = "M9A 任务出错"
-        elif (
-            "MaaFramework" in log
-            or not await self.m9a_process_manager.is_running()
-        ):
+        # 注意：禁用基于日志关键字的错误检测，因为 M9A 在游戏加载时会输出大量 [ERR] 日志
+        # 改为只检测进程是否真的退出，或等待超时
+        elif not await self.m9a_process_manager.is_running():
             self.cur_user_log.status = "M9A 进程已结束"
         elif datetime.now() - latest_time > timedelta(
             minutes=self.script_config.get("Run", "RunTimeLimit") or 10
