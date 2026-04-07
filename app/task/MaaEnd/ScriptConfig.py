@@ -23,7 +23,6 @@ import json
 import shutil
 import asyncio
 from pathlib import Path
-from copy import deepcopy
 
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem
@@ -142,7 +141,7 @@ class ScriptConfigTask(TaskExecuteBase):
 
         shutil.rmtree(self.config_file_path, ignore_errors=True)
         self.config_file_path.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(self.maaend_set_path, self.config_file_path)
+        shutil.copytree(self.maaend_set_path, self.config_file_path, dirs_exist_ok=True)
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
