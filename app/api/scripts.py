@@ -485,3 +485,45 @@ async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
+
+
+@router.post(
+    "/m9a/tasks/available",
+    tags=["M9A"],
+    summary="获取 M9A 可用任务列表（排除 standalone 任务）",
+    status_code=200,
+)
+async def get_m9a_available_tasks(script_id: str):
+    """
+    获取 M9A 可用任务列表（排除 standalone 任务）
+
+    前端调用此接口获取可选择的任务列表，
+    用于展示在用户编辑界面的任务选择区域。
+
+    Args:
+        script_id: M9A 脚本 ID
+
+    Returns:
+        dict: 包含任务列表的响应
+    """
+    from app.task.M9A.task_loader import M9ATaskLoader
+    from pathlib import Path
+
+    try:
+        script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+        m9a_path = Path(script_config.get("Info", "Path"))
+        loader = M9ATaskLoader(m9a_path)
+
+        return {
+            "code": 200,
+            "status": "success",
+            "message": f"共 {len(loader.get_task_names())} 个可用任务",
+            "data": loader.get_available_tasks()
+        }
+    except Exception as e:
+        return {
+            "code": 500,
+            "status": "error",
+            "message": f"{type(e).__name__}: {str(e)}",
+            "data": []
+        }
