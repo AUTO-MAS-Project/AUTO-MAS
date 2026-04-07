@@ -851,8 +851,8 @@ class M9AUserConfig_Info(BaseModel):
 
 
 class M9AUserConfig_Task(BaseModel):
-    AvailableTasks: Optional[str] = Field(default=None, description="可用任务列表 JSON 数组字符串")
-    Queue: Optional[str] = Field(default=None, description="运行任务队列 JSON 数组字符串")
+    AvailableTasks: Optional[Union[str, List]] = Field(default=None, description="可用任务列表 JSON 数组字符串或数组")
+    Queue: Optional[Union[str, List]] = Field(default=None, description="运行任务队列 JSON 数组字符串或数组")
 
 class M9AUserConfig_Data(BaseModel):
     LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
