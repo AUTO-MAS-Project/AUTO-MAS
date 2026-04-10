@@ -16,6 +16,7 @@ export interface PlanNameValidationResult {
 export function generateUniquePlanName(planType: string, existingNames: string[]): string {
   const baseNames = {
     MaaPlanConfig: '新 MAA 计划表',
+    MaaEndPlanConfig: '新 MaaEnd 计划表',
     GeneralPlan: '新通用计划表',
     CustomPlan: '新自定义计划表',
   } as Record<string, string>
@@ -81,6 +82,7 @@ export function validatePlanName(
 export function getPlanTypeLabel(planType: string): string {
   const labels = {
     MaaPlanConfig: 'MAA计划表',
+    MaaEndPlanConfig: 'MaaEnd计划表',
     GeneralPlan: '通用计划表',
     CustomPlan: '自定义计划表',
   } as Record<string, string>

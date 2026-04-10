@@ -31,6 +31,8 @@ export function usePlanApi() {
     try {
       if (type === 'MaaPlanConfig') {
         type = 'MaaPlan'
+      } else if (type === 'MaaEndPlanConfig') {
+        type = 'MaaEndPlan'
       }
       const params: PlanCreateIn = { type }
       const response = await Service.addPlanApiPlanAddPost(params)

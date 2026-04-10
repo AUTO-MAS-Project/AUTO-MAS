@@ -55,6 +55,7 @@ import PlanHeader from './components/PlanHeader.vue'
 import PlanSelector from './components/PlanSelector.vue'
 import PlanConfig from './components/PlanConfig.vue'
 import MaaPlanTable from './tables/MaaPlanTable.vue'
+import MaaEndPlanTable from './tables/MaaEndPlanTable.vue'
 // import GeneralPlanTable from './tables/GeneralPlanTable.vue'
 // import CustomPlanTable from './tables/CustomPlanTable.vue'
 
@@ -89,9 +90,10 @@ const tableData = ref<Record<string, any>>({})
 
 const currentTableComponent = computed(() => {
   const currentPlan = planList.value.find(plan => plan.id === activePlanId.value)
-  // 统一使用 MaaPlanConfig 作为默认类型
   const planType = currentPlan?.type
   switch (planType) {
+    case 'MaaEndPlanConfig':
+      return MaaEndPlanTable
     case 'MaaPlanConfig':
       return MaaPlanTable
     default:
@@ -328,6 +330,7 @@ const initPlans = async () => {
         if (
           !planName ||
           planName === '新 MAA 计划表' ||
+          planName === '新 MaaEnd 计划表' ||
           planName === '新通用计划表' ||
           planName === '新自定义计划表'
         ) {

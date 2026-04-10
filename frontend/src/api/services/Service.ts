@@ -13,6 +13,7 @@ import type { EmulatorReorderIn } from '../models/EmulatorReorderIn';
 import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
 import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
+import type { GetPlanComboxIn } from '../models/GetPlanComboxIn';
 import type { GetStageIn } from '../models/GetStageIn';
 import type { HistoryDataGetIn } from '../models/HistoryDataGetIn';
 import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
@@ -157,10 +158,14 @@ export class Service {
      * @returns ComboBoxOut Successful Response
      * @throws ApiError
      */
-    public static getPlanComboxApiInfoComboxPlanPost(): CancelablePromise<ComboBoxOut> {
+    public static getPlanComboxApiInfoComboxPlanPost(
+        requestBody?: GetPlanComboxIn,
+    ): CancelablePromise<ComboBoxOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/combox/plan',
+            body: requestBody,
+            mediaType: 'application/json',
         });
     }
     /**

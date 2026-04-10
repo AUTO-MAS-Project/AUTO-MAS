@@ -193,6 +193,15 @@ MAAEND_STAGE_BOOK = {
 MAAEND_STAGE_WITH_AB = set(["OperatorEXP", "Promotions", "SkillUp", "WeaponTune"])
 """MAAEnd任务包含AB关的关卡列表"""
 
+MAAEND_PLAN_FIELDS = (
+    "ProtocolSpaceTab",
+    "OperatorProgression",
+    "WeaponProgression",
+    "CrisisDrills",
+    "RewardsSetOption",
+)
+"""MAAEnd协议空间计划表字段列表"""
+
 
 MAAEND_KILLPROC_TASK = {
     "id": "jobstop",

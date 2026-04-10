@@ -551,9 +551,16 @@ const loadScripts = async () => {
 const loadCurrentPlan = async () => {
   try {
     const response = await getPlans()
-    if (response.data) {
-      // 加载所有计划表数据
-      allPlansData.value = response.data
+    if (response.data && response.index) {
+      const maaPlanIds = response.index
+        .filter(plan => plan.type === 'MaaPlanConfig')
+        .map(plan => plan.uid)
+
+      allPlansData.value = Object.fromEntries(
+        maaPlanIds
+          .filter(planId => response.data[planId])
+          .map(planId => [planId, response.data[planId]])
+      )
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)

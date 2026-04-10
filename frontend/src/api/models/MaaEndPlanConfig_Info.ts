@@ -2,14 +2,13 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type PlanIndexItem = {
+export type MaaEndPlanConfig_Info = {
     /**
-     * 唯一标识符
+     * 计划表名称
      */
-    uid: string;
+    Name?: (string | null);
     /**
-     * 配置类型
+     * 计划表模式
      */
-    type: ('MaaPlanConfig' | 'MaaEndPlanConfig');
+    Mode?: ('ALL' | 'Weekly' | null);
 };
-

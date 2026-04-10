@@ -148,6 +148,7 @@ export interface User {
     Name: string
     Notes: string
     Password: string
+    ProtocolSpaceMode?: string
     RemainedDay: number
     SeriesNumb: string
     Server: string

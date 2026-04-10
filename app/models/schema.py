@@ -21,7 +21,7 @@
 #   Contact: DLmaster_361@163.com
 
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Any, Dict, List, Union, Optional, Literal
 
 
@@ -91,6 +91,12 @@ class GetStageIn(BaseModel):
     ] = Field(
         ...,
         description="选择的日期类型, Today为当天, ALL为包含当天未开放关卡在内的所有项",
+    )
+
+
+class GetPlanComboxIn(BaseModel):
+    consumer: Literal["MAA", "MaaEnd"] = Field(
+        default="MAA", description="计划表下拉框使用者类型"
     )
 
 
@@ -563,6 +569,9 @@ class MaaEndUserConfig_Info(BaseModel):
     Mode: Optional[Literal["简洁", "详细"]] = Field(
         default=None, description="配置模式"
     )
+    ProtocolSpaceMode: Optional[str] = Field(
+        default=None, description="协议空间配置模式"
+    )
     Resource: Optional[Literal["官服"]] = Field(default=None, description="资源名称")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
     Notes: Optional[str] = Field(default=None, description="备注")
@@ -844,7 +853,9 @@ class SrcConfig(BaseModel):
 
 class PlanIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: Literal["MaaPlanConfig"] = Field(..., description="配置类型")
+    type: Literal["MaaPlanConfig", "MaaEndPlanConfig"] = Field(
+        ..., description="配置类型"
+    )
 
 
 class MaaPlanConfig_Info(BaseModel):
@@ -855,6 +866,8 @@ class MaaPlanConfig_Info(BaseModel):
 
 
 class MaaPlanConfig_Item(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     MedicineNumb: Optional[int] = Field(default=None, description="吃理智药")
     SeriesNumb: Optional[Literal["0", "6", "5", "4", "3", "2", "1", "-1"]] = Field(
         None, description="连战次数"
@@ -867,6 +880,8 @@ class MaaPlanConfig_Item(BaseModel):
 
 
 class MaaPlanConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     Info: Optional[MaaPlanConfig_Info] = Field(default=None, description="基础信息")
     ALL: Optional[MaaPlanConfig_Item] = Field(default=None, description="全局")
     Monday: Optional[MaaPlanConfig_Item] = Field(default=None, description="周一")
@@ -876,6 +891,64 @@ class MaaPlanConfig(BaseModel):
     Friday: Optional[MaaPlanConfig_Item] = Field(default=None, description="周五")
     Saturday: Optional[MaaPlanConfig_Item] = Field(default=None, description="周六")
     Sunday: Optional[MaaPlanConfig_Item] = Field(default=None, description="周日")
+
+
+class MaaEndPlanConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="计划表名称")
+    Mode: Optional[Literal["ALL", "Weekly"]] = Field(
+        default=None, description="计划表模式"
+    )
+
+
+class MaaEndPlanConfig_Item(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ProtocolSpaceTab: Optional[
+        Literal["OperatorProgression", "WeaponProgression", "CrisisDrills"]
+    ] = Field(default=None, description="协议空间选项卡")
+    OperatorProgression: Optional[
+        Literal["OperatorEXP", "Promotions", "T-Creds", "SkillUp"]
+    ] = Field(default=None, description="干员养成任务")
+    WeaponProgression: Optional[Literal["WeaponEXP", "WeaponTune"]] = Field(
+        default=None, description="武器养成任务"
+    )
+    CrisisDrills: Optional[
+        Literal[
+            "AdvancedProgression1",
+            "AdvancedProgression2",
+            "AdvancedProgression3",
+            "AdvancedProgression4",
+            "AdvancedProgression5",
+        ]
+    ] = Field(default=None, description="危境预演任务")
+    RewardsSetOption: Optional[Literal["RewardsSetA", "RewardsSetB"]] = Field(
+        default=None, description="奖励套组选项"
+    )
+
+
+class MaaEndPlanConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    Info: Optional[MaaEndPlanConfig_Info] = Field(
+        default=None, description="基础信息"
+    )
+    ALL: Optional[MaaEndPlanConfig_Item] = Field(default=None, description="全局")
+    Monday: Optional[MaaEndPlanConfig_Item] = Field(default=None, description="周一")
+    Tuesday: Optional[MaaEndPlanConfig_Item] = Field(default=None, description="周二")
+    Wednesday: Optional[MaaEndPlanConfig_Item] = Field(
+        default=None, description="周三"
+    )
+    Thursday: Optional[MaaEndPlanConfig_Item] = Field(
+        default=None, description="周四"
+    )
+    Friday: Optional[MaaEndPlanConfig_Item] = Field(default=None, description="周五")
+    Saturday: Optional[MaaEndPlanConfig_Item] = Field(
+        default=None, description="周六"
+    )
+    Sunday: Optional[MaaEndPlanConfig_Item] = Field(default=None, description="周日")
+
+
+PlanConfigData = Union[MaaPlanConfig, MaaEndPlanConfig]
 
 
 class HistoryIndexItem(BaseModel):
@@ -1129,12 +1202,12 @@ class WebhookTestIn(WebhookInBase):
 
 
 class PlanCreateIn(BaseModel):
-    type: Literal["MaaPlan"]
+    type: Literal["MaaPlan", "MaaEndPlan"]
 
 
 class PlanCreateOut(OutBase):
     planId: str = Field(..., description="新创建的计划ID")
-    data: MaaPlanConfig = Field(..., description="计划配置数据")
+    data: PlanConfigData = Field(..., description="计划配置数据")
 
 
 class PlanGetIn(BaseModel):
@@ -1145,12 +1218,14 @@ class PlanGetIn(BaseModel):
 
 class PlanGetOut(OutBase):
     index: List[PlanIndexItem] = Field(..., description="计划索引列表")
-    data: Dict[str, MaaPlanConfig] = Field(..., description="计划列表或单个计划数据")
+    data: Dict[str, PlanConfigData] = Field(
+        ..., description="计划列表或单个计划数据"
+    )
 
 
 class PlanUpdateIn(BaseModel):
     planId: str = Field(..., description="计划ID")
-    data: MaaPlanConfig = Field(..., description="计划更新数据")
+    data: PlanConfigData = Field(..., description="计划更新数据")
 
 
 class PlanDeleteIn(BaseModel):

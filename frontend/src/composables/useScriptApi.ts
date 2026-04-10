@@ -613,6 +613,10 @@ export function useScriptApi() {
                           maaEndUserData.Info?.Mode !== undefined
                             ? maaEndUserData.Info.Mode
                             : '简洁',
+                        ProtocolSpaceMode:
+                          maaEndUserData.Info?.ProtocolSpaceMode !== undefined
+                            ? maaEndUserData.Info.ProtocolSpaceMode
+                            : 'Fixed',
                         Resource:
                           maaEndUserData.Info?.Resource !== undefined
                             ? maaEndUserData.Info.Resource
