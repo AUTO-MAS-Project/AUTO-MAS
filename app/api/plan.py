@@ -24,9 +24,27 @@
 from fastapi import APIRouter, Body
 
 from app.core import Config
+from app.models.config import MaaEndPlanConfig as MaaEndPlanConfigModel
+from app.models.config import MaaPlanConfig as MaaPlanConfigModel
 from app.models.schema import *
 
 router = APIRouter(prefix="/api/plan", tags=["计划管理"])
+
+
+def build_plan_config_model(
+    plan_type: str, plan_data: dict
+) -> MaaPlanConfig | MaaEndPlanConfig:
+    if plan_type == "MaaEndPlanConfig":
+        return MaaEndPlanConfig(**plan_data)
+    return MaaPlanConfig(**plan_data)
+
+
+def build_plan_config_from_instance(
+    config: MaaPlanConfigModel | MaaEndPlanConfigModel, plan_data: dict
+) -> MaaPlanConfig | MaaEndPlanConfig:
+    if isinstance(config, MaaEndPlanConfigModel):
+        return MaaEndPlanConfig(**plan_data)
+    return MaaPlanConfig(**plan_data)
 
 
 @router.post(
@@ -40,14 +58,18 @@ async def add_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
 
     try:
         uid, config = await Config.add_plan(plan.type)
-        data = MaaPlanConfig(**(await config.toDict()))
+        data = build_plan_config_from_instance(config, await config.toDict())
     except Exception as e:
         return PlanCreateOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             planId="",
-            data=MaaPlanConfig(**{}),
+            data=(
+                MaaEndPlanConfig(**{})
+                if plan.type == "MaaEndPlan"
+                else MaaPlanConfig(**{})
+            ),
         )
     return PlanCreateOut(planId=str(uid), data=data)
 
@@ -62,9 +84,13 @@ async def add_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
 async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
 
     try:
-        index, data = await Config.get_plan(plan.planId)
-        index = [PlanIndexItem(**_) for _ in index]
-        data = {uid: MaaPlanConfig(**cfg) for uid, cfg in data.items()}
+        raw_index, raw_data = await Config.get_plan(plan.planId)
+        index = [PlanIndexItem(**_) for _ in raw_index]
+        index_book = {item["uid"]: item["type"] for item in raw_index}
+        data = {
+            uid: build_plan_config_model(index_book.get(uid, "MaaPlanConfig"), cfg)
+            for uid, cfg in raw_data.items()
+        }
     except Exception as e:
         return PlanGetOut(
             code=500,

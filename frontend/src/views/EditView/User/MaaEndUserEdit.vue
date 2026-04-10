@@ -52,7 +52,17 @@
             :resource-options="resourceOptions"
             @save="handleFieldSave"
           />
-          <TaskConfigSection :form-data="formData" @save="handleFieldSave" />
+          <TaskConfigSection
+            :form-data="formData"
+            :loading="loading"
+            :is-plan-mode="isProtocolSpacePlanMode"
+            :protocol-space-mode-options="protocolSpaceModeOptions"
+            :plan-mode-config="planModeConfig"
+            :protocol-space-tooltip="protocolSpaceTooltip"
+            :current-task-tooltip="currentTaskTooltip"
+            :rewards-tooltip="rewardsTooltip"
+            @save="handleFieldSave"
+          />
           <SkylandConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
           <NotifyConfigSection
             :form-data="formData"
@@ -68,16 +78,30 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
+import type { MaaEndPlanConfig } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { usePlanApi } from '@/composables/usePlanApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import { getWeekdayInTimezone } from '@/utils/dateUtils'
+import {
+  MAAEND_PLAN_TIME_LABELS,
+  MAAEND_PLAN_WEEKDAY_KEYS,
+  PROTOCOL_SPACE_LABEL_MAP,
+  PROTOCOL_SPACE_TASK_LABEL_MAP,
+  REWARD_LABEL_MAP,
+  getCurrentProtocolTaskValue,
+  normalizeProtocolSpaceConfig,
+  type PlanWeekdayKey,
+  type ProtocolSpaceConfig,
+} from '@/utils/maaEndProtocolSpace'
 
 import MaaEndUserEditHeader from '../../MaaEndUserEdit/MaaEndUserEditHeader.vue'
 import BasicInfoSection from '../../MaaEndUserEdit/BasicInfoSection.vue'
@@ -91,6 +115,7 @@ const router = useRouter()
 const route = useRoute()
 const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
 const { getScript } = useScriptApi()
+const { getPlans } = usePlanApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
@@ -109,6 +134,12 @@ const maaEndSubscriptionId = ref<string | null>(null)
 const maaEndWebsocketId = ref<string | null>(null)
 let maaEndConfigTimeout: number | null = null
 const resourceOptions = [{ label: '官服', value: '官服' }]
+const protocolSpaceModeOptions = ref<Array<{ label: string; value: string }>>([
+  { label: '固定', value: 'Fixed' },
+])
+const isProtocolSpacePlanMode = computed(() => formData.Info.ProtocolSpaceMode !== 'Fixed')
+const planModeConfig = ref<ProtocolSpaceConfig | null>(null)
+const fullPlanData = ref<MaaEndPlanConfig | null>(null)
 
 const getDefaultMaaEndUserData = () => ({
   Info: {
@@ -117,6 +148,7 @@ const getDefaultMaaEndUserData = () => ({
     Id: '',
     Password: '',
     Mode: '简洁',
+    ProtocolSpaceMode: 'Fixed',
     Resource: '官服',
     RemainedDay: -1,
     IfSkland: false,
@@ -146,6 +178,58 @@ const getDefaultMaaEndUserData = () => ({
     IfPassCheck: false,
   },
 })
+
+const getPlanDayConfig = (planData: MaaEndPlanConfig, dayKey: PlanWeekdayKey | 'ALL') =>
+  planData[dayKey] as Partial<ProtocolSpaceConfig> | null | undefined
+
+const getPlanCurrentConfig = (planData?: MaaEndPlanConfig | null): ProtocolSpaceConfig | null => {
+  if (!planData) return null
+
+  if (planData.Info?.Mode === 'Weekly') {
+    const weekday = MAAEND_PLAN_WEEKDAY_KEYS[(getWeekdayInTimezone(4) + 6) % 7]
+    return normalizeProtocolSpaceConfig(getPlanDayConfig(planData, weekday) ?? planData.ALL)
+  }
+
+  return normalizeProtocolSpaceConfig(planData.ALL)
+}
+
+const formatPlanValue = (
+  dayConfig: Partial<ProtocolSpaceConfig> | null | undefined,
+  field: 'ProtocolSpaceTab' | 'CurrentTask' | 'RewardsSetOption'
+) => {
+  const normalized = normalizeProtocolSpaceConfig(dayConfig)
+
+  if (field === 'ProtocolSpaceTab') {
+    return PROTOCOL_SPACE_LABEL_MAP[normalized.ProtocolSpaceTab]
+  }
+
+  if (field === 'CurrentTask') {
+    return PROTOCOL_SPACE_TASK_LABEL_MAP[getCurrentProtocolTaskValue(normalized)]
+  }
+
+  return REWARD_LABEL_MAP[normalized.RewardsSetOption]
+}
+
+const getPlanTooltip = (field: 'ProtocolSpaceTab' | 'CurrentTask' | 'RewardsSetOption') => {
+  if (!isProtocolSpacePlanMode.value || !fullPlanData.value) return ''
+
+  if (fullPlanData.value.Info?.Mode !== 'Weekly') {
+    return '此项由全局计划表控制'
+  }
+
+  const lines = ['此项由周计划表控制:']
+
+  MAAEND_PLAN_WEEKDAY_KEYS.forEach(dayKey => {
+    const dayConfig = getPlanDayConfig(fullPlanData.value, dayKey) ?? fullPlanData.value?.ALL
+    lines.push(`${MAAEND_PLAN_TIME_LABELS[dayKey]}: ${formatPlanValue(dayConfig, field)}`)
+  })
+
+  return lines.join('\n')
+}
+
+const protocolSpaceTooltip = computed(() => getPlanTooltip('ProtocolSpaceTab'))
+const currentTaskTooltip = computed(() => getPlanTooltip('CurrentTask'))
+const rewardsTooltip = computed(() => getPlanTooltip('RewardsSetOption'))
 
 const formData = reactive({
   userName: '',
@@ -198,6 +282,75 @@ const loadScriptInfo = async () => {
   const scriptDetail = await getScript(scriptId)
   if (scriptDetail) {
     scriptName.value = scriptDetail.name
+  }
+}
+
+const loadProtocolSpaceModeOptions = async () => {
+  try {
+    const response = await Service.getPlanComboxApiInfoComboxPlanPost({ consumer: 'MaaEnd' })
+    if (response?.code === 200 && response.data) {
+      protocolSpaceModeOptions.value = response.data
+    }
+  } catch (error) {
+    logger.error(
+      `加载协议空间配置模式选项失败: ${error instanceof Error ? error.message : String(error)}`
+    )
+  }
+}
+
+const loadProtocolSpacePlan = async (planId?: string | null) => {
+  if (!planId || planId === 'Fixed') {
+    logger.debug('切换到固定模式')
+    planModeConfig.value = null
+    fullPlanData.value = null
+    return
+  }
+
+  try {
+    logger.debug(`开始加载协议空间计划配置: ${planId}`)
+    const response = await getPlans(planId)
+    const planData = response?.data?.[planId] as MaaEndPlanConfig | undefined
+    const planIndex = response?.index?.find(item => item.uid === planId)
+
+    if (!planData || planIndex?.type !== 'MaaEndPlanConfig') {
+      logger.warn(`协议空间计划配置响应不完整: ${JSON.stringify({ response, planId })}`)
+      planModeConfig.value = null
+      fullPlanData.value = null
+      message.warning('计划表不存在或已失效')
+      return
+    }
+
+    const currentConfig = getPlanCurrentConfig(planData)
+
+    logger.debug(`获取到协议空间计划数据: ${JSON.stringify(planData)}`)
+    logger.debug(`getPlanCurrentConfig返回: ${JSON.stringify(currentConfig)}`)
+
+    planModeConfig.value = currentConfig
+    fullPlanData.value = planData
+
+    logger.info(
+      `协议空间计划配置加载成功:${JSON.stringify({
+        planId,
+        currentConfig: JSON.parse(JSON.stringify(currentConfig)),
+        planModeConfigValue: JSON.parse(JSON.stringify(planModeConfig.value)),
+      })}`
+    )
+
+    const planOption = protocolSpaceModeOptions.value.find(option => option.value === planId)
+    const planName = planOption ? planOption.label : planId
+
+    message.success(`已切换到计划模式：${planName}`)
+  } catch (error) {
+    const errorInfo = {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      type: typeof error,
+      name: error instanceof Error ? error.name : error?.constructor?.name,
+    }
+    logger.error(`加载协议空间计划配置失败: ${JSON.stringify(errorInfo)}`)
+    planModeConfig.value = null
+    fullPlanData.value = null
+    message.error('加载计划配置时发生错误')
   }
 }
 
@@ -315,11 +468,22 @@ const handleSaveMaaEndConfig = async () => {
 }
 
 const handleCancel = () => {
+  cleanupConfigSession()
   router.push('/scripts')
 }
 
 onMounted(async () => {
   await loadScriptInfo()
+  await loadProtocolSpaceModeOptions()
+
+  watch(
+    () => formData.Info.ProtocolSpaceMode,
+    async newMode => {
+      await loadProtocolSpacePlan(newMode)
+    },
+    { immediate: false }
+  )
+
   if (isEdit.value) {
     await loadUserData()
   } else {

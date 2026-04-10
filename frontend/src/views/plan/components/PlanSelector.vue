@@ -73,6 +73,7 @@ const getPlanTypeLabel = (planType: string) => {
   const normalizedPlanType = planType
   const labelMap: Record<string, string> = {
     MaaPlanConfig: 'MAA',
+    MaaEndPlanConfig: 'MaaEnd',
     GeneralPlan: '通用',
     CustomPlan: '自定义',
   }

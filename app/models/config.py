@@ -32,6 +32,7 @@ from app.utils.constants import (
     MATERIALS_MAP,
     RESOURCE_STAGE_INFO,
     MAA_STAGE_KEY,
+    MAAEND_PLAN_FIELDS,
     MAAEND_STAGE_BOOK,
     MAAEND_STAGE_WITH_AB,
     STARRAIL_STAGE_BOOK,
@@ -639,6 +640,8 @@ class MaaConfig(ConfigBase):
 class MaaEndUserConfig(ConfigBase):
     """MaaEnd用户配置"""
 
+    related_config: dict[str, MultipleConfig] = {}
+
     def __init__(self) -> None:
 
         ## Info ------------------------------------------------------------
@@ -653,6 +656,13 @@ class MaaEndUserConfig(ConfigBase):
         ## 配置模式
         self.Info_Mode = ConfigItem(
             "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+        )
+        ## 协议空间配置模式
+        self.Info_ProtocolSpaceMode = ConfigItem(
+            "Info",
+            "ProtocolSpaceMode",
+            "Fixed",
+            MultipleUIDValidator("Fixed", self.related_config, "PlanConfig"),
         )
         ## 资源名称
         self.Info_Resource = ConfigItem(
@@ -765,6 +775,32 @@ class MaaEndUserConfig(ConfigBase):
 
         super().__init__()
 
+    def get_effective_protocol_space_config(self) -> tuple[dict[str, str], str]:
+        """获取当前生效的协议空间配置"""
+
+        mode = self.get("Info", "ProtocolSpaceMode")
+        if mode == "Fixed":
+            return (
+                {
+                    field: self.get("Task", field)
+                    for field in MAAEND_PLAN_FIELDS
+                },
+                "Fixed",
+            )
+
+        try:
+            plan = self.related_config["PlanConfig"][uuid.UUID(mode)]
+        except (KeyError, ValueError) as e:
+            raise ValueError("引用的协议空间计划表不存在") from e
+
+        if not isinstance(plan, MaaEndPlanConfig):
+            raise TypeError("引用的计划表类型不是 MaaEnd 计划表")
+
+        return (
+            {field: plan.get_current_info(field).getValue() for field in MAAEND_PLAN_FIELDS},
+            "Plan",
+        )
+
     def getTags(self) -> str:
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
@@ -833,14 +869,23 @@ class MaaEndUserConfig(ConfigBase):
             }
         )
 
-        # 关卡信息标签
-        stage = self.get("Task", self.get("Task", "ProtocolSpaceTab"))
-        stage_ab = (
-            f" - {self.get("Task", "RewardsSetOption")[-1]}"
-            if stage in MAAEND_STAGE_WITH_AB
-            else ""
-        )
-        tags.append({"text": MAAEND_STAGE_BOOK[stage] + stage_ab, "color": "blue"})
+        # 协议空间标签
+        try:
+            task_config, task_mode = self.get_effective_protocol_space_config()
+            stage = task_config[task_config["ProtocolSpaceTab"]]
+            stage_ab = (
+                f" - {task_config['RewardsSetOption'][-1]}"
+                if stage in MAAEND_STAGE_WITH_AB
+                else ""
+            )
+            tags.append(
+                {
+                    "text": MAAEND_STAGE_BOOK[stage] + stage_ab,
+                    "color": "green" if task_mode == "Plan" else "blue",
+                }
+            )
+        except Exception as e:
+            tags.append({"text": f"协议空间：{str(e)}", "color": "red"})
 
         # 备注标签
         notes = self.get("Info", "Notes")
@@ -1348,6 +1393,91 @@ class MaaPlanConfig(ConfigBase):
                 self.config_item_dict[group][name] = ConfigItem(group, name, "-")
 
             for name in MAA_STAGE_KEY:
+                setattr(self, f"{group}_{name}", self.config_item_dict[group][name])
+
+        super().__init__()
+
+    def get_current_info(self, name: str) -> ConfigItem:
+        """获取当前的计划表配置项"""
+
+        if self.get("Info", "Mode") == "ALL":
+            return self.config_item_dict["ALL"][name]
+
+        elif self.get("Info", "Mode") == "Weekly":
+
+            today = datetime.now(tz=UTC4).strftime("%A")
+
+            if today in self.config_item_dict:
+                return self.config_item_dict[today][name]
+            else:
+                return self.config_item_dict["ALL"][name]
+
+        else:
+            raise ValueError("非法的计划表模式")
+
+
+class MaaEndPlanConfig(ConfigBase):
+    """MaaEnd计划表配置"""
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## 计划表名称
+        self.Info_Name = ConfigItem("Info", "Name", "新 MaaEnd 计划表")
+        ## 计划表模式
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "ALL", OptionsValidator(["ALL", "Weekly"])
+        )
+
+        self.config_item_dict: dict[str, dict[str, ConfigItem]] = {}
+
+        for group in ["ALL", *calendar.day_name]:
+            self.config_item_dict[group] = {}
+
+            self.config_item_dict[group]["ProtocolSpaceTab"] = ConfigItem(
+                group,
+                "ProtocolSpaceTab",
+                "OperatorProgression",
+                OptionsValidator(
+                    ["OperatorProgression", "WeaponProgression", "CrisisDrills"]
+                ),
+            )
+            self.config_item_dict[group]["OperatorProgression"] = ConfigItem(
+                group,
+                "OperatorProgression",
+                "OperatorEXP",
+                OptionsValidator(
+                    ["OperatorEXP", "Promotions", "T-Creds", "SkillUp"]
+                ),
+            )
+            self.config_item_dict[group]["WeaponProgression"] = ConfigItem(
+                group,
+                "WeaponProgression",
+                "WeaponEXP",
+                OptionsValidator(["WeaponEXP", "WeaponTune"]),
+            )
+            self.config_item_dict[group]["CrisisDrills"] = ConfigItem(
+                group,
+                "CrisisDrills",
+                "AdvancedProgression1",
+                OptionsValidator(
+                    [
+                        "AdvancedProgression1",
+                        "AdvancedProgression2",
+                        "AdvancedProgression3",
+                        "AdvancedProgression4",
+                        "AdvancedProgression5",
+                    ]
+                ),
+            )
+            self.config_item_dict[group]["RewardsSetOption"] = ConfigItem(
+                group,
+                "RewardsSetOption",
+                "RewardsSetA",
+                OptionsValidator(["RewardsSetA", "RewardsSetB"]),
+            )
+
+            for name in MAAEND_PLAN_FIELDS:
                 setattr(self, f"{group}_{name}", self.config_item_dict[group][name])
 
         super().__init__()
@@ -1885,7 +2015,7 @@ class GlobalConfig(ConfigBase):
         ## 模拟器配置列表
         self.EmulatorConfig = MultipleConfig([EmulatorConfig])
         ## 计划表配置列表
-        self.PlanConfig = MultipleConfig([MaaPlanConfig])
+        self.PlanConfig = MultipleConfig([MaaPlanConfig, MaaEndPlanConfig])
         ## 脚本配置列表
         self.ScriptConfig = MultipleConfig(
             [MaaConfig, MaaEndConfig, SrcConfig, GeneralConfig]
@@ -1900,6 +2030,7 @@ class GlobalConfig(ConfigBase):
         SrcConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
+        MaaEndUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
 
     def getStage(self) -> str:
@@ -1968,6 +2099,7 @@ class GlobalConfig(ConfigBase):
 CLASS_BOOK = {
     "MAA": MaaConfig,
     "MaaPlan": MaaPlanConfig,
+    "MaaEndPlan": MaaEndPlanConfig,
     "SRC": SrcConfig,
     "MaaEnd": MaaEndConfig,
     "General": GeneralConfig,

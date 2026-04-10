@@ -44,6 +44,7 @@ from app.models.config import (
     SrcConfig,
     MaaEndConfig,
     MaaPlanConfig,
+    MaaEndPlanConfig,
     QueueConfig,
     QueueItem,
     MaaUserConfig,
@@ -401,6 +402,8 @@ class AppConfig(GlobalConfig):
                     shutil.rmtree(Path.cwd() / "config/QueueConfig")
                 if (Path.cwd() / "config/MaaPlanConfig").exists():
                     shutil.rmtree(Path.cwd() / "config/MaaPlanConfig")
+                if (Path.cwd() / "config/MaaEndPlanConfig").exists():
+                    shutil.rmtree(Path.cwd() / "config/MaaEndPlanConfig")
                 if (Path.cwd() / "config/MaaConfig").exists():
                     shutil.rmtree(Path.cwd() / "config/MaaConfig")
                 if (Path.cwd() / "config/GeneralConfig").exists():
@@ -927,8 +930,8 @@ class AppConfig(GlobalConfig):
         return data
 
     async def add_plan(
-        self, script: Literal["MaaPlan"]
-    ) -> tuple[uuid.UUID, MaaPlanConfig]:
+        self, script: Literal["MaaPlan", "MaaEndPlan"]
+    ) -> tuple[uuid.UUID, MaaPlanConfig | MaaEndPlanConfig]:
         """添加计划表"""
 
         logger.info(f"添加计划表: {script}")
@@ -965,21 +968,32 @@ class AppConfig(GlobalConfig):
         logger.info(f"删除计划表配置: {plan_id}")
 
         plan_uid = uuid.UUID(plan_id)
+        plan_config = self.PlanConfig[plan_uid]
 
-        user_list = []
+        user_list: list[tuple[MaaUserConfig | MaaEndUserConfig, str]] = []
 
         for script in self.ScriptConfig.values():
-            if isinstance(script, MaaConfig):
+            if isinstance(plan_config, MaaPlanConfig) and isinstance(script, MaaConfig):
                 for user in script.UserData.values():
                     if user.get("Info", "StageMode") == str(plan_uid):
                         if user.is_locked:
                             raise RuntimeError(
                                 f"用户 {user.get('Info','Name')} 正在使用此计划表且被锁定, 无法完成删除"
                             )
-                        user_list.append(user)
+                        user_list.append((user, "StageMode"))
+            elif isinstance(plan_config, MaaEndPlanConfig) and isinstance(
+                script, MaaEndConfig
+            ):
+                for user in script.UserData.values():
+                    if user.get("Info", "ProtocolSpaceMode") == str(plan_uid):
+                        if user.is_locked:
+                            raise RuntimeError(
+                                f"用户 {user.get('Info','Name')} 正在使用此计划表且被锁定, 无法完成删除"
+                            )
+                        user_list.append((user, "ProtocolSpaceMode"))
 
-        for user in user_list:
-            await user.set("Info", "StageMode", "Fixed")
+        for user, field_name in user_list:
+            await user.set("Info", field_name, "Fixed")
 
         await self.PlanConfig.remove(plan_uid)
 
@@ -1629,13 +1643,15 @@ class AppConfig(GlobalConfig):
 
         return data
 
-    async def get_plan_combox(self):
+    async def get_plan_combox(self, consumer: Literal["MAA", "MaaEnd"] = "MAA"):
         """获取计划下拉框信息"""
 
-        logger.info("开始获取计划下拉框信息")
+        logger.info(f"开始获取计划下拉框信息: {consumer}")
         data = [{"label": "固定", "value": "Fixed"}]
+        plan_type = MaaPlanConfig if consumer == "MAA" else MaaEndPlanConfig
         for uid, plan in self.PlanConfig.items():
-            data.append({"label": plan.get("Info", "Name"), "value": str(uid)})
+            if isinstance(plan, plan_type):
+                data.append({"label": plan.get("Info", "Name"), "value": str(uid)})
         logger.success("计划下拉框信息获取成功")
 
         return data

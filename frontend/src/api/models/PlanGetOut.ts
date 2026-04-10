@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { MaaPlanConfig } from './MaaPlanConfig';
 import type { PlanIndexItem } from './PlanIndexItem';
+import type { PlanConfigData } from './PlanConfigData';
 export type PlanGetOut = {
     /**
      * 状态码
@@ -24,6 +24,6 @@ export type PlanGetOut = {
     /**
      * 计划列表或单个计划数据
      */
-    data: Record<string, MaaPlanConfig>;
+    data: Record<string, PlanConfigData>;
 };
 

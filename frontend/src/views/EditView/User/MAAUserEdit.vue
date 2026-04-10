@@ -688,7 +688,7 @@ const loadStageOptions = async () => {
 
 const loadStageModeOptions = async () => {
   try {
-    const response = await Service.getPlanComboxApiInfoComboxPlanPost()
+    const response = await Service.getPlanComboxApiInfoComboxPlanPost({ consumer: 'MAA' })
     if (response && response.code === 200 && response.data) {
       stageModeOptions.value = response.data
     }

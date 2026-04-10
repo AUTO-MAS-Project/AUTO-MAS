@@ -13,6 +13,10 @@
                 <PlusOutlined />
                 新建 MAA 计划
               </a-menu-item>
+              <a-menu-item key="MaaEndPlanConfig">
+                <PlusOutlined />
+                新建 MaaEnd 计划
+              </a-menu-item>
               <!-- 预留其他计划类型 -->
               <!-- <a-menu-item key="GeneralPlan">
                 <PlusOutlined />
@@ -84,6 +88,8 @@ const getPlanButtonText = computed(() => {
   switch (selectedPlanType.value) {
     case 'MaaPlanConfig':
       return '新建 MAA 计划'
+    case 'MaaEndPlanConfig':
+      return '新建 MaaEnd 计划'
     case 'GeneralPlan':
       return '新建通用计划'
     case 'CustomPlan':
