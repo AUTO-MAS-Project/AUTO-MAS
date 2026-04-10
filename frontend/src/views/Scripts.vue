@@ -282,7 +282,7 @@
             <div class="type-info">
               <div class="type-title">MaaEnd 脚本</div>
               <div class="type-description">
-                MaaEnd 自动化脚本，沿用 SRC 风格的多账号代理管理界面
+                明日方舟：终末地自动化脚本，支持多账号代理与协议空间配置
               </div>
             </div>
           </div>
