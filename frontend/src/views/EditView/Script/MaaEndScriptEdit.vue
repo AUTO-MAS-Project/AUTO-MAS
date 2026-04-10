@@ -30,6 +30,29 @@
         <a-tag class="type-tag">MaaEnd</a-tag>
       </template>
 
+      <a-alert message="重要提示" type="warning" show-icon class="notice-alert">
+        <template #description>
+          <div class="notice-content">
+            <p>默认等待时间建议调到 120 秒。</p>
+            <p>终末地必须使用窗口模式，推荐分辨率为 1280×720。</p>
+            <p>
+              MaaEnd专项还在积极测试中，如有问题请加入 
+              <a
+                href="https://qm.qq.com/q/1FKvD6Q8H6"
+                target="_blank"
+                rel="noopener noreferrer"
+                @click="handleExternalLink"
+              >QQ群</a>
+              反馈，或前往
+              <a
+                href="https://github.com/AUTO-MAS-Project/AUTO-MAS/issues/149"
+                @click="handleExternalLink"
+              >BUG收集页</a>留言
+            </p>
+          </div>
+        </template>
+      </a-alert>
+
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
           <div class="section-header">
@@ -273,6 +296,7 @@ import type { ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { handleExternalLink } from '@/utils/openExternal'
 import {
   ArrowLeftOutlined,
   FolderOpenOutlined,
@@ -314,7 +338,7 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     ControllerType: 'Win32-Window',
     Path: '',
     Arguments: '',
-    WaitTime: 15,
+    WaitTime: 90,
     EmulatorId: '',
     EmulatorIndex: '',
     CloseOnFinish: false,
@@ -440,7 +464,7 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
           ControllerType: value,
           Path: '',
           Arguments: '',
-          WaitTime: 15,
+          WaitTime: 90,
         }
         : {
           ControllerType: value,
@@ -594,6 +618,23 @@ onMounted(async () => {
   border: 1px solid var(--ant-color-primary-border);
   color: var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
+}
+
+.notice-alert {
+  margin-bottom: 24px;
+  border-radius: 12px;
+}
+
+.notice-content p {
+  margin: 0;
+}
+
+.notice-content p + p {
+  margin-top: 6px;
+}
+
+.notice-content a {
+  font-weight: 600;
 }
 
 .form-section {

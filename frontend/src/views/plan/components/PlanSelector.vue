@@ -13,8 +13,14 @@
       <!-- 计划按钮组 -->
       <div class="plan-buttons-container">
         <a-space wrap size="middle">
-          <a-button v-for="plan in planList" :key="plan.id" :type="activePlanId === plan.id ? 'primary' : 'default'"
-            size="large" class="plan-button" @click="handlePlanClick(plan.id)">
+          <a-button
+            v-for="plan in planList"
+            :key="plan.id"
+            :type="activePlanId === plan.id ? 'primary' : 'default'"
+            size="large"
+            class="plan-button"
+            @click="handlePlanClick(plan.id)"
+          >
             <span class="plan-name">{{ plan.name }}</span>
             <a-tag v-if="shouldShowPlanTypeTag()" size="small" color="blue" class="plan-type-tag">
               {{ getPlanTypeLabel(plan.type) }}
@@ -27,8 +33,6 @@
 </template>
 
 <script setup lang="ts">
-import { useDebounceFn } from '@vueuse/core'
-
 interface Plan {
   id: string
   name: string
@@ -40,18 +44,15 @@ interface Props {
   activePlanId: string
 }
 
-interface Emits {
-  (e: 'plan-change', planId: string): void
-}
-
 const props = defineProps<Props>()
-const emit = defineEmits<Emits>()
+const emit = defineEmits<{
+  'plan-change': [planId: string]
+}>()
 
-// 使用 VueUse 的 useDebounceFn 替换手写的 debounce
-const handlePlanClick = useDebounceFn((planId: string) => {
+const handlePlanClick = (planId: string) => {
   if (planId === props.activePlanId) return
   emit('plan-change', planId)
-}, 100)
+}
 
 // 判断是否需要显示计划类型标签
 // 当所有计划的类型都相同时不显示标签，否则显示非默认类型的标签

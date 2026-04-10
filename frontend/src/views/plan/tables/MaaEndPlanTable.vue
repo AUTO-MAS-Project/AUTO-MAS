@@ -157,7 +157,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
   MAAEND_PLAN_TIME_KEYS,
   MAAEND_PLAN_TIME_LABELS,
@@ -184,6 +184,21 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+
+// 本地状态用于乐观更新
+const localTableData = ref<Record<string, any>>({})
+
+// 监听外部数据变化
+watch(
+  () => props.tableData,
+  newData => {
+    if (newData) {
+      // 深拷贝以避免直接修改 props
+      localTableData.value = JSON.parse(JSON.stringify(newData))
+    }
+  },
+  { immediate: true, deep: true }
+)
 
 const configColumns = [
   {
@@ -238,7 +253,7 @@ const isColumnDisabled = (timeKey: PlanTimeKey) => {
 }
 
 const getDayConfig = (timeKey: PlanTimeKey): ProtocolSpaceConfig =>
-  normalizeProtocolSpaceConfig(props.tableData?.[timeKey])
+  normalizeProtocolSpaceConfig(localTableData.value?.[timeKey])
 
 const getCurrentTaskOptions = (timeKey: PlanTimeKey) =>
   PROTOCOL_SPACE_TASK_OPTIONS_MAP[getDayConfig(timeKey).ProtocolSpaceTab]
@@ -293,7 +308,10 @@ const simpleRows = computed(() => {
 })
 
 const saveDayConfig = async (timeKey: PlanTimeKey, config: Partial<ProtocolSpaceConfig>) => {
-  await props.handlePlanChange(timeKey, normalizeProtocolSpaceConfig(config))
+  const normalized = normalizeProtocolSpaceConfig(config)
+  // 乐观更新本地状态
+  localTableData.value[timeKey] = normalized
+  await props.handlePlanChange(timeKey, normalized)
 }
 
 const handleProtocolSpaceChange = async (timeKey: PlanTimeKey, value: ProtocolSpaceTab) => {
