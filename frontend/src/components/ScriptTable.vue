@@ -18,6 +18,7 @@
                   <img v-else-if="script.type === 'SRC'" src="@/assets/SRC.png" alt="SRC" class="script-logo" />
                   <img v-else-if="script.type === 'MaaEnd'" src="@/assets/MaaEnd.png" alt="MaaEnd"
                     class="script-logo" />
+                  <img v-else-if="script.type === 'M9A'" src="@/assets/M9A.png" alt="M9A" class="script-logo" />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
@@ -28,7 +29,9 @@
                       ? 'purple'
                       : script.type === 'MaaEnd'
                         ? 'blue'
-                        : 'green'
+                        : script.type === 'M9A'
+                          ? 'cyan'
+                          : 'green'
                     " class="script-type">
                     {{ script.type }}
                   </a-tag>
