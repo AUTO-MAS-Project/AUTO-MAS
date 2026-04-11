@@ -72,7 +72,8 @@ class AutoProxyTask(TaskExecuteBase):
         # 初始化路径
         self.m9a_root_path = Path(self.script_config.get("Info", "Path"))
         self.m9a_config_path = self.m9a_root_path / "config"
-        self.m9a_log_path = self.m9a_root_path / "debug/maa.log"
+        today_date = datetime.now().strftime("%Y%m%d")
+        self.m9a_log_path = self.m9a_root_path / f"logs/log-{today_date}.log"
         self.m9a_exe_path = self.m9a_root_path / "M9A.exe"
         self.m9a_tasks_path = self.m9a_config_path / "instances/default.json"
 
@@ -101,8 +102,8 @@ class AutoProxyTask(TaskExecuteBase):
 
         self.m9a_process_manager = ProcessManager()
         self.m9a_log_monitor = LogMonitor(
-            (1, 20),
-            "%Y-%m-%d %H:%M:%S",
+            (1, 24),
+            "%Y-%m-%d %H:%M:%S.%f",
             self.check_log,
             except_logs=["如果长时间无进一步日志更新，可能需要手动干预。"],
         )
@@ -113,7 +114,8 @@ class AutoProxyTask(TaskExecuteBase):
 
         self.m9a_root_path = Path(self.script_config.get("Info", "Path"))
         self.m9a_config_path = self.m9a_root_path / "config"
-        self.m9a_log_path = self.m9a_root_path / "debug/maa.log"
+        today_date = datetime.now().strftime("%Y%m%d")
+        self.m9a_log_path = self.m9a_root_path / f"logs/log-{today_date}.log"
         self.m9a_exe_path = self.m9a_root_path / "M9A.exe"
         self.m9a_tasks_path = self.m9a_config_path / "instances/default.json"
 
@@ -324,19 +326,29 @@ class AutoProxyTask(TaskExecuteBase):
 
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
-        """日志回调 - M9A 专用版本（禁用敏感的错误检测，避免在游戏加载时误判）"""
+        """日志回调 - M9A 专用版本（禁用敏感的错误检测，避免在游戏加载时误判）
+        
+        重要：log_content 只包含本次启动后的日志（由 LogMonitor 根据 log_start_time 过滤）
+        因此不会误检测到之前运行的日志内容
+        """
 
         log = "".join(log_content)
         self.cur_user_log.content = log_content
         self.script_info.log = log
 
-        # 判断任务完成
-        if "任务已全部完成" in log or "All tasks completed" in log:
+        # 判断任务完成 - 检测"任务已全部完成！"（带感叹号）
+        # 注意：只检测本次启动后的日志，不会误判之前的运行
+        if "任务已全部完成！" in log or "All tasks completed" in log:
             self.cur_user_log.status = "Success!"
         # 注意：禁用基于日志关键字的错误检测，因为 M9A 在游戏加载时会输出大量 [ERR] 日志
         # 改为只检测进程是否真的退出，或等待超时
         elif not await self.m9a_process_manager.is_running():
-            self.cur_user_log.status = "M9A 进程已结束"
+            # 进程已结束但未检测到正常完成标志，置为异常完成
+            # 注意：只检查本次启动后的日志
+            if "任务已全部完成！" not in log and "All tasks completed" not in log:
+                self.cur_user_log.status = "M9A 进程已异常结束"
+            else:
+                self.cur_user_log.status = "M9A 进程已结束"
         elif datetime.now() - latest_time > timedelta(
             minutes=self.script_config.get("Run", "RunTimeLimit") or 10
         ):
@@ -366,14 +378,20 @@ class AutoProxyTask(TaskExecuteBase):
         except Exception as e:
             logger.exception(f"关闭模拟器失败：{e}")
 
-        # 3. 更新用户状态
+        # 3. 更新用户状态 - 根据日志结果判断
         if self.cur_user_item.status == "运行":
-            self.cur_user_item.status = "完成"
-            await self.cur_user_config.set(
-                "Data", "ProxyTimes",
-                self.cur_user_config.get("Data", "ProxyTimes") + 1
-            )
-            logger.success(f"用户 {self.cur_user_uid} 的 M9A 任务已完成")
+            # 检查是否正常完成
+            if self.cur_user_log.status == "Success!":
+                self.cur_user_item.status = "完成"
+                await self.cur_user_config.set(
+                    "Data", "ProxyTimes",
+                    self.cur_user_config.get("Data", "ProxyTimes") + 1
+                )
+                logger.success(f"用户 {self.cur_user_uid} 的 M9A 任务已完成")
+            else:
+                # 未检测到正常完成标志，置为异常
+                self.cur_user_item.status = "异常"
+                logger.warning(f"用户 {self.cur_user_uid} 的 M9A 任务异常结束: {self.cur_user_log.status}")
 
 
 
