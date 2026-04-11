@@ -120,6 +120,16 @@ class M9AManager(TaskExecuteBase):
         self.temp_path.mkdir(parents=True, exist_ok=True)
         if self.m9a_config_path.exists():
             shutil.copytree(self.m9a_config_path, self.temp_path, dirs_exist_ok=True)
+            
+            # 确保 config/instances 目录只保留 default.json
+            instances_dir = self.m9a_config_path / "instances"
+            if instances_dir.exists():
+                for json_file in instances_dir.glob("*.json"):
+                    try:
+                        json_file.unlink()
+                        logger.info(f"已删除原始配置文件：{json_file}")
+                    except Exception as e:
+                        logger.warning(f"删除原始配置文件 {json_file} 失败：{e}")
 
         # 构建用户列表
         if self.task_info.mode == "ScriptConfig":

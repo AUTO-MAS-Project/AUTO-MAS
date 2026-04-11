@@ -25,6 +25,7 @@ import queue
 import uuid
 import asyncio
 import shutil
+import re
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -290,12 +291,36 @@ class AutoProxyTask(TaskExecuteBase):
             logger.error(f"构建 M9A 配置失败: {e}")
             raise
 
-        # 保存配置
+        # 保存配置到 M9A 目录
         self.m9a_tasks_path.write_text(
             json.dumps(config, ensure_ascii=False, indent=2),
             encoding="utf-8"
         )
         logger.info(f"已写入 M9A 配置：{self.m9a_tasks_path}")
+
+        # ==================== Debug 备份功能 ====================
+        # 保存到 data/script_id 目录，按 test1.json, test2.json 递增
+        debug_dir = Path("data") / self.script_info.script_id
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 查找现有 test*.json 文件，获取下一个编号
+        existing_tests = list(debug_dir.glob("test*.json"))
+        test_numbers = []
+        for test_file in existing_tests:
+            match = re.search(r"test(\d+)\.json", test_file.name)
+            if match:
+                test_numbers.append(int(match.group(1)))
+        
+        next_num = max(test_numbers) + 1 if test_numbers else 1
+        backup_path = debug_dir / f"test{next_num}.json"
+        
+        # 保存备份
+        backup_path.write_text(
+            json.dumps(config, ensure_ascii=False, indent=2),
+            encoding="utf-8"
+        )
+        logger.info(f"Debug 备份已保存：{backup_path}")
+        # =======================================================
 
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
