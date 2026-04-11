@@ -513,12 +513,21 @@ async def get_m9a_available_tasks(script_id: str):
         script_config = Config.ScriptConfig[uuid.UUID(script_id)]
         m9a_path = Path(script_config.get("Info", "Path"))
         loader = M9ATaskLoader(m9a_path)
-
+        
+        # 获取可用任务，并添加完整定义（包括 option 和 _option_definitions）
+        available_tasks = loader.get_available_tasks()
+        result_tasks = []
+        
+        for task in available_tasks:
+            full_def = loader.get_full_definition(task["name"])
+            if full_def:
+                result_tasks.append(full_def)
+        
         return {
             "code": 200,
             "status": "success",
-            "message": f"共 {len(loader.get_task_names())} 个可用任务",
-            "data": loader.get_available_tasks()
+            "message": f"共 {len(result_tasks)} 个可用任务",
+            "data": result_tasks
         }
     except Exception as e:
         return {

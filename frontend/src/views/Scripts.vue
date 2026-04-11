@@ -212,6 +212,12 @@
                 alt="MaaEnd"
                 class="type-icon"
               />
+              <img
+                v-else-if="script.type === 'M9A'"
+                src="@/assets/M9A.png"
+                alt="M9A"
+                class="type-icon"
+              />
               <img v-else src="@/assets/AUTO-MAS.ico" alt="General" class="type-icon" />
             </div>
             <div class="script-info">
@@ -224,7 +230,9 @@
                       ? 'SRC脚本'
                       : script.type === 'MaaEnd'
                         ? 'MaaEnd脚本'
-                        : '通用脚本'
+                        : script.type === 'M9A'
+                          ? 'M9A脚本'
+                          : '通用脚本'
                 }}</span>
                 <span class="script-users">
                   <UserOutlined />
@@ -283,6 +291,19 @@
               <div class="type-title">MaaEnd 脚本</div>
               <div class="type-description">
                 MaaEnd 自动化脚本，沿用 SRC 风格的多账号代理管理界面
+              </div>
+            </div>
+          </div>
+        </a-radio-button>
+        <a-radio-button value="M9A" class="type-option">
+          <div class="type-content">
+            <div class="type-logo-container">
+              <img src="@/assets/M9A.png" alt="M9A" class="type-logo" />
+            </div>
+            <div class="type-info">
+              <div class="type-title">M9A脚本</div>
+              <div class="type-description">
+                重返未来: 1999 自动化脚本，支持多账号日常代理等功能
               </div>
             </div>
           </div>
@@ -658,7 +679,9 @@ const handleConfirmAddScript = async () => {
             ? 'src'
             : selectedType.value === 'MaaEnd'
               ? 'maaend'
-              : 'general'
+              : selectedType.value === 'M9A'
+                ? 'm9a'
+                : 'general'
       router.push({
         path: `/scripts/${result.scriptId}/edit/${editPath}`,
         state: {
@@ -779,6 +802,8 @@ const handleEditScript = (script: Script) => {
     router.push(`/scripts/${script.id}/edit/src`)
   } else if (script.type === 'MaaEnd') {
     router.push(`/scripts/${script.id}/edit/maaend`)
+  } else if (script.type === 'M9A') {
+    router.push(`/scripts/${script.id}/edit/m9a`)
   } else {
     router.push(`/scripts/${script.id}/edit/general`)
   }
@@ -799,6 +824,8 @@ const handleAddUser = (script: Script) => {
     router.push(`/scripts/${script.id}/users/add/src`)
   } else if (script.type === 'MaaEnd') {
     router.push(`/scripts/${script.id}/users/add/maaend`)
+  } else if (script.type === 'M9A') {
+    router.push(`/scripts/${script.id}/users/add/m9a`)
   } else {
     router.push(`/scripts/${script.id}/users/add/general`)
   }
@@ -815,6 +842,8 @@ const handleEditUser = (user: User) => {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/src`)
     } else if (script.type === 'MaaEnd') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/maaend`)
+    } else if (script.type === 'M9A') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/m9a`)
     } else {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
     }
