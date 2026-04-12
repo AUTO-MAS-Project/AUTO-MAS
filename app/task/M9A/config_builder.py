@@ -267,6 +267,17 @@ class M9AConfigBuilder:
                         if sub_opts:
                             opt_item["sub_options"] = sub_opts
             
+            # 对于 input 类型，添加 data 字段存储默认值
+            if isinstance(opt_def, dict) and opt_def.get("type") == "input" and "inputs" in opt_def:
+                data = {}
+                for input_def in opt_def["inputs"]:
+                    input_name = input_def.get("name")
+                    default_value = input_def.get("default")
+                    if input_name and default_value is not None:
+                        data[input_name] = default_value
+                if data:
+                    opt_item["data"] = data
+            
             options.append(opt_item)
         
         return options
@@ -303,6 +314,21 @@ class M9AConfigBuilder:
                         )
                         if sub_opts:
                             opt_item["sub_options"] = sub_opts
+            
+            # 优先使用用户的 data，如果没有则使用 input_values
+            user_data = user_opt.get("data") if "data" in user_opt else user_opt.get("input_values")
+            
+            if user_data is not None:
+                opt_item["data"] = user_data
+            elif isinstance(opt_def, dict) and opt_def.get("type") == "input" and "inputs" in opt_def:
+                data = {}
+                for input_def in opt_def["inputs"]:
+                    input_name = input_def.get("name")
+                    default_value = input_def.get("default")
+                    if input_name and default_value is not None:
+                        data[input_name] = default_value
+                if data:
+                    opt_item["data"] = data
             
             options.append(opt_item)
         

@@ -10,9 +10,9 @@
           @change="handleOptionChange(index)"
         >
           <a-radio
-            v-for="(caseItem, caseIndex) in optionDefinitions[option.name].cases"
-            :key="caseIndex"
-            :value="caseIndex"
+            v-for="(caseItem, caseIndex) in getDisplayCases(optionDefinitions[option.name])"
+            :key="getCaseIndex(optionDefinitions[option.name], caseItem)"
+            :value="getCaseIndex(optionDefinitions[option.name], caseItem)"
           >
             {{ caseItem.name }}
           </a-radio>
@@ -85,6 +85,35 @@ const emit = defineEmits<{
 }>()
 
 const currentOptions = ref<M9ATaskOption[]>([])
+
+const getDisplayCases = (optionDef: any) => {
+  if (!optionDef || !optionDef.cases) {
+    return []
+  }
+  
+  const cases = [...optionDef.cases]
+  
+  const isYesNoSwitch = cases.some(c => c.name === 'Yes' || c.name === 'No' || c.name === '是' || c.name === '否')
+  
+  if (!isYesNoSwitch) {
+    return cases
+  }
+  
+  return cases.sort((a, b) => {
+    const aIsYes = a.name === 'Yes' || a.name === '是'
+    const bIsYes = b.name === 'Yes' || b.name === '是'
+    if (aIsYes && !bIsYes) return -1
+    if (!aIsYes && bIsYes) return 1
+    return 0
+  })
+}
+
+const getCaseIndex = (optionDef: any, caseItem: any) => {
+  if (!optionDef || !optionDef.cases) {
+    return 0
+  }
+  return optionDef.cases.findIndex((c: any) => c.name === caseItem.name)
+}
 
 const getSubOptions = (optionDef: any, index: number): M9ATaskOption[] => {
   if (!optionDef || !optionDef.cases || optionDef.cases.length <= index) {
