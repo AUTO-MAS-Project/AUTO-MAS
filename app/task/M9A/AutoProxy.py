@@ -331,6 +331,25 @@ class AutoProxyTask(TaskExecuteBase):
             encoding="utf-8"
         )
         logger.info(f"Debug 备份已保存：{backup_path}")
+        
+        # 清理旧的备份文件，只保留最后 5 个
+        existing_tests = list(debug_dir.glob("test*.json"))
+        test_files_with_num = []
+        for test_file in existing_tests:
+            match = re.search(r"test(\d+)\.json", test_file.name)
+            if match:
+                test_files_with_num.append((int(match.group(1)), test_file))
+        
+        # 按编号排序，删除最旧的
+        test_files_with_num.sort(key=lambda x: x[0])
+        if len(test_files_with_num) > 5:
+            files_to_delete = test_files_with_num[:-5]
+            for num, file_path in files_to_delete:
+                try:
+                    file_path.unlink()
+                    logger.debug(f"已删除旧备份文件：{file_path}")
+                except Exception as e:
+                    logger.warning(f"删除旧备份文件失败 {file_path}: {e}")
         # =======================================================
 
 
