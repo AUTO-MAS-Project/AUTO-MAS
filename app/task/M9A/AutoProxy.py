@@ -147,6 +147,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         logger.info(f"开始代理用户: {self.cur_user_uid}")
         self.cur_user_item.status = "运行"
+        self.run_complete = False
         for i in range(self.script_config.get("Run", "RunTimesLimit")):
             logger.info(
                 f"用户 {self.cur_user_item.name} 自动代理模式 - 尝试次数: {i + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
@@ -247,6 +248,8 @@ class AutoProxyTask(TaskExecuteBase):
                 self.script_info.log = (
                     "检测到 M9A 完成代理任务\n正在等待相关程序结束"
                 )
+                self.run_complete = True
+                break
             else:
                 logger.error(
                     f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
@@ -384,10 +387,36 @@ class AutoProxyTask(TaskExecuteBase):
         except Exception as e:
             logger.exception(f"关闭模拟器失败：{e}")
 
-        # 3. 更新用户状态 - 根据日志结果判断
+        # 3. 保存历史记录
+        user_logs_list = []
+        for t, log_item in self.cur_user_item.log_record.items():
+
+            if log_item.status == "M9A 正常运行中":
+                log_item.status = "任务被用户手动中止"
+
+            dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
+            log_path = (
+                Path.cwd()
+                / f"history/{dt.strftime('%Y-%m-%d')}/{self.cur_user_item.name}/{dt.strftime('%H-%M-%S')}.log"
+            )
+            user_logs_list.append(log_path.with_suffix(".json"))
+
+            await Config.save_maa_log(log_path, log_item.content, log_item.status)
+
+        statistics = await Config.merge_statistic_info(user_logs_list)
+        statistics["user_info"] = self.cur_user_item.name
+        statistics["start_time"] = self.user_start_time.strftime("%Y-%m-%d %H:%M:%S")
+        statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        statistics["user_result"] = (
+            "代理任务全部完成"
+            if self.run_complete
+            else self.cur_user_item.result
+        )
+
+        # 4. 更新用户状态 - 根据日志结果判断
         if self.cur_user_item.status == "运行":
             # 检查是否正常完成
-            if self.cur_user_log.status == "Success!":
+            if self.run_complete:
                 self.cur_user_item.status = "完成"
                 await self.cur_user_config.set(
                     "Data", "ProxyTimes",
@@ -398,6 +427,50 @@ class AutoProxyTask(TaskExecuteBase):
                 # 未检测到正常完成标志，置为异常
                 self.cur_user_item.status = "异常"
                 logger.warning(f"用户 {self.cur_user_uid} 的 M9A 任务异常结束: {self.cur_user_log.status}")
+
+        try:
+            from .tools import push_notification
+            await push_notification(
+                "统计信息",
+                f"{datetime.now().strftime('%m-%d')} |{'√' if self.run_complete else 'X'}|  {self.cur_user_item.name} 的自动代理统计报告",
+                statistics,
+                self.cur_user_config,
+            )
+        except Exception as e:
+            logger.exception(f"推送通知时出现异常: {e}")
+            await Config.send_websocket_message(
+                id=self.task_info.task_id,
+                type="Info",
+                data={"Error": f"推送通知时出现异常: {e}"},
+            )
+
+        if self.run_complete:
+            if (
+                self.cur_user_config.get("Data", "ProxyTimes") == 0
+                and self.cur_user_config.get("Info", "RemainedDay") != -1
+            ):
+                await self.cur_user_config.set(
+                    "Info",
+                    "RemainedDay",
+                    self.cur_user_config.get("Info", "RemainedDay") - 1,
+                )
+            await self.cur_user_config.set(
+                "Data",
+                "ProxyTimes",
+                self.cur_user_config.get("Data", "ProxyTimes") + 1,
+            )
+
+            self.cur_user_item.status = "完成"
+            logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
+            await Notify.push_plyer(
+                "成功完成一个自动代理任务！",
+                f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
+                f"已完成 {self.cur_user_item.name} 的自动代理任务",
+                3,
+            )
+        else:
+            logger.error(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
+            self.cur_user_item.status = "异常"
 
 
 
