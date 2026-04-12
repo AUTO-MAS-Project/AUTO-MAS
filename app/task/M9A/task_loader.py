@@ -71,6 +71,68 @@ class M9ATaskLoader:
 
         logger.success(f"M9A 任务加载完成，共 {len(self._task_cache)} 个任务")
 
+        self._add_missing_option_fallback()
+
+    def _add_missing_option_fallback(self):
+        """
+        添加缺失选项的动态兜底逻辑：
+        如果某个任务的 task.option 数组里列了某个选项，但该文件的 option 字典里没有定义，
+        则从其他有该选项定义的任务中复制过来，包括递归处理子选项
+        """
+        global_option_defs = {}
+        
+        for json_file in self.tasks_dir.glob("*.json"):
+            try:
+                data = json.loads(json_file.read_text(encoding="utf-8"))
+                if "option" in data:
+                    for opt_name, opt_def in data["option"].items():
+                        if opt_name not in global_option_defs:
+                            global_option_defs[opt_name] = opt_def
+            except Exception:
+                continue
+        
+        if not global_option_defs:
+            logger.debug("未找到任何选项定义，跳过兜底逻辑")
+            return
+        
+        def collect_required_options(opt_name: str, collected: set):
+            if opt_name in collected:
+                return
+            if opt_name not in global_option_defs:
+                return
+            
+            collected.add(opt_name)
+            opt_def = global_option_defs[opt_name]
+            
+            if "cases" in opt_def:
+                for case in opt_def["cases"]:
+                    if "option" in case:
+                        for sub_opt_name in case["option"]:
+                            collect_required_options(sub_opt_name, collected)
+        
+        for task_name, raw_data in self._raw_data_cache.items():
+            if "option" not in raw_data or "task" not in raw_data:
+                continue
+            
+            task_def_list = raw_data["task"]
+            referenced_options = set()
+            
+            for t in task_def_list:
+                if "option" in t:
+                    for opt_name in t["option"]:
+                        collect_required_options(opt_name, referenced_options)
+            
+            missing_options = []
+            for opt_name in referenced_options:
+                if opt_name not in raw_data["option"] and opt_name in global_option_defs:
+                    missing_options.append(opt_name)
+            
+            if missing_options:
+                logger.info(f"为任务 '{task_name}' 添加缺失选项配置: {missing_options}")
+                
+                for opt_name in missing_options:
+                    raw_data["option"][opt_name] = global_option_defs[opt_name].copy()
+
     def get_available_tasks(self) -> list[dict]:
         """
         获取可用任务列表（排除 standalone 任务）
