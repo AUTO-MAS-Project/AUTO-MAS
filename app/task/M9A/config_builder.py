@@ -20,10 +20,13 @@
 
 
 import json
+import uuid
 from pathlib import Path
 
 from app.utils import get_logger
 from app.models.emulator import DeviceInfo
+from app.core import Config
+from app.models.config import M9AConfig
 
 logger = get_logger("M9A 配置构建器")
 
@@ -35,11 +38,15 @@ class M9AConfigBuilder:
         self.root_path = m9a_root_path
         self.template_path = m9a_root_path / "config/instances/default.json"
 
-    def build_config(
+    async def build_config(
         self,
         queue: list[dict],
         task_loader: 'M9ATaskLoader',
-        emulator_info: DeviceInfo = None
+        emulator_info: DeviceInfo = None,
+        emulator_id: str = None,
+        script_config: M9AConfig = None,
+        emulator_index: str = None,
+        emulator_manager = None
     ) -> dict:
         """
         根据任务队列构建完整配置
@@ -48,11 +55,16 @@ class M9AConfigBuilder:
         1. CurrentTasks 包含所有任务（格式：任务名<|||>entry）
         2. TaskItems 包含队列中的所有任务（支持重复，如切换账号）
         3. option 字段正确转换（从 option 名称列表 → {name, index} 格式）
+        4. 支持 ldplayer 和 mumu 模拟器的完整 AdbDevice 配置
         
         Args:
             queue: 用户选择的任务队列 [{"name": "启动游戏", "options": [...]}, ...]
             task_loader: 任务加载器实例
             emulator_info: 模拟器设备信息（可选）
+            emulator_id: 模拟器 ID（可选，用于 ldplayer/mumu 特殊配置）
+            script_config: M9A 脚本配置（可选）
+            emulator_index: 模拟器索引（可选）
+            emulator_manager: 模拟器管理器实例（可选）
 
         Returns:
             完整的 default.json 配置字典
@@ -174,7 +186,19 @@ class M9AConfigBuilder:
         config["TaskItems"] = ordered_task_items
         logger.info("M9A TaskItems 已排序：启动游戏首位，关闭游戏末位")
 
-        # 5. 设置 ADB 地址（如果提供）
+        # 5. 构建 AdbDevice 配置（支持 ldplayer 和 mumu 特殊配置）
+        if emulator_id and script_config and emulator_index and emulator_manager:
+            try:
+                adb_device_config = await self._build_adb_device_config(
+                    emulator_info, emulator_id, script_config, emulator_index, emulator_manager
+                )
+                if adb_device_config:
+                    config["AdbDevice"] = adb_device_config
+                    logger.info("已应用特殊 AdbDevice 配置")
+            except Exception as e:
+                logger.warning(f"构建特殊 AdbDevice 配置失败，使用默认配置: {e}")
+
+        # 设置 Connect.Address（如果提供）
         if emulator_info and emulator_info.adb_address != "Unknown":
             config["Connect.Address"] = emulator_info.adb_address
 
@@ -185,7 +209,15 @@ class M9AConfigBuilder:
         if "BeforeTask" not in config:
             config["BeforeTask"] = "StartupSoftwareAndScript"
         if "AfterTask" not in config:
-            config["AfterTask"] = "CloseMFA"
+            config["AfterTask"] = "CloseEmulatorAndMFA"
+
+        # 8. 添加固定配置字段
+        config["AutoConnectAfterRefresh"] = False
+        config["AutoDetectOnConnectionFailed"] = False
+        config["AllowAdbHardRestart"] = False
+        config["AllowAdbRestart"] = False
+        config["UseFingerprintMatching"] = False
+        config["RememberAdb"] = True
 
         logger.info(
             f"M9A 配置构建完成：CurrentTasks={len(config['CurrentTasks'])} 个任务, "
@@ -324,3 +356,126 @@ class M9AConfigBuilder:
             item["pipeline_override"] = task_def["pipeline_override"]
         
         return item
+
+    async def _build_adb_device_config(
+        self,
+        emulator_info: DeviceInfo,
+        emulator_id: str,
+        script_config: M9AConfig,
+        emulator_index: str,
+        emulator_manager
+    ) -> dict | None:
+        """
+        构建 AdbDevice 配置，支持 ldplayer 和 mumu 模拟器
+        
+        Args:
+            emulator_info: 模拟器设备信息
+            emulator_id: 模拟器 ID
+            script_config: M9A 脚本配置
+            emulator_index: 模拟器索引
+            emulator_manager: 模拟器管理器实例
+            
+        Returns:
+            AdbDevice 配置字典，或 None 表示不支持
+        """
+        try:
+            emulator_uid = uuid.UUID(emulator_id)
+            emulator_config = Config.EmulatorConfig[emulator_uid]
+            
+            emulator_type = emulator_config.get("Info", "Type")
+            emulator_path = Path(emulator_config.get("Info", "Path"))
+            
+            if emulator_type == "ldplayer":
+                return await self._build_ldplayer_config(
+                    emulator_info, emulator_path, emulator_index, emulator_manager
+                )
+            elif emulator_type == "mumu":
+                return self._build_mumu_config(
+                    emulator_info, emulator_path, emulator_index
+                )
+            else:
+                logger.info(f"不支持的模拟器类型: {emulator_type}，使用默认配置")
+                return None
+        except Exception as e:
+            logger.warning(f"构建 AdbDevice 配置时出错: {e}")
+            return None
+
+    async def _build_ldplayer_config(
+        self,
+        emulator_info: DeviceInfo,
+        emulator_path: Path,
+        emulator_index: str,
+        emulator_manager
+    ) -> dict:
+        """
+        构建雷电模拟器的 AdbDevice 配置
+        """
+        logger.info("构建雷电模拟器 AdbDevice 配置")
+        
+        ld_player_device = None
+        try:
+            devices = await emulator_manager.get_device_info(emulator_index)
+            if emulator_index in devices:
+                ld_player_device = devices[emulator_index]
+                logger.info(f"成功获取雷电模拟器设备信息: idx={ld_player_device.idx}, pid={ld_player_device.pid}")
+        except Exception as e:
+            logger.warning(f"获取雷电模拟器设备信息失败: {e}")
+        
+        emulator_root = emulator_path.parent
+        adb_path = emulator_root / "adb.exe"
+        
+        name = ld_player_device.title if ld_player_device else "雷电模拟器-LDPlayer"
+        idx = ld_player_device.idx if ld_player_device else int(emulator_index)
+        pid = ld_player_device.pid if ld_player_device else 0
+        
+        ld_extras = {
+            "enable": True,
+            "index": idx,
+            "path": str(emulator_root).replace("\\", "/"),
+            "pid": pid
+        }
+        
+        config_json = json.dumps({"extras": {"ld": ld_extras}}, ensure_ascii=False)
+        
+        return {
+            "Name": name,
+            "AdbPath": str(adb_path).replace("\\", "/"),
+            "AdbSerial": emulator_info.adb_address,
+            "ScreencapMethods": 64,
+            "InputMethods": 18446744073709551607,
+            "Config": config_json,
+            "AgentPath": "./MaaAgentBinary"
+        }
+
+    def _build_mumu_config(
+        self,
+        emulator_info: DeviceInfo,
+        emulator_path: Path,
+        emulator_index: str
+    ) -> dict:
+        """
+        构建 MuMu 模拟器的 AdbDevice 配置
+        """
+        logger.info("构建 MuMu 模拟器 AdbDevice 配置")
+        
+        shell_dir = emulator_path.parent
+        emulator_root = shell_dir.parent
+        adb_path = shell_dir / "adb.exe"
+        
+        mumu_extras = {
+            "enable": True,
+            "index": int(emulator_index),
+            "path": str(emulator_root).replace("\\", "/")
+        }
+        
+        config_json = json.dumps({"extras": {"mumu": mumu_extras}}, ensure_ascii=False)
+        
+        return {
+            "Name": "MuMu模拟器",
+            "AdbPath": str(adb_path).replace("\\", "/"),
+            "AdbSerial": emulator_info.adb_address,
+            "ScreencapMethods": 64,
+            "InputMethods": 18446744073709551607,
+            "Config": config_json,
+            "AgentPath": "./MaaAgentBinary"
+        }
