@@ -217,7 +217,6 @@ class AutoProxyTask(TaskExecuteBase):
 
             logger.info(f"用户 {self.cur_user_uid} 将执行 {len(queue)} 个任务: {queue}")
 
-            
             # 写入M9A配置
             await self.write_m9a_config(queue, emulator_info)
 
@@ -284,10 +283,17 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 使用 config_builder 构建完整配置
         try:
-            config = self.m9a_config_builder.build_config(
+            emulator_id = self.script_config.get("Emulator", "Id")
+            emulator_index = self.script_config.get("Emulator", "Index")
+            
+            config = await self.m9a_config_builder.build_config(
                 queue=queue,
                 task_loader=self.m9a_task_loader,
-                emulator_info=emulator_info
+                emulator_info=emulator_info,
+                emulator_id=emulator_id,
+                script_config=self.script_config,
+                emulator_index=emulator_index,
+                emulator_manager=self.emulator_manager
             )
         except Exception as e:
             logger.error(f"构建 M9A 配置失败: {e}")
