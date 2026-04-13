@@ -38,17 +38,26 @@ logger = get_logger("业务调度")
 class TaskInfo(TaskItem):
 
     async def on_change(self):
-        await Config.send_websocket_message(
-            id=self.task_id,
-            type="Update",
-            data={"task_info": self.asdict},
-        )
-        if self.current_index != -1:
-            await Config.send_websocket_message(
+        task_info_data = self.asdict
+        if task_info_data != self._last_sent_task_info:
+            if await Config.send_websocket_message(
                 id=self.task_id,
                 type="Update",
-                data={"log": self.script_list[self.current_index].log},
-            )
+                data={"task_info": task_info_data},
+            ):
+                self._last_sent_task_info = task_info_data
+
+        if self.current_index != -1:
+            current_log = self.script_list[self.current_index].log
+            if current_log != self._last_sent_log:
+                if await Config.send_websocket_message(
+                    id=self.task_id,
+                    type="Update",
+                    data={"log": current_log},
+                ):
+                    self._last_sent_log = current_log
+        else:
+            self._last_sent_log = None
 
 
 class Task(TaskExecuteBase):

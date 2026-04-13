@@ -129,6 +129,7 @@ class AppConfig(GlobalConfig):
             "KillSelf",
         ] = "NoAction"
         self.temp_task: List[asyncio.Task] = []
+        self.websocket_send_lock: asyncio.Lock | None = None
 
         truststore.inject_into_ssl()
 
@@ -465,26 +466,38 @@ class AppConfig(GlobalConfig):
             db.close()
             logger.success("数据文件版本更新完成")
 
-    async def send_json(self, data: dict) -> None:
+    async def send_json(self, data: dict) -> bool:
         """通过WebSocket发送JSON数据"""
-        if Config.websocket is None:
-            logger.warning("WebSocket 未连接")
-        else:
+        if self.websocket_send_lock is None:
+            self.websocket_send_lock = asyncio.Lock()
+
+        async with self.websocket_send_lock:
+            if Config.websocket is None:
+                logger.warning("WebSocket 未连接")
+                return False
+
             await Config.websocket.send_json(data)
+            return True
 
     async def send_websocket_message(
         self,
         id: str,
         type: Literal["Update", "Message", "Info", "Signal"],
         data: Dict[str, Any],
-    ) -> None:
+    ) -> bool:
         """通过WebSocket发送消息"""
-        if Config.websocket is None:
-            logger.warning("WebSocket 未连接")
-        else:
+        if self.websocket_send_lock is None:
+            self.websocket_send_lock = asyncio.Lock()
+
+        async with self.websocket_send_lock:
+            if Config.websocket is None:
+                logger.warning("WebSocket 未连接")
+                return False
+
             await Config.websocket.send_json(
                 WebSocketMessage(id=id, type=type, data=data).model_dump()
             )
+            return True
 
     async def get_git_version(self) -> tuple[bool, str, str]:
         """获取Git版本信息，如果Git不可用则返回默认值"""
