@@ -77,7 +77,7 @@ def main():
         async def lifespan(app: FastAPI):
             from app.core import Config, MainTimer, TaskManager, PluginManager
             from app.MaaFW import ArknightWin32Toolkit
-            from app.core.plugins.dev_stub_generator import (
+            from scripts.dev_stub_generator import (
                 generate_plugin_context_stubs,
                 is_dev_stub_generation_enabled,
             )
