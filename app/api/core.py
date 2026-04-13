@@ -66,10 +66,8 @@ async def connect_websocket(websocket: WebSocket):
             if data.get("type") == "Signal" and "Pong" in data.get("data", {}):
                 last_pong = time.monotonic()
             elif data.get("type") == "Signal" and "Ping" in data.get("data", {}):
-                await websocket.send_json(
-                    WebSocketMessage(
-                        id="Main", type="Signal", data={"Pong": "无描述"}
-                    ).model_dump()
+                await Config.send_websocket_message(
+                    id="Main", type="Signal", data={"Pong": "无描述"}
                 )
             else:
                 await Broadcast.put(data)
@@ -79,10 +77,8 @@ async def connect_websocket(websocket: WebSocket):
             if last_pong < last_ping:
                 await websocket.close(code=1000, reason="Ping超时")
                 break
-            await websocket.send_json(
-                WebSocketMessage(
-                    id="Main", type="Signal", data={"Ping": "无描述"}
-                ).model_dump()
+            await Config.send_websocket_message(
+                id="Main", type="Signal", data={"Ping": "无描述"}
             )
             last_ping = time.monotonic()
 

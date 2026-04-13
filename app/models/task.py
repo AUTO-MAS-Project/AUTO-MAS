@@ -27,6 +27,11 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import List, Optional, Literal
 
+from app.utils.logger import get_logger
+
+
+logger = get_logger("任务模型")
+
 
 @dataclass
 class LogRecord:
@@ -52,7 +57,7 @@ class UserItem:
         if name in ("user_id", "name", "status") and self._task_item_ref is not None:
             ti = self._task_item_ref()
             if ti is not None:
-                asyncio.create_task(ti.on_change())
+                ti.notify_change()
 
     @property
     def result(self) -> str:
@@ -87,7 +92,7 @@ class ScriptItem:
                 object.__setattr__(user, "_task_item_ref", self._task_item_ref)
 
         if name not in ("_task_item_ref",) and self.task_info is not None:
-            asyncio.create_task(self.task_info.on_change())
+            self.task_info.notify_change()
 
     @property
     def task_info(self) -> Optional[TaskItem]:
@@ -116,6 +121,10 @@ class TaskItem(ABC):
     user_id: str | None  # 执行的用户ID
     script_list: List[ScriptItem] = field(default_factory=list)  # 脚本信息列表
     current_index: int = -1  # 当前执行的脚本索引，-1 表示未开始
+    _change_task: asyncio.Task | None = field(default=None, init=False, repr=False)
+    _change_pending: bool = field(default=False, init=False, repr=False)
+    _last_sent_task_info: list | None = field(default=None, init=False, repr=False)
+    _last_sent_log: str | None = field(default=None, init=False, repr=False)
 
     def __setattr__(self, name, value):
         super().__setattr__(name, value)
@@ -137,6 +146,32 @@ class TaskItem(ABC):
     async def on_change(self):
         """统一回调入口"""
         raise NotImplementedError("子类必须实现 on_change")
+
+    def notify_change(self) -> None:
+        """合并连续状态变化，避免每次字段赋值都创建新的发送协程。"""
+
+        self._change_pending = True
+
+        if self._change_task is not None and not self._change_task.done():
+            return
+
+        try:
+            self._change_task = asyncio.create_task(self._drain_change_notifications())
+        except RuntimeError:
+            self._change_task = None
+
+    async def _drain_change_notifications(self) -> None:
+        try:
+            while self._change_pending:
+                self._change_pending = False
+                await asyncio.sleep(0)
+                await self.on_change()
+        except Exception as e:
+            logger.exception(f"任务变更通知发送失败: {e}")
+        finally:
+            self._change_task = None
+            if self._change_pending:
+                self.notify_change()
 
     @property
     def asdict(self) -> list:
