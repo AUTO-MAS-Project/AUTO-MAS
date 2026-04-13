@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from string import Template
 from typing import Dict
 
 try:
@@ -19,6 +20,16 @@ except Exception:  # pragma: no cover
 
 PLUGIN_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 ENTRY_POINT_GROUPS = ("auto_mas.plugins", "automas.plugins")
+TEMPLATE_DIR_NAME = "plugin_templates"
+
+TEMPLATE_OUTPUTS = {
+    Path("pyproject.toml"): Path("pyproject.toml.template"),
+    Path("README.md"): Path("README.md.template"),
+    Path("src/${plugin_name}/__init__.py"): Path("__init__.py.template"),
+    Path("src/${plugin_name}/plugin.py"): Path("plugin.py.template"),
+    Path("src/${plugin_name}/schema.py"): Path("schema.py.template"),
+    Path(".gitignore"): Path(".gitignore.template"),
+}
 
 
 class ScaffoldError(Exception):
@@ -106,95 +117,41 @@ def validate_description(description: str) -> str:
     return value
 
 
+def get_template_dir() -> Path:
+    """获取脚手架模板目录。"""
+    return Path(__file__).resolve().parent / TEMPLATE_DIR_NAME
+
+
+def render_template(content: str, variables: Dict[str, str]) -> str:
+    """使用安全占位符替换渲染模板文本。"""
+    try:
+        return Template(content).substitute(variables)
+    except KeyError as e:
+        raise ScaffoldError(f"模板占位符缺失: {e}") from e
+
+
 def build_template_files(plugin_name: str, description: str) -> Dict[Path, str]:
     """构建最小 PyPI 模板文件内容。"""
-    escaped_description = description.replace('"', '\\"')
-    pyproject = f'''[build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
+    template_dir = get_template_dir()
+    if not template_dir.exists():
+        raise ScaffoldError(f"模板目录不存在: {template_dir}")
 
-[project]
-name = "automas_plugin_{plugin_name}"
-version = "0.1.0"
-description = "{escaped_description}"
-readme = {{ file = "README.md", content-type = "text/markdown" }}
-requires-python = ">=3.10"
-dependencies = ["pydantic>=2.0"]
-
-[project.entry-points."auto_mas.plugins"]
-{plugin_name} = "{plugin_name}.plugin:Plugin"
-
-[tool.setuptools.packages.find]
-where = ["src"]
-'''
-
-    init_py = (
-        '"""最小 PyPI 插件示例包。"""\n\n'
-        "from .plugin import Config, Plugin\n\n"
-        '__all__ = ["Plugin", "Config"]\n'
-    )
-
-    plugin_py = '''from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
-from pydantic import BaseModel, ConfigDict, Field
-
-if TYPE_CHECKING:
-    from app.core.plugins.context import PluginContext
-
-
-class Plugin:
-    """最小 PyPI 插件示例。"""
-
-    def __init__(self, ctx: "PluginContext") -> None:
-        """初始化插件实例。
-
-        Args:
-            ctx (PluginContext): 插件上下文对象。
-
-        Returns:
-            None: 无返回值。
-        """
-        self.ctx = ctx
-
-    async def on_start(self) -> None:
-        """生命周期：实例进入运行态。"""
-        self.ctx.logger.info("[{}] 插件启动".format(self.ctx.plugin_name))
-        self.ctx.logger.info(f"hello={self.ctx.config.get('hello')}")
-
-    async def on_stop(self, reason: str) -> None:
-        """生命周期：实例停止前调用。
-
-        Args:
-            reason (str): 停止原因。
-
-        Returns:
-            None: 无返回值。
-        """
-        self.ctx.logger.info("[{}] 插件停止, reason={}".format(self.ctx.plugin_name, reason))
-
-
-class Config(BaseModel):
-    """最小配置模型示例。"""
-
-    model_config = ConfigDict(extra="allow")
-
-    hello: str = Field(default="world", description="问候词")
-'''
-
-    readme = f'''# automas_{plugin_name}
-
-{description}
-
-'''
-
-    return {
-        Path("pyproject.toml"): pyproject,
-        Path("README.md"): readme,
-        Path("src") / plugin_name / "__init__.py": init_py,
-        Path("src") / plugin_name / "plugin.py": plugin_py,
+    variables = {
+        "plugin_name": plugin_name,
+        "description": description,
+        "description_escaped": description.replace('"', '\\"'),
     }
+
+    files: Dict[Path, str] = {}
+    for output_template, source_template in TEMPLATE_OUTPUTS.items():
+        source_path = template_dir / source_template
+        if not source_path.exists():
+            raise ScaffoldError(f"模板文件不存在: {source_path}")
+        content = source_path.read_text(encoding="utf-8")
+        output_path = Path(render_template(output_template.as_posix(), variables))
+        files[output_path] = render_template(content, variables)
+
+    return files
 
 
 def maybe_init_git(target_dir: Path) -> tuple[bool, list[str]]:

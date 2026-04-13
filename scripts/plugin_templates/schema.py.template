@@ -1,0 +1,7 @@
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class Config(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    hello: str = Field(default="world", description="问候词")
