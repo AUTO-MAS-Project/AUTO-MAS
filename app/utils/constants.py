@@ -226,6 +226,8 @@ EMULATOR_PATH_BOOK = {
             r"D:\Program Files (x86)\Netease\MuMu Player 12",
             r"D:\Program Files\Netease\MuMu\nx_main",
             r"D:\Program Files (x86)\Netease\MuMu\nx_main",
+            r"E:\Program Files\YXArkNights-12.0",
+            r"E:\Program Files\YXReverse1999-12.0",
             (Path.home() / "AppData/Local/MuMu Player 12").as_posix(),
         ],
     },
