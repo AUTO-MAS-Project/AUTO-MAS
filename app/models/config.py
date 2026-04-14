@@ -1748,6 +1748,10 @@ class GlobalConfig(ConfigBase):
         ## 是否关闭到托盘
         self.UI_IfToTray = ConfigItem("UI", "IfToTray", False, BoolValidator())
 
+        ## Emulator ----------------------------------------------------------
+        ## 自定义模拟器搜索目录
+        self.Emulator_CustomSearchDirs = ConfigItem("Emulator", "CustomSearchDirs", "[]", JSONValidator(list))
+
         ## Notify -----------------------------------------------------------
         ## 任务结果推送时间
         self.Notify_SendTaskResultTime = ConfigItem(

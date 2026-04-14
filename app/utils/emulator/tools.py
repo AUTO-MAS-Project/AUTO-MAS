@@ -23,15 +23,151 @@
 import os
 import winreg
 import subprocess
+import asyncio
+import concurrent.futures
 from maa.toolkit import Toolkit
 from contextlib import suppress
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Set, Optional
 
 from app.utils.constants import EMULATOR_PATH_BOOK
 from app.utils import get_logger
+from app.core.config import Config
 
 logger = get_logger("模拟器管理工具")
+
+# 排除的目录列表，避免搜索系统目录和其他不必要的目录
+EXCLUDED_DIRS = {
+    "C:\\Windows",
+    "C:\\Program Files",
+    "C:\\Program Files (x86)",
+    "C:\\ProgramData",
+    "C:\\Users",
+    "C:\\System Volume Information",
+    "C:\\$Recycle.Bin",
+    "D:\\System Volume Information",
+    "D:\\$Recycle.Bin",
+}
+
+# 可执行文件扩展名
+EXECUTABLE_EXTENSIONS = {".exe", ".bat", ".cmd"}
+
+
+def get_available_drives() -> List[str]:
+    """获取所有可用的磁盘驱动器"""
+    drives = []
+    for c in range(65, 91):  # A-Z
+        drive = f"{chr(c)}:/"
+        if os.path.exists(drive):
+            drives.append(drive)
+    return drives
+
+
+async def _search_in_directory(
+    directory: str, 
+    executable_names: Set[str], 
+    found_paths: Set[str],
+    max_depth: int = 5,  # 增加搜索深度
+    current_depth: int = 0
+) -> None:
+    """在指定目录中搜索模拟器可执行文件"""
+    if current_depth >= max_depth:
+        return
+
+    # 检查是否是排除目录，但允许搜索 E:\Program Files 目录
+    if directory in EXCLUDED_DIRS and not directory.startswith("E:\\Program Files"):
+        logger.debug(f"跳过排除目录: {directory}")
+        return
+
+    try:
+        logger.debug(f"搜索目录: {directory}")
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                try:
+                    if entry.is_dir():
+                        # 跳过隐藏目录
+                        if entry.name.startswith(".") or entry.name.startswith("$"):
+                            logger.debug(f"跳过隐藏目录: {entry.path}")
+                            continue
+                        # 特别关注 YXReverse1999-12.0 目录
+                        if "YXReverse1999" in entry.name:
+                            logger.info(f"发现 YXReverse1999 目录: {entry.path}")
+                        # 递归搜索子目录
+                        await _search_in_directory(
+                            entry.path, 
+                            executable_names, 
+                            found_paths, 
+                            max_depth, 
+                            current_depth + 1
+                        )
+                    elif entry.is_file():
+                        # 检查是否是可执行文件且名称匹配
+                        if (
+                            Path(entry.path).suffix.lower() in EXECUTABLE_EXTENSIONS and
+                            entry.name in executable_names
+                        ):
+                            logger.info(f"找到匹配的可执行文件: {entry.path}")
+                            found_paths.add(entry.path)
+                except (PermissionError, OSError) as e:
+                    # 跳过无权限访问的文件或目录
+                    logger.debug(f"无法访问 {entry.path}: {e}")
+                    pass
+    except (PermissionError, OSError) as e:
+        # 跳过无权限访问的目录
+        logger.debug(f"无法访问目录 {directory}: {e}")
+        pass
+
+
+async def _full_disk_scan(executable_names: Set[str]) -> Set[str]:
+    """全盘扫描模拟器可执行文件"""
+    logger.info("开始全盘扫描模拟器")
+    found_paths = set()
+    drives = get_available_drives()
+    
+    logger.info(f"发现 {len(drives)} 个可用磁盘驱动器: {drives}")
+    
+    # 针对 E 盘的特殊处理，添加详细日志
+    for drive in drives:
+        if drive == "E:/":
+            logger.info(f"开始扫描 E 盘")
+            # 直接扫描 E 盘的 Program Files 目录
+            program_files_path = os.path.join(drive, "Program Files")
+            if os.path.exists(program_files_path):
+                logger.info(f"扫描 E:\\Program Files 目录")
+                # 列出该目录下的所有子目录
+                try:
+                    with os.scandir(program_files_path) as entries:
+                        for entry in entries:
+                            if entry.is_dir():
+                                logger.info(f"E:\\Program Files 下的目录: {entry.name}")
+                                # 特别检查 YXReverse1999-12.0 目录
+                                if "YXReverse1999" in entry.name:
+                                    logger.info(f"发现 YXReverse1999 目录: {entry.path}")
+                                    # 直接在该目录中搜索模拟器可执行文件
+                                    await _search_in_directory(entry.path, executable_names, found_paths, max_depth=5)
+                except Exception as e:
+                    logger.warning(f"无法列出 E:\\Program Files 目录: {e}")
+    
+    # 使用线程池并行扫描
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(drives))) as executor:
+        tasks = []
+        for drive in drives:
+            task = executor.submit(
+                asyncio.run, 
+                _search_in_directory(drive, executable_names, found_paths)
+            )
+            tasks.append(task)
+        
+        # 等待所有任务完成
+        for task in concurrent.futures.as_completed(tasks):
+            try:
+                task.result()
+            except Exception as e:
+                logger.warning(f"扫描过程中出错: {e}")
+    
+    logger.info(f"全盘扫描完成，找到 {len(found_paths)} 个匹配的可执行文件")
+    logger.info(f"找到的可执行文件: {found_paths}")
+    return found_paths
 
 
 async def search_all_emulators() -> List[Dict[str, str]]:
@@ -41,7 +177,12 @@ async def search_all_emulators() -> List[Dict[str, str]]:
     found_emulators = []
     found_emulator_paths = set()
 
-    # 根据可能的模拟器路径搜索
+    # 收集所有模拟器可执行文件名称
+    all_executables = set()
+    for config in EMULATOR_PATH_BOOK.values():
+        all_executables.update(config["executables"])
+
+    # 1. 传统搜索（注册表、默认路径、PATH）
     for emulator_type, config in EMULATOR_PATH_BOOK.items():
         try:
             emulator_path = await _search_emulator(config)
@@ -63,6 +204,69 @@ async def search_all_emulators() -> List[Dict[str, str]]:
         except Exception as e:
             logger.warning(f"搜索{config['name']}时出错: {e}")
 
+    # 2. 自定义目录扫描
+    try:
+        # 读取用户自定义的搜索目录
+        custom_dirs = Config.get("Emulator", "CustomSearchDirs")
+        if custom_dirs:
+            logger.info(f"开始扫描用户自定义目录: {custom_dirs}")
+            for custom_dir in custom_dirs:
+                if os.path.exists(custom_dir):
+                    # 在自定义目录中搜索模拟器可执行文件
+                    custom_paths = set()
+                    await _search_in_directory(custom_dir, all_executables, custom_paths, max_depth=5)
+                    for path in custom_paths:
+                        # 尝试确定模拟器类型
+                        emulator_type = "general"
+                        for et, config in EMULATOR_PATH_BOOK.items():
+                            if any(exe in path for exe in config["executables"]):
+                                emulator_type = et
+                                break
+                        
+                        # 自动修正路径
+                        corrected_path = await find_emulator_manager_path(path, emulator_type)
+                        if corrected_path not in found_emulator_paths:
+                            found_emulator_paths.add(corrected_path)
+                            config = EMULATOR_PATH_BOOK.get(emulator_type, {"name": "未知模拟器"})
+                            found_emulators.append(
+                                {
+                                    "type": emulator_type,
+                                    "path": corrected_path,
+                                    "name": f"{config['name']} ({corrected_path})",
+                                }
+                            )
+                            logger.info(f"通过自定义目录扫描找到{config['name']}: {corrected_path}")
+    except Exception as e:
+        logger.warning(f"自定义目录扫描时出错: {e}")
+
+    # 3. 全盘扫描
+    try:
+        full_disk_paths = await _full_disk_scan(all_executables)
+        for path in full_disk_paths:
+            # 尝试确定模拟器类型
+            emulator_type = "general"
+            for et, config in EMULATOR_PATH_BOOK.items():
+                if any(exe in path for exe in config["executables"]):
+                    emulator_type = et
+                    break
+            
+            # 自动修正路径
+            corrected_path = await find_emulator_manager_path(path, emulator_type)
+            if corrected_path not in found_emulator_paths:
+                found_emulator_paths.add(corrected_path)
+                config = EMULATOR_PATH_BOOK.get(emulator_type, {"name": "未知模拟器"})
+                found_emulators.append(
+                    {
+                        "type": emulator_type,
+                        "path": corrected_path,
+                        "name": f"{config['name']} ({corrected_path})",
+                    }
+                )
+                logger.info(f"通过全盘扫描找到{config['name']}: {corrected_path}")
+    except Exception as e:
+        logger.warning(f"全盘扫描时出错: {e}")
+
+    # 4. ADB设备搜索
     for emulator in Toolkit.find_adb_devices():
         for emulator_type in EMULATOR_PATH_BOOK.keys():
             corrected_path = await find_emulator_manager_path(
