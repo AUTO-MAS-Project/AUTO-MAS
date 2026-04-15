@@ -37,6 +37,38 @@ from app.utils.constants import POWER_SIGN_MAP
 logger = get_logger("业务调度")
 
 
+def _resolve_queue_name(queue_id: str | None) -> str | None:
+    """根据 queue_id 解析队列名，解析失败时返回 None。"""
+    if not queue_id:
+        return None
+
+    try:
+        return Config.QueueConfig[uuid.UUID(queue_id)].get("Info", "Name")
+    except Exception:
+        return None
+
+
+def _build_script_summaries(script_list: list[ScriptItem]) -> list[dict[str, str]]:
+    """构建脚本摘要数组，供任务事件复用。"""
+    return [
+        {
+            "script_id": item.script_id,
+            "script_name": item.name,
+            "status": item.status,
+        }
+        for item in script_list
+    ]
+
+
+def _resolve_final_script(task_info: TaskItem) -> ScriptItem | None:
+    """获取任务结束时可代表当前任务状态的脚本项。"""
+    if 0 <= task_info.current_index < len(task_info.script_list):
+        return task_info.script_list[task_info.current_index]
+    if task_info.script_list:
+        return task_info.script_list[-1]
+    return None
+
+
 class TaskInfo(TaskItem):
 
     def _has_meaningful_current_log(self) -> bool:
@@ -56,7 +88,10 @@ class TaskInfo(TaskItem):
             if not self._has_meaningful_current_log():
                 return
 
-        progress_data = PluginEventFactory.build_task_progress_data(self)
+        progress_data = PluginEventFactory.build_task_progress_data(
+            self,
+            queue_name=_resolve_queue_name(self.queue_id),
+        )
         signature = repr(progress_data)
         if getattr(self, "_last_progress_signature", None) == signature:
             return
@@ -90,6 +125,8 @@ class TaskInfo(TaskItem):
             data={
                 "task_id": self.task_id,
                 "mode": self.mode,
+                "queue_id": self.queue_id,
+                "queue_name": _resolve_queue_name(self.queue_id),
                 "script_id": script_item.script_id,
                 "script_name": script_item.name,
                 "script_status": script_item.status,
@@ -128,8 +165,18 @@ class Task(TaskExecuteBase):
         self._exit_result = "success"
         self._exit_error: str | None = None
 
+    def _build_script_event_data(self) -> Dict[str, str | None]:
+        """附加到 script.* 事件的任务上下文。"""
+        return {
+            "queue_id": self.task_info.queue_id,
+            "queue_name": _resolve_queue_name(self.task_info.queue_id),
+        }
+
     async def _emit_task_start(self) -> None:
         """发送 task.start 事件，提供插件所需的任务标识和可操作入口。"""
+        scripts = _build_script_summaries(self.task_info.script_list)
+        primary_script = scripts[0] if len(scripts) == 1 else None
+
         await PluginEventFactory.emit_event_async(
             event=PluginEventNames.TASK_START,
             source="core.task_manager",
@@ -137,17 +184,17 @@ class Task(TaskExecuteBase):
                 "task_id": self.task_info.task_id,
                 "mode": self.task_info.mode,
                 "queue_id": self.task_info.queue_id,
+                "queue_name": _resolve_queue_name(self.task_info.queue_id),
                 "script_id": self.task_info.script_id,
                 "user_id": self.task_info.user_id,
                 "script_total": len(self.task_info.script_list),
-                "scripts": [
-                    {
-                        "script_id": item.script_id,
-                        "script_name": item.name,
-                        "status": item.status,
-                    }
-                    for item in self.task_info.script_list
-                ],
+                "scripts": scripts,
+                "primary_script_id": (
+                    primary_script.get("script_id") if primary_script else None
+                ),
+                "primary_script_name": (
+                    primary_script.get("script_name") if primary_script else None
+                ),
                 "actions": {
                     "stop_task": {
                         "api": "/api/dispatch/stop",
@@ -165,6 +212,9 @@ class Task(TaskExecuteBase):
 
     async def _emit_task_exit(self) -> None:
         """发送 task.exit 事件，告知任务最终结果。"""
+        scripts = _build_script_summaries(self.task_info.script_list)
+        final_script = _resolve_final_script(self.task_info)
+
         await PluginEventFactory.emit_event_async(
             event=PluginEventNames.TASK_EXIT,
             source="core.task_manager",
@@ -172,8 +222,19 @@ class Task(TaskExecuteBase):
                 "task_id": self.task_info.task_id,
                 "mode": self.task_info.mode,
                 "queue_id": self.task_info.queue_id,
+                "queue_name": _resolve_queue_name(self.task_info.queue_id),
                 "script_id": self.task_info.script_id,
                 "user_id": self.task_info.user_id,
+                "scripts": scripts,
+                "final_script_id": (
+                    final_script.script_id if final_script is not None else None
+                ),
+                "final_script_name": (
+                    final_script.name if final_script is not None else None
+                ),
+                "final_script_status": (
+                    final_script.status if final_script is not None else None
+                ),
                 "result": self._exit_result,
                 "error": self._exit_error,
                 "summary": self.task_info.result,
@@ -254,6 +315,7 @@ class Task(TaskExecuteBase):
             # 标记为运行中
             script_item.status = "运行"
             logger.info(f"任务开始: {current_script_uid}")
+            script_event_data = self._build_script_event_data()
             await PluginEventFactory.emit_script_event_async(
                 event=PluginEventNames.SCRIPT_START,
                 source="core.task_manager",
@@ -262,6 +324,7 @@ class Task(TaskExecuteBase):
                 script_name=script_item.name,
                 mode=self.task_info.mode,
                 status=script_item.status,
+                data=script_event_data,
             )
 
             if isinstance(Config.ScriptConfig[current_script_uid], MaaConfig):
@@ -300,6 +363,7 @@ class Task(TaskExecuteBase):
                     status=script_item.status,
                     error=error_text,
                     result=PluginEventNames.SCRIPT_CANCELLED,
+                    data=script_event_data,
                 )
                 await PluginEventFactory.emit_script_event_async(
                     event=PluginEventNames.SCRIPT_EXIT,
@@ -311,6 +375,7 @@ class Task(TaskExecuteBase):
                     status=script_item.status,
                     error=error_text,
                     result=PluginEventNames.SCRIPT_CANCELLED,
+                    data=script_event_data,
                 )
                 raise
             except Exception as e:
@@ -327,6 +392,7 @@ class Task(TaskExecuteBase):
                     status=script_item.status,
                     error=error_text,
                     result=PluginEventNames.SCRIPT_ERROR,
+                    data=script_event_data,
                 )
                 await PluginEventFactory.emit_script_event_async(
                     event=PluginEventNames.SCRIPT_EXIT,
@@ -338,6 +404,7 @@ class Task(TaskExecuteBase):
                     status=script_item.status,
                     error=error_text,
                     result=PluginEventNames.SCRIPT_ERROR,
+                    data=script_event_data,
                 )
                 raise
             else:
@@ -362,6 +429,7 @@ class Task(TaskExecuteBase):
                     status=script_item.status,
                     error=result_error,
                     result=result_event,
+                    data=script_event_data,
                 )
                 await PluginEventFactory.emit_script_event_async(
                     event=PluginEventNames.SCRIPT_EXIT,
@@ -373,6 +441,7 @@ class Task(TaskExecuteBase):
                     status=script_item.status,
                     error=result_error,
                     result=result_event,
+                    data=script_event_data,
                 )
 
     async def final_task(self) -> None:

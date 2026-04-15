@@ -17,7 +17,11 @@ class PluginEventFactory:
     """统一构建并发送插件事件。"""
 
     @staticmethod
-    def build_task_progress_data(task_info: Any) -> Dict[str, Any]:
+    def build_task_progress_data(
+        task_info: Any,
+        *,
+        queue_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         将任务对象转换为标准化的任务进度事件数据。
 
@@ -40,6 +44,8 @@ class PluginEventFactory:
         )
 
         current_script = None
+        current_script_id = None
+        current_script_name = None
         if 0 <= task_info.current_index < total_scripts:
             item = task_info.script_list[task_info.current_index]
             current_script = {
@@ -49,14 +55,19 @@ class PluginEventFactory:
                 "current_user_index": item.current_index,
                 "user_count": len(item.user_list),
             }
+            current_script_id = item.script_id
+            current_script_name = item.name
 
         return {
             "task_id": task_info.task_id,
             "mode": task_info.mode,
             "queue_id": task_info.queue_id,
+            "queue_name": queue_name,
             "script_id": task_info.script_id,
             "user_id": task_info.user_id,
             "current_script_index": task_info.current_index,
+            "current_script_id": current_script_id,
+            "current_script_name": current_script_name,
             "script_total": total_scripts,
             "script_completed": completed_scripts,
             "user_total": total_users,
