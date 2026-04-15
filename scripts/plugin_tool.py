@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from string import Template
 from typing import Dict
@@ -28,6 +29,8 @@ TEMPLATE_OUTPUTS = {
     Path("src/${plugin_name}/__init__.py"): Path("__init__.py.template"),
     Path("src/${plugin_name}/plugin.py"): Path("plugin.py.template"),
     Path("src/${plugin_name}/schema.py"): Path("schema.py.template"),
+    Path(".gitattributes"): Path(".gitattributes.template"),
+    Path(".editorconfig"): Path(".editorconfig.template"),
     Path(".gitignore"): Path(".gitignore.template"),
 }
 
@@ -49,6 +52,16 @@ def get_plugins_dir(workspace_dir: Path) -> Path:
 def get_pypi_site_dir(plugins_dir: Path) -> Path:
     """获取 plugins/pypi/site-packages 目录。"""
     return plugins_dir / "pypi" / "site-packages"
+
+
+def is_inside_git_repo(path: Path) -> bool:
+    """判断路径是否位于 Git 仓库内（向上查找 .git）。"""
+    current = path.resolve()
+    for parent in (current, *current.parents):
+        git_marker = parent / ".git"
+        if git_marker.exists():
+            return True
+    return False
 
 
 def iter_plugin_entry_points(plugins_dir: Path):
@@ -113,8 +126,61 @@ def validate_description(description: str) -> str:
     """校验插件简介。"""
     value = description.strip()
     if not value:
-        raise ScaffoldError("插件简介不能为空")
+        return ""
     return value
+
+
+def ensure_pycharm_vcs_mapping(workspace_dir: Path, plugin_name: str) -> tuple[bool, str]:
+    """为 PyCharm 的 vcs.xml 写入插件仓库映射。"""
+    idea_dir = workspace_dir / ".idea"
+    if not idea_dir.exists():
+        return False, "未检测到 .idea 目录，已跳过 PyCharm VCS 映射写入"
+
+    vcs_xml = idea_dir / "vcs.xml"
+    project_dir_token = "$PROJECT_DIR$"
+    plugin_mapping = f"{project_dir_token}/plugins/{plugin_name}"
+
+    try:
+        if vcs_xml.exists():
+            tree = ET.parse(vcs_xml)
+            root = tree.getroot()
+        else:
+            root = ET.Element("project", {"version": "4"})
+            tree = ET.ElementTree(root)
+
+        component = None
+        for node in root.findall("component"):
+            if node.get("name") == "VcsDirectoryMappings":
+                component = node
+                break
+
+        if component is None:
+            component = ET.SubElement(root, "component", {"name": "VcsDirectoryMappings"})
+
+        has_root_mapping = any(
+            item.tag == "mapping"
+            and item.get("directory") == project_dir_token
+            and item.get("vcs") == "Git"
+            for item in component.findall("mapping")
+        )
+        if not has_root_mapping:
+            ET.SubElement(component, "mapping", {"directory": project_dir_token, "vcs": "Git"})
+
+        has_plugin_mapping = any(
+            item.tag == "mapping"
+            and item.get("directory") == plugin_mapping
+            and item.get("vcs") == "Git"
+            for item in component.findall("mapping")
+        )
+        if has_plugin_mapping:
+            return True, "PyCharm VCS 映射已存在"
+
+        ET.SubElement(component, "mapping", {"directory": plugin_mapping, "vcs": "Git"})
+        ET.indent(tree, space="  ")
+        tree.write(vcs_xml, encoding="utf-8", xml_declaration=True)
+        return True, "已写入 PyCharm VCS 映射"
+    except Exception as e:
+        return False, f"写入 PyCharm VCS 映射失败: {type(e).__name__}: {e}"
 
 
 def get_template_dir() -> Path:
@@ -155,7 +221,7 @@ def build_template_files(plugin_name: str, description: str) -> Dict[Path, str]:
 
 
 def maybe_init_git(target_dir: Path) -> tuple[bool, list[str]]:
-    """按需初始化 Git 仓库。"""
+    """按需初始化 Git 仓库并创建首次提交。"""
     warnings: list[str] = []
     if (target_dir / ".git").exists():
         warnings.append("检测到已存在 .git，已跳过初始化")
@@ -166,16 +232,41 @@ def maybe_init_git(target_dir: Path) -> tuple[bool, list[str]]:
         warnings.append("未检测到 git 命令，已跳过初始化")
         return False, warnings
 
-    result = subprocess.run(
+    init_result = subprocess.run(
         [git_cmd, "init"],
         cwd=str(target_dir),
         capture_output=True,
         text=True,
         check=False,
     )
-    if result.returncode != 0:
-        warnings.append(f"git init 失败: {(result.stderr or '').strip() or 'unknown error'}")
+    if init_result.returncode != 0:
+        warnings.append(f"git init 失败: {(init_result.stderr or '').strip() or 'unknown error'}")
         return False, warnings
+
+    add_result = subprocess.run(
+        [git_cmd, "add", "."],
+        cwd=str(target_dir),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if add_result.returncode != 0:
+        warnings.append(f"git add . 失败: {(add_result.stderr or '').strip() or 'unknown error'}")
+        return False, warnings
+
+    commit_result = subprocess.run(
+        [git_cmd, "commit", "-m", "initial commit"],
+        cwd=str(target_dir),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if commit_result.returncode != 0:
+        detail = (commit_result.stderr or "").strip() or (commit_result.stdout or "").strip() or "unknown error"
+        warnings.append(f"git commit 失败: {detail}")
+        warnings.append("请检查 Git 用户名/邮箱是否已配置（git config user.name / user.email）")
+        return False, warnings
+
     return True, warnings
 
 
@@ -203,6 +294,11 @@ def prompt_non_empty(message: str) -> str:
         print("输入不能为空，请重新输入。")
 
 
+def prompt_optional(message: str) -> str:
+    """提示用户输入可留空文本。"""
+    return read_input(message).strip()
+
+
 def prompt_yes_no(message: str, default: bool = False) -> bool:
     """提示用户输入是/否。"""
     suffix = "[Y/n]" if default else "[y/N]"
@@ -222,8 +318,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="独立最小 PyPI 插件脚手架（不依赖后端初始化）")
     parser.add_argument("--name", type=str, help="插件名（小写蛇形）")
     parser.add_argument("--description", type=str, help="插件简介")
-    parser.add_argument("--init-git", action="store_true", help="生成后初始化 Git")
-    parser.add_argument("--no-init-git", action="store_true", help="生成后不初始化 Git")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--init-git", action="store_true", help="生成后初始化 Git（默认）")
+    group.add_argument("--no-git", action="store_true", help="生成后不初始化 Git")
     return parser.parse_args()
 
 
@@ -253,20 +350,35 @@ def main() -> int:
                 return 1
             input_name = ""
 
-    try:
-        description = validate_description((args.description or "").strip())
-    except ScaffoldError:
-        description = prompt_non_empty("请输入插件简介：")
-
-    if args.init_git:
-        init_git = True
-    elif args.no_init_git:
-        init_git = False
+    if args.description is None and interactive:
+        description = validate_description(prompt_optional("请输入插件简介（可留空）："))
     else:
-        print("\n注意：父目录已是 Git 仓库时，初始化将创建嵌套仓库。")
-        init_git = prompt_yes_no("是否在新插件目录初始化 Git？", default=False)
+        description = validate_description(args.description or "")
 
     target_dir = (plugins_dir / plugin_name).resolve()
+    parent_in_git_repo = is_inside_git_repo(target_dir.parent)
+    git_available = shutil.which("git") is not None
+    skip_git_reason = ""
+
+    if args.no_git:
+        init_git = False
+    else:
+        init_git = True
+
+    if init_git and not git_available:
+        init_git = False
+        skip_git_reason = "当前环境未检测到 git，已自动跳过初始化。"
+
+    if init_git:
+        if parent_in_git_repo:
+            print("\n提示：检测到父目录位于 Git 仓库中，将以子仓库模式初始化插件仓库。")
+        else:
+            print("\n提示：未检测到父仓库，将初始化独立 Git 仓库。")
+    elif skip_git_reason:
+        print(f"\n提示：{skip_git_reason}")
+    else:
+        print("\n提示：已通过 --no-git 禁用 Git 初始化。")
+
     files = build_template_files(plugin_name, description)
 
     try:
@@ -283,12 +395,23 @@ def main() -> int:
 
     git_ok = False
     warnings: list[str] = []
+    vcs_mapping_status = ""
+    if skip_git_reason:
+        warnings.append(skip_git_reason)
     if init_git:
         git_ok, warnings = maybe_init_git(target_dir)
+        if git_ok:
+            _, vcs_mapping_status = ensure_pycharm_vcs_mapping(workspace, plugin_name)
+            if vcs_mapping_status:
+                print(f"- PyCharm VCS 映射: {vcs_mapping_status}")
 
     print("\n最小 PyPI 插件模板生成成功")
     print(f"- 输出目录: {target_dir}")
     print(f"- Entry Point: auto_mas.plugins / {plugin_name}")
+    if init_git:
+        print(f"- Git 模式: {'子仓库模式' if parent_in_git_repo else '独立仓库模式'}")
+    else:
+        print("- Git 模式: 已禁用")
     print(f"- Git 初始化: {'是' if git_ok else '否'}")
     print("- 已创建文件:")
     for item in created:
