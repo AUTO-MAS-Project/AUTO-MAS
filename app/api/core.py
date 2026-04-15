@@ -92,6 +92,9 @@ async def close() -> OutBase:
     try:
         if Config.websocket is not None:
             await Config.websocket.close(code=1000, reason="正常关闭")
+        if is_backend_dev_mode():
+            logger.warning("后端开发模式下忽略 /api/core/close 的 KillSelf 请求")
+            return OutBase(message="开发模式下已忽略关闭请求")
         await System.set_power("KillSelf", from_frontend=True)
     except Exception as e:
         return OutBase(
