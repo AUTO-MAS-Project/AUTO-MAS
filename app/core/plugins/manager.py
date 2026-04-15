@@ -5,6 +5,9 @@ from pathlib import Path
 import asyncio
 import subprocess
 import sys
+import shutil
+import importlib.metadata as importlib_metadata
+from dataclasses import dataclass
 from typing import Any, Dict
 import uuid
 
@@ -13,9 +16,24 @@ from app.utils import get_logger
 from .event_bus import EventBus
 from .config_store import PluginConfigStore
 from .loader import PluginLoader
+from .pypi_site import ENTRY_POINT_GROUPS, get_installed_plugin_entry_points, get_pypi_site_packages_dir
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 
 
 logger = get_logger("插件管理器")
+
+
+@dataclass
+class _LocalPluginProject:
+    """本地插件工程元信息。"""
+
+    project_dir: Path
+    distribution_name: str
+    entry_point_names: set[str]
 
 
 class _PluginManager:
@@ -37,8 +55,209 @@ class _PluginManager:
         )
 
     def _discover_plugins(self) -> Dict[str, Any]:
-        """发现插件（兼容本地目录与 PyPI Entry Point）。"""
+        """发现插件（统一基于 Entry Point）。"""
         return self.loader.discover()
+
+    def _iter_local_pyproject_paths(self) -> list[Path]:
+        """枚举本地插件目录中的 pyproject.toml 文件。
+
+        Returns:
+            list[Path]: 所有候选 pyproject.toml 的路径列表。
+
+        Raises:
+            OSError: 读取插件目录失败时抛出。
+        """
+        if not self.plugins_dir.exists():
+            return []
+
+        result: list[Path] = []
+        for item in sorted(self.plugins_dir.iterdir()):
+            if not item.is_dir() or item.name == "pypi":
+                continue
+            pyproject_path = item / "pyproject.toml"
+            if pyproject_path.exists():
+                result.append(pyproject_path)
+        return result
+
+    def _parse_local_plugin_project(self, pyproject_path: Path) -> _LocalPluginProject | None:
+        """解析本地 pyproject 并提取插件入口点信息。
+
+        Args:
+            pyproject_path (Path): pyproject.toml 文件路径。
+
+        Returns:
+            _LocalPluginProject | None: 解析成功返回工程信息；未声明插件入口点时返回 None。
+
+        Raises:
+            ValueError: 在以下场景抛出：
+                1) pyproject 顶层结构非法；
+                2) project 表或 entry-points 表结构非法。
+            TOMLDecodeError: pyproject.toml 格式错误时抛出。
+            OSError: 文件读取失败时抛出。
+        """
+        with pyproject_path.open("rb") as f:
+            data = tomllib.load(f)
+
+        if not isinstance(data, dict):
+            raise ValueError(f"pyproject 顶层必须是对象: {pyproject_path}")
+
+        project_table = data.get("project", {})
+        if not isinstance(project_table, dict):
+            raise ValueError(f"pyproject project 字段必须是对象: {pyproject_path}")
+
+        distribution_name = str(project_table.get("name") or pyproject_path.parent.name).strip()
+        entry_points_table = project_table.get("entry-points", {})
+        if not isinstance(entry_points_table, dict):
+            raise ValueError(f"pyproject project.entry-points 必须是对象: {pyproject_path}")
+
+        entry_point_names: set[str] = set()
+        for group in ENTRY_POINT_GROUPS:
+            group_table = entry_points_table.get(group)
+            if not isinstance(group_table, dict):
+                continue
+            for ep_name in group_table.keys():
+                name = str(ep_name or "").strip()
+                if name:
+                    entry_point_names.add(name)
+
+        if not entry_point_names:
+            return None
+
+        return _LocalPluginProject(
+            project_dir=pyproject_path.parent.resolve(),
+            distribution_name=distribution_name,
+            entry_point_names=entry_point_names,
+        )
+
+    def _collect_local_plugin_projects(self) -> list[_LocalPluginProject]:
+        """扫描并收集本地可安装插件工程。
+
+        Returns:
+            list[_LocalPluginProject]: 可用于 editable 安装的本地工程列表。
+        """
+        result: list[_LocalPluginProject] = []
+        for pyproject_path in self._iter_local_pyproject_paths():
+            try:
+                parsed = self._parse_local_plugin_project(pyproject_path)
+            except Exception as e:
+                logger.warning(f"解析本地插件 pyproject 失败，已跳过: path={pyproject_path}, error={type(e).__name__}: {e}")
+                continue
+
+            if parsed is None:
+                logger.warning(f"本地插件未声明入口点组 {ENTRY_POINT_GROUPS}，已跳过自动安装: {pyproject_path.parent}")
+                continue
+            result.append(parsed)
+        return result
+
+    def _should_install_local_project(
+        self,
+        project: _LocalPluginProject,
+        installed_entry_points: Dict[str, list[Any]],
+    ) -> tuple[bool, str]:
+        """判定本地插件工程是否需要执行 editable 安装。
+
+        Args:
+            project (_LocalPluginProject): 本地插件工程信息。
+            installed_entry_points (Dict[str, list[Any]]): 已安装入口点快照。
+
+        Returns:
+            tuple[bool, str]: (是否需要安装, 原因描述)。
+        """
+        expected_source = project.project_dir.resolve()
+        for entry_name in sorted(project.entry_point_names):
+            installed_infos = installed_entry_points.get(entry_name, [])
+            if not installed_infos:
+                return True, f"入口点未安装: {entry_name}"
+
+            same_source = any(
+                getattr(item, "editable_project_path", None) is not None
+                and Path(getattr(item, "editable_project_path")).resolve() == expected_source
+                for item in installed_infos
+            )
+            if not same_source:
+                return True, f"入口点来源冲突，本地优先覆盖: {entry_name}"
+
+        return False, "已安装且来源一致"
+
+    async def _install_local_project_editable(self, project: _LocalPluginProject, reason: str) -> None:
+        """将本地插件工程以 editable 方式安装到插件 site-packages。
+
+        Args:
+            project (_LocalPluginProject): 目标本地插件工程。
+            reason (str): 安装触发原因。
+
+        Returns:
+            None: 无返回值。
+
+        Raises:
+            RuntimeError: pip 安装命令返回非 0 时抛出，错误信息包含 stderr/stdout 摘要。
+        """
+        target_dir = get_pypi_site_packages_dir(self.plugins_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        command = [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "-e",
+            str(project.project_dir),
+            "--target",
+            str(target_dir),
+            "--upgrade",
+        ]
+        completed = await self._run_subprocess(command)
+        if completed.returncode != 0:
+            stderr = (completed.stderr or "").strip()
+            stdout = (completed.stdout or "").strip()
+            detail = stderr or stdout or "未知错误"
+            raise RuntimeError(
+                f"本地插件 editable 安装失败: project={project.project_dir}, reason={reason}, detail={detail}"
+            )
+
+        logger.info(
+            f"本地插件 editable 安装完成: project={project.project_dir}, distribution={project.distribution_name}, reason={reason}"
+        )
+
+    async def _ensure_local_projects_installed(self) -> None:
+        """扫描本地 pyproject 并按需执行 editable 安装。
+
+        安装策略：
+        - 若入口点未安装，则自动安装；
+        - 若入口点已存在但并非来自当前本地工程，则执行本地优先覆盖安装；
+        - 若入口点已安装且来源一致，则跳过。
+
+        Returns:
+            None: 无返回值。
+
+        Raises:
+            RuntimeError: 任意本地插件安装失败时抛出。
+        """
+        projects = self._collect_local_plugin_projects()
+        if not projects:
+            return
+
+        installed_entry_points = get_installed_plugin_entry_points(self.plugins_dir)
+        for project in projects:
+            needs_install, reason = self._should_install_local_project(project, installed_entry_points)
+            if not needs_install:
+                continue
+            await self._install_local_project_editable(project, reason)
+            installed_entry_points = get_installed_plugin_entry_points(self.plugins_dir)
+
+    async def discover_plugins(self) -> Dict[str, Any]:
+        """执行本地插件自动安装后再统一发现插件。
+
+        Returns:
+            Dict[str, Any]: 已发现插件映射。
+
+        Raises:
+            RuntimeError: 本地插件安装失败时抛出。
+        """
+        await self._ensure_local_projects_installed()
+        discovered = self._discover_plugins()
+        self.loader.discovered_plugins = discovered
+        return discovered
 
     async def _run_subprocess(self, command: list[str]) -> subprocess.CompletedProcess[str]:
         """在线程池中执行子进程命令，避免阻塞事件循环。"""
@@ -49,6 +268,208 @@ class _PluginManager:
             text=True,
             check=False,
         )
+
+    @staticmethod
+    def _normalize_distribution_name(name: str) -> str:
+        """将分发名归一化为便于比较的格式。"""
+        return str(name or "").strip().lower().replace("-", "_")
+
+    def _validate_package_name(self, package_name: str) -> str:
+        """校验并规范化包名输入。
+
+        Args:
+            package_name (str): 用户输入的包名。
+
+        Returns:
+            str: 去除首尾空白后的包名。
+
+        Raises:
+            ValueError: 在以下场景抛出：
+                1) 包名为空字符串；
+                2) 包名包含空格字符；
+                3) 包名包含非法字符（仅允许字母、数字、下划线、连字符、点号）。
+        """
+        normalized = str(package_name or "").strip()
+        if not normalized:
+            raise ValueError("包名不能为空")
+
+        if any(ch.isspace() for ch in normalized):
+            raise ValueError("包名不能包含空格")
+
+        allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
+        if any(ch not in allowed for ch in normalized):
+            raise ValueError("包名包含非法字符，仅允许字母、数字、下划线、连字符与点号")
+
+        return normalized
+
+    def _iter_target_distributions(self, target_dir: Path) -> list[importlib_metadata.Distribution]:
+        """枚举插件目标目录中的分发记录。"""
+        if not target_dir.exists():
+            return []
+        return list(importlib_metadata.distributions(path=[str(target_dir)]))
+
+    def _collect_distribution_top_level_modules(
+        self,
+        dist: importlib_metadata.Distribution,
+    ) -> set[str]:
+        """提取分发包关联的顶层模块名集合。"""
+        modules: set[str] = set()
+
+        try:
+            top_level = dist.read_text("top_level.txt")
+        except Exception:
+            top_level = None
+
+        if isinstance(top_level, str):
+            for line in top_level.splitlines():
+                name = str(line or "").strip()
+                if name:
+                    modules.add(name)
+
+        for ep in getattr(dist, "entry_points", []):
+            value = str(getattr(ep, "value", "") or "").strip()
+            if not value:
+                continue
+            module_part = value.split(":", 1)[0].strip()
+            root_module = module_part.split(".", 1)[0].strip()
+            if root_module:
+                modules.add(root_module)
+
+        return modules
+
+    def _cleanup_package_from_target(self, package_name: str, target_dir: Path) -> bool:
+        """从目标 site-packages 清理指定分发及其顶层模块。
+
+        Args:
+            package_name (str): 分发包名。
+            target_dir (Path): 目标 site-packages 目录。
+
+        Returns:
+            bool: 存在匹配并执行清理时返回 True；未发现匹配分发时返回 False。
+
+        Raises:
+            OSError: 删除文件或目录失败时抛出。
+        """
+        normalized = self._normalize_distribution_name(package_name)
+        matched: list[tuple[importlib_metadata.Distribution, set[str]]] = []
+
+        for dist in self._iter_target_distributions(target_dir):
+            dist_name = str(getattr(dist, "name", "") or "")
+            if self._normalize_distribution_name(dist_name) != normalized:
+                continue
+            matched.append((dist, self._collect_distribution_top_level_modules(dist)))
+
+        if not matched:
+            return False
+
+        for dist, modules in matched:
+            dist_files = list(getattr(dist, "files", []) or [])
+            for item in dist_files:
+                candidate = Path(dist.locate_file(item))
+                if candidate.is_file():
+                    candidate.unlink(missing_ok=True)
+                elif candidate.is_dir():
+                    shutil.rmtree(candidate, ignore_errors=True)
+
+            for module_name in modules:
+                module_dir = target_dir / module_name
+                module_py = target_dir / f"{module_name}.py"
+                if module_dir.exists() and module_dir.is_dir():
+                    shutil.rmtree(module_dir, ignore_errors=True)
+                if module_py.exists() and module_py.is_file():
+                    module_py.unlink(missing_ok=True)
+
+            dist_name = self._normalize_distribution_name(str(getattr(dist, "name", "") or ""))
+            version = str(getattr(dist, "version", "") or "").strip()
+            if dist_name and version:
+                editable_pth = target_dir / f"__editable__.{dist_name}-{version}.pth"
+                editable_pth.unlink(missing_ok=True)
+
+        return True
+
+    async def install_plugin_package(self, package_name: str) -> None:
+        """从 PyPI 安装插件包到插件专用 site-packages。
+
+        Args:
+            package_name (str): PyPI 包名，例如 auto-mas-test。
+
+        Returns:
+            None: 无返回值。
+
+        Raises:
+            ValueError: 包名非法时抛出。
+            RuntimeError: 在以下场景抛出：
+                1) pip install 命令执行失败；
+                2) 安装后未发现任何插件入口点。
+        """
+        normalized = self._validate_package_name(package_name)
+        target_dir = get_pypi_site_packages_dir(self.plugins_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        command = [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            normalized,
+            "--target",
+            str(target_dir),
+            "--upgrade",
+        ]
+        completed = await self._run_subprocess(command)
+        if completed.returncode != 0:
+            stderr = (completed.stderr or "").strip()
+            stdout = (completed.stdout or "").strip()
+            detail = stderr or stdout or "未知错误"
+            raise RuntimeError(f"安装插件包失败: package={normalized}, detail={detail}")
+
+        discovered = await self.discover_plugins()
+        if not discovered:
+            raise RuntimeError(
+                f"安装完成但未发现插件入口点: package={normalized}，请确认该包声明了 {ENTRY_POINT_GROUPS}"
+            )
+
+        logger.info(f"插件包安装完成: package={normalized}")
+
+    async def uninstall_plugin_package(self, package_name: str) -> None:
+        """卸载插件包并清理插件专用 site-packages 中的残留文件。
+
+        Args:
+            package_name (str): PyPI 包名。
+
+        Returns:
+            None: 无返回值。
+
+        Raises:
+            ValueError: 包名非法时抛出。
+            RuntimeError: 当未找到可卸载分发且 pip uninstall 同样失败时抛出。
+            OSError: 删除目标目录文件失败时抛出。
+        """
+        normalized = self._validate_package_name(package_name)
+        target_dir = get_pypi_site_packages_dir(self.plugins_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        removed_from_target = self._cleanup_package_from_target(normalized, target_dir)
+
+        uninstall_cmd = [
+            sys.executable,
+            "-m",
+            "pip",
+            "uninstall",
+            "-y",
+            normalized,
+        ]
+        completed = await self._run_subprocess(uninstall_cmd)
+        pip_ok = completed.returncode == 0
+
+        if not removed_from_target and not pip_ok:
+            stderr = (completed.stderr or "").strip()
+            stdout = (completed.stdout or "").strip()
+            detail = stderr or stdout or "未知错误"
+            raise RuntimeError(f"卸载插件包失败: package={normalized}, detail={detail}")
+
+        await self.discover_plugins()
+        logger.info(f"插件包卸载完成: package={normalized}, removed_from_target={removed_from_target}")
 
     async def _update_pypi_plugin(
         self,
@@ -158,8 +579,7 @@ class _PluginManager:
             logger.warning("插件系统已启动，忽略重复启动")
             return
 
-        discovered = self._discover_plugins()
-        self.loader.discovered_plugins = discovered
+        discovered = await self.discover_plugins()
         instances = await self.config_store.load_instances(
             self.plugins_dir,
             discovered,
@@ -338,8 +758,7 @@ class _PluginManager:
             RuntimeError: 更新某个 PyPI 插件包失败时抛出（pip 安装命令返回非 0）。
             ValueError: 重启过程中读取或校验插件实例配置失败时抛出。
         """
-        discovered = self._discover_plugins()
-        self.loader.discovered_plugins = discovered
+        discovered = await self.discover_plugins()
         await self._update_all_pypi_plugins(discovered)
         if self.started:
             await self.stop()
@@ -361,8 +780,7 @@ class _PluginManager:
                 2) 实例配置读取后校验失败。
             RuntimeError: 目标实例对应 PyPI 插件更新失败时抛出。
         """
-        discovered = self._discover_plugins()
-        self.loader.discovered_plugins = discovered
+        discovered = await self.discover_plugins()
         instances = await self.config_store.load_instances(
             self.plugins_dir,
             discovered,
@@ -402,8 +820,7 @@ class _PluginManager:
                 2) 插件实例配置读取后校验失败。
             RuntimeError: 目标 PyPI 插件更新失败时抛出。
         """
-        discovered = self._discover_plugins()
-        self.loader.discovered_plugins = discovered
+        discovered = await self.discover_plugins()
         await self._update_pypi_plugin(plugin_name, discovered)
         instances = await self.config_store.load_instances(
             self.plugins_dir,
