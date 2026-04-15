@@ -1,7 +1,6 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
-import importlib.util
 import inspect
 import json
 import sys
@@ -18,7 +17,11 @@ from app.utils.constants import UTC8
 from .context import PluginContext
 from .decorators import EventSubscription, get_event_subscriptions
 from .lifecycle import REQUIRED_LIFECYCLE_METHODS
-from .pypi_site import ensure_pypi_site_packages_on_syspath, iter_plugin_entry_points
+from .pypi_site import (
+    ensure_pypi_site_packages_on_syspath,
+    iter_plugin_entry_points,
+    resolve_entry_point_editable_project_path,
+)
 
 
 logger = get_logger("插件加载器")
@@ -68,9 +71,8 @@ class PluginLoader:
     class PluginSource:
         """插件来源描述。"""
 
-        source: Literal["local", "pypi"]
+        source: Literal["pypi"]
         path: Optional[Path] = None
-        module_path: Optional[Path] = None
         entry_point: Any = None
         module_name: Optional[str] = None
         distribution: Optional[str] = None
@@ -94,37 +96,13 @@ class PluginLoader:
             logger.warning(f"读取本地 PyPI Entry Points 失败: {e}")
             return []
 
-    def _resolve_local_plugin_module_path(self, plugin_dir: Path) -> Optional[Path]:
-        """解析本地插件模块文件路径。
-
-        兼容两种本地目录形态：
-        1) `plugins/<name>/plugin.py`
-        2) `plugins/<name>/src/<name>/plugin.py`
-
-        Args:
-            plugin_dir (Path): 插件根目录。
-
-        Returns:
-            Optional[Path]: 匹配到的模块文件路径；未匹配时返回 None。
-        """
-        root_plugin = plugin_dir / "plugin.py"
-        if root_plugin.exists():
-            return root_plugin
-
-        src_plugin = plugin_dir / "src" / plugin_dir.name / "plugin.py"
-        if src_plugin.exists():
-            return src_plugin
-
-        return None
-
     def discover(self) -> Dict[str, PluginSource]:
         """
-        扫描并发现可用插件来源（支持同名 local/pypi 共存）。
+        扫描并发现可用插件来源（统一为 Entry Point）。
 
         规则：
-        - PyPI Entry Point 仍以原插件名作为主键（如 `test`）。
-        - 本地插件支持 `plugins/<name>/plugin.py` 与 `plugins/<name>/src/<name>/plugin.py`。
-        - 若本地与 PyPI 同名，则本地以 `<name>@local` 追加，避免覆盖。
+        - 仅从 plugins/pypi/site-packages 的 Entry Point 发现插件。
+        - 本地插件需先通过 `pip install -e` 安装后才可被发现。
 
         Returns:
             Dict[str, PluginSource]: 键为插件名、值为插件来源描述的映射。
@@ -140,49 +118,23 @@ class PluginLoader:
             dist = getattr(ep, "dist", None)
             distribution = getattr(dist, "name", None)
             version = getattr(dist, "version", None)
+            editable_path = resolve_entry_point_editable_project_path(ep)
 
             discovered[plugin_name] = self.PluginSource(
                 source="pypi",
+                path=editable_path,
                 entry_point=ep,
                 module_name=getattr(ep, "module", None),
                 distribution=distribution,
                 version=version,
             )
 
-        if self.plugins_dir.exists():
-            for item in sorted(self.plugins_dir.iterdir()):
-                if not item.is_dir():
-                    continue
-                plugin_py = self._resolve_local_plugin_module_path(item)
-                if plugin_py is None:
-                    continue
-
-                if item.name in discovered:
-                    local_key = f"{item.name}@local"
-                    discovered[local_key] = self.PluginSource(
-                        source="local",
-                        path=item,
-                        module_path=plugin_py,
-                    )
-                    logger.warning(
-                        f"检测到同名本地插件，已保留并重命名为 {local_key}（PyPI 仍使用主键 {item.name}）"
-                    )
-                    continue
-
-                discovered[item.name] = self.PluginSource(
-                    source="local",
-                    path=item,
-                    module_path=plugin_py,
-                )
-        else:
-            logger.info(f"插件目录不存在，仅扫描 PyPI 插件: {self.plugins_dir}")
-
         self.discovered_plugins = discovered
         logger.info(f"插件扫描完成，共发现 {len(discovered)} 个插件")
         return discovered
 
     def _load_plugin_config(self, plugin_name: str, plugin_source: PluginSource) -> Dict[str, Any]:
-        if plugin_source.source != "local" or plugin_source.path is None:
+        if plugin_source.path is None:
             return {}
 
         plugin_path = plugin_source.path
@@ -200,16 +152,6 @@ class PluginLoader:
         except Exception as e:
             logger.error(f"读取插件配置失败: {plugin_name}, error={e}")
             return {}
-
-    def _import_local_plugin_module(self, plugin_name: str, plugin_py: Path) -> ModuleType:
-        module_name = f"mas_plugin_{plugin_name}"
-        spec = importlib.util.spec_from_file_location(module_name, str(plugin_py))
-        if spec is None or spec.loader is None:
-            raise ImportError(f"无法创建插件模块规格: {plugin_name}")
-
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module
 
     def _load_plugin_class_from_entry_point(self, plugin_name: str, entry_point: Any) -> tuple[Optional[ModuleType], type[Any]]:
         """从 PyPI Entry Point 加载插件类入口。
@@ -277,24 +219,8 @@ class PluginLoader:
             tuple[Optional[ModuleType], type[Any]]: 模块对象与插件类。
 
         Raises:
-            PluginDefinitionError: 当插件路径缺失、缺少 Entry Point、或未导出 Plugin 类时抛出。
+            PluginDefinitionError: 当缺少 Entry Point、或未导出 Plugin 类时抛出。
         """
-        if plugin_source.source == "local":
-            if plugin_source.path is None:
-                raise PluginDefinitionError(f"本地插件路径缺失: {plugin_name}")
-            plugin_py = plugin_source.module_path or self._resolve_local_plugin_module_path(plugin_source.path)
-            if plugin_py is None:
-                raise PluginDefinitionError(
-                    f"本地插件缺少入口文件 plugin.py: {plugin_name}（支持根目录或 src/<name>/plugin.py）"
-                )
-            module = self._import_local_plugin_module(plugin_name, plugin_py)
-            plugin_class = getattr(module, "Plugin", None)
-            if not inspect.isclass(plugin_class):
-                raise PluginDefinitionError(
-                    f"插件缺少类入口 Plugin: {plugin_name}"
-                )
-            return module, plugin_class
-
         if plugin_source.entry_point is None:
             raise PluginDefinitionError(f"PyPI 插件缺少 Entry Point: {plugin_name}")
         self._clear_cached_pypi_module(plugin_name, plugin_source)
