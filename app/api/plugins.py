@@ -8,7 +8,7 @@ from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 
 from app.core.plugins import PluginConfigStore, PluginManager
-from app.core.plugins.dev_stub_generator import (
+from scripts.dev_stub_generator import (
     generate_plugin_context_stubs,
     is_dev_stub_generation_enabled,
 )
@@ -100,11 +100,15 @@ class PluginDevRebuildCtxStubOut(OutBase):
     unchanged_files: List[str] = Field(default_factory=list, description="未变更文件")
 
 
-def _discover_plugins(plugins_dir: Path) -> Dict[str, Any]:
-    """发现插件（兼容本地目录与 PyPI Entry Point）。"""
-    loader = PluginManager.loader
-    loader.plugins_dir = plugins_dir
-    return loader.discover()
+class PluginPackageIn(BaseModel):
+    package: str = Field(..., description="PyPI 包名")
+
+
+async def _discover_plugins(plugins_dir: Path) -> Dict[str, Any]:
+    """发现插件（先自动安装本地 editable，再统一按 Entry Point 发现）。"""
+    PluginManager.plugins_dir = plugins_dir
+    PluginManager.loader.plugins_dir = plugins_dir
+    return await PluginManager.discover_plugins()
 
 
 def _build_instances(root: Dict[str, Any]) -> List[PluginInstanceModel]:
@@ -186,7 +190,7 @@ def _build_runtime_states(root: Dict[str, Any]) -> Dict[str, PluginRuntimeStateM
 async def get_plugins() -> PluginsGetOut:
     try:
         plugins_dir = Path.cwd() / "plugins"
-        discovered = _discover_plugins(plugins_dir)
+        discovered = await _discover_plugins(plugins_dir)
         root = await config_store.get_root(
             plugins_dir,
             discovered,
@@ -261,6 +265,58 @@ async def reload_plugin_by_name(data: PluginReloadPluginIn = Body(...)) -> OutBa
 
 
 @router.post(
+    "/install_package",
+    tags=["Action"],
+    summary="下载安装插件包",
+    response_model=OutBase,
+    status_code=200,
+)
+async def install_plugin_package(data: PluginPackageIn = Body(...)) -> OutBase:
+    """下载安装指定插件包。
+
+    Args:
+        data (PluginPackageIn): 包名参数。
+
+    Returns:
+        OutBase: 统一响应对象。
+
+    Raises:
+        无。接口内部会捕获异常并转换为统一错误响应。
+    """
+    try:
+        await PluginManager.install_plugin_package(data.package)
+        return OutBase(message=f"插件包下载安装成功: {data.package}")
+    except Exception as e:
+        return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
+
+
+@router.post(
+    "/uninstall_package",
+    tags=["Action"],
+    summary="卸载插件包",
+    response_model=OutBase,
+    status_code=200,
+)
+async def uninstall_plugin_package(data: PluginPackageIn = Body(...)) -> OutBase:
+    """卸载指定插件包。
+
+    Args:
+        data (PluginPackageIn): 包名参数。
+
+    Returns:
+        OutBase: 统一响应对象。
+
+    Raises:
+        无。接口内部会捕获异常并转换为统一错误响应。
+    """
+    try:
+        await PluginManager.uninstall_plugin_package(data.package)
+        return OutBase(message=f"插件包卸载成功: {data.package}")
+    except Exception as e:
+        return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
+
+
+@router.post(
     "/dev/rebuild_ctx_stub",
     tags=["Action"],
     summary="重建插件 ctx 类型提示文件",
@@ -324,7 +380,7 @@ async def rebuild_plugin_ctx_stub(
 async def add_plugin_instance(data: PluginAddIn = Body(...)) -> PluginAddOut:
     try:
         plugins_dir = Path.cwd() / "plugins"
-        discovered = _discover_plugins(plugins_dir)
+        discovered = await _discover_plugins(plugins_dir)
 
         if data.plugin not in discovered:
             raise ValueError(f"未发现插件: {data.plugin}")
@@ -375,7 +431,7 @@ async def add_plugin_instance(data: PluginAddIn = Body(...)) -> PluginAddOut:
 async def update_plugin_instance(data: PluginUpdateIn = Body(...)) -> OutBase:
     try:
         plugins_dir = Path.cwd() / "plugins"
-        discovered = _discover_plugins(plugins_dir)
+        discovered = await _discover_plugins(plugins_dir)
         root = await config_store.get_root(
             plugins_dir,
             discovered,
@@ -431,7 +487,7 @@ async def update_plugin_instance(data: PluginUpdateIn = Body(...)) -> OutBase:
 async def delete_plugin_instance(data: PluginDeleteIn = Body(...)) -> OutBase:
     try:
         plugins_dir = Path.cwd() / "plugins"
-        discovered = _discover_plugins(plugins_dir)
+        discovered = await _discover_plugins(plugins_dir)
         root = await config_store.get_root(
             plugins_dir,
             discovered,

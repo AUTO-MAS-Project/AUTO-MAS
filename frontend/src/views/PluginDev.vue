@@ -6,6 +6,18 @@
       </div>
       <div class="header-actions">
         <a-space>
+          <a-input
+            v-model:value="pluginPackageName"
+            placeholder="输入 PyPI 包名，例如 auto-mas-test"
+            allow-clear
+            style="width: 260px"
+          />
+          <a-button type="primary" :loading="installingPackage" @click="installPackage">
+            下载安装
+          </a-button>
+          <a-button danger :loading="uninstallingPackage" @click="uninstallPackage">
+            卸载包
+          </a-button>
           <a-button :loading="loading" @click="fetchData">刷新</a-button>
           <a-button type="primary" @click="openAddModal">新增实例</a-button>
           <a-button :loading="reloadingAll" @click="reloadAll">重载全部</a-button>
@@ -433,7 +445,10 @@ const logger = window.electronAPI.getLogger('插件管理调试页')
 const loading = ref(false)
 const submitting = ref(false)
 const reloadingAll = ref(false)
+const installingPackage = ref(false)
+const uninstallingPackage = ref(false)
 const keyword = ref('')
+const pluginPackageName = ref('auto-mas-test')
 
 const version = ref(1)
 const discoveredPlugins = ref<string[]>([])
@@ -954,6 +969,24 @@ const apiPost = async <T = any>(url: string, payload: Record<string, unknown> = 
   return data
 }
 
+const parseMissingPackageNameFromError = (error: unknown): string | null => {
+  const text = String(error || '')
+  const patterns = [
+    /No matching distribution found for\s+([^\s]+)/i,
+    /Could not find a version that satisfies the requirement\s+([^\s]+)/i,
+  ]
+
+  for (const pattern of patterns) {
+    const matched = text.match(pattern)
+    const name = matched?.[1]?.trim()
+    if (name) {
+      return name
+    }
+  }
+
+  return null
+}
+
 const fetchData = async () => {
   loading.value = true
   try {
@@ -1123,6 +1156,55 @@ const reloadPlugin = async (plugin: string) => {
     }
   } catch (error) {
     message.error(`插件重载失败: ${String(error)}`)
+  }
+}
+
+const installPackage = async () => {
+  const packageName = pluginPackageName.value.trim()
+  if (!packageName) {
+    message.warning('请输入要安装的 PyPI 包名')
+    return
+  }
+
+  installingPackage.value = true
+  try {
+    const data = await apiPost('/api/plugins/install_package', { package: packageName })
+    if (data.code !== 200 || data.status !== 'success') {
+      throw new Error(data.message || '下载安装失败')
+    }
+    message.success(`下载安装成功: ${packageName}`)
+    await fetchData()
+  } catch (error) {
+    const missingPackageName = parseMissingPackageNameFromError(error)
+    if (missingPackageName) {
+      message.error(`找不到${missingPackageName}，请检查名称`)
+      return
+    }
+    message.error(`下载安装失败: ${String(error)}`)
+  } finally {
+    installingPackage.value = false
+  }
+}
+
+const uninstallPackage = async () => {
+  const packageName = pluginPackageName.value.trim()
+  if (!packageName) {
+    message.warning('请输入要卸载的 PyPI 包名')
+    return
+  }
+
+  uninstallingPackage.value = true
+  try {
+    const data = await apiPost('/api/plugins/uninstall_package', { package: packageName })
+    if (data.code !== 200 || data.status !== 'success') {
+      throw new Error(data.message || '卸载失败')
+    }
+    message.success(`卸载成功: ${packageName}`)
+    await fetchData()
+  } catch (error) {
+    message.error(`卸载失败: ${String(error)}`)
+  } finally {
+    uninstallingPackage.value = false
   }
 }
 
@@ -1309,7 +1391,7 @@ onMounted(() => {
 
 .instance-item:hover {
   border-color: var(--ant-color-primary-hover);
-  transform: translateY(-1px);
+  transform: translateY(+1px);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
 }
 
