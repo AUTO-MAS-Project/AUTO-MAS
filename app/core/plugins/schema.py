@@ -113,6 +113,44 @@ class PluginSchemaManager:
 
         return None
 
+    def _resolve_local_schema_path(
+        self,
+        plugin_name: str,
+        plugin_path: Path,
+        file_name: str,
+    ) -> Path | None:
+        """解析本地插件 Schema 文件路径。
+
+        兼容以下目录结构：
+        1) `plugins/<name>/<file_name>`
+        2) `plugins/<name>/src/<name>/<file_name>`
+        3) `plugins/<name>/src/<base_name>/<file_name>`（`<base_name>` 来自 `@` 前缀）
+
+        Args:
+            plugin_name (str): 插件名（允许包含来源后缀）。
+            plugin_path (Path): 本地插件根目录。
+            file_name (str): 目标文件名（例如 schema.py / schema.json）。
+
+        Returns:
+            Path | None: 匹配到的文件路径；未匹配返回 None。
+        """
+        root_schema = plugin_path / file_name
+        if root_schema.exists():
+            return root_schema
+
+        candidates = [plugin_path.name, self._canonical_plugin_name(plugin_name)]
+        seen: set[str] = set()
+        for candidate in candidates:
+            name = str(candidate or "").strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            src_schema = plugin_path / "src" / name / file_name
+            if src_schema.exists():
+                return src_schema
+
+        return None
+
     def load_schema(self, plugin_name: str, plugin_path: Path | None) -> Dict[str, Dict[str, Any]]:
         """
         加载并校验插件 Schema 定义。
@@ -135,12 +173,20 @@ class PluginSchemaManager:
         schema: Dict[str, Dict[str, Any]] = {}
         canonical_plugin_name = self._canonical_plugin_name(plugin_name)
         if plugin_path is not None:
-            schema_py = plugin_path / "schema.py"
-            schema_json = plugin_path / "schema.json"
+            schema_py = self._resolve_local_schema_path(
+                plugin_name,
+                plugin_path,
+                "schema.py",
+            )
+            schema_json = self._resolve_local_schema_path(
+                plugin_name,
+                plugin_path,
+                "schema.json",
+            )
 
-            if schema_py.exists():
+            if schema_py is not None and schema_py.exists():
                 schema = self._load_schema_from_py(plugin_name, schema_py)
-            elif schema_json.exists():
+            elif schema_json is not None and schema_json.exists():
                 schema = self._load_schema_from_json(plugin_name, schema_json)
 
             if not schema:
