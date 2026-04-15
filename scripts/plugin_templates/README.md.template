@@ -1,3 +1,5 @@
 # automas_${plugin_name}
 
+[![PyPI version](https://img.shields.io/pypi/v/automas_plugin_${plugin_name}?logo=pypi&logoColor=white)](https://pypi.org/project/automas_plugin_${plugin_name}/)
+
 ${description}
