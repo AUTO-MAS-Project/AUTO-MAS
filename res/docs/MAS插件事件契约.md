@@ -1,7 +1,7 @@
 # MAS 插件事件契约
 
-> 版本：v1.1  
-> 生效日期：2026-03-22  
+> 版本：v1.2  
+> 生效日期：2026-04-15  
 > 适用范围：AUTO-MAS 插件事件总线（EventBus）与任务编排事件
 
 ## 1. 目标与原则
@@ -66,6 +66,15 @@
 
 `task.start` 包含可操作入口（如停止当前任务、停止全部任务），插件可直接据此触发 API 调用。
 
+### 4.4 队列与脚本识别字段增强
+
+为支持插件按具体脚本配置精准过滤（例如“仅当崩铁-三月七结束时执行”），任务与脚本事件新增以下兼容字段：
+
+- `queue_name`：队列名称（可为空）；
+- `task.exit.data.scripts`：任务内脚本摘要数组；
+- `task.exit.data.final_script_*`：任务收口时脚本上下文；
+- `script.*.data.queue_id / queue_name`：脚本事件上的队列上下文。
+
 ## 5. Payload 示例
 
 ### 5.1 task.start
@@ -80,6 +89,7 @@
     "task_id": "task-001",
     "mode": "AutoProxy",
     "queue_id": "queue-001",
+    "queue_name": "每日轮询",
     "script_total": 3,
     "scripts": [
       {
@@ -88,6 +98,8 @@
         "status": "等待"
       }
     ],
+    "primary_script_id": null,
+    "primary_script_name": null,
     "actions": {
       "stop_task": {
         "api": "/api/dispatch/stop",
@@ -120,7 +132,10 @@
     "task_id": "task-001",
     "mode": "AutoProxy",
     "queue_id": "queue-001",
+    "queue_name": "每日轮询",
     "current_script_index": 0,
+    "current_script_id": "script-001",
+    "current_script_name": "日常任务",
     "script_total": 3,
     "script_completed": 1,
     "user_total": 12,
@@ -147,6 +162,8 @@
   "data": {
     "task_id": "task-001",
     "mode": "AutoProxy",
+    "queue_id": "queue-001",
+    "queue_name": "每日轮询",
     "script_id": "script-001",
     "script_name": "日常任务",
     "script_status": "运行",
@@ -171,6 +188,17 @@
     "task_id": "task-001",
     "mode": "AutoProxy",
     "queue_id": "queue-001",
+    "queue_name": "每日轮询",
+    "scripts": [
+      {
+        "script_id": "script-001",
+        "script_name": "日常任务",
+        "status": "完成"
+      }
+    ],
+    "final_script_id": "script-001",
+    "final_script_name": "日常任务",
+    "final_script_status": "完成",
     "result": "success",
     "error": null,
     "summary": "任务摘要..."
@@ -192,7 +220,11 @@
   "mode": "AutoProxy",
   "status": "完成",
   "error": null,
-  "result": "script.success"
+  "result": "script.success",
+  "data": {
+    "queue_id": "queue-001",
+    "queue_name": "每日轮询"
+  }
 }
 ```
 
@@ -200,6 +232,7 @@
 
 - 任务维度追踪：用 `task_id` 作为主键，监听 `task.start` / `task.progress` / `task.log` / `task.exit`。
 - 脚本维度收口：优先监听 `script.exit`，按 `result` 做分支处理。
+- 精准脚本触发：优先以 `script.exit` + `script_name/script_id` 过滤；`task.exit` 可结合 `scripts` 与 `final_script_name` 做任务收口判断。
 - 事件处理容错：处理函数内部应捕获异常，避免传播到总线。
 - 缓存配合事件：建议使用 `ctx.cache` 对事件计数、去重签名、短期状态做本地持久化。
 
