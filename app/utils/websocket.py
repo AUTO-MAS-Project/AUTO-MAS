@@ -67,6 +67,7 @@ class ReverseWebSocketSession:
         self._last_ping = 0.0
         self._last_pong = 0.0
         self._tasks: list[asyncio.Task] = []
+        self._background_tasks: set[asyncio.Task] = set()
         self._closed_event = asyncio.Event()
         self._disconnect_notified = False
 
@@ -170,6 +171,11 @@ class ReverseWebSocketSession:
                 task.cancel()
         self._tasks.clear()
 
+        for task in list(self._background_tasks):
+            if not task.done():
+                task.cancel()
+        self._background_tasks.clear()
+
         try:
             if self.is_connected:
                 await self.websocket.close(code=code, reason=reason)
@@ -228,11 +234,43 @@ class ReverseWebSocketSession:
             if self.on_message:
                 result = self.on_message(data)
                 if asyncio.iscoroutine(result):
-                    await result
+                    self._schedule_background_task(
+                        result,
+                        task_name="reverse_on_message",
+                    )
         except json.JSONDecodeError as e:
             self.logger.warning(f"消息解析失败: {e}")
         except Exception as e:
             self.logger.error(f"处理消息时发生异常: {type(e).__name__}: {e}")
+
+    def _schedule_background_task(self, coro: Any, task_name: str) -> None:
+        """调度后台异步任务，避免阻塞接收与心跳循环。
+
+        Args:
+            coro (Any): 待调度的协程对象。
+            task_name (str): 任务名称，仅用于日志标识。
+
+        Returns:
+            None: 无返回值。
+
+        Raises:
+            TypeError: 当 `coro` 不是协程对象时抛出。
+        """
+        if not asyncio.iscoroutine(coro):
+            raise TypeError("coro 必须是协程对象")
+
+        task = asyncio.create_task(coro)
+        self._background_tasks.add(task)
+
+        def _on_done(done_task: asyncio.Task):
+            self._background_tasks.discard(done_task)
+            if done_task.cancelled():
+                return
+            exc = done_task.exception()
+            if exc is not None:
+                self.logger.error(f"后台任务异常({task_name}): {type(exc).__name__}: {exc}")
+
+        task.add_done_callback(_on_done)
 
     async def _receive_loop(self):
         """消息接收循环。"""
