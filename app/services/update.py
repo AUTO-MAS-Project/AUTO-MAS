@@ -185,6 +185,9 @@ class _UpdateHandler:
         elif Config.get("Update", "Source") == "AutoSite":
             download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
 
+        elif Config.get("Update", "Source") == "CNB":
+            download_url = f"https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/releases/download/{self.remote_version}/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
+
         else:
             await Config.send_websocket_message(
                 id="Update",

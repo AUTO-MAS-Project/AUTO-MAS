@@ -15,6 +15,7 @@
     <div class="draggable-table-container">
       <!-- 表头 -->
       <div class="draggable-table-header">
+        <div class="header-cell drag-cell"></div>
         <div class="header-cell index-cell">序号</div>
         <div class="header-cell script-cell">脚本任务</div>
         <div class="header-cell actions-cell">操作</div>
@@ -22,9 +23,15 @@
 
       <!-- 拖拽内容区域 -->
       <draggable v-model="queueItems" group="queueItems" item-key="id" :animation="200" :disabled="loading"
-        ghost-class="ghost" chosen-class="chosen" drag-class="drag" class="draggable-container" @end="onDragEnd">
+        ghost-class="ghost" chosen-class="chosen" drag-class="drag" handle=".drag-handle"
+        class="draggable-container" @end="onDragEnd">
         <template #item="{ element: record, index }">
           <div class="draggable-row" :class="{ 'row-dragging': loading }">
+            <div class="row-cell drag-cell">
+              <span class="drag-handle" title="拖拽排序" aria-label="拖拽排序">
+                <span class="drag-dots" aria-hidden="true"></span>
+              </span>
+            </div>
             <div class="row-cell index-cell">{{ index + 1 }}</div>
             <div class="row-cell script-cell">
               <a-select v-model:value="record.script" size="small" style="width: 200px" class="script-select"
@@ -541,6 +548,12 @@ onMounted(() => {
   max-width: 80px;
 }
 
+.drag-cell {
+  width: 36px;
+  min-width: 36px;
+  max-width: 36px;
+}
+
 .script-cell {
   flex: 1;
   min-width: 200px;
@@ -562,7 +575,7 @@ onMounted(() => {
   background: var(--ant-color-bg-container);
   border-bottom: 1px solid var(--ant-color-border);
   transition: all 0.2s ease;
-  cursor: move;
+  cursor: default;
 }
 
 .draggable-row:last-child {
@@ -598,6 +611,12 @@ onMounted(() => {
   color: var(--ant-color-text-secondary);
 }
 
+.row-cell.drag-cell {
+  width: 36px;
+  min-width: 36px;
+  max-width: 36px;
+}
+
 .row-cell.script-cell {
   flex: 1;
   min-width: 200px;
@@ -611,20 +630,54 @@ onMounted(() => {
 
 /* 拖拽状态样式 */
 .ghost {
-  opacity: 0.5;
-  background: var(--ant-color-primary-bg);
-  border: 2px dashed var(--ant-color-primary);
+  opacity: 0 !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
 }
 
 .chosen {
-  background: var(--ant-color-primary-bg-hover);
-  transform: scale(1.02);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  cursor: grabbing !important;
 }
 
 .drag {
-  transform: rotate(5deg);
-  opacity: 0.8;
+  transform: rotate(3deg);
+  opacity: 1 !important;
+}
+
+.drag .draggable-row {
+  opacity: 1 !important;
+  transition: none !important;
+}
+
+.drag-handle {
+  width: 16px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ant-color-text-tertiary);
+  background: transparent;
+  border: none;
+  cursor: grab;
+  user-select: none;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.drag-dots {
+  width: 10px;
+  height: 16px;
+  display: block;
+  background-image: radial-gradient(currentColor 1.2px, transparent 1.2px);
+  background-size: 5px 5px;
+  opacity: 0.65;
+}
+
+.drag-handle:hover .drag-dots {
+  opacity: 0.85;
 }
 
 /* 空状态样式 */
@@ -688,6 +741,7 @@ onMounted(() => {
   }
 
   .index-cell,
+  .drag-cell,
   .script-cell,
   .actions-cell {
     width: 100% !important;
