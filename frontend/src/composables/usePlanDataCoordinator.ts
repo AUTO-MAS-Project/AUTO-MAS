@@ -1,20 +1,25 @@
-/**
- * 计划表数据协调层
+﻿/**
+ * 璁″垝琛ㄦ暟鎹崗璋冨眰
  *
- * 作为前端架构中的"交通指挥中心"，负责：
- * 1. 统一管理数据流
- * 2. 协调视图间的同步
- * 3. 处理与后端的通信
- * 4. 提供统一的数据访问接口
+ * 浣滀负鍓嶇鏋舵瀯涓殑"浜ら€氭寚鎸ヤ腑蹇?锛岃礋璐ｏ細
+ * 1. 缁熶竴绠＄悊鏁版嵁娴?
+ * 2. 鍗忚皟瑙嗗浘闂寸殑鍚屾
+ * 3. 澶勭悊涓庡悗绔殑閫氫俊
+ * 4. 鎻愪緵缁熶竴鐨勬暟鎹闂帴鍙?
  */
 
 import { ref, computed } from 'vue'
-import type { MaaPlanConfig, MaaPlanConfig_Item, ComboBoxItem } from '@/api'
-import { Service } from '@/api'
-import { GetStageIn } from '@/api'
-const logger = window.electronAPI.getLogger('计划数据协调器')
+import {
+  STAGE_QUERY_TYPE,
+  infoApi,
+  type ComboBoxItem,
+  type MaaPlanDayRead,
+  type MaaPlanRead,
+  type StageQueryType,
+} from '@/api'
+const logger = window.electronAPI.getLogger('璁″垝鏁版嵁鍗忚皟鍣?)
 
-// 时间维度常量
+// 鏃堕棿缁村害甯搁噺
 export const TIME_KEYS = [
   'ALL',
   'Monday',
@@ -27,20 +32,20 @@ export const TIME_KEYS = [
 ] as const
 export type TimeKey = (typeof TIME_KEYS)[number]
 
-// 关卡槽位常量
+// 鍏冲崱妲戒綅甯搁噺
 export const STAGE_SLOTS = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3'] as const
 export type StageSlot = (typeof STAGE_SLOTS)[number]
 
-// 统一的数据结构
+// 缁熶竴鐨勬暟鎹粨鏋?
 export interface PlanDataState {
-  // 基础信息
+  // 鍩虹淇℃伅
   info: {
     name: string
     mode: 'ALL' | 'Weekly'
     type: string
   }
 
-  // 时间维度的配置数据
+  // 鏃堕棿缁村害鐨勯厤缃暟鎹?
   timeConfigs: Record<
     TimeKey,
     {
@@ -56,7 +61,7 @@ export interface PlanDataState {
     }
   >
 
-  // 自定义关卡定义
+  // 鑷畾涔夊叧鍗″畾涔?
   customStageDefinitions: {
     custom_stage_1: string
     custom_stage_2: string
@@ -65,78 +70,78 @@ export interface PlanDataState {
   }
 }
 
-// 关卡可用性信息
+// 鍏冲崱鍙敤鎬т俊鎭?
 export interface StageAvailability {
   value: string
   text: string
   days: number[]
 }
 
-// 标准关卡选项缓存（按时间维度）
+// 鏍囧噯鍏冲崱閫夐」缂撳瓨锛堟寜鏃堕棿缁村害锛?
 const stageOptionsCache = ref<Record<string, ComboBoxItem[]>>({})
 
-// 加载标准关卡选项
+// 鍔犺浇鏍囧噯鍏冲崱閫夐」
 export async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]> {
-  // 如果已缓存，直接返回
+  // 濡傛灉宸茬紦瀛橈紝鐩存帴杩斿洖
   if (stageOptionsCache.value[timeKey]) {
     return stageOptionsCache.value[timeKey]
   }
 
   try {
-    // 映射时间维度到 API 参数
-    const typeMap: Record<TimeKey, GetStageIn.type> = {
-      ALL: GetStageIn.type.ALL,
-      Monday: GetStageIn.type.MONDAY,
-      Tuesday: GetStageIn.type.TUESDAY,
-      Wednesday: GetStageIn.type.WEDNESDAY,
-      Thursday: GetStageIn.type.THURSDAY,
-      Friday: GetStageIn.type.FRIDAY,
-      Saturday: GetStageIn.type.SATURDAY,
-      Sunday: GetStageIn.type.SUNDAY,
+    // 鏄犲皠鏃堕棿缁村害鍒?API 鍙傛暟
+    const typeMap: Record<TimeKey, StageQueryType> = {
+      ALL: STAGE_QUERY_TYPE.ALL,
+      Monday: STAGE_QUERY_TYPE.MONDAY,
+      Tuesday: STAGE_QUERY_TYPE.TUESDAY,
+      Wednesday: STAGE_QUERY_TYPE.WEDNESDAY,
+      Thursday: STAGE_QUERY_TYPE.THURSDAY,
+      Friday: STAGE_QUERY_TYPE.FRIDAY,
+      Saturday: STAGE_QUERY_TYPE.SATURDAY,
+      Sunday: STAGE_QUERY_TYPE.SUNDAY,
     }
 
-    const response = await Service.getStageComboxApiInfoComboxStagePost({
+    const response = await infoApi.getStageOptions({
       type: typeMap[timeKey],
     })
 
     if (response.code === 200 || response.code === undefined) {
-      // 缓存结果
+      // 缂撳瓨缁撴灉
       stageOptionsCache.value[timeKey] = response.data
       return response.data
     } else {
-      logger.error(`加载失败 (${timeKey}): ${response.message}`)
+      logger.error(`鍔犺浇澶辫触 (${timeKey}): ${response.message}`)
       return []
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载异常 (${timeKey}): ${errorMsg}`)
+    logger.error(`鍔犺浇寮傚父 (${timeKey}): ${errorMsg}`)
     return []
   }
 }
 
-// 预加载所有时间维度的关卡选项
+// 棰勫姞杞芥墍鏈夋椂闂寸淮搴︾殑鍏冲崱閫夐」
 export async function preloadAllStageOptions(): Promise<void> {
   const loadPromises = TIME_KEYS.map(timeKey => loadStageOptions(timeKey))
   await Promise.all(loadPromises)
-  logger.info('关卡选项预加载完成')
+  logger.info('鍏冲崱閫夐」棰勫姞杞藉畬鎴?)
 }
 
-// 清除缓存（用于刷新数据）
+// 娓呴櫎缂撳瓨锛堢敤浜庡埛鏂版暟鎹級
 export function clearStageOptionsCache(): void {
   stageOptionsCache.value = {}
-  logger.info('关卡选项缓存已清除')
+  logger.info('鍏冲崱閫夐」缂撳瓨宸叉竻闄?)
 }
 
-// 获取缓存的关卡选项
+// 鑾峰彇缂撳瓨鐨勫叧鍗￠€夐」
 export function getCachedStageOptions(timeKey: TimeKey): ComboBoxItem[] {
   return stageOptionsCache.value[timeKey] || []
 }
 
 /**
- * 计划表数据协调器
+ * 璁″垝琛ㄦ暟鎹崗璋冨櫒
  */
 export function usePlanDataCoordinator() {
-  // 当前计划表ID
+  // 褰撳墠璁″垝琛↖D
   const currentPlanId = ref<string>('default')
 
   const getDefaultCustomStageDefinitions = () => ({
@@ -146,7 +151,7 @@ export function usePlanDataCoordinator() {
     custom_stage_4: '',
   })
 
-  // 单一数据源
+  // 鍗曚竴鏁版嵁婧?
   const planData = ref<PlanDataState>({
     info: {
       name: '',
@@ -157,7 +162,7 @@ export function usePlanDataCoordinator() {
     customStageDefinitions: getDefaultCustomStageDefinitions(),
   })
 
-  // 初始化时间配置
+  // 鍒濆鍖栨椂闂撮厤缃?
   const initializeTimeConfigs = () => {
     TIME_KEYS.forEach(timeKey => {
       planData.value.timeConfigs[timeKey] = {
@@ -174,27 +179,27 @@ export function usePlanDataCoordinator() {
     })
   }
 
-  // 初始化数据
+  // 鍒濆鍖栨暟鎹?
   initializeTimeConfigs()
 
-  // 从API数据转换为内部数据结构
-  const fromApiData = (apiData: MaaPlanConfig, forceUpdateCustomStages = false) => {
-    // 更新基础信息
+  // 浠嶢PI鏁版嵁杞崲涓哄唴閮ㄦ暟鎹粨鏋?
+  const fromApiData = (apiData: MaaPlanRead, forceUpdateCustomStages = false) => {
+    // 鏇存柊鍩虹淇℃伅
     if (apiData.Info) {
       planData.value.info.name = apiData.Info.Name || ''
-      planData.value.info.mode = apiData.Info.Mode || 'ALL'
+      planData.value.info.mode = (apiData.Info.Mode as string as 'ALL' | 'Weekly') || 'ALL'
 
-      // 如果API数据中包含计划表ID信息，更新当前planId
-      // 注意：这里假设planId通过其他方式传入，API数据本身可能不包含ID
+      // 濡傛灉API鏁版嵁涓寘鍚鍒掕〃ID淇℃伅锛屾洿鏂板綋鍓峱lanId
+      // 娉ㄦ剰锛氳繖閲屽亣璁緋lanId閫氳繃鍏朵粬鏂瑰紡浼犲叆锛孉PI鏁版嵁鏈韩鍙兘涓嶅寘鍚獻D
     }
 
-    // 更新时间配置
+    // 鏇存柊鏃堕棿閰嶇疆
     TIME_KEYS.forEach(timeKey => {
-      const timeData = apiData[timeKey] as MaaPlanConfig_Item
+      const timeData = apiData[timeKey as keyof MaaPlanRead] as MaaPlanDayRead
       if (timeData) {
         planData.value.timeConfigs[timeKey] = {
           medicineNumb: timeData.MedicineNumb || 0,
-          seriesNumb: timeData.SeriesNumb || '0',
+          seriesNumb: (timeData.SeriesNumb as string) || '0',
           stages: {
             primary: timeData.Stage || '-',
             backup1: timeData.Stage_1 || '-',
@@ -206,18 +211,18 @@ export function usePlanDataCoordinator() {
       }
     })
 
-    // 从所有时间配置中推断自定义关卡定义
+    // 浠庢墍鏈夋椂闂撮厤缃腑鎺ㄦ柇鑷畾涔夊叧鍗″畾涔?
     const inferredStages = new Set<string>()
 
     TIME_KEYS.forEach(timeKey => {
-      const timeData = apiData[timeKey] as MaaPlanConfig_Item
+      const timeData = apiData[timeKey as keyof MaaPlanRead] as MaaPlanDayRead
       if (timeData) {
-        // 检查所有关卡字段
-        const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3', 'Stage_Remain']
+        // 妫€鏌ユ墍鏈夊叧鍗″瓧娈?
+        const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3', 'Stage_Remain'] as const
         stageFields.forEach(field => {
-          const stageValue = timeData[field as keyof MaaPlanConfig_Item] as string
+          const stageValue = timeData[field] as string
           if (stageValue && stageValue !== '-') {
-            // 如果不是标准关卡，则认为是自定义关卡
+            // 濡傛灉涓嶆槸鏍囧噯鍏冲崱锛屽垯璁や负鏄嚜瀹氫箟鍏冲崱
             const cachedOptions = getCachedStageOptions(timeKey)
             const isStandardStage = cachedOptions.some(option => option.value === stageValue)
             if (!isStandardStage) {
@@ -228,9 +233,9 @@ export function usePlanDataCoordinator() {
       }
     })
 
-    // 根据参数决定是否更新自定义关卡定义
+    // 鏍规嵁鍙傛暟鍐冲畾鏄惁鏇存柊鑷畾涔夊叧鍗″畾涔?
     if (forceUpdateCustomStages) {
-      // 强制更新：完全从配置推断（用于初始加载或切换计划）
+      // 寮哄埗鏇存柊锛氬畬鍏ㄤ粠閰嶇疆鎺ㄦ柇锛堢敤浜庡垵濮嬪姞杞芥垨鍒囨崲璁″垝锛?
       const inferredArray = Array.from(inferredStages).sort()
       planData.value.customStageDefinitions = {
         custom_stage_1: inferredArray[0] || '',
@@ -241,11 +246,11 @@ export function usePlanDataCoordinator() {
 
       if (inferredStages.size > 0) {
         logger.info(
-          `从配置数据推断出 ${inferredStages.size} 个自定义关卡: ${Array.from(inferredStages).join(', ')}`
+          `浠庨厤缃暟鎹帹鏂嚭 ${inferredStages.size} 涓嚜瀹氫箟鍏冲崱: ${Array.from(inferredStages).join(', ')}`
         )
       }
     } else {
-      // 智能合并：保留现有定义，只添加新发现的关卡
+      // 鏅鸿兘鍚堝苟锛氫繚鐣欑幇鏈夊畾涔夛紝鍙坊鍔犳柊鍙戠幇鐨勫叧鍗?
       const currentCustomStages = new Set<string>()
       Object.values(planData.value.customStageDefinitions).forEach(stage => {
         if (stage && stage.trim()) {
@@ -253,11 +258,11 @@ export function usePlanDataCoordinator() {
         }
       })
 
-      // 找出新发现的关卡（在推断中但不在当前定义中）
+      // 鎵惧嚭鏂板彂鐜扮殑鍏冲崱锛堝湪鎺ㄦ柇涓絾涓嶅湪褰撳墠瀹氫箟涓級
       const newStages = Array.from(inferredStages).filter(stage => !currentCustomStages.has(stage))
 
       if (newStages.length > 0) {
-        // 将新关卡添加到空的槽位中
+        // 灏嗘柊鍏冲崱娣诲姞鍒扮┖鐨勬Ы浣嶄腑
         const currentDefinitions = { ...planData.value.customStageDefinitions }
         const emptySlots = Object.keys(currentDefinitions).filter(
           key => !currentDefinitions[key as keyof typeof currentDefinitions]
@@ -270,25 +275,25 @@ export function usePlanDataCoordinator() {
         })
 
         planData.value.customStageDefinitions = currentDefinitions
-        logger.info(`添加新发现的自定义关卡: ${newStages.join(', ')}`)
+        logger.info(`娣诲姞鏂板彂鐜扮殑鑷畾涔夊叧鍗? ${newStages.join(', ')}`)
       }
     }
   }
 
-  // 转换为API数据格式
-  const toApiData = (): MaaPlanConfig => {
-    const result: MaaPlanConfig = {
+  // 杞崲涓篈PI鏁版嵁鏍煎紡
+  const toApiData = (): MaaPlanRead => {
+    const result: MaaPlanRead = {
       Info: {
         Name: planData.value.info.name,
-        Mode: planData.value.info.mode,
+        Mode: planData.value.info.mode as MaaPlanRead['Info'] extends { Mode?: infer M } ? M : never,
       },
     }
 
     TIME_KEYS.forEach(timeKey => {
       const config = planData.value.timeConfigs[timeKey]
-      result[timeKey] = {
+      ;(result as Record<string, unknown>)[timeKey] = {
         MedicineNumb: config.medicineNumb,
-        SeriesNumb: config.seriesNumb as any,
+        SeriesNumb: config.seriesNumb as MaaPlanDayRead['SeriesNumb'],
         Stage: config.stages.primary,
         Stage_1: config.stages.backup1,
         Stage_2: config.stages.backup2,
@@ -297,17 +302,17 @@ export function usePlanDataCoordinator() {
       }
     })
 
-    // 不保存自定义关卡定义到后端，它们会在加载时重新推断
+    // 涓嶄繚瀛樿嚜瀹氫箟鍏冲崱瀹氫箟鍒板悗绔紝瀹冧滑浼氬湪鍔犺浇鏃堕噸鏂版帹鏂?
 
     return result
   }
 
-  // 配置视图数据适配器
+  // 閰嶇疆瑙嗗浘鏁版嵁閫傞厤鍣?
   const configViewData = computed(() => {
     return [
       {
         key: 'MedicineNumb',
-        taskName: '吃理智药',
+        taskName: '鍚冪悊鏅鸿嵂',
         ...Object.fromEntries(
           TIME_KEYS.map(timeKey => [
             timeKey,
@@ -317,7 +322,7 @@ export function usePlanDataCoordinator() {
       },
       {
         key: 'SeriesNumb',
-        taskName: '连战次数',
+        taskName: '杩炴垬娆℃暟',
         ...Object.fromEntries(
           TIME_KEYS.map(timeKey => [
             timeKey,
@@ -327,7 +332,7 @@ export function usePlanDataCoordinator() {
       },
       {
         key: 'Stage',
-        taskName: '关卡选择',
+        taskName: '鍏冲崱閫夋嫨',
         ...Object.fromEntries(
           TIME_KEYS.map(timeKey => [
             timeKey,
@@ -337,7 +342,7 @@ export function usePlanDataCoordinator() {
       },
       {
         key: 'Stage_1',
-        taskName: '备选关卡-1',
+        taskName: '澶囬€夊叧鍗?1',
         ...Object.fromEntries(
           TIME_KEYS.map(timeKey => [
             timeKey,
@@ -347,7 +352,7 @@ export function usePlanDataCoordinator() {
       },
       {
         key: 'Stage_2',
-        taskName: '备选关卡-2',
+        taskName: '澶囬€夊叧鍗?2',
         ...Object.fromEntries(
           TIME_KEYS.map(timeKey => [
             timeKey,
@@ -357,7 +362,7 @@ export function usePlanDataCoordinator() {
       },
       {
         key: 'Stage_3',
-        taskName: '备选关卡-3',
+        taskName: '澶囬€夊叧鍗?3',
         ...Object.fromEntries(
           TIME_KEYS.map(timeKey => [
             timeKey,
@@ -367,7 +372,7 @@ export function usePlanDataCoordinator() {
       },
       {
         key: 'Stage_Remain',
-        taskName: '剩余理智关卡',
+        taskName: '鍓╀綑鐞嗘櫤鍏冲崱',
         ...Object.fromEntries(
           TIME_KEYS.map(timeKey => [
             timeKey,
@@ -378,11 +383,11 @@ export function usePlanDataCoordinator() {
     ]
   })
 
-  // 简化视图数据适配器
+  // 绠€鍖栬鍥炬暟鎹€傞厤鍣?
   const simpleViewData = computed(() => {
     const result: any[] = []
 
-    // 添加自定义关卡
+    // 娣诲姞鑷畾涔夊叧鍗?
     Object.entries(planData.value.customStageDefinitions).forEach(([, stageName]) => {
       if (stageName && stageName.trim()) {
         const stageStates: Record<string, boolean> = {}
@@ -401,7 +406,7 @@ export function usePlanDataCoordinator() {
       }
     })
 
-    // 添加标准关卡（从 ALL 的缓存中获取所有标准关卡）
+    // 娣诲姞鏍囧噯鍏冲崱锛堜粠 ALL 鐨勭紦瀛樹腑鑾峰彇鎵€鏈夋爣鍑嗗叧鍗★級
     const allStageOptions = getCachedStageOptions('ALL')
     allStageOptions
       .filter(option => option.value && option.value !== '-')
@@ -424,7 +429,7 @@ export function usePlanDataCoordinator() {
     return result
   })
 
-  // 更新配置数据
+  // 鏇存柊閰嶇疆鏁版嵁
   const updateConfig = (timeKey: TimeKey, field: string, value: any) => {
     if (field === 'MedicineNumb') {
       planData.value.timeConfigs[timeKey].medicineNumb = value
@@ -443,48 +448,48 @@ export function usePlanDataCoordinator() {
     }
   }
 
-  // 切换关卡状态（简化视图用）
+  // 鍒囨崲鍏冲崱鐘舵€侊紙绠€鍖栬鍥剧敤锛?
   const toggleStage = (stageName: string, timeKey: TimeKey, enabled: boolean) => {
     const config = planData.value.timeConfigs[timeKey]
     const stageSlots = ['primary', 'backup1', 'backup2', 'backup3'] as const
 
     if (enabled) {
-      // 找到第一个空槽位
+      // 鎵惧埌绗竴涓┖妲戒綅
       const emptySlot = stageSlots.find(slot => !config.stages[slot] || config.stages[slot] === '-')
       if (emptySlot) {
         config.stages[emptySlot] = stageName
       }
-      // 启用后重新按简化视图顺序排列
+      // 鍚敤鍚庨噸鏂版寜绠€鍖栬鍥鹃『搴忔帓鍒?
       reassignSlotsBySimpleViewOrder(timeKey)
     } else {
-      // 从所有槽位中移除
+      // 浠庢墍鏈夋Ы浣嶄腑绉婚櫎
       stageSlots.forEach(slot => {
         if (config.stages[slot] === stageName) {
           config.stages[slot] = '-'
         }
       })
-      // 移除后重新按简化视图顺序排列
+      // 绉婚櫎鍚庨噸鏂版寜绠€鍖栬鍥鹃『搴忔帓鍒?
       reassignSlotsBySimpleViewOrder(timeKey)
     }
   }
 
-  // 按简化视图顺序重新分配槽位
+  // 鎸夌畝鍖栬鍥鹃『搴忛噸鏂板垎閰嶆Ы浣?
   const reassignSlotsBySimpleViewOrder = (timeKey: TimeKey) => {
     const config = planData.value.timeConfigs[timeKey]
     const stageSlots = ['primary', 'backup1', 'backup2', 'backup3'] as const
 
-    // 收集当前已启用的关卡
+    // 鏀堕泦褰撳墠宸插惎鐢ㄧ殑鍏冲崱
     const enabledStages = Object.values(config.stages).filter(stage => stage && stage !== '-')
 
-    // 清空所有槽位
+    // 娓呯┖鎵€鏈夋Ы浣?
     stageSlots.forEach(slot => {
       config.stages[slot] = '-'
     })
 
-    // 按简化视图的实际显示顺序重新分配
+    // 鎸夌畝鍖栬鍥剧殑瀹為檯鏄剧ず椤哄簭閲嶆柊鍒嗛厤
     const sortedStages: string[] = []
 
-    // 1. 先添加自定义关卡（按 custom_stage_1, custom_stage_2, custom_stage_3, custom_stage_4 的顺序）
+    // 1. 鍏堟坊鍔犺嚜瀹氫箟鍏冲崱锛堟寜 custom_stage_1, custom_stage_2, custom_stage_3, custom_stage_4 鐨勯『搴忥級
     for (let i = 1; i <= 4; i++) {
       const key = `custom_stage_${i}` as keyof typeof planData.value.customStageDefinitions
       const stageName = planData.value.customStageDefinitions[key]
@@ -493,7 +498,7 @@ export function usePlanDataCoordinator() {
       }
     }
 
-    // 2. 再添加标准关卡（按 ALL 缓存的顺序，跳过'-'）
+    // 2. 鍐嶆坊鍔犳爣鍑嗗叧鍗★紙鎸?ALL 缂撳瓨鐨勯『搴忥紝璺宠繃'-'锛?
     const allStageOptions = getCachedStageOptions('ALL')
     allStageOptions
       .filter(option => option.value && option.value !== '-')
@@ -503,29 +508,29 @@ export function usePlanDataCoordinator() {
         }
       })
 
-    // 3. 按顺序分配到槽位：第1个→primary，第2个→backup1，第3个→backup2，第4个→backup3
+    // 3. 鎸夐『搴忓垎閰嶅埌妲戒綅锛氱1涓啋primary锛岀2涓啋backup1锛岀3涓啋backup2锛岀4涓啋backup3
     sortedStages.forEach((stageName, index) => {
       if (index < stageSlots.length) {
         config.stages[stageSlots[index]] = stageName
       }
     })
 
-    // 只在开发环境输出排序日志
+    // 鍙湪寮€鍙戠幆澧冭緭鍑烘帓搴忔棩蹇?
     if (process.env.NODE_ENV === 'development') {
-      logger.debug(`关卡排序 ${timeKey}: ${sortedStages.join(' → ')}`)
+      logger.debug(`鍏冲崱鎺掑簭 ${timeKey}: ${sortedStages.join(' 鈫?')}`)
     }
   }
 
-  // 更新自定义关卡定义
+  // 鏇存柊鑷畾涔夊叧鍗″畾涔?
   const updateCustomStageDefinition = (index: 1 | 2 | 3 | 4, name: string) => {
     const key = `custom_stage_${index}` as keyof typeof planData.value.customStageDefinitions
     const oldName = planData.value.customStageDefinitions[key]
 
-    logger.info(`更新自定义关卡-${index}: "${oldName}" -> "${name}"`)
+    logger.info(`鏇存柊鑷畾涔夊叧鍗?${index}: "${oldName}" -> "${name}"`)
 
     planData.value.customStageDefinitions[key] = name
 
-    // 如果名称改变了，需要更新所有引用
+    // 濡傛灉鍚嶇О鏀瑰彉浜嗭紝闇€瑕佹洿鏂版墍鏈夊紩鐢?
     if (oldName !== name) {
       TIME_KEYS.forEach(timeKey => {
         const config = planData.value.timeConfigs[timeKey]
@@ -538,34 +543,35 @@ export function usePlanDataCoordinator() {
     }
   }
 
-  // 更新计划表ID
+  // 鏇存柊璁″垝琛↖D
   const updatePlanId = (newPlanId: string) => {
     if (currentPlanId.value !== newPlanId) {
-      logger.info(`切换: ${currentPlanId.value} -> ${newPlanId}`)
+      logger.info(`鍒囨崲: ${currentPlanId.value} -> ${newPlanId}`)
       currentPlanId.value = newPlanId
-      // 注意：自定义关卡定义将在 fromApiData 中从后端数据重新推断
+      // 娉ㄦ剰锛氳嚜瀹氫箟鍏冲崱瀹氫箟灏嗗湪 fromApiData 涓粠鍚庣鏁版嵁閲嶆柊鎺ㄦ柇
     }
   }
 
   return {
-    // 数据
+    // 鏁版嵁
     planData: planData.value,
 
-    // 视图适配器
+    // 瑙嗗浘閫傞厤鍣?
     configViewData,
     simpleViewData,
 
-    // 数据转换
+    // 鏁版嵁杞崲
     fromApiData,
     toApiData,
 
-    // 数据操作
+    // 鏁版嵁鎿嶄綔
     updateConfig,
     toggleStage,
     updateCustomStageDefinition,
     updatePlanId,
 
-    // 工具函数
+    // 宸ュ叿鍑芥暟
     initializeTimeConfigs,
   }
 }
+

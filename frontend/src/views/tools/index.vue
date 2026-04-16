@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, reactive, ref, computed } from 'vue'
 import { useEventListener } from '@vueuse/core'
-import type { ToolsConfig } from '@/api'
+import type { ToolsConfigRead } from '@/api'
 import { useToolsApi } from '@/composables/useToolsApi'
 import { useStatusTag, createStatusTag } from '@/composables/useStatusTag'
 import TabArknightsPC from './TabArknightsPC.vue'
@@ -13,7 +13,7 @@ const { loading, getTools, updateTools } = useToolsApi()
 const activeKey = ref('arknightspc')
 
 // 工具数据
-const toolsConfig = reactive<ToolsConfig>({
+const toolsConfig = reactive<ToolsConfigRead>({
     ArknightsPC: {
         Enabled: false,
         PauseKey: 'f10',
@@ -27,7 +27,7 @@ const toolsConfig = reactive<ToolsConfig>({
 })
 
 // 本地编辑状态
-const editingConfig = reactive<ToolsConfig>({
+const editingConfig = reactive<ToolsConfigRead>({
     ArknightsPC: {
         Enabled: false,
         PauseKey: 'f10',

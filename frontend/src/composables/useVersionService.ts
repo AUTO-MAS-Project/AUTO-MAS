@@ -1,31 +1,31 @@
-/**
- * 版本服务 - 统一管理前端和后端版本信息获取与定时检查
- * 包含两个独立的定时器：
- * 1. 标题栏版本信息检查（10分钟一次）
- * 2. 版本更新检查（4小时一次）
+﻿/**
+ * 鐗堟湰鏈嶅姟 - 缁熶竴绠＄悊鍓嶇鍜屽悗绔増鏈俊鎭幏鍙栦笌瀹氭椂妫€鏌?
+ * 鍖呭惈涓や釜鐙珛鐨勫畾鏃跺櫒锛?
+ * 1. 鏍囬鏍忕増鏈俊鎭鏌ワ紙10鍒嗛挓涓€娆★級
+ * 2. 鐗堟湰鏇存柊妫€鏌ワ紙4灏忔椂涓€娆★級
  */
 
 import { ref } from 'vue'
-import { Service, type UpdateCheckOut, type VersionOut } from '@/api'
-const logger = window.electronAPI.getLogger('版本服务')
+import { infoApi, updateApi, type UpdateCheckOut, type VersionOut } from '@/api'
+const logger = window.electronAPI.getLogger('鐗堟湰鏈嶅姟')
 
-// 获取版本号
+// 鑾峰彇鐗堟湰鍙?
 const version = (import.meta as any).env.VITE_APP_VERSION || '1.0.0'
 
-// ========== 标题栏版本信息相关 ==========
+// ========== 鏍囬鏍忕増鏈俊鎭浉鍏?==========
 export const updateInfo = ref<UpdateCheckOut | null>(null)
 export const backendUpdateInfo = ref<VersionOut | null>(null)
 
-const TITLEBAR_POLL_MS = 10 * 60 * 1000 // 10 分钟
+const TITLEBAR_POLL_MS = 10 * 60 * 1000 // 10 鍒嗛挓
 let titlebarPollTimer: number | null = null
 const isTitlebarPolling = ref(false)
 
 /**
- * 获取前端版本和更新信息（用于标题栏显示）
+ * 鑾峰彇鍓嶇鐗堟湰鍜屾洿鏂颁俊鎭紙鐢ㄤ簬鏍囬鏍忔樉绀猴級
  */
 const getAppVersion = async () => {
     try {
-        const ver = await Service.checkUpdateApiUpdateCheckPost({
+        const ver = await updateApi.check({
             current_version: version,
             if_force: false,
         })
@@ -33,25 +33,25 @@ const getAppVersion = async () => {
         return ver
     } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.error(`获取前端版本失败: ${errorMsg}`)
+        logger.error(`鑾峰彇鍓嶇鐗堟湰澶辫触: ${errorMsg}`)
         return null
     }
 }
 
 /**
- * 获取后端版本信息（用于标题栏显示）
+ * 鑾峰彇鍚庣鐗堟湰淇℃伅锛堢敤浜庢爣棰樻爮鏄剧ず锛?
  */
 export const getBackendVersion = async () => {
     try {
-        backendUpdateInfo.value = await Service.getGitVersionApiInfoVersionPost()
+        backendUpdateInfo.value = await infoApi.getVersion()
     } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.error(`获取后端版本失败: ${errorMsg}`)
+        logger.error(`鑾峰彇鍚庣鐗堟湰澶辫触: ${errorMsg}`)
     }
 }
 
 /**
- * 执行一次标题栏版本信息检查
+ * 鎵ц涓€娆℃爣棰樻爮鐗堟湰淇℃伅妫€鏌?
  */
 const pollTitlebarVersionOnce = async () => {
     if (isTitlebarPolling.value) return
@@ -62,11 +62,11 @@ const pollTitlebarVersionOnce = async () => {
 
         if (appRes.status === 'rejected') {
             const errorMsg = appRes.reason instanceof Error ? appRes.reason.message : String(appRes.reason)
-            logger.error(`获取前端版本失败: ${errorMsg}`)
+            logger.error(`鑾峰彇鍓嶇鐗堟湰澶辫触: ${errorMsg}`)
         }
         if (backendRes.status === 'rejected') {
             const errorMsg = backendRes.reason instanceof Error ? backendRes.reason.message : String(backendRes.reason)
-            logger.error(`获取后端版本失败: ${errorMsg}`)
+            logger.error(`鑾峰彇鍚庣鐗堟湰澶辫触: ${errorMsg}`)
         }
     } finally {
         isTitlebarPolling.value = false
@@ -74,34 +74,35 @@ const pollTitlebarVersionOnce = async () => {
 }
 
 /**
- * 启动标题栏版本信息定时检查（10分钟一次）
+ * 鍚姩鏍囬鏍忕増鏈俊鎭畾鏃舵鏌ワ紙10鍒嗛挓涓€娆★級
  */
 export const startTitlebarVersionCheck = async () => {
     if (titlebarPollTimer) {
-        logger.warn('标题栏版本检查定时器已存在，跳过启动')
+        logger.warn('鏍囬鏍忕増鏈鏌ュ畾鏃跺櫒宸插瓨鍦紝璺宠繃鍚姩')
         return
     }
 
-    logger.info('启动标题栏版本信息定时检查（每10分钟）')
+    logger.info('鍚姩鏍囬鏍忕増鏈俊鎭畾鏃舵鏌ワ紙姣?0鍒嗛挓锛?)
 
-    // 立即执行一次
+    // 绔嬪嵆鎵ц涓€娆?
     await pollTitlebarVersionOnce()
 
-    // 启动定时器
+    // 鍚姩瀹氭椂鍣?
     titlebarPollTimer = window.setInterval(pollTitlebarVersionOnce, TITLEBAR_POLL_MS)
 }
 
 /**
- * 停止标题栏版本信息定时检查
+ * 鍋滄鏍囬鏍忕増鏈俊鎭畾鏃舵鏌?
  */
 export const stopTitlebarVersionCheck = () => {
     if (titlebarPollTimer) {
         clearInterval(titlebarPollTimer)
         titlebarPollTimer = null
-        logger.info('停止标题栏版本信息定时检查')
+        logger.info('鍋滄鏍囬鏍忕増鏈俊鎭畾鏃舵鏌?)
     }
 }
 
-// ========== 版本更新检查相关（4小时）==========
-// 这部分直接从 useUpdateChecker 导入，保持原有逻辑
+// ========== 鐗堟湰鏇存柊妫€鏌ョ浉鍏筹紙4灏忔椂锛?=========
+// 杩欓儴鍒嗙洿鎺ヤ粠 useUpdateChecker 瀵煎叆锛屼繚鎸佸師鏈夐€昏緫
 export { useUpdateChecker, useUpdateModal } from './useUpdateChecker'
+

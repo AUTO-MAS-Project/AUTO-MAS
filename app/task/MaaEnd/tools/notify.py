@@ -18,10 +18,9 @@
 
 #   Contact: DLmaster_361@163.com
 
-from typing import Any, cast
+from typing import Any
 
 from app.core import Config
-from app.models import MaaEndUserConfig
 from app.services import Notify
 from app.utils import get_logger
 
@@ -32,11 +31,9 @@ async def push_notification(
     mode: str,
     title: str,
     message: dict[str, Any],
-    user_config: MaaEndUserConfig | None,
+    user_config: Any | None,
 ) -> None:
     """通过所有渠道推送通知。"""
-
-    config = cast(Any, Config)
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
     if mode == "代理结果" and (
@@ -51,7 +48,7 @@ async def push_notification(
             f"已完成数: {message['completed_count']}, 未完成数: {message['uncompleted_count']}\n\n"
             f"{message['result']}"
         )
-        notify_env = config.notify_env
+        notify_env = Config.notify_env
         template = notify_env.get_template("general_result.html")
         message_html = str(template.render(message))
         serverchan_message = message_text.replace("\n", "\n\n")
@@ -81,7 +78,7 @@ async def push_notification(
             f"MaaEnd执行结果: {message['user_result']}\n\n"
         )
 
-        notify_env = config.notify_env
+        notify_env = Config.notify_env
         template = notify_env.get_template("general_statistics.html")
         message_html = str(template.render(message))
         serverchan_message = message_text.replace("\n", "\n\n")
@@ -112,30 +109,31 @@ async def push_notification(
             and user_config.get("Notify", "Enabled")
             and user_config.get("Notify", "IfSendStatistic")
         ):
-            if user_config.get("Notify", "IfSendMail"):
-                if user_config.get("Notify", "ToAddress"):
+            user_config_any = user_config
+            if user_config_any.get("Notify", "IfSendMail"):
+                if user_config_any.get("Notify", "ToAddress"):
                     await Notify.send_mail(
                         "网页",
                         title,
                         message_html,
-                        user_config.get("Notify", "ToAddress"),
+                        user_config_any.get("Notify", "ToAddress"),
                     )
                 else:
                     logger.error("用户邮箱地址为空, 无法发送用户单独的邮件通知")
 
-            if user_config.get("Notify", "IfServerChan"):
-                if user_config.get("Notify", "ServerChanKey"):
+            if user_config_any.get("Notify", "IfServerChan"):
+                if user_config_any.get("Notify", "ServerChanKey"):
                     await Notify.ServerChanPush(
                         title,
                         f"{serverchan_message}\n\nAUTO-MAS 敬上",
-                        user_config.get("Notify", "ServerChanKey"),
+                        user_config_any.get("Notify", "ServerChanKey"),
                     )
                 else:
                     logger.error(
                         "用户ServerChan密钥为空, 无法发送用户单独的ServerChan通知"
                     )
 
-            for webhook in user_config.Notify_CustomWebhooks.values():
+            for webhook in user_config_any.Notify_CustomWebhooks.values():
                 await Notify.WebhookPush(
                     title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
                 )

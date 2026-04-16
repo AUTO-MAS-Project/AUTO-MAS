@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <a-card title="任务列表" class="queue-item-card">
     <template #extra>
       <a-space>
@@ -21,18 +21,41 @@
       </div>
 
       <!-- 拖拽内容区域 -->
-      <draggable v-model="queueItems" group="queueItems" item-key="id" :animation="200" :disabled="loading"
-        ghost-class="ghost" chosen-class="chosen" drag-class="drag" class="draggable-container" @end="onDragEnd">
+      <draggable
+        v-model="queueItems"
+        group="queueItems"
+        item-key="id"
+        :animation="200"
+        :disabled="loading"
+        ghost-class="ghost"
+        chosen-class="chosen"
+        drag-class="drag"
+        class="draggable-container"
+        @end="onDragEnd"
+      >
         <template #item="{ element: record, index }">
           <div class="draggable-row" :class="{ 'row-dragging': loading }">
             <div class="row-cell index-cell">{{ index + 1 }}</div>
             <div class="row-cell script-cell">
-              <a-select v-model:value="record.script" size="small" style="width: 200px" class="script-select"
-                placeholder="请选择脚本" :options="scriptOptions" allow-clear @change="updateQueueItemScript(record)" />
+              <a-select
+                v-model:value="record.script"
+                size="small"
+                style="width: 200px"
+                class="script-select"
+                placeholder="请选择脚本"
+                :options="scriptOptions"
+                allow-clear
+                @change="updateQueueItemScript(record)"
+              />
             </div>
             <div class="row-cell actions-cell">
               <a-space>
-                <a-popconfirm title="确定要删除这个任务吗？" ok-text="确定" cancel-text="取消" @confirm="deleteQueueItem(record.id)">
+                <a-popconfirm
+                  title="确定要删除这个任务吗？"
+                  ok-text="确定"
+                  cancel-text="取消"
+                  @confirm="deleteQueueItem(record.id)"
+                >
                   <a-button size="middle" danger>
                     <DeleteOutlined />
                     删除
@@ -59,7 +82,7 @@ import { onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
-import { Service } from '@/api'
+import { infoApi, queueItemApi } from '@/api'
 const logger = window.electronAPI.getLogger('队列项管理')
 
 // Props
@@ -120,7 +143,7 @@ const loadOptions = async () => {
   try {
     logger.info('开始加载脚本选项...')
     // 使用正确的API获取脚本下拉框选项
-    const scriptsResponse = await Service.getScriptComboxApiInfoComboxScriptPost()
+    const scriptsResponse = await infoApi.getScriptOptions()
     logger.debug(`脚本API响应: ${JSON.stringify(scriptsResponse)}`)
 
     if (scriptsResponse.code === 200) {
@@ -142,13 +165,9 @@ const updateQueueItemScript = async (record: any) => {
   try {
     loading.value = true
 
-    const response = await Service.updateItemApiQueueItemUpdatePost({
-      queueId: props.queueId,
-      queueItemId: record.id,
-      data: {
-        Info: {
-          ScriptId: record.script,
-        },
+    const response = await queueItemApi.update(props.queueId, record.id, {
+      Info: {
+        ScriptId: record.script,
       },
     })
 
@@ -172,11 +191,9 @@ const addQueueItem = async () => {
     loading.value = true
 
     // 直接创建队列项，默认ScriptId为null（未选择）
-    const createResponse = await Service.addItemApiQueueItemAddPost({
-      queueId: props.queueId,
-    })
+    const createResponse = await queueItemApi.create(props.queueId)
 
-    if (createResponse.code === 200 && createResponse.queueItemId) {
+    if (createResponse.code === 200 && createResponse.id) {
       emit('refresh')
     } else {
       message.error('任务添加失败: ' + (createResponse.message || '未知错误'))
@@ -193,10 +210,7 @@ const addQueueItem = async () => {
 // 删除队列项
 const deleteQueueItem = async (itemId: string) => {
   try {
-    const response = await Service.deleteItemApiQueueItemDeletePost({
-      queueId: props.queueId,
-      queueItemId: itemId,
-    })
+    const response = await queueItemApi.remove(props.queueId, itemId)
 
     if (response.code === 200) {
       // 确保删除后刷新数据
@@ -225,9 +239,8 @@ const onDragEnd = async (evt: any) => {
     const sortedIds = queueItems.value.map(item => item.id)
 
     // 调用排序API
-    const response = await Service.reorderItemApiQueueItemOrderPost({
-      queueId: props.queueId,
-      indexList: sortedIds,
+    const response = await queueItemApi.reorder(props.queueId, {
+      index_list: sortedIds,
     })
 
     if (response.code === 200) {

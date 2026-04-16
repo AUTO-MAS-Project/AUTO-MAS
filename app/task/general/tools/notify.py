@@ -22,7 +22,6 @@
 from app.core import Config
 from app.services import Notify
 from app.utils import get_logger
-from app.models import GeneralUserConfig
 from typing import Any
 
 logger = get_logger("通用通知工具")
@@ -32,7 +31,7 @@ async def push_notification(
     mode: str,
     title: str,
     message: dict[str, Any],
-    user_config: GeneralUserConfig | None,
+    user_config: Any | None,
 ) -> None:
     """通过所有渠道推送通知"""
 

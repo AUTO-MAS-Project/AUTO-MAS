@@ -1,7 +1,6 @@
-import { ref } from 'vue'
+﻿import { ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { Service } from '@/api'
-import type { UserInBase, UserCreateOut, UserUpdateIn, UserDeleteIn, UserGetIn, UserReorderIn } from '@/api'
+import { userApi } from '@/api'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
 const logger = window.electronAPI.getLogger('用户API')
@@ -11,16 +10,12 @@ export function useUserApi() {
   const error = ref<string | null>(null)
 
   // 添加用户
-  const addUser = async (scriptId: string): Promise<UserCreateOut | null> => {
+  const addUser = async (scriptId: string): Promise<any | null> => {
     loading.value = true
     error.value = null
 
     try {
-      const requestData: UserInBase = {
-        scriptId,
-      }
-
-      const response = await Service.addUserApiScriptsUserAddPost(requestData)
+      const response = await userApi.create(scriptId)
 
       if (response.code !== 200) {
         const errorMsg = response.message || '添加用户失败'
@@ -32,7 +27,10 @@ export function useUserApi() {
       const { playSound } = useAudioPlayer()
       await playSound('add_user')
 
-      return response
+      return {
+        ...response,
+        userId: response.id,
+      }
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '添加用户失败'
       error.value = errorMsg
@@ -51,14 +49,10 @@ export function useUserApi() {
     error.value = null
 
     try {
-      const requestData: UserUpdateIn = {
-        scriptId,
-        userId,
-        data: userData,
-      }
-
       logger.debug('发送更新用户请求')
-      const response = await Service.updateUserApiScriptsUserUpdatePost(requestData)
+      const response = await userApi.update(scriptId, userId, {
+        data: userData,
+      })
       logger.debug(`更新用户响应: ${JSON.stringify(response)}`)
 
       if (response.code !== 200) {
@@ -87,12 +81,19 @@ export function useUserApi() {
     error.value = null
 
     try {
-      const requestData: UserGetIn = {
-        scriptId,
-        userId: userId || null,
+      let response: any
+      if (userId) {
+        const itemResponse = await userApi.get(scriptId, userId)
+        response = {
+          code: itemResponse.code,
+          status: itemResponse.status,
+          message: itemResponse.message,
+          index: [{ uid: userId, type: 'UserConfig' }],
+          data: { [userId]: itemResponse.data },
+        }
+      } else {
+        response = await userApi.list(scriptId)
       }
-
-      const response = await Service.getUserApiScriptsUserGetPost(requestData)
 
       if (response.code !== 200) {
         const errorMsg = response.message || '获取用户列表失败'
@@ -119,12 +120,7 @@ export function useUserApi() {
     error.value = null
 
     try {
-      const requestData: UserDeleteIn = {
-        scriptId,
-        userId,
-      }
-
-      const response = await Service.deleteUserApiScriptsUserDeletePost(requestData)
+      const response = await userApi.remove(scriptId, userId)
 
       if (response.code !== 200) {
         const errorMsg = response.message || '删除用户失败'
@@ -155,12 +151,9 @@ export function useUserApi() {
     error.value = null
 
     try {
-      const requestData: UserReorderIn = {
-        scriptId,
-        indexList: userIds,
-      }
-
-      const response = await Service.reorderUserApiScriptsUserOrderPost(requestData)
+      const response = await userApi.reorder(scriptId, {
+        index_list: userIds,
+      })
 
       if (response.code !== 200) {
         const errorMsg = response.message || '用户排序失败'

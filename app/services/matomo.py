@@ -28,7 +28,6 @@ import platform
 import time
 from typing import Dict, Any, Optional
 
-from app.core import Config
 from app.utils import get_logger
 
 logger = get_logger("信息上报")
@@ -58,6 +57,7 @@ class _MatomoHandler:
 
     def _build_base_params(self, custom_vars: Optional[Dict[str, Any]] = None):
         """构建基础参数"""
+        from app.core import Config
         params = {
             "idsite": self.site_id,
             "rec": "1",

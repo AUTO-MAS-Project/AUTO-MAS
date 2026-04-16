@@ -1,18 +1,18 @@
-import { ref } from 'vue'
+﻿import { ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { GetService, UpdateService, type GlobalConfig } from '@/api'
+import { settingApi, type GlobalConfigRead } from '@/api'
 
 export function useSettingsApi() {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
   // 获取设置
-  const getSettings = async (): Promise<GlobalConfig | null> => {
+  const getSettings = async (): Promise<GlobalConfigRead | null> => {
     loading.value = true
     error.value = null
 
     try {
-      const response = await GetService.getScriptsApiSettingGetPost()
+      const response = await settingApi.get()
 
       // 根据code判断是否成功（非200就是不成功）
       if (response.code !== 200) {
@@ -35,14 +35,12 @@ export function useSettingsApi() {
   }
 
   // 更新设置 - 只发送修改的字段
-  const updateSettings = async (settings: GlobalConfig): Promise<boolean> => {
+  const updateSettings = async (settings: GlobalConfigRead): Promise<boolean> => {
     loading.value = true
     error.value = null
 
     try {
-      const response = await UpdateService.updateScriptApiSettingUpdatePost({
-        data: settings,
-      })
+      const response = await settingApi.update(settings)
 
       // 根据code判断是否成功（非200就是不成功）
       if (response.code !== 200) {

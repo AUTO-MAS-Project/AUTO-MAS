@@ -31,17 +31,28 @@ class EmulatorConfigIndexItem(ApiModel):
     type: Literal["EmulatorConfig"] = Field(..., description="配置类型")
 
 
-EmulatorGetOut = ResourceCollectionOut[EmulatorConfigIndexItem, EmulatorRead]
-EmulatorDetailOut = ResourceItemOut[EmulatorRead]
-EmulatorCreateOut = ResourceCreateOut[EmulatorRead]
+class EmulatorGetOut(ResourceCollectionOut[EmulatorConfigIndexItem, EmulatorRead]):
+    """模拟器列表响应模型"""
+
+
+class EmulatorDetailOut(ResourceItemOut[EmulatorRead]):
+    """模拟器详情响应模型"""
+
+
+class EmulatorCreateOut(ResourceCreateOut[EmulatorRead]):
+    """模拟器创建响应模型"""
 
 
 class EmulatorActionBody(ApiModel):
     index: str = Field(..., description="模拟器索引")
 
 
-EmulatorStatusOut = ResourceItemOut[dict[str, dict[str, DeviceInfo]]]
-EmulatorDeviceStatusOut = ResourceItemOut[dict[str, DeviceInfo]]
+class EmulatorStatusOut(ResourceItemOut[dict[str, dict[str, DeviceInfo]]]):
+    """模拟器状态响应模型"""
+
+
+class EmulatorDeviceStatusOut(ResourceItemOut[dict[str, DeviceInfo]]):
+    """模拟器设备状态响应模型"""
 
 
 class EmulatorSearchResult(ApiModel):

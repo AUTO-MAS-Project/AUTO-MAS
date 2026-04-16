@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
+if TYPE_CHECKING:
+    _ClsT = TypeVar("_ClsT")
 from .base import MultipleConfig
 from .fields import (
     OnDeleteCallback,
@@ -207,34 +209,37 @@ def _init_related_targets(instance: Any) -> None:
             related[alias] = target
 
 
-def config(cls: type[Any]) -> type[Any]:
-    """配置类总装饰器：在 ``model_post_init`` 阶段完成运行期装配。
+if TYPE_CHECKING:
+    def config(cls: _ClsT) -> _ClsT: ...  # type: ignore[misc]
+else:
+    def config(cls: type[Any]) -> type[Any]:
+        """配置类总装饰器：在 ``model_post_init`` 阶段完成运行期装配。
 
-    装配顺序：
-    1. 初始化子配置（``_init_sub_configs``）；
-    2. 建立引用目标映射（``_init_related_targets``）；
-    3. 调用原有 ``model_post_init``（如果存在）。
+        装配顺序：
+        1. 初始化子配置（``_init_sub_configs``）；
+        2. 建立引用目标映射（``_init_related_targets``）；
+        3. 调用原有 ``model_post_init``（如果存在）。
 
-    这样可以确保原有后置初始化逻辑执行时，子配置和引用关系已可用。
+        这样可以确保原有后置初始化逻辑执行时，子配置和引用关系已可用。
 
-    Args:
-        cls: 被装饰的配置类。
+        Args:
+            cls: 被装饰的配置类。
 
-    Returns:
-        注入初始化逻辑后的原类。
-    """
+        Returns:
+            注入初始化逻辑后的原类。
+        """
 
-    original_model_post_init = getattr(cls, "model_post_init", None)
+        original_model_post_init = getattr(cls, "model_post_init", None)
 
-    def _model_post_init(self: Any, context: Any) -> None:
-        _init_sub_configs(self)
-        _init_related_targets(self)
+        def _model_post_init(self: Any, context: Any) -> None:
+            _init_sub_configs(self)
+            _init_related_targets(self)
 
-        if callable(original_model_post_init):
-            original_model_post_init(self, context)
+            if callable(original_model_post_init):
+                original_model_post_init(self, context)
 
-    setattr(cls, "model_post_init", _model_post_init)
-    return cls
+        setattr(cls, "model_post_init", _model_post_init)
+        return cls
 
 
 __all__ = [

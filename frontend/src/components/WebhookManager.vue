@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="webhook-manager">
     <div class="webhook-header">
       <h3>自定义 Webhook 通知</h3>
@@ -12,8 +12,12 @@
 
     <!-- Webhook 列表 -->
     <div v-if="displayWebhooks.length > 0" class="webhook-list">
-      <div v-for="webhook in displayWebhooks" :key="webhook.uid" class="webhook-item"
-        :class="{ 'webhook-disabled': !webhook.enabled }">
+      <div
+        v-for="webhook in displayWebhooks"
+        :key="webhook.uid"
+        class="webhook-item"
+        :class="{ 'webhook-disabled': !webhook.enabled }"
+      >
         <div class="webhook-info">
           <div class="webhook-name">
             <span class="name-text">{{ webhook.name }}</span>
@@ -24,9 +28,20 @@
           <div class="webhook-url">{{ webhook.url }}</div>
         </div>
         <div class="webhook-actions">
-          <a-switch v-model:checked="webhook.enabled" size="small" :checked-children="'启用'" :un-checked-children="'禁用'"
-            class="webhook-switch" @change="toggleWebhookEnabled(webhook)" />
-          <a-button type="text" size="small" :loading="testingWebhooks[webhook.uid]" @click="testWebhook(webhook)">
+          <a-switch
+            v-model:checked="webhook.enabled"
+            size="small"
+            :checked-children="'启用'"
+            :un-checked-children="'禁用'"
+            class="webhook-switch"
+            @change="toggleWebhookEnabled(webhook)"
+          />
+          <a-button
+            type="text"
+            size="small"
+            :loading="testingWebhooks[webhook.uid]"
+            @click="testWebhook(webhook)"
+          >
             <template #icon>
               <PlayCircleOutlined />
             </template>
@@ -57,13 +72,29 @@
     </div>
 
     <!-- 添加/编辑 Webhook 弹窗 -->
-    <a-modal v-model:open="modalVisible" :title="isEditing ? '编辑 Webhook' : '添加 Webhook'" width="800px"
-      :ok-text="isEditing ? '更新' : '添加'" :confirm-loading="submitting" @ok="handleSubmit" @cancel="handleCancel">
+    <a-modal
+      v-model:open="modalVisible"
+      :title="isEditing ? '编辑 Webhook' : '添加 Webhook'"
+      width="800px"
+      :ok-text="isEditing ? '更新' : '添加'"
+      :confirm-loading="submitting"
+      @ok="handleSubmit"
+      @cancel="handleCancel"
+    >
       <a-form ref="formRef" :model="formData" layout="vertical">
         <!-- 模板选择放在最上面 -->
         <a-form-item label="选择模板">
-          <a-select v-model:value="selectedTemplate" placeholder="选择预设模板或自定义" allow-clear @change="applyTemplate">
-            <a-select-option v-for="template in WEBHOOK_TEMPLATES" :key="template.name" :value="template.name">
+          <a-select
+            v-model:value="selectedTemplate"
+            placeholder="选择预设模板或自定义"
+            allow-clear
+            @change="applyTemplate"
+          >
+            <a-select-option
+              v-for="template in WEBHOOK_TEMPLATES"
+              :key="template.name"
+              :value="template.name"
+            >
               {{ template.name }} - {{ template.description }}
             </a-select-option>
           </a-select>
@@ -71,7 +102,11 @@
 
         <a-row :gutter="16">
           <a-col :span="12">
-            <a-form-item label="Webhook 名称" name="name" :rules="[{ required: true, message: '请输入 Webhook 名称' }]">
+            <a-form-item
+              label="Webhook 名称"
+              name="name"
+              :rules="[{ required: true, message: '请输入 Webhook 名称' }]"
+            >
               <a-input v-model:value="formData.name" placeholder="请输入 Webhook 名称" />
             </a-form-item>
           </a-col>
@@ -85,13 +120,23 @@
           </a-col>
         </a-row>
 
-        <a-form-item label="Webhook URL" name="url" :rules="[{ required: true, message: '请输入 Webhook URL' }]">
-          <a-input v-model:value="formData.url" placeholder="https://your-webhook-url.com/api/notify" />
+        <a-form-item
+          label="Webhook URL"
+          name="url"
+          :rules="[{ required: true, message: '请输入 Webhook URL' }]"
+        >
+          <a-input
+            v-model:value="formData.url"
+            placeholder="https://your-webhook-url.com/api/notify"
+          />
         </a-form-item>
 
         <a-form-item label="消息模板">
-          <a-textarea v-model:value="formData.template" :rows="6"
-            placeholder="请输入消息模板，支持变量: {title}, {content}, {datetime}, {date}, {time}" />
+          <a-textarea
+            v-model:value="formData.template"
+            :rows="6"
+            placeholder="请输入消息模板，支持变量: {title}, {content}, {datetime}, {date}, {time}"
+          />
           <div class="template-help">
             <a-typography-text type="secondary" style="font-size: 12px">
               支持的变量：
@@ -105,15 +150,28 @@
         <a-form-item label="自定义请求头 (可选)">
           <div class="headers-input">
             <div v-for="(header, index) in formData.headersList" :key="index" class="header-row">
-              <a-input v-model:value="header.key" placeholder="Header 名称" style="width: 40%; margin-right: 8px" />
-              <a-input v-model:value="header.value" placeholder="Header 值" style="width: 40%; margin-right: 8px" />
+              <a-input
+                v-model:value="header.key"
+                placeholder="Header 名称"
+                style="width: 40%; margin-right: 8px"
+              />
+              <a-input
+                v-model:value="header.value"
+                placeholder="Header 值"
+                style="width: 40%; margin-right: 8px"
+              />
               <a-button type="text" danger size="small" @click="removeHeader(index)">
                 <template #icon>
                   <DeleteOutlined />
                 </template>
               </a-button>
             </div>
-            <a-button type="dashed" size="small" style="width: 100%; margin-top: 8px" @click="addHeader">
+            <a-button
+              type="dashed"
+              size="small"
+              style="width: 100%; margin-top: 8px"
+              @click="addHeader"
+            >
               <template #icon>
                 <PlusOutlined />
               </template>
@@ -141,7 +199,7 @@ import {
   PlusOutlined,
 } from '@ant-design/icons-vue'
 import { TEMPLATE_VARIABLES, WEBHOOK_TEMPLATES } from '@/utils/webhookTemplates'
-import { Service } from '@/api/services/Service'
+import { webhookApi } from '@/api'
 
 const logger = window.electronAPI.getLogger('Webhook管理器')
 
@@ -235,18 +293,10 @@ const loadWebhooks = async () => {
 
     if (props.mode === 'global') {
       // 全局模式：使用setting接口
-      response = await Service.getWebhookApiSettingWebhookGetPost({
-        scriptId: null,
-        userId: null,
-        webhookId: null,
-      })
+      response = await webhookApi.listGlobal()
     } else {
       // 用户模式：使用scripts接口
-      response = await Service.getWebhookApiScriptsWebhookGetPost({
-        scriptId: props.scriptId || null,
-        userId: props.userId || null,
-        webhookId: null,
-      })
+      response = await webhookApi.listUser(props.scriptId || '', props.userId || '')
     }
 
     if (response.code === 200) {
@@ -286,18 +336,15 @@ const showAddModal = async () => {
 
       if (props.mode === 'global') {
         // 全局模式：使用setting接口
-        response = await Service.addWebhookApiSettingWebhookAddPost()
+        response = await webhookApi.createGlobal()
       } else {
         // 用户模式：使用scripts接口
-        response = await Service.addWebhookApiScriptsWebhookAddPost({
-          scriptId: props.scriptId || null,
-          userId: props.userId || null,
-        })
+        response = await webhookApi.createUser(props.scriptId || '', props.userId || '')
       }
 
       if (response.code === 200) {
         // 只使用返回的webhookId，其他字段使用空白默认值
-        formData.uid = response.webhookId
+        formData.uid = response.id
 
         // 强制使用空白默认值，不管后端返回什么数据
         formData.name = ''
@@ -307,7 +354,7 @@ const showAddModal = async () => {
         formData.enabled = true
         formData.headersList = []
 
-        logger.info(`创建新Webhook，ID: ${response.webhookId}`)
+        logger.info(`创建新Webhook，ID: ${response.id}`)
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
@@ -349,40 +396,30 @@ const toggleWebhookEnabled = async (webhook: WebhookItem) => {
 
       if (props.mode === 'global') {
         // 全局模式：使用setting接口
-        await Service.updateWebhookApiSettingWebhookUpdatePost({
-          scriptId: null,
-          userId: null,
-          webhookId: webhook.uid,
-          data: {
-            Info: {
-              Name: webhook.name,
-              Enabled: newEnabled,
-            },
-            Data: {
-              Url: webhook.url,
-              Template: webhook.template,
-              Method: webhook.method,
-              Headers: headers,
-            },
+        await webhookApi.updateGlobal(webhook.uid, {
+          Info: {
+            Name: webhook.name,
+            Enabled: newEnabled,
+          },
+          Data: {
+            Url: webhook.url,
+            Template: webhook.template,
+            Method: webhook.method,
+            Headers: headers,
           },
         })
       } else {
         // 用户模式：使用scripts接口
-        await Service.updateWebhookApiScriptsWebhookUpdatePost({
-          scriptId: props.scriptId || null,
-          userId: props.userId || null,
-          webhookId: webhook.uid,
-          data: {
-            Info: {
-              Name: webhook.name,
-              Enabled: newEnabled,
-            },
-            Data: {
-              Url: webhook.url,
-              Template: webhook.template,
-              Method: webhook.method,
-              Headers: headers,
-            },
+        await webhookApi.updateUser(props.scriptId || '', props.userId || '', webhook.uid, {
+          Info: {
+            Name: webhook.name,
+            Enabled: newEnabled,
+          },
+          Data: {
+            Url: webhook.url,
+            Template: webhook.template,
+            Method: webhook.method,
+            Headers: headers,
           },
         })
       }
@@ -423,18 +460,10 @@ const deleteWebhook = (webhook: WebhookItem) => {
         try {
           if (props.mode === 'global') {
             // 全局模式：使用setting接口
-            await Service.deleteWebhookApiSettingWebhookDeletePost({
-              scriptId: null,
-              userId: null,
-              webhookId: webhook.uid,
-            })
+            await webhookApi.removeGlobal(webhook.uid)
           } else {
             // 用户模式：使用scripts接口
-            await Service.deleteWebhookApiScriptsWebhookDeletePost({
-              scriptId: props.scriptId || null,
-              userId: props.userId || null,
-              webhookId: webhook.uid,
-            })
+            await webhookApi.removeUser(props.scriptId || '', props.userId || '', webhook.uid)
           }
 
           // 重新加载最新数据
@@ -463,20 +492,16 @@ const testWebhook = async (webhook: WebhookItem) => {
   try {
     const headersJson = webhook.headers ? JSON.stringify(webhook.headers) : null
 
-    const response = await Service.testWebhookApiSettingWebhookTestPost({
-      scriptId: props.mode === 'global' ? null : props.scriptId || null,
-      userId: props.mode === 'global' ? null : props.userId || null,
-      data: {
-        Info: {
-          Name: webhook.name,
-          Enabled: webhook.enabled,
-        },
-        Data: {
-          Url: webhook.url,
-          Template: webhook.template,
-          Method: webhook.method,
-          Headers: headersJson,
-        },
+    const response = await webhookApi.testGlobal({
+      Info: {
+        Name: webhook.name,
+        Enabled: webhook.enabled,
+      },
+      Data: {
+        Url: webhook.url,
+        Template: webhook.template,
+        Method: webhook.method,
+        Headers: headersJson,
       },
     })
 
@@ -486,7 +511,8 @@ const testWebhook = async (webhook: WebhookItem) => {
       message.error(`Webhook 测试失败: ${response.message || '未知错误'}`)
     }
   } catch (error: any) {
-    const errorMsg = error.response?.data?.message || (error instanceof Error ? error.message : '网络错误')
+    const errorMsg =
+      error.response?.data?.message || (error instanceof Error ? error.message : '网络错误')
     logger.error(`Webhook测试错误: ${errorMsg}`)
     message.error(`Webhook 测试失败: ${errorMsg}`)
   } finally {
@@ -563,40 +589,30 @@ const handleSubmit = async () => {
 
         if (props.mode === 'global') {
           // 全局模式：使用setting接口
-          await Service.updateWebhookApiSettingWebhookUpdatePost({
-            scriptId: null,
-            userId: null,
-            webhookId: formData.uid,
-            data: {
-              Info: {
-                Name: formData.name,
-                Enabled: formData.enabled,
-              },
-              Data: {
-                Url: formData.url,
-                Template: formData.template,
-                Method: formData.method,
-                Headers: headersJson,
-              },
+          await webhookApi.updateGlobal(formData.uid, {
+            Info: {
+              Name: formData.name,
+              Enabled: formData.enabled,
+            },
+            Data: {
+              Url: formData.url,
+              Template: formData.template,
+              Method: formData.method,
+              Headers: headersJson,
             },
           })
         } else {
           // 用户模式：使用scripts接口
-          await Service.updateWebhookApiScriptsWebhookUpdatePost({
-            scriptId: props.scriptId || null,
-            userId: props.userId || null,
-            webhookId: formData.uid,
-            data: {
-              Info: {
-                Name: formData.name,
-                Enabled: formData.enabled,
-              },
-              Data: {
-                Url: formData.url,
-                Template: formData.template,
-                Method: formData.method,
-                Headers: headersJson,
-              },
+          await webhookApi.updateUser(props.scriptId || '', props.userId || '', formData.uid, {
+            Info: {
+              Name: formData.name,
+              Enabled: formData.enabled,
+            },
+            Data: {
+              Url: formData.url,
+              Template: formData.template,
+              Method: formData.method,
+              Headers: headersJson,
             },
           })
         }

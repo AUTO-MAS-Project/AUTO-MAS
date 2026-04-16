@@ -1,13 +1,13 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
 import { useTheme } from '@/composables/useTheme'
 import type { SelectValue } from 'ant-design-vue/es/select'
-import type { GlobalConfig } from '@/api'
+import type { GlobalConfigRead } from '@/api'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
-import { Service, type VersionOut } from '@/api'
+import { infoApi, settingApi, type VersionOut } from '@/api'
 const logger = window.electronAPI.getLogger('设置')
 
 // 引入拆分后的 Tab 组件
@@ -33,7 +33,7 @@ const version = (import.meta as any).env?.VITE_APP_VERSION || '获取版本失�
 const backendUpdateInfo = ref<VersionOut | null>(null)
 
 // 设置数据 - 从API获取，不再使用硬编码初值
-const settings = reactive<GlobalConfig>({})
+const settings = reactive<GlobalConfigRead>({})
 
 // 下拉选项
 const historyRetentionOptions = [
@@ -121,9 +121,9 @@ const loadSettings = async () => {
 }
 
 // 保存设置 - 只发送修改的字段（遵循最小原则）
-const saveSettings = async (category: keyof GlobalConfig, changes: any): Promise<boolean> => {
+const saveSettings = async (category: keyof GlobalConfigRead, changes: any): Promise<boolean> => {
   try {
-    const updateData: GlobalConfig = { [category]: changes }
+    const updateData: GlobalConfigRead = { [category]: changes }
     const result = await updateSettings(updateData)
     if (!result) {
       message.error('设置保存失败')
@@ -161,7 +161,7 @@ const refreshSettings = async () => {
   }
 }
 
-const handleSettingChange = async (category: keyof GlobalConfig, key: string, value: any) => {
+const handleSettingChange = async (category: keyof GlobalConfigRead, key: string, value: any) => {
   // 只发送修改的字段
   const changes = { [key]: value }
   const success = await saveSettings(category, changes)
@@ -220,11 +220,13 @@ const checkUpdate = async () => {
 
   try {
     await globalCheckUpdate(false, true) // silent=false, forceCheck=true
-    logger.info(`全局更新检查完成，状态: ${JSON.stringify({
-      updateVisible: updateVisible.value,
-      updateData: updateData.value,
-      latestVersion: latestVersion.value,
-    })}`)
+    logger.info(
+      `全局更新检查完成，状态: ${JSON.stringify({
+        updateVisible: updateVisible.value,
+        updateData: updateData.value,
+        latestVersion: latestVersion.value,
+      })}`
+    )
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`全局更新检查失败: ${errorMsg}`)
@@ -236,7 +238,7 @@ const checkUpdate = async () => {
 // 后端版本
 const getBackendVersion = async () => {
   try {
-    backendUpdateInfo.value = await Service.getGitVersionApiInfoVersionPost()
+    backendUpdateInfo.value = await infoApi.getVersion()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`获取后端版本失败: ${errorMsg}`)
@@ -248,7 +250,7 @@ const testingNotify = ref(false)
 const testNotify = async () => {
   testingNotify.value = true
   try {
-    const res = await Service.testNotifyApiSettingTestNotifyPost()
+    const res = await settingApi.testNotify()
     if (res?.code && res.code !== 200) message.warning(res?.message || '测试通知发送结果未知')
     else message.success('测试通知已发送')
   } catch (error) {
@@ -274,20 +276,36 @@ onMounted(() => {
     <div class="settings-content">
       <a-tabs v-model:active-key="activeKey" type="card" :loading="loading" class="settings-tabs">
         <a-tab-pane key="basic" tab="界面设置">
-          <TabBasic :settings="settings" :theme-mode="themeMode" :theme-color="themeColor"
-            :theme-mode-options="themeModeOptions" :theme-color-options="themeColorOptions"
-            :handle-theme-mode-change="handleThemeModeChange" :handle-theme-color-change="handleThemeColorChange"
-            :handle-setting-change="handleSettingChange" />
+          <TabBasic
+            :settings="settings"
+            :theme-mode="themeMode"
+            :theme-color="themeColor"
+            :theme-mode-options="themeModeOptions"
+            :theme-color-options="themeColorOptions"
+            :handle-theme-mode-change="handleThemeModeChange"
+            :handle-theme-color-change="handleThemeColorChange"
+            :handle-setting-change="handleSettingChange"
+          />
         </a-tab-pane>
         <a-tab-pane key="function" tab="功能设置">
-          <TabFunction :settings="settings" :history-retention-options="historyRetentionOptions"
-            :update-source-options="updateSourceOptions" :update-channel-options="updateChannelOptions"
-            :voice-type-options="voiceTypeOptions" :handle-setting-change="handleSettingChange"
-            :check-update="checkUpdate" />
+          <TabFunction
+            :settings="settings"
+            :history-retention-options="historyRetentionOptions"
+            :update-source-options="updateSourceOptions"
+            :update-channel-options="updateChannelOptions"
+            :voice-type-options="voiceTypeOptions"
+            :handle-setting-change="handleSettingChange"
+            :check-update="checkUpdate"
+          />
         </a-tab-pane>
         <a-tab-pane key="notify" tab="通知设置">
-          <TabNotify :settings="settings" :send-task-result-time-options="sendTaskResultTimeOptions"
-            :handle-setting-change="handleSettingChange" :test-notify="testNotify" :testing-notify="testingNotify" />
+          <TabNotify
+            :settings="settings"
+            :send-task-result-time-options="sendTaskResultTimeOptions"
+            :handle-setting-change="handleSettingChange"
+            :test-notify="testNotify"
+            :testing-notify="testingNotify"
+          />
         </a-tab-pane>
         <a-tab-pane key="advanced" tab="高级设置">
           <TabAdvanced :open-dev-tools="openDevTools" />

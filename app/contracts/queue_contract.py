@@ -58,17 +58,38 @@ class TimeSetIndexItem(ApiModel):
     type: Literal["TimeSet"] = Field(..., description="配置类型")
 
 
-QueueCreateOut = ResourceCreateOut[QueueRead]
-QueueDetailOut = ResourceItemOut[QueueRead]
-QueueGetOut = ResourceCollectionOut[QueueIndexItem, QueueRead]
+class QueueCreateOut(ResourceCreateOut[QueueRead]):
+    """队列创建响应模型"""
 
-TimeSetCreateOut = ResourceCreateOut[TimeSetRead]
-TimeSetDetailOut = ResourceItemOut[TimeSetRead]
-TimeSetGetOut = ResourceCollectionOut[TimeSetIndexItem, TimeSetRead]
 
-QueueItemCreateOut = ResourceCreateOut[QueueItemRead]
-QueueItemDetailOut = ResourceItemOut[QueueItemRead]
-QueueItemGetOut = ResourceCollectionOut[QueueItemIndexItem, QueueItemRead]
+class QueueDetailOut(ResourceItemOut[QueueRead]):
+    """队列详情响应模型"""
+
+
+class QueueGetOut(ResourceCollectionOut[QueueIndexItem, QueueRead]):
+    """队列列表响应模型"""
+
+class TimeSetCreateOut(ResourceCreateOut[TimeSetRead]):
+    """时间集创建响应模型"""
+
+
+class TimeSetDetailOut(ResourceItemOut[TimeSetRead]):
+    """时间集详情响应模型"""
+
+
+class TimeSetGetOut(ResourceCollectionOut[TimeSetIndexItem, TimeSetRead]):
+    """时间集列表响应模型"""
+
+class QueueItemCreateOut(ResourceCreateOut[QueueItemRead]):
+    """队列项创建响应模型"""
+
+
+class QueueItemDetailOut(ResourceItemOut[QueueItemRead]):
+    """队列项详情响应模型"""
+
+
+class QueueItemGetOut(ResourceCollectionOut[QueueItemIndexItem, QueueItemRead]):
+    """队列项列表响应模型"""
 
 
 __all__ = [

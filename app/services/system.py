@@ -32,7 +32,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
 
-from app.core import Config
 from app.utils import ProcessRunner, get_logger
 
 logger = get_logger("系统服务")
@@ -227,13 +226,15 @@ class _SystemHandler:
                     ["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"]
                 )
 
-            elif mode == "KillSelf" and Config.server is not None:
-                logger.info("执行退出主程序操作")
-                if not from_frontend:
-                    await Config.send_websocket_message(
-                        id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
-                    )
-                Config.server.should_exit = True
+            elif mode == "KillSelf":
+                from app.core import Config
+                if Config.server is not None:
+                    logger.info("执行退出主程序操作")
+                    if not from_frontend:
+                        await Config.send_websocket_message(
+                            id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
+                        )
+                    Config.server.should_exit = True
 
         elif sys.platform.startswith("linux"):
             if mode == "NoAction":
@@ -255,13 +256,15 @@ class _SystemHandler:
                 logger.info("执行睡眠操作")
                 subprocess.run(["systemctl", "suspend"])
 
-            elif mode == "KillSelf" and Config.server is not None:
-                logger.info("执行退出主程序操作")
-                if not from_frontend:
-                    await Config.send_websocket_message(
-                        id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
-                    )
-                Config.server.should_exit = True
+            elif mode == "KillSelf":
+                from app.core import Config
+                if Config.server is not None:
+                    logger.info("执行退出主程序操作")
+                    if not from_frontend:
+                        await Config.send_websocket_message(
+                            id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
+                        )
+                    Config.server.should_exit = True
 
     async def _power_task(
         self,
@@ -284,6 +287,7 @@ class _SystemHandler:
         """开始电源任务"""
 
         if self.power_task is None or self.power_task.done():
+            from app.core import Config
             self.power_task = asyncio.create_task(self._power_task(Config.power_sign))
             logger.info(
                 f"电源任务已启动, {self.countdown}秒后执行: {Config.power_sign}"

@@ -1,9 +1,13 @@
-<template>
+﻿<template>
   <a-card title="定时列表" class="time-set-card">
     <template #extra>
       <a-space>
-        <a-button type="primary" :loading="loading" :disabled="!props.queueId || props.queueId.trim() === ''"
-          @click="addTimeSet">
+        <a-button
+          type="primary"
+          :loading="loading"
+          :disabled="!props.queueId || props.queueId.trim() === ''"
+          @click="addTimeSet"
+        >
           <template #icon>
             <PlusOutlined />
           </template>
@@ -24,22 +28,46 @@
       </div>
 
       <!-- 拖拽内容区域 -->
-      <draggable v-model="timeSets" group="timeSets" item-key="id" :animation="200" :disabled="loading"
-        ghost-class="ghost" chosen-class="chosen" drag-class="drag" class="draggable-container" @end="onDragEnd">
+      <draggable
+        v-model="timeSets"
+        group="timeSets"
+        item-key="id"
+        :animation="200"
+        :disabled="loading"
+        ghost-class="ghost"
+        chosen-class="chosen"
+        drag-class="drag"
+        class="draggable-container"
+        @end="onDragEnd"
+      >
         <template #item="{ element: record, index }">
           <div class="draggable-row" :class="{ 'row-dragging': loading }">
             <div class="row-cell index-cell">{{ index + 1 }}</div>
             <div class="row-cell status-cell">
-              <a-select v-model:value="record.enabled" size="small" style="width: 80px" class="status-select"
-                @change="updateTimeSetStatus(record)">
+              <a-select
+                v-model:value="record.enabled"
+                size="small"
+                style="width: 80px"
+                class="status-select"
+                @change="updateTimeSetStatus(record)"
+              >
                 <a-select-option :value="true">启用</a-select-option>
                 <a-select-option :value="false">禁用</a-select-option>
               </a-select>
             </div>
             <div class="row-cell days-cell">
-              <a-select v-model:value="record.days" mode="multiple" size="small" style="width: 100%"
-                placeholder="请选择执行周期" :disabled="loading" @change="updateTimeSetDays(record)" :maxTagCount="7"
-                :bordered="false" class="days-select">
+              <a-select
+                v-model:value="record.days"
+                mode="multiple"
+                size="small"
+                style="width: 100%"
+                placeholder="请选择执行周期"
+                :disabled="loading"
+                @change="updateTimeSetDays(record)"
+                :maxTagCount="7"
+                :bordered="false"
+                class="days-select"
+              >
                 <a-select-option value="Monday">周一</a-select-option>
                 <a-select-option value="Tuesday">周二</a-select-option>
                 <a-select-option value="Wednesday">周三</a-select-option>
@@ -50,12 +78,23 @@
               </a-select>
             </div>
             <div class="row-cell time-cell">
-              <a-time-picker v-model:value="record.timeValue" format="HH:mm" placeholder="请选择时间" size="small"
-                :disabled="loading" @change="updateTimeSetTime(record)" />
+              <a-time-picker
+                v-model:value="record.timeValue"
+                format="HH:mm"
+                placeholder="请选择时间"
+                size="small"
+                :disabled="loading"
+                @change="updateTimeSetTime(record)"
+              />
             </div>
             <div class="row-cell actions-cell">
               <a-space>
-                <a-popconfirm title="确定要删除这个定时吗？" ok-text="确定" cancel-text="取消" @confirm="deleteTimeSet(record.id)">
+                <a-popconfirm
+                  title="确定要删除这个定时吗？"
+                  ok-text="确定"
+                  cancel-text="取消"
+                  @confirm="deleteTimeSet(record.id)"
+                >
                   <a-button size="middle" danger>
                     <DeleteOutlined />
                     删除
@@ -82,7 +121,7 @@ import { ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
-import { Service } from '@/api'
+import { timeSetApi } from '@/api'
 import dayjs from 'dayjs'
 const logger = window.electronAPI.getLogger('定时项管理')
 
@@ -207,11 +246,9 @@ const addTimeSet = async () => {
     loading.value = true
 
     // 创建定时项，使用后端默认值
-    const createResponse = await Service.addTimeSetApiQueueTimeAddPost({
-      queueId: props.queueId,
-    })
+    const createResponse = await timeSetApi.create(props.queueId)
 
-    if (createResponse.code === 200 && createResponse.timeSetId) {
+    if (createResponse.code === 200 && createResponse.id) {
       emit('refresh')
     } else {
       message.error('创建定时项失败: ' + (createResponse.message || '未知错误'))
@@ -230,13 +267,9 @@ const updateTimeSetTime = async (timeSet: any) => {
   try {
     const timeString = formatTimeValue(timeSet.timeValue)
 
-    const response = await Service.updateTimeSetApiQueueTimeUpdatePost({
-      queueId: props.queueId,
-      timeSetId: timeSet.id,
-      data: {
-        Info: {
-          Time: timeString,
-        },
+    const response = await timeSetApi.update(props.queueId, timeSet.id, {
+      Info: {
+        Time: timeString,
       },
     })
 
@@ -260,13 +293,9 @@ const updateTimeSetTime = async (timeSet: any) => {
 // 更新定时项状态
 const updateTimeSetStatus = async (timeSet: any) => {
   try {
-    const response = await Service.updateTimeSetApiQueueTimeUpdatePost({
-      queueId: props.queueId,
-      timeSetId: timeSet.id,
-      data: {
-        Info: {
-          Enabled: timeSet.enabled,
-        },
+    const response = await timeSetApi.update(props.queueId, timeSet.id, {
+      Info: {
+        Enabled: timeSet.enabled,
       },
     })
 
@@ -293,13 +322,9 @@ const updateTimeSetDays = async (timeSet: any) => {
     const sortedDays = sortDays(timeSet.days || [])
     timeSet.days = sortedDays
 
-    const response = await Service.updateTimeSetApiQueueTimeUpdatePost({
-      queueId: props.queueId,
-      timeSetId: timeSet.id,
-      data: {
-        Info: {
-          Days: sortedDays,
-        },
+    const response = await timeSetApi.update(props.queueId, timeSet.id, {
+      Info: {
+        Days: sortedDays,
       },
     })
 
@@ -318,10 +343,7 @@ const updateTimeSetDays = async (timeSet: any) => {
 // 删除定时项
 const deleteTimeSet = async (timeSetId: string) => {
   try {
-    const response = await Service.deleteTimeSetApiQueueTimeDeletePost({
-      queueId: props.queueId,
-      timeSetId,
-    })
+    const response = await timeSetApi.remove(props.queueId, timeSetId)
 
     if (response.code === 200) {
       // 确保删除后刷新数据
@@ -350,9 +372,8 @@ const onDragEnd = async (evt: any) => {
     const sortedIds = timeSets.value.map(item => item.id)
 
     // 调用排序API
-    const response = await Service.reorderTimeSetApiQueueTimeOrderPost({
-      queueId: props.queueId,
-      indexList: sortedIds,
+    const response = await timeSetApi.reorder(props.queueId, {
+      index_list: sortedIds,
     })
 
     if (response.code === 200) {
@@ -1139,7 +1160,9 @@ const onDragEnd = async (evt: any) => {
   transition: background 0.2s ease;
 }
 
-[data-theme='dark'] .ant-picker-dropdown .ant-picker-time-panel-column::-webkit-scrollbar-thumb:hover {
+[data-theme='dark']
+  .ant-picker-dropdown
+  .ant-picker-time-panel-column::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.45);
 }
 </style>

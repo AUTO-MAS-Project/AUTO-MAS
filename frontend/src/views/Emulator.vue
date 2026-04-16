@@ -1,4 +1,4 @@
-<!-- eslint-disable vue/multi-word-component-names -->
+﻿<!-- eslint-disable vue/multi-word-component-names -->
 <script setup lang="ts">
 // 挂载和卸载键盘监听
 import { h, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -16,7 +16,7 @@ import {
   StopOutlined,
 } from '@ant-design/icons-vue'
 import type { EmulatorConfigIndexItem, EmulatorSearchResult } from '@/api'
-import { Service } from '@/api'
+import { emulatorApi } from '@/api'
 const logger = window.electronAPI.getLogger('模拟器管理')
 
 // 编辑数据接口
@@ -93,9 +93,7 @@ const pollDevicesStatus = async () => {
   // 静默获取设备状态，不显示loading
   try {
     for (const emulator of emulatorIndex.value) {
-      const response = await Service.getStatusApiEmulatorStatusPost({
-        emulatorId: emulator.uid,
-      })
+      const response = await emulatorApi.getStatus(emulator.uid)
 
       if (response.code === 200) {
         const allDevicesData = response.data || {}
@@ -216,7 +214,7 @@ const syncNameToDisplay = (uuid: string, name: string) => {
 const loadEmulators = async () => {
   loading.value = true
   try {
-    const response = await Service.getEmulatorApiEmulatorGetPost({ emulatorId: null })
+    const response = await emulatorApi.list()
     if (response.code === 200 && 'index' in response && 'data' in response) {
       emulatorIndex.value = (response.index as EmulatorConfigIndexItem[]) || []
       emulatorData.value = (response.data as Record<string, any>) || {}
@@ -252,13 +250,13 @@ const loadEmulators = async () => {
 // 添加模拟器
 const handleAdd = async () => {
   try {
-    const response = await Service.addEmulatorApiEmulatorAddPost()
+    const response = await emulatorApi.create()
     if (response.code === 200) {
       await loadEmulators()
       // 自动切换到新模拟器
-      activeKey.value = response.emulatorId
+      activeKey.value = response.id
       saveActiveKey(activeKey.value)
-      await loadDevices(response.emulatorId)
+      await loadDevices(response.id)
     } else {
       message.error(response.message || '添加失败')
     }
@@ -272,27 +270,26 @@ const handleAdd = async () => {
 // 刷新模拟器配置 - 保存成功后调用
 const refreshEmulatorConfig = async (uuid?: string) => {
   try {
-    const response = await Service.getEmulatorApiEmulatorGetPost({ emulatorId: uuid || null })
-    if (response.code === 200 && 'index' in response && 'data' in response) {
+    const response = uuid ? await emulatorApi.get(uuid) : await emulatorApi.list()
+    if (response.code === 200 && 'data' in response) {
       // 如果指定了 uuid，只更新特定模拟器的数据，而不是替换整个列表
       if (uuid) {
         // 更新特定模拟器的数据
-        const updatedIndex = response.index as EmulatorConfigIndexItem[]
         const updatedData = response.data as Record<string, any>
 
-        if (updatedIndex.length > 0 && updatedData[uuid]) {
+        if (updatedData) {
           // 找到并更新 index 中的对应项
           const indexItem = emulatorIndex.value.find(item => item.uid === uuid)
           if (indexItem) {
             // 更新 type
-            indexItem.type = updatedIndex[0].type
+            indexItem.type = (updatedData as any)?.type || indexItem.type
           }
 
           // 更新或添加 data
-          emulatorData.value[uuid] = updatedData[uuid]
+          emulatorData.value[uuid] = updatedData
 
           // 更新编辑数据
-          const configData = updatedData[uuid]
+          const configData = updatedData
           const bossKeys = safeJsonParse(configData?.Info?.BossKey, [])
           editingDataMap.value.set(uuid, {
             name: configData?.Info?.Name || '',
@@ -357,10 +354,7 @@ const handleSaveChange = async (uuid: string, key: string, value: any) => {
       configData = { Info: { BossKey: JSON.stringify(value) } }
     }
 
-    const response = await Service.updateEmulatorApiEmulatorUpdatePost({
-      emulatorId: uuid,
-      data: configData,
-    })
+    const response = await emulatorApi.update(uuid, configData)
 
     if (response.code === 200) {
       logger.info(`配置已保存: ${key}`)
@@ -381,11 +375,8 @@ const handleSaveChange = async (uuid: string, key: string, value: any) => {
 // 删除模拟器
 const handleDelete = async (uuid: string) => {
   try {
-    const response = await Service.deleteEmulatorApiEmulatorDeletePost({
-      emulatorId: uuid,
-    })
+    const response = await emulatorApi.remove(uuid)
     if (response.code === 200) {
-
       // 如果删除的是当前激活的 Tab，需要跳转到其他 Tab
       if (activeKey.value === uuid) {
         const currentIndex = emulatorIndex.value.findIndex(e => e.uid === uuid)
@@ -416,7 +407,7 @@ const handleDelete = async (uuid: string) => {
 const handleSearch = async () => {
   searching.value = true
   try {
-    const response = await Service.searchEmulatorsApiEmulatorEmulatorSearchPost()
+    const response = await emulatorApi.listDetected()
     if (response.code === 200) {
       searchResults.value = response.emulators || []
       if (searchResults.value.length > 0) {
@@ -440,19 +431,16 @@ const handleSearch = async () => {
 // 从搜索结果导入
 const handleImportFromSearch = async (result: EmulatorSearchResult) => {
   try {
-    const response = await Service.addEmulatorApiEmulatorAddPost()
+    const response = await emulatorApi.create()
     if (response.code === 200) {
       // 更新新添加的模拟器配置，使用分组结构
-      const updateResponse = await Service.updateEmulatorApiEmulatorUpdatePost({
-        emulatorId: response.emulatorId,
-        data: {
-          Info: {
-            Name: result.name,
-            Type: result.type as 'general' | 'mumu' | 'ldplayer',
-            Path: result.path,
-            MaxWaitTime: 60,
-            BossKey: JSON.stringify([]),
-          },
+      const updateResponse = await emulatorApi.update(response.id, {
+        Info: {
+          Name: result.name,
+          Type: result.type as 'general' | 'mumu' | 'ldplayer',
+          Path: result.path,
+          MaxWaitTime: 60,
+          BossKey: JSON.stringify([]),
         },
       })
       if (updateResponse.code === 200) {
@@ -483,9 +471,7 @@ const loadDevices = async (uuid: string) => {
   loadingDevices.value = new Set(loadingDevices.value)
 
   try {
-    const response = await Service.getStatusApiEmulatorStatusPost({
-      emulatorId: uuid,
-    })
+    const response = await emulatorApi.getStatus(uuid)
 
     if (response.code === 200) {
       // 后端返回的data是 { "模拟器UUID": { "设备索引": {...} } }
@@ -515,11 +501,7 @@ const startEmulator = async (uuid: string, index: string) => {
   startingDevices.value = new Set(startingDevices.value)
 
   try {
-    const response = await Service.operationEmulatorApiEmulatorOperatePost({
-      emulatorId: uuid,
-      operate: 'open' as any,
-      index: index,
-    })
+    const response = await emulatorApi.operate(uuid, 'open', { index })
 
     if (response.code === 200) {
       message.success(response.message || `模拟器 ${index} 启动成功`)
@@ -545,11 +527,7 @@ const stopEmulator = async (uuid: string, index: string) => {
   stoppingDevices.value = new Set(stoppingDevices.value)
 
   try {
-    const response = await Service.operationEmulatorApiEmulatorOperatePost({
-      emulatorId: uuid,
-      operate: 'close' as any,
-      index: index,
-    })
+    const response = await emulatorApi.operate(uuid, 'close', { index })
 
     if (response.code === 200) {
       message.success(response.message || `模拟器 ${index} 已关闭`)
@@ -575,11 +553,7 @@ const showEmulator = async (uuid: string, index: string) => {
   showingDevices.value = new Set(showingDevices.value)
 
   try {
-    const response = await Service.operationEmulatorApiEmulatorOperatePost({
-      emulatorId: uuid,
-      operate: 'show' as any,
-      index: index,
-    })
+    const response = await emulatorApi.operate(uuid, 'show', { index })
 
     if (response.code === 200) {
       message.success(response.message || `模拟器 ${index} 窗口已显示`)
@@ -840,7 +814,13 @@ const handleBossKeyInputChange = (uuid: string) => {
         <div v-if="emulatorIndex.length === 0" class="empty-state-large">
           <a-empty />
           <a-space direction="horizontal" :size="16">
-            <a-button type="primary" size="large" :icon="h(SearchOutlined)" :loading="searching" @click="handleSearch">
+            <a-button
+              type="primary"
+              size="large"
+              :icon="h(SearchOutlined)"
+              :loading="searching"
+              @click="handleSearch"
+            >
               自动搜索模拟器
             </a-button>
             <a-button size="large" :icon="h(PlusOutlined)" @click="handleAddWithSwitch">
@@ -850,8 +830,14 @@ const handleBossKeyInputChange = (uuid: string) => {
         </div>
 
         <!-- Tab 模式：有模拟器时显示 Tabs -->
-        <a-tabs v-else v-model:active-key="activeKey" type="editable-card" hide-add class="emulator-tabs"
-          @change="onTabChange">
+        <a-tabs
+          v-else
+          v-model:active-key="activeKey"
+          type="editable-card"
+          hide-add
+          class="emulator-tabs"
+          @change="onTabChange"
+        >
           <!-- 每个模拟器一个 Tab -->
           <a-tab-pane v-for="element in emulatorIndex" :key="element.uid" :closable="false">
             <template #tab>
@@ -868,8 +854,12 @@ const handleBossKeyInputChange = (uuid: string) => {
                   <h3>模拟器配置</h3>
                   <div class="section-actions">
                     <a-spin v-if="savingMap.get(element.uid)" size="small" />
-                    <a-popconfirm title="确定要删除此模拟器配置吗？" ok-text="确定" cancel-text="取消"
-                      @confirm="handleDelete(element.uid)">
+                    <a-popconfirm
+                      title="确定要删除此模拟器配置吗？"
+                      ok-text="确定"
+                      cancel-text="取消"
+                      @confirm="handleDelete(element.uid)"
+                    >
                       <a-button type="link" danger size="small" :icon="h(DeleteOutlined)">
                         删除
                       </a-button>
@@ -881,11 +871,16 @@ const handleBossKeyInputChange = (uuid: string) => {
                 <div class="config-form">
                   <a-descriptions :column="2" bordered size="small">
                     <a-descriptions-item label="模拟器名称">
-                      <a-input v-model:value="getEditingData(element.uid).name" placeholder="输入模拟器名称" size="small"
-                        :bordered="false" @input="syncNameToDisplay(element.uid, getEditingData(element.uid).name)"
+                      <a-input
+                        v-model:value="getEditingData(element.uid).name"
+                        placeholder="输入模拟器名称"
+                        size="small"
+                        :bordered="false"
+                        @input="syncNameToDisplay(element.uid, getEditingData(element.uid).name)"
                         @blur="
                           handleSaveChange(element.uid, 'name', getEditingData(element.uid).name)
-                          " />
+                        "
+                      />
                     </a-descriptions-item>
                     <a-descriptions-item>
                       <template #label>
@@ -894,16 +889,29 @@ const handleBossKeyInputChange = (uuid: string) => {
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
-                      <a-select v-model:value="getEditingData(element.uid).type" placeholder="选择模拟器类型"
-                        :options="emulatorTypeOptions" size="small" :bordered="false" style="width: 100%"
-                        @change="handleSaveChange(element.uid, 'type', $event)" />
+                      <a-select
+                        v-model:value="getEditingData(element.uid).type"
+                        placeholder="选择模拟器类型"
+                        :options="emulatorTypeOptions"
+                        size="small"
+                        :bordered="false"
+                        style="width: 100%"
+                        @change="handleSaveChange(element.uid, 'type', $event)"
+                      />
                     </a-descriptions-item>
                     <a-descriptions-item label="模拟器路径" :span="2">
-                      <a-input v-model:value="getEditingData(element.uid).path" placeholder="请点击文件夹图标选择模拟器路径"
-                        size="small" :bordered="false" readonly>
+                      <a-input
+                        v-model:value="getEditingData(element.uid).path"
+                        placeholder="请点击文件夹图标选择模拟器路径"
+                        size="small"
+                        :bordered="false"
+                        readonly
+                      >
                         <template #suffix>
-                          <FolderOpenOutlined style="cursor: pointer; color: #1890ff"
-                            @click="selectEmulatorPath(element.uid)" />
+                          <FolderOpenOutlined
+                            style="cursor: pointer; color: #1890ff"
+                            @click="selectEmulatorPath(element.uid)"
+                          />
                         </template>
                       </a-input>
                     </a-descriptions-item>
@@ -914,9 +922,24 @@ const handleBossKeyInputChange = (uuid: string) => {
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
-                      <a-input-number v-model:value="getEditingData(element.uid).max_wait_time" placeholder="输入最大等待时间"
-                        size="small" :bordered="false" style="width: 100%" :min="10" :max="9999" :step="5" suffix="秒"
-                        @blur="handleSaveChange(element.uid, 'max_wait_time', getEditingData(element.uid).max_wait_time)" />
+                      <a-input-number
+                        v-model:value="getEditingData(element.uid).max_wait_time"
+                        placeholder="输入最大等待时间"
+                        size="small"
+                        :bordered="false"
+                        style="width: 100%"
+                        :min="10"
+                        :max="9999"
+                        :step="5"
+                        suffix="秒"
+                        @blur="
+                          handleSaveChange(
+                            element.uid,
+                            'max_wait_time',
+                            getEditingData(element.uid).max_wait_time
+                          )
+                        "
+                      />
                     </a-descriptions-item>
                     <a-descriptions-item>
                       <template #label>
@@ -925,19 +948,37 @@ const handleBossKeyInputChange = (uuid: string) => {
                           <QuestionCircleOutlined style="margin-left: 4px" />
                         </a-tooltip>
                       </template>
-                      <a-input v-if="getEditingData(element.uid).type !== 'mumu'"
-                        v-model:value="bossKeyInputMap[element.uid]" :placeholder="recordingBossKeyMap.get(element.uid)
-                          ? '请按下快捷键组合...'
-                          : '输入格式如 Ctrl+Q，按回车添加'
-                          " size="small" :bordered="false" :disabled="recordingBossKeyMap.get(element.uid)"
-                        @press-enter="handleSetBossKey(element.uid)" @blur="handleSetBossKey(element.uid)"
-                        @input="handleBossKeyInputChange(element.uid)">
+                      <a-input
+                        v-if="getEditingData(element.uid).type !== 'mumu'"
+                        v-model:value="bossKeyInputMap[element.uid]"
+                        :placeholder="
+                          recordingBossKeyMap.get(element.uid)
+                            ? '请按下快捷键组合...'
+                            : '输入格式如 Ctrl+Q，按回车添加'
+                        "
+                        size="small"
+                        :bordered="false"
+                        :disabled="recordingBossKeyMap.get(element.uid)"
+                        @press-enter="handleSetBossKey(element.uid)"
+                        @blur="handleSetBossKey(element.uid)"
+                        @input="handleBossKeyInputChange(element.uid)"
+                      >
                         <template #suffix>
-                          <a-button v-if="!recordingBossKeyMap.get(element.uid)" type="default" size="small"
-                            @click="startRecordBossKey(element.uid)">
+                          <a-button
+                            v-if="!recordingBossKeyMap.get(element.uid)"
+                            type="default"
+                            size="small"
+                            @click="startRecordBossKey(element.uid)"
+                          >
                             录制
                           </a-button>
-                          <a-button v-else type="primary" danger size="small" @click="stopRecordBossKey(element.uid)">
+                          <a-button
+                            v-else
+                            type="primary"
+                            danger
+                            size="small"
+                            @click="stopRecordBossKey(element.uid)"
+                          >
                             取消录制
                           </a-button>
                         </template>
@@ -957,14 +998,21 @@ const handleBossKeyInputChange = (uuid: string) => {
                 </div>
 
                 <a-spin :spinning="loadingDevices.has(element.uid)">
-                  <div v-if="
-                    !devicesData[element.uid] ||
-                    Object.keys(devicesData[element.uid]).length === 0
-                  " class="empty-devices">
+                  <div
+                    v-if="
+                      !devicesData[element.uid] ||
+                      Object.keys(devicesData[element.uid]).length === 0
+                    "
+                    class="empty-devices"
+                  >
                     <a-empty description="暂无设备信息">
                       <template #extra>
-                        <a-button type="primary" size="small" :icon="h(PlayCircleOutlined)"
-                          @click="startEmulator(element.uid, '0')">
+                        <a-button
+                          type="primary"
+                          size="small"
+                          :icon="h(PlayCircleOutlined)"
+                          @click="startEmulator(element.uid, '0')"
+                        >
                           启动模拟器
                         </a-button>
                       </template>
@@ -972,12 +1020,15 @@ const handleBossKeyInputChange = (uuid: string) => {
                   </div>
 
                   <div v-else class="devices-grid">
-                    <a-table :data-source="Object.entries(devicesData[element.uid]).map(([index, device]) => ({
-                      key: index,
-                      index,
-                      ...device,
-                    }))
-                      " :columns="[
+                    <a-table
+                      :data-source="
+                        Object.entries(devicesData[element.uid]).map(([index, device]) => ({
+                          key: index,
+                          index,
+                          ...device,
+                        }))
+                      "
+                      :columns="[
                         {
                           title: '设备',
                           dataIndex: 'index',
@@ -999,7 +1050,11 @@ const handleBossKeyInputChange = (uuid: string) => {
                           ellipsis: true,
                         },
                         { title: '操作', key: 'action', width: 160 },
-                      ]" :pagination="false" size="small" :scroll="{ x: 'max-content', y: 'calc(100vh - 560px)' }">
+                      ]"
+                      :pagination="false"
+                      size="small"
+                      :scroll="{ x: 'max-content', y: 'calc(100vh - 560px)' }"
+                    >
                       <template #bodyCell="{ column, record }">
                         <template v-if="column.key === 'status'">
                           <a-tag :color="getDeviceStatusInfo(record.status).color" size="small">
@@ -1008,19 +1063,30 @@ const handleBossKeyInputChange = (uuid: string) => {
                         </template>
                         <template v-else-if="column.key === 'action'">
                           <a-space :size="4">
-                            <a-button :icon="h(EyeOutlined)" :disabled="record.status !== 0"
+                            <a-button
+                              :icon="h(EyeOutlined)"
+                              :disabled="record.status !== 0"
                               :loading="showingDevices.has(`${element.uid}-${record.index}`)"
-                              @click="showEmulator(element.uid, String(record.index))">
+                              @click="showEmulator(element.uid, String(record.index))"
+                            >
                               显示
                             </a-button>
-                            <a-button v-if="canStartDevice(record.status)" type="primary" :icon="h(PlayCircleOutlined)"
+                            <a-button
+                              v-if="canStartDevice(record.status)"
+                              type="primary"
+                              :icon="h(PlayCircleOutlined)"
                               :loading="startingDevices.has(`${element.uid}-${record.index}`)"
-                              @click="startEmulator(element.uid, String(record.index))">
+                              @click="startEmulator(element.uid, String(record.index))"
+                            >
                               启动
                             </a-button>
-                            <a-button v-else-if="canStopDevice(record.status)" danger :icon="h(StopOutlined)"
+                            <a-button
+                              v-else-if="canStopDevice(record.status)"
+                              danger
+                              :icon="h(StopOutlined)"
                               :loading="stoppingDevices.has(`${element.uid}-${record.index}`)"
-                              @click="stopEmulator(element.uid, String(record.index))">
+                              @click="stopEmulator(element.uid, String(record.index))"
+                            >
                               关闭
                             </a-button>
                             <a-button v-else disabled>

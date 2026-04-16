@@ -1,10 +1,7 @@
-import { TaskCreateIn } from '@/api/models/TaskCreateIn'
-import { PowerIn } from '@/api/models/PowerIn'
+import { POWER_SIGNAL, TASK_CREATE_MODE, type PowerSignal, type TaskCreateMode } from '@/api'
 
-// 调度台状态
 export type SchedulerStatus = '空闲' | '运行' | '结束'
 
-// 新增：任务总览数据类型
 export interface User {
   user_id: string
   status: string
@@ -18,14 +15,12 @@ export interface Script {
   user_list: User[]
 }
 
-// 状态颜色映射
 export const TAB_STATUS_COLOR: Record<SchedulerStatus, string> = {
   空闲: 'default',
   运行: 'processing',
   结束: 'success',
 }
 
-// 队列状态 -> 颜色
 export const getQueueStatusColor = (status: string): string => {
   if (/成功|完成|已完成/.test(status)) return 'green'
   if (/失败|错误|异常/.test(status)) return 'red'
@@ -34,26 +29,24 @@ export const getQueueStatusColor = (status: string): string => {
   return 'default'
 }
 
-// 任务模式选项（直接复用后端枚举值）
 export const TASK_MODE_OPTIONS = [
-  { label: "自动代理", value: TaskCreateIn.mode.AUTO_PROXY },
-  { label: "人工排查", value: TaskCreateIn.mode.MANUAL_REVIEW },
+  { label: '自动代理', value: TASK_CREATE_MODE.AUTO_PROXY },
+  { label: '人工排查', value: TASK_CREATE_MODE.MANUAL_REVIEW },
 ]
 
-// 电源操作映射
-export const POWER_ACTION_TEXT: Record<PowerIn.signal, string> = {
-  [PowerIn.signal.NO_ACTION]: '无动作',
-  [PowerIn.signal.SHUTDOWN]: '关机',
-  [PowerIn.signal.SHUTDOWN_FORCE]: '强制关机',
-  [PowerIn.signal.REBOOT]: '重启',
-  [PowerIn.signal.HIBERNATE]: '休眠',
-  [PowerIn.signal.SLEEP]: '睡眠',
-  [PowerIn.signal.KILL_SELF]: '退出软件'
+export const POWER_ACTION_TEXT: Record<PowerSignal, string> = {
+  [POWER_SIGNAL.NO_ACTION]: '无动作',
+  [POWER_SIGNAL.SHUTDOWN]: '关机',
+  [POWER_SIGNAL.SHUTDOWN_FORCE]: '强制关机',
+  [POWER_SIGNAL.REBOOT]: '重启',
+  [POWER_SIGNAL.HIBERNATE]: '休眠',
+  [POWER_SIGNAL.SLEEP]: '睡眠',
+  [POWER_SIGNAL.KILL_SELF]: '退出软件',
 }
-export const getPowerActionText = (action: PowerIn.signal) => POWER_ACTION_TEXT[action] || '无动作'
 
-// 日志相关
-export const LOG_MAX_LENGTH = 2000 // 最多保留日志条数
+export const getPowerActionText = (action: PowerSignal) => POWER_ACTION_TEXT[action] || '无动作'
+
+export const LOG_MAX_LENGTH = 2000
 
 export type LogType = 'info' | 'error' | 'warning' | 'success'
 
@@ -75,7 +68,7 @@ export interface SchedulerTab {
   closable: boolean
   status: SchedulerStatus
   selectedTaskId: string | null
-  selectedMode: TaskCreateIn.mode | null
+  selectedMode: TaskCreateMode | null
   websocketId: string | null
   subscriptionId?: string | null
   taskQueue: QueueItem[]
@@ -83,15 +76,11 @@ export interface SchedulerTab {
   logs: LogEntry[]
   isLogAtBottom: boolean
   lastLogContent: string
-  // 新增：任务总览快照（用于路由返回时快速恢复显示）
   overviewData?: Script[]
-  // 新增：消息去重相关字段
   lastMessageHash?: string
   lastMessageTime?: number
-  // 新增：运行时任务/模式文本快照（用于持久化显示）
   runningTaskLabel?: string
   runningModeLabel?: string
-  // 新增：日志显示模式
   logMode?: 'follow' | 'browse'
 }
 

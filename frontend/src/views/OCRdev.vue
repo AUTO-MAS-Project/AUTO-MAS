@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="ocr-debug-page">
     <!-- 标题 -->
     <div class="page-header">
@@ -16,7 +16,10 @@
             <a-row :gutter="16">
               <a-col :span="24">
                 <a-form-item label="窗口标题" required>
-                  <a-input v-model:value="screenshotForm.window_title" placeholder="请输入窗口标题关键字（如：记事本、Chrome）" />
+                  <a-input
+                    v-model:value="screenshotForm.window_title"
+                    placeholder="请输入窗口标题关键字（如：记事本、Chrome）"
+                  />
                 </a-form-item>
               </a-col>
             </a-row>
@@ -24,14 +27,22 @@
             <a-row :gutter="16">
               <a-col :span="12">
                 <a-form-item label="宽高比 - 宽度">
-                  <a-input-number v-model:value="screenshotForm.aspect_ratio_width" :min="1" :max="32"
-                    style="width: 100%" />
+                  <a-input-number
+                    v-model:value="screenshotForm.aspect_ratio_width"
+                    :min="1"
+                    :max="32"
+                    style="width: 100%"
+                  />
                 </a-form-item>
               </a-col>
               <a-col :span="12">
                 <a-form-item label="宽高比 - 高度">
-                  <a-input-number v-model:value="screenshotForm.aspect_ratio_height" :min="1" :max="32"
-                    style="width: 100%" />
+                  <a-input-number
+                    v-model:value="screenshotForm.aspect_ratio_height"
+                    :min="1"
+                    :max="32"
+                    style="width: 100%"
+                  />
                 </a-form-item>
               </a-col>
             </a-row>
@@ -39,8 +50,11 @@
             <a-row :gutter="16">
               <a-col :span="24">
                 <a-form-item label="预处理模式">
-                  <a-switch v-model:checked="screenshotForm.should_preprocess" checked-children="启用"
-                    un-checked-children="禁用" />
+                  <a-switch
+                    v-model:checked="screenshotForm.should_preprocess"
+                    checked-children="启用"
+                    un-checked-children="禁用"
+                  />
                   <span style="margin-left: 12px; color: var(--ant-color-text-secondary)">
                     启用时将排除窗口边框和标题栏
                   </span>
@@ -89,7 +103,11 @@
           <!-- 图片展示 -->
           <div v-if="screenshotResult.image_base64" class="image-container">
             <h3>截图预览：</h3>
-            <img :src="`data:image/png;base64,${screenshotResult.image_base64}`" alt="截图" class="screenshot-image" />
+            <img
+              :src="`data:image/png;base64,${screenshotResult.image_base64}`"
+              alt="截图"
+              class="screenshot-image"
+            />
           </div>
           <a-empty v-else description="未获取到截图数据" />
         </a-card>
@@ -102,8 +120,10 @@
             <a-row :gutter="16">
               <a-col :span="24">
                 <a-form-item label="ADB 可执行文件路径" required>
-                  <a-input v-model:value="adbScreenshotForm.adb_path"
-                    placeholder="请输入 ADB 可执行文件的完整路径（如：D:\Android\platform-tools\adb.exe）" />
+                  <a-input
+                    v-model:value="adbScreenshotForm.adb_path"
+                    placeholder="请输入 ADB 可执行文件的完整路径（如：D:\Android\platform-tools\adb.exe）"
+                  />
                   <span style="color: var(--ant-color-text-secondary); font-size: 12px">
                     Windows 示例: D:\Android\platform-tools\adb.exe
                   </span>
@@ -114,10 +134,13 @@
             <a-row :gutter="16">
               <a-col :span="24">
                 <a-form-item label="设备序列号" required>
-                  <a-input v-model:value="adbScreenshotForm.serial"
-                    placeholder="请输入设备序列号（如：127.0.0.1:5555 或 emulator-5554）" />
+                  <a-input
+                    v-model:value="adbScreenshotForm.serial"
+                    placeholder="请输入设备序列号（如：127.0.0.1:5555 或 emulator-5554）"
+                  />
                   <span style="color: var(--ant-color-text-secondary); font-size: 12px">
-                    网络设备示例: 127.0.0.1:5555 | USB设备示例: emulator-5554 | 可通过 adb devices 命令查看
+                    网络设备示例: 127.0.0.1:5555 | USB设备示例: emulator-5554 | 可通过 adb devices
+                    命令查看
                   </span>
                 </a-form-item>
               </a-col>
@@ -126,8 +149,11 @@
             <a-row :gutter="16">
               <a-col :span="24">
                 <a-form-item label="截图方法">
-                  <a-switch v-model:checked="adbScreenshotForm.use_screencap" checked-children="PNG"
-                    un-checked-children="RAW" />
+                  <a-switch
+                    v-model:checked="adbScreenshotForm.use_screencap"
+                    checked-children="PNG"
+                    un-checked-children="RAW"
+                  />
                   <span style="margin-left: 12px; color: var(--ant-color-text-secondary)">
                     PNG 方法速度更快（推荐），RAW 方法兼容性更好
                   </span>
@@ -137,7 +163,11 @@
 
             <a-form-item>
               <a-space>
-                <a-button type="primary" :loading="adbScreenshotLoading" @click="handleADBScreenshot">
+                <a-button
+                  type="primary"
+                  :loading="adbScreenshotLoading"
+                  @click="handleADBScreenshot"
+                >
                   <template #icon>
                     <CameraOutlined />
                   </template>
@@ -176,8 +206,11 @@
           <!-- 图片展示 -->
           <div v-if="adbScreenshotResult.image_base64" class="image-container">
             <h3>截图预览：</h3>
-            <img :src="`data:image/png;base64,${adbScreenshotResult.image_base64}`" alt="ADB 截图"
-              class="screenshot-image" />
+            <img
+              :src="`data:image/png;base64,${adbScreenshotResult.image_base64}`"
+              alt="ADB 截图"
+              class="screenshot-image"
+            />
           </div>
           <a-empty v-else description="未获取到截图数据" />
         </a-card>
@@ -202,18 +235,35 @@
             <a-row :gutter="16">
               <a-col :span="24">
                 <a-form-item label="窗口标题" required>
-                  <a-input v-model:value="checkForm.window_title" placeholder="请输入窗口标题关键字" />
+                  <a-input
+                    v-model:value="checkForm.window_title"
+                    placeholder="请输入窗口标题关键字"
+                  />
                 </a-form-item>
               </a-col>
             </a-row>
 
             <a-row :gutter="16">
               <a-col :span="24">
-                <a-form-item :label="checkForm.mode === 'single' ? '图片路径' : '图片路径列表'" required>
-                  <a-textarea v-model:value="checkForm.image_paths_text"
-                    :placeholder="checkForm.mode === 'single' ? '请输入图片完整路径' : '请输入图片路径，每行一个'" :rows="4" />
+                <a-form-item
+                  :label="checkForm.mode === 'single' ? '图片路径' : '图片路径列表'"
+                  required
+                >
+                  <a-textarea
+                    v-model:value="checkForm.image_paths_text"
+                    :placeholder="
+                      checkForm.mode === 'single'
+                        ? '请输入图片完整路径'
+                        : '请输入图片路径，每行一个'
+                    "
+                    :rows="4"
+                  />
                   <span style="color: var(--ant-color-text-secondary); font-size: 12px">
-                    {{ checkForm.mode === 'single' ? '例如: D:\\images\\button.png' : '多个路径时每行一个路径' }}
+                    {{
+                      checkForm.mode === 'single'
+                        ? '例如: D:\\images\\button.png'
+                        : '多个路径时每行一个路径'
+                    }}
                   </span>
                 </a-form-item>
               </a-col>
@@ -222,19 +272,34 @@
             <a-row :gutter="16">
               <a-col :span="8">
                 <a-form-item label="重试次数">
-                  <a-input-number v-model:value="checkForm.retry_times" :min="1" :max="20" style="width: 100%" />
+                  <a-input-number
+                    v-model:value="checkForm.retry_times"
+                    :min="1"
+                    :max="20"
+                    style="width: 100%"
+                  />
                 </a-form-item>
               </a-col>
               <a-col :span="8">
                 <a-form-item label="间隔时间(秒)">
-                  <a-input-number v-model:value="checkForm.interval" :min="0" :max="10" :step="0.5"
-                    style="width: 100%" />
+                  <a-input-number
+                    v-model:value="checkForm.interval"
+                    :min="0"
+                    :max="10"
+                    :step="0.5"
+                    style="width: 100%"
+                  />
                 </a-form-item>
               </a-col>
               <a-col :span="8">
                 <a-form-item label="匹配阈值">
-                  <a-input-number v-model:value="checkForm.threshold" :min="0" :max="1" :step="0.05"
-                    style="width: 100%" />
+                  <a-input-number
+                    v-model:value="checkForm.threshold"
+                    :min="0"
+                    :max="1"
+                    :step="0.05"
+                    style="width: 100%"
+                  />
                 </a-form-item>
               </a-col>
             </a-row>
@@ -299,7 +364,10 @@
             <a-row :gutter="16">
               <a-col :span="24">
                 <a-form-item label="窗口标题" required>
-                  <a-input v-model:value="clickForm.window_title" placeholder="请输入窗口标题关键字" />
+                  <a-input
+                    v-model:value="clickForm.window_title"
+                    placeholder="请输入窗口标题关键字"
+                  />
                 </a-form-item>
               </a-col>
             </a-row>
@@ -307,7 +375,10 @@
             <a-row :gutter="16">
               <a-col :span="24">
                 <a-form-item v-if="clickForm.mode === 'image'" label="图片路径" required>
-                  <a-input v-model:value="clickForm.image_path" placeholder="请输入要点击的图片完整路径" />
+                  <a-input
+                    v-model:value="clickForm.image_path"
+                    placeholder="请输入要点击的图片完整路径"
+                  />
                   <span style="color: var(--ant-color-text-secondary); font-size: 12px">
                     例如: D:\images\button.png
                   </span>
@@ -324,19 +395,34 @@
             <a-row :gutter="16">
               <a-col :span="8">
                 <a-form-item label="重试次数">
-                  <a-input-number v-model:value="clickForm.retry_times" :min="1" :max="20" style="width: 100%" />
+                  <a-input-number
+                    v-model:value="clickForm.retry_times"
+                    :min="1"
+                    :max="20"
+                    style="width: 100%"
+                  />
                 </a-form-item>
               </a-col>
               <a-col :span="8">
                 <a-form-item label="间隔时间(秒)">
-                  <a-input-number v-model:value="clickForm.interval" :min="0" :max="10" :step="0.5"
-                    style="width: 100%" />
+                  <a-input-number
+                    v-model:value="clickForm.interval"
+                    :min="0"
+                    :max="10"
+                    :step="0.5"
+                    style="width: 100%"
+                  />
                 </a-form-item>
               </a-col>
               <a-col :span="8" v-if="clickForm.mode === 'image'">
                 <a-form-item label="匹配阈值">
-                  <a-input-number v-model:value="clickForm.threshold" :min="0" :max="1" :step="0.05"
-                    style="width: 100%" />
+                  <a-input-number
+                    v-model:value="clickForm.threshold"
+                    :min="0"
+                    :max="1"
+                    :step="0.05"
+                    style="width: 100%"
+                  />
                 </a-form-item>
               </a-col>
             </a-row>
@@ -393,27 +479,29 @@ import {
   CameraOutlined,
   ClearOutlined,
   SearchOutlined,
-  ThunderboltOutlined
+  ThunderboltOutlined,
 } from '@ant-design/icons-vue'
-import { OcrService } from '@/api/services/OcrService'
-import type { OCRScreenshotIn } from '@/api/models/OCRScreenshotIn'
-import type { OCRScreenshotOut } from '@/api/models/OCRScreenshotOut'
-import type { ADBScreenshotIn } from '@/api/models/ADBScreenshotIn'
-import type { ADBScreenshotOut } from '@/api/models/ADBScreenshotOut'
+import {
+  ocrApi,
+  type OcrScreenshotIn,
+  type OcrScreenshotOut,
+  type AdbScreenshotIn,
+  type AdbScreenshotOut,
+} from '@/api'
 const logger = window.electronAPI.getLogger('OCR调试')
 
 // 当前激活的标签页
 const activeTab = ref('screenshot')
 
 // ========== 截图测试 ==========
-const screenshotForm = reactive<OCRScreenshotIn>({
+const screenshotForm = reactive<OcrScreenshotIn>({
   window_title: '',
   should_preprocess: true,
   aspect_ratio_width: 16,
   aspect_ratio_height: 9,
 })
 const screenshotLoading = ref(false)
-const screenshotResult = ref<OCRScreenshotOut | null>(null)
+const screenshotResult = ref<OcrScreenshotOut | null>(null)
 
 const handleScreenshot = async () => {
   if (!screenshotForm.window_title.trim()) {
@@ -425,7 +513,7 @@ const handleScreenshot = async () => {
     screenshotLoading.value = true
     screenshotResult.value = null
 
-    const response = await OcrService.getScreenshotApiOcrScreenshotPost({
+    const response = await ocrApi.getWindowScreenshot({
       window_title: screenshotForm.window_title,
       should_preprocess: screenshotForm.should_preprocess,
       aspect_ratio_width: screenshotForm.aspect_ratio_width,
@@ -457,13 +545,13 @@ const resetScreenshotForm = () => {
 }
 
 // ========== ADB 截图测试 ==========
-const adbScreenshotForm = reactive<ADBScreenshotIn>({
+const adbScreenshotForm = reactive<AdbScreenshotIn>({
   adb_path: '',
   serial: '',
   use_screencap: true,
 })
 const adbScreenshotLoading = ref(false)
-const adbScreenshotResult = ref<ADBScreenshotOut | null>(null)
+const adbScreenshotResult = ref<AdbScreenshotOut | null>(null)
 
 const handleADBScreenshot = async () => {
   if (!adbScreenshotForm.adb_path.trim()) {
@@ -480,7 +568,7 @@ const handleADBScreenshot = async () => {
     adbScreenshotLoading.value = true
     adbScreenshotResult.value = null
 
-    const response = await OcrService.getScreenshotAdbApiOcrScreenshotAdbPost({
+    const response = await ocrApi.getAdbScreenshot({
       adb_path: adbScreenshotForm.adb_path,
       serial: adbScreenshotForm.serial,
       use_screencap: adbScreenshotForm.use_screencap,
@@ -540,7 +628,7 @@ const handleCheck = async () => {
 
     if (checkForm.mode === 'single') {
       // 单个图像检查
-      response = await OcrService.checkImageApiOcrCheckImagePost({
+      response = await ocrApi.checkImage({
         window_title: checkForm.window_title,
         image_path: checkForm.image_paths_text.trim(),
         retry_times: checkForm.retry_times,
@@ -560,7 +648,7 @@ const handleCheck = async () => {
       }
 
       if (checkForm.mode === 'any') {
-        response = await OcrService.checkImageAnyApiOcrCheckImageAnyPost({
+        response = await ocrApi.checkAnyImage({
           window_title: checkForm.window_title,
           image_paths: imagePaths,
           retry_times: checkForm.retry_times,
@@ -568,7 +656,7 @@ const handleCheck = async () => {
           threshold: checkForm.threshold,
         })
       } else {
-        response = await OcrService.checkImageAllApiOcrCheckImageAllPost({
+        response = await ocrApi.checkAllImages({
           window_title: checkForm.window_title,
           image_paths: imagePaths,
           retry_times: checkForm.retry_times,
@@ -644,7 +732,7 @@ const handleClick = async () => {
     let response: any
 
     if (clickForm.mode === 'image') {
-      response = await OcrService.clickImageApiOcrClickImagePost({
+      response = await ocrApi.clickImage({
         window_title: clickForm.window_title,
         image_path: clickForm.image_path.trim(),
         retry_times: clickForm.retry_times,
@@ -652,7 +740,7 @@ const handleClick = async () => {
         threshold: clickForm.threshold,
       })
     } else {
-      response = await OcrService.clickTextApiOcrClickTextPost({
+      response = await ocrApi.clickText({
         window_title: clickForm.window_title,
         text: clickForm.text.trim(),
         retry_times: clickForm.retry_times,

@@ -1,102 +1,97 @@
-import { type HistoryData, HistorySearchIn } from '@/api'
-import { Service } from '@/api/services/Service'
-import { useLogHighlight } from '@/composables/useLogHighlight'
 import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { computed, onMounted, reactive, ref } from 'vue'
 
-const logger = window.electronAPI.getLogger('历史记录')
+import { HISTORY_SEARCH_MODE, historyApi, type HistoryData, type HistorySearchMode } from '@/api'
+import { useLogHighlight } from '@/composables/useLogHighlight'
 
-// 历史记录日期分组接口
+const logger = window.electronAPI.getLogger('history')
+
 export interface HistoryDateGroup {
   date: string
   users: Record<string, HistoryData>
 }
 
-// 快捷时间预设
 export const timePresets = [
   {
     key: 'today',
     label: '今天',
     startDate: () => dayjs().format('YYYY-MM-DD'),
     endDate: () => dayjs().format('YYYY-MM-DD'),
-    mode: HistorySearchIn.mode.DAILY,
+    mode: HISTORY_SEARCH_MODE.DAILY,
   },
   {
     key: 'yesterday',
     label: '昨天',
     startDate: () => dayjs().subtract(1, 'day').format('YYYY-MM-DD'),
     endDate: () => dayjs().subtract(1, 'day').format('YYYY-MM-DD'),
-    mode: HistorySearchIn.mode.DAILY,
+    mode: HISTORY_SEARCH_MODE.DAILY,
   },
   {
     key: 'week',
     label: '最近一周',
     startDate: () => dayjs().subtract(7, 'day').format('YYYY-MM-DD'),
     endDate: () => dayjs().format('YYYY-MM-DD'),
-    mode: HistorySearchIn.mode.DAILY,
+    mode: HISTORY_SEARCH_MODE.DAILY,
   },
   {
     key: 'month',
     label: '最近一个月',
     startDate: () => dayjs().subtract(1, 'month').format('YYYY-MM-DD'),
     endDate: () => dayjs().format('YYYY-MM-DD'),
-    mode: HistorySearchIn.mode.WEEKLY,
+    mode: HISTORY_SEARCH_MODE.WEEKLY,
   },
   {
     key: 'twoMonths',
     label: '最近两个月',
     startDate: () => dayjs().subtract(2, 'month').format('YYYY-MM-DD'),
     endDate: () => dayjs().format('YYYY-MM-DD'),
-    mode: HistorySearchIn.mode.WEEKLY,
+    mode: HISTORY_SEARCH_MODE.WEEKLY,
   },
   {
     key: 'threeMonths',
     label: '最近三个月',
     startDate: () => dayjs().subtract(3, 'month').format('YYYY-MM-DD'),
     endDate: () => dayjs().format('YYYY-MM-DD'),
-    mode: HistorySearchIn.mode.MONTHLY,
+    mode: HISTORY_SEARCH_MODE.MONTHLY,
   },
   {
     key: 'halfYear',
     label: '最近半年',
     startDate: () => dayjs().subtract(6, 'month').format('YYYY-MM-DD'),
     endDate: () => dayjs().format('YYYY-MM-DD'),
-    mode: HistorySearchIn.mode.MONTHLY,
+    mode: HISTORY_SEARCH_MODE.MONTHLY,
   },
 ]
 
 export function useHistoryLogic() {
-  // 响应式数据
   const searchLoading = ref(false)
   const detailLoading = ref(false)
   const activeKeys = ref<string[]>([])
   const currentPreset = ref('week')
 
-  // 日志高亮
   const { registerLogLanguage, editorTheme, editorConfig, setEditorConfig } = useLogHighlight()
 
-  // 字体大小选项
   const fontSizeOptions = [11, 12, 13, 14, 15, 16, 18, 20]
 
-  // 选中的用户相关数据
   const selectedUser = ref('')
   const selectedUserData = ref<HistoryData | null>(null)
   const selectedRecordIndex = ref(-1)
   const currentDetail = ref<HistoryData | null>(null)
   const currentJsonFile = ref('')
 
-  // 搜索表单
-  const searchForm = reactive({
-    mode: HistorySearchIn.mode.DAILY as HistorySearchIn.mode,
+  const searchForm = reactive<{
+    mode: HistorySearchMode
+    startDate: string
+    endDate: string
+  }>({
+    mode: HISTORY_SEARCH_MODE.DAILY,
     startDate: dayjs().subtract(7, 'day').format('YYYY-MM-DD'),
     endDate: dayjs().format('YYYY-MM-DD'),
   })
 
-  // 历史记录数据
   const historyData = ref<HistoryDateGroup[]>([])
 
-  // 搜索历史记录
   const handleSearch = async () => {
     if (!searchForm.startDate || !searchForm.endDate) {
       message.error('请选择开始日期和结束日期')
@@ -105,7 +100,7 @@ export function useHistoryLogic() {
 
     try {
       searchLoading.value = true
-      const response = await Service.searchHistoryApiHistorySearchPost({
+      const response = await historyApi.search({
         mode: searchForm.mode,
         start_date: searchForm.startDate,
         end_date: searchForm.endDate,
@@ -126,16 +121,15 @@ export function useHistoryLogic() {
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`搜索历史记录失败: ${errorMsg}`)
+      logger.error(`Search history failed: ${errorMsg}`)
       message.error('搜索历史记录失败')
     } finally {
       searchLoading.value = false
     }
   }
 
-  // 重置搜索条件
   const handleReset = () => {
-    searchForm.mode = HistorySearchIn.mode.DAILY
+    searchForm.mode = HISTORY_SEARCH_MODE.DAILY
     searchForm.startDate = dayjs().subtract(7, 'day').format('YYYY-MM-DD')
     searchForm.endDate = dayjs().format('YYYY-MM-DD')
     historyData.value = []
@@ -148,7 +142,6 @@ export function useHistoryLogic() {
     currentPreset.value = 'week'
   }
 
-  // 快捷时间选择处理
   const handleQuickTimeSelect = (preset: (typeof timePresets)[0]) => {
     currentPreset.value = preset.key
     searchForm.startDate = preset.startDate()
@@ -157,12 +150,10 @@ export function useHistoryLogic() {
     handleSearch()
   }
 
-  // 日期变化处理
   const handleDateChange = () => {
     currentPreset.value = ''
   }
 
-  // 选择用户处理
   const handleSelectUser = async (date: string, username: string, userData: HistoryData) => {
     selectedUser.value = `${date}-${username}`
     selectedUserData.value = userData
@@ -171,18 +162,16 @@ export function useHistoryLogic() {
     currentJsonFile.value = ''
   }
 
-  // 选择记录处理
   const handleSelectRecord = async (index: number, record: any) => {
     selectedRecordIndex.value = index
     currentJsonFile.value = record.jsonFile
     await loadUserLog(record.jsonFile)
   }
 
-  // 加载用户日志
   const loadUserLog = async (jsonFile: string) => {
     try {
       detailLoading.value = true
-      const response = await Service.getHistoryDataApiHistoryDataPost({ jsonPath: jsonFile })
+      const response = await historyApi.getData({ jsonPath: jsonFile })
 
       if (response.code === 200) {
         currentDetail.value = response.data
@@ -192,7 +181,7 @@ export function useHistoryLogic() {
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`获取历史记录详情失败: ${errorMsg}`)
+      logger.error(`Load history detail failed: ${errorMsg}`)
       message.error('获取历史记录详情失败')
       currentDetail.value = null
     } finally {
@@ -200,7 +189,6 @@ export function useHistoryLogic() {
     }
   }
 
-  // 打开日志文件
   const handleOpenLogFile = async () => {
     if (!currentJsonFile.value) {
       message.warning('请先选择一条记录')
@@ -217,12 +205,11 @@ export function useHistoryLogic() {
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`打开日志文件失败: ${errorMsg}`)
+      logger.error(`Open log file failed: ${errorMsg}`)
       message.error(`打开日志文件失败: ${errorMsg}`)
     }
   }
 
-  // 打开日志文件所在目录
   const handleOpenLogDirectory = async () => {
     if (!currentJsonFile.value) {
       message.warning('请先选择一条记录')
@@ -239,12 +226,11 @@ export function useHistoryLogic() {
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`打开日志文件目录失败: ${errorMsg}`)
+      logger.error(`Open log directory failed: ${errorMsg}`)
       message.error(`打开日志文件目录失败: ${errorMsg}`)
     }
   }
 
-  // Monaco Editor 配置
   const monacoOptions = computed(() => ({
     readOnly: true,
     fontSize: editorConfig.value.fontSize,
@@ -267,13 +253,11 @@ export function useHistoryLogic() {
     },
   }))
 
-  // 页面加载时自动搜索
   onMounted(() => {
     handleSearch()
   })
 
   return {
-    // 状态
     searchLoading,
     detailLoading,
     activeKeys,
@@ -286,13 +270,11 @@ export function useHistoryLogic() {
     searchForm,
     historyData,
 
-    // 配置
     fontSizeOptions,
     editorConfig,
     editorTheme,
     monacoOptions,
 
-    // 方法
     handleSearch,
     handleReset,
     handleQuickTimeSelect,

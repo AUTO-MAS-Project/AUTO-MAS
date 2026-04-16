@@ -21,7 +21,6 @@
 from app.core import Config
 from app.services import Notify
 from app.utils import get_logger
-from app.models import SrcUserConfig
 from typing import Any
 
 logger = get_logger("SRC通知工具")
@@ -31,7 +30,7 @@ async def push_notification(
     mode: str,
     title: str,
     message: dict[str, Any],
-    user_config: SrcUserConfig | None,
+    user_config: Any | None,
 ) -> None:
     """通过所有渠道推送通知"""
 
@@ -123,25 +122,26 @@ async def push_notification(
             and user_config.get("Notify", "Enabled")
             and user_config.get("Notify", "IfSendStatistic")
         ):
+            user_config_any = user_config
             # 发送邮件通知
-            if user_config.get("Notify", "IfSendMail"):
-                if user_config.get("Notify", "ToAddress"):
+            if user_config_any.get("Notify", "IfSendMail"):
+                if user_config_any.get("Notify", "ToAddress"):
                     await Notify.send_mail(
                         "网页",
                         title,
                         message_html,
-                        user_config.get("Notify", "ToAddress"),
+                        user_config_any.get("Notify", "ToAddress"),
                     )
                 else:
                     logger.error("用户邮箱地址为空, 无法发送用户单独的邮件通知")
 
             # 发送ServerChan通知
-            if user_config.get("Notify", "IfServerChan"):
-                if user_config.get("Notify", "ServerChanKey"):
+            if user_config_any.get("Notify", "IfServerChan"):
+                if user_config_any.get("Notify", "ServerChanKey"):
                     await Notify.ServerChanPush(
                         title,
                         f"{serverchan_message}\n\nAUTO-MAS 敬上",
-                        user_config.get("Notify", "ServerChanKey"),
+                        user_config_any.get("Notify", "ServerChanKey"),
                     )
                 else:
                     logger.error(
@@ -149,7 +149,7 @@ async def push_notification(
                     )
 
             # 推送CompanyWebHookBot通知
-            for webhook in user_config.Notify_CustomWebhooks.values():
+            for webhook in user_config_any.Notify_CustomWebhooks.values():
                 await Notify.WebhookPush(
                     title, f"{message_text}\n\nAUTO-MAS 敬上", webhook
                 )

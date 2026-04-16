@@ -40,6 +40,26 @@ export default [
         'warn',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '@/api/generated',
+                '@/api/generated/*',
+                '@/api/models',
+                '@/api/models/*',
+                '@/api/services',
+                '@/api/services/*',
+                '@/api/core',
+                '@/api/core/*',
+              ],
+              message: '请从 @/api 顶层出口导入，不要直接依赖生成层或旧目录',
+            },
+          ],
+        },
+      ],
     },
   },
 
@@ -109,7 +129,7 @@ export default [
       '**/*.d.ts',
       '**/*.js',
       // 忽略自动生成的 API 文件
-      'src/api/*',
+      'src/api/generated/**',
     ],
   },
 ]
