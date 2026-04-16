@@ -48,3 +48,6 @@ uv.lock
 /frontend/app
 # Local AI/agent metadata
 /.claude/
+
+/plugins
+/app/core/plugins/_generated/

@@ -33,7 +33,8 @@ from app.core.config.base import MultipleConfig
 from app.models import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceInfo, DeviceBase
 from app.services import Notify, System
-from app.utils import get_logger, LogMonitor, ProcessManager, skland_sign_in
+from app.tools import skland_sign_in
+from app.utils import get_logger, LogMonitor, ProcessManager
 from app.utils.constants import (
     UTC4,
     UTC8,

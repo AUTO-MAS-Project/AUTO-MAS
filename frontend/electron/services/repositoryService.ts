@@ -616,7 +616,7 @@ export class RepositoryService {
      * 复制文件到根目录
      */
     private async copyToRoot(): Promise<void> {
-        const itemsToCopy = ['.git', 'app', 'res', 'main.py', 'requirements.txt', 'LICENSE', 'README.md']
+        const itemsToCopy = ['.git', 'app', 'res', 'scripts', 'mas', 'main.py', 'requirements.txt', 'LICENSE', 'README.md']
 
         for (const item of itemsToCopy) {
             const srcPath = path.join(this.repoPath, item)

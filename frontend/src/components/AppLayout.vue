@@ -91,6 +91,7 @@ const mainMenuItems = [
   { key: '/scripts', label: '脚本管理', icon: icon(FileTextOutlined) },
   { key: '/plans', label: '计划管理', icon: icon(CalendarOutlined) },
   { key: '/emulators', label: '模拟器管理', icon: icon(DatabaseOutlined) },
+  { key: '/plugins', label: '插件管理', icon: icon(ApiOutlined) },
   { key: '/queue', label: '调度队列', icon: icon(UnorderedListOutlined) },
   { key: '/scheduler', label: '调度中心', icon: icon(ControlOutlined) },
 ]

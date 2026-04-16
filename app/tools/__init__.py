@@ -1,12 +1,6 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
-#   This file incorporates work covered by the following copyright and
-#   permission notice:
-#
-#       git-sync Copyright © 2024-present cnb.cool
-#       https://cnb.cool/cnb/plugins/tencentcom/git-sync
-
 #   This file is part of AUTO-MAS.
 
 #   AUTO-MAS is free software: you can redistribute it and/or modify
@@ -24,26 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-name: Sync to CNB
-on:
-  push:
-  create:
 
-jobs:
-  sync:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
-          fetch-depth: 0
-      
-      - name: Sync to CNB Repository
-        uses: docker://tencentcom/git-sync
-        env:
-          PLUGIN_TARGET_URL: "https://cnb.cool/AUTO-MAS-Project/AUTO-MAS.git"
-          PLUGIN_AUTH_TYPE: "https"
-          PLUGIN_USERNAME: "cnb"
-          PLUGIN_PASSWORD: ${{ secrets.GIT_PASSWORD }}
-          PLUGIN_PUSH_TAGS: "true"
-          PLUGIN_FORCE: "true"
+from .skland import skland_sign_in
+
+__all__ = ["skland_sign_in"]
