@@ -70,13 +70,13 @@ const mainMenuItems = [
   { key: '/scripts', label: '脚本管理', icon: icon(FileTextOutlined) },
   { key: '/plans', label: '计划管理', icon: icon(CalendarOutlined) },
   { key: '/emulators', label: '模拟器管理', icon: icon(DatabaseOutlined) },
+  { key: '/plugins', label: '插件管理', icon: icon(ApiOutlined) },
   { key: '/queue', label: '调度队列', icon: icon(UnorderedListOutlined) },
   { key: '/scheduler', label: '调度中心', icon: icon(ControlOutlined) },
 ]
 
 // 开发环境专用菜单项
 const devMenuItems = [
-  { key: '/plugins', label: '插件管理', icon: icon(ApiOutlined) },
   { key: '/TestRouter', label: '测试路由', icon: icon(SettingOutlined) },
   { key: '/OCRdev', label: 'OCR测试', icon: icon(SettingOutlined) },
   { key: '/WSdev', label: 'WebSocket测试', icon: icon(ApiOutlined) },
