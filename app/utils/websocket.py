@@ -204,13 +204,15 @@ class ReverseWebSocketSession:
         message = {"id": "Client", "type": "Signal", "data": {"Ping": "heartbeat"}}
         if await self.send(message):
             self._last_ping = time.monotonic()
-            self.logger.debug("已发送 Ping")
+            if self.name != "Main":
+                self.logger.debug("已发送 Ping")
 
     async def _send_pong(self):
         """发送应用层 Pong。"""
         message = {"id": "Client", "type": "Signal", "data": {"Pong": "heartbeat"}}
         await self.send(message)
-        self.logger.debug("已发送 Pong")
+        if self.name != "Main":
+            self.logger.debug("已发送 Pong")
 
     async def _handle_message(self, raw_message: Any):
         """处理接收到的消息。"""
@@ -224,10 +226,12 @@ class ReverseWebSocketSession:
                 signal_data = data.get("data", {})
                 if "Pong" in signal_data:
                     self._last_pong = time.monotonic()
-                    self.logger.debug("收到 Pong")
+                    if self.name != "Main":
+                        self.logger.debug("收到 Pong")
                     return
                 if "Ping" in signal_data:
-                    self.logger.debug("收到 Ping")
+                    if self.name != "Main":
+                        self.logger.debug("收到 Ping")
                     await self._send_pong()
                     return
 
