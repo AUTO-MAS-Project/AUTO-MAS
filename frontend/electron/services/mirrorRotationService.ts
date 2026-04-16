@@ -118,7 +118,7 @@ export class MirrorRotationService {
 
     /**
      * 排序镜像源
-     * 优先使用配置的镜像源，然后是镜像源，最后是官方源
+     * 优先使用配置的镜像源；若存在 GitHub 源则优先 GitHub；然后是镜像源，最后是官方源
      */
     private sortMirrors(mirrors: MirrorSource[], preferredMirrorName?: string): MirrorSource[] {
         const sorted = [...mirrors]
@@ -130,7 +130,13 @@ export class MirrorRotationService {
                 if (b.name === preferredMirrorName) return 1
             }
 
-            // 2. 镜像源优先于官方源
+            // 2. 测试版场景优先 GitHub 源（repo 列表中 key/name 通常包含 github）
+            const aIsGithub = this.isGithubMirror(a)
+            const bIsGithub = this.isGithubMirror(b)
+            if (aIsGithub && !bIsGithub) return -1
+            if (!aIsGithub && bIsGithub) return 1
+
+            // 3. 镜像源优先于官方源
             if (a.type === 'mirror' && b.type === 'official') return -1
             if (a.type === 'official' && b.type === 'mirror') return 1
 
@@ -138,6 +144,16 @@ export class MirrorRotationService {
         })
 
         return sorted
+    }
+
+    /**
+     * 判断当前源是否为 GitHub 源（用于初始化拉取时优先级提升）
+     */
+    private isGithubMirror(mirror: MirrorSource): boolean {
+        const key = mirror.key?.toLowerCase() || ''
+        const name = mirror.name?.toLowerCase() || ''
+        const url = mirror.url?.toLowerCase() || ''
+        return key.includes('github') || name.includes('github') || url.includes('github.com')
     }
 
     /**
