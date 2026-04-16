@@ -77,10 +77,20 @@ def main():
         async def lifespan(app: FastAPI):
             from app.core import Config, MainTimer, TaskManager, PluginManager
             from app.MaaFW import ArknightWin32Toolkit
-            from scripts.dev_stub_generator import (
-                generate_plugin_context_stubs,
-                is_dev_stub_generation_enabled,
-            )
+
+            if os.getenv("AUTO_MAS_DEV") == "1":
+                from scripts.dev_stub_generator import (
+                    generate_plugin_context_stubs,
+                    is_dev_stub_generation_enabled,
+                )
+            else:
+                def is_dev_stub_generation_enabled() -> bool:
+                    """判断是否允许生成开发期类型提示。"""
+                    return False
+
+                def generate_plugin_context_stubs() -> dict:
+                    """非开发模式下的兜底实现。"""
+                    raise RuntimeError("当前非开发模式，未加载 dev_stub_generator")
 
             await Config.init_config()
             await Config.get_stage()

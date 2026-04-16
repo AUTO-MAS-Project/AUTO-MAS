@@ -1,6 +1,7 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -8,11 +9,34 @@ from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 
 from app.core.plugins import PluginConfigStore, PluginManager
-from scripts.dev_stub_generator import (
-    generate_plugin_context_stubs,
-    is_dev_stub_generation_enabled,
-)
 from app.models.schema import OutBase
+
+
+if os.getenv("AUTO_MAS_DEV") == "1":
+    from scripts.dev_stub_generator import (
+        generate_plugin_context_stubs,
+        is_dev_stub_generation_enabled,
+    )
+else:
+    def is_dev_stub_generation_enabled() -> bool:
+        """判断是否允许生成开发期类型提示。
+
+        Returns:
+            bool: 在非开发模式下恒为 False。
+        """
+        return False
+
+
+    def generate_plugin_context_stubs() -> Dict[str, Any]:
+        """非开发模式下的兜底实现。
+
+        Returns:
+            Dict[str, Any]: 不返回有效结果，调用时将抛出异常。
+
+        Raises:
+            RuntimeError: 当 AUTO_MAS_DEV 不为 "1" 时禁止生成类型提示。
+        """
+        raise RuntimeError("当前非开发模式，未加载 dev_stub_generator")
 
 
 router = APIRouter(prefix="/api/plugins", tags=["插件实例"])
