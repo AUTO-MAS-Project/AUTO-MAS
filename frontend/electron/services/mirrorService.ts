@@ -70,6 +70,13 @@ const DEFAULT_MIRROR_CONFIG: MirrorConfig = {
             description: '清华大学开源软件镜像站，国内访问速度快'
         },
         {
+            key: 'huawei',
+            name: '华为云镜像',
+            url: 'https://mirrors.huaweicloud.com/repository/toolkit/python/3.12.0/python-3.12.0-embed-amd64.zip',
+            type: 'mirror',
+            description: '华为云镜像服务，国内访问稳定'
+        },
+        {
             key: 'autonas',
             name: 'AUTO-MAS 自建源',
             url: 'https://download.auto-mas.top/d/AUTO-MAS/Environment/python-3.12.0-embed-amd64.zip',
@@ -111,9 +118,16 @@ const DEFAULT_MIRROR_CONFIG: MirrorConfig = {
     ],
     repo: [
         {
-            key: 'gitee',
-            name: 'Gitee 镜像',
-            url: 'https://gitee.com/auto-mas-project/AUTO-MAS',
+            key: 'cnb',
+            name: 'CNB 官方镜像',
+            url: 'https://cnb.cool/AUTO-MAS-Project/AUTO-MAS.git',
+            type: 'mirror',
+            description: 'CNB 镜像源，更新及时，国内访问速度快'
+        },
+        {
+            key: 'gitee 镜像源',
+            name: 'gitee',
+            url: 'https://gitee.com/auto-mas-project/AUTO-MAS.git',
             type: 'mirror',
             description: 'Gitee 镜像源，更新会有少许延迟'
         },
@@ -123,6 +137,27 @@ const DEFAULT_MIRROR_CONFIG: MirrorConfig = {
             url: 'https://gh-proxy.com/https://github.com/AUTO-MAS-Project/AUTO-MAS.git',
             type: 'mirror',
             description: 'Cloudflare CDN 镜像，适合全球用户'
+        },
+        {
+            key: 'ghproxy_fastly',
+            name: 'gh-proxy (Fastly CDN)',
+            url: 'https://cdn.gh-proxy.com/https://github.com/AUTO-MAS-Project/AUTO-MAS.git',
+            type: 'mirror',
+            description: 'Fastly CDN 镜像服务'
+        },
+        {
+            key: 'ghproxy_edgeone',
+            name: 'gh-proxy (EdgeOne)',
+            url: 'https://edgeone.gh-proxy.com/https://github.com/AUTO-MAS-Project/AUTO-MAS.git',
+            type: 'mirror',
+            description: 'EdgeOne 镜像服务'
+        },
+        {
+            key: 'ghfast',
+            name: 'ghfast 镜像',
+            url: 'https://ghfast.top/https://github.com/AUTO-MAS-Project/AUTO-MAS.git',
+            type: 'mirror',
+            description: '第三方镜像服务'
         },
         {
             key: 'github',
