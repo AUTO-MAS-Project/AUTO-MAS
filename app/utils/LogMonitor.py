@@ -25,7 +25,7 @@ from contextlib import suppress
 from datetime import datetime, timedelta, date
 from copy import copy
 from pathlib import Path
-from typing import Callable, Optional, Awaitable
+from typing import Callable, Literal, Awaitable
 
 from .constants import TIME_FIELDS, ANSI_ESCAPE_RE
 from .logger import get_logger
@@ -68,7 +68,7 @@ class LogMonitor:
         self.last_callback_time: datetime = datetime.now()
         self.log_contents: list[str] = []
         self.latest_time = datetime.now()
-        self.task: Optional[asyncio.Task] = None
+        self.task: asyncio.Task | None = None
 
     async def monitor_file(
         self,
@@ -181,28 +181,38 @@ class LogMonitor:
 
             await asyncio.sleep(1)
 
-    async def monitor_process(self, process: asyncio.subprocess.Process):
+    async def monitor_process(
+        self, process: asyncio.subprocess.Process, stream: Literal["stdout", "stderr"]
+    ):
         """监控进程日志"""
 
         logger.info(f"开始监控进程日志: {process.pid}")
 
         await self.update_latest_timestamp("", if_init=True)
 
-        if process.stdout is None:
-            raise ValueError("进程没有标准输出")
+        if hasattr(process, stream):
+            process_stream = getattr(process, stream)
+            if not isinstance(process_stream, asyncio.StreamReader):
+                raise ValueError(f"进程没有可用的{stream}流")
+        else:
+            raise ValueError(f"无效的流类型: {stream}")
 
         self.log_contents = []
 
         while True:
 
             try:
-                bline = await asyncio.wait_for(process.stdout.readline(), timeout=60)
+                bline = await asyncio.wait_for(process_stream.readline(), timeout=60)
             except asyncio.TimeoutError:
                 # 超时后调用回调函数
                 await self.do_callback()
                 continue
 
             line = ANSI_ESCAPE_RE.sub("", decode_bytes(bline))
+
+            if not line.strip():
+                continue
+
             self.log_contents.append(line)
             await self.update_latest_timestamp(line)
 
@@ -243,6 +253,7 @@ class LogMonitor:
                     self.time_format,
                     self.last_callback_time,
                 )
+                logger.debug(f"日志时间戳更新: {self.latest_time}")
                 self.last_log = log_text
 
     async def start_monitor_file(
@@ -270,18 +281,23 @@ class LogMonitor:
         )
         logger.info(f"日志文件监控已启动: {log_file_path}")
 
-    async def start_monitor_process(self, process: asyncio.subprocess.Process) -> None:
+    async def start_monitor_process(
+        self,
+        process: asyncio.subprocess.Process,
+        stream: Literal["stdout", "stderr"] = "stdout",
+    ) -> None:
         """
         开始监控进程日志
 
         Args:
             process (asyncio.subprocess.Process): 进程对象
+            stream (Literal["stdout", "stderr"]): 流对象
         """
 
         if self.task is not None and not self.task.done():
             await self.stop()
 
-        self.task = asyncio.create_task(self.monitor_process(process))
+        self.task = asyncio.create_task(self.monitor_process(process, stream))
         logger.info(f"进程日志监控已启动: {process.pid}")
 
     async def stop(self):

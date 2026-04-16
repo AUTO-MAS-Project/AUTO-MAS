@@ -222,8 +222,8 @@ class GlobalConfig_Notify(BaseModel):
 
 class GlobalConfig_Update(BaseModel):
     IfAutoUpdate: Optional[bool] = Field(default=None, description="是否自动更新")
-    Source: Optional[Literal["GitHub", "MirrorChyan", "AutoSite"]] = Field(
-        default=None, description="更新源: GitHub源, Mirror酱源, 自建源"
+    Source: Optional[Literal["GitHub", "MirrorChyan", "AutoSite", "CNB"]] = Field(
+        default=None, description="更新源: GitHub源, Mirror酱源, 自建源, CNB 镜像源"
     )
     Channel: Optional[Literal["stable", "beta"]] = Field(
         default=None, description="更新渠道: 稳定版, 测试版"
