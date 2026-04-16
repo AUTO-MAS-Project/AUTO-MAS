@@ -40,7 +40,6 @@ from tenacity import (
     wait_exponential,
 )
 
-from app.core import Config
 from app.utils.constants import MIRROR_ERROR_INFO
 from app.utils import ProcessRunner, get_logger
 from .system import System
@@ -85,6 +84,7 @@ class _UpdateHandler:
                 self.update_version_info,
             )
 
+        from app.core import Config
         logger.info("开始检查更新")
         version_info: dict[str, Any] = {}
 
@@ -150,6 +150,7 @@ class _UpdateHandler:
     async def download_update(self) -> None:
         """下载更新包并通过 WebSocket 上报进度。"""
 
+        from app.core import Config
         logger.info("收到前端下载请求")
 
         if self._operation_lock.locked():
@@ -306,6 +307,7 @@ class _UpdateHandler:
     async def install_update(self):
         """解压并安装已下载的更新包。"""
 
+        from app.core import Config
         if self._operation_lock.locked():
             await Config.send_websocket_message(
                 id="Update",

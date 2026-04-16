@@ -23,14 +23,12 @@
 
 from typing import TYPE_CHECKING
 
-from .broadcast import Broadcast
-from .emulator_manager import EmulatorManager
-from .task_manager import TaskManager
-from .maa_manager import MaaFWManager
-
-from .timer import MainTimer
-
 if TYPE_CHECKING:
+    from .broadcast import Broadcast as Broadcast
+    from .emulator_manager import EmulatorManager as EmulatorManager
+    from .task_manager import TaskManager as TaskManager
+    from .maa_manager import MaaFWManager as MaaFWManager
+    from .timer import MainTimer as MainTimer
     from .config import Config as Config
 
 __all__ = [
@@ -44,6 +42,26 @@ __all__ = [
 
 
 def __getattr__(name: str):
+    if name == "Broadcast":
+        from .broadcast import Broadcast
+
+        return Broadcast
+    if name == "EmulatorManager":
+        from .emulator_manager import EmulatorManager
+
+        return EmulatorManager
+    if name == "TaskManager":
+        from .task_manager import TaskManager
+
+        return TaskManager
+    if name == "MaaFWManager":
+        from .maa_manager import MaaFWManager
+
+        return MaaFWManager
+    if name == "MainTimer":
+        from .timer import MainTimer
+
+        return MainTimer
     if name == "Config":
         from .config import Config
 

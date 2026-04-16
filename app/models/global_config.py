@@ -25,6 +25,7 @@ from .common import EmulatorConfig, QueueConfig, QueueItem, Webhook
 from .general import GeneralConfig
 from .maa import MaaConfig, MaaPlanConfig, MaaUserConfig
 from .maaend import MaaEndConfig
+from .plugin import PluginInstanceConfig
 from .src import SrcConfig
 
 
@@ -174,6 +175,9 @@ class GlobalConfig(PydanticConfigBase):
         self.PlanConfig: MultipleConfig[MaaPlanConfig] = MultipleConfig([MaaPlanConfig])
         self.ScriptConfig: MultipleConfig[Any] = MultipleConfig(
             [MaaConfig, MaaEndConfig, SrcConfig, GeneralConfig]
+        )
+        self.PluginConfig: MultipleConfig[PluginInstanceConfig] = MultipleConfig(
+            [PluginInstanceConfig]
         )
         self.QueueConfig: MultipleConfig[QueueConfig] = MultipleConfig([QueueConfig])
         self.ToolsConfig = ToolsConfig()

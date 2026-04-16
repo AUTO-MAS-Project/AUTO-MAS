@@ -33,7 +33,6 @@ from email.utils import formataddr
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from app.core import Config
 from app.models import Webhook
 from app.utils import get_logger, ImageUtils
 
@@ -58,6 +57,7 @@ class Notification:
             通知持续时间
         """
 
+        from app.core import Config
         if not Config.get("Notify", "IfPushPlyer"):
             return
 
@@ -94,6 +94,7 @@ class Notification:
             收件人地址
         """
 
+        from app.core import Config
         if Config.get("Notify", "SMTPServerAddress") == "":
             raise ValueError("邮件通知的SMTP服务器地址不能为空")
         if Config.get("Notify", "AuthorizationCode") == "":
@@ -177,6 +178,7 @@ class Notification:
         params = {"title": title, "desp": content}
         headers = {"Content-Type": "application/json;charset=utf-8"}
 
+        from app.core import Config
         async with httpx.AsyncClient(proxy=Config.proxy) as client:
             response = await client.post(url, json=params, headers=headers)
             result = response.json()
@@ -285,6 +287,7 @@ class Notification:
         headers = {"Content-Type": "application/json"}
         headers.update(json.loads(webhook.get("Data", "Headers")))
 
+        from app.core import Config
         async with httpx.AsyncClient(proxy=Config.proxy, timeout=10) as client:
             response: httpx.Response
             if webhook.get("Data", "Method") == "POST":
@@ -345,6 +348,7 @@ class Notification:
         content = f"{title}\n{content}"
         data = {"msgtype": "text", "text": {"content": content}}
 
+        from app.core import Config
         async with httpx.AsyncClient(proxy=Config.proxy) as client:
             response = await client.post(url=webhook_url, json=data)
             info = response.json()
@@ -383,6 +387,7 @@ class Notification:
             "image": {"base64": image_base64, "md5": image_md5},
         }
 
+        from app.core import Config
         async with httpx.AsyncClient(proxy=Config.proxy) as client:
             response = await client.post(url=webhook_url, json=data)
             info = response.json()
@@ -458,6 +463,7 @@ class Notification:
         )
 
         # 发送邮件通知
+        from app.core import Config
         if Config.get("Notify", "IfSendMail"):
             await self.send_mail(
                 "文本",

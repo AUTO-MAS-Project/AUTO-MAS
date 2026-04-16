@@ -131,6 +131,7 @@ def main() -> None:
             dispatch_router,
             history_router,
             tools_router,
+            plugins_router,
             setting_router,
             update_router,
             ocr_router,
@@ -272,6 +273,7 @@ def main() -> None:
         app.include_router(dispatch_router)
         app.include_router(history_router)
         app.include_router(tools_router)
+        app.include_router(plugins_router)
         app.include_router(setting_router)
         app.include_router(update_router)
         app.include_router(ocr_router)

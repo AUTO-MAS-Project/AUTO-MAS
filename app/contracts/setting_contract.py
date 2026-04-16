@@ -39,10 +39,20 @@ class WebhookIndexItem(ApiModel):
     type: Literal["Webhook"] = Field(..., description="配置类型")
 
 
-WebhookGetOut = ResourceCollectionOut[WebhookIndexItem, WebhookRead]
-WebhookDetailOut = ResourceItemOut[WebhookRead]
-WebhookCreateOut = ResourceCreateOut[WebhookRead]
-SettingGetOut = ResourceItemOut[GlobalConfigRead]
+class WebhookGetOut(ResourceCollectionOut[WebhookIndexItem, WebhookRead]):
+    """Webhook 列表响应模型"""
+
+
+class WebhookDetailOut(ResourceItemOut[WebhookRead]):
+    """Webhook 详情响应模型"""
+
+
+class WebhookCreateOut(ResourceCreateOut[WebhookRead]):
+    """Webhook 创建响应模型"""
+
+
+class SettingGetOut(ResourceItemOut[GlobalConfigRead]):
+    """全局设置响应模型"""
 
 
 __all__ = [

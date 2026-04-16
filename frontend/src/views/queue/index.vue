@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <!-- 加载状态 -->
   <div v-if="loading" class="loading-container">
     <a-spin size="large" tip="加载中，请稍候..." />
@@ -20,8 +20,13 @@
             新建队列
           </a-button>
 
-          <a-popconfirm v-if="queueList.length > 0" title="确定要删除这个队列吗？" ok-text="确定" cancel-text="取消"
-            @confirm="handleRemoveQueue(activeQueueId)">
+          <a-popconfirm
+            v-if="queueList.length > 0"
+            title="确定要删除这个队列吗？"
+            ok-text="确定"
+            cancel-text="取消"
+            @confirm="handleRemoveQueue(activeQueueId)"
+          >
             <a-button danger size="large" :disabled="!activeQueueId">
               <template #icon>
                 <DeleteOutlined />
@@ -63,9 +68,14 @@
           <!-- 队列按钮组 -->
           <div class="queue-buttons-container">
             <a-space wrap size="middle">
-              <a-button v-for="queue in queueList" :key="queue.id"
-                :type="activeQueueId === queue.id ? 'primary' : 'default'" size="large" class="queue-button"
-                @click="onQueueChange(queue.id)">
+              <a-button
+                v-for="queue in queueList"
+                :key="queue.id"
+                :type="activeQueueId === queue.id ? 'primary' : 'default'"
+                size="large"
+                class="queue-button"
+                @click="onQueueChange(queue.id)"
+              >
                 {{ queue.name }}
               </a-button>
             </a-space>
@@ -86,9 +96,15 @@
               </a-button>
             </div>
             <div v-else class="queue-title-edit">
-              <a-input ref="queueNameInputRef" v-model:value="currentQueueName" placeholder="请输入队列名称"
-                class="queue-title-input" :maxlength="50" @blur="finishEditQueueName"
-                @press-enter="finishEditQueueName" />
+              <a-input
+                ref="queueNameInputRef"
+                v-model:value="currentQueueName"
+                placeholder="请输入队列名称"
+                class="queue-title-input"
+                :maxlength="50"
+                @blur="finishEditQueueName"
+                @press-enter="finishEditQueueName"
+              />
             </div>
           </div>
         </template>
@@ -104,8 +120,12 @@
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
-                <a-select v-model:value="currentStartUpEnabled" style="width: 100%" size="large"
-                  @change="(value: any) => handleConfigChange('StartUpEnabled', value)">
+                <a-select
+                  v-model:value="currentStartUpEnabled"
+                  style="width: 100%"
+                  size="large"
+                  @change="(value: any) => handleConfigChange('StartUpEnabled', value)"
+                >
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -119,8 +139,12 @@
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
-                <a-select v-model:value="currentTimeEnabled" style="width: 100%" size="large"
-                  @change="(value: any) => handleConfigChange('TimeEnabled', value)">
+                <a-select
+                  v-model:value="currentTimeEnabled"
+                  style="width: 100%"
+                  size="large"
+                  @change="(value: any) => handleConfigChange('TimeEnabled', value)"
+                >
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -134,9 +158,14 @@
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
-                <a-select v-model:value="currentAfterAccomplish" style="width: 100%" :options="afterAccomplishOptions"
-                  placeholder="请选择操作" size="large"
-                  @change="(value: any) => handleConfigChange('AfterAccomplish', value)" />
+                <a-select
+                  v-model:value="currentAfterAccomplish"
+                  style="width: 100%"
+                  :options="afterAccomplishOptions"
+                  placeholder="请选择操作"
+                  size="large"
+                  @change="(value: any) => handleConfigChange('AfterAccomplish', value)"
+                />
               </div>
             </a-col>
           </a-row>
@@ -145,14 +174,24 @@
 
         <!-- 定时项管理 -->
         <a-col :span="24" class="manager-col">
-          <TimeSetManager v-if="activeQueueId && currentQueueData" :queue-id="activeQueueId"
-            :time-sets="currentTimeSets" style="font-size: 14px" @refresh="refreshTimeSets" />
+          <TimeSetManager
+            v-if="activeQueueId && currentQueueData"
+            :queue-id="activeQueueId"
+            :time-sets="currentTimeSets"
+            style="font-size: 14px"
+            @refresh="refreshTimeSets"
+          />
         </a-col>
 
         <!-- 队列项管理 -->
         <a-col :span="24" class="manager-col">
-          <QueueItemManager v-if="activeQueueId && currentQueueData" :queue-id="activeQueueId"
-            :queue-items="currentQueueItems" style="font-size: 14px" @refresh="refreshQueueItems" />
+          <QueueItemManager
+            v-if="activeQueueId && currentQueueData"
+            :queue-id="activeQueueId"
+            :queue-items="currentQueueItems"
+            style="font-size: 14px"
+            @refresh="refreshQueueItems"
+          />
         </a-col>
       </a-card>
     </div>
@@ -160,7 +199,7 @@
 </template>
 
 <script setup lang="ts">
-import { Service } from '@/api'
+import { queueApi, queueItemApi, timeSetApi } from '@/api'
 import QueueItemManager from '@/views/queue/components/QueueItemManager.vue'
 import TimeSetManager from '@/views/queue/components/TimeSetManager.vue'
 import {
@@ -213,7 +252,7 @@ const loading = ref(true)
 const fetchQueues = async () => {
   loading.value = true
   try {
-    const response = await Service.getQueuesApiQueueGetPost({})
+    const response = await queueApi.list()
     if (response.code === 200) {
       // 处理队列数据
       logger.debug(`API Response: ${JSON.stringify(response)}`) // 调试日志
@@ -277,7 +316,7 @@ const loadQueueData = async (queueId: string) => {
   if (!queueId) return
 
   try {
-    const response = await Service.getQueuesApiQueueGetPost({})
+    const response = await queueApi.list()
     currentQueueData.value = response.data
 
     // 根据API响应数据更新队列信息
@@ -331,9 +370,7 @@ const refreshTimeSets = async () => {
 
   try {
     // 使用专门的定时项API获取数据
-    const response = await Service.getTimeSetApiQueueTimeGetPost({
-      queueId: activeQueueId.value,
-    })
+    const response = await timeSetApi.list(activeQueueId.value)
 
     if (response.code !== 200) {
       logger.error(`获取定时项数据失败: ${JSON.stringify(response)}`)
@@ -396,9 +433,7 @@ const refreshQueueItems = async () => {
 
   try {
     // 使用专门的队列项API获取数据
-    const response = await Service.getItemApiQueueItemGetPost({
-      queueId: activeQueueId.value,
-    })
+    const response = await queueItemApi.list(activeQueueId.value)
 
     if (response.code !== 200) {
       logger.error(`获取队列项数据失败: ${JSON.stringify(response)}`)
@@ -482,9 +517,9 @@ const handleConfigChange = async (key: string, value: any) => {
 // 添加队列
 const handleAddQueue = async () => {
   try {
-    const response = await Service.addQueueApiQueueAddPost()
+    const response = await queueApi.create()
 
-    if (response.code === 200 && response.queueId) {
+    if (response.code === 200 && response.id) {
       // 播放添加队列成功音频
       const { useAudioPlayer } = await import('@/composables/useAudioPlayer')
       const { playSound } = useAudioPlayer()
@@ -492,7 +527,7 @@ const handleAddQueue = async () => {
 
       const defaultName = '新队列'
       const newQueue = {
-        id: response.queueId,
+        id: response.id,
         name: defaultName,
       }
       queueList.value.push(newQueue)
@@ -519,7 +554,7 @@ const handleAddQueue = async () => {
 // 删除队列
 const handleRemoveQueue = async (queueId: string) => {
   try {
-    const response = await Service.deleteQueueApiQueueDeletePost({ queueId })
+    const response = await queueApi.remove(queueId)
 
     if (response.code === 200) {
       // 播放删除队列成功音频
@@ -573,7 +608,7 @@ const refreshQueueConfig = async () => {
   if (!activeQueueId.value) return
 
   try {
-    const response = await Service.getQueuesApiQueueGetPost({})
+    const response = await queueApi.list()
     if (response.code === 200 && response.data && response.data[activeQueueId.value]) {
       currentQueueData.value = response.data
       const queueData = response.data[activeQueueId.value]
@@ -608,10 +643,7 @@ const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
       Info: { [key]: value },
     }
 
-    const response = await Service.updateQueueApiQueueUpdatePost({
-      queueId: activeQueueId.value,
-      data: queueData,
-    })
+    const response = await queueApi.update(activeQueueId.value, queueData)
 
     if (response.code !== 200) {
       message.error(response.message || '保存失败')
@@ -783,7 +815,6 @@ onMounted(async () => {
 }
 
 @keyframes pulse {
-
   0%,
   100% {
     opacity: 0.6;

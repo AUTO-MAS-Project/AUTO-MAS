@@ -21,7 +21,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier . --write",
-    "openapi": "openapi --input http://127.0.0.1:36163/openapi.json --output ./src/api --client axios"
+    "openapi": "openapi-ts"
   },
   "build": {
     "asar": true,
@@ -81,6 +81,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.37.0",
+    "@hey-api/openapi-ts": "^0.86.0",
     "@types/matter-js": "^0",
     "@types/node": "22.17.1",
     "@typescript-eslint/eslint-plugin": "^8.38.0",
@@ -96,7 +97,6 @@
     "eslint-plugin-prettier": "^5.5.3",
     "eslint-plugin-vue": "^10.4.0",
     "globals": "^16.4.0",
-    "openapi-typescript-codegen": "^0.29.0",
     "prettier": "^3.6.2",
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.45.0",

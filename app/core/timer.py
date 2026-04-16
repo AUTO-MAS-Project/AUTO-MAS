@@ -23,7 +23,6 @@ import asyncio
 from datetime import datetime
 
 from app.services import Matomo
-from app.MaaFW import ArknightWin32Toolkit
 from app.utils import get_logger
 from .config import Config
 from .task_manager import TaskManager
@@ -69,6 +68,7 @@ class _MainTimer:
             await self.timed_start()
 
             if Config.ToolsConfig.get("ArknightsPC", "Enabled"):
+                from app.MaaFW import ArknightWin32Toolkit
                 await ArknightWin32Toolkit.scheduled_task()
 
             await asyncio.sleep(1)

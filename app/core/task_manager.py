@@ -29,7 +29,6 @@ from .config import Config
 from app.services import System
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
 from app.utils import get_logger
-from app.task import MaaManager, SrcManager, GeneralManager, MaaEndManager
 from app.utils.constants import POWER_SIGN_MAP
 
 
@@ -134,6 +133,7 @@ class Task(TaskExecuteBase):
             script_item.status = "运行"
             logger.info(f"任务开始: {current_script_uid}")
 
+            from app.task import MaaManager, SrcManager, GeneralManager, MaaEndManager
             if isinstance(Config.ScriptConfig[current_script_uid], MaaConfig):
                 task_item = MaaManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], SrcConfig):

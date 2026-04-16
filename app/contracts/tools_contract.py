@@ -14,7 +14,8 @@ class ToolsConfigRead(_ToolsConfigBase):
     """工具配置读取/写入模型。"""
 
 
-ToolsGetOut = ResourceItemOut[ToolsConfigRead]
+class ToolsGetOut(ResourceItemOut[ToolsConfigRead]):
+    """工具配置响应模型"""
 
 
 __all__ = [

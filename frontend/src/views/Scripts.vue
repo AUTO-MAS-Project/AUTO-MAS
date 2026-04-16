@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <!-- MAA配置遮罩层 -->
   <div v-if="showMAAConfigMask" class="maa-config-mask">
     <div class="mask-content">
@@ -450,8 +450,7 @@ import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useTemplateApi, type WebConfigTemplate } from '@/composables/useTemplateApi'
 import { usePlanApi } from '@/composables/usePlanApi'
-import { Service } from '@/api/services/Service'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import { TASK_CREATE_MODE, dispatchApi } from '@/api'
 import MarkdownIt from 'markdown-it'
 const logger = window.electronAPI.getLogger('脚本管理')
 
@@ -851,9 +850,9 @@ const handleStartMAAConfig = async (script: Script) => {
     }
 
     // 调用启动配置任务API
-    const response = await Service.addTaskApiDispatchStartPost({
+    const response = await dispatchApi.startTask({
       taskId: script.id,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+      mode: TASK_CREATE_MODE.SCRIPT_CONFIG,
     })
 
     if (response.code === 200) {
@@ -951,7 +950,7 @@ const handleSaveMAAConfig = async (script: Script) => {
     }
 
     // 调用停止配置任务API
-    const response = await Service.stopTaskApiDispatchStopPost({
+    const response = await dispatchApi.stopTask({
       taskId: connection.websocketId,
     })
 
@@ -985,9 +984,9 @@ const handleStartSRCConfig = async (script: Script) => {
     }
 
     // 调用启动配置任务API
-    const response = await Service.addTaskApiDispatchStartPost({
+    const response = await dispatchApi.startTask({
       taskId: script.id,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+      mode: TASK_CREATE_MODE.SCRIPT_CONFIG,
     })
 
     if (response.code === 200) {
@@ -1085,7 +1084,7 @@ const handleSaveSRCConfig = async (script: Script) => {
     }
 
     // 调用停止配置任务API
-    const response = await Service.stopTaskApiDispatchStopPost({
+    const response = await dispatchApi.stopTask({
       taskId: connection.websocketId,
     })
 
@@ -1117,9 +1116,9 @@ const handleStartMaaEndConfig = async (script: Script) => {
       return
     }
 
-    const response = await Service.addTaskApiDispatchStartPost({
+    const response = await dispatchApi.startTask({
       taskId: script.id,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+      mode: TASK_CREATE_MODE.SCRIPT_CONFIG,
     })
 
     if (response.code === 200) {
@@ -1199,7 +1198,7 @@ const handleSaveMaaEndConfig = async (script: Script) => {
       return
     }
 
-    const response = await Service.stopTaskApiDispatchStopPost({
+    const response = await dispatchApi.stopTask({
       taskId: connection.websocketId,
     })
 

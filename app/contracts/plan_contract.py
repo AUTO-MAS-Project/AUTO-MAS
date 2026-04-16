@@ -205,11 +205,12 @@ class MaaPlanRead(ApiModel):
     )
 
     # 自动展开的星期项
-    for _day_key, _day_type, _day_field in _iter_weekday_fields(
+    for wk_key, wk_type, wk_field in _iter_weekday_fields(
         MaaPlanDayRead, optional=False
     ):
-        __annotations__[_day_key] = _day_type
-        locals()[_day_key] = _day_field
+        __annotations__[wk_key] = wk_type
+        locals()[wk_key] = wk_field
+    del wk_key, wk_type, wk_field
 
 
 class MaaPlanPatch(ApiModel):
@@ -227,11 +228,12 @@ class MaaPlanPatch(ApiModel):
     )
 
     # 自动展开的星期项
-    for _day_key, _day_type, _day_field in _iter_weekday_fields(
+    for wk_key, wk_type, wk_field in _iter_weekday_fields(
         MaaPlanDayPatch, optional=True
     ):
-        __annotations__[_day_key] = _day_type
-        locals()[_day_key] = _day_field
+        __annotations__[wk_key] = wk_type
+        locals()[wk_key] = wk_field
+    del wk_key, wk_type, wk_field
 
 
 class PlanCreateIn(ApiModel):
@@ -242,9 +244,16 @@ class PlanUpdateBody(ApiModel):
     data: MaaPlanPatch = Field(..., description="计划更新数据")
 
 
-PlanCreateOut = ResourceCreateOut[MaaPlanRead]
-PlanDetailOut = ResourceItemOut[MaaPlanRead]
-PlanGetOut = ResourceCollectionOut[PlanIndexItem, MaaPlanRead]
+class PlanCreateOut(ResourceCreateOut[MaaPlanRead]):
+    """计划创建响应模型"""
+
+
+class PlanDetailOut(ResourceItemOut[MaaPlanRead]):
+    """计划详情响应模型"""
+
+
+class PlanGetOut(ResourceCollectionOut[PlanIndexItem, MaaPlanRead]):
+    """计划列表响应模型"""
 
 
 __all__ = [

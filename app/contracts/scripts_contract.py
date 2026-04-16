@@ -111,9 +111,16 @@ class ScriptCreateIn(ApiModel):
     )
 
 
-ScriptCreateOut = ResourceCreateOut[ScriptReadData]
-ScriptDetailOut = ResourceItemOut[ScriptReadData]
-ScriptGetOut = ResourceCollectionOut[ScriptIndexItem, ScriptReadData]
+class ScriptCreateOut(ResourceCreateOut[ScriptReadData]):
+    """脚本创建响应模型"""
+
+
+class ScriptDetailOut(ResourceItemOut[ScriptReadData]):
+    """脚本详情响应模型"""
+
+
+class ScriptGetOut(ResourceCollectionOut[ScriptIndexItem, ScriptReadData]):
+    """脚本列表响应模型"""
 
 
 class ScriptFileBody(ApiModel):
@@ -130,9 +137,16 @@ class ScriptUploadBody(ApiModel):
     description: str = Field(..., description="描述")
 
 
-UserGetOut = ResourceCollectionOut[UserIndexItem, UserReadData]
-UserDetailOut = ResourceItemOut[UserReadData]
-UserCreateOut = ResourceCreateOut[UserReadData]
+class UserGetOut(ResourceCollectionOut[UserIndexItem, UserReadData]):
+    """用户列表响应模型"""
+
+
+class UserDetailOut(ResourceItemOut[UserReadData]):
+    """用户详情响应模型"""
+
+
+class UserCreateOut(ResourceCreateOut[UserReadData]):
+    """用户创建响应模型"""
 
 ScriptPatchData = Annotated[
     MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig,
