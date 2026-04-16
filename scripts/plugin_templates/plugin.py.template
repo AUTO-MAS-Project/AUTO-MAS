@@ -1,0 +1,21 @@
+﻿from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from .schema import Config
+
+if TYPE_CHECKING:
+    from mas.plugins import PluginContext
+
+
+class Plugin:
+    def __init__(self, ctx: "PluginContext") -> None:
+        self.ctx = ctx
+
+    async def on_start(self) -> None:
+        # 从此处开始
+        self.ctx.logger.info("[{}] ".format(self.ctx.plugin_name))
+        self.ctx.logger.info(f"hello={self.ctx.config.get('hello')}")
+
+    async def on_stop(self, reason: str) -> None:
+        self.ctx.logger.info("[{}] 插件停止, reason={}".format(self.ctx.plugin_name, reason))

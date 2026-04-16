@@ -82,7 +82,7 @@ def main() -> None:
 
         @asynccontextmanager
         async def lifespan(app: FastAPI):
-            from app.core import Config, MainTimer, TaskManager
+            from app.core import Config, MainTimer, PluginManager, TaskManager
             from app.MaaFW import ArknightWin32Toolkit
 
             await Config.init_config()
@@ -90,6 +90,7 @@ def main() -> None:
             await Config.clean_old_history()
             await ArknightWin32Toolkit.init()
             await MainTimer.start()
+            await PluginManager.start()
 
             # 初始化 Koishi 系统客户端（如果已启用）
             if Config.get("Notify", "IfKoishiSupport"):
@@ -111,6 +112,7 @@ def main() -> None:
             yield
 
             await TaskManager.stop_task("ALL")
+            await PluginManager.stop()
 
             await MainTimer.stop()
 

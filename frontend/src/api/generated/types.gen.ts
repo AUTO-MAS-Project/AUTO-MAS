@@ -2443,6 +2443,414 @@ export type PlanUpdateBody = {
 };
 
 /**
+ * PluginAddIn
+ */
+export type PluginAddIn = {
+    /**
+     * Plugin
+     *
+     * 插件名
+     */
+    plugin: string;
+    /**
+     * Name
+     *
+     * 实例名称
+     */
+    name?: string | null;
+    /**
+     * Enabled
+     *
+     * 是否启用
+     */
+    enabled?: boolean;
+    /**
+     * Config
+     *
+     * 插件配置
+     */
+    config?: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * PluginDeleteIn
+ */
+export type PluginDeleteIn = {
+    /**
+     * Instanceid
+     *
+     * 实例ID
+     */
+    instanceId: string;
+};
+
+/**
+ * PluginDevRebuildCtxStubIn
+ */
+export type PluginDevRebuildCtxStubIn = {
+    /**
+     * Force
+     *
+     * 是否强制重建
+     */
+    force?: boolean;
+};
+
+/**
+ * PluginDevRebuildCtxStubOut
+ */
+export type PluginDevRebuildCtxStubOut = {
+    /**
+     * Code
+     *
+     * 状态码
+     */
+    code?: number;
+    /**
+     * Status
+     *
+     * 操作状态
+     */
+    status?: string;
+    /**
+     * Message
+     *
+     * 操作消息
+     */
+    message?: string;
+    /**
+     * Output Dir
+     *
+     * 生成目录
+     */
+    output_dir?: string | null;
+    /**
+     * Changed Files
+     *
+     * 已更新文件
+     */
+    changed_files?: Array<string>;
+    /**
+     * Unchanged Files
+     *
+     * 未变更文件
+     */
+    unchanged_files?: Array<string>;
+};
+
+/**
+ * PluginInstanceModel
+ */
+export type PluginInstanceModel = {
+    /**
+     * Id
+     *
+     * 实例ID
+     */
+    id: string;
+    /**
+     * Plugin
+     *
+     * 插件名
+     */
+    plugin: string;
+    /**
+     * Enabled
+     *
+     * 是否启用
+     */
+    enabled?: boolean;
+    /**
+     * Name
+     *
+     * 实例名称
+     */
+    name: string;
+    /**
+     * Config
+     *
+     * 插件配置
+     */
+    config?: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * PluginMutationOut
+ */
+export type PluginMutationOut = {
+    /**
+     * Code
+     *
+     * 状态码
+     */
+    code?: number;
+    /**
+     * Status
+     *
+     * 操作状态
+     */
+    status?: string;
+    /**
+     * Message
+     *
+     * 操作消息
+     */
+    message?: string;
+    /**
+     * 当前实例
+     */
+    instance?: PluginInstanceModel | null;
+};
+
+/**
+ * PluginPackageIn
+ */
+export type PluginPackageIn = {
+    /**
+     * Package
+     *
+     * PyPI 包名
+     */
+    package: string;
+};
+
+/**
+ * PluginReloadInstanceIn
+ */
+export type PluginReloadInstanceIn = {
+    /**
+     * Instanceid
+     *
+     * 实例ID
+     */
+    instanceId: string;
+};
+
+/**
+ * PluginReloadPluginIn
+ */
+export type PluginReloadPluginIn = {
+    /**
+     * Plugin
+     *
+     * 插件名
+     */
+    plugin: string;
+};
+
+/**
+ * PluginRuntimeStateModel
+ */
+export type PluginRuntimeStateModel = {
+    /**
+     * Instance Id
+     *
+     * 实例ID
+     */
+    instance_id: string;
+    /**
+     * Plugin
+     *
+     * 插件名
+     */
+    plugin: string;
+    /**
+     * Status
+     *
+     * 运行状态
+     */
+    status?: string;
+    /**
+     * Generation
+     *
+     * 实例代际
+     */
+    generation?: number;
+    /**
+     * Lifecycle Phase
+     *
+     * 生命周期阶段
+     */
+    lifecycle_phase?: string;
+    /**
+     * Lifecycle Updated At
+     *
+     * 生命周期阶段更新时间
+     */
+    lifecycle_updated_at?: string | null;
+    /**
+     * Reload Count
+     *
+     * 成功重载次数
+     */
+    reload_count?: number;
+    /**
+     * Last Reload Reason
+     *
+     * 最近重载原因
+     */
+    last_reload_reason?: string | null;
+    /**
+     * Last Reload At
+     *
+     * 最近重载时间
+     */
+    last_reload_at?: string | null;
+    /**
+     * Created At
+     *
+     * 记录创建时间
+     */
+    created_at?: string | null;
+    /**
+     * Discovered At
+     *
+     * 发现时间
+     */
+    discovered_at?: string | null;
+    /**
+     * Loaded At
+     *
+     * 代码加载时间
+     */
+    loaded_at?: string | null;
+    /**
+     * Activated At
+     *
+     * 激活时间
+     */
+    activated_at?: string | null;
+    /**
+     * Disposed At
+     *
+     * 销毁时间
+     */
+    disposed_at?: string | null;
+    /**
+     * Unloaded At
+     *
+     * 卸载时间
+     */
+    unloaded_at?: string | null;
+    /**
+     * Last Error
+     *
+     * 最近错误
+     */
+    last_error?: string | null;
+    /**
+     * Last Error At
+     *
+     * 最近错误时间
+     */
+    last_error_at?: string | null;
+};
+
+/**
+ * PluginUpdateIn
+ */
+export type PluginUpdateIn = {
+    /**
+     * Instanceid
+     *
+     * 实例ID
+     */
+    instanceId: string;
+    /**
+     * Plugin
+     *
+     * 插件名
+     */
+    plugin?: string | null;
+    /**
+     * Name
+     *
+     * 实例名称
+     */
+    name?: string | null;
+    /**
+     * Enabled
+     *
+     * 是否启用
+     */
+    enabled?: boolean | null;
+    /**
+     * Config
+     *
+     * 插件配置
+     */
+    config?: {
+        [key: string]: unknown;
+    } | null;
+};
+
+/**
+ * PluginsGetOut
+ */
+export type PluginsGetOut = {
+    /**
+     * Code
+     *
+     * 状态码
+     */
+    code?: number;
+    /**
+     * Status
+     *
+     * 操作状态
+     */
+    status?: string;
+    /**
+     * Message
+     *
+     * 操作消息
+     */
+    message?: string;
+    /**
+     * Discovered Plugins
+     *
+     * 已发现插件
+     */
+    discovered_plugins?: Array<string>;
+    /**
+     * Schemas
+     *
+     * 插件Schema映射
+     */
+    schemas?: {
+        [key: string]: {
+            [key: string]: unknown;
+        };
+    };
+    /**
+     * Schema Errors
+     *
+     * 插件Schema加载错误
+     */
+    schema_errors?: {
+        [key: string]: string;
+    };
+    /**
+     * Instances
+     *
+     * 插件实例列表
+     */
+    instances?: Array<PluginInstanceModel>;
+    /**
+     * Runtime States
+     *
+     * 插件实例运行态
+     */
+    runtime_states?: {
+        [key: string]: PluginRuntimeStateModel;
+    };
+};
+
+/**
  * PowerIn
  */
 export type PowerIn = {
@@ -7097,6 +7505,238 @@ export type UpdateToolsApiToolsPatchResponses = {
 };
 
 export type UpdateToolsApiToolsPatchResponse = UpdateToolsApiToolsPatchResponses[keyof UpdateToolsApiToolsPatchResponses];
+
+export type GetPluginsApiPluginsGetPostData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/plugins/get';
+};
+
+export type GetPluginsApiPluginsGetPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: PluginsGetOut;
+};
+
+export type GetPluginsApiPluginsGetPostResponse = GetPluginsApiPluginsGetPostResponses[keyof GetPluginsApiPluginsGetPostResponses];
+
+export type ReloadPluginsApiPluginsReloadPostData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/plugins/reload';
+};
+
+export type ReloadPluginsApiPluginsReloadPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: OutBase;
+};
+
+export type ReloadPluginsApiPluginsReloadPostResponse = ReloadPluginsApiPluginsReloadPostResponses[keyof ReloadPluginsApiPluginsReloadPostResponses];
+
+export type ReloadPluginInstanceApiPluginsReloadInstancePostData = {
+    body: PluginReloadInstanceIn;
+    path?: never;
+    query?: never;
+    url: '/api/plugins/reload_instance';
+};
+
+export type ReloadPluginInstanceApiPluginsReloadInstancePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReloadPluginInstanceApiPluginsReloadInstancePostError = ReloadPluginInstanceApiPluginsReloadInstancePostErrors[keyof ReloadPluginInstanceApiPluginsReloadInstancePostErrors];
+
+export type ReloadPluginInstanceApiPluginsReloadInstancePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: OutBase;
+};
+
+export type ReloadPluginInstanceApiPluginsReloadInstancePostResponse = ReloadPluginInstanceApiPluginsReloadInstancePostResponses[keyof ReloadPluginInstanceApiPluginsReloadInstancePostResponses];
+
+export type ReloadPluginByNameApiPluginsReloadPluginPostData = {
+    body: PluginReloadPluginIn;
+    path?: never;
+    query?: never;
+    url: '/api/plugins/reload_plugin';
+};
+
+export type ReloadPluginByNameApiPluginsReloadPluginPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ReloadPluginByNameApiPluginsReloadPluginPostError = ReloadPluginByNameApiPluginsReloadPluginPostErrors[keyof ReloadPluginByNameApiPluginsReloadPluginPostErrors];
+
+export type ReloadPluginByNameApiPluginsReloadPluginPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: OutBase;
+};
+
+export type ReloadPluginByNameApiPluginsReloadPluginPostResponse = ReloadPluginByNameApiPluginsReloadPluginPostResponses[keyof ReloadPluginByNameApiPluginsReloadPluginPostResponses];
+
+export type InstallPluginPackageApiPluginsInstallPackagePostData = {
+    body: PluginPackageIn;
+    path?: never;
+    query?: never;
+    url: '/api/plugins/install_package';
+};
+
+export type InstallPluginPackageApiPluginsInstallPackagePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type InstallPluginPackageApiPluginsInstallPackagePostError = InstallPluginPackageApiPluginsInstallPackagePostErrors[keyof InstallPluginPackageApiPluginsInstallPackagePostErrors];
+
+export type InstallPluginPackageApiPluginsInstallPackagePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: OutBase;
+};
+
+export type InstallPluginPackageApiPluginsInstallPackagePostResponse = InstallPluginPackageApiPluginsInstallPackagePostResponses[keyof InstallPluginPackageApiPluginsInstallPackagePostResponses];
+
+export type UninstallPluginPackageApiPluginsUninstallPackagePostData = {
+    body: PluginPackageIn;
+    path?: never;
+    query?: never;
+    url: '/api/plugins/uninstall_package';
+};
+
+export type UninstallPluginPackageApiPluginsUninstallPackagePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UninstallPluginPackageApiPluginsUninstallPackagePostError = UninstallPluginPackageApiPluginsUninstallPackagePostErrors[keyof UninstallPluginPackageApiPluginsUninstallPackagePostErrors];
+
+export type UninstallPluginPackageApiPluginsUninstallPackagePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: OutBase;
+};
+
+export type UninstallPluginPackageApiPluginsUninstallPackagePostResponse = UninstallPluginPackageApiPluginsUninstallPackagePostResponses[keyof UninstallPluginPackageApiPluginsUninstallPackagePostResponses];
+
+export type RebuildPluginCtxStubApiPluginsDevRebuildCtxStubPostData = {
+    body: PluginDevRebuildCtxStubIn;
+    path?: never;
+    query?: never;
+    url: '/api/plugins/dev/rebuild_ctx_stub';
+};
+
+export type RebuildPluginCtxStubApiPluginsDevRebuildCtxStubPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RebuildPluginCtxStubApiPluginsDevRebuildCtxStubPostError = RebuildPluginCtxStubApiPluginsDevRebuildCtxStubPostErrors[keyof RebuildPluginCtxStubApiPluginsDevRebuildCtxStubPostErrors];
+
+export type RebuildPluginCtxStubApiPluginsDevRebuildCtxStubPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: PluginDevRebuildCtxStubOut;
+};
+
+export type RebuildPluginCtxStubApiPluginsDevRebuildCtxStubPostResponse = RebuildPluginCtxStubApiPluginsDevRebuildCtxStubPostResponses[keyof RebuildPluginCtxStubApiPluginsDevRebuildCtxStubPostResponses];
+
+export type AddPluginInstanceApiPluginsAddPostData = {
+    body: PluginAddIn;
+    path?: never;
+    query?: never;
+    url: '/api/plugins/add';
+};
+
+export type AddPluginInstanceApiPluginsAddPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AddPluginInstanceApiPluginsAddPostError = AddPluginInstanceApiPluginsAddPostErrors[keyof AddPluginInstanceApiPluginsAddPostErrors];
+
+export type AddPluginInstanceApiPluginsAddPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: PluginMutationOut;
+};
+
+export type AddPluginInstanceApiPluginsAddPostResponse = AddPluginInstanceApiPluginsAddPostResponses[keyof AddPluginInstanceApiPluginsAddPostResponses];
+
+export type UpdatePluginInstanceApiPluginsUpdatePostData = {
+    body: PluginUpdateIn;
+    path?: never;
+    query?: never;
+    url: '/api/plugins/update';
+};
+
+export type UpdatePluginInstanceApiPluginsUpdatePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdatePluginInstanceApiPluginsUpdatePostError = UpdatePluginInstanceApiPluginsUpdatePostErrors[keyof UpdatePluginInstanceApiPluginsUpdatePostErrors];
+
+export type UpdatePluginInstanceApiPluginsUpdatePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: PluginMutationOut;
+};
+
+export type UpdatePluginInstanceApiPluginsUpdatePostResponse = UpdatePluginInstanceApiPluginsUpdatePostResponses[keyof UpdatePluginInstanceApiPluginsUpdatePostResponses];
+
+export type DeletePluginInstanceApiPluginsDeletePostData = {
+    body: PluginDeleteIn;
+    path?: never;
+    query?: never;
+    url: '/api/plugins/delete';
+};
+
+export type DeletePluginInstanceApiPluginsDeletePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeletePluginInstanceApiPluginsDeletePostError = DeletePluginInstanceApiPluginsDeletePostErrors[keyof DeletePluginInstanceApiPluginsDeletePostErrors];
+
+export type DeletePluginInstanceApiPluginsDeletePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: OutBase;
+};
+
+export type DeletePluginInstanceApiPluginsDeletePostResponse = DeletePluginInstanceApiPluginsDeletePostResponses[keyof DeletePluginInstanceApiPluginsDeletePostResponses];
 
 export type GetSettingApiSettingGetData = {
     body?: never;

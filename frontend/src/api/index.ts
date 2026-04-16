@@ -20,12 +20,21 @@ export { historyApi } from './gateways/history'
 export { infoApi } from './gateways/info'
 export { ocrApi } from './gateways/ocr'
 export { planApi } from './gateways/plan'
+export { pluginApi } from './gateways/plugin'
 export { queueApi, queueItemApi, timeSetApi } from './gateways/queue'
 export { scriptApi, userApi } from './gateways/script'
 export { settingApi, webhookApi } from './gateways/setting'
 export { toolsApi } from './gateways/tools'
 export { updateApi } from './gateways/update'
 export { wsDebugApi } from './gateways/wsDebug'
+
+export type {
+  PluginInstance,
+  PluginMutationOut,
+  PluginsGetOut as PluginGetOut,
+  PluginRuntimeState,
+  PluginSchemaField,
+} from './gateways/plugin'
 
 export type {
   AdbScreenshotIn,
