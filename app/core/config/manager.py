@@ -1428,7 +1428,7 @@ class AppConfig(GlobalConfig):
                     "Name": name or f"{plugin_name} 实例",
                 },
                 "Data": {
-                    "Config": config or {},
+                    "Config": json.dumps(config or {}, ensure_ascii=False),
                 },
             }
         )

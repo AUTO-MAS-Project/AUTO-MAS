@@ -1,0 +1,17 @@
+﻿[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "automas_plugin_${plugin_name}"
+version = "0.0.1"
+description = "${description_escaped}"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+dependencies = ["pydantic>=2.0"]
+
+[project.entry-points."auto_mas.plugins"]
+${plugin_name} = "${plugin_name}.plugin:Plugin"
+
+[tool.setuptools.packages.find]
+where = ["src"]

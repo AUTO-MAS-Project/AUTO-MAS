@@ -3403,6 +3403,386 @@
         }
       }
     },
+    "/api/plugins/get": {
+      "post": {
+        "tags": [
+          "插件实例",
+          "Get"
+        ],
+        "summary": "获取插件实例配置",
+        "operationId": "get_plugins_api_plugins_get_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginsGetOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins/reload": {
+      "post": {
+        "tags": [
+          "插件实例",
+          "Action"
+        ],
+        "summary": "重载插件实例",
+        "operationId": "reload_plugins_api_plugins_reload_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutBase"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins/reload_instance": {
+      "post": {
+        "tags": [
+          "插件实例",
+          "Action"
+        ],
+        "summary": "重载单个插件实例",
+        "operationId": "reload_plugin_instance_api_plugins_reload_instance_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginReloadInstanceIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutBase"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins/reload_plugin": {
+      "post": {
+        "tags": [
+          "插件实例",
+          "Action"
+        ],
+        "summary": "按插件名重载所有实例",
+        "operationId": "reload_plugin_by_name_api_plugins_reload_plugin_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginReloadPluginIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutBase"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins/install_package": {
+      "post": {
+        "tags": [
+          "插件实例",
+          "Action"
+        ],
+        "summary": "下载安装插件包",
+        "operationId": "install_plugin_package_api_plugins_install_package_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginPackageIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutBase"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins/uninstall_package": {
+      "post": {
+        "tags": [
+          "插件实例",
+          "Action"
+        ],
+        "summary": "卸载插件包",
+        "operationId": "uninstall_plugin_package_api_plugins_uninstall_package_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginPackageIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutBase"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins/dev/rebuild_ctx_stub": {
+      "post": {
+        "tags": [
+          "插件实例",
+          "Action"
+        ],
+        "summary": "重建插件 ctx 类型提示文件",
+        "operationId": "rebuild_plugin_ctx_stub_api_plugins_dev_rebuild_ctx_stub_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginDevRebuildCtxStubIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginDevRebuildCtxStubOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins/add": {
+      "post": {
+        "tags": [
+          "插件实例",
+          "Add"
+        ],
+        "summary": "新增插件实例",
+        "operationId": "add_plugin_instance_api_plugins_add_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginAddIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginMutationOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins/update": {
+      "post": {
+        "tags": [
+          "插件实例",
+          "Update"
+        ],
+        "summary": "更新插件实例",
+        "operationId": "update_plugin_instance_api_plugins_update_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginUpdateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginMutationOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plugins/delete": {
+      "post": {
+        "tags": [
+          "插件实例",
+          "Delete"
+        ],
+        "summary": "删除插件实例",
+        "operationId": "delete_plugin_instance_api_plugins_delete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PluginDeleteIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutBase"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/setting": {
       "get": {
         "tags": [
@@ -9233,6 +9613,544 @@
           "data"
         ],
         "title": "PlanUpdateBody"
+      },
+      "PluginAddIn": {
+        "properties": {
+          "plugin": {
+            "type": "string",
+            "title": "Plugin",
+            "description": "插件名"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name",
+            "description": "实例名称"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "是否启用",
+            "default": true
+          },
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config",
+            "description": "插件配置"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plugin"
+        ],
+        "title": "PluginAddIn"
+      },
+      "PluginDeleteIn": {
+        "properties": {
+          "instanceId": {
+            "type": "string",
+            "title": "Instanceid",
+            "description": "实例ID"
+          }
+        },
+        "type": "object",
+        "required": [
+          "instanceId"
+        ],
+        "title": "PluginDeleteIn"
+      },
+      "PluginDevRebuildCtxStubIn": {
+        "properties": {
+          "force": {
+            "type": "boolean",
+            "title": "Force",
+            "description": "是否强制重建",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "PluginDevRebuildCtxStubIn"
+      },
+      "PluginDevRebuildCtxStubOut": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code",
+            "description": "状态码",
+            "default": 200
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "操作状态",
+            "default": "success"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "操作消息",
+            "default": "操作成功"
+          },
+          "output_dir": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Dir",
+            "description": "生成目录"
+          },
+          "changed_files": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Changed Files",
+            "description": "已更新文件"
+          },
+          "unchanged_files": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unchanged Files",
+            "description": "未变更文件"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PluginDevRebuildCtxStubOut"
+      },
+      "PluginInstanceModel": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "实例ID"
+          },
+          "plugin": {
+            "type": "string",
+            "title": "Plugin",
+            "description": "插件名"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "description": "是否启用",
+            "default": true
+          },
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "实例名称"
+          },
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config",
+            "description": "插件配置"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "plugin",
+          "name"
+        ],
+        "title": "PluginInstanceModel"
+      },
+      "PluginMutationOut": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code",
+            "description": "状态码",
+            "default": 200
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "操作状态",
+            "default": "success"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "操作消息",
+            "default": "操作成功"
+          },
+          "instance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PluginInstanceModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "当前实例"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PluginMutationOut"
+      },
+      "PluginPackageIn": {
+        "properties": {
+          "package": {
+            "type": "string",
+            "title": "Package",
+            "description": "PyPI 包名"
+          }
+        },
+        "type": "object",
+        "required": [
+          "package"
+        ],
+        "title": "PluginPackageIn"
+      },
+      "PluginReloadInstanceIn": {
+        "properties": {
+          "instanceId": {
+            "type": "string",
+            "title": "Instanceid",
+            "description": "实例ID"
+          }
+        },
+        "type": "object",
+        "required": [
+          "instanceId"
+        ],
+        "title": "PluginReloadInstanceIn"
+      },
+      "PluginReloadPluginIn": {
+        "properties": {
+          "plugin": {
+            "type": "string",
+            "title": "Plugin",
+            "description": "插件名"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plugin"
+        ],
+        "title": "PluginReloadPluginIn"
+      },
+      "PluginRuntimeStateModel": {
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "title": "Instance Id",
+            "description": "实例ID"
+          },
+          "plugin": {
+            "type": "string",
+            "title": "Plugin",
+            "description": "插件名"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "运行状态",
+            "default": "configured"
+          },
+          "generation": {
+            "type": "integer",
+            "title": "Generation",
+            "description": "实例代际",
+            "default": 0
+          },
+          "lifecycle_phase": {
+            "type": "string",
+            "title": "Lifecycle Phase",
+            "description": "生命周期阶段",
+            "default": "configured"
+          },
+          "lifecycle_updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lifecycle Updated At",
+            "description": "生命周期阶段更新时间"
+          },
+          "reload_count": {
+            "type": "integer",
+            "title": "Reload Count",
+            "description": "成功重载次数",
+            "default": 0
+          },
+          "last_reload_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Reload Reason",
+            "description": "最近重载原因"
+          },
+          "last_reload_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Reload At",
+            "description": "最近重载时间"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At",
+            "description": "记录创建时间"
+          },
+          "discovered_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discovered At",
+            "description": "发现时间"
+          },
+          "loaded_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loaded At",
+            "description": "代码加载时间"
+          },
+          "activated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activated At",
+            "description": "激活时间"
+          },
+          "disposed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disposed At",
+            "description": "销毁时间"
+          },
+          "unloaded_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unloaded At",
+            "description": "卸载时间"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error",
+            "description": "最近错误"
+          },
+          "last_error_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error At",
+            "description": "最近错误时间"
+          }
+        },
+        "type": "object",
+        "required": [
+          "instance_id",
+          "plugin"
+        ],
+        "title": "PluginRuntimeStateModel"
+      },
+      "PluginUpdateIn": {
+        "properties": {
+          "instanceId": {
+            "type": "string",
+            "title": "Instanceid",
+            "description": "实例ID"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plugin",
+            "description": "插件名"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name",
+            "description": "实例名称"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled",
+            "description": "是否启用"
+          },
+          "config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config",
+            "description": "插件配置"
+          }
+        },
+        "type": "object",
+        "required": [
+          "instanceId"
+        ],
+        "title": "PluginUpdateIn"
+      },
+      "PluginsGetOut": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code",
+            "description": "状态码",
+            "default": 200
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "操作状态",
+            "default": "success"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "操作消息",
+            "default": "操作成功"
+          },
+          "discovered_plugins": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Discovered Plugins",
+            "description": "已发现插件"
+          },
+          "schemas": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Schemas",
+            "description": "插件Schema映射"
+          },
+          "schema_errors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Schema Errors",
+            "description": "插件Schema加载错误"
+          },
+          "instances": {
+            "items": {
+              "$ref": "#/components/schemas/PluginInstanceModel"
+            },
+            "type": "array",
+            "title": "Instances",
+            "description": "插件实例列表"
+          },
+          "runtime_states": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PluginRuntimeStateModel"
+            },
+            "type": "object",
+            "title": "Runtime States",
+            "description": "插件实例运行态"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PluginsGetOut"
       },
       "PowerIn": {
         "properties": {

@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .broadcast import Broadcast as Broadcast
+    from .plugins import PluginManager as PluginManager
     from .emulator_manager import EmulatorManager as EmulatorManager
     from .task_manager import TaskManager as TaskManager
     from .maa_manager import MaaFWManager as MaaFWManager
@@ -38,6 +39,7 @@ __all__ = [
     "TaskManager",
     "EmulatorManager",
     "MaaFWManager",
+    "PluginManager",
 ]
 
 
@@ -50,6 +52,10 @@ def __getattr__(name: str):
         from .emulator_manager import EmulatorManager
 
         return EmulatorManager
+    if name == "PluginManager":
+        from .plugins import PluginManager
+
+        return PluginManager
     if name == "TaskManager":
         from .task_manager import TaskManager
 
