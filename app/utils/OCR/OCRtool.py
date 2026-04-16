@@ -5,23 +5,17 @@ import pyautogui
 from PIL import Image
 import win32con
 import win32gui
-from rapidocr_onnxruntime import RapidOCR
+from importlib import import_module
 from mss import mss
 import subprocess
 from pathlib import Path
+from typing import Any, cast
 
 from app.utils import get_logger
 from app.utils.exception import (
     WindowsNotFoundException,
     WindowsNotFocusException,
     OCRNotFoundTitleException,
-    ADBFileNotFoundException,
-    ADBCommandFailedException,
-    ADBDeviceNotFoundException,
-    ADBConnectionFailedException,
-    ADBTimeoutException,
-    ADBScreenshotException,
-    ImageProcessException
 )
 
 # OCR入门指南！
@@ -44,6 +38,9 @@ from app.utils.exception import (
 # 你现在已经学会了OCR识别的基础知识了！快来试试吧！
 
 logger = get_logger("OCR模块")
+RapidOCR = cast(Any, import_module("rapidocr_onnxruntime")).RapidOCR
+
+
 class OCRTool:
     #  默认宽高比 16:9，用于图像预处理
     aspect_ratio_width = 16
@@ -61,7 +58,7 @@ class OCRTool:
     # 全局窗口标题，用于避免在方法调用时反复传入
     title: str | None = None
 
-    def __init__(self, width=16, height=9, title: str | None = None):
+    def __init__(self, width: int = 16, height: int = 9, title: str | None = None):
         """
         初始化 OCR 引擎
 
@@ -105,13 +102,16 @@ class OCRTool:
         try:
             # 启用高 DPI 感知，避免始终返回 96
             try:
-                ctypes.windll.shcore.SetProcessDpiAwareness(2)  # type: ignore[attr-defined]
+                shcore = getattr(ctypes.windll, "shcore", None)
+                set_dpi_awareness = getattr(shcore, "SetProcessDpiAwareness", None)
+                if callable(set_dpi_awareness):
+                    set_dpi_awareness(2)
             except (AttributeError, OSError):
                 # Windows 8.1 以下系统没有该函数
                 pass
 
             # 获取主显示器 DC
-            hdc = win32gui.GetDC(0)
+            hdc = cast(int, cast(Any, win32gui).GetDC(0))
             try:
                 # 使用 ctypes 直接调用 GetDeviceCaps
                 # LOGPIXELSX = 88
@@ -127,10 +127,11 @@ class OCRTool:
             logger.warning(f"获取系统 DPI 失败: {e}，使用默认缩放比例 1.5")
             return 1.5
 
-
     # ========== 截图部分 ==========
     @classmethod
-    def get_screenshot_region(cls, title: str, should_preprocess: bool = True) -> tuple[int, int, int, int]:
+    def get_screenshot_region(
+        cls, title: str, should_preprocess: bool = True
+    ) -> tuple[int, int, int, int]:
         """
         根据给定的窗口标题获取截图区域。
 
@@ -199,12 +200,18 @@ class OCRTool:
 
             # 扣除边框后的实际可用宽高
             available_width = width - left_offset * 2  # 左右两侧都要扣除
-            available_height = height - top_offset - int(8 * cls.zoom)  # 顶部标题栏 + 底部边框
+            available_height = (
+                height - top_offset - int(8 * cls.zoom)
+            )  # 顶部标题栏 + 底部边框
 
             # 计算截图区域的宽度，将宽度调整为 相应 的倍数
-            cls.area_width = available_width // cls.aspect_ratio_width * cls.aspect_ratio_width
+            cls.area_width = (
+                available_width // cls.aspect_ratio_width * cls.aspect_ratio_width
+            )
             # 计算截图区域的高度，将高度调整为 相应 的倍数
-            cls.area_height = available_height // cls.aspect_ratio_height * cls.aspect_ratio_height
+            cls.area_height = (
+                available_height // cls.aspect_ratio_height * cls.aspect_ratio_height
+            )
             # 根据缩放比例调整顶部坐标，如果顶部坐标不为 0 则加上偏移量
             cls.area_top = top + top_offset
             # 根据缩放比例调整左侧坐标，如果左侧坐标不为 0 则加上偏移量
@@ -232,7 +239,7 @@ class OCRTool:
             return
 
         # 重试一次
-        logger.warning(f"窗口未激活，再次尝试强制激活...")
+        logger.warning("窗口未激活，再次尝试强制激活...")
         cls._force_activate_window(hwnd)
         time.sleep(0.2)
 
@@ -268,7 +275,9 @@ class OCRTool:
 
             # 获取前台窗口的线程ID和进程ID
             if foreground_hwnd:
-                foreground_thread_id, _ = win32process.GetWindowThreadProcessId(foreground_hwnd)
+                foreground_thread_id, _ = win32process.GetWindowThreadProcessId(
+                    foreground_hwnd
+                )
             else:
                 foreground_thread_id = 0
 
@@ -280,9 +289,13 @@ class OCRTool:
             if foreground_thread_id != target_thread_id and foreground_thread_id != 0:
                 try:
                     # 附着到前台窗口的输入线程
-                    win32process.AttachThreadInput(foreground_thread_id, target_thread_id, True)
+                    cast(Any, win32process).AttachThreadInput(
+                        foreground_thread_id, target_thread_id, True
+                    )
                     attached = True
-                    logger.debug(f"已附着输入线程: {foreground_thread_id} -> {target_thread_id}")
+                    logger.debug(
+                        f"已附着输入线程: {foreground_thread_id} -> {target_thread_id}"
+                    )
                 except Exception as e:
                     logger.warning(f"附着输入线程失败: {e}")
 
@@ -311,7 +324,9 @@ class OCRTool:
                 # 分离输入线程（必须在 finally 中执行，确保一定会分离）
                 if attached:
                     try:
-                        win32process.AttachThreadInput(foreground_thread_id, target_thread_id, False)
+                        cast(Any, win32process).AttachThreadInput(
+                            foreground_thread_id, target_thread_id, False
+                        )
                         logger.debug("已分离输入线程")
                     except Exception as e:
                         logger.warning(f"分离输入线程失败: {e}")
@@ -319,7 +334,6 @@ class OCRTool:
         except Exception as e:
             logger.error(f"强制激活窗口出错: {e}")
             # 即使出错也不抛出异常，因为可能已经部分成功
-
 
     @staticmethod
     def _find_window_with_win32gui(title: str) -> int | None:
@@ -332,9 +346,9 @@ class OCRTool:
         Returns:
             int | None: 找到的窗口句柄，未找到返回 None
         """
-        found_windows = []
+        found_windows: list[tuple[int, str]] = []
 
-        def enum_callback(hwnd, results):
+        def enum_callback(hwnd: int, results: list[tuple[int, str]]) -> None:
             if win32gui.IsWindowVisible(hwnd):
                 window_title = win32gui.GetWindowText(hwnd)
                 if title.lower() in window_title.lower():
@@ -355,7 +369,12 @@ class OCRTool:
         return None
 
     @classmethod
-    def get_screenshot_with_pc(cls, title: str, should_preprocess: bool = True, region: tuple[int, int, int, int] | None = None) -> Image.Image:
+    def get_screenshot_with_pc(
+        cls,
+        title: str,
+        should_preprocess: bool = True,
+        region: tuple[int, int, int, int] | None = None,
+    ) -> Image.Image:
         """
         根据指定的窗口标题和区域获取截图，并对截图进行尺寸调整。
 
@@ -379,7 +398,9 @@ class OCRTool:
         return cls._image_resize(pillow_img)
 
     @classmethod
-    def get_screenshot_with_adb(cls, adb_path: str, serial: str, use_screencap: bool = True) -> Image.Image:
+    def get_screenshot_with_adb(
+        cls, adb_path: str, serial: str, use_screencap: bool = True
+    ) -> Image.Image:
         """
         实验性，未测试
         通过 ADB 端口获取设备截图。
@@ -434,23 +455,18 @@ class OCRTool:
         # 检查设备是否已连接
         try:
             cmd = [adb_path, "devices"]
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                timeout=10,
-                check=False
-            )
+            result = subprocess.run(cmd, capture_output=True, timeout=10, check=False)
 
             if result.returncode != 0:
-                raise RuntimeError(f"无法执行 adb devices 命令")
+                raise RuntimeError("无法执行 adb devices 命令")
 
-            devices_output = result.stdout.decode('utf-8', errors='ignore')
+            devices_output = result.stdout.decode("utf-8", errors="ignore")
             logger.debug(f"ADB devices 输出:\n{devices_output}")
 
             # 检查设备是否在列表中且状态为 device
             is_connected = False
-            for line in devices_output.split('\n'):
-                if serial in line and 'device' in line and 'offline' not in line:
+            for line in devices_output.split("\n"):
+                if serial in line and "device" in line and "offline" not in line:
                     is_connected = True
                     break
 
@@ -459,35 +475,37 @@ class OCRTool:
                 return
 
             # 如果是网络设备格式（IP:Port），尝试连接
-            if ':' in serial:
+            if ":" in serial:
                 logger.info(f"设备 {serial} 未连接，尝试执行 adb connect...")
                 connect_cmd = [adb_path, "connect", serial]
                 connect_result = subprocess.run(
-                    connect_cmd,
-                    capture_output=True,
-                    timeout=10,
-                    check=False
+                    connect_cmd, capture_output=True, timeout=10, check=False
                 )
 
                 if connect_result.returncode != 0:
-                    error_msg = connect_result.stderr.decode('utf-8', errors='ignore')
+                    error_msg = connect_result.stderr.decode("utf-8", errors="ignore")
                     raise RuntimeError(f"adb connect 失败: {error_msg}")
 
-                connect_output = connect_result.stdout.decode('utf-8', errors='ignore')
+                connect_output = connect_result.stdout.decode("utf-8", errors="ignore")
                 logger.info(f"adb connect 输出: {connect_output}")
 
                 # 再次检查是否连接成功
-                if 'connected' in connect_output.lower() or 'already connected' in connect_output.lower():
+                if (
+                    "connected" in connect_output.lower()
+                    or "already connected" in connect_output.lower()
+                ):
                     logger.info(f"设备 {serial} 连接成功")
                     return
                 else:
                     raise RuntimeError(f"连接设备失败: {connect_output}")
             else:
                 # USB 设备但未找到
-                raise RuntimeError(f"设备 {serial} 未找到，请确保设备已连接并启用 USB 调试")
+                raise RuntimeError(
+                    f"设备 {serial} 未找到，请确保设备已连接并启用 USB 调试"
+                )
 
         except subprocess.TimeoutExpired:
-            raise RuntimeError(f"ADB 命令超时")
+            raise RuntimeError("ADB 命令超时")
         except Exception as e:
             logger.error(f"检查/连接设备失败: {e}")
             raise
@@ -510,16 +528,17 @@ class OCRTool:
         try:
             # 执行 adb shell screencap -p 并直接捕获输出
             cmd = [adb_path, "-s", serial, "shell", "screencap", "-p"]
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                timeout=30,
-                check=False
-            )
+            result = subprocess.run(cmd, capture_output=True, timeout=30, check=False)
 
             if result.returncode != 0:
-                error_msg = result.stderr.decode('utf-8', errors='ignore') if result.stderr else "未知错误"
-                raise RuntimeError(f"ADB screencap 命令失败 (返回码: {result.returncode}): {error_msg}")
+                error_msg = (
+                    result.stderr.decode("utf-8", errors="ignore")
+                    if result.stderr
+                    else "未知错误"
+                )
+                raise RuntimeError(
+                    f"ADB screencap 命令失败 (返回码: {result.returncode}): {error_msg}"
+                )
 
             # 从二进制数据创建图像
             image_data = result.stdout
@@ -529,15 +548,18 @@ class OCRTool:
             # Windows 环境下需要处理换行符问题
             # screencap -p 在 Windows 上会将 \n (0x0A) 转换为 \r\n (0x0D 0x0A)
             # 这会破坏 PNG 文件格式，需要将 \r\n 替换回 \n
-            image_data = image_data.replace(b'\r\n', b'\n')
+            image_data = image_data.replace(b"\r\n", b"\n")
 
             logger.debug(f"ADB screencap 返回数据大小: {len(image_data)} 字节")
 
             # 使用 PIL 从字节流加载图像
             from io import BytesIO
+
             try:
                 pillow_img = Image.open(BytesIO(image_data))
-                logger.info(f"成功通过 ADB screencap 获取截图 (设备: {serial}, 尺寸: {pillow_img.size})")
+                logger.info(
+                    f"成功通过 ADB screencap 获取截图 (设备: {serial}, 尺寸: {pillow_img.size})"
+                )
                 return pillow_img
             except Exception as img_error:
                 # 如果 PNG 方法失败，记录详细信息并尝试降级到 raw 方法
@@ -576,16 +598,17 @@ class OCRTool:
         try:
             # 执行 adb shell screencap（原始格式）
             cmd = [adb_path, "-s", serial, "shell", "screencap"]
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                timeout=30,
-                check=False
-            )
+            result = subprocess.run(cmd, capture_output=True, timeout=30, check=False)
 
             if result.returncode != 0:
-                error_msg = result.stderr.decode('utf-8', errors='ignore') if result.stderr else "未知错误"
-                raise RuntimeError(f"ADB screencap raw 命令失败 (返回码: {result.returncode}): {error_msg}")
+                error_msg = (
+                    result.stderr.decode("utf-8", errors="ignore")
+                    if result.stderr
+                    else "未知错误"
+                )
+                raise RuntimeError(
+                    f"ADB screencap raw 命令失败 (返回码: {result.returncode}): {error_msg}"
+                )
 
             raw_data = result.stdout
             if len(raw_data) < 12:
@@ -593,9 +616,11 @@ class OCRTool:
 
             # 解析头部信息（前 12 字节）
             # 格式: width (4 bytes), height (4 bytes), format (4 bytes)
-            width, height, pixel_format = struct.unpack('<III', raw_data[:12])
+            width, height, pixel_format = struct.unpack("<III", raw_data[:12])
 
-            logger.debug(f"ADB screencap raw 头部: width={width}, height={height}, format={pixel_format}")
+            logger.debug(
+                f"ADB screencap raw 头部: width={width}, height={height}, format={pixel_format}"
+            )
 
             # 检查像素格式（1 = RGBA_8888）
             if pixel_format != 1:
@@ -604,18 +629,22 @@ class OCRTool:
             # 计算预期的数据大小（RGBA 每像素 4 字节）
             expected_size = width * height * 4 + 12
             if len(raw_data) < expected_size:
-                raise RuntimeError(f"ADB screencap raw 数据不完整 (预期: {expected_size}, 实际: {len(raw_data)})")
+                raise RuntimeError(
+                    f"ADB screencap raw 数据不完整 (预期: {expected_size}, 实际: {len(raw_data)})"
+                )
 
             # 提取像素数据（跳过前 12 字节的头部）
-            pixel_data = raw_data[12:12 + width * height * 4]
+            pixel_data = raw_data[12 : 12 + width * height * 4]
 
             # 创建 PIL 图像（RGBA 格式）
-            pillow_img = Image.frombytes('RGBA', (width, height), pixel_data)
+            pillow_img = Image.frombytes("RGBA", (width, height), pixel_data)
 
             # 转换为 RGB（去除 Alpha 通道）
-            pillow_img = pillow_img.convert('RGB')
+            pillow_img = pillow_img.convert("RGB")
 
-            logger.info(f"成功通过 ADB screencap raw 获取截图 (设备: {serial}, 尺寸: {pillow_img.size})")
+            logger.info(
+                f"成功通过 ADB screencap raw 获取截图 (设备: {serial}, 尺寸: {pillow_img.size})"
+            )
             return pillow_img
 
         except subprocess.TimeoutExpired:
@@ -641,12 +670,7 @@ class OCRTool:
         left, top, width, height = region
 
         # MSS 使用 (left, top, right, bottom) 格式的 monitor 字典
-        monitor = {
-            "left": left,
-            "top": top,
-            "width": width,
-            "height": height
-        }
+        monitor = {"left": left, "top": top, "width": width, "height": height}
 
         try:
             with mss() as sct:
@@ -654,7 +678,9 @@ class OCRTool:
                 screenshot = sct.grab(monitor)
                 # 转换为 Pillow 图像
                 pillow_img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
-                logger.debug(f"使用 MSS 成功截图: 区域={region}, 尺寸={pillow_img.size}")
+                logger.debug(
+                    f"使用 MSS 成功截图: 区域={region}, 尺寸={pillow_img.size}"
+                )
                 return pillow_img
         except Exception as e:
             logger.error(f"MSS 截图失败: {e}，尝试使用 pyautogui 作为备用方案")
@@ -664,7 +690,6 @@ class OCRTool:
             except Exception as fallback_error:
                 logger.error(f"pyautogui 备用截图也失败: {fallback_error}")
                 raise
-
 
     @classmethod
     def _image_resize(cls, pillow_image: Image.Image) -> Image.Image:
@@ -678,18 +703,23 @@ class OCRTool:
         Returns:
             Image.Image: 调整尺寸后的 Pillow 图像对象。
         """
-        if pillow_image.width % cls.area_width==0 and pillow_image.height % cls.area_height==0:
+        if (
+            pillow_image.width % cls.area_width == 0
+            and pillow_image.height % cls.area_height == 0
+        ):
             return pillow_image
         cls.screenshot_proportion = 1920 / pillow_image.width
         resized_image = pillow_image.resize(
-            (int(pillow_image.width * cls.screenshot_proportion),
-             int(pillow_image.height * cls.screenshot_proportion)),
-            Image.Resampling.BICUBIC)
+            (
+                int(pillow_image.width * cls.screenshot_proportion),
+                int(pillow_image.height * cls.screenshot_proportion),
+            ),
+            Image.Resampling.BICUBIC,
+        )
         return resized_image
 
-
     @classmethod
-    def _location_calculator(cls, x, y):
+    def _location_calculator(cls, x: float, y: float) -> tuple[float, float]:
         """
         根据截图缩放比例和截图区域偏移量，计算实际屏幕坐标。
 
@@ -701,11 +731,16 @@ class OCRTool:
             tuple[int, int]: 实际屏幕上的坐标 (x, y)。
         """
         cls.location_proportion = 1 / cls.screenshot_proportion
-        return x * cls.location_proportion + cls.area_left, y * cls.location_proportion + cls.area_top
+        return (
+            x * cls.location_proportion + cls.area_left,
+            y * cls.location_proportion + cls.area_top,
+        )
 
     # ========== 图像匹配与查找部分 ==========
     @classmethod
-    def _find_template_in_screenshot(cls, screenshot: Image.Image, template_path: str, threshold: float = 0.8) -> tuple[bool, tuple[int, int] | None]:
+    def _find_template_in_screenshot(
+        cls, screenshot: Image.Image, template_path: str, threshold: float = 0.8
+    ) -> tuple[bool, tuple[int, int] | None]:
         """
         在截图中查找模板图像。
 
@@ -720,18 +755,19 @@ class OCRTool:
         """
         try:
             # 读取模板图像
-            template = cv2.imread(template_path)
+            template = cast(Any, cv2.imread(template_path))
             if template is None:
                 logger.error(f"无法读取模板图像: {template_path}")
                 return False, None
 
             # 将 Pillow 图像转换为 OpenCV 格式
             import numpy as np
+
             screenshot_cv = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
 
             # 执行模板匹配
             result = cv2.matchTemplate(screenshot_cv, template, cv2.TM_CCOEFF_NORMED)
-            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
+            _, max_val, _, max_loc = cv2.minMaxLoc(result)
 
             # 判断是否匹配成功
             if max_val >= threshold:
@@ -739,10 +775,14 @@ class OCRTool:
                 template_h, template_w = template.shape[:2]
                 center_x = max_loc[0] + template_w // 2
                 center_y = max_loc[1] + template_h // 2
-                logger.debug(f"找到模板图像 {template_path}，匹配度: {max_val:.2f}，位置: ({center_x}, {center_y})")
+                logger.debug(
+                    f"找到模板图像 {template_path}，匹配度: {max_val:.2f}，位置: ({center_x}, {center_y})"
+                )
                 return True, (center_x, center_y)
             else:
-                logger.debug(f"未找到模板图像 {template_path}，最高匹配度: {max_val:.2f}")
+                logger.debug(
+                    f"未找到模板图像 {template_path}，最高匹配度: {max_val:.2f}"
+                )
                 return False, None
 
         except Exception as e:
@@ -750,7 +790,14 @@ class OCRTool:
             return False, None
 
     @classmethod
-    def check(cls, image_path: str, title: str | None = None, interval: float = 0, retry_times: int = 1, threshold: float = 0.8) -> bool:
+    def check(
+        cls,
+        image_path: str,
+        title: str | None = None,
+        interval: float = 0,
+        retry_times: int = 1,
+        threshold: float = 0.8,
+    ) -> bool:
         """
         截图并查找是否存在图片内的内容。
 
@@ -772,7 +819,9 @@ class OCRTool:
         # 使用传入的 title 或类的全局 title
         window_title = title or cls.title
         if not window_title:
-            raise OCRNotFoundTitleException("必须提供 title 参数或通过 set_title() 设置全局 title")
+            raise OCRNotFoundTitleException(
+                "必须提供 title 参数或通过 set_title() 设置全局 title"
+            )
 
         for attempt in range(retry_times):
             try:
@@ -780,7 +829,9 @@ class OCRTool:
                 screenshot = cls.get_screenshot_with_pc(window_title)
 
                 # 查找模板
-                found, _ = cls._find_template_in_screenshot(screenshot, image_path, threshold)
+                found, _ = cls._find_template_in_screenshot(
+                    screenshot, image_path, threshold
+                )
 
                 if found:
                     logger.info(f"在第 {attempt + 1} 次尝试中找到图像: {image_path}")
@@ -791,7 +842,9 @@ class OCRTool:
                     time.sleep(interval)
 
             except Exception as e:
-                logger.error(f"check 方法执行失败 (尝试 {attempt + 1}/{retry_times}): {e}")
+                logger.error(
+                    f"check 方法执行失败 (尝试 {attempt + 1}/{retry_times}): {e}"
+                )
                 if attempt < retry_times - 1 and interval > 0:
                     time.sleep(interval)
 
@@ -799,7 +852,14 @@ class OCRTool:
         return False
 
     @classmethod
-    def check_any(cls, image_paths: list[str], title: str | None = None, interval: float = 0, retry_times: int = 1, threshold: float = 0.8) -> bool:
+    def check_any(
+        cls,
+        image_paths: list[str],
+        title: str | None = None,
+        interval: float = 0,
+        retry_times: int = 1,
+        threshold: float = 0.8,
+    ) -> bool:
         """
         截图并查找是否存在列表中任意一张图片的内容。
 
@@ -821,7 +881,9 @@ class OCRTool:
         # 使用传入的 title 或类的全局 title
         window_title = title or cls.title
         if not window_title:
-            raise OCRNotFoundTitleException("必须提供 title 参数或通过 set_title() 设置全局 title")
+            raise OCRNotFoundTitleException(
+                "必须提供 title 参数或通过 set_title() 设置全局 title"
+            )
 
         for attempt in range(retry_times):
             try:
@@ -830,9 +892,13 @@ class OCRTool:
 
                 # 遍历所有模板图像
                 for image_path in image_paths:
-                    found, _ = cls._find_template_in_screenshot(screenshot, image_path, threshold)
+                    found, _ = cls._find_template_in_screenshot(
+                        screenshot, image_path, threshold
+                    )
                     if found:
-                        logger.info(f"在第 {attempt + 1} 次尝试中找到图像: {image_path}")
+                        logger.info(
+                            f"在第 {attempt + 1} 次尝试中找到图像: {image_path}"
+                        )
                         return True
 
                 # 如果不是最后一次尝试，等待间隔时间
@@ -840,7 +906,9 @@ class OCRTool:
                     time.sleep(interval)
 
             except Exception as e:
-                logger.error(f"check_any 方法执行失败 (尝试 {attempt + 1}/{retry_times}): {e}")
+                logger.error(
+                    f"check_any 方法执行失败 (尝试 {attempt + 1}/{retry_times}): {e}"
+                )
                 if attempt < retry_times - 1 and interval > 0:
                     time.sleep(interval)
 
@@ -848,7 +916,14 @@ class OCRTool:
         return False
 
     @classmethod
-    def check_all(cls, image_paths: list[str], title: str | None = None, interval: float = 0, retry_times: int = 1, threshold: float = 0.8) -> bool:
+    def check_all(
+        cls,
+        image_paths: list[str],
+        title: str | None = None,
+        interval: float = 0,
+        retry_times: int = 1,
+        threshold: float = 0.8,
+    ) -> bool:
         """
         截图并查找是否存在列表中所有图片的内容。
 
@@ -870,7 +945,9 @@ class OCRTool:
         # 使用传入的 title 或类的全局 title
         window_title = title or cls.title
         if not window_title:
-            raise OCRNotFoundTitleException("必须提供 title 参数或通过 set_title() 设置全局 title")
+            raise OCRNotFoundTitleException(
+                "必须提供 title 参数或通过 set_title() 设置全局 title"
+            )
 
         for attempt in range(retry_times):
             try:
@@ -880,10 +957,14 @@ class OCRTool:
                 # 检查所有模板图像
                 found_all = True
                 for image_path in image_paths:
-                    found, _ = cls._find_template_in_screenshot(screenshot, image_path, threshold)
+                    found, _ = cls._find_template_in_screenshot(
+                        screenshot, image_path, threshold
+                    )
                     if not found:
                         found_all = False
-                        logger.debug(f"第 {attempt + 1} 次尝试中未找到图像: {image_path}")
+                        logger.debug(
+                            f"第 {attempt + 1} 次尝试中未找到图像: {image_path}"
+                        )
                         break
 
                 if found_all:
@@ -895,7 +976,9 @@ class OCRTool:
                     time.sleep(interval)
 
             except Exception as e:
-                logger.error(f"check_all 方法执行失败 (尝试 {attempt + 1}/{retry_times}): {e}")
+                logger.error(
+                    f"check_all 方法执行失败 (尝试 {attempt + 1}/{retry_times}): {e}"
+                )
                 if attempt < retry_times - 1 and interval > 0:
                     time.sleep(interval)
 
@@ -904,7 +987,14 @@ class OCRTool:
 
     # ========== 点击操作部分 ==========
     @classmethod
-    def click_img(cls, image_path: str, title: str | None = None, interval: float = 0, retry_times: int = 1, threshold: float = 0.8) -> bool:
+    def click_img(
+        cls,
+        image_path: str,
+        title: str | None = None,
+        interval: float = 0,
+        retry_times: int = 1,
+        threshold: float = 0.8,
+    ) -> bool:
         """
         点击与图像一致的位置的坐标。
 
@@ -926,7 +1016,9 @@ class OCRTool:
         # 使用传入的 title 或类的全局 title
         window_title = title or cls.title
         if not window_title:
-            raise OCRNotFoundTitleException("必须提供 title 参数或通过 set_title() 设置全局 title")
+            raise OCRNotFoundTitleException(
+                "必须提供 title 参数或通过 set_title() 设置全局 title"
+            )
 
         for attempt in range(retry_times):
             try:
@@ -934,15 +1026,21 @@ class OCRTool:
                 screenshot = cls.get_screenshot_with_pc(window_title)
 
                 # 查找模板
-                found, position = cls._find_template_in_screenshot(screenshot, image_path, threshold)
+                found, position = cls._find_template_in_screenshot(
+                    screenshot, image_path, threshold
+                )
 
                 if found and position:
                     # 将截图坐标转换为实际屏幕坐标
-                    screen_x, screen_y = cls._location_calculator(position[0], position[1])
+                    screen_x, screen_y = cls._location_calculator(
+                        position[0], position[1]
+                    )
 
                     # 执行点击
-                    pyautogui.click(screen_x, screen_y)
-                    logger.info(f"成功点击图像 {image_path} 的位置: ({screen_x}, {screen_y})")
+                    pyautogui.click(int(screen_x), int(screen_y))
+                    logger.info(
+                        f"成功点击图像 {image_path} 的位置: ({screen_x}, {screen_y})"
+                    )
                     return True
 
                 # 如果不是最后一次尝试，等待间隔时间
@@ -950,7 +1048,9 @@ class OCRTool:
                     time.sleep(interval)
 
             except Exception as e:
-                logger.error(f"click_img 方法执行失败 (尝试 {attempt + 1}/{retry_times}): {e}")
+                logger.error(
+                    f"click_img 方法执行失败 (尝试 {attempt + 1}/{retry_times}): {e}"
+                )
                 if attempt < retry_times - 1 and interval > 0:
                     time.sleep(interval)
 
@@ -958,7 +1058,13 @@ class OCRTool:
         return False
 
     @classmethod
-    def click_txt(cls, text: str, title: str | None = None, interval: float = 0, retry_times: int = 1) -> bool:
+    def click_txt(
+        cls,
+        text: str,
+        title: str | None = None,
+        interval: float = 0,
+        retry_times: int = 1,
+    ) -> bool:
         """
         点击与文字一致的位置。
 
@@ -980,7 +1086,9 @@ class OCRTool:
         # 使用传入的 title 或类的全局 title
         window_title = title or cls.title
         if not window_title:
-            raise OCRNotFoundTitleException("必须提供 title 参数或通过 set_title() 设置全局 title")
+            raise OCRNotFoundTitleException(
+                "必须提供 title 参数或通过 set_title() 设置全局 title"
+            )
 
         for attempt in range(retry_times):
             try:
@@ -991,7 +1099,7 @@ class OCRTool:
                 screenshot_np = np.array(screenshot)
 
                 # 使用 OCR 识别文字
-                result, elapse = cls().ocr_engine(screenshot_np)
+                result, _elapsed = cls().ocr_engine(screenshot_np)
 
                 if result is None:
                     logger.debug(f"第 {attempt + 1} 次尝试中未识别到任何文字")
@@ -1000,22 +1108,28 @@ class OCRTool:
                     continue
 
                 # 遍历识别结果，查找匹配的文字
-                for line in result:
-                    detected_text = line[1]  # OCR 识别的文字
+                for line in cast(list[list[Any]], result):
+                    detected_text = str(line[1])  # OCR 识别的文字
                     if text in detected_text:
                         # 获取文字区域的边界框坐标
-                        box = line[0]  # [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
+                        box = cast(
+                            list[list[float]], line[0]
+                        )  # [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
 
                         # 计算中心点
                         center_x = int((box[0][0] + box[2][0]) / 2)
                         center_y = int((box[0][1] + box[2][1]) / 2)
 
                         # 将截图坐标转换为实际屏幕坐标
-                        screen_x, screen_y = cls._location_calculator(center_x, center_y)
+                        screen_x, screen_y = cls._location_calculator(
+                            center_x, center_y
+                        )
 
                         # 执行点击
-                        pyautogui.click(screen_x, screen_y)
-                        logger.info(f"成功点击文字 '{text}' 的位置: ({screen_x}, {screen_y})")
+                        pyautogui.click(int(screen_x), int(screen_y))
+                        logger.info(
+                            f"成功点击文字 '{text}' 的位置: ({screen_x}, {screen_y})"
+                        )
                         return True
 
                 logger.debug(f"第 {attempt + 1} 次尝试中未找到文字: {text}")
@@ -1025,10 +1139,11 @@ class OCRTool:
                     time.sleep(interval)
 
             except Exception as e:
-                logger.error(f"click_txt 方法执行失败 (尝试 {attempt + 1}/{retry_times}): {e}")
+                logger.error(
+                    f"click_txt 方法执行失败 (尝试 {attempt + 1}/{retry_times}): {e}"
+                )
                 if attempt < retry_times - 1 and interval > 0:
                     time.sleep(interval)
 
         logger.info(f"在 {retry_times} 次尝试后未能点击文字: {text}")
         return False
-

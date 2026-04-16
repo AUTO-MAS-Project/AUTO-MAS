@@ -28,11 +28,11 @@ import asyncio
 import keyboard
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict
 
+from app.models.common import EmulatorConfig
 from app.utils.ProcessManager import ProcessManager
 from app.models.emulator import DeviceStatus, DeviceBase, DeviceInfo
-from app.models.config import EmulatorConfig
 from app.utils import get_logger
 
 logger = get_logger("通用模拟器管理")
@@ -44,20 +44,26 @@ class GeneralDeviceManager(DeviceBase):
     """
 
     def __init__(self, config: EmulatorConfig) -> None:
+        if not Path(str(config.get("Info", "Path"))).exists():
+            raise FileNotFoundError(
+                f"模拟器文件不存在: {str(config.get('Info', 'Path'))}"
+            )
 
-        if not Path(config.get("Info", "Path")).exists():
-            raise FileNotFoundError(f"模拟器文件不存在: {config.get('Info', 'Path')}")
-
-        if config.get("Info", "Type") != "general":
+        if str(config.get("Info", "Type")) != "general":
             raise ValueError("配置的模拟器类型不是通用类型")
 
         self.config = config
-        self.emulator_path = Path(config.get("Info", "Path"))
+        self.emulator_path = Path(str(config.get("Info", "Path")))
         self.process_managers: Dict[str, ProcessManager] = {}
-        self.device_info: Dict[str, Dict[str, Any]] = {}
+        self.device_info: Dict[str, Dict[str, object]] = {}
+
+    def _info_str(self, key: str) -> str:
+        return str(self.config.get("Info", key))
+
+    def _info_int(self, key: str) -> int:
+        return int(self.config.get("Info", key))
 
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
-
         # 检查是否已经在运行
         current_status = await self.getStatus(idx)
         if current_status == DeviceStatus.ONLINE:
@@ -74,12 +80,11 @@ class GeneralDeviceManager(DeviceBase):
         await self.process_managers[idx].open_process(self.emulator_path, *args)
 
         # 等待进程启动
-        await asyncio.sleep(self.config.get("Info", "MaxWaitTime"))
+        await asyncio.sleep(self._info_int("MaxWaitTime"))
 
         return (await self.getInfo(idx))[idx]
 
     async def close(self, idx: str) -> DeviceStatus:
-
         status = await self.getStatus(idx)
         if status == DeviceStatus.OFFLINE:
             logger.warning(f"设备{idx}未在线，当前状态: {status}")
@@ -90,9 +95,7 @@ class GeneralDeviceManager(DeviceBase):
 
         # 等待进程完全停止
         t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
+        while datetime.now() - t < timedelta(seconds=self._info_int("MaxWaitTime")):
             if not await self.process_managers[idx].is_running():
                 return DeviceStatus.OFFLINE
 
@@ -101,7 +104,6 @@ class GeneralDeviceManager(DeviceBase):
             raise RuntimeError(f"关闭设备{idx}超时")
 
     async def getStatus(self, idx: str) -> DeviceStatus:
-
         if idx not in self.process_managers:
             return DeviceStatus.OFFLINE
 
@@ -111,30 +113,25 @@ class GeneralDeviceManager(DeviceBase):
             return DeviceStatus.OFFLINE
 
     async def getInfo(self, idx: str | None) -> Dict[str, DeviceInfo]:
-
-        data = {}
+        data: Dict[str, DeviceInfo] = {}
         for index in self.process_managers:
             if idx is not None and index != idx:
                 continue
             data[index] = DeviceInfo(
-                title=f"{self.config.get('Info', 'Name')}_{index}",
+                title=f"{self._info_str('Name')}_{index}",
                 status=await self.getStatus(index),
                 adb_address=self.parse_index(index)[1],
             )
         return data
 
     async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
-
         status = await self.getStatus(idx)
         if status != DeviceStatus.ONLINE:
             logger.warning(f"设备{idx}未在线，当前状态码: {status}")
             return status
 
         t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
-
+        while datetime.now() - t < timedelta(seconds=self._info_int("MaxWaitTime")):
             # 检查窗口可见性是否符合预期
             if self.process_managers[idx].main_pid is not None and (
                 win32gui.IsWindowVisible(self.process_managers[idx].main_pid)
@@ -145,8 +142,7 @@ class GeneralDeviceManager(DeviceBase):
             try:
                 keyboard.press_and_release(
                     "+".join(
-                        _.strip().lower()
-                        for _ in json.loads(self.config.get("Info", "BossKey"))
+                        _.strip().lower() for _ in json.loads(self._info_str("BossKey"))
                     )
                 )  # 老板键
             except Exception as e:
@@ -158,7 +154,6 @@ class GeneralDeviceManager(DeviceBase):
             raise RuntimeError(f"隐藏设备{idx}窗口超时")
 
     def parse_index(self, idx: str):
-
         if "|" not in idx:
             raise ValueError("缺少 '|' 分隔符")
 

@@ -23,31 +23,32 @@
 import base64
 import hashlib
 from pathlib import Path
+from typing import Union
 
 from PIL import Image
 
 
 class ImageUtils:
     @staticmethod
-    def get_base64_from_file(image_path):
+    def get_base64_from_file(image_path: Union[str, Path]) -> str:
         """从本地文件读取并返回base64编码字符串"""
         with open(image_path, "rb") as f:
             return base64.b64encode(f.read()).decode("utf-8")
 
     @staticmethod
-    def calculate_md5_from_file(image_path):
+    def calculate_md5_from_file(image_path: Union[str, Path]) -> str:
         """从本地文件读取并返回md5值（hex字符串）"""
         with open(image_path, "rb") as f:
             return hashlib.md5(f.read()).hexdigest()
 
     @staticmethod
-    def calculate_md5_from_base64(base64_content):
+    def calculate_md5_from_base64(base64_content: str) -> str:
         """从base64字符串计算md5"""
         image_data = base64.b64decode(base64_content)
         return hashlib.md5(image_data).hexdigest()
 
     @staticmethod
-    def compress_image_if_needed(image_path: Path, max_size_mb=2) -> Path:
+    def compress_image_if_needed(image_path: Path, max_size_mb: float = 2) -> Path:
         """
         如果图片大于max_size_mb, 则压缩并覆盖原文件, 返回原始路径（Path对象）
         """

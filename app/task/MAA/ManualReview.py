@@ -26,11 +26,12 @@ import asyncio
 import shutil
 from pathlib import Path
 from datetime import datetime, timedelta
+from typing import Any, cast
 
 from app.core import Config, Broadcast
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
-from app.models.ConfigBase import MultipleConfig
-from app.models.config import MaaConfig, MaaUserConfig
+from app.core.config.base import MultipleConfig
+from app.models import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceInfo, DeviceBase
 from app.services import System
 from app.utils import get_logger, LogMonitor, ProcessManager
@@ -66,7 +67,6 @@ class ManualReviewTask(TaskExecuteBase):
         self.check_result = "-"
 
     async def check(self) -> str:
-
         if (
             self.cur_user_config.get("Info", "Mode") == "详细"
             and not (
@@ -79,10 +79,9 @@ class ManualReviewTask(TaskExecuteBase):
         return "Pass"
 
     async def prepare(self):
-
         self.maa_process_manager = ProcessManager()
         self.maa_log_monitor = LogMonitor((1, 20), "%Y-%m-%d %H:%M:%S", self.check_log)
-        self.message_queue = asyncio.Queue()
+        self.message_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         await Broadcast.subscribe(self.message_queue)
         self.wait_event = asyncio.Event()
         self.log_start_time = datetime.now()
@@ -122,7 +121,6 @@ class ManualReviewTask(TaskExecuteBase):
         self.cur_user_item.status = "运行"
 
         while True:
-
             try:
                 self.script_info.log = "正在启动模拟器"
                 emulator_info = await self.emulator_manager.open(
@@ -130,7 +128,6 @@ class ManualReviewTask(TaskExecuteBase):
                     ARKNIGHTS_PACKAGE_NAME[self.cur_user_config.get("Info", "Server")],
                 )
             except Exception as e:
-
                 logger.exception(
                     f"用户: {self.cur_user_item.user_id} - 模拟器启动失败: {e}"
                 )
@@ -156,8 +153,13 @@ class ManualReviewTask(TaskExecuteBase):
                         "options": ["是", "否"],
                     },
                 )
-                result = await self._wait_for_user_response(uid)
-                if not result.get("data", {}).get("choice", False):
+                result: dict[str, Any] = await self._wait_for_user_response(uid)
+                data = result.get("data")
+                choice = False
+                if isinstance(data, dict):
+                    data_dict = cast(dict[str, Any], data)
+                    choice = bool(data_dict.get("choice"))
+                if not choice:
                     break
                 continue
 
@@ -182,7 +184,6 @@ class ManualReviewTask(TaskExecuteBase):
                 self.run_book["SignIn"] = True
                 break
             else:
-
                 logger.error(
                     f"用户: {self.cur_user_item.user_id} - MAA进程异常: {self.cur_user_log.status}"
                 )
@@ -209,12 +210,16 @@ class ManualReviewTask(TaskExecuteBase):
                         "options": ["是", "否"],
                     },
                 )
-                result = await self._wait_for_user_response(uid)
-                if not result.get("data", {}).get("choice", False):
+                result: dict[str, Any] = await self._wait_for_user_response(uid)
+                data = result.get("data")
+                choice = False
+                if isinstance(data, dict):
+                    data_dict = cast(dict[str, Any], data)
+                    choice = bool(data_dict.get("choice"))
+                if not choice:
                     break
 
         if self.run_book["SignIn"]:
-
             try:
                 await self.emulator_manager.setVisible(
                     self.script_config.get("Emulator", "Index"), True
@@ -233,15 +238,20 @@ class ManualReviewTask(TaskExecuteBase):
                     "options": ["是", "否"],
                 },
             )
-            result = await self._wait_for_user_response(uid)
-            if result.get("data", {}).get("choice", False):
+            result: dict[str, Any] = await self._wait_for_user_response(uid)
+            data = result.get("data")
+            choice = False
+            if isinstance(data, dict):
+                data_dict = cast(dict[str, Any], data)
+                choice = bool(data_dict.get("choice"))
+            if choice:
                 self.run_book["PassCheck"] = True
 
-    async def _wait_for_user_response(self, message_id: str):
+    async def _wait_for_user_response(self, message_id: str) -> dict[str, Any]:
         """等待用户交互响应"""
         logger.info(f"等待客户端回应消息: {message_id}")
         while True:
-            message = await self.message_queue.get()
+            message: dict[str, Any] = await self.message_queue.get()
             if message.get("id") == message_id and message.get("type") == "Response":
                 self.message_queue.task_done()
                 logger.success(f"收到客户端回应消息: {message_id}")
@@ -251,7 +261,7 @@ class ManualReviewTask(TaskExecuteBase):
 
     async def set_maa(self, emulator_info: DeviceInfo):
         """配置MAA运行参数"""
-        logger.info(f"开始配置MAA运行参数: 人工排查")
+        logger.info("开始配置MAA运行参数: 人工排查")
 
         await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
@@ -380,7 +390,6 @@ class ManualReviewTask(TaskExecuteBase):
             self.wait_event.set()
 
     async def final_task(self):
-
         if self.check_result != "Pass":
             return
 

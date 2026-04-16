@@ -21,180 +21,161 @@
 #   Contact: DLmaster_361@163.com
 
 
-from fastapi import APIRouter, Body
+from typing import Annotated, Literal
+
+from fastapi import APIRouter, Body, Path
+
+
 from app.core import Config, EmulatorManager
-from app.models.schema import (
+from app.contracts.common_contract import (
+    IndexOrderPatch,
     OutBase,
-    EmulatorConfig,
-    EmulatorGetIn,
-    EmulatorGetOut,
+    dump_writable_data,
+    project_model,
+    project_model_list,
+    project_model_map,
+)
+from app.contracts.emulator_contract import (
+    EmulatorActionBody,
     EmulatorConfigIndexItem,
     EmulatorCreateOut,
-    EmulatorUpdateIn,
-    EmulatorDeleteIn,
-    EmulatorReorderIn,
-    EmulatorOperateIn,
-    EmulatorStatusOut,
+    EmulatorDetailOut,
+    EmulatorDeviceStatusOut,
+    EmulatorGetOut,
+    EmulatorRead,
     EmulatorSearchOut,
     EmulatorSearchResult,
+    EmulatorStatusOut,
 )
 
 router = APIRouter(prefix="/api/emulator", tags=["模拟器管理"])
 
+EmulatorIdPath = Annotated[str, Path(description="模拟器 ID")]
+EmulatorActionPath = Annotated[
+    Literal["open", "close", "show"],
+    Path(description="模拟器动作"),
+]
 
-@router.post(
-    "/get",
+
+@router.get(
+    "",
     tags=["Get"],
-    summary="查询模拟器配置",
+    summary="查询全部模拟器配置",
     response_model=EmulatorGetOut,
-    status_code=200,
 )
-async def get_emulator(emulator: EmulatorGetIn = Body(...)) -> EmulatorGetOut:
-    try:
-        index, data = await Config.get_emulator(emulator.emulatorId)
-        index = [EmulatorConfigIndexItem(**_) for _ in index]
-        data = {uid: EmulatorConfig(**cfg) for uid, cfg in data.items()}
-    except Exception as e:
-        return EmulatorGetOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            index=[],
-            data={},
-        )
-    return EmulatorGetOut(index=index, data=data)
+async def list_emulators() -> EmulatorGetOut:
+    index, data = await Config.get_emulator(None)
+    return EmulatorGetOut(
+        index=project_model_list(EmulatorConfigIndexItem, index),
+        data=project_model_map(EmulatorRead, data),
+    )
 
 
 @router.post(
-    "/add",
+    "",
     tags=["Add"],
-    summary="添加模拟器项",
+    summary="创建模拟器配置",
     response_model=EmulatorCreateOut,
-    status_code=200,
 )
-async def add_emulator() -> EmulatorCreateOut:
-    try:
-        uid, config = await Config.add_emulator()
-        data = EmulatorConfig(**(await config.toDict()))
-    except Exception as e:
-        return EmulatorCreateOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            emulatorId="",
-            data=EmulatorConfig(**{}),
-        )
-    return EmulatorCreateOut(emulatorId=str(uid), data=data)
+async def create_emulator() -> EmulatorCreateOut:
+    uid, config = await Config.add_emulator()
+    return EmulatorCreateOut(
+        id=str(uid),
+        data=project_model(EmulatorRead, await config.toDict()),
+    )
 
 
-@router.post(
-    "/update",
-    tags=["Update"],
-    summary="更新模拟器项",
-    response_model=OutBase,
-    status_code=200,
-)
-async def update_emulator(emulator: EmulatorUpdateIn = Body(...)) -> OutBase:
-    try:
-        await Config.update_emulator(
-            emulator.emulatorId, emulator.data.model_dump(exclude_unset=True)
-        )
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
-
-
-@router.post(
-    "/delete",
-    tags=["Delete"],
-    summary="删除模拟器项",
-    response_model=OutBase,
-    status_code=200,
-)
-async def delete_emulator(emulator: EmulatorDeleteIn = Body(...)) -> OutBase:
-    try:
-        await Config.del_emulator(emulator.emulatorId)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
-
-
-@router.post(
+@router.patch(
     "/order",
     tags=["Update"],
-    summary="重新排序模拟器项",
+    summary="重新排序模拟器",
     response_model=OutBase,
-    status_code=200,
 )
-async def reorder_emulator(emulator: EmulatorReorderIn = Body(...)) -> OutBase:
-    try:
-        await Config.reorder_emulator(emulator.indexList)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+async def reorder_emulator(body: IndexOrderPatch = Body(...)) -> OutBase:
+    await Config.reorder_emulator(body.index_list)
     return OutBase()
 
 
-@router.post(
-    "/operate",
-    tags=["Action"],
-    summary="操作模拟器",
-    response_model=OutBase,
-    status_code=200,
-)
-async def operation_emulator(emulator: EmulatorOperateIn = Body(...)) -> OutBase:
-    try:
-        await EmulatorManager.operate_emulator(
-            emulator.operate, emulator.emulatorId, emulator.index
-        )
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
-
-
-@router.post(
-    "/status",
-    tags=["Get"],
-    summary="查询模拟器状态",
-    response_model=EmulatorStatusOut,
-    status_code=200,
-)
-async def get_status(emulator: EmulatorGetIn = Body(...)) -> EmulatorStatusOut:
-    try:
-        data = await EmulatorManager.get_status(emulator.emulatorId)
-    except Exception as e:
-        return EmulatorStatusOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data={}
-        )
-    return EmulatorStatusOut(data=data)
-
-
-@router.post(
-    "/emulator/search",
+@router.get(
+    "/detected",
     tags=["Get"],
     summary="搜索已安装的模拟器",
     response_model=EmulatorSearchOut,
-    status_code=200,
 )
-async def search_emulators() -> EmulatorSearchOut:
-    """自动搜索系统中已安装的模拟器"""
-    try:
-        from app.utils import search_all_emulators
+async def detect_emulators() -> EmulatorSearchOut:
+    from app.utils import search_all_emulators
 
-        emulators = await search_all_emulators()
-        results = [EmulatorSearchResult(**emulator) for emulator in emulators]
-    except Exception as e:
-        return EmulatorSearchOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            emulators=[],
-        )
-    return EmulatorSearchOut(emulators=results)
+    emulators = await search_all_emulators()
+    return EmulatorSearchOut(data=project_model_list(EmulatorSearchResult, emulators))
+
+
+@router.get(
+    "/status",
+    tags=["Get"],
+    summary="查询全部模拟器状态",
+    response_model=EmulatorStatusOut,
+)
+async def get_emulator_statuses() -> EmulatorStatusOut:
+    return EmulatorStatusOut(data=await EmulatorManager.get_status(None))
+
+
+@router.get(
+    "/{emulator_id}",
+    tags=["Get"],
+    summary="查询单个模拟器配置",
+    response_model=EmulatorDetailOut,
+)
+async def get_emulator(emulator_id: EmulatorIdPath) -> EmulatorDetailOut:
+    _, data = await Config.get_emulator(emulator_id)
+    projected = project_model_map(EmulatorRead, data)
+    return EmulatorDetailOut(data=projected[emulator_id])
+
+
+@router.patch(
+    "/{emulator_id}",
+    tags=["Update"],
+    summary="更新模拟器配置",
+    response_model=OutBase,
+)
+async def update_emulator(
+    emulator_id: EmulatorIdPath, data: EmulatorRead = Body(...)
+) -> OutBase:
+    await Config.update_emulator(emulator_id, dump_writable_data(data))
+    return OutBase()
+
+
+@router.delete(
+    "/{emulator_id}",
+    tags=["Delete"],
+    summary="删除模拟器配置",
+    response_model=OutBase,
+)
+async def delete_emulator(emulator_id: EmulatorIdPath) -> OutBase:
+    await Config.del_emulator(emulator_id)
+    return OutBase()
+
+
+@router.get(
+    "/{emulator_id}/status",
+    tags=["Get"],
+    summary="查询单个模拟器状态",
+    response_model=EmulatorDeviceStatusOut,
+)
+async def get_emulator_status(emulator_id: EmulatorIdPath) -> EmulatorDeviceStatusOut:
+    statuses = await EmulatorManager.get_status(emulator_id)
+    return EmulatorDeviceStatusOut(data=statuses.get(emulator_id, {}))
+
+
+@router.post(
+    "/{emulator_id}/actions/{action}",
+    tags=["Action"],
+    summary="执行模拟器动作",
+    response_model=OutBase,
+)
+async def operate_emulator(
+    emulator_id: EmulatorIdPath,
+    action: EmulatorActionPath,
+    body: EmulatorActionBody = Body(...),
+) -> OutBase:
+    await EmulatorManager.operate_emulator(action, emulator_id, body.index)
+    return OutBase()

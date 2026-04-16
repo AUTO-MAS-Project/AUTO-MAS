@@ -29,8 +29,8 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel
 from pathlib import Path
 
+from app.models.common import EmulatorConfig
 from app.models.emulator import DeviceStatus, DeviceInfo, DeviceBase
-from app.models.config import EmulatorConfig
 from app.utils import ProcessRunner, get_logger
 
 logger = get_logger("雷电模拟器管理")
@@ -55,26 +55,30 @@ class LDManager(DeviceBase):
     """
 
     def __init__(self, config: EmulatorConfig) -> None:
-        if not Path(config.get("Info", "Path")).exists():
+        if not Path(str(config.get("Info", "Path"))).exists():
             raise FileNotFoundError(
-                f"LDPlayerManager.exe文件不存在: {config.get('Info', 'Path')}"
+                f"LDPlayerManager.exe文件不存在: {str(config.get('Info', 'Path'))}"
             )
 
-        if config.get("Info", "Type") != "ldplayer":
+        if str(config.get("Info", "Type")) != "ldplayer":
             raise ValueError("配置的模拟器类型不是ldplayer")
 
         self.config = config
 
-        self.emulator_path = Path(config.get("Info", "Path"))
+        self.emulator_path = Path(str(config.get("Info", "Path")))
 
-    async def open(self, idx: str, package_name="") -> DeviceInfo:
+    def _info_str(self, key: str) -> str:
+        return str(self.config.get("Info", key))
+
+    def _info_int(self, key: str) -> int:
+        return int(self.config.get("Info", key))
+
+    async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
         logger.info(f"开始启动模拟器 {idx}  - {package_name}")
 
         status = DeviceStatus.UNKNOWN  # 初始化status变量
         t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
+        while datetime.now() - t < timedelta(seconds=self._info_int("MaxWaitTime")):
             status = await self.getStatus(idx)
             if status == DeviceStatus.ONLINE:
                 return (await self.getInfo(idx))[idx]
@@ -91,7 +95,7 @@ class LDManager(DeviceBase):
             "--index",
             idx,
             *(["--packagename", f'"{package_name}"'] if package_name else []),
-            timeout=self.config.get("Info", "MaxWaitTime"),
+            timeout=self._info_int("MaxWaitTime"),
             if_merge_std=True,
         )
         # 参考命令 dnconsole.exe launch --index 0
@@ -100,15 +104,12 @@ class LDManager(DeviceBase):
             raise RuntimeError(f"命令执行失败: {result.stdout}")
 
         t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
+        while datetime.now() - t < timedelta(seconds=self._info_int("MaxWaitTime")):
             status = await self.getStatus(idx)
             if status == DeviceStatus.ONLINE:
                 await asyncio.sleep(
                     30
-                    if package_name != ""
-                    and self.config.get("Info", "MaxWaitTime") > 60
+                    if package_name != "" and self._info_int("MaxWaitTime") > 60
                     else 3
                 )  # 等待模拟器的 ADB 等服务完全启动, 低性能设备额外等待应用启动
                 return (await self.getInfo(idx))[idx]
@@ -130,7 +131,7 @@ class LDManager(DeviceBase):
             "quit",
             "--index",
             idx,
-            timeout=self.config.get("Info", "MaxWaitTime"),
+            timeout=self._info_int("MaxWaitTime"),
             if_merge_std=True,
         )
         # 参考命令 dnconsole.exe quit --index 0
@@ -138,9 +139,7 @@ class LDManager(DeviceBase):
         if result.returncode != 0:
             raise RuntimeError(f"命令执行失败: {result.stdout}")
         t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
+        while datetime.now() - t < timedelta(seconds=self._info_int("MaxWaitTime")):
             status = await self.getStatus(idx)
             if status == DeviceStatus.OFFLINE:
                 return DeviceStatus.OFFLINE
@@ -203,9 +202,7 @@ class LDManager(DeviceBase):
         result = (await self.get_device_info(idx))[idx]
 
         t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
+        while datetime.now() - t < timedelta(seconds=self._info_int("MaxWaitTime")):
             # 检查窗口可见性是否符合预期
             if win32gui.IsWindowVisible(result.top_hwnd) == is_visible:
                 return status
@@ -213,8 +210,7 @@ class LDManager(DeviceBase):
             try:
                 keyboard.press_and_release(
                     "+".join(
-                        _.strip().lower()
-                        for _ in json.loads(self.config.get("Info", "BossKey"))
+                        _.strip().lower() for _ in json.loads(self._info_str("BossKey"))
                     )
                 )  # 老板键
             except Exception as e:
@@ -231,7 +227,7 @@ class LDManager(DeviceBase):
         result = await ProcessRunner.run_process(
             self.emulator_path,
             "list2",
-            timeout=self.config.get("Info", "MaxWaitTime"),
+            timeout=self._info_int("MaxWaitTime"),
             if_merge_std=True,
         )
 

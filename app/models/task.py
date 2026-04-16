@@ -25,34 +25,52 @@ import weakref
 from datetime import datetime
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Optional, Literal
+from typing import Any, Literal, Optional
+
+
+def _default_content() -> list[str]:
+    return []
+
+
+def _default_log_record() -> dict[datetime, LogRecord]:
+    return {}
+
+
+def _default_user_list() -> list[UserItem]:
+    return []
+
+
+def _default_script_list() -> list[ScriptItem]:
+    return []
+
+
+def _default_pending_tasks() -> set[asyncio.Task[Any]]:
+    return set()
 
 
 @dataclass
 class LogRecord:
-
-    content: list[str] = field(default_factory=list)
+    content: list[str] = field(default_factory=_default_content)
     status: str = "未开始监看日志"
 
 
 @dataclass
 class UserItem:
-
     user_id: str  # 用户ID
     name: str  # 用户名称
     status: str  # 用户执行状态
     log_record: dict[datetime, LogRecord] = field(
-        default_factory=dict
+        default_factory=_default_log_record
     )  # 用户本次代理的全部日志记录
     _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
 
-    def __setattr__(self, name, value):
+    def __setattr__(self, name: str, value: Any) -> None:
         super().__setattr__(name, value)
         # 监听所有字段变化
         if name in ("user_id", "name", "status") and self._task_item_ref is not None:
             ti = self._task_item_ref()
             if ti is not None:
-                asyncio.create_task(ti.on_change())
+                ti.create_tracked_task(ti.on_change())
 
     @property
     def result(self) -> str:
@@ -69,16 +87,17 @@ class UserItem:
 
 @dataclass
 class ScriptItem:
-
     script_id: str  # 脚本ID
     name: str  # 脚本名称
     status: str  # 脚本执行状态
-    user_list: List[UserItem] = field(default_factory=list)  # 用户信息列表
+    user_list: list[UserItem] = field(
+        default_factory=_default_user_list
+    )  # 用户信息列表
     current_index: int = -1  # 当前执行的用户索引，-1 表示未开始
     log: str = ""  # 脚本执行日志
     _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
 
-    def __setattr__(self, name, value):
+    def __setattr__(self, name: str, value: Any) -> None:
         super().__setattr__(name, value)
 
         # 如果 user_list 被整体替换，重新绑定
@@ -87,7 +106,7 @@ class ScriptItem:
                 object.__setattr__(user, "_task_item_ref", self._task_item_ref)
 
         if name not in ("_task_item_ref",) and self.task_info is not None:
-            asyncio.create_task(self.task_info.on_change())
+            self.task_info.create_tracked_task(self.task_info.on_change())
 
     @property
     def task_info(self) -> Optional[TaskItem]:
@@ -114,10 +133,15 @@ class TaskItem(ABC):
     queue_id: str | None  # 执行的队列ID
     script_id: str | None  # 执行的脚本ID
     user_id: str | None  # 执行的用户ID
-    script_list: List[ScriptItem] = field(default_factory=list)  # 脚本信息列表
+    script_list: list[ScriptItem] = field(
+        default_factory=_default_script_list
+    )  # 脚本信息列表
     current_index: int = -1  # 当前执行的脚本索引，-1 表示未开始
+    _pending_tasks: set[asyncio.Task[Any]] = field(
+        default_factory=_default_pending_tasks, init=False
+    )
 
-    def __setattr__(self, name, value):
+    def __setattr__(self, name: str, value: Any) -> None:
         super().__setattr__(name, value)
 
         # 如果 script_list 被整体替换，重新绑定
@@ -125,7 +149,7 @@ class TaskItem(ABC):
             for item in self.script_list:
                 self._bind_task_item(item)
 
-    def _bind_task_item(self, item: ScriptItem):
+    def _bind_task_item(self, item: ScriptItem) -> None:
         """绑定 TaskItem 及其内部所有 UserItem 到当前 TaskItem"""
         ti_ref = weakref.ref(self)
         object.__setattr__(item, "_task_item_ref", ti_ref)
@@ -133,13 +157,38 @@ class TaskItem(ABC):
         for user in item.user_list:
             object.__setattr__(user, "_task_item_ref", ti_ref)
 
+    def create_tracked_task(self, coro: Any) -> asyncio.Task[Any]:
+        """创建并跟踪异步任务，避免任务异常被静默吞掉。"""
+
+        task = asyncio.create_task(coro)
+        self._pending_tasks.add(task)
+
+        def _finalize(done_task: asyncio.Task[Any]) -> None:
+            self._pending_tasks.discard(done_task)
+            if done_task.cancelled():
+                return
+            exception = done_task.exception()
+            if exception is not None:
+                # 在事件循环中转抛，便于统一异常处理器捕获
+                loop = done_task.get_loop()
+                loop.call_exception_handler(
+                    {
+                        "message": "TaskItem 子任务执行失败",
+                        "exception": exception,
+                        "task": done_task,
+                    }
+                )
+
+        task.add_done_callback(_finalize)
+        return task
+
     @abstractmethod
-    async def on_change(self):
+    async def on_change(self) -> None:
         """统一回调入口"""
         raise NotImplementedError("子类必须实现 on_change")
 
     @property
-    def asdict(self) -> list:
+    def asdict(self) -> list[dict[str, str | list[dict[str, str]]]]:
         """将 TaskItem 转换为字典形式"""
         return [
             {
@@ -162,30 +211,30 @@ class TaskItem(ABC):
 
         if not self.script_list:
             return "任务未加载"
-        return "\n\n\n".join(
-            [
-                f"{script.name}：\n\n"
-                f"    已完成用户数：{sum(1 for user in script.user_list if user.status == '完成')}；未完成用户数：{sum(1 for user in script.user_list if user.status != '完成')}\n\n"
-                f"    {script.result.replace('\n', '\n    ')}"
-                for script in self.script_list
-            ]
-        )
+        formatted_result: list[str] = []
+        formatted_result = [
+            f"{script.name}：\n\n"
+            f"    已完成用户数：{sum(1 for user in script.user_list if user.status == '完成')}；未完成用户数：{sum(1 for user in script.user_list if user.status != '完成')}\n\n"
+            f"    {script.result.replace('\n', '\n    ')}"
+            for script in self.script_list
+        ]
+        return "\n\n\n".join(formatted_result)
 
 
 @dataclass
 class TaskExecuteBase(ABC):
-    task: asyncio.Task | None = None
+    task: asyncio.Task[None] | None = None
     _task_group: asyncio.TaskGroup | None = None
     accomplish: asyncio.Event = field(default_factory=asyncio.Event)
 
     @abstractmethod
-    async def main_task(self): ...
+    async def main_task(self) -> None: ...
     @abstractmethod
-    async def final_task(self): ...
+    async def final_task(self) -> None: ...
     @abstractmethod
-    async def on_crash(self, e): ...
+    async def on_crash(self, e: Exception) -> None: ...
 
-    async def _execute_task(self, parent_tg: asyncio.TaskGroup):
+    async def _execute_task(self, parent_tg: asyncio.TaskGroup) -> None:
         self._task_group = parent_tg
         try:
             await self.main_task()
@@ -200,19 +249,19 @@ class TaskExecuteBase(ABC):
             finally:
                 self.accomplish.set()
 
-    def spawn(self, child: TaskExecuteBase) -> asyncio.Task:
+    def spawn(self, child: TaskExecuteBase) -> asyncio.Task[None]:
         if self._task_group is None:
             raise RuntimeError("子任务必须在主任务中启动")
         return self._task_group.create_task(child._execute_task(self._task_group))
 
-    def execute(self):
+    def execute(self) -> None:
         if self.task is not None and not self.task.done():
             raise RuntimeError("任务已在运行")
 
         if self._task_group is not None:
             raise RuntimeError("execute() 仅可由顶层任务调用，子任务请使用 spawn()")
 
-        async def _root_coro():
+        async def _root_coro() -> None:
             async with asyncio.TaskGroup() as tg:
                 self.task = tg.create_task(self._execute_task(tg))
 

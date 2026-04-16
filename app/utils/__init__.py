@@ -1,55 +1,43 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2024-2025 DLmaster361
-#   Copyright © 2025 MoeSnowyFox
-#   Copyright © 2025-2026 AUTO-MAS Team
+from __future__ import annotations
 
-#   This file is part of AUTO-MAS.
-
-#   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU Affero General Public License as
-#   published by the Free Software Foundation, either version 3 of
-#   the License, or (at your option) any later version.
-
-#   AUTO-MAS is distributed in the hope that it will be useful,
-#   but WITHOUT ANY WARRANTY; without even the implied warranty
-#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU Affero General Public License for more details.
-
-#   You should have received a copy of the GNU Affero General Public License
-#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
-#   Contact: DLmaster_361@163.com
+from importlib import import_module
+from typing import Any
 
 
-from .constants import *
-from .logger import get_logger
-from .ImageUtils import ImageUtils
-from .LogMonitor import LogMonitor, strptime
-from .ProcessManager import ProcessManager, ProcessRunner, ProcessInfo, ProcessResult
-from .security import dpapi_encrypt, dpapi_decrypt, sanitize_log_message
-from .emulator import MumuManager, LDManager, search_all_emulators, EMULATOR_TYPE_BOOK
-from .tools import decode_bytes, busy_wait
-from .websocket import WebSocketClient, create_ws_client
+_EXPORTS: dict[str, tuple[str, str]] = {
+    "constants": ("app.utils.constants", ""),
+    "get_logger": ("app.utils.logger", "get_logger"),
+    "ImageUtils": ("app.utils.ImageUtils", "ImageUtils"),
+    "LogMonitor": ("app.utils.LogMonitor", "LogMonitor"),
+    "strptime": ("app.utils.LogMonitor", "strptime"),
+    "ProcessManager": ("app.utils.ProcessManager", "ProcessManager"),
+    "ProcessRunner": ("app.utils.ProcessManager", "ProcessRunner"),
+    "ProcessInfo": ("app.utils.ProcessManager", "ProcessInfo"),
+    "ProcessResult": ("app.utils.ProcessManager", "ProcessResult"),
+    "dpapi_encrypt": ("app.utils.security", "dpapi_encrypt"),
+    "dpapi_decrypt": ("app.utils.security", "dpapi_decrypt"),
+    "sanitize_log_message": ("app.utils.security", "sanitize_log_message"),
+    "skland_sign_in": ("app.utils.skland", "skland_sign_in"),
+    "MumuManager": ("app.utils.emulator", "MumuManager"),
+    "LDManager": ("app.utils.emulator", "LDManager"),
+    "search_all_emulators": ("app.utils.emulator", "search_all_emulators"),
+    "EMULATOR_TYPE_BOOK": ("app.utils.emulator", "EMULATOR_TYPE_BOOK"),
+    "decode_bytes": ("app.utils.tools", "decode_bytes"),
+    "busy_wait": ("app.utils.tools", "busy_wait"),
+    "WebSocketClient": ("app.utils.websocket", "WebSocketClient"),
+    "create_ws_client": ("app.utils.websocket", "create_ws_client"),
+}
 
-__all__ = [
-    "constants",
-    "get_logger",
-    "ImageUtils",
-    "LogMonitor",
-    "ProcessManager",
-    "ProcessRunner",
-    "ProcessInfo",
-    "ProcessResult",
-    "dpapi_encrypt",
-    "dpapi_decrypt",
-    "sanitize_log_message",
-    "strptime",
-    "MumuManager",
-    "LDManager",
-    "search_all_emulators",
-    "EMULATOR_TYPE_BOOK",
-    "decode_bytes",
-    "busy_wait",
-    "WebSocketClient",
-    "create_ws_client",
-]
+
+__all__ = list(_EXPORTS)
+
+
+def __getattr__(name: str) -> Any:
+    if name not in _EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+    module_name, attr_name = _EXPORTS[name]
+    module = import_module(module_name)
+    value = module if not attr_name else getattr(module, attr_name)
+    globals()[name] = value
+    return value

@@ -1,10 +1,11 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
+
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
+
 const logger = window.electronAPI.getLogger('路由管理')
 
-// 异步按需加载调度中心，避免弹窗窗口提前执行相关逻辑
 const SchedulerView = () => import('../views/scheduler/index.vue')
 
 let needInitLanding = true
@@ -36,19 +37,19 @@ const routes = [
     path: '/scripts/:id/edit/maa',
     name: 'MAAScriptEdit',
     component: () => import('../views/EditView/Script/MAAScriptEdit.vue'),
-    meta: { title: '编辑MAA脚本' },
+    meta: { title: '编辑 MAA 脚本' },
   },
   {
     path: '/scripts/:id/edit/src',
     name: 'SRCScriptEdit',
     component: () => import('../views/EditView/Script/SRCScriptEdit.vue'),
-    meta: { title: '编辑SRC脚本' },
+    meta: { title: '编辑 SRC 脚本' },
   },
   {
     path: '/scripts/:id/edit/maaend',
     name: 'MaaEndScriptEdit',
     component: () => import('../views/EditView/Script/MaaEndScriptEdit.vue'),
-    meta: { title: '编辑MaaEnd脚本' },
+    meta: { title: '编辑 MaaEnd 脚本' },
   },
   {
     path: '/scripts/:id/edit/general',
@@ -60,43 +61,43 @@ const routes = [
     path: '/scripts/:scriptId/users/add/maa',
     name: 'MAAUserAdd',
     component: () => import('../views/EditView/User/MAAUserEdit.vue'),
-    meta: { title: '添加MAA用户' },
+    meta: { title: '新增 MAA 用户' },
   },
   {
     path: '/scripts/:scriptId/users/:userId/edit/maa',
     name: 'MAAUserEdit',
     component: () => import('../views/EditView/User/MAAUserEdit.vue'),
-    meta: { title: '编辑MAA用户' },
+    meta: { title: '编辑 MAA 用户' },
   },
   {
     path: '/scripts/:scriptId/users/add/src',
     name: 'SRCUserAdd',
     component: () => import('../views/EditView/User/SRCUserEdit.vue'),
-    meta: { title: '添加SRC用户' },
+    meta: { title: '新增 SRC 用户' },
   },
   {
     path: '/scripts/:scriptId/users/add/maaend',
     name: 'MaaEndUserAdd',
     component: () => import('../views/EditView/User/MaaEndUserEdit.vue'),
-    meta: { title: '添加MaaEnd用户' },
+    meta: { title: '新增 MaaEnd 用户' },
   },
   {
     path: '/scripts/:scriptId/users/:userId/edit/src',
     name: 'SRCUserEdit',
     component: () => import('../views/EditView/User/SRCUserEdit.vue'),
-    meta: { title: '编辑SRC用户' },
+    meta: { title: '编辑 SRC 用户' },
   },
   {
     path: '/scripts/:scriptId/users/:userId/edit/maaend',
     name: 'MaaEndUserEdit',
     component: () => import('../views/EditView/User/MaaEndUserEdit.vue'),
-    meta: { title: '编辑MaaEnd用户' },
+    meta: { title: '编辑 MaaEnd 用户' },
   },
   {
     path: '/scripts/:scriptId/users/add/general',
     name: 'GeneralUserAdd',
     component: () => import('../views/EditView/User/GeneralUserEdit.vue'),
-    meta: { title: '添加通用用户' },
+    meta: { title: '新增通用用户' },
   },
   {
     path: '/scripts/:scriptId/users/:userId/edit/general',
@@ -128,7 +129,7 @@ const routes = [
     component: SchedulerView,
     meta: {
       title: '调度中心',
-      keepAlive: true, // 启用 keep-alive，保持组件存活
+      keepAlive: true,
     },
   },
   {
@@ -141,7 +142,7 @@ const routes = [
     path: '/OCRdev',
     name: 'OCRdev',
     component: () => import('../views/OCRdev.vue'),
-    meta: { title: 'OCR测试' },
+    meta: { title: 'OCR 测试' },
   },
   {
     path: '/WSdev',
@@ -169,7 +170,7 @@ const routes = [
   },
   {
     path: '/plugins',
-    name: 'PluginDev',
+    name: 'Plugins',
     component: () => import('../views/PluginDev.vue'),
     meta: { title: '插件管理' },
   },
@@ -197,7 +198,6 @@ router.beforeEach(async (to, from, next) => {
 
   const { isInitialized, isBootstrapping } = useAppInitialization()
 
-  // 声明跳过的路由：直接放行
   if ((to.meta as any)?.skipGuard) {
     next()
     return
@@ -222,7 +222,10 @@ router.beforeEach(async (to, from, next) => {
   }
 
   const isDev = import.meta.env.DEV
-  if (isDev) return next()
+  if (isDev) {
+    next()
+    return
+  }
 
   logger.info(
     `检查初始化状态：${JSON.stringify({ isInitialized: isInitialized.value, isBootstrapping: isBootstrapping.value })}`

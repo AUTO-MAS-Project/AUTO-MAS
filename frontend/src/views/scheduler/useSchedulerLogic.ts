@@ -1,13 +1,17 @@
-import { computed, ref, watch } from 'vue'
+﻿import { computed, ref, watch } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import { message, Modal, notification } from 'ant-design-vue'
-import { Service } from '@/api/services/Service'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn'
-import { PowerIn } from '@/api/models/PowerIn'
+import {
+  POWER_SIGNAL,
+  TASK_CREATE_MODE,
+  dispatchApi,
+  infoApi,
+  type ComboBoxItem,
+  type PowerSignal,
+} from '@/api'
 import { useWebSocket, ExternalWSHandlers } from '@/composables/useWebSocket'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import schedulerHandlers from './schedulerHandlers'
-import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem, Script } from './schedulerConstants'
 import { type SchedulerTab, type TaskMessage, type SchedulerStatus } from './schedulerConstants'
 const logger = window.electronAPI.getLogger('调度台逻辑')
@@ -44,7 +48,7 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
       closable: false,
       status: '空闲',
       selectedTaskId: null,
-      selectedMode: TaskCreateIn.mode.AUTO_PROXY,
+      selectedMode: TASK_CREATE_MODE.AUTO_PROXY,
       websocketId: null,
       taskQueue: [],
       userQueue: [],
@@ -98,7 +102,7 @@ const taskOptionsLoading = ref(false)
 const taskOptions = ref<ComboBoxItem[]>([])
 
 // 电源操作状态
-const powerAction = ref<PowerIn.signal>(PowerIn.signal.NO_ACTION)
+const powerAction = ref<PowerSignal>(POWER_SIGNAL.NO_ACTION)
 // 注意：电源倒计时弹窗已移至全局组件 GlobalPowerCountdown.vue
 // 这里保留引用以避免破坏现有代码，但实际功能由全局组件处理
 const powerCountdownVisible = ref(false)
@@ -136,14 +140,21 @@ export function useSchedulerLogic() {
       const queueId = data.queueId
       const taskName = data.taskName
       const taskType = data.taskType
-      logger.info(`收到新任务信号: 任务ID=${taskId}, 队列ID=${queueId}, 任务名称=${taskName}, 任务类型=${taskType}`)
+      logger.info(
+        `收到新任务信号: 任务ID=${taskId}, 队列ID=${queueId}, 任务名称=${taskName}, 任务类型=${taskType}`
+      )
 
       // 创建新的调度台
       createSchedulerTabForTask(taskId, queueId, taskName, taskType)
     }
   }
 
-  const createSchedulerTabForTask = (taskId: string, queueId?: string, taskName?: string, taskType?: string) => {
+  const createSchedulerTabForTask = (
+    taskId: string,
+    queueId?: string,
+    taskName?: string,
+    taskType?: string
+  ) => {
     // 使用现有的addSchedulerTab函数创建新调度台，并传入特定的配置选项
     const newTab = addSchedulerTab({
       title: `调度台${tabCounter}`,
@@ -193,7 +204,12 @@ export function useSchedulerLogic() {
   watchTabsChanges()
 
   // Tab 管理
-  const addSchedulerTab = (options?: { title?: string; status?: string; websocketId?: string; selectedTaskId?: string }) => {
+  const addSchedulerTab = (options?: {
+    title?: string
+    status?: string
+    websocketId?: string
+    selectedTaskId?: string
+  }) => {
     tabCounter++
     const status = options?.status || '空闲'
     // 使用更安全的类型断言，确保状态值是有效的SchedulerStatus
@@ -207,7 +223,7 @@ export function useSchedulerLogic() {
       closable: true,
       status: validStatus,
       selectedTaskId: options?.selectedTaskId || options?.websocketId || null,
-      selectedMode: TaskCreateIn.mode.AUTO_PROXY,
+      selectedMode: TASK_CREATE_MODE.AUTO_PROXY,
       websocketId: options?.websocketId || null,
       taskQueue: [],
       userQueue: [],
@@ -326,7 +342,7 @@ export function useSchedulerLogic() {
     }
 
     try {
-      const response = await Service.addTaskApiDispatchStartPost({
+      const response = await dispatchApi.startTask({
         taskId: tab.selectedTaskId,
         mode: tab.selectedMode,
       })
@@ -372,7 +388,7 @@ export function useSchedulerLogic() {
     if (!tab.websocketId) return
 
     try {
-      await Service.stopTaskApiDispatchStopPost({ taskId: tab.websocketId })
+      await dispatchApi.stopTask({ taskId: tab.websocketId })
 
       // 播放任务中止音频
       const { playSound } = useAudioPlayer()
@@ -404,25 +420,28 @@ export function useSchedulerLogic() {
     }
 
     // 创建新订阅，不再needCache，因为keep-alive保持组件存活
-    const subscriptionId = ws.subscribe(
-      { id: tab.websocketId },
-      message => handleWebSocketMessage(tab, message)
+    const subscriptionId = ws.subscribe({ id: tab.websocketId }, message =>
+      handleWebSocketMessage(tab, message)
     )
 
     // 将订阅ID保存到tab中，以便后续取消订阅
     tab.subscriptionId = subscriptionId
-    logger.info(`新建WebSocket订阅: ${JSON.stringify({
-      key: tab.key,
-      websocketId: tab.websocketId,
-      subscriptionId,
-    })}`)
+    logger.info(
+      `新建WebSocket订阅: ${JSON.stringify({
+        key: tab.key,
+        websocketId: tab.websocketId,
+        subscriptionId,
+      })}`
+    )
 
     // 验证订阅是否成功建立
     if (!subscriptionId) {
-      logger.error(`WebSocket订阅创建失败！: ${JSON.stringify({
-        key: tab.key,
-        websocketId: tab.websocketId,
-      })}`)
+      logger.error(
+        `WebSocket订阅创建失败！: ${JSON.stringify({
+          key: tab.key,
+          websocketId: tab.websocketId,
+        })}`
+      )
       message.error('WebSocket订阅创建失败，可能无法接收任务消息')
     }
   }
@@ -516,7 +535,8 @@ export function useSchedulerLogic() {
       if (data.task_info && Array.isArray(data.task_info)) {
         // 完整脚本+用户数据，直接保存
         tab.overviewData = (data.task_info as any[]).map(s => ({
-          script_id: s.script_id || `script_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          script_id:
+            s.script_id || `script_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           name: s.name || '未知脚本',
           status: s.status || '等待',
           user_list: s.userList ? [...s.userList] : [],
@@ -564,10 +584,12 @@ export function useSchedulerLogic() {
         const newContent = data.log
         if (tab.lastLogContent !== newContent) {
           tab.lastLogContent = newContent
-          logger.debug(`更新日志内容: ${JSON.stringify({
-            tabKey: tab.key,
-            contentLength: newContent.length
-          })}`)
+          logger.debug(
+            `更新日志内容: ${JSON.stringify({
+              tabKey: tab.key,
+              contentLength: newContent.length,
+            })}`
+          )
         }
       } else if (typeof data.log === 'object') {
         let newContent = ''
@@ -578,10 +600,12 @@ export function useSchedulerLogic() {
 
         if (tab.lastLogContent !== newContent) {
           tab.lastLogContent = newContent
-          logger.debug(`更新日志对象: ${JSON.stringify({
-            tabKey: tab.key,
-            contentLength: newContent.length
-          })}`)
+          logger.debug(
+            `更新日志对象: ${JSON.stringify({
+              tabKey: tab.key,
+              contentLength: newContent.length,
+            })}`
+          )
         }
       }
     }
@@ -596,9 +620,17 @@ export function useSchedulerLogic() {
       const errorMsg = String(data.Error).toLowerCase()
 
       // 根据错误内容匹配具体的 noisy 模式音频
-      if (errorMsg.includes('adb') && (errorMsg.includes('连接') || errorMsg.includes('connection'))) {
+      if (
+        errorMsg.includes('adb') &&
+        (errorMsg.includes('连接') || errorMsg.includes('connection'))
+      ) {
         await playSound('maa_adb_connection_error')
-      } else if (errorMsg.includes('模拟器') && (errorMsg.includes('未检测') || errorMsg.includes('not detected') || errorMsg.includes('找不到'))) {
+      } else if (
+        errorMsg.includes('模拟器') &&
+        (errorMsg.includes('未检测') ||
+          errorMsg.includes('not detected') ||
+          errorMsg.includes('找不到'))
+      ) {
         await playSound('maa_no_emulator_detected')
       } else if (errorMsg.includes('登录') && errorMsg.includes('失败')) {
         await playSound('maa_prts_login_failed')
@@ -625,12 +657,24 @@ export function useSchedulerLogic() {
 
       // 匹配成功信息的 noisy 模式音频
       if (infoMsg.includes('skland') || infoMsg.includes('森空岛')) {
-        if (infoMsg.includes('签到成功') || infoMsg.includes('checkin success') || infoMsg.includes('成功')) {
+        if (
+          infoMsg.includes('签到成功') ||
+          infoMsg.includes('checkin success') ||
+          infoMsg.includes('成功')
+        ) {
           await playSound('skland_checkin_success')
-        } else if (infoMsg.includes('签到失败') || infoMsg.includes('checkin failed') || infoMsg.includes('失败')) {
+        } else if (
+          infoMsg.includes('签到失败') ||
+          infoMsg.includes('checkin failed') ||
+          infoMsg.includes('失败')
+        ) {
           await playSound('skland_checkin_failed')
         }
-      } else if (infoMsg.includes('六星') || infoMsg.includes('6星') || infoMsg.includes('six star')) {
+      } else if (
+        infoMsg.includes('六星') ||
+        infoMsg.includes('6星') ||
+        infoMsg.includes('six star')
+      ) {
         await playSound('six_star_report')
       } else if (infoMsg.includes('adb') && infoMsg.includes('成功')) {
         await playSound('adb_success')
@@ -691,15 +735,19 @@ export function useSchedulerLogic() {
       if (tabIndex !== -1) {
         const updatedTab: SchedulerTab = { ...tab }
         schedulerTabs.value.splice(tabIndex, 1, updatedTab)
-        logger.debug(`已强制更新schedulerTabs，当前tabs状态: ${JSON.stringify(schedulerTabs.value)}`)
+        logger.debug(
+          `已强制更新schedulerTabs，当前tabs状态: ${JSON.stringify(schedulerTabs.value)}`
+        )
       }
 
       if (tab.subscriptionId) {
-        logger.info(`任务完成，清理WebSocket订阅: ${JSON.stringify({
-          key: tab.key,
-          subscriptionId: tab.subscriptionId,
-          websocketId: tab.websocketId,
-        })}`)
+        logger.info(
+          `任务完成，清理WebSocket订阅: ${JSON.stringify({
+            key: tab.key,
+            subscriptionId: tab.subscriptionId,
+            websocketId: tab.websocketId,
+          })}`
+        )
         try {
           ws.unsubscribe(tab.subscriptionId)
         } catch (error) {
@@ -710,10 +758,12 @@ export function useSchedulerLogic() {
       }
 
       if (tab.websocketId) {
-        logger.info(`任务完成，清理websocketId: ${JSON.stringify({
-          key: tab.key,
-          websocketId: tab.websocketId,
-        })}`)
+        logger.info(
+          `任务完成，清理websocketId: ${JSON.stringify({
+            key: tab.key,
+            websocketId: tab.websocketId,
+          })}`
+        )
         tab.websocketId = null
       }
 
@@ -762,7 +812,7 @@ export function useSchedulerLogic() {
               name: s.name,
               status: s.status,
               userList: s.user_list, // 转换回后端格式
-            }))
+            })),
           },
         }
         try {
@@ -778,13 +828,13 @@ export function useSchedulerLogic() {
   }
 
   // 电源操作
-  const onPowerActionChange = async (value: PowerIn.signal) => {
+  const onPowerActionChange = async (value: PowerSignal) => {
     powerAction.value = value
     // useLocalStorage 会自动同步到 localStorage，无需手动保存
 
     // 调用API设置电源操作
     try {
-      await Service.setPowerApiDispatchSetPowerPost({ signal: value })
+      await dispatchApi.setPower({ signal: value })
       logger.info(`电源操作设置成功: ${JSON.stringify(value)}`)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
@@ -795,30 +845,30 @@ export function useSchedulerLogic() {
 
   // 更新电源操作显示（不发送API请求）
   const updatePowerActionDisplay = (powerSign: string) => {
-    // 将后端的PowerSign转换为前端的PowerIn.signal枚举值
-    let newPowerAction: PowerIn.signal = PowerIn.signal.NO_ACTION
+    // map backend power state to the frontend signal enum
+    let newPowerAction: PowerSignal = POWER_SIGNAL.NO_ACTION
 
     switch (powerSign) {
       case 'NoAction':
-        newPowerAction = PowerIn.signal.NO_ACTION
+        newPowerAction = POWER_SIGNAL.NO_ACTION
         break
       case 'Shutdown':
-        newPowerAction = PowerIn.signal.SHUTDOWN
+        newPowerAction = POWER_SIGNAL.SHUTDOWN
         break
       case 'ShutdownForce':
-        newPowerAction = PowerIn.signal.SHUTDOWN_FORCE
+        newPowerAction = POWER_SIGNAL.SHUTDOWN_FORCE
         break
       case 'Reboot':
-        newPowerAction = PowerIn.signal.REBOOT
+        newPowerAction = POWER_SIGNAL.REBOOT
         break
       case 'Hibernate':
-        newPowerAction = PowerIn.signal.HIBERNATE
+        newPowerAction = POWER_SIGNAL.HIBERNATE
         break
       case 'Sleep':
-        newPowerAction = PowerIn.signal.SLEEP
+        newPowerAction = POWER_SIGNAL.SLEEP
         break
       case 'KillSelf':
-        newPowerAction = PowerIn.signal.KILL_SELF
+        newPowerAction = POWER_SIGNAL.KILL_SELF
         break
       default:
         logger.warn(`未知的PowerSign值: ${powerSign}`)
@@ -875,7 +925,7 @@ export function useSchedulerLogic() {
   const loadTaskOptions = async () => {
     try {
       taskOptionsLoading.value = true
-      const response = await Service.getTaskComboxApiInfoComboxTaskPost()
+      const response = await infoApi.getTaskOptions()
       if (response.code === 200) {
         taskOptions.value = response.data
       } else {
@@ -893,17 +943,17 @@ export function useSchedulerLogic() {
   // 获取电源状态
   const getPowerState = async () => {
     try {
-      const response = await Service.getPowerApiDispatchGetPowerPost()
+      const response = await dispatchApi.getPower()
       if (response.code === 200 && response.signal) {
-        // 将后端返回的 PowerOut.signal 转换为 PowerIn.signal
-        const signalMap: Record<string, PowerIn.signal> = {
-          'NoAction': PowerIn.signal.NO_ACTION,
-          'Shutdown': PowerIn.signal.SHUTDOWN,
-          'ShutdownForce': PowerIn.signal.SHUTDOWN_FORCE,
-          'Reboot': PowerIn.signal.REBOOT,
-          'Hibernate': PowerIn.signal.HIBERNATE,
-          'Sleep': PowerIn.signal.SLEEP,
-          'KillSelf': PowerIn.signal.KILL_SELF,
+        // keep frontend state aligned with the backend signal value
+        const signalMap: Record<string, PowerSignal> = {
+          NoAction: POWER_SIGNAL.NO_ACTION,
+          Shutdown: POWER_SIGNAL.SHUTDOWN,
+          ShutdownForce: POWER_SIGNAL.SHUTDOWN_FORCE,
+          Reboot: POWER_SIGNAL.REBOOT,
+          Hibernate: POWER_SIGNAL.HIBERNATE,
+          Sleep: POWER_SIGNAL.SLEEP,
+          KillSelf: POWER_SIGNAL.KILL_SELF,
         }
         const mappedSignal = signalMap[response.signal]
         if (mappedSignal) {
@@ -1032,11 +1082,13 @@ export function useSchedulerLogic() {
     try {
       schedulerTabs.value.forEach(tab => {
         if (tab.status === '运行' && tab.websocketId) {
-          logger.info(`初始化阶段检查运行中标签的订阅: ${JSON.stringify({
-            key: tab.key,
-            websocketId: tab.websocketId,
-            hasSubscription: !!tab.subscriptionId,
-          })}`)
+          logger.info(
+            `初始化阶段检查运行中标签的订阅: ${JSON.stringify({
+              key: tab.key,
+              websocketId: tab.websocketId,
+              hasSubscription: !!tab.subscriptionId,
+            })}`
+          )
           // subscribeToTask 会自动跳过已有订阅，保持缓存标记不丢失
           subscribeToTask(tab)
         }
@@ -1077,12 +1129,14 @@ export function useSchedulerLogic() {
   const debugSubscriptionStatus = () => {
     logger.info('当前调度台订阅状态:')
     schedulerTabs.value.forEach(tab => {
-      logger.info(`- Tab ${tab.key} (${tab.title}): ${JSON.stringify({
-        status: tab.status,
-        websocketId: tab.websocketId,
-        subscriptionId: tab.subscriptionId,
-        hasSubscription: !!tab.subscriptionId,
-      })}`)
+      logger.info(
+        `- Tab ${tab.key} (${tab.title}): ${JSON.stringify({
+          status: tab.status,
+          websocketId: tab.websocketId,
+          subscriptionId: tab.subscriptionId,
+          hasSubscription: !!tab.subscriptionId,
+        })}`
+      )
     })
     logger.info(`WebSocket状态: ${JSON.stringify(ws.status.value)}`)
   }
@@ -1108,11 +1162,13 @@ export function useSchedulerLogic() {
     logger.info('清理所有WebSocket订阅')
     schedulerTabs.value.forEach(tab => {
       if (tab.subscriptionId) {
-        logger.info(`清理订阅: ${JSON.stringify({
-          key: tab.key,
-          status: tab.status,
-          subscriptionId: tab.subscriptionId,
-        })}`)
+        logger.info(
+          `清理订阅: ${JSON.stringify({
+            key: tab.key,
+            status: tab.status,
+            subscriptionId: tab.subscriptionId,
+          })}`
+        )
         try {
           ws.unsubscribe(tab.subscriptionId)
         } catch (error) {

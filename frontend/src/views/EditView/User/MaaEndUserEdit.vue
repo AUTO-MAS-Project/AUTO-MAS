@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="user-edit-container">
     <teleport to="body">
       <div v-if="showMaaEndConfigMask" class="maaend-config-mask">
@@ -76,8 +76,7 @@ import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
-import { Service } from '@/api'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import { TASK_CREATE_MODE, dispatchApi } from '@/api'
 
 import MaaEndUserEditHeader from '../../MaaEndUserEdit/MaaEndUserEditHeader.vue'
 import BasicInfoSection from '../../MaaEndUserEdit/BasicInfoSection.vue'
@@ -251,9 +250,9 @@ const handleMaaEndConfig = async () => {
     maaEndConfigLoading.value = true
     cleanupConfigSession()
 
-    const response = await Service.addTaskApiDispatchStartPost({
+    const response = await dispatchApi.startTask({
       taskId: userId,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+      mode: TASK_CREATE_MODE.SCRIPT_CONFIG,
     })
 
     if (!response?.taskId) {
@@ -302,7 +301,7 @@ const handleSaveMaaEndConfig = async () => {
       throw new Error('未找到活动配置会话')
     }
 
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId: maaEndWebsocketId.value })
+    const response = await dispatchApi.stopTask({ taskId: maaEndWebsocketId.value })
     if (response.code !== 200) {
       throw new Error(response.message || '保存配置失败')
     }

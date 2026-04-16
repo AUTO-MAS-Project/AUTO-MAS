@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="plugin-dev-page">
     <div class="scripts-header">
       <div class="header-left">
@@ -29,11 +29,12 @@
       <a-col :span="7">
         <div class="left-panel">
           <a-card :bordered="false" title="插件实例列表" class="section-card list-card">
-            <template #extra>
-              <a-tag>v{{ version }}</a-tag>
-            </template>
-
-            <a-input v-model:value="keyword" placeholder="搜索实例ID/名称/插件" allow-clear class="search-box" />
+            <a-input
+              v-model:value="keyword"
+              placeholder="搜索实例ID/名称/插件"
+              allow-clear
+              class="search-box"
+            />
 
             <div class="instance-list">
               <a-empty v-if="filteredInstances.length === 0" description="暂无实例" />
@@ -65,7 +66,9 @@
                       {{ getRuntimeState(item.id)?.lifecycle_phase || 'idle' }}
                     </a-tag>
                     <a-tag color="blue">g{{ getRuntimeState(item.id)?.generation ?? 0 }}</a-tag>
-                    <a-tag color="purple">reload {{ getRuntimeState(item.id)?.reload_count ?? 0 }}</a-tag>
+                    <a-tag color="purple"
+                      >reload {{ getRuntimeState(item.id)?.reload_count ?? 0 }}</a-tag
+                    >
                   </a-space>
                 </div>
               </div>
@@ -98,229 +101,286 @@
 
           <div class="detail-scroll" @wheel.stop>
             <template v-if="selectedInstance">
-            <a-alert
-              v-if="isDirty"
-              type="warning"
-              show-icon
-              message="当前有未保存改动"
-              style="margin-bottom: 12px"
-            />
+              <a-alert
+                v-if="isDirty"
+                type="warning"
+                show-icon
+                message="当前有未保存改动"
+                style="margin-bottom: 12px"
+              />
 
-            <a-alert
-              v-if="currentSchemaError"
-              type="error"
-              show-icon
-              :message="`Schema 加载失败：${currentSchemaError}`"
-              style="margin-bottom: 12px"
-            />
+              <a-alert
+                v-if="currentSchemaError"
+                type="error"
+                show-icon
+                :message="`Schema 加载失败：${currentSchemaError}`"
+                style="margin-bottom: 12px"
+              />
 
-            <a-alert
-              v-if="!currentSchemaError && activeSchemaEntries.length === 0"
-              type="warning"
-              show-icon
-              message="该插件未声明 schema，可能非预期行为或插件本身无需配置"
-              style="margin-bottom: 12px"
-            />
+              <a-alert
+                v-if="!currentSchemaError && activeSchemaEntries.length === 0"
+                type="warning"
+                show-icon
+                message="该插件未声明 schema，可能非预期行为或插件本身无需配置"
+                style="margin-bottom: 12px"
+              />
 
-            <a-card v-if="selectedRuntimeState" size="small" class="runtime-observer-card" title="运行态观测">
-              <a-descriptions :column="2" size="small" bordered>
-                <a-descriptions-item label="运行状态">
-                  <a-tag :color="getStatusTagColor(selectedRuntimeState.status)">
-                    {{ selectedRuntimeState.status }}
-                  </a-tag>
-                </a-descriptions-item>
-                <a-descriptions-item label="生命周期阶段">
-                  <a-tag :color="getPhaseTagColor(selectedRuntimeState.lifecycle_phase)">
-                    {{ selectedRuntimeState.lifecycle_phase }}
-                  </a-tag>
-                </a-descriptions-item>
-                <a-descriptions-item label="代际">g{{ selectedRuntimeState.generation }}</a-descriptions-item>
-                <a-descriptions-item label="重载次数">{{ selectedRuntimeState.reload_count }}</a-descriptions-item>
-                <a-descriptions-item label="最近重载原因">
-                  {{ selectedRuntimeState.last_reload_reason || '-' }}
-                </a-descriptions-item>
-                <a-descriptions-item label="最近重载时间">
-                  {{ formatRuntimeTime(selectedRuntimeState.last_reload_at) }}
-                </a-descriptions-item>
-                <a-descriptions-item label="阶段更新时间">
-                  {{ formatRuntimeTime(selectedRuntimeState.lifecycle_updated_at) }}
-                </a-descriptions-item>
-                <a-descriptions-item label="最近错误">
-                  {{ selectedRuntimeState.last_error || '-' }}
-                </a-descriptions-item>
-              </a-descriptions>
-            </a-card>
-
-            <a-form layout="vertical">
-              <a-form-item label="实例名称">
-                <a-input v-model:value="editForm.name" placeholder="输入实例名称" />
-              </a-form-item>
-
-              <a-card size="small" title="Schema 动态表单" class="editor-card">
-                <template v-if="activeSchemaEntries.length > 0">
-                  <a-form-item
-                    v-for="([field, fieldSchema], index) in activeSchemaEntries"
-                    :key="field"
-                    :label="fieldSchema.description || field"
-                    :required="Boolean(fieldSchema.required)"
-                    :class="['schema-item', `schema-item-${fieldSchema.type}`]"
-                    :style="{ marginBottom: index === activeSchemaEntries.length - 1 ? '0' : '16px' }"
+              <a-card
+                v-if="selectedRuntimeState"
+                size="small"
+                class="runtime-observer-card"
+                title="运行态观测"
+              >
+                <a-descriptions :column="2" size="small" bordered>
+                  <a-descriptions-item label="运行状态">
+                    <a-tag :color="getStatusTagColor(selectedRuntimeState.status)">
+                      {{ selectedRuntimeState.status }}
+                    </a-tag>
+                  </a-descriptions-item>
+                  <a-descriptions-item label="生命周期阶段">
+                    <a-tag :color="getPhaseTagColor(selectedRuntimeState.lifecycle_phase)">
+                      {{ selectedRuntimeState.lifecycle_phase }}
+                    </a-tag>
+                  </a-descriptions-item>
+                  <a-descriptions-item label="代际"
+                    >g{{ selectedRuntimeState.generation }}</a-descriptions-item
                   >
-                    <div class="schema-field-head">
-                      <a-space size="6">
-                        <a-tag class="type-tag" color="processing">{{ getTypeLabel(fieldSchema) }}</a-tag>
-                        <a-tag v-if="fieldSchema.required" color="error">必填</a-tag>
-                        <a-tag v-if="isPasswordSchema(fieldSchema)" color="gold">敏感</a-tag>
-                      </a-space>
-                    </div>
-
-                    <template v-if="fieldSchema.type === 'boolean'">
-                      <a-switch
-                        :checked="getBooleanValue(field)"
-                        checked-children="是"
-                        un-checked-children="否"
-                        @update:checked="(val: boolean) => updateFieldValue(field, val)"
-                      />
-                    </template>
-
-                    <template v-else-if="fieldSchema.type === 'string'">
-                      <a-input-password
-                        v-if="isPasswordSchema(fieldSchema)"
-                        :value="String(getFieldValue(field) ?? '')"
-                        @update:value="(val: string) => updateFieldValue(field, val)"
-                      />
-                      <a-input
-                        v-else
-                        :value="String(getFieldValue(field) ?? '')"
-                        @update:value="(val: string) => updateFieldValue(field, val)"
-                      />
-                    </template>
-
-                    <template v-else-if="fieldSchema.type === 'number'">
-                      <a-input-number
-                        :value="getNumberValue(field)"
-                        style="width: 100%"
-                        :step="1"
-                        @update:value="(val: number | null) => updateFieldValue(field, val)"
-                      />
-                    </template>
-
-                    <template v-else-if="fieldSchema.type === 'list'">
-                      <a-space direction="vertical" style="width: 100%">
-                        <a-button size="small" @click="addListRow(field, fieldSchema.item_type)">新增一行</a-button>
-                        <a-table
-                          :columns="listColumns"
-                          :data-source="getListRows(field)"
-                          :pagination="false"
-                          size="small"
-                          row-key="__rowKey"
-                        >
-                          <template #bodyCell="{ column, record, index }">
-                            <template v-if="column.key === 'value'">
-                              <a-switch
-                                v-if="fieldSchema.item_type === 'boolean'"
-                                :checked="Boolean(record.value)"
-                                @update:checked="(val: boolean) => updateListRowValue(field, index, val, fieldSchema.item_type)"
-                              />
-                              <a-input-number
-                                v-else-if="fieldSchema.item_type === 'number'"
-                                style="width: 100%"
-                                :value="typeof record.value === 'number' ? record.value : Number(record.value || 0)"
-                                @update:value="(val: number | null) => updateListRowValue(field, index, val ?? 0, fieldSchema.item_type)"
-                              />
-                              <a-input
-                                v-else
-                                :value="String(record.value ?? '')"
-                                @update:value="(val: string) => updateListRowValue(field, index, val, fieldSchema.item_type)"
-                              />
-                            </template>
-                            <template v-else-if="column.key === 'action'">
-                              <a-button danger size="small" @click="removeListRow(field, index)">删除</a-button>
-                            </template>
-                          </template>
-                        </a-table>
-                      </a-space>
-                    </template>
-
-                    <template v-else-if="fieldSchema.type === 'key_value'">
-                      <a-space direction="vertical" style="width: 100%">
-                        <a-button size="small" @click="addKeyValueRow(field)">新增一行</a-button>
-                        <a-table
-                          :columns="keyValueColumns"
-                          :data-source="getKeyValueRows(field)"
-                          :pagination="false"
-                          size="small"
-                          row-key="__rowKey"
-                        >
-                          <template #bodyCell="{ column, record }">
-                            <template v-if="column.key === 'key'">
-                              <a-input
-                                :value="record.key"
-                                @blur="(e: FocusEvent) => updateKeyValueRowKey(field, record.key, String((e.target as HTMLInputElement).value || ''))"
-                              />
-                            </template>
-                            <template v-else-if="column.key === 'value'">
-                              <a-input
-                                :value="record.value"
-                                @update:value="(val: string) => updateKeyValueRowValue(field, record.key, val)"
-                              />
-                            </template>
-                            <template v-else-if="column.key === 'action'">
-                              <a-button danger size="small" @click="removeKeyValueRow(field, record.key)">删除</a-button>
-                            </template>
-                          </template>
-                        </a-table>
-                      </a-space>
-                    </template>
-
-                    <template v-else-if="fieldSchema.type === 'table'">
-                      <a-space direction="vertical" style="width: 100%">
-                        <a-space>
-                          <a-button size="small" @click="addTableRow(field)">新增行</a-button>
-                          <a-button size="small" @click="addTableColumn(field)">新增列</a-button>
-                        </a-space>
-                        <a-table
-                          :columns="getTableColumns(field)"
-                          :data-source="getTableRows(field)"
-                          :pagination="false"
-                          size="small"
-                          row-key="__rowKey"
-                        >
-                          <template #bodyCell="{ column, record, index }">
-                            <template v-if="column.key === 'action'">
-                              <a-button danger size="small" @click="removeTableRow(field, index)">删除</a-button>
-                            </template>
-                            <template v-else>
-                              <a-input
-                                :value="String(record[column.dataIndex] ?? '')"
-                                @update:value="(val: string) => updateTableCell(field, index, String(column.dataIndex), val)"
-                              />
-                            </template>
-                          </template>
-                        </a-table>
-                      </a-space>
-                    </template>
-
-                    <template v-else>
-                      <a-input
-                        :value="String(getFieldValue(field) ?? '')"
-                        @update:value="(val: string) => updateFieldValue(field, val)"
-                      />
-                    </template>
-                  </a-form-item>
-                </template>
-                <template v-else>
-                  <a-form-item label="配置 JSON（Schema 不可用时可直接编辑）" style="margin-bottom: 0">
-                    <a-textarea
-                      v-model:value="editForm.configText"
-                      :rows="12"
-                      placeholder="请输入 JSON 对象配置"
-                    />
-                  </a-form-item>
-                </template>
+                  <a-descriptions-item label="重载次数">{{
+                    selectedRuntimeState.reload_count
+                  }}</a-descriptions-item>
+                  <a-descriptions-item label="最近重载原因">
+                    {{ selectedRuntimeState.last_reload_reason || '-' }}
+                  </a-descriptions-item>
+                  <a-descriptions-item label="最近重载时间">
+                    {{ formatRuntimeTime(selectedRuntimeState.last_reload_at) }}
+                  </a-descriptions-item>
+                  <a-descriptions-item label="阶段更新时间">
+                    {{ formatRuntimeTime(selectedRuntimeState.lifecycle_updated_at) }}
+                  </a-descriptions-item>
+                  <a-descriptions-item label="最近错误">
+                    {{ selectedRuntimeState.last_error || '-' }}
+                  </a-descriptions-item>
+                </a-descriptions>
               </a-card>
-            </a-form>
-          </template>
+
+              <a-form layout="vertical">
+                <a-form-item label="实例名称">
+                  <a-input v-model:value="editForm.name" placeholder="输入实例名称" />
+                </a-form-item>
+
+                <a-card size="small" title="Schema 动态表单" class="editor-card">
+                  <template v-if="activeSchemaEntries.length > 0">
+                    <a-form-item
+                      v-for="([field, fieldSchema], index) in activeSchemaEntries"
+                      :key="field"
+                      :label="fieldSchema.description || field"
+                      :required="Boolean(fieldSchema.required)"
+                      :class="['schema-item', `schema-item-${fieldSchema.type}`]"
+                      :style="{
+                        marginBottom: index === activeSchemaEntries.length - 1 ? '0' : '16px',
+                      }"
+                    >
+                      <div class="schema-field-head">
+                        <a-space size="6">
+                          <a-tag class="type-tag" color="processing">{{
+                            getTypeLabel(fieldSchema)
+                          }}</a-tag>
+                          <a-tag v-if="fieldSchema.required" color="error">必填</a-tag>
+                          <a-tag v-if="isPasswordSchema(fieldSchema)" color="gold">敏感</a-tag>
+                        </a-space>
+                      </div>
+
+                      <template v-if="fieldSchema.type === 'boolean'">
+                        <a-switch
+                          :checked="getBooleanValue(field)"
+                          checked-children="是"
+                          un-checked-children="否"
+                          @update:checked="(val: boolean) => updateFieldValue(field, val)"
+                        />
+                      </template>
+
+                      <template v-else-if="fieldSchema.type === 'string'">
+                        <a-input-password
+                          v-if="isPasswordSchema(fieldSchema)"
+                          :value="String(getFieldValue(field) ?? '')"
+                          @update:value="(val: string) => updateFieldValue(field, val)"
+                        />
+                        <a-input
+                          v-else
+                          :value="String(getFieldValue(field) ?? '')"
+                          @update:value="(val: string) => updateFieldValue(field, val)"
+                        />
+                      </template>
+
+                      <template v-else-if="fieldSchema.type === 'number'">
+                        <a-input-number
+                          :value="getNumberValue(field)"
+                          style="width: 100%"
+                          :step="1"
+                          @update:value="(val: number | null) => updateFieldValue(field, val)"
+                        />
+                      </template>
+
+                      <template v-else-if="fieldSchema.type === 'list'">
+                        <a-space direction="vertical" style="width: 100%">
+                          <a-button size="small" @click="addListRow(field, fieldSchema.item_type)"
+                            >新增一行</a-button
+                          >
+                          <a-table
+                            :columns="listColumns"
+                            :data-source="getListRows(field)"
+                            :pagination="false"
+                            size="small"
+                            row-key="__rowKey"
+                          >
+                            <template #bodyCell="{ column, record, index }">
+                              <template v-if="column.key === 'value'">
+                                <a-switch
+                                  v-if="fieldSchema.item_type === 'boolean'"
+                                  :checked="Boolean(record.value)"
+                                  @update:checked="
+                                    (val: boolean) =>
+                                      updateListRowValue(field, index, val, fieldSchema.item_type)
+                                  "
+                                />
+                                <a-input-number
+                                  v-else-if="fieldSchema.item_type === 'number'"
+                                  style="width: 100%"
+                                  :value="
+                                    typeof record.value === 'number'
+                                      ? record.value
+                                      : Number(record.value || 0)
+                                  "
+                                  @update:value="
+                                    (val: number | null) =>
+                                      updateListRowValue(
+                                        field,
+                                        index,
+                                        val ?? 0,
+                                        fieldSchema.item_type
+                                      )
+                                  "
+                                />
+                                <a-input
+                                  v-else
+                                  :value="String(record.value ?? '')"
+                                  @update:value="
+                                    (val: string) =>
+                                      updateListRowValue(field, index, val, fieldSchema.item_type)
+                                  "
+                                />
+                              </template>
+                              <template v-else-if="column.key === 'action'">
+                                <a-button danger size="small" @click="removeListRow(field, index)"
+                                  >删除</a-button
+                                >
+                              </template>
+                            </template>
+                          </a-table>
+                        </a-space>
+                      </template>
+
+                      <template v-else-if="fieldSchema.type === 'key_value'">
+                        <a-space direction="vertical" style="width: 100%">
+                          <a-button size="small" @click="addKeyValueRow(field)">新增一行</a-button>
+                          <a-table
+                            :columns="keyValueColumns"
+                            :data-source="getKeyValueRows(field)"
+                            :pagination="false"
+                            size="small"
+                            row-key="__rowKey"
+                          >
+                            <template #bodyCell="{ column, record }">
+                              <template v-if="column.key === 'key'">
+                                <a-input
+                                  :value="record.key"
+                                  @blur="
+                                    (e: FocusEvent) =>
+                                      updateKeyValueRowKey(
+                                        field,
+                                        record.key,
+                                        String((e.target as HTMLInputElement).value || '')
+                                      )
+                                  "
+                                />
+                              </template>
+                              <template v-else-if="column.key === 'value'">
+                                <a-input
+                                  :value="record.value"
+                                  @update:value="
+                                    (val: string) => updateKeyValueRowValue(field, record.key, val)
+                                  "
+                                />
+                              </template>
+                              <template v-else-if="column.key === 'action'">
+                                <a-button
+                                  danger
+                                  size="small"
+                                  @click="removeKeyValueRow(field, record.key)"
+                                  >删除</a-button
+                                >
+                              </template>
+                            </template>
+                          </a-table>
+                        </a-space>
+                      </template>
+
+                      <template v-else-if="fieldSchema.type === 'table'">
+                        <a-space direction="vertical" style="width: 100%">
+                          <a-space>
+                            <a-button size="small" @click="addTableRow(field)">新增行</a-button>
+                            <a-button size="small" @click="addTableColumn(field)">新增列</a-button>
+                          </a-space>
+                          <a-table
+                            :columns="getTableColumns(field)"
+                            :data-source="getTableRows(field)"
+                            :pagination="false"
+                            size="small"
+                            row-key="__rowKey"
+                          >
+                            <template #bodyCell="{ column, record, index }">
+                              <template v-if="column.key === 'action'">
+                                <a-button danger size="small" @click="removeTableRow(field, index)"
+                                  >删除</a-button
+                                >
+                              </template>
+                              <template v-else>
+                                <a-input
+                                  :value="String(record[column.dataIndex] ?? '')"
+                                  @update:value="
+                                    (val: string) =>
+                                      updateTableCell(field, index, String(column.dataIndex), val)
+                                  "
+                                />
+                              </template>
+                            </template>
+                          </a-table>
+                        </a-space>
+                      </template>
+
+                      <template v-else>
+                        <a-input
+                          :value="String(getFieldValue(field) ?? '')"
+                          @update:value="(val: string) => updateFieldValue(field, val)"
+                        />
+                      </template>
+                    </a-form-item>
+                  </template>
+                  <template v-else>
+                    <a-form-item
+                      label="配置 JSON（Schema 不可用时可直接编辑）"
+                      style="margin-bottom: 0"
+                    >
+                      <a-textarea
+                        v-model:value="editForm.configText"
+                        :rows="12"
+                        placeholder="请输入 JSON 对象配置"
+                      />
+                    </a-form-item>
+                  </template>
+                </a-card>
+              </a-form>
+            </template>
 
             <a-empty v-else description="请选择左侧实例进行编辑" />
           </div>
@@ -366,58 +426,9 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import axios from 'axios'
 import { message } from 'ant-design-vue'
-import { OpenAPI } from '@/api'
-
-interface PluginInstance {
-  id: string
-  plugin: string
-  enabled: boolean
-  name: string
-  config: Record<string, unknown>
-}
-
-interface PluginSchemaField {
-  type: string
-  format?: string
-  default?: unknown
-  required?: boolean
-  description?: string
-  item_type?: string
-}
-
-interface PluginsGetResponse {
-  code: number
-  status: string
-  message: string
-  version: number
-  discovered_plugins: string[]
-  schemas: Record<string, Record<string, PluginSchemaField>>
-  schema_errors: Record<string, string>
-  instances: PluginInstance[]
-  runtime_states: Record<string, PluginRuntimeState>
-}
-
-interface PluginRuntimeState {
-  instance_id: string
-  plugin: string
-  status: string
-  generation: number
-  lifecycle_phase: string
-  lifecycle_updated_at?: string | null
-  reload_count: number
-  last_reload_reason?: string | null
-  last_reload_at?: string | null
-  created_at?: string | null
-  discovered_at?: string | null
-  loaded_at?: string | null
-  activated_at?: string | null
-  disposed_at?: string | null
-  unloaded_at?: string | null
-  last_error?: string | null
-  last_error_at?: string | null
-}
+import type { PluginGetOut, PluginInstance, PluginRuntimeState, PluginSchemaField } from '@/api'
+import { pluginApi } from '@/api'
 
 interface ListRow {
   __rowKey: string
@@ -450,7 +461,6 @@ const uninstallingPackage = ref(false)
 const keyword = ref('')
 const pluginPackageName = ref('auto-mas-test')
 
-const version = ref(1)
 const discoveredPlugins = ref<string[]>([])
 const schemaMap = ref<Record<string, Record<string, PluginSchemaField>>>({})
 const schemaErrors = ref<Record<string, string>>({})
@@ -614,7 +624,12 @@ const getPhaseTagColor = (phase?: string) => {
   if (phase === 'on_load' || phase === 'on_start') {
     return 'blue'
   }
-  if (phase === 'on_stop' || phase === 'on_unload' || phase === 'disposed' || phase === 'unloaded') {
+  if (
+    phase === 'on_stop' ||
+    phase === 'on_unload' ||
+    phase === 'disposed' ||
+    phase === 'unloaded'
+  ) {
     return 'default'
   }
   return 'geekblue'
@@ -768,9 +783,10 @@ const getKeyValueRows = (field: string): KeyValueRow[] => {
 
 const addKeyValueRow = (field: string) => {
   const value = getFieldValue(field)
-  const obj = value && typeof value === 'object' && !Array.isArray(value)
-    ? { ...(value as Record<string, unknown>) }
-    : {}
+  const obj =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? { ...(value as Record<string, unknown>) }
+      : {}
 
   let idx = 1
   let key = `key_${idx}`
@@ -785,9 +801,10 @@ const addKeyValueRow = (field: string) => {
 
 const removeKeyValueRow = (field: string, key: string) => {
   const value = getFieldValue(field)
-  const obj = value && typeof value === 'object' && !Array.isArray(value)
-    ? { ...(value as Record<string, unknown>) }
-    : {}
+  const obj =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? { ...(value as Record<string, unknown>) }
+      : {}
   delete obj[key]
   updateFieldValue(field, obj)
 }
@@ -799,9 +816,10 @@ const updateKeyValueRowKey = (field: string, oldKey: string, newKey: string) => 
   }
 
   const value = getFieldValue(field)
-  const obj = value && typeof value === 'object' && !Array.isArray(value)
-    ? { ...(value as Record<string, unknown>) }
-    : {}
+  const obj =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? { ...(value as Record<string, unknown>) }
+      : {}
 
   if (Object.prototype.hasOwnProperty.call(obj, safeKey)) {
     message.warning('键名已存在')
@@ -815,9 +833,10 @@ const updateKeyValueRowKey = (field: string, oldKey: string, newKey: string) => 
 
 const updateKeyValueRowValue = (field: string, key: string, value: string) => {
   const source = getFieldValue(field)
-  const obj = source && typeof source === 'object' && !Array.isArray(source)
-    ? { ...(source as Record<string, unknown>) }
-    : {}
+  const obj =
+    source && typeof source === 'object' && !Array.isArray(source)
+      ? { ...(source as Record<string, unknown>) }
+      : {}
   obj[key] = value
   updateFieldValue(field, obj)
 }
@@ -829,9 +848,10 @@ const getTableRows = (field: string): TableRow[] => {
   }
 
   return value.map((item, index) => {
-    const row = item && typeof item === 'object' && !Array.isArray(item)
-      ? { ...(item as Record<string, unknown>) }
-      : {}
+    const row =
+      item && typeof item === 'object' && !Array.isArray(item)
+        ? { ...(item as Record<string, unknown>) }
+        : {}
     return {
       __rowKey: `${field}-${index}`,
       ...row,
@@ -963,9 +983,13 @@ const selectInstance = (instanceId: string) => {
   }
 }
 
-const apiPost = async <T = any>(url: string, payload: Record<string, unknown> = {}) => {
-  const requestUrl = `${OpenAPI.BASE}${url}`
-  const { data } = await axios.post<T>(requestUrl, payload)
+const ensureSuccess = <T extends { code: number; status: string; message: string }>(
+  data: T,
+  fallbackMessage: string
+) => {
+  if (data.code !== 200 || data.status !== 'success') {
+    throw new Error(data.message || fallbackMessage)
+  }
   return data
 }
 
@@ -990,12 +1014,7 @@ const parseMissingPackageNameFromError = (error: unknown): string | null => {
 const fetchData = async () => {
   loading.value = true
   try {
-    const data = await apiPost<PluginsGetResponse>('/api/plugins/get', {})
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '获取插件配置失败')
-    }
-
-    version.value = data.version
+    const data = ensureSuccess<PluginGetOut>(await pluginApi.get(), '获取插件配置失败')
     discoveredPlugins.value = data.discovered_plugins
     schemaMap.value = data.schemas || {}
     schemaErrors.value = data.schema_errors || {}
@@ -1035,15 +1054,15 @@ const openAddModal = () => {
 const submitAdd = async () => {
   submitting.value = true
   try {
-    const data = await apiPost('/api/plugins/add', {
-      plugin: addForm.plugin,
-      name: addForm.name || undefined,
-      enabled: addForm.enabled,
-      config: {},
-    })
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '新增失败')
-    }
+    const data = ensureSuccess(
+      await pluginApi.add({
+        plugin: addForm.plugin,
+        name: addForm.name || undefined,
+        enabled: addForm.enabled,
+        config: {},
+      }),
+      '新增失败'
+    )
     message.success('新增成功')
     addModalVisible.value = false
     await fetchData()
@@ -1073,18 +1092,21 @@ const submitEdit = async () => {
       config.enable = editForm.enabled
       setConfigObjectToText(config)
     }
-    const data = await apiPost('/api/plugins/update', {
-      instanceId: editForm.instanceId,
-      plugin: editForm.plugin,
-      name: editForm.name,
-      enabled: editForm.enabled,
-      config,
-    })
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '更新失败')
-    }
+    const data = ensureSuccess(
+      await pluginApi.update({
+        instanceId: editForm.instanceId,
+        plugin: editForm.plugin,
+        name: editForm.name,
+        enabled: editForm.enabled,
+        config,
+      }),
+      '更新失败'
+    )
     message.success('更新成功')
     await fetchData()
+    if (data.instance?.id) {
+      selectInstance(data.instance.id)
+    }
   } catch (error) {
     message.error(`更新失败: ${String(error)}`)
   } finally {
@@ -1094,10 +1116,7 @@ const submitEdit = async () => {
 
 const deleteInstance = async (instanceId: string) => {
   try {
-    const data = await apiPost('/api/plugins/delete', { instanceId })
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '删除失败')
-    }
+    ensureSuccess(await pluginApi.remove({ instanceId }), '删除失败')
     message.success('删除成功')
     await fetchData()
     if (selectedInstanceId.value === instanceId) {
@@ -1114,10 +1133,7 @@ const deleteInstance = async (instanceId: string) => {
 const reloadAll = async () => {
   reloadingAll.value = true
   try {
-    const data = await apiPost('/api/plugins/reload', {})
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '重载失败')
-    }
+    ensureSuccess(await pluginApi.reloadAll(), '重载失败')
     message.success('重载全部成功')
     await fetchData()
   } catch (error) {
@@ -1129,10 +1145,7 @@ const reloadAll = async () => {
 
 const reloadInstance = async (instanceId: string) => {
   try {
-    const data = await apiPost('/api/plugins/reload_instance', { instanceId })
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '重载实例失败')
-    }
+    ensureSuccess(await pluginApi.reloadInstance({ instanceId }), '重载实例失败')
     message.success(`实例重载成功: ${instanceId}`)
     await fetchData()
     if (selectedInstanceId.value) {
@@ -1145,10 +1158,7 @@ const reloadInstance = async (instanceId: string) => {
 
 const reloadPlugin = async (plugin: string) => {
   try {
-    const data = await apiPost('/api/plugins/reload_plugin', { plugin })
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '重载插件失败')
-    }
+    ensureSuccess(await pluginApi.reloadPlugin({ plugin }), '重载插件失败')
     message.success(`插件重载成功: ${plugin}`)
     await fetchData()
     if (selectedInstanceId.value) {
@@ -1168,10 +1178,7 @@ const installPackage = async () => {
 
   installingPackage.value = true
   try {
-    const data = await apiPost('/api/plugins/install_package', { package: packageName })
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '下载安装失败')
-    }
+    ensureSuccess(await pluginApi.installPackage({ package: packageName }), '下载安装失败')
     message.success(`下载安装成功: ${packageName}`)
     await fetchData()
   } catch (error) {
@@ -1195,10 +1202,7 @@ const uninstallPackage = async () => {
 
   uninstallingPackage.value = true
   try {
-    const data = await apiPost('/api/plugins/uninstall_package', { package: packageName })
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '卸载失败')
-    }
+    ensureSuccess(await pluginApi.uninstallPackage({ package: packageName }), '卸载失败')
     message.success(`卸载成功: ${packageName}`)
     await fetchData()
   } catch (error) {
@@ -1211,15 +1215,27 @@ const uninstallPackage = async () => {
 const toggleInstanceEnabled = async (instance: PluginInstance, enabled: boolean) => {
   const previous = instance.enabled
   instance.enabled = enabled
+  const payload: {
+    instanceId: string
+    enabled: boolean
+    config?: Record<string, unknown>
+  } = {
+    instanceId: instance.id,
+    enabled,
+  }
+
+  if (hasEnableSchema(instance.plugin)) {
+    payload.config = {
+      ...(instance.config || {}),
+      enable: enabled,
+    }
+  }
 
   try {
-    const data = await apiPost('/api/plugins/update', {
-      instanceId: instance.id,
-      enabled,
-    })
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '更新启用状态失败')
-    }
+    ensureSuccess(
+      await pluginApi.update(payload),
+      '更新启用状态失败'
+    )
 
     if (selectedInstanceId.value === instance.id) {
       editForm.enabled = enabled
@@ -1385,7 +1401,11 @@ onMounted(() => {
 
 .instance-item.active {
   border-color: var(--ant-color-primary);
-  background: linear-gradient(135deg, var(--ant-color-primary-bg), color-mix(in srgb, var(--ant-color-primary-bg) 80%, white));
+  background: linear-gradient(
+    135deg,
+    var(--ant-color-primary-bg),
+    color-mix(in srgb, var(--ant-color-primary-bg) 80%, white)
+  );
   box-shadow: 0 4px 16px color-mix(in srgb, var(--ant-color-primary) 12%, transparent);
 }
 

@@ -22,50 +22,31 @@
 
 
 from fastapi import APIRouter, Body
+
+
 from app.core import Config
-from app.models.schema import ToolsGetOut, ToolsConfig, OutBase, ToolsUpdateIn
+from app.contracts.common_contract import OutBase, dump_writable_data, project_model
+from app.contracts.tools_contract import ToolsConfigRead, ToolsGetOut
 
 router = APIRouter(prefix="/api/tools", tags=["工具设置"])
 
 
-@router.post(
-    "/get",
+@router.get(
+    "",
     tags=["Get"],
     summary="查询工具配置",
     response_model=ToolsGetOut,
-    status_code=200,
 )
 async def get_tools() -> ToolsGetOut:
-    """查询工具配置"""
-
-    try:
-        data = await Config.get_tools()
-    except Exception as e:
-        return ToolsGetOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            data=ToolsConfig(**{}),
-        )
-    return ToolsGetOut(data=ToolsConfig(**data))
+    return ToolsGetOut(data=project_model(ToolsConfigRead, await Config.get_tools()))
 
 
-@router.post(
-    "/update",
+@router.patch(
+    "",
     tags=["Update"],
     summary="更新工具配置",
     response_model=OutBase,
-    status_code=200,
 )
-async def update_tools(script: ToolsUpdateIn = Body(...)) -> OutBase:
-    """更新工具配置"""
-
-    try:
-        data = script.data.model_dump(exclude_unset=True)
-        await Config.update_tools(data)
-
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+async def update_tools(data: ToolsConfigRead = Body(...)) -> OutBase:
+    await Config.update_tools(dump_writable_data(data))
     return OutBase()

@@ -32,20 +32,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
 
-from app.core import Config
 from app.utils import ProcessRunner, get_logger
 
 logger = get_logger("系统服务")
 
 
 class _SystemHandler:
-
     ES_CONTINUOUS = 0x80000000
     ES_SYSTEM_REQUIRED = 0x00000001
     countdown = 60
 
     def __init__(self) -> None:
-        self.power_task: Optional[asyncio.Task] = None
+        self.power_task: Optional[asyncio.Task[None]] = None
 
     async def set_Sleep(self, if_allow_sleep: bool) -> None:
         """
@@ -77,7 +75,6 @@ class _SystemHandler:
         """
 
         if if_self_start and not await self.is_startup():
-
             # 创建任务计划
 
             # 获取当前用户和时间
@@ -167,9 +164,7 @@ class _SystemHandler:
                     Path(xml_file).unlink()
 
         elif not if_self_start and await self.is_startup():
-
             try:
-
                 result = await ProcessRunner.run_process(
                     "schtasks", "/delete", "/tn", "AUTO-MAS_AutoStart", "/f"
                 )
@@ -204,13 +199,10 @@ class _SystemHandler:
         """
 
         if sys.platform.startswith("win"):
-
             if mode == "NoAction":
-
                 logger.info("不执行系统电源操作")
 
             elif mode == "Shutdown":
-
                 await self.kill_emulator_processes()
                 logger.info("执行关机操作")
                 subprocess.run(["shutdown", "/s", "/t", "0"])
@@ -220,66 +212,59 @@ class _SystemHandler:
                 subprocess.run(["shutdown", "/s", "/t", "0", "/f"])
 
             elif mode == "Reboot":
-
                 await self.kill_emulator_processes()
                 logger.info("执行重启操作")
                 subprocess.run(["shutdown", "/r", "/t", "0"])
 
             elif mode == "Hibernate":
-
                 logger.info("执行休眠操作")
                 subprocess.run(["shutdown", "/h"])
 
             elif mode == "Sleep":
-
                 logger.info("执行睡眠操作")
                 subprocess.run(
                     ["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"]
                 )
 
-            elif mode == "KillSelf" and Config.server is not None:
-
-                logger.info("执行退出主程序操作")
-                if not from_frontend:
-                    await Config.send_websocket_message(
-                        id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
-                    )
-                Config.server.should_exit = True
+            elif mode == "KillSelf":
+                from app.core import Config
+                if Config.server is not None:
+                    logger.info("执行退出主程序操作")
+                    if not from_frontend:
+                        await Config.send_websocket_message(
+                            id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
+                        )
+                    Config.server.should_exit = True
 
         elif sys.platform.startswith("linux"):
-
             if mode == "NoAction":
-
                 logger.info("不执行系统电源操作")
 
             elif mode == "Shutdown":
-
                 logger.info("执行关机操作")
                 subprocess.run(["shutdown", "-h", "now"])
 
             elif mode == "Reboot":
-
                 logger.info("执行重启操作")
                 subprocess.run(["shutdown", "-r", "now"])
 
             elif mode == "Hibernate":
-
                 logger.info("执行休眠操作")
                 subprocess.run(["systemctl", "hibernate"])
 
             elif mode == "Sleep":
-
                 logger.info("执行睡眠操作")
                 subprocess.run(["systemctl", "suspend"])
 
-            elif mode == "KillSelf" and Config.server is not None:
-
-                logger.info("执行退出主程序操作")
-                if not from_frontend:
-                    await Config.send_websocket_message(
-                        id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
-                    )
-                Config.server.should_exit = True
+            elif mode == "KillSelf":
+                from app.core import Config
+                if Config.server is not None:
+                    logger.info("执行退出主程序操作")
+                    if not from_frontend:
+                        await Config.send_websocket_message(
+                            id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
+                        )
+                    Config.server.should_exit = True
 
     async def _power_task(
         self,
@@ -302,6 +287,7 @@ class _SystemHandler:
         """开始电源任务"""
 
         if self.power_task is None or self.power_task.done():
+            from app.core import Config
             self.power_task = asyncio.create_task(self._power_task(Config.power_sign))
             logger.info(
                 f"电源任务已启动, {self.countdown}秒后执行: {Config.power_sign}"
@@ -380,7 +366,7 @@ class _SystemHandler:
 
         logger.success(f"进程已中止: {path}")
 
-    async def search_pids(self, path: Path) -> list:
+    async def search_pids(self, path: Path) -> list[int]:
         """
         根据路径查找进程PID
 

@@ -1,4 +1,4 @@
-"""Public MAS Python API namespace."""
+﻿"""Public MAS Python API namespace."""
 
 from . import plugins
 

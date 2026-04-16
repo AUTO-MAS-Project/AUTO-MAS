@@ -26,8 +26,8 @@ from pathlib import Path
 
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem
-from app.models.ConfigBase import MultipleConfig
-from app.models.config import SrcConfig, SrcUserConfig
+from app.core.config.base import MultipleConfig
+from app.models import SrcConfig, SrcUserConfig
 from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
@@ -58,7 +58,6 @@ class ScriptConfigTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
 
     async def prepare(self):
-
         self.src_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
 
@@ -67,7 +66,6 @@ class ScriptConfigTask(TaskExecuteBase):
         self.src_exe_path = self.src_root_path / "src.exe"
 
     async def main_task(self):
-
         await self.prepare()
 
         await self.set_src()
@@ -144,7 +142,6 @@ class ScriptConfigTask(TaskExecuteBase):
         logger.success(f"SRC运行参数配置完成: 设置脚本 {self.cur_user_item.user_id}")
 
     async def final_task(self):
-
         await self.src_process_manager.kill()
         await System.kill_process(self.src_exe_path)
 

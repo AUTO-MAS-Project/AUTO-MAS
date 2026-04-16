@@ -30,8 +30,8 @@ from datetime import datetime, timedelta
 
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
-from app.models.ConfigBase import MultipleConfig
-from app.models.config import GeneralConfig, GeneralUserConfig
+from app.core.config.base import MultipleConfig
+from app.models import GeneralConfig, GeneralUserConfig
 from app.models.emulator import DeviceBase
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager, ProcessInfo, strptime
@@ -67,14 +67,11 @@ class AutoProxyTask(TaskExecuteBase):
         self.check_result = "-"
 
     async def check(self) -> str:
-
         if self.script_config.get(
             "Run", "ProxyTimesLimit"
         ) != 0 and self.cur_user_config.get(
             "Data", "ProxyTimes"
-        ) >= self.script_config.get(
-            "Run", "ProxyTimesLimit"
-        ):
+        ) >= self.script_config.get("Run", "ProxyTimesLimit"):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
 
@@ -89,7 +86,6 @@ class AutoProxyTask(TaskExecuteBase):
         return "Pass"
 
     async def prepare(self):
-
         self.general_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
@@ -217,12 +213,11 @@ class AutoProxyTask(TaskExecuteBase):
                     "脚本前任务",
                 )
 
-            self.script_info.log = f"正在启动游戏 / 模拟器"
+            self.script_info.log = "正在启动游戏 / 模拟器"
             # 启动游戏/模拟器
             if self.game_manager is not None:
                 try:
                     if isinstance(self.game_manager, ProcessManager):
-
                         if self.script_config.get("Game", "Type") == "URL":
                             logger.info(
                                 f"启动游戏: {self.game_process_name}, 参数{self.game_url}"
@@ -245,7 +240,7 @@ class AutoProxyTask(TaskExecuteBase):
                             await asyncio.sleep(
                                 self.script_config.get("Game", "WaitTime")
                             )
-                    elif isinstance(self.game_manager, DeviceBase):
+                    else:
                         logger.info(
                             f"启动模拟器: {self.script_config.get('Game', 'EmulatorIndex')}"
                         )
@@ -273,7 +268,6 @@ class AutoProxyTask(TaskExecuteBase):
             self.script_info.log = "正在等待脚本日志文件生成"
             if_get_file = False
             while datetime.now() - t < timedelta(minutes=1):
-
                 for log_file in self.script_log_path.parent.iterdir():
                     if log_file.is_file():
                         with suppress(ValueError):
@@ -351,7 +345,6 @@ class AutoProxyTask(TaskExecuteBase):
     async def handle_pre_script_error(
         self, error_message: str, e: Exception | None = None
     ):
-
         if e is None:
             logger.error(f"用户: {self.cur_user_uid} - {error_message}")
             await Config.send_websocket_message(
@@ -379,7 +372,6 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
     async def update_config(self):
-
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
             shutil.copytree(
                 self.script_config_path,
@@ -414,7 +406,7 @@ class AutoProxyTask(TaskExecuteBase):
                         "Game", "Type"
                     ) == "Client" and self.script_config.get("Game", "IfForceClose"):
                         await System.kill_process(self.game_path)
-                elif isinstance(self.game_manager, DeviceBase):
+                else:
                     await self.game_manager.close(
                         self.script_config.get("Game", "EmulatorIndex"),
                     )
@@ -423,7 +415,7 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def set_general(self) -> None:
         """配置通用脚本运行参数"""
-        logger.info(f"开始配置脚本运行参数: 自动代理")
+        logger.info("开始配置脚本运行参数: 自动代理")
 
         # 配置前关闭可能未正常退出的脚本进程
         await System.kill_process(self.script_exe_path)
@@ -444,7 +436,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.script_config_path,
             )
 
-        logger.info(f"脚本运行参数配置完成: 自动代理")
+        logger.info("脚本运行参数配置完成: 自动代理")
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调"""
@@ -481,7 +473,6 @@ class AutoProxyTask(TaskExecuteBase):
             self.wait_event.set()
 
     async def final_task(self):
-
         if self.check_result != "Pass":
             return
 
@@ -493,7 +484,6 @@ class AutoProxyTask(TaskExecuteBase):
 
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
-
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
             log_path = (
                 Path.cwd()

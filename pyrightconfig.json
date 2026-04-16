@@ -1,0 +1,25 @@
+{
+  "pythonVersion": "3.12",
+  "pythonPlatform": "Windows",
+  "venvPath": ".",
+  "venv": ".venv",
+  "typeCheckingMode": "strict",
+  "include": [
+    "app",
+    "main.py"
+  ],
+  "exclude": [
+    "frontend",
+    "data",
+    "history",
+    "debug",
+    "__pycache__",
+    "test"
+  ],
+  "reportMissingTypeStubs": "warning",
+  "reportUnknownVariableType": "warning",
+  "reportUnknownMemberType": "warning",
+  "reportUnknownArgumentType": "warning",
+  "reportUnknownLambdaType": "warning",
+  "reportUnknownParameterType": "warning"
+}

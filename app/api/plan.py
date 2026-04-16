@@ -21,110 +21,100 @@
 #   Contact: DLmaster_361@163.com
 
 
-from fastapi import APIRouter, Body
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Path
 
 from app.core import Config
-from app.models.schema import *
+from app.contracts.common_contract import (
+    IndexOrderPatch,
+    OutBase,
+    dump_writable_data,
+    project_model,
+    project_model_list,
+    project_model_map,
+)
+from app.contracts.plan_contract import (
+    MaaPlanRead,
+    PlanCreateIn,
+    PlanCreateOut,
+    PlanDetailOut,
+    PlanGetOut,
+    PlanIndexItem,
+    PlanUpdateBody,
+)
 
 router = APIRouter(prefix="/api/plan", tags=["计划管理"])
 
+PlanIdPath = Annotated[str, Path(description="计划 ID")]
+
 
 @router.post(
-    "/add",
+    "",
     tags=["Add"],
-    summary="添加计划表",
+    summary="创建计划表",
     response_model=PlanCreateOut,
-    status_code=200,
 )
-async def add_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
-
-    try:
-        uid, config = await Config.add_plan(plan.type)
-        data = MaaPlanConfig(**(await config.toDict()))
-    except Exception as e:
-        return PlanCreateOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            planId="",
-            data=MaaPlanConfig(**{}),
-        )
-    return PlanCreateOut(planId=str(uid), data=data)
+async def create_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
+    uid, config = await Config.add_plan(plan.type)
+    data = project_model(MaaPlanRead, await config.toDict())
+    return PlanCreateOut(id=str(uid), data=data)
 
 
-@router.post(
-    "/get",
+@router.get(
+    "",
     tags=["Get"],
-    summary="查询计划表",
+    summary="查询全部计划表",
     response_model=PlanGetOut,
-    status_code=200,
 )
-async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
-
-    try:
-        index, data = await Config.get_plan(plan.planId)
-        index = [PlanIndexItem(**_) for _ in index]
-        data = {uid: MaaPlanConfig(**cfg) for uid, cfg in data.items()}
-    except Exception as e:
-        return PlanGetOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            index=[],
-            data={},
-        )
-    return PlanGetOut(index=index, data=data)
+async def list_plans() -> PlanGetOut:
+    index, data = await Config.get_plan(None)
+    return PlanGetOut(
+        index=project_model_list(PlanIndexItem, index),
+        data=project_model_map(MaaPlanRead, data),
+    )
 
 
-@router.post(
-    "/update",
+@router.get(
+    "/{plan_id}",
+    tags=["Get"],
+    summary="查询单个计划表",
+    response_model=PlanDetailOut,
+)
+async def get_plan(plan_id: PlanIdPath) -> PlanDetailOut:
+    _, data = await Config.get_plan(plan_id)
+    projected = project_model_map(MaaPlanRead, data)
+    return PlanDetailOut(data=projected[plan_id])
+
+
+@router.patch(
+    "/{plan_id}",
     tags=["Update"],
-    summary="更新计划表配置信息",
+    summary="更新计划表",
     response_model=OutBase,
-    status_code=200,
 )
-async def update_plan(plan: PlanUpdateIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.update_plan(plan.planId, plan.data.model_dump(exclude_unset=True))
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+async def update_plan(plan_id: PlanIdPath, body: PlanUpdateBody = Body(...)) -> OutBase:
+    await Config.update_plan(plan_id, dump_writable_data(body.data))
     return OutBase()
 
 
-@router.post(
-    "/delete",
+@router.delete(
+    "/{plan_id}",
     tags=["Delete"],
     summary="删除计划表",
     response_model=OutBase,
-    status_code=200,
 )
-async def delete_plan(plan: PlanDeleteIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.del_plan(plan.planId)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+async def delete_plan(plan_id: PlanIdPath) -> OutBase:
+    await Config.del_plan(plan_id)
     return OutBase()
 
 
-@router.post(
+@router.patch(
     "/order",
     tags=["Update"],
     summary="重新排序计划表",
     response_model=OutBase,
-    status_code=200,
 )
-async def reorder_plan(plan: PlanReorderIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.reorder_plan(plan.indexList)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+async def reorder_plan(body: IndexOrderPatch = Body(...)) -> OutBase:
+    await Config.reorder_plan(body.index_list)
     return OutBase()

@@ -198,14 +198,6 @@ export interface User {
 }
 
 // API响应类型
-export interface AddScriptResponse {
-  code: number
-  status: string
-  message: string
-  scriptId: string
-  data: MAAScriptConfig | GeneralScriptConfig | SRCScriptConfig | MaaEndScriptConfig
-}
-
 // 脚本索引项
 export interface ScriptIndexItem {
   uid: string
@@ -213,14 +205,6 @@ export interface ScriptIndexItem {
 }
 
 // 获取脚本API响应
-export interface GetScriptsResponse {
-  code: number
-  status: string
-  message: string
-  index: ScriptIndexItem[]
-  data: Record<string, MAAScriptConfig | GeneralScriptConfig | SRCScriptConfig | MaaEndScriptConfig>
-}
-
 // 脚本详情（用于前端展示）
 export interface ScriptDetail {
   uid: string
@@ -232,15 +216,4 @@ export interface ScriptDetail {
 }
 
 // 删除脚本API响应
-export interface DeleteScriptResponse {
-  code: number
-  status: string
-  message: string
-}
-
 // 更新脚本API响应
-export interface UpdateScriptResponse {
-  code: number
-  status: string
-  message: string
-}

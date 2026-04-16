@@ -1,7 +1,17 @@
-<template>
+﻿<template>
   <!-- 电源操作倒计时弹窗 - 使用 Ant Design Vue Modal -->
-  <a-modal v-model:open="visible" :title="null" :footer="null" :closable="false" :keyboard="false"
-    :mask-closable="false" :mask="{ blur: true }" :width="480" centered wrap-class-name="power-countdown-modal">
+  <a-modal
+    v-model:open="visible"
+    :title="null"
+    :footer="null"
+    :closable="false"
+    :keyboard="false"
+    :mask-closable="false"
+    :mask="{ blur: true }"
+    :width="480"
+    centered
+    wrap-class-name="power-countdown-modal"
+  >
     <div class="countdown-content">
       <div class="warning-icon">⚠️</div>
       <h2 class="countdown-title">{{ title }}</h2>
@@ -13,9 +23,14 @@
       <div v-else class="countdown-timer">
         <span class="countdown-text">等待后端倒计时...</span>
       </div>
-      <a-progress v-if="countdown !== undefined" :percent="Math.max(0, Math.min(100, ((60 - countdown) / 60) * 100))"
-        :show-info="false" :stroke-color="(countdown || 0) <= 10 ? '#ff4d4f' : '#1890ff'" :stroke-width="8"
-        class="countdown-progress" />
+      <a-progress
+        v-if="countdown !== undefined"
+        :percent="Math.max(0, Math.min(100, ((60 - countdown) / 60) * 100))"
+        :show-info="false"
+        :stroke-color="(countdown || 0) <= 10 ? '#ff4d4f' : '#1890ff'"
+        :stroke-width="8"
+        class="countdown-progress"
+      />
       <div class="countdown-actions">
         <a-button type="primary" size="large" class="cancel-button" @click="handleCancel">
           取消操作
@@ -27,7 +42,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { Service } from '@/api'
+import { dispatchApi } from '@/api'
 import { subscribe, unsubscribe } from '@/composables/useWebSocket'
 const logger = window.electronAPI.getLogger('全局电源倒计时')
 
@@ -110,7 +125,7 @@ const handleCancel = async () => {
 
   // 调用取消电源操作的API
   try {
-    await Service.cancelPowerTaskApiDispatchCancelPowerPost()
+    await dispatchApi.cancelPowerTask()
     logger.info('电源操作已取消')
 
     // 触发全局事件，通知调度中心刷新电源状态
@@ -242,7 +257,6 @@ onUnmounted(() => {
 
 /* 动画效果 */
 @keyframes pulse {
-
   0%,
   100% {
     transform: scale(1);

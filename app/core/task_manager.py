@@ -20,25 +20,24 @@
 #   Contact: DLmaster_361@163.com
 
 
-import uuid
 import asyncio
+import uuid
 from typing import Dict, Literal
 
-from .config import Config, MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig
-from .config import Config, MaaConfig, SrcConfig, GeneralConfig
-from .plugins import PluginEventFactory, PluginEventNames
-from app.services import System
+from app.models import GeneralConfig, MaaConfig, MaaEndConfig, SrcConfig
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
+from app.services import System
 from app.utils import get_logger
-from app.task import MaaManager, SrcManager, GeneralManager, MaaEndManager
 from app.utils.constants import POWER_SIGN_MAP
+from .config import Config
+from .plugins import PluginEventFactory, PluginEventNames
 
 
 logger = get_logger("业务调度")
 
 
 def _resolve_queue_name(queue_id: str | None) -> str | None:
-    """根据 queue_id 解析队列名，解析失败时返回 None。"""
+    """根据 queue_id 解析队列名，失败时返回 None"""
     if not queue_id:
         return None
 
@@ -49,7 +48,7 @@ def _resolve_queue_name(queue_id: str | None) -> str | None:
 
 
 def _build_script_summaries(script_list: list[ScriptItem]) -> list[dict[str, str]]:
-    """构建脚本摘要数组，供任务事件复用。"""
+    """构建脚本摘要，供任务事件复用"""
     return [
         {
             "script_id": item.script_id,
@@ -61,7 +60,7 @@ def _build_script_summaries(script_list: list[ScriptItem]) -> list[dict[str, str
 
 
 def _resolve_final_script(task_info: TaskItem) -> ScriptItem | None:
-    """获取任务结束时可代表当前任务状态的脚本项。"""
+    """获取任务结束时最能代表结果的脚本项"""
     if 0 <= task_info.current_index < len(task_info.script_list):
         return task_info.script_list[task_info.current_index]
     if task_info.script_list:
@@ -70,9 +69,8 @@ def _resolve_final_script(task_info: TaskItem) -> ScriptItem | None:
 
 
 class TaskInfo(TaskItem):
-
     def _has_meaningful_current_log(self) -> bool:
-        """判断当前脚本日志是否包含有效内容。"""
+        """判断当前脚本日志里是否有有效内容"""
         if not (0 <= self.current_index < len(self.script_list)):
             return False
 
@@ -83,11 +81,7 @@ class TaskInfo(TaskItem):
         return bool(log_text.strip())
 
     async def _emit_task_progress(self) -> None:
-        """发送 task.progress 事件，避免重复发送相同快照。"""
-        if 0 <= self.current_index < len(self.script_list):
-            if not self._has_meaningful_current_log():
-                return
-
+        """发送 task.progress 事件，避免重复广播相同快照"""
         progress_data = PluginEventFactory.build_task_progress_data(
             self,
             queue_name=_resolve_queue_name(self.queue_id),
@@ -104,7 +98,7 @@ class TaskInfo(TaskItem):
         )
 
     async def _emit_task_log(self) -> None:
-        """发送 task.log 事件，提供当前脚本日志内容。"""
+        """发送 task.log 事件，带上当前脚本日志"""
         if not (0 <= self.current_index < len(self.script_list)):
             return
         if not self._has_meaningful_current_log():
@@ -139,7 +133,8 @@ class TaskInfo(TaskItem):
         )
 
     async def on_change(self):
-        """任务状态变更时，同步推送前端并广播插件事件。"""
+        """任务状态变化后推送 WebSocket 增量更新并广播插件事件"""
+
         await Config.send_websocket_message(
             id=self.task_id,
             type="Update",
@@ -157,7 +152,6 @@ class TaskInfo(TaskItem):
 
 
 class Task(TaskExecuteBase):
-
     def __init__(self, task_info: TaskInfo):
         super().__init__()
         self.task_info = task_info
@@ -166,14 +160,14 @@ class Task(TaskExecuteBase):
         self._exit_error: str | None = None
 
     def _build_script_event_data(self) -> Dict[str, str | None]:
-        """附加到 script.* 事件的任务上下文。"""
+        """附加到 script.* 事件里的任务上下文"""
         return {
             "queue_id": self.task_info.queue_id,
             "queue_name": _resolve_queue_name(self.task_info.queue_id),
         }
 
     async def _emit_task_start(self) -> None:
-        """发送 task.start 事件，提供插件所需的任务标识和可操作入口。"""
+        """发送 task.start 事件"""
         scripts = _build_script_summaries(self.task_info.script_list)
         primary_script = scripts[0] if len(scripts) == 1 else None
 
@@ -211,7 +205,7 @@ class Task(TaskExecuteBase):
         )
 
     async def _emit_task_exit(self) -> None:
-        """发送 task.exit 事件，告知任务最终结果。"""
+        """发送 task.exit 事件"""
         scripts = _build_script_summaries(self.task_info.script_list)
         final_script = _resolve_final_script(self.task_info)
 
@@ -242,6 +236,7 @@ class Task(TaskExecuteBase):
         )
 
     async def prepare(self):
+        """根据任务模式解析脚本清单并初始化运行项"""
 
         # 初始化任务列表
         script_ids = (
@@ -273,6 +268,7 @@ class Task(TaskExecuteBase):
         )
 
     async def main_task(self):
+        """串行执行任务中每个脚本项"""
 
         await self.prepare()
         await self._emit_task_start()
@@ -281,6 +277,8 @@ class Task(TaskExecuteBase):
         logger.info(
             f"开始运行任务: {self.task_info.task_id}, 模式: {self.task_info.mode}"
         )
+
+        from app.task import MaaManager, SrcManager, GeneralManager, MaaEndManager
 
         # 依次运行任务
         for self.task_info.current_index, script_item in enumerate(
@@ -445,6 +443,7 @@ class Task(TaskExecuteBase):
                 )
 
     async def final_task(self) -> None:
+        """任务收尾：上报结果并处理电源动作信号"""
 
         logger.info(f"任务结束: {self.task_info.task_id}")
 
@@ -458,7 +457,6 @@ class Task(TaskExecuteBase):
         await self._emit_task_exit()
 
         if self.task_info.mode == "AutoProxy" and self.task_info.queue_id is not None:
-
             if Config.power_sign == "NoAction":
                 Config.power_sign = Config.QueueConfig[
                     uuid.UUID(self.task_info.queue_id)
@@ -468,7 +466,7 @@ class Task(TaskExecuteBase):
                 )
 
     async def on_crash(self, e: Exception) -> None:
-        """处理任务异常并记录退出状态。"""
+        """任务异常回调：记录日志并向前端推送错误信息"""
         if self._exit_result == "success":
             self._exit_result = "error"
             self._exit_error = f"{type(e).__name__}: {e}"
@@ -489,12 +487,35 @@ class _TaskManager:
 
         self.task_info: Dict[uuid.UUID, TaskInfo] = {}
         self.task_handler: Dict[uuid.UUID, Task] = {}
+        self._mutex = asyncio.Lock()
+        self._background_tasks: set[asyncio.Task[None]] = set()
+
+    def _track_background_task(self, task: asyncio.Task[None]) -> None:
+        """跟踪后台任务，避免异常静默与任务泄漏。"""
+
+        self._background_tasks.add(task)
+
+        def _done(done_task: asyncio.Task[None]) -> None:
+            self._background_tasks.discard(done_task)
+            if done_task.cancelled():
+                return
+            exc = done_task.exception()
+            if exc is not None:
+                done_task.get_loop().call_exception_handler(
+                    {
+                        "message": "TaskManager 后台任务执行失败",
+                        "exception": exc,
+                        "task": done_task,
+                    }
+                )
+
+        task.add_done_callback(_done)
 
     async def add_task(
         self,
         mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"],
         id: str,
-        new_task_info: dict | None = None,
+        new_task_info: dict[str, str] | None = None,
     ) -> uuid.UUID:
         """
         添加任务, 根据 id 值搜索实际指向的任务配置
@@ -510,61 +531,61 @@ class _TaskManager:
 
         uid = uuid.UUID(id)
 
-        if mode == "ScriptConfig":
-            if uid in Config.ScriptConfig:
+        async with self._mutex:
+            if mode == "ScriptConfig":
+                if uid in Config.ScriptConfig:
+                    task_uid = uuid.uuid4()
+                    queue_id = None
+                    script_uid = uid
+                    user_uid = "Default"
+                else:
+                    for script_id, script in Config.ScriptConfig.items():
+                        if uid in script.UserData:
+                            task_uid = uuid.uuid4()
+                            queue_id = None
+                            script_uid = script_id
+                            user_uid = uid
+                            break
+                    else:
+                        raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
+            elif uid in Config.QueueConfig:
+                task_uid = uuid.uuid4()
+                queue_id = uid
+                script_uid = None
+                user_uid = None
+            elif uid in Config.ScriptConfig:
                 task_uid = uuid.uuid4()
                 queue_id = None
                 script_uid = uid
-                user_uid = "Default"
+                user_uid = None
             else:
-                for script_id, script in Config.ScriptConfig.items():
-                    if uid in script.UserData:
-                        task_uid = uuid.uuid4()
-                        queue_id = None
-                        script_uid = script_id
-                        user_uid = uid
-                        break
-                else:
-                    raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
-        elif uid in Config.QueueConfig:
-            task_uid = uuid.uuid4()
-            queue_id = uid
-            script_uid = None
-            user_uid = None
-        elif uid in Config.ScriptConfig:
-            task_uid = uuid.uuid4()
-            queue_id = None
-            script_uid = uid
-            user_uid = None
-        else:
-            raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
+                raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
 
-        if script_uid is not None and Config.ScriptConfig[script_uid].is_locked:
-            raise RuntimeError(
-                f"任务 {Config.ScriptConfig[script_uid].get('Info', 'Name')} 已在运行"
+            if script_uid is not None and Config.ScriptConfig[script_uid].is_locked:
+                raise RuntimeError(
+                    f"任务 {Config.ScriptConfig[script_uid].get('Info', 'Name')} 已在运行"
+                )
+
+            logger.info(f"创建任务: {task_uid}, 模式: {mode}")
+            if new_task_info:
+                new_task_info["newTask"] = str(task_uid)
+                await Config.send_websocket_message(
+                    id="TaskManager", type="Signal", data=new_task_info
+                )
+            self.task_info[task_uid] = TaskInfo(
+                mode=mode,
+                task_id=str(task_uid),
+                queue_id=str(queue_id) if queue_id else None,
+                script_id=str(script_uid) if script_uid else None,
+                user_id=str(user_uid) if user_uid else None,
             )
+            self.task_handler[task_uid] = Task(self.task_info[task_uid])
+            self.task_handler[task_uid].execute()
+            self._track_background_task(asyncio.create_task(self.clean_task(task_uid)))
 
-        logger.info(f"创建任务: {task_uid}, 模式: {mode}")
-        if new_task_info:
-            new_task_info["newTask"] = str(task_uid)
-            await Config.send_websocket_message(
-                id="TaskManager", type="Signal", data=new_task_info
-            )
-        self.task_info[task_uid] = TaskInfo(
-            mode=mode,
-            task_id=str(task_uid),
-            queue_id=str(queue_id) if queue_id else None,
-            script_id=str(script_uid) if script_uid else None,
-            user_id=str(user_uid) if user_uid else None,
-        )
-        self.task_handler[task_uid] = Task(self.task_info[task_uid])
-        self.task_handler[task_uid].execute()
-        asyncio.create_task(self.clean_task(task_uid))
-
-        return task_uid
+            return task_uid
 
     async def clean_task(self, task_uid: uuid.UUID) -> None:
-
         await self.task_handler[task_uid].accomplish.wait()
         power_enabled = bool(self.task_info[task_uid].mode != "ScriptConfig")
         self.task_info.pop(task_uid, None)
@@ -622,7 +643,6 @@ class _TaskManager:
 
         logger.info("开始运行启动时任务")
         for uid, queue in Config.QueueConfig.items():
-
             if queue.get("Info", "StartUpEnabled"):
                 logger.info(f"启动时需要运行的队列：{uid}")
                 await TaskManager.add_task(

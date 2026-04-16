@@ -25,7 +25,14 @@ from fastapi import APIRouter, Body
 
 from app.core import Config, TaskManager
 from app.services import System
-from app.models.schema import *
+from app.contracts.common_contract import OutBase
+from app.contracts.dispatch_contract import (
+    DispatchIn,
+    PowerIn,
+    PowerOut,
+    TaskCreateIn,
+    TaskCreateOut,
+)
 
 router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
 
@@ -35,16 +42,9 @@ router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
     tags=["Action"],
     summary="添加任务",
     response_model=TaskCreateOut,
-    status_code=200,
 )
 async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
-
-    try:
-        task_id = await TaskManager.add_task(task.mode, task.taskId)
-    except Exception as e:
-        return TaskCreateOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", taskId=""
-        )
+    task_id = await TaskManager.add_task(task.mode, task.taskId)
     return TaskCreateOut(taskId=str(task_id))
 
 
@@ -53,16 +53,9 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
     tags=["Action"],
     summary="中止任务",
     response_model=OutBase,
-    status_code=200,
 )
 async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
-
-    try:
-        await TaskManager.stop_task(task.taskId)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+    await TaskManager.stop_task(task.taskId)
     return OutBase()
 
 
@@ -71,19 +64,9 @@ async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
     tags=["Get"],
     summary="获取电源标志",
     response_model=PowerOut,
-    status_code=200,
 )
 async def get_power() -> PowerOut:
-
-    try:
-        signal = Config.power_sign
-    except Exception as e:
-        return PowerOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            signal="NoAction",
-        )
+    signal = Config.power_sign
     return PowerOut(signal=signal)
 
 
@@ -92,16 +75,9 @@ async def get_power() -> PowerOut:
     tags=["Action"],
     summary="设置电源标志",
     response_model=OutBase,
-    status_code=200,
 )
 async def set_power(task: PowerIn = Body(...)) -> OutBase:
-
-    try:
-        Config.power_sign = task.signal
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+    Config.power_sign = task.signal
     return OutBase()
 
 
@@ -110,14 +86,7 @@ async def set_power(task: PowerIn = Body(...)) -> OutBase:
     tags=["Action"],
     summary="取消电源任务",
     response_model=OutBase,
-    status_code=200,
 )
 async def cancel_power_task() -> OutBase:
-
-    try:
-        await System.cancel_power_task()
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+    await System.cancel_power_task()
     return OutBase()

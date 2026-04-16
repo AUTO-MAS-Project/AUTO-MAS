@@ -21,207 +21,158 @@
 #   Contact: DLmaster_361@163.com
 
 
-from fastapi import APIRouter, Body
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Path
+
+
 from app.core import Config
-from app.services import Notify
-from app.models.schema import (
-    SettingGetOut,
-    GlobalConfig,
+from app.models import Webhook as WebhookConfig
+from app.contracts.common_contract import (
+    IndexOrderPatch,
     OutBase,
-    SettingUpdateIn,
+    dump_writable_data,
+    project_model,
+    project_model_list,
+    project_model_map,
+)
+from app.contracts.setting_contract import (
+    GlobalConfigRead,
+    SettingGetOut,
+    WebhookCreateOut,
+    WebhookDetailOut,
     WebhookGetOut,
     WebhookIndexItem,
-    Webhook,
-    WebhookGetIn,
-    WebhookCreateOut,
-    WebhookUpdateIn,
-    WebhookDeleteIn,
-    WebhookReorderIn,
-    WebhookTestIn,
+    WebhookRead,
 )
-from app.models.config import Webhook as WebhookConfig
+from app.services import Notify
 
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
 
+WebhookIdPath = Annotated[str, Path(description="Webhook ID")]
 
-@router.post(
-    "/get",
+
+@router.get(
+    "",
     tags=["Get"],
-    summary="查询配置",
+    summary="查询全局配置",
     response_model=SettingGetOut,
-    status_code=200,
 )
-async def get_scripts() -> SettingGetOut:
-    """查询配置"""
-
-    try:
-        data = await Config.get_setting()
-    except Exception as e:
-        return SettingGetOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            data=GlobalConfig(**{}),
-        )
-    return SettingGetOut(data=GlobalConfig(**data))
+async def get_setting() -> SettingGetOut:
+    return SettingGetOut(
+        data=project_model(GlobalConfigRead, await Config.get_setting())
+    )
 
 
-@router.post(
-    "/update",
+@router.patch(
+    "",
     tags=["Update"],
-    summary="更新配置",
+    summary="更新全局配置",
     response_model=OutBase,
-    status_code=200,
 )
-async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
-    """更新配置"""
-
-    try:
-        data = script.data.model_dump(exclude_unset=True)
-        await Config.update_setting(data)
-
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+async def update_setting(data: GlobalConfigRead = Body(...)) -> OutBase:
+    await Config.update_setting(dump_writable_data(data))
     return OutBase()
 
 
 @router.post(
-    "/test_notify",
+    "/actions/test-notify",
     tags=["Action"],
     summary="测试通知",
     response_model=OutBase,
-    status_code=200,
 )
 async def test_notify() -> OutBase:
-    """测试通知"""
-
-    try:
-        await Notify.send_test_notification()
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+    await Notify.send_test_notification()
     return OutBase()
 
 
-@router.post(
-    "/webhook/get",
+@router.get(
+    "/webhooks",
     tags=["Get"],
-    summary="查询 webhook 配置",
+    summary="查询全部全局 Webhook 配置",
     response_model=WebhookGetOut,
-    status_code=200,
 )
-async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
-    try:
-        index, data = await Config.get_webhook(None, None, webhook.webhookId)
-        index = [WebhookIndexItem(**_) for _ in index]
-        data = {uid: Webhook(**cfg) for uid, cfg in data.items()}
-    except Exception as e:
-        return WebhookGetOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            index=[],
-            data={},
-        )
-    return WebhookGetOut(index=index, data=data)
+async def list_webhooks() -> WebhookGetOut:
+    index, data = await Config.get_webhook(None, None, None)
+    return WebhookGetOut(
+        index=project_model_list(WebhookIndexItem, index),
+        data=project_model_map(WebhookRead, data),
+    )
 
 
 @router.post(
-    "/webhook/add",
+    "/webhooks",
     tags=["Add"],
-    summary="添加webhook项",
+    summary="创建全局 Webhook 配置",
     response_model=WebhookCreateOut,
-    status_code=200,
 )
-async def add_webhook() -> WebhookCreateOut:
-    try:
-        uid, config = await Config.add_webhook(None, None)
-        data = Webhook(**(await config.toDict()))
-    except Exception as e:
-        return WebhookCreateOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            webhookId="",
-            data=Webhook(**{}),
-        )
-    return WebhookCreateOut(webhookId=str(uid), data=data)
+async def create_webhook() -> WebhookCreateOut:
+    uid, config = await Config.add_webhook(None, None)
+    return WebhookCreateOut(
+        id=str(uid),
+        data=project_model(WebhookRead, await config.toDict()),
+    )
 
 
-@router.post(
-    "/webhook/update",
+@router.patch(
+    "/webhooks/order",
     tags=["Update"],
-    summary="更新webhook项",
+    summary="重新排序全局 Webhook",
     response_model=OutBase,
-    status_code=200,
 )
-async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
-    try:
-        await Config.update_webhook(
-            None, None, webhook.webhookId, webhook.data.model_dump(exclude_unset=True)
-        )
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+async def reorder_webhooks(body: IndexOrderPatch = Body(...)) -> OutBase:
+    await Config.reorder_webhook(None, None, body.index_list)
     return OutBase()
 
 
 @router.post(
-    "/webhook/delete",
-    tags=["Delete"],
-    summary="删除webhook项",
-    response_model=OutBase,
-    status_code=200,
-)
-async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
-    try:
-        await Config.del_webhook(None, None, webhook.webhookId)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
-
-
-@router.post(
-    "/webhook/order",
-    tags=["Update"],
-    summary="重新排序webhook项",
-    response_model=OutBase,
-    status_code=200,
-)
-async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
-    try:
-        await Config.reorder_webhook(None, None, webhook.indexList)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
-
-
-@router.post(
-    "/webhook/test",
+    "/webhooks/test",
     tags=["Action"],
-    summary="测试Webhook配置",
+    summary="测试指定 Webhook 配置",
     response_model=OutBase,
-    status_code=200,
 )
-async def test_webhook(webhook: WebhookTestIn = Body(...)) -> OutBase:
-    """测试自定义Webhook"""
+async def test_webhook(data: WebhookRead = Body(...)) -> OutBase:
+    webhook_config = WebhookConfig()
+    await webhook_config.load(dump_writable_data(data))
+    await Notify.WebhookPush(
+        "AUTO-MAS Webhook测试",
+        "这是一条测试消息，如果您收到此消息，说明Webhook配置正确！",
+        webhook_config,
+    )
+    return OutBase()
 
-    try:
-        webhook_config = WebhookConfig()
-        await webhook_config.load(webhook.data.model_dump())
-        await Notify.WebhookPush(
-            "AUTO-MAS Webhook测试",
-            "这是一条测试消息，如果您收到此消息，说明Webhook配置正确！",
-            webhook_config,
-        )
-    except Exception as e:
-        return OutBase(code=500, status="error", message=f"Webhook测试失败: {str(e)}")
+
+@router.get(
+    "/webhooks/{webhook_id}",
+    tags=["Get"],
+    summary="查询单个全局 Webhook 配置",
+    response_model=WebhookDetailOut,
+)
+async def get_webhook(webhook_id: WebhookIdPath) -> WebhookDetailOut:
+    _, data = await Config.get_webhook(None, None, webhook_id)
+    projected = project_model_map(WebhookRead, data)
+    return WebhookDetailOut(data=projected[webhook_id])
+
+
+@router.patch(
+    "/webhooks/{webhook_id}",
+    tags=["Update"],
+    summary="更新全局 Webhook 配置",
+    response_model=OutBase,
+)
+async def update_webhook(
+    webhook_id: WebhookIdPath, data: WebhookRead = Body(...)
+) -> OutBase:
+    await Config.update_webhook(None, None, webhook_id, dump_writable_data(data))
+    return OutBase()
+
+
+@router.delete(
+    "/webhooks/{webhook_id}",
+    tags=["Delete"],
+    summary="删除全局 Webhook 配置",
+    response_model=OutBase,
+)
+async def delete_webhook(webhook_id: WebhookIdPath) -> OutBase:
+    await Config.del_webhook(None, None, webhook_id)
     return OutBase()

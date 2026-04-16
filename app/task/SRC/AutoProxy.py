@@ -30,8 +30,8 @@ from datetime import datetime, timedelta
 
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
-from app.models.ConfigBase import MultipleConfig
-from app.models.config import SrcConfig, SrcUserConfig
+from app.core.config.base import MultipleConfig
+from app.models import SrcConfig, SrcUserConfig
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager, strptime
@@ -67,14 +67,11 @@ class AutoProxyTask(TaskExecuteBase):
         self.check_result = "-"
 
     async def check(self) -> str:
-
         if self.script_config.get(
             "Run", "ProxyTimesLimit"
         ) != 0 and self.cur_user_config.get(
             "Data", "ProxyTimes"
-        ) >= self.script_config.get(
-            "Run", "ProxyTimesLimit"
-        ):
+        ) >= self.script_config.get("Run", "ProxyTimesLimit"):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
 
@@ -90,7 +87,6 @@ class AutoProxyTask(TaskExecuteBase):
         return "Pass"
 
     async def prepare(self):
-
         self.src_process_manager = ProcessManager()
         self.src_log_monitor = LogMonitor(
             (0, 23), "%Y-%m-%d %H:%M:%S.%f", self.check_log
@@ -193,7 +189,6 @@ class AutoProxyTask(TaskExecuteBase):
             self.script_info.log = "正在启动模拟器...\n模拟器启动成功\n正在登录「崩坏·星穹铁道」\n「崩坏·星穹铁道」登录成功\n正在等待 SRC 日志文件生成"
             if_get_file = False
             while datetime.now() - t < timedelta(minutes=1):
-
                 for log_file in self.src_log_path.parent.iterdir():
                     if log_file.is_file():
                         with suppress(ValueError):
@@ -260,7 +255,6 @@ class AutoProxyTask(TaskExecuteBase):
     async def handle_pre_src_error(
         self, error_message: str, e: Exception | None = None
     ):
-
         if e is None:
             logger.error(f"用户: {self.cur_user_uid} - {error_message}")
             await Config.send_websocket_message(
@@ -430,7 +424,7 @@ class AutoProxyTask(TaskExecuteBase):
                 else None
             ),
         )
-        logger.info(f"脚本运行参数配置完成: 自动代理")
+        logger.info("脚本运行参数配置完成: 自动代理")
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调"""
@@ -462,7 +456,6 @@ class AutoProxyTask(TaskExecuteBase):
             self.wait_event.set()
 
     async def final_task(self):
-
         if self.check_result != "Pass":
             return
 
@@ -484,7 +477,6 @@ class AutoProxyTask(TaskExecuteBase):
 
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
-
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
             log_path = (
                 Path.cwd()

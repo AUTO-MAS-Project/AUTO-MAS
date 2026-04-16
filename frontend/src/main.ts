@@ -1,61 +1,49 @@
 import { createApp } from 'vue'
-import App from './App.vue'
-import router from './router/index.ts'
-import { OpenAPI } from '@/api'
-
 import Antd from 'ant-design-vue'
-import 'ant-design-vue/dist/reset.css'
 import dayjs from 'dayjs'
+import 'ant-design-vue/dist/reset.css'
 import 'dayjs/locale/zh-cn'
 
-// 导入日志系统
-const logger = window.electronAPI.getLogger('前端主入口')
-
-// 导入WebSocket消息监听组件
+import App from './App.vue'
+import router from './router/index.ts'
+import { apiRuntime } from '@/api'
 import WebSocketMessageListener from '@/components/WebSocketMessageListener.vue'
 
-// 正常路由：执行完整初始化
-// 配置dayjs中文本地化
+const logger = window.electronAPI.getLogger('frontend-main')
+
 dayjs.locale('zh-cn')
 
-// 从 Electron 获取 API 端点并设置 OpenAPI.BASE
+const defaultApiBaseUrl = 'http://localhost:36163'
+
 if (window.electronAPI?.getApiEndpoint) {
-  window.electronAPI.getApiEndpoint('local')
+  window.electronAPI
+    .getApiEndpoint('local')
     .then(endpoint => {
-      OpenAPI.BASE = endpoint
-      logger.info('前端应用开始初始化')
-      logger.info(`API基础URL: ${OpenAPI.BASE}`)
+      apiRuntime.baseUrl = endpoint
+      logger.info(`API base URL: ${apiRuntime.baseUrl}`)
     })
     .catch(error => {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`获取 API 端点失败，使用默认值: ${errorMsg}`)
-      OpenAPI.BASE = 'http://localhost:36163'
-      logger.info(`API基础URL (默认): ${OpenAPI.BASE}`)
+      logger.error(`Failed to get API endpoint, fallback to default: ${errorMsg}`)
+      apiRuntime.baseUrl = defaultApiBaseUrl
+      logger.info(`API base URL: ${apiRuntime.baseUrl}`)
     })
 } else {
-  // 非 Electron 环境，使用默认值
-  OpenAPI.BASE = 'http://localhost:36163'
-  logger.info('前端应用开始初始化')
-  logger.info(`API基础URL (默认): ${OpenAPI.BASE}`)
+  apiRuntime.baseUrl = defaultApiBaseUrl
+  logger.info(`API base URL: ${apiRuntime.baseUrl}`)
 }
 
-// 创建应用实例
 const app = createApp(App)
 
-// 注册插件
 app.use(Antd)
 app.use(router)
 
-// 全局错误处理
 app.config.errorHandler = (err, instance, info) => {
   const errorMsg = err instanceof Error ? err.message : String(err)
-  logger.error(`Vue应用错误: ${errorMsg}, 组件信息: ${info}`)
+  logger.error(`Vue error: ${errorMsg}, info: ${info}`)
 }
 
-// 挂载应用
 app.mount('#app')
-
-// 注册WebSocket消息监听组件
 app.component('WebSocketMessageListener', WebSocketMessageListener)
 
-logger.info('前端应用初始化完成')
+logger.info('Frontend app initialized')

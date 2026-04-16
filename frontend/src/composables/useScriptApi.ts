@@ -1,13 +1,14 @@
-import { ref } from 'vue'
+﻿import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import {
+  SCRIPT_CREATE_TYPE,
   type GeneralConfig,
   type MaaConfig,
   type MaaEndConfig,
+  type ScriptCreateIn,
   type SrcConfig,
-  ScriptCreateIn,
-  type ScriptReorderIn,
-  Service,
+  scriptApi,
+  userApi,
 } from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
@@ -27,16 +28,16 @@ export function useScriptApi() {
       const requestData: ScriptCreateIn = {
         type:
           type === 'MAA'
-            ? ScriptCreateIn.type.MAA
+            ? SCRIPT_CREATE_TYPE.MAA
             : type === 'SRC'
-              ? ScriptCreateIn.type.SRC
+              ? SCRIPT_CREATE_TYPE.SRC
               : type === 'MaaEnd'
-                ? ScriptCreateIn.type.MAA_END
-                : ScriptCreateIn.type.GENERAL,
-        scriptId: scriptId || null,
+                ? SCRIPT_CREATE_TYPE.MAA_END
+                : SCRIPT_CREATE_TYPE.GENERAL,
+        copyFromId: scriptId || null,
       }
 
-      const response = await Service.addScriptApiScriptsAddPost(requestData)
+      const response = await scriptApi.create(requestData)
 
       if (response.code !== 200) {
         const errorMsg = response.message || '添加脚本失败'
@@ -49,7 +50,7 @@ export function useScriptApi() {
       await playSound('add_script_instance')
 
       return {
-        scriptId: response.scriptId,
+        scriptId: response.id,
         message: response.message || '脚本添加成功',
         data: response.data,
       }
@@ -85,7 +86,7 @@ export function useScriptApi() {
     }
 
     try {
-      const response = await Service.getScriptApiScriptsGetPost({})
+      const response = await scriptApi.list()
 
       if (response.code !== 200) {
         const errorMsg = response.message || '获取脚本列表失败'
@@ -239,9 +240,7 @@ export function useScriptApi() {
         scriptDetails.map(async script => {
           try {
             // 获取该脚本下的用户列表
-            const userResponse = await Service.getUserApiScriptsUserGetPost({
-              scriptId: script.uid,
-            })
+            const userResponse = await userApi.list(script.uid)
 
             if (userResponse.code === 200) {
               // 将用户数据转换为User格式
@@ -756,7 +755,7 @@ export function useScriptApi() {
     error.value = null
 
     try {
-      const response = await Service.getScriptApiScriptsGetPost({ scriptId })
+      const response = await scriptApi.get(scriptId)
 
       if (response.code !== 200) {
         const errorMsg = response.message || '获取脚本详情失败'
@@ -764,26 +763,25 @@ export function useScriptApi() {
         throw new Error(errorMsg)
       }
 
-      // 检查是否有数据返回
-      if (response.index.length === 0) {
+      const config = response.data
+      if (!config) {
         throw new Error('脚本不存在')
       }
 
-      const item = response.index[0]
-      const config = response.data[item.uid]
+      const scriptConfigType = config.type
       const scriptType: ScriptType =
-        item.type === 'MaaConfig'
+        scriptConfigType === 'MaaConfig'
           ? 'MAA'
-          : item.type === 'SrcConfig'
+          : scriptConfigType === 'SrcConfig'
             ? 'SRC'
-            : item.type === 'MaaEndConfig'
+            : scriptConfigType === 'MaaEndConfig'
               ? 'MaaEnd'
               : 'General'
 
       return {
-        uid: item.uid,
+        uid: scriptId,
         type: scriptType,
-        name: config?.Info?.Name || `${item.type}脚本`,
+        name: config?.Info?.Name || `${scriptConfigType}脚本`,
         config,
       }
     } catch (err) {
@@ -804,7 +802,7 @@ export function useScriptApi() {
     error.value = null
 
     try {
-      const response = await Service.deleteScriptApiScriptsDeletePost({ scriptId })
+      const response = await scriptApi.remove(scriptId)
 
       if (response.code !== 200) {
         const errorMsg = response.message || '删除脚本失败'
@@ -838,8 +836,7 @@ export function useScriptApi() {
       // 创建数据副本并移除 SubConfigsInfo 字段
       const { SubConfigsInfo, ...dataToSend } = data
 
-      const response = await Service.updateScriptApiScriptsUpdatePost({
-        scriptId,
+      const response = await scriptApi.update(scriptId, {
         data: dataToSend,
       })
 
@@ -868,11 +865,9 @@ export function useScriptApi() {
     error.value = null
 
     try {
-      const requestData: ScriptReorderIn = {
-        indexList: scriptIds,
-      }
-
-      const response = await Service.reorderScriptApiScriptsOrderPost(requestData)
+      const response = await scriptApi.reorder({
+        index_list: scriptIds,
+      })
 
       if (response.code !== 200) {
         const errorMsg = response.message || '脚本排序失败'

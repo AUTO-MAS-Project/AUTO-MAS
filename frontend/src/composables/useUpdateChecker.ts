@@ -1,5 +1,5 @@
-import { ref, onUnmounted } from 'vue'
-import { Service } from '@/api'
+﻿import { ref, onUnmounted } from 'vue'
+import { settingApi, updateApi } from '@/api'
 import { message } from 'ant-design-vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
@@ -31,7 +31,7 @@ const checkAutoUpdateEnabled = async (): Promise<boolean> => {
   }
 
   try {
-    const response = await Service.getScriptsApiSettingGetPost()
+    const response = await settingApi.get()
     if (response.code === 200 && response.data) {
       const isEnabled = response.data.Update?.IfAutoUpdate || false
       if (!isEnabled) {
@@ -66,7 +66,7 @@ export function useUpdateChecker() {
     isPolling.value = true
 
     try {
-      const response = await Service.checkUpdateApiUpdateCheckPost({
+      const response = await updateApi.check({
         current_version: version,
         if_force: false, // 定时检查不强制获取，和顶栏一致
       })
@@ -113,7 +113,7 @@ export function useUpdateChecker() {
 
     const { playSound } = useAudioPlayer()
     try {
-      const response = await Service.checkUpdateApiUpdateCheckPost({
+      const response = await updateApi.check({
         current_version: version,
         if_force: forceCheck,
       })

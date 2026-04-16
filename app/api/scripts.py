@@ -22,464 +22,412 @@
 
 
 import uuid
-from fastapi import APIRouter, Body
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Path
+from pydantic import TypeAdapter
 
 from app.core import Config
-from app.models.schema import *
+from app.contracts.common_contract import (
+    ComboBoxItem,
+    ComboBoxOut,
+    IndexOrderPatch,
+    OutBase,
+    dump_writable_data,
+    project_model,
+    project_model_list,
+    project_model_map,
+)
+from app.contracts.scripts_contract import (
+    ScriptPatchBody,
+    InfrastructureImportBody,
+    ScriptCreateIn,
+    ScriptCreateOut,
+    ScriptDetailOut,
+    ScriptFileBody,
+    ScriptGetOut,
+    ScriptIndexItem,
+    ScriptUploadBody,
+    ScriptUrlBody,
+    UserPatchBody,
+    UserCreateOut,
+    UserDetailOut,
+    UserGetOut,
+    UserIndexItem,
+    project_script_model,
+    project_script_model_map,
+    project_user_model,
+    project_user_model_map,
+    script_contract_type_from_runtime,
+    user_contract_type_from_script,
+    dump_script_patch_data,
+    dump_user_patch_data,
+)
+from app.contracts.setting_contract import (
+    WebhookCreateOut,
+    WebhookDetailOut,
+    WebhookGetOut,
+    WebhookIndexItem,
+    WebhookRead,
+)
+
+COMBOBOX_ITEMS_ADAPTER: TypeAdapter[list[ComboBoxItem]] = TypeAdapter(
+    list[ComboBoxItem]
+)
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 
-
-SCRIPT_BOOK = {
-    "MaaConfig": MaaConfig,
-    "SrcConfig": SrcConfig,
-    "MaaEndConfig": MaaEndConfig,
-    "GeneralConfig": GeneralConfig,
-}
-USER_BOOK = {
-    "MaaConfig": MaaUserConfig,
-    "SrcConfig": SrcUserConfig,
-    "MaaEndConfig": MaaEndUserConfig,
-    "GeneralConfig": GeneralUserConfig,
-}
+ScriptIdPath = Annotated[str, Path(description="脚本 ID")]
+UserIdPath = Annotated[str, Path(description="用户 ID")]
+WebhookIdPath = Annotated[str, Path(description="Webhook ID")]
 
 
-@router.post(
-    "/add",
-    tags=["Add"],
-    summary="添加脚本",
-    response_model=ScriptCreateOut,
-    status_code=200,
-)
-async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
-
-    try:
-        uid, config = await Config.add_script(script.type, script.scriptId)
-        data = SCRIPT_BOOK[type(config).__name__](**(await config.toDict()))
-    except Exception as e:
-        return ScriptCreateOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            scriptId="",
-            data=GeneralConfig(**{}),
-        )
-    return ScriptCreateOut(scriptId=str(uid), data=data)
-
-
-@router.post(
-    "/get",
+@router.get(
+    "",
     tags=["Get"],
-    summary="查询脚本配置信息",
+    summary="查询全部脚本",
     response_model=ScriptGetOut,
-    status_code=200,
 )
-async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
-
-    try:
-        index, data = await Config.get_script(script.scriptId)
-        index = [ScriptIndexItem(**_) for _ in index]
-        data = {
-            uid: SCRIPT_BOOK[next((_.type for _ in index if _.uid == uid), "General")](
-                **cfg
-            )
-            for uid, cfg in data.items()
-        }
-    except Exception as e:
-        return ScriptGetOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            index=[],
-            data={},
-        )
-    return ScriptGetOut(index=index, data=data)
+async def list_scripts() -> ScriptGetOut:
+    index, data = await Config.get_script(None)
+    script_index = project_model_list(ScriptIndexItem, index)
+    return ScriptGetOut(
+        index=script_index, data=project_script_model_map(script_index, data)
+    )
 
 
 @router.post(
-    "/update",
-    tags=["Update"],
-    summary="更新脚本配置信息",
-    response_model=OutBase,
-    status_code=200,
+    "",
+    tags=["Add"],
+    summary="创建脚本",
+    response_model=ScriptCreateOut,
 )
-async def update_script(script: ScriptUpdateIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.update_script(
-            script.scriptId, script.data.model_dump(exclude_unset=True)
-        )
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
+async def create_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
+    uid, config = await Config.add_script(script.type, script.copyFromId)
+    data = project_script_model(
+        script_contract_type_from_runtime(type(config).__name__),
+        await config.toDict(),
+    )
+    return ScriptCreateOut(id=str(uid), data=data)
 
 
-@router.post(
-    "/delete",
-    tags=["Delete"],
-    summary="删除脚本",
-    response_model=OutBase,
-    status_code=200,
-)
-async def delete_script(script: ScriptDeleteIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.del_script(script.scriptId)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
-
-
-@router.post(
+@router.patch(
     "/order",
     tags=["Update"],
     summary="重新排序脚本",
     response_model=OutBase,
-    status_code=200,
 )
-async def reorder_script(script: ScriptReorderIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.reorder_script(script.indexList)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+async def reorder_scripts(body: IndexOrderPatch = Body(...)) -> OutBase:
+    await Config.reorder_script(body.index_list)
     return OutBase()
 
 
-@router.post(
-    "/import/file",
+@router.get(
+    "/{script_id}",
+    tags=["Get"],
+    summary="查询单个脚本",
+    response_model=ScriptDetailOut,
+)
+async def get_script(script_id: ScriptIdPath) -> ScriptDetailOut:
+    index, data = await Config.get_script(script_id)
+    script_index = project_model_list(ScriptIndexItem, index)
+    projected = project_script_model_map(script_index, data)
+    return ScriptDetailOut(data=projected[script_id])
+
+
+@router.patch(
+    "/{script_id}",
     tags=["Update"],
-    summary="从文件加载脚本配置",
+    summary="更新脚本配置",
     response_model=OutBase,
-    status_code=200,
 )
-async def import_script_from_file(script: ScriptFileIn = Body(...)) -> OutBase:
+async def update_script(
+    script_id: ScriptIdPath,
+    body: ScriptPatchBody = Body(...),
+) -> OutBase:
+    script_type = script_contract_type_from_runtime(
+        type(Config.ScriptConfig[uuid.UUID(script_id)]).__name__
+    )
+    await Config.update_script(
+        script_id, dump_script_patch_data(script_type, body.data)
+    )
+    return OutBase()
 
-    try:
-        await Config.import_script_from_file(script.scriptId, script.jsonFile)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+
+@router.delete(
+    "/{script_id}",
+    tags=["Delete"],
+    summary="删除脚本",
+    response_model=OutBase,
+)
+async def delete_script(script_id: ScriptIdPath) -> OutBase:
+    await Config.del_script(script_id)
     return OutBase()
 
 
 @router.post(
-    "/export/file",
+    "/{script_id}/actions/import-file",
+    tags=["Action"],
+    summary="从文件导入脚本配置",
+    response_model=OutBase,
+)
+async def import_script_from_file(
+    script_id: ScriptIdPath, body: ScriptFileBody = Body(...)
+) -> OutBase:
+    await Config.import_script_from_file(script_id, body.path)
+    return OutBase()
+
+
+@router.post(
+    "/{script_id}/actions/export-file",
     tags=["Action"],
     summary="导出脚本配置到文件",
     response_model=OutBase,
-    status_code=200,
 )
-async def export_script_to_file(script: ScriptFileIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.export_script_to_file(script.scriptId, script.jsonFile)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+async def export_script_to_file(
+    script_id: ScriptIdPath, body: ScriptFileBody = Body(...)
+) -> OutBase:
+    await Config.export_script_to_file(script_id, body.path)
     return OutBase()
 
 
 @router.post(
-    "/import/web",
-    tags=["Update"],
-    summary="从网络加载脚本配置",
+    "/{script_id}/actions/import-web",
+    tags=["Action"],
+    summary="从网络导入脚本配置",
     response_model=OutBase,
-    status_code=200,
 )
-async def import_script_from_web(script: ScriptUrlIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.import_script_from_web(script.scriptId, script.url)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+async def import_script_from_web(
+    script_id: ScriptIdPath, body: ScriptUrlBody = Body(...)
+) -> OutBase:
+    await Config.import_script_from_web(script_id, body.url)
     return OutBase()
 
 
 @router.post(
-    "/Upload/web",
+    "/{script_id}/actions/upload-web",
     tags=["Action"],
     summary="上传脚本配置到网络",
     response_model=OutBase,
-    status_code=200,
 )
-async def upload_script_to_web(script: ScriptUploadIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.upload_script_to_web(
-            script.scriptId, script.config_name, script.author, script.description
-        )
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+async def upload_script_to_web(
+    script_id: ScriptIdPath, body: ScriptUploadBody = Body(...)
+) -> OutBase:
+    await Config.upload_script_to_web(
+        script_id, body.config_name, body.author, body.description
+    )
     return OutBase()
 
 
-@router.post(
-    "/user/get",
+@router.get(
+    "/{script_id}/users",
     tags=["Get"],
-    summary="查询用户",
+    summary="查询脚本下的全部用户",
     response_model=UserGetOut,
-    status_code=200,
 )
-async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
-
-    try:
-        index, data = await Config.get_user(user.scriptId, user.userId)
-        index = [UserIndexItem(**_) for _ in index]
-        data = {
-            uid: USER_BOOK[
-                type(Config.ScriptConfig[uuid.UUID(user.scriptId)]).__name__
-            ](**cfg)
-            for uid, cfg in data.items()
-        }
-    except Exception as e:
-        return UserGetOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            index=[],
-            data={},
-        )
-    return UserGetOut(index=index, data=data)
+async def list_users(script_id: ScriptIdPath) -> UserGetOut:
+    index, data = await Config.get_user(script_id, None)
+    user_index = project_model_list(UserIndexItem, index)
+    return UserGetOut(index=user_index, data=project_user_model_map(user_index, data))
 
 
 @router.post(
-    "/user/add",
+    "/{script_id}/users",
     tags=["Add"],
-    summary="添加用户",
+    summary="创建用户",
     response_model=UserCreateOut,
-    status_code=200,
 )
-async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
-
-    try:
-        uid, config = await Config.add_user(user.scriptId)
-        data = USER_BOOK[type(Config.ScriptConfig[uuid.UUID(user.scriptId)]).__name__](
-            **(await config.toDict())
-        )
-    except Exception as e:
-        return UserCreateOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            userId="",
-            data=GeneralUserConfig(**{}),
-        )
-    return UserCreateOut(userId=str(uid), data=data)
+async def create_user(script_id: ScriptIdPath) -> UserCreateOut:
+    uid, config = await Config.add_user(script_id)
+    script_type = script_contract_type_from_runtime(
+        type(Config.ScriptConfig[uuid.UUID(script_id)]).__name__
+    )
+    user_type = user_contract_type_from_script(script_type)
+    data = project_user_model(user_type, await config.toDict())
+    return UserCreateOut(id=str(uid), data=data)
 
 
-@router.post(
-    "/user/update",
-    tags=["Update"],
-    summary="更新用户配置信息",
-    response_model=OutBase,
-    status_code=200,
-)
-async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.update_user(
-            user.scriptId, user.userId, user.data.model_dump(exclude_unset=True)
-        )
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
-
-
-@router.post(
-    "/user/delete",
-    tags=["Delete"],
-    summary="删除用户",
-    response_model=OutBase,
-    status_code=200,
-)
-async def delete_user(user: UserDeleteIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.del_user(user.scriptId, user.userId)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
-
-
-@router.post(
-    "/user/order",
+@router.patch(
+    "/{script_id}/users/order",
     tags=["Update"],
     summary="重新排序用户",
     response_model=OutBase,
-    status_code=200,
 )
-async def reorder_user(user: UserReorderIn = Body(...)) -> OutBase:
+async def reorder_users(
+    script_id: ScriptIdPath, body: IndexOrderPatch = Body(...)
+) -> OutBase:
+    await Config.reorder_user(script_id, body.index_list)
+    return OutBase()
 
-    try:
-        await Config.reorder_user(user.scriptId, user.indexList)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+
+@router.get(
+    "/{script_id}/users/{user_id}",
+    tags=["Get"],
+    summary="查询单个用户",
+    response_model=UserDetailOut,
+)
+async def get_user(script_id: ScriptIdPath, user_id: UserIdPath) -> UserDetailOut:
+    index, data = await Config.get_user(script_id, user_id)
+    user_index = project_model_list(UserIndexItem, index)
+    projected = project_user_model_map(user_index, data)
+    return UserDetailOut(data=projected[user_id])
+
+
+@router.patch(
+    "/{script_id}/users/{user_id}",
+    tags=["Update"],
+    summary="更新用户配置",
+    response_model=OutBase,
+)
+async def update_user(
+    script_id: ScriptIdPath,
+    user_id: UserIdPath,
+    body: UserPatchBody = Body(...),
+) -> OutBase:
+    script_type = script_contract_type_from_runtime(
+        type(Config.ScriptConfig[uuid.UUID(script_id)]).__name__
+    )
+    user_type = user_contract_type_from_script(script_type)
+    await Config.update_user(
+        script_id, user_id, dump_user_patch_data(user_type, body.data)
+    )
+    return OutBase()
+
+
+@router.delete(
+    "/{script_id}/users/{user_id}",
+    tags=["Delete"],
+    summary="删除用户",
+    response_model=OutBase,
+)
+async def delete_user(script_id: ScriptIdPath, user_id: UserIdPath) -> OutBase:
+    await Config.del_user(script_id, user_id)
     return OutBase()
 
 
 @router.post(
-    "/user/infrastructure",
-    tags=["Update"],
+    "/{script_id}/users/{user_id}/actions/import-infrastructure",
+    tags=["Action"],
     summary="导入基建配置文件",
     response_model=OutBase,
-    status_code=200,
 )
-async def import_infrastructure(user: UserSetIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.set_infrastructure(user.scriptId, user.userId, user.jsonFile)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+async def import_infrastructure(
+    script_id: ScriptIdPath,
+    user_id: UserIdPath,
+    body: InfrastructureImportBody = Body(...),
+) -> OutBase:
+    await Config.set_infrastructure(script_id, user_id, body.path)
     return OutBase()
 
 
-@router.post(
-    "/user/combox/infrastructure",
+@router.get(
+    "/{script_id}/users/{user_id}/infrastructure-options",
     tags=["Get"],
     summary="用户自定义基建排班可选项",
     response_model=ComboBoxOut,
-    status_code=200,
 )
-async def get_user_combox_infrastructure(user: UserDeleteIn = Body(...)) -> ComboBoxOut:
-
-    try:
-        raw_data = await Config.get_user_combox_infrastructure(
-            user.scriptId, user.userId
-        )
-        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
-    except Exception as e:
-        return ComboBoxOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
-        )
+async def get_user_infrastructure_options(
+    script_id: ScriptIdPath, user_id: UserIdPath
+) -> ComboBoxOut:
+    raw_data = await Config.get_user_combox_infrastructure(script_id, user_id)
+    data = COMBOBOX_ITEMS_ADAPTER.validate_python(raw_data or [])
     return ComboBoxOut(data=data)
 
 
-@router.post(
-    "/webhook/get",
+@router.get(
+    "/{script_id}/users/{user_id}/webhooks",
     tags=["Get"],
-    summary="查询 webhook 配置",
+    summary="查询用户下的全部 Webhook",
     response_model=WebhookGetOut,
-    status_code=200,
 )
-async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
-
-    try:
-        index, data = await Config.get_webhook(
-            webhook.scriptId, webhook.userId, webhook.webhookId
-        )
-        index = [WebhookIndexItem(**_) for _ in index]
-        data = {uid: Webhook(**cfg) for uid, cfg in data.items()}
-    except Exception as e:
-        return WebhookGetOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            index=[],
-            data={},
-        )
-    return WebhookGetOut(index=index, data=data)
+async def list_user_webhooks(
+    script_id: ScriptIdPath, user_id: UserIdPath
+) -> WebhookGetOut:
+    index, data = await Config.get_webhook(script_id, user_id, None)
+    return WebhookGetOut(
+        index=project_model_list(WebhookIndexItem, index),
+        data=project_model_map(WebhookRead, data),
+    )
 
 
 @router.post(
-    "/webhook/add",
+    "/{script_id}/users/{user_id}/webhooks",
     tags=["Add"],
-    summary="添加webhook项",
+    summary="创建用户 Webhook",
     response_model=WebhookCreateOut,
-    status_code=200,
 )
-async def add_webhook(webhook: WebhookInBase = Body(...)) -> WebhookCreateOut:
-
-    try:
-        uid, config = await Config.add_webhook(webhook.scriptId, webhook.userId)
-        data = Webhook(**(await config.toDict()))
-    except Exception as e:
-        return WebhookCreateOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            webhookId="",
-            data=Webhook(**{}),
-        )
-    return WebhookCreateOut(webhookId=str(uid), data=data)
+async def create_user_webhook(
+    script_id: ScriptIdPath, user_id: UserIdPath
+) -> WebhookCreateOut:
+    uid, config = await Config.add_webhook(script_id, user_id)
+    return WebhookCreateOut(
+        id=str(uid),
+        data=project_model(WebhookRead, await config.toDict()),
+    )
 
 
-@router.post(
-    "/webhook/update",
+@router.patch(
+    "/{script_id}/users/{user_id}/webhooks/order",
     tags=["Update"],
-    summary="更新webhook项",
+    summary="重新排序用户 Webhook",
     response_model=OutBase,
-    status_code=200,
 )
-async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.update_webhook(
-            webhook.scriptId,
-            webhook.userId,
-            webhook.webhookId,
-            webhook.data.model_dump(exclude_unset=True),
-        )
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+async def reorder_user_webhooks(
+    script_id: ScriptIdPath,
+    user_id: UserIdPath,
+    body: IndexOrderPatch = Body(...),
+) -> OutBase:
+    await Config.reorder_webhook(script_id, user_id, body.index_list)
     return OutBase()
 
 
-@router.post(
-    "/webhook/delete",
+@router.get(
+    "/{script_id}/users/{user_id}/webhooks/{webhook_id}",
+    tags=["Get"],
+    summary="查询单个用户 Webhook",
+    response_model=WebhookDetailOut,
+)
+async def get_user_webhook(
+    script_id: ScriptIdPath,
+    user_id: UserIdPath,
+    webhook_id: WebhookIdPath,
+) -> WebhookDetailOut:
+    _, data = await Config.get_webhook(script_id, user_id, webhook_id)
+    projected = project_model_map(WebhookRead, data)
+    return WebhookDetailOut(data=projected[webhook_id])
+
+
+@router.patch(
+    "/{script_id}/users/{user_id}/webhooks/{webhook_id}",
+    tags=["Update"],
+    summary="更新用户 Webhook",
+    response_model=OutBase,
+)
+async def update_user_webhook(
+    script_id: ScriptIdPath,
+    user_id: UserIdPath,
+    webhook_id: WebhookIdPath,
+    data: WebhookRead = Body(...),
+) -> OutBase:
+    await Config.update_webhook(
+        script_id,
+        user_id,
+        webhook_id,
+        dump_writable_data(data),
+    )
+    return OutBase()
+
+
+@router.delete(
+    "/{script_id}/users/{user_id}/webhooks/{webhook_id}",
     tags=["Delete"],
-    summary="删除webhook项",
+    summary="删除用户 Webhook",
     response_model=OutBase,
-    status_code=200,
 )
-async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.del_webhook(webhook.scriptId, webhook.userId, webhook.webhookId)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
-
-
-@router.post(
-    "/webhook/order",
-    tags=["Update"],
-    summary="重新排序webhook项",
-    response_model=OutBase,
-    status_code=200,
-)
-async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.reorder_webhook(
-            webhook.scriptId, webhook.userId, webhook.indexList
-        )
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+async def delete_user_webhook(
+    script_id: ScriptIdPath,
+    user_id: UserIdPath,
+    webhook_id: WebhookIdPath,
+) -> OutBase:
+    await Config.del_webhook(script_id, user_id, webhook_id)
     return OutBase()

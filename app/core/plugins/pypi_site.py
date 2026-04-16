@@ -1,4 +1,4 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2026 AUTO-MAS Team
 
 import sys

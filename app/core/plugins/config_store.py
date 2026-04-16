@@ -1,58 +1,62 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
+from __future__ import annotations
+
 import copy
 import json
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Mapping
+
+from app.models.plugin import PluginInstanceConfig
 
 from .schema import PluginSchemaManager
 
 
 class PluginConfigStore:
-    """负责读取插件配置，并结合 Schema 生成有效配置。"""
+    """负责读取插件实例配置，并结合 Schema 生成有效配置。"""
 
-    @dataclass
+    @dataclass(slots=True)
     class PluginInstance:
         id: str
         plugin: str
         enabled: bool
         name: str
-        config: Dict[str, Any]
+        config: dict[str, Any]
+
+    @dataclass(slots=True)
+    class _ResolvedInstance:
+        uid: uuid.UUID
+        instance: "PluginConfigStore.PluginInstance"
 
     def __init__(self, schema_manager: PluginSchemaManager | None = None) -> None:
         self.schema_manager = schema_manager or PluginSchemaManager()
 
-    def _extract_instance_suffix(self, plugin_name: str, instance_id: str) -> str:
-        """从实例 ID 中提取实例号后缀。"""
-        if isinstance(instance_id, str) and instance_id.startswith(f"{plugin_name}:"):
-            suffix = instance_id.split(":", 1)[1].strip()
-            if suffix:
-                return suffix
-        if isinstance(instance_id, str) and instance_id.strip():
-            return instance_id.strip()
-        return uuid.uuid4().hex[:5]
+    @staticmethod
+    def _normalize_plugin_name(plugin_name: str) -> str:
+        normalized = str(plugin_name or "").strip()
+        if not normalized:
+            raise ValueError("插件名不能为空")
+        return normalized
+
+    @staticmethod
+    def _normalize_suffix(suffix: str) -> str:
+        normalized = str(suffix or "").strip()
+        if not normalized:
+            raise ValueError("插件实例后缀不能为空")
+        return normalized
 
     def _build_instance_id(self, plugin_name: str, suffix: str) -> str:
         """根据插件名和实例号后缀构造完整实例 ID。"""
-        safe_plugin = str(plugin_name or "unknown_plugin").strip() or "unknown_plugin"
-        safe_suffix = str(suffix or "").strip() or uuid.uuid4().hex[:5]
-        return f"{safe_plugin}:{safe_suffix}"
+        return (
+            f"{self._normalize_plugin_name(plugin_name)}:"
+            f"{self._normalize_suffix(suffix)}"
+        )
 
     def _resolve_plugin_path(self, plugin_name: str) -> Path:
-        """根据插件名解析插件目录路径。
-
-        当插件名包含来源后缀（如 `test@local`）时，优先使用基础名目录
-        `plugins/test`；若不存在则回退 `plugins/test@local`。
-
-        Args:
-            plugin_name (str): 插件名。
-
-        Returns:
-            Path: 解析得到的插件目录路径。
-        """
+        """根据插件名解析插件目录路径。"""
         plugins_root = Path.cwd() / "plugins"
         raw_name = str(plugin_name or "").strip()
         if not raw_name:
@@ -64,367 +68,246 @@ class PluginConfigStore:
             return base_path
         return plugins_root / raw_name
 
-    async def _read_root(self) -> Dict[str, Any]:
-        """从插件独立配置读取统一配置根对象。"""
-        from app.core import Config
+    def _resolve_plugin_source_path(
+        self,
+        plugin_name: str,
+        discovered_plugins: Mapping[str, Any] | None = None,
+    ) -> Path | None:
+        if discovered_plugins is not None and plugin_name in discovered_plugins:
+            return getattr(discovered_plugins[plugin_name], "path", None)
+        return self._resolve_plugin_path(plugin_name)
 
-        instances: List[Dict[str, Any]] = []
-        for instance_config in Config.PluginConfig.PluginInstances.values():
-            plugin_name = str(instance_config.get("Info", "Plugin") or "").strip()
-            suffix = str(instance_config.get("Info", "Id") or "").strip()
-            enabled = bool(instance_config.get("Info", "Enabled"))
-            name = str(instance_config.get("Info", "Name") or "未命名实例")
+    @staticmethod
+    def _parse_config_value(value: Any, *, instance_id: str) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return copy.deepcopy(value)
 
-            config_text = instance_config.get("Data", "Config")
+        if isinstance(value, str):
             try:
-                config = json.loads(config_text) if isinstance(config_text, str) else {}
-            except Exception:
-                raw_config_text = instance_config.get("Data", "ConfigRaw")
-                config = (
-                    json.loads(raw_config_text)
-                    if isinstance(raw_config_text, str)
-                    else {}
-                )
-            if not isinstance(config, dict):
-                config = {}
+                parsed = json.loads(value)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"插件实例配置不是合法 JSON 对象: {instance_id}"
+                ) from exc
+            if isinstance(parsed, dict):
+                return copy.deepcopy(parsed)
 
-            if not plugin_name:
-                continue
+        raise ValueError(f"插件实例配置必须是对象: {instance_id}")
 
-            instances.append(
-                {
-                    "id": self._build_instance_id(plugin_name, suffix),
-                    "plugin": plugin_name,
-                    "enabled": enabled,
-                    "name": name,
-                    "config": config,
-                }
-            )
+    def _build_instance(
+        self,
+        uid: uuid.UUID,
+        instance_config: PluginInstanceConfig,
+    ) -> PluginInstance:
+        plugin_name = self._normalize_plugin_name(instance_config.get("Info", "Plugin"))
+        suffix = self._normalize_suffix(instance_config.get("Info", "Id"))
+        instance_id = self._build_instance_id(plugin_name, suffix)
+        name = str(instance_config.get("Info", "Name") or instance_id)
+        enabled = bool(instance_config.get("Info", "Enabled"))
+        config = self._parse_config_value(
+            instance_config.get("Data", "Config"),
+            instance_id=instance_id,
+        )
 
-        raw_version = Config.PluginConfig.get("Data", "Version")
+        return self.PluginInstance(
+            id=instance_id,
+            plugin=plugin_name,
+            enabled=enabled,
+            name=name,
+            config=config,
+        )
 
-        try:
-            version = int(raw_version)
-        except Exception:
-            version = 1
-
-        return {
-            "version": max(1, version),
-            "instances": instances,
-        }
-
-    async def _write_root(self, root: Dict[str, Any]) -> None:
-        """写入插件独立配置中的统一配置根对象。"""
+    def _resolve_instance(self, instance_id: str) -> _ResolvedInstance:
         from app.core import Config
 
-        version = int(root.get("version", 1))
-        raw_instances = root.get("instances", [])
-        if not isinstance(raw_instances, list):
-            raise ValueError("插件统一配置中的 instances 必须是数组")
-
-        instance_index: Dict[str, Dict[str, Any]] = {}
-        instance_list: List[Dict[str, str]] = []
-
-        for item in raw_instances:
-            if not isinstance(item, dict):
-                raise ValueError("instances 中存在非对象项")
-
-            plugin_name = item.get("plugin")
-            if not isinstance(plugin_name, str) or not plugin_name:
-                raise ValueError("插件实例缺少有效的 plugin 字段")
-
-            instance_id = item.get("id")
-            if not isinstance(instance_id, str) or not instance_id:
-                raise ValueError("插件实例缺少有效的 id 字段")
-
-            enabled = item.get("enabled", True)
-            if not isinstance(enabled, bool):
-                raise ValueError(f"插件实例 {instance_id} 的 enabled 字段必须为布尔值")
-
-            config = item.get("config", {})
-            if not isinstance(config, dict):
-                raise ValueError(f"插件实例 {instance_id} 的 config 必须是对象")
-
-            name = str(item.get("name") or instance_id)
-            suffix = self._extract_instance_suffix(plugin_name, instance_id)
-
-            effective_config = self.load_effective_config(
-                plugin_name,
-                self._resolve_plugin_path(plugin_name),
-                config,
-            )
-
-            uid = str(uuid.uuid4())
-            instance_list.append(
-                {
-                    "uid": uid,
-                    "type": "PluginInstanceConfig",
-                }
-            )
-            instance_index[uid] = {
-                "Info": {
-                    "Plugin": plugin_name,
-                    "Id": suffix,
-                    "Enabled": enabled,
-                    "Name": name,
-                },
-                "Data": {
-                    "ConfigRaw": json.dumps(effective_config, ensure_ascii=False),
-                },
-            }
-
-        payload: Dict[str, Any] = {
-            "Data": {
-                "Version": max(1, version),
-            },
-            "SubConfigsInfo": {
-                "PluginInstances": {
-                    "instances": instance_list,
-                    **instance_index,
-                }
-            },
-        }
-
-        await Config.PluginConfig.load(payload)
+        for uid, instance_config in Config.PluginConfig.items():
+            instance = self._build_instance(uid, instance_config)
+            if instance.id == instance_id:
+                return self._ResolvedInstance(uid=uid, instance=instance)
+        raise ValueError(f"未找到插件实例: {instance_id}")
 
     def generate_instance_id(self, plugin_name: str) -> str:
-        """
-        生成插件实例 ID。
+        """生成插件实例 ID。"""
+        return self._build_instance_id(plugin_name, uuid.uuid4().hex[:5])
 
-        Args:
-            plugin_name (str): 插件名。
+    async def load_instances(self) -> list[PluginInstance]:
+        """读取并校验插件实例列表。"""
+        from app.core import Config
 
-        Returns:
-            str: 形如 plugin_name:xxxxx 的实例 ID。
-        """
-        return f"{plugin_name}:{uuid.uuid4().hex[:5]}"
-
-    async def get_root(
-        self,
-        plugins_dir,
-        discovered_plugins,
-        auto_create_missing: bool = False,
-    ) -> Dict[str, Any]:
-        """
-        读取统一插件配置根对象，并按需补齐缺失实例。
-
-        Args:
-            plugins_dir: 插件目录路径（当前实现中仅用于接口兼容）。
-            discovered_plugins: 已发现插件映射。
-            auto_create_missing (bool): 是否自动创建缺失插件的默认实例。
-
-        Returns:
-            Dict[str, Any]: 统一插件配置根对象。
-        """
-        return await self.ensure_instances(
-            plugins_dir,
-            discovered_plugins,
-            auto_create_missing=auto_create_missing,
-        )
-
-    async def save_root(self, plugins_dir, root: Dict[str, Any]) -> None:
-        """
-        保存统一插件配置根对象到持久化配置。
-
-        Args:
-            plugins_dir: 插件目录路径（当前实现中仅用于接口兼容）。
-            root (Dict[str, Any]): 待保存的配置根对象。
-
-        Returns:
-            None: 无返回值。
-
-        Raises:
-            ValueError: 在以下场景抛出：
-                1) root 不是字典对象；
-                2) root.instances 缺失或不是列表。
-        """
-        if not isinstance(root, dict):
-            raise ValueError("插件统一配置根对象必须是字典")
-        instances = root.get("instances")
-        if not isinstance(instances, list):
-            raise ValueError("插件统一配置缺少 instances 列表")
-        root.setdefault("version", 1)
-        await self._write_root(root)
-
-    async def ensure_instances(
-        self,
-        plugins_dir,
-        discovered_plugins,
-        auto_create_missing: bool = False,
-    ) -> Dict[str, Any]:
-        """
-        确保统一配置中的实例列表满足当前发现结果。
-
-        Args:
-            plugins_dir: 插件目录路径（当前实现中仅用于接口兼容）。
-            discovered_plugins: 已发现插件映射。
-            auto_create_missing (bool): 是否为缺失插件自动创建默认实例。
-
-        Returns:
-            Dict[str, Any]: 更新后的统一插件配置根对象。
-        """
-        root = await self._read_root()
-        instances: List[Dict[str, Any]] = root.get("instances", [])
-
-        existing_plugins = {
-            item.get("plugin")
-            for item in instances
-            if isinstance(item, dict) and isinstance(item.get("plugin"), str)
-        }
-
-        changed = False
-        if auto_create_missing:
-            for plugin_name in discovered_plugins.keys():
-                if plugin_name in existing_plugins:
-                    continue
-                instances.append(
-                    {
-                        "id": self._generate_instance_id(plugin_name),
-                        "plugin": plugin_name,
-                        "enabled": True,
-                        "name": f"{plugin_name} 默认实例",
-                        "config": {},
-                    }
-                )
-                changed = True
-
-        root["instances"] = instances
-        if changed:
-            await self._write_root(root)
-
-        return root
-
-    async def load_instances(
-        self,
-        plugins_dir,
-        discovered_plugins,
-        auto_create_missing: bool = False,
-    ) -> List[PluginInstance]:
-        """
-        读取并校验插件实例列表。
-
-        Args:
-            plugins_dir: 插件目录路径（当前实现中仅用于接口兼容）。
-            discovered_plugins: 已发现插件映射。
-            auto_create_missing (bool): 是否自动创建缺失插件实例。
-
-        Returns:
-            List[PluginInstance]: 校验通过的插件实例对象列表。
-
-        Raises:
-            ValueError: 在以下场景抛出：
-                1) instances 中存在非对象项；
-                2) 实例 id 为空或不是字符串；
-                3) 实例 id 重复；
-                4) plugin 字段无效；
-                5) enabled 字段不是布尔值；
-                6) config 字段不是对象。
-        """
-        root = await self.ensure_instances(
-            plugins_dir,
-            discovered_plugins,
-            auto_create_missing=auto_create_missing,
-        )
-        result: List[PluginConfigStore.PluginInstance] = []
         seen_ids: set[str] = set()
+        result: list[PluginConfigStore.PluginInstance] = []
 
-        for item in root.get("instances", []):
-            if not isinstance(item, dict):
-                raise ValueError("instances 中存在非对象项")
-
-            instance_id = item.get("id")
-            plugin_name = item.get("plugin")
-            enabled = item.get("enabled", True)
-            name = item.get("name") or str(instance_id or "未命名实例")
-            config = item.get("config", {})
-
-            if not isinstance(instance_id, str) or not instance_id:
-                raise ValueError("插件实例 id 必须是非空字符串")
-            if instance_id in seen_ids:
-                raise ValueError(f"插件实例 id 重复: {instance_id}")
-            seen_ids.add(instance_id)
-            if not isinstance(plugin_name, str) or not plugin_name:
-                raise ValueError(f"插件实例 {instance_id} 的 plugin 字段无效")
-            if not isinstance(enabled, bool):
-                raise ValueError(f"插件实例 {instance_id} 的 enabled 字段必须为布尔值")
-            if not isinstance(config, dict):
-                raise ValueError(f"插件实例 {instance_id} 的 config 必须是对象")
-
-            result.append(
-                self.PluginInstance(
-                    id=instance_id,
-                    plugin=plugin_name,
-                    enabled=enabled,
-                    name=str(name),
-                    config=copy.deepcopy(config),
-                )
-            )
+        for uid, instance_config in Config.PluginConfig.items():
+            instance = self._build_instance(uid, instance_config)
+            if instance.id in seen_ids:
+                raise ValueError(f"插件实例 id 重复: {instance.id}")
+            seen_ids.add(instance.id)
+            result.append(instance)
 
         return result
 
-    def normalize_raw_config(self, plugin_name: str, raw_config: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        规范化并深拷贝原始配置对象。
+    async def create_instance(
+        self,
+        *,
+        plugin_name: str,
+        name: str | None = None,
+        enabled: bool = True,
+        raw_config: dict[str, Any] | None = None,
+        discovered_plugins: Mapping[str, Any] | None = None,
+    ) -> PluginInstance:
+        from app.core import Config
 
-        Args:
-            plugin_name (str): 插件名。
-            raw_config (Dict[str, Any]): 原始配置对象。
+        normalized_plugin = self._normalize_plugin_name(plugin_name)
+        if discovered_plugins is not None and normalized_plugin not in discovered_plugins:
+            raise ValueError(f"未发现插件: {normalized_plugin}")
 
-        Returns:
-            Dict[str, Any]: 规范化后的配置副本。
+        effective_config = self.load_effective_config(
+            normalized_plugin,
+            self._resolve_plugin_source_path(normalized_plugin, discovered_plugins),
+            raw_config or {},
+        )
+        uid, plugin_config = await Config.PluginConfig.add(PluginInstanceConfig)
+        await plugin_config.set_many(
+            {
+                "Info": {
+                    "Plugin": normalized_plugin,
+                    "Id": uid.hex[:5],
+                    "Enabled": enabled,
+                    "Name": name or f"{normalized_plugin} 实例",
+                },
+                "Data": {
+                    "Config": json.dumps(effective_config, ensure_ascii=False),
+                },
+            }
+        )
+        return self._build_instance(uid, plugin_config)
 
-        Raises:
-            ValueError: 原始配置不是字典时抛出。
-        """
+    async def update_instance(
+        self,
+        instance_id: str,
+        *,
+        plugin_name: str | None = None,
+        name: str | None = None,
+        enabled: bool | None = None,
+        raw_config: dict[str, Any] | None = None,
+        discovered_plugins: Mapping[str, Any] | None = None,
+    ) -> tuple[PluginInstance, PluginInstance]:
+        from app.core import Config
+
+        resolved = self._resolve_instance(instance_id)
+        current = resolved.instance
+        next_plugin = (
+            current.plugin
+            if plugin_name is None
+            else self._normalize_plugin_name(plugin_name)
+        )
+        if discovered_plugins is not None and next_plugin not in discovered_plugins:
+            raise ValueError(f"未发现插件: {next_plugin}")
+
+        next_name = current.name if name is None else str(name)
+        next_enabled = current.enabled if enabled is None else enabled
+        next_config_input = current.config if raw_config is None else raw_config
+        effective_config = self.load_effective_config(
+            next_plugin,
+            self._resolve_plugin_source_path(next_plugin, discovered_plugins),
+            next_config_input,
+        )
+
+        suffix = self._normalize_suffix(
+            Config.PluginConfig[resolved.uid].get("Info", "Id")
+        )
+        await Config.PluginConfig[resolved.uid].set_many(
+            {
+                "Info": {
+                    "Plugin": next_plugin,
+                    "Id": suffix,
+                    "Enabled": next_enabled,
+                    "Name": next_name,
+                },
+                "Data": {
+                    "Config": json.dumps(effective_config, ensure_ascii=False),
+                },
+            },
+        )
+        updated = self._build_instance(resolved.uid, Config.PluginConfig[resolved.uid])
+        return current, updated
+
+    async def delete_instance(self, instance_id: str) -> PluginInstance:
+        from app.core import Config
+
+        resolved = self._resolve_instance(instance_id)
+        await Config.PluginConfig.remove(resolved.uid)
+        return resolved.instance
+
+    async def repair_invalid_instances(
+        self,
+        *,
+        missing_instance_ids: set[str],
+        failed_instance_ids: set[str],
+    ) -> tuple[list[str], list[str]]:
+        from app.core import Config
+
+        remove_ids = set(missing_instance_ids)
+        disable_ids = set(failed_instance_ids) - remove_ids
+        if not remove_ids and not disable_ids:
+            return [], []
+
+        removed_ids: list[str] = []
+        disabled_ids: list[str] = []
+        resolved_instances = [
+            self._ResolvedInstance(uid=uid, instance=self._build_instance(uid, config))
+            for uid, config in Config.PluginConfig.items()
+        ]
+
+        async with Config.PluginConfig.transaction():
+            for resolved in resolved_instances:
+                current_id = resolved.instance.id
+                if current_id in remove_ids:
+                    await Config.PluginConfig.remove(resolved.uid)
+                    removed_ids.append(current_id)
+                    continue
+
+                if current_id in disable_ids and resolved.instance.enabled:
+                    await Config.PluginConfig[resolved.uid].set_many(
+                        {
+                            "Info": {
+                                "Enabled": False,
+                            }
+                        }
+                    )
+                    disabled_ids.append(current_id)
+
+        return removed_ids, disabled_ids
+
+    def normalize_raw_config(
+        self, plugin_name: str, raw_config: dict[str, Any]
+    ) -> dict[str, Any]:
+        """规范化并深拷贝原始配置对象。"""
         if not isinstance(raw_config, dict):
             raise ValueError(f"插件配置必须是对象: {plugin_name}")
         return copy.deepcopy(raw_config)
 
-    def load_schema(self, plugin_name: str, plugin_path: Path | None) -> Dict[str, Dict[str, Any]]:
-        """
-        加载插件 Schema，兼容本地路径与 PyPI 安装模块。
-
-        Args:
-            plugin_name (str): 插件名。
-            plugin_path (Path | None): 插件本地目录路径。
-
-        Returns:
-            Dict[str, Dict[str, Any]]: 插件 Schema 字段定义字典。
-        """
+    def load_schema(
+        self,
+        plugin_name: str,
+        plugin_path: Path | None,
+    ) -> dict[str, dict[str, Any]]:
+        """加载插件 Schema，兼容本地路径与 PyPI 安装模块。"""
         return self.schema_manager.load_schema(plugin_name, plugin_path)
 
     def load_effective_config(
         self,
         plugin_name: str,
         plugin_path: Path | None,
-        raw_config: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """
-        基于 Schema 生成并校验插件有效配置。
-
-        Args:
-            plugin_name (str): 插件名。
-            plugin_path (Path | None): 插件本地目录路径。
-            raw_config (Dict[str, Any]): 原始配置对象。
-
-        Returns:
-            Dict[str, Any]: 通过校验并补齐默认值的有效配置。
-
-        Raises:
-            ValueError: 插件未声明 Schema 但 raw_config 含有配置项时抛出。
-            PluginSchemaError: 在以下场景抛出：
-                1) Schema 加载失败或定义不合法；
-                2) 配置缺失必填项；
-                3) 配置项类型与 Schema 声明不匹配。
-        """
+        raw_config: dict[str, Any],
+    ) -> dict[str, Any]:
+        """基于 Schema 生成并校验插件有效配置。"""
         schema = self.load_schema(plugin_name, plugin_path)
         normalized_config = self.normalize_raw_config(plugin_name, raw_config)
 
         if not schema:
             if normalized_config:
-                raise ValueError(
-                    f"插件 {plugin_name} 使用了配置项但未声明 schema"
-                )
+                raise ValueError(f"插件 {plugin_name} 使用了配置项但未声明 schema")
             return normalized_config
 
         return self.schema_manager.apply_defaults_and_validate(

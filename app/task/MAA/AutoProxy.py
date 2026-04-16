@@ -29,8 +29,8 @@ from datetime import datetime, timedelta
 
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
-from app.models.ConfigBase import MultipleConfig
-from app.models.config import MaaConfig, MaaUserConfig
+from app.core.config.base import MultipleConfig
+from app.models import MaaConfig, MaaUserConfig
 from app.models.emulator import DeviceInfo, DeviceBase
 from app.services import Notify, System
 from app.tools import skland_sign_in
@@ -78,14 +78,11 @@ class AutoProxyTask(TaskExecuteBase):
         self.check_result = "-"
 
     async def check(self) -> str:
-
         if self.script_config.get(
             "Run", "ProxyTimesLimit"
         ) != 0 and self.cur_user_config.get(
             "Data", "ProxyTimes"
-        ) >= self.script_config.get(
-            "Run", "ProxyTimesLimit"
-        ):
+        ) >= self.script_config.get("Run", "ProxyTimesLimit"):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
 
@@ -101,7 +98,6 @@ class AutoProxyTask(TaskExecuteBase):
         return "Pass"
 
     async def prepare(self):
-
         self.maa_process_manager = ProcessManager()
         self.maa_log_monitor = LogMonitor(
             (1, 20),
@@ -379,7 +375,6 @@ class AutoProxyTask(TaskExecuteBase):
         task_set = {}
         # 每个任务类型匹配第一个配置作为配置基础
         for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
-
             for task_item in gui_new_set["Configurations"]["Default"]["TaskQueue"]:
                 if task_item.get("TaskType", "") == en_task:
                     task_set[en_task] = task_item
@@ -547,7 +542,6 @@ class AutoProxyTask(TaskExecuteBase):
         self.task_dict["StartUp"] = True
         task_queue = gui_new_set["Configurations"]["Default"]["TaskQueue"] = []
         for task_type in MAA_TASKS:
-
             task_set[task_type]["IsEnable"] = self.task_dict[task_type]
             task_queue.append(task_set[task_type])
 
@@ -589,7 +583,6 @@ class AutoProxyTask(TaskExecuteBase):
         elif "任务出错: 开始唤醒" in log:
             self.cur_user_log.status = "MAA 未能正确登录 PRTS"
         elif "任务已全部完成！" in log:
-
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
                 if f"完成任务: {zh_task}" in log:
                     self.task_dict[en_task] = False
@@ -628,7 +621,6 @@ class AutoProxyTask(TaskExecuteBase):
             self.wait_event.set()
 
     async def final_task(self):
-
         if self.check_result != "Pass":
             return
 
@@ -648,7 +640,6 @@ class AutoProxyTask(TaskExecuteBase):
         user_logs_list = []
         if_six_star = False
         for t, log_item in self.cur_user_item.log_record.items():
-
             if log_item.status == "MAA 正常运行中":
                 log_item.status = "任务被用户手动中止"
 

@@ -1,30 +1,105 @@
-#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2024-2025 DLmaster361
-#   Copyright © 2025 MoeSnowyFox
-#   Copyright © 2025-2026 AUTO-MAS Team
+from typing import TYPE_CHECKING
 
-#   This file is part of AUTO-MAS.
-
-#   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU Affero General Public License as
-#   published by the Free Software Foundation, either version 3 of
-#   the License, or (at your option) any later version.
-
-#   AUTO-MAS is distributed in the hope that it will be useful,
-#   but WITHOUT ANY WARRANTY; without even the implied warranty
-#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU Affero General Public License for more details.
-
-#   You should have received a copy of the GNU Affero General Public License
-#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
-#   Contact: DLmaster_361@163.com
+if TYPE_CHECKING:
+    from .common import EmulatorConfig, QueueConfig, QueueItem, TimeSet, Webhook
+    from .general import GeneralConfig, GeneralUserConfig
+    from .global_config import CLASS_BOOK, GlobalConfig, ToolsConfig
+    from .maa import MaaConfig, MaaPlanConfig, MaaUserConfig
+    from .maaend import MaaEndConfig, MaaEndUserConfig
+    from .plugin import PluginInstanceConfig
+    from .src import SrcConfig, SrcUserConfig
 
 
-from .ConfigBase import *
-from .config import *
-from .schema import *
-from .emulator import *
-from .task import *
+__all__ = [
+    "EmulatorConfig",
+    "Webhook",
+    "QueueItem",
+    "TimeSet",
+    "QueueConfig",
+    "MaaPlanConfig",
+    "MaaUserConfig",
+    "MaaConfig",
+    "MaaEndUserConfig",
+    "MaaEndConfig",
+    "PluginInstanceConfig",
+    "SrcUserConfig",
+    "SrcConfig",
+    "GeneralUserConfig",
+    "GeneralConfig",
+    "ToolsConfig",
+    "GlobalConfig",
+    "CLASS_BOOK",
+]
 
-__all__ = ["ConfigBase", "config", "schema", "emulator", "task"]
+
+def __getattr__(name: str):
+    if name in {"emulator", "task"}:
+        import importlib
+
+        return importlib.import_module(f"{__name__}.{name}")
+
+    if name in {
+        "EmulatorConfig",
+        "QueueConfig",
+        "QueueItem",
+        "TimeSet",
+        "Webhook",
+    }:
+        from .common import EmulatorConfig, QueueConfig, QueueItem, TimeSet, Webhook
+
+        return {
+            "EmulatorConfig": EmulatorConfig,
+            "QueueConfig": QueueConfig,
+            "QueueItem": QueueItem,
+            "TimeSet": TimeSet,
+            "Webhook": Webhook,
+        }[name]
+
+    if name in {"GeneralConfig", "GeneralUserConfig"}:
+        from .general import GeneralConfig, GeneralUserConfig
+
+        return {
+            "GeneralConfig": GeneralConfig,
+            "GeneralUserConfig": GeneralUserConfig,
+        }[name]
+
+    if name in {"CLASS_BOOK", "GlobalConfig", "ToolsConfig"}:
+        from .global_config import CLASS_BOOK, GlobalConfig, ToolsConfig
+
+        return {
+            "CLASS_BOOK": CLASS_BOOK,
+            "GlobalConfig": GlobalConfig,
+            "ToolsConfig": ToolsConfig,
+        }[name]
+
+    if name in {"MaaConfig", "MaaPlanConfig", "MaaUserConfig"}:
+        from .maa import MaaConfig, MaaPlanConfig, MaaUserConfig
+
+        return {
+            "MaaConfig": MaaConfig,
+            "MaaPlanConfig": MaaPlanConfig,
+            "MaaUserConfig": MaaUserConfig,
+        }[name]
+
+    if name in {"MaaEndConfig", "MaaEndUserConfig"}:
+        from .maaend import MaaEndConfig, MaaEndUserConfig
+
+        return {
+            "MaaEndConfig": MaaEndConfig,
+            "MaaEndUserConfig": MaaEndUserConfig,
+        }[name]
+
+    if name == "PluginInstanceConfig":
+        from .plugin import PluginInstanceConfig
+
+        return PluginInstanceConfig
+
+    if name in {"SrcConfig", "SrcUserConfig"}:
+        from .src import SrcConfig, SrcUserConfig
+
+        return {
+            "SrcConfig": SrcConfig,
+            "SrcUserConfig": SrcUserConfig,
+        }[name]
+
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

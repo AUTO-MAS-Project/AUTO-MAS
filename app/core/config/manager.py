@@ -1,0 +1,2244 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025 MoeSnowyFox
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+import os
+import re
+import sys
+import httpx
+import shutil
+import asyncio
+import uvicorn
+import sqlite3
+import tomllib
+import truststore
+from pathlib import Path
+from fastapi import WebSocket
+from collections import defaultdict
+from jinja2 import Environment, FileSystemLoader
+from datetime import datetime, timedelta, date
+from typing import Literal, Optional, Dict, Any, List, ClassVar, cast
+import uuid
+import json
+
+from app.models.common import EmulatorConfig, QueueConfig, QueueItem, TimeSet, Webhook
+from app.models.general import GeneralConfig, GeneralUserConfig
+from app.models.global_config import GlobalConfig
+from app.models.maa import MaaConfig, MaaPlanConfig, MaaUserConfig
+from app.models.maaend import MaaEndConfig, MaaEndUserConfig
+from app.models.plugin import PluginInstanceConfig
+from app.models.src import SrcConfig, SrcUserConfig
+from .base import dump_toml
+from app.models.shared import WebSocketMessage
+from app.utils.constants import (
+    UTC4,
+    UTC8,
+    RESOURCE_STAGE_INFO,
+    RESOURCE_STAGE_DROP_INFO,
+    TYPE_BOOK,
+    RESOURCE_STAGE_DATE_TEXT,
+)
+from app.utils import get_logger
+
+logger = get_logger("配置管理")
+
+ScriptConfigClass = (
+    type[MaaConfig] | type[SrcConfig] | type[GeneralConfig] | type[MaaEndConfig]
+)
+ScriptConfigData = MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig
+
+if (Path.cwd() / "environment/git/bin/git.exe").exists():
+    os.environ["GIT_PYTHON_GIT_EXECUTABLE"] = str(
+        Path.cwd() / "environment/git/bin/git.exe"
+    )
+
+try:
+    from git import Repo
+except ImportError:
+    Repo = None
+
+
+class AppConfig(GlobalConfig):
+    VERSION: ClassVar[str] = "v5.2.0-beta.1"
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        logger.info("")
+        logger.info("===================================")
+        logger.info("AUTO-MAS 后端应用程序")
+        logger.info(f"版本号:  {self.VERSION}")
+        logger.info(f"工作目录:  {Path.cwd()}")
+        logger.info("===================================")
+
+        self.log_path = Path.cwd() / "debug/app.log"
+        self.database_path = Path.cwd() / "data/data.db"
+        self.config_path = Path.cwd() / "config"
+        self.history_path = Path.cwd() / "history"
+        # 检查目录
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        self.database_path.parent.mkdir(parents=True, exist_ok=True)
+        self.config_path.mkdir(parents=True, exist_ok=True)
+        self.history_path.mkdir(parents=True, exist_ok=True)
+
+        # 初始化Git仓库（如果可用）
+        try:
+            if Repo is not None:
+                self.repo = Repo(Path.cwd())
+            else:
+                self.repo = None
+        except (OSError, ValueError) as e:
+            logger.warning(f"Git仓库初始化失败: {e}")
+            self.repo = None
+
+        self.notify_env = Environment(
+            loader=FileSystemLoader(str(Path.cwd() / "res/html"))
+        )
+
+        self.server: Optional[uvicorn.Server] = None
+        self.websocket: Optional[WebSocket] = None
+        self.power_sign: Literal[
+            "NoAction",
+            "Shutdown",
+            "ShutdownForce",
+            "Reboot",
+            "Hibernate",
+            "Sleep",
+            "KillSelf",
+        ] = "NoAction"
+        self.temp_task: List[asyncio.Task[Any]] = []
+
+        truststore.inject_into_ssl()
+
+    def _resolve_config_path(self, stem: str) -> Path:
+        """返回运行期 TOML 配置路径。"""
+
+        return self.config_path / f"{stem}.toml"
+
+    async def _connect_runtime_configs(self) -> None:
+        """连接运行期主配置文件。"""
+
+        await self.connect(self._resolve_config_path("Config"))
+        await self.EmulatorConfig.connect(self._resolve_config_path("EmulatorConfig"))
+        await self.PlanConfig.connect(self._resolve_config_path("PlanConfig"))
+        await self.ScriptConfig.connect(self._resolve_config_path("ScriptConfig"))
+        await self.PluginConfig.connect(self._resolve_config_path("PluginConfig"))
+        await self.QueueConfig.connect(self._resolve_config_path("QueueConfig"))
+        await self.ToolsConfig.connect(self._resolve_config_path("ToolsConfig"))
+
+    def _read_mapping_config(self, path: Path) -> dict[str, Any]:
+        """读取 TOML/JSON 字典配置文件并返回映射对象。"""
+
+        if not path.exists():
+            return {}
+
+        text = path.read_text(encoding="utf-8")
+        if not text.strip():
+            return {}
+
+        if path.suffix == ".toml":
+            data = tomllib.loads(text)
+        else:
+            data = json.loads(text)
+        if isinstance(data, dict):
+            return cast(dict[str, Any], data)
+        return {}
+
+    def _write_mapping_config(self, path: Path, data: dict[str, Any]) -> None:
+        """将字典配置写入 TOML/JSON 文件。"""
+
+        if path.suffix == ".toml":
+            path.write_text(dump_toml(data), encoding="utf-8")
+            return
+
+        path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
+
+    async def init_config(self) -> None:
+        """初始化配置管理"""
+
+        await self.check_data()
+
+        await self._connect_runtime_configs()
+
+        from app.services import System
+
+        self.bind("Start", "IfSelfStart", System.set_SelfStart)
+        self.bind("Function", "IfAllowSleep", System.set_Sleep)
+        await System.set_SelfStart(self.get("Start", "IfSelfStart"))
+        await System.set_Sleep(self.get("Function", "IfAllowSleep"))
+
+        self.loop = asyncio.get_running_loop()
+
+        logger.info("程序初始化完成")
+
+    async def check_data(self) -> None:
+        """检查用户数据文件并处理数据文件版本更新"""
+
+        # 生成主数据库
+        if not self.database_path.exists():
+            db = sqlite3.connect(self.database_path)
+            cur = db.cursor()
+            cur.execute("CREATE TABLE version(v text)")
+            cur.execute("INSERT INTO version VALUES(?)", ("v1.11",))
+            db.commit()
+            cur.close()
+            db.close()
+
+        # 数据文件版本更新
+        db = sqlite3.connect(self.database_path)
+        cur = db.cursor()
+        cur.execute("SELECT * FROM version WHERE True")
+        version = cur.fetchall()
+
+        if version[0][0] != "v1.11":
+            logger.info(
+                "数据文件版本更新开始",
+            )
+            if_streaming = False
+            # v1.7-->v1.8
+            if version[0][0] == "v1.7" or if_streaming:
+                logger.info(
+                    "数据文件版本更新: v1.7-->v1.8",
+                )
+                if_streaming = True
+
+                if (Path.cwd() / "config/QueueConfig").exists():
+                    for QueueConfig in (Path.cwd() / "config/QueueConfig").glob(
+                        "*.json"
+                    ):
+                        with QueueConfig.open(encoding="utf-8") as f:
+                            queue_config = json.load(f)
+
+                        queue_config["QueueSet"]["TimeEnabled"] = queue_config[
+                            "QueueSet"
+                        ]["Enabled"]
+
+                        for i in range(10):
+                            queue_config["Queue"][f"Script_{i}"] = queue_config[
+                                "Queue"
+                            ][f"Member_{i + 1}"]
+                            queue_config["Time"][f"Enabled_{i}"] = queue_config["Time"][
+                                f"TimeEnabled_{i}"
+                            ]
+                            queue_config["Time"][f"Set_{i}"] = queue_config["Time"][
+                                f"TimeSet_{i}"
+                            ]
+
+                        with QueueConfig.open("w", encoding="utf-8") as f:
+                            json.dump(queue_config, f, ensure_ascii=False, indent=4)
+
+                cur.execute("DELETE FROM version WHERE v = ?", ("v1.7",))
+                cur.execute("INSERT INTO version VALUES(?)", ("v1.8",))
+                db.commit()
+            # v1.8-->v1.9
+            if version[0][0] == "v1.8" or if_streaming:
+                logger.info(
+                    "数据文件版本更新: v1.8-->v1.9",
+                )
+                if_streaming = True
+
+                await self.ScriptConfig.connect(
+                    self._resolve_config_path("ScriptConfig")
+                )
+                await self.PlanConfig.connect(self._resolve_config_path("PlanConfig"))
+                await self.QueueConfig.connect(self._resolve_config_path("QueueConfig"))
+
+                if (Path.cwd() / "config/config.json").exists():
+                    (Path.cwd() / "config/config.json").rename(
+                        Path.cwd() / "config/Config.json"
+                    )
+                await self.connect(self._resolve_config_path("Config"))
+
+                plan_dict = {"固定": "Fixed"}
+
+                if (Path.cwd() / "config/MaaPlanConfig").exists():
+                    for MaaPlanConfig in (
+                        Path.cwd() / "config/MaaPlanConfig"
+                    ).iterdir():
+                        if (
+                            MaaPlanConfig.is_dir()
+                            and (MaaPlanConfig / "config.json").exists()
+                        ):
+                            maa_plan_config = json.loads(
+                                (MaaPlanConfig / "config.json").read_text(
+                                    encoding="utf-8"
+                                )
+                            )
+                            uid, pc = await self.add_plan("MaaPlan")
+                            plan_dict[MaaPlanConfig.name] = str(uid)
+
+                            await pc.load(maa_plan_config)
+
+                script_dict: Dict[str, Optional[str]] = {"禁用": None}
+
+                if (Path.cwd() / "config/MaaConfig").exists():
+                    for MaaConfig in (Path.cwd() / "config/MaaConfig").iterdir():
+                        if MaaConfig.is_dir():
+                            maa_config = json.loads(
+                                (MaaConfig / "config.json").read_text(encoding="utf-8")
+                            )
+                            maa_config["Info"] = maa_config["MaaSet"]
+                            maa_config["Run"] = maa_config["RunSet"]
+
+                            uid, sc = await self.add_script("MAA")
+                            script_dict[MaaConfig.name] = str(uid)
+                            await sc.load(maa_config)
+
+                            if (MaaConfig / "Default/gui.json").exists():
+                                (Path.cwd() / f"data/{uid}/Default/ConfigFile").mkdir(
+                                    parents=True, exist_ok=True
+                                )
+                                shutil.copy(
+                                    MaaConfig / "Default/gui.json",
+                                    Path.cwd()
+                                    / f"data/{uid}/Default/ConfigFile/gui.json",
+                                )
+
+                            for user in (MaaConfig / "UserData").iterdir():
+                                if user.is_dir() and (user / "config.json").exists():
+                                    user_config = json.loads(
+                                        (user / "config.json").read_text(
+                                            encoding="utf-8"
+                                        )
+                                    )
+
+                                    user_config["Info"]["StageMode"] = plan_dict.get(
+                                        user_config["Info"]["StageMode"], "Fixed"
+                                    )
+                                    user_config["Info"]["Password"] = ""
+
+                                    user_uid, uc = await self.add_user(str(uid))
+                                    await uc.load(user_config)
+
+                                    if (user / "Routine/gui.json").exists():
+                                        (
+                                            Path.cwd()
+                                            / f"data/{uid}/{user_uid}/ConfigFile"
+                                        ).mkdir(parents=True, exist_ok=True)
+                                        shutil.copy(
+                                            user / "Routine/gui.json",
+                                            Path.cwd()
+                                            / f"data/{uid}/{user_uid}/ConfigFile/gui.json",
+                                        )
+                                    if (
+                                        user / "Infrastructure/infrastructure.json"
+                                    ).exists():
+                                        (
+                                            Path.cwd()
+                                            / f"data/{uid}/{user_uid}/Infrastructure"
+                                        ).mkdir(parents=True, exist_ok=True)
+                                        shutil.copy(
+                                            user / "Infrastructure/infrastructure.json",
+                                            Path.cwd()
+                                            / f"data/{uid}/{user_uid}/Infrastructure/infrastructure.json",
+                                        )
+
+                if (Path.cwd() / "config/GeneralConfig").exists():
+                    for GeneralConfig in (
+                        Path.cwd() / "config/GeneralConfig"
+                    ).iterdir():
+                        if GeneralConfig.is_dir():
+                            general_config = json.loads(
+                                (GeneralConfig / "config.json").read_text(
+                                    encoding="utf-8"
+                                )
+                            )
+                            general_config["Info"] = {
+                                "Name": general_config["Script"]["Name"],
+                                "RootPath": general_config["Script"]["RootPath"],
+                            }
+
+                            general_config["Script"]["ConfigPathMode"] = (
+                                "File"
+                                if "所有文件"
+                                in general_config["Script"]["ConfigPathMode"]
+                                else "Folder"
+                            )
+
+                            uid, sc = await self.add_script("General")
+                            script_dict[GeneralConfig.name] = str(uid)
+                            await sc.load(general_config)
+
+                            for user in (GeneralConfig / "SubData").iterdir():
+                                if user.is_dir() and (user / "config.json").exists():
+                                    user_config = json.loads(
+                                        (user / "config.json").read_text(
+                                            encoding="utf-8"
+                                        )
+                                    )
+
+                                    user_uid, uc = await self.add_user(str(uid))
+                                    await uc.load(user_config)
+
+                                    if (user / "ConfigFiles").exists():
+                                        (Path.cwd() / f"data/{uid}/{user_uid}").mkdir(
+                                            parents=True, exist_ok=True
+                                        )
+                                        shutil.move(
+                                            user / "ConfigFiles",
+                                            Path.cwd()
+                                            / f"data/{uid}/{user_uid}/ConfigFile",
+                                        )
+
+                if (Path.cwd() / "config/QueueConfig").exists():
+                    for QueueConfig in (Path.cwd() / "config/QueueConfig").glob(
+                        "*.json"
+                    ):
+                        queue_config = json.loads(
+                            QueueConfig.read_text(encoding="utf-8")
+                        )
+
+                        uid, qc = await self.add_queue()
+
+                        queue_config["Info"] = queue_config["QueueSet"]
+                        await qc.load(queue_config)
+
+                        for i in range(10):
+                            _, item = await self.add_queue_item(str(uid))
+                            _, time = await self.add_time_set(str(uid))
+
+                            await time.load(
+                                {
+                                    "Info": {
+                                        "Enabled": queue_config["Time"][f"Enabled_{i}"],
+                                        "Time": queue_config["Time"][f"Set_{i}"],
+                                    }
+                                }
+                            )
+                            await item.load(
+                                {
+                                    "Info": {
+                                        "ScriptId": script_dict.get(
+                                            queue_config["Queue"][f"Script_{i}"], "-"
+                                        )
+                                    }
+                                }
+                            )
+
+                if (Path.cwd() / "config/QueueConfig").exists():
+                    shutil.rmtree(Path.cwd() / "config/QueueConfig")
+                if (Path.cwd() / "config/MaaPlanConfig").exists():
+                    shutil.rmtree(Path.cwd() / "config/MaaPlanConfig")
+                if (Path.cwd() / "config/MaaConfig").exists():
+                    shutil.rmtree(Path.cwd() / "config/MaaConfig")
+                if (Path.cwd() / "config/GeneralConfig").exists():
+                    shutil.rmtree(Path.cwd() / "config/GeneralConfig")
+                if (Path.cwd() / "data/gameid.txt").exists():
+                    (Path.cwd() / "data/gameid.txt").unlink()
+                if (Path.cwd() / "data/key").exists():
+                    shutil.rmtree(Path.cwd() / "data/key")
+
+                cur.execute("DELETE FROM version WHERE v = ?", ("v1.8",))
+                cur.execute("INSERT INTO version VALUES(?)", ("v1.9",))
+                db.commit()
+            # v1.9-->v1.10
+            if version[0][0] == "v1.9" or if_streaming:
+                logger.info(
+                    "数据文件版本更新: v1.9-->v1.10",
+                )
+                if_streaming = True
+
+                global_config_path = self._resolve_config_path("Config")
+                if global_config_path.exists():
+                    data = self._read_mapping_config(global_config_path)
+                    data["Data"]["LastStageUpdated"] = ""
+                    data["Data"]["Stage"] = "{ }"
+                    data["Function"]["IfBlockAd"] = data["Function"].get(
+                        "IfSkipMumuSplashAds", False
+                    )
+                    self._write_mapping_config(global_config_path, data)
+
+                cur.execute("DELETE FROM version WHERE v = ?", ("v1.9",))
+                cur.execute("INSERT INTO version VALUES(?)", ("v1.10",))
+                db.commit()
+            # v1.10-->v1.11
+            if version[0][0] == "v1.10" or if_streaming:
+                logger.info(
+                    "数据文件版本更新: v1.10-->v1.11",
+                )
+                if_streaming = True
+
+                script_config_path = self._resolve_config_path("ScriptConfig")
+                if script_config_path.exists():
+                    data = script_config_path.read_text(encoding="utf-8")
+                    data = data.replace("IfWakeUp", "IfStartUp")
+                    data = data.replace("IfAutoRoguelike", "IfRoguelike")
+                    data = data.replace("IfBase", "IfInfrast")
+                    data = data.replace("IfCombat", "IfFight")
+                    data = data.replace("IfMission", "IfAward")
+                    data = data.replace("IfRecruiting", "IfRecruit")
+                    script_config_path.write_text(data, encoding="utf-8")
+
+                cur.execute("DELETE FROM version WHERE v = ?", ("v1.10",))
+                cur.execute("INSERT INTO version VALUES(?)", ("v1.11",))
+                db.commit()
+
+            cur.close()
+            db.close()
+            logger.success("数据文件版本更新完成")
+
+    async def send_json(self, data: dict[str, Any]) -> None:
+        """通过WebSocket发送JSON数据"""
+        if Config.websocket is None:
+            logger.warning("WebSocket 未连接")
+        else:
+            await Config.websocket.send_json(data)
+
+    async def send_websocket_message(
+        self,
+        id: str,
+        type: Literal["Update", "Message", "Info", "Signal"],
+        data: Dict[str, Any],
+    ) -> None:
+        """通过WebSocket发送消息"""
+        if Config.websocket is None:
+            logger.warning("WebSocket 未连接")
+        else:
+            await Config.websocket.send_json(
+                WebSocketMessage(id=id, type=type, data=data).model_dump()
+            )
+
+    async def get_git_version(self) -> tuple[bool, str, str]:
+        """获取Git版本信息，如果Git不可用则返回默认值"""
+
+        def _get_git_info():
+            if self.repo is None:
+                logger.warning("Git仓库不可用，返回默认版本信息")
+                return False, "unknown", "unknown"
+
+            # 获取当前 commit
+            current_commit = self.repo.head.commit
+            # 获取 commit 哈希
+            commit_hash = current_commit.hexsha
+            # 获取 commit 时间
+            commit_time = datetime.fromtimestamp(current_commit.committed_date)
+
+            # 检查是否为最新 commit
+            try:
+                # 获取远程分支的最新 commit
+                origin = self.repo.remotes.origin
+                origin.fetch()  # 拉取最新信息
+                remote_commit = self.repo.commit(
+                    f"origin/{self.repo.active_branch.name}"
+                )
+                is_latest = bool(current_commit.hexsha == remote_commit.hexsha)
+            except (ValueError, OSError) as e:
+                logger.warning(f"无法获取远程分支信息: {e}")
+                is_latest = False
+
+            return is_latest, commit_hash, commit_time.strftime("%Y-%m-%d %H:%M:%S")
+
+        # 在线程池中执行 Git 操作
+        is_latest, commit_hash, commit_time = await self.loop.run_in_executor(
+            None, _get_git_info
+        )
+        return is_latest, commit_hash, commit_time
+
+    async def add_script(
+        self,
+        script: Literal["MAA", "SRC", "General", "MaaEnd"],
+        script_id: str | None = None,
+    ) -> tuple[uuid.UUID, Any]:
+        """添加脚本配置"""
+
+        logger.info(f"添加脚本配置: {script}, 从 {script_id} 复制")
+
+        script_class_map: dict[
+            Literal["MAA", "SRC", "General", "MaaEnd"], ScriptConfigClass
+        ] = {
+            "MAA": MaaConfig,
+            "SRC": SrcConfig,
+            "General": GeneralConfig,
+            "MaaEnd": MaaEndConfig,
+        }
+        script_class = script_class_map[script]
+
+        if script_id is None:
+            return await self.ScriptConfig.add(script_class)
+        else:
+            script_uid = uuid.UUID(script_id)
+
+            if type(self.ScriptConfig[script_uid]) is not script_class:
+                raise TypeError(f"脚本配置类型不匹配: {script_id} {script}")
+
+            new_uid, new_config = await self.ScriptConfig.add(script_class)
+
+            await new_config.load(
+                await self.ScriptConfig[script_uid].toDict(regenerate_uuids=True)
+            )
+
+            # 复制用户数据
+            if (Path.cwd() / f"data/{script_id}").exists():
+                shutil.copytree(
+                    Path.cwd() / f"data/{script_id}",
+                    Path.cwd() / f"data/{new_uid}",
+                    dirs_exist_ok=True,
+                )
+                for old_user, new_user in zip(
+                    self.ScriptConfig[script_uid].UserData.keys(),
+                    new_config.UserData.keys(),
+                ):
+                    if (Path.cwd() / f"data/{new_uid}/{old_user}").exists():
+                        (Path.cwd() / f"data/{new_uid}/{old_user}").rename(
+                            Path.cwd() / f"data/{new_uid}/{new_user}"
+                        )
+
+            return new_uid, new_config
+
+    async def get_script(
+        self, script_id: str | None
+    ) -> tuple[list[dict[str, str]], dict[str, Any]]:
+        """获取脚本配置"""
+
+        logger.info(f"获取脚本配置: {script_id}")
+
+        if script_id is None:
+            # 获取所有脚本配置
+            data = await self.ScriptConfig.toDict()
+        else:
+            # 获取指定脚本配置
+            data = await self.ScriptConfig.get(uuid.UUID(script_id))
+
+        index = data.pop("instances", [])
+        return list(index), data
+
+    async def update_script(
+        self, script_id: str, data: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """更新脚本配置"""
+
+        logger.info(f"更新脚本配置: {script_id}")
+
+        uid = uuid.UUID(script_id)
+
+        if self.ScriptConfig[uid].is_locked:
+            raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
+
+        await self.ScriptConfig[uid].set_many(data)
+
+    async def del_script(self, script_id: str) -> None:
+        """删除脚本配置"""
+
+        logger.info(f"删除脚本配置: {script_id}")
+
+        uid = uuid.UUID(script_id)
+
+        if self.ScriptConfig[uid].is_locked:
+            raise RuntimeError(f"脚本 {script_id} 正在运行, 无法删除")
+
+        await self.ScriptConfig.remove(uid)
+        if (Path.cwd() / f"data/{uid}").exists():
+            shutil.rmtree(Path.cwd() / f"data/{uid}")
+
+    async def reorder_script(self, index_list: list[str]) -> None:
+        """重新排序脚本"""
+
+        logger.info(f"重新排序脚本: {index_list}")
+
+        await self.ScriptConfig.setOrder([uuid.UUID(_) for _ in index_list])
+
+    async def import_script_from_file(self, script_id: str, jsonFile: str) -> None:
+        """从文件加载脚本配置"""
+
+        logger.info(f"从文件加载脚本配置: {script_id} - {jsonFile}")
+        uid = uuid.UUID(script_id)
+        file_path = Path(jsonFile)
+
+        if uid not in self.ScriptConfig:
+            logger.error(f"{script_id} 不存在")
+            raise KeyError(f"脚本 {script_id} 不存在")
+        if not isinstance(self.ScriptConfig[uid], GeneralConfig):
+            logger.error(f"{script_id} 不是通用脚本配置")
+            raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
+        if not Path(file_path).exists():
+            logger.error(f"文件不存在: {file_path}")
+            raise FileNotFoundError(f"文件不存在: {file_path}")
+
+        data = json.loads(file_path.read_text(encoding="utf-8"))
+        await self.ScriptConfig[uid].load(data)
+
+        logger.success(f"{script_id} 配置加载成功")
+
+    async def export_script_to_file(self, script_id: str, jsonFile: str):
+        """导出脚本配置到文件"""
+
+        logger.info(f"导出配置到文件: {script_id} - {jsonFile}")
+
+        uid = uuid.UUID(script_id)
+        file_path = Path(jsonFile)
+
+        if uid not in self.ScriptConfig:
+            logger.error(f"{script_id} 不存在")
+            raise KeyError(f"脚本 {script_id} 不存在")
+        if not isinstance(self.ScriptConfig[uid], GeneralConfig):
+            logger.error(f"{script_id} 不是通用脚本配置")
+            raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
+
+        temp = await self.ScriptConfig[uid].toDict(if_decrypt=False)
+        temp.pop("sub_configs_info", None)
+        temp = await self.remove_privacy_info(temp, Path(file_path).stem)
+
+        file_path.write_text(
+            json.dumps(temp, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
+
+        logger.success(f"{script_id} 配置导出成功")
+
+    async def import_script_from_web(self, script_id: str, url: str):
+        """从「AUTO-MAS 配置分享中心」导入配置"""
+
+        logger.info(f"从网络加载脚本配置: {script_id} - {url}")
+        uid = uuid.UUID(script_id)
+
+        if uid not in self.ScriptConfig:
+            logger.error(f"{script_id} 不存在")
+            raise KeyError(f"脚本 {script_id} 不存在")
+        if not isinstance(self.ScriptConfig[uid], GeneralConfig):
+            logger.error(f"{script_id} 不是通用脚本配置")
+            raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
+
+        # 使用 httpx 异步请求
+        async with httpx.AsyncClient(
+            proxy=Config.proxy, follow_redirects=True
+        ) as client:
+            try:
+                response = await client.get(url)
+                if response.status_code == 200:
+                    data = response.json()
+                else:
+                    logger.warning(
+                        f"无法从 AUTO-MAS 服务器获取配置内容: {response.text}"
+                    )
+                    raise ConnectionError(
+                        f"无法从 AUTO-MAS 服务器获取配置内容: {response.status_code}"
+                    )
+            except httpx.RequestError as e:
+                logger.warning(f"无法从 AUTO-MAS 服务器获取配置内容: {e}")
+                raise ConnectionError(f"无法从 AUTO-MAS 服务器获取配置内容: {e}")
+
+        if data.get("code", 200) == 500:
+            logger.error(f"从 AUTO-MAS 服务器获取配置内容失败: {data.get('message')}")
+            raise ConnectionError(
+                f"从 AUTO-MAS 服务器获取配置内容失败: {data.get('message')}"
+            )
+
+        await self.ScriptConfig[uid].load(data)
+
+        logger.success(f"{script_id} 配置加载成功")
+
+    async def upload_script_to_web(
+        self, script_id: str, config_name: str, author: str, description: str
+    ):
+        """上传配置到「AUTO-MAS 配置分享中心」"""
+
+        logger.info(f"上传配置到网络: {script_id} - {config_name} - {author}")
+
+        uid = uuid.UUID(script_id)
+
+        if uid not in self.ScriptConfig:
+            logger.error(f"{script_id} 不存在")
+            raise KeyError(f"脚本 {script_id} 不存在")
+        if not isinstance(self.ScriptConfig[uid], GeneralConfig):
+            logger.error(f"{script_id} 不是通用脚本配置")
+            raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
+
+        temp = await self.ScriptConfig[uid].toDict(if_decrypt=False)
+        temp.pop("sub_configs_info", None)
+        temp = await self.remove_privacy_info(temp, config_name)
+
+        files = {
+            "file": (
+                f"{config_name}&&{author}&&{description}&&{int(datetime.now(tz=UTC8).timestamp() * 1000)}.json",
+                json.dumps(temp, ensure_ascii=False),
+                "application/json",
+            )
+        }
+        data = {"username": author, "description": description}
+
+        async with httpx.AsyncClient(
+            proxy=Config.proxy, follow_redirects=True
+        ) as client:
+            try:
+                response = await client.post(
+                    "https://share.auto-mas.top/api/upload/share",
+                    files=files,
+                    data=data,
+                )
+
+                if response.status_code == 200:
+                    logger.success("配置上传成功")
+                else:
+                    logger.error(f"无法上传配置到 AUTO-MAS 服务器: {response.text}")
+                    raise ConnectionError(
+                        f"无法上传配置到 AUTO-MAS 服务器: {response.status_code} - {response.text}"
+                    )
+            except httpx.RequestError as e:
+                logger.error(f"无法上传配置到 AUTO-MAS 服务器: {e}")
+                raise ConnectionError(f"无法上传配置到 AUTO-MAS 服务器: {e}")
+
+    async def remove_privacy_info(
+        self, confg: dict[str, Any], name: str
+    ) -> dict[str, Any]:
+        """移除配置中可能存在的隐私信息"""
+
+        confg["info"]["name"] = name
+        for path in ["script_path", "config_path", "log_path", "track_process_exe"]:
+            if Path(confg["script"][path]).is_relative_to(
+                Path(confg["info"]["root_path"])
+            ):
+                confg["script"][path] = str(
+                    Path(r"C:/脚本根目录")
+                    / Path(confg["script"][path]).relative_to(
+                        Path(confg["info"]["root_path"])
+                    )
+                )
+            if sys.platform == "win32" and Path(confg["script"][path]).is_relative_to(
+                Path(os.environ["APPDATA"])
+            ):
+                confg["script"][path] = (
+                    f"%APPDATA%/{Path(confg['script'][path]).relative_to(Path(os.environ['APPDATA']))}"
+                )
+        confg["info"]["root_path"] = str(Path(r"C:/脚本根目录"))
+
+        return confg
+
+    async def get_user(
+        self, script_id: str, user_id: Optional[str]
+    ) -> tuple[list[dict[str, str]], dict[str, Any]]:
+        """获取用户配置"""
+
+        logger.info(f"获取用户配置: {script_id} - {user_id}")
+
+        uid = uuid.UUID(script_id)
+
+        if user_id is None:
+            # 获取全部用户配置
+            data = await self.ScriptConfig[uid].UserData.toDict()
+        else:
+            # 获取指定用户配置
+            data = await self.ScriptConfig[uid].UserData.get(uuid.UUID(user_id))
+
+        index = data.pop("instances", [])
+        return list(index), data
+
+    async def add_user(self, script_id: str) -> tuple[uuid.UUID, Any]:
+        """添加用户配置"""
+
+        logger.info(f"{script_id} 添加用户配置")
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+
+        # 根据脚本类型选择添加对应用户配置
+        if isinstance(script_config, MaaConfig):
+            uid, config = await script_config.UserData.add(MaaUserConfig)
+        elif isinstance(script_config, SrcConfig):
+            uid, config = await script_config.UserData.add(SrcUserConfig)
+        elif isinstance(script_config, GeneralConfig):
+            uid, config = await script_config.UserData.add(GeneralUserConfig)
+        else:
+            uid, config = await script_config.UserData.add(MaaEndUserConfig)
+
+        return uid, config
+
+    async def update_user(
+        self, script_id: str, user_id: str, data: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """更新用户配置"""
+
+        logger.info(f"{script_id} 更新用户配置: {user_id}")
+
+        script_uid = uuid.UUID(script_id)
+        user_uid = uuid.UUID(user_id)
+
+        await self.ScriptConfig[script_uid].UserData[user_uid].set_many(data)
+
+    async def del_user(self, script_id: str, user_id: str) -> None:
+        """删除用户配置"""
+
+        logger.info(f"{script_id} 删除用户配置: {user_id}")
+
+        script_uid = uuid.UUID(script_id)
+        user_uid = uuid.UUID(user_id)
+
+        await self.ScriptConfig[script_uid].UserData.remove(user_uid)
+        if (Path.cwd() / f"data/{script_id}/{user_id}").exists():
+            shutil.rmtree(Path.cwd() / f"data/{script_id}/{user_id}")
+
+    async def reorder_user(self, script_id: str, index_list: list[str]) -> None:
+        """重新排序用户"""
+
+        logger.info(f"{script_id} 重新排序用户: {index_list}")
+
+        script_uid = uuid.UUID(script_id)
+
+        await self.ScriptConfig[script_uid].UserData.setOrder(
+            list(map(uuid.UUID, index_list))
+        )
+
+    async def set_infrastructure(
+        self, script_id: str, user_id: str, jsonFile: str
+    ) -> None:
+        logger.info(f"{script_id} - {user_id} 设置基建配置: {jsonFile}")
+
+        script_uid = uuid.UUID(script_id)
+        user_uid = uuid.UUID(user_id)
+        json_path = Path(jsonFile)
+
+        if not json_path.exists():
+            raise FileNotFoundError(f"文件未找到: {json_path}")
+
+        if not isinstance(self.ScriptConfig[script_uid], MaaConfig):
+            raise TypeError(f"脚本 {script_id} 不是 MAA 脚本, 无法设置基建配置")
+
+        infrast_data = json.loads(json_path.read_text(encoding="utf-8"))
+
+        if len(infrast_data.get("plans", [])) == 0:
+            raise ValueError("未找到有效的基建排班信息")
+
+        # 如果标题为默认标题, 则使用文件名作为标题
+        if infrast_data.get("title", "文件标题") == "文件标题":
+            infrast_data["title"] = json_path.stem
+
+        await (
+            self.ScriptConfig[script_uid]
+            .UserData[user_uid]
+            .set("Data", "CustomInfrast", json.dumps(infrast_data, ensure_ascii=False))
+        )
+
+    async def get_user_combox_infrastructure(
+        self, script_id: str, user_id: str
+    ) -> list[dict[str, str]]:
+        logger.info(f"获取用户自定义基建排班下拉框信息: {script_id} - {user_id}")
+
+        script_uid = uuid.UUID(script_id)
+        user_uid = uuid.UUID(user_id)
+
+        script_config = self.ScriptConfig[script_uid]
+
+        # 根据脚本类型选择添加对应用户配置
+        if not isinstance(script_config, MaaConfig):
+            raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
+
+        logger.info("开始获取用户自定义基建排班下拉框信息")
+
+        data: list[dict[str, str]] = []
+        for i, plan in enumerate(
+            json.loads(
+                script_config.UserData[user_uid].get("Data", "CustomInfrast")
+            ).get("plans", [])
+        ):
+            plan_mapping = cast(dict[str, Any], plan)
+            data.append(
+                {"label": str(plan_mapping.get("name", f"排班 {i+1}")), "value": str(i)}
+            )
+
+        logger.success("用户自定义基建排班下拉框信息获取成功")
+
+        return data
+
+    async def add_plan(
+        self, script: Literal["MaaPlan"]
+    ) -> tuple[uuid.UUID, MaaPlanConfig]:
+        """添加计划表"""
+
+        logger.info(f"添加计划表: {script}")
+
+        return await self.PlanConfig.add(MaaPlanConfig)
+
+    async def get_plan(
+        self, plan_id: Optional[str]
+    ) -> tuple[list[dict[str, str]], dict[str, Any]]:
+        """获取计划表配置"""
+
+        logger.info(f"获取计划表配置: {plan_id}")
+
+        if plan_id is None:
+            data = await self.PlanConfig.toDict()
+        else:
+            data = await self.PlanConfig.get(uuid.UUID(plan_id))
+
+        index = data.pop("instances", [])
+        return list(index), data
+
+    async def update_plan(self, plan_id: str, data: Dict[str, Dict[str, Any]]) -> None:
+        """更新计划表配置"""
+
+        logger.info(f"更新计划表配置: {plan_id}")
+
+        plan_uid = uuid.UUID(plan_id)
+
+        await self.PlanConfig[plan_uid].set_many(data)
+
+    async def del_plan(self, plan_id: str) -> None:
+        """删除计划表配置"""
+
+        logger.info(f"删除计划表配置: {plan_id}")
+
+        plan_uid = uuid.UUID(plan_id)
+
+        await self.PlanConfig.remove(plan_uid)
+
+    async def reorder_plan(self, index_list: list[str]) -> None:
+        """重新排序计划表"""
+
+        logger.info(f"重新排序计划表: {index_list}")
+
+        await self.PlanConfig.setOrder(list(map(uuid.UUID, index_list)))
+
+    async def get_emulator(
+        self, emulator_id: Optional[str]
+    ) -> tuple[list[dict[str, str]], dict[str, Any]]:
+        """获取模拟器配置"""
+        logger.info(f"获取全局模拟器设置: {emulator_id}")
+
+        if emulator_id is None:
+            data = await self.EmulatorConfig.toDict()
+        else:
+            data = await self.EmulatorConfig.get(uuid.UUID(emulator_id))
+
+        index = data.pop("instances", [])
+        return list(index), data
+
+    async def add_emulator(self) -> tuple[uuid.UUID, EmulatorConfig]:
+        """添加模拟器配置"""
+        logger.info("添加全局模拟器配置")
+
+        uid, config = await self.EmulatorConfig.add(EmulatorConfig)
+        return uid, config
+
+    async def update_emulator(
+        self, emulator_id: str, data: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """更新模拟器配置"""
+
+        emulator_uid = uuid.UUID(emulator_id)
+
+        logger.info(f"更新模拟器配置: {emulator_id}")
+
+        await self.EmulatorConfig[emulator_uid].set_many(data)
+
+    async def del_emulator(self, emulator_id: str) -> None:
+        """删除模拟器配置"""
+
+        emulator_uid = uuid.UUID(emulator_id)
+
+        logger.info(f"删除全局模拟器配置: {emulator_id}")
+
+        await self.EmulatorConfig.remove(emulator_uid)
+
+    async def reorder_emulator(self, index_list: list[str]) -> None:
+        """重新排序模拟器"""
+
+        logger.info(f"重新排序模拟器: {index_list}")
+
+        await self.EmulatorConfig.setOrder(list(map(uuid.UUID, index_list)))
+
+    async def add_queue(self) -> tuple[uuid.UUID, QueueConfig]:
+        """添加调度队列"""
+
+        logger.info("添加调度队列")
+
+        return await self.QueueConfig.add(QueueConfig)
+
+    async def get_queue(
+        self, queue_id: Optional[str]
+    ) -> tuple[list[dict[str, str]], dict[str, Any]]:
+        """获取调度队列配置"""
+
+        logger.info(f"获取调度队列配置: {queue_id}")
+
+        if queue_id is None:
+            data = await self.QueueConfig.toDict()
+        else:
+            data = await self.QueueConfig.get(uuid.UUID(queue_id))
+
+        index = data.pop("instances", [])
+        return list(index), data
+
+    async def update_queue(
+        self, queue_id: str, data: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """更新调度队列配置"""
+
+        logger.info(f"更新调度队列配置: {queue_id}")
+
+        queue_uid = uuid.UUID(queue_id)
+
+        await self.QueueConfig[queue_uid].set_many(data)
+
+    async def del_queue(self, queue_id: str) -> None:
+        """删除调度队列配置"""
+
+        logger.info(f"删除调度队列配置: {queue_id}")
+
+        await self.QueueConfig.remove(uuid.UUID(queue_id))
+
+    async def reorder_queue(self, index_list: list[str]) -> None:
+        """重新排序调度队列"""
+
+        logger.info(f"重新排序调度队列: {index_list}")
+
+        await self.QueueConfig.setOrder(list(map(uuid.UUID, index_list)))
+
+    async def get_time_set(
+        self, queue_id: str, time_set_id: Optional[str]
+    ) -> tuple[list[dict[str, str]], dict[str, Any]]:
+        """获取时间设置配置"""
+
+        logger.info(f"获取队列的时间配置: {queue_id} - {time_set_id}")
+
+        queue_uid = uuid.UUID(queue_id)
+
+        if time_set_id is None:
+            data = await self.QueueConfig[queue_uid].TimeSet.toDict()
+        else:
+            data = await self.QueueConfig[queue_uid].TimeSet.get(uuid.UUID(time_set_id))
+
+        index = data.pop("instances", [])
+        return list(index), data
+
+    async def add_time_set(self, queue_id: str) -> tuple[uuid.UUID, TimeSet]:
+        """添加时间设置配置"""
+
+        logger.info(f"{queue_id} 添加时间设置配置")
+
+        queue_uid = uuid.UUID(queue_id)
+        uid, config = await self.QueueConfig[queue_uid].TimeSet.add(TimeSet)
+
+        return uid, config
+
+    async def update_time_set(
+        self, queue_id: str, time_set_id: str, data: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """更新时间设置配置"""
+
+        logger.info(f"{queue_id} 更新时间设置配置: {time_set_id}")
+
+        queue_uid = uuid.UUID(queue_id)
+        time_set_uid = uuid.UUID(time_set_id)
+
+        await self.QueueConfig[queue_uid].TimeSet[time_set_uid].set_many(data)
+
+    async def del_time_set(self, queue_id: str, time_set_id: str) -> None:
+        """删除时间设置配置"""
+
+        logger.info(f"{queue_id} 删除时间设置配置: {time_set_id}")
+
+        queue_uid = uuid.UUID(queue_id)
+        time_set_uid = uuid.UUID(time_set_id)
+
+        await self.QueueConfig[queue_uid].TimeSet.remove(time_set_uid)
+
+    async def reorder_time_set(self, queue_id: str, index_list: list[str]) -> None:
+        """重新排序时间设置"""
+
+        logger.info(f"{queue_id} 重新排序时间设置: {index_list}")
+
+        queue_uid = uuid.UUID(queue_id)
+
+        await self.QueueConfig[queue_uid].TimeSet.setOrder(
+            list(map(uuid.UUID, index_list))
+        )
+
+    async def get_queue_item(
+        self, queue_id: str, queue_item_id: Optional[str]
+    ) -> tuple[list[dict[str, str]], dict[str, Any]]:
+        """获取队列项配置"""
+
+        logger.info(f"获取队列的队列项配置: {queue_id} - {queue_item_id}")
+
+        queue_uid = uuid.UUID(queue_id)
+
+        if queue_item_id is None:
+            data = await self.QueueConfig[queue_uid].QueueItem.toDict()
+        else:
+            data = await self.QueueConfig[queue_uid].QueueItem.get(
+                uuid.UUID(queue_item_id)
+            )
+
+        index = data.pop("instances", [])
+        return list(index), data
+
+    async def add_queue_item(self, queue_id: str) -> tuple[uuid.UUID, QueueItem]:
+        """添加队列项配置"""
+
+        logger.info(f"{queue_id} 添加队列项配置")
+
+        queue_uid = uuid.UUID(queue_id)
+
+        uid, config = await self.QueueConfig[queue_uid].QueueItem.add(QueueItem)
+
+        return uid, config
+
+    async def update_queue_item(
+        self, queue_id: str, queue_item_id: str, data: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """更新队列项配置"""
+
+        logger.info(f"{queue_id} 更新队列项配置: {queue_item_id}")
+
+        queue_uid = uuid.UUID(queue_id)
+        queue_item_uid = uuid.UUID(queue_item_id)
+
+        await self.QueueConfig[queue_uid].QueueItem[queue_item_uid].set_many(data)
+
+    async def del_queue_item(self, queue_id: str, queue_item_id: str) -> None:
+        """删除队列项配置"""
+
+        logger.info(f"{queue_id} 删除队列项配置: {queue_item_id}")
+
+        queue_uid = uuid.UUID(queue_id)
+        queue_item_uid = uuid.UUID(queue_item_id)
+
+        await self.QueueConfig[queue_uid].QueueItem.remove(queue_item_uid)
+
+    async def reorder_queue_item(self, queue_id: str, index_list: list[str]) -> None:
+        """重新排序队列项"""
+
+        logger.info(f"{queue_id} 重新排序队列项: {index_list}")
+
+        queue_uid = uuid.UUID(queue_id)
+
+        await self.QueueConfig[queue_uid].QueueItem.setOrder(
+            list(map(uuid.UUID, index_list))
+        )
+
+    async def get_tools(self) -> Dict[str, Any]:
+        """获取工具设置"""
+
+        logger.debug("获取工具设置")
+
+        return await self.ToolsConfig.toDict()
+
+    async def update_tools(self, data: Dict[str, Dict[str, Any]]) -> None:
+        """更新工具设置"""
+
+        logger.info("更新工具设置")
+
+        await self.ToolsConfig.set_many(data)
+
+        logger.success("工具设置更新成功")
+
+    async def get_setting(self) -> Dict[str, Any]:
+        """获取全局设置"""
+
+        logger.info("获取全局设置")
+
+        return await self.toDict()
+
+    async def update_setting(self, data: Dict[str, Dict[str, Any]]) -> None:
+        """更新全局设置"""
+
+        logger.info("更新全局设置")
+
+        await self.set_many(data)
+
+        logger.success("全局设置更新成功")
+
+    async def get_webhook(
+        self,
+        script_id: Optional[str],
+        user_id: Optional[str],
+        webhook_id: Optional[str],
+    ) -> tuple[list[dict[str, str]], dict[str, Any]]:
+        """获取webhook配置"""
+
+        if script_id is None and user_id is None:
+            logger.info(f"获取全局webhook设置: {webhook_id}")
+
+            if webhook_id is None:
+                data = await self.Notify_CustomWebhooks.toDict()
+            else:
+                data = await self.Notify_CustomWebhooks.get(uuid.UUID(webhook_id))
+
+        else:
+            logger.info(f"获取webhook设置: {script_id} - {user_id} - {webhook_id}")
+
+            script_uid = uuid.UUID(script_id)
+            user_uid = uuid.UUID(user_id)
+
+            if webhook_id is None:
+                data = (
+                    await self.ScriptConfig[script_uid]
+                    .UserData[user_uid]
+                    .Notify_CustomWebhooks.toDict()
+                )
+            else:
+                data = (
+                    await self.ScriptConfig[script_uid]
+                    .UserData[user_uid]
+                    .Notify_CustomWebhooks.get(uuid.UUID(webhook_id))
+                )
+
+        index = data.pop("instances", [])
+        return list(index), data
+
+    async def add_webhook(
+        self, script_id: Optional[str], user_id: Optional[str]
+    ) -> tuple[uuid.UUID, Webhook]:
+        """添加webhook配置"""
+
+        if script_id is None and user_id is None:
+            logger.info("添加全局webhook配置")
+
+            uid, config = await self.Notify_CustomWebhooks.add(Webhook)
+            return uid, config
+
+        else:
+            logger.info(f"添加webhook配置: {script_id} - {user_id}")
+
+            script_uid = uuid.UUID(script_id)
+            user_uid = uuid.UUID(user_id)
+
+            uid, config = (
+                await self.ScriptConfig[script_uid]
+                .UserData[user_uid]
+                .Notify_CustomWebhooks.add(Webhook)
+            )
+            return uid, config
+
+    async def update_webhook(
+        self,
+        script_id: Optional[str],
+        user_id: Optional[str],
+        webhook_id: str,
+        data: Dict[str, Dict[str, Any]],
+    ) -> None:
+        """更新 webhook 配置"""
+
+        webhook_uid = uuid.UUID(webhook_id)
+
+        if script_id is None and user_id is None:
+            logger.info(f"更新 webhook 全局配置: {webhook_id}")
+
+            await self.Notify_CustomWebhooks[webhook_uid].set_many(data)
+
+        else:
+            logger.info(f"更新 webhook 配置: {script_id} - {user_id} - {webhook_id}")
+
+            script_uid = uuid.UUID(script_id)
+            user_uid = uuid.UUID(user_id)
+
+            await (
+                self.ScriptConfig[script_uid]
+                .UserData[user_uid]
+                .Notify_CustomWebhooks[webhook_uid]
+                .set_many(data)
+            )
+
+    async def del_webhook(
+        self, script_id: Optional[str], user_id: Optional[str], webhook_id: str
+    ) -> None:
+        """删除 webhook 配置"""
+
+        webhook_uid = uuid.UUID(webhook_id)
+
+        if script_id is None and user_id is None:
+            logger.info(f"删除全局 webhook 配置: {webhook_id}")
+
+            await self.Notify_CustomWebhooks.remove(webhook_uid)
+
+        else:
+            logger.info(f"删除 webhook 配置: {script_id} - {user_id} - {webhook_id}")
+
+            script_uid = uuid.UUID(script_id)
+            user_uid = uuid.UUID(user_id)
+
+            await (
+                self.ScriptConfig[script_uid]
+                .UserData[user_uid]
+                .Notify_CustomWebhooks.remove(webhook_uid)
+            )
+
+    async def reorder_webhook(
+        self, script_id: Optional[str], user_id: Optional[str], index_list: list[str]
+    ) -> None:
+        """重新排序 webhook"""
+
+        if script_id is None and user_id is None:
+            logger.info(f"重新排序全局 webhook: {index_list}")
+
+            await self.Notify_CustomWebhooks.setOrder(list(map(uuid.UUID, index_list)))
+
+        else:
+            logger.info(f"重新排序 webhook: {script_id} - {user_id} - {index_list}")
+
+            script_uid = uuid.UUID(script_id)
+            user_uid = uuid.UUID(user_id)
+
+            await (
+                self.ScriptConfig[script_uid]
+                .UserData[user_uid]
+                .Notify_CustomWebhooks.setOrder(list(map(uuid.UUID, index_list)))
+            )
+
+    async def get_plugin(
+        self, plugin_id: Optional[str]
+    ) -> tuple[list[dict[str, str]], dict[str, Any]]:
+        """获取插件实例配置。"""
+
+        logger.info(f"获取插件实例配置: {plugin_id}")
+
+        if plugin_id is None:
+            data = await self.PluginConfig.toDict()
+        else:
+            data = await self.PluginConfig.get(uuid.UUID(plugin_id))
+
+        index = data.pop("instances", [])
+        return list(index), data
+
+    async def add_plugin(
+        self,
+        plugin_name: str,
+        name: Optional[str] = None,
+        enabled: bool = True,
+        config: Optional[dict[str, Any]] = None,
+    ) -> tuple[uuid.UUID, PluginInstanceConfig]:
+        """创建插件实例配置。"""
+
+        logger.info(f"创建插件实例配置: {plugin_name}")
+        uid, plugin_config = await self.PluginConfig.add(PluginInstanceConfig)
+
+        await plugin_config.set_many(
+            {
+                "Info": {
+                    "Plugin": plugin_name,
+                    "Id": uid.hex[:5],
+                    "Enabled": enabled,
+                    "Name": name or f"{plugin_name} 实例",
+                },
+                "Data": {
+                    "Config": json.dumps(config or {}, ensure_ascii=False),
+                },
+            }
+        )
+
+        return uid, plugin_config
+
+    async def update_plugin(
+        self,
+        plugin_id: str,
+        data: Dict[str, Dict[str, Any]],
+    ) -> None:
+        """更新插件实例配置。"""
+
+        logger.info(f"更新插件实例配置: {plugin_id}")
+        await self.PluginConfig[uuid.UUID(plugin_id)].set_many(data)
+
+    async def del_plugin(self, plugin_id: str) -> None:
+        """删除插件实例配置。"""
+
+        logger.info(f"删除插件实例配置: {plugin_id}")
+        await self.PluginConfig.remove(uuid.UUID(plugin_id))
+
+    async def reorder_plugin(self, index_list: list[str]) -> None:
+        """重排插件实例配置。"""
+
+        logger.info(f"重排插件实例配置: {index_list}")
+        await self.PluginConfig.setOrder(list(map(uuid.UUID, index_list)))
+
+    @property
+    def proxy(self) -> Optional[httpx.Proxy]:
+        """获取代理设置，返回适用于 httpx 的代理对象"""
+        proxy_addr = self.get("Update", "ProxyAddress")
+        if not proxy_addr:
+            return None
+
+        # 如果地址不包含协议，默认为 http
+        if not proxy_addr.startswith(("http://", "https://", "socks5://", "socks4://")):
+            proxy_addr = f"http://{proxy_addr}"
+
+        try:
+            return httpx.Proxy(proxy_addr)
+        except ValueError as e:
+            logger.warning(f"代理配置无效: {proxy_addr}, 错误: {e}")
+            return None
+
+    async def get_stage_info(
+        self,
+        type: Literal[
+            "User",
+            "Today",
+            "ALL",
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+            "Info",
+        ],
+    ) -> dict[str, Any] | list[dict[str, str]]:
+        """获取关卡信息"""
+
+        stage_cache = cast(dict[str, Any], json.loads(self.get("Data", "Stage")))
+        if stage_cache != {}:
+            task = asyncio.create_task(self.get_stage())
+            self.temp_task.append(task)
+            task.add_done_callback(
+                lambda t: self.temp_task.remove(t) if t in self.temp_task else None
+            )
+        else:
+            refreshed = await self.get_stage()
+            stage_cache = cast(
+                dict[str, Any], refreshed if refreshed is not None else {}
+            )
+
+        if type == "Info":
+            today = datetime.now(tz=UTC4).isoweekday()
+            res_stage_info: list[dict[str, Any]] = []
+            for stage in RESOURCE_STAGE_INFO:
+                days = stage.get("days")
+                if (
+                    isinstance(days, list)
+                    and today in days
+                    and stage["value"] in RESOURCE_STAGE_DROP_INFO
+                ):
+                    res_stage_info.append(RESOURCE_STAGE_DROP_INFO[stage["value"]])
+            return {
+                "Activity": stage_cache.get("Info", []),
+                "Resource": res_stage_info,
+            }
+        elif type == "User":
+            data = cast(list[dict[str, str]], stage_cache.get("ALL", []))
+            for combox in data:
+                combox["label"] = RESOURCE_STAGE_DATE_TEXT.get(
+                    combox["value"], combox["label"]
+                )
+            return data
+        elif type == "Today":
+            return cast(
+                list[dict[str, str]],
+                stage_cache.get(datetime.now(tz=UTC4).strftime("%A"), []),
+            )
+        else:
+            return cast(list[dict[str, str]], stage_cache.get(type, []))
+
+    async def get_proxy_overview(self) -> Dict[str, Any]:
+        """获取代理情况概览信息"""
+
+        logger.info("获取代理情况概览信息")
+
+        history_index = await self.search_history(
+            "DAILY", datetime.now(tz=UTC4).date(), datetime.now(tz=UTC4).date()
+        )
+        if datetime.now(tz=UTC4).strftime("%Y-%m-%d") not in history_index:
+            return {}
+        today_records = history_index[datetime.now(tz=UTC4).strftime("%Y-%m-%d")]
+        merged_list = await asyncio.gather(
+            *(self.merge_statistic_info(v) for v in today_records.values())
+        )
+        history_data = {
+            user: merged
+            for user, merged in zip(today_records.keys(), merged_list, strict=False)
+        }
+        overview: dict[str, dict[str, Any]] = {}
+        for user, data in history_data.items():
+            index_data = data.get("index", [])
+            if index_data:
+                last_proxy_date = max(
+                    datetime.strptime(_["date"], "%Y-%m-%d %H:%M:%S")
+                    for _ in index_data
+                ).strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                last_proxy_date = "暂无代理数据"
+            proxy_times = len(data.get("index", []))
+            error_info = data.get("error_info", {})
+            error_times = len(error_info)
+            overview[user] = {
+                "LastProxyDate": last_proxy_date,
+                "ProxyTimes": proxy_times,
+                "ErrorTimes": error_times,
+                "ErrorInfo": error_info,
+            }
+        return overview
+
+    async def get_stage(self) -> Optional[Dict[str, List[Dict[str, str]]]]:
+        """更新活动关卡信息"""
+
+        if datetime.now() - timedelta(hours=1) < datetime.strptime(
+            self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"
+        ):
+            logger.info("一小时内已进行过一次检查, 直接使用缓存的活动关卡信息")
+            return json.loads(self.get("Data", "Stage"))
+
+        logger.info("开始获取活动关卡信息")
+        try:
+            async with httpx.AsyncClient(
+                proxy=self.proxy, follow_redirects=True
+            ) as client:
+                response = await client.get(
+                    "https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivityV2.json",
+                    headers={"If-None-Match": self.get("Data", "StageETag")},
+                )
+
+                if response.status_code == 304:
+                    logger.info("关卡信息未更新，使用本地缓存的活动关卡信息")
+                    await self.set(
+                        "Data",
+                        "LastStageUpdated",
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    )
+                elif response.status_code == 200:
+                    logger.success("成功获取远端活动关卡信息")
+                    await self.set(
+                        "Data",
+                        "LastStageUpdated",
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    )
+                    await self.set(
+                        "Data",
+                        "StageETag",
+                        response.headers.get("ETag")
+                        or response.headers.get("etag")
+                        or "",
+                    )
+                    await self.set(
+                        "Data",
+                        "StageData",
+                        json.dumps(
+                            response.json()
+                            .get("Official", {})
+                            .get("sideStoryStage", {}),
+                            ensure_ascii=False,
+                        ),
+                    )
+                else:
+                    logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
+        except (httpx.HTTPError, ValueError, json.JSONDecodeError) as e:
+            logger.warning(f"无法从MAA服务器获取活动关卡信息: {e}")
+
+        return json.loads(self.get("Data", "Stage"))
+
+    async def get_script_combox(self):
+        """获取脚本下拉框信息"""
+
+        logger.info("开始获取脚本下拉框信息")
+        data = [{"label": "未选择", "value": "-"}]
+        for uid, script in self.ScriptConfig.items():
+            data.append(
+                {
+                    "label": f"{TYPE_BOOK[type(script).__name__]} - {script.get('Info', 'Name')}",
+                    "value": str(uid),
+                }
+            )
+        logger.success("脚本下拉框信息获取成功")
+
+        return data
+
+    async def get_task_combox(self):
+        """获取任务下拉框信息"""
+
+        logger.info("开始获取任务下拉框信息")
+        data = [{"label": "未选择", "value": None}]
+        for uid, queue in self.QueueConfig.items():
+            data.append(
+                {
+                    "label": f"队列 - {queue.get('Info', 'Name')}",
+                    "value": str(uid),
+                }
+            )
+        for uid, script in self.ScriptConfig.items():
+            if not script.is_locked:
+                data.append(
+                    {
+                        "label": f"脚本 - {TYPE_BOOK[type(script).__name__]} - {script.get('Info', 'Name')}",
+                        "value": str(uid),
+                    }
+                )
+        logger.success("任务下拉框信息获取成功")
+
+        return data
+
+    async def get_plan_combox(self):
+        """获取计划下拉框信息"""
+
+        logger.info("开始获取计划下拉框信息")
+        data = [{"label": "固定", "value": "Fixed"}]
+        for uid, plan in self.PlanConfig.items():
+            data.append({"label": plan.get("Info", "Name"), "value": str(uid)})
+        logger.success("计划下拉框信息获取成功")
+
+        return data
+
+    async def get_emulator_combox(self):
+        """获取模拟器下拉框信息"""
+
+        logger.info("开始获取模拟器下拉框信息")
+        data = [{"label": "未选择", "value": "-"}]
+        for uid, emulator in self.EmulatorConfig.items():
+            data.append({"label": emulator.get("Info", "Name"), "value": str(uid)})
+        logger.success("模拟器下拉框信息获取成功")
+        return data
+
+    async def get_emulator_devices_combox(
+        self, emulator_id: str
+    ) -> list[dict[str, str]]:
+        """获取模拟器多开实例下拉框信息"""
+
+        logger.info("开始获取模拟器下拉框信息")
+
+        if self.EmulatorConfig[uuid.UUID(emulator_id)].get("Info", "Type") == "general":
+            logger.info("通用模拟器不支持扫描多开实例, 返回空列表")
+            return []
+
+        data: list[dict[str, str]] = [{"label": "未选择", "value": "-"}]
+
+        from ..emulator_manager import EmulatorManager
+
+        for index, device in (
+            await (await EmulatorManager.get_emulator_instance(emulator_id)).getInfo(
+                None
+            )
+        ).items():
+            data.append({"label": device.title, "value": index})
+
+        logger.success("模拟器下拉框信息获取成功")
+
+        return data
+
+    async def get_notice(self) -> tuple[bool, Dict[str, str]]:
+        """获取公告信息"""
+
+        if datetime.now() - timedelta(hours=1) < datetime.strptime(
+            self.get("Data", "LastNoticeUpdated"), "%Y-%m-%d %H:%M:%S"
+        ):
+            logger.info("一小时内已进行过一次检查, 直接使用缓存的公告信息")
+            return False, json.loads(self.get("Data", "Notice")).get("notice_dict", {})
+
+        logger.info("开始从 AUTO-MAS 服务器获取公告信息")
+        try:
+            async with httpx.AsyncClient(
+                proxy=self.proxy, follow_redirects=True
+            ) as client:
+                response = await client.get(
+                    "https://api.auto-mas.top/file/Server/notice.json",
+                    headers={"If-None-Match": self.get("Data", "NoticeETag")},
+                )
+                if response.status_code == 304:
+                    logger.info("公告未更新，使用本地缓存的公告信息")
+                    await self.set(
+                        "Data",
+                        "LastNoticeUpdated",
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    )
+                elif response.status_code == 200:
+                    logger.info("公告已更新，要求展示公告信息")
+                    await self.set(
+                        "Data",
+                        "LastNoticeUpdated",
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    )
+                    await self.set(
+                        "Data",
+                        "NoticeETag",
+                        response.headers.get("ETag")
+                        or response.headers.get("etag")
+                        or "",
+                    )
+                    await self.set("Data", "IfShowNotice", True)
+                    await self.set(
+                        "Data",
+                        "Notice",
+                        json.dumps(response.json(), ensure_ascii=False),
+                    )
+                else:
+                    logger.warning(
+                        f"无法从 AUTO-MAS 服务器获取公告信息:{response.text}"
+                    )
+        except (httpx.HTTPError, ValueError, json.JSONDecodeError) as e:
+            logger.warning(f"无法从 AUTO-MAS 服务器获取公告信息: {e}")
+
+        return self.get("Data", "IfShowNotice"), json.loads(
+            self.get("Data", "Notice")
+        ).get("notice_dict", {})
+
+    async def get_web_config(self):
+        """获取「AUTO-MAS 配置分享中心」配置"""
+
+        local_web_config = json.loads(self.get("Data", "WebConfig"))
+        if datetime.now() - timedelta(hours=1) < datetime.strptime(
+            self.get("Data", "LastWebConfigUpdated"), "%Y-%m-%d %H:%M:%S"
+        ):
+            logger.info("一小时内已进行过一次检查, 直接使用缓存的配置分享中心信息")
+            return local_web_config
+
+        logger.info("开始从 AUTO-MAS 服务器获取配置分享中心信息")
+
+        try:
+            async with httpx.AsyncClient(
+                proxy=self.proxy, follow_redirects=True
+            ) as client:
+                response = await client.get(
+                    "https://share.auto-mas.top/api/list/config/general"
+                )
+                if response.status_code == 200:
+                    remote_web_config = response.json()
+                else:
+                    logger.warning(
+                        f"无法从 AUTO-MAS 服务器获取配置分享中心信息:{response.text}"
+                    )
+                    remote_web_config = None
+        except (httpx.HTTPError, ValueError, json.JSONDecodeError) as e:
+            logger.warning(f"无法从 AUTO-MAS 服务器获取配置分享中心信息: {e}")
+            remote_web_config = None
+
+        if remote_web_config is None:
+            logger.warning("使用本地配置分享中心信息")
+            return local_web_config
+
+        await self.set(
+            "Data", "LastWebConfigUpdated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        )
+        await self.set(
+            "Data", "WebConfig", json.dumps(remote_web_config, ensure_ascii=False)
+        )
+
+        return remote_web_config
+
+    async def save_maa_log(
+        self, log_path: Path, logs: list[str], maa_result: str
+    ) -> bool:
+        """
+        保存MAA日志并生成对应统计数据
+
+        Args:
+            log_path (Path): 日志文件保存路径
+            logs (list): 日志列表
+            maa_result (str): MAA任务结果
+        Returns:
+            bool: 是否存在高资
+        """
+
+        logger.info(f"开始处理 MAA 日志, 日志长度: {len(logs)}, 日志标记: {maa_result}")
+
+        data: dict[str, Any] = {
+            "recruit_statistics": defaultdict(int),
+            "drop_statistics": defaultdict(dict),
+            "sanity": 0,
+            "sanity_full_at": "",
+            "maa_result": maa_result,
+        }
+
+        if_six_star = False
+
+        # 提取理智相关信息
+        for log_line in logs:
+            # 提取当前理智值：理智: 5/180
+            sanity_match = re.search(r"理智:\s*(\d+)/\d+", log_line)
+            if sanity_match:
+                data["sanity"] = int(sanity_match.group(1))
+
+            # 提取理智回满时间：理智将在 2025-09-26 18:57 回满。(17h 29m 后)
+            sanity_full_match = re.search(
+                r"(理智将在\s*\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s*回满。\(\d+h\s+\d+m\s+后\))",
+                log_line,
+            )
+            if sanity_full_match:
+                data["sanity_full_at"] = sanity_full_match.group(1)
+
+        # 公招统计（仅统计招募到的）
+        confirmed_recruit = False
+        current_star_level = None
+        i = 0
+        while i < len(logs):
+            if "公招识别结果:" in logs[i]:
+                current_star_level = None  # 每次识别公招时清空之前的星级
+                i += 1
+                while i < len(logs) and "Tags" not in logs[i]:  # 读取所有公招标签
+                    i += 1
+
+                if i < len(logs) and "Tags" in logs[i]:  # 识别星级
+                    star_match = re.search(r"(\d+)\s*★ Tags", logs[i])
+                    if star_match:
+                        current_star_level = f"{star_match.group(1)}★"
+                        if current_star_level == "6★":
+                            if_six_star = True
+
+            if "已确认招募" in logs[i]:  # 只有确认招募后才统计
+                confirmed_recruit = True
+
+            if confirmed_recruit and current_star_level:
+                data["recruit_statistics"][current_star_level] += 1
+                confirmed_recruit = False  # 重置, 等待下一次公招
+                current_star_level = None  # 清空已处理的星级
+
+            i += 1
+
+        # 掉落统计
+        # 存储所有关卡的掉落统计
+        all_stage_drops: dict[str, dict[str, int]] = {}
+
+        # 查找所有Fight任务的开始和结束位置
+        fight_tasks: list[tuple[int, int]] = []
+        for i, line in enumerate(logs):
+            if "开始任务: Fight" in line or "开始任务: 理智作战" in line:
+                # 查找对应的任务结束位置
+                end_index = -1
+                for j in range(i + 1, len(logs)):
+                    if "完成任务: Fight" in logs[j] or "完成任务: 理智作战" in logs[j]:
+                        end_index = j
+                        break
+                    # 如果遇到新的Fight任务开始, 则当前任务没有正常结束
+                    if j < len(logs) and (
+                        "开始任务: Fight" in logs[j] or "开始任务: 理智作战" in logs[j]
+                    ):
+                        break
+
+                # 如果找到了结束位置, 记录这个任务的范围
+                if end_index != -1:
+                    fight_tasks.append((i, end_index))
+
+        # 处理每个Fight任务
+        for start_idx, end_idx in fight_tasks:
+            # 提取当前任务的日志
+            task_logs = logs[start_idx : end_idx + 1]
+
+            # 查找任务中的最后一次掉落统计
+            last_drop_stats: dict[str, int] = {}
+            current_stage = None
+
+            for line in task_logs:
+                # 匹配掉落统计行, 如"1-7 掉落统计:"
+                drop_match = re.search(r"([\u4e00-\u9fffA-Za-z0-9\-]+) 掉落统计:", line)
+                if drop_match:
+                    # 发现新的掉落统计, 重置当前关卡的掉落数据
+                    current_stage = drop_match.group(1)
+                    last_drop_stats = {}
+                    continue
+
+                # 如果已经找到了关卡, 处理掉落物
+                if current_stage:
+                    item_match: List[str] = re.findall(
+                        r"^(?!\[)(\S+?)\s*:\s*([\d,]+[kK]?)(?:\s*\(\+[\d,]+[kK]?\))?",
+                        line,
+                        re.M,
+                    )
+                    for item, total in item_match:
+                        total = total.replace(",", "")
+                        if total.lower().endswith("k"):
+                            total = int(total[:-1]) * 1000
+                        else:
+                            total = int(total)
+
+                        # 黑名单
+                        if item not in [
+                            "当前次数",
+                            "理智",
+                            "最快截图耗时",
+                            "专精等级",
+                            "剩余时间",
+                        ]:
+                            last_drop_stats[item] = total
+
+            # 如果任务中有掉落统计, 更新总统计
+            if current_stage and last_drop_stats:
+                if current_stage not in all_stage_drops:
+                    all_stage_drops[current_stage] = {}
+
+                # 累加掉落数据
+                for item, count in last_drop_stats.items():
+                    all_stage_drops[current_stage].setdefault(item, 0)
+                    all_stage_drops[current_stage][item] += count
+
+        # 将累加后的掉落数据保存到结果中
+        data["drop_statistics"] = all_stage_drops
+
+        # 保存日志
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("".join(logs), encoding="utf-8")
+        # 保存统计数据
+        log_path.with_suffix(".json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
+
+        logger.success(f"MAA 日志统计完成, 日志路径: {log_path}")
+
+        return if_six_star
+
+    async def save_maaend_log(
+        self, log_path: Path, logs: list[str], maaend_result: str
+    ) -> None:
+        """
+        Save MaaEnd logs and generate basic statistics data.
+
+        Args:
+            log_path (Path): Target log file path.
+            logs (list[str]): Log lines.
+            maaend_result (str): Result label for this run.
+        """
+
+        logger.info(
+            f"开始处理MaaEnd日志, 日志长度: {len(logs)}, 日志标记: {maaend_result}"
+        )
+
+        data: Dict[str, str] = {"maaend_result": maaend_result}
+
+        # 保存日志
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
+        log_path.with_suffix(".json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
+
+        logger.success(f"MaaEnd日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
+
+    async def save_src_log(
+        self, log_path: Path, logs: list[str], src_result: str
+    ) -> None:
+        """
+        保存SRC日志并生成对应统计数据
+
+        Args:
+            log_path (Path): 日志文件保存路径
+            logs (list): 日志内容列表
+            src_result (str): 待保存的日志结果信息
+        """
+
+        logger.info(f"开始处理SRC日志, 日志长度: {len(logs)}, 日志标记: {src_result}")
+
+        data: Dict[str, str] = {"src_result": src_result}
+
+        # 保存日志
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
+        log_path.with_suffix(".json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
+
+        logger.success(f"SRC日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
+
+    async def save_general_log(
+        self, log_path: Path, logs: list[str], general_result: str
+    ) -> None:
+        """
+        保存通用日志并生成对应统计数据
+
+        :param log_path: 日志文件保存路径
+        :param logs: 日志内容列表
+        :param general_result: 待保存的日志结果信息
+        """
+
+        logger.info(
+            f"开始处理通用日志, 日志长度: {len(logs)}, 日志标记: {general_result}"
+        )
+
+        data: Dict[str, str] = {"general_result": general_result}
+
+        # 保存日志
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
+        log_path.with_suffix(".json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
+
+        logger.success(f"通用日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
+
+    async def merge_statistic_info(
+        self, statistic_path_list: List[Path]
+    ) -> dict[str, Any]:
+        """
+        合并指定数据统计信息文件
+
+        Args:
+            statistic_path_list (List[Path]): 数据统计信息文件列表
+
+        Returns:
+            dict: 合并后的数据统计信息
+        """
+
+        data: Dict[str, Any] = {"index": {}}
+
+        for json_file in statistic_path_list:
+            try:
+                single_data = json.loads(json_file.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as e:
+                logger.warning(
+                    f"无法解析文件 {json_file}, 错误信息: {type(e).__name__}: {str(e)}"
+                )
+                continue
+
+            for key in single_data.keys():
+                if key not in data:
+                    data[key] = {}
+
+                # 合并公招统计
+                if key == "recruit_statistics":
+                    for star_level, count in single_data[key].items():
+                        if star_level not in data[key]:
+                            data[key][star_level] = 0
+                        data[key][star_level] += count
+
+                # 合并掉落统计
+                elif key == "drop_statistics":
+                    for stage, drops in single_data[key].items():
+                        if stage not in data[key]:
+                            data[key][stage] = {}  # 初始化关卡
+
+                        for item, count in drops.items():
+                            if item not in data[key][stage]:
+                                data[key][stage][item] = 0
+                            data[key][stage][item] += count
+
+                # 处理理智相关字段 - 使用最后一个文件的值
+                elif key in ["sanity", "sanity_full_at"]:
+                    data[key] = single_data[key]
+
+                # 录入运行结果
+                elif key in [
+                    "maa_result",
+                    "maaend_result",
+                    "src_result",
+                    "general_result",
+                ]:
+                    actual_date = (
+                        datetime.strptime(
+                            f"{json_file.parent.parent.name} {json_file.stem}",
+                            "%Y-%m-%d %H-%M-%S",
+                        )
+                        .replace(tzinfo=UTC4)
+                        .astimezone()
+                    )
+
+                    if single_data[key] != "Success!":
+                        if "error_info" not in data:
+                            data["error_info"] = {}
+                        data["error_info"][
+                            actual_date.strftime("%Y-%m-%d %H:%M:%S")
+                        ] = single_data[key]
+
+                    data["index"][actual_date] = {
+                        "date": actual_date.strftime("%Y-%m-%d %H:%M:%S"),
+                        "status": (
+                            "DONE" if single_data[key] == "Success!" else "ERROR"
+                        ),
+                        "jsonFile": str(json_file),
+                    }
+
+        data["index"] = [data["index"][_] for _ in sorted(data["index"])]
+
+        # 确保返回的字典始终包含 index 字段，即使为空
+        result = {k: v for k, v in data.items() if v}
+        if "index" not in result:
+            result["index"] = []
+
+        return result
+
+    async def search_history(
+        self,
+        mode: Literal["DAILY", "WEEKLY", "MONTHLY"],
+        start_date: date,
+        end_date: date,
+    ) -> dict[str, dict[str, list[Path]]]:
+        """
+        搜索指定时间范围内的历史记录
+
+        Args:
+            mode (Literal["DAILY", "WEEKLY", "MONTHLY"]): 合并模式
+            start_date (date): 开始日期
+            end_date (date): 结束日期
+        """
+
+        logger.info(
+            f"开始搜索历史记录, 合并模式: {mode}, 日期范围: {start_date} 至 {end_date}"
+        )
+
+        history_dict: dict[str, dict[str, list[Path]]] = {}
+
+        for date_folder in self.history_path.iterdir():
+            if not date_folder.is_dir():
+                continue  # 只处理日期文件夹
+
+            try:
+                date = datetime.strptime(date_folder.name, "%Y-%m-%d").date()
+
+                if not (start_date <= date <= end_date):
+                    continue  # 只统计在范围内的日期
+
+                if mode == "DAILY":
+                    date_name = date.strftime("%Y-%m-%d")
+                elif mode == "WEEKLY":
+                    date_name = date.strftime("%G-W%V")
+                elif mode == "MONTHLY":
+                    date_name = date.strftime("%Y-%m")
+                else:
+                    raise ValueError("无效的合并模式")
+
+                if date_name not in history_dict:
+                    history_dict[date_name] = {}
+
+                for user_folder in date_folder.iterdir():
+                    if not user_folder.is_dir():
+                        continue  # 只处理用户文件夹
+
+                    if user_folder.stem not in history_dict[date_name]:
+                        history_dict[date_name][user_folder.stem] = list(
+                            user_folder.with_suffix("").glob("*.json")
+                        )
+                    else:
+                        history_dict[date_name][user_folder.stem] += list(
+                            user_folder.with_suffix("").glob("*.json")
+                        )
+
+            except ValueError as e:
+                logger.warning(f"非日期格式的目录: {date_folder}, 错误: {e}")
+
+        logger.success(f"历史记录搜索完成, 共计 {len(history_dict)} 条记录")
+
+        return {
+            k: v
+            for k, v in sorted(history_dict.items(), key=lambda kv: kv[0], reverse=True)
+        }
+
+    async def clean_old_history(self):
+        """删除超过用户设定天数的历史记录文件（基于目录日期）"""
+
+        if self.get("Function", "HistoryRetentionTime") == 0:
+            logger.info("历史记录永久保留, 跳过历史记录清理")
+            return
+
+        logger.info("开始清理超过设定天数的历史记录")
+
+        deleted_count = 0
+
+        for date_folder in self.history_path.iterdir():
+            if not date_folder.is_dir():
+                continue  # 只处理日期文件夹
+
+            try:
+                # 只检查 `YYYY-MM-DD` 格式的文件夹
+                folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d").date()
+                if datetime.now(tz=UTC4).date() - folder_date > timedelta(
+                    days=self.get("Function", "HistoryRetentionTime")
+                ):
+                    shutil.rmtree(date_folder, ignore_errors=True)
+                    deleted_count += 1
+                    logger.debug(f"已删除超期日志目录: {date_folder}")
+            except ValueError:
+                logger.warning(f"非日期格式的目录: {date_folder}")
+
+        logger.success(f"清理完成: {deleted_count} 个日期目录")
+
+
+Config = AppConfig()

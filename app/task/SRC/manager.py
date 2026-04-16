@@ -27,8 +27,8 @@ from datetime import datetime
 
 from app.core import Config, EmulatorManager
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem
-from app.models.ConfigBase import MultipleConfig
-from app.models.config import SrcConfig, SrcUserConfig
+from app.core.config.base import MultipleConfig
+from app.models import SrcConfig, SrcUserConfig
 from app.services import Notify
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
@@ -161,7 +161,6 @@ class SrcManager(TaskExecuteBase):
         )
 
     async def main_task(self):
-
         self.check_result = await self.check()
         if self.check_result != "Pass":
             logger.error(f"未通过配置检查: {self.check_result}")
@@ -192,14 +191,13 @@ class SrcManager(TaskExecuteBase):
 
         if self.check_result != "Pass":
             self.script_info.status = "异常"
-            return self.check_result
+            return
 
         logger.info("SRC 主任务已结束, 开始执行后续操作")
         await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode in ["AutoProxy", "ManualReview"]:
-
             await self.emulator_manager.close(
                 self.script_config.get("Emulator", "Index")
             )
@@ -253,7 +251,6 @@ class SrcManager(TaskExecuteBase):
         self.script_info.status = "完成"
 
     async def on_crash(self, e: Exception):
-
         self.script_info.status = "异常"
         logger.exception(f"SRC任务出现异常: {e}")
         await Config.send_websocket_message(

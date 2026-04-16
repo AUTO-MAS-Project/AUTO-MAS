@@ -21,14 +21,16 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .broadcast import Broadcast
-from .config import Config
-from .emulator_manager import EmulatorManager
-from .task_manager import TaskManager
-from .maa_manager import MaaFWManager
-from .plugins import PluginManager
+from typing import TYPE_CHECKING
 
-from .timer import MainTimer
+if TYPE_CHECKING:
+    from .broadcast import Broadcast as Broadcast
+    from .plugins import PluginManager as PluginManager
+    from .emulator_manager import EmulatorManager as EmulatorManager
+    from .task_manager import TaskManager as TaskManager
+    from .maa_manager import MaaFWManager as MaaFWManager
+    from .timer import MainTimer as MainTimer
+    from .config import Config as Config
 
 __all__ = [
     "Broadcast",
@@ -39,3 +41,35 @@ __all__ = [
     "MaaFWManager",
     "PluginManager",
 ]
+
+
+def __getattr__(name: str):
+    if name == "Broadcast":
+        from .broadcast import Broadcast
+
+        return Broadcast
+    if name == "EmulatorManager":
+        from .emulator_manager import EmulatorManager
+
+        return EmulatorManager
+    if name == "PluginManager":
+        from .plugins import PluginManager
+
+        return PluginManager
+    if name == "TaskManager":
+        from .task_manager import TaskManager
+
+        return TaskManager
+    if name == "MaaFWManager":
+        from .maa_manager import MaaFWManager
+
+        return MaaFWManager
+    if name == "MainTimer":
+        from .timer import MainTimer
+
+        return MainTimer
+    if name == "Config":
+        from .config import Config
+
+        return Config
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

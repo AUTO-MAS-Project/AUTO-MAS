@@ -1,15 +1,15 @@
-<template>
-  <a-modal v-model:open="visible" :title="`下载更新 ${latestVersion}`" :width="600" :footer="null" :mask-closable="false"
+﻿<template>
+  <a-modal v-model:open="visible" :title="`涓嬭浇鏇存柊 ${latestVersion}`" :width="600" :footer="null" :mask-closable="false"
     :closable="false" :z-index="9999" class="update-download-modal" centered>
     <div class="download-container">
-      <!-- 下载进度区域 -->
+      <!-- 涓嬭浇杩涘害鍖哄煙 -->
       <div v-if="isDownloading" class="download-progress-section">
-        <!-- 主进度显示 -->
+        <!-- 涓昏繘搴︽樉绀?-->
         <div class="main-progress">
           <div class="progress-header">
             <div class="progress-title">
               <a-spin :spinning="true" size="small" />
-              <span class="download-title">下载进度</span>
+              <span class="download-title">涓嬭浇杩涘害</span>
             </div>
             <div class="progress-percent" :class="{
               'animate-pulse': downloadProgressPercent > 0 && downloadProgressPercent < 100,
@@ -21,7 +21,7 @@
           <a-progress :percent="downloadProgressPercent" :show-info="false" stroke-color="var(--ant-color-primary)"
             trail-color="var(--ant-color-fill-secondary)" :stroke-width="8" class="progress-bar" />
 
-          <!-- 进度信息行 -->
+          <!-- 杩涘害淇℃伅琛?-->
           <div class="progress-info-row">
             <div class="left-info">
               <span class="file-progress">{{ formatBytes(downloadProgress.downloaded_size) }} /
@@ -29,38 +29,38 @@
               <span class="download-speed">{{ formatSpeed(downloadProgress.speed) }}</span>
             </div>
             <div v-if="estimatedTimeRemaining" class="right-info">
-              <span class="eta-label">预计剩余时间</span>
+              <span class="eta-label">棰勮鍓╀綑鏃堕棿</span>
               <span class="eta-value">{{ estimatedTimeRemaining }}</span>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- 下载失败区域 -->
+      <!-- 涓嬭浇澶辫触鍖哄煙 -->
       <div v-if="downloadFailed" class="download-failed-section">
         <div class="failed-icon">
-          <a-result status="error" title="下载失败" :sub-title="failureReason">
+          <a-result status="error" title="涓嬭浇澶辫触" :sub-title="failureReason">
             <template #extra>
               <div class="failed-actions">
                 <a-button type="primary" :loading="isRetrying" @click="handleRetry">
-                  重试下载
+                  閲嶈瘯涓嬭浇
                 </a-button>
-                <a-button @click="handleCancel"> 取消 </a-button>
+                <a-button @click="handleCancel"> 鍙栨秷 </a-button>
               </div>
             </template>
           </a-result>
         </div>
       </div>
 
-      <!-- 下载成功区域 -->
+      <!-- 涓嬭浇鎴愬姛鍖哄煙 -->
       <div v-if="downloadCompleted" class="download-success-section">
-        <a-result status="success" title="下载完成" sub-title="更新包已下载完成，是否立即安装？">
+        <a-result status="success" title="涓嬭浇瀹屾垚" sub-title="鏇存柊鍖呭凡涓嬭浇瀹屾垚锛屾槸鍚︾珛鍗冲畨瑁咃紵">
           <template #extra>
             <div class="success-actions">
               <a-button type="primary" :loading="isInstalling" @click="handleInstall">
-                立即安装
+                绔嬪嵆瀹夎
               </a-button>
-              <a-button @click="handleLater"> 稍后安装 </a-button>
+              <a-button @click="handleLater"> 绋嶅悗瀹夎 </a-button>
             </div>
           </template>
         </a-result>
@@ -72,11 +72,11 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { message } from 'ant-design-vue'
-import { Service } from '@/api/services/Service.ts'
+import { updateApi } from '@/api'
 import { subscribe, unsubscribe } from '@/composables/useWebSocket'
-const logger = window.electronAPI.getLogger('更新下载模态框')
+const logger = window.electronAPI.getLogger('鏇存柊涓嬭浇妯℃€佹')
 
-// Props 定义
+// Props 瀹氫箟
 interface Props {
   visible: boolean
   latestVersion: string
@@ -85,7 +85,7 @@ interface Props {
 
 const props = defineProps<Props>()
 
-// Emits 定义
+// Emits 瀹氫箟
 const emit = defineEmits<{
   'update:visible': [value: boolean]
   completed: []
@@ -93,10 +93,10 @@ const emit = defineEmits<{
   installRequested: []
 }>()
 
-// WebSocket 相关
+// WebSocket 鐩稿叧
 let updateSubscriptionId: string = ''
 
-// 状态管理
+// 鐘舵€佺鐞?
 const isDownloading = ref(false)
 const downloadFailed = ref(false)
 const downloadCompleted = ref(false)
@@ -104,20 +104,20 @@ const isRetrying = ref(false)
 const isInstalling = ref(false)
 const failureReason = ref('')
 
-// WebSocket健康检查
+// WebSocket鍋ュ悍妫€鏌?
 let wsHealthCheckInterval: NodeJS.Timeout | null = null
 
-// 下载超时定时器
+// 涓嬭浇瓒呮椂瀹氭椂鍣?
 let downloadTimeout: NodeJS.Timeout | null = null
 
-// 下载进度相关状态
+// 涓嬭浇杩涘害鐩稿叧鐘舵€?
 const downloadProgress = ref({
   downloaded_size: 0,
   file_size: 0,
   speed: 0,
 })
 
-// 计算下载进度百分比
+// 璁＄畻涓嬭浇杩涘害鐧惧垎姣?
 const downloadProgressPercent = computed(() => {
   const progress = downloadProgress.value
   if (!progress.file_size || progress.file_size <= 0) {
@@ -127,7 +127,7 @@ const downloadProgressPercent = computed(() => {
   return Math.min(percent, 100)
 })
 
-// 计算剩余时间
+// 璁＄畻鍓╀綑鏃堕棿
 const estimatedTimeRemaining = computed(() => {
   const progress = downloadProgress.value
   const speed = progress.speed
@@ -140,25 +140,25 @@ const estimatedTimeRemaining = computed(() => {
   const remainingSeconds = remainingBytes / speed
 
   if (remainingSeconds < 60) {
-    return `${Math.ceil(remainingSeconds)}秒`
+    return `${Math.ceil(remainingSeconds)}绉抈
   } else if (remainingSeconds < 3600) {
     const minutes = Math.floor(remainingSeconds / 60)
     const seconds = Math.ceil(remainingSeconds % 60)
-    return `${minutes}分${seconds}秒`
+    return `${minutes}鍒?{seconds}绉抈
   } else {
     const hours = Math.floor(remainingSeconds / 3600)
     const minutes = Math.floor((remainingSeconds % 3600) / 60)
-    return `${hours}小时${minutes}分钟`
+    return `${hours}灏忔椂${minutes}鍒嗛挓`
   }
 })
 
-// 计算属性 - 响应式地接收外部 visible 状态
+// 璁＄畻灞炴€?- 鍝嶅簲寮忓湴鎺ユ敹澶栭儴 visible 鐘舵€?
 const visible = computed({
   get: () => props.visible,
   set: (value: boolean) => emit('update:visible', value),
 })
 
-// 格式化字节大小
+// 鏍煎紡鍖栧瓧鑺傚ぇ灏?
 const formatBytes = (bytes: number) => {
   if (bytes === 0) return '0 B'
   const k = 1024
@@ -167,7 +167,7 @@ const formatBytes = (bytes: number) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
-// 格式化速度
+// 鏍煎紡鍖栭€熷害
 const formatSpeed = (bytesPerSecond: number) => {
   if (bytesPerSecond === 0) return '0 B/s'
 
@@ -179,15 +179,15 @@ const formatSpeed = (bytesPerSecond: number) => {
   return parseFloat(value.toFixed(1)) + ' ' + sizes[i]
 }
 
-// 重置状态
+// 閲嶇疆鐘舵€?
 const resetState = () => {
-  // 清除下载超时
+  // 娓呴櫎涓嬭浇瓒呮椂
   if (downloadTimeout) {
     clearTimeout(downloadTimeout)
     downloadTimeout = null
   }
 
-  // 停止WebSocket健康检查
+  // 鍋滄WebSocket鍋ュ悍妫€鏌?
   stopWebSocketHealthCheck()
 
   isDownloading.value = false
@@ -203,32 +203,24 @@ const resetState = () => {
   }
 }
 
-// 开始下载
+// 寮€濮嬩笅杞?
 const startDownload = async () => {
-  logger.info('开始下载流程')
+  logger.info('寮€濮嬩笅杞芥祦绋?)
 
-  if (import.meta.env.DEV) {
-    logger.info('开发环境：跳过更新下载流程与版本检查请求')
-    downloadFailed.value = true
-    isDownloading.value = false
-    failureReason.value = '开发环境已禁用更新下载'
-    return
-  }
-
-  // 确保WebSocket订阅已建立
+  // 纭繚WebSocket璁㈤槄宸插缓绔?
   ensureWebSocketSubscription()
 
-  // 验证WebSocket连接状态
-  logger.info('WebSocket连接准备就绪，开始下载...')
+  // 楠岃瘉WebSocket杩炴帴鐘舵€?
+  logger.info('WebSocket杩炴帴鍑嗗灏辩华锛屽紑濮嬩笅杞?..')
 
   resetState()
   isDownloading.value = true
 
   try {
-    // 确保有版本信息，如果没有则先检查更新
+    // 纭繚鏈夌増鏈俊鎭紝濡傛灉娌℃湁鍒欏厛妫€鏌ユ洿鏂?
     if (!props.latestVersion) {
-      logger.info('没有版本信息，先检查更新')
-      const checkResult = await Service.checkUpdateApiUpdateCheckPost({
+      logger.info('娌℃湁鐗堟湰淇℃伅锛屽厛妫€鏌ユ洿鏂?)
+      const checkResult = await updateApi.check({
         current_version: (import.meta as any).env?.VITE_APP_VERSION || '1.0.0',
         if_force: false,
       })
@@ -236,34 +228,34 @@ const startDownload = async () => {
       if (checkResult.code !== 200 || !checkResult.if_need_update) {
         downloadFailed.value = true
         isDownloading.value = false
-        failureReason.value = '无法获取更新信息，请先检查更新'
+        failureReason.value = '鏃犳硶鑾峰彇鏇存柊淇℃伅锛岃鍏堟鏌ユ洿鏂?
         return
       }
     }
 
-    logger.info('调用下载API')
-    const res = await Service.downloadUpdateApiUpdateDownloadPost()
-    logger.debug(`API响应: ${JSON.stringify(res)}`)
+    logger.info('璋冪敤涓嬭浇API')
+    const res = await updateApi.download()
+    logger.debug(`API鍝嶅簲: ${JSON.stringify(res)}`)
 
     if (res.code !== 200) {
-      logger.error(`下载请求失败: ${res.message}`)
+      logger.error(`涓嬭浇璇锋眰澶辫触: ${res.message}`)
       downloadFailed.value = true
       isDownloading.value = false
-      failureReason.value = res.message || '下载请求失败'
+      failureReason.value = res.message || '涓嬭浇璇锋眰澶辫触'
     } else {
-      logger.info('下载请求成功，等待WebSocket进度更新')
+      logger.info('涓嬭浇璇锋眰鎴愬姛锛岀瓑寰匴ebSocket杩涘害鏇存柊')
 
-      // 启动WebSocket健康检查
+      // 鍚姩WebSocket鍋ュ悍妫€鏌?
       startWebSocketHealthCheck()
 
-      // 设置下载超时（2小时）
+      // 璁剧疆涓嬭浇瓒呮椂锛?灏忔椂锛?
       downloadTimeout = setTimeout(
         () => {
           if (isDownloading.value) {
-            logger.warn('下载超时，取消WebSocket订阅')
+            logger.warn('涓嬭浇瓒呮椂锛屽彇娑圵ebSocket璁㈤槄')
             isDownloading.value = false
             downloadFailed.value = true
-            failureReason.value = '下载超时，请检查网络连接或稍后重试'
+            failureReason.value = '涓嬭浇瓒呮椂锛岃妫€鏌ョ綉缁滆繛鎺ユ垨绋嶅悗閲嶈瘯'
             stopWebSocketHealthCheck()
             cancelWebSocketSubscription()
           }
@@ -273,16 +265,16 @@ const startDownload = async () => {
     }
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err)
-    logger.error(`启动下载失败: ${errorMsg}`)
+    logger.error(`鍚姩涓嬭浇澶辫触: ${errorMsg}`)
     downloadFailed.value = true
     isDownloading.value = false
-    failureReason.value = '网络请求失败，请检查网络连接'
+    failureReason.value = '缃戠粶璇锋眰澶辫触锛岃妫€鏌ョ綉缁滆繛鎺?
     stopWebSocketHealthCheck()
     cancelWebSocketSubscription()
   }
 }
 
-// 重试下载
+// 閲嶈瘯涓嬭浇
 const handleRetry = async () => {
   isRetrying.value = true
   try {
@@ -292,84 +284,84 @@ const handleRetry = async () => {
   }
 }
 
-// 取消
+// 鍙栨秷
 const handleCancel = () => {
   visible.value = false
   emit('cancelled')
 }
 
-// 稍后安装
+// 绋嶅悗瀹夎
 const handleLater = () => {
   visible.value = false
   emit('completed')
 }
 
-// 立即安装
+// 绔嬪嵆瀹夎
 const handleInstall = async () => {
   isInstalling.value = true
   try {
-    const res = await Service.installUpdateApiUpdateInstallPost()
+    const res = await updateApi.install()
     if (res.code === 200) {
-      message.success('安装程序已启动')
+      message.success('瀹夎绋嬪簭宸插惎鍔?)
       visible.value = false
       emit('installRequested')
     } else {
-      message.error(res.message || '启动安装失败')
+      message.error(res.message || '鍚姩瀹夎澶辫触')
     }
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err)
-    logger.error(`安装失败: ${errorMsg}`)
-    message.error('启动安装失败')
+    logger.error(`瀹夎澶辫触: ${errorMsg}`)
+    message.error('鍚姩瀹夎澶辫触')
   } finally {
     isInstalling.value = false
   }
 }
 
-// WebSocket 消息处理
+// WebSocket 娑堟伅澶勭悊
 const handleUpdateMessage = (wsMessage: any) => {
 
   if (wsMessage.id === 'Update') {
     if (wsMessage.type === 'Update') {
-      // 更新下载进度
-      logger.debug(`更新下载进度: ${JSON.stringify(wsMessage.data)}`)
+      // 鏇存柊涓嬭浇杩涘害
+      logger.debug(`鏇存柊涓嬭浇杩涘害: ${JSON.stringify(wsMessage.data)}`)
       const { downloaded_size, file_size, speed } = wsMessage.data
 
-      // 使用Object.assign确保响应式更新
+      // 浣跨敤Object.assign纭繚鍝嶅簲寮忔洿鏂?
       Object.assign(downloadProgress.value, {
         downloaded_size: downloaded_size || 0,
         file_size: file_size || 0,
         speed: speed || 0,
       })
 
-      // 强制触发Vue的响应式更新
+      // 寮哄埗瑙﹀彂Vue鐨勫搷搴斿紡鏇存柊
       nextTick(() => {
-        logger.debug(`进度更新后状态: ${JSON.stringify({
-          进度: downloadProgress.value,
-          百分比: downloadProgressPercent.value.toFixed(2) + '%',
-          正在下载: isDownloading.value,
-          订阅ID: updateSubscriptionId,
-          时间戳: new Date().toISOString(),
+        logger.debug(`杩涘害鏇存柊鍚庣姸鎬? ${JSON.stringify({
+          杩涘害: downloadProgress.value,
+          鐧惧垎姣? downloadProgressPercent.value.toFixed(2) + '%',
+          姝ｅ湪涓嬭浇: isDownloading.value,
+          璁㈤槄ID: updateSubscriptionId,
+          鏃堕棿鎴? new Date().toISOString(),
         })}`)
       })
     } else if (wsMessage.type === 'Signal') {
-      logger.debug(`收到Signal消息: ${JSON.stringify(wsMessage.data)}`)
+      logger.debug(`鏀跺埌Signal娑堟伅: ${JSON.stringify(wsMessage.data)}`)
 
-      // 清除下载超时
+      // 娓呴櫎涓嬭浇瓒呮椂
       if (downloadTimeout) {
         clearTimeout(downloadTimeout)
         downloadTimeout = null
       }
 
       if (wsMessage.data.Accomplish) {
-        // 下载完成 - 取消WebSocket订阅
-        logger.info('下载完成，取消WebSocket订阅')
+        // 涓嬭浇瀹屾垚 - 鍙栨秷WebSocket璁㈤槄
+        logger.info('涓嬭浇瀹屾垚锛屽彇娑圵ebSocket璁㈤槄')
         isDownloading.value = false
         downloadCompleted.value = true
         stopWebSocketHealthCheck()
         cancelWebSocketSubscription()
       } else if (wsMessage.data.Failed) {
-        // 下载失败 - 取消WebSocket订阅
-        logger.error(`下载失败: ${JSON.stringify(wsMessage.data.Failed)}`)
+        // 涓嬭浇澶辫触 - 鍙栨秷WebSocket璁㈤槄
+        logger.error(`涓嬭浇澶辫触: ${JSON.stringify(wsMessage.data.Failed)}`)
         isDownloading.value = false
         downloadFailed.value = true
         failureReason.value = wsMessage.data.Failed
@@ -377,123 +369,123 @@ const handleUpdateMessage = (wsMessage: any) => {
         cancelWebSocketSubscription()
       }
     } else if (wsMessage.type === 'Info') {
-      logger.debug(`收到Info消息: ${JSON.stringify(wsMessage.data)}`)
+      logger.debug(`鏀跺埌Info娑堟伅: ${JSON.stringify(wsMessage.data)}`)
       if (wsMessage.data.Error) {
-        // 安装过程中的错误
+        // 瀹夎杩囩▼涓殑閿欒
         isInstalling.value = false
-        message.error(`安装失败: ${wsMessage.data.Error}`)
+        message.error(`瀹夎澶辫触: ${wsMessage.data.Error}`)
       }
     }
   }
 }
 
-// 确保WebSocket订阅
+// 纭繚WebSocket璁㈤槄
 const ensureWebSocketSubscription = () => {
   if (!updateSubscriptionId) {
-    logger.info('创建WebSocket订阅')
+    logger.info('鍒涘缓WebSocket璁㈤槄')
     try {
       updateSubscriptionId = subscribe({ id: 'Update' }, handleUpdateMessage)
-      logger.debug(`WebSocket订阅ID: ${updateSubscriptionId}`)
+      logger.debug(`WebSocket璁㈤槄ID: ${updateSubscriptionId}`)
 
-      // 添加测试消息处理函数来验证订阅是否工作
-      logger.debug('订阅创建完成，等待WebSocket消息...')
+      // 娣诲姞娴嬭瘯娑堟伅澶勭悊鍑芥暟鏉ラ獙璇佽闃呮槸鍚﹀伐浣?
+      logger.debug('璁㈤槄鍒涘缓瀹屾垚锛岀瓑寰匴ebSocket娑堟伅...')
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`创建WebSocket订阅失败: ${errorMsg}`)
+      logger.error(`鍒涘缓WebSocket璁㈤槄澶辫触: ${errorMsg}`)
     }
   } else {
-    logger.debug(`WebSocket订阅已存在: ${updateSubscriptionId}`)
-    // 验证订阅是否仍然有效
-    logger.debug('验证现有订阅是否有效')
+    logger.debug(`WebSocket璁㈤槄宸插瓨鍦? ${updateSubscriptionId}`)
+    // 楠岃瘉璁㈤槄鏄惁浠嶇劧鏈夋晥
+    logger.debug('楠岃瘉鐜版湁璁㈤槄鏄惁鏈夋晥')
   }
 }
 
-// 取消WebSocket订阅
+// 鍙栨秷WebSocket璁㈤槄
 const cancelWebSocketSubscription = () => {
   if (updateSubscriptionId) {
-    logger.info(`取消WebSocket订阅: ${updateSubscriptionId}`)
+    logger.info(`鍙栨秷WebSocket璁㈤槄: ${updateSubscriptionId}`)
     try {
       unsubscribe(updateSubscriptionId)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`取消WebSocket订阅失败: ${errorMsg}`)
+      logger.error(`鍙栨秷WebSocket璁㈤槄澶辫触: ${errorMsg}`)
     }
     updateSubscriptionId = ''
   }
 }
 
-// 启动WebSocket健康检查
+// 鍚姩WebSocket鍋ュ悍妫€鏌?
 const startWebSocketHealthCheck = () => {
-  // 清除之前的检查
+  // 娓呴櫎涔嬪墠鐨勬鏌?
   stopWebSocketHealthCheck()
 
-  logger.info('启动WebSocket健康检查')
+  logger.info('鍚姩WebSocket鍋ュ悍妫€鏌?)
   wsHealthCheckInterval = setInterval(() => {
     if (isDownloading.value) {
-      logger.debug(`WebSocket健康检查 - 订阅ID: ${updateSubscriptionId}`)
-      // 如果订阅丢失了，重新创建
+      logger.debug(`WebSocket鍋ュ悍妫€鏌?- 璁㈤槄ID: ${updateSubscriptionId}`)
+      // 濡傛灉璁㈤槄涓㈠け浜嗭紝閲嶆柊鍒涘缓
       if (!updateSubscriptionId) {
-        logger.warn('检测到WebSocket订阅丢失，重新创建')
+        logger.warn('妫€娴嬪埌WebSocket璁㈤槄涓㈠け锛岄噸鏂板垱寤?)
         ensureWebSocketSubscription()
       }
     }
-  }, 3000) // 每3秒检查一次
+  }, 3000) // 姣?绉掓鏌ヤ竴娆?
 }
 
-// 停止WebSocket健康检查
+// 鍋滄WebSocket鍋ュ悍妫€鏌?
 const stopWebSocketHealthCheck = () => {
   if (wsHealthCheckInterval) {
-    logger.info('停止WebSocket健康检查')
+    logger.info('鍋滄WebSocket鍋ュ悍妫€鏌?)
     clearInterval(wsHealthCheckInterval)
     wsHealthCheckInterval = null
   }
 }
 
-// 监听 visible 变化
+// 鐩戝惉 visible 鍙樺寲
 watch(
   () => props.visible,
   newVisible => {
-    logger.debug(`visible变化: ${newVisible}`)
-    logger.debug(`当前props: ${JSON.stringify({
+    logger.debug(`visible鍙樺寲: ${newVisible}`)
+    logger.debug(`褰撳墠props: ${JSON.stringify({
       visible: props.visible,
       latestVersion: props.latestVersion,
       updateData: props.updateData,
     })}`)
 
     if (newVisible) {
-      logger.info('窗口显示，确保WebSocket订阅并开始下载')
-      // 确保WebSocket订阅处于活动状态
+      logger.info('绐楀彛鏄剧ず锛岀‘淇漌ebSocket璁㈤槄骞跺紑濮嬩笅杞?)
+      // 纭繚WebSocket璁㈤槄澶勪簬娲诲姩鐘舵€?
       ensureWebSocketSubscription()
-      // 开始下载
+      // 寮€濮嬩笅杞?
       startDownload()
     } else {
-      logger.info('窗口隐藏，重置状态但保持订阅')
-      // 隐藏时重置状态，但不取消订阅（因为可能还在下载）
+      logger.info('绐楀彛闅愯棌锛岄噸缃姸鎬佷絾淇濇寔璁㈤槄')
+      // 闅愯棌鏃堕噸缃姸鎬侊紝浣嗕笉鍙栨秷璁㈤槄锛堝洜涓哄彲鑳借繕鍦ㄤ笅杞斤級
       resetState()
     }
   }
 )
 
-// 组件挂载时订阅 WebSocket 消息
+// 缁勪欢鎸傝浇鏃惰闃?WebSocket 娑堟伅
 onMounted(() => {
-  logger.debug('组件挂载')
+  logger.debug('缁勪欢鎸傝浇')
   ensureWebSocketSubscription()
 })
 
-// 组件卸载时取消订阅
+// 缁勪欢鍗歌浇鏃跺彇娑堣闃?
 onUnmounted(() => {
-  logger.debug('组件卸载，清理资源')
+  logger.debug('缁勪欢鍗歌浇锛屾竻鐞嗚祫婧?)
 
-  // 清理下载超时
+  // 娓呯悊涓嬭浇瓒呮椂
   if (downloadTimeout) {
     clearTimeout(downloadTimeout)
     downloadTimeout = null
   }
 
-  // 停止WebSocket健康检查
+  // 鍋滄WebSocket鍋ュ悍妫€鏌?
   stopWebSocketHealthCheck()
 
-  // 清理WebSocket订阅
+  // 娓呯悊WebSocket璁㈤槄
   cancelWebSocketSubscription()
 })
 </script>
@@ -686,3 +678,5 @@ onUnmounted(() => {
   font-weight: 500;
 }
 </style>
+
+

@@ -21,303 +21,279 @@
 #   Contact: DLmaster_361@163.com
 
 
-from fastapi import APIRouter, Body
+from typing import Annotated
 
-from app.core import Config
-from app.models.schema import *
+from fastapi import APIRouter, Body, Path
+
 from app.api.ws_command import ws_command
+from app.core import Config
+from app.contracts.common_contract import (
+    IndexOrderPatch,
+    OutBase,
+    dump_writable_data,
+    project_model,
+    project_model_list,
+    project_model_map,
+)
+from app.contracts.queue_contract import (
+    QueueCreateOut,
+    QueueDetailOut,
+    QueueGetOut,
+    QueueIndexItem,
+    QueueItemCreateOut,
+    QueueItemDetailOut,
+    QueueItemGetOut,
+    QueueItemIndexItem,
+    QueueItemRead,
+    QueueRead,
+    TimeSetCreateOut,
+    TimeSetDetailOut,
+    TimeSetGetOut,
+    TimeSetIndexItem,
+    TimeSetRead,
+)
 
 router = APIRouter(prefix="/api/queue", tags=["调度队列管理"])
+
+QueueIdPath = Annotated[str, Path(description="队列 ID")]
+TimeSetIdPath = Annotated[str, Path(description="时间设置 ID")]
+QueueItemIdPath = Annotated[str, Path(description="队列项 ID")]
+
+
+@router.get(
+    "",
+    tags=["Get"],
+    summary="查询全部调度队列",
+    response_model=QueueGetOut,
+)
+async def list_queues() -> QueueGetOut:
+    index, data = await Config.get_queue(None)
+    return QueueGetOut(
+        index=project_model_list(QueueIndexItem, index),
+        data=project_model_map(QueueRead, data),
+    )
 
 
 @ws_command("queue.add")
 @router.post(
-    "/add",
+    "",
     tags=["Add"],
-    summary="添加调度队列",
+    summary="创建调度队列",
     response_model=QueueCreateOut,
-    status_code=200,
 )
-async def add_queue() -> QueueCreateOut:
+async def create_queue() -> QueueCreateOut:
+    uid, config = await Config.add_queue()
+    return QueueCreateOut(
+        id=str(uid),
+        data=project_model(QueueRead, await config.toDict()),
+    )
 
-    try:
-        uid, config = await Config.add_queue()
-        data = QueueConfig(**(await config.toDict()))
-    except Exception as e:
-        return QueueCreateOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            queueId="",
-            data=QueueConfig(**{}),
-        )
-    return QueueCreateOut(queueId=str(uid), data=data)
+
+@router.patch(
+    "/order",
+    tags=["Update"],
+    summary="重新排序调度队列",
+    response_model=OutBase,
+)
+async def reorder_queue(body: IndexOrderPatch = Body(...)) -> OutBase:
+    await Config.reorder_queue(body.index_list)
+    return OutBase()
 
 
 @ws_command("queue.get")
-@router.post(
-    "/get",
+@router.get(
+    "/{queue_id}",
     tags=["Get"],
-    summary="查询调度队列配置信息",
-    response_model=QueueGetOut,
-    status_code=200,
+    summary="查询单个调度队列",
+    response_model=QueueDetailOut,
 )
-async def get_queues(queue: QueueGetIn = Body(...)) -> QueueGetOut:
-
-    try:
-        index, config = await Config.get_queue(queue.queueId)
-        index = [QueueIndexItem(**_) for _ in index]
-        data = {uid: QueueConfig(**cfg) for uid, cfg in config.items()}
-    except Exception as e:
-        return QueueGetOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            index=[],
-            data={},
-        )
-    return QueueGetOut(index=index, data=data)
+async def get_queue(queue_id: QueueIdPath) -> QueueDetailOut:
+    _, data = await Config.get_queue(queue_id)
+    projected = project_model_map(QueueRead, data)
+    return QueueDetailOut(data=projected[queue_id])
 
 
-@router.post(
-    "/update",
+@router.patch(
+    "/{queue_id}",
     tags=["Update"],
-    summary="更新调度队列配置信息",
+    summary="更新调度队列",
     response_model=OutBase,
-    status_code=200,
 )
-async def update_queue(queue: QueueUpdateIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.update_queue(
-            queue.queueId, queue.data.model_dump(exclude_unset=True)
-        )
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+async def update_queue(queue_id: QueueIdPath, data: QueueRead = Body(...)) -> OutBase:
+    await Config.update_queue(queue_id, dump_writable_data(data))
     return OutBase()
 
 
-@router.post(
-    "/delete",
+@router.delete(
+    "/{queue_id}",
     tags=["Delete"],
     summary="删除调度队列",
     response_model=OutBase,
-    status_code=200,
 )
-async def delete_queue(queue: QueueDeleteIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.del_queue(queue.queueId)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+async def delete_queue(queue_id: QueueIdPath) -> OutBase:
+    await Config.del_queue(queue_id)
     return OutBase()
 
 
-@router.post(
-    "/order",
-    tags=["Update"],
-    summary="重新排序",
-    response_model=OutBase,
-    status_code=200,
-)
-async def reorder_queue(script: QueueReorderIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.reorder_queue(script.indexList)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
-
-
-@router.post(
-    "/time/get",
+@router.get(
+    "/{queue_id}/times",
     tags=["Get"],
-    summary="查询定时项",
+    summary="查询队列下的全部定时项",
     response_model=TimeSetGetOut,
-    status_code=200,
 )
-async def get_time_set(time: TimeSetGetIn = Body(...)) -> TimeSetGetOut:
-
-    try:
-        index, data = await Config.get_time_set(time.queueId, time.timeSetId)
-        index = [TimeSetIndexItem(**_) for _ in index]
-        data = {uid: TimeSet(**cfg) for uid, cfg in data.items()}
-    except Exception as e:
-        return TimeSetGetOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            index=[],
-            data={},
-        )
-    return TimeSetGetOut(index=index, data=data)
+async def list_time_sets(queue_id: QueueIdPath) -> TimeSetGetOut:
+    index, data = await Config.get_time_set(queue_id, None)
+    return TimeSetGetOut(
+        index=project_model_list(TimeSetIndexItem, index),
+        data=project_model_map(TimeSetRead, data),
+    )
 
 
 @router.post(
-    "/time/add",
+    "/{queue_id}/times",
     tags=["Add"],
-    summary="添加定时项",
+    summary="创建定时项",
     response_model=TimeSetCreateOut,
-    status_code=200,
 )
-async def add_time_set(time: QueueSetInBase = Body(...)) -> TimeSetCreateOut:
-
-    uid, config = await Config.add_time_set(time.queueId)
-    data = TimeSet(**(await config.toDict()))
-    return TimeSetCreateOut(timeSetId=str(uid), data=data)
-
-
-@router.post(
-    "/time/update",
-    tags=["Update"],
-    summary="更新定时项",
-    response_model=OutBase,
-    status_code=200,
-)
-async def update_time_set(time: TimeSetUpdateIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.update_time_set(
-            time.queueId, time.timeSetId, time.data.model_dump(exclude_unset=True)
-        )
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
+async def create_time_set(queue_id: QueueIdPath) -> TimeSetCreateOut:
+    uid, config = await Config.add_time_set(queue_id)
+    return TimeSetCreateOut(
+        id=str(uid),
+        data=project_model(TimeSetRead, await config.toDict()),
+    )
 
 
-@router.post(
-    "/time/delete",
-    tags=["Delete"],
-    summary="删除定时项",
-    response_model=OutBase,
-    status_code=200,
-)
-async def delete_time_set(time: TimeSetDeleteIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.del_time_set(time.queueId, time.timeSetId)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
-
-
-@router.post(
-    "/time/order",
+@router.patch(
+    "/{queue_id}/times/order",
     tags=["Update"],
     summary="重新排序定时项",
     response_model=OutBase,
-    status_code=200,
 )
-async def reorder_time_set(time: TimeSetReorderIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.reorder_time_set(time.queueId, time.indexList)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+async def reorder_time_sets(
+    queue_id: QueueIdPath, body: IndexOrderPatch = Body(...)
+) -> OutBase:
+    await Config.reorder_time_set(queue_id, body.index_list)
     return OutBase()
 
 
-@router.post(
-    "/item/get",
+@router.get(
+    "/{queue_id}/times/{time_set_id}",
     tags=["Get"],
-    summary="查询队列项",
-    response_model=QueueItemGetOut,
-    status_code=200,
+    summary="查询单个定时项",
+    response_model=TimeSetDetailOut,
 )
-async def get_item(item: QueueItemGetIn = Body(...)) -> QueueItemGetOut:
-
-    try:
-        index, data = await Config.get_queue_item(item.queueId, item.queueItemId)
-        index = [QueueItemIndexItem(**_) for _ in index]
-        data = {uid: QueueItem(**cfg) for uid, cfg in data.items()}
-    except Exception as e:
-        return QueueItemGetOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            index=[],
-            data={},
-        )
-    return QueueItemGetOut(index=index, data=data)
+async def get_time_set(
+    queue_id: QueueIdPath, time_set_id: TimeSetIdPath
+) -> TimeSetDetailOut:
+    _, data = await Config.get_time_set(queue_id, time_set_id)
+    projected = project_model_map(TimeSetRead, data)
+    return TimeSetDetailOut(data=projected[time_set_id])
 
 
-@router.post(
-    "/item/add",
-    tags=["Add"],
-    summary="添加队列项",
-    response_model=QueueItemCreateOut,
-    status_code=200,
-)
-async def add_item(item: QueueSetInBase = Body(...)) -> QueueItemCreateOut:
-
-    uid, config = await Config.add_queue_item(item.queueId)
-    data = QueueItem(**(await config.toDict()))
-    return QueueItemCreateOut(queueItemId=str(uid), data=data)
-
-
-@router.post(
-    "/item/update",
+@router.patch(
+    "/{queue_id}/times/{time_set_id}",
     tags=["Update"],
-    summary="更新队列项",
+    summary="更新定时项",
     response_model=OutBase,
-    status_code=200,
 )
-async def update_item(item: QueueItemUpdateIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.update_queue_item(
-            item.queueId, item.queueItemId, item.data.model_dump(exclude_unset=True)
-        )
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+async def update_time_set(
+    queue_id: QueueIdPath,
+    time_set_id: TimeSetIdPath,
+    data: TimeSetRead = Body(...),
+) -> OutBase:
+    await Config.update_time_set(queue_id, time_set_id, dump_writable_data(data))
     return OutBase()
 
 
-@router.post(
-    "/item/delete",
+@router.delete(
+    "/{queue_id}/times/{time_set_id}",
     tags=["Delete"],
-    summary="删除队列项",
+    summary="删除定时项",
     response_model=OutBase,
-    status_code=200,
 )
-async def delete_item(item: QueueItemDeleteIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.del_queue_item(item.queueId, item.queueItemId)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+async def delete_time_set(queue_id: QueueIdPath, time_set_id: TimeSetIdPath) -> OutBase:
+    await Config.del_time_set(queue_id, time_set_id)
     return OutBase()
 
 
+@router.get(
+    "/{queue_id}/items",
+    tags=["Get"],
+    summary="查询队列下的全部队列项",
+    response_model=QueueItemGetOut,
+)
+async def list_queue_items(queue_id: QueueIdPath) -> QueueItemGetOut:
+    index, data = await Config.get_queue_item(queue_id, None)
+    return QueueItemGetOut(
+        index=project_model_list(QueueItemIndexItem, index),
+        data=project_model_map(QueueItemRead, data),
+    )
+
+
 @router.post(
-    "/item/order",
+    "/{queue_id}/items",
+    tags=["Add"],
+    summary="创建队列项",
+    response_model=QueueItemCreateOut,
+)
+async def create_queue_item(queue_id: QueueIdPath) -> QueueItemCreateOut:
+    uid, config = await Config.add_queue_item(queue_id)
+    return QueueItemCreateOut(
+        id=str(uid),
+        data=project_model(QueueItemRead, await config.toDict()),
+    )
+
+
+@router.patch(
+    "/{queue_id}/items/order",
     tags=["Update"],
     summary="重新排序队列项",
     response_model=OutBase,
-    status_code=200,
 )
-async def reorder_item(item: QueueItemReorderIn = Body(...)) -> OutBase:
+async def reorder_queue_items(
+    queue_id: QueueIdPath, body: IndexOrderPatch = Body(...)
+) -> OutBase:
+    await Config.reorder_queue_item(queue_id, body.index_list)
+    return OutBase()
 
-    try:
-        await Config.reorder_queue_item(item.queueId, item.indexList)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+
+@router.get(
+    "/{queue_id}/items/{queue_item_id}",
+    tags=["Get"],
+    summary="查询单个队列项",
+    response_model=QueueItemDetailOut,
+)
+async def get_queue_item(
+    queue_id: QueueIdPath, queue_item_id: QueueItemIdPath
+) -> QueueItemDetailOut:
+    _, data = await Config.get_queue_item(queue_id, queue_item_id)
+    projected = project_model_map(QueueItemRead, data)
+    return QueueItemDetailOut(data=projected[queue_item_id])
+
+
+@router.patch(
+    "/{queue_id}/items/{queue_item_id}",
+    tags=["Update"],
+    summary="更新队列项",
+    response_model=OutBase,
+)
+async def update_queue_item(
+    queue_id: QueueIdPath,
+    queue_item_id: QueueItemIdPath,
+    data: QueueItemRead = Body(...),
+) -> OutBase:
+    await Config.update_queue_item(queue_id, queue_item_id, dump_writable_data(data))
+    return OutBase()
+
+
+@router.delete(
+    "/{queue_id}/items/{queue_item_id}",
+    tags=["Delete"],
+    summary="删除队列项",
+    response_model=OutBase,
+)
+async def delete_queue_item(
+    queue_id: QueueIdPath, queue_item_id: QueueItemIdPath
+) -> OutBase:
+    await Config.del_queue_item(queue_id, queue_item_id)
     return OutBase()

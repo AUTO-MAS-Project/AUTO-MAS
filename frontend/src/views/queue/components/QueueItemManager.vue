@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <a-card title="任务列表" class="queue-item-card">
     <template #extra>
       <a-space>
@@ -15,31 +15,47 @@
     <div class="draggable-table-container">
       <!-- 表头 -->
       <div class="draggable-table-header">
-        <div class="header-cell drag-cell"></div>
         <div class="header-cell index-cell">序号</div>
         <div class="header-cell script-cell">脚本任务</div>
         <div class="header-cell actions-cell">操作</div>
       </div>
 
       <!-- 拖拽内容区域 -->
-      <draggable v-model="queueItems" group="queueItems" item-key="id" :animation="200" :disabled="loading"
-        ghost-class="ghost" chosen-class="chosen" drag-class="drag" handle=".drag-handle"
-        class="draggable-container" @end="onDragEnd">
+      <draggable
+        v-model="queueItems"
+        group="queueItems"
+        item-key="id"
+        :animation="200"
+        :disabled="loading"
+        ghost-class="ghost"
+        chosen-class="chosen"
+        drag-class="drag"
+        class="draggable-container"
+        @end="onDragEnd"
+      >
         <template #item="{ element: record, index }">
           <div class="draggable-row" :class="{ 'row-dragging': loading }">
-            <div class="row-cell drag-cell">
-              <span class="drag-handle" title="拖拽排序" aria-label="拖拽排序">
-                <span class="drag-dots" aria-hidden="true"></span>
-              </span>
-            </div>
             <div class="row-cell index-cell">{{ index + 1 }}</div>
             <div class="row-cell script-cell">
-              <a-select v-model:value="record.script" size="small" style="width: 200px" class="script-select"
-                placeholder="请选择脚本" :options="scriptOptions" allow-clear @change="updateQueueItemScript(record)" />
+              <a-select
+                v-model:value="record.script"
+                size="small"
+                style="width: 200px"
+                class="script-select"
+                placeholder="请选择脚本"
+                :options="scriptOptions"
+                allow-clear
+                @change="updateQueueItemScript(record)"
+              />
             </div>
             <div class="row-cell actions-cell">
               <a-space>
-                <a-popconfirm title="确定要删除这个任务吗？" ok-text="确定" cancel-text="取消" @confirm="deleteQueueItem(record.id)">
+                <a-popconfirm
+                  title="确定要删除这个任务吗？"
+                  ok-text="确定"
+                  cancel-text="取消"
+                  @confirm="deleteQueueItem(record.id)"
+                >
                   <a-button size="middle" danger>
                     <DeleteOutlined />
                     删除
@@ -66,7 +82,7 @@ import { onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
-import { Service } from '@/api'
+import { infoApi, queueItemApi } from '@/api'
 const logger = window.electronAPI.getLogger('队列项管理')
 
 // Props
@@ -127,7 +143,7 @@ const loadOptions = async () => {
   try {
     logger.info('开始加载脚本选项...')
     // 使用正确的API获取脚本下拉框选项
-    const scriptsResponse = await Service.getScriptComboxApiInfoComboxScriptPost()
+    const scriptsResponse = await infoApi.getScriptOptions()
     logger.debug(`脚本API响应: ${JSON.stringify(scriptsResponse)}`)
 
     if (scriptsResponse.code === 200) {
@@ -149,13 +165,9 @@ const updateQueueItemScript = async (record: any) => {
   try {
     loading.value = true
 
-    const response = await Service.updateItemApiQueueItemUpdatePost({
-      queueId: props.queueId,
-      queueItemId: record.id,
-      data: {
-        Info: {
-          ScriptId: record.script,
-        },
+    const response = await queueItemApi.update(props.queueId, record.id, {
+      Info: {
+        ScriptId: record.script,
       },
     })
 
@@ -179,11 +191,9 @@ const addQueueItem = async () => {
     loading.value = true
 
     // 直接创建队列项，默认ScriptId为null（未选择）
-    const createResponse = await Service.addItemApiQueueItemAddPost({
-      queueId: props.queueId,
-    })
+    const createResponse = await queueItemApi.create(props.queueId)
 
-    if (createResponse.code === 200 && createResponse.queueItemId) {
+    if (createResponse.code === 200 && createResponse.id) {
       emit('refresh')
     } else {
       message.error('任务添加失败: ' + (createResponse.message || '未知错误'))
@@ -200,10 +210,7 @@ const addQueueItem = async () => {
 // 删除队列项
 const deleteQueueItem = async (itemId: string) => {
   try {
-    const response = await Service.deleteItemApiQueueItemDeletePost({
-      queueId: props.queueId,
-      queueItemId: itemId,
-    })
+    const response = await queueItemApi.remove(props.queueId, itemId)
 
     if (response.code === 200) {
       // 确保删除后刷新数据
@@ -232,9 +239,8 @@ const onDragEnd = async (evt: any) => {
     const sortedIds = queueItems.value.map(item => item.id)
 
     // 调用排序API
-    const response = await Service.reorderItemApiQueueItemOrderPost({
-      queueId: props.queueId,
-      indexList: sortedIds,
+    const response = await queueItemApi.reorder(props.queueId, {
+      index_list: sortedIds,
     })
 
     if (response.code === 200) {
@@ -548,12 +554,6 @@ onMounted(() => {
   max-width: 80px;
 }
 
-.drag-cell {
-  width: 36px;
-  min-width: 36px;
-  max-width: 36px;
-}
-
 .script-cell {
   flex: 1;
   min-width: 200px;
@@ -575,7 +575,7 @@ onMounted(() => {
   background: var(--ant-color-bg-container);
   border-bottom: 1px solid var(--ant-color-border);
   transition: all 0.2s ease;
-  cursor: default;
+  cursor: move;
 }
 
 .draggable-row:last-child {
@@ -611,12 +611,6 @@ onMounted(() => {
   color: var(--ant-color-text-secondary);
 }
 
-.row-cell.drag-cell {
-  width: 36px;
-  min-width: 36px;
-  max-width: 36px;
-}
-
 .row-cell.script-cell {
   flex: 1;
   min-width: 200px;
@@ -630,54 +624,20 @@ onMounted(() => {
 
 /* 拖拽状态样式 */
 .ghost {
-  opacity: 0 !important;
-  background: transparent !important;
-  border-color: transparent !important;
-  box-shadow: none !important;
+  opacity: 0.5;
+  background: var(--ant-color-primary-bg);
+  border: 2px dashed var(--ant-color-primary);
 }
 
 .chosen {
-  cursor: grabbing !important;
+  background: var(--ant-color-primary-bg-hover);
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .drag {
-  transform: rotate(3deg);
-  opacity: 1 !important;
-}
-
-.drag .draggable-row {
-  opacity: 1 !important;
-  transition: none !important;
-}
-
-.drag-handle {
-  width: 16px;
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ant-color-text-tertiary);
-  background: transparent;
-  border: none;
-  cursor: grab;
-  user-select: none;
-}
-
-.drag-handle:active {
-  cursor: grabbing;
-}
-
-.drag-dots {
-  width: 10px;
-  height: 16px;
-  display: block;
-  background-image: radial-gradient(currentColor 1.2px, transparent 1.2px);
-  background-size: 5px 5px;
-  opacity: 0.65;
-}
-
-.drag-handle:hover .drag-dots {
-  opacity: 0.85;
+  transform: rotate(5deg);
+  opacity: 0.8;
 }
 
 /* 空状态样式 */
@@ -741,7 +701,6 @@ onMounted(() => {
   }
 
   .index-cell,
-  .drag-cell,
   .script-cell,
   .actions-cell {
     width: 100% !important;

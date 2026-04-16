@@ -31,13 +31,13 @@ current_dir = Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
 
-from app.utils import get_logger, sanitize_log_message
+from app.utils import get_logger, sanitize_log_message  # noqa: E402
 
 logger = get_logger("主程序")
 
 
 class InterceptHandler(logging.Handler):
-    def emit(self, record):
+    def emit(self, record: logging.LogRecord) -> None:
         # 获取对应 loguru 的 level
         try:
             level = logger.level(record.levelname).name
@@ -64,33 +64,26 @@ def is_admin() -> bool:
 
 
 @logger.catch
-def main():
+def main() -> None:
     if is_admin():
         import asyncio
         import uvicorn
-        from fastapi import FastAPI
+        from fastapi import FastAPI, HTTPException, Request
+        from fastapi.exceptions import RequestValidationError
+        from fastapi.routing import APIRoute
         from fastapi_mcp import FastApiMCP
+        from fastapi.responses import JSONResponse
         from fastapi.staticfiles import StaticFiles
         from contextlib import asynccontextmanager
+        from typing import Any, cast, get_args, get_origin
+        from pydantic import BaseModel
+        from pydantic_core import PydanticUndefined
+        from app.contracts.common_contract import OutBase
 
         @asynccontextmanager
         async def lifespan(app: FastAPI):
-            from app.core import Config, MainTimer, TaskManager, PluginManager
+            from app.core import Config, MainTimer, PluginManager, TaskManager
             from app.MaaFW import ArknightWin32Toolkit
-
-            if os.getenv("AUTO_MAS_DEV") == "1":
-                from scripts.dev_stub_generator import (
-                    generate_plugin_context_stubs,
-                    is_dev_stub_generation_enabled,
-                )
-            else:
-                def is_dev_stub_generation_enabled() -> bool:
-                    """判断是否允许生成开发期类型提示。"""
-                    return False
-
-                def generate_plugin_context_stubs() -> dict:
-                    """非开发模式下的兜底实现。"""
-                    raise RuntimeError("当前非开发模式，未加载 dev_stub_generator")
 
             await Config.init_config()
             await Config.get_stage()
@@ -98,18 +91,6 @@ def main():
             await ArknightWin32Toolkit.init()
             await MainTimer.start()
             await PluginManager.start()
-
-            if is_dev_stub_generation_enabled():
-                try:
-                    result = generate_plugin_context_stubs()
-                    logger.info(
-                        "插件上下文类型提示生成完成: "
-                        f"changed={len(result.get('changed_files', []))}, "
-                        f"unchanged={len(result.get('unchanged_files', []))}, "
-                        f"dir={result.get('output_dir', '')}"
-                    )
-                except Exception as e:
-                    logger.warning(f"插件上下文类型提示生成失败（已忽略）: {type(e).__name__}: {e}")
 
             # 初始化 Koishi 系统客户端（如果已启用）
             if Config.get("Notify", "IfKoishiSupport"):
@@ -127,6 +108,7 @@ def main():
                     (Path.cwd() / "AUTO_MAA.exe").unlink()
                 except Exception as e:
                     logger.error(f"删除AUTO_MAA.exe失败: {e}")
+
             yield
 
             await TaskManager.stop_task("ALL")
@@ -151,11 +133,11 @@ def main():
             dispatch_router,
             history_router,
             tools_router,
+            plugins_router,
             setting_router,
             update_router,
             ocr_router,
-            ws_router,
-            plugins_router,
+            ws_debug_router,
         )
 
         app = FastAPI(
@@ -164,6 +146,117 @@ def main():
             version="1.0.0",
             lifespan=lifespan,
         )
+
+        def _as_error_message(detail: object) -> str:
+            if isinstance(detail, str):
+                return detail
+            return str(detail)
+
+        def _annotation_fallback(annotation: Any) -> Any:
+            origin = get_origin(annotation)
+            args = get_args(annotation)
+
+            if origin is not None and type(None) in args:
+                return None
+
+            if origin in (list, set, tuple):
+                return []
+            if origin is dict:
+                return {}
+
+            if annotation is str:
+                return ""
+            if annotation is int:
+                return 0
+            if annotation is float:
+                return 0.0
+            if annotation is bool:
+                return False
+            if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+                return {}
+            return None
+
+        def _resolve_response_model(request: Request) -> type[OutBase]:
+            route = request.scope.get("route")
+            if isinstance(route, APIRoute):
+                model = route.response_model
+                if isinstance(model, type) and issubclass(model, OutBase):
+                    return model
+            return OutBase
+
+        def _build_error_payload(
+            request: Request,
+            *,
+            code: int,
+            message: str,
+        ) -> dict[str, Any]:
+            model_cls = _resolve_response_model(request)
+            if model_cls is OutBase:
+                return OutBase(code=code, status="error", message=message).model_dump()
+
+            payload: dict[str, Any] = {
+                "code": code,
+                "status": "error",
+                "message": message,
+            }
+
+            for field_name, field_info in model_cls.model_fields.items():
+                if field_name in payload:
+                    continue
+
+                if field_info.default is not PydanticUndefined:
+                    payload[field_name] = field_info.default
+                    continue
+
+                if field_info.default_factory is not None:
+                    payload[field_name] = field_info.get_default(
+                        call_default_factory=True,
+                        validated_data=payload,
+                    )
+                    continue
+
+                payload[field_name] = _annotation_fallback(field_info.annotation)
+
+            try:
+                return model_cls.model_validate(payload).model_dump()
+            except Exception:
+                return model_cls.model_construct(**payload).model_dump()
+
+        async def handle_http_exception(_: Request, exc: HTTPException) -> JSONResponse:
+            payload = _build_error_payload(
+                _,
+                code=exc.status_code,
+                message=_as_error_message(exc.detail),
+            )
+            return JSONResponse(status_code=200, content=payload)
+
+        async def handle_validation_exception(
+            _: Request, exc: RequestValidationError
+        ) -> JSONResponse:
+            payload = _build_error_payload(
+                _,
+                code=422,
+                message=f"RequestValidationError: {str(exc)}",
+            )
+            return JSONResponse(status_code=200, content=payload)
+
+        async def handle_unexpected_exception(
+            _: Request, exc: Exception
+        ) -> JSONResponse:
+            logger.exception("未处理异常", exc_info=exc)
+            payload = _build_error_payload(
+                _,
+                code=500,
+                message=f"{type(exc).__name__}: {str(exc)}",
+            )
+            return JSONResponse(status_code=200, content=payload)
+
+        app.add_exception_handler(HTTPException, cast(Any, handle_http_exception))
+        app.add_exception_handler(
+            RequestValidationError,
+            cast(Any, handle_validation_exception),
+        )
+        app.add_exception_handler(Exception, cast(Any, handle_unexpected_exception))
 
         app.add_middleware(
             CORSMiddleware,
@@ -182,11 +275,11 @@ def main():
         app.include_router(dispatch_router)
         app.include_router(history_router)
         app.include_router(tools_router)
+        app.include_router(plugins_router)
         app.include_router(setting_router)
         app.include_router(update_router)
         app.include_router(ocr_router)
-        app.include_router(ws_router)
-        app.include_router(plugins_router)
+        app.include_router(ws_debug_router)
 
         app.mount(
             "/api/res/materials",

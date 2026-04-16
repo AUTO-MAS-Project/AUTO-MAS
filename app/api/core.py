@@ -24,14 +24,15 @@
 import os
 import time
 import asyncio
+from typing import Any, cast
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.core import Config, Broadcast, TaskManager
 from app.services import System
-from app.models.schema import *
+from app.contracts.common_contract import OutBase
+from app.models.shared import WebSocketMessage
 from app.api.ws_command import ws_command
 from app.utils import get_logger
-from app.utils.websocket import ws_client_manager
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])
 logger = get_logger("DEV")
@@ -46,33 +47,50 @@ def is_backend_dev_mode() -> bool:
 
 @router.websocket("/ws")
 async def connect_websocket(websocket: WebSocket):
-
     if Config.websocket is not None:
         await websocket.close(code=1000, reason="已有连接")
         return
 
     await websocket.accept()
-    Config.websocket = None
+    Config.websocket = websocket
+    last_pong = time.monotonic()
+    last_ping = time.monotonic()
+    data: dict[str, Any] = {}
 
-    async def on_message(data: dict):
-        await Broadcast.put(data)
-
-    async def on_disconnect():
-        Config.websocket = None
-
-    session = await ws_client_manager.openwsr(
-        name=ws_client_manager.MAIN_CLIENT_NAME,
-        websocket=websocket,
-        ping_interval=15.0,
-        ping_timeout=30.0,
-        on_message=on_message,
-        on_disconnect=on_disconnect,
-    )
-
-    Config.websocket = session
     asyncio.create_task(TaskManager.start_startup_queue())
-    await session.wait_closed()
 
+    while True:
+        try:
+            payload = await asyncio.wait_for(websocket.receive_json(), timeout=15.0)
+            if not isinstance(payload, dict):
+                continue
+            data = cast(dict[str, Any], payload)
+            if data.get("type") == "Signal" and "Pong" in data.get("data", {}):
+                last_pong = time.monotonic()
+            elif data.get("type") == "Signal" and "Ping" in data.get("data", {}):
+                await websocket.send_json(
+                    WebSocketMessage(
+                        id="Main", type="Signal", data={"Pong": "无描述"}
+                    ).model_dump()
+                )
+            else:
+                await Broadcast.put(data)
+
+        except asyncio.TimeoutError:
+            if last_pong < last_ping:
+                await websocket.close(code=1000, reason="Ping超时")
+                break
+            await websocket.send_json(
+                WebSocketMessage(
+                    id="Main", type="Signal", data={"Ping": "无描述"}
+                ).model_dump()
+            )
+            last_ping = time.monotonic()
+
+        except WebSocketDisconnect:
+            break
+
+    Config.websocket = None
     if is_backend_dev_mode():
         logger.warning("后端开发模式下检测到 WS 断链，跳过 KillSelf 自动退出")
     else:
@@ -84,20 +102,11 @@ async def connect_websocket(websocket: WebSocket):
     "/close",
     summary="关闭后端程序",
     response_model=OutBase,
-    status_code=200,
 )
 async def close() -> OutBase:
     """关闭后端程序"""
 
-    try:
-        if Config.websocket is not None:
-            await Config.websocket.close(code=1000, reason="正常关闭")
-        if is_backend_dev_mode():
-            logger.warning("后端开发模式下忽略 /api/core/close 的 KillSelf 请求")
-            return OutBase(message="开发模式下已忽略关闭请求")
-        await System.set_power("KillSelf", from_frontend=True)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+    if Config.websocket is not None:
+        await Config.websocket.close(code=1000, reason="正常关闭")
+    await System.set_power("KillSelf", from_frontend=True)
     return OutBase()

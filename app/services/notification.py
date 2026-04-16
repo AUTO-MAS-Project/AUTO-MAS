@@ -1,7 +1,6 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2024-2025 DLmaster361
 #   Copyright © 2025-2026 AUTO-MAS Team
-import asyncio
 
 #   This file is part of AUTO-MAS.
 
@@ -26,23 +25,22 @@ import json
 import smtplib
 import httpx
 from datetime import datetime
-from plyer import notification
+from importlib import import_module
 from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, cast
 
-from app.core import Config
-from app.models.config import Webhook
+from app.models import Webhook
 from app.utils import get_logger, ImageUtils
 
 logger = get_logger("通知服务")
+notification = import_module("plyer").notification
 
 
 class Notification:
-
     async def push_plyer(self, title: str, message: str, ticker: str, t: int) -> None:
         """
         推送系统通知
@@ -59,6 +57,7 @@ class Notification:
             通知持续时间
         """
 
+        from app.core import Config
         if not Config.get("Notify", "IfPushPlyer"):
             return
 
@@ -95,6 +94,7 @@ class Notification:
             收件人地址
         """
 
+        from app.core import Config
         if Config.get("Notify", "SMTPServerAddress") == "":
             raise ValueError("邮件通知的SMTP服务器地址不能为空")
         if Config.get("Notify", "AuthorizationCode") == "":
@@ -115,10 +115,13 @@ class Notification:
             raise ValueError("邮件通知的接收邮箱格式错误或为空")
 
         # 定义邮件正文
+        message: MIMEText | MIMEMultipart
         if mode == "文本":
             message = MIMEText(content, "plain", "utf-8")
         elif mode == "网页":
             message = MIMEMultipart("alternative")
+        else:
+            raise ValueError(f"不支持的邮件模式: {mode}")
         message["From"] = formataddr(
             (
                 Header("AUTO-MAS通知服务", "utf-8").encode(),
@@ -175,6 +178,7 @@ class Notification:
         params = {"title": title, "desp": content}
         headers = {"Content-Type": "application/json;charset=utf-8"}
 
+        from app.core import Config
         async with httpx.AsyncClient(proxy=Config.proxy) as client:
             response = await client.post(url, json=params, headers=headers)
             result = response.json()
@@ -211,7 +215,6 @@ class Notification:
 
         # 替换模板变量
         try:
-
             # 准备模板变量
             template_vars = {
                 "title": title,
@@ -230,11 +233,16 @@ class Notification:
                 template_obj = json.loads(template)
 
                 # 递归替换JSON对象中的变量
-                def replace_variables(obj):
+                def replace_variables(obj: Any) -> Any:
                     if isinstance(obj, dict):
-                        return {k: replace_variables(v) for k, v in obj.items()}
+                        obj_mapping = cast(dict[str, Any], obj)
+                        return {
+                            key: replace_variables(value)
+                            for key, value in obj_mapping.items()
+                        }
                     elif isinstance(obj, list):
-                        return [replace_variables(item) for item in obj]
+                        obj_list = cast(list[Any], obj)
+                        return [replace_variables(item) for item in obj_list]
                     elif isinstance(obj, str):
                         result = obj
                         for key, value in template_vars.items():
@@ -279,29 +287,42 @@ class Notification:
         headers = {"Content-Type": "application/json"}
         headers.update(json.loads(webhook.get("Data", "Headers")))
 
+        from app.core import Config
         async with httpx.AsyncClient(proxy=Config.proxy, timeout=10) as client:
+            response: httpx.Response
             if webhook.get("Data", "Method") == "POST":
                 if isinstance(data, dict):
+                    payload = cast(dict[str, Any], data)
                     response = await client.post(
-                        url=webhook.get("Data", "Url"), json=data, headers=headers
+                        url=webhook.get("Data", "Url"), json=payload, headers=headers
                     )
                 elif isinstance(data, str):
                     response = await client.post(
                         url=webhook.get("Data", "Url"), content=data, headers=headers
                     )
+                else:
+                    response = await client.post(
+                        url=webhook.get("Data", "Url"),
+                        content=str(data),
+                        headers=headers,
+                    )
             elif webhook.get("Data", "Method") == "GET":
                 if isinstance(data, dict):
                     # Flatten params to ensure all values are str or list of str
-                    params = {}
-                    for k, v in data.items():
+                    params: dict[str, str] = {}
+                    for k, v in cast(dict[str, Any], data).items():
                         if isinstance(v, (dict, list)):
-                            params[k] = json.dumps(v, ensure_ascii=False)
+                            params[str(k)] = json.dumps(v, ensure_ascii=False)
                         else:
-                            params[k] = str(v)
+                            params[str(k)] = str(v)
                 else:
-                    params = {"message": str(data)}
+                    params: dict[str, str] = {"message": str(data)}
                 response = await client.get(
                     url=webhook.get("Data", "Url"), params=params, headers=headers
+                )
+            else:
+                raise ValueError(
+                    f"不支持的 Webhook 方法: {webhook.get('Data', 'Method')}"
                 )
 
         # 检查响应
@@ -312,7 +333,7 @@ class Notification:
         else:
             raise Exception(f"HTTP {response.status_code}: {response.text}")
 
-    async def _WebHookPush(self, title, content, webhook_url) -> None:
+    async def _WebHookPush(self, title: str, content: str, webhook_url: str) -> None:
         """
         WebHook 推送通知 (即将弃用)
 
@@ -327,6 +348,7 @@ class Notification:
         content = f"{title}\n{content}"
         data = {"msgtype": "text", "text": {"content": content}}
 
+        from app.core import Config
         async with httpx.AsyncClient(proxy=Config.proxy) as client:
             response = await client.post(url=webhook_url, json=data)
             info = response.json()
@@ -365,6 +387,7 @@ class Notification:
             "image": {"base64": image_base64, "md5": image_md5},
         }
 
+        from app.core import Config
         async with httpx.AsyncClient(proxy=Config.proxy) as client:
             response = await client.post(url=webhook_url, json=data)
             info = response.json()
@@ -422,7 +445,7 @@ class Notification:
         if success:
             logger.success(f"Koishi 通知推送成功: {message[:50]}")
         else:
-            logger.error(f"Koishi 通知推送失败: 发送消息失败")
+            logger.error("Koishi 通知推送失败: 发送消息失败")
 
         return success
 
@@ -440,6 +463,7 @@ class Notification:
         )
 
         # 发送邮件通知
+        from app.core import Config
         if Config.get("Notify", "IfSendMail"):
             await self.send_mail(
                 "文本",
