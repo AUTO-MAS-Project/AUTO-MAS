@@ -81,7 +81,7 @@ except ImportError:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.2.0-beta.1"
+    VERSION = "v5.2.0-beta.2"
 
     def __init__(self) -> None:
         super().__init__()
@@ -1437,6 +1437,7 @@ class AppConfig(GlobalConfig):
             proxy_addr = f"http://{proxy_addr}"
 
         try:
+            logger.info(f"使用代理: {proxy_addr}")
             return httpx.Proxy(proxy_addr)
         except Exception as e:
             logger.warning(f"代理配置无效: {proxy_addr}, 错误: {e}")

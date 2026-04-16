@@ -2,13 +2,17 @@
   <div class="scripts-grid">
     <!-- 使用vuedraggable包装脚本列表 -->
     <draggable v-model="localScripts" item-key="id" :animation="200" ghost-class="script-ghost"
-      chosen-class="script-chosen" drag-class="script-drag" class="draggable-scripts" @end="onScriptDragEnd">
+      chosen-class="script-chosen" drag-class="script-drag" handle=".script-drag-handle" class="draggable-scripts"
+      @end="onScriptDragEnd">
       <template #item="{ element: script }">
         <div :key="script.id" class="script-wrapper">
-          <a-card :hoverable="true" class="script-card" :body-style="{ padding: '0' }">
+          <a-card :hoverable="false" class="script-card" :body-style="{ padding: '0' }">
             <!-- 脚本头部信息 -->
             <div class="script-header">
               <div class="script-info">
+                <span class="script-drag-handle" title="拖拽排序" aria-label="拖拽排序">
+                  <span class="script-drag-dots" aria-hidden="true"></span>
+                </span>
                 <div class="script-logo-container">
                   <img v-if="script.type === 'MAA'" src="@/assets/MAA.png" alt="MAA" class="script-logo" />
                   <img v-else-if="script.type === 'SRC'" src="@/assets/SRC.png" alt="SRC" class="script-logo" />
@@ -101,10 +105,13 @@
             <div v-if="script.users && script.users.length > 0" class="users-section">
               <!-- 使用vuedraggable包装用户列表 -->
               <draggable v-model="script.users" item-key="id" :animation="200" ghost-class="user-ghost"
-                chosen-class="user-chosen" drag-class="user-drag" class="users-list"
+                chosen-class="user-chosen" drag-class="user-drag" handle=".user-drag-handle" class="users-list"
                 @end="(evt: any) => onUserDragEnd(evt, script)">
                 <template #item="{ element: user }">
                   <div :key="user.id" class="user-item">
+                    <span class="user-drag-handle" title="拖拽排序" aria-label="拖拽排序">
+                      <span class="script-drag-dots" aria-hidden="true"></span>
+                    </span>
                     <div class="user-info">
                       <div class="user-details-row">
                         <div class="user-name-section">
@@ -931,21 +938,35 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 
 .script-wrapper {
   width: 100%;
+  cursor: auto;
 }
 
 .script-ghost {
-  opacity: 0.5;
-  transform: rotate(2deg);
+  opacity: 0 !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
 }
 
 .script-chosen {
-  cursor: grabbing !important;
+  cursor: move !important;
 }
 
 .script-drag {
   transform: rotate(2deg);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
   z-index: 1000;
+  opacity: 1 !important;
+  cursor: all-scroll !important;
+}
+
+.script-drag * {
+  cursor: all-scroll !important;
+}
+
+.script-drag .script-card {
+  opacity: 1 !important;
+  transition: none !important;
 }
 
 .users-list {
@@ -953,13 +974,14 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 }
 
 .user-ghost {
-  opacity: 0.5;
-  background: var(--ant-color-primary-bg) !important;
-  border: 2px dashed var(--ant-color-primary) !important;
+  opacity: 0 !important;
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
 }
 
 .user-chosen {
-  cursor: grabbing !important;
+  cursor: move !important;
   background: var(--ant-color-primary-bg) !important;
 }
 
@@ -968,6 +990,28 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
   z-index: 999;
   background: var(--ant-color-bg-container) !important;
+  opacity: 1 !important;
+  cursor: all-scroll !important;
+}
+
+.user-drag * {
+  cursor: all-scroll !important;
+}
+
+.script-drag .script-drag-handle {
+  cursor: grabbing !important;
+}
+
+.script-drag .script-drag-handle * {
+  cursor: grabbing !important;
+}
+
+.user-drag .user-drag-handle {
+  cursor: grabbing !important;
+}
+
+.user-drag .user-drag-handle * {
+  cursor: grabbing !important;
 }
 
 /* 拖拽时禁用某些交互 */
@@ -987,7 +1031,6 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   border-radius: 16px;
   border: 1px solid var(--ant-color-border-secondary);
   background: var(--ant-color-bg-container);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
   height: 100%;
   display: flex;
@@ -997,8 +1040,6 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 
 .script-card:hover {
   border-color: var(--ant-color-primary);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-  transform: translateY(-2px);
 }
 
 /* 脚本头部 */
@@ -1015,6 +1056,34 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   align-items: center;
   gap: 12px;
   flex: 1;
+}
+
+.script-drag-handle {
+  width: 16px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ant-color-text-tertiary);
+  background: transparent;
+  border: none;
+  cursor: move;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.script-drag-handle:active {
+  cursor: move;
+}
+
+.script-drag-dots {
+  width: 10px;
+  height: 16px;
+  display: block;
+  background-image: radial-gradient(currentColor 1.2px, transparent 1.2px);
+  background-size: 5px 5px;
+  background-position: 0 0;
+  opacity: 0.65;
 }
 
 .script-logo-container {
@@ -1034,7 +1103,6 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   width: 36px;
   height: 36px;
   object-fit: contain;
-  transition: all 0.3s ease;
 }
 
 .script-details {
@@ -1068,13 +1136,7 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 .action-button {
   border-radius: 8px;
   font-weight: 500;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.action-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 .add-button {
@@ -1105,16 +1167,33 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   gap: 12px;
   padding: 16px 20px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
-  transition: all 0.2s ease;
   min-height: 80px;
+}
+
+.user-drag-handle {
+  width: 16px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ant-color-text-tertiary);
+  background: transparent;
+  border: none;
+  cursor: move;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.user-drag-handle:active {
+  cursor: move;
+}
+
+.user-drag-handle:hover .script-drag-dots {
+  opacity: 0.85;
 }
 
 .user-item:last-child {
   border-bottom: none;
-}
-
-.user-item:hover {
-  background: var(--ant-color-bg-layout);
 }
 
 .user-info {
@@ -1203,26 +1282,14 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 .user-action-btn {
   border-radius: 6px;
   font-weight: 500;
-  transition: all 0.3s ease;
   min-width: 60px;
   border: 1px solid var(--ant-color-border);
   background: var(--ant-color-bg-container);
 }
 
-.user-action-btn:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  border-color: var(--ant-color-primary);
-}
-
 .user-action-btn.ant-btn-dangerous {
   border-color: var(--ant-color-error);
   color: var(--ant-color-error);
-}
-
-.user-action-btn.ant-btn-dangerous:hover {
-  border-color: var(--ant-color-error-hover);
-  background: var(--ant-color-error-bg);
 }
 
 /* 空状态 */
@@ -1340,17 +1407,7 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   .clickable-tag {
     cursor: pointer;
     user-select: none;
-    transition: all 0.2s ease;
     border: 1px solid rgba(0, 0, 0, 0.15);
-  }
-
-  .clickable-tag:hover {
-    transform: scale(1.05);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  }
-
-  .clickable-tag:active {
-    transform: scale(0.95);
   }
 }
 </style>

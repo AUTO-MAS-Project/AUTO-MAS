@@ -19,8 +19,6 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .login import login
-from .notify import push_notification
-from .window import wait_and_focus_window
+from .skland import skland_sign_in
 
-__all__ = ["login", "push_notification", "wait_and_focus_window"]
+__all__ = ["skland_sign_in"]
