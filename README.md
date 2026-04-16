@@ -1,7 +1,7 @@
 <h1 align="center">AUTO-MAS</h1>
 <p align="center">
   多脚本多配置统一管理与自动化软件<br><br>
-  <img alt="软件图标" src="https://auto-mas.top/resources/icon.png">
+  <img alt="软件图标" src="https://auto-mas.top/favicon.ico">
 </p>
 
 ---
