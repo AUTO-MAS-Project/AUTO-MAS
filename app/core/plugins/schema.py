@@ -62,6 +62,8 @@ class PluginSchemaManager:
         "boolean": bool,
         "dict": dict[str, Any],
         "list": list[Any],
+        "key_value": dict[str, Any],
+        "table": list[dict[str, Any]],
     }
 
     def _canonical_plugin_name(self, plugin_name: str) -> str:
@@ -827,24 +829,36 @@ class PluginSchemaManager:
                 2) 未知类型别名；
                 3) 联合类型解析失败。
         """
-        if expr in self._PRIMITIVE_TYPE_ALIASES:
-            return self._PRIMITIVE_TYPE_ALIASES[expr]
+        normalized = expr.strip()
+        if (
+            len(normalized) >= 2
+            and normalized[0] == normalized[-1]
+            and normalized[0] in {'"', "'"}
+        ):
+            normalized = normalized[1:-1].strip()
 
-        parts = self._split_top_level(expr, "|")
+        if normalized in self._PRIMITIVE_TYPE_ALIASES:
+            return self._PRIMITIVE_TYPE_ALIASES[normalized]
+
+        lowered = normalized.lower()
+        if lowered in self._PRIMITIVE_TYPE_ALIASES:
+            return self._PRIMITIVE_TYPE_ALIASES[lowered]
+
+        parts = self._split_top_level(normalized, "|")
         if len(parts) > 1:
             annotation = self._parse_type_expr(parts[0])
             for part in parts[1:]:
                 annotation = annotation | self._parse_type_expr(part)
             return annotation
 
-        if expr.startswith("list[") and expr.endswith("]"):
-            inner = expr[5:-1].strip()
+        if normalized.startswith("list[") and normalized.endswith("]"):
+            inner = normalized[5:-1].strip()
             if not inner:
                 raise PluginSchemaError(f"非法 list 类型表达式: {expr}")
             return list[self._parse_type_expr(inner)]
 
-        if expr.startswith("dict[") and expr.endswith("]"):
-            inner = expr[5:-1].strip()
+        if normalized.startswith("dict[") and normalized.endswith("]"):
+            inner = normalized[5:-1].strip()
             items = self._split_top_level(inner, ",")
             if len(items) != 2:
                 raise PluginSchemaError(f"非法 dict 类型表达式: {expr}")
@@ -852,15 +866,15 @@ class PluginSchemaManager:
             value_type = self._parse_type_expr(items[1].strip())
             return dict[key_type, value_type]
 
-        if expr.startswith("tuple[") and expr.endswith("]"):
-            inner = expr[6:-1].strip()
+        if normalized.startswith("tuple[") and normalized.endswith("]"):
+            inner = normalized[6:-1].strip()
             if not inner:
                 raise PluginSchemaError(f"非法 tuple 类型表达式: {expr}")
             tuple_args = [self._parse_type_expr(item.strip()) for item in self._split_top_level(inner, ",")]
             return tuple[tuple(tuple_args)]
 
-        if expr.startswith("Optional[") and expr.endswith("]"):
-            inner = expr[9:-1].strip()
+        if normalized.startswith("Optional[") and normalized.endswith("]"):
+            inner = normalized[9:-1].strip()
             if not inner:
                 raise PluginSchemaError(f"非法 Optional 类型表达式: {expr}")
             return self._parse_type_expr(inner) | None
