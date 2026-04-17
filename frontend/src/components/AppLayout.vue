@@ -30,6 +30,7 @@
 <script lang="ts" setup>
 import {
   ApiOutlined,
+  AppstoreOutlined,
   CalendarOutlined,
   ControlOutlined,
   DatabaseOutlined,
@@ -71,6 +72,7 @@ const mainMenuItems = [
   { key: '/plans', label: '计划管理', icon: icon(CalendarOutlined) },
   { key: '/emulators', label: '模拟器管理', icon: icon(DatabaseOutlined) },
   { key: '/plugins', label: '插件管理', icon: icon(ApiOutlined) },
+  { key: '/plugins-market', label: '插件市场', icon: icon(AppstoreOutlined) },
   { key: '/queue', label: '调度队列', icon: icon(UnorderedListOutlined) },
   { key: '/scheduler', label: '调度中心', icon: icon(ControlOutlined) },
 ]
