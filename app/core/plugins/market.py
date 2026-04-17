@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,9 +28,13 @@ PYPI_MARKET_PREFIX_TAGS: tuple[str, ...] = ("automas_plugin_", "automas_")
 PYPI_MARKET_SEED_PROJECTS: tuple[str, ...] = ()
 
 PYPI_PROJECT_JSON_ENDPOINT = "https://pypi.org/pypi/{project}/json"
+PYPI_SIMPLE_INDEX_ENDPOINT = "https://pypi.org/simple/"
 PYPI_TIMEOUT_SECONDS = 12.0
+PYPI_SIMPLE_TIMEOUT_SECONDS = 45.0
 PYPI_FETCH_CONCURRENCY = 8
+PYPI_DEFAULT_PER_PREFIX_LIMIT = 60
 LOCAL_PROJECT_NAME_PATTERN = re.compile(r'^\s*name\s*=\s*"(?P<name>[^"]+)"\s*$', re.MULTILINE)
+SIMPLE_INDEX_ANCHOR_PATTERN = re.compile(r">(?P<name>[^<]+)</a>", re.IGNORECASE)
 
 
 def _normalize_package_name(package_name: str) -> str:
@@ -98,11 +103,73 @@ def _build_installed_map(packages: Iterable[str], installed_names: set[str]) -> 
     }
 
 
-def collect_market_candidate_project_names(plugins_dir: Path | None = None) -> list[str]:
-    """收集候选包名（本地插件 + 已安装 + 可选种子），并按前缀过滤。"""
+async def _collect_prefix_projects_from_simple_index(
+    per_prefix_limit: int,
+) -> list[str]:
+    """从 PyPI simple index 发现符合前缀规则的项目名。"""
+    normalized_prefixes = {
+        prefix: _normalize_package_name(prefix)
+        for prefix in PYPI_MARKET_PREFIX_TAGS
+    }
+    counters = {prefix: 0 for prefix in PYPI_MARKET_PREFIX_TAGS}
+    result: list[str] = []
+    seen: set[str] = set()
+
+    if per_prefix_limit <= 0:
+        return result
+
+    timeout = httpx.Timeout(PYPI_SIMPLE_TIMEOUT_SECONDS)
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        async with client.stream(
+            "GET",
+            PYPI_SIMPLE_INDEX_ENDPOINT,
+            headers={"User-Agent": "AUTO-MAS-PluginMarket/1.0"},
+        ) as response:
+            response.raise_for_status()
+
+            async for line in response.aiter_lines():
+                text = str(line or "").strip()
+                if "</a>" not in text:
+                    continue
+
+                matched = SIMPLE_INDEX_ANCHOR_PATTERN.search(text)
+                if not matched:
+                    continue
+
+                project_name = html.unescape(matched.group("name") or "").strip()
+                if not project_name:
+                    continue
+
+                normalized_name = _normalize_package_name(project_name)
+                if normalized_name in seen:
+                    continue
+
+                for prefix, normalized_prefix in normalized_prefixes.items():
+                    if counters[prefix] >= per_prefix_limit:
+                        continue
+                    if not normalized_name.startswith(normalized_prefix):
+                        continue
+
+                    counters[prefix] += 1
+                    seen.add(normalized_name)
+                    result.append(project_name)
+                    break
+
+                if all(count >= per_prefix_limit for count in counters.values()):
+                    break
+
+    return result
+
+
+async def collect_market_candidate_project_names(
+    plugins_dir: Path | None = None,
+    per_prefix_limit: int = PYPI_DEFAULT_PER_PREFIX_LIMIT,
+) -> list[str]:
+    """收集候选包名（仅 PyPI 前缀扫描 + 可选种子）。"""
+    _ = plugins_dir
     names: set[str] = set(PYPI_MARKET_SEED_PROJECTS)
-    names.update(_collect_local_project_names(plugins_dir=plugins_dir))
-    names.update(collect_installed_distribution_names(plugins_dir=plugins_dir))
+    pypi_projects = await _collect_prefix_projects_from_simple_index(per_prefix_limit=per_prefix_limit)
+    names.update(pypi_projects)
 
     filtered = [name for name in names if _match_prefix_tag(name)]
     return sorted(filtered, key=_normalize_package_name)
@@ -182,11 +249,14 @@ async def _fetch_market_items_from_candidates(candidates: list[str]) -> list[dic
 
 async def fetch_market_snapshot(
     plugins_dir: Path | None = None,
-    per_prefix_limit: int = 0,
+    per_prefix_limit: int = PYPI_DEFAULT_PER_PREFIX_LIMIT,
 ) -> dict[str, Any]:
     """构建插件市场快照。"""
-    _ = per_prefix_limit
-    candidates = collect_market_candidate_project_names(plugins_dir=plugins_dir)
+    limit = max(1, min(int(per_prefix_limit or PYPI_DEFAULT_PER_PREFIX_LIMIT), 300))
+    candidates = await collect_market_candidate_project_names(
+        plugins_dir=plugins_dir,
+        per_prefix_limit=limit,
+    )
     items = await _fetch_market_items_from_candidates(candidates)
     installed_names = collect_installed_distribution_names(plugins_dir=plugins_dir)
     installed_map = _build_installed_map((item["package"] for item in items), installed_names)
