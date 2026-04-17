@@ -174,6 +174,12 @@ const routes = [
     meta: { title: '插件管理' },
   },
   {
+    path: '/plugins-market',
+    name: 'PluginMarket',
+    component: () => import('../views/PluginMarket.vue'),
+    meta: { title: '插件市场' },
+  },
+  {
     path: '/settings',
     name: 'Settings',
     component: () => import('../views/setting/index.vue'),

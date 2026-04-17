@@ -29,11 +29,18 @@ WebSocket 客户端调试 API
 """
 
 import json
+import asyncio
+from pathlib import Path
 from typing import Optional, Dict, Any, Callable
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.utils.websocket import ws_client_manager
 from app.api.ws_command import list_ws_commands
+from app.core.plugins import PluginManager
+from app.core.plugins.market import (
+    fetch_market_snapshot,
+    collect_installed_distribution_names,
+)
 from app.utils.logger import get_logger
 from app.models.schema import (
     WSClientCreateIn,
@@ -56,6 +63,205 @@ logger = get_logger("WS端点")
 
 router = APIRouter(prefix="/api/ws", tags=["Websocket端点"])
 WSDEV_CHANNEL_NAME = "wsdev"
+PLUGIN_CHANNEL_NAME = "plugin"
+PLUGIN_CHANNEL_CLIENT_ID = "PluginMarket"
+_plugin_operation_lock = asyncio.Lock()
+
+
+def _normalize_distribution_name(name: str) -> str:
+    return str(name or "").strip().lower().replace("-", "_")
+
+
+async def _send_plugin_message(
+    event: str,
+    *,
+    request_id: str | None = None,
+    status: str = "success",
+    message: str = "",
+    payload: dict[str, Any] | None = None,
+) -> None:
+    session = ws_client_manager.get_session(PLUGIN_CHANNEL_NAME)
+    if session is None:
+        return
+
+    await session.send_json(
+        {
+            "id": PLUGIN_CHANNEL_CLIENT_ID,
+            "type": "Message",
+            "data": {
+                "event": event,
+                "request_id": request_id,
+                "status": status,
+                "message": message,
+                "payload": payload or {},
+            },
+        }
+    )
+
+
+async def _push_installed_sync(
+    package_name: str,
+    *,
+    request_id: str | None = None,
+) -> None:
+    plugins_dir = Path.cwd() / "plugins"
+    installed_names = collect_installed_distribution_names(plugins_dir=plugins_dir)
+    normalized = _normalize_distribution_name(package_name)
+    await _send_plugin_message(
+        "plugin.installed.sync",
+        request_id=request_id,
+        payload={
+            "package": package_name,
+            "installed": normalized in installed_names,
+        },
+    )
+
+
+async def _handle_plugin_channel_message(data: Dict[str, Any]) -> None:
+    action = str(data.get("action") or "").strip()
+    request_id = str(data.get("request_id") or "").strip() or None
+    payload = data.get("payload")
+    if not isinstance(payload, dict):
+        payload = {}
+
+    if not action:
+        await _send_plugin_message(
+            "plugin.error",
+            request_id=request_id,
+            status="error",
+            message="缺少 action 字段",
+        )
+        return
+
+    if action == "market.snapshot.request":
+        try:
+            limit = int(payload.get("per_prefix_limit") or 60)
+            snapshot = await fetch_market_snapshot(
+                plugins_dir=Path.cwd() / "plugins",
+                per_prefix_limit=max(1, min(limit, 200)),
+            )
+            await _send_plugin_message(
+                "market.snapshot.response",
+                request_id=request_id,
+                payload=snapshot,
+            )
+        except Exception as error:
+            logger.error(f"构建插件市场快照失败: {type(error).__name__}: {error}")
+            await _send_plugin_message(
+                "plugin.error",
+                request_id=request_id,
+                status="error",
+                message=f"构建插件市场快照失败: {type(error).__name__}: {error}",
+            )
+        return
+
+    if action == "plugin.install.request":
+        package_name = str(payload.get("package") or "").strip()
+        if not package_name:
+            await _send_plugin_message(
+                "plugin.error",
+                request_id=request_id,
+                status="error",
+                message="安装请求缺少 package",
+            )
+            return
+
+        await _send_plugin_message(
+            "plugin.install.progress",
+            request_id=request_id,
+            payload={"package": package_name, "progress": 5, "stage": "queued"},
+        )
+
+        async with _plugin_operation_lock:
+            await _send_plugin_message(
+                "plugin.install.progress",
+                request_id=request_id,
+                payload={"package": package_name, "progress": 30, "stage": "installing"},
+            )
+            try:
+                await PluginManager.install_plugin_package(package_name)
+                await _send_plugin_message(
+                    "plugin.install.progress",
+                    request_id=request_id,
+                    payload={"package": package_name, "progress": 100, "stage": "completed"},
+                )
+                await _send_plugin_message(
+                    "plugin.install.result",
+                    request_id=request_id,
+                    payload={"package": package_name, "success": True},
+                    message=f"安装成功: {package_name}",
+                )
+            except Exception as error:
+                await _send_plugin_message(
+                    "plugin.install.result",
+                    request_id=request_id,
+                    status="error",
+                    payload={"package": package_name, "success": False},
+                    message=f"安装失败: {type(error).__name__}: {error}",
+                )
+            finally:
+                await _push_installed_sync(package_name, request_id=request_id)
+        return
+
+    if action == "plugin.uninstall.request":
+        package_name = str(payload.get("package") or "").strip()
+        if not package_name:
+            await _send_plugin_message(
+                "plugin.error",
+                request_id=request_id,
+                status="error",
+                message="卸载请求缺少 package",
+            )
+            return
+
+        async with _plugin_operation_lock:
+            try:
+                await PluginManager.uninstall_plugin_package(package_name)
+                await _send_plugin_message(
+                    "plugin.uninstall.result",
+                    request_id=request_id,
+                    payload={"package": package_name, "success": True},
+                    message=f"卸载成功: {package_name}",
+                )
+            except Exception as error:
+                await _send_plugin_message(
+                    "plugin.uninstall.result",
+                    request_id=request_id,
+                    status="error",
+                    payload={"package": package_name, "success": False},
+                    message=f"卸载失败: {type(error).__name__}: {error}",
+                )
+            finally:
+                await _push_installed_sync(package_name, request_id=request_id)
+        return
+
+    if action == "plugin.installed.request":
+        package_name = str(payload.get("package") or "").strip()
+        if not package_name:
+            await _send_plugin_message(
+                "plugin.error",
+                request_id=request_id,
+                status="error",
+                message="installed 查询缺少 package",
+            )
+            return
+        await _push_installed_sync(package_name, request_id=request_id)
+        return
+
+    await _send_plugin_message(
+        "plugin.error",
+        request_id=request_id,
+        status="error",
+        message=f"未知 action: {action}",
+    )
+
+
+async def _on_plugin_channel_connect() -> None:
+    await _send_plugin_message(
+        "plugin.channel.ready",
+        payload={"channel": PLUGIN_CHANNEL_NAME},
+        message="plugin 通道已连接",
+    )
 
 
 async def _send_wsdev_snapshot(websocket: WebSocket):
@@ -166,6 +372,14 @@ def _register_builtin_reverse_channels():
         name=WSDEV_CHANNEL_NAME,
         ping_interval=15.0,
         ping_timeout=30.0,
+        overwrite=True,
+    )
+    ws_client_manager.register_reverse_channel(
+        name=PLUGIN_CHANNEL_NAME,
+        ping_interval=15.0,
+        ping_timeout=30.0,
+        on_message=_handle_plugin_channel_message,
+        on_connect=_on_plugin_channel_connect,
         overwrite=True,
     )
 
