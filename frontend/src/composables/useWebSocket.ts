@@ -1044,10 +1044,16 @@ const createGlobalWebSocket = (): WebSocket => {
   }
 
   ws.onclose = event => {
-    logger.info(`WebSocket连接关闭事件触发: code=${event.code}, reason="${event.reason}"`)
+    const isHeartbeatTimeout = event.code === 1000 && (event.reason === 'Ping超时' || event.reason === '心跳超时')
+
+    if (isHeartbeatTimeout) {
+      logger.error(`WebSocket连接因心跳超时关闭: code=${event.code}, reason="${event.reason}"`)
+    } else {
+      logger.info(`WebSocket连接关闭事件触发: code=${event.code}, reason="${event.reason}"`)
+    }
     setGlobalStatus('已断开')
     // WebSocket断开时设置后端状态
-    if (event.code === 1000 && (event.reason === 'Ping超时' || event.reason === '心跳超时')) {
+    if (isHeartbeatTimeout) {
       setBackendStatus('error')
     } else {
       setBackendStatus('stopped')
@@ -1055,13 +1061,15 @@ const createGlobalWebSocket = (): WebSocket => {
     stopGlobalHeartbeat()
     global.isConnecting = false
 
-    logger.info(`WebSocket连接关闭详情: code=${event.code}, reason="${event.reason}"`)
+    if (!isHeartbeatTimeout) {
+      logger.info(`WebSocket连接关闭详情: code=${event.code}, reason="${event.reason}"`)
+    }
 
     // 重置一些可能阻止重连的状态
     global.lastConnectAttempt = 0
 
     // 根据关闭原因决定处理方式
-    if (event.code === 1000 && (event.reason === 'Ping超时' || event.reason === '心跳超时')) {
+    if (isHeartbeatTimeout) {
       // 心跳超时通常意味着后端有问题，直接处理后端故障
       handleBackendFailure().catch(e => {
         const errorMsg = e instanceof Error ? e.message : String(e)
