@@ -113,17 +113,6 @@ class AutoProxyTask(TaskExecuteBase):
 
         self.run_book = False
 
-    def _has_stop_sequence_completed(self, log: str) -> bool:
-        return any(
-            marker in log
-            for marker in (
-                "任务完成: 停止任务",
-                "任务完成: ⛔ 结束进程",
-                "任务完成: __MXU_KILLPROC__",
-                "任务完成: StopTask",
-            )
-        )
-
     async def main_task(self):
         """自动代理模式主逻辑"""
 
@@ -509,10 +498,13 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_info.log = log
         if "资源加载失败" in log:
             self.cur_user_log.status = "MaaEnd 资源加载失败"
-        elif (not await self.maaend_process_manager.is_running()) or self._has_stop_sequence_completed(log):
-            # MaaEnd may close stdout before asyncio refreshes returncode.
-            # The explicit stop-task markers avoid missing the final completion pass.
-
+        elif (
+            "任务完成: 停止任务" in log
+            or "任务完成: ⛔ 结束进程" in log
+            or "任务完成: __MXU_KILLPROC__" in log
+            or "任务完成: StopTask" in log
+            or not await self.maaend_process_manager.is_running()
+        ):
             if self.task_dict is None:
                 self.cur_user_log.status = "MaaEnd 未加载任何任务"
             else:
