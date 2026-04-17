@@ -25,12 +25,19 @@ import time
 import asyncio
 import json
 import re
+import os
 from typing import Optional, Callable, Any, Dict, List
 
 from websockets.asyncio.client import connect, ClientConnection
 from websockets.exceptions import ConnectionClosed
 
 from app.utils.logger import get_logger
+
+
+def _is_backend_dev_mode() -> bool:
+    """判断后端是否处于开发模式。"""
+    raw = str(os.getenv("AUTO_MAS_DEV", "")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 # ============== WebSocket 客户端实例 ==============
 
@@ -53,6 +60,7 @@ class ReverseWebSocketSession:
         self.websocket = websocket
         self.name = name
         self.logger = get_logger(f"WS反向会话:{self.name}")
+        self._log_heartbeat_details = _is_backend_dev_mode()
 
         self.ping_interval = ping_interval
         self.ping_timeout = ping_timeout
@@ -204,14 +212,14 @@ class ReverseWebSocketSession:
         message = {"id": "Client", "type": "Signal", "data": {"Ping": "heartbeat"}}
         if await self.send(message):
             self._last_ping = time.monotonic()
-            if self.name != "Main":
+            if self._log_heartbeat_details and self.name != "Main":
                 self.logger.debug("已发送 Ping")
 
     async def _send_pong(self):
         """发送应用层 Pong。"""
         message = {"id": "Client", "type": "Signal", "data": {"Pong": "heartbeat"}}
         await self.send(message)
-        if self.name != "Main":
+        if self._log_heartbeat_details and self.name != "Main":
             self.logger.debug("已发送 Pong")
 
     async def _handle_message(self, raw_message: Any):
@@ -226,11 +234,11 @@ class ReverseWebSocketSession:
                 signal_data = data.get("data", {})
                 if "Pong" in signal_data:
                     self._last_pong = time.monotonic()
-                    if self.name != "Main":
+                    if self._log_heartbeat_details and self.name != "Main":
                         self.logger.debug("收到 Pong")
                     return
                 if "Ping" in signal_data:
-                    if self.name != "Main":
+                    if self._log_heartbeat_details and self.name != "Main":
                         self.logger.debug("收到 Ping")
                     await self._send_pong()
                     return
@@ -302,7 +310,7 @@ class ReverseWebSocketSession:
                 if self._last_pong < self._last_ping:
                     time_since_ping = current_time - self._last_ping
                     if time_since_ping > self.ping_timeout:
-                        self.logger.warning(f"Pong 超时 ({time_since_ping:.1f}s)，断开连接")
+                        self.logger.error(f"Pong 超时 ({time_since_ping:.1f}s)，断开连接")
                         break
 
                 if current_time - self._last_ping >= self.ping_interval:
@@ -353,6 +361,7 @@ class WebSocketClient:
         WebSocketClient._instance_counter += 1
         self.name = name or f"WSClient-{WebSocketClient._instance_counter}"
         self.logger = get_logger(f"WS客户端:{self.name}")
+        self._log_heartbeat_details = _is_backend_dev_mode()
 
         self.url = url
         self.ping_interval = ping_interval
@@ -488,13 +497,15 @@ class WebSocketClient:
         message = {"id": "Client", "type": "Signal", "data": {"Ping": "heartbeat"}}
         if await self.send(message):
             self._last_ping = time.monotonic()
-            self.logger.debug("已发送 Ping")
+            if self._log_heartbeat_details:
+                self.logger.debug("已发送 Ping")
 
     async def _send_pong(self):
         """发送应用层 Pong"""
         message = {"id": "Client", "type": "Signal", "data": {"Pong": "heartbeat"}}
         await self.send(message)
-        self.logger.debug("已发送 Pong")
+        if self._log_heartbeat_details:
+            self.logger.debug("已发送 Pong")
 
     async def _handle_message(self, raw_message: str):
         """
@@ -511,10 +522,12 @@ class WebSocketClient:
                 signal_data = data.get("data", {})
                 if "Pong" in signal_data:
                     self._last_pong = time.monotonic()
-                    self.logger.debug("收到 Pong")
+                    if self._log_heartbeat_details:
+                        self.logger.debug("收到 Pong")
                     return
                 elif "Ping" in signal_data:
-                    self.logger.debug("收到 Ping")
+                    if self._log_heartbeat_details:
+                        self.logger.debug("收到 Ping")
                     await self._send_pong()
                     return
 
@@ -620,7 +633,7 @@ class WebSocketClient:
                 if self._last_pong < self._last_ping:
                     time_since_ping = current_time - self._last_ping
                     if time_since_ping > self.ping_timeout:
-                        self.logger.warning(
+                        self.logger.error(
                             f"Pong 超时 ({time_since_ping:.1f}s)，断开连接"
                         )
                         break
