@@ -100,7 +100,17 @@ const allItems = computed(() => [
 // 选中项：根据当前路径前缀匹配
 const selectedKeys = computed(() => {
   const path = route.path
-  const matched = allItems.value.find(i => path.startsWith(String(i.key)))
+  const exactMatched = allItems.value.find(i => path === String(i.key))
+  if (exactMatched) {
+    return [exactMatched.key]
+  }
+
+  // 退化到前缀匹配时，优先选择“最长前缀”，避免 /plugins 命中 /plugins-market。
+  const prefixMatched = allItems.value
+    .filter(i => path.startsWith(String(i.key)))
+    .sort((a, b) => String(b.key).length - String(a.key).length)[0]
+
+  const matched = prefixMatched
   return [matched?.key || '/home']
 })
 
