@@ -101,12 +101,19 @@ interface PluginMessageEnvelope {
   payload?: any
 }
 
+interface PluginMarketCache {
+  snapshot: MarketSnapshot
+  saved_at: string
+}
+
 const logger = window.electronAPI.getLogger('插件市场')
+const PLUGIN_MARKET_CACHE_KEY = 'auto-mas-plugin-market-cache-v1'
 const wsStatus = ref('未连接')
 const isConnected = ref(false)
 const wsRef = ref<WebSocket | null>(null)
 const reconnectTimer = ref<number | null>(null)
 const manualClose = ref(false)
+const shouldFetchOnConnect = ref(false)
 
 const marketSnapshot = ref<MarketSnapshot | null>(null)
 const installedState = ref<Record<string, boolean>>({})
@@ -146,6 +153,54 @@ const applySnapshot = (snapshot: MarketSnapshot) => {
     nextState[normalizeName(pkg)] = Boolean(installed)
   })
   installedState.value = nextState
+}
+
+const saveSnapshotCache = (snapshot: MarketSnapshot) => {
+  try {
+    const payload: PluginMarketCache = {
+      snapshot,
+      saved_at: new Date().toISOString(),
+    }
+    sessionStorage.setItem(PLUGIN_MARKET_CACHE_KEY, JSON.stringify(payload))
+  } catch (error) {
+    logger.warn(`写入插件市场缓存失败: ${String(error)}`)
+  }
+}
+
+const loadSnapshotCache = (): MarketSnapshot | null => {
+  try {
+    const raw = sessionStorage.getItem(PLUGIN_MARKET_CACHE_KEY)
+    if (!raw) {
+      return null
+    }
+    const parsed = JSON.parse(raw) as PluginMarketCache
+    if (!parsed || typeof parsed !== 'object' || !parsed.snapshot) {
+      return null
+    }
+    return parsed.snapshot
+  } catch (error) {
+    logger.warn(`读取插件市场缓存失败: ${String(error)}`)
+    return null
+  }
+}
+
+const updateInstalledState = (pkg: string, installed: boolean) => {
+  const normalized = normalizeName(pkg)
+  installedState.value = {
+    ...installedState.value,
+    [normalized]: installed,
+  }
+
+  if (marketSnapshot.value) {
+    marketSnapshot.value = {
+      ...marketSnapshot.value,
+      installed_map: {
+        ...marketSnapshot.value.installed_map,
+        [pkg]: installed,
+      },
+    }
+    saveSnapshotCache(marketSnapshot.value)
+  }
 }
 
 const clearReconnectTimer = () => {
@@ -224,6 +279,10 @@ const onPluginMessage = (envelope: PluginMessageEnvelope) => {
   if (event === 'market.snapshot.response') {
     snapshotLoading.value = false
     applySnapshot(payload as MarketSnapshot)
+    if (marketSnapshot.value) {
+      saveSnapshotCache(marketSnapshot.value)
+    }
+    shouldFetchOnConnect.value = false
     setInfo('市场快照已更新', 'success')
     return
   }
@@ -244,10 +303,7 @@ const onPluginMessage = (envelope: PluginMessageEnvelope) => {
     }
     const ok = status !== 'error' && Boolean(payload.success)
     if (ok && pkg) {
-      installedState.value = {
-        ...installedState.value,
-        [normalizeName(pkg)]: true,
-      }
+      updateInstalledState(pkg, true)
     }
     setInfo(envelope.message || (ok ? '安装成功' : '安装失败'), ok ? 'success' : 'error')
     if (ok) {
@@ -265,10 +321,7 @@ const onPluginMessage = (envelope: PluginMessageEnvelope) => {
     }
     const ok = status !== 'error' && Boolean(payload.success)
     if (ok && pkg) {
-      installedState.value = {
-        ...installedState.value,
-        [normalizeName(pkg)]: false,
-      }
+      updateInstalledState(pkg, false)
     }
     setInfo(envelope.message || (ok ? '卸载成功' : '卸载失败'), ok ? 'success' : 'error')
     if (ok) {
@@ -284,10 +337,7 @@ const onPluginMessage = (envelope: PluginMessageEnvelope) => {
     if (!pkg) {
       return
     }
-    installedState.value = {
-      ...installedState.value,
-      [normalizeName(pkg)]: Boolean(payload.installed),
-    }
+    updateInstalledState(pkg, Boolean(payload.installed))
     markOperation(pkg, false)
     return
   }
@@ -316,7 +366,10 @@ const connectWs = () => {
     isConnected.value = true
     wsStatus.value = '已连接'
     logger.info(`插件市场 WS 已连接: ${wsUrl}`)
-    requestSnapshot()
+    if (shouldFetchOnConnect.value || !marketSnapshot.value) {
+      requestSnapshot()
+      shouldFetchOnConnect.value = false
+    }
   }
 
   ws.onmessage = event => {
@@ -384,6 +437,14 @@ const filteredItems = computed(() => {
 
 onMounted(() => {
   manualClose.value = false
+  const cachedSnapshot = loadSnapshotCache()
+  if (cachedSnapshot) {
+    applySnapshot(cachedSnapshot)
+    setInfo('已加载本地缓存，点击“刷新快照”可获取最新市场数据', 'info')
+    shouldFetchOnConnect.value = false
+  } else {
+    shouldFetchOnConnect.value = true
+  }
   connectWs()
 })
 
