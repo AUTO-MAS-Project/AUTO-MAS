@@ -8,7 +8,7 @@ import json
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from app.models.plugin import PluginInstanceConfig
 
@@ -80,7 +80,7 @@ class PluginConfigStore:
     @staticmethod
     def _parse_config_value(value: Any, *, instance_id: str) -> dict[str, Any]:
         if isinstance(value, dict):
-            return copy.deepcopy(value)
+            return copy.deepcopy(cast(dict[str, Any], value))
 
         if isinstance(value, str):
             try:
@@ -90,7 +90,7 @@ class PluginConfigStore:
                     f"插件实例配置不是合法 JSON 对象: {instance_id}"
                 ) from exc
             if isinstance(parsed, dict):
-                return copy.deepcopy(parsed)
+                return copy.deepcopy(cast(dict[str, Any], parsed))
 
         raise ValueError(f"插件实例配置必须是对象: {instance_id}")
 

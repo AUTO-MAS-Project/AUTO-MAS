@@ -36,6 +36,10 @@ router = APIRouter(prefix="/api/plugins", tags=["插件实例"])
 config_store = PluginConfigStore()
 
 
+def _empty_plugin_instance_models() -> list["PluginInstanceModel"]:
+    return []
+
+
 class PluginInstanceModel(BaseModel):
     id: str = Field(..., description="实例ID")
     plugin: str = Field(..., description="插件名")
@@ -68,7 +72,7 @@ class PluginsGetOut(OutBase):
     discovered_plugins: list[str] = Field(default_factory=list, description="已发现插件")
     schemas: dict[str, dict[str, Any]] = Field(default_factory=dict, description="插件Schema映射")
     schema_errors: dict[str, str] = Field(default_factory=dict, description="插件Schema加载错误")
-    instances: list[PluginInstanceModel] = Field(default_factory=list, description="插件实例列表")
+    instances: list[PluginInstanceModel] = Field(default_factory=_empty_plugin_instance_models, description="插件实例列表")
     runtime_states: dict[str, PluginRuntimeStateModel] = Field(
         default_factory=dict,
         description="插件实例运行态",

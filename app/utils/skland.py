@@ -88,7 +88,7 @@ def get_tn(obj: Dict[str, Any]) -> str:
         if isinstance(v, (int, float)):
             v = str(int(v * 10000))
         elif isinstance(v, dict):
-            v = get_tn(v)
+            v = get_tn(cast(Dict[str, Any], v))
         else:
             v = str(v)
         result_list.append(v)
@@ -552,11 +552,12 @@ async def skland_sign_in(
         total_count = 0
 
         for character in characters:
-            roles = character.get("roles") or []
+            roles_value = character.get("roles")
             game_name = character.get("gameName")
             channel_name = character.get("channelName")
-            if not isinstance(roles, list):
+            if not isinstance(roles_value, list):
                 continue
+            roles = cast(list[dict[str, Any]], roles_value)
             total_count += len(roles)
 
             for role in roles:
@@ -577,9 +578,23 @@ async def skland_sign_in(
                             failed_list.append(character_name)
                             logger.error(f"{character_name} 签到失败: {message}")
                     else:
-                        award_ids = rsp.get("data", {}).get("awardIds", [])
-                        resource_map = rsp.get("data", {}).get("resourceInfoMap", {})
-                        awards = []
+                        data = rsp.get("data")
+                        data_dict = (
+                            cast(dict[str, Any], data) if isinstance(data, dict) else {}
+                        )
+                        award_ids_value = data_dict.get("awardIds")
+                        resource_map_value = data_dict.get("resourceInfoMap")
+                        award_ids = (
+                            cast(list[dict[str, Any]], award_ids_value)
+                            if isinstance(award_ids_value, list)
+                            else []
+                        )
+                        resource_map = (
+                            cast(dict[str, dict[str, Any]], resource_map_value)
+                            if isinstance(resource_map_value, dict)
+                            else {}
+                        )
+                        awards: list[str] = []
                         for award in award_ids:
                             award_id = award.get("id")
                             if award_id and award_id in resource_map:

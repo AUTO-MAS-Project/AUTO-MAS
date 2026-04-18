@@ -475,7 +475,7 @@ class AutoProxyTask(TaskExecuteBase):
         del self.src_process_manager
         del self.src_log_monitor
 
-        user_logs_list = []
+        user_logs_list: list[Path] = []
         for t, log_item in self.cur_user_item.log_record.items():
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
             log_path = (

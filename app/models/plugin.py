@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, Field
 
@@ -27,7 +27,7 @@ class PluginInstanceConfig(PydanticConfigBase):
             except json.JSONDecodeError:
                 return {}
 
-            return parsed if isinstance(parsed, dict) else {}
+            return cast(dict[str, Any], parsed) if isinstance(parsed, dict) else {}
 
     Info: InfoModel = Field(default_factory=InfoModel)
     Data: DataModel = Field(default_factory=DataModel)

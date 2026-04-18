@@ -376,7 +376,7 @@ class _SystemHandler:
 
         logger.info(f"开始查找进程 PID: {path}")
 
-        pids = []
+        pids: list[int] = []
         for proc in psutil.process_iter(["pid", "exe"]):
             with suppress(
                 psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess

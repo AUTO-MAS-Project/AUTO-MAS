@@ -11,7 +11,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 from types import NoneType, UnionType
-from typing import Annotated, Any, Dict, Mapping, Union, get_args, get_origin
+from typing import Annotated, Any, Dict, Mapping, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
@@ -240,7 +240,10 @@ class PluginSchemaManager:
         if not isinstance(schema, dict):
             raise PluginSchemaError(f"插件 Schema 必须是对象: {plugin_name}")
 
-        return self._normalize_schema_fields(plugin_name, schema)
+        return self._normalize_schema_fields(
+            plugin_name,
+            cast(Mapping[str, Any], schema),
+        )
 
     def _import_module_from_file(self, module_name: str, file_path: Path) -> Any:
         """
@@ -385,7 +388,10 @@ class PluginSchemaManager:
         if not isinstance(schema, dict):
             raise PluginSchemaError(f"插件 Schema 必须是对象: {plugin_name}")
 
-        return self._normalize_schema_fields(plugin_name, schema)
+        return self._normalize_schema_fields(
+            plugin_name,
+            cast(Mapping[str, Any], schema),
+        )
 
     def _build_schema_from_config_declaration(
         self,
@@ -425,7 +431,10 @@ class PluginSchemaManager:
 
         normalized = self._normalize_schema_object(target)
         if isinstance(normalized, dict):
-            return self._normalize_schema_fields(plugin_name, normalized)
+            return self._normalize_schema_fields(
+                plugin_name,
+                cast(Mapping[str, Any], normalized),
+            )
 
         raise PluginSchemaError(
             f"Config 声明不支持的返回类型: {plugin_name}, type={type(target).__name__}"
@@ -484,7 +493,7 @@ class PluginSchemaManager:
                     raise PluginSchemaError(
                         f"Config 字段 json_schema_extra 必须是对象: {plugin_name}.{field_name}"
                     )
-                field_schema.update(copy.deepcopy(extra))
+                field_schema.update(copy.deepcopy(cast(dict[str, Any], extra)))
 
             result[field_name] = field_schema
 
@@ -596,7 +605,10 @@ class PluginSchemaManager:
         if not isinstance(schema, dict):
             raise PluginSchemaError(f"插件 Schema 必须是对象: {plugin_name}")
 
-        return self._normalize_schema_fields(plugin_name, schema)
+        return self._normalize_schema_fields(
+            plugin_name,
+            cast(Mapping[str, Any], schema),
+        )
 
     def _validate_schema_definition(
         self,
@@ -714,7 +726,7 @@ class PluginSchemaManager:
                     ) from e
 
             try:
-                adapter = TypeAdapter(annotation)
+                adapter: TypeAdapter[Any] = TypeAdapter(annotation)
             except Exception as e:
                 raise PluginSchemaError(
                     f"Schema 类型无法编译: {plugin_name}.{field_name}, type={spec.type}, error={type(e).__name__}: {e}"

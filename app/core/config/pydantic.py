@@ -10,7 +10,7 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from collections.abc import Callable, Coroutine
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import Any, ClassVar, TypeVar, cast
 
 from pydantic import AliasChoices, AliasPath, BaseModel, ConfigDict, PrivateAttr
@@ -757,7 +757,7 @@ class PydanticConfigBase(BaseModel):
                 await self._emit_bindings(group, name, value)
 
     @asynccontextmanager
-    async def transaction(self) -> AsyncIterator["PydanticConfigBase"]:
+    async def transaction(self) -> AsyncGenerator["PydanticConfigBase", None]:
         """开启一个延迟保存事务。"""
 
         is_outermost = self._transaction_depth == 0

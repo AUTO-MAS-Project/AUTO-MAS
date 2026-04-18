@@ -7,7 +7,7 @@ import subprocess
 import sys
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from app.utils.logger import LoggerLike
 
@@ -34,7 +34,7 @@ class RuntimeAPI:
     def _runtime_options(self) -> dict[str, Any]:
         runtime = self.config.get("runtime")
         if isinstance(runtime, dict):
-            return runtime
+            return cast(dict[str, Any], runtime)
         return {}
 
     def set_runtime_options(self, options: dict[str, Any]) -> dict[str, Any]:
@@ -43,14 +43,15 @@ class RuntimeAPI:
         if not isinstance(runtime, dict):
             runtime = {}
             self.config["runtime"] = runtime
+        runtime_dict = cast(dict[str, Any], runtime)
 
         for key, value in options.items():
-            runtime[key] = value
+            runtime_dict[key] = value
 
         # runtime 配置变更后清理缓存，确保 info 结果反映最新参数。
         self._cached_runtime_info = None
         self._audit("set_runtime_options", "ok", {"keys": list(options.keys())})
-        return dict(runtime)
+        return dict(runtime_dict)
 
     def _audit(
         self,

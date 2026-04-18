@@ -3,6 +3,7 @@
   "pythonPlatform": "Windows",
   "venvPath": ".",
   "venv": ".venv",
+  "stubPath": "typings",
   "typeCheckingMode": "strict",
   "include": [
     "app",

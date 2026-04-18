@@ -21,6 +21,7 @@
 
 import asyncio
 from contextlib import suppress
+from typing import Any
 
 from app.models.emulator import DeviceInfo, DeviceStatus
 from app.utils import get_logger
@@ -54,7 +55,7 @@ async def login(
 
     if (package_name == "com.miHoYo.hkrpg" and "*" in id) or password == "":
         logger.info("账号密码不完整，禁用通过输入账号密码登录")
-        pipeline_override = {
+        pipeline_override: dict[str, Any] = {
             "切换账号[StarRailEmulator]": {"action": {"param": {"package": package_name}}},
             "启动游戏[StarRailEmulator]": {"action": {"param": {"package": package_name}}},
             "Bilibili隐私政策[StarRailEmulator]": {"enabled": Config.get("Function", "IfAgreeBilibili")},

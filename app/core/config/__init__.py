@@ -1,5 +1,3 @@
-from typing import TYPE_CHECKING
-
 from .base import (
     MultipleConfig,
     MultipleConfigAddEvent,
@@ -8,6 +6,7 @@ from .base import (
     dump_toml,
 )
 from .fields import RefField, VirtualField
+from .manager import AppConfig, Config
 from .pydantic import PydanticConfigBase
 from .shortcuts import (
     config,
@@ -33,17 +32,6 @@ from .types import (
     YmdString,
     decrypt_encrypted_string,
 )
-
-if TYPE_CHECKING:
-    from .manager import AppConfig, Config
-
-
-def __getattr__(name: str):
-    if name in {"AppConfig", "Config"}:
-        from .manager import AppConfig, Config
-
-        return {"AppConfig": AppConfig, "Config": Config}[name]
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [

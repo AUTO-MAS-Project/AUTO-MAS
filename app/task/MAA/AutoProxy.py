@@ -26,6 +26,7 @@ import asyncio
 import shutil
 from pathlib import Path
 from datetime import datetime, timedelta
+from typing import Any, cast
 
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
@@ -540,10 +541,11 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 导出任务配置
         self.task_dict["StartUp"] = True
-        task_queue = gui_new_set["Configurations"]["Default"]["TaskQueue"] = []
+        task_queue: list[dict[str, Any]] = []
+        gui_new_set["Configurations"]["Default"]["TaskQueue"] = task_queue
         for task_type in MAA_TASKS:
             task_set[task_type]["IsEnable"] = self.task_dict[task_type]
-            task_queue.append(task_set[task_type])
+            task_queue.append(cast(dict[str, Any], task_set[task_type]))
 
             # 剩余理智关卡配置
             if (
@@ -552,7 +554,7 @@ class AutoProxyTask(TaskExecuteBase):
                 and self.task_dict["Fight"]
                 and plan_data.get("Stage_Remain", "-") != "-"
             ):
-                remain_fight = MAA_REMAIN_FIGHT_BASE.copy()
+                remain_fight = cast(dict[str, Any], MAA_REMAIN_FIGHT_BASE.copy())
                 remain_fight["StagePlan"] = [
                     (
                         ""
@@ -637,7 +639,7 @@ class AutoProxyTask(TaskExecuteBase):
             except Exception as e:
                 logger.exception(f"关闭模拟器失败: {e}")
 
-        user_logs_list = []
+        user_logs_list: list[Path] = []
         if_six_star = False
         for t, log_item in self.cur_user_item.log_record.items():
             if log_item.status == "MAA 正常运行中":
