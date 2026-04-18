@@ -2,7 +2,7 @@
 #   Copyright © 2025-2026 AUTO-MAS Team
 
 from dataclasses import dataclass
-from typing import Any, Callable, Final, Literal
+from typing import Any, Callable, Final, Literal, cast
 
 
 EventScope = Literal["global", "instance"]
@@ -98,7 +98,7 @@ def get_event_subscriptions(target: Any) -> list[EventSubscription]:
         return []
 
     result: list[EventSubscription] = []
-    for item in raw:
+    for item in cast(list[object], raw):
         if isinstance(item, EventSubscription):
             result.append(item)
     return result

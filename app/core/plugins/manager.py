@@ -8,7 +8,7 @@ import sys
 import shutil
 import importlib.metadata as importlib_metadata
 from dataclasses import dataclass
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, cast
 import uuid
 
 from app.utils import get_logger
@@ -103,7 +103,7 @@ class _PluginManager:
         if project_value is None:
             project_table = {}
         elif isinstance(project_value, dict):
-            project_table = project_value
+            project_table = cast(dict[str, Any], project_value)
         else:
             raise ValueError(f"pyproject project 字段必须是对象: {pyproject_path}")
 
@@ -112,7 +112,7 @@ class _PluginManager:
         if entry_points_value is None:
             entry_points_table: dict[str, Any] = {}
         elif isinstance(entry_points_value, dict):
-            entry_points_table = entry_points_value
+            entry_points_table = cast(dict[str, Any], entry_points_value)
         else:
             raise ValueError(f"pyproject project.entry-points 必须是对象: {pyproject_path}")
 
@@ -121,7 +121,8 @@ class _PluginManager:
             group_table = entry_points_table.get(group)
             if not isinstance(group_table, dict):
                 continue
-            for ep_name in group_table.keys():
+            group_table_dict = cast(dict[str, Any], group_table)
+            for ep_name in group_table_dict.keys():
                 name = str(ep_name or "").strip()
                 if name:
                     entry_point_names.add(name)

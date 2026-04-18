@@ -23,10 +23,11 @@
 import os
 import winreg
 import subprocess
+from collections.abc import Iterable
 from maa.toolkit import Toolkit
 from contextlib import suppress
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Protocol, TypedDict, cast
 
 from app.utils.constants import EMULATOR_PATH_BOOK
 from app.utils import get_logger
@@ -34,15 +35,44 @@ from app.utils import get_logger
 logger = get_logger("模拟器管理工具")
 
 
-async def search_all_emulators() -> List[Dict[str, str]]:
+class EmulatorInfo(TypedDict):
+    type: str
+    path: str
+    name: str
+
+
+class EmulatorSearchConfig(TypedDict):
+    name: str
+    executables: list[str]
+    registry_paths: list[str]
+    default_paths: list[str]
+
+
+class SearchCandidate(TypedDict):
+    path: Path
+    exe_path: Path
+    depth: int
+    level: int
+
+
+class AdbDeviceLike(Protocol):
+    adb_path: Path
+
+
+def _candidate_depth(candidate: SearchCandidate) -> int:
+    return candidate["depth"]
+
+
+async def search_all_emulators() -> list[EmulatorInfo]:
     """搜索所有支持的模拟器"""
 
     logger.info("开始搜索所有模拟器")
-    found_emulators = []
-    found_emulator_paths = set()
+    found_emulators: list[EmulatorInfo] = []
+    found_emulator_paths: set[str] = set()
 
     # 根据可能的模拟器路径搜索
-    for emulator_type, config in EMULATOR_PATH_BOOK.items():
+    for emulator_type, raw_config in EMULATOR_PATH_BOOK.items():
+        config = cast(EmulatorSearchConfig, raw_config)
         try:
             emulator_path = await _search_emulator(config)
             if emulator_path:
@@ -63,12 +93,15 @@ async def search_all_emulators() -> List[Dict[str, str]]:
         except Exception as e:
             logger.warning(f"搜索{config['name']}时出错: {e}")
 
-    for emulator in Toolkit.find_adb_devices():
+    adb_devices = cast(Iterable[AdbDeviceLike], Toolkit.find_adb_devices())
+    for emulator in adb_devices:
+        adb_path_text = emulator.adb_path.as_posix()
+        adb_parent_text = emulator.adb_path.parent.as_posix()
         for emulator_type in EMULATOR_PATH_BOOK.keys():
             corrected_path = await find_emulator_manager_path(
-                emulator.adb_path.as_posix(), emulator_type
+                adb_path_text, emulator_type
             )
-            if corrected_path != emulator.adb_path.as_posix():
+            if corrected_path != adb_path_text:
                 if corrected_path not in found_emulator_paths:
                     found_emulator_paths.add(corrected_path)
                     found_emulators.append(
@@ -83,22 +116,22 @@ async def search_all_emulators() -> List[Dict[str, str]]:
                     )
                 break
         else:
-            if emulator.adb_path.as_posix() not in found_emulator_paths:
-                found_emulator_paths.add(emulator.adb_path.as_posix())
+            if adb_path_text not in found_emulator_paths:
+                found_emulator_paths.add(adb_path_text)
                 found_emulators.append(
                     {
                         "type": "general",
-                        "path": emulator.adb_path.parent.as_posix(),
-                        "name": f"未知模拟器 ({emulator.adb_path.parent.as_posix()})",
+                        "path": adb_parent_text,
+                        "name": f"未知模拟器 ({adb_parent_text})",
                     }
                 )
-                logger.info(f"通过ADB找到未知模拟器: {emulator.adb_path.as_posix()}")
+                logger.info(f"通过ADB找到未知模拟器: {adb_path_text}")
 
     logger.info(f"搜索完成，共找到 {len(found_emulators)} 个模拟器")
     return found_emulators
 
 
-async def _search_emulator(config: Dict[str, Any]) -> str:
+async def _search_emulator(config: EmulatorSearchConfig) -> str:
     """搜索单类模拟器"""
 
     # 1. 从注册表搜索
@@ -121,7 +154,7 @@ async def _search_emulator(config: Dict[str, Any]) -> str:
     return ""
 
 
-async def _search_from_registry(registry_paths: List[str]) -> str:
+async def _search_from_registry(registry_paths: list[str]) -> str:
     """从注册表搜索模拟器路径"""
 
     for reg_path in registry_paths:
@@ -140,7 +173,7 @@ async def _search_from_registry(registry_paths: List[str]) -> str:
     return ""
 
 
-async def _search_from_path(executables: List[str]) -> str:
+async def _search_from_path(executables: list[str]) -> str:
     """从系统PATH搜索模拟器"""
 
     for executable in executables:
@@ -155,7 +188,7 @@ async def _search_from_path(executables: List[str]) -> str:
     return ""
 
 
-async def _validate_emulator_path(path: str, executables: List[str]) -> bool:
+async def _validate_emulator_path(path: str, executables: list[str]) -> bool:
     """验证模拟器路径是否有效"""
 
     if not path or not os.path.exists(path):
@@ -202,7 +235,7 @@ async def find_emulator_manager_path(
         logger.warning(f"不支持的模拟器类型: {emulator_type}")
         return input_path
 
-    config = EMULATOR_PATH_BOOK[emulator_type]
+    config = cast(EmulatorSearchConfig, EMULATOR_PATH_BOOK[emulator_type])
     executables = config["executables"]
     # 第一个可执行文件是主管理器程序（优先级最高）
     primary_exe = executables[0]
@@ -226,7 +259,7 @@ async def find_emulator_manager_path(
         return result
 
     # 2. 向上搜索父目录，找到直接包含主管理器程序的目录（最多3层）
-    candidates = []
+    candidates: list[SearchCandidate] = []
     current = path_obj
     for level in range(max_levels):
         parent = current.parent
@@ -251,7 +284,7 @@ async def find_emulator_manager_path(
     # 如果找到了候选目录，选择最优的（深度最小的，即最接近根目录的）
     if candidates:
         # 排序策略：深度越小越好（越靠近根目录）
-        candidates.sort(key=lambda x: x["depth"])
+        candidates.sort(key=_candidate_depth)
 
         best_candidate = candidates[0]
         result = str(best_candidate["exe_path"])

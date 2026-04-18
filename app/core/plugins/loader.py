@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Callable, Dict, Iterable, Optional, Literal
+from typing import Any, Callable, Dict, Iterable, Optional, Literal, cast
 
 from app.utils import get_logger
 from app.utils.constants import UTC8
@@ -26,6 +26,10 @@ from .pypi_site import (
 
 
 logger = get_logger("插件加载器")
+
+
+def _new_listener_ids() -> list[str]:
+    return []
 
 
 def _utc8_now_iso() -> str:
@@ -61,7 +65,7 @@ class PluginRecord:
     unloaded_at: Optional[str] = None
     last_error: Optional[str] = None
     last_error_at: Optional[str] = None
-    listener_ids: list[str] = field(default_factory=list)
+    listener_ids: list[str] = field(default_factory=_new_listener_ids)
     plugin_instance: Any = None
 
 
@@ -152,7 +156,7 @@ class PluginLoader:
             with config_path.open("r", encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, dict):
-                return data
+                return cast(Dict[str, Any], data)
             logger.warning(f"插件配置格式错误（非对象），已忽略: {plugin_name}")
             return {}
         except Exception as e:

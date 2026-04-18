@@ -1,6 +1,6 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2024-2025 DLmaster361
-#   Copyright © 2025-2026 AUTO-MAS Team
+#   Copyright ? 2024-2025 DLmaster361
+#   Copyright ? 2025-2026 AUTO-MAS Team
 
 #   This file is part of AUTO-MAS.
 
@@ -20,27 +20,61 @@
 #   Contact: DLmaster_361@163.com
 
 
-import re
 import base64
+import re
+from typing import Any, Protocol, cast
+
 import win32crypt
+
+
+class _CryptProtectDataFn(Protocol):
+    def __call__(
+        self,
+        DataIn: bytes,
+        DataDescr: str | None = None,
+        OptionalEntropy: Any | None = None,
+        Reserved: Any | None = None,
+        PromptStruct: Any | None = None,
+        Flags: int = 0,
+    ) -> bytes: ...
+
+
+class _CryptUnprotectDataFn(Protocol):
+    def __call__(
+        self,
+        DataIn: bytes,
+        OptionalEntropy: Any | None = None,
+        Reserved: Any | None = None,
+        PromptStruct: Any | None = None,
+        Flags: int = 0,
+    ) -> tuple[Any, bytes]: ...
+
+
+CRYPT_PROTECT_DATA = cast(
+    _CryptProtectDataFn,
+    getattr(win32crypt, "CryptProtectData"),
+)
+CRYPT_UNPROTECT_DATA = cast(
+    _CryptUnprotectDataFn,
+    getattr(win32crypt, "CryptUnprotectData"),
+)
 
 
 def sanitize_log_message(message: str) -> str:
     """
-    从日志消息中移除敏感信息
+    ??????????????????
 
-    :param message: 原始日志消息
+    :param message: ?????????
     :type message: str
-    :return: 过滤后的日志消息
+    :return: ????????????
     :rtype: str
     """
-    # 定义需要过滤的敏感参数模式
     sensitive_patterns = [
-        (r"(cdk=)[^&\s]+", r"\1***"),  # cdk参数
-        (r"(password=)[^&\s]+", r"\1***"),  # password参数
-        (r"(token=)[^&\s]+", r"\1***"),  # token参数
-        (r"(api_key=)[^&\s]+", r"\1***"),  # api_key参数
-        (r"(secret=)[^&\s]+", r"\1***"),  # secret参数
+        (r"(cdk=)[^&\s]+", r"\1***"),
+        (r"(password=)[^&\s]+", r"\1***"),
+        (r"(token=)[^&\s]+", r"\1***"),
+        (r"(api_key=)[^&\s]+", r"\1***"),
+        (r"(secret=)[^&\s]+", r"\1***"),
     ]
 
     sanitized_message = message
@@ -56,43 +90,39 @@ def dpapi_encrypt(
     note: str, description: None | str = None, entropy: None | bytes = None
 ) -> str:
     """
-    使用Windows DPAPI加密数据
+    ???Windows DPAPI??????
 
-    :param note: 数据明文
+    :param note: ??????
     :type note: str
-    :param description: 描述信息
+    :param description: ??????
     :type description: str
-    :param entropy: 随机熵
+    :param entropy: ?????
     :type entropy: bytes
-    :return: 加密后的数据
+    :return: ?????????
     :rtype: str
     """
 
     if note == "":
         return ""
 
-    encrypted = win32crypt.CryptProtectData(
-        note.encode("utf-8"), description, entropy, None, None, 0
-    )
+    encrypted = CRYPT_PROTECT_DATA(note.encode("utf-8"), description, entropy, None, None, 0)
     return base64.b64encode(encrypted).decode("utf-8")
 
 
 def dpapi_decrypt(note: str, entropy: None | bytes = None) -> str:
     """
-    使用Windows DPAPI解密数据
+    ???Windows DPAPI??????
 
-    :param note: 数据密文
+    :param note: ??????
     :type note: str
-    :param entropy: 随机熵
+    :param entropy: ?????
     :type entropy: bytes
-    :return: 解密后的明文
+    :return: ?????????
     :rtype: str
     """
 
     if note == "":
         return ""
 
-    decrypted = win32crypt.CryptUnprotectData(
-        base64.b64decode(note), entropy, None, None, 0
-    )
+    decrypted = CRYPT_UNPROTECT_DATA(base64.b64decode(note), entropy, None, None, 0)
     return decrypted[1].decode("utf-8")

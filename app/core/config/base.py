@@ -33,7 +33,7 @@ import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import AsyncIterator, Callable, Coroutine, Iterator
+from collections.abc import AsyncGenerator, Callable, Coroutine, Iterator
 from typing import Any, Generic, Protocol, TypeVar, cast, overload
 from importlib import import_module
 
@@ -459,7 +459,7 @@ class MultipleConfig(Generic[T]):
             await sub_config.add_save_method(save_method)
 
     @asynccontextmanager
-    async def transaction(self) -> AsyncIterator["MultipleConfig[T]"]:
+    async def transaction(self) -> AsyncGenerator["MultipleConfig[T]", None]:
         """开启一个延迟保存事务。"""
 
         self._transaction_depth += 1

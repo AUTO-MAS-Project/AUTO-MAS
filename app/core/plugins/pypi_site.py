@@ -7,7 +7,7 @@ import site
 import importlib.metadata as importlib_metadata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 from urllib.parse import urlparse, unquote
 from urllib.request import url2pathname
 
@@ -129,7 +129,8 @@ def _resolve_dist_editable_project_path(dist: importlib_metadata.Distribution) -
     if not isinstance(data, dict):
         return None
 
-    url = str(data.get("url") or "").strip()
+    direct_url_data = cast(dict[str, Any], data)
+    url = str(direct_url_data.get("url") or "").strip()
     parsed = urlparse(url)
     if parsed.scheme != "file":
         return None

@@ -24,6 +24,7 @@ import json
 import asyncio
 from pathlib import Path
 from datetime import datetime, timedelta
+from typing import Any
 
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
@@ -405,7 +406,7 @@ class AutoProxyTask(TaskExecuteBase):
         if self.task_dict is None:
             # 任务列表为空则记录任务
             self.task_dict = {}
-            task = {}
+            task: dict[str, Any] = {}
             for task in maaend_tasks:
                 self.task_dict[task["id"]] = task["enabled"]
             if task.get("taskName") == "__MXU_KILLPROC__" and task.get(
@@ -419,7 +420,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 记录启用的无重复任务项以便简化判定
         self.unique_task = {}
-        duplicate_task = set()
+        duplicate_task: set[str] = set()
         for task in maaend_tasks:
             if task["enabled"] and task["id"] in self.task_dict:
                 if task["taskName"] in self.unique_task:
@@ -514,7 +515,7 @@ class AutoProxyTask(TaskExecuteBase):
         else:
             await self.kill_managed_process()
 
-        user_logs_list = []
+        user_logs_list: list[Path] = []
         for t, log_item in self.cur_user_item.log_record.items():
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
             log_path = (
