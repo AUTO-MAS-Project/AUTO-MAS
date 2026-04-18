@@ -119,7 +119,7 @@ def _resolve_dist_editable_project_path(dist: importlib_metadata.Distribution) -
         Optional[Path]: 可解析时返回工程根目录路径；否则返回 None。
     """
     try:
-        direct_url_path = dist.locate_file("direct_url.json")
+        direct_url_path = Path(str(dist.locate_file("direct_url.json")))
         if not direct_url_path.exists():
             return _resolve_dist_editable_project_path_from_pth(dist)
         data = json.loads(direct_url_path.read_text(encoding="utf-8"))
@@ -166,7 +166,7 @@ def _resolve_dist_editable_project_path_from_pth(
         return None
 
     normalized_name = dist_name.replace("-", "_")
-    pth_file = dist.locate_file(f"__editable__.{normalized_name}-{dist_version}.pth")
+    pth_file = Path(str(dist.locate_file(f"__editable__.{normalized_name}-{dist_version}.pth")))
     if not pth_file.exists():
         return None
 
@@ -192,7 +192,7 @@ def _is_broken_editable_distribution(dist: importlib_metadata.Distribution) -> b
         return False
 
     normalized_name = dist_name.replace("-", "_")
-    pth_file = dist.locate_file(f"__editable__.{normalized_name}-{dist_version}.pth")
+    pth_file = Path(str(dist.locate_file(f"__editable__.{normalized_name}-{dist_version}.pth")))
     if not pth_file.exists():
         return False
 

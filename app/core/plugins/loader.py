@@ -16,6 +16,7 @@ from app.utils.constants import UTC8
 
 from .context import PluginContext
 from .decorators import EventSubscription, get_event_subscriptions
+from .event_bus import EventBus
 from .lifecycle import REQUIRED_LIFECYCLE_METHODS
 from .pypi_site import (
     ensure_pypi_site_packages_on_syspath,
@@ -78,9 +79,14 @@ class PluginLoader:
         distribution: Optional[str] = None
         version: Optional[str] = None
 
-    def __init__(self, events, runtime: Any = None, plugins_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        events: EventBus,
+        runtime: dict[str, Callable[..., Any]] | None = None,
+        plugins_dir: Optional[Path] = None,
+    ):
         self.events = events
-        self.runtime = {} if runtime is None else runtime
+        self.runtime = {} if runtime is None else dict(runtime)
         self.plugins_dir = plugins_dir or (Path.cwd() / "plugins")
         self.pypi_site_packages_dir = ensure_pypi_site_packages_on_syspath(self.plugins_dir)
         self.records: Dict[str, PluginRecord] = {}
@@ -367,9 +373,6 @@ class PluginLoader:
             TypeError: 当 phase 不是字符串时抛出。
             ValueError: 当 phase 为空字符串时抛出。
         """
-        if not isinstance(phase, str):
-            raise TypeError("phase 必须是字符串")
-
         normalized = phase.strip()
         if not normalized:
             raise ValueError("phase 不能为空字符串")

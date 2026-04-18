@@ -4,7 +4,8 @@
 """DSL v2 统一类型导出模块（与 dsl.py / dsl_v2.py 同级）。"""
 
 from copy import deepcopy
-from typing import Annotated, Any, Generic, TypeVar
+from collections.abc import Callable
+from typing import Annotated, Any, Generic, TypeVar, cast
 
 from . import dsl_v2 as _dsl
 
@@ -57,6 +58,7 @@ KeyValueStr = Annotated[
 
 
 U = TypeVar("U")
+ConfigClassT = TypeVar("ConfigClassT")
 
 
 class TableOf(Generic[U]):
@@ -81,7 +83,7 @@ class D:
     def __class_getitem__(cls, item: Any) -> Any:
         if not isinstance(item, tuple) or len(item) != 2:
             raise TypeError("D[...] 需要两个参数：D[Type, '描述文本']")
-        py_type, text = item
+        py_type, text = cast(tuple[Any, object], item)
         if not isinstance(text, str):
             raise TypeError("D[Type, text] 中 text 必须是字符串")
         return Annotated[py_type, Desc(text)]
@@ -98,13 +100,13 @@ class A:
     def __class_getitem__(cls, item: Any) -> Any:
         if not isinstance(item, tuple) or len(item) != 2:
             raise TypeError("A[...] 需要两个参数：A[Type, '描述文本']")
-        py_type, text = item
+        py_type, text = cast(tuple[Any, object], item)
         if not isinstance(text, str):
             raise TypeError("A[Type, text] 中 text 必须是字符串")
         return Annotated[py_type, Desc(text)]
 
 
-def extra(field: str | None = None, /, **ui: Any):
+def extra(field: str | None = None, /, **ui: Any) -> Callable[[ConfigClassT], ConfigClassT]:
     """类装饰器：为字段追加前端扩展元数据。
 
     用法 1（推荐）:
@@ -122,20 +124,17 @@ def extra(field: str | None = None, /, **ui: Any):
             else:
                 raise TypeError("@extra(enable=...) 的值必须是字典")
     else:
-        if not isinstance(field, str) or not field.strip():
+        if not field.strip():
             raise TypeError("@extra(field, ...) 的 field 必须是非空字符串")
         mapping = {field: deepcopy(ui)}
 
-    def _decorator(config_cls):
+    def _decorator(config_cls: ConfigClassT) -> ConfigClassT:
         attr_name = _dsl.FIELD_UI_EXTRA_ATTR
         existing = getattr(config_cls, attr_name, {})
-        if not isinstance(existing, dict):
-            existing = {}
-        merged = deepcopy(existing)
+        existing_mapping = existing if isinstance(existing, dict) else {}
+        merged: dict[str, dict[str, Any]] = deepcopy(existing_mapping)
         for field_name, payload in mapping.items():
             current = merged.get(field_name, {})
-            if not isinstance(current, dict):
-                current = {}
             current.update(deepcopy(payload))
             merged[field_name] = current
         setattr(config_cls, attr_name, merged)

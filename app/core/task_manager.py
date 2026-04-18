@@ -22,7 +22,7 @@
 
 import asyncio
 import uuid
-from typing import Dict, Literal
+from typing import Dict, Literal, cast
 
 from app.models import GeneralConfig, MaaConfig, MaaEndConfig, SrcConfig
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
@@ -74,11 +74,7 @@ class TaskInfo(TaskItem):
         if not (0 <= self.current_index < len(self.script_list)):
             return False
 
-        log_text = self.script_list[self.current_index].log
-        if not isinstance(log_text, str):
-            return False
-
-        return bool(log_text.strip())
+        return bool(self.script_list[self.current_index].log.strip())
 
     async def _emit_task_progress(self) -> None:
         """发送 task.progress 事件，避免重复广播相同快照"""
@@ -131,6 +127,14 @@ class TaskInfo(TaskItem):
                 "truncated_for_tail": is_truncated,
             },
         )
+
+    async def emit_task_progress(self) -> None:
+        """公开的任务进度事件发送入口"""
+        await self._emit_task_progress()
+
+    async def emit_task_log(self) -> None:
+        """公开的任务日志事件发送入口"""
+        await self._emit_task_log()
 
     async def on_change(self):
         """任务状态变化后推送 WebSocket 增量更新并广播插件事件"""
@@ -272,7 +276,7 @@ class Task(TaskExecuteBase):
 
         await self.prepare()
         await self._emit_task_start()
-        await self.task_info._emit_task_progress()
+        await self.task_info.emit_task_progress()
 
         logger.info(
             f"开始运行任务: {self.task_info.task_id}, 模式: {self.task_info.mode}"
@@ -406,9 +410,10 @@ class Task(TaskExecuteBase):
                 )
                 raise
             else:
+                current_status = cast(str, script_item.status)
                 result_event = (
                     PluginEventNames.SCRIPT_SUCCESS
-                    if script_item.status == "完成"
+                    if current_status == "完成"
                     else PluginEventNames.SCRIPT_ERROR
                 )
                 result_error = None
@@ -453,7 +458,7 @@ class Task(TaskExecuteBase):
             data={"Accomplish": self.task_info.result},
         )
 
-        await self.task_info._emit_task_progress()
+        await self.task_info.emit_task_progress()
         await self._emit_task_exit()
 
         if self.task_info.mode == "AutoProxy" and self.task_info.queue_id is not None:

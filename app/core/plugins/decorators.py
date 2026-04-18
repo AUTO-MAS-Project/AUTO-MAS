@@ -27,7 +27,7 @@ class EventSubscription:
 
 
 def on_event(
-    event: str,
+    event: object,
     *,
     priority: int = 0,
     scope: EventScope = "instance",

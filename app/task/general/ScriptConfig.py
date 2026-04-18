@@ -65,8 +65,8 @@ class ScriptConfigTask(TaskExecuteBase):
         self.script_root_path = Path(self.script_config.get("Info", "RootPath"))
         self.script_path = Path(self.script_config.get("Script", "ScriptPath"))
 
-        arguments_list = []
-        path_list = []
+        arguments_list: list[list[str]] = []
+        path_list: list[Path] = []
 
         for argument in [
             part.strip()
@@ -86,12 +86,16 @@ class ScriptConfigTask(TaskExecuteBase):
             )
             arguments_list.append(shlex.split(arg_parts[-1]))
 
-        self.script_arguments = arguments_list[0] if len(arguments_list) > 0 else []
-        self.script_set_exe_path = (
+        self.script_arguments: list[str] = arguments_list[0] if arguments_list else []
+        self.script_set_exe_path: Path = (
             path_list[1] if len(path_list) > 1 else self.script_path
         )
-        self.script_set_arguments = arguments_list[1] if len(arguments_list) > 1 else []
-        self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
+        self.script_set_arguments: list[str] = (
+            arguments_list[1] if len(arguments_list) > 1 else []
+        )
+        self.script_config_path: Path = Path(
+            self.script_config.get("Script", "ConfigPath")
+        )
 
     async def main_task(self):
         await self.prepare()

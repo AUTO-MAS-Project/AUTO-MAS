@@ -7,7 +7,9 @@ import subprocess
 import sys
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable
+
+from app.utils.logger import LoggerLike
 
 
 class RuntimeAPI:
@@ -18,28 +20,25 @@ class RuntimeAPI:
         *,
         plugin_name: str,
         instance_id: str,
-        config: Dict[str, Any],
-        logger,
-        runtime_capabilities: Optional[Dict[str, Callable[..., Any]]] = None,
+        config: dict[str, Any],
+        logger: LoggerLike,
+        runtime_capabilities: dict[str, Callable[..., Any]] | None = None,
     ) -> None:
         self.plugin_name = plugin_name
         self.instance_id = instance_id
         self.config = config or {}
         self.logger = logger
         self.runtime_capabilities = runtime_capabilities or {}
-        self._cached_runtime_info: Optional[Dict[str, Any]] = None
+        self._cached_runtime_info: dict[str, Any] | None = None
 
-    def _runtime_options(self) -> Dict[str, Any]:
+    def _runtime_options(self) -> dict[str, Any]:
         runtime = self.config.get("runtime")
         if isinstance(runtime, dict):
             return runtime
         return {}
 
-    def set_runtime_options(self, options: Dict[str, Any]) -> Dict[str, Any]:
+    def set_runtime_options(self, options: dict[str, Any]) -> dict[str, Any]:
         """更新 runtime 配置并返回最新配置。"""
-        if not isinstance(options, dict):
-            raise ValueError("runtime options 必须是字典")
-
         runtime = self.config.get("runtime")
         if not isinstance(runtime, dict):
             runtime = {}
@@ -53,7 +52,12 @@ class RuntimeAPI:
         self._audit("set_runtime_options", "ok", {"keys": list(options.keys())})
         return dict(runtime)
 
-    def _audit(self, action: str, status: str, detail: Optional[Dict[str, Any]] = None) -> None:
+    def _audit(
+        self,
+        action: str,
+        status: str,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
         payload = {
             "plugin": self.plugin_name,
             "instance": self.instance_id,
@@ -64,7 +68,7 @@ class RuntimeAPI:
             payload.update(detail)
         self.logger.debug(f"[runtime] {json.dumps(payload, ensure_ascii=False, indent=2)}")
 
-    def _resolve_interpreter(self, override: Optional[str] = None) -> str:
+    def _resolve_interpreter(self, override: str | None = None) -> str:
         runtime_options = self._runtime_options()
 
         candidates = [
@@ -80,7 +84,7 @@ class RuntimeAPI:
 
         return sys.executable
 
-    def _resolve_timeout(self, override: Optional[int] = None, default: int = 15) -> int:
+    def _resolve_timeout(self, override: int | None = None, default: int = 15) -> int:
         runtime_options = self._runtime_options()
 
         value = override
@@ -98,7 +102,7 @@ class RuntimeAPI:
 
         return max(1, min(timeout, 300))
 
-    def get_runtime_info(self, force_refresh: bool = False) -> Dict[str, Any]:
+    def get_runtime_info(self, force_refresh: bool = False) -> dict[str, Any]:
         """
         获取当前插件实例的运行时环境信息。
 
@@ -124,7 +128,7 @@ class RuntimeAPI:
         self._cached_runtime_info = info
         return info
 
-    def check_interpreter(self, python_executable: Optional[str] = None) -> Dict[str, Any]:
+    def check_interpreter(self, python_executable: str | None = None) -> dict[str, Any]:
         """
         校验目标 Python 解释器是否可用。
 
@@ -246,9 +250,9 @@ class RuntimeAPI:
         self,
         code: str,
         *,
-        python_executable: Optional[str] = None,
-        timeout_seconds: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        python_executable: str | None = None,
+        timeout_seconds: int | None = None,
+    ) -> dict[str, Any]:
         """
         使用指定解释器执行一段 Python 代码并返回执行结果。
 
@@ -263,6 +267,7 @@ class RuntimeAPI:
         target = self._resolve_interpreter(python_executable)
         timeout = self._resolve_timeout(timeout_seconds)
 
+        process: asyncio.subprocess.Process | None = None
         try:
             process = await asyncio.create_subprocess_exec(
                 target,
@@ -275,8 +280,9 @@ class RuntimeAPI:
             stdout = stdout_raw.decode("utf-8", errors="replace")
             stderr = stderr_raw.decode("utf-8", errors="replace")
         except asyncio.TimeoutError:
-            with suppress(Exception):
-                process.kill()
+            if process is not None:
+                with suppress(Exception):
+                    process.kill()
             result = {
                 "ok": False,
                 "returncode": -1,

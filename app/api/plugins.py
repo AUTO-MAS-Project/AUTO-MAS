@@ -2,7 +2,7 @@
 #   Copyright © 2025-2026 AUTO-MAS Team
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
@@ -12,6 +12,18 @@ from app.core.plugins import PluginConfigStore, PluginManager
 
 
 DEV_STUB_ENABLED = os.getenv("AUTO_MAS_DEV") == "1"
+
+
+def _dev_stub_generation_disabled() -> bool:
+    return False
+
+
+def _raise_dev_stub_generation_disabled() -> dict[str, Any]:
+    raise RuntimeError("当前未启用插件上下文类型提示生成")
+
+
+is_dev_stub_generation_enabled = _dev_stub_generation_disabled
+generate_plugin_context_stubs = _raise_dev_stub_generation_disabled
 
 if DEV_STUB_ENABLED:
     from scripts.dev_stub_generator import (
@@ -29,7 +41,7 @@ class PluginInstanceModel(BaseModel):
     plugin: str = Field(..., description="插件名")
     enabled: bool = Field(default=True, description="是否启用")
     name: str = Field(..., description="实例名称")
-    config: Dict[str, Any] = Field(default_factory=dict, description="插件配置")
+    config: dict[str, Any] = Field(default_factory=dict, description="插件配置")
 
 
 class PluginRuntimeStateModel(BaseModel):
@@ -53,11 +65,11 @@ class PluginRuntimeStateModel(BaseModel):
 
 
 class PluginsGetOut(OutBase):
-    discovered_plugins: List[str] = Field(default_factory=list, description="已发现插件")
-    schemas: Dict[str, Dict[str, Any]] = Field(default_factory=dict, description="插件Schema映射")
-    schema_errors: Dict[str, str] = Field(default_factory=dict, description="插件Schema加载错误")
-    instances: List[PluginInstanceModel] = Field(default_factory=list, description="插件实例列表")
-    runtime_states: Dict[str, PluginRuntimeStateModel] = Field(
+    discovered_plugins: list[str] = Field(default_factory=list, description="已发现插件")
+    schemas: dict[str, dict[str, Any]] = Field(default_factory=dict, description="插件Schema映射")
+    schema_errors: dict[str, str] = Field(default_factory=dict, description="插件Schema加载错误")
+    instances: list[PluginInstanceModel] = Field(default_factory=list, description="插件实例列表")
+    runtime_states: dict[str, PluginRuntimeStateModel] = Field(
         default_factory=dict,
         description="插件实例运行态",
     )
@@ -67,7 +79,7 @@ class PluginAddIn(BaseModel):
     plugin: str = Field(..., description="插件名")
     name: Optional[str] = Field(default=None, description="实例名称")
     enabled: bool = Field(default=True, description="是否启用")
-    config: Dict[str, Any] = Field(default_factory=dict, description="插件配置")
+    config: dict[str, Any] = Field(default_factory=dict, description="插件配置")
 
 
 class PluginMutationOut(OutBase):
@@ -79,7 +91,7 @@ class PluginUpdateIn(BaseModel):
     plugin: Optional[str] = Field(default=None, description="插件名")
     name: Optional[str] = Field(default=None, description="实例名称")
     enabled: Optional[bool] = Field(default=None, description="是否启用")
-    config: Optional[Dict[str, Any]] = Field(default=None, description="插件配置")
+    config: Optional[dict[str, Any]] = Field(default=None, description="插件配置")
 
 
 class PluginDeleteIn(BaseModel):
@@ -100,15 +112,15 @@ class PluginDevRebuildCtxStubIn(BaseModel):
 
 class PluginDevRebuildCtxStubOut(OutBase):
     output_dir: Optional[str] = Field(default=None, description="生成目录")
-    changed_files: List[str] = Field(default_factory=list, description="已更新文件")
-    unchanged_files: List[str] = Field(default_factory=list, description="未变更文件")
+    changed_files: list[str] = Field(default_factory=list, description="已更新文件")
+    unchanged_files: list[str] = Field(default_factory=list, description="未变更文件")
 
 
 class PluginPackageIn(BaseModel):
     package: str = Field(..., description="PyPI 包名")
 
 
-async def _discover_plugins() -> Dict[str, Any]:
+async def _discover_plugins() -> dict[str, Any]:
     return await PluginManager.discover_plugins()
 
 
@@ -122,9 +134,11 @@ def _to_instance_model(instance: PluginConfigStore.PluginInstance) -> PluginInst
     )
 
 
-def _build_schemas(discovered: Dict[str, Any]) -> tuple[Dict[str, Dict[str, Any]], Dict[str, str]]:
-    schemas: Dict[str, Dict[str, Any]] = {}
-    errors: Dict[str, str] = {}
+def _build_schemas(
+    discovered: dict[str, Any],
+) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
+    schemas: dict[str, dict[str, Any]] = {}
+    errors: dict[str, str] = {}
     for plugin_name, plugin_source in discovered.items():
         plugin_path = getattr(plugin_source, "path", None)
         try:
@@ -137,8 +151,8 @@ def _build_schemas(discovered: Dict[str, Any]) -> tuple[Dict[str, Dict[str, Any]
 
 def _build_runtime_states(
     instances: list[PluginConfigStore.PluginInstance],
-) -> Dict[str, PluginRuntimeStateModel]:
-    result: Dict[str, PluginRuntimeStateModel] = {}
+) -> dict[str, PluginRuntimeStateModel]:
+    result: dict[str, PluginRuntimeStateModel] = {}
     records = getattr(PluginManager.loader, "records", {})
 
     for instance in instances:

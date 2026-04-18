@@ -22,14 +22,8 @@ class PluginInstanceConfig(PydanticConfigBase):
         Config: JsonDictString = Field(default="{ }")
 
         def config_dict(self) -> dict[str, Any]:
-            value = self.Config
-            if isinstance(value, dict):
-                return value
-            if not isinstance(value, str):
-                return {}
-
             try:
-                parsed = json.loads(value)
+                parsed = json.loads(self.Config)
             except json.JSONDecodeError:
                 return {}
 

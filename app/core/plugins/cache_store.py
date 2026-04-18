@@ -6,9 +6,11 @@ import json
 import math
 import re
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Literal
+from typing import Any, Dict, Literal, TypedDict, cast
+
+from app.utils.logger import LoggerLike
 
 
 LimitMode = Literal["count", "bytes"]
@@ -24,9 +26,49 @@ _LIMIT_UNIT_MULTIPLIER: Dict[str, int] = {
 }
 
 
+class CacheItem(TypedDict, total=False):
+    value: Any
+    updated_at: str
+
+
+class CachePayload(TypedDict):
+    items: dict[str, CacheItem]
+    updated_at: str
+
+
 def _utc_now_iso() -> str:
     """返回当前 UTC 时间字符串。"""
-    return datetime.utcnow().isoformat() + "Z"
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _empty_payload() -> CachePayload:
+    return {"items": {}, "updated_at": _utc_now_iso()}
+
+
+def _normalize_cache_item(value: object) -> CacheItem | None:
+    if not isinstance(value, dict):
+        return None
+
+    data = cast(dict[object, object], value)
+    item: CacheItem = {}
+    if "value" in data:
+        item["value"] = data["value"]
+    item["updated_at"] = str(data.get("updated_at") or "")
+    return item
+
+
+def _normalize_cache_items(value: object) -> dict[str, CacheItem]:
+    if not isinstance(value, dict):
+        return {}
+
+    mapping = cast(dict[object, object], value)
+    result: dict[str, CacheItem] = {}
+    for raw_key, raw_item in mapping.items():
+        item = _normalize_cache_item(raw_item)
+        if item is None:
+            continue
+        result[str(raw_key)] = item
+    return result
 
 
 def _safe_instance_dir_name(instance_id: str) -> str:
@@ -60,24 +102,23 @@ class JsonPluginCache:
         if not self.file_path.exists():
             self._write_store({"items": {}, "updated_at": _utc_now_iso()})
 
-    def _read_store(self) -> Dict[str, Any]:
+    def _read_store(self) -> CachePayload:
         """读取缓存数据结构。"""
         try:
             text = self.file_path.read_text(encoding="utf-8")
             payload = json.loads(text)
             if not isinstance(payload, dict):
-                return {"items": {}, "updated_at": _utc_now_iso()}
-            items = payload.get("items", {})
-            if not isinstance(items, dict):
-                items = {}
+                return _empty_payload()
+
+            payload_dict = cast(dict[object, object], payload)
             return {
-                "items": items,
-                "updated_at": payload.get("updated_at") or _utc_now_iso(),
+                "items": _normalize_cache_items(payload_dict.get("items")),
+                "updated_at": str(payload_dict.get("updated_at") or _utc_now_iso()),
             }
         except Exception:
-            return {"items": {}, "updated_at": _utc_now_iso()}
+            return _empty_payload()
 
-    def _write_store(self, payload: Dict[str, Any]) -> None:
+    def _write_store(self, payload: CachePayload) -> None:
         """原子写入缓存文件。"""
         payload["updated_at"] = _utc_now_iso()
         temp_path = self.file_path.with_suffix(f"{self.file_path.suffix}.tmp")
@@ -87,10 +128,10 @@ class JsonPluginCache:
         )
         temp_path.replace(self.file_path)
 
-    def _cleanup_if_needed(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _cleanup_if_needed(self, payload: CachePayload) -> CachePayload:
         """按配置阈值执行清理，优先淘汰最久未更新的数据。"""
-        items = payload.get("items", {})
-        if not isinstance(items, dict) or not items:
+        items = payload["items"]
+        if not items:
             payload["items"] = {}
             return payload
 
@@ -99,7 +140,7 @@ class JsonPluginCache:
                 return payload
             sorted_keys = sorted(
                 items.keys(),
-                key=lambda key: str(items.get(key, {}).get("updated_at", "")),
+                key=lambda key: items.get(key, {}).get("updated_at", ""),
             )
             overflow = len(items) - self.limit
             for key in sorted_keys[:overflow]:
@@ -111,7 +152,7 @@ class JsonPluginCache:
         while len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) > self.limit and items:
             oldest_key = min(
                 items.keys(),
-                key=lambda key: str(items.get(key, {}).get("updated_at", "")),
+                key=lambda key: items.get(key, {}).get("updated_at", ""),
             )
             items.pop(oldest_key, None)
             payload["items"] = items
@@ -131,7 +172,7 @@ class JsonPluginCache:
         safe_key = str(key)
         with self._lock:
             payload = self._read_store()
-            items = payload.setdefault("items", {})
+            items = payload["items"]
             items[safe_key] = {
                 "value": value,
                 "updated_at": _utc_now_iso(),
@@ -154,8 +195,8 @@ class JsonPluginCache:
         safe_key = str(key)
         with self._lock:
             payload = self._read_store()
-            item = payload.get("items", {}).get(safe_key)
-            if not isinstance(item, dict):
+            item = payload["items"].get(safe_key)
+            if item is None:
                 return default
             return item.get("value", default)
 
@@ -172,7 +213,7 @@ class JsonPluginCache:
         safe_key = str(key)
         with self._lock:
             payload = self._read_store()
-            items = payload.get("items", {})
+            items = payload["items"]
             if safe_key not in items:
                 return False
             items.pop(safe_key, None)
@@ -193,7 +234,7 @@ class JsonPluginCache:
         safe_key = str(key)
         with self._lock:
             payload = self._read_store()
-            return safe_key in payload.get("items", {})
+            return safe_key in payload["items"]
 
     def update(self, mapping: Dict[str, Any]) -> None:
         """
@@ -208,11 +249,9 @@ class JsonPluginCache:
         Raises:
             ValueError: mapping 不是字典时抛出。
         """
-        if not isinstance(mapping, dict):
-            raise ValueError("mapping 必须是字典")
         with self._lock:
             payload = self._read_store()
-            items = payload.setdefault("items", {})
+            items = payload["items"]
             now = _utc_now_iso()
             for key, value in mapping.items():
                 items[str(key)] = {
@@ -233,8 +272,8 @@ class JsonPluginCache:
         with self._lock:
             payload = self._read_store()
             result: Dict[str, Any] = {}
-            for key, item in payload.get("items", {}).items():
-                if isinstance(item, dict) and "value" in item:
+            for key, item in payload["items"].items():
+                if "value" in item:
                     result[key] = item["value"]
             return result
 
@@ -263,7 +302,7 @@ class JsonPluginCache:
                 "backend": "json",
                 "limit_mode": self.limit_mode,
                 "limit": self.limit,
-                "count": len(payload.get("items", {})),
+                "count": len(payload["items"]),
                 "size_bytes": len(serialized),
                 "path": str(self.file_path),
             }
@@ -278,7 +317,7 @@ class PluginCacheManager:
         plugin_name: str,
         instance_id: str,
         data_root: Path,
-        logger,
+        logger: LoggerLike,
     ) -> None:
         self.plugin_name = plugin_name
         self.instance_id = instance_id

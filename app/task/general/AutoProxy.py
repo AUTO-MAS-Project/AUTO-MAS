@@ -94,8 +94,8 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_root_path = Path(self.script_config.get("Info", "RootPath"))
         self.script_path = Path(self.script_config.get("Script", "ScriptPath"))
 
-        arguments_list = []
-        path_list = []
+        arguments_list: list[list[str]] = []
+        path_list: list[Path] = []
 
         for argument in [
             part.strip()
@@ -115,11 +115,13 @@ class AutoProxyTask(TaskExecuteBase):
             )
             arguments_list.append(shlex.split(arg_parts[-1]))
 
-        self.script_exe_path = path_list[0] if len(path_list) > 0 else self.script_path
-        self.script_arguments = arguments_list[0] if len(arguments_list) > 0 else []
-        self.script_set_arguments = arguments_list[1] if len(arguments_list) > 1 else []
+        self.script_exe_path: Path = path_list[0] if path_list else self.script_path
+        self.script_arguments: list[str] = arguments_list[0] if arguments_list else []
+        self.script_set_arguments: list[str] = (
+            arguments_list[1] if len(arguments_list) > 1 else []
+        )
 
-        self.script_target_process_info = (
+        self.script_target_process_info: ProcessInfo | None = (
             ProcessInfo(
                 name=self.script_config.get("Script", "TrackProcessName") or None,
                 exe=self.script_config.get("Script", "TrackProcessExe") or None,
@@ -132,10 +134,12 @@ class AutoProxyTask(TaskExecuteBase):
             else None
         )
 
-        self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
+        self.script_config_path: Path = Path(
+            self.script_config.get("Script", "ConfigPath")
+        )
 
-        self.script_log_path = Path(self.script_config.get("Script", "LogPath"))
-        self.log_format = self.script_config.get("Script", "LogPathFormat")
+        self.script_log_path: Path = Path(self.script_config.get("Script", "LogPath"))
+        self.log_format: str = self.script_config.get("Script", "LogPathFormat")
         if self.log_format:
             with suppress(ValueError):
                 datetime.strptime(self.script_log_path.stem, self.log_format)
@@ -150,7 +154,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.script_config.get("Script", "LogTimeStart") - 1,
             self.script_config.get("Script", "LogTimeEnd"),
         )
-        self.success_log = (
+        self.success_log: list[str] = (
             [
                 _.strip()
                 for _ in self.script_config.get("Script", "SuccessLog").split("|")
@@ -158,7 +162,7 @@ class AutoProxyTask(TaskExecuteBase):
             if self.script_config.get("Script", "SuccessLog")
             else []
         )
-        self.error_log = [
+        self.error_log: list[str] = [
             _.strip() for _ in self.script_config.get("Script", "ErrorLog").split("|")
         ]
         self.general_log_monitor = LogMonitor(
@@ -482,7 +486,7 @@ class AutoProxyTask(TaskExecuteBase):
         del self.general_process_manager
         del self.general_log_monitor
 
-        user_logs_list = []
+        user_logs_list: list[Path] = []
         for t, log_item in self.cur_user_item.log_record.items():
             dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
             log_path = (
