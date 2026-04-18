@@ -44,7 +44,7 @@ class EventBus:
 
     def on(
         self,
-        event: str,
+        event: object,
         handler: Callable[[Any], Any],
         *,
         priority: int = 0,

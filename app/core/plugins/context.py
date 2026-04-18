@@ -1,14 +1,17 @@
 ﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
-from pathlib import Path
+from collections.abc import Iterable, Iterator, Mapping
 from copy import deepcopy
-from typing import Any, Dict, Callable, Optional, Iterator
 import asyncio
+from pathlib import Path
+from typing import Any, Callable, cast
 
 from .cache_store import PluginCacheManager
+from .event_bus import EventBus
 from .event_contract import EventErrorPolicy, EventScope
 from .runtime_api import RuntimeAPI
+from app.utils.logger import LoggerLike
 
 
 
@@ -20,10 +23,10 @@ class PluginContext:
         *,
         plugin_name: str,
         instance_id: str | None = None,
-        config: Dict[str, Any],
-        logger,
-        events,
-        runtime_capabilities: Optional[Dict[str, Callable[..., Any]]] = None,
+        config: dict[str, Any],
+        logger: LoggerLike,
+        events: EventBus,
+        runtime_capabilities: dict[str, Callable[..., Any]] | None = None,
     ) -> None:
         # 基础必要属性
         self.plugin_name = plugin_name
@@ -54,15 +57,15 @@ class PluginContext:
             logger=self.logger,
         )
 
-class PluginConfigProxy(dict):
+class PluginConfigProxy(dict[str, Any]):
     """插件配置代理，兼容字典访问并提供 set/update/reset 语义。"""
 
-    def __init__(self, initial: Dict[str, Any] | None = None) -> None:
-        data = deepcopy(initial) if isinstance(initial, dict) else {}
+    def __init__(self, initial: Mapping[str, Any] | None = None) -> None:
+        data = deepcopy(dict(initial)) if initial is not None else {}
         super().__init__(data)
-        self._source_config: Dict[str, Any] = deepcopy(data)
+        self._source_config: dict[str, Any] = deepcopy(data)
 
-    def set(self, key: str, value: Any) -> None:
+    def set(self, key: object, value: Any) -> None:
         """
         设置单个配置项。
 
@@ -83,7 +86,7 @@ class PluginConfigProxy(dict):
             raise ValueError("配置键不能为空字符串")
         self[key] = value
 
-    def update(self, values: Dict[str, Any] | None = None, **kwargs: Any) -> None:
+    def update(self, *args: Any, **kwargs: Any) -> None:
         """
         批量更新配置项。
 
@@ -97,19 +100,31 @@ class PluginConfigProxy(dict):
         Raises:
             TypeError: `values` 非字典时抛出。
         """
-        if values is not None and not isinstance(values, dict):
-            raise TypeError("update(values) 的 values 必须是字典或 None")
+        if len(args) > 1:
+            raise TypeError("update(values) 最多只接受一个位置参数")
 
-        payload: Dict[str, Any] = {}
-        if isinstance(values, dict):
-            payload.update(values)
-        if kwargs:
-            payload.update(kwargs)
+        items: list[tuple[object, Any]] = []
+        if args:
+            values = args[0]
+            if values is None:
+                items = []
+            elif isinstance(values, Mapping):
+                mapping = cast(Mapping[object, Any], values)
+                items = list(mapping.items())
+            else:
+                try:
+                    items = list(cast(Iterable[tuple[object, Any]], values))
+                except Exception as e:
+                    raise TypeError(
+                        "update(values) 的 values 必须是映射、键值对迭代器或 None"
+                    ) from e
 
-        for key, value in payload.items():
+        for key, value in items:
+            self.set(key, value)
+        for key, value in kwargs.items():
             self.set(key, value)
 
-    def reset(self, values: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    def reset(self, values: Mapping[str, Any] | None = None) -> dict[str, Any]:
         """
         删除源配置并以新配置重建当前配置。
 
@@ -122,24 +137,21 @@ class PluginConfigProxy(dict):
         Raises:
             TypeError: `values` 非字典且非 None 时抛出。
         """
-        if values is not None and not isinstance(values, dict):
-            raise TypeError("reset(values) 的 values 必须是字典或 None")
-
-        next_source = deepcopy(values) if isinstance(values, dict) else {}
+        next_source = deepcopy(dict(values)) if values is not None else {}
         self._source_config = deepcopy(next_source)
         super().clear()
         super().update(deepcopy(next_source))
         return self.to_dict()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """返回当前配置的深拷贝字典。"""
         return deepcopy(dict(self))
 
-    def source_dict(self) -> Dict[str, Any]:
+    def source_dict(self) -> dict[str, Any]:
         """返回源配置的深拷贝字典。"""
         return deepcopy(self._source_config)
 
-    def __iter__(self) -> Iterator[Any]:
+    def __iter__(self) -> Iterator[str]:
         """返回配置键的迭代器。"""
         return super().__iter__()
 
@@ -152,21 +164,21 @@ class RuntimeFacade:
     def __init__(self, api: RuntimeAPI) -> None:
         self._api = api
 
-    def info(self, force_refresh: bool = False) -> Dict[str, Any]:
+    def info(self, force_refresh: bool = False) -> dict[str, Any]:
         """获取运行时环境信息。"""
         return self._api.get_runtime_info(force_refresh=force_refresh)
 
     def set(
         self,
         *,
-        python_executable: Optional[str] = None,
-        timeout_seconds: Optional[int] = None,
-        options: Optional[Dict[str, Any]] = None,
-        **kwargs,
-    ) -> Dict[str, Any]:
+        python_executable: str | None = None,
+        timeout_seconds: int | None = None,
+        options: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
         """更新 runtime 配置选项。"""
-        payload: Dict[str, Any] = {}
-        if isinstance(options, dict):
+        payload: dict[str, Any] = {}
+        if options is not None:
             payload.update(options)
         if python_executable is not None:
             payload["python_executable"] = python_executable
@@ -180,9 +192,9 @@ class RuntimeFacade:
         self,
         code: str,
         *,
-        python_executable: Optional[str] = None,
-        timeout_seconds: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        python_executable: str | None = None,
+        timeout_seconds: int | None = None,
+    ) -> dict[str, Any]:
         """执行 Python 代码片段。"""
         return await self._api.run_python_snippet(
             code,
@@ -201,9 +213,9 @@ class PluginEventFacade:
     def __init__(
         self,
         *,
-        plugin_name: str,
-        instance_id: str,
-        events,
+        plugin_name: object,
+        instance_id: object,
+        events: EventBus,
     ) -> None:
         """
         初始化插件事件门面。
@@ -231,10 +243,6 @@ class PluginEventFacade:
             raise TypeError("instance_id 必须是字符串")
         if not instance_id.strip():
             raise ValueError("instance_id 不能为空字符串")
-
-        for method_name in ("on", "off", "emit"):
-            if not hasattr(events, method_name):
-                raise AttributeError(f"events 缺少必要方法: {method_name}")
 
         self._plugin_name = plugin_name
         self._instance_id = instance_id
@@ -328,7 +336,7 @@ class PluginEventFacade:
             ValueError: 底层事件总线校验参数失败时抛出。
             Exception: 在 `error_policy="raise"` 且监听器失败时向上抛出。
         """
-        kwargs: Dict[str, Any] = {
+        kwargs: dict[str, Any] = {
             "scope": scope,
             "error_policy": error_policy,
         }
@@ -390,5 +398,4 @@ class PluginEventFacade:
         Returns:
             None: 无返回值。
         """
-        if hasattr(self._events, "off_by_instance"):
-            self._events.off_by_instance(self._instance_id)
+        self._events.off_by_instance(self._instance_id)

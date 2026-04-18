@@ -126,9 +126,41 @@ class PluginConfigStore:
                 return self._ResolvedInstance(uid=uid, instance=instance)
         raise ValueError(f"未找到插件实例: {instance_id}")
 
+    def _collect_existing_instance_ids(
+        self,
+        *,
+        exclude_uid: uuid.UUID | None = None,
+    ) -> set[str]:
+        from app.core import Config
+
+        result: set[str] = set()
+        for uid, instance_config in Config.PluginConfig.items():
+            if exclude_uid is not None and uid == exclude_uid:
+                continue
+            result.add(self._build_instance(uid, instance_config).id)
+        return result
+
+    def _allocate_unique_instance_id(
+        self,
+        plugin_name: str,
+        *,
+        exclude_uid: uuid.UUID | None = None,
+    ) -> str:
+        existing_ids = self._collect_existing_instance_ids(exclude_uid=exclude_uid)
+
+        for suffix_length in (5, 6, 7, 8):
+            for _ in range(32):
+                suffix = uuid.uuid4().hex[:suffix_length]
+                instance_id = self._build_instance_id(plugin_name, suffix)
+                if instance_id not in existing_ids:
+                    return instance_id
+
+        raise RuntimeError(f"插件实例 ID 生成失败: {plugin_name}")
+
     def generate_instance_id(self, plugin_name: str) -> str:
         """生成插件实例 ID。"""
-        return self._build_instance_id(plugin_name, uuid.uuid4().hex[:5])
+        normalized_plugin = self._normalize_plugin_name(plugin_name)
+        return self._allocate_unique_instance_id(normalized_plugin)
 
     async def load_instances(self) -> list[PluginInstance]:
         """读取并校验插件实例列表。"""
@@ -166,12 +198,14 @@ class PluginConfigStore:
             self._resolve_plugin_source_path(normalized_plugin, discovered_plugins),
             raw_config or {},
         )
+        generated_instance_id = self.generate_instance_id(normalized_plugin)
+        _, suffix = generated_instance_id.split(":", 1)
         uid, plugin_config = await Config.PluginConfig.add(PluginInstanceConfig)
         await plugin_config.set_many(
             {
                 "Info": {
                     "Plugin": normalized_plugin,
-                    "Id": uid.hex[:5],
+                    "Id": suffix,
                     "Enabled": enabled,
                     "Name": name or f"{normalized_plugin} 实例",
                 },
@@ -216,6 +250,13 @@ class PluginConfigStore:
         suffix = self._normalize_suffix(
             Config.PluginConfig[resolved.uid].get("Info", "Id")
         )
+        next_instance_id = self._build_instance_id(next_plugin, suffix)
+        if next_instance_id in self._collect_existing_instance_ids(exclude_uid=resolved.uid):
+            _, suffix = self._allocate_unique_instance_id(
+                next_plugin,
+                exclude_uid=resolved.uid,
+            ).split(":", 1)
+
         await Config.PluginConfig[resolved.uid].set_many(
             {
                 "Info": {
@@ -283,8 +324,6 @@ class PluginConfigStore:
         self, plugin_name: str, raw_config: dict[str, Any]
     ) -> dict[str, Any]:
         """规范化并深拷贝原始配置对象。"""
-        if not isinstance(raw_config, dict):
-            raise ValueError(f"插件配置必须是对象: {plugin_name}")
         return copy.deepcopy(raw_config)
 
     def load_schema(

@@ -8,7 +8,7 @@ import sys
 import shutil
 import importlib.metadata as importlib_metadata
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 import uuid
 
 from app.utils import get_logger
@@ -96,18 +96,24 @@ class _PluginManager:
             OSError: 文件读取失败时抛出。
         """
         with pyproject_path.open("rb") as f:
-            data = tomllib.load(f)
+            data: dict[str, Any] = tomllib.load(f)
 
-        if not isinstance(data, dict):
-            raise ValueError(f"pyproject 顶层必须是对象: {pyproject_path}")
-
-        project_table = data.get("project", {})
-        if not isinstance(project_table, dict):
+        project_value = data.get("project")
+        project_table: dict[str, Any]
+        if project_value is None:
+            project_table = {}
+        elif isinstance(project_value, dict):
+            project_table = project_value
+        else:
             raise ValueError(f"pyproject project 字段必须是对象: {pyproject_path}")
 
         distribution_name = str(project_table.get("name") or pyproject_path.parent.name).strip()
-        entry_points_table = project_table.get("entry-points", {})
-        if not isinstance(entry_points_table, dict):
+        entry_points_value = project_table.get("entry-points")
+        if entry_points_value is None:
+            entry_points_table: dict[str, Any] = {}
+        elif isinstance(entry_points_value, dict):
+            entry_points_table = entry_points_value
+        else:
             raise ValueError(f"pyproject project.entry-points 必须是对象: {pyproject_path}")
 
         entry_point_names: set[str] = set()
@@ -365,7 +371,7 @@ class _PluginManager:
         for dist, modules in matched:
             dist_files = list(getattr(dist, "files", []) or [])
             for item in dist_files:
-                candidate = Path(dist.locate_file(item))
+                candidate = Path(str(dist.locate_file(item)))
                 if candidate.is_file():
                     candidate.unlink(missing_ok=True)
                 elif candidate.is_dir():
@@ -534,7 +540,7 @@ class _PluginManager:
     def _list_scripts(self) -> list[Dict[str, Any]]:
         try:
             from app.core import Config
-            scripts = []
+            scripts: list[dict[str, Any]] = []
             for script_id, script in Config.ScriptConfig.items():
                 scripts.append(
                     {
@@ -592,7 +598,8 @@ class _PluginManager:
         if not failed:
             return
 
-        missing_ids = set(getattr(self.loader, "startup_missing_instances", set()) or set())
+        raw_missing_ids = getattr(self.loader, "startup_missing_instances", None)
+        missing_ids = {str(item) for item in raw_missing_ids or ()}
 
         try:
             removed_ids, disabled_ids = await self.config_store.repair_invalid_instances(
@@ -626,7 +633,12 @@ class _PluginManager:
         self.started = False
         logger.info("插件系统已关闭")
 
-    def on(self, event: str, handler, **kwargs: Any) -> str:
+    def on(
+        self,
+        event: str,
+        handler: Callable[[Any], Any],
+        **kwargs: Any,
+    ) -> str:
         """
         注册插件系统事件监听器。
 
@@ -640,7 +652,13 @@ class _PluginManager:
         """
         return self.events.on(event, handler, **kwargs)
 
-    def off(self, event: str, handler=None, *, listener_id: str | None = None) -> None:
+    def off(
+        self,
+        event: str,
+        handler: Callable[[Any], Any] | None = None,
+        *,
+        listener_id: str | None = None,
+    ) -> None:
         """
         移除插件系统事件监听器。
 

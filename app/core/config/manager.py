@@ -44,7 +44,6 @@ from app.models.general import GeneralConfig, GeneralUserConfig
 from app.models.global_config import GlobalConfig
 from app.models.maa import MaaConfig, MaaPlanConfig, MaaUserConfig
 from app.models.maaend import MaaEndConfig, MaaEndUserConfig
-from app.models.plugin import PluginInstanceConfig
 from app.models.src import SrcConfig, SrcUserConfig
 from .base import dump_toml
 from app.models.shared import WebSocketMessage
@@ -1391,71 +1390,6 @@ class AppConfig(GlobalConfig):
                 .UserData[user_uid]
                 .Notify_CustomWebhooks.setOrder(list(map(uuid.UUID, index_list)))
             )
-
-    async def get_plugin(
-        self, plugin_id: Optional[str]
-    ) -> tuple[list[dict[str, str]], dict[str, Any]]:
-        """获取插件实例配置。"""
-
-        logger.info(f"获取插件实例配置: {plugin_id}")
-
-        if plugin_id is None:
-            data = await self.PluginConfig.toDict()
-        else:
-            data = await self.PluginConfig.get(uuid.UUID(plugin_id))
-
-        index = data.pop("instances", [])
-        return list(index), data
-
-    async def add_plugin(
-        self,
-        plugin_name: str,
-        name: Optional[str] = None,
-        enabled: bool = True,
-        config: Optional[dict[str, Any]] = None,
-    ) -> tuple[uuid.UUID, PluginInstanceConfig]:
-        """创建插件实例配置。"""
-
-        logger.info(f"创建插件实例配置: {plugin_name}")
-        uid, plugin_config = await self.PluginConfig.add(PluginInstanceConfig)
-
-        await plugin_config.set_many(
-            {
-                "Info": {
-                    "Plugin": plugin_name,
-                    "Id": uid.hex[:5],
-                    "Enabled": enabled,
-                    "Name": name or f"{plugin_name} 实例",
-                },
-                "Data": {
-                    "Config": json.dumps(config or {}, ensure_ascii=False),
-                },
-            }
-        )
-
-        return uid, plugin_config
-
-    async def update_plugin(
-        self,
-        plugin_id: str,
-        data: Dict[str, Dict[str, Any]],
-    ) -> None:
-        """更新插件实例配置。"""
-
-        logger.info(f"更新插件实例配置: {plugin_id}")
-        await self.PluginConfig[uuid.UUID(plugin_id)].set_many(data)
-
-    async def del_plugin(self, plugin_id: str) -> None:
-        """删除插件实例配置。"""
-
-        logger.info(f"删除插件实例配置: {plugin_id}")
-        await self.PluginConfig.remove(uuid.UUID(plugin_id))
-
-    async def reorder_plugin(self, index_list: list[str]) -> None:
-        """重排插件实例配置。"""
-
-        logger.info(f"重排插件实例配置: {index_list}")
-        await self.PluginConfig.setOrder(list(map(uuid.UUID, index_list)))
 
     @property
     def proxy(self) -> Optional[httpx.Proxy]:

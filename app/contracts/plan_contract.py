@@ -205,6 +205,9 @@ class MaaPlanRead(ApiModel):
     )
 
     # 自动展开的星期项
+    wk_key = ""
+    wk_type = object
+    wk_field = None
     for wk_key, wk_type, wk_field in _iter_weekday_fields(
         MaaPlanDayRead, optional=False
     ):
@@ -228,6 +231,9 @@ class MaaPlanPatch(ApiModel):
     )
 
     # 自动展开的星期项
+    wk_key = ""
+    wk_type = object
+    wk_field = None
     for wk_key, wk_type, wk_field in _iter_weekday_fields(
         MaaPlanDayPatch, optional=True
     ):

@@ -20,10 +20,53 @@
 
 #   Contact: DLmaster_361@163.com
 
+from collections.abc import Callable
+from typing import Any, Protocol, TypeVar, overload
 
 from loguru import logger as _logger
 import sys
 from pathlib import Path
+
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+class LoggerLike(Protocol):
+    def bind(self, *args: Any, **kwargs: Any) -> "LoggerLike": ...
+
+    def debug(self, __message: object, *args: Any, **kwargs: Any) -> None: ...
+
+    def info(self, __message: object, *args: Any, **kwargs: Any) -> None: ...
+
+    def success(self, __message: object, *args: Any, **kwargs: Any) -> None: ...
+
+    def warning(self, __message: object, *args: Any, **kwargs: Any) -> None: ...
+
+    def error(self, __message: object, *args: Any, **kwargs: Any) -> None: ...
+
+    def exception(self, __message: object, *args: Any, **kwargs: Any) -> None: ...
+
+    def level(self, *args: Any, **kwargs: Any) -> Any: ...
+
+    def opt(self, *args: Any, **kwargs: Any) -> "LoggerLike": ...
+
+    def log(self, *args: Any, **kwargs: Any) -> None: ...
+
+    @overload
+    def catch(self, function: F, /) -> F: ...
+
+    @overload
+    def catch(
+        self,
+        exception: type[BaseException] = Exception,
+        *,
+        level: str = "ERROR",
+        reraise: bool = False,
+        onerror: Callable[[BaseException], Any] | None = None,
+        exclude: Any | None = None,
+        default: Any | None = None,
+        message: str = "An error has been caught",
+    ) -> Callable[[F], F]: ...
 
 (Path.cwd() / "debug").mkdir(parents=True, exist_ok=True)
 
@@ -57,7 +100,7 @@ _logger.add(
 _logger = _logger.patch(lambda record: record["extra"].setdefault("module", "未知模块"))
 
 
-def get_logger(module_name: str):
+def get_logger(module_name: str) -> LoggerLike:
     """
     获取指定模块名的日志记录器
 
@@ -70,4 +113,4 @@ def get_logger(module_name: str):
     return _logger.bind(module=module_name)
 
 
-__all__ = ["get_logger"]
+__all__ = ["LoggerLike", "get_logger"]

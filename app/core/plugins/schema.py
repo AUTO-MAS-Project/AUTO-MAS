@@ -467,7 +467,9 @@ class PluginSchemaManager:
             if not field_info.is_required():
                 if field_info.default_factory is not None:
                     try:
-                        field_schema["default"] = field_info.default_factory()
+                        field_schema["default"] = field_info.get_default(
+                            call_default_factory=True,
+                        )
                     except Exception as e:
                         raise PluginSchemaError(
                             f"Config 字段 default_factory 执行失败: {plugin_name}.{field_name}, "
@@ -551,11 +553,6 @@ class PluginSchemaManager:
         """
         normalized: Dict[str, Dict[str, Any]] = {}
         for field_name, field_schema in schema.items():
-            if not isinstance(field_name, str):
-                raise PluginSchemaError(
-                    f"Schema 字段名必须是字符串: {plugin_name}.{field_name}"
-                )
-
             value = field_schema
             if hasattr(value, "to_dict") and callable(value.to_dict):
                 value = value.to_dict()
@@ -649,9 +646,6 @@ class PluginSchemaManager:
                 3) 任一字段值不满足声明类型或约束；
                 4) 字段值为 None 且字段未声明 nullable。
         """
-        if not isinstance(config, dict):
-            raise PluginSchemaError(f"插件配置必须是对象: {plugin_name}")
-
         compiled = self._compile_schema(plugin_name, schema)
         merged = copy.deepcopy(config)
 

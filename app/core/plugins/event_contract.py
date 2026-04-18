@@ -58,7 +58,7 @@ def is_script_event(event: str) -> bool:
     return event in SCRIPT_LIFECYCLE_EVENTS
 
 
-def is_valid_source(source: str) -> bool:
+def is_valid_source(source: object) -> bool:
     """
     校验事件来源字符串是否满足基础格式约束。
 

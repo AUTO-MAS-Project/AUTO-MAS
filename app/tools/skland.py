@@ -47,8 +47,8 @@ from Crypto.Util.Padding import pad
 
 from typing import Dict, Any, cast
 
-from .constants import SKLAND_SM_CONFIG, BROWSER_ENV, DES_RULE
-from .logger import get_logger
+from app.utils.constants import SKLAND_SM_CONFIG, BROWSER_ENV, DES_RULE
+from app.utils.logger import get_logger
 
 logger = get_logger("森空岛签到任务")
 

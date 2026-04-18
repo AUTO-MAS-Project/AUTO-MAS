@@ -72,7 +72,7 @@ def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
 def get_window_handles(pid: int) -> list[int]:
     """获取指定进程的所有窗口句柄"""
 
-    window_handles = []
+    window_handles: list[int] = []
 
     def enum_callback(hwnd: int, lparam: int) -> bool:
         """枚举窗口的回调函数"""
