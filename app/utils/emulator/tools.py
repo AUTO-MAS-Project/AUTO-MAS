@@ -122,10 +122,10 @@ async def search_all_emulators() -> list[EmulatorInfo]:
                     {
                         "type": "general",
                         "path": adb_parent_text,
-                        "name": f"未知模拟器 ({adb_parent_text})",
+                        "name": f"未知模拟器 ({emulator.adb_path.parent.as_posix()})",
                     }
                 )
-                logger.info(f"通过ADB找到未知模拟器: {adb_path_text}")
+                logger.info(f"通过ADB找到未知模拟器: {emulator.adb_path.as_posix()}")
 
     logger.info(f"搜索完成，共找到 {len(found_emulators)} 个模拟器")
     return found_emulators

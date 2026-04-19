@@ -64,17 +64,17 @@ def sanitize_log_message(message: str) -> str:
     """
     ??????????????????
 
-    :param message: ?????????
+    :param message: 原始日志消息
     :type message: str
-    :return: ????????????
+    :return: 过滤后的日志消息
     :rtype: str
     """
     sensitive_patterns = [
-        (r"(cdk=)[^&\s]+", r"\1***"),
-        (r"(password=)[^&\s]+", r"\1***"),
-        (r"(token=)[^&\s]+", r"\1***"),
-        (r"(api_key=)[^&\s]+", r"\1***"),
-        (r"(secret=)[^&\s]+", r"\1***"),
+        (r"(cdk=)[^&\s]+", r"\1***"),  # cdk参数
+        (r"(password=)[^&\s]+", r"\1***"),  # password参数
+        (r"(token=)[^&\s]+", r"\1***"),  # token参数
+        (r"(api_key=)[^&\s]+", r"\1***"),  # api_key参数
+        (r"(secret=)[^&\s]+", r"\1***"),  # secret参数
     ]
 
     sanitized_message = message
@@ -90,15 +90,15 @@ def dpapi_encrypt(
     note: str, description: None | str = None, entropy: None | bytes = None
 ) -> str:
     """
-    ???Windows DPAPI??????
+    使用Windows DPAPI加密数据
 
-    :param note: ??????
+    :param note: 数据明文
     :type note: str
-    :param description: ??????
+    :param description: 描述信息
     :type description: str
-    :param entropy: ?????
+    :param entropy: 随机熵
     :type entropy: bytes
-    :return: ?????????
+    :return: 加密后的数据
     :rtype: str
     """
 
@@ -111,13 +111,13 @@ def dpapi_encrypt(
 
 def dpapi_decrypt(note: str, entropy: None | bytes = None) -> str:
     """
-    ???Windows DPAPI??????
+    使用Windows DPAPI解密数据
 
-    :param note: ??????
+    :param note: 数据密文
     :type note: str
-    :param entropy: ?????
+    :param entropy: 随机熵
     :type entropy: bytes
-    :return: ?????????
+    :return: 解密后的明文
     :rtype: str
     """
 

@@ -1118,3 +1118,7 @@ class PydanticConfigBase(BaseModel):
         self._is_locked = False
         for config in self._multiple_config_index().values():
             await config.unlock()
+
+
+class PluginConfigBase(PydanticConfigBase):
+    """插件配置模型锚点基类。"""

@@ -1,4 +1,4 @@
-﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
 import inspect
@@ -11,6 +11,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Callable, Dict, Iterable, Optional, Literal, cast
 
+from app.core.config import PluginConfigBase
 from app.utils import get_logger
 from app.utils.constants import UTC8
 
@@ -49,7 +50,7 @@ class PluginRecord:
     display_name: str = ""
     status: str = "discovered"
     module: Optional[ModuleType] = None
-    context: Optional[PluginContext] = None
+    context: Optional[PluginContext[PluginConfigBase]] = None
     error: Optional[str] = None
     generation: int = 1
     lifecycle_phase: str = "idle"
@@ -92,7 +93,9 @@ class PluginLoader:
         self.events = events
         self.runtime = {} if runtime is None else dict(runtime)
         self.plugins_dir = plugins_dir or (Path.cwd() / "plugins")
-        self.pypi_site_packages_dir = ensure_pypi_site_packages_on_syspath(self.plugins_dir)
+        self.pypi_site_packages_dir = ensure_pypi_site_packages_on_syspath(
+            self.plugins_dir
+        )
         self.records: Dict[str, PluginRecord] = {}
         self.discovered_plugins: Dict[str, PluginLoader.PluginSource] = {}
         self.startup_failed_instances: Dict[str, str] = {}
@@ -143,7 +146,9 @@ class PluginLoader:
         logger.info(f"插件扫描完成，共发现 {len(discovered)} 个插件")
         return discovered
 
-    def _load_plugin_config(self, plugin_name: str, plugin_source: PluginSource) -> Dict[str, Any]:
+    def _load_plugin_config(
+        self, plugin_name: str, plugin_source: PluginSource
+    ) -> Dict[str, Any]:
         if plugin_source.path is None:
             return {}
 
@@ -163,7 +168,9 @@ class PluginLoader:
             logger.error(f"读取插件配置失败: {plugin_name}, error={e}")
             return {}
 
-    def _load_plugin_class_from_entry_point(self, plugin_name: str, entry_point: Any) -> tuple[Optional[ModuleType], type[Any]]:
+    def _load_plugin_class_from_entry_point(
+        self, plugin_name: str, entry_point: Any
+    ) -> tuple[Optional[ModuleType], type[Any]]:
         """从 PyPI Entry Point 加载插件类入口。
 
         Args:
@@ -187,9 +194,13 @@ class PluginLoader:
             module = inspect.getmodule(loaded)
             return module, loaded
 
-        raise PluginDefinitionError(f"插件 Entry Point 返回了不支持的对象（需要模块或类）: {plugin_name}")
+        raise PluginDefinitionError(
+            f"插件 Entry Point 返回了不支持的对象（需要模块或类）: {plugin_name}"
+        )
 
-    def _clear_cached_pypi_module(self, plugin_name: str, plugin_source: PluginSource) -> None:
+    def _clear_cached_pypi_module(
+        self, plugin_name: str, plugin_source: PluginSource
+    ) -> None:
         """清理 PyPI 插件模块缓存，确保重载使用最新代码。"""
         if plugin_source.source != "pypi":
             return
@@ -234,7 +245,9 @@ class PluginLoader:
         if plugin_source.entry_point is None:
             raise PluginDefinitionError(f"PyPI 插件缺少 Entry Point: {plugin_name}")
         self._clear_cached_pypi_module(plugin_name, plugin_source)
-        return self._load_plugin_class_from_entry_point(plugin_name, plugin_source.entry_point)
+        return self._load_plugin_class_from_entry_point(
+            plugin_name, plugin_source.entry_point
+        )
 
     @staticmethod
     def _ensure_required_lifecycle_methods(plugin_name: str, instance: Any) -> None:
@@ -269,7 +282,9 @@ class PluginLoader:
                 f"插件生命周期方法不可调用: plugin={plugin_name}, invalid={','.join(invalid)}"
             )
 
-    async def _call_lifecycle_method(self, instance: Any, method_name: str, *args: Any) -> None:
+    async def _call_lifecycle_method(
+        self, instance: Any, method_name: str, *args: Any
+    ) -> None:
         """调用插件生命周期方法，并兼容同步/异步实现。
 
         Args:
@@ -295,7 +310,9 @@ class PluginLoader:
         if inspect.isawaitable(result):
             await result
 
-    async def _call_optional_lifecycle_method(self, instance: Any, method_name: str, *args: Any) -> bool:
+    async def _call_optional_lifecycle_method(
+        self, instance: Any, method_name: str, *args: Any
+    ) -> bool:
         """尝试调用可选生命周期方法。
 
         Args:
@@ -321,7 +338,62 @@ class PluginLoader:
             await result
         return True
 
-    def _create_plugin_instance(self, plugin_name: str, plugin_class: type[Any], context: PluginContext) -> Any:
+    def _resolve_plugin_config_model(
+        self,
+        plugin_name: str,
+        module: ModuleType | None,
+        plugin_class: type[Any],
+    ) -> type[PluginConfigBase]:
+        """解析并校验插件配置模型类型。"""
+        candidates: list[Any] = []
+        if module is not None:
+            candidates.append(getattr(module, "Config", None))
+        candidates.append(getattr(plugin_class, "Config", None))
+
+        checked_ids: set[int] = set()
+        for candidate in candidates:
+            if candidate is None:
+                continue
+
+            identity = id(candidate)
+            if identity in checked_ids:
+                continue
+            checked_ids.add(identity)
+
+            if not inspect.isclass(candidate):
+                raise PluginDefinitionError(
+                    f"插件 Config 声明必须是类: plugin={plugin_name}, actual={type(candidate).__name__}"
+                )
+
+            if issubclass(candidate, PluginConfigBase):
+                return candidate
+
+            raise PluginDefinitionError(
+                f"插件 Config 必须继承 PluginConfigBase: plugin={plugin_name}, actual={candidate.__name__}"
+            )
+
+        raise PluginDefinitionError(f"插件缺少 Config 声明: {plugin_name}")
+
+    def _validate_plugin_config(
+        self,
+        plugin_name: str,
+        config_model: type[PluginConfigBase],
+        raw_config: dict[str, Any],
+    ) -> PluginConfigBase:
+        """使用插件配置模型校验实例配置。"""
+        try:
+            return config_model.model_validate(raw_config)
+        except Exception as e:
+            raise PluginDefinitionError(
+                f"插件配置校验失败: plugin={plugin_name}, model={config_model.__name__}, error={type(e).__name__}: {e}"
+            ) from e
+
+    def _create_plugin_instance(
+        self,
+        plugin_name: str,
+        plugin_class: type[Any],
+        context: PluginContext[PluginConfigBase],
+    ) -> Any:
         """构建插件实例并校验生命周期契约。
 
         Args:
@@ -392,7 +464,11 @@ class PluginLoader:
         record.status = "error"
 
     @staticmethod
-    def _invoke_with_context(handler: Callable[..., Any], payload: Any, context: PluginContext) -> Any:
+    def _invoke_with_context(
+        handler: Callable[..., Any],
+        payload: Any,
+        context: PluginContext[PluginConfigBase],
+    ) -> Any:
         """
         按监听器签名将事件 payload 与上下文注入到处理函数。
 
@@ -413,12 +489,18 @@ class PluginLoader:
         if not params:
             raise TypeError("事件监听器至少需要一个参数用于接收 payload")
 
-        has_var_keyword = any(item.kind == inspect.Parameter.VAR_KEYWORD for item in params)
+        has_var_keyword = any(
+            item.kind == inspect.Parameter.VAR_KEYWORD for item in params
+        )
         has_ctx_keyword = has_var_keyword or "ctx" in signature.parameters
         positional_params = [
             item
             for item in params
-            if item.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+            if item.kind
+            in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            )
         ]
 
         if len(positional_params) >= 2:
@@ -436,7 +518,7 @@ class PluginLoader:
         self,
         *,
         handler: Callable[..., Any],
-        context: PluginContext,
+        context: PluginContext[PluginConfigBase],
     ) -> Callable[[Any], Any]:
         """
         构建自动注入 `ctx` 的监听器包装函数。
@@ -449,6 +531,7 @@ class PluginLoader:
             Callable[[Any], Any]: 仅接收 payload 的包装监听器。
         """
         if inspect.iscoroutinefunction(handler):
+
             @wraps(handler)
             async def async_wrapper(payload: Any) -> Any:
                 result = self._invoke_with_context(handler, payload, context)
@@ -465,7 +548,9 @@ class PluginLoader:
         return sync_wrapper
 
     @staticmethod
-    def _iter_decorated_members(target: Any) -> list[tuple[Callable[..., Any], EventSubscription]]:
+    def _iter_decorated_members(
+        target: Any,
+    ) -> list[tuple[Callable[..., Any], EventSubscription]]:
         """遍历对象成员并提取 `@on_event` 声明。"""
         result: list[tuple[Callable[..., Any], EventSubscription]] = []
         for _, member in inspect.getmembers(target):
@@ -567,11 +652,20 @@ class PluginLoader:
                 plugin_name,
                 plugin_source,
             )
+            config_model = self._resolve_plugin_config_model(
+                plugin_name,
+                record.module,
+                plugin_class,
+            )
             self._mark_status(record, "loaded")
             self._mark_lifecycle_phase(record, "loaded")
 
             plugin_logger = get_logger(f"插件:{plugin_name}")
-            plugin_config = self._load_plugin_config(plugin_name, plugin_source)
+            plugin_config = self._validate_plugin_config(
+                plugin_name,
+                config_model,
+                self._load_plugin_config(plugin_name, plugin_source),
+            )
 
             record.context = PluginContext(
                 plugin_name=plugin_name,
@@ -584,7 +678,9 @@ class PluginLoader:
 
             if record.module is not None:
                 record.listener_ids.extend(
-                    self._register_decorated_handlers(record=record, target=record.module)
+                    self._register_decorated_handlers(
+                        record=record, target=record.module
+                    )
                 )
 
             record.plugin_instance = self._create_plugin_instance(
@@ -593,10 +689,14 @@ class PluginLoader:
                 context=record.context,
             )
             record.listener_ids.extend(
-                self._register_decorated_handlers(record=record, target=record.plugin_instance)
+                self._register_decorated_handlers(
+                    record=record, target=record.plugin_instance
+                )
             )
             self._mark_lifecycle_phase(record, "on_load")
-            await self._call_optional_lifecycle_method(record.plugin_instance, "on_load", record.context)
+            await self._call_optional_lifecycle_method(
+                record.plugin_instance, "on_load", record.context
+            )
             self._mark_lifecycle_phase(record, "on_start")
             await self._call_lifecycle_method(record.plugin_instance, "on_start")
 
@@ -667,14 +767,22 @@ class PluginLoader:
                 plugin_name,
                 plugin_source,
             )
+            config_model = self._resolve_plugin_config_model(
+                plugin_name,
+                record.module,
+                plugin_class,
+            )
             self._mark_status(record, "loaded")
             self._mark_lifecycle_phase(record, "loaded")
 
             plugin_logger = get_logger(f"插件:{instance_id}")
+            typed_config = self._validate_plugin_config(
+                plugin_name, config_model, config
+            )
             record.context = PluginContext(
                 plugin_name=plugin_name,
                 instance_id=instance_id,
-                config=config,
+                config=typed_config,
                 logger=plugin_logger,
                 events=self.events,
                 runtime_capabilities=self.runtime,
@@ -682,7 +790,9 @@ class PluginLoader:
 
             if record.module is not None:
                 record.listener_ids.extend(
-                    self._register_decorated_handlers(record=record, target=record.module)
+                    self._register_decorated_handlers(
+                        record=record, target=record.module
+                    )
                 )
 
             record.plugin_instance = self._create_plugin_instance(
@@ -691,10 +801,14 @@ class PluginLoader:
                 context=record.context,
             )
             record.listener_ids.extend(
-                self._register_decorated_handlers(record=record, target=record.plugin_instance)
+                self._register_decorated_handlers(
+                    record=record, target=record.plugin_instance
+                )
             )
             self._mark_lifecycle_phase(record, "on_load")
-            await self._call_optional_lifecycle_method(record.plugin_instance, "on_load", record.context)
+            await self._call_optional_lifecycle_method(
+                record.plugin_instance, "on_load", record.context
+            )
             self._mark_lifecycle_phase(record, "on_start")
             await self._call_lifecycle_method(record.plugin_instance, "on_start")
 
@@ -708,7 +822,9 @@ class PluginLoader:
         except Exception as e:
             self._unregister_record_listeners(record)
             self._mark_error(record, f"{type(e).__name__}: {e}")
-            logger.error(f"插件实例加载失败: {instance_id}, error={type(e).__name__}: {e}")
+            logger.error(
+                f"插件实例加载失败: {instance_id}, error={type(e).__name__}: {e}"
+            )
 
         return record
 
@@ -782,9 +898,13 @@ class PluginLoader:
         try:
             if record.plugin_instance is not None:
                 self._mark_lifecycle_phase(record, "on_stop")
-                await self._call_lifecycle_method(record.plugin_instance, "on_stop", "stop")
+                await self._call_lifecycle_method(
+                    record.plugin_instance, "on_stop", "stop"
+                )
                 self._mark_lifecycle_phase(record, "on_unload")
-                await self._call_optional_lifecycle_method(record.plugin_instance, "on_unload")
+                await self._call_optional_lifecycle_method(
+                    record.plugin_instance, "on_unload"
+                )
             self._mark_status(record, "disposed")
             self._mark_lifecycle_phase(record, "disposed")
         except Exception as e:
@@ -846,9 +966,13 @@ class PluginLoader:
             old_record.last_reload_reason = reason
             old_record.last_reload_at = _utc8_now_iso()
             self._mark_lifecycle_phase(old_record, "on_reload_prepare")
-            await self._call_optional_lifecycle_method(old_record.plugin_instance, "on_reload_prepare")
+            await self._call_optional_lifecycle_method(
+                old_record.plugin_instance, "on_reload_prepare"
+            )
             self._mark_lifecycle_phase(old_record, "on_stop")
-            await self._call_lifecycle_method(old_record.plugin_instance, "on_stop", f"reload:{reason}")
+            await self._call_lifecycle_method(
+                old_record.plugin_instance, "on_stop", f"reload:{reason}"
+            )
 
         await self.unload_instance(instance_id)
         new_record = await self.load_instance(
@@ -870,13 +994,17 @@ class PluginLoader:
         if old_record is not None:
             previous_generation = int(getattr(old_record, "generation", 1) or 1)
         new_record.generation = previous_generation + 1
-        new_record.reload_count = (old_record.reload_count + 1) if old_record is not None else 1
+        new_record.reload_count = (
+            (old_record.reload_count + 1) if old_record is not None else 1
+        )
         new_record.last_reload_reason = reason
         new_record.last_reload_at = _utc8_now_iso()
 
         if new_record.plugin_instance is not None:
             self._mark_lifecycle_phase(new_record, "on_reload_commit")
-            await self._call_optional_lifecycle_method(new_record.plugin_instance, "on_reload_commit")
+            await self._call_optional_lifecycle_method(
+                new_record.plugin_instance, "on_reload_commit"
+            )
         self._mark_lifecycle_phase(new_record, "active")
         return new_record
 

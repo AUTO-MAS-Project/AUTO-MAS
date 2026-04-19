@@ -57,7 +57,7 @@ class LDManager(DeviceBase):
     def __init__(self, config: EmulatorConfig) -> None:
         if not Path(str(config.get("Info", "Path"))).exists():
             raise FileNotFoundError(
-                f"LDPlayerManager.exe文件不存在: {str(config.get('Info', 'Path'))}"
+                f"LDPlayerManager.exe文件不存在: {config.get('Info', 'Path')}"
             )
 
         if str(config.get("Info", "Type")) != "ldplayer":
