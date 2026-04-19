@@ -769,29 +769,29 @@ class AppConfig(GlobalConfig):
                 logger.error(f"无法上传配置到 AUTO-MAS 服务器: {e}")
                 raise ConnectionError(f"无法上传配置到 AUTO-MAS 服务器: {e}")
 
-    async def remove_privacy_info(self, confg: dict, name: str) -> dict:
+    async def remove_privacy_info(self, config: dict, name: str) -> dict:
         """移除配置中可能存在的隐私信息"""
 
-        confg["Info"]["Name"] = name
+        config["Info"]["Name"] = name
         for path in ["ScriptPath", "ConfigPath", "LogPath", "TrackProcessExe"]:
-            if Path(confg["Script"][path]).is_relative_to(
-                Path(confg["Info"]["RootPath"])
+            if Path(config["Script"][path]).is_relative_to(
+                Path(config["Info"]["RootPath"])
             ):
-                confg["Script"][path] = str(
+                config["Script"][path] = str(
                     Path(r"C:/脚本根目录")
-                    / Path(confg["Script"][path]).relative_to(
-                        Path(confg["Info"]["RootPath"])
+                    / Path(config["Script"][path]).relative_to(
+                        Path(config["Info"]["RootPath"])
                     )
                 )
-            if sys.platform == "win32" and Path(confg["Script"][path]).is_relative_to(
+            if sys.platform == "win32" and Path(config["Script"][path]).is_relative_to(
                 Path(os.environ["APPDATA"])
             ):
-                confg["Script"][
+                config["Script"][
                     path
-                ] = f"%APPDATA%/{Path(confg["Script"][path]).relative_to(Path(os.environ["APPDATA"]))}"
-        confg["Info"]["RootPath"] = str(Path(r"C:/脚本根目录"))
+                ] = f"%APPDATA%/{Path(config['Script'][path]).relative_to(Path(os.environ['APPDATA']))}"
+        config["Info"]["RootPath"] = str(Path(r"C:/脚本根目录"))
 
-        return confg
+        return config
 
     async def get_user(
         self, script_id: str, user_id: Optional[str]
