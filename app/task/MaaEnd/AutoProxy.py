@@ -258,7 +258,6 @@ class AutoProxyTask(TaskExecuteBase):
             await self.maaend_process_manager.open_process(
                 self.maaend_exe_path, stdout=asyncio.subprocess.PIPE
             )
-
             # 静默模式隐藏 MaaEnd 窗口
             if Config.get("Function", "IfSilence"):
                 while datetime.now() - t < timedelta(minutes=1):
@@ -266,6 +265,13 @@ class AutoProxyTask(TaskExecuteBase):
                         await self.maaend_process_manager.hide_window()
                         break
                     await asyncio.sleep(0.1)
+            elif self.script_config.get("Game", "ControllerType") == "Win32-Front":
+                await asyncio.sleep(5)
+                if await self.maaend_process_manager.is_running():
+                    if await self.maaend_process_manager.minimize_window():
+                        logger.debug("MaaEnd 窗口已在启动 5 秒后最小化")
+                    else:
+                        logger.debug("MaaEnd 窗口最小化失败")
 
             await asyncio.sleep(1)
             if isinstance(
