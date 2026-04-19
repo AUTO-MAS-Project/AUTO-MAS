@@ -37,8 +37,11 @@ from collections.abc import AsyncGenerator, Callable, Coroutine, Iterator
 from typing import Any, Generic, Protocol, TypeVar, cast, overload
 from importlib import import_module
 
-from loguru import logger
 from filelock import FileLock, Timeout
+from app.utils import get_logger
+
+
+logger = get_logger("配置管理")
 
 
 tomli_w = import_module("tomli_w")
