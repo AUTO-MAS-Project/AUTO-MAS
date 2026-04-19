@@ -216,7 +216,7 @@ class LogMonitor:
             self.log_contents.append(line)
             await self.update_latest_timestamp(line)
 
-            if datetime.now() - self.last_callback_time > timedelta(seconds=0.1):
+            if datetime.now() - self.last_callback_time > timedelta(seconds=1):
                 await self.do_callback()
 
     async def do_callback(self):
