@@ -1,4 +1,4 @@
-﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from types import NoneType, UnionType
 from typing import Annotated, Any, Dict, Mapping, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+from app.core.config import PluginConfigBase
 
 from .pypi_site import iter_plugin_entry_points
 
@@ -83,7 +84,9 @@ class PluginSchemaManager:
             return ""
         return normalized.split("@", 1)[0].strip() or normalized
 
-    def _resolve_local_plugin_py_path(self, plugin_name: str, plugin_path: Path) -> Path | None:
+    def _resolve_local_plugin_py_path(
+        self, plugin_name: str, plugin_path: Path
+    ) -> Path | None:
         """解析本地插件入口文件路径。
 
         兼容以下目录结构：
@@ -153,7 +156,9 @@ class PluginSchemaManager:
 
         return None
 
-    def load_schema(self, plugin_name: str, plugin_path: Path | None) -> Dict[str, Dict[str, Any]]:
+    def load_schema(
+        self, plugin_name: str, plugin_path: Path | None
+    ) -> Dict[str, Dict[str, Any]]:
         """
         加载并校验插件 Schema 定义。
 
@@ -208,7 +213,9 @@ class PluginSchemaManager:
         self._validate_schema_definition(plugin_name, schema)
         return schema
 
-    def _extract_schema_from_module(self, plugin_name: str, module: Any) -> Dict[str, Dict[str, Any]]:
+    def _extract_schema_from_module(
+        self, plugin_name: str, module: Any
+    ) -> Dict[str, Dict[str, Any]]:
         """
         从模块对象中提取 schema 定义。
 
@@ -298,7 +305,9 @@ class PluginSchemaManager:
         module = self._import_module_from_file(module_name, plugin_py_path)
         return self._extract_schema_from_module(plugin_name, module)
 
-    def _load_schema_from_entry_point(self, plugin_name: str) -> Dict[str, Dict[str, Any]]:
+    def _load_schema_from_entry_point(
+        self, plugin_name: str
+    ) -> Dict[str, Dict[str, Any]]:
         """
         从 PyPI Entry Point 对应模块加载 schema。
 
@@ -415,7 +424,7 @@ class PluginSchemaManager:
                 3) BaseModel 字段默认值工厂执行失败。
         """
         target = declaration
-        if callable(declaration) and not (inspect.isclass(declaration) and issubclass(declaration, BaseModel)):
+        if callable(declaration) and not inspect.isclass(declaration):
             try:
                 target = declaration()
             except Exception as e:
@@ -423,17 +432,24 @@ class PluginSchemaManager:
                     f"执行 Config 声明失败: {plugin_name}, error={type(e).__name__}: {e}"
                 ) from e
 
-        if inspect.isclass(target) and issubclass(target, BaseModel):
-            return self._build_schema_from_model(plugin_name, target)
+        if inspect.isclass(target):
+            target_cls = target
+            if issubclass(target_cls, PluginConfigBase):
+                return self._build_schema_from_model(plugin_name, target_cls)
+            if issubclass(target_cls, BaseModel):
+                raise PluginSchemaError(
+                    f"Config 必须继承 PluginConfigBase: {plugin_name}, actual={target_cls.__name__}"
+                )
+            raise PluginSchemaError(
+                f"Config 声明必须是 PluginConfigBase 子类: {plugin_name}, actual={target_cls.__name__}"
+            )
 
-        if isinstance(target, BaseModel):
+        if isinstance(target, PluginConfigBase):
             return self._build_schema_from_model(plugin_name, type(target))
 
-        normalized = self._normalize_schema_object(target)
-        if isinstance(normalized, dict):
-            return self._normalize_schema_fields(
-                plugin_name,
-                cast(Mapping[str, Any], normalized),
+        if isinstance(target, BaseModel):
+            raise PluginSchemaError(
+                f"Config 必须继承 PluginConfigBase: {plugin_name}, actual={type(target).__name__}"
             )
 
         raise PluginSchemaError(
@@ -600,7 +616,9 @@ class PluginSchemaManager:
             with schema_path.open("r", encoding="utf-8") as f:
                 schema = json.load(f)
         except Exception as e:
-            raise PluginSchemaError(f"读取 Schema 失败: {plugin_name}, error={e}") from e
+            raise PluginSchemaError(
+                f"读取 Schema 失败: {plugin_name}, error={e}"
+            ) from e
 
         if not isinstance(schema, dict):
             raise PluginSchemaError(f"插件 Schema 必须是对象: {plugin_name}")
@@ -666,7 +684,9 @@ class PluginSchemaManager:
                 if item.has_default:
                     merged[item.name] = copy.deepcopy(item.default)
                 elif item.required:
-                    raise PluginSchemaError(f"缺少必填配置项: {plugin_name}.{item.name}")
+                    raise PluginSchemaError(
+                        f"缺少必填配置项: {plugin_name}.{item.name}"
+                    )
                 else:
                     continue
 
@@ -703,7 +723,9 @@ class PluginSchemaManager:
         compiled: list[_CompiledField] = []
         for field_name, raw_field in schema.items():
             if "type" not in raw_field:
-                raise PluginSchemaError(f"Schema 字段缺少 type: {plugin_name}.{field_name}")
+                raise PluginSchemaError(
+                    f"Schema 字段缺少 type: {plugin_name}.{field_name}"
+                )
 
             try:
                 spec = _FieldSpecModel.model_validate(raw_field)
@@ -876,7 +898,10 @@ class PluginSchemaManager:
             inner = normalized[6:-1].strip()
             if not inner:
                 raise PluginSchemaError(f"非法 tuple 类型表达式: {expr}")
-            tuple_args = [self._parse_type_expr(item.strip()) for item in self._split_top_level(inner, ",")]
+            tuple_args = [
+                self._parse_type_expr(item.strip())
+                for item in self._split_top_level(inner, ",")
+            ]
             return tuple[tuple(tuple_args)]
 
         if normalized.startswith("Optional[") and normalized.endswith("]"):
@@ -912,7 +937,9 @@ class PluginSchemaManager:
         result.append(expr[start:])
         return [item.strip() for item in result if item.strip()]
 
-    def _format_schema_error(self, plugin_name: str, field_name: str, error: ValidationError) -> str:
+    def _format_schema_error(
+        self, plugin_name: str, field_name: str, error: ValidationError
+    ) -> str:
         """
         格式化 schema 字段元信息错误。
 

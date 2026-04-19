@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """独立最小 PyPI 插件脚手架。"""
 
 from __future__ import annotations

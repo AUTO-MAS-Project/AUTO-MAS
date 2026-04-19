@@ -215,18 +215,18 @@ else:
     def config(cls: type[Any]) -> type[Any]:
         """配置类总装饰器：在 ``model_post_init`` 阶段完成运行期装配。
 
-        装配顺序：
-        1. 初始化子配置（``_init_sub_configs``）；
-        2. 建立引用目标映射（``_init_related_targets``）；
-        3. 调用原有 ``model_post_init``（如果存在）。
+    装配顺序：
+    1. 初始化子配置（``_init_sub_configs``）；
+    2. 建立引用目标映射（``_init_related_targets``）；
+    3. 调用原有 ``model_post_init``（如果存在）。
 
-        这样可以确保原有后置初始化逻辑执行时，子配置和引用关系已可用。
+    这样可以确保原有后置初始化逻辑执行时，子配置和引用关系已可用。
 
         Args:
-            cls: 被装饰的配置类。
+        cls: 被装饰的配置类。
 
         Returns:
-            注入初始化逻辑后的原类。
+        注入初始化逻辑后的原类。
         """
 
         original_model_post_init = getattr(cls, "model_post_init", None)

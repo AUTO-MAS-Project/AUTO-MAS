@@ -7,7 +7,10 @@ from .base import (
 )
 from .fields import RefField as RefField, VirtualField as VirtualField
 from .manager import AppConfig as AppConfig, Config as Config
-from .pydantic import PydanticConfigBase as PydanticConfigBase
+from .pydantic import (
+    PluginConfigBase as PluginConfigBase,
+    PydanticConfigBase as PydanticConfigBase,
+)
 from .shortcuts import (
     config as config,
     encrypted as encrypted,

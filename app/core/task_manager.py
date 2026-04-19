@@ -137,7 +137,7 @@ class TaskInfo(TaskItem):
         await self._emit_task_log()
 
     async def on_change(self):
-        """任务状态变化后推送 WebSocket 增量更新并广播插件事件"""
+        """任务状态变化后推送 WebSocket 增量更新。"""
 
         await Config.send_websocket_message(
             id=self.task_id,
@@ -240,7 +240,7 @@ class Task(TaskExecuteBase):
         )
 
     async def prepare(self):
-        """根据任务模式解析脚本清单并初始化运行项"""
+        """根据任务模式解析脚本清单并初始化运行项。"""
 
         # 初始化任务列表
         script_ids = (
@@ -272,7 +272,7 @@ class Task(TaskExecuteBase):
         )
 
     async def main_task(self):
-        """串行执行任务中每个脚本项"""
+        """串行执行任务中每个脚本项。"""
 
         await self.prepare()
         await self._emit_task_start()
@@ -448,7 +448,7 @@ class Task(TaskExecuteBase):
                 )
 
     async def final_task(self) -> None:
-        """任务收尾：上报结果并处理电源动作信号"""
+        """任务收尾：上报结果并处理电源动作信号。"""
 
         logger.info(f"任务结束: {self.task_info.task_id}")
 
@@ -471,7 +471,7 @@ class Task(TaskExecuteBase):
                 )
 
     async def on_crash(self, e: Exception) -> None:
-        """任务异常回调：记录日志并向前端推送错误信息"""
+        """任务异常回调：记录日志并向前端推送错误信息。"""
         if self._exit_result == "success":
             self._exit_result = "error"
             self._exit_error = f"{type(e).__name__}: {e}"

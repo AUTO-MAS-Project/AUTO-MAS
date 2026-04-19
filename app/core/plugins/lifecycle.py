@@ -1,12 +1,18 @@
-﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2026 AUTO-MAS Team
 
 from __future__ import annotations
 
+from typing import Generic, TypeVar
+
+from app.core.config import PluginConfigBase
 from .context import PluginContext
 
 
-class PluginLifecycle:
+TPluginConfig = TypeVar("TPluginConfig", bound=PluginConfigBase)
+
+
+class PluginLifecycle(Generic[TPluginConfig]):
     """插件生命周期协议基类。
 
     新协议要求插件模块导出 `Plugin` 类，默认采用“最小必选 + 高级可选”：
@@ -18,7 +24,7 @@ class PluginLifecycle:
     - 加载器会以反射方式校验方法是否存在且可调用。
     """
 
-    def __init__(self, ctx: PluginContext) -> None:
+    def __init__(self, ctx: PluginContext[TPluginConfig]) -> None:
         """初始化插件实例。
 
         Args:
@@ -29,7 +35,7 @@ class PluginLifecycle:
         """
         self.ctx = ctx
 
-    async def on_load(self, ctx: PluginContext) -> None:
+    async def on_load(self, ctx: PluginContext[TPluginConfig]) -> None:
         """生命周期（可选）：代码加载后、启动前。"""
         _ = ctx
 

@@ -1,4 +1,4 @@
-﻿#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2026 AUTO-MAS Team
 
 import json
@@ -9,6 +9,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any, Callable, cast
 
+from app.core.config import PluginConfigBase
 from app.utils.logger import LoggerLike
 
 
@@ -20,29 +21,43 @@ class RuntimeAPI:
         *,
         plugin_name: str,
         instance_id: str,
-        config: dict[str, Any],
+        config: PluginConfigBase,
         logger: LoggerLike,
         runtime_capabilities: dict[str, Callable[..., Any]] | None = None,
     ) -> None:
         self.plugin_name = plugin_name
         self.instance_id = instance_id
-        self.config = config or {}
+        self.config = config
         self.logger = logger
         self.runtime_capabilities = runtime_capabilities or {}
         self._cached_runtime_info: dict[str, Any] | None = None
 
+    def _root_get(self, key: str, default: Any = None) -> Any:
+        if hasattr(self.config, key):
+            return getattr(self.config, key)
+
+        extra = getattr(self.config, "__pydantic_extra__", None)
+        if isinstance(extra, dict):
+            extra_dict = cast(dict[str, Any], extra)
+            return extra_dict.get(key, default)
+
+        return default
+
+    def _root_set(self, key: str, value: Any) -> None:
+        setattr(self.config, key, value)
+
     def _runtime_options(self) -> dict[str, Any]:
-        runtime = self.config.get("runtime")
+        runtime = self._root_get("runtime")
         if isinstance(runtime, dict):
             return cast(dict[str, Any], runtime)
         return {}
 
     def set_runtime_options(self, options: dict[str, Any]) -> dict[str, Any]:
         """更新 runtime 配置并返回最新配置。"""
-        runtime = self.config.get("runtime")
+        runtime = self._root_get("runtime")
         if not isinstance(runtime, dict):
             runtime = {}
-            self.config["runtime"] = runtime
+            self._root_set("runtime", runtime)
         runtime_dict = cast(dict[str, Any], runtime)
 
         for key, value in options.items():
@@ -67,7 +82,9 @@ class RuntimeAPI:
         }
         if detail:
             payload.update(detail)
-        self.logger.debug(f"[runtime] {json.dumps(payload, ensure_ascii=False, indent=2)}")
+        self.logger.debug(
+            f"[runtime] {json.dumps(payload, ensure_ascii=False, indent=2)}"
+        )
 
     def _resolve_interpreter(self, override: str | None = None) -> str:
         runtime_options = self._runtime_options()
@@ -75,7 +92,7 @@ class RuntimeAPI:
         candidates = [
             override,
             runtime_options.get("python_executable"),
-            self.config.get("python_executable"),
+            self._root_get("python_executable"),
             sys.executable,
         ]
 
@@ -92,7 +109,7 @@ class RuntimeAPI:
         if value is None:
             value = runtime_options.get("python_timeout_seconds")
         if value is None:
-            value = self.config.get("python_timeout_seconds")
+            value = self._root_get("python_timeout_seconds")
         if value is None:
             value = default
 
@@ -180,7 +197,9 @@ class RuntimeAPI:
             result = {
                 "ok": False,
                 "python": target,
-                "reason": (completed.stderr or completed.stdout or "解释器不可用").strip(),
+                "reason": (
+                    completed.stderr or completed.stdout or "解释器不可用"
+                ).strip(),
             }
             self._audit("check_interpreter", "error", result)
             return result
@@ -232,12 +251,16 @@ class RuntimeAPI:
         """
         func = self.runtime_capabilities.get("get_script_log")
         if not callable(func):
-            self._audit("get_script_log", "ok", {"source": "empty", "script_id": script_id})
+            self._audit(
+                "get_script_log", "ok", {"source": "empty", "script_id": script_id}
+            )
             return ""
 
         try:
             data = func(script_id, limit)
-            self._audit("get_script_log", "ok", {"script_id": script_id, "limit": limit})
+            self._audit(
+                "get_script_log", "ok", {"script_id": script_id, "limit": limit}
+            )
             return data
         except Exception as e:
             self._audit(
@@ -277,7 +300,9 @@ class RuntimeAPI:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout_raw, stderr_raw = await asyncio.wait_for(process.communicate(), timeout=timeout)
+            stdout_raw, stderr_raw = await asyncio.wait_for(
+                process.communicate(), timeout=timeout
+            )
             stdout = stdout_raw.decode("utf-8", errors="replace")
             stderr = stderr_raw.decode("utf-8", errors="replace")
         except asyncio.TimeoutError:
@@ -291,7 +316,9 @@ class RuntimeAPI:
                 "stderr": "Python 代码执行超时",
                 "python": target,
             }
-            self._audit("run_python_snippet", "error", {"python": target, "timeout": timeout})
+            self._audit(
+                "run_python_snippet", "error", {"python": target, "timeout": timeout}
+            )
             return result
         except Exception as e:
             result = {
@@ -301,7 +328,9 @@ class RuntimeAPI:
                 "stderr": f"Python 代码执行异常: {type(e).__name__}: {e}",
                 "python": target,
             }
-            self._audit("run_python_snippet", "error", {"python": target, "reason": str(e)})
+            self._audit(
+                "run_python_snippet", "error", {"python": target, "reason": str(e)}
+            )
             return result
 
         result = {

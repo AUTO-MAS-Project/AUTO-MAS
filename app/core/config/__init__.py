@@ -7,7 +7,7 @@ from .base import (
 )
 from .fields import RefField, VirtualField
 from .manager import AppConfig, Config
-from .pydantic import PydanticConfigBase
+from .pydantic import PydanticConfigBase, PluginConfigBase
 from .shortcuts import (
     config,
     encrypted,
@@ -43,6 +43,7 @@ __all__ = [
     "RefField",
     "VirtualField",
     "PydanticConfigBase",
+    "PluginConfigBase",
     "ref",
     "virtual",
     "encrypted",
