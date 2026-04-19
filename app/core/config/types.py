@@ -6,11 +6,14 @@ from typing import Annotated, Any
 from urllib.parse import urlparse
 
 import pyautogui
-from loguru import logger
 from pydantic import AfterValidator, Field
 
+from app.utils import get_logger
 from app.utils.constants import DEFAULT_DATETIME
 from app.utils.security import dpapi_decrypt, dpapi_encrypt
+
+
+logger = get_logger("配置类型")
 
 
 class EncryptedFieldMarker:
