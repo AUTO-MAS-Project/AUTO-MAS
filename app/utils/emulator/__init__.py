@@ -23,7 +23,7 @@
 from .mumu import MumuManager
 from .ldplayer import LDManager
 from .general import GeneralDeviceManager
-from .tools import search_all_emulators
+from .tools import search_all_emulators, get_emulator_search_progress
 
 EMULATOR_TYPE_BOOK = {
     "mumu": MumuManager,
@@ -36,5 +36,6 @@ __all__ = [
     "LDManager",
     "GeneralDeviceManager",
     "search_all_emulators",
+    "get_emulator_search_progress",
     "EMULATOR_TYPE_BOOK",
 ]

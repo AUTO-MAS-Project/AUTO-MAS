@@ -40,6 +40,13 @@ const safeJsonParse = (jsonString: string | null | undefined, fallback: any = []
   }
 }
 
+const formatScanPath = (path: string, maxLen = 64) => {
+  if (!path || path.length <= maxLen) return path
+  const head = path.slice(0, 24)
+  const tail = path.slice(-(maxLen - 27))
+  return `${head}...${tail}`
+}
+
 // 模拟器类型映射
 const emulatorTypeOptions = [
   { value: 'general', label: '通用模拟器' },
@@ -53,6 +60,14 @@ const emulatorTypeOptions = [
 // 数据状态
 const loading = ref(false)
 const searching = ref(false)
+const fullScanElapsedSeconds = ref(0)
+const fullScanTimer = ref<ReturnType<typeof setInterval> | null>(null)
+const fullScanStartedAt = ref<number | null>(null)
+const fullScanProgressPercent = ref(0)
+const fullScanCurrentDrive = ref('')
+const fullScanCurrentPath = ref('')
+const fullScanCompletedDrives = ref(0)
+const fullScanTotalDrives = ref(0)
 const emulatorIndex = ref<EmulatorConfigIndexItem[]>([])
 const emulatorData = ref<Record<string, any>>({})
 const searchResults = ref<EmulatorSearchResult[]>([])
@@ -412,18 +427,85 @@ const handleDelete = async (uuid: string) => {
   }
 }
 
-// 自动搜索模拟器
-const handleSearch = async () => {
-  searching.value = true
+// 搜索模拟器（默认快速搜索，可选全盘）
+const startFullScanProgress = () => {
+  fullScanStartedAt.value = Date.now()
+  fullScanElapsedSeconds.value = 0
+  fullScanProgressPercent.value = 0
+  fullScanCurrentDrive.value = ''
+  fullScanCurrentPath.value = ''
+  fullScanCompletedDrives.value = 0
+  fullScanTotalDrives.value = 0
+  const key = 'full-scan-progress'
+  message.loading({
+    key,
+    duration: 0,
+    content: '全盘扫描中 0%（0/0 盘），已耗时 0 秒',
+  })
+  fullScanTimer.value = setInterval(() => {
+    void pollFullScanProgress()
+    if (fullScanStartedAt.value !== null) {
+      fullScanElapsedSeconds.value = Math.max(
+        0,
+        Math.floor((Date.now() - fullScanStartedAt.value) / 1000),
+      )
+    }
+    message.loading({
+      key,
+      duration: 0,
+      content: `全盘扫描中 ${fullScanProgressPercent.value}%（${fullScanCompletedDrives.value}/${fullScanTotalDrives.value} 盘）`
+        + `${fullScanCurrentDrive.value ? `，当前: ${fullScanCurrentDrive.value}` : ''}`
+        + `${fullScanCurrentPath.value ? `，路径: ${formatScanPath(fullScanCurrentPath.value)}` : ''}`
+        + `，已耗时 ${fullScanElapsedSeconds.value} 秒`,
+    })
+  }, 1000)
+}
+
+const stopFullScanProgress = () => {
+  if (fullScanTimer.value) {
+    clearInterval(fullScanTimer.value)
+    fullScanTimer.value = null
+  }
+  fullScanStartedAt.value = null
+  message.destroy('full-scan-progress')
+}
+
+const pollFullScanProgress = async () => {
   try {
-    const response = await Service.searchEmulatorsApiEmulatorEmulatorSearchPost()
+    const response = await Service.getSearchProgressApiEmulatorEmulatorSearchProgressPost()
+    if (response.code !== 200 || !response.data) {
+      return
+    }
+    const data = response.data
+    fullScanProgressPercent.value = Number(data.progress_percent ?? 0)
+    fullScanCurrentDrive.value = String(data.current_drive ?? '')
+    fullScanCurrentPath.value = String(data.current_path ?? '')
+    fullScanCompletedDrives.value = Number(data.completed_drives ?? 0)
+    fullScanTotalDrives.value = Number(data.total_drives ?? 0)
+  } catch (e) {
+    const errorMsg = e instanceof Error ? e.message : String(e)
+    logger.warn(`获取全盘扫描进度失败: ${errorMsg}`)
+  }
+}
+
+const handleSearch = async (includeFullScan = false) => {
+  searching.value = true
+  if (includeFullScan) {
+    startFullScanProgress()
+  }
+  try {
+    const response = await Service.searchEmulatorsApiEmulatorEmulatorSearchPost(includeFullScan)
     if (response.code === 200) {
       searchResults.value = response.emulators || []
       if (searchResults.value.length > 0) {
         showSearchModal.value = true
-        message.success(`找到 ${searchResults.value.length} 个模拟器`)
+        message.success(
+          includeFullScan
+            ? `全盘搜索完成，找到 ${searchResults.value.length} 个模拟器`
+            : `快速搜索完成，找到 ${searchResults.value.length} 个模拟器`
+        )
       } else {
-        message.info('未找到已安装的模拟器')
+        message.info(includeFullScan ? '全盘搜索未找到已安装的模拟器' : '快速搜索未找到已安装的模拟器')
       }
     } else {
       message.error(response.message || '搜索失败')
@@ -433,6 +515,9 @@ const handleSearch = async () => {
     logger.error(`搜索模拟器失败: ${errorMsg}`)
     message.error('搜索模拟器失败')
   } finally {
+    if (includeFullScan) {
+      stopFullScanProgress()
+    }
     searching.value = false
   }
 }
@@ -840,8 +925,11 @@ const handleBossKeyInputChange = (uuid: string) => {
         <div v-if="emulatorIndex.length === 0" class="empty-state-large">
           <a-empty />
           <a-space direction="horizontal" :size="16">
-            <a-button type="primary" size="large" :icon="h(SearchOutlined)" :loading="searching" @click="handleSearch">
-              自动搜索模拟器
+            <a-button type="primary" size="large" :icon="h(SearchOutlined)" :loading="searching" @click="handleSearch()">
+              快速搜索模拟器
+            </a-button>
+            <a-button size="large" :icon="h(SearchOutlined)" :loading="searching" @click="handleSearch(true)">
+              全盘搜索模拟器
             </a-button>
             <a-button size="large" :icon="h(PlusOutlined)" @click="handleAddWithSwitch">
               手动添加模拟器
@@ -1043,11 +1131,17 @@ const handleBossKeyInputChange = (uuid: string) => {
                 <a-button type="text" size="small" :icon="h(PlusOutlined)" />
                 <template #overlay>
                   <a-menu>
-                    <a-menu-item key="search" @click="handleSearch">
+                    <a-menu-item key="search" @click="handleSearch()">
                       <template #icon>
                         <SearchOutlined />
                       </template>
-                      自动搜索模拟器
+                      快速搜索模拟器
+                    </a-menu-item>
+                    <a-menu-item key="full-search" @click="handleSearch(true)">
+                      <template #icon>
+                        <SearchOutlined />
+                      </template>
+                      全盘搜索模拟器
                     </a-menu-item>
                     <a-menu-item key="add" @click="handleAddWithSwitch">
                       <template #icon>
