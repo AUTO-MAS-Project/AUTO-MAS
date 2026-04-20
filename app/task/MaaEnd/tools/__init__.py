@@ -21,6 +21,6 @@
 
 from .login import login
 from .notify import push_notification
-from .window import wait_and_focus_window
+from ....utils.window import wait_and_focus_window
 
 __all__ = ["login", "push_notification", "wait_and_focus_window"]
