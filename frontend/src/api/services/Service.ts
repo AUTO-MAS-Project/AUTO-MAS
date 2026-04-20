@@ -862,10 +862,26 @@ export class Service {
      * @returns EmulatorSearchOut Successful Response
      * @throws ApiError
      */
-    public static searchEmulatorsApiEmulatorEmulatorSearchPost(): CancelablePromise<EmulatorSearchOut> {
+    public static searchEmulatorsApiEmulatorEmulatorSearchPost(
+        includeFullScan: boolean = false,
+    ): CancelablePromise<EmulatorSearchOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator/emulator/search',
+            query: {
+                include_full_scan: includeFullScan,
+            },
+        });
+    }
+    /**
+     * 获取全盘搜索进度
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getSearchProgressApiEmulatorEmulatorSearchProgressPost(): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator/emulator/search/progress',
         });
     }
     /**
