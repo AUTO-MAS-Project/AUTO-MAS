@@ -11,6 +11,7 @@ import type { EmulatorGetOut } from '../models/EmulatorGetOut';
 import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
 import type { EmulatorReorderIn } from '../models/EmulatorReorderIn';
 import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
+import type { EmulatorSearchProgressOut } from '../models/EmulatorSearchProgressOut';
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
 import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
 import type { GetStageIn } from '../models/GetStageIn';
@@ -859,6 +860,7 @@ export class Service {
     /**
      * 搜索已安装的模拟器
      * 自动搜索系统中已安装的模拟器
+     * @param includeFullScan 是否启用全盘扫描（速度较慢）
      * @returns EmulatorSearchOut Successful Response
      * @throws ApiError
      */
@@ -869,16 +871,19 @@ export class Service {
             method: 'POST',
             url: '/api/emulator/emulator/search',
             query: {
-                include_full_scan: includeFullScan,
+                'include_full_scan': includeFullScan,
+            },
+            errors: {
+                422: `Validation Error`,
             },
         });
     }
     /**
      * 获取全盘搜索进度
-     * @returns any Successful Response
+     * @returns EmulatorSearchProgressOut Successful Response
      * @throws ApiError
      */
-    public static getSearchProgressApiEmulatorEmulatorSearchProgressPost(): CancelablePromise<any> {
+    public static getSearchProgressApiEmulatorEmulatorSearchProgressPost(): CancelablePromise<EmulatorSearchProgressOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator/emulator/search/progress',
