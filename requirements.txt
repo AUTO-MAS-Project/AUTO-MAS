@@ -22,7 +22,7 @@ pyautogui==0.9.54
 pynput==1.8.1
 numpy==2.3.4
 opencv-python==4.10.0.84
-maafw==5.8.1
+maafw==5.10.2
 mss==9.0.2
 fastapi-mcp==0.4.0
 json5==0.14.0
