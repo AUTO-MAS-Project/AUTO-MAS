@@ -316,25 +316,6 @@ class ProcessManager:
         except Exception:
             return False
 
-    async def minimize_window(self) -> bool:
-        """最小化主进程窗口
-
-        Returns:
-            bool: 操作是否成功
-        """
-
-        if self.main_hwnd is None:
-            return False
-
-        try:
-            await asyncio.get_running_loop().run_in_executor(
-                None, win32gui.ShowWindow, self.main_hwnd, win32con.SW_MINIMIZE
-            )
-            return True
-        except Exception:
-            return False
-
-
 class ProcessRunner:
     """用于运行子进程并获取结果的实用程序类"""
 
