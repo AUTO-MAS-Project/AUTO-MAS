@@ -47,12 +47,34 @@ from .system import System
 logger = get_logger("更新服务")
 
 
+_VERSION_CORE_PATTERN = re.compile(r"(?i)v?(\d+(?:\.\d+)+)")
+
+
 def _log_retry_before_sleep(retry_state: RetryCallState) -> None:
     """输出重试等待日志。"""
 
     attempt = retry_state.attempt_number
     reason = retry_state.outcome.exception() if retry_state.outcome else None
     logger.warning(f"下载失败，准备第 {attempt + 1} 次重试，原因: {reason}")
+
+
+def _parse_release_version(raw_version: str) -> version.Version:
+    normalized_version = raw_version.strip()
+    if normalized_version.startswith(("v", "V")):
+        normalized_version = normalized_version[1:]
+
+    try:
+        return version.parse(normalized_version)
+    except version.InvalidVersion:
+        match = _VERSION_CORE_PATTERN.search(normalized_version)
+        if match is None:
+            raise
+
+        fallback_version = match.group(1)
+        logger.debug(
+            f"Version {raw_version} is not PEP 440, fallback to core version {fallback_version}"
+        )
+        return version.parse(fallback_version)
 
 
 class _UpdateHandler:
@@ -76,10 +98,10 @@ class _UpdateHandler:
             and self.last_check_time > datetime.now() - timedelta(hours=4)
         ):
             logger.info("四小时内已进行过一次检查, 直接使用缓存的版本更新信息")
+            current_parsed_version = _parse_release_version(current_version)
+            remote_parsed_version = _parse_release_version(self.remote_version)
             return (
-                bool(
-                    version.parse(self.remote_version) > version.parse(current_version)
-                ),
+                bool(remote_parsed_version > current_parsed_version),
                 self.remote_version,
                 self.update_version_info,
             )
@@ -121,7 +143,10 @@ class _UpdateHandler:
         if "url" in data:
             self.mirror_chyan_download_url = cast(Optional[str], data.get("url"))
 
-        if version.parse(self.remote_version) > version.parse(current_version):
+        current_parsed_version = _parse_release_version(current_version)
+        remote_parsed_version = _parse_release_version(self.remote_version)
+
+        if remote_parsed_version > current_parsed_version:
             # 版本更新信息
             version_info_json: Dict[str, Dict[str, List[str]]] = json.loads(
                 re.sub(
@@ -135,7 +160,7 @@ class _UpdateHandler:
             for v_i in [
                 info
                 for ver, info in version_info_json.items()
-                if version.parse(ver) > version.parse(current_version)
+                if _parse_release_version(ver) > current_parsed_version
             ]:
                 for key, value in v_i.items():
                     if key not in self.update_version_info:
@@ -320,7 +345,7 @@ class _UpdateHandler:
             logger.info("开始应用更新")
 
             versions = {
-                version.parse(match.group(1)): f.name
+                _parse_release_version(match.group(1)): f.name
                 for f in Path.cwd().glob("UpdatePack_*.zip")
                 if (match := re.match(r"UpdatePack_(.+)\.zip$", f.name))
             }

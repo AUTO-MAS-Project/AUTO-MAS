@@ -27,6 +27,7 @@ import asyncio
 import inspect
 import json
 import tomllib
+import ast
 import uuid
 import weakref
 import os
@@ -431,24 +432,23 @@ class MultipleConfig(Generic[T]):
         if self.is_locked:
             raise ValueError("配置已锁定，无法修改")
 
-        async with self._mutex:
-            logger.info(f"连接配置文件: {path}")
-            self.file = path
+        logger.info(f"连接配置文件: {path}")
+        self.file = path
 
-            if not self.file.exists():
-                self.file.parent.mkdir(parents=True, exist_ok=True)
-                self.file.touch()
-                logger.debug(f"创建新配置文件: {self.file}")
+        if not self.file.exists():
+            self.file.parent.mkdir(parents=True, exist_ok=True)
+            self.file.touch()
+            logger.debug(f"创建新配置文件: {self.file}")
 
-            try:
-                data, legacy_file = _load_config_with_legacy_migration(self.file)
-                await self.load(data)
-                await self.add_save_method(self.save)
-                _backup_legacy_config_if_needed(self.file, legacy_file)
-                logger.info(f"配置加载成功: {path}, 项目数: {len(self.data)}")
-            except (OSError, ValueError, TypeError) as e:
-                logger.error(f"配置加载失败: {path}, 错误: {e}")
-                raise
+        try:
+            data, legacy_file = _load_config_with_legacy_migration(self.file)
+            await self.load(data)
+            await self.add_save_method(self.save)
+            _backup_legacy_config_if_needed(self.file, legacy_file)
+            logger.info(f"配置加载成功: {path}, 项目数: {len(self.data)}")
+        except (OSError, ValueError, TypeError) as e:
+            logger.error(f"配置加载失败: {path}, 错误: {e}")
+            raise
 
     async def add_save_method(
         self, save_method: Callable[[], Coroutine[Any, Any, None]]
@@ -511,6 +511,14 @@ class MultipleConfig(Generic[T]):
             instances_list = cast(list[object], instances)
 
             for instance in instances_list:
+                if isinstance(instance, str):
+                    try:
+                        parsed_instance = ast.literal_eval(instance)
+                    except (SyntaxError, ValueError):
+                        continue
+                    if isinstance(parsed_instance, dict):
+                        instance = parsed_instance
+
                 if not isinstance(instance, dict):
                     continue
                 instance_dict = cast(dict[object, Any], instance)

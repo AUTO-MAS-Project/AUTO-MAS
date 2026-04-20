@@ -4,9 +4,9 @@
       <div class="control-row">
         <a-space size="middle">
           <a-select
-            v-if="status !== '杩愯'"
+            v-if="status !== '运行'"
             v-model:value="localSelectedTaskId"
-            placeholder="閫夋嫨浠诲姟椤?
+            placeholder="选择任务项"
             style="width: 200px"
             :loading="taskOptionsLoading"
             :options="taskOptions"
@@ -16,9 +16,9 @@
             @dropdownVisibleChange="onDropdownVisibleChange"
           />
           <a-select
-            v-if="status !== '杩愯'"
+            v-if="status !== '运行'"
             v-model:value="localSelectedMode"
-            placeholder="閫夋嫨妯″紡"
+            placeholder="选择模式"
             style="width: 120px"
             :disabled="disabled"
             size="large"
@@ -34,12 +34,12 @@
           </a-select>
           <div v-else class="running-info">
             <span class="info-item">
-              <span class="label">浠诲姟锛?/span>
+              <span class="label">任务：</span>
               <span class="value">{{ runningTaskLabel }}</span>
             </span>
             <span class="divider">|</span>
             <span class="info-item">
-              <span class="label">妯″紡锛?/span>
+              <span class="label">模式：</span>
               <span class="value">{{ runningModeLabel }}</span>
             </span>
           </div>
@@ -47,19 +47,19 @@
         <div class="control-spacer"></div>
         <a-space size="middle">
           <a-button
-            :type="status === '杩愯' ? 'default' : 'primary'"
-            :danger="status === '杩愯'"
+            :type="status === '运行' ? 'default' : 'primary'"
+            :danger="status === '运行'"
             :disabled="
-              status === '杩愯' ? false : !localSelectedTaskId || !localSelectedMode || disabled
+              status === '运行' ? false : !localSelectedTaskId || !localSelectedMode || disabled
             "
             size="large"
             @click="onAction"
           >
             <template #icon>
-              <StopOutlined v-if="status === '杩愯'" />
+              <StopOutlined v-if="status === '运行'" />
               <PlayCircleOutlined v-else />
             </template>
-            {{ status === '杩愯' ? '鍋滄浠诲姟' : '寮€濮嬫墽琛? }}
+            {{ status === '运行' ? '停止任务' : '开始执行' }}
           </a-button>
         </a-space>
       </div>
@@ -108,22 +108,22 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<Emits>()
 
-// 鏈湴鐘舵€侊紝鐢ㄤ簬鍙屽悜缁戝畾
+// 本地状态，用于双向绑定
 const localSelectedTaskId = ref(props.selectedTaskId)
 const localSelectedMode = ref(props.selectedMode)
 
-// 妯″紡閫夐」
+// 模式选项
 const modeOptions = TASK_MODE_OPTIONS
 
-// 杩愯鏃剁殑鏄剧ず鏂囨湰 - 鐩存帴浣跨敤 props锛屼笉鍐嶉渶瑕佹湰鍦?ref
+// 运行时的显示文本 - 直接使用 props，不再需要本地 ref
 // const runningTaskLabel = ref('')
 // const runningModeLabel = ref('')
 
-// 鐩戝惉鐘舵€佸彉鍖栵紝璁板綍杩愯鏃剁殑鏂囨湰淇℃伅
+// 监听状态变化，记录运行时的文本信息
 watch(
   () => props.status,
-  (newStatus) => {
-    if (newStatus === '杩愯') {
+  newStatus => {
+    if (newStatus === '运行') {
       const taskOption = props.taskOptions.find(opt => opt.value === props.selectedTaskId)
       const taskLabel = taskOption?.label || props.selectedTaskId || ''
       emit('update:runningTaskLabel', taskLabel)
@@ -135,8 +135,7 @@ watch(
   }
 )
 
-
-// 鐩戝惉 props 鍙樺寲锛屽悓姝ュ埌鏈湴鐘舵€?
+// 监听 props 变化，同步到本地状态
 watch(
   () => props.selectedTaskId,
   newVal => {
@@ -153,7 +152,7 @@ watch(
   { immediate: true }
 )
 
-// 浜嬩欢澶勭悊
+// 事件处理
 const onTaskChange = (value: string) => {
   emit('update:selectedTaskId', value)
 }
@@ -162,16 +161,16 @@ const onModeChange = (value: TaskCreateMode) => {
   emit('update:selectedMode', value)
 }
 
-// 鍚堝苟鐨勬寜閽簨浠跺鐞?
+// 合并的按钮事件处理
 const onAction = () => {
-  if (props.status === '杩愯') {
+  if (props.status === '运行') {
     emit('stop')
   } else {
     emit('start')
   }
 }
 
-// 涓嬫媺妗嗗睍寮€鏃跺埛鏂颁换鍔″垪琛?
+// 下拉框展开时刷新任务列表
 const onDropdownVisibleChange = (open: boolean) => {
   if (open) {
     emit('refresh-tasks')
@@ -204,7 +203,7 @@ const onDropdownVisibleChange = (open: boolean) => {
   flex: 1;
 }
 
-/* 鍝嶅簲寮?- 绉诲姩绔€傞厤 */
+/* 响应式 - 移动端适配 */
 @media (max-width: 768px) {
   .control-row {
     flex-direction: column;
@@ -247,4 +246,3 @@ const onDropdownVisibleChange = (open: boolean) => {
   color: var(--ant-color-border);
 }
 </style>
-

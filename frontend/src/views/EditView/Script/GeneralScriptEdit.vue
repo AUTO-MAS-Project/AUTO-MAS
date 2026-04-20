@@ -1974,14 +1974,13 @@ const handleUpload = async () => {
 
     // 构建上传数据
     const uploadData: ScriptUploadBody = {
-      scriptId: scriptId,
       config_name: uploadForm.config_name,
       author: uploadForm.author,
       description: uploadForm.description,
     }
 
     // 调用上传API
-    await scriptApi.uploadTemplateToWeb(uploadData)
+    await scriptApi.uploadTemplateToWeb(scriptId, uploadData)
 
     message.success('脚本配置上传成功，等待审核通过后即可向所有用户展示~')
     uploadModalVisible.value = false

@@ -21,12 +21,22 @@
     </div>
 
     <!-- 应用对话框 -->
-    <Modal v-model:open="isModalOpen" :title="modalTitle" :closable="false" :maskClosable="false" :keyboard="true"
-      centered>
+    <Modal
+      v-model:open="isModalOpen"
+      :title="modalTitle"
+      :closable="false"
+      :maskClosable="false"
+      :keyboard="true"
+      centered
+    >
       <p class="modal-message">{{ modalMessage }}</p>
       <template #footer>
-        <Button v-for="(option, index) in modalOptions" :key="index" :type="index === 0 ? 'primary' : 'default'"
-          @click="handleChoice(index === 0)">
+        <Button
+          v-for="(option, index) in modalOptions"
+          :key="index"
+          :type="index === 0 ? 'primary' : 'default'"
+          @click="handleChoice(index === 0)"
+        >
           {{ option }}
         </Button>
       </template>
@@ -38,7 +48,6 @@
 import { ref } from 'vue'
 import { Modal, Button } from 'ant-design-vue'
 
-
 defineOptions({
   name: 'TestRouterView',
 })
@@ -46,14 +55,14 @@ defineOptions({
 const logger = window.electronAPI.getLogger('测试路由')
 const lastResult = ref<boolean | null>(null)
 
-// Modal ״̬
+// Modal 状态
 const isModalOpen = ref(false)
 const modalTitle = ref('')
 const modalMessage = ref('')
 const modalOptions = ref<string[]>([])
 let resolvePromise: ((value: boolean) => void) | null = null
 
-// ��ʾ���������� Promise
+// 显示对话框并返回 Promise
 const showModal = (options: {
   title: string
   message: string
@@ -62,13 +71,13 @@ const showModal = (options: {
   return new Promise(resolve => {
     modalTitle.value = options.title
     modalMessage.value = options.message
-    modalOptions.value = options.buttonOptions || ['ȷ��', 'ȡ��']
+    modalOptions.value = options.buttonOptions || ['确认', '取消']
     resolvePromise = resolve
     isModalOpen.value = true
   })
 }
 
-// �����û�ѡ��
+// 处理用户选择
 const handleChoice = (choice: boolean) => {
   isModalOpen.value = false
   if (resolvePromise) {
@@ -200,7 +209,7 @@ p {
   color: #ff4d4f;
 }
 
-/* ��ɫģʽ֧�� */
+/* 深色模式支持 */
 @media (prefers-color-scheme: dark) {
   h2 {
     color: #ffffff;

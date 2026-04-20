@@ -9,7 +9,6 @@ import {
   getUserInfrastructureOptionsApiScriptsScriptIdUsersUserIdInfrastructureOptionsGet,
   importInfrastructureApiScriptsScriptIdUsersUserIdActionsImportInfrastructurePost,
   importScriptFromFileApiScriptsScriptIdActionsImportFilePost,
-  importScriptFromWebApiScriptsImportWebPost,
   importScriptFromWebApiScriptsScriptIdActionsImportWebPost,
   listScriptsApiScriptsGet,
   listUsersApiScriptsScriptIdUsersGet,
@@ -18,7 +17,6 @@ import {
   updateScriptApiScriptsScriptIdPatch,
   updateUserApiScriptsScriptIdUsersUserIdPatch,
   uploadScriptToWebApiScriptsScriptIdActionsUploadWebPost,
-  uploadScriptToWebApiScriptsUploadWebPost,
 } from '../generated/sdk.gen'
 import type {
   IndexOrderPatch,
@@ -79,8 +77,11 @@ export const scriptApi = {
     })
   },
 
-  importTemplateFromWeb(body: ScriptUrlBody) {
-    return importScriptFromWebApiScriptsImportWebPost({ body })
+  importTemplateFromWeb(scriptId: string, body: ScriptUrlBody) {
+    return importScriptFromWebApiScriptsScriptIdActionsImportWebPost({
+      path: { script_id: scriptId },
+      body,
+    })
   },
 
   uploadToWeb(scriptId: string, body: ScriptUploadBody) {
@@ -90,8 +91,11 @@ export const scriptApi = {
     })
   },
 
-  uploadTemplateToWeb(body: ScriptUploadBody) {
-    return uploadScriptToWebApiScriptsUploadWebPost({ body })
+  uploadTemplateToWeb(scriptId: string, body: ScriptUploadBody) {
+    return uploadScriptToWebApiScriptsScriptIdActionsUploadWebPost({
+      path: { script_id: scriptId },
+      body,
+    })
   },
 }
 

@@ -23,7 +23,7 @@ export function useTemplateApi() {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  // 鑾峰彇Web閰嶇疆妯℃澘鍒楄〃
+  // 获取 Web 配置模板列表
   const getWebConfigTemplates = async (): Promise<WebConfigTemplate[]> => {
     loading.value = true
     error.value = null
@@ -32,15 +32,15 @@ export function useTemplateApi() {
       const response = await infoApi.getWebConfig()
 
       if (response.code !== 200) {
-        const errorMsg = response.message || '鑾峰彇妯℃澘鍒楄〃澶辫触'
+        const errorMsg = response.message || '获取模板列表失败'
         message.error(errorMsg)
         throw new Error(errorMsg)
       }
 
-      // 鐩存帴杩斿洖API鍝嶅簲涓殑WebConfig鏁扮粍
+      // 直接返回 API 响应中的 WebConfig 数组
       return (response.data as any).WebConfig || []
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '鑾峰彇妯℃澘鍒楄〃澶辫触'
+      const errorMsg = err instanceof Error ? err.message : '获取模板列表失败'
       error.value = errorMsg
       if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
@@ -51,26 +51,23 @@ export function useTemplateApi() {
     }
   }
 
-  // 浠嶹eb瀵煎叆鑴氭湰閰嶇疆
+  // 从 Web 导入脚本配置
   const importScriptFromWeb = async (scriptId: string, url: string): Promise<boolean> => {
     loading.value = true
     error.value = null
 
     try {
-      const response = await scriptApi.importTemplateFromWeb({
-        scriptId,
-        url,
-      })
+      const response = await scriptApi.importTemplateFromWeb(scriptId, { url })
 
       if (response.code !== 200) {
-        const errorMsg = response.message || '瀵煎叆閰嶇疆澶辫触'
+        const errorMsg = response.message || '导入配置失败'
         message.error(errorMsg)
         throw new Error(errorMsg)
       }
 
       return true
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '瀵煎叆閰嶇疆澶辫触'
+      const errorMsg = err instanceof Error ? err.message : '导入配置失败'
       error.value = errorMsg
       if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
