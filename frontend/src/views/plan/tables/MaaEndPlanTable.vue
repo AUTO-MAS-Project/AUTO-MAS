@@ -18,16 +18,16 @@
 
           <template v-else>
             <a-select
-              v-if="record.key === 'ProtocolSpaceTab'"
+              v-if="record.rowKey === 'SanityTaskType'"
               :value="record[column.key]"
               size="small"
               class="config-select"
               :bordered="false"
               :disabled="isColumnDisabled(asTimeKey(column.key))"
-              @update:value="handleProtocolSpaceChange(asTimeKey(column.key), $event)"
+              @update:value="handleSanityTaskTypeChange(asTimeKey(column.key), $event)"
             >
               <a-select-option
-                v-for="option in PROTOCOL_SPACE_OPTIONS"
+                v-for="option in SANITY_TASK_TYPE_OPTIONS"
                 :key="option.value"
                 :value="option.value"
               >
@@ -35,8 +35,31 @@
               </a-select-option>
             </a-select>
 
+            <template v-else-if="record.rowKey === 'ProtocolSpaceTab'">
+              <span v-if="getDayConfig(asTimeKey(column.key)).SanityTaskType === 'Matrix'">
+                {{ SANITY_TASK_TYPE_LABEL_MAP.Matrix }}
+              </span>
+              <a-select
+                v-else
+                :value="record[column.key]"
+                size="small"
+                class="config-select"
+                :bordered="false"
+                :disabled="isColumnDisabled(asTimeKey(column.key))"
+                @update:value="handleProtocolSpaceChange(asTimeKey(column.key), $event)"
+              >
+                <a-select-option
+                  v-for="option in PROTOCOL_SPACE_OPTIONS"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </a-select-option>
+              </a-select>
+            </template>
+
             <a-select
-              v-else-if="record.key === 'CurrentTask'"
+              v-else-if="record.rowKey === 'CurrentTask'"
               :value="record[column.key]"
               size="small"
               class="config-select"
@@ -94,8 +117,30 @@
             {{ record.timeLabel }}
           </template>
 
+          <a-select
+            v-else-if="column.key === 'SanityTaskType'"
+            :value="record.SanityTaskType"
+            size="small"
+            class="config-select"
+            :bordered="false"
+            :disabled="isColumnDisabled(record.key)"
+            @update:value="handleSanityTaskTypeChange(record.key, $event)"
+          >
+            <a-select-option
+              v-for="option in SANITY_TASK_TYPE_OPTIONS"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </a-select-option>
+          </a-select>
+
           <template v-else-if="column.key === 'ProtocolSpaceTab'">
+            <span v-if="getDayConfig(record.key).SanityTaskType === 'Matrix'">
+              {{ SANITY_TASK_TYPE_LABEL_MAP.Matrix }}
+            </span>
             <a-select
+              v-else
               :value="record.ProtocolSpaceTab"
               size="small"
               class="config-select"
@@ -113,43 +158,41 @@
             </a-select>
           </template>
 
-          <template v-else-if="column.key === 'CurrentTask'">
-            <a-select
-              :value="record.CurrentTask"
-              size="small"
-              class="config-select"
-              :bordered="false"
-              :disabled="isColumnDisabled(record.key)"
-              @update:value="handleTaskChange(record.key, $event)"
+          <a-select
+            v-else-if="column.key === 'CurrentTask'"
+            :value="record.CurrentTask"
+            size="small"
+            class="config-select"
+            :bordered="false"
+            :disabled="isColumnDisabled(record.key)"
+            @update:value="handleTaskChange(record.key, $event)"
+          >
+            <a-select-option
+              v-for="option in getCurrentTaskOptions(record.key)"
+              :key="option.value"
+              :value="option.value"
             >
-              <a-select-option
-                v-for="option in getCurrentTaskOptions(record.key)"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </a-select-option>
-            </a-select>
-          </template>
+              {{ option.label }}
+            </a-select-option>
+          </a-select>
 
-          <template v-else>
-            <a-select
-              :value="record.RewardsSetOption"
-              size="small"
-              class="config-select"
-              :bordered="false"
-              :disabled="isColumnDisabled(record.key) || !isRewardGroupEnabledForTime(record.key)"
-              @update:value="handleRewardChange(record.key, $event)"
+          <a-select
+            v-else
+            :value="record.RewardsSetOption"
+            size="small"
+            class="config-select"
+            :bordered="false"
+            :disabled="isColumnDisabled(record.key) || !isRewardGroupEnabledForTime(record.key)"
+            @update:value="handleRewardChange(record.key, $event)"
+          >
+            <a-select-option
+              v-for="option in REWARD_OPTIONS"
+              :key="option.value"
+              :value="option.value"
             >
-              <a-select-option
-                v-for="option in REWARD_OPTIONS"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </a-select-option>
-            </a-select>
-          </template>
+              {{ option.label }}
+            </a-select-option>
+          </a-select>
         </template>
       </a-table>
     </div>
@@ -159,19 +202,24 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import {
+  AUTO_ESSENCE_LOCATION_OPTIONS,
   MAAEND_PLAN_TIME_KEYS,
   MAAEND_PLAN_TIME_LABELS,
   PROTOCOL_SPACE_OPTIONS,
+  PROTOCOL_SPACE_TASK_FIELD_MAP,
   PROTOCOL_SPACE_TASK_OPTIONS_MAP,
   REWARD_OPTIONS,
-  getCurrentProtocolTaskValue,
-  normalizeProtocolSpaceConfig,
+  SANITY_TASK_TYPE_LABEL_MAP,
+  SANITY_TASK_TYPE_OPTIONS,
+  getCurrentTaskValue,
   isProtocolSpaceRewardEnabled,
+  normalizeMaaEndSanityConfig,
   type CurrentTaskValue,
+  type MaaEndSanityConfig,
   type PlanTimeKey,
-  type ProtocolSpaceConfig,
   type ProtocolSpaceTab,
   type RewardSetOption,
+  type SanityTaskType,
 } from '@/utils/maaEndProtocolSpace'
 
 interface Props {
@@ -185,15 +233,12 @@ interface Props {
 
 const props = defineProps<Props>()
 
-// 本地状态用于乐观更新
 const localTableData = ref<Record<string, any>>({})
 
-// 监听外部数据变化
 watch(
   () => props.tableData,
   newData => {
     if (newData) {
-      // 深拷贝以避免直接修改 props
       localTableData.value = JSON.parse(JSON.stringify(newData))
     }
   },
@@ -229,7 +274,14 @@ const simpleColumns = [
     align: 'center',
   },
   {
-    title: '协议空间',
+    title: '任务类型',
+    dataIndex: 'SanityTaskType',
+    key: 'SanityTaskType',
+    width: 140,
+    align: 'center',
+  },
+  {
+    title: '子分类',
     dataIndex: 'ProtocolSpaceTab',
     key: 'ProtocolSpaceTab',
     width: 180,
@@ -252,35 +304,47 @@ const isColumnDisabled = (timeKey: PlanTimeKey) => {
   return timeKey === 'ALL'
 }
 
-const getDayConfig = (timeKey: PlanTimeKey): ProtocolSpaceConfig =>
-  normalizeProtocolSpaceConfig(localTableData.value?.[timeKey])
+const getDayConfig = (timeKey: PlanTimeKey): MaaEndSanityConfig =>
+  normalizeMaaEndSanityConfig(localTableData.value?.[timeKey])
 
-const getCurrentTaskOptions = (timeKey: PlanTimeKey) =>
-  PROTOCOL_SPACE_TASK_OPTIONS_MAP[getDayConfig(timeKey).ProtocolSpaceTab]
+const getCurrentTaskOptions = (timeKey: PlanTimeKey) => {
+  const dayConfig = getDayConfig(timeKey)
+  if (dayConfig.SanityTaskType === 'Matrix') {
+    return AUTO_ESSENCE_LOCATION_OPTIONS
+  }
+  return PROTOCOL_SPACE_TASK_OPTIONS_MAP[dayConfig.ProtocolSpaceTab]
+}
 
-const isRewardGroupEnabledForTime = (timeKey: PlanTimeKey) =>
-  isProtocolSpaceRewardEnabled(getDayConfig(timeKey))
+const isRewardGroupEnabledForTime = (timeKey: PlanTimeKey) => {
+  const dayConfig = getDayConfig(timeKey)
+  if (dayConfig.SanityTaskType === 'Matrix') return false
+  return isProtocolSpaceRewardEnabled(dayConfig)
+}
 
 const configRows = computed(() => [
   {
-    key: 'ProtocolSpaceTab',
-    fieldName: '协议空间',
+    rowKey: 'SanityTaskType',
+    fieldName: '理智任务',
+    ...Object.fromEntries(
+      MAAEND_PLAN_TIME_KEYS.map(timeKey => [timeKey, getDayConfig(timeKey).SanityTaskType])
+    ),
+  },
+  {
+    rowKey: 'ProtocolSpaceTab',
+    fieldName: '子分类',
     ...Object.fromEntries(
       MAAEND_PLAN_TIME_KEYS.map(timeKey => [timeKey, getDayConfig(timeKey).ProtocolSpaceTab])
     ),
   },
   {
-    key: 'CurrentTask',
+    rowKey: 'CurrentTask',
     fieldName: '当前任务',
     ...Object.fromEntries(
-      MAAEND_PLAN_TIME_KEYS.map(timeKey => [
-        timeKey,
-        getCurrentProtocolTaskValue(getDayConfig(timeKey)),
-      ])
+      MAAEND_PLAN_TIME_KEYS.map(timeKey => [timeKey, getCurrentTaskValue(getDayConfig(timeKey))])
     ),
   },
   {
-    key: 'RewardsSetOption',
+    rowKey: 'RewardsSetOption',
     fieldName: '奖励组',
     ...Object.fromEntries(
       MAAEND_PLAN_TIME_KEYS.map(timeKey => [timeKey, getDayConfig(timeKey).RewardsSetOption])
@@ -296,22 +360,28 @@ const simpleRows = computed(() => {
 
   return timeKeys.map(timeKey => {
     const dayConfig = getDayConfig(timeKey)
-
     return {
       key: timeKey,
       timeLabel: MAAEND_PLAN_TIME_LABELS[timeKey],
+      SanityTaskType: dayConfig.SanityTaskType,
       ProtocolSpaceTab: dayConfig.ProtocolSpaceTab,
-      CurrentTask: getCurrentProtocolTaskValue(dayConfig),
+      CurrentTask: getCurrentTaskValue(dayConfig),
       RewardsSetOption: dayConfig.RewardsSetOption,
     }
   })
 })
 
-const saveDayConfig = async (timeKey: PlanTimeKey, config: Partial<ProtocolSpaceConfig>) => {
-  const normalized = normalizeProtocolSpaceConfig(config)
-  // 乐观更新本地状态
+const saveDayConfig = async (timeKey: PlanTimeKey, config: Partial<MaaEndSanityConfig>) => {
+  const normalized = normalizeMaaEndSanityConfig(config)
   localTableData.value[timeKey] = normalized
   await props.handlePlanChange(timeKey, normalized)
+}
+
+const handleSanityTaskTypeChange = async (timeKey: PlanTimeKey, value: SanityTaskType) => {
+  await saveDayConfig(timeKey, {
+    ...getDayConfig(timeKey),
+    SanityTaskType: value,
+  })
 }
 
 const handleProtocolSpaceChange = async (timeKey: PlanTimeKey, value: ProtocolSpaceTab) => {
@@ -323,9 +393,18 @@ const handleProtocolSpaceChange = async (timeKey: PlanTimeKey, value: ProtocolSp
 
 const handleTaskChange = async (timeKey: PlanTimeKey, value: CurrentTaskValue) => {
   const currentConfig = getDayConfig(timeKey)
+  if (currentConfig.SanityTaskType === 'Matrix') {
+    await saveDayConfig(timeKey, {
+      ...currentConfig,
+      AutoEssenceSpecifiedLocation: value as MaaEndSanityConfig['AutoEssenceSpecifiedLocation'],
+    })
+    return
+  }
+
   await saveDayConfig(timeKey, {
     ...currentConfig,
-    [currentConfig.ProtocolSpaceTab]: value,
+    [PROTOCOL_SPACE_TASK_FIELD_MAP[currentConfig.ProtocolSpaceTab]]:
+      value as MaaEndSanityConfig['OperatorProgression'],
   })
 }
 

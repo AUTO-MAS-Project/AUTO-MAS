@@ -31,22 +31,6 @@ from app.models.schema import *
 router = APIRouter(prefix="/api/plan", tags=["计划管理"])
 
 
-def build_plan_config_model(
-    plan_type: str, plan_data: dict
-) -> MaaPlanConfig | MaaEndPlanConfig:
-    if plan_type == "MaaEndPlanConfig":
-        return MaaEndPlanConfig(**plan_data)
-    return MaaPlanConfig(**plan_data)
-
-
-def build_plan_config_from_instance(
-    config: MaaPlanConfigModel | MaaEndPlanConfigModel, plan_data: dict
-) -> MaaPlanConfig | MaaEndPlanConfig:
-    if isinstance(config, MaaEndPlanConfigModel):
-        return MaaEndPlanConfig(**plan_data)
-    return MaaPlanConfig(**plan_data)
-
-
 @router.post(
     "/add",
     tags=["Add"],
@@ -58,7 +42,14 @@ async def add_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
 
     try:
         uid, config = await Config.add_plan(plan.type)
-        data = build_plan_config_from_instance(config, await config.toDict())
+        raw_data = await config.toDict()
+
+        if isinstance(config, MaaPlanConfigModel):
+            data = MaaPlanConfig(**raw_data)
+        elif isinstance(config, MaaEndPlanConfigModel):
+            data = MaaEndPlanConfig(**raw_data)
+        else:
+            raise TypeError(f"不支持的计划表配置类型: {type(config)}")
     except Exception as e:
         return PlanCreateOut(
             code=500,
@@ -86,11 +77,21 @@ async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
     try:
         raw_index, raw_data = await Config.get_plan(plan.planId)
         index = [PlanIndexItem(**_) for _ in raw_index]
-        index_book = {item["uid"]: item["type"] for item in raw_index}
-        data = {
-            uid: build_plan_config_model(index_book.get(uid, "MaaPlanConfig"), cfg)
-            for uid, cfg in raw_data.items()
-        }
+        data: dict[str, MaaPlanConfig | MaaEndPlanConfig] = {}
+
+        for item in raw_index:
+            uid = item["uid"]
+            plan_type = item["type"]
+
+            if uid not in raw_data:
+                raise ValueError(f"计划表索引缺少对应数据: {uid}")
+
+            if plan_type == "MaaPlanConfig":
+                data[uid] = MaaPlanConfig(**raw_data[uid])
+            elif plan_type == "MaaEndPlanConfig":
+                data[uid] = MaaEndPlanConfig(**raw_data[uid])
+            else:
+                raise ValueError(f"不支持的计划表类型: {plan_type}")
     except Exception as e:
         return PlanGetOut(
             code=500,

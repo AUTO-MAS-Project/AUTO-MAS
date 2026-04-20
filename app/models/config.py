@@ -24,7 +24,7 @@ import json
 import calendar
 from pathlib import Path
 from datetime import datetime
-from typing import Callable
+from typing import Callable, Any
 
 from app.utils.constants import (
     UTC4,
@@ -33,6 +33,8 @@ from app.utils.constants import (
     RESOURCE_STAGE_INFO,
     MAA_STAGE_KEY,
     MAAEND_PLAN_FIELDS,
+    MAAEND_SANITY_TASK_TYPES,
+    MAAEND_AUTO_ESSENCE_LOCATIONS,
     MAAEND_STAGE_BOOK,
     MAAEND_STAGE_WITH_AB,
     STARRAIL_STAGE_BOOK,
@@ -242,7 +244,9 @@ class MaaUserConfig(ConfigBase):
             "Info",
             "StageMode",
             "Fixed",
-            MultipleUIDValidator("Fixed", self.related_config, "PlanConfig"),
+            MultipleUIDValidator(
+                "Fixed", self.related_config, "PlanConfig", MaaPlanConfig
+            ),
         )
         ## 游戏服务器
         self.Info_Server = ConfigItem(
@@ -438,6 +442,32 @@ class MaaUserConfig(ConfigBase):
         else:
             return self.get("Data", "InfrastIndex") or "0"
 
+    def get_effective_stage_config(self) -> tuple[dict[str, Any], str]:
+        """获取当前生效的关卡配置"""
+
+        mode = self.get("Info", "StageMode")
+        if mode == "Fixed":
+            return (
+                {stage_key: self.get("Info", stage_key) for stage_key in MAA_STAGE_KEY},
+                "Fixed",
+            )
+
+        try:
+            plan = self.related_config["PlanConfig"][uuid.UUID(mode)]
+        except (KeyError, ValueError) as e:
+            raise ValueError("引用的关卡计划表不存在") from e
+
+        if not isinstance(plan, MaaPlanConfig):
+            raise TypeError(f"引用的计划表 {mode} 类型不是 MAA 计划表")
+
+        return (
+            {
+                stage_key: plan.get_current_info(stage_key).getValue()
+                for stage_key in MAA_STAGE_KEY
+            },
+            "Plan",
+        )
+
     def getTags(self) -> str:
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
@@ -513,24 +543,12 @@ class MaaUserConfig(ConfigBase):
             tags.append({"text": "基建：关闭", "color": "red"})
 
         # 关卡信息标签
-        if self.get("Info", "StageMode") == "Fixed":
-            plan_data = {
-                stage_key: self.get_stage_zh(self.get("Info", stage_key))
-                for stage_key in MAA_STAGE_KEY[2:]
-            }
-            tag_color = "blue"
-        else:
-            plan = self.related_config["PlanConfig"][
-                uuid.UUID(self.get("Info", "StageMode"))
-            ]
-            if isinstance(plan, MaaPlanConfig):
-                plan_data = {
-                    stage_key: self.get_stage_zh(
-                        plan.get_current_info(stage_key).getValue()
-                    )
-                    for stage_key in MAA_STAGE_KEY[2:]
-                }
-                tag_color = "green"
+        plan_data, stage_mode = self.get_effective_stage_config()
+        plan_data = {
+            stage_key: self.get_stage_zh(plan_data[stage_key])
+            for stage_key in MAA_STAGE_KEY[2:]
+        }
+        tag_color = "blue" if stage_mode == "Fixed" else "green"
         # 主关卡
         tags.append({"text": f"主关卡：{plan_data['Stage']}", "color": tag_color})
         # 备选关卡（合并显示）
@@ -657,12 +675,14 @@ class MaaEndUserConfig(ConfigBase):
         self.Info_Mode = ConfigItem(
             "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
         )
-        ## 协议空间配置模式
-        self.Info_ProtocolSpaceMode = ConfigItem(
+        ## 理智任务配置模式
+        self.Info_SanityMode = ConfigItem(
             "Info",
-            "ProtocolSpaceMode",
+            "SanityMode",
             "Fixed",
-            MultipleUIDValidator("Fixed", self.related_config, "PlanConfig"),
+            MultipleUIDValidator(
+                "Fixed", self.related_config, "PlanConfig", MaaEndPlanConfig
+            ),
         )
         ## 资源名称
         self.Info_Resource = ConfigItem(
@@ -686,6 +706,13 @@ class MaaEndUserConfig(ConfigBase):
         )
 
         ## Task ------------------------------------------------------------
+        ## 理智任务类型
+        self.Task_SanityTaskType = ConfigItem(
+            "Task",
+            "SanityTaskType",
+            "ProtocolSpace",
+            OptionsValidator(list(MAAEND_SANITY_TASK_TYPES)),
+        )
         ## 协议空间选项
         self.Task_ProtocolSpaceTab = ConfigItem(
             "Task",
@@ -726,6 +753,12 @@ class MaaEndUserConfig(ConfigBase):
             "RewardsSetOption",
             "RewardsSetA",
             OptionsValidator(["RewardsSetA", "RewardsSetB"]),
+        )
+        self.Task_AutoEssenceSpecifiedLocation = ConfigItem(
+            "Task",
+            "AutoEssenceSpecifiedLocation",
+            "VFTheHub",
+            OptionsValidator(list(MAAEND_AUTO_ESSENCE_LOCATIONS)),
         )
 
         ## Data ------------------------------------------------------------
@@ -775,26 +808,20 @@ class MaaEndUserConfig(ConfigBase):
 
         super().__init__()
 
-    def get_effective_protocol_space_config(self) -> tuple[dict[str, str], str]:
-        """获取当前生效的协议空间配置"""
+    def get_effective_sanity_task_config(self) -> tuple[dict[str, str], str]:
+        """获取当前生效的理智任务配置"""
 
-        mode = self.get("Info", "ProtocolSpaceMode")
+        mode = self.get("Info", "SanityMode")
         if mode == "Fixed":
-            return (
-                {
-                    field: self.get("Task", field)
-                    for field in MAAEND_PLAN_FIELDS
-                },
-                "Fixed",
-            )
+            return ({field: self.get("Task", field) for field in MAAEND_PLAN_FIELDS}, "Fixed")
 
         try:
             plan = self.related_config["PlanConfig"][uuid.UUID(mode)]
         except (KeyError, ValueError) as e:
-            raise ValueError("引用的协议空间计划表不存在") from e
+            raise ValueError("引用的理智任务计划表不存在") from e
 
         if not isinstance(plan, MaaEndPlanConfig):
-            raise TypeError("引用的计划表类型不是 MaaEnd 计划表")
+            raise TypeError(f"引用的计划表 {mode} 类型不是 MaaEnd 计划表")
 
         return (
             {field: plan.get_current_info(field).getValue() for field in MAAEND_PLAN_FIELDS},
@@ -869,23 +896,31 @@ class MaaEndUserConfig(ConfigBase):
             }
         )
 
-        # 协议空间标签
+        # 理智任务标签
         try:
-            task_config, task_mode = self.get_effective_protocol_space_config()
-            stage = task_config[task_config["ProtocolSpaceTab"]]
-            stage_ab = (
-                f" - {task_config['RewardsSetOption'][-1]}"
-                if stage in MAAEND_STAGE_WITH_AB
-                else ""
-            )
-            tags.append(
-                {
-                    "text": MAAEND_STAGE_BOOK[stage] + stage_ab,
-                    "color": "green" if task_mode == "Plan" else "blue",
-                }
-            )
-        except Exception as e:
-            tags.append({"text": f"协议空间：{str(e)}", "color": "red"})
+            task_config, task_mode = self.get_effective_sanity_task_config()
+            if task_config["SanityTaskType"] == "ProtocolSpace":
+                stage = task_config[task_config["ProtocolSpaceTab"]]
+                stage_ab = (
+                    f" - {task_config['RewardsSetOption'][-1]}"
+                    if stage in MAAEND_STAGE_WITH_AB
+                    else ""
+                )
+                tags.append(
+                    {
+                        "text": MAAEND_STAGE_BOOK[stage] + stage_ab,
+                        "color": "green" if task_mode == "Plan" else "blue",
+                    }
+                )
+            else:
+                tags.append(
+                    {
+                        "text": "基质刷取",
+                        "color": "green" if task_mode == "Plan" else "blue",
+                    }
+                )
+        except (ValueError, TypeError) as e:
+            tags.append({"text": f"理智任务：{str(e)}", "color": "red"})
 
         # 备注标签
         notes = self.get("Info", "Notes")
@@ -1475,6 +1510,18 @@ class MaaEndPlanConfig(ConfigBase):
                 "RewardsSetOption",
                 "RewardsSetA",
                 OptionsValidator(["RewardsSetA", "RewardsSetB"]),
+            )
+            self.config_item_dict[group]["SanityTaskType"] = ConfigItem(
+                group,
+                "SanityTaskType",
+                "ProtocolSpace",
+                OptionsValidator(list(MAAEND_SANITY_TASK_TYPES)),
+            )
+            self.config_item_dict[group]["AutoEssenceSpecifiedLocation"] = ConfigItem(
+                group,
+                "AutoEssenceSpecifiedLocation",
+                "VFTheHub",
+                OptionsValidator(list(MAAEND_AUTO_ESSENCE_LOCATIONS)),
             )
 
             for name in MAAEND_PLAN_FIELDS:

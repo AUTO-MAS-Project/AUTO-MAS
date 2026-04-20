@@ -193,14 +193,37 @@ MAAEND_STAGE_BOOK = {
 MAAEND_STAGE_WITH_AB = set(["OperatorEXP", "Promotions", "SkillUp", "WeaponTune"])
 """MAAEnd任务包含AB关的关卡列表"""
 
-MAAEND_PLAN_FIELDS = (
+MAAEND_SANITY_TASK_TYPES = ("ProtocolSpace", "Matrix")
+"""MAAEnd理智任务类型列表"""
+
+MAAEND_PROTOCOL_SPACE_FIELDS = (
     "ProtocolSpaceTab",
     "OperatorProgression",
     "WeaponProgression",
     "CrisisDrills",
     "RewardsSetOption",
 )
-"""MAAEnd协议空间计划表字段列表"""
+"""MAAEnd协议空间任务字段列表"""
+
+MAAEND_MATRIX_FIELDS = ("AutoEssenceSpecifiedLocation",)
+"""MAAEnd基质刷取任务字段列表"""
+
+MAAEND_AUTO_ESSENCE_LOCATIONS = (
+    "VFTheHub",
+    "VFOriginiumSciencePark",
+    "VFOriginLodespring",
+    "VFPowerPlateau",
+    "WLWulingCity",
+    "WLQingboStockade",
+)
+"""MAAEnd基质刷取地点列表"""
+
+MAAEND_PLAN_FIELDS = (
+    "SanityTaskType",
+    *MAAEND_PROTOCOL_SPACE_FIELDS,
+    *MAAEND_MATRIX_FIELDS,
+)
+"""MAAEnd计划表字段列表"""
 
 
 MAAEND_KILLPROC_TASK = {

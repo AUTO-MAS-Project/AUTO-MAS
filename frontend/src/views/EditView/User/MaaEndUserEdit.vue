@@ -55,9 +55,10 @@
           <TaskConfigSection
             :form-data="formData"
             :loading="loading"
-            :is-plan-mode="isProtocolSpacePlanMode"
-            :protocol-space-mode-options="protocolSpaceModeOptions"
+            :is-plan-mode="isSanityPlanMode"
+            :sanity-mode-options="sanityModeOptions"
             :plan-mode-config="planModeConfig"
+            :sanity-task-type-tooltip="sanityTaskTypeTooltip"
             :protocol-space-tooltip="protocolSpaceTooltip"
             :current-task-tooltip="currentTaskTooltip"
             :rewards-tooltip="rewardsTooltip"
@@ -94,13 +95,13 @@ import { getWeekdayInTimezone } from '@/utils/dateUtils'
 import {
   MAAEND_PLAN_TIME_LABELS,
   MAAEND_PLAN_WEEKDAY_KEYS,
+  SANITY_TASK_TYPE_LABEL_MAP,
   PROTOCOL_SPACE_LABEL_MAP,
-  PROTOCOL_SPACE_TASK_LABEL_MAP,
   REWARD_LABEL_MAP,
-  getCurrentProtocolTaskValue,
-  normalizeProtocolSpaceConfig,
+  getSanityTaskDisplayValue,
+  normalizeMaaEndSanityConfig,
   type PlanWeekdayKey,
-  type ProtocolSpaceConfig,
+  type MaaEndSanityConfig,
 } from '@/utils/maaEndProtocolSpace'
 
 import MaaEndUserEditHeader from '../../MaaEndUserEdit/MaaEndUserEditHeader.vue'
@@ -134,11 +135,11 @@ const maaEndSubscriptionId = ref<string | null>(null)
 const maaEndWebsocketId = ref<string | null>(null)
 let maaEndConfigTimeout: number | null = null
 const resourceOptions = [{ label: '官服', value: '官服' }]
-const protocolSpaceModeOptions = ref<Array<{ label: string; value: string }>>([
+const sanityModeOptions = ref<Array<{ label: string; value: string }>>([
   { label: '固定', value: 'Fixed' },
 ])
-const isProtocolSpacePlanMode = computed(() => formData.Info.ProtocolSpaceMode !== 'Fixed')
-const planModeConfig = ref<ProtocolSpaceConfig | null>(null)
+const isSanityPlanMode = computed(() => formData.Info.SanityMode !== 'Fixed')
+const planModeConfig = ref<MaaEndSanityConfig | null>(null)
 const fullPlanData = ref<MaaEndPlanConfig | null>(null)
 
 const getDefaultMaaEndUserData = () => ({
@@ -148,7 +149,7 @@ const getDefaultMaaEndUserData = () => ({
     Id: '',
     Password: '',
     Mode: '简洁',
-    ProtocolSpaceMode: 'Fixed',
+    SanityMode: 'Fixed',
     Resource: '官服',
     RemainedDay: -1,
     IfSkland: false,
@@ -157,11 +158,13 @@ const getDefaultMaaEndUserData = () => ({
     Tag: '',
   },
   Task: {
+    SanityTaskType: 'ProtocolSpace',
     ProtocolSpaceTab: 'OperatorProgression',
     OperatorProgression: 'OperatorEXP',
     WeaponProgression: 'WeaponEXP',
     CrisisDrills: 'AdvancedProgression1',
     RewardsSetOption: 'RewardsSetA',
+    AutoEssenceSpecifiedLocation: 'VFTheHub',
   },
   Notify: {
     Enabled: false,
@@ -180,38 +183,45 @@ const getDefaultMaaEndUserData = () => ({
 })
 
 const getPlanDayConfig = (planData: MaaEndPlanConfig, dayKey: PlanWeekdayKey | 'ALL') =>
-  planData[dayKey] as Partial<ProtocolSpaceConfig> | null | undefined
+  planData[dayKey] as Partial<MaaEndSanityConfig> | null | undefined
 
-const getPlanCurrentConfig = (planData?: MaaEndPlanConfig | null): ProtocolSpaceConfig | null => {
+const getPlanCurrentConfig = (planData?: MaaEndPlanConfig | null): MaaEndSanityConfig | null => {
   if (!planData) return null
 
   if (planData.Info?.Mode === 'Weekly') {
     const weekday = MAAEND_PLAN_WEEKDAY_KEYS[(getWeekdayInTimezone(4) + 6) % 7]
-    return normalizeProtocolSpaceConfig(getPlanDayConfig(planData, weekday) ?? planData.ALL)
+    return normalizeMaaEndSanityConfig(getPlanDayConfig(planData, weekday) ?? planData.ALL)
   }
 
-  return normalizeProtocolSpaceConfig(planData.ALL)
+  return normalizeMaaEndSanityConfig(planData.ALL)
 }
 
 const formatPlanValue = (
-  dayConfig: Partial<ProtocolSpaceConfig> | null | undefined,
-  field: 'ProtocolSpaceTab' | 'CurrentTask' | 'RewardsSetOption'
+  dayConfig: Partial<MaaEndSanityConfig> | null | undefined,
+  field: 'SanityTaskType' | 'ProtocolSpaceTab' | 'CurrentTask' | 'RewardsSetOption'
 ) => {
-  const normalized = normalizeProtocolSpaceConfig(dayConfig)
+  const normalized = normalizeMaaEndSanityConfig(dayConfig)
+
+  if (field === 'SanityTaskType') {
+    return SANITY_TASK_TYPE_LABEL_MAP[normalized.SanityTaskType]
+  }
 
   if (field === 'ProtocolSpaceTab') {
+    if (normalized.SanityTaskType === 'Matrix') return SANITY_TASK_TYPE_LABEL_MAP.Matrix
     return PROTOCOL_SPACE_LABEL_MAP[normalized.ProtocolSpaceTab]
   }
 
   if (field === 'CurrentTask') {
-    return PROTOCOL_SPACE_TASK_LABEL_MAP[getCurrentProtocolTaskValue(normalized)]
+    return getSanityTaskDisplayValue(normalized)
   }
 
   return REWARD_LABEL_MAP[normalized.RewardsSetOption]
 }
 
-const getPlanTooltip = (field: 'ProtocolSpaceTab' | 'CurrentTask' | 'RewardsSetOption') => {
-  if (!isProtocolSpacePlanMode.value || !fullPlanData.value) return ''
+const getPlanTooltip = (
+  field: 'SanityTaskType' | 'ProtocolSpaceTab' | 'CurrentTask' | 'RewardsSetOption'
+) => {
+  if (!isSanityPlanMode.value || !fullPlanData.value) return ''
 
   if (fullPlanData.value.Info?.Mode !== 'Weekly') {
     return '此项由全局计划表控制'
@@ -227,6 +237,7 @@ const getPlanTooltip = (field: 'ProtocolSpaceTab' | 'CurrentTask' | 'RewardsSetO
   return lines.join('\n')
 }
 
+const sanityTaskTypeTooltip = computed(() => getPlanTooltip('SanityTaskType'))
 const protocolSpaceTooltip = computed(() => getPlanTooltip('ProtocolSpaceTab'))
 const currentTaskTooltip = computed(() => getPlanTooltip('CurrentTask'))
 const rewardsTooltip = computed(() => getPlanTooltip('RewardsSetOption'))
@@ -285,35 +296,35 @@ const loadScriptInfo = async () => {
   }
 }
 
-const loadProtocolSpaceModeOptions = async () => {
+const loadSanityModeOptions = async () => {
   try {
-    const response = await Service.getPlanComboxApiInfoComboxPlanPost({ consumer: 'MaaEnd' })
+    const response = await Service.getMaaendPlanComboxApiInfoComboxMaaendPlanPost()
     if (response?.code === 200 && response.data) {
-      protocolSpaceModeOptions.value = response.data
+      sanityModeOptions.value = response.data
     }
   } catch (error) {
     logger.error(
-      `加载协议空间配置模式选项失败: ${error instanceof Error ? error.message : String(error)}`
+      `加载理智任务配置模式选项失败: ${error instanceof Error ? error.message : String(error)}`
     )
   }
 }
 
-const loadProtocolSpacePlan = async (planId?: string | null) => {
+const loadSanityPlan = async (planId?: string | null) => {
   if (!planId || planId === 'Fixed') {
-    logger.debug('切换到固定模式')
+    logger.debug('切换到固定理智任务模式')
     planModeConfig.value = null
     fullPlanData.value = null
     return
   }
 
   try {
-    logger.debug(`开始加载协议空间计划配置: ${planId}`)
+    logger.debug(`开始加载理智任务计划配置: ${planId}`)
     const response = await getPlans(planId)
     const planData = response?.data?.[planId] as MaaEndPlanConfig | undefined
     const planIndex = response?.index?.find(item => item.uid === planId)
 
     if (!planData || planIndex?.type !== 'MaaEndPlanConfig') {
-      logger.warn(`协议空间计划配置响应不完整: ${JSON.stringify({ response, planId })}`)
+      logger.warn(`理智任务计划配置响应不完整: ${JSON.stringify({ response, planId })}`)
       planModeConfig.value = null
       fullPlanData.value = null
       message.warning('计划表不存在或已失效')
@@ -322,24 +333,24 @@ const loadProtocolSpacePlan = async (planId?: string | null) => {
 
     const currentConfig = getPlanCurrentConfig(planData)
 
-    logger.debug(`获取到协议空间计划数据: ${JSON.stringify(planData)}`)
+    logger.debug(`获取到理智任务计划数据: ${JSON.stringify(planData)}`)
     logger.debug(`getPlanCurrentConfig返回: ${JSON.stringify(currentConfig)}`)
 
     planModeConfig.value = currentConfig
     fullPlanData.value = planData
 
     logger.info(
-      `协议空间计划配置加载成功:${JSON.stringify({
+      `理智任务计划配置加载成功:${JSON.stringify({
         planId,
         currentConfig: JSON.parse(JSON.stringify(currentConfig)),
         planModeConfigValue: JSON.parse(JSON.stringify(planModeConfig.value)),
       })}`
     )
 
-    const planOption = protocolSpaceModeOptions.value.find(option => option.value === planId)
+    const planOption = sanityModeOptions.value.find(option => option.value === planId)
     const planName = planOption ? planOption.label : planId
 
-    message.success(`已切换到计划模式：${planName}`)
+    message.success(`已切换到理智任务计划模式：${planName}`)
   } catch (error) {
     const errorInfo = {
       message: error instanceof Error ? error.message : String(error),
@@ -347,7 +358,7 @@ const loadProtocolSpacePlan = async (planId?: string | null) => {
       type: typeof error,
       name: error instanceof Error ? error.name : error?.constructor?.name,
     }
-    logger.error(`加载协议空间计划配置失败: ${JSON.stringify(errorInfo)}`)
+    logger.error(`加载理智任务计划配置失败: ${JSON.stringify(errorInfo)}`)
     planModeConfig.value = null
     fullPlanData.value = null
     message.error('加载计划配置时发生错误')
@@ -474,12 +485,12 @@ const handleCancel = () => {
 
 onMounted(async () => {
   await loadScriptInfo()
-  await loadProtocolSpaceModeOptions()
+  await loadSanityModeOptions()
 
   watch(
-    () => formData.Info.ProtocolSpaceMode,
+    () => formData.Info.SanityMode,
     async newMode => {
-      await loadProtocolSpacePlan(newMode)
+      await loadSanityPlan(newMode)
     },
     { immediate: false }
   )

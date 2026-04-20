@@ -94,12 +94,6 @@ class GetStageIn(BaseModel):
     )
 
 
-class GetPlanComboxIn(BaseModel):
-    consumer: Literal["MAA", "MaaEnd"] = Field(
-        default="MAA", description="计划表下拉框使用者类型"
-    )
-
-
 class EmulatorConfigIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
     type: Literal["EmulatorConfig"] = Field(..., description="配置类型")
@@ -569,9 +563,7 @@ class MaaEndUserConfig_Info(BaseModel):
     Mode: Optional[Literal["简洁", "详细"]] = Field(
         default=None, description="配置模式"
     )
-    ProtocolSpaceMode: Optional[str] = Field(
-        default=None, description="协议空间配置模式"
-    )
+    SanityMode: Optional[str] = Field(default=None, description="理智任务配置模式")
     Resource: Optional[Literal["官服"]] = Field(default=None, description="资源名称")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
     Notes: Optional[str] = Field(default=None, description="备注")
@@ -581,6 +573,9 @@ class MaaEndUserConfig_Info(BaseModel):
 
 
 class MaaEndUserConfig_Task(BaseModel):
+    SanityTaskType: Optional[Literal["ProtocolSpace", "Matrix"]] = Field(
+        default=None, description="理智任务类型"
+    )
     ProtocolSpaceTab: Optional[
         Literal["OperatorProgression", "WeaponProgression", "CrisisDrills"]
     ] = Field(default=None, description="协议空间选项卡")
@@ -600,8 +595,18 @@ class MaaEndUserConfig_Task(BaseModel):
         ]
     ] = Field(default=None, description="危境预演任务")
     RewardsSetOption: Optional[Literal["RewardsSetA", "RewardsSetB"]] = Field(
-        default=None, description="奖励套组选项"
+        default=None, description="奖励组选项"
     )
+    AutoEssenceSpecifiedLocation: Optional[
+        Literal[
+            "VFTheHub",
+            "VFOriginiumSciencePark",
+            "VFOriginLodespring",
+            "VFPowerPlateau",
+            "WLWulingCity",
+            "WLQingboStockade",
+        ]
+    ] = Field(default=None, description="基质刷取指定地点")
 
 
 class MaaEndUserConfig_Notify(BaseModel):
@@ -903,6 +908,9 @@ class MaaEndPlanConfig_Info(BaseModel):
 class MaaEndPlanConfig_Item(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    SanityTaskType: Optional[Literal["ProtocolSpace", "Matrix"]] = Field(
+        default=None, description="理智任务类型"
+    )
     ProtocolSpaceTab: Optional[
         Literal["OperatorProgression", "WeaponProgression", "CrisisDrills"]
     ] = Field(default=None, description="协议空间选项卡")
@@ -924,6 +932,16 @@ class MaaEndPlanConfig_Item(BaseModel):
     RewardsSetOption: Optional[Literal["RewardsSetA", "RewardsSetB"]] = Field(
         default=None, description="奖励套组选项"
     )
+    AutoEssenceSpecifiedLocation: Optional[
+        Literal[
+            "VFTheHub",
+            "VFOriginiumSciencePark",
+            "VFOriginLodespring",
+            "VFPowerPlateau",
+            "WLWulingCity",
+            "WLQingboStockade",
+        ]
+    ] = Field(default=None, description="基质刷取指定地点")
 
 
 class MaaEndPlanConfig(BaseModel):
