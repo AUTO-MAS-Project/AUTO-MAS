@@ -21,14 +21,17 @@
 
 
 import os
-import winreg
-import subprocess
+import json
 import asyncio
 import concurrent.futures
+import threading
+import time
+import winreg
+import subprocess
 from maa.toolkit import Toolkit
 from contextlib import suppress
 from pathlib import Path
-from typing import List, Dict, Set, Optional
+from typing import List, Dict, Set, Callable
 
 from app.utils.constants import EMULATOR_PATH_BOOK
 from app.utils import get_logger
@@ -36,153 +39,309 @@ from app.core.config import Config
 
 logger = get_logger("模拟器管理工具")
 
-# 排除的目录列表，避免搜索系统目录和其他不必要的目录
+# 快速模式下跳过的大目录，保证自动搜索体验
 EXCLUDED_DIRS = {
-    "C:\\Windows",
-    "C:\\Program Files",
-    "C:\\Program Files (x86)",
-    "C:\\ProgramData",
-    "C:\\Users",
-    "C:\\System Volume Information",
-    "C:\\$Recycle.Bin",
-    "D:\\System Volume Information",
-    "D:\\$Recycle.Bin",
+    "windows",
+    "program files",
+    "program files (x86)",
+    "programdata",
+    "users",
+    "system volume information",
+    "$recycle.bin",
 }
 
-# 可执行文件扩展名
+# 全盘搜索模式下只跳过明显的系统目录
+FULL_SCAN_EXCLUDED_DIRS = {"system volume information", "$recycle.bin"}
+
 EXECUTABLE_EXTENSIONS = {".exe", ".bat", ".cmd"}
+
+_SCAN_PROGRESS_LOCK = threading.Lock()
+_SCAN_PROGRESS = {
+    "active": False,
+    "phase": "idle",
+    "total_drives": 0,
+    "completed_drives": 0,
+    "current_drive": "",
+    "current_path": "",
+    "found_count": 0,
+    "elapsed_seconds": 0,
+    "progress_percent": 0,
+}
+
+
+def _normalize_path(path: str) -> str:
+    """标准化路径，避免分隔符和大小写导致匹配失效"""
+    return os.path.normpath(path).rstrip("\\/").lower()
+
+
+def _load_custom_search_dirs() -> List[str]:
+    """读取并解析用户自定义搜索目录（配置项存的是 JSON 字符串）"""
+    try:
+        custom_dirs_raw = Config.get("Emulator", "CustomSearchDirs")
+    except AttributeError:
+        # 兼容旧配置：不存在该配置项时按未配置处理
+        return []
+    if not custom_dirs_raw:
+        return []
+
+    if isinstance(custom_dirs_raw, list):
+        return [d for d in custom_dirs_raw if isinstance(d, str) and d.strip()]
+
+    if isinstance(custom_dirs_raw, str):
+        with suppress(json.JSONDecodeError, TypeError):
+            parsed_dirs = json.loads(custom_dirs_raw)
+            if isinstance(parsed_dirs, list):
+                return [d for d in parsed_dirs if isinstance(d, str) and d.strip()]
+
+    return []
 
 
 def get_available_drives() -> List[str]:
-    """获取所有可用的磁盘驱动器"""
+    """获取当前系统可用盘符"""
     drives = []
     for c in range(65, 91):  # A-Z
-        drive = f"{chr(c)}:/"
+        drive = f"{chr(c)}:\\"
         if os.path.exists(drive):
             drives.append(drive)
     return drives
 
 
+def _set_scan_progress(**kwargs) -> None:
+    with _SCAN_PROGRESS_LOCK:
+        _SCAN_PROGRESS.update(kwargs)
+
+
+def get_emulator_search_progress() -> Dict[str, int | str | bool]:
+    """读取当前全盘扫描进度（用于前端轮询）"""
+    with _SCAN_PROGRESS_LOCK:
+        return dict(_SCAN_PROGRESS)
+
+
 async def _search_in_directory(
-    directory: str, 
-    executable_names: Set[str], 
+    directory: str,
+    executable_names: Set[str],
     found_paths: Set[str],
-    max_depth: int = 5,  # 增加搜索深度
-    current_depth: int = 0
+    max_depth: int = 5,
+    current_depth: int = 0,
+    include_full_scan: bool = False,
 ) -> None:
-    """在指定目录中搜索模拟器可执行文件"""
-    if current_depth >= max_depth:
+    """在目录中递归搜索模拟器可执行文件"""
+    if current_depth > max_depth:
         return
 
-    # 检查是否是排除目录，但允许搜索 E:\Program Files 目录
-    if directory in EXCLUDED_DIRS and not directory.startswith("E:\\Program Files"):
-        logger.debug(f"跳过排除目录: {directory}")
+    normalized_dir = _normalize_path(directory)
+    basename = os.path.basename(normalized_dir)
+
+    if not include_full_scan and basename in EXCLUDED_DIRS:
+        return
+    if include_full_scan and basename in FULL_SCAN_EXCLUDED_DIRS:
         return
 
     try:
-        logger.debug(f"搜索目录: {directory}")
         with os.scandir(directory) as entries:
             for entry in entries:
                 try:
-                    if entry.is_dir():
-                        # 跳过隐藏目录
-                        if entry.name.startswith(".") or entry.name.startswith("$"):
-                            logger.debug(f"跳过隐藏目录: {entry.path}")
+                    if entry.is_dir(follow_symlinks=False):
+                        entry_name = entry.name.lower()
+                        if entry_name.startswith(".") or entry_name.startswith("$"):
                             continue
-                        # 特别关注 YXReverse1999-12.0 目录
-                        if "YXReverse1999" in entry.name:
-                            logger.info(f"发现 YXReverse1999 目录: {entry.path}")
-                        # 递归搜索子目录
+
                         await _search_in_directory(
-                            entry.path, 
-                            executable_names, 
-                            found_paths, 
-                            max_depth, 
-                            current_depth + 1
+                            entry.path,
+                            executable_names,
+                            found_paths,
+                            max_depth=max_depth,
+                            current_depth=current_depth + 1,
+                            include_full_scan=include_full_scan,
                         )
-                    elif entry.is_file():
-                        # 检查是否是可执行文件且名称匹配
+                    elif entry.is_file(follow_symlinks=False):
                         if (
-                            Path(entry.path).suffix.lower() in EXECUTABLE_EXTENSIONS and
-                            entry.name in executable_names
+                            Path(entry.path).suffix.lower() in EXECUTABLE_EXTENSIONS
+                            and entry.name in executable_names
                         ):
-                            logger.info(f"找到匹配的可执行文件: {entry.path}")
                             found_paths.add(entry.path)
-                except (PermissionError, OSError) as e:
-                    # 跳过无权限访问的文件或目录
-                    logger.debug(f"无法访问 {entry.path}: {e}")
-                    pass
-    except (PermissionError, OSError) as e:
-        # 跳过无权限访问的目录
-        logger.debug(f"无法访问目录 {directory}: {e}")
-        pass
+                except (PermissionError, OSError):
+                    continue
+    except (PermissionError, OSError):
+        return
 
 
-async def _full_disk_scan(executable_names: Set[str]) -> Set[str]:
-    """全盘扫描模拟器可执行文件"""
-    logger.info("开始全盘扫描模拟器")
-    found_paths = set()
-    drives = get_available_drives()
-    
-    logger.info(f"发现 {len(drives)} 个可用磁盘驱动器: {drives}")
-    
-    # 针对 E 盘的特殊处理，添加详细日志
-    for drive in drives:
-        if drive == "E:/":
-            logger.info(f"开始扫描 E 盘")
-            # 直接扫描 E 盘的 Program Files 目录
-            program_files_path = os.path.join(drive, "Program Files")
-            if os.path.exists(program_files_path):
-                logger.info(f"扫描 E:\\Program Files 目录")
-                # 列出该目录下的所有子目录
-                try:
-                    with os.scandir(program_files_path) as entries:
-                        for entry in entries:
-                            if entry.is_dir():
-                                logger.info(f"E:\\Program Files 下的目录: {entry.name}")
-                                # 特别检查 YXReverse1999-12.0 目录
-                                if "YXReverse1999" in entry.name:
-                                    logger.info(f"发现 YXReverse1999 目录: {entry.path}")
-                                    # 直接在该目录中搜索模拟器可执行文件
-                                    await _search_in_directory(entry.path, executable_names, found_paths, max_depth=5)
-                except Exception as e:
-                    logger.warning(f"无法列出 E:\\Program Files 目录: {e}")
-    
-    # 使用线程池并行扫描
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(drives))) as executor:
-        tasks = []
-        for drive in drives:
-            task = executor.submit(
-                asyncio.run, 
-                _search_in_directory(drive, executable_names, found_paths)
-            )
-            tasks.append(task)
-        
-        # 等待所有任务完成
-        for task in concurrent.futures.as_completed(tasks):
-            try:
-                task.result()
-            except Exception as e:
-                logger.warning(f"扫描过程中出错: {e}")
-    
-    logger.info(f"全盘扫描完成，找到 {len(found_paths)} 个匹配的可执行文件")
-    logger.info(f"找到的可执行文件: {found_paths}")
+def _search_in_directory_sync(
+    directory: str,
+    executable_names: Set[str],
+    max_depth: int = 5,
+    include_full_scan: bool = False,
+    progress_callback: Callable[[str], None] | None = None,
+) -> Set[str]:
+    """同步目录搜索，用于线程池并发全盘扫描"""
+    found_paths: Set[str] = set()
+    stack: List[tuple[str, int]] = [(directory, 0)]
+
+    while stack:
+        current_dir, depth = stack.pop()
+        if progress_callback is not None:
+            with suppress(Exception):
+                progress_callback(current_dir)
+        if depth > max_depth:
+            continue
+
+        normalized_dir = _normalize_path(current_dir)
+        basename = os.path.basename(normalized_dir)
+
+        if not include_full_scan and basename in EXCLUDED_DIRS:
+            continue
+        if include_full_scan and basename in FULL_SCAN_EXCLUDED_DIRS:
+            continue
+
+        try:
+            with os.scandir(current_dir) as entries:
+                for entry in entries:
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            entry_name = entry.name.lower()
+                            if entry_name.startswith(".") or entry_name.startswith("$"):
+                                continue
+                            stack.append((entry.path, depth + 1))
+                        elif entry.is_file(follow_symlinks=False):
+                            if (
+                                Path(entry.path).suffix.lower() in EXECUTABLE_EXTENSIONS
+                                and entry.name in executable_names
+                            ):
+                                found_paths.add(entry.path)
+                    except (PermissionError, OSError):
+                        continue
+        except (PermissionError, OSError):
+            continue
+
     return found_paths
 
 
-async def search_all_emulators() -> List[Dict[str, str]]:
+def _full_disk_scan_sync(executable_names: Set[str]) -> Set[str]:
+    """全盘扫描模拟器可执行文件（可选慢速模式）"""
+    found_paths: Set[str] = set()
+    drives = get_available_drives()
+    if not drives:
+        _set_scan_progress(
+            active=False,
+            phase="done",
+            total_drives=0,
+            completed_drives=0,
+            current_drive="",
+            current_path="",
+            found_count=0,
+            elapsed_seconds=0,
+            progress_percent=100,
+        )
+        return found_paths
+
+    scan_start = time.monotonic()
+    _set_scan_progress(
+        active=True,
+        phase="full_scan",
+        total_drives=len(drives),
+        completed_drives=0,
+        current_drive="",
+        current_path="",
+        found_count=0,
+        elapsed_seconds=0,
+        progress_percent=0,
+    )
+
+    worker_count = min(max(2, (os.cpu_count() or 4) // 2), len(drives), 6)
+    progress_update_lock = threading.Lock()
+    last_path_update_ts = 0.0
+
+    def report_current_path(path: str) -> None:
+        nonlocal last_path_update_ts
+        # 限流更新，降低锁竞争和状态刷新开销
+        now = time.monotonic()
+        if now - last_path_update_ts < 0.4:
+            return
+        with progress_update_lock:
+            if now - last_path_update_ts < 0.4:
+                return
+            last_path_update_ts = now
+        current_drive = f"{Path(path).drive}\\" if Path(path).drive else ""
+        _set_scan_progress(current_drive=current_drive, current_path=path)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+        future_to_drive = {
+            executor.submit(
+                _search_in_directory_sync,
+                drive,
+                executable_names,
+                8,
+                True,
+                report_current_path,
+            ): drive
+            for drive in drives
+        }
+        completed = 0
+        for future in concurrent.futures.as_completed(future_to_drive):
+            drive = future_to_drive[future]
+            _set_scan_progress(current_drive=drive)
+            with suppress(Exception):
+                found_paths.update(future.result())
+            completed += 1
+            elapsed = int(time.monotonic() - scan_start)
+            percent = int((completed / len(drives)) * 100)
+            _set_scan_progress(
+                completed_drives=completed,
+                found_count=len(found_paths),
+                elapsed_seconds=elapsed,
+                progress_percent=percent,
+            )
+
+    _set_scan_progress(
+        active=False,
+        phase="done",
+        current_drive="",
+        current_path="",
+        elapsed_seconds=int(time.monotonic() - scan_start),
+        progress_percent=100,
+    )
+
+    return found_paths
+
+
+async def _full_disk_scan(executable_names: Set[str]) -> Set[str]:
+    """在线程中执行全盘扫描，避免阻塞事件循环导致进度接口卡住"""
+    return await asyncio.to_thread(_full_disk_scan_sync, executable_names)
+
+
+async def search_all_emulators(include_full_scan: bool = False) -> List[Dict[str, str]]:
     """搜索所有支持的模拟器"""
 
-    logger.info("开始搜索所有模拟器")
+    logger.info(f"开始搜索所有模拟器, include_full_scan={include_full_scan}")
+    if include_full_scan:
+        # 每次开始全盘扫描请求前先重置进度，避免前端读到上次扫描残留耗时
+        _set_scan_progress(
+            active=True,
+            phase="preparing",
+            total_drives=0,
+            completed_drives=0,
+            current_drive="",
+            current_path="",
+            found_count=0,
+            elapsed_seconds=0,
+            progress_percent=0,
+        )
+    else:
+        _set_scan_progress(
+            active=False,
+            phase="quick_search",
+            total_drives=0,
+            completed_drives=0,
+            current_drive="",
+            current_path="",
+            found_count=0,
+            elapsed_seconds=0,
+            progress_percent=0,
+        )
     found_emulators = []
     found_emulator_paths = set()
 
-    # 收集所有模拟器可执行文件名称
-    all_executables = set()
-    for config in EMULATOR_PATH_BOOK.values():
-        all_executables.update(config["executables"])
-
-    # 1. 传统搜索（注册表、默认路径、PATH）
+    # 根据可能的模拟器路径搜索
     for emulator_type, config in EMULATOR_PATH_BOOK.items():
         try:
             emulator_path = await _search_emulator(config)
@@ -204,69 +363,70 @@ async def search_all_emulators() -> List[Dict[str, str]]:
         except Exception as e:
             logger.warning(f"搜索{config['name']}时出错: {e}")
 
-    # 2. 自定义目录扫描
-    try:
-        # 读取用户自定义的搜索目录
-        custom_dirs = Config.get("Emulator", "CustomSearchDirs")
-        if custom_dirs:
-            logger.info(f"开始扫描用户自定义目录: {custom_dirs}")
-            for custom_dir in custom_dirs:
-                if os.path.exists(custom_dir):
-                    # 在自定义目录中搜索模拟器可执行文件
-                    custom_paths = set()
-                    await _search_in_directory(custom_dir, all_executables, custom_paths, max_depth=5)
-                    for path in custom_paths:
-                        # 尝试确定模拟器类型
-                        emulator_type = "general"
-                        for et, config in EMULATOR_PATH_BOOK.items():
-                            if any(exe in path for exe in config["executables"]):
-                                emulator_type = et
-                                break
-                        
-                        # 自动修正路径
-                        corrected_path = await find_emulator_manager_path(path, emulator_type)
-                        if corrected_path not in found_emulator_paths:
-                            found_emulator_paths.add(corrected_path)
-                            config = EMULATOR_PATH_BOOK.get(emulator_type, {"name": "未知模拟器"})
-                            found_emulators.append(
-                                {
-                                    "type": emulator_type,
-                                    "path": corrected_path,
-                                    "name": f"{config['name']} ({corrected_path})",
-                                }
-                            )
-                            logger.info(f"通过自定义目录扫描找到{config['name']}: {corrected_path}")
-    except Exception as e:
-        logger.warning(f"自定义目录扫描时出错: {e}")
+    # 扫描自定义目录（修复: 配置项为 JSON 字符串）
+    custom_dirs = _load_custom_search_dirs()
+    if custom_dirs:
+        custom_executables = set()
+        for config in EMULATOR_PATH_BOOK.values():
+            custom_executables.update(config["executables"])
 
-    # 3. 全盘扫描
-    try:
-        full_disk_paths = await _full_disk_scan(all_executables)
+        for custom_dir in custom_dirs:
+            if not os.path.exists(custom_dir):
+                continue
+
+            custom_paths = set()
+            await _search_in_directory(
+                custom_dir,
+                custom_executables,
+                custom_paths,
+                max_depth=5,
+                include_full_scan=False,
+            )
+            for path in custom_paths:
+                emulator_type = "general"
+                for et, cfg in EMULATOR_PATH_BOOK.items():
+                    if any(exe in path for exe in cfg["executables"]):
+                        emulator_type = et
+                        break
+
+                corrected_path = await find_emulator_manager_path(path, emulator_type)
+                if corrected_path not in found_emulator_paths:
+                    found_emulator_paths.add(corrected_path)
+                    cfg = EMULATOR_PATH_BOOK.get(emulator_type, {"name": "未知模拟器"})
+                    found_emulators.append(
+                        {
+                            "type": emulator_type,
+                            "path": corrected_path,
+                            "name": f"{cfg['name']} ({corrected_path})",
+                        }
+                    )
+
+    # 可选全盘扫描（慢）
+    if include_full_scan:
+        custom_executables = set()
+        for config in EMULATOR_PATH_BOOK.values():
+            custom_executables.update(config["executables"])
+        full_disk_paths = await _full_disk_scan(custom_executables)
+
         for path in full_disk_paths:
-            # 尝试确定模拟器类型
             emulator_type = "general"
-            for et, config in EMULATOR_PATH_BOOK.items():
-                if any(exe in path for exe in config["executables"]):
+            for et, cfg in EMULATOR_PATH_BOOK.items():
+                if any(exe in path for exe in cfg["executables"]):
                     emulator_type = et
                     break
-            
-            # 自动修正路径
+
             corrected_path = await find_emulator_manager_path(path, emulator_type)
             if corrected_path not in found_emulator_paths:
                 found_emulator_paths.add(corrected_path)
-                config = EMULATOR_PATH_BOOK.get(emulator_type, {"name": "未知模拟器"})
+                cfg = EMULATOR_PATH_BOOK.get(emulator_type, {"name": "未知模拟器"})
                 found_emulators.append(
                     {
                         "type": emulator_type,
                         "path": corrected_path,
-                        "name": f"{config['name']} ({corrected_path})",
+                        "name": f"{cfg['name']} ({corrected_path})",
                     }
                 )
-                logger.info(f"通过全盘扫描找到{config['name']}: {corrected_path}")
-    except Exception as e:
-        logger.warning(f"全盘扫描时出错: {e}")
 
-    # 4. ADB设备搜索
     for emulator in Toolkit.find_adb_devices():
         for emulator_type in EMULATOR_PATH_BOOK.keys():
             corrected_path = await find_emulator_manager_path(
