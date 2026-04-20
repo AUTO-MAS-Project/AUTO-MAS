@@ -10,7 +10,7 @@ export type SrcUserConfig_Stage = {
     /**
      * 遗器关卡
      */
-    Relic?: ('-' | 'Cavern_of_Corrosion_Path_of_Possession' | 'Cavern_of_Corrosion_Path_of_Hidden_Salvation' | 'Cavern_of_Corrosion_Path_of_Thundersurge' | 'Cavern_of_Corrosion_Path_of_Aria' | 'Cavern_of_Corrosion_Path_of_Uncertainty' | 'Cavern_of_Corrosion_Path_of_Cavalier' | 'Cavern_of_Corrosion_Path_of_DreamdiveCavern_of_Corrosion_Path_of_Darkness' | 'Cavern_of_Corrosion_Path_of_Elixir_Seekers' | 'Cavern_of_Corrosion_Path_of_Conflagration' | 'Cavern_of_Corrosion_Path_of_Holy_Hymn' | 'Cavern_of_Corrosion_Path_of_Providence' | 'Cavern_of_Corrosion_Path_of_Drifting' | 'Cavern_of_Corrosion_Path_of_Jabbing_Punch' | 'Cavern_of_Corrosion_Path_of_Gelid_Wind' | null);
+    Relic?: ('-' | 'Cavern_of_Corrosion_Path_of_Possession' | 'Cavern_of_Corrosion_Path_of_Hidden_Salvation' | 'Cavern_of_Corrosion_Path_of_Thundersurge' | 'Cavern_of_Corrosion_Path_of_Aria' | 'Cavern_of_Corrosion_Path_of_Uncertainty' | 'Cavern_of_Corrosion_Path_of_Cavalier' | 'Cavern_of_Corrosion_Path_of_Dreamdive' | 'Cavern_of_Corrosion_Path_of_Darkness' | 'Cavern_of_Corrosion_Path_of_Elixir_Seekers' | 'Cavern_of_Corrosion_Path_of_Conflagration' | 'Cavern_of_Corrosion_Path_of_Holy_Hymn' | 'Cavern_of_Corrosion_Path_of_Providence' | 'Cavern_of_Corrosion_Path_of_Drifting' | 'Cavern_of_Corrosion_Path_of_Jabbing_Punch' | 'Cavern_of_Corrosion_Path_of_Gelid_Wind' | null);
     /**
      * 材料关卡
      */
