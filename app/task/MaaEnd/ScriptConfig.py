@@ -123,6 +123,9 @@ class ScriptConfigTask(TaskExecuteBase):
         maaend_set["instances"] = [selected_instance]
         maaend_set["lastActiveInstanceId"] = "automas"
 
+        # 移除冗余任务项信息
+        maaend_set["recentlyClosed"] = []
+
         # 不直接运行任务
         maaend_set["settings"]["autoStartInstanceId"] = "automas"
         maaend_set["settings"]["autoRunOnLaunch"] = False
