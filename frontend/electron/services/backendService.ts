@@ -89,11 +89,20 @@ export class BackendService {
 
       this.isCapturingStartupLogs = true
 
+      const backendEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        PYTHONIOENCODING: 'utf-8',
+      }
+
+      if (process.env.VITE_DEV_SERVER_URL) {
+        backendEnv.AUTO_MAS_DEV = '1'
+      }
+
       // 启动后端进程
       this.backendProcess = spawn(pythonExe, [mainPy], {
         cwd,
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+        env: backendEnv,
       })
 
       this.startTime = new Date()

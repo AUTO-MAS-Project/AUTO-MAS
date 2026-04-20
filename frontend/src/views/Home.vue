@@ -1,7 +1,7 @@
 ﻿<template>
   <div class="header">
     <a-typography-title>{{ greeting }}</a-typography-title>
-    <!-- 鍙充笂瑙掑叕鍛婃寜閽?-->
+    <!-- 右上角公告按钮 -->
     <div class="header-actions">
       <a-button
         type="primary"
@@ -13,12 +13,12 @@
         <template #icon>
           <BellOutlined />
         </template>
-        鏌ョ湅鍏憡
+        查看公告
       </a-button>
     </div>
   </div>
 
-  <!-- 鍏憡妯℃€佹 -->
+  <!-- 公告模态框 -->
   <NoticeModal
     v-model:visible="noticeVisible"
     :notice-data="noticeData"
@@ -26,10 +26,10 @@
   />
 
   <div class="content">
-    <!-- 褰撴湡娲诲姩鍏冲崱 -->
+    <!-- 当前活动关卡 -->
     <a-card
       v-if="activityData?.length"
-      title="褰撴湡娲诲姩鍏冲崱"
+      title="当前活动关卡"
       class="activity-card"
       :loading="loading"
     >
@@ -37,7 +37,7 @@
         <a-alert :message="error" type="error" show-icon closable @close="error = ''" />
       </div>
 
-      <!-- 娲诲姩淇℃伅灞曠ず -->
+      <!-- 活动信息展示 -->
       <div v-if="currentActivity && !loading" class="activity-info">
         <div class="activity-header">
           <div class="activity-left">
@@ -53,7 +53,7 @@
           </div>
 
           <div class="activity-right">
-            <!-- 娲诲姩宸茬粨鏉熸椂鏄剧ず鎻愮ず -->
+            <!-- 活动已结束时显示提示 -->
             <a-statistic-countdown
               v-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'ended'"
               title=""
@@ -67,20 +67,20 @@
               @finish="onCountdownFinish"
             />
 
-            <!-- 鍓╀綑鏃堕棿灏忎簬涓ゅぉ鏃舵樉绀虹偒褰╁€掕鏃?-->
+            <!-- 剩余时间小于两天时显示彩色倒计时 -->
             <a-statistic-countdown
               v-else-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'warning'"
-              title="褰撴湡娲诲姩鍓╀綑鏃堕棿"
+              title="当前活动剩余时间"
               :value="getCountdownValue(currentActivity.UtcExpireTime)"
-              format="D 澶?H 鏃?m 鍒?ss 绉?SSS 姣"
+              format="D 天 H 时 m 分 ss 秒 SSS 毫秒"
               class="rainbow-text"
               @finish="onCountdownFinish"
             />
 
-            <!-- 鍓╀綑鏃堕棿澶т簬绛変簬涓ゅぉ鏃舵樉绀哄父瑙勫€掕鏃?-->
+            <!-- 剩余时间大于等于两天时显示常规倒计时 -->
             <a-statistic-countdown
               v-else
-              title="褰撴湡娲诲姩鍓╀綑鏃堕棿"
+              title="当前活动剩余时间"
               :value="getCountdownValue(currentActivity.UtcExpireTime)"
               format="D 天 H 时 m 分"
               :value-style="{
@@ -120,7 +120,7 @@
       </div>
     </a-card>
 
-    <!-- 璧勬簮鏀堕泦鍏冲崱 -->
+    <!-- 资源收集关卡 -->
     <a-card title="今日开放资源收集关卡" class="resource-card" :loading="loading">
       <div v-if="error" class="error-message">
         <a-alert :message="error" type="error" show-icon closable @close="error = ''" />
@@ -155,7 +155,7 @@
       </div>
     </a-card>
 
-    <!-- 浠ｇ悊鐘舵€?-->
+    <!-- 代理状态 -->
     <a-card title="代理状态" class="proxy-card" :loading="loading">
       <template #extra>
         <a-tag :color="getProxyStatusColor()">{{ Object.keys(proxyData).length }} 个用户</a-tag>
@@ -178,12 +178,15 @@
               </div>
 
               <div class="proxy-stats">
-                <!-- 绗竴琛岋細鏈€鍚庝唬鐞嗘椂闂达紝鐙崰涓€琛?-->
+                <!-- 第一行：最后代理时间，独占一行 -->
                 <div class="stat-item full-width">
-                  <a-statistic title="最后代理时间" :value="formatProxyDisplay(proxy.LastProxyDate)" />
+                  <a-statistic
+                    title="最后代理时间"
+                    :value="formatProxyDisplay(proxy.LastProxyDate)"
+                  />
                 </div>
 
-                <!-- 绗簩琛岋細浠ｇ悊娆℃暟 鍜?閿欒娆℃暟 -->
+                <!-- 第二行：代理次数 和 错误次数 -->
                 <div class="stat-item half-width">
                   <a-statistic title="浠ｇ悊娆℃暟" :value="proxy.ProxyTimes" />
                 </div>
@@ -236,7 +239,7 @@ import NoticeModal from '@/components/NoticeModal.vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
-const logger = window.electronAPI.getLogger('棣栭〉')
+const logger = window.electronAPI.getLogger('首页')
 
 interface ActivityInfo {
   Tip: string
@@ -286,32 +289,32 @@ const activityData = ref<ActivityItem[]>([])
 const resourceData = ref<ResourceItem[]>([])
 const proxyData = ref<Record<string, ProxyInfo>>({})
 
-// 鍏憡绯荤粺鐩稿叧鐘舵€?
+// 公告系统相关状态
 const noticeVisible = ref(false)
 const noticeData = ref<Record<string, string>>({})
 const noticeLoading = ref(false)
 const { isBootstrapping } = useAppInitialization()
 
-// 闊抽鎾斁鍣?
+// 音频播放器
 const { playSound } = useAudioPlayer()
 
-// 鑾峰彇褰撳墠娲诲姩淇℃伅
+// 获取当前活动信息
 const currentActivity = computed(() => {
   if (!activityData.value.length) return null
   return activityData.value[0]?.Activity
 })
 
 const formatProxyDisplay = (dateStr: string) => {
-  if (dateStr === '鏆傛棤浠ｇ悊鏁版嵁') {
+  if (dateStr === '暂无代理数据') {
     return dateStr
   }
   return formatBackendDateTime(dateStr)
 }
 
-// 鏍煎紡鍖栨椂闂存樉绀?- 鐩存帴浣跨敤缁欏畾鏃堕棿锛屼笉杩涜鏃跺尯杞崲
+// 格式化时间显示 - 直接使用给定时间，不进行时区转换
 const formatTime = (timeString: string) => {
   try {
-    // 鐩存帴浣跨敤缁欏畾鐨勬椂闂村瓧绗︿覆锛屽洜涓哄凡缁忔槸涓浗鏃堕棿
+    // 直接使用给定时间字符串，因为已经是中国时间
     const date = new Date(timeString)
     return date.toLocaleString('zh-CN', {
       year: 'numeric',
@@ -325,7 +328,7 @@ const formatTime = (timeString: string) => {
   }
 }
 
-// 鑾峰彇鍊掕鏃剁殑鐩爣鏃堕棿鎴?
+// 获取倒计时的目标时间戳
 const getCountdownValue = (expireTime: string) => {
   try {
     return new Date(expireTime).getTime()
@@ -334,7 +337,7 @@ const getCountdownValue = (expireTime: string) => {
   }
 }
 
-// 妫€鏌ュ墿浣欐椂闂寸姸鎬侊細normal锛?2澶╋級銆亀arning锛?=2澶?0锛夈€乪nded锛?=0锛?
+// 检查剩余时间状态：normal（>2天）、warning（<=2天且>0）、ended（<=0）
 const getActivityTimeStatus = (expireTime: string): 'normal' | 'warning' | 'ended' => {
   try {
     const expire = new Date(expireTime)
@@ -349,10 +352,10 @@ const getActivityTimeStatus = (expireTime: string): 'normal' | 'warning' | 'ende
   }
 }
 
-// 鍊掕鏃剁粨鏉熷洖璋?
+// 倒计时结束回调
 const onCountdownFinish = () => {
   message.warning('活动已结束')
-  // 閲嶆柊鑾峰彇鏁版嵁
+  // 重新获取数据
   fetchActivityData()
 }
 
@@ -360,7 +363,7 @@ const getMaterialImage = (dropName: string) => {
   if (!dropName) {
     return ''
   }
-  // 鐩存帴鎷兼帴鍚庣鍥剧墖鎺ュ彛鍦板潃
+  // 直接拼接后端图片接口地址
   return `${apiRuntime.baseUrl}/api/res/materials/${dropName}.png`
 }
 
@@ -386,18 +389,18 @@ const fetchActivityData = async () => {
         proxyData.value = data.Proxy
       }
     } else {
-      error.value = response.message || '鑾峰彇鏁版嵁澶辫触'
+      error.value = response.message || '获取数据失败'
     }
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err)
-    logger.error(`鑾峰彇鏁版嵁澶辫触: ${errorMsg}`)
+    logger.error(`获取数据失败: ${errorMsg}`)
     error.value = '网络请求失败，请检查连接'
   } finally {
     loading.value = false
   }
 }
 
-// 鑾峰彇浠ｇ悊鐘舵€侀鑹?
+// 获取代理状态颜色
 const getProxyStatusColor = () => {
   const hasError = Object.values(proxyData.value).some(proxy => proxy.ErrorTimes > 0)
   return hasError ? 'error' : 'success'
@@ -406,68 +409,68 @@ const getProxyStatusColor = () => {
 const greeting = computed(() => {
   const hour = new Date().getHours()
   if (hour >= 5 && hour < 11) {
-    return '鏃╀笂濂斤紝鍗氬＋锛屽挄~'
+    return '早上好，博士，咕~'
   } else if (hour >= 11 && hour < 14) {
-    return '涓崍濂斤紝鍗氬＋锛屽挄~'
+    return '中午好，博士，咕~'
   } else if (hour >= 14 && hour < 18) {
-    return '涓嬪崍濂斤紝鍗氬＋锛屽挄~'
+    return '下午好，博士，咕~'
   } else if (hour >= 18 && hour < 23) {
-    return '鏅氫笂濂斤紝鍗氬＋锛屽挄~'
+    return '晚上好，博士，咕~'
   } else {
-    return '澶滄繁浜嗭紝鍗氬＋锛岃娉ㄦ剰浼戞伅锛屽挄~'
+    return '夜深了，博士，请注意休息，咕~'
   }
 })
 
-// 鑾峰彇鍏憡淇℃伅
+// 获取公告信息
 const fetchNoticeData = async () => {
   try {
     const response = await infoApi.getNotice()
 
     if (response.code === 200) {
-      // 妫€鏌ユ槸鍚﹂渶瑕佹樉绀哄叕鍛?
+      // 检查是否需要显示公告
       if (response.if_need_show && response.data && Object.keys(response.data).length > 0) {
         noticeData.value = response.data
         noticeVisible.value = true
-        // 鎾斁鍏憡灞曠ず闊抽
+        // 播放公告展示音频
         await playSound('announcement_display')
       }
     } else {
-      logger.warn(`鑾峰彇鍏憡澶辫触: ${response.message}`)
+      logger.warn(`获取公告失败: ${response.message}`)
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`鑾峰彇鍏憡澶辫触: ${errorMsg}`)
+    logger.error(`获取公告失败: ${errorMsg}`)
   }
 }
 
-// 鍏憡纭鍥炶皟
+// 公告确认回调
 const onNoticeConfirmed = () => {
   noticeVisible.value = false
 }
 
-// 鏄剧ず鍏憡鐨勫鐞嗗嚱鏁?
+// 显示公告的处理函数
 const showNotice = async () => {
   noticeLoading.value = true
   try {
     const response = await infoApi.getNotice()
 
     if (response.code === 200) {
-      // 蹇界暐 if_need_show 瀛楁锛屽彧瑕佹湁鍏憡鏁版嵁灏辨樉绀?
+      // 忽略 if_need_show 字段，只要有公告数据就显示
       if (response.data && Object.keys(response.data).length > 0) {
         noticeData.value = response.data
         noticeVisible.value = true
-        // 鎵嬪姩鏌ョ湅鍏憡鏃朵篃鎾斁闊抽
+        // 手动查看公告时也播放音频
         await playSound('announcement_display')
       } else {
-        message.info('鏆傛棤鍏憡淇℃伅')
+        message.info('暂无公告信息')
       }
     } else {
-      message.error(response.message || '鑾峰彇鍏憡澶辫触')
+      message.error(response.message || '获取公告失败')
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`鏄剧ず鍏憡澶辫触: ${errorMsg}`)
-    message.error('鏄剧ず鍏憡澶辫触锛岃绋嶅悗閲嶈瘯')
+    logger.error(`显示公告失败: ${errorMsg}`)
+    message.error('显示公告失败，请稍后重试')
   } finally {
     noticeLoading.value = false
   }
@@ -766,7 +769,7 @@ onMounted(() => {
   }
 }
 
-/* 鍝嶅簲寮忚璁?*/
+/* 响应式设计 */
 @media (max-width: 1500px) {
   .activity-list,
   .resource-list {
@@ -794,5 +797,3 @@ onMounted(() => {
   }
 }
 </style>
-
-

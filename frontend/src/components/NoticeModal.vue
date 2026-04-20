@@ -1,27 +1,52 @@
 ﻿<template>
-  <a-modal v-model:open="visible" title="绯荤粺鍏憡" :width="800" :footer="null" :closable="false" :mask-closable="false"
-    class="notice-modal">
+  <a-modal
+    v-model:open="visible"
+    title="系统公告"
+    :width="800"
+    :footer="null"
+    :closable="false"
+    :mask-closable="false"
+    class="notice-modal"
+  >
     <div v-if="notices.length > 0" class="notice-container">
-      <!-- 鍏憡鏍囩椤?- 绔栫洿甯冨眬 -->
-      <a-tabs v-model:active-key="activeNoticeKey" tab-position="left" class="notice-tabs"
-        :tab-bar-style="{ width: '200px' }">
-        <a-tab-pane v-for="(content, title) in noticeData" :key="title" :tab="title" class="notice-tab-pane">
+      <!-- 公告标签页 - 竖直布局 -->
+      <a-tabs
+        v-model:active-key="activeNoticeKey"
+        tab-position="left"
+        class="notice-tabs"
+        :tab-bar-style="{ width: '200px' }"
+      >
+        <a-tab-pane
+          v-for="(content, title) in noticeData"
+          :key="title"
+          :tab="title"
+          class="notice-tab-pane"
+        >
           <div class="notice-content">
-            <div ref="markdownContentRef" class="markdown-content" @click="handleLinkClick"
-              v-html="renderMarkdown(content)"></div>
+            <div
+              ref="markdownContentRef"
+              class="markdown-content"
+              @click="handleLinkClick"
+              v-html="renderMarkdown(content)"
+            ></div>
           </div>
         </a-tab-pane>
       </a-tabs>
 
-      <!-- 搴曢儴鎿嶄綔鎸夐挳 -->
+      <!-- 底部操作按钮 -->
       <div class="notice-footer">
         <div class="notice-pagination">
-          <span class="pagination-text"> 鍏?{{ notices.length }} 涓叕鍛?</span>
+          <span class="pagination-text"> 共 {{ notices.length }} 个公告</span>
         </div>
 
         <div class="notice-actions">
-          <a-button type="primary" :loading="confirming" class="confirm-button" @click="confirmNotices">
-            鎴戠煡閬撲簡
+          <a-button
+            type="primary"
+            :loading="confirming"
+            class="confirm-button"
+            @click="confirmNotices"
+          >
+            我知道了
           </a-button>
         </div>
       </div>
@@ -36,7 +61,7 @@ import MarkdownIt from 'markdown-it'
 import { infoApi } from '@/api'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
-const logger = window.electronAPI.getLogger('鍏憡妯℃€佹')
+const logger = window.electronAPI.getLogger('公告弹窗')
 
 interface Props {
   visible: boolean
@@ -59,29 +84,29 @@ const visible = computed({
 const confirming = ref(false)
 const activeNoticeKey = ref('')
 
-// 闊抽鎾斁鍣?
+// 音频播放器
 const { playSound } = useAudioPlayer()
 
-// 鍒濆鍖?markdown 瑙ｆ瀽鍣?
+// 初始化 markdown 解析器
 const md = new MarkdownIt({
   html: true,
   linkify: true,
   typographer: true,
 })
 
-// 鑾峰彇鍏憡鏍囬鍒楄〃
+// 获取公告标题列表
 const notices = computed(() => Object.keys(props.noticeData))
 
-// 褰撳墠鍏憡绱㈠紩
+// 当前公告索引
 computed(() => {
   return notices.value.findIndex(title => title === activeNoticeKey.value)
 })
-// 娓叉煋 markdown
+// 渲染 markdown
 const renderMarkdown = (content: string) => {
   return md.render(content)
 }
 
-// 纭鎵€鏈夊叕鍛?
+// 确认所有公告
 const confirmNotices = async () => {
   confirming.value = true
   try {
@@ -90,18 +115,18 @@ const confirmNotices = async () => {
       visible.value = false
       emit('confirmed')
     } else {
-      message.error(response.message || '纭鍏憡澶辫触')
+      message.error(response.message || '确认公告失败')
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`纭鍏憡澶辫触: ${errorMsg}`)
-    message.error('纭鍏憡澶辫触锛岃閲嶈瘯')
+    logger.error(`确认公告失败: ${errorMsg}`)
+    message.error('确认公告失败，请重试')
   } finally {
     confirming.value = false
   }
 }
 
-// 澶勭悊閾炬帴鐐瑰嚮
+// 处理链接点击
 const handleLinkClick = async (event: MouseEvent) => {
   const target = event.target as HTMLElement
   if (target.tagName === 'A') {
@@ -109,27 +134,27 @@ const handleLinkClick = async (event: MouseEvent) => {
     const url = target.getAttribute('href')
     if (url) {
       try {
-        // 妫€鏌ユ槸鍚﹀湪Electron鐜涓?
+        // 检查是否在 Electron 环境中
         if (window.electronAPI && window.electronAPI.openUrl) {
           const result = await window.electronAPI.openUrl(url)
           if (!result.success) {
-            logger.error(`鎵撳紑閾炬帴澶辫触: ${String(result.error)}`)
-            message.error('鎵撳紑閾炬帴澶辫触锛岃鎵嬪姩澶嶅埗閾炬帴鍦板潃')
+            logger.error(`打开链接失败: ${String(result.error)}`)
+            message.error('打开链接失败，请手动复制链接地址')
           }
         } else {
-          // 濡傛灉涓嶅湪Electron鐜涓紝浣跨敤鏅€氱殑window.open
+          // 如果不在 Electron 环境中，使用普通的 window.open
           window.open(url, '_blank')
         }
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.error(`鎵撳紑閾炬帴澶辫触: ${errorMsg}`)
-        message.error('鎵撳紑閾炬帴澶辫触锛岃鎵嬪姩澶嶅埗閾炬帴鍦板潃')
+        logger.error(`打开链接失败: ${errorMsg}`)
+        message.error('打开链接失败，请手动复制链接地址')
       }
     }
   }
 }
 
-// 鐩戝惉鍏憡鏁版嵁鍙樺寲锛岃缃粯璁ら€変腑绗竴涓叕鍛?
+// 监听公告数据变化，设置默认选中第一个公告
 watch(
   () => props.noticeData,
   newData => {
@@ -141,11 +166,11 @@ watch(
   { immediate: true }
 )
 
-// 鐩戝惉寮圭獥鏄剧ず鐘舵€侊紝閲嶇疆鍒扮涓€涓叕鍛婂苟鎾斁闊抽
+// 监听弹窗显示状态，重置到第一个公告并播放音频
 watch(visible, async newVisible => {
   if (newVisible && notices.value.length > 0) {
     activeNoticeKey.value = notices.value[0]
-    // 褰撳叕鍛婃ā鎬佹鏄剧ず鏃舵挱鏀鹃煶棰?
+    // 当公告模态框显示时播放音频
     await playSound('announcement_display')
   }
 })
@@ -182,14 +207,14 @@ watch(visible, async newVisible => {
   max-height: 50vh;
   overflow-y: auto;
   padding-left: 16px;
-  /* 闅愯棌婊氬姩鏉′絾淇濇寔婊氬姩鍔熻兘 */
+  /* 隐藏滚动条但保持滚动功能 */
   scrollbar-width: none;
   /* Firefox */
   -ms-overflow-style: none;
-  /* IE 鍜?Edge */
+  /* IE 和 Edge */
 }
 
-/* 闅愯棌 WebKit 娴忚鍣ㄧ殑婊氬姩鏉?*/
+/* 隐藏 WebKit 浏览器的滚动条 */
 .notice-tabs :deep(.ant-tabs-content-holder)::-webkit-scrollbar {
   display: none;
 }
@@ -318,7 +343,7 @@ watch(visible, async newVisible => {
   height: 36px;
 }
 
-/* 鍝嶅簲寮忚璁?*/
+/* 响应式设计 */
 @media (max-width: 768px) {
   .notice-modal :deep(.ant-modal) {
     width: 95vw !important;
@@ -354,5 +379,3 @@ watch(visible, async newVisible => {
   }
 }
 </style>
-
-
