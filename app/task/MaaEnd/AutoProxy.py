@@ -35,9 +35,10 @@ from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
+from app.utils.window import wait_and_focus_window
 from app.tools import skland_sign_in
 from app.utils.constants import UTC4, UTC8, MAAEND_KILLPROC_TASK
-from .tools import login, push_notification, wait_and_focus_window
+from .tools import login, push_notification
 
 logger = get_logger("MaaEnd 自动代理")
 
@@ -268,10 +269,10 @@ class AutoProxyTask(TaskExecuteBase):
             elif self.script_config.get("Game", "ControllerType") == "Win32-Front":
                 await asyncio.sleep(5)
                 if await self.maaend_process_manager.is_running():
-                    if await self.maaend_process_manager.minimize_window():
-                        logger.debug("MaaEnd 窗口已在启动 5 秒后最小化")
+                    if await wait_and_focus_window("Endfield"):
+                        logger.debug("MaaEnd启动, 尝试前置 Endfield 窗口")
                     else:
-                        logger.debug("MaaEnd 窗口最小化失败")
+                        logger.debug("前置 Endfield 窗口失败")
 
             await asyncio.sleep(1)
             if isinstance(
