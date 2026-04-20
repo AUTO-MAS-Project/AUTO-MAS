@@ -396,6 +396,9 @@ class AutoProxyTask(TaskExecuteBase):
         # 建立全局设置引用
         settings = maaend_set["settings"]
 
+        # 移除冗余任务项信息
+        maaend_set["recentlyClosed"] = []
+
         # 直接运行任务
         settings["autoStartInstanceId"] = "automas"
         settings["autoRunOnLaunch"] = True
@@ -504,6 +507,8 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_info.log = log
         if "资源加载失败" in log:
             self.cur_user_log.status = "MaaEnd 资源加载失败"
+        elif "快捷键开始任务：失败" in log:
+            self.cur_user_log.status = "MaaEnd 任务启动失败"
         elif (
             "任务完成: 停止任务" in log
             or "任务完成: ⛔ 结束进程" in log

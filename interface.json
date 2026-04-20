@@ -24,18 +24,7 @@
                 "window_regex": "Endfield",
                 "mouse": "PostMessageWithCursorPos",
                 "keyboard": "PostMessageWithCursorPos",
-                "screencap": "PrintWindow"
-            }
-        },
-        {
-            "name": "终末地PC端-登录表单",
-            "type": "Win32",
-            "permission_required": true,
-            "win32": {
-                "window_regex": "Form",
-                "mouse": "PostMessageWithCursorPos",
-                "keyboard": "PostMessageWithCursorPos",
-                "screencap": "PrintWindow"
+                "screencap": "FramePool"
             }
         },
         {
@@ -82,17 +71,10 @@
             ]
         },
         {
-            "name": "终末地PC端-切换账号-调出登录框",
-            "entry": "切换账号-调出登录框[EndFieldPC]",
+            "name": "终末地PC端-切换账号",
+            "entry": "切换账号[EndFieldPC]",
             "controller": [
                 "终末地PC端"
-            ]
-        },
-        {
-            "name": "终末地PC端-切换账号-账号登录",
-            "entry": "切换账号-账号登录[EndFieldPC]",
-            "controller": [
-                "终末地PC端-登录表单"
             ]
         },
         {

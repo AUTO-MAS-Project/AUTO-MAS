@@ -55,20 +55,26 @@ async def login(
     if (package_name == "com.miHoYo.hkrpg" and "*" in id) or password == "":
         logger.info("账号密码不完整，禁用通过输入账号密码登录")
         pipeline_override = {
-            "切换账号[StarRailEmulator]": {"action": {"param": {"package": package_name}}},
-            "启动游戏[StarRailEmulator]": {"action": {"param": {"package": package_name}}},
-            "Bilibili隐私政策[StarRailEmulator]": {"enabled": Config.get("Function", "IfAgreeBilibili")},
+            "切换账号[StarRailEmulator]": {
+                "action": {"param": {"package": package_name}}
+            },
+            "启动游戏[StarRailEmulator]": {
+                "action": {"param": {"package": package_name}}
+            },
+            "Bilibili隐私政策[StarRailEmulator]": {
+                "enabled": Config.get("Function", "IfAgreeBilibili")
+            },
             "下滑账号列表[StarRailEmulator]": {"on_error": []},
             "下滑账号列表-B服[StarRailEmulator]": {"on_error": []},
             "识别登录下拉框禁用[StarRailEmulator]": {"on_error": []},
             "选中账号[StarRailEmulator]": {
                 "recognition": {
-                    "param": {"expected": [f"^{id[:3]}[a-zA-Z0-9 *]*{id[-2:]}$"]}
+                    "param": {"expected": [f"{id[:3]}[a-zA-Z0-9 *]*{id[-2:]}"]}
                 }
             },
             "验证当前账号[StarRailEmulator]": {
                 "recognition": {
-                    "param": {"expected": [f"^{id[:3]}[a-zA-Z0-9 *]*{id[-2:]}$"]}
+                    "param": {"expected": [f"{id[:3]}[a-zA-Z0-9 *]*{id[-2:]}"]}
                 }
             },
             "选中账号-B服[StarRailEmulator]": {
@@ -82,17 +88,23 @@ async def login(
         }
     else:
         pipeline_override = {
-            "切换账号[StarRailEmulator]": {"action": {"param": {"package": package_name}}},
-            "启动游戏[StarRailEmulator]": {"action": {"param": {"package": package_name}}},
-            "Bilibili隐私政策[StarRailEmulator]": {"enabled": Config.get("Function", "IfAgreeBilibili")},
+            "切换账号[StarRailEmulator]": {
+                "action": {"param": {"package": package_name}}
+            },
+            "启动游戏[StarRailEmulator]": {
+                "action": {"param": {"package": package_name}}
+            },
+            "Bilibili隐私政策[StarRailEmulator]": {
+                "enabled": Config.get("Function", "IfAgreeBilibili")
+            },
             "选中账号[StarRailEmulator]": {
                 "recognition": {
-                    "param": {"expected": [f"^{id[:3]}[a-zA-Z0-9 *]*{id[-2:]}$"]}
+                    "param": {"expected": [f"{id[:3]}[a-zA-Z0-9 *]*{id[-2:]}"]}
                 }
             },
             "验证当前账号[StarRailEmulator]": {
                 "recognition": {
-                    "param": {"expected": [f"^{id[:3]}[a-zA-Z0-9 *]*{id[-2:]}$"]}
+                    "param": {"expected": [f"{id[:3]}[a-zA-Z0-9 *]*{id[-2:]}"]}
                 }
             },
             "选中账号-B服[StarRailEmulator]": {
@@ -104,7 +116,9 @@ async def login(
                 }
             },
             "输入账号[StarRailEmulator]": {"action": {"param": {"input_text": id}}},
-            "输入密码[StarRailEmulator]": {"action": {"param": {"input_text": password}}},
+            "输入密码[StarRailEmulator]": {
+                "action": {"param": {"input_text": password}}
+            },
             "输入账号-B服[StarRailEmulator]": {
                 "action": {
                     "param": {
@@ -112,7 +126,9 @@ async def login(
                     }
                 }
             },
-            "输入密码-B服[StarRailEmulator]": {"action": {"param": {"input_text": password}}},
+            "输入密码-B服[StarRailEmulator]": {
+                "action": {"param": {"input_text": password}}
+            },
         }
 
     try:
