@@ -36,7 +36,12 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
 from app.tools import skland_sign_in
-from app.utils.constants import UTC4, UTC8, MAAEND_KILLPROC_TASK
+from app.utils.constants import (
+    UTC4,
+    UTC8,
+    MAAEND_KILLPROC_TASK,
+    MAAEND_AUTO_ESSENCE_LOCATIONS,
+)
 from .tools import login, push_notification
 
 logger = get_logger("MaaEnd 自动代理")
@@ -66,7 +71,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
         self.check_result = "-"
-        self.effective_protocol_space_config: dict[str, str] | None = None
+        self.effective_sanity_task_config: dict[str, str] | None = None
 
     async def check(self) -> str:
 
@@ -93,12 +98,12 @@ class AutoProxyTask(TaskExecuteBase):
             )
 
         try:
-            self.effective_protocol_space_config, _ = (
-                self.cur_user_config.get_effective_protocol_space_config()
+            self.effective_sanity_task_config, _ = (
+                self.cur_user_config.get_effective_sanity_task_config()
             )
         except Exception as e:
             self.cur_user_item.status = "异常"
-            return f"协议空间计划表配置无效: {str(e)}"
+            return f"理智任务计划表配置无效: {str(e)}"
 
         return "Pass"
 
@@ -363,6 +368,70 @@ class AutoProxyTask(TaskExecuteBase):
         except Exception as e:
             logger.exception(f"关闭模拟器失败: {e}")
 
+    def apply_sanity_task_config(self, maaend_tasks: list[dict]) -> None:
+        """根据理智任务类型配置任务启用状态与选项"""
+
+        if self.effective_sanity_task_config is None:
+            raise RuntimeError("未找到当前生效的理智任务配置")
+
+        sanity_task_type = self.effective_sanity_task_config["SanityTaskType"]
+        auto_essence_location = ""
+        if sanity_task_type == "Matrix":
+            auto_essence_location = self.effective_sanity_task_config.get(
+                "AutoEssenceSpecifiedLocation", ""
+            )
+            if auto_essence_location not in MAAEND_AUTO_ESSENCE_LOCATIONS:
+                raise RuntimeError(f"无效的基质刷取地点: {auto_essence_location}")
+
+        protocol_space_found = False
+        auto_essence_found = False
+
+        for task in maaend_tasks:
+            if task["taskName"] == "ProtocolSpace":
+                protocol_space_found = True
+                task["enabled"] = sanity_task_type == "ProtocolSpace"
+                if sanity_task_type != "ProtocolSpace":
+                    continue
+                task["optionValues"]["ProtocolSpaceTab"] = {
+                    "type": "select",
+                    "caseName": self.effective_sanity_task_config["ProtocolSpaceTab"],
+                }
+                task["optionValues"]["OperatorProgression"] = {
+                    "type": "select",
+                    "caseName": self.effective_sanity_task_config["OperatorProgression"],
+                }
+                task["optionValues"]["WeaponProgression"] = {
+                    "type": "select",
+                    "caseName": self.effective_sanity_task_config["WeaponProgression"],
+                }
+                task["optionValues"]["CrisisDrills"] = {
+                    "type": "select",
+                    "caseName": self.effective_sanity_task_config["CrisisDrills"],
+                }
+                task["optionValues"]["RewardsSetOption"] = {
+                    "type": "select",
+                    "caseName": self.effective_sanity_task_config["RewardsSetOption"],
+                }
+            elif task["taskName"] == "AutoEssence":
+                auto_essence_found = True
+                task["enabled"] = sanity_task_type == "Matrix"
+                if sanity_task_type != "Matrix":
+                    continue
+                task.setdefault("optionValues", {})
+                task["optionValues"]["AutoEssenceSpecifiedLocation"] = {
+                    "type": "select",
+                    "caseName": auto_essence_location,
+                }
+
+        if sanity_task_type == "ProtocolSpace" and not protocol_space_found:
+            logger.warning(
+                f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 ProtocolSpace 任务，已跳过协议空间注入"
+            )
+        if sanity_task_type == "Matrix" and not auto_essence_found:
+            logger.warning(
+                f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 AutoEssence 任务，已跳过基质刷取注入"
+            )
+
     async def set_maaend(self, device_info: DeviceInfo | None) -> None:
         """写入 MaaEnd 运行前配置"""
 
@@ -460,42 +529,8 @@ class AutoProxyTask(TaskExecuteBase):
                 if task_name in self.task_dict:
                     task["enabled"] = self.task_dict[task_name][task["id"]]
 
-        # 配置协议空间
-        if self.effective_protocol_space_config is None:
-            raise RuntimeError("未找到当前生效的协议空间配置")
-        for task in maaend_tasks:
-            if task["taskName"] == "ProtocolSpace":
-                task["optionValues"]["ProtocolSpaceTab"] = {
-                    "type": "select",
-                    "caseName": self.effective_protocol_space_config[
-                        "ProtocolSpaceTab"
-                    ],
-                }
-                task["optionValues"]["OperatorProgression"] = {
-                    "type": "select",
-                    "caseName": self.effective_protocol_space_config[
-                        "OperatorProgression"
-                    ],
-                }
-                task["optionValues"]["WeaponProgression"] = {
-                    "type": "select",
-                    "caseName": self.effective_protocol_space_config[
-                        "WeaponProgression"
-                    ],
-                }
-                task["optionValues"]["CrisisDrills"] = {
-                    "type": "select",
-                    "caseName": self.effective_protocol_space_config[
-                        "CrisisDrills"
-                    ],
-                }
-                task["optionValues"]["RewardsSetOption"] = {
-                    "type": "select",
-                    "caseName": self.effective_protocol_space_config[
-                        "RewardsSetOption"
-                    ],
-                }
-                break
+        # 配置理智任务
+        self.apply_sanity_task_config(maaend_tasks)
 
         # 完成任务后退出脚本
         if (

@@ -10,10 +10,11 @@ export type PlanTimeKey =
 
 export type PlanWeekdayKey = Exclude<PlanTimeKey, 'ALL'>
 
+export type SanityTaskType = 'ProtocolSpace' | 'Matrix'
 export type ProtocolSpaceTab = 'OperatorProgression' | 'WeaponProgression' | 'CrisisDrills'
 export type CurrentTaskField = ProtocolSpaceTab
 export type RewardSetOption = 'RewardsSetA' | 'RewardsSetB'
-export type CurrentTaskValue =
+export type ProtocolSpaceTaskValue =
   | 'OperatorEXP'
   | 'Promotions'
   | 'T-Creds'
@@ -25,20 +26,33 @@ export type CurrentTaskValue =
   | 'AdvancedProgression3'
   | 'AdvancedProgression4'
   | 'AdvancedProgression5'
+export type AutoEssenceLocation =
+  | 'VFTheHub'
+  | 'VFOriginiumSciencePark'
+  | 'VFOriginLodespring'
+  | 'VFPowerPlateau'
+  | 'WLWulingCity'
+  | 'WLQingboStockade'
+export type CurrentTaskValue = ProtocolSpaceTaskValue | AutoEssenceLocation
 
 export interface ProtocolSpaceTaskOption {
   label: string
-  value: CurrentTaskValue
+  value: ProtocolSpaceTaskValue
   rewards?: boolean
 }
 
-export interface ProtocolSpaceConfig {
+export interface MaaEndSanityConfig {
+  SanityTaskType: SanityTaskType
   ProtocolSpaceTab: ProtocolSpaceTab
-  OperatorProgression: CurrentTaskValue
-  WeaponProgression: CurrentTaskValue
-  CrisisDrills: CurrentTaskValue
+  OperatorProgression: ProtocolSpaceTaskValue
+  WeaponProgression: ProtocolSpaceTaskValue
+  CrisisDrills: ProtocolSpaceTaskValue
   RewardsSetOption: RewardSetOption
+  AutoEssenceSpecifiedLocation: AutoEssenceLocation
 }
+
+// 保留旧别名，避免历史引用爆炸
+export type ProtocolSpaceConfig = MaaEndSanityConfig
 
 export const MAAEND_PLAN_TIME_KEYS: PlanTimeKey[] = [
   'ALL',
@@ -72,6 +86,11 @@ export const MAAEND_PLAN_TIME_LABELS: Record<PlanTimeKey, string> = {
   Sunday: '周日',
 }
 
+export const SANITY_TASK_TYPE_OPTIONS: Array<{ label: string; value: SanityTaskType }> = [
+  { label: '协议空间', value: 'ProtocolSpace' },
+  { label: '基质刷取', value: 'Matrix' },
+]
+
 export const PROTOCOL_SPACE_OPTIONS: Array<{ label: string; value: ProtocolSpaceTab }> = [
   { label: '干员养成', value: 'OperatorProgression' },
   { label: '武器养成', value: 'WeaponProgression' },
@@ -81,6 +100,18 @@ export const PROTOCOL_SPACE_OPTIONS: Array<{ label: string; value: ProtocolSpace
 export const REWARD_OPTIONS: Array<{ label: string; value: RewardSetOption }> = [
   { label: '奖励组 A', value: 'RewardsSetA' },
   { label: '奖励组 B', value: 'RewardsSetB' },
+]
+
+export const AUTO_ESSENCE_LOCATION_OPTIONS: Array<{
+  label: string
+  value: AutoEssenceLocation
+}> = [
+  { label: '枢纽区', value: 'VFTheHub' },
+  { label: '源石研究园', value: 'VFOriginiumSciencePark' },
+  { label: '矿脉源区', value: 'VFOriginLodespring' },
+  { label: '供能高地', value: 'VFPowerPlateau' },
+  { label: '武陵城区', value: 'WLWulingCity' },
+  { label: '清波寨', value: 'WLQingboStockade' },
 ]
 
 export const PROTOCOL_SPACE_TASK_OPTIONS_MAP: Record<ProtocolSpaceTab, ProtocolSpaceTaskOption[]> =
@@ -110,6 +141,10 @@ export const PROTOCOL_SPACE_TASK_FIELD_MAP: Record<ProtocolSpaceTab, CurrentTask
   CrisisDrills: 'CrisisDrills',
 }
 
+export const SANITY_TASK_TYPE_LABEL_MAP = Object.fromEntries(
+  SANITY_TASK_TYPE_OPTIONS.map(option => [option.value, option.label])
+) as Record<SanityTaskType, string>
+
 export const PROTOCOL_SPACE_LABEL_MAP = Object.fromEntries(
   PROTOCOL_SPACE_OPTIONS.map(option => [option.value, option.label])
 ) as Record<ProtocolSpaceTab, string>
@@ -118,7 +153,11 @@ export const PROTOCOL_SPACE_TASK_LABEL_MAP = Object.fromEntries(
   Object.values(PROTOCOL_SPACE_TASK_OPTIONS_MAP)
     .flat()
     .map(option => [option.value, option.label])
-) as Record<CurrentTaskValue, string>
+) as Record<ProtocolSpaceTaskValue, string>
+
+export const AUTO_ESSENCE_LOCATION_LABEL_MAP = Object.fromEntries(
+  AUTO_ESSENCE_LOCATION_OPTIONS.map(option => [option.value, option.label])
+) as Record<AutoEssenceLocation, string>
 
 export const PROTOCOL_SPACE_TASK_TITLE_MAP: Record<ProtocolSpaceTab, string> = {
   OperatorProgression: '干员养成任务',
@@ -136,12 +175,14 @@ export const REWARD_LABEL_MAP = Object.fromEntries(
   REWARD_OPTIONS.map(option => [option.value, option.label])
 ) as Record<RewardSetOption, string>
 
-export const createDefaultProtocolSpaceConfig = (): ProtocolSpaceConfig => ({
+export const createDefaultMaaEndSanityConfig = (): MaaEndSanityConfig => ({
+  SanityTaskType: 'ProtocolSpace',
   ProtocolSpaceTab: 'OperatorProgression',
   OperatorProgression: 'OperatorEXP',
   WeaponProgression: 'WeaponEXP',
   CrisisDrills: 'AdvancedProgression1',
   RewardsSetOption: 'RewardsSetA',
+  AutoEssenceSpecifiedLocation: 'VFTheHub',
 })
 
 export const getProtocolSpaceTaskField = (tab: ProtocolSpaceTab): CurrentTaskField =>
@@ -150,34 +191,71 @@ export const getProtocolSpaceTaskField = (tab: ProtocolSpaceTab): CurrentTaskFie
 export const getProtocolSpaceTaskOptions = (tab: ProtocolSpaceTab): ProtocolSpaceTaskOption[] =>
   PROTOCOL_SPACE_TASK_OPTIONS_MAP[tab]
 
-export const getCurrentProtocolTaskValue = (config: ProtocolSpaceConfig): CurrentTaskValue =>
+export const getCurrentProtocolTaskValue = (config: MaaEndSanityConfig): ProtocolSpaceTaskValue =>
   config[getProtocolSpaceTaskField(config.ProtocolSpaceTab)]
 
-export const isProtocolSpaceRewardEnabled = (config: ProtocolSpaceConfig): boolean => {
+export const getCurrentTaskValue = (config: MaaEndSanityConfig): CurrentTaskValue => {
+  if (config.SanityTaskType === 'Matrix') {
+    return config.AutoEssenceSpecifiedLocation
+  }
+  return getCurrentProtocolTaskValue(config)
+}
+
+export const isProtocolSpaceRewardEnabled = (config: MaaEndSanityConfig): boolean => {
   const currentTask = getCurrentProtocolTaskValue(config)
   return getProtocolSpaceTaskOptions(config.ProtocolSpaceTab).some(
     option => option.value === currentTask && option.rewards
   )
 }
 
-export const normalizeProtocolSpaceConfig = (
-  rawConfig?: Partial<ProtocolSpaceConfig> | null
-): ProtocolSpaceConfig => {
+export const getSanityTaskDisplayValue = (rawConfig?: Partial<MaaEndSanityConfig> | null) => {
+  const config = normalizeMaaEndSanityConfig(rawConfig)
+  if (config.SanityTaskType === 'Matrix') {
+    return AUTO_ESSENCE_LOCATION_LABEL_MAP[config.AutoEssenceSpecifiedLocation]
+  }
+  return PROTOCOL_SPACE_TASK_LABEL_MAP[getCurrentProtocolTaskValue(config)]
+}
+
+export const normalizeMaaEndSanityConfig = (
+  rawConfig?: Partial<MaaEndSanityConfig> | null
+): MaaEndSanityConfig => {
   const config = {
-    ...createDefaultProtocolSpaceConfig(),
+    ...createDefaultMaaEndSanityConfig(),
     ...(rawConfig ?? {}),
-  } as ProtocolSpaceConfig
+  } as MaaEndSanityConfig
+
+  if (!SANITY_TASK_TYPE_LABEL_MAP[config.SanityTaskType]) {
+    config.SanityTaskType = 'ProtocolSpace'
+  }
+  if (!PROTOCOL_SPACE_LABEL_MAP[config.ProtocolSpaceTab]) {
+    config.ProtocolSpaceTab = 'OperatorProgression'
+  }
+  if (!AUTO_ESSENCE_LOCATION_LABEL_MAP[config.AutoEssenceSpecifiedLocation]) {
+    config.AutoEssenceSpecifiedLocation = 'VFTheHub'
+  }
+  if (!REWARD_LABEL_MAP[config.RewardsSetOption]) {
+    config.RewardsSetOption = 'RewardsSetA'
+  }
 
   const currentField = getProtocolSpaceTaskField(config.ProtocolSpaceTab)
   const validTaskOptions = getProtocolSpaceTaskOptions(config.ProtocolSpaceTab)
-
   if (!validTaskOptions.some(option => option.value === config[currentField])) {
     config[currentField] = validTaskOptions[0].value
   }
 
-  if (!isProtocolSpaceRewardEnabled(config)) {
+  if (config.SanityTaskType === 'Matrix') {
+    config.RewardsSetOption = 'RewardsSetA'
+  } else if (!isProtocolSpaceRewardEnabled(config)) {
     config.RewardsSetOption = 'RewardsSetA'
   }
 
   return config
 }
+
+// 保留旧导出，兼容既有调用
+export const createDefaultProtocolSpaceConfig = (): ProtocolSpaceConfig =>
+  createDefaultMaaEndSanityConfig()
+
+export const normalizeProtocolSpaceConfig = (
+  rawConfig?: Partial<ProtocolSpaceConfig> | null
+): ProtocolSpaceConfig => normalizeMaaEndSanityConfig(rawConfig)

@@ -148,7 +148,7 @@ export interface User {
     Name: string
     Notes: string
     Password: string
-    ProtocolSpaceMode?: string
+    SanityMode?: string
     RemainedDay: number
     SeriesNumb: string
     Server: string
@@ -183,6 +183,13 @@ export interface User {
     ToAddress: string
   }
   Task: {
+    SanityTaskType?: string
+    ProtocolSpaceTab?: string
+    OperatorProgression?: string
+    WeaponProgression?: string
+    CrisisDrills?: string
+    RewardsSetOption?: string
+    AutoEssenceSpecifiedLocation?: string
     IfRoguelike: boolean
     IfInfrast: boolean
     IfFight: boolean

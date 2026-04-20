@@ -985,12 +985,12 @@ class AppConfig(GlobalConfig):
                 script, MaaEndConfig
             ):
                 for user in script.UserData.values():
-                    if user.get("Info", "ProtocolSpaceMode") == str(plan_uid):
+                    if user.get("Info", "SanityMode") == str(plan_uid):
                         if user.is_locked:
                             raise RuntimeError(
                                 f"用户 {user.get('Info','Name')} 正在使用此计划表且被锁定, 无法完成删除"
                             )
-                        user_list.append((user, "ProtocolSpaceMode"))
+                        user_list.append((user, "SanityMode"))
 
         for user, field_name in user_list:
             await user.set("Info", field_name, "Fixed")
@@ -1643,16 +1643,27 @@ class AppConfig(GlobalConfig):
 
         return data
 
-    async def get_plan_combox(self, consumer: Literal["MAA", "MaaEnd"] = "MAA"):
-        """获取计划下拉框信息"""
+    async def get_maa_plan_combox(self):
+        """获取 MAA 计划下拉框信息"""
 
-        logger.info(f"开始获取计划下拉框信息: {consumer}")
+        logger.info("开始获取 MAA 计划下拉框信息")
         data = [{"label": "固定", "value": "Fixed"}]
-        plan_type = MaaPlanConfig if consumer == "MAA" else MaaEndPlanConfig
         for uid, plan in self.PlanConfig.items():
-            if isinstance(plan, plan_type):
+            if isinstance(plan, MaaPlanConfig):
                 data.append({"label": plan.get("Info", "Name"), "value": str(uid)})
-        logger.success("计划下拉框信息获取成功")
+        logger.success("MAA 计划下拉框信息获取成功")
+
+        return data
+
+    async def get_maaend_plan_combox(self):
+        """获取 MaaEnd 计划下拉框信息"""
+
+        logger.info("开始获取 MaaEnd 计划下拉框信息")
+        data = [{"label": "固定", "value": "Fixed"}]
+        for uid, plan in self.PlanConfig.items():
+            if isinstance(plan, MaaEndPlanConfig):
+                data.append({"label": plan.get("Info", "Name"), "value": str(uid)})
+        logger.success("MaaEnd 计划下拉框信息获取成功")
 
         return data
 
