@@ -35,7 +35,6 @@ from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
-from app.utils.window import wait_and_focus_window
 from app.tools import skland_sign_in
 from app.utils.constants import UTC4, UTC8, MAAEND_KILLPROC_TASK
 from .tools import login, push_notification
@@ -233,9 +232,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.script_info.log = (
                 "正在启动游戏...\n游戏启动成功\n正在登录「明日方舟：终末地」..."
             )
-            if self.emulator_manager is None and not await wait_and_focus_window(
-                "Endfield"
-            ):
+            if self.emulator_manager is None and not await self.maaend_process_manager.bring_to_front("Endfield"):
                 await self.handle_pre_maaend_error("未检测到 Endfield 窗口")
                 continue
 
@@ -269,7 +266,7 @@ class AutoProxyTask(TaskExecuteBase):
             elif self.script_config.get("Game", "ControllerType") == "Win32-Front":
                 await asyncio.sleep(5)
                 if await self.maaend_process_manager.is_running():
-                    if await wait_and_focus_window("Endfield"):
+                    if await self.maaend_process_manager.bring_to_front("Endfield"):
                         logger.debug("MaaEnd启动, 尝试前置 Endfield 窗口")
                     else:
                         logger.debug("前置 Endfield 窗口失败")
