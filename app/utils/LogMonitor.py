@@ -255,7 +255,6 @@ class LogMonitor:
                     self.time_format,
                     self.last_callback_time,
                 )
-                logger.debug(f"日志时间戳更新: {self.latest_time}")
                 self.last_log = log_text
 
     async def start_monitor_file(
