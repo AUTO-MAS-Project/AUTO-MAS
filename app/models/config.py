@@ -62,6 +62,7 @@ from .ConfigBase import (
     ArgumentValidator,
     AdvancedArgumentValidator,
 )
+from . import schema as schema_model
 from .schema import TagItem
 
 
@@ -2062,7 +2063,7 @@ class GlobalConfig(ConfigBase):
         ## 模拟器配置列表
         self.EmulatorConfig = MultipleConfig([EmulatorConfig])
         ## 计划表配置列表
-        self.PlanConfig = MultipleConfig([MaaPlanConfig, MaaEndPlanConfig])
+        self.PlanConfig = MultipleConfig(list(PLAN_CREATE_CLASS_BOOK.values()))
         ## 脚本配置列表
         self.ScriptConfig = MultipleConfig(
             [MaaConfig, MaaEndConfig, SrcConfig, GeneralConfig]
@@ -2145,10 +2146,25 @@ class GlobalConfig(ConfigBase):
 
 CLASS_BOOK = {
     "MAA": MaaConfig,
-    "MaaPlan": MaaPlanConfig,
-    "MaaEndPlan": MaaEndPlanConfig,
     "SRC": SrcConfig,
     "MaaEnd": MaaEndConfig,
     "General": GeneralConfig,
 }
 """配置类映射表"""
+
+PLAN_CREATE_CLASS_BOOK = {
+    "MaaPlan": MaaPlanConfig,
+    "MaaEndPlan": MaaEndPlanConfig,
+}
+"""计划表创建类型映射表"""
+
+PLAN_CONFIG_CLASS_BOOK = {
+    plan_class.__name__: plan_class for plan_class in PLAN_CREATE_CLASS_BOOK.values()
+}
+"""计划表配置类型映射表"""
+
+PLAN_SCHEMA_CLASS_BOOK = {
+    "MaaPlanConfig": schema_model.MaaPlanConfig,
+    "MaaEndPlanConfig": schema_model.MaaEndPlanConfig,
+}
+"""计划表接口模型映射表"""

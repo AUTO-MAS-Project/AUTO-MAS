@@ -7,18 +7,10 @@
       <a-space size="middle">
         <a-dropdown :trigger="['click']">
           <template #overlay>
-            <a-menu @click="handleAddPlanFromMenu">
-              <a-menu-item key="MaaPlanConfig"> 新建 MAA 计划 </a-menu-item>
-              <a-menu-item key="MaaEndPlanConfig"> 新建 MaaEnd 计划 </a-menu-item>
-              <!-- 预留其他计划类型 -->
-              <!-- <a-menu-item key="GeneralPlan">
-                <PlusOutlined />
-                新建通用计划
+            <a-menu @click="onAddPlanMenu">
+              <a-menu-item v-for="planType in PLAN_TYPE_DESCRIPTORS" :key="planType.configType">
+                新建 {{ planType.displayName }}
               </a-menu-item>
-              <a-menu-item key="CustomPlan">
-                <PlusOutlined />
-                新建自定义计划
-              </a-menu-item> -->
             </a-menu>
           </template>
           <a-button type="primary" size="large">
@@ -48,6 +40,7 @@
 
 <script setup lang="ts">
 import { DeleteOutlined, DownOutlined } from '@ant-design/icons-vue'
+import { PLAN_TYPE_DESCRIPTORS, type PlanConfigType } from '@/utils/planTypeRegistry'
 
 interface Plan {
   id: string
@@ -62,12 +55,12 @@ interface Props {
 
 defineProps<Props>()
 const emit = defineEmits<{
-  'add-plan': [planType: string]
+  'add-plan': [planType: PlanConfigType]
   'remove-plan': [planId: string]
 }>()
 
-const handleAddPlanFromMenu = ({ key }: { key: string }) => {
-  emit('add-plan', key)
+const onAddPlanMenu = ({ key }: { key: string }) => {
+  emit('add-plan', key as PlanConfigType)
 }
 </script>
 

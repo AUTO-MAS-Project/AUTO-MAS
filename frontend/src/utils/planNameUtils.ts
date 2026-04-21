@@ -2,6 +2,8 @@
  * 计划表名称管理工具函数
  */
 
+import { getPlanTypeDescriptor } from './planTypeRegistry'
+
 export interface PlanNameValidationResult {
   isValid: boolean
   message?: string
@@ -14,14 +16,7 @@ export interface PlanNameValidationResult {
  * @returns 唯一的计划表名称
  */
 export function generateUniquePlanName(planType: string, existingNames: string[]): string {
-  const baseNames = {
-    MaaPlanConfig: '新 MAA 计划表',
-    MaaEndPlanConfig: '新 MaaEnd 计划表',
-    GeneralPlan: '新通用计划表',
-    CustomPlan: '新自定义计划表',
-  } as Record<string, string>
-
-  const baseName = baseNames[planType] || '新计划表'
+  const baseName = getPlanTypeDescriptor(planType)?.defaultName || '新计划表'
 
   // 如果基础名称没有被使用，直接返回
   if (!existingNames.includes(baseName)) {
@@ -80,12 +75,5 @@ export function validatePlanName(
  * @returns 显示标签
  */
 export function getPlanTypeLabel(planType: string): string {
-  const labels = {
-    MaaPlanConfig: 'MAA计划表',
-    MaaEndPlanConfig: 'MaaEnd计划表',
-    GeneralPlan: '通用计划表',
-    CustomPlan: '自定义计划表',
-  } as Record<string, string>
-
-  return labels[planType] || '计划表'
+  return getPlanTypeDescriptor(planType)?.displayName || '计划表'
 }

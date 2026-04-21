@@ -39,6 +39,7 @@
 
         <!-- 计划配置 -->
         <PlanConfig
+          v-if="currentPlanDescriptor"
           :current-plan-name="currentPlanName"
           :current-mode="currentMode"
           :view-mode="viewMode"
@@ -52,7 +53,7 @@
         >
           <!-- 动态渲染不同类型的表格 -->
           <component
-            :is="currentTableComponent"
+            :is="currentPlanDescriptor.tableComponent"
             :table-data="tableData"
             :current-mode="currentMode"
             :view-mode="viewMode"
@@ -71,33 +72,26 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { usePlanApi } from '@/composables/usePlanApi'
+import type { PlanConfigData, PlanIndexItem } from '@/api'
 import { generateUniquePlanName, getPlanTypeLabel, validatePlanName } from '@/utils/planNameUtils'
+import {
+  DEFAULT_PLAN_CONFIG_TYPE,
+  getPlanTypeDescriptor,
+  isKnownPlanType,
+  type PlanConfigType,
+} from '@/utils/planTypeRegistry'
 import PlanHeader from './components/PlanHeader.vue'
 import PlanSelector from './components/PlanSelector.vue'
 import PlanConfig from './components/PlanConfig.vue'
-import MaaPlanTable from './tables/MaaPlanTable.vue'
-import MaaEndPlanTable from './tables/MaaEndPlanTable.vue'
-// import GeneralPlanTable from './tables/GeneralPlanTable.vue'
-// import CustomPlanTable from './tables/CustomPlanTable.vue'
 
 const logger = window.electronAPI.getLogger('计划管理')
-
-interface PlanData {
-  [key: string]: any
-
-  Info?: {
-    Mode: 'ALL' | 'Weekly'
-    Name: string
-    Type?: string
-  }
-}
 
 const { getPlans, createPlan, updatePlan, deletePlan } = usePlanApi()
 const route = useRoute()
 
-const planList = ref<Array<{ id: string; name: string; type: string }>>([])
+const planList = ref<Array<{ id: string; name: string; type: PlanConfigType }>>([])
 const activePlanId = ref<string>('')
-const currentPlanData = ref<PlanData | null>(null)
+const currentPlanData = ref<Record<string, PlanConfigData> | null>(null)
 
 const currentPlanName = ref<string>('')
 const currentMode = ref<'ALL' | 'Weekly'>('ALL')
@@ -109,20 +103,17 @@ const loading = ref(true)
 // Use a record to match child component expectations
 const tableData = ref<Record<string, any>>({})
 
-const currentTableComponent = computed(() => {
-  const currentPlan = planList.value.find(plan => plan.id === activePlanId.value)
-  const planType = currentPlan?.type
-  switch (planType) {
-    case 'MaaEndPlanConfig':
-      return MaaEndPlanTable
-    case 'MaaPlanConfig':
-      return MaaPlanTable
-    default:
-      return MaaPlanTable
+const currentPlan = computed(
+  () => planList.value.find(plan => plan.id === activePlanId.value) || null
+)
+const currentPlanDescriptor = computed(() => {
+  if (!currentPlan.value) {
+    return null
   }
+  return getPlanTypeDescriptor(currentPlan.value.type)
 })
 
-const handleAddPlan = async (planType: string = 'MaaPlanConfig') => {
+const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE) => {
   try {
     const response = await createPlan(planType)
     const uniqueName = getDefaultPlanName(planType)
@@ -304,7 +295,7 @@ const loadPlanData = async (planId: string) => {
     // 总是从后端重新加载数据，确保数据一致性
     const response = await getPlans(planId)
     currentPlanData.value = response.data
-    const planData = response.data[planId] as PlanData
+    const planData = response.data[planId] as PlanConfigData | undefined
     logger.info(`从后端加载数据 (${planId})`)
 
     if (planData) {
@@ -345,20 +336,18 @@ const initPlans = async () => {
       // 优化：预先收集所有名称，避免O(n²)复杂度
       const allPlanNames: string[] = []
 
-      planList.value = response.index.map((item: any) => {
+      planList.value = response.index.map((item: PlanIndexItem) => {
         const planId = item.uid
-        const planData = response.data[planId]
-        const planType = item.type
+        const planData = response.data[planId] as PlanConfigData | undefined
+        const planType = item.type as string
+        if (!isKnownPlanType(planType)) {
+          throw new Error(`未注册的计划表类型: ${planType}`)
+        }
+        const planDescriptor = getPlanTypeDescriptor(planType)
         let planName = planData?.Info?.Name || ''
 
         // 如果API中没有名称，或者名称是默认的模板名称，则生成唯一名称
-        if (
-          !planName ||
-          planName === '新 MAA 计划表' ||
-          planName === '新 MaaEnd 计划表' ||
-          planName === '新通用计划表' ||
-          planName === '新自定义计划表'
-        ) {
+        if (!planName || planName === planDescriptor?.defaultName) {
           planName = generateUniquePlanName(planType, allPlanNames)
         }
 
@@ -402,12 +391,10 @@ const initPlans = async () => {
   }
 }
 
-const getDefaultPlanName = (planType: string) => {
-  // 保持原来的逻辑，但添加重名检测
+const getDefaultPlanName = (planType: PlanConfigType) => {
   const existingNames = planList.value.map(plan => plan.name)
   return generateUniquePlanName(planType, existingNames)
 }
-// getPlanTypeLabel 现在从 @/utils/planNameUtils 导入，删除本地定义
 
 // 注意：currentPlanName 和 currentMode 的变更保存由各自的 finish/change 事件处理
 // 直接调用 handlePlanChange 只发送修改的字段

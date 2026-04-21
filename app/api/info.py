@@ -120,14 +120,6 @@ async def get_task_combox() -> ComboBoxOut:
 
 
 @router.post(
-    "/combox/plan",
-    tags=["Get"],
-    summary="获取可选计划下拉框信息（兼容旧路由）",
-    response_model=ComboBoxOut,
-    status_code=200,
-    deprecated=True,
-)
-@router.post(
     "/combox/maa-plan",
     tags=["Get"],
     summary="获取可选 MAA 计划下拉框信息",
