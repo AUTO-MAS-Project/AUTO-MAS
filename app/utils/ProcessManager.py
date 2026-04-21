@@ -146,12 +146,15 @@ class ProcessManager:
         stderr: int = asyncio.subprocess.DEVNULL,
     ) -> None:
         """
-        使用命令行启动子进程, 多级派生类型进程需要目标进程信息进行跟踪
+        启动子进程并跟踪目标进程
 
         Args:
-            path (Path): 可执行文件路径
-            args (list, optional): 启动参数列表
-            target_process (TargetProcess | None, optional): 期望目标进程信息
+            program (Path | str): 可执行文件路径
+            *args (str): 传递给可执行文件的参数
+            cwd (Path | None): 可选的工作目录, 默认为可执行文件所在目录
+            target_process (ProcessInfo | None): 期望目标进程信息, 用于跟踪主进程及其子进程, 默认为 None 表示跟踪直接启动的子进程
+            stdout (int): 标准输出重定向选项, 默认为 asyncio.subprocess.DEVNULL
+            stderr (int): 标准错误重定向选项, 默认为 asyncio.subprocess.DEVNULL
         """
 
         if await self.is_running():
