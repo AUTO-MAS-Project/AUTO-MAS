@@ -232,9 +232,6 @@ class AutoProxyTask(TaskExecuteBase):
             self.script_info.log = (
                 "正在启动游戏...\n游戏启动成功\n正在登录「明日方舟：终末地」..."
             )
-            if self.emulator_manager is None and not await self.maaend_process_manager.bring_to_front("Endfield"):
-                await self.handle_pre_maaend_error("未检测到 Endfield 窗口")
-                continue
 
             if self.cur_user_config.get("Info", "Id") == "" or await login(
                 self.cur_user_config.get("Info", "Id"),
@@ -263,13 +260,11 @@ class AutoProxyTask(TaskExecuteBase):
                         await self.maaend_process_manager.hide_window()
                         break
                     await asyncio.sleep(0.1)
-            elif self.script_config.get("Game", "ControllerType") == "Win32-Front":
-                await asyncio.sleep(5)
-                if await self.maaend_process_manager.is_running():
-                    if await self.maaend_process_manager.bring_to_front("Endfield"):
-                        logger.debug("MaaEnd启动, 尝试前置 Endfield 窗口")
-                    else:
-                        logger.debug("前置 Endfield 窗口失败")
+            if self.script_config.get("Game", "ControllerType") == "Win32-Front":
+                if await self.game_process_manager.activate_window():
+                    logger.success("前置 Endfield 窗口成功")
+                else:
+                    logger.error("前置 Endfield 窗口失败")
 
             await asyncio.sleep(1)
             if isinstance(
