@@ -856,11 +856,12 @@ class SrcConfig(BaseModel):
     Run: Optional[SrcConfig_Run] = Field(default=None, description="脚本运行配置")
 
 
+PlanConfigType = Literal["MaaPlanConfig", "MaaEndPlanConfig"]
+
+
 class PlanIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: Literal["MaaPlanConfig", "MaaEndPlanConfig"] = Field(
-        ..., description="配置类型"
-    )
+    type: PlanConfigType = Field(..., description="配置类型")
 
 
 class MaaPlanConfig_Info(BaseModel):
@@ -966,7 +967,8 @@ class MaaEndPlanConfig(BaseModel):
     Sunday: Optional[MaaEndPlanConfig_Item] = Field(default=None, description="周日")
 
 
-PlanConfigData = Union[MaaPlanConfig, MaaEndPlanConfig]
+PlanCreateType = Literal["MaaPlan", "MaaEndPlan"]
+PlanConfigData = MaaPlanConfig | MaaEndPlanConfig
 
 
 class HistoryIndexItem(BaseModel):
@@ -1220,7 +1222,7 @@ class WebhookTestIn(WebhookInBase):
 
 
 class PlanCreateIn(BaseModel):
-    type: Literal["MaaPlan", "MaaEndPlan"]
+    type: PlanCreateType
 
 
 class PlanCreateOut(OutBase):

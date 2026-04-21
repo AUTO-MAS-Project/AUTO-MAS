@@ -22,7 +22,12 @@
             @click="handlePlanClick(plan.id)"
           >
             <span class="plan-name">{{ plan.name }}</span>
-            <a-tag v-if="shouldShowPlanTypeTag()" size="small" color="blue" class="plan-type-tag">
+            <a-tag
+              v-if="shouldShowPlanTypeTag(plan.type)"
+              size="small"
+              :color="isKnownPlanType(plan.type) ? 'blue' : 'orange'"
+              class="plan-type-tag"
+            >
               {{ getPlanTypeLabel(plan.type) }}
             </a-tag>
           </a-button>
@@ -33,6 +38,8 @@
 </template>
 
 <script setup lang="ts">
+import { getPlanTypeDescriptor, isKnownPlanType } from '@/utils/planTypeRegistry'
+
 interface Plan {
   id: string
   name: string
@@ -54,32 +61,18 @@ const handlePlanClick = (planId: string) => {
   emit('plan-change', planId)
 }
 
-// 判断是否需要显示计划类型标签
-// 当所有计划的类型都相同时不显示标签，否则显示非默认类型的标签
-const shouldShowPlanTypeTag = () => {
-  // 如果只有一个计划或没有计划，不显示类型标签
-  if (props.planList.length <= 1) {
-    return false
-  }
+const hasMixedPlanTypes = () => {
+  if (props.planList.length <= 1) return false
 
-  // 检查是否所有计划的类型都相同
   const firstType = props.planList[0].type
-  const allSameType = props.planList.every(p => p.type === firstType)
-
-  // 如果所有计划类型相同，则不显示任何标签
-  return !allSameType
+  return !props.planList.every(plan => plan.type === firstType)
 }
 
-const getPlanTypeLabel = (planType: string) => {
-  const normalizedPlanType = planType
-  const labelMap: Record<string, string> = {
-    MaaPlanConfig: 'MAA',
-    MaaEndPlanConfig: 'MaaEnd',
-    GeneralPlan: '通用',
-    CustomPlan: '自定义',
-  }
-  return labelMap[normalizedPlanType] || normalizedPlanType
-}
+const shouldShowPlanTypeTag = (planType: string) =>
+  !isKnownPlanType(planType) || hasMixedPlanTypes()
+
+const getPlanTypeLabel = (planType: string) =>
+  getPlanTypeDescriptor(planType)?.selectorTag || `未知: ${planType}`
 </script>
 
 <style scoped>
