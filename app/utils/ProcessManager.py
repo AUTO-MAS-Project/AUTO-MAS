@@ -23,6 +23,7 @@
 import os
 import psutil
 import asyncio
+import win32api
 import win32gui
 import win32con
 import win32process
@@ -86,13 +87,16 @@ def get_window_handles(pid: int) -> list[int]:
 
 
 def get_main_window_handle(pid: int) -> int | None:
-    """获取指定进程的主窗口句柄（可见的第一个窗口）"""
+    """获取指定进程的主窗口句柄, 优先返回可见窗口"""
 
     handles = get_window_handles(pid)
     for hwnd in handles:
         if win32gui.IsWindowVisible(hwnd):
             return hwnd
-    return handles[0] if handles else None
+    for hwnd in handles:
+        if win32gui.IsWindow(hwnd):
+            return hwnd
+    return None
 
 
 class ProcessManager:
@@ -292,9 +296,7 @@ class ProcessManager:
             return False
 
         try:
-            await asyncio.get_running_loop().run_in_executor(
-                None, win32gui.ShowWindow, self.main_hwnd, win32con.SW_SHOW
-            )
+            win32gui.ShowWindow(self.main_hwnd, win32con.SW_SHOW)
             return True
         except Exception:
             return False
@@ -309,24 +311,93 @@ class ProcessManager:
             return False
 
         try:
-            await asyncio.get_running_loop().run_in_executor(
-                None, win32gui.ShowWindow, self.main_hwnd, win32con.SW_HIDE
-            )
+            win32gui.ShowWindow(self.main_hwnd, win32con.SW_HIDE)
             return True
         except Exception:
             return False
 
-    async def bring_to_front(self, window_title: str) -> bool:
-        """one-shot尝试将指定标题的窗口置前"""
-        hwnd = win32gui.FindWindow(None, window_title)
-        if not hwnd:
+    async def minimize_window(self) -> bool:
+        """最小化主进程窗口
+
+        Returns:
+            bool: 操作是否成功
+        """
+
+        if self.main_hwnd is None:
             return False
+
         try:
-            win32gui.ShowWindow(hwnd, 9)
-            win32gui.SetForegroundWindow(hwnd)
+            win32gui.ShowWindow(self.main_hwnd, win32con.SW_MINIMIZE)
             return True
         except Exception:
             return False
+
+    async def activate_window(self) -> bool:
+        """激活主进程窗口并将其置于前台
+
+        Returns:
+            bool: 操作是否成功
+        """
+
+        hwnd = self.main_hwnd
+        if hwnd is None:
+            return False
+
+        attached = False
+        current_tid = 0
+        foreground_tid = 0
+
+        try:
+
+            # 若当前线程与前台窗口线程不同, 则附加输入以允许激活窗口
+            foreground_hwnd = win32gui.GetForegroundWindow()
+            if foreground_hwnd:
+                foreground_tid, _ = win32process.GetWindowThreadProcessId(
+                    foreground_hwnd
+                )
+            current_tid = win32api.GetCurrentThreadId()
+            if foreground_tid not in (0, current_tid):
+                win32process.AttachThreadInput(current_tid, foreground_tid, True)
+                attached = True
+
+            # 激活窗口并将其置于前台
+            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+            win32gui.BringWindowToTop(hwnd)
+            try:
+                win32gui.SetForegroundWindow(hwnd)
+            except Exception:
+                # 某些系统策略下 SetForegroundWindow 可能被拒绝, 尝试焦点切换降级路径
+                try:
+                    win32gui.SetWindowPos(
+                        hwnd,
+                        win32con.HWND_TOPMOST,
+                        0,
+                        0,
+                        0,
+                        0,
+                        win32con.SWP_NOMOVE | win32con.SWP_NOSIZE,
+                    )
+                    win32gui.SetWindowPos(
+                        hwnd,
+                        win32con.HWND_NOTOPMOST,
+                        0,
+                        0,
+                        0,
+                        0,
+                        win32con.SWP_NOMOVE | win32con.SWP_NOSIZE,
+                    )
+                    win32gui.SetForegroundWindow(hwnd)
+                except Exception:
+                    return False
+            return True
+        except Exception:
+            return False
+
+        finally:
+            # 取消输入附加
+            if attached:
+                with suppress(Exception):
+                    win32process.AttachThreadInput(current_tid, foreground_tid, False)
 
 
 class ProcessRunner:
