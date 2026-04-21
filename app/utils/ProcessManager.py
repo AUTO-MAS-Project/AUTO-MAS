@@ -316,6 +316,19 @@ class ProcessManager:
         except Exception:
             return False
 
+    async def bring_to_front(self, window_title: str) -> bool:
+        """one-shot尝试将指定标题的窗口置前"""
+        hwnd = win32gui.FindWindow(None, window_title)
+        if not hwnd:
+            return False
+        try:
+            win32gui.ShowWindow(hwnd, 9)
+            win32gui.SetForegroundWindow(hwnd)
+            return True
+        except Exception:
+            return False
+
+
 class ProcessRunner:
     """用于运行子进程并获取结果的实用程序类"""
 
