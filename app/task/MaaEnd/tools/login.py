@@ -53,13 +53,27 @@ async def login(
         pipeline_override = {
             "输入账号[EndFieldPC]": {"action": {"param": {"input_text": account}}},
             "输入密码[EndFieldPC]": {"action": {"param": {"input_text": password}}},
+            "检查账号[EndFieldPC]": {
+                "recognition": {
+                    "param": {
+                        "expected": [f"{account[:3]}[a-zA-Z0-9 *]*{account[-2:]}"]
+                    }
+                }
+            },
+            "选中账号[EndFieldPC]": {
+                "recognition": {
+                    "param": {
+                        "expected": [f"{account[:3]}[a-zA-Z0-9 *]*{account[-2:]}"]
+                    }
+                }
+            },
         }
 
         try:
             hwnd = win32gui.FindWindow(None, "Endfield")
             tasker = await MaaFWManager.get_win32_tasker(
                 hwnd=hwnd,
-                screencap_method=MaaWin32ScreencapMethodEnum.PrintWindow,
+                screencap_method=MaaWin32ScreencapMethodEnum.FramePool,
                 mouse_method=MaaWin32InputMethodEnum.PostMessageWithCursorPos,
                 keyboard_method=MaaWin32InputMethodEnum.PostMessageWithCursorPos,
             )
@@ -67,38 +81,9 @@ async def login(
             logger.error(f"获取终末地的 win32 控制器时出现异常: {e}")
             return False
 
-        if win32gui.FindWindow(None, "Form") == 0:
-            try:
-                await MaaFWManager.do_job(
-                    tasker.post_task(
-                        "切换账号-调出登录框[EndFieldPC]", pipeline_override
-                    )
-                )
-            except Exception as e:
-                logger.error(f"终末地调出登录框时出现异常: {e}")
-                return False
-            except asyncio.CancelledError:
-                with suppress(Exception):
-                    await MaaFWManager.do_job(tasker.post_stop())
-                raise
-
-        try:
-            # 稍等登录表单弹出，避免窗口尚未创建时直接卡死。
-            await asyncio.sleep(3)
-            hwnd = win32gui.FindWindow(None, "Form")
-            tasker = await MaaFWManager.get_win32_tasker(
-                hwnd=hwnd,
-                screencap_method=MaaWin32ScreencapMethodEnum.PrintWindow,
-                mouse_method=MaaWin32InputMethodEnum.PostMessageWithCursorPos,
-                keyboard_method=MaaWin32InputMethodEnum.PostMessageWithCursorPos,
-            )
-        except Exception as e:
-            logger.error(f"获取终末地登录表单的 win32 控制器时出现异常: {e}")
-            return False
-
         try:
             await MaaFWManager.do_job(
-                tasker.post_task("切换账号-账号登录[EndFieldPC]", pipeline_override)
+                tasker.post_task("切换账号[EndFieldPC]", pipeline_override)
             )
             logger.success("终末地登录成功")
             await asyncio.sleep(10)  # 等待资源释放

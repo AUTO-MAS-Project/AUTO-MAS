@@ -37,7 +37,7 @@ from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
 from app.tools import skland_sign_in
 from app.utils.constants import UTC4, UTC8, MAAEND_KILLPROC_TASK
-from .tools import login, push_notification, wait_and_focus_window
+from .tools import login, push_notification
 
 logger = get_logger("MaaEnd 自动代理")
 
@@ -112,17 +112,6 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
         self.run_book = False
-
-    def _has_stop_sequence_completed(self, log: str) -> bool:
-        return any(
-            marker in log
-            for marker in (
-                "任务完成: 停止任务",
-                "任务完成: ⛔ 结束进程",
-                "任务完成: __MXU_KILLPROC__",
-                "任务完成: StopTask",
-            )
-        )
 
     async def main_task(self):
         """自动代理模式主逻辑"""
@@ -243,11 +232,6 @@ class AutoProxyTask(TaskExecuteBase):
             self.script_info.log = (
                 "正在启动游戏...\n游戏启动成功\n正在登录「明日方舟：终末地」..."
             )
-            if self.emulator_manager is None and not await wait_and_focus_window(
-                "Endfield"
-            ):
-                await self.handle_pre_maaend_error("未检测到 Endfield 窗口")
-                continue
 
             if self.cur_user_config.get("Info", "Id") == "" or await login(
                 self.cur_user_config.get("Info", "Id"),
@@ -269,7 +253,6 @@ class AutoProxyTask(TaskExecuteBase):
             await self.maaend_process_manager.open_process(
                 self.maaend_exe_path, stdout=asyncio.subprocess.PIPE
             )
-
             # 静默模式隐藏 MaaEnd 窗口
             if Config.get("Function", "IfSilence"):
                 while datetime.now() - t < timedelta(minutes=1):
@@ -277,6 +260,11 @@ class AutoProxyTask(TaskExecuteBase):
                         await self.maaend_process_manager.hide_window()
                         break
                     await asyncio.sleep(0.1)
+            if self.script_config.get("Game", "ControllerType") == "Win32-Front":
+                if await self.game_process_manager.activate_window():
+                    logger.success("前置 Endfield 窗口成功")
+                else:
+                    logger.error("前置 Endfield 窗口失败")
 
             await asyncio.sleep(1)
             if isinstance(
@@ -401,6 +389,9 @@ class AutoProxyTask(TaskExecuteBase):
         # 建立全局设置引用
         settings = maaend_set["settings"]
 
+        # 移除冗余任务项信息
+        maaend_set["recentlyClosed"] = []
+
         # 直接运行任务
         settings["autoStartInstanceId"] = "automas"
         settings["autoRunOnLaunch"] = True
@@ -509,10 +500,15 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_info.log = log
         if "资源加载失败" in log:
             self.cur_user_log.status = "MaaEnd 资源加载失败"
-        elif (not await self.maaend_process_manager.is_running()) or self._has_stop_sequence_completed(log):
-            # MaaEnd may close stdout before asyncio refreshes returncode.
-            # The explicit stop-task markers avoid missing the final completion pass.
-
+        elif "快捷键开始任务：失败" in log:
+            self.cur_user_log.status = "MaaEnd 任务启动失败"
+        elif (
+            "任务完成: 停止任务" in log
+            or "任务完成: ⛔ 结束进程" in log
+            or "任务完成: __MXU_KILLPROC__" in log
+            or "任务完成: StopTask" in log
+            or not await self.maaend_process_manager.is_running()
+        ):
             if self.task_dict is None:
                 self.cur_user_log.status = "MaaEnd 未加载任何任务"
             else:

@@ -210,13 +210,15 @@ class LogMonitor:
 
             line = ANSI_ESCAPE_RE.sub("", decode_bytes(bline))
 
-            if not line.strip():
-                continue
-
             self.log_contents.append(line)
             await self.update_latest_timestamp(line)
 
-            if datetime.now() - self.last_callback_time > timedelta(seconds=0.1):
+            if process_stream.at_eof():
+                logger.info("监控的流已结束")
+                await self.do_callback()
+                break
+
+            if datetime.now() - self.last_callback_time > timedelta(seconds=1):
                 await self.do_callback()
 
     async def do_callback(self):
@@ -242,7 +244,7 @@ class LogMonitor:
             self.latest_time = datetime.now()
             return
 
-        if any(_ in log for _ in self.except_logs):
+        if log == "" or any(_ in log for _ in self.except_logs):
             return
 
         with suppress(IndexError, ValueError):
@@ -253,7 +255,6 @@ class LogMonitor:
                     self.time_format,
                     self.last_callback_time,
                 )
-                logger.debug(f"日志时间戳更新: {self.latest_time}")
                 self.last_log = log_text
 
     async def start_monitor_file(
