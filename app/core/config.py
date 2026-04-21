@@ -81,7 +81,7 @@ except ImportError:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.2.0-beta.2"
+    VERSION = "v5.2.0"
 
     def __init__(self) -> None:
         super().__init__()
