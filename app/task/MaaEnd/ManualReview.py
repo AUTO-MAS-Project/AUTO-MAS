@@ -132,10 +132,10 @@ class ManualReviewTask(TaskExecuteBase):
                     await asyncio.sleep(self.script_config.get("Game", "WaitTime"))
                 else:
                     logger.info(
-                        f"启动模拟器: {self.script_config.get('Emulator', 'Index')}"
+                        f"启动模拟器: {self.script_config.get('Game', 'EmulatorIndex')}"
                     )
                     emulator_info = await self.emulator_manager.open(
-                        self.script_config.get("Emulator", "Index"),
+                        self.script_config.get("Game", "EmulatorIndex"),
                         "com.hypergryph.endfield",
                     )
             except Exception as e:
@@ -202,7 +202,7 @@ class ManualReviewTask(TaskExecuteBase):
             try:
                 if self.emulator_manager is not None:
                     await self.emulator_manager.setVisible(
-                        self.script_config.get("Emulator", "Index"), True
+                        self.script_config.get("Game", "EmulatorIndex"), True
                     )
             except Exception as e:
                 logger.exception(f"模拟器显示失败: {e}")
@@ -243,7 +243,7 @@ class ManualReviewTask(TaskExecuteBase):
                 await System.kill_process(self.script_config.get("Game", "Path"))
             else:
                 await self.emulator_manager.close(
-                    self.script_config.get("Emulator", "Index")
+                    self.script_config.get("Game", "EmulatorIndex")
                 )
         except Exception as e:
             logger.exception(f"关闭游戏失败: {e}")
