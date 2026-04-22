@@ -10,6 +10,15 @@ export type PlanIndexItem = {
     /**
      * 配置类型
      */
-    type: ('MaaPlanConfig' | 'MaaEndPlanConfig');
+    type: PlanIndexItem.type;
 };
+export namespace PlanIndexItem {
+    /**
+     * 配置类型
+     */
+    export enum type {
+        MAA_PLAN_CONFIG = 'MaaPlanConfig',
+        MAA_END_PLAN_CONFIG = 'MaaEndPlanConfig',
+    }
+}
 
