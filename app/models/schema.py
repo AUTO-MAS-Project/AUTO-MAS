@@ -895,6 +895,9 @@ class HistoryData(BaseModel):
         default=None,
         description="掉落统计数据, 格式为 { '关卡号': { '掉落物': 数量 } }",
     )
+    matrix_statistics: Optional[Dict[str, str]] = Field(
+        default=None, description="基质统计数据, key为技能组合, value为符合武器名称"
+    )
     error_info: Optional[Dict[str, str]] = Field(
         default=None, description="报错信息, key为时间戳, value为错误描述"
     )

@@ -6,11 +6,20 @@
     </div>
 
     <!-- 搜索筛选区域 -->
-    <HistorySearchPanel :mode="searchForm.mode" :start-date="searchForm.startDate" :end-date="searchForm.endDate"
-      :current-preset="currentPreset" :loading="searchLoading" @update:mode="searchForm.mode = $event"
-      @update:start-date="searchForm.startDate = $event" @update:end-date="searchForm.endDate = $event"
-      @quick-select="handleQuickTimeSelect" @search="handleSearch" @reset="handleReset"
-      @date-change="handleDateChange" />
+    <HistorySearchPanel
+      :mode="searchForm.mode"
+      :start-date="searchForm.startDate"
+      :end-date="searchForm.endDate"
+      :current-preset="currentPreset"
+      :loading="searchLoading"
+      @update:mode="handleModeUpdate"
+      @update:start-date="searchForm.startDate = $event"
+      @update:end-date="searchForm.endDate = $event"
+      @quick-select="handleQuickTimeSelect"
+      @search="handleSearch"
+      @reset="handleReset"
+      @date-change="handleDateChange"
+    />
 
     <!-- 主内容区域 -->
     <div class="main-content">
@@ -25,37 +34,67 @@
         <!-- 数据展示 -->
         <div v-else class="content-layout">
           <!-- 左侧日期列表 -->
-          <HistoryDateSidebar :history-data="historyData" :active-keys="activeKeys" :selected-user="selectedUser"
-            @update:active-keys="activeKeys = $event" @select-user="handleSelectUser" />
+          <HistoryDateSidebar
+            :history-data="historyData"
+            :active-keys="activeKeys"
+            :selected-user="selectedUser"
+            @update:active-keys="activeKeys = $event"
+            @select-user="handleSelectUser"
+          />
 
           <!-- 右侧详情区域 -->
-          <HistoryDetailPanel :has-user-selected="!!selectedUserData" :records="selectedUserData?.index || []"
-            :selected-record-index="selectedRecordIndex" :error-info="selectedUserData?.error_info || null"
+          <HistoryDetailPanel
+            :has-user-selected="!!selectedUserData"
+            :records="selectedUserData?.index || []"
+            :selected-record-index="selectedRecordIndex"
+            :error-info="selectedUserData?.error_info || null"
             :recruit-statistics="selectedUserData?.recruit_statistics || null"
-            :drop-statistics="selectedUserData?.drop_statistics || null" @select-record="handleSelectRecord" />
+            :drop-statistics="selectedUserData?.drop_statistics || null"
+            :matrix-statistics="getMatrixStatistics(selectedUserData)"
+            @select-record="handleSelectRecord"
+          />
         </div>
       </a-spin>
     </div>
 
     <!-- 日志弹窗 -->
-    <HistoryLogModal :open="logModalOpen" :log-content="currentDetail?.log_content || null" :loading="detailLoading"
-      :has-file="!!currentJsonFile" :record-date="currentRecordDate" :record-status="currentRecordStatus"
-      :error-message="currentErrorMessage" :recruit-statistics="currentDetail?.recruit_statistics || null"
-      :drop-statistics="currentDetail?.drop_statistics || null" :font-size="editorConfig.fontSize"
-      :font-size-options="fontSizeOptions" :editor-theme="editorTheme" :monaco-options="monacoOptions"
-      :register-log-language="registerLogLanguage" @close="logModalOpen = false" @open-file="handleOpenLogFile"
-      @open-directory="handleOpenLogDirectory" @update:font-size="setEditorConfig({ fontSize: $event })" />
+    <HistoryLogModal
+      :open="logModalOpen"
+      :log-content="currentDetail?.log_content || null"
+      :loading="detailLoading"
+      :has-file="!!currentJsonFile"
+      :record-date="currentRecordDate"
+      :record-status="currentRecordStatus"
+      :error-message="currentErrorMessage"
+      :recruit-statistics="currentDetail?.recruit_statistics || null"
+      :drop-statistics="currentDetail?.drop_statistics || null"
+      :matrix-statistics="getMatrixStatistics(currentDetail)"
+      :font-size="editorConfig.fontSize"
+      :font-size-options="fontSizeOptions"
+      :editor-theme="editorTheme"
+      :monaco-options="monacoOptions"
+      :register-log-language="registerLogLanguage"
+      @close="logModalOpen = false"
+      @open-file="handleOpenLogFile"
+      @open-directory="handleOpenLogDirectory"
+      @update:font-size="setEditorConfig({ fontSize: $event })"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import type { HistoryData } from '@/api'
 import HistoryDateSidebar from './components/HistoryDateSidebar.vue'
 import HistoryDetailPanel from './components/HistoryDetailPanel.vue'
 import HistoryLogModal from './components/HistoryLogModal.vue'
 import HistorySearchPanel from './components/HistorySearchPanel.vue'
 import { useHistoryLogic } from './useHistoryLogic'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
+
+defineOptions({
+  name: 'HistoryPage',
+})
 
 const {
   // 状态
@@ -95,6 +134,18 @@ const logModalOpen = ref(false)
 const currentRecordDate = ref('')
 const currentRecordStatus = ref('')
 const currentErrorMessage = ref('')
+
+type HistoryDataWithMatrix = HistoryData & {
+  matrix_statistics?: Record<string, string> | null
+}
+
+const getMatrixStatistics = (data: HistoryData | null): Record<string, string> | null => {
+  return (data as HistoryDataWithMatrix | null)?.matrix_statistics || null
+}
+
+const handleModeUpdate = (mode: string) => {
+  searchForm.mode = mode as typeof searchForm.mode
+}
 
 // 选择记录时打开弹窗
 const handleSelectRecord = async (index: number, record: any) => {

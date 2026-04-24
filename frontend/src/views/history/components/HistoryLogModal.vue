@@ -60,6 +60,27 @@
               </template>
               <a-button size="small" class="drop-btn"> <GiftOutlined /> 查看掉落统计 </a-button>
             </a-popover>
+            <!-- 基质统计 -->
+            <a-popover
+              v-if="matrixStatistics && Object.keys(matrixStatistics).length > 0"
+              placement="bottomLeft"
+              trigger="hover"
+            >
+              <template #content>
+                <div class="drop-popover">
+                  <div v-for="(weapon, skill) in matrixStatistics" :key="skill" class="drop-stage">
+                    <div class="stage-name">{{ weapon }}</div>
+                    <div class="stage-items">
+                      <span class="drop-item">{{ skill }}</span>
+                    </div>
+                  </div>
+                </div>
+              </template>
+              <a-button size="small" class="drop-btn">
+                <InboxOutlined />
+                查看基质统计
+              </a-button>
+            </a-popover>
           </div>
         </div>
 
@@ -141,6 +162,7 @@ import {
   FileTextOutlined,
   FolderOpenOutlined,
   GiftOutlined,
+  InboxOutlined,
   LoadingOutlined,
   SearchOutlined,
 } from '@ant-design/icons-vue'
@@ -157,20 +179,21 @@ interface Props {
   errorMessage?: string
   recruitStatistics: Record<string, number> | null
   dropStatistics: Record<string, Record<string, number>> | null
+  matrixStatistics: Record<string, string> | null
   fontSize: number
   fontSizeOptions: number[]
   editorTheme: string
   monacoOptions: Record<string, any>
-  registerLogLanguage: (monaco: any) => void
+  registerLogLanguage: any
 }
 
 const props = defineProps<Props>()
 
 defineEmits<{
-  (e: 'close'): void
-  (e: 'open-file'): void
-  (e: 'open-directory'): void
-  (e: 'update:fontSize', value: number): void
+  close: []
+  'open-file': []
+  'open-directory': []
+  'update:fontSize': [number]
 }>()
 
 // 去除空行开关（默认开启）
@@ -185,16 +208,6 @@ const displayLogContent = computed(() => {
     .split('\n')
     .filter(line => line.trim() !== '')
     .join('\n')
-})
-
-// 计算掉落物品总数
-const dropCount = computed(() => {
-  if (!props.dropStatistics) return 0
-  let count = 0
-  for (const stage of Object.values(props.dropStatistics)) {
-    count += Object.keys(stage).length
-  }
-  return count
 })
 </script>
 
