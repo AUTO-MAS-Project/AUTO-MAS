@@ -1931,6 +1931,106 @@ class AppConfig(GlobalConfig):
 
         return if_six_star
 
+    def parse_maaend_failed_tasks(self, logs: list[str]) -> List[str]:
+        """
+        解析MaaEnd失败任务名称
+
+        Args:
+            logs (list[str]): 日志列表
+
+        Returns:
+            List[str]: 失败任务名称列表
+        """
+
+        failed_tasks: List[str] = []
+        ignored_tasks = {"停止任务", "⛔ 结束进程", "__MXU_KILLPROC__", "StopTask"}
+
+        for log_line in logs:
+            match = re.search(r"任务失败:\s*(.+)", log_line)
+            if match is None:
+                continue
+
+            task_name = match.group(1).strip()
+            if (
+                task_name
+                and task_name not in ignored_tasks
+                and task_name not in failed_tasks
+            ):
+                failed_tasks.append(task_name)
+
+        return failed_tasks
+
+    def parse_maaend_matrix_statistics(self, logs: list[str]) -> Dict[str, str]:
+        """
+        解析MaaEnd基质刷取统计
+
+        Args:
+            logs (list[str]): 日志列表
+
+        Returns:
+            Dict[str, str]: 基质统计数据, key为技能组合, value为符合武器名称
+        """
+
+        matrix_statistics: Dict[str, str] = {}
+        matched_matrix_skills: Dict[str, str] = {}
+        current_matrix_skill = ""
+
+        def append_summary_statistics(summary_lines: List[str]) -> None:
+            for i in range(0, len(summary_lines) - 2, 3):
+                weapon_name = summary_lines[i]
+                skill_name = summary_lines[i + 1]
+                count_text = summary_lines[i + 2]
+
+                if not count_text.isdigit() or int(count_text) <= 0:
+                    continue
+
+                matrix_statistics[
+                    matched_matrix_skills.get(weapon_name, skill_name)
+                ] = weapon_name
+
+        for log_line in logs:
+            skill_match = re.search(r"OCR到技能：(.+)", log_line)
+            if skill_match:
+                current_matrix_skill = skill_match.group(1).strip()
+                continue
+
+            weapon_match = re.search(r"匹配到武器：(.+)", log_line)
+            if weapon_match and current_matrix_skill:
+                matched_matrix_skills[weapon_match.group(1).strip()] = (
+                    current_matrix_skill
+                )
+                current_matrix_skill = ""
+
+        summary_started = False
+        summary_lines: List[str] = []
+        for log_line in logs:
+            if "战利品摘要：" in log_line:
+                if summary_started:
+                    append_summary_statistics(summary_lines)
+                summary_started = True
+                summary_lines = []
+                continue
+
+            if not summary_started:
+                continue
+
+            if "任务完成:" in log_line or "🎉" in log_line:
+                append_summary_statistics(summary_lines)
+                summary_started = False
+                summary_lines = []
+                continue
+
+            content = re.sub(r"^\[[^\]]+\]\s*", "", log_line).strip()
+            if not content or content == "武器技能组合锁定数量":
+                continue
+
+            summary_lines.append(content)
+
+        if summary_started:
+            append_summary_statistics(summary_lines)
+
+        return matrix_statistics
+
     async def save_maaend_log(
         self, log_path: Path, logs: list[str], maaend_result: str
     ) -> None:
@@ -1947,7 +2047,15 @@ class AppConfig(GlobalConfig):
             f"开始处理MaaEnd日志, 日志长度: {len(logs)}, 日志标记: {maaend_result}"
         )
 
-        data: Dict[str, str] = {"maaend_result": maaend_result}
+        failed_tasks = self.parse_maaend_failed_tasks(logs)
+        matrix_statistics = self.parse_maaend_matrix_statistics(logs)
+
+        if maaend_result == "MaaEnd 部分任务执行失败" and failed_tasks:
+            maaend_result = f"{maaend_result}: {'、'.join(failed_tasks)}"
+
+        data: Dict[str, Any] = {"maaend_result": maaend_result}
+        if matrix_statistics:
+            data["matrix_statistics"] = matrix_statistics
 
         # 保存日志
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2050,6 +2158,11 @@ class AppConfig(GlobalConfig):
                             if item not in data[key][stage]:
                                 data[key][stage][item] = 0
                             data[key][stage][item] += count
+
+                # 合并基质统计
+                elif key == "matrix_statistics":
+                    for skill, weapon in single_data[key].items():
+                        data[key][skill] = weapon
 
                 # 处理理智相关字段 - 使用最后一个文件的值
                 elif key in ["sanity", "sanity_full_at"]:

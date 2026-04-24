@@ -2,7 +2,10 @@
   <div class="statistics-card">
     <div class="card-content">
       <!-- 公招统计 -->
-      <div v-if="recruitStatistics && Object.keys(recruitStatistics).length > 0" class="stat-section">
+      <div
+        v-if="recruitStatistics && Object.keys(recruitStatistics).length > 0"
+        class="stat-section"
+      >
         <div class="section-header">
           <TeamOutlined class="section-icon" />
           <span class="section-title">公招统计</span>
@@ -13,15 +16,21 @@
               <div class="stat-label" :class="`star-${star}`">{{ star }}</div>
               <div class="stat-value">{{ count }}</div>
             </div>
-            <a-divider v-if="index < Object.keys(recruitStatistics).length - 1" type="vertical" class="stat-divider" />
+            <a-divider
+              v-if="index < Object.keys(recruitStatistics).length - 1"
+              type="vertical"
+              class="stat-divider"
+            />
           </template>
         </div>
       </div>
 
       <!-- 分割线 -->
       <a-divider
-        v-if="recruitStatistics && Object.keys(recruitStatistics).length > 0 && dropStatistics && Object.keys(dropStatistics).length > 0"
-        type="vertical" class="section-divider" />
+        v-if="hasRecruitStatistics && hasDropStatistics"
+        type="vertical"
+        class="section-divider"
+      />
 
       <!-- 掉落统计 -->
       <div v-if="dropStatistics && Object.keys(dropStatistics).length > 0" class="stat-section">
@@ -31,7 +40,12 @@
         </div>
         <div class="drop-container">
           <div class="drop-stages">
-            <a-popover v-for="(items, stage) in dropStatistics" :key="stage" placement="bottom" trigger="hover">
+            <a-popover
+              v-for="(items, stage) in dropStatistics"
+              :key="stage"
+              placement="bottom"
+              trigger="hover"
+            >
               <template #content>
                 <div class="drop-popover-content">
                   <div class="popover-stage-title">{{ stage }}</div>
@@ -51,11 +65,50 @@
         </div>
       </div>
 
+      <!-- 分割线 -->
+      <a-divider
+        v-if="(hasRecruitStatistics || hasDropStatistics) && hasMatrixStatistics"
+        type="vertical"
+        class="section-divider"
+      />
+
+      <!-- 基质统计 -->
+      <div v-if="matrixStatistics && Object.keys(matrixStatistics).length > 0" class="stat-section">
+        <div class="section-header">
+          <InboxOutlined class="section-icon" />
+          <span class="section-title">基质统计</span>
+        </div>
+        <div class="drop-container">
+          <div class="drop-stages">
+            <a-popover
+              v-for="(weapon, skill) in matrixStatistics"
+              :key="skill"
+              placement="bottom"
+              trigger="hover"
+            >
+              <template #content>
+                <div class="drop-popover-content">
+                  <div class="popover-stage-title">{{ weapon }}</div>
+                  <div class="popover-drops">
+                    <div class="popover-drop-item">
+                      <span class="popover-item-name">{{ skill }}</span>
+                    </div>
+                  </div>
+                </div>
+              </template>
+              <div class="stage-card">
+                <div class="stage-name">{{ weapon }}</div>
+              </div>
+            </a-popover>
+          </div>
+        </div>
+      </div>
+
       <!-- 空状态 -->
-      <div v-if="
-        (!recruitStatistics || Object.keys(recruitStatistics).length === 0) &&
-        (!dropStatistics || Object.keys(dropStatistics).length === 0)
-      " class="empty-stats">
+      <div
+        v-if="!hasRecruitStatistics && !hasDropStatistics && !hasMatrixStatistics"
+        class="empty-stats"
+      >
         <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
       </div>
     </div>
@@ -64,13 +117,27 @@
 
 <script setup lang="ts">
 import { GiftOutlined, InboxOutlined, TeamOutlined } from '@ant-design/icons-vue'
+import { computed } from 'vue'
 
 interface Props {
   recruitStatistics: Record<string, number> | null
   dropStatistics: Record<string, Record<string, number>> | null
+  matrixStatistics: Record<string, string> | null
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
+
+const hasRecruitStatistics = computed(() => {
+  return !!props.recruitStatistics && Object.keys(props.recruitStatistics).length > 0
+})
+
+const hasDropStatistics = computed(() => {
+  return !!props.dropStatistics && Object.keys(props.dropStatistics).length > 0
+})
+
+const hasMatrixStatistics = computed(() => {
+  return !!props.matrixStatistics && Object.keys(props.matrixStatistics).length > 0
+})
 </script>
 
 <style scoped>
