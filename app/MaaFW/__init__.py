@@ -21,5 +21,6 @@
 
 
 from .ArknightWin32 import ArknightWin32Toolkit
+from .EndFieldPCWin32 import CheckComboxBox, CheckForm
 
-__all__ = ["ArknightWin32Toolkit"]
+__all__ = ["ArknightWin32Toolkit", "CheckComboxBox", "CheckForm"]
