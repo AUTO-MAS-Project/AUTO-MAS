@@ -73,12 +73,15 @@
       />
 
       <!-- 基质统计 -->
-      <div v-if="matrixStatistics && Object.keys(matrixStatistics).length > 0" class="stat-section">
+      <div v-if="hasMatrixStatistics" class="stat-section">
         <div class="section-header">
           <InboxOutlined class="section-icon" />
           <span class="section-title">基质统计</span>
         </div>
-        <div class="drop-container">
+        <div
+          v-if="matrixStatistics && Object.keys(matrixStatistics).length > 0"
+          class="drop-container"
+        >
           <div class="drop-stages">
             <a-popover
               v-for="(weapon, skill) in matrixStatistics"
@@ -102,6 +105,7 @@
             </a-popover>
           </div>
         </div>
+        <div v-else class="matrix-empty">无合适的基质</div>
       </div>
 
       <!-- 空状态 -->
@@ -136,7 +140,7 @@ const hasDropStatistics = computed(() => {
 })
 
 const hasMatrixStatistics = computed(() => {
-  return !!props.matrixStatistics && Object.keys(props.matrixStatistics).length > 0
+  return props.matrixStatistics !== null
 })
 </script>
 
@@ -364,5 +368,13 @@ const hasMatrixStatistics = computed(() => {
 .empty-text {
   font-size: 12px;
   color: var(--ant-color-text-tertiary);
+}
+
+.matrix-empty {
+  font-size: 13px;
+  color: var(--ant-color-text-secondary);
+  padding: 10px 12px;
+  background: var(--ant-color-fill-quaternary);
+  border-radius: 6px;
 }
 </style>
