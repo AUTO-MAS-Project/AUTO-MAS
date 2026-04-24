@@ -21,7 +21,6 @@
 
 
 import os
-import json
 import asyncio
 import concurrent.futures
 import threading
@@ -35,23 +34,8 @@ from typing import List, Dict, Set, Callable
 
 from app.utils.constants import EMULATOR_PATH_BOOK
 from app.utils import get_logger
-from app.core.config import Config
 
 logger = get_logger("模拟器管理工具")
-
-# 快速模式下跳过的大目录，保证自动搜索体验
-EXCLUDED_DIRS = {
-    "windows",
-    "program files",
-    "program files (x86)",
-    "programdata",
-    "users",
-    "system volume information",
-    "$recycle.bin",
-}
-
-# 全盘搜索模式下只跳过明显的系统目录
-FULL_SCAN_EXCLUDED_DIRS = {"system volume information", "$recycle.bin"}
 
 EXECUTABLE_EXTENSIONS = {".exe", ".bat", ".cmd"}
 
@@ -67,33 +51,6 @@ _SCAN_PROGRESS = {
     "elapsed_seconds": 0,
     "progress_percent": 0,
 }
-
-
-def _normalize_path(path: str) -> str:
-    """标准化路径，避免分隔符和大小写导致匹配失效"""
-    return os.path.normpath(path).rstrip("\\/").lower()
-
-
-def _load_custom_search_dirs() -> List[str]:
-    """读取并解析用户自定义搜索目录（配置项存的是 JSON 字符串）"""
-    try:
-        custom_dirs_raw = Config.get("Emulator", "CustomSearchDirs")
-    except AttributeError:
-        # 兼容旧配置：不存在该配置项时按未配置处理
-        return []
-    if not custom_dirs_raw:
-        return []
-
-    if isinstance(custom_dirs_raw, list):
-        return [d for d in custom_dirs_raw if isinstance(d, str) and d.strip()]
-
-    if isinstance(custom_dirs_raw, str):
-        with suppress(json.JSONDecodeError, TypeError):
-            parsed_dirs = json.loads(custom_dirs_raw)
-            if isinstance(parsed_dirs, list):
-                return [d for d in parsed_dirs if isinstance(d, str) and d.strip()]
-
-    return []
 
 
 def get_available_drives() -> List[str]:
@@ -117,60 +74,10 @@ def get_emulator_search_progress() -> Dict[str, int | str | bool]:
         return dict(_SCAN_PROGRESS)
 
 
-async def _search_in_directory(
-    directory: str,
-    executable_names: Set[str],
-    found_paths: Set[str],
-    max_depth: int = 5,
-    current_depth: int = 0,
-    include_full_scan: bool = False,
-) -> None:
-    """在目录中递归搜索模拟器可执行文件"""
-    if current_depth > max_depth:
-        return
-
-    normalized_dir = _normalize_path(directory)
-    basename = os.path.basename(normalized_dir)
-
-    if not include_full_scan and basename in EXCLUDED_DIRS:
-        return
-    if include_full_scan and basename in FULL_SCAN_EXCLUDED_DIRS:
-        return
-
-    try:
-        with os.scandir(directory) as entries:
-            for entry in entries:
-                try:
-                    if entry.is_dir(follow_symlinks=False):
-                        entry_name = entry.name.lower()
-                        if entry_name.startswith(".") or entry_name.startswith("$"):
-                            continue
-
-                        await _search_in_directory(
-                            entry.path,
-                            executable_names,
-                            found_paths,
-                            max_depth=max_depth,
-                            current_depth=current_depth + 1,
-                            include_full_scan=include_full_scan,
-                        )
-                    elif entry.is_file(follow_symlinks=False):
-                        if (
-                            Path(entry.path).suffix.lower() in EXECUTABLE_EXTENSIONS
-                            and entry.name in executable_names
-                        ):
-                            found_paths.add(entry.path)
-                except (PermissionError, OSError):
-                    continue
-    except (PermissionError, OSError):
-        return
-
-
 def _search_in_directory_sync(
     directory: str,
     executable_names: Set[str],
     max_depth: int = 5,
-    include_full_scan: bool = False,
     progress_callback: Callable[[str], None] | None = None,
 ) -> Set[str]:
     """同步目录搜索，用于线程池并发全盘扫描"""
@@ -183,14 +90,6 @@ def _search_in_directory_sync(
             with suppress(Exception):
                 progress_callback(current_dir)
         if depth > max_depth:
-            continue
-
-        normalized_dir = _normalize_path(current_dir)
-        basename = os.path.basename(normalized_dir)
-
-        if not include_full_scan and basename in EXCLUDED_DIRS:
-            continue
-        if include_full_scan and basename in FULL_SCAN_EXCLUDED_DIRS:
             continue
 
         try:
@@ -271,7 +170,6 @@ def _full_disk_scan_sync(executable_names: Set[str]) -> Set[str]:
                 drive,
                 executable_names,
                 8,
-                True,
                 report_current_path,
             ): drive
             for drive in drives
@@ -344,12 +242,10 @@ async def search_all_emulators(include_full_scan: bool = False) -> List[Dict[str
     # 根据可能的模拟器路径搜索
     for emulator_type, config in EMULATOR_PATH_BOOK.items():
         try:
-            emulator_path = await _search_emulator(config)
+            emulator_path = _search_emulator(config)
             if emulator_path:
                 # 自动修正路径
-                corrected_path = await find_emulator_manager_path(
-                    emulator_path, emulator_type
-                )
+                corrected_path = find_emulator_manager_path(emulator_path, emulator_type)
                 if corrected_path not in found_emulator_paths:
                     found_emulator_paths.add(corrected_path)
                     found_emulators.append(
@@ -362,44 +258,6 @@ async def search_all_emulators(include_full_scan: bool = False) -> List[Dict[str
                 logger.info(f"找到{config['name']}: {corrected_path}")
         except Exception as e:
             logger.warning(f"搜索{config['name']}时出错: {e}")
-
-    # 扫描自定义目录（修复: 配置项为 JSON 字符串）
-    custom_dirs = _load_custom_search_dirs()
-    if custom_dirs:
-        custom_executables = set()
-        for config in EMULATOR_PATH_BOOK.values():
-            custom_executables.update(config["executables"])
-
-        for custom_dir in custom_dirs:
-            if not os.path.exists(custom_dir):
-                continue
-
-            custom_paths = set()
-            await _search_in_directory(
-                custom_dir,
-                custom_executables,
-                custom_paths,
-                max_depth=5,
-                include_full_scan=False,
-            )
-            for path in custom_paths:
-                emulator_type = "general"
-                for et, cfg in EMULATOR_PATH_BOOK.items():
-                    if any(exe in path for exe in cfg["executables"]):
-                        emulator_type = et
-                        break
-
-                corrected_path = await find_emulator_manager_path(path, emulator_type)
-                if corrected_path not in found_emulator_paths:
-                    found_emulator_paths.add(corrected_path)
-                    cfg = EMULATOR_PATH_BOOK.get(emulator_type, {"name": "未知模拟器"})
-                    found_emulators.append(
-                        {
-                            "type": emulator_type,
-                            "path": corrected_path,
-                            "name": f"{cfg['name']} ({corrected_path})",
-                        }
-                    )
 
     # 可选全盘扫描（慢）
     if include_full_scan:
@@ -415,7 +273,7 @@ async def search_all_emulators(include_full_scan: bool = False) -> List[Dict[str
                     emulator_type = et
                     break
 
-            corrected_path = await find_emulator_manager_path(path, emulator_type)
+            corrected_path = find_emulator_manager_path(path, emulator_type)
             if corrected_path not in found_emulator_paths:
                 found_emulator_paths.add(corrected_path)
                 cfg = EMULATOR_PATH_BOOK.get(emulator_type, {"name": "未知模拟器"})
@@ -429,7 +287,7 @@ async def search_all_emulators(include_full_scan: bool = False) -> List[Dict[str
 
     for emulator in Toolkit.find_adb_devices():
         for emulator_type in EMULATOR_PATH_BOOK.keys():
-            corrected_path = await find_emulator_manager_path(
+            corrected_path = find_emulator_manager_path(
                 emulator.adb_path.as_posix(), emulator_type
             )
             if corrected_path != emulator.adb_path.as_posix():
@@ -462,30 +320,28 @@ async def search_all_emulators(include_full_scan: bool = False) -> List[Dict[str
     return found_emulators
 
 
-async def _search_emulator(config: Dict) -> str:
+def _search_emulator(config: Dict) -> str:
     """搜索单类模拟器"""
 
     # 1. 从注册表搜索
-    registry_path = await _search_from_registry(config["registry_paths"])
-    if registry_path and await _validate_emulator_path(
-        registry_path, config["executables"]
-    ):
+    registry_path = _search_from_registry(config["registry_paths"])
+    if registry_path and _validate_emulator_path(registry_path, config["executables"]):
         return registry_path
 
     # 2. 从默认路径搜索
     for default_path in config["default_paths"]:
-        if await _validate_emulator_path(default_path, config["executables"]):
+        if _validate_emulator_path(default_path, config["executables"]):
             return default_path
 
     # 3. 从系统PATH搜索
-    path_result = await _search_from_path(config["executables"])
+    path_result = _search_from_path(config["executables"])
     if path_result:
         return Path(path_result).parent.as_posix()
 
     return ""
 
 
-async def _search_from_registry(registry_paths: List[str]) -> str:
+def _search_from_registry(registry_paths: List[str]) -> str:
     """从注册表搜索模拟器路径"""
 
     for reg_path in registry_paths:
@@ -504,7 +360,7 @@ async def _search_from_registry(registry_paths: List[str]) -> str:
     return ""
 
 
-async def _search_from_path(executables: List[str]) -> str:
+def _search_from_path(executables: List[str]) -> str:
     """从系统PATH搜索模拟器"""
 
     for executable in executables:
@@ -519,7 +375,7 @@ async def _search_from_path(executables: List[str]) -> str:
     return ""
 
 
-async def _validate_emulator_path(path: str, executables: List[str]) -> bool:
+def _validate_emulator_path(path: str, executables: List[str]) -> bool:
     """验证模拟器路径是否有效"""
 
     if not path or not os.path.exists(path):
@@ -543,7 +399,7 @@ async def _validate_emulator_path(path: str, executables: List[str]) -> bool:
     return False
 
 
-async def find_emulator_manager_path(
+def find_emulator_manager_path(
     input_path: str, emulator_type: str, max_levels: int = 3
 ) -> str:
     """
