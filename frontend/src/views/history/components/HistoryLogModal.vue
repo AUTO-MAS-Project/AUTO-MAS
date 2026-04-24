@@ -81,6 +81,7 @@
                 查看基质统计
               </a-button>
             </a-popover>
+            <a-tag v-else-if="matrixStatistics !== null" color="default">无合适的基质</a-tag>
           </div>
         </div>
 

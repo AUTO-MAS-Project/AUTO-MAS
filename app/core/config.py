@@ -1960,7 +1960,9 @@ class AppConfig(GlobalConfig):
 
         return failed_tasks
 
-    def parse_maaend_matrix_statistics(self, logs: list[str]) -> Dict[str, str]:
+    def parse_maaend_matrix_statistics(
+        self, logs: list[str]
+    ) -> tuple[Optional[Dict[str, str]], bool]:
         """
         解析MaaEnd基质刷取统计
 
@@ -1968,7 +1970,7 @@ class AppConfig(GlobalConfig):
             logs (list[str]): 日志列表
 
         Returns:
-            Dict[str, str]: 基质统计数据, key为技能组合, value为符合武器名称
+            tuple[Optional[Dict[str, str]], bool]: 基质统计数据与是否识别到基质流程
         """
 
         matrix_statistics: Dict[str, str] = {}
@@ -2029,7 +2031,20 @@ class AppConfig(GlobalConfig):
         if summary_started:
             append_summary_statistics(summary_lines)
 
-        return matrix_statistics
+        has_matrix_flow = any("战利品摘要：" in log_line for log_line in logs)
+        if not has_matrix_flow:
+            return None, False
+
+        last_locked_count: Optional[int] = None
+        for log_line in logs:
+            match = re.search(r"确认锁定物品：(\d+)", log_line)
+            if match is not None:
+                last_locked_count = int(match.group(1))
+
+        if not matrix_statistics and last_locked_count == 0:
+            return {}, True
+
+        return matrix_statistics, True
 
     async def save_maaend_log(
         self, log_path: Path, logs: list[str], maaend_result: str
@@ -2048,13 +2063,13 @@ class AppConfig(GlobalConfig):
         )
 
         failed_tasks = self.parse_maaend_failed_tasks(logs)
-        matrix_statistics = self.parse_maaend_matrix_statistics(logs)
+        matrix_statistics, has_matrix_flow = self.parse_maaend_matrix_statistics(logs)
 
         if maaend_result == "MaaEnd 部分任务执行失败" and failed_tasks:
             maaend_result = f"{maaend_result}: {'、'.join(failed_tasks)}"
 
         data: Dict[str, Any] = {"maaend_result": maaend_result}
-        if matrix_statistics:
+        if has_matrix_flow and matrix_statistics is not None:
             data["matrix_statistics"] = matrix_statistics
 
         # 保存日志
@@ -2202,7 +2217,11 @@ class AppConfig(GlobalConfig):
         data["index"] = [data["index"][_] for _ in sorted(data["index"])]
 
         # 确保返回的字典始终包含 index 字段，即使为空
-        result = {k: v for k, v in data.items() if v}
+        result = {
+            k: v
+            for k, v in data.items()
+            if v or (k == "matrix_statistics" and isinstance(v, dict))
+        }
         if "index" not in result:
             result["index"] = []
 
