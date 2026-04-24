@@ -1,7 +1,7 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
-from .context import PluginContext, PluginConfigProxy, RuntimeFacade, PluginEventFacade
+from .context import PluginContext, PluginConfigProxy, RuntimeFacade, PluginEventFacade, ServiceFacade
 from .cache_store import PluginCacheManager, JsonPluginCache
 from .config_store import PluginConfigStore
 from .event_bus import EventBus
@@ -28,6 +28,8 @@ from .pypi_site import (
     iter_plugin_entry_points,
 )
 from .runtime_api import RuntimeAPI
+from .service_registry import ServiceRegistry
+from .service_spec import ServiceSpec
 from .lifecycle import (
     PluginLifecycle,
     REQUIRED_LIFECYCLE_METHODS,
@@ -39,6 +41,7 @@ __all__ = [
     "PluginConfigProxy",
     "PluginEventFacade",
     "RuntimeFacade",
+    "ServiceFacade",
     "PluginCacheManager",
     "JsonPluginCache",
     "PluginConfigStore",
@@ -58,6 +61,8 @@ __all__ = [
     "PluginLoader",
     "PluginRecord",
     "RuntimeAPI",
+    "ServiceRegistry",
+    "ServiceSpec",
     "PluginLifecycle",
     "REQUIRED_LIFECYCLE_METHODS",
     "OPTIONAL_LIFECYCLE_METHODS",

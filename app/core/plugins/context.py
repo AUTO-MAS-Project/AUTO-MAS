@@ -5,10 +5,12 @@ from pathlib import Path
 from copy import deepcopy
 from typing import Any, Dict, Callable, Optional, Iterator
 import asyncio
+import inspect
 
 from .cache_store import PluginCacheManager
 from .event_contract import EventErrorPolicy, EventScope
 from .runtime_api import RuntimeAPI
+from .service_registry import ServiceRegistry
 
 
 
@@ -24,6 +26,10 @@ class PluginContext:
         logger,
         events,
         runtime_capabilities: Optional[Dict[str, Callable[..., Any]]] = None,
+        service_registry: Optional[ServiceRegistry] = None,
+        provides: Optional[set[str]] = None,
+        needs: Optional[set[str]] = None,
+        wants: Optional[set[str]] = None,
     ) -> None:
         # 基础必要属性
         self.plugin_name = plugin_name
@@ -34,6 +40,18 @@ class PluginContext:
             plugin_name=self.plugin_name,
             instance_id=self.instance_id,
             events=events,
+        )
+
+        # service 门面负责插件服务声明、赋值、依赖注入和未声明访问告警。
+        self.service = ServiceFacade(
+            ctx=self,
+            plugin_name=self.plugin_name,
+            instance_id=self.instance_id,
+            logger=self.logger,
+            registry=service_registry,
+            provides=provides,
+            needs=needs,
+            wants=wants,
         )
         
         # 解释器能力函数集合
@@ -53,6 +71,27 @@ class PluginContext:
             data_root=Path.cwd() / "data",
             logger=self.logger,
         )
+
+    def provide(self, name: str) -> None:
+        """声明服务槽位。"""
+        self.service.provide(name)
+
+    def set(self, name: str, value: Any) -> None:
+        """设置服务实例值。"""
+        self.service.set(name, value)
+
+    def get(self, name: str, default: Any = None) -> Any:
+        """读取服务实例值。"""
+        return self.service.get(name, default)
+
+    def inject(
+        self,
+        needs: Any = None,
+        wants: Any = None,
+        ready: Optional[Callable[..., Any]] = None,
+    ) -> None:
+        """注册动态依赖并在满足时触发回调。"""
+        self.service.inject(needs=needs, wants=wants, ready=ready)
 
 class PluginConfigProxy(dict):
     """插件配置代理，兼容字典访问并提供 set/update/reset 语义。"""
@@ -142,6 +181,127 @@ class PluginConfigProxy(dict):
     def __iter__(self) -> Iterator[Any]:
         """返回配置键的迭代器。"""
         return super().__iter__()
+
+
+class ServiceFacade:
+    """插件服务门面。"""
+
+    def __init__(
+        self,
+        *,
+        ctx: "PluginContext",
+        plugin_name: str,
+        instance_id: str,
+        logger,
+        registry: Optional[ServiceRegistry],
+        provides: Optional[set[str]] = None,
+        needs: Optional[set[str]] = None,
+        wants: Optional[set[str]] = None,
+    ) -> None:
+        self._ctx = ctx
+        self._plugin_name = plugin_name
+        self._instance_id = instance_id
+        self._logger = logger
+        self._registry = registry or ServiceRegistry()
+
+        self._provides = set(provides or set())
+        self._needs = set(needs or set())
+        self._wants = set(wants or set())
+        self._declared = set(self._provides | self._needs | self._wants)
+
+        self._registry.bind(self._instance_id, self._needs, self._wants)
+        for name in self._provides:
+            self._registry.provide(name, self._instance_id)
+
+    @staticmethod
+    def _names(raw: Any) -> set[str]:
+        if raw is None:
+            return set()
+        if isinstance(raw, str):
+            name = raw.strip()
+            return {name} if name else set()
+        if isinstance(raw, (list, tuple, set)):
+            result: set[str] = set()
+            for item in raw:
+                text = str(item or "").strip()
+                if text:
+                    result.add(text)
+            return result
+        return set()
+
+    def _warn(self, name: str) -> None:
+        if name in self._declared:
+            return
+        # 保持运行时兼容，只做行为引导。
+        self._logger.warning(
+            f"访问未声明服务: plugin={self._plugin_name}, instance={self._instance_id}, service={name}"
+        )
+
+    @staticmethod
+    def _call(func: Callable[..., Any], ctx: "PluginContext") -> Callable[[], Any]:
+        def wrapped() -> Any:
+            try:
+                signature = inspect.signature(func)
+            except (TypeError, ValueError):
+                # 对无法反射签名的可调用对象，按无参调用兼容。
+                return func()
+
+            if not signature.parameters:
+                return func()
+            # 有参回调默认注入 PluginContext，降低插件侧样板代码。
+            return func(ctx)
+
+        return wrapped
+
+    def provide(self, name: str) -> None:
+        service = str(name or "").strip()
+        if not service:
+            return
+        self._declared.add(service)
+        self._provides.add(service)
+        self._registry.provide(service, self._instance_id)
+
+    def set(self, name: str, value: Any) -> None:
+        service = str(name or "").strip()
+        if not service:
+            return
+        self.provide(service)
+        self._registry.set(service, value, self._instance_id)
+
+    def get(self, name: str, default: Any = None) -> Any:
+        service = str(name or "").strip()
+        if not service:
+            return default
+        self._warn(service)
+        return self._registry.take(service, self._instance_id, default)
+
+    def inject(
+        self,
+        needs: Any = None,
+        wants: Any = None,
+        ready: Optional[Callable[..., Any]] = None,
+    ) -> None:
+        # 动态注入会持续合并依赖声明，确保后续 get() 不被误报未声明。
+        needset = self._names(needs)
+        wantset = self._names(wants)
+        self._needs.update(needset)
+        self._wants.update(wantset)
+        self._declared.update(needset)
+        self._declared.update(wantset)
+
+        callback: Optional[Callable[[], Any]] = None
+        if callable(ready):
+            callback = self._call(ready, self._ctx)
+
+        self._registry.inject(
+            owner=self._instance_id,
+            needs=self._needs,
+            wants=self._wants,
+            ready=callback,
+        )
+
+    def miss(self) -> "set[str]":
+        return self._registry.miss(self._instance_id)
 
 
 
