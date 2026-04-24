@@ -21,10 +21,35 @@
             "type": "Win32",
             "permission_required": true,
             "win32": {
+                "class_regex": "UnityWndClass",
                 "window_regex": "Endfield",
                 "mouse": "PostMessageWithCursorPos",
                 "keyboard": "PostMessageWithCursorPos",
-                "screencap": "FramePool"
+                "screencap": "PrintWindow"
+            }
+        },
+        {
+            "name": "终末地PC端-登录表单",
+            "type": "Win32",
+            "permission_required": true,
+            "win32": {
+                "class_regex": "Qt5158QWindowToolSaveBits",
+                "window_regex": "Form",
+                "mouse": "PostMessageWithCursorPos",
+                "keyboard": "PostMessageWithCursorPos",
+                "screencap": "PrintWindow"
+            }
+        },
+        {
+            "name": "终末地PC端-登录下拉菜单",
+            "type": "Win32",
+            "permission_required": true,
+            "win32": {
+                "class_regex": "Qt5158QWindowToolSaveBits",
+                "window_regex": "Endfield",
+                "mouse": "PostMessageWithCursorPos",
+                "keyboard": "PostMessageWithCursorPos",
+                "screencap": "PrintWindow"
             }
         },
         {
@@ -68,13 +93,6 @@
             "entry": "下一帧[ArknightsPC]",
             "controller": [
                 "明日方舟PC端"
-            ]
-        },
-        {
-            "name": "终末地PC端-切换账号",
-            "entry": "切换账号[EndFieldPC]",
-            "controller": [
-                "终末地PC端"
             ]
         },
         {
