@@ -4,6 +4,8 @@
 import inspect
 import json
 import sys
+import asyncio
+from copy import deepcopy
 from functools import wraps
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -17,6 +19,9 @@ from app.utils.constants import UTC8
 from .context import PluginContext
 from .decorators import EventSubscription, get_event_subscriptions
 from .lifecycle import REQUIRED_LIFECYCLE_METHODS
+from .realtime import publish_runtime_record
+from .service_registry import ServiceRegistry
+from .service_spec import ServiceSpec
 from .pypi_site import (
     ensure_pypi_site_packages_on_syspath,
     iter_plugin_entry_points,
@@ -62,6 +67,11 @@ class PluginRecord:
     last_error_at: Optional[str] = None
     listener_ids: list[str] = field(default_factory=list)
     plugin_instance: Any = None
+    config: Dict[str, Any] = field(default_factory=dict)
+    provides: set[str] = field(default_factory=set)
+    needs: set[str] = field(default_factory=set)
+    wants: set[str] = field(default_factory=set)
+    missing: set[str] = field(default_factory=set)
 
 
 class PluginLoader:
@@ -78,15 +88,28 @@ class PluginLoader:
         distribution: Optional[str] = None
         version: Optional[str] = None
 
-    def __init__(self, events, runtime: Any = None, plugins_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        events,
+        runtime: Any = None,
+        plugins_dir: Optional[Path] = None,
+        service: Optional[ServiceRegistry] = None,
+    ):
         self.events = events
         self.runtime = {} if runtime is None else runtime
         self.plugins_dir = plugins_dir or (Path.cwd() / "plugins")
+        self.service = service or ServiceRegistry()
         self.pypi_site_packages_dir = ensure_pypi_site_packages_on_syspath(self.plugins_dir)
         self.records: Dict[str, PluginRecord] = {}
         self.discovered_plugins: Dict[str, PluginLoader.PluginSource] = {}
         self.startup_failed_instances: Dict[str, str] = {}
         self.startup_missing_instances: set[str] = set()
+        self._pulse: set[str] = set()
+        self._task: Optional[asyncio.Task[Any]] = None
+        self._busy = False
+
+        self.service.watch("before", self._before)
+        self.service.watch("after", self._after)
 
     def _iter_entry_points(self) -> list[Any]:
         """读取 plugins/pypi/site-packages 中的插件 Entry Points。"""
@@ -132,6 +155,152 @@ class PluginLoader:
         self.discovered_plugins = discovered
         logger.info(f"插件扫描完成，共发现 {len(discovered)} 个插件")
         return discovered
+
+    def _meta(self, plugin_class: type[Any]) -> tuple[set[str], set[str], set[str]]:
+        spec = ServiceSpec.load(plugin_class)
+        return spec.sets()
+
+    def _plan(self, instances: Iterable[Any]) -> tuple[list[str], dict[str, set[str]], dict[str, tuple[set[str], set[str], set[str]]]]:
+        enabled: dict[str, Any] = {}
+        order: list[str] = []
+        meta: dict[str, tuple[set[str], set[str], set[str]]] = {}
+
+        for item in instances:
+            if not bool(getattr(item, "enabled", False)):
+                continue
+            instance_id = str(getattr(item, "id"))
+            plugin_name = str(getattr(item, "plugin"))
+            if not instance_id or not plugin_name:
+                continue
+            enabled[instance_id] = item
+            order.append(instance_id)
+
+            plugin_source = self.discovered_plugins.get(plugin_name)
+            if plugin_source is None:
+                meta[instance_id] = (set(), set(), set())
+                continue
+
+            try:
+                _, plugin_class = self._resolve_plugin_module_and_class(plugin_name, plugin_source)
+                meta[instance_id] = self._meta(plugin_class)
+            except Exception as e:
+                logger.warning(
+                    f"解析插件依赖声明失败，已按空声明处理: instance_id={instance_id}, plugin={plugin_name}, error={type(e).__name__}: {e}"
+                )
+                meta[instance_id] = (set(), set(), set())
+
+        providers: dict[str, list[str]] = {}
+        for instance_id, payload in meta.items():
+            provides, _, _ = payload
+            for name in provides:
+                providers.setdefault(name, []).append(instance_id)
+
+        missing: dict[str, set[str]] = {}
+        edges: dict[str, set[str]] = {instance_id: set() for instance_id in order}
+        indegree: dict[str, int] = {instance_id: 0 for instance_id in order}
+
+        for instance_id in order:
+            _, needs, _ = meta.get(instance_id, (set(), set(), set()))
+            lost = {
+                name
+                for name in needs
+                if not self.service.ready(name) and not providers.get(name)
+            }
+            if lost:
+                missing[instance_id] = lost
+
+            for name in needs:
+                if self.service.ready(name):
+                    continue
+                candidates = sorted(providers.get(name, []))
+                if not candidates:
+                    continue
+                owner = candidates[0]
+                if owner == instance_id:
+                    continue
+                if instance_id not in edges[owner]:
+                    edges[owner].add(instance_id)
+                    indegree[instance_id] += 1
+
+        queue: list[str] = [instance_id for instance_id in order if indegree[instance_id] == 0]
+        queue.sort(key=lambda item: order.index(item))
+        planned: list[str] = []
+
+        while queue:
+            current = queue.pop(0)
+            planned.append(current)
+            for target in sorted(edges.get(current, set())):
+                indegree[target] -= 1
+                if indegree[target] == 0:
+                    queue.append(target)
+                    queue.sort(key=lambda item: order.index(item))
+
+        if len(planned) < len(order):
+            left = [instance_id for instance_id in order if instance_id not in planned]
+            logger.warning(f"检测到插件依赖环，剩余实例将按原顺序加载: {left}")
+            planned.extend(left)
+
+        return planned, missing, meta
+
+    def _before(self, _name: str, users: set[str]) -> None:
+        if self._busy:
+            return
+        for instance_id in users:
+            record = self.records.get(instance_id)
+            if record is None:
+                continue
+            if record.status != "active":
+                continue
+            self._pulse.add(instance_id)
+
+    def _after(self, _name: str, _users: set[str]) -> None:
+        if self._busy:
+            return
+        if not self._pulse:
+            return
+        if self._task is not None and not self._task.done():
+            return
+        self._spawn(self._sync())
+
+    def _spawn(self, coro: Any) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._task = loop.create_task(coro)
+
+    async def _sync(self) -> None:
+        targets = sorted(self._pulse)
+        self._pulse.clear()
+        if not targets:
+            return
+
+        self._busy = True
+        try:
+            for instance_id in targets:
+                record = self.records.get(instance_id)
+                if record is None:
+                    continue
+                if record.status == "active":
+                    await self.unload_instance(instance_id)
+
+            for instance_id in targets:
+                record = self.records.get(instance_id)
+                if record is None:
+                    continue
+                if record.config is None:
+                    continue
+                await self.load_instance(
+                    instance_id=record.instance_id,
+                    plugin_name=record.plugin_name,
+                    instance_name=record.display_name,
+                    config=deepcopy(record.config),
+                    provides=set(record.provides),
+                    needs=set(record.needs),
+                    wants=set(record.wants),
+                )
+        finally:
+            self._busy = False
 
     def _load_plugin_config(self, plugin_name: str, plugin_source: PluginSource) -> Dict[str, Any]:
         if plugin_source.path is None:
@@ -353,6 +522,8 @@ class PluginLoader:
         if status in {"active", "unloaded"}:
             record.error = None
 
+        publish_runtime_record(record, event="status")
+
     def _mark_lifecycle_phase(self, record: PluginRecord, phase: str) -> None:
         """更新插件生命周期阶段并刷新时间戳。
 
@@ -376,6 +547,7 @@ class PluginLoader:
 
         record.lifecycle_phase = normalized
         record.lifecycle_updated_at = _utc8_now_iso()
+        publish_runtime_record(record, event="lifecycle")
 
     def _mark_error(self, record: PluginRecord, message: str) -> None:
         """记录插件错误并切换为 error 状态。"""
@@ -383,6 +555,7 @@ class PluginLoader:
         record.last_error = message
         record.last_error_at = _utc8_now_iso()
         record.status = "error"
+        publish_runtime_record(record, event="error")
 
     @staticmethod
     def _invoke_with_context(handler: Callable[..., Any], payload: Any, context: PluginContext) -> Any:
@@ -560,6 +733,20 @@ class PluginLoader:
                 plugin_name,
                 plugin_source,
             )
+            provides, needs, wants = self._meta(plugin_class)
+            missing = {
+                name
+                for name in needs
+                if name not in provides and not self.service.ready(name)
+            }
+            if missing:
+                record.provides = set(provides)
+                record.needs = set(needs)
+                record.wants = set(wants)
+                record.missing = set(missing)
+                self._mark_error(record, f"缺失 required 服务: {', '.join(sorted(missing))}")
+                return record
+
             self._mark_status(record, "loaded")
             self._mark_lifecycle_phase(record, "loaded")
 
@@ -573,7 +760,16 @@ class PluginLoader:
                 logger=plugin_logger,
                 events=self.events,
                 runtime_capabilities=self.runtime,
+                service_registry=self.service,
+                provides=provides,
+                needs=needs,
+                wants=wants,
             )
+            record.config = deepcopy(plugin_config)
+            record.provides = set(provides)
+            record.needs = set(needs)
+            record.wants = set(wants)
+            record.missing = set()
 
             if record.module is not None:
                 record.listener_ids.extend(
@@ -614,6 +810,9 @@ class PluginLoader:
         plugin_name: str,
         instance_name: str,
         config: Dict[str, Any],
+        provides: Optional[set[str]] = None,
+        needs: Optional[set[str]] = None,
+        wants: Optional[set[str]] = None,
     ) -> PluginRecord:
         """
         加载单个插件实例并返回实例记录。
@@ -660,6 +859,23 @@ class PluginLoader:
                 plugin_name,
                 plugin_source,
             )
+            static_provides, static_needs, static_wants = self._meta(plugin_class)
+            merged_provides = set(provides or static_provides)
+            merged_needs = set(needs or static_needs)
+            merged_wants = set(wants or static_wants)
+            missing = {
+                name
+                for name in merged_needs
+                if name not in merged_provides and not self.service.ready(name)
+            }
+            if missing:
+                record.provides = merged_provides
+                record.needs = merged_needs
+                record.wants = merged_wants
+                record.missing = set(missing)
+                self._mark_error(record, f"缺失 required 服务: {', '.join(sorted(missing))}")
+                return record
+
             self._mark_status(record, "loaded")
             self._mark_lifecycle_phase(record, "loaded")
 
@@ -671,7 +887,16 @@ class PluginLoader:
                 logger=plugin_logger,
                 events=self.events,
                 runtime_capabilities=self.runtime,
+                service_registry=self.service,
+                provides=merged_provides,
+                needs=merged_needs,
+                wants=merged_wants,
             )
+            record.config = deepcopy(config)
+            record.provides = merged_provides
+            record.needs = merged_needs
+            record.wants = merged_wants
+            record.missing = set()
 
             if record.module is not None:
                 record.listener_ids.extend(
@@ -731,22 +956,55 @@ class PluginLoader:
             self.discover()
         self.startup_failed_instances = {}
         self.startup_missing_instances = set()
+        self.service.clear()
 
-        for instance in instances:
-            enabled = bool(getattr(instance, "enabled", False))
-            if not enabled:
+        planned, missing_map, meta_map = self._plan(instances)
+        enabled_map: dict[str, Any] = {
+            str(getattr(item, "id")): item
+            for item in instances
+            if bool(getattr(item, "enabled", False))
+        }
+
+        for instance_id in planned:
+            instance = enabled_map.get(instance_id)
+            if instance is None:
                 continue
 
-            instance_id = str(getattr(instance, "id"))
             plugin_name = str(getattr(instance, "plugin"))
             instance_name = str(getattr(instance, "name", "") or "")
             config = dict(getattr(instance, "config", {}) or {})
+            provides, needs, wants = meta_map.get(instance_id, (set(), set(), set()))
+
+            if instance_id in missing_map:
+                lost = sorted(missing_map[instance_id])
+                record = PluginRecord(
+                    instance_id=instance_id,
+                    plugin_name=plugin_name,
+                    path=None,
+                    display_name=instance_name or instance_id,
+                )
+                record.config = deepcopy(config)
+                record.provides = set(provides)
+                record.needs = set(needs)
+                record.wants = set(wants)
+                record.missing = set(lost)
+                self._mark_status(record, "discovered")
+                self._mark_error(record, f"缺失 required 服务: {', '.join(lost)}")
+                self.records[instance_id] = record
+                self.startup_failed_instances[instance_id] = str(record.error or "未知错误")
+                logger.warning(
+                    f"插件实例缺失 required 服务，已跳过启动: instance_id={instance_id}, missing={lost}"
+                )
+                continue
 
             record = await self.load_instance(
                 instance_id=instance_id,
                 plugin_name=plugin_name,
                 instance_name=instance_name,
                 config=config,
+                provides=provides,
+                needs=needs,
+                wants=wants,
             )
             if record.status == "error":
                 error_text = str(record.error or "未知错误")
@@ -756,6 +1014,7 @@ class PluginLoader:
                 logger.error(
                     f"插件实例加载失败但已忽略（继续启动）: instance_id={instance_id}, plugin={plugin_name}, error='{error_text}'"
                 )
+
         return self.records
 
     async def unload_plugin(self, plugin_name: str) -> None:
@@ -770,6 +1029,7 @@ class PluginLoader:
         """
         record = self.records.get(plugin_name)
         if record is None:
+            self.service.drop(plugin_name)
             return
 
         try:
@@ -786,6 +1046,7 @@ class PluginLoader:
             return
         finally:
             self._unregister_record_listeners(record)
+            self.service.drop(record.instance_id)
 
         self._mark_status(record, "unloaded")
         self._mark_lifecycle_phase(record, "unloaded")

@@ -16,6 +16,7 @@ from app.utils import get_logger
 from .event_bus import EventBus
 from .config_store import PluginConfigStore
 from .loader import PluginLoader
+from .service_registry import ServiceRegistry
 from .pypi_site import ENTRY_POINT_GROUPS, get_installed_plugin_entry_points, get_pypi_site_packages_dir
 
 try:
@@ -44,6 +45,7 @@ class _PluginManager:
         self.events = EventBus()
         self.config_store = PluginConfigStore()
         self.plugins_dir = Path.cwd() / "plugins"
+        self.service = ServiceRegistry()
         self.runtime: Dict[str, Any] = {
             "list_scripts": self._list_scripts,
             "get_script_log": self._get_script_log,
@@ -52,6 +54,7 @@ class _PluginManager:
             events=self.events,
             runtime=self.runtime,
             plugins_dir=self.plugins_dir,
+            service=self.service,
         )
 
     def _discover_plugins(self) -> Dict[str, Any]:

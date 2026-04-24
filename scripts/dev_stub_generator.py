@@ -97,7 +97,7 @@ def _render_init_stub() -> str:
 
 
 def _render_context_stub() -> str:
-    plugin_context_cls, runtime_facade_cls, _runtime_api_cls, plugin_config_proxy_cls = (
+    plugin_context_cls, runtime_facade_cls, _runtime_api_cls, plugin_config_proxy_cls, service_facade_cls = (
         _load_stub_target_classes()
     )
 
@@ -109,6 +109,7 @@ def _render_context_stub() -> str:
         "events": "Any",
         "runtime_api": "RuntimeAPI",
         "runtime": runtime_facade_cls.__name__,
+        "service": service_facade_cls.__name__,
         "cache": "PluginCacheManager",
     }
     runtime_facade_attrs = {"_api": "RuntimeAPI"}
@@ -119,11 +120,13 @@ def _render_context_stub() -> str:
         "from typing import Any, Callable, Dict, Optional",
         "",
         "from .cache_store import PluginCacheManager",
-        "from .context import PluginConfigProxy",
+        "from .context import PluginConfigProxy, ServiceFacade",
         "from .runtime_api import RuntimeAPI",
         "",
     ]
     lines.extend(_render_class_stub(plugin_context_cls, class_attrs))
+    lines.append("")
+    lines.extend(_render_class_stub(service_facade_cls, {}))
     lines.append("")
     lines.extend(_render_class_stub(runtime_facade_cls, runtime_facade_attrs))
     lines.append("")
@@ -131,7 +134,7 @@ def _render_context_stub() -> str:
 
 
 def _render_runtime_api_stub() -> str:
-    _plugin_context_cls, _runtime_facade_cls, runtime_api_cls, _plugin_config_proxy_cls = (
+    _plugin_context_cls, _runtime_facade_cls, runtime_api_cls, _plugin_config_proxy_cls, _service_facade_cls = (
         _load_stub_target_classes()
     )
 
@@ -180,12 +183,12 @@ def _render_cache_store_stub() -> str:
     return "\n".join(lines)
 
 
-def _load_stub_target_classes() -> tuple[type, type, type, type]:
+def _load_stub_target_classes() -> tuple[type, type, type, type, type]:
     """延迟加载生成上下文 stub 所需的核心类。"""
-    from app.core.plugins.context import PluginConfigProxy, PluginContext, RuntimeFacade
+    from app.core.plugins.context import PluginConfigProxy, PluginContext, RuntimeFacade, ServiceFacade
     from app.core.plugins.runtime_api import RuntimeAPI
 
-    return PluginContext, RuntimeFacade, RuntimeAPI, PluginConfigProxy
+    return PluginContext, RuntimeFacade, RuntimeAPI, PluginConfigProxy, ServiceFacade
 
 
 def _load_cache_classes() -> tuple[type, type]:
