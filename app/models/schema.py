@@ -22,7 +22,20 @@
 
 
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Any, Dict, List, Union, Optional, Literal
+from typing import Any, Dict, List, Union, Optional, Literal, Generic, TypeVar
+
+
+WeekdayKey = Literal[
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+]# 所有的脚本都使用这个类型来表示星期几
+TPlanInfo = TypeVar("TPlanInfo")
+TPlanItem = TypeVar("TPlanItem")
 
 
 class OutBase(BaseModel):
@@ -77,18 +90,7 @@ class ComboBoxOut(OutBase):
 
 
 class GetStageIn(BaseModel):
-    type: Literal[
-        "User",
-        "Today",
-        "ALL",
-        "Monday",
-        "Tuesday",
-        "Wednesday",
-        "Thursday",
-        "Friday",
-        "Saturday",
-        "Sunday",
-    ] = Field(
+    type: Union[Literal["User", "Today", "ALL"], WeekdayKey] = Field(
         ...,
         description="选择的日期类型, Today为当天, ALL为包含当天未开放关卡在内的所有项",
     )
@@ -278,19 +280,7 @@ class QueueItem(BaseModel):
 
 class TimeSet_Info(BaseModel):
     Enabled: Optional[bool] = Field(default=None, description="是否启用")
-    Days: Optional[
-        List[
-            Literal[
-                "Monday",
-                "Tuesday",
-                "Wednesday",
-                "Thursday",
-                "Friday",
-                "Saturday",
-                "Sunday",
-            ]
-        ]
-    ] = Field(default=None, description="执行周期, 可多选")
+    Days: Optional[List[WeekdayKey]] = Field(default=None, description="执行周期, 可多选")
     Time: Optional[str] = Field(default=None, description="时间设置, 格式为HH:MM")
 
 
@@ -885,18 +875,20 @@ class MaaPlanConfig_Item(BaseModel):
     Stage_Remain: Optional[str] = Field(default=None, description="剩余理智关卡")
 
 
-class MaaPlanConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class WeeklyPlanConfig(BaseModel, Generic[TPlanInfo, TPlanItem]):
+    Info: Optional[TPlanInfo] = Field(default=None, description="基础信息")
+    ALL: Optional[TPlanItem] = Field(default=None, description="全局")
+    Monday: Optional[TPlanItem] = Field(default=None, description="周一")
+    Tuesday: Optional[TPlanItem] = Field(default=None, description="周二")
+    Wednesday: Optional[TPlanItem] = Field(default=None, description="周三")
+    Thursday: Optional[TPlanItem] = Field(default=None, description="周四")
+    Friday: Optional[TPlanItem] = Field(default=None, description="周五")
+    Saturday: Optional[TPlanItem] = Field(default=None, description="周六")
+    Sunday: Optional[TPlanItem] = Field(default=None, description="周日")
 
-    Info: Optional[MaaPlanConfig_Info] = Field(default=None, description="基础信息")
-    ALL: Optional[MaaPlanConfig_Item] = Field(default=None, description="全局")
-    Monday: Optional[MaaPlanConfig_Item] = Field(default=None, description="周一")
-    Tuesday: Optional[MaaPlanConfig_Item] = Field(default=None, description="周二")
-    Wednesday: Optional[MaaPlanConfig_Item] = Field(default=None, description="周三")
-    Thursday: Optional[MaaPlanConfig_Item] = Field(default=None, description="周四")
-    Friday: Optional[MaaPlanConfig_Item] = Field(default=None, description="周五")
-    Saturday: Optional[MaaPlanConfig_Item] = Field(default=None, description="周六")
-    Sunday: Optional[MaaPlanConfig_Item] = Field(default=None, description="周日")
+
+class MaaPlanConfig(WeeklyPlanConfig[MaaPlanConfig_Info, MaaPlanConfig_Item]):
+    model_config = ConfigDict(extra="forbid")
 
 
 class MaaEndPlanConfig_Info(BaseModel):
@@ -945,26 +937,8 @@ class MaaEndPlanConfig_Item(BaseModel):
     ] = Field(default=None, description="基质刷取指定地点")
 
 
-class MaaEndPlanConfig(BaseModel):
+class MaaEndPlanConfig(WeeklyPlanConfig[MaaEndPlanConfig_Info, MaaEndPlanConfig_Item]):
     model_config = ConfigDict(extra="forbid")
-
-    Info: Optional[MaaEndPlanConfig_Info] = Field(
-        default=None, description="基础信息"
-    )
-    ALL: Optional[MaaEndPlanConfig_Item] = Field(default=None, description="全局")
-    Monday: Optional[MaaEndPlanConfig_Item] = Field(default=None, description="周一")
-    Tuesday: Optional[MaaEndPlanConfig_Item] = Field(default=None, description="周二")
-    Wednesday: Optional[MaaEndPlanConfig_Item] = Field(
-        default=None, description="周三"
-    )
-    Thursday: Optional[MaaEndPlanConfig_Item] = Field(
-        default=None, description="周四"
-    )
-    Friday: Optional[MaaEndPlanConfig_Item] = Field(default=None, description="周五")
-    Saturday: Optional[MaaEndPlanConfig_Item] = Field(
-        default=None, description="周六"
-    )
-    Sunday: Optional[MaaEndPlanConfig_Item] = Field(default=None, description="周日")
 
 
 PlanCreateType = Literal["MaaPlan", "MaaEndPlan"]
