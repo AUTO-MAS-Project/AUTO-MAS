@@ -141,67 +141,67 @@ async def login(
                 await MaaFWManager.do_job(form_tasker.post_stop())
             raise
 
-        # 通过下拉框切换账号
-        # 展开下拉框
-        try:
-            await MaaFWManager.do_job(
-                form_tasker.post_task(
-                    "切换账号-展开下拉框[EndFieldPC]", pipeline_override
-                )
-            )
-            logger.info("已展开登录下拉框")
-        except Exception as e:
-            logger.error(f"终末地展开下拉框时出现异常: {e}")
-            return False
-        except asyncio.CancelledError:
-            with suppress(Exception):
-                await MaaFWManager.do_job(form_tasker.post_stop())
-            raise
-        # 获取登录下拉框的控制器
-        try:
-            hwnd = win32gui.FindWindow("Qt5158QWindowToolSaveBits", "Endfield")
-            combo_tasker = await MaaFWManager.get_win32_tasker(
-                hwnd=hwnd,
-                screencap_method=MaaWin32ScreencapMethodEnum.PrintWindow,
-                mouse_method=MaaWin32InputMethodEnum.Seize,
-                keyboard_method=MaaWin32InputMethodEnum.Seize,
-            )
-        except Exception as e:
-            logger.error(f"获取终末地登录下拉框的 win32 控制器时出现异常: {e}")
-            return False
-        # 选择目标账号
-        try:
-            await MaaFWManager.do_job(
-                combo_tasker.post_task(
-                    "切换账号-下拉框切换[EndFieldPC]", pipeline_override
-                )
-            )
-            logger.info("已通过下拉框选择中目标账号")
-            hwnd = win32gui.FindWindow("Qt5158QWindowToolSaveBits", "Endfield")
-            if hwnd != 0:
-                win32gui.SendMessage(hwnd, win32con.WM_CLOSE, 0, 0)
-            logger.info("已收起下拉框")
-            await MaaFWManager.do_job(
-                form_tasker.post_task(
-                    "切换账号-验证账号[EndFieldPC]", pipeline_override
-                )
-            )
-            logger.info("已验证切换账号后的账号信息")
-            await MaaFWManager.do_job(
-                main_tasker.post_task(
-                    "账号切换-等待加载完成[EndFieldPC]", pipeline_override
-                )
-            )
-            logger.success("终末地登录成功: 通过下拉框切换至目标账号")
-            return True
-        except Exception as e:
-            logger.info("未找到目标账号登录记录")
-        except asyncio.CancelledError:
-            with suppress(Exception):
-                await MaaFWManager.do_job(main_tasker.post_stop())
-                await MaaFWManager.do_job(form_tasker.post_stop())
-                await MaaFWManager.do_job(combo_tasker.post_stop())
-            raise
+        # # 通过下拉框切换账号
+        # # 展开下拉框
+        # try:
+        #     await MaaFWManager.do_job(
+        #         form_tasker.post_task(
+        #             "切换账号-展开下拉框[EndFieldPC]", pipeline_override
+        #         )
+        #     )
+        #     logger.info("已展开登录下拉框")
+        # except Exception as e:
+        #     logger.error(f"终末地展开下拉框时出现异常: {e}")
+        #     return False
+        # except asyncio.CancelledError:
+        #     with suppress(Exception):
+        #         await MaaFWManager.do_job(form_tasker.post_stop())
+        #     raise
+        # # 获取登录下拉框的控制器
+        # try:
+        #     hwnd = win32gui.FindWindow("Qt5158QWindowToolSaveBits", "Endfield")
+        #     combo_tasker = await MaaFWManager.get_win32_tasker(
+        #         hwnd=hwnd,
+        #         screencap_method=MaaWin32ScreencapMethodEnum.PrintWindow,
+        #         mouse_method=MaaWin32InputMethodEnum.Seize,
+        #         keyboard_method=MaaWin32InputMethodEnum.Seize,
+        #     )
+        # except Exception as e:
+        #     logger.error(f"获取终末地登录下拉框的 win32 控制器时出现异常: {e}")
+        #     return False
+        # # 选择目标账号
+        # try:
+        #     await MaaFWManager.do_job(
+        #         combo_tasker.post_task(
+        #             "切换账号-下拉框切换[EndFieldPC]", pipeline_override
+        #         )
+        #     )
+        #     logger.info("已通过下拉框选择中目标账号")
+        #     hwnd = win32gui.FindWindow("Qt5158QWindowToolSaveBits", "Endfield")
+        #     if hwnd != 0:
+        #         win32gui.SendMessage(hwnd, win32con.WM_CLOSE, 0, 0)
+        #     logger.info("已收起下拉框")
+        #     await MaaFWManager.do_job(
+        #         form_tasker.post_task(
+        #             "切换账号-验证账号[EndFieldPC]", pipeline_override
+        #         )
+        #     )
+        #     logger.info("已验证切换账号后的账号信息")
+        #     await MaaFWManager.do_job(
+        #         main_tasker.post_task(
+        #             "账号切换-等待加载完成[EndFieldPC]", pipeline_override
+        #         )
+        #     )
+        #     logger.success("终末地登录成功: 通过下拉框切换至目标账号")
+        #     return True
+        # except Exception as e:
+        #     logger.info("未找到目标账号登录记录")
+        # except asyncio.CancelledError:
+        #     with suppress(Exception):
+        #         await MaaFWManager.do_job(main_tasker.post_stop())
+        #         await MaaFWManager.do_job(form_tasker.post_stop())
+        #         await MaaFWManager.do_job(combo_tasker.post_stop())
+        #     raise
 
         # 通过账号密码登录账号
         if id != "" and "*" not in id and password != "":
