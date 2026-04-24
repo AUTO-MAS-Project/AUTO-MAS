@@ -395,6 +395,7 @@ class AutoProxyTask(TaskExecuteBase):
         # 直接运行任务
         settings["autoStartInstanceId"] = "automas"
         settings["autoRunOnLaunch"] = True
+        settings.pop("autoStartRemovedInstanceName", None)
 
         # 模拟器相关配置
         maaend_instance["controllerName"] = self.script_config.get(
