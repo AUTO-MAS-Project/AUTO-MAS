@@ -256,15 +256,18 @@ class AutoProxyTask(TaskExecuteBase):
             # 静默模式隐藏 MaaEnd 窗口
             if Config.get("Function", "IfSilence"):
                 while datetime.now() - t < timedelta(minutes=1):
-                    if await self.maaend_process_manager.is_visible():
-                        await self.maaend_process_manager.hide_window()
+                    await self.maaend_process_manager.hide_window()
+                    if not await self.maaend_process_manager.is_visible():
                         break
                     await asyncio.sleep(0.1)
             if self.script_config.get("Game", "ControllerType") == "Win32-Front":
-                if await self.game_process_manager.activate_window():
-                    logger.success("前置 Endfield 窗口成功")
-                else:
-                    logger.error("前置 Endfield 窗口失败")
+                while datetime.now() - t < timedelta(minutes=1):
+                    if await self.game_process_manager.activate_window():
+                        logger.success("前置 Endfield 窗口成功")
+                        break
+                    else:
+                        logger.error("前置 Endfield 窗口失败")
+                        await asyncio.sleep(0.1)
 
             await asyncio.sleep(1)
             if isinstance(
