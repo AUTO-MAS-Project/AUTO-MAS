@@ -86,27 +86,98 @@ def get_window_handles(pid: int) -> list[int]:
     return window_handles
 
 
-def get_main_window_handle(pid: int) -> int | None:
-    """获取指定进程的主窗口句柄, 优先返回可见窗口"""
+def get_main_window_handle(
+    pid: int,
+    window_title: str | None = None,
+    window_class_name: str | None = None,
+) -> int | None:
+    """获取指定进程的主窗口句柄
 
-    handles = get_window_handles(pid)
-    for hwnd in handles:
-        if win32gui.IsWindowVisible(hwnd):
-            return hwnd
-    for hwnd in handles:
-        if win32gui.IsWindow(hwnd):
-            return hwnd
-    return None
+    优先按标题或类名定位, 若未命中则回退到 PID 下最合适的顶层窗口。
+    """
+
+    # 候选过滤: 仅保留可作为主窗口的顶层窗口
+    handles: list[int] = []
+    for hwnd in get_window_handles(pid):
+        try:
+            if not win32gui.IsWindow(hwnd):
+                continue
+            if win32gui.GetParent(hwnd) not in (0, None):
+                continue
+            if win32gui.GetWindow(hwnd, win32con.GW_OWNER):
+                continue
+
+            ex_style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+            if ex_style & win32con.WS_EX_TOOLWINDOW:
+                continue
+        except Exception:
+            continue
+
+        handles.append(hwnd)
+
+    # 主流程: 无候选直接失败
+    if not handles:
+        return None
+
+    # 提示匹配: 按标题或类名进一步过滤
+    hinted_handles: list[int] = []
+    if window_title is not None or window_class_name is not None:
+        for hwnd in handles:
+            try:
+                if window_title is not None:
+                    title = win32gui.GetWindowText(hwnd)
+                    if not title or window_title.lower() not in title.lower():
+                        continue
+
+                if window_class_name is not None:
+                    class_name = win32gui.GetClassName(hwnd)
+                    if (
+                        not class_name
+                        or window_class_name.lower() not in class_name.lower()
+                    ):
+                        continue
+            except Exception:
+                continue
+
+            hinted_handles.append(hwnd)
+
+    # 候选排序: 可见优先, 面积次之, 句柄值作为稳定兜底
+    candidates = hinted_handles if hinted_handles else handles
+    best_hwnd: int | None = None
+    best_score: tuple[int, int, int] | None = None
+
+    for hwnd in candidates:
+        try:
+            visible_score = 1 if win32gui.IsWindowVisible(hwnd) else 0
+        except Exception:
+            visible_score = 0
+
+        try:
+            left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+            area_score = max(0, right - left) * max(0, bottom - top)
+        except Exception:
+            area_score = -1
+
+        score = (visible_score, area_score, -hwnd)
+        if best_score is None or score > best_score:
+            best_score = score
+            best_hwnd = hwnd
+
+    return best_hwnd
 
 
 class ProcessManager:
     """进程监视器类, 用于跟踪主进程及其所有子进程的状态"""
 
-    def __init__(self):
+    def __init__(
+        self, window_title: str | None = None, window_class_name: str | None = None
+    ):
         super().__init__()
 
         self.process: asyncio.subprocess.Process | None = None
         self.target_process: psutil.Process | None = None
+        self.window_title = window_title
+        self.window_class_name = window_class_name
 
     @property
     def main_pid(self) -> int | None:
@@ -134,7 +205,9 @@ class ProcessManager:
 
         if self.main_pid is None:
             return None
-        return get_main_window_handle(self.main_pid)
+        return get_main_window_handle(
+            self.main_pid, self.window_title, self.window_class_name
+        )
 
     async def open_process(
         self,
