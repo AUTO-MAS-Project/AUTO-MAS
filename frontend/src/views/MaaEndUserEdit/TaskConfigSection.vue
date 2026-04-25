@@ -185,7 +185,7 @@ const currentField = computed(
 )
 
 const currentTaskOptions = computed(() => {
-  if (formData.Task.SanityTaskType === 'Matrix') {
+  if (formData.Task.SanityTaskType === 'Essence') {
     return AUTO_ESSENCE_LOCATION_OPTIONS
   }
   return PROTOCOL_SPACE_TASK_OPTIONS_MAP[formData.Task.SanityTaskType as ProtocolSpaceTab]
@@ -193,13 +193,13 @@ const currentTaskOptions = computed(() => {
 
 const currentTaskValue = computed({
   get: () => {
-    if (formData.Task.SanityTaskType === 'Matrix') {
+    if (formData.Task.SanityTaskType === 'Essence') {
       return formData.Task.AutoEssenceSpecifiedLocation
     }
     return formData.Task[currentField.value]
   },
   set: value => {
-    if (formData.Task.SanityTaskType === 'Matrix') {
+    if (formData.Task.SanityTaskType === 'Essence') {
       formData.Task.AutoEssenceSpecifiedLocation = value
       return
     }
@@ -212,7 +212,7 @@ const currentTaskOption = computed(() =>
 )
 
 const rewardGroupEnabled = computed(() => {
-  if (formData.Task.SanityTaskType === 'Matrix') return false
+  if (formData.Task.SanityTaskType === 'Essence') return false
   return Boolean(currentTaskOption.value?.rewards)
 })
 
@@ -236,14 +236,14 @@ const displayRewardsSet = computed(() => {
 })
 
 const taskOptionLabel = computed(() =>
-  formData.Task.SanityTaskType === 'Matrix'
+  formData.Task.SanityTaskType === 'Essence'
     ? '基质地点'
     : (PROTOCOL_SPACE_TASK_TITLE_MAP[formData.Task.SanityTaskType as ProtocolSpaceTab] ??
       '协议空间任务')
 )
 
 const taskOptionTooltip = computed(() =>
-  formData.Task.SanityTaskType === 'Matrix'
+  formData.Task.SanityTaskType === 'Essence'
     ? '选择当前基质刷取地点'
     : (PROTOCOL_SPACE_TASK_TOOLTIP_MAP[formData.Task.SanityTaskType as ProtocolSpaceTab] ??
       '选择当前协议空间任务')
@@ -285,7 +285,7 @@ const handleSanityTaskTypeChange = (value: SanityTaskType) => {
   formData.Task.SanityTaskType = value
   emitSave('Task.SanityTaskType', formData.Task.SanityTaskType)
   ensureCurrentTaskValue()
-  if (value === 'Matrix') {
+  if (value === 'Essence') {
     emitSave(
       'Task.AutoEssenceSpecifiedLocation',
       formData.Task.AutoEssenceSpecifiedLocation ?? 'VFTheHub'
@@ -297,7 +297,7 @@ const handleSanityTaskTypeChange = (value: SanityTaskType) => {
 }
 
 const handleTaskOptionChange = () => {
-  if (formData.Task.SanityTaskType === 'Matrix') {
+  if (formData.Task.SanityTaskType === 'Essence') {
     emitSave('Task.AutoEssenceSpecifiedLocation', formData.Task.AutoEssenceSpecifiedLocation)
   } else {
     emitSave(`Task.${currentField.value}`, currentTaskValue.value)

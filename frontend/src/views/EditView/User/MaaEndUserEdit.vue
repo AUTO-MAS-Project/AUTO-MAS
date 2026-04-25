@@ -83,9 +83,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
-import { OpenAPI, Service } from '@/api'
+import { Service } from '@/api'
 import type { MaaEndPlanConfig } from '@/api'
-import { request as apiRequest } from '@/api/core/request'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { usePlanApi } from '@/composables/usePlanApi'
@@ -288,12 +287,11 @@ const loadScriptInfo = async () => {
 
 const loadSanityModeOptions = async () => {
   try {
-    const response = await apiRequest(OpenAPI, {
-      method: 'POST',
-      url: '/api/info/combox/plan',
-      body: { consumer: 'maaend' },
-      mediaType: 'application/json',
-    })
+    const response = await (
+      Service as {
+        getPlanComboxApiInfoComboxPlanPost: (requestBody: { consumer: 'maaend' }) => Promise<any>
+      }
+    ).getPlanComboxApiInfoComboxPlanPost({ consumer: 'maaend' })
     if (response?.code === 200 && response.data) {
       sanityModeOptions.value = response.data
     }

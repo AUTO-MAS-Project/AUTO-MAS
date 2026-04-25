@@ -129,10 +129,8 @@ import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { usePlanApi } from '@/composables/usePlanApi.ts'
 import { useWebSocket } from '@/composables/useWebSocket.ts'
-import { OpenAPI, Service } from '@/api'
-import { request as apiRequest } from '@/api/core/request'
+import { GetStageIn, Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
-import { GetStageIn } from '@/api/models/GetStageIn.ts'
 import { getWeekdayInTimezone } from '@/utils/dateUtils.ts'
 
 const logger = window.electronAPI.getLogger('MAA用户编辑')
@@ -740,12 +738,11 @@ const loadStageOptions = async () => {
 
 const loadStageModeOptions = async () => {
   try {
-    const response = await apiRequest(OpenAPI, {
-      method: 'POST',
-      url: '/api/info/combox/plan',
-      body: { consumer: 'maa' },
-      mediaType: 'application/json',
-    })
+    const response = await (
+      Service as {
+        getPlanComboxApiInfoComboxPlanPost: (requestBody: { consumer: 'maa' }) => Promise<any>
+      }
+    ).getPlanComboxApiInfoComboxPlanPost({ consumer: 'maa' })
     if (response && response.code === 200 && response.data) {
       stageModeOptions.value = response.data
     }

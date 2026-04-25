@@ -254,7 +254,7 @@ const getDayConfig = (timeKey: PlanTimeKey): MaaEndSanityConfig =>
 
 const getCurrentTaskOptions = (timeKey: PlanTimeKey) => {
   const dayConfig = getDayConfig(timeKey)
-  if (dayConfig.SanityTaskType === 'Matrix') {
+  if (dayConfig.SanityTaskType === 'Essence') {
     return AUTO_ESSENCE_LOCATION_OPTIONS
   }
   return PROTOCOL_SPACE_TASK_OPTIONS_MAP[dayConfig.SanityTaskType as ProtocolSpaceTab]
@@ -262,7 +262,7 @@ const getCurrentTaskOptions = (timeKey: PlanTimeKey) => {
 
 const isRewardGroupEnabledForTime = (timeKey: PlanTimeKey) => {
   const dayConfig = getDayConfig(timeKey)
-  if (dayConfig.SanityTaskType === 'Matrix') return false
+  if (dayConfig.SanityTaskType === 'Essence') return false
   return isProtocolSpaceRewardEnabled(dayConfig)
 }
 
@@ -323,7 +323,7 @@ const handleSanityTaskTypeChange = async (timeKey: PlanTimeKey, value: SanityTas
 
 const handleTaskChange = async (timeKey: PlanTimeKey, value: CurrentTaskValue) => {
   const currentConfig = getDayConfig(timeKey)
-  if (currentConfig.SanityTaskType === 'Matrix') {
+  if (currentConfig.SanityTaskType === 'Essence') {
     await saveDayConfig(timeKey, {
       ...currentConfig,
       AutoEssenceSpecifiedLocation: value as MaaEndSanityConfig['AutoEssenceSpecifiedLocation'],

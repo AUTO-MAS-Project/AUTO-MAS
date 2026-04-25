@@ -92,7 +92,18 @@ class ComboBoxOut(OutBase):
 
 
 class GetStageIn(BaseModel):
-    type: Union[Literal["User", "Today", "ALL"], WeekdayKey] = Field(
+    type: Literal[
+        "User",
+        "Today",
+        "ALL",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ] = Field(
         ...,
         description="选择的日期类型, Today为当天, ALL为包含当天未开放关卡在内的所有项",
     )

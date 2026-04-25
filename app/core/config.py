@@ -973,7 +973,11 @@ class AppConfig(GlobalConfig):
 
         plan_uid = uuid.UUID(plan_id)
         plan_config = self.PlanConfig[plan_uid]
-        consumer_config = self._plan_consumer(plan_config)
+        plan_type = type(plan_config).__name__
+        if plan_type not in PLAN_BOOK:
+            raise TypeError(f"不支持的计划表配置类型: {plan_type}")
+
+        consumer_config = PLAN_BOOK[plan_type]
         user_list: list[MaaUserConfig | MaaEndUserConfig] = []
 
         for script in self.ScriptConfig.values():
@@ -1640,17 +1644,6 @@ class AppConfig(GlobalConfig):
         logger.success("任务下拉框信息获取成功")
 
         return data
-
-    def _plan_consumer(
-        self, plan_config: MaaPlanConfig | MaaEndPlanConfig
-    ) -> dict[str, Any]:
-        """获取计划表消费方配置"""
-
-        plan_type = type(plan_config).__name__
-        if plan_type in PLAN_BOOK:
-            return PLAN_BOOK[plan_type]
-
-        raise TypeError(f"不支持的计划表配置类型: {plan_type}")
 
     async def get_plan_combox(self, consumer: PlanComboxConsumer):
         """获取指定消费方的计划下拉框信息"""

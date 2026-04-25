@@ -462,32 +462,6 @@ class MaaUserConfig(ConfigBase):
         else:
             return self.get("Data", "InfrastIndex") or "0"
 
-    def get_effective_stage_config(self) -> tuple[dict[str, Any], str]:
-        """获取当前生效的关卡配置"""
-
-        mode = self.get("Info", "StageMode")
-        if mode == "Fixed":
-            return (
-                {stage_key: self.get("Info", stage_key) for stage_key in MAA_STAGE_KEY},
-                "Fixed",
-            )
-
-        try:
-            plan = self.related_config["PlanConfig"][uuid.UUID(mode)]
-        except (KeyError, ValueError) as e:
-            raise ValueError("引用的关卡计划表不存在") from e
-
-        if not isinstance(plan, MaaPlanConfig):
-            raise TypeError(f"引用的计划表 {mode} 类型不是 MAA 计划表")
-
-        return (
-            {
-                stage_key: plan.get_current_info(stage_key).getValue()
-                for stage_key in MAA_STAGE_KEY
-            },
-            "Plan",
-        )
-
     def getTags(self) -> str:
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
@@ -563,12 +537,24 @@ class MaaUserConfig(ConfigBase):
             tags.append({"text": "基建：关闭", "color": "red"})
 
         # 关卡信息标签
-        plan_data, stage_mode = self.get_effective_stage_config()
-        plan_data = {
-            stage_key: self.get_stage_zh(plan_data[stage_key])
-            for stage_key in MAA_STAGE_KEY[2:]
-        }
-        tag_color = "blue" if stage_mode == "Fixed" else "green"
+        if self.get("Info", "StageMode") == "Fixed":
+            plan_data = {
+                stage_key: self.get_stage_zh(self.get("Info", stage_key))
+                for stage_key in MAA_STAGE_KEY[2:]
+            }
+            tag_color = "blue"
+        else:
+            plan = self.related_config["PlanConfig"][
+                uuid.UUID(self.get("Info", "StageMode"))
+            ]
+            if isinstance(plan, MaaPlanConfig):
+                plan_data = {
+                    stage_key: self.get_stage_zh(
+                        plan.get_current_info(stage_key).getValue()
+                    )
+                    for stage_key in MAA_STAGE_KEY[2:]
+                }
+                tag_color = "green"
         # 主关卡
         tags.append({"text": f"主关卡：{plan_data['Stage']}", "color": tag_color})
         # 备选关卡（合并显示）
@@ -1446,13 +1432,6 @@ class MaaPlanConfig(ConfigBase):
                 setattr(self, f"{group}_{name}", self.config_item_dict[group][name])
 
         super().__init__()
-
-    async def load(self, data: dict):
-        for group in ["ALL", *calendar.day_name]:
-            group_data = data.get(group)
-            if isinstance(group_data, dict):
-                _normalize_maaend_sanity_task_type(group_data)
-        await super().load(data)
 
     def get_current_info(self, name: str) -> ConfigItem:
         """获取当前的计划表配置项"""
