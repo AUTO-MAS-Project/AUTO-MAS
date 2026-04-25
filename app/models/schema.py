@@ -1084,22 +1084,6 @@ class EmulatorSearchOut(OutBase):
     )
 
 
-class EmulatorSearchProgress(BaseModel):
-    active: bool = Field(default=False, description="是否正在扫描")
-    phase: str = Field(default="idle", description="扫描阶段")
-    total_drives: int = Field(default=0, description="总盘符数量")
-    completed_drives: int = Field(default=0, description="已完成盘符数量")
-    current_drive: str = Field(default="", description="当前扫描盘符")
-    current_path: str = Field(default="", description="当前扫描目录路径")
-    found_count: int = Field(default=0, description="已发现模拟器数量")
-    elapsed_seconds: int = Field(default=0, description="扫描耗时（秒）")
-    progress_percent: int = Field(default=0, description="扫描进度百分比")
-
-
-class EmulatorSearchProgressOut(OutBase):
-    data: EmulatorSearchProgress = Field(..., description="扫描进度信息")
-
-
 class WebhookInBase(BaseModel):
     scriptId: Optional[str] = Field(
         default=None, description="所属脚本ID, 获取全局设置的Webhook数据时无需携带"
