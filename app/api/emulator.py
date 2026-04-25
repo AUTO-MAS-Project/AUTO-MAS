@@ -37,8 +37,6 @@ from app.models.schema import (
     EmulatorStatusOut,
     EmulatorSearchOut,
     EmulatorSearchResult,
-    EmulatorSearchProgress,
-    EmulatorSearchProgressOut,
 )
 
 router = APIRouter(prefix="/api/emulator", tags=["模拟器管理"])
@@ -187,7 +185,7 @@ async def get_status(emulator: EmulatorGetIn = Body(...)) -> EmulatorStatusOut:
 )
 async def search_emulators(
     include_full_scan: bool = Query(
-        default=False, description="是否启用全盘扫描（速度较慢）"
+        default=False, description="已停用参数，当前固定使用快速搜索"
     ),
 ) -> EmulatorSearchOut:
     """自动搜索系统中已安装的模拟器"""
@@ -206,23 +204,3 @@ async def search_emulators(
     return EmulatorSearchOut(emulators=results)
 
 
-@router.post(
-    "/emulator/search/progress",
-    tags=["Get"],
-    summary="获取全盘搜索进度",
-    response_model=EmulatorSearchProgressOut,
-    status_code=200,
-)
-async def get_search_progress() -> EmulatorSearchProgressOut:
-    try:
-        from app.utils import get_emulator_search_progress
-
-        progress = EmulatorSearchProgress(**get_emulator_search_progress())
-    except Exception as e:
-        return EmulatorSearchProgressOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            data=EmulatorSearchProgress(),
-        )
-    return EmulatorSearchProgressOut(data=progress)

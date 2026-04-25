@@ -13,7 +13,6 @@ import type { EmulatorDeleteIn } from '../models/EmulatorDeleteIn';
 import type { EmulatorGetIn } from '../models/EmulatorGetIn';
 import type { EmulatorGetOut } from '../models/EmulatorGetOut';
 import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
-import type { EmulatorSearchProgressOut } from '../models/EmulatorSearchProgressOut';
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
 import type { GetStageIn } from '../models/GetStageIn';
 import type { HistoryDataGetIn } from '../models/HistoryDataGetIn';
@@ -327,17 +326,6 @@ export class GetService {
             errors: {
                 422: `Validation Error`,
             },
-        });
-    }
-    /**
-     * 获取全盘搜索进度
-     * @returns EmulatorSearchProgressOut Successful Response
-     * @throws ApiError
-     */
-    public static getSearchProgressApiEmulatorEmulatorSearchProgressPost(): CancelablePromise<EmulatorSearchProgressOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/emulator/search/progress',
         });
     }
     /**

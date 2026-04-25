@@ -31,7 +31,6 @@ from .emulator import (
     MumuManager,
     LDManager,
     search_all_emulators,
-    get_emulator_search_progress,
     EMULATOR_TYPE_BOOK,
 )
 from .tools import decode_bytes, busy_wait
@@ -53,7 +52,6 @@ __all__ = [
     "MumuManager",
     "LDManager",
     "search_all_emulators",
-    "get_emulator_search_progress",
     "EMULATOR_TYPE_BOOK",
     "decode_bytes",
     "busy_wait",
