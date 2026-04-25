@@ -85,6 +85,7 @@ export type { NoticeOut } from './models/NoticeOut';
 export type { OCRScreenshotIn } from './models/OCRScreenshotIn';
 export type { OCRScreenshotOut } from './models/OCRScreenshotOut';
 export type { OutBase } from './models/OutBase';
+export { PlanComboxIn } from './models/PlanComboxIn';
 export { PlanCreateIn } from './models/PlanCreateIn';
 export type { PlanCreateOut } from './models/PlanCreateOut';
 export type { PlanDeleteIn } from './models/PlanDeleteIn';
