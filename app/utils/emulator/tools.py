@@ -20,13 +20,13 @@
 #   Contact: DLmaster_361@163.com
 
 
-import os
 import asyncio
 import concurrent.futures
+import multiprocessing
+import shutil
 import threading
 import time
 import winreg
-import subprocess
 from maa.toolkit import Toolkit
 from contextlib import suppress
 from pathlib import Path
@@ -57,9 +57,9 @@ def get_available_drives() -> List[str]:
     """获取当前系统可用盘符"""
     drives = []
     for c in range(65, 91):  # A-Z
-        drive = f"{chr(c)}:\\"
-        if os.path.exists(drive):
-            drives.append(drive)
+        drive = Path(f"{chr(c)}:/")
+        if drive.exists():
+            drives.append(str(drive))
     return drives
 
 
@@ -82,33 +82,35 @@ def _search_in_directory_sync(
 ) -> Set[str]:
     """同步目录搜索，用于线程池并发全盘扫描"""
     found_paths: Set[str] = set()
-    stack: List[tuple[str, int]] = [(directory, 0)]
+    stack: List[tuple[Path, int]] = [(Path(directory), 0)]
 
     while stack:
         current_dir, depth = stack.pop()
         if progress_callback is not None:
             with suppress(Exception):
-                progress_callback(current_dir)
+                progress_callback(str(current_dir))
         if depth > max_depth:
             continue
 
         try:
-            with os.scandir(current_dir) as entries:
-                for entry in entries:
-                    try:
-                        if entry.is_dir(follow_symlinks=False):
-                            entry_name = entry.name.lower()
-                            if entry_name.startswith(".") or entry_name.startswith("$"):
-                                continue
-                            stack.append((entry.path, depth + 1))
-                        elif entry.is_file(follow_symlinks=False):
-                            if (
-                                Path(entry.path).suffix.lower() in EXECUTABLE_EXTENSIONS
-                                and entry.name in executable_names
-                            ):
-                                found_paths.add(entry.path)
-                    except (PermissionError, OSError):
+            for entry in current_dir.iterdir():
+                try:
+                    # 保持与旧逻辑一致：跳过符号链接，避免死循环或重复路径
+                    if entry.is_symlink():
                         continue
+                    if entry.is_dir():
+                        entry_name = entry.name.lower()
+                        if entry_name.startswith(".") or entry_name.startswith("$"):
+                            continue
+                        stack.append((entry, depth + 1))
+                    elif entry.is_file():
+                        if (
+                            entry.suffix.lower() in EXECUTABLE_EXTENSIONS
+                            and entry.name in executable_names
+                        ):
+                            found_paths.add(str(entry))
+                except (PermissionError, OSError):
+                    continue
         except (PermissionError, OSError):
             continue
 
@@ -146,7 +148,7 @@ def _full_disk_scan_sync(executable_names: Set[str]) -> Set[str]:
         progress_percent=0,
     )
 
-    worker_count = min(max(2, (os.cpu_count() or 4) // 2), len(drives), 6)
+    worker_count = min(max(2, (multiprocessing.cpu_count() or 4) // 2), len(drives), 6)
     progress_update_lock = threading.Lock()
     last_path_update_ts = 0.0
 
@@ -364,13 +366,9 @@ def _search_from_path(executables: List[str]) -> str:
     """从系统PATH搜索模拟器"""
 
     for executable in executables:
-        with suppress(subprocess.TimeoutExpired, subprocess.SubprocessError):
-            # 使用where命令搜索可执行文件
-            result = subprocess.run(
-                ["where", executable], capture_output=True, text=True, timeout=5
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                return result.stdout.strip().split("\n")[0]
+        resolved_path = shutil.which(executable)
+        if resolved_path:
+            return str(Path(resolved_path))
 
     return ""
 
@@ -378,10 +376,12 @@ def _search_from_path(executables: List[str]) -> str:
 def _validate_emulator_path(path: str, executables: List[str]) -> bool:
     """验证模拟器路径是否有效"""
 
-    if not path or not os.path.exists(path):
+    if not path:
         return False
 
     path_obj = Path(path)
+    if not path_obj.exists():
+        return False
 
     # 检查当前目录是否直接包含任何可执行文件
     for executable in executables:
@@ -413,7 +413,11 @@ def find_emulator_manager_path(
         str: 找到的主管理器程序的完整路径，如果未找到则返回原输入路径
     """
 
-    if not input_path or not os.path.exists(input_path):
+    if not input_path:
+        logger.warning(f"输入路径无效: {input_path}")
+        return input_path
+    input_path_obj = Path(input_path)
+    if not input_path_obj.exists():
         logger.warning(f"输入路径无效: {input_path}")
         return input_path
 
@@ -427,7 +431,7 @@ def find_emulator_manager_path(
     # 第一个可执行文件是主管理器程序（优先级最高）
     primary_exe = executables[0]
 
-    path_obj = Path(input_path)
+    path_obj = input_path_obj
 
     # 如果输入的是文件,先获取其父目录
     if path_obj.is_file():
