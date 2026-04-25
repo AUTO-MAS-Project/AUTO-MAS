@@ -646,10 +646,6 @@ export function useScriptApi() {
                         SanityTaskType:
                           maaEndUserData.Task?.SanityTaskType !== undefined
                             ? maaEndUserData.Task.SanityTaskType
-                            : 'ProtocolSpace',
-                        ProtocolSpaceTab:
-                          maaEndUserData.Task?.ProtocolSpaceTab !== undefined
-                            ? maaEndUserData.Task.ProtocolSpaceTab
                             : 'OperatorProgression',
                         OperatorProgression:
                           maaEndUserData.Task?.OperatorProgression !== undefined

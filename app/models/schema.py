@@ -24,6 +24,8 @@
 from pydantic import BaseModel, ConfigDict, Field
 from typing import Any, Dict, List, Union, Optional, Literal, Generic, TypeVar
 
+from app.utils.constants import PLAN_CONSUMER_VALUES
+
 
 WeekdayKey = Literal[
     "Monday",
@@ -563,12 +565,11 @@ class MaaEndUserConfig_Info(BaseModel):
 
 
 class MaaEndUserConfig_Task(BaseModel):
-    SanityTaskType: Optional[Literal["ProtocolSpace", "Matrix"]] = Field(
+    SanityTaskType: Optional[
+        Literal["OperatorProgression", "WeaponProgression", "CrisisDrills", "Essence"]
+    ] = Field(
         default=None, description="理智任务类型"
     )
-    ProtocolSpaceTab: Optional[
-        Literal["OperatorProgression", "WeaponProgression", "CrisisDrills"]
-    ] = Field(default=None, description="协议空间选项卡")
     OperatorProgression: Optional[
         Literal["OperatorEXP", "Promotions", "T-Creds", "SkillUp"]
     ] = Field(default=None, description="干员养成任务")
@@ -847,6 +848,7 @@ class SrcConfig(BaseModel):
 
 
 PlanConfigType = Literal["MaaPlanConfig", "MaaEndPlanConfig"]
+PlanComboxConsumer = Literal[*PLAN_CONSUMER_VALUES]
 
 
 class PlanIndexItem(BaseModel):
@@ -901,12 +903,11 @@ class MaaEndPlanConfig_Info(BaseModel):
 class MaaEndPlanConfig_Item(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    SanityTaskType: Optional[Literal["ProtocolSpace", "Matrix"]] = Field(
+    SanityTaskType: Optional[
+        Literal["OperatorProgression", "WeaponProgression", "CrisisDrills", "Essence"]
+    ] = Field(
         default=None, description="理智任务类型"
     )
-    ProtocolSpaceTab: Optional[
-        Literal["OperatorProgression", "WeaponProgression", "CrisisDrills"]
-    ] = Field(default=None, description="协议空间选项卡")
     OperatorProgression: Optional[
         Literal["OperatorEXP", "Promotions", "T-Creds", "SkillUp"]
     ] = Field(default=None, description="干员养成任务")
@@ -1197,6 +1198,10 @@ class WebhookTestIn(WebhookInBase):
 
 class PlanCreateIn(BaseModel):
     type: PlanCreateType
+
+
+class PlanComboxIn(BaseModel):
+    consumer: PlanComboxConsumer = Field(..., description="计划表消费方")
 
 
 class PlanCreateOut(OutBase):

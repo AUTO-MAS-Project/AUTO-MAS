@@ -184,7 +184,6 @@ export interface User {
   }
   Task: {
     SanityTaskType?: string
-    ProtocolSpaceTab?: string
     OperatorProgression?: string
     WeaponProgression?: string
     CrisisDrills?: string

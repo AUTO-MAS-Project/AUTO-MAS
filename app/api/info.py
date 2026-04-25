@@ -120,34 +120,16 @@ async def get_task_combox() -> ComboBoxOut:
 
 
 @router.post(
-    "/combox/maa-plan",
+    "/combox/plan",
     tags=["Get"],
-    summary="获取可选 MAA 计划下拉框信息",
+    summary="获取可选计划下拉框信息",
     response_model=ComboBoxOut,
     status_code=200,
 )
-async def get_maa_plan_combox() -> ComboBoxOut:
-    try:
-        raw_data = await Config.get_maa_plan_combox()
-        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
-    except Exception as e:
-        return ComboBoxOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
-        )
-    return ComboBoxOut(data=data)
-
-
-@router.post(
-    "/combox/maaend-plan",
-    tags=["Get"],
-    summary="获取可选 MaaEnd 计划下拉框信息",
-    response_model=ComboBoxOut,
-    status_code=200,
-)
-async def get_maaend_plan_combox() -> ComboBoxOut:
+async def get_plan_combox(plan: PlanComboxIn = Body(...)) -> ComboBoxOut:
 
     try:
-        raw_data = await Config.get_maaend_plan_combox()
+        raw_data = await Config.get_plan_combox(plan.consumer)
         data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
     except Exception as e:
         return ComboBoxOut(

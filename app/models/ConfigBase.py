@@ -152,12 +152,10 @@ class MultipleUIDValidator(ValidatorBase):
         default: Any,
         related_config: dict[str, MultipleConfig],
         config_name: str,
-        config_type: Type[Any] | None = None,
     ):
         self.default = default
         self.related_config = related_config
         self.config_name = config_name
-        self.config_type = config_type
 
     def validate(self, value):
         if value == self.default:
@@ -169,11 +167,7 @@ class MultipleUIDValidator(ValidatorBase):
         except (TypeError, ValueError):
             return False
         config = self.related_config.get(self.config_name, {})
-        if uid in config:
-            if self.config_type is None:
-                return True
-            return isinstance(config[uid], self.config_type)
-        return False
+        return uid in config
 
     def correct(self, value):
         if self.validate(value):

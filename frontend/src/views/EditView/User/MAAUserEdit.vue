@@ -129,7 +129,8 @@ import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { usePlanApi } from '@/composables/usePlanApi.ts'
 import { useWebSocket } from '@/composables/useWebSocket.ts'
-import { Service } from '@/api'
+import { OpenAPI, Service } from '@/api'
+import { request as apiRequest } from '@/api/core/request'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 import { GetStageIn } from '@/api/models/GetStageIn.ts'
 import { getWeekdayInTimezone } from '@/utils/dateUtils.ts'
@@ -739,7 +740,12 @@ const loadStageOptions = async () => {
 
 const loadStageModeOptions = async () => {
   try {
-    const response = await Service.getMaaPlanComboxApiInfoComboxMaaPlanPost()
+    const response = await apiRequest(OpenAPI, {
+      method: 'POST',
+      url: '/api/info/combox/plan',
+      body: { consumer: 'maa' },
+      mediaType: 'application/json',
+    })
     if (response && response.code === 200 && response.data) {
       stageModeOptions.value = response.data
     }

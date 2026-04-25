@@ -44,6 +44,9 @@ TYPE_BOOK = {
 }
 """配置类型映射表"""
 
+PLAN_CONSUMER_VALUES = ("maa", "maaend")
+"""计划表消费方列表，后续新计划表添加时请将消费方添加到此处"""
+
 MAA_RUN_MOOD_BOOK = {"Annihilation": "剿灭", "Routine": "日常"}
 """MAA运行模式映射表"""
 
@@ -193,11 +196,17 @@ MAAEND_STAGE_BOOK = {
 MAAEND_STAGE_WITH_AB = set(["OperatorEXP", "Promotions", "SkillUp", "WeaponTune"])
 """MAAEnd任务包含AB关的关卡列表"""
 
-MAAEND_SANITY_TASK_TYPES = ("ProtocolSpace", "Matrix")
+MAAEND_PROTOCOL_SPACE_TABS = (
+    "OperatorProgression",
+    "WeaponProgression",
+    "CrisisDrills",
+)
+"""MAAEnd协议空间任务分类列表"""
+
+MAAEND_SANITY_TASK_TYPES = (*MAAEND_PROTOCOL_SPACE_TABS, "Essence")
 """MAAEnd理智任务类型列表"""
 
 MAAEND_PROTOCOL_SPACE_FIELDS = (
-    "ProtocolSpaceTab",
     "OperatorProgression",
     "WeaponProgression",
     "CrisisDrills",
@@ -205,7 +214,7 @@ MAAEND_PROTOCOL_SPACE_FIELDS = (
 )
 """MAAEnd协议空间任务字段列表"""
 
-MAAEND_MATRIX_FIELDS = ("AutoEssenceSpecifiedLocation",)
+MAAEND_ESSENCE_FIELDS = ("AutoEssenceSpecifiedLocation",)
 """MAAEnd基质刷取任务字段列表"""
 
 MAAEND_AUTO_ESSENCE_LOCATIONS = (
@@ -221,7 +230,7 @@ MAAEND_AUTO_ESSENCE_LOCATIONS = (
 MAAEND_PLAN_FIELDS = (
     "SanityTaskType",
     *MAAEND_PROTOCOL_SPACE_FIELDS,
-    *MAAEND_MATRIX_FIELDS,
+    *MAAEND_ESSENCE_FIELDS,
 )
 """MAAEnd计划表字段列表"""
 

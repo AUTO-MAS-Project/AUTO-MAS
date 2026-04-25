@@ -53,13 +53,12 @@ from app.models.config import (
     GeneralUserConfig,
     GlobalConfig,
     CLASS_BOOK,
-    PLAN_CREATE_CLASS_BOOK,
-    PLAN_CONFIG_CLASS_BOOK,
+    PLAN_BOOK,
     Webhook,
     TimeSet,
     EmulatorConfig,
 )
-from app.models.schema import WebSocketMessage
+from app.models.schema import WebSocketMessage, PlanComboxConsumer
 from app.utils.constants import (
     UTC4,
     UTC8,
@@ -71,20 +70,6 @@ from app.utils.constants import (
 from app.utils import get_logger
 
 logger = get_logger("配置管理")
-
-PLAN_CONSUMER_BOOK = {
-    "maa": {
-        "plan_type": "MaaPlanConfig",
-        "script_class": MaaConfig,
-        "field_name": "StageMode",
-    },
-    "maaend": {
-        "plan_type": "MaaEndPlanConfig",
-        "script_class": MaaEndConfig,
-        "field_name": "SanityMode",
-    },
-}
-"""计划表消费方映射表"""
 
 if (Path.cwd() / "environment/git/bin/git.exe").exists():
     os.environ["GIT_PYTHON_GIT_EXECUTABLE"] = str(
@@ -952,7 +937,10 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"添加计划表: {script}")
 
-        return await self.PlanConfig.add(PLAN_CREATE_CLASS_BOOK[script])
+        plan_class = next(
+            item["config_class"] for item in PLAN_BOOK.values() if item["create_type"] == script
+        )
+        return await self.PlanConfig.add(plan_class)
 
     async def get_plan(self, plan_id: Optional[str]) -> tuple[list, dict]:
         """获取计划表配置"""
@@ -1659,17 +1647,21 @@ class AppConfig(GlobalConfig):
         """获取计划表消费方配置"""
 
         plan_type = type(plan_config).__name__
-        for consumer_config in PLAN_CONSUMER_BOOK.values():
-            if consumer_config["plan_type"] == plan_type:
-                return consumer_config
+        if plan_type in PLAN_BOOK:
+            return PLAN_BOOK[plan_type]
 
         raise TypeError(f"不支持的计划表配置类型: {plan_type}")
 
-    async def get_plan_combox(self, consumer: Literal["maa", "maaend"]):
+    async def get_plan_combox(self, consumer: PlanComboxConsumer):
         """获取指定消费方的计划下拉框信息"""
 
-        consumer_config = PLAN_CONSUMER_BOOK[consumer]
-        plan_class = PLAN_CONFIG_CLASS_BOOK[consumer_config["plan_type"]]
+        consumer_config = next(
+            (item for item in PLAN_BOOK.values() if item["consumer"] == consumer), None
+        )
+        if consumer_config is None:
+            raise TypeError(f"不支持的计划表消费方类型: {consumer}")
+
+        plan_class = consumer_config["config_class"]
         logger.info(f"开始获取 {consumer} 计划下拉框信息")
 
         data = [{"label": "固定", "value": "Fixed"}]
@@ -1680,16 +1672,6 @@ class AppConfig(GlobalConfig):
         logger.success(f"{consumer} 计划下拉框信息获取成功")
 
         return data
-
-    async def get_maa_plan_combox(self):
-        """获取 MAA 计划下拉框信息"""
-
-        return await self.get_plan_combox("maa")
-
-    async def get_maaend_plan_combox(self):
-        """获取 MaaEnd 计划下拉框信息"""
-
-        return await self.get_plan_combox("maaend")
 
     async def get_emulator_combox(self):
         """获取模拟器下拉框信息"""

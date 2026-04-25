@@ -6,7 +6,7 @@ export type MaaEndUserConfig_Task = {
   /**
    * 理智任务类型
    */
-  SanityTaskType?: 'ProtocolSpace' | 'Matrix' | null
+  SanityTaskType?: 'ProtocolSpace' | 'Essence' | null
   /**
    * 协议空间选项卡
    */

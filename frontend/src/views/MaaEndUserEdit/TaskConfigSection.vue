@@ -74,44 +74,6 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip
-              :title="
-                isPlanMode
-                  ? '当前生效任务分类来自计划表'
-                  : formData.Task.SanityTaskType === 'ProtocolSpace'
-                    ? '选择当前要执行的协议空间任务分类'
-                    : '基质刷取无需额外分类'
-              "
-            >
-              <span class="form-label">
-                子分类
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
-          </template>
-          <div v-if="isPlanMode" class="plan-mode-display">
-            <div class="plan-value">{{ displayProtocolSpace }}</div>
-            <a-tooltip>
-              <template #title>
-                <div class="plan-tooltip" v-html="formatTooltip(protocolSpaceTooltip)"></div>
-              </template>
-              <div class="plan-source">来自计划表</div>
-            </a-tooltip>
-          </div>
-          <a-select
-            v-else
-            v-model:value="formData.Task.ProtocolSpaceTab"
-            :options="PROTOCOL_SPACE_OPTIONS"
-            :disabled="loading || formData.Task.SanityTaskType !== 'ProtocolSpace'"
-            size="large"
-            @change="handleProtocolSpaceChange"
-          />
-        </a-form-item>
-      </a-col>
-
-      <a-col :span="8">
-        <a-form-item>
-          <template #label>
             <a-tooltip :title="isPlanMode ? '当前生效任务来自计划表' : taskOptionTooltip">
               <span class="form-label">
                 {{ taskOptionLabel }}
@@ -187,8 +149,6 @@ import { navigateTo } from '@/router'
 import {
   SANITY_TASK_TYPE_OPTIONS,
   SANITY_TASK_TYPE_LABEL_MAP,
-  PROTOCOL_SPACE_OPTIONS,
-  PROTOCOL_SPACE_LABEL_MAP,
   PROTOCOL_SPACE_TASK_FIELD_MAP,
   PROTOCOL_SPACE_TASK_OPTIONS_MAP,
   PROTOCOL_SPACE_TASK_TITLE_MAP,
@@ -210,7 +170,6 @@ const props = defineProps<{
   sanityModeOptions: Array<{ label: string; value: string }>
   planModeConfig: MaaEndSanityConfig | null
   sanityTaskTypeTooltip: string
-  protocolSpaceTooltip: string
   currentTaskTooltip: string
   rewardsTooltip: string
 }>()
@@ -222,21 +181,14 @@ const emit = defineEmits<{
 const formData = props.formData
 
 const currentField = computed(
-  () =>
-    PROTOCOL_SPACE_TASK_FIELD_MAP[
-      (formData.Task.ProtocolSpaceTab ?? 'OperatorProgression') as ProtocolSpaceTab
-    ]
+  () => PROTOCOL_SPACE_TASK_FIELD_MAP[formData.Task.SanityTaskType as ProtocolSpaceTab]
 )
 
 const currentTaskOptions = computed(() => {
   if (formData.Task.SanityTaskType === 'Matrix') {
     return AUTO_ESSENCE_LOCATION_OPTIONS
   }
-  return (
-    PROTOCOL_SPACE_TASK_OPTIONS_MAP[
-      (formData.Task.ProtocolSpaceTab ?? 'OperatorProgression') as ProtocolSpaceTab
-    ] ?? PROTOCOL_SPACE_TASK_OPTIONS_MAP.OperatorProgression
-  )
+  return PROTOCOL_SPACE_TASK_OPTIONS_MAP[formData.Task.SanityTaskType as ProtocolSpaceTab]
 })
 
 const currentTaskValue = computed({
@@ -273,14 +225,6 @@ const displaySanityTaskType = computed(() => {
   return SANITY_TASK_TYPE_LABEL_MAP[displayPlanConfig.value.SanityTaskType]
 })
 
-const displayProtocolSpace = computed(() => {
-  if (!displayPlanConfig.value) return '未读取到计划表配置'
-  if (displayPlanConfig.value.SanityTaskType === 'Matrix') {
-    return SANITY_TASK_TYPE_LABEL_MAP.Matrix
-  }
-  return PROTOCOL_SPACE_LABEL_MAP[displayPlanConfig.value.ProtocolSpaceTab]
-})
-
 const displayCurrentTask = computed(() => {
   if (!displayPlanConfig.value) return '未读取到计划表配置'
   return getSanityTaskDisplayValue(displayPlanConfig.value)
@@ -294,17 +238,15 @@ const displayRewardsSet = computed(() => {
 const taskOptionLabel = computed(() =>
   formData.Task.SanityTaskType === 'Matrix'
     ? '基质地点'
-    : (PROTOCOL_SPACE_TASK_TITLE_MAP[
-        (formData.Task.ProtocolSpaceTab ?? 'OperatorProgression') as ProtocolSpaceTab
-      ] ?? '协议空间任务')
+    : (PROTOCOL_SPACE_TASK_TITLE_MAP[formData.Task.SanityTaskType as ProtocolSpaceTab] ??
+      '协议空间任务')
 )
 
 const taskOptionTooltip = computed(() =>
   formData.Task.SanityTaskType === 'Matrix'
     ? '选择当前基质刷取地点'
-    : (PROTOCOL_SPACE_TASK_TOOLTIP_MAP[
-        (formData.Task.ProtocolSpaceTab ?? 'OperatorProgression') as ProtocolSpaceTab
-      ] ?? '选择当前协议空间任务')
+    : (PROTOCOL_SPACE_TASK_TOOLTIP_MAP[formData.Task.SanityTaskType as ProtocolSpaceTab] ??
+      '选择当前协议空间任务')
 )
 
 const emitSave = (key: string, value: any) => {
@@ -354,13 +296,6 @@ const handleSanityTaskTypeChange = (value: SanityTaskType) => {
   ensureRewardGroupState()
 }
 
-const handleProtocolSpaceChange = () => {
-  ensureCurrentTaskValue()
-  emitSave('Task.ProtocolSpaceTab', formData.Task.ProtocolSpaceTab)
-  emitSave(`Task.${currentField.value}`, currentTaskValue.value)
-  ensureRewardGroupState()
-}
-
 const handleTaskOptionChange = () => {
   if (formData.Task.SanityTaskType === 'Matrix') {
     emitSave('Task.AutoEssenceSpecifiedLocation', formData.Task.AutoEssenceSpecifiedLocation)
@@ -381,7 +316,7 @@ const escapeHtml = (text: string) =>
 const formatTooltip = (text: string) => (text ? escapeHtml(text).replace(/\n/g, '<br/>') : '')
 
 watch(
-  () => [formData.Task.SanityTaskType, formData.Task.ProtocolSpaceTab],
+  () => formData.Task.SanityTaskType,
   () => {
     if (props.isPlanMode) return
     ensureCurrentTaskValue()

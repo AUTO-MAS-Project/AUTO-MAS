@@ -32,7 +32,9 @@ from app.utils.constants import (
     MATERIALS_MAP,
     RESOURCE_STAGE_INFO,
     MAA_STAGE_KEY,
+    PLAN_CONSUMER_VALUES,
     MAAEND_PLAN_FIELDS,
+    MAAEND_PROTOCOL_SPACE_TABS,
     MAAEND_SANITY_TASK_TYPES,
     MAAEND_AUTO_ESSENCE_LOCATIONS,
     MAAEND_STAGE_BOOK,
@@ -64,6 +66,25 @@ from .ConfigBase import (
 )
 from . import schema as schema_model
 from .schema import TagItem
+
+
+def _normalize_maaend_sanity_task_type(task_data: dict[str, Any]) -> None:
+    """将旧版 MaaEnd 理智任务配置迁移到当前结构"""
+
+    if not isinstance(task_data, dict):
+        return
+
+    sanity_task_type = task_data.get("SanityTaskType")
+    if sanity_task_type in MAAEND_SANITY_TASK_TYPES:
+        return
+
+    if sanity_task_type == "ProtocolSpace":
+        protocol_space_tab = task_data.get("ProtocolSpaceTab")
+        if protocol_space_tab in MAAEND_PROTOCOL_SPACE_TABS:
+            task_data["SanityTaskType"] = protocol_space_tab
+            return
+
+    task_data["SanityTaskType"] = "OperatorProgression"
 
 
 class EmulatorConfig(ConfigBase):
@@ -245,9 +266,7 @@ class MaaUserConfig(ConfigBase):
             "Info",
             "StageMode",
             "Fixed",
-            MultipleUIDValidator(
-                "Fixed", self.related_config, "PlanConfig", MaaPlanConfig
-            ),
+            MultipleUIDValidator("Fixed", self.related_config, "PlanConfig"),
         )
         ## 游戏服务器
         self.Info_Server = ConfigItem(
@@ -681,9 +700,7 @@ class MaaEndUserConfig(ConfigBase):
             "Info",
             "SanityMode",
             "Fixed",
-            MultipleUIDValidator(
-                "Fixed", self.related_config, "PlanConfig", MaaEndPlanConfig
-            ),
+            MultipleUIDValidator("Fixed", self.related_config, "PlanConfig"),
         )
         ## 资源名称
         self.Info_Resource = ConfigItem(
@@ -711,17 +728,8 @@ class MaaEndUserConfig(ConfigBase):
         self.Task_SanityTaskType = ConfigItem(
             "Task",
             "SanityTaskType",
-            "ProtocolSpace",
-            OptionsValidator(list(MAAEND_SANITY_TASK_TYPES)),
-        )
-        ## 协议空间选项
-        self.Task_ProtocolSpaceTab = ConfigItem(
-            "Task",
-            "ProtocolSpaceTab",
             "OperatorProgression",
-            OptionsValidator(
-                ["OperatorProgression", "WeaponProgression", "CrisisDrills"]
-            ),
+            OptionsValidator(list(MAAEND_SANITY_TASK_TYPES)),
         )
         self.Task_OperatorProgression = ConfigItem(
             "Task",
@@ -808,6 +816,12 @@ class MaaEndUserConfig(ConfigBase):
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
         super().__init__()
+
+    async def load(self, data: dict):
+        task_data = data.get("Task")
+        if isinstance(task_data, dict):
+            _normalize_maaend_sanity_task_type(task_data)
+        await super().load(data)
 
     def get_effective_sanity_task_config(self) -> tuple[dict[str, str], str]:
         """获取当前生效的理智任务配置"""
@@ -900,8 +914,8 @@ class MaaEndUserConfig(ConfigBase):
         # 理智任务标签
         try:
             task_config, task_mode = self.get_effective_sanity_task_config()
-            if task_config["SanityTaskType"] == "ProtocolSpace":
-                stage = task_config[task_config["ProtocolSpaceTab"]]
+            if task_config["SanityTaskType"] != "Essence":
+                stage = task_config[task_config["SanityTaskType"]]
                 stage_ab = (
                     f" - {task_config['RewardsSetOption'][-1]}"
                     if stage in MAAEND_STAGE_WITH_AB
@@ -1433,6 +1447,13 @@ class MaaPlanConfig(ConfigBase):
 
         super().__init__()
 
+    async def load(self, data: dict):
+        for group in ["ALL", *calendar.day_name]:
+            group_data = data.get(group)
+            if isinstance(group_data, dict):
+                _normalize_maaend_sanity_task_type(group_data)
+        await super().load(data)
+
     def get_current_info(self, name: str) -> ConfigItem:
         """获取当前的计划表配置项"""
 
@@ -1470,14 +1491,6 @@ class MaaEndPlanConfig(ConfigBase):
         for group in ["ALL", *calendar.day_name]:
             self.config_item_dict[group] = {}
 
-            self.config_item_dict[group]["ProtocolSpaceTab"] = ConfigItem(
-                group,
-                "ProtocolSpaceTab",
-                "OperatorProgression",
-                OptionsValidator(
-                    ["OperatorProgression", "WeaponProgression", "CrisisDrills"]
-                ),
-            )
             self.config_item_dict[group]["OperatorProgression"] = ConfigItem(
                 group,
                 "OperatorProgression",
@@ -1515,7 +1528,7 @@ class MaaEndPlanConfig(ConfigBase):
             self.config_item_dict[group]["SanityTaskType"] = ConfigItem(
                 group,
                 "SanityTaskType",
-                "ProtocolSpace",
+                "OperatorProgression",
                 OptionsValidator(list(MAAEND_SANITY_TASK_TYPES)),
             )
             self.config_item_dict[group]["AutoEssenceSpecifiedLocation"] = ConfigItem(
@@ -2063,7 +2076,9 @@ class GlobalConfig(ConfigBase):
         ## 模拟器配置列表
         self.EmulatorConfig = MultipleConfig([EmulatorConfig])
         ## 计划表配置列表
-        self.PlanConfig = MultipleConfig(list(PLAN_CREATE_CLASS_BOOK.values()))
+        self.PlanConfig = MultipleConfig(
+            [item["config_class"] for item in PLAN_BOOK.values()]
+        )
         ## 脚本配置列表
         self.ScriptConfig = MultipleConfig(
             [MaaConfig, MaaEndConfig, SrcConfig, GeneralConfig]
@@ -2152,19 +2167,22 @@ CLASS_BOOK = {
 }
 """配置类映射表"""
 
-PLAN_CREATE_CLASS_BOOK = {
-    "MaaPlan": MaaPlanConfig,
-    "MaaEndPlan": MaaEndPlanConfig,
+PLAN_BOOK = {
+    "MaaPlanConfig": {
+        "create_type": "MaaPlan",
+        "config_class": MaaPlanConfig,
+        "schema_class": schema_model.MaaPlanConfig,
+        "consumer": PLAN_CONSUMER_VALUES[0],
+        "script_class": MaaConfig,
+        "field_name": "StageMode",
+    },
+    "MaaEndPlanConfig": {
+        "create_type": "MaaEndPlan",
+        "config_class": MaaEndPlanConfig,
+        "schema_class": schema_model.MaaEndPlanConfig,
+        "consumer": PLAN_CONSUMER_VALUES[1],
+        "script_class": MaaEndConfig,
+        "field_name": "SanityMode",
+    },
 }
-"""计划表创建类型映射表"""
-
-PLAN_CONFIG_CLASS_BOOK = {
-    plan_class.__name__: plan_class for plan_class in PLAN_CREATE_CLASS_BOOK.values()
-}
-"""计划表配置类型映射表"""
-
-PLAN_SCHEMA_CLASS_BOOK = {
-    "MaaPlanConfig": schema_model.MaaPlanConfig,
-    "MaaEndPlanConfig": schema_model.MaaEndPlanConfig,
-}
-"""计划表接口模型映射表"""
+"""计划表注册表"""

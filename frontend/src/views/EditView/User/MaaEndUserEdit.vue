@@ -59,7 +59,6 @@
             :sanity-mode-options="sanityModeOptions"
             :plan-mode-config="planModeConfig"
             :sanity-task-type-tooltip="sanityTaskTypeTooltip"
-            :protocol-space-tooltip="protocolSpaceTooltip"
             :current-task-tooltip="currentTaskTooltip"
             :rewards-tooltip="rewardsTooltip"
             @save="handleFieldSave"
@@ -84,19 +83,19 @@ import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
+import { OpenAPI, Service } from '@/api'
 import type { MaaEndPlanConfig } from '@/api'
+import { request as apiRequest } from '@/api/core/request'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { usePlanApi } from '@/composables/usePlanApi'
 import { useWebSocket } from '@/composables/useWebSocket'
-import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { getWeekdayInTimezone } from '@/utils/dateUtils'
 import {
   MAAEND_PLAN_TIME_LABELS,
   MAAEND_PLAN_WEEKDAY_KEYS,
   SANITY_TASK_TYPE_LABEL_MAP,
-  PROTOCOL_SPACE_LABEL_MAP,
   REWARD_LABEL_MAP,
   getSanityTaskDisplayValue,
   normalizeMaaEndSanityConfig,
@@ -158,8 +157,7 @@ const getDefaultMaaEndUserData = () => ({
     Tag: '',
   },
   Task: {
-    SanityTaskType: 'ProtocolSpace',
-    ProtocolSpaceTab: 'OperatorProgression',
+    SanityTaskType: 'OperatorProgression',
     OperatorProgression: 'OperatorEXP',
     WeaponProgression: 'WeaponEXP',
     CrisisDrills: 'AdvancedProgression1',
@@ -198,17 +196,12 @@ const getPlanCurrentConfig = (planData?: MaaEndPlanConfig | null): MaaEndSanityC
 
 const formatPlanValue = (
   dayConfig: Partial<MaaEndSanityConfig> | null | undefined,
-  field: 'SanityTaskType' | 'ProtocolSpaceTab' | 'CurrentTask' | 'RewardsSetOption'
+  field: 'SanityTaskType' | 'CurrentTask' | 'RewardsSetOption'
 ) => {
   const normalized = normalizeMaaEndSanityConfig(dayConfig)
 
   if (field === 'SanityTaskType') {
     return SANITY_TASK_TYPE_LABEL_MAP[normalized.SanityTaskType]
-  }
-
-  if (field === 'ProtocolSpaceTab') {
-    if (normalized.SanityTaskType === 'Matrix') return SANITY_TASK_TYPE_LABEL_MAP.Matrix
-    return PROTOCOL_SPACE_LABEL_MAP[normalized.ProtocolSpaceTab]
   }
 
   if (field === 'CurrentTask') {
@@ -218,9 +211,7 @@ const formatPlanValue = (
   return REWARD_LABEL_MAP[normalized.RewardsSetOption]
 }
 
-const getPlanTooltip = (
-  field: 'SanityTaskType' | 'ProtocolSpaceTab' | 'CurrentTask' | 'RewardsSetOption'
-) => {
+const getPlanTooltip = (field: 'SanityTaskType' | 'CurrentTask' | 'RewardsSetOption') => {
   if (!isSanityPlanMode.value || !fullPlanData.value) return ''
 
   if (fullPlanData.value.Info?.Mode !== 'Weekly') {
@@ -238,7 +229,6 @@ const getPlanTooltip = (
 }
 
 const sanityTaskTypeTooltip = computed(() => getPlanTooltip('SanityTaskType'))
-const protocolSpaceTooltip = computed(() => getPlanTooltip('ProtocolSpaceTab'))
 const currentTaskTooltip = computed(() => getPlanTooltip('CurrentTask'))
 const rewardsTooltip = computed(() => getPlanTooltip('RewardsSetOption'))
 
@@ -298,7 +288,12 @@ const loadScriptInfo = async () => {
 
 const loadSanityModeOptions = async () => {
   try {
-    const response = await Service.getMaaendPlanComboxApiInfoComboxMaaendPlanPost()
+    const response = await apiRequest(OpenAPI, {
+      method: 'POST',
+      url: '/api/info/combox/plan',
+      body: { consumer: 'maaend' },
+      mediaType: 'application/json',
+    })
     if (response?.code === 200 && response.data) {
       sanityModeOptions.value = response.data
     }

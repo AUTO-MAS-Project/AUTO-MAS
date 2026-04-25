@@ -24,28 +24,10 @@
 from fastapi import APIRouter, Body
 
 from app.core import Config
-from app.models.config import PLAN_CREATE_CLASS_BOOK, PLAN_SCHEMA_CLASS_BOOK
+from app.models.config import PLAN_BOOK
 from app.models.schema import *
 
 router = APIRouter(prefix="/api/plan", tags=["计划管理"])
-
-
-def to_plan_schema(plan_type: str, raw_data: dict) -> PlanConfigData:
-    """根据计划表类型构建接口模型"""
-
-    if plan_type not in PLAN_SCHEMA_CLASS_BOOK:
-        raise ValueError(f"不支持的计划表类型: {plan_type}")
-
-    return PLAN_SCHEMA_CLASS_BOOK[plan_type](**raw_data)
-
-
-def empty_plan_schema(plan_create_type: str) -> PlanConfigData:
-    """根据计划表创建类型构建空接口模型"""
-
-    if plan_create_type not in PLAN_CREATE_CLASS_BOOK:
-        raise ValueError(f"不支持的计划表创建类型: {plan_create_type}")
-
-    return to_plan_schema(PLAN_CREATE_CLASS_BOOK[plan_create_type].__name__, {})
 
 
 @router.post(
@@ -59,14 +41,19 @@ async def add_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
 
     try:
         uid, config = await Config.add_plan(plan.type)
-        data = to_plan_schema(type(config).__name__, await config.toDict())
+        data = PLAN_BOOK[type(config).__name__]["schema_class"](**(await config.toDict()))
     except Exception as e:
+        plan_schema_class = next(
+            item["schema_class"]
+            for item in PLAN_BOOK.values()
+            if item["create_type"] == plan.type
+        )
         return PlanCreateOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             planId="",
-            data=empty_plan_schema(plan.type),
+            data=plan_schema_class(**{}),
         )
     return PlanCreateOut(planId=str(uid), data=data)
 
@@ -92,7 +79,7 @@ async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
             if uid not in raw_data:
                 raise ValueError(f"计划表索引缺少对应数据: {uid}")
 
-            data[uid] = to_plan_schema(plan_type, raw_data[uid])
+            data[uid] = PLAN_BOOK[plan_type]["schema_class"](**raw_data[uid])
     except Exception as e:
         return PlanGetOut(
             code=500,
