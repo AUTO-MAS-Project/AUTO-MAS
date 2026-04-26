@@ -62,7 +62,7 @@ CRYPT_UNPROTECT_DATA = cast(
 
 def sanitize_log_message(message: str) -> str:
     """
-    ??????????????????
+    过滤日志中的敏感信息。
 
     :param message: 原始日志消息
     :type message: str

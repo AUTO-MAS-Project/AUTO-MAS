@@ -27,7 +27,6 @@ import asyncio
 import inspect
 import json
 import tomllib
-import ast
 import uuid
 import weakref
 import os
@@ -513,8 +512,8 @@ class MultipleConfig(Generic[T]):
             for instance in instances_list:
                 if isinstance(instance, str):
                     try:
-                        parsed_instance = ast.literal_eval(instance)
-                    except (SyntaxError, ValueError):
+                        parsed_instance = json.loads(instance)
+                    except (json.JSONDecodeError, ValueError):
                         continue
                     if isinstance(parsed_instance, dict):
                         instance = parsed_instance
@@ -546,11 +545,14 @@ class MultipleConfig(Generic[T]):
                 self.data[uid] = config
                 await config.load(instance_data_dict)
 
-            if self.file:
-                await self._save_unlocked()
+            should_save = bool(self.file)
+            should_cascade = bool(self._save_methods)
 
-            if self._save_methods:
-                await asyncio.gather(*(_() for _ in self._save_methods))
+        if should_save:
+            await self._save_unlocked()
+
+        if should_cascade:
+            await asyncio.gather(*(_() for _ in self._save_methods))
 
     async def toDict(
         self,
@@ -660,18 +662,19 @@ class MultipleConfig(Generic[T]):
 
             if self.file:
                 await config.add_save_method(self.save)
-                await self._save_unlocked()
+                self._pending_save = True
 
-            if self._transaction_depth > 0:
-                self._pending_sync = self._pending_sync or bool(self._save_methods)
-            elif self._save_methods:
-                await asyncio.gather(*(_() for _ in self._save_methods))
+            if self._save_methods:
+                self._pending_sync = True
 
-            await _emit_collection_slots(
-                self._on_add_slots, MultipleConfigAddEvent(self, uid, config)
-            )
+        if self._transaction_depth == 0:
+            await self._flush_pending_changes()
 
-            return uid, config
+        await _emit_collection_slots(
+            self._on_add_slots, MultipleConfigAddEvent(self, uid, config)
+        )
+
+        return uid, config
 
     async def remove(self, uid: uuid.UUID) -> None:
         """
@@ -702,16 +705,16 @@ class MultipleConfig(Generic[T]):
             self.order.remove(uid)
 
             if self.file:
-                await self._save_unlocked()
+                self._pending_save = True
+            if self._save_methods:
+                self._pending_sync = True
 
-            if self._transaction_depth > 0:
-                self._pending_sync = self._pending_sync or bool(self._save_methods)
-            elif self._save_methods:
-                await asyncio.gather(*(_() for _ in self._save_methods))
+        if self._transaction_depth == 0:
+            await self._flush_pending_changes()
 
-            await _emit_collection_slots(
-                self._on_del_slots, MultipleConfigDeleteEvent(self, uid, config)
-            )
+        await _emit_collection_slots(
+            self._on_del_slots, MultipleConfigDeleteEvent(self, uid, config)
+        )
 
     async def setOrder(self, order: list[uuid.UUID]) -> None:  # noqa: N802
         """设置子配置实例顺序。"""
@@ -725,16 +728,45 @@ class MultipleConfig(Generic[T]):
             self.order = order
 
             if self.file:
-                await self._save_unlocked()
+                self._pending_save = True
+            if self._save_methods:
+                self._pending_sync = True
 
-            if self._transaction_depth > 0:
-                self._pending_sync = self._pending_sync or bool(self._save_methods)
-            elif self._save_methods:
-                await asyncio.gather(*(_() for _ in self._save_methods))
+        if self._transaction_depth == 0:
+            await self._flush_pending_changes()
 
-            await _emit_collection_slots(
-                self._on_reorder_slots, MultipleConfigReorderEvent(self, list(order))
-            )
+        await _emit_collection_slots(
+            self._on_reorder_slots, MultipleConfigReorderEvent(self, list(order))
+        )
+
+    async def get_item(
+        self, uid_str: str | None = None
+    ) -> tuple[list[dict[str, str]], dict[str, Any]]:
+        """通用查询：返回 (index_list, data_dict)。"""
+
+        if uid_str is None:
+            data = await self.toDict()
+        else:
+            data = await self.get(uuid.UUID(uid_str))
+        index = data.pop("instances", [])
+        return list(index), data
+
+    async def update_item(
+        self, uid_str: str, data: dict[str, dict[str, Any]]
+    ) -> None:
+        """通用更新：根据 UID 字符串更新子配置。"""
+
+        await self[uuid.UUID(uid_str)].set_many(data)
+
+    async def del_item(self, uid_str: str) -> None:
+        """通用删除：根据 UID 字符串删除子配置。"""
+
+        await self.remove(uuid.UUID(uid_str))
+
+    async def reorder_items(self, index_list: list[str]) -> None:
+        """通用排序：根据 UID 字符串列表重新排序。"""
+
+        await self.setOrder([uuid.UUID(uid) for uid in index_list])
 
     async def lock(self) -> None:
         """锁定当前管理器及全部子配置。"""

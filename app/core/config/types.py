@@ -202,6 +202,9 @@ def _validate_keyboard_key(value: Any) -> str:
     return text
 
 
+_ENCRYPTED_PREFIX = "DPAPI:"
+
+
 def _normalize_encrypted_string(value: Any) -> str:
     """
     规范化加密字符串。
@@ -216,19 +219,22 @@ def _normalize_encrypted_string(value: Any) -> str:
     """
     text = _to_string(value)
     if not text:
-        raise ValueError("加密字段不能为空")
+        return ""
+
+    if text.startswith(_ENCRYPTED_PREFIX):
+        return text
 
     try:
-        # 尝试解密，如果成功说明已加密
-        dpapi_decrypt(text)
-        return text
-    except ValueError:
-        # 解密失败，说明是明文，需要加密
-        try:
-            return dpapi_encrypt(text)
-        except (ValueError, TypeError) as e:
-            logger.error(f"加密失败: {e}, 输入长度: {len(text)}")
-            raise ValueError("加密失败") from e
+        plaintext = dpapi_decrypt(text)
+        return _ENCRYPTED_PREFIX + dpapi_encrypt(plaintext)
+    except (ValueError, Exception):
+        pass
+
+    try:
+        return _ENCRYPTED_PREFIX + dpapi_encrypt(text)
+    except (ValueError, TypeError) as e:
+        logger.error(f"加密失败: {e}, 输入长度: {len(text)}")
+        raise ValueError("加密失败") from e
 
 
 def decrypt_encrypted_string(value: str) -> str:
@@ -239,13 +245,15 @@ def decrypt_encrypted_string(value: str) -> str:
         value: 加密的字符串
 
     Returns:
-        解密后的明文，失败时返回错误提示
+        解密后的明文，失败时抛出异常
     """
     if not value:
         return ""
 
+    cipher = value[len(_ENCRYPTED_PREFIX):] if value.startswith(_ENCRYPTED_PREFIX) else value
+
     try:
-        return dpapi_decrypt(value)
+        return dpapi_decrypt(cipher)
     except ValueError as e:
         logger.error(f"解密失败: {e}")
         raise ValueError("数据损坏，请重新设置") from e

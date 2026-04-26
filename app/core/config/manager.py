@@ -21,7 +21,6 @@
 #   Contact: DLmaster_361@163.com
 
 import os
-import re
 import sys
 import httpx
 import shutil
@@ -32,7 +31,6 @@ import tomllib
 import truststore
 from pathlib import Path
 from fastapi import WebSocket
-from collections import defaultdict
 from jinja2 import Environment, FileSystemLoader
 from datetime import datetime, timedelta, date
 from typing import Literal, Optional, Dict, Any, List, ClassVar, cast
@@ -56,6 +54,9 @@ from app.utils.constants import (
     RESOURCE_STAGE_DATE_TEXT,
 )
 from app.utils import get_logger
+from app.services.git_service import GitService
+from app.services.log_service import LogService
+from app.services.migration import MigrationService
 
 logger = get_logger("配置管理")
 
@@ -88,10 +89,10 @@ class AppConfig(GlobalConfig):
         logger.info(f"工作目录:  {Path.cwd()}")
         logger.info("===================================")
 
-        self.log_path = Path.cwd() / "debug/app.log"
-        self.database_path = Path.cwd() / "data/data.db"
-        self.config_path = Path.cwd() / "config"
-        self.history_path = Path.cwd() / "history"
+        object.__setattr__(self, "log_path", Path.cwd() / "debug/app.log")
+        object.__setattr__(self, "database_path", Path.cwd() / "data/data.db")
+        object.__setattr__(self, "config_path", Path.cwd() / "config")
+        object.__setattr__(self, "history_path", Path.cwd() / "history")
         # 检查目录
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -101,30 +102,27 @@ class AppConfig(GlobalConfig):
         # 初始化Git仓库（如果可用）
         try:
             if Repo is not None:
-                self.repo = Repo(Path.cwd())
+                object.__setattr__(self, "repo", Repo(Path.cwd()))
             else:
-                self.repo = None
+                object.__setattr__(self, "repo", None)
         except (OSError, ValueError) as e:
             logger.warning(f"Git仓库初始化失败: {e}")
-            self.repo = None
+            object.__setattr__(self, "repo", None)
 
-        self.notify_env = Environment(
-            loader=FileSystemLoader(str(Path.cwd() / "res/html"))
+        object.__setattr__(
+            self,
+            "notify_env",
+            Environment(loader=FileSystemLoader(str(Path.cwd() / "res/html"))),
         )
 
-        self.server: Optional[uvicorn.Server] = None
-        self.websocket: Optional[WebSocket] = None
-        self.web_connections: set[WebSocket] = set()
-        self.power_sign: Literal[
-            "NoAction",
-            "Shutdown",
-            "ShutdownForce",
-            "Reboot",
-            "Hibernate",
-            "Sleep",
-            "KillSelf",
-        ] = "NoAction"
-        self.temp_task: List[asyncio.Task[Any]] = []
+        object.__setattr__(self, "server", None)
+        object.__setattr__(self, "websocket", None)
+        object.__setattr__(self, "web_connections", set())
+        object.__setattr__(self, "power_sign", "NoAction")
+        object.__setattr__(self, "temp_task", [])
+
+        object.__setattr__(self, "_migration_service", MigrationService(self))
+        object.__setattr__(self, "_log_service", LogService(self.history_path))
 
         truststore.inject_into_ssl()
 
@@ -188,314 +186,16 @@ class AppConfig(GlobalConfig):
         await System.set_Sleep(self.get("Function", "IfAllowSleep"))
 
         self.loop = asyncio.get_running_loop()
+        object.__setattr__(
+            self, "_git_service", GitService(self.repo, self.loop)
+        )
 
         logger.info("程序初始化完成")
 
     async def check_data(self) -> None:
         """检查用户数据文件并处理数据文件版本更新"""
 
-        # 生成主数据库
-        if not self.database_path.exists():
-            db = sqlite3.connect(self.database_path)
-            cur = db.cursor()
-            cur.execute("CREATE TABLE version(v text)")
-            cur.execute("INSERT INTO version VALUES(?)", ("v1.11",))
-            db.commit()
-            cur.close()
-            db.close()
-
-        # 数据文件版本更新
-        db = sqlite3.connect(self.database_path)
-        cur = db.cursor()
-        cur.execute("SELECT * FROM version WHERE True")
-        version = cur.fetchall()
-
-        if version[0][0] != "v1.11":
-            logger.info(
-                "数据文件版本更新开始",
-            )
-            if_streaming = False
-            # v1.7-->v1.8
-            if version[0][0] == "v1.7" or if_streaming:
-                logger.info(
-                    "数据文件版本更新: v1.7-->v1.8",
-                )
-                if_streaming = True
-
-                if (Path.cwd() / "config/QueueConfig").exists():
-                    for QueueConfig in (Path.cwd() / "config/QueueConfig").glob(
-                        "*.json"
-                    ):
-                        with QueueConfig.open(encoding="utf-8") as f:
-                            queue_config = json.load(f)
-
-                        queue_config["QueueSet"]["TimeEnabled"] = queue_config[
-                            "QueueSet"
-                        ]["Enabled"]
-
-                        for i in range(10):
-                            queue_config["Queue"][f"Script_{i}"] = queue_config[
-                                "Queue"
-                            ][f"Member_{i + 1}"]
-                            queue_config["Time"][f"Enabled_{i}"] = queue_config["Time"][
-                                f"TimeEnabled_{i}"
-                            ]
-                            queue_config["Time"][f"Set_{i}"] = queue_config["Time"][
-                                f"TimeSet_{i}"
-                            ]
-
-                        with QueueConfig.open("w", encoding="utf-8") as f:
-                            json.dump(queue_config, f, ensure_ascii=False, indent=4)
-
-                cur.execute("DELETE FROM version WHERE v = ?", ("v1.7",))
-                cur.execute("INSERT INTO version VALUES(?)", ("v1.8",))
-                db.commit()
-            # v1.8-->v1.9
-            if version[0][0] == "v1.8" or if_streaming:
-                logger.info(
-                    "数据文件版本更新: v1.8-->v1.9",
-                )
-                if_streaming = True
-
-                await self.ScriptConfig.connect(
-                    self._resolve_config_path("ScriptConfig")
-                )
-                await self.PlanConfig.connect(self._resolve_config_path("PlanConfig"))
-                await self.QueueConfig.connect(self._resolve_config_path("QueueConfig"))
-
-                if (Path.cwd() / "config/config.json").exists():
-                    (Path.cwd() / "config/config.json").rename(
-                        Path.cwd() / "config/Config.json"
-                    )
-                await self.connect(self._resolve_config_path("Config"))
-
-                plan_dict = {"固定": "Fixed"}
-
-                if (Path.cwd() / "config/MaaPlanConfig").exists():
-                    for MaaPlanConfig in (
-                        Path.cwd() / "config/MaaPlanConfig"
-                    ).iterdir():
-                        if (
-                            MaaPlanConfig.is_dir()
-                            and (MaaPlanConfig / "config.json").exists()
-                        ):
-                            maa_plan_config = json.loads(
-                                (MaaPlanConfig / "config.json").read_text(
-                                    encoding="utf-8"
-                                )
-                            )
-                            uid, pc = await self.add_plan("MaaPlan")
-                            plan_dict[MaaPlanConfig.name] = str(uid)
-
-                            await pc.load(maa_plan_config)
-
-                script_dict: Dict[str, Optional[str]] = {"禁用": None}
-
-                if (Path.cwd() / "config/MaaConfig").exists():
-                    for MaaConfig in (Path.cwd() / "config/MaaConfig").iterdir():
-                        if MaaConfig.is_dir():
-                            maa_config = json.loads(
-                                (MaaConfig / "config.json").read_text(encoding="utf-8")
-                            )
-                            maa_config["Info"] = maa_config["MaaSet"]
-                            maa_config["Run"] = maa_config["RunSet"]
-
-                            uid, sc = await self.add_script("MAA")
-                            script_dict[MaaConfig.name] = str(uid)
-                            await sc.load(maa_config)
-
-                            if (MaaConfig / "Default/gui.json").exists():
-                                (Path.cwd() / f"data/{uid}/Default/ConfigFile").mkdir(
-                                    parents=True, exist_ok=True
-                                )
-                                shutil.copy(
-                                    MaaConfig / "Default/gui.json",
-                                    Path.cwd()
-                                    / f"data/{uid}/Default/ConfigFile/gui.json",
-                                )
-
-                            for user in (MaaConfig / "UserData").iterdir():
-                                if user.is_dir() and (user / "config.json").exists():
-                                    user_config = json.loads(
-                                        (user / "config.json").read_text(
-                                            encoding="utf-8"
-                                        )
-                                    )
-
-                                    user_config["Info"]["StageMode"] = plan_dict.get(
-                                        user_config["Info"]["StageMode"], "Fixed"
-                                    )
-                                    user_config["Info"]["Password"] = ""
-
-                                    user_uid, uc = await self.add_user(str(uid))
-                                    await uc.load(user_config)
-
-                                    if (user / "Routine/gui.json").exists():
-                                        (
-                                            Path.cwd()
-                                            / f"data/{uid}/{user_uid}/ConfigFile"
-                                        ).mkdir(parents=True, exist_ok=True)
-                                        shutil.copy(
-                                            user / "Routine/gui.json",
-                                            Path.cwd()
-                                            / f"data/{uid}/{user_uid}/ConfigFile/gui.json",
-                                        )
-                                    if (
-                                        user / "Infrastructure/infrastructure.json"
-                                    ).exists():
-                                        (
-                                            Path.cwd()
-                                            / f"data/{uid}/{user_uid}/Infrastructure"
-                                        ).mkdir(parents=True, exist_ok=True)
-                                        shutil.copy(
-                                            user / "Infrastructure/infrastructure.json",
-                                            Path.cwd()
-                                            / f"data/{uid}/{user_uid}/Infrastructure/infrastructure.json",
-                                        )
-
-                if (Path.cwd() / "config/GeneralConfig").exists():
-                    for GeneralConfig in (
-                        Path.cwd() / "config/GeneralConfig"
-                    ).iterdir():
-                        if GeneralConfig.is_dir():
-                            general_config = json.loads(
-                                (GeneralConfig / "config.json").read_text(
-                                    encoding="utf-8"
-                                )
-                            )
-                            general_config["Info"] = {
-                                "Name": general_config["Script"]["Name"],
-                                "RootPath": general_config["Script"]["RootPath"],
-                            }
-
-                            general_config["Script"]["ConfigPathMode"] = (
-                                "File"
-                                if "所有文件"
-                                in general_config["Script"]["ConfigPathMode"]
-                                else "Folder"
-                            )
-
-                            uid, sc = await self.add_script("General")
-                            script_dict[GeneralConfig.name] = str(uid)
-                            await sc.load(general_config)
-
-                            for user in (GeneralConfig / "SubData").iterdir():
-                                if user.is_dir() and (user / "config.json").exists():
-                                    user_config = json.loads(
-                                        (user / "config.json").read_text(
-                                            encoding="utf-8"
-                                        )
-                                    )
-
-                                    user_uid, uc = await self.add_user(str(uid))
-                                    await uc.load(user_config)
-
-                                    if (user / "ConfigFiles").exists():
-                                        (Path.cwd() / f"data/{uid}/{user_uid}").mkdir(
-                                            parents=True, exist_ok=True
-                                        )
-                                        shutil.move(
-                                            user / "ConfigFiles",
-                                            Path.cwd()
-                                            / f"data/{uid}/{user_uid}/ConfigFile",
-                                        )
-
-                if (Path.cwd() / "config/QueueConfig").exists():
-                    for QueueConfig in (Path.cwd() / "config/QueueConfig").glob(
-                        "*.json"
-                    ):
-                        queue_config = json.loads(
-                            QueueConfig.read_text(encoding="utf-8")
-                        )
-
-                        uid, qc = await self.add_queue()
-
-                        queue_config["Info"] = queue_config["QueueSet"]
-                        await qc.load(queue_config)
-
-                        for i in range(10):
-                            _, item = await self.add_queue_item(str(uid))
-                            _, time = await self.add_time_set(str(uid))
-
-                            await time.load(
-                                {
-                                    "Info": {
-                                        "Enabled": queue_config["Time"][f"Enabled_{i}"],
-                                        "Time": queue_config["Time"][f"Set_{i}"],
-                                    }
-                                }
-                            )
-                            await item.load(
-                                {
-                                    "Info": {
-                                        "ScriptId": script_dict.get(
-                                            queue_config["Queue"][f"Script_{i}"], "-"
-                                        )
-                                    }
-                                }
-                            )
-
-                if (Path.cwd() / "config/QueueConfig").exists():
-                    shutil.rmtree(Path.cwd() / "config/QueueConfig")
-                if (Path.cwd() / "config/MaaPlanConfig").exists():
-                    shutil.rmtree(Path.cwd() / "config/MaaPlanConfig")
-                if (Path.cwd() / "config/MaaConfig").exists():
-                    shutil.rmtree(Path.cwd() / "config/MaaConfig")
-                if (Path.cwd() / "config/GeneralConfig").exists():
-                    shutil.rmtree(Path.cwd() / "config/GeneralConfig")
-                if (Path.cwd() / "data/gameid.txt").exists():
-                    (Path.cwd() / "data/gameid.txt").unlink()
-                if (Path.cwd() / "data/key").exists():
-                    shutil.rmtree(Path.cwd() / "data/key")
-
-                cur.execute("DELETE FROM version WHERE v = ?", ("v1.8",))
-                cur.execute("INSERT INTO version VALUES(?)", ("v1.9",))
-                db.commit()
-            # v1.9-->v1.10
-            if version[0][0] == "v1.9" or if_streaming:
-                logger.info(
-                    "数据文件版本更新: v1.9-->v1.10",
-                )
-                if_streaming = True
-
-                global_config_path = self._resolve_config_path("Config")
-                if global_config_path.exists():
-                    data = self._read_mapping_config(global_config_path)
-                    data["Data"]["LastStageUpdated"] = ""
-                    data["Data"]["Stage"] = "{ }"
-                    data["Function"]["IfBlockAd"] = data["Function"].get(
-                        "IfSkipMumuSplashAds", False
-                    )
-                    self._write_mapping_config(global_config_path, data)
-
-                cur.execute("DELETE FROM version WHERE v = ?", ("v1.9",))
-                cur.execute("INSERT INTO version VALUES(?)", ("v1.10",))
-                db.commit()
-            # v1.10-->v1.11
-            if version[0][0] == "v1.10" or if_streaming:
-                logger.info(
-                    "数据文件版本更新: v1.10-->v1.11",
-                )
-                if_streaming = True
-
-                script_config_path = self._resolve_config_path("ScriptConfig")
-                if script_config_path.exists():
-                    data = script_config_path.read_text(encoding="utf-8")
-                    data = data.replace("IfWakeUp", "IfStartUp")
-                    data = data.replace("IfAutoRoguelike", "IfRoguelike")
-                    data = data.replace("IfBase", "IfInfrast")
-                    data = data.replace("IfCombat", "IfFight")
-                    data = data.replace("IfMission", "IfAward")
-                    data = data.replace("IfRecruiting", "IfRecruit")
-                    script_config_path.write_text(data, encoding="utf-8")
-
-                cur.execute("DELETE FROM version WHERE v = ?", ("v1.10",))
-                cur.execute("INSERT INTO version VALUES(?)", ("v1.11",))
-                db.commit()
-
-            cur.close()
-            db.close()
-            logger.success("数据文件版本更新完成")
+        await self._migration_service.check_data()
 
     async def send_json(self, data: dict[str, Any]) -> None:
         """通过WebSocket发送JSON数据（桌面 + 所有 Web 连接）"""
@@ -531,38 +231,7 @@ class AppConfig(GlobalConfig):
     async def get_git_version(self) -> tuple[bool, str, str]:
         """获取Git版本信息，如果Git不可用则返回默认值"""
 
-        def _get_git_info():
-            if self.repo is None:
-                logger.warning("Git仓库不可用，返回默认版本信息")
-                return False, "unknown", "unknown"
-
-            # 获取当前 commit
-            current_commit = self.repo.head.commit
-            # 获取 commit 哈希
-            commit_hash = current_commit.hexsha
-            # 获取 commit 时间
-            commit_time = datetime.fromtimestamp(current_commit.committed_date)
-
-            # 检查是否为最新 commit
-            try:
-                # 获取远程分支的最新 commit
-                origin = self.repo.remotes.origin
-                origin.fetch()  # 拉取最新信息
-                remote_commit = self.repo.commit(
-                    f"origin/{self.repo.active_branch.name}"
-                )
-                is_latest = bool(current_commit.hexsha == remote_commit.hexsha)
-            except (ValueError, OSError) as e:
-                logger.warning(f"无法获取远程分支信息: {e}")
-                is_latest = False
-
-            return is_latest, commit_hash, commit_time.strftime("%Y-%m-%d %H:%M:%S")
-
-        # 在线程池中执行 Git 操作
-        is_latest, commit_hash, commit_time = await self.loop.run_in_executor(
-            None, _get_git_info
-        )
-        return is_latest, commit_hash, commit_time
+        return await self._git_service.get_git_version()
 
     async def add_script(
         self,
@@ -621,16 +290,7 @@ class AppConfig(GlobalConfig):
         """获取脚本配置"""
 
         logger.info(f"获取脚本配置: {script_id}")
-
-        if script_id is None:
-            # 获取所有脚本配置
-            data = await self.ScriptConfig.toDict()
-        else:
-            # 获取指定脚本配置
-            data = await self.ScriptConfig.get(uuid.UUID(script_id))
-
-        index = data.pop("instances", [])
-        return list(index), data
+        return await self.ScriptConfig.get_item(script_id)
 
     async def update_script(
         self, script_id: str, data: Dict[str, Dict[str, Any]]
@@ -644,7 +304,7 @@ class AppConfig(GlobalConfig):
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
 
-        await self.ScriptConfig[uid].set_many(data)
+        await self.ScriptConfig.update_item(script_id, data)
 
     async def del_script(self, script_id: str) -> None:
         """删除脚本配置"""
@@ -656,7 +316,7 @@ class AppConfig(GlobalConfig):
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法删除")
 
-        await self.ScriptConfig.remove(uid)
+        await self.ScriptConfig.del_item(script_id)
         if (Path.cwd() / f"data/{uid}").exists():
             shutil.rmtree(Path.cwd() / f"data/{uid}")
 
@@ -665,7 +325,7 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"重新排序脚本: {index_list}")
 
-        await self.ScriptConfig.setOrder([uuid.UUID(_) for _ in index_list])
+        await self.ScriptConfig.reorder_items(index_list)
 
     async def import_script_from_file(self, script_id: str, jsonFile: str) -> None:
         """从文件加载脚本配置"""
@@ -839,17 +499,7 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"获取用户配置: {script_id} - {user_id}")
 
-        uid = uuid.UUID(script_id)
-
-        if user_id is None:
-            # 获取全部用户配置
-            data = await self.ScriptConfig[uid].UserData.toDict()
-        else:
-            # 获取指定用户配置
-            data = await self.ScriptConfig[uid].UserData.get(uuid.UUID(user_id))
-
-        index = data.pop("instances", [])
-        return list(index), data
+        return await self.ScriptConfig[uuid.UUID(script_id)].UserData.get_item(user_id)
 
     async def add_user(self, script_id: str) -> tuple[uuid.UUID, Any]:
         """添加用户配置"""
@@ -877,10 +527,7 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"{script_id} 更新用户配置: {user_id}")
 
-        script_uid = uuid.UUID(script_id)
-        user_uid = uuid.UUID(user_id)
-
-        await self.ScriptConfig[script_uid].UserData[user_uid].set_many(data)
+        await self.ScriptConfig[uuid.UUID(script_id)].UserData.update_item(user_id, data)
 
     async def del_user(self, script_id: str, user_id: str) -> None:
         """删除用户配置"""
@@ -899,11 +546,7 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"{script_id} 重新排序用户: {index_list}")
 
-        script_uid = uuid.UUID(script_id)
-
-        await self.ScriptConfig[script_uid].UserData.setOrder(
-            list(map(uuid.UUID, index_list))
-        )
+        await self.ScriptConfig[uuid.UUID(script_id)].UserData.reorder_items(index_list)
 
     async def set_infrastructure(
         self, script_id: str, user_id: str, jsonFile: str
@@ -982,38 +625,28 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"获取计划表配置: {plan_id}")
 
-        if plan_id is None:
-            data = await self.PlanConfig.toDict()
-        else:
-            data = await self.PlanConfig.get(uuid.UUID(plan_id))
-
-        index = data.pop("instances", [])
-        return list(index), data
+        return await self.PlanConfig.get_item(plan_id)
 
     async def update_plan(self, plan_id: str, data: Dict[str, Dict[str, Any]]) -> None:
         """更新计划表配置"""
 
         logger.info(f"更新计划表配置: {plan_id}")
 
-        plan_uid = uuid.UUID(plan_id)
-
-        await self.PlanConfig[plan_uid].set_many(data)
+        await self.PlanConfig.update_item(plan_id, data)
 
     async def del_plan(self, plan_id: str) -> None:
         """删除计划表配置"""
 
         logger.info(f"删除计划表配置: {plan_id}")
 
-        plan_uid = uuid.UUID(plan_id)
-
-        await self.PlanConfig.remove(plan_uid)
+        await self.PlanConfig.del_item(plan_id)
 
     async def reorder_plan(self, index_list: list[str]) -> None:
         """重新排序计划表"""
 
         logger.info(f"重新排序计划表: {index_list}")
 
-        await self.PlanConfig.setOrder(list(map(uuid.UUID, index_list)))
+        await self.PlanConfig.reorder_items(index_list)
 
     async def get_emulator(
         self, emulator_id: Optional[str]
@@ -1021,13 +654,7 @@ class AppConfig(GlobalConfig):
         """获取模拟器配置"""
         logger.info(f"获取全局模拟器设置: {emulator_id}")
 
-        if emulator_id is None:
-            data = await self.EmulatorConfig.toDict()
-        else:
-            data = await self.EmulatorConfig.get(uuid.UUID(emulator_id))
-
-        index = data.pop("instances", [])
-        return list(index), data
+        return await self.EmulatorConfig.get_item(emulator_id)
 
     async def add_emulator(self) -> tuple[uuid.UUID, EmulatorConfig]:
         """添加模拟器配置"""
@@ -1041,27 +668,23 @@ class AppConfig(GlobalConfig):
     ) -> None:
         """更新模拟器配置"""
 
-        emulator_uid = uuid.UUID(emulator_id)
-
         logger.info(f"更新模拟器配置: {emulator_id}")
 
-        await self.EmulatorConfig[emulator_uid].set_many(data)
+        await self.EmulatorConfig.update_item(emulator_id, data)
 
     async def del_emulator(self, emulator_id: str) -> None:
         """删除模拟器配置"""
 
-        emulator_uid = uuid.UUID(emulator_id)
-
         logger.info(f"删除全局模拟器配置: {emulator_id}")
 
-        await self.EmulatorConfig.remove(emulator_uid)
+        await self.EmulatorConfig.del_item(emulator_id)
 
     async def reorder_emulator(self, index_list: list[str]) -> None:
         """重新排序模拟器"""
 
         logger.info(f"重新排序模拟器: {index_list}")
 
-        await self.EmulatorConfig.setOrder(list(map(uuid.UUID, index_list)))
+        await self.EmulatorConfig.reorder_items(index_list)
 
     async def add_queue(self) -> tuple[uuid.UUID, QueueConfig]:
         """添加调度队列"""
@@ -1077,13 +700,7 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"获取调度队列配置: {queue_id}")
 
-        if queue_id is None:
-            data = await self.QueueConfig.toDict()
-        else:
-            data = await self.QueueConfig.get(uuid.UUID(queue_id))
-
-        index = data.pop("instances", [])
-        return list(index), data
+        return await self.QueueConfig.get_item(queue_id)
 
     async def update_queue(
         self, queue_id: str, data: Dict[str, Dict[str, Any]]
@@ -1092,23 +709,21 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"更新调度队列配置: {queue_id}")
 
-        queue_uid = uuid.UUID(queue_id)
-
-        await self.QueueConfig[queue_uid].set_many(data)
+        await self.QueueConfig.update_item(queue_id, data)
 
     async def del_queue(self, queue_id: str) -> None:
         """删除调度队列配置"""
 
         logger.info(f"删除调度队列配置: {queue_id}")
 
-        await self.QueueConfig.remove(uuid.UUID(queue_id))
+        await self.QueueConfig.del_item(queue_id)
 
     async def reorder_queue(self, index_list: list[str]) -> None:
         """重新排序调度队列"""
 
         logger.info(f"重新排序调度队列: {index_list}")
 
-        await self.QueueConfig.setOrder(list(map(uuid.UUID, index_list)))
+        await self.QueueConfig.reorder_items(index_list)
 
     async def get_time_set(
         self, queue_id: str, time_set_id: Optional[str]
@@ -1117,15 +732,7 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"获取队列的时间配置: {queue_id} - {time_set_id}")
 
-        queue_uid = uuid.UUID(queue_id)
-
-        if time_set_id is None:
-            data = await self.QueueConfig[queue_uid].TimeSet.toDict()
-        else:
-            data = await self.QueueConfig[queue_uid].TimeSet.get(uuid.UUID(time_set_id))
-
-        index = data.pop("instances", [])
-        return list(index), data
+        return await self.QueueConfig[uuid.UUID(queue_id)].TimeSet.get_item(time_set_id)
 
     async def add_time_set(self, queue_id: str) -> tuple[uuid.UUID, TimeSet]:
         """添加时间设置配置"""
@@ -1144,31 +751,21 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"{queue_id} 更新时间设置配置: {time_set_id}")
 
-        queue_uid = uuid.UUID(queue_id)
-        time_set_uid = uuid.UUID(time_set_id)
-
-        await self.QueueConfig[queue_uid].TimeSet[time_set_uid].set_many(data)
+        await self.QueueConfig[uuid.UUID(queue_id)].TimeSet.update_item(time_set_id, data)
 
     async def del_time_set(self, queue_id: str, time_set_id: str) -> None:
         """删除时间设置配置"""
 
         logger.info(f"{queue_id} 删除时间设置配置: {time_set_id}")
 
-        queue_uid = uuid.UUID(queue_id)
-        time_set_uid = uuid.UUID(time_set_id)
-
-        await self.QueueConfig[queue_uid].TimeSet.remove(time_set_uid)
+        await self.QueueConfig[uuid.UUID(queue_id)].TimeSet.del_item(time_set_id)
 
     async def reorder_time_set(self, queue_id: str, index_list: list[str]) -> None:
         """重新排序时间设置"""
 
         logger.info(f"{queue_id} 重新排序时间设置: {index_list}")
 
-        queue_uid = uuid.UUID(queue_id)
-
-        await self.QueueConfig[queue_uid].TimeSet.setOrder(
-            list(map(uuid.UUID, index_list))
-        )
+        await self.QueueConfig[uuid.UUID(queue_id)].TimeSet.reorder_items(index_list)
 
     async def get_queue_item(
         self, queue_id: str, queue_item_id: Optional[str]
@@ -1177,17 +774,7 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"获取队列的队列项配置: {queue_id} - {queue_item_id}")
 
-        queue_uid = uuid.UUID(queue_id)
-
-        if queue_item_id is None:
-            data = await self.QueueConfig[queue_uid].QueueItem.toDict()
-        else:
-            data = await self.QueueConfig[queue_uid].QueueItem.get(
-                uuid.UUID(queue_item_id)
-            )
-
-        index = data.pop("instances", [])
-        return list(index), data
+        return await self.QueueConfig[uuid.UUID(queue_id)].QueueItem.get_item(queue_item_id)
 
     async def add_queue_item(self, queue_id: str) -> tuple[uuid.UUID, QueueItem]:
         """添加队列项配置"""
@@ -1207,31 +794,21 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"{queue_id} 更新队列项配置: {queue_item_id}")
 
-        queue_uid = uuid.UUID(queue_id)
-        queue_item_uid = uuid.UUID(queue_item_id)
-
-        await self.QueueConfig[queue_uid].QueueItem[queue_item_uid].set_many(data)
+        await self.QueueConfig[uuid.UUID(queue_id)].QueueItem.update_item(queue_item_id, data)
 
     async def del_queue_item(self, queue_id: str, queue_item_id: str) -> None:
         """删除队列项配置"""
 
         logger.info(f"{queue_id} 删除队列项配置: {queue_item_id}")
 
-        queue_uid = uuid.UUID(queue_id)
-        queue_item_uid = uuid.UUID(queue_item_id)
-
-        await self.QueueConfig[queue_uid].QueueItem.remove(queue_item_uid)
+        await self.QueueConfig[uuid.UUID(queue_id)].QueueItem.del_item(queue_item_id)
 
     async def reorder_queue_item(self, queue_id: str, index_list: list[str]) -> None:
         """重新排序队列项"""
 
         logger.info(f"{queue_id} 重新排序队列项: {index_list}")
 
-        queue_uid = uuid.UUID(queue_id)
-
-        await self.QueueConfig[queue_uid].QueueItem.setOrder(
-            list(map(uuid.UUID, index_list))
-        )
+        await self.QueueConfig[uuid.UUID(queue_id)].QueueItem.reorder_items(index_list)
 
     async def get_tools(self) -> Dict[str, Any]:
         """获取工具设置"""
@@ -1776,151 +1353,7 @@ class AppConfig(GlobalConfig):
             bool: 是否存在高资
         """
 
-        logger.info(f"开始处理 MAA 日志, 日志长度: {len(logs)}, 日志标记: {maa_result}")
-
-        data: dict[str, Any] = {
-            "recruit_statistics": defaultdict(int),
-            "drop_statistics": defaultdict(dict),
-            "sanity": 0,
-            "sanity_full_at": "",
-            "maa_result": maa_result,
-        }
-
-        if_six_star = False
-
-        # 提取理智相关信息
-        for log_line in logs:
-            # 提取当前理智值：理智: 5/180
-            sanity_match = re.search(r"理智:\s*(\d+)/\d+", log_line)
-            if sanity_match:
-                data["sanity"] = int(sanity_match.group(1))
-
-            # 提取理智回满时间：理智将在 2025-09-26 18:57 回满。(17h 29m 后)
-            sanity_full_match = re.search(
-                r"(理智将在\s*\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s*回满。\(\d+h\s+\d+m\s+后\))",
-                log_line,
-            )
-            if sanity_full_match:
-                data["sanity_full_at"] = sanity_full_match.group(1)
-
-        # 公招统计（仅统计招募到的）
-        confirmed_recruit = False
-        current_star_level = None
-        i = 0
-        while i < len(logs):
-            if "公招识别结果:" in logs[i]:
-                current_star_level = None  # 每次识别公招时清空之前的星级
-                i += 1
-                while i < len(logs) and "Tags" not in logs[i]:  # 读取所有公招标签
-                    i += 1
-
-                if i < len(logs) and "Tags" in logs[i]:  # 识别星级
-                    star_match = re.search(r"(\d+)\s*★ Tags", logs[i])
-                    if star_match:
-                        current_star_level = f"{star_match.group(1)}★"
-                        if current_star_level == "6★":
-                            if_six_star = True
-
-            if "已确认招募" in logs[i]:  # 只有确认招募后才统计
-                confirmed_recruit = True
-
-            if confirmed_recruit and current_star_level:
-                data["recruit_statistics"][current_star_level] += 1
-                confirmed_recruit = False  # 重置, 等待下一次公招
-                current_star_level = None  # 清空已处理的星级
-
-            i += 1
-
-        # 掉落统计
-        # 存储所有关卡的掉落统计
-        all_stage_drops: dict[str, dict[str, int]] = {}
-
-        # 查找所有Fight任务的开始和结束位置
-        fight_tasks: list[tuple[int, int]] = []
-        for i, line in enumerate(logs):
-            if "开始任务: Fight" in line or "开始任务: 理智作战" in line:
-                # 查找对应的任务结束位置
-                end_index = -1
-                for j in range(i + 1, len(logs)):
-                    if "完成任务: Fight" in logs[j] or "完成任务: 理智作战" in logs[j]:
-                        end_index = j
-                        break
-                    # 如果遇到新的Fight任务开始, 则当前任务没有正常结束
-                    if j < len(logs) and (
-                        "开始任务: Fight" in logs[j] or "开始任务: 理智作战" in logs[j]
-                    ):
-                        break
-
-                # 如果找到了结束位置, 记录这个任务的范围
-                if end_index != -1:
-                    fight_tasks.append((i, end_index))
-
-        # 处理每个Fight任务
-        for start_idx, end_idx in fight_tasks:
-            # 提取当前任务的日志
-            task_logs = logs[start_idx : end_idx + 1]
-
-            # 查找任务中的最后一次掉落统计
-            last_drop_stats: dict[str, int] = {}
-            current_stage = None
-
-            for line in task_logs:
-                # 匹配掉落统计行, 如"1-7 掉落统计:"
-                drop_match = re.search(r"([\u4e00-\u9fffA-Za-z0-9\-]+) 掉落统计:", line)
-                if drop_match:
-                    # 发现新的掉落统计, 重置当前关卡的掉落数据
-                    current_stage = drop_match.group(1)
-                    last_drop_stats = {}
-                    continue
-
-                # 如果已经找到了关卡, 处理掉落物
-                if current_stage:
-                    item_match: List[str] = re.findall(
-                        r"^(?!\[)(\S+?)\s*:\s*([\d,]+[kK]?)(?:\s*\(\+[\d,]+[kK]?\))?",
-                        line,
-                        re.M,
-                    )
-                    for item, total in item_match:
-                        total = total.replace(",", "")
-                        if total.lower().endswith("k"):
-                            total = int(total[:-1]) * 1000
-                        else:
-                            total = int(total)
-
-                        # 黑名单
-                        if item not in [
-                            "当前次数",
-                            "理智",
-                            "最快截图耗时",
-                            "专精等级",
-                            "剩余时间",
-                        ]:
-                            last_drop_stats[item] = total
-
-            # 如果任务中有掉落统计, 更新总统计
-            if current_stage and last_drop_stats:
-                if current_stage not in all_stage_drops:
-                    all_stage_drops[current_stage] = {}
-
-                # 累加掉落数据
-                for item, count in last_drop_stats.items():
-                    all_stage_drops[current_stage].setdefault(item, 0)
-                    all_stage_drops[current_stage][item] += count
-
-        # 将累加后的掉落数据保存到结果中
-        data["drop_statistics"] = all_stage_drops
-
-        # 保存日志
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.write_text("".join(logs), encoding="utf-8")
-        # 保存统计数据
-        log_path.with_suffix(".json").write_text(
-            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
-
-        logger.success(f"MAA 日志统计完成, 日志路径: {log_path}")
-
-        return if_six_star
+        return await self._log_service.save_maa_log(log_path, logs, maa_result)
 
     async def save_maaend_log(
         self, log_path: Path, logs: list[str], maaend_result: str
@@ -1934,20 +1367,7 @@ class AppConfig(GlobalConfig):
             maaend_result (str): Result label for this run.
         """
 
-        logger.info(
-            f"开始处理MaaEnd日志, 日志长度: {len(logs)}, 日志标记: {maaend_result}"
-        )
-
-        data: Dict[str, str] = {"maaend_result": maaend_result}
-
-        # 保存日志
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
-        log_path.with_suffix(".json").write_text(
-            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
-
-        logger.success(f"MaaEnd日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
+        await self._log_service.save_maaend_log(log_path, logs, maaend_result)
 
     async def save_src_log(
         self, log_path: Path, logs: list[str], src_result: str
@@ -1961,18 +1381,7 @@ class AppConfig(GlobalConfig):
             src_result (str): 待保存的日志结果信息
         """
 
-        logger.info(f"开始处理SRC日志, 日志长度: {len(logs)}, 日志标记: {src_result}")
-
-        data: Dict[str, str] = {"src_result": src_result}
-
-        # 保存日志
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
-        log_path.with_suffix(".json").write_text(
-            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
-
-        logger.success(f"SRC日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
+        await self._log_service.save_src_log(log_path, logs, src_result)
 
     async def save_general_log(
         self, log_path: Path, logs: list[str], general_result: str
@@ -1985,20 +1394,7 @@ class AppConfig(GlobalConfig):
         :param general_result: 待保存的日志结果信息
         """
 
-        logger.info(
-            f"开始处理通用日志, 日志长度: {len(logs)}, 日志标记: {general_result}"
-        )
-
-        data: Dict[str, str] = {"general_result": general_result}
-
-        # 保存日志
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
-        log_path.with_suffix(".json").write_text(
-            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
-
-        logger.success(f"通用日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
+        await self._log_service.save_general_log(log_path, logs, general_result)
 
     async def merge_statistic_info(
         self, statistic_path_list: List[Path]
@@ -2013,82 +1409,7 @@ class AppConfig(GlobalConfig):
             dict: 合并后的数据统计信息
         """
 
-        data: Dict[str, Any] = {"index": {}}
-
-        for json_file in statistic_path_list:
-            try:
-                single_data = json.loads(json_file.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError) as e:
-                logger.warning(
-                    f"无法解析文件 {json_file}, 错误信息: {type(e).__name__}: {str(e)}"
-                )
-                continue
-
-            for key in single_data.keys():
-                if key not in data:
-                    data[key] = {}
-
-                # 合并公招统计
-                if key == "recruit_statistics":
-                    for star_level, count in single_data[key].items():
-                        if star_level not in data[key]:
-                            data[key][star_level] = 0
-                        data[key][star_level] += count
-
-                # 合并掉落统计
-                elif key == "drop_statistics":
-                    for stage, drops in single_data[key].items():
-                        if stage not in data[key]:
-                            data[key][stage] = {}  # 初始化关卡
-
-                        for item, count in drops.items():
-                            if item not in data[key][stage]:
-                                data[key][stage][item] = 0
-                            data[key][stage][item] += count
-
-                # 处理理智相关字段 - 使用最后一个文件的值
-                elif key in ["sanity", "sanity_full_at"]:
-                    data[key] = single_data[key]
-
-                # 录入运行结果
-                elif key in [
-                    "maa_result",
-                    "maaend_result",
-                    "src_result",
-                    "general_result",
-                ]:
-                    actual_date = (
-                        datetime.strptime(
-                            f"{json_file.parent.parent.name} {json_file.stem}",
-                            "%Y-%m-%d %H-%M-%S",
-                        )
-                        .replace(tzinfo=UTC4)
-                        .astimezone()
-                    )
-
-                    if single_data[key] != "Success!":
-                        if "error_info" not in data:
-                            data["error_info"] = {}
-                        data["error_info"][
-                            actual_date.strftime("%Y-%m-%d %H:%M:%S")
-                        ] = single_data[key]
-
-                    data["index"][actual_date] = {
-                        "date": actual_date.strftime("%Y-%m-%d %H:%M:%S"),
-                        "status": (
-                            "DONE" if single_data[key] == "Success!" else "ERROR"
-                        ),
-                        "jsonFile": str(json_file),
-                    }
-
-        data["index"] = [data["index"][_] for _ in sorted(data["index"])]
-
-        # 确保返回的字典始终包含 index 字段，即使为空
-        result = {k: v for k, v in data.items() if v}
-        if "index" not in result:
-            result["index"] = []
-
-        return result
+        return await self._log_service.merge_statistic_info(statistic_path_list)
 
     async def search_history(
         self,
@@ -2105,85 +1426,12 @@ class AppConfig(GlobalConfig):
             end_date (date): 结束日期
         """
 
-        logger.info(
-            f"开始搜索历史记录, 合并模式: {mode}, 日期范围: {start_date} 至 {end_date}"
-        )
-
-        history_dict: dict[str, dict[str, list[Path]]] = {}
-
-        for date_folder in self.history_path.iterdir():
-            if not date_folder.is_dir():
-                continue  # 只处理日期文件夹
-
-            try:
-                date = datetime.strptime(date_folder.name, "%Y-%m-%d").date()
-
-                if not (start_date <= date <= end_date):
-                    continue  # 只统计在范围内的日期
-
-                if mode == "DAILY":
-                    date_name = date.strftime("%Y-%m-%d")
-                elif mode == "WEEKLY":
-                    date_name = date.strftime("%G-W%V")
-                elif mode == "MONTHLY":
-                    date_name = date.strftime("%Y-%m")
-                else:
-                    raise ValueError("无效的合并模式")
-
-                if date_name not in history_dict:
-                    history_dict[date_name] = {}
-
-                for user_folder in date_folder.iterdir():
-                    if not user_folder.is_dir():
-                        continue  # 只处理用户文件夹
-
-                    if user_folder.stem not in history_dict[date_name]:
-                        history_dict[date_name][user_folder.stem] = list(
-                            user_folder.with_suffix("").glob("*.json")
-                        )
-                    else:
-                        history_dict[date_name][user_folder.stem] += list(
-                            user_folder.with_suffix("").glob("*.json")
-                        )
-
-            except ValueError as e:
-                logger.warning(f"非日期格式的目录: {date_folder}, 错误: {e}")
-
-        logger.success(f"历史记录搜索完成, 共计 {len(history_dict)} 条记录")
-
-        return {
-            k: v
-            for k, v in sorted(history_dict.items(), key=lambda kv: kv[0], reverse=True)
-        }
+        return await self._log_service.search_history(mode, start_date, end_date)
 
     async def clean_old_history(self):
         """删除超过用户设定天数的历史记录文件（基于目录日期）"""
 
-        if self.get("Function", "HistoryRetentionTime") == 0:
-            logger.info("历史记录永久保留, 跳过历史记录清理")
-            return
-
-        logger.info("开始清理超过设定天数的历史记录")
-
-        deleted_count = 0
-
-        for date_folder in self.history_path.iterdir():
-            if not date_folder.is_dir():
-                continue  # 只处理日期文件夹
-
-            try:
-                # 只检查 `YYYY-MM-DD` 格式的文件夹
-                folder_date = datetime.strptime(date_folder.name, "%Y-%m-%d").date()
-                if datetime.now(tz=UTC4).date() - folder_date > timedelta(
-                    days=self.get("Function", "HistoryRetentionTime")
-                ):
-                    shutil.rmtree(date_folder, ignore_errors=True)
-                    deleted_count += 1
-                    logger.debug(f"已删除超期日志目录: {date_folder}")
-            except ValueError:
-                logger.warning(f"非日期格式的目录: {date_folder}")
-
-        logger.success(f"清理完成: {deleted_count} 个日期目录")
+        await self._log_service.clean_old_history(self.get("Function", "HistoryRetentionTime"))
 
 
 Config = AppConfig()

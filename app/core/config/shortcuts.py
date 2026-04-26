@@ -64,7 +64,7 @@ def ref(
     *,
     default: Any,
     allow_values: tuple[Any, ...] = (),
-    on_delete: RefDeleteAction = "set_default",
+    on_delete: RefDeleteAction = RefDeleteAction.SET_DEFAULT,
     on_delete_callback: OnDeleteCallback | str | None = None,
 ) -> RefField:
     """创建引用字段元数据（RefField 语法糖）。"""
@@ -180,9 +180,9 @@ def _init_sub_configs(instance: Any) -> None:
             continue
 
         if spec.singleton:
-            setattr(instance, name, spec.types[0]())
+            object.__setattr__(instance, name, spec.types[0]())
         else:
-            setattr(instance, name, MultipleConfig(list(spec.types)))
+            object.__setattr__(instance, name, MultipleConfig(list(spec.types)))
 
 
 def _init_related_targets(instance: Any) -> None:
