@@ -257,7 +257,7 @@
         },
         "timeout": 60000,
         "next": [
-            "识别点击进入[StarRailEmulator]"
+            "识别加载完成[StarRailEmulator]"
         ]
     },
     "登录下拉框折叠-B服[StarRailEmulator]": {
@@ -441,7 +441,7 @@
         },
         "timeout": 60000,
         "next": [
-            "识别点击进入[StarRailEmulator]"
+            "识别加载完成[StarRailEmulator]"
         ]
     },
     "登出[StarRailEmulator]": {
@@ -690,7 +690,7 @@
         },
         "timeout": 60000,
         "next": [
-            "识别点击进入[StarRailEmulator]"
+            "识别加载完成[StarRailEmulator]"
         ]
     },
     "启动游戏[StarRailEmulator]": {
@@ -829,23 +829,17 @@
         },
         "timeout": 60000,
         "next": [
-            "识别点击进入[StarRailEmulator]"
+            "识别加载完成[StarRailEmulator]"
         ]
     },
-    "识别点击进入[StarRailEmulator]": {
+    "识别加载完成[StarRailEmulator]": {
         "recognition": {
-            "type": "OCR",
+            "type": "Or",
             "param": {
-                "roi": [
-                    580,
-                    640,
-                    125,
-                    50
-                ],
-                "expected": [
-                    "点击进入"
-                ],
-                "model": "zh_cn"
+                "any_of": [
+                    "识别点击进入[StarRailEmulator]",
+                    "识别开始游戏[StarRailEmulator]"
+                ]
             }
         }
     },
@@ -928,7 +922,41 @@
     "等待加载完成[StarRailEmulator]": {
         "timeout": 600000,
         "next": [
-            "识别点击进入[StarRailEmulator]"
+            "识别加载完成[StarRailEmulator]"
         ]
+    },
+    "识别点击进入[StarRailEmulator]": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "roi": [
+                    580,
+                    640,
+                    125,
+                    50
+                ],
+                "expected": [
+                    "点击进入"
+                ],
+                "model": "zh_cn"
+            }
+        }
+    },
+    "识别开始游戏[StarRailEmulator]": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "roi": [
+                    550,
+                    480,
+                    200,
+                    75
+                ],
+                "expected": [
+                    "开始游戏"
+                ],
+                "model": "zh_cn"
+            }
+        }
     }
 }
