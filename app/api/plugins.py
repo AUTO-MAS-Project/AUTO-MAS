@@ -198,8 +198,33 @@ def _schedule_enabled_runtime_update(instance_id: str, enabled: bool) -> None:
     asyncio.create_task(_runner())
 
 
+def _schedule_update_snapshot(instance_id: str, reason: str = "api.plugins.update") -> None:
+    async def _runner() -> None:
+        try:
+            await publish_plugin_snapshot(
+                reason=reason,
+                message=f"已更新插件实例: {instance_id}",
+            )
+        except Exception as snapshot_exc:
+            logger.warning(
+                f"插件快照后台发布失败: instance_id={instance_id}, "
+                f"error={type(snapshot_exc).__name__}: {snapshot_exc}"
+            )
+
+    asyncio.create_task(_runner())
+
+
 def _need_discover_for_update(data: PluginUpdateIn) -> bool:
     return data.plugin is not None or data.config is not None
+
+
+def _is_name_only_update(data: PluginUpdateIn) -> bool:
+    return (
+        data.name is not None
+        and data.plugin is None
+        and data.config is None
+        and data.enabled is None
+    )
 
 
 def _is_enabled_only_update(data: PluginUpdateIn) -> bool:
@@ -660,7 +685,9 @@ async def update_plugin_instance(data: PluginUpdateIn = Body(...)) -> OutBase:
         await config_store.save_root(plugins_dir, root)
 
         if PluginManager.started:
-            if _is_enabled_only_update(data) and was_enabled != bool(data.enabled):
+            if _is_name_only_update(data):
+                _schedule_update_snapshot(data.instanceId, reason="api.plugins.update.name")
+            elif _is_enabled_only_update(data) and was_enabled != bool(data.enabled):
                 _schedule_enabled_runtime_update(data.instanceId, bool(data.enabled))
             else:
                 _schedule_update_reload(data.instanceId)
