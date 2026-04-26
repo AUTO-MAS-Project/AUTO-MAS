@@ -161,7 +161,7 @@ class AutoProxyTask(TaskExecuteBase):
                 "正在启动模拟器...\n模拟器启动成功\n正在登录「崩坏·星穹铁道」..."
             )
 
-            if self.cur_user_config.get("Info", "Id") == "" or await login(
+            if await login(
                 emulator_info,
                 STARRAIL_PACKAGE_NAME[self.cur_user_config.get("Info", "Server")],
                 self.cur_user_config.get("Info", "Id"),
