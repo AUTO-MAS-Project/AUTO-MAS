@@ -4,7 +4,7 @@ import json
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, ClassVar, Callable, Literal
+from typing import Annotated, Any, ClassVar, Literal
 
 from pydantic import AliasChoices, AliasPath, BaseModel, Field, field_validator
 
@@ -20,14 +20,7 @@ from app.core.config.types import (
 )
 from app.utils.constants import MAA_STAGE_KEY, RESOURCE_STAGE_INFO, UTC4, UTC8
 from .common import Webhook
-
-
-class _ValueProxy:
-    def __init__(self, value_getter: Callable[[], Any]):
-        self._value_getter = value_getter
-
-    def getValue(self, if_decrypt: bool = True) -> Any:  # noqa: N802
-        return self._value_getter()
+from .tag_helpers import notes_tag, proxy_date_tag, remained_day_tag
 
 
 @config
@@ -177,18 +170,13 @@ class MaaUserConfig(PydanticConfigBase):
         if not self.get("Data", "IfPassCheck"):
             tags.append({"text": "人工排查未通过", "color": "red"})
 
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"日常：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
+        tags.append(
+            proxy_date_tag(
+                self.get("Data", "LastProxyDate"),
+                self.get("Data", "ProxyTimes"),
+                UTC4,
             )
-        else:
-            tags.append({"text": "日常：未代理", "color": "orange"})
+        )
 
         if self.get("Info", "IfSkland"):
             if (
@@ -201,29 +189,7 @@ class MaaUserConfig(PydanticConfigBase):
         else:
             tags.append({"text": "森空岛：禁用", "color": "red"})
 
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": (
-                    f"剩余天数：{remained_day}天"
-                    if remained_day >= 0
-                    else "剩余天数：无期限"
-                ),
-                "color": tag_color,
-            }
-        )
+        tags.append(remained_day_tag(self.get("Info", "RemainedDay")))
 
         infrast_mode = self.get("Info", "InfrastMode")
         if self.get("Task", "IfInfrast"):
@@ -252,7 +218,7 @@ class MaaUserConfig(PydanticConfigBase):
             if isinstance(plan, MaaPlanConfig):
                 plan_data = {
                     stage_key: self.get_stage_zh(
-                        plan.get_current_info(stage_key).getValue()
+                        plan.get_current_info(stage_key)
                     )
                     for stage_key in MAA_STAGE_KEY[2:]
                 }
@@ -273,15 +239,7 @@ class MaaUserConfig(PydanticConfigBase):
                 {"text": f"剩余：{plan_data['Stage_Remain']}", "color": tag_color}
             )
 
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": f"备注：{notes}"
-                if len(notes) <= 20
-                else f"备注：{notes[:20]}...",
-                "color": "pink",
-            }
-        )
+        tags.append(notes_tag(self.get("Info", "Notes")))
 
         return json.dumps(tags, ensure_ascii=False)
 
@@ -365,16 +323,16 @@ class MaaPlanConfig(PydanticConfigBase):
     Saturday: DayPlanModel = Field(default_factory=DayPlanModel)
     Sunday: DayPlanModel = Field(default_factory=DayPlanModel)
 
-    def get_current_info(self, name: str) -> _ValueProxy:
+    def get_current_info(self, name: str) -> Any:
         """获取当前的计划表配置项"""
 
         if self.get("Info", "Mode") == "ALL":
-            return _ValueProxy(lambda: getattr(self.ALL, name, "-"))
+            return getattr(self.ALL, name, "-")
 
         if self.get("Info", "Mode") == "Weekly":
             today = datetime.now(tz=UTC4).strftime("%A")
             plan = getattr(self, today, self.ALL)
-            return _ValueProxy(lambda: getattr(plan, name, "-"))
+            return getattr(plan, name, "-")
 
         raise ValueError("非法的计划表模式")
 

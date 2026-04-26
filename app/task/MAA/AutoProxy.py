@@ -446,7 +446,7 @@ class AutoProxyTask(TaskExecuteBase):
                 uuid.UUID(self.cur_user_config.get("Info", "StageMode"))
             ]
             plan_data = {
-                stage_key: plan.get_current_info(stage_key).getValue()
+                stage_key: plan.get_current_info(stage_key)
                 for stage_key in MAA_STAGE_KEY
             }
 

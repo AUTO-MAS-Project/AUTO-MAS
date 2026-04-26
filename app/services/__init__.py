@@ -20,9 +20,20 @@
 #   Contact: DLmaster_361@163.com
 
 
+from .git_service import GitService
+from .log_service import LogService
 from .matomo import Matomo
+from .migration import MigrationService
 from .notification import Notify
 from .system import System
 from .update import Updater
 
-__all__ = ["Matomo", "Notify", "System", "Updater"]
+__all__ = [
+    "GitService",
+    "LogService",
+    "Matomo",
+    "MigrationService",
+    "Notify",
+    "System",
+    "Updater",
+]

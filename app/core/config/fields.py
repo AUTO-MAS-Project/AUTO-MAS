@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol
+from enum import Enum
+from typing import Any, Protocol
 
 
-RefDeleteAction = Literal["restrict", "set_default", "cascade", "custom"]
+class RefDeleteAction(str, Enum):
+    RESTRICT = "restrict"
+    SET_DEFAULT = "set_default"
+    CASCADE = "cascade"
+    CUSTOM = "custom"
 VirtualDependency = tuple[str, str]
 
 
@@ -43,14 +48,14 @@ class RefField:
     target: str
     default: Any
     allow_values: tuple[Any, ...] = ()
-    on_delete: RefDeleteAction = "set_default"
+    on_delete: RefDeleteAction = RefDeleteAction.SET_DEFAULT
     on_delete_callback: OnDeleteCallback | str | None = None
 
     def __post_init__(self) -> None:
         """验证字段配置。"""
-        if self.on_delete == "custom" and self.on_delete_callback is None:
+        if self.on_delete == RefDeleteAction.CUSTOM and self.on_delete_callback is None:
             raise ValueError("on_delete='custom' 时必须提供 on_delete_callback")
-        if self.on_delete != "custom" and self.on_delete_callback is not None:
+        if self.on_delete != RefDeleteAction.CUSTOM and self.on_delete_callback is not None:
             raise ValueError("on_delete_callback 仅在 on_delete='custom' 时有效")
 
 

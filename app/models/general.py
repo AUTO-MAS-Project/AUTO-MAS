@@ -13,6 +13,7 @@ from app.core.config.pydantic import PydanticConfigBase
 from app.core.config.shortcuts import config, ref, sub_configs, virtual
 from app.core.config.types import DayCount, NonNegativeInt, PositiveInt, UrlString
 from .common import Webhook
+from .tag_helpers import notes_tag, proxy_date_tag, remained_day_tag
 
 
 @config
@@ -64,50 +65,16 @@ class GeneralUserConfig(PydanticConfigBase):
         """生成通用用户标签列表"""
         tags: list[dict[str, str]] = []
 
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"任务：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
+        tags.append(
+            proxy_date_tag(
+                self.get("Data", "LastProxyDate"),
+                self.get("Data", "ProxyTimes"),
+                UTC4,
+                label="任务",
             )
-        else:
-            tags.append({"text": "任务：未代理", "color": "orange"})
-
-        remained_day = self.get("Info", "RemainedDay")
-        if remained_day == -1:
-            tag_color = "gold"
-        elif remained_day == 0:
-            tag_color = "red"
-        elif remained_day <= 3:
-            tag_color = "orange"
-        elif remained_day <= 7:
-            tag_color = "yellow"
-        elif remained_day <= 30:
-            tag_color = "blue"
-        else:
-            tag_color = "green"
-        tags.append(
-            {
-                "text": f"剩余天数：{remained_day}天"
-                if remained_day >= 0
-                else "剩余天数：无期限",
-                "color": tag_color,
-            }
         )
-
-        notes = self.get("Info", "Notes")
-        tags.append(
-            {
-                "text": f"备注：{notes}"
-                if len(notes) <= 20
-                else f"备注：{notes[:20]}...",
-                "color": "pink",
-            }
-        )
+        tags.append(remained_day_tag(self.get("Info", "RemainedDay")))
+        tags.append(notes_tag(self.get("Info", "Notes")))
 
         return json.dumps(tags, ensure_ascii=False)
 

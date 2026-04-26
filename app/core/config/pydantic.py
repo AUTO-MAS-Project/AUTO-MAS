@@ -26,6 +26,10 @@ from .base import (
 from .fields import RefField, VirtualField
 from .types import EncryptedFieldMarker, decrypt_encrypted_string
 
+from app.utils import get_logger
+
+logger = get_logger("配置基类")
+
 
 SaveMethod = Callable[[], Coroutine[Any, Any, None]]
 Slot = Callable[[Any], Any] | Callable[[Any], Coroutine[Any, Any, Any]]
@@ -220,7 +224,7 @@ def _export_group_model(
 class PydanticConfigBase(BaseModel):
     """基于 pydantic v2 的配置基类，兼容旧版 ConfigBase 常用接口。"""
 
-    model_config = ConfigDict(extra="allow", validate_assignment=True)
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     LEGACY_FIELD_MAP: ClassVar[dict[tuple[str, str], tuple[str, str]]] = {}
     related_config: ClassVar[dict[str, MultipleConfig[Any]]] = {}
@@ -230,6 +234,13 @@ class PydanticConfigBase(BaseModel):
             dict[tuple[str, str], tuple[tuple[str, str], ...]],
         ]
     ] = {}
+
+    @classmethod
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        cls.related_config = {}
+        cls._class_virtual_dependencies = {}
+
     _file: Path | None = PrivateAttr(default=None)
     _is_locked: bool = PrivateAttr(default=False)
     _save_methods: list[SaveMethod] = PrivateAttr(default_factory=_default_save_methods)
@@ -255,6 +266,10 @@ class PydanticConfigBase(BaseModel):
         PrivateAttr(default_factory=_default_ref_validation_cache)
     )
     _ref_validation_cache_enabled: bool = PrivateAttr(default=False)
+    _group_index_cache: dict[str, BaseModel] | None = PrivateAttr(default=None)
+    _multiple_config_index_cache: dict[str, MultipleConfig[Any]] | None = PrivateAttr(
+        default=None
+    )
 
     @property
     def file(self) -> Path | None:
@@ -496,6 +511,11 @@ class PydanticConfigBase(BaseModel):
                     )
                 elif isinstance(virtual_field.getter, str):
                     deps = self._infer_virtual_dependencies(virtual_field.getter)
+                    if deps:
+                        logger.debug(
+                            f"虚拟字段 {group_name}.{field_name} 通过 AST 自动推导依赖: {deps}。"
+                            f"建议显式声明 depends_on 以提高可靠性。"
+                        )
                 else:
                     deps = ()
 
@@ -505,18 +525,24 @@ class PydanticConfigBase(BaseModel):
         self._virtual_dependencies_cache = class_cache
 
     def _multiple_config_index(self) -> dict[str, MultipleConfig[Any]]:
+        if self._multiple_config_index_cache is not None:
+            return self._multiple_config_index_cache
         result: dict[str, MultipleConfig[Any]] = {}
         for name, value in self.__dict__.items():
             if isinstance(value, MultipleConfig):
                 result[name] = value
+        self._multiple_config_index_cache = result
         return result
 
     def _group_index(self) -> dict[str, BaseModel]:
+        if self._group_index_cache is not None:
+            return self._group_index_cache
         result: dict[str, BaseModel] = {}
         for name in type(self).model_fields:
             value = getattr(self, name, None)
             if isinstance(value, BaseModel):
                 result[name] = value
+        self._group_index_cache = result
         return result
 
     def _normalize_value(self, group: str, name: str, value: Any) -> Any:
@@ -900,11 +926,14 @@ class PydanticConfigBase(BaseModel):
                             f"加载配置项失败: {group_name}.{field_name}={candidate!r}"
                         ) from e
 
-            if self._file:
-                await self._save_unlocked()
+            should_save = bool(self._file)
+            should_cascade = bool(self._save_methods)
 
-            if self._save_methods:
-                await asyncio.gather(*(_() for _ in self._save_methods))
+        if should_save:
+            await self._save_unlocked()
+
+        if should_cascade:
+            await asyncio.gather(*(_() for _ in self._save_methods))
 
     async def toDict(
         self,
@@ -1041,12 +1070,12 @@ class PydanticConfigBase(BaseModel):
                     )
 
             if self._file:
-                await self._save_unlocked()
+                self._pending_save = True
+            if self._save_methods:
+                self._pending_sync = True
 
-            if self._transaction_depth > 0:
-                self._pending_sync = self._pending_sync or bool(self._save_methods)
-            elif self._save_methods:
-                await asyncio.gather(*(_() for _ in self._save_methods))
+        if self._transaction_depth == 0:
+            await self._flush_pending_changes()
 
     async def set_many(self, values: dict[str, dict[str, Any]]) -> None:
         """批量更新多个配置项。"""
@@ -1122,3 +1151,5 @@ class PydanticConfigBase(BaseModel):
 
 class PluginConfigBase(PydanticConfigBase):
     """插件配置模型锚点基类。"""
+
+    model_config = ConfigDict(extra="allow", validate_assignment=True)

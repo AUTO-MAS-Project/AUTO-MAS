@@ -4,13 +4,12 @@ import calendar
 import json
 import uuid
 from datetime import datetime
-from typing import Annotated, Any, Callable, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import AliasChoices, AliasPath, BaseModel, Field, field_validator
 
-from app.core.config.base import MultipleConfig
 from app.core.config.pydantic import PydanticConfigBase
-from app.core.config.shortcuts import virtual
+from app.core.config.shortcuts import config, singleton, sub_configs, virtual
 from app.core.config.types import (
     EncryptedString,
     JsonDictString,
@@ -49,8 +48,8 @@ class ToolsConfig(PydanticConfigBase):
 
     def __init__(self, **data: Any):
         super().__init__(**data)
-        self.arknights_pc_running = False
-        self.arknights_pc_get_connected: Callable[[], bool] = lambda: False
+        object.__setattr__(self, "arknights_pc_running", False)
+        object.__setattr__(self, "arknights_pc_get_connected", lambda: False)
 
     @property
     def arknights_pc_connected(self) -> bool:
@@ -83,6 +82,16 @@ class ToolsConfig(PydanticConfigBase):
         ]
 
 
+@config
+@sub_configs(
+    Notify_CustomWebhooks=[Webhook],
+    EmulatorConfig=[EmulatorConfig],
+    PlanConfig=[MaaPlanConfig],
+    ScriptConfig=[MaaConfig, MaaEndConfig, SrcConfig, GeneralConfig],
+    PluginConfig=[PluginInstanceConfig],
+    QueueConfig=[QueueConfig],
+    ToolsConfig=singleton(ToolsConfig),
+)
 class GlobalConfig(PydanticConfigBase):
     """全局配置"""
 
@@ -165,23 +174,7 @@ class GlobalConfig(PydanticConfigBase):
     Update: UpdateModel = Field(default_factory=UpdateModel)
     Data: DataModel = Field(default_factory=DataModel)
 
-    def __init__(self, **data: Any):
-        super().__init__(**data)
-
-        self.Notify_CustomWebhooks: MultipleConfig[Webhook] = MultipleConfig([Webhook])
-        self.EmulatorConfig: MultipleConfig[EmulatorConfig] = MultipleConfig(
-            [EmulatorConfig]
-        )
-        self.PlanConfig: MultipleConfig[MaaPlanConfig] = MultipleConfig([MaaPlanConfig])
-        self.ScriptConfig: MultipleConfig[Any] = MultipleConfig(
-            [MaaConfig, MaaEndConfig, SrcConfig, GeneralConfig]
-        )
-        self.PluginConfig: MultipleConfig[PluginInstanceConfig] = MultipleConfig(
-            [PluginInstanceConfig]
-        )
-        self.QueueConfig: MultipleConfig[QueueConfig] = MultipleConfig([QueueConfig])
-        self.ToolsConfig = ToolsConfig()
-
+    def model_post_init(self, __context: Any) -> None:
         MaaConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaEndConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         SrcConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
