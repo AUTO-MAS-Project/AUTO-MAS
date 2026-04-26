@@ -47,6 +47,7 @@
                 <div class="instance-item-header">
                   <span class="instance-name">{{ item.name || item.id }}</span>
                   <a-switch
+                    class="instance-enabled-switch"
                     :checked="getInstanceSwitchChecked(item)"
                     checked-children="启用"
                     un-checked-children="禁用"
@@ -121,19 +122,28 @@
               style="margin-bottom: 12px"
             />
 
-            <a-card size="small" class="service-card" title="服务声明">
-              <a-descriptions :column="1" size="small" bordered>
-                <a-descriptions-item label="提供服务">
-                  {{ formatServiceList(selectedPluginService?.provides) }}
-                </a-descriptions-item>
-                <a-descriptions-item label="必须服务">
-                  {{ formatServiceList(selectedPluginService?.needs) }}
-                </a-descriptions-item>
-                <a-descriptions-item label="可选服务">
-                  {{ formatServiceList(selectedPluginService?.wants) }}
-                </a-descriptions-item>
-              </a-descriptions>
-            </a-card>
+            <a-alert
+              v-if="hasSelectedPluginServiceDeclarations"
+              class="service-alert"
+              type="info"
+              show-icon
+              message="服务声明"
+            >
+              <template #description>
+                <div class="service-declaration-list">
+                  <div
+                    v-for="row in selectedServiceDeclarationRows"
+                    :key="row.key"
+                    class="service-declaration-row"
+                  >
+                    <a-tag :color="row.color" class="service-declaration-label">
+                      {{ row.label }}
+                    </a-tag>
+                    <span class="service-declaration-value">{{ row.value }}</span>
+                  </div>
+                </div>
+              </template>
+            </a-alert>
 
             <a-card v-if="selectedRuntimeState" size="small" class="runtime-observer-card" title="运行态观测">
               <a-descriptions :column="2" size="small" bordered>
@@ -161,7 +171,7 @@
                 <a-input v-model:value="editForm.name" placeholder="输入实例名称" />
               </a-form-item>
 
-              <a-card size="small" title="Schema 动态表单" class="editor-card">
+              <a-card size="small" title="插件配置" class="editor-card">
                 <template v-if="activeSchemaEntries.length > 0">
                   <a-form-item
                     v-for="([field, fieldSchema], index) in activeSchemaEntries"
@@ -550,6 +560,43 @@ const selectedPluginService = computed(() => {
   return pluginServices.value[pluginName] || null
 })
 
+const hasServiceListItems = (items?: string[]) => Array.isArray(items) && items.length > 0
+
+const serviceDeclarationDefs = [
+  { key: 'provides', label: '提供服务', color: 'green' },
+  { key: 'needs', label: '必须服务', color: 'red' },
+  { key: 'wants', label: '可选服务', color: 'gold' },
+] as const
+
+const selectedServiceDeclarationRows = computed(() => {
+  const service = selectedPluginService.value
+  if (!service) {
+    return []
+  }
+
+  return serviceDeclarationDefs
+    .map(item => {
+      const values = service[item.key]
+      if (!hasServiceListItems(values)) {
+        return null
+      }
+      return {
+        key: item.key,
+        label: item.label,
+        color: item.color,
+        value: values.join('、'),
+      }
+    })
+    .filter(
+      (item): item is { key: string; label: string; color: string; value: string } =>
+        item !== null,
+    )
+})
+
+const hasSelectedPluginServiceDeclarations = computed(() => {
+  return selectedServiceDeclarationRows.value.length > 0
+})
+
 const activeSchema = computed(() => {
   const pluginName = editForm.plugin || selectedInstance.value?.plugin
   if (!pluginName) {
@@ -689,13 +736,6 @@ const getPhaseLabel = (phase?: string) => {
     return '未知'
   }
   return PHASE_LABELS[phase] || phase
-}
-
-const formatServiceList = (items?: string[]) => {
-  if (!items || items.length === 0) {
-    return '无'
-  }
-  return items.join('、')
 }
 
 const getStatusTagColor = (status?: string) => {
@@ -1318,16 +1358,47 @@ const submitEdit = async () => {
       config.enable = editForm.enabled
       setConfigObjectToText(config)
     }
-    const data = await requestPluginAction<any>('plugins.update', '/api/plugins/update', {
+    const target = selectedInstance.value
+    if (!target) {
+      throw new Error('未选择插件实例')
+    }
+    const payload: Record<string, unknown> = {
       instanceId: editForm.instanceId,
-      plugin: editForm.plugin,
-      name: editForm.name,
-      enabled: editForm.enabled,
-      config,
+    }
+    const nextConfigText = JSON.stringify(config, null, 2)
+    if (editForm.name !== target.name) {
+      payload.name = editForm.name
+    }
+    if (editForm.plugin !== target.plugin) {
+      payload.plugin = editForm.plugin
+    }
+    if (editForm.enabled !== target.enabled) {
+      payload.enabled = editForm.enabled
+    }
+    const targetConfig = { ...(target.config || {}) }
+    if (hasEnableSchema(editForm.plugin)) {
+      targetConfig.enable = target.enabled
+    }
+    if (nextConfigText !== JSON.stringify(targetConfig, null, 2)) {
+      payload.config = config
+    }
+    const data = await requestPluginAction<any>('plugins.update', '/api/plugins/update', {
+      ...payload,
     })
     if (data.code !== 200 || data.status !== 'success') {
       throw new Error(data.message || '更新失败')
     }
+    instances.value = instances.value.map(item =>
+      item.id === editForm.instanceId
+        ? {
+            ...item,
+            plugin: editForm.plugin,
+            name: editForm.name,
+            enabled: editForm.enabled,
+            config,
+          }
+        : item,
+    )
     editSnapshot.value = captureEditSnapshot()
     message.success('更新成功')
   } catch (error) {
@@ -1657,12 +1728,27 @@ onUnmounted(() => {
 .instance-item-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 10px;
   margin-bottom: 6px;
 }
 
 .instance-name {
+  min-width: 0;
   font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.instance-enabled-switch {
+  flex: 0 0 auto;
+  min-width: 68px;
+  margin-top: 1px;
+}
+
+.instance-item :deep(.ant-switch-inner) {
+  min-width: 42px;
 }
 
 .instance-plugin,
@@ -1679,8 +1765,30 @@ onUnmounted(() => {
   margin-bottom: 10px;
 }
 
-.service-card {
+.service-alert {
   margin-bottom: 10px;
+}
+
+.service-declaration-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.service-declaration-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.service-declaration-label {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+}
+
+.service-declaration-value {
+  min-width: 0;
+  word-break: break-word;
 }
 
 .detail-title {
@@ -1691,10 +1799,26 @@ onUnmounted(() => {
 
 .editor-card {
   margin-bottom: 10px;
+  border-color: var(--ant-color-border-secondary);
+  background: color-mix(in srgb, var(--ant-color-bg-container) 96%, var(--ant-color-fill-quaternary));
+}
+
+.editor-card :deep(.ant-card-head) {
+  min-height: 48px;
+  border-bottom-color: var(--ant-color-border-secondary);
+}
+
+.editor-card :deep(.ant-card-head-title) {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.editor-card :deep(.ant-card-body) {
+  padding: 16px 18px;
 }
 
 .schema-field-head {
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .type-tag {
@@ -1703,25 +1827,40 @@ onUnmounted(() => {
 
 .schema-item :deep(.ant-form-item-control-input-content) {
   border-radius: 8px;
-  padding: 6px 8px;
+}
+
+.schema-item {
+  padding: 14px 16px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
+}
+
+.schema-item :deep(.ant-form-item-label) {
+  padding-bottom: 4px;
+}
+
+.schema-item :deep(.ant-form-item-label > label) {
+  font-weight: 600;
+  color: var(--ant-color-text);
 }
 
 .schema-item-boolean :deep(.ant-form-item-control-input-content) {
-  background: var(--ant-color-success-bg);
+  padding-top: 2px;
 }
 
 .schema-item-string :deep(.ant-form-item-control-input-content) {
-  background: var(--ant-color-info-bg);
+  max-width: 100%;
 }
 
 .schema-item-number :deep(.ant-form-item-control-input-content) {
-  background: var(--ant-color-warning-bg);
+  max-width: 260px;
 }
 
 .schema-item-list :deep(.ant-form-item-control-input-content),
 .schema-item-key_value :deep(.ant-form-item-control-input-content),
 .schema-item-table :deep(.ant-form-item-control-input-content) {
-  background: var(--ant-color-fill-tertiary);
+  max-width: 100%;
 }
 
 .detail-card :deep(.ant-alert) {
