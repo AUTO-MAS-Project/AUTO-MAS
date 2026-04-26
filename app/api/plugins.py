@@ -1,6 +1,7 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
+import asyncio
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -9,7 +10,13 @@ from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 
 from app.core.plugins import PluginConfigStore, PluginManager
+from app.core.plugins.realtime import publish_plugin_snapshot
+from app.api.ws_command import ws_command
 from app.models.schema import OutBase
+from app.utils import get_logger
+
+
+logger = get_logger("插件API")
 
 
 if os.getenv("AUTO_MAS_DEV") == "1":
@@ -71,11 +78,21 @@ class PluginRuntimeStateModel(BaseModel):
     last_error_at: Optional[str] = Field(default=None, description="最近错误时间")
 
 
+class PluginServiceModel(BaseModel):
+    provides: List[str] = Field(default_factory=list, description="提供的服务")
+    needs: List[str] = Field(default_factory=list, description="必须服务")
+    wants: List[str] = Field(default_factory=list, description="可选服务")
+
+
 class PluginsGetOut(OutBase):
     version: int = Field(default=1, description="配置版本")
     discovered_plugins: List[str] = Field(default_factory=list, description="已发现插件")
     schemas: Dict[str, Dict[str, Any]] = Field(default_factory=dict, description="插件Schema映射")
     schema_errors: Dict[str, str] = Field(default_factory=dict, description="插件Schema加载错误")
+    plugin_services: Dict[str, PluginServiceModel] = Field(
+        default_factory=dict,
+        description="插件服务声明",
+    )
     instances: List[PluginInstanceModel] = Field(default_factory=list, description="插件实例列表")
     runtime_states: Dict[str, PluginRuntimeStateModel] = Field(
         default_factory=dict,
@@ -135,6 +152,68 @@ async def _discover_plugins(plugins_dir: Path) -> Dict[str, Any]:
     return await PluginManager.discover_plugins()
 
 
+def _schedule_update_reload(instance_id: str) -> None:
+    async def _runner() -> None:
+        try:
+            await PluginManager.reload_instance(instance_id)
+        except Exception as exc:
+            logger.error(
+                f"插件实例后台重载失败: instance_id={instance_id}, error={type(exc).__name__}: {exc}",
+                exc_info=True,
+            )
+            try:
+                await publish_plugin_snapshot(
+                    reason="api.plugins.update.reload_failed",
+                    message=f"插件实例后台重载失败: {instance_id}",
+                )
+            except Exception as snapshot_exc:
+                logger.warning(
+                    f"插件快照后台发布失败: instance_id={instance_id}, "
+                    f"error={type(snapshot_exc).__name__}: {snapshot_exc}"
+                )
+
+    asyncio.create_task(_runner())
+
+
+def _need_discover_for_update(data: PluginUpdateIn) -> bool:
+    return data.plugin is not None or data.config is not None
+
+
+def _resolve_effective_config(
+    *,
+    data: PluginUpdateIn,
+    target: Dict[str, Any],
+    discovered: Dict[str, Any],
+    need_discover: bool,
+) -> tuple[str, Dict[str, Any]]:
+    next_plugin = data.plugin if data.plugin is not None else target.get("plugin")
+    if not isinstance(next_plugin, str) or not next_plugin:
+        raise ValueError(f"插件实例缺少有效 plugin 字段: {data.instanceId}")
+
+    # 仅更新启用状态/名称时，沿用现有配置，避免无关 schema 校验影响开关流程。
+    if data.plugin is None and data.config is None:
+        current_config = target.get("config", {})
+        if not isinstance(current_config, dict):
+            raise ValueError(f"插件实例配置无效: {data.instanceId}")
+        return next_plugin, current_config
+
+    next_config = data.config if data.config is not None else target.get("config", {})
+
+    plugin_path = None
+    if need_discover:
+        if next_plugin not in discovered:
+            raise ValueError(f"未发现插件: {next_plugin}")
+        plugin_path = getattr(discovered[next_plugin], "path", None)
+
+    effective_config = config_store.load_effective_config(
+        next_plugin,
+        plugin_path,
+        next_config,
+    )
+    return next_plugin, effective_config
+
+
+
 def _build_instances(root: Dict[str, Any]) -> List[PluginInstanceModel]:
     instances: List[PluginInstanceModel] = []
     for item in root.get("instances", []):
@@ -155,6 +234,25 @@ def _build_schemas(discovered: Dict[str, Any]) -> tuple[Dict[str, Dict[str, Any]
             schemas[plugin_name] = {}
             errors[plugin_name] = f"{type(e).__name__}: {e}"
     return schemas, errors
+
+
+def _build_plugin_services(discovered: Dict[str, Any]) -> Dict[str, PluginServiceModel]:
+    services: Dict[str, PluginServiceModel] = {}
+    loader = PluginManager.loader
+
+    for plugin_name, plugin_source in discovered.items():
+        try:
+            _, plugin_class = loader._resolve_plugin_module_and_class(plugin_name, plugin_source)
+            provides, needs, wants = loader._meta(plugin_class)
+            services[plugin_name] = PluginServiceModel(
+                provides=sorted(provides),
+                needs=sorted(needs),
+                wants=sorted(wants),
+            )
+        except Exception:
+            services[plugin_name] = PluginServiceModel()
+
+    return services
 
 
 def _build_runtime_states(root: Dict[str, Any]) -> Dict[str, PluginRuntimeStateModel]:
@@ -204,6 +302,7 @@ def _build_runtime_states(root: Dict[str, Any]) -> Dict[str, PluginRuntimeStateM
     return result
 
 
+@ws_command("plugins.get")
 @router.post(
     "/get",
     tags=["Get"],
@@ -221,11 +320,13 @@ async def get_plugins() -> PluginsGetOut:
             auto_create_missing=False,
         )
         schemas, schema_errors = _build_schemas(discovered)
+        plugin_services = _build_plugin_services(discovered)
         return PluginsGetOut(
             version=int(root.get("version", 1)),
             discovered_plugins=list(discovered.keys()),
             schemas=schemas,
             schema_errors=schema_errors,
+            plugin_services=plugin_services,
             instances=_build_instances(root),
             runtime_states=_build_runtime_states(root),
         )
@@ -238,11 +339,13 @@ async def get_plugins() -> PluginsGetOut:
             discovered_plugins=[],
             schemas={},
             schema_errors={},
+            plugin_services={},
             instances=[],
             runtime_states={},
         )
 
 
+@ws_command("plugins.reload")
 @router.post(
     "/reload",
     tags=["Action"],
@@ -253,11 +356,16 @@ async def get_plugins() -> PluginsGetOut:
 async def reload_plugins() -> OutBase:
     try:
         await PluginManager.reload()
+        await publish_plugin_snapshot(
+            reason="api.plugins.reload",
+            message="插件系统已重载",
+        )
         return OutBase(message="插件系统重载成功")
     except Exception as e:
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
 
 
+@ws_command("plugins.reload_instance")
 @router.post(
     "/reload_instance",
     tags=["Action"],
@@ -268,11 +376,16 @@ async def reload_plugins() -> OutBase:
 async def reload_plugin_instance(data: PluginReloadInstanceIn = Body(...)) -> OutBase:
     try:
         await PluginManager.reload_instance(data.instanceId)
+        await publish_plugin_snapshot(
+            reason="api.plugins.reload_instance",
+            message=f"插件实例已重载: {data.instanceId}",
+        )
         return OutBase(message=f"插件实例重载成功: {data.instanceId}")
     except Exception as e:
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
 
 
+@ws_command("plugins.reload_plugin")
 @router.post(
     "/reload_plugin",
     tags=["Action"],
@@ -283,11 +396,16 @@ async def reload_plugin_instance(data: PluginReloadInstanceIn = Body(...)) -> Ou
 async def reload_plugin_by_name(data: PluginReloadPluginIn = Body(...)) -> OutBase:
     try:
         await PluginManager.reload_plugin(data.plugin)
+        await publish_plugin_snapshot(
+            reason="api.plugins.reload_plugin",
+            message=f"插件已重载: {data.plugin}",
+        )
         return OutBase(message=f"插件重载成功: {data.plugin}")
     except Exception as e:
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
 
 
+@ws_command("plugins.install_package")
 @router.post(
     "/install_package",
     tags=["Action"],
@@ -309,11 +427,16 @@ async def install_plugin_package(data: PluginPackageIn = Body(...)) -> OutBase:
     """
     try:
         await PluginManager.install_plugin_package(data.package)
+        await publish_plugin_snapshot(
+            reason="api.plugins.install_package",
+            message=f"插件包已安装: {data.package}",
+        )
         return OutBase(message=f"插件包下载安装成功: {data.package}")
     except Exception as e:
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
 
 
+@ws_command("plugins.uninstall_package")
 @router.post(
     "/uninstall_package",
     tags=["Action"],
@@ -335,11 +458,16 @@ async def uninstall_plugin_package(data: PluginPackageIn = Body(...)) -> OutBase
     """
     try:
         await PluginManager.uninstall_plugin_package(data.package)
+        await publish_plugin_snapshot(
+            reason="api.plugins.uninstall_package",
+            message=f"插件包已卸载: {data.package}",
+        )
         return OutBase(message=f"插件包卸载成功: {data.package}")
     except Exception as e:
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
 
 
+@ws_command("plugins.dev.rebuild_ctx_stub")
 @router.post(
     "/dev/rebuild_ctx_stub",
     tags=["Action"],
@@ -394,6 +522,7 @@ async def rebuild_plugin_ctx_stub(
         )
 
 
+@ws_command("plugins.add")
 @router.post(
     "/add",
     tags=["Add"],
@@ -435,6 +564,11 @@ async def add_plugin_instance(data: PluginAddIn = Body(...)) -> PluginAddOut:
         if PluginManager.started and data.enabled:
             await PluginManager.reload_instance(instance["id"])
 
+        await publish_plugin_snapshot(
+            reason="api.plugins.add",
+            message=f"已新增插件实例: {instance['id']}",
+        )
+
         return PluginAddOut(instance=PluginInstanceModel(**instance))
     except Exception as e:
         return PluginAddOut(
@@ -445,6 +579,7 @@ async def add_plugin_instance(data: PluginAddIn = Body(...)) -> PluginAddOut:
         )
 
 
+@ws_command("plugins.update")
 @router.post(
     "/update",
     tags=["Update"],
@@ -455,7 +590,10 @@ async def add_plugin_instance(data: PluginAddIn = Body(...)) -> PluginAddOut:
 async def update_plugin_instance(data: PluginUpdateIn = Body(...)) -> OutBase:
     try:
         plugins_dir = Path.cwd() / "plugins"
-        discovered = await _discover_plugins(plugins_dir)
+        need_discover = _need_discover_for_update(data)
+        discovered: Dict[str, Any] = {}
+        if need_discover:
+            discovered = await _discover_plugins(plugins_dir)
         root = await config_store.get_root(
             plugins_dir,
             discovered,
@@ -472,16 +610,11 @@ async def update_plugin_instance(data: PluginUpdateIn = Body(...)) -> OutBase:
         if target is None:
             raise ValueError(f"未找到插件实例: {data.instanceId}")
 
-        next_plugin = data.plugin if data.plugin is not None else target.get("plugin")
-        if not isinstance(next_plugin, str) or next_plugin not in discovered:
-            raise ValueError(f"未发现插件: {next_plugin}")
-
-        next_config = data.config if data.config is not None else target.get("config", {})
-        plugin_path = getattr(discovered[next_plugin], "path", None)
-        effective_config = config_store.load_effective_config(
-            next_plugin,
-            plugin_path,
-            next_config,
+        next_plugin, effective_config = _resolve_effective_config(
+            data=data,
+            target=target,
+            discovered=discovered,
+            need_discover=need_discover,
         )
 
         target["plugin"] = next_plugin
@@ -494,13 +627,21 @@ async def update_plugin_instance(data: PluginUpdateIn = Body(...)) -> OutBase:
         await config_store.save_root(plugins_dir, root)
 
         if PluginManager.started:
-            await PluginManager.reload_instance(data.instanceId)
+            _schedule_update_reload(data.instanceId)
+        else:
+            asyncio.create_task(
+                publish_plugin_snapshot(
+                    reason="api.plugins.update",
+                    message=f"已更新插件实例: {data.instanceId}",
+                )
+            )
 
         return OutBase()
     except Exception as e:
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
 
 
+@ws_command("plugins.delete")
 @router.post(
     "/delete",
     tags=["Delete"],
@@ -533,6 +674,10 @@ async def delete_plugin_instance(data: PluginDeleteIn = Body(...)) -> OutBase:
 
         root["instances"] = new_instances
         await config_store.save_root(plugins_dir, root)
+        await publish_plugin_snapshot(
+            reason="api.plugins.delete",
+            message=f"已删除插件实例: {data.instanceId}",
+        )
         return OutBase()
     except Exception as e:
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
