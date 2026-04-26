@@ -862,9 +862,14 @@ TASK_MODE_ZH = {
 }
 """任务模式中文映射表"""
 
+APPDATA_PATH = Path(os.getenv("APPDATA") or "")
+"""APPDATA路径"""
+
 EMULATOR_SPLASH_ADS_PATH_BOOK = {
-    "mumu": Path(os.getenv("APPDATA") or "")
-    / "Netease/MuMuPlayer-12.0/data/startupImage",
-    "ldplayer": Path(os.getenv("APPDATA") or "") / "leidian9/cache",
+    "mumu": [
+        APPDATA_PATH / "Netease/MuMuPlayer-12.0/data/startupImage",
+        APPDATA_PATH / "Netease/MuMuPlayer/data/startupImage",
+    ],
+    "ldplayer": [APPDATA_PATH / "leidian9/cache"],
 }
 """模拟器启动时广告路径"""
