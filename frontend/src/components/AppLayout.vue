@@ -210,10 +210,10 @@ const onMenuClick: MenuProps['onClick'] = info => {
 }
 
 .content-area {
-  display: flex;
-  flex-direction: column;
+  height: 100%;
   min-height: 0;
-  overflow: hidden;
+  box-sizing: border-box;
+  overflow: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
   padding: 32px 32px 48px;
@@ -223,10 +223,6 @@ const onMenuClick: MenuProps['onClick'] = info => {
   display: none;
 }
 
-.content-area > * {
-  flex: 1;
-  min-height: 0;
-}
 </style>
 
 <!-- 使用标准 Sider 布局，去除 fixed 与 marginLeft，保持菜单样式与滚动行为 -->
