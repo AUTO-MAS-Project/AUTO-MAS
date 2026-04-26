@@ -210,15 +210,22 @@ const onMenuClick: MenuProps['onClick'] = info => {
 }
 
 .content-area {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  padding: 32px;
+  padding: 32px 32px 48px;
 }
 
 .content-area::-webkit-scrollbar {
   display: none;
+}
+
+.content-area > * {
+  flex: 1;
+  min-height: 0;
 }
 </style>
 
