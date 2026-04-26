@@ -89,23 +89,23 @@
         ]
     },
     "Bilibili隐私政策[StarRailEmulator]": {
+        "enabled": false,
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "bilibili游戏隐私政策提示",
-                    "隐私政策"
-                ],
                 "roi": [
                     520,
                     140,
                     240,
                     30
                 ],
+                "expected": [
+                    "bilibili游戏隐私政策提示",
+                    "隐私政策"
+                ],
                 "model": "zh_cn"
             }
         },
-        "enabled": false,
         "next": [
             "同意Bilibili隐私政策[StarRailEmulator]"
         ]
@@ -114,21 +114,20 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "同意"
-                ],
                 "roi": [
                     700,
                     535,
                     60,
                     40
                 ],
+                "expected": [
+                    "同意"
+                ],
                 "model": "zh_cn"
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "timeout": 600000,
         "next": [
@@ -141,20 +140,19 @@
         "recognition": {
             "type": "TemplateMatch",
             "param": {
-                "template": [
-                    "StarRailEmulator/登录下拉框展开-B服.png"
-                ],
                 "roi": [
                     775,
                     260,
                     75,
                     75
+                ],
+                "template": [
+                    "StarRailEmulator/登录下拉框展开-B服.png"
                 ]
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "选中账号-B服[StarRailEmulator]",
@@ -165,20 +163,19 @@
         "recognition": {
             "type": "TemplateMatch",
             "param": {
-                "template": [
-                    "StarRailEmulator/登出登入.png"
-                ],
                 "roi": [
                     1175,
                     100,
                     60,
                     100
+                ],
+                "template": [
+                    "StarRailEmulator/登出登入.png"
                 ]
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "登录下拉框展开[StarRailEmulator]",
@@ -187,6 +184,7 @@
         ]
     },
     "下滑账号列表-B服[StarRailEmulator]": {
+        "max_hit": 20,
         "action": {
             "type": "Swipe",
             "param": {
@@ -207,7 +205,6 @@
             }
         },
         "timeout": 5000,
-        "max_hit": 20,
         "next": [
             "选中账号-B服[StarRailEmulator]",
             "下滑账号列表-B服[StarRailEmulator]"
@@ -220,21 +217,20 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "B站用户名"
-                ],
                 "roi": [
                     430,
                     250,
                     360,
                     320
                 ],
+                "expected": [
+                    "B站用户名"
+                ],
                 "model": "zh_cn"
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "进入游戏-B服-高[StarRailEmulator]"
@@ -244,46 +240,44 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "登录"
-                ],
                 "roi": [
                     600,
                     380,
                     80,
                     50
                 ],
+                "expected": [
+                    "登录"
+                ],
                 "model": "zh_cn"
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "timeout": 60000,
         "next": [
-            "识别公告[StarRailEmulator]"
+            "识别点击进入[StarRailEmulator]"
         ]
     },
     "登录下拉框折叠-B服[StarRailEmulator]": {
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "登录记录"
-                ],
                 "roi": [
                     585,
                     190,
                     110,
                     40
                 ],
+                "expected": [
+                    "登录记录"
+                ],
                 "model": "zh_cn"
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "切换其他账号[StarRailEmulator]"
@@ -293,21 +287,20 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "切换其他账号"
-                ],
                 "roi": [
                     580,
                     465,
                     120,
                     35
                 ],
+                "expected": [
+                    "切换其他账号"
+                ],
                 "model": "zh_cn"
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "同意协议-B服[StarRailEmulator]",
@@ -318,20 +311,19 @@
         "recognition": {
             "type": "TemplateMatch",
             "param": {
-                "template": [
-                    "StarRailEmulator/账号密码登录-B服.png"
-                ],
                 "roi": [
                     600,
                     425,
                     80,
                     75
+                ],
+                "template": [
+                    "StarRailEmulator/账号密码登录-B服.png"
                 ]
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "点击账号框-B服[StarRailEmulator]"
@@ -341,14 +333,14 @@
         "recognition": {
             "type": "TemplateMatch",
             "param": {
-                "template": [
-                    "StarRailEmulator/已同意复选框-B服.png"
-                ],
                 "roi": [
                     435,
                     500,
                     35,
                     30
+                ],
+                "template": [
+                    "StarRailEmulator/已同意复选框-B服.png"
                 ]
             }
         },
@@ -360,24 +352,23 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "请输入账号/邮箱号/手机号",
-                    "账号",
-                    "邮箱号",
-                    "手机号"
-                ],
                 "roi": [
                     450,
                     260,
                     280,
                     50
                 ],
+                "expected": [
+                    "请输入账号/邮箱号/手机号",
+                    "账号",
+                    "邮箱号",
+                    "手机号"
+                ],
                 "model": "zh_cn"
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "禁用日志-账号-B服[StarRailEmulator]"
@@ -409,22 +400,21 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "请输入密码",
-                    "密码"
-                ],
                 "roi": [
                     450,
                     347,
                     140,
                     50
                 ],
+                "expected": [
+                    "请输入密码",
+                    "密码"
+                ],
                 "model": "zh_cn"
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "禁用日志-密码-B服[StarRailEmulator]"
@@ -434,45 +424,43 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "登录"
-                ],
                 "roi": [
                     600,
                     510,
                     80,
                     50
                 ],
+                "expected": [
+                    "登录"
+                ],
                 "model": "zh_cn"
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "timeout": 60000,
         "next": [
-            "识别公告[StarRailEmulator]"
+            "识别点击进入[StarRailEmulator]"
         ]
     },
     "登出[StarRailEmulator]": {
         "recognition": {
             "type": "TemplateMatch",
             "param": {
-                "template": [
-                    "StarRailEmulator/登出登入.png"
-                ],
                 "roi": [
                     1175,
                     200,
                     60,
                     310
+                ],
+                "template": [
+                    "StarRailEmulator/登出登入.png"
                 ]
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "识别切换账号[StarRailEmulator]"
@@ -482,21 +470,20 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "确认"
-                ],
                 "roi": [
                     656,
                     359,
                     237,
                     83
                 ],
+                "expected": [
+                    "确认"
+                ],
                 "model": "zh_cn"
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "登录下拉框展开[StarRailEmulator]",
@@ -508,14 +495,14 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "确认切换账号"
-                ],
                 "roi": [
                     525,
                     270,
                     220,
                     60
+                ],
+                "expected": [
+                    "确认切换账号"
                 ],
                 "model": "zh_cn"
             }
@@ -528,21 +515,20 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "登录其他账号"
-                ],
                 "roi": [
                     550,
                     500,
                     180,
                     45
                 ],
+                "expected": [
+                    "登录其他账号"
+                ],
                 "model": "zh_cn"
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "账号密码[StarRailEmulator]"
@@ -552,21 +538,20 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "账号密码"
-                ],
                 "roi": [
                     420,
                     585,
                     110,
                     40
                 ],
+                "expected": [
+                    "账号密码"
+                ],
                 "model": "zh_cn"
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "点击账号框[StarRailEmulator]"
@@ -576,23 +561,22 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "输入手机号/邮箱",
-                    "手机号",
-                    "邮箱"
-                ],
                 "roi": [
                     390,
                     225,
                     230,
                     50
                 ],
+                "expected": [
+                    "输入手机号/邮箱",
+                    "手机号",
+                    "邮箱"
+                ],
                 "model": "zh_cn"
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "禁用日志-账号[StarRailEmulator]"
@@ -613,22 +597,21 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "输入密码",
-                    "密码"
-                ],
                 "roi": [
                     390,
                     320,
                     140,
                     50
                 ],
+                "expected": [
+                    "输入密码",
+                    "密码"
+                ],
                 "model": "zh_cn"
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "禁用日志-密码[StarRailEmulator]"
@@ -649,20 +632,19 @@
         "recognition": {
             "type": "TemplateMatch",
             "param": {
-                "template": [
-                    "StarRailEmulator/未同意复选框.png"
-                ],
                 "roi": [
                     370,
                     400,
                     40,
                     40
+                ],
+                "template": [
+                    "StarRailEmulator/未同意复选框.png"
                 ]
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "已同意协议[StarRailEmulator]"
@@ -672,14 +654,14 @@
         "recognition": {
             "type": "TemplateMatch",
             "param": {
-                "template": [
-                    "StarRailEmulator/已同意复选框.png"
-                ],
                 "roi": [
                     370,
                     400,
                     40,
                     40
+                ],
+                "template": [
+                    "StarRailEmulator/已同意复选框.png"
                 ]
             }
         },
@@ -691,25 +673,24 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "进入游戏"
-                ],
                 "roi": [
                     560,
                     480,
                     150,
                     50
                 ],
+                "expected": [
+                    "进入游戏"
+                ],
                 "model": "zh_cn"
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "timeout": 60000,
         "next": [
-            "识别公告[StarRailEmulator]"
+            "识别点击进入[StarRailEmulator]"
         ]
     },
     "启动游戏[StarRailEmulator]": {
@@ -733,20 +714,19 @@
         "recognition": {
             "type": "TemplateMatch",
             "param": {
-                "template": [
-                    "StarRailEmulator/登录下拉框展开.png"
-                ],
                 "roi": [
                     825,
                     260,
                     75,
                     75
+                ],
+                "template": [
+                    "StarRailEmulator/登录下拉框展开.png"
                 ]
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "选中账号[StarRailEmulator]",
@@ -757,27 +737,27 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "账号-正则"
-                ],
                 "roi": [
                     374,
                     357,
                     533,
                     331
                 ],
+                "expected": [
+                    "账号-正则"
+                ],
                 "model": "en_us"
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "进入游戏-高[StarRailEmulator]"
         ]
     },
     "下滑账号列表[StarRailEmulator]": {
+        "max_hit": 20,
         "action": {
             "type": "Swipe",
             "param": {
@@ -797,7 +777,6 @@
                 ]
             }
         },
-        "max_hit": 20,
         "timeout": 5000,
         "next": [
             "选中账号[StarRailEmulator]",
@@ -811,20 +790,19 @@
         "recognition": {
             "type": "TemplateMatch",
             "param": {
-                "template": [
-                    "StarRailEmulator/登录下拉框折叠.png"
-                ],
                 "roi": [
                     825,
                     260,
                     75,
                     75
+                ],
+                "template": [
+                    "StarRailEmulator/登录下拉框折叠.png"
                 ]
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "登录其他账号[StarRailEmulator]"
@@ -834,40 +812,40 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "进入游戏"
-                ],
                 "roi": [
                     565,
                     415,
                     150,
                     50
                 ],
+                "expected": [
+                    "进入游戏"
+                ],
                 "model": "zh_cn"
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "timeout": 60000,
         "next": [
-            "识别公告[StarRailEmulator]"
+            "识别点击进入[StarRailEmulator]"
         ]
     },
-    "识别公告[StarRailEmulator]": {
+    "识别点击进入[StarRailEmulator]": {
         "recognition": {
-            "type": "TemplateMatch",
+            "type": "OCR",
             "param": {
-                "template": [
-                    "StarRailEmulator/公告.png"
-                ],
                 "roi": [
-                    1175,
-                    20,
-                    60,
-                    100
-                ]
+                    580,
+                    640,
+                    125,
+                    50
+                ],
+                "expected": [
+                    "点击进入"
+                ],
+                "model": "zh_cn"
             }
         }
     },
@@ -875,20 +853,19 @@
         "recognition": {
             "type": "TemplateMatch",
             "param": {
-                "template": [
-                    "StarRailEmulator/未同意复选框-B服.png"
-                ],
                 "roi": [
                     435,
                     500,
                     35,
                     30
+                ],
+                "template": [
+                    "StarRailEmulator/未同意复选框-B服.png"
                 ]
             }
         },
         "action": {
-            "type": "Click",
-            "param": {}
+            "type": "Click"
         },
         "next": [
             "已同意协议-B服[StarRailEmulator]"
@@ -898,14 +875,14 @@
         "recognition": {
             "type": "TemplateMatch",
             "param": {
-                "template": [
-                    "StarRailEmulator/登录下拉框禁用.png"
-                ],
                 "roi": [
                     825,
                     260,
                     75,
                     75
+                ],
+                "template": [
+                    "StarRailEmulator/登录下拉框禁用.png"
                 ]
             }
         },
@@ -921,14 +898,14 @@
         "recognition": {
             "type": "OCR",
             "param": {
-                "expected": [
-                    "账号-正则"
-                ],
                 "roi": [
                     480,
                     260,
                     225,
                     65
+                ],
+                "expected": [
+                    "账号-正则"
                 ],
                 "model": "en_us"
             }
@@ -946,6 +923,12 @@
         },
         "next": [
             "启动游戏[StarRailEmulator]"
+        ]
+    },
+    "等待加载完成[StarRailEmulator]": {
+        "timeout": 600000,
+        "next": [
+            "识别点击进入[StarRailEmulator]"
         ]
     }
 }
