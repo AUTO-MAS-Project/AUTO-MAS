@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ast
 import copy
 import importlib
 import importlib.util
@@ -11,7 +12,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 from types import NoneType, UnionType
-from typing import Annotated, Any, Dict, Mapping, Union, get_args, get_origin
+from typing import Annotated, Any, Dict, Literal, Mapping, Union, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
@@ -453,10 +454,15 @@ class PluginSchemaManager:
         """
         result: Dict[str, Dict[str, Any]] = {}
         for field_name, field_info in model_cls.model_fields.items():
+            type_expr = self._type_to_expr(field_info.annotation)
             field_schema: Dict[str, Any] = {
-                "type": self._type_to_expr(field_info.annotation),
+                "type": type_expr,
                 "required": bool(field_info.is_required()),
             }
+            literal_values = self._literal_values(field_info.annotation)
+            if literal_values is not None:
+                field_schema["enum"] = copy.deepcopy(literal_values)
+                field_schema["type"] = self._enum_base_type(literal_values)
 
             if field_info.description is not None:
                 field_schema["description"] = str(field_info.description)
@@ -707,6 +713,14 @@ class PluginSchemaManager:
                 ) from e
 
             annotation = self._parse_type_annotation(spec.type)
+            enum_values = raw_field.get("enum")
+            if enum_values is not None:
+                annotation = self._apply_enum_annotation(
+                    plugin_name,
+                    field_name,
+                    annotation,
+                    enum_values,
+                )
             if spec.nullable:
                 annotation = annotation | None
 
@@ -813,6 +827,52 @@ class PluginSchemaManager:
 
         return self._parse_type_expr(expr)
 
+    def _literal_values(self, annotation: Any) -> list[Any] | None:
+        origin = get_origin(annotation)
+        args = get_args(annotation)
+
+        if origin is Annotated and args:
+            return self._literal_values(args[0])
+
+        if origin is Literal:
+            return list(args)
+
+        return None
+
+    @staticmethod
+    def _enum_base_type(values: list[Any]) -> str:
+        if not values:
+            return "string"
+        if all(isinstance(item, bool) for item in values):
+            return "boolean"
+        if all(isinstance(item, int) and not isinstance(item, bool) for item in values):
+            return "integer"
+        if all(isinstance(item, (int, float)) and not isinstance(item, bool) for item in values):
+            return "number"
+        return "string"
+
+    def _apply_enum_annotation(
+        self,
+        plugin_name: str,
+        field_name: str,
+        annotation: Any,
+        enum_values: Any,
+    ) -> Any:
+        if not isinstance(enum_values, list) or not enum_values:
+            raise PluginSchemaError(f"Schema enum 必须是非空数组: {plugin_name}.{field_name}")
+
+        origin = get_origin(annotation)
+        args = get_args(annotation)
+        literal_annotation = Literal.__getitem__(tuple(enum_values))
+
+        if origin is list:
+            return list[literal_annotation]
+
+        if origin is None and annotation is list:
+            return list[literal_annotation]
+
+        return literal_annotation
+
     def _parse_type_expr(self, expr: str) -> Any:
         """
         解析字符串类型表达式。
@@ -878,6 +938,20 @@ class PluginSchemaManager:
             if not inner:
                 raise PluginSchemaError(f"非法 Optional 类型表达式: {expr}")
             return self._parse_type_expr(inner) | None
+
+        if normalized.startswith("Literal[") and normalized.endswith("]"):
+            inner = normalized[8:-1].strip()
+            if not inner:
+                raise PluginSchemaError(f"非法 Literal 类型表达式: {expr}")
+            values = []
+            for item in self._split_top_level(inner, ","):
+                try:
+                    values.append(ast.literal_eval(item))
+                except Exception as e:
+                    raise PluginSchemaError(
+                        f"非法 Literal 值: {expr}, value={item}, error={type(e).__name__}: {e}"
+                    ) from e
+            return Literal.__getitem__(tuple(values))
 
         raise PluginSchemaError(f"不支持的 Schema type 表达式: {expr}")
 
@@ -973,11 +1047,20 @@ class PluginSchemaManager:
         if raw_type is Any:
             return "Any"
 
-        if raw_type in (str, int, float, bool):
-            return raw_type.__name__
+        if raw_type is str:
+            return "string"
+        if raw_type is int:
+            return "integer"
+        if raw_type is float:
+            return "number"
+        if raw_type is bool:
+            return "boolean"
 
         origin = get_origin(raw_type)
         args = get_args(raw_type)
+
+        if origin is Literal:
+            return self._enum_base_type(list(args))
 
         if origin is list:
             inner = self._type_to_expr(args[0] if args else Any)
