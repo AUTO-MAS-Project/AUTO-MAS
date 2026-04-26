@@ -52,7 +52,10 @@ async def login(
 
     from app.core import Config, MaaFWManager
 
-    if (package_name == "com.miHoYo.hkrpg" and "*" in id) or password == "":
+    if id == "":
+        logger.info("未输入账号，将跳过账号切换，等待游戏加载")
+        pipeline_override = {}
+    elif (package_name == "com.miHoYo.hkrpg" and "*" in id) or password == "":
         logger.info("账号密码不完整，禁用通过输入账号密码登录")
         pipeline_override = {
             "切换账号[StarRailEmulator]": {
@@ -139,7 +142,14 @@ async def login(
 
     try:
         await MaaFWManager.do_job(
-            tasker.post_task("切换账号[StarRailEmulator]", pipeline_override)
+            tasker.post_task(
+                (
+                    "切换账号[StarRailEmulator]"
+                    if pipeline_override
+                    else "等待加载完成[StarRailEmulator]"
+                ),
+                pipeline_override,
+            )
         )
         logger.success(f"模拟器{emulator_info.title}登录成功")
         await asyncio.sleep(10)  # 等待资源释放

@@ -152,7 +152,7 @@ class ManualReviewTask(TaskExecuteBase):
             self.script_info.log = (
                 "正在启动模拟器\n模拟器已启动，正在登录「崩坏·星穹铁道」..."
             )
-            if self.cur_user_config.get("Info", "Id") == "" or await login(
+            if await login(
                 emulator_info,
                 STARRAIL_PACKAGE_NAME[self.cur_user_config.get("Info", "Server")],
                 self.cur_user_config.get("Info", "Id"),
