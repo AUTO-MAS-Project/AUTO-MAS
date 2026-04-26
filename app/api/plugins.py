@@ -175,8 +175,40 @@ def _schedule_update_reload(instance_id: str) -> None:
     asyncio.create_task(_runner())
 
 
+def _schedule_enabled_runtime_update(instance_id: str, enabled: bool) -> None:
+    async def _runner() -> None:
+        try:
+            await PluginManager.apply_instance_enabled(instance_id, enabled)
+        except Exception as exc:
+            logger.error(
+                f"插件实例后台启用状态切换失败: instance_id={instance_id}, error={type(exc).__name__}: {exc}",
+                exc_info=True,
+            )
+            try:
+                await publish_plugin_snapshot(
+                    reason="api.plugins.update.enabled_failed",
+                    message=f"插件实例启用状态切换失败: {instance_id}",
+                )
+            except Exception as snapshot_exc:
+                logger.warning(
+                    f"插件快照后台发布失败: instance_id={instance_id}, "
+                    f"error={type(snapshot_exc).__name__}: {snapshot_exc}"
+                )
+
+    asyncio.create_task(_runner())
+
+
 def _need_discover_for_update(data: PluginUpdateIn) -> bool:
     return data.plugin is not None or data.config is not None
+
+
+def _is_enabled_only_update(data: PluginUpdateIn) -> bool:
+    return (
+        data.enabled is not None
+        and data.plugin is None
+        and data.config is None
+        and data.name is None
+    )
 
 
 def _resolve_effective_config(
@@ -610,6 +642,7 @@ async def update_plugin_instance(data: PluginUpdateIn = Body(...)) -> OutBase:
         if target is None:
             raise ValueError(f"未找到插件实例: {data.instanceId}")
 
+        was_enabled = bool(target.get("enabled", False))
         next_plugin, effective_config = _resolve_effective_config(
             data=data,
             target=target,
@@ -627,7 +660,10 @@ async def update_plugin_instance(data: PluginUpdateIn = Body(...)) -> OutBase:
         await config_store.save_root(plugins_dir, root)
 
         if PluginManager.started:
-            _schedule_update_reload(data.instanceId)
+            if _is_enabled_only_update(data) and was_enabled != bool(data.enabled):
+                _schedule_enabled_runtime_update(data.instanceId, bool(data.enabled))
+            else:
+                _schedule_update_reload(data.instanceId)
         else:
             asyncio.create_task(
                 publish_plugin_snapshot(
