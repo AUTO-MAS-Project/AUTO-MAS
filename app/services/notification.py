@@ -1,378 +1,118 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2024-2025 DLmaster361
-#   Copyright © 2025-2026 AUTO-MAS Team
-import asyncio
+#   Copyright (C) 2024-2025 DLmaster361
+#   Copyright (C) 2025-2026 AUTO-MAS Team
 
-#   This file is part of AUTO-MAS.
+from __future__ import annotations
 
-#   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU Affero General Public License as
-#   published by the Free Software Foundation, either version 3 of
-#   the License, or (at your option) any later version.
-
-#   AUTO-MAS is distributed in the hope that it will be useful,
-#   but WITHOUT ANY WARRANTY; without even the implied warranty
-#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU Affero General Public License for more details.
-
-#   You should have received a copy of the GNU Affero General Public License
-#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
-#   Contact: DLmaster_361@163.com
-
-
-import re
-import json
-import smtplib
-import httpx
-from datetime import datetime
-from plyer import notification
-from email.header import Header
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.utils import formataddr
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from app.core import Config
 from app.models.config import Webhook
-from app.utils import get_logger, ImageUtils
+from app.utils import get_logger
 
 logger = get_logger("通知服务")
 
 
 class Notification:
+    """Compatibility facade for the pluginized notification service."""
 
-    async def push_plyer(self, title: str, message: str, ticker: str, t: int) -> None:
-        """
-        推送系统通知
+    _missing_warned = False
 
-        Parameters
-        ----------
-        title: str
-            通知标题
-        message: str
-            通知内容
-        ticker: str
-            通知横幅
-        t: int
-            通知持续时间
-        """
+    def _service(self) -> Any | None:
+        try:
+            from app.core.plugins.manager import PluginManager
 
-        if not Config.get("Notify", "IfPushPlyer"):
+            return PluginManager.service.get("notify")
+        except Exception as e:
+            logger.warning(f"获取 notify 插件服务失败: {type(e).__name__}: {e}")
+            return None
+
+    def _missing_service(self) -> None:
+        if self._missing_warned:
             return
+        self._missing_warned = True
+        logger.warning("notify 插件服务未启用，通知请求已跳过")
 
-        logger.info(f"推送系统通知: {title}")
+    async def _call(self, method: str, *args: Any, default: Any = None, **kwargs: Any) -> Any:
+        service = self._service()
+        if service is None:
+            self._missing_service()
+            return default
 
-        if notification.notify is not None:
-            notification.notify(
+        handler = getattr(service, method, None)
+        if not callable(handler):
+            logger.warning(f"notify 插件服务缺少方法: {method}")
+            return default
+        return await handler(*args, **kwargs)
+
+    async def push_plyer(self, title: str, message: str, ticker: str, t: int) -> bool:
+        return bool(
+            await self._call(
+                "send_system",
                 title=title,
                 message=message,
-                app_name="AUTO-MAS",
-                app_icon=(Path.cwd() / "res/icons/AUTO-MAS.ico").as_posix(),
-                timeout=t,
                 ticker=ticker,
-                toast=True,
+                timeout=t,
+                default=False,
             )
-        else:
-            logger.error("plyer.notification 未正确导入, 无法推送系统通知")
+        )
 
     async def send_mail(
         self, mode: Literal["文本", "网页"], title: str, content: str, to_address: str
-    ) -> None:
-        """
-        推送邮件通知
-
-        Parameters
-        ----------
-        mode: Literal["文本", "网页"]
-            邮件内容模式, 支持 "文本" 和 "网页"
-        title: str
-            邮件标题
-        content: str
-            邮件内容
-        to_address: str
-            收件人地址
-        """
-
-        if Config.get("Notify", "SMTPServerAddress") == "":
-            raise ValueError("邮件通知的SMTP服务器地址不能为空")
-        if Config.get("Notify", "AuthorizationCode") == "":
-            raise ValueError("邮件通知的授权码不能为空")
-        if not bool(
-            re.match(
-                r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
-                Config.get("Notify", "FromAddress"),
+    ) -> bool:
+        return bool(
+            await self._call(
+                "send_mail",
+                mode=mode,
+                title=title,
+                content=content,
+                to_address=to_address,
+                default=False,
             )
-        ):
-            raise ValueError("邮件通知的发送邮箱格式错误或为空")
-        if not bool(
-            re.match(
-                r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
-                to_address,
-            )
-        ):
-            raise ValueError("邮件通知的接收邮箱格式错误或为空")
-
-        # 定义邮件正文
-        if mode == "文本":
-            message = MIMEText(content, "plain", "utf-8")
-        elif mode == "网页":
-            message = MIMEMultipart("alternative")
-        message["From"] = formataddr(
-            (
-                Header("AUTO-MAS通知服务", "utf-8").encode(),
-                Config.get("Notify", "FromAddress"),
-            )
-        )  # 发件人显示的名字
-        message["To"] = formataddr(
-            (Header("AUTO-MAS用户", "utf-8").encode(), to_address)
-        )  # 收件人显示的名字
-        message["Subject"] = str(Header(title, "utf-8"))
-
-        if mode == "网页":
-            message.attach(MIMEText(content, "html", "utf-8"))
-
-        smtpObj = smtplib.SMTP_SSL(Config.get("Notify", "SMTPServerAddress"), 465)
-        smtpObj.login(
-            Config.get("Notify", "FromAddress"),
-            Config.get("Notify", "AuthorizationCode"),
-        )
-        smtpObj.sendmail(
-            Config.get("Notify", "FromAddress"), to_address, message.as_string()
-        )
-        smtpObj.quit()
-        logger.success(f"邮件发送成功: {title}")
-
-    async def ServerChanPush(self, title: str, content: str, send_key: str) -> None:
-        """
-        使用Server酱推送通知
-
-        Parameters
-        ----------
-        title: str
-            通知标题
-        content: str
-            通知内容
-        send_key: str
-            Server酱的SendKey
-        """
-
-        if send_key == "":
-            raise ValueError("ServerChan SendKey 不能为空")
-
-        # 构造 URL
-        if send_key.startswith("sctp"):
-            match = re.match(r"^sctp(\d+)t", send_key)
-            if match:
-                url = f"https://{match.group(1)}.push.ft07.com/send/{send_key}.send"
-            else:
-                raise ValueError("SendKey 格式不正确 (sctp<int>)")
-        else:
-            url = f"https://sctapi.ftqq.com/{send_key}.send"
-
-        # 请求发送
-        params = {"title": title, "desp": content}
-        headers = {"Content-Type": "application/json;charset=utf-8"}
-
-        async with httpx.AsyncClient(proxy=Config.proxy) as client:
-            response = await client.post(url, json=params, headers=headers)
-            result = response.json()
-
-        if result.get("code") == 0:
-            logger.success(f"Server酱推送通知成功: {title}")
-        else:
-            raise Exception(f"ServerChan 推送通知失败: {response.text}")
-
-    async def WebhookPush(self, title: str, content: str, webhook: Webhook) -> None:
-        """
-        Webhook 推送通知
-
-        Parameters
-        ----------
-        title: str
-            通知标题
-        content: str
-            通知内容
-        webhook: Webhook
-            Webhook配置对象
-        """
-        if not webhook.get("Info", "Enabled"):
-            return
-
-        if webhook.get("Data", "Url") == "":
-            raise ValueError("Webhook URL 不能为空")
-
-        # 解析模板
-        template = (
-            webhook.get("Data", "Template")
-            or '{"title": "{title}", "content": "{content}"}'
         )
 
-        # 替换模板变量
-        try:
-
-            # 准备模板变量
-            template_vars = {
-                "title": title,
-                "content": content,
-                "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "date": datetime.now().strftime("%Y-%m-%d"),
-                "time": datetime.now().strftime("%H:%M:%S"),
-            }
-
-            logger.debug(f"原始模板: {template}")
-            logger.debug(f"模板变量: {template_vars}")
-
-            # 先尝试作为JSON模板处理
-            try:
-                # 解析模板为JSON对象，然后替换其中的变量
-                template_obj = json.loads(template)
-
-                # 递归替换JSON对象中的变量
-                def replace_variables(obj):
-                    if isinstance(obj, dict):
-                        return {k: replace_variables(v) for k, v in obj.items()}
-                    elif isinstance(obj, list):
-                        return [replace_variables(item) for item in obj]
-                    elif isinstance(obj, str):
-                        result = obj
-                        for key, value in template_vars.items():
-                            result = result.replace(f"{{{key}}}", str(value))
-                        return result
-                    else:
-                        return obj
-
-                data = replace_variables(template_obj)
-                logger.debug(f"成功解析JSON模板: {data}")
-
-            except json.JSONDecodeError:
-                # 如果不是有效的JSON，作为字符串模板处理
-                logger.debug("模板不是有效JSON，作为字符串模板处理")
-                formatted_template = template
-                for key, value in template_vars.items():
-                    # 转义特殊字符以避免JSON解析错误
-                    safe_value = (
-                        str(value)
-                        .replace('"', '\\"')
-                        .replace("\n", "\\n")
-                        .replace("\r", "\\r")
-                    )
-                    formatted_template = formatted_template.replace(
-                        f"{{{key}}}", safe_value
-                    )
-
-                # 再次尝试解析为JSON
-                try:
-                    data = json.loads(formatted_template)
-                    logger.debug(f"字符串模板解析为JSON成功: {data}")
-                except json.JSONDecodeError:
-                    # 最终作为纯文本发送
-                    data = formatted_template
-                    logger.debug(f"作为纯文本发送: {data}")
-
-        except Exception as e:
-            logger.warning(f"模板解析失败，使用默认格式: {e}")
-            data = {"title": title, "content": content}
-
-        # 准备请求头
-        headers = {"Content-Type": "application/json"}
-        headers.update(json.loads(webhook.get("Data", "Headers")))
-
-        async with httpx.AsyncClient(proxy=Config.proxy, timeout=10) as client:
-            if webhook.get("Data", "Method") == "POST":
-                if isinstance(data, dict):
-                    response = await client.post(
-                        url=webhook.get("Data", "Url"), json=data, headers=headers
-                    )
-                elif isinstance(data, str):
-                    response = await client.post(
-                        url=webhook.get("Data", "Url"), content=data, headers=headers
-                    )
-            elif webhook.get("Data", "Method") == "GET":
-                if isinstance(data, dict):
-                    # Flatten params to ensure all values are str or list of str
-                    params = {}
-                    for k, v in data.items():
-                        if isinstance(v, (dict, list)):
-                            params[k] = json.dumps(v, ensure_ascii=False)
-                        else:
-                            params[k] = str(v)
-                else:
-                    params = {"message": str(data)}
-                response = await client.get(
-                    url=webhook.get("Data", "Url"), params=params, headers=headers
-                )
-
-        # 检查响应
-        if response.status_code == 200:
-            logger.success(
-                f"自定义Webhook推送成功: {webhook.get('Info', 'Name')} - {title}"
+    async def ServerChanPush(self, title: str, content: str, send_key: str) -> bool:
+        return bool(
+            await self._call(
+                "send_serverchan",
+                title=title,
+                content=content,
+                send_key=send_key,
+                default=False,
             )
-        else:
-            raise Exception(f"HTTP {response.status_code}: {response.text}")
+        )
 
-    async def _WebHookPush(self, title, content, webhook_url) -> None:
-        """
-        WebHook 推送通知 (即将弃用)
+    async def WebhookPush(self, title: str, content: str, webhook: Webhook) -> bool:
+        return bool(
+            await self._call(
+                "send_webhook",
+                title=title,
+                content=content,
+                webhook=webhook,
+                default=False,
+            )
+        )
 
-        :param title: 通知标题
-        :param content: 通知内容
-        :param webhook_url: WebHook地址
-        """
+    async def _WebHookPush(self, title: str, content: str, webhook_url: str) -> bool:
+        return bool(
+            await self._call(
+                "send_legacy_webhook",
+                title=title,
+                content=content,
+                webhook_url=webhook_url,
+                default=False,
+            )
+        )
 
-        if not webhook_url:
-            raise ValueError("WebHook 地址不能为空")
-
-        content = f"{title}\n{content}"
-        data = {"msgtype": "text", "text": {"content": content}}
-
-        async with httpx.AsyncClient(proxy=Config.proxy) as client:
-            response = await client.post(url=webhook_url, json=data)
-            info = response.json()
-
-        if info["errcode"] == 0:
-            logger.success(f"WebHook 推送通知成功: {title}")
-        else:
-            raise Exception(f"WebHook 推送通知失败: {response.text}")
-
-    async def CompanyWebHookBotPushImage(
-        self, image_path: Path, webhook_url: str
-    ) -> None:
-        """
-        使用企业微信群机器人推送图片通知（等待重新适配）
-
-        :param image_path: 图片文件路径
-        :param webhook_url: 企业微信群机器人的WebHook地址
-        """
-
-        if not webhook_url:
-            raise ValueError("webhook URL 不能为空")
-
-        # 压缩图片
-        ImageUtils.compress_image_if_needed(image_path)
-
-        # 检查图片是否存在
-        if not image_path.exists():
-            raise FileNotFoundError(f"文件未找到: {image_path}")
-
-        # 获取图片base64和md5
-        image_base64 = ImageUtils.get_base64_from_file(str(image_path))
-        image_md5 = ImageUtils.calculate_md5_from_file(str(image_path))
-
-        data = {
-            "msgtype": "image",
-            "image": {"base64": image_base64, "md5": image_md5},
-        }
-
-        async with httpx.AsyncClient(proxy=Config.proxy) as client:
-            response = await client.post(url=webhook_url, json=data)
-            info = response.json()
-
-        if info.get("errcode") == 0:
-            logger.success(f"企业微信群机器人推送图片成功: {image_path.name}")
-        else:
-            raise Exception(f"企业微信群机器人推送图片失败: {response.text}")
+    async def CompanyWebHookBotPushImage(self, image_path: Path, webhook_url: str) -> bool:
+        return bool(
+            await self._call(
+                "send_webhook_image",
+                image_path=image_path,
+                webhook_url=webhook_url,
+                default=False,
+            )
+        )
 
     async def send_koishi(
         self,
@@ -380,97 +120,54 @@ class Notification:
         msgtype: str = "text",
         client_name: str = "Koishi",
     ) -> bool:
-        """
-        通过 WebSocket 推送消息到 Koishi AUTO-MAS 插件
-
-        Args:
-            message (str): 消息内容。
-            msgtype (str): 消息类型，可选 "text"、"html"、"picture"，默认 "text"。
-            client_name (str): WebSocket 客户端名称，默认 "Koishi"。
-
-        Returns:
-            bool: 发送是否成功。
-        """
-        from app.utils.websocket import ws_client_manager
-
-        # 获取 WebSocket 客户端
-        client = ws_client_manager.get_client(client_name)
-        if not client:
-            logger.error(
-                f"Koishi 通知推送失败: 未找到名为 [{client_name}] 的 WebSocket 客户端"
+        return bool(
+            await self._call(
+                "send_koishi",
+                message=message,
+                msgtype=msgtype,
+                client_name=client_name,
+                default=False,
             )
-            return False
-
-        if not client.is_connected:
-            logger.error(
-                f"Koishi 通知推送失败: WebSocket 客户端 [{client_name}] 未连接"
-            )
-            return False
-
-        # 构造通知消息
-        notify_message = {
-            "id": "Client",
-            "type": "notify",
-            "data": {
-                "msgtype": msgtype,
-                "message": message,
-            },
-        }
-
-        # 发送消息
-        success = await client.send(notify_message)
-        if success:
-            logger.success(f"Koishi 通知推送成功: {message[:50]}")
-        else:
-            logger.error(f"Koishi 通知推送失败: 发送消息失败")
-
-        return success
-
-    async def send_test_notification(self) -> None:
-        """发送测试通知到所有已启用的通知渠道"""
-
-        logger.info("发送测试通知到所有已启用的通知渠道")
-
-        # 发送系统通知
-        await self.push_plyer(
-            "测试通知",
-            "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！",
-            "测试通知",
-            3,
         )
 
-        # 发送邮件通知
-        if Config.get("Notify", "IfSendMail"):
-            await self.send_mail(
-                "文本",
-                "AUTO-MAS测试通知",
-                "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！",
-                Config.get("Notify", "ToAddress"),
-            )
+    async def send(
+        self,
+        *,
+        title: str,
+        text: str,
+        html: str | None = None,
+        kind: str = "generic",
+        serverchan_content: str | None = None,
+        koishi_message: str | None = None,
+    ) -> dict[str, bool]:
+        return await self._call(
+            "send",
+            title=title,
+            text=text,
+            html=html,
+            kind=kind,
+            serverchan_content=serverchan_content,
+            koishi_message=koishi_message,
+            default={},
+        )
 
-        # 发送Server酱通知
-        if Config.get("Notify", "IfServerChan"):
-            await self.ServerChanPush(
-                "AUTO-MAS测试通知",
-                "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！",
-                Config.get("Notify", "ServerChanKey"),
+    async def should_send_task_result(self, message: dict[str, Any]) -> bool:
+        return bool(
+            await self._call(
+                "should_send_task_result",
+                message=message,
+                default=False,
             )
+        )
 
-        # 发送自定义Webhook通知
-        for webhook in Config.Notify_CustomWebhooks.values():
-            await self.WebhookPush(
-                "AUTO-MAS测试通知",
-                "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！",
-                webhook,
-            )
+    async def should_send_statistic(self) -> bool:
+        return bool(await self._call("should_send_statistic", default=False))
 
-        # 发送Koishi通知
-        if Config.get("Notify", "IfKoishiSupport"):
-            await self.send_koishi(
-                "这是 AUTO-MAS 外部通知测试信息。如果你看到了这段内容, 说明 AUTO-MAS 的通知功能已经正确配置且可以正常工作！"
-            )
+    async def should_send_six_star(self) -> bool:
+        return bool(await self._call("should_send_six_star", default=False))
 
-        logger.success("测试通知发送完成")
+    async def send_test_notification(self) -> dict[str, bool]:
+        return await self._call("send_test_notification", default={})
 
 
 Notify = Notification()
