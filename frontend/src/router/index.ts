@@ -169,8 +169,8 @@ const routes = [
   },
   {
     path: '/plugins',
-    name: 'PluginDev',
-    component: () => import('../views/PluginDev.vue'),
+    name: 'Plugin',
+    component: () => import('../views/Plugin.vue'),
     meta: { title: '插件管理' },
   },
   {

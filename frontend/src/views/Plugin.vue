@@ -1,23 +1,11 @@
-<template>
-  <div class="plugin-dev-page">
+﻿<template>
+  <div class="plugin-page">
     <div class="scripts-header">
       <div class="header-left">
         <h1 class="page-title">插件管理</h1>
       </div>
       <div class="header-actions">
         <a-space>
-          <a-input
-            v-model:value="pluginPackageName"
-            placeholder="输入 PyPI 包名，例如 auto-mas-test"
-            allow-clear
-            style="width: 260px"
-          />
-          <a-button type="primary" :loading="installingPackage" @click="installPackage">
-            下载安装
-          </a-button>
-          <a-button danger :loading="uninstallingPackage" @click="uninstallPackage">
-            卸载包
-          </a-button>
           <a-button :loading="loading" @click="fetchData">刷新</a-button>
           <a-button type="primary" @click="openAddModal">新增实例</a-button>
           <a-button :loading="reloadingAll" @click="reloadAll">重载全部</a-button>
@@ -57,7 +45,6 @@
                   />
                 </div>
                 <div class="instance-plugin">{{ item.plugin }}</div>
-                <div class="instance-id">{{ item.id }}</div>
                 <div class="instance-runtime" v-if="getRuntimeState(item.id)">
                   <a-space size="6" wrap>
                     <a-tag :color="getStatusTagColor(getRuntimeState(item.id)?.status)">
@@ -189,7 +176,26 @@
                       </a-space>
                     </div>
 
-                    <template v-if="fieldSchema.type === 'boolean'">
+                    <template v-if="isEnumSchema(fieldSchema)">
+                      <a-select
+                        :value="getFieldValue(field)"
+                        style="width: 100%"
+                        :options="getEnumOptions(fieldSchema)"
+                        @update:value="(val: unknown) => updateFieldValue(field, val)"
+                      />
+                    </template>
+
+                    <template v-else-if="isEnumListSchema(fieldSchema)">
+                      <a-select
+                        mode="multiple"
+                        :value="getEnumListValue(field)"
+                        style="width: 100%"
+                        :options="getEnumOptions(fieldSchema)"
+                        @update:value="(val: unknown[]) => updateFieldValue(field, val)"
+                      />
+                    </template>
+
+                    <template v-else-if="isBooleanSchema(fieldSchema)">
                       <a-switch
                         :checked="getBooleanValue(field)"
                         checked-children="是"
@@ -198,7 +204,7 @@
                       />
                     </template>
 
-                    <template v-else-if="fieldSchema.type === 'string'">
+                    <template v-else-if="isStringSchema(fieldSchema)">
                       <a-input-password
                         v-if="isPasswordSchema(fieldSchema)"
                         :value="String(getFieldValue(field) ?? '')"
@@ -211,7 +217,7 @@
                       />
                     </template>
 
-                    <template v-else-if="fieldSchema.type === 'number'">
+                    <template v-else-if="isNumberSchema(fieldSchema)">
                       <a-input-number
                         :value="getNumberValue(field)"
                         style="width: 100%"
@@ -220,7 +226,7 @@
                       />
                     </template>
 
-                    <template v-else-if="fieldSchema.type === 'list'">
+                    <template v-else-if="isListSchema(fieldSchema)">
                       <a-space direction="vertical" style="width: 100%">
                         <a-button size="small" @click="addListRow(field, fieldSchema.item_type)">新增一行</a-button>
                         <a-table
@@ -402,6 +408,7 @@ interface PluginSchemaField {
   required?: boolean
   description?: string
   item_type?: string
+  enum?: unknown[]
 }
 
 interface PluginsGetResponse {
@@ -421,6 +428,13 @@ interface PluginServiceInfo {
   provides: string[]
   needs: string[]
   wants: string[]
+}
+
+interface ServiceDeclarationRow {
+  key: 'provides' | 'needs' | 'wants'
+  label: string
+  color: string
+  value: string
 }
 
 interface PluginRuntimeState {
@@ -484,16 +498,13 @@ interface TableColumn {
   key: string
 }
 
-const logger = window.electronAPI.getLogger('插件管理调试页')
+const logger = window.electronAPI.getLogger('插件管理')
 const { subscribe, unsubscribe, sendRaw } = useWebSocket()
 const loading = ref(false)
 const submitting = ref(false)
 const reloadingAll = ref(false)
-const installingPackage = ref(false)
-const uninstallingPackage = ref(false)
 const togglingInstanceId = ref('')
 const keyword = ref('')
-const pluginPackageName = ref('auto-mas-test')
 
 const version = ref(1)
 const discoveredPlugins = ref<string[]>([])
@@ -571,11 +582,11 @@ const serviceDeclarationDefs = [
 const selectedServiceDeclarationRows = computed(() => {
   const service = selectedPluginService.value
   if (!service) {
-    return []
+    return [] as ServiceDeclarationRow[]
   }
 
   return serviceDeclarationDefs
-    .map(item => {
+    .map((item): ServiceDeclarationRow | null => {
       const values = service[item.key]
       if (!hasServiceListItems(values)) {
         return null
@@ -587,10 +598,7 @@ const selectedServiceDeclarationRows = computed(() => {
         value: values.join('、'),
       }
     })
-    .filter(
-      (item): item is { key: string; label: string; color: string; value: string } =>
-        item !== null,
-    )
+    .filter((item): item is ServiceDeclarationRow => item !== null)
 })
 
 const hasSelectedPluginServiceDeclarations = computed(() => {
@@ -610,12 +618,12 @@ const hasEnableSchema = (pluginName?: string) => {
     return false
   }
   const schema = schemaMap.value[pluginName]
-  return Boolean(schema && schema.enable && schema.enable.type === 'boolean')
+  return Boolean(schema && schema.enable && isBooleanSchema(schema.enable))
 }
 
 const activeSchemaEntries = computed(() =>
   Object.entries(activeSchema.value).filter(([field, fieldSchema]) => {
-    if (field === 'enable' && fieldSchema.type === 'boolean') {
+    if (field === 'enable' && isBooleanSchema(fieldSchema)) {
       return false
     }
     return true
@@ -827,22 +835,59 @@ const getNumberValue = (field: string) => {
 }
 
 const isPasswordSchema = (fieldSchema: PluginSchemaField) =>
-  fieldSchema.type === 'string' && fieldSchema.format === 'password'
+  isStringSchema(fieldSchema) && fieldSchema.format === 'password'
+
+const isBooleanSchema = (fieldSchema: PluginSchemaField) =>
+  fieldSchema.type === 'boolean' || fieldSchema.type === 'bool'
+
+const isStringSchema = (fieldSchema: PluginSchemaField) =>
+  fieldSchema.type === 'string' || fieldSchema.type === 'str'
+
+const isNumberSchema = (fieldSchema: PluginSchemaField) =>
+  fieldSchema.type === 'number' || fieldSchema.type === 'integer' || fieldSchema.type === 'int' || fieldSchema.type === 'float'
+
+const isListSchema = (fieldSchema: PluginSchemaField) =>
+  fieldSchema.type === 'list' || fieldSchema.type.startsWith('list[')
+
+const isEnumSchema = (fieldSchema: PluginSchemaField) =>
+  Array.isArray(fieldSchema.enum) && fieldSchema.enum.length > 0 && !isEnumListSchema(fieldSchema)
+
+const isEnumListSchema = (fieldSchema: PluginSchemaField) =>
+  Array.isArray(fieldSchema.enum) && fieldSchema.enum.length > 0 && (
+    isListSchema(fieldSchema)
+  )
+
+const getEnumOptions = (fieldSchema: PluginSchemaField) =>
+  (fieldSchema.enum || []).map(item => ({
+    label: String(item),
+    value: item as never,
+  }))
+
+const getEnumListValue = (field: string) => {
+  const value = getFieldValue(field)
+  return Array.isArray(value) ? value : []
+}
 
 const getTypeLabel = (fieldSchema: PluginSchemaField) => {
+  if (isEnumSchema(fieldSchema)) {
+    return '选项'
+  }
+  if (isEnumListSchema(fieldSchema)) {
+    return '多选'
+  }
   if (isPasswordSchema(fieldSchema)) {
     return '密码'
   }
-  if (fieldSchema.type === 'string') {
+  if (isStringSchema(fieldSchema)) {
     return '字符串'
   }
-  if (fieldSchema.type === 'number') {
+  if (isNumberSchema(fieldSchema)) {
     return '数字'
   }
-  if (fieldSchema.type === 'boolean') {
+  if (isBooleanSchema(fieldSchema)) {
     return '布尔'
   }
-  if (fieldSchema.type === 'list') {
+  if (isListSchema(fieldSchema)) {
     return '列表'
   }
   if (fieldSchema.type === 'key_value') {
@@ -1158,7 +1203,7 @@ const ensureWsResponseSubscription = () => {
 const cleanupPendingWsCommands = () => {
   wsCommandPending.forEach(pending => {
     clearTimeout(pending.timer)
-    pending.reject(new Error('PluginDev websocket command cancelled'))
+    pending.reject(new Error('Plugin websocket command cancelled'))
   })
   wsCommandPending.clear()
 }
@@ -1167,7 +1212,7 @@ const sendPluginCommand = async <T = any>(endpoint: string, params: Record<strin
   ensureWsResponseSubscription()
 
   return await new Promise<T>((resolve, reject) => {
-    const requestId = `plugindev_${Date.now()}_${wsCommandCounter += 1}`
+    const requestId = `plugin_${Date.now()}_${wsCommandCounter += 1}`
     const timer = setTimeout(() => {
       wsCommandPending.delete(requestId)
       reject(new Error(`WebSocket command timeout: ${endpoint}`))
@@ -1256,24 +1301,6 @@ const handlePluginSystemMessage = (message: WebSocketBaseMessage) => {
   }
 }
 
-const parseMissingPackageNameFromError = (error: unknown): string | null => {
-  const text = String(error || '')
-  const patterns = [
-    /No matching distribution found for\s+([^\s]+)/i,
-    /Could not find a version that satisfies the requirement\s+([^\s]+)/i,
-  ]
-
-  for (const pattern of patterns) {
-    const matched = text.match(pattern)
-    const name = matched?.[1]?.trim()
-    if (name) {
-      return name
-    }
-  }
-
-  return null
-}
-
 const fetchDataByHttp = async () => {
   const data = await apiPost<PluginsGetResponse>('/api/plugins/get', {})
   if (data.code !== 200 || data.status !== 'success') {
@@ -1295,7 +1322,7 @@ const fetchData = async () => {
     }
     applySnapshot(data)
   } catch (error) {
-    logger.warn(`PluginDev fetch by websocket failed: ${String(error)}`)
+    logger.warn(`Plugin fetch by websocket failed: ${String(error)}`)
     try {
       await fetchDataByHttp()
     } catch (httpError) {
@@ -1470,61 +1497,6 @@ const reloadPlugin = async (plugin: string) => {
   }
 }
 
-const installPackage = async () => {
-  const packageName = pluginPackageName.value.trim()
-  if (!packageName) {
-    message.warning('请输入要安装的 PyPI 包名')
-    return
-  }
-
-  installingPackage.value = true
-  try {
-    const data = await requestPluginAction<any>(
-      'plugins.install_package',
-      '/api/plugins/install_package',
-      { package: packageName },
-    )
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '下载安装失败')
-    }
-    message.success(`下载安装成功: ${packageName}`)
-  } catch (error) {
-    const missingPackageName = parseMissingPackageNameFromError(error)
-    if (missingPackageName) {
-      message.error(`找不到${missingPackageName}，请检查名称`)
-      return
-    }
-    message.error(`下载安装失败: ${String(error)}`)
-  } finally {
-    installingPackage.value = false
-  }
-}
-
-const uninstallPackage = async () => {
-  const packageName = pluginPackageName.value.trim()
-  if (!packageName) {
-    message.warning('请输入要卸载的 PyPI 包名')
-    return
-  }
-
-  uninstallingPackage.value = true
-  try {
-    const data = await requestPluginAction<any>(
-      'plugins.uninstall_package',
-      '/api/plugins/uninstall_package',
-      { package: packageName },
-    )
-    if (data.code !== 200 || data.status !== 'success') {
-      throw new Error(data.message || '卸载失败')
-    }
-    message.success(`卸载成功: ${packageName}`)
-  } catch (error) {
-    message.error(`卸载失败: ${String(error)}`)
-  } finally {
-    uninstallingPackage.value = false
-  }
-}
-
 const toggleInstanceEnabled = async (instance: PluginInstance, enabled: boolean) => {
   togglingInstanceId.value = instance.id
   try {
@@ -1569,7 +1541,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.plugin-dev-page {
+.plugin-page {
   padding: 16px;
   height: 100%;
   min-height: 0;
@@ -1640,6 +1612,14 @@ onUnmounted(() => {
   min-height: 0;
   overflow: auto;
   padding-right: 2px;
+  padding-bottom: 28px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.instance-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .detail-card {
@@ -1677,6 +1657,7 @@ onUnmounted(() => {
   overflow-y: auto;
   overflow-x: hidden;
   padding-right: 2px;
+  padding-bottom: 28px;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -1880,3 +1861,4 @@ onUnmounted(() => {
   padding: 14px;
 }
 </style>
+
