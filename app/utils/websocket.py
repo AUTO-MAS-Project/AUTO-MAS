@@ -222,6 +222,34 @@ class ReverseWebSocketSession:
         if self._log_heartbeat_details and self.name != "Main":
             self.logger.debug("已发送 Pong")
 
+    async def _handle_command(self, data: Dict[str, Any]) -> None:
+        try:
+            msg_id = data.get("id", "Unknown")
+            msg_data = data.get("data", {})
+            endpoint = msg_data.get("endpoint")
+            params = msg_data.get("params")
+
+            if not endpoint:
+                self.logger.warning(
+                    f"鏀跺埌鏉ヨ嚜 [{msg_id}] 鐨?command 娑堟伅锛屼絾缂哄皯 endpoint"
+                )
+                return
+
+            self.logger.info(f"鏀跺埌鏉ヨ嚜 [{msg_id}] 鐨勫懡浠? {endpoint}")
+
+            from app.api.ws_command import execute_ws_command
+
+            result = await execute_ws_command(endpoint, params)
+            await self.send(
+                {
+                    "id": "Client",
+                    "type": "response",
+                    "data": {"endpoint": endpoint, "request_id": msg_id, **result},
+                }
+            )
+        except Exception as e:
+            self.logger.error(f"澶勭悊鍛戒护鏃跺彂鐢熷紓甯? {type(e).__name__}: {e}")
+
     async def _handle_message(self, raw_message: Any):
         """处理接收到的消息。"""
         try:
@@ -242,6 +270,10 @@ class ReverseWebSocketSession:
                         self.logger.debug("收到 Ping")
                     await self._send_pong()
                     return
+
+            if data.get("type") == "command":
+                await self._handle_command(data)
+                return
 
             if self.on_message:
                 result = self.on_message(data)

@@ -47,10 +47,11 @@
                 <div class="instance-item-header">
                   <span class="instance-name">{{ item.name || item.id }}</span>
                   <a-switch
-                    :checked="item.enabled"
+                    :checked="getInstanceSwitchChecked(item)"
                     checked-children="启用"
                     un-checked-children="禁用"
-                    @click.stop
+                    :loading="togglingInstanceId === item.id"
+                    :disabled="togglingInstanceId === item.id"
                     @update:checked="(val: boolean) => toggleInstanceEnabled(item, val)"
                   />
                 </div>
@@ -59,23 +60,21 @@
                 <div class="instance-runtime" v-if="getRuntimeState(item.id)">
                   <a-space size="6" wrap>
                     <a-tag :color="getStatusTagColor(getRuntimeState(item.id)?.status)">
-                      {{ getRuntimeState(item.id)?.status || 'unknown' }}
+                      {{ getStatusLabel(getRuntimeState(item.id)?.status) }}
                     </a-tag>
                     <a-tag :color="getPhaseTagColor(getRuntimeState(item.id)?.lifecycle_phase)">
-                      {{ getRuntimeState(item.id)?.lifecycle_phase || 'idle' }}
+                      {{ getPhaseLabel(getRuntimeState(item.id)?.lifecycle_phase) }}
                     </a-tag>
-                    <a-tag color="blue">g{{ getRuntimeState(item.id)?.generation ?? 0 }}</a-tag>
-                    <a-tag color="purple">reload {{ getRuntimeState(item.id)?.reload_count ?? 0 }}</a-tag>
                   </a-space>
                 </div>
               </div>
             </div>
-          </a-card>
-        </div>
-      </a-col>
+            </a-card>
+          </div>
+        </a-col>
 
-      <a-col :span="17">
-        <a-card :bordered="false" class="section-card detail-card">
+        <a-col :span="17">
+          <a-card :bordered="false" class="section-card detail-card">
           <template #title>
             <div class="detail-title">
               <span>{{ selectedInstance ? selectedInstance.plugin : '实例配置' }}</span>
@@ -122,28 +121,34 @@
               style="margin-bottom: 12px"
             />
 
+            <a-card size="small" class="service-card" title="服务声明">
+              <a-descriptions :column="1" size="small" bordered>
+                <a-descriptions-item label="提供服务">
+                  {{ formatServiceList(selectedPluginService?.provides) }}
+                </a-descriptions-item>
+                <a-descriptions-item label="必须服务">
+                  {{ formatServiceList(selectedPluginService?.needs) }}
+                </a-descriptions-item>
+                <a-descriptions-item label="可选服务">
+                  {{ formatServiceList(selectedPluginService?.wants) }}
+                </a-descriptions-item>
+              </a-descriptions>
+            </a-card>
+
             <a-card v-if="selectedRuntimeState" size="small" class="runtime-observer-card" title="运行态观测">
               <a-descriptions :column="2" size="small" bordered>
                 <a-descriptions-item label="运行状态">
                   <a-tag :color="getStatusTagColor(selectedRuntimeState.status)">
-                    {{ selectedRuntimeState.status }}
+                    {{ getStatusLabel(selectedRuntimeState.status) }}
                   </a-tag>
                 </a-descriptions-item>
                 <a-descriptions-item label="生命周期阶段">
                   <a-tag :color="getPhaseTagColor(selectedRuntimeState.lifecycle_phase)">
-                    {{ selectedRuntimeState.lifecycle_phase }}
+                    {{ getPhaseLabel(selectedRuntimeState.lifecycle_phase) }}
                   </a-tag>
                 </a-descriptions-item>
-                <a-descriptions-item label="代际">g{{ selectedRuntimeState.generation }}</a-descriptions-item>
-                <a-descriptions-item label="重载次数">{{ selectedRuntimeState.reload_count }}</a-descriptions-item>
                 <a-descriptions-item label="最近重载原因">
                   {{ selectedRuntimeState.last_reload_reason || '-' }}
-                </a-descriptions-item>
-                <a-descriptions-item label="最近重载时间">
-                  {{ formatRuntimeTime(selectedRuntimeState.last_reload_at) }}
-                </a-descriptions-item>
-                <a-descriptions-item label="阶段更新时间">
-                  {{ formatRuntimeTime(selectedRuntimeState.lifecycle_updated_at) }}
                 </a-descriptions-item>
                 <a-descriptions-item label="最近错误">
                   {{ selectedRuntimeState.last_error || '-' }}
@@ -324,9 +329,10 @@
 
             <a-empty v-else description="请选择左侧实例进行编辑" />
           </div>
-        </a-card>
-      </a-col>
-    </a-row>
+          </a-card>
+        </a-col>
+      </a-row>
+
 
     <a-modal
       v-model:open="addModalVisible"
@@ -365,10 +371,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import axios from 'axios'
 import { message } from 'ant-design-vue'
 import { OpenAPI } from '@/api'
+import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
 
 interface PluginInstance {
   id: string
@@ -395,8 +402,15 @@ interface PluginsGetResponse {
   discovered_plugins: string[]
   schemas: Record<string, Record<string, PluginSchemaField>>
   schema_errors: Record<string, string>
+  plugin_services?: Record<string, PluginServiceInfo>
   instances: PluginInstance[]
   runtime_states: Record<string, PluginRuntimeState>
+}
+
+interface PluginServiceInfo {
+  provides: string[]
+  needs: string[]
+  wants: string[]
 }
 
 interface PluginRuntimeState {
@@ -417,6 +431,25 @@ interface PluginRuntimeState {
   unloaded_at?: string | null
   last_error?: string | null
   last_error_at?: string | null
+}
+
+interface PluginSystemRuntimeMessage {
+  kind: 'runtime_state'
+  event: string
+  record: PluginRuntimeState
+}
+
+interface PluginSystemSnapshotMessage extends PluginsGetResponse {
+  kind: 'snapshot'
+  reason?: string
+}
+
+interface WsCommandResponse<T = unknown> {
+  success?: boolean
+  message?: string
+  code?: number
+  data?: T
+  request_id?: string
 }
 
 interface ListRow {
@@ -442,11 +475,13 @@ interface TableColumn {
 }
 
 const logger = window.electronAPI.getLogger('插件管理调试页')
+const { subscribe, unsubscribe, sendRaw } = useWebSocket()
 const loading = ref(false)
 const submitting = ref(false)
 const reloadingAll = ref(false)
 const installingPackage = ref(false)
 const uninstallingPackage = ref(false)
+const togglingInstanceId = ref('')
 const keyword = ref('')
 const pluginPackageName = ref('auto-mas-test')
 
@@ -454,10 +489,19 @@ const version = ref(1)
 const discoveredPlugins = ref<string[]>([])
 const schemaMap = ref<Record<string, Record<string, PluginSchemaField>>>({})
 const schemaErrors = ref<Record<string, string>>({})
+const pluginServices = ref<Record<string, PluginServiceInfo>>({})
 const instances = ref<PluginInstance[]>([])
 const runtimeStates = ref<Record<string, PluginRuntimeState>>({})
 const selectedInstanceId = ref('')
 const editSnapshot = ref('')
+let pluginSystemSubscriptionId = ''
+let wsResponseSubscriptionId = ''
+let wsCommandCounter = 0
+const wsCommandPending = new Map<string, {
+  resolve: (value: any) => void
+  reject: (reason?: unknown) => void
+  timer: ReturnType<typeof setTimeout>
+}>()
 
 const addModalVisible = ref(false)
 const jsonPreviewVisible = ref(false)
@@ -496,6 +540,14 @@ const selectedRuntimeState = computed(() => {
     return null
   }
   return runtimeStates.value[selectedInstanceId.value] || null
+})
+
+const selectedPluginService = computed(() => {
+  const pluginName = editForm.plugin || selectedInstance.value?.plugin
+  if (!pluginName) {
+    return null
+  }
+  return pluginServices.value[pluginName] || null
 })
 
 const activeSchema = computed(() => {
@@ -566,6 +618,14 @@ const jsonPreviewText = computed(() => {
   }
 })
 
+const captureEditSnapshot = () => JSON.stringify({
+  instanceId: editForm.instanceId,
+  plugin: editForm.plugin,
+  name: editForm.name,
+  enabled: editForm.enabled,
+  configText: editForm.configText,
+})
+
 const parseConfigText = (text: string): Record<string, unknown> => {
   const parsed = JSON.parse(text)
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -575,6 +635,68 @@ const parseConfigText = (text: string): Record<string, unknown> => {
 }
 
 const getRuntimeState = (instanceId: string) => runtimeStates.value[instanceId]
+
+const getInstanceSwitchChecked = (instance: PluginInstance) => {
+  if (!instance.enabled) {
+    return false
+  }
+
+  const runtime = getRuntimeState(instance.id)
+  if (!runtime) {
+    return true
+  }
+
+  return !['error', 'disposed', 'unloaded'].includes(runtime.status)
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  active: '运行中',
+  loaded: '已加载',
+  configured: '待配置',
+  discovered: '已发现',
+  error: '异常',
+  disposed: '已销毁',
+  unloaded: '已卸载',
+}
+
+const PHASE_LABELS: Record<string, string> = {
+  active: '已激活',
+  discovered: '已发现',
+  loaded: '已加载',
+  configured: '已配置',
+  on_load: '加载中',
+  on_start: '启动中',
+  on_stop: '停止中',
+  on_unload: '卸载中',
+  on_reload_prepare: '重载准备',
+  on_reload_commit: '重载提交',
+  on_reload_rollback: '重载回滚',
+  reload_failed: '重载失败',
+  disposed: '已销毁',
+  unloaded: '已卸载',
+  idle: '空闲',
+}
+
+const getStatusLabel = (status?: string) => {
+  if (!status) {
+    return '未知'
+  }
+  return STATUS_LABELS[status] || status
+}
+
+const getPhaseLabel = (phase?: string) => {
+  if (!phase) {
+    return '未知'
+  }
+  return PHASE_LABELS[phase] || phase
+}
+
+const formatServiceList = (items?: string[]) => {
+  if (!items || items.length === 0) {
+    return '无'
+  }
+  return items.join('、')
+}
 
 const getStatusTagColor = (status?: string) => {
   if (!status) {
@@ -946,13 +1068,7 @@ const setEditFromInstance = (row: PluginInstance) => {
     nextConfig.enable = row.enabled
   }
   editForm.configText = JSON.stringify(nextConfig, null, 2)
-  editSnapshot.value = JSON.stringify({
-    instanceId: editForm.instanceId,
-    plugin: editForm.plugin,
-    name: editForm.name,
-    enabled: editForm.enabled,
-    configText: editForm.configText,
-  })
+  editSnapshot.value = captureEditSnapshot()
 }
 
 const selectInstance = (instanceId: string) => {
@@ -967,6 +1083,137 @@ const apiPost = async <T = any>(url: string, payload: Record<string, unknown> = 
   const requestUrl = `${OpenAPI.BASE}${url}`
   const { data } = await axios.post<T>(requestUrl, payload)
   return data
+}
+
+const handleWsCommandResponse = (message: WebSocketBaseMessage) => {
+  const payload = message.data as WsCommandResponse | undefined
+  const requestId = payload?.request_id
+  if (typeof requestId !== 'string') {
+    return
+  }
+
+  const pending = wsCommandPending.get(requestId)
+  if (!pending) {
+    return
+  }
+
+  clearTimeout(pending.timer)
+  wsCommandPending.delete(requestId)
+
+  if (payload?.success) {
+    pending.resolve(payload.data)
+    return
+  }
+
+  pending.reject(new Error(payload?.message || `WebSocket command failed: ${requestId}`))
+}
+
+const ensureWsResponseSubscription = () => {
+  if (wsResponseSubscriptionId) {
+    return
+  }
+  wsResponseSubscriptionId = subscribe({ type: 'response', id: 'Client' }, handleWsCommandResponse)
+}
+
+const cleanupPendingWsCommands = () => {
+  wsCommandPending.forEach(pending => {
+    clearTimeout(pending.timer)
+    pending.reject(new Error('PluginDev websocket command cancelled'))
+  })
+  wsCommandPending.clear()
+}
+
+const sendPluginCommand = async <T = any>(endpoint: string, params: Record<string, unknown> = {}) => {
+  ensureWsResponseSubscription()
+
+  return await new Promise<T>((resolve, reject) => {
+    const requestId = `plugindev_${Date.now()}_${wsCommandCounter += 1}`
+    const timer = setTimeout(() => {
+      wsCommandPending.delete(requestId)
+      reject(new Error(`WebSocket command timeout: ${endpoint}`))
+    }, 10000)
+
+    wsCommandPending.set(requestId, { resolve, reject, timer })
+
+    const sent = sendRaw('command', { endpoint, params }, requestId)
+    if (!sent) {
+      clearTimeout(timer)
+      wsCommandPending.delete(requestId)
+      reject(new Error(`WebSocket unavailable for command: ${endpoint}`))
+    }
+  })
+}
+
+const requestPluginAction = async <T = any>(
+  endpoint: string,
+  url: string,
+  payload: Record<string, unknown> = {},
+) => {
+  try {
+    return await sendPluginCommand<T>(endpoint, payload)
+  } catch (error) {
+    logger.warn(`WebSocket command fallback to HTTP: ${endpoint}, error=${String(error)}`)
+    return await apiPost<T>(url, payload)
+  }
+}
+
+const applySnapshot = (data: PluginsGetResponse, preferredInstanceId = selectedInstanceId.value) => {
+  const hadDirtyDraft = isDirty.value
+  const nextInstances = Array.isArray(data.instances) ? data.instances : []
+
+  version.value = data.version
+  discoveredPlugins.value = data.discovered_plugins || []
+  schemaMap.value = data.schemas || {}
+  schemaErrors.value = data.schema_errors || {}
+  pluginServices.value = data.plugin_services || {}
+  instances.value = nextInstances
+  runtimeStates.value = data.runtime_states || {}
+
+  if (nextInstances.length === 0) {
+    selectedInstanceId.value = ''
+    return
+  }
+
+  const targetId = nextInstances.some(item => item.id === preferredInstanceId)
+    ? preferredInstanceId
+    : nextInstances[0].id
+
+  selectedInstanceId.value = targetId
+  const target = nextInstances.find(item => item.id === targetId)
+  if (!target) {
+    return
+  }
+
+  if (!hadDirtyDraft || editForm.instanceId !== targetId) {
+    setEditFromInstance(target)
+  }
+}
+
+const applyRuntimeStateUpdate = (record: PluginRuntimeState) => {
+  if (!record?.instance_id) {
+    return
+  }
+
+  runtimeStates.value = {
+    ...runtimeStates.value,
+    [record.instance_id]: record,
+  }
+}
+
+const handlePluginSystemMessage = (message: WebSocketBaseMessage) => {
+  const payload = message.data as PluginSystemRuntimeMessage | PluginSystemSnapshotMessage | undefined
+  if (!payload || typeof payload !== 'object') {
+    return
+  }
+
+  if (payload.kind === 'snapshot') {
+    applySnapshot(payload)
+    return
+  }
+
+  if (payload.kind === 'runtime_state') {
+    applyRuntimeStateUpdate(payload.record)
+  }
 }
 
 const parseMissingPackageNameFromError = (error: unknown): string | null => {
@@ -987,39 +1234,34 @@ const parseMissingPackageNameFromError = (error: unknown): string | null => {
   return null
 }
 
+const fetchDataByHttp = async () => {
+  const data = await apiPost<PluginsGetResponse>('/api/plugins/get', {})
+  if (data.code !== 200 || data.status !== 'success') {
+    throw new Error(data.message || '获取插件配置失败')
+  }
+  applySnapshot(data)
+}
+
 const fetchData = async () => {
   loading.value = true
   try {
-    const data = await apiPost<PluginsGetResponse>('/api/plugins/get', {})
+    const data = await requestPluginAction<PluginsGetResponse>(
+      'plugins.get',
+      '/api/plugins/get',
+      {},
+    )
     if (data.code !== 200 || data.status !== 'success') {
       throw new Error(data.message || '获取插件配置失败')
     }
-
-    version.value = data.version
-    discoveredPlugins.value = data.discovered_plugins
-    schemaMap.value = data.schemas || {}
-    schemaErrors.value = data.schema_errors || {}
-    instances.value = data.instances
-    runtimeStates.value = data.runtime_states || {}
-
-    if (!selectedInstanceId.value && instances.value.length > 0) {
-      selectInstance(instances.value[0].id)
-      return
-    }
-
-    if (selectedInstanceId.value) {
-      const target = instances.value.find(item => item.id === selectedInstanceId.value)
-      if (target) {
-        setEditFromInstance(target)
-      } else if (instances.value.length > 0) {
-        selectInstance(instances.value[0].id)
-      } else {
-        selectedInstanceId.value = ''
-      }
-    }
+    applySnapshot(data)
   } catch (error) {
-    message.error(`获取失败: ${String(error)}`)
-    logger.error(`获取插件配置失败: ${String(error)}`)
+    logger.warn(`PluginDev fetch by websocket failed: ${String(error)}`)
+    try {
+      await fetchDataByHttp()
+    } catch (httpError) {
+      message.error(`获取失败: ${String(httpError)}`)
+      logger.error(`获取插件配置失败: ${String(httpError)}`)
+    }
   } finally {
     loading.value = false
   }
@@ -1035,7 +1277,7 @@ const openAddModal = () => {
 const submitAdd = async () => {
   submitting.value = true
   try {
-    const data = await apiPost('/api/plugins/add', {
+    const data = await requestPluginAction<any>('plugins.add', '/api/plugins/add', {
       plugin: addForm.plugin,
       name: addForm.name || undefined,
       enabled: addForm.enabled,
@@ -1046,9 +1288,12 @@ const submitAdd = async () => {
     }
     message.success('新增成功')
     addModalVisible.value = false
-    await fetchData()
     if (data.instance?.id) {
-      selectInstance(data.instance.id)
+      if (instances.value.some(item => item.id === data.instance.id)) {
+        selectInstance(data.instance.id)
+      } else {
+        selectedInstanceId.value = data.instance.id
+      }
     }
   } catch (error) {
     message.error(`新增失败: ${String(error)}`)
@@ -1073,7 +1318,7 @@ const submitEdit = async () => {
       config.enable = editForm.enabled
       setConfigObjectToText(config)
     }
-    const data = await apiPost('/api/plugins/update', {
+    const data = await requestPluginAction<any>('plugins.update', '/api/plugins/update', {
       instanceId: editForm.instanceId,
       plugin: editForm.plugin,
       name: editForm.name,
@@ -1083,8 +1328,8 @@ const submitEdit = async () => {
     if (data.code !== 200 || data.status !== 'success') {
       throw new Error(data.message || '更新失败')
     }
+    editSnapshot.value = captureEditSnapshot()
     message.success('更新成功')
-    await fetchData()
   } catch (error) {
     message.error(`更新失败: ${String(error)}`)
   } finally {
@@ -1094,17 +1339,13 @@ const submitEdit = async () => {
 
 const deleteInstance = async (instanceId: string) => {
   try {
-    const data = await apiPost('/api/plugins/delete', { instanceId })
+    const data = await requestPluginAction<any>('plugins.delete', '/api/plugins/delete', { instanceId })
     if (data.code !== 200 || data.status !== 'success') {
       throw new Error(data.message || '删除失败')
     }
     message.success('删除成功')
-    await fetchData()
     if (selectedInstanceId.value === instanceId) {
-      selectedInstanceId.value = instances.value[0]?.id || ''
-      if (selectedInstanceId.value) {
-        selectInstance(selectedInstanceId.value)
-      }
+      selectedInstanceId.value = ''
     }
   } catch (error) {
     message.error(`删除失败: ${String(error)}`)
@@ -1114,12 +1355,11 @@ const deleteInstance = async (instanceId: string) => {
 const reloadAll = async () => {
   reloadingAll.value = true
   try {
-    const data = await apiPost('/api/plugins/reload', {})
+    const data = await requestPluginAction<any>('plugins.reload', '/api/plugins/reload', {})
     if (data.code !== 200 || data.status !== 'success') {
       throw new Error(data.message || '重载失败')
     }
     message.success('重载全部成功')
-    await fetchData()
   } catch (error) {
     message.error(`重载失败: ${String(error)}`)
   } finally {
@@ -1129,15 +1369,15 @@ const reloadAll = async () => {
 
 const reloadInstance = async (instanceId: string) => {
   try {
-    const data = await apiPost('/api/plugins/reload_instance', { instanceId })
+    const data = await requestPluginAction<any>(
+      'plugins.reload_instance',
+      '/api/plugins/reload_instance',
+      { instanceId },
+    )
     if (data.code !== 200 || data.status !== 'success') {
       throw new Error(data.message || '重载实例失败')
     }
     message.success(`实例重载成功: ${instanceId}`)
-    await fetchData()
-    if (selectedInstanceId.value) {
-      selectInstance(selectedInstanceId.value)
-    }
   } catch (error) {
     message.error(`实例重载失败: ${String(error)}`)
   }
@@ -1145,15 +1385,15 @@ const reloadInstance = async (instanceId: string) => {
 
 const reloadPlugin = async (plugin: string) => {
   try {
-    const data = await apiPost('/api/plugins/reload_plugin', { plugin })
+    const data = await requestPluginAction<any>(
+      'plugins.reload_plugin',
+      '/api/plugins/reload_plugin',
+      { plugin },
+    )
     if (data.code !== 200 || data.status !== 'success') {
       throw new Error(data.message || '重载插件失败')
     }
     message.success(`插件重载成功: ${plugin}`)
-    await fetchData()
-    if (selectedInstanceId.value) {
-      selectInstance(selectedInstanceId.value)
-    }
   } catch (error) {
     message.error(`插件重载失败: ${String(error)}`)
   }
@@ -1168,12 +1408,15 @@ const installPackage = async () => {
 
   installingPackage.value = true
   try {
-    const data = await apiPost('/api/plugins/install_package', { package: packageName })
+    const data = await requestPluginAction<any>(
+      'plugins.install_package',
+      '/api/plugins/install_package',
+      { package: packageName },
+    )
     if (data.code !== 200 || data.status !== 'success') {
       throw new Error(data.message || '下载安装失败')
     }
     message.success(`下载安装成功: ${packageName}`)
-    await fetchData()
   } catch (error) {
     const missingPackageName = parseMissingPackageNameFromError(error)
     if (missingPackageName) {
@@ -1195,12 +1438,15 @@ const uninstallPackage = async () => {
 
   uninstallingPackage.value = true
   try {
-    const data = await apiPost('/api/plugins/uninstall_package', { package: packageName })
+    const data = await requestPluginAction<any>(
+      'plugins.uninstall_package',
+      '/api/plugins/uninstall_package',
+      { package: packageName },
+    )
     if (data.code !== 200 || data.status !== 'success') {
       throw new Error(data.message || '卸载失败')
     }
     message.success(`卸载成功: ${packageName}`)
-    await fetchData()
   } catch (error) {
     message.error(`卸载失败: ${String(error)}`)
   } finally {
@@ -1209,11 +1455,9 @@ const uninstallPackage = async () => {
 }
 
 const toggleInstanceEnabled = async (instance: PluginInstance, enabled: boolean) => {
-  const previous = instance.enabled
-  instance.enabled = enabled
-
+  togglingInstanceId.value = instance.id
   try {
-    const data = await apiPost('/api/plugins/update', {
+    const data = await requestPluginAction<any>('plugins.update', '/api/plugins/update', {
       instanceId: instance.id,
       enabled,
     })
@@ -1221,20 +1465,35 @@ const toggleInstanceEnabled = async (instance: PluginInstance, enabled: boolean)
       throw new Error(data.message || '更新启用状态失败')
     }
 
-    if (selectedInstanceId.value === instance.id) {
+    if (selectedInstanceId.value === instance.id && !isDirty.value) {
       editForm.enabled = enabled
       if (hasEnableSchema(editForm.plugin)) {
         updateFieldValue('enable', enabled)
       }
+      editSnapshot.value = captureEditSnapshot()
     }
   } catch (error) {
-    instance.enabled = previous
     message.error(`更新启用状态失败: ${String(error)}`)
+  } finally {
+    togglingInstanceId.value = ''
   }
 }
 
 onMounted(() => {
+  pluginSystemSubscriptionId = subscribe({ id: 'PluginSystem' }, handlePluginSystemMessage)
   void fetchData()
+})
+
+onUnmounted(() => {
+  if (pluginSystemSubscriptionId) {
+    unsubscribe(pluginSystemSubscriptionId)
+    pluginSystemSubscriptionId = ''
+  }
+  if (wsResponseSubscriptionId) {
+    unsubscribe(wsResponseSubscriptionId)
+    wsResponseSubscriptionId = ''
+  }
+  cleanupPendingWsCommands()
 })
 </script>
 
@@ -1417,6 +1676,10 @@ onMounted(() => {
 }
 
 .runtime-observer-card {
+  margin-bottom: 10px;
+}
+
+.service-card {
   margin-bottom: 10px;
 }
 

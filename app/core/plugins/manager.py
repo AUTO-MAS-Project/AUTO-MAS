@@ -16,6 +16,7 @@ from app.utils import get_logger
 from .event_bus import EventBus
 from .config_store import PluginConfigStore
 from .loader import PluginLoader
+from .realtime import schedule_plugin_snapshot
 from .service_registry import ServiceRegistry
 from .pypi_site import ENTRY_POINT_GROUPS, get_installed_plugin_entry_points, get_pypi_site_packages_dir
 
@@ -42,6 +43,7 @@ class _PluginManager:
 
     def __init__(self) -> None:
         self.started = False
+        schedule_plugin_snapshot(reason="manager.stop")
         self.events = EventBus()
         self.config_store = PluginConfigStore()
         self.plugins_dir = Path.cwd() / "plugins"
@@ -571,6 +573,33 @@ class _PluginManager:
             logger.warning(f"获取脚本日志失败: script_id={script_id}, error={e}")
             return ""
 
+    async def _set_instance_enabled(
+        self,
+        instance_id: str,
+        enabled: bool,
+        *,
+        discovered: Dict[str, Any] | None = None,
+    ) -> bool:
+        snapshot = discovered or await self.discover_plugins()
+        root = await self.config_store.get_root(
+            self.plugins_dir,
+            snapshot,
+            auto_create_missing=False,
+        )
+
+        for item in root.get("instances", []):
+            if not isinstance(item, dict):
+                continue
+            if item.get("id") != instance_id:
+                continue
+            if item.get("enabled") is enabled:
+                return False
+            item["enabled"] = enabled
+            await self.config_store.save_root(self.plugins_dir, root)
+            return True
+
+        return False
+
     async def start(self) -> None:
         """
         启动插件系统并按配置加载实例。
@@ -591,6 +620,7 @@ class _PluginManager:
         await self.loader.load_instances(instances)
         await self._repair_invalid_instances_after_start(discovered)
         self.started = True
+        schedule_plugin_snapshot(reason="manager.start", discovered=discovered)
         logger.info("插件系统启动完成")
 
     async def _repair_invalid_instances_after_start(self, discovered: Dict[str, Any]) -> None:
@@ -656,6 +686,11 @@ class _PluginManager:
             logger.warning(f"已删除未发现插件的实例配置: {', '.join(removed_ids)}")
         if disabled_ids:
             logger.warning(f"已自动禁用启动失败的插件实例: {', '.join(disabled_ids)}")
+
+        schedule_plugin_snapshot(
+            reason="manager.repair_invalid_instances",
+            discovered=discovered,
+        )
 
     async def stop(self) -> None:
         """
@@ -766,6 +801,7 @@ class _PluginManager:
         if self.started:
             await self.stop()
         await self.start()
+        schedule_plugin_snapshot(reason="manager.reload", discovered=discovered)
 
     async def reload_instance(self, instance_id: str) -> None:
         """
@@ -796,16 +832,34 @@ class _PluginManager:
         await self._update_pypi_plugin(target.plugin, discovered)
 
         if target.enabled:
-            await self.loader.reload_instance(
+            record = await self.loader.reload_instance(
                 instance_id=target.id,
                 plugin_name=target.plugin,
                 instance_name=target.name,
                 config=target.config,
                 reason="manager.reload_instance",
             )
+            if getattr(record, "status", "") == "error":
+                changed = await self._set_instance_enabled(
+                    target.id,
+                    False,
+                    discovered=discovered,
+                )
+                if changed:
+                    logger.warning(
+                        f"插件实例重载失败，已自动禁用: instance_id={target.id}, error={record.error}"
+                    )
+            schedule_plugin_snapshot(
+                reason="manager.reload_instance",
+                discovered=discovered,
+            )
             return
 
         await self.loader.unload_instance(instance_id)
+        schedule_plugin_snapshot(
+            reason="manager.reload_instance",
+            discovered=discovered,
+        )
 
     async def reload_plugin(self, plugin_name: str) -> None:
         """
@@ -834,17 +888,35 @@ class _PluginManager:
         if not matched:
             raise ValueError(f"未找到插件实例: {plugin_name}")
 
+        disabled_ids: list[str] = []
         for item in matched:
             if not item.enabled:
                 await self.loader.unload_instance(item.id)
                 continue
-            await self.loader.reload_instance(
+            record = await self.loader.reload_instance(
                 instance_id=item.id,
                 plugin_name=item.plugin,
                 instance_name=item.name,
                 config=item.config,
                 reason="manager.reload_plugin",
             )
+            if getattr(record, "status", "") == "error":
+                changed = await self._set_instance_enabled(
+                    item.id,
+                    False,
+                    discovered=discovered,
+                )
+                if changed:
+                    disabled_ids.append(item.id)
+
+        if disabled_ids:
+            logger.warning(
+                f"插件重载后自动禁用了启动失败实例: {', '.join(disabled_ids)}"
+            )
+        schedule_plugin_snapshot(
+            reason="manager.reload_plugin",
+            discovered=discovered,
+        )
 
 
 PluginManager = _PluginManager()
