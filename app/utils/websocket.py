@@ -231,11 +231,11 @@ class ReverseWebSocketSession:
 
             if not endpoint:
                 self.logger.warning(
-                    f"鏀跺埌鏉ヨ嚜 [{msg_id}] 鐨?command 娑堟伅锛屼絾缂哄皯 endpoint"
+                    f"收到来自 [{msg_id}] 的 command 消息，但缺少 endpoint"
                 )
                 return
 
-            self.logger.info(f"鏀跺埌鏉ヨ嚜 [{msg_id}] 鐨勫懡浠? {endpoint}")
+            self.logger.info(f"收到来自 [{msg_id}] 的命令: {endpoint}")
 
             from app.api.ws_command import execute_ws_command
 
@@ -248,7 +248,7 @@ class ReverseWebSocketSession:
                 }
             )
         except Exception as e:
-            self.logger.error(f"澶勭悊鍛戒护鏃跺彂鐢熷紓甯? {type(e).__name__}: {e}")
+            self.logger.error(f"处理命令时发生异常: {type(e).__name__}: {e}")
 
     async def _handle_message(self, raw_message: Any):
         """处理接收到的消息。"""
