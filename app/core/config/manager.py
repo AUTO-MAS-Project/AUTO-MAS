@@ -114,6 +114,7 @@ class AppConfig(GlobalConfig):
 
         self.server: Optional[uvicorn.Server] = None
         self.websocket: Optional[WebSocket] = None
+        self.web_connections: set[WebSocket] = set()
         self.power_sign: Literal[
             "NoAction",
             "Shutdown",
@@ -497,11 +498,25 @@ class AppConfig(GlobalConfig):
             logger.success("数据文件版本更新完成")
 
     async def send_json(self, data: dict[str, Any]) -> None:
-        """通过WebSocket发送JSON数据"""
-        if Config.websocket is None:
+        """通过WebSocket发送JSON数据（桌面 + 所有 Web 连接）"""
+        if Config.websocket is None and not Config.web_connections:
             logger.warning("WebSocket 未连接")
-        else:
-            await Config.websocket.send_json(data)
+            return
+
+        if Config.websocket is not None:
+            try:
+                await Config.websocket.send_json(data)
+            except Exception:
+                logger.warning("桌面 WebSocket 发送失败")
+
+        dead: list[WebSocket] = []
+        for ws in Config.web_connections:
+            try:
+                await ws.send_json(data)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            Config.web_connections.discard(ws)
 
     async def send_websocket_message(
         self,
@@ -509,13 +524,9 @@ class AppConfig(GlobalConfig):
         type: Literal["Update", "Message", "Info", "Signal"],
         data: Dict[str, Any],
     ) -> None:
-        """通过WebSocket发送消息"""
-        if Config.websocket is None:
-            logger.warning("WebSocket 未连接")
-        else:
-            await Config.websocket.send_json(
-                WebSocketMessage(id=id, type=type, data=data).model_dump()
-            )
+        """通过WebSocket发送消息（桌面 + 所有 Web 连接）"""
+        msg = WebSocketMessage(id=id, type=type, data=data).model_dump()
+        await self.send_json(msg)
 
     async def get_git_version(self) -> tuple[bool, str, str]:
         """获取Git版本信息，如果Git不可用则返回默认值"""

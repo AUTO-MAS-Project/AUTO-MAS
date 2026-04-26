@@ -97,6 +97,54 @@ async def connect_websocket(websocket: WebSocket):
         await System.set_power("KillSelf", from_frontend=True)
 
 
+@router.websocket("/ws/web")
+async def connect_websocket_web(websocket: WebSocket):
+    """Web 端 WebSocket 连接：支持多连接，断开不影响后端生命周期"""
+    await websocket.accept()
+    Config.web_connections.add(websocket)
+    logger.info(f"Web 客户端已连接，当前 Web 连接数: {len(Config.web_connections)}")
+
+    last_pong = time.monotonic()
+    last_ping = time.monotonic()
+
+    while True:
+        try:
+            payload = await asyncio.wait_for(websocket.receive_json(), timeout=30.0)
+            if not isinstance(payload, dict):
+                continue
+            data = cast(dict[str, Any], payload)
+            if data.get("type") == "Signal" and "Pong" in data.get("data", {}):
+                last_pong = time.monotonic()
+            elif data.get("type") == "Signal" and "Ping" in data.get("data", {}):
+                await websocket.send_json(
+                    WebSocketMessage(
+                        id="Main", type="Signal", data={"Pong": "无描述"}
+                    ).model_dump()
+                )
+            else:
+                await Broadcast.put(data)
+
+        except asyncio.TimeoutError:
+            if last_pong < last_ping:
+                await websocket.close(code=1000, reason="Ping超时")
+                break
+            await websocket.send_json(
+                WebSocketMessage(
+                    id="Main", type="Signal", data={"Ping": "无描述"}
+                ).model_dump()
+            )
+            last_ping = time.monotonic()
+
+        except WebSocketDisconnect:
+            break
+
+        except Exception:
+            break
+
+    Config.web_connections.discard(websocket)
+    logger.info(f"Web 客户端已断开，剩余 Web 连接数: {len(Config.web_connections)}")
+
+
 @ws_command("core.close")
 @router.post(
     "/close",
