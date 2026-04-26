@@ -7,6 +7,7 @@ import subprocess
 import sys
 import shutil
 import importlib.metadata as importlib_metadata
+import time
 from dataclasses import dataclass
 from typing import Any, Dict
 import uuid
@@ -58,6 +59,16 @@ class _PluginManager:
             plugins_dir=self.plugins_dir,
             service=self.service,
         )
+        self._discover_cache: Dict[str, Any] | None = None
+        self._discover_cache_time = 0.0
+        self._discover_cache_plugins_dir: Path | None = None
+        self._discover_cache_ttl = 30.0
+        self._discover_lock = asyncio.Lock()
+
+    def invalidate_discover_cache(self) -> None:
+        self._discover_cache = None
+        self._discover_cache_time = 0.0
+        self._discover_cache_plugins_dir = None
 
     def _discover_plugins(self) -> Dict[str, Any]:
         """发现插件（统一基于 Entry Point）。"""
@@ -250,7 +261,16 @@ class _PluginManager:
             await self._install_local_project_editable(project, reason)
             installed_entry_points = get_installed_plugin_entry_points(self.plugins_dir)
 
-    async def discover_plugins(self) -> Dict[str, Any]:
+    def _get_valid_discover_cache(self) -> Dict[str, Any] | None:
+        if self._discover_cache is None:
+            return None
+        if self._discover_cache_plugins_dir != self.plugins_dir:
+            return None
+        if time.monotonic() - self._discover_cache_time >= self._discover_cache_ttl:
+            return None
+        return self._discover_cache
+
+    async def discover_plugins(self, *, force: bool = False) -> Dict[str, Any]:
         """执行本地插件自动安装后再统一发现插件。
 
         Returns:
@@ -259,10 +279,26 @@ class _PluginManager:
         Raises:
             RuntimeError: 本地插件安装失败时抛出。
         """
-        await self._ensure_local_projects_installed()
-        discovered = self._discover_plugins()
-        self.loader.discovered_plugins = discovered
-        return discovered
+        if not force:
+            cached = self._get_valid_discover_cache()
+            if cached is not None:
+                self.loader.discovered_plugins = cached
+                return cached
+
+        async with self._discover_lock:
+            if not force:
+                cached = self._get_valid_discover_cache()
+                if cached is not None:
+                    self.loader.discovered_plugins = cached
+                    return cached
+
+            await self._ensure_local_projects_installed()
+            discovered = self._discover_plugins()
+            self.loader.discovered_plugins = discovered
+            self._discover_cache = discovered
+            self._discover_cache_time = time.monotonic()
+            self._discover_cache_plugins_dir = self.plugins_dir
+            return discovered
 
     async def _run_subprocess(self, command: list[str]) -> subprocess.CompletedProcess[str]:
         """在线程池中执行子进程命令，避免阻塞事件循环。"""
@@ -428,7 +464,8 @@ class _PluginManager:
             detail = stderr or stdout or "未知错误"
             raise RuntimeError(f"安装插件包失败: package={normalized}, detail={detail}")
 
-        discovered = await self.discover_plugins()
+        self.invalidate_discover_cache()
+        discovered = await self.discover_plugins(force=True)
         if not discovered:
             raise RuntimeError(
                 f"安装完成但未发现插件入口点: package={normalized}，请确认该包声明了 {ENTRY_POINT_GROUPS}"
@@ -473,7 +510,8 @@ class _PluginManager:
             detail = stderr or stdout or "未知错误"
             raise RuntimeError(f"卸载插件包失败: package={normalized}, detail={detail}")
 
-        await self.discover_plugins()
+        self.invalidate_discover_cache()
+        await self.discover_plugins(force=True)
         logger.info(f"插件包卸载完成: package={normalized}, removed_from_target={removed_from_target}")
 
     async def _update_pypi_plugin(
@@ -599,6 +637,43 @@ class _PluginManager:
             return True
 
         return False
+
+    async def apply_instance_enabled(self, instance_id: str, enabled: bool) -> None:
+        """Apply an already-saved enabled toggle without a full instance reload."""
+        discovered = await self.discover_plugins()
+        instances = await self.config_store.load_instances(
+            self.plugins_dir,
+            discovered,
+            auto_create_missing=False,
+        )
+        target = next((item for item in instances if item.id == instance_id), None)
+        if target is None:
+            raise ValueError(f"未找到插件实例: {instance_id}")
+
+        if enabled:
+            record = await self.loader.load_instance(
+                instance_id=target.id,
+                plugin_name=target.plugin,
+                instance_name=target.name,
+                config=target.config,
+            )
+            if getattr(record, "status", "") == "error":
+                changed = await self._set_instance_enabled(
+                    target.id,
+                    False,
+                    discovered=discovered,
+                )
+                if changed:
+                    logger.warning(
+                        f"插件实例启用失败，已自动禁用: instance_id={target.id}, error={record.error}"
+                    )
+        else:
+            await self.loader.unload_instance(instance_id)
+
+        schedule_plugin_snapshot(
+            reason="manager.apply_instance_enabled",
+            discovered=discovered,
+        )
 
     async def start(self) -> None:
         """
