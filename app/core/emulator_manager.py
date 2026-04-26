@@ -55,15 +55,19 @@ class _EmulatorManager:
             # 设置模拟器广告
             with suppress(Exception):
                 if config.get("Info", "Type") in EMULATOR_SPLASH_ADS_PATH_BOOK:
-                    ads_path = EMULATOR_SPLASH_ADS_PATH_BOOK[config.get("Info", "Type")]
+                    ads_paths = EMULATOR_SPLASH_ADS_PATH_BOOK[
+                        config.get("Info", "Type")
+                    ]
                     if Config.get("Function", "IfBlockAd"):
-                        if ads_path.is_dir():
-                            shutil.rmtree(ads_path)
-                        ads_path.parent.mkdir(parents=True, exist_ok=True)
-                        ads_path.touch()
+                        for ads_path in ads_paths:
+                            if ads_path.is_dir():
+                                shutil.rmtree(ads_path)
+                            ads_path.parent.mkdir(parents=True, exist_ok=True)
+                            ads_path.touch()
                     else:
-                        if ads_path.is_file():
-                            ads_path.unlink()
+                        for ads_path in ads_paths:
+                            if ads_path.is_file():
+                                ads_path.unlink()
                 if config.get("Info", "Type") == "ldplayer":
                     await ProcessRunner.run_process(
                         Path(config.get("Info", "Path")),
