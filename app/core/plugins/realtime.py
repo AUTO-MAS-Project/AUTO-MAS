@@ -99,6 +99,7 @@ async def build_plugin_snapshot(*, discovered: Dict[str, Any] | None = None) -> 
             _, plugin_class = PluginManager.loader._resolve_plugin_module_and_class(
                 plugin_name,
                 plugin_source,
+                clear_cache=False,
             )
             provides, needs, wants = PluginManager.loader._meta(plugin_class)
             plugin_services[plugin_name] = {
