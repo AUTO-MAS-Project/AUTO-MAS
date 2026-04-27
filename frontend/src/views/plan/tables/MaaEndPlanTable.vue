@@ -173,28 +173,35 @@ import {
   type RewardSetOption,
   type SanityTaskType,
 } from '@/utils/maaEndProtocolSpace'
+import type { PlanChangeHandler } from '@/utils/planTypeRegistry'
 
 interface Props {
   tableData: Record<string, any> | null
   currentMode: 'ALL' | 'Weekly'
   viewMode: 'config' | 'simple'
   planId?: string
-  // eslint-disable-next-line no-unused-vars
-  handlePlanChange: (...args: [string, any]) => Promise<void>
+  handlePlanChange: PlanChangeHandler
 }
 
 const props = defineProps<Props>()
 
-const localTableData = ref<Record<string, any>>({})
+const localTableData = ref<Partial<Record<PlanTimeKey, MaaEndSanityConfig>>>({})
+
+const syncLocalTableData = (tableData: Record<string, any> | null) => {
+  localTableData.value = Object.fromEntries(
+    MAAEND_PLAN_TIME_KEYS.map(timeKey => [
+      timeKey,
+      normalizeMaaEndSanityConfig(tableData?.[timeKey]),
+    ])
+  ) as Partial<Record<PlanTimeKey, MaaEndSanityConfig>>
+}
 
 watch(
-  () => props.tableData,
-  newData => {
-    if (newData) {
-      localTableData.value = JSON.parse(JSON.stringify(newData))
-    }
+  [() => props.planId, () => props.tableData],
+  ([, tableData]) => {
+    syncLocalTableData(tableData)
   },
-  { immediate: true, deep: true }
+  { immediate: true }
 )
 
 const configColumns = [
@@ -310,8 +317,20 @@ const simpleRows = computed(() => {
 
 const saveDayConfig = async (timeKey: PlanTimeKey, config: Partial<MaaEndSanityConfig>) => {
   const normalized = normalizeMaaEndSanityConfig(config)
-  localTableData.value[timeKey] = normalized
-  await props.handlePlanChange(timeKey, normalized)
+  const previous = localTableData.value[timeKey]
+
+  localTableData.value = {
+    ...localTableData.value,
+    [timeKey]: normalized,
+  }
+
+  const saved = await props.handlePlanChange(timeKey, normalized, false)
+  if (!saved) {
+    localTableData.value = {
+      ...localTableData.value,
+      [timeKey]: previous ?? normalizeMaaEndSanityConfig(),
+    }
+  }
 }
 
 const handleSanityTaskTypeChange = async (timeKey: PlanTimeKey, value: SanityTaskType) => {

@@ -45,7 +45,7 @@ import { PLAN_TYPE_DESCRIPTORS, type PlanConfigType } from '@/utils/planTypeRegi
 interface Plan {
   id: string
   name: string
-  type: string
+  type: PlanConfigType
 }
 
 interface Props {

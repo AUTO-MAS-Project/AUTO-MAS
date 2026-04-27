@@ -22,12 +22,7 @@
             @click="handlePlanClick(plan.id)"
           >
             <span class="plan-name">{{ plan.name }}</span>
-            <a-tag
-              v-if="shouldShowPlanTypeTag(plan.type)"
-              size="small"
-              :color="isKnownPlanType(plan.type) ? 'blue' : 'orange'"
-              class="plan-type-tag"
-            >
+            <a-tag v-if="hasMixedPlanTypes()" size="small" color="blue" class="plan-type-tag">
               {{ getPlanTypeLabel(plan.type) }}
             </a-tag>
           </a-button>
@@ -38,12 +33,12 @@
 </template>
 
 <script setup lang="ts">
-import { getPlanTypeDescriptor, isKnownPlanType } from '@/utils/planTypeRegistry'
+import { PLAN_TYPE_REGISTRY, type PlanConfigType } from '@/utils/planTypeRegistry'
 
 interface Plan {
   id: string
   name: string
-  type: string
+  type: PlanConfigType
 }
 
 interface Props {
@@ -68,11 +63,7 @@ const hasMixedPlanTypes = () => {
   return !props.planList.every(plan => plan.type === firstType)
 }
 
-const shouldShowPlanTypeTag = (planType: string) =>
-  !isKnownPlanType(planType) || hasMixedPlanTypes()
-
-const getPlanTypeLabel = (planType: string) =>
-  getPlanTypeDescriptor(planType)?.selectorTag || `未知: ${planType}`
+const getPlanTypeLabel = (planType: PlanConfigType) => PLAN_TYPE_REGISTRY[planType].selectorTag
 </script>
 
 <style scoped>

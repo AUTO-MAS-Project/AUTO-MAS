@@ -62,6 +62,7 @@
             :current-task-tooltip="currentTaskTooltip"
             :rewards-tooltip="rewardsTooltip"
             @save="handleFieldSave"
+            @save-batch="handleFieldsSave"
           />
           <SkylandConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
           <NotifyConfigSection
@@ -83,7 +84,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
-import { Service } from '@/api'
+import { PlanComboxIn, Service } from '@/api'
 import type { MaaEndPlanConfig } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -91,6 +92,7 @@ import { usePlanApi } from '@/composables/usePlanApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { getWeekdayInTimezone } from '@/utils/dateUtils'
+import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
 import {
   MAAEND_PLAN_TIME_LABELS,
   MAAEND_PLAN_WEEKDAY_KEYS,
@@ -231,6 +233,11 @@ const sanityTaskTypeTooltip = computed(() => getPlanTooltip('SanityTaskType'))
 const currentTaskTooltip = computed(() => getPlanTooltip('CurrentTask'))
 const rewardsTooltip = computed(() => getPlanTooltip('RewardsSetOption'))
 
+interface FieldChange {
+  key: string
+  value: any
+}
+
 const formData = reactive({
   userName: '',
   ...getDefaultMaaEndUserData(),
@@ -249,26 +256,34 @@ const syncUserName = () => {
   }
 }
 
-const handleFieldSave = async (key: string, value: any) => {
-  if (isInitializing.value || isSaving.value || !userId) return
+const setNestedValue = (target: Record<string, any>, path: string, value: any) => {
+  const parts = path.split('.')
+  let current = target
 
-  if (key === 'userName') {
-    syncUserName()
-    key = 'Info.Name'
-    value = formData.Info.Name
+  for (let index = 0; index < parts.length - 1; index += 1) {
+    current[parts[index]] = current[parts[index]] ?? {}
+    current = current[parts[index]]
   }
+
+  current[parts[parts.length - 1]] = value
+}
+
+const saveUserFields = async (changes: FieldChange[]) => {
+  if (isInitializing.value || isSaving.value || !userId || !changes.length) return
 
   isSaving.value = true
   try {
-    const parts = key.split('.')
     const userData: Record<string, any> = {}
-    let current = userData
 
-    for (let i = 0; i < parts.length - 1; i++) {
-      current[parts[i]] = {}
-      current = current[parts[i]]
-    }
-    current[parts[parts.length - 1]] = value
+    changes.forEach(change => {
+      if (change.key === 'userName') {
+        syncUserName()
+        setNestedValue(userData, 'Info.Name', formData.Info.Name)
+        return
+      }
+
+      setNestedValue(userData, change.key, change.value)
+    })
 
     await updateUser(scriptId, userId, userData)
   } catch (error) {
@@ -276,6 +291,14 @@ const handleFieldSave = async (key: string, value: any) => {
   } finally {
     isSaving.value = false
   }
+}
+
+const handleFieldSave = async (key: string, value: any) => {
+  await saveUserFields([{ key, value }])
+}
+
+const handleFieldsSave = async (changes: FieldChange[]) => {
+  await saveUserFields(changes)
 }
 
 const loadScriptInfo = async () => {
@@ -287,11 +310,8 @@ const loadScriptInfo = async () => {
 
 const loadSanityModeOptions = async () => {
   try {
-    const response = await (
-      Service as {
-        getPlanComboxApiInfoComboxPlanPost: (requestBody: { consumer: 'maaend' }) => Promise<any>
-      }
-    ).getPlanComboxApiInfoComboxPlanPost({ consumer: 'maaend' })
+    const requestBody: PlanComboxIn = { consumer: PlanComboxIn.consumer.MAAEND }
+    const response = await Service.getPlanComboxApiInfoComboxPlanPost(requestBody)
     if (response?.code === 200 && response.data) {
       sanityModeOptions.value = response.data
     }
@@ -301,6 +321,8 @@ const loadSanityModeOptions = async () => {
     )
   }
 }
+
+const isCurrentSanityPlan = (planId: string) => formData.Info.SanityMode === planId
 
 const loadSanityPlan = async (planId?: string | null) => {
   if (!planId || planId === 'Fixed') {
@@ -316,7 +338,12 @@ const loadSanityPlan = async (planId?: string | null) => {
     const planData = response?.data?.[planId] as MaaEndPlanConfig | undefined
     const planIndex = response?.index?.find(item => item.uid === planId)
 
-    if (!planData || planIndex?.type !== 'MaaEndPlanConfig') {
+    if (!isCurrentSanityPlan(planId)) {
+      logger.debug(`理智任务计划配置已切换，跳过过期响应: ${planId}`)
+      return
+    }
+
+    if (!planData || planIndex?.type !== PLAN_CONFIG_TYPES.MAA_END) {
       logger.warn(`理智任务计划配置响应不完整: ${JSON.stringify({ response, planId })}`)
       planModeConfig.value = null
       fullPlanData.value = null
@@ -352,9 +379,11 @@ const loadSanityPlan = async (planId?: string | null) => {
       name: error instanceof Error ? error.name : error?.constructor?.name,
     }
     logger.error(`加载理智任务计划配置失败: ${JSON.stringify(errorInfo)}`)
-    planModeConfig.value = null
-    fullPlanData.value = null
-    message.error('加载计划配置时发生错误')
+    if (planId && isCurrentSanityPlan(planId)) {
+      planModeConfig.value = null
+      fullPlanData.value = null
+      message.error('加载计划配置时发生错误')
+    }
   }
 }
 

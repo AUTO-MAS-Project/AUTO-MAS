@@ -123,13 +123,13 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { SaveOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { usePlanApi } from '@/composables/usePlanApi.ts'
 import { useWebSocket } from '@/composables/useWebSocket.ts'
-import { GetStageIn, Service } from '@/api'
+import { GetStageIn, PlanComboxIn, Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 import { getWeekdayInTimezone } from '@/utils/dateUtils.ts'
 
@@ -573,33 +573,6 @@ const handleFieldSave = async (key: string, value: any) => {
   }
 }
 
-// 保存完整用户数据（仅用于特殊批量操作）
-const saveFullUserData = async () => {
-  if (isInitializing.value || isSaving.value || !userId) return
-
-  isSaving.value = true
-  try {
-    // 确保扁平化字段同步到嵌套数据
-    formData.Info.Name = formData.userName
-    formData.Info.Id = formData.userId
-
-    const userData = {
-      Info: { ...formData.Info },
-      Task: { ...formData.Task },
-      Notify: { ...formData.Notify },
-      Data: { ...formData.Data },
-    }
-
-    await updateUser(scriptId, userId, userData)
-    logger.info('用户配置已保存')
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
-}
-
 // 注意：移除了 watch 自动保存，现在由子组件的 @save 事件触发保存
 
 // 加载脚本信息
@@ -738,11 +711,8 @@ const loadStageOptions = async () => {
 
 const loadStageModeOptions = async () => {
   try {
-    const response = await (
-      Service as {
-        getPlanComboxApiInfoComboxPlanPost: (requestBody: { consumer: 'maa' }) => Promise<any>
-      }
-    ).getPlanComboxApiInfoComboxPlanPost({ consumer: 'maa' })
+    const requestBody: PlanComboxIn = { consumer: PlanComboxIn.consumer.MAA }
+    const response = await Service.getPlanComboxApiInfoComboxPlanPost(requestBody)
     if (response && response.code === 200 && response.data) {
       stageModeOptions.value = response.data
     }

@@ -57,7 +57,6 @@
             :table-data="tableData"
             :current-mode="currentMode"
             :view-mode="viewMode"
-            :options-loaded="!loading"
             :plan-id="activePlanId"
             :handle-plan-change="handlePlanChange"
           />
@@ -68,30 +67,42 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { usePlanApi } from '@/composables/usePlanApi'
-import type { PlanConfigData, PlanIndexItem } from '@/api'
+import type { PlanIndexItem } from '@/api'
 import { generateUniquePlanName, getPlanTypeLabel, validatePlanName } from '@/utils/planNameUtils'
 import {
   DEFAULT_PLAN_CONFIG_TYPE,
-  getPlanTypeDescriptor,
+  PLAN_TYPE_REGISTRY,
   isKnownPlanType,
+  type PlanConfigData,
   type PlanConfigType,
 } from '@/utils/planTypeRegistry'
 import PlanHeader from './components/PlanHeader.vue'
 import PlanSelector from './components/PlanSelector.vue'
 import PlanConfig from './components/PlanConfig.vue'
 
+defineOptions({
+  name: 'PlanManagementView',
+})
+
 const logger = window.electronAPI.getLogger('计划管理')
 
 const { getPlans, createPlan, updatePlan, deletePlan } = usePlanApi()
 const route = useRoute()
 
-const planList = ref<Array<{ id: string; name: string; type: PlanConfigType }>>([])
+interface PlanListItem {
+  id: string
+  name: string
+  type: PlanConfigType
+}
+
+const planList = ref<PlanListItem[]>([])
 const activePlanId = ref<string>('')
-const currentPlanData = ref<Record<string, PlanConfigData> | null>(null)
+const planDataMap = ref<Record<string, PlanConfigData>>({})
+const currentPlanData = ref<PlanConfigData | null>(null)
 
 const currentPlanName = ref<string>('')
 const currentMode = ref<'ALL' | 'Weekly'>('ALL')
@@ -100,7 +111,6 @@ const viewMode = ref<'config' | 'simple'>('config')
 const isEditingPlanName = ref<boolean>(false)
 const loading = ref(true)
 
-// Use a record to match child component expectations
 const tableData = ref<Record<string, any>>({})
 
 const currentPlan = computed(
@@ -110,22 +120,79 @@ const currentPlanDescriptor = computed(() => {
   if (!currentPlan.value) {
     return null
   }
-  return getPlanTypeDescriptor(currentPlan.value.type)
+  return PLAN_TYPE_REGISTRY[currentPlan.value.type]
 })
+
+const isActivePlan = (planId: string) => activePlanId.value === planId
+
+const clonePlanData = <T,>(value: T): T => structuredClone(value)
+
+const syncCurrentPlan = (planId: string, isInitialLoad = false) => {
+  const planData = planDataMap.value[planId]
+  if (!planData) {
+    currentPlanData.value = null
+    tableData.value = {}
+    return false
+  }
+
+  currentPlanData.value = planData
+  const currentPlanItem = planList.value.find(plan => plan.id === planId)
+  const apiName = planData.Info?.Name || ''
+
+  if (currentPlanItem?.name) {
+    currentPlanName.value = currentPlanItem.name
+  } else {
+    currentPlanName.value = apiName
+    if (currentPlanItem && apiName) {
+      currentPlanItem.name = apiName
+    }
+  }
+
+  currentMode.value = planData.Info?.Mode || 'ALL'
+  tableData.value = isInitialLoad ? { ...planData, _isInitialLoad: true } : { ...planData }
+  return true
+}
+
+const applyLocalPlanChange = (planId: string, path: string, value: any) => {
+  const planData = planDataMap.value[planId]
+  if (!planData) {
+    return
+  }
+
+  const nextPlanData = clonePlanData(planData) as Record<string, any>
+  const keys = path.split('.')
+  let current = nextPlanData
+
+  for (let index = 0; index < keys.length - 1; index += 1) {
+    const key = keys[index]
+    current[key] = current[key] ?? {}
+    current = current[key]
+  }
+
+  current[keys[keys.length - 1]] = value
+  planDataMap.value = {
+    ...planDataMap.value,
+    [planId]: nextPlanData as PlanConfigData,
+  }
+}
 
 const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE) => {
   try {
     const response = await createPlan(planType)
     const uniqueName = getDefaultPlanName(planType)
-    const newPlan = { id: response.planId, name: uniqueName, type: planType }
+    const newPlan: PlanListItem = { id: response.planId, name: uniqueName, type: planType }
+    planDataMap.value = {
+      ...planDataMap.value,
+      [newPlan.id]: response.data as PlanConfigData,
+    }
     planList.value.push(newPlan)
     activePlanId.value = newPlan.id
-    currentPlanName.value = uniqueName
-    const saved = await savePlanField({ Info: { Name: uniqueName } })
+    const saved = await handlePlanChange('Info.Name', uniqueName, false)
     if (!saved) {
       logger.error(`新计划名称持久化失败: ${newPlan.id} -> ${uniqueName}`)
+      newPlan.name = response.data.Info?.Name || uniqueName
     }
-    await loadPlanData(newPlan.id)
+    syncCurrentPlan(newPlan.id, true)
     // 如果生成的名称包含数字，说明有重名，提示用户
     if (uniqueName.match(/\s\d+$/)) {
       message.info(
@@ -144,6 +211,9 @@ const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE
 const handleRemovePlan = async (planId: string) => {
   try {
     await deletePlan(planId)
+    const nextPlanData = { ...planDataMap.value }
+    delete nextPlanData[planId]
+    planDataMap.value = nextPlanData
     const index = planList.value.findIndex(plan => plan.id === planId)
     if (index > -1) {
       planList.value.splice(index, 1)
@@ -153,6 +223,9 @@ const handleRemovePlan = async (planId: string) => {
           await loadPlanData(activePlanId.value)
         } else {
           currentPlanData.value = null
+          currentPlanName.value = ''
+          currentMode.value = 'ALL'
+          tableData.value = {}
         }
       }
     }
@@ -163,14 +236,14 @@ const handleRemovePlan = async (planId: string) => {
 }
 
 // 使用即时保存 - 只发送修改的字段（遵循最小原则）
-const savePlanField = async (changes: Record<string, any>): Promise<boolean> => {
-  if (!activePlanId.value) {
+const savePlanField = async (planId: string, changes: Record<string, any>): Promise<boolean> => {
+  if (!planId) {
     return false
   }
 
   try {
-    logger.debug(`保存字段 (${activePlanId.value}): ${JSON.stringify(changes)}`)
-    await updatePlan(activePlanId.value, changes)
+    logger.debug(`保存字段 (${planId}): ${JSON.stringify(changes)}`)
+    await updatePlan(planId, changes)
     return true
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -179,41 +252,55 @@ const savePlanField = async (changes: Record<string, any>): Promise<boolean> => 
   }
 }
 
-// 刷新计划数据
-const refreshPlanData = async () => {
-  if (!activePlanId.value) return
+const fetchPlanData = async (planId: string): Promise<PlanConfigData | null> => {
+  const response = await getPlans(planId)
+  const planData = response.data[planId] as PlanConfigData | undefined
 
-  try {
-    const response = await getPlans(activePlanId.value)
-    const planData = response.data[activePlanId.value]
-    if (planData) {
-      currentPlanData.value = response.data
-      tableData.value = { ...planData, _isInitialLoad: true }
-
-      if (planData.Info) {
-        currentMode.value = planData.Info.Mode || 'ALL'
-        const currentPlan = planList.value.find(plan => plan.id === activePlanId.value)
-        if (currentPlan && planData.Info.Name) {
-          currentPlanName.value = planData.Info.Name
-        }
-      }
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`刷新计划数据失败: ${errorMsg}`)
+  if (!planData) {
+    return null
   }
+
+  planDataMap.value = {
+    ...planDataMap.value,
+    ...response.data,
+  }
+
+  return planData
 }
 
-// 处理计划字段变更 - 遵循设置页面的模式
-const handlePlanChange = async (path: string, value: any) => {
+const handlePlanChange = async (
+  path: string,
+  value: any,
+  reload?: boolean
+): Promise<boolean> => {
+  const planId = activePlanId.value
+  if (!planId) {
+    return false
+  }
+
   // 构建只包含修改字段的更新数据
   const changes = buildNestedObject(path, value)
-  const success = await savePlanField(changes)
+  const shouldReload = reload ?? currentPlanDescriptor.value?.reloadAfterSave ?? true
+  const success = await savePlanField(planId, changes)
 
-  // 更新成功后重新获取最新配置
-  if (success) {
-    await refreshPlanData()
+  if (!success) {
+    return false
   }
+
+  applyLocalPlanChange(planId, path, value)
+  if (isActivePlan(planId)) {
+    syncCurrentPlan(planId)
+  }
+
+  if (shouldReload) {
+    if (isActivePlan(planId)) {
+      await loadPlanData(planId, true)
+    } else {
+      await fetchPlanData(planId)
+    }
+  }
+
+  return true
 }
 
 // 辅助函数：根据路径构建嵌套对象
@@ -290,39 +377,29 @@ const onModeChange = async () => {
   await handlePlanChange('Info.Mode', currentMode.value)
 }
 
-const loadPlanData = async (planId: string) => {
+const loadPlanData = async (planId: string, force = false) => {
   try {
-    // 总是从后端重新加载数据，确保数据一致性
-    const response = await getPlans(planId)
-    currentPlanData.value = response.data
-    const planData = response.data[planId] as PlanConfigData | undefined
-    logger.info(`从后端加载数据 (${planId})`)
-
-    if (planData) {
-      if (planData.Info) {
-        const apiName = planData.Info.Name || ''
-        const currentPlan = planList.value.find(plan => plan.id === planId)
-
-        // 优先使用planList中的名称
-        if (currentPlan && currentPlan.name) {
-          currentPlanName.value = currentPlan.name
-
-          if (apiName !== currentPlan.name) {
-            logger.info(`同步名称: API="${apiName}" -> planList="${currentPlan.name}"`)
-          }
-        } else if (apiName) {
-          currentPlanName.value = apiName
-          if (currentPlan) {
-            currentPlan.name = apiName
-          }
-        }
-
-        currentMode.value = planData.Info.Mode || 'ALL'
-      }
-
-      // 标记这是初始加载，需要强制更新自定义关卡
-      tableData.value = { ...planData, _isInitialLoad: true }
+    if (!force && isActivePlan(planId) && syncCurrentPlan(planId, true)) {
+      logger.info(`从缓存切换计划 (${planId})`)
+      return
     }
+
+    const planData = await fetchPlanData(planId)
+    if (!planData) {
+      if (isActivePlan(planId)) {
+        currentPlanData.value = null
+        tableData.value = {}
+      }
+      return
+    }
+
+    if (!isActivePlan(planId)) {
+      logger.info(`计划已切换，跳过界面同步 (${planId})`)
+      return
+    }
+
+    syncCurrentPlan(planId, true)
+    logger.info(`从后端加载数据 (${planId})`)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载计划数据失败: ${errorMsg}`)
@@ -333,6 +410,7 @@ const initPlans = async () => {
   try {
     const response = await getPlans()
     if (response.index && response.index.length > 0) {
+      planDataMap.value = response.data
       // 优化：预先收集所有名称，避免O(n²)复杂度
       const allPlanNames: string[] = []
 
@@ -343,7 +421,7 @@ const initPlans = async () => {
         if (!isKnownPlanType(planType)) {
           throw new Error(`未注册的计划表类型: ${planType}`)
         }
-        const planDescriptor = getPlanTypeDescriptor(planType)
+        const planDescriptor = PLAN_TYPE_REGISTRY[planType]
         let planName = planData?.Info?.Name || ''
 
         // 如果API中没有名称，或者名称是默认的模板名称，则生成唯一名称
@@ -359,33 +437,18 @@ const initPlans = async () => {
       const target = queryPlanId ? planList.value.find(p => p.id === queryPlanId) : null
       const selectedPlanId = target ? target.id : planList.value[0].id
 
-      // 优化：直接使用已获取的数据，避免重复API调用
       activePlanId.value = selectedPlanId
-      const planData = response.data[selectedPlanId]
-      if (planData) {
-        currentPlanData.value = response.data
-
-        // 直接设置数据，避免loadPlanData的重复调用
-        const selectedPlan = planList.value.find(plan => plan.id === selectedPlanId)
-        if (selectedPlan) {
-          currentPlanName.value = selectedPlan.name
-        }
-
-        if (planData.Info) {
-          currentMode.value = planData.Info.Mode || 'ALL'
-        }
-
-        logger.info(`初始加载数据 (${selectedPlanId})`)
-        // 标记这是初始加载，需要强制更新自定义关卡
-        tableData.value = { ...planData, _isInitialLoad: true }
-      }
+      syncCurrentPlan(selectedPlanId, true)
+      logger.info(`初始加载数据 (${selectedPlanId})`)
     } else {
       currentPlanData.value = null
+      planDataMap.value = {}
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`初始化计划失败: ${errorMsg}`)
     currentPlanData.value = null
+    planDataMap.value = {}
   } finally {
     loading.value = false
   }
@@ -413,10 +476,6 @@ watch(
 
 onMounted(() => {
   initPlans()
-})
-
-onUnmounted(() => {
-  // 组件卸载时的清理逻辑
 })
 </script>
 

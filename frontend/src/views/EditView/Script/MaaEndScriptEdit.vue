@@ -33,8 +33,7 @@
       <a-alert message="重要提示" type="warning" show-icon class="notice-alert">
         <template #description>
           <div class="notice-content">
-            <p>默认等待时间建议调到 120 秒。</p>
-            <p>终末地必须使用窗口模式，推荐分辨率为 1280×720。</p>
+            <p>默认等待时间建议调到 60 秒。</p>
             <p>
               MaaEnd专项还在积极测试中，如有问题请加入
               <a
@@ -422,7 +421,7 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     ControllerType: 'Win32-Window',
     Path: '',
     Arguments: '',
-    WaitTime: 90,
+    WaitTime: 60,
     EmulatorId: '',
     EmulatorIndex: '',
     CloseOnFinish: false,

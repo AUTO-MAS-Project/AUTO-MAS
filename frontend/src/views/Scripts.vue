@@ -450,6 +450,7 @@ import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useTemplateApi, type WebConfigTemplate } from '@/composables/useTemplateApi'
 import { usePlanApi } from '@/composables/usePlanApi'
+import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import MarkdownIt from 'markdown-it'
@@ -553,7 +554,7 @@ const loadCurrentPlan = async () => {
     const response = await getPlans()
     if (response.data && response.index) {
       const maaPlanIds = response.index
-        .filter(plan => plan.type === 'MaaPlanConfig')
+        .filter(plan => plan.type === PLAN_CONFIG_TYPES.MAA)
         .map(plan => plan.uid)
 
       allPlansData.value = Object.fromEntries(

@@ -12,6 +12,7 @@ import { ref, computed } from 'vue'
 import type { MaaPlanConfig, MaaPlanConfig_Item, ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import { GetStageIn } from '@/api'
+import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
 const logger = window.electronAPI.getLogger('计划数据协调器')
 
 // 时间维度常量
@@ -151,7 +152,7 @@ export function usePlanDataCoordinator() {
     info: {
       name: '',
       mode: 'ALL',
-      type: 'MaaPlanConfig',
+      type: PLAN_CONFIG_TYPES.MAA,
     },
     timeConfigs: {} as Record<TimeKey, any>,
     customStageDefinitions: getDefaultCustomStageDefinitions(),

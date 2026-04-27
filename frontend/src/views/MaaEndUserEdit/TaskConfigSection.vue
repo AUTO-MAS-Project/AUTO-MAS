@@ -1,4 +1,3 @@
-<!-- eslint-disable vue/no-v-html -->
 <template>
   <div class="form-section">
     <div class="section-header">
@@ -55,7 +54,7 @@
             <div class="plan-value">{{ displaySanityTaskType }}</div>
             <a-tooltip>
               <template #title>
-                <div class="plan-tooltip" v-html="formatTooltip(sanityTaskTypeTooltip)"></div>
+                <div class="plan-tooltip">{{ sanityTaskTypeTooltip }}</div>
               </template>
               <div class="plan-source">来自计划表</div>
             </a-tooltip>
@@ -85,7 +84,7 @@
             <div class="plan-value">{{ displayCurrentTask }}</div>
             <a-tooltip>
               <template #title>
-                <div class="plan-tooltip" v-html="formatTooltip(currentTaskTooltip)"></div>
+                <div class="plan-tooltip">{{ currentTaskTooltip }}</div>
               </template>
               <div class="plan-source">来自计划表</div>
             </a-tooltip>
@@ -123,7 +122,7 @@
             <div class="plan-value">{{ displayRewardsSet }}</div>
             <a-tooltip>
               <template #title>
-                <div class="plan-tooltip" v-html="formatTooltip(rewardsTooltip)"></div>
+                <div class="plan-tooltip">{{ rewardsTooltip }}</div>
               </template>
               <div class="plan-source">来自计划表</div>
             </a-tooltip>
@@ -163,6 +162,11 @@ import {
   type SanityTaskType,
 } from '@/utils/maaEndProtocolSpace'
 
+interface FieldChange {
+  key: string
+  value: any
+}
+
 const props = defineProps<{
   formData: any
   loading: boolean
@@ -176,6 +180,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   save: [key: string, value: any]
+  saveBatch: [changes: FieldChange[]]
 }>()
 
 const formData = props.formData
@@ -253,6 +258,11 @@ const emitSave = (key: string, value: any) => {
   emit('save', key, value)
 }
 
+const emitSaveBatch = (changes: FieldChange[]) => {
+  if (!changes.length) return
+  emit('saveBatch', changes)
+}
+
 const handleGoToPlans = () => {
   const planId =
     props.isPlanMode && formData.Info.SanityMode && formData.Info.SanityMode !== 'Fixed'
@@ -274,53 +284,66 @@ const ensureCurrentTaskValue = () => {
   }
 }
 
-const ensureRewardGroupState = () => {
+const normalizeRewardGroupState = (): FieldChange | null => {
   if (!rewardGroupEnabled.value && formData.Task.RewardsSetOption !== 'RewardsSetA') {
     formData.Task.RewardsSetOption = 'RewardsSetA'
-    emitSave('Task.RewardsSetOption', formData.Task.RewardsSetOption)
+    return { key: 'Task.RewardsSetOption', value: formData.Task.RewardsSetOption }
   }
+
+  return null
 }
 
 const handleSanityTaskTypeChange = (value: SanityTaskType) => {
   formData.Task.SanityTaskType = value
-  emitSave('Task.SanityTaskType', formData.Task.SanityTaskType)
   ensureCurrentTaskValue()
+
+  const changes: FieldChange[] = [
+    { key: 'Task.SanityTaskType', value: formData.Task.SanityTaskType },
+  ]
+
   if (value === 'Essence') {
-    emitSave(
-      'Task.AutoEssenceSpecifiedLocation',
-      formData.Task.AutoEssenceSpecifiedLocation ?? 'VFTheHub'
-    )
+    changes.push({
+      key: 'Task.AutoEssenceSpecifiedLocation',
+      value: formData.Task.AutoEssenceSpecifiedLocation ?? 'VFTheHub',
+    })
   } else {
-    emitSave(`Task.${currentField.value}`, currentTaskValue.value)
+    changes.push({ key: `Task.${currentField.value}`, value: currentTaskValue.value })
   }
-  ensureRewardGroupState()
+
+  const rewardGroupChange = normalizeRewardGroupState()
+  if (rewardGroupChange) {
+    changes.push(rewardGroupChange)
+  }
+
+  emitSaveBatch(changes)
 }
 
 const handleTaskOptionChange = () => {
+  const changes: FieldChange[] = []
+
   if (formData.Task.SanityTaskType === 'Essence') {
-    emitSave('Task.AutoEssenceSpecifiedLocation', formData.Task.AutoEssenceSpecifiedLocation)
+    changes.push({
+      key: 'Task.AutoEssenceSpecifiedLocation',
+      value: formData.Task.AutoEssenceSpecifiedLocation,
+    })
   } else {
-    emitSave(`Task.${currentField.value}`, currentTaskValue.value)
+    changes.push({ key: `Task.${currentField.value}`, value: currentTaskValue.value })
   }
-  ensureRewardGroupState()
+
+  const rewardGroupChange = normalizeRewardGroupState()
+  if (rewardGroupChange) {
+    changes.push(rewardGroupChange)
+  }
+
+  emitSaveBatch(changes)
 }
-
-const escapeHtml = (text: string) =>
-  text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-
-const formatTooltip = (text: string) => (text ? escapeHtml(text).replace(/\n/g, '<br/>') : '')
 
 watch(
   () => formData.Task.SanityTaskType,
   () => {
     if (props.isPlanMode) return
     ensureCurrentTaskValue()
-    ensureRewardGroupState()
+    normalizeRewardGroupState()
   },
   { immediate: true }
 )
@@ -416,6 +439,6 @@ watch(
 .plan-tooltip {
   max-width: 360px;
   line-height: 1.6;
-  white-space: normal;
+  white-space: pre-line;
 }
 </style>

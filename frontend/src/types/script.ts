@@ -1,7 +1,7 @@
 // 脚本类型定义
 import type { MaaConfig, GeneralConfig, SrcConfig, MaaEndConfig } from '@/api'
 
-export type ScriptType = 'MAA' | 'General' | 'SRC' | 'MaaEnd'
+11
 
 // MAA脚本配置
 export interface MAAScriptConfig {
