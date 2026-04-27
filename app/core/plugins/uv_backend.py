@@ -23,7 +23,15 @@ DEFAULT_INDEX_URLS: list[str] = [
 
 
 def _find_uv() -> str | None:
-    """查找 uv 可执行文件路径。"""
+    """查找 uv 可执行文件路径。
+
+    查找顺序：
+    1. Electron 安装位置 (environment/python/Scripts/uv.exe)
+    2. 系统 PATH
+    """
+    local_uv = Path.cwd() / "environment" / "python" / "Scripts" / "uv.exe"
+    if local_uv.is_file():
+        return str(local_uv)
     return shutil.which("uv")
 
 
@@ -52,6 +60,49 @@ def get_uv_executable() -> str:
 def check_uv_available() -> bool:
     """检查 uv 是否可用。"""
     return _find_uv() is not None
+
+
+def install_uv() -> bool:
+    """通过官方安装脚本自动安装 uv。
+
+    Returns:
+        bool: 安装成功返回 True。
+    """
+    global _uv_path
+    logger.info("正在自动安装 uv ...")
+
+    completed = subprocess.run(
+        ["powershell", "-ExecutionPolicy", "ByPass", "-c", "irm https://astral.sh/uv/install.ps1 | iex"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip()
+        logger.error(f"uv 安装失败: {detail}")
+        return False
+
+    _uv_path = None
+    found = _find_uv()
+    if found is None:
+        logger.error("uv 安装脚本执行成功，但仍未在 PATH 中找到 uv")
+        return False
+
+    _uv_path = found
+    logger.info(f"uv 安装成功: {found}")
+    return True
+
+
+def ensure_uv() -> bool:
+    """确保 uv 可用，不可用时自动安装。
+
+    Returns:
+        bool: uv 最终可用返回 True。
+    """
+    if check_uv_available():
+        return True
+    return install_uv()
 
 
 async def _run(command: list[str]) -> subprocess.CompletedProcess[str]:

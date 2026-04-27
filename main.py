@@ -66,12 +66,11 @@ def is_admin() -> bool:
 @logger.catch
 def main():
     if is_admin():
-        from app.core.plugins.uv_backend import check_uv_available
+        from app.core.plugins.uv_backend import ensure_uv
 
-        if not check_uv_available():
+        if not ensure_uv():
             logger.error(
-                "未检测到 uv 包管理器，插件系统无法运行。"
-                "请先安装 uv: https://docs.astral.sh/uv/getting-started/installation/"
+                "uv 包管理器安装失败，请手动安装: https://docs.astral.sh/uv/getting-started/installation/"
             )
             sys.exit(1)
 
