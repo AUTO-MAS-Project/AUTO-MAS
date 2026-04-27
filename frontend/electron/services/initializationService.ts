@@ -16,7 +16,7 @@ const logger = getLogger('初始化服务')
 // ==================== 类型定义 ====================
 
 export interface InitializationProgress {
-    stage: 'mirror' | 'python' | 'pip' | 'git' | 'repository' | 'dependency' | 'backend' | 'complete'
+    stage: 'mirror' | 'python' | 'uv' | 'git' | 'repository' | 'dependency' | 'backend' | 'complete'
     stageIndex: number
     totalStages: number
     progress: number
@@ -115,19 +115,19 @@ export class InitializationService {
 
             completedStages.push('python')
 
-            // 阶段 3: 安装 Pip
+            // 阶段 3: 安装 uv
             onProgress?.({
-                stage: 'pip',
+                stage: 'uv',
                 stageIndex: 3,
                 totalStages,
                 progress: 0,
-                message: '正在安装 Pip...'
+                message: '正在安装 uv 包管理器...'
             })
 
             const pipInstaller = new PipInstaller(this.appRoot, this.mirrorService)
             const pipResult = await pipInstaller.install((installProgress) => {
                 onProgress?.({
-                    stage: 'pip',
+                    stage: 'uv',
                     stageIndex: 3,
                     totalStages,
                     progress: installProgress.progress,

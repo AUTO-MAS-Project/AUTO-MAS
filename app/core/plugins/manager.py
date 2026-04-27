@@ -3,8 +3,6 @@
 
 from pathlib import Path
 import asyncio
-import subprocess
-import sys
 import shutil
 import importlib.metadata as importlib_metadata
 import time
@@ -19,6 +17,7 @@ from .config_store import PluginConfigStore
 from .loader import PluginLoader
 from .realtime import schedule_plugin_snapshot
 from .service_registry import ServiceRegistry
+from .uv_backend import uv_pip_install, uv_pip_install_with_mirror_fallback, uv_pip_uninstall
 from .pypi_site import ENTRY_POINT_GROUPS, get_installed_plugin_entry_points, get_pypi_site_packages_dir
 
 try:
@@ -206,30 +205,19 @@ class _PluginManager:
             None: 无返回值。
 
         Raises:
-            RuntimeError: pip 安装命令返回非 0 时抛出，错误信息包含 stderr/stdout 摘要。
+            RuntimeError: 安装失败时抛出。
         """
         target_dir = get_pypi_site_packages_dir(self.plugins_dir)
-        target_dir.mkdir(parents=True, exist_ok=True)
-
-        command = [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "-e",
-            str(project.project_dir),
-            "--target",
-            str(target_dir),
-            "--upgrade",
-        ]
-        completed = await self._run_subprocess(command)
-        if completed.returncode != 0:
-            stderr = (completed.stderr or "").strip()
-            stdout = (completed.stdout or "").strip()
-            detail = stderr or stdout or "未知错误"
-            raise RuntimeError(
-                f"本地插件 editable 安装失败: project={project.project_dir}, reason={reason}, detail={detail}"
+        try:
+            await uv_pip_install(
+                [str(project.project_dir)],
+                target=target_dir,
+                editable=True,
             )
+        except RuntimeError as e:
+            raise RuntimeError(
+                f"本地插件 editable 安装失败: project={project.project_dir}, reason={reason}, detail={e}"
+            ) from e
 
         logger.info(
             f"本地插件 editable 安装完成: project={project.project_dir}, distribution={project.distribution_name}, reason={reason}"
@@ -299,16 +287,6 @@ class _PluginManager:
             self._discover_cache_time = time.monotonic()
             self._discover_cache_plugins_dir = self.plugins_dir
             return discovered
-
-    async def _run_subprocess(self, command: list[str]) -> subprocess.CompletedProcess[str]:
-        """在线程池中执行子进程命令，避免阻塞事件循环。"""
-        return await asyncio.to_thread(
-            subprocess.run,
-            command,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
 
     @staticmethod
     def _normalize_distribution_name(name: str) -> str:
@@ -440,29 +418,16 @@ class _PluginManager:
         Raises:
             ValueError: 包名非法时抛出。
             RuntimeError: 在以下场景抛出：
-                1) pip install 命令执行失败；
+                1) 安装命令执行失败；
                 2) 安装后未发现任何插件入口点。
         """
         normalized = self._validate_package_name(package_name)
         target_dir = get_pypi_site_packages_dir(self.plugins_dir)
-        target_dir.mkdir(parents=True, exist_ok=True)
 
-        command = [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            normalized,
-            "--target",
-            str(target_dir),
-            "--upgrade",
-        ]
-        completed = await self._run_subprocess(command)
-        if completed.returncode != 0:
-            stderr = (completed.stderr or "").strip()
-            stdout = (completed.stdout or "").strip()
-            detail = stderr or stdout or "未知错误"
-            raise RuntimeError(f"安装插件包失败: package={normalized}, detail={detail}")
+        try:
+            await uv_pip_install_with_mirror_fallback([normalized], target=target_dir)
+        except RuntimeError as e:
+            raise RuntimeError(f"安装插件包失败: package={normalized}, detail={e}") from e
 
         self.invalidate_discover_cache()
         discovered = await self.discover_plugins(force=True)
@@ -484,7 +449,7 @@ class _PluginManager:
 
         Raises:
             ValueError: 包名非法时抛出。
-            RuntimeError: 当未找到可卸载分发且 pip uninstall 同样失败时抛出。
+            RuntimeError: 当未找到可卸载分发且 uv pip uninstall 同样失败时抛出。
             OSError: 删除目标目录文件失败时抛出。
         """
         normalized = self._validate_package_name(package_name)
@@ -493,18 +458,10 @@ class _PluginManager:
 
         removed_from_target = self._cleanup_package_from_target(normalized, target_dir)
 
-        uninstall_cmd = [
-            sys.executable,
-            "-m",
-            "pip",
-            "uninstall",
-            "-y",
-            normalized,
-        ]
-        completed = await self._run_subprocess(uninstall_cmd)
-        pip_ok = completed.returncode == 0
+        completed = await uv_pip_uninstall(normalized, target=target_dir)
+        uv_ok = completed.returncode == 0
 
-        if not removed_from_target and not pip_ok:
+        if not removed_from_target and not uv_ok:
             stderr = (completed.stderr or "").strip()
             stdout = (completed.stdout or "").strip()
             detail = stderr or stdout or "未知错误"
@@ -546,24 +503,13 @@ class _PluginManager:
             return
 
         target_dir = self.plugins_dir / "pypi" / "site-packages"
-        target_dir.mkdir(parents=True, exist_ok=True)
 
-        command = [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            str(package_dir),
-            "--target",
-            str(target_dir),
-            "--upgrade",
-        ]
-        completed = await self._run_subprocess(command)
-        if completed.returncode != 0:
-            stderr = (completed.stderr or "").strip()
-            stdout = (completed.stdout or "").strip()
-            detail = stderr or stdout or "未知错误"
-            raise RuntimeError(f"更新 PyPI 插件失败: plugin={plugin_name}, detail={detail}")
+        try:
+            await uv_pip_install([str(package_dir)], target=target_dir)
+        except RuntimeError as e:
+            raise RuntimeError(
+                f"更新 PyPI 插件失败: plugin={plugin_name}, detail={e}"
+            ) from e
 
         logger.info(f"PyPI 插件目录更新完成: plugin={plugin_name}, path={package_dir}")
 

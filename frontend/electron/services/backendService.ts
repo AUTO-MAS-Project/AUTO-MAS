@@ -71,7 +71,7 @@ export class BackendService {
 
     try {
       const pythonExe =
-        options?.pythonPath || path.join(this.appRoot, 'environment', 'python', 'python.exe')
+        options?.pythonPath || path.join(this.appRoot, '.venv', 'Scripts', 'python.exe')
       const mainPy = options?.mainPyPath || path.join(this.appRoot, 'main.py')
       const cwd = options?.cwd || this.appRoot
       const timeout = options?.timeout || 60000

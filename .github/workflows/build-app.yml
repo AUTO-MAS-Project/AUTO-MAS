@@ -334,15 +334,16 @@ jobs:
       - name: 签出代码
         uses: actions/checkout@v4
 
+      - name: 安装 uv
+        uses: astral-sh/setup-uv@v6
+
       - name: 设置 Python 环境
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
       - name: 安装依赖
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r .github/workflows/requirements.txt
+        run: uv pip install --system -r .github/workflows/requirements.txt
 
       - name: 触发 CNB 构建
         env:
