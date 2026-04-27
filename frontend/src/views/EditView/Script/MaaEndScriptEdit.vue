@@ -314,7 +314,7 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     ControllerType: 'Win32-Window',
     Path: '',
     Arguments: '',
-    WaitTime: 15,
+    WaitTime: 60,
     EmulatorId: '',
     EmulatorIndex: '',
     CloseOnFinish: false,
