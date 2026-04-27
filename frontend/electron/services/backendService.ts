@@ -75,6 +75,9 @@ export class BackendService {
       const mainPy = options?.mainPyPath || path.join(this.appRoot, 'main.py')
       const cwd = options?.cwd || this.appRoot
       const timeout = options?.timeout || 60000
+      const uvDir = path.join(this.appRoot, 'environment', 'python', 'Scripts')
+      const processPath = process.env.PATH || process.env.Path || ''
+      const processPathExt = process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD'
 
       // 检查文件是否存在
       if (!fs.existsSync(pythonExe)) {
@@ -93,7 +96,14 @@ export class BackendService {
       this.backendProcess = spawn(pythonExe, [mainPy], {
         cwd,
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+        env: {
+          ...process.env,
+          PATH: `${uvDir}${path.delimiter}${processPath}`,
+          Path: `${uvDir}${path.delimiter}${processPath}`,
+          PATHEXT: processPathExt,
+          PYTHONIOENCODING: 'utf-8',
+          AUTO_MAS_UV_EXE: path.join(uvDir, 'uv.exe'),
+        },
       })
 
       this.startTime = new Date()
