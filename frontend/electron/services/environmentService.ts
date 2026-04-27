@@ -422,53 +422,13 @@ export class UvInstaller extends BaseEnvironmentInstaller {
   }
 
   protected async downloadPackage(onProgress?: ProgressCallback, selectedMirror?: string): Promise<{ success: boolean; error?: string }> {
-    logger.info('=== 下载 uv ===')
-
-    const mirrors = this.mirrorService.getMirrors('uv')
-    const tempPath = path.join(this.appRoot, 'temp', 'uv_download')
-
-    const tempDir = path.dirname(tempPath)
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true })
-    }
-
-    const downloadOperation: NetworkOperationCallback = async (mirror, onOpProgress) => {
-      const operationId = ++this.currentOperationId
-
-      onOpProgress({ progress: 0, description: `正在从 ${mirror.name} 下载...` })
-
-      const isZip = mirror.url.endsWith('.zip')
-      const downloadPath = isZip
-        ? path.join(this.appRoot, 'temp', 'uv.zip')
-        : path.join(this.appRoot, 'temp', 'uv.exe')
-
-      const result = await this.downloader.download(mirror.url, downloadPath, (progress) => {
-        if (operationId !== this.currentOperationId) {
-          return
-        }
-
-        onProgress?.({
-          progress: progress.progress,
-          speed: progress.speed,
-          downloadedSize: progress.downloadedSize,
-          totalSize: progress.totalSize
-        })
-        onOpProgress({
-          progress: progress.progress,
-          description: `下载中... ${progress.progress.toFixed(1)}%`
-        })
-      })
-
-      return result
-    }
-
-    const result = await this.rotationService.execute(mirrors, downloadOperation, undefined, selectedMirror)
-
-    if (!result.success) {
-      return { success: false, error: result.error }
-    }
-
-    logger.info(`uv 下载完成，使用镜像源: ${result.usedMirror?.name}`)
+    logger.info('=== 准备安装 uv ===')
+    onProgress?.({
+      progress: 100,
+      speed: 0,
+      downloadedSize: 0,
+      totalSize: 0,
+    })
     return { success: true }
   }
 
@@ -479,38 +439,16 @@ export class UvInstaller extends BaseEnvironmentInstaller {
     logger.info('=== 安装 uv ===')
 
     const scriptsDir = path.join(this.pythonPath, 'Scripts')
-    const tempZipPath = path.join(this.appRoot, 'temp', 'uv.zip')
-    const tempExePath = path.join(this.appRoot, 'temp', 'uv.exe')
 
     try {
       if (!fs.existsSync(scriptsDir)) {
         fs.mkdirSync(scriptsDir, { recursive: true })
       }
 
-      onProgress?.(20, '正在安装 uv...')
-
-      if (fs.existsSync(tempZipPath)) {
-        onProgress?.(40, '正在解压 uv...')
-        const AdmZip = require('adm-zip')
-        const zip = new AdmZip(tempZipPath)
-        const tempExtract = path.join(this.appRoot, 'temp', 'uv_extract')
-        zip.extractAllTo(tempExtract, true)
-
-        const uvBinary = this.findFileRecursive(tempExtract, 'uv.exe')
-        if (uvBinary) {
-          fs.copyFileSync(uvBinary, this.uvExe)
-        } else {
-          throw new Error('uv.exe not found in archive')
-        }
-
-        fs.rmSync(tempExtract, { recursive: true, force: true })
-        fs.unlinkSync(tempZipPath)
-      } else if (fs.existsSync(tempExePath)) {
-        fs.copyFileSync(tempExePath, this.uvExe)
-        fs.unlinkSync(tempExePath)
-      } else {
-        throw new Error('未找到下载的 uv 文件')
-      }
+      onProgress?.(20, '正在运行 uv 官方安装脚本...')
+      await this.runUvInstallScript(scriptsDir, progress => {
+        onProgress?.(progress, '正在安装 uv...')
+      })
 
       onProgress?.(90, '验证 uv 安装...')
       const check = await this.checkEnvironment()
@@ -528,17 +466,61 @@ export class UvInstaller extends BaseEnvironmentInstaller {
     }
   }
 
-  private findFileRecursive(dir: string, filename: string): string | null {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const fullPath = path.join(dir, entry.name)
-      if (entry.isDirectory()) {
-        const found = this.findFileRecursive(fullPath, filename)
-        if (found) return found
-      } else if (entry.name.toLowerCase() === filename.toLowerCase()) {
-        return fullPath
-      }
-    }
-    return null
+  private runUvInstallScript(installDir: string, onProgress?: (progress: number) => void): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const script = [
+        "$ErrorActionPreference = 'Stop'",
+        `$env:UV_INSTALL_DIR = ${this.quotePowerShellString(installDir)}`,
+        'irm https://astral.sh/uv/install.ps1 | iex',
+      ].join('; ')
+
+      const proc = spawn('powershell.exe', [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        script,
+      ], {
+        cwd: this.appRoot,
+        stdio: 'pipe',
+      })
+
+      let output = ''
+
+      proc.stdout?.on('data', data => {
+        const text = data.toString().trim()
+        output += text
+        logger.info(`uv 安装输出: ${text}`)
+
+        if (text.includes('downloading')) {
+          onProgress?.(40)
+        } else if (text.includes('installing')) {
+          onProgress?.(70)
+        } else if (text.includes('everything')) {
+          onProgress?.(85)
+        }
+      })
+
+      proc.stderr?.on('data', data => {
+        const text = data.toString().trim()
+        output += text
+        logger.warn(`uv 安装输出: ${text}`)
+      })
+
+      proc.on('close', code => {
+        if (code === 0 && fs.existsSync(this.uvExe)) {
+          resolve()
+          return
+        }
+        reject(new Error(`uv 安装脚本失败，退出码: ${code}, output: ${output}`))
+      })
+
+      proc.on('error', reject)
+    })
+  }
+
+  private quotePowerShellString(value: string): string {
+    return `'${value.replace(/'/g, "''")}'`
   }
 }
 
