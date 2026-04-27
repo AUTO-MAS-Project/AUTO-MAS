@@ -36,6 +36,14 @@ export type MaaEndUserConfig_Info = {
      */
     Notes?: (string | null);
     /**
+     * 是否启用森空岛签到
+     */
+    IfSkland?: (boolean | null);
+    /**
+     * SklandToken
+     */
+    SklandToken?: (string | null);
+    /**
      * 用户标签信息
      */
     Tag?: (string | null);

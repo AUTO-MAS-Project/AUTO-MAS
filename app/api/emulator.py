@@ -21,7 +21,7 @@
 #   Contact: DLmaster_361@163.com
 
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Query
 from app.core import Config, EmulatorManager
 from app.models.schema import (
     OutBase,
@@ -183,12 +183,16 @@ async def get_status(emulator: EmulatorGetIn = Body(...)) -> EmulatorStatusOut:
     response_model=EmulatorSearchOut,
     status_code=200,
 )
-async def search_emulators() -> EmulatorSearchOut:
+async def search_emulators(
+    include_full_scan: bool = Query(
+        default=False, description="已停用参数，当前固定使用快速搜索"
+    ),
+) -> EmulatorSearchOut:
     """自动搜索系统中已安装的模拟器"""
     try:
         from app.utils import search_all_emulators
 
-        emulators = await search_all_emulators()
+        emulators = await search_all_emulators(include_full_scan=include_full_scan)
         results = [EmulatorSearchResult(**emulator) for emulator in emulators]
     except Exception as e:
         return EmulatorSearchOut(
@@ -198,3 +202,5 @@ async def search_emulators() -> EmulatorSearchOut:
             emulators=[],
         )
     return EmulatorSearchOut(emulators=results)
+
+
