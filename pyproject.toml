@@ -1,0 +1,39 @@
+[project]
+name = "auto-mas"
+version = "5.2.0"
+description = "A Multi-Script, Multi-Config Management and Automation Software"
+requires-python = "~=3.12"
+license = "AGPL-3.0-or-later"
+dependencies = [
+    "loguru==0.7.3",
+    "fastapi==0.116.1",
+    "pydantic==2.11.7",
+    "uvicorn==0.35.0",
+    "websockets==15.0.1",
+    "aiofiles==24.1.0",
+    "aiohttp==3.13.3",
+    "httpx[socks]==0.28.1",
+    "gitpython==3.1.45",
+    "plyer==2.1.0",
+    "psutil==7.0.0",
+    "jinja2==3.1.6",
+    "pywin32==310",
+    "keyboard==0.13.5",
+    "pycryptodome==3.23.0",
+    "truststore==0.10.1",
+    "pillow==12.1.1",
+    "packaging==25.0",
+    "rapidocr_onnxruntime==1.2.3",
+    "pygetwindow==0.0.9",
+    "pyautogui==0.9.54",
+    "pynput==1.8.1",
+    "numpy==2.3.4",
+    "opencv-python==4.10.0.84",
+    "maafw==5.8.1",
+    "mss==9.0.2",
+    "fastapi-mcp==0.4.0",
+    "json5==0.14.0",
+]
+
+[tool.uv]
+dev-dependencies = []
