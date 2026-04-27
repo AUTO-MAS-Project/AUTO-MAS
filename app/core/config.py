@@ -119,6 +119,7 @@ class AppConfig(GlobalConfig):
 
         self.server: Optional[uvicorn.Server] = None
         self.websocket: Optional[WebSocket] = None
+        self._websocket_missing_logged = False
         self.power_sign: Literal[
             "NoAction",
             "Shutdown",
@@ -469,9 +470,9 @@ class AppConfig(GlobalConfig):
     async def send_json(self, data: dict) -> None:
         """通过WebSocket发送JSON数据"""
         if Config.websocket is None:
-            logger.warning("WebSocket 未连接")
-        else:
-            await Config.websocket.send_json(data)
+            self._log_websocket_missing_once()
+            return
+        await Config.websocket.send_json(data)
 
     async def send_websocket_message(
         self,
@@ -481,11 +482,17 @@ class AppConfig(GlobalConfig):
     ) -> None:
         """通过WebSocket发送消息"""
         if Config.websocket is None:
-            logger.warning("WebSocket 未连接")
-        else:
-            await Config.websocket.send_json(
-                WebSocketMessage(id=id, type=type, data=data).model_dump()
-            )
+            self._log_websocket_missing_once()
+            return
+        await Config.websocket.send_json(
+            WebSocketMessage(id=id, type=type, data=data).model_dump()
+        )
+
+    def _log_websocket_missing_once(self) -> None:
+        if self._websocket_missing_logged:
+            return
+        self._websocket_missing_logged = True
+        logger.debug("WebSocket 未连接")
 
     async def get_git_version(self) -> tuple[bool, str, str]:
         """获取Git版本信息，如果Git不可用则返回默认值"""
