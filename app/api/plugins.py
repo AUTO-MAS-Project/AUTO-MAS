@@ -299,7 +299,11 @@ def _build_plugin_services(discovered: Dict[str, Any]) -> Dict[str, PluginServic
 
     for plugin_name, plugin_source in discovered.items():
         try:
-            _, plugin_class = loader._resolve_plugin_module_and_class(plugin_name, plugin_source)
+            _, plugin_class = loader._resolve_plugin_module_and_class(
+                plugin_name,
+                plugin_source,
+                clear_cache=False,
+            )
             provides, needs, wants = loader._meta(plugin_class)
             services[plugin_name] = PluginServiceModel(
                 provides=sorted(provides),

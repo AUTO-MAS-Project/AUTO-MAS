@@ -377,6 +377,8 @@ class PluginLoader:
         self,
         plugin_name: str,
         plugin_source: PluginSource,
+        *,
+        clear_cache: bool = True,
     ) -> tuple[Optional[ModuleType], type[Any]]:
         """解析插件模块与类入口。
 
@@ -392,7 +394,8 @@ class PluginLoader:
         """
         if plugin_source.entry_point is None:
             raise PluginDefinitionError(f"PyPI 插件缺少 Entry Point: {plugin_name}")
-        self._clear_cached_pypi_module(plugin_name, plugin_source)
+        if clear_cache:
+            self._clear_cached_pypi_module(plugin_name, plugin_source)
         return self._load_plugin_class_from_entry_point(plugin_name, plugin_source.entry_point)
 
     @staticmethod
