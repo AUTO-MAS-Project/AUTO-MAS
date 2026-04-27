@@ -139,6 +139,7 @@ class Notification:
         kind: str = "generic",
         serverchan_content: str | None = None,
         koishi_message: str | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> dict[str, bool]:
         return await self._call(
             "send",
@@ -148,6 +149,7 @@ class Notification:
             kind=kind,
             serverchan_content=serverchan_content,
             koishi_message=koishi_message,
+            extra=extra,
             default={},
         )
 
