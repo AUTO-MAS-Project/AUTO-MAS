@@ -591,7 +591,7 @@ class ConfigItem:
                 f"配置项 '{self.group}.{self.name}' 的默认值 '{self.value}' 不合法"
             )
 
-    def setValue(self, value: Any):
+    def setValue(self, value: Any) -> bool:
         """
         设置配置项值, 将自动进行验证和修正
 
@@ -606,10 +606,12 @@ class ConfigItem:
             if isinstance(self.validator, EncryptValidator)
             else self.value
         ) == value:
-            return
+            return False
 
         if self.is_locked:
             raise ValueError(f"配置项 '{self.group}.{self.name}' 已锁定, 无法修改")
+
+        old_value = self.value
 
         # deepcopy new value
         try:
@@ -626,8 +628,10 @@ class ConfigItem:
         if not self.validator.validate(self.value):
             self.value = self.validator.correct(self.value)
 
-        if len(self._slots) > 0:
+        changed = self.value != old_value
+        if changed and len(self._slots) > 0:
             asyncio.create_task(self._emit_signal(self.value))
+        return changed
 
     def getValue(self, if_decrypt: bool = True) -> Any:
         """
@@ -780,13 +784,29 @@ class ConfigBase(ABC):
             保存方法
         """
 
-        if save_method != self.save:
+        if save_method != self.save and save_method not in self._save_methods:
             self._save_methods.append(save_method)
 
         for sub_config in self._multiple_config_index.values():
             await sub_config.add_save_method(save_method)
 
-    async def load(self, data: dict):
+    async def _run_save_methods(self):
+        """执行去重后的保存方法列表。"""
+        if not self._save_methods:
+            return
+        unique_save_methods: list[Callable[[], Coroutine[Any, Any, None]]] = []
+        for save_method in self._save_methods:
+            if save_method not in unique_save_methods:
+                unique_save_methods.append(save_method)
+        await asyncio.gather(*(save_method() for save_method in unique_save_methods))
+
+    async def _commit_changes(self):
+        """统一变更提交：本地保存一次 + 广播保存回调一次。"""
+        if self.file:
+            await self.save()
+        await self._run_save_methods()
+
+    async def load(self, data: dict) -> bool:
         """
         从字典加载配置数据
 
@@ -802,8 +822,11 @@ class ConfigBase(ABC):
         if self.is_locked:
             raise ValueError("配置已锁定, 无法修改")
 
+        source_data = deepcopy(data) if isinstance(data, dict) else {}
+        working_data = deepcopy(source_data)
+
         # 加载多配置项类型数据
-        sub_configs = data.pop("SubConfigsInfo", {})
+        sub_configs = working_data.pop("SubConfigsInfo", {})
         if not isinstance(sub_configs, dict):
             sub_configs = {}
         for name, sub_config in self._multiple_config_index.items():
@@ -814,20 +837,23 @@ class ConfigBase(ABC):
         for group, info in self._config_item_index.items():
             for name, item in info.items():
                 try:
-                    item.setValue(data[group][name])
+                    item.setValue(working_data[group][name])
                 except:
                     if item.legacy_group_name is not None:
                         with suppress(Exception):
                             item.setValue(
-                                data[item.legacy_group_name[0]][
+                                working_data[item.legacy_group_name[0]][
                                     item.legacy_group_name[1]
                                 ]
                             )
 
-        if self.file:
-            await self.save()
+        normalized_data = await self.toDict(if_decrypt=False)
+        is_dirty = normalized_data != source_data
 
-        await asyncio.gather(*(_() for _ in self._save_methods))
+        if is_dirty:
+            await self._commit_changes()
+
+        return is_dirty
 
     async def toDict(
         self, if_decrypt: bool = True, regenerate_uuids: bool = False
@@ -877,12 +903,11 @@ class ConfigBase(ABC):
         if self.is_locked:
             raise ValueError("配置已锁定, 无法修改")
 
-        self._config_item_index[group][name].setValue(value)
+        is_changed = self._config_item_index[group][name].setValue(value)
+        if not is_changed:
+            return
 
-        if self.file:
-            await self.save()
-
-        await asyncio.gather(*(_() for _ in self._save_methods))
+        await self._commit_changes()
 
     def bind(self, group: str, name: str, slot: Callable[[Any], Any]):
         """
@@ -1069,13 +1094,29 @@ class MultipleConfig(Generic[T]):
             保存方法, 必须是一个协程函数, 无参数, 无返回值
         """
 
-        if save_method != self.save:
+        if save_method != self.save and save_method not in self._save_methods:
             self._save_methods.append(save_method)
 
         for sub_config in self.data.values():
             await sub_config.add_save_method(save_method)
 
-    async def load(self, data: dict):
+    async def _run_save_methods(self):
+        """执行去重后的保存方法列表。"""
+        if not self._save_methods:
+            return
+        unique_save_methods: list[Callable[[], Coroutine[Any, Any, None]]] = []
+        for save_method in self._save_methods:
+            if save_method not in unique_save_methods:
+                unique_save_methods.append(save_method)
+        await asyncio.gather(*(save_method() for save_method in unique_save_methods))
+
+    async def _commit_changes(self):
+        """统一变更提交：本地保存一次 + 广播保存回调一次。"""
+        if self.file:
+            await self.save()
+        await self._run_save_methods()
+
+    async def load(self, data: dict) -> bool:
         """
         从字典加载配置数据
 
@@ -1092,14 +1133,19 @@ class MultipleConfig(Generic[T]):
         if self.is_locked:
             raise ValueError("配置已锁定, 无法修改")
 
+        source_data = deepcopy(data) if isinstance(data, dict) else {}
+
         self.order = []
         self.data = {}
 
-        if not data.get("instances"):
-            return
+        if not source_data.get("instances"):
+            is_dirty = bool(source_data)
+            if is_dirty:
+                await self._commit_changes()
+            return is_dirty
 
-        for instance in data["instances"]:
-            if not isinstance(instance, dict) or not data.get(instance.get("uid")):
+        for instance in source_data["instances"]:
+            if not isinstance(instance, dict) or not source_data.get(instance.get("uid")):
                 continue
 
             type_name = instance.get("type")
@@ -1107,12 +1153,15 @@ class MultipleConfig(Generic[T]):
             if type_name in self.sub_config_type:
                 self.order.append(uuid.UUID(instance["uid"]))
                 self.data[self.order[-1]] = self.sub_config_type[type_name]()
-                await self.data[self.order[-1]].load(data[instance["uid"]])
+                await self.data[self.order[-1]].load(source_data[instance["uid"]])
 
-        if self.file:
-            await self.save()
+        normalized_data = await self.toDict(if_decrypt=False)
+        is_dirty = normalized_data != source_data
 
-        await asyncio.gather(*(_() for _ in self._save_methods))
+        if is_dirty:
+            await self._commit_changes()
+
+        return is_dirty
 
     async def toDict(
         self, if_decrypt: bool = True, regenerate_uuids: bool = False
@@ -1222,9 +1271,8 @@ class MultipleConfig(Generic[T]):
 
         if self.file:
             await self.data[uid].add_save_method(self.save)
-            await self.save()
 
-        await asyncio.gather(*(_() for _ in self._save_methods))
+        await self._commit_changes()
 
         return uid, self.data[uid]
 
@@ -1250,10 +1298,7 @@ class MultipleConfig(Generic[T]):
         self.data.pop(uid)
         self.order.remove(uid)
 
-        if self.file:
-            await self.save()
-
-        await asyncio.gather(*(_() for _ in self._save_methods))
+        await self._commit_changes()
 
     async def setOrder(self, order: list[uuid.UUID]):
         """
@@ -1273,10 +1318,7 @@ class MultipleConfig(Generic[T]):
 
         self.order = order
 
-        if self.file:
-            await self.save()
-
-        await asyncio.gather(*(_() for _ in self._save_methods))
+        await self._commit_changes()
 
     async def lock(self):
         """
