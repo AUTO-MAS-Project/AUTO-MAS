@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -22,20 +24,52 @@ DEFAULT_INDEX_URLS: list[str] = [
 ]
 
 
+def _is_executable_file(path: Path) -> bool:
+    return path.is_file()
+
+
+def _candidate_uv_paths() -> list[Path]:
+    """返回 uv 的候选路径，项目内置版本优先。"""
+    candidates: list[Path] = []
+
+    env_path = os.getenv("AUTO_MAS_UV_EXE")
+    if env_path:
+        candidates.append(Path(env_path))
+
+    app_root = Path.cwd()
+    candidates.extend(
+        [
+            app_root / "environment" / "python" / "Scripts" / "uv.exe",
+            app_root / ".venv" / "Scripts" / "uv.exe",
+            Path(sys.executable).resolve().parent / "uv.exe",
+        ]
+    )
+
+    path_uv = shutil.which("uv")
+    if path_uv:
+        candidates.append(Path(path_uv))
+
+    return candidates
+
+
 def _find_uv() -> str | None:
     """查找 uv 可执行文件路径。"""
-    return shutil.which("uv")
+    seen: set[Path] = set()
+    for candidate in _candidate_uv_paths():
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            resolved = candidate
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if _is_executable_file(resolved):
+            return str(resolved)
+    return None
 
 
 def get_uv_executable() -> str:
-    """返回 uv 可执行文件路径（带缓存）。
-
-    Returns:
-        str: uv 可执行文件的绝对路径。
-
-    Raises:
-        RuntimeError: 未找到 uv 时抛出。
-    """
+    """返回 uv 可执行文件路径（带缓存）。"""
     global _uv_path
     if _uv_path is not None:
         return _uv_path
@@ -43,7 +77,8 @@ def get_uv_executable() -> str:
     found = _find_uv()
     if found is None:
         raise RuntimeError(
-            "未找到 uv 可执行文件，请先安装: https://docs.astral.sh/uv/getting-started/installation/"
+            "未找到 uv 可执行文件，请确认 environment/python/Scripts/uv.exe 已存在，"
+            "或通过 AUTO_MAS_UV_EXE 指定 uv.exe 路径。"
         )
     _uv_path = found
     return _uv_path
@@ -86,21 +121,7 @@ async def uv_pip_install(
     upgrade: bool = True,
     index_url: Optional[str] = None,
 ) -> subprocess.CompletedProcess[str]:
-    """使用 uv pip install 安装包到指定目录。
-
-    Args:
-        packages: 包名列表或本地路径列表。
-        target: 安装目标目录（对应 --target）。
-        editable: 是否以 editable 模式安装。
-        upgrade: 是否使用 --upgrade。
-        index_url: PyPI 镜像源 URL，为 None 时使用 uv 默认源。
-
-    Returns:
-        subprocess.CompletedProcess: 命令执行结果。
-
-    Raises:
-        RuntimeError: uv 不可用或安装失败时抛出。
-    """
+    """使用 uv pip install 安装包到指定目录。"""
     uv = get_uv_executable()
     target.mkdir(parents=True, exist_ok=True)
 
@@ -118,9 +139,7 @@ async def uv_pip_install(
     completed = await _run(command)
     if completed.returncode != 0:
         detail = _error_detail(completed)
-        raise RuntimeError(
-            f"uv pip install 失败: packages={packages}, detail={detail}"
-        )
+        raise RuntimeError(f"uv pip install 失败: packages={packages}, detail={detail}")
 
     return completed
 
@@ -133,24 +152,7 @@ async def uv_pip_install_with_mirror_fallback(
     upgrade: bool = True,
     index_urls: list[str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """使用 uv pip install 安装包，自动轮替镜像源。
-
-    依次尝试指定的镜像源列表，任一成功即返回。
-    全部失败后使用 uv 默认源做最后尝试。
-
-    Args:
-        packages: 包名列表。
-        target: 安装目标目录。
-        editable: 是否 editable 安装。
-        upgrade: 是否 --upgrade。
-        index_urls: 镜像源 URL 列表，为 None 时使用内置默认镜像列表。
-
-    Returns:
-        subprocess.CompletedProcess: 成功的命令执行结果。
-
-    Raises:
-        RuntimeError: 所有镜像源均失败时抛出。
-    """
+    """使用 uv pip install 安装包，自动轮替镜像源。"""
     urls = index_urls if index_urls is not None else DEFAULT_INDEX_URLS
     last_error = ""
 
@@ -176,9 +178,7 @@ async def uv_pip_install_with_mirror_fallback(
             index_url=None,
         )
     except RuntimeError as e:
-        raise RuntimeError(
-            f"所有镜像源均失败 (packages={packages}): {last_error}"
-        ) from e
+        raise RuntimeError(f"所有镜像源均失败 (packages={packages}): {last_error}") from e
 
 
 async def uv_pip_uninstall(
@@ -186,16 +186,7 @@ async def uv_pip_uninstall(
     *,
     target: Path,
 ) -> subprocess.CompletedProcess[str]:
-    """使用 uv pip uninstall 从指定目录卸载包。
-
-    Args:
-        package: 包名。
-        target: 目标目录（对应 --target）。
-
-    Returns:
-        subprocess.CompletedProcess: 命令执行结果。
-    """
+    """使用 uv pip uninstall 从指定目录卸载包。"""
     uv = get_uv_executable()
-
     command = [uv, "pip", "uninstall", package, "--target", str(target)]
     return await _run(command)
