@@ -102,7 +102,6 @@ interface PlanListItem {
 const planList = ref<PlanListItem[]>([])
 const activePlanId = ref<string>('')
 const planDataMap = ref<Record<string, PlanConfigData>>({})
-const currentPlanData = ref<PlanConfigData | null>(null)
 
 const currentPlanName = ref<string>('')
 const currentMode = ref<'ALL' | 'Weekly'>('ALL')
@@ -116,6 +115,9 @@ const tableData = ref<Record<string, any>>({})
 const currentPlan = computed(
   () => planList.value.find(plan => plan.id === activePlanId.value) || null
 )
+const currentPlanData = computed<PlanConfigData | null>(
+  () => planDataMap.value[activePlanId.value] ?? null
+)
 const currentPlanDescriptor = computed(() => {
   if (!currentPlan.value) {
     return null
@@ -127,15 +129,13 @@ const isActivePlan = (planId: string) => activePlanId.value === planId
 
 const clonePlanData = <T,>(value: T): T => structuredClone(value)
 
-const syncCurrentPlan = (planId: string, isInitialLoad = false) => {
+const syncCurrentPlan = (planId: string) => {
   const planData = planDataMap.value[planId]
   if (!planData) {
-    currentPlanData.value = null
     tableData.value = {}
     return false
   }
 
-  currentPlanData.value = planData
   const currentPlanItem = planList.value.find(plan => plan.id === planId)
   const apiName = planData.Info?.Name || ''
 
@@ -149,7 +149,7 @@ const syncCurrentPlan = (planId: string, isInitialLoad = false) => {
   }
 
   currentMode.value = planData.Info?.Mode || 'ALL'
-  tableData.value = isInitialLoad ? { ...planData, _isInitialLoad: true } : { ...planData }
+  tableData.value = clonePlanData(planData)
   return true
 }
 
@@ -192,7 +192,7 @@ const handleAddPlan = async (planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE
       logger.error(`新计划名称持久化失败: ${newPlan.id} -> ${uniqueName}`)
       newPlan.name = response.data.Info?.Name || uniqueName
     }
-    syncCurrentPlan(newPlan.id, true)
+    syncCurrentPlan(newPlan.id)
     // 如果生成的名称包含数字，说明有重名，提示用户
     if (uniqueName.match(/\s\d+$/)) {
       message.info(
@@ -222,7 +222,6 @@ const handleRemovePlan = async (planId: string) => {
         if (activePlanId.value) {
           await loadPlanData(activePlanId.value)
         } else {
-          currentPlanData.value = null
           currentPlanName.value = ''
           currentMode.value = 'ALL'
           tableData.value = {}
@@ -268,11 +267,7 @@ const fetchPlanData = async (planId: string): Promise<PlanConfigData | null> => 
   return planData
 }
 
-const handlePlanChange = async (
-  path: string,
-  value: any,
-  reload?: boolean
-): Promise<boolean> => {
+const handlePlanChange = async (path: string, value: any, reload?: boolean): Promise<boolean> => {
   const planId = activePlanId.value
   if (!planId) {
     return false
@@ -379,7 +374,7 @@ const onModeChange = async () => {
 
 const loadPlanData = async (planId: string, force = false) => {
   try {
-    if (!force && isActivePlan(planId) && syncCurrentPlan(planId, true)) {
+    if (!force && isActivePlan(planId) && syncCurrentPlan(planId)) {
       logger.info(`从缓存切换计划 (${planId})`)
       return
     }
@@ -387,7 +382,6 @@ const loadPlanData = async (planId: string, force = false) => {
     const planData = await fetchPlanData(planId)
     if (!planData) {
       if (isActivePlan(planId)) {
-        currentPlanData.value = null
         tableData.value = {}
       }
       return
@@ -398,7 +392,7 @@ const loadPlanData = async (planId: string, force = false) => {
       return
     }
 
-    syncCurrentPlan(planId, true)
+    syncCurrentPlan(planId)
     logger.info(`从后端加载数据 (${planId})`)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -438,16 +432,14 @@ const initPlans = async () => {
       const selectedPlanId = target ? target.id : planList.value[0].id
 
       activePlanId.value = selectedPlanId
-      syncCurrentPlan(selectedPlanId, true)
+      syncCurrentPlan(selectedPlanId)
       logger.info(`初始加载数据 (${selectedPlanId})`)
     } else {
-      currentPlanData.value = null
       planDataMap.value = {}
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`初始化计划失败: ${errorMsg}`)
-    currentPlanData.value = null
     planDataMap.value = {}
   } finally {
     loading.value = false

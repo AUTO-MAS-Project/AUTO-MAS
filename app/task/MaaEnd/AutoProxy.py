@@ -40,7 +40,6 @@ from app.utils.constants import (
     UTC4,
     UTC8,
     MAAEND_KILLPROC_TASK,
-    MAAEND_AUTO_ESSENCE_LOCATIONS,
 )
 from .tools import login, push_notification
 
@@ -475,8 +474,6 @@ class AutoProxyTask(TaskExecuteBase):
             auto_essence_location = self.effective_sanity_task_config.get(
                 "AutoEssenceSpecifiedLocation", ""
             )
-            if auto_essence_location not in MAAEND_AUTO_ESSENCE_LOCATIONS:
-                raise RuntimeError(f"无效的基质刷取地点: {auto_essence_location}")
 
         protocol_space_found = False
         auto_essence_found = False

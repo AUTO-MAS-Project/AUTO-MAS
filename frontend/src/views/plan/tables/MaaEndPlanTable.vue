@@ -197,8 +197,8 @@ const syncLocalTableData = (tableData: Record<string, any> | null) => {
 }
 
 watch(
-  [() => props.planId, () => props.tableData],
-  ([, tableData]) => {
+  () => props.tableData,
+  tableData => {
     syncLocalTableData(tableData)
   },
   { immediate: true }

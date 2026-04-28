@@ -98,7 +98,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import {
   usePlanDataCoordinator,
@@ -119,6 +119,7 @@ const props = defineProps<Props>()
 
 // 使用数据协调器 - 单一数据源
 const coordinator = usePlanDataCoordinator()
+const lastSyncedPlanId = ref<string | null>(null)
 
 // 临时自定义关卡输入
 const tempCustomStages = ref({
@@ -446,43 +447,36 @@ const handleStageToggle = async (stageKey: string, timeKey: TimeKey, enabled: bo
   }
 }
 
-// 监听 planId 变化
-watch(
-  () => props.planId,
-  newPlanId => {
-    if (newPlanId) {
-      coordinator.updatePlanId(newPlanId)
-    }
-  },
-  { immediate: true }
-)
-
 // 监听外部数据变化 - 这是数据的唯一来源
 watch(
-  () => props.tableData,
-  async newData => {
+  [() => props.planId, () => props.tableData],
+  async ([planId, newData]) => {
+    if (planId) {
+      coordinator.updatePlanId(planId)
+    }
+
     if (newData) {
-      // 检查是否是初始加载
-      const isInitialLoad = (newData as any)._isInitialLoad === true
+      const shouldResetCustomStages =
+        lastSyncedPlanId.value === null || (planId ? planId !== lastSyncedPlanId.value : false)
 
-      // 清理标记后传递给协调器
-      const cleanData = { ...newData }
-      delete (cleanData as any)._isInitialLoad
-
-      // 如果是首次加载，确保先完成关卡选项的预加载，避免将标准关卡误判为自定义关卡
-      if (isInitialLoad) {
+      // 首次进入或切换计划时才阻塞等待预加载，避免把标准关卡误判为自定义关卡。
+      if (shouldResetCustomStages) {
         try {
           await preloadAllStageOptions()
-        } catch (e) {
+        } catch {
           // 预加载失败时降级为不阻塞——仍然尝试加载配置
           // 错误已由 preloadAllStageOptions 内部记录
         }
       }
 
       // 从后端数据加载到协调器
-      coordinator.fromApiData(cleanData, isInitialLoad)
+      coordinator.fromApiData(newData, shouldResetCustomStages)
       // 同步到临时输入框
       tempCustomStages.value = { ...coordinator.planData.customStageDefinitions }
+
+      if (planId) {
+        lastSyncedPlanId.value = planId
+      }
     }
   },
   { immediate: true }
@@ -499,10 +493,6 @@ watch(
   { deep: true }
 )
 
-// 组件挂载时预加载关卡选项
-onMounted(async () => {
-  await preloadAllStageOptions()
-})
 </script>
 
 <style scoped>

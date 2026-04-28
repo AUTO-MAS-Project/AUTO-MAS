@@ -36,7 +36,6 @@ from app.utils.constants import (
     MAAEND_PLAN_FIELDS,
     MAAEND_PROTOCOL_SPACE_TABS,
     MAAEND_SANITY_TASK_TYPES,
-    MAAEND_AUTO_ESSENCE_LOCATIONS,
     MAAEND_STAGE_BOOK,
     MAAEND_STAGE_WITH_AB,
     STARRAIL_STAGE_BOOK,
@@ -715,45 +714,31 @@ class MaaEndUserConfig(ConfigBase):
             "Task",
             "SanityTaskType",
             "OperatorProgression",
-            OptionsValidator(list(MAAEND_SANITY_TASK_TYPES)),
         )
         self.Task_OperatorProgression = ConfigItem(
             "Task",
             "OperatorProgression",
             "OperatorEXP",
-            OptionsValidator(["OperatorEXP", "Promotions", "T-Creds", "SkillUp"]),
         )
         self.Task_WeaponProgression = ConfigItem(
             "Task",
             "WeaponProgression",
             "WeaponEXP",
-            OptionsValidator(["WeaponEXP", "WeaponTune"]),
         )
         self.Task_CrisisDrills = ConfigItem(
             "Task",
             "CrisisDrills",
             "AdvancedProgression1",
-            OptionsValidator(
-                [
-                    "AdvancedProgression1",
-                    "AdvancedProgression2",
-                    "AdvancedProgression3",
-                    "AdvancedProgression4",
-                    "AdvancedProgression5",
-                ]
-            ),
         )
         self.Task_RewardsSetOption = ConfigItem(
             "Task",
             "RewardsSetOption",
             "RewardsSetA",
-            OptionsValidator(["RewardsSetA", "RewardsSetB"]),
         )
         self.Task_AutoEssenceSpecifiedLocation = ConfigItem(
             "Task",
             "AutoEssenceSpecifiedLocation",
             "VFTheHub",
-            OptionsValidator(list(MAAEND_AUTO_ESSENCE_LOCATIONS)),
         )
 
         ## Data ------------------------------------------------------------
@@ -1474,47 +1459,31 @@ class MaaEndPlanConfig(ConfigBase):
                 group,
                 "OperatorProgression",
                 "OperatorEXP",
-                OptionsValidator(
-                    ["OperatorEXP", "Promotions", "T-Creds", "SkillUp"]
-                ),
             )
             self.config_item_dict[group]["WeaponProgression"] = ConfigItem(
                 group,
                 "WeaponProgression",
                 "WeaponEXP",
-                OptionsValidator(["WeaponEXP", "WeaponTune"]),
             )
             self.config_item_dict[group]["CrisisDrills"] = ConfigItem(
                 group,
                 "CrisisDrills",
                 "AdvancedProgression1",
-                OptionsValidator(
-                    [
-                        "AdvancedProgression1",
-                        "AdvancedProgression2",
-                        "AdvancedProgression3",
-                        "AdvancedProgression4",
-                        "AdvancedProgression5",
-                    ]
-                ),
             )
             self.config_item_dict[group]["RewardsSetOption"] = ConfigItem(
                 group,
                 "RewardsSetOption",
                 "RewardsSetA",
-                OptionsValidator(["RewardsSetA", "RewardsSetB"]),
             )
             self.config_item_dict[group]["SanityTaskType"] = ConfigItem(
                 group,
                 "SanityTaskType",
                 "OperatorProgression",
-                OptionsValidator(list(MAAEND_SANITY_TASK_TYPES)),
             )
             self.config_item_dict[group]["AutoEssenceSpecifiedLocation"] = ConfigItem(
                 group,
                 "AutoEssenceSpecifiedLocation",
                 "VFTheHub",
-                OptionsValidator(list(MAAEND_AUTO_ESSENCE_LOCATIONS)),
             )
 
             for name in MAAEND_PLAN_FIELDS:
