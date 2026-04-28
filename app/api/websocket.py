@@ -28,7 +28,8 @@ WebSocket 客户端调试 API
 支持：创建客户端、连接、断开、发送消息、鉴权等
 """
 
-from typing import Optional
+import json
+from typing import Optional, Dict, Any, Callable
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.utils.websocket import ws_client_manager
@@ -51,10 +52,125 @@ from app.models.schema import (
     WSCommandsOut,
 )
 
-logger = get_logger("WS调试")
+logger = get_logger("WS端点")
 
-router = APIRouter(prefix="/api/ws_debug", tags=["WebSocket调试"])
+router = APIRouter(prefix="/api/ws", tags=["Websocket端点"])
+WSDEV_CHANNEL_NAME = "wsdev"
 
+
+async def _send_wsdev_snapshot(websocket: WebSocket):
+    """
+    发送 wsdev 初始化快照。
+
+    Args:
+        websocket: 当前调试前端的 WebSocket 连接。
+
+    Raises:
+        Exception: 发送初始化数据失败时抛出底层异常。
+    """
+    # 发送当前所有客户端状态
+    clients = ws_client_manager.list_clients()
+    await websocket.send_json({"type": "init", "clients": list(clients.values())})
+
+    # 发送历史消息
+    history = ws_client_manager.get_message_history()
+    for client_name, messages in history.items():
+        for msg in messages:
+            await websocket.send_json({"type": "message", "client": client_name, **msg})
+
+
+async def _invoke_declared_callback(callback: Optional[Callable], *args):
+    """
+    调用声明式回调并自动兼容同步/异步函数。
+
+    Args:
+        callback: 声明式回调函数。
+        *args: 传递给回调的参数。
+
+    Raises:
+        Exception: 回调执行过程中抛出的原始异常会向上抛出。
+    """
+    if callback is None:
+        return
+
+    result = callback(*args)
+    if hasattr(result, "__await__"):
+        await result
+
+
+def _build_channel_handlers(
+    channel_name: str,
+    websocket: WebSocket,
+    channel_config: Dict[str, Any],
+):
+    """
+    构建声明式通道的消息与生命周期回调。
+
+    Args:
+        channel_name: 通道名称。
+        websocket: 当前 WebSocket 连接。
+        channel_config: 通道声明配置。
+
+    Returns:
+        tuple: `(on_message, on_connect, on_disconnect)` 三个回调。
+    """
+    declared_on_message = channel_config.get("on_message")
+    declared_on_connect = channel_config.get("on_connect")
+    declared_on_disconnect = channel_config.get("on_disconnect")
+
+    if channel_name == WSDEV_CHANNEL_NAME:
+
+        async def on_message(data: Dict[str, Any]):
+            action = data.get("action") if isinstance(data, dict) else None
+            if action == "ping":
+                await websocket.send_text("pong")
+            elif action == "request_snapshot":
+                await _send_wsdev_snapshot(websocket)
+            await _invoke_declared_callback(declared_on_message, data)
+
+        async def on_connect():
+            ws_client_manager.add_debug_connection(websocket)
+            logger.info(f"调试前端已连接 (/api/ws/{channel_name}): {websocket.client}")
+            await _send_wsdev_snapshot(websocket)
+            await _invoke_declared_callback(declared_on_connect)
+
+        async def on_disconnect():
+            ws_client_manager.remove_debug_connection(websocket)
+            logger.info(f"调试前端已断开 (/api/ws/{channel_name}): {websocket.client}")
+            await _invoke_declared_callback(declared_on_disconnect)
+
+        return on_message, on_connect, on_disconnect
+
+    async def on_message(data: Dict[str, Any]):
+        await _invoke_declared_callback(declared_on_message, data)
+
+    async def on_connect():
+        logger.info(f"声明通道已连接 (/api/ws/{channel_name}): {websocket.client}")
+        await _invoke_declared_callback(declared_on_connect)
+
+    async def on_disconnect():
+        logger.info(f"声明通道已断开 (/api/ws/{channel_name}): {websocket.client}")
+        await _invoke_declared_callback(declared_on_disconnect)
+
+    return on_message, on_connect, on_disconnect
+
+
+def _register_builtin_reverse_channels():
+    """
+    注册内置声明式反向通道。
+
+    Raises:
+        ValueError: 当内置通道名称非法或与保留名称冲突时抛出。
+    """
+    ws_client_manager.register_reverse_channel(
+        name=WSDEV_CHANNEL_NAME,
+        ping_interval=15.0,
+        ping_timeout=30.0,
+        overwrite=True,
+    )
+
+
+_register_builtin_reverse_channels()
 
 # ============== API 路由 ==============
 
@@ -454,44 +570,39 @@ async def get_commands() -> WSCommandsOut:
     )
 
 
-@router.websocket("/live")
-async def websocket_live(websocket: WebSocket):
+@router.websocket("/{channel_name}")
+async def websocket_dynamic_channel(websocket: WebSocket, channel_name: str):
     """
-    实时消息推送 WebSocket 端点
+    声明式动态 WebSocket 端点。
 
-    前端连接此端点后，可实时接收所有客户端的消息和事件
+    路由会根据 `channel_name` 查找管理器中的声明配置，
+    并统一通过 `openwsr` 接管当前连接。
+
+    Raises:
+        Exception: 会话创建或运行失败时抛出底层异常。
     """
+    channel_config = ws_client_manager.get_reverse_channel_config(channel_name)
+    if channel_config is None:
+        logger.warning(f"未声明的反向通道连接被拒绝: /api/ws/{channel_name}")
+        await websocket.close(code=1008, reason=f"未声明通道: {channel_name}")
+        return
+
     await websocket.accept()
-    ws_client_manager.add_debug_connection(websocket)
 
-    logger.info(f"调试前端已连接: {websocket.client}")
+    on_message, on_connect, on_disconnect = _build_channel_handlers(
+        channel_name=channel_name,
+        websocket=websocket,
+        channel_config=channel_config,
+    )
 
-    try:
-        # 发送当前所有客户端状态
-        clients = ws_client_manager.list_clients()
-        await websocket.send_json({"type": "init", "clients": list(clients.values())})
-
-        # 发送历史消息
-        history = ws_client_manager.get_message_history()
-        for client_name, messages in history.items():
-            for msg in messages:
-                await websocket.send_json(
-                    {"type": "message", "client": client_name, **msg}
-                )
-
-        # 保持连接，接收心跳
-        while True:
-            try:
-                data = await websocket.receive_text()
-                # 处理心跳或其他命令
-                if data == "ping":
-                    await websocket.send_text("pong")
-            except WebSocketDisconnect:
-                break
-            except Exception as e:
-                logger.error(f"WebSocket 错误: {e}")
-                break
-
-    finally:
-        ws_client_manager.remove_debug_connection(websocket)
-        logger.info(f"调试前端已断开: {websocket.client}")
+    session = await ws_client_manager.openwsr(
+        name=channel_name,
+        websocket=websocket,
+        ping_interval=float(channel_config.get("ping_interval", 15.0)),
+        ping_timeout=float(channel_config.get("ping_timeout", 30.0)),
+        auth_token=channel_config.get("auth_token"),
+        on_message=on_message,
+        on_connect=on_connect,
+        on_disconnect=on_disconnect,
+    )
+    await session.wait_closed()
