@@ -18,6 +18,7 @@ from .event_contract import (
 )
 from .decorators import on_event, EventSubscription
 from .event_factory import PluginEventFactory
+from .fields import PluginField
 from .loader import PluginLoader, PluginRecord
 from .manager import PluginManager
 from .pypi_site import (
@@ -58,6 +59,7 @@ __all__ = [
     "on_event",
     "EventSubscription",
     "PluginEventFactory",
+    "PluginField",
     "PluginLoader",
     "PluginRecord",
     "RuntimeAPI",
