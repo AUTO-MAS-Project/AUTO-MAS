@@ -9,6 +9,7 @@ import importlib
 import importlib.util
 import inspect
 import json
+from enum import Enum
 from dataclasses import dataclass
 from pathlib import Path
 from types import NoneType, UnionType
@@ -462,13 +463,28 @@ class PluginSchemaManager:
             literal_values = self._literal_values(field_info.annotation)
             if literal_values is not None:
                 field_schema["enum"] = copy.deepcopy(literal_values)
-                field_schema["type"] = self._enum_base_type(literal_values)
+                if not self._is_list_annotation(field_info.annotation):
+                    field_schema["type"] = self._enum_base_type(literal_values)
 
             if field_info.description is not None:
                 field_schema["description"] = str(field_info.description)
 
+            if field_info.title is not None:
+                field_schema["title"] = str(field_info.title)
+
+            if field_info.examples is not None:
+                field_schema["examples"] = copy.deepcopy(field_info.examples)
+
             if self._annotation_allows_none(field_info.annotation):
                 field_schema["nullable"] = True
+
+            constraints = self._constraints_from_field_metadata(field_info.metadata)
+            if constraints:
+                field_schema["constraints"] = constraints
+
+            item_type = self._list_item_type(field_info.annotation)
+            if item_type is not None:
+                field_schema.setdefault("item_type", item_type)
 
             if not field_info.is_required():
                 if field_info.default_factory is not None:
@@ -493,6 +509,56 @@ class PluginSchemaManager:
             result[field_name] = field_schema
 
         return result
+
+    def _constraints_from_field_metadata(self, metadata: Any) -> Dict[str, Any]:
+        constraints: Dict[str, Any] = {}
+        for item in metadata or []:
+            for name in (
+                "gt",
+                "ge",
+                "lt",
+                "le",
+                "multiple_of",
+                "min_length",
+                "max_length",
+                "pattern",
+            ):
+                value = getattr(item, name, None)
+                if value is not None:
+                    constraints[name] = value
+        return constraints
+
+    def _list_item_type(self, annotation: Any) -> str | None:
+        origin = get_origin(annotation)
+        args = get_args(annotation)
+
+        if origin is Annotated and args:
+            return self._list_item_type(args[0])
+
+        if origin is Union or origin is UnionType:
+            non_none_args = [arg for arg in args if arg not in (NoneType, type(None))]
+            if len(non_none_args) == 1:
+                return self._list_item_type(non_none_args[0])
+            return None
+
+        if origin is not list or not args:
+            return None
+
+        item = args[0]
+        item_origin = get_origin(item)
+        if item_origin is Literal:
+            return self._enum_base_type(list(get_args(item)))
+        if item is str:
+            return "string"
+        if item is bool:
+            return "boolean"
+        if item is int or item is float:
+            return "number"
+        if inspect.isclass(item) and issubclass(item, BaseModel):
+            return "object"
+        if inspect.isclass(item) and issubclass(item, Enum):
+            return "string"
+        return None
 
     def _annotation_allows_none(self, annotation: Any) -> bool:
         """
@@ -837,7 +903,22 @@ class PluginSchemaManager:
         if origin is Literal:
             return list(args)
 
+        if origin is list and args:
+            return self._literal_values(args[0])
+
         return None
+
+    def _is_list_annotation(self, annotation: Any) -> bool:
+        origin = get_origin(annotation)
+        args = get_args(annotation)
+
+        if origin is Annotated and args:
+            return self._is_list_annotation(args[0])
+
+        if origin is Union or origin is UnionType:
+            return any(self._is_list_annotation(arg) for arg in args if arg not in (NoneType, type(None)))
+
+        return origin is list
 
     @staticmethod
     def _enum_base_type(values: list[Any]) -> str:
