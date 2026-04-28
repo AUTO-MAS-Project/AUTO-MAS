@@ -135,20 +135,20 @@ class Notification:
         *,
         title: str,
         text: str,
-        html: str | None = None,
         kind: str = "generic",
         serverchan_content: str | None = None,
         koishi_message: str | None = None,
+        data: dict[str, Any] | None = None,
         extra: dict[str, Any] | None = None,
     ) -> dict[str, bool]:
         return await self._call(
             "send",
             title=title,
             text=text,
-            html=html,
             kind=kind,
             serverchan_content=serverchan_content,
             koishi_message=koishi_message,
+            data=data,
             extra=extra,
             default={},
         )
