@@ -21,7 +21,12 @@
               <a-tag>v{{ version }}</a-tag>
             </template>
 
-            <a-input v-model:value="keyword" placeholder="搜索实例ID/名称/插件" allow-clear class="search-box" />
+            <a-input
+              v-model:value="keyword"
+              placeholder="搜索实例ID/名称/插件"
+              allow-clear
+              class="search-box"
+            />
 
             <div class="instance-list">
               <a-empty v-if="filteredInstances.length === 0" description="暂无实例" />
@@ -45,7 +50,7 @@
                   />
                 </div>
                 <div class="instance-plugin">{{ item.plugin }}</div>
-                <div class="instance-runtime" v-if="getRuntimeState(item.id)">
+                <div v-if="getRuntimeState(item.id)" class="instance-runtime">
                   <a-space size="6" wrap>
                     <a-tag :color="getStatusTagColor(getRuntimeState(item.id)?.status)">
                       {{ getStatusLabel(getRuntimeState(item.id)?.status) }}
@@ -57,12 +62,12 @@
                 </div>
               </div>
             </div>
-            </a-card>
-          </div>
-        </a-col>
+          </a-card>
+        </div>
+      </a-col>
 
-        <a-col :span="17">
-          <a-card :bordered="false" class="section-card detail-card">
+      <a-col :span="17">
+        <a-card :bordered="false" class="section-card detail-card">
           <template #title>
             <div class="detail-title">
               <span>{{ selectedInstance ? selectedInstance.plugin : '实例配置' }}</span>
@@ -85,277 +90,371 @@
 
           <div class="detail-scroll" @wheel.stop>
             <template v-if="selectedInstance">
-            <a-alert
-              v-if="isDirty"
-              type="warning"
-              show-icon
-              message="当前有未保存改动"
-              style="margin-bottom: 12px"
-            />
+              <a-alert
+                v-if="isDirty"
+                type="warning"
+                show-icon
+                message="当前有未保存改动"
+                style="margin-bottom: 12px"
+              />
 
-            <a-alert
-              v-if="currentSchemaError"
-              type="error"
-              show-icon
-              :message="`Schema 加载失败：${currentSchemaError}`"
-              style="margin-bottom: 12px"
-            />
+              <a-alert
+                v-if="currentSchemaError"
+                type="error"
+                show-icon
+                :message="`Schema 加载失败：${currentSchemaError}`"
+                style="margin-bottom: 12px"
+              />
 
-            <a-alert
-              v-if="!currentSchemaError && activeSchemaEntries.length === 0"
-              type="warning"
-              show-icon
-              message="该插件未声明 schema，可能非预期行为或插件本身无需配置"
-              style="margin-bottom: 12px"
-            />
+              <a-alert
+                v-if="!currentSchemaError && activeSchemaEntries.length === 0"
+                type="warning"
+                show-icon
+                message="该插件未声明 schema，可能非预期行为或插件本身无需配置"
+                style="margin-bottom: 12px"
+              />
 
-            <a-alert
-              v-if="hasSelectedPluginServiceDeclarations"
-              class="service-alert"
-              type="info"
-              show-icon
-              message="服务声明"
-            >
-              <template #description>
-                <div class="service-declaration-list">
-                  <div
-                    v-for="row in selectedServiceDeclarationRows"
-                    :key="row.key"
-                    class="service-declaration-row"
-                  >
-                    <a-tag :color="row.color" class="service-declaration-label">
-                      {{ row.label }}
-                    </a-tag>
-                    <span class="service-declaration-value">{{ row.value }}</span>
-                  </div>
-                </div>
-              </template>
-            </a-alert>
-
-            <a-card v-if="selectedRuntimeState" size="small" class="runtime-observer-card" title="运行态观测">
-              <a-descriptions :column="2" size="small" bordered>
-                <a-descriptions-item label="运行状态">
-                  <a-tag :color="getStatusTagColor(selectedRuntimeState.status)">
-                    {{ getStatusLabel(selectedRuntimeState.status) }}
-                  </a-tag>
-                </a-descriptions-item>
-                <a-descriptions-item label="生命周期阶段">
-                  <a-tag :color="getPhaseTagColor(selectedRuntimeState.lifecycle_phase)">
-                    {{ getPhaseLabel(selectedRuntimeState.lifecycle_phase) }}
-                  </a-tag>
-                </a-descriptions-item>
-                <a-descriptions-item label="最近重载原因">
-                  {{ selectedRuntimeState.last_reload_reason || '-' }}
-                </a-descriptions-item>
-                <a-descriptions-item label="最近错误">
-                  {{ selectedRuntimeState.last_error || '-' }}
-                </a-descriptions-item>
-              </a-descriptions>
-            </a-card>
-
-            <a-form layout="vertical">
-              <a-form-item label="实例名称">
-                <a-input v-model:value="editForm.name" placeholder="输入实例名称" />
-              </a-form-item>
-
-              <a-card size="small" title="插件配置" class="editor-card">
-                <template v-if="activeSchemaEntries.length > 0">
-                  <a-form-item
-                    v-for="([field, fieldSchema], index) in activeSchemaEntries"
-                    :key="field"
-                    :label="fieldSchema.description || field"
-                    :required="Boolean(fieldSchema.required)"
-                    :class="['schema-item', `schema-item-${fieldSchema.type}`]"
-                    :style="{ marginBottom: index === activeSchemaEntries.length - 1 ? '0' : '16px' }"
-                  >
-                    <div class="schema-field-head">
-                      <a-space size="6">
-                        <a-tag class="type-tag" color="processing">{{ getTypeLabel(fieldSchema) }}</a-tag>
-                        <a-tag v-if="fieldSchema.required" color="error">必填</a-tag>
-                        <a-tag v-if="isPasswordSchema(fieldSchema)" color="gold">敏感</a-tag>
-                      </a-space>
+              <a-alert
+                v-if="hasSelectedPluginServiceDeclarations"
+                class="service-alert"
+                type="info"
+                show-icon
+                message="服务声明"
+              >
+                <template #description>
+                  <div class="service-declaration-list">
+                    <div
+                      v-for="row in selectedServiceDeclarationRows"
+                      :key="row.key"
+                      class="service-declaration-row"
+                    >
+                      <a-tag :color="row.color" class="service-declaration-label">
+                        {{ row.label }}
+                      </a-tag>
+                      <span class="service-declaration-value">{{ row.value }}</span>
                     </div>
-
-                    <template v-if="isEnumSchema(fieldSchema)">
-                      <a-select
-                        :value="getFieldValue(field)"
-                        style="width: 100%"
-                        :options="getEnumOptions(fieldSchema)"
-                        @update:value="(val: unknown) => updateFieldValue(field, val)"
-                      />
-                    </template>
-
-                    <template v-else-if="isEnumListSchema(fieldSchema)">
-                      <a-select
-                        mode="multiple"
-                        :value="getEnumListValue(field)"
-                        style="width: 100%"
-                        :options="getEnumOptions(fieldSchema)"
-                        @update:value="(val: unknown[]) => updateFieldValue(field, val)"
-                      />
-                    </template>
-
-                    <template v-else-if="isBooleanSchema(fieldSchema)">
-                      <a-switch
-                        :checked="getBooleanValue(field)"
-                        checked-children="是"
-                        un-checked-children="否"
-                        @update:checked="(val: boolean) => updateFieldValue(field, val)"
-                      />
-                    </template>
-
-                    <template v-else-if="isStringSchema(fieldSchema)">
-                      <a-input-password
-                        v-if="isPasswordSchema(fieldSchema)"
-                        :value="String(getFieldValue(field) ?? '')"
-                        @update:value="(val: string) => updateFieldValue(field, val)"
-                      />
-                      <a-input
-                        v-else
-                        :value="String(getFieldValue(field) ?? '')"
-                        @update:value="(val: string) => updateFieldValue(field, val)"
-                      />
-                    </template>
-
-                    <template v-else-if="isNumberSchema(fieldSchema)">
-                      <a-input-number
-                        :value="getNumberValue(field)"
-                        style="width: 100%"
-                        :step="1"
-                        @update:value="(val: number | null) => updateFieldValue(field, val)"
-                      />
-                    </template>
-
-                    <template v-else-if="isListSchema(fieldSchema)">
-                      <a-space direction="vertical" style="width: 100%">
-                        <a-button size="small" @click="addListRow(field, fieldSchema.item_type)">新增一行</a-button>
-                        <a-table
-                          :columns="listColumns"
-                          :data-source="getListRows(field)"
-                          :pagination="false"
-                          size="small"
-                          row-key="__rowKey"
-                        >
-                          <template #bodyCell="{ column, record, index }">
-                            <template v-if="column.key === 'value'">
-                              <a-switch
-                                v-if="fieldSchema.item_type === 'boolean'"
-                                :checked="Boolean(record.value)"
-                                @update:checked="(val: boolean) => updateListRowValue(field, index, val, fieldSchema.item_type)"
-                              />
-                              <a-input-number
-                                v-else-if="fieldSchema.item_type === 'number'"
-                                style="width: 100%"
-                                :value="typeof record.value === 'number' ? record.value : Number(record.value || 0)"
-                                @update:value="(val: number | null) => updateListRowValue(field, index, val ?? 0, fieldSchema.item_type)"
-                              />
-                              <a-input
-                                v-else
-                                :value="String(record.value ?? '')"
-                                @update:value="(val: string) => updateListRowValue(field, index, val, fieldSchema.item_type)"
-                              />
-                            </template>
-                            <template v-else-if="column.key === 'action'">
-                              <a-button danger size="small" @click="removeListRow(field, index)">删除</a-button>
-                            </template>
-                          </template>
-                        </a-table>
-                      </a-space>
-                    </template>
-
-                    <template v-else-if="fieldSchema.type === 'key_value'">
-                      <a-space direction="vertical" style="width: 100%">
-                        <a-button size="small" @click="addKeyValueRow(field)">新增一行</a-button>
-                        <a-table
-                          :columns="keyValueColumns"
-                          :data-source="getKeyValueRows(field)"
-                          :pagination="false"
-                          size="small"
-                          row-key="__rowKey"
-                        >
-                          <template #bodyCell="{ column, record }">
-                            <template v-if="column.key === 'key'">
-                              <a-input
-                                :value="record.key"
-                                @blur="(e: FocusEvent) => updateKeyValueRowKey(field, record.key, String((e.target as HTMLInputElement).value || ''))"
-                              />
-                            </template>
-                            <template v-else-if="column.key === 'value'">
-                              <a-input
-                                :value="record.value"
-                                @update:value="(val: string) => updateKeyValueRowValue(field, record.key, val)"
-                              />
-                            </template>
-                            <template v-else-if="column.key === 'action'">
-                              <a-button danger size="small" @click="removeKeyValueRow(field, record.key)">删除</a-button>
-                            </template>
-                          </template>
-                        </a-table>
-                      </a-space>
-                    </template>
-
-                    <template v-else-if="fieldSchema.type === 'table'">
-                      <a-space direction="vertical" style="width: 100%">
-                        <a-space>
-                          <a-button size="small" @click="addTableRow(field)">新增行</a-button>
-                          <a-button size="small" @click="addTableColumn(field)">新增列</a-button>
-                        </a-space>
-                        <a-table
-                          :columns="getTableColumns(field)"
-                          :data-source="getTableRows(field)"
-                          :pagination="false"
-                          size="small"
-                          row-key="__rowKey"
-                        >
-                          <template #bodyCell="{ column, record, index }">
-                            <template v-if="column.key === 'action'">
-                              <a-button danger size="small" @click="removeTableRow(field, index)">删除</a-button>
-                            </template>
-                            <template v-else>
-                              <a-input
-                                :value="String(record[column.dataIndex] ?? '')"
-                                @update:value="(val: string) => updateTableCell(field, index, String(column.dataIndex), val)"
-                              />
-                            </template>
-                          </template>
-                        </a-table>
-                      </a-space>
-                    </template>
-
-                    <template v-else>
-                      <a-input
-                        :value="String(getFieldValue(field) ?? '')"
-                        @update:value="(val: string) => updateFieldValue(field, val)"
-                      />
-                    </template>
-                  </a-form-item>
+                  </div>
                 </template>
-                <template v-else>
-                  <a-form-item label="配置 JSON（Schema 不可用时可直接编辑）" style="margin-bottom: 0">
-                    <a-textarea
-                      v-model:value="editForm.configText"
-                      :rows="12"
-                      placeholder="请输入 JSON 对象配置"
-                    />
-                  </a-form-item>
-                </template>
+              </a-alert>
+
+              <a-card
+                v-if="selectedRuntimeState"
+                size="small"
+                class="runtime-observer-card"
+                title="运行态观测"
+              >
+                <a-descriptions :column="2" size="small" bordered>
+                  <a-descriptions-item label="运行状态">
+                    <a-tag :color="getStatusTagColor(selectedRuntimeState.status)">
+                      {{ getStatusLabel(selectedRuntimeState.status) }}
+                    </a-tag>
+                  </a-descriptions-item>
+                  <a-descriptions-item label="生命周期阶段">
+                    <a-tag :color="getPhaseTagColor(selectedRuntimeState.lifecycle_phase)">
+                      {{ getPhaseLabel(selectedRuntimeState.lifecycle_phase) }}
+                    </a-tag>
+                  </a-descriptions-item>
+                  <a-descriptions-item label="最近重载原因">
+                    {{ selectedRuntimeState.last_reload_reason || '-' }}
+                  </a-descriptions-item>
+                  <a-descriptions-item label="最近错误">
+                    {{ selectedRuntimeState.last_error || '-' }}
+                  </a-descriptions-item>
+                </a-descriptions>
               </a-card>
-            </a-form>
-          </template>
+
+              <a-form layout="vertical">
+                <a-form-item label="实例名称">
+                  <a-input v-model:value="editForm.name" placeholder="输入实例名称" />
+                </a-form-item>
+
+                <a-card size="small" title="插件配置" class="editor-card">
+                  <template v-if="activeSchemaEntries.length > 0">
+                    <a-form-item
+                      v-for="([field, fieldSchema], index) in activeSchemaEntries"
+                      :key="field"
+                      :label="getFieldLabel(field, fieldSchema)"
+                      :required="Boolean(fieldSchema.required)"
+                      :help="getFieldHelp(field, fieldSchema)"
+                      :validate-status="getFieldValidateStatus(field, fieldSchema)"
+                      :class="['schema-item', `schema-item-${fieldSchema.type}`]"
+                      :style="{
+                        marginBottom: index === activeSchemaEntries.length - 1 ? '0' : '16px',
+                      }"
+                    >
+                      <div class="schema-field-head">
+                        <a-space size="6">
+                          <a-tag class="type-tag" color="processing">{{
+                            getTypeLabel(fieldSchema)
+                          }}</a-tag>
+                          <a-tag v-if="fieldSchema.required" color="error">必填</a-tag>
+                          <a-tag v-if="isPasswordSchema(fieldSchema)" color="gold">敏感</a-tag>
+                        </a-space>
+                      </div>
+
+                      <template v-if="isEnumSchema(fieldSchema)">
+                        <a-select
+                          :value="getFieldValue(field)"
+                          style="width: 100%"
+                          :options="getEnumOptions(fieldSchema)"
+                          @update:value="(val: unknown) => updateFieldValue(field, val)"
+                        />
+                      </template>
+
+                      <template v-else-if="isEnumListSchema(fieldSchema)">
+                        <a-select
+                          mode="multiple"
+                          :value="getEnumListValue(field)"
+                          style="width: 100%"
+                          :options="getEnumOptions(fieldSchema)"
+                          @update:value="(val: unknown[]) => updateFieldValue(field, val)"
+                        />
+                      </template>
+
+                      <template v-else-if="isBooleanSchema(fieldSchema)">
+                        <a-switch
+                          :checked="getBooleanValue(field)"
+                          checked-children="是"
+                          un-checked-children="否"
+                          @update:checked="(val: boolean) => updateFieldValue(field, val)"
+                        />
+                      </template>
+
+                      <template v-else-if="isStringSchema(fieldSchema)">
+                        <a-input-password
+                          v-if="isPasswordSchema(fieldSchema)"
+                          :value="String(getFieldValue(field) ?? '')"
+                          :placeholder="getFieldPlaceholder(fieldSchema)"
+                          :maxlength="getStringMaxLength(fieldSchema)"
+                          @update:value="(val: string) => updateFieldValue(field, val)"
+                        />
+                        <a-textarea
+                          v-else-if="isTextareaSchema(fieldSchema)"
+                          :value="String(getFieldValue(field) ?? '')"
+                          :placeholder="getFieldPlaceholder(fieldSchema)"
+                          :maxlength="getStringMaxLength(fieldSchema)"
+                          :rows="getTextareaRows(fieldSchema)"
+                          @update:value="(val: string) => updateFieldValue(field, val)"
+                        />
+                        <a-input
+                          v-else
+                          :value="String(getFieldValue(field) ?? '')"
+                          :placeholder="getFieldPlaceholder(fieldSchema)"
+                          :maxlength="getStringMaxLength(fieldSchema)"
+                          @update:value="(val: string) => updateFieldValue(field, val)"
+                        />
+                      </template>
+
+                      <template v-else-if="isNumberSchema(fieldSchema)">
+                        <a-input-number
+                          :value="getNumberValue(field)"
+                          style="width: 100%"
+                          :min="getNumberMin(fieldSchema)"
+                          :max="getNumberMax(fieldSchema)"
+                          :step="getNumberStep(fieldSchema)"
+                          @update:value="(val: number | null) => updateFieldValue(field, val)"
+                        />
+                      </template>
+
+                      <template v-else-if="isListSchema(fieldSchema)">
+                        <a-space direction="vertical" style="width: 100%">
+                          <a-button
+                            size="small"
+                            @click="addListRow(field, getListItemType(fieldSchema))"
+                            >新增一行</a-button
+                          >
+                          <a-table
+                            :columns="listColumns"
+                            :data-source="getListRows(field)"
+                            :pagination="false"
+                            size="small"
+                            row-key="__rowKey"
+                          >
+                            <template #bodyCell="{ column, record, index }">
+                              <template v-if="column.key === 'value'">
+                                <a-switch
+                                  v-if="getListItemType(fieldSchema) === 'boolean'"
+                                  :checked="Boolean(record.value)"
+                                  @update:checked="
+                                    (val: boolean) =>
+                                      updateListRowValue(
+                                        field,
+                                        index,
+                                        val,
+                                        getListItemType(fieldSchema)
+                                      )
+                                  "
+                                />
+                                <a-input-number
+                                  v-else-if="getListItemType(fieldSchema) === 'number'"
+                                  style="width: 100%"
+                                  :value="
+                                    typeof record.value === 'number'
+                                      ? record.value
+                                      : Number(record.value || 0)
+                                  "
+                                  @update:value="
+                                    (val: number | null) =>
+                                      updateListRowValue(
+                                        field,
+                                        index,
+                                        val ?? 0,
+                                        getListItemType(fieldSchema)
+                                      )
+                                  "
+                                />
+                                <a-input
+                                  v-else
+                                  :value="String(record.value ?? '')"
+                                  @update:value="
+                                    (val: string) =>
+                                      updateListRowValue(
+                                        field,
+                                        index,
+                                        val,
+                                        getListItemType(fieldSchema)
+                                      )
+                                  "
+                                />
+                              </template>
+                              <template v-else-if="column.key === 'action'">
+                                <a-button danger size="small" @click="removeListRow(field, index)"
+                                  >删除</a-button
+                                >
+                              </template>
+                            </template>
+                          </a-table>
+                        </a-space>
+                      </template>
+
+                      <template v-else-if="fieldSchema.type === 'key_value'">
+                        <a-space direction="vertical" style="width: 100%">
+                          <a-button size="small" @click="addKeyValueRow(field)">新增一行</a-button>
+                          <a-table
+                            :columns="keyValueColumns"
+                            :data-source="getKeyValueRows(field)"
+                            :pagination="false"
+                            size="small"
+                            row-key="__rowKey"
+                          >
+                            <template #bodyCell="{ column, record }">
+                              <template v-if="column.key === 'key'">
+                                <a-input
+                                  :value="record.key"
+                                  @blur="
+                                    (e: FocusEvent) =>
+                                      updateKeyValueRowKey(
+                                        field,
+                                        record.key,
+                                        String((e.target as HTMLInputElement).value || '')
+                                      )
+                                  "
+                                />
+                              </template>
+                              <template v-else-if="column.key === 'value'">
+                                <a-input
+                                  :value="record.value"
+                                  @update:value="
+                                    (val: string) => updateKeyValueRowValue(field, record.key, val)
+                                  "
+                                />
+                              </template>
+                              <template v-else-if="column.key === 'action'">
+                                <a-button
+                                  danger
+                                  size="small"
+                                  @click="removeKeyValueRow(field, record.key)"
+                                  >删除</a-button
+                                >
+                              </template>
+                            </template>
+                          </a-table>
+                        </a-space>
+                      </template>
+
+                      <template v-else-if="fieldSchema.type === 'table'">
+                        <a-space direction="vertical" style="width: 100%">
+                          <a-space>
+                            <a-button size="small" @click="addTableRow(field)">新增行</a-button>
+                            <a-button size="small" @click="addTableColumn(field)">新增列</a-button>
+                          </a-space>
+                          <a-table
+                            :columns="getTableColumns(field)"
+                            :data-source="getTableRows(field)"
+                            :pagination="false"
+                            size="small"
+                            row-key="__rowKey"
+                          >
+                            <template #bodyCell="{ column, record, index }">
+                              <template v-if="column.key === 'action'">
+                                <a-button danger size="small" @click="removeTableRow(field, index)"
+                                  >删除</a-button
+                                >
+                              </template>
+                              <template v-else>
+                                <a-input
+                                  :value="String(record[column.dataIndex] ?? '')"
+                                  @update:value="
+                                    (val: string) =>
+                                      updateTableCell(field, index, String(column.dataIndex), val)
+                                  "
+                                />
+                              </template>
+                            </template>
+                          </a-table>
+                        </a-space>
+                      </template>
+
+                      <template v-else>
+                        <a-space direction="vertical" style="width: 100%">
+                          <a-alert
+                            type="warning"
+                            show-icon
+                            message="该字段类型暂无专用控件，请使用 JSON 编辑"
+                          />
+                          <a-textarea
+                            :value="getJsonFieldText(field)"
+                            :rows="6"
+                            @blur="
+                              (e: FocusEvent) =>
+                                updateJsonFieldValue(
+                                  field,
+                                  String((e.target as HTMLTextAreaElement).value || '')
+                                )
+                            "
+                          />
+                        </a-space>
+                      </template>
+                    </a-form-item>
+                  </template>
+                  <template v-else>
+                    <a-form-item
+                      label="配置 JSON（Schema 不可用时可直接编辑）"
+                      style="margin-bottom: 0"
+                    >
+                      <a-textarea
+                        v-model:value="editForm.configText"
+                        :rows="12"
+                        placeholder="请输入 JSON 对象配置"
+                      />
+                    </a-form-item>
+                  </template>
+                </a-card>
+              </a-form>
+            </template>
 
             <a-empty v-else description="请选择左侧实例进行编辑" />
           </div>
-          </a-card>
-        </a-col>
-      </a-row>
-
+        </a-card>
+      </a-col>
+    </a-row>
 
     <a-modal
       v-model:open="addModalVisible"
       title="新增插件实例"
-      @ok="submitAdd"
       :confirm-loading="submitting"
       width="520px"
+      @ok="submitAdd"
     >
       <a-form layout="vertical">
         <a-row :gutter="12">
@@ -387,7 +486,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import axios from 'axios'
 import { message } from 'ant-design-vue'
 import { OpenAPI } from '@/api'
@@ -403,12 +502,18 @@ interface PluginInstance {
 
 interface PluginSchemaField {
   type: string
+  title?: string
   format?: string
   default?: unknown
   required?: boolean
   description?: string
+  placeholder?: string
+  help?: string
+  rows?: number
   item_type?: string
   enum?: unknown[]
+  examples?: unknown[]
+  constraints?: Record<string, unknown>
 }
 
 interface PluginsGetResponse {
@@ -513,16 +618,20 @@ const schemaErrors = ref<Record<string, string>>({})
 const pluginServices = ref<Record<string, PluginServiceInfo>>({})
 const instances = ref<PluginInstance[]>([])
 const runtimeStates = ref<Record<string, PluginRuntimeState>>({})
+const schemaFieldErrors = ref<Record<string, string>>({})
 const selectedInstanceId = ref('')
 const editSnapshot = ref('')
 let pluginSystemSubscriptionId = ''
 let wsResponseSubscriptionId = ''
 let wsCommandCounter = 0
-const wsCommandPending = new Map<string, {
-  resolve: (value: any) => void
-  reject: (reason?: unknown) => void
-  timer: ReturnType<typeof setTimeout>
-}>()
+const wsCommandPending = new Map<
+  string,
+  {
+    resolve: (value: any) => void
+    reject: (reason?: unknown) => void
+    timer: ReturnType<typeof setTimeout>
+  }
+>()
 
 const addModalVisible = ref(false)
 const jsonPreviewVisible = ref(false)
@@ -673,13 +782,14 @@ const jsonPreviewText = computed(() => {
   }
 })
 
-const captureEditSnapshot = () => JSON.stringify({
-  instanceId: editForm.instanceId,
-  plugin: editForm.plugin,
-  name: editForm.name,
-  enabled: editForm.enabled,
-  configText: editForm.configText,
-})
+const captureEditSnapshot = () =>
+  JSON.stringify({
+    instanceId: editForm.instanceId,
+    plugin: editForm.plugin,
+    name: editForm.name,
+    enabled: editForm.enabled,
+    configText: editForm.configText,
+  })
 
 const parseConfigText = (text: string): Record<string, unknown> => {
   const parsed = JSON.parse(text)
@@ -784,7 +894,12 @@ const getPhaseTagColor = (phase?: string) => {
   if (phase === 'on_load' || phase === 'on_start') {
     return 'blue'
   }
-  if (phase === 'on_stop' || phase === 'on_unload' || phase === 'disposed' || phase === 'unloaded') {
+  if (
+    phase === 'on_stop' ||
+    phase === 'on_unload' ||
+    phase === 'disposed' ||
+    phase === 'unloaded'
+  ) {
     return 'default'
   }
   return 'geekblue'
@@ -834,8 +949,69 @@ const getNumberValue = (field: string) => {
   return undefined
 }
 
+const getSchemaConstraint = (fieldSchema: PluginSchemaField, key: string) =>
+  fieldSchema.constraints?.[key]
+
+const toFiniteNumber = (value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+  return undefined
+}
+
+const getFieldLabel = (field: string, fieldSchema: PluginSchemaField) =>
+  fieldSchema.title || fieldSchema.description || field
+
+const getFieldPlaceholder = (fieldSchema: PluginSchemaField) =>
+  typeof fieldSchema.placeholder === 'string' ? fieldSchema.placeholder : undefined
+
+const getStringMaxLength = (fieldSchema: PluginSchemaField) =>
+  toFiniteNumber(getSchemaConstraint(fieldSchema, 'max_length'))
+
+const getTextareaRows = (fieldSchema: PluginSchemaField) => {
+  const rows = toFiniteNumber(fieldSchema.rows)
+  return rows && rows > 0 ? rows : 4
+}
+
+const getNumberMin = (fieldSchema: PluginSchemaField) => {
+  const ge = toFiniteNumber(getSchemaConstraint(fieldSchema, 'ge'))
+  if (ge !== undefined) {
+    return ge
+  }
+  return toFiniteNumber(getSchemaConstraint(fieldSchema, 'gt'))
+}
+
+const getNumberMax = (fieldSchema: PluginSchemaField) => {
+  const le = toFiniteNumber(getSchemaConstraint(fieldSchema, 'le'))
+  if (le !== undefined) {
+    return le
+  }
+  return toFiniteNumber(getSchemaConstraint(fieldSchema, 'lt'))
+}
+
+const getNumberStep = (fieldSchema: PluginSchemaField) => {
+  const multipleOf = toFiniteNumber(getSchemaConstraint(fieldSchema, 'multiple_of'))
+  if (multipleOf && multipleOf > 0) {
+    return multipleOf
+  }
+  return fieldSchema.type === 'integer' || fieldSchema.type === 'int' ? 1 : undefined
+}
+
 const isPasswordSchema = (fieldSchema: PluginSchemaField) =>
   isStringSchema(fieldSchema) && fieldSchema.format === 'password'
+
+const isTextareaSchema = (fieldSchema: PluginSchemaField) =>
+  isStringSchema(fieldSchema) && fieldSchema.format === 'textarea'
+
+const isUrlSchema = (fieldSchema: PluginSchemaField) =>
+  isStringSchema(fieldSchema) && fieldSchema.format === 'url'
+
+const isEmailSchema = (fieldSchema: PluginSchemaField) =>
+  isStringSchema(fieldSchema) && fieldSchema.format === 'email'
 
 const isBooleanSchema = (fieldSchema: PluginSchemaField) =>
   fieldSchema.type === 'boolean' || fieldSchema.type === 'bool'
@@ -844,18 +1020,40 @@ const isStringSchema = (fieldSchema: PluginSchemaField) =>
   fieldSchema.type === 'string' || fieldSchema.type === 'str'
 
 const isNumberSchema = (fieldSchema: PluginSchemaField) =>
-  fieldSchema.type === 'number' || fieldSchema.type === 'integer' || fieldSchema.type === 'int' || fieldSchema.type === 'float'
+  fieldSchema.type === 'number' ||
+  fieldSchema.type === 'integer' ||
+  fieldSchema.type === 'int' ||
+  fieldSchema.type === 'float'
 
 const isListSchema = (fieldSchema: PluginSchemaField) =>
   fieldSchema.type === 'list' || fieldSchema.type.startsWith('list[')
+
+const getListItemType = (fieldSchema: PluginSchemaField) => {
+  if (fieldSchema.item_type) {
+    return fieldSchema.item_type
+  }
+  const matched = /^list\[(.+)]$/.exec(fieldSchema.type)
+  const itemType = matched?.[1]?.trim().toLowerCase()
+  if (!itemType) {
+    return undefined
+  }
+  if (['int', 'integer', 'float', 'number'].includes(itemType)) {
+    return 'number'
+  }
+  if (['bool', 'boolean'].includes(itemType)) {
+    return 'boolean'
+  }
+  if (['str', 'string'].includes(itemType)) {
+    return 'string'
+  }
+  return undefined
+}
 
 const isEnumSchema = (fieldSchema: PluginSchemaField) =>
   Array.isArray(fieldSchema.enum) && fieldSchema.enum.length > 0 && !isEnumListSchema(fieldSchema)
 
 const isEnumListSchema = (fieldSchema: PluginSchemaField) =>
-  Array.isArray(fieldSchema.enum) && fieldSchema.enum.length > 0 && (
-    isListSchema(fieldSchema)
-  )
+  Array.isArray(fieldSchema.enum) && fieldSchema.enum.length > 0 && isListSchema(fieldSchema)
 
 const getEnumOptions = (fieldSchema: PluginSchemaField) =>
   (fieldSchema.enum || []).map(item => ({
@@ -899,11 +1097,206 @@ const getTypeLabel = (fieldSchema: PluginSchemaField) => {
   return fieldSchema.type
 }
 
+const formatExampleText = (fieldSchema: PluginSchemaField) => {
+  if (!Array.isArray(fieldSchema.examples) || fieldSchema.examples.length === 0) {
+    return ''
+  }
+  return `示例：${fieldSchema.examples.map(item => String(item)).join('、')}`
+}
+
+const isIpv4Host = (host: string) => {
+  const parts = host.split('.')
+  return parts.length === 4 && parts.every(part => {
+    if (!/^\d{1,3}$/.test(part)) {
+      return false
+    }
+    const value = Number(part)
+    return value >= 0 && value <= 255
+  })
+}
+
+const isIpv6Host = (host: string) => host.includes(':')
+
+const isValidDomainHost = (host: string) => {
+  const labels = host.split('.')
+  if (labels.length < 2) {
+    return false
+  }
+  const tld = labels[labels.length - 1]
+  if (!/^[a-zA-Z]{2,}$/.test(tld)) {
+    return false
+  }
+  return labels.every(label =>
+    /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/.test(label)
+  )
+}
+
+const isValidHttpUrl = (value: string) => {
+  try {
+    const parsed = new URL(value)
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return '请输入 http 或 https URL'
+    }
+    const hostname = parsed.hostname
+    if (!hostname) {
+      return '请输入有效的 URL'
+    }
+    if (hostname === 'localhost' || isIpv4Host(hostname) || isIpv6Host(hostname)) {
+      return ''
+    }
+    if (!isValidDomainHost(hostname)) {
+      return '请输入有效的域名、localhost 或 IP 地址'
+    }
+    return ''
+  } catch {
+    return '请输入有效的 URL'
+  }
+}
+
+const validateSchemaFieldValue = (
+  field: string,
+  fieldSchema: PluginSchemaField,
+  value: unknown
+) => {
+  if (value === undefined || value === null || value === '') {
+    if (fieldSchema.required) {
+      return '该字段为必填项'
+    }
+    return ''
+  }
+
+  if (isStringSchema(fieldSchema)) {
+    const text = String(value)
+    const minLength = toFiniteNumber(getSchemaConstraint(fieldSchema, 'min_length'))
+    const maxLength = toFiniteNumber(getSchemaConstraint(fieldSchema, 'max_length'))
+    const pattern = getSchemaConstraint(fieldSchema, 'pattern')
+
+    if (minLength !== undefined && text.length < minLength) {
+      return `至少需要 ${minLength} 个字符`
+    }
+    if (maxLength !== undefined && text.length > maxLength) {
+      return `最多允许 ${maxLength} 个字符`
+    }
+    if (typeof pattern === 'string' && pattern) {
+      try {
+        if (!new RegExp(pattern).test(text)) {
+          return '内容不符合格式要求'
+        }
+      } catch {
+        return ''
+      }
+    }
+    if (isUrlSchema(fieldSchema)) {
+      const urlError = isValidHttpUrl(text)
+      if (urlError) {
+        return urlError
+      }
+    }
+    if (isEmailSchema(fieldSchema)) {
+      const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailPattern.test(text)) {
+        return '请输入有效的邮箱地址'
+      }
+    }
+  }
+
+  if (isNumberSchema(fieldSchema)) {
+    const numberValue = toFiniteNumber(value)
+    if (numberValue === undefined) {
+      return '请输入有效数字'
+    }
+    const ge = toFiniteNumber(getSchemaConstraint(fieldSchema, 'ge'))
+    const le = toFiniteNumber(getSchemaConstraint(fieldSchema, 'le'))
+    const gt = toFiniteNumber(getSchemaConstraint(fieldSchema, 'gt'))
+    const lt = toFiniteNumber(getSchemaConstraint(fieldSchema, 'lt'))
+    if (ge !== undefined && numberValue < ge) {
+      return `不能小于 ${ge}`
+    }
+    if (le !== undefined && numberValue > le) {
+      return `不能大于 ${le}`
+    }
+    if (gt !== undefined && numberValue <= gt) {
+      return `必须大于 ${gt}`
+    }
+    if (lt !== undefined && numberValue >= lt) {
+      return `必须小于 ${lt}`
+    }
+  }
+
+  return ''
+}
+
+const collectSchemaFieldErrors = () => {
+  const errors: Record<string, string> = {}
+  let config: Record<string, unknown>
+  try {
+    config = getConfigObjectFromText()
+  } catch {
+    return errors
+  }
+
+  activeSchemaEntries.value.forEach(([field, fieldSchema]) => {
+    const error = validateSchemaFieldValue(field, fieldSchema, config[field])
+    if (error) {
+      errors[field] = error
+    }
+  })
+  return errors
+}
+
+const refreshSchemaFieldErrors = () => {
+  schemaFieldErrors.value = collectSchemaFieldErrors()
+}
+
+const getFieldHelp = (field: string, fieldSchema: PluginSchemaField) => {
+  const error = schemaFieldErrors.value[field]
+  if (error) {
+    return error
+  }
+  if (typeof fieldSchema.help === 'string' && fieldSchema.help.trim()) {
+    return fieldSchema.help
+  }
+  return formatExampleText(fieldSchema) || undefined
+}
+
+const getFieldValidateStatus = (field: string, fieldSchema: PluginSchemaField) =>
+  schemaFieldErrors.value[field] ? 'error' : undefined
+
+const validateActiveSchemaBeforeSubmit = () => {
+  refreshSchemaFieldErrors()
+  const errors = schemaFieldErrors.value
+  const entries = Object.entries(errors)
+  if (entries.length === 0) {
+    return
+  }
+  const [field, error] = entries[0]
+  throw new Error(
+    `${getFieldLabel(field, activeSchema.value[field] || { type: 'string' })}: ${error}`
+  )
+}
+
+const getJsonFieldText = (field: string) => {
+  const value = getFieldValue(field)
+  if (typeof value === 'string') {
+    return value
+  }
+  return JSON.stringify(value ?? null, null, 2)
+}
+
+const updateJsonFieldValue = (field: string, rawValue: string) => {
+  try {
+    updateFieldValue(field, JSON.parse(rawValue))
+  } catch {
+    message.warning('JSON 格式不正确，未更新该字段')
+  }
+}
+
 const updateFieldValue = (field: string, value: unknown) => {
   try {
     const config = getConfigObjectFromText()
     config[field] = value as never
     setConfigObjectToText(config)
+    refreshSchemaFieldErrors()
   } catch (error) {
     message.error(`更新字段失败: ${String(error)}`)
   }
@@ -975,9 +1368,10 @@ const getKeyValueRows = (field: string): KeyValueRow[] => {
 
 const addKeyValueRow = (field: string) => {
   const value = getFieldValue(field)
-  const obj = value && typeof value === 'object' && !Array.isArray(value)
-    ? { ...(value as Record<string, unknown>) }
-    : {}
+  const obj =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? { ...(value as Record<string, unknown>) }
+      : {}
 
   let idx = 1
   let key = `key_${idx}`
@@ -992,9 +1386,10 @@ const addKeyValueRow = (field: string) => {
 
 const removeKeyValueRow = (field: string, key: string) => {
   const value = getFieldValue(field)
-  const obj = value && typeof value === 'object' && !Array.isArray(value)
-    ? { ...(value as Record<string, unknown>) }
-    : {}
+  const obj =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? { ...(value as Record<string, unknown>) }
+      : {}
   delete obj[key]
   updateFieldValue(field, obj)
 }
@@ -1006,9 +1401,10 @@ const updateKeyValueRowKey = (field: string, oldKey: string, newKey: string) => 
   }
 
   const value = getFieldValue(field)
-  const obj = value && typeof value === 'object' && !Array.isArray(value)
-    ? { ...(value as Record<string, unknown>) }
-    : {}
+  const obj =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? { ...(value as Record<string, unknown>) }
+      : {}
 
   if (Object.prototype.hasOwnProperty.call(obj, safeKey)) {
     message.warning('键名已存在')
@@ -1022,9 +1418,10 @@ const updateKeyValueRowKey = (field: string, oldKey: string, newKey: string) => 
 
 const updateKeyValueRowValue = (field: string, key: string, value: string) => {
   const source = getFieldValue(field)
-  const obj = source && typeof source === 'object' && !Array.isArray(source)
-    ? { ...(source as Record<string, unknown>) }
-    : {}
+  const obj =
+    source && typeof source === 'object' && !Array.isArray(source)
+      ? { ...(source as Record<string, unknown>) }
+      : {}
   obj[key] = value
   updateFieldValue(field, obj)
 }
@@ -1036,9 +1433,10 @@ const getTableRows = (field: string): TableRow[] => {
   }
 
   return value.map((item, index) => {
-    const row = item && typeof item === 'object' && !Array.isArray(item)
-      ? { ...(item as Record<string, unknown>) }
-      : {}
+    const row =
+      item && typeof item === 'object' && !Array.isArray(item)
+        ? { ...(item as Record<string, unknown>) }
+        : {}
     return {
       __rowKey: `${field}-${index}`,
       ...row,
@@ -1153,6 +1551,7 @@ const setEditFromInstance = (row: PluginInstance) => {
     nextConfig.enable = row.enabled
   }
   editForm.configText = JSON.stringify(nextConfig, null, 2)
+  refreshSchemaFieldErrors()
   editSnapshot.value = captureEditSnapshot()
 }
 
@@ -1164,7 +1563,7 @@ const selectInstance = (instanceId: string) => {
   }
 }
 
-const apiPost = async <T = any>(url: string, payload: Record<string, unknown> = {}) => {
+const apiPost = async <T = any,>(url: string, payload: Record<string, unknown> = {}) => {
   const requestUrl = `${OpenAPI.BASE}${url}`
   const { data } = await axios.post<T>(requestUrl, payload)
   return data
@@ -1208,11 +1607,14 @@ const cleanupPendingWsCommands = () => {
   wsCommandPending.clear()
 }
 
-const sendPluginCommand = async <T = any>(endpoint: string, params: Record<string, unknown> = {}) => {
+const sendPluginCommand = async <T = any,>(
+  endpoint: string,
+  params: Record<string, unknown> = {}
+) => {
   ensureWsResponseSubscription()
 
   return await new Promise<T>((resolve, reject) => {
-    const requestId = `plugin_${Date.now()}_${wsCommandCounter += 1}`
+    const requestId = `plugin_${Date.now()}_${(wsCommandCounter += 1)}`
     const timer = setTimeout(() => {
       wsCommandPending.delete(requestId)
       reject(new Error(`WebSocket command timeout: ${endpoint}`))
@@ -1229,10 +1631,10 @@ const sendPluginCommand = async <T = any>(endpoint: string, params: Record<strin
   })
 }
 
-const requestPluginAction = async <T = any>(
+const requestPluginAction = async <T = any,>(
   endpoint: string,
   url: string,
-  payload: Record<string, unknown> = {},
+  payload: Record<string, unknown> = {}
 ) => {
   try {
     return await sendPluginCommand<T>(endpoint, payload)
@@ -1242,7 +1644,10 @@ const requestPluginAction = async <T = any>(
   }
 }
 
-const applySnapshot = (data: PluginsGetResponse, preferredInstanceId = selectedInstanceId.value) => {
+const applySnapshot = (
+  data: PluginsGetResponse,
+  preferredInstanceId = selectedInstanceId.value
+) => {
   const hadDirtyDraft = isDirty.value
   const nextInstances = Array.isArray(data.instances) ? data.instances : []
 
@@ -1286,7 +1691,10 @@ const applyRuntimeStateUpdate = (record: PluginRuntimeState) => {
 }
 
 const handlePluginSystemMessage = (message: WebSocketBaseMessage) => {
-  const payload = message.data as PluginSystemRuntimeMessage | PluginSystemSnapshotMessage | undefined
+  const payload = message.data as
+    | PluginSystemRuntimeMessage
+    | PluginSystemSnapshotMessage
+    | undefined
   if (!payload || typeof payload !== 'object') {
     return
   }
@@ -1315,7 +1723,7 @@ const fetchData = async () => {
     const data = await requestPluginAction<PluginsGetResponse>(
       'plugins.get',
       '/api/plugins/get',
-      {},
+      {}
     )
     if (data.code !== 200 || data.status !== 'success') {
       throw new Error(data.message || '获取插件配置失败')
@@ -1381,6 +1789,7 @@ const submitEdit = async () => {
   submitting.value = true
   try {
     const config = parseConfigText(editForm.configText)
+    validateActiveSchemaBeforeSubmit()
     if (hasEnableSchema(editForm.plugin)) {
       config.enable = editForm.enabled
       setConfigObjectToText(config)
@@ -1424,7 +1833,7 @@ const submitEdit = async () => {
             enabled: editForm.enabled,
             config,
           }
-        : item,
+        : item
     )
     editSnapshot.value = captureEditSnapshot()
     message.success('更新成功')
@@ -1437,7 +1846,9 @@ const submitEdit = async () => {
 
 const deleteInstance = async (instanceId: string) => {
   try {
-    const data = await requestPluginAction<any>('plugins.delete', '/api/plugins/delete', { instanceId })
+    const data = await requestPluginAction<any>('plugins.delete', '/api/plugins/delete', {
+      instanceId,
+    })
     if (data.code !== 200 || data.status !== 'success') {
       throw new Error(data.message || '删除失败')
     }
@@ -1470,7 +1881,7 @@ const reloadInstance = async (instanceId: string) => {
     const data = await requestPluginAction<any>(
       'plugins.reload_instance',
       '/api/plugins/reload_instance',
-      { instanceId },
+      { instanceId }
     )
     if (data.code !== 200 || data.status !== 'success') {
       throw new Error(data.message || '重载实例失败')
@@ -1486,7 +1897,7 @@ const reloadPlugin = async (plugin: string) => {
     const data = await requestPluginAction<any>(
       'plugins.reload_plugin',
       '/api/plugins/reload_plugin',
-      { plugin },
+      { plugin }
     )
     if (data.code !== 200 || data.status !== 'success') {
       throw new Error(data.message || '重载插件失败')
@@ -1521,6 +1932,12 @@ const toggleInstanceEnabled = async (instance: PluginInstance, enabled: boolean)
     togglingInstanceId.value = ''
   }
 }
+
+watch(
+  [() => editForm.configText, () => editForm.plugin, activeSchemaEntries],
+  () => refreshSchemaFieldErrors(),
+  { deep: true, flush: 'post' }
+)
 
 onMounted(() => {
   pluginSystemSubscriptionId = subscribe({ id: 'PluginSystem' }, handlePluginSystemMessage)
@@ -1696,7 +2113,11 @@ onUnmounted(() => {
 
 .instance-item.active {
   border-color: var(--ant-color-primary);
-  background: linear-gradient(135deg, var(--ant-color-primary-bg), color-mix(in srgb, var(--ant-color-primary-bg) 80%, white));
+  background: linear-gradient(
+    135deg,
+    var(--ant-color-primary-bg),
+    color-mix(in srgb, var(--ant-color-primary-bg) 80%, white)
+  );
   box-shadow: 0 4px 16px color-mix(in srgb, var(--ant-color-primary) 12%, transparent);
 }
 
@@ -1781,7 +2202,11 @@ onUnmounted(() => {
 .editor-card {
   margin-bottom: 10px;
   border-color: var(--ant-color-border-secondary);
-  background: color-mix(in srgb, var(--ant-color-bg-container) 96%, var(--ant-color-fill-quaternary));
+  background: color-mix(
+    in srgb,
+    var(--ant-color-bg-container) 96%,
+    var(--ant-color-fill-quaternary)
+  );
 }
 
 .editor-card :deep(.ant-card-head) {
@@ -1861,4 +2286,3 @@ onUnmounted(() => {
   padding: 14px;
 }
 </style>
-
