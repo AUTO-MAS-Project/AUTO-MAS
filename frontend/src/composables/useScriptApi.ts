@@ -613,6 +613,10 @@ export function useScriptApi() {
                           maaEndUserData.Info?.Mode !== undefined
                             ? maaEndUserData.Info.Mode
                             : '简洁',
+                        SanityMode:
+                          maaEndUserData.Info?.SanityMode !== undefined
+                            ? maaEndUserData.Info.SanityMode
+                            : 'Fixed',
                         Resource:
                           maaEndUserData.Info?.Resource !== undefined
                             ? maaEndUserData.Info.Resource
@@ -639,9 +643,9 @@ export function useScriptApi() {
                           maaEndUserData.Info?.Tag !== undefined ? maaEndUserData.Info.Tag : null,
                       },
                       Task: {
-                        ProtocolSpaceTab:
-                          maaEndUserData.Task?.ProtocolSpaceTab !== undefined
-                            ? maaEndUserData.Task.ProtocolSpaceTab
+                        SanityTaskType:
+                          maaEndUserData.Task?.SanityTaskType !== undefined
+                            ? maaEndUserData.Task.SanityTaskType
                             : 'OperatorProgression',
                         OperatorProgression:
                           maaEndUserData.Task?.OperatorProgression !== undefined
@@ -659,6 +663,10 @@ export function useScriptApi() {
                           maaEndUserData.Task?.RewardsSetOption !== undefined
                             ? maaEndUserData.Task.RewardsSetOption
                             : 'RewardsSetA',
+                        AutoEssenceSpecifiedLocation:
+                          maaEndUserData.Task?.AutoEssenceSpecifiedLocation !== undefined
+                            ? maaEndUserData.Task.AutoEssenceSpecifiedLocation
+                            : 'VFTheHub',
                       },
                       Notify: {
                         Enabled:
