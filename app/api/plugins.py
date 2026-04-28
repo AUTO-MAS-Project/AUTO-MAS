@@ -2,11 +2,13 @@
 #   Copyright © 2025-2026 AUTO-MAS Team
 
 import asyncio
+import mimetypes
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.core.plugins import PluginConfigStore, PluginManager
@@ -143,6 +145,92 @@ class PluginDevRebuildCtxStubOut(OutBase):
 
 class PluginPackageIn(BaseModel):
     package: str = Field(..., description="PyPI 包名")
+
+
+class PluginFrontendBackgroundOut(OutBase):
+    enabled: bool = Field(default=False, description="是否启用前端背景")
+    image_url: Optional[str] = Field(default=None, description="背景图片代理地址")
+    blur_px: int = Field(default=0, description="模糊半径")
+    brightness: int = Field(default=100, description="亮度百分比")
+    opacity: int = Field(default=100, description="图片透明度百分比")
+    overlay_opacity: int = Field(default=0, description="遮罩透明度百分比")
+    card_opacity: int = Field(default=92, description="卡片透明度百分比")
+    position: str = Field(default="center", description="背景位置")
+    fit: str = Field(default="cover", description="背景填充方式")
+
+
+BACKGROUND_SERVICE_NAME = "frontend_background"
+BACKGROUND_ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+BACKGROUND_PLUGIN_ASSET_DIR = Path.cwd() / "plugins" / "background" / "assets"
+
+
+def _clamp_int(raw: Any, default: int, low: int, high: int) -> int:
+    try:
+        value = int(raw)
+    except Exception:
+        value = default
+    return max(low, min(high, value))
+
+
+def _strip_wrapping_quotes(raw: Any) -> str:
+    text = str(raw or "").strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
+        text = text[1:-1].strip()
+    return text
+
+
+def _normalize_background_payload(raw: Any) -> Dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+
+    source = str(raw.get("source") or "builtin").strip().lower()
+    if source not in {"builtin", "local"}:
+        source = "builtin"
+
+    position = str(raw.get("position") or "center").strip().lower()
+    if position not in {"center", "top", "bottom"}:
+        position = "center"
+
+    fit = str(raw.get("fit") or "cover").strip().lower()
+    if fit not in {"cover", "contain"}:
+        fit = "cover"
+
+    return {
+        "source": source,
+        "builtin_name": str(raw.get("builtin_name") or "default-background.jpg").strip(),
+        "local_path": _strip_wrapping_quotes(raw.get("local_path")),
+        "blur_px": _clamp_int(raw.get("blur_px"), 8, 0, 40),
+        "brightness": _clamp_int(raw.get("brightness"), 85, 20, 160),
+        "opacity": _clamp_int(raw.get("opacity"), 100, 0, 100),
+        "overlay_opacity": _clamp_int(raw.get("overlay_opacity"), 35, 0, 90),
+        "card_opacity": _clamp_int(raw.get("card_opacity"), 92, 0, 100),
+        "position": position,
+        "fit": fit,
+    }
+
+
+def _is_safe_image_path(path: Path) -> bool:
+    return path.suffix.lower() in BACKGROUND_ALLOWED_EXTS and path.exists() and path.is_file()
+
+
+def _resolve_background_image_path(payload: Dict[str, Any]) -> Path | None:
+    source = payload.get("source")
+    if source == "local":
+        local_path = str(payload.get("local_path") or "").strip()
+        if not local_path:
+            return None
+        candidate = Path(local_path).expanduser()
+        if not candidate.is_absolute():
+            candidate = Path.cwd() / candidate
+        candidate = candidate.resolve()
+        return candidate if _is_safe_image_path(candidate) else None
+
+    asset_dir = BACKGROUND_PLUGIN_ASSET_DIR.resolve()
+    filename = Path(str(payload.get("builtin_name") or "default-background.jpg")).name
+    candidate = (asset_dir / filename).resolve()
+    if candidate != asset_dir and asset_dir not in candidate.parents:
+        return None
+    return candidate if _is_safe_image_path(candidate) else None
 
 
 async def _discover_plugins(plugins_dir: Path) -> Dict[str, Any]:
@@ -314,6 +402,56 @@ def _build_plugin_services(discovered: Dict[str, Any]) -> Dict[str, PluginServic
             services[plugin_name] = PluginServiceModel()
 
     return services
+
+
+@router.get(
+    "/frontend/background",
+    tags=["Get"],
+    summary="获取主应用背景配置",
+    response_model=PluginFrontendBackgroundOut,
+    status_code=200,
+)
+async def get_frontend_background() -> PluginFrontendBackgroundOut:
+    payload = _normalize_background_payload(PluginManager.service.get(BACKGROUND_SERVICE_NAME))
+    if payload is None:
+        return PluginFrontendBackgroundOut(enabled=False, message="未启用背景插件")
+
+    image_path = _resolve_background_image_path(payload)
+    if image_path is None:
+        return PluginFrontendBackgroundOut(enabled=False, message="背景图片不存在或路径不合法")
+
+    image_url = f"/api/plugins/frontend/background/image?v={int(image_path.stat().st_mtime)}"
+    return PluginFrontendBackgroundOut(
+        enabled=True,
+        image_url=image_url,
+        blur_px=payload["blur_px"],
+        brightness=payload["brightness"],
+        opacity=payload["opacity"],
+        overlay_opacity=payload["overlay_opacity"],
+        card_opacity=payload["card_opacity"],
+        position=payload["position"],
+        fit=payload["fit"],
+    )
+
+
+@router.get(
+    "/frontend/background/image",
+    tags=["Get"],
+    summary="获取主应用背景图片",
+    response_class=FileResponse,
+    status_code=200,
+)
+async def get_frontend_background_image() -> FileResponse:
+    payload = _normalize_background_payload(PluginManager.service.get(BACKGROUND_SERVICE_NAME))
+    if payload is None:
+        raise HTTPException(status_code=404, detail="背景插件未启用")
+
+    image_path = _resolve_background_image_path(payload)
+    if image_path is None:
+        raise HTTPException(status_code=404, detail="背景图片不存在或路径不合法")
+
+    media_type = mimetypes.guess_type(str(image_path))[0] or "application/octet-stream"
+    return FileResponse(str(image_path), media_type=media_type)
 
 
 def _build_runtime_states(root: Dict[str, Any]) -> Dict[str, PluginRuntimeStateModel]:
