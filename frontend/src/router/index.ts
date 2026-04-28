@@ -51,6 +51,12 @@ const routes = [
     meta: { title: '编辑MaaEnd脚本' },
   },
   {
+    path: '/scripts/:id/edit/m9a',
+    name: 'M9AScriptEdit',
+    component: () => import('../views/EditView/Script/M9AScriptEdit.vue'),
+    meta: { title: '编辑M9A脚本' },
+  },
+  {
     path: '/scripts/:id/edit/general',
     name: 'GeneralScriptEdit',
     component: () => import('../views/EditView/Script/GeneralScriptEdit.vue'),
@@ -81,6 +87,12 @@ const routes = [
     meta: { title: '添加MaaEnd用户' },
   },
   {
+    path: '/scripts/:scriptId/users/add/m9a',
+    name: 'M9AUserAdd',
+    component: () => import('../views/EditView/User/M9AUserEdit.vue'),
+    meta: { title: '添加M9A用户' },
+  },
+  {
     path: '/scripts/:scriptId/users/:userId/edit/src',
     name: 'SRCUserEdit',
     component: () => import('../views/EditView/User/SRCUserEdit.vue'),
@@ -91,6 +103,12 @@ const routes = [
     name: 'MaaEndUserEdit',
     component: () => import('../views/EditView/User/MaaEndUserEdit.vue'),
     meta: { title: '编辑MaaEnd用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/m9a',
+    name: 'M9AUserEdit',
+    component: () => import('../views/EditView/User/M9AUserEdit.vue'),
+    meta: { title: '编辑M9A用户' },
   },
   {
     path: '/scripts/:scriptId/users/add/general',
