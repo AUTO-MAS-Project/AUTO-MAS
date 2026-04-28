@@ -1,7 +1,16 @@
 <template>
-  <a-layout style="flex: 1; min-height: 0; overflow: hidden">
-    <a-layout-sider :width="SIDER_WIDTH" :theme="isDark ? 'dark' : 'light'" :style="{
-      background: 'var(--ant-color-bg-elevated)',
+  <a-layout
+    class="app-layout-shell"
+    :class="{ 'has-background': backgroundEnabled }"
+    :style="backgroundCssVars"
+  >
+    <div v-if="backgroundEnabled" class="app-background-layer" aria-hidden="true">
+      <div class="app-background-image" />
+      <div class="app-background-overlay" />
+    </div>
+
+    <a-layout-sider :width="SIDER_WIDTH" :theme="isDark ? 'dark' : 'light'" class="app-sider" :style="{
+      background: 'var(--app-layout-sider-bg, var(--ant-color-bg-elevated))',
       borderRight: '1px solid var(--ant-color-border)',
     }">
       <div class="sider-content">
@@ -15,7 +24,7 @@
       </div>
     </a-layout-sider>
 
-    <a-layout style="flex: 1; min-width: 0">
+    <a-layout class="app-main-layout">
       <a-layout-content class="content-area">
         <router-view v-slot="{ Component, route }">
           <keep-alive :include="['Scheduler']">
@@ -41,10 +50,12 @@ import {
   ToolOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
-import { computed, h } from 'vue'
+import { computed, h, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from '../composables/useTheme.ts'
 import { useRouteLock } from '../composables/useRouteLock.ts'
+import { useAppBackground } from '../composables/useAppBackground.ts'
+import { useWebSocket } from '../composables/useWebSocket.ts'
 import type { MenuProps } from 'ant-design-vue'
 
 const SIDER_WIDTH = 160
@@ -53,6 +64,32 @@ const router = useRouter()
 const route = useRoute()
 const { isDark } = useTheme()
 const { isRouteLocked, triggerBlockCallback } = useRouteLock()
+const { enabled: backgroundEnabled, cssVars: backgroundCssVars, loadBackground } = useAppBackground()
+const { subscribe, unsubscribe } = useWebSocket()
+
+let backgroundSubscriptionId = ''
+let backgroundRefreshTimer: ReturnType<typeof window.setTimeout> | undefined
+
+onMounted(() => {
+  void loadBackground()
+  backgroundSubscriptionId = subscribe({ id: 'PluginSystem' }, () => {
+    void loadBackground()
+  })
+  backgroundRefreshTimer = window.setTimeout(() => {
+    void loadBackground()
+  }, 1500)
+})
+
+onUnmounted(() => {
+  if (backgroundSubscriptionId) {
+    unsubscribe(backgroundSubscriptionId)
+    backgroundSubscriptionId = ''
+  }
+  if (backgroundRefreshTimer !== undefined) {
+    window.clearTimeout(backgroundRefreshTimer)
+    backgroundRefreshTimer = undefined
+  }
+})
 
 // 工具：生成菜单项
 const icon = (Comp: any) => () => h(Comp)
@@ -129,6 +166,100 @@ const onMenuClick: MenuProps['onClick'] = info => {
 </script>
 
 <style scoped>
+.app-layout-shell {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  background: var(--ant-color-bg-layout);
+}
+
+.app-layout-shell.has-background {
+  background: transparent;
+  --app-background-card-bg: color-mix(
+    in srgb,
+    var(--ant-color-bg-container) var(--app-background-card-opacity),
+    transparent
+  );
+  --app-background-card-elevated-bg: color-mix(
+    in srgb,
+    var(--ant-color-bg-elevated) var(--app-background-card-opacity),
+    transparent
+  );
+  --app-layout-sider-bg: color-mix(
+    in srgb,
+    var(--ant-color-bg-elevated) 88%,
+    transparent
+  );
+}
+
+.app-layout-shell.has-background :deep(.plugin-page) {
+  background: transparent;
+}
+
+.app-layout-shell.has-background :deep(.ant-card),
+.app-layout-shell.has-background :deep(.ant-card-head),
+.app-layout-shell.has-background :deep(.ant-card-body),
+.app-layout-shell.has-background :deep(.ant-list),
+.app-layout-shell.has-background :deep(.ant-table),
+.app-layout-shell.has-background :deep(.ant-table-container),
+.app-layout-shell.has-background :deep(.ant-table-thead > tr > th),
+.app-layout-shell.has-background :deep(.ant-table-tbody > tr > td),
+.app-layout-shell.has-background :deep(.ant-collapse),
+.app-layout-shell.has-background :deep(.ant-collapse-item),
+.app-layout-shell.has-background :deep(.ant-collapse-content),
+.app-layout-shell.has-background :deep(.ant-tabs-content-holder) {
+  background: var(--app-background-card-bg) !important;
+}
+
+.app-layout-shell.has-background :deep(.ant-modal-content),
+.app-layout-shell.has-background :deep(.ant-popover-inner),
+.app-layout-shell.has-background :deep(.ant-drawer-content),
+.app-layout-shell.has-background :deep(.ant-select-dropdown),
+.app-layout-shell.has-background :deep(.ant-picker-dropdown .ant-picker-panel-container) {
+  background: var(--app-background-card-elevated-bg) !important;
+}
+
+.app-background-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+  background: var(--ant-color-bg-layout);
+}
+
+.app-background-image {
+  position: absolute;
+  inset: -48px;
+  background-image: var(--app-background-image);
+  background-size: var(--app-background-size);
+  background-position: var(--app-background-position);
+  background-repeat: no-repeat;
+  opacity: var(--app-background-opacity);
+  filter: blur(var(--app-background-blur)) brightness(var(--app-background-brightness));
+  transform: scale(1.03);
+}
+
+.app-background-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--ant-color-bg-layout);
+  opacity: var(--app-background-overlay-opacity);
+}
+
+.app-sider,
+.app-main-layout {
+  position: relative;
+  z-index: 1;
+}
+
+.app-main-layout {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+}
+
 .sider-content {
   height: 100%;
   display: flex;
@@ -217,6 +348,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
   scrollbar-width: none;
   -ms-overflow-style: none;
   padding: 32px 32px 48px;
+  background: transparent;
 }
 
 .content-area::-webkit-scrollbar {
