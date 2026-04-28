@@ -1,7 +1,8 @@
-from pydantic import BaseModel, ConfigDict, Field
+from mas.plugin_config import PluginField
+from pydantic import BaseModel, ConfigDict
 
 
 class Config(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    hello: str = Field(default="world", description="问候词")
+    hello: str = PluginField(default="world", description="问候词")
