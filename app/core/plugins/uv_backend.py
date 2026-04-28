@@ -23,13 +23,20 @@ DEFAULT_INDEX_URLS: list[str] = [
     "https://pypi.mirrors.ustc.edu.cn/simple/",
 ]
 
+UV_INSTALL_SCRIPT_URL = "https://astral.sh/uv/install.ps1"
+
+
+def _embedded_uv_path(app_root: Path | None = None) -> Path:
+    root = app_root or Path.cwd()
+    return root / "environment" / "python" / "Scripts" / "uv.exe"
+
 
 def _is_executable_file(path: Path) -> bool:
     return path.is_file()
 
 
 def _candidate_uv_paths() -> list[Path]:
-    """返回 uv 的候选路径，项目内置版本优先。"""
+    """返回 uv 的候选路径，AUTO-MAS 管理路径优先。"""
     candidates: list[Path] = []
 
     env_path = os.getenv("AUTO_MAS_UV_EXE")
@@ -39,7 +46,7 @@ def _candidate_uv_paths() -> list[Path]:
     app_root = Path.cwd()
     candidates.extend(
         [
-            app_root / "environment" / "python" / "Scripts" / "uv.exe",
+            _embedded_uv_path(app_root),
             app_root / ".venv" / "Scripts" / "uv.exe",
             Path(sys.executable).resolve().parent / "uv.exe",
         ]
@@ -68,9 +75,15 @@ def _find_uv() -> str | None:
     return None
 
 
+def _set_cached_uv(path: str) -> str:
+    global _uv_path
+    _uv_path = path
+    os.environ["AUTO_MAS_UV_EXE"] = path
+    return path
+
+
 def get_uv_executable() -> str:
     """返回 uv 可执行文件路径（带缓存）。"""
-    global _uv_path
     if _uv_path is not None:
         return _uv_path
 
@@ -80,13 +93,77 @@ def get_uv_executable() -> str:
             "未找到 uv 可执行文件，请确认 environment/python/Scripts/uv.exe 已存在，"
             "或通过 AUTO_MAS_UV_EXE 指定 uv.exe 路径。"
         )
-    _uv_path = found
-    return _uv_path
+    return _set_cached_uv(found)
 
 
 def check_uv_available() -> bool:
     """检查 uv 是否可用。"""
-    return _find_uv() is not None
+    found = _find_uv()
+    if found is None:
+        return False
+    _set_cached_uv(found)
+    return True
+
+
+def _quote_powershell_string(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _find_powershell() -> str | None:
+    return shutil.which("powershell.exe") or shutil.which("powershell") or shutil.which("pwsh")
+
+
+def install_uv(install_dir: Path | None = None) -> bool:
+    """通过官方安装脚本把 uv 安装到 AUTO-MAS 管理目录。"""
+    target_dir = install_dir or _embedded_uv_path().parent
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    powershell = _find_powershell()
+    if powershell is None:
+        logger.error("未找到 PowerShell，无法自动安装 uv")
+        return False
+
+    script = "; ".join(
+        [
+            "$ErrorActionPreference = 'Stop'",
+            f"$env:UV_INSTALL_DIR = {_quote_powershell_string(str(target_dir))}",
+            f"irm {UV_INSTALL_SCRIPT_URL} | iex",
+        ]
+    )
+    completed = subprocess.run(
+        [
+            powershell,
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ],
+        cwd=str(Path.cwd()),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or "").strip() or (completed.stdout or "").strip() or "未知错误"
+        logger.error(f"uv 自动安装失败: {detail}")
+        return False
+
+    found = _find_uv()
+    if found is None:
+        logger.error(f"uv 安装脚本执行完成，但未找到 uv.exe: target={target_dir}")
+        return False
+
+    _set_cached_uv(found)
+    logger.info(f"uv 已就绪: {found}")
+    return True
+
+
+def ensure_uv() -> bool:
+    """确保 uv 可用；缺失时安装到 environment/python/Scripts。"""
+    if check_uv_available():
+        return True
+    return install_uv()
 
 
 async def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
