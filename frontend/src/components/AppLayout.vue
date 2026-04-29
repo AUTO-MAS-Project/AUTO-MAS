@@ -69,12 +69,23 @@ const { subscribe, unsubscribe } = useWebSocket()
 
 let backgroundSubscriptionId = ''
 let backgroundRefreshTimer: ReturnType<typeof window.setTimeout> | undefined
+let backgroundStartupRetryTimer: ReturnType<typeof window.setTimeout> | undefined
+
+const scheduleBackgroundRefresh = (delay = 120) => {
+  if (backgroundRefreshTimer !== undefined) {
+    window.clearTimeout(backgroundRefreshTimer)
+  }
+  backgroundRefreshTimer = window.setTimeout(() => {
+    backgroundRefreshTimer = undefined
+    void loadBackground()
+  }, delay)
+}
 
 onMounted(() => {
-  void loadBackground()
+  scheduleBackgroundRefresh(0)
   backgroundSubscriptionId = subscribe({ id: 'PluginSystem' }, handlePluginSystemMessage)
-  backgroundRefreshTimer = window.setTimeout(() => {
-    void loadBackground()
+  backgroundStartupRetryTimer = window.setTimeout(() => {
+    scheduleBackgroundRefresh(0)
   }, 1500)
 })
 
@@ -86,6 +97,10 @@ onUnmounted(() => {
   if (backgroundRefreshTimer !== undefined) {
     window.clearTimeout(backgroundRefreshTimer)
     backgroundRefreshTimer = undefined
+  }
+  if (backgroundStartupRetryTimer !== undefined) {
+    window.clearTimeout(backgroundStartupRetryTimer)
+    backgroundStartupRetryTimer = undefined
   }
 })
 
@@ -107,6 +122,13 @@ interface PluginSystemHmrMessage {
   changed_files?: string[]
   action?: string
   status?: string
+}
+
+interface PluginSystemRuntimeMessage {
+  kind: 'runtime_state'
+  record?: {
+    plugin?: string | null
+  } | null
 }
 
 const isBackgroundHmr = (payload: PluginSystemHmrMessage) => {
@@ -132,22 +154,31 @@ const refreshPluginFrontend = () => {
 }
 
 const handlePluginSystemMessage = (message: WebSocketBaseMessage) => {
-  const payload = message.data as { kind?: string } | PluginSystemHmrMessage | undefined
+  const payload = message.data as
+    | { kind?: string }
+    | PluginSystemHmrMessage
+    | PluginSystemRuntimeMessage
+    | undefined
   if (!payload || typeof payload !== 'object') {
     return
   }
 
-  if (payload.kind !== 'hmr') {
-    void loadBackground()
+  if (payload.kind === 'hmr') {
+    const hmrPayload = payload as PluginSystemHmrMessage
+    if (isBackgroundHmr(hmrPayload)) {
+      scheduleBackgroundRefresh()
+    }
+    if (hmrPayload.status === 'success' && hmrPayload.action === 'frontend_refresh') {
+      refreshPluginFrontend()
+    }
     return
   }
 
-  const hmrPayload = payload as PluginSystemHmrMessage
-  if (isBackgroundHmr(hmrPayload)) {
-    void loadBackground()
-  }
-  if (hmrPayload.status === 'success' && hmrPayload.action === 'frontend_refresh') {
-    refreshPluginFrontend()
+  if (payload.kind === 'runtime_state') {
+    const runtimePayload = payload as PluginSystemRuntimeMessage
+    if (runtimePayload.record?.plugin === 'background') {
+      scheduleBackgroundRefresh()
+    }
   }
 }
 

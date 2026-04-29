@@ -20,6 +20,7 @@ const background = ref<AppBackgroundResponse>({
   enabled: false,
 })
 const loaded = ref(false)
+let loadPromise: Promise<void> | null = null
 
 const toPercent = (value: unknown, fallback: number) => {
   const parsed = Number(value)
@@ -86,20 +87,29 @@ export function useAppBackground() {
   }))
 
   const loadBackground = async () => {
-    try {
-      const base = await getApiBase()
-      const response = await fetch(`${base}/api/plugins/frontend/background`)
-      const data = (await response.json()) as AppBackgroundResponse
-      if (!response.ok || data.code === 500 || data.status === 'error') {
-        background.value = { enabled: false }
-        return
-      }
-      background.value = data
-    } catch {
-      background.value = { enabled: false }
-    } finally {
-      loaded.value = true
+    if (loadPromise) {
+      return loadPromise
     }
+
+    loadPromise = (async () => {
+      try {
+        const base = await getApiBase()
+        const response = await fetch(`${base}/api/plugins/frontend/background`)
+        const data = (await response.json()) as AppBackgroundResponse
+        if (!response.ok || data.code === 500 || data.status === 'error') {
+          background.value = { enabled: false }
+          return
+        }
+        background.value = data
+      } catch {
+        background.value = { enabled: false }
+      } finally {
+        loaded.value = true
+        loadPromise = null
+      }
+    })()
+
+    return loadPromise
   }
 
   return {
