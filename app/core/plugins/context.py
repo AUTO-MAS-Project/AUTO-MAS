@@ -11,6 +11,7 @@ from .cache_store import PluginCacheManager
 from .event_contract import EventErrorPolicy, EventScope
 from .runtime_api import RuntimeAPI
 from .service_registry import ServiceRegistry
+from .server import PluginServerFacade, PluginServerRegistry, plugin_server
 
 
 
@@ -27,6 +28,7 @@ class PluginContext:
         events,
         runtime_capabilities: Optional[Dict[str, Callable[..., Any]]] = None,
         service_registry: Optional[ServiceRegistry] = None,
+        server_registry: Optional[PluginServerRegistry] = None,
         provides: Optional[set[str]] = None,
         needs: Optional[set[str]] = None,
         wants: Optional[set[str]] = None,
@@ -52,6 +54,13 @@ class PluginContext:
             provides=provides,
             needs=needs,
             wants=wants,
+        )
+
+        # server 门面负责声明插件对外 HTTP/WS 能力与前端动作。
+        self.server = PluginServerFacade(
+            registry=server_registry or plugin_server,
+            plugin_name=self.plugin_name,
+            instance_id=self.instance_id,
         )
         
         # 解释器能力函数集合
