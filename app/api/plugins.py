@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from app.core.plugins import PluginConfigStore, PluginManager
 from app.core.plugins.realtime import publish_plugin_snapshot
+from app.core.plugins.server import plugin_server
 from app.api.ws_command import ws_command
 from app.models.schema import OutBase
 from app.utils import get_logger
@@ -86,6 +87,22 @@ class PluginServiceModel(BaseModel):
     wants: List[str] = Field(default_factory=list, description="可选服务")
 
 
+class PluginRouteModel(BaseModel):
+    kind: str = Field(..., description="服务类型")
+    path: str = Field(..., description="声明路径")
+    methods: List[str] = Field(default_factory=list, description="允许的调用方式")
+    plugin: str = Field(..., description="插件名")
+
+
+class PluginActionModel(BaseModel):
+    id: str = Field(..., description="动作 ID")
+    label: str = Field(..., description="按钮标题")
+    path: str = Field(..., description="调用路径")
+    method: str = Field(default="POST", description="HTTP 方法")
+    payload: Any = Field(default=None, description="默认请求载荷")
+    plugin: str = Field(..., description="插件名")
+
+
 class PluginsGetOut(OutBase):
     version: int = Field(default=1, description="配置版本")
     discovered_plugins: List[str] = Field(default_factory=list, description="已发现插件")
@@ -94,6 +111,14 @@ class PluginsGetOut(OutBase):
     plugin_services: Dict[str, PluginServiceModel] = Field(
         default_factory=dict,
         description="插件服务声明",
+    )
+    plugin_routes: Dict[str, List[PluginRouteModel]] = Field(
+        default_factory=dict,
+        description="插件声明式服务路由",
+    )
+    plugin_actions: Dict[str, List[PluginActionModel]] = Field(
+        default_factory=dict,
+        description="插件声明式前端动作",
     )
     instances: List[PluginInstanceModel] = Field(default_factory=list, description="插件实例列表")
     runtime_states: Dict[str, PluginRuntimeStateModel] = Field(
@@ -520,12 +545,15 @@ async def get_plugins() -> PluginsGetOut:
         )
         schemas, schema_errors = _build_schemas(discovered)
         plugin_services = _build_plugin_services(discovered)
+        server_snapshot = plugin_server.snapshot()
         return PluginsGetOut(
             version=int(root.get("version", 1)),
             discovered_plugins=list(discovered.keys()),
             schemas=schemas,
             schema_errors=schema_errors,
             plugin_services=plugin_services,
+            plugin_routes=server_snapshot["plugin_routes"],
+            plugin_actions=server_snapshot["plugin_actions"],
             instances=_build_instances(root),
             runtime_states=_build_runtime_states(root),
         )
@@ -539,6 +567,8 @@ async def get_plugins() -> PluginsGetOut:
             schemas={},
             schema_errors={},
             plugin_services={},
+            plugin_routes={},
+            plugin_actions={},
             instances=[],
             runtime_states={},
         )

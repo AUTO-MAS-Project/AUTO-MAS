@@ -22,6 +22,7 @@ from .lifecycle import REQUIRED_LIFECYCLE_METHODS
 from .realtime import publish_runtime_record
 from .service_registry import ServiceRegistry
 from .service_spec import ServiceSpec
+from .server import plugin_server
 from .pypi_site import (
     ensure_pypi_site_packages_on_syspath,
     iter_plugin_entry_points,
@@ -764,6 +765,7 @@ class PluginLoader:
                 events=self.events,
                 runtime_capabilities=self.runtime,
                 service_registry=self.service,
+                server_registry=plugin_server,
                 provides=provides,
                 needs=needs,
                 wants=wants,
@@ -797,10 +799,12 @@ class PluginLoader:
             logger.info(f"插件已激活: {plugin_name}")
         except PluginDefinitionError as e:
             self._unregister_record_listeners(record)
+            await plugin_server.unregister_owner(record.instance_id)
             self._mark_error(record, str(e))
             logger.error(f"插件加载失败: {plugin_name}, error={e}")
         except Exception as e:
             self._unregister_record_listeners(record)
+            await plugin_server.unregister_owner(record.instance_id)
             self._mark_error(record, f"{type(e).__name__}: {e}")
             logger.exception(f"插件加载失败: {plugin_name}, error={e}")
 
@@ -891,6 +895,7 @@ class PluginLoader:
                 events=self.events,
                 runtime_capabilities=self.runtime,
                 service_registry=self.service,
+                server_registry=plugin_server,
                 provides=merged_provides,
                 needs=merged_needs,
                 wants=merged_wants,
@@ -924,10 +929,12 @@ class PluginLoader:
             logger.info(f"插件实例已激活: {instance_id} ({plugin_name})")
         except PluginDefinitionError as e:
             self._unregister_record_listeners(record)
+            await plugin_server.unregister_owner(record.instance_id)
             self._mark_error(record, str(e))
             logger.error(f"插件实例加载失败: {instance_id}, error={e}")
         except Exception as e:
             self._unregister_record_listeners(record)
+            await plugin_server.unregister_owner(record.instance_id)
             self._mark_error(record, f"{type(e).__name__}: {e}")
             logger.error(f"插件实例加载失败: {instance_id}, error={type(e).__name__}: {e}")
 
@@ -1050,6 +1057,7 @@ class PluginLoader:
         finally:
             self._unregister_record_listeners(record)
             self.service.drop(record.instance_id)
+            await plugin_server.unregister_owner(record.instance_id)
 
         self._mark_status(record, "unloaded")
         self._mark_lifecycle_phase(record, "unloaded")

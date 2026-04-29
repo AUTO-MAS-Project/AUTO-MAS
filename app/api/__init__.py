@@ -35,6 +35,7 @@ from .update import router as update_router
 from .ocr import router as ocr_router
 from .websocket import router as ws_router
 from .plugins import router as plugins_router
+from .plugin_gateway import router as plugin_gateway_router
 
 __all__ = [
     "core_router",
@@ -51,4 +52,5 @@ __all__ = [
     "ocr_router",
     "ws_router",
     "plugins_router",
+    "plugin_gateway_router",
 ]

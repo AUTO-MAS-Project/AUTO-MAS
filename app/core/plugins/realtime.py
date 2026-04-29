@@ -144,6 +144,9 @@ async def build_plugin_snapshot(*, discovered: Dict[str, Any] | None = None) -> 
             "last_error_at": None,
         }
 
+    from .server import plugin_server
+
+    server_snapshot = plugin_server.snapshot()
     return {
         "code": 200,
         "status": "success",
@@ -153,6 +156,8 @@ async def build_plugin_snapshot(*, discovered: Dict[str, Any] | None = None) -> 
         "schemas": schemas,
         "schema_errors": schema_errors,
         "plugin_services": plugin_services,
+        "plugin_routes": server_snapshot["plugin_routes"],
+        "plugin_actions": server_snapshot["plugin_actions"],
         "instances": deepcopy(root.get("instances", [])),
         "runtime_states": runtime_states,
     }
