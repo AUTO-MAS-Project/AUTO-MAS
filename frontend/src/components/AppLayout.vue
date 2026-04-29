@@ -55,7 +55,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from '../composables/useTheme.ts'
 import { useRouteLock } from '../composables/useRouteLock.ts'
 import { useAppBackground } from '../composables/useAppBackground.ts'
-import { useWebSocket } from '../composables/useWebSocket.ts'
+import { useWebSocket, type WebSocketBaseMessage } from '../composables/useWebSocket.ts'
 import type { MenuProps } from 'ant-design-vue'
 
 const SIDER_WIDTH = 160
@@ -72,9 +72,7 @@ let backgroundRefreshTimer: ReturnType<typeof window.setTimeout> | undefined
 
 onMounted(() => {
   void loadBackground()
-  backgroundSubscriptionId = subscribe({ id: 'PluginSystem' }, () => {
-    void loadBackground()
-  })
+  backgroundSubscriptionId = subscribe({ id: 'PluginSystem' }, handlePluginSystemMessage)
   backgroundRefreshTimer = window.setTimeout(() => {
     void loadBackground()
   }, 1500)
@@ -102,6 +100,56 @@ const isDevelopment = computed(() => {
     window.location.hostname === 'localhost'
   )
 })
+
+interface PluginSystemHmrMessage {
+  kind: 'hmr'
+  plugin?: string | null
+  changed_files?: string[]
+  action?: string
+  status?: string
+}
+
+const isBackgroundHmr = (payload: PluginSystemHmrMessage) => {
+  if (payload.plugin === 'background') {
+    return true
+  }
+  return (payload.changed_files || []).some(file => {
+    const normalized = file.replace(/\\/g, '/')
+    return normalized.startsWith('plugins/background/') || normalized.includes('/assets/')
+  })
+}
+
+const refreshPluginFrontend = () => {
+  if (!isDevelopment.value) {
+    return
+  }
+  const hot = (import.meta as any).hot
+  if (hot?.invalidate) {
+    hot.invalidate()
+    return
+  }
+  window.location.reload()
+}
+
+const handlePluginSystemMessage = (message: WebSocketBaseMessage) => {
+  const payload = message.data as { kind?: string } | PluginSystemHmrMessage | undefined
+  if (!payload || typeof payload !== 'object') {
+    return
+  }
+
+  if (payload.kind !== 'hmr') {
+    void loadBackground()
+    return
+  }
+
+  const hmrPayload = payload as PluginSystemHmrMessage
+  if (isBackgroundHmr(hmrPayload)) {
+    void loadBackground()
+  }
+  if (hmrPayload.status === 'success' && hmrPayload.action === 'frontend_refresh') {
+    refreshPluginFrontend()
+  }
+}
 
 const mainMenuItems = [
   { key: '/home', label: '主页', icon: icon(HomeOutlined) },
