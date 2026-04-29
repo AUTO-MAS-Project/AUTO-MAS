@@ -31,6 +31,14 @@ from .pypi_site import (
 from .runtime_api import RuntimeAPI
 from .service_registry import ServiceRegistry
 from .service_spec import ServiceSpec
+from .server import (
+    PluginHttpRequest,
+    PluginHttpResponse,
+    PluginServerFacade,
+    PluginServerRegistry,
+    PluginWebSocketSession,
+    plugin_server,
+)
 from .lifecycle import (
     PluginLifecycle,
     REQUIRED_LIFECYCLE_METHODS,
@@ -65,6 +73,12 @@ __all__ = [
     "RuntimeAPI",
     "ServiceRegistry",
     "ServiceSpec",
+    "PluginHttpRequest",
+    "PluginHttpResponse",
+    "PluginServerFacade",
+    "PluginServerRegistry",
+    "PluginWebSocketSession",
+    "plugin_server",
     "PluginLifecycle",
     "REQUIRED_LIFECYCLE_METHODS",
     "OPTIONAL_LIFECYCLE_METHODS",

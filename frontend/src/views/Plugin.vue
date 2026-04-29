@@ -138,6 +138,26 @@
               </a-alert>
 
               <a-card
+                v-if="selectedPluginActions.length > 0"
+                size="small"
+                class="plugin-action-card"
+                title="插件动作"
+              >
+                <a-space wrap>
+                  <a-button
+                    v-for="item in selectedPluginActions"
+                    :key="item.id"
+                    type="primary"
+                    :loading="pluginActionLoadingId === item.id"
+                    :disabled="Boolean(pluginActionLoadingId)"
+                    @click="triggerPluginAction(item)"
+                  >
+                    {{ item.label }}
+                  </a-button>
+                </a-space>
+              </a-card>
+
+              <a-card
                 v-if="selectedRuntimeState"
                 size="small"
                 class="runtime-observer-card"
@@ -525,6 +545,8 @@ interface PluginsGetResponse {
   schemas: Record<string, Record<string, PluginSchemaField>>
   schema_errors: Record<string, string>
   plugin_services?: Record<string, PluginServiceInfo>
+  plugin_routes?: Record<string, PluginRouteInfo[]>
+  plugin_actions?: Record<string, PluginActionInfo[]>
   instances: PluginInstance[]
   runtime_states: Record<string, PluginRuntimeState>
 }
@@ -533,6 +555,22 @@ interface PluginServiceInfo {
   provides: string[]
   needs: string[]
   wants: string[]
+}
+
+interface PluginRouteInfo {
+  kind: 'http' | 'websocket' | string
+  path: string
+  methods: string[]
+  plugin: string
+}
+
+interface PluginActionInfo {
+  id: string
+  label: string
+  path: string
+  method: string
+  payload?: unknown
+  plugin: string
 }
 
 interface ServiceDeclarationRow {
@@ -619,6 +657,7 @@ const loading = ref(false)
 const submitting = ref(false)
 const reloadingAll = ref(false)
 const togglingInstanceId = ref('')
+const pluginActionLoadingId = ref('')
 const keyword = ref('')
 
 const version = ref(1)
@@ -626,6 +665,8 @@ const discoveredPlugins = ref<string[]>([])
 const schemaMap = ref<Record<string, Record<string, PluginSchemaField>>>({})
 const schemaErrors = ref<Record<string, string>>({})
 const pluginServices = ref<Record<string, PluginServiceInfo>>({})
+const pluginRoutes = ref<Record<string, PluginRouteInfo[]>>({})
+const pluginActions = ref<Record<string, PluginActionInfo[]>>({})
 const instances = ref<PluginInstance[]>([])
 const runtimeStates = ref<Record<string, PluginRuntimeState>>({})
 const schemaFieldErrors = ref<Record<string, string>>({})
@@ -722,6 +763,13 @@ const selectedServiceDeclarationRows = computed(() => {
 
 const hasSelectedPluginServiceDeclarations = computed(() => {
   return selectedServiceDeclarationRows.value.length > 0
+})
+
+const selectedPluginActions = computed(() => {
+  if (!selectedInstanceId.value) {
+    return [] as PluginActionInfo[]
+  }
+  return pluginActions.value[selectedInstanceId.value] || []
 })
 
 const activeSchema = computed(() => {
@@ -1579,6 +1627,42 @@ const apiPost = async <T = any,>(url: string, payload: Record<string, unknown> =
   return data
 }
 
+const requestDeclaredPluginAction = async <T = any,>(action: PluginActionInfo) => {
+  const method = (action.method || 'POST').toUpperCase()
+  const path = action.path.startsWith('/') ? action.path : `/${action.path}`
+  const requestUrl = `${OpenAPI.BASE}/plugin${path}`
+  const payload = action.payload ?? {}
+  const { data } = await axios.request<T>({
+    method,
+    url: requestUrl,
+    params: method === 'GET' ? payload : undefined,
+    data: method === 'GET' ? undefined : payload,
+  })
+  return data
+}
+
+const triggerPluginAction = async (action: PluginActionInfo) => {
+  pluginActionLoadingId.value = action.id
+  try {
+    const data = await requestDeclaredPluginAction<any>(action)
+    if (
+      data &&
+      typeof data === 'object' &&
+      'code' in data &&
+      Number((data as { code?: number }).code) !== 200
+    ) {
+      throw new Error(String((data as { message?: string }).message || '插件动作执行失败'))
+    }
+    message.success(`${action.label} 已执行`)
+    void fetchData()
+  } catch (error) {
+    message.error(`插件动作失败: ${String(error)}`)
+    logger.error(`插件动作失败: action=${action.id}, error=${String(error)}`)
+  } finally {
+    pluginActionLoadingId.value = ''
+  }
+}
+
 const handleWsCommandResponse = (message: WebSocketBaseMessage) => {
   const payload = message.data as WsCommandResponse | undefined
   const requestId = payload?.request_id
@@ -1666,6 +1750,8 @@ const applySnapshot = (
   schemaMap.value = data.schemas || {}
   schemaErrors.value = data.schema_errors || {}
   pluginServices.value = data.plugin_services || {}
+  pluginRoutes.value = data.plugin_routes || {}
+  pluginActions.value = data.plugin_actions || {}
   instances.value = nextInstances
   runtimeStates.value = data.runtime_states || {}
 
@@ -2188,6 +2274,10 @@ onUnmounted(() => {
 }
 
 .runtime-observer-card {
+  margin-bottom: 10px;
+}
+
+.plugin-action-card {
   margin-bottom: 10px;
 }
 
