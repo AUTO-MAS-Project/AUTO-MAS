@@ -184,7 +184,7 @@ const onDropdownVisibleChange = (open: boolean) => {
 .task-control {
   margin-bottom: 16px;
   border-radius: 12px;
-  background-color: var(--ant-color-bg-container);
+  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   border: 1px solid var(--ant-color-border-secondary);
   overflow: hidden;

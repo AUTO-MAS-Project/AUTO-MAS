@@ -646,7 +646,7 @@ onMounted(async () => {
 <style scoped>
 .queue-container {
   min-height: 100vh;
-  background: var(--ant-color-bg-layout);
+  background: transparent;
   padding: 24px;
 }
 
@@ -659,6 +659,7 @@ onMounted(async () => {
 
 .queue-main {
   margin: 0 auto;
+  background: transparent;
 }
 
 /* 页面头部 */
@@ -805,6 +806,7 @@ onMounted(async () => {
 
 /* 队列选择卡片 */
 .queue-selector-card {
+  background: var(--app-background-card-bg, var(--ant-color-bg-container));
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   border-radius: 12px;
   border: 1px solid var(--ant-color-border-secondary);
@@ -838,6 +840,7 @@ onMounted(async () => {
 
 /* 队列配置卡片 */
 .queue-config-card {
+  background: var(--app-background-card-bg, var(--ant-color-bg-container));
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   border-radius: 12px;
   border: 1px solid var(--ant-color-border-secondary);
@@ -1023,11 +1026,11 @@ onMounted(async () => {
 /* 深色模式适配 */
 @media (prefers-color-scheme: dark) {
   .queue-selector-card {
-    background: var(--ant-color-bg-container);
+    background: var(--app-background-card-bg, var(--ant-color-bg-container));
   }
 
   .queue-config-card {
-    background: var(--ant-color-bg-container);
+    background: var(--app-background-card-bg, var(--ant-color-bg-container));
   }
 }
 </style>

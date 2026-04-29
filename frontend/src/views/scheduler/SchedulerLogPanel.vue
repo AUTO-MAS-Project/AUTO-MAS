@@ -185,7 +185,7 @@ onUnmounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: var(--ant-color-bg-container);
+  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   border: 1px solid var(--ant-color-border-secondary);
@@ -258,7 +258,7 @@ onUnmounted(() => {
 /* 暗色模式适配 */
 @media (prefers-color-scheme: dark) {
   .log-panel {
-    background: var(--ant-color-bg-container, #1f1f1f);
+    background: var(--app-background-card-bg, var(--ant-color-bg-container, #1f1f1f));
     border: 1px solid var(--ant-color-border, #424242);
   }
 
