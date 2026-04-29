@@ -21,52 +21,17 @@
 
 
 import json
+import json5
 from pathlib import Path
 from app.core import Config
-
-
-def _strip_jsonc_comments(text: str) -> str:
-    # Remove single-line comments (// ...) and multi-line comments (/* ... */)
-    # but preserve comment-like strings inside string literals
-    result = []
-    i = 0
-    in_string = False
-    while i < len(text):
-        c = text[i]
-        if in_string:
-            if c == "\\" and i + 1 < len(text):
-                result.append(c)
-                result.append(text[i + 1])
-                i += 2
-                continue
-            if c == '"':
-                in_string = False
-            result.append(c)
-            i += 1
-        else:
-            if c == '"':
-                in_string = True
-                result.append(c)
-                i += 1
-            elif text[i : i + 2] == "//":
-                while i < len(text) and text[i] != "\n":
-                    i += 1
-            elif text[i : i + 2] == "/*":
-                i += 2
-                while i < len(text) and text[i : i + 2] != "*/":
-                    i += 1
-                i += 2
-            else:
-                result.append(c)
-                i += 1
-    return "".join(result)
+from typing import Any, Dict, cast
 
 
 async def agree_bilibili(maa_tasks_path: Path, if_agree: bool):
     """向MAA写入Bilibili协议相关任务"""
 
     raw = maa_tasks_path.read_text(encoding="utf-8")
-    data: dict = json.loads(_strip_jsonc_comments(raw))
+    data: Dict[str, Any] = cast(Dict[str, Any], json5.loads(raw))
     if if_agree and Config.get("Function", "IfAgreeBilibili"):
         data["BilibiliAgreement_AUTO"] = {
             "algorithm": "OcrDetect",
