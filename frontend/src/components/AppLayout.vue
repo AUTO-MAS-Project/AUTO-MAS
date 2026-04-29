@@ -272,8 +272,13 @@ const onMenuClick: MenuProps['onClick'] = info => {
   );
 }
 
-.app-layout-shell.has-background :deep(.plugin-page) {
-  background: transparent;
+.app-layout-shell.has-background :deep(.plugin-page),
+.app-layout-shell.has-background :deep(.emulator-page),
+.app-layout-shell.has-background :deep(.queue-container),
+.app-layout-shell.has-background :deep(.queue-main),
+.app-layout-shell.has-background :deep(.scheduler-main) {
+  background: transparent !important;
+  background-color: transparent !important;
 }
 
 .app-layout-shell.has-background :deep(.ant-card),
@@ -297,6 +302,14 @@ const onMenuClick: MenuProps['onClick'] = info => {
 .app-layout-shell.has-background :deep(.ant-select-dropdown),
 .app-layout-shell.has-background :deep(.ant-picker-dropdown .ant-picker-panel-container) {
   background: var(--app-background-card-elevated-bg) !important;
+}
+
+.app-layout-shell.has-background :deep(.emulator-tabs .ant-tabs),
+.app-layout-shell.has-background :deep(.emulator-tabs .ant-tabs-content-holder),
+.app-layout-shell.has-background :deep(.scheduler-tabs .ant-tabs),
+.app-layout-shell.has-background :deep(.scheduler-tabs .ant-tabs-content-holder) {
+  background: transparent !important;
+  background-color: transparent !important;
 }
 
 .app-background-layer {
