@@ -69,23 +69,12 @@ const { subscribe, unsubscribe } = useWebSocket()
 
 let backgroundSubscriptionId = ''
 let backgroundRefreshTimer: ReturnType<typeof window.setTimeout> | undefined
-let backgroundStartupRetryTimer: ReturnType<typeof window.setTimeout> | undefined
-
-const scheduleBackgroundRefresh = (delay = 120) => {
-  if (backgroundRefreshTimer !== undefined) {
-    window.clearTimeout(backgroundRefreshTimer)
-  }
-  backgroundRefreshTimer = window.setTimeout(() => {
-    backgroundRefreshTimer = undefined
-    void loadBackground()
-  }, delay)
-}
 
 onMounted(() => {
-  scheduleBackgroundRefresh(0)
+  void loadBackground()
   backgroundSubscriptionId = subscribe({ id: 'PluginSystem' }, handlePluginSystemMessage)
-  backgroundStartupRetryTimer = window.setTimeout(() => {
-    scheduleBackgroundRefresh(0)
+  backgroundRefreshTimer = window.setTimeout(() => {
+    void loadBackground()
   }, 1500)
 })
 
@@ -97,10 +86,6 @@ onUnmounted(() => {
   if (backgroundRefreshTimer !== undefined) {
     window.clearTimeout(backgroundRefreshTimer)
     backgroundRefreshTimer = undefined
-  }
-  if (backgroundStartupRetryTimer !== undefined) {
-    window.clearTimeout(backgroundStartupRetryTimer)
-    backgroundStartupRetryTimer = undefined
   }
 })
 
@@ -122,13 +107,6 @@ interface PluginSystemHmrMessage {
   changed_files?: string[]
   action?: string
   status?: string
-}
-
-interface PluginSystemRuntimeMessage {
-  kind: 'runtime_state'
-  record?: {
-    plugin?: string | null
-  } | null
 }
 
 const isBackgroundHmr = (payload: PluginSystemHmrMessage) => {
@@ -154,31 +132,22 @@ const refreshPluginFrontend = () => {
 }
 
 const handlePluginSystemMessage = (message: WebSocketBaseMessage) => {
-  const payload = message.data as
-    | { kind?: string }
-    | PluginSystemHmrMessage
-    | PluginSystemRuntimeMessage
-    | undefined
+  const payload = message.data as { kind?: string } | PluginSystemHmrMessage | undefined
   if (!payload || typeof payload !== 'object') {
     return
   }
 
-  if (payload.kind === 'hmr') {
-    const hmrPayload = payload as PluginSystemHmrMessage
-    if (isBackgroundHmr(hmrPayload)) {
-      scheduleBackgroundRefresh()
-    }
-    if (hmrPayload.status === 'success' && hmrPayload.action === 'frontend_refresh') {
-      refreshPluginFrontend()
-    }
+  if (payload.kind !== 'hmr') {
+    void loadBackground()
     return
   }
 
-  if (payload.kind === 'runtime_state') {
-    const runtimePayload = payload as PluginSystemRuntimeMessage
-    if (runtimePayload.record?.plugin === 'background') {
-      scheduleBackgroundRefresh()
-    }
+  const hmrPayload = payload as PluginSystemHmrMessage
+  if (isBackgroundHmr(hmrPayload)) {
+    void loadBackground()
+  }
+  if (hmrPayload.status === 'success' && hmrPayload.action === 'frontend_refresh') {
+    refreshPluginFrontend()
   }
 }
 
@@ -272,13 +241,8 @@ const onMenuClick: MenuProps['onClick'] = info => {
   );
 }
 
-.app-layout-shell.has-background :deep(.plugin-page),
-.app-layout-shell.has-background :deep(.emulator-page),
-.app-layout-shell.has-background :deep(.queue-container),
-.app-layout-shell.has-background :deep(.queue-main),
-.app-layout-shell.has-background :deep(.scheduler-main) {
-  background: transparent !important;
-  background-color: transparent !important;
+.app-layout-shell.has-background :deep(.plugin-page) {
+  background: transparent;
 }
 
 .app-layout-shell.has-background :deep(.ant-card),
@@ -302,14 +266,6 @@ const onMenuClick: MenuProps['onClick'] = info => {
 .app-layout-shell.has-background :deep(.ant-select-dropdown),
 .app-layout-shell.has-background :deep(.ant-picker-dropdown .ant-picker-panel-container) {
   background: var(--app-background-card-elevated-bg) !important;
-}
-
-.app-layout-shell.has-background :deep(.emulator-tabs .ant-tabs),
-.app-layout-shell.has-background :deep(.emulator-tabs .ant-tabs-content-holder),
-.app-layout-shell.has-background :deep(.scheduler-tabs .ant-tabs),
-.app-layout-shell.has-background :deep(.scheduler-tabs .ant-tabs-content-holder) {
-  background: transparent !important;
-  background-color: transparent !important;
 }
 
 .app-background-layer {
