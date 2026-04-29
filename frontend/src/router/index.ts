@@ -201,7 +201,7 @@ const router = createRouter({
 router.beforeEach(async (to, from, next) => {
   logger.info(`路由守卫：${JSON.stringify({ to: to.path, from: from.path })}`)
 
-  const { isInitialized, isBootstrapping } = useAppInitialization()
+  const { isInitialized, isBootstrapping, isAppReady } = useAppInitialization()
 
   // 声明跳过的路由：直接放行
   if ((to.meta as any)?.skipGuard) {
@@ -228,7 +228,15 @@ router.beforeEach(async (to, from, next) => {
   }
 
   const isDev = import.meta.env.DEV
-  if (isDev) return next()
+  if (isDev) {
+    // 开发环境下也需要保证应用先经过初始化入口，避免直接进入业务路由导致空白页
+    if (!isAppReady.value && to.path !== '/initialization') {
+      next({ path: '/initialization', query: { redirect: to.fullPath } })
+      return
+    }
+    next()
+    return
+  }
 
   logger.info(
     `检查初始化状态：${JSON.stringify({ isInitialized: isInitialized.value, isBootstrapping: isBootstrapping.value })}`
