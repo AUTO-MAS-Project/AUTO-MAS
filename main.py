@@ -100,12 +100,20 @@ def main():
                     """非开发模式下的兜底实现。"""
                     raise RuntimeError("当前非开发模式，未加载 dev_stub_generator")
 
+            hmr_service = None
+
             await Config.init_config()
             await Config.get_stage()
             await Config.clean_old_history()
             await ArknightWin32Toolkit.init()
             await MainTimer.start()
             await PluginManager.start()
+
+            if os.getenv("AUTO_MAS_DEV") == "1":
+                from app.core.plugins.dev_hmr import DevPluginHMR
+
+                hmr_service = DevPluginHMR(PluginManager)
+                hmr_service.start()
 
             if is_dev_stub_generation_enabled():
                 try:
@@ -136,6 +144,9 @@ def main():
                 except Exception as e:
                     logger.error(f"删除AUTO_MAA.exe失败: {e}")
             yield
+
+            if hmr_service is not None:
+                await hmr_service.stop()
 
             await TaskManager.stop_task("ALL")
             await PluginManager.stop()

@@ -573,6 +573,16 @@ interface PluginSystemSnapshotMessage extends PluginsGetResponse {
   reason?: string
 }
 
+interface PluginSystemHmrMessage {
+  kind: 'hmr'
+  event: string
+  plugin?: string | null
+  changed_files?: string[]
+  action: string
+  status: 'running' | 'success' | 'error' | string
+  message?: string
+}
+
 interface WsCommandResponse<T = unknown> {
   success?: boolean
   message?: string
@@ -1690,10 +1700,11 @@ const applyRuntimeStateUpdate = (record: PluginRuntimeState) => {
   }
 }
 
-const handlePluginSystemMessage = (message: WebSocketBaseMessage) => {
-  const payload = message.data as
+const handlePluginSystemMessage = (wsMessage: WebSocketBaseMessage) => {
+  const payload = wsMessage.data as
     | PluginSystemRuntimeMessage
     | PluginSystemSnapshotMessage
+    | PluginSystemHmrMessage
     | undefined
   if (!payload || typeof payload !== 'object') {
     return
@@ -1706,6 +1717,19 @@ const handlePluginSystemMessage = (message: WebSocketBaseMessage) => {
 
   if (payload.kind === 'runtime_state') {
     applyRuntimeStateUpdate(payload.record)
+    return
+  }
+
+  if (payload.kind === 'hmr') {
+    logger.info(
+      `Plugin HMR: plugin=${payload.plugin || '-'}, action=${payload.action}, status=${payload.status}`
+    )
+    if (payload.status === 'error') {
+      message.warning(`插件 HMR 失败: ${payload.message || payload.plugin || 'unknown'}`)
+    }
+    if (payload.status !== 'running') {
+      void fetchData()
+    }
   }
 }
 
