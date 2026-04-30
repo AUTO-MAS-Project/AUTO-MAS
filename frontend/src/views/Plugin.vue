@@ -212,7 +212,21 @@
                         </a-space>
                       </div>
 
-                      <template v-if="isEnumSchema(fieldSchema)">
+                      <template v-if="isButtonSchema(fieldSchema)">
+                        <a-button
+                          type="primary"
+                          :loading="pluginActionLoadingId === getSchemaButtonActionId(field)"
+                          :disabled="Boolean(pluginActionLoadingId)"
+                          @click="triggerSchemaButtonAction(field, fieldSchema)"
+                        >
+                          {{
+                            getSchemaButtonAction(field, fieldSchema)?.label ||
+                            getFieldLabel(field, fieldSchema)
+                          }}
+                        </a-button>
+                      </template>
+
+                      <template v-else-if="isEnumSchema(fieldSchema)">
                         <a-select
                           :value="getFieldValue(field)"
                           style="width: 100%"
@@ -534,6 +548,16 @@ interface PluginSchemaField {
   enum?: unknown[]
   examples?: unknown[]
   constraints?: Record<string, unknown>
+  action?: PluginSchemaAction
+  button?: PluginSchemaAction
+  configurable?: boolean
+}
+
+interface PluginSchemaAction {
+  label?: string
+  path?: string
+  method?: string
+  payload?: unknown
 }
 
 interface PluginsGetResponse {
@@ -1113,6 +1137,9 @@ const isEnumSchema = (fieldSchema: PluginSchemaField) =>
 const isEnumListSchema = (fieldSchema: PluginSchemaField) =>
   Array.isArray(fieldSchema.enum) && fieldSchema.enum.length > 0 && isListSchema(fieldSchema)
 
+const isButtonSchema = (fieldSchema: PluginSchemaField) =>
+  fieldSchema.type === 'button' || fieldSchema.type === 'action'
+
 const getEnumOptions = (fieldSchema: PluginSchemaField) =>
   (fieldSchema.enum || []).map(item => ({
     label: String(item),
@@ -1125,6 +1152,9 @@ const getEnumListValue = (field: string) => {
 }
 
 const getTypeLabel = (fieldSchema: PluginSchemaField) => {
+  if (isButtonSchema(fieldSchema)) {
+    return '按钮'
+  }
   if (isEnumSchema(fieldSchema)) {
     return '选项'
   }
@@ -1216,6 +1246,10 @@ const validateSchemaFieldValue = (
   fieldSchema: PluginSchemaField,
   value: unknown
 ) => {
+  if (isButtonSchema(fieldSchema)) {
+    return ''
+  }
+
   if (value === undefined || value === null || value === '') {
     if (fieldSchema.required) {
       return '该字段为必填项'
@@ -1641,7 +1675,7 @@ const requestDeclaredPluginAction = async <T = any,>(action: PluginActionInfo) =
   return data
 }
 
-const triggerPluginAction = async (action: PluginActionInfo) => {
+const runDeclaredPluginAction = async (action: PluginActionInfo, sourceLabel = '插件动作') => {
   pluginActionLoadingId.value = action.id
   try {
     const data = await requestDeclaredPluginAction<any>(action)
@@ -1656,11 +1690,47 @@ const triggerPluginAction = async (action: PluginActionInfo) => {
     message.success(`${action.label} 已执行`)
     void fetchData()
   } catch (error) {
-    message.error(`插件动作失败: ${String(error)}`)
-    logger.error(`插件动作失败: action=${action.id}, error=${String(error)}`)
+    message.error(`${sourceLabel}失败: ${String(error)}`)
+    logger.error(`${sourceLabel}失败: action=${action.id}, error=${String(error)}`)
   } finally {
     pluginActionLoadingId.value = ''
   }
+}
+
+const triggerPluginAction = async (action: PluginActionInfo) => {
+  await runDeclaredPluginAction(action, '插件动作')
+}
+
+const getSchemaButtonActionId = (field: string) => `schema:${selectedInstanceId.value}:${field}`
+
+const getSchemaButtonAction = (
+  field: string,
+  fieldSchema: PluginSchemaField
+): PluginActionInfo | null => {
+  const action = fieldSchema.action || fieldSchema.button
+  if (!action || typeof action !== 'object') {
+    return null
+  }
+  if (typeof action.path !== 'string' || !action.path.trim()) {
+    return null
+  }
+  return {
+    id: getSchemaButtonActionId(field),
+    label: action.label || getFieldLabel(field, fieldSchema),
+    path: action.path,
+    method: action.method || 'POST',
+    payload: action.payload ?? {},
+    plugin: editForm.plugin,
+  }
+}
+
+const triggerSchemaButtonAction = async (field: string, fieldSchema: PluginSchemaField) => {
+  const action = getSchemaButtonAction(field, fieldSchema)
+  if (!action) {
+    message.warning('Schema 按钮缺少 action.path 声明')
+    return
+  }
+  await runDeclaredPluginAction(action, 'Schema 按钮')
 }
 
 const handleWsCommandResponse = (message: WebSocketBaseMessage) => {
