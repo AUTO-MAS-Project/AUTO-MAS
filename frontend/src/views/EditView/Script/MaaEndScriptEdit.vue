@@ -117,13 +117,13 @@
                 <template #label>
                   <span class="form-label">
                     游戏路径
-                    <a-tooltip title="选择游戏本体可执行文件的路径">
+                    <a-tooltip title="选择 Endfield.exe 文件路径">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input v-model:value="maaEndConfig.Game.Path" placeholder="请选择游戏可执行文件" size="large"
+                  <a-input v-model:value="maaEndConfig.Game.Path" placeholder="请选择 Endfield.exe 文件的路径" size="large"
                     class="path-input" readonly />
                   <a-button size="large" class="path-button" @click="selectGamePath">
                     <template #icon>
@@ -504,12 +504,17 @@ const selectMaaEndPath = async () => {
 const selectGamePath = async () => {
   const paths = await window.electronAPI?.selectFile([
     {
-      name: 'Executable',
+      name: 'Endfield.exe',
       extensions: ['exe'],
     },
   ])
   const path = paths?.[0]
   if (!path) return
+  const fileName = path.split(/[\\/]/).pop()
+  if (fileName?.toLowerCase() !== 'endfield.exe') {
+    message.error('请选择 Endfield.exe')
+    return
+  }
   maaEndConfig.Game.Path = path
   await handleChange('Game', 'Path', path)
 }
