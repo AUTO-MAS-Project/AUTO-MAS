@@ -558,6 +558,7 @@ interface PluginSchemaAction {
   path?: string
   method?: string
   payload?: unknown
+  refresh?: boolean
 }
 
 interface PluginsGetResponse {
@@ -595,6 +596,7 @@ interface PluginActionInfo {
   method: string
   payload?: unknown
   plugin: string
+  refresh?: boolean
 }
 
 interface ServiceDeclarationRow {
@@ -1688,7 +1690,9 @@ const runDeclaredPluginAction = async (action: PluginActionInfo, sourceLabel = '
       throw new Error(String((data as { message?: string }).message || '插件动作执行失败'))
     }
     message.success(`${action.label} 已执行`)
-    void fetchData()
+    if (action.refresh) {
+      void fetchData()
+    }
   } catch (error) {
     message.error(`${sourceLabel}失败: ${String(error)}`)
     logger.error(`${sourceLabel}失败: action=${action.id}, error=${String(error)}`)
@@ -1721,6 +1725,7 @@ const getSchemaButtonAction = (
     method: action.method || 'POST',
     payload: action.payload ?? {},
     plugin: editForm.plugin,
+    refresh: Boolean(action.refresh),
   }
 }
 
