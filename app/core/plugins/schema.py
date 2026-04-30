@@ -54,6 +54,7 @@ class PluginSchemaManager:
     _PRIMITIVE_TYPE_ALIASES: Dict[str, Any] = {
         "any": Any,
         "Any": Any,
+        "button": Any,
         "str": str,
         "string": str,
         "int": int,
@@ -771,6 +772,9 @@ class PluginSchemaManager:
             if "type" not in raw_field:
                 raise PluginSchemaError(f"Schema 字段缺少 type: {plugin_name}.{field_name}")
 
+            if self._is_virtual_schema_field(raw_field):
+                continue
+
             try:
                 spec = _FieldSpecModel.model_validate(raw_field)
             except ValidationError as e:
@@ -822,6 +826,14 @@ class PluginSchemaManager:
 
             raw_field["type"] = self._type_to_expr(spec.type)
         return compiled
+
+    @staticmethod
+    def _is_virtual_schema_field(raw_field: Dict[str, Any]) -> bool:
+        """判断字段是否只用于前端渲染，不参与插件配置校验与落库。"""
+        field_type = str(raw_field.get("type") or "").strip().lower()
+        if field_type in {"button", "action"}:
+            return True
+        return raw_field.get("configurable") is False
 
     def _validate_field_value(
         self,

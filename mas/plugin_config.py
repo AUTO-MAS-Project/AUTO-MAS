@@ -20,6 +20,8 @@ def PluginField(
     help: str | None = None,
     ui_type: str | None = None,
     item_type: str | None = None,
+    action: dict[str, Any] | None = None,
+    configurable: bool | None = None,
     json_schema_extra: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> Any:
@@ -38,6 +40,10 @@ def PluginField(
         extra["type"] = ui_type
     if item_type is not None:
         extra["item_type"] = item_type
+    if action is not None:
+        extra["action"] = action
+    if configurable is not None:
+        extra["configurable"] = configurable
 
     field_kwargs = dict(kwargs)
     if extra:
@@ -49,4 +55,3 @@ def PluginField(
 
 
 __all__ = ["PluginField", "PluginFieldFormat"]
-
