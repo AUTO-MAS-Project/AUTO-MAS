@@ -76,6 +76,12 @@ class _PluginManager:
     def _iter_local_pyproject_paths(self) -> list[Path]:
         """枚举本地插件目录中的 pyproject.toml 文件。
 
+        支持两级深度扫描：
+        - 一级：plugins/<name>/pyproject.toml
+        - 二级：plugins/<group>/<name>/pyproject.toml
+
+        若一级目录自身包含 pyproject.toml 则不再深入该目录。
+
         Returns:
             list[Path]: 所有候选 pyproject.toml 的路径列表。
 
@@ -92,6 +98,13 @@ class _PluginManager:
             pyproject_path = item / "pyproject.toml"
             if pyproject_path.exists():
                 result.append(pyproject_path)
+                continue
+            for sub_item in sorted(item.iterdir()):
+                if not sub_item.is_dir():
+                    continue
+                sub_pyproject = sub_item / "pyproject.toml"
+                if sub_pyproject.exists():
+                    result.append(sub_pyproject)
         return result
 
     def _parse_local_plugin_project(self, pyproject_path: Path) -> _LocalPluginProject | None:
