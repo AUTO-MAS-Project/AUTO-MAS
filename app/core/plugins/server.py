@@ -105,6 +105,7 @@ class PluginAction:
     instance_id: str
     plugin_name: str
     payload: Any = None
+    refresh: bool = False
 
 
 @dataclass
@@ -187,6 +188,7 @@ class PluginServerRegistry:
         path: str,
         method: str = "POST",
         payload: Any = None,
+        refresh: bool = False,
     ) -> PluginAction:
         """注册插件前端动作按钮。"""
         normalized_id = str(action_id or "").strip()
@@ -202,6 +204,7 @@ class PluginServerRegistry:
             path=_normalize_path(path),
             method=str(method or "POST").strip().upper() or "POST",
             payload=payload,
+            refresh=bool(refresh),
             instance_id=instance_id,
             plugin_name=plugin_name,
         )
@@ -360,6 +363,7 @@ class PluginServerRegistry:
                     "method": action.method,
                     "payload": action.payload,
                     "plugin": action.plugin_name,
+                    "refresh": action.refresh,
                 }
                 for action in action_map.values()
             ]
@@ -406,16 +410,19 @@ class PluginServerFacade:
                 action_id = str(action.get("id") or route.path.strip("/").replace("/", ".") or "default")
                 label = str(action.get("label") or action_id)
                 payload = action.get("payload")
+                refresh = bool(action.get("refresh", False))
             else:
                 action_id = route.path.strip("/").replace("/", ".") or "default"
                 label = str(action)
                 payload = None
+                refresh = False
             self.action(
                 id=action_id,
                 label=label,
                 path=route.path,
                 method=sorted(route.methods)[0],
                 payload=payload,
+                refresh=refresh,
             )
         return route
 
@@ -427,6 +434,7 @@ class PluginServerFacade:
         *,
         method: str = "POST",
         payload: Any = None,
+        refresh: bool = False,
     ) -> PluginAction:
         """声明一个插件管理页按钮动作。"""
         return self._registry.register_action(
@@ -437,6 +445,7 @@ class PluginServerFacade:
             path=path,
             method=method,
             payload=payload,
+            refresh=refresh,
         )
 
     def websocket(
@@ -503,4 +512,3 @@ def serialize_plugin_result(result: Any) -> Any:
 
 
 plugin_server = PluginServerRegistry()
-
