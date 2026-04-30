@@ -56,12 +56,19 @@ def _iter_local_pyproject_paths(plugins_dir: Path | None = None) -> list[Path]:
         return []
 
     result: list[Path] = []
-    for child in base_dir.iterdir():
-        if not child.is_dir():
+    for child in sorted(base_dir.iterdir()):
+        if not child.is_dir() or child.name == "pypi":
             continue
         pyproject = child / "pyproject.toml"
         if pyproject.exists() and pyproject.is_file():
             result.append(pyproject)
+            continue
+        for sub_child in sorted(child.iterdir()):
+            if not sub_child.is_dir():
+                continue
+            sub_pyproject = sub_child / "pyproject.toml"
+            if sub_pyproject.exists() and sub_pyproject.is_file():
+                result.append(sub_pyproject)
 
     return result
 
