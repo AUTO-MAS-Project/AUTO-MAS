@@ -89,7 +89,11 @@ def _to_response(result: Any) -> Response:
     return PlainTextResponse(content=str(data))
 
 
-@router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+@router.api_route(
+    "/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    include_in_schema=False,
+)
 async def dispatch_plugin_http(path: str, request: Request) -> Response:
     """分发插件声明式 HTTP 请求。"""
     route_path = f"/{path}".rstrip("/") or "/"
