@@ -300,6 +300,9 @@ class AutoProxyTask(TaskExecuteBase):
                     f"{self.cur_user_item.name}的自动代理出现异常",
                     3,
                 )
+                if "游戏分辨率设置错误" in self.cur_user_log.status:
+                    logger.info("检测到游戏分辨率设置错误，跳过后续重试")
+                    break
 
     async def handle_pre_maaend_error(
         self, error_message: str, e: Exception | None = None
@@ -502,6 +505,8 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_log.status = "MaaEnd 资源加载失败"
         elif "快捷键开始任务：失败" in log:
             self.cur_user_log.status = "MaaEnd 任务启动失败"
+        elif "resolution check failed" in log or "分辨率不符合要求" in log:
+            self.cur_user_log.status = "游戏分辨率设置错误，请重设分辨率比例为16:9"
         elif (
             "任务完成: 停止任务" in log
             or "任务完成: ⛔ 结束进程" in log
