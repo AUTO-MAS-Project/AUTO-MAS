@@ -24,7 +24,7 @@ import json
 import calendar
 from pathlib import Path
 from datetime import datetime
-from typing import Callable
+from typing import Callable, Any
 
 from app.utils.constants import (
     UTC4,
@@ -32,6 +32,10 @@ from app.utils.constants import (
     MATERIALS_MAP,
     RESOURCE_STAGE_INFO,
     MAA_STAGE_KEY,
+    PLAN_CONSUMER_VALUES,
+    MAAEND_PLAN_FIELDS,
+    MAAEND_PROTOCOL_SPACE_TABS,
+    MAAEND_SANITY_TASK_TYPES,
     MAAEND_STAGE_BOOK,
     MAAEND_STAGE_WITH_AB,
     STARRAIL_STAGE_BOOK,
@@ -59,7 +63,27 @@ from .ConfigBase import (
     ArgumentValidator,
     AdvancedArgumentValidator,
 )
+from . import schema as schema_model
 from .schema import TagItem
+
+
+def _normalize_maaend_sanity_task_type(task_data: dict[str, Any]) -> None:
+    """将旧版 MaaEnd 理智任务配置迁移到当前结构"""
+
+    if not isinstance(task_data, dict):
+        return
+
+    sanity_task_type = task_data.get("SanityTaskType")
+    if sanity_task_type in MAAEND_SANITY_TASK_TYPES:
+        return
+
+    if sanity_task_type == "ProtocolSpace":
+        protocol_space_tab = task_data.get("ProtocolSpaceTab")
+        if protocol_space_tab in MAAEND_PROTOCOL_SPACE_TABS:
+            task_data["SanityTaskType"] = protocol_space_tab
+            return
+
+    task_data["SanityTaskType"] = "OperatorProgression"
 
 
 class EmulatorConfig(ConfigBase):
@@ -639,6 +663,8 @@ class MaaConfig(ConfigBase):
 class MaaEndUserConfig(ConfigBase):
     """MaaEnd用户配置"""
 
+    related_config: dict[str, MultipleConfig] = {}
+
     def __init__(self) -> None:
 
         ## Info ------------------------------------------------------------
@@ -653,6 +679,13 @@ class MaaEndUserConfig(ConfigBase):
         ## 配置模式
         self.Info_Mode = ConfigItem(
             "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+        )
+        ## 理智任务配置模式
+        self.Info_SanityMode = ConfigItem(
+            "Info",
+            "SanityMode",
+            "Fixed",
+            MultipleUIDValidator("Fixed", self.related_config, "PlanConfig"),
         )
         ## 资源名称
         self.Info_Resource = ConfigItem(
@@ -676,46 +709,36 @@ class MaaEndUserConfig(ConfigBase):
         )
 
         ## Task ------------------------------------------------------------
-        ## 协议空间选项
-        self.Task_ProtocolSpaceTab = ConfigItem(
+        ## 理智任务类型
+        self.Task_SanityTaskType = ConfigItem(
             "Task",
-            "ProtocolSpaceTab",
+            "SanityTaskType",
             "OperatorProgression",
-            OptionsValidator(
-                ["OperatorProgression", "WeaponProgression", "CrisisDrills"]
-            ),
         )
         self.Task_OperatorProgression = ConfigItem(
             "Task",
             "OperatorProgression",
             "OperatorEXP",
-            OptionsValidator(["OperatorEXP", "Promotions", "T-Creds", "SkillUp"]),
         )
         self.Task_WeaponProgression = ConfigItem(
             "Task",
             "WeaponProgression",
             "WeaponEXP",
-            OptionsValidator(["WeaponEXP", "WeaponTune"]),
         )
         self.Task_CrisisDrills = ConfigItem(
             "Task",
             "CrisisDrills",
             "AdvancedProgression1",
-            OptionsValidator(
-                [
-                    "AdvancedProgression1",
-                    "AdvancedProgression2",
-                    "AdvancedProgression3",
-                    "AdvancedProgression4",
-                    "AdvancedProgression5",
-                ]
-            ),
         )
         self.Task_RewardsSetOption = ConfigItem(
             "Task",
             "RewardsSetOption",
             "RewardsSetA",
-            OptionsValidator(["RewardsSetA", "RewardsSetB"]),
+        )
+        self.Task_AutoEssenceSpecifiedLocation = ConfigItem(
+            "Task",
+            "AutoEssenceSpecifiedLocation",
+            "VFTheHub",
         )
 
         ## Data ------------------------------------------------------------
@@ -764,6 +787,32 @@ class MaaEndUserConfig(ConfigBase):
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
         super().__init__()
+
+    async def load(self, data: dict):
+        task_data = data.get("Task")
+        if isinstance(task_data, dict):
+            _normalize_maaend_sanity_task_type(task_data)
+        await super().load(data)
+
+    def get_effective_sanity_task_config(self) -> tuple[dict[str, str], str]:
+        """获取当前生效的理智任务配置"""
+
+        mode = self.get("Info", "SanityMode")
+        if mode == "Fixed":
+            return ({field: self.get("Task", field) for field in MAAEND_PLAN_FIELDS}, "Fixed")
+
+        try:
+            plan = self.related_config["PlanConfig"][uuid.UUID(mode)]
+        except (KeyError, ValueError) as e:
+            raise ValueError("引用的理智任务计划表不存在") from e
+
+        if not isinstance(plan, MaaEndPlanConfig):
+            raise TypeError(f"引用的计划表 {mode} 类型不是 MaaEnd 计划表")
+
+        return (
+            {field: plan.get_current_info(field).getValue() for field in MAAEND_PLAN_FIELDS},
+            "Plan",
+        )
 
     def getTags(self) -> str:
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
@@ -833,14 +882,31 @@ class MaaEndUserConfig(ConfigBase):
             }
         )
 
-        # 关卡信息标签
-        stage = self.get("Task", self.get("Task", "ProtocolSpaceTab"))
-        stage_ab = (
-            f" - {self.get("Task", "RewardsSetOption")[-1]}"
-            if stage in MAAEND_STAGE_WITH_AB
-            else ""
-        )
-        tags.append({"text": MAAEND_STAGE_BOOK[stage] + stage_ab, "color": "blue"})
+        # 理智任务标签
+        try:
+            task_config, task_mode = self.get_effective_sanity_task_config()
+            if task_config["SanityTaskType"] != "Essence":
+                stage = task_config[task_config["SanityTaskType"]]
+                stage_ab = (
+                    f" - {task_config['RewardsSetOption'][-1]}"
+                    if stage in MAAEND_STAGE_WITH_AB
+                    else ""
+                )
+                tags.append(
+                    {
+                        "text": MAAEND_STAGE_BOOK[stage] + stage_ab,
+                        "color": "green" if task_mode == "Plan" else "blue",
+                    }
+                )
+            else:
+                tags.append(
+                    {
+                        "text": "基质刷取",
+                        "color": "green" if task_mode == "Plan" else "blue",
+                    }
+                )
+        except (ValueError, TypeError) as e:
+            tags.append({"text": f"理智任务：{str(e)}", "color": "red"})
 
         # 备注标签
         notes = self.get("Info", "Notes")
@@ -1348,6 +1414,79 @@ class MaaPlanConfig(ConfigBase):
                 self.config_item_dict[group][name] = ConfigItem(group, name, "-")
 
             for name in MAA_STAGE_KEY:
+                setattr(self, f"{group}_{name}", self.config_item_dict[group][name])
+
+        super().__init__()
+
+    def get_current_info(self, name: str) -> ConfigItem:
+        """获取当前的计划表配置项"""
+
+        if self.get("Info", "Mode") == "ALL":
+            return self.config_item_dict["ALL"][name]
+
+        elif self.get("Info", "Mode") == "Weekly":
+
+            today = datetime.now(tz=UTC4).strftime("%A")
+
+            if today in self.config_item_dict:
+                return self.config_item_dict[today][name]
+            else:
+                return self.config_item_dict["ALL"][name]
+
+        else:
+            raise ValueError("非法的计划表模式")
+
+
+class MaaEndPlanConfig(ConfigBase):
+    """MaaEnd计划表配置"""
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## 计划表名称
+        self.Info_Name = ConfigItem("Info", "Name", "新 MaaEnd 计划表")
+        ## 计划表模式
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "ALL", OptionsValidator(["ALL", "Weekly"])
+        )
+
+        self.config_item_dict: dict[str, dict[str, ConfigItem]] = {}
+
+        for group in ["ALL", *calendar.day_name]:
+            self.config_item_dict[group] = {}
+
+            self.config_item_dict[group]["OperatorProgression"] = ConfigItem(
+                group,
+                "OperatorProgression",
+                "OperatorEXP",
+            )
+            self.config_item_dict[group]["WeaponProgression"] = ConfigItem(
+                group,
+                "WeaponProgression",
+                "WeaponEXP",
+            )
+            self.config_item_dict[group]["CrisisDrills"] = ConfigItem(
+                group,
+                "CrisisDrills",
+                "AdvancedProgression1",
+            )
+            self.config_item_dict[group]["RewardsSetOption"] = ConfigItem(
+                group,
+                "RewardsSetOption",
+                "RewardsSetA",
+            )
+            self.config_item_dict[group]["SanityTaskType"] = ConfigItem(
+                group,
+                "SanityTaskType",
+                "OperatorProgression",
+            )
+            self.config_item_dict[group]["AutoEssenceSpecifiedLocation"] = ConfigItem(
+                group,
+                "AutoEssenceSpecifiedLocation",
+                "VFTheHub",
+            )
+
+            for name in MAAEND_PLAN_FIELDS:
                 setattr(self, f"{group}_{name}", self.config_item_dict[group][name])
 
         super().__init__()
@@ -1885,7 +2024,9 @@ class GlobalConfig(ConfigBase):
         ## 模拟器配置列表
         self.EmulatorConfig = MultipleConfig([EmulatorConfig])
         ## 计划表配置列表
-        self.PlanConfig = MultipleConfig([MaaPlanConfig])
+        self.PlanConfig = MultipleConfig(
+            [item["config_class"] for item in PLAN_BOOK.values()]
+        )
         ## 脚本配置列表
         self.ScriptConfig = MultipleConfig(
             [MaaConfig, MaaEndConfig, SrcConfig, GeneralConfig]
@@ -1900,6 +2041,7 @@ class GlobalConfig(ConfigBase):
         SrcConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
+        MaaEndUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
 
     def getStage(self) -> str:
@@ -1967,9 +2109,28 @@ class GlobalConfig(ConfigBase):
 
 CLASS_BOOK = {
     "MAA": MaaConfig,
-    "MaaPlan": MaaPlanConfig,
     "SRC": SrcConfig,
     "MaaEnd": MaaEndConfig,
     "General": GeneralConfig,
 }
 """配置类映射表"""
+
+PLAN_BOOK = {
+    "MaaPlanConfig": {
+        "create_type": "MaaPlan",
+        "config_class": MaaPlanConfig,
+        "schema_class": schema_model.MaaPlanConfig,
+        "consumer": PLAN_CONSUMER_VALUES[0],
+        "script_class": MaaConfig,
+        "field_name": "StageMode",
+    },
+    "MaaEndPlanConfig": {
+        "create_type": "MaaEndPlan",
+        "config_class": MaaEndPlanConfig,
+        "schema_class": schema_model.MaaEndPlanConfig,
+        "consumer": PLAN_CONSUMER_VALUES[1],
+        "script_class": MaaEndConfig,
+        "field_name": "SanityMode",
+    },
+}
+"""计划表注册表"""

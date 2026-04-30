@@ -36,7 +36,11 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
 from app.tools import skland_sign_in
-from app.utils.constants import UTC4, UTC8, MAAEND_KILLPROC_TASK
+from app.utils.constants import (
+    UTC4,
+    UTC8,
+    MAAEND_KILLPROC_TASK,
+)
 from .tools import login, push_notification
 
 logger = get_logger("MaaEnd 自动代理")
@@ -66,6 +70,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
         self.check_result = "-"
+        self.effective_sanity_task_config: dict[str, str] | None = None
 
     async def check(self) -> str:
 
@@ -90,6 +95,14 @@ class AutoProxyTask(TaskExecuteBase):
             return (
                 "未找到用户的 MaaEnd 配置文件, 请先在用户配置页完成「MaaEnd 配置」步骤"
             )
+
+        try:
+            self.effective_sanity_task_config, _ = (
+                self.cur_user_config.get_effective_sanity_task_config()
+            )
+        except Exception as e:
+            self.cur_user_item.status = "异常"
+            return f"理智任务计划表配置无效: {str(e)}"
 
         return "Pass"
 
@@ -451,30 +464,67 @@ class AutoProxyTask(TaskExecuteBase):
                 if task_name in self.task_dict:
                     task["enabled"] = self.task_dict[task_name][task["id"]]
 
-        # 配置协议空间
+        # 配置理智任务
+        if self.effective_sanity_task_config is None:
+            raise RuntimeError("未找到当前生效的理智任务配置")
+
+        sanity_task_type = self.effective_sanity_task_config["SanityTaskType"]
+        auto_essence_location = ""
+        if sanity_task_type == "Essence":
+            auto_essence_location = self.effective_sanity_task_config.get(
+                "AutoEssenceSpecifiedLocation", ""
+            )
+
+        protocol_space_found = False
+        auto_essence_found = False
+
         for task in maaend_tasks:
             if task["taskName"] == "ProtocolSpace":
+                protocol_space_found = True
+                task["enabled"] = sanity_task_type != "Essence"
+                if sanity_task_type == "Essence":
+                    continue
+
                 task["optionValues"]["ProtocolSpaceTab"] = {
                     "type": "select",
-                    "caseName": self.cur_user_config.get("Task", "ProtocolSpaceTab"),
+                    "caseName": sanity_task_type,
                 }
                 task["optionValues"]["OperatorProgression"] = {
                     "type": "select",
-                    "caseName": self.cur_user_config.get("Task", "OperatorProgression"),
+                    "caseName": self.effective_sanity_task_config["OperatorProgression"],
                 }
                 task["optionValues"]["WeaponProgression"] = {
                     "type": "select",
-                    "caseName": self.cur_user_config.get("Task", "WeaponProgression"),
+                    "caseName": self.effective_sanity_task_config["WeaponProgression"],
                 }
                 task["optionValues"]["CrisisDrills"] = {
                     "type": "select",
-                    "caseName": self.cur_user_config.get("Task", "CrisisDrills"),
+                    "caseName": self.effective_sanity_task_config["CrisisDrills"],
                 }
                 task["optionValues"]["RewardsSetOption"] = {
                     "type": "select",
-                    "caseName": self.cur_user_config.get("Task", "RewardsSetOption"),
+                    "caseName": self.effective_sanity_task_config["RewardsSetOption"],
                 }
-                break
+            elif task["taskName"] == "AutoEssence":
+                auto_essence_found = True
+                task["enabled"] = sanity_task_type == "Essence"
+                if sanity_task_type != "Essence":
+                    continue
+
+                task.setdefault("optionValues", {})
+                task["optionValues"]["AutoEssenceSpecifiedLocation"] = {
+                    "type": "select",
+                    "caseName": auto_essence_location,
+                }
+
+        if sanity_task_type != "Essence" and not protocol_space_found:
+            logger.warning(
+                f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 ProtocolSpace 任务，已跳过协议空间注入"
+            )
+        if sanity_task_type == "Essence" and not auto_essence_found:
+            logger.warning(
+                f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 AutoEssence 任务，已跳过基质刷取注入"
+            )
 
         # 完成任务后退出脚本
         if (

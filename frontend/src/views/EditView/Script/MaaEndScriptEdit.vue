@@ -30,6 +30,30 @@
         <a-tag class="type-tag">MaaEnd</a-tag>
       </template>
 
+      <a-alert message="重要提示" type="warning" show-icon class="notice-alert">
+        <template #description>
+          <div class="notice-content">
+            <p>默认等待时间建议调到 60 秒。</p>
+            <p>
+              MaaEnd专项还在积极测试中，如有问题请加入
+              <a
+                href="https://qm.qq.com/q/1FKvD6Q8H6"
+                target="_blank"
+                rel="noopener noreferrer"
+                @click="handleExternalLink"
+                >QQ群</a
+              >
+              反馈，或前往
+              <a
+                href="https://github.com/AUTO-MAS-Project/AUTO-MAS/issues/149"
+                @click="handleExternalLink"
+                >BUG收集页</a
+              >留言
+            </p>
+          </div>
+        </template>
+      </a-alert>
+
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
           <div class="section-header">
@@ -46,8 +70,13 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input v-model:value="formData.name" placeholder="请输入脚本名称" size="large" class="modern-input"
-                  @blur="handleChange('Info', 'Name', formData.name)" />
+                <a-input
+                  v-model:value="formData.name"
+                  placeholder="请输入脚本名称"
+                  size="large"
+                  class="modern-input"
+                  @blur="handleChange('Info', 'Name', formData.name)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="16">
@@ -61,8 +90,13 @@
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input v-model:value="formData.path" placeholder="请选择 MaaEnd.exe 所在目录" size="large"
-                    class="path-input" readonly />
+                  <a-input
+                    v-model:value="formData.path"
+                    placeholder="请选择 MaaEnd.exe 所在目录"
+                    size="large"
+                    class="path-input"
+                    readonly
+                  />
                   <a-button size="large" class="path-button" @click="selectMaaEndPath">
                     <template #icon>
                       <FolderOpenOutlined />
@@ -91,8 +125,12 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-select v-model:value="maaEndConfig.Game.ControllerType" size="large" :options="controllerOptions"
-                  @change="handleControllerTypeChange" />
+                <a-select
+                  v-model:value="maaEndConfig.Game.ControllerType"
+                  size="large"
+                  :options="controllerOptions"
+                  @change="handleControllerTypeChange"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -105,8 +143,12 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-select v-model:value="maaEndConfig.Game.CloseOnFinish" size="large" :options="booleanOptions"
-                  @change="handleChange('Game', 'CloseOnFinish', $event)" />
+                <a-select
+                  v-model:value="maaEndConfig.Game.CloseOnFinish"
+                  size="large"
+                  :options="booleanOptions"
+                  @change="handleChange('Game', 'CloseOnFinish', $event)"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -123,8 +165,13 @@
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input v-model:value="maaEndConfig.Game.Path" placeholder="请选择游戏可执行文件" size="large"
-                    class="path-input" readonly />
+                  <a-input
+                    v-model:value="maaEndConfig.Game.Path"
+                    placeholder="请选择游戏可执行文件"
+                    size="large"
+                    class="path-input"
+                    readonly
+                  />
                   <a-button size="large" class="path-button" @click="selectGamePath">
                     <template #icon>
                       <FolderOpenOutlined />
@@ -144,8 +191,13 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input v-model:value="maaEndConfig.Game.Arguments" placeholder="请输入启动参数" size="large"
-                  class="modern-input" @blur="handleChange('Game', 'Arguments', maaEndConfig.Game.Arguments)" />
+                <a-input
+                  v-model:value="maaEndConfig.Game.Arguments"
+                  placeholder="请输入启动参数"
+                  size="large"
+                  class="modern-input"
+                  @blur="handleChange('Game', 'Arguments', maaEndConfig.Game.Arguments)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -158,8 +210,14 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input-number v-model:value="maaEndConfig.Game.WaitTime" :min="0" :max="9999" size="large"
-                  style="width: 100%" @blur="handleChange('Game', 'WaitTime', maaEndConfig.Game.WaitTime)" />
+                <a-input-number
+                  v-model:value="maaEndConfig.Game.WaitTime"
+                  :min="0"
+                  :max="9999"
+                  size="large"
+                  style="width: 100%"
+                  @blur="handleChange('Game', 'WaitTime', maaEndConfig.Game.WaitTime)"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -175,9 +233,18 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-select v-model:value="maaEndConfig.Game.EmulatorId" size="large" placeholder="请选择模拟器"
-                  :loading="emulatorLoading" @change="handleEmulatorSelectChange">
-                  <a-select-option v-for="item in emulatorOptions" :key="item.value" :value="item.value">
+                <a-select
+                  v-model:value="maaEndConfig.Game.EmulatorId"
+                  size="large"
+                  placeholder="请选择模拟器"
+                  :loading="emulatorLoading"
+                  @change="handleEmulatorSelectChange"
+                >
+                  <a-select-option
+                    v-for="item in emulatorOptions"
+                    :key="item.value"
+                    :value="item.value"
+                  >
                     {{ item.label }}
                   </a-select-option>
                 </a-select>
@@ -189,18 +256,38 @@
                   <span class="form-label">
                     模拟器实例
                     <a-tooltip
-                      :title="emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading ? '不支持自动扫描实例的模拟器，请手动输入实例信息' : '选择模拟器的具体实例'">
+                      :title="
+                        emulatorDeviceOptions.length === 0 && !emulatorDeviceLoading
+                          ? '不支持自动扫描实例的模拟器，请手动输入实例信息'
+                          : '选择模拟器的具体实例'
+                      "
+                    >
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input v-if="showManualEmulatorIndexInput" v-model:value="maaEndConfig.Game.EmulatorIndex"
-                  size="large" class="modern-input" placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
-                  @blur="handleChange('Game', 'EmulatorIndex', maaEndConfig.Game.EmulatorIndex)" />
-                <a-select v-else v-model:value="maaEndConfig.Game.EmulatorIndex" size="large" placeholder="请选择实例"
-                  :loading="emulatorDeviceLoading" :disabled="!maaEndConfig.Game.EmulatorId"
-                  @change="handleChange('Game', 'EmulatorIndex', $event)">
-                  <a-select-option v-for="item in emulatorDeviceOptions" :key="item.value" :value="item.value">
+                <a-input
+                  v-if="showManualEmulatorIndexInput"
+                  v-model:value="maaEndConfig.Game.EmulatorIndex"
+                  size="large"
+                  class="modern-input"
+                  placeholder="请输入实例信息，格式：启动附加命令 | ADB地址"
+                  @blur="handleChange('Game', 'EmulatorIndex', maaEndConfig.Game.EmulatorIndex)"
+                />
+                <a-select
+                  v-else
+                  v-model:value="maaEndConfig.Game.EmulatorIndex"
+                  size="large"
+                  placeholder="请选择实例"
+                  :loading="emulatorDeviceLoading"
+                  :disabled="!maaEndConfig.Game.EmulatorId"
+                  @change="handleChange('Game', 'EmulatorIndex', $event)"
+                >
+                  <a-select-option
+                    v-for="item in emulatorDeviceOptions"
+                    :key="item.value"
+                    :value="item.value"
+                  >
                     {{ item.label }}
                   </a-select-option>
                 </a-select>
@@ -219,14 +306,21 @@
                 <template #label>
                   <span class="form-label">
                     单日代理次数上限
-                    <a-tooltip title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限">
+                    <a-tooltip
+                      title="当用户本日代理成功次数达到该阀值时跳过代理，阈值为「0」时视为无代理次数上限"
+                    >
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input-number v-model:value="maaEndConfig.Run.ProxyTimesLimit" :min="0" :max="9999" size="large"
+                <a-input-number
+                  v-model:value="maaEndConfig.Run.ProxyTimesLimit"
+                  :min="0"
+                  :max="9999"
+                  size="large"
                   style="width: 100%"
-                  @blur="handleChange('Run', 'ProxyTimesLimit', maaEndConfig.Run.ProxyTimesLimit)" />
+                  @blur="handleChange('Run', 'ProxyTimesLimit', maaEndConfig.Run.ProxyTimesLimit)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -239,8 +333,14 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input-number v-model:value="maaEndConfig.Run.RunTimesLimit" :min="1" :max="9999" size="large"
-                  style="width: 100%" @blur="handleChange('Run', 'RunTimesLimit', maaEndConfig.Run.RunTimesLimit)" />
+                <a-input-number
+                  v-model:value="maaEndConfig.Run.RunTimesLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  style="width: 100%"
+                  @blur="handleChange('Run', 'RunTimesLimit', maaEndConfig.Run.RunTimesLimit)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="8">
@@ -253,8 +353,14 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input-number v-model:value="maaEndConfig.Run.RunTimeLimit" :min="1" :max="9999" size="large"
-                  style="width: 100%" @blur="handleChange('Run', 'RunTimeLimit', maaEndConfig.Run.RunTimeLimit)" />
+                <a-input-number
+                  v-model:value="maaEndConfig.Run.RunTimeLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  style="width: 100%"
+                  @blur="handleChange('Run', 'RunTimeLimit', maaEndConfig.Run.RunTimeLimit)"
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -273,6 +379,7 @@ import type { ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { handleExternalLink } from '@/utils/openExternal'
 import {
   ArrowLeftOutlined,
   FolderOpenOutlined,
@@ -437,16 +544,16 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
     const gamePayload =
       value === 'ADB'
         ? {
-          ControllerType: value,
-          Path: '',
-          Arguments: '',
-          WaitTime: 15,
-        }
+            ControllerType: value,
+            Path: '',
+            Arguments: '',
+            WaitTime: 90,
+          }
         : {
-          ControllerType: value,
-          EmulatorId: '',
-          EmulatorIndex: '',
-        }
+            ControllerType: value,
+            EmulatorId: '',
+            EmulatorIndex: '',
+          }
 
     if (value !== 'ADB') {
       emulatorDeviceOptions.value = []
@@ -594,6 +701,23 @@ onMounted(async () => {
   border: 1px solid var(--ant-color-primary-border);
   color: var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
+}
+
+.notice-alert {
+  margin-bottom: 24px;
+  border-radius: 12px;
+}
+
+.notice-content p {
+  margin: 0;
+}
+
+.notice-content p + p {
+  margin-top: 6px;
+}
+
+.notice-content a {
+  font-weight: 600;
 }
 
 .form-section {

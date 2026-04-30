@@ -24,6 +24,7 @@
 from fastapi import APIRouter, Body
 
 from app.core import Config
+from app.models.config import PLAN_BOOK
 from app.models.schema import *
 
 router = APIRouter(prefix="/api/plan", tags=["计划管理"])
@@ -40,14 +41,19 @@ async def add_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
 
     try:
         uid, config = await Config.add_plan(plan.type)
-        data = MaaPlanConfig(**(await config.toDict()))
+        data = PLAN_BOOK[type(config).__name__]["schema_class"](**(await config.toDict()))
     except Exception as e:
+        plan_schema_class = next(
+            item["schema_class"]
+            for item in PLAN_BOOK.values()
+            if item["create_type"] == plan.type
+        )
         return PlanCreateOut(
             code=500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             planId="",
-            data=MaaPlanConfig(**{}),
+            data=plan_schema_class(**{}),
         )
     return PlanCreateOut(planId=str(uid), data=data)
 
@@ -62,9 +68,18 @@ async def add_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
 async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
 
     try:
-        index, data = await Config.get_plan(plan.planId)
-        index = [PlanIndexItem(**_) for _ in index]
-        data = {uid: MaaPlanConfig(**cfg) for uid, cfg in data.items()}
+        raw_index, raw_data = await Config.get_plan(plan.planId)
+        index = [PlanIndexItem(**_) for _ in raw_index]
+        data: dict[str, PlanConfigData] = {}
+
+        for item in raw_index:
+            uid = item["uid"]
+            plan_type = item["type"]
+
+            if uid not in raw_data:
+                raise ValueError(f"计划表索引缺少对应数据: {uid}")
+
+            data[uid] = PLAN_BOOK[plan_type]["schema_class"](**raw_data[uid])
     except Exception as e:
         return PlanGetOut(
             code=500,

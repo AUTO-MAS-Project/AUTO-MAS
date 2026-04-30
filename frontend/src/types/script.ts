@@ -1,7 +1,7 @@
 // 脚本类型定义
 import type { MaaConfig, GeneralConfig, SrcConfig, MaaEndConfig } from '@/api'
 
-export type ScriptType = 'MAA' | 'General' | 'SRC' | 'MaaEnd'
+11
 
 // MAA脚本配置
 export interface MAAScriptConfig {
@@ -148,6 +148,7 @@ export interface User {
     Name: string
     Notes: string
     Password: string
+    SanityMode?: string
     RemainedDay: number
     SeriesNumb: string
     Server: string
@@ -182,6 +183,12 @@ export interface User {
     ToAddress: string
   }
   Task: {
+    SanityTaskType?: string
+    OperatorProgression?: string
+    WeaponProgression?: string
+    CrisisDrills?: string
+    RewardsSetOption?: string
+    AutoEssenceSpecifiedLocation?: string
     IfRoguelike: boolean
     IfInfrast: boolean
     IfFight: boolean

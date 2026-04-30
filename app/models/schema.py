@@ -21,8 +21,23 @@
 #   Contact: DLmaster_361@163.com
 
 
-from pydantic import BaseModel, Field
-from typing import Any, Dict, List, Union, Optional, Literal
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Any, Dict, List, Union, Optional, Literal, Generic, TypeVar
+
+from app.utils.constants import PLAN_CONSUMER_VALUES
+
+
+WeekdayKey = Literal[
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+]# 所有的脚本都使用这个类型来表示星期几
+TPlanInfo = TypeVar("TPlanInfo")
+TPlanItem = TypeVar("TPlanItem")
 
 
 class OutBase(BaseModel):
@@ -278,19 +293,7 @@ class QueueItem(BaseModel):
 
 class TimeSet_Info(BaseModel):
     Enabled: Optional[bool] = Field(default=None, description="是否启用")
-    Days: Optional[
-        List[
-            Literal[
-                "Monday",
-                "Tuesday",
-                "Wednesday",
-                "Thursday",
-                "Friday",
-                "Saturday",
-                "Sunday",
-            ]
-        ]
-    ] = Field(default=None, description="执行周期, 可多选")
+    Days: Optional[List[WeekdayKey]] = Field(default=None, description="执行周期, 可多选")
     Time: Optional[str] = Field(default=None, description="时间设置, 格式为HH:MM")
 
 
@@ -563,6 +566,7 @@ class MaaEndUserConfig_Info(BaseModel):
     Mode: Optional[Literal["简洁", "详细"]] = Field(
         default=None, description="配置模式"
     )
+    SanityMode: Optional[str] = Field(default=None, description="理智任务配置模式")
     Resource: Optional[Literal["官服"]] = Field(default=None, description="资源名称")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
     Notes: Optional[str] = Field(default=None, description="备注")
@@ -572,9 +576,11 @@ class MaaEndUserConfig_Info(BaseModel):
 
 
 class MaaEndUserConfig_Task(BaseModel):
-    ProtocolSpaceTab: Optional[
-        Literal["OperatorProgression", "WeaponProgression", "CrisisDrills"]
-    ] = Field(default=None, description="协议空间选项卡")
+    SanityTaskType: Optional[
+        Literal["OperatorProgression", "WeaponProgression", "CrisisDrills", "Essence"]
+    ] = Field(
+        default=None, description="理智任务类型"
+    )
     OperatorProgression: Optional[
         Literal["OperatorEXP", "Promotions", "T-Creds", "SkillUp"]
     ] = Field(default=None, description="干员养成任务")
@@ -591,8 +597,18 @@ class MaaEndUserConfig_Task(BaseModel):
         ]
     ] = Field(default=None, description="危境预演任务")
     RewardsSetOption: Optional[Literal["RewardsSetA", "RewardsSetB"]] = Field(
-        default=None, description="奖励套组选项"
+        default=None, description="奖励组选项"
     )
+    AutoEssenceSpecifiedLocation: Optional[
+        Literal[
+            "VFTheHub",
+            "VFOriginiumSciencePark",
+            "VFOriginLodespring",
+            "VFPowerPlateau",
+            "WLWulingCity",
+            "WLQingboStockade",
+        ]
+    ] = Field(default=None, description="基质刷取指定地点")
 
 
 class MaaEndUserConfig_Notify(BaseModel):
@@ -842,9 +858,13 @@ class SrcConfig(BaseModel):
     Run: Optional[SrcConfig_Run] = Field(default=None, description="脚本运行配置")
 
 
+PlanConfigType = Literal["MaaPlanConfig", "MaaEndPlanConfig"]
+PlanComboxConsumer = Literal[*PLAN_CONSUMER_VALUES]
+
+
 class PlanIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: Literal["MaaPlanConfig"] = Field(..., description="配置类型")
+    type: PlanConfigType = Field(..., description="配置类型")
 
 
 class MaaPlanConfig_Info(BaseModel):
@@ -855,6 +875,8 @@ class MaaPlanConfig_Info(BaseModel):
 
 
 class MaaPlanConfig_Item(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     MedicineNumb: Optional[int] = Field(default=None, description="吃理智药")
     SeriesNumb: Optional[Literal["0", "6", "5", "4", "3", "2", "1", "-1"]] = Field(
         None, description="连战次数"
@@ -866,16 +888,73 @@ class MaaPlanConfig_Item(BaseModel):
     Stage_Remain: Optional[str] = Field(default=None, description="剩余理智关卡")
 
 
-class MaaPlanConfig(BaseModel):
-    Info: Optional[MaaPlanConfig_Info] = Field(default=None, description="基础信息")
-    ALL: Optional[MaaPlanConfig_Item] = Field(default=None, description="全局")
-    Monday: Optional[MaaPlanConfig_Item] = Field(default=None, description="周一")
-    Tuesday: Optional[MaaPlanConfig_Item] = Field(default=None, description="周二")
-    Wednesday: Optional[MaaPlanConfig_Item] = Field(default=None, description="周三")
-    Thursday: Optional[MaaPlanConfig_Item] = Field(default=None, description="周四")
-    Friday: Optional[MaaPlanConfig_Item] = Field(default=None, description="周五")
-    Saturday: Optional[MaaPlanConfig_Item] = Field(default=None, description="周六")
-    Sunday: Optional[MaaPlanConfig_Item] = Field(default=None, description="周日")
+class WeeklyPlanConfig(BaseModel, Generic[TPlanInfo, TPlanItem]):
+    Info: Optional[TPlanInfo] = Field(default=None, description="基础信息")
+    ALL: Optional[TPlanItem] = Field(default=None, description="全局")
+    Monday: Optional[TPlanItem] = Field(default=None, description="周一")
+    Tuesday: Optional[TPlanItem] = Field(default=None, description="周二")
+    Wednesday: Optional[TPlanItem] = Field(default=None, description="周三")
+    Thursday: Optional[TPlanItem] = Field(default=None, description="周四")
+    Friday: Optional[TPlanItem] = Field(default=None, description="周五")
+    Saturday: Optional[TPlanItem] = Field(default=None, description="周六")
+    Sunday: Optional[TPlanItem] = Field(default=None, description="周日")
+
+
+class MaaPlanConfig(WeeklyPlanConfig[MaaPlanConfig_Info, MaaPlanConfig_Item]):
+    model_config = ConfigDict(extra="forbid")
+
+
+class MaaEndPlanConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="计划表名称")
+    Mode: Optional[Literal["ALL", "Weekly"]] = Field(
+        default=None, description="计划表模式"
+    )
+
+
+class MaaEndPlanConfig_Item(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    SanityTaskType: Optional[
+        Literal["OperatorProgression", "WeaponProgression", "CrisisDrills", "Essence"]
+    ] = Field(
+        default=None, description="理智任务类型"
+    )
+    OperatorProgression: Optional[
+        Literal["OperatorEXP", "Promotions", "T-Creds", "SkillUp"]
+    ] = Field(default=None, description="干员养成任务")
+    WeaponProgression: Optional[Literal["WeaponEXP", "WeaponTune"]] = Field(
+        default=None, description="武器养成任务"
+    )
+    CrisisDrills: Optional[
+        Literal[
+            "AdvancedProgression1",
+            "AdvancedProgression2",
+            "AdvancedProgression3",
+            "AdvancedProgression4",
+            "AdvancedProgression5",
+        ]
+    ] = Field(default=None, description="危境预演任务")
+    RewardsSetOption: Optional[Literal["RewardsSetA", "RewardsSetB"]] = Field(
+        default=None, description="奖励套组选项"
+    )
+    AutoEssenceSpecifiedLocation: Optional[
+        Literal[
+            "VFTheHub",
+            "VFOriginiumSciencePark",
+            "VFOriginLodespring",
+            "VFPowerPlateau",
+            "WLWulingCity",
+            "WLQingboStockade",
+        ]
+    ] = Field(default=None, description="基质刷取指定地点")
+
+
+class MaaEndPlanConfig(WeeklyPlanConfig[MaaEndPlanConfig_Info, MaaEndPlanConfig_Item]):
+    model_config = ConfigDict(extra="forbid")
+
+
+PlanCreateType = Literal["MaaPlan", "MaaEndPlan"]
+PlanConfigData = MaaPlanConfig | MaaEndPlanConfig
 
 
 class HistoryIndexItem(BaseModel):
@@ -1129,12 +1208,16 @@ class WebhookTestIn(WebhookInBase):
 
 
 class PlanCreateIn(BaseModel):
-    type: Literal["MaaPlan"]
+    type: PlanCreateType
+
+
+class PlanComboxIn(BaseModel):
+    consumer: PlanComboxConsumer = Field(..., description="计划表消费方")
 
 
 class PlanCreateOut(OutBase):
     planId: str = Field(..., description="新创建的计划ID")
-    data: MaaPlanConfig = Field(..., description="计划配置数据")
+    data: PlanConfigData = Field(..., description="计划配置数据")
 
 
 class PlanGetIn(BaseModel):
@@ -1145,12 +1228,14 @@ class PlanGetIn(BaseModel):
 
 class PlanGetOut(OutBase):
     index: List[PlanIndexItem] = Field(..., description="计划索引列表")
-    data: Dict[str, MaaPlanConfig] = Field(..., description="计划列表或单个计划数据")
+    data: Dict[str, PlanConfigData] = Field(
+        ..., description="计划列表或单个计划数据"
+    )
 
 
 class PlanUpdateIn(BaseModel):
     planId: str = Field(..., description="计划ID")
-    data: MaaPlanConfig = Field(..., description="计划更新数据")
+    data: PlanConfigData = Field(..., description="计划更新数据")
 
 
 class PlanDeleteIn(BaseModel):

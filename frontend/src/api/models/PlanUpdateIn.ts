@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { MaaEndPlanConfig } from './MaaEndPlanConfig';
 import type { MaaPlanConfig } from './MaaPlanConfig';
 export type PlanUpdateIn = {
     /**
@@ -11,6 +12,6 @@ export type PlanUpdateIn = {
     /**
      * 计划更新数据
      */
-    data: MaaPlanConfig;
+    data: (MaaPlanConfig | MaaEndPlanConfig);
 };
 

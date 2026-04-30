@@ -282,7 +282,7 @@
             <div class="type-info">
               <div class="type-title">MaaEnd 脚本</div>
               <div class="type-description">
-                MaaEnd 自动化脚本，沿用 SRC 风格的多账号代理管理界面
+                明日方舟：终末地自动化脚本，支持多账号代理与协议空间配置
               </div>
             </div>
           </div>
@@ -450,6 +450,7 @@ import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useTemplateApi, type WebConfigTemplate } from '@/composables/useTemplateApi'
 import { usePlanApi } from '@/composables/usePlanApi'
+import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import MarkdownIt from 'markdown-it'
@@ -551,9 +552,16 @@ const loadScripts = async () => {
 const loadCurrentPlan = async () => {
   try {
     const response = await getPlans()
-    if (response.data) {
-      // 加载所有计划表数据
-      allPlansData.value = response.data
+    if (response.data && response.index) {
+      const maaPlanIds = response.index
+        .filter(plan => plan.type === PLAN_CONFIG_TYPES.MAA)
+        .map(plan => plan.uid)
+
+      allPlansData.value = Object.fromEntries(
+        maaPlanIds
+          .filter(planId => response.data[planId])
+          .map(planId => [planId, response.data[planId]])
+      )
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
