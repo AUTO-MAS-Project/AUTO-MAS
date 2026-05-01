@@ -252,9 +252,9 @@ class AutoProxyTask(TaskExecuteBase):
             await self.maaend_process_manager.open_process(
                 self.maaend_exe_path, stdout=asyncio.subprocess.PIPE
             )
+            await asyncio.sleep(3)  # 等待 MaaEnd 启动完成
             # 静默模式隐藏 MaaEnd 窗口
             if Config.get("Function", "IfSilence"):
-                await asyncio.sleep(3)  # 等待 MaaEnd 启动完成
                 if await self.maaend_process_manager.minimize_window():
                     logger.success("静默模式: 成功隐藏 MaaEnd 窗口")
                 else:
