@@ -1,0 +1,36 @@
+{
+  "include": [
+    "app",
+    "scripts",
+    "plugins"
+  ],
+  "exclude": [
+    "plugins/pypi",
+    "plugins/**/build",
+    "plugins/**/dist",
+    "plugins/**/*.egg-info",
+    "plugins/_generated",
+    "**/__pycache__"
+  ],
+  "extraPaths": [
+    ".",
+    "plugins/pypi/site-packages"
+  ],
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "strict",
+  "reportMissingTypeStubs": false,
+  "executionEnvironments": [
+    {
+      "root": "plugins",
+      "typeCheckingMode": "standard",
+      "extraPaths": [
+        ".",
+        "plugins/pypi/site-packages"
+      ],
+      "reportMissingImports": true,
+      "reportMissingTypeStubs": false
+    }
+  ]
+}

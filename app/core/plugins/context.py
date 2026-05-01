@@ -1,22 +1,36 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
+from __future__ import annotations
+
 from pathlib import Path
 from copy import deepcopy
 from typing import Any, Dict, Callable, Optional, Iterator
 import asyncio
 import inspect
+import logging
 
 from .cache_store import PluginCacheManager
+from .event_bus import EventBus
 from .event_contract import EventErrorPolicy, EventScope
 from .runtime_api import RuntimeAPI
 from .service_registry import ServiceRegistry
 from .server import PluginServerFacade, PluginServerRegistry, plugin_server
 
 
-
 class PluginContext:
     """面向插件的上下文对象，公开受控的 MAS 功能。"""
+
+    plugin_name: str
+    instance_id: str
+    config: PluginConfigProxy
+    logger: logging.Logger
+    event: PluginEventFacade
+    service: ServiceFacade
+    server: PluginServerFacade
+    runtime_api: RuntimeAPI
+    runtime: RuntimeFacade
+    cache: PluginCacheManager
 
     def __init__(
         self,
@@ -24,8 +38,8 @@ class PluginContext:
         plugin_name: str,
         instance_id: str | None = None,
         config: Dict[str, Any],
-        logger,
-        events,
+        logger: logging.Logger,
+        events: EventBus,
         runtime_capabilities: Optional[Dict[str, Callable[..., Any]]] = None,
         service_registry: Optional[ServiceRegistry] = None,
         server_registry: Optional[PluginServerRegistry] = None,
@@ -62,7 +76,7 @@ class PluginContext:
             plugin_name=self.plugin_name,
             instance_id=self.instance_id,
         )
-        
+
         # 解释器能力函数集合
         self.runtime_api = RuntimeAPI(
             plugin_name=self.plugin_name,
@@ -95,14 +109,15 @@ class PluginContext:
 
     def inject(
         self,
-        needs: Any = None,
-        wants: Any = None,
+        needs: str | list[str] | set[str] | None = None,
+        wants: str | list[str] | set[str] | None = None,
         ready: Optional[Callable[..., Any]] = None,
     ) -> None:
         """注册动态依赖并在满足时触发回调。"""
         self.service.inject(needs=needs, wants=wants, ready=ready)
 
-class PluginConfigProxy(dict):
+
+class PluginConfigProxy(dict[str, Any]):
     """插件配置代理，兼容字典访问并提供 set/update/reset 语义。"""
 
     def __init__(self, initial: Dict[str, Any] | None = None) -> None:
@@ -125,13 +140,11 @@ class PluginConfigProxy(dict):
             TypeError: `key` 不是字符串时抛出。
             ValueError: `key` 为空字符串时抛出。
         """
-        if not isinstance(key, str):
-            raise TypeError("配置键必须是字符串")
         if not key.strip():
             raise ValueError("配置键不能为空字符串")
         self[key] = value
 
-    def update(self, values: Dict[str, Any] | None = None, **kwargs: Any) -> None:
+    def update(self, values: Dict[str, Any] | None = None, **kwargs: Any) -> None:  # type: ignore[override]
         """
         批量更新配置项。
 
@@ -145,8 +158,6 @@ class PluginConfigProxy(dict):
         Raises:
             TypeError: `values` 非字典时抛出。
         """
-        if values is not None and not isinstance(values, dict):
-            raise TypeError("update(values) 的 values 必须是字典或 None")
 
         payload: Dict[str, Any] = {}
         if isinstance(values, dict):
@@ -170,8 +181,6 @@ class PluginConfigProxy(dict):
         Raises:
             TypeError: `values` 非字典且非 None 时抛出。
         """
-        if values is not None and not isinstance(values, dict):
-            raise TypeError("reset(values) 的 values 必须是字典或 None")
 
         next_source = deepcopy(values) if isinstance(values, dict) else {}
         self._source_config = deepcopy(next_source)
@@ -187,7 +196,7 @@ class PluginConfigProxy(dict):
         """返回源配置的深拷贝字典。"""
         return deepcopy(self._source_config)
 
-    def __iter__(self) -> Iterator[Any]:
+    def __iter__(self) -> Iterator[str]:
         """返回配置键的迭代器。"""
         return super().__iter__()
 
@@ -198,20 +207,20 @@ class ServiceFacade:
     def __init__(
         self,
         *,
-        ctx: "PluginContext",
+        ctx: PluginContext,
         plugin_name: str,
         instance_id: str,
-        logger,
+        logger: logging.Logger | Any,
         registry: Optional[ServiceRegistry],
         provides: Optional[set[str]] = None,
         needs: Optional[set[str]] = None,
         wants: Optional[set[str]] = None,
     ) -> None:
-        self._ctx = ctx
-        self._plugin_name = plugin_name
-        self._instance_id = instance_id
-        self._logger = logger
-        self._registry = registry or ServiceRegistry()
+        self._ctx: PluginContext = ctx
+        self._plugin_name: str = plugin_name
+        self._instance_id: str = instance_id
+        self._logger: logging.Logger | Any = logger
+        self._registry: ServiceRegistry = registry or ServiceRegistry()
 
         self._provides = set(provides or set())
         self._needs = set(needs or set())
@@ -223,13 +232,12 @@ class ServiceFacade:
             self._registry.provide(name, self._instance_id)
 
     @staticmethod
-    def _names(raw: Any) -> set[str]:
+    def _names(raw: str | list[str] | tuple[str, ...] | set[str] | None) -> set[str]:
         if raw is None:
             return set()
         if isinstance(raw, str):
             name = raw.strip()
             return {name} if name else set()
-        if isinstance(raw, (list, tuple, set)):
             result: set[str] = set()
             for item in raw:
                 text = str(item or "").strip()
@@ -247,7 +255,7 @@ class ServiceFacade:
         )
 
     @staticmethod
-    def _call(func: Callable[..., Any], ctx: "PluginContext") -> Callable[[], Any]:
+    def _call(func: Callable[..., Any], ctx: PluginContext) -> Callable[[], Any]:
         def wrapped() -> Any:
             try:
                 signature = inspect.signature(func)
@@ -286,8 +294,8 @@ class ServiceFacade:
 
     def inject(
         self,
-        needs: Any = None,
-        wants: Any = None,
+        needs: str | list[str] | set[str] | None = None,
+        wants: str | list[str] | set[str] | None = None,
         ready: Optional[Callable[..., Any]] = None,
     ) -> None:
         # 动态注入会持续合并依赖声明，确保后续 get() 不被误报未声明。
@@ -313,8 +321,6 @@ class ServiceFacade:
         return self._registry.miss(self._instance_id)
 
 
-
-
 class RuntimeFacade:
     """RuntimeAPI 语法糖包装层，提供更简洁的调用方式。"""
 
@@ -331,7 +337,7 @@ class RuntimeFacade:
         python_executable: Optional[str] = None,
         timeout_seconds: Optional[int] = None,
         options: Optional[Dict[str, Any]] = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """更新 runtime 配置选项。"""
         payload: Dict[str, Any] = {}
@@ -372,7 +378,7 @@ class PluginEventFacade:
         *,
         plugin_name: str,
         instance_id: str,
-        events,
+        events: EventBus,
     ) -> None:
         """
         初始化插件事件门面。
@@ -392,12 +398,9 @@ class PluginEventFacade:
             ValueError: `instance_id` 为空字符串时抛出。
             AttributeError: `events` 缺少 `on/off/emit` 任意方法时抛出。
         """
-        if not isinstance(plugin_name, str):
-            raise TypeError("plugin_name 必须是字符串")
+
         if not plugin_name.strip():
             raise ValueError("plugin_name 不能为空字符串")
-        if not isinstance(instance_id, str):
-            raise TypeError("instance_id 必须是字符串")
         if not instance_id.strip():
             raise ValueError("instance_id 不能为空字符串")
 
@@ -405,9 +408,9 @@ class PluginEventFacade:
             if not hasattr(events, method_name):
                 raise AttributeError(f"events 缺少必要方法: {method_name}")
 
-        self._plugin_name = plugin_name
-        self._instance_id = instance_id
-        self._events = events
+        self._plugin_name: str = plugin_name
+        self._instance_id: str = instance_id
+        self._events: EventBus = events
 
     def on(
         self,
