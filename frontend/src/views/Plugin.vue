@@ -229,30 +229,123 @@
       v-model:open="addModalVisible"
       title="新增插件实例"
       :confirm-loading="submitting"
-      width="520px"
+      width="1040px"
+      :ok-button-props="{ disabled: !addForm.plugin }"
       @ok="submitAdd"
     >
-      <a-form layout="vertical">
-        <a-row :gutter="12">
-          <a-col :span="12">
-            <a-form-item label="插件名" required>
-              <a-select v-model:value="addForm.plugin" placeholder="请选择插件">
-                <a-select-option v-for="name in discoveredPlugins" :key="name" :value="name">
-                  {{ name }}
-                </a-select-option>
-              </a-select>
-            </a-form-item>
+      <div class="add-plugin-modal-body">
+        <a-row :gutter="12" class="add-plugin-layout">
+          <a-col :span="15" class="add-plugin-layout-col">
+            <div class="add-plugin-picker-panel">
+              <div class="add-plugin-panel-header">
+                <div>
+                  <div class="add-plugin-panel-title">选择插件</div>
+                  <div class="add-plugin-panel-hint">
+                    按插件名、服务声明或路由信息搜索，快速定位目标插件
+                  </div>
+                </div>
+                <a-tag color="blue">共 {{ discoveredPluginOptions.length }} 个</a-tag>
+              </div>
+
+              <a-input
+                v-model:value="addPluginKeyword"
+                allow-clear
+                placeholder="搜索插件名 / 服务 / 路由"
+                class="add-plugin-search"
+              />
+
+              <div class="add-plugin-picker-summary">
+                <span>筛选结果 {{ filteredDiscoveredPluginOptions.length }} 个</span>
+                <span v-if="addPluginKeyword.trim()">关键词：{{ addPluginKeyword.trim() }}</span>
+              </div>
+
+              <div class="plugin-option-grid">
+                <a-empty
+                  v-if="filteredDiscoveredPluginOptions.length === 0"
+                  :description="addPluginEmptyDescription"
+                />
+                <button
+                  v-for="item in filteredDiscoveredPluginOptions"
+                  :key="item.name"
+                  type="button"
+                  class="plugin-option-card"
+                  :class="{ active: addForm.plugin === item.name }"
+                  @click="addForm.plugin = item.name"
+                >
+                  <div class="plugin-option-card-head">
+                    <span class="plugin-option-name">{{ item.name }}</span>
+                    <a-tag v-if="item.instanceCount > 0" color="default">
+                      {{ item.instanceCount }} 实例
+                    </a-tag>
+                  </div>
+                  <div class="plugin-option-description">{{ item.description }}</div>
+                  <a-space class="plugin-option-tags" size="[0, 8]" wrap>
+                    <a-tag v-if="item.serviceCount > 0" color="green">
+                      服务 {{ item.serviceCount }}
+                    </a-tag>
+                    <a-tag v-if="item.routeCount > 0" color="geekblue">
+                      路由 {{ item.routeCount }}
+                    </a-tag>
+                    <a-tag v-if="item.schemaError" color="red">Schema 异常</a-tag>
+                  </a-space>
+                </button>
+              </div>
+            </div>
           </a-col>
-          <a-col :span="12">
-            <a-form-item label="实例名称">
-              <a-input v-model:value="addForm.name" placeholder="可选" />
-            </a-form-item>
+
+          <a-col :span="9" class="add-plugin-layout-col">
+            <a-card size="small" title="实例信息" class="add-plugin-side-card">
+              <a-form layout="vertical">
+                <a-form-item label="已选插件" required>
+                  <a-input :value="addForm.plugin" readonly placeholder="请先选择左侧插件" />
+                </a-form-item>
+                <a-form-item label="实例名称">
+                  <a-input v-model:value="addForm.name" placeholder="可选" />
+                </a-form-item>
+                <a-form-item label="启用">
+                  <a-switch v-model:checked="addForm.enabled" />
+                </a-form-item>
+              </a-form>
+
+              <template v-if="selectedAddPluginOption">
+                <a-space class="add-plugin-side-tags" size="[0, 8]" wrap>
+                  <a-tag color="default">实例 {{ selectedAddPluginOption.instanceCount }}</a-tag>
+                  <a-tag v-if="selectedAddPluginOption.serviceCount > 0" color="green">
+                    服务 {{ selectedAddPluginOption.serviceCount }}
+                  </a-tag>
+                  <a-tag v-if="selectedAddPluginOption.routeCount > 0" color="geekblue">
+                    路由 {{ selectedAddPluginOption.routeCount }}
+                  </a-tag>
+                </a-space>
+
+                <a-alert
+                  v-if="selectedAddPluginOption.schemaError"
+                  class="add-plugin-schema-alert"
+                  type="warning"
+                  show-icon
+                  :message="selectedAddPluginOption.schemaError"
+                />
+
+                <div
+                  v-if="selectedAddPluginServiceRows.length > 0"
+                  class="add-plugin-service-summary"
+                >
+                  <div
+                    v-for="row in selectedAddPluginServiceRows"
+                    :key="row.key"
+                    class="service-declaration-row"
+                  >
+                    <a-tag :color="row.color" class="service-declaration-label">
+                      {{ row.label }}
+                    </a-tag>
+                    <span class="service-declaration-value">{{ row.value }}</span>
+                  </div>
+                </div>
+              </template>
+            </a-card>
           </a-col>
         </a-row>
-        <a-form-item label="启用">
-          <a-switch v-model:checked="addForm.enabled" />
-        </a-form-item>
-      </a-form>
+      </div>
     </a-modal>
 
     <a-modal v-model:open="jsonPreviewVisible" title="当前配置 JSON" width="760px" :footer="null">
@@ -420,6 +513,16 @@ interface TableColumn {
   key: string
 }
 
+interface DiscoveredPluginOption {
+  name: string
+  instanceCount: number
+  serviceCount: number
+  routeCount: number
+  schemaError: string
+  description: string
+  searchText: string
+}
+
 const logger = window.electronAPI.getLogger('插件管理')
 const { subscribe, unsubscribe, sendRaw } = useWebSocket()
 const loading = ref(false)
@@ -428,6 +531,7 @@ const reloadingAll = ref(false)
 const togglingInstanceId = ref('')
 const pluginActionLoadingId = ref('')
 const keyword = ref('')
+const addPluginKeyword = ref('')
 
 const version = ref(1)
 const discoveredPlugins = ref<string[]>([])
@@ -509,10 +613,9 @@ const serviceDeclarationDefs = [
   { key: 'wants', label: '可选服务', color: 'gold' },
 ] as const
 
-const selectedServiceDeclarationRows = computed(() => {
-  const service = selectedPluginService.value
+const getServiceDeclarationRows = (service?: PluginServiceInfo | null): ServiceDeclarationRow[] => {
   if (!service) {
-    return [] as ServiceDeclarationRow[]
+    return []
   }
 
   return serviceDeclarationDefs
@@ -529,7 +632,11 @@ const selectedServiceDeclarationRows = computed(() => {
       }
     })
     .filter((item): item is ServiceDeclarationRow => item !== null)
-})
+}
+
+const selectedServiceDeclarationRows = computed(() =>
+  getServiceDeclarationRows(selectedPluginService.value)
+)
 
 const hasSelectedPluginServiceDeclarations = computed(() => {
   return selectedServiceDeclarationRows.value.length > 0
@@ -598,6 +705,114 @@ const currentSchemaError = computed(() => {
   }
   return schemaErrors.value[editForm.plugin] || ''
 })
+
+const sortedDiscoveredPlugins = computed(() =>
+  [...discoveredPlugins.value].sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'))
+)
+
+const getPluginServiceCount = (pluginName: string) => {
+  const service = pluginServices.value[pluginName]
+  if (!service) {
+    return 0
+  }
+  return ['provides', 'needs', 'wants'].reduce((total, key) => {
+    const values = service[key as keyof PluginServiceInfo]
+    return total + (Array.isArray(values) ? values.length : 0)
+  }, 0)
+}
+
+const getPluginRouteCount = (pluginName: string) => {
+  const routes = pluginRoutes.value[pluginName]
+  return Array.isArray(routes) ? routes.length : 0
+}
+
+const buildPluginSearchText = (pluginName: string) => {
+  const service = pluginServices.value[pluginName]
+  const routes = pluginRoutes.value[pluginName] || []
+  const values = [
+    pluginName,
+    ...(service?.provides || []),
+    ...(service?.needs || []),
+    ...(service?.wants || []),
+    ...routes.flatMap(route => [route.kind, route.path, ...(route.methods || [])]),
+    schemaErrors.value[pluginName] || '',
+  ]
+  return values.join(' ').toLowerCase()
+}
+
+const buildPluginOptionDescription = (pluginName: string) => {
+  const serviceRows = getServiceDeclarationRows(pluginServices.value[pluginName] || null)
+  if (serviceRows.length > 0) {
+    return serviceRows.map(row => `${row.label}：${row.value}`).join(' · ')
+  }
+
+  const routes = pluginRoutes.value[pluginName] || []
+  if (routes.length > 0) {
+    return routes
+      .slice(0, 2)
+      .map(route => `${route.kind.toUpperCase()} ${route.path}`)
+      .join(' · ')
+  }
+
+  if (schemaErrors.value[pluginName]) {
+    return schemaErrors.value[pluginName]
+  }
+
+  return '未声明额外服务或路由信息'
+}
+
+const pluginInstanceCountMap = computed(() => {
+  const counts: Record<string, number> = {}
+  for (const item of instances.value) {
+    counts[item.plugin] = (counts[item.plugin] || 0) + 1
+  }
+  return counts
+})
+
+const discoveredPluginOptions = computed<DiscoveredPluginOption[]>(() =>
+  sortedDiscoveredPlugins.value.map(name => ({
+    name,
+    instanceCount: pluginInstanceCountMap.value[name] || 0,
+    serviceCount: getPluginServiceCount(name),
+    routeCount: getPluginRouteCount(name),
+    schemaError: schemaErrors.value[name] || '',
+    description: buildPluginOptionDescription(name),
+    searchText: buildPluginSearchText(name),
+  }))
+)
+
+const filteredDiscoveredPluginOptions = computed(() => {
+  const keyword = addPluginKeyword.value.trim().toLowerCase()
+  if (!keyword) {
+    return discoveredPluginOptions.value
+  }
+  return discoveredPluginOptions.value.filter(item => item.searchText.includes(keyword))
+})
+
+const selectedAddPluginOption = computed(() => {
+  if (!addForm.plugin) {
+    return null
+  }
+  return (
+    discoveredPluginOptions.value.find(item => item.name === addForm.plugin) || {
+      name: addForm.plugin,
+      instanceCount: pluginInstanceCountMap.value[addForm.plugin] || 0,
+      serviceCount: getPluginServiceCount(addForm.plugin),
+      routeCount: getPluginRouteCount(addForm.plugin),
+      schemaError: schemaErrors.value[addForm.plugin] || '',
+      description: buildPluginOptionDescription(addForm.plugin),
+      searchText: buildPluginSearchText(addForm.plugin),
+    }
+  )
+})
+
+const selectedAddPluginServiceRows = computed(() =>
+  getServiceDeclarationRows(pluginServices.value[addForm.plugin] || null)
+)
+
+const addPluginEmptyDescription = computed(() =>
+  addPluginKeyword.value.trim() ? '没有匹配的插件' : '当前没有可新增的插件'
+)
 
 const filteredInstances = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
@@ -1697,13 +1912,18 @@ const fetchData = async () => {
 }
 
 const openAddModal = () => {
-  addForm.plugin = discoveredPlugins.value[0] || ''
+  addForm.plugin = sortedDiscoveredPlugins.value[0] || ''
   addForm.name = ''
   addForm.enabled = true
+  addPluginKeyword.value = ''
   addModalVisible.value = true
 }
 
 const submitAdd = async () => {
+  if (!addForm.plugin) {
+    message.warning('请先选择要新增的插件')
+    return
+  }
   submitting.value = true
   try {
     const data = await requestPluginAction<any>('plugins.add', '/api/plugins/add', {
@@ -2242,5 +2462,240 @@ onUnmounted(() => {
 
 .detail-card :deep(.ant-card-small > .ant-card-body) {
   padding: 14px;
+}
+
+.add-plugin-modal-body {
+  min-height: 0;
+}
+
+.add-plugin-modal-body :deep(.ant-input),
+.add-plugin-modal-body :deep(.ant-select-selector) {
+  border-radius: 8px;
+}
+
+.add-plugin-modal-body :deep(.ant-form-item) {
+  margin-bottom: 12px;
+}
+
+.add-plugin-modal-body :deep(.ant-modal-body) {
+  padding-top: 14px;
+}
+
+.add-plugin-layout {
+  align-items: stretch;
+}
+
+.add-plugin-layout-col {
+  display: flex;
+}
+
+.add-plugin-picker-panel,
+.add-plugin-side-card {
+  width: 100%;
+}
+
+.add-plugin-picker-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.add-plugin-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.add-plugin-panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.add-plugin-panel-hint {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ant-color-text-secondary);
+}
+
+.add-plugin-search {
+  margin-bottom: 6px;
+}
+
+.add-plugin-picker-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--ant-color-text-secondary);
+}
+
+.plugin-option-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  max-height: 468px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.plugin-option-card {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 10px;
+  padding: 11px 12px 10px;
+  text-align: left;
+  background: var(--ant-color-bg-container);
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.plugin-option-card:hover {
+  border-color: var(--ant-color-primary-hover);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+.plugin-option-card.active {
+  border-color: var(--ant-color-primary);
+  background: linear-gradient(
+    135deg,
+    var(--ant-color-primary-bg),
+    color-mix(in srgb, var(--ant-color-primary-bg) 82%, white)
+  );
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--ant-color-primary) 14%, transparent);
+}
+
+.plugin-option-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.plugin-option-name {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ant-color-text);
+  overflow-wrap: anywhere;
+}
+
+.plugin-option-description {
+  flex: 1;
+  min-height: 32px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ant-color-text-secondary);
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.plugin-option-tags {
+  margin-top: auto;
+  padding-top: 8px;
+  min-height: 26px;
+  align-items: flex-end;
+  align-content: flex-end;
+}
+
+.plugin-option-tags:empty {
+  display: none;
+}
+
+.plugin-option-card :deep(.ant-space-item) {
+  display: flex;
+  align-items: center;
+}
+
+.plugin-option-card :deep(.ant-space) {
+  row-gap: 6px !important;
+}
+
+.plugin-option-card :deep(.ant-space-item .ant-tag) {
+  margin-top: 0;
+}
+
+.add-plugin-side-card {
+  border-color: var(--ant-color-border-secondary);
+  border-radius: 10px;
+}
+
+.add-plugin-side-card :deep(.ant-card-body) {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+
+.add-plugin-side-card :deep(.ant-card-head) {
+  min-height: 42px;
+}
+
+.add-plugin-side-card :deep(.ant-card-head-title) {
+  padding: 10px 0;
+  font-size: 14px;
+}
+
+.add-plugin-side-card :deep(.ant-form-item-label) {
+  padding-bottom: 4px;
+}
+
+.add-plugin-side-card :deep(.ant-form-item-label > label) {
+  font-size: 12px;
+}
+
+.add-plugin-side-tags {
+  display: flex;
+}
+
+.add-plugin-side-tags :deep(.ant-tag),
+.plugin-option-card :deep(.ant-tag) {
+  margin-inline-end: 0;
+  font-size: 11px;
+  line-height: 18px;
+  padding-inline: 7px;
+}
+
+.add-plugin-schema-alert {
+  margin-bottom: 0;
+}
+
+.add-plugin-schema-alert :deep(.ant-alert-message) {
+  font-size: 12px;
+}
+
+.add-plugin-service-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+@media (max-width: 1200px) {
+  .plugin-option-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1100px) {
+  .plugin-option-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>
