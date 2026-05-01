@@ -1,7 +1,8 @@
 // 脚本类型定义
 import type { MaaConfig, GeneralConfig, SrcConfig, MaaEndConfig } from '@/api'
+import type { SchemaDefinition } from './schemaForm'
 
-export type ScriptType = 'MAA' | 'General' | 'SRC' | 'MaaEnd'
+export type ScriptType = string
 
 // MAA脚本配置
 export interface MAAScriptConfig {
@@ -122,14 +123,27 @@ export interface Script {
   id: string
   type: ScriptType
   name: string
-  config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
+  config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig | Record<string, any>
   users: User[]
+  schema?: SchemaDefinition
+  userSchema?: SchemaDefinition
+  editorKind?: string
+  supportedModes?: string[]
+  icon?: string | null
+  docsUrl?: string | null
+  displayName?: string
+  isBuiltin?: boolean
+  createTime?: string
 }
 
 // 用户配置
 export interface User {
   id: string
   name: string
+  scriptId?: string
+  type?: string
+  schema?: SchemaDefinition
+  config?: Record<string, any>
   Data: {
     IfPassCheck: boolean
     LastProxyDate: string

@@ -840,6 +840,7 @@ async def update_plugin_instance(data: PluginUpdateIn = Body(...)) -> OutBase:
             raise ValueError(f"未找到插件实例: {data.instanceId}")
 
         was_enabled = bool(target.get("enabled", False))
+
         next_plugin, effective_config = _resolve_effective_config(
             data=data,
             target=target,
@@ -904,7 +905,19 @@ async def delete_plugin_instance(data: PluginDeleteIn = Body(...)) -> OutBase:
         if len(new_instances) == len(old_instances):
             raise ValueError(f"未找到插件实例: {data.instanceId}")
 
+        target_instance = next(
+            item
+            for item in old_instances
+            if isinstance(item, dict) and item.get("id") == data.instanceId
+        )
+        target_plugin = str(target_instance.get("plugin") or "")
+
         if PluginManager.started:
+            await PluginManager.ensure_instance_can_delete(
+                data.instanceId,
+                plugin_name=target_plugin,
+                discovered=discovered,
+            )
             await PluginManager.loader.unload_instance(data.instanceId)
 
         root["instances"] = new_instances

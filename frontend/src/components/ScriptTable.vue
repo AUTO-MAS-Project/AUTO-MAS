@@ -14,23 +14,12 @@
                   <span class="script-drag-dots" aria-hidden="true"></span>
                 </span>
                 <div class="script-logo-container">
-                  <img v-if="script.type === 'MAA'" src="@/assets/MAA.png" alt="MAA" class="script-logo" />
-                  <img v-else-if="script.type === 'SRC'" src="@/assets/SRC.png" alt="SRC" class="script-logo" />
-                  <img v-else-if="script.type === 'MaaEnd'" src="@/assets/MaaEnd.png" alt="MaaEnd"
-                    class="script-logo" />
-                  <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
+                  <img :src="getScriptIcon(script.type)" :alt="script.type" class="script-logo" />
                 </div>
                 <div class="script-details">
                   <h3 class="script-name">{{ script.name }}</h3>
-                  <a-tag :color="script.type === 'MAA'
-                    ? 'blue'
-                    : script.type === 'SRC'
-                      ? 'purple'
-                      : script.type === 'MaaEnd'
-                        ? 'blue'
-                        : 'green'
-                    " class="script-type">
-                    {{ script.type }}
+                  <a-tag :color="getScriptTypeTagColor(script.type)" class="script-type">
+                    {{ script.displayName || script.type }}
                   </a-tag>
                 </div>
               </div>
@@ -236,10 +225,10 @@ import draggable from 'vuedraggable'
 import { ref, watch } from 'vue'
 import { Service } from '@/api'
 import { message, Modal } from 'ant-design-vue'
-import { useScriptApi } from '@/composables/useScriptApi'
-import { useUserApi } from '@/composables/useUserApi'
+import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import { parseStatusTagList } from '@/composables/useStatusTag'
 import { getTodayInTimezone, isDateEqual, getWeekdayInTimezone } from '@/utils/dateUtils'
+import { getScriptIcon, getScriptTypeTagColor } from '@/utils/scriptRegistry'
 
 interface Props {
   scripts: Script[]
@@ -906,20 +895,27 @@ const getCurrentPlanStageOld = (): string => {
 
   return ''
 }
-const { reorderScript } = useScriptApi()
-const { reorderUser } = useUserApi()
+const registryApi = useScriptRegistryApi()
 
 const onScriptDragEnd = async () => {
   const scriptIds = localScripts.value.map(s => s.id)
-  const success = await reorderScript(scriptIds)
-  if (success) {
+  try {
+    await registryApi.reorderScripts(scriptIds)
     emit('scriptsReordered', localScripts.value)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    message.error(`脚本排序失败: ${errorMsg}`)
   }
 }
 
 const onUserDragEnd = async (evt: any, script: Script) => {
   const userIds = script.users.map(u => u.id)
-  const success = await reorderUser(script.id, userIds)
+  try {
+    await registryApi.reorderUsers(script.id, userIds)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    message.error(`用户排序失败: ${errorMsg}`)
+  }
 }
 </script>
 

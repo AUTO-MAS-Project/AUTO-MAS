@@ -57,6 +57,12 @@ const routes = [
     meta: { title: '编辑通用脚本' },
   },
   {
+    path: '/scripts/:id/edit/schema',
+    name: 'GenericScriptEdit',
+    component: () => import('../views/EditView/Script/GenericScriptEdit.vue'),
+    meta: { title: '编辑插件化脚本' },
+  },
+  {
     path: '/scripts/:scriptId/users/add/maa',
     name: 'MAAUserAdd',
     component: () => import('../views/EditView/User/MAAUserEdit.vue'),
@@ -99,10 +105,22 @@ const routes = [
     meta: { title: '添加通用用户' },
   },
   {
+    path: '/scripts/:scriptId/users/add/schema',
+    name: 'GenericUserAdd',
+    component: () => import('../views/EditView/User/GenericUserEdit.vue'),
+    meta: { title: '添加插件化用户' },
+  },
+  {
     path: '/scripts/:scriptId/users/:userId/edit/general',
     name: 'GeneralUserEdit',
     component: () => import('../views/EditView/User/GeneralUserEdit.vue'),
     meta: { title: '编辑通用用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/schema',
+    name: 'GenericUserEdit',
+    component: () => import('../views/EditView/User/GenericUserEdit.vue'),
+    meta: { title: '编辑插件化用户' },
   },
   {
     path: '/plans',

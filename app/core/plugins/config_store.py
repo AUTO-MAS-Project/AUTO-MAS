@@ -204,6 +204,7 @@ class PluginConfigStore:
         plugins_dir,
         discovered_plugins,
         auto_create_missing: bool = False,
+        default_instances: Dict[str, Dict[str, Any]] | None = None,
     ) -> Dict[str, Any]:
         """
         读取统一插件配置根对象，并按需补齐缺失实例。
@@ -220,6 +221,7 @@ class PluginConfigStore:
             plugins_dir,
             discovered_plugins,
             auto_create_missing=auto_create_missing,
+            default_instances=default_instances,
         )
 
     async def save_root(self, plugins_dir, root: Dict[str, Any]) -> None:
@@ -251,6 +253,7 @@ class PluginConfigStore:
         plugins_dir,
         discovered_plugins,
         auto_create_missing: bool = False,
+        default_instances: Dict[str, Dict[str, Any]] | None = None,
     ) -> Dict[str, Any]:
         """
         确保统一配置中的实例列表满足当前发现结果。
@@ -273,19 +276,48 @@ class PluginConfigStore:
         }
 
         changed = False
+        normalized_defaults = default_instances or {}
+        for plugin_name, default_instance in normalized_defaults.items():
+            if plugin_name in existing_plugins:
+                continue
+            if not isinstance(default_instance, dict):
+                raise ValueError(f"插件 {plugin_name} 的默认实例声明必须是对象")
+
+            name = str(default_instance.get("name") or f"{plugin_name} 默认实例").strip()
+            enabled = default_instance.get("enabled", True)
+            config = default_instance.get("config", {})
+
+            if not isinstance(enabled, bool):
+                raise ValueError(f"插件 {plugin_name} 的默认实例 enabled 必须为布尔值")
+            if not isinstance(config, dict):
+                raise ValueError(f"插件 {plugin_name} 的默认实例 config 必须为对象")
+
+            instances.append(
+                {
+                    "id": self.generate_instance_id(plugin_name),
+                    "plugin": plugin_name,
+                    "enabled": enabled,
+                    "name": name or f"{plugin_name} 默认实例",
+                    "config": copy.deepcopy(config),
+                }
+            )
+            existing_plugins.add(plugin_name)
+            changed = True
+
         if auto_create_missing:
             for plugin_name in discovered_plugins.keys():
                 if plugin_name in existing_plugins:
                     continue
                 instances.append(
                     {
-                        "id": self._generate_instance_id(plugin_name),
+                        "id": self.generate_instance_id(plugin_name),
                         "plugin": plugin_name,
                         "enabled": True,
                         "name": f"{plugin_name} 默认实例",
                         "config": {},
                     }
                 )
+                existing_plugins.add(plugin_name)
                 changed = True
 
         root["instances"] = instances

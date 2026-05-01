@@ -1,0 +1,58 @@
+export interface SchemaActionDefinition {
+  label?: string
+  path?: string
+  method?: string
+  payload?: unknown
+  refresh?: boolean
+}
+
+export interface SchemaOptionDefinition {
+  label: string
+  value: unknown
+}
+
+export interface SchemaFieldDefinition {
+  key?: string
+  group?: string
+  name?: string
+  label?: string
+  type: string
+  title?: string
+  format?: string
+  default?: unknown
+  required?: boolean
+  readonly?: boolean
+  sensitive?: boolean
+  description?: string
+  placeholder?: string
+  help?: string
+  rows?: number
+  item_type?: string
+  enum?: unknown[]
+  options?: SchemaOptionDefinition[]
+  examples?: unknown[]
+  constraints?: Record<string, unknown>
+  action?: SchemaActionDefinition
+  button?: SchemaActionDefinition
+  configurable?: boolean
+  min?: number
+  max?: number
+  step?: number
+  json_type?: string
+}
+
+export interface SchemaGroupDefinition {
+  key: string
+  label?: string
+  fields: SchemaFieldDefinition[]
+}
+
+export interface GroupedSchemaDefinition {
+  groups: SchemaGroupDefinition[]
+}
+
+export type SchemaDefinition = GroupedSchemaDefinition | Record<string, SchemaFieldDefinition>
+
+export interface SchemaValidationErrorMap {
+  [field: string]: string
+}

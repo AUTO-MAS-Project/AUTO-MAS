@@ -38,6 +38,7 @@ from typing import Literal, Optional, Union, Dict, Any, List
 import uuid
 import json
 
+from app.models.ConfigBase import ConfigBase
 from app.models.config import (
     GeneralConfig,
     MaaConfig,
@@ -57,6 +58,7 @@ from app.models.config import (
     EmulatorConfig,
 )
 from app.models.schema import WebSocketMessage
+from app.models.script_api import ScriptRecord, ScriptTypeDescriptor, ScriptUserRecord
 from app.utils.constants import (
     UTC4,
     UTC8,
@@ -66,6 +68,13 @@ from app.utils.constants import (
     RESOURCE_STAGE_DATE_TEXT,
 )
 from app.utils import get_logger
+from .script_types import (
+    apply_script_type_registry_to_global_config,
+    build_legacy_fallback_provider_by_script_config,
+    build_descriptor,
+    script_type_registry,
+    strip_sub_configs,
+)
 
 logger = get_logger("配置管理")
 
@@ -85,6 +94,7 @@ class AppConfig(GlobalConfig):
 
     def __init__(self) -> None:
         super().__init__()
+        apply_script_type_registry_to_global_config(self)
 
         logger.info("")
         logger.info("===================================")
@@ -533,55 +543,55 @@ class AppConfig(GlobalConfig):
 
     async def add_script(
         self,
-        script: Literal["MAA", "SRC", "General", "MaaEnd"],
+        script: str,
         script_id: str | None = None,
-    ) -> tuple[uuid.UUID, MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig]:
-        """添加脚本配置"""
+    ) -> tuple[uuid.UUID, ConfigBase]:
+        """添加脚本配置。"""
 
         logger.info(f"添加脚本配置: {script}, 从 {script_id} 复制")
 
+        provider = script_type_registry.get(script)
+
         if script_id is None:
-            return await self.ScriptConfig.add(CLASS_BOOK[script])
-        else:
-            script_uid = uuid.UUID(script_id)
+            return await self.ScriptConfig.add(provider.script_config_class)
 
-            if not isinstance(self.ScriptConfig[script_uid], CLASS_BOOK[script]):
-                raise TypeError(f"脚本配置类型不匹配: {script_id} {script}")
+        script_uid = uuid.UUID(script_id)
+        source_provider = script_type_registry.get_by_script_config(
+            self.ScriptConfig[script_uid]
+        )
+        if source_provider.type_key != provider.type_key:
+            raise TypeError(f"脚本配置类型不匹配: {script_id} {script}")
 
-            new_uid, new_config = await self.ScriptConfig.add(CLASS_BOOK[script])
+        new_uid, new_config = await self.ScriptConfig.add(provider.script_config_class)
+        await new_config.load(
+            await self.ScriptConfig[script_uid].toDict(regenerate_uuids=True)
+        )
 
-            await new_config.load(
-                await self.ScriptConfig[script_uid].toDict(regenerate_uuids=True)
+        if (Path.cwd() / f"data/{script_id}").exists():
+            shutil.copytree(
+                Path.cwd() / f"data/{script_id}",
+                Path.cwd() / f"data/{new_uid}",
+                dirs_exist_ok=True,
             )
+            for old_user, new_user in zip(
+                self.ScriptConfig[script_uid].UserData.keys(),
+                new_config.UserData.keys(),
+            ):
+                if (Path.cwd() / f"data/{new_uid}/{old_user}").exists():
+                    (Path.cwd() / f"data/{new_uid}/{old_user}").rename(
+                        Path.cwd() / f"data/{new_uid}/{new_user}"
+                    )
 
-            # 复制用户数据
-            if (Path.cwd() / f"data/{script_id}").exists():
-                shutil.copytree(
-                    Path.cwd() / f"data/{script_id}",
-                    Path.cwd() / f"data/{new_uid}",
-                    dirs_exist_ok=True,
-                )
-                for old_user, new_user in zip(
-                    self.ScriptConfig[script_uid].UserData.keys(),
-                    new_config.UserData.keys(),
-                ):
-                    if (Path.cwd() / f"data/{new_uid}/{old_user}").exists():
-                        (Path.cwd() / f"data/{new_uid}/{old_user}").rename(
-                            Path.cwd() / f"data/{new_uid}/{new_user}"
-                        )
-
-            return new_uid, new_config
+        return new_uid, new_config
 
     async def get_script(self, script_id: str | None) -> tuple[list, dict]:
-        """获取脚本配置"""
+        """获取脚本配置。"""
 
         logger.info(f"获取脚本配置: {script_id}")
 
         if script_id is None:
-            # 获取所有脚本配置
             data = await self.ScriptConfig.toDict()
         else:
-            # 获取指定脚本配置
             data = await self.ScriptConfig.get(uuid.UUID(script_id))
 
         index = data.pop("instances", [])
@@ -812,30 +822,14 @@ class AppConfig(GlobalConfig):
         index = data.pop("instances", [])
         return list(index), data
 
-    async def add_user(
-        self, script_id: str
-    ) -> tuple[
-        uuid.UUID, MaaUserConfig | SrcUserConfig | GeneralUserConfig | MaaEndUserConfig
-    ]:
-        """添加用户配置"""
+    async def add_user(self, script_id: str) -> tuple[uuid.UUID, ConfigBase]:
+        """添加用户配置。"""
 
         logger.info(f"{script_id} 添加用户配置")
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
-
-        # 根据脚本类型选择添加对应用户配置
-        if isinstance(script_config, MaaConfig):
-            uid, config = await script_config.UserData.add(MaaUserConfig)
-        elif isinstance(script_config, SrcConfig):
-            uid, config = await script_config.UserData.add(SrcUserConfig)
-        elif isinstance(script_config, GeneralConfig):
-            uid, config = await script_config.UserData.add(GeneralUserConfig)
-        elif isinstance(script_config, MaaEndConfig):
-            uid, config = await script_config.UserData.add(MaaEndUserConfig)
-        else:
-            raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
-
-        return uid, config
+        provider = script_type_registry.get_by_script_config(script_config)
+        return await script_config.UserData.add(provider.user_config_class)
 
     async def update_user(
         self, script_id: str, user_id: str, data: Dict[str, Dict[str, Any]]
@@ -877,6 +871,101 @@ class AppConfig(GlobalConfig):
         await self.ScriptConfig[script_uid].UserData.setOrder(
             list(map(uuid.UUID, index_list))
         )
+
+    async def get_script_type_descriptors(self) -> list[ScriptTypeDescriptor]:
+        """获取脚本类型描述列表。"""
+
+        return [
+            ScriptTypeDescriptor(**build_descriptor(provider))
+            for provider in script_type_registry.list()
+        ]
+
+    def _resolve_record_provider(self, script_config: ConfigBase):
+        """解析脚本记录展示所需的 provider，缺失时回退到离线描述。"""
+
+        try:
+            return script_type_registry.get_by_script_config(script_config)
+        except KeyError as exc:
+            provider = build_legacy_fallback_provider_by_script_config(script_config)
+            if provider is None:
+                raise exc
+            logger.warning(
+                f"脚本类型 provider 未启用，使用离线回退描述: {type(script_config).__name__}"
+            )
+            return provider
+
+    async def get_script_records(self, script_id: str | None = None) -> list[ScriptRecord]:
+        """获取通用脚本记录。"""
+
+        if script_id is None:
+            script_pairs = [(uid, config) for uid, config in self.ScriptConfig.items()]
+        else:
+            uid = uuid.UUID(script_id)
+            script_pairs = [(uid, self.ScriptConfig[uid])]
+
+        records: list[ScriptRecord] = []
+        for uid, config in script_pairs:
+            provider = self._resolve_record_provider(config)
+            config_data = strip_sub_configs(await config.toDict())
+            name = provider.display_name
+            if (
+                "Info" in config._config_item_index
+                and "Name" in config._config_item_index["Info"]
+            ):
+                name = config.get("Info", "Name")
+            records.append(
+                ScriptRecord(
+                    id=str(uid),
+                    type=provider.type_key,
+                    name=name,
+                    config=config_data,
+                    schema=provider.build_script_schema(),
+                    editor_kind=provider.editor_kind,
+                    supported_modes=list(provider.supported_modes),
+                    icon=provider.icon,
+                    docs_url=provider.docs_url,
+                    user_count=len(config.UserData) if hasattr(config, "UserData") else 0,
+                )
+            )
+
+        return records
+
+    async def get_user_records(
+        self, script_id: str, user_id: str | None = None
+    ) -> list[ScriptUserRecord]:
+        """获取通用用户记录。"""
+
+        script_uid = uuid.UUID(script_id)
+        script_config = self.ScriptConfig[script_uid]
+        provider = self._resolve_record_provider(script_config)
+
+        if user_id is None:
+            user_pairs = [(uid, config) for uid, config in script_config.UserData.items()]
+        else:
+            uid = uuid.UUID(user_id)
+            user_pairs = [(uid, script_config.UserData[uid])]
+
+        records: list[ScriptUserRecord] = []
+        for uid, config in user_pairs:
+            config_data = strip_sub_configs(await config.toDict())
+            name = str(uid)
+            if (
+                "Info" in config._config_item_index
+                and "Name" in config._config_item_index["Info"]
+            ):
+                name = config.get("Info", "Name")
+            records.append(
+                ScriptUserRecord(
+                    id=str(uid),
+                    script_id=str(script_uid),
+                    type=provider.type_key,
+                    name=name,
+                    config=config_data,
+                    schema=provider.build_user_schema(),
+                )
+            )
+
+        return records
 
     async def set_infrastructure(
         self, script_id: str, user_id: str, jsonFile: str
