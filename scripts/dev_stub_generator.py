@@ -97,16 +97,23 @@ def _render_init_stub() -> str:
 
 
 def _render_context_stub() -> str:
-    plugin_context_cls, runtime_facade_cls, _runtime_api_cls, plugin_config_proxy_cls, service_facade_cls, server_facade_cls = (
-        _load_stub_target_classes()
-    )
+    (
+        plugin_context_cls,
+        runtime_facade_cls,
+        _runtime_api_cls,
+        plugin_config_proxy_cls,
+        service_facade_cls,
+        server_facade_cls,
+        plugin_event_facade_cls,
+        plugin_logger_cls,
+    ) = _load_stub_target_classes()
 
     class_attrs = {
         "plugin_name": "str",
         "instance_id": "str",
         "config": plugin_config_proxy_cls.__name__,
-        "logger": "Any",
-        "events": "Any",
+        "logger": plugin_logger_cls.__name__,
+        "event": plugin_event_facade_cls.__name__,
         "runtime_api": "RuntimeAPI",
         "runtime": runtime_facade_cls.__name__,
         "service": service_facade_cls.__name__,
@@ -118,27 +125,43 @@ def _render_context_stub() -> str:
     lines = [
         _HEADER.rstrip("\n"),
         "",
-        "from typing import Any, Callable, Dict, Optional",
+        "from collections.abc import Iterator",
+        "from typing import Any, Callable, Dict, Literal, Optional",
+        "",
+        "from app.core.plugins.event_contract import EventErrorPolicy, EventScope",
+        "from app.core.plugins.server import PluginServerFacade, PluginServerRegistry",
+        "from app.core.plugins.service_registry import ServiceRegistry",
         "",
         "from .cache_store import PluginCacheManager",
-        "from .context import PluginConfigProxy, ServiceFacade",
         "from .runtime_api import RuntimeAPI",
-        "from .server import PluginServerFacade",
         "",
     ]
-    lines.extend(_render_class_stub(plugin_context_cls, class_attrs))
+    lines.extend(_render_class_stub(plugin_config_proxy_cls, {}))
+    lines.append("")
+    lines.extend(_render_class_stub(plugin_logger_cls, {}))
     lines.append("")
     lines.extend(_render_class_stub(service_facade_cls, {}))
     lines.append("")
     lines.extend(_render_class_stub(runtime_facade_cls, runtime_facade_attrs))
     lines.append("")
+    lines.extend(_render_class_stub(plugin_event_facade_cls, {}))
+    lines.append("")
+    lines.extend(_render_class_stub(plugin_context_cls, class_attrs))
+    lines.append("")
     return "\n".join(lines)
 
 
 def _render_runtime_api_stub() -> str:
-    _plugin_context_cls, _runtime_facade_cls, runtime_api_cls, _plugin_config_proxy_cls, _service_facade_cls, _server_facade_cls = (
-        _load_stub_target_classes()
-    )
+    (
+        _plugin_context_cls,
+        _runtime_facade_cls,
+        runtime_api_cls,
+        _plugin_config_proxy_cls,
+        _service_facade_cls,
+        _server_facade_cls,
+        _plugin_event_facade_cls,
+        _plugin_logger_cls,
+    ) = _load_stub_target_classes()
 
     lines = [
         _HEADER.rstrip("\n"),
@@ -185,13 +208,29 @@ def _render_cache_store_stub() -> str:
     return "\n".join(lines)
 
 
-def _load_stub_target_classes() -> tuple[type, type, type, type, type, type]:
+def _load_stub_target_classes() -> tuple[type, type, type, type, type, type, type, type]:
     """延迟加载生成上下文 stub 所需的核心类。"""
-    from app.core.plugins.context import PluginConfigProxy, PluginContext, RuntimeFacade, ServiceFacade
+    from app.core.plugins.context import (
+        PluginConfigProxy,
+        PluginContext,
+        RuntimeFacade,
+        ServiceFacade,
+        PluginEventFacade,
+        PluginLogger,
+    )
     from app.core.plugins.runtime_api import RuntimeAPI
     from app.core.plugins.server import PluginServerFacade
 
-    return PluginContext, RuntimeFacade, RuntimeAPI, PluginConfigProxy, ServiceFacade, PluginServerFacade
+    return (
+        PluginContext,
+        RuntimeFacade,
+        RuntimeAPI,
+        PluginConfigProxy,
+        ServiceFacade,
+        PluginServerFacade,
+        PluginEventFacade,
+        PluginLogger,
+    )
 
 
 def _load_cache_classes() -> tuple[type, type]:

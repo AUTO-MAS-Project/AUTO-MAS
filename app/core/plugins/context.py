@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from copy import deepcopy
-from typing import Any, Dict, Callable, Optional, Iterator
+from typing import Any, Dict, Callable, Optional, Iterator, Protocol
 import asyncio
 import inspect
 import logging
@@ -16,6 +16,20 @@ from .event_contract import EventErrorPolicy, EventScope
 from .runtime_api import RuntimeAPI
 from .service_registry import ServiceRegistry
 from .server import PluginServerFacade, PluginServerRegistry, plugin_server
+
+
+class PluginLogger(Protocol):
+    """插件上下文使用的最小日志协议。"""
+
+    def debug(self, message: Any, *args: Any, **kwargs: Any) -> Any: ...
+
+    def info(self, message: Any, *args: Any, **kwargs: Any) -> Any: ...
+
+    def warning(self, message: Any, *args: Any, **kwargs: Any) -> Any: ...
+
+    def error(self, message: Any, *args: Any, **kwargs: Any) -> Any: ...
+
+    def exception(self, message: Any, *args: Any, **kwargs: Any) -> Any: ...
 
 
 class PluginContext:
