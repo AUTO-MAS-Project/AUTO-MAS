@@ -252,12 +252,6 @@ class ServiceFacade:
         if isinstance(raw, str):
             name = raw.strip()
             return {name} if name else set()
-            result: set[str] = set()
-            for item in raw:
-                text = str(item or "").strip()
-                if text:
-                    result.add(text)
-            return result
         return set()
 
     def _warn(self, name: str) -> None:
