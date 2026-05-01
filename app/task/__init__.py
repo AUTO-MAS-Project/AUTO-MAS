@@ -21,9 +21,8 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .MAA import MaaManager
 from .MaaEnd import MaaEndManager
 from .SRC import SrcManager
 from .general import GeneralManager
 
-__all__ = ["MaaManager", "SrcManager", "GeneralManager", "MaaEndManager"]
+__all__ = ["SrcManager", "GeneralManager", "MaaEndManager"]

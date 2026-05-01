@@ -36,11 +36,15 @@ from .ocr import router as ocr_router
 from .websocket import router as ws_router
 from .plugins import router as plugins_router
 from .plugin_gateway import router as plugin_gateway_router
+from .scripts2 import router as scripts2_router
+from .script_types import router as script_types_router
 
 __all__ = [
     "core_router",
     "info_router",
     "scripts_router",
+    "scripts2_router",
+    "script_types_router",
     "plan_router",
     "emulator_router",
     "queue_router",

@@ -399,6 +399,56 @@ class PluginLoader:
             self._clear_cached_pypi_module(plugin_name, plugin_source)
         return self._load_plugin_class_from_entry_point(plugin_name, plugin_source.entry_point)
 
+    def get_default_instance_spec(
+        self,
+        plugin_name: str,
+        plugin_source: PluginSource,
+    ) -> dict[str, Any] | None:
+        """读取插件模块导出的默认实例声明。"""
+
+        try:
+            module, plugin_class = self._resolve_plugin_module_and_class(
+                plugin_name,
+                plugin_source,
+                clear_cache=False,
+            )
+        except Exception as e:
+            logger.warning(
+                f"读取插件默认实例声明失败，已跳过: plugin={plugin_name}, error={type(e).__name__}: {e}"
+            )
+            return None
+
+        raw_default = None
+        if module is not None:
+            raw_default = getattr(module, "DEFAULT_INSTANCE", None)
+        if raw_default is None:
+            raw_default = getattr(plugin_class, "DEFAULT_INSTANCE", None)
+        if raw_default is None:
+            return None
+        if not isinstance(raw_default, dict):
+            raise PluginDefinitionError(
+                f"DEFAULT_INSTANCE 必须是对象: plugin={plugin_name}"
+            )
+
+        name = str(raw_default.get("name") or f"{plugin_name} 默认实例").strip()
+        config = raw_default.get("config", {})
+        enabled = raw_default.get("enabled", True)
+
+        if not isinstance(config, dict):
+            raise PluginDefinitionError(
+                f"DEFAULT_INSTANCE.config 必须是对象: plugin={plugin_name}"
+            )
+        if not isinstance(enabled, bool):
+            raise PluginDefinitionError(
+                f"DEFAULT_INSTANCE.enabled 必须是布尔值: plugin={plugin_name}"
+            )
+
+        return {
+            "name": name or f"{plugin_name} 默认实例",
+            "enabled": enabled,
+            "config": deepcopy(config),
+        }
+
     @staticmethod
     def _ensure_required_lifecycle_methods(plugin_name: str, instance: Any) -> None:
         """校验插件实例是否完整实现生命周期方法。
@@ -800,11 +850,17 @@ class PluginLoader:
         except PluginDefinitionError as e:
             self._unregister_record_listeners(record)
             await plugin_server.unregister_owner(record.instance_id)
+            from app.core.script_types import script_type_registry
+
+            script_type_registry.unregister_by_owner(record.instance_id)
             self._mark_error(record, str(e))
             logger.error(f"插件加载失败: {plugin_name}, error={e}")
         except Exception as e:
             self._unregister_record_listeners(record)
             await plugin_server.unregister_owner(record.instance_id)
+            from app.core.script_types import script_type_registry
+
+            script_type_registry.unregister_by_owner(record.instance_id)
             self._mark_error(record, f"{type(e).__name__}: {e}")
             logger.exception(f"插件加载失败: {plugin_name}, error={e}")
 
@@ -930,11 +986,17 @@ class PluginLoader:
         except PluginDefinitionError as e:
             self._unregister_record_listeners(record)
             await plugin_server.unregister_owner(record.instance_id)
+            from app.core.script_types import script_type_registry
+
+            script_type_registry.unregister_by_owner(record.instance_id)
             self._mark_error(record, str(e))
             logger.error(f"插件实例加载失败: {instance_id}, error={e}")
         except Exception as e:
             self._unregister_record_listeners(record)
             await plugin_server.unregister_owner(record.instance_id)
+            from app.core.script_types import script_type_registry
+
+            script_type_registry.unregister_by_owner(record.instance_id)
             self._mark_error(record, f"{type(e).__name__}: {e}")
             logger.error(f"插件实例加载失败: {instance_id}, error={type(e).__name__}: {e}")
 
@@ -1058,6 +1120,9 @@ class PluginLoader:
             self._unregister_record_listeners(record)
             self.service.drop(record.instance_id)
             await plugin_server.unregister_owner(record.instance_id)
+            from app.core.script_types import script_type_registry
+
+            script_type_registry.unregister_by_owner(record.instance_id)
 
         self._mark_status(record, "unloaded")
         self._mark_lifecycle_phase(record, "unloaded")

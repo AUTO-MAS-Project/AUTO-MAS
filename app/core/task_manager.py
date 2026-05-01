@@ -24,13 +24,12 @@ import uuid
 import asyncio
 from typing import Dict, Literal
 
-from .config import Config, MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig
-from .config import Config, MaaConfig, SrcConfig, GeneralConfig
+from .config import Config
 from .plugins import PluginEventFactory, PluginEventNames
+from .script_types import script_type_registry
 from app.services import System
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
 from app.utils import get_logger
-from app.task import MaaManager, SrcManager, GeneralManager, MaaEndManager
 from app.utils.constants import POWER_SIGN_MAP
 
 
@@ -282,16 +281,14 @@ class Task(TaskExecuteBase):
             f"开始运行任务: {self.task_info.task_id}, 模式: {self.task_info.mode}"
         )
 
-        # 依次运行任务
         for self.task_info.current_index, script_item in enumerate(
             self.task_info.script_list
         ):
             current_script_uid = uuid.UUID(script_item.script_id)
 
-            # 检查任务对应脚本是否仍存在
             if current_script_uid not in Config.ScriptConfig:
                 script_item.status = "异常"
-                logger.info(f"跳过任务: {current_script_uid}, 该任务对应脚本已被删除")
+                logger.info(f"跳过任务: {current_script_uid}, 对应脚本已被删除")
                 await Config.send_websocket_message(
                     id=self.task_info.task_id,
                     type="Info",
@@ -299,12 +296,37 @@ class Task(TaskExecuteBase):
                 )
                 continue
 
-            # 检查任务是否已被其他任务调度器锁定
+            try:
+                provider = script_type_registry.get_by_script_config(
+                    Config.ScriptConfig[current_script_uid]
+                )
+            except KeyError:
+                logger.error(
+                    f"不支持的脚本类型: {type(Config.ScriptConfig[current_script_uid]).__name__}"
+                )
+                await Config.send_websocket_message(
+                    id=self.task_info.task_id,
+                    type="Info",
+                    data={"Error": "脚本类型不支持"},
+                )
+                continue
+
+            if self.task_info.mode not in provider.supported_modes:
+                logger.error(
+                    f"脚本类型 {provider.type_key} 不支持任务模式 {self.task_info.mode}"
+                )
+                await Config.send_websocket_message(
+                    id=self.task_info.task_id,
+                    type="Info",
+                    data={
+                        "Error": f"脚本类型 {provider.type_key} 不支持任务模式 {self.task_info.mode}"
+                    },
+                )
+                continue
+
             if Config.ScriptConfig[current_script_uid].is_locked:
                 script_item.status = "跳过"
-                logger.info(
-                    f"跳过任务: {current_script_uid}, 该任务已被其他任务调度器锁定"
-                )
+                logger.info(f"跳过任务: {current_script_uid}, 脚本已被其他任务锁定")
                 await Config.send_websocket_message(
                     id=self.task_info.task_id,
                     type="Info",
@@ -312,7 +334,6 @@ class Task(TaskExecuteBase):
                 )
                 continue
 
-            # 标记为运行中
             script_item.status = "运行"
             logger.info(f"任务开始: {current_script_uid}")
             script_event_data = self._build_script_event_data()
@@ -327,26 +348,8 @@ class Task(TaskExecuteBase):
                 data=script_event_data,
             )
 
-            if isinstance(Config.ScriptConfig[current_script_uid], MaaConfig):
-                task_item = MaaManager(script_item)
-            elif isinstance(Config.ScriptConfig[current_script_uid], SrcConfig):
-                task_item = SrcManager(script_item)
-            elif isinstance(Config.ScriptConfig[current_script_uid], GeneralConfig):
-                task_item = GeneralManager(script_item)
-            elif isinstance(Config.ScriptConfig[current_script_uid], MaaEndConfig):
-                task_item = MaaEndManager(script_item)
-            else:
-                logger.error(
-                    f"不支持的脚本类型: {type(Config.ScriptConfig[current_script_uid]).__name__}"
-                )
-                await Config.send_websocket_message(
-                    id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": "脚本类型不支持"},
-                )
-                continue
+            task_item = provider.create_manager(script_item)
 
-            # 运行任务
             try:
                 await self.spawn(task_item)
             except asyncio.CancelledError:
@@ -415,7 +418,7 @@ class Task(TaskExecuteBase):
                 )
                 result_error = None
                 if result_event == PluginEventNames.SCRIPT_ERROR:
-                    result_error = "脚本状态非完成"
+                    result_error = "脚本状态未完成"
                     self._exit_result = "error"
                     self._exit_error = result_error
 
