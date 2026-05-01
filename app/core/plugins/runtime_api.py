@@ -19,7 +19,7 @@ class RuntimeAPI:
         plugin_name: str,
         instance_id: str,
         config: Dict[str, Any],
-        logger,
+        logger: Any,
         runtime_capabilities: Optional[Dict[str, Callable[..., Any]]] = None,
     ) -> None:
         self.plugin_name = plugin_name
