@@ -5,10 +5,11 @@ from __future__ import annotations
 
 from pathlib import Path
 from copy import deepcopy
-from typing import Any, Dict, Callable, Optional, Iterator, Protocol
+from typing import Any, Dict, Callable, Optional, Iterator
 import asyncio
 import inspect
-import logging
+
+from loguru import Logger
 
 from .cache_store import PluginCacheManager
 from .event_bus import EventBus
@@ -18,27 +19,13 @@ from .service_registry import ServiceRegistry
 from .server import PluginServerFacade, PluginServerRegistry, plugin_server
 
 
-class PluginLogger(Protocol):
-    """插件上下文使用的最小日志协议。"""
-
-    def debug(self, message: Any, *args: Any, **kwargs: Any) -> Any: ...
-
-    def info(self, message: Any, *args: Any, **kwargs: Any) -> Any: ...
-
-    def warning(self, message: Any, *args: Any, **kwargs: Any) -> Any: ...
-
-    def error(self, message: Any, *args: Any, **kwargs: Any) -> Any: ...
-
-    def exception(self, message: Any, *args: Any, **kwargs: Any) -> Any: ...
-
-
 class PluginContext:
     """面向插件的上下文对象，公开受控的 MAS 功能。"""
 
     plugin_name: str
     instance_id: str
     config: PluginConfigProxy
-    logger: logging.Logger
+    logger: Logger
     event: PluginEventFacade
     service: ServiceFacade
     server: PluginServerFacade
@@ -52,7 +39,7 @@ class PluginContext:
         plugin_name: str,
         instance_id: str | None = None,
         config: Dict[str, Any],
-        logger: logging.Logger,
+        logger: Logger,
         events: EventBus,
         runtime_capabilities: Optional[Dict[str, Callable[..., Any]]] = None,
         service_registry: Optional[ServiceRegistry] = None,
@@ -224,7 +211,7 @@ class ServiceFacade:
         ctx: PluginContext,
         plugin_name: str,
         instance_id: str,
-        logger: logging.Logger | Any,
+        logger: Logger,
         registry: Optional[ServiceRegistry],
         provides: Optional[set[str]] = None,
         needs: Optional[set[str]] = None,
@@ -233,7 +220,7 @@ class ServiceFacade:
         self._ctx: PluginContext = ctx
         self._plugin_name: str = plugin_name
         self._instance_id: str = instance_id
-        self._logger: logging.Logger | Any = logger
+        self._logger: Logger = logger
         self._registry: ServiceRegistry = registry or ServiceRegistry()
 
         self._provides = set(provides or set())
