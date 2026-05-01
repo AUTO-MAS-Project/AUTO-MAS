@@ -192,40 +192,14 @@
           :class="['script-item', { selected: selectedScriptId === script.id }]"
           @click="selectedScriptId = script.id"
         >
-          <div class="script-item-content">
-            <div class="script-icon">
-              <img
-                v-if="script.type === 'MAA'"
-                src="@/assets/MAA.png"
-                alt="MAA"
-                class="type-icon"
-              />
-              <img
-                v-else-if="script.type === 'SRC'"
-                src="@/assets/SRC.png"
-                alt="SRC"
-                class="type-icon"
-              />
-              <img
-                v-else-if="script.type === 'MaaEnd'"
-                src="@/assets/MaaEnd.png"
-                alt="MaaEnd"
-                class="type-icon"
-              />
-              <img v-else src="@/assets/AUTO-MAS.ico" alt="General" class="type-icon" />
-            </div>
-            <div class="script-info">
-              <div class="script-name">{{ script.name }}</div>
-              <div class="script-meta">
-                <span class="script-type">{{
-                  script.type === 'MAA'
-                    ? 'MAA脚本'
-                    : script.type === 'SRC'
-                      ? 'SRC脚本'
-                      : script.type === 'MaaEnd'
-                        ? 'MaaEnd脚本'
-                        : '通用脚本'
-                }}</span>
+            <div class="script-item-content">
+              <div class="script-icon">
+                <img :src="getScriptIcon(script.type)" :alt="script.type" class="type-icon" />
+              </div>
+              <div class="script-info">
+                <div class="script-name">{{ script.name }}</div>
+                <div class="script-meta">
+                  <span class="script-type">{{ script.displayName || script.type }}</span>
                 <span class="script-users">
                   <UserOutlined />
                   {{ script.users?.length || 0 }} 个用户
@@ -252,49 +226,21 @@
   >
     <div class="type-selection">
       <a-radio-group v-model:value="selectedType" class="type-radio-group">
-        <a-radio-button value="MAA" class="type-option">
+        <a-radio-button
+          v-for="descriptor in availableScriptTypes"
+          :key="descriptor.type_key"
+          :value="descriptor.type_key"
+          class="type-option"
+        >
           <div class="type-content">
             <div class="type-logo-container">
-              <img src="@/assets/MAA.png" alt="MAA" class="type-logo" />
+              <img :src="getScriptIcon(descriptor.type_key)" :alt="descriptor.type_key" class="type-logo" />
             </div>
             <div class="type-info">
-              <div class="type-title">MAA脚本</div>
-              <div class="type-description">明日方舟自动化脚本，支持多账号日常代理等功能</div>
-            </div>
-          </div>
-        </a-radio-button>
-        <a-radio-button value="SRC" class="type-option">
-          <div class="type-content">
-            <div class="type-logo-container">
-              <img src="@/assets/SRC.png" alt="SRC" class="type-logo" />
-            </div>
-            <div class="type-info">
-              <div class="type-title">SRC脚本</div>
-              <div class="type-description">崩坏星穹铁道自动化脚本，支持多账号日常代理等功能</div>
-            </div>
-          </div>
-        </a-radio-button>
-        <a-radio-button value="MaaEnd" class="type-option">
-          <div class="type-content">
-            <div class="type-logo-container">
-              <img src="@/assets/MaaEnd.png" alt="MaaEnd" class="type-logo" />
-            </div>
-            <div class="type-info">
-              <div class="type-title">MaaEnd 脚本</div>
+              <div class="type-title">{{ descriptor.display_name }}</div>
               <div class="type-description">
-                MaaEnd 自动化脚本，沿用 SRC 风格的多账号代理管理界面
+                支持模式：{{ descriptor.supported_modes.join(' / ') || '未声明' }}
               </div>
-            </div>
-          </div>
-        </a-radio-button>
-        <a-radio-button value="General" class="type-option">
-          <div class="type-content">
-            <div class="type-logo-container">
-              <img src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="type-logo" />
-            </div>
-            <div class="type-info">
-              <div class="type-title">通用脚本</div>
-              <div class="type-description">通用自动化脚本，适用于所有具备日志文件的脚本</div>
             </div>
           </div>
         </a-radio-button>
@@ -445,19 +391,26 @@ import {
 } from '@ant-design/icons-vue'
 import ScriptTable from '@/components/ScriptTable.vue'
 import type { Script, ScriptType, User } from '@/types/script'
-import { useScriptApi } from '@/composables/useScriptApi'
-import { useUserApi } from '@/composables/useUserApi'
+import type { ScriptTypeDescriptor } from '@/types/scriptRegistry'
+import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useTemplateApi, type WebConfigTemplate } from '@/composables/useTemplateApi'
 import { usePlanApi } from '@/composables/usePlanApi'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import {
+  descriptorMapFromList,
+  getScriptEditPath,
+  getScriptIcon,
+  getUserCreatePath,
+  getUserEditPath,
+  normalizeScriptRecord,
+} from '@/utils/scriptRegistry'
 import MarkdownIt from 'markdown-it'
 const logger = window.electronAPI.getLogger('脚本管理')
 
 const router = useRouter()
-const { addScript, deleteScript, getScriptsWithUsers } = useScriptApi()
-const { updateUser, deleteUser } = useUserApi()
+const registryApi = useScriptRegistryApi()
 const { subscribe, unsubscribe } = useWebSocket()
 const { getWebConfigTemplates, importScriptFromWeb } = useTemplateApi()
 const { getPlans } = usePlanApi()
@@ -470,6 +423,7 @@ const md = new MarkdownIt({
 })
 
 const scripts = ref<Script[]>([])
+const scriptTypeDescriptors = ref<ScriptTypeDescriptor[]>([])
 // 增加：标记是否已经完成过一次脚本列表加载（成功或失败都算一次）
 const loadedOnce = ref(false)
 // 所有计划表数据 (planId -> planData)
@@ -481,7 +435,7 @@ const generalModeSelectVisible = ref(false)
 const templateSelectVisible = ref(false)
 const selectedCreateMode = ref('new') // 'copy' or 'new'
 const selectedScriptId = ref<string | null>(null) // 选中要复制的脚本ID
-const selectedType = ref<ScriptType>('MAA')
+const selectedType = ref<ScriptType>('')
 const selectedGeneralMode = ref('template')
 const selectedTemplate = ref<WebConfigTemplate | null>(null)
 const templates = ref<WebConfigTemplate[]>([])
@@ -519,6 +473,8 @@ const filteredTemplates = computed(() => {
   )
 })
 
+const availableScriptTypes = computed(() => scriptTypeDescriptors.value)
+
 onMounted(() => {
   loadScripts()
   loadCurrentPlan()
@@ -526,17 +482,19 @@ onMounted(() => {
 
 const loadScripts = async () => {
   try {
-    const scriptDetails = await getScriptsWithUsers()
+    const descriptors = await registryApi.getScriptTypes()
+    scriptTypeDescriptors.value = descriptors
+    if (!selectedType.value && descriptors.length > 0) {
+      selectedType.value = descriptors[0].type_key
+    }
 
-    // 将 ScriptDetail 转换为 Script 格式（为了兼容现有的表格组件）
-    scripts.value = scriptDetails.map(detail => ({
-      id: detail.uid,
-      type: detail.type as ScriptType,
-      name: detail.name,
-      config: detail.config,
-      users: (detail.users || []).filter((user): user is NonNullable<typeof user> => user !== null),
-      createTime: new Date().toLocaleString(),
-    }))
+    const descriptorMap = descriptorMapFromList(descriptors)
+    const scriptRecords = await registryApi.getScripts()
+    const userRecords = await Promise.all(scriptRecords.map(record => registryApi.getUsers(record.id)))
+
+    scripts.value = scriptRecords.map((record, index) =>
+      normalizeScriptRecord(record, descriptorMap, userRecords[index] || [])
+    )
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本列表失败: ${errorMsg}`)
@@ -563,6 +521,9 @@ const loadCurrentPlan = async () => {
 }
 
 const handleAddScript = () => {
+  if (!selectedType.value && availableScriptTypes.value.length > 0) {
+    selectedType.value = availableScriptTypes.value[0].type_key
+  }
   // 如果当前没有脚本，直接进入类型选择
   if (scripts.value.length === 0) {
     selectedType.value = 'MAA'
@@ -604,30 +565,9 @@ const handleConfirmScriptSelect = async () => {
 
   addLoading.value = true
   try {
-    // 使用选中的脚本ID调用addScript，传入scriptId进行复制创建
-    const result = await addScript(selectedScript.type, selectedScriptId.value)
-    if (result) {
-      scriptSelectVisible.value = false
-      // 跳转到编辑页面
-      const editPath =
-        selectedScript.type === 'MAA'
-          ? 'maa'
-          : selectedScript.type === 'SRC'
-            ? 'src'
-            : selectedScript.type === 'MaaEnd'
-              ? 'maaend'
-              : 'general'
-      router.push({
-        path: `/scripts/${result.scriptId}/edit/${editPath}`,
-        state: {
-          scriptData: {
-            id: result.scriptId,
-            type: selectedScript.type,
-            config: result.data,
-          },
-        },
-      })
-    }
+    const result = await registryApi.addScript(selectedScript.type, selectedScriptId.value)
+    scriptSelectVisible.value = false
+    router.push(getScriptEditPath({ id: result.id, type: result.type, editorKind: result.editor_kind }))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`复制脚本失败: ${errorMsg}`)
@@ -647,29 +587,9 @@ const handleConfirmAddScript = async () => {
   // MAA和SRC脚本直接创建
   addLoading.value = true
   try {
-    const result = await addScript(selectedType.value)
-    if (result) {
-      typeSelectVisible.value = false
-      // 跳转到编辑页面，传递API返回的数据
-      const editPath =
-        selectedType.value === 'MAA'
-          ? 'maa'
-          : selectedType.value === 'SRC'
-            ? 'src'
-            : selectedType.value === 'MaaEnd'
-              ? 'maaend'
-              : 'general'
-      router.push({
-        path: `/scripts/${result.scriptId}/edit/${editPath}`,
-        state: {
-          scriptData: {
-            id: result.scriptId,
-            type: selectedType.value,
-            config: result.data,
-          },
-        },
-      })
-    }
+    const result = await registryApi.addScript(selectedType.value)
+    typeSelectVisible.value = false
+    router.push(getScriptEditPath({ id: result.id, type: result.type, editorKind: result.editor_kind }))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`添加脚本失败: ${errorMsg}`)
@@ -689,19 +609,8 @@ const handleConfirmGeneralMode = async () => {
     generalModeSelectVisible.value = false
     addLoading.value = true
     try {
-      const result = await addScript('General')
-      if (result) {
-        router.push({
-          path: `/scripts/${result.scriptId}/edit/general`,
-          state: {
-            scriptData: {
-              id: result.scriptId,
-              type: 'General',
-              config: result.data,
-            },
-          },
-        })
-      }
+      const result = await registryApi.addScript('General')
+      router.push(`/scripts/${result.id}/edit/general`)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`添加脚本失败: ${errorMsg}`)
@@ -733,14 +642,11 @@ const handleConfirmTemplate = async () => {
   templateLoading.value = true
   try {
     // 1. 先创建通用脚本
-    const createResult = await addScript('General')
-    if (!createResult) {
-      return
-    }
+    const createResult = await registryApi.addScript('General')
 
     // 2. 使用模板URL导入配置
     const importResult = await importScriptFromWeb(
-      createResult.scriptId,
+      createResult.id,
       selectedTemplate.value.downloadUrl
     )
 
@@ -753,7 +659,7 @@ const handleConfirmTemplate = async () => {
       await loadScripts()
 
       // 跳转到编辑页面，不传递state数据，让编辑页面从API重新加载最新配置
-      router.push(`/scripts/${createResult.scriptId}/edit/general`)
+      router.push(`/scripts/${createResult.id}/edit/general`)
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -772,52 +678,28 @@ const handleCancelTemplate = () => {
 }
 
 const handleEditScript = (script: Script) => {
-  // 根据脚本类型跳转到对应的编辑页面
-  if (script.type === 'MAA') {
-    router.push(`/scripts/${script.id}/edit/maa`)
-  } else if (script.type === 'SRC') {
-    router.push(`/scripts/${script.id}/edit/src`)
-  } else if (script.type === 'MaaEnd') {
-    router.push(`/scripts/${script.id}/edit/maaend`)
-  } else {
-    router.push(`/scripts/${script.id}/edit/general`)
-  }
+  router.push(getScriptEditPath(script))
 }
 
 const handleDeleteScript = async (script: Script) => {
-  const result = await deleteScript(script.id)
-  if (result) {
-    loadScripts()
+  try {
+    await registryApi.deleteScript(script.id)
+    await loadScripts()
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`删除脚本失败: ${errorMsg}`)
   }
 }
 
 const handleAddUser = (script: Script) => {
-  // 根据脚本类型跳转到对应的用户添加页面
-  if (script.type === 'MAA') {
-    router.push(`/scripts/${script.id}/users/add/maa`)
-  } else if (script.type === 'SRC') {
-    router.push(`/scripts/${script.id}/users/add/src`)
-  } else if (script.type === 'MaaEnd') {
-    router.push(`/scripts/${script.id}/users/add/maaend`)
-  } else {
-    router.push(`/scripts/${script.id}/users/add/general`)
-  }
+  router.push(getUserCreatePath(script))
 }
 
 const handleEditUser = (user: User) => {
   // 从用户数据中找到对应的脚本
   const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
   if (script) {
-    // 根据脚本类型跳转到对应的用户编辑页面
-    if (script.type === 'MAA') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/maa`)
-    } else if (script.type === 'SRC') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/src`)
-    } else if (script.type === 'MaaEnd') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/maaend`)
-    } else {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
-    }
+    router.push(getUserEditPath(script, user))
   } else {
     message.error('找不到对应的脚本')
   }
@@ -831,13 +713,15 @@ const handleDeleteUser = async (user: User) => {
     return
   }
 
-  const result = await deleteUser(script.id, user.id)
-  if (result) {
-    // 删除成功后，从本地数据中移除用户
+  try {
+    await registryApi.deleteUser(script.id, user.id)
     const userIndex = script.users.findIndex(u => u.id === user.id)
     if (userIndex > -1) {
       script.users.splice(userIndex, 1)
     }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`删除用户失败: ${errorMsg}`)
   }
 }
 
@@ -1230,18 +1114,14 @@ const handleToggleUserStatus = async (user: User) => {
     const newStatus = !user.Info.Status
 
     // 调用 updateUser API
-    const result = await updateUser(script.id, user.id, {
+    await registryApi.updateUser(script.id, user.id, {
       Info: {
         ...user.Info,
         Status: newStatus,
       },
     })
-
-    if (result) {
-      message.success('用户状态更新成功')
-      // 更新本地用户状态
-      user.Info.Status = newStatus
-    }
+    message.success('用户状态更新成功')
+    user.Info.Status = newStatus
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新用户状态失败: ${errorMsg}`)
@@ -1259,17 +1139,13 @@ const handlePassCheckUser = async (user: User) => {
     }
 
     // 调用 updateUser API，更新 Data.IfPassCheck 为 true
-    const result = await updateUser(script.id, user.id, {
+    await registryApi.updateUser(script.id, user.id, {
       Data: {
         IfPassCheck: true,
       },
     })
-
-    if (result) {
-      message.success('已标记为「通过人工排查」')
-      // 刷新脚本配置
-      await loadScripts()
-    }
+    message.success('已标记为「通过人工排查」')
+    await loadScripts()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新人工排查状态失败: ${errorMsg}`)

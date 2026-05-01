@@ -295,11 +295,32 @@ class _PluginManager:
 
             await self._ensure_local_projects_installed()
             discovered = self._discover_plugins()
+            await self._ensure_default_instances(discovered)
             self.loader.discovered_plugins = discovered
             self._discover_cache = discovered
             self._discover_cache_time = time.monotonic()
             self._discover_cache_plugins_dir = self.plugins_dir
             return discovered
+
+    async def _ensure_default_instances(self, discovered: Dict[str, Any]) -> None:
+        """按插件声明补齐默认实例。"""
+
+        default_instances: Dict[str, Dict[str, Any]] = {}
+        for plugin_name, plugin_source in discovered.items():
+            spec = self.loader.get_default_instance_spec(plugin_name, plugin_source)
+            if spec is None:
+                continue
+            default_instances[plugin_name] = spec
+
+        if not default_instances:
+            return
+
+        await self.config_store.ensure_instances(
+            self.plugins_dir,
+            discovered,
+            auto_create_missing=False,
+            default_instances=default_instances,
+        )
 
     @staticmethod
     def _normalize_distribution_name(name: str) -> str:
@@ -596,6 +617,136 @@ class _PluginManager:
             return True
 
         return False
+
+    def _collect_instance_bound_script_refs(self, instance_id: str) -> list[str]:
+        """收集当前实例绑定且仍被脚本配置使用的脚本引用。"""
+
+        from app.core import Config
+        from app.core.script_types import script_type_registry
+
+        owned_providers = [
+            provider
+            for provider in script_type_registry.list()
+            if script_type_registry.get_owner(provider.type_key) == instance_id
+        ]
+        if not owned_providers:
+            return []
+
+        bound_refs: list[str] = []
+        for script_id, script in Config.ScriptConfig.items():
+            for provider in owned_providers:
+                if not isinstance(script, provider.script_config_class):
+                    continue
+                script_name = provider.display_name
+                if (
+                    "Info" in script._config_item_index
+                    and "Name" in script._config_item_index["Info"]
+                ):
+                    script_name = script.get("Info", "Name")
+                bound_refs.append(
+                    f"{provider.type_key}:{script_name}({script_id})"
+                )
+                break
+
+        return bound_refs
+
+    async def ensure_instance_can_unload(self, instance_id: str) -> None:
+        """兼容旧调用：停用实例时允许脚本进入离线只读状态。"""
+
+        _ = instance_id
+
+    def _collect_declared_instance_bound_script_refs(
+        self,
+        instance_id: str,
+        *,
+        plugin_name: str,
+        discovered: Dict[str, Any] | None = None,
+    ) -> list[str]:
+        """按插件声明收集已停用实例仍占用的脚本配置。"""
+
+        from app.core import Config
+        from app.models.ConfigBase import ConfigBase
+        from app.models import config as config_models
+
+        _ = instance_id
+        snapshot = discovered or self.loader.discovered_plugins or self._discover_plugins()
+        plugin_source = snapshot.get(plugin_name)
+        if plugin_source is None:
+            return []
+
+        try:
+            module, plugin_class = self.loader._resolve_plugin_module_and_class(
+                plugin_name,
+                plugin_source,
+                clear_cache=False,
+            )
+        except Exception as e:
+            logger.warning(
+                f"读取插件脚本类型绑定失败，已跳过: plugin={plugin_name}, error={type(e).__name__}: {e}"
+            )
+            return []
+
+        raw_bindings = None
+        if module is not None:
+            raw_bindings = getattr(module, "SCRIPT_TYPE_BINDINGS", None)
+        if raw_bindings is None:
+            raw_bindings = getattr(plugin_class, "SCRIPT_TYPE_BINDINGS", None)
+        if raw_bindings is None:
+            return []
+        if isinstance(raw_bindings, dict):
+            raw_bindings = [raw_bindings]
+        if not isinstance(raw_bindings, list):
+            logger.warning(f"插件脚本类型绑定声明无效，已跳过: plugin={plugin_name}")
+            return []
+
+        bindings: list[tuple[str, str, type]] = []
+        for item in raw_bindings:
+            if not isinstance(item, dict):
+                continue
+            class_name = str(item.get("script_config_class_name") or "").strip()
+            config_class = getattr(config_models, class_name, None)
+            if not isinstance(config_class, type) or not issubclass(config_class, ConfigBase):
+                continue
+            type_key = str(item.get("type_key") or class_name).strip()
+            display_name = str(item.get("display_name") or type_key).strip()
+            bindings.append((type_key, display_name, config_class))
+
+        bound_refs: list[str] = []
+        for script_id, script in Config.ScriptConfig.items():
+            for type_key, display_name, config_class in bindings:
+                if not isinstance(script, config_class):
+                    continue
+                script_name = display_name
+                if (
+                    "Info" in script._config_item_index
+                    and "Name" in script._config_item_index["Info"]
+                ):
+                    script_name = script.get("Info", "Name")
+                bound_refs.append(f"{type_key}:{script_name}({script_id})")
+                break
+        return bound_refs
+
+    async def ensure_instance_can_delete(
+        self,
+        instance_id: str,
+        *,
+        plugin_name: str | None = None,
+        discovered: Dict[str, Any] | None = None,
+    ) -> None:
+        """校验插件实例是否允许删除。"""
+
+        bound_refs = self._collect_instance_bound_script_refs(instance_id)
+        if not bound_refs and plugin_name:
+            bound_refs = self._collect_declared_instance_bound_script_refs(
+                instance_id,
+                plugin_name=plugin_name,
+                discovered=discovered,
+            )
+        if bound_refs:
+            raise RuntimeError(
+                "插件实例仍被脚本配置占用，无法删除。请先删除或迁移这些脚本: "
+                + "; ".join(bound_refs)
+            )
 
     async def apply_instance_enabled(self, instance_id: str, enabled: bool) -> None:
         """Apply an already-saved enabled toggle without a full instance reload."""

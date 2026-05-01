@@ -190,276 +190,18 @@
 
                 <a-card size="small" title="插件配置" class="editor-card">
                   <template v-if="activeSchemaEntries.length > 0">
-                    <a-form-item
-                      v-for="([field, fieldSchema], index) in activeSchemaEntries"
-                      :key="field"
-                      :label="getFieldLabel(field, fieldSchema)"
-                      :required="Boolean(fieldSchema.required)"
-                      :help="getFieldHelp(field, fieldSchema)"
-                      :validate-status="getFieldValidateStatus(field, fieldSchema)"
-                      :class="['schema-item', `schema-item-${fieldSchema.type}`]"
-                      :style="{
-                        marginBottom: index === activeSchemaEntries.length - 1 ? '0' : '16px',
-                      }"
-                    >
-                      <div class="schema-field-head">
-                        <a-space size="6">
-                          <a-tag class="type-tag" color="processing">{{
-                            getTypeLabel(fieldSchema)
-                          }}</a-tag>
-                          <a-tag v-if="fieldSchema.required" color="error">必填</a-tag>
-                          <a-tag v-if="isPasswordSchema(fieldSchema)" color="gold">敏感</a-tag>
-                        </a-space>
-                      </div>
-
-                      <template v-if="isButtonSchema(fieldSchema)">
-                        <a-button
-                          type="primary"
-                          :loading="pluginActionLoadingId === getSchemaButtonActionId(field)"
-                          :disabled="Boolean(pluginActionLoadingId)"
-                          @click="triggerSchemaButtonAction(field, fieldSchema)"
-                        >
-                          {{
-                            getSchemaButtonAction(field, fieldSchema)?.label ||
-                            getFieldLabel(field, fieldSchema)
-                          }}
-                        </a-button>
-                      </template>
-
-                      <template v-else-if="isEnumSchema(fieldSchema)">
-                        <a-select
-                          :value="getFieldValue(field)"
-                          style="width: 100%"
-                          :options="getEnumOptions(fieldSchema)"
-                          @update:value="(val: unknown) => updateFieldValue(field, val)"
-                        />
-                      </template>
-
-                      <template v-else-if="isEnumListSchema(fieldSchema)">
-                        <a-select
-                          mode="multiple"
-                          :value="getEnumListValue(field)"
-                          style="width: 100%"
-                          :options="getEnumOptions(fieldSchema)"
-                          @update:value="(val: unknown[]) => updateFieldValue(field, val)"
-                        />
-                      </template>
-
-                      <template v-else-if="isBooleanSchema(fieldSchema)">
-                        <a-switch
-                          :checked="getBooleanValue(field)"
-                          checked-children="是"
-                          un-checked-children="否"
-                          @update:checked="(val: boolean) => updateFieldValue(field, val)"
-                        />
-                      </template>
-
-                      <template v-else-if="isStringSchema(fieldSchema)">
-                        <a-input-password
-                          v-if="isPasswordSchema(fieldSchema)"
-                          :value="String(getFieldValue(field) ?? '')"
-                          :placeholder="getFieldPlaceholder(fieldSchema)"
-                          :maxlength="getStringMaxLength(fieldSchema)"
-                          @update:value="(val: string) => updateFieldValue(field, val)"
-                        />
-                        <a-textarea
-                          v-else-if="isTextareaSchema(fieldSchema)"
-                          :value="String(getFieldValue(field) ?? '')"
-                          :placeholder="getFieldPlaceholder(fieldSchema)"
-                          :maxlength="getStringMaxLength(fieldSchema)"
-                          :rows="getTextareaRows(fieldSchema)"
-                          @update:value="(val: string) => updateFieldValue(field, val)"
-                        />
-                        <a-input
-                          v-else
-                          :value="String(getFieldValue(field) ?? '')"
-                          :placeholder="getFieldPlaceholder(fieldSchema)"
-                          :maxlength="getStringMaxLength(fieldSchema)"
-                          @update:value="(val: string) => updateFieldValue(field, val)"
-                        />
-                      </template>
-
-                      <template v-else-if="isNumberSchema(fieldSchema)">
-                        <a-input-number
-                          :value="getNumberValue(field)"
-                          style="width: 100%"
-                          :min="getNumberMin(fieldSchema)"
-                          :max="getNumberMax(fieldSchema)"
-                          :step="getNumberStep(fieldSchema)"
-                          @update:value="(val: number | null) => updateFieldValue(field, val)"
-                        />
-                      </template>
-
-                      <template v-else-if="isListSchema(fieldSchema)">
-                        <a-space direction="vertical" style="width: 100%">
-                          <a-button
-                            size="small"
-                            @click="addListRow(field, getListItemType(fieldSchema))"
-                            >新增一行</a-button
-                          >
-                          <a-table
-                            :columns="listColumns"
-                            :data-source="getListRows(field)"
-                            :pagination="false"
-                            size="small"
-                            row-key="__rowKey"
-                          >
-                            <template #bodyCell="{ column, record, index }">
-                              <template v-if="column.key === 'value'">
-                                <a-switch
-                                  v-if="getListItemType(fieldSchema) === 'boolean'"
-                                  :checked="Boolean(record.value)"
-                                  @update:checked="
-                                    (val: boolean) =>
-                                      updateListRowValue(
-                                        field,
-                                        index,
-                                        val,
-                                        getListItemType(fieldSchema)
-                                      )
-                                  "
-                                />
-                                <a-input-number
-                                  v-else-if="getListItemType(fieldSchema) === 'number'"
-                                  style="width: 100%"
-                                  :value="
-                                    typeof record.value === 'number'
-                                      ? record.value
-                                      : Number(record.value || 0)
-                                  "
-                                  @update:value="
-                                    (val: number | null) =>
-                                      updateListRowValue(
-                                        field,
-                                        index,
-                                        val ?? 0,
-                                        getListItemType(fieldSchema)
-                                      )
-                                  "
-                                />
-                                <a-input
-                                  v-else
-                                  :value="String(record.value ?? '')"
-                                  @update:value="
-                                    (val: string) =>
-                                      updateListRowValue(
-                                        field,
-                                        index,
-                                        val,
-                                        getListItemType(fieldSchema)
-                                      )
-                                  "
-                                />
-                              </template>
-                              <template v-else-if="column.key === 'action'">
-                                <a-button danger size="small" @click="removeListRow(field, index)"
-                                  >删除</a-button
-                                >
-                              </template>
-                            </template>
-                          </a-table>
-                        </a-space>
-                      </template>
-
-                      <template v-else-if="fieldSchema.type === 'key_value'">
-                        <a-space direction="vertical" style="width: 100%">
-                          <a-button size="small" @click="addKeyValueRow(field)">新增一行</a-button>
-                          <a-table
-                            :columns="keyValueColumns"
-                            :data-source="getKeyValueRows(field)"
-                            :pagination="false"
-                            size="small"
-                            row-key="__rowKey"
-                          >
-                            <template #bodyCell="{ column, record }">
-                              <template v-if="column.key === 'key'">
-                                <a-input
-                                  :value="record.key"
-                                  @blur="
-                                    (e: FocusEvent) =>
-                                      updateKeyValueRowKey(
-                                        field,
-                                        record.key,
-                                        String((e.target as HTMLInputElement).value || '')
-                                      )
-                                  "
-                                />
-                              </template>
-                              <template v-else-if="column.key === 'value'">
-                                <a-input
-                                  :value="record.value"
-                                  @update:value="
-                                    (val: string) => updateKeyValueRowValue(field, record.key, val)
-                                  "
-                                />
-                              </template>
-                              <template v-else-if="column.key === 'action'">
-                                <a-button
-                                  danger
-                                  size="small"
-                                  @click="removeKeyValueRow(field, record.key)"
-                                  >删除</a-button
-                                >
-                              </template>
-                            </template>
-                          </a-table>
-                        </a-space>
-                      </template>
-
-                      <template v-else-if="fieldSchema.type === 'table'">
-                        <a-space direction="vertical" style="width: 100%">
-                          <a-space>
-                            <a-button size="small" @click="addTableRow(field)">新增行</a-button>
-                            <a-button size="small" @click="addTableColumn(field)">新增列</a-button>
-                          </a-space>
-                          <a-table
-                            :columns="getTableColumns(field)"
-                            :data-source="getTableRows(field)"
-                            :pagination="false"
-                            size="small"
-                            row-key="__rowKey"
-                          >
-                            <template #bodyCell="{ column, record, index }">
-                              <template v-if="column.key === 'action'">
-                                <a-button danger size="small" @click="removeTableRow(field, index)"
-                                  >删除</a-button
-                                >
-                              </template>
-                              <template v-else>
-                                <a-input
-                                  :value="String(record[column.dataIndex] ?? '')"
-                                  @update:value="
-                                    (val: string) =>
-                                      updateTableCell(field, index, String(column.dataIndex), val)
-                                  "
-                                />
-                              </template>
-                            </template>
-                          </a-table>
-                        </a-space>
-                      </template>
-
-                      <template v-else>
-                        <a-space direction="vertical" style="width: 100%">
-                          <a-alert
-                            type="warning"
-                            show-icon
-                            message="该字段类型暂无专用控件，请使用 JSON 编辑"
-                          />
-                          <a-textarea
-                            :value="getJsonFieldText(field)"
-                            :rows="6"
-                            @blur="
-                              (e: FocusEvent) =>
-                                updateJsonFieldValue(
-                                  field,
-                                  String((e.target as HTMLTextAreaElement).value || '')
-                                )
-                            "
-                          />
-                        </a-space>
-                      </template>
-                    </a-form-item>
+                    <SchemaForm
+                      ref="schemaFormRef"
+                      v-model="schemaFormModel"
+                      :schema="activeSchema"
+                      :hide-fields="hiddenSchemaFields"
+                      :action-loading-id="pluginActionLoadingId"
+                      @trigger-action="
+                        ({ field, fieldSchema }) =>
+                          triggerSchemaButtonAction(field, fieldSchema as PluginSchemaField)
+                      "
+                      @validation-change="handleSchemaValidationChange"
+                    />
                   </template>
                   <template v-else>
                     <a-form-item
@@ -524,6 +266,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import axios from 'axios'
 import { message } from 'ant-design-vue'
 import { OpenAPI } from '@/api'
+import SchemaForm from '@/components/SchemaForm.vue'
 import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
 
 interface PluginInstance {
@@ -696,6 +439,7 @@ const pluginActions = ref<Record<string, PluginActionInfo[]>>({})
 const instances = ref<PluginInstance[]>([])
 const runtimeStates = ref<Record<string, PluginRuntimeState>>({})
 const schemaFieldErrors = ref<Record<string, string>>({})
+const schemaFormRef = ref<InstanceType<typeof SchemaForm> | null>(null)
 const selectedInstanceId = ref('')
 const editSnapshot = ref('')
 let pluginSystemSubscriptionId = ''
@@ -822,6 +566,31 @@ const activeSchemaEntries = computed(() =>
     return true
   })
 )
+
+const hiddenSchemaFields = computed(() => {
+  const fields: string[] = []
+  if (activeSchema.value.enable && isBooleanSchema(activeSchema.value.enable)) {
+    fields.push('enable')
+  }
+  return fields
+})
+
+const schemaFormModel = computed<Record<string, unknown>>({
+  get: () => {
+    try {
+      return parseConfigText(editForm.configText)
+    } catch {
+      return {}
+    }
+  },
+  set: (value) => {
+    setConfigObjectToText(value)
+  },
+})
+
+const handleSchemaValidationChange = (errors: Record<string, string>) => {
+  schemaFieldErrors.value = errors
+}
 
 const currentSchemaError = computed(() => {
   if (!editForm.plugin) {
@@ -1357,8 +1126,8 @@ const getFieldValidateStatus = (field: string, fieldSchema: PluginSchemaField) =
   schemaFieldErrors.value[field] ? 'error' : undefined
 
 const validateActiveSchemaBeforeSubmit = () => {
-  refreshSchemaFieldErrors()
-  const errors = schemaFieldErrors.value
+  const result = schemaFormRef.value?.validate()
+  const errors = result?.errors || schemaFieldErrors.value
   const entries = Object.entries(errors)
   if (entries.length === 0) {
     return
@@ -1705,7 +1474,7 @@ const triggerPluginAction = async (action: PluginActionInfo) => {
   await runDeclaredPluginAction(action, '插件动作')
 }
 
-const getSchemaButtonActionId = (field: string) => `schema:${selectedInstanceId.value}:${field}`
+const getSchemaButtonActionId = (field: string) => field
 
 const getSchemaButtonAction = (
   field: string,

@@ -85,6 +85,7 @@ def main():
         async def lifespan(app: FastAPI):
             from app.core import Config, MainTimer, TaskManager, PluginManager
             from app.MaaFW import ArknightWin32Toolkit
+            from app.core.script_types import validate_script_type_registry
 
             if os.getenv("AUTO_MAS_DEV") == "1":
                 from scripts.dev_stub_generator import (
@@ -108,6 +109,13 @@ def main():
             await ArknightWin32Toolkit.init()
             await MainTimer.start()
             await PluginManager.start()
+
+            missing_script_types = validate_script_type_registry(Config)
+            if missing_script_types:
+                raise RuntimeError(
+                    "脚本类型注册不完整，以下脚本未找到可用 provider: "
+                    + "; ".join(missing_script_types)
+                )
 
             if os.getenv("AUTO_MAS_DEV") == "1":
                 from app.core.plugins.dev_hmr import DevPluginHMR
@@ -164,6 +172,8 @@ def main():
             core_router,
             info_router,
             scripts_router,
+            scripts2_router,
+            script_types_router,
             plan_router,
             emulator_router,
             queue_router,
@@ -196,6 +206,8 @@ def main():
         app.include_router(core_router)
         app.include_router(info_router)
         app.include_router(scripts_router)
+        app.include_router(scripts2_router)
+        app.include_router(script_types_router)
         app.include_router(plan_router)
         app.include_router(emulator_router)
         app.include_router(queue_router)
