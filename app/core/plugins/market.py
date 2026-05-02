@@ -33,7 +33,6 @@ PYPI_TIMEOUT_SECONDS = 12.0
 PYPI_SIMPLE_TIMEOUT_SECONDS = 45.0
 PYPI_FETCH_CONCURRENCY = 8
 PYPI_DEFAULT_PER_PREFIX_LIMIT = 60
-LOCAL_PROJECT_NAME_PATTERN = re.compile(r'^\s*name\s*=\s*"(?P<name>[^"]+)"\s*$', re.MULTILINE)
 SIMPLE_INDEX_ANCHOR_PATTERN = re.compile(r">(?P<name>[^<]+)</a>", re.IGNORECASE)
 
 
@@ -48,43 +47,6 @@ def _match_prefix_tag(package_name: str) -> str | None:
         if normalized.startswith(_normalize_package_name(prefix)):
             return prefix
     return None
-
-
-def _iter_local_pyproject_paths(plugins_dir: Path | None = None) -> list[Path]:
-    base_dir = plugins_dir or (Path.cwd() / "plugins")
-    if not base_dir.exists() or not base_dir.is_dir():
-        return []
-
-    result: list[Path] = []
-    for child in sorted(base_dir.iterdir()):
-        if not child.is_dir() or child.name == "pypi":
-            continue
-        pyproject = child / "pyproject.toml"
-        if pyproject.exists() and pyproject.is_file():
-            result.append(pyproject)
-            continue
-        for sub_child in sorted(child.iterdir()):
-            if not sub_child.is_dir():
-                continue
-            sub_pyproject = sub_child / "pyproject.toml"
-            if sub_pyproject.exists() and sub_pyproject.is_file():
-                result.append(sub_pyproject)
-
-    return result
-
-
-def _collect_local_project_names(plugins_dir: Path | None = None) -> set[str]:
-    names: set[str] = set()
-    for pyproject in _iter_local_pyproject_paths(plugins_dir=plugins_dir):
-        try:
-            text = pyproject.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
-            continue
-        matched = LOCAL_PROJECT_NAME_PATTERN.search(text)
-        project_name = matched.group("name").strip() if matched else ""
-        if project_name:
-            names.add(project_name)
-    return names
 
 
 def collect_installed_distribution_names(plugins_dir: Path | None = None) -> set[str]:
@@ -245,7 +207,7 @@ async def _fetch_market_items_from_candidates(candidates: list[str]) -> list[dic
 
     dedup: dict[str, dict[str, Any]] = {}
     for result in results:
-        if isinstance(result, Exception) or result is None:
+        if isinstance(result, BaseException) or result is None:
             continue
         normalized = _normalize_package_name(result["package"])
         if normalized not in dedup:

@@ -271,6 +271,18 @@ class RuntimeAPI:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
+        except Exception as e:
+            result = {
+                "ok": False,
+                "returncode": -1,
+                "stdout": "",
+                "stderr": f"启动 Python 子进程失败: {type(e).__name__}: {e}",
+                "python": target,
+            }
+            self._audit("run_python_snippet", "error", {"python": target, "error": str(e)})
+            return result
+
+        try:
             stdout_raw, stderr_raw = await asyncio.wait_for(process.communicate(), timeout=timeout)
             stdout = stdout_raw.decode("utf-8", errors="replace")
             stderr = stderr_raw.decode("utf-8", errors="replace")
