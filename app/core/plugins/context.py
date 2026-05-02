@@ -14,6 +14,7 @@ from loguru import Logger
 from .cache_store import PluginCacheManager
 from .event_bus import EventBus
 from .event_contract import EventErrorPolicy, EventScope
+from .log_pipeline import LogFacade, _LogPipelineHolder
 from .runtime_api import RuntimeAPI
 from .service_registry import ServiceRegistry
 from .server import PluginServerFacade, PluginServerRegistry, plugin_server
@@ -32,6 +33,7 @@ class PluginContext:
     runtime_api: RuntimeAPI
     runtime: RuntimeFacade
     cache: PluginCacheManager
+    log: LogFacade
 
     def __init__(
         self,
@@ -47,6 +49,7 @@ class PluginContext:
         provides: Optional[set[str]] = None,
         needs: Optional[set[str]] = None,
         wants: Optional[set[str]] = None,
+        log_pipeline_holder: Optional[_LogPipelineHolder] = None,
     ) -> None:
         # 基础必要属性
         self.plugin_name = plugin_name
@@ -94,6 +97,12 @@ class PluginContext:
             instance_id=self.instance_id,
             data_root=Path.cwd() / "data",
             logger=self.logger,
+        )
+
+        # 日志管道门面
+        self.log = LogFacade(
+            instance_id=self.instance_id,
+            pipeline_holder=log_pipeline_holder or _LogPipelineHolder(),
         )
 
     def provide(self, name: str) -> None:
