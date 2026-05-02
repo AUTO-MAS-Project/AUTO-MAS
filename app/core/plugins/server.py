@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import inspect
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterable, Optional
+from typing import Any, Callable, Dict, Iterable
 
 from fastapi import WebSocket
 from pydantic import BaseModel
@@ -284,10 +283,10 @@ class PluginServerRegistry:
             ping_timeout=ping_timeout,
             reconnect_interval=5.0,
             max_reconnect_attempts=-1 if reconnect else 0,
-            on_message=wrapped_message,
-            on_connect=wrapped_connect,
-            on_disconnect=wrapped_disconnect,
         )
+        client.on_message = wrapped_message
+        client.on_connect = wrapped_connect
+        client.on_disconnect = wrapped_disconnect
         self._outbound_names.setdefault(instance_id, set()).add(client_name)
         await ws_client_manager.connect_client(client_name)
         return client

@@ -13,11 +13,16 @@ from enum import Enum
 from dataclasses import dataclass
 from pathlib import Path
 from types import NoneType, UnionType
-from typing import Annotated, Any, Dict, Literal, Mapping, Union, get_args, get_origin
+from typing import Annotated, Any, Callable, Dict, Literal, Mapping, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from .pypi_site import iter_plugin_entry_points
+
+
+def _make_literal(values: tuple[Any, ...]) -> Any:
+    """运行时动态构造 Literal 类型。"""
+    return Literal.__getitem__(values)  # type: ignore[attr-defined]
 
 
 class PluginSchemaError(Exception):
@@ -490,7 +495,8 @@ class PluginSchemaManager:
             if not field_info.is_required():
                 if field_info.default_factory is not None:
                     try:
-                        field_schema["default"] = field_info.default_factory()
+                        factory = cast(Callable[[], Any], field_info.default_factory)
+                        field_schema["default"] = factory()
                     except Exception as e:
                         raise PluginSchemaError(
                             f"Config 字段 default_factory 执行失败: {plugin_name}.{field_name}, "
@@ -955,8 +961,7 @@ class PluginSchemaManager:
             raise PluginSchemaError(f"Schema enum 必须是非空数组: {plugin_name}.{field_name}")
 
         origin = get_origin(annotation)
-        args = get_args(annotation)
-        literal_annotation = Literal.__getitem__(tuple(enum_values))
+        literal_annotation = _make_literal(tuple(enum_values))
 
         if origin is list:
             return list[literal_annotation]
@@ -1044,7 +1049,7 @@ class PluginSchemaManager:
                     raise PluginSchemaError(
                         f"非法 Literal 值: {expr}, value={item}, error={type(e).__name__}: {e}"
                     ) from e
-            return Literal.__getitem__(tuple(values))
+            return _make_literal(tuple(values))
 
         raise PluginSchemaError(f"不支持的 Schema type 表达式: {expr}")
 

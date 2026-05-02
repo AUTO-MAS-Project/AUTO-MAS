@@ -8,6 +8,7 @@ from typing import Any, Dict
 
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
+from watchdog.observers.api import BaseObserver
 
 from app.utils import get_logger
 
@@ -69,7 +70,7 @@ class _PluginWatchHandler(FileSystemEventHandler):
         if event.event_type in {"opened", "closed_no_write"}:
             return
 
-        paths = [Path(event.src_path)]
+        paths = [Path(str(event.src_path))]
         dest_path = getattr(event, "dest_path", "")
         if dest_path:
             paths.append(Path(dest_path))
@@ -93,7 +94,7 @@ class DevPluginHMR:
         self.debounce_seconds = debounce_seconds
         self._pending: dict[str, _PendingChange] = {}
         self._task: asyncio.Task[None] | None = None
-        self._observer: Observer | None = None
+        self._observer: BaseObserver | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._changed_event: asyncio.Event | None = None
         self._running = False
@@ -108,19 +109,22 @@ class DevPluginHMR:
             return
 
         if not self.plugins_dir.exists():
-            logger.warning(f"Plugin HMR skipped: plugins_dir not found: {self.plugins_dir}")
+            logger.warning(
+                f"Plugin HMR skipped: plugins_dir not found: {self.plugins_dir}"
+            )
             return
 
         self._running = True
         self._loop = loop
         self._changed_event = asyncio.Event()
-        self._observer = Observer()
-        self._observer.schedule(
+        observer = Observer()
+        observer.schedule(
             _PluginWatchHandler(self),
             str(self.plugins_dir),
             recursive=True,
         )
-        self._observer.start()
+        observer.start()
+        self._observer = observer
         self._task = loop.create_task(self._run())
         logger.info(f"Plugin HMR started: plugins_dir={self.plugins_dir}")
 
@@ -146,7 +150,7 @@ class DevPluginHMR:
         logger.info("Plugin HMR stopped")
 
     @staticmethod
-    def _stop_observer(observer: Observer) -> None:
+    def _stop_observer(observer: BaseObserver) -> None:
         observer.stop()
         observer.join(timeout=5.0)
 
@@ -198,7 +202,9 @@ class DevPluginHMR:
                 if not self._pending:
                     continue
 
-                next_deadline = min(pending.deadline for pending in self._pending.values())
+                next_deadline = min(
+                    pending.deadline for pending in self._pending.values()
+                )
                 timeout = max(0.0, next_deadline - asyncio.get_running_loop().time())
                 await self._wait_for_change(timeout=timeout)
             except asyncio.CancelledError:
@@ -228,9 +234,7 @@ class DevPluginHMR:
 
         now = asyncio.get_running_loop().time()
         due_keys = [
-            key
-            for key, pending in self._pending.items()
-            if pending.deadline <= now
+            key for key, pending in self._pending.items() if pending.deadline <= now
         ]
         for key in due_keys:
             pending = self._pending.pop(key, None)
@@ -320,7 +324,9 @@ class DevPluginHMR:
                     if await self._has_configured_instances(plugin_name):
                         await self.plugin_manager.reload_plugin(plugin_name)
                     else:
-                        discovered = await self.plugin_manager.discover_plugins(force=True)
+                        discovered = await self.plugin_manager.discover_plugins(
+                            force=True
+                        )
                         await publish_plugin_snapshot(
                             reason="dev_hmr.discover_plugin",
                             message=f"Plugin code changed without configured instances: {plugin_name}",
@@ -376,7 +382,11 @@ class DevPluginHMR:
         if any(self._is_frontend_change(path) for path in files):
             return "frontend_refresh"
         if any(self._is_resource_change(path) for path in files):
-            return "reload_plugin" if self._has_enabled_instances(plugin_name) else "snapshot"
+            return (
+                "reload_plugin"
+                if self._has_enabled_instances(plugin_name)
+                else "snapshot"
+            )
         return "snapshot"
 
     def _has_enabled_instances(self, plugin_name: str) -> bool:

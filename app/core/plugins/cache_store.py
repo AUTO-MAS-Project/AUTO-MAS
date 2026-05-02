@@ -6,9 +6,10 @@ import json
 import math
 import re
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Literal
+from loguru import Logger
 
 
 LimitMode = Literal["count", "bytes"]
@@ -26,7 +27,7 @@ _LIMIT_UNIT_MULTIPLIER: Dict[str, int] = {
 
 def _utc_now_iso() -> str:
     """返回当前 UTC 时间字符串。"""
-    return datetime.utcnow().isoformat() + "Z"
+    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
 
 
 def _safe_instance_dir_name(instance_id: str) -> str:
@@ -108,7 +109,10 @@ class JsonPluginCache:
             return payload
 
         # limit_mode == "bytes"
-        while len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) > self.limit and items:
+        while (
+            len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) > self.limit
+            and items
+        ):
             oldest_key = min(
                 items.keys(),
                 key=lambda key: str(items.get(key, {}).get("updated_at", "")),
@@ -278,12 +282,14 @@ class PluginCacheManager:
         plugin_name: str,
         instance_id: str,
         data_root: Path,
-        logger,
+        logger: Logger,
     ) -> None:
         self.plugin_name = plugin_name
         self.instance_id = instance_id
         self.logger = logger
-        self._instance_dir = data_root / _safe_instance_dir_name(instance_id) / "plugin_cache"
+        self._instance_dir = (
+            data_root / _safe_instance_dir_name(instance_id) / "plugin_cache"
+        )
         # 懒创建：仅在首次真正注册缓存时创建目录，避免未使用缓存的插件产生空目录。
         self._stores: Dict[str, JsonPluginCache] = {}
 
@@ -339,7 +345,9 @@ class PluginCacheManager:
             text = limit.strip().lower()
             matched = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)\s*(b|kb|mb|gb)?", text)
             if matched is None:
-                raise ValueError("bytes 模式下 limit 格式无效，示例: 1024 / 10mb / 1.5gb")
+                raise ValueError(
+                    "bytes 模式下 limit 格式无效，示例: 1024 / 10mb / 1.5gb"
+                )
             amount = float(matched.group(1))
             inline_unit = matched.group(2)
             if inline_unit:
@@ -414,9 +422,7 @@ class PluginCacheManager:
             return existing
 
         if backend != "json":
-            raise NotImplementedError(
-                "数据库后端接口已预留，当前版本仅实现 json。"
-            )
+            raise NotImplementedError("数据库后端接口已预留，当前版本仅实现 json。")
 
         self._instance_dir.mkdir(parents=True, exist_ok=True)
 

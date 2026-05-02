@@ -201,8 +201,8 @@ class PluginConfigStore:
 
     async def get_root(
         self,
-        plugins_dir,
-        discovered_plugins,
+        plugins_dir: Path,
+        discovered_plugins: Dict[str, object],
         auto_create_missing: bool = False,
         default_instances: Dict[str, Dict[str, Any]] | None = None,
     ) -> Dict[str, Any]:
@@ -210,8 +210,8 @@ class PluginConfigStore:
         读取统一插件配置根对象，并按需补齐缺失实例。
 
         Args:
-            plugins_dir: 插件目录路径（当前实现中仅用于接口兼容）。
-            discovered_plugins: 已发现插件映射。
+            plugins_dir (Path): 插件目录路径（当前实现中仅用于接口兼容）。
+            discovered_plugins (Dict[str, object]): 已发现插件映射。
             auto_create_missing (bool): 是否自动创建缺失插件的默认实例。
 
         Returns:
@@ -224,12 +224,12 @@ class PluginConfigStore:
             default_instances=default_instances,
         )
 
-    async def save_root(self, plugins_dir, root: Dict[str, Any]) -> None:
+    async def save_root(self, plugins_dir: Path, root: Dict[str, Any]) -> None:
         """
         保存统一插件配置根对象到持久化配置。
 
         Args:
-            plugins_dir: 插件目录路径（当前实现中仅用于接口兼容）。
+            plugins_dir (Path): 插件目录路径（当前实现中仅用于接口兼容）。
             root (Dict[str, Any]): 待保存的配置根对象。
 
         Returns:
@@ -250,8 +250,8 @@ class PluginConfigStore:
 
     async def ensure_instances(
         self,
-        plugins_dir,
-        discovered_plugins,
+        plugins_dir: Path,
+        discovered_plugins: Dict[str, object],
         auto_create_missing: bool = False,
         default_instances: Dict[str, Dict[str, Any]] | None = None,
     ) -> Dict[str, Any]:
@@ -259,8 +259,8 @@ class PluginConfigStore:
         确保统一配置中的实例列表满足当前发现结果。
 
         Args:
-            plugins_dir: 插件目录路径（当前实现中仅用于接口兼容）。
-            discovered_plugins: 已发现插件映射。
+            plugins_dir (Path): 插件目录路径（当前实现中仅用于接口兼容）。
+            discovered_plugins (Dict[str, object]): 已发现插件映射。
             auto_create_missing (bool): 是否为缺失插件自动创建默认实例。
 
         Returns:
@@ -283,7 +283,9 @@ class PluginConfigStore:
             if not isinstance(default_instance, dict):
                 raise ValueError(f"插件 {plugin_name} 的默认实例声明必须是对象")
 
-            name = str(default_instance.get("name") or f"{plugin_name} 默认实例").strip()
+            name = str(
+                default_instance.get("name") or f"{plugin_name} 默认实例"
+            ).strip()
             enabled = default_instance.get("enabled", True)
             config = default_instance.get("config", {})
 
@@ -328,16 +330,16 @@ class PluginConfigStore:
 
     async def load_instances(
         self,
-        plugins_dir,
-        discovered_plugins,
+        plugins_dir: Path,
+        discovered_plugins: Dict[str, object],
         auto_create_missing: bool = False,
     ) -> List[PluginInstance]:
         """
         读取并校验插件实例列表。
 
         Args:
-            plugins_dir: 插件目录路径（当前实现中仅用于接口兼容）。
-            discovered_plugins: 已发现插件映射。
+            plugins_dir (Path): 插件目录路径（当前实现中仅用于接口兼容）。
+            discovered_plugins (Dict[str, object]): 已发现插件映射。
             auto_create_missing (bool): 是否自动创建缺失插件实例。
 
         Returns:
@@ -394,7 +396,9 @@ class PluginConfigStore:
 
         return result
 
-    def normalize_raw_config(self, plugin_name: str, raw_config: Dict[str, Any]) -> Dict[str, Any]:
+    def normalize_raw_config(
+        self, plugin_name: str, raw_config: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         规范化并深拷贝原始配置对象。
 
@@ -412,7 +416,9 @@ class PluginConfigStore:
             raise ValueError(f"插件配置必须是对象: {plugin_name}")
         return copy.deepcopy(raw_config)
 
-    def load_schema(self, plugin_name: str, plugin_path: Path | None) -> Dict[str, Dict[str, Any]]:
+    def load_schema(
+        self, plugin_name: str, plugin_path: Path | None
+    ) -> Dict[str, Dict[str, Any]]:
         """
         加载插件 Schema，兼容本地路径与 PyPI 安装模块。
 
@@ -454,9 +460,7 @@ class PluginConfigStore:
 
         if not schema:
             if normalized_config:
-                raise ValueError(
-                    f"插件 {plugin_name} 使用了配置项但未声明 schema"
-                )
+                raise ValueError(f"插件 {plugin_name} 使用了配置项但未声明 schema")
             return normalized_config
 
         return self.schema_manager.apply_defaults_and_validate(

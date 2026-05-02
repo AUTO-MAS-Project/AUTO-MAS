@@ -7,7 +7,7 @@ import shutil
 import importlib.metadata as importlib_metadata
 import time
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 import uuid
 
 from app.utils import get_logger
@@ -418,7 +418,7 @@ class _PluginManager:
         for dist, modules in matched:
             dist_files = list(getattr(dist, "files", []) or [])
             for item in dist_files:
-                candidate = Path(dist.locate_file(item))
+                candidate = Path(str(dist.locate_file(item)))
                 if candidate.is_file():
                     candidate.unlink(missing_ok=True)
                 elif candidate.is_dir():
@@ -576,9 +576,9 @@ class _PluginManager:
             from app.core import Config
 
             uid = uuid.UUID(script_id)
-            script = Config.ScriptConfig.get(uid)
-            if script is None:
+            if uid not in Config.ScriptConfig:
                 return ""
+            script = Config.ScriptConfig[uid]
 
             log_value = getattr(script, "log", None)
             if isinstance(log_value, str):
@@ -892,7 +892,7 @@ class _PluginManager:
         self.started = False
         logger.info("插件系统已关闭")
 
-    def on(self, event: str, handler, **kwargs: Any) -> str:
+    def on(self, event: str, handler: Callable[[Any], Any], **kwargs: Any) -> str:
         """
         注册插件系统事件监听器。
 
@@ -906,7 +906,7 @@ class _PluginManager:
         """
         return self.events.on(event, handler, **kwargs)
 
-    def off(self, event: str, handler=None, *, listener_id: str | None = None) -> None:
+    def off(self, event: str, handler: Callable[[Any], Any] | None = None, *, listener_id: str | None = None) -> None:
         """
         移除插件系统事件监听器。
 

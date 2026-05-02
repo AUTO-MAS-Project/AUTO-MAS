@@ -375,9 +375,9 @@ class ServiceRegistry:
             result = func(*args)
             if inspect.isawaitable(result):
                 try:
-                    loop = asyncio.get_running_loop()
+                    asyncio.get_running_loop()
                 except RuntimeError:
                     return
-                loop.create_task(result)
+                asyncio.ensure_future(result)
         except Exception:
             return
