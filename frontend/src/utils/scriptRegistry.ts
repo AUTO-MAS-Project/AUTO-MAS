@@ -108,6 +108,9 @@ export const getScriptEditPath = (script: Pick<Script, 'id' | 'type' | 'editorKi
     case 'builtin:general':
       return `/scripts/${script.id}/edit/general`
     default:
+      if (script.editorKind?.startsWith('plugin:')) {
+        return `/scripts/${script.id}/edit/plugin`
+      }
       return `/scripts/${script.id}/edit/schema`
   }
 }
@@ -123,6 +126,9 @@ export const getUserCreatePath = (script: Pick<Script, 'id' | 'editorKind'>) => 
     case 'builtin:general':
       return `/scripts/${script.id}/users/add/general`
     default:
+      if (script.editorKind?.startsWith('plugin:')) {
+        return `/scripts/${script.id}/users/add/plugin`
+      }
       return `/scripts/${script.id}/users/add/schema`
   }
 }
@@ -141,6 +147,9 @@ export const getUserEditPath = (
     case 'builtin:general':
       return `/scripts/${script.id}/users/${user.id}/edit/general`
     default:
+      if (script.editorKind?.startsWith('plugin:')) {
+        return `/scripts/${script.id}/users/${user.id}/edit/plugin`
+      }
       return `/scripts/${script.id}/users/${user.id}/edit/schema`
   }
 }

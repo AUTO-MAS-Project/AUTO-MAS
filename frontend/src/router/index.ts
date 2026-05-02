@@ -63,6 +63,12 @@ const routes = [
     meta: { title: '编辑插件化脚本' },
   },
   {
+    path: '/scripts/:id/edit/plugin',
+    name: 'PluginScriptEdit',
+    component: () => import('../views/EditView/Script/PluginScriptEdit.vue'),
+    meta: { title: '编辑插件脚本' },
+  },
+  {
     path: '/scripts/:scriptId/users/add/maa',
     name: 'MAAUserAdd',
     component: () => import('../views/EditView/User/MAAUserEdit.vue'),
@@ -111,6 +117,12 @@ const routes = [
     meta: { title: '添加插件化用户' },
   },
   {
+    path: '/scripts/:scriptId/users/add/plugin',
+    name: 'PluginUserAdd',
+    component: () => import('../views/EditView/User/PluginUserEdit.vue'),
+    meta: { title: '添加插件脚本用户' },
+  },
+  {
     path: '/scripts/:scriptId/users/:userId/edit/general',
     name: 'GeneralUserEdit',
     component: () => import('../views/EditView/User/GeneralUserEdit.vue'),
@@ -121,6 +133,12 @@ const routes = [
     name: 'GenericUserEdit',
     component: () => import('../views/EditView/User/GenericUserEdit.vue'),
     meta: { title: '编辑插件化用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/plugin',
+    name: 'PluginUserEdit',
+    component: () => import('../views/EditView/User/PluginUserEdit.vue'),
+    meta: { title: '编辑插件脚本用户' },
   },
   {
     path: '/plans',

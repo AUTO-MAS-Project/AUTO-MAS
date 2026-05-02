@@ -19,6 +19,34 @@ from .event_contract import (
 from .decorators import on_event, EventSubscription
 from .event_factory import PluginEventFactory
 from .fields import PluginField
+from .lifecycle_hooks import (
+    LifecycleHookSpec,
+    LifecycleHookRegistry,
+    PluginDefinitionError,
+    LIFECYCLE_HOOK_ATTR,
+    get_lifecycle_hooks,
+    inject_check,
+    inject_before_prepare,
+    inject_prepare,
+    inject_main_task,
+    inject_final_task,
+    inject_on_crash,
+    replace_check,
+    replace_prepare,
+    replace_main_task,
+    replace_final_task,
+    replace_on_crash,
+)
+from .log_pipeline import (
+    LogContext,
+    LogPipeline,
+    LogMonitorAdapter,
+    LogHandlerSpec,
+    LogFacade,
+    LOG_HANDLER_ATTR,
+    on_log_line,
+    get_log_handlers,
+)
 from .loader import PluginLoader, PluginRecord
 from .manager import PluginManager
 from .pypi_site import (
@@ -29,6 +57,14 @@ from .pypi_site import (
     iter_plugin_entry_points,
 )
 from .runtime_api import RuntimeAPI
+from .script_base import (
+    TaskContext,
+    PluginScriptManager,
+    PluginAutoProxyTask,
+    PluginManualReviewTask,
+    PluginScriptConfigTask,
+    register_script_type,
+)
 from .service_registry import ServiceRegistry
 from .service_spec import ServiceSpec
 from .server import (
@@ -68,9 +104,39 @@ __all__ = [
     "EventSubscription",
     "PluginEventFactory",
     "PluginField",
+    "LifecycleHookSpec",
+    "LifecycleHookRegistry",
+    "PluginDefinitionError",
+    "LIFECYCLE_HOOK_ATTR",
+    "get_lifecycle_hooks",
+    "inject_check",
+    "inject_before_prepare",
+    "inject_prepare",
+    "inject_main_task",
+    "inject_final_task",
+    "inject_on_crash",
+    "replace_check",
+    "replace_prepare",
+    "replace_main_task",
+    "replace_final_task",
+    "replace_on_crash",
+    "LogContext",
+    "LogPipeline",
+    "LogMonitorAdapter",
+    "LogHandlerSpec",
+    "LogFacade",
+    "LOG_HANDLER_ATTR",
+    "on_log_line",
+    "get_log_handlers",
     "PluginLoader",
     "PluginRecord",
     "RuntimeAPI",
+    "TaskContext",
+    "PluginScriptManager",
+    "PluginAutoProxyTask",
+    "PluginManualReviewTask",
+    "PluginScriptConfigTask",
+    "register_script_type",
     "ServiceRegistry",
     "ServiceSpec",
     "PluginHttpRequest",

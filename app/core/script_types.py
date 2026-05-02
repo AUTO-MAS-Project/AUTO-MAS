@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+from pydantic import BaseModel
+
 from app.models.ConfigBase import (
     BoolValidator,
     ConfigBase,
@@ -89,8 +91,8 @@ class ScriptTypeProvider:
 
     type_key: str
     display_name: str
-    script_config_class: type[ConfigBase]
-    user_config_class: type[ConfigBase]
+    script_config_class: type[Any]
+    user_config_class: type[Any]
     supported_modes: tuple[str, ...]
     manager_factory: Callable[[ScriptItem], Any]
     script_schema: dict[str, Any] | None = None
@@ -142,10 +144,10 @@ class ScriptTypeRegistry:
             raise ValueError("脚本类型键不能为空")
         if type_key in self._providers:
             raise ValueError(f"脚本类型 {type_key} 已存在")
-        if not issubclass(provider.script_config_class, ConfigBase):
-            raise TypeError("script_config_class 必须继承 ConfigBase")
-        if not issubclass(provider.user_config_class, ConfigBase):
-            raise TypeError("user_config_class 必须继承 ConfigBase")
+        if not issubclass(provider.script_config_class, (ConfigBase, BaseModel)):
+            raise TypeError("script_config_class 必须继承 ConfigBase 或 pydantic.BaseModel")
+        if not issubclass(provider.user_config_class, (ConfigBase, BaseModel)):
+            raise TypeError("user_config_class 必须继承 ConfigBase 或 pydantic.BaseModel")
         if not callable(provider.manager_factory):
             raise TypeError("manager_factory 必须可调用")
 
@@ -337,8 +339,14 @@ class ScriptTypeRegistry:
                     )
 
 
-def build_config_schema(config_class: type[ConfigBase]) -> dict[str, Any]:
-    """从 ConfigBase 配置类生成通用表单描述。"""
+def build_config_schema(config_class: type[Any]) -> dict[str, Any]:
+    """从 ConfigBase 或 Pydantic BaseModel 配置类生成通用表单描述。"""
+
+    if inspect.isclass(config_class) and issubclass(config_class, BaseModel) and not issubclass(config_class, ConfigBase):
+        from app.core.plugins.schema import PluginSchemaManager
+        schema_manager = PluginSchemaManager()
+        fields = schema_manager._build_schema_from_model("__inline__", config_class)
+        return fields
 
     config = config_class()
     groups: list[dict[str, Any]] = []
@@ -549,7 +557,7 @@ def _bind_builtin_script_config_models(global_config: Any) -> None:
     _ = SrcUserConfig
 
 
-def _resolve_class_name(config: ConfigBase | type[ConfigBase] | str) -> str:
+def _resolve_class_name(config: Any) -> str:
     """统一解析配置类名。"""
 
     if isinstance(config, str):
