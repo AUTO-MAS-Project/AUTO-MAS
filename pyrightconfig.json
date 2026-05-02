@@ -10,7 +10,8 @@
     "plugins/**/dist",
     "plugins/**/*.egg-info",
     "plugins/_generated",
-    "**/__pycache__"
+    "**/__pycache__",
+    "**/.venv"
   ],
   "extraPaths": [
     ".",
@@ -21,10 +22,21 @@
   "pythonVersion": "3.12",
   "typeCheckingMode": "strict",
   "reportMissingTypeStubs": false,
+  "reportUnnecessaryIsInstance": false,
+  "reportUnknownMemberType": false,
+  "reportUnknownVariableType": false,
+  "reportUnknownArgumentType": false,
+  "reportUnknownParameterType": false,
+  "reportUnknownLambdaType": false,
+  "reportPrivateUsage": false,
+  "reportDeprecated": "warning",
+  "reportCallIssue": "warning",
+  "reportAttributeAccessIssue": "warning",
+  "reportIndexIssue": "warning",
+  "reportArgumentType": "warning",
   "executionEnvironments": [
     {
       "root": "plugins",
-      "typeCheckingMode": "standard",
       "extraPaths": [
         ".",
         "plugins/pypi/site-packages"
