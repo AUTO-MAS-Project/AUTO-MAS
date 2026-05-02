@@ -743,6 +743,37 @@ class PluginLoader:
 
         return created_ids
 
+    def _register_plugin_log_handlers(
+        self,
+        *,
+        record: PluginRecord,
+        target: Any,
+    ) -> None:
+        """发现并注册插件上的 ``@on_log_line`` 日志处理器。"""
+        if record.context is None:
+            return
+
+        from .log_pipeline import get_log_handlers
+
+        for _, member in inspect.getmembers(target):
+            if not (inspect.isfunction(member) or inspect.ismethod(member)):
+                continue
+            specs = get_log_handlers(member)
+            if not specs:
+                continue
+
+            wrapped = self._build_context_bound_handler(
+                handler=member,
+                context=record.context,
+            )
+            for spec in specs:
+                record.context.log.add_handler(
+                    wrapped,
+                    priority=spec.priority,
+                    pattern=spec.pattern,
+                    source_filter=spec.source_filter,
+                )
+
     def _unregister_record_listeners(self, record: PluginRecord) -> None:
         """移除插件记录关联的全部监听器。"""
         if record.instance_id:
@@ -974,6 +1005,7 @@ class PluginLoader:
             record.listener_ids.extend(
                 self._register_decorated_handlers(record=record, target=record.plugin_instance)
             )
+            self._register_plugin_log_handlers(record=record, target=record.plugin_instance)
             self._mark_lifecycle_phase(record, "on_load")
             await self._call_optional_lifecycle_method(record.plugin_instance, "on_load", record.context)
             self._mark_lifecycle_phase(record, "on_start")
