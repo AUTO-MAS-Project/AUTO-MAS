@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Literal
 
 from app.utils import get_logger
 
@@ -37,7 +37,7 @@ def _serialize_record(record: Any) -> Dict[str, Any]:
     }
 
 
-async def send_plugin_system_message(message_type: str, data: Dict[str, Any]) -> None:
+async def send_plugin_system_message(message_type: Literal["Update", "Message", "Info", "Signal"], data: Dict[str, Any]) -> None:
     try:
         from app.core import Config
 
@@ -52,7 +52,7 @@ async def send_plugin_system_message(message_type: str, data: Dict[str, Any]) ->
         )
 
 
-def schedule_plugin_system_message(message_type: str, data: Dict[str, Any]) -> None:
+def schedule_plugin_system_message(message_type: Literal["Update", "Message", "Info", "Signal"], data: Dict[str, Any]) -> None:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:

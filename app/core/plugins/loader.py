@@ -17,6 +17,7 @@ from app.utils import get_logger
 from app.utils.constants import UTC8
 
 from .context import PluginContext
+from .event_bus import EventBus
 from .decorators import EventSubscription, get_event_subscriptions
 from .lifecycle import REQUIRED_LIFECYCLE_METHODS
 from .realtime import publish_runtime_record
@@ -91,7 +92,7 @@ class PluginLoader:
 
     def __init__(
         self,
-        events,
+        events: EventBus,
         runtime: Any = None,
         plugins_dir: Optional[Path] = None,
         service: Optional[ServiceRegistry] = None,
@@ -288,8 +289,6 @@ class PluginLoader:
             for instance_id in targets:
                 record = self.records.get(instance_id)
                 if record is None:
-                    continue
-                if record.config is None:
                     continue
                 await self.load_instance(
                     instance_id=record.instance_id,
