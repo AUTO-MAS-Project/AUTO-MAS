@@ -9,9 +9,9 @@ import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, TYPE_CHECKING
 
-from loguru import Logger
+
 from pydantic import BaseModel
 
 from app.models.task import ScriptItem, TaskExecuteBase, TaskItem, UserItem, LogRecord
@@ -28,7 +28,8 @@ from .log_pipeline import (
     _LogPipelineHolder,
     get_log_handlers,
 )
-
+if TYPE_CHECKING:
+    from loguru import Logger
 
 _logger = get_logger("插件脚本基类")
 
