@@ -22,7 +22,6 @@ from app.utils.ProcessManager import ProcessManager
 from .context import PluginContext
 from .lifecycle_hooks import LifecycleHookRegistry, get_lifecycle_hooks
 from .log_pipeline import (
-    LogContext,
     LogMonitorAdapter,
     LogPipeline,
     _LogPipelineHolder,
@@ -186,10 +185,17 @@ class PluginScriptManager(TaskExecuteBase):
 
         exe_path_val = self.task_ctx.get_config_value(script_config, exe_path_key)
         if isinstance(exe_path_val, str) and exe_path_val:
-            self.task_ctx.script_root = Path(exe_path_val)
-            exe_candidates = list(self.task_ctx.script_root.glob("*.exe"))
-            if exe_candidates:
-                self.task_ctx.exe_path = exe_candidates[0]
+            candidate = Path(exe_path_val)
+            if candidate.is_file():
+                self.task_ctx.exe_path = candidate
+                self.task_ctx.script_root = candidate.parent
+            elif candidate.is_dir():
+                self.task_ctx.script_root = candidate
+                exe_candidates = list(candidate.glob("*.exe"))
+                if exe_candidates:
+                    self.task_ctx.exe_path = exe_candidates[0]
+            else:
+                self.task_ctx.script_root = candidate
 
     async def _default_check(self, task_ctx: TaskContext) -> None:
         """默认校验：检查模式合法性和脚本路径。"""
@@ -223,10 +229,22 @@ class PluginScriptManager(TaskExecuteBase):
             task_ctx.config_backup_path.mkdir(parents=True, exist_ok=True)
 
     async def _default_final_task(self, task_ctx: TaskContext) -> None:
-        """默认清理：恢复配置，设置完成状态。"""
+        """默认清理：恢复配置，根据用户结果设置状态。"""
         if task_ctx.config_backup_path and task_ctx.config_backup_path.exists():
             shutil.rmtree(task_ctx.config_backup_path, ignore_errors=True)
-        task_ctx.script_info.status = "完成"
+
+        user_list = task_ctx.script_info.user_list
+        if not user_list:
+            task_ctx.script_info.status = "完成"
+            return
+        all_done = all(u.status == "完成" for u in user_list)
+        any_done = any(u.status == "完成" for u in user_list)
+        if all_done:
+            task_ctx.script_info.status = "完成"
+        elif any_done:
+            task_ctx.script_info.status = "部分完成"
+        else:
+            task_ctx.script_info.status = "异常"
 
     async def _default_on_crash(self, task_ctx: TaskContext, e: Exception) -> None:
         """默认异常处理。"""
@@ -240,7 +258,7 @@ class PluginScriptManager(TaskExecuteBase):
 
         await _run_phase("check", self.hook_registry, self._default_check, task_ctx)
 
-        if task_ctx.script_info.status not in ("", "等待中", "运行中"):
+        if task_ctx.script_info.status not in ("", "等待", "等待中", "运行", "运行中"):
             return
 
         task_ctx.script_info.status = "运行中"
@@ -340,9 +358,14 @@ class PluginAutoProxyTask(TaskExecuteBase):
             wait_event.clear()
 
             if task_ctx.exe_path and task_ctx.exe_path.exists():
+                needs_stdout = not (task_ctx.log_path_key and task_ctx.get_config_value(
+                    task_ctx.script_config, task_ctx.log_path_key
+                ))
                 await process_manager.open_process(
                     str(task_ctx.exe_path),
                     cwd=task_ctx.script_root,
+                    stdout=asyncio.subprocess.PIPE if needs_stdout else asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.PIPE if needs_stdout else asyncio.subprocess.DEVNULL,
                 )
             elif task_ctx.script_root:
                 task_ctx.logger.warning(
@@ -367,14 +390,8 @@ class PluginAutoProxyTask(TaskExecuteBase):
             if log_monitor.task is not None:
                 await log_monitor.stop()
 
-            last_ctx: LogContext | None = None
-            if pipeline._handlers:
-                last_ctx = await pipeline.process_batch(
-                    log_monitor.log_contents, "file", log_monitor.latest_time
-                )
-
-            if last_ctx and last_ctx.status:
-                log_record.status = last_ctx.status
+            if adapter.last_status:
+                log_record.status = adapter.last_status
             elif log_record.status == "未开始监看日志":
                 if not await process_manager.is_running():
                     log_record.status = "脚本在完成任务前退出"
@@ -632,11 +649,17 @@ def _discover_and_register_log_handlers(
     owner: str,
 ) -> None:
     """发现插件实例上的 ``@on_log_line`` 处理器并注册。"""
-    for _, member in inspect.getmembers(plugin_instance):
-        if not (inspect.isfunction(member) or inspect.ismethod(member)):
+    for attr_name in dir(plugin_instance):
+        try:
+            member = getattr(plugin_instance, attr_name)
+        except Exception:
+            continue
+        if not callable(member):
             continue
         specs = get_log_handlers(member)
         for spec in specs:
+            if inspect.isfunction(member) and not inspect.ismethod(member):
+                member = member.__get__(plugin_instance, type(plugin_instance))
             holder.add_pending_handler(
                 member,
                 priority=spec.priority,

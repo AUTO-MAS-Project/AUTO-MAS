@@ -416,13 +416,18 @@ def build_legacy_fallback_provider_by_user_config(
 def apply_script_type_registry_to_global_config(global_config: Any) -> None:
     """把注册表中的脚本类型同步到全局配置容器。"""
 
+    from app.models.plugin_script_config import PluginScriptConfig
+
     _bind_builtin_script_config_models(global_config)
     script_type_registry.bootstrap()
 
+    global_config.ScriptConfig.sub_config_type["PluginScriptConfig"] = PluginScriptConfig
+
     for provider in script_type_registry.list():
-        global_config.ScriptConfig.sub_config_type[provider.script_config_class.__name__] = (
-            provider.script_config_class
-        )
+        if provider.is_builtin:
+            global_config.ScriptConfig.sub_config_type[provider.script_config_class.__name__] = (
+                provider.script_config_class
+            )
         if provider.bind_related_config is not None:
             provider.bind_related_config(global_config)
 
@@ -430,8 +435,25 @@ def apply_script_type_registry_to_global_config(global_config: Any) -> None:
 def validate_script_type_registry(global_config: Any) -> list[str]:
     """校验当前已加载脚本配置是否都存在对应 provider。"""
 
+    from app.models.plugin_script_config import PluginScriptConfig
+
     missing: list[str] = []
     for script_id, script_config in global_config.ScriptConfig.items():
+        if isinstance(script_config, PluginScriptConfig):
+            type_key = str(script_config.get("Meta", "PluginTypeKey") or "").strip()
+            if not type_key:
+                continue
+            try:
+                script_type_registry.get(type_key)
+            except KeyError:
+                script_name = str(script_config.get("Info", "Name") or "").strip()
+                label = script_name or str(script_id)
+                logger.warning(
+                    "插件脚本类型 provider 未加载: "
+                    f"script_id={script_id}, script_name={label}, type_key={type_key}"
+                )
+            continue
+
         try:
             provider = script_type_registry.get_by_script_config(script_config)
         except KeyError:

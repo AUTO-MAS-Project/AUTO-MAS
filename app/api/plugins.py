@@ -394,9 +394,22 @@ def _build_instances(root: Dict[str, Any]) -> List[PluginInstanceModel]:
 
 
 def _build_schemas(discovered: Dict[str, Any]) -> tuple[Dict[str, Dict[str, Any]], Dict[str, str]]:
+    from app.core.script_types import script_type_registry
+
+    script_type_plugins: set[str] = set()
+    for provider in script_type_registry.list():
+        if not provider.is_builtin:
+            owner = script_type_registry.get_owner(provider.type_key)
+            if owner:
+                plugin_name = owner.split(":", 1)[0] if ":" in owner else owner
+                script_type_plugins.add(plugin_name)
+
     schemas: Dict[str, Dict[str, Any]] = {}
     errors: Dict[str, str] = {}
     for plugin_name, plugin_source in discovered.items():
+        if plugin_name in script_type_plugins:
+            schemas[plugin_name] = {}
+            continue
         plugin_path = getattr(plugin_source, "path", None)
         try:
             schemas[plugin_name] = config_store.load_schema(plugin_name, plugin_path)

@@ -64,7 +64,7 @@ class ScriptRecordCreateIn(BaseModel):
 
 class ScriptRecordUpdateIn(BaseModel):
     scriptId: str = Field(..., description="脚本 ID")
-    config: dict[str, dict[str, Any]] = Field(..., description="脚本配置更新内容")
+    config: dict[str, Any] = Field(..., description="脚本配置更新内容")
 
 
 class ScriptRecordDeleteIn(BaseModel):
@@ -113,7 +113,7 @@ class ScriptUserRecordCreateIn(BaseModel):
 class ScriptUserRecordUpdateIn(BaseModel):
     scriptId: str = Field(..., description="所属脚本 ID")
     userId: str = Field(..., description="用户 ID")
-    config: dict[str, dict[str, Any]] = Field(..., description="用户配置更新内容")
+    config: dict[str, Any] = Field(..., description="用户配置更新内容")
 
 
 class ScriptUserRecordDeleteIn(BaseModel):
