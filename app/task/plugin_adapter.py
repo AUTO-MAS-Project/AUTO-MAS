@@ -45,8 +45,23 @@ def create_plugin_manager_factory(
 
         try:
             from app.core import Config
-            script_cfg: Any = Config.ScriptConfig[script_item.script_id]
-            if script_cfg is not None:
+            from app.models.plugin_script_config import PluginScriptConfig, PluginUserConfig
+            import json
+            import uuid as _uuid
+
+            script_uid = _uuid.UUID(script_item.script_id)
+            script_cfg: Any = Config.ScriptConfig[script_uid]
+
+            if isinstance(script_cfg, PluginScriptConfig):
+                raw = script_cfg.get("PluginData", "Config")
+                script_config = json.loads(raw) if raw and raw != "{}" else {}
+
+                for _uid, user_cfg in script_cfg.UserData.items():
+                    if isinstance(user_cfg, PluginUserConfig):
+                        raw_user = user_cfg.get("PluginData", "Config")
+                        user_data = json.loads(raw_user) if raw_user and raw_user != "{}" else {}
+                        user_configs.append(user_data)
+            elif script_cfg is not None:
                 if hasattr(script_cfg, "asdict"):
                     script_config = script_cfg.asdict()
                 elif hasattr(script_cfg, "to_dict"):
@@ -54,16 +69,19 @@ def create_plugin_manager_factory(
 
                 sub_info = script_config.get("SubConfigsInfo", {})
                 if isinstance(sub_info, dict):
-                    user_data = sub_info.get("UserData", {})
-                    if isinstance(user_data, dict):
-                        instances = user_data.get("instances", [])
+                    user_data_section = sub_info.get("UserData", {})
+                    if isinstance(user_data_section, dict):
+                        instances = user_data_section.get("instances", [])
                         if isinstance(instances, list):
                             user_configs = [
                                 inst for inst in instances
                                 if isinstance(inst, dict)
                             ]
-        except Exception:
-            pass
+        except Exception as _exc:
+            from app.utils import get_logger as _get_logger
+            _get_logger("插件脚本").opt(exception=True).error(
+                f"加载插件脚本配置失败: {script_item.script_id}, {type(_exc).__name__}: {_exc}"
+            )
 
         return PluginScriptManager(
             script_item,

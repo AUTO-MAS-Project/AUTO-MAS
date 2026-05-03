@@ -755,20 +755,23 @@ class PluginLoader:
 
         from .log_pipeline import get_log_handlers
 
-        for _, member in inspect.getmembers(target):
-            if not (inspect.isfunction(member) or inspect.ismethod(member)):
+        for attr_name in dir(target):
+            try:
+                member = getattr(target, attr_name)
+            except Exception:
+                continue
+            if not callable(member):
                 continue
             specs = get_log_handlers(member)
             if not specs:
                 continue
 
-            wrapped = self._build_context_bound_handler(
-                handler=member,
-                context=record.context,
-            )
+            if inspect.isfunction(member) and not inspect.ismethod(member):
+                member = member.__get__(target, type(target))
+
             for spec in specs:
                 record.context.log.add_handler(
-                    wrapped,
+                    member,
                     priority=spec.priority,
                     pattern=spec.pattern,
                     source_filter=spec.source_filter,

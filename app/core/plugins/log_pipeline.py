@@ -272,6 +272,16 @@ class LogMonitorAdapter:
         self._wait_event = wait_event
         self._source = source
         self._prev_count = 0
+        self._last_status: str | None = None
+        self._last_status_detail: str | None = None
+
+    @property
+    def last_status(self) -> str | None:
+        return self._last_status
+
+    @property
+    def last_status_detail(self) -> str | None:
+        return self._last_status_detail
 
     async def callback(self, log_contents: list[str], latest_time: datetime) -> None:
         """``LogMonitor`` 回调入口。"""
@@ -282,6 +292,7 @@ class LogMonitorAdapter:
             return
 
         for line in new_lines:
+            logger.debug(f"日志管道处理行: {line.rstrip()}")
             ctx = LogContext(
                 line=line,
                 timestamp=None,
@@ -292,6 +303,9 @@ class LogMonitorAdapter:
             await self._pipeline.process_line(ctx)
 
             if ctx.status is not None:
+                logger.debug(f"日志管道状态变更: {ctx.status}")
+                self._last_status = ctx.status
+                self._last_status_detail = ctx.status_detail
                 self._wait_event.set()
                 return
 

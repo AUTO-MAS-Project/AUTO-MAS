@@ -9,11 +9,12 @@ import importlib
 import importlib.util
 import inspect
 import json
+import typing
 from enum import Enum
 from dataclasses import dataclass
 from pathlib import Path
 from types import NoneType, UnionType
-from typing import Annotated, Any, Callable, Dict, Literal, Mapping, Union, cast, get_args, get_origin
+from typing import Annotated, Any, Callable, Dict, ForwardRef, Literal, Mapping, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
@@ -266,17 +267,23 @@ class PluginSchemaManager:
                 1) 无法创建模块规格；
                 2) 模块执行失败。
         """
+        import sys
+
         spec = importlib.util.spec_from_file_location(module_name, str(file_path))
         if spec is None or spec.loader is None:
             raise PluginSchemaError(f"无法加载 Python 模块: {file_path}")
 
         module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
         try:
             spec.loader.exec_module(module)
         except Exception as e:
+            sys.modules.pop(module_name, None)
             raise PluginSchemaError(
                 f"执行 Python 模块失败: {file_path.name}, error={type(e).__name__}: {e}"
             ) from e
+        finally:
+            sys.modules.pop(module_name, None)
         return module
 
     def _load_schema_from_plugin_py(
@@ -347,6 +354,17 @@ class PluginSchemaManager:
                     schema = self._extract_schema_from_module(plugin_name, module)
                     if schema:
                         return schema
+
+                    package_name = module_name.rsplit(".", 1)[0] if "." in module_name else module_name
+                    schema_module_name = f"{package_name}.schema"
+                    if schema_module_name != module_name:
+                        try:
+                            schema_module = importlib.import_module(schema_module_name)
+                            schema = self._extract_schema_from_module(plugin_name, schema_module)
+                            if schema:
+                                return schema
+                        except ImportError:
+                            pass
 
         return {}
 
@@ -461,15 +479,16 @@ class PluginSchemaManager:
         """
         result: Dict[str, Dict[str, Any]] = {}
         for field_name, field_info in model_cls.model_fields.items():
-            type_expr = self._type_to_expr(field_info.annotation)
+            annotation = self._resolve_forward_ref(field_info.annotation)
+            type_expr = self._type_to_expr(annotation)
             field_schema: Dict[str, Any] = {
                 "type": type_expr,
                 "required": bool(field_info.is_required()),
             }
-            literal_values = self._literal_values(field_info.annotation)
+            literal_values = self._literal_values(annotation)
             if literal_values is not None:
                 field_schema["enum"] = copy.deepcopy(literal_values)
-                if not self._is_list_annotation(field_info.annotation):
+                if not self._is_list_annotation(annotation):
                     field_schema["type"] = self._enum_base_type(literal_values)
 
             if field_info.description is not None:
@@ -481,14 +500,14 @@ class PluginSchemaManager:
             if field_info.examples is not None:
                 field_schema["examples"] = copy.deepcopy(field_info.examples)
 
-            if self._annotation_allows_none(field_info.annotation):
+            if self._annotation_allows_none(annotation):
                 field_schema["nullable"] = True
 
             constraints = self._constraints_from_field_metadata(field_info.metadata)
             if constraints:
                 field_schema["constraints"] = constraints
 
-            item_type = self._list_item_type(field_info.annotation)
+            item_type = self._list_item_type(annotation)
             if item_type is not None:
                 field_schema.setdefault("item_type", item_type)
 
@@ -1128,6 +1147,18 @@ class PluginSchemaManager:
             f"错误={first.get('msg', '未知错误')}, "
             f"实际类型={value_type}, 实际值={value_preview}"
         )
+
+    @staticmethod
+    def _resolve_forward_ref(annotation: Any) -> Any:
+        """将 ForwardRef 求值为真实类型对象。"""
+        if not isinstance(annotation, ForwardRef):
+            return annotation
+        globalns: dict[str, Any] = vars(typing)
+        globalns.update({"NoneType": NoneType})
+        try:
+            return typing._eval_type(annotation, globalns, None)  # type: ignore[attr-defined]
+        except Exception:
+            return annotation
 
     def _type_to_expr(self, raw_type: Any) -> str:
         """
