@@ -93,14 +93,14 @@ class _PluginManager:
 
         result: list[Path] = []
         for item in sorted(self.plugins_dir.iterdir()):
-            if not item.is_dir() or item.name == "pypi":
+            if not item.is_dir() or item.name == "pypi" or item.name.startswith("_"):
                 continue
             pyproject_path = item / "pyproject.toml"
             if pyproject_path.exists():
                 result.append(pyproject_path)
                 continue
             for sub_item in sorted(item.iterdir()):
-                if not sub_item.is_dir():
+                if not sub_item.is_dir() or sub_item.name.startswith("_"):
                     continue
                 sub_pyproject = sub_item / "pyproject.toml"
                 if sub_pyproject.exists():
