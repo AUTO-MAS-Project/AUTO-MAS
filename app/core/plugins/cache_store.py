@@ -1,6 +1,8 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
+from __future__ import annotations
+
 import hashlib
 import json
 import math
@@ -8,9 +10,9 @@ import re
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Literal
-from loguru import Logger
-
+from typing import Any, Dict, Literal, TYPE_CHECKING
+if TYPE_CHECKING:
+    from loguru import Logger
 
 LimitMode = Literal["count", "bytes"]
 CacheBackendType = Literal["json", "database"]

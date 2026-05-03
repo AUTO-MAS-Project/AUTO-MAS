@@ -5,11 +5,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from copy import deepcopy
-from typing import Any, Dict, Callable, Optional, Iterator
+from typing import Any, Dict, Callable, Optional, Iterator, TYPE_CHECKING
 import asyncio
 import inspect
 
-from loguru import Logger
 
 from .cache_store import PluginCacheManager
 from .event_bus import EventBus
@@ -19,6 +18,8 @@ from .runtime_api import RuntimeAPI
 from .service_registry import ServiceRegistry
 from .server import PluginServerFacade, PluginServerRegistry, plugin_server
 
+if TYPE_CHECKING:
+    from loguru import Logger
 
 class PluginContext:
     """面向插件的上下文对象，公开受控的 MAS 功能。"""
