@@ -164,6 +164,28 @@ class Task(TaskExecuteBase):
         self._exit_result = "success"
         self._exit_error: str | None = None
 
+    def _resolve_script_provider(self, script_uid: uuid.UUID):
+        """解析脚本对应的 provider，兼容插件脚本。"""
+        from app.models.plugin_script_config import PluginScriptConfig
+        from .script_types import (
+            build_legacy_fallback_provider_by_script_config,
+        )
+
+        script_config = Config.ScriptConfig[script_uid]
+
+        if isinstance(script_config, PluginScriptConfig):
+            type_key = str(script_config.get("Meta", "PluginTypeKey") or "").strip()
+            if type_key:
+                return script_type_registry.get(type_key)
+
+        try:
+            return script_type_registry.get_by_script_config(script_config)
+        except KeyError:
+            provider = build_legacy_fallback_provider_by_script_config(script_config)
+            if provider is not None:
+                return provider
+            raise
+
     def _build_script_event_data(self) -> Dict[str, str | None]:
         """附加到 script.* 事件的任务上下文。"""
         return {
@@ -297,9 +319,7 @@ class Task(TaskExecuteBase):
                 continue
 
             try:
-                provider = script_type_registry.get_by_script_config(
-                    Config.ScriptConfig[current_script_uid]
-                )
+                provider = self._resolve_script_provider(current_script_uid)
             except KeyError:
                 logger.error(
                     f"不支持的脚本类型: {type(Config.ScriptConfig[current_script_uid]).__name__}"

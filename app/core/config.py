@@ -552,6 +552,31 @@ class AppConfig(GlobalConfig):
 
         provider = script_type_registry.get(script)
 
+        if not provider.is_builtin:
+            from app.models.plugin_script_config import PluginScriptConfig
+
+            new_uid, new_config = await self.ScriptConfig.add(PluginScriptConfig)
+            await new_config.set("Meta", "PluginTypeKey", provider.type_key)
+
+            defaults = provider.script_config_class().model_dump(mode="json")
+            script_name = defaults.get("script_name", "") or provider.display_name
+            await new_config.set("Info", "Name", script_name)
+            await new_config.set(
+                "PluginData", "Config",
+                json.dumps(defaults, ensure_ascii=False),
+            )
+
+            if script_id is not None:
+                source_uid = uuid.UUID(script_id)
+                source_config = self.ScriptConfig[source_uid]
+                await new_config.set(
+                    "PluginData", "Config",
+                    source_config.get("PluginData", "Config"),
+                )
+                await new_config.set("Info", "Name", source_config.get("Info", "Name"))
+
+            return new_uid, new_config
+
         if script_id is None:
             return await self.ScriptConfig.add(provider.script_config_class)
 
@@ -598,16 +623,47 @@ class AppConfig(GlobalConfig):
         return list(index), data
 
     async def update_script(
-        self, script_id: str, data: Dict[str, Dict[str, Any]]
+        self, script_id: str, data: Dict[str, Any]
     ) -> None:
         """更新脚本配置"""
 
         logger.info(f"更新脚本配置: {script_id}")
 
         uid = uuid.UUID(script_id)
+        config = self.ScriptConfig[uid]
 
-        if self.ScriptConfig[uid].is_locked:
+        if config.is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
+
+        from app.models.plugin_script_config import PluginScriptConfig
+
+        if isinstance(config, PluginScriptConfig):
+            info = data.pop("Info", None)
+            if isinstance(info, dict) and "Name" in info:
+                await config.set("Info", "Name", info["Name"])
+
+            plugin_data = data.pop("PluginData", None)
+            if isinstance(plugin_data, dict) and "Config" in plugin_data:
+                raw = plugin_data["Config"]
+                if isinstance(raw, str):
+                    await config.set("PluginData", "Config", raw)
+                else:
+                    await config.set(
+                        "PluginData", "Config",
+                        json.dumps(raw, ensure_ascii=False),
+                    )
+            elif data:
+                await config.set(
+                    "PluginData", "Config",
+                    json.dumps(data, ensure_ascii=False),
+                )
+
+            raw_config = config.get("PluginData", "Config")
+            parsed = json.loads(raw_config) if raw_config else {}
+            script_name = parsed.get("script_name")
+            if isinstance(script_name, str) and script_name.strip():
+                await config.set("Info", "Name", script_name.strip())
+            return
 
         for group, items in data.items():
             for name, value in items.items():
@@ -828,11 +884,24 @@ class AppConfig(GlobalConfig):
         logger.info(f"{script_id} 添加用户配置")
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
-        provider = script_type_registry.get_by_script_config(script_config)
+        provider = self._resolve_record_provider(script_config)
+
+        from app.models.plugin_script_config import PluginScriptConfig, PluginUserConfig
+
+        if isinstance(script_config, PluginScriptConfig):
+            new_uid, new_user = await script_config.UserData.add(PluginUserConfig)
+            await new_user.set("Meta", "PluginTypeKey", provider.type_key)
+            defaults = provider.user_config_class().model_dump(mode="json")
+            await new_user.set(
+                "PluginData", "Config",
+                json.dumps(defaults, ensure_ascii=False),
+            )
+            return new_uid, new_user
+
         return await script_config.UserData.add(provider.user_config_class)
 
     async def update_user(
-        self, script_id: str, user_id: str, data: Dict[str, Dict[str, Any]]
+        self, script_id: str, user_id: str, data: Dict[str, Any]
     ) -> None:
         """更新用户配置"""
 
@@ -840,6 +909,31 @@ class AppConfig(GlobalConfig):
 
         script_uid = uuid.UUID(script_id)
         user_uid = uuid.UUID(user_id)
+
+        from app.models.plugin_script_config import PluginUserConfig
+
+        user_config = self.ScriptConfig[script_uid].UserData[user_uid]
+        if isinstance(user_config, PluginUserConfig):
+            info = data.pop("Info", None)
+            if isinstance(info, dict) and "Name" in info:
+                await user_config.set("Info", "Name", info["Name"])
+
+            plugin_data = data.pop("PluginData", None)
+            if isinstance(plugin_data, dict) and "Config" in plugin_data:
+                raw = plugin_data["Config"]
+                if isinstance(raw, str):
+                    await user_config.set("PluginData", "Config", raw)
+                else:
+                    await user_config.set(
+                        "PluginData", "Config",
+                        json.dumps(raw, ensure_ascii=False),
+                    )
+            elif data:
+                await user_config.set(
+                    "PluginData", "Config",
+                    json.dumps(data, ensure_ascii=False),
+                )
+            return
 
         for group, items in data.items():
             for name, value in items.items():
@@ -883,6 +977,16 @@ class AppConfig(GlobalConfig):
     def _resolve_record_provider(self, script_config: ConfigBase):
         """解析脚本记录展示所需的 provider，缺失时回退到离线描述。"""
 
+        from app.models.plugin_script_config import PluginScriptConfig
+
+        if isinstance(script_config, PluginScriptConfig):
+            type_key = str(script_config.get("Meta", "PluginTypeKey") or "").strip()
+            if type_key:
+                try:
+                    return script_type_registry.get(type_key)
+                except KeyError:
+                    pass
+
         try:
             return script_type_registry.get_by_script_config(script_config)
         except KeyError as exc:
@@ -894,8 +998,21 @@ class AppConfig(GlobalConfig):
             )
             return provider
 
+    def _resolve_script_type_label(self, script_config: ConfigBase) -> str:
+        """获取脚本类型的显示标签，兼容插件脚本。"""
+        class_name = type(script_config).__name__
+        if class_name in TYPE_BOOK:
+            return TYPE_BOOK[class_name]
+        try:
+            provider = self._resolve_record_provider(script_config)
+            return provider.display_name
+        except (KeyError, Exception):
+            return class_name
+
     async def get_script_records(self, script_id: str | None = None) -> list[ScriptRecord]:
         """获取通用脚本记录。"""
+
+        from app.models.plugin_script_config import PluginScriptConfig
 
         if script_id is None:
             script_pairs = [(uid, config) for uid, config in self.ScriptConfig.items()]
@@ -906,13 +1023,23 @@ class AppConfig(GlobalConfig):
         records: list[ScriptRecord] = []
         for uid, config in script_pairs:
             provider = self._resolve_record_provider(config)
-            config_data = strip_sub_configs(await config.toDict())
-            name = provider.display_name
-            if (
-                "Info" in config._config_item_index
-                and "Name" in config._config_item_index["Info"]
-            ):
-                name = config.get("Info", "Name")
+
+            if isinstance(config, PluginScriptConfig):
+                raw = config.get("PluginData", "Config")
+                config_data = json.loads(raw) if raw and raw != "{}" else {}
+                script_name = config_data.get("script_name", "")
+                info_name = config.get("Info", "Name") or provider.display_name
+                name = script_name or info_name
+                config_data.setdefault("Info", {})["Name"] = name
+            else:
+                config_data = strip_sub_configs(await config.toDict())
+                name = provider.display_name
+                if (
+                    "Info" in config._config_item_index
+                    and "Name" in config._config_item_index["Info"]
+                ):
+                    name = config.get("Info", "Name")
+
             records.append(
                 ScriptRecord(
                     id=str(uid),
@@ -935,6 +1062,8 @@ class AppConfig(GlobalConfig):
     ) -> list[ScriptUserRecord]:
         """获取通用用户记录。"""
 
+        from app.models.plugin_script_config import PluginUserConfig
+
         script_uid = uuid.UUID(script_id)
         script_config = self.ScriptConfig[script_uid]
         provider = self._resolve_record_provider(script_config)
@@ -947,13 +1076,20 @@ class AppConfig(GlobalConfig):
 
         records: list[ScriptUserRecord] = []
         for uid, config in user_pairs:
-            config_data = strip_sub_configs(await config.toDict())
-            name = str(uid)
-            if (
-                "Info" in config._config_item_index
-                and "Name" in config._config_item_index["Info"]
-            ):
-                name = config.get("Info", "Name")
+            if isinstance(config, PluginUserConfig):
+                raw = config.get("PluginData", "Config")
+                config_data = json.loads(raw) if raw and raw != "{}" else {}
+                name = config.get("Info", "Name") or str(uid)
+                config_data.setdefault("Info", {})["Name"] = name
+            else:
+                config_data = strip_sub_configs(await config.toDict())
+                name = str(uid)
+                if (
+                    "Info" in config._config_item_index
+                    and "Name" in config._config_item_index["Info"]
+                ):
+                    name = config.get("Info", "Name")
+
             records.append(
                 ScriptUserRecord(
                     id=str(uid),
@@ -1692,9 +1828,10 @@ class AppConfig(GlobalConfig):
         logger.info("开始获取脚本下拉框信息")
         data = [{"label": "未选择", "value": "-"}]
         for uid, script in self.ScriptConfig.items():
+            type_label = self._resolve_script_type_label(script)
             data.append(
                 {
-                    "label": f"{TYPE_BOOK[type(script).__name__]} - {script.get('Info', 'Name')}",
+                    "label": f"{type_label} - {script.get('Info', 'Name')}",
                     "value": str(uid),
                 }
             )
@@ -1716,9 +1853,10 @@ class AppConfig(GlobalConfig):
             )
         for uid, script in self.ScriptConfig.items():
             if not script.is_locked:
+                type_label = self._resolve_script_type_label(script)
                 data.append(
                     {
-                        "label": f"脚本 - {TYPE_BOOK[type(script).__name__]} - {script.get('Info', 'Name')}",
+                        "label": f"脚本 - {type_label} - {script.get('Info', 'Name')}",
                         "value": str(uid),
                     }
                 )

@@ -204,22 +204,20 @@ class LogMonitor:
             try:
                 bline = await asyncio.wait_for(process_stream.readline(), timeout=60)
             except asyncio.TimeoutError:
-                # 超时后调用回调函数
                 await self.do_callback()
                 continue
 
-            line = ANSI_ESCAPE_RE.sub("", decode_bytes(bline))
-
-            self.log_contents.append(line)
-            await self.update_latest_timestamp(line)
-
-            if process_stream.at_eof():
+            if not bline:
                 logger.info("监控的流已结束")
                 await self.do_callback()
                 break
 
-            if datetime.now() - self.last_callback_time > timedelta(seconds=1):
-                await self.do_callback()
+            line = ANSI_ESCAPE_RE.sub("", decode_bytes(bline))
+            logger.debug(f"进程日志行: {line.rstrip()}")
+
+            self.log_contents.append(line)
+            await self.update_latest_timestamp(line)
+            await self.do_callback()
 
     async def do_callback(self):
         """安全调用回调函数"""
