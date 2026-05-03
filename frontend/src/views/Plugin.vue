@@ -16,9 +16,13 @@
     <a-row :gutter="12" class="main-layout">
       <a-col :span="7">
         <div class="left-panel">
-          <a-card :bordered="false" title="插件实例列表" class="section-card list-card">
-            <template #extra>
-              <a-tag>v{{ version }}</a-tag>
+          <a-card :bordered="false" class="section-card list-card">
+            <template #title>
+              <div class="list-card-title">
+                <span>插件实例</span>
+                <a-tag>v{{ version }}</a-tag>
+                <a-button size="small" type="link" @click="createGroup">+ 新建分组</a-button>
+              </div>
             </template>
 
             <a-input
@@ -31,35 +35,63 @@
             <div class="instance-list">
               <a-empty v-if="filteredInstances.length === 0" description="暂无实例" />
               <div
-                v-for="item in filteredInstances"
-                :key="item.id"
-                class="instance-item"
-                :class="{ active: selectedInstanceId === item.id }"
-                @click="selectInstance(item.id)"
+                v-for="group in groupedInstances"
+                :key="group.key"
+                class="instance-group"
+                :data-group="group.key"
               >
-                <div class="instance-item-header">
-                  <span class="instance-name">{{ item.name || item.id }}</span>
-                  <a-switch
-                    class="instance-enabled-switch"
-                    :checked="getInstanceSwitchChecked(item)"
-                    checked-children="启用"
-                    un-checked-children="禁用"
-                    :loading="togglingInstanceId === item.id"
-                    :disabled="togglingInstanceId === item.id"
-                    @update:checked="(val: boolean) => toggleInstanceEnabled(item, val)"
-                  />
+                <div class="group-header">
+                  <span class="group-name">{{ group.label }}</span>
+                  <a-dropdown v-if="group.key !== ''" :trigger="['click']">
+                    <a-button size="small" type="text" class="group-menu-btn">...</a-button>
+                    <template #overlay>
+                      <a-menu @click="({ key }: { key: string }) => handleGroupAction(key, group.key)">
+                        <a-menu-item key="rename">重命名分组</a-menu-item>
+                        <a-menu-item key="delete" danger>删除分组</a-menu-item>
+                      </a-menu>
+                    </template>
+                  </a-dropdown>
                 </div>
-                <div class="instance-plugin">{{ item.plugin }}</div>
-                <div v-if="getRuntimeState(item.id)" class="instance-runtime">
-                  <a-space size="6" wrap>
-                    <a-tag :color="getStatusTagColor(getRuntimeState(item.id)?.status)">
-                      {{ getStatusLabel(getRuntimeState(item.id)?.status) }}
-                    </a-tag>
-                    <a-tag :color="getPhaseTagColor(getRuntimeState(item.id)?.lifecycle_phase)">
-                      {{ getPhaseLabel(getRuntimeState(item.id)?.lifecycle_phase) }}
-                    </a-tag>
-                  </a-space>
-                </div>
+                <draggable
+                  :model-value="group.items"
+                  item-key="id"
+                  :animation="200"
+                  :disabled="isInstanceSearchActive"
+                  ghost-class="instance-ghost"
+                  chosen-class="instance-chosen"
+                  drag-class="instance-drag"
+                  handle=".drag-handle"
+                  group="plugins"
+                  @end="(evt: any) => onDragEnd(evt, group.key)"
+                >
+                  <template #item="{ element }">
+                    <div
+                      class="instance-item"
+                      :class="{ active: selectedInstanceId === element.id }"
+                      :data-id="element.id"
+                    >
+                      <span class="drag-handle" title="拖拽排序">
+                        <span class="drag-dots" />
+                      </span>
+                      <span
+                        class="status-dot"
+                        :style="{ background: getStatusDotColor(element) }"
+                      />
+                      <span class="instance-name" @click="selectInstance(element.id)">
+                        {{ element.name || element.id }}
+                      </span>
+                      <a-switch
+                        class="instance-switch"
+                        size="small"
+                        :checked="element.enabled"
+                        :loading="togglingInstanceId === element.id"
+                        :disabled="togglingInstanceId === element.id"
+                        @update:checked="(val: boolean) => toggleInstanceEnabled(element, val)"
+                        @click.stop
+                      />
+                    </div>
+                  </template>
+                </draggable>
               </div>
             </div>
           </a-card>
@@ -355,9 +387,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import axios from 'axios'
-import { message } from 'ant-design-vue'
+import draggable from 'vuedraggable'
+import { Input, message, Modal } from 'ant-design-vue'
 import { OpenAPI } from '@/api'
 import SchemaForm from '@/components/SchemaForm.vue'
 import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
@@ -523,8 +556,16 @@ interface DiscoveredPluginOption {
   searchText: string
 }
 
+interface PluginListLayoutState {
+  version: 1
+  groupOrder: string[]
+  instanceOrder: string[]
+  instanceGroups: Record<string, string>
+}
+
 const logger = window.electronAPI.getLogger('插件管理')
 const { subscribe, unsubscribe, sendRaw } = useWebSocket()
+const PLUGIN_LIST_LAYOUT_STORAGE_KEY = 'plugin-manager-list-layout-v1'
 const loading = ref(false)
 const submitting = ref(false)
 const reloadingAll = ref(false)
@@ -560,6 +601,123 @@ const wsCommandPending = new Map<
 
 const addModalVisible = ref(false)
 const jsonPreviewVisible = ref(false)
+
+const createEmptyPluginListLayout = (): PluginListLayoutState => ({
+  version: 1,
+  groupOrder: [],
+  instanceOrder: [],
+  instanceGroups: {},
+})
+
+const clonePluginListLayout = (layout: PluginListLayoutState): PluginListLayoutState => ({
+  version: 1,
+  groupOrder: [...layout.groupOrder],
+  instanceOrder: [...layout.instanceOrder],
+  instanceGroups: { ...layout.instanceGroups },
+})
+
+const normalizeNamedGroup = (value: unknown) => String(value ?? '').trim()
+
+const normalizePluginListLayout = (
+  layout: Partial<PluginListLayoutState> | null | undefined,
+  availableInstanceIds?: string[]
+): PluginListLayoutState => {
+  const normalized = createEmptyPluginListLayout()
+  const availableSet = new Set(availableInstanceIds || [])
+  const limitToAvailableInstances = Array.isArray(availableInstanceIds)
+  const seenGroups = new Set<string>()
+  const seenInstanceIds = new Set<string>()
+
+  for (const rawGroup of Array.isArray(layout?.groupOrder) ? layout.groupOrder : []) {
+    const group = normalizeNamedGroup(rawGroup)
+    if (!group || seenGroups.has(group)) {
+      continue
+    }
+    seenGroups.add(group)
+    normalized.groupOrder.push(group)
+  }
+
+  for (const rawInstanceId of Array.isArray(layout?.instanceOrder) ? layout.instanceOrder : []) {
+    const instanceId = String(rawInstanceId ?? '').trim()
+    if (!instanceId || seenInstanceIds.has(instanceId)) {
+      continue
+    }
+    if (limitToAvailableInstances && !availableSet.has(instanceId)) {
+      continue
+    }
+    seenInstanceIds.add(instanceId)
+    normalized.instanceOrder.push(instanceId)
+  }
+
+  const rawInstanceGroups =
+    layout?.instanceGroups && typeof layout.instanceGroups === 'object'
+      ? layout.instanceGroups
+      : {}
+
+  for (const [instanceId, rawGroup] of Object.entries(rawInstanceGroups)) {
+    if (limitToAvailableInstances && !availableSet.has(instanceId)) {
+      continue
+    }
+    const group = normalizeNamedGroup(rawGroup)
+    if (!group) {
+      continue
+    }
+    normalized.instanceGroups[instanceId] = group
+    if (!seenGroups.has(group)) {
+      seenGroups.add(group)
+      normalized.groupOrder.push(group)
+    }
+  }
+
+  for (const instanceId of availableInstanceIds || []) {
+    if (!seenInstanceIds.has(instanceId)) {
+      normalized.instanceOrder.push(instanceId)
+    }
+  }
+
+  return normalized
+}
+
+const loadPluginListLayout = (): PluginListLayoutState => {
+  try {
+    const raw = window.localStorage.getItem(PLUGIN_LIST_LAYOUT_STORAGE_KEY)
+    if (!raw) {
+      return createEmptyPluginListLayout()
+    }
+    return normalizePluginListLayout(JSON.parse(raw))
+  } catch (error) {
+    logger.warn(`读取插件列表布局失败，将回退到默认布局: ${String(error)}`)
+    return createEmptyPluginListLayout()
+  }
+}
+
+const pluginListLayout = ref<PluginListLayoutState>(loadPluginListLayout())
+
+const persistPluginListLayout = (nextLayout: PluginListLayoutState, availableInstanceIds?: string[]) => {
+  const normalized = normalizePluginListLayout(
+    nextLayout,
+    availableInstanceIds ?? instances.value.map(item => item.id)
+  )
+  pluginListLayout.value = normalized
+  try {
+    window.localStorage.setItem(PLUGIN_LIST_LAYOUT_STORAGE_KEY, JSON.stringify(normalized))
+  } catch (error) {
+    logger.warn(`保存插件列表布局失败: ${String(error)}`)
+  }
+}
+
+const updatePluginListLayout = (
+  updater: (draft: PluginListLayoutState) => void,
+  availableInstanceIds?: string[]
+) => {
+  const draft = clonePluginListLayout(pluginListLayout.value)
+  updater(draft)
+  persistPluginListLayout(draft, availableInstanceIds)
+}
+
+const syncPluginListLayoutWithInstances = (nextInstances: PluginInstance[]) => {
+  persistPluginListLayout(pluginListLayout.value, nextInstances.map(item => item.id))
+}
 
 const listColumns: TableColumn[] = [
   { title: '值', dataIndex: 'value', key: 'value' },
@@ -814,18 +972,83 @@ const addPluginEmptyDescription = computed(() =>
   addPluginKeyword.value.trim() ? '没有匹配的插件' : '当前没有可新增的插件'
 )
 
+const orderedInstances = computed(() => {
+  const orderIndexMap = new Map<string, number>()
+  pluginListLayout.value.instanceOrder.forEach((instanceId, index) => {
+    orderIndexMap.set(instanceId, index)
+  })
+
+  return [...instances.value].sort((left, right) => {
+    const leftIndex = orderIndexMap.get(left.id)
+    const rightIndex = orderIndexMap.get(right.id)
+
+    if (leftIndex == null && rightIndex == null) {
+      return 0
+    }
+    if (leftIndex == null) {
+      return 1
+    }
+    if (rightIndex == null) {
+      return -1
+    }
+    return leftIndex - rightIndex
+  })
+})
+
 const filteredInstances = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   if (!kw) {
-    return instances.value
+    return orderedInstances.value
   }
-  return instances.value.filter(item => {
+  return orderedInstances.value.filter(item => {
     return (
       item.id.toLowerCase().includes(kw) ||
       item.plugin.toLowerCase().includes(kw) ||
       (item.name || '').toLowerCase().includes(kw)
     )
   })
+})
+
+const isInstanceSearchActive = computed(() => keyword.value.trim().length > 0)
+
+interface InstanceGroup {
+  key: string
+  label: string
+  items: PluginInstance[]
+}
+
+const getInstanceGroupKey = (instanceId: string) => {
+  return pluginListLayout.value.instanceGroups[instanceId] || ''
+}
+
+const groupedInstances = computed<InstanceGroup[]>(() => {
+  const groupMap = new Map<string, PluginInstance[]>([['', []]])
+  const groupOrder: string[] = ['']
+
+  for (const group of pluginListLayout.value.groupOrder) {
+    if (groupMap.has(group)) {
+      continue
+    }
+    groupMap.set(group, [])
+    groupOrder.push(group)
+  }
+
+  for (const item of filteredInstances.value) {
+    const groupKey = getInstanceGroupKey(item.id)
+    if (!groupMap.has(groupKey)) {
+      groupMap.set(groupKey, [])
+      groupOrder.push(groupKey)
+    }
+    groupMap.get(groupKey)!.push(item)
+  }
+
+  return groupOrder
+    .filter(key => !isInstanceSearchActive.value || (groupMap.get(key)?.length ?? 0) > 0)
+    .map(key => ({
+      key,
+      label: key === '' ? '默认分组' : key,
+      items: groupMap.get(key) || [],
+    }))
 })
 
 const isDirty = computed(() => {
@@ -944,6 +1167,149 @@ const getStatusTagColor = (status?: string) => {
     return 'warning'
   }
   return 'default'
+}
+
+const getStatusDotColor = (instance: PluginInstance) => {
+  const runtime = getRuntimeState(instance.id)
+  if (!runtime) {
+    return 'var(--ant-color-text-quaternary)'
+  }
+  if (runtime.status === 'active') {
+    return '#52c41a'
+  }
+  if (runtime.status === 'error') {
+    return '#faad14'
+  }
+  return 'var(--ant-color-text-quaternary)'
+}
+
+const collectRenderedInstanceOrder = () => {
+  const renderedIds: string[] = []
+  document.querySelectorAll('.instance-group .instance-item').forEach(itemEl => {
+    const element = itemEl as HTMLElement
+    const instanceId = element.dataset.id
+    if (instanceId) {
+      renderedIds.push(instanceId)
+    }
+  })
+  return renderedIds
+}
+
+const buildFullInstanceOrder = (renderedIds: string[]) => {
+  const renderedSet = new Set(renderedIds)
+  const currentOrderedIds = orderedInstances.value.map(item => item.id)
+  return [...renderedIds, ...currentOrderedIds.filter(instanceId => !renderedSet.has(instanceId))]
+}
+
+const onDragEnd = (evt: any, _sourceGroup: string) => {
+  if (evt.oldIndex === evt.newIndex && evt.from === evt.to) {
+    return
+  }
+
+  if (isInstanceSearchActive.value) {
+    message.warning('搜索筛选中不支持拖拽排序，请先清空搜索条件')
+    return
+  }
+
+  const draggedId = evt.item?.__draggable_context?.element?.id
+  if (!draggedId) {
+    return
+  }
+
+  let targetGroup = getInstanceGroupKey(draggedId)
+  if (evt.from !== evt.to && draggedId) {
+    const targetGroupEl = evt.to.closest('.instance-group')
+    targetGroup = targetGroupEl?.dataset?.group ?? ''
+  }
+
+  const renderedIds = collectRenderedInstanceOrder()
+  if (renderedIds.length === 0) {
+    return
+  }
+
+  updatePluginListLayout(draft => {
+    draft.instanceOrder = buildFullInstanceOrder(renderedIds)
+    if (targetGroup) {
+      draft.instanceGroups[draggedId] = targetGroup
+      if (!draft.groupOrder.includes(targetGroup)) {
+        draft.groupOrder.push(targetGroup)
+      }
+    } else {
+      delete draft.instanceGroups[draggedId]
+    }
+  })
+}
+
+const createGroup = () => {
+  let name = ''
+  Modal.confirm({
+    title: '新建分组',
+    content: h('div', [
+      h(Input, {
+        placeholder: '请输入分组名称',
+        onChange: (e: any) => { name = e.target?.value ?? e },
+      }),
+    ]),
+    onOk: async () => {
+      const trimmed = (name || '').trim()
+      if (!trimmed) {
+        message.warning('分组名称不能为空')
+        return
+      }
+      if (pluginListLayout.value.groupOrder.includes(trimmed)) {
+        message.warning(`分组 "${trimmed}" 已存在`)
+        return
+      }
+      updatePluginListLayout(draft => {
+        draft.groupOrder.push(trimmed)
+      })
+      message.success(`分组 "${trimmed}" 已创建，可通过拖拽移动实例到该分组`)
+    },
+  })
+}
+
+const handleGroupAction = (action: string, groupKey: string) => {
+  if (action === 'rename') {
+    let newName = groupKey
+    Modal.confirm({
+      title: '重命名分组',
+      content: h('div', [
+        h(Input, {
+          defaultValue: groupKey,
+          onChange: (e: any) => { newName = e.target?.value ?? e },
+        }),
+      ]),
+      onOk: async () => {
+        const trimmed = (newName || '').trim()
+        if (!trimmed || trimmed === groupKey) {
+          return
+        }
+        if (pluginListLayout.value.groupOrder.includes(trimmed)) {
+          message.warning(`分组 "${trimmed}" 已存在`)
+          return
+        }
+        updatePluginListLayout(draft => {
+          draft.groupOrder = draft.groupOrder.map(group => (group === groupKey ? trimmed : group))
+          for (const [instanceId, group] of Object.entries(draft.instanceGroups)) {
+            if (group === groupKey) {
+              draft.instanceGroups[instanceId] = trimmed
+            }
+          }
+        })
+        message.success(`分组已重命名为 "${trimmed}"`)
+      },
+    })
+  } else if (action === 'delete') {
+    updatePluginListLayout(draft => {
+      draft.groupOrder = draft.groupOrder.filter(group => group !== groupKey)
+      for (const [instanceId, group] of Object.entries(draft.instanceGroups)) {
+        if (group === groupKey) {
+          delete draft.instanceGroups[instanceId]
+        }
+      }
+    })
+    message.success(`分组 "${groupKey}" 已删除，实例已移回默认分组`)
+  }
 }
 
 const getPhaseTagColor = (phase?: string) => {
@@ -1812,6 +2178,7 @@ const applySnapshot = (
   pluginRoutes.value = data.plugin_routes || {}
   pluginActions.value = data.plugin_actions || {}
   instances.value = nextInstances
+  syncPluginListLayoutWithInstances(nextInstances)
   runtimeStates.value = data.runtime_states || {}
 
   if (nextInstances.length === 0) {
@@ -2027,8 +2394,16 @@ const deleteInstance = async (instanceId: string) => {
       throw new Error(data.message || '删除失败')
     }
     message.success('删除成功')
+    const nextInstances = instances.value.filter(item => item.id !== instanceId)
+    instances.value = nextInstances
+    syncPluginListLayoutWithInstances(nextInstances)
     if (selectedInstanceId.value === instanceId) {
-      selectedInstanceId.value = ''
+      const nextSelectedId = nextInstances[0]?.id || ''
+      selectedInstanceId.value = nextSelectedId
+      const nextSelectedInstance = nextInstances.find(item => item.id === nextSelectedId)
+      if (nextSelectedInstance) {
+        setEditFromInstance(nextSelectedInstance)
+      }
     }
   } catch (error) {
     message.error(`删除失败: ${String(error)}`)
@@ -2276,13 +2651,23 @@ onUnmounted(() => {
 }
 
 .instance-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   border: 1px solid var(--ant-color-border);
   border-radius: 8px;
-  padding: 10px;
-  margin-bottom: 10px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
   cursor: pointer;
   background: var(--ant-color-bg-container);
   transition: all 0.2s ease;
+}
+
+.status-dot {
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
 }
 
 .instance-item.active {
@@ -2301,40 +2686,101 @@ onUnmounted(() => {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
 }
 
-.instance-item-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 10px;
-  margin-bottom: 6px;
-}
-
 .instance-name {
+  flex: 1;
   min-width: 0;
-  font-weight: 600;
-  line-height: 1.45;
+  font-size: 13px;
+  line-height: 1.4;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
-.instance-enabled-switch {
-  flex: 0 0 auto;
-  min-width: 68px;
-  margin-top: 1px;
+.list-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.instance-item :deep(.ant-switch-inner) {
-  min-width: 42px;
+.instance-group {
+  margin-bottom: 12px;
 }
 
-.instance-plugin,
-.instance-id {
+.group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 2px;
+  margin-bottom: 4px;
+}
+
+.group-name {
   font-size: 12px;
+  font-weight: 600;
   color: var(--ant-color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-.instance-runtime {
-  margin-top: 8px;
+.group-menu-btn {
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+  color: var(--ant-color-text-tertiary);
+}
+
+/* 拖拽手柄 */
+.drag-handle {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ant-color-text-tertiary);
+  cursor: move;
+  user-select: none;
+}
+
+.drag-handle:hover .drag-dots {
+  opacity: 0.85;
+}
+
+.drag-dots {
+  width: 8px;
+  height: 14px;
+  display: block;
+  background-image: radial-gradient(currentColor 1px, transparent 1px);
+  background-size: 4px 4px;
+  background-position: 0 0;
+  opacity: 0.5;
+}
+
+/* 拖拽状态 */
+.instance-ghost {
+  opacity: 0.4;
+}
+
+.instance-chosen {
+  cursor: move !important;
+}
+
+.instance-drag {
+  transform: rotate(1deg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+}
+
+.instance-drag .drag-handle {
+  cursor: grabbing !important;
+}
+
+.instance-drag .drag-dots {
+  opacity: 1;
+}
+
+.instance-switch {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .runtime-observer-card {
