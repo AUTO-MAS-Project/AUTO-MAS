@@ -24,7 +24,7 @@ LOG_HANDLER_ATTR: Final[str] = "__mas_log_handler__"
 
 @dataclass(frozen=True, slots=True)
 class LogHandlerSpec:
-    """``@on_log_line`` 装饰器声明的元数据。"""
+    """``@on_log`` 装饰器声明的元数据。"""
 
     priority: int = 0
     pattern: re.Pattern[str] | None = None
@@ -32,7 +32,7 @@ class LogHandlerSpec:
 
 
 def get_log_handlers(target: Any) -> list[LogHandlerSpec]:
-    """从函数或方法上提取 ``@on_log_line`` 声明。"""
+    """从函数或方法上提取 ``@on_log`` 声明。"""
     specs: list[LogHandlerSpec] = getattr(target, LOG_HANDLER_ATTR, [])
     return list(specs)
 
@@ -40,7 +40,7 @@ def get_log_handlers(target: Any) -> list[LogHandlerSpec]:
 # ── 装饰器 ──────────────────────────────────────────────────────────────
 
 
-def on_log_line(
+def on_log(
     *,
     priority: int = 0,
     pattern: str | re.Pattern[str] | None = None,

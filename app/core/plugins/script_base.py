@@ -315,7 +315,8 @@ class PluginScriptManager(TaskExecuteBase):
 class PluginAutoProxyTask(TaskExecuteBase):
     """插件脚本的通用 per-user 自动代理任务。
 
-    提供标准重试循环：启动进程 → 日志监控 → 等待结果。
+    提供标准重试循环：初始化 → 启动进程 → 日志监控 → 等待结果 → 状态评估 → 重试决策。
+    每个子阶段均可通过 ``hook.inject.main_task.*`` / ``hook.replace.main_task.*`` 钩子介入。
     """
 
     def __init__(
@@ -330,11 +331,10 @@ class PluginAutoProxyTask(TaskExecuteBase):
         self.hook_registry = hook_registry
         self.cur_user = task_ctx.script_info.user_list[user_index]
 
-    async def main_task(self) -> None:
-        task_ctx = self.task_ctx
-        cur_user = self.cur_user
-        cur_user.status = "运行中"
+    # ── 子阶段默认实现 ──────────────────────────────────────────────────
 
+    async def _default_init(self, task_ctx: TaskContext) -> None:
+        """默认初始化：创建 ProcessManager、LogPipeline、LogMonitor。"""
         process_manager = ProcessManager()
         task_ctx.process_manager = process_manager
 
@@ -350,63 +350,117 @@ class PluginAutoProxyTask(TaskExecuteBase):
         task_ctx.log_monitor = log_monitor
         task_ctx.wait_event = wait_event
 
-        begin_time = datetime.now()
+        task_ctx.extra["_proxy_adapter"] = adapter
+        task_ctx.extra["_proxy_begin_time"] = datetime.now()
+
+    async def _default_process_start(self, task_ctx: TaskContext) -> None:
+        """默认进程启动：根据 exe_path 创建子进程。"""
+        process_manager = task_ctx.process_manager
+        if process_manager is None:
+            return
+        if task_ctx.exe_path and task_ctx.exe_path.exists():
+            needs_stdout = not (task_ctx.log_path_key and task_ctx.get_config_value(
+                task_ctx.script_config, task_ctx.log_path_key
+            ))
+            await process_manager.open_process(
+                str(task_ctx.exe_path),
+                cwd=task_ctx.script_root,
+                stdout=asyncio.subprocess.PIPE if needs_stdout else asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE if needs_stdout else asyncio.subprocess.DEVNULL,
+            )
+        elif task_ctx.script_root:
+            task_ctx.logger.warning(
+                f"未找到可执行文件: {task_ctx.exe_path or task_ctx.script_root}"
+            )
+
+    async def _default_log_start(self, task_ctx: TaskContext) -> None:
+        """默认日志监控启动：文件优先，否则 stdout。"""
+        log_monitor = task_ctx.log_monitor
+        process_manager = task_ctx.process_manager
+        if log_monitor is None:
+            return
+
+        if task_ctx.log_path_key:
+            log_path_val = task_ctx.get_config_value(task_ctx.script_config, task_ctx.log_path_key)
+            if isinstance(log_path_val, str) and log_path_val:
+                task_ctx.log_path = Path(log_path_val)
+
+        begin_time: datetime = task_ctx.extra.get("_proxy_begin_time", datetime.now())
+        if task_ctx.log_path and task_ctx.log_path.exists():
+            await log_monitor.start_monitor_file(task_ctx.log_path, begin_time)
+        elif process_manager is not None and process_manager.process is not None:
+            await log_monitor.start_monitor_process(process_manager.process, "stdout")
+
+    async def _default_wait(self, task_ctx: TaskContext) -> None:
+        """默认等待：asyncio.wait_for 等待 wait_event。"""
+        log_record: LogRecord | None = task_ctx.extra.get("_proxy_log_record")
+        try:
+            await asyncio.wait_for(task_ctx.wait_event.wait(), timeout=task_ctx.run_time_limit * 60)
+        except asyncio.TimeoutError:
+            if log_record is not None:
+                log_record.status = "脚本进程超时"
+
+    async def _default_evaluate(self, task_ctx: TaskContext) -> None:
+        """默认状态评估：从 adapter 和 process 状态推断结果。"""
+        log_monitor = task_ctx.log_monitor
+        process_manager = task_ctx.process_manager
+        adapter: LogMonitorAdapter | None = task_ctx.extra.get("_proxy_adapter")
+        log_record: LogRecord | None = task_ctx.extra.get("_proxy_log_record")
+
+        if log_monitor is not None and log_monitor.task is not None:
+            await log_monitor.stop()
+
+        if log_record is None:
+            return
+
+        if adapter is not None and adapter.last_status:
+            log_record.status = adapter.last_status
+        elif log_record.status == "未开始监看日志":
+            if process_manager is not None and not await process_manager.is_running():
+                log_record.status = "脚本在完成任务前退出"
+            else:
+                log_record.status = "运行中"
+
+        if log_monitor is not None:
+            task_ctx.script_info.log = "\n".join(log_monitor.log_contents)
+            log_record.content = list(log_monitor.log_contents)
+
+    async def _default_retry(self, task_ctx: TaskContext) -> None:
+        """默认重试决策：成功则标记完成，否则杀进程等待重试。"""
+        log_record: LogRecord | None = task_ctx.extra.get("_proxy_log_record")
+        if log_record is not None and ("Success" in log_record.status or log_record.status == "完成"):
+            self.cur_user.status = "完成"
+            task_ctx.extra["_proxy_break"] = True
+            return
+
+        if task_ctx.process_manager is not None:
+            await task_ctx.process_manager.kill()
+        await asyncio.sleep(3)
+
+    # ── 主循环 ────────────────────────────────────────────────────────────
+
+    async def main_task(self) -> None:
+        task_ctx = self.task_ctx
+        cur_user = self.cur_user
+        cur_user.status = "运行中"
+
+        await _run_phase("proxy_init", self.hook_registry, self._default_init, task_ctx)
 
         for _ in range(task_ctx.run_times_limit):
             log_record = LogRecord()
             cur_user.log_record[datetime.now()] = log_record
-            wait_event.clear()
+            task_ctx.wait_event.clear()
+            task_ctx.extra["_proxy_log_record"] = log_record
+            task_ctx.extra["_proxy_break"] = False
 
-            if task_ctx.exe_path and task_ctx.exe_path.exists():
-                needs_stdout = not (task_ctx.log_path_key and task_ctx.get_config_value(
-                    task_ctx.script_config, task_ctx.log_path_key
-                ))
-                await process_manager.open_process(
-                    str(task_ctx.exe_path),
-                    cwd=task_ctx.script_root,
-                    stdout=asyncio.subprocess.PIPE if needs_stdout else asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.PIPE if needs_stdout else asyncio.subprocess.DEVNULL,
-                )
-            elif task_ctx.script_root:
-                task_ctx.logger.warning(
-                    f"未找到可执行文件: {task_ctx.exe_path or task_ctx.script_root}"
-                )
+            await _run_phase("proxy_process_start", self.hook_registry, self._default_process_start, task_ctx)
+            await _run_phase("proxy_log_start", self.hook_registry, self._default_log_start, task_ctx)
+            await _run_phase("proxy_wait", self.hook_registry, self._default_wait, task_ctx)
+            await _run_phase("proxy_evaluate", self.hook_registry, self._default_evaluate, task_ctx)
+            await _run_phase("proxy_retry", self.hook_registry, self._default_retry, task_ctx)
 
-            if task_ctx.log_path_key:
-                log_path_val = task_ctx.get_config_value(task_ctx.script_config, task_ctx.log_path_key)
-                if isinstance(log_path_val, str) and log_path_val:
-                    task_ctx.log_path = Path(log_path_val)
-
-            if task_ctx.log_path and task_ctx.log_path.exists():
-                await log_monitor.start_monitor_file(task_ctx.log_path, begin_time)
-            elif process_manager.process is not None:
-                await log_monitor.start_monitor_process(process_manager.process, "stdout")
-
-            try:
-                await asyncio.wait_for(wait_event.wait(), timeout=task_ctx.run_time_limit * 60)
-            except asyncio.TimeoutError:
-                log_record.status = "脚本进程超时"
-
-            if log_monitor.task is not None:
-                await log_monitor.stop()
-
-            if adapter.last_status:
-                log_record.status = adapter.last_status
-            elif log_record.status == "未开始监看日志":
-                if not await process_manager.is_running():
-                    log_record.status = "脚本在完成任务前退出"
-                else:
-                    log_record.status = "运行中"
-
-            task_ctx.script_info.log = "\n".join(log_monitor.log_contents)
-            log_record.content = list(log_monitor.log_contents)
-
-            if "Success" in log_record.status or log_record.status == "完成":
-                cur_user.status = "完成"
+            if task_ctx.extra.get("_proxy_break"):
                 break
-
-            await process_manager.kill()
-            await asyncio.sleep(3)
         else:
             cur_user.status = "异常"
 
@@ -544,7 +598,7 @@ def register_script_type(
 ) -> None:
     """高级助手：注册一个插件脚本类型。
 
-    1. 发现调用者 Plugin 实例上的 ``@inject_*`` / ``@replace_*`` / ``@on_log_line`` 装饰器
+    1. 发现调用者 Plugin 实例上的 ``@inject_*`` / ``@replace_*`` / ``@on_log`` 装饰器
     2. 创建 ``LifecycleHookRegistry`` + ``LogPipeline``，填充发现的钩子和处理器
     3. 创建 ``ScriptTypeProvider``（使用 ``PluginSchemaManager`` 生成 schema）
     4. 调用 ``script_type_registry.register(provider, owner=instance_id)``
@@ -648,7 +702,7 @@ def _discover_and_register_log_handlers(
     holder: _LogPipelineHolder,
     owner: str,
 ) -> None:
-    """发现插件实例上的 ``@on_log_line`` 处理器并注册。"""
+    """发现插件实例上的 ``@on_log`` 处理器并注册。"""
     for attr_name in dir(plugin_instance):
         try:
             member = getattr(plugin_instance, attr_name)
