@@ -16,9 +16,11 @@ logger = get_logger("生命周期钩子")
 
 LIFECYCLE_HOOK_ATTR: Final[str] = "__mas_lifecycle_hooks__"
 
-VALID_PHASES: Final[frozenset[str]] = frozenset(
-    {"check", "prepare", "main_task", "final_task", "on_crash"}
-)
+VALID_PHASES: Final[frozenset[str]] = frozenset({
+    "check", "prepare", "main_task", "final_task", "on_crash",
+    "proxy_init", "proxy_process_start", "proxy_log_start",
+    "proxy_wait", "proxy_evaluate", "proxy_retry",
+})
 VALID_ACTIONS: Final[frozenset[str]] = frozenset(
     {"inject_before", "inject_after", "inject_subtask", "replace"}
 )
@@ -163,6 +165,177 @@ def replace_on_crash() -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         替换后默认错误处理和所有 inject 钩子均不会执行。
     """
     return _lifecycle_decorator("on_crash", "replace", 0)
+
+
+# ── hook 命名空间 ──────────────────────────────────────────────────────
+
+
+class _InjectMainTaskNamespace:
+    """``hook.inject.main_task`` —— 既可直接调用，也可通过子属性访问子阶段。
+
+    用法::
+
+        @hook.inject.main_task(priority=5)                   # 原有：子任务注入
+        @hook.inject.main_task.before_process_start(priority=10)  # 新增：子阶段
+    """
+
+    def __call__(self, *, priority: int = 0) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """在 ``main_task`` 中作为子任务注入。"""
+        return _lifecycle_decorator("main_task", "inject_subtask", priority)
+
+    @staticmethod
+    def before_init(*, priority: int = 0) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """在 AutoProxy 初始化（创建 ProcessManager/LogMonitor）之前注入。"""
+        return _lifecycle_decorator("proxy_init", "inject_before", priority)
+
+    @staticmethod
+    def init(*, priority: int = 0) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """在 AutoProxy 初始化之后注入。"""
+        return _lifecycle_decorator("proxy_init", "inject_after", priority)
+
+    @staticmethod
+    def before_process_start(*, priority: int = 0) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """在启动脚本进程之前注入。每次重试都会调用。"""
+        return _lifecycle_decorator("proxy_process_start", "inject_before", priority)
+
+    @staticmethod
+    def process_start(*, priority: int = 0) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """在启动脚本进程之后注入。每次重试都会调用。"""
+        return _lifecycle_decorator("proxy_process_start", "inject_after", priority)
+
+    @staticmethod
+    def before_log_start(*, priority: int = 0) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """在启动日志监控之前注入。可修改 ``task_ctx.log_path`` 改变日志来源。"""
+        return _lifecycle_decorator("proxy_log_start", "inject_before", priority)
+
+    @staticmethod
+    def log_start(*, priority: int = 0) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """在启动日志监控之后注入。"""
+        return _lifecycle_decorator("proxy_log_start", "inject_after", priority)
+
+    @staticmethod
+    def before_wait(*, priority: int = 0) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """在等待脚本结果之前注入。"""
+        return _lifecycle_decorator("proxy_wait", "inject_before", priority)
+
+    @staticmethod
+    def wait(*, priority: int = 0) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """在等待脚本结果之后注入。"""
+        return _lifecycle_decorator("proxy_wait", "inject_after", priority)
+
+    @staticmethod
+    def before_evaluate(*, priority: int = 0) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """在状态评估之前注入。"""
+        return _lifecycle_decorator("proxy_evaluate", "inject_before", priority)
+
+    @staticmethod
+    def evaluate(*, priority: int = 0) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """在状态评估之后注入。可修改 ``log_record.status`` 覆盖结果。"""
+        return _lifecycle_decorator("proxy_evaluate", "inject_after", priority)
+
+    @staticmethod
+    def before_retry(*, priority: int = 0) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """在重试决策之前注入。"""
+        return _lifecycle_decorator("proxy_retry", "inject_before", priority)
+
+    @staticmethod
+    def retry(*, priority: int = 0) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """在重试决策之后注入。"""
+        return _lifecycle_decorator("proxy_retry", "inject_after", priority)
+
+
+class _ReplaceMainTaskNamespace:
+    """``hook.replace.main_task`` —— 既可直接调用，也可通过子属性替换子阶段。"""
+
+    def __call__(self) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """替换默认的 ``main_task`` 阶段。
+
+        .. warning::
+
+            不建议使用, 除非你知道你在做什么。
+            替换后默认任务循环和所有 inject 钩子均不会执行。
+        """
+        return _lifecycle_decorator("main_task", "replace", 0)
+
+    @staticmethod
+    def init() -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """替换 AutoProxy 初始化阶段。"""
+        return _lifecycle_decorator("proxy_init", "replace", 0)
+
+    @staticmethod
+    def process_start() -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """替换脚本进程启动阶段。"""
+        return _lifecycle_decorator("proxy_process_start", "replace", 0)
+
+    @staticmethod
+    def log_start() -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """替换日志监控启动阶段。可完全自定义日志来源选择逻辑。"""
+        return _lifecycle_decorator("proxy_log_start", "replace", 0)
+
+    @staticmethod
+    def wait() -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """替换等待脚本结果阶段。"""
+        return _lifecycle_decorator("proxy_wait", "replace", 0)
+
+    @staticmethod
+    def evaluate() -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """替换状态评估阶段。"""
+        return _lifecycle_decorator("proxy_evaluate", "replace", 0)
+
+    @staticmethod
+    def retry() -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        """替换重试决策阶段。"""
+        return _lifecycle_decorator("proxy_retry", "replace", 0)
+
+
+class _InjectNamespace:
+    """``hook.inject.*`` 命名空间，提供注入式生命周期钩子装饰器。"""
+
+    check = staticmethod(inject_check)
+    before_prepare = staticmethod(inject_before_prepare)
+    prepare = staticmethod(inject_prepare)
+    main_task = _InjectMainTaskNamespace()
+    final_task = staticmethod(inject_final_task)
+    on_crash = staticmethod(inject_on_crash)
+
+
+class _ReplaceNamespace:
+    """``hook.replace.*`` 命名空间，提供替换式生命周期钩子装饰器。"""
+
+    check = staticmethod(replace_check)
+    prepare = staticmethod(replace_prepare)
+    main_task = _ReplaceMainTaskNamespace()
+    final_task = staticmethod(replace_final_task)
+    on_crash = staticmethod(replace_on_crash)
+
+
+class _HookNamespace:
+    """``hook.inject.*`` / ``hook.replace.*`` 顶层命名空间。
+
+    用法::
+
+        from app.core.plugins.lifecycle_hooks import hook
+
+        # 顶层阶段
+        @hook.inject.main_task(priority=5)
+        async def my_subtask(self, ctx: TaskContext) -> None: ...
+
+        @hook.replace.prepare()
+        async def my_prepare(self, ctx: TaskContext) -> None: ...
+
+        # main_task 子阶段
+        @hook.inject.main_task.before_process_start(priority=10)
+        async def setup_env(self, ctx: TaskContext) -> None: ...
+
+        @hook.replace.main_task.log_start()
+        async def my_log_start(self, ctx: TaskContext) -> None: ...
+    """
+
+    inject = _InjectNamespace()
+    replace = _ReplaceNamespace()
+
+
+hook = _HookNamespace()
 
 
 # ── LifecycleHookRegistry ─────────────────────────────────────────────

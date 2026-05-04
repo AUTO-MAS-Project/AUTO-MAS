@@ -25,6 +25,7 @@ from .lifecycle_hooks import (
     PluginDefinitionError,
     LIFECYCLE_HOOK_ATTR,
     get_lifecycle_hooks,
+    hook,
     inject_check,
     inject_before_prepare,
     inject_prepare,
@@ -44,7 +45,7 @@ from .log_pipeline import (
     LogHandlerSpec,
     LogFacade,
     LOG_HANDLER_ATTR,
-    on_log_line,
+    on_log,
     get_log_handlers,
 )
 from .loader import PluginLoader, PluginRecord
@@ -109,6 +110,7 @@ __all__ = [
     "PluginDefinitionError",
     "LIFECYCLE_HOOK_ATTR",
     "get_lifecycle_hooks",
+    "hook",
     "inject_check",
     "inject_before_prepare",
     "inject_prepare",
@@ -126,7 +128,7 @@ __all__ = [
     "LogHandlerSpec",
     "LogFacade",
     "LOG_HANDLER_ATTR",
-    "on_log_line",
+    "on_log",
     "get_log_handlers",
     "PluginLoader",
     "PluginRecord",

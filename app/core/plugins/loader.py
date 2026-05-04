@@ -749,7 +749,7 @@ class PluginLoader:
         record: PluginRecord,
         target: Any,
     ) -> None:
-        """发现并注册插件上的 ``@on_log_line`` 日志处理器。"""
+        """发现并注册插件上的 ``@on_log`` 日志处理器。"""
         if record.context is None:
             return
 
