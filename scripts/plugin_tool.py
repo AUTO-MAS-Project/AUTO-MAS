@@ -29,7 +29,7 @@ TEMPLATE_OUTPUTS = {
     Path("src/${plugin_name}/__init__.py"): Path("__init__.py.template"),
     Path("src/${plugin_name}/plugin.py"): Path("plugin.py.template"),
     Path("src/${plugin_name}/schema.py"): Path("schema.py.template"),
-    Path(".github/publish.yml"): Path("publish.yml.template"),
+    Path(".github/workflows/publish.yml"): Path("publish.yml.template"),
     Path(".gitattributes"): Path(".gitattributes.template"),
     Path(".editorconfig"): Path(".editorconfig.template"),
     Path(".gitignore"): Path(".gitignore.template"),
