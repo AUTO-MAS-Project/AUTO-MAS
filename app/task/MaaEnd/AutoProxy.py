@@ -438,10 +438,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.task_dict = {}
             task = {}
             for task in maaend_tasks:
-                if (
-                    task["taskName"] == "__MXU_KILLPROC__"
-                    and task["optionValues"]["__MXU_KILLPROC_SELF_OPTION__"]["value"]
-                ):
+                if task["taskName"].startswith("__MXU_"):
                     continue
                 task_name = maaend_i18n.get(task["taskName"], task["taskName"])
                 if task_name not in self.task_dict:
