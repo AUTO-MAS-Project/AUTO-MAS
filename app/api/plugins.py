@@ -3,7 +3,6 @@
 
 import asyncio
 import mimetypes
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -20,35 +19,6 @@ from app.utils import get_logger
 
 
 logger = get_logger("插件API")
-
-
-if os.getenv("AUTO_MAS_DEV") == "1":
-    from scripts.dev_stub_generator import (
-        generate_plugin_context_stubs,
-        is_dev_stub_generation_enabled,
-    )
-else:
-    def is_dev_stub_generation_enabled() -> bool:
-        """判断是否允许生成开发期类型提示。
-
-        Returns:
-            bool: 在非开发模式下恒为 False。
-        """
-        return False
-
-
-    def generate_plugin_context_stubs() -> Dict[str, Any]:
-        """非开发模式下的兜底实现。
-
-        Returns:
-            Dict[str, Any]: 不返回有效结果，调用时将抛出异常。
-
-        Raises:
-            RuntimeError: 当 AUTO_MAS_DEV 不为 "1" 时禁止生成类型提示。
-        """
-        raise RuntimeError("当前非开发模式，未加载 dev_stub_generator")
-
-
 router = APIRouter(prefix="/api/plugins", tags=["插件实例"])
 config_store = PluginConfigStore()
 
@@ -156,16 +126,6 @@ class PluginReloadInstanceIn(BaseModel):
 
 class PluginReloadPluginIn(BaseModel):
     plugin: str = Field(..., description="插件名")
-
-
-class PluginDevRebuildCtxStubIn(BaseModel):
-    force: bool = Field(default=False, description="是否在非开发模式下强制生成")
-
-
-class PluginDevRebuildCtxStubOut(OutBase):
-    output_dir: Optional[str] = Field(default=None, description="生成目录")
-    changed_files: List[str] = Field(default_factory=list, description="已更新文件")
-    unchanged_files: List[str] = Field(default_factory=list, description="未变更文件")
 
 
 class PluginPackageIn(BaseModel):
@@ -707,61 +667,6 @@ async def uninstall_plugin_package(data: PluginPackageIn = Body(...)) -> OutBase
         return OutBase(message=f"插件包卸载成功: {data.package}")
     except Exception as e:
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
-
-
-@ws_command("plugins.dev.rebuild_ctx_stub")
-@router.post(
-    "/dev/rebuild_ctx_stub",
-    tags=["Action"],
-    summary="重建插件 ctx 类型提示文件",
-    response_model=PluginDevRebuildCtxStubOut,
-    status_code=200,
-)
-async def rebuild_plugin_ctx_stub(
-    data: PluginDevRebuildCtxStubIn = Body(...),
-) -> PluginDevRebuildCtxStubOut:
-    """手动触发插件上下文 .pyi 重建。
-
-    该接口用于插件开发阶段快速刷新类型提示，便于 IDE 立即获得最新签名。
-
-    Args:
-        data (PluginDevRebuildCtxStubIn): 重建参数。
-
-    Returns:
-        PluginDevRebuildCtxStubOut: 重建结果摘要。
-
-    Raises:
-        无。接口内部会捕获异常并转换为统一错误响应。
-    """
-    try:
-        if not data.force and not is_dev_stub_generation_enabled():
-            return PluginDevRebuildCtxStubOut(
-                code=403,
-                status="error",
-                message="当前非开发模式，请设置 AUTO_MAS_DEV=1 或传 force=true",
-            )
-
-        result = generate_plugin_context_stubs()
-        changed_files = result.get("changed_files", [])
-        unchanged_files = result.get("unchanged_files", [])
-        return PluginDevRebuildCtxStubOut(
-            message=(
-                "插件上下文类型提示重建完成: "
-                f"changed={len(changed_files)}, unchanged={len(unchanged_files)}"
-            ),
-            output_dir=result.get("output_dir"),
-            changed_files=changed_files,
-            unchanged_files=unchanged_files,
-        )
-    except Exception as e:
-        return PluginDevRebuildCtxStubOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            output_dir=None,
-            changed_files=[],
-            unchanged_files=[],
-        )
 
 
 @ws_command("plugins.add")
