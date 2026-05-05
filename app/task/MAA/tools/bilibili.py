@@ -49,14 +49,9 @@ async def agree_bilibili(maa_tasks_path: Path, if_agree: bool):
         if "BilibiliAgreement_AUTO" in data["StartUpThemes"]["next"]:
             data["StartUpThemes"]["next"].remove("BilibiliAgreement_AUTO")
 
-    # 临时补丁
-    data["AccountManagerLoginButton"]["next"] = [
-        "StartAtHome",
-        "StartWithSanity",
-        "SwitchTheme@ToggleSettingsMenu",
-        "StartUpBegin",
-    ]
-    data["AccountManagerLoginButton"]["postDelay"] = 5000
+    # 移除临时补丁
+    data["AccountManagerLoginButton"].pop("next", None)
+    data["AccountManagerLoginButton"].pop("postDelay", None)
 
     maa_tasks_path.write_text(
         json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
