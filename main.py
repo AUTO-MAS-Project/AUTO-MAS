@@ -87,20 +87,6 @@ def main():
             from app.MaaFW import ArknightWin32Toolkit
             from app.core.script_types import validate_script_type_registry
 
-            if os.getenv("AUTO_MAS_DEV") == "1":
-                from scripts.dev_stub_generator import (
-                    generate_plugin_context_stubs,
-                    is_dev_stub_generation_enabled,
-                )
-            else:
-                def is_dev_stub_generation_enabled() -> bool:
-                    """判断是否允许生成开发期类型提示。"""
-                    return False
-
-                def generate_plugin_context_stubs() -> dict:
-                    """非开发模式下的兜底实现。"""
-                    raise RuntimeError("当前非开发模式，未加载 dev_stub_generator")
-
             hmr_service = None
 
             await Config.init_config()
@@ -131,18 +117,6 @@ def main():
 
                 hmr_service = DevPluginHMR(PluginManager)
                 hmr_service.start()
-
-            if is_dev_stub_generation_enabled():
-                try:
-                    result = generate_plugin_context_stubs()
-                    logger.info(
-                        "插件上下文类型提示生成完成: "
-                        f"changed={len(result.get('changed_files', []))}, "
-                        f"unchanged={len(result.get('unchanged_files', []))}, "
-                        f"dir={result.get('output_dir', '')}"
-                    )
-                except Exception as e:
-                    logger.warning(f"插件上下文类型提示生成失败（已忽略）: {type(e).__name__}: {e}")
 
             # 初始化 Koishi 系统客户端（如果已启用）
             if Config.get("Notify", "IfKoishiSupport"):
