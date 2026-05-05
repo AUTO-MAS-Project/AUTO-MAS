@@ -539,7 +539,18 @@ class AutoProxyTask(TaskExecuteBase):
                         elif f"任务失败: {task_name}" in log_line:
                             task_index[task_name]["index"] += 1
 
-                    if any(any(_.values()) for _ in self.task_dict.values()):
+                    unfinished_tasks = {}
+                    for task_name, task_status in self.task_dict.items():
+                        task_ids = [
+                            task_id
+                            for task_id, enabled in task_status.items()
+                            if enabled
+                        ]
+                        if task_ids:
+                            unfinished_tasks[task_name] = task_ids
+
+                    if unfinished_tasks:
+                        logger.info(f"MaaEnd 未完成任务列表: {unfinished_tasks}")
                         self.cur_user_log.status = "MaaEnd 部分任务执行失败"
                     else:
                         self.cur_user_log.status = "Success!"
