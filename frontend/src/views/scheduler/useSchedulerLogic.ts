@@ -6,6 +6,7 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { PowerIn } from '@/api/models/PowerIn'
 import { useWebSocket, ExternalWSHandlers } from '@/composables/useWebSocket'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import { SCRIPT_UPDATED_EVENT } from '@/utils/events'
 import schedulerHandlers from './schedulerHandlers'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem, Script } from './schedulerConstants'
@@ -327,7 +328,6 @@ export function useSchedulerLogic() {
 
   // 任务操作
   const loadScriptLabelMap = async () => {
-    if (Object.keys(scriptOptionsMap.value).length > 0) return
     try {
       const response = await Service.getScriptComboxApiInfoComboxScriptPost()
       if (response.code === 200 && Array.isArray(response.data)) {
@@ -1007,6 +1007,16 @@ export function useSchedulerLogic() {
     getPowerState()
   }
 
+  // 脚本更新事件处理函数：脚本管理页保存成功后，刷新恢复下拉的脚本名称
+  const handleScriptUpdated = () => {
+    logger.info('收到脚本更新事件，刷新调度中心恢复脚本选项')
+    schedulerTabs.value.forEach(tab => {
+      if (tab.selectedTaskId && tab.status !== '运行') {
+        loadResumeScriptOptions(tab)
+      }
+    })
+  }
+
   // 初始化函数 - 使用单例标志确保核心初始化只执行一次
   const initialize = () => {
     // 核心初始化只执行一次
@@ -1023,6 +1033,10 @@ export function useSchedulerLogic() {
       // 监听电源状态变更事件（从 GlobalPowerCountdown 组件触发）
       window.addEventListener('power-state-changed', handlePowerStateChanged)
       logger.info('已注册电源状态变更事件监听器')
+
+      // 监听脚本更新事件（从脚本管理页面触发）
+      window.addEventListener(SCRIPT_UPDATED_EVENT, handleScriptUpdated)
+      logger.info('已注册脚本更新事件监听器')
 
       // 注册 UI hooks 到 schedulerHandlers，使其能在 schedulerHandlers 检测到 pending 时回放到当前 UI
       try {
@@ -1189,6 +1203,10 @@ export function useSchedulerLogic() {
     // 移除电源状态变更事件监听器
     window.removeEventListener('power-state-changed', handlePowerStateChanged)
     logger.info('已移除电源状态变更事件监听器')
+
+    // 移除脚本更新事件监听器
+    window.removeEventListener(SCRIPT_UPDATED_EVENT, handleScriptUpdated)
+    logger.info('已移除脚本更新事件监听器')
 
     // 注意：由于keep-alive机制，路由切换时组件不会卸载
     // cleanup只在组件真正销毁时才会调用（如应用关闭）
