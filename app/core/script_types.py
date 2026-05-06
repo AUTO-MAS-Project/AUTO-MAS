@@ -482,7 +482,7 @@ def validate_script_type_registry(global_config: Any) -> list[str]:
             )
             continue
 
-        if provider.script_config_class is not type(script_config):
+        if not _is_provider_compatible_with_script_config(provider, script_config):
             script_name = ""
             try:
                 script_name = str(script_config.get("Info", "Name") or "").strip()
@@ -493,8 +493,41 @@ def validate_script_type_registry(global_config: Any) -> list[str]:
                 f"script_id={script_id}, script_name={label}, provider={provider.type_key}, "
                 f"config_class={type(script_config).__name__}"
             )
+            continue
+
+        if provider.script_config_class is not type(script_config):
+            script_name = ""
+            try:
+                script_name = str(script_config.get("Info", "Name") or "").strip()
+            except Exception:
+                script_name = ""
+            label = script_name or str(script_id)
+            logger.warning(
+                "脚本配置类已通过兼容映射接入 provider，启动继续: "
+                f"script_id={script_id}, script_name={label}, provider={provider.type_key}, "
+                f"loaded_class={type(script_config).__module__}.{type(script_config).__name__}, "
+                f"provider_class={provider.script_config_class.__module__}.{provider.script_config_class.__name__}"
+            )
 
     return missing
+
+
+def _is_provider_compatible_with_script_config(
+    provider: ScriptTypeProvider,
+    script_config: ConfigBase | BaseModel,
+) -> bool:
+    """判断 provider 是否可兼容当前已加载的脚本配置类。"""
+
+    config_class = type(script_config)
+    if provider.script_config_class is config_class:
+        return True
+
+    config_class_name = config_class.__name__
+    compatible_names = {
+        provider.script_config_class.__name__,
+        str(provider.legacy_config_class_name or "").strip(),
+    }
+    return config_class_name in compatible_names
 
 
 def _normalize_entry_point_provider(loaded: Any) -> list[ScriptTypeProvider]:
