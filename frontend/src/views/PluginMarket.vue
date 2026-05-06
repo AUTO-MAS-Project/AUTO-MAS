@@ -13,6 +13,7 @@
           style="width: 280px"
         />
         <a-button :loading="snapshotLoading" @click="requestSnapshot">刷新快照</a-button>
+        <a-button @click="openManualInstall">手动安装</a-button>
       </a-space>
     </div>
 
@@ -68,6 +69,40 @@
         </a-card>
       </div>
     </template>
+
+    <a-modal
+      v-model:open="manualInstallVisible"
+      title="手动安装插件包"
+      :mask-closable="!manualInstallSubmitting"
+      :keyboard="!manualInstallSubmitting"
+      :closable="!manualInstallSubmitting"
+      @cancel="closeManualInstall"
+    >
+      <a-form layout="vertical">
+        <a-form-item label="PyPI 包名">
+          <a-input
+            v-model:value="manualPackageName"
+            allow-clear
+            placeholder="例如：automas_xxx"
+            :disabled="manualInstallSubmitting"
+            @pressEnter="submitManualInstall"
+          />
+        </a-form-item>
+      </a-form>
+      <a-alert
+        type="info"
+        show-icon
+        message="输入精确包名后，将直接从 PyPI 下载并安装到当前插件目录。"
+      />
+      <template #footer>
+        <a-space>
+          <a-button :disabled="manualInstallSubmitting" @click="closeManualInstall">取消</a-button>
+          <a-button type="primary" :loading="manualInstallSubmitting" @click="submitManualInstall">
+            开始安装
+          </a-button>
+        </a-space>
+      </template>
+    </a-modal>
   </div>
 </template>
 
@@ -120,6 +155,9 @@ const installedState = ref<Record<string, boolean>>({})
 const operationLoading = ref<Record<string, boolean>>({})
 const searchKeyword = ref('')
 const snapshotLoading = ref(false)
+const manualInstallVisible = ref(false)
+const manualPackageName = ref('')
+const pendingManualPackage = ref('')
 
 const lastInfoType = ref<'success' | 'error' | 'info' | 'warning'>('info')
 const lastInfoMessage = ref('')
@@ -239,11 +277,36 @@ const isInstalled = (pkg: string) => Boolean(installedState.value[normalizeName(
 
 const isOperationLoading = (pkg: string) => Boolean(operationLoading.value[normalizeName(pkg)])
 
+const manualInstallSubmitting = computed(() => {
+  const pkg = manualPackageName.value.trim()
+  if (!pkg) {
+    return false
+  }
+  return isOperationLoading(pkg)
+})
+
 const markOperation = (pkg: string, loading: boolean) => {
   operationLoading.value = {
     ...operationLoading.value,
     [normalizeName(pkg)]: loading,
   }
+}
+
+const requestInstall = (pkg: string): boolean => {
+  const packageName = String(pkg || '').trim()
+  if (!packageName) {
+    message.warning('请先输入包名')
+    return false
+  }
+  if (isOperationLoading(packageName)) {
+    return false
+  }
+  markOperation(packageName, true)
+  if (!sendPluginAction('plugin.install.request', { package: packageName })) {
+    markOperation(packageName, false)
+    return false
+  }
+  return true
 }
 
 const toggleInstall = (pkg: string) => {
@@ -257,10 +320,33 @@ const toggleInstall = (pkg: string) => {
       markOperation(pkg, false)
     }
   } else {
-    if (!sendPluginAction('plugin.install.request', { package: pkg })) {
-      markOperation(pkg, false)
-    }
+    requestInstall(pkg)
   }
+}
+
+const openManualInstall = () => {
+  manualInstallVisible.value = true
+}
+
+const closeManualInstall = () => {
+  if (manualInstallSubmitting.value) {
+    return
+  }
+  manualInstallVisible.value = false
+}
+
+const submitManualInstall = () => {
+  const packageName = manualPackageName.value.trim()
+  if (!packageName) {
+    message.warning('请输入要安装的包名')
+    return
+  }
+  pendingManualPackage.value = normalizeName(packageName)
+  if (!requestInstall(packageName)) {
+    pendingManualPackage.value = ''
+    return
+  }
+  setInfo(`已发起手动安装请求: ${packageName}`, 'info')
 }
 
 const goToPackage = (url: string) => {
@@ -304,6 +390,13 @@ const onPluginMessage = (envelope: PluginMessageEnvelope) => {
     const ok = status !== 'error' && Boolean(payload.success)
     if (ok && pkg) {
       updateInstalledState(pkg, true)
+    }
+    if (pkg && normalizeName(pkg) === pendingManualPackage.value) {
+      if (ok) {
+        manualPackageName.value = ''
+        manualInstallVisible.value = false
+      }
+      pendingManualPackage.value = ''
     }
     setInfo(envelope.message || (ok ? '安装成功' : '安装失败'), ok ? 'success' : 'error')
     if (ok) {
