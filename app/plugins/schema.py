@@ -346,35 +346,69 @@ class PluginSchemaManager:
                 ) from e
 
             if hasattr(loaded, "__dict__") and not callable(loaded):
-                schema = self._extract_schema_from_module(plugin_name, loaded)
+                module_schema_error: PluginSchemaError | None = None
+                try:
+                    schema = self._extract_schema_from_module(plugin_name, loaded)
+                    if schema:
+                        return schema
+                except PluginSchemaError as e:
+                    module_schema_error = e
+
+                module_name = getattr(loaded, "__name__", "")
+                schema = self._load_schema_from_sibling_schema_module(
+                    plugin_name,
+                    module_name,
+                )
                 if schema:
                     return schema
+                if module_schema_error is not None:
+                    raise module_schema_error
 
             if callable(loaded):
                 module_name = getattr(loaded, "__module__", "")
                 if module_name:
+                    module_schema_error: PluginSchemaError | None = None
                     try:
                         module = importlib.import_module(module_name)
                     except Exception as e:
                         raise PluginSchemaError(
                             f"导入插件模块失败: {plugin_name}, module={module_name}, error={type(e).__name__}: {e}"
                         ) from e
-                    schema = self._extract_schema_from_module(plugin_name, module)
+                    try:
+                        schema = self._extract_schema_from_module(plugin_name, module)
+                        if schema:
+                            return schema
+                    except PluginSchemaError as e:
+                        module_schema_error = e
+
+                    schema = self._load_schema_from_sibling_schema_module(
+                        plugin_name,
+                        module_name,
+                    )
                     if schema:
                         return schema
-
-                    package_name = module_name.rsplit(".", 1)[0] if "." in module_name else module_name
-                    schema_module_name = f"{package_name}.schema"
-                    if schema_module_name != module_name:
-                        try:
-                            schema_module = importlib.import_module(schema_module_name)
-                            schema = self._extract_schema_from_module(plugin_name, schema_module)
-                            if schema:
-                                return schema
-                        except ImportError:
-                            pass
+                    if module_schema_error is not None:
+                        raise module_schema_error
 
         return {}
+
+    def _load_schema_from_sibling_schema_module(
+        self,
+        plugin_name: str,
+        module_name: str,
+    ) -> Dict[str, Dict[str, Any]]:
+        """从入口点模块同包的 `schema` 模块回退加载 Schema。"""
+        package_name = module_name.rsplit(".", 1)[0] if "." in module_name else module_name
+        schema_module_name = f"{package_name}.schema"
+        if not package_name or schema_module_name == module_name:
+            return {}
+
+        try:
+            schema_module = importlib.import_module(schema_module_name)
+        except ImportError:
+            return {}
+
+        return self._extract_schema_from_module(plugin_name, schema_module)
 
     def _load_schema_from_py(
         self,
