@@ -9,6 +9,7 @@ from pydantic_core import PydanticUndefined
 
 
 PluginFieldFormat = Literal["password", "url", "email", "textarea"]
+PluginFieldSize = Literal["small", "half", "medium", "large"]
 
 
 def PluginField(
@@ -22,6 +23,7 @@ def PluginField(
     item_type: str | None = None,
     action: dict[str, Any] | None = None,
     configurable: bool | None = None,
+    size: PluginFieldSize | None = None,
     json_schema_extra: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> Any:
@@ -44,6 +46,8 @@ def PluginField(
         extra["action"] = action
     if configurable is not None:
         extra["configurable"] = configurable
+    if size is not None:
+        extra["size"] = size
 
     field_kwargs = dict(kwargs)
     if extra:
@@ -54,4 +58,4 @@ def PluginField(
     return Field(default, **field_kwargs)
 
 
-__all__ = ["PluginField", "PluginFieldFormat"]
+__all__ = ["PluginField", "PluginFieldFormat", "PluginFieldSize"]
