@@ -25,7 +25,7 @@ import asyncio
 from typing import Dict, Literal
 
 from .config import Config
-from .plugins import PluginEventFactory, PluginEventNames
+from app.plugins import PluginEventFactory, PluginEventNames
 from .script_types import script_type_registry
 from app.services import System
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase

@@ -36,8 +36,8 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.utils.websocket import ws_client_manager
 from app.api.ws_command import list_ws_commands
-from app.core.plugins import PluginManager
-from app.core.plugins.market import (
+from app.plugins import PluginManager
+from app.plugins.market import (
     fetch_market_snapshot,
     collect_installed_distribution_names,
 )

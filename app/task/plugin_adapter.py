@@ -9,10 +9,10 @@ from pydantic import BaseModel
 
 from app.models.task import ScriptItem, TaskExecuteBase
 
-from app.core.plugins.context import PluginContext
-from app.core.plugins.lifecycle_hooks import LifecycleHookRegistry
-from app.core.plugins.log_pipeline import LogPipeline
-from app.core.plugins.script_base import PluginScriptManager
+from app.plugins.context import PluginContext
+from app.plugins.lifecycle_hooks import LifecycleHookRegistry
+from app.plugins.log_pipeline import LogPipeline
+from app.plugins.script_base import PluginScriptManager
 
 
 def create_plugin_manager_factory(

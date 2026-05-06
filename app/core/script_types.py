@@ -28,7 +28,7 @@ from app.models.ConfigBase import (
 from app.models.task import ScriptItem
 from app.utils import get_logger
 
-from .plugins.pypi_site import ensure_pypi_site_packages_on_syspath
+from app.plugins.pypi_site import ensure_pypi_site_packages_on_syspath
 
 
 logger = get_logger("脚本类型注册表")
@@ -343,7 +343,7 @@ def build_config_schema(config_class: type[Any]) -> dict[str, Any]:
     """从 ConfigBase 或 Pydantic BaseModel 配置类生成通用表单描述。"""
 
     if inspect.isclass(config_class) and issubclass(config_class, BaseModel) and not issubclass(config_class, ConfigBase):
-        from app.core.plugins.schema import PluginSchemaManager
+        from app.plugins.schema import PluginSchemaManager
         schema_manager = PluginSchemaManager()
         fields = schema_manager._build_schema_from_model("__inline__", config_class)
         return fields

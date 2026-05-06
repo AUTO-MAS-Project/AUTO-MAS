@@ -25,7 +25,7 @@ from .broadcast import Broadcast
 from .config import Config
 from .emulator_manager import EmulatorManager
 from .maa_manager import MaaFWManager
-from .plugins import PluginManager
+from app.plugins import PluginManager
 from .task_manager import TaskManager
 from .timer import MainTimer
 
