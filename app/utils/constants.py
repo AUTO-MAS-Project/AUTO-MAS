@@ -211,10 +211,15 @@ EMULATOR_PATH_BOOK = {
     "mumu": {
         "name": "MuMu模拟器",
         "executables": ["MuMuManager.exe", "MuMuPlayer.exe"],
+        "registry_display_keywords": ["MuMu", "MuMu Player", "MuMuPlayer", "Netease MuMu"],
         "registry_paths": [
             r"SOFTWARE\NetEase\MuMu Player 12",
             r"SOFTWARE\NetEase\MuMuPlayer-12.0",
             r"SOFTWARE\NetEase\MuMu\nx_main",  # mumu5
+            r"SOFTWARE\NetEase\GameViewer",  # 兼容新安装器写入的路径键
+            r"SOFTWARE\NetEase\MuMuPlayer",
+            r"SOFTWARE\NetEase\MuMuNx",
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
         "default_paths": [
             r"C:\Program Files\Netease\MuMu Player 12",
@@ -231,7 +236,15 @@ EMULATOR_PATH_BOOK = {
     "ldplayer": {
         "name": "雷电模拟器",
         "executables": ["ldconsole.exe", "LDPlayer.exe", "dnplayer.exe"],
-        "registry_paths": [r"SOFTWARE\ChangZhi", r"SOFTWARE\leidian\ldplayer"],
+        "registry_display_keywords": ["LDPlayer", "雷电", "leidian", "XuanZhi"],
+        "registry_paths": [
+            r"SOFTWARE\ChangZhi",
+            r"SOFTWARE\leidian\ldplayer",
+            r"SOFTWARE\leidian\ldplayer9",
+            r"SOFTWARE\XuanZhi\LDPlayer64",
+            r"SOFTWARE\XuanZhi\LDPlayer9",
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        ],
         "default_paths": [
             r"C:\LDPlayer\LDPlayer4.0",
             r"C:\Program Files\LDPlayer",
@@ -242,7 +255,12 @@ EMULATOR_PATH_BOOK = {
     "nox": {
         "name": "夜神模拟器",
         "executables": ["Nox.exe", "NoxVMHandle.exe"],
-        "registry_paths": [r"SOFTWARE\BigNox\VirtualBox"],
+        "registry_display_keywords": ["Nox", "NoxPlayer", "Nox APP Player", "BigNox"],
+        "registry_paths": [
+            r"SOFTWARE\BigNox\VirtualBox",
+            r"SOFTWARE\Nox APP Player",
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        ],
         "default_paths": [
             r"C:\Program Files\Nox\bin",
             r"C:\Program Files (x86)\Nox\bin",
@@ -253,7 +271,12 @@ EMULATOR_PATH_BOOK = {
     "memu": {
         "name": "逍遥模拟器",
         "executables": ["MEmu.exe", "MemuManager.exe"],
-        "registry_paths": [r"SOFTWARE\Microvirt\MEmu"],
+        "registry_display_keywords": ["MEmu", "Microvirt"],
+        "registry_paths": [
+            r"SOFTWARE\Microvirt\MEmu",
+            r"SYSTEM\CurrentControlSet\Services\MEmusvc",
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        ],
         "default_paths": [
             r"C:\Program Files\Microvirt\MEmu",
             r"D:\Program Files\Microvirt\MEmu",
@@ -262,7 +285,14 @@ EMULATOR_PATH_BOOK = {
     "bluestacks": {
         "name": "BlueStacks",
         "executables": ["BlueStacks.exe", "HD-Player.exe"],
-        "registry_paths": [r"SOFTWARE\BlueStacks", r"SOFTWARE\BlueStacks_nxt"],
+        "registry_display_keywords": ["BlueStacks", "BlueStacks_nxt", "BlueStacks X"],
+        "registry_paths": [
+            r"SOFTWARE\BlueStacks",
+            r"SOFTWARE\BlueStacks_nxt",
+            r"SOFTWARE\BlueStacks_cn",
+            r"SOFTWARE\BlueStacks_nxt_cn",
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        ],
         "default_paths": [
             r"C:\Program Files\BlueStacks",
             r"C:\Program Files\BlueStacks_nxt",
