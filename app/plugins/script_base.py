@@ -667,7 +667,7 @@ def register_script_type(
 def _find_plugin_instance(ctx: PluginContext) -> Any:
     """从 PluginManager 中找到当前插件实例对象。"""
     try:
-        from app.core.plugins.manager import PluginManager
+        from app.plugins.manager import PluginManager
         loader = PluginManager.loader
         record = loader.records.get(ctx.instance_id)
         if record is not None:

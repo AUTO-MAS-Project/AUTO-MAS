@@ -10,9 +10,9 @@ from fastapi import APIRouter, Body, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from app.core.plugins import PluginConfigStore, PluginManager
-from app.core.plugins.realtime import publish_plugin_snapshot
-from app.core.plugins.server import plugin_server
+from app.plugins import PluginConfigStore, PluginManager
+from app.plugins.realtime import publish_plugin_snapshot
+from app.plugins.server import plugin_server
 from app.api.ws_command import ws_command
 from app.models.schema import OutBase
 from app.utils import get_logger

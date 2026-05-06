@@ -66,7 +66,7 @@ def is_admin() -> bool:
 @logger.catch
 def main():
     if is_admin():
-        from app.core.plugins.uv_backend import ensure_uv
+        from app.plugins.uv_backend import ensure_uv
 
         if not ensure_uv():
             logger.error(
@@ -113,7 +113,7 @@ def main():
                 )
 
             if os.getenv("AUTO_MAS_DEV") == "1":
-                from app.core.plugins.dev_hmr import DevPluginHMR
+                from app.plugins.dev_hmr import DevPluginHMR
 
                 hmr_service = DevPluginHMR(PluginManager)
                 hmr_service.start()

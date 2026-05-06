@@ -1791,7 +1791,7 @@ class PluginConfig(ConfigBase):
                 return json.dumps(raw_config, ensure_ascii=False)
 
             try:
-                from app.core.plugins.schema import PluginSchemaManager
+                from app.plugins.schema import PluginSchemaManager
 
                 plugin_path = Path.cwd() / "plugins" / plugin_name
                 schema_manager = PluginSchemaManager()

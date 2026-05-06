@@ -23,8 +23,9 @@
 
 from .api import *
 from .core import *
+from . import plugins
 from .models import *
 from .services import *
 from .utils import *
 
-__all__ = ["api", "core", "models", "services", "utils"]
+__all__ = ["api", "core", "plugins", "models", "services", "utils"]

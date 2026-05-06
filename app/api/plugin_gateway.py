@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Request, WebSocket
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
-from app.core.plugins.server import (
+from app.plugins.server import (
     PluginHttpRequest,
     PluginHttpResponse,
     PluginWebSocketSession,

@@ -20,7 +20,7 @@ class Notification:
 
     def _service(self) -> Any | None:
         try:
-            from app.core.plugins.manager import PluginManager
+            from app.plugins.manager import PluginManager
 
             return PluginManager.service.get("notify")
         except Exception as e:

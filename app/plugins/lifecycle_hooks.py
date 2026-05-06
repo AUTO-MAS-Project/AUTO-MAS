@@ -314,7 +314,7 @@ class _HookNamespace:
 
     用法::
 
-        from app.core.plugins.lifecycle_hooks import hook
+        from app.plugins.lifecycle_hooks import hook
 
         # 顶层阶段
         @hook.inject.main_task(priority=5)
