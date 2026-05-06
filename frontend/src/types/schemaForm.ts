@@ -12,6 +12,11 @@ export interface SchemaOptionDefinition {
 }
 
 export type SchemaFieldSize = 'small' | 'half' | 'medium' | 'large'
+export type SchemaPathKind = 'file' | 'folder'
+export type SchemaFileFilter = {
+  name: string
+  extensions: string[]
+}
 
 export interface SchemaFieldDefinition {
   key?: string
@@ -29,9 +34,10 @@ export interface SchemaFieldDefinition {
   placeholder?: string
   help?: string
   rows?: number
+  ui_type?: string
   item_type?: string
   enum?: unknown[]
-  options?: SchemaOptionDefinition[]
+  options?: Array<SchemaOptionDefinition | string | number | boolean>
   examples?: unknown[]
   constraints?: Record<string, unknown>
   action?: SchemaActionDefinition
@@ -40,6 +46,8 @@ export interface SchemaFieldDefinition {
   min?: number
   max?: number
   step?: number
+  path_kind?: SchemaPathKind
+  filters?: SchemaFileFilter[]
   json_type?: string
   size?: SchemaFieldSize
 }

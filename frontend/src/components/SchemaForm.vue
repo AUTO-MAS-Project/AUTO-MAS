@@ -44,16 +44,6 @@
             </a-button>
           </template>
 
-          <template v-else-if="isSelectField(field)">
-            <a-select
-              :value="getFieldValue(getFieldPath(field))"
-              style="width: 100%"
-              :options="getFieldOptions(field)"
-              :disabled="readonly || field.readonly"
-              @update:value="(val: unknown) => updateFieldValue(getFieldPath(field), val)"
-            />
-          </template>
-
           <template v-else-if="isMultiSelectField(field)">
             <a-select
               mode="multiple"
@@ -65,6 +55,16 @@
             />
           </template>
 
+          <template v-else-if="isSelectField(field)">
+            <a-select
+              :value="getFieldValue(getFieldPath(field))"
+              style="width: 100%"
+              :options="getFieldOptions(field)"
+              :disabled="readonly || field.readonly"
+              @update:value="(val: unknown) => updateFieldValue(getFieldPath(field), val)"
+            />
+          </template>
+
           <template v-else-if="isBooleanField(field)">
             <a-switch
               :checked="getBooleanValue(getFieldPath(field))"
@@ -73,6 +73,24 @@
               :disabled="readonly || field.readonly"
               @update:checked="(val: boolean) => updateFieldValue(getFieldPath(field), val)"
             />
+          </template>
+
+          <template v-else-if="isPathField(field)">
+            <div class="schema-path-field">
+              <a-input
+                :value="String(getFieldValue(getFieldPath(field)) ?? '')"
+                :placeholder="getFieldPlaceholder(field)"
+                :disabled="readonly || field.readonly"
+                @update:value="(val: string) => updateFieldValue(getFieldPath(field), val)"
+              />
+              <a-button
+                v-if="hasElectronPathPicker()"
+                :disabled="readonly || field.readonly"
+                @click="pickPath(getFieldPath(field), field)"
+              >
+                选择
+              </a-button>
+            </div>
           </template>
 
           <template v-else-if="isStringField(field)">
@@ -101,6 +119,28 @@
               :disabled="readonly || field.readonly"
               @update:value="(val: string) => updateFieldValue(getFieldPath(field), val)"
             />
+          </template>
+
+          <template v-else-if="isSliderField(field)">
+            <div class="schema-slider-field">
+              <a-slider
+                :value="getSliderValue(getFieldPath(field), field)"
+                :min="getNumberMin(field)"
+                :max="getNumberMax(field)"
+                :step="getNumberStep(field)"
+                :disabled="readonly || field.readonly"
+                @update:value="(val: number) => updateFieldValue(getFieldPath(field), val)"
+              />
+              <a-input-number
+                :value="getNumberValue(getFieldPath(field))"
+                class="schema-slider-number"
+                :min="getNumberMin(field)"
+                :max="getNumberMax(field)"
+                :step="getNumberStep(field)"
+                :disabled="readonly || field.readonly"
+                @update:value="(val: number | null) => updateFieldValue(getFieldPath(field), val)"
+              />
+            </div>
           </template>
 
           <template v-else-if="isNumberField(field)">
@@ -429,13 +469,29 @@ const getFieldPlaceholder = (field: SchemaFieldDefinition) =>
 
 const getFieldOptions = (field: SchemaFieldDefinition) => {
   if (Array.isArray(field.options) && field.options.length > 0) {
-    return field.options
+    return field.options.map(item => {
+      if (item && typeof item === 'object' && 'value' in item) {
+        const option = item as { label?: unknown; value: unknown }
+        return {
+          label: String(option.label ?? option.value),
+          value: option.value,
+        }
+      }
+      return {
+        label: String(item),
+        value: item,
+      }
+    })
   }
   return (field.enum || []).map(item => ({
     label: String(item),
     value: item,
   }))
 }
+
+const hasSelectableOptions = (field: SchemaFieldDefinition) =>
+  (Array.isArray(field.options) && field.options.length > 0) ||
+  (Array.isArray(field.enum) && field.enum.length > 0)
 
 const getActionLabel = (field: SchemaFieldDefinition) => {
   const action = field.action || field.button
@@ -518,12 +574,17 @@ const toFiniteNumber = (value: unknown) => {
 const getSchemaConstraint = (field: SchemaFieldDefinition, key: string) => field.constraints?.[key]
 
 const isButtonField = (field: SchemaFieldDefinition) => field.type === 'button' || field.type === 'action'
-const isSelectField = (field: SchemaFieldDefinition) => field.type === 'select'
-const isMultiSelectField = (field: SchemaFieldDefinition) => field.type === 'multiselect'
+const isSelectField = (field: SchemaFieldDefinition) =>
+  field.type === 'select' || (!isMultiSelectField(field) && hasSelectableOptions(field))
+const isMultiSelectField = (field: SchemaFieldDefinition) =>
+  field.type === 'multiselect' || (hasSelectableOptions(field) && isListField(field))
 const isBooleanField = (field: SchemaFieldDefinition) => field.type === 'boolean' || field.type === 'bool'
-const isStringField = (field: SchemaFieldDefinition) => ['string', 'str', 'folder', 'file', 'uuid', 'datetime', 'related-id', 'readonly'].includes(field.type)
+const isPathField = (field: SchemaFieldDefinition) =>
+  ['folder', 'file', 'path'].includes(field.type)
+const isStringField = (field: SchemaFieldDefinition) => ['string', 'str', 'uuid', 'datetime', 'related-id', 'readonly'].includes(field.type)
+const isSliderField = (field: SchemaFieldDefinition) => field.type === 'slider'
 const isNumberField = (field: SchemaFieldDefinition) =>
-  ['number', 'integer', 'int', 'float'].includes(field.type)
+  ['number', 'integer', 'int', 'float', 'slider'].includes(field.type)
 const isListField = (field: SchemaFieldDefinition) => field.type === 'list' || field.type.startsWith('list[')
 const isJsonField = (field: SchemaFieldDefinition) => field.type === 'json'
 const isDictionaryField = (field: SchemaFieldDefinition) =>
@@ -553,6 +614,14 @@ const getNumberValue = (field: string) => {
     return Number.isFinite(numberValue) ? numberValue : undefined
   }
   return undefined
+}
+
+const getSliderValue = (field: string, fieldSchema: SchemaFieldDefinition) => {
+  const value = getNumberValue(field)
+  if (value !== undefined) {
+    return value
+  }
+  return getNumberMin(fieldSchema) ?? 0
 }
 
 const getEnumListValue = (field: string) => {
@@ -599,6 +668,36 @@ const getNumberStep = (field: SchemaFieldDefinition) => {
     return multipleOf
   }
   return field.type === 'integer' || field.type === 'int' ? 1 : undefined
+}
+
+const getPathKind = (field: SchemaFieldDefinition) => {
+  if (field.path_kind === 'folder' || field.type === 'folder') {
+    return 'folder'
+  }
+  return 'file'
+}
+
+const hasElectronPathPicker = () =>
+  typeof window !== 'undefined' &&
+  Boolean(window.electronAPI?.selectFolder && window.electronAPI?.selectFile)
+
+const pickPath = async (field: string, fieldSchema: SchemaFieldDefinition) => {
+  if (!hasElectronPathPicker()) {
+    return
+  }
+
+  if (getPathKind(fieldSchema) === 'folder') {
+    const selected = await window.electronAPI.selectFolder()
+    if (selected) {
+      updateFieldValue(field, selected)
+    }
+    return
+  }
+
+  const selected = await window.electronAPI.selectFile(fieldSchema.filters)
+  if (Array.isArray(selected) && selected[0]) {
+    updateFieldValue(field, selected[0])
+  }
 }
 
 const getJsonText = (field: string) => JSON.stringify(getFieldValue(field) ?? {}, null, 2)
@@ -967,6 +1066,12 @@ const getTypeLabel = (field: SchemaFieldDefinition) => {
   if (isMultiSelectField(field)) {
     return '多选'
   }
+  if (isSliderField(field)) {
+    return '滑动条'
+  }
+  if (isPathField(field)) {
+    return getPathKind(field) === 'folder' ? '文件夹' : '文件'
+  }
   if (isPasswordField(field)) {
     return '密码'
   }
@@ -1078,6 +1183,28 @@ defineExpose({
   color: var(--ant-color-text);
 }
 
+.schema-path-field {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.schema-path-field :deep(.ant-input) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.schema-slider-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 112px;
+  gap: 12px;
+  align-items: center;
+}
+
+.schema-slider-number {
+  width: 112px;
+}
+
 @media (max-width: 960px) {
   .schema-form-grid {
     grid-template-columns: 1fr;
@@ -1085,6 +1212,14 @@ defineExpose({
 
   .schema-form-grid .schema-item {
     grid-column: 1 / -1 !important;
+  }
+
+  .schema-slider-field {
+    grid-template-columns: 1fr;
+  }
+
+  .schema-slider-number {
+    width: 100%;
   }
 }
 </style>
