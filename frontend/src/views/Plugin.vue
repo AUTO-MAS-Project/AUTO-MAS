@@ -14,7 +14,7 @@
     </div>
 
     <a-row :gutter="12" class="main-layout">
-      <a-col :span="7">
+      <a-col flex="none" class="plugin-list-col">
         <div class="left-panel">
           <a-card :bordered="false" class="section-card list-card">
             <template #title>
@@ -69,15 +69,20 @@
                       class="instance-item"
                       :class="{ active: selectedInstanceId === element.id }"
                       :data-id="element.id"
+                      role="button"
+                      tabindex="0"
+                      @click="selectInstance(element.id)"
+                      @keydown.enter.prevent="selectInstance(element.id)"
+                      @keydown.space.prevent="selectInstance(element.id)"
                     >
-                      <span class="drag-handle" title="拖拽排序">
+                      <span class="drag-handle" title="拖拽排序" @click.stop>
                         <span class="drag-dots" />
                       </span>
                       <span
                         class="status-dot"
                         :style="{ background: getStatusDotColor(element) }"
                       />
-                      <span class="instance-name" @click="selectInstance(element.id)">
+                      <span class="instance-name">
                         {{ element.name || element.id }}
                       </span>
                       <a-switch
@@ -98,7 +103,7 @@
         </div>
       </a-col>
 
-      <a-col :span="17">
+      <a-col flex="1 1 0" class="plugin-detail-col">
         <a-card :bordered="false" class="section-card detail-card">
           <template #title>
             <div class="detail-title">
@@ -226,6 +231,7 @@
                       ref="schemaFormRef"
                       v-model="schemaFormModel"
                       :schema="activeSchema"
+                      layout="plugin-grid"
                       :hide-fields="hiddenSchemaFields"
                       :action-loading-id="pluginActionLoadingId"
                       @trigger-action="
@@ -2536,6 +2542,7 @@ onUnmounted(() => {
 }
 
 .main-layout {
+  --plugin-instance-list-width: 350px;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -2548,6 +2555,17 @@ onUnmounted(() => {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+}
+
+.plugin-list-col {
+  flex: 0 0 var(--plugin-instance-list-width) !important;
+  width: var(--plugin-instance-list-width);
+  max-width: var(--plugin-instance-list-width);
+  min-width: var(--plugin-instance-list-width);
+}
+
+.plugin-detail-col {
+  min-width: 0;
 }
 
 .left-panel {
@@ -2661,6 +2679,7 @@ onUnmounted(() => {
   cursor: pointer;
   background: var(--ant-color-bg-container);
   transition: all 0.2s ease;
+  outline: none;
 }
 
 .status-dot {
@@ -2684,6 +2703,11 @@ onUnmounted(() => {
   border-color: var(--ant-color-primary-hover);
   transform: translateY(+1px);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
+}
+
+.instance-item:focus-visible {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ant-color-primary) 24%, transparent);
 }
 
 .instance-name {
