@@ -119,6 +119,21 @@
               <a-button @click="openJsonPreview">查看当前 JSON</a-button>
               <a-button @click="reloadInstance(editForm.instanceId)">重载实例</a-button>
               <a-button @click="reloadPlugin(editForm.plugin)">重载同插件</a-button>
+              <a-popconfirm
+                :disabled="!canUninstallSelectedPlugin || uninstallingPlugin === editForm.plugin"
+                :title="`确认卸载插件包 ${selectedPluginPackageName || editForm.plugin}？相关实例配置不会自动删除。`"
+                ok-text="卸载"
+                cancel-text="取消"
+                @confirm="uninstallPluginPackage(editForm.plugin)"
+              >
+                <a-button
+                  danger
+                  :disabled="!canUninstallSelectedPlugin"
+                  :loading="uninstallingPlugin === editForm.plugin"
+                >
+                  卸载插件
+                </a-button>
+              </a-popconfirm>
               <a-popconfirm title="确认删除该实例？" @confirm="deleteInstance(editForm.instanceId)">
                 <a-button danger>删除实例</a-button>
               </a-popconfirm>
@@ -436,6 +451,13 @@ interface PluginSchemaAction {
   refresh?: boolean
 }
 
+interface PluginPackageInfo {
+  package: string
+  version?: string | null
+  source?: string
+  path?: string | null
+}
+
 interface PluginsGetResponse {
   code: number
   status: string
@@ -447,6 +469,7 @@ interface PluginsGetResponse {
   plugin_services?: Record<string, PluginServiceInfo>
   plugin_routes?: Record<string, PluginRouteInfo[]>
   plugin_actions?: Record<string, PluginActionInfo[]>
+  plugin_packages?: Record<string, PluginPackageInfo>
   instances: PluginInstance[]
   runtime_states: Record<string, PluginRuntimeState>
 }
@@ -577,6 +600,7 @@ const submitting = ref(false)
 const reloadingAll = ref(false)
 const togglingInstanceId = ref('')
 const pluginActionLoadingId = ref('')
+const uninstallingPlugin = ref('')
 const keyword = ref('')
 const addPluginKeyword = ref('')
 
@@ -587,6 +611,7 @@ const schemaErrors = ref<Record<string, string>>({})
 const pluginServices = ref<Record<string, PluginServiceInfo>>({})
 const pluginRoutes = ref<Record<string, PluginRouteInfo[]>>({})
 const pluginActions = ref<Record<string, PluginActionInfo[]>>({})
+const pluginPackages = ref<Record<string, PluginPackageInfo>>({})
 const instances = ref<PluginInstance[]>([])
 const runtimeStates = ref<Record<string, PluginRuntimeState>>({})
 const schemaFieldErrors = ref<Record<string, string>>({})
@@ -768,6 +793,17 @@ const selectedPluginService = computed(() => {
   }
   return pluginServices.value[pluginName] || null
 })
+
+const selectedPluginPackage = computed(() => {
+  const pluginName = editForm.plugin || selectedInstance.value?.plugin
+  if (!pluginName) {
+    return null
+  }
+  return pluginPackages.value[pluginName] || null
+})
+
+const selectedPluginPackageName = computed(() => selectedPluginPackage.value?.package || '')
+const canUninstallSelectedPlugin = computed(() => Boolean(selectedPluginPackageName.value))
 
 const hasServiceListItems = (items?: string[]) => Array.isArray(items) && items.length > 0
 
@@ -2183,6 +2219,7 @@ const applySnapshot = (
   pluginServices.value = data.plugin_services || {}
   pluginRoutes.value = data.plugin_routes || {}
   pluginActions.value = data.plugin_actions || {}
+  pluginPackages.value = data.plugin_packages || {}
   instances.value = nextInstances
   syncPluginListLayoutWithInstances(nextInstances)
   runtimeStates.value = data.runtime_states || {}
@@ -2460,6 +2497,32 @@ const reloadPlugin = async (plugin: string) => {
     message.success(`插件重载成功: ${plugin}`)
   } catch (error) {
     message.error(`插件重载失败: ${String(error)}`)
+  }
+}
+
+const uninstallPluginPackage = async (plugin: string) => {
+  const packageName = pluginPackages.value[plugin]?.package || ''
+  if (!packageName) {
+    message.warning('当前插件缺少安装包信息，无法卸载')
+    return
+  }
+
+  uninstallingPlugin.value = plugin
+  try {
+    const data = await requestPluginAction<any>(
+      'plugins.uninstall_package',
+      '/api/plugins/uninstall_package',
+      { package: packageName }
+    )
+    if (data.code !== 200 || data.status !== 'success') {
+      throw new Error(data.message || '卸载插件失败')
+    }
+    message.success(`插件包已卸载: ${packageName}`)
+    await fetchData()
+  } catch (error) {
+    message.error(`卸载插件失败: ${String(error)}`)
+  } finally {
+    uninstallingPlugin.value = ''
   }
 }
 
