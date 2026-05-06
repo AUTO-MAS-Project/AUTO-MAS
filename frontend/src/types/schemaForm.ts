@@ -11,6 +11,8 @@ export interface SchemaOptionDefinition {
   value: unknown
 }
 
+export type SchemaFieldSize = 'small' | 'half' | 'medium' | 'large'
+
 export interface SchemaFieldDefinition {
   key?: string
   group?: string
@@ -39,6 +41,7 @@ export interface SchemaFieldDefinition {
   max?: number
   step?: number
   json_type?: string
+  size?: SchemaFieldSize
 }
 
 export interface SchemaGroupDefinition {

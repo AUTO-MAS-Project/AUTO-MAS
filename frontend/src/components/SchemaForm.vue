@@ -1,5 +1,5 @@
 <template>
-  <div class="schema-form">
+  <div class="schema-form" :class="`schema-form-${layout}`">
     <div
       v-for="group in normalizedGroups"
       :key="group.key"
@@ -7,7 +7,10 @@
     >
       <div v-if="showGroupTitle(group)" class="schema-group-title">{{ group.label || group.key }}</div>
 
-      <a-form layout="vertical">
+      <a-form
+        layout="vertical"
+        :class="{ 'schema-form-grid': layout === 'plugin-grid' }"
+      >
         <a-form-item
           v-for="field in group.fields"
           :key="getFieldPath(field)"
@@ -15,7 +18,11 @@
           :required="Boolean(field.required)"
           :help="getFieldHelp(field)"
           :validate-status="validationErrors[getFieldPath(field)] ? 'error' : undefined"
-          :class="['schema-item', `schema-item-${field.type}`]"
+          :class="[
+            'schema-item',
+            `schema-item-${field.type}`,
+            layout === 'plugin-grid' ? `schema-item-size-${getFieldLayoutSize(field)}` : '',
+          ]"
         >
           <div class="schema-field-head">
             <a-space size="6">
@@ -350,11 +357,13 @@ const props = withDefaults(
     readonly?: boolean
     hideFields?: string[]
     actionLoadingId?: string
+    layout?: 'single' | 'plugin-grid'
   }>(),
   {
     readonly: false,
     hideFields: () => [],
     actionLoadingId: '',
+    layout: 'single',
   }
 )
 
@@ -433,6 +442,31 @@ const getActionLabel = (field: SchemaFieldDefinition) => {
   return action?.label || getFieldLabel(field)
 }
 
+const schemaFieldSizes = ['small', 'half', 'medium', 'large'] as const
+
+const isSchemaFieldSize = (value: unknown): value is NonNullable<SchemaFieldDefinition['size']> =>
+  typeof value === 'string' && schemaFieldSizes.includes(value as NonNullable<SchemaFieldDefinition['size']>)
+
+const getFieldLayoutSize = (field: SchemaFieldDefinition): NonNullable<SchemaFieldDefinition['size']> => {
+  if (isSchemaFieldSize(field.size)) {
+    return field.size
+  }
+
+  if (
+    field.type === 'table' ||
+    field.type === 'key_value' ||
+    isJsonField(field) ||
+    isDictionaryField(field) ||
+    isListField(field) ||
+    isTextareaField(field) ||
+    getTextareaRows(field) > 4
+  ) {
+    return 'large'
+  }
+
+  return 'small'
+}
+
 const getValueByPath = (source: Record<string, any>, path: string) => {
   if (!path) {
     return undefined
@@ -492,6 +526,8 @@ const isNumberField = (field: SchemaFieldDefinition) =>
   ['number', 'integer', 'int', 'float'].includes(field.type)
 const isListField = (field: SchemaFieldDefinition) => field.type === 'list' || field.type.startsWith('list[')
 const isJsonField = (field: SchemaFieldDefinition) => field.type === 'json'
+const isDictionaryField = (field: SchemaFieldDefinition) =>
+  field.type === 'dict' || field.type.startsWith('dict[')
 const isPasswordField = (field: SchemaFieldDefinition) =>
   (isStringField(field) && field.format === 'password') || field.type === 'password'
 const isTextareaField = (field: SchemaFieldDefinition) =>
@@ -991,6 +1027,32 @@ defineExpose({
   color: var(--ant-color-text);
 }
 
+.schema-form-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.schema-form-grid .schema-item {
+  min-width: 0;
+}
+
+.schema-form-grid .schema-item-size-small {
+  grid-column: span 2;
+}
+
+.schema-form-grid .schema-item-size-half {
+  grid-column: span 3;
+}
+
+.schema-form-grid .schema-item-size-medium {
+  grid-column: span 4;
+}
+
+.schema-form-grid .schema-item-size-large {
+  grid-column: 1 / -1;
+}
+
 .schema-field-head {
   margin-bottom: 8px;
 }
@@ -1014,5 +1076,15 @@ defineExpose({
 .schema-item :deep(.ant-form-item-label > label) {
   font-weight: 600;
   color: var(--ant-color-text);
+}
+
+@media (max-width: 960px) {
+  .schema-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .schema-form-grid .schema-item {
+    grid-column: 1 / -1 !important;
+  }
 }
 </style>
