@@ -76,6 +76,9 @@ export interface SchedulerTab {
   status: SchedulerStatus
   selectedTaskId: string | null
   selectedMode: TaskCreateIn.mode | null
+  resumeFromScriptId?: string | null
+  resumeScriptOptions?: Array<{ label: string; value: string }>
+  resumeScriptLoading?: boolean
   websocketId: string | null
   subscriptionId?: string | null
   taskQueue: QueueItem[]

@@ -11,6 +11,7 @@ import {
 } from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import { SCRIPT_UPDATED_EVENT } from '@/utils/events'
 
 const logger = window.electronAPI.getLogger('脚本API')
 
@@ -848,6 +849,9 @@ export function useScriptApi() {
         message.error(errorMsg)
         throw new Error(errorMsg)
       }
+
+      // 通知其他页面（如调度中心）脚本信息已更新，便于刷新脚本名称等展示
+      window.dispatchEvent(new CustomEvent(SCRIPT_UPDATED_EVENT))
 
       return true
     } catch (err) {

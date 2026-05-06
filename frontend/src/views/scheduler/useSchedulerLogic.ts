@@ -6,6 +6,7 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { PowerIn } from '@/api/models/PowerIn'
 import { useWebSocket, ExternalWSHandlers } from '@/composables/useWebSocket'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import { SCRIPT_UPDATED_EVENT } from '@/utils/events'
 import schedulerHandlers from './schedulerHandlers'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { QueueItem, Script } from './schedulerConstants'
@@ -45,6 +46,9 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
       status: '空闲',
       selectedTaskId: null,
       selectedMode: TaskCreateIn.mode.AUTO_PROXY,
+      resumeFromScriptId: null,
+      resumeScriptOptions: [],
+      resumeScriptLoading: false,
       websocketId: null,
       taskQueue: [],
       userQueue: [],
@@ -96,6 +100,7 @@ initTabCounter()
 // 任务选项
 const taskOptionsLoading = ref(false)
 const taskOptions = ref<ComboBoxItem[]>([])
+const scriptOptionsMap = ref<Record<string, string>>({})
 
 // 电源操作状态
 const powerAction = ref<PowerIn.signal>(PowerIn.signal.NO_ACTION)
@@ -208,6 +213,9 @@ export function useSchedulerLogic() {
       status: validStatus,
       selectedTaskId: options?.selectedTaskId || options?.websocketId || null,
       selectedMode: TaskCreateIn.mode.AUTO_PROXY,
+      resumeFromScriptId: null,
+      resumeScriptOptions: [],
+      resumeScriptLoading: false,
       websocketId: options?.websocketId || null,
       taskQueue: [],
       userQueue: [],
@@ -319,6 +327,74 @@ export function useSchedulerLogic() {
   }
 
   // 任务操作
+  const loadScriptLabelMap = async () => {
+    try {
+      const response = await Service.getScriptComboxApiInfoComboxScriptPost()
+      if (response.code === 200 && Array.isArray(response.data)) {
+        const mapped: Record<string, string> = {}
+        response.data.forEach(item => {
+          if (item.value && item.label) {
+            mapped[item.value] = item.label
+          }
+        })
+        scriptOptionsMap.value = mapped
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(`加载脚本下拉信息失败，将回退为脚本ID显示: ${errorMsg}`)
+    }
+  }
+
+  const loadResumeScriptOptions = async (tab: SchedulerTab) => {
+    if (!tab.selectedTaskId) {
+      tab.resumeScriptOptions = []
+      tab.resumeFromScriptId = null
+      return
+    }
+
+    tab.resumeScriptLoading = true
+    try {
+      await loadScriptLabelMap()
+      const response = await Service.getItemApiQueueItemGetPost({ queueId: tab.selectedTaskId })
+      if (response.code !== 200) {
+        tab.resumeScriptOptions = []
+        tab.resumeFromScriptId = null
+        return
+      }
+
+      const options: Array<{ label: string; value: string }> = []
+      const scriptSeen = new Set<string>()
+      response.index.forEach(item => {
+        const scriptId = response.data?.[item.uid]?.Info?.ScriptId
+        if (!scriptId || scriptSeen.has(scriptId)) return
+        scriptSeen.add(scriptId)
+        options.push({
+          value: scriptId,
+          label: scriptOptionsMap.value[scriptId] || scriptId,
+        })
+      })
+
+      tab.resumeScriptOptions = options
+      if (tab.resumeFromScriptId && !options.some(item => item.value === tab.resumeFromScriptId)) {
+        tab.resumeFromScriptId = null
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`加载恢复脚本列表失败: ${errorMsg}`)
+      tab.resumeScriptOptions = []
+      tab.resumeFromScriptId = null
+      message.error('加载队列脚本失败，无法按脚本ID恢复')
+    } finally {
+      tab.resumeScriptLoading = false
+    }
+  }
+
+  const handleTaskSelectionChange = async (tab: SchedulerTab, taskId: string | null) => {
+    tab.selectedTaskId = taskId
+    tab.resumeFromScriptId = null
+    await loadResumeScriptOptions(tab)
+  }
+
   const startTask = async (tab: SchedulerTab) => {
     if (!tab.selectedTaskId || !tab.selectedMode) {
       message.error('请选择任务项和执行模式')
@@ -326,10 +402,15 @@ export function useSchedulerLogic() {
     }
 
     try {
-      const response = await Service.addTaskApiDispatchStartPost({
+      const requestBody: TaskCreateIn & { resumeFromScriptId?: string } = {
         taskId: tab.selectedTaskId,
         mode: tab.selectedMode,
-      })
+      }
+      if (tab.resumeFromScriptId) {
+        requestBody.resumeFromScriptId = tab.resumeFromScriptId
+      }
+
+      const response = await Service.addTaskApiDispatchStartPost(requestBody)
 
       if (response.code === 200) {
         tab.status = '运行'
@@ -926,6 +1007,16 @@ export function useSchedulerLogic() {
     getPowerState()
   }
 
+  // 脚本更新事件处理函数：脚本管理页保存成功后，刷新恢复下拉的脚本名称
+  const handleScriptUpdated = () => {
+    logger.info('收到脚本更新事件，刷新调度中心恢复脚本选项')
+    schedulerTabs.value.forEach(tab => {
+      if (tab.selectedTaskId && tab.status !== '运行') {
+        loadResumeScriptOptions(tab)
+      }
+    })
+  }
+
   // 初始化函数 - 使用单例标志确保核心初始化只执行一次
   const initialize = () => {
     // 核心初始化只执行一次
@@ -942,6 +1033,10 @@ export function useSchedulerLogic() {
       // 监听电源状态变更事件（从 GlobalPowerCountdown 组件触发）
       window.addEventListener('power-state-changed', handlePowerStateChanged)
       logger.info('已注册电源状态变更事件监听器')
+
+      // 监听脚本更新事件（从脚本管理页面触发）
+      window.addEventListener(SCRIPT_UPDATED_EVENT, handleScriptUpdated)
+      logger.info('已注册脚本更新事件监听器')
 
       // 注册 UI hooks 到 schedulerHandlers，使其能在 schedulerHandlers 检测到 pending 时回放到当前 UI
       try {
@@ -986,6 +1081,13 @@ export function useSchedulerLogic() {
 
     // 获取后端当前的电源状态
     getPowerState()
+
+    // 为已有调度台预加载恢复脚本选项，确保刷新后恢复交互可用
+    schedulerTabs.value.forEach(tab => {
+      if (tab.selectedTaskId && tab.status !== '运行') {
+        loadResumeScriptOptions(tab)
+      }
+    })
 
     // 回放 pending tabs（如果有的话）- 会被 consume 掉，所以多次调用是安全的
     try {
@@ -1102,6 +1204,10 @@ export function useSchedulerLogic() {
     window.removeEventListener('power-state-changed', handlePowerStateChanged)
     logger.info('已移除电源状态变更事件监听器')
 
+    // 移除脚本更新事件监听器
+    window.removeEventListener(SCRIPT_UPDATED_EVENT, handleScriptUpdated)
+    logger.info('已移除脚本更新事件监听器')
+
     // 注意：由于keep-alive机制，路由切换时组件不会卸载
     // cleanup只在组件真正销毁时才会调用（如应用关闭）
     // 所以这里清理所有订阅，包括运行中的任务
@@ -1155,6 +1261,8 @@ export function useSchedulerLogic() {
     // 任务操作
     startTask,
     stopTask,
+    handleTaskSelectionChange,
+    loadResumeScriptOptions,
 
     // 日志操作
     onLogScroll,
