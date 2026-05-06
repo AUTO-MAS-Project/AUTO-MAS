@@ -10,6 +10,7 @@ from pydantic_core import PydanticUndefined
 
 PluginFieldFormat = Literal["password", "url", "email", "textarea"]
 PluginFieldSize = Literal["small", "half", "medium", "large"]
+PluginPathKind = Literal["file", "folder"]
 
 
 def PluginField(
@@ -21,9 +22,13 @@ def PluginField(
     help: str | None = None,
     ui_type: str | None = None,
     item_type: str | None = None,
+    options: list[Any] | None = None,
     action: dict[str, Any] | None = None,
     configurable: bool | None = None,
     size: PluginFieldSize | None = None,
+    step: int | float | None = None,
+    path_kind: PluginPathKind | None = None,
+    filters: list[dict[str, Any]] | None = None,
     json_schema_extra: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> Any:
@@ -42,12 +47,20 @@ def PluginField(
         extra["type"] = ui_type
     if item_type is not None:
         extra["item_type"] = item_type
+    if options is not None:
+        extra["options"] = options
     if action is not None:
         extra["action"] = action
     if configurable is not None:
         extra["configurable"] = configurable
     if size is not None:
         extra["size"] = size
+    if step is not None:
+        extra["step"] = step
+    if path_kind is not None:
+        extra["path_kind"] = path_kind
+    if filters is not None:
+        extra["filters"] = filters
 
     field_kwargs = dict(kwargs)
     if extra:
@@ -58,4 +71,4 @@ def PluginField(
     return Field(default, **field_kwargs)
 
 
-__all__ = ["PluginField", "PluginFieldFormat", "PluginFieldSize"]
+__all__ = ["PluginField", "PluginFieldFormat", "PluginFieldSize", "PluginPathKind"]
