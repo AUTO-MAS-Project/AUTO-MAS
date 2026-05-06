@@ -281,12 +281,9 @@ class AutoProxyTask(TaskExecuteBase):
                     "检测到 MaaEnd 完成代理任务\n正在等待相关程序结束"
                 )
 
-                #仅在非最后一个用户时重置状态，最后一个用户完成后直接保留状态，根据你的配置来
-                if self.script_info.current_index < len(self.script_info.user_list) - 1:
-                    await self.kill_managed_process()
-                else:
-                    await self.maaend_process_manager.kill()
-                    await System.kill_process(self.maaend_exe_path)
+                # 中止相关程序
+                await self.maaend_process_manager.kill()
+                await System.kill_process(self.maaend_exe_path)
 
             else:
                 logger.error(
