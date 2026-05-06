@@ -40,7 +40,9 @@ router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
 async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
 
     try:
-        task_id = await TaskManager.add_task(task.mode, task.taskId)
+        task_id = await TaskManager.add_task(
+            task.mode, task.taskId, resume_from_script_id=task.resumeFromScriptId
+        )
     except Exception as e:
         return TaskCreateOut(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}", taskId=""
