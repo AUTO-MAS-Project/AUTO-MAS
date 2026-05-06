@@ -8,7 +8,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List
 
+from app.utils import get_logger
+
 from .schema import PluginSchemaManager
+
+
+logger = get_logger("插件配置")
 
 
 class PluginConfigStore:
@@ -113,7 +118,42 @@ class PluginConfigStore:
             "instances": instances,
         }
 
-    async def _write_root(self, root: Dict[str, Any]) -> None:
+    def _resolve_storage_config(
+        self,
+        plugin_name: str,
+        config: Dict[str, Any],
+        *,
+        validate_schema: bool,
+    ) -> Dict[str, Any]:
+        """生成用于持久化的插件配置，容错模式下跳过致命 schema 错误。"""
+        plugin_path = self._resolve_plugin_path(plugin_name)
+        normalized_config = self.normalize_raw_config(plugin_name, config)
+        if validate_schema:
+            return self.load_effective_config(
+                plugin_name,
+                plugin_path,
+                normalized_config,
+            )
+
+        try:
+            return self.load_effective_config(
+                plugin_name,
+                plugin_path,
+                normalized_config,
+            )
+        except Exception as e:
+            logger.warning(
+                f"插件配置 schema 校验失败，已跳过以避免影响启动: plugin={plugin_name}, "
+                f"error={type(e).__name__}: {e}"
+            )
+            return normalized_config
+
+    async def _write_root(
+        self,
+        root: Dict[str, Any],
+        *,
+        validate_schema: bool = True,
+    ) -> None:
         """写入插件独立配置中的统一配置根对象。"""
         from app.core import Config
 
@@ -148,10 +188,10 @@ class PluginConfigStore:
             name = str(item.get("name") or instance_id)
             suffix = self._extract_instance_suffix(plugin_name, instance_id)
 
-            effective_config = self.load_effective_config(
+            effective_config = self._resolve_storage_config(
                 plugin_name,
-                self._resolve_plugin_path(plugin_name),
                 config,
+                validate_schema=validate_schema,
             )
 
             uid = str(uuid.uuid4())
@@ -205,6 +245,7 @@ class PluginConfigStore:
         discovered_plugins: Dict[str, object],
         auto_create_missing: bool = False,
         default_instances: Dict[str, Dict[str, Any]] | None = None,
+        validate_schema: bool = False,
     ) -> Dict[str, Any]:
         """
         读取统一插件配置根对象，并按需补齐缺失实例。
@@ -222,9 +263,16 @@ class PluginConfigStore:
             discovered_plugins,
             auto_create_missing=auto_create_missing,
             default_instances=default_instances,
+            validate_schema=validate_schema,
         )
 
-    async def save_root(self, plugins_dir: Path, root: Dict[str, Any]) -> None:
+    async def save_root(
+        self,
+        plugins_dir: Path,
+        root: Dict[str, Any],
+        *,
+        validate_schema: bool = True,
+    ) -> None:
         """
         保存统一插件配置根对象到持久化配置。
 
@@ -246,7 +294,7 @@ class PluginConfigStore:
         if not isinstance(instances, list):
             raise ValueError("插件统一配置缺少 instances 列表")
         root.setdefault("version", 1)
-        await self._write_root(root)
+        await self._write_root(root, validate_schema=validate_schema)
 
     async def ensure_instances(
         self,
@@ -254,6 +302,7 @@ class PluginConfigStore:
         discovered_plugins: Dict[str, object],
         auto_create_missing: bool = False,
         default_instances: Dict[str, Dict[str, Any]] | None = None,
+        validate_schema: bool = False,
     ) -> Dict[str, Any]:
         """
         确保统一配置中的实例列表满足当前发现结果。
@@ -324,7 +373,7 @@ class PluginConfigStore:
 
         root["instances"] = instances
         if changed:
-            await self._write_root(root)
+            await self._write_root(root, validate_schema=validate_schema)
 
         return root
 
