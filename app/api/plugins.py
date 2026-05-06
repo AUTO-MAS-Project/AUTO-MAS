@@ -73,6 +73,13 @@ class PluginActionModel(BaseModel):
     plugin: str = Field(..., description="插件名")
 
 
+class PluginPackageModel(BaseModel):
+    package: str = Field(..., description="插件安装包名")
+    version: Optional[str] = Field(default=None, description="插件包版本")
+    source: str = Field(default="pypi", description="插件来源")
+    path: Optional[str] = Field(default=None, description="本地工程路径")
+
+
 class PluginsGetOut(OutBase):
     version: int = Field(default=1, description="配置版本")
     discovered_plugins: List[str] = Field(default_factory=list, description="已发现插件")
@@ -91,6 +98,10 @@ class PluginsGetOut(OutBase):
         description="插件声明式前端动作",
     )
     instances: List[PluginInstanceModel] = Field(default_factory=list, description="插件实例列表")
+    plugin_packages: Dict[str, PluginPackageModel] = Field(
+        default_factory=dict,
+        description="插件安装包信息",
+    )
     runtime_states: Dict[str, PluginRuntimeStateModel] = Field(
         default_factory=dict,
         description="插件实例运行态",
@@ -402,6 +413,22 @@ def _build_plugin_services(discovered: Dict[str, Any]) -> Dict[str, PluginServic
     return services
 
 
+def _build_plugin_packages(discovered: Dict[str, Any]) -> Dict[str, PluginPackageModel]:
+    packages: Dict[str, PluginPackageModel] = {}
+    for plugin_name, plugin_source in discovered.items():
+        package_name = str(getattr(plugin_source, "distribution", "") or "").strip()
+        if not package_name:
+            continue
+        plugin_path = getattr(plugin_source, "path", None)
+        packages[plugin_name] = PluginPackageModel(
+            package=package_name,
+            version=getattr(plugin_source, "version", None),
+            source=str(getattr(plugin_source, "source", "pypi") or "pypi"),
+            path=str(plugin_path) if plugin_path else None,
+        )
+    return packages
+
+
 @router.get(
     "/frontend/background",
     tags=["Get"],
@@ -527,6 +554,7 @@ async def get_plugins() -> PluginsGetOut:
             plugin_services=plugin_services,
             plugin_routes=server_snapshot["plugin_routes"],
             plugin_actions=server_snapshot["plugin_actions"],
+            plugin_packages=_build_plugin_packages(discovered),
             instances=_build_instances(root),
             runtime_states=_build_runtime_states(root),
         )
@@ -542,6 +570,7 @@ async def get_plugins() -> PluginsGetOut:
             plugin_services={},
             plugin_routes={},
             plugin_actions={},
+            plugin_packages={},
             instances=[],
             runtime_states={},
         )

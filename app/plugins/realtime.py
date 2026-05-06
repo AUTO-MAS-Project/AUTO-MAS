@@ -87,6 +87,7 @@ async def build_plugin_snapshot(*, discovered: Dict[str, Any] | None = None) -> 
     schemas: Dict[str, Dict[str, Any]] = {}
     schema_errors: Dict[str, str] = {}
     plugin_services: Dict[str, Dict[str, Any]] = {}
+    plugin_packages: Dict[str, Dict[str, Any]] = {}
     for plugin_name, plugin_source in discovered.items():
         plugin_path = getattr(plugin_source, "path", None)
         try:
@@ -94,6 +95,15 @@ async def build_plugin_snapshot(*, discovered: Dict[str, Any] | None = None) -> 
         except Exception as exc:
             schemas[plugin_name] = {}
             schema_errors[plugin_name] = f"{type(exc).__name__}: {exc}"
+
+        package_name = str(getattr(plugin_source, "distribution", "") or "").strip()
+        if package_name:
+            plugin_packages[plugin_name] = {
+                "package": package_name,
+                "version": getattr(plugin_source, "version", None),
+                "source": str(getattr(plugin_source, "source", "pypi") or "pypi"),
+                "path": str(plugin_path) if plugin_path else None,
+            }
 
         try:
             _, plugin_class = PluginManager.loader._resolve_plugin_module_and_class(
@@ -158,6 +168,7 @@ async def build_plugin_snapshot(*, discovered: Dict[str, Any] | None = None) -> 
         "plugin_services": plugin_services,
         "plugin_routes": server_snapshot["plugin_routes"],
         "plugin_actions": server_snapshot["plugin_actions"],
+        "plugin_packages": plugin_packages,
         "instances": deepcopy(root.get("instances", [])),
         "runtime_states": runtime_states,
     }
