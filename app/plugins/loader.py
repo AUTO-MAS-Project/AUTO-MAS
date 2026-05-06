@@ -837,7 +837,7 @@ class PluginLoader:
             self._mark_status(record, "loaded")
             self._mark_lifecycle_phase(record, "loaded")
 
-            plugin_logger = get_logger(f"插件:{plugin_name}")
+            plugin_logger = get_logger(plugin_name)
             plugin_config = self._load_plugin_config(plugin_name, plugin_source)
 
             record.context = PluginContext(
@@ -975,7 +975,7 @@ class PluginLoader:
             self._mark_status(record, "loaded")
             self._mark_lifecycle_phase(record, "loaded")
 
-            plugin_logger = get_logger(f"插件:{instance_id}")
+            plugin_logger = get_logger(plugin_name)
             record.context = PluginContext(
                 plugin_name=plugin_name,
                 instance_id=instance_id,
@@ -1123,12 +1123,13 @@ class PluginLoader:
 
         return self.records
 
-    async def unload_plugin(self, plugin_name: str) -> None:
+    async def unload_plugin(self, plugin_name: str, *, stop_reason: str = "stop") -> None:
         """
         卸载单个插件实例并执行其释放逻辑。
 
         Args:
             plugin_name (str): 目标实例 ID（兼容插件名作为默认实例 ID）。
+            stop_reason (str): 传递给插件 on_stop 的停止原因。
 
         Returns:
             None: 无返回值。
@@ -1141,7 +1142,7 @@ class PluginLoader:
         try:
             if record.plugin_instance is not None:
                 self._mark_lifecycle_phase(record, "on_stop")
-                await self._call_lifecycle_method(record.plugin_instance, "on_stop", "stop")
+                await self._call_lifecycle_method(record.plugin_instance, "on_stop", stop_reason)
                 self._mark_lifecycle_phase(record, "on_unload")
                 await self._call_optional_lifecycle_method(record.plugin_instance, "on_unload")
             self._mark_status(record, "disposed")
@@ -1162,17 +1163,18 @@ class PluginLoader:
         self._mark_lifecycle_phase(record, "unloaded")
         logger.info(f"插件已卸载: {plugin_name}")
 
-    async def unload_instance(self, instance_id: str) -> None:
+    async def unload_instance(self, instance_id: str, *, stop_reason: str = "stop") -> None:
         """
         卸载指定插件实例。
 
         Args:
             instance_id (str): 目标实例 ID。
+            stop_reason (str): 传递给插件 on_stop 的停止原因。
 
         Returns:
             None: 无返回值。
         """
-        await self.unload_plugin(instance_id)
+        await self.unload_plugin(instance_id, stop_reason=stop_reason)
 
     async def reload_instance(
         self,
@@ -1211,10 +1213,8 @@ class PluginLoader:
             old_record.last_reload_at = _utc8_now_iso()
             self._mark_lifecycle_phase(old_record, "on_reload_prepare")
             await self._call_optional_lifecycle_method(old_record.plugin_instance, "on_reload_prepare")
-            self._mark_lifecycle_phase(old_record, "on_stop")
-            await self._call_lifecycle_method(old_record.plugin_instance, "on_stop", f"reload:{reason}")
 
-        await self.unload_instance(instance_id)
+        await self.unload_instance(instance_id, stop_reason=f"reload:{reason}")
         new_record = await self.load_instance(
             instance_id=instance_id,
             plugin_name=plugin_name,
