@@ -123,6 +123,7 @@ const loadData = async () => {
     }
 
     userName.value = user.name
+    userSchema.value = user.schema || descriptor?.user_schema || null
     formModel.value = JSON.parse(JSON.stringify(user.config || {}))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)

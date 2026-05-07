@@ -23,6 +23,7 @@
 import os
 import re
 import sys
+import copy
 import httpx
 import shutil
 import asyncio
@@ -38,7 +39,7 @@ from typing import Literal, Optional, Union, Dict, Any, List
 import uuid
 import json
 
-from app.models.ConfigBase import ConfigBase
+from app.models.ConfigBase import ConfigBase, JSONValidator
 from app.models.config import (
     GeneralConfig,
     MaaConfig,
@@ -542,6 +543,69 @@ class AppConfig(GlobalConfig):
         )
         return is_latest, commit_hash, commit_time
 
+    @staticmethod
+    def _is_configbase_class(config_class: type[Any]) -> bool:
+        return isinstance(config_class, type) and issubclass(config_class, ConfigBase)
+
+    async def _build_provider_default_payload(self, config_class: type[Any]) -> dict[str, Any]:
+        if self._is_configbase_class(config_class):
+            return await config_class().toDict()
+        return config_class().model_dump(mode="json")
+
+    def _normalize_configbase_payload_for_form(
+        self,
+        config_class: type[Any],
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
+        normalized = copy.deepcopy(data or {})
+        if not self._is_configbase_class(config_class):
+            return normalized
+
+        config = config_class()
+        for group, items in config._config_item_index.items():
+            group_data = normalized.get(group)
+            if not isinstance(group_data, dict):
+                continue
+            for name, item in items.items():
+                if not isinstance(item.validator, JSONValidator):
+                    continue
+                raw_value = group_data.get(name)
+                if not isinstance(raw_value, str):
+                    continue
+                try:
+                    group_data[name] = json.loads(raw_value)
+                except json.JSONDecodeError:
+                    group_data[name] = {} if item.validator.type is dict else []
+
+        return normalized
+
+    def _normalize_configbase_payload_for_storage(
+        self,
+        config_class: type[Any],
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
+        normalized = copy.deepcopy(data or {})
+        normalized.pop("SubConfigsInfo", None)
+        if not self._is_configbase_class(config_class):
+            return normalized
+
+        config = config_class()
+        for group, items in config._config_item_index.items():
+            group_data = normalized.get(group)
+            if not isinstance(group_data, dict):
+                continue
+            for name, item in items.items():
+                if not isinstance(item.validator, JSONValidator) or name not in group_data:
+                    continue
+                value = group_data[name]
+                if isinstance(value, str):
+                    continue
+                if value is None:
+                    value = {} if item.validator.type is dict else []
+                group_data[name] = json.dumps(value, ensure_ascii=False)
+
+        return normalized
+
     async def add_script(
         self,
         script: str,
@@ -559,8 +623,20 @@ class AppConfig(GlobalConfig):
             new_uid, new_config = await self.ScriptConfig.add(PluginScriptConfig)
             await new_config.set("Meta", "PluginTypeKey", provider.type_key)
 
-            defaults = provider.script_config_class().model_dump(mode="json")
-            script_name = defaults.get("script_name", "") or provider.display_name
+            defaults = await self._build_provider_default_payload(provider.script_config_class)
+            defaults.pop("SubConfigsInfo", None)
+            info_defaults = defaults.get("Info")
+            script_name = ""
+            if isinstance(defaults.get("script_name"), str):
+                script_name = defaults["script_name"].strip()
+            if (
+                not script_name
+                and isinstance(info_defaults, dict)
+                and isinstance(info_defaults.get("Name"), str)
+            ):
+                script_name = info_defaults["Name"].strip()
+            if not script_name:
+                script_name = provider.display_name
             await new_config.set("Info", "Name", script_name)
             await new_config.set(
                 "PluginData", "Config",
@@ -570,9 +646,18 @@ class AppConfig(GlobalConfig):
             if script_id is not None:
                 source_uid = uuid.UUID(script_id)
                 source_config = self.ScriptConfig[source_uid]
+                source_provider = self._resolve_record_provider(source_config)
+                if source_provider.type_key != provider.type_key:
+                    raise TypeError(f"鑴氭湰閰嶇疆绫诲瀷涓嶅尮閰? {script_id} {script}")
+                if isinstance(source_config, PluginScriptConfig):
+                    raw_config = source_config.get("PluginData", "Config")
+                else:
+                    source_payload = await source_config.toDict(regenerate_uuids=True)
+                    source_payload.pop("SubConfigsInfo", None)
+                    raw_config = json.dumps(source_payload, ensure_ascii=False)
                 await new_config.set(
                     "PluginData", "Config",
-                    source_config.get("PluginData", "Config"),
+                    raw_config,
                 )
                 await new_config.set("Info", "Name", source_config.get("Info", "Name"))
 
@@ -639,29 +724,47 @@ class AppConfig(GlobalConfig):
         from app.models.plugin_script_config import PluginScriptConfig
 
         if isinstance(config, PluginScriptConfig):
+            provider = self._resolve_record_provider(config)
             info = data.pop("Info", None)
             if isinstance(info, dict) and "Name" in info:
                 await config.set("Info", "Name", info["Name"])
 
             plugin_data = data.pop("PluginData", None)
+            payload_data: dict[str, Any] | None = None
             if isinstance(plugin_data, dict) and "Config" in plugin_data:
                 raw = plugin_data["Config"]
                 if isinstance(raw, str):
                     await config.set("PluginData", "Config", raw)
                 else:
-                    await config.set(
-                        "PluginData", "Config",
-                        json.dumps(raw, ensure_ascii=False),
-                    )
+                    payload_data = raw
             elif data:
+                payload_data = data
+
+            if payload_data is not None:
+                if self._is_configbase_class(provider.script_config_class):
+                    payload_data = self._normalize_configbase_payload_for_storage(
+                        provider.script_config_class,
+                        payload_data,
+                    )
                 await config.set(
                     "PluginData", "Config",
-                    json.dumps(data, ensure_ascii=False),
+                    json.dumps(payload_data, ensure_ascii=False),
                 )
 
             raw_config = config.get("PluginData", "Config")
             parsed = json.loads(raw_config) if raw_config else {}
+            parsed_for_form = self._normalize_configbase_payload_for_form(
+                provider.script_config_class,
+                parsed,
+            )
+            info_payload = parsed_for_form.get("Info")
             script_name = parsed.get("script_name")
+            if (
+                (not isinstance(script_name, str) or not script_name.strip())
+                and isinstance(info_payload, dict)
+                and isinstance(info_payload.get("Name"), str)
+            ):
+                script_name = info_payload["Name"]
             if isinstance(script_name, str) and script_name.strip():
                 await config.set("Info", "Name", script_name.strip())
             return
@@ -892,7 +995,10 @@ class AppConfig(GlobalConfig):
         if isinstance(script_config, PluginScriptConfig):
             new_uid, new_user = await script_config.UserData.add(PluginUserConfig)
             await new_user.set("Meta", "PluginTypeKey", provider.type_key)
-            defaults = provider.user_config_class().model_dump(mode="json")
+            defaults = await self._build_provider_default_payload(provider.user_config_class)
+            info_defaults = defaults.get("Info")
+            if isinstance(info_defaults, dict) and isinstance(info_defaults.get("Name"), str):
+                await new_user.set("Info", "Name", info_defaults["Name"])
             await new_user.set(
                 "PluginData", "Config",
                 json.dumps(defaults, ensure_ascii=False),
@@ -915,24 +1021,30 @@ class AppConfig(GlobalConfig):
 
         user_config = self.ScriptConfig[script_uid].UserData[user_uid]
         if isinstance(user_config, PluginUserConfig):
+            provider = self._resolve_record_provider(self.ScriptConfig[script_uid])
             info = data.pop("Info", None)
             if isinstance(info, dict) and "Name" in info:
                 await user_config.set("Info", "Name", info["Name"])
 
             plugin_data = data.pop("PluginData", None)
+            payload_data: dict[str, Any] | None = None
             if isinstance(plugin_data, dict) and "Config" in plugin_data:
                 raw = plugin_data["Config"]
                 if isinstance(raw, str):
                     await user_config.set("PluginData", "Config", raw)
                 else:
-                    await user_config.set(
-                        "PluginData", "Config",
-                        json.dumps(raw, ensure_ascii=False),
-                    )
+                    payload_data = raw
             elif data:
+                payload_data = data
+            if payload_data is not None:
+                if self._is_configbase_class(provider.user_config_class):
+                    payload_data = self._normalize_configbase_payload_for_storage(
+                        provider.user_config_class,
+                        payload_data,
+                    )
                 await user_config.set(
                     "PluginData", "Config",
-                    json.dumps(data, ensure_ascii=False),
+                    json.dumps(payload_data, ensure_ascii=False),
                 )
             return
 
@@ -999,6 +1111,393 @@ class AppConfig(GlobalConfig):
             )
             return provider
 
+    @staticmethod
+    def _find_schema_group(schema: dict[str, Any], group_key: str) -> dict[str, Any] | None:
+        groups = schema.get("groups")
+        if not isinstance(groups, list):
+            return None
+        for group in groups:
+            if isinstance(group, dict) and group.get("key") == group_key:
+                return group
+        return None
+
+    @classmethod
+    def _find_schema_field(cls, schema: dict[str, Any], field_key: str) -> dict[str, Any] | None:
+        groups = schema.get("groups")
+        if not isinstance(groups, list):
+            return None
+        for group in groups:
+            if not isinstance(group, dict):
+                continue
+            fields = group.get("fields")
+            if not isinstance(fields, list):
+                continue
+            for field in fields:
+                if isinstance(field, dict) and field.get("key") == field_key:
+                    return field
+        return None
+
+    @classmethod
+    def _set_schema_group_label(
+        cls,
+        schema: dict[str, Any],
+        group_key: str,
+        label: str,
+    ) -> None:
+        group = cls._find_schema_group(schema, group_key)
+        if group is not None:
+            group["label"] = label
+
+    @classmethod
+    def _set_schema_field_label(
+        cls,
+        schema: dict[str, Any],
+        field_key: str,
+        label: str,
+    ) -> None:
+        field = cls._find_schema_field(schema, field_key)
+        if field is not None:
+            field["label"] = label
+
+    @classmethod
+    def _set_schema_field_options(
+        cls,
+        schema: dict[str, Any],
+        field_key: str,
+        options: list[dict[str, Any]],
+        *,
+        allow_custom: bool | None = None,
+    ) -> None:
+        field = cls._find_schema_field(schema, field_key)
+        if field is None:
+            return
+        field["options"] = copy.deepcopy(options)
+        if allow_custom is not None:
+            field["allow_custom"] = allow_custom
+
+    @classmethod
+    def _set_schema_field_state(
+        cls,
+        schema: dict[str, Any],
+        field_key: str,
+        *,
+        readonly: bool | None = None,
+        help_text: str | None = None,
+        placeholder: str | None = None,
+        rows: int | None = None,
+        size: str | None = None,
+    ) -> None:
+        field = cls._find_schema_field(schema, field_key)
+        if field is None:
+            return
+        if readonly is not None:
+            field["readonly"] = readonly
+        if help_text is not None:
+            field["help"] = help_text
+        if placeholder is not None:
+            field["placeholder"] = placeholder
+        if rows is not None:
+            field["rows"] = rows
+        if size is not None:
+            field["size"] = size
+
+    @classmethod
+    def _append_schema_field(
+        cls,
+        schema: dict[str, Any],
+        group_key: str,
+        field_schema: dict[str, Any],
+    ) -> None:
+        group = cls._find_schema_group(schema, group_key)
+        if group is None:
+            groups = schema.setdefault("groups", [])
+            if not isinstance(groups, list):
+                return
+            group = {"key": group_key, "label": group_key, "fields": []}
+            groups.append(group)
+        fields = group.setdefault("fields", [])
+        if not isinstance(fields, list):
+            return
+        field_key = field_schema.get("key")
+        if field_key and any(
+            isinstance(field, dict) and field.get("key") == field_key for field in fields
+        ):
+            return
+        fields.append(copy.deepcopy(field_schema))
+
+    @staticmethod
+    def _build_infrast_plan_options(config_data: dict[str, Any]) -> list[dict[str, str]]:
+        data_group = config_data.get("Data")
+        if not isinstance(data_group, dict):
+            return []
+        custom_infrast = data_group.get("CustomInfrast")
+        if not isinstance(custom_infrast, dict):
+            return []
+        plans = custom_infrast.get("plans")
+        if not isinstance(plans, list):
+            return []
+        options: list[dict[str, str]] = []
+        for index, plan in enumerate(plans):
+            if isinstance(plan, dict):
+                label = str(plan.get("name") or f"排班 {index + 1}")
+            else:
+                label = f"排班 {index + 1}"
+            options.append({"label": label, "value": str(index)})
+        return options
+
+    async def _decorate_maa_script_schema(
+        self,
+        schema: dict[str, Any],
+        config_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        group_labels = {
+            "Info": "基础信息",
+            "Emulator": "模拟器设置",
+            "Run": "运行设置",
+        }
+        field_labels = {
+            "Info.Name": "脚本名称",
+            "Info.Path": "MAA 根目录",
+            "Emulator.Id": "模拟器",
+            "Emulator.Index": "多开实例",
+            "Run.TaskTransitionMethod": "任务切换方式",
+            "Run.ProxyTimesLimit": "代理次数限制",
+            "Run.RunTimesLimit": "运行次数限制",
+            "Run.AnnihilationTimeLimit": "剿灭时间限制（分钟）",
+            "Run.RoutineTimeLimit": "日常时间限制（分钟）",
+            "Run.AnnihilationAvoidWaste": "剿灭避免浪费理智",
+        }
+
+        for group_key, label in group_labels.items():
+            self._set_schema_group_label(schema, group_key, label)
+        for field_key, label in field_labels.items():
+            self._set_schema_field_label(schema, field_key, label)
+
+        self._set_schema_field_state(
+            schema,
+            "Info.Path",
+            placeholder="请选择 MAA 的安装目录",
+            size="large",
+        )
+        self._set_schema_field_options(schema, "Emulator.Id", await self.get_emulator_combox())
+
+        selected_emulator = ""
+        emulator_group = config_data.get("Emulator")
+        if isinstance(emulator_group, dict):
+            selected_emulator = str(emulator_group.get("Id") or "")
+
+        emulator_index_options = [{"label": "未选择", "value": "-"}]
+        if selected_emulator and selected_emulator != "-":
+            try:
+                scanned_options = await self.get_emulator_devices_combox(selected_emulator)
+                if scanned_options:
+                    emulator_index_options = scanned_options
+            except Exception as exc:
+                logger.warning(f"获取 MAA 模拟器多开实例失败: {type(exc).__name__}: {exc}")
+
+        self._set_schema_field_options(schema, "Emulator.Index", emulator_index_options)
+        self._set_schema_field_state(
+            schema,
+            "Emulator.Index",
+            help_text="选择多开序号；若列表为空，可保持为“未选择”后由运行时自动处理。",
+        )
+
+        return schema
+
+    async def _decorate_maa_user_schema(
+        self,
+        schema: dict[str, Any],
+        config_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        group_labels = {
+            "Info": "基础信息",
+            "Task": "任务开关",
+            "Notify": "通知设置",
+            "Data": "运行数据",
+        }
+        field_labels = {
+            "Info.Name": "用户名称",
+            "Info.Id": "用户 ID",
+            "Info.Password": "密码",
+            "Info.Mode": "展示模式",
+            "Info.StageMode": "关卡模式",
+            "Info.Server": "服务器",
+            "Info.Status": "启用用户",
+            "Info.RemainedDay": "剩余天数",
+            "Info.Annihilation": "剿灭设置",
+            "Info.InfrastMode": "基建模式",
+            "Info.InfrastName": "自定义基建名称",
+            "Info.InfrastIndex": "当前班次索引",
+            "Info.Notes": "备注",
+            "Info.MedicineNumb": "吃理智药数量",
+            "Info.SeriesNumb": "连战次数",
+            "Info.Stage": "主关卡",
+            "Info.Stage_1": "备选关卡 1",
+            "Info.Stage_2": "备选关卡 2",
+            "Info.Stage_3": "备选关卡 3",
+            "Info.Stage_Remain": "剩余理智关卡",
+            "Info.IfSkland": "森空岛签到",
+            "Info.SklandToken": "森空岛 Token",
+            "Info.Tag": "用户标签",
+            "Data.LastProxyDate": "上次代理日期",
+            "Data.LastSklandDate": "上次森空岛签到日期",
+            "Data.ProxyTimes": "今日代理次数",
+            "Data.IfPassCheck": "人工排查通过",
+            "Data.CustomInfrast": "自定义基建 JSON",
+            "Data.InfrastIndex": "自定义基建排班",
+            "Task.IfStartUp": "自动启动",
+            "Task.IfFight": "理智作战",
+            "Task.IfInfrast": "基建换班",
+            "Task.IfRecruit": "公开招募",
+            "Task.IfMall": "信用收支",
+            "Task.IfAward": "领取奖励",
+            "Task.IfRoguelike": "肉鸽",
+            "Task.IfReclamation": "生息演算",
+            "Notify.Enabled": "启用通知",
+            "Notify.IfSendStatistic": "发送统计信息",
+            "Notify.IfSendSixStar": "发送高资喜报",
+            "Notify.IfSendMail": "邮件通知",
+            "Notify.ToAddress": "收件邮箱",
+            "Notify.IfServerChan": "Server酱通知",
+            "Notify.ServerChanKey": "Server酱 SENDKEY",
+        }
+
+        for group_key, label in group_labels.items():
+            self._set_schema_group_label(schema, group_key, label)
+        for field_key, label in field_labels.items():
+            self._set_schema_field_label(schema, field_key, label)
+
+        self._set_schema_field_options(schema, "Info.StageMode", await self.get_plan_combox())
+        self._set_schema_field_options(
+            schema,
+            "Info.InfrastMode",
+            [
+                {"label": "常规模式", "value": "Normal"},
+                {"label": "一键轮休", "value": "Rotation"},
+                {"label": "自定义基建", "value": "Custom"},
+            ],
+        )
+        self._set_schema_field_options(
+            schema,
+            "Info.SeriesNumb",
+            [
+                {"label": "AUTO", "value": "0"},
+                {"label": "1", "value": "1"},
+                {"label": "2", "value": "2"},
+                {"label": "3", "value": "3"},
+                {"label": "4", "value": "4"},
+                {"label": "5", "value": "5"},
+                {"label": "6", "value": "6"},
+                {"label": "不切换", "value": "-1"},
+            ],
+        )
+
+        stage_options = await self.get_stage_info("User")
+        if not isinstance(stage_options, list):
+            stage_options = []
+        stage_remain_options = copy.deepcopy(stage_options)
+        for option in stage_remain_options:
+            if isinstance(option, dict) and option.get("value") == "-":
+                option["label"] = "不选择"
+
+        for field_key in ("Info.Stage", "Info.Stage_1", "Info.Stage_2", "Info.Stage_3"):
+            self._set_schema_field_options(
+                schema,
+                field_key,
+                stage_options,
+                allow_custom=True,
+            )
+            self._set_schema_field_state(
+                schema,
+                field_key,
+                placeholder="选择或输入自定义关卡",
+            )
+
+        self._set_schema_field_options(
+            schema,
+            "Info.Stage_Remain",
+            stage_remain_options,
+            allow_custom=True,
+        )
+        self._set_schema_field_state(
+            schema,
+            "Info.Stage_Remain",
+            placeholder="选择或输入自定义关卡",
+            help_text="选择“不选择”时，将不使用剩余理智关卡。",
+        )
+
+        info_group = config_data.get("Info")
+        if not isinstance(info_group, dict):
+            info_group = {}
+        stage_mode = str(info_group.get("StageMode") or "Fixed")
+        if stage_mode != "Fixed":
+            plan_help = "当前由计划表控制，请前往计划表修改。"
+            for field_key in (
+                "Info.MedicineNumb",
+                "Info.SeriesNumb",
+                "Info.Stage",
+                "Info.Stage_1",
+                "Info.Stage_2",
+                "Info.Stage_3",
+                "Info.Stage_Remain",
+            ):
+                self._set_schema_field_state(
+                    schema,
+                    field_key,
+                    readonly=True,
+                    help_text=plan_help,
+                )
+
+        infrast_mode = str(info_group.get("InfrastMode") or "Normal")
+        infrast_options = self._build_infrast_plan_options(config_data)
+        if infrast_options:
+            self._set_schema_field_options(schema, "Data.InfrastIndex", infrast_options)
+
+        if infrast_mode != "Custom":
+            custom_help = "当前不是自定义基建模式，此区域仅保留已保存数据。"
+            self._set_schema_field_state(
+                schema,
+                "Data.InfrastIndex",
+                readonly=True,
+                help_text=custom_help,
+            )
+            self._set_schema_field_state(
+                schema,
+                "Data.CustomInfrast",
+                readonly=True,
+                help_text=custom_help,
+                rows=12,
+                size="large",
+            )
+        else:
+            infrast_help = "可直接粘贴自定义基建配置 JSON，保存后会按当前排班生效。"
+            if not infrast_options:
+                infrast_help = "请先在下方填写有效的自定义基建 JSON，保存后即可选择排班。"
+            self._set_schema_field_state(
+                schema,
+                "Data.InfrastIndex",
+                help_text=infrast_help,
+            )
+            self._set_schema_field_state(
+                schema,
+                "Data.CustomInfrast",
+                help_text="直接编辑或粘贴完整的自定义基建 JSON。",
+                rows=12,
+                size="large",
+            )
+
+        self._set_schema_field_state(
+            schema,
+            "Info.Tag",
+            help_text="运行时自动生成，仅用于展示。",
+        )
+        self._set_schema_field_state(
+            schema,
+            "Info.InfrastName",
+            help_text="运行时根据自定义基建 JSON 自动解析。",
+        )
+        return schema
+
     def _resolve_script_type_label(self, script_config: ConfigBase) -> str:
         """获取脚本类型的显示标签，兼容插件脚本。"""
         class_name = type(script_config).__name__
@@ -1027,13 +1526,34 @@ class AppConfig(GlobalConfig):
 
             if isinstance(config, PluginScriptConfig):
                 raw = config.get("PluginData", "Config")
-                config_data = json.loads(raw) if raw and raw != "{}" else {}
-                script_name = config_data.get("script_name", "")
+                raw_config_data = json.loads(raw) if raw and raw != "{}" else {}
+                config_data = self._normalize_configbase_payload_for_form(
+                    provider.script_config_class,
+                    raw_config_data,
+                )
+                if self._is_configbase_class(provider.script_config_class):
+                    config_data = strip_sub_configs(config_data)
+                script_name = (
+                    raw_config_data.get("script_name", "")
+                    if isinstance(raw_config_data.get("script_name"), str)
+                    else ""
+                )
                 info_name = config.get("Info", "Name") or provider.display_name
+                info_group = config_data.get("Info")
+                if (
+                    not script_name
+                    and isinstance(info_group, dict)
+                    and isinstance(info_group.get("Name"), str)
+                    and info_group.get("Name", "").strip()
+                ):
+                    info_name = info_group["Name"].strip()
                 name = script_name or info_name
                 config_data.setdefault("Info", {})["Name"] = name
             else:
-                config_data = strip_sub_configs(await config.toDict())
+                config_data = self._normalize_configbase_payload_for_form(
+                    provider.script_config_class,
+                    strip_sub_configs(await config.toDict()),
+                )
                 name = provider.display_name
                 if (
                     "Info" in config._config_item_index
@@ -1041,13 +1561,17 @@ class AppConfig(GlobalConfig):
                 ):
                     name = config.get("Info", "Name")
 
+            schema = copy.deepcopy(provider.build_script_schema())
+            if provider.type_key == "MAA":
+                schema = await self._decorate_maa_script_schema(schema, config_data)
+
             records.append(
                 ScriptRecord(
                     id=str(uid),
                     type=provider.type_key,
                     name=name,
                     config=config_data,
-                    schema=provider.build_script_schema(),
+                    schema=schema,
                     editor_kind=provider.editor_kind,
                     supported_modes=list(provider.supported_modes),
                     icon=provider.icon,
@@ -1079,17 +1603,29 @@ class AppConfig(GlobalConfig):
         for uid, config in user_pairs:
             if isinstance(config, PluginUserConfig):
                 raw = config.get("PluginData", "Config")
-                config_data = json.loads(raw) if raw and raw != "{}" else {}
+                config_data = self._normalize_configbase_payload_for_form(
+                    provider.user_config_class,
+                    json.loads(raw) if raw and raw != "{}" else {},
+                )
+                if self._is_configbase_class(provider.user_config_class):
+                    config_data = strip_sub_configs(config_data)
                 name = config.get("Info", "Name") or str(uid)
                 config_data.setdefault("Info", {})["Name"] = name
             else:
-                config_data = strip_sub_configs(await config.toDict())
+                config_data = self._normalize_configbase_payload_for_form(
+                    provider.user_config_class,
+                    strip_sub_configs(await config.toDict()),
+                )
                 name = str(uid)
                 if (
                     "Info" in config._config_item_index
                     and "Name" in config._config_item_index["Info"]
                 ):
                     name = config.get("Info", "Name")
+
+            schema = copy.deepcopy(provider.build_user_schema())
+            if provider.type_key == "MAA":
+                schema = await self._decorate_maa_user_schema(schema, config_data)
 
             records.append(
                 ScriptUserRecord(
@@ -1098,7 +1634,7 @@ class AppConfig(GlobalConfig):
                     type=provider.type_key,
                     name=name,
                     config=config_data,
-                    schema=provider.build_user_schema(),
+                    schema=schema,
                 )
             )
 

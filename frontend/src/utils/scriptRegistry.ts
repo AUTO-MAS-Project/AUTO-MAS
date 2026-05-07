@@ -65,7 +65,7 @@ const DEFAULT_USER_SHAPE = {
   },
 }
 
-export const BUILTIN_SCRIPT_TYPES = new Set(['MAA', 'SRC', 'MaaEnd', 'General'])
+export const BUILTIN_SCRIPT_TYPES = new Set(['SRC', 'MaaEnd', 'General'])
 
 export const isBuiltinScriptType = (type: string) => BUILTIN_SCRIPT_TYPES.has(type)
 
@@ -99,8 +99,6 @@ export const getScriptTypeTagColor = (type: string) => {
 
 export const getScriptEditPath = (script: Pick<Script, 'id' | 'type' | 'editorKind'>) => {
   switch (script.editorKind) {
-    case 'builtin:maa':
-      return `/scripts/${script.id}/edit/maa`
     case 'builtin:src':
       return `/scripts/${script.id}/edit/src`
     case 'builtin:maaend':
@@ -117,8 +115,6 @@ export const getScriptEditPath = (script: Pick<Script, 'id' | 'type' | 'editorKi
 
 export const getUserCreatePath = (script: Pick<Script, 'id' | 'editorKind'>) => {
   switch (script.editorKind) {
-    case 'builtin:maa':
-      return `/scripts/${script.id}/users/add/maa`
     case 'builtin:src':
       return `/scripts/${script.id}/users/add/src`
     case 'builtin:maaend':
@@ -138,8 +134,6 @@ export const getUserEditPath = (
   user: Pick<User, 'id'>
 ) => {
   switch (script.editorKind) {
-    case 'builtin:maa':
-      return `/scripts/${script.id}/users/${user.id}/edit/maa`
     case 'builtin:src':
       return `/scripts/${script.id}/users/${user.id}/edit/src`
     case 'builtin:maaend':
