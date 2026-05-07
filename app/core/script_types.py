@@ -424,7 +424,7 @@ def apply_script_type_registry_to_global_config(global_config: Any) -> None:
     global_config.ScriptConfig.sub_config_type["PluginScriptConfig"] = PluginScriptConfig
 
     for provider in script_type_registry.list():
-        if provider.is_builtin:
+        if issubclass(provider.script_config_class, ConfigBase):
             global_config.ScriptConfig.sub_config_type[provider.script_config_class.__name__] = (
                 provider.script_config_class
             )
