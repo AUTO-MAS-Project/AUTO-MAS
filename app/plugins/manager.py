@@ -38,6 +38,15 @@ class _LocalPluginProject:
     entry_point_names: set[str]
 
 
+@dataclass(frozen=True)
+class _DeclaredScriptTypeBinding:
+    """插件声明的脚本类型绑定。"""
+
+    type_key: str
+    display_name: str
+    legacy_config_class: type
+
+
 class _PluginManager:
     """协调插件的生命周期并为 MAS 核心提供事件 API。"""
 
@@ -726,6 +735,153 @@ class _PluginManager:
                 break
         return bound_refs
 
+    def _resolve_declared_script_type_bindings(
+        self,
+        plugin_name: str,
+        *,
+        discovered: Dict[str, Any] | None = None,
+    ) -> list[_DeclaredScriptTypeBinding]:
+        """解析插件声明的脚本类型绑定。"""
+
+        from app.models.ConfigBase import ConfigBase
+        from app.models import config as config_models
+
+        snapshot = discovered or self.loader.discovered_plugins or self._discover_plugins()
+        plugin_source = snapshot.get(plugin_name)
+        if plugin_source is None:
+            return []
+
+        try:
+            module, plugin_class = self.loader._resolve_plugin_module_and_class(
+                plugin_name,
+                plugin_source,
+                clear_cache=False,
+            )
+        except Exception as e:
+            logger.warning(
+                f"读取插件脚本类型绑定失败，已跳过: plugin={plugin_name}, error={type(e).__name__}: {e}"
+            )
+            return []
+
+        raw_bindings = None
+        if module is not None:
+            raw_bindings = getattr(module, "SCRIPT_TYPE_BINDINGS", None)
+        if raw_bindings is None:
+            raw_bindings = getattr(plugin_class, "SCRIPT_TYPE_BINDINGS", None)
+        if raw_bindings is None:
+            return []
+        if isinstance(raw_bindings, dict):
+            raw_bindings = [raw_bindings]
+        if not isinstance(raw_bindings, list):
+            logger.warning(f"插件脚本类型绑定声明无效，已跳过: plugin={plugin_name}")
+            return []
+
+        bindings: list[_DeclaredScriptTypeBinding] = []
+        for item in raw_bindings:
+            if not isinstance(item, dict):
+                continue
+            class_name = str(item.get("script_config_class_name") or "").strip()
+            config_class = getattr(config_models, class_name, None)
+            if not isinstance(config_class, type) or not issubclass(config_class, ConfigBase):
+                continue
+            type_key = str(item.get("type_key") or class_name).strip()
+            if not type_key:
+                continue
+            display_name = str(item.get("display_name") or type_key).strip() or type_key
+            bindings.append(
+                _DeclaredScriptTypeBinding(
+                    type_key=type_key,
+                    display_name=display_name,
+                    legacy_config_class=config_class,
+                )
+            )
+
+        return bindings
+
+    async def _sync_script_types_and_migrate_legacy_configs(
+        self,
+        *,
+        discovered: Dict[str, Any] | None = None,
+    ) -> None:
+        """同步脚本类型映射，并把旧宿主脚本配置迁移到插件当前类。"""
+
+        from app.core import Config
+        from app.core.script_types import (
+            apply_script_type_registry_to_global_config,
+            script_type_registry,
+        )
+        from app.models.ConfigBase import ConfigBase
+
+        apply_script_type_registry_to_global_config(Config)
+
+        migrated_scripts: list[str] = []
+        for record in self.loader.records.values():
+            if getattr(record, "status", "") != "active":
+                continue
+
+            bindings = self._resolve_declared_script_type_bindings(
+                record.plugin_name,
+                discovered=discovered,
+            )
+            if not bindings:
+                continue
+
+            for binding in bindings:
+                try:
+                    provider = script_type_registry.get(binding.type_key)
+                except KeyError:
+                    continue
+
+                if script_type_registry.get_owner(binding.type_key) != record.instance_id:
+                    continue
+                if not issubclass(provider.script_config_class, ConfigBase):
+                    continue
+                if binding.legacy_config_class is provider.script_config_class:
+                    continue
+
+                for script_id, script in list(Config.ScriptConfig.items()):
+                    if type(script) is provider.script_config_class:
+                        continue
+                    if not isinstance(script, binding.legacy_config_class):
+                        continue
+
+                    script_name = str(script_id)
+                    try:
+                        if (
+                            "Info" in script._config_item_index
+                            and "Name" in script._config_item_index["Info"]
+                        ):
+                            script_name = str(script.get("Info", "Name") or script_id)
+                    except Exception:
+                        script_name = str(script_id)
+
+                    try:
+                        raw_data = await script.toDict(if_decrypt=False)
+                        new_script = provider.script_config_class()
+                        await new_script.load(raw_data)
+                        for save_method in Config.ScriptConfig._save_methods:
+                            await new_script.add_save_method(save_method)
+                        if Config.ScriptConfig.file:
+                            await new_script.add_save_method(Config.ScriptConfig.save)
+                        Config.ScriptConfig.data[script_id] = new_script
+                        migrated_scripts.append(
+                            f"{binding.type_key}:{script_name}({script_id})"
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "旧脚本配置自动迁移失败，将继续使用当前对象: "
+                            f"plugin={record.plugin_name}, instance_id={record.instance_id}, "
+                            f"type_key={binding.type_key}, script_id={script_id}, "
+                            f"error={type(e).__name__}: {e}"
+                        )
+
+        if migrated_scripts:
+            await Config.ScriptConfig.save()
+            logger.warning(
+                "检测到旧版脚本配置，已自动迁移到插件当前类型并保存: "
+                + "; ".join(migrated_scripts)
+            )
+
     async def ensure_instance_can_delete(
         self,
         instance_id: str,
@@ -780,6 +936,7 @@ class _PluginManager:
         else:
             await self.loader.unload_instance(instance_id)
 
+        await self._sync_script_types_and_migrate_legacy_configs(discovered=discovered)
         schedule_plugin_snapshot(
             reason="manager.apply_instance_enabled",
             discovered=discovered,
@@ -803,6 +960,7 @@ class _PluginManager:
             auto_create_missing=False,
         )
         await self.loader.load_instances(instances)
+        await self._sync_script_types_and_migrate_legacy_configs(discovered=discovered)
         await self._repair_invalid_instances_after_start(discovered)
         self.started = True
         schedule_plugin_snapshot(reason="manager.start", discovered=discovered)
