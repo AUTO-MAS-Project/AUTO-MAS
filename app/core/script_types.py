@@ -512,6 +512,31 @@ def validate_script_type_registry(global_config: Any) -> list[str]:
     return missing
 
 
+def is_script_config_compatible_with_type_key(
+    script_config: ConfigBase | BaseModel,
+    type_key: str,
+) -> bool:
+    """判断脚本配置是否可兼容指定脚本类型键。"""
+
+    normalized_type_key = str(type_key or "").strip()
+    if not normalized_type_key:
+        return False
+
+    try:
+        provider = script_type_registry.get_by_script_config(script_config)
+    except KeyError:
+        fallback_provider = build_legacy_fallback_provider_by_script_config(script_config)
+        return (
+            fallback_provider is not None
+            and fallback_provider.type_key == normalized_type_key
+        )
+
+    return (
+        provider.type_key == normalized_type_key
+        and _is_provider_compatible_with_script_config(provider, script_config)
+    )
+
+
 def _is_provider_compatible_with_script_config(
     provider: ScriptTypeProvider,
     script_config: ConfigBase | BaseModel,

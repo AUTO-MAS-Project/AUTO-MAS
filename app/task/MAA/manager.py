@@ -26,9 +26,10 @@ from pathlib import Path
 from datetime import datetime
 
 from app.core import Config, EmulatorManager
+from app.core.script_types import is_script_config_compatible_with_type_key
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem
 from app.models.ConfigBase import MultipleConfig
-from app.models.config import MaaConfig, MaaUserConfig
+from app.models.config import MaaUserConfig
 from app.services import Notify
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
@@ -64,8 +65,8 @@ class MaaManager(TaskExecuteBase):
         """校验MAA配置是否可用"""
         if self.task_info.mode not in METHOD_BOOK:
             return "不支持的任务模式，请检查任务配置！"
-        if not isinstance(
-            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], MaaConfig
+        if not is_script_config_compatible_with_type_key(
+            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], "MAA"
         ):
             return "脚本配置类型错误, 不是MAA脚本类型"
         if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
@@ -172,7 +173,7 @@ class MaaManager(TaskExecuteBase):
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await self.prepare()
 
-        if not isinstance(self.script_config, MaaConfig):
+        if not is_script_config_compatible_with_type_key(self.script_config, "MAA"):
             raise RuntimeError("脚本配置类型错误, 不是MAA脚本类型")
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
