@@ -43,8 +43,8 @@ LEGACY_SCRIPT_TYPE_METADATA = (
         "user_class_name": "MaaUserConfig",
         "supported_modes": ("AutoProxy", "ManualReview", "ScriptConfig"),
         "icon": "MAA",
-        "editor_kind": "builtin:maa",
-        "is_builtin": True,
+        "editor_kind": "plugin:script_maa",
+        "is_builtin": False,
     },
     {
         "type_key": "SRC",

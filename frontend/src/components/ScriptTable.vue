@@ -24,20 +24,6 @@
                 </div>
               </div>
               <div class="header-actions">
-                <a-button v-if="script.type === 'MAA' && !props.activeConnections.has(script.id)" type="primary" ghost
-                  size="middle" @click="handleStartMAAConfig(script)">
-                  <template #icon>
-                    <SettingOutlined />
-                  </template>
-                  配置MAA
-                </a-button>
-                <a-button v-if="script.type === 'MAA' && props.activeConnections.has(script.id)" type="default"
-                  size="middle" disabled style="color: #52c41a; border-color: #52c41a">
-                  <template #icon>
-                    <SettingOutlined />
-                  </template>
-                  正在配置
-                </a-button>
                 <a-button v-if="script.type === 'SRC' && !props.activeConnections.has(script.id)" type="primary" ghost
                   size="middle" @click="handleStartSRCConfig(script)">
                   <template #icon>
@@ -248,10 +234,6 @@ interface Emits {
 
   (e: 'deleteUser', user: User): void
 
-  (e: 'startMaaConfig', script: Script): void
-
-  (e: 'saveMaaConfig', script: Script): void
-
   (e: 'startSrcConfig', script: Script): void
 
   (e: 'saveSrcConfig', script: Script): void
@@ -329,14 +311,6 @@ const handleEditUser = (user: User) => {
 
 const handleDeleteUser = (user: User) => {
   emit('deleteUser', user)
-}
-
-const handleStartMAAConfig = (script: Script) => {
-  emit('startMaaConfig', script)
-}
-
-const handleSaveMAAConfig = (script: Script) => {
-  emit('saveMaaConfig', script)
 }
 
 const handleStartSRCConfig = (script: Script) => {
