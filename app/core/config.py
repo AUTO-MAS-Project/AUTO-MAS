@@ -72,6 +72,7 @@ from .script_types import (
     apply_script_type_registry_to_global_config,
     build_legacy_fallback_provider_by_script_config,
     build_descriptor,
+    is_script_config_compatible_with_type_key,
     script_type_registry,
     strip_sub_configs,
 )
@@ -1115,7 +1116,9 @@ class AppConfig(GlobalConfig):
         if not json_path.exists():
             raise FileNotFoundError(f"文件未找到: {json_path}")
 
-        if not isinstance(self.ScriptConfig[script_uid], MaaConfig):
+        if not is_script_config_compatible_with_type_key(
+            self.ScriptConfig[script_uid], "MAA"
+        ):
             raise TypeError(f"脚本 {script_id} 不是 MAA 脚本, 无法设置基建配置")
 
         infrast_data = json.loads(json_path.read_text(encoding="utf-8"))
@@ -1142,7 +1145,7 @@ class AppConfig(GlobalConfig):
         script_config = self.ScriptConfig[script_uid]
 
         # 根据脚本类型选择添加对应用户配置
-        if not isinstance(script_config, MaaConfig):
+        if not is_script_config_compatible_with_type_key(script_config, "MAA"):
             raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 
         logger.info("开始获取用户自定义基建排班下拉框信息")
@@ -1202,7 +1205,7 @@ class AppConfig(GlobalConfig):
         user_list = []
 
         for script in self.ScriptConfig.values():
-            if isinstance(script, MaaConfig):
+            if is_script_config_compatible_with_type_key(script, "MAA"):
                 for user in script.UserData.values():
                     if user.get("Info", "StageMode") == str(plan_uid):
                         if user.is_locked:
@@ -1265,7 +1268,7 @@ class AppConfig(GlobalConfig):
         script_list = []
 
         for script in self.ScriptConfig.values():
-            if isinstance(script, MaaConfig):
+            if is_script_config_compatible_with_type_key(script, "MAA"):
                 if script.get("Emulator", "Id") == str(emulator_id):
                     if script.is_locked:
                         raise RuntimeError(
@@ -1283,7 +1286,7 @@ class AppConfig(GlobalConfig):
                     script_list.append(script)
 
         for script in script_list:
-            if isinstance(script, MaaConfig):
+            if is_script_config_compatible_with_type_key(script, "MAA"):
                 await script.set("Emulator", "Id", "-")
             elif isinstance(script, GeneralConfig):
                 await script.set("Game", "EmulatorId", "-")
