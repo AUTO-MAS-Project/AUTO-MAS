@@ -44,6 +44,16 @@
             </a-button>
           </template>
 
+          <template v-else-if="isAutocompleteField(field)">
+            <a-auto-complete
+              :value="String(getFieldValue(getFieldPath(field)) ?? '')"
+              style="width: 100%"
+              :options="getFieldOptions(field)"
+              :disabled="readonly || field.readonly"
+              @update:value="(val: string) => updateFieldValue(getFieldPath(field), val)"
+            />
+          </template>
+
           <template v-else-if="isMultiSelectField(field)">
             <a-select
               mode="multiple"
@@ -574,8 +584,11 @@ const toFiniteNumber = (value: unknown) => {
 const getSchemaConstraint = (field: SchemaFieldDefinition, key: string) => field.constraints?.[key]
 
 const isButtonField = (field: SchemaFieldDefinition) => field.type === 'button' || field.type === 'action'
+const isAutocompleteField = (field: SchemaFieldDefinition) =>
+  Boolean(field.allow_custom) && isStringField(field) && hasSelectableOptions(field)
 const isSelectField = (field: SchemaFieldDefinition) =>
-  field.type === 'select' || (!isMultiSelectField(field) && hasSelectableOptions(field))
+  field.type === 'select' ||
+  (!isAutocompleteField(field) && !isMultiSelectField(field) && hasSelectableOptions(field))
 const isMultiSelectField = (field: SchemaFieldDefinition) =>
   field.type === 'multiselect' || (hasSelectableOptions(field) && isListField(field))
 const isBooleanField = (field: SchemaFieldDefinition) => field.type === 'boolean' || field.type === 'bool'

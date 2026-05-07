@@ -2,6 +2,7 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
+
 const logger = window.electronAPI.getLogger('路由管理')
 
 // 异步按需加载调度中心，避免弹窗窗口提前执行相关逻辑
@@ -24,7 +25,7 @@ const routes = [
     path: '/home',
     name: 'Home',
     component: () => import('../views/Home.vue'),
-    meta: { title: '主页' },
+    meta: { title: '首页' },
   },
   {
     path: '/scripts',
@@ -33,22 +34,16 @@ const routes = [
     meta: { title: '脚本管理' },
   },
   {
-    path: '/scripts/:id/edit/maa',
-    name: 'MAAScriptEdit',
-    component: () => import('../views/EditView/Script/MAAScriptEdit.vue'),
-    meta: { title: '编辑MAA脚本' },
-  },
-  {
     path: '/scripts/:id/edit/src',
     name: 'SRCScriptEdit',
     component: () => import('../views/EditView/Script/SRCScriptEdit.vue'),
-    meta: { title: '编辑SRC脚本' },
+    meta: { title: '编辑 SRC 脚本' },
   },
   {
     path: '/scripts/:id/edit/maaend',
     name: 'MaaEndScriptEdit',
     component: () => import('../views/EditView/Script/MaaEndScriptEdit.vue'),
-    meta: { title: '编辑MaaEnd脚本' },
+    meta: { title: '编辑 MaaEnd 脚本' },
   },
   {
     path: '/scripts/:id/edit/general',
@@ -60,7 +55,7 @@ const routes = [
     path: '/scripts/:id/edit/schema',
     name: 'GenericScriptEdit',
     component: () => import('../views/EditView/Script/GenericScriptEdit.vue'),
-    meta: { title: '编辑插件化脚本' },
+    meta: { title: '编辑 Schema 脚本' },
   },
   {
     path: '/scripts/:id/edit/plugin',
@@ -69,40 +64,28 @@ const routes = [
     meta: { title: '编辑插件脚本' },
   },
   {
-    path: '/scripts/:scriptId/users/add/maa',
-    name: 'MAAUserAdd',
-    component: () => import('../views/EditView/User/MAAUserEdit.vue'),
-    meta: { title: '添加MAA用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/:userId/edit/maa',
-    name: 'MAAUserEdit',
-    component: () => import('../views/EditView/User/MAAUserEdit.vue'),
-    meta: { title: '编辑MAA用户' },
-  },
-  {
     path: '/scripts/:scriptId/users/add/src',
     name: 'SRCUserAdd',
     component: () => import('../views/EditView/User/SRCUserEdit.vue'),
-    meta: { title: '添加SRC用户' },
+    meta: { title: '添加 SRC 用户' },
   },
   {
     path: '/scripts/:scriptId/users/add/maaend',
     name: 'MaaEndUserAdd',
     component: () => import('../views/EditView/User/MaaEndUserEdit.vue'),
-    meta: { title: '添加MaaEnd用户' },
+    meta: { title: '添加 MaaEnd 用户' },
   },
   {
     path: '/scripts/:scriptId/users/:userId/edit/src',
     name: 'SRCUserEdit',
     component: () => import('../views/EditView/User/SRCUserEdit.vue'),
-    meta: { title: '编辑SRC用户' },
+    meta: { title: '编辑 SRC 用户' },
   },
   {
     path: '/scripts/:scriptId/users/:userId/edit/maaend',
     name: 'MaaEndUserEdit',
     component: () => import('../views/EditView/User/MaaEndUserEdit.vue'),
-    meta: { title: '编辑MaaEnd用户' },
+    meta: { title: '编辑 MaaEnd 用户' },
   },
   {
     path: '/scripts/:scriptId/users/add/general',
@@ -114,7 +97,7 @@ const routes = [
     path: '/scripts/:scriptId/users/add/schema',
     name: 'GenericUserAdd',
     component: () => import('../views/EditView/User/GenericUserEdit.vue'),
-    meta: { title: '添加插件化用户' },
+    meta: { title: '添加 Schema 用户' },
   },
   {
     path: '/scripts/:scriptId/users/add/plugin',
@@ -132,7 +115,7 @@ const routes = [
     path: '/scripts/:scriptId/users/:userId/edit/schema',
     name: 'GenericUserEdit',
     component: () => import('../views/EditView/User/GenericUserEdit.vue'),
-    meta: { title: '编辑插件化用户' },
+    meta: { title: '编辑 Schema 用户' },
   },
   {
     path: '/scripts/:scriptId/users/:userId/edit/plugin',
@@ -164,7 +147,7 @@ const routes = [
     component: SchedulerView,
     meta: {
       title: '调度中心',
-      keepAlive: true, // 启用 keep-alive，保持组件存活
+      keepAlive: true,
     },
   },
   {
@@ -177,7 +160,7 @@ const routes = [
     path: '/OCRdev',
     name: 'OCRdev',
     component: () => import('../views/OCRdev.vue'),
-    meta: { title: 'OCR测试' },
+    meta: { title: 'OCR 测试' },
   },
   {
     path: '/WSdev',
@@ -239,7 +222,6 @@ router.beforeEach(async (to, from, next) => {
 
   const { isInitialized, isBootstrapping, isAppReady } = useAppInitialization()
 
-  // 声明跳过的路由：直接放行
   if ((to.meta as any)?.skipGuard) {
     next()
     return
@@ -250,7 +232,7 @@ router.beforeEach(async (to, from, next) => {
       const decision = await getInitializationDecision()
       if (decision.mode === 'skip-home') {
         needInitLanding = false
-        logger.info(`命中跳过初始化条件，直接进入主页: ${JSON.stringify(decision)}`)
+        logger.info(`命中跳过初始化条件，直接进入首页: ${JSON.stringify(decision)}`)
         void startSkippedInitializationStartup()
         next('/home')
         return
@@ -275,7 +257,10 @@ router.beforeEach(async (to, from, next) => {
   }
 
   logger.info(
-    `检查初始化状态：${JSON.stringify({ isInitialized: isInitialized.value, isBootstrapping: isBootstrapping.value })}`
+    `检查初始化状态：${JSON.stringify({
+      isInitialized: isInitialized.value,
+      isBootstrapping: isBootstrapping.value,
+    })}`
   )
   if (isBootstrapping.value) {
     needInitLanding = false
