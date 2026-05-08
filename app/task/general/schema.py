@@ -105,7 +105,7 @@ SCRIPT_GROUPS = (
                 "根目录路径",
                 str(Path.cwd()),
                 placeholder="选择脚本根目录",
-                size="large",
+                size="medium",
             ),
         ],
     ),

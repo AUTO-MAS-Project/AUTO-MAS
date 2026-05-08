@@ -31,7 +31,17 @@ export interface SchemaOptionDefinition {
   value: unknown
 }
 
-export type SchemaFieldSize = 'small' | 'half' | 'medium' | 'large'
+export type SchemaFieldSize =
+  | '1/1'
+  | '1/2'
+  | '1/3'
+  | '2/3'
+  | '1/4'
+  | '3/4'
+  | 'small'
+  | 'half'
+  | 'medium'
+  | 'large'
 export type SchemaPathKind = 'file' | 'folder'
 export type SchemaFileFilter = {
   name: string
