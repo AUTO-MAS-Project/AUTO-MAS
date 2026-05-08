@@ -8,6 +8,13 @@ from .script_base import (
     TaskContext,
     register_script_type,
 )
+from .script_adapter import (
+    BaseAdapterManager,
+    ScriptAdapterDefinition,
+    ScriptAdapterHooks,
+    ScriptAdapterPlugin,
+    ScriptAdapterRuntime,
+)
 
 __all__ = [
     "TaskContext",
@@ -16,4 +23,9 @@ __all__ = [
     "PluginManualReviewTask",
     "PluginScriptConfigTask",
     "register_script_type",
+    "ScriptAdapterRuntime",
+    "ScriptAdapterHooks",
+    "ScriptAdapterDefinition",
+    "BaseAdapterManager",
+    "ScriptAdapterPlugin",
 ]

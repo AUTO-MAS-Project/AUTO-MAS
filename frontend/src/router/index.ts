@@ -46,12 +46,6 @@ const routes = [
     meta: { title: '编辑 MaaEnd 脚本' },
   },
   {
-    path: '/scripts/:id/edit/general',
-    name: 'GeneralScriptEdit',
-    component: () => import('../views/EditView/Script/GeneralScriptEdit.vue'),
-    meta: { title: '编辑通用脚本' },
-  },
-  {
     path: '/scripts/:id/edit/schema',
     name: 'GenericScriptEdit',
     component: () => import('../views/EditView/Script/GenericScriptEdit.vue'),
@@ -88,12 +82,6 @@ const routes = [
     meta: { title: '编辑 MaaEnd 用户' },
   },
   {
-    path: '/scripts/:scriptId/users/add/general',
-    name: 'GeneralUserAdd',
-    component: () => import('../views/EditView/User/GeneralUserEdit.vue'),
-    meta: { title: '添加通用用户' },
-  },
-  {
     path: '/scripts/:scriptId/users/add/schema',
     name: 'GenericUserAdd',
     component: () => import('../views/EditView/User/GenericUserEdit.vue'),
@@ -104,12 +92,6 @@ const routes = [
     name: 'PluginUserAdd',
     component: () => import('../views/EditView/User/PluginUserEdit.vue'),
     meta: { title: '添加插件脚本用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/:userId/edit/general',
-    name: 'GeneralUserEdit',
-    component: () => import('../views/EditView/User/GeneralUserEdit.vue'),
-    meta: { title: '编辑通用用户' },
   },
   {
     path: '/scripts/:scriptId/users/:userId/edit/schema',
@@ -218,7 +200,7 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to, from, next) => {
-  logger.info(`路由守卫：${JSON.stringify({ to: to.path, from: from.path })}`)
+  logger.info(`路由守卫: ${JSON.stringify({ to: to.path, from: from.path })}`)
 
   const { isInitialized, isBootstrapping, isAppReady } = useAppInitialization()
 
@@ -257,7 +239,7 @@ router.beforeEach(async (to, from, next) => {
   }
 
   logger.info(
-    `检查初始化状态：${JSON.stringify({
+    `初始化状态检查: ${JSON.stringify({
       isInitialized: isInitialized.value,
       isBootstrapping: isBootstrapping.value,
     })}`

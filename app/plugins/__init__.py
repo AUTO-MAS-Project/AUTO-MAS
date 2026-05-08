@@ -29,6 +29,19 @@ from .lifecycle_hooks import (
     replace_on_crash,
     replace_prepare,
 )
+from .script_adapter import (
+    BaseAdapterManager,
+    ScriptAdapterDefinition,
+    ScriptAdapterHooks,
+    ScriptAdapterPlugin,
+    ScriptAdapterRuntime,
+)
+from .script_adapter_schema import (
+    ScriptAdapterSchemaArtifacts,
+    build_configbase_class,
+    build_schema,
+    build_script_adapter_schema,
+)
 
 # ── 分组 API ──
 from .event import *  # noqa: F401,F403
@@ -121,6 +134,15 @@ __all__ = [
     "PluginManualReviewTask",
     "PluginScriptConfigTask",
     "register_script_type",
+    "ScriptAdapterRuntime",
+    "ScriptAdapterHooks",
+    "ScriptAdapterDefinition",
+    "BaseAdapterManager",
+    "ScriptAdapterPlugin",
+    "ScriptAdapterSchemaArtifacts",
+    "build_configbase_class",
+    "build_schema",
+    "build_script_adapter_schema",
     # 加载 / 管理
     "PluginLoader",
     "PluginRecord",

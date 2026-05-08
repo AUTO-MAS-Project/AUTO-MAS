@@ -413,7 +413,7 @@ const props = withDefaults(
     readonly: false,
     hideFields: () => [],
     actionLoadingId: '',
-    layout: 'single',
+    layout: 'plugin-grid',
   }
 )
 
@@ -516,18 +516,6 @@ const isSchemaFieldSize = (value: unknown): value is NonNullable<SchemaFieldDefi
 const getFieldLayoutSize = (field: SchemaFieldDefinition): NonNullable<SchemaFieldDefinition['size']> => {
   if (isSchemaFieldSize(field.size)) {
     return field.size
-  }
-
-  if (
-    field.type === 'table' ||
-    field.type === 'key_value' ||
-    isJsonField(field) ||
-    isDictionaryField(field) ||
-    isListField(field) ||
-    isTextareaField(field) ||
-    getTextareaRows(field) > 4
-  ) {
-    return 'large'
   }
 
   return 'small'

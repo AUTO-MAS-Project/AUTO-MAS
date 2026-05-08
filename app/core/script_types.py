@@ -26,9 +26,8 @@ from app.models.ConfigBase import (
     VirtualConfigValidator,
 )
 from app.models.task import ScriptItem
-from app.utils import get_logger
-
 from app.plugins.pypi_site import ensure_pypi_site_packages_on_syspath
+from app.utils import get_logger
 
 
 logger = get_logger("脚本类型注册表")
@@ -73,8 +72,8 @@ LEGACY_SCRIPT_TYPE_METADATA = (
         "user_class_name": "GeneralUserConfig",
         "supported_modes": ("AutoProxy", "ScriptConfig"),
         "icon": "General",
-        "editor_kind": "builtin:general",
-        "is_builtin": True,
+        "editor_kind": "schema",
+        "is_builtin": False,
     },
 )
 LEGACY_SCRIPT_TYPE_BY_SCRIPT_CLASS = {
@@ -256,13 +255,15 @@ class ScriptTypeRegistry:
     def _register_builtin_providers(self) -> None:
         """注册内建脚本类型。"""
 
-        from app.models.config import (
+        from app.models.config import MaaEndConfig, MaaEndUserConfig, SrcConfig, SrcUserConfig
+        from app.plugins import ScriptAdapterDefinition
+        from app.task.general.adapter import GeneralAdapterHooks
+        from app.task.general.schema import (
             GeneralConfig,
             GeneralUserConfig,
-            MaaEndConfig,
-            MaaEndUserConfig,
-            SrcConfig,
-            SrcUserConfig,
+            bind_related_config as bind_general_related_config,
+            build_general_script_schema,
+            build_general_user_schema,
         )
 
         def _lazy_manager(module_path: str, class_name: str) -> Callable[[ScriptItem], Any]:
@@ -296,18 +297,25 @@ class ScriptTypeRegistry:
                 editor_kind="builtin:maaend",
                 is_builtin=True,
             ),
-            ScriptTypeProvider(
+            ScriptAdapterDefinition(
                 type_key="General",
                 display_name="通用脚本",
                 script_config_class=GeneralConfig,
                 user_config_class=GeneralUserConfig,
+                hooks_factory=GeneralAdapterHooks,
                 supported_modes=("AutoProxy", "ScriptConfig"),
-                manager_factory=_lazy_manager("app.task.general.manager", "GeneralManager"),
                 icon="General",
-                editor_kind="builtin:general",
-                is_builtin=True,
-            ),
+                editor_kind="schema",
+                legacy_config_class_name="GeneralConfig",
+                legacy_user_config_class_name="GeneralUserConfig",
+                is_builtin=False,
+                bind_related_config=bind_general_related_config,
+                metadata={"framework": "script_adapter"},
+            ).build_provider(),
         ]
+
+        providers[-1].script_schema = build_general_script_schema()
+        providers[-1].user_schema = build_general_user_schema()
 
         for provider in providers:
             self.register(provider)
@@ -342,8 +350,19 @@ class ScriptTypeRegistry:
 def build_config_schema(config_class: type[Any]) -> dict[str, Any]:
     """从 ConfigBase 或 Pydantic BaseModel 配置类生成通用表单描述。"""
 
-    if inspect.isclass(config_class) and issubclass(config_class, BaseModel) and not issubclass(config_class, ConfigBase):
+    declared_groups = getattr(config_class, "_field_groups", None)
+    if declared_groups:
+        from app.plugins.script_adapter_schema import build_schema
+
+        return build_schema(declared_groups)
+
+    if (
+        inspect.isclass(config_class)
+        and issubclass(config_class, BaseModel)
+        and not issubclass(config_class, ConfigBase)
+    ):
         from app.plugins.schema import PluginSchemaManager
+
         schema_manager = PluginSchemaManager()
         fields = schema_manager._build_schema_from_model("__inline__", config_class)
         return fields
@@ -607,8 +626,8 @@ def _bind_builtin_script_config_models(global_config: Any) -> None:
     """预绑定宿主内建脚本配置模型，确保配置可以在 provider 激活前完成加载。"""
 
     from app.models.config import (
-        GeneralConfig,
-        GeneralUserConfig,
+        GeneralConfig as LegacyGeneralConfig,
+        GeneralUserConfig as LegacyGeneralUserConfig,
         MaaConfig,
         MaaEndConfig,
         MaaEndUserConfig,
@@ -617,22 +636,19 @@ def _bind_builtin_script_config_models(global_config: Any) -> None:
         SrcUserConfig,
     )
 
-    builtin_script_types = (
-        GeneralConfig,
-        MaaConfig,
-        MaaEndConfig,
-        SrcConfig,
-    )
+    builtin_script_types = (MaaConfig, MaaEndConfig, SrcConfig)
     for config_class in builtin_script_types:
         global_config.ScriptConfig.sub_config_type[config_class.__name__] = config_class
 
-    GeneralConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
+    # General 已迁移为插件脚本容器，这里只保留旧类名到旧模型的兼容装载映射。
+    global_config.ScriptConfig.sub_config_type["GeneralConfig"] = LegacyGeneralConfig
+
     MaaConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
     MaaEndConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
     SrcConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
     MaaUserConfig.related_config["PlanConfig"] = global_config.PlanConfig
 
-    _ = GeneralUserConfig
+    _ = LegacyGeneralUserConfig
     _ = MaaEndUserConfig
     _ = SrcUserConfig
 

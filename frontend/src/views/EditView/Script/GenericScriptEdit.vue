@@ -33,9 +33,20 @@
       ref="schemaFormRef"
       v-model="formModel"
       :schema="script.schema || {}"
+      :action-loading-id="actionLoadingId"
+      @trigger-action="({ field, fieldSchema }) => handleFieldAction(field, fieldSchema)"
       @validation-change="(errors) => (fieldErrors = errors)"
     />
   </a-card>
+
+  <SchemaActionSessionMask
+    :visible="sessionVisible"
+    :title="sessionTitle"
+    :description="sessionDescription"
+    :stop-label="sessionStopLabel"
+    :stopping="sessionStopping"
+    @stop="stopActiveSession()"
+  />
 </template>
 
 <script setup lang="ts">
@@ -43,9 +54,11 @@ import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import SchemaForm from '@/components/SchemaForm.vue'
+import SchemaActionSessionMask from '@/components/SchemaActionSessionMask.vue'
+import { useSchemaActionRunner } from '@/composables/useSchemaActionRunner'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import type { Script } from '@/types/script'
-import type { SchemaValidationErrorMap } from '@/types/schemaForm'
+import type { SchemaFieldDefinition, SchemaValidationErrorMap } from '@/types/schemaForm'
 import { descriptorMapFromList, getScriptTypeTagColor, normalizeScriptRecord } from '@/utils/scriptRegistry'
 
 const logger = window.electronAPI.getLogger('通用脚本编辑')
@@ -83,6 +96,32 @@ const loadScript = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const {
+  actionLoadingId,
+  sessionVisible,
+  sessionTitle,
+  sessionDescription,
+  sessionStopLabel,
+  sessionStopping,
+  runFieldAction,
+  stopActiveSession,
+} = useSchemaActionRunner({
+  onRefresh: async () => {
+    await loadScript()
+  },
+})
+
+const handleFieldAction = async (field: string, fieldSchema: SchemaFieldDefinition) => {
+  await runFieldAction(field, fieldSchema, {
+    scriptId,
+    scriptName: script.value?.name || '',
+    scriptType: script.value?.type || '',
+    scriptDisplayName: script.value?.displayName || '',
+    supportedModes: script.value?.supportedModes || [],
+    formModel: formModel.value,
+  })
 }
 
 const handleSave = async () => {

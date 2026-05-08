@@ -1,9 +1,29 @@
+export interface SchemaActionSessionDefinition {
+  response_task_id_key?: string
+  stop_path?: string
+  stop_method?: string
+  stop_payload?: unknown
+  overlay_title?: string
+  overlay_description?: string
+  stop_label?: string
+  start_message?: string
+  success_message?: string
+  stop_message?: string
+  timeout_ms?: number
+  timeout_auto_stop?: boolean
+  timeout_message?: string
+  completion_type?: string
+  completion_field?: string
+  error_field?: string
+}
+
 export interface SchemaActionDefinition {
   label?: string
   path?: string
   method?: string
   payload?: unknown
   refresh?: boolean
+  session?: SchemaActionSessionDefinition | null
 }
 
 export interface SchemaOptionDefinition {
