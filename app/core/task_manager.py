@@ -113,14 +113,13 @@ class Task(TaskExecuteBase):
                     f"未找到 resume_from_script_id={resume_id}，将从队列首项开始执行"
                 )
 
-        for i in range(0, start_index):
-            try:
-                self.task_info.script_list[i].status = "跳过"
-            except Exception:
-                pass
+        for i in range(start_index):
+            self.task_info.script_list[i].status = "跳过"
 
         # 依次运行任务
-        for self.task_info.current_index in range(start_index, len(self.task_info.script_list)):
+        for self.task_info.current_index in range(
+            start_index, len(self.task_info.script_list)
+        ):
             script_item = self.task_info.script_list[self.task_info.current_index]
             current_script_uid = uuid.UUID(script_item.script_id)
 

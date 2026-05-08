@@ -47,13 +47,13 @@
         <div class="control-spacer"></div>
         <a-space size="middle">
           <a-select
-            v-if="status !== '运行'"
+            v-if="status !== '运行' && showResumeScriptSelect"
             v-model:value="localResumeFromScriptId"
-            :placeholder="localSelectedTaskId ? '重启从指定脚本开始（默认第一个）' : '先选择任务项'"
+            placeholder="从指定脚本继续（默认第一个）"
             style="width: 260px"
             :loading="resumeScriptLoading"
             :options="resumeScriptOptions || []"
-            :disabled="disabled || !localSelectedTaskId"
+            :disabled="disabled"
             allow-clear
             size="large"
             @change="onResumeScriptChange"
@@ -63,11 +63,7 @@
             :type="status === '运行' ? 'default' : 'primary'"
             :danger="status === '运行'"
             :disabled="
-              status === '运行'
-                ? false
-                : !localSelectedTaskId
-                  || !localSelectedMode
-                  || disabled
+              status === '运行' ? false : !localSelectedTaskId || !localSelectedMode || disabled
             "
             size="large"
             @click="onAction"
@@ -85,7 +81,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { PlayCircleOutlined, StopOutlined } from '@ant-design/icons-vue'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
@@ -139,6 +135,13 @@ const localResumeFromScriptId = ref(props.resumeFromScriptId ?? null)
 
 // 模式选项
 const modeOptions = TASK_MODE_OPTIONS
+const showResumeScriptSelect = computed(() => {
+  const selectedTaskId = localSelectedTaskId.value
+  if (!selectedTaskId) return false
+
+  const taskOption = props.taskOptions.find(opt => opt.value === selectedTaskId)
+  return Boolean(taskOption?.label.startsWith('队列 - '))
+})
 
 // 运行时的显示文本 - 直接使用 props，不再需要本地 ref
 // const runningTaskLabel = ref('')
@@ -147,7 +150,7 @@ const modeOptions = TASK_MODE_OPTIONS
 // 监听状态变化，记录运行时的文本信息
 watch(
   () => props.status,
-  (newStatus) => {
+  newStatus => {
     if (newStatus === '运行') {
       const taskOption = props.taskOptions.find(opt => opt.value === props.selectedTaskId)
       const taskLabel = taskOption?.label || props.selectedTaskId || ''
@@ -159,7 +162,6 @@ watch(
     }
   }
 )
-
 
 // 监听 props 变化，同步到本地状态
 watch(
@@ -288,5 +290,4 @@ const onDropdownVisibleChange = (open: boolean) => {
 .divider {
   color: var(--ant-color-border);
 }
-
 </style>
