@@ -40,11 +40,22 @@
       ref="schemaFormRef"
       v-model="formModel"
       :schema="userSchema"
+      :action-loading-id="actionLoadingId"
+      @trigger-action="({ field, fieldSchema }) => handleFieldAction(field, fieldSchema)"
       @validation-change="(errors) => (fieldErrors = errors)"
     />
 
     <a-empty v-if="!userSchema && !loading" description="此插件脚本类型未提供用户配置表单" />
   </a-card>
+
+  <SchemaActionSessionMask
+    :visible="sessionVisible"
+    :title="sessionTitle"
+    :description="sessionDescription"
+    :stop-label="sessionStopLabel"
+    :stopping="sessionStopping"
+    @stop="stopActiveSession()"
+  />
 </template>
 
 <script setup lang="ts">
@@ -52,8 +63,14 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import SchemaForm from '@/components/SchemaForm.vue'
+import SchemaActionSessionMask from '@/components/SchemaActionSessionMask.vue'
+import { useSchemaActionRunner } from '@/composables/useSchemaActionRunner'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
-import type { SchemaDefinition, SchemaValidationErrorMap } from '@/types/schemaForm'
+import type {
+  SchemaDefinition,
+  SchemaFieldDefinition,
+  SchemaValidationErrorMap,
+} from '@/types/schemaForm'
 import { descriptorMapFromList, getScriptTypeTagColor } from '@/utils/scriptRegistry'
 
 const logger = window.electronAPI.getLogger('插件用户编辑')
@@ -88,7 +105,16 @@ const modeLabels: Record<string, string> = {
 
 const displayNameFromForm = computed(() => {
   const info = formModel.value?.Info
-  return typeof info?.Name === 'string' && info.Name.trim() ? info.Name : ''
+  if (typeof info?.Name === 'string' && info.Name.trim()) {
+    return info.Name
+  }
+  if (typeof formModel.value?.user_name === 'string' && formModel.value.user_name.trim()) {
+    return formModel.value.user_name
+  }
+  if (typeof formModel.value?.name === 'string' && formModel.value.name.trim()) {
+    return formModel.value.name
+  }
+  return ''
 })
 
 const loadData = async () => {
@@ -133,6 +159,35 @@ const loadData = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const {
+  actionLoadingId,
+  sessionVisible,
+  sessionTitle,
+  sessionDescription,
+  sessionStopLabel,
+  sessionStopping,
+  runFieldAction,
+  stopActiveSession,
+} = useSchemaActionRunner({
+  onRefresh: async () => {
+    await loadData()
+  },
+})
+
+const handleFieldAction = async (field: string, fieldSchema: SchemaFieldDefinition) => {
+  await runFieldAction(field, fieldSchema, {
+    scriptId,
+    scriptName: scriptName.value,
+    scriptType: scriptType.value,
+    scriptDisplayName: scriptDisplayName.value,
+    userId: userId.value,
+    userName: displayNameFromForm.value || userName.value,
+    docsUrl: docsUrl.value,
+    supportedModes: supportedModes.value,
+    formModel: formModel.value,
+  })
 }
 
 const handleSave = async () => {

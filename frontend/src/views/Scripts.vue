@@ -498,7 +498,7 @@ const handleAddScript = () => {
   }
   // 如果当前没有脚本，直接进入类型选择
   if (scripts.value.length === 0) {
-    selectedType.value = 'MAA'
+    selectedType.value = availableScriptTypes.value[0]?.type_key || 'MAA'
     typeSelectVisible.value = true
     return
   }
@@ -517,7 +517,7 @@ const handleConfirmCreateMode = () => {
   } else {
     // 创建新脚本 - 进入类型选择
     createModeSelectVisible.value = false
-    selectedType.value = 'MAA'
+    selectedType.value = availableScriptTypes.value[0]?.type_key || 'MAA'
     typeSelectVisible.value = true
   }
 }
@@ -582,7 +582,7 @@ const handleConfirmGeneralMode = async () => {
     addLoading.value = true
     try {
       const result = await registryApi.addScript('General')
-      router.push(`/scripts/${result.id}/edit/general`)
+      router.push(getScriptEditPath({ id: result.id, type: result.type, editorKind: result.editor_kind }))
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`添加脚本失败: ${errorMsg}`)
@@ -631,7 +631,13 @@ const handleConfirmTemplate = async () => {
       await loadScripts()
 
       // 跳转到编辑页面，不传递state数据，让编辑页面从API重新加载最新配置
-      router.push(`/scripts/${createResult.id}/edit/general`)
+      router.push(
+        getScriptEditPath({
+          id: createResult.id,
+          type: createResult.type,
+          editorKind: createResult.editor_kind,
+        })
+      )
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
