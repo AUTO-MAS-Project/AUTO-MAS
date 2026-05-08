@@ -1,0 +1,32 @@
+# automas_${plugin_name}
+
+[![PyPI version](https://img.shields.io/pypi/v/automas_plugin_${plugin_name}?logo=pypi&logoColor=white)](https://pypi.org/project/automas_plugin_${plugin_name}/)
+
+${description}
+
+## 说明
+
+这是一个基于 AUTO-MAS 脚本适配框架的专项适配插件模板。
+
+- 插件继续通过 `auto_mas.plugins` 入口点被发现和加载。
+- 脚本配置与用户配置全部由后端 schema 声明生成前端表单。
+- 运行时通过 `ScriptAdapterHooks` 提供 `check / prepare / finalize / on_crash`。
+- 标准模式默认包含 `AutoProxy`、`ScriptConfig`、`ManualReview`。
+
+## 目录结构
+
+```text
+src/${plugin_name}/
+├── adapter/
+│   ├── __init__.py
+│   └── runtime.py
+├── __init__.py
+├── plugin.py
+└── schema.py
+```
+
+## 命名约定
+
+- 脚本名称建议使用 `script_name`。
+- 用户名称建议使用 `user_name`。
+- 这两个字段会同步到宿主的通用展示名称。

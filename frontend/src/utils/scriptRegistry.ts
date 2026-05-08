@@ -65,7 +65,7 @@ const DEFAULT_USER_SHAPE = {
   },
 }
 
-export const BUILTIN_SCRIPT_TYPES = new Set(['SRC', 'MaaEnd', 'General'])
+export const BUILTIN_SCRIPT_TYPES = new Set(['SRC', 'MaaEnd'])
 
 export const isBuiltinScriptType = (type: string) => BUILTIN_SCRIPT_TYPES.has(type)
 
@@ -103,8 +103,6 @@ export const getScriptEditPath = (script: Pick<Script, 'id' | 'type' | 'editorKi
       return `/scripts/${script.id}/edit/src`
     case 'builtin:maaend':
       return `/scripts/${script.id}/edit/maaend`
-    case 'builtin:general':
-      return `/scripts/${script.id}/edit/general`
     default:
       if (script.editorKind?.startsWith('plugin:')) {
         return `/scripts/${script.id}/edit/plugin`
@@ -119,8 +117,6 @@ export const getUserCreatePath = (script: Pick<Script, 'id' | 'editorKind'>) => 
       return `/scripts/${script.id}/users/add/src`
     case 'builtin:maaend':
       return `/scripts/${script.id}/users/add/maaend`
-    case 'builtin:general':
-      return `/scripts/${script.id}/users/add/general`
     default:
       if (script.editorKind?.startsWith('plugin:')) {
         return `/scripts/${script.id}/users/add/plugin`
@@ -138,8 +134,6 @@ export const getUserEditPath = (
       return `/scripts/${script.id}/users/${user.id}/edit/src`
     case 'builtin:maaend':
       return `/scripts/${script.id}/users/${user.id}/edit/maaend`
-    case 'builtin:general':
-      return `/scripts/${script.id}/users/${user.id}/edit/general`
     default:
       if (script.editorKind?.startsWith('plugin:')) {
         return `/scripts/${script.id}/users/${user.id}/edit/plugin`

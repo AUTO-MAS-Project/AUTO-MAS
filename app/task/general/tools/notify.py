@@ -19,10 +19,14 @@
 
 #   Contact: DLmaster_361@163.com
 
+from typing import TYPE_CHECKING
+
 from app.core import Config
 from app.services import Notify
 from app.utils import get_logger
-from app.models.config import GeneralUserConfig
+
+if TYPE_CHECKING:
+    from ..schema import GeneralUserConfig
 
 logger = get_logger("通用通知工具")
 

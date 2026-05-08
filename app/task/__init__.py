@@ -20,9 +20,26 @@
 
 #   Contact: DLmaster_361@163.com
 
+from importlib import import_module
+from typing import Any
 
-from .MaaEnd import MaaEndManager
-from .SRC import SrcManager
-from .general import GeneralManager
+__all__ = ["SrcManager", "MaaEndManager"]
 
-__all__ = ["SrcManager", "GeneralManager", "MaaEndManager"]
+_LAZY_EXPORTS = {
+    "SrcManager": ("app.task.SRC.manager", "SrcManager"),
+    "MaaEndManager": ("app.task.MaaEnd.manager", "MaaEndManager"),
+}
+
+
+def __getattr__(name: str) -> Any:
+    """按需导出任务管理器，避免包初始化时触发环形导入。"""
+
+    target = _LAZY_EXPORTS.get(name)
+    if target is None:
+        raise AttributeError(name)
+
+    module_path, attr_name = target
+    module = import_module(module_path)
+    value = getattr(module, attr_name)
+    globals()[name] = value
+    return value
