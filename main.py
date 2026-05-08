@@ -101,7 +101,7 @@ def main():
                 for pycache in plugins_dir.rglob("__pycache__"):
                     if pycache.is_dir():
                         shutil.rmtree(pycache, ignore_errors=True)
-                logger.info("DEV 模式：已清理 plugins 目录下的 __pycache__")
+                logger.debug("DEV 模式：已清理 plugins 目录下的 __pycache__")
 
             await PluginManager.start()
 

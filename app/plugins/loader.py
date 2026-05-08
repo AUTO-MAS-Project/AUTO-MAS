@@ -155,7 +155,7 @@ class PluginLoader:
             )
 
         self.discovered_plugins = discovered
-        logger.info(f"插件扫描完成，共发现 {len(discovered)} 个插件")
+        logger.debug(f"插件扫描完成，共发现 {len(discovered)} 个插件")
         return discovered
 
     def _meta(self, plugin_class: type[Any]) -> tuple[set[str], set[str], set[str]]:
@@ -369,7 +369,7 @@ class PluginLoader:
             sys.modules.pop(key, None)
 
         if target_keys:
-            logger.info(
+            logger.debug(
                 f"已清理 PyPI 插件模块缓存: plugin={plugin_name}, modules={len(target_keys)}"
             )
 
