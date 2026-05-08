@@ -508,18 +508,49 @@ const getActionLabel = (field: SchemaFieldDefinition) => {
   return action?.label || getFieldLabel(field)
 }
 
-const schemaFieldSizes = ['small', 'half', 'medium', 'large'] as const
+const schemaFieldSizeAliases = {
+  small: '1/3',
+  half: '1/2',
+  medium: '2/3',
+  large: '1/1',
+} as const
+
+const schemaFieldSizeClasses = {
+  '1/1': '1-1',
+  '1/2': '1-2',
+  '1/3': '1-3',
+  '2/3': '2-3',
+  '1/4': '1-4',
+  '3/4': '3-4',
+} as const
+
+const schemaFieldSizes = [
+  ...Object.keys(schemaFieldSizeClasses),
+  ...Object.keys(schemaFieldSizeAliases),
+] as const
 
 const isSchemaFieldSize = (value: unknown): value is NonNullable<SchemaFieldDefinition['size']> =>
   typeof value === 'string' && schemaFieldSizes.includes(value as NonNullable<SchemaFieldDefinition['size']>)
 
-const getFieldLayoutSize = (field: SchemaFieldDefinition): NonNullable<SchemaFieldDefinition['size']> => {
-  if (isSchemaFieldSize(field.size)) {
-    return field.size
+const normalizeFieldLayoutSize = (size: SchemaFieldDefinition['size']): keyof typeof schemaFieldSizeClasses => {
+  if (typeof size !== 'string') {
+    return '1/3'
   }
 
-  return 'small'
+  if (size in schemaFieldSizeClasses) {
+    return size as keyof typeof schemaFieldSizeClasses
+  }
+
+  if (size in schemaFieldSizeAliases) {
+    return schemaFieldSizeAliases[size as keyof typeof schemaFieldSizeAliases]
+  }
+
+  return '1/3'
 }
+
+const getFieldLayoutSize = (
+  field: SchemaFieldDefinition,
+): keyof typeof schemaFieldSizeClasses => schemaFieldSizeClasses[normalizeFieldLayoutSize(field.size)]
 
 const getValueByPath = (source: Record<string, any>, path: string) => {
   if (!path) {
@@ -1135,7 +1166,7 @@ defineExpose({
 
 .schema-form-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -1143,20 +1174,28 @@ defineExpose({
   min-width: 0;
 }
 
-.schema-form-grid .schema-item-size-small {
-  grid-column: span 2;
-}
-
-.schema-form-grid .schema-item-size-half {
+.schema-form-grid .schema-item-size-1-4 {
   grid-column: span 3;
 }
 
-.schema-form-grid .schema-item-size-medium {
+.schema-form-grid .schema-item-size-1-3 {
   grid-column: span 4;
 }
 
-.schema-form-grid .schema-item-size-large {
-  grid-column: 1 / -1;
+.schema-form-grid .schema-item-size-1-2 {
+  grid-column: span 6;
+}
+
+.schema-form-grid .schema-item-size-2-3 {
+  grid-column: span 8;
+}
+
+.schema-form-grid .schema-item-size-3-4 {
+  grid-column: span 9;
+}
+
+.schema-form-grid .schema-item-size-1-1 {
+  grid-column: span 12;
 }
 
 .schema-field-head {

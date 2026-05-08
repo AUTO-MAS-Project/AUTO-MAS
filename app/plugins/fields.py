@@ -10,7 +10,18 @@ from pydantic_core import PydanticUndefined
 
 
 PluginFieldFormat = Literal["password", "url", "email", "textarea"]
-PluginFieldSize = Literal["small", "half", "medium", "large"]
+PluginFieldSize = Literal[
+    "1/1",
+    "1/2",
+    "1/3",
+    "2/3",
+    "1/4",
+    "3/4",
+    "small",
+    "half",
+    "medium",
+    "large",
+]
 PluginPathKind = Literal["file", "folder"]
 
 
