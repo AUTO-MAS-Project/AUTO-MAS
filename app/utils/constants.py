@@ -40,6 +40,8 @@ TYPE_BOOK = {
     "SrcConfig": "SRC",
     "MaaEndConfig": "MaaEnd",
     "GeneralConfig": "通用",
+    "M9AConfig": "M9A",
+    "M9AUserConfig": "M9A",
 }
 """配置类型映射表"""
 
@@ -211,7 +213,15 @@ EMULATOR_PATH_BOOK = {
     "mumu": {
         "name": "MuMu模拟器",
         "executables": ["MuMuManager.exe", "MuMuPlayer.exe"],
-        "registry_display_keywords": ["MuMu", "MuMu Player", "MuMuPlayer", "Netease MuMu"],
+        # Uninstall 表 DisplayName 关键词匹配。
+        # 注意：关键词为子串匹配（大小写不敏感），因此 "MuMu Player" 可命中 "MuMu Player 12"，
+        # 但不使用裸 "MuMu" 以避免误匹配 MuMuPlugin 等无关软件。
+        "registry_display_keywords": [
+            "MuMu Player",
+            "MuMuPlayer",
+            "Netease MuMu",
+            "MuMu模拟器",
+        ],
         "registry_paths": [
             r"SOFTWARE\NetEase\MuMu Player 12",
             r"SOFTWARE\NetEase\MuMuPlayer-12.0",
@@ -236,7 +246,14 @@ EMULATOR_PATH_BOOK = {
     "ldplayer": {
         "name": "雷电模拟器",
         "executables": ["ldconsole.exe", "LDPlayer.exe", "dnplayer.exe"],
-        "registry_display_keywords": ["LDPlayer", "雷电", "leidian", "XuanZhi"],
+        # "雷电" 单独作为关键词可能误匹配其他中文软件，
+        # 因此使用 "雷电模拟器"（完整产品名）配合英文标识符。
+        "registry_display_keywords": [
+            "LDPlayer",
+            "雷电模拟器",
+            "leidian",
+            "XuanZhi LDPlayer",
+        ],
         "registry_paths": [
             r"SOFTWARE\ChangZhi",
             r"SOFTWARE\leidian\ldplayer",
@@ -255,7 +272,11 @@ EMULATOR_PATH_BOOK = {
     "nox": {
         "name": "夜神模拟器",
         "executables": ["Nox.exe", "NoxVMHandle.exe"],
-        "registry_display_keywords": ["Nox", "NoxPlayer", "Nox APP Player", "BigNox"],
+        "registry_display_keywords": [
+            "NoxPlayer",
+            "Nox APP Player",
+            "BigNox",
+        ],
         "registry_paths": [
             r"SOFTWARE\BigNox\VirtualBox",
             r"SOFTWARE\Nox APP Player",
@@ -285,7 +306,11 @@ EMULATOR_PATH_BOOK = {
     "bluestacks": {
         "name": "BlueStacks",
         "executables": ["BlueStacks.exe", "HD-Player.exe"],
-        "registry_display_keywords": ["BlueStacks", "BlueStacks_nxt", "BlueStacks X"],
+        "registry_display_keywords": [
+            "BlueStacks",
+            "BlueStacks_nxt",
+            "BlueStacks X",
+        ],
         "registry_paths": [
             r"SOFTWARE\BlueStacks",
             r"SOFTWARE\BlueStacks_nxt",

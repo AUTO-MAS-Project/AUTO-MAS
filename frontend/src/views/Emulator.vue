@@ -416,14 +416,14 @@ const handleDelete = async (uuid: string) => {
 const handleSearch = async () => {
   searching.value = true
   try {
-    const response = await Service.searchEmulatorsApiEmulatorEmulatorSearchPost(false)
+    const response = await Service.searchEmulatorsApiEmulatorEmulatorSearchPost()
     if (response.code === 200) {
       searchResults.value = response.emulators || []
       if (searchResults.value.length > 0) {
         showSearchModal.value = true
-        message.success(`快速搜索完成，找到 ${searchResults.value.length} 个模拟器`)
+        message.success(`找到 ${searchResults.value.length} 个模拟器`)
       } else {
-        message.info('快速搜索未找到已安装的模拟器')
+        message.info('未找到已安装的模拟器')
       }
     } else {
       message.error(response.message || '搜索失败')
@@ -840,8 +840,8 @@ const handleBossKeyInputChange = (uuid: string) => {
         <div v-if="emulatorIndex.length === 0" class="empty-state-large">
           <a-empty />
           <a-space direction="horizontal" :size="16">
-            <a-button type="primary" size="large" :icon="h(SearchOutlined)" :loading="searching" @click="handleSearch()">
-              快速搜索模拟器
+            <a-button type="primary" size="large" :icon="h(SearchOutlined)" :loading="searching" @click="handleSearch">
+              自动搜索模拟器
             </a-button>
             <a-button size="large" :icon="h(PlusOutlined)" @click="handleAddWithSwitch">
               手动添加模拟器
@@ -1041,10 +1041,10 @@ const handleBossKeyInputChange = (uuid: string) => {
             <div class="tab-extra-actions">
               <a-space :size="8">
                 <a-button type="default" size="middle" :icon="h(SearchOutlined)" :loading="searching" @click="handleSearch()">
-                  快速搜索
+                  自动搜索模拟器
                 </a-button>
                 <a-button type="primary" size="middle" :icon="h(PlusOutlined)" @click="handleAddWithSwitch">
-                  手动添加
+                  手动添加多开器
                 </a-button>
               </a-space>
             </div>
