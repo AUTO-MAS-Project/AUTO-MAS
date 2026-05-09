@@ -326,6 +326,8 @@ export function useSchedulerLogic() {
   }
 
   // 任务操作
+  // 注：当前通过任务选项 label 的 "队列 - " 前缀判断是否为队列任务。
+  //     这是对后端 ComboBox label 格式的隐式依赖；若 label 格式变更需同步调整。
   const isQueueTask = (tab: SchedulerTab) => {
     const taskOption = taskOptions.value.find(item => item.value === tab.selectedTaskId)
     return Boolean(taskOption?.label.startsWith('队列 - '))
