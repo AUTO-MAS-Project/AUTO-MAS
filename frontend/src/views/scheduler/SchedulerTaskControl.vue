@@ -135,6 +135,9 @@ const localResumeFromScriptId = ref(props.resumeFromScriptId ?? null)
 
 // 模式选项
 const modeOptions = TASK_MODE_OPTIONS
+
+// 仅当选中队列任务时显示恢复脚本下拉框。
+// 注：通过任务选项 label 的 "队列 - " 前缀判断，与 useSchedulerLogic.isQueueTask 保持同步。
 const showResumeScriptSelect = computed(() => {
   const selectedTaskId = localSelectedTaskId.value
   if (!selectedTaskId) return false
