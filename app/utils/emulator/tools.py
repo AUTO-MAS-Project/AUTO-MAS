@@ -20,8 +20,8 @@
 #   Contact: DLmaster_361@163.com
 
 
-import shutil
 import re
+import shutil
 import winreg
 from maa.toolkit import Toolkit
 from contextlib import suppress
@@ -33,7 +33,7 @@ from app.utils import get_logger
 
 logger = get_logger("模拟器管理工具")
 
-EXECUTABLE_EXTENSIONS = {".exe", ".bat", ".cmd"}
+# 注册表中常见的安装路径值名称（按优先级排列）
 REGISTRY_INSTALL_VALUE_NAMES = (
     "InstallPath",
     "InstallLocation",
@@ -47,7 +47,8 @@ REGISTRY_INSTALL_VALUE_NAMES = (
     "QuietUninstallString",
     "ImagePath",
 )
-MUMU_EXECUTABLES = ("MuMuManager.exe",)
+
+# MuMu 相对路径推断模式：从给定基准目录出发，按顺序拼接子路径直到 MuMuManager.exe
 MUMU_RELATIVE_EXECUTABLE_PATTERNS = (
     ("MuMuManager.exe",),
     ("nx_main", "MuMuManager.exe"),
@@ -55,6 +56,8 @@ MUMU_RELATIVE_EXECUTABLE_PATTERNS = (
     ("MuMu Player 12", "nx_main", "MuMuManager.exe"),
     ("MuMu", "nx_main", "MuMuManager.exe"),
 )
+
+# MuMu GameViewer 安装器跨盘符推断模式：安装器在 C 盘但主程序可能在 D/E 盘
 MUMU_GAMEVIEWER_DRIVE_PATTERNS = (
     ("MuMuPlayer", "nx_main", "MuMuManager.exe"),
     ("Program Files", "Netease", "MuMu Player 12", "nx_main", "MuMuManager.exe"),
@@ -70,24 +73,22 @@ MUMU_GAMEVIEWER_DRIVE_PATTERNS = (
 )
 
 
-async def search_all_emulators(include_full_scan: bool = False) -> List[Dict[str, str]]:
-    """搜索所有支持的模拟器"""
+async def search_all_emulators() -> List[Dict[str, str]]:
+    """搜索所有支持的模拟器（注册表优先 + 默认路径/PATH/ADB 轻量兜底）"""
 
-    # 历史版本存在全盘扫描/进度轮询，这里已完全移除，仅保留快速搜索。
-    # include_full_scan 参数仅为接口兼容保留，不再触发任何扫描模式。
-    if include_full_scan:
-        logger.info("include_full_scan 参数已忽略（全盘扫描流程已移除）")
     logger.info("开始搜索所有模拟器, mode=quick_search")
     found_emulators = []
     found_emulator_paths = set()
 
-    # 兼容主流模拟器：注册表（厂商键 + 卸载表关键词）→ 默认路径 → 系统 PATH → ADB 兜底。
+    # 搜索链路：注册表（厂商键 + 卸载表关键词）→ 默认路径 → 系统 PATH
     for emulator_type, config in EMULATOR_PATH_BOOK.items():
         try:
             emulator_paths = _search_emulator(config)
             for emulator_path in emulator_paths:
                 # 自动修正路径
-                corrected_path = find_emulator_manager_path(emulator_path, emulator_type)
+                corrected_path = find_emulator_manager_path(
+                    emulator_path, emulator_type
+                )
                 if corrected_path not in found_emulator_paths:
                     found_emulator_paths.add(corrected_path)
                     found_emulators.append(
@@ -101,7 +102,7 @@ async def search_all_emulators(include_full_scan: bool = False) -> List[Dict[str
         except Exception as e:
             logger.warning(f"搜索{config['name']}时出错: {e}")
 
-    # ADB 兜底：尽量在“可验证主程序存在”的前提下归类；否则标记为 general。
+    # ADB 兜底：尽量在"可验证主程序存在"的前提下归类；否则标记为 general
     for emulator in Toolkit.find_adb_devices():
         adb_path = emulator.adb_path
         adb_dir = adb_path.parent
@@ -110,9 +111,15 @@ async def search_all_emulators(include_full_scan: bool = False) -> List[Dict[str
             primary_exe = config["executables"][0] if config.get("executables") else ""
             if not primary_exe:
                 continue
-            corrected_path = find_emulator_manager_path(adb_dir.as_posix(), emulator_type)
+            corrected_path = find_emulator_manager_path(
+                adb_dir.as_posix(), emulator_type
+            )
             corrected_obj = Path(corrected_path)
-            if corrected_obj.exists() and corrected_obj.is_file() and corrected_obj.name == primary_exe:
+            if (
+                corrected_obj.exists()
+                and corrected_obj.is_file()
+                and corrected_obj.name == primary_exe
+            ):
                 corrected_key = corrected_obj.as_posix()
                 if corrected_key not in found_emulator_paths:
                     found_emulator_paths.add(corrected_key)
@@ -147,16 +154,18 @@ async def search_all_emulators(include_full_scan: bool = False) -> List[Dict[str
 
 
 def _search_emulator(config: Dict) -> List[str]:
-    """搜索单类模拟器"""
+    """搜索单类模拟器，返回找到的所有候选路径列表"""
+
+    # 推断当前配置属于哪种模拟器类型
     emulator_type = "general"
     for et, cfg in EMULATOR_PATH_BOOK.items():
         if cfg is config:
             emulator_type = et
             break
 
-    # 1. 从注册表搜索
     found_paths: List[str] = []
 
+    # 将注册表路径分为厂商键和卸载表根键
     vendor_registry_paths = [
         path
         for path in config["registry_paths"]
@@ -167,6 +176,8 @@ def _search_emulator(config: Dict) -> List[str]:
         for path in config["registry_paths"]
         if "MICROSOFT\\WINDOWS\\CURRENTVERSION\\UNINSTALL" in path.upper()
     ]
+
+    # 1. 厂商注册表键搜索
     registry_candidates = _search_from_registry(
         vendor_registry_paths,
         config.get("registry_display_keywords") or [],
@@ -180,7 +191,8 @@ def _search_emulator(config: Dict) -> List[str]:
         )
         found_paths.extend(resolved_registry_paths)
 
-    # 卸载表根键关键词匹配：兼容安装器写入路径不固定的场景，依赖后续“可执行文件存在”校验过滤噪声。
+    # 2. 卸载表根键关键词匹配：兼容安装器写入路径不固定的场景，
+    #    依赖后续"可执行文件存在"校验过滤噪声
     if uninstall_registry_paths:
         uninstall_candidates = _search_from_registry(
             uninstall_registry_paths,
@@ -195,7 +207,7 @@ def _search_emulator(config: Dict) -> List[str]:
             )
             found_paths.extend(resolved_registry_paths)
 
-    # 默认路径：覆盖无法从注册表获取安装位置的情况（例如绿色版 / 权限受限）。
+    # 3. 默认路径：覆盖无法从注册表获取安装位置的情况（例如绿色版 / 权限受限）
     for default_path in config.get("default_paths") or []:
         resolved_default_paths = _resolve_emulator_install_paths(
             default_path,
@@ -205,7 +217,7 @@ def _search_emulator(config: Dict) -> List[str]:
         )
         found_paths.extend(resolved_default_paths)
 
-    # 系统 PATH：命中率较低但成本很小，作为最后的轻量兜底。
+    # 4. 系统 PATH：命中率较低但成本很小，作为最后的轻量兜底
     path_result = _search_from_path(config.get("executables") or [])
     if path_result:
         resolved_path_results = _resolve_emulator_install_paths(
@@ -225,7 +237,8 @@ def _resolve_emulator_install_paths(
     emulator_type: str,
     source: str,
 ) -> List[str]:
-    """将来源路径统一解析为可用的模拟器安装目录。"""
+    """将来源路径统一解析为可用的模拟器安装目录"""
+
     if not candidate_path:
         return []
 
@@ -234,22 +247,21 @@ def _resolve_emulator_install_paths(
         return []
 
     results: List[str] = []
-
     executable_names = config["executables"]
 
-    # 若输入本身就是目标可执行文件，直接使用其父目录。
+    # 若输入本身就是目标可执行文件，直接使用其父目录
     if path_obj.is_file():
         if path_obj.name in executable_names:
             logger.info(f"{config['name']} 通过{source}命中可执行文件: {path_obj}")
             results.append(path_obj.parent.as_posix())
         return _dedupe_path_strings(results)
 
-    # 目录本身可直接校验的场景先走通用逻辑。
+    # 目录本身可直接校验的场景先走通用逻辑
     if _validate_emulator_path(str(path_obj), executable_names):
         logger.info(f"{config['name']} 通过{source}命中安装目录: {path_obj}")
         results.append(path_obj.as_posix())
 
-    # MuMu 的安装器路径（如 GameViewer）与主程序目录分离，需要额外结构化推断。
+    # MuMu 的安装器路径（如 GameViewer）与主程序目录分离，需要额外结构化推断
     if emulator_type == "mumu":
         for manager_path in _iter_mumu_manager_paths(path_obj):
             if manager_path.exists():
@@ -264,6 +276,7 @@ def _resolve_emulator_install_paths(
 
 
 def _dedupe_path_strings(paths: List[str]) -> List[str]:
+    """路径去重（大小写不敏感），保留首次出现的大小写"""
     dedup: List[str] = []
     seen: Set[str] = set()
     for path in paths:
@@ -276,6 +289,7 @@ def _dedupe_path_strings(paths: List[str]) -> List[str]:
 
 
 def _safe_is_same_path(left: Path, right: Path) -> bool:
+    """安全比较两个路径是否指向同一位置"""
     with suppress(OSError):
         return left.samefile(right)
     return left.resolve().as_posix().lower() == right.resolve().as_posix().lower()
@@ -284,7 +298,7 @@ def _safe_is_same_path(left: Path, right: Path) -> bool:
 def _iter_existing_drive_roots() -> List[Path]:
     """
     枚举当前系统存在的盘符根目录（仅检查 A:/ ~ Z:/ 是否存在，不做任何目录递归扫描）。
-    这不是“全盘扫描”，只是为 MuMu GameViewer 的跨盘安装场景提供候选根路径。
+    这不是"全盘扫描"，只是为 MuMu GameViewer 的跨盘安装场景提供候选根路径。
     """
     roots: List[Path] = []
     for c in range(65, 91):  # A-Z
@@ -295,7 +309,8 @@ def _iter_existing_drive_roots() -> List[Path]:
 
 
 def _iter_mumu_manager_paths(base_path: Path) -> List[Path]:
-    """按 MuMu 常见目录结构生成主程序候选路径。"""
+    """按 MuMu 常见目录结构生成主程序候选路径"""
+
     candidate_bases: List[Path] = [base_path]
 
     current = base_path
@@ -311,13 +326,13 @@ def _iter_mumu_manager_paths(base_path: Path) -> List[Path]:
         for pattern in MUMU_RELATIVE_EXECUTABLE_PATTERNS:
             candidates.append(candidate_base.joinpath(*pattern))
 
-    # 若命中 GameViewer 安装器路径，进一步做结构化推断。
+    # 若命中 GameViewer 安装器路径，进一步做跨盘符结构化推断
     if "gameviewer" in base_path.as_posix().lower():
         candidate_drive_roots: List[Path] = []
         current_drive_root = Path(base_path.anchor) if base_path.anchor else None
         if current_drive_root and current_drive_root.exists():
             candidate_drive_roots.append(current_drive_root)
-        # 补齐跨盘安装的推断：仅枚举盘符根目录，不做递归扫描。
+        # 补齐跨盘安装的推断：仅枚举盘符根目录，不做递归扫描
         for drive_root in _iter_existing_drive_roots():
             if any(
                 _safe_is_same_path(drive_root, existing)
@@ -344,10 +359,15 @@ def _iter_mumu_manager_paths(base_path: Path) -> List[Path]:
 def _extract_path_from_command(value: str) -> str:
     """
     从注册表里常见的命令行字段中抽取一个路径（exe 或目录）。
+
     例如:
       - "\"D:\\MuMu\\uninstall.exe\" /S" -> D:\\MuMu\\uninstall.exe
       - "D:\\MuMu\\uninstall.exe /S"     -> D:\\MuMu\\uninstall.exe
+
+    注意：部分注册表值在路径后附加 ",0" 等图标索引号（如
+    "C:\\Foo\\bar.exe",0），需要通过正则移除该尾缀。
     """
+
     if not value:
         return ""
     s = str(value).strip()
@@ -358,20 +378,25 @@ def _extract_path_from_command(value: str) -> str:
     m = re.match(r'^\s*"([^"]+)"', s)
     if m:
         extracted = m.group(1).strip()
+        # 移除路径尾部的 ",数字" 图标索引标记
         extracted = re.sub(r",\d+\s*$", "", extracted)
         return extracted.strip()
 
     # 否则取第一个 token（到空格为止）
     token = s.split(" ")[0].strip()
+    # 同样移除 ",数字" 图标索引标记
     token = re.sub(r",\d+\s*$", "", token)
     return token.strip()
 
 
-def _search_from_registry(registry_paths: List[str], display_keywords: List[str] | None = None) -> List[str]:
-    """从注册表搜索模拟器路径"""
+def _search_from_registry(
+    registry_paths: List[str],
+    display_keywords: List[str] | None = None,
+) -> List[str]:
+    """从注册表搜索模拟器路径，返回所有找到的路径列表"""
 
     def iter_registry_paths(path: str):
-        """在不改配置结构的前提下，兼容 WOW6432Node 视图路径。"""
+        """在不改配置结构的前提下，兼容 WOW6432Node 视图路径"""
         yielded = set()
         candidates = [path]
         software_prefix = "SOFTWARE\\"
@@ -390,6 +415,7 @@ def _search_from_registry(registry_paths: List[str], display_keywords: List[str]
             yield candidate
 
     def read_install_path(key) -> str:
+        """尝试多种常见的值名称读取安装路径"""
         for value_name in REGISTRY_INSTALL_VALUE_NAMES:
             with suppress(FileNotFoundError, OSError):
                 value, _ = winreg.QueryValueEx(key, value_name)
@@ -403,6 +429,7 @@ def _search_from_registry(registry_paths: List[str], display_keywords: List[str]
         return u.endswith(r"MICROSOFT\WINDOWS\CURRENTVERSION\UNINSTALL")
 
     def match_display_name(key) -> bool:
+        """检查子键的 DisplayName 是否包含任一关键词"""
         if not display_keywords:
             return True
         with suppress(FileNotFoundError, OSError):
@@ -475,7 +502,7 @@ def _search_from_registry(registry_paths: List[str], display_keywords: List[str]
 
 
 def _search_from_path(executables: List[str]) -> str:
-    """从系统PATH搜索模拟器"""
+    """从系统PATH搜索模拟器（使用 shutil.which，比 subprocess 调用 where 更轻量）"""
 
     for executable in executables:
         resolved_path = shutil.which(executable)
@@ -543,6 +570,7 @@ def find_emulator_manager_path(
     # 第一个可执行文件是主管理器程序（优先级最高）
     primary_exe = executables[0]
 
+    # 复用已解析的 path_obj，避免重复构造
     path_obj = input_path_obj
 
     # 如果输入的是文件,先获取其父目录
@@ -576,7 +604,6 @@ def find_emulator_manager_path(
                 {
                     "path": parent,
                     "exe_path": parent_exe_path,
-                    "depth": len(parent.parts),
                     "level": level + 1,
                 }
             )
@@ -584,7 +611,7 @@ def find_emulator_manager_path(
 
         current = parent
 
-    # 如果找到了候选目录，选择最优的（层级最小的，即最接近输入路径的）
+    # 如果找到了候选目录，选择最优的（level 最小的，即最接近输入路径的）
     if candidates:
         # 排序策略：level 越小越好（越接近输入路径）
         candidates.sort(key=lambda x: x["level"])

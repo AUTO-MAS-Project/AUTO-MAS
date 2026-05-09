@@ -368,7 +368,9 @@ class EmulatorPathValidator(FileValidator):
         try:
             from app.utils.emulator.tools import find_emulator_manager_path
 
-            return find_emulator_manager_path(normalized, self.emulator_type.getValue())
+            return find_emulator_manager_path(
+                normalized, self.emulator_type.getValue()
+            )
         except Exception:
             return Path(normalized).resolve().as_posix()
 
@@ -379,12 +381,13 @@ class EmulatorPathValidator(FileValidator):
         if value == "":
             return True
 
-        # validate 仅校验最终态：输入统一归一化和定位后，结果必须是主 manager exe。
+        # validate 仅校验最终态：输入统一归一化和定位后，结果必须是主 manager exe
         corrected = self._resolve_manager_exe_path(value)
         if not corrected:
             return False
         if not Path(corrected).is_absolute():
             return False
+
         path = Path(corrected)
 
         if not path.is_file() or not os.access(path, os.X_OK):
@@ -599,6 +602,11 @@ class ConfigItem:
         ----------
         value: Any
             要设置的值, 可以是任何合法类型
+
+        Returns
+        -------
+        bool
+            值是否真正发生了变化
         """
 
         if (
@@ -817,6 +825,11 @@ class ConfigBase(ABC):
         ----------
         data: dict
             配置数据字典
+
+        Returns
+        -------
+        bool
+            是否因数据规范化/纠错而产生了写入（dirty）
         """
 
         if self.is_locked:
@@ -1128,6 +1141,11 @@ class MultipleConfig(Generic[T]):
         ----------
         data: dict
             配置数据字典
+
+        Returns
+        -------
+        bool
+            是否因数据规范化/纠错而产生了写入（dirty）
         """
 
         if self.is_locked:
@@ -1139,13 +1157,16 @@ class MultipleConfig(Generic[T]):
         self.data = {}
 
         if not source_data.get("instances"):
+            # 修复边界情况：当旧数据存在但新数据为空时，仍需标记 dirty 以触发保存写回
             is_dirty = bool(source_data)
             if is_dirty:
                 await self._commit_changes()
             return is_dirty
 
         for instance in source_data["instances"]:
-            if not isinstance(instance, dict) or not source_data.get(instance.get("uid")):
+            if not isinstance(instance, dict) or not source_data.get(
+                instance.get("uid")
+            ):
                 continue
 
             type_name = instance.get("type")
