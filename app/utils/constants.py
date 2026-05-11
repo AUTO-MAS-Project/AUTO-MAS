@@ -211,9 +211,7 @@ EMULATOR_PATH_BOOK = {
     "mumu": {
         "name": "MuMu模拟器",
         "executables": ["MuMuManager.exe", "MuMuPlayer.exe"],
-        # Uninstall 表 DisplayName 关键词匹配。
-        # 注意：关键词为子串匹配（大小写不敏感），因此 "MuMu Player" 可命中 "MuMu Player 12"，
-        # 但不使用裸 "MuMu" 以避免误匹配 MuMuPlugin 等无关软件。
+        # DisplayName 子串匹配；避免裸 "MuMu" 以防误匹配 MuMuPlugin 等。
         "registry_display_keywords": [
             "MuMu Player",
             "MuMuPlayer",
@@ -233,8 +231,7 @@ EMULATOR_PATH_BOOK = {
     "ldplayer": {
         "name": "雷电模拟器",
         "executables": ["ldconsole.exe", "LDPlayer.exe", "dnplayer.exe"],
-        # "雷电" 单独作为关键词可能误匹配其他中文软件，
-        # 因此使用 "雷电模拟器"（完整产品名）配合英文标识符。
+        # 关键词用完整产品名/英文，避免单字「雷电」误匹配。
         "registry_display_keywords": [
             "LDPlayer",
             "雷电模拟器",
