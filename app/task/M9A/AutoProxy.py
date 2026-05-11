@@ -81,9 +81,6 @@ class AutoProxyTask(TaskExecuteBase):
         self.m9a_task_loader = M9ATaskLoader(self.m9a_root_path)
         self.m9a_config_builder = M9AConfigBuilder(self.m9a_root_path)
 
-        # 初始化任务加载器和配置构建器
-        self.m9a_task_loader = M9ATaskLoader(self.m9a_root_path)
-        self.m9a_config_builder = M9AConfigBuilder(self.m9a_root_path)
 
     async def check(self) -> str:
 
@@ -105,12 +102,10 @@ class AutoProxyTask(TaskExecuteBase):
             (1, 24),
             "%Y-%m-%d %H:%M:%S.%f",
             self.check_log,
-            except_logs=["如果长时间无进一步日志更新，可能需要手动干预。"],
         )
         self.wait_event = asyncio.Event()
         self.user_start_time = datetime.now()
         self.log_start_time = datetime.now()
-        self.mode = "AutoProxy"  # M9A 暂时不需要这个，但先占位
 
         self.m9a_root_path = Path(self.script_config.get("Info", "Path"))
         self.m9a_config_path = self.m9a_root_path / "config"
@@ -160,7 +155,7 @@ class AutoProxyTask(TaskExecuteBase):
             try:
                 self.script_info.log = "正在启动模拟器"
                 emulator_info = await self.emulator_manager.open(
-                    self.script_config.get("Emulator", "Index"), None, 
+                    self.script_config.get("Emulator", "Index"),
                 )
             except Exception as e:
                 logger.exception(f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}")
@@ -431,18 +426,41 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 4. 更新用户状态 - 根据日志结果判断
         if self.cur_user_item.status == "运行":
-            # 检查是否正常完成
             if self.run_complete:
+                # 正常完成
                 self.cur_user_item.status = "完成"
+                
+                # 如果是第一次代理，减少剩余天数
+                if (
+                    self.cur_user_config.get("Data", "ProxyTimes") == 0
+                    and self.cur_user_config.get("Info", "RemainedDay") != -1
+                ):
+                    await self.cur_user_config.set(
+                        "Info",
+                        "RemainedDay",
+                        self.cur_user_config.get("Info", "RemainedDay") - 1,
+                    )
+                
+                # 增加代理次数
                 await self.cur_user_config.set(
                     "Data", "ProxyTimes",
                     self.cur_user_config.get("Data", "ProxyTimes") + 1
                 )
-                logger.success(f"用户 {self.cur_user_uid} 的 M9A 任务已完成")
+                
+                logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
+                
+                # 发送桌面通知
+                await Notify.push_plyer(
+                    "成功完成一个自动代理任务！",
+                    f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
+                    f"已完成 {self.cur_user_item.name} 的自动代理任务",
+                    3,
+                )
             else:
                 # 未检测到正常完成标志，置为异常
                 self.cur_user_item.status = "异常"
                 logger.warning(f"用户 {self.cur_user_uid} 的 M9A 任务异常结束: {self.cur_user_log.status}")
+                logger.error(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
 
         try:
             from .tools import push_notification
@@ -459,34 +477,6 @@ class AutoProxyTask(TaskExecuteBase):
                 type="Info",
                 data={"Error": f"推送通知时出现异常: {e}"},
             )
-
-        if self.run_complete:
-            if (
-                self.cur_user_config.get("Data", "ProxyTimes") == 0
-                and self.cur_user_config.get("Info", "RemainedDay") != -1
-            ):
-                await self.cur_user_config.set(
-                    "Info",
-                    "RemainedDay",
-                    self.cur_user_config.get("Info", "RemainedDay") - 1,
-                )
-            await self.cur_user_config.set(
-                "Data",
-                "ProxyTimes",
-                self.cur_user_config.get("Data", "ProxyTimes") + 1,
-            )
-
-            self.cur_user_item.status = "完成"
-            logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
-            await Notify.push_plyer(
-                "成功完成一个自动代理任务！",
-                f"已完成用户 {self.cur_user_item.name} 的自动代理任务",
-                f"已完成 {self.cur_user_item.name} 的自动代理任务",
-                3,
-            )
-        else:
-            logger.error(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
-            self.cur_user_item.status = "异常"
 
 
 
