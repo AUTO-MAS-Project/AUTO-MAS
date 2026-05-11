@@ -203,7 +203,6 @@ class AutoProxyTask(TaskExecuteBase):
 
             # 确保 queue 是列表
             if isinstance(queue, str):
-                import json
                 try:
                     queue = json.loads(queue)
                     logger.info(f"任务队列已从 JSON 字符串解析: {queue}")
