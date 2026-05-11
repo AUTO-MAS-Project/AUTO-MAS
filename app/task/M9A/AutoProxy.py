@@ -21,10 +21,8 @@
 
 
 import json
-import queue
 import uuid
 import asyncio
-import shutil
 import re
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -557,28 +555,6 @@ class AutoProxyTask(TaskExecuteBase):
             f"M9A TaskItems：共 {len(config['TaskItems'])} 个任务项"
             f"（已过滤 {skipped_standalone} 个 standalone 任务）"
         )
-
-        startup_item = None
-        close_item = None
-        normal_items = []
-
-        for item in config["TaskItems"]:
-            if item.get("entry") == "StartUp":
-                startup_item = item
-            elif item.get("entry") == "Close1999":
-                close_item = item
-            else:
-                normal_items.append(item)
-
-        ordered_task_items = []
-        if startup_item:
-            ordered_task_items.append(startup_item)
-        ordered_task_items.extend(normal_items)
-        if close_item:
-            ordered_task_items.append(close_item)
-
-        config["TaskItems"] = ordered_task_items
-        logger.info("M9A TaskItems 已排序：启动游戏首位，关闭游戏末位")
 
         if emulator_id and script_config and emulator_index and emulator_manager:
             try:
