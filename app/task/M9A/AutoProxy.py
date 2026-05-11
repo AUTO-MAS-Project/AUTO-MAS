@@ -224,10 +224,8 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info(f"启动 M9A 进程：{self.m9a_exe_path}")
             self.wait_event.clear()
             await self.m9a_process_manager.open_process(self.m9a_exe_path)
-            await asyncio.sleep(1)  # 等待 M9A 处理日志文件
-
-            # 等待一段时间让 M9A 初始化
-            logger.info("等待 M9A 初始化连接...")
+            # 等待 M9A 处理日志文件与初始化
+            logger.info("等待 M9A 初始化...")
             await asyncio.sleep(5)
             
             # 检查 M9A 进程是否还在运行
