@@ -1174,13 +1174,6 @@ class MultipleConfig(Generic[T]):
             if type_name in self.sub_config_type:
                 self.order.append(uuid.UUID(instance["uid"]))
                 self.data[self.order[-1]] = self.sub_config_type[type_name]()
-
-                for save_method in self._save_methods:
-                    await self.data[self.order[-1]].add_save_method(save_method)
-
-                if self.file:
-                    await self.data[self.order[-1]].add_save_method(self.save)
-
                 await self.data[self.order[-1]].load(source_data[instance["uid"]])
 
         normalized_data = await self.toDict(if_decrypt=False)
