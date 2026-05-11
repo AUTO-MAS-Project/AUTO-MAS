@@ -69,37 +69,19 @@ class M9AConfigBuilder:
         Returns:
             完整的 default.json 配置字典
         """
-        # 1. 读取模板配置（自动扫描所有 .json 文件）
+        # 1. 尝试读取 default.json 模板，失败则使用最小默认配置
         config = None
         
-        # 自动扫描 config/instances 目录下的所有 .json 文件
-        instances_dir = self.root_path / "config/instances"
-        template_paths = []
+        if self.template_path.exists():
+            try:
+                config = json.loads(self.template_path.read_text(encoding="utf-8"))
+                logger.info(f"使用配置模板：{self.template_path}")
+            except Exception as e:
+                logger.warning(f"读取模板 {self.template_path} 失败：{e}")
         
-        # 优先尝试 default.json
-        if (instances_dir / "default.json").exists():
-            template_paths.append(instances_dir / "default.json")
-        
-        # 然后扫描所有其他 .json 文件
-        for json_file in sorted(instances_dir.glob("*.json")):
-            if json_file.name != "default.json" and json_file not in template_paths:
-                template_paths.append(json_file)
-        
-        logger.info(f"找到 {len(template_paths)} 个配置模板")
-        
-        for template_path in template_paths:
-            if template_path.exists():
-                try:
-                    config = json.loads(template_path.read_text(encoding="utf-8"))
-                    logger.info(f"使用配置模板：{template_path}")
-                    break
-                except Exception as e:
-                    logger.warning(f"读取模板 {template_path} 失败：{e}")
-                    continue
-        
-        # 如果所有模板都失败，创建最小默认配置
+        # 如果读取失败或不存在，创建最小默认配置
         if config is None:
-            logger.warning("所有配置模板都无法读取，创建最小默认配置")
+            logger.warning("无法读取配置模板，使用最小默认配置")
             config = {
                 "Resource": "官服",
                 "CurrentTasks": [],
