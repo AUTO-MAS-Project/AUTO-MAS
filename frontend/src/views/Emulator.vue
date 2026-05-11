@@ -412,7 +412,7 @@ const handleDelete = async (uuid: string) => {
   }
 }
 
-// 搜索模拟器（注册表 + ADB，不含默认路径与 PATH）
+// 自动搜索模拟器
 const handleSearch = async () => {
   searching.value = true
   try {
