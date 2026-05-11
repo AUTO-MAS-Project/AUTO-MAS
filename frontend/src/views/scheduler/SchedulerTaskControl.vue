@@ -113,8 +113,6 @@ interface Emits {
 
   (e: 'update:runningTaskLabel', value: string): void
 
-  (e: 'update:runningTaskLabel', value: string): void
-
   (e: 'update:runningModeLabel', value: string): void
 
   (e: 'refresh-tasks'): void
