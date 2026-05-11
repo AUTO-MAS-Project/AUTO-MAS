@@ -866,9 +866,6 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator/emulator/search',
-            errors: {
-                422: `Validation Error`,
-            },
         });
     }
     /**

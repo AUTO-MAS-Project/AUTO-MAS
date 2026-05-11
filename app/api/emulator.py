@@ -198,5 +198,3 @@ async def search_emulators() -> EmulatorSearchOut:
             emulators=[],
         )
     return EmulatorSearchOut(emulators=results)
-
-
