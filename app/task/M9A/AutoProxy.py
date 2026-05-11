@@ -375,7 +375,7 @@ class AutoProxyTask(TaskExecuteBase):
             else:
                 self.cur_user_log.status = "M9A 进程已结束"
         elif datetime.now() - latest_time > timedelta(
-            minutes=self.script_config.get("Run", "RunTimeLimit") or 10
+            minutes=self.script_config.get("Run", "RunTimeLimit")
         ):
             self.cur_user_log.status = "M9A 进程超时"
         else:
