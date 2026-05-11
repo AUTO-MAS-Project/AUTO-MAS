@@ -27,7 +27,6 @@ from .ImageUtils import ImageUtils
 from .LogMonitor import LogMonitor, strptime
 from .ProcessManager import ProcessManager, ProcessRunner, ProcessInfo, ProcessResult
 from .security import dpapi_encrypt, dpapi_decrypt, sanitize_log_message
-from .skland import skland_sign_in
 from .emulator import (
     MumuManager,
     LDManager,
@@ -49,7 +48,6 @@ __all__ = [
     "dpapi_encrypt",
     "dpapi_decrypt",
     "sanitize_log_message",
-    "skland_sign_in",
     "strptime",
     "MumuManager",
     "LDManager",
