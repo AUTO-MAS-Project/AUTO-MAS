@@ -73,13 +73,13 @@ MUMU_GAMEVIEWER_DRIVE_PATTERNS = (
 
 
 async def search_all_emulators() -> List[Dict[str, str]]:
-    """搜索所有支持的模拟器（注册表优先；ADB 仅作补充发现）"""
+    """搜索所有支持的模拟器"""
 
     logger.info("开始搜索所有模拟器, mode=registry_plus_adb")
     found_emulators = []
     found_emulator_paths = set()
 
-    # 搜索链路：注册表（厂商键 + 卸载表关键词）；不再扫描默认路径或 PATH
+    # 根据可能的模拟器路径搜索
     for emulator_type, config in EMULATOR_PATH_BOOK.items():
         try:
             emulator_paths = _search_emulator(config)
@@ -101,7 +101,6 @@ async def search_all_emulators() -> List[Dict[str, str]]:
         except Exception as e:
             logger.warning(f"搜索{config['name']}时出错: {e}")
 
-    # ADB 兜底：尽量在"可验证主程序存在"的前提下归类；否则标记为 general
     for emulator in Toolkit.find_adb_devices():
         adb_path = emulator.adb_path
         adb_dir = adb_path.parent
