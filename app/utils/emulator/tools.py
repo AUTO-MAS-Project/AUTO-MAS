@@ -21,7 +21,6 @@
 
 
 import re
-import shutil
 import winreg
 from maa.toolkit import Toolkit
 from contextlib import suppress
@@ -74,13 +73,13 @@ MUMU_GAMEVIEWER_DRIVE_PATTERNS = (
 
 
 async def search_all_emulators() -> List[Dict[str, str]]:
-    """搜索所有支持的模拟器（注册表优先 + 默认路径/PATH/ADB 轻量兜底）"""
+    """搜索所有支持的模拟器（注册表优先；ADB 仅作补充发现）"""
 
-    logger.info("开始搜索所有模拟器, mode=quick_search")
+    logger.info("开始搜索所有模拟器, mode=registry_plus_adb")
     found_emulators = []
     found_emulator_paths = set()
 
-    # 搜索链路：注册表（厂商键 + 卸载表关键词）→ 默认路径 → 系统 PATH
+    # 搜索链路：注册表（厂商键 + 卸载表关键词）；不再扫描默认路径或 PATH
     for emulator_type, config in EMULATOR_PATH_BOOK.items():
         try:
             emulator_paths = _search_emulator(config)
@@ -206,27 +205,6 @@ def _search_emulator(config: Dict) -> List[str]:
                 source="registry_uninstall",
             )
             found_paths.extend(resolved_registry_paths)
-
-    # 3. 默认路径：覆盖无法从注册表获取安装位置的情况（例如绿色版 / 权限受限）
-    for default_path in config.get("default_paths") or []:
-        resolved_default_paths = _resolve_emulator_install_paths(
-            default_path,
-            config,
-            emulator_type,
-            source="default_paths",
-        )
-        found_paths.extend(resolved_default_paths)
-
-    # 4. 系统 PATH：命中率较低但成本很小，作为最后的轻量兜底
-    path_result = _search_from_path(config.get("executables") or [])
-    if path_result:
-        resolved_path_results = _resolve_emulator_install_paths(
-            str(Path(path_result).parent),
-            config,
-            emulator_type,
-            source="system_path",
-        )
-        found_paths.extend(resolved_path_results)
 
     return _dedupe_path_strings(found_paths)
 
@@ -499,17 +477,6 @@ def _search_from_registry(
                         add_path(install_path)
 
     return found
-
-
-def _search_from_path(executables: List[str]) -> str:
-    """从系统PATH搜索模拟器（使用 shutil.which，比 subprocess 调用 where 更轻量）"""
-
-    for executable in executables:
-        resolved_path = shutil.which(executable)
-        if resolved_path:
-            return str(Path(resolved_path))
-
-    return ""
 
 
 def _validate_emulator_path(path: str, executables: List[str]) -> bool:
