@@ -229,17 +229,6 @@ EMULATOR_PATH_BOOK = {
             r"SOFTWARE\NetEase\MuMuNx",
             r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
-        "default_paths": [
-            r"C:\Program Files\Netease\MuMu Player 12",
-            r"C:\Program Files (x86)\Netease\MuMu Player 12",
-            r"C:\Program Files\Netease\MuMu\nx_main",
-            r"C:\Program Files (x86)\Netease\MuMu\nx_main",
-            r"D:\Program Files\Netease\MuMu Player 12",
-            r"D:\Program Files (x86)\Netease\MuMu Player 12",
-            r"D:\Program Files\Netease\MuMu\nx_main",
-            r"D:\Program Files (x86)\Netease\MuMu\nx_main",
-            (Path.home() / "AppData/Local/MuMu Player 12").as_posix(),
-        ],
     },
     "ldplayer": {
         "name": "雷电模拟器",
@@ -260,12 +249,6 @@ EMULATOR_PATH_BOOK = {
             r"SOFTWARE\XuanZhi\LDPlayer9",
             r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
-        "default_paths": [
-            r"C:\LDPlayer\LDPlayer4.0",
-            r"C:\Program Files\LDPlayer",
-            r"D:\LDPlayer\LDPlayer4.0",
-            r"D:\Program Files\LDPlayer",
-        ],
     },
     "nox": {
         "name": "夜神模拟器",
@@ -280,12 +263,6 @@ EMULATOR_PATH_BOOK = {
             r"SOFTWARE\Nox APP Player",
             r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
-        "default_paths": [
-            r"C:\Program Files\Nox\bin",
-            r"C:\Program Files (x86)\Nox\bin",
-            r"D:\Program Files\Nox\bin",
-            r"D:\Program Files (x86)\Nox\bin",
-        ],
     },
     "memu": {
         "name": "逍遥模拟器",
@@ -295,10 +272,6 @@ EMULATOR_PATH_BOOK = {
             r"SOFTWARE\Microvirt\MEmu",
             r"SYSTEM\CurrentControlSet\Services\MEmusvc",
             r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
-        ],
-        "default_paths": [
-            r"C:\Program Files\Microvirt\MEmu",
-            r"D:\Program Files\Microvirt\MEmu",
         ],
     },
     "bluestacks": {
@@ -315,12 +288,6 @@ EMULATOR_PATH_BOOK = {
             r"SOFTWARE\BlueStacks_cn",
             r"SOFTWARE\BlueStacks_nxt_cn",
             r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
-        ],
-        "default_paths": [
-            r"C:\Program Files\BlueStacks",
-            r"C:\Program Files\BlueStacks_nxt",
-            r"D:\Program Files\BlueStacks",
-            r"D:\Program Files\BlueStacks_nxt",
         ],
     },
 }
