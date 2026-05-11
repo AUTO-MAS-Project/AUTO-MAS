@@ -39,7 +39,6 @@ from app.utils import get_logger, LogMonitor, ProcessManager
 from app.utils.constants import UTC4,UTC8
 from .tools import push_notification
 from .task_loader import M9ATaskLoader
-from .config_builder import M9AConfigBuilder
 
 logger = get_logger("M9A 自动代理")
 
@@ -77,9 +76,9 @@ class AutoProxyTask(TaskExecuteBase):
         self.m9a_exe_path = self.m9a_root_path / "M9A.exe"
         self.m9a_tasks_path = self.m9a_config_path / "instances/default.json"
 
-        # 初始化任务加载器和配置构建器
+        # 初始化任务加载器
         self.m9a_task_loader = M9ATaskLoader(self.m9a_root_path)
-        self.m9a_config_builder = M9AConfigBuilder(self.m9a_root_path)
+        self.template_path = self.m9a_root_path / "config/instances/default.json"
 
 
     async def check(self) -> str:
@@ -281,7 +280,7 @@ class AutoProxyTask(TaskExecuteBase):
             emulator_id = self.script_config.get("Emulator", "Id")
             emulator_index = self.script_config.get("Emulator", "Index")
             
-            config = await self.m9a_config_builder.build_config(
+            config = await self.build_config(
                 queue=queue,
                 task_loader=self.m9a_task_loader,
                 emulator_info=emulator_info,
@@ -482,6 +481,345 @@ class AutoProxyTask(TaskExecuteBase):
 
 
 
+
+    async def build_config(
+        self,
+        queue: list[dict],
+        task_loader: 'M9ATaskLoader',
+        emulator_info: DeviceInfo = None,
+        emulator_id: str = None,
+        script_config: M9AConfig = None,
+        emulator_index: str = None,
+        emulator_manager = None
+    ) -> dict:
+        config = None
+
+        if self.template_path.exists():
+            try:
+                config = json.loads(self.template_path.read_text(encoding="utf-8"))
+                logger.info(f"使用配置模板：{self.template_path}")
+            except Exception as e:
+                logger.warning(f"读取模板 {self.template_path} 失败：{e}")
+
+        if config is None:
+            logger.warning("无法读取配置模板，使用最小默认配置")
+            config = {
+                "Resource": "官服",
+                "CurrentTasks": [],
+                "TaskItems": [],
+                "AdbDevice": {
+                    "InfoHandle": {"value": 0},
+                    "Name": "",
+                    "AdbPath": "",
+                    "AdbSerial": "",
+                    "ScreencapMethods": 0,
+                    "InputMethods": 0,
+                    "Config": "{}",
+                    "AgentPath": "./MaaAgentBinary"
+                },
+                "ResourceOptionItems": {},
+                "CurrentControllerName": "ADB",
+                "Connect.Address": ""
+            }
+
+        all_tasks = task_loader.get_all_tasks_with_entry()
+        config["CurrentTasks"] = [
+            f"{task['name']}<|||>{task['entry']}"
+            for task in all_tasks
+        ]
+        logger.info(f"M9A CurrentTasks：共 {len(config['CurrentTasks'])} 个任务")
+
+        config["TaskItems"] = []
+        skipped_standalone = 0
+
+        for queue_item in queue:
+            if isinstance(queue_item, str):
+                task_name = queue_item
+                task_options = None
+            else:
+                task_name = queue_item.get("name")
+                task_options = queue_item.get("options")
+
+            task_def = task_loader.get_full_definition(task_name)
+            if not task_def:
+                logger.warning(f"未找到任务定义：{task_name}，跳过")
+                continue
+
+            if "standalone" in task_def.get("group", []):
+                logger.debug(f"跳过 standalone 任务：{task_name}")
+                skipped_standalone += 1
+                continue
+
+            item = self._build_task_item(task_def, default_check=True, user_options=task_options)
+            config["TaskItems"].append(item)
+
+        logger.info(
+            f"M9A TaskItems：共 {len(config['TaskItems'])} 个任务项"
+            f"（已过滤 {skipped_standalone} 个 standalone 任务）"
+        )
+
+        startup_item = None
+        close_item = None
+        normal_items = []
+
+        for item in config["TaskItems"]:
+            if item.get("entry") == "StartUp":
+                startup_item = item
+            elif item.get("entry") == "Close1999":
+                close_item = item
+            else:
+                normal_items.append(item)
+
+        ordered_task_items = []
+        if startup_item:
+            ordered_task_items.append(startup_item)
+        ordered_task_items.extend(normal_items)
+        if close_item:
+            ordered_task_items.append(close_item)
+
+        config["TaskItems"] = ordered_task_items
+        logger.info("M9A TaskItems 已排序：启动游戏首位，关闭游戏末位")
+
+        if emulator_id and script_config and emulator_index and emulator_manager:
+            try:
+                adb_device_config = await self._build_adb_device_config(
+                    emulator_info, emulator_id, script_config, emulator_index, emulator_manager
+                )
+                if adb_device_config:
+                    config["AdbDevice"] = adb_device_config
+                    logger.info("已应用特殊 AdbDevice 配置")
+            except Exception as e:
+                logger.warning(f"构建特殊 AdbDevice 配置失败，使用默认配置: {e}")
+
+        if emulator_info and emulator_info.adb_address != "Unknown":
+            config["Connect.Address"] = emulator_info.adb_address
+
+        config["InstanceName"] = "MAS"
+
+        if "BeforeTask" not in config:
+            config["BeforeTask"] = "StartupSoftwareAndScript"
+        if "AfterTask" not in config:
+            config["AfterTask"] = "CloseEmulatorAndMFA"
+
+        config["AutoConnectAfterRefresh"] = False
+        config["AutoDetectOnConnectionFailed"] = False
+        config["AllowAdbHardRestart"] = False
+        config["AllowAdbRestart"] = False
+        config["UseFingerprintMatching"] = False
+        config["RememberAdb"] = True
+
+        logger.info(
+            f"M9A 配置构建完成：CurrentTasks={len(config['CurrentTasks'])} 个任务, "
+            f"TaskItems={len(config['TaskItems'])} 个任务项"
+        )
+        return config
+
+    @staticmethod
+    def _build_option_list(option_names: list[str], option_definitions: dict) -> list[dict]:
+        options = []
+        for opt_name in option_names:
+            opt_item = {"name": opt_name, "index": 0}
+
+            opt_def = option_definitions.get(opt_name, {})
+            if isinstance(opt_def, dict) and "cases" in opt_def:
+                cases = opt_def.get("cases", [])
+                if cases and len(cases) > 0:
+                    current_case = cases[0]
+                    if "option" in current_case:
+                        sub_opts = AutoProxyTask._build_option_list(
+                            current_case["option"], option_definitions
+                        )
+                        if sub_opts:
+                            opt_item["sub_options"] = sub_opts
+
+            if isinstance(opt_def, dict) and opt_def.get("type") == "input" and "inputs" in opt_def:
+                data = {}
+                for input_def in opt_def["inputs"]:
+                    input_name = input_def.get("name")
+                    default_value = input_def.get("default")
+                    if input_name and default_value is not None:
+                        data[input_name] = default_value
+                if data:
+                    opt_item["data"] = data
+
+            options.append(opt_item)
+
+        return options
+
+    @staticmethod
+    def _build_option_list_from_user(user_options: list[dict], option_definitions: dict) -> list[dict]:
+        options = []
+        for user_opt in user_options:
+            opt_name = user_opt.get("name")
+            opt_index = user_opt.get("index", 0)
+            opt_item = {"name": opt_name, "index": opt_index}
+
+            opt_def = option_definitions.get(opt_name, {})
+            if isinstance(opt_def, dict) and "cases" in opt_def:
+                cases = opt_def.get("cases", [])
+                if cases and len(cases) > opt_index:
+                    current_case = cases[opt_index]
+                    if "option" in current_case:
+                        user_sub_opts = user_opt.get("sub_options", [])
+                        sub_opts = AutoProxyTask._build_option_list_from_user(
+                            user_sub_opts, option_definitions
+                        )
+                        if sub_opts:
+                            opt_item["sub_options"] = sub_opts
+
+            user_data = user_opt.get("data") if "data" in user_opt else user_opt.get("input_values")
+
+            if user_data is not None:
+                opt_item["data"] = user_data
+            elif isinstance(opt_def, dict) and opt_def.get("type") == "input" and "inputs" in opt_def:
+                data = {}
+                for input_def in opt_def["inputs"]:
+                    input_name = input_def.get("name")
+                    default_value = input_def.get("default")
+                    if input_name and default_value is not None:
+                        data[input_name] = default_value
+                if data:
+                    opt_item["data"] = data
+
+            options.append(opt_item)
+
+        return options
+
+    def _build_task_item(self, task_def: dict, default_check: bool = True, user_options: list = None) -> dict:
+        item = {
+            "name": task_def["name"],
+            "entry": task_def["entry"],
+            "default_check": default_check,
+        }
+
+        if "group" in task_def:
+            item["group"] = task_def["group"]
+
+        if "description" in task_def:
+            item["description"] = task_def["description"]
+
+        if "controller" in task_def:
+            item["controller"] = task_def["controller"]
+
+        if user_options is not None and "_option_definitions" in task_def:
+            item["option"] = self._build_option_list_from_user(
+                user_options,
+                task_def["_option_definitions"]
+            )
+        elif "option" in task_def and "_option_definitions" in task_def:
+            item["option"] = self._build_option_list(
+                task_def["option"],
+                task_def["_option_definitions"]
+            )
+
+        if "pipeline_override" in task_def:
+            item["pipeline_override"] = task_def["pipeline_override"]
+
+        return item
+
+    async def _build_adb_device_config(
+        self,
+        emulator_info: DeviceInfo,
+        emulator_id: str,
+        script_config: M9AConfig,
+        emulator_index: str,
+        emulator_manager
+    ) -> dict | None:
+        try:
+            emulator_uid = uuid.UUID(emulator_id)
+            emulator_config = Config.EmulatorConfig[emulator_uid]
+
+            emulator_type = emulator_config.get("Info", "Type")
+            emulator_path = Path(emulator_config.get("Info", "Path"))
+
+            if emulator_type == "ldplayer":
+                return await self._build_ldplayer_config(
+                    emulator_info, emulator_path, emulator_index, emulator_manager
+                )
+            elif emulator_type == "mumu":
+                return self._build_mumu_config(
+                    emulator_info, emulator_path, emulator_index
+                )
+            else:
+                logger.info(f"不支持的模拟器类型: {emulator_type}，使用默认配置")
+                return None
+        except Exception as e:
+            logger.warning(f"构建 AdbDevice 配置时出错: {e}")
+            return None
+
+    async def _build_ldplayer_config(
+        self,
+        emulator_info: DeviceInfo,
+        emulator_path: Path,
+        emulator_index: str,
+        emulator_manager
+    ) -> dict:
+        logger.info("构建雷电模拟器 AdbDevice 配置")
+
+        ld_player_device = None
+        try:
+            devices = await emulator_manager.get_device_info(emulator_index)
+            if emulator_index in devices:
+                ld_player_device = devices[emulator_index]
+                logger.info(f"成功获取雷电模拟器设备信息: idx={ld_player_device.idx}, pid={ld_player_device.pid}")
+        except Exception as e:
+            logger.warning(f"获取雷电模拟器设备信息失败: {e}")
+
+        emulator_root = emulator_path.parent
+        adb_path = emulator_root / "adb.exe"
+
+        name = ld_player_device.title if ld_player_device else "雷电模拟器-LDPlayer"
+        idx = ld_player_device.idx if ld_player_device else int(emulator_index)
+        pid = ld_player_device.pid if ld_player_device else 0
+
+        ld_extras = {
+            "enable": True,
+            "index": idx,
+            "path": str(emulator_root).replace("\\", "/"),
+            "pid": pid
+        }
+
+        config_json = json.dumps({"extras": {"ld": ld_extras}}, ensure_ascii=False)
+
+        return {
+            "Name": name,
+            "AdbPath": str(adb_path).replace("\\", "/"),
+            "AdbSerial": emulator_info.adb_address,
+            "ScreencapMethods": 64,
+            "InputMethods": 18446744073709551607,
+            "Config": config_json,
+            "AgentPath": "./MaaAgentBinary"
+        }
+
+    def _build_mumu_config(
+        self,
+        emulator_info: DeviceInfo,
+        emulator_path: Path,
+        emulator_index: str
+    ) -> dict:
+        logger.info("构建 MuMu 模拟器 AdbDevice 配置")
+
+        shell_dir = emulator_path.parent
+        emulator_root = shell_dir.parent
+        adb_path = shell_dir / "adb.exe"
+
+        mumu_extras = {
+            "enable": True,
+            "index": int(emulator_index),
+            "path": str(emulator_root).replace("\\", "/")
+        }
+
+        config_json = json.dumps({"extras": {"mumu": mumu_extras}}, ensure_ascii=False)
+
+        return {
+            "Name": "MuMu模拟器",
+            "AdbPath": str(adb_path).replace("\\", "/"),
+            "AdbSerial": emulator_info.adb_address,
+            "ScreencapMethods": 64,
+            "InputMethods": 18446744073709551607,
+            "Config": config_json,
+            "AgentPath": "./MaaAgentBinary"
+        }
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
