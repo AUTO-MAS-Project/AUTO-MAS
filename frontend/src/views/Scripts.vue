@@ -372,15 +372,18 @@
             </div>
             <div class="search-container">
               <a-input
-                v-model:value="searchKeyword"
+                v-model:value="pendingSearchKeyword"
                 placeholder="搜索模板名称、作者或描述..."
                 allow-clear
                 class="template-search"
+                @press-enter="handleSearchTemplates"
+                @change="handleSearchInputChange"
               >
                 <template #prefix>
                   <FileSearchOutlined />
                 </template>
               </a-input>
+              <a-button type="primary" @click="handleSearchTemplates">搜索</a-button>
             </div>
           </div>
           <div class="templates-list">
@@ -389,41 +392,38 @@
               <p>未找到匹配的模板</p>
               <p class="no-results-tip">请尝试其他关键词</p>
             </div>
-            <div
-              v-for="template in filteredTemplates"
-              :key="template.configName"
-              :class="[
-                'template-item',
-                { selected: selectedTemplate?.configName === template.configName },
-              ]"
-              @click="selectedTemplate = template"
-            >
-              <div class="template-content">
-                <div class="template-header">
-                  <div class="template-info">
-                    <h3 class="template-name">{{ template.configName }}</h3>
-                    <div class="template-meta">
-                      <span class="template-author">
-                        <UserOutlined />
-                        {{ template.author || '未知作者' }}
-                      </span>
-                      <span class="template-time">
-                        <ClockCircleOutlined />
-                        {{ template.createTime || '未知时间' }}
-                      </span>
+            <template v-else>
+              <div
+                v-for="(template, index) in filteredTemplates"
+                :key="getTemplateKey(template, index)"
+                :class="['template-item', { selected: isSelectedTemplate(template) }]"
+                @click="selectedTemplate = template"
+              >
+                <div class="template-content">
+                  <div class="template-header">
+                    <div class="template-info">
+                      <h3 class="template-name">{{ template.configName }}</h3>
+                      <div class="template-meta">
+                        <span class="template-author">
+                          <UserOutlined />
+                          {{ template.author || '未知作者' }}
+                        </span>
+                        <span class="template-time">
+                          <ClockCircleOutlined />
+                          {{ template.createTime || '未知时间' }}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                  <!--                  <div class="template-selector">-->
-                  <!--                    <a-radio :checked="selectedTemplate?.configName === template.configName" />-->
-                  <!--                  </div>-->
-                </div>
 
-                <div
-                  class="template-description"
-                  v-html="parseMarkdown(template.description)"
-                ></div>
+                  <div
+                    class="template-description"
+                    @click="handleTemplateDescriptionClick"
+                    v-html="parseMarkdown(template.description)"
+                  ></div>
+                </div>
               </div>
-            </div>
+            </template>
           </div>
         </div>
       </a-spin>
@@ -432,7 +432,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
@@ -452,6 +452,7 @@ import { useTemplateApi, type WebConfigTemplate } from '@/composables/useTemplat
 import { usePlanApi } from '@/composables/usePlanApi'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import { openExternalUrl } from '@/utils/openExternal'
 import MarkdownIt from 'markdown-it'
 const logger = window.electronAPI.getLogger('脚本管理')
 
@@ -487,7 +488,8 @@ const selectedTemplate = ref<WebConfigTemplate | null>(null)
 const templates = ref<WebConfigTemplate[]>([])
 const addLoading = ref(false)
 const templateLoading = ref(false)
-const searchKeyword = ref('')
+const pendingSearchKeyword = ref('')
+const appliedSearchKeyword = ref('')
 const showMAAConfigMask = ref(false) // 控制MAA配置遮罩层的显示
 const showSRCConfigMask = ref(false) // 控制SRC配置遮罩层的显示
 const showMaaEndConfigMask = ref(false) // 控制MaaEnd配置遮罩层的显示
@@ -504,19 +506,53 @@ const parseMarkdown = (text: string) => {
   return md.render(text)
 }
 
+const getTemplateKey = (template: WebConfigTemplate, index: number) =>
+  [template.downloadUrl, template.configName, template.author, template.createTime, index]
+    .filter(value => value !== undefined && value !== '')
+    .join('::')
+
+const isSelectedTemplate = (template: WebConfigTemplate) => selectedTemplate.value === template
+
+const handleTemplateDescriptionClick = (event: MouseEvent) => {
+  const link = (event.target as HTMLElement | null)?.closest('a')
+  if (!link) return
+
+  event.preventDefault()
+  const url = link.getAttribute('href')
+  if (url) {
+    openExternalUrl(url)
+  }
+}
+
 // 过滤模板
 const filteredTemplates = computed(() => {
-  if (!searchKeyword.value.trim()) {
+  if (!appliedSearchKeyword.value.trim()) {
     return templates.value
   }
 
-  const keyword = searchKeyword.value.toLowerCase()
+  const keyword = appliedSearchKeyword.value.toLowerCase()
   return templates.value.filter(
     template =>
       template.configName.toLowerCase().includes(keyword) ||
       (template.author && template.author.toLowerCase().includes(keyword)) ||
       (template.description && template.description.toLowerCase().includes(keyword))
   )
+})
+
+const handleSearchTemplates = () => {
+  appliedSearchKeyword.value = pendingSearchKeyword.value.trim()
+}
+
+const handleSearchInputChange = () => {
+  if (!pendingSearchKeyword.value.trim()) {
+    appliedSearchKeyword.value = ''
+  }
+}
+
+watch(filteredTemplates, filtered => {
+  if (selectedTemplate.value && !filtered.includes(selectedTemplate.value)) {
+    selectedTemplate.value = null
+  }
 })
 
 onMounted(() => {
@@ -1617,12 +1653,20 @@ const handlePassCheckUser = async (user: User) => {
 
 .search-container {
   flex: 1;
-  max-width: 300px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 380px;
   margin-left: 16px;
 }
 
 .template-search {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
+}
+
+.search-container .ant-btn {
+  flex-shrink: 0;
 }
 
 .templates-list {
@@ -1631,6 +1675,26 @@ const handlePassCheckUser = async (user: User) => {
   border: 1px solid var(--ant-color-border);
   border-radius: 6px;
   background: var(--ant-color-bg-container);
+  scrollbar-width: thin;
+  scrollbar-color: var(--ant-color-border) transparent;
+}
+
+.templates-list::-webkit-scrollbar {
+  width: 6px !important;
+  display: block !important;
+}
+
+.templates-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.templates-list::-webkit-scrollbar-thumb {
+  background-color: var(--ant-color-border);
+  border-radius: 3px;
+}
+
+.templates-list::-webkit-scrollbar-thumb:hover {
+  background-color: var(--ant-color-border-secondary);
 }
 
 .template-item {
