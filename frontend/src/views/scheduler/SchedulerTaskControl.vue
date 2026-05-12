@@ -199,8 +199,8 @@ const onModeChange = (value: TaskCreateIn.mode) => {
   emit('update:selectedMode', value)
 }
 
-const onResumeScriptChange = (value: string) => {
-  emit('update:resumeFromScriptId', value)
+const onResumeScriptChange = (value: string | undefined) => {
+  emit('update:resumeFromScriptId', value ?? null)
 }
 
 const onResumeDropdownVisibleChange = (open: boolean) => {
