@@ -359,9 +359,15 @@ def _extract_path_from_command(value: str) -> str:
         extracted = re.sub(r",\d+\s*$", "", extracted)
         return extracted.strip()
 
-    # 否则取第一个 token（到空格为止）
+    # 未加引号但路径可能包含空格：优先从字符串中提取形如 X:\...\foo.exe 的片段
+    m = re.search(r"([A-Za-z]:\\[^\r\n]*?\.(?:exe|cmd|bat|lnk))(?:,\d+)?", s)
+    if m:
+        extracted = m.group(1).strip()
+        extracted = re.sub(r",\d+\s*$", "", extracted)
+        return extracted.strip()
+
+    # 兜底：取第一个 token（到空格为止）
     token = s.split(" ")[0].strip()
-    # 同样移除 ",数字" 图标索引标记
     token = re.sub(r",\d+\s*$", "", token)
     return token.strip()
 
