@@ -44,7 +44,7 @@ METHOD_BOOK: dict[str, type[AutoProxyTask]] = {
 
 
 class M9AManager(TaskExecuteBase):
-    """M9A控制器"""
+    """M9A 任务调度器，负责配置校验、模拟器管理、用户调度和配置还原"""
 
     def __init__(self, script_info: ScriptItem):
         super().__init__()
@@ -57,55 +57,36 @@ class M9AManager(TaskExecuteBase):
         self.check_result = "-"
 
     async def check(self) -> str:
-        """校验M9A配置是否可用"""
+        """校验 M9A 配置是否可用"""
+        script_id = uuid.UUID(self.script_info.script_id)
+        script_config = Config.ScriptConfig[script_id]
+
         if self.task_info.mode not in METHOD_BOOK:
             return "不支持的任务模式，请检查任务配置！"
-        if not isinstance(
-            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], M9AConfig
-        ):
-            return "脚本配置类型错误, 不是M9A脚本类型"
-        if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-            "Emulator", "Id"
-        ) == "-" or Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+        if not isinstance(script_config, M9AConfig):
+            return "脚本配置类型错误，不是 M9A 脚本类型"
+        if script_config.get("Emulator", "Id") == "-" or script_config.get(
             "Emulator", "Index"
-        ) in (
-            "",
-            "-",
-        ):
-            return "未完成模拟器配置, 请检查脚本配置中的模拟器设置！"
-        if not (
-            Path(
-                Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                    "Info", "Path"
-                )
-            )
-            / "M9A.exe"
-        ).exists():
-            return "M9A.exe文件不存在, 请检查M9A路径设置！"
-        if not (
-            any(
-                (
-                    Path(
-                        Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
-                            "Info", "Path"
-                        )
-                    )
-                    / "config"
-                ).glob("*.json")
-            )
-        ):
-            return "M9A配置文件不存在或已损坏, 请检查M9A路径设置或检查配置文件情况！"
+        ) in ("", "-"):
+            return "未完成模拟器配置，请检查脚本配置中的模拟器设置！"
+
+        m9a_exe_path = Path(script_config.get("Info", "Path")) / "M9A.exe"
+        if not m9a_exe_path.exists():
+            return "M9A.exe 文件不存在，请检查 M9A 路径设置！"
+
+        config_dir = Path(script_config.get("Info", "Path")) / "config"
+        if not any(config_dir.glob("*.json")):
+            return "M9A 配置文件不存在或已损坏，请检查 M9A 路径或配置文件情况！"
         return "Pass"
 
     async def prepare(self):
-        """运行前准备"""
-
-        # 锁定脚本配置并加载用户配置
-        await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].lock()
-        self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        """运行前准备：锁定配置、加载用户、备份原始配置、初始化模拟器"""
+        script_id = uuid.UUID(self.script_info.script_id)
+        await Config.ScriptConfig[script_id].lock()
+        self.script_config = Config.ScriptConfig[script_id]
         self.user_config = MultipleConfig([M9AUserConfig])
         await self.user_config.load(await self.script_config.UserData.toDict())
-        logger.success(f"{self.script_info.script_id}已锁定, M9A配置提取完成")
+        logger.success(f"{self.script_info.script_id} 已锁定，M9A 配置提取完成")
 
         self.m9a_config_path = Path(self.script_config.get("Info", "Path")) / "config"
         self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
@@ -115,13 +96,12 @@ class M9AManager(TaskExecuteBase):
             self.script_config.get("Emulator", "Id")
         )
 
-        # 备份原始配置
+        # 备份原始配置并清空 instances 目录（仅保留 default.json）
         shutil.rmtree(self.temp_path, ignore_errors=True)
         self.temp_path.mkdir(parents=True, exist_ok=True)
         if self.m9a_config_path.exists():
             shutil.copytree(self.m9a_config_path, self.temp_path, dirs_exist_ok=True)
-            
-            # 确保 config/instances 目录只保留 default.json
+
             instances_dir = self.m9a_config_path / "instances"
             if instances_dir.exists():
                 for json_file in instances_dir.glob("*.json"):
@@ -172,7 +152,7 @@ class M9AManager(TaskExecuteBase):
             await self.spawn(task)
 
     async def final_task(self):
-        """运行结束后的收尾工作"""
+        """运行结束后的收尾：解锁配置、推送结果、还原原始配置"""
 
         if self.check_result != "Pass":
             self.script_info.status = "异常"
@@ -191,6 +171,7 @@ class M9AManager(TaskExecuteBase):
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())
 
+            # 按状态分组用户
             error_user = [
                 u.name for u in self.script_info.user_list if u.status == "异常"
             ]
@@ -228,7 +209,7 @@ class M9AManager(TaskExecuteBase):
                     data={"Error": f"推送代理结果时出现异常: {e}"},
                 )
 
-        # 还原配置
+        # 还原配置：从 temp 恢复原始 config
         if (self.temp_path).exists():
             shutil.rmtree(self.m9a_config_path, ignore_errors=True)
             shutil.copytree(self.temp_path, self.m9a_config_path, dirs_exist_ok=True)

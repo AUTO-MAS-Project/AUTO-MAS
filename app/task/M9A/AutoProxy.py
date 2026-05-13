@@ -94,7 +94,6 @@ class AutoProxyTask(TaskExecuteBase):
         return "Pass"
 
     async def prepare(self):
-
         self.m9a_process_manager = ProcessManager()
         self.m9a_log_monitor = LogMonitor(
             (1, 24),
@@ -105,17 +104,9 @@ class AutoProxyTask(TaskExecuteBase):
         self.user_start_time = datetime.now()
         self.log_start_time = datetime.now()
 
-        self.m9a_root_path = Path(self.script_config.get("Info", "Path"))
-        self.m9a_config_path = self.m9a_root_path / "config"
-        today_date = datetime.now().strftime("%Y%m%d")
-        self.m9a_log_path = self.m9a_root_path / f"logs/log-{today_date}.log"
-        self.m9a_exe_path = self.m9a_root_path / "M9A.exe"
-        self.m9a_tasks_path = self.m9a_config_path / "instances/default.json"
-
 
     async def main_task(self):
         """自动代理模式主逻辑"""
-        # 任务完成记录
         self.task_dict = {}
 
         # 初始化每日代理状态
@@ -267,8 +258,8 @@ class AutoProxyTask(TaskExecuteBase):
                 await asyncio.sleep(3)
 
     async def write_m9a_config(self, queue: list, emulator_info: DeviceInfo):
-        """写入M9A配置文件 - 后端兜底模式"""
-        logger.info(f"开始配置M9A运行参数")
+        """向 M9A 目录写入运行配置文件，并保存 debug 备份"""
+        logger.info("开始配置 M9A 运行参数")
 
         # 确保M9A进程已关闭
         await self.m9a_process_manager.kill()
@@ -299,8 +290,7 @@ class AutoProxyTask(TaskExecuteBase):
         )
         logger.info(f"已写入 M9A 配置：{self.m9a_tasks_path}")
 
-        # ==================== Debug 备份功能 ====================
-        # 保存到 data/script_id 目录，按 test1.json, test2.json 递增
+        # Debug 备份：保存到 data/script_id 目录，按 testN.json 递增，保留最近 5 个
         debug_dir = Path("data") / self.script_info.script_id
         debug_dir.mkdir(parents=True, exist_ok=True)
         
@@ -322,7 +312,7 @@ class AutoProxyTask(TaskExecuteBase):
         )
         logger.info(f"Debug 备份已保存：{backup_path}")
         
-        # 清理旧的备份文件，只保留最后 5 个
+        # 清理旧备份，只保留最近 5 个
         existing_tests = list(debug_dir.glob("test*.json"))
         test_files_with_num = []
         for test_file in existing_tests:
@@ -340,32 +330,26 @@ class AutoProxyTask(TaskExecuteBase):
                     logger.debug(f"已删除旧备份文件：{file_path}")
                 except Exception as e:
                     logger.warning(f"删除旧备份文件失败 {file_path}: {e}")
-        # =======================================================
 
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
-        """日志回调 - M9A 专用版本（禁用敏感的错误检测，避免在游戏加载时误判）
-        
-        重要：log_content 只包含本次启动后的日志（由 LogMonitor 根据 log_start_time 过滤）
-        因此不会误检测到之前运行的日志内容
+        """M9A 日志回调：分析实时日志，判断任务执行状态
+
+        策略说明：
+        - log_content 由 LogMonitor 根据 log_start_time 过滤，仅包含本次启动后的日志
+        - 不使用日志关键字做错误检测（M9A 在游戏加载时会输出大量 [ERR] 日志）
+        - 仅依赖进程退出状态和超时来判断异常
         """
 
         log = "".join(log_content)
         self.cur_user_log.content = log_content
         self.script_info.log = log
 
-        # 判断任务完成 - 检测"任务已全部完成！"（带感叹号）
-        # 注意：只检测本次启动后的日志，不会误判之前的运行
         if "任务已全部完成！" in log or "All tasks completed" in log:
             self.cur_user_log.status = "Success!"
-        # 检测"已放弃本次任务" - M9A 在任务出错时会有此日志
         elif "已放弃本次任务" in log:
             self.cur_user_log.status = "M9A 已放弃本次任务"
-        # 注意：禁用基于日志关键字的错误检测，因为 M9A 在游戏加载时会输出大量 [ERR] 日志
-        # 改为只检测进程是否真的退出，或等待超时
         elif not await self.m9a_process_manager.is_running():
-            # 进程已结束但未检测到正常完成标志，置为异常完成
-            # 注意：只检查本次启动后的日志
             if "任务已全部完成！" not in log and "All tasks completed" not in log:
                 self.cur_user_log.status = "M9A 进程已异常结束"
             else:
@@ -390,8 +374,8 @@ class AutoProxyTask(TaskExecuteBase):
         await self.m9a_process_manager.kill()
         await System.kill_process(self.m9a_exe_path)  
 
-        logger.info("用户任务结束, 关闭模拟器")
-        # 2. 关闭模拟器
+        logger.info("用户任务结束，关闭模拟器")
+
         try:
             await self.emulator_manager.close(
                 self.script_config.get("Emulator", "Index")
@@ -399,7 +383,7 @@ class AutoProxyTask(TaskExecuteBase):
         except Exception as e:
             logger.exception(f"关闭模拟器失败：{e}")
 
-        # 3. 保存历史记录
+        # 保存历史记录并合并统计信息
         user_logs_list = []
         for t, log_item in self.cur_user_item.log_record.items():
 
@@ -436,7 +420,7 @@ class AutoProxyTask(TaskExecuteBase):
             logger.exception(f"日志分析失败: {e}")
         statistics["task_details"] = task_details_text
 
-        # 4. 更新用户状态 - 根据日志结果判断
+        # 根据运行结果更新用户状态
         if self.cur_user_item.status == "运行":
             if self.run_complete:
                 # 正常完成
@@ -475,8 +459,6 @@ class AutoProxyTask(TaskExecuteBase):
                 logger.error(f"用户 {self.cur_user_uid} 的自动代理任务未完成")
 
         try:
-            from .tools import push_notification
-
             await push_notification(
                 "统计信息",
                 f"{datetime.now().strftime('%m-%d')} |{'√' if self.run_complete else 'X'}|  {self.cur_user_item.name} 的自动代理统计报告",
@@ -492,18 +474,14 @@ class AutoProxyTask(TaskExecuteBase):
             )
 
 
-
-
-
-
     async def build_config(
         self,
         queue: list[dict],
         task_loader: 'M9ATaskLoader',
-        emulator_info: DeviceInfo = None,
-        emulator_id: str = None,
-        script_config: M9AConfig = None,
-        emulator_index: str = None,
+        emulator_info: DeviceInfo | None = None,
+        emulator_id: str | None = None,
+        script_config: M9AConfig | None = None,
+        emulator_index: str | None = None,
         emulator_manager = None
     ) -> dict:
         config = None
@@ -691,7 +669,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         return options
 
-    def _build_task_item(self, task_def: dict, default_check: bool = True, user_options: list = None) -> dict:
+    def _build_task_item(self, task_def: dict, default_check: bool = True, user_options: list | None = None) -> dict:
         item = {
             "name": task_def["name"],
             "entry": task_def["entry"],
