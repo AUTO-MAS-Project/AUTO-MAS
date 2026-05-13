@@ -62,7 +62,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
@@ -84,6 +84,7 @@ const emit = defineEmits<{
 
 // 响应式数据
 const loading = ref(false)
+const isDraggingQueueItem = ref(false)
 
 // 选项数据
 const scriptOptions = ref<Array<{ label: string; value: string | null }>>([])
@@ -117,7 +118,9 @@ const queueItems = ref(props.queueItems)
 watch(
   () => props.queueItems,
   newQueueItems => {
-    queueItems.value = newQueueItems
+    if (!isDraggingQueueItem.value) {
+      queueItems.value = newQueueItems
+    }
   },
   { deep: true }
 )
@@ -225,6 +228,8 @@ const onDragEnd = async (evt: any) => {
     return
   }
 
+  isDraggingQueueItem.value = true
+
   try {
     loading.value = true
 
@@ -253,6 +258,9 @@ const onDragEnd = async (evt: any) => {
     emit('refresh')
   } finally {
     loading.value = false
+    nextTick(() => {
+      isDraggingQueueItem.value = false
+    })
   }
 }
 

@@ -111,7 +111,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { PlusOutlined, UpOutlined, DownOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import draggable from 'vuedraggable'
@@ -136,6 +136,7 @@ const availableTasks = ref<any[]>([])
 const selectedTaskIndex = ref<number | null>(null)
 const taskDefinitions = ref<Record<string, any>>({})
 const localTaskQueue = ref<M9ATaskQueueItem[]>([])
+const isDragging = ref(false)
 
 const buildDefaultOptions = (taskDef: any): M9ATaskOption[] => {
   const options: M9ATaskOption[] = []
@@ -283,13 +284,19 @@ const handleOptionUpdate = (newOptions: M9ATaskOption[]) => {
 }
 
 const onDragEnd = () => {
+  isDragging.value = true
   emit('update:taskQueue', localTaskQueue.value)
+  nextTick(() => {
+    isDragging.value = false
+  })
 }
 
 watch(
   () => props.taskQueue,
   (newQueue) => {
-    localTaskQueue.value = [...newQueue]
+    if (!isDragging.value) {
+      localTaskQueue.value = [...newQueue]
+    }
   },
   { immediate: true, deep: true }
 )
