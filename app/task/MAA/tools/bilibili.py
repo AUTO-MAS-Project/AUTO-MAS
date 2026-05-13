@@ -21,14 +21,17 @@
 
 
 import json
+import json5
 from pathlib import Path
 from app.core import Config
+from typing import Any, Dict, cast
 
 
 async def agree_bilibili(maa_tasks_path: Path, if_agree: bool):
     """向MAA写入Bilibili协议相关任务"""
 
-    data: dict = json.loads(maa_tasks_path.read_text(encoding="utf-8"))
+    raw = maa_tasks_path.read_text(encoding="utf-8")
+    data: Dict[str, Any] = cast(Dict[str, Any], json5.loads(raw))
     if if_agree and Config.get("Function", "IfAgreeBilibili"):
         data["BilibiliAgreement_AUTO"] = {
             "algorithm": "OcrDetect",
