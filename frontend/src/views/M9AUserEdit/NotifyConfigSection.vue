@@ -21,9 +21,6 @@
         <a-checkbox v-model:checked="formData.Notify.IfSendStatistic" :disabled="loading || !formData.Notify.Enabled"
           @change="emitSave('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)">统计信息
         </a-checkbox>
-        <a-checkbox v-model:checked="formData.Notify.IfSendSixStar" :disabled="loading || !formData.Notify.Enabled"
-          @change="emitSave('Notify.IfSendSixStar', formData.Notify.IfSendSixStar)">公开招募高资喜报
-        </a-checkbox>
       </a-col>
     </a-row>
 

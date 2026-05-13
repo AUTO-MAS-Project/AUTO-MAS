@@ -41,8 +41,8 @@ class M9ALogAnalyzer:
     DROP_KEYWORDS = ("掉落统计:", "材料掉落总结:")
     """掉落物统计行的关键词"""
 
-    RARITY_TAGS = {"[紫色]", "[金色]", "[蓝色]", "[绿色]", "[白色]"}
-    """稀有度标签，在最终输出中过滤掉"""
+    RARITY_TAGS_RE = re.compile(r"^\[.+?\]$")
+    """稀有度标签正则，匹配 [黄色] [紫色] 等括号标签，在最终输出中过滤掉"""
 
     HTML_TAG_RE = re.compile(r"<[^>]+>")
 
@@ -165,7 +165,11 @@ class M9ALogAnalyzer:
                 continue
 
             if M9ALogAnalyzer._is_drop_line(line):
-                in_drops = True
+                # 只在"材料掉落总结:"时开始采集，"掉落统计:"部分重复，直接忽略
+                if "材料掉落总结:" in line:
+                    in_drops = True
+                    drops.clear()
+                # 遇到"掉落统计:"时不启用采集
                 continue
 
             if in_drops and current_task and current_task["name"] == "常规作战":
@@ -245,7 +249,7 @@ class M9ALogAnalyzer:
                     line += f"（{', '.join(parts)}）"
 
                 drops = task["extra"].get("drops", [])
-                drops = [d for d in drops if d not in M9ALogAnalyzer.RARITY_TAGS]
+                drops = [d for d in drops if not M9ALogAnalyzer.RARITY_TAGS_RE.match(d)]
                 if drops:
                     lines.append(line)
                     for d in drops:
