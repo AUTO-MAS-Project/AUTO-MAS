@@ -367,21 +367,36 @@ class AutoProxyTask(TaskExecuteBase):
             self.wait_event.set()
 
     async def final_task(self):
+        """任务收尾：停止监控、结束进程、关闭模拟器、保存记录并推送通知"""
+
+        # 1) 停止日志监控（如果已启动）
+        try:
+            if hasattr(self, "m9a_log_monitor") and self.m9a_log_monitor is not None:
+                await self.m9a_log_monitor.stop()
+        except Exception as e:
+            logger.warning(f"停止 M9A 日志监控失败: {e}")
 
         if self.check_result != "Pass":
             return
 
-        await self.m9a_process_manager.kill()
-        await System.kill_process(self.m9a_exe_path)  
+        # 2) 结束 M9A 进程
+        try:
+            await self.m9a_process_manager.kill()
+        except Exception as e:
+            logger.warning(f"结束 M9A 进程失败: {e}")
+        try:
+            await System.kill_process(self.m9a_exe_path)
+        except Exception as e:
+            logger.warning(f"强制结束 M9A.exe 失败: {e}")
 
+        # 3) 关闭模拟器
         logger.info("用户任务结束，关闭模拟器")
-
         try:
             await self.emulator_manager.close(
                 self.script_config.get("Emulator", "Index")
             )
         except Exception as e:
-            logger.exception(f"关闭模拟器失败：{e}")
+            logger.warning(f"关闭模拟器失败: {e}")
 
         # 保存历史记录并合并统计信息
         user_logs_list = []
