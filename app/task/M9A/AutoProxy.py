@@ -611,6 +611,15 @@ class AutoProxyTask(TaskExecuteBase):
                         if sub_opts:
                             opt_item["sub_options"] = sub_opts
 
+                if opt_def.get("type") == "checkbox":
+                    default_case = opt_def.get("default_case", [])
+                    if default_case:
+                        opt_item["selected_cases"] = list(default_case)
+                    else:
+                        opt_item["selected_cases"] = [
+                            c["name"] for c in cases if "name" in c
+                        ]
+
             if isinstance(opt_def, dict) and opt_def.get("type") == "input" and "inputs" in opt_def:
                 data = {}
                 for input_def in opt_def["inputs"]:
@@ -645,6 +654,11 @@ class AutoProxyTask(TaskExecuteBase):
                         )
                         if sub_opts:
                             opt_item["sub_options"] = sub_opts
+
+                if opt_def.get("type") == "checkbox":
+                    user_selected_cases = user_opt.get("selected_cases")
+                    if user_selected_cases is not None:
+                        opt_item["selected_cases"] = user_selected_cases
 
             user_data = user_opt.get("data") if "data" in user_opt else user_opt.get("input_values")
 
