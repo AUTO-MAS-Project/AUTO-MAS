@@ -440,14 +440,18 @@ class AutoProxyTask(TaskExecuteBase):
             for task in maaend_tasks:
                 if task["taskName"].startswith("__MXU_"):
                     continue
-                task_name = maaend_i18n.get(task["taskName"], task["taskName"])
+                task_name = task.get("customName") or maaend_i18n.get(
+                    task["taskName"], task["taskName"]
+                )
                 if task_name not in self.task_dict:
                     self.task_dict[task_name] = {}
                 self.task_dict[task_name][task["id"]] = task["enabled"]
         else:
             # 任务列表不为空则配置任务
             for task in maaend_tasks:
-                task_name = maaend_i18n.get(task["taskName"], task["taskName"])
+                task_name = task.get("customName") or maaend_i18n.get(
+                    task["taskName"], task["taskName"]
+                )
                 if task_name in self.task_dict:
                     task["enabled"] = self.task_dict[task_name][task["id"]]
 
