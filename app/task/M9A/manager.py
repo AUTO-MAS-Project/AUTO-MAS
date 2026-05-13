@@ -74,8 +74,32 @@ class M9AManager(TaskExecuteBase):
         if not m9a_exe_path.exists():
             return "M9A.exe 文件不存在，请检查 M9A 路径设置！"
 
-        config_dir = Path(script_config.get("Info", "Path")) / "config"
-        if not any(config_dir.glob("*.json")):
+        m9a_root = Path(script_config.get("Info", "Path"))
+        m9a_config_dir = m9a_root / "config"
+        m9a_instances_dir = m9a_config_dir / "instances"
+
+        root_name_lower = str(m9a_root).lower()
+        looks_like_mux = "mux" in root_name_lower or any(
+            "mux" in p.name.lower() for p in m9a_root.iterdir()
+        )
+
+        if not m9a_config_dir.exists():
+            return "M9A/config 目录不存在，请检查 M9A 路径是否指向完整的 M9A 程序目录。"
+
+        if not m9a_instances_dir.exists():
+            if looks_like_mux:
+                return (
+                    "检测到当前 M9A 可能为 MuX 框架构建"
+                    "（目录/配置结构与 AUTO-MAS 的 M9A 适配不兼容）。\n"
+                    "请在脚本编辑设置中将 M9A 路径切换为 MFAA 构建版本的 M9A 根目录"
+                    "（应包含 M9A.exe 与 config/instances/）。"
+                )
+            return (
+                "M9A/config/instances 目录不存在，无法写入运行配置。\n"
+                "请确认 M9A 路径正确，或使用 MFAA 构建版本的 M9A。"
+            )
+
+        if not any(m9a_config_dir.glob("*.json")):
             return "M9A 配置文件不存在或已损坏，请检查 M9A 路径或配置文件情况！"
         return "Pass"
 
