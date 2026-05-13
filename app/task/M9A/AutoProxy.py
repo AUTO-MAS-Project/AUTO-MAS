@@ -357,6 +357,9 @@ class AutoProxyTask(TaskExecuteBase):
         # 注意：只检测本次启动后的日志，不会误判之前的运行
         if "任务已全部完成！" in log or "All tasks completed" in log:
             self.cur_user_log.status = "Success!"
+        # 检测"已放弃本次任务" - M9A 在任务出错时会有此日志
+        elif "已放弃本次任务" in log:
+            self.cur_user_log.status = "M9A 已放弃本次任务"
         # 注意：禁用基于日志关键字的错误检测，因为 M9A 在游戏加载时会输出大量 [ERR] 日志
         # 改为只检测进程是否真的退出，或等待超时
         elif not await self.m9a_process_manager.is_running():
@@ -760,7 +763,7 @@ class AutoProxyTask(TaskExecuteBase):
         return {
             "Name": name,
             "AdbPath": str(adb_path).replace("\\", "/"),
-            "AdbSerial": emulator_info.adb_address,
+            "AdbSerial": f"emulator-{5554 + idx * 2}",
             "ScreencapMethods": 64,
             "InputMethods": 18446744073709551607,
             "Config": config_json,
