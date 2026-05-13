@@ -219,10 +219,10 @@ class AutoProxyTask(TaskExecuteBase):
                     await asyncio.sleep(self.script_config.get("Game", "WaitTime"))
                 else:
                     logger.info(
-                        f"启动模拟器: {self.script_config.get('Emulator', 'Index')}"
+                        f"启动模拟器: {self.script_config.get('Game', 'EmulatorIndex')}"
                     )
                     emulator_info = await self.emulator_manager.open(
-                        self.script_config.get("Emulator", "Index"),
+                        self.script_config.get("Game", "EmulatorIndex"),
                         "com.hypergryph.endfield",
                     )
             except Exception as e:
@@ -249,17 +249,16 @@ class AutoProxyTask(TaskExecuteBase):
 
             logger.info(f"运行脚本任务: {self.maaend_exe_path}")
             self.wait_event.clear()
-            t = datetime.now()
             await self.maaend_process_manager.open_process(
                 self.maaend_exe_path, stdout=asyncio.subprocess.PIPE
             )
+            await asyncio.sleep(3)  # 等待 MaaEnd 启动完成
             # 静默模式隐藏 MaaEnd 窗口
             if Config.get("Function", "IfSilence"):
-                while datetime.now() - t < timedelta(minutes=1):
-                    if await self.maaend_process_manager.is_visible():
-                        await self.maaend_process_manager.hide_window()
-                        break
-                    await asyncio.sleep(0.1)
+                if await self.maaend_process_manager.minimize_window():
+                    logger.success("静默模式: 成功隐藏 MaaEnd 窗口")
+                else:
+                    logger.error("静默模式: 隐藏 MaaEnd 窗口失败")
             if self.script_config.get("Game", "ControllerType") == "Win32-Front":
                 if await self.game_process_manager.activate_window():
                     logger.success("前置 Endfield 窗口成功")
@@ -301,6 +300,9 @@ class AutoProxyTask(TaskExecuteBase):
                     f"{self.cur_user_item.name}的自动代理出现异常",
                     3,
                 )
+                if "游戏分辨率设置错误" in self.cur_user_log.status:
+                    logger.info("检测到游戏分辨率设置错误，跳过后续重试")
+                    break
 
     async def handle_pre_maaend_error(
         self, error_message: str, e: Exception | None = None
@@ -349,7 +351,7 @@ class AutoProxyTask(TaskExecuteBase):
             else:
                 logger.info("中止模拟器进程")
                 await self.emulator_manager.close(
-                    self.script_config.get("Emulator", "Index")
+                    self.script_config.get("Game", "EmulatorIndex")
                 )
         except Exception as e:
             logger.exception(f"关闭模拟器失败: {e}")
@@ -395,6 +397,7 @@ class AutoProxyTask(TaskExecuteBase):
         # 直接运行任务
         settings["autoStartInstanceId"] = "automas"
         settings["autoRunOnLaunch"] = True
+        settings.pop("autoStartRemovedInstanceName", None)
 
         # 模拟器相关配置
         maaend_instance["controllerName"] = self.script_config.get(
@@ -435,10 +438,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.task_dict = {}
             task = {}
             for task in maaend_tasks:
-                if (
-                    task["taskName"] == "__MXU_KILLPROC__"
-                    and task["optionValues"]["__MXU_KILLPROC_SELF_OPTION__"]["value"]
-                ):
+                if task["taskName"].startswith("__MXU_"):
                     continue
                 task_name = maaend_i18n.get(task["taskName"], task["taskName"])
                 if task_name not in self.task_dict:
@@ -502,6 +502,8 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_log.status = "MaaEnd 资源加载失败"
         elif "快捷键开始任务：失败" in log:
             self.cur_user_log.status = "MaaEnd 任务启动失败"
+        elif "resolution check failed" in log or "分辨率不符合要求" in log:
+            self.cur_user_log.status = "游戏分辨率设置错误，请重设分辨率比例为16:9"
         elif (
             "任务完成: 停止任务" in log
             or "任务完成: ⛔ 结束进程" in log
@@ -534,7 +536,18 @@ class AutoProxyTask(TaskExecuteBase):
                         elif f"任务失败: {task_name}" in log_line:
                             task_index[task_name]["index"] += 1
 
-                    if any(any(_.values()) for _ in self.task_dict.values()):
+                    unfinished_tasks = {}
+                    for task_name, task_status in self.task_dict.items():
+                        task_ids = [
+                            task_id
+                            for task_id, enabled in task_status.items()
+                            if enabled
+                        ]
+                        if task_ids:
+                            unfinished_tasks[task_name] = task_ids
+
+                    if unfinished_tasks:
+                        logger.info(f"MaaEnd 未完成任务列表: {unfinished_tasks}")
                         self.cur_user_log.status = "MaaEnd 部分任务执行失败"
                     else:
                         self.cur_user_log.status = "Success!"
