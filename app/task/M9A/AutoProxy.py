@@ -36,6 +36,7 @@ from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
 from app.utils.constants import UTC4,UTC8
 from .tools import push_notification
+from .tools.notify import M9ALogAnalyzer
 from .task_loader import M9ATaskLoader
 
 logger = get_logger("M9A 自动代理")
@@ -424,6 +425,17 @@ class AutoProxyTask(TaskExecuteBase):
             else self.cur_user_item.result
         )
 
+        # 分析运行日志，获取任务详情
+        task_details_text = ""
+        try:
+            latest_log_path = self._get_latest_history_log()
+            if latest_log_path and latest_log_path.exists():
+                analysis = M9ALogAnalyzer.parse_log(latest_log_path)
+                task_details_text = M9ALogAnalyzer.build_notification_text(analysis)
+        except Exception as e:
+            logger.exception(f"日志分析失败: {e}")
+        statistics["task_details"] = task_details_text
+
         # 4. 更新用户状态 - 根据日志结果判断
         if self.cur_user_item.status == "运行":
             if self.run_complete:
@@ -464,6 +476,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         try:
             from .tools import push_notification
+
             await push_notification(
                 "统计信息",
                 f"{datetime.now().strftime('%m-%d')} |{'√' if self.run_complete else 'X'}|  {self.cur_user_item.name} 的自动代理统计报告",
@@ -813,6 +826,18 @@ class AutoProxyTask(TaskExecuteBase):
             "Config": config_json,
             "AgentPath": "./MaaAgentBinary"
         }
+
+    def _get_latest_history_log(self) -> Path | None:
+        history_dir = Path.cwd() / "history"
+        if not history_dir.exists():
+            return None
+
+        log_files = sorted(
+            history_dir.rglob(f"{self.cur_user_item.name}/*.log"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True
+        )
+        return log_files[0] if log_files else None
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
