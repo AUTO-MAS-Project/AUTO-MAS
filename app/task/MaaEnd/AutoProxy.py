@@ -475,16 +475,18 @@ class AutoProxyTask(TaskExecuteBase):
                 "AutoEssenceSpecifiedLocation", ""
             )
 
-        protocol_space_found = False
-        auto_essence_found = False
+        protocol_space_configured = False
+        auto_essence_configured = False
 
         for task in maaend_tasks:
             if task["taskName"] == "ProtocolSpace":
-                protocol_space_found = True
-                task["enabled"] = sanity_task_type != "Essence"
-                if sanity_task_type == "Essence":
+                task["enabled"] = (
+                    sanity_task_type != "Essence" and not protocol_space_configured
+                )
+                if not task["enabled"]:
                     continue
 
+                protocol_space_configured = True
                 task["optionValues"]["ProtocolSpaceTab"] = {
                     "type": "select",
                     "caseName": sanity_task_type,
@@ -506,22 +508,24 @@ class AutoProxyTask(TaskExecuteBase):
                     "caseName": self.effective_sanity_task_config["RewardsSetOption"],
                 }
             elif task["taskName"] == "AutoEssence":
-                auto_essence_found = True
-                task["enabled"] = sanity_task_type == "Essence"
-                if sanity_task_type != "Essence":
+                task["enabled"] = (
+                    sanity_task_type == "Essence" and not auto_essence_configured
+                )
+                if not task["enabled"]:
                     continue
 
+                auto_essence_configured = True
                 task.setdefault("optionValues", {})
                 task["optionValues"]["AutoEssenceSpecifiedLocation"] = {
                     "type": "select",
                     "caseName": auto_essence_location,
                 }
 
-        if sanity_task_type != "Essence" and not protocol_space_found:
+        if sanity_task_type != "Essence" and not protocol_space_configured:
             logger.warning(
                 f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 ProtocolSpace 任务，已跳过协议空间注入"
             )
-        if sanity_task_type == "Essence" and not auto_essence_found:
+        if sanity_task_type == "Essence" and not auto_essence_configured:
             logger.warning(
                 f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 AutoEssence 任务，已跳过基质刷取注入"
             )
