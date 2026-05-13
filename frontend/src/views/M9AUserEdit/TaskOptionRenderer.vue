@@ -58,6 +58,24 @@
             />
           </a-form-item>
         </div>
+        
+        <div
+          v-else-if="optionDefinitions[option.name].type === 'checkbox'"
+          class="checkbox-cases"
+        >
+          <a-checkbox-group
+            v-model:value="option.selected_cases"
+            @change="handleCheckboxChange(index)"
+          >
+            <a-checkbox
+              v-for="caseItem in optionDefinitions[option.name].cases"
+              :key="caseItem.name"
+              :value="caseItem.name"
+            >
+              {{ caseItem.label || caseItem.name }}
+            </a-checkbox>
+          </a-checkbox-group>
+        </div>
       </template>
       
       <div v-if="option.sub_options && option.sub_options.length > 0" class="sub-options">
@@ -150,7 +168,8 @@ const initializeOptions = () => {
       name: opt.name, 
       index: opt.index ?? 0,
       sub_options: opt.sub_options ? [...opt.sub_options] : undefined,
-      input_values: opt.input_values ? { ...opt.input_values } : undefined
+      input_values: opt.input_values ? { ...opt.input_values } : undefined,
+      selected_cases: opt.selected_cases ? [...opt.selected_cases] : undefined
     }
     
     if (props.optionDefinitions && props.optionDefinitions[opt.name]) {
@@ -213,6 +232,10 @@ const handleInputChange = (index: number) => {
   emit('update', currentOptions.value)
 }
 
+const handleCheckboxChange = (index: number) => {
+  emit('update', currentOptions.value)
+}
+
 const handleSubOptionsUpdate = (parentIndex: number, newSubOptions: M9ATaskOption[]) => {
   currentOptions.value[parentIndex].sub_options = newSubOptions
   emit('update', currentOptions.value)
@@ -257,5 +280,11 @@ watch(
   margin-left: 24px;
   padding-left: 16px;
   border-left: 2px solid var(--ant-color-border);
+}
+
+.checkbox-cases {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 </style>

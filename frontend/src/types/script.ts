@@ -266,6 +266,7 @@ export interface M9ATaskOption {
   index: number
   sub_options?: M9ATaskOption[]
   input_values?: Record<string, string | number>
+  selected_cases?: string[]
 }
 
 // M9A 任务队列项类型
