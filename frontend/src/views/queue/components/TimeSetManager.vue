@@ -85,7 +85,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
@@ -108,6 +108,7 @@ const emit = defineEmits<{
 
 // 响应式数据
 const loading = ref(false)
+const isDraggingTimeSet = ref(false)
 
 // 时间处理工具函数
 const parseTimeString = (timeStr: string) => {
@@ -197,7 +198,9 @@ const processTimeSets = (rawTimeSets: any[]) => {
 watch(
   () => props.timeSets,
   newTimeSets => {
-    timeSets.value = processTimeSets(newTimeSets)
+    if (!isDraggingTimeSet.value) {
+      timeSets.value = processTimeSets(newTimeSets)
+    }
   },
   { deep: true, immediate: true }
 )
@@ -350,6 +353,8 @@ const onDragEnd = async (evt: any) => {
     return
   }
 
+  isDraggingTimeSet.value = true
+
   try {
     loading.value = true
 
@@ -378,6 +383,9 @@ const onDragEnd = async (evt: any) => {
     emit('refresh')
   } finally {
     loading.value = false
+    nextTick(() => {
+      isDraggingTimeSet.value = false
+    })
   }
 }
 </script>
