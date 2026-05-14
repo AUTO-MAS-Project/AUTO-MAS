@@ -97,7 +97,7 @@ class EmulatorConfig(ConfigBase):
         )
         ## 最大等待时间（秒）
         self.Info_MaxWaitTime = ConfigItem(
-            "Info", "MaxWaitTime", 60, RangeValidator(1, 9999), legacy_group="Data"
+            "Info", "MaxWaitTime", 300, RangeValidator(1, 9999), legacy_group="Data"
         )
 
         super().__init__()
