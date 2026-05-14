@@ -38,6 +38,11 @@ from app.utils import get_logger, LogMonitor, ProcessManager
 from app.tools import skland_sign_in
 from app.utils.constants import UTC4, UTC8, MAAEND_KILLPROC_TASK
 from .tools import login, push_notification
+from .preset import (
+    build_maaend_preset_config,
+    get_maaend_active_instance,
+    save_maaend_preset_options,
+)
 
 logger = get_logger("MaaEnd 自动代理")
 
@@ -81,14 +86,50 @@ class AutoProxyTask(TaskExecuteBase):
 
         if (
             self.cur_user_config.get("Info", "Mode") == "详细"
+            and not self.cur_user_config.get("Data", "IfPresetConfigured")
+        ):
+            legacy_config_path = (
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile/mxu-MaaEnd.json"
+            )
+            if legacy_config_path.exists():
+                try:
+                    legacy_config = json.loads(
+                        legacy_config_path.read_text(encoding="utf-8")
+                    )
+                    await save_maaend_preset_options(
+                        self.cur_user_config,
+                        legacy_config,
+                        mark_configured=True,
+                        controller_type=self.script_config.get(
+                            "Game", "ControllerType"
+                        ),
+                    )
+                    logger.info(f"用户 {self.cur_user_uid} 已导入旧 MaaEnd 预设配置")
+                except Exception as e:
+                    self.cur_user_item.status = "异常"
+                    logger.exception(
+                        f"用户 {self.cur_user_uid} 导入旧 MaaEnd 预设配置失败: {e}"
+                    )
+                    return (
+                        "旧 MaaEnd 预设配置读取失败, 请在用户配置页重新完成「MaaEnd 配置」步骤"
+                    )
+            else:
+                self.cur_user_item.status = "异常"
+                return (
+                    "未找到用户的 MaaEnd 预设配置, 请先在用户配置页完成「MaaEnd 配置」步骤"
+                )
+
+        if (
+            self.cur_user_config.get("Info", "Mode") == "自定义"
             and not (
                 Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
+                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile/mxu-MaaEnd.json"
             ).exists()
         ):
             self.cur_user_item.status = "异常"
             return (
-                "未找到用户的 MaaEnd 配置文件, 请先在用户配置页完成「MaaEnd 配置」步骤"
+                "未找到用户的 MaaEnd 自定义配置文件, 请先在用户配置页完成「MaaEnd 配置」步骤"
             )
 
         return "Pass"
@@ -365,27 +406,41 @@ class AutoProxyTask(TaskExecuteBase):
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
-        # 基础配置内容
-        maaend_config_path = (
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{'Default' if self.cur_user_config.get('Info', 'Mode') == '简洁' else self.cur_user_uid}/ConfigFile"
-        )
         shutil.rmtree(self.maaend_set_path, ignore_errors=True)
-        shutil.copytree(maaend_config_path, self.maaend_set_path)
+        self.maaend_set_path.mkdir(parents=True, exist_ok=True)
+
+        if self.cur_user_config.get("Info", "Mode") == "自定义":
+            maaend_config_path = (
+                Path.cwd()
+                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
+            )
+            shutil.copytree(maaend_config_path, self.maaend_set_path, dirs_exist_ok=True)
+            maaend_set = json.loads(
+                (self.maaend_set_path / "mxu-MaaEnd.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+        else:
+            preset_config = (
+                self.script_config
+                if self.cur_user_config.get("Info", "Mode") == "简洁"
+                else self.cur_user_config
+            )
+            maaend_set = build_maaend_preset_config(
+                preset_config,
+                self.script_config.get("Game", "ControllerType"),
+            )
+            (self.maaend_set_path / "mxu-MaaEnd.json").write_text(
+                json.dumps(maaend_set, ensure_ascii=False, indent=4),
+                encoding="utf-8",
+            )
 
         # 初始化任务实例
-        maaend_set = json.loads(
-            (self.maaend_set_path / "mxu-MaaEnd.json").read_text(encoding="utf-8")
-        )
-
-        # 获取任务项单例
-        for instance in maaend_set["instances"]:
-            if instance["id"] == "automas":
-                maaend_instance = instance
-                break
-        else:
-            maaend_instance = {"id": "automas", "name": "AUTO-MAS", "tasks": []}
+        maaend_instance = get_maaend_active_instance(maaend_set)
+        maaend_instance["id"] = "automas"
+        maaend_instance["name"] = "AUTO-MAS"
         maaend_set["instances"] = [maaend_instance]
+        maaend_set["lastActiveInstanceId"] = "automas"
         maaend_tasks = maaend_instance["tasks"]
 
         # 建立全局设置引用
@@ -455,34 +510,10 @@ class AutoProxyTask(TaskExecuteBase):
                 if task_name in self.task_dict:
                     task["enabled"] = self.task_dict[task_name][task["id"]]
 
-        # 配置协议空间
-        for task in maaend_tasks:
-            if task["taskName"] == "ProtocolSpace":
-                task["optionValues"]["ProtocolSpaceTab"] = {
-                    "type": "select",
-                    "caseName": self.cur_user_config.get("Task", "ProtocolSpaceTab"),
-                }
-                task["optionValues"]["OperatorProgression"] = {
-                    "type": "select",
-                    "caseName": self.cur_user_config.get("Task", "OperatorProgression"),
-                }
-                task["optionValues"]["WeaponProgression"] = {
-                    "type": "select",
-                    "caseName": self.cur_user_config.get("Task", "WeaponProgression"),
-                }
-                task["optionValues"]["CrisisDrills"] = {
-                    "type": "select",
-                    "caseName": self.cur_user_config.get("Task", "CrisisDrills"),
-                }
-                task["optionValues"]["RewardsSetOption"] = {
-                    "type": "select",
-                    "caseName": self.cur_user_config.get("Task", "RewardsSetOption"),
-                }
-                break
-
         # 完成任务后退出脚本
         if (
-            maaend_tasks[-1]["taskName"] == "__MXU_KILLPROC__"
+            maaend_tasks
+            and maaend_tasks[-1]["taskName"] == "__MXU_KILLPROC__"
             and maaend_tasks[-1]["optionValues"]["__MXU_KILLPROC_SELF_OPTION__"][
                 "value"
             ]

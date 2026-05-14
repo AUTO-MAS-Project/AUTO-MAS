@@ -1,0 +1,45 @@
+{
+    "settings": {
+        "language": "zh-CN",
+        "autoStartInstanceId": "automas",
+        "autoRunOnLaunch": false
+    },
+    "instances": [
+        {
+            "id": "automas",
+            "name": "AUTO-MAS",
+            "controllerName": "Win32-Window",
+            "tasks": [
+                {
+                    "id": "protocolspace",
+                    "taskName": "ProtocolSpace",
+                    "enabled": true,
+                    "optionValues": {
+                        "ProtocolSpaceTab": {
+                            "type": "select",
+                            "caseName": "OperatorProgression"
+                        },
+                        "OperatorProgression": {
+                            "type": "select",
+                            "caseName": "OperatorEXP"
+                        },
+                        "WeaponProgression": {
+                            "type": "select",
+                            "caseName": "WeaponEXP"
+                        },
+                        "CrisisDrills": {
+                            "type": "select",
+                            "caseName": "AdvancedProgression1"
+                        },
+                        "RewardsSetOption": {
+                            "type": "select",
+                            "caseName": "RewardsSetA"
+                        }
+                    }
+                }
+            ]
+        }
+    ],
+    "lastActiveInstanceId": "automas",
+    "recentlyClosed": []
+}

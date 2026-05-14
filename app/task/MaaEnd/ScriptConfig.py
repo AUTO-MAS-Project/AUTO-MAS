@@ -22,6 +22,7 @@
 import json
 import shutil
 import asyncio
+import uuid
 from pathlib import Path
 
 from app.core import Config
@@ -31,6 +32,7 @@ from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
+from .preset import build_maaend_preset_config, save_maaend_preset_options
 
 logger = get_logger("MaaEnd 脚本设置")
 
@@ -68,6 +70,14 @@ class ScriptConfigTask(TaskExecuteBase):
             Path.cwd()
             / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
         )
+        if self.cur_user_item.user_id == "Default":
+            self.config_mode = "简洁"
+            self.target_config = self.script_config
+        else:
+            self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
+            self.cur_user_config = self.user_config[self.cur_user_uid]
+            self.config_mode = self.cur_user_config.get("Info", "Mode")
+            self.target_config = self.script_config.UserData[self.cur_user_uid]
 
     async def main_task(self):
 
@@ -87,9 +97,23 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
-        if self.config_file_path.exists():
+        if self.config_mode == "自定义" and self.config_file_path.exists():
             shutil.copytree(
                 self.config_file_path, self.maaend_set_path, dirs_exist_ok=True
+            )
+        elif self.config_mode != "自定义":
+            shutil.rmtree(self.maaend_set_path, ignore_errors=True)
+            self.maaend_set_path.mkdir(parents=True, exist_ok=True)
+            (self.maaend_set_path / "mxu-MaaEnd.json").write_text(
+                json.dumps(
+                    build_maaend_preset_config(
+                        self.target_config,
+                        self.script_config.get("Game", "ControllerType"),
+                    ),
+                    ensure_ascii=False,
+                    indent=4,
+                ),
+                encoding="utf-8",
             )
 
         # 初始化任务实例
@@ -143,9 +167,28 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
-        shutil.rmtree(self.config_file_path, ignore_errors=True)
-        self.config_file_path.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(self.maaend_set_path, self.config_file_path, dirs_exist_ok=True)
+        if self.config_mode == "自定义":
+            shutil.rmtree(self.config_file_path, ignore_errors=True)
+            self.config_file_path.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(
+                self.maaend_set_path, self.config_file_path, dirs_exist_ok=True
+            )
+        else:
+            maaend_set = json.loads(
+                (self.maaend_set_path / "mxu-MaaEnd.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            await self.script_config.unlock()
+            try:
+                await save_maaend_preset_options(
+                    self.target_config,
+                    maaend_set,
+                    mark_configured=self.cur_user_item.user_id != "Default",
+                    controller_type=self.script_config.get("Game", "ControllerType"),
+                )
+            finally:
+                await self.script_config.lock()
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"

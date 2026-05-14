@@ -62,6 +62,74 @@ from .ConfigBase import (
 from .schema import TagItem
 
 
+MAAEND_PROTOCOL_SPACE_TABS = [
+    "OperatorProgression",
+    "WeaponProgression",
+    "CrisisDrills",
+]
+MAAEND_OPERATOR_PROGRESSION_OPTIONS = [
+    "OperatorEXP",
+    "Promotions",
+    "T-Creds",
+    "SkillUp",
+]
+MAAEND_WEAPON_PROGRESSION_OPTIONS = ["WeaponEXP", "WeaponTune"]
+MAAEND_CRISIS_DRILLS_OPTIONS = [
+    "AdvancedProgression1",
+    "AdvancedProgression2",
+    "AdvancedProgression3",
+    "AdvancedProgression4",
+    "AdvancedProgression5",
+]
+MAAEND_REWARDS_SET_OPTIONS = ["RewardsSetA", "RewardsSetB"]
+
+
+def init_maaend_task_config(config) -> None:
+    """初始化 MaaEnd 预设任务配置"""
+
+    ## 是否启用协议空间
+    config.Task_IfProtocolSpace = ConfigItem(
+        "Task", "IfProtocolSpace", True, BoolValidator()
+    )
+    ## 协议空间选项
+    config.Task_ProtocolSpaceTab = ConfigItem(
+        "Task",
+        "ProtocolSpaceTab",
+        "OperatorProgression",
+        OptionsValidator(MAAEND_PROTOCOL_SPACE_TABS),
+    )
+    ## 干员养成任务
+    config.Task_OperatorProgression = ConfigItem(
+        "Task",
+        "OperatorProgression",
+        "OperatorEXP",
+        OptionsValidator(MAAEND_OPERATOR_PROGRESSION_OPTIONS),
+    )
+    ## 武器养成任务
+    config.Task_WeaponProgression = ConfigItem(
+        "Task",
+        "WeaponProgression",
+        "WeaponEXP",
+        OptionsValidator(MAAEND_WEAPON_PROGRESSION_OPTIONS),
+    )
+    ## 危境预演任务
+    config.Task_CrisisDrills = ConfigItem(
+        "Task",
+        "CrisisDrills",
+        "AdvancedProgression1",
+        OptionsValidator(MAAEND_CRISIS_DRILLS_OPTIONS),
+    )
+    ## 奖励套组选项
+    config.Task_RewardsSetOption = ConfigItem(
+        "Task",
+        "RewardsSetOption",
+        "RewardsSetA",
+        OptionsValidator(MAAEND_REWARDS_SET_OPTIONS),
+    )
+    ## MaaEnd 原始预设任务选项
+    config.Task_Options = ConfigItem("Task", "Options", "{ }", JSONValidator())
+
+
 class EmulatorConfig(ConfigBase):
     """模拟器配置"""
 
@@ -652,7 +720,7 @@ class MaaEndUserConfig(ConfigBase):
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 配置模式
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细", "自定义"])
         )
         ## 资源名称
         self.Info_Resource = ConfigItem(
@@ -676,47 +744,7 @@ class MaaEndUserConfig(ConfigBase):
         )
 
         ## Task ------------------------------------------------------------
-        ## 协议空间选项
-        self.Task_ProtocolSpaceTab = ConfigItem(
-            "Task",
-            "ProtocolSpaceTab",
-            "OperatorProgression",
-            OptionsValidator(
-                ["OperatorProgression", "WeaponProgression", "CrisisDrills"]
-            ),
-        )
-        self.Task_OperatorProgression = ConfigItem(
-            "Task",
-            "OperatorProgression",
-            "OperatorEXP",
-            OptionsValidator(["OperatorEXP", "Promotions", "T-Creds", "SkillUp"]),
-        )
-        self.Task_WeaponProgression = ConfigItem(
-            "Task",
-            "WeaponProgression",
-            "WeaponEXP",
-            OptionsValidator(["WeaponEXP", "WeaponTune"]),
-        )
-        self.Task_CrisisDrills = ConfigItem(
-            "Task",
-            "CrisisDrills",
-            "AdvancedProgression1",
-            OptionsValidator(
-                [
-                    "AdvancedProgression1",
-                    "AdvancedProgression2",
-                    "AdvancedProgression3",
-                    "AdvancedProgression4",
-                    "AdvancedProgression5",
-                ]
-            ),
-        )
-        self.Task_RewardsSetOption = ConfigItem(
-            "Task",
-            "RewardsSetOption",
-            "RewardsSetA",
-            OptionsValidator(["RewardsSetA", "RewardsSetB"]),
-        )
+        init_maaend_task_config(self)
 
         ## Data ------------------------------------------------------------
         ## 上次代理日期
@@ -740,6 +768,10 @@ class MaaEndUserConfig(ConfigBase):
         )
         ## 是否通过检查
         self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
+        ## 是否已完成预设配置采集
+        self.Data_IfPresetConfigured = ConfigItem(
+            "Data", "IfPresetConfigured", False, BoolValidator()
+        )
 
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
@@ -917,6 +949,10 @@ class MaaEndConfig(ConfigBase):
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
         )
+
+        ## Task ------------------------------------------------------------
+        ## 脚本级预设任务配置（简洁模式数据源）
+        init_maaend_task_config(self)
 
         self.UserData = MultipleConfig([MaaEndUserConfig])
 
