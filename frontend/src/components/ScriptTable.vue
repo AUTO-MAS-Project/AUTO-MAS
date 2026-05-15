@@ -91,62 +91,31 @@
                       <div class="user-details-row">
                         <div class="user-name-section">
                           <span class="user-name">{{ user.Info.Name }}</span>
-                          <!-- MAA、SRC 和 MaaEnd 脚本显示服务器标签 -->
-                          <a-tag v-if="
-                            script.type === 'MAA' ||
-                            script.type === 'SRC' ||
-                            script.type === 'MaaEnd'
-                          " :color="script.type === 'MaaEnd'
-                            ? getMaaEndResourceTagColor(user)
-                            : getServerTagColor(user.Info.Server)
-                            " class="server-tag">
-                            {{ script.type === 'MaaEnd' ? getMaaEndResourceLabel(user) :
-                              getServerDisplayName(user.Info.Server) }}
+                          <!-- 有服务器或资源字段的用户显示来源标签 -->
+                          <a-tag v-if="shouldShowServerTag(user)" :color="getUserServerTagColor(user)"
+                            class="server-tag">
+                            {{ getUserServerDisplayName(user) }}
                           </a-tag>
 
                           <!-- 账号标签 -->
-                          <a-tag v-if="
-                            script.type === 'MAA' ||
-                            script.type === 'SRC' ||
-                            script.type === 'MaaEnd'
-                          " :color="script.type === 'MaaEnd'
-                            ? 'blue'
-                            : getServerTagColor(user.Info.Server)
-                            " class="clickable-tag" @click="handleUserIdClick(user)">
+                          <a-tag v-if="shouldShowUserIdTag(user)" :color="getUserIdentityTagColor(user)"
+                            class="clickable-tag" @click="handleUserIdClick(user)">
                             {{ getUserIdDisplayText(user) }}
                           </a-tag>
 
                           <!-- 密码标签 -->
-                          <a-tag v-if="
-                            script.type === 'MAA' ||
-                            script.type === 'SRC' ||
-                            script.type === 'MaaEnd'
-                          " :color="script.type === 'MaaEnd'
-                            ? 'blue'
-                            : getServerTagColor(user.Info.Server)
-                            " class="clickable-tag" @click="handlePasswordClick(user)">
+                          <a-tag v-if="shouldShowPasswordTag(user)" :color="getUserIdentityTagColor(user)"
+                            class="clickable-tag" @click="handlePasswordClick(user)">
                             {{ getPasswordDisplayText(user) }}
                           </a-tag>
                         </div>
 
-                        <!-- 用户详细信息 - MAA和SRC脚本用户 -->
-                        <div v-if="
-                          script.type === 'MAA' ||
-                          script.type === 'SRC' ||
-                          script.type === 'MaaEnd'
-                        " class="user-info-tags">
+                        <!-- 用户详细信息 -->
+                        <div v-if="shouldShowStatusTags(user)" class="user-info-tags">
                           <!-- 直接使用后端提供的Tag字段 -->
                           <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
                             :title="tag.text" :class="['info-tag', { 'clickable-tag': tag.text === '人工排查未通过' }]"
                             :color="tag.color" @click="tag.text === '人工排查未通过' ? handlePassCheck(user) : undefined">
-                            {{ tag.text }}
-                          </a-tag>
-                        </div>
-                        <!-- 用户详细信息 - 通用脚本用户 -->
-                        <div v-if="script.type === 'General'" class="user-info-tags">
-                          <!-- 直接使用后端提供的Tag字段 -->
-                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
-                            :title="tag.text" class="info-tag" :color="tag.color">
                             {{ tag.text }}
                           </a-tag>
                         </div>
@@ -345,6 +314,36 @@ const handlePassCheck = (user: User) => {
   })
 }
 
+const getInfoFieldValue = (user: any, field: string): any => {
+  return user?.Info?.[field]
+}
+
+const hasInfoField = (user: any, field: string): boolean => {
+  const info = user?.Info
+  return !!info && Object.prototype.hasOwnProperty.call(info, field)
+}
+
+const hasInfoDisplayValue = (user: any, field: string): boolean => {
+  const value = getInfoFieldValue(user, field)
+  return value !== undefined && value !== null && String(value).length > 0
+}
+
+const shouldShowServerTag = (user: any): boolean => {
+  return hasInfoDisplayValue(user, 'Server') || hasInfoDisplayValue(user, 'Resource')
+}
+
+const shouldShowUserIdTag = (user: any): boolean => {
+  return hasInfoDisplayValue(user, 'Id')
+}
+
+const shouldShowPasswordTag = (user: any): boolean => {
+  return hasInfoField(user, 'Password')
+}
+
+const shouldShowStatusTags = (user: any): boolean => {
+  return hasInfoDisplayValue(user, 'Tag')
+}
+
 const truncateText = (text: string, maxLength: number = 10): string => {
   if (!text || text.length === 0) return '无'
   return text.length > maxLength ? text.substring(0, maxLength) + '...' : text
@@ -434,6 +433,30 @@ const getMaaEndResourceTagColor = (user: any): string => {
     default:
       return 'blue'
   }
+}
+
+const getUserServerTagColor = (user: any): string => {
+  const server = getInfoFieldValue(user, 'Server')
+  if (server !== undefined && server !== null && String(server).length > 0) {
+    return getServerTagColor(String(server))
+  }
+  return getMaaEndResourceTagColor(user)
+}
+
+const getUserServerDisplayName = (user: any): string => {
+  const server = getInfoFieldValue(user, 'Server')
+  if (server !== undefined && server !== null && String(server).length > 0) {
+    return getServerDisplayName(String(server))
+  }
+  return getMaaEndResourceLabel(user)
+}
+
+const getUserIdentityTagColor = (user: any): string => {
+  const server = getInfoFieldValue(user, 'Server')
+  if (server !== undefined && server !== null && String(server).length > 0) {
+    return getServerTagColor(String(server))
+  }
+  return getMaaEndResourceTagColor(user)
 }
 
 // 获取剩余天数的颜色
