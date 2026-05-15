@@ -5,8 +5,36 @@
       <h3>任务配置</h3>
     </div>
 
+    <a-alert
+      v-if="modeNotice"
+      :message="modeNotice"
+      type="info"
+      show-icon
+      class="mode-notice"
+    />
+
     <a-row :gutter="24">
-      <a-col :span="8">
+      <a-col :span="6">
+        <a-form-item>
+          <template #label>
+            <a-tooltip title="是否启用 MAS 托管的协议空间预设任务">
+              <span class="form-label">
+                协议空间任务
+                <QuestionCircleOutlined class="help-icon" />
+              </span>
+            </a-tooltip>
+          </template>
+          <a-select
+            v-model:value="formData.Task.IfProtocolSpace"
+            :options="booleanOptions"
+            :disabled="controlsDisabled"
+            size="large"
+            @change="emitSave('Task.IfProtocolSpace', formData.Task.IfProtocolSpace)"
+          />
+        </a-form-item>
+      </a-col>
+
+      <a-col :span="6">
         <a-form-item>
           <template #label>
             <a-tooltip title="选择当前要执行的协议空间任务分类">
@@ -16,12 +44,17 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select v-model:value="formData.Task.ProtocolSpaceTab" :options="protocolSpaceOptions" size="large"
-            @change="handleProtocolSpaceChange" />
+          <a-select
+            v-model:value="formData.Task.ProtocolSpaceTab"
+            :options="protocolSpaceOptions"
+            :disabled="controlsDisabled"
+            size="large"
+            @change="handleProtocolSpaceChange"
+          />
         </a-form-item>
       </a-col>
 
-      <a-col :span="8">
+      <a-col :span="6">
         <a-form-item>
           <template #label>
             <a-tooltip :title="taskOptionTooltip">
@@ -31,12 +64,17 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select v-model:value="currentTaskValue" :options="currentTaskOptions" size="large"
-            @change="handleTaskOptionChange" />
+          <a-select
+            v-model:value="currentTaskValue"
+            :options="currentTaskOptions"
+            :disabled="controlsDisabled"
+            size="large"
+            @change="handleTaskOptionChange"
+          />
         </a-form-item>
       </a-col>
 
-      <a-col :span="8">
+      <a-col :span="6">
         <a-form-item>
           <template #label>
             <a-tooltip title="当前任务支持奖励组切换时，可在这里选择对应奖励组">
@@ -46,9 +84,13 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select v-model:value="formData.Task.RewardsSetOption" :options="rewardOptions"
-            :disabled="!rewardGroupEnabled" size="large"
-            @change="emitSave('Task.RewardsSetOption', formData.Task.RewardsSetOption)" />
+          <a-select
+            v-model:value="formData.Task.RewardsSetOption"
+            :options="rewardOptions"
+            :disabled="controlsDisabled || !rewardGroupEnabled"
+            size="large"
+            @change="emitSave('Task.RewardsSetOption', formData.Task.RewardsSetOption)"
+          />
         </a-form-item>
       </a-col>
     </a-row>
@@ -60,9 +102,19 @@
 import { computed, watch } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 
-const props = defineProps<{
-  formData: any
-}>()
+const props = withDefaults(
+  defineProps<{
+    formData: any
+    loading?: boolean
+    mode?: string
+    source?: 'script' | 'user'
+  }>(),
+  {
+    loading: false,
+    mode: '详细',
+    source: 'user',
+  }
+)
 
 const emit = defineEmits<{
   save: [key: string, value: any]
@@ -72,6 +124,11 @@ const protocolSpaceOptions = [
   { label: '干员养成', value: 'OperatorProgression' },
   { label: '武器养成', value: 'WeaponProgression' },
   { label: '危境预演', value: 'CrisisDrills' },
+]
+
+const booleanOptions = [
+  { label: '启用', value: true },
+  { label: '停用', value: false },
 ]
 
 const taskOptionsMap: Record<string, Array<{ label: string; value: string; rewards?: boolean }>> = {
@@ -144,11 +201,37 @@ const taskOptionTooltip = computed(
 
 const rewardGroupEnabled = computed(() => Boolean(currentTaskOption.value?.rewards))
 
+const controlsDisabled = computed(() => {
+  return (
+    props.loading ||
+    (props.source === 'user' && props.mode === '简洁') ||
+    props.mode === '自定义'
+  )
+})
+
+const modeNotice = computed(() => {
+  if (props.source === 'script') {
+    return '简洁模式用户将使用这里的脚本级预设任务配置。'
+  }
+
+  if (props.mode === '简洁') {
+    return '简洁模式使用脚本级预设配置，请在脚本配置页调整任务开关和选项。'
+  }
+
+  if (props.mode === '自定义') {
+    return '自定义模式运行用户完整 MaaEnd 配置，MAS 不托管业务任务队列。'
+  }
+
+  return ''
+})
+
 const emitSave = (key: string, value: any) => {
+  if (controlsDisabled.value) return
   emit('save', key, value)
 }
 
 const ensureCurrentTaskValue = () => {
+  if (controlsDisabled.value) return
   const options = currentTaskOptions.value
   if (!options.some(option => option.value === currentTaskValue.value)) {
     currentTaskValue.value = options[0].value
@@ -156,6 +239,7 @@ const ensureCurrentTaskValue = () => {
 }
 
 const ensureRewardGroupState = () => {
+  if (controlsDisabled.value) return
   if (!rewardGroupEnabled.value && props.formData.Task.RewardsSetOption !== 'RewardsSetA') {
     props.formData.Task.RewardsSetOption = 'RewardsSetA'
     emitSave('Task.RewardsSetOption', props.formData.Task.RewardsSetOption)
@@ -163,6 +247,7 @@ const ensureRewardGroupState = () => {
 }
 
 const handleProtocolSpaceChange = () => {
+  if (controlsDisabled.value) return
   ensureCurrentTaskValue()
   emitSave('Task.ProtocolSpaceTab', props.formData.Task.ProtocolSpaceTab)
   emitSave(`Task.${currentField.value}`, currentTaskValue.value)
@@ -170,6 +255,7 @@ const handleProtocolSpaceChange = () => {
 }
 
 const handleTaskOptionChange = () => {
+  if (controlsDisabled.value) return
   emitSave(`Task.${currentField.value}`, currentTaskValue.value)
   ensureRewardGroupState()
 }
@@ -196,6 +282,10 @@ watch(
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.mode-notice {
+  margin-bottom: 16px;
 }
 
 .section-header h3 {

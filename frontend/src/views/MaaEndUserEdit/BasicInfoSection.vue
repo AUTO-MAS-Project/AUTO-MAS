@@ -76,7 +76,7 @@
           <template #label>
             <span class="form-label">
               用户配置模式
-              <a-tooltip title="简洁模式下沿用脚本全局配置，详细模式下沿用用户自定义配置">
+              <a-tooltip title="简洁使用脚本级预设配置，详细使用用户级预设配置，自定义保存并运行用户完整 MaaEnd 配置">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </span>
@@ -84,6 +84,7 @@
           <a-select v-model:value="formData.Info.Mode" size="large" :options="[
             { label: '简洁', value: '简洁' },
             { label: '详细', value: '详细' },
+            { label: '自定义', value: '自定义' },
           ]" @change="emitSave('Info.Mode', formData.Info.Mode)" />
         </a-form-item>
       </a-col>

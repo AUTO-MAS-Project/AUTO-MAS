@@ -52,7 +52,13 @@
             :resource-options="resourceOptions"
             @save="handleFieldSave"
           />
-          <TaskConfigSection :form-data="formData" @save="handleFieldSave" />
+          <TaskConfigSection
+            :form-data="formData"
+            :loading="loading"
+            :mode="formData.Info.Mode"
+            source="user"
+            @save="handleFieldSave"
+          />
           <SkylandConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
           <NotifyConfigSection
             :form-data="formData"
@@ -125,11 +131,13 @@ const getDefaultMaaEndUserData = () => ({
     Tag: '',
   },
   Task: {
+    IfProtocolSpace: true,
     ProtocolSpaceTab: 'OperatorProgression',
     OperatorProgression: 'OperatorEXP',
     WeaponProgression: 'WeaponEXP',
     CrisisDrills: 'AdvancedProgression1',
     RewardsSetOption: 'RewardsSetA',
+    Options: '{}',
   },
   Notify: {
     Enabled: false,
@@ -144,6 +152,7 @@ const getDefaultMaaEndUserData = () => ({
     LastSklandDate: '',
     ProxyTimes: 0,
     IfPassCheck: false,
+    IfPresetConfigured: false,
   },
 })
 

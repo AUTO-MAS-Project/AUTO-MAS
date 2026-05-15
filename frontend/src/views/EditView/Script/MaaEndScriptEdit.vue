@@ -209,6 +209,14 @@
           </a-row>
         </div>
 
+        <TaskConfigSection
+          :form-data="maaEndConfig"
+          :loading="pageLoading"
+          mode="简洁"
+          source="script"
+          @save="handleTaskChange"
+        />
+
         <div class="form-section">
           <div class="section-header">
             <h3>运行配置</h3>
@@ -273,6 +281,7 @@ import type { ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
 import { useScriptApi } from '@/composables/useScriptApi'
+import TaskConfigSection from '../../MaaEndUserEdit/TaskConfigSection.vue'
 import {
   ArrowLeftOutlined,
   FolderOpenOutlined,
@@ -318,6 +327,15 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     EmulatorId: '',
     EmulatorIndex: '',
     CloseOnFinish: false,
+  },
+  Task: {
+    IfProtocolSpace: true,
+    ProtocolSpaceTab: 'OperatorProgression',
+    OperatorProgression: 'OperatorEXP',
+    WeaponProgression: 'WeaponEXP',
+    CrisisDrills: 'AdvancedProgression1',
+    RewardsSetOption: 'RewardsSetA',
+    Options: '{}',
   },
 })
 
@@ -367,10 +385,17 @@ const handleChange = async (category: string, key: string, value: unknown) => {
   }
 }
 
+const applyMaaEndConfig = (config: MaaEndScriptConfig) => {
+  Object.assign(maaEndConfig.Info, config.Info ?? {})
+  Object.assign(maaEndConfig.Run, config.Run ?? {})
+  Object.assign(maaEndConfig.Game, config.Game ?? {})
+  Object.assign(maaEndConfig.Task, config.Task ?? {})
+}
+
 const refreshScript = async () => {
   const scriptDetail = await getScript(scriptId)
   if (!scriptDetail) return
-  Object.assign(maaEndConfig, scriptDetail.config as MaaEndScriptConfig)
+  applyMaaEndConfig(scriptDetail.config as MaaEndScriptConfig)
   formData.name = scriptDetail.name
 }
 
@@ -409,7 +434,7 @@ const loadScript = async () => {
     if (routeState?.scriptData) {
       const config = routeState.scriptData.config as MaaEndScriptConfig
       formData.name = config.Info?.Name || '新建 MaaEnd 脚本'
-      Object.assign(maaEndConfig, config)
+      applyMaaEndConfig(config)
     }
 
     const scriptDetail = await getScript(scriptId)
@@ -421,7 +446,7 @@ const loadScript = async () => {
 
     formData.type = scriptDetail.type
     formData.name = scriptDetail.name
-    Object.assign(maaEndConfig, scriptDetail.config as MaaEndScriptConfig)
+    applyMaaEndConfig(scriptDetail.config as MaaEndScriptConfig)
 
     if (maaEndConfig.Game.EmulatorId) {
       await loadEmulatorDeviceOptions(maaEndConfig.Game.EmulatorId)
@@ -429,6 +454,12 @@ const loadScript = async () => {
   } finally {
     pageLoading.value = false
   }
+}
+
+const handleTaskChange = async (key: string, value: unknown) => {
+  const [, taskKey] = key.split('.')
+  if (!taskKey) return
+  await handleChange('Task', taskKey, value)
 }
 
 const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['ControllerType']) => {

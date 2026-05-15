@@ -95,6 +95,21 @@ export interface SRCScriptConfig {
   }
 }
 
+export interface MaaEndTaskConfig {
+  IfProtocolSpace: boolean
+  ProtocolSpaceTab: 'OperatorProgression' | 'WeaponProgression' | 'CrisisDrills'
+  OperatorProgression: 'OperatorEXP' | 'Promotions' | 'T-Creds' | 'SkillUp'
+  WeaponProgression: 'WeaponEXP' | 'WeaponTune'
+  CrisisDrills:
+    | 'AdvancedProgression1'
+    | 'AdvancedProgression2'
+    | 'AdvancedProgression3'
+    | 'AdvancedProgression4'
+    | 'AdvancedProgression5'
+  RewardsSetOption: 'RewardsSetA' | 'RewardsSetB'
+  Options: string
+}
+
 // MaaEnd脚本配置
 export interface MaaEndScriptConfig {
   Info: {
@@ -115,6 +130,7 @@ export interface MaaEndScriptConfig {
     EmulatorIndex: string
     CloseOnFinish: boolean
   }
+  Task: MaaEndTaskConfig
 }
 
 // 脚本基础信息
@@ -135,6 +151,7 @@ export interface User {
     LastProxyDate: string
     LastSklandDate: string
     ProxyTimes: number
+    IfPresetConfigured?: boolean
   }
   Info: {
     Annihilation: string
@@ -190,6 +207,13 @@ export interface User {
     IfReclamation: boolean
     IfRecruit: boolean
     IfStartUp: boolean
+    IfProtocolSpace?: boolean
+    ProtocolSpaceTab?: MaaEndTaskConfig['ProtocolSpaceTab']
+    OperatorProgression?: MaaEndTaskConfig['OperatorProgression']
+    WeaponProgression?: MaaEndTaskConfig['WeaponProgression']
+    CrisisDrills?: MaaEndTaskConfig['CrisisDrills']
+    RewardsSetOption?: MaaEndTaskConfig['RewardsSetOption']
+    Options?: string
   }
   QFluentWidgets: {
     ThemeColor: string

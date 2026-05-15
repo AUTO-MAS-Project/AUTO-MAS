@@ -639,6 +639,10 @@ export function useScriptApi() {
                           maaEndUserData.Info?.Tag !== undefined ? maaEndUserData.Info.Tag : null,
                       },
                       Task: {
+                        IfProtocolSpace:
+                          maaEndUserData.Task?.IfProtocolSpace !== undefined
+                            ? maaEndUserData.Task.IfProtocolSpace
+                            : true,
                         ProtocolSpaceTab:
                           maaEndUserData.Task?.ProtocolSpaceTab !== undefined
                             ? maaEndUserData.Task.ProtocolSpaceTab
@@ -659,6 +663,8 @@ export function useScriptApi() {
                           maaEndUserData.Task?.RewardsSetOption !== undefined
                             ? maaEndUserData.Task.RewardsSetOption
                             : 'RewardsSetA',
+                        Options:
+                          maaEndUserData.Task?.Options !== undefined ? maaEndUserData.Task.Options : '{}',
                       },
                       Notify: {
                         Enabled:
@@ -706,6 +712,10 @@ export function useScriptApi() {
                         IfPassCheck:
                           maaEndUserData.Data?.IfPassCheck !== undefined
                             ? maaEndUserData.Data.IfPassCheck
+                            : false,
+                        IfPresetConfigured:
+                          maaEndUserData.Data?.IfPresetConfigured !== undefined
+                            ? maaEndUserData.Data.IfPresetConfigured
                             : false,
                       },
                     }
