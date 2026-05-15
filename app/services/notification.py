@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import html
+import sys
 from pathlib import Path
 from typing import Any, Literal
 
@@ -69,6 +71,48 @@ class Notification:
                 to_address=to_address,
                 default=False,
             )
+        )
+
+    def render_mail_template(
+        self,
+        template_name: str,
+        context: dict[str, Any] | None = None,
+    ) -> str:
+        try:
+            from notification_mail.template_renderer import render_template
+
+            return render_template(template_name, context)
+        except ModuleNotFoundError:
+            source_root = Path.cwd() / "plugins/notification_mail/src"
+            normalized = str(source_root)
+            if source_root.exists() and normalized not in sys.path:
+                sys.path.insert(0, normalized)
+            try:
+                from notification_mail.template_renderer import render_template
+
+                return render_template(template_name, context)
+            except Exception as e:
+                logger.warning(
+                    f"从本地插件源码渲染邮件模板失败，将回退为简易 HTML: {template_name}, error={type(e).__name__}: {e}"
+                )
+        except Exception as e:
+            logger.warning(
+                f"渲染邮件模板失败，将回退为简易 HTML: {template_name}, error={type(e).__name__}: {e}"
+            )
+        payload = context or {}
+        title = html.escape(str(payload.get("title") or "AUTO-MAS 通知"))
+        lines = []
+        for key, value in payload.items():
+            if key == "title":
+                continue
+            lines.append(
+                f"<p><strong>{html.escape(str(key))}：</strong>{html.escape(str(value))}</p>"
+            )
+        return (
+            "<!DOCTYPE html><html><body>"
+            f"<h2>{title}</h2>"
+            + "".join(lines)
+            + "</body></html>"
         )
 
     async def ServerChanPush(self, title: str, content: str, send_key: str) -> bool:
