@@ -1,0 +1,252 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2024-2025 DLmaster361
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+
+import uuid
+import shutil
+from pathlib import Path
+from datetime import datetime
+
+from app.core import Config, EmulatorManager
+from app.models.task import TaskExecuteBase, ScriptItem, UserItem
+from app.models.ConfigBase import MultipleConfig
+from app.models.config import M9AConfig, M9AUserConfig
+from app.services import Notify
+from app.utils import get_logger
+from app.utils.constants import TASK_MODE_ZH
+from .tools import push_notification
+from .AutoProxy import AutoProxyTask
+
+
+logger = get_logger("M9A 调度器")
+
+METHOD_BOOK: dict[str, type[AutoProxyTask]] = {
+    "AutoProxy": AutoProxyTask
+}
+
+
+class M9AManager(TaskExecuteBase):
+    """M9A 任务调度器，负责配置校验、模拟器管理、用户调度和配置还原"""
+
+    def __init__(self, script_info: ScriptItem):
+        super().__init__()
+
+        if script_info.task_info is None:
+            raise RuntimeError("ScriptItem 未绑定到 TaskItem")
+
+        self.task_info = script_info.task_info
+        self.script_info = script_info
+        self.check_result = "-"
+
+    async def check(self) -> str:
+        """校验 M9A 配置是否可用"""
+        script_id = uuid.UUID(self.script_info.script_id)
+        script_config = Config.ScriptConfig[script_id]
+
+        if self.task_info.mode not in METHOD_BOOK:
+            return "不支持的任务模式，请检查任务配置！"
+        if not isinstance(script_config, M9AConfig):
+            return "脚本配置类型错误，不是 M9A 脚本类型"
+        if script_config.get("Emulator", "Id") == "-" or script_config.get(
+            "Emulator", "Index"
+        ) in ("", "-"):
+            return "未完成模拟器配置，请检查脚本配置中的模拟器设置！"
+
+        m9a_exe_path = Path(script_config.get("Info", "Path")) / "M9A.exe"
+        if not m9a_exe_path.exists():
+            return "M9A.exe 文件不存在，请检查 M9A 路径设置！"
+
+        m9a_root = Path(script_config.get("Info", "Path"))
+        m9a_config_dir = m9a_root / "config"
+        m9a_instances_dir = m9a_config_dir / "instances"
+
+        root_name_lower = str(m9a_root).lower()
+        looks_like_mux = "mux" in root_name_lower or any(
+            "mux" in p.name.lower() for p in m9a_root.iterdir()
+        )
+
+        if not m9a_config_dir.exists():
+            return "M9A/config 目录不存在，请检查 M9A 路径是否指向完整的 M9A 程序目录。"
+
+        if not m9a_instances_dir.exists():
+            if looks_like_mux:
+                return (
+                    "检测到当前 M9A 可能为 MuX 框架构建"
+                    "（目录/配置结构与 AUTO-MAS 的 M9A 适配不兼容）。\n"
+                    "请在脚本编辑设置中将 M9A 路径切换为 MFAA 构建版本的 M9A 根目录"
+                    "（应包含 M9A.exe 与 config/instances/）。"
+                )
+            return (
+                "M9A/config/instances 目录不存在，无法写入运行配置。\n"
+                "请确认 M9A 路径正确，或使用 MFAA 构建版本的 M9A。"
+            )
+
+        if not any(m9a_config_dir.glob("*.json")):
+            return "M9A 配置文件不存在或已损坏，请检查 M9A 路径或配置文件情况！"
+        return "Pass"
+
+    async def prepare(self):
+        """运行前准备：锁定配置、加载用户、备份原始配置、初始化模拟器"""
+        script_id = uuid.UUID(self.script_info.script_id)
+        await Config.ScriptConfig[script_id].lock()
+        self.script_config = Config.ScriptConfig[script_id]
+        self.user_config = MultipleConfig([M9AUserConfig])
+        await self.user_config.load(await self.script_config.UserData.toDict())
+        logger.success(f"{self.script_info.script_id} 已锁定，M9A 配置提取完成")
+
+        self.m9a_config_path = Path(self.script_config.get("Info", "Path")) / "config"
+        self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
+
+        # 初始化模拟器管理器
+        self.emulator_manager = await EmulatorManager.get_emulator_instance(
+            self.script_config.get("Emulator", "Id")
+        )
+
+        # 备份原始配置并清空 instances 目录（仅保留 default.json）
+        shutil.rmtree(self.temp_path, ignore_errors=True)
+        self.temp_path.mkdir(parents=True, exist_ok=True)
+        if self.m9a_config_path.exists():
+            shutil.copytree(self.m9a_config_path, self.temp_path, dirs_exist_ok=True)
+
+            instances_dir = self.m9a_config_path / "instances"
+            if instances_dir.exists():
+                for json_file in instances_dir.glob("*.json"):
+                    try:
+                        json_file.unlink()
+                        logger.info(f"已删除原始配置文件：{json_file}")
+                    except Exception as e:
+                        logger.warning(f"删除原始配置文件 {json_file} 失败：{e}")
+
+        # 构建用户列表
+        self.script_info.user_list = [
+            UserItem(
+                user_id=str(uid), name=config.get("Info", "Name"), status="等待"
+            )
+            for uid, config in self.user_config.items()
+            if config.get("Info", "Status")
+            and config.get("Info", "RemainedDay") != 0
+        ]
+        logger.info(
+            f"用户列表加载完成, 已筛选用户数: {len(self.script_info.user_list)}"
+        )
+
+    async def main_task(self):
+
+        self.check_result = await self.check()
+        if self.check_result != "Pass":
+            logger.error(f"未通过配置检查: {self.check_result}")
+            await Config.send_websocket_message(
+                id=self.task_info.task_id,
+                type="Info",
+                data={"Error": self.check_result},
+            )
+            return
+
+        self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        await self.prepare()
+
+        if not isinstance(self.script_config, M9AConfig):
+            raise RuntimeError("脚本配置类型错误, 不是 M9A 脚本类型")
+
+        for self.script_info.current_index in range(len(self.script_info.user_list)):
+            task = METHOD_BOOK[self.task_info.mode](
+                self.script_info,
+                self.script_config,
+                self.user_config,
+                self.emulator_manager,
+            )
+            await self.spawn(task)
+
+    async def final_task(self):
+        """运行结束后的收尾：解锁配置、推送结果、还原原始配置"""
+
+        if self.check_result != "Pass":
+            self.script_info.status = "异常"
+            return self.check_result
+
+        logger.info("M9A 主任务已结束, 开始执行后续操作")
+        await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
+        logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
+
+        if self.task_info.mode in ["AutoProxy"]:
+
+            await self.emulator_manager.close(
+                self.script_config.get("Emulator", "Index")
+            )
+            await Config.ScriptConfig[
+                uuid.UUID(self.script_info.script_id)
+            ].UserData.load(await self.user_config.toDict())
+
+            # 按状态分组用户
+            error_user = [
+                u.name for u in self.script_info.user_list if u.status == "异常"
+            ]
+            over_user = [
+                u.name for u in self.script_info.user_list if u.status == "完成"
+            ]
+            wait_user = [
+                u.name for u in self.script_info.user_list if u.status == "等待"
+            ]
+
+            title = f"{datetime.now().strftime('%m-%d')} | {self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
+            result = {
+                "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
+                "script_name": self.script_info.name or "空白",
+                "start_time": self.begin_time,
+                "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "completed_count": len(over_user),
+                "uncompleted_count": len(error_user) + len(wait_user),
+                "result": self.script_info.result,
+            }
+
+            await Notify.push_plyer(
+                title.replace("报告", "已完成！"),
+                f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
+                f"已完成用户数: {len(over_user)}, 未完成用户数: {len(error_user) + len(wait_user)}",
+                10,
+            )
+            try:
+                await push_notification("代理结果", title, result, None)
+            except Exception as e:
+                logger.exception(f"推送代理结果时出现异常: {e}")
+                await Config.send_websocket_message(
+                    id=self.task_info.task_id,
+                    type="Info",
+                    data={"Error": f"推送代理结果时出现异常: {e}"},
+                )
+
+        # 还原配置：从 temp 恢复原始 config
+        if (self.temp_path).exists():
+            shutil.rmtree(self.m9a_config_path, ignore_errors=True)
+            shutil.copytree(self.temp_path, self.m9a_config_path, dirs_exist_ok=True)
+        shutil.rmtree(self.temp_path, ignore_errors=True)
+
+        self.script_info.status = "完成"
+
+    async def on_crash(self, e: Exception):
+
+        self.script_info.status = "异常"
+        logger.exception(f"M9A任务出现异常: {e}")
+        await Config.send_websocket_message(
+            id=self.task_info.task_id,
+            type="Info",
+            data={"Error": f"M9A任务出现异常: {e}"},
+        )
