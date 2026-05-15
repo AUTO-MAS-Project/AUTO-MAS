@@ -82,6 +82,9 @@ LEGACY_SCRIPT_TYPE_BY_SCRIPT_CLASS = {
 LEGACY_SCRIPT_TYPE_BY_USER_CLASS = {
     item["user_class_name"]: item for item in LEGACY_SCRIPT_TYPE_METADATA
 }
+LEGACY_SCRIPT_TYPE_BY_TYPE_KEY = {
+    item["type_key"]: item for item in LEGACY_SCRIPT_TYPE_METADATA
+}
 
 
 @dataclass(slots=True)
@@ -429,6 +432,15 @@ def build_legacy_fallback_provider_by_user_config(
     return _build_legacy_fallback_provider(
         _resolve_class_name(config),
         LEGACY_SCRIPT_TYPE_BY_USER_CLASS,
+    )
+
+
+def build_legacy_fallback_provider_by_type_key(type_key: str) -> ScriptTypeProvider | None:
+    """按脚本类型键构造离线回退 provider。"""
+
+    return _build_legacy_fallback_provider(
+        str(type_key or "").strip(),
+        LEGACY_SCRIPT_TYPE_BY_TYPE_KEY,
     )
 
 

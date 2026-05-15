@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import uuid
 import inspect
 from dataclasses import dataclass, field
@@ -220,6 +219,11 @@ class ScriptAdapterRuntime:
     check_result: str = "Pass"
     extra: dict[str, Any] = field(default_factory=dict)
 
+    def _resolve_provider(self):
+        from app.core.script_types import script_type_registry
+
+        return script_type_registry.get(self.type_key)
+
     def build_action_context(self) -> dict[str, Any]:
         """构建可供前端 schema action 使用的上下文字段。"""
 
@@ -243,85 +247,121 @@ class ScriptAdapterRuntime:
     async def read_script_data(self) -> dict[str, Any]:
         """读取脚本配置的表单态数据。"""
 
-        from app.core import Config as RuntimeConfig
-        from app.core.script_types import strip_sub_configs
+        from app.core.script_config_codec import storage_to_form
         from app.models.plugin_script_config import PluginScriptConfig
 
+        provider = self._resolve_provider()
         storage = self.get_storage_script_config()
         if isinstance(storage, PluginScriptConfig):
-            raw = storage.get("PluginData", "Config")
-            data = json.loads(raw) if raw and raw != "{}" else {}
-            normalized = RuntimeConfig._normalize_configbase_payload_for_form(
-                self.definition.script_config_class,
-                data,
-            )
-            if _is_configbase_class(self.definition.script_config_class):
-                normalized = strip_sub_configs(normalized)
-            return normalized
-
-        payload = await storage.toDict()
-        normalized = RuntimeConfig._normalize_configbase_payload_for_form(
-            self.definition.script_config_class,
-            strip_sub_configs(payload),
-        )
-        if _is_configbase_class(self.definition.script_config_class):
-            normalized = strip_sub_configs(normalized)
-        return normalized
+            return await storage_to_form(provider, storage.get("PluginData", "Config"), "script")
+        return await storage_to_form(provider, await storage.toDict(), "script")
 
     async def read_user_data_pairs(self) -> list[tuple[str, dict[str, Any]]]:
         """读取当前脚本下全部用户配置的表单态数据。"""
 
-        from app.core import Config as RuntimeConfig
-        from app.core.script_types import strip_sub_configs
+        from app.core.script_config_codec import storage_to_form
         from app.models.plugin_script_config import PluginUserConfig
 
+        provider = self._resolve_provider()
         storage = self.get_storage_script_config()
         pairs: list[tuple[str, dict[str, Any]]] = []
         for user_uid, user_config in storage.UserData.items():
             if isinstance(user_config, PluginUserConfig):
-                raw = user_config.get("PluginData", "Config")
-                data = json.loads(raw) if raw and raw != "{}" else {}
-                normalized = RuntimeConfig._normalize_configbase_payload_for_form(
-                    self.definition.user_config_class,
-                    data,
-                )
-                if _is_configbase_class(self.definition.user_config_class):
-                    normalized = strip_sub_configs(normalized)
+                payload = user_config.get("PluginData", "Config")
             else:
                 payload = await user_config.toDict()
-                normalized = RuntimeConfig._normalize_configbase_payload_for_form(
-                    self.definition.user_config_class,
-                    strip_sub_configs(payload),
-                )
-                if _is_configbase_class(self.definition.user_config_class):
-                    normalized = strip_sub_configs(normalized)
-            pairs.append((str(user_uid), normalized))
+            pairs.append((str(user_uid), await storage_to_form(provider, payload, "user")))
         return pairs
 
     async def build_script_model(self) -> Any:
         """按声明的 schema 类型重建脚本配置模型。"""
 
-        data = await self.read_script_data()
-        if _is_configbase_class(self.definition.script_config_class):
-            config = self.definition.script_config_class()
-            await config.load(data)
-            return config
-        return self.definition.script_config_class.model_validate(data)
+        from app.core.script_config_codec import build_config_model
+        from app.models.plugin_script_config import PluginScriptConfig
+
+        provider = self._resolve_provider()
+        storage = self.get_storage_script_config()
+        if isinstance(storage, PluginScriptConfig):
+            payload = storage.get("PluginData", "Config")
+        else:
+            payload = await storage.toDict(if_decrypt=False)
+        return await build_config_model(provider, payload, "script")
 
     async def build_user_models(self) -> list[tuple[str, Any]]:
         """按声明的 schema 类型重建用户配置模型列表。"""
 
-        pairs = await self.read_user_data_pairs()
+        from app.core.script_config_codec import build_config_model
+        from app.models.plugin_script_config import PluginUserConfig
+
+        provider = self._resolve_provider()
+        storage = self.get_storage_script_config()
         result: list[tuple[str, Any]] = []
-        for user_uid, data in pairs:
-            if _is_configbase_class(self.definition.user_config_class):
-                config = self.definition.user_config_class()
-                await config.load(data)
-                result.append((user_uid, config))
+        for user_uid, user_config in storage.UserData.items():
+            if isinstance(user_config, PluginUserConfig):
+                payload = user_config.get("PluginData", "Config")
             else:
-                result.append(
-                    (user_uid, self.definition.user_config_class.model_validate(data))
-                )
+                payload = await user_config.toDict(if_decrypt=False)
+            result.append((str(user_uid), await build_config_model(provider, payload, "user")))
+        return result
+
+    async def read_script_data(self) -> dict[str, Any]:
+        """读取脚本配置的表单态数据。"""
+
+        from app.core.script_config_codec import storage_to_form
+        from app.models.plugin_script_config import PluginScriptConfig
+
+        provider = self._resolve_provider()
+        storage = self.get_storage_script_config()
+        if isinstance(storage, PluginScriptConfig):
+            return await storage_to_form(provider, storage.get("PluginData", "Config"), "script")
+        return await storage_to_form(provider, await storage.toDict(), "script")
+
+    async def read_user_data_pairs(self) -> list[tuple[str, dict[str, Any]]]:
+        """读取当前脚本下全部用户配置的表单态数据。"""
+
+        from app.core.script_config_codec import storage_to_form
+        from app.models.plugin_script_config import PluginUserConfig
+
+        provider = self._resolve_provider()
+        storage = self.get_storage_script_config()
+        pairs: list[tuple[str, dict[str, Any]]] = []
+        for user_uid, user_config in storage.UserData.items():
+            if isinstance(user_config, PluginUserConfig):
+                payload = user_config.get("PluginData", "Config")
+            else:
+                payload = await user_config.toDict()
+            pairs.append((str(user_uid), await storage_to_form(provider, payload, "user")))
+        return pairs
+
+    async def build_script_model(self) -> Any:
+        """按声明的配置类构造运行态脚本配置模型。"""
+
+        from app.core.script_config_codec import build_config_model
+        from app.models.plugin_script_config import PluginScriptConfig
+
+        provider = self._resolve_provider()
+        storage = self.get_storage_script_config()
+        if isinstance(storage, PluginScriptConfig):
+            payload = storage.get("PluginData", "Config")
+        else:
+            payload = await storage.toDict(if_decrypt=False)
+        return await build_config_model(provider, payload, "script")
+
+    async def build_user_models(self) -> list[tuple[str, Any]]:
+        """按声明的配置类构造运行态用户配置模型。"""
+
+        from app.core.script_config_codec import build_config_model
+        from app.models.plugin_script_config import PluginUserConfig
+
+        provider = self._resolve_provider()
+        storage = self.get_storage_script_config()
+        result: list[tuple[str, Any]] = []
+        for user_uid, user_config in storage.UserData.items():
+            if isinstance(user_config, PluginUserConfig):
+                payload = user_config.get("PluginData", "Config")
+            else:
+                payload = await user_config.toDict(if_decrypt=False)
+            result.append((str(user_uid), await build_config_model(provider, payload, "user")))
         return result
 
 
