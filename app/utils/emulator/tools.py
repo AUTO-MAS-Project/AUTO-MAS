@@ -93,22 +93,8 @@ def _resolve_manager_dir_from_side_exe(
     return []
 
 
-# 注册表中常见的安装路径值名称（按优先级排列；已剪枝低覆盖项）
-REGISTRY_INSTALL_VALUE_NAMES = (
-    "InstallLocation",
-    "InstallDir",
-    "UninstallString",
-    "ImagePath",
-    "DisplayIcon",  # 兜底，模拟器卸载项多为 .ico，read_install_path 会跳过
-)
-
-# 值为安装目录/路径，可能含空格；勿走命令行 token 截断（如 C:\Program Files\...）
-REGISTRY_DIRECTORY_VALUE_NAMES = frozenset(
-    {
-        "InstallLocation",
-        "InstallDir",
-    }
-)
+# 卸载表/注册表路径仅读 UninstallString（由旁路 exe 或目录校验解析主管理器）
+REGISTRY_INSTALL_VALUE_NAMES = ("UninstallString",)
 
 # MuMu 相对路径推断模式：从给定基准目录出发，按顺序拼接子路径直到 MuMuManager.exe
 MUMU_RELATIVE_EXECUTABLE_PATTERNS = (
@@ -210,51 +196,21 @@ def search_all_emulators() -> List[Dict[str, str]]:
 
 
 def _search_emulator(emulator_type: str, config: Dict) -> List[str]:
-    """搜索单类模拟器，返回找到的所有候选路径列表"""
+    """搜索单类模拟器：仅扫描卸载表子键的 UninstallString。"""
 
     found_paths: List[str] = []
+    keywords = config.get("registry_display_keywords") or []
 
-    # 将注册表路径分为厂商键和卸载表根键
-    vendor_registry_paths = [
-        path
-        for path in config["registry_paths"]
-        if "MICROSOFT\\WINDOWS\\CURRENTVERSION\\UNINSTALL" not in path.upper()
-    ]
-    uninstall_registry_paths = [
-        path
-        for path in config["registry_paths"]
-        if "MICROSOFT\\WINDOWS\\CURRENTVERSION\\UNINSTALL" in path.upper()
-    ]
-
-    # 1. 厂商注册表键搜索
-    registry_candidates = _search_from_registry(
-        vendor_registry_paths,
-        config.get("registry_display_keywords") or [],
-    )
-    for registry_path in registry_candidates:
-        resolved_registry_paths = _resolve_emulator_install_paths(
-            registry_path,
-            config,
-            emulator_type,
-            source="registry",
-        )
-        found_paths.extend(resolved_registry_paths)
-
-    # 2. 卸载表根键关键词匹配：兼容安装器写入路径不固定的场景，
-    #    依赖后续"可执行文件存在"校验过滤噪声
-    if uninstall_registry_paths:
-        uninstall_candidates = _search_from_registry(
-            uninstall_registry_paths,
-            config.get("registry_display_keywords") or [],
-        )
-        for registry_path in uninstall_candidates:
-            resolved_registry_paths = _resolve_emulator_install_paths(
-                registry_path,
-                config,
-                emulator_type,
-                source="registry_uninstall",
+    for registry_path in config.get("registry_paths") or []:
+        for candidate in _search_from_registry([registry_path], keywords):
+            found_paths.extend(
+                _resolve_emulator_install_paths(
+                    candidate,
+                    config,
+                    emulator_type,
+                    source="registry_uninstall",
+                )
             )
-            found_paths.extend(resolved_registry_paths)
 
     return _dedupe_path_strings(found_paths)
 
@@ -498,17 +454,9 @@ def _search_from_registry(
             with suppress(FileNotFoundError, OSError):
                 value, _ = winreg.QueryValueEx(key, value_name)
                 if isinstance(value, str) and value.strip():
-                    raw = value.strip()
-                    if value_name in REGISTRY_DIRECTORY_VALUE_NAMES:
-                        path = raw.strip('"').strip("'")
-                    else:
-                        path = _extract_path_from_command(raw) or raw
-                    if not path:
-                        continue
-                    # 卸载表常先命中 DisplayIcon（.ico），需继续尝试 UninstallString 等
-                    if path.lower().endswith(".ico"):
-                        continue
-                    return path
+                    path = _extract_path_from_command(value.strip()) or value.strip()
+                    if path:
+                        return path
         return ""
 
     def is_uninstall_root(path: str) -> bool:

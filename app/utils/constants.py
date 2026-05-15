@@ -221,13 +221,6 @@ EMULATOR_PATH_BOOK = {
             "YXReverse1999",
         ],
         "registry_paths": [
-            r"SOFTWARE\NetEase\MuMu Player 12",
-            r"SOFTWARE\NetEase\MuMuPlayer-12.0",
-            r"SOFTWARE\NetEase\MuMu\nx_main",  # mumu5
-            r"SOFTWARE\NetEase\GameViewer",  # 兼容新安装器写入的路径键
-            r"SOFTWARE\NetEase\MuMuPlayer",
-            r"SOFTWARE\NetEase\MuMuNx",
-            r"SYSTEM\CurrentControlSet\Services\MuMuRemoteService",
             r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
     },
@@ -242,12 +235,6 @@ EMULATOR_PATH_BOOK = {
             "XuanZhi LDPlayer",
         ],
         "registry_paths": [
-            r"SOFTWARE\ChangZhi",
-            r"SOFTWARE\leidian\ldplayer",
-            r"SOFTWARE\leidian\ldplayer9",
-            r"SOFTWARE\XuanZhi\LDPlayer64",
-            r"SOFTWARE\XuanZhi\LDPlayer9",
-            r"SYSTEM\CurrentControlSet\Services\LDPlayerSvr",
             r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
     },
@@ -260,8 +247,6 @@ EMULATOR_PATH_BOOK = {
             "BigNox",
         ],
         "registry_paths": [
-            r"SOFTWARE\BigNox\VirtualBox",
-            r"SOFTWARE\Nox APP Player",
             r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
     },
@@ -275,9 +260,6 @@ EMULATOR_PATH_BOOK = {
             "逍遥模拟器",
         ],
         "registry_paths": [
-            r"SOFTWARE\Microvirt\MEmu",
-            r"SOFTWARE\WOW6432Node\Microvirt\MEmu",
-            r"SYSTEM\CurrentControlSet\Services\MEmusvc",
             r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
     },
@@ -291,10 +273,6 @@ EMULATOR_PATH_BOOK = {
             "BlueStacks X",
         ],
         "registry_paths": [
-            r"SOFTWARE\BlueStacks",
-            r"SOFTWARE\BlueStacks_nxt",
-            r"SOFTWARE\BlueStacks_cn",
-            r"SOFTWARE\BlueStacks_nxt_cn",
             r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
     },
