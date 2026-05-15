@@ -14,27 +14,28 @@
     />
 
     <a-row :gutter="24">
-      <a-col :span="6">
-        <a-form-item>
+      <a-col v-for="task in presetTaskSwitches" :key="task.field" :span="6">
+        <a-form-item :name="task.field">
           <template #label>
-            <a-tooltip title="是否启用 MAS 托管的协议空间预设任务">
-              <span class="form-label">
-                协议空间任务
+            <a-tooltip :title="task.tooltip">
+              <span>
+                {{ task.label }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
-          <a-select
-            v-model:value="formData.Task.IfProtocolSpace"
-            :options="booleanOptions"
+          <a-switch
+            v-model:checked="formData.Task[task.field]"
             :disabled="controlsDisabled"
-            size="large"
-            @change="emitSave('Task.IfProtocolSpace', formData.Task.IfProtocolSpace)"
+            @change="emitSave(`Task.${task.field}`, formData.Task[task.field])"
           />
         </a-form-item>
       </a-col>
+    </a-row>
 
-      <a-col :span="6">
+    <a-row :gutter="24">
+
+      <a-col :span="8">
         <a-form-item>
           <template #label>
             <a-tooltip title="选择当前要执行的协议空间任务分类">
@@ -47,14 +48,14 @@
           <a-select
             v-model:value="formData.Task.ProtocolSpaceTab"
             :options="protocolSpaceOptions"
-            :disabled="controlsDisabled"
+            :disabled="optionControlsDisabled"
             size="large"
             @change="handleProtocolSpaceChange"
           />
         </a-form-item>
       </a-col>
 
-      <a-col :span="6">
+      <a-col :span="8">
         <a-form-item>
           <template #label>
             <a-tooltip :title="taskOptionTooltip">
@@ -67,14 +68,14 @@
           <a-select
             v-model:value="currentTaskValue"
             :options="currentTaskOptions"
-            :disabled="controlsDisabled"
+            :disabled="optionControlsDisabled"
             size="large"
             @change="handleTaskOptionChange"
           />
         </a-form-item>
       </a-col>
 
-      <a-col :span="6">
+      <a-col :span="8">
         <a-form-item>
           <template #label>
             <a-tooltip title="当前任务支持奖励组切换时，可在这里选择对应奖励组">
@@ -87,7 +88,7 @@
           <a-select
             v-model:value="formData.Task.RewardsSetOption"
             :options="rewardOptions"
-            :disabled="controlsDisabled || !rewardGroupEnabled"
+            :disabled="optionControlsDisabled || !rewardGroupEnabled"
             size="large"
             @change="emitSave('Task.RewardsSetOption', formData.Task.RewardsSetOption)"
           />
@@ -126,9 +127,92 @@ const protocolSpaceOptions = [
   { label: '危境预演', value: 'CrisisDrills' },
 ]
 
-const booleanOptions = [
-  { label: '启用', value: true },
-  { label: '停用', value: false },
+const presetTaskSwitches = [
+  {
+    label: '协议空间',
+    field: 'IfProtocolSpace',
+    tooltip: '是否启用 MAS 托管的协议空间预设任务',
+  },
+  {
+    label: '访问好友',
+    field: 'IfVisitFriends',
+    tooltip: '是否启用访问好友任务',
+  },
+  {
+    label: '帝江奖励',
+    field: 'IfDijiangRewards',
+    tooltip: '是否启用帝江奖励任务',
+  },
+  {
+    label: '信用采购',
+    field: 'IfCreditShoppingN2',
+    tooltip: '是否启用信用采购任务',
+  },
+  {
+    label: '配送委托',
+    field: 'IfDeliveryJobs',
+    tooltip: '是否启用配送委托任务',
+  },
+  {
+    label: '自动售卖',
+    field: 'IfSellProduct',
+    tooltip: '是否启用自动售卖任务',
+  },
+  {
+    label: '自动备货',
+    field: 'IfAutoStockpile',
+    tooltip: '是否启用自动备货任务',
+  },
+  {
+    label: '自动补货',
+    field: 'IfAutoStockStaple',
+    tooltip: '是否启用自动补货任务',
+  },
+  {
+    label: '自动交易',
+    field: 'IfAutoSell',
+    tooltip: '是否启用自动交易任务',
+  },
+  {
+    label: '环境监测',
+    field: 'IfEnvironmentMonitoring',
+    tooltip: '是否启用环境监测任务',
+  },
+  {
+    label: '日常奖励',
+    field: 'IfDailyRewards',
+    tooltip: '是否启用日常奖励任务',
+  },
+  {
+    label: '收取委托',
+    field: 'IfSeizeEntrustTask',
+    tooltip: '是否启用收取委托任务',
+  },
+  {
+    label: '自动采集',
+    field: 'IfAutoCollect',
+    tooltip: '是否启用自动采集任务',
+  },
+  {
+    label: '自动用理智药',
+    field: 'IfAutoUseSpMedication',
+    tooltip: '是否启用自动用理智药任务',
+  },
+  {
+    label: '资源回收',
+    field: 'IfResourceRecycleStation',
+    tooltip: '是否启用资源回收任务',
+  },
+  {
+    label: '自动农场',
+    field: 'IfAutoEcoFarm',
+    tooltip: '是否启用自动农场任务',
+  },
+  {
+    label: '基质刷取',
+    field: 'IfAutoEssence',
+    tooltip: '是否启用基质刷取任务',
+  },
 ]
 
 const taskOptionsMap: Record<string, Array<{ label: string; value: string; rewards?: boolean }>> = {
@@ -207,6 +291,10 @@ const controlsDisabled = computed(() => {
     (props.source === 'user' && props.mode === '简洁') ||
     props.mode === '自定义'
   )
+})
+
+const optionControlsDisabled = computed(() => {
+  return controlsDisabled.value || !props.formData.Task.IfProtocolSpace
 })
 
 const modeNotice = computed(() => {

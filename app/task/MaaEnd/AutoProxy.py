@@ -41,6 +41,7 @@ from .tools import login, push_notification
 from .preset import (
     build_maaend_preset_config,
     get_maaend_active_instance,
+    is_maaend_preset_supported,
     save_maaend_preset_options,
 )
 
@@ -83,6 +84,15 @@ class AutoProxyTask(TaskExecuteBase):
         ):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
+
+        if (
+            self.cur_user_config.get("Info", "Mode") != "自定义"
+            and not is_maaend_preset_supported(
+                self.script_config.get("Game", "ControllerType")
+            )
+        ):
+            self.cur_user_item.status = "异常"
+            return "当前控制器暂不支持 MaaEnd 预设模式, 请切换用户配置模式为「自定义」"
 
         if (
             self.cur_user_config.get("Info", "Mode") == "详细"

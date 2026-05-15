@@ -50,6 +50,7 @@
             :form-data="formData"
             :loading="loading"
             :resource-options="resourceOptions"
+            :preset-supported="presetSupported"
             @save="handleFieldSave"
           />
           <TaskConfigSection
@@ -108,6 +109,10 @@ const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId)
 const scriptName = ref('')
+const controllerType = ref<string | null>(null)
+const presetSupported = computed(() =>
+  controllerType.value === 'Win32-Window' || controllerType.value === 'Win32-Front'
+)
 
 const maaEndConfigLoading = ref(false)
 const showMaaEndConfigMask = ref(false)
@@ -132,6 +137,22 @@ const getDefaultMaaEndUserData = () => ({
   },
   Task: {
     IfProtocolSpace: true,
+    IfVisitFriends: true,
+    IfDijiangRewards: true,
+    IfCreditShoppingN2: true,
+    IfDeliveryJobs: true,
+    IfSellProduct: true,
+    IfAutoStockpile: true,
+    IfAutoStockStaple: true,
+    IfAutoSell: true,
+    IfEnvironmentMonitoring: true,
+    IfDailyRewards: true,
+    IfSeizeEntrustTask: true,
+    IfAutoCollect: true,
+    IfAutoUseSpMedication: true,
+    IfResourceRecycleStation: true,
+    IfAutoEcoFarm: true,
+    IfAutoEssence: true,
     ProtocolSpaceTab: 'OperatorProgression',
     OperatorProgression: 'OperatorEXP',
     WeaponProgression: 'WeaponEXP',
@@ -207,7 +228,14 @@ const loadScriptInfo = async () => {
   const scriptDetail = await getScript(scriptId)
   if (scriptDetail) {
     scriptName.value = scriptDetail.name
+    controllerType.value = (scriptDetail.config as any).Game?.ControllerType ?? null
   }
+}
+
+const normalizeModeForController = async () => {
+  if (presetSupported.value || formData.Info.Mode === '自定义' || !userId) return
+  formData.Info.Mode = '自定义'
+  await updateUser(scriptId, userId, { Info: { Mode: '自定义' } })
 }
 
 const loadUserData = async () => {
@@ -331,11 +359,13 @@ onMounted(async () => {
   await loadScriptInfo()
   if (isEdit.value) {
     await loadUserData()
+    await normalizeModeForController()
   } else {
     const result = await addUser(scriptId)
     if (result?.userId) {
       userId = result.userId
       isEdit.value = true
+      await normalizeModeForController()
     } else {
       message.error('创建用户失败')
       router.push('/scripts')

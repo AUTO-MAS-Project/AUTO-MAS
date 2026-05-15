@@ -82,15 +82,37 @@ MAAEND_CRISIS_DRILLS_OPTIONS = [
     "AdvancedProgression5",
 ]
 MAAEND_REWARDS_SET_OPTIONS = ["RewardsSetA", "RewardsSetB"]
+MAAEND_PRESET_TASK_SWITCHES = [
+    ("ProtocolSpace", "协议空间"),
+    ("VisitFriends", "访问好友"),
+    ("DijiangRewards", "帝江奖励"),
+    ("CreditShoppingN2", "信用采购"),
+    ("DeliveryJobs", "配送委托"),
+    ("SellProduct", "自动售卖"),
+    ("AutoStockpile", "自动备货"),
+    ("AutoStockStaple", "自动补货"),
+    ("AutoSell", "自动交易"),
+    ("EnvironmentMonitoring", "环境监测"),
+    ("DailyRewards", "日常奖励"),
+    ("SeizeEntrustTask", "收取委托"),
+    ("AutoCollect", "自动采集"),
+    ("AutoUseSpMedication", "自动用理智药"),
+    ("ResourceRecycleStation", "资源回收"),
+    ("AutoEcoFarm", "自动农场"),
+    ("AutoEssence", "基质刷取"),
+]
 
 
 def init_maaend_task_config(config) -> None:
     """初始化 MaaEnd 预设任务配置"""
 
-    ## 是否启用协议空间
-    config.Task_IfProtocolSpace = ConfigItem(
-        "Task", "IfProtocolSpace", True, BoolValidator()
-    )
+    ## 预设任务开关
+    for task_name, _ in MAAEND_PRESET_TASK_SWITCHES:
+        setattr(
+            config,
+            f"Task_If{task_name}",
+            ConfigItem("Task", f"If{task_name}", True, BoolValidator()),
+        )
     ## 协议空间选项
     config.Task_ProtocolSpaceTab = ConfigItem(
         "Task",

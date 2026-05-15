@@ -573,6 +573,28 @@ class MaaEndUserConfig_Info(BaseModel):
 
 class MaaEndUserConfig_Task(BaseModel):
     IfProtocolSpace: Optional[bool] = Field(default=None, description="是否启用协议空间")
+    IfVisitFriends: Optional[bool] = Field(default=None, description="是否启用访问好友")
+    IfDijiangRewards: Optional[bool] = Field(default=None, description="是否启用帝江奖励")
+    IfCreditShoppingN2: Optional[bool] = Field(default=None, description="是否启用信用采购")
+    IfDeliveryJobs: Optional[bool] = Field(default=None, description="是否启用配送委托")
+    IfSellProduct: Optional[bool] = Field(default=None, description="是否启用自动售卖")
+    IfAutoStockpile: Optional[bool] = Field(default=None, description="是否启用自动备货")
+    IfAutoStockStaple: Optional[bool] = Field(default=None, description="是否启用自动补货")
+    IfAutoSell: Optional[bool] = Field(default=None, description="是否启用自动交易")
+    IfEnvironmentMonitoring: Optional[bool] = Field(
+        default=None, description="是否启用环境监测"
+    )
+    IfDailyRewards: Optional[bool] = Field(default=None, description="是否启用日常奖励")
+    IfSeizeEntrustTask: Optional[bool] = Field(default=None, description="是否启用收取委托")
+    IfAutoCollect: Optional[bool] = Field(default=None, description="是否启用自动采集")
+    IfAutoUseSpMedication: Optional[bool] = Field(
+        default=None, description="是否启用自动用理智药"
+    )
+    IfResourceRecycleStation: Optional[bool] = Field(
+        default=None, description="是否启用资源回收"
+    )
+    IfAutoEcoFarm: Optional[bool] = Field(default=None, description="是否启用自动农场")
+    IfAutoEssence: Optional[bool] = Field(default=None, description="是否启用基质刷取")
     ProtocolSpaceTab: Optional[
         Literal["OperatorProgression", "WeaponProgression", "CrisisDrills"]
     ] = Field(default=None, description="协议空间选项卡")
@@ -657,6 +679,28 @@ class MaaEndConfig_Game(BaseModel):
 
 class MaaEndConfig_Task(BaseModel):
     IfProtocolSpace: Optional[bool] = Field(default=None, description="是否启用协议空间")
+    IfVisitFriends: Optional[bool] = Field(default=None, description="是否启用访问好友")
+    IfDijiangRewards: Optional[bool] = Field(default=None, description="是否启用帝江奖励")
+    IfCreditShoppingN2: Optional[bool] = Field(default=None, description="是否启用信用采购")
+    IfDeliveryJobs: Optional[bool] = Field(default=None, description="是否启用配送委托")
+    IfSellProduct: Optional[bool] = Field(default=None, description="是否启用自动售卖")
+    IfAutoStockpile: Optional[bool] = Field(default=None, description="是否启用自动备货")
+    IfAutoStockStaple: Optional[bool] = Field(default=None, description="是否启用自动补货")
+    IfAutoSell: Optional[bool] = Field(default=None, description="是否启用自动交易")
+    IfEnvironmentMonitoring: Optional[bool] = Field(
+        default=None, description="是否启用环境监测"
+    )
+    IfDailyRewards: Optional[bool] = Field(default=None, description="是否启用日常奖励")
+    IfSeizeEntrustTask: Optional[bool] = Field(default=None, description="是否启用收取委托")
+    IfAutoCollect: Optional[bool] = Field(default=None, description="是否启用自动采集")
+    IfAutoUseSpMedication: Optional[bool] = Field(
+        default=None, description="是否启用自动用理智药"
+    )
+    IfResourceRecycleStation: Optional[bool] = Field(
+        default=None, description="是否启用资源回收"
+    )
+    IfAutoEcoFarm: Optional[bool] = Field(default=None, description="是否启用自动农场")
+    IfAutoEssence: Optional[bool] = Field(default=None, description="是否启用基质刷取")
     ProtocolSpaceTab: Optional[
         Literal["OperatorProgression", "WeaponProgression", "CrisisDrills"]
     ] = Field(default=None, description="协议空间选项卡")

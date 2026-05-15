@@ -81,11 +81,8 @@
               </a-tooltip>
             </span>
           </template>
-          <a-select v-model:value="formData.Info.Mode" size="large" :options="[
-            { label: '简洁', value: '简洁' },
-            { label: '详细', value: '详细' },
-            { label: '自定义', value: '自定义' },
-          ]" @change="emitSave('Info.Mode', formData.Info.Mode)" />
+          <a-select v-model:value="formData.Info.Mode" size="large" :options="modeOptions"
+            @change="emitSave('Info.Mode', formData.Info.Mode)" />
         </a-form-item>
       </a-col>
       <a-col :span="8">
@@ -134,17 +131,29 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
-
-defineProps<{
-  formData: any
-  loading: boolean
-  resourceOptions: Array<{ label: string; value: string }>
-}>()
 
 const emit = defineEmits<{
   save: [key: string, value: any]
 }>()
+
+const props = defineProps<{
+  formData: any
+  loading: boolean
+  resourceOptions: Array<{ label: string; value: string }>
+  presetSupported?: boolean
+}>()
+
+const modeOptions = computed(() =>
+  props.presetSupported === false
+    ? [{ label: '自定义', value: '自定义' }]
+    : [
+        { label: '简洁', value: '简洁' },
+        { label: '详细', value: '详细' },
+        { label: '自定义', value: '自定义' },
+      ]
+)
 
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)

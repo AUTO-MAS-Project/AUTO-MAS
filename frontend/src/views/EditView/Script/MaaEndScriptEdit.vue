@@ -210,11 +210,19 @@
         </div>
 
         <TaskConfigSection
+          v-if="isPresetController"
           :form-data="maaEndConfig"
           :loading="pageLoading"
           mode="简洁"
           source="script"
           @save="handleTaskChange"
+        />
+        <a-alert
+          v-else
+          message="当前控制器暂不支持 MaaEnd 预设模式，用户仅可使用自定义模式。"
+          type="info"
+          show-icon
+          style="margin-bottom: 24px"
         />
 
         <div class="form-section">
@@ -330,6 +338,22 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
   },
   Task: {
     IfProtocolSpace: true,
+    IfVisitFriends: true,
+    IfDijiangRewards: true,
+    IfCreditShoppingN2: true,
+    IfDeliveryJobs: true,
+    IfSellProduct: true,
+    IfAutoStockpile: true,
+    IfAutoStockStaple: true,
+    IfAutoSell: true,
+    IfEnvironmentMonitoring: true,
+    IfDailyRewards: true,
+    IfSeizeEntrustTask: true,
+    IfAutoCollect: true,
+    IfAutoUseSpMedication: true,
+    IfResourceRecycleStation: true,
+    IfAutoEcoFarm: true,
+    IfAutoEssence: true,
     ProtocolSpaceTab: 'OperatorProgression',
     OperatorProgression: 'OperatorEXP',
     WeaponProgression: 'WeaponEXP',
@@ -362,6 +386,11 @@ const emulatorOptions = ref<ComboBoxItem[]>([])
 const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
 
 const isWinController = computed(() => maaEndConfig.Game.ControllerType !== 'ADB')
+const isPresetController = computed(
+  () =>
+    maaEndConfig.Game.ControllerType === 'Win32-Window' ||
+    maaEndConfig.Game.ControllerType === 'Win32-Front'
+)
 const showManualEmulatorIndexInput = computed(
   () =>
     emulatorDeviceOptions.value.length === 0 &&

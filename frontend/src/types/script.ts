@@ -97,6 +97,22 @@ export interface SRCScriptConfig {
 
 export interface MaaEndTaskConfig {
   IfProtocolSpace: boolean
+  IfVisitFriends: boolean
+  IfDijiangRewards: boolean
+  IfCreditShoppingN2: boolean
+  IfDeliveryJobs: boolean
+  IfSellProduct: boolean
+  IfAutoStockpile: boolean
+  IfAutoStockStaple: boolean
+  IfAutoSell: boolean
+  IfEnvironmentMonitoring: boolean
+  IfDailyRewards: boolean
+  IfSeizeEntrustTask: boolean
+  IfAutoCollect: boolean
+  IfAutoUseSpMedication: boolean
+  IfResourceRecycleStation: boolean
+  IfAutoEcoFarm: boolean
+  IfAutoEssence: boolean
   ProtocolSpaceTab: 'OperatorProgression' | 'WeaponProgression' | 'CrisisDrills'
   OperatorProgression: 'OperatorEXP' | 'Promotions' | 'T-Creds' | 'SkillUp'
   WeaponProgression: 'WeaponEXP' | 'WeaponTune'
@@ -208,6 +224,22 @@ export interface User {
     IfRecruit: boolean
     IfStartUp: boolean
     IfProtocolSpace?: boolean
+    IfVisitFriends?: boolean
+    IfDijiangRewards?: boolean
+    IfCreditShoppingN2?: boolean
+    IfDeliveryJobs?: boolean
+    IfSellProduct?: boolean
+    IfAutoStockpile?: boolean
+    IfAutoStockStaple?: boolean
+    IfAutoSell?: boolean
+    IfEnvironmentMonitoring?: boolean
+    IfDailyRewards?: boolean
+    IfSeizeEntrustTask?: boolean
+    IfAutoCollect?: boolean
+    IfAutoUseSpMedication?: boolean
+    IfResourceRecycleStation?: boolean
+    IfAutoEcoFarm?: boolean
+    IfAutoEssence?: boolean
     ProtocolSpaceTab?: MaaEndTaskConfig['ProtocolSpaceTab']
     OperatorProgression?: MaaEndTaskConfig['OperatorProgression']
     WeaponProgression?: MaaEndTaskConfig['WeaponProgression']

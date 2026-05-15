@@ -30,38 +30,64 @@ from app.models.ConfigBase import ConfigBase
 
 MAAEND_PRESET_TEMPLATE_DIR = Path.cwd() / "res/templates/MaaEnd/config"
 MAAEND_PRESET_TEMPLATE = MAAEND_PRESET_TEMPLATE_DIR / "mxu-MaaEnd.json"
-MAAEND_PRESET_TEMPLATE_BOOK = {
-    "Win32-Window": MAAEND_PRESET_TEMPLATE_DIR / "mxu-MaaEnd.win32-window.json",
-    "Win32-Window-Background": (
-        MAAEND_PRESET_TEMPLATE_DIR / "mxu-MaaEnd.win32-background.json"
-    ),
-    "Win32-Front": MAAEND_PRESET_TEMPLATE_DIR / "mxu-MaaEnd.win32-front.json",
-    "ADB": MAAEND_PRESET_TEMPLATE_DIR / "mxu-MaaEnd.adb.json",
-}
+MAAEND_PRESET_TASK_SWITCHES = [
+    "ProtocolSpace",
+    "VisitFriends",
+    "DijiangRewards",
+    "CreditShoppingN2",
+    "DeliveryJobs",
+    "SellProduct",
+    "AutoStockpile",
+    "AutoStockStaple",
+    "AutoSell",
+    "EnvironmentMonitoring",
+    "DailyRewards",
+    "SeizeEntrustTask",
+    "AutoCollect",
+    "AutoUseSpMedication",
+    "ResourceRecycleStation",
+    "AutoEcoFarm",
+    "AutoEssence",
+]
 MAAEND_PRESET_TASK_CONFIG = {
-    "ProtocolSpace": {
-        "enabled": "IfProtocolSpace",
-        "core_options": [
-            "ProtocolSpaceTab",
-            "OperatorProgression",
-            "WeaponProgression",
-            "CrisisDrills",
-            "RewardsSetOption",
-        ],
-    },
+    task_name: {"enabled": f"If{task_name}"}
+    for task_name in MAAEND_PRESET_TASK_SWITCHES
 }
+MAAEND_PRESET_TASK_CONFIG["ProtocolSpace"]["core_options"] = [
+    "ProtocolSpaceTab",
+    "OperatorProgression",
+    "WeaponProgression",
+    "CrisisDrills",
+    "RewardsSetOption",
+]
 
 
-def load_maaend_preset_template(controller_type: str) -> dict[str, Any]:
+def load_maaend_preset_template() -> dict[str, Any]:
     """读取 MAS 自带的 MaaEnd 预设配置模板"""
 
-    template_path = MAAEND_PRESET_TEMPLATE_BOOK.get(
-        controller_type, MAAEND_PRESET_TEMPLATE
-    )
-    if not template_path.exists():
-        template_path = MAAEND_PRESET_TEMPLATE
+    return json.loads(MAAEND_PRESET_TEMPLATE.read_text(encoding="utf-8"))
 
-    return json.loads(template_path.read_text(encoding="utf-8"))
+
+def get_maaend_preset_instance(
+    config_data: dict[str, Any], controller_type: str
+) -> dict[str, Any]:
+    """按控制器类型获取 MAS 预设实例"""
+
+    for instance in config_data["instances"]:
+        if instance.get("controllerName") == controller_type:
+            return instance
+
+    raise ValueError(f"控制器 {controller_type} 暂不支持 MaaEnd 预设模式")
+
+
+def is_maaend_preset_supported(controller_type: str) -> bool:
+    """判断控制器是否存在 MAS 预设实例"""
+
+    try:
+        get_maaend_preset_instance(load_maaend_preset_template(), controller_type)
+    except (FileNotFoundError, KeyError, ValueError):
+        return False
+    return True
 
 
 def get_maaend_active_instance(config_data: dict[str, Any]) -> dict[str, Any]:
@@ -86,8 +112,8 @@ def build_maaend_preset_config(
 ) -> dict[str, Any]:
     """使用当前 MAS 模板和 MAS 保存的预设选项生成 MaaEnd 配置"""
 
-    config_data = load_maaend_preset_template(controller_type)
-    instance = get_maaend_active_instance(config_data)
+    config_data = load_maaend_preset_template()
+    instance = get_maaend_preset_instance(config_data, controller_type)
     template_tasks = {
         task.get("taskName"): task
         for task in instance["tasks"]
@@ -130,8 +156,8 @@ async def save_maaend_preset_options(
 
     instance = get_maaend_active_instance(config_data)
     options: dict[str, dict[str, Any]] = {}
-    defaults = load_maaend_preset_template(controller_type)
-    default_instance = get_maaend_active_instance(defaults)
+    defaults = load_maaend_preset_template()
+    default_instance = get_maaend_preset_instance(defaults, controller_type)
     default_options_map = {
         task.get("taskName"): task.get("optionValues", {})
         for task in default_instance["tasks"]

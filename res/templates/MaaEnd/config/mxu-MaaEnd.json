@@ -1,45 +1,2156 @@
 {
-    "settings": {
-        "language": "zh-CN",
-        "autoStartInstanceId": "automas",
-        "autoRunOnLaunch": false
-    },
-    "instances": [
+  "version": "1.0",
+  "instances": [
+    {
+      "id": "cbek8en",
+      "name": "电脑端-默认",
+      "controllerName": "Win32-Window",
+      "resourceName": "官服",
+      "tasks": [
         {
-            "id": "automas",
-            "name": "AUTO-MAS",
-            "controllerName": "Win32-Window",
-            "tasks": [
-                {
-                    "id": "protocolspace",
-                    "taskName": "ProtocolSpace",
-                    "enabled": true,
-                    "optionValues": {
-                        "ProtocolSpaceTab": {
-                            "type": "select",
-                            "caseName": "OperatorProgression"
-                        },
-                        "OperatorProgression": {
-                            "type": "select",
-                            "caseName": "OperatorEXP"
-                        },
-                        "WeaponProgression": {
-                            "type": "select",
-                            "caseName": "WeaponEXP"
-                        },
-                        "CrisisDrills": {
-                            "type": "select",
-                            "caseName": "AdvancedProgression1"
-                        },
-                        "RewardsSetOption": {
-                            "type": "select",
-                            "caseName": "RewardsSetA"
-                        }
-                    }
-                }
-            ]
+          "id": "66exzd1",
+          "taskName": "VisitFriends",
+          "enabled": true,
+          "optionValues": {
+            "VisitFriendsRemark": {
+              "type": "switch",
+              "value": false
+            },
+            "ProductionAssistControl": {
+              "type": "checkbox",
+              "caseNames": [
+                "ProductionAssistControlNexus",
+                "ProductionAssistMFGCabin",
+                "ProductionAssistGrowthChamber"
+              ]
+            }
+          }
+        },
+        {
+          "id": "sl6ekn7",
+          "taskName": "DijiangRewards",
+          "enabled": true,
+          "optionValues": {
+            "AutoStartExchange": {
+              "type": "switch",
+              "value": true
+            },
+            "StageTaskSetting": {
+              "type": "switch",
+              "value": false
+            },
+            "ClueSetting": {
+              "type": "switch",
+              "value": false
+            },
+            "SelectToGrow": {
+              "type": "select",
+              "caseName": "Any"
+            },
+            "AutoExtractSeed": {
+              "type": "switch",
+              "value": true
+            },
+            "SortBy": {
+              "type": "select",
+              "caseName": "Default"
+            },
+            "SortOrder": {
+              "type": "select",
+              "caseName": "ASC"
+            },
+            "ClueStockLimit": {
+              "type": "select",
+              "caseName": "2"
+            }
+          }
+        },
+        {
+          "id": "1ve46wq",
+          "taskName": "CreditShoppingN2",
+          "enabled": true,
+          "optionValues": {
+            "CreditShoppingReserve": {
+              "type": "input",
+              "values": {
+                "ReserveCreditThreshold": "300"
+              }
+            },
+            "CreditShoppingClueSend": {
+              "type": "input",
+              "values": {
+                "MaxClueSendWhenInsufficient": "1"
+              }
+            },
+            "CreditShoppingClueStockLimit": {
+              "type": "select",
+              "caseName": "2"
+            },
+            "CreditShoppingPriority1": {
+              "type": "switch",
+              "value": true
+            },
+            "CreditShoppingPriority1AutoGetCredits": {
+              "type": "switch",
+              "value": true
+            },
+            "CreditShoppingPriority1UnconditionalPurchase": {
+              "type": "switch",
+              "value": true
+            },
+            "CreditShoppingPriority1Items": {
+              "type": "checkbox",
+              "caseNames": [
+                "ArsenalTicket",
+                "Oroberyl"
+              ]
+            },
+            "CreditShoppingPriority1DiscountValue": {
+              "type": "select",
+              "caseName": "Any"
+            },
+            "CreditShoppingPriority2": {
+              "type": "switch",
+              "value": true
+            },
+            "CreditShoppingPriority2AutoGetCredits": {
+              "type": "switch",
+              "value": false
+            },
+            "CreditShoppingPriority2UnconditionalPurchase": {
+              "type": "switch",
+              "value": false
+            },
+            "CreditShoppingPriority2Items": {
+              "type": "checkbox",
+              "caseNames": [
+                "ArsenalTicket",
+                "Oroberyl",
+                "TCreds",
+                "ElementaryCognitiveCarrier",
+                "ElementaryCombatRecord",
+                "IntermediateCombatRecord",
+                "ArmsInspector",
+                "ArmsINSPKit",
+                "CastDie",
+                "HeavyCastDie",
+                "Protodisk",
+                "Protoset",
+                "Protoprism",
+                "Protohedron"
+              ]
+            },
+            "CreditShoppingPriority2DiscountValue": {
+              "type": "select",
+              "caseName": "-75%"
+            },
+            "CreditShoppingPriority3": {
+              "type": "switch",
+              "value": false
+            },
+            "CreditShoppingForce": {
+              "type": "select",
+              "caseName": "Refresh"
+            }
+          }
+        },
+        {
+          "id": "tlyl98l",
+          "taskName": "DeliveryJobs",
+          "enabled": true,
+          "optionValues": {
+            "ValleyIV": {
+              "type": "switch",
+              "value": true
+            },
+            "OriginiumSciencePark": {
+              "type": "switch",
+              "value": true
+            },
+            "OriginLodespring": {
+              "type": "switch",
+              "value": true
+            },
+            "PowerPlateau": {
+              "type": "switch",
+              "value": true
+            },
+            "Wuling": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingCity": {
+              "type": "switch",
+              "value": true
+            },
+            "PackCargoSelectItem": {
+              "type": "switch",
+              "value": false
+            },
+            "DeliveryJobsAcceptJobOnly": {
+              "type": "switch",
+              "value": false
+            },
+            "DeliveryJobsPackCargoOnly": {
+              "type": "switch",
+              "value": false
+            }
+          }
+        },
+        {
+          "id": "jur6jog",
+          "taskName": "SellProduct",
+          "enabled": true,
+          "optionValues": {
+            "SellBeyondAidQuota": {
+              "type": "switch",
+              "value": false
+            },
+            "ValleyIVSell": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVRefugeeCamp": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVRefugeeCampAttempt1": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVRefugeeCampItem1": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "ValleyIVRefugeeCampReserve1": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "ValleyIVRefugeeCampAttempt2": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVRefugeeCampItem2": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "ValleyIVRefugeeCampReserve2": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "ValleyIVRefugeeCampAttempt3": {
+              "type": "switch",
+              "value": false
+            },
+            "ValleyIVRefugeeCampAttempt4": {
+              "type": "switch",
+              "value": false
+            },
+            "ValleyIVInfrastructureOutpost": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVInfrastructureOutpostAttempt1": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVInfrastructureOutpostItem1": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "ValleyIVInfrastructureOutpostReserve1": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "ValleyIVInfrastructureOutpostAttempt2": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVInfrastructureOutpostItem2": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "ValleyIVInfrastructureOutpostReserve2": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "ValleyIVInfrastructureOutpostAttempt3": {
+              "type": "switch",
+              "value": false
+            },
+            "ValleyIVInfrastructureOutpostAttempt4": {
+              "type": "switch",
+              "value": false
+            },
+            "ValleyIVReconstructionCommand": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVReconstructionCommandAttempt1": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVReconstructionCommandItem1": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "ValleyIVReconstructionCommandReserve1": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "ValleyIVReconstructionCommandAttempt2": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVReconstructionCommandItem2": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "ValleyIVReconstructionCommandReserve2": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "ValleyIVReconstructionCommandAttempt3": {
+              "type": "switch",
+              "value": false
+            },
+            "ValleyIVReconstructionCommandAttempt4": {
+              "type": "switch",
+              "value": false
+            },
+            "WulingSell": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingSkyKingFlats": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingSkyKingFlatsAttempt1": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingSkyKingFlatsItem1": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "WulingSkyKingFlatsReserve1": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "WulingSkyKingFlatsAttempt2": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingSkyKingFlatsItem2": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "WulingSkyKingFlatsReserve2": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "WulingSkyKingFlatsAttempt3": {
+              "type": "switch",
+              "value": false
+            },
+            "WulingSkyKingFlatsAttempt4": {
+              "type": "switch",
+              "value": false
+            },
+            "WulingCardiacRemediationStation": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingCardiacRemediationStationAttempt1": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingCardiacRemediationStationItem1": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "WulingCardiacRemediationStationReserve1": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "WulingCardiacRemediationStationAttempt2": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingCardiacRemediationStationItem2": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "WulingCardiacRemediationStationReserve2": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "WulingCardiacRemediationStationAttempt3": {
+              "type": "switch",
+              "value": false
+            },
+            "WulingCardiacRemediationStationAttempt4": {
+              "type": "switch",
+              "value": false
+            }
+          }
+        },
+        {
+          "id": "xy8ubx9",
+          "taskName": "AutoStockpile",
+          "enabled": true,
+          "optionValues": {
+            "AutoStockpileServerTime": {
+              "type": "select",
+              "caseName": "CN_UTC_PLUS_8"
+            },
+            "AutoStockpileAllowDataUpload": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoStockpileElasticValleyIV": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoStockpileElasticWuling": {
+              "type": "switch",
+              "value": true
+            }
+          }
+        },
+        {
+          "id": "p9vhp9n",
+          "taskName": "AutoStockStaple",
+          "enabled": true,
+          "optionValues": {
+            "AutoStockStapleSchedule": {
+              "type": "checkbox",
+              "caseNames": [
+                "AutoStockStapleScheduleMonday",
+                "AutoStockStapleScheduleTuesday",
+                "AutoStockStapleScheduleWednesday",
+                "AutoStockStapleScheduleThursday",
+                "AutoStockStapleScheduleFriday",
+                "AutoStockStapleScheduleSaturday",
+                "AutoStockStapleScheduleSunday"
+              ]
+            },
+            "AutoStockStapleValleyIV": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoStockReserveValleyIV": {
+              "type": "input",
+              "values": {
+                "ReserveValleyIV": "240000"
+              }
+            },
+            "AutoStockBuyDailyGoodsValleyIV": {
+              "type": "checkbox",
+              "caseNames": []
+            },
+            "AutoStockBuyDailyGoodsValleyIVEngravingPermitLimit": {
+              "type": "input",
+              "values": {
+                "ValleyEngravingPermitLimit": "20"
+              }
+            },
+            "AutoStockBuyDailyGoodsValleyIVFoodAndBuffLimit": {
+              "type": "input",
+              "values": {
+                "ValleyFoodAndBuffLimit": "20"
+              }
+            },
+            "AutoStockBuyStockFactoryGoodsValleyIV": {
+              "type": "checkbox",
+              "caseNames": [
+                "KeenValleyDetector",
+                "KeenValleyCompass"
+              ]
+            },
+            "AutoStockBuyStockFactoryGoodsValleyIVDetectorCompassLimit": {
+              "type": "input",
+              "values": {
+                "ValleyDetectorCompassLimit": "20"
+              }
+            },
+            "AutoStockBuyCulturalGoodsValleyIV": {
+              "type": "checkbox",
+              "caseNames": []
+            },
+            "AutoStockBuyCulturalGoodsValleyIVGiftLimit": {
+              "type": "input",
+              "values": {
+                "ValleyGiftLimit": "20"
+              }
+            },
+            "AutoStockUseDiscountsValleyIV": {
+              "type": "select",
+              "caseName": "50"
+            },
+            "AutoStockStapleWuling": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoStockReserveWuling": {
+              "type": "input",
+              "values": {
+                "ReserveWuling": "240000"
+              }
+            },
+            "AutoStockBuyDailyGoodsWuling": {
+              "type": "checkbox",
+              "caseNames": []
+            },
+            "AutoStockBuyDailyGoodsWulingEngravingPermitLimit": {
+              "type": "input",
+              "values": {
+                "WulingEngravingPermitLimit": "20"
+              }
+            },
+            "AutoStockBuyDailyGoodsWulingFoodAndBuffLimit": {
+              "type": "input",
+              "values": {
+                "WulingFoodAndBuffLimit": "20"
+              }
+            },
+            "AutoStockBuyStockFactoryGoodsWuling": {
+              "type": "checkbox",
+              "caseNames": [
+                "WulingArtificingCatalyst",
+                "KeenWulingDetector",
+                "KeenWulingCompass"
+              ]
+            },
+            "AutoStockBuyStockFactoryGoodsWulingArtificingCatalystLimit": {
+              "type": "input",
+              "values": {
+                "WulingArtificingCatalystLimit": "20"
+              }
+            },
+            "AutoStockBuyStockFactoryGoodsWulingDetectorCompassLimit": {
+              "type": "input",
+              "values": {
+                "WulingDetectorCompassLimit": "20"
+              }
+            },
+            "AutoStockBuyCulturalGoodsWuling": {
+              "type": "checkbox",
+              "caseNames": []
+            },
+            "AutoStockBuyCulturalGoodsWulingGiftLimit": {
+              "type": "input",
+              "values": {
+                "WulingGiftLimit": "20"
+              }
+            },
+            "AutoStockUseDiscountsWuling": {
+              "type": "select",
+              "caseName": "50"
+            }
+          }
+        },
+        {
+          "id": "l9lmqbs",
+          "taskName": "DailyRewards",
+          "enabled": true,
+          "optionValues": {
+            "DailyEmailRewards": {
+              "type": "switch",
+              "value": true
+            },
+            "DailyTaskRewards": {
+              "type": "switch",
+              "value": true
+            },
+            "DailyTaskUpgradeWeapon": {
+              "type": "switch",
+              "value": false
+            },
+            "DailyTaskCreation": {
+              "type": "switch",
+              "value": false
+            },
+            "DailyTaskAssemble": {
+              "type": "switch",
+              "value": false
+            },
+            "DailyTaskLevelUpOperator": {
+              "type": "switch",
+              "value": false
+            },
+            "DailyClaimDeliveryJobsRewards": {
+              "type": "switch",
+              "value": true
+            },
+            "DailyEventRewards": {
+              "type": "switch",
+              "value": true
+            },
+            "DailyProtocolPassRewards": {
+              "type": "switch",
+              "value": true
+            }
+          }
+        },
+        {
+          "id": "ki9tsg4",
+          "taskName": "SeizeEntrustTask",
+          "enabled": true,
+          "optionValues": {
+            "SeizeEntrustTaskisGoDepotNodeWorld": {
+              "type": "switch",
+              "value": false
+            }
+          }
         }
-    ],
-    "lastActiveInstanceId": "automas",
-    "recentlyClosed": []
+      ]
+    },
+    {
+      "id": "44d6qo2",
+      "name": "电脑端-前台",
+      "controllerName": "Win32-Front",
+      "resourceName": "官服",
+      "tasks": [
+        {
+          "id": "5zqhjux",
+          "taskName": "VisitFriends",
+          "enabled": true,
+          "optionValues": {
+            "VisitFriendsRemark": {
+              "type": "switch",
+              "value": false
+            },
+            "ProductionAssistControl": {
+              "type": "checkbox",
+              "caseNames": [
+                "ProductionAssistControlNexus",
+                "ProductionAssistMFGCabin",
+                "ProductionAssistGrowthChamber"
+              ]
+            }
+          }
+        },
+        {
+          "id": "diyt9yn",
+          "taskName": "DijiangRewards",
+          "enabled": true,
+          "optionValues": {
+            "AutoStartExchange": {
+              "type": "switch",
+              "value": true
+            },
+            "StageTaskSetting": {
+              "type": "switch",
+              "value": false
+            },
+            "ClueSetting": {
+              "type": "switch",
+              "value": false
+            },
+            "SelectToGrow": {
+              "type": "select",
+              "caseName": "Any"
+            },
+            "AutoExtractSeed": {
+              "type": "switch",
+              "value": true
+            },
+            "SortBy": {
+              "type": "select",
+              "caseName": "Default"
+            },
+            "SortOrder": {
+              "type": "select",
+              "caseName": "ASC"
+            },
+            "ClueStockLimit": {
+              "type": "select",
+              "caseName": "2"
+            }
+          }
+        },
+        {
+          "id": "g8597rn",
+          "taskName": "CreditShoppingN2",
+          "enabled": true,
+          "optionValues": {
+            "CreditShoppingReserve": {
+              "type": "input",
+              "values": {
+                "ReserveCreditThreshold": "300"
+              }
+            },
+            "CreditShoppingClueSend": {
+              "type": "input",
+              "values": {
+                "MaxClueSendWhenInsufficient": "1"
+              }
+            },
+            "CreditShoppingClueStockLimit": {
+              "type": "select",
+              "caseName": "2"
+            },
+            "CreditShoppingPriority1": {
+              "type": "switch",
+              "value": true
+            },
+            "CreditShoppingPriority1AutoGetCredits": {
+              "type": "switch",
+              "value": true
+            },
+            "CreditShoppingPriority1UnconditionalPurchase": {
+              "type": "switch",
+              "value": true
+            },
+            "CreditShoppingPriority1Items": {
+              "type": "checkbox",
+              "caseNames": [
+                "ArsenalTicket",
+                "Oroberyl"
+              ]
+            },
+            "CreditShoppingPriority1DiscountValue": {
+              "type": "select",
+              "caseName": "Any"
+            },
+            "CreditShoppingPriority2": {
+              "type": "switch",
+              "value": true
+            },
+            "CreditShoppingPriority2AutoGetCredits": {
+              "type": "switch",
+              "value": false
+            },
+            "CreditShoppingPriority2UnconditionalPurchase": {
+              "type": "switch",
+              "value": false
+            },
+            "CreditShoppingPriority2Items": {
+              "type": "checkbox",
+              "caseNames": [
+                "ArsenalTicket",
+                "Oroberyl",
+                "TCreds",
+                "ElementaryCognitiveCarrier",
+                "ElementaryCombatRecord",
+                "IntermediateCombatRecord",
+                "ArmsInspector",
+                "ArmsINSPKit",
+                "CastDie",
+                "HeavyCastDie",
+                "Protodisk",
+                "Protoset",
+                "Protoprism",
+                "Protohedron"
+              ]
+            },
+            "CreditShoppingPriority2DiscountValue": {
+              "type": "select",
+              "caseName": "-75%"
+            },
+            "CreditShoppingPriority3": {
+              "type": "switch",
+              "value": false
+            },
+            "CreditShoppingForce": {
+              "type": "select",
+              "caseName": "Refresh"
+            }
+          }
+        },
+        {
+          "id": "0bzqbf2",
+          "taskName": "DeliveryJobs",
+          "enabled": true,
+          "optionValues": {
+            "ValleyIV": {
+              "type": "switch",
+              "value": true
+            },
+            "OriginiumSciencePark": {
+              "type": "switch",
+              "value": true
+            },
+            "OriginLodespring": {
+              "type": "switch",
+              "value": true
+            },
+            "PowerPlateau": {
+              "type": "switch",
+              "value": true
+            },
+            "Wuling": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingCity": {
+              "type": "switch",
+              "value": true
+            },
+            "PackCargoSelectItem": {
+              "type": "switch",
+              "value": false
+            },
+            "DeliveryJobsAcceptJobOnly": {
+              "type": "switch",
+              "value": false
+            },
+            "DeliveryJobsPackCargoOnly": {
+              "type": "switch",
+              "value": false
+            }
+          }
+        },
+        {
+          "id": "8vfq6y1",
+          "taskName": "SellProduct",
+          "enabled": true,
+          "optionValues": {
+            "SellBeyondAidQuota": {
+              "type": "switch",
+              "value": false
+            },
+            "ValleyIVSell": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVRefugeeCamp": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVRefugeeCampAttempt1": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVRefugeeCampItem1": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "ValleyIVRefugeeCampReserve1": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "ValleyIVRefugeeCampAttempt2": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVRefugeeCampItem2": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "ValleyIVRefugeeCampReserve2": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "ValleyIVRefugeeCampAttempt3": {
+              "type": "switch",
+              "value": false
+            },
+            "ValleyIVRefugeeCampAttempt4": {
+              "type": "switch",
+              "value": false
+            },
+            "ValleyIVInfrastructureOutpost": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVInfrastructureOutpostAttempt1": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVInfrastructureOutpostItem1": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "ValleyIVInfrastructureOutpostReserve1": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "ValleyIVInfrastructureOutpostAttempt2": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVInfrastructureOutpostItem2": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "ValleyIVInfrastructureOutpostReserve2": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "ValleyIVInfrastructureOutpostAttempt3": {
+              "type": "switch",
+              "value": false
+            },
+            "ValleyIVInfrastructureOutpostAttempt4": {
+              "type": "switch",
+              "value": false
+            },
+            "ValleyIVReconstructionCommand": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVReconstructionCommandAttempt1": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVReconstructionCommandItem1": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "ValleyIVReconstructionCommandReserve1": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "ValleyIVReconstructionCommandAttempt2": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVReconstructionCommandItem2": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "ValleyIVReconstructionCommandReserve2": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "ValleyIVReconstructionCommandAttempt3": {
+              "type": "switch",
+              "value": false
+            },
+            "ValleyIVReconstructionCommandAttempt4": {
+              "type": "switch",
+              "value": false
+            },
+            "WulingSell": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingSkyKingFlats": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingSkyKingFlatsAttempt1": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingSkyKingFlatsItem1": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "WulingSkyKingFlatsReserve1": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "WulingSkyKingFlatsAttempt2": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingSkyKingFlatsItem2": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "WulingSkyKingFlatsReserve2": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "WulingSkyKingFlatsAttempt3": {
+              "type": "switch",
+              "value": false
+            },
+            "WulingSkyKingFlatsAttempt4": {
+              "type": "switch",
+              "value": false
+            },
+            "WulingCardiacRemediationStation": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingCardiacRemediationStationAttempt1": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingCardiacRemediationStationItem1": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "WulingCardiacRemediationStationReserve1": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "WulingCardiacRemediationStationAttempt2": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingCardiacRemediationStationItem2": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "WulingCardiacRemediationStationReserve2": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "WulingCardiacRemediationStationAttempt3": {
+              "type": "switch",
+              "value": false
+            },
+            "WulingCardiacRemediationStationAttempt4": {
+              "type": "switch",
+              "value": false
+            }
+          }
+        },
+        {
+          "id": "es8dug8",
+          "taskName": "AutoStockpile",
+          "enabled": true,
+          "optionValues": {
+            "AutoStockpileServerTime": {
+              "type": "select",
+              "caseName": "CN_UTC_PLUS_8"
+            },
+            "AutoStockpileAllowDataUpload": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoStockpileElasticValleyIV": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoStockpileElasticWuling": {
+              "type": "switch",
+              "value": true
+            }
+          }
+        },
+        {
+          "id": "740f85h",
+          "taskName": "AutoStockStaple",
+          "enabled": true,
+          "optionValues": {
+            "AutoStockStapleSchedule": {
+              "type": "checkbox",
+              "caseNames": [
+                "AutoStockStapleScheduleMonday",
+                "AutoStockStapleScheduleTuesday",
+                "AutoStockStapleScheduleWednesday",
+                "AutoStockStapleScheduleThursday",
+                "AutoStockStapleScheduleFriday",
+                "AutoStockStapleScheduleSaturday",
+                "AutoStockStapleScheduleSunday"
+              ]
+            },
+            "AutoStockStapleValleyIV": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoStockReserveValleyIV": {
+              "type": "input",
+              "values": {
+                "ReserveValleyIV": "240000"
+              }
+            },
+            "AutoStockBuyDailyGoodsValleyIV": {
+              "type": "checkbox",
+              "caseNames": []
+            },
+            "AutoStockBuyDailyGoodsValleyIVEngravingPermitLimit": {
+              "type": "input",
+              "values": {
+                "ValleyEngravingPermitLimit": "20"
+              }
+            },
+            "AutoStockBuyDailyGoodsValleyIVFoodAndBuffLimit": {
+              "type": "input",
+              "values": {
+                "ValleyFoodAndBuffLimit": "20"
+              }
+            },
+            "AutoStockBuyStockFactoryGoodsValleyIV": {
+              "type": "checkbox",
+              "caseNames": [
+                "KeenValleyDetector",
+                "KeenValleyCompass"
+              ]
+            },
+            "AutoStockBuyStockFactoryGoodsValleyIVDetectorCompassLimit": {
+              "type": "input",
+              "values": {
+                "ValleyDetectorCompassLimit": "20"
+              }
+            },
+            "AutoStockBuyCulturalGoodsValleyIV": {
+              "type": "checkbox",
+              "caseNames": []
+            },
+            "AutoStockBuyCulturalGoodsValleyIVGiftLimit": {
+              "type": "input",
+              "values": {
+                "ValleyGiftLimit": "20"
+              }
+            },
+            "AutoStockUseDiscountsValleyIV": {
+              "type": "select",
+              "caseName": "50"
+            },
+            "AutoStockStapleWuling": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoStockReserveWuling": {
+              "type": "input",
+              "values": {
+                "ReserveWuling": "240000"
+              }
+            },
+            "AutoStockBuyDailyGoodsWuling": {
+              "type": "checkbox",
+              "caseNames": []
+            },
+            "AutoStockBuyDailyGoodsWulingEngravingPermitLimit": {
+              "type": "input",
+              "values": {
+                "WulingEngravingPermitLimit": "20"
+              }
+            },
+            "AutoStockBuyDailyGoodsWulingFoodAndBuffLimit": {
+              "type": "input",
+              "values": {
+                "WulingFoodAndBuffLimit": "20"
+              }
+            },
+            "AutoStockBuyStockFactoryGoodsWuling": {
+              "type": "checkbox",
+              "caseNames": [
+                "WulingArtificingCatalyst",
+                "KeenWulingDetector",
+                "KeenWulingCompass"
+              ]
+            },
+            "AutoStockBuyStockFactoryGoodsWulingArtificingCatalystLimit": {
+              "type": "input",
+              "values": {
+                "WulingArtificingCatalystLimit": "20"
+              }
+            },
+            "AutoStockBuyStockFactoryGoodsWulingDetectorCompassLimit": {
+              "type": "input",
+              "values": {
+                "WulingDetectorCompassLimit": "20"
+              }
+            },
+            "AutoStockBuyCulturalGoodsWuling": {
+              "type": "checkbox",
+              "caseNames": []
+            },
+            "AutoStockBuyCulturalGoodsWulingGiftLimit": {
+              "type": "input",
+              "values": {
+                "WulingGiftLimit": "20"
+              }
+            },
+            "AutoStockUseDiscountsWuling": {
+              "type": "select",
+              "caseName": "50"
+            }
+          }
+        },
+        {
+          "id": "jjusssw",
+          "taskName": "AutoSell",
+          "enabled": true,
+          "optionValues": {
+            "AutoSellValleyIV": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoSellWuling": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoSellPriceType": {
+              "type": "select",
+              "caseName": "AutoSellPriceTypeGlobal"
+            },
+            "AutoSellPriceGlobal": {
+              "type": "input",
+              "values": {
+                "AutoSellPriceGlobalValue": "4600"
+              }
+            }
+          }
+        },
+        {
+          "id": "gj70e22",
+          "taskName": "EnvironmentMonitoring",
+          "enabled": true,
+          "optionValues": {}
+        },
+        {
+          "id": "hiu9ttk",
+          "taskName": "DailyRewards",
+          "enabled": true,
+          "optionValues": {
+            "DailyEmailRewards": {
+              "type": "switch",
+              "value": true
+            },
+            "DailyTaskRewards": {
+              "type": "switch",
+              "value": true
+            },
+            "DailyTaskUpgradeWeapon": {
+              "type": "switch",
+              "value": false
+            },
+            "DailyTaskCreation": {
+              "type": "switch",
+              "value": false
+            },
+            "DailyTaskAssemble": {
+              "type": "switch",
+              "value": false
+            },
+            "DailyTaskLevelUpOperator": {
+              "type": "switch",
+              "value": false
+            },
+            "DailyClaimDeliveryJobsRewards": {
+              "type": "switch",
+              "value": true
+            },
+            "DailyEventRewards": {
+              "type": "switch",
+              "value": true
+            },
+            "DailyProtocolPassRewards": {
+              "type": "switch",
+              "value": true
+            }
+          }
+        },
+        {
+          "id": "mwg371e",
+          "taskName": "SeizeEntrustTask",
+          "enabled": true,
+          "optionValues": {
+            "SeizeEntrustTaskisGoDepotNodeWorld": {
+              "type": "switch",
+              "value": false
+            }
+          }
+        },
+        {
+          "id": "7u9ebfh",
+          "taskName": "AutoCollect",
+          "enabled": true,
+          "optionValues": {
+            "AutoCollectSchedule": {
+              "type": "checkbox",
+              "caseNames": [
+                "AutoCollectScheduleMonday",
+                "AutoCollectScheduleTuesday",
+                "AutoCollectScheduleWednesday",
+                "AutoCollectScheduleThursday",
+                "AutoCollectScheduleFriday",
+                "AutoCollectScheduleSaturday",
+                "AutoCollectScheduleSunday"
+              ]
+            },
+            "AutoCollectRoutes": {
+              "type": "checkbox",
+              "caseNames": [
+                "Route1",
+                "Route2",
+                "Route3",
+                "Route4",
+                "Route5"
+              ]
+            }
+          }
+        },
+        {
+          "id": "y0k1zue",
+          "taskName": "AutoUseSpMedication",
+          "enabled": true,
+          "optionValues": {
+            "UseRegularSpMedication": {
+              "type": "switch",
+              "value": true
+            },
+            "UseAllExpireSoonSpMedication": {
+              "type": "switch",
+              "value": true
+            }
+          }
+        },
+        {
+          "id": "agfpwsh",
+          "taskName": "ResourceRecycleStation",
+          "enabled": true,
+          "optionValues": {
+            "ResourceRecycleStationRegion": {
+              "type": "checkbox",
+              "caseNames": [
+                "Wuling",
+                "ValleyIV"
+              ]
+            }
+          }
+        },
+        {
+          "id": "qmwzjgu",
+          "taskName": "AutoEcoFarm",
+          "enabled": true,
+          "optionValues": {
+            "SelectFarm": {
+              "type": "switch",
+              "value": true
+            },
+            "GotoValleyIV": {
+              "type": "switch",
+              "value": true
+            },
+            "GotoWulin": {
+              "type": "switch",
+              "value": true
+            },
+            "LeaveBaseWithCameraMode": {
+              "type": "switch",
+              "value": false
+            },
+            "FarmlandFindingScheme": {
+              "type": "select",
+              "caseName": "Center"
+            },
+            "GotoEcoFarmPathMethod": {
+              "type": "select",
+              "caseName": "MapNavigator"
+            },
+            "AutoEcoFarmClearBagBeforeTasks": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoEcoFarmClearBagAfterTasks": {
+              "type": "switch",
+              "value": true
+            }
+          }
+        },
+        {
+          "id": "5ej6pg9",
+          "taskName": "AutoEssence",
+          "enabled": true,
+          "optionValues": {
+            "AutoEssenceSpecifiedLocation": {
+              "type": "select",
+              "caseName": "VFTheHub"
+            },
+            "AutoEssenceChallengeMode": {
+              "type": "select",
+              "caseName": "Walk"
+            },
+            "AutoEssenceObtainMode": {
+              "type": "select",
+              "caseName": "ObtainScaling1"
+            },
+            "AutoEssenceDoOverride": {
+              "type": "switch",
+              "value": true
+            },
+            "EssenceFilterAfterBattle": {
+              "type": "switch",
+              "value": false
+            },
+            "AutoEssenceRepeatCount": {
+              "type": "input",
+              "values": {
+                "AutoEssenceRepeatCountValue": "1"
+              }
+            }
+          }
+        },
+        {
+          "id": "d947el4",
+          "taskName": "ProtocolSpace",
+          "enabled": true,
+          "optionValues": {
+            "ProtocolSpaceSchedule": {
+              "type": "checkbox",
+              "caseNames": [
+                "ProtocolSpaceScheduleMonday",
+                "ProtocolSpaceScheduleTuesday",
+                "ProtocolSpaceScheduleWednesday",
+                "ProtocolSpaceScheduleThursday",
+                "ProtocolSpaceScheduleFriday",
+                "ProtocolSpaceScheduleSaturday",
+                "ProtocolSpaceScheduleSunday"
+              ]
+            },
+            "AutoFightSetting": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoFightKeymap": {
+              "type": "switch",
+              "value": false
+            },
+            "AutoFightReserveSkillLevel": {
+              "type": "select",
+              "caseName": "1"
+            },
+            "AutoFightBreakAccumulatingPower": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoFightHealthDangerousSwitch": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoFightDodge": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoFightLockTarget": {
+              "type": "switch",
+              "value": true
+            },
+            "ProtocolSpaceTeamChoose": {
+              "type": "select",
+              "caseName": "ProtocolSpaceTeamChooseDefault"
+            },
+            "ProtocolSpaceSuccessCount": {
+              "type": "select",
+              "caseName": "ProtocolSpaceSuccessCountUnlimited"
+            },
+            "ProtocolSpaceFailedCount": {
+              "type": "select",
+              "caseName": "ProtocolSpaceFailedCount3"
+            },
+            "ProtocolSpaceUsePermit": {
+              "type": "switch",
+              "value": true
+            },
+            "ProtocolSpaceTab": {
+              "type": "select",
+              "caseName": "OperatorProgression"
+            },
+            "OperatorProgression": {
+              "type": "select",
+              "caseName": "OperatorEXP"
+            },
+            "OperatorEXPRewardsSetOption": {
+              "type": "select",
+              "caseName": "AdvancedCombatRecord"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "theme": "light",
+    "accentColor": "emerald",
+    "language": "system",
+    "backgroundOpacity": 50,
+    "confirmBeforeDelete": false,
+    "maxLogsPerInstance": 2000,
+    "autoClearLogsOnLaunch": true,
+    "windowSize": {
+      "width": 1000,
+      "height": 618
+    },
+    "showOptionPreview": true,
+    "sidePanelExpanded": true,
+    "rightPanelWidth": 320,
+    "rightPanelCollapsed": false,
+    "addTaskPanelHeight": 192,
+    "connectionPanelExpanded": true,
+    "screenshotPanelExpanded": true,
+    "screenshotFrameRate": "1",
+    "mirrorChyan": {
+      "cdk": "",
+      "channel": "stable",
+      "cdkEncrypted": ""
+    },
+    "welcomeShownHash": "t30zzi",
+    "devMode": false,
+    "tcpCompatMode": false,
+    "allowLanAccess": false,
+    "webServerPort": 12701,
+    "autoRunOnLaunch": false,
+    "minimizeToTray": false,
+    "onboardingCompleted": false,
+    "preActionConnectDelaySec": 5,
+    "hotkeys": {
+      "startTasks": "F10",
+      "stopTasks": "F11"
+    }
+  },
+  "customAccents": [],
+  "recentlyClosed": [
+    {
+      "id": "8k9i57b",
+      "name": "基质刷取",
+      "closedAt": 1778837518232,
+      "controllerName": "Win32-Window",
+      "resourceName": "官服",
+      "tasks": [
+        {
+          "id": "4k9xcfu",
+          "taskName": "AutoEssence",
+          "enabled": true,
+          "optionValues": {
+            "AutoEssenceSpecifiedLocation": {
+              "type": "select",
+              "caseName": "VFTheHub"
+            },
+            "AutoEssenceChallengeMode": {
+              "type": "select",
+              "caseName": "Walk"
+            },
+            "AutoEssenceObtainMode": {
+              "type": "select",
+              "caseName": "ObtainScaling1"
+            },
+            "AutoEssenceDoOverride": {
+              "type": "switch",
+              "value": true
+            },
+            "EssenceFilterAfterBattle": {
+              "type": "switch",
+              "value": false
+            },
+            "AutoEssenceRepeatCount": {
+              "type": "input",
+              "values": {
+                "AutoEssenceRepeatCountValue": "5"
+              }
+            }
+          }
+        },
+        {
+          "id": "yf0foqv",
+          "taskName": "EssenceFilter",
+          "enabled": true,
+          "optionValues": {
+            "SelectInputLanguage": {
+              "type": "select",
+              "caseName": "CN"
+            },
+            "SelectWeaponRarity": {
+              "type": "switch",
+              "value": true
+            },
+            "Rarity6Weapon": {
+              "type": "switch",
+              "value": true
+            },
+            "Rarity5Weapon": {
+              "type": "switch",
+              "value": true
+            },
+            "Rarity4Weapon": {
+              "type": "switch",
+              "value": false
+            },
+            "SelectEssence": {
+              "type": "switch",
+              "value": true
+            },
+            "FlawlessEssence": {
+              "type": "switch",
+              "value": true
+            },
+            "PureEssence": {
+              "type": "switch",
+              "value": false
+            },
+            "SelectExtraRules": {
+              "type": "switch",
+              "value": false
+            },
+            "SkipThumbLock": {
+              "type": "switch",
+              "value": true
+            },
+            "SkipThumbDiscard": {
+              "type": "switch",
+              "value": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "iipnk2e",
+      "name": "实时辅助",
+      "closedAt": 1778837517748,
+      "controllerName": "Win32-Window",
+      "resourceName": "官服",
+      "tasks": [
+        {
+          "id": "ilxvcmo",
+          "taskName": "RealTimeTask",
+          "enabled": true,
+          "optionValues": {
+            "SklandMap": {
+              "type": "switch",
+              "value": true
+            },
+            "SklandMapOpacity": {
+              "type": "input",
+              "values": {
+                "SklandMapOpacityInt": "100"
+              }
+            },
+            "VideoBrowser": {
+              "type": "switch",
+              "value": false
+            },
+            "AutoSkip": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoSkipAll": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoSkipChoose": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoSkipNext": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoCloseInteraction": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoFight": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoFightKeymap": {
+              "type": "switch",
+              "value": false
+            },
+            "AutoFightAttack": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoFightCombo": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoFightDodge": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoFightSkill": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoFightReserveSkillLevel": {
+              "type": "select",
+              "caseName": "1"
+            },
+            "AutoFightBreakAccumulatingPower": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoFightEndSkill": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoFightLockTarget": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoFightHealthDangerousSwitch": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoPick": {
+              "type": "switch",
+              "value": true
+            },
+            "QuickTeleport": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoPuzzleSolving": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoZipline": {
+              "type": "switch",
+              "value": true
+            },
+            "AutoPat": {
+              "type": "switch",
+              "value": false
+            },
+            "AutoTaskInterval": {
+              "type": "select",
+              "caseName": "AutoTaskIntervalNormal"
+            },
+            "EnableTutorialBook": {
+              "type": "switch",
+              "value": true
+            },
+            "EnableClickAnywhere": {
+              "type": "switch",
+              "value": true
+            },
+            "EnableCloseSpecialPanel": {
+              "type": "switch",
+              "value": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "njcpxmi",
+      "name": "快速日常",
+      "closedAt": 1778837517434,
+      "controllerName": "Win32-Window",
+      "resourceName": "官服",
+      "tasks": [
+        {
+          "id": "gmgh3mf",
+          "taskName": "VisitFriends",
+          "enabled": true,
+          "optionValues": {
+            "VisitFriendsRemark": {
+              "type": "switch",
+              "value": false
+            },
+            "ProductionAssistControl": {
+              "type": "checkbox",
+              "caseNames": [
+                "ProductionAssistControlNexus",
+                "ProductionAssistMFGCabin",
+                "ProductionAssistGrowthChamber"
+              ]
+            }
+          }
+        },
+        {
+          "id": "v8pe0z1",
+          "taskName": "DijiangRewards",
+          "enabled": true,
+          "optionValues": {
+            "AutoStartExchange": {
+              "type": "switch",
+              "value": true
+            },
+            "StageTaskSetting": {
+              "type": "switch",
+              "value": false
+            },
+            "ClueSetting": {
+              "type": "switch",
+              "value": false
+            },
+            "SelectToGrow": {
+              "type": "select",
+              "caseName": "Any"
+            },
+            "AutoExtractSeed": {
+              "type": "switch",
+              "value": true
+            },
+            "SortBy": {
+              "type": "select",
+              "caseName": "Default"
+            },
+            "SortOrder": {
+              "type": "select",
+              "caseName": "ASC"
+            },
+            "ClueStockLimit": {
+              "type": "select",
+              "caseName": "2"
+            }
+          }
+        },
+        {
+          "id": "6ja85vk",
+          "taskName": "CreditShoppingN2",
+          "enabled": true,
+          "optionValues": {
+            "CreditShoppingReserve": {
+              "type": "input",
+              "values": {
+                "ReserveCreditThreshold": "300"
+              }
+            },
+            "CreditShoppingClueSend": {
+              "type": "input",
+              "values": {
+                "MaxClueSendWhenInsufficient": "1"
+              }
+            },
+            "CreditShoppingClueStockLimit": {
+              "type": "select",
+              "caseName": "2"
+            },
+            "CreditShoppingPriority1": {
+              "type": "switch",
+              "value": true
+            },
+            "CreditShoppingPriority1AutoGetCredits": {
+              "type": "switch",
+              "value": true
+            },
+            "CreditShoppingPriority1UnconditionalPurchase": {
+              "type": "switch",
+              "value": true
+            },
+            "CreditShoppingPriority1Items": {
+              "type": "checkbox",
+              "caseNames": [
+                "ArsenalTicket",
+                "Oroberyl"
+              ]
+            },
+            "CreditShoppingPriority1DiscountValue": {
+              "type": "select",
+              "caseName": "Any"
+            },
+            "CreditShoppingPriority2": {
+              "type": "switch",
+              "value": true
+            },
+            "CreditShoppingPriority2AutoGetCredits": {
+              "type": "switch",
+              "value": false
+            },
+            "CreditShoppingPriority2UnconditionalPurchase": {
+              "type": "switch",
+              "value": false
+            },
+            "CreditShoppingPriority2Items": {
+              "type": "checkbox",
+              "caseNames": [
+                "ArsenalTicket",
+                "Oroberyl",
+                "TCreds",
+                "ElementaryCognitiveCarrier",
+                "ElementaryCombatRecord",
+                "IntermediateCombatRecord",
+                "ArmsInspector",
+                "ArmsINSPKit",
+                "CastDie",
+                "HeavyCastDie",
+                "Protodisk",
+                "Protoset",
+                "Protoprism",
+                "Protohedron"
+              ]
+            },
+            "CreditShoppingPriority2DiscountValue": {
+              "type": "select",
+              "caseName": "-75%"
+            },
+            "CreditShoppingPriority3": {
+              "type": "switch",
+              "value": false
+            },
+            "CreditShoppingForce": {
+              "type": "select",
+              "caseName": "Refresh"
+            }
+          }
+        },
+        {
+          "id": "58kwt13",
+          "taskName": "SellProduct",
+          "enabled": true,
+          "optionValues": {
+            "SellBeyondAidQuota": {
+              "type": "switch",
+              "value": false
+            },
+            "ValleyIVSell": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVRefugeeCamp": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVRefugeeCampAttempt1": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVRefugeeCampItem1": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "ValleyIVRefugeeCampReserve1": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "ValleyIVRefugeeCampAttempt2": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVRefugeeCampItem2": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "ValleyIVRefugeeCampReserve2": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "ValleyIVRefugeeCampAttempt3": {
+              "type": "switch",
+              "value": false
+            },
+            "ValleyIVRefugeeCampAttempt4": {
+              "type": "switch",
+              "value": false
+            },
+            "ValleyIVInfrastructureOutpost": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVInfrastructureOutpostAttempt1": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVInfrastructureOutpostItem1": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "ValleyIVInfrastructureOutpostReserve1": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "ValleyIVInfrastructureOutpostAttempt2": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVInfrastructureOutpostItem2": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "ValleyIVInfrastructureOutpostReserve2": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "ValleyIVInfrastructureOutpostAttempt3": {
+              "type": "switch",
+              "value": false
+            },
+            "ValleyIVInfrastructureOutpostAttempt4": {
+              "type": "switch",
+              "value": false
+            },
+            "ValleyIVReconstructionCommand": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVReconstructionCommandAttempt1": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVReconstructionCommandItem1": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "ValleyIVReconstructionCommandReserve1": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "ValleyIVReconstructionCommandAttempt2": {
+              "type": "switch",
+              "value": true
+            },
+            "ValleyIVReconstructionCommandItem2": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "ValleyIVReconstructionCommandReserve2": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "ValleyIVReconstructionCommandAttempt3": {
+              "type": "switch",
+              "value": false
+            },
+            "ValleyIVReconstructionCommandAttempt4": {
+              "type": "switch",
+              "value": false
+            },
+            "WulingSell": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingSkyKingFlats": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingSkyKingFlatsAttempt1": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingSkyKingFlatsItem1": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "WulingSkyKingFlatsReserve1": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "WulingSkyKingFlatsAttempt2": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingSkyKingFlatsItem2": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "WulingSkyKingFlatsReserve2": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "WulingSkyKingFlatsAttempt3": {
+              "type": "switch",
+              "value": false
+            },
+            "WulingSkyKingFlatsAttempt4": {
+              "type": "switch",
+              "value": false
+            },
+            "WulingCardiacRemediationStation": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingCardiacRemediationStationAttempt1": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingCardiacRemediationStationItem1": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "WulingCardiacRemediationStationReserve1": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "WulingCardiacRemediationStationAttempt2": {
+              "type": "switch",
+              "value": true
+            },
+            "WulingCardiacRemediationStationItem2": {
+              "type": "select",
+              "caseName": "无"
+            },
+            "WulingCardiacRemediationStationReserve2": {
+              "type": "select",
+              "caseName": "全部售出"
+            },
+            "WulingCardiacRemediationStationAttempt3": {
+              "type": "switch",
+              "value": false
+            },
+            "WulingCardiacRemediationStationAttempt4": {
+              "type": "switch",
+              "value": false
+            }
+          }
+        },
+        {
+          "id": "mwkxmg1",
+          "taskName": "DailyRewards",
+          "enabled": true,
+          "optionValues": {
+            "DailyEmailRewards": {
+              "type": "switch",
+              "value": true
+            },
+            "DailyTaskRewards": {
+              "type": "switch",
+              "value": true
+            },
+            "DailyTaskUpgradeWeapon": {
+              "type": "switch",
+              "value": false
+            },
+            "DailyTaskCreation": {
+              "type": "switch",
+              "value": false
+            },
+            "DailyTaskAssemble": {
+              "type": "switch",
+              "value": false
+            },
+            "DailyTaskLevelUpOperator": {
+              "type": "switch",
+              "value": false
+            },
+            "DailyClaimDeliveryJobsRewards": {
+              "type": "switch",
+              "value": true
+            },
+            "DailyEventRewards": {
+              "type": "switch",
+              "value": true
+            },
+            "DailyProtocolPassRewards": {
+              "type": "switch",
+              "value": true
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "interfaceTaskSnapshot": [
+    "SellProduct",
+    "SeizeEntrustTask",
+    "DeliveryJobs",
+    "AutoStockpile",
+    "AutoStockStaple",
+    "AutoSell",
+    "EnvironmentMonitoring",
+    "GearAssembly",
+    "WeaponUpgrade",
+    "BatchUseDetector",
+    "AutoUseSpMedication",
+    "EssenceFilter",
+    "AutoArtificing",
+    "ResourceRecycleStation",
+    "AutoCollect",
+    "AutoEcoFarm",
+    "PuzzleSolver",
+    "ImportBluePrints",
+    "AutoEssence",
+    "ProtocolSpace",
+    "DijiangRewards",
+    "VisitFriends",
+    "GiftOperator",
+    "BatchAddFriends",
+    "BakerEntry",
+    "ReadAllWiki",
+    "DailyRewards",
+    "ClaimSimulationRewards",
+    "CreditShoppingN2",
+    "AndroidOpenGame",
+    "RealTimeTask",
+    "ItemTransfer",
+    "Crafting",
+    "SimpleProductionBatchStart",
+    "ReceiveProdManual"
+  ],
+  "newTaskNames": [],
+  "lastActiveInstanceId": "cbek8en",
+  "presetInitialized": true
 }

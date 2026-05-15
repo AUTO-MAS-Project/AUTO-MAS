@@ -32,7 +32,11 @@ from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
-from .preset import build_maaend_preset_config, save_maaend_preset_options
+from .preset import (
+    build_maaend_preset_config,
+    is_maaend_preset_supported,
+    save_maaend_preset_options,
+)
 
 logger = get_logger("MaaEnd 脚本设置")
 
@@ -102,6 +106,12 @@ class ScriptConfigTask(TaskExecuteBase):
                 self.config_file_path, self.maaend_set_path, dirs_exist_ok=True
             )
         elif self.config_mode != "自定义":
+            if not is_maaend_preset_supported(
+                self.script_config.get("Game", "ControllerType")
+            ):
+                raise RuntimeError(
+                    "当前控制器暂不支持 MaaEnd 预设模式, 请使用自定义模式"
+                )
             shutil.rmtree(self.maaend_set_path, ignore_errors=True)
             self.maaend_set_path.mkdir(parents=True, exist_ok=True)
             (self.maaend_set_path / "mxu-MaaEnd.json").write_text(
