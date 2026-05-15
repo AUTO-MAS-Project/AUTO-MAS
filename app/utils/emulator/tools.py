@@ -93,31 +93,20 @@ def _resolve_manager_dir_from_side_exe(
     return []
 
 
-# 注册表中常见的安装路径值名称（按优先级排列）
+# 注册表中常见的安装路径值名称（按优先级排列；已剪枝低覆盖项）
 REGISTRY_INSTALL_VALUE_NAMES = (
-    "InstallPath",
     "InstallLocation",
     "InstallDir",
-    "instDir",
-    "install_dir",
-    "Path",
-    "DataDir",
-    "DisplayIcon",
     "UninstallString",
-    "QuietUninstallString",
     "ImagePath",
+    "DisplayIcon",  # 兜底，模拟器卸载项多为 .ico，read_install_path 会跳过
 )
 
 # 值为安装目录/路径，可能含空格；勿走命令行 token 截断（如 C:\Program Files\...）
 REGISTRY_DIRECTORY_VALUE_NAMES = frozenset(
     {
-        "InstallPath",
         "InstallLocation",
         "InstallDir",
-        "instDir",
-        "install_dir",
-        "Path",
-        "DataDir",
     }
 )
 
