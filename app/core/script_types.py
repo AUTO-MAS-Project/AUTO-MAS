@@ -541,6 +541,14 @@ def is_script_config_compatible_with_type_key(
     if not normalized_type_key:
         return False
 
+    from app.models.plugin_script_config import PluginScriptConfig
+
+    if isinstance(script_config, PluginScriptConfig):
+        return (
+            str(script_config.get("Meta", "PluginTypeKey") or "").strip()
+            == normalized_type_key
+        )
+
     try:
         provider = script_type_registry.get_by_script_config(script_config)
     except KeyError:
