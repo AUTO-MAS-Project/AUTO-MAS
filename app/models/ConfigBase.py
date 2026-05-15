@@ -300,7 +300,7 @@ class FileValidator(ValidatorBase):
                 shell = win32com.client.Dispatch("WScript.Shell")
                 shortcut = shell.CreateShortcut(value)
                 value = shortcut.TargetPath
-            except:
+            except Exception:
                 pass
         return Path(value).resolve().as_posix()
 
