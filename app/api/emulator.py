@@ -21,8 +21,10 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
 from fastapi import APIRouter, Body
 from app.core import Config, EmulatorManager
+from app.utils.emulator.tools import search_all_emulators
 from app.models.schema import (
     OutBase,
     EmulatorConfig,
@@ -186,9 +188,7 @@ async def get_status(emulator: EmulatorGetIn = Body(...)) -> EmulatorStatusOut:
 async def search_emulators() -> EmulatorSearchOut:
     """自动搜索系统中已安装的模拟器"""
     try:
-        from app.utils import search_all_emulators
-
-        emulators = await search_all_emulators()
+        emulators = await asyncio.to_thread(search_all_emulators)
         results = [EmulatorSearchResult(**emulator) for emulator in emulators]
     except Exception as e:
         return EmulatorSearchOut(

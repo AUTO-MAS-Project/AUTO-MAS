@@ -217,6 +217,8 @@ EMULATOR_PATH_BOOK = {
             "MuMuPlayer",
             "Netease MuMu",
             "MuMu模拟器",
+            "YXArkNights",
+            "YXReverse1999",
         ],
         "registry_paths": [
             r"SOFTWARE\NetEase\MuMu Player 12",
@@ -225,6 +227,7 @@ EMULATOR_PATH_BOOK = {
             r"SOFTWARE\NetEase\GameViewer",  # 兼容新安装器写入的路径键
             r"SOFTWARE\NetEase\MuMuPlayer",
             r"SOFTWARE\NetEase\MuMuNx",
+            r"SYSTEM\CurrentControlSet\Services\MuMuRemoteService",
             r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
     },
@@ -244,6 +247,7 @@ EMULATOR_PATH_BOOK = {
             r"SOFTWARE\leidian\ldplayer9",
             r"SOFTWARE\XuanZhi\LDPlayer64",
             r"SOFTWARE\XuanZhi\LDPlayer9",
+            r"SYSTEM\CurrentControlSet\Services\LDPlayerSvr",
             r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
     },
@@ -263,17 +267,24 @@ EMULATOR_PATH_BOOK = {
     },
     "memu": {
         "name": "逍遥模拟器",
-        "executables": ["MEmu.exe", "MemuManager.exe"],
-        "registry_display_keywords": ["MEmu", "Microvirt"],
+        "executables": ["MEmu.exe", "MEmuConsole.exe", "MemuManager.exe"],
+        "registry_display_keywords": [
+            "MEmu",
+            "Microvirt",
+            "逍遥",
+            "逍遥模拟器",
+        ],
         "registry_paths": [
             r"SOFTWARE\Microvirt\MEmu",
+            r"SOFTWARE\WOW6432Node\Microvirt\MEmu",
             r"SYSTEM\CurrentControlSet\Services\MEmusvc",
             r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
     },
     "bluestacks": {
         "name": "BlueStacks",
-        "executables": ["BlueStacks.exe", "HD-Player.exe"],
+        # BlueStacks 5 / nxt 国服常见主进程为 HD-Player.exe
+        "executables": ["HD-Player.exe", "BlueStacks.exe"],
         "registry_display_keywords": [
             "BlueStacks",
             "BlueStacks_nxt",
