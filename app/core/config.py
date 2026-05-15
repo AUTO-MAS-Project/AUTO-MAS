@@ -42,12 +42,14 @@ from app.models.config import (
     GeneralConfig,
     MaaConfig,
     SrcConfig,
+    M9AConfig,
     MaaEndConfig,
     MaaPlanConfig,
     QueueConfig,
     QueueItem,
     MaaUserConfig,
     SrcUserConfig,
+    M9AUserConfig,
     MaaEndUserConfig,
     GeneralUserConfig,
     GlobalConfig,
@@ -525,9 +527,9 @@ class AppConfig(GlobalConfig):
 
     async def add_script(
         self,
-        script: Literal["MAA", "SRC", "General", "MaaEnd"],
+        script: Literal["MAA", "SRC", "General", "MaaEnd", "M9A"],
         script_id: str | None = None,
-    ) -> tuple[uuid.UUID, MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig]:
+    ) -> tuple[uuid.UUID, MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig | M9AConfig]:
         """添加脚本配置"""
 
         logger.info(f"添加脚本配置: {script}, 从 {script_id} 复制")
@@ -807,7 +809,7 @@ class AppConfig(GlobalConfig):
     async def add_user(
         self, script_id: str
     ) -> tuple[
-        uuid.UUID, MaaUserConfig | SrcUserConfig | GeneralUserConfig | MaaEndUserConfig
+        uuid.UUID, MaaUserConfig | SrcUserConfig | GeneralUserConfig | MaaEndUserConfig | M9AUserConfig
     ]:
         """添加用户配置"""
 
@@ -824,6 +826,8 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(GeneralUserConfig)
         elif isinstance(script_config, MaaEndConfig):
             uid, config = await script_config.UserData.add(MaaEndUserConfig)
+        elif isinstance(script_config, M9AConfig):
+            uid, config = await script_config.UserData.add(M9AUserConfig)
         else:
             raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 

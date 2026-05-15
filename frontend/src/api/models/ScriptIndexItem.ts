@@ -21,6 +21,7 @@ export namespace ScriptIndexItem {
         GENERAL_CONFIG = 'GeneralConfig',
         SRC_CONFIG = 'SrcConfig',
         MAA_END_CONFIG = 'MaaEndConfig',
+        M9ACONFIG = 'M9AConfig',
     }
 }
 
