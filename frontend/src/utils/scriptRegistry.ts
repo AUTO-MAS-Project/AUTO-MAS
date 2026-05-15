@@ -192,6 +192,7 @@ export const normalizeScriptRecord = (
   users: ScriptUserRecord[] = []
 ): Script => {
   const descriptor = descriptorMap[record.type]
+  const available = Boolean(descriptor)
   const info = record.config?.Info && typeof record.config.Info === 'object' ? record.config.Info : {}
   return {
     id: record.id,
@@ -207,6 +208,8 @@ export const normalizeScriptRecord = (
     docsUrl: record.docs_url ?? descriptor?.docs_url ?? null,
     displayName: descriptor?.display_name ?? record.type,
     isBuiltin: descriptor?.is_builtin ?? isBuiltinScriptType(record.type),
+    available,
+    unavailableReason: available ? null : `脚本类型 ${record.type} 当前未启用，暂时不能操作`,
     createTime: new Date().toLocaleString(),
   }
 }

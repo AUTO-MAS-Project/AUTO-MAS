@@ -71,7 +71,7 @@ import type {
   SchemaFieldDefinition,
   SchemaValidationErrorMap,
 } from '@/types/schemaForm'
-import { descriptorMapFromList, getScriptTypeTagColor } from '@/utils/scriptRegistry'
+import { descriptorMapFromList, getScriptTypeTagColor, normalizeScriptRecord } from '@/utils/scriptRegistry'
 
 const logger = window.electronAPI.getLogger('插件用户编辑')
 
@@ -127,12 +127,19 @@ const loadData = async () => {
     }
 
     const descriptorMap = descriptorMapFromList(descriptors)
+    const normalizedScript = normalizeScriptRecord(scriptRecord, descriptorMap, [])
+    if (normalizedScript.available === false) {
+      throw new Error(
+        normalizedScript.unavailableReason || `脚本类型 ${normalizedScript.type} 当前未启用`
+      )
+    }
+
     const descriptor = descriptorMap[scriptRecord.type]
-    scriptName.value = scriptRecord.name
-    scriptType.value = scriptRecord.type
-    scriptDisplayName.value = descriptor?.display_name || scriptRecord.type
-    docsUrl.value = descriptor?.docs_url || null
-    supportedModes.value = descriptor?.supported_modes || scriptRecord.supported_modes || []
+    scriptName.value = normalizedScript.name
+    scriptType.value = normalizedScript.type
+    scriptDisplayName.value = normalizedScript.displayName || normalizedScript.type
+    docsUrl.value = normalizedScript.docsUrl || null
+    supportedModes.value = normalizedScript.supportedModes || []
     userSchema.value = descriptor?.user_schema || null
 
     if (!userId.value) {

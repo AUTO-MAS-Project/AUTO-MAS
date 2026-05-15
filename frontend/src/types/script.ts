@@ -133,6 +133,8 @@ export interface Script {
   docsUrl?: string | null
   displayName?: string
   isBuiltin?: boolean
+  available?: boolean
+  unavailableReason?: string | null
   createTime?: string
 }
 
