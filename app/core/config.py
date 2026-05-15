@@ -44,6 +44,7 @@ from app.models.config import (
     SrcConfig,
     MaaEndConfig,
     MaaPlanConfig,
+    MaaEndPlanConfig,
     QueueConfig,
     QueueItem,
     MaaUserConfig,
@@ -52,11 +53,12 @@ from app.models.config import (
     GeneralUserConfig,
     GlobalConfig,
     CLASS_BOOK,
+    PLAN_BOOK,
     Webhook,
     TimeSet,
     EmulatorConfig,
 )
-from app.models.schema import WebSocketMessage
+from app.models.schema import WebSocketMessage, PlanComboxConsumer
 from app.utils.constants import (
     UTC4,
     UTC8,
@@ -401,6 +403,8 @@ class AppConfig(GlobalConfig):
                     shutil.rmtree(Path.cwd() / "config/QueueConfig")
                 if (Path.cwd() / "config/MaaPlanConfig").exists():
                     shutil.rmtree(Path.cwd() / "config/MaaPlanConfig")
+                if (Path.cwd() / "config/MaaEndPlanConfig").exists():
+                    shutil.rmtree(Path.cwd() / "config/MaaEndPlanConfig")
                 if (Path.cwd() / "config/MaaConfig").exists():
                     shutil.rmtree(Path.cwd() / "config/MaaConfig")
                 if (Path.cwd() / "config/GeneralConfig").exists():
@@ -927,13 +931,16 @@ class AppConfig(GlobalConfig):
         return data
 
     async def add_plan(
-        self, script: Literal["MaaPlan"]
-    ) -> tuple[uuid.UUID, MaaPlanConfig]:
+        self, script: Literal["MaaPlan", "MaaEndPlan"]
+    ) -> tuple[uuid.UUID, MaaPlanConfig | MaaEndPlanConfig]:
         """添加计划表"""
 
         logger.info(f"添加计划表: {script}")
 
-        return await self.PlanConfig.add(CLASS_BOOK[script])
+        plan_class = next(
+            item["config_class"] for item in PLAN_BOOK.values() if item["create_type"] == script
+        )
+        return await self.PlanConfig.add(plan_class)
 
     async def get_plan(self, plan_id: Optional[str]) -> tuple[list, dict]:
         """获取计划表配置"""
@@ -965,21 +972,30 @@ class AppConfig(GlobalConfig):
         logger.info(f"删除计划表配置: {plan_id}")
 
         plan_uid = uuid.UUID(plan_id)
+        plan_config = self.PlanConfig[plan_uid]
+        plan_type = type(plan_config).__name__
+        if plan_type not in PLAN_BOOK:
+            raise TypeError(f"不支持的计划表配置类型: {plan_type}")
 
-        user_list = []
+        consumer_config = PLAN_BOOK[plan_type]
+        user_list: list[MaaUserConfig | MaaEndUserConfig] = []
 
         for script in self.ScriptConfig.values():
-            if isinstance(script, MaaConfig):
-                for user in script.UserData.values():
-                    if user.get("Info", "StageMode") == str(plan_uid):
-                        if user.is_locked:
-                            raise RuntimeError(
-                                f"用户 {user.get('Info','Name')} 正在使用此计划表且被锁定, 无法完成删除"
-                            )
-                        user_list.append(user)
+            if not isinstance(script, consumer_config["script_class"]):
+                continue
+
+            for user in script.UserData.values():
+                if user.get("Info", consumer_config["field_name"]) != str(plan_uid):
+                    continue
+
+                if user.is_locked:
+                    raise RuntimeError(
+                        f"用户 {user.get('Info','Name')} 正在使用此计划表且被锁定, 无法完成删除"
+                    )
+                user_list.append(user)
 
         for user in user_list:
-            await user.set("Info", "StageMode", "Fixed")
+            await user.set("Info", consumer_config["field_name"], "Fixed")
 
         await self.PlanConfig.remove(plan_uid)
 
@@ -1629,14 +1645,24 @@ class AppConfig(GlobalConfig):
 
         return data
 
-    async def get_plan_combox(self):
-        """获取计划下拉框信息"""
+    async def get_plan_combox(self, consumer: PlanComboxConsumer):
+        """获取指定消费方的计划下拉框信息"""
 
-        logger.info("开始获取计划下拉框信息")
+        consumer_config = next(
+            (item for item in PLAN_BOOK.values() if item["consumer"] == consumer), None
+        )
+        if consumer_config is None:
+            raise TypeError(f"不支持的计划表消费方类型: {consumer}")
+
+        plan_class = consumer_config["config_class"]
+        logger.info(f"开始获取 {consumer} 计划下拉框信息")
+
         data = [{"label": "固定", "value": "Fixed"}]
         for uid, plan in self.PlanConfig.items():
-            data.append({"label": plan.get("Info", "Name"), "value": str(uid)})
-        logger.success("计划下拉框信息获取成功")
+            if isinstance(plan, plan_class):
+                data.append({"label": plan.get("Info", "Name"), "value": str(uid)})
+
+        logger.success(f"{consumer} 计划下拉框信息获取成功")
 
         return data
 

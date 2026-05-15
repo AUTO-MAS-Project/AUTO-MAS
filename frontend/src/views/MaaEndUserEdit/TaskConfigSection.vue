@@ -3,15 +3,20 @@
   <div class="form-section">
     <div class="section-header">
       <h3>任务配置</h3>
+      <a-button
+        v-if="isPlanMode && formData.Info.SanityMode && formData.Info.SanityMode !== 'Fixed'"
+        type="link"
+        class="plans-button"
+        @click="handleGoToPlans"
+      >
+        <template #icon>
+          <CalendarOutlined />
+        </template>
+        跳转到计划表
+      </a-button>
     </div>
 
-    <a-alert
-      v-if="modeNotice"
-      :message="modeNotice"
-      type="info"
-      show-icon
-      class="mode-notice"
-    />
+    <a-alert v-if="modeNotice" :message="modeNotice" type="info" show-icon class="mode-notice" />
 
     <a-row :gutter="24">
       <a-col v-for="task in presetTaskSwitches" :key="task.field" :span="6">
@@ -34,38 +39,79 @@
     </a-row>
 
     <a-row :gutter="24">
-
-      <a-col :span="8">
+      <a-col v-if="showSanityMode" :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip title="选择当前要执行的协议空间任务分类">
+            <a-tooltip title="可选择固定配置或引用 MaaEnd 计划表">
               <span class="form-label">
-                协议空间
+                理智任务配置模式
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
           <a-select
-            v-model:value="formData.Task.ProtocolSpaceTab"
-            :options="protocolSpaceOptions"
+            v-model:value="formData.Info.SanityMode"
+            :options="sanityModeOptions"
             :disabled="optionControlsDisabled"
             size="large"
-            @change="handleProtocolSpaceChange"
+            @change="emitSave('Info.SanityMode', formData.Info.SanityMode)"
           />
         </a-form-item>
       </a-col>
 
-      <a-col :span="8">
+      <a-col :span="optionColumnSpan">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="taskOptionTooltip">
+            <a-tooltip
+              :title="isPlanMode ? '当前生效理智任务来自计划表' : '选择当前执行的理智任务类型'"
+            >
+              <span class="form-label">
+                理智任务
+                <QuestionCircleOutlined class="help-icon" />
+              </span>
+            </a-tooltip>
+          </template>
+          <div v-if="isPlanMode" class="plan-mode-display">
+            <div class="plan-value">{{ displaySanityTaskType }}</div>
+            <a-tooltip>
+              <template #title>
+                <div class="plan-tooltip">{{ sanityTaskTypeTooltip }}</div>
+              </template>
+              <div class="plan-source">来自计划表</div>
+            </a-tooltip>
+          </div>
+          <a-select
+            v-else
+            v-model:value="formData.Task.SanityTaskType"
+            :options="SANITY_TASK_TYPE_OPTIONS"
+            :disabled="optionControlsDisabled"
+            size="large"
+            @change="handleSanityTaskTypeChange"
+          />
+        </a-form-item>
+      </a-col>
+
+      <a-col :span="optionColumnSpan">
+        <a-form-item>
+          <template #label>
+            <a-tooltip :title="isPlanMode ? '当前生效任务来自计划表' : taskOptionTooltip">
               <span class="form-label">
                 {{ taskOptionLabel }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
+          <div v-if="isPlanMode" class="plan-mode-display">
+            <div class="plan-value">{{ displayCurrentTask }}</div>
+            <a-tooltip>
+              <template #title>
+                <div class="plan-tooltip">{{ currentTaskTooltip }}</div>
+              </template>
+              <div class="plan-source">来自计划表</div>
+            </a-tooltip>
+          </div>
           <a-select
+            v-else
             v-model:value="currentTaskValue"
             :options="currentTaskOptions"
             :disabled="optionControlsDisabled"
@@ -74,20 +120,38 @@
           />
         </a-form-item>
       </a-col>
+    </a-row>
 
+    <a-row :gutter="24">
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip title="当前任务支持奖励组切换时，可在这里选择对应奖励组">
+            <a-tooltip
+              :title="
+                isPlanMode
+                  ? '当前生效奖励组来自计划表；非协议空间奖励任务会固定为奖励组 A'
+                  : '协议空间奖励任务可在这里选择奖励组，基质刷取固定奖励组 A'
+              "
+            >
               <span class="form-label">
                 可选奖励组
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
+          <div v-if="isPlanMode" class="plan-mode-display">
+            <div class="plan-value">{{ displayRewardsSet }}</div>
+            <a-tooltip>
+              <template #title>
+                <div class="plan-tooltip">{{ rewardsTooltip }}</div>
+              </template>
+              <div class="plan-source">来自计划表</div>
+            </a-tooltip>
+          </div>
           <a-select
+            v-else
             v-model:value="formData.Task.RewardsSetOption"
-            :options="rewardOptions"
+            :options="REWARD_OPTIONS"
             :disabled="optionControlsDisabled || !rewardGroupEnabled"
             size="large"
             @change="emitSave('Task.RewardsSetOption', formData.Task.RewardsSetOption)"
@@ -95,13 +159,34 @@
         </a-form-item>
       </a-col>
     </a-row>
-
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, watch } from 'vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { CalendarOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { navigateTo } from '@/router'
+import {
+  AUTO_ESSENCE_LOCATION_OPTIONS,
+  PROTOCOL_SPACE_TASK_FIELD_MAP,
+  PROTOCOL_SPACE_TASK_OPTIONS_MAP,
+  PROTOCOL_SPACE_TASK_TITLE_MAP,
+  PROTOCOL_SPACE_TASK_TOOLTIP_MAP,
+  REWARD_LABEL_MAP,
+  REWARD_OPTIONS,
+  SANITY_TASK_TYPE_LABEL_MAP,
+  SANITY_TASK_TYPE_OPTIONS,
+  getSanityTaskDisplayValue,
+  normalizeMaaEndSanityConfig,
+  type MaaEndSanityConfig,
+  type ProtocolSpaceTab,
+  type SanityTaskType,
+} from '@/utils/maaEndProtocolSpace'
+
+interface FieldChange {
+  key: string
+  value: any
+}
 
 const props = withDefaults(
   defineProps<{
@@ -109,250 +194,363 @@ const props = withDefaults(
     loading?: boolean
     mode?: string
     source?: 'script' | 'user'
+    controllerType?: string | null
+    isPlanMode?: boolean
+    sanityModeOptions?: Array<{ label: string; value: string }>
+    planModeConfig?: MaaEndSanityConfig | null
+    sanityTaskTypeTooltip?: string
+    currentTaskTooltip?: string
+    rewardsTooltip?: string
   }>(),
   {
     loading: false,
     mode: '详细',
     source: 'user',
+    controllerType: null,
+    isPlanMode: false,
+    sanityModeOptions: () => [{ label: '固定配置', value: 'Fixed' }],
+    planModeConfig: null,
+    sanityTaskTypeTooltip: '',
+    currentTaskTooltip: '',
+    rewardsTooltip: '',
   }
 )
 
 const emit = defineEmits<{
   save: [key: string, value: any]
+  saveBatch: [changes: FieldChange[]]
 }>()
 
-const protocolSpaceOptions = [
-  { label: '干员养成', value: 'OperatorProgression' },
-  { label: '武器养成', value: 'WeaponProgression' },
-  { label: '危境预演', value: 'CrisisDrills' },
-]
+const formData = props.formData
+const showSanityMode = computed(() => props.source === 'user')
+const optionColumnSpan = computed(() => (showSanityMode.value ? 8 : 12))
 
-const presetTaskSwitches = [
+const maaEndPresetTaskNamesByController: Record<string, string[]> = {
+  'Win32-Window': [
+    'VisitFriends',
+    'DijiangRewards',
+    'CreditShoppingN2',
+    'DeliveryJobs',
+    'SellProduct',
+    'AutoStockpile',
+    'AutoStockStaple',
+    'DailyRewards',
+    'SeizeEntrustTask',
+  ],
+  'Win32-Front': [
+    'VisitFriends',
+    'DijiangRewards',
+    'CreditShoppingN2',
+    'DeliveryJobs',
+    'SellProduct',
+    'AutoStockpile',
+    'AutoStockStaple',
+    'AutoSell',
+    'EnvironmentMonitoring',
+    'DailyRewards',
+    'SeizeEntrustTask',
+    'AutoCollect',
+    'AutoUseSpMedication',
+    'ResourceRecycleStation',
+    'AutoEcoFarm',
+    'AutoEssence',
+    'ProtocolSpace',
+  ],
+}
+
+const allPresetTaskSwitches = [
   {
-    label: '协议空间',
-    field: 'IfProtocolSpace',
-    tooltip: '是否启用 MAS 托管的协议空间预设任务',
+    label: '理智任务',
+    field: 'IfSanity',
+    tooltip: '是否启用协议空间或基质刷取任务',
+    taskNames: ['ProtocolSpace', 'AutoEssence'],
   },
   {
     label: '访问好友',
     field: 'IfVisitFriends',
     tooltip: '是否启用访问好友任务',
+    taskNames: ['VisitFriends'],
   },
   {
     label: '帝江奖励',
     field: 'IfDijiangRewards',
     tooltip: '是否启用帝江奖励任务',
+    taskNames: ['DijiangRewards'],
   },
   {
     label: '信用采购',
     field: 'IfCreditShoppingN2',
     tooltip: '是否启用信用采购任务',
+    taskNames: ['CreditShoppingN2'],
   },
   {
     label: '配送委托',
     field: 'IfDeliveryJobs',
     tooltip: '是否启用配送委托任务',
+    taskNames: ['DeliveryJobs'],
   },
   {
     label: '自动售卖',
     field: 'IfSellProduct',
     tooltip: '是否启用自动售卖任务',
+    taskNames: ['SellProduct'],
   },
   {
     label: '自动备货',
     field: 'IfAutoStockpile',
     tooltip: '是否启用自动备货任务',
+    taskNames: ['AutoStockpile'],
   },
   {
     label: '自动补货',
     field: 'IfAutoStockStaple',
     tooltip: '是否启用自动补货任务',
+    taskNames: ['AutoStockStaple'],
   },
   {
     label: '自动交易',
     field: 'IfAutoSell',
     tooltip: '是否启用自动交易任务',
+    taskNames: ['AutoSell'],
   },
   {
     label: '环境监测',
     field: 'IfEnvironmentMonitoring',
     tooltip: '是否启用环境监测任务',
+    taskNames: ['EnvironmentMonitoring'],
   },
   {
     label: '日常奖励',
     field: 'IfDailyRewards',
     tooltip: '是否启用日常奖励任务',
+    taskNames: ['DailyRewards'],
   },
   {
     label: '收取委托',
     field: 'IfSeizeEntrustTask',
     tooltip: '是否启用收取委托任务',
+    taskNames: ['SeizeEntrustTask'],
   },
   {
     label: '自动采集',
     field: 'IfAutoCollect',
     tooltip: '是否启用自动采集任务',
+    taskNames: ['AutoCollect'],
   },
   {
     label: '自动用理智药',
     field: 'IfAutoUseSpMedication',
     tooltip: '是否启用自动用理智药任务',
+    taskNames: ['AutoUseSpMedication'],
   },
   {
     label: '资源回收',
     field: 'IfResourceRecycleStation',
     tooltip: '是否启用资源回收任务',
+    taskNames: ['ResourceRecycleStation'],
   },
   {
     label: '自动农场',
     field: 'IfAutoEcoFarm',
     tooltip: '是否启用自动农场任务',
-  },
-  {
-    label: '基质刷取',
-    field: 'IfAutoEssence',
-    tooltip: '是否启用基质刷取任务',
+    taskNames: ['AutoEcoFarm'],
   },
 ]
 
-const taskOptionsMap: Record<string, Array<{ label: string; value: string; rewards?: boolean }>> = {
-  OperatorProgression: [
-    { label: '干员经验', value: 'OperatorEXP', rewards: true },
-    { label: '干员进阶', value: 'Promotions', rewards: true },
-    { label: '钱币收集', value: 'T-Creds', rewards: false },
-    { label: '技能提升', value: 'SkillUp', rewards: true },
-  ],
-  WeaponProgression: [
-    { label: '武器经验', value: 'WeaponEXP', rewards: false },
-    { label: '武器进阶', value: 'WeaponTune', rewards: true },
-  ],
-  CrisisDrills: [
-    { label: '高阶培养 I - D96钢样品四', value: 'AdvancedProgression1', rewards: false },
-    { label: '高阶培养 II - 超距辉映管', value: 'AdvancedProgression2', rewards: false },
-    { label: '高阶培养 III - 快子遴捡晶格', value: 'AdvancedProgression3', rewards: false },
-    { label: '高阶培养 IV - 象限拟合液', value: 'AdvancedProgression4', rewards: false },
-    { label: '高阶培养 V - 三相纳米片', value: 'AdvancedProgression5', rewards: false },
-  ],
-}
+const presetTaskSwitches = computed(() => {
+  const templateTaskNames = props.controllerType
+    ? maaEndPresetTaskNamesByController[props.controllerType]
+    : null
+  if (!templateTaskNames) return allPresetTaskSwitches
 
-const rewardOptions = [
-  { label: '奖励组 A', value: 'RewardsSetA' },
-  { label: '奖励组 B', value: 'RewardsSetB' },
-]
-
-const protocolTaskFieldMap: Record<string, string> = {
-  OperatorProgression: 'OperatorProgression',
-  WeaponProgression: 'WeaponProgression',
-  CrisisDrills: 'CrisisDrills',
-}
-
-const taskLabelMap: Record<string, string> = {
-  OperatorProgression: '干员养成任务',
-  WeaponProgression: '武器养成任务',
-  CrisisDrills: '危境预演任务',
-}
-
-const taskTooltipMap: Record<string, string> = {
-  OperatorProgression: '选择要执行的干员养成任务',
-  WeaponProgression: '选择要执行的武器养成任务',
-  CrisisDrills: '选择要执行的危境预演任务',
-}
-
-const currentField = computed(() => protocolTaskFieldMap[props.formData.Task.ProtocolSpaceTab])
-
-const currentTaskOptions = computed(
-  () => taskOptionsMap[props.formData.Task.ProtocolSpaceTab] ?? taskOptionsMap.OperatorProgression
-)
-
-const currentTaskValue = computed({
-  get: () => props.formData.Task[currentField.value],
-  set: value => {
-    props.formData.Task[currentField.value] = value
-  },
-})
-
-const currentTaskOption = computed(() => {
-  return currentTaskOptions.value.find(option => option.value === currentTaskValue.value)
-})
-
-const taskOptionLabel = computed(
-  () => taskLabelMap[props.formData.Task.ProtocolSpaceTab] ?? '干员养成任务'
-)
-
-const taskOptionTooltip = computed(
-  () => taskTooltipMap[props.formData.Task.ProtocolSpaceTab] ?? '选择要执行的干员养成任务'
-)
-
-const rewardGroupEnabled = computed(() => Boolean(currentTaskOption.value?.rewards))
-
-const controlsDisabled = computed(() => {
-  return (
-    props.loading ||
-    (props.source === 'user' && props.mode === '简洁') ||
-    props.mode === '自定义'
+  return allPresetTaskSwitches.filter(task =>
+    task.taskNames.some(taskName => templateTaskNames.includes(taskName))
   )
 })
 
-const optionControlsDisabled = computed(() => {
-  return controlsDisabled.value || !props.formData.Task.IfProtocolSpace
+const controlsDisabled = computed(() => {
+  return (
+    props.loading || (props.source === 'user' && props.mode === '简洁') || props.mode === '自定义'
+  )
 })
+
+const optionControlsDisabled = computed(() => controlsDisabled.value || !formData.Task.IfSanity)
 
 const modeNotice = computed(() => {
   if (props.source === 'script') {
     return '简洁模式用户将使用这里的脚本级预设任务配置。'
   }
-
   if (props.mode === '简洁') {
     return '简洁模式使用脚本级预设配置，请在脚本配置页调整任务开关和选项。'
   }
-
   if (props.mode === '自定义') {
     return '自定义模式运行用户完整 MaaEnd 配置，MAS 不托管业务任务队列。'
   }
-
   return ''
 })
+
+const currentField = computed(
+  () => PROTOCOL_SPACE_TASK_FIELD_MAP[formData.Task.SanityTaskType as ProtocolSpaceTab]
+)
+
+const currentTaskOptions = computed(() => {
+  if (formData.Task.SanityTaskType === 'Essence') {
+    return AUTO_ESSENCE_LOCATION_OPTIONS
+  }
+  return PROTOCOL_SPACE_TASK_OPTIONS_MAP[formData.Task.SanityTaskType as ProtocolSpaceTab]
+})
+
+const currentTaskValue = computed({
+  get: () => {
+    if (formData.Task.SanityTaskType === 'Essence') {
+      return formData.Task.AutoEssenceSpecifiedLocation
+    }
+    return formData.Task[currentField.value]
+  },
+  set: value => {
+    if (formData.Task.SanityTaskType === 'Essence') {
+      formData.Task.AutoEssenceSpecifiedLocation = value
+      return
+    }
+    formData.Task[currentField.value] = value
+  },
+})
+
+const currentTaskOption = computed(() =>
+  currentTaskOptions.value.find(option => option.value === currentTaskValue.value)
+)
+
+const rewardGroupEnabled = computed(() => {
+  if (formData.Task.SanityTaskType === 'Essence') return false
+  return Boolean(currentTaskOption.value?.rewards)
+})
+
+const displayPlanConfig = computed(() =>
+  props.planModeConfig ? normalizeMaaEndSanityConfig(props.planModeConfig) : null
+)
+
+const displaySanityTaskType = computed(() => {
+  if (!displayPlanConfig.value) return '未读取到计划表配置'
+  return SANITY_TASK_TYPE_LABEL_MAP[displayPlanConfig.value.SanityTaskType]
+})
+
+const displayCurrentTask = computed(() => {
+  if (!displayPlanConfig.value) return '未读取到计划表配置'
+  return getSanityTaskDisplayValue(displayPlanConfig.value)
+})
+
+const displayRewardsSet = computed(() => {
+  if (!displayPlanConfig.value) return '未读取到计划表配置'
+  return REWARD_LABEL_MAP[displayPlanConfig.value.RewardsSetOption]
+})
+
+const taskOptionLabel = computed(() =>
+  formData.Task.SanityTaskType === 'Essence'
+    ? '基质地点'
+    : (PROTOCOL_SPACE_TASK_TITLE_MAP[formData.Task.SanityTaskType as ProtocolSpaceTab] ??
+      '协议空间任务')
+)
+
+const taskOptionTooltip = computed(() =>
+  formData.Task.SanityTaskType === 'Essence'
+    ? '选择当前基质刷取地点'
+    : (PROTOCOL_SPACE_TASK_TOOLTIP_MAP[formData.Task.SanityTaskType as ProtocolSpaceTab] ??
+      '选择当前协议空间任务')
+)
 
 const emitSave = (key: string, value: any) => {
   if (controlsDisabled.value) return
   emit('save', key, value)
 }
 
+const emitSaveBatch = (changes: FieldChange[]) => {
+  if (controlsDisabled.value || !changes.length) return
+  emit('saveBatch', changes)
+}
+
+const handleGoToPlans = () => {
+  const planId =
+    props.isPlanMode && formData.Info.SanityMode && formData.Info.SanityMode !== 'Fixed'
+      ? formData.Info.SanityMode
+      : undefined
+
+  navigateTo('/plans', {
+    query: {
+      from: 'sanity-task-config',
+      ...(planId ? { planId } : {}),
+    },
+  })
+}
+
 const ensureCurrentTaskValue = () => {
-  if (controlsDisabled.value) return
+  if (optionControlsDisabled.value) return
   const options = currentTaskOptions.value
   if (!options.some(option => option.value === currentTaskValue.value)) {
     currentTaskValue.value = options[0].value
   }
 }
 
-const ensureRewardGroupState = () => {
-  if (controlsDisabled.value) return
-  if (!rewardGroupEnabled.value && props.formData.Task.RewardsSetOption !== 'RewardsSetA') {
-    props.formData.Task.RewardsSetOption = 'RewardsSetA'
-    emitSave('Task.RewardsSetOption', props.formData.Task.RewardsSetOption)
+const normalizeRewardGroupState = (): FieldChange | null => {
+  if (!rewardGroupEnabled.value && formData.Task.RewardsSetOption !== 'RewardsSetA') {
+    formData.Task.RewardsSetOption = 'RewardsSetA'
+    return { key: 'Task.RewardsSetOption', value: formData.Task.RewardsSetOption }
   }
+  return null
 }
 
-const handleProtocolSpaceChange = () => {
-  if (controlsDisabled.value) return
+const handleSanityTaskTypeChange = (value: SanityTaskType) => {
+  if (optionControlsDisabled.value) return
+  formData.Task.SanityTaskType = value
   ensureCurrentTaskValue()
-  emitSave('Task.ProtocolSpaceTab', props.formData.Task.ProtocolSpaceTab)
-  emitSave(`Task.${currentField.value}`, currentTaskValue.value)
-  ensureRewardGroupState()
+
+  const changes: FieldChange[] = [
+    { key: 'Task.SanityTaskType', value: formData.Task.SanityTaskType },
+  ]
+
+  if (value === 'Essence') {
+    changes.push({
+      key: 'Task.AutoEssenceSpecifiedLocation',
+      value: formData.Task.AutoEssenceSpecifiedLocation ?? 'VFTheHub',
+    })
+  } else {
+    changes.push({ key: `Task.${currentField.value}`, value: currentTaskValue.value })
+  }
+
+  const rewardGroupChange = normalizeRewardGroupState()
+  if (rewardGroupChange) {
+    changes.push(rewardGroupChange)
+  }
+
+  emitSaveBatch(changes)
 }
 
 const handleTaskOptionChange = () => {
-  if (controlsDisabled.value) return
-  emitSave(`Task.${currentField.value}`, currentTaskValue.value)
-  ensureRewardGroupState()
+  if (optionControlsDisabled.value) return
+  const changes: FieldChange[] = []
+
+  if (formData.Task.SanityTaskType === 'Essence') {
+    changes.push({
+      key: 'Task.AutoEssenceSpecifiedLocation',
+      value: formData.Task.AutoEssenceSpecifiedLocation,
+    })
+  } else {
+    changes.push({ key: `Task.${currentField.value}`, value: currentTaskValue.value })
+  }
+
+  const rewardGroupChange = normalizeRewardGroupState()
+  if (rewardGroupChange) {
+    changes.push(rewardGroupChange)
+  }
+
+  emitSaveBatch(changes)
 }
 
 watch(
-  () => props.formData.Task.ProtocolSpaceTab,
+  () => formData.Task.SanityTaskType,
   () => {
+    if (props.isPlanMode || optionControlsDisabled.value) return
     ensureCurrentTaskValue()
-    ensureRewardGroupState()
+    normalizeRewardGroupState()
   },
   { immediate: true }
 )
@@ -394,6 +592,15 @@ watch(
   border-radius: 2px;
 }
 
+.plans-button {
+  font-size: 14px;
+  color: var(--ant-color-primary);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .form-label {
   display: flex;
   align-items: center;
@@ -412,5 +619,33 @@ watch(
 
 .help-icon:hover {
   color: var(--ant-color-primary);
+}
+
+.plan-mode-display {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 6px;
+  background: var(--ant-color-bg-container);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.plan-value {
+  color: var(--ant-color-text);
+  font-weight: 500;
+}
+
+.plan-source {
+  font-size: 12px;
+  color: var(--ant-color-primary);
+  white-space: nowrap;
+  cursor: help;
+}
+
+.plan-tooltip {
+  white-space: pre-line;
 }
 </style>

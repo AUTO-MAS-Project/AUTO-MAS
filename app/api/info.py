@@ -126,10 +126,10 @@ async def get_task_combox() -> ComboBoxOut:
     response_model=ComboBoxOut,
     status_code=200,
 )
-async def get_plan_combox() -> ComboBoxOut:
+async def get_plan_combox(plan: PlanComboxIn = Body(...)) -> ComboBoxOut:
 
     try:
-        raw_data = await Config.get_plan_combox()
+        raw_data = await Config.get_plan_combox(plan.consumer)
         data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
     except Exception as e:
         return ComboBoxOut(

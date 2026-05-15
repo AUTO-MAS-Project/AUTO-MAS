@@ -148,7 +148,10 @@ class MultipleUIDValidator(ValidatorBase):
     """多配置管理类UID验证器"""
 
     def __init__(
-        self, default: Any, related_config: dict[str, MultipleConfig], config_name: str
+        self,
+        default: Any,
+        related_config: dict[str, MultipleConfig],
+        config_name: str,
     ):
         self.default = default
         self.related_config = related_config
@@ -163,9 +166,8 @@ class MultipleUIDValidator(ValidatorBase):
             uid = uuid.UUID(value)
         except (TypeError, ValueError):
             return False
-        if uid in self.related_config.get(self.config_name, {}):
-            return True
-        return False
+        config = self.related_config.get(self.config_name, {})
+        return uid in config
 
     def correct(self, value):
         if self.validate(value):

@@ -613,6 +613,10 @@ export function useScriptApi() {
                           maaEndUserData.Info?.Mode !== undefined
                             ? maaEndUserData.Info.Mode
                             : '简洁',
+                        SanityMode:
+                          maaEndUserData.Info?.SanityMode !== undefined
+                            ? maaEndUserData.Info.SanityMode
+                            : 'Fixed',
                         Resource:
                           maaEndUserData.Info?.Resource !== undefined
                             ? maaEndUserData.Info.Resource
@@ -639,9 +643,9 @@ export function useScriptApi() {
                           maaEndUserData.Info?.Tag !== undefined ? maaEndUserData.Info.Tag : null,
                       },
                       Task: {
-                        IfProtocolSpace:
-                          maaEndUserData.Task?.IfProtocolSpace !== undefined
-                            ? maaEndUserData.Task.IfProtocolSpace
+                        IfSanity:
+                          maaEndUserData.Task?.IfSanity !== undefined
+                            ? maaEndUserData.Task.IfSanity
                             : true,
                         IfVisitFriends:
                           maaEndUserData.Task?.IfVisitFriends !== undefined
@@ -703,13 +707,9 @@ export function useScriptApi() {
                           maaEndUserData.Task?.IfAutoEcoFarm !== undefined
                             ? maaEndUserData.Task.IfAutoEcoFarm
                             : true,
-                        IfAutoEssence:
-                          maaEndUserData.Task?.IfAutoEssence !== undefined
-                            ? maaEndUserData.Task.IfAutoEssence
-                            : true,
-                        ProtocolSpaceTab:
-                          maaEndUserData.Task?.ProtocolSpaceTab !== undefined
-                            ? maaEndUserData.Task.ProtocolSpaceTab
+                        SanityTaskType:
+                          maaEndUserData.Task?.SanityTaskType !== undefined
+                            ? maaEndUserData.Task.SanityTaskType
                             : 'OperatorProgression',
                         OperatorProgression:
                           maaEndUserData.Task?.OperatorProgression !== undefined
@@ -727,6 +727,10 @@ export function useScriptApi() {
                           maaEndUserData.Task?.RewardsSetOption !== undefined
                             ? maaEndUserData.Task.RewardsSetOption
                             : 'RewardsSetA',
+                        AutoEssenceSpecifiedLocation:
+                          maaEndUserData.Task?.AutoEssenceSpecifiedLocation !== undefined
+                            ? maaEndUserData.Task.AutoEssenceSpecifiedLocation
+                            : 'VFTheHub',
                         Options:
                           maaEndUserData.Task?.Options !== undefined ? maaEndUserData.Task.Options : '{}',
                       },

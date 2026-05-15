@@ -2,7 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type MaaEndUserConfig_Task = {
+export type MaaEndPlanConfig_Item = {
     /**
      * 理智任务类型
      */
@@ -20,7 +20,7 @@ export type MaaEndUserConfig_Task = {
      */
     CrisisDrills?: ('AdvancedProgression1' | 'AdvancedProgression2' | 'AdvancedProgression3' | 'AdvancedProgression4' | 'AdvancedProgression5' | null);
     /**
-     * 奖励组选项
+     * 奖励套组选项
      */
     RewardsSetOption?: ('RewardsSetA' | 'RewardsSetB' | null);
     /**

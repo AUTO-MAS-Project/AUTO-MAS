@@ -1,7 +1,11 @@
 // 脚本类型定义
 import type { MaaConfig, GeneralConfig, SrcConfig, MaaEndConfig } from '@/api'
-
-export type ScriptType = 'MAA' | 'General' | 'SRC' | 'MaaEnd'
+import type {
+  AutoEssenceLocation,
+  ProtocolSpaceTaskValue,
+  RewardSetOption,
+  SanityTaskType,
+} from '@/utils/maaEndProtocolSpace'
 
 // MAA脚本配置
 export interface MAAScriptConfig {
@@ -96,7 +100,7 @@ export interface SRCScriptConfig {
 }
 
 export interface MaaEndTaskConfig {
-  IfProtocolSpace: boolean
+  IfSanity: boolean
   IfVisitFriends: boolean
   IfDijiangRewards: boolean
   IfCreditShoppingN2: boolean
@@ -112,17 +116,12 @@ export interface MaaEndTaskConfig {
   IfAutoUseSpMedication: boolean
   IfResourceRecycleStation: boolean
   IfAutoEcoFarm: boolean
-  IfAutoEssence: boolean
-  ProtocolSpaceTab: 'OperatorProgression' | 'WeaponProgression' | 'CrisisDrills'
-  OperatorProgression: 'OperatorEXP' | 'Promotions' | 'T-Creds' | 'SkillUp'
-  WeaponProgression: 'WeaponEXP' | 'WeaponTune'
-  CrisisDrills:
-    | 'AdvancedProgression1'
-    | 'AdvancedProgression2'
-    | 'AdvancedProgression3'
-    | 'AdvancedProgression4'
-    | 'AdvancedProgression5'
-  RewardsSetOption: 'RewardsSetA' | 'RewardsSetB'
+  SanityTaskType: SanityTaskType
+  OperatorProgression: ProtocolSpaceTaskValue
+  WeaponProgression: ProtocolSpaceTaskValue
+  CrisisDrills: ProtocolSpaceTaskValue
+  RewardsSetOption: RewardSetOption
+  AutoEssenceSpecifiedLocation: AutoEssenceLocation
   Options: string
 }
 
@@ -181,6 +180,7 @@ export interface User {
     Name: string
     Notes: string
     Password: string
+    SanityMode?: string
     RemainedDay: number
     SeriesNumb: string
     Server: string
@@ -223,7 +223,7 @@ export interface User {
     IfReclamation: boolean
     IfRecruit: boolean
     IfStartUp: boolean
-    IfProtocolSpace?: boolean
+    IfSanity?: boolean
     IfVisitFriends?: boolean
     IfDijiangRewards?: boolean
     IfCreditShoppingN2?: boolean
@@ -239,12 +239,12 @@ export interface User {
     IfAutoUseSpMedication?: boolean
     IfResourceRecycleStation?: boolean
     IfAutoEcoFarm?: boolean
-    IfAutoEssence?: boolean
-    ProtocolSpaceTab?: MaaEndTaskConfig['ProtocolSpaceTab']
+    SanityTaskType?: MaaEndTaskConfig['SanityTaskType']
     OperatorProgression?: MaaEndTaskConfig['OperatorProgression']
     WeaponProgression?: MaaEndTaskConfig['WeaponProgression']
     CrisisDrills?: MaaEndTaskConfig['CrisisDrills']
     RewardsSetOption?: MaaEndTaskConfig['RewardsSetOption']
+    AutoEssenceSpecifiedLocation?: MaaEndTaskConfig['AutoEssenceSpecifiedLocation']
     Options?: string
   }
   QFluentWidgets: {

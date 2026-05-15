@@ -12,6 +12,7 @@ import { ref, computed } from 'vue'
 import type { MaaPlanConfig, MaaPlanConfig_Item, ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import { GetStageIn } from '@/api'
+import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
 const logger = window.electronAPI.getLogger('计划数据协调器')
 
 // 时间维度常量
@@ -74,6 +75,7 @@ export interface StageAvailability {
 
 // 标准关卡选项缓存（按时间维度）
 const stageOptionsCache = ref<Record<string, ComboBoxItem[]>>({})
+let stageOptionsPreloadPromise: Promise<void> | null = null
 
 // 加载标准关卡选项
 export async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]> {
@@ -116,14 +118,28 @@ export async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]
 
 // 预加载所有时间维度的关卡选项
 export async function preloadAllStageOptions(): Promise<void> {
-  const loadPromises = TIME_KEYS.map(timeKey => loadStageOptions(timeKey))
-  await Promise.all(loadPromises)
-  logger.info('关卡选项预加载完成')
+  const hasCompleteCache = TIME_KEYS.every(timeKey => Array.isArray(stageOptionsCache.value[timeKey]))
+  if (hasCompleteCache) {
+    return
+  }
+
+  if (!stageOptionsPreloadPromise) {
+    stageOptionsPreloadPromise = Promise.all(TIME_KEYS.map(timeKey => loadStageOptions(timeKey)))
+      .then(() => {
+        logger.info('关卡选项预加载完成')
+      })
+      .finally(() => {
+        stageOptionsPreloadPromise = null
+      })
+  }
+
+  await stageOptionsPreloadPromise
 }
 
 // 清除缓存（用于刷新数据）
 export function clearStageOptionsCache(): void {
   stageOptionsCache.value = {}
+  stageOptionsPreloadPromise = null
   logger.info('关卡选项缓存已清除')
 }
 
@@ -151,7 +167,7 @@ export function usePlanDataCoordinator() {
     info: {
       name: '',
       mode: 'ALL',
-      type: 'MaaPlanConfig',
+      type: PLAN_CONFIG_TYPES.MAA,
     },
     timeConfigs: {} as Record<TimeKey, any>,
     customStageDefinitions: getDefaultCustomStageDefinitions(),

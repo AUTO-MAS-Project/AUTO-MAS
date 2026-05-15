@@ -24,6 +24,10 @@ export type MaaEndUserConfig_Info = {
      */
     Mode?: ('简洁' | '详细' | null);
     /**
+     * 理智任务配置模式
+     */
+    SanityMode?: (string | null);
+    /**
      * 资源名称
      */
     Resource?: (string | null);
@@ -35,6 +39,14 @@ export type MaaEndUserConfig_Info = {
      * 备注
      */
     Notes?: (string | null);
+    /**
+     * 是否启用森空岛签到
+     */
+    IfSkland?: (boolean | null);
+    /**
+     * SklandToken
+     */
+    SklandToken?: (string | null);
     /**
      * 用户标签信息
      */

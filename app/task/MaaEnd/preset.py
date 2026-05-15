@@ -31,7 +31,6 @@ from app.models.ConfigBase import ConfigBase
 MAAEND_PRESET_TEMPLATE_DIR = Path.cwd() / "res/templates/MaaEnd/config"
 MAAEND_PRESET_TEMPLATE = MAAEND_PRESET_TEMPLATE_DIR / "mxu-MaaEnd.json"
 MAAEND_PRESET_TASK_SWITCHES = [
-    "ProtocolSpace",
     "VisitFriends",
     "DijiangRewards",
     "CreditShoppingN2",
@@ -47,19 +46,31 @@ MAAEND_PRESET_TASK_SWITCHES = [
     "AutoUseSpMedication",
     "ResourceRecycleStation",
     "AutoEcoFarm",
-    "AutoEssence",
 ]
 MAAEND_PRESET_TASK_CONFIG = {
     task_name: {"enabled": f"If{task_name}"}
     for task_name in MAAEND_PRESET_TASK_SWITCHES
 }
-MAAEND_PRESET_TASK_CONFIG["ProtocolSpace"]["core_options"] = [
-    "ProtocolSpaceTab",
-    "OperatorProgression",
-    "WeaponProgression",
-    "CrisisDrills",
-    "RewardsSetOption",
-]
+MAAEND_PRESET_TASK_CONFIG["ProtocolSpace"] = {
+    "enabled": "IfSanity",
+    "core_options": [
+        "SanityTaskType",
+        "OperatorProgression",
+        "WeaponProgression",
+        "CrisisDrills",
+        "RewardsSetOption",
+    ],
+}
+MAAEND_PRESET_TASK_CONFIG["AutoEssence"] = {
+    "enabled": "IfSanity",
+    "core_options": ["AutoEssenceSpecifiedLocation"],
+}
+MAAEND_CORE_OPTION_FIELD_BOOK = {
+    "SanityTaskType": "ProtocolSpaceTab",
+}
+MAAEND_CORE_OPTION_FIELD_REVERSE_BOOK = {
+    value: key for key, value in MAAEND_CORE_OPTION_FIELD_BOOK.items()
+}
 
 
 def load_maaend_preset_template() -> dict[str, Any]:
@@ -127,12 +138,25 @@ def build_maaend_preset_config(
         task = deepcopy(template_tasks[task_name])
         if "enabled" in task_config:
             task["enabled"] = bool(config.get("Task", task_config["enabled"]))
+            if task_name == "ProtocolSpace":
+                task["enabled"] = (
+                    task["enabled"]
+                    and config.get("Task", "SanityTaskType") != "Essence"
+                )
+            elif task_name == "AutoEssence":
+                task["enabled"] = (
+                    task["enabled"]
+                    and config.get("Task", "SanityTaskType") == "Essence"
+                )
         if task_name in stored_options:
             for field, option in stored_options[task_name].items():
                 if field in task.get("optionValues", {}):
                     task["optionValues"][field] = deepcopy(option)
         for field in task_config.get("core_options", []):
-            task["optionValues"].setdefault(field, {"type": "select"})["caseName"] = (
+            option_field = MAAEND_CORE_OPTION_FIELD_BOOK.get(field, field)
+            task["optionValues"].setdefault(option_field, {"type": "select"})[
+                "caseName"
+            ] = (
                 config.get("Task", field)
             )
         tasks.append(task)
@@ -171,10 +195,13 @@ async def save_maaend_preset_options(
         options[task_name] = deepcopy(option_values)
         default_options = default_options_map.get(task_name, {})
         for field in task_config.get("core_options", []):
+            option_field = MAAEND_CORE_OPTION_FIELD_BOOK.get(field, field)
             await config.set(
                 "Task",
                 field,
-                option_values.get(field, default_options[field])["caseName"],
+                option_values.get(option_field, default_options[option_field])[
+                    "caseName"
+                ],
             )
 
     await config.set("Task", "Options", json.dumps(options, ensure_ascii=False))
