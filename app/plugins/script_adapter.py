@@ -7,9 +7,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from types import NoneType, UnionType
-from typing import Any, Callable, Literal, Sequence, get_args, get_origin
+from typing import TYPE_CHECKING, Any, Callable, Literal, Sequence, get_args, get_origin
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from .schema_utils import SchemaDecorationContext
 
 from app.models.ConfigBase import (
     BoolValidator,
@@ -358,6 +361,24 @@ class ScriptAdapterHooks:
         _ = runtime, user_index
         raise RuntimeError("当前适配未实现 ManualReview 模式")
 
+    async def decorate_script_schema(
+        self,
+        schema: dict[str, Any],
+        config_data: dict[str, Any],
+        ctx: "SchemaDecorationContext",
+    ) -> dict[str, Any]:
+        _ = config_data, ctx
+        return schema
+
+    async def decorate_user_schema(
+        self,
+        schema: dict[str, Any],
+        config_data: dict[str, Any],
+        ctx: "SchemaDecorationContext",
+    ) -> dict[str, Any]:
+        _ = config_data, ctx
+        return schema
+
 
 class BaseAdapterManager(TaskExecuteBase):
     """统一的专项脚本外层调度器。"""
@@ -490,6 +511,7 @@ class ScriptAdapterDefinition:
         if owner is not None:
             provider.metadata.setdefault("adapter_owner", owner)
         provider.metadata.setdefault("adapter_kind", "script_adapter")
+        provider.metadata["hooks_factory"] = self.hooks_factory
         return provider
 
 

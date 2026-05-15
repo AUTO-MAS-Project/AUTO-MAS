@@ -42,6 +42,16 @@ from .script_adapter_schema import (
     build_schema,
     build_script_adapter_schema,
 )
+from .schema_utils import (
+    SchemaDecorationContext,
+    append_schema_field,
+    find_schema_field,
+    find_schema_group,
+    set_schema_field_label,
+    set_schema_field_options,
+    set_schema_field_state,
+    set_schema_group_label,
+)
 
 # ── 分组 API ──
 from .event import *  # noqa: F401,F403
@@ -143,6 +153,15 @@ __all__ = [
     "build_configbase_class",
     "build_schema",
     "build_script_adapter_schema",
+    # Schema 工具
+    "SchemaDecorationContext",
+    "find_schema_group",
+    "find_schema_field",
+    "set_schema_group_label",
+    "set_schema_field_label",
+    "set_schema_field_options",
+    "set_schema_field_state",
+    "append_schema_field",
     # 加载 / 管理
     "PluginLoader",
     "PluginRecord",
