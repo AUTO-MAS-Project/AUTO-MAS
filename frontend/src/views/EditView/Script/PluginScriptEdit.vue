@@ -109,6 +109,9 @@ const loadScript = async () => {
 
     const descriptorMap = descriptorMapFromList(descriptors)
     script.value = normalizeScriptRecord(record, descriptorMap, [])
+    if (script.value.available === false) {
+      throw new Error(script.value.unavailableReason || `脚本类型 ${script.value.type} 当前未启用`)
+    }
     formModel.value = JSON.parse(JSON.stringify(record.config || {}))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)

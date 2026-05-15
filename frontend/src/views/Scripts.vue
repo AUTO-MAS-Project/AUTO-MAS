@@ -162,8 +162,8 @@
         <div
           v-for="script in scripts"
           :key="script.id"
-          :class="['script-item', { selected: selectedScriptId === script.id }]"
-          @click="selectedScriptId = script.id"
+          :class="['script-item', { selected: selectedScriptId === script.id, unavailable: script.available === false }]"
+          @click="script.available === false ? undefined : (selectedScriptId = script.id)"
         >
             <div class="script-item-content">
               <div class="script-icon">
@@ -173,6 +173,7 @@
                 <div class="script-name">{{ script.name }}</div>
                 <div class="script-meta">
                   <span class="script-type">{{ script.displayName || script.type }}</span>
+                  <span v-if="script.available === false" class="script-type script-unavailable">未启用</span>
                 <span class="script-users">
                   <UserOutlined />
                   {{ script.users?.length || 0 }} 个用户
@@ -447,6 +448,16 @@ const filteredTemplates = computed(() => {
 
 const availableScriptTypes = computed(() => scriptTypeDescriptors.value)
 
+const isScriptAvailable = (script: Script) => script.available !== false
+
+const ensureScriptAvailable = (script: Script) => {
+  if (isScriptAvailable(script)) {
+    return true
+  }
+  message.warning(script.unavailableReason || `脚本类型 ${script.type} 当前未启用，暂时不能操作`)
+  return false
+}
+
 onMounted(() => {
   loadScripts()
   loadCurrentPlan()
@@ -532,6 +543,10 @@ const handleConfirmScriptSelect = async () => {
   const selectedScript = scripts.value.find(s => s.id === selectedScriptId.value)
   if (!selectedScript) {
     message.error('所选脚本不存在')
+    return
+  }
+
+  if (!ensureScriptAvailable(selectedScript)) {
     return
   }
 
@@ -656,6 +671,9 @@ const handleCancelTemplate = () => {
 }
 
 const handleEditScript = (script: Script) => {
+  if (!ensureScriptAvailable(script)) {
+    return
+  }
   router.push(getScriptEditPath(script))
 }
 
@@ -670,6 +688,9 @@ const handleDeleteScript = async (script: Script) => {
 }
 
 const handleAddUser = (script: Script) => {
+  if (!ensureScriptAvailable(script)) {
+    return
+  }
   router.push(getUserCreatePath(script))
 }
 
@@ -677,6 +698,9 @@ const handleEditUser = (user: User) => {
   // 从用户数据中找到对应的脚本
   const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
   if (script) {
+    if (!ensureScriptAvailable(script)) {
+      return
+    }
     router.push(getUserEditPath(script, user))
   } else {
     message.error('找不到对应的脚本')
@@ -688,6 +712,9 @@ const handleDeleteUser = async (user: User) => {
   const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
   if (!script) {
     message.error('找不到对应的脚本')
+    return
+  }
+  if (!ensureScriptAvailable(script)) {
     return
   }
 
@@ -704,6 +731,9 @@ const handleDeleteUser = async (user: User) => {
 }
 
 const handleStartSRCConfig = async (script: Script) => {
+  if (!ensureScriptAvailable(script)) {
+    return
+  }
   try {
     // 检查是否已有连接
     const existingConnection = activeConnections.value.get(script.id)
@@ -838,6 +868,9 @@ const handleSaveSRCConfig = async (script: Script) => {
 }
 
 const handleStartMaaEndConfig = async (script: Script) => {
+  if (!ensureScriptAvailable(script)) {
+    return
+  }
   try {
     const existingConnection = activeConnections.value.get(script.id)
     if (existingConnection) {
@@ -955,6 +988,9 @@ const handleToggleUserStatus = async (user: User) => {
       message.error('找不到对应的脚本')
       return
     }
+    if (!ensureScriptAvailable(script)) {
+      return
+    }
     const newStatus = !user.Info.Status
 
     // 调用 updateUser API
@@ -979,6 +1015,9 @@ const handlePassCheckUser = async (user: User) => {
     const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
     if (!script) {
       message.error('找不到对应的脚本')
+      return
+    }
+    if (!ensureScriptAvailable(script)) {
       return
     }
 

@@ -21,11 +21,14 @@
                   <a-tag :color="getScriptTypeTagColor(script.type)" class="script-type">
                     {{ script.displayName || script.type }}
                   </a-tag>
+                  <a-tag v-if="script.available === false" color="orange" class="script-type">
+                    未启用
+                  </a-tag>
                 </div>
               </div>
               <div class="header-actions">
                 <a-button v-if="script.type === 'SRC' && !props.activeConnections.has(script.id)" type="primary" ghost
-                  size="middle" @click="handleStartSRCConfig(script)">
+                  size="middle" :disabled="!isScriptOperable(script)" @click="handleStartSRCConfig(script)">
                   <template #icon>
                     <SettingOutlined />
                   </template>
@@ -39,7 +42,7 @@
                   正在配置
                 </a-button>
                 <a-button v-if="script.type === 'MaaEnd' && !props.activeConnections.has(script.id)" type="primary"
-                  ghost size="middle" @click="handleStartMaaEndConfig(script)">
+                  ghost size="middle" :disabled="!isScriptOperable(script)" @click="handleStartMaaEndConfig(script)">
                   <template #icon>
                     <SettingOutlined />
                   </template>
@@ -52,13 +55,14 @@
                   </template>
                   正在配置
                 </a-button>
-                <a-button type="default" size="middle" @click="handleEdit(script)">
+                <a-button type="default" size="middle" :disabled="!isScriptOperable(script)" @click="handleEdit(script)">
                   <template #icon>
                     <EditOutlined />
                   </template>
                   编辑脚本
                 </a-button>
-                <a-button type="default" size="middle" class="action-button add-button" @click="handleAddUser(script)">
+                <a-button type="default" size="middle" class="action-button add-button"
+                  :disabled="!isScriptOperable(script)" @click="handleAddUser(script)">
                   <template #icon>
                     <UserAddOutlined />
                   </template>
@@ -125,12 +129,13 @@
                     <div class="user-controls">
                       <div class="user-status">
                         <a-switch :checked="user.Info.Status" :checked-children="'启用'" :un-checked-children="'禁用'"
-                          class="status-switch" @click="handleToggleUserStatus(user)" />
+                          class="status-switch" :disabled="!isScriptOperable(script)" @click="handleToggleUserStatus(user)" />
                       </div>
 
                       <div class="user-actions">
                         <a-tooltip title="编辑用户配置">
-                          <a-button type="default" size="middle" class="user-action-btn" @click="handleEditUser(user)">
+                          <a-button type="default" size="middle" class="user-action-btn"
+                            :disabled="!isScriptOperable(script)" @click="handleEditUser(user)">
                             <template #icon>
                               <EditOutlined />
                             </template>
@@ -261,6 +266,8 @@ watch(
   },
   { immediate: true, deep: true }
 )
+
+const isScriptOperable = (script: Script) => script.available !== false
 
 const handleEdit = (script: Script) => {
   emit('edit', script)

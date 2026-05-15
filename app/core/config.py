@@ -63,11 +63,13 @@ from app.utils import get_logger
 from .script_types import (
     apply_script_type_registry_to_global_config,
     build_legacy_fallback_provider_by_script_config,
+    build_legacy_fallback_provider_by_type_key,
     build_descriptor,
     is_script_config_compatible_with_type_key,
     script_type_registry,
     strip_sub_configs,
 )
+from .script_config_codec import form_to_storage, storage_to_form
 
 logger = get_logger("配置管理")
 
@@ -540,6 +542,56 @@ class AppConfig(GlobalConfig):
             return await config_class().toDict()
         return config_class().model_dump(mode="json")
 
+    @staticmethod
+    def _read_plugin_payload(raw: Any) -> dict[str, Any]:
+        if raw is None:
+            return {}
+        if isinstance(raw, str):
+            text = raw.strip()
+            if not text or text == "{}":
+                return {}
+            parsed = json.loads(text)
+            if not isinstance(parsed, dict):
+                raise TypeError("PluginData.Config 必须是 JSON 对象")
+            return parsed
+        if isinstance(raw, dict):
+            return copy.deepcopy(raw)
+        raise TypeError(f"PluginData.Config 必须是 dict 或 JSON 字符串: {type(raw).__name__}")
+
+    @staticmethod
+    def _script_record_name(
+        provider: Any,
+        config_data: dict[str, Any],
+        fallback: str | None = None,
+    ) -> str:
+        script_name = config_data.get("script_name")
+        if isinstance(script_name, str) and script_name.strip():
+            return script_name.strip()
+
+        info = config_data.get("Info")
+        if isinstance(info, dict) and isinstance(info.get("Name"), str):
+            info_name = info["Name"].strip()
+            if info_name:
+                return info_name
+
+        if isinstance(fallback, str) and fallback.strip():
+            return fallback.strip()
+        return provider.display_name
+
+    @staticmethod
+    def _user_record_name(config_data: dict[str, Any], fallback: str) -> str:
+        user_name = config_data.get("user_name")
+        if isinstance(user_name, str) and user_name.strip():
+            return user_name.strip()
+
+        info = config_data.get("Info")
+        if isinstance(info, dict) and isinstance(info.get("Name"), str):
+            info_name = info["Name"].strip()
+            if info_name:
+                return info_name
+
+        return fallback
+
     def _normalize_configbase_payload_for_form(
         self,
         config_class: type[Any],
@@ -616,11 +668,7 @@ class AppConfig(GlobalConfig):
         if isinstance(script_config, PluginScriptConfig):
             provider = self._resolve_record_provider(script_config)
             raw = script_config.get("PluginData", "Config")
-            payload = json.loads(raw) if raw and raw != "{}" else {}
-            return self._normalize_configbase_payload_for_form(
-                provider.script_config_class,
-                payload,
-            )
+            return await storage_to_form(provider, raw, "script")
 
         return strip_sub_configs(await script_config.toDict(if_decrypt=if_decrypt))
 
@@ -639,18 +687,18 @@ class AppConfig(GlobalConfig):
 
         if isinstance(script_config, PluginScriptConfig):
             provider = self._resolve_record_provider(script_config)
-            payload = self._normalize_configbase_payload_for_storage(
-                provider.script_config_class,
-                data,
-            )
+            payload = await form_to_storage(provider, data, "script")
             await script_config.set(
                 "PluginData",
                 "Config",
                 json.dumps(payload, ensure_ascii=False),
             )
-            info_group = payload.get("Info")
-            if isinstance(info_group, dict) and isinstance(info_group.get("Name"), str):
-                await script_config.set("Info", "Name", info_group["Name"])
+            form_payload = await storage_to_form(provider, payload, "script")
+            await script_config.set(
+                "Info",
+                "Name",
+                self._script_record_name(provider, form_payload, script_config.get("Info", "Name")),
+            )
             return
 
         await script_config.load(data)
@@ -726,20 +774,9 @@ class AppConfig(GlobalConfig):
             new_uid, new_config = await self.ScriptConfig.add(PluginScriptConfig)
             await new_config.set("Meta", "PluginTypeKey", provider.type_key)
 
-            defaults = await self._build_provider_default_payload(provider.script_config_class)
-            defaults.pop("SubConfigsInfo", None)
-            info_defaults = defaults.get("Info")
-            script_name = ""
-            if isinstance(defaults.get("script_name"), str):
-                script_name = defaults["script_name"].strip()
-            if (
-                not script_name
-                and isinstance(info_defaults, dict)
-                and isinstance(info_defaults.get("Name"), str)
-            ):
-                script_name = info_defaults["Name"].strip()
-            if not script_name:
-                script_name = provider.display_name
+            defaults = await form_to_storage(provider, {}, "script")
+            default_form = await storage_to_form(provider, defaults, "script")
+            script_name = self._script_record_name(provider, default_form)
             await new_config.set("Info", "Name", script_name)
             await new_config.set(
                 "PluginData", "Config",
@@ -753,14 +790,18 @@ class AppConfig(GlobalConfig):
                 if source_provider.type_key != provider.type_key:
                     raise TypeError(f"脚本配置类型不匹配: {script_id} {script}")
                 if isinstance(source_config, PluginScriptConfig):
-                    raw_config = source_config.get("PluginData", "Config")
+                    source_payload = self._read_plugin_payload(
+                        source_config.get("PluginData", "Config")
+                    )
                 else:
-                    source_payload = await source_config.toDict(regenerate_uuids=True)
-                    source_payload.pop("SubConfigsInfo", None)
-                    raw_config = json.dumps(source_payload, ensure_ascii=False)
+                    source_payload = await source_config.toDict(
+                        if_decrypt=False,
+                        regenerate_uuids=True,
+                    )
+                storage_payload = await form_to_storage(provider, source_payload, "script")
                 await new_config.set(
                     "PluginData", "Config",
-                    raw_config,
+                    json.dumps(storage_payload, ensure_ascii=False),
                 )
                 await new_config.set("Info", "Name", source_config.get("Info", "Name"))
 
@@ -828,48 +869,30 @@ class AppConfig(GlobalConfig):
 
         if isinstance(config, PluginScriptConfig):
             provider = self._resolve_record_provider(config)
-            info = data.pop("Info", None)
-            if isinstance(info, dict) and "Name" in info:
-                await config.set("Info", "Name", info["Name"])
-
-            plugin_data = data.pop("PluginData", None)
+            self._require_provider_available(provider, "更新脚本配置")
+            update_data = copy.deepcopy(data or {})
+            plugin_data = update_data.pop("PluginData", None)
             payload_data: dict[str, Any] | None = None
             if isinstance(plugin_data, dict) and "Config" in plugin_data:
                 raw = plugin_data["Config"]
-                if isinstance(raw, str):
-                    await config.set("PluginData", "Config", raw)
-                else:
-                    payload_data = raw
-            elif data:
-                payload_data = data
+                payload_data = self._read_plugin_payload(raw)
+            elif update_data:
+                payload_data = update_data
 
             if payload_data is not None:
-                if self._is_configbase_class(provider.script_config_class):
-                    payload_data = self._normalize_configbase_payload_for_storage(
-                        provider.script_config_class,
-                        payload_data,
-                    )
+                payload_data = await form_to_storage(provider, payload_data, "script")
                 await config.set(
                     "PluginData", "Config",
                     json.dumps(payload_data, ensure_ascii=False),
                 )
 
             raw_config = config.get("PluginData", "Config")
-            parsed = json.loads(raw_config) if raw_config else {}
-            parsed_for_form = self._normalize_configbase_payload_for_form(
-                provider.script_config_class,
-                parsed,
+            form_payload = await storage_to_form(provider, raw_config, "script")
+            await config.set(
+                "Info",
+                "Name",
+                self._script_record_name(provider, form_payload, config.get("Info", "Name")),
             )
-            info_payload = parsed_for_form.get("Info")
-            script_name = parsed.get("script_name")
-            if (
-                (not isinstance(script_name, str) or not script_name.strip())
-                and isinstance(info_payload, dict)
-                and isinstance(info_payload.get("Name"), str)
-            ):
-                script_name = info_payload["Name"]
-            if isinstance(script_name, str) and script_name.strip():
-                await config.set("Info", "Name", script_name.strip())
             return
 
         for group, items in data.items():
@@ -1094,19 +1117,16 @@ class AppConfig(GlobalConfig):
         from app.models.plugin_script_config import PluginScriptConfig, PluginUserConfig
 
         if isinstance(script_config, PluginScriptConfig):
+            self._require_provider_available(provider, "新增用户配置")
             new_uid, new_user = await script_config.UserData.add(PluginUserConfig)
             await new_user.set("Meta", "PluginTypeKey", provider.type_key)
-            defaults = await self._build_provider_default_payload(provider.user_config_class)
-            user_name = defaults.get("user_name")
-            if isinstance(user_name, str) and user_name.strip():
-                await new_user.set("Info", "Name", user_name.strip())
-            info_defaults = defaults.get("Info")
-            if (
-                not (isinstance(user_name, str) and user_name.strip())
-                and isinstance(info_defaults, dict)
-                and isinstance(info_defaults.get("Name"), str)
-            ):
-                await new_user.set("Info", "Name", info_defaults["Name"])
+            defaults = await form_to_storage(provider, {}, "user")
+            default_form = await storage_to_form(provider, defaults, "user")
+            await new_user.set(
+                "Info",
+                "Name",
+                self._user_record_name(default_form, "新用户"),
+            )
             await new_user.set(
                 "PluginData", "Config",
                 json.dumps(defaults, ensure_ascii=False),
@@ -1130,35 +1150,28 @@ class AppConfig(GlobalConfig):
         user_config = self.ScriptConfig[script_uid].UserData[user_uid]
         if isinstance(user_config, PluginUserConfig):
             provider = self._resolve_record_provider(self.ScriptConfig[script_uid])
-            info = data.pop("Info", None)
-            if isinstance(info, dict) and "Name" in info:
-                await user_config.set("Info", "Name", info["Name"])
-
-            plugin_data = data.pop("PluginData", None)
+            self._require_provider_available(provider, "更新用户配置")
+            update_data = copy.deepcopy(data or {})
+            plugin_data = update_data.pop("PluginData", None)
             payload_data: dict[str, Any] | None = None
             if isinstance(plugin_data, dict) and "Config" in plugin_data:
                 raw = plugin_data["Config"]
-                if isinstance(raw, str):
-                    await user_config.set("PluginData", "Config", raw)
-                else:
-                    payload_data = raw
-            elif data:
-                payload_data = data
+                payload_data = self._read_plugin_payload(raw)
+            elif update_data:
+                payload_data = update_data
             if payload_data is not None:
-                if self._is_configbase_class(provider.user_config_class):
-                    payload_data = self._normalize_configbase_payload_for_storage(
-                        provider.user_config_class,
-                        payload_data,
-                    )
+                payload_data = await form_to_storage(provider, payload_data, "user")
                 await user_config.set(
                     "PluginData", "Config",
                     json.dumps(payload_data, ensure_ascii=False),
                 )
             raw_config = user_config.get("PluginData", "Config")
-            parsed = json.loads(raw_config) if raw_config else {}
-            user_name = parsed.get("user_name")
-            if isinstance(user_name, str) and user_name.strip():
-                await user_config.set("Info", "Name", user_name.strip())
+            form_payload = await storage_to_form(provider, raw_config, "user")
+            await user_config.set(
+                "Info",
+                "Name",
+                self._user_record_name(form_payload, user_config.get("Info", "Name")),
+            )
             return
 
         for group, items in data.items():
@@ -1200,18 +1213,47 @@ class AppConfig(GlobalConfig):
             for provider in script_type_registry.list()
         ]
 
+    @staticmethod
+    def _provider_is_available(provider: Any) -> bool:
+        """判断脚本类型 provider 当前是否可操作。"""
+
+        return provider.metadata.get("available", True) is not False
+
+    @classmethod
+    def _require_provider_available(cls, provider: Any, action: str) -> None:
+        """阻止对未启用脚本类型执行写操作。"""
+
+        if cls._provider_is_available(provider):
+            return
+        raise RuntimeError(f"脚本类型 {provider.type_key} 当前未启用，无法{action}")
+
+    def _resolve_plugin_record_provider(self, script_config: Any):
+        """解析插件脚本容器对应的 provider，缺失时回退到离线描述。"""
+
+        type_key = str(script_config.get("Meta", "PluginTypeKey") or "").strip()
+        if not type_key:
+            raise KeyError("插件脚本记录缺少 Meta.PluginTypeKey")
+        try:
+            return script_type_registry.get(type_key)
+        except KeyError as exc:
+            provider = build_legacy_fallback_provider_by_type_key(type_key)
+            if provider is None:
+                raise exc
+            script_name = str(script_config.get("Info", "Name") or "").strip()
+            label = script_name or type_key
+            logger.warning(
+                "插件脚本类型 provider 未启用，使用离线回退描述: "
+                f"script_name={label}, type_key={type_key}"
+            )
+            return provider
+
     def _resolve_record_provider(self, script_config: ConfigBase):
         """解析脚本记录展示所需的 provider，缺失时回退到离线描述。"""
 
         from app.models.plugin_script_config import PluginScriptConfig
 
         if isinstance(script_config, PluginScriptConfig):
-            type_key = str(script_config.get("Meta", "PluginTypeKey") or "").strip()
-            if type_key:
-                try:
-                    return script_type_registry.get(type_key)
-                except KeyError:
-                    pass
+            return self._resolve_plugin_record_provider(script_config)
 
         try:
             return script_type_registry.get_by_script_config(script_config)
@@ -1346,37 +1388,22 @@ class AppConfig(GlobalConfig):
 
             if isinstance(config, PluginScriptConfig):
                 raw = config.get("PluginData", "Config")
-                raw_config_data = json.loads(raw) if raw and raw != "{}" else {}
-                config_data = self._normalize_configbase_payload_for_form(
-                    provider.script_config_class,
-                    raw_config_data,
+                config_data = await storage_to_form(provider, raw, "script")
+                name = self._script_record_name(
+                    provider,
+                    config_data,
+                    config.get("Info", "Name") or provider.display_name,
                 )
-                if self._is_configbase_class(provider.script_config_class):
-                    config_data = strip_sub_configs(config_data)
-                script_name = (
-                    raw_config_data.get("script_name", "")
-                    if isinstance(raw_config_data.get("script_name"), str)
-                    else ""
-                )
-                info_name = config.get("Info", "Name") or provider.display_name
-                info_group = config_data.get("Info")
-                if (
-                    not script_name
-                    and isinstance(info_group, dict)
-                    and isinstance(info_group.get("Name"), str)
-                    and info_group.get("Name", "").strip()
-                ):
-                    info_name = info_group["Name"].strip()
-                name = script_name or info_name
                 if not isinstance(config_data.get("script_name"), str) or not str(
                     config_data.get("script_name") or ""
                 ).strip():
                     config_data["script_name"] = name
                 config_data.setdefault("Info", {})["Name"] = name
             else:
-                config_data = self._normalize_configbase_payload_for_form(
-                    provider.script_config_class,
-                    strip_sub_configs(await config.toDict()),
+                config_data = await storage_to_form(
+                    provider,
+                    await config.toDict(),
+                    "script",
                 )
                 name = provider.display_name
                 if (
@@ -1428,25 +1455,19 @@ class AppConfig(GlobalConfig):
         for uid, config in user_pairs:
             if isinstance(config, PluginUserConfig):
                 raw = config.get("PluginData", "Config")
-                config_data = self._normalize_configbase_payload_for_form(
-                    provider.user_config_class,
-                    json.loads(raw) if raw and raw != "{}" else {},
-                )
-                if self._is_configbase_class(provider.user_config_class):
-                    config_data = strip_sub_configs(config_data)
+                config_data = await storage_to_form(provider, raw, "user")
                 name = config.get("Info", "Name") or str(uid)
-                user_name = config_data.get("user_name")
-                if isinstance(user_name, str) and user_name.strip():
-                    name = user_name.strip()
+                name = self._user_record_name(config_data, name)
                 if not isinstance(config_data.get("user_name"), str) or not str(
                     config_data.get("user_name") or ""
                 ).strip():
                     config_data["user_name"] = name
                 config_data.setdefault("Info", {})["Name"] = name
             else:
-                config_data = self._normalize_configbase_payload_for_form(
-                    provider.user_config_class,
-                    strip_sub_configs(await config.toDict()),
+                config_data = await storage_to_form(
+                    provider,
+                    await config.toDict(),
+                    "user",
                 )
                 name = str(uid)
                 if (
