@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import json
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -17,7 +18,6 @@ from app.plugins.schema_utils import (
 )
 from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
-from .schema import GeneralConfig, GeneralUserConfig
 
 logger = get_logger("通用脚本适配")
 
@@ -68,17 +68,12 @@ class GeneralAdapterHooks(ScriptAdapterHooks):
         script_config = await runtime.build_script_model()
         runtime.script_config = script_config
         runtime.storage_script_config = storage_script_config
-        runtime.user_config = MultipleConfig([GeneralUserConfig])
-
-        user_payload = {"instances": []}
-        for user_uid, user_data in await runtime.read_user_data_pairs():
-            runtime_user = GeneralUserConfig()
-            await runtime_user.load(user_data)
-            user_payload["instances"].append(
-                {"uid": user_uid, "type": GeneralUserConfig.__name__}
-            )
-            user_payload[user_uid] = await runtime_user.toDict()
-        await runtime.user_config.load(user_payload)
+        provider = runtime._resolve_provider()
+        runtime.user_config = MultipleConfig([provider.user_config_class])
+        for user_uid, user_model in await runtime.build_user_models():
+            uid = uuid.UUID(user_uid)
+            runtime.user_config.order.append(uid)
+            runtime.user_config.data[uid] = user_model
         logger.success(f"{runtime.script_info.script_id}已锁定, 通用脚本配置提取完成")
 
         script_config_path = Path(script_config.get("Script", "ConfigPath"))
@@ -159,7 +154,7 @@ class GeneralAdapterHooks(ScriptAdapterHooks):
             runtime.script_info.status = "异常"
             return
 
-        script_config: GeneralConfig | None = runtime.script_config
+        script_config = runtime.script_config
         storage_script_config = runtime.get_storage_script_config()
         if script_config is None:
             runtime.script_info.status = "异常"

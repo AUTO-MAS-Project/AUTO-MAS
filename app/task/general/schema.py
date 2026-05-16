@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 from app.plugins.fields import PluginField
-from app.plugins.script_adapter_schema import build_script_adapter_schema
 from app.utils.constants import UTC4
 
 
@@ -348,39 +347,8 @@ USER_GROUPS = (
 )
 
 
-_ARTIFACTS = build_script_adapter_schema(
-    script_class_name="GeneralConfig",
-    user_class_name="GeneralUserConfig",
-    script_groups=SCRIPT_GROUPS,
-    user_groups=USER_GROUPS,
-    module=__name__,
-    related_bindings={"EmulatorConfig": "EmulatorConfig"},
-)
-
-GeneralConfig = _ARTIFACTS.script_config_class
-GeneralUserConfig = _ARTIFACTS.user_config_class
-bind_related_config = _ARTIFACTS.bind_related_config
-
-
-def build_general_script_schema() -> dict[str, Any]:
-    """返回由字段声明生成的通用脚本配置 schema。"""
-
-    return json.loads(json.dumps(_ARTIFACTS.script_schema, ensure_ascii=False))
-
-
-def build_general_user_schema() -> dict[str, Any]:
-    """返回由字段声明生成的通用脚本用户配置 schema。"""
-
-    return json.loads(json.dumps(_ARTIFACTS.user_schema, ensure_ascii=False))
-
-
 __all__ = [
-    "GeneralConfig",
-    "GeneralUserConfig",
     "SCRIPT_GROUPS",
     "USER_GROUPS",
     "WEBHOOK_GROUPS",
-    "bind_related_config",
-    "build_general_script_schema",
-    "build_general_user_schema",
 ]

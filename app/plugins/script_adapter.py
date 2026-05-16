@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Callable, Literal, Sequence, get_args, ge
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
+    from .fields import PluginFieldGroup
     from .schema_utils import SchemaDecorationContext
 
 from app.models.ConfigBase import (
@@ -501,9 +502,15 @@ class ScriptAdapterDefinition:
 
     type_key: str
     display_name: str
-    script_config_class: type[Any]
-    user_config_class: type[Any]
     hooks_factory: Callable[[], ScriptAdapterHooks]
+    script_model: type[BaseModel] | None = None
+    user_model: type[BaseModel] | None = None
+    script_groups: Sequence["PluginFieldGroup"] | None = None
+    user_groups: Sequence["PluginFieldGroup"] | None = None
+    script_class_name: str | None = None
+    user_class_name: str | None = None
+    module: str | None = None
+    related_bindings: dict[str, str] | None = None
     supported_modes: tuple[str, ...] = ("AutoProxy", "ScriptConfig")
     icon: str | None = None
     docs_url: str | None = None
@@ -511,8 +518,61 @@ class ScriptAdapterDefinition:
     legacy_config_class_name: str | None = None
     legacy_user_config_class_name: str | None = None
     is_builtin: bool = False
-    bind_related_config: Callable[[Any], None] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    def _class_names(self) -> tuple[str, str]:
+        return (
+            self.script_class_name
+            or self.legacy_config_class_name
+            or f"{self.type_key}Config",
+            self.user_class_name
+            or self.legacy_user_config_class_name
+            or f"{self.type_key}UserConfig",
+        )
+
+    def _schema_module(self) -> str:
+        if self.module:
+            return self.module
+        if self.script_model is not None:
+            return self.script_model.__module__
+        if self.user_model is not None:
+            return self.user_model.__module__
+        return __name__
+
+    def _build_schema_artifacts(self):
+        from app.plugins.script_adapter_schema import (
+            build_script_adapter_schema,
+            build_script_adapter_schema_from_models,
+        )
+
+        script_class_name, user_class_name = self._class_names()
+        has_models = self.script_model is not None or self.user_model is not None
+        has_groups = self.script_groups is not None or self.user_groups is not None
+        if has_models and has_groups:
+            raise ValueError("ScriptAdapterDefinition 不能同时声明 model 和 groups")
+        if has_models:
+            if self.script_model is None or self.user_model is None:
+                raise ValueError("ScriptAdapterDefinition 必须同时声明 script_model 和 user_model")
+            return build_script_adapter_schema_from_models(
+                script_class_name=script_class_name,
+                user_class_name=user_class_name,
+                script_model=self.script_model,
+                user_model=self.user_model,
+                module=self._schema_module(),
+                related_bindings=self.related_bindings,
+            )
+        if has_groups:
+            if self.script_groups is None or self.user_groups is None:
+                raise ValueError("ScriptAdapterDefinition 必须同时声明 script_groups 和 user_groups")
+            return build_script_adapter_schema(
+                script_class_name=script_class_name,
+                user_class_name=user_class_name,
+                script_groups=tuple(self.script_groups),
+                user_groups=tuple(self.user_groups),
+                module=self._schema_module(),
+                related_bindings=self.related_bindings,
+            )
+        raise ValueError("ScriptAdapterDefinition 必须声明 script_model/user_model 或 script_groups/user_groups")
 
     def build_provider(
         self,
@@ -523,6 +583,8 @@ class ScriptAdapterDefinition:
         """构建脚本类型 provider。"""
 
         from app.core.script_types import ScriptTypeProvider
+
+        artifacts = self._build_schema_artifacts()
 
         def _factory(script_item: ScriptItem) -> TaskExecuteBase:
             return BaseAdapterManager(
@@ -535,17 +597,19 @@ class ScriptAdapterDefinition:
         provider = ScriptTypeProvider(
             type_key=self.type_key,
             display_name=self.display_name,
-            script_config_class=self.script_config_class,
-            user_config_class=self.user_config_class,
+            script_config_class=artifacts.script_config_class,
+            user_config_class=artifacts.user_config_class,
             supported_modes=self.supported_modes,
             manager_factory=_factory,
+            script_schema=artifacts.script_schema,
+            user_schema=artifacts.user_schema,
             icon=self.icon,
             docs_url=self.docs_url,
             editor_kind=self.editor_kind,
             legacy_config_class_name=self.legacy_config_class_name,
             legacy_user_config_class_name=self.legacy_user_config_class_name,
             is_builtin=self.is_builtin,
-            bind_related_config=self.bind_related_config,
+            bind_related_config=artifacts.bind_related_config,
             metadata=dict(self.metadata),
         )
         if owner is not None:
@@ -570,12 +634,12 @@ class ScriptAdapterPlugin:
 
         registered: list[str] = []
         for definition in self.build_script_adapters():
-            if definition.bind_related_config is not None:
-                definition.bind_related_config(RuntimeConfig)
             provider = definition.build_provider(
                 owner=self.ctx.instance_id,
                 plugin_context=self.ctx,
             )
+            if provider.bind_related_config is not None:
+                provider.bind_related_config(RuntimeConfig)
             script_type_registry.register(provider, owner=self.ctx.instance_id)
             registered.append(definition.type_key)
 

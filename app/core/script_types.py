@@ -262,11 +262,8 @@ class ScriptTypeRegistry:
         from app.plugins import ScriptAdapterDefinition
         from app.task.general.adapter import GeneralAdapterHooks
         from app.task.general.schema import (
-            GeneralConfig,
-            GeneralUserConfig,
-            bind_related_config as bind_general_related_config,
-            build_general_script_schema,
-            build_general_user_schema,
+            SCRIPT_GROUPS,
+            USER_GROUPS,
         )
 
         def _lazy_manager(module_path: str, class_name: str) -> Callable[[ScriptItem], Any]:
@@ -303,22 +300,22 @@ class ScriptTypeRegistry:
             ScriptAdapterDefinition(
                 type_key="General",
                 display_name="通用脚本",
-                script_config_class=GeneralConfig,
-                user_config_class=GeneralUserConfig,
                 hooks_factory=GeneralAdapterHooks,
+                script_groups=SCRIPT_GROUPS,
+                user_groups=USER_GROUPS,
+                script_class_name="GeneralConfig",
+                user_class_name="GeneralUserConfig",
+                module="app.task.general.schema",
+                related_bindings={"EmulatorConfig": "EmulatorConfig"},
                 supported_modes=("AutoProxy", "ScriptConfig"),
                 icon="General",
                 editor_kind="schema",
                 legacy_config_class_name="GeneralConfig",
                 legacy_user_config_class_name="GeneralUserConfig",
                 is_builtin=False,
-                bind_related_config=bind_general_related_config,
                 metadata={"framework": "script_adapter"},
             ).build_provider(),
         ]
-
-        providers[-1].script_schema = build_general_script_schema()
-        providers[-1].user_schema = build_general_user_schema()
 
         for provider in providers:
             self.register(provider)
