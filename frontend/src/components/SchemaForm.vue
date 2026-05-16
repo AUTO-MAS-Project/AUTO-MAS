@@ -54,6 +54,23 @@
             />
           </template>
 
+          <template v-else-if="isOrderedMultiSelectField(field)">
+            <div class="schema-ordered-multiselect">
+              <button
+                v-for="(option, index) in getFieldOptions(field)"
+                :key="`${getFieldPath(field)}-${String(option.value)}`"
+                type="button"
+                class="schema-ordered-option"
+                :class="{ 'schema-ordered-option-active': isOrderedOptionChecked(getFieldPath(field), field, index) }"
+                :disabled="readonly || field.readonly"
+                @click="toggleOrderedOption(getFieldPath(field), field, index)"
+              >
+                <span class="schema-ordered-option-index">{{ index + 1 }}</span>
+                <span class="schema-ordered-option-label">{{ option.label }}</span>
+              </button>
+            </div>
+          </template>
+
           <template v-else-if="isMultiSelectField(field)">
             <a-select
               mode="multiple"
@@ -504,6 +521,20 @@ const getFieldOptions = (field: SchemaFieldDefinition) => {
   }))
 }
 
+const normalizeOrderedMultiSelectValue = (
+  field: SchemaFieldDefinition,
+  value: unknown,
+) => {
+  const selected = new Set(Array.isArray(value) ? value : [])
+  const normalized: unknown[] = []
+  for (const option of getFieldOptions(field)) {
+    if (selected.has(option.value)) {
+      normalized.push(option.value)
+    }
+  }
+  return normalized
+}
+
 const hasSelectableOptions = (field: SchemaFieldDefinition) =>
   (Array.isArray(field.options) && field.options.length > 0) ||
   (Array.isArray(field.enum) && field.enum.length > 0)
@@ -610,11 +641,14 @@ const getSchemaConstraint = (field: SchemaFieldDefinition, key: string) => field
 const isButtonField = (field: SchemaFieldDefinition) => field.type === 'button' || field.type === 'action'
 const isAutocompleteField = (field: SchemaFieldDefinition) =>
   Boolean(field.allow_custom) && isStringField(field) && hasSelectableOptions(field)
+const isOrderedMultiSelectField = (field: SchemaFieldDefinition) =>
+  field.selection_mode === 'ordered' && field.type === 'multiselect'
 const isSelectField = (field: SchemaFieldDefinition) =>
   field.type === 'select' ||
   (!isAutocompleteField(field) && !isMultiSelectField(field) && hasSelectableOptions(field))
 const isMultiSelectField = (field: SchemaFieldDefinition) =>
-  field.type === 'multiselect' || (hasSelectableOptions(field) && isListField(field))
+  !isOrderedMultiSelectField(field)
+  && (field.type === 'multiselect' || (hasSelectableOptions(field) && isListField(field)))
 const isBooleanField = (field: SchemaFieldDefinition) => field.type === 'boolean' || field.type === 'bool'
 const isPathField = (field: SchemaFieldDefinition) =>
   ['folder', 'file', 'path'].includes(field.type)
@@ -664,6 +698,34 @@ const getSliderValue = (field: string, fieldSchema: SchemaFieldDefinition) => {
 const getEnumListValue = (field: string) => {
   const value = getFieldValue(field)
   return Array.isArray(value) ? value : []
+}
+
+const getOrderedMultiSelectValue = (field: string, fieldSchema: SchemaFieldDefinition) =>
+  normalizeOrderedMultiSelectValue(fieldSchema, getFieldValue(field))
+
+const isOrderedOptionChecked = (
+  field: string,
+  fieldSchema: SchemaFieldDefinition,
+  index: number,
+) => {
+  const options = getFieldOptions(fieldSchema)
+  const current = getOrderedMultiSelectValue(field, fieldSchema)
+  return current.includes(options[index]?.value)
+}
+
+const toggleOrderedOption = (
+  field: string,
+  fieldSchema: SchemaFieldDefinition,
+  index: number,
+) => {
+  const options = getFieldOptions(fieldSchema)
+  const current = getOrderedMultiSelectValue(field, fieldSchema)
+  const target = options[index]?.value
+  const exists = current.includes(target)
+  const next = exists
+    ? current.filter(item => item !== target)
+    : normalizeOrderedMultiSelectValue(fieldSchema, [...current, target])
+  updateFieldValue(field, next)
 }
 
 const getStringMaxLength = (field: SchemaFieldDefinition) =>
@@ -1024,7 +1086,7 @@ const validateFieldValue = (fieldPath: string, field: SchemaFieldDefinition, val
     return ''
   }
 
-  if (isMultiSelectField(field) || isListField(field)) {
+  if (isOrderedMultiSelectField(field) || isMultiSelectField(field) || isListField(field)) {
     if (!Array.isArray(value)) {
       return '该字段需要列表值'
     }
@@ -1107,7 +1169,7 @@ const getTypeLabel = (field: SchemaFieldDefinition) => {
   if (isSelectField(field)) {
     return '枚举'
   }
-  if (isMultiSelectField(field)) {
+  if (isOrderedMultiSelectField(field) || isMultiSelectField(field)) {
     return '多选'
   }
   if (isSliderField(field)) {
@@ -1255,6 +1317,70 @@ defineExpose({
 
 .schema-slider-number {
   width: 112px;
+}
+
+.schema-ordered-multiselect {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.schema-ordered-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 10px;
+  background: var(--ant-color-fill-quaternary);
+  color: var(--ant-color-text);
+  text-align: left;
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+}
+
+.schema-ordered-option:not(:disabled) {
+  cursor: pointer;
+}
+
+.schema-ordered-option:not(:disabled):hover {
+  border-color: var(--ant-color-primary-hover);
+  background: var(--ant-color-fill-secondary);
+  transform: translateY(-1px);
+}
+
+.schema-ordered-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.schema-ordered-option-active {
+  border-color: var(--ant-color-primary);
+  background: color-mix(in srgb, var(--ant-color-primary-bg) 72%, white);
+}
+
+.schema-ordered-option-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.schema-ordered-option-active .schema-ordered-option-index {
+  background: var(--ant-color-primary);
+  color: #fff;
+}
+
+.schema-ordered-option-label {
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 @media (max-width: 960px) {
