@@ -18,6 +18,7 @@ from app.models.ConfigBase import (
     FolderValidator,
     JSONValidator,
     MultipleConfig,
+    MultipleOptionsValidator,
     MultipleUIDValidator,
     OptionsValidator,
     RangeValidator,
@@ -410,6 +411,8 @@ def _build_validator(
         return URLValidator(default=str(_copy_default(field.default) or ""))
     if field.field_type == "select":
         return OptionsValidator(_option_values(field.options or []))
+    if field.field_type == "multiselect":
+        return MultipleOptionsValidator(_option_values(field.options or []))
     if field.field_type == "boolean":
         return BoolValidator()
     if field.field_type == "number":
@@ -421,7 +424,11 @@ def _build_validator(
     return StringValidator()
 
 
-def _build_schema_field(group: str, field: PluginFieldDeclaration) -> dict[str, Any]:
+def _build_schema_field(
+    group: str,
+    field: PluginFieldDeclaration,
+    field_order: int | None = None,
+) -> dict[str, Any]:
     schema: dict[str, Any] = {
         "key": f"{group}.{field.name}",
         "group": group,
@@ -430,6 +437,8 @@ def _build_schema_field(group: str, field: PluginFieldDeclaration) -> dict[str, 
         "type": field.field_type,
         "required": field.required,
     }
+    if field_order is not None:
+        schema["order"] = field_order
     if field.default is not PydanticUndefined:
         schema["default"] = _copy_default(field.default)
     if field.readonly:
