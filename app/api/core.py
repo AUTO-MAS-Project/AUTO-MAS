@@ -25,6 +25,7 @@ import os
 import time
 import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, Field
 
 from app.core import Config, Broadcast, TaskManager
 from app.services import System
@@ -37,11 +38,33 @@ router = APIRouter(prefix="/api/core", tags=["核心信息"])
 logger = get_logger("DEV")
 
 
+class WebSocketMetaOut(BaseModel):
+    """前端协商主 WebSocket 链接时使用的元信息。"""
+
+    devMode: bool = Field(description="后端当前是否处于开发模式")
+    wsPath: str = Field(default="/api/core/ws", description="主 WebSocket 路径")
+
+
 def is_backend_dev_mode() -> bool:
     """判断后端是否处于开发模式。"""
 
     raw = str(os.getenv("AUTO_MAS_DEV", "")).strip().lower()
     return raw in {"1", "true", "yes", "on"}
+
+
+@router.get(
+    "/ws_meta",
+    summary="获取主 WebSocket 元信息",
+    response_model=WebSocketMetaOut,
+    status_code=200,
+)
+async def get_ws_meta() -> WebSocketMetaOut:
+    """返回前端建立主 WebSocket 连接需要的元信息。"""
+
+    return WebSocketMetaOut(
+        devMode=is_backend_dev_mode(),
+        wsPath="/api/core/ws",
+    )
 
 
 @router.websocket("/ws")
