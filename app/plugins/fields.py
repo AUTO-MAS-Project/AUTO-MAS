@@ -88,13 +88,24 @@ class PluginFieldFactory:
         placeholder: str | None = None,
         help: str | None = None,
         ui_type: str | None = None,
+        json_type: Literal["object", "array"] | None = None,
         item_type: str | None = None,
         options: list[Any] | None = None,
         action: dict[str, Any] | None = None,
+        button: dict[str, Any] | None = None,
         configurable: bool | None = None,
+        readonly: bool | None = None,
+        sensitive: bool | None = None,
         size: PluginFieldSize | None = None,
         step: int | float | None = None,
         path_kind: PluginPathKind | None = None,
+        validator: str | None = None,
+        related_config: str | None = None,
+        related_default: Any = PydanticUndefined,
+        legacy_group: str | None = None,
+        legacy_name: str | None = None,
+        virtual_handler: Any | None = None,
+        include_in_schema: bool | None = None,
         filters: list[dict[str, Any]] | None = None,
         json_schema_extra: dict[str, Any] | None = None,
         **kwargs: Any,
@@ -112,20 +123,42 @@ class PluginFieldFactory:
             extra["help"] = help
         if ui_type is not None:
             extra["type"] = ui_type
+        if json_type is not None:
+            extra["json_type"] = json_type
         if item_type is not None:
             extra["item_type"] = item_type
         if options is not None:
             extra["options"] = options
         if action is not None:
             extra["action"] = action
+        if button is not None:
+            extra["button"] = button
         if configurable is not None:
             extra["configurable"] = configurable
+        if readonly is not None:
+            extra["readonly"] = readonly
+        if sensitive is not None:
+            extra["sensitive"] = sensitive
         if size is not None:
             extra["size"] = size
         if step is not None:
             extra["step"] = step
         if path_kind is not None:
             extra["path_kind"] = path_kind
+        if validator is not None:
+            extra["validator"] = validator
+        if related_config is not None:
+            extra["related_config"] = related_config
+        if related_default is not PydanticUndefined:
+            extra["related_default"] = related_default
+        if legacy_group is not None:
+            extra["legacy_group"] = legacy_group
+        if legacy_name is not None:
+            extra["legacy_name"] = legacy_name
+        if virtual_handler is not None:
+            extra["virtual_handler"] = virtual_handler
+        if include_in_schema is not None:
+            extra["include_in_schema"] = include_in_schema
         if filters is not None:
             extra["filters"] = filters
 

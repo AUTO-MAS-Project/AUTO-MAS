@@ -36,12 +36,6 @@ from .script_adapter import (
     ScriptAdapterPlugin,
     ScriptAdapterRuntime,
 )
-from .script_adapter_schema import (
-    ScriptAdapterSchemaArtifacts,
-    build_configbase_class,
-    build_schema,
-    build_script_adapter_schema,
-)
 from .schema_utils import (
     SchemaDecorationContext,
     append_schema_field,
@@ -149,10 +143,6 @@ __all__ = [
     "ScriptAdapterDefinition",
     "BaseAdapterManager",
     "ScriptAdapterPlugin",
-    "ScriptAdapterSchemaArtifacts",
-    "build_configbase_class",
-    "build_schema",
-    "build_script_adapter_schema",
     # Schema 工具
     "SchemaDecorationContext",
     "find_schema_group",
