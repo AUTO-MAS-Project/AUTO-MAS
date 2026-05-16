@@ -31,6 +31,14 @@
             <component :is="Component" :key="route.path" />
           </keep-alive>
         </router-view>
+        <transition name="hmr-fade">
+          <div v-if="hmrOverlayVisible" class="hmr-soft-overlay" aria-live="polite">
+            <div class="hmr-soft-panel">
+              <LoadingOutlined class="hmr-soft-spinner" />
+              <span>{{ hmrOverlayText }}</span>
+            </div>
+          </div>
+        </transition>
       </a-layout-content>
     </a-layout>
   </a-layout>
@@ -46,11 +54,12 @@ import {
   FileTextOutlined,
   HistoryOutlined,
   HomeOutlined,
+  LoadingOutlined,
   SettingOutlined,
   ToolOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
-import { computed, h, onMounted, onUnmounted } from 'vue'
+import { computed, h, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from '../composables/useTheme.ts'
 import { useRouteLock } from '../composables/useRouteLock.ts'
@@ -69,9 +78,17 @@ const { subscribe, unsubscribe } = useWebSocket()
 
 let backgroundSubscriptionId = ''
 let backgroundRefreshTimer: ReturnType<typeof window.setTimeout> | undefined
+let hmrOverlayTimer: ReturnType<typeof window.setTimeout> | undefined
+const HMR_SOFT_RELOAD_FLAG = 'auto-mas-hmr-soft-reload'
+const hmrOverlayVisible = ref(false)
+const hmrOverlayText = ref('正在重载插件界面')
 
 onMounted(() => {
   void loadBackground()
+  if (window.sessionStorage.getItem(HMR_SOFT_RELOAD_FLAG) === '1') {
+    window.sessionStorage.removeItem(HMR_SOFT_RELOAD_FLAG)
+    showHmrOverlay('插件界面已刷新', 800)
+  }
   backgroundSubscriptionId = subscribe({ id: 'PluginSystem' }, handlePluginSystemMessage)
   backgroundRefreshTimer = window.setTimeout(() => {
     void loadBackground()
@@ -86,6 +103,10 @@ onUnmounted(() => {
   if (backgroundRefreshTimer !== undefined) {
     window.clearTimeout(backgroundRefreshTimer)
     backgroundRefreshTimer = undefined
+  }
+  if (hmrOverlayTimer !== undefined) {
+    window.clearTimeout(hmrOverlayTimer)
+    hmrOverlayTimer = undefined
   }
 })
 
@@ -119,16 +140,39 @@ const isBackgroundHmr = (payload: PluginSystemHmrMessage) => {
   })
 }
 
+const showHmrOverlay = (text: string, autoHideMs?: number) => {
+  hmrOverlayText.value = text
+  hmrOverlayVisible.value = true
+  if (hmrOverlayTimer !== undefined) {
+    window.clearTimeout(hmrOverlayTimer)
+    hmrOverlayTimer = undefined
+  }
+  if (autoHideMs !== undefined) {
+    hmrOverlayTimer = window.setTimeout(() => {
+      hmrOverlayVisible.value = false
+      hmrOverlayTimer = undefined
+    }, autoHideMs)
+  }
+}
+
+const hideHmrOverlaySoon = () => {
+  showHmrOverlay('插件界面已更新', 650)
+}
+
 const refreshPluginFrontend = () => {
   if (!isDevelopment.value) {
     return
   }
   const hot = (import.meta as any).hot
-  if (hot?.invalidate) {
-    hot.invalidate()
-    return
-  }
-  window.location.reload()
+  showHmrOverlay('正在刷新插件前端')
+  window.sessionStorage.setItem(HMR_SOFT_RELOAD_FLAG, '1')
+  window.setTimeout(() => {
+    if (hot?.invalidate) {
+      hot.invalidate()
+      return
+    }
+    window.location.reload()
+  }, 80)
 }
 
 const handlePluginSystemMessage = (message: WebSocketBaseMessage) => {
@@ -145,6 +189,11 @@ const handlePluginSystemMessage = (message: WebSocketBaseMessage) => {
   const hmrPayload = payload as PluginSystemHmrMessage
   if (isBackgroundHmr(hmrPayload)) {
     void loadBackground()
+  }
+  if (hmrPayload.status === 'running') {
+    showHmrOverlay('正在重载插件界面')
+  } else if (hmrPayload.status === 'success' || hmrPayload.status === 'error') {
+    hideHmrOverlaySoon()
   }
   if (hmrPayload.status === 'success' && hmrPayload.action === 'frontend_refresh') {
     refreshPluginFrontend()
@@ -389,6 +438,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
 }
 
 .content-area {
+  position: relative;
   height: 100%;
   min-height: 0;
   box-sizing: border-box;
@@ -401,6 +451,52 @@ const onMenuClick: MenuProps['onClick'] = info => {
 
 .content-area::-webkit-scrollbar {
   display: none;
+}
+
+.hmr-soft-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--ant-color-bg-layout) 70%, transparent);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+
+.hmr-soft-panel {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  color: var(--ant-color-text);
+  background: var(--ant-color-bg-elevated);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.hmr-soft-spinner {
+  color: var(--ant-color-primary);
+  font-size: 18px;
+}
+
+.hmr-fade-enter-active,
+.hmr-fade-leave-active {
+  transition:
+    opacity 0.18s ease,
+    backdrop-filter 0.18s ease;
+}
+
+.hmr-fade-enter-from,
+.hmr-fade-leave-to {
+  opacity: 0;
+  backdrop-filter: blur(0);
 }
 
 </style>
