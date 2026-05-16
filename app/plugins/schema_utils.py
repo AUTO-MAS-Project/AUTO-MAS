@@ -64,6 +64,7 @@ def set_schema_field_state(
     schema: dict[str, Any],
     field_key: str,
     *,
+    hidden: bool | None = None,
     readonly: bool | None = None,
     help_text: str | None = None,
     placeholder: str | None = None,
@@ -73,6 +74,8 @@ def set_schema_field_state(
     field = find_schema_field(schema, field_key)
     if field is None:
         return
+    if hidden is not None:
+        field["hidden"] = hidden
     if readonly is not None:
         field["readonly"] = readonly
     if help_text is not None:
@@ -144,6 +147,7 @@ class SchemaDecorationContext:
         schema: dict[str, Any],
         field_key: str,
         *,
+        hidden: bool | None = None,
         readonly: bool | None = None,
         help_text: str | None = None,
         placeholder: str | None = None,
@@ -152,6 +156,7 @@ class SchemaDecorationContext:
     ) -> None:
         set_schema_field_state(
             schema, field_key,
+            hidden=hidden,
             readonly=readonly, help_text=help_text,
             placeholder=placeholder, rows=rows, size=size,
         )
