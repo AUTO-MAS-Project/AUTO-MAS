@@ -2,6 +2,7 @@
 #   Copyright © 2025-2026 AUTO-MAS Team
 
 import inspect
+import importlib
 import json
 import sys
 import asyncio
@@ -360,10 +361,14 @@ class PluginLoader:
         if not module_name:
             return
 
+        module_roots = {module_name}
+        if "." in module_name:
+            module_roots.add(module_name.split(".", 1)[0])
+        importlib.invalidate_caches()
         target_keys = [
             key
             for key in list(sys.modules.keys())
-            if key == module_name or key.startswith(f"{module_name}.")
+            if any(key == root or key.startswith(f"{root}.") for root in module_roots)
         ]
         for key in target_keys:
             sys.modules.pop(key, None)

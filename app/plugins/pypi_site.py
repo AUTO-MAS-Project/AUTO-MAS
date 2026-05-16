@@ -73,11 +73,34 @@ def ensure_pypi_site_packages_on_syspath(plugins_dir: Path | None = None) -> Pat
     site.addsitedir(normalized)
 
     # 维持插件目录优先级，避免被全局环境同名包覆盖。
-    if normalized in sys.path:
+    _move_sys_path_to_front(Path(normalized))
+    for editable_path in reversed(_iter_editable_import_paths(site_dir)):
+        _move_sys_path_to_front(editable_path)
+
+    return site_dir
+
+
+def _move_sys_path_to_front(path: Path) -> None:
+    normalized = str(path.resolve())
+    while normalized in sys.path:
         sys.path.remove(normalized)
     sys.path.insert(0, normalized)
 
-    return site_dir
+
+def _iter_editable_import_paths(site_dir: Path) -> List[Path]:
+    paths: list[Path] = []
+    seen: set[str] = set()
+    for dist in importlib_metadata.distributions(path=[str(site_dir)]):
+        project_path = _resolve_dist_editable_project_path(dist)
+        if project_path is None:
+            continue
+        import_path = project_path / "src" if (project_path / "src").exists() else project_path
+        normalized = str(import_path.resolve())
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        paths.append(import_path)
+    return paths
 
 
 def iter_plugin_entry_points(plugins_dir: Path | None = None) -> List[importlib_metadata.EntryPoint]:
@@ -91,20 +114,25 @@ def iter_plugin_entry_points(plugins_dir: Path | None = None) -> List[importlib_
         List[importlib_metadata.EntryPoint]: 去重后的插件入口点列表。
     """
     site_dir = ensure_pypi_site_packages_on_syspath(plugins_dir)
-    result: list[importlib_metadata.EntryPoint] = []
-    seen: set[tuple[str, str, str]] = set()
+    candidates: list[tuple[bool, importlib_metadata.EntryPoint]] = []
 
     for dist in importlib_metadata.distributions(path=[str(site_dir)]):
         if _is_broken_editable_distribution(dist):
             continue
+        is_editable = _resolve_dist_editable_project_path(dist) is not None
         for ep in getattr(dist, "entry_points", []):
             if ep.group not in ENTRY_POINT_GROUPS:
                 continue
-            key = (ep.group, ep.name, ep.value)
-            if key in seen:
-                continue
-            seen.add(key)
-            result.append(ep)
+            candidates.append((is_editable, ep))
+
+    result: list[importlib_metadata.EntryPoint] = []
+    seen: set[tuple[str, str, str]] = set()
+    for _, ep in sorted(candidates, key=lambda item: not item[0]):
+        key = (ep.group, ep.name, ep.value)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(ep)
 
     return result
 

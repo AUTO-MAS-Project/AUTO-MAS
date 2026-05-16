@@ -322,7 +322,10 @@ class DevPluginHMR:
                 elif action == "reload_plugin":
                     self.plugin_manager.invalidate_discover_cache()
                     if await self._has_configured_instances(plugin_name):
-                        await self.plugin_manager.reload_plugin(plugin_name)
+                        await self.plugin_manager.reload_plugin(
+                            plugin_name,
+                            refresh_package=self._needs_package_refresh(files),
+                        )
                     else:
                         discovered = await self.plugin_manager.discover_plugins(
                             force=True
@@ -388,6 +391,9 @@ class DevPluginHMR:
                 else "snapshot"
             )
         return "snapshot"
+
+    def _needs_package_refresh(self, files: list[Path]) -> bool:
+        return any(path.name.lower() == "pyproject.toml" for path in files)
 
     def _has_enabled_instances(self, plugin_name: str) -> bool:
         for record in getattr(self.plugin_manager.loader, "records", {}).values():
