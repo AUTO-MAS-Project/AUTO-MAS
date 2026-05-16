@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass
-from typing import Any, Callable
+from types import NoneType, UnionType
+from typing import Any, Callable, Literal, get_args, get_origin
 
+from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
 from app.models.ConfigBase import (
@@ -84,6 +86,63 @@ def build_script_adapter_schema(
     )
 
 
+def build_script_adapter_schema_from_models(
+    *,
+    script_class_name: str,
+    user_class_name: str,
+    script_model: type[BaseModel],
+    user_model: type[BaseModel],
+    module: str,
+    related_bindings: dict[str, str] | None = None,
+    user_data_attribute: str | None = "UserData",
+) -> ScriptAdapterSchemaArtifacts:
+    """根据 Pydantic 分组模型生成脚本适配配置类和前端 schema。"""
+
+    return build_script_adapter_schema(
+        script_class_name=script_class_name,
+        user_class_name=user_class_name,
+        script_groups=build_field_groups_from_model(script_model),
+        user_groups=build_field_groups_from_model(user_model),
+        module=module,
+        related_bindings=related_bindings,
+        user_data_attribute=user_data_attribute,
+    )
+
+
+def build_field_groups_from_model(
+    model: type[BaseModel],
+) -> tuple[PluginFieldGroup, ...]:
+    """把 Pydantic 顶层分组模型编译为声明式字段组。"""
+
+    groups: list[PluginFieldGroup] = []
+    for group_key, group_info in model.model_fields.items():
+        group_model = _annotation_model(group_info.annotation)
+        if group_model is None:
+            group_label = group_info.title or group_info.description or "配置"
+            groups.append(
+                PluginFieldGroup(
+                    key="default",
+                    label=str(group_label),
+                    fields=(_field_from_model_field(group_key, group_info),),
+                )
+            )
+            continue
+
+        group_label = group_info.title or group_info.description or group_key
+        groups.append(
+            PluginFieldGroup(
+                key=group_key,
+                label=str(group_label),
+                fields=tuple(
+                    _field_from_model_field(field_name, field_info)
+                    for field_name, field_info in group_model.model_fields.items()
+                ),
+            )
+        )
+
+    return tuple(groups)
+
+
 def build_configbase_class(
     class_name: str,
     groups: list[PluginFieldGroup] | tuple[PluginFieldGroup, ...],
@@ -158,6 +217,156 @@ def _compile_nested_multiples(
             )
             result.append((_multiple_attr(group.key, field.name), config_class))
     return result
+
+
+def _annotation_without_none(annotation: Any) -> Any:
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+    if origin in (UnionType, getattr(__import__("typing"), "Union")):
+        non_none = [arg for arg in args if arg not in (None, NoneType, type(None))]
+        if len(non_none) == 1:
+            return non_none[0]
+    return annotation
+
+
+def _annotation_model(annotation: Any) -> type[BaseModel] | None:
+    annotation = _annotation_without_none(annotation)
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return annotation
+    return None
+
+
+def _list_model(annotation: Any) -> type[BaseModel] | None:
+    annotation = _annotation_without_none(annotation)
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+    if origin is list and args:
+        return _annotation_model(args[0])
+    return None
+
+
+def _literal_values(annotation: Any) -> list[Any] | None:
+    annotation = _annotation_without_none(annotation)
+    origin = get_origin(annotation)
+    if origin is Literal:
+        return list(get_args(annotation))
+    return None
+
+
+def _field_default(field_info: Any) -> Any:
+    if field_info.default_factory is not None:
+        return field_info.default_factory()
+    if field_info.is_required():
+        return PydanticUndefined
+    return field_info.default
+
+
+def _field_constraints(field_info: Any) -> dict[str, Any]:
+    constraints: dict[str, Any] = {}
+    for item in field_info.metadata or []:
+        for source, target in (("ge", "min"), ("gt", "min"), ("le", "max"), ("lt", "max")):
+            value = getattr(item, source, None)
+            if value is not None and target not in constraints:
+                constraints[target] = value
+        multiple_of = getattr(item, "multiple_of", None)
+        if multiple_of is not None:
+            constraints["step"] = multiple_of
+    return constraints
+
+
+def _field_type(annotation: Any, extra: dict[str, Any]) -> str:
+    ui_type = extra.get("type") or extra.get("ui_type")
+    if isinstance(ui_type, str) and ui_type:
+        return ui_type
+
+    annotation = _annotation_without_none(annotation)
+    if _literal_values(annotation) is not None:
+        return "select"
+    if annotation is bool:
+        return "boolean"
+    if annotation is int or annotation is float:
+        return "number"
+    if annotation is dict or get_origin(annotation) is dict:
+        return "json"
+    if get_origin(annotation) is list:
+        return "list"
+    return "string"
+
+
+def _field_options(annotation: Any, extra: dict[str, Any]) -> list[Any] | None:
+    options = extra.get("options")
+    if isinstance(options, list):
+        return copy.deepcopy(options)
+    values = _literal_values(annotation)
+    if values is None:
+        return None
+    return [{"label": str(value), "value": value} for value in values]
+
+
+def _field_from_model_field(name: str, field_info: Any) -> PluginFieldDeclaration:
+    extra = dict(field_info.json_schema_extra or {})
+    item_model = _list_model(field_info.annotation)
+    if item_model is not None:
+        multiple_groups = build_field_groups_from_model(item_model)
+        return PluginFieldDeclaration(
+            name=name,
+            label=str(field_info.title or field_info.description or name),
+            field_type="multiple",
+            default=_field_default(field_info),
+            multiple_groups=multiple_groups,
+            multiple_class_name=str(extra.pop("multiple_class_name", "") or item_model.__name__),
+            include_in_schema=bool(extra.pop("include_in_schema", False)),
+            extra=extra,
+        )
+
+    constraints = _field_constraints(field_info)
+    field_type = _field_type(field_info.annotation, extra)
+    field_kwargs: dict[str, Any] = {
+        "options": _field_options(field_info.annotation, extra),
+        "placeholder": extra.pop("placeholder", None),
+        "help": extra.pop("help", None),
+        "readonly": bool(extra.pop("readonly", False)),
+        "sensitive": bool(extra.pop("sensitive", False)),
+        "required": bool(field_info.is_required()),
+        "rows": extra.pop("rows", None),
+        "size": extra.pop("size", None),
+        "min": extra.pop("min", constraints.get("min")),
+        "max": extra.pop("max", constraints.get("max")),
+        "step": extra.pop("step", constraints.get("step")),
+        "format": extra.pop("format", None),
+        "json_type": extra.pop("json_type", None),
+        "item_type": extra.pop("item_type", None),
+        "path_kind": extra.pop("path_kind", None),
+        "validator": extra.pop("validator", None),
+        "related_config": extra.pop("related_config", None),
+        "related_default": extra.pop("related_default", PydanticUndefined),
+        "action": extra.pop("action", None),
+        "button": extra.pop("button", None),
+        "configurable": extra.pop("configurable", True),
+        "legacy_group": extra.pop("legacy_group", None),
+        "legacy_name": extra.pop("legacy_name", None),
+        "virtual_handler": extra.pop("virtual_handler", None),
+        "include_in_schema": bool(extra.pop("include_in_schema", True)),
+    }
+    if field_type == "json" and field_kwargs["json_type"] is None:
+        field_kwargs["json_type"] = "object"
+    if field_type == "folder" and field_kwargs["path_kind"] is None:
+        field_kwargs["path_kind"] = "folder"
+    if field_type in {"file", "path"} and field_kwargs["path_kind"] is None:
+        field_kwargs["path_kind"] = "file"
+    if field_type == "password":
+        field_type = "string"
+        field_kwargs["format"] = "password"
+        field_kwargs["sensitive"] = True
+
+    return PluginFieldDeclaration(
+        name=name,
+        label=str(field_info.title or field_info.description or name),
+        field_type=field_type,
+        default=_field_default(field_info),
+        extra=extra,
+        **field_kwargs,
+    )
 
 
 def _is_runtime_field(field: PluginFieldDeclaration) -> bool:
