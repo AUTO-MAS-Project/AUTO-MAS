@@ -436,24 +436,31 @@ const keyValueColumns = [
   { title: '操作', dataIndex: 'action', key: 'action' },
 ]
 
+const getFieldPath = (field: SchemaFieldDefinition) => field.key || field.name || ''
+
+const shouldRenderField = (field: SchemaFieldDefinition) =>
+  !field.hidden && !props.hideFields.includes(getFieldPath(field))
+
 const normalizedGroups = computed<SchemaGroupDefinition[]>(() => {
   if (!props.schema) {
     return []
   }
 
   if ('groups' in props.schema && Array.isArray((props.schema as GroupedSchemaDefinition).groups)) {
-    return (props.schema as GroupedSchemaDefinition).groups.map(group => ({
-      ...group,
-      fields: (group.fields || []).filter(field => !props.hideFields.includes(getFieldPath(field))),
-    }))
+    return (props.schema as GroupedSchemaDefinition).groups
+      .map(group => ({
+        ...group,
+        fields: (group.fields || []).filter(shouldRenderField),
+      }))
+      .filter(group => group.fields.length > 0)
   }
 
   const fields = Object.entries(props.schema as Record<string, SchemaFieldDefinition>)
-    .filter(([field]) => !props.hideFields.includes(field))
     .map(([field, fieldSchema]) => ({
       ...fieldSchema,
       key: field,
     }))
+    .filter(shouldRenderField)
 
   return [
     {
@@ -465,8 +472,6 @@ const normalizedGroups = computed<SchemaGroupDefinition[]>(() => {
 })
 
 const cloneModel = () => JSON.parse(JSON.stringify(props.modelValue || {}))
-
-const getFieldPath = (field: SchemaFieldDefinition) => field.key || field.name || ''
 
 const showGroupTitle = (group: SchemaGroupDefinition) =>
   normalizedGroups.value.length > 1 && Boolean(group.label || group.key)

@@ -40,6 +40,7 @@ class PluginFieldDeclaration:
     options: list[Any] | None = None
     placeholder: str | None = None
     help: str | None = None
+    hidden: bool = False
     readonly: bool = False
     sensitive: bool = False
     required: bool = False
@@ -87,6 +88,7 @@ class PluginFieldFactory:
         rows: int | None = None,
         placeholder: str | None = None,
         help: str | None = None,
+        hidden: bool | None = None,
         ui_type: str | None = None,
         json_type: Literal["object", "array"] | None = None,
         item_type: str | None = None,
@@ -121,6 +123,8 @@ class PluginFieldFactory:
             extra["placeholder"] = placeholder
         if help is not None:
             extra["help"] = help
+        if hidden is not None:
+            extra["hidden"] = hidden
         if ui_type is not None:
             extra["type"] = ui_type
         if json_type is not None:
@@ -293,6 +297,7 @@ def _declaration(
         "options",
         "placeholder",
         "help",
+        "hidden",
         "readonly",
         "sensitive",
         "required",
