@@ -697,7 +697,9 @@ const handleBackendFailure = async () => {
     Modal.error({
       title: '后端服务异常',
       content: '后端服务多次重启失败，请重启整个应用程序。',
+      okCancel: true,
       okText: '重启应用',
+      cancelText: '取消',
       onOk: () => {
         // 显示关闭遮罩
         const { showClosingOverlay } = useAppClosing()
@@ -710,6 +712,9 @@ const handleBackendFailure = async () => {
         } else {
           window.location.reload()
         }
+      },
+      onCancel: () => {
+        return
       },
     })
     return
