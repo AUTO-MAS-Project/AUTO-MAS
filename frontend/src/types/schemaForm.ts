@@ -69,6 +69,7 @@ export interface SchemaFieldDefinition {
   item_type?: string
   enum?: unknown[]
   options?: Array<SchemaOptionDefinition | string | number | boolean>
+  selection_mode?: 'ordered'
   allow_custom?: boolean
   examples?: unknown[]
   constraints?: Record<string, unknown>
