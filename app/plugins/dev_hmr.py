@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict
@@ -321,10 +322,12 @@ class DevPluginHMR:
                     )
                 elif action == "reload_plugin":
                     self.plugin_manager.invalidate_discover_cache()
+                    self._clear_python_bytecode(files)
                     if await self._has_configured_instances(plugin_name):
+                        refresh_package = self._needs_package_refresh(files)
                         await self.plugin_manager.reload_plugin(
                             plugin_name,
-                            refresh_package=self._needs_package_refresh(files),
+                            refresh_package=refresh_package,
                         )
                     else:
                         discovered = await self.plugin_manager.discover_plugins(
@@ -394,6 +397,23 @@ class DevPluginHMR:
 
     def _needs_package_refresh(self, files: list[Path]) -> bool:
         return any(path.name.lower() == "pyproject.toml" for path in files)
+
+    def _clear_python_bytecode(self, files: list[Path]) -> None:
+        pycache_dirs: set[Path] = set()
+        for path in files:
+            if path.suffix.lower() not in {".py", ".pyi"}:
+                continue
+            try:
+                resolved = path.resolve()
+                resolved.relative_to(self.plugins_dir)
+            except ValueError:
+                continue
+            pycache = resolved.parent / "__pycache__"
+            if pycache.exists() and pycache.is_dir():
+                pycache_dirs.add(pycache)
+
+        for pycache in pycache_dirs:
+            shutil.rmtree(pycache, ignore_errors=True)
 
     def _has_enabled_instances(self, plugin_name: str) -> bool:
         for record in getattr(self.plugin_manager.loader, "records", {}).values():

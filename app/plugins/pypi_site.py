@@ -157,6 +157,10 @@ def _resolve_dist_editable_project_path(dist: importlib_metadata.Distribution) -
     if not isinstance(data, dict):
         return None
 
+    dir_info = data.get("dir_info")
+    if not isinstance(dir_info, dict) or dir_info.get("editable") is not True:
+        return None
+
     url = str(data.get("url") or "").strip()
     parsed = urlparse(url)
     if parsed.scheme != "file":
