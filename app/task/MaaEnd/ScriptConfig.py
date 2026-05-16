@@ -161,9 +161,10 @@ class ScriptConfigTask(TaskExecuteBase):
         maaend_set["recentlyClosed"] = []
 
         # 不直接运行任务
-        maaend_set["settings"]["autoStartInstanceId"] = "automas"
-        maaend_set["settings"]["autoRunOnLaunch"] = False
-        maaend_set["settings"].pop("autoStartRemovedInstanceName", None)
+        settings = maaend_set.setdefault("settings", {})
+        settings["autoStartInstanceId"] = selected_instance["id"]
+        settings["autoRunOnLaunch"] = False
+        settings.pop("autoStartRemovedInstanceName", None)
 
         (self.maaend_set_path / "mxu-MaaEnd.json").write_text(
             json.dumps(maaend_set, ensure_ascii=False, indent=4), encoding="utf-8"

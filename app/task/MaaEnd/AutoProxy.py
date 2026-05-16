@@ -468,13 +468,13 @@ class AutoProxyTask(TaskExecuteBase):
         maaend_tasks = maaend_instance["tasks"]
 
         # 建立全局设置引用
-        settings = maaend_set["settings"]
+        settings = maaend_set.setdefault("settings", {})
 
         # 移除冗余任务项信息
         maaend_set["recentlyClosed"] = []
 
         # 直接运行任务
-        settings["autoStartInstanceId"] = "automas"
+        settings["autoStartInstanceId"] = maaend_instance["id"]
         settings["autoRunOnLaunch"] = True
         settings.pop("autoStartRemovedInstanceName", None)
 
@@ -491,7 +491,7 @@ class AutoProxyTask(TaskExecuteBase):
             }
 
         # 加载 i18n 配置
-        if settings["language"] == "system":
+        if settings.get("language", "system") == "system":
             settings["language"] = "zh-CN"
         maaend_i18n_raw = json.loads(
             (
