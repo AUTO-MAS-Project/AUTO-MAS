@@ -248,6 +248,12 @@ const STAGE_NAME_MAP: Record<string, string> = {
   'PR-D-2': '近/特芯片组',
 }
 
+ANNIHILATION_MAP.Annihilation = '剿灭'
+ANNIHILATION_MAP['Chernobog@Annihilation'] = '切尔诺伯格'
+ANNIHILATION_MAP['LungmenOutskirts@Annihilation'] = '龙门外环'
+ANNIHILATION_MAP['LungmenDowntown@Annihilation'] = '龙门市区'
+ANNIHILATION_MAP.Close = '不使用剿灭'
+
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
