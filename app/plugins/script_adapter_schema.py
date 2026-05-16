@@ -325,6 +325,7 @@ def _field_from_model_field(name: str, field_info: Any) -> PluginFieldDeclaratio
         "options": _field_options(field_info.annotation, extra),
         "placeholder": extra.pop("placeholder", None),
         "help": extra.pop("help", None),
+        "hidden": bool(extra.pop("hidden", False)),
         "readonly": bool(extra.pop("readonly", False)),
         "sensitive": bool(extra.pop("sensitive", False)),
         "required": bool(field_info.is_required()),
@@ -433,6 +434,8 @@ def _build_schema_field(group: str, field: PluginFieldDeclaration) -> dict[str, 
         schema["default"] = _copy_default(field.default)
     if field.readonly:
         schema["readonly"] = True
+    if field.hidden:
+        schema["hidden"] = True
     if field.sensitive:
         schema["sensitive"] = True
     if field.options is not None:

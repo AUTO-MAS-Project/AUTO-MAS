@@ -63,6 +63,7 @@ export interface SchemaFieldDefinition {
   description?: string
   placeholder?: string
   help?: string
+  hidden?: boolean
   rows?: number
   ui_type?: string
   item_type?: string
