@@ -80,23 +80,28 @@ def _find_manager_exe_in_dir(directory: Path, executable_names: List[str]) -> Op
     return None
 
 
+def _primary_executable_name(executable_names: List[str]) -> str:
+    return executable_names[0] if executable_names else ""
+
+
 def _find_manager_exe_near_side_exe(
     path_obj: Path,
     executable_names: List[str],
     *,
     max_parent_levels: int = 2,
 ) -> Optional[Path]:
-    """自旁路 exe 所在目录向上有限层查找主管理器（仅 is_file，不 iterdir）。"""
-    if path_obj.suffix.lower() != ".exe":
+    """自旁路 exe 所在目录向上有限层查找主管理器（executables[0]，仅 is_file，不 iterdir）。"""
+    if path_obj.suffix.lower() != ".exe" or not executable_names:
         return None
-    allowed = _executable_name_set({"executables": executable_names})
-    if path_obj.name.lower() in allowed:
+
+    primary = _primary_executable_name(executable_names).lower()
+    if path_obj.name.lower() == primary and path_obj.is_file():
         return path_obj
 
     current = path_obj.parent
-    for _ in range(max_parent_levels):
+    for _ in range(max_parent_levels + 1):
         hit = _find_manager_exe_in_dir(current, executable_names)
-        if hit:
+        if hit and hit.name.lower() == primary:
             return hit
         parent = current.parent
         if parent == current:
@@ -273,8 +278,8 @@ def _resolve_uninstall_exe_to_manager(
         return None
 
     executable_names = config.get("executables") or []
-    allowed = _executable_name_set(config)
-    if path_obj.name.lower() in allowed:
+    primary = _primary_executable_name(executable_names)
+    if primary and path_obj.name.lower() == primary.lower():
         logger.info(f"{config['name']} 通过{source}命中主管理器: {path_obj}")
         return path_obj.as_posix()
 
@@ -329,7 +334,7 @@ def _find_mumu_manager_from_base(base_path: Path) -> Optional[Path]:
             if key in seen:
                 continue
             seen.add(key)
-            if candidate.exists():
+            if candidate.is_file():
                 return candidate
     return None
 
@@ -422,10 +427,11 @@ def find_emulator_manager_path(
             if manager:
                 return str(manager)
         else:
+            parent_levels = 3 if emulator_type == "memu" else max_levels
             manager = _find_manager_exe_near_side_exe(
                 input_path_obj,
                 executables,
-                max_parent_levels=max_levels,
+                max_parent_levels=parent_levels,
             )
             if manager:
                 return str(manager)

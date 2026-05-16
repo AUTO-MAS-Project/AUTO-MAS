@@ -240,7 +240,8 @@ EMULATOR_PATH_BOOK = {
     },
     "nox": {
         "name": "夜神模拟器",
-        "executables": ["Nox.exe", "NoxVMHandle.exe"],
+        # executables[0] 为多开管理器；卸载项常见旁路为 Nox.exe（同 bin 目录）
+        "executables": ["MultiPlayerManager.exe", "Nox.exe", "NoxVMHandle.exe"],
         "registry_display_keywords": [
             "NoxPlayer",
             "Nox APP Player",
@@ -252,7 +253,7 @@ EMULATOR_PATH_BOOK = {
     },
     "memu": {
         "name": "逍遥模拟器",
-        "executables": ["MEmu.exe", "MEmuConsole.exe", "MemuManager.exe"],
+        "executables": ["MEmuConsole.exe", "MEmu.exe", "MemuManager.exe"],
         "registry_display_keywords": [
             "MEmu",
             "Microvirt",
@@ -265,8 +266,12 @@ EMULATOR_PATH_BOOK = {
     },
     "bluestacks": {
         "name": "BlueStacks",
-        # BlueStacks 5 / nxt 国服常见主进程为 HD-Player.exe
-        "executables": ["HD-Player.exe", "BlueStacks.exe"],
+        # executables[0] 为多开管理器；卸载项/快捷方式常见旁路为 HD-Player.exe
+        "executables": [
+            "HD-MultiInstanceManager.exe",
+            "HD-Player.exe",
+            "BlueStacks.exe",
+        ],
         "registry_display_keywords": [
             "BlueStacks",
             "BlueStacks_nxt",
