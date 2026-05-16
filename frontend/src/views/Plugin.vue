@@ -2282,9 +2282,6 @@ const handlePluginSystemMessage = (wsMessage: WebSocketBaseMessage) => {
     if (payload.status === 'error') {
       message.warning(`插件 HMR 失败: ${payload.message || payload.plugin || 'unknown'}`)
     }
-    if (payload.status !== 'running') {
-      void fetchData()
-    }
   }
 }
 

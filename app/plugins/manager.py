@@ -1204,7 +1204,7 @@ class _PluginManager:
             discovered=discovered,
         )
 
-    async def reload_plugin(self, plugin_name: str) -> None:
+    async def reload_plugin(self, plugin_name: str, *, refresh_package: bool = True) -> None:
         """
         重载指定插件的全部实例。
 
@@ -1221,7 +1221,8 @@ class _PluginManager:
             RuntimeError: 目标 PyPI 插件更新失败时抛出。
         """
         discovered = await self.discover_plugins()
-        await self._update_pypi_plugin(plugin_name, discovered)
+        if refresh_package:
+            await self._update_pypi_plugin(plugin_name, discovered)
         instances = await self.config_store.load_instances(
             self.plugins_dir,
             discovered,
