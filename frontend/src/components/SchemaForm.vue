@@ -1082,6 +1082,13 @@ const getFieldHelp = (field: SchemaFieldDefinition) => {
   if (typeof field.help === 'string' && field.help.trim()) {
     return field.help
   }
+  if (
+    typeof field.description === 'string'
+    && field.description.trim()
+    && field.description !== getFieldLabel(field)
+  ) {
+    return field.description
+  }
   if (Array.isArray(field.examples) && field.examples.length > 0) {
     return `示例：${field.examples.map(item => String(item)).join('、')}`
   }
