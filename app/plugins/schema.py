@@ -40,7 +40,18 @@ class _FieldSpecModel(BaseModel):
     nullable: bool = False
     description: str | None = None
     constraints: Dict[str, Any] = Field(default_factory=dict)
-    size: Literal["small", "half", "medium", "large"] | None = None
+    size: Literal[
+        "1/1",
+        "1/2",
+        "1/3",
+        "2/3",
+        "1/4",
+        "3/4",
+        "small",
+        "half",
+        "medium",
+        "large",
+    ] | None = None
 
 
 @dataclass

@@ -61,12 +61,13 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import SchemaForm from '@/components/SchemaForm.vue'
 import SchemaActionSessionMask from '@/components/SchemaActionSessionMask.vue'
 import { useSchemaActionRunner } from '@/composables/useSchemaActionRunner'
+import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import type { Script } from '@/types/script'
 import type { SchemaFieldDefinition, SchemaValidationErrorMap } from '@/types/schemaForm'
@@ -82,6 +83,7 @@ const logger = window.electronAPI.getLogger('插件脚本编辑')
 const route = useRoute()
 const router = useRouter()
 const api = useScriptRegistryApi()
+const { subscribe, unsubscribe } = useWebSocket()
 
 const loading = ref(true)
 const saving = ref(false)
@@ -89,8 +91,47 @@ const script = ref<Script | null>(null)
 const formModel = ref<Record<string, any>>({})
 const fieldErrors = ref<SchemaValidationErrorMap>({})
 const schemaFormRef = ref<InstanceType<typeof SchemaForm> | null>(null)
+const schemaRefreshInFlight = ref(false)
 
 const scriptId = route.params.id as string
+let pluginSystemSubscriptionId: string | null = null
+
+interface PluginSystemSnapshotMessage {
+  kind: 'snapshot'
+}
+
+interface PluginSystemHmrMessage {
+  kind: 'hmr'
+  plugin?: string | null
+  status: 'running' | 'success' | 'error' | string
+  message?: string
+}
+
+const cloneValue = <T>(value: T): T => JSON.parse(JSON.stringify(value))
+
+const normalizePluginKey = (value?: string | null) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+
+const currentPluginKey = () => {
+  const editorKind = script.value?.editorKind || ''
+  if (!editorKind.startsWith('plugin:')) {
+    return ''
+  }
+  return normalizePluginKey(editorKind.slice('plugin:'.length))
+}
+
+const isCurrentPluginEvent = (plugin?: string | null) => {
+  const key = currentPluginKey()
+  if (!key) {
+    return false
+  }
+  if (!plugin) {
+    return true
+  }
+  return normalizePluginKey(plugin) === key
+}
 
 const modeLabels: Record<string, string> = {
   AutoProxy: '全自动代理',
@@ -98,8 +139,17 @@ const modeLabels: Record<string, string> = {
   ScriptConfig: '脚本配置',
 }
 
-const loadScript = async () => {
+const loadScript = async ({
+  preserveFormModel = false,
+  redirectOnError = true,
+  showError = true,
+}: {
+  preserveFormModel?: boolean
+  redirectOnError?: boolean
+  showError?: boolean
+} = {}) => {
   loading.value = true
+  const preservedFormModel = preserveFormModel ? cloneValue(formModel.value || {}) : null
   try {
     const [descriptors, records] = await Promise.all([api.getScriptTypes(), api.getScripts(scriptId)])
     const record = records[0]
@@ -112,14 +162,57 @@ const loadScript = async () => {
     if (script.value.available === false) {
       throw new Error(script.value.unavailableReason || `脚本类型 ${script.value.type} 当前未启用`)
     }
-    formModel.value = JSON.parse(JSON.stringify(record.config || {}))
+    formModel.value = preservedFormModel ?? cloneValue(record.config || {})
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载插件脚本失败: ${errorMsg}`)
-    message.error(errorMsg)
-    router.push('/scripts')
+    if (showError) {
+      message.error(errorMsg)
+    }
+    if (redirectOnError) {
+      router.push('/scripts')
+    }
   } finally {
     loading.value = false
+  }
+}
+
+const refreshSchemaFromPluginSystem = async () => {
+  if (loading.value || schemaRefreshInFlight.value || !currentPluginKey()) {
+    return
+  }
+  schemaRefreshInFlight.value = true
+  try {
+    await loadScript({
+      preserveFormModel: true,
+      redirectOnError: false,
+      showError: false,
+    })
+  } finally {
+    schemaRefreshInFlight.value = false
+  }
+}
+
+const handlePluginSystemMessage = (wsMessage: WebSocketBaseMessage) => {
+  const payload = wsMessage.data as
+    | PluginSystemSnapshotMessage
+    | PluginSystemHmrMessage
+    | undefined
+  if (!payload || typeof payload !== 'object') {
+    return
+  }
+
+  if (payload.kind === 'snapshot') {
+    void refreshSchemaFromPluginSystem()
+    return
+  }
+
+  if (
+    payload.kind === 'hmr'
+    && payload.status === 'error'
+    && isCurrentPluginEvent(payload.plugin)
+  ) {
+    message.warning(payload.message || `plugin hmr failed: ${payload.plugin || 'unknown'}`)
   }
 }
 
@@ -172,7 +265,15 @@ const handleSave = async () => {
 }
 
 onMounted(() => {
+  pluginSystemSubscriptionId = subscribe({ id: 'PluginSystem' }, handlePluginSystemMessage)
   void loadScript()
+})
+
+onUnmounted(() => {
+  if (pluginSystemSubscriptionId) {
+    unsubscribe(pluginSystemSubscriptionId)
+    pluginSystemSubscriptionId = null
+  }
 })
 </script>
 
