@@ -183,6 +183,7 @@ class AutoProxyTask(TaskExecuteBase):
 
             # 读取用户队列
             queue = self.cur_user_config.get("Task", "Queue")
+            resource = self.cur_user_config.get("Info", "Resource") or "官服"
             logger.info(f"用户 {self.cur_user_uid} 的任务队列 (原始): {queue}, 类型: {type(queue)}")
 
             # 确保 queue 是列表
@@ -202,7 +203,7 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info(f"用户 {self.cur_user_uid} 将执行 {len(queue)} 个任务: {queue}")
 
             # 写入M9A配置
-            await self.write_m9a_config(queue, emulator_info)
+            await self.write_m9a_config(queue, emulator_info, resource)
 
             # 启动 M9A
             logger.info(f"启动 M9A 进程：{self.m9a_exe_path}")
@@ -257,7 +258,7 @@ class AutoProxyTask(TaskExecuteBase):
 
                 await asyncio.sleep(3)
 
-    async def write_m9a_config(self, queue: list, emulator_info: DeviceInfo):
+    async def write_m9a_config(self, queue: list, emulator_info: DeviceInfo, resource: str = "官服"):
         """向 M9A 目录写入运行配置文件，并保存 debug 备份"""
         logger.info("开始配置 M9A 运行参数")
 
@@ -277,7 +278,8 @@ class AutoProxyTask(TaskExecuteBase):
                 emulator_id=emulator_id,
                 script_config=self.script_config,
                 emulator_index=emulator_index,
-                emulator_manager=self.emulator_manager
+                emulator_manager=self.emulator_manager,
+                resource=resource
             )
         except Exception as e:
             logger.error(f"构建 M9A 配置失败: {e}")
@@ -497,13 +499,15 @@ class AutoProxyTask(TaskExecuteBase):
         emulator_id: str | None = None,
         script_config: M9AConfig | None = None,
         emulator_index: str | None = None,
-        emulator_manager = None
+        emulator_manager = None,
+        resource: str = "官服"
     ) -> dict:
         config = None
 
         if self.template_path.exists():
             try:
                 config = json.loads(self.template_path.read_text(encoding="utf-8"))
+                config["Resource"] = resource
                 logger.info(f"使用配置模板：{self.template_path}")
             except Exception as e:
                 logger.warning(f"读取模板 {self.template_path} 失败：{e}")
@@ -511,7 +515,7 @@ class AutoProxyTask(TaskExecuteBase):
         if config is None:
             logger.warning("无法读取配置模板，使用最小默认配置")
             config = {
-                "Resource": "官服",
+                "Resource": resource,
                 "CurrentTasks": [],
                 "TaskItems": [],
                 "AdbDevice": {

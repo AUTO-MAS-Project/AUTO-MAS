@@ -61,6 +61,7 @@ const getDefaultM9AUserData = () => ({
     RemainedDay: -1,
     Notes: '',
     Tag: '',
+    Resource: '官服',
   },
   Task: {
     AvailableTasks: '[]',
