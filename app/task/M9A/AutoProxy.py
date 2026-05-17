@@ -426,18 +426,6 @@ class AutoProxyTask(TaskExecuteBase):
                 logger.info("虚拟用户: M9A 准备重启应用更新")
                 self.script_info._m9a_restart_triggered = True
 
-            if getattr(self.script_info, '_m9a_restart_triggered', False):
-                version_match = re.search(r'资源版本：v([\d.]+)', log)
-                if version_match:
-                    new_version = version_match.group(1)
-                    old_version = getattr(self.script_info, '_m9a_current_version', '')
-                    if new_version != old_version:
-                        logger.info(f"虚拟用户: 更新成功！v{old_version} → v{new_version}")
-                        self.script_info._m9a_update_success = True
-                        self.cur_user_log.status = "Success!"
-                        self.wait_event.set()
-                        return
-
             if "[ERR]" in log and not getattr(self.script_info, '_m9a_restart_triggered', False):
                 err_content = log.split("[ERR]", 1)[1].strip() if "[ERR]" in log else ""
                 if err_content:
