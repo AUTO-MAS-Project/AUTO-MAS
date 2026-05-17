@@ -39,21 +39,6 @@
 
     <a-row :gutter="24">
       <a-col :span="12">
-        <a-form-item name="remainedDay">
-          <template #label>
-            <a-tooltip title="账号剩余的有效天数，「-1」表示无限">
-              <span class="form-label">
-                剩余天数
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
-          </template>
-          <a-input-number v-model:value="formData.Info.RemainedDay" :min="-1" :max="9999" placeholder="0"
-            :disabled="loading" size="large" style="width: 100%"
-            @blur="emitSave('Info.RemainedDay', formData.Info.RemainedDay)" />
-        </a-form-item>
-      </a-col>
-      <a-col :span="12">
         <a-form-item name="resource">
           <template #label>
             <a-tooltip title="选择当前用户使用的游戏服务器">
@@ -71,6 +56,50 @@
             :options="resourceOptions"
             @change="emitSave('Info.Resource', formData.Info.Resource)"
           />
+        </a-form-item>
+      </a-col>
+      <a-col :span="12">
+        <a-form-item name="account">
+          <template #label>
+            <a-tooltip>
+              <template #title>
+                <div style="max-width: 260px; white-space: normal;">
+                  填写目标账号时会在账号列表中逐页下滑查找并切换，找不到则任务失败<br><br>
+                  目前该功能仅支持官服，且仅支持 1280×720 实际未缩放分辨率
+                </div>
+              </template>
+              <span class="form-label">
+                账号信息
+                <QuestionCircleOutlined class="help-icon" />
+              </span>
+            </a-tooltip>
+          </template>
+          <a-input
+            v-model:value="formData.Info.Account"
+            placeholder="留空则不切换账号"
+            :disabled="loading"
+            size="large"
+            class="modern-input"
+            @blur="emitSave('Info.Account', formData.Info.Account)"
+          />
+        </a-form-item>
+      </a-col>
+    </a-row>
+
+    <a-row :gutter="24">
+      <a-col :span="12">
+        <a-form-item name="remainedDay">
+          <template #label>
+            <a-tooltip title="账号剩余的有效天数，「-1」表示无限">
+              <span class="form-label">
+                剩余天数
+                <QuestionCircleOutlined class="help-icon" />
+              </span>
+            </a-tooltip>
+          </template>
+          <a-input-number v-model:value="formData.Info.RemainedDay" :min="-1" :max="9999" placeholder="0"
+            :disabled="loading" size="large" style="width: 100%"
+            @blur="emitSave('Info.RemainedDay', formData.Info.RemainedDay)" />
         </a-form-item>
       </a-col>
     </a-row>

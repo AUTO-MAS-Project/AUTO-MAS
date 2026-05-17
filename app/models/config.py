@@ -1335,6 +1335,8 @@ class M9AUserConfig(ConfigBase):
         )
         ## 服务器资源
         self.Info_Resource = ConfigItem("Info", "Resource", "官服")
+        ## 账号信息（用于切换账号）
+        self.Info_Account = ConfigItem("Info", "Account", "")
 
         ## Task -------------------------------------------------------------
         ## 可用任务列表（从 M9A 配置文件读取）

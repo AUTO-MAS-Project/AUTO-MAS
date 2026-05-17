@@ -849,6 +849,7 @@ class M9AUserConfig_Info(BaseModel):
     Notes: Optional[str] = Field(default=None, description="备注")
     Tag: Optional[str] = Field(default=None, description="用户标签信息")
     Resource: Optional[str] = Field(default=None, description="服务器资源名称")
+    Account: Optional[str] = Field(default=None, description="账号信息（用于切换账号，仅官服生效）")
 
 
 class M9AUserConfig_Task(BaseModel):
