@@ -38,6 +38,7 @@ class PluginFieldDeclaration:
     field_type: str
     default: Any = PydanticUndefined
     options: list[Any] | None = None
+    options_provider: dict[str, Any] | None = None
     placeholder: str | None = None
     help: str | None = None
     hidden: bool = False
@@ -93,6 +94,7 @@ class PluginFieldFactory:
         json_type: Literal["object", "array"] | None = None,
         item_type: str | None = None,
         options: list[Any] | None = None,
+        options_provider: dict[str, Any] | None = None,
         action: dict[str, Any] | None = None,
         button: dict[str, Any] | None = None,
         configurable: bool | None = None,
@@ -133,6 +135,8 @@ class PluginFieldFactory:
             extra["item_type"] = item_type
         if options is not None:
             extra["options"] = options
+        if options_provider is not None:
+            extra["options_provider"] = options_provider
         if action is not None:
             extra["action"] = action
         if button is not None:
@@ -295,6 +299,7 @@ def _declaration(
 
     known_keys = {
         "options",
+        "options_provider",
         "placeholder",
         "help",
         "hidden",

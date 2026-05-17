@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Literal
 
 
 def find_schema_group(schema: dict[str, Any], group_key: str) -> dict[str, Any] | None:
@@ -168,3 +168,13 @@ class SchemaDecorationContext:
         field_schema: dict[str, Any],
     ) -> None:
         append_schema_field(schema, group_key, field_schema)
+
+
+@dataclass
+class SchemaOptionsProviderContext:
+    """传递给声明式动态 options provider 的运行时上下文。"""
+
+    kind: Literal["script", "user"]
+    provider: Any
+    global_config: Any
+    related_config: dict[str, Any]

@@ -1344,6 +1344,12 @@ class AppConfig(GlobalConfig):
         config_data: dict[str, Any],
         kind: str,
     ) -> dict[str, Any]:
+        schema = await self._apply_schema_options_providers(
+            provider,
+            schema,
+            config_data,
+            kind,
+        )
         hooks_factory = provider.metadata.get("hooks_factory")
         if hooks_factory is None:
             return schema
@@ -1359,6 +1365,75 @@ class AppConfig(GlobalConfig):
         if kind == "script":
             return await hooks.decorate_script_schema(schema, config_data, ctx)
         return await hooks.decorate_user_schema(schema, config_data, ctx)
+
+    async def _apply_schema_options_providers(
+        self,
+        provider: Any,
+        schema: dict[str, Any],
+        config_data: dict[str, Any],
+        kind: str,
+    ) -> dict[str, Any]:
+        from app.plugins.schema_utils import SchemaOptionsProviderContext
+
+        options_providers = provider.metadata.get("options_providers")
+        if not isinstance(options_providers, dict) or not options_providers:
+            return schema
+
+        config_class = (
+            provider.script_config_class if kind == "script" else provider.user_config_class
+        )
+        ctx = SchemaOptionsProviderContext(
+            kind=kind,
+            provider=provider,
+            global_config=self,
+            related_config=getattr(config_class, "related_config", {}),
+        )
+
+        groups = schema.get("groups")
+        if not isinstance(groups, list):
+            return schema
+
+        for group in groups:
+            if not isinstance(group, dict):
+                continue
+            fields = group.get("fields")
+            if not isinstance(fields, list):
+                continue
+            for field in fields:
+                if not isinstance(field, dict):
+                    continue
+                options_provider = field.get("options_provider")
+                if not isinstance(options_provider, dict):
+                    continue
+                source = str(options_provider.get("source") or "").strip()
+                if not source:
+                    continue
+                resolver = options_providers.get(source)
+                if not callable(resolver):
+                    logger.warning(
+                        f"动态 options provider 未注册: type={provider.type_key}, source={source}"
+                    )
+                    continue
+                options = await resolver(
+                    options_provider=copy.deepcopy(options_provider),
+                    field_schema=copy.deepcopy(field),
+                    config_data=copy.deepcopy(config_data),
+                    ctx=ctx,
+                )
+                if not isinstance(options, list):
+                    continue
+                self._set_schema_field_options(
+                    schema,
+                    str(field.get("key") or ""),
+                    options,
+                    allow_custom=(
+                        bool(options_provider.get("allow_custom"))
+                        if "allow_custom" in options_provider
+                        else None
+                    ),
+                )
+
+        return schema
 
     def _resolve_script_type_label(self, script_config: ConfigBase) -> str:
         """获取脚本类型的显示标签，兼容插件脚本。"""
@@ -1520,7 +1595,26 @@ class AppConfig(GlobalConfig):
         if infrast_data.get("title", "文件标题") == "文件标题":
             infrast_data["title"] = json_path.stem
 
-        await self.ScriptConfig[script_uid].UserData[user_uid].set(
+        from app.models.plugin_script_config import PluginUserConfig
+
+        user_config = self.ScriptConfig[script_uid].UserData[user_uid]
+        if isinstance(user_config, PluginUserConfig):
+            provider = self._resolve_record_provider(self.ScriptConfig[script_uid])
+            self._require_provider_available(provider, "设置基建配置")
+            form_payload = await storage_to_form(
+                provider,
+                user_config.get("PluginData", "Config"),
+                "user",
+            )
+            form_payload.setdefault("Data", {})["CustomInfrast"] = infrast_data
+            storage_payload = await form_to_storage(provider, form_payload, "user")
+            await user_config.set(
+                "PluginData", "Config",
+                json.dumps(storage_payload, ensure_ascii=False),
+            )
+            return
+
+        await user_config.set(
             "Data", "CustomInfrast", json.dumps(infrast_data, ensure_ascii=False)
         )
 
@@ -1540,12 +1634,22 @@ class AppConfig(GlobalConfig):
 
         logger.info("开始获取用户自定义基建排班下拉框信息")
 
+        from app.models.plugin_script_config import PluginUserConfig
+
+        user_config = script_config.UserData[user_uid]
+        if isinstance(user_config, PluginUserConfig):
+            provider = self._resolve_record_provider(script_config)
+            form_payload = await storage_to_form(
+                provider,
+                user_config.get("PluginData", "Config"),
+                "user",
+            )
+            custom_infrast = form_payload.get("Data", {}).get("CustomInfrast", {})
+        else:
+            custom_infrast = json.loads(user_config.get("Data", "CustomInfrast"))
+
         data = []
-        for i, plan in enumerate(
-            json.loads(
-                script_config.UserData[user_uid].get("Data", "CustomInfrast")
-            ).get("plans", [])
-        ):
+        for i, plan in enumerate(custom_infrast.get("plans", [])):
             data.append({"label": plan.get("name", f"排班 {i+1}"), "value": str(i)})
 
         logger.success("用户自定义基建排班下拉框信息获取成功")

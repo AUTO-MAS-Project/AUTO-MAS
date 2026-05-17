@@ -519,6 +519,7 @@ class ScriptAdapterDefinition:
     legacy_user_config_class_name: str | None = None
     is_builtin: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
+    options_providers: dict[str, Callable[..., Any]] | None = None
 
     def _class_names(self) -> tuple[str, str]:
         return (
@@ -616,6 +617,7 @@ class ScriptAdapterDefinition:
             provider.metadata.setdefault("adapter_owner", owner)
         provider.metadata.setdefault("adapter_kind", "script_adapter")
         provider.metadata["hooks_factory"] = self.hooks_factory
+        provider.metadata["options_providers"] = dict(self.options_providers or {})
         return provider
 
 
