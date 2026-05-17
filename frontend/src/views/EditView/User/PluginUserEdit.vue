@@ -240,6 +240,38 @@ const refreshSchemaFromPluginSystem = async () => {
   }
 }
 
+const refreshImportedInfrastructure = async () => {
+  const preservedFormModel = cloneValue(formModel.value || {})
+  const [descriptors, users] = await Promise.all([
+    api.getScriptTypes(),
+    api.getUsers(scriptId, userId.value),
+  ])
+  const descriptorMap = descriptorMapFromList(descriptors)
+  const descriptor = descriptorMap[scriptType.value]
+  const user = users[0]
+  if (!user) {
+    throw new Error('用户不存在')
+  }
+
+  const latestConfig = cloneValue(user.config || {})
+  userSchema.value = user.schema || descriptor?.user_schema || null
+
+  const nextFormModel = {
+    ...preservedFormModel,
+    Info: {
+      ...(preservedFormModel.Info || {}),
+      InfrastName: latestConfig?.Info?.InfrastName ?? preservedFormModel?.Info?.InfrastName,
+      InfrastIndex: latestConfig?.Info?.InfrastIndex ?? preservedFormModel?.Info?.InfrastIndex,
+    },
+    Data: {
+      ...(preservedFormModel.Data || {}),
+      CustomInfrast: latestConfig?.Data?.CustomInfrast ?? preservedFormModel?.Data?.CustomInfrast,
+    },
+  }
+
+  formModel.value = nextFormModel
+}
+
 const handlePluginSystemMessage = (wsMessage: WebSocketBaseMessage) => {
   const payload = wsMessage.data as
     | PluginSystemSnapshotMessage
@@ -275,6 +307,13 @@ const {
 } = useSchemaActionRunner({
   onRefresh: async () => {
     await loadData()
+  },
+  onActionSuccess: async ({ field, action }) => {
+    if (field !== 'Data.ImportCustomInfrast' || action.path !== '/api/scripts/user/infrastructure') {
+      return false
+    }
+    await refreshImportedInfrastructure()
+    return true
   },
 })
 
