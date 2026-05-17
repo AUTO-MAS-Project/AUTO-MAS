@@ -58,8 +58,6 @@ class M9AManager(TaskExecuteBase):
         self.check_result = "-"
         self.has_new_version = False
         self.auto_update_fix_enabled = False
-        self.m9a_config_json_path = None
-        self.original_enable_auto_update = None
         self._virtual_user_old_version = None
         self._virtual_user_new_version = None
 
@@ -110,38 +108,21 @@ class M9AManager(TaskExecuteBase):
             return "M9A 配置文件不存在或已损坏，请检查 M9A 路径或配置文件情况！"
         return "Pass"
 
-    async def _disable_m9a_auto_update(self):
-        """禁用 M9A 自动更新开关，备份原始值"""
+    async def _set_m9a_auto_update(self, enabled: bool):
+        """设置 M9A config.json 中 EnableAutoUpdateResource 的值"""
         if not self.m9a_config_path:
-            return False
+            return
         config_json = self.m9a_config_path / "config.json"
         if not config_json.exists():
-            return False
-        try:
-            config = json.loads(config_json.read_text(encoding="utf-8"))
-        except Exception:
-            logger.warning("读取 M9A config.json 失败，跳过自动更新控制")
-            return False
-        self.m9a_config_json_path = config_json
-        self.original_enable_auto_update = config.get("EnableAutoUpdateResource", False)
-        if self.original_enable_auto_update:
-            config["EnableAutoUpdateResource"] = False
-            config_json.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
-            logger.info("已关闭 M9A 自动更新开关（原值=true），将在批量任务完成后恢复")
-            return True
-        return False
-
-    async def _restore_m9a_auto_update(self):
-        """恢复 M9A 自动更新开关原始值"""
-        if not self.m9a_config_json_path or self.original_enable_auto_update is None:
             return
         try:
-            config = json.loads(self.m9a_config_json_path.read_text(encoding="utf-8"))
-            config["EnableAutoUpdateResource"] = self.original_enable_auto_update
-            self.m9a_config_json_path.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
-            logger.info("已恢复 M9A 自动更新开关")
-        except Exception as e:
-            logger.exception(f"恢复 M9A 自动更新失败: {e}")
+            config = json.loads(config_json.read_text(encoding="utf-8"))
+            config["EnableAutoUpdateResource"] = enabled
+            config_json.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
+            status = "开启" if enabled else "关闭"
+            logger.info(f"已{status} M9A 自动更新开关")
+        except Exception:
+            logger.warning("读写 M9A config.json 失败，跳过自动更新控制")
 
     async def _build_virtual_user_config(self) -> M9AUserConfig:
         """构建虚拟用户的 M9A 用户配置"""
@@ -210,7 +191,7 @@ class M9AManager(TaskExecuteBase):
         m9a_exe = Path(self.script_config.get("Info", "Path")) / "M9A.exe"
         await System.kill_process(m9a_exe)
 
-        await self._disable_m9a_auto_update()
+        await self._set_m9a_auto_update(False)
 
         self.auto_update_fix_enabled = self.script_config.get("Run", "IfAutoUpdateAfterQueue")
         if self.auto_update_fix_enabled:
@@ -257,7 +238,7 @@ class M9AManager(TaskExecuteBase):
             logger.info("检测到 M9A 有新版本，将启动虚拟用户执行自动更新")
 
             self.script_info._m9a_restart_triggered = False
-            await self._restore_m9a_auto_update()
+            await self._set_m9a_auto_update(True)
 
             virtual_uid_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, "m9a-update.mas.auto")
             virtual_uid = str(virtual_uid_uuid)
@@ -292,9 +273,6 @@ class M9AManager(TaskExecuteBase):
                 logger.success(f"M9A 自动更新完成: v{self._virtual_user_old_version} → v{self._virtual_user_new_version}")
             else:
                 logger.warning(f"虚拟用户未正常完成，状态: {virtual_user_item.status}")
-
-        elif self.auto_update_fix_enabled and not self.has_new_version:
-            logger.info("首个用户未检测到 M9A 新版本，跳过自动更新")
 
     async def final_task(self):
         """运行结束后的收尾：解锁配置、推送结果、还原原始配置"""
