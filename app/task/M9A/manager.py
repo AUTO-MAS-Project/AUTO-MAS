@@ -210,11 +210,11 @@ class M9AManager(TaskExecuteBase):
         m9a_exe = Path(self.script_config.get("Info", "Path")) / "M9A.exe"
         await System.kill_process(m9a_exe)
 
-        self.auto_update_fix_enabled = await self._disable_m9a_auto_update()
+        self.auto_update_fix_enabled = self.script_config.get("Run", "IfAutoUpdateAfterQueue")
         if self.auto_update_fix_enabled:
-            logger.info("已关闭 M9A 自动更新，将在批量任务后统一处理")
+            logger.success("已开启队列结束后自动更新，将在批量任务后统一处理")
         else:
-            logger.info("M9A 自动更新未启用或读取失败，无需干预")
+            logger.info("队列结束后自动更新未开启，跳过自动更新处理")
 
     async def main_task(self):
 

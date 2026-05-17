@@ -131,6 +131,7 @@ export interface M9AScriptConfig {
     ProxyTimesLimit: number
     RunTimesLimit: number
     RunTimeLimit: number
+    IfAutoUpdateAfterQueue: boolean
   }
   SubConfigsInfo: {
     UserData: {

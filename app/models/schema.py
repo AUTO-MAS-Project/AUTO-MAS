@@ -892,6 +892,7 @@ class M9AConfig_Run(BaseModel):
     ProxyTimesLimit: Optional[int] = Field(default=None, description="代理次数限制")
     RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
     RunTimeLimit: Optional[int] = Field(default=None, description="运行时间限制（分钟）")
+    IfAutoUpdateAfterQueue: Optional[bool] = Field(default=None, description="是否在队列结束后自动更新M9A")
 
 
 class M9AConfig(BaseModel):
