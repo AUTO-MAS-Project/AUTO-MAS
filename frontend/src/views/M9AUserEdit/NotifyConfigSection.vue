@@ -83,12 +83,12 @@ const handleWebhookChange = () => {
 
 <style scoped>
 .form-section {
-  margin-bottom: 32px;
+  margin-bottom: 40px;
 }
 
 .section-header {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
+  margin-bottom: 24px;
+  padding-bottom: 12px;
   border-bottom: 2px solid var(--ant-color-border-secondary);
   display: flex;
   justify-content: space-between;
@@ -114,9 +114,10 @@ const handleWebhookChange = () => {
 }
 
 .switch-description {
-  margin-left: 12px;
-  font-size: 13px;
+  margin-left: 16px;
+  font-size: 14px;
   color: var(--ant-color-text-secondary);
+  line-height: 1.6;
 }
 
 .modern-input {
