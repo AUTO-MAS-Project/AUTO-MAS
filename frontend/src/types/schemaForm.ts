@@ -17,12 +17,17 @@ export interface SchemaActionSessionDefinition {
   error_field?: string
 }
 
+export interface SchemaActionFilePickerDefinition {
+  filters?: SchemaFileFilter[]
+}
+
 export interface SchemaActionDefinition {
   label?: string
   path?: string
   method?: string
   payload?: unknown
   refresh?: boolean
+  file_picker?: SchemaActionFilePickerDefinition | null
   session?: SchemaActionSessionDefinition | null
 }
 
