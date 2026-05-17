@@ -150,12 +150,12 @@ const emitSave = (key: string, value: any) => {
 
 <style scoped>
 .form-section {
-  margin-bottom: 32px;
+  margin-bottom: 40px;
 }
 
 .section-header {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
+  margin-bottom: 24px;
+  padding-bottom: 12px;
   border-bottom: 2px solid var(--ant-color-border-secondary);
   display: flex;
   justify-content: space-between;
@@ -212,7 +212,7 @@ const emitSave = (key: string, value: any) => {
 
 .modern-input:focus,
 .modern-input.ant-input-focused {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+  border-color: #13c2c2;
+  box-shadow: 0 0 0 4px rgba(19, 194, 194, 0.15);
 }
 </style>

@@ -9,7 +9,7 @@
         <div class="column-header">
           <span>任务队列</span>
           <a-dropdown v-model:visible="addTaskDropdownVisible" trigger="click">
-            <a-button type="primary" size="small" :loading="loading">
+            <a-button type="primary" size="middle" :loading="loading">
               <template #icon><PlusOutlined /></template>
               添加任务 ({{ availableTasks.length }})
             </a-button>
@@ -45,7 +45,7 @@
                   <div class="task-actions">
                     <a-button
                       type="text"
-                      size="small"
+                      size="middle"
                       :disabled="index === 0"
                       @click.stop="moveTaskUp(index)"
                     >
@@ -53,19 +53,11 @@
                     </a-button>
                     <a-button
                       type="text"
-                      size="small"
+                      size="middle"
                       :disabled="index === localTaskQueue.length - 1"
                       @click.stop="moveTaskDown(index)"
                     >
                       <DownOutlined />
-                    </a-button>
-                    <a-button
-                      type="text"
-                      size="small"
-                      danger
-                      @click.stop="deleteTask(index)"
-                    >
-                      <DeleteOutlined />
                     </a-button>
                   </div>
                 </div>
@@ -91,15 +83,12 @@
             @update="handleOptionUpdate"
           />
           
-          <a-button
-            type="primary"
-            danger
-            block
-            style="margin-top: 24px"
-            @click="deleteSelectedTask"
-          >
-            删除此任务
-          </a-button>
+          <a-popconfirm title="确定要删除这个任务吗？" ok-text="确定" cancel-text="取消" @confirm="deleteSelectedTask">
+            <a-button danger block style="margin-top: 24px; height: 40px; font-size: 14px;">
+              <template #icon><DeleteOutlined /></template>
+              删除此任务
+            </a-button>
+          </a-popconfirm>
         </div>
         
         <div class="no-selection" v-else>
@@ -372,18 +361,23 @@ onMounted(() => {
 .task-queue-list {
   height: 100%;
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
 }
 
 .draggable-task-item {
-  padding: 12px 16px;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--ant-color-border);
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: all 0.25s ease;
+  border-left: 3px solid transparent;
 }
 
-.draggable-task-item:hover {
+/* 未选中状态的 hover 效果 */
+.draggable-task-item:not(.selected-item):hover {
   background-color: var(--ant-color-primary-bg-hover);
+  border-left-color: var(--ant-color-primary);
 }
 
 .draggable-task-item:last-child {
@@ -399,29 +393,55 @@ onMounted(() => {
 
 .task-name {
   flex: 1;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ant-color-text);
 }
 
 .task-actions {
   display: flex;
-  gap: 4px;
+  gap: 8px;
 }
 
+.task-actions :deep(.ant-btn) {
+  transition: all 0.2s ease;
+  border-radius: 6px;
+}
+
+.task-actions :deep(.ant-btn:hover) {
+  background-color: var(--ant-color-primary-bg-hover);
+}
+
+/* 选中状态的样式（始终显示，使用 !important 确保不被 hover 覆盖）*/
 .selected-item {
-  background-color: var(--ant-color-primary-bg);
+  background-color: var(--ant-color-primary-bg) !important;
+  border-left-color: var(--ant-color-primary) !important;
+}
+
+/* 选中 + hover 时：保持高亮不变 */
+.selected-item:hover {
+  background-color: var(--ant-color-primary-bg) !important;
+  border-left-color: var(--ant-color-primary-hover, #1890ff) !important;
 }
 
 .task-config {
-  padding: 16px;
+  padding: 24px;
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  background: var(--ant-color-bg-container);
 }
 
 .selected-task-name {
-  font-size: 18px;
-  font-weight: 600;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--ant-color-border);
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--ant-color-border-secondary);
+  color: var(--ant-color-text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .no-selection {

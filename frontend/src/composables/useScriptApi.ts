@@ -733,6 +733,14 @@ export function useScriptApi() {
                         Notes:
                           m9aUserData.Info?.Notes !== undefined ? m9aUserData.Info.Notes : '',
                         Tag: m9aUserData.Info?.Tag !== undefined ? m9aUserData.Info.Tag : null,
+                        Resource:
+                          m9aUserData.Info?.Resource !== undefined
+                            ? m9aUserData.Info.Resource
+                            : '官服',
+                        Account:
+                          m9aUserData.Info?.Account !== undefined
+                            ? m9aUserData.Info.Account
+                            : '',
                         EmulatorId:
                           m9aUserData.Info?.EmulatorId !== undefined
                             ? m9aUserData.Info.EmulatorId
