@@ -189,8 +189,13 @@ const loadAvailableTasks = async () => {
       availableTasks.value = []
       taskDefinitions.value = {}
       
+      const RESERVED_ENTRIES = ['StartUp', 'Close1999', 'SwitchAccount']
+
       response.data.forEach((task: any) => {
-        if (!task.group || !task.group.includes('standalone')) {
+        if (
+          (!task.group || !task.group.includes('standalone')) &&
+          !RESERVED_ENTRIES.includes(task.entry)
+        ) {
           availableTasks.value.push(task)
           taskDefinitions.value[task.name] = task
         }

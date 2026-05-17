@@ -184,6 +184,7 @@ class AutoProxyTask(TaskExecuteBase):
             # 读取用户队列
             queue = self.cur_user_config.get("Task", "Queue")
             resource = self.cur_user_config.get("Info", "Resource") or "官服"
+            account = self.cur_user_config.get("Info", "Account") or ""
             logger.info(f"用户 {self.cur_user_uid} 的任务队列 (原始): {queue}, 类型: {type(queue)}")
 
             # 确保 queue 是列表
@@ -200,10 +201,14 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_item.status = "异常"
                 return
 
+            # 清理保留任务（二次兜底）
+            RESERVED_NAMES = {"启动游戏", "关闭游戏", "切换账号"}
+            queue = [item for item in queue if (item if isinstance(item, str) else item.get("name", "")) not in RESERVED_NAMES]
+
             logger.info(f"用户 {self.cur_user_uid} 将执行 {len(queue)} 个任务: {queue}")
 
             # 写入M9A配置
-            await self.write_m9a_config(queue, emulator_info, resource)
+            await self.write_m9a_config(queue, emulator_info, resource, account)
 
             # 启动 M9A
             logger.info(f"启动 M9A 进程：{self.m9a_exe_path}")
@@ -258,7 +263,7 @@ class AutoProxyTask(TaskExecuteBase):
 
                 await asyncio.sleep(3)
 
-    async def write_m9a_config(self, queue: list, emulator_info: DeviceInfo, resource: str = "官服"):
+    async def write_m9a_config(self, queue: list, emulator_info: DeviceInfo, resource: str = "官服", account: str = ""):
         """向 M9A 目录写入运行配置文件，并保存 debug 备份"""
         logger.info("开始配置 M9A 运行参数")
 
@@ -279,7 +284,8 @@ class AutoProxyTask(TaskExecuteBase):
                 script_config=self.script_config,
                 emulator_index=emulator_index,
                 emulator_manager=self.emulator_manager,
-                resource=resource
+                resource=resource,
+                account=account
             )
         except Exception as e:
             logger.error(f"构建 M9A 配置失败: {e}")
@@ -500,7 +506,8 @@ class AutoProxyTask(TaskExecuteBase):
         script_config: M9AConfig | None = None,
         emulator_index: str | None = None,
         emulator_manager = None,
-        resource: str = "官服"
+        resource: str = "官服",
+        account: str = ""
     ) -> dict:
         config = None
 
@@ -541,6 +548,22 @@ class AutoProxyTask(TaskExecuteBase):
         logger.info(f"M9A CurrentTasks：共 {len(config['CurrentTasks'])} 个任务")
 
         config["TaskItems"] = []
+
+        # 自动添加启动游戏（队列首）
+        startup_def = task_loader.get_full_definition("启动游戏")
+        if startup_def:
+            config["TaskItems"].append(self._build_task_item(startup_def, default_check=True))
+
+        # 如果官服且填写了账号信息，插入切换账号
+        if resource == "官服" and account:
+            switch_account_def = task_loader.get_full_definition("切换账号")
+            if switch_account_def:
+                switch_item = self._build_task_item(switch_account_def, default_check=True)
+                for opt in (switch_item.get("option") or []):
+                    if opt.get("name") == "目标账号(可选)":
+                        opt["data"] = {"账号": account}
+                config["TaskItems"].append(switch_item)
+
         skipped_standalone = 0
 
         for queue_item in queue:
@@ -563,6 +586,11 @@ class AutoProxyTask(TaskExecuteBase):
 
             item = self._build_task_item(task_def, default_check=True, user_options=task_options)
             config["TaskItems"].append(item)
+
+        # 自动添加关闭游戏（队列尾）
+        close_def = task_loader.get_full_definition("关闭游戏")
+        if close_def:
+            config["TaskItems"].append(self._build_task_item(close_def, default_check=True))
 
         logger.info(
             f"M9A TaskItems：共 {len(config['TaskItems'])} 个任务项"
