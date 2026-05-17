@@ -848,6 +848,7 @@ class M9AUserConfig_Info(BaseModel):
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
     Notes: Optional[str] = Field(default=None, description="备注")
     Tag: Optional[str] = Field(default=None, description="用户标签信息")
+    Resource: Optional[str] = Field(default=None, description="服务器资源名称")
 
 
 class M9AUserConfig_Task(BaseModel):

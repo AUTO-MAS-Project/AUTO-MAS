@@ -1333,6 +1333,8 @@ class M9AUserConfig(ConfigBase):
         self.Info_Tag = ConfigItem(
             "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
         )
+        ## 服务器资源
+        self.Info_Resource = ConfigItem("Info", "Resource", "官服")
 
         ## Task -------------------------------------------------------------
         ## 可用任务列表（从 M9A 配置文件读取）

@@ -53,6 +53,26 @@
             @blur="emitSave('Info.RemainedDay', formData.Info.RemainedDay)" />
         </a-form-item>
       </a-col>
+      <a-col :span="12">
+        <a-form-item name="resource">
+          <template #label>
+            <a-tooltip title="选择当前用户使用的游戏服务器">
+              <span class="form-label">
+                服务器
+                <QuestionCircleOutlined class="help-icon" />
+              </span>
+            </a-tooltip>
+          </template>
+          <a-select
+            v-model:value="formData.Info.Resource"
+            placeholder="请选择服务器"
+            :disabled="loading"
+            size="large"
+            :options="resourceOptions"
+            @change="emitSave('Info.Resource', formData.Info.Resource)"
+          />
+        </a-form-item>
+      </a-col>
     </a-row>
 
     <a-form-item name="notes">
@@ -72,6 +92,18 @@
 
 <script setup lang="ts">
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+
+const resourceOptions = [
+  { label: '官服', value: '官服' },
+  { label: 'B 服', value: 'B 服' },
+  { label: 'OPPO 服', value: 'OPPO 服' },
+  { label: '小米服', value: '小米服' },
+  { label: '华为服', value: '华为服' },
+  { label: '国际服（EN）', value: '国际服（EN）' },
+  { label: '国际服（JP）', value: '国际服（JP）' },
+  { label: '港澳台服', value: '港澳台服' },
+  { label: '国际服（KR）', value: '国际服（KR）' },
+]
 
 defineProps<{
   formData: any
