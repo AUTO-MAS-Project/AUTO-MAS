@@ -38,6 +38,7 @@ from .script_adapter import (
 )
 from .schema_utils import (
     SchemaDecorationContext,
+    SchemaOptionsProviderContext,
     append_schema_field,
     find_schema_field,
     find_schema_group,
@@ -145,6 +146,7 @@ __all__ = [
     "ScriptAdapterPlugin",
     # Schema 工具
     "SchemaDecorationContext",
+    "SchemaOptionsProviderContext",
     "find_schema_group",
     "find_schema_field",
     "set_schema_group_label",

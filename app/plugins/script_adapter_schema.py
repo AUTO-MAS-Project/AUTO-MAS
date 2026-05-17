@@ -324,6 +324,7 @@ def _field_from_model_field(name: str, field_info: Any) -> PluginFieldDeclaratio
     field_type = _field_type(field_info.annotation, extra)
     field_kwargs: dict[str, Any] = {
         "options": _field_options(field_info.annotation, extra),
+        "options_provider": extra.pop("options_provider", None),
         "placeholder": extra.pop("placeholder", None),
         "help": extra.pop("help", None),
         "hidden": bool(extra.pop("hidden", False)),
@@ -449,6 +450,8 @@ def _build_schema_field(
         schema["sensitive"] = True
     if field.options is not None:
         schema["options"] = copy.deepcopy(field.options)
+    if field.options_provider is not None:
+        schema["options_provider"] = copy.deepcopy(field.options_provider)
 
     _copy_optional(schema, "placeholder", field.placeholder)
     _copy_optional(schema, "help", field.help)
