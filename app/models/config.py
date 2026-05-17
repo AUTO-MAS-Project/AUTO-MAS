@@ -1478,6 +1478,10 @@ class M9AConfig(ConfigBase):
         self.Run_RunTimeLimit = ConfigItem(
             "Run", "RunTimeLimit", 10, RangeValidator(1, 9999)
         )
+        ## 是否在队列结束后自动更新
+        self.Run_IfAutoUpdateAfterQueue = ConfigItem(
+            "Run", "IfAutoUpdateAfterQueue", False, BoolValidator()
+        )
 
         self.UserData = MultipleConfig([M9AUserConfig])
 
