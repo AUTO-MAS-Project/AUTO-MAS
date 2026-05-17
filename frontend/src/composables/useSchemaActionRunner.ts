@@ -91,8 +91,22 @@ const unwrapResponseError = (data: any) => {
   }
 }
 
+const toSerializableValue = <T>(value: T): T => {
+  if (value == null) {
+    return value
+  }
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
 export const useSchemaActionRunner = (options?: {
   onRefresh?: () => Promise<void> | void
+  onActionSuccess?: (params: {
+    field: string
+    action: SchemaActionDefinition
+    fieldSchema: SchemaFieldDefinition
+    context: ActionContext
+    response: any
+  }) => Promise<boolean | void> | boolean | void
 }) => {
   const { subscribe, unsubscribe } = useWebSocket()
   const actionLoadingId = ref('')
@@ -234,22 +248,43 @@ export const useSchemaActionRunner = (options?: {
     actionLoadingId.value = field
     try {
       const method = action.method || 'POST'
-      const payload = resolveTemplateValue(action.payload ?? {}, context)
+      let actionContext = context
+      if (action.file_picker) {
+        const filters = toSerializableValue(action.file_picker.filters ?? [])
+        const selectedFiles = await window.electronAPI.selectFile(filters)
+        const pickedFile = Array.isArray(selectedFiles) ? selectedFiles[0] : null
+        if (!pickedFile) {
+          return
+        }
+        actionContext = {
+          ...context,
+          pickedFile,
+        }
+      }
+
+      const payload = resolveTemplateValue(action.payload ?? {}, actionContext)
       const data = await requestAction<any>(action.path, method, payload)
       unwrapResponseError(data)
 
       if (action.session) {
-        await bindSessionEvents(field, action, action.session, context, data)
+        await bindSessionEvents(field, action, action.session, actionContext, data)
         const startText = resolveTemplateValue(
           action.session.start_message || `${action.label || '配置动作'}已启动`,
-          context
+          actionContext
         )
         message.success(String(startText))
       } else {
-        message.success(`${action.label || '配置动作'}已执行`)
-        if (action.refresh && options?.onRefresh) {
+        const handledRefresh = await options?.onActionSuccess?.({
+          field,
+          action,
+          fieldSchema,
+          context: actionContext,
+          response: data,
+        })
+        if (action.refresh && !handledRefresh && options?.onRefresh) {
           await options.onRefresh()
         }
+        message.success(`${action.label || '配置动作'}已执行`)
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)

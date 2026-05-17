@@ -38,7 +38,7 @@
               type="primary"
               :loading="actionLoadingId === getFieldPath(field)"
               :disabled="readonly"
-              @click="emit('trigger-action', { field: getFieldPath(field), fieldSchema: field })"
+              @click="handleButtonClick(getFieldPath(field), field)"
             >
               {{ getActionLabel(field) }}
             </a-button>
@@ -386,7 +386,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import type {
   GroupedSchemaDefinition,
   SchemaDefinition,
@@ -813,6 +813,22 @@ const handleJsonBlur = (field: string, event: FocusEvent) => {
     }
     emit('validation-change', validationErrors.value)
   }
+}
+
+const flushActiveField = async () => {
+  if (typeof document === 'undefined') {
+    return
+  }
+  const activeElement = document.activeElement
+  if (activeElement instanceof HTMLElement) {
+    activeElement.blur()
+    await nextTick()
+  }
+}
+
+const handleButtonClick = async (field: string, fieldSchema: SchemaFieldDefinition) => {
+  await flushActiveField()
+  emit('trigger-action', { field, fieldSchema })
 }
 
 const normalizeListValueByType = (value: unknown, itemType?: string) => {
