@@ -576,28 +576,30 @@ class MaaEndUserConfig_Info(BaseModel):
 
 
 class MaaEndUserConfig_Task(BaseModel):
-    IfSanity: Optional[bool] = Field(default=None, description="是否启用理智任务")
-    IfVisitFriends: Optional[bool] = Field(default=None, description="是否启用访问好友")
-    IfDijiangRewards: Optional[bool] = Field(default=None, description="是否启用帝江奖励")
-    IfCreditShoppingN2: Optional[bool] = Field(default=None, description="是否启用信用采购")
-    IfDeliveryJobs: Optional[bool] = Field(default=None, description="是否启用配送委托")
-    IfSellProduct: Optional[bool] = Field(default=None, description="是否启用自动售卖")
-    IfAutoStockpile: Optional[bool] = Field(default=None, description="是否启用自动备货")
-    IfAutoStockStaple: Optional[bool] = Field(default=None, description="是否启用自动补货")
-    IfAutoSell: Optional[bool] = Field(default=None, description="是否启用自动交易")
-    IfEnvironmentMonitoring: Optional[bool] = Field(
-        default=None, description="是否启用环境监测"
+    IfSanity: Optional[bool] = Field(default=None, description="是否启用刷理智")
+    IfVisitFriends: Optional[bool] = Field(default=None, description="是否启用🤝拜访好友")
+    IfDijiangRewards: Optional[bool] = Field(default=None, description="是否启用🎁基建任务")
+    IfCreditShoppingN2: Optional[bool] = Field(
+        default=None, description="是否启用🛍️信用点购物"
     )
-    IfDailyRewards: Optional[bool] = Field(default=None, description="是否启用日常奖励")
-    IfSeizeEntrustTask: Optional[bool] = Field(default=None, description="是否启用收取委托")
-    IfAutoCollect: Optional[bool] = Field(default=None, description="是否启用自动采集")
+    IfDeliveryJobs: Optional[bool] = Field(default=None, description="是否启用🚚转交委托")
+    IfSellProduct: Optional[bool] = Field(default=None, description="是否启用🛒售卖产品")
+    IfAutoStockpile: Optional[bool] = Field(default=None, description="是否启用📦自动囤货")
+    IfAutoStockStaple: Optional[bool] = Field(default=None, description="是否启用🏪购买稳定物资")
+    IfAutoSell: Optional[bool] = Field(default=None, description="是否启用💰售卖弹性物资")
+    IfEnvironmentMonitoring: Optional[bool] = Field(
+        default=None, description="是否启用🌿环境监测"
+    )
+    IfDailyRewards: Optional[bool] = Field(default=None, description="是否启用📅日常奖励领取")
+    IfSeizeEntrustTask: Optional[bool] = Field(default=None, description="是否启用🌆抢委托")
+    IfAutoCollect: Optional[bool] = Field(default=None, description="是否启用🧺自动采集")
     IfAutoUseSpMedication: Optional[bool] = Field(
-        default=None, description="是否启用自动用理智药"
+        default=None, description="是否启用💊应急理智加强剂"
     )
     IfResourceRecycleStation: Optional[bool] = Field(
-        default=None, description="是否启用资源回收"
+        default=None, description="是否启用🦉资源回收站"
     )
-    IfAutoEcoFarm: Optional[bool] = Field(default=None, description="是否启用自动农场")
+    IfAutoEcoFarm: Optional[bool] = Field(default=None, description="是否启用🌾生态农场")
     SanityTaskType: Optional[
         Literal["OperatorProgression", "WeaponProgression", "CrisisDrills", "Essence"]
     ] = Field(default=None, description="理智任务类型")
@@ -692,27 +694,29 @@ class MaaEndConfig_Game(BaseModel):
 
 class MaaEndConfig_Task(BaseModel):
     IfSanity: Optional[bool] = Field(default=None, description="是否启用理智任务")
-    IfVisitFriends: Optional[bool] = Field(default=None, description="是否启用访问好友")
-    IfDijiangRewards: Optional[bool] = Field(default=None, description="是否启用帝江奖励")
-    IfCreditShoppingN2: Optional[bool] = Field(default=None, description="是否启用信用采购")
-    IfDeliveryJobs: Optional[bool] = Field(default=None, description="是否启用配送委托")
-    IfSellProduct: Optional[bool] = Field(default=None, description="是否启用自动售卖")
-    IfAutoStockpile: Optional[bool] = Field(default=None, description="是否启用自动备货")
-    IfAutoStockStaple: Optional[bool] = Field(default=None, description="是否启用自动补货")
-    IfAutoSell: Optional[bool] = Field(default=None, description="是否启用自动交易")
-    IfEnvironmentMonitoring: Optional[bool] = Field(
-        default=None, description="是否启用环境监测"
+    IfVisitFriends: Optional[bool] = Field(default=None, description="是否启用🤝拜访好友")
+    IfDijiangRewards: Optional[bool] = Field(default=None, description="是否启用🎁基建任务")
+    IfCreditShoppingN2: Optional[bool] = Field(
+        default=None, description="是否启用🛍️信用点购物"
     )
-    IfDailyRewards: Optional[bool] = Field(default=None, description="是否启用日常奖励")
-    IfSeizeEntrustTask: Optional[bool] = Field(default=None, description="是否启用收取委托")
-    IfAutoCollect: Optional[bool] = Field(default=None, description="是否启用自动采集")
+    IfDeliveryJobs: Optional[bool] = Field(default=None, description="是否启用🚚转交委托")
+    IfSellProduct: Optional[bool] = Field(default=None, description="是否启用🛒售卖产品")
+    IfAutoStockpile: Optional[bool] = Field(default=None, description="是否启用📦自动囤货")
+    IfAutoStockStaple: Optional[bool] = Field(default=None, description="是否启用🏪购买稳定物资")
+    IfAutoSell: Optional[bool] = Field(default=None, description="是否启用💰售卖弹性物资")
+    IfEnvironmentMonitoring: Optional[bool] = Field(
+        default=None, description="是否启用🌿环境监测"
+    )
+    IfDailyRewards: Optional[bool] = Field(default=None, description="是否启用📅日常奖励领取")
+    IfSeizeEntrustTask: Optional[bool] = Field(default=None, description="是否启用🌆抢委托")
+    IfAutoCollect: Optional[bool] = Field(default=None, description="是否启用🧺自动采集")
     IfAutoUseSpMedication: Optional[bool] = Field(
-        default=None, description="是否启用自动用理智药"
+        default=None, description="是否启用💊应急理智加强剂"
     )
     IfResourceRecycleStation: Optional[bool] = Field(
-        default=None, description="是否启用资源回收"
+        default=None, description="是否启用🦉资源回收站"
     )
-    IfAutoEcoFarm: Optional[bool] = Field(default=None, description="是否启用自动农场")
+    IfAutoEcoFarm: Optional[bool] = Field(default=None, description="是否启用🌾生态农场")
     SanityTaskType: Optional[
         Literal["OperatorProgression", "WeaponProgression", "CrisisDrills", "Essence"]
     ] = Field(default=None, description="理智任务类型")

@@ -160,12 +160,6 @@ class ScriptConfigTask(TaskExecuteBase):
         # 移除冗余任务项信息
         maaend_set["recentlyClosed"] = []
 
-        # 不直接运行任务
-        settings = maaend_set.setdefault("settings", {})
-        settings["autoStartInstanceId"] = selected_instance["id"]
-        settings["autoRunOnLaunch"] = False
-        settings.pop("autoStartRemovedInstanceName", None)
-
         (self.maaend_set_path / "mxu-MaaEnd.json").write_text(
             json.dumps(maaend_set, ensure_ascii=False, indent=4), encoding="utf-8"
         )

@@ -1449,5 +1449,52 @@
         }
       ]
     }
+  ],
+  "lastActiveInstanceId": "cbek8en",
+  "recentlyClosed": [],
+  "settings": {
+    "language": "zh-CN",
+    "onboardingCompleted": true
+  },
+  "customAccents": [],
+  "newTaskNames": [],
+  "presetInitialized": true,
+  "interfaceTaskSnapshot": [
+    "SellProduct",
+    "SeizeEntrustTask",
+    "DeliveryJobs",
+    "AutoStockpile",
+    "AutoStockStaple",
+    "AutoSell",
+    "EnvironmentMonitoring",
+    "GearAssembly",
+    "Weapon",
+    "BatchUseDetector",
+    "AutoUseSpMedication",
+    "EssenceFilter",
+    "AutoArtificing",
+    "ResourceRecycleStation",
+    "AutoCollect",
+    "AutoEcoFarm",
+    "PuzzleSolver",
+    "ImportBluePrints",
+    "AutoEssence",
+    "ProtocolSpace",
+    "DijiangRewards",
+    "VisitFriends",
+    "GiftOperator",
+    "BatchAddFriends",
+    "BakerEntry",
+    "ReadAllWiki",
+    "DailyRewards",
+    "ClaimSimulationRewards",
+    "CreditShoppingN2",
+    "AndroidOpenGame",
+    "RealTimeTask",
+    "ItemTransfer",
+    "Crafting",
+    "SimpleProductionBatchStart",
+    "ReceiveProdManual",
+    "StashBackpack"
   ]
 }
