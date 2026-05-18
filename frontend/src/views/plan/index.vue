@@ -127,7 +127,7 @@ const currentPlanDescriptor = computed(() => {
 
 const isActivePlan = (planId: string) => activePlanId.value === planId
 
-const clonePlanData = <T,>(value: T): T => structuredClone(value)
+const clonePlanData = <T,>(value: T): T => JSON.parse(JSON.stringify(value))
 
 const syncCurrentPlan = (planId: string) => {
   const planData = planDataMap.value[planId]
@@ -315,15 +315,20 @@ const buildNestedObject = (path: string, value: any): Record<string, any> => {
   return result
 }
 
-// 优化计划切换逻辑
+// 优化计划切换逻辑：先同步 tableData，再切换 activePlanId
+// 确保 <component :is> 切换时新组件拿到的是正确类型的数据
 const onPlanChange = async (planId: string) => {
   if (planId === activePlanId.value) return
 
   try {
-    // 立即切换到新计划
     logger.info(`切换到新计划: ${planId}`)
+
+    // 先从缓存同步 tableData（initPlans 已预加载了所有数据）
+    // 这样当 activePlanId 改变触发组件切换时，tableData 已经是正确的数据
+    syncCurrentPlan(planId)
+
+    // 然后切换活跃计划（触发 currentPlanDescriptor / <component :is> 切换）
     activePlanId.value = planId
-    await loadPlanData(planId)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`切换计划失败: ${errorMsg}`)

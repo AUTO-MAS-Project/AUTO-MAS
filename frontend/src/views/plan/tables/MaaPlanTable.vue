@@ -447,10 +447,15 @@ const handleStageToggle = async (stageKey: string, timeKey: TimeKey, enabled: bo
   }
 }
 
+// 防竞态版本号：当快速切换计划时，旧的 async watcher 回调不会覆盖新数据
+let syncVersion = 0
+
 // 监听外部数据变化 - 这是数据的唯一来源
 watch(
   [() => props.planId, () => props.tableData],
   async ([planId, newData]) => {
+    const currentVersion = ++syncVersion
+
     if (planId) {
       coordinator.updatePlanId(planId)
     }
@@ -468,6 +473,9 @@ watch(
           // 错误已由 preloadAllStageOptions 内部记录
         }
       }
+
+      // async 操作完成后检查是否已过时（快速切换时旧回调会被丢弃）
+      if (currentVersion !== syncVersion) return
 
       // 从后端数据加载到协调器
       coordinator.fromApiData(newData, shouldResetCustomStages)
