@@ -79,8 +79,13 @@ class AutoProxyTask(TaskExecuteBase):
         self.m9a_task_loader = M9ATaskLoader(self.m9a_root_path)
         self.template_path = self.m9a_root_path / "config/instances/default.json"
 
+        self.is_first_user_for_version_check = False
+        self.is_virtual_update_user = False
 
     async def check(self) -> str:
+
+        if self.is_virtual_update_user:
+            return "Pass"
 
         if self.script_config.get(
             "Run", "ProxyTimesLimit"
@@ -110,10 +115,11 @@ class AutoProxyTask(TaskExecuteBase):
         self.task_dict = {}
 
         # 初始化每日代理状态
-        self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
-        if self.cur_user_config.get("Data", "LastProxyDate") != self.curdate:
-            await self.cur_user_config.set("Data", "LastProxyDate", self.curdate)
-            await self.cur_user_config.set("Data", "ProxyTimes", 0)
+        if not self.is_virtual_update_user:
+            self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+            if self.cur_user_config.get("Data", "LastProxyDate") != self.curdate:
+                await self.cur_user_config.set("Data", "LastProxyDate", self.curdate)
+                await self.cur_user_config.set("Data", "ProxyTimes", 0)
 
         self.check_result = await self.check()
         if self.check_result != "Pass":
@@ -132,9 +138,10 @@ class AutoProxyTask(TaskExecuteBase):
         logger.info(f"开始代理用户: {self.cur_user_uid}")
         self.cur_user_item.status = "运行"
         self.run_complete = False
-        for i in range(self.script_config.get("Run", "RunTimesLimit")):
+        retry_limit = 1 if self.is_virtual_update_user else self.script_config.get("Run", "RunTimesLimit")
+        for i in range(retry_limit):
             logger.info(
-                f"用户 {self.cur_user_item.name} 自动代理模式 - 尝试次数: {i + 1}/{self.script_config.get('Run', 'RunTimesLimit')}"
+                f"用户 {self.cur_user_item.name} 自动代理模式 - 尝试次数: {i + 1}/{retry_limit}"
             )
             self.log_start_time = datetime.now()
             self.cur_user_item.log_record[self.log_start_time] = (
@@ -142,10 +149,13 @@ class AutoProxyTask(TaskExecuteBase):
             ) = LogRecord()
 
             try:
-                self.script_info.log = "正在启动模拟器"
-                emulator_info = await self.emulator_manager.open(
-                    self.script_config.get("Emulator", "Index"),
-                )
+                if self.is_virtual_update_user:
+                    emulator_info = None
+                else:
+                    self.script_info.log = "正在启动模拟器"
+                    emulator_info = await self.emulator_manager.open(
+                        self.script_config.get("Emulator", "Index"),
+                    )
             except Exception as e:
                 logger.exception(f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}")
                 await Config.send_websocket_message(
@@ -173,7 +183,7 @@ class AutoProxyTask(TaskExecuteBase):
                 )
                 continue
 
-            if Config.get("Function", "IfSilence"):
+            if Config.get("Function", "IfSilence") and not self.is_virtual_update_user:
                 try:
                     await self.emulator_manager.setVisible(
                         self.script_config.get("Emulator", "Index"), False
@@ -196,7 +206,7 @@ class AutoProxyTask(TaskExecuteBase):
                     logger.error(f"任务队列 JSON 解析失败: {e}")
                     queue = []
 
-            if not queue:
+            if not queue and not self.is_virtual_update_user:
                 logger.warning(f"用户 {self.cur_user_uid} 未配置任务队列或队列为空")
                 self.cur_user_item.status = "异常"
                 return
@@ -246,12 +256,13 @@ class AutoProxyTask(TaskExecuteBase):
                 )
 
                 await self.m9a_process_manager.kill()
-                try:
-                    await self.emulator_manager.close(
-                        self.script_config.get("Emulator", "Index")
-                    )
-                except Exception as e:
-                    logger.exception(f"关闭模拟器失败: {e}")
+                if not self.is_virtual_update_user:
+                    try:
+                        await self.emulator_manager.close(
+                            self.script_config.get("Emulator", "Index")
+                        )
+                    except Exception as e:
+                        logger.exception(f"关闭模拟器失败: {e}")
                 await System.kill_process(self.m9a_exe_path)
 
                 await Notify.push_plyer(
@@ -267,26 +278,28 @@ class AutoProxyTask(TaskExecuteBase):
         """向 M9A 目录写入运行配置文件，并保存 debug 备份"""
         logger.info("开始配置 M9A 运行参数")
 
-        # 确保M9A进程已关闭
-        await self.m9a_process_manager.kill()
-        await System.kill_process(self.m9a_exe_path)
+        if not self.is_virtual_update_user:
+            await self.m9a_process_manager.kill()
+            await System.kill_process(self.m9a_exe_path)
 
-        # 使用 config_builder 构建完整配置
         try:
-            emulator_id = self.script_config.get("Emulator", "Id")
-            emulator_index = self.script_config.get("Emulator", "Index")
-            
-            config = await self.build_config(
-                queue=queue,
-                task_loader=self.m9a_task_loader,
-                emulator_info=emulator_info,
-                emulator_id=emulator_id,
-                script_config=self.script_config,
-                emulator_index=emulator_index,
-                emulator_manager=self.emulator_manager,
-                resource=resource,
-                account=account
-            )
+            if self.is_virtual_update_user:
+                config = await self._build_virtual_config()
+            else:
+                emulator_id = self.script_config.get("Emulator", "Id")
+                emulator_index = self.script_config.get("Emulator", "Index")
+
+                config = await self.build_config(
+                    queue=queue,
+                    task_loader=self.m9a_task_loader,
+                    emulator_info=emulator_info,
+                    emulator_id=emulator_id,
+                    script_config=self.script_config,
+                    emulator_index=emulator_index,
+                    emulator_manager=self.emulator_manager,
+                    resource=resource,
+                    account=account
+                )
         except Exception as e:
             logger.error(f"构建 M9A 配置失败: {e}")
             raise
@@ -341,20 +354,34 @@ class AutoProxyTask(TaskExecuteBase):
 
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
-        """M9A 日志回调：分析实时日志，判断任务执行状态
-
-        策略说明：
-        - log_content 由 LogMonitor 根据 log_start_time 过滤，仅包含本次启动后的日志
-        - 不使用日志关键字做错误检测（M9A 在游戏加载时会输出大量 [ERR] 日志）
-        - 仅依赖进程退出状态和超时来判断异常
-        """
 
         log = "".join(log_content)
         self.cur_user_log.content = log_content
         self.script_info.log = log
 
+        if self.is_first_user_for_version_check:
+            version_keywords = [
+                "检测到资源有新版本",
+                "检测到新版本",
+                "Found new version",
+                "New version detected",
+            ]
+            if any(kw in log for kw in version_keywords):
+                if not getattr(self.script_info, '_m9a_has_new_version', False):
+                    self.script_info._m9a_has_new_version = True
+                    logger.info("在首个用户日志中检测到 M9A 新版本提示！")
+
+            version_match = re.search(r'当前资源版本：v([\d.]+)', log)
+            if version_match and not getattr(self.script_info, '_m9a_current_version', None):
+                self.script_info._m9a_current_version = version_match.group(1)
+
+            version_match = re.search(r'最新资源版本：v([\d.]+)', log)
+            if version_match:
+                self.script_info._m9a_latest_version = version_match.group(1)
+
         if "任务已全部完成！" in log or "All tasks completed" in log:
-            self.cur_user_log.status = "Success!"
+            if not self.is_virtual_update_user:
+                self.cur_user_log.status = "Success!"
         elif "已放弃本次任务" in log:
             self.cur_user_log.status = "M9A 已放弃本次任务"
         elif not await self.m9a_process_manager.is_running():
@@ -369,6 +396,89 @@ class AutoProxyTask(TaskExecuteBase):
         else:
             self.cur_user_log.status = "M9A 正常运行中"
 
+        if self.is_virtual_update_user:
+
+            if "获取资源包下载信息失败" in log:
+                reason_match = re.search(r'原因=(.+?)(?:\n|$)', log)
+                reason = reason_match.group(1).strip() if reason_match else "未知原因"
+                logger.warning(f"虚拟用户: M9A 资源更新失败 - {reason}")
+                self.cur_user_log.status = f"M9A 更新失败: {reason}"
+                if not hasattr(self.script_info, '_m9a_err_log'):
+                    self.script_info._m9a_err_log = []
+                self.script_info._m9a_err_log.append("获取资源包下载信息失败")
+                self.wait_event.set()
+                return
+
+            if "文件操作失败" in log and "远程主机强迫关闭了一个现有的连接" in log:
+                logger.warning("虚拟用户: M9A 更新下载失败 - 网络连接中断")
+                self.cur_user_log.status = "M9A 更新失败: 网络连接中断"
+                if not hasattr(self.script_info, '_m9a_err_log'):
+                    self.script_info._m9a_err_log = []
+                self.script_info._m9a_err_log.append("网络连接中断")
+                self.wait_event.set()
+                return
+
+            if "HTTP 请求失败" in log:
+                reason_match = re.search(r'原因=(.+?)(?:\n|$)', log)
+                reason = reason_match.group(1).strip() if reason_match else "HTTP 请求失败"
+                reason = re.sub(r'[（(][^）)]*[）)]$', '', reason).strip().rstrip('.')
+                logger.warning(f"虚拟用户: M9A HTTP 请求失败 - {reason}")
+                self.cur_user_log.status = f"M9A 更新失败: {reason}"
+                if not hasattr(self.script_info, '_m9a_err_log'):
+                    self.script_info._m9a_err_log = []
+                self.script_info._m9a_err_log.append("HTTP 请求失败")
+                self.wait_event.set()
+                return
+
+            if "准备重新启动应用" in log or "Preparing to restart" in log:
+                logger.info("虚拟用户: M9A 准备重启应用更新")
+                self.script_info._m9a_restart_triggered = True
+
+            if "[ERR]" in log and not getattr(self.script_info, '_m9a_restart_triggered', False):
+                err_content = log.split("[ERR]", 1)[1].strip() if "[ERR]" in log else ""
+                if err_content:
+                    err_content = re.sub(r'\[src=[^\]]+\]', '', err_content)
+                    err_content = re.sub(r'\[cfg=[^\]]+\]', '', err_content)
+                    err_content = re.sub(r'\[inst=[^\]]+\]', '', err_content)
+                    err_content = re.sub(r'\[op=[^\]]+\]', '', err_content)
+                    err_content = ' '.join(err_content.split())
+                    err_content = err_content.strip().rstrip('.')
+                    if err_content:
+                        logger.warning(f"虚拟用户: M9A 运行错误 - {err_content}")
+                        if not hasattr(self.script_info, '_m9a_err_log'):
+                            self.script_info._m9a_err_log = []
+                        short_err = err_content.split(' at ')[0].strip()
+                        if len(short_err) > 80:
+                            short_err = short_err[:77] + '...'
+                        self.script_info._m9a_err_log.append(short_err)
+
+            elapsed = (datetime.now() - self.log_start_time).total_seconds()
+            if elapsed > 600:
+                self.script_info._m9a_timeout = True
+                err_log = getattr(self.script_info, '_m9a_err_log', [])
+                err_suffix = f"（{err_log[-1]}）" if err_log else ""
+                logger.warning(f"虚拟用户: 更新超时（10分钟）{err_suffix}")
+                self.cur_user_log.status = f"M9A 更新超时"
+                self.wait_event.set()
+                return
+
+            if not await self.m9a_process_manager.is_running():
+                if getattr(self.script_info, '_m9a_restart_triggered', False):
+                    logger.info("虚拟用户: M9A 更新成功（进程已正常重启退出）")
+                    self.script_info._m9a_update_success = True
+                    self.cur_user_log.status = "Success!"
+                    self.wait_event.set()
+                    return
+                else:
+                    err_log = getattr(self.script_info, '_m9a_err_log', [])
+                    err_suffix = f"（{err_log[-1]}）" if err_log else ""
+                    logger.warning(f"虚拟用户: M9A 进程异常退出（未触发重启信号）{err_suffix}")
+                    self.cur_user_log.status = f"M9A 进程异常结束{err_suffix}"
+                    self.wait_event.set()
+                    return
+
+            return
+
         logger.debug(f"M9A 日志分析结果：{self.cur_user_log.status}")
         if self.cur_user_log.status != "M9A 正常运行中":
             logger.info(f"M9A 任务结果：{self.cur_user_log.status}")
@@ -377,7 +487,6 @@ class AutoProxyTask(TaskExecuteBase):
     async def final_task(self):
         """任务收尾：停止监控、结束进程、关闭模拟器、保存记录并推送通知"""
 
-        # 1) 停止日志监控（如果已启动）
         try:
             if hasattr(self, "m9a_log_monitor") and self.m9a_log_monitor is not None:
                 await self.m9a_log_monitor.stop()
@@ -385,6 +494,25 @@ class AutoProxyTask(TaskExecuteBase):
             logger.warning(f"停止 M9A 日志监控失败: {e}")
 
         if self.check_result != "Pass":
+            return
+
+        if self.is_virtual_update_user:
+            try:
+                await self.m9a_process_manager.kill()
+            except Exception as e:
+                logger.warning(f"结束 M9A 进程失败: {e}")
+            try:
+                await System.kill_process(self.m9a_exe_path)
+            except Exception as e:
+                logger.warning(f"强制结束 M9A.exe 失败: {e}")
+
+            if self.cur_user_log.status == "Success!":
+                self.cur_user_item.status = "完成"
+                logger.success(f"虚拟用户 {self.cur_user_uid} M9A 自动更新完成")
+            else:
+                self.cur_user_item.status = "异常"
+                logger.warning(f"虚拟用户 {self.cur_user_uid} M9A 自动更新异常: {self.cur_user_log.status}")
+            logger.info("虚拟用户任务结束")
             return
 
         # 2) 结束 M9A 进程
@@ -629,6 +757,56 @@ class AutoProxyTask(TaskExecuteBase):
             f"M9A 配置构建完成：CurrentTasks={len(config['CurrentTasks'])} 个任务, "
             f"TaskItems={len(config['TaskItems'])} 个任务项"
         )
+        return config
+
+    async def _build_virtual_config(self) -> dict:
+
+        config = {}
+        if self.template_path.exists():
+            try:
+                config = json.loads(self.template_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+        config.update({
+            "BeforeTask": "None",
+            "AfterTask": "None",
+            "CurrentTasks": [
+                "启动游戏<|||>StartUp",
+                "关闭游戏<|||>Close1999"
+            ],
+            "TaskItems": [
+                {
+                    "name": "启动游戏",
+                    "entry": "StartUp",
+                    "default_check": False,
+                    "controller": ["ADB"]
+                },
+                {
+                    "name": "关闭游戏",
+                    "entry": "Close1999",
+                    "default_check": False,
+                    "controller": ["ADB"]
+                }
+            ],
+            "Resource": config.get("Resource", "官服"),
+            "InstanceName": "MAS-Update",
+            "AutoConnectAfterRefresh": False,
+            "AutoDetectOnConnectionFailed": False,
+            "ContinueRunningWhenError": False,
+            "RememberAdb": False,
+            "RetryOnDisconnected": False,
+            "AllowAdbRestart": False,
+            "AllowAdbHardRestart": False,
+            "AdbControlScreenCapType": "None",
+            "AdbControlInputType": "None",
+            "CurrentControllerName": "ADB",
+            "UI.LiveView.RefreshRate": 10.0,
+            "UI.LiveView.EnableLiveView": True,
+            "AgentTcpMode": True,
+        })
+
+        logger.info("虚拟用户 M9A 配置构建完成")
         return config
 
     @staticmethod

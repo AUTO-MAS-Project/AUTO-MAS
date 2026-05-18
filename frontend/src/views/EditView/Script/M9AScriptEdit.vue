@@ -175,6 +175,25 @@
               </a-form-item>
             </a-col>
           </a-row>
+          <a-row :gutter="24" style="margin-top: 16px">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="开启后，当此脚本在调度队列中运行时，所有用户任务完成后将自动更新M9A资源版本，须提前手动打开M9A应用配置更新源">
+                    <span class="form-label">
+                      队列结束后自动更新
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select v-model:value="m9aConfig.Run.IfAutoUpdateAfterQueue" size="large"
+                  @change="handleChange('Run', 'IfAutoUpdateAfterQueue', $event)">
+                  <a-select-option :value="true">是</a-select-option>
+                  <a-select-option :value="false">否</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+          </a-row>
         </div>
 
       </a-form>
@@ -244,6 +263,7 @@ const m9aConfig = reactive<M9AScriptConfig>({
     ProxyTimesLimit: 0,
     RunTimesLimit: 3,
     RunTimeLimit: 30,
+    IfAutoUpdateAfterQueue: false,
   },
   Emulator: {
     Id: '',
