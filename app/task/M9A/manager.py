@@ -124,25 +124,6 @@ class M9AManager(TaskExecuteBase):
         except Exception:
             logger.warning("读写 M9A config.json 失败，跳过自动更新控制")
 
-    async def _build_virtual_user_config(self) -> M9AUserConfig:
-        """构建虚拟用户的 M9A 用户配置"""
-
-        config = M9AUserConfig()
-        await config.set("Info", "Name", "M9A自动更新")
-        await config.set("Info", "Status", True)
-        await config.set("Info", "RemainedDay", 999)
-        await config.set("Notify", "Enabled", False)
-        return config
-
-    def _extract_version_info(self):
-        """从首个用户的日志记录中提取 M9A 版本信息"""
-        self._virtual_user_old_version = getattr(
-            self.script_info, '_m9a_current_version', '未知'
-        )
-        self._virtual_user_new_version = getattr(
-            self.script_info, '_m9a_latest_version', '未知'
-        )
-
     async def prepare(self):
         """运行前准备"""
 
@@ -251,8 +232,13 @@ class M9AManager(TaskExecuteBase):
             )
             self.script_info.user_list.append(virtual_user)
 
+            virtual_user_config_data = M9AUserConfig()
+            await virtual_user_config_data.set("Info", "Name", "M9A自动更新")
+            await virtual_user_config_data.set("Info", "Status", True)
+            await virtual_user_config_data.set("Info", "RemainedDay", 999)
+            await virtual_user_config_data.set("Notify", "Enabled", False)
             virtual_user_config = {
-                virtual_uid_uuid: await self._build_virtual_user_config()
+                virtual_uid_uuid: virtual_user_config_data
             }
 
             self.script_info.current_index = len(self.script_info.user_list) - 1
@@ -267,7 +253,8 @@ class M9AManager(TaskExecuteBase):
 
             await self.spawn(virtual_task)
 
-            self._extract_version_info()
+            self._virtual_user_old_version = getattr(self.script_info, '_m9a_current_version', '未知')
+            self._virtual_user_new_version = getattr(self.script_info, '_m9a_latest_version', '未知')
 
             virtual_user_item = self.script_info.user_list[-1]
             if virtual_user_item.status == "完成":
