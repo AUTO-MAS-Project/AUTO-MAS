@@ -46,11 +46,14 @@
 
           <template v-else-if="isAutocompleteField(field)">
             <a-auto-complete
-              :value="String(getFieldValue(getFieldPath(field)) ?? '')"
+              :value="getAutocompleteInputValue(getFieldPath(field), field)"
               style="width: 100%"
               :options="getFieldOptions(field)"
               :disabled="readonly || field.readonly"
-              @update:value="(val: string) => updateFieldValue(getFieldPath(field), val)"
+              @focus="handleAutocompleteFocus(getFieldPath(field), field)"
+              @blur="handleAutocompleteBlur(getFieldPath(field), field)"
+              @select="(val: string) => handleAutocompleteSelect(getFieldPath(field), field, val)"
+              @update:value="(val: string) => handleAutocompleteInput(getFieldPath(field), val)"
             />
           </template>
 
@@ -441,6 +444,7 @@ const emit = defineEmits<{
 }>()
 
 const validationErrors = ref<SchemaValidationErrorMap>({})
+const autocompleteDrafts = ref<Record<string, string>>({})
 
 const listColumns = [
   { title: '值', dataIndex: 'value', key: 'value' },
@@ -519,6 +523,16 @@ const getFieldOptions = (field: SchemaFieldDefinition) => {
     label: String(item),
     value: item,
   }))
+}
+
+const getOptionLabelByValue = (field: SchemaFieldDefinition, value: unknown) => {
+  const matched = getFieldOptions(field).find(option => option.value === value)
+  return matched ? String(matched.label) : undefined
+}
+
+const getOptionValueByLabel = (field: SchemaFieldDefinition, label: string) => {
+  const matched = getFieldOptions(field).find(option => String(option.label) === label)
+  return matched?.value
 }
 
 const normalizeOrderedMultiSelectValue = (
@@ -623,6 +637,70 @@ const updateFieldValue = (field: string, value: unknown) => {
   const nextValue = cloneModel()
   setValueByPath(nextValue, field, value)
   emit('update:modelValue', nextValue)
+}
+
+const syncAutocompleteDraft = (field: string, fieldSchema: SchemaFieldDefinition) => {
+  const rawValue = getFieldValue(field)
+  autocompleteDrafts.value[field] = getOptionLabelByValue(fieldSchema, rawValue) ?? String(rawValue ?? '')
+}
+
+const getAutocompleteInputValue = (field: string, fieldSchema: SchemaFieldDefinition) => {
+  const current = autocompleteDrafts.value[field]
+  if (typeof current === 'string') {
+    return current
+  }
+  const rawValue = getFieldValue(field)
+  return getOptionLabelByValue(fieldSchema, rawValue) ?? String(rawValue ?? '')
+}
+
+const handleAutocompleteInput = (field: string, value: string) => {
+  autocompleteDrafts.value[field] = value
+}
+
+const handleAutocompleteSelect = (
+  field: string,
+  fieldSchema: SchemaFieldDefinition,
+  value: string,
+) => {
+  const matchedLabel = getOptionLabelByValue(fieldSchema, value)
+  autocompleteDrafts.value[field] = matchedLabel ?? value
+  updateFieldValue(field, value)
+}
+
+const handleAutocompleteBlur = (field: string, fieldSchema: SchemaFieldDefinition) => {
+  const draftValue = autocompleteDrafts.value[field]
+  if (typeof draftValue !== 'string') {
+    syncAutocompleteDraft(field, fieldSchema)
+    return
+  }
+
+  const trimmedValue = draftValue.trim()
+  if (!trimmedValue) {
+    updateFieldValue(field, '')
+    autocompleteDrafts.value[field] = ''
+    return
+  }
+
+  const matchedByLabel = getOptionValueByLabel(fieldSchema, trimmedValue)
+  if (matchedByLabel !== undefined) {
+    updateFieldValue(field, matchedByLabel)
+    autocompleteDrafts.value[field] = getOptionLabelByValue(fieldSchema, matchedByLabel) ?? trimmedValue
+    return
+  }
+
+  const matchedByValueLabel = getOptionLabelByValue(fieldSchema, trimmedValue)
+  if (matchedByValueLabel !== undefined) {
+    updateFieldValue(field, trimmedValue)
+    autocompleteDrafts.value[field] = matchedByValueLabel
+    return
+  }
+
+  updateFieldValue(field, trimmedValue)
+  autocompleteDrafts.value[field] = trimmedValue
+}
+
+const handleAutocompleteFocus = (field: string, fieldSchema: SchemaFieldDefinition) => {
+  syncAutocompleteDraft(field, fieldSchema)
 }
 
 const toFiniteNumber = (value: unknown) => {
@@ -1224,6 +1302,13 @@ const getTypeLabel = (field: SchemaFieldDefinition) => {
 watch(
   () => [props.modelValue, props.schema],
   () => {
+    normalizedGroups.value.forEach(group => {
+      group.fields.forEach(field => {
+        if (isAutocompleteField(field)) {
+          syncAutocompleteDraft(getFieldPath(field), field)
+        }
+      })
+    })
     validationErrors.value = collectValidationErrors()
     emit('validation-change', validationErrors.value)
   },
