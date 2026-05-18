@@ -26,57 +26,39 @@ from pathlib import Path
 from typing import Any
 
 from app.models.ConfigBase import ConfigBase
+from .constants import (
+    MAAEND_CORE_OPTION_FIELD_BOOK,
+    MAAEND_DEFAULT_CONTROLLER,
+    MAAEND_PRESET_TASK_CONFIG,
+)
 
 
 MAAEND_PRESET_TEMPLATE_DIR = Path.cwd() / "res/templates/MaaEnd/config"
 MAAEND_PRESET_TEMPLATE = MAAEND_PRESET_TEMPLATE_DIR / "mxu-MaaEnd.json"
-MAAEND_PRESET_TASK_SWITCHES = [
-    "VisitFriends",
-    "DijiangRewards",
-    "CreditShoppingN2",
-    "DeliveryJobs",
-    "SellProduct",
-    "AutoStockpile",
-    "AutoStockStaple",
-    "AutoSell",
-    "EnvironmentMonitoring",
-    "DailyRewards",
-    "SeizeEntrustTask",
-    "AutoCollect",
-    "AutoUseSpMedication",
-    "ResourceRecycleStation",
-    "AutoEcoFarm",
-]
-MAAEND_PRESET_TASK_CONFIG = {
-    task_name: {"enabled": f"If{task_name}"}
-    for task_name in MAAEND_PRESET_TASK_SWITCHES
-}
-MAAEND_PRESET_TASK_CONFIG["ProtocolSpace"] = {
-    "enabled": "IfSanity",
-    "core_options": [
-        "SanityTaskType",
-        "OperatorProgression",
-        "WeaponProgression",
-        "CrisisDrills",
-        "RewardsSetOption",
-    ],
-}
-MAAEND_PRESET_TASK_CONFIG["AutoEssence"] = {
-    "enabled": "IfSanity",
-    "core_options": ["AutoEssenceSpecifiedLocation"],
-}
-MAAEND_CORE_OPTION_FIELD_BOOK = {
-    "SanityTaskType": "ProtocolSpaceTab",
-}
-MAAEND_CORE_OPTION_FIELD_REVERSE_BOOK = {
-    value: key for key, value in MAAEND_CORE_OPTION_FIELD_BOOK.items()
-}
+MAAEND_CONFIG_FILENAME = "mxu-MaaEnd.json"
 
 
 def load_maaend_preset_template() -> dict[str, Any]:
     """读取 MAS 自带的 MaaEnd 预设配置模板"""
 
     return json.loads(MAAEND_PRESET_TEMPLATE.read_text(encoding="utf-8"))
+
+
+def load_maaend_config(config_dir: Path) -> dict[str, Any]:
+    """读取 MaaEnd 配置文件"""
+
+    return json.loads(
+        (config_dir / MAAEND_CONFIG_FILENAME).read_text(encoding="utf-8")
+    )
+
+
+def save_maaend_config(config_dir: Path, config_data: dict[str, Any]) -> None:
+    """写入 MaaEnd 配置文件"""
+
+    (config_dir / MAAEND_CONFIG_FILENAME).write_text(
+        json.dumps(config_data, ensure_ascii=False, indent=4),
+        encoding="utf-8",
+    )
 
 
 def get_maaend_preset_instance(
@@ -105,16 +87,78 @@ def get_maaend_active_instance(config_data: dict[str, Any]) -> dict[str, Any]:
     """获取 MaaEnd 配置中当前应运行的实例"""
 
     instances = config_data["instances"]
-    for instance in instances:
-        if instance.get("id") == "automas":
-            return instance
-
-    active_id = config_data.get("lastActiveInstanceId")
-    for instance in instances:
-        if instance.get("id") == active_id:
-            return instance
+    if not instances:
+        return {"tasks": []}
 
     return instances[0]
+
+
+def apply_maaend_sanity_task_config(
+    tasks: list[dict[str, Any]],
+    sanity_enabled: bool,
+    sanity_task_config: dict[str, Any],
+) -> tuple[bool, bool]:
+    """将 MAS 理智配置写入 MaaEnd 任务配置"""
+
+    if not sanity_enabled:
+        for task in tasks:
+            if task["taskName"] in ("ProtocolSpace", "AutoEssence"):
+                task["enabled"] = False
+        return True, True
+
+    protocol_space_configured = False
+    auto_essence_configured = False
+    sanity_task_type = sanity_task_config["SanityTaskType"]
+    auto_essence_location = ""
+    if sanity_task_type == "Essence":
+        auto_essence_location = sanity_task_config.get(
+            "AutoEssenceSpecifiedLocation", ""
+        )
+
+    for task in tasks:
+        if task["taskName"] == "ProtocolSpace":
+            task["enabled"] = (
+                sanity_task_type != "Essence" and not protocol_space_configured
+            )
+            if not task["enabled"]:
+                continue
+
+            protocol_space_configured = True
+            task["optionValues"]["ProtocolSpaceTab"] = {
+                "type": "select",
+                "caseName": sanity_task_type,
+            }
+            task["optionValues"]["OperatorProgression"] = {
+                "type": "select",
+                "caseName": sanity_task_config["OperatorProgression"],
+            }
+            task["optionValues"]["WeaponProgression"] = {
+                "type": "select",
+                "caseName": sanity_task_config["WeaponProgression"],
+            }
+            task["optionValues"]["CrisisDrills"] = {
+                "type": "select",
+                "caseName": sanity_task_config["CrisisDrills"],
+            }
+            task["optionValues"]["RewardsSetOption"] = {
+                "type": "select",
+                "caseName": sanity_task_config["RewardsSetOption"],
+            }
+        elif task["taskName"] == "AutoEssence":
+            task["enabled"] = (
+                sanity_task_type == "Essence" and not auto_essence_configured
+            )
+            if not task["enabled"]:
+                continue
+
+            auto_essence_configured = True
+            task.setdefault("optionValues", {})
+            task["optionValues"]["AutoEssenceSpecifiedLocation"] = {
+                "type": "select",
+                "caseName": auto_essence_location,
+            }
+
+    return protocol_space_configured, auto_essence_configured
 
 
 def build_maaend_preset_config(
@@ -161,12 +205,8 @@ def build_maaend_preset_config(
             )
         tasks.append(task)
 
-    instance["id"] = "automas"
-    instance["name"] = "AUTO-MAS"
     instance["tasks"] = tasks
     config_data["instances"] = [instance]
-    config_data["lastActiveInstanceId"] = "automas"
-    config_data["recentlyClosed"] = []
     return config_data
 
 
@@ -174,7 +214,7 @@ async def save_maaend_preset_options(
     config: ConfigBase,
     config_data: dict[str, Any],
     mark_configured: bool = False,
-    controller_type: str = "Win32-Window",
+    controller_type: str = MAAEND_DEFAULT_CONTROLLER,
 ) -> None:
     """从 MaaEnd 配置中抽取静态预设任务选项并保存到 MAS 配置"""
 

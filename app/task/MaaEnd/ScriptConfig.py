@@ -19,7 +19,6 @@
 #   Contact: DLmaster_361@163.com
 
 
-import json
 import shutil
 import asyncio
 import uuid
@@ -35,6 +34,8 @@ from app.utils import get_logger, ProcessManager
 from .preset import (
     build_maaend_preset_config,
     is_maaend_preset_supported,
+    load_maaend_config,
+    save_maaend_config,
     save_maaend_preset_options,
 )
 
@@ -114,55 +115,15 @@ class ScriptConfigTask(TaskExecuteBase):
                 )
             shutil.rmtree(self.maaend_set_path, ignore_errors=True)
             self.maaend_set_path.mkdir(parents=True, exist_ok=True)
-            (self.maaend_set_path / "mxu-MaaEnd.json").write_text(
-                json.dumps(
-                    build_maaend_preset_config(
-                        self.target_config,
-                        self.script_config.get("Game", "ControllerType"),
-                    ),
-                    ensure_ascii=False,
-                    indent=4,
+            save_maaend_config(
+                self.maaend_set_path,
+                build_maaend_preset_config(
+                    self.target_config,
+                    self.script_config.get("Game", "ControllerType"),
                 ),
-                encoding="utf-8",
             )
 
-        # 初始化任务实例
-        maaend_set = json.loads(
-            (self.maaend_set_path / "mxu-MaaEnd.json").read_text(encoding="utf-8")
-        )
-        maaend_instances = maaend_set["instances"]
-
-        # 创建任务项单例
-        selected_instance = None
-        for instance in maaend_instances:
-            if instance["id"] == "automas":
-                selected_instance = instance
-                break
-        else:
-            for instance in maaend_instances:
-                if instance["id"] == maaend_set["lastActiveInstanceId"]:
-                    selected_instance = instance
-                    break
-        if selected_instance is None:
-            selected_instance = (
-                maaend_instances[0]
-                if len(maaend_instances) > 0
-                else {"id": "automas", "name": "AUTO-MAS", "tasks": []}
-            )
-
-        if "tasks" not in selected_instance:
-            selected_instance["tasks"] = []
-        selected_instance["id"] = "automas"
-        selected_instance["name"] = "AUTO-MAS"
-        maaend_set["instances"] = [selected_instance]
-        maaend_set["lastActiveInstanceId"] = "automas"
-
-        # 移除冗余任务项信息
-        maaend_set["recentlyClosed"] = []
-
-        (self.maaend_set_path / "mxu-MaaEnd.json").write_text(
-            json.dumps(maaend_set, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
+        load_maaend_config(self.maaend_set_path)
         logger.success(
             f"MaaEnd 运行参数配置完成: 设置脚本 {self.cur_user_item.user_id}"
         )
@@ -179,11 +140,7 @@ class ScriptConfigTask(TaskExecuteBase):
                 self.maaend_set_path, self.config_file_path, dirs_exist_ok=True
             )
         else:
-            maaend_set = json.loads(
-                (self.maaend_set_path / "mxu-MaaEnd.json").read_text(
-                    encoding="utf-8"
-                )
-            )
+            maaend_set = load_maaend_config(self.maaend_set_path)
             await self.script_config.unlock()
             try:
                 await save_maaend_preset_options(
