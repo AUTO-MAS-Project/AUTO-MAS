@@ -23,5 +23,13 @@ export type M9AUserConfig_Info = {
      * 用户标签信息
      */
     Tag?: (string | null);
+    /**
+     * 服务器资源名称
+     */
+    Resource?: (string | null);
+    /**
+     * 账号信息（用于切换账号，仅官服生效）
+     */
+    Account?: (string | null);
 };
 
