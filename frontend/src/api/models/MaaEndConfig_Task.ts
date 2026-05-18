@@ -2,9 +2,9 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type MaaEndUserConfig_Task = {
+export type MaaEndConfig_Task = {
     /**
-     * 是否启用刷理智
+     * 是否启用理智任务
      */
     IfSanity?: (boolean | null);
     /**
@@ -84,7 +84,7 @@ export type MaaEndUserConfig_Task = {
      */
     CrisisDrills?: ('AdvancedProgression1' | 'AdvancedProgression2' | 'AdvancedProgression3' | 'AdvancedProgression4' | 'AdvancedProgression5' | null);
     /**
-     * 奖励组选项
+     * 奖励套组选项
      */
     RewardsSetOption?: ('RewardsSetA' | 'RewardsSetB' | null);
     /**

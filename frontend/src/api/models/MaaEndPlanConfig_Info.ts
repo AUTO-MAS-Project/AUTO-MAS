@@ -12,3 +12,4 @@ export type MaaEndPlanConfig_Info = {
      */
     Mode?: ('ALL' | 'Weekly' | null);
 };
+

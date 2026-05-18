@@ -42,3 +42,4 @@ export type MaaEndPlanConfig = {
      */
     Sunday?: (MaaEndPlanConfig_Item | null);
 };
+
