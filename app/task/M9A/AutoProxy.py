@@ -211,13 +211,12 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_item.status = "异常"
                 return
 
-            # 清理保留任务（二次兜底）
             RESERVED_NAMES = {"启动游戏", "关闭游戏", "切换账号"}
             queue = [item for item in queue if (item if isinstance(item, str) else item.get("name", "")) not in RESERVED_NAMES]
 
             logger.info(f"用户 {self.cur_user_uid} 将执行 {len(queue)} 个任务: {queue}")
 
-            # 写入M9A配置
+            # 写入 M9A 配置
             await self.write_m9a_config(queue, emulator_info, resource, account)
 
             # 启动 M9A
@@ -397,86 +396,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_log.status = "M9A 正常运行中"
 
         if self.is_virtual_update_user:
-
-            if "获取资源包下载信息失败" in log:
-                reason_match = re.search(r'原因=(.+?)(?:\n|$)', log)
-                reason = reason_match.group(1).strip() if reason_match else "未知原因"
-                logger.warning(f"虚拟用户: M9A 资源更新失败 - {reason}")
-                self.cur_user_log.status = f"M9A 更新失败: {reason}"
-                if not hasattr(self.script_info, '_m9a_err_log'):
-                    self.script_info._m9a_err_log = []
-                self.script_info._m9a_err_log.append("获取资源包下载信息失败")
-                self.wait_event.set()
-                return
-
-            if "文件操作失败" in log and "远程主机强迫关闭了一个现有的连接" in log:
-                logger.warning("虚拟用户: M9A 更新下载失败 - 网络连接中断")
-                self.cur_user_log.status = "M9A 更新失败: 网络连接中断"
-                if not hasattr(self.script_info, '_m9a_err_log'):
-                    self.script_info._m9a_err_log = []
-                self.script_info._m9a_err_log.append("网络连接中断")
-                self.wait_event.set()
-                return
-
-            if "HTTP 请求失败" in log:
-                reason_match = re.search(r'原因=(.+?)(?:\n|$)', log)
-                reason = reason_match.group(1).strip() if reason_match else "HTTP 请求失败"
-                reason = re.sub(r'[（(][^）)]*[）)]$', '', reason).strip().rstrip('.')
-                logger.warning(f"虚拟用户: M9A HTTP 请求失败 - {reason}")
-                self.cur_user_log.status = f"M9A 更新失败: {reason}"
-                if not hasattr(self.script_info, '_m9a_err_log'):
-                    self.script_info._m9a_err_log = []
-                self.script_info._m9a_err_log.append("HTTP 请求失败")
-                self.wait_event.set()
-                return
-
-            if "准备重新启动应用" in log or "Preparing to restart" in log:
-                logger.info("虚拟用户: M9A 准备重启应用更新")
-                self.script_info._m9a_restart_triggered = True
-
-            if "[ERR]" in log and not getattr(self.script_info, '_m9a_restart_triggered', False):
-                err_content = log.split("[ERR]", 1)[1].strip() if "[ERR]" in log else ""
-                if err_content:
-                    err_content = re.sub(r'\[src=[^\]]+\]', '', err_content)
-                    err_content = re.sub(r'\[cfg=[^\]]+\]', '', err_content)
-                    err_content = re.sub(r'\[inst=[^\]]+\]', '', err_content)
-                    err_content = re.sub(r'\[op=[^\]]+\]', '', err_content)
-                    err_content = ' '.join(err_content.split())
-                    err_content = err_content.strip().rstrip('.')
-                    if err_content:
-                        logger.warning(f"虚拟用户: M9A 运行错误 - {err_content}")
-                        if not hasattr(self.script_info, '_m9a_err_log'):
-                            self.script_info._m9a_err_log = []
-                        short_err = err_content.split(' at ')[0].strip()
-                        if len(short_err) > 80:
-                            short_err = short_err[:77] + '...'
-                        self.script_info._m9a_err_log.append(short_err)
-
-            elapsed = (datetime.now() - self.log_start_time).total_seconds()
-            if elapsed > 600:
-                self.script_info._m9a_timeout = True
-                err_log = getattr(self.script_info, '_m9a_err_log', [])
-                err_suffix = f"（{err_log[-1]}）" if err_log else ""
-                logger.warning(f"虚拟用户: 更新超时（10分钟）{err_suffix}")
-                self.cur_user_log.status = f"M9A 更新超时"
-                self.wait_event.set()
-                return
-
-            if not await self.m9a_process_manager.is_running():
-                if getattr(self.script_info, '_m9a_restart_triggered', False):
-                    logger.info("虚拟用户: M9A 更新成功（进程已正常重启退出）")
-                    self.script_info._m9a_update_success = True
-                    self.cur_user_log.status = "Success!"
-                    self.wait_event.set()
-                    return
-                else:
-                    err_log = getattr(self.script_info, '_m9a_err_log', [])
-                    err_suffix = f"（{err_log[-1]}）" if err_log else ""
-                    logger.warning(f"虚拟用户: M9A 进程异常退出（未触发重启信号）{err_suffix}")
-                    self.cur_user_log.status = f"M9A 进程异常结束{err_suffix}"
-                    self.wait_event.set()
-                    return
-
+            await self._check_virtual_user_log(log)
             return
 
         logger.debug(f"M9A 日志分析结果：{self.cur_user_log.status}")
@@ -484,8 +404,89 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info(f"M9A 任务结果：{self.cur_user_log.status}")
             self.wait_event.set()
 
+    async def _check_virtual_user_log(self, log: str):
+
+        if "获取资源包下载信息失败" in log:
+            reason_match = re.search(r'原因=(.+?)(?:\n|$)', log)
+            reason = reason_match.group(1).strip() if reason_match else "未知原因"
+            logger.warning(f"虚拟用户: M9A 资源更新失败 - {reason}")
+            self.cur_user_log.status = f"M9A 更新失败: {reason}"
+            if not hasattr(self.script_info, '_m9a_err_log'):
+                self.script_info._m9a_err_log = []
+            self.script_info._m9a_err_log.append("获取资源包下载信息失败")
+            self.wait_event.set()
+            return
+
+        if "文件操作失败" in log and "远程主机强迫关闭了一个现有的连接" in log:
+            logger.warning("虚拟用户: M9A 更新下载失败 - 网络连接中断")
+            self.cur_user_log.status = "M9A 更新失败: 网络连接中断"
+            if not hasattr(self.script_info, '_m9a_err_log'):
+                self.script_info._m9a_err_log = []
+            self.script_info._m9a_err_log.append("网络连接中断")
+            self.wait_event.set()
+            return
+
+        if "HTTP 请求失败" in log:
+            reason_match = re.search(r'原因=(.+?)(?:\n|$)', log)
+            reason = reason_match.group(1).strip() if reason_match else "HTTP 请求失败"
+            reason = re.sub(r'[（(][^）)]*[）)]$', '', reason).strip().rstrip('.')
+            logger.warning(f"虚拟用户: M9A HTTP 请求失败 - {reason}")
+            self.cur_user_log.status = f"M9A 更新失败: {reason}"
+            if not hasattr(self.script_info, '_m9a_err_log'):
+                self.script_info._m9a_err_log = []
+            self.script_info._m9a_err_log.append("HTTP 请求失败")
+            self.wait_event.set()
+            return
+
+        if "准备重新启动应用" in log or "Preparing to restart" in log:
+            logger.info("虚拟用户: M9A 准备重启应用更新")
+            self.script_info._m9a_restart_triggered = True
+
+        if "[ERR]" in log and not getattr(self.script_info, '_m9a_restart_triggered', False):
+            err_content = log.split("[ERR]", 1)[1].strip() if "[ERR]" in log else ""
+            if err_content:
+                err_content = re.sub(r'\[src=[^\]]+\]', '', err_content)
+                err_content = re.sub(r'\[cfg=[^\]]+\]', '', err_content)
+                err_content = re.sub(r'\[inst=[^\]]+\]', '', err_content)
+                err_content = re.sub(r'\[op=[^\]]+\]', '', err_content)
+                err_content = ' '.join(err_content.split())
+                err_content = err_content.strip().rstrip('.')
+                if err_content:
+                    logger.warning(f"虚拟用户: M9A 运行错误 - {err_content}")
+                    if not hasattr(self.script_info, '_m9a_err_log'):
+                        self.script_info._m9a_err_log = []
+                    short_err = err_content.split(' at ')[0].strip()
+                    if len(short_err) > 80:
+                        short_err = short_err[:77] + '...'
+                    self.script_info._m9a_err_log.append(short_err)
+
+        elapsed = (datetime.now() - self.log_start_time).total_seconds()
+        if elapsed > 600:
+            self.script_info._m9a_timeout = True
+            err_log = getattr(self.script_info, '_m9a_err_log', [])
+            err_suffix = f"（{err_log[-1]}）" if err_log else ""
+            logger.warning(f"虚拟用户: 更新超时（10分钟）{err_suffix}")
+            self.cur_user_log.status = f"M9A 更新超时"
+            self.wait_event.set()
+            return
+
+        if not await self.m9a_process_manager.is_running():
+            if getattr(self.script_info, '_m9a_restart_triggered', False):
+                logger.info("虚拟用户: M9A 更新成功（进程已正常重启退出）")
+                self.script_info._m9a_update_success = True
+                self.cur_user_log.status = "Success!"
+                self.wait_event.set()
+                return
+            else:
+                err_log = getattr(self.script_info, '_m9a_err_log', [])
+                err_suffix = f"（{err_log[-1]}）" if err_log else ""
+                logger.warning(f"虚拟用户: M9A 进程异常退出（未触发重启信号）{err_suffix}")
+                self.cur_user_log.status = f"M9A 进程异常结束{err_suffix}"
+                self.wait_event.set()
+                return
+
     async def final_task(self):
-        """任务收尾：停止监控、结束进程、关闭模拟器、保存记录并推送通知"""
+        """运行结束后的收尾工作"""
 
         try:
             if hasattr(self, "m9a_log_monitor") and self.m9a_log_monitor is not None:
@@ -515,7 +516,7 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info("虚拟用户任务结束")
             return
 
-        # 2) 结束 M9A 进程
+        # 结束 M9A 进程
         try:
             await self.m9a_process_manager.kill()
         except Exception as e:
@@ -525,7 +526,7 @@ class AutoProxyTask(TaskExecuteBase):
         except Exception as e:
             logger.warning(f"强制结束 M9A.exe 失败: {e}")
 
-        # 3) 关闭模拟器
+        # 关闭模拟器
         logger.info("用户任务结束，关闭模拟器")
         try:
             await self.emulator_manager.close(

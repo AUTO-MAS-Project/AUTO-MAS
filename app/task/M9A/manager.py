@@ -45,7 +45,7 @@ METHOD_BOOK: dict[str, type[AutoProxyTask]] = {
 
 
 class M9AManager(TaskExecuteBase):
-    """M9A 任务调度器，负责配置校验、模拟器管理、用户调度和配置还原"""
+    """M9A 调度器"""
 
     def __init__(self, script_info: ScriptItem):
         super().__init__()
@@ -144,7 +144,8 @@ class M9AManager(TaskExecuteBase):
         )
 
     async def prepare(self):
-        """运行前准备：锁定配置、加载用户、备份原始配置、初始化模拟器"""
+        """运行前准备"""
+
         script_id = uuid.UUID(self.script_info.script_id)
         await Config.ScriptConfig[script_id].lock()
         self.script_config = Config.ScriptConfig[script_id]
@@ -275,7 +276,7 @@ class M9AManager(TaskExecuteBase):
                 logger.warning(f"虚拟用户未正常完成，状态: {virtual_user_item.status}")
 
     async def final_task(self):
-        """运行结束后的收尾：解锁配置、推送结果、还原原始配置"""
+        """运行结束后的收尾工作"""
 
         if self.check_result != "Pass":
             self.script_info.status = "异常"
@@ -294,7 +295,6 @@ class M9AManager(TaskExecuteBase):
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())
 
-            # 按状态分组用户
             error_user = [
                 u.name for u in self.script_info.user_list if u.status == "异常"
             ]
@@ -332,72 +332,7 @@ class M9AManager(TaskExecuteBase):
                     data={"Error": f"推送代理结果时出现异常: {e}"},
                 )
 
-            if (
-                getattr(self.script_info, '_m9a_update_success', False)
-                and self._virtual_user_new_version
-                and self._virtual_user_old_version
-            ):
-                update_title = "M9A 资源版本更新"
-                update_message = (
-                    f"M9A 资源版本已从 v{self._virtual_user_old_version} "
-                    f"更新至 v{self._virtual_user_new_version}"
-                )
-                try:
-                    await Notify.push_plyer(update_title, update_message, update_message, 10)
-                except Exception as e:
-                    logger.exception(f"版本更新桌面通知发送失败: {e}")
-
-                update_result = {
-                    "start_time": datetime.now().strftime("%H:%M:%S"),
-                    "end_time": datetime.now().strftime("%H:%M:%S"),
-                    "completed_count": 1,
-                    "uncompleted_count": 0,
-                    "result": update_message,
-                }
-                try:
-                    await push_notification("代理结果", update_title, update_result, None)
-                    logger.info(f"已发送版本更新通知: {update_message}")
-                except Exception as e:
-                    logger.exception(f"版本更新通知发送失败: {e}")
-
-            elif not getattr(self.script_info, '_m9a_update_success', False) and self._virtual_user_old_version:
-                err_log = getattr(self.script_info, '_m9a_err_log', [])
-                virtual_status = "未知错误"
-                full_reason = err_log[-1] if err_log else "无"
-                if getattr(self.script_info, '_m9a_timeout', False):
-                    virtual_status = "更新超时"
-                elif err_log:
-                    last_err = err_log[-1]
-                    if "网络连接中断" in last_err:
-                        virtual_status = "网络连接中断"
-                    elif "HTTP 请求失败" in last_err:
-                        virtual_status = "HTTP 请求失败"
-                    elif "获取资源包下载信息失败" in last_err:
-                        virtual_status = "获取资源包下载信息失败"
-                    elif "进程异常结束" in last_err or "进程异常退出" in last_err:
-                        virtual_status = "进程异常退出"
-                    else:
-                        virtual_status = "未知错误"
-
-                fail_title = "M9A 资源更新失败"
-                fail_message = f"M9A 资源更新失败（{virtual_status}）\n当前版本: v{self._virtual_user_old_version}"
-                try:
-                    await Notify.push_plyer(fail_title, fail_message, fail_message, 10)
-                except Exception as e:
-                    logger.exception(f"版本更新失败桌面通知发送失败: {e}")
-
-                fail_result = {
-                    "start_time": datetime.now().strftime("%H:%M:%S"),
-                    "end_time": datetime.now().strftime("%H:%M:%S"),
-                    "completed_count": 0,
-                    "uncompleted_count": 1,
-                    "result": f"更新失败（{virtual_status}），当前版本: v{self._virtual_user_old_version}",
-                }
-                try:
-                    await push_notification("代理结果", fail_title, fail_result, None)
-                except Exception as e:
-                    logger.exception(f"版本更新失败通知发送失败: {e}")
-                logger.warning(f"M9A 自动更新失败: {virtual_status}（完整原因: {full_reason}）")
+            await self._notify_version_update_result()
 
         if (self.temp_path).exists():
             shutil.rmtree(self.m9a_config_path, ignore_errors=True)
@@ -405,6 +340,75 @@ class M9AManager(TaskExecuteBase):
         shutil.rmtree(self.temp_path, ignore_errors=True)
 
         self.script_info.status = "完成"
+
+    async def _notify_version_update_result(self):
+
+        if (
+            getattr(self.script_info, '_m9a_update_success', False)
+            and self._virtual_user_new_version
+            and self._virtual_user_old_version
+        ):
+            update_title = "M9A 资源版本更新"
+            update_message = (
+                f"M9A 资源版本已从 v{self._virtual_user_old_version} "
+                f"更新至 v{self._virtual_user_new_version}"
+            )
+            try:
+                await Notify.push_plyer(update_title, update_message, update_message, 10)
+            except Exception as e:
+                logger.exception(f"版本更新桌面通知发送失败: {e}")
+
+            update_result = {
+                "start_time": datetime.now().strftime("%H:%M:%S"),
+                "end_time": datetime.now().strftime("%H:%M:%S"),
+                "completed_count": 1,
+                "uncompleted_count": 0,
+                "result": update_message,
+            }
+            try:
+                await push_notification("代理结果", update_title, update_result, None)
+                logger.info(f"已发送版本更新通知: {update_message}")
+            except Exception as e:
+                logger.exception(f"版本更新通知发送失败: {e}")
+
+        elif not getattr(self.script_info, '_m9a_update_success', False) and self._virtual_user_old_version:
+            err_log = getattr(self.script_info, '_m9a_err_log', [])
+            virtual_status = "未知错误"
+            full_reason = err_log[-1] if err_log else "无"
+            if getattr(self.script_info, '_m9a_timeout', False):
+                virtual_status = "更新超时"
+            elif err_log:
+                last_err = err_log[-1]
+                if "网络连接中断" in last_err:
+                    virtual_status = "网络连接中断"
+                elif "HTTP 请求失败" in last_err:
+                    virtual_status = "HTTP 请求失败"
+                elif "获取资源包下载信息失败" in last_err:
+                    virtual_status = "获取资源包下载信息失败"
+                elif "进程异常结束" in last_err or "进程异常退出" in last_err:
+                    virtual_status = "进程异常退出"
+                else:
+                    virtual_status = "未知错误"
+
+            fail_title = "M9A 资源更新失败"
+            fail_message = f"M9A 资源更新失败（{virtual_status}）\n当前版本: v{self._virtual_user_old_version}"
+            try:
+                await Notify.push_plyer(fail_title, fail_message, fail_message, 10)
+            except Exception as e:
+                logger.exception(f"版本更新失败桌面通知发送失败: {e}")
+
+            fail_result = {
+                "start_time": datetime.now().strftime("%H:%M:%S"),
+                "end_time": datetime.now().strftime("%H:%M:%S"),
+                "completed_count": 0,
+                "uncompleted_count": 1,
+                "result": f"更新失败（{virtual_status}），当前版本: v{self._virtual_user_old_version}",
+            }
+            try:
+                await push_notification("代理结果", fail_title, fail_result, None)
+            except Exception as e:
+                logger.exception(f"版本更新失败通知发送失败: {e}")
+            logger.warning(f"M9A 自动更新失败: {virtual_status}（完整原因: {full_reason}）")
 
     async def on_crash(self, e: Exception):
 
