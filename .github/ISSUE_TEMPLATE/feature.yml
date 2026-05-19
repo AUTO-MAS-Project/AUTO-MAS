@@ -1,0 +1,29 @@
+name: 功能建议
+description: 新功能或改进（请按仓库协作规范填写）
+title: ""
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请用**简体中文**填写。只写背景与期望，不写实现方案、代码路径或验收清单。
+        详见 [Issue 描述规范](https://github.com/AUTO-MAS-Project/AUTO-MAS/blob/main/skills/github-issue-zh/references/guide.md)。
+  - type: textarea
+    id: background
+    attributes:
+      label: 背景
+      description: 现状与痛点，说明「为什么需要改」
+      placeholder: 当前遇到什么问题？对用户/维护者有什么影响？
+    validations:
+      required: true
+  - type: textarea
+    id: expectation
+    attributes:
+      label: 期望
+      description: 要达成什么（可分点；多个功能请用小标题或编号）
+      placeholder: |
+        ### 1. 功能点标题
+        - 用户可见的行为
+    validations:
+      required: true

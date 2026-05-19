@@ -4,6 +4,18 @@
 
 - [AUTO-MAS 开发文档](https://doc.auto-mas.top/developer/)。
 
+## 开发规范（Skills）
+
+本仓库在 [`skills/`](./skills/) 内置工程与协作 Skill。开发代码时建议先阅读 [**mas-skills**](./skills/mas-skills/SKILL.md) 并按任务加载子 Skill（API 契约、数据模型、模块边界等）。**新增专项脚本类型**（如 MaaEnd、M9A）请参阅 [**mas-script-specialized-adapter**](./skills/mas-script-specialized-adapter/SKILL.md)。上游 `mas-*` 更新见 [skills/SYNC.md](./skills/SYNC.md)。
+
+## Issue 与 Pull Request 怎么写
+
+提交 Issue 或 PR 时请用**简体中文**，并遵循仓库 [Skills](./skills/) 说明：
+
+- **Issue**：[github-issue-zh](./skills/github-issue-zh/SKILL.md)（[完整规范](./skills/github-issue-zh/references/guide.md)）— 只写**背景**与**期望**（多个功能请分点）；不写实现方案、代码路径表或冗长验收清单。
+- **Pull Request**：[github-pr-zh](./skills/github-pr-zh/SKILL.md)（[完整规范](./skills/github-pr-zh/references/guide.md)）— 只写简短**摘要**，并关联 Issue（如 `Closes #123`）。
+- 在 GitHub 网页创建 Issue 时可选用模板；PR 将自动带出 [pull_request_template.md](./.github/pull_request_template.md)。
+
 Welcome to contribute to the AUTO-MAS project! Before participating in development, please read the **AUTO-MAS Developer Documentation**.
 
 - [AUTO-MAS Developer Documentation](https://doc.auto-mas.top/developer/).

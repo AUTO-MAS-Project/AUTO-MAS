@@ -1,0 +1,25 @@
+name: 缺陷报告
+description: 报告 Bug（请按仓库协作规范填写）
+title: ""
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请用**简体中文**填写。背景写复现现象与环境；期望写「应该怎样」。
+        详见 [Issue 描述规范](https://github.com/AUTO-MAS-Project/AUTO-MAS/blob/main/skills/github-issue-zh/references/guide.md)。
+  - type: textarea
+    id: background
+    attributes:
+      label: 背景
+      description: 实际现象、复现步骤、环境（版本、系统等）
+    validations:
+      required: true
+  - type: textarea
+    id: expectation
+    attributes:
+      label: 期望
+      description: 正确或预期的行为
+    validations:
+      required: true
