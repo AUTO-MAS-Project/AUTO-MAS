@@ -1,7 +1,7 @@
 <template>
   <div class="user-edit-container">
     <teleport to="body">
-      <div v-if="showConfigMask" class="okww-config-mask">
+      <div v-if="showConfigMask" class="maa-config-mask">
         <div class="mask-content">
           <div class="mask-icon">
             <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
@@ -637,9 +637,13 @@ onMounted(async () => {
   border: 2px solid var(--ant-color-border);
 }
 
-.okww-config-mask {
+/* 与 Scripts.vue / MAAUserEdit 配置遮罩一致 */
+.maa-config-mask {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background: rgba(0, 0, 0, 0.45);
   display: flex;
   align-items: center;
@@ -654,6 +658,10 @@ onMounted(async () => {
   max-width: 480px;
   width: 100%;
   text-align: center;
+  box-shadow:
+    0 6px 16px 0 rgba(0, 0, 0, 0.08),
+    0 3px 6px -4px rgba(0, 0, 0, 0.12),
+    0 9px 28px 8px rgba(0, 0, 0, 0.05);
   border: 1px solid var(--ant-color-border);
 }
 
@@ -665,6 +673,7 @@ onMounted(async () => {
   font-size: 18px;
   font-weight: 600;
   margin: 0 0 8px;
+  color: var(--ant-color-text);
 }
 
 .mask-description {
