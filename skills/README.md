@@ -31,10 +31,11 @@ skills/<skill-name>/
 | [mas-data-model](./mas-data-model/SKILL.md) | 数据模型 |
 | [mas-script-specialized-adapter](./mas-script-specialized-adapter/SKILL.md) | 专项脚本类型端到端适配（MaaEnd / M9A 等） |
 
-## Issue / PR 与 AI
+## 官方开发规范与协作
 
-- 用户提交 Issue、PR：[CONTRIBUTING.md](../CONTRIBUTING.md)、[.github/ISSUE_PR_GUIDE.md](../.github/ISSUE_PR_GUIDE.md)
-- AI 助手边界与审阅约定：[AGENTS.md](../AGENTS.md)
+- 分支、提交信息、版本记录等：[开发规范（官方）](https://doc.auto-mas.top/developer/development-specifications.html)
+- 社区贡献摘要：[CONTRIBUTING.md](../CONTRIBUTING.md)；Issue / PR：[.github/ISSUE_PR_GUIDE.md](../.github/ISSUE_PR_GUIDE.md)
+- AI 助手：[AGENTS.md](../AGENTS.md)
 
 ## 新增 Skill
 

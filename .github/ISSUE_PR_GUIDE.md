@@ -1,6 +1,7 @@
 # 提交 Issue 与 PR（开发者）
 
-请用**简体中文**、**本人填写**（见仓库根目录 [AGENTS.md](../AGENTS.md) 了解 AI 助手的边界）。
+请用**简体中文**、**本人填写**。AI 助手边界见 [AGENTS.md](../AGENTS.md)。  
+分支、提交信息、版本记录等完整规范：[开发规范](https://doc.auto-mas.top/developer/development-specifications.html)。
 
 ## 选模板
 
@@ -12,13 +13,21 @@
 
 ## Issue 怎么写
 
-**Enhancement**：背景（为何改）→ 期望（要什么，可分点）→ 备注可选。
+**Enhancement**：背景 → 期望 → 备注（选填）。
 
-**Bug**：问题描述（现象 + 步骤 + 期望）→ 版本号 → 日志建议填 → 备注可选；截图在提交后拖进正文即可。
+**Bug**：问题描述 → 版本号 → 日志（建议）→ 备注（选填）；截图提交后拖进正文。
 
-篇幅宜短，说不清再补；多个独立需求请拆 Issue。
+篇幅宜短；多个独立需求请拆 Issue。
 
-## PR 怎么写
+## PR 流程（必读）
+
+1. **Base 选 `dev`**，不要选 `main`（向 `main` 的 PR 会被拒绝）。
+2. 在从 `dev` 拉出的分支上开发，向官方仓库 **`dev`** 提 PR，等待开发组审核。
+3. **禁止**向上游 `main` push。
+4. 提交说明遵循 Conventional Commits，例如 `feat(api): 简述`（详见[官方规范](https://doc.auto-mas.top/developer/development-specifications.html#git-提交信息)）。
+5. 用户可见变更请更新 [`res/version.json`](../res/version.json)（见[版本记录](https://doc.auto-mas.top/developer/development-specifications.html#版本记录)）。
+
+## PR 正文怎么写
 
 **摘要** 1～4 条，写**已经做了什么**；有关联 Issue 时文末写 `Closes #123`。
 
