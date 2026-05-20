@@ -888,10 +888,6 @@ export function useScriptApi() {
                           okwwUserData.Data?.ProxyTimes !== undefined
                             ? okwwUserData.Data.ProxyTimes
                             : 0,
-                        IfPassCheck:
-                          okwwUserData.Data?.IfPassCheck !== undefined
-                            ? okwwUserData.Data.IfPassCheck
-                            : false,
                       },
                     }
                   }
