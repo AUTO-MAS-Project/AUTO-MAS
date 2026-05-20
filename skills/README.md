@@ -31,9 +31,10 @@ skills/<skill-name>/
 | [mas-data-model](./mas-data-model/SKILL.md) | 数据模型 |
 | [mas-script-specialized-adapter](./mas-script-specialized-adapter/SKILL.md) | 专项脚本类型端到端适配（MaaEnd / M9A 等） |
 
-## Issue 与 Pull Request
+## Issue / PR 与 AI
 
-协作撰写规范见仓库根目录 [CONTRIBUTING.md](../CONTRIBUTING.md) 与 [.github/ISSUE_PR_GUIDE.md](../.github/ISSUE_PR_GUIDE.md)，不在 `skills/` 中维护。
+- 用户提交 Issue、PR：[CONTRIBUTING.md](../CONTRIBUTING.md)、[.github/ISSUE_PR_GUIDE.md](../.github/ISSUE_PR_GUIDE.md)
+- AI 助手边界与审阅约定：[AGENTS.md](../AGENTS.md)
 
 ## 新增 Skill
 

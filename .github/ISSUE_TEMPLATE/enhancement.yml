@@ -1,56 +1,28 @@
 name: "[Enhancement] 功能建议"
-description: 新功能或改进（背景 / 期望 / 备注）
+description: 背景 · 期望 · 备注（选填）
 title: "[Enhancement] "
 labels:
   - enhancement
 body:
-  - type: markdown
-    attributes:
-      value: |
-        请用**简体中文**填写，由提交者本人撰写（勿依赖 AI 代写）。
-        只写**背景**与**期望**；不写实现方案、代码路径或冗长验收清单。详见 [.github/ISSUE_PR_GUIDE.md](../ISSUE_PR_GUIDE.md)。
-  - type: markdown
-    attributes:
-      value: |
-        ---
-        ### 背景
-        现状与痛点，说明「为什么需要改」。
   - type: textarea
     id: background
     attributes:
       label: 背景
-      description: 必填。当前遇到什么问题？对用户/维护者有什么影响？
-      placeholder: |
-        例如：当前只能……，导致用户需要……
+      description: 为什么需要改
+      placeholder: 当前情况与痛点…
     validations:
       required: true
-  - type: markdown
-    attributes:
-      value: |
-        ---
-        ### 期望
-        要达成什么；多个功能请用小标题或编号分点。
   - type: textarea
     id: expectation
     attributes:
       label: 期望
-      description: 必填。用户可见的行为或结果。
-      placeholder: |
-        ### 1. 功能点标题
-        - 用户可见的行为
-
-        ### 2. …
+      description: 希望做到什么（可分点）
+      placeholder: "- …"
     validations:
       required: true
-  - type: markdown
-    attributes:
-      value: |
-        ---
-        ### 备注
-        可选。范围说明、非目标、参考链接等（仍勿写实现细节）。
   - type: textarea
     id: notes
     attributes:
       label: 备注
       description: 选填
-      placeholder: 例如：优先覆盖 MaaEnd；与 #123 相关但范围不同……
+      placeholder: 范围、相关 Issue 等…

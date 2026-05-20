@@ -8,12 +8,10 @@
 
 本仓库在 [`skills/`](./skills/) 内置工程与协作 Skill。开发代码时建议先阅读 [**mas-skills**](./skills/mas-skills/SKILL.md) 并按任务加载子 Skill（API 契约、数据模型、模块边界等）。**新增专项脚本类型**（如 MaaEnd、M9A）请参阅 [**mas-script-specialized-adapter**](./skills/mas-script-specialized-adapter/SKILL.md)。上游 `mas-*` 更新见 [skills/SYNC.md](./skills/SYNC.md)。
 
-## Issue 与 Pull Request 怎么写
+## Issue 与 Pull Request
 
-提交 Issue 或 PR 时请用**简体中文**，由**提交者本人**填写正文（勿依赖 AI 代写）。规范见 [.github/ISSUE_PR_GUIDE.md](./.github/ISSUE_PR_GUIDE.md)：
-
-- **Issue**：创建时可选 **[Enhancement]**（背景 / 期望 / 备注）、**[bug]**（问题描述 / 版本 / 日志 / 备注），或**空白 Issue**（普通模板）。不写实现方案、代码路径或冗长验收清单。详见 [Issue 模板](./.github/ISSUE_TEMPLATE/) 与 [撰写说明](./.github/ISSUE_PR_GUIDE.md)。
-- **Pull Request**：只写简短**摘要**（1～4 条），并关联 Issue（如 `Closes #123`）。打开 PR 时会自动带出 [pull_request_template.md](./.github/pull_request_template.md)。
+- **开发者**：用简体中文本人填写；选 [Issue 模板](./.github/ISSUE_TEMPLATE/) 或空白 Issue，说明见 [.github/ISSUE_PR_GUIDE.md](./.github/ISSUE_PR_GUIDE.md)。PR 打开时会带出 [pull_request_template.md](./.github/pull_request_template.md)。
+- **AI 助手**：见 [AGENTS.md](./AGENTS.md)（勿代写 Issue/PR，代码规范见 [`skills/`](./skills/)）。
 
 Welcome to contribute to the AUTO-MAS project! Before participating in development, please read the **AUTO-MAS Developer Documentation**.
 
