@@ -301,7 +301,7 @@ const okwwConfig = reactive<OkwwConfig>({
   Info: { Name: '', RootPath: '.' },
   Script: {
     ScriptPath: '.',
-    Arguments: '-t 1 -e',
+    Arguments: '',
     IfTrackProcess: true,
     TrackProcessExe: '',
     ConfigPath: '.',

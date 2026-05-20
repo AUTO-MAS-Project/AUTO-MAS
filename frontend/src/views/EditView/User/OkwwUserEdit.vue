@@ -357,7 +357,6 @@ const getDefaultUserData = () => ({
   Data: {
     LastProxyDate: '',
     ProxyTimes: 0,
-    IfPassCheck: false,
   },
 })
 
