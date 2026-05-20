@@ -1,14 +1,9 @@
 {
-    "version": "v5.3.0-beta.2",
+    "version": "v5.3.0-beta.1",
     "version_info": {
         "v5.3.0-beta.1": {
             "新增功能": [
                 "专项适配 M9A"
-            ]
-        },
-        "v5.3.0-beta.2": {
-            "新增功能": [
-                "专项适配 ok-ww（Okww）"
             ]
         }
     }
