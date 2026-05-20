@@ -46,6 +46,19 @@
         </a-space>
         <div class="control-spacer"></div>
         <a-space size="middle">
+          <a-select
+            v-if="status !== '运行' && showResumeScriptSelect"
+            v-model:value="localResumeFromScriptId"
+            placeholder="从指定脚本继续（默认第一个）"
+            style="width: 260px"
+            :loading="resumeScriptLoading"
+            :options="resumeScriptOptions || []"
+            :disabled="disabled"
+            allow-clear
+            size="large"
+            @change="onResumeScriptChange"
+            @dropdownVisibleChange="onResumeDropdownVisibleChange"
+          />
           <a-button
             :type="status === '运行' ? 'default' : 'primary'"
             :danger="status === '运行'"
@@ -68,7 +81,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { PlayCircleOutlined, StopOutlined } from '@ant-design/icons-vue'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
@@ -77,6 +90,9 @@ import { type SchedulerStatus, TASK_MODE_OPTIONS } from './schedulerConstants'
 interface Props {
   selectedTaskId: string | null
   selectedMode: TaskCreateIn.mode | null
+  resumeFromScriptId?: string | null
+  resumeScriptOptions?: Array<{ label: string; value: string }>
+  resumeScriptLoading?: boolean
   taskOptions: ComboBoxItem[]
   taskOptionsLoading: boolean
   status: SchedulerStatus
@@ -89,6 +105,7 @@ interface Emits {
   (e: 'update:selectedTaskId', value: string | null): void
 
   (e: 'update:selectedMode', value: TaskCreateIn.mode | null): void
+  (e: 'update:resumeFromScriptId', value: string | null): void
 
   (e: 'start'): void
 
@@ -96,11 +113,11 @@ interface Emits {
 
   (e: 'update:runningTaskLabel', value: string): void
 
-  (e: 'update:runningTaskLabel', value: string): void
-
   (e: 'update:runningModeLabel', value: string): void
 
   (e: 'refresh-tasks'): void
+  (e: 'task-changed', value: string | null): void
+  (e: 'refresh-resume-scripts'): void
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -112,9 +129,20 @@ const emit = defineEmits<Emits>()
 // 本地状态，用于双向绑定
 const localSelectedTaskId = ref(props.selectedTaskId)
 const localSelectedMode = ref(props.selectedMode)
+const localResumeFromScriptId = ref(props.resumeFromScriptId ?? null)
 
 // 模式选项
 const modeOptions = TASK_MODE_OPTIONS
+
+// 仅当选中队列任务时显示恢复脚本下拉框。
+// 注：通过任务选项 label 的 "队列 - " 前缀判断，与 useSchedulerLogic.isQueueTask 保持同步。
+const showResumeScriptSelect = computed(() => {
+  const selectedTaskId = localSelectedTaskId.value
+  if (!selectedTaskId) return false
+
+  const taskOption = props.taskOptions.find(opt => opt.value === selectedTaskId)
+  return Boolean(taskOption?.label.startsWith('队列 - '))
+})
 
 // 运行时的显示文本 - 直接使用 props，不再需要本地 ref
 // const runningTaskLabel = ref('')
@@ -123,7 +151,7 @@ const modeOptions = TASK_MODE_OPTIONS
 // 监听状态变化，记录运行时的文本信息
 watch(
   () => props.status,
-  (newStatus) => {
+  newStatus => {
     if (newStatus === '运行') {
       const taskOption = props.taskOptions.find(opt => opt.value === props.selectedTaskId)
       const taskLabel = taskOption?.label || props.selectedTaskId || ''
@@ -135,7 +163,6 @@ watch(
     }
   }
 )
-
 
 // 监听 props 变化，同步到本地状态
 watch(
@@ -154,13 +181,30 @@ watch(
   { immediate: true }
 )
 
+watch(
+  () => props.resumeFromScriptId,
+  newVal => {
+    localResumeFromScriptId.value = newVal ?? null
+  },
+  { immediate: true }
+)
+
 // 事件处理
 const onTaskChange = (value: string) => {
   emit('update:selectedTaskId', value)
+  emit('task-changed', value)
 }
 
 const onModeChange = (value: TaskCreateIn.mode) => {
   emit('update:selectedMode', value)
+}
+
+const onResumeScriptChange = (value: string | undefined) => {
+  emit('update:resumeFromScriptId', value ?? null)
+}
+
+const onResumeDropdownVisibleChange = (open: boolean) => {
+  if (open) emit('refresh-resume-scripts')
 }
 
 // 合并的按钮事件处理

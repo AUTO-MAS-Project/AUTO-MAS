@@ -1,12 +1,12 @@
 // 脚本类型定义
-import type { MaaConfig, GeneralConfig, SrcConfig, MaaEndConfig } from '@/api'
+import type { MaaConfig, GeneralConfig, SrcConfig, MaaEndConfig,M9AConfig} from '@/api'
 import type {
   AutoEssenceLocation,
   ProtocolSpaceTaskValue,
   RewardSetOption,
   SanityTaskType,
 } from '@/utils/maaEndProtocolSpace'
-
+export type ScriptType = 'MAA' | 'General' | 'SRC' | 'MaaEnd' | 'M9A'
 // MAA脚本配置
 export interface MAAScriptConfig {
   Info: {
@@ -148,12 +148,34 @@ export interface MaaEndScriptConfig {
   Task: MaaEndTaskConfig
 }
 
+// M9A脚本配置
+export interface M9AScriptConfig {
+  Info: {
+    Name: string
+    Path: string
+  }
+  Emulator: {
+    Id: string
+    Index: string
+  }
+  Run: {
+    ProxyTimesLimit: number
+    RunTimesLimit: number
+    RunTimeLimit: number
+  }
+  SubConfigsInfo: {
+    UserData: {
+      instances: any[]
+    }
+  }
+}
+
 // 脚本基础信息
 export interface Script {
   id: string
   type: ScriptType
   name: string
-  config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
+  config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig | M9AConfig
   users: User[]
 }
 
@@ -259,13 +281,13 @@ export interface AddScriptResponse {
   status: string
   message: string
   scriptId: string
-  data: MAAScriptConfig | GeneralScriptConfig | SRCScriptConfig | MaaEndScriptConfig
+  data: MAAScriptConfig | GeneralScriptConfig | SRCScriptConfig | MaaEndScriptConfig | M9AScriptConfig
 }
 
 // 脚本索引项
 export interface ScriptIndexItem {
   uid: string
-  type: 'MaaConfig' | 'GeneralConfig' | 'SrcConfig' | 'MaaEndConfig'
+  type: 'MaaConfig' | 'GeneralConfig' | 'SrcConfig' | 'MaaEndConfig' | 'M9AConfig'
 }
 
 // 获取脚本API响应
@@ -274,7 +296,7 @@ export interface GetScriptsResponse {
   status: string
   message: string
   index: ScriptIndexItem[]
-  data: Record<string, MAAScriptConfig | GeneralScriptConfig | SRCScriptConfig | MaaEndScriptConfig>
+  data: Record<string, MAAScriptConfig | GeneralScriptConfig | SRCScriptConfig | MaaEndScriptConfig | M9AScriptConfig>
 }
 
 // 脚本详情（用于前端展示）
@@ -282,7 +304,7 @@ export interface ScriptDetail {
   uid: string
   type: ScriptType
   name: string
-  config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
+  config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig | M9AConfig
   users?: User[]
   createTime?: string
 }
@@ -292,6 +314,21 @@ export interface DeleteScriptResponse {
   code: number
   status: string
   message: string
+}
+
+// M9A 任务选项类型
+export interface M9ATaskOption {
+  name: string
+  index: number
+  sub_options?: M9ATaskOption[]
+  input_values?: Record<string, string | number>
+  selected_cases?: string[]
+}
+
+// M9A 任务队列项类型
+export interface M9ATaskQueueItem {
+  name: string
+  options: M9ATaskOption[]
 }
 
 // 更新脚本API响应
