@@ -1,6 +1,6 @@
-name: 缺陷报告
-description: 报告 Bug（请按仓库协作规范填写）
-title: ""
+name: "[bug] 缺陷报告"
+description: 报告 Bug（问题描述 / 版本 / 日志 / 备注）
+title: "[bug] "
 labels:
   - bug
 body:
@@ -8,23 +8,72 @@ body:
     attributes:
       value: |
         请用**简体中文**填写，由提交者本人撰写（勿依赖 AI 代写）。
-
-        **背景**：实际现象、复现步骤、环境（版本、系统等）。  
-        **期望**：正确或预期的行为。
-
-        **请勿写**：实现方案、代码路径、验收 checkbox 清单。  
-        理想篇幅约 150～400 字。详见 [.github/ISSUE_PR_GUIDE.md](../ISSUE_PR_GUIDE.md)。
-  - type: textarea
-    id: background
+        提交后可在 Issue 正文中**拖拽上传截图与附件**（或粘贴图片）。详见 [.github/ISSUE_PR_GUIDE.md](../ISSUE_PR_GUIDE.md)。
+  - type: markdown
     attributes:
-      label: 背景
-      description: 实际现象、复现步骤、环境（版本、系统等）
+      value: |
+        ---
+        ### 问题描述
+        实际现象、复现步骤、期望的正确行为。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 问题描述
+      description: 必填
+      placeholder: |
+        **现象**：……
+
+        **复现步骤**：
+        1. …
+        2. …
+
+        **期望**：应该怎样……
     validations:
       required: true
-  - type: textarea
-    id: expectation
+  - type: markdown
     attributes:
-      label: 期望
-      description: 正确或预期的行为
+      value: |
+        ---
+        ### AUTO-MAS 版本
+        应用内「关于」或设置页显示的版本号；开发版请注明分支/提交（若已知）。
+  - type: input
+    id: version
+    attributes:
+      label: AUTO-MAS 版本
+      description: 必填。例如 v5.3.0-beta.1
+      placeholder: v5.3.0-beta.1
     validations:
       required: true
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        ### 前后端日志
+        请粘贴相关日志片段；过长可附文件或折叠为代码块。必要时在提交后补充截图。
+  - type: textarea
+    id: logs
+    attributes:
+      label: 前后端日志
+      description: 选填但强烈建议提供。后端日志、前端/Electron 控制台、脚本输出等
+      placeholder: |
+        **后端**（如有）：
+        ```
+        …
+        ```
+
+        **前端 / Electron**（如有）：
+        ```
+        …
+        ```
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        ### 备注
+        可选。操作系统、显卡驱动、脚本类型、是否与某 Issue/PR 相关等。
+  - type: textarea
+    id: notes
+    attributes:
+      label: 备注
+      description: 选填
+      placeholder: 例如：Windows 11 24H2；仅 MaaEnd 脚本复现；升级前正常……
