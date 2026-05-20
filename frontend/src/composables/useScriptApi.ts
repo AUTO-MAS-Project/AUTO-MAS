@@ -5,6 +5,7 @@ import {
   type MaaConfig,
   type MaaEndConfig,
   type M9AConfig,
+  type OkwwConfig,
   type SrcConfig,
   ScriptCreateIn,
   type ScriptReorderIn,
@@ -35,7 +36,9 @@ export function useScriptApi() {
                 ? ScriptCreateIn.type.MAA_END
                 : type === 'M9A'
                   ? ScriptCreateIn.type.M9A
-                  : ScriptCreateIn.type.GENERAL,
+                  : type === 'Okww'
+                    ? ScriptCreateIn.type.OKWW
+                    : ScriptCreateIn.type.GENERAL,
         scriptId: scriptId || null,
       }
 
@@ -76,7 +79,7 @@ export function useScriptApi() {
       uid: string
       type: string
       name: string
-      config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig | M9AConfig
+      config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig | M9AConfig
     }[]
   > => {
     if (manageLoading) {
@@ -104,6 +107,8 @@ export function useScriptApi() {
             ? 'MAA'
             : indexItem.type === 'SrcConfig'
               ? 'SRC'
+              : indexItem.type === 'OkwwConfig'
+                ? 'Okww'
               : indexItem.type === 'MaaEndConfig'
                 ? 'MaaEnd'
                 : indexItem.type === 'M9AConfig'
@@ -133,7 +138,7 @@ export function useScriptApi() {
           uid: string
           type: string
           name: string
-          config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig | M9AConfig
+          config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig | M9AConfig
           users: (
             | {
                 id: string
@@ -220,14 +225,14 @@ export function useScriptApi() {
           uid: string
           type: string
           name: string
-          config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
+          config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig
           users: any[]
         }
       | {
           uid: string
           type: string
           name: string
-          config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
+          config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig
           users: any[]
         }
     >[]
@@ -795,6 +800,100 @@ export function useScriptApi() {
                             : false,
                       },
                     }
+                  } else if (userIndex.type === 'OkwwUserConfig' && userData) {
+                    const okwwUserData = userData as any
+                    return {
+                      id: userIndex.uid,
+                      name: okwwUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name:
+                          okwwUserData.Info?.Name !== undefined
+                            ? okwwUserData.Info.Name
+                            : `用户${userIndex.uid}`,
+                        Status:
+                          okwwUserData.Info?.Status !== undefined
+                            ? okwwUserData.Info.Status
+                            : true,
+                        RemainedDay:
+                          okwwUserData.Info?.RemainedDay !== undefined
+                            ? okwwUserData.Info.RemainedDay
+                            : -1,
+                        IfScriptBeforeTask:
+                          okwwUserData.Info?.IfScriptBeforeTask !== undefined
+                            ? okwwUserData.Info.IfScriptBeforeTask
+                            : false,
+                        ScriptBeforeTask:
+                          okwwUserData.Info?.ScriptBeforeTask !== undefined
+                            ? okwwUserData.Info.ScriptBeforeTask
+                            : '',
+                        IfScriptAfterTask:
+                          okwwUserData.Info?.IfScriptAfterTask !== undefined
+                            ? okwwUserData.Info.IfScriptAfterTask
+                            : false,
+                        ScriptAfterTask:
+                          okwwUserData.Info?.ScriptAfterTask !== undefined
+                            ? okwwUserData.Info.ScriptAfterTask
+                            : '',
+                        Notes:
+                          okwwUserData.Info?.Notes !== undefined
+                            ? okwwUserData.Info.Notes
+                            : '',
+                      },
+                      Task: {
+                        TaskIndex:
+                          okwwUserData.Task?.TaskIndex !== undefined
+                            ? okwwUserData.Task.TaskIndex
+                            : 1,
+                        ExitOnFinish:
+                          okwwUserData.Task?.ExitOnFinish !== undefined
+                            ? okwwUserData.Task.ExitOnFinish
+                            : true,
+                      },
+                      Notify: {
+                        Enabled:
+                          okwwUserData.Notify?.Enabled !== undefined
+                            ? okwwUserData.Notify.Enabled
+                            : false,
+                        IfSendStatistic:
+                          okwwUserData.Notify?.IfSendStatistic !== undefined
+                            ? okwwUserData.Notify.IfSendStatistic
+                            : false,
+                        IfSendMail:
+                          okwwUserData.Notify?.IfSendMail !== undefined
+                            ? okwwUserData.Notify.IfSendMail
+                            : false,
+                        ToAddress:
+                          okwwUserData.Notify?.ToAddress !== undefined
+                            ? okwwUserData.Notify.ToAddress
+                            : '',
+                        IfServerChan:
+                          okwwUserData.Notify?.IfServerChan !== undefined
+                            ? okwwUserData.Notify.IfServerChan
+                            : false,
+                        ServerChanKey:
+                          okwwUserData.Notify?.ServerChanKey !== undefined
+                            ? okwwUserData.Notify.ServerChanKey
+                            : '',
+                        CustomWebhooks:
+                          okwwUserData.Notify?.CustomWebhooks !== undefined
+                            ? okwwUserData.Notify.CustomWebhooks
+                            : [],
+                      },
+                      Data: {
+                        LastProxyDate:
+                          okwwUserData.Data?.LastProxyDate !== undefined
+                            ? okwwUserData.Data.LastProxyDate
+                            : '',
+                        ProxyTimes:
+                          okwwUserData.Data?.ProxyTimes !== undefined
+                            ? okwwUserData.Data.ProxyTimes
+                            : 0,
+                        IfPassCheck:
+                          okwwUserData.Data?.IfPassCheck !== undefined
+                            ? okwwUserData.Data.IfPassCheck
+                            : false,
+                      },
+                    }
                   }
 
                   return null
@@ -862,6 +961,8 @@ export function useScriptApi() {
           ? 'MAA'
           : item.type === 'SrcConfig'
             ? 'SRC'
+            : item.type === 'OkwwConfig'
+              ? 'Okww'
             : item.type === 'MaaEndConfig'
               ? 'MaaEnd'
               : item.type === 'M9AConfig'
