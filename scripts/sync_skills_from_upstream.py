@@ -13,9 +13,6 @@ REPO = "AUTO-MAS-Project/skills"
 BRANCH = "main"
 ROOT = Path(__file__).resolve().parents[1]
 SKILLS_DIR = ROOT / "skills"
-LOCAL_ONLY = {"github-issue-zh", "github-pr-zh"}
-
-
 def gh_api(path: str) -> bytes:
     out = subprocess.check_output(
         ["gh", "api", f"repos/{REPO}/{path}", "-q", ".content"],
@@ -49,8 +46,6 @@ def main() -> None:
         if len(parts) < 2:
             continue
         skill_name = parts[0]
-        if skill_name in LOCAL_ONLY:
-            continue
 
         dest = SKILLS_DIR / rel
         dest.parent.mkdir(parents=True, exist_ok=True)

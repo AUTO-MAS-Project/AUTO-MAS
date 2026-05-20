@@ -10,11 +10,10 @@
 
 ## Issue 与 Pull Request 怎么写
 
-提交 Issue 或 PR 时请用**简体中文**，并遵循仓库 [Skills](./skills/) 说明：
+提交 Issue 或 PR 时请用**简体中文**，由**提交者本人**填写正文（勿依赖 AI 代写）。规范见 [.github/ISSUE_PR_GUIDE.md](./.github/ISSUE_PR_GUIDE.md)：
 
-- **Issue**：[github-issue-zh](./skills/github-issue-zh/SKILL.md)（[完整规范](./skills/github-issue-zh/references/guide.md)）— 只写**背景**与**期望**（多个功能请分点）；不写实现方案、代码路径表或冗长验收清单。
-- **Pull Request**：[github-pr-zh](./skills/github-pr-zh/SKILL.md)（[完整规范](./skills/github-pr-zh/references/guide.md)）— 只写简短**摘要**，并关联 Issue（如 `Closes #123`）。
-- 在 GitHub 网页创建 Issue 时可选用模板；PR 将自动带出 [pull_request_template.md](./.github/pull_request_template.md)。
+- **Issue**：只写**背景**与**期望**（多个功能请分点）；不写实现方案、代码路径或冗长验收清单。在 GitHub 创建时可选用 [Issue 模板](./.github/ISSUE_TEMPLATE/)。
+- **Pull Request**：只写简短**摘要**（1～4 条），并关联 Issue（如 `Closes #123`）。打开 PR 时会自动带出 [pull_request_template.md](./.github/pull_request_template.md)。
 
 Welcome to contribute to the AUTO-MAS project! Before participating in development, please read the **AUTO-MAS Developer Documentation**.
 

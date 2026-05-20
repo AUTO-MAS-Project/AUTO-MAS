@@ -31,12 +31,9 @@ skills/<skill-name>/
 | [mas-data-model](./mas-data-model/SKILL.md) | 数据模型 |
 | [mas-script-specialized-adapter](./mas-script-specialized-adapter/SKILL.md) | 专项脚本类型端到端适配（MaaEnd / M9A 等） |
 
-## 协作规范（本仓库）
+## Issue 与 Pull Request
 
-| name | 说明 |
-|------|------|
-| [github-issue-zh](./github-issue-zh/SKILL.md) | 中文撰写 GitHub Issue |
-| [github-pr-zh](./github-pr-zh/SKILL.md) | 中文撰写 GitHub Pull Request |
+协作撰写规范见仓库根目录 [CONTRIBUTING.md](../CONTRIBUTING.md) 与 [.github/ISSUE_PR_GUIDE.md](../.github/ISSUE_PR_GUIDE.md)，不在 `skills/` 中维护。
 
 ## 新增 Skill
 
@@ -44,4 +41,4 @@ skills/<skill-name>/
 2. 长文放入 `references/`。
 3. 更新本表；必要时更新 `CONTRIBUTING.md` 与 `.github/` 模板。
 
-若与上游 [AUTO-MAS-Project/skills](https://github.com/AUTO-MAS-Project/skills) 对齐，请按 [SYNC.md](./SYNC.md) 同步，并保留本仓库专有的 `github-*` Skill。
+若与上游 [AUTO-MAS-Project/skills](https://github.com/AUTO-MAS-Project/skills) 对齐，请按 [SYNC.md](./SYNC.md) 同步。

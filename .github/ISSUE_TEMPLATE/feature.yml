@@ -7,8 +7,13 @@ body:
   - type: markdown
     attributes:
       value: |
-        请用**简体中文**填写。只写背景与期望，不写实现方案、代码路径或验收清单。
-        详见 [Issue 描述规范](https://github.com/AUTO-MAS-Project/AUTO-MAS/blob/main/skills/github-issue-zh/references/guide.md)。
+        请用**简体中文**填写，由提交者本人撰写（勿依赖 AI 代写）。
+
+        **背景**：现状与痛点，说明「为什么需要改」。  
+        **期望**：要达成什么（多个功能请用小标题或编号分点）。
+
+        **请勿写**：实现方案、API/Schema、代码路径、冗长验收清单。  
+        理想篇幅约 150～400 字；多条独立需求请拆成多个 Issue。详见 [.github/ISSUE_PR_GUIDE.md](../ISSUE_PR_GUIDE.md)。
   - type: textarea
     id: background
     attributes:

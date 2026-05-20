@@ -14,7 +14,7 @@ python scripts/sync_skills_from_upstream.py
 
 1. 通过 `gh api` 拉取上游各 `mas-*/SKILL.md` 写入 `skills/<name>/references/guide.md`
 2. 拉取 `mas-code-standards/references/style-observations.md` 与各 `agents/openai.yaml`
-3. **不会**覆盖本仓库专有的 `github-issue-zh`、`github-pr-zh` 及已手工精简的 `SKILL.md` 摘要
+3. **不会**覆盖本仓库已手工精简的 `SKILL.md` 摘要
 
 同步后请人工检查：摘要 `SKILL.md` 是否与 `guide.md` 一致，必要时更新摘要条目。
 
