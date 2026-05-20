@@ -80,15 +80,32 @@ class ScriptConfigTask(TaskExecuteBase):
         self.wait_event.clear()
         await self.wait_event.wait()
 
-    async def on_stop(self):
+    async def _kill_okww_processes(self) -> None:
+        """结束 ok-ww.exe 及其 pythonw 子进程（与 AutoProxy 收尾一致）"""
+        if hasattr(self, "okww_process_manager"):
+            try:
+                await self.okww_process_manager.kill()
+            except Exception:
+                pass
+
+        exe = Path(self.script_config.get("Script", "ScriptPath"))
         try:
-            await self.okww_process_manager.kill()
+            await System.kill_process(exe)
         except Exception:
             pass
 
-        # 记录配置会话已完成：
-        # - 脚本页按钮（task_info.user_id == "Default"）写共享配置标记
-        # - 用户页按钮（task_info.user_id == <user_id>）写用户独立配置标记
+        root = Path(self.script_config.get("Info", "RootPath"))
+        track_exe = str(self.script_config.get("Script", "TrackProcessExe") or "").strip()
+        if not track_exe and root:
+            track_exe = str(root / "data/apps/ok-ww/python/pythonw.exe")
+        if track_exe:
+            try:
+                await System.kill_process(Path(track_exe))
+            except Exception:
+                pass
+
+    def _write_config_marker(self) -> None:
+        # 脚本页（user_id == Default）与用户页各写独立 ConfigFile 标记
         config_owner = self.task_info.user_id or "Default"
         config_marker = (
             Path.cwd()
@@ -97,12 +114,10 @@ class ScriptConfigTask(TaskExecuteBase):
         config_marker.mkdir(parents=True, exist_ok=True)
 
     async def final_task(self):
-        if hasattr(self, "okww_process_manager"):
-            try:
-                await self.okww_process_manager.kill()
-            except Exception:
-                pass
-        await self.on_stop()
+        if hasattr(self, "wait_event"):
+            self.wait_event.set()
+        await self._kill_okww_processes()
+        self._write_config_marker()
 
     async def on_crash(self, e: Exception):
         logger.exception(f"OK-WW 配置任务出现异常: {e}")
