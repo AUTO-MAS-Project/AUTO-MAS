@@ -44,6 +44,7 @@ from app.models.config import (
     SrcConfig,
     M9AConfig,
     MaaEndConfig,
+    OkwwConfig,
     MaaPlanConfig,
     QueueConfig,
     QueueItem,
@@ -52,6 +53,7 @@ from app.models.config import (
     M9AUserConfig,
     MaaEndUserConfig,
     GeneralUserConfig,
+    OkwwUserConfig,
     GlobalConfig,
     CLASS_BOOK,
     Webhook,
@@ -527,9 +529,11 @@ class AppConfig(GlobalConfig):
 
     async def add_script(
         self,
-        script: Literal["MAA", "SRC", "General", "MaaEnd", "M9A"],
+        script: Literal["MAA", "SRC", "General", "MaaEnd", "M9A", "Okww"],
         script_id: str | None = None,
-    ) -> tuple[uuid.UUID, MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig | M9AConfig]:
+    ) -> tuple[
+        uuid.UUID, MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig | M9AConfig | OkwwConfig
+    ]:
         """添加脚本配置"""
 
         logger.info(f"添加脚本配置: {script}, 从 {script_id} 复制")
@@ -824,6 +828,8 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(SrcUserConfig)
         elif isinstance(script_config, GeneralConfig):
             uid, config = await script_config.UserData.add(GeneralUserConfig)
+        elif isinstance(script_config, OkwwConfig):
+            uid, config = await script_config.UserData.add(OkwwUserConfig)
         elif isinstance(script_config, MaaEndConfig):
             uid, config = await script_config.UserData.add(MaaEndUserConfig)
         elif isinstance(script_config, M9AConfig):

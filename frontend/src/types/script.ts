@@ -1,7 +1,16 @@
 // 脚本类型定义
-import type { MaaConfig, GeneralConfig, SrcConfig, MaaEndConfig, M9AConfig } from '@/api'
+import type {
+  MaaConfig,
+  GeneralConfig,
+  OkwwConfig,
+  SrcConfig,
+  MaaEndConfig,
+  M9AConfig,
+} from '@/api'
 
-export type ScriptType = 'MAA' | 'General' | 'SRC' | 'MaaEnd' | 'M9A'
+export type ScriptType = 'MAA' | 'General' | 'Okww' | 'SRC' | 'MaaEnd' | 'M9A'
+
+export type OkwwScriptConfig = OkwwConfig
 
 // MAA脚本配置
 export interface MAAScriptConfig {
@@ -144,7 +153,7 @@ export interface Script {
   id: string
   type: ScriptType
   name: string
-  config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig | M9AConfig
+  config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig | M9AConfig
   users: User[]
 }
 

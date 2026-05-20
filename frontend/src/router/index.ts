@@ -63,6 +63,12 @@ const routes = [
     meta: { title: '编辑通用脚本' },
   },
   {
+    path: '/scripts/:id/edit/okww',
+    name: 'OkwwScriptEdit',
+    component: () => import('../views/EditView/Script/OkwwScriptEdit.vue'),
+    meta: { title: '编辑ok-ww脚本' },
+  },
+  {
     path: '/scripts/:scriptId/users/add/maa',
     name: 'MAAUserAdd',
     component: () => import('../views/EditView/User/MAAUserEdit.vue'),
@@ -121,6 +127,18 @@ const routes = [
     name: 'GeneralUserEdit',
     component: () => import('../views/EditView/User/GeneralUserEdit.vue'),
     meta: { title: '编辑通用用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/add/okww',
+    name: 'OkwwUserAdd',
+    component: () => import('../views/EditView/User/OkwwUserEdit.vue'),
+    meta: { title: '添加ok-ww用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/okww',
+    name: 'OkwwUserEdit',
+    component: () => import('../views/EditView/User/OkwwUserEdit.vue'),
+    meta: { title: '编辑ok-ww用户' },
   },
   {
     path: '/plans',
