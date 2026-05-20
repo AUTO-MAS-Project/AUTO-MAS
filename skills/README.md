@@ -29,7 +29,7 @@ skills/<skill-name>/
 | [mas-function-design](./mas-function-design/SKILL.md) | 函数设计 |
 | [mas-api-contract](./mas-api-contract/SKILL.md) | HTTP / WebSocket 契约 |
 | [mas-data-model](./mas-data-model/SKILL.md) | 数据模型 |
-| [mas-script-specialized-adapter](./mas-script-specialized-adapter/SKILL.md) | 专项脚本类型端到端适配（MaaEnd / M9A 等） |
+| [mas-script-specialized-adapter](./mas-script-specialized-adapter/SKILL.md) | 专项适配（架构线；优先仓库 URL 问诊 → Agent 研判 → 用户确认） |
 
 ## 官方开发规范与协作
 

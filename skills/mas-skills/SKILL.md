@@ -19,7 +19,7 @@ description: Master entrypoint for MAS engineering standards and code convention
 | `mas-function-design` | 函数职责、签名、副作用与错误 |
 | `mas-api-contract` | HTTP / WebSocket 契约 |
 | `mas-data-model` | schema / config / task 模型 |
-| `mas-script-specialized-adapter` | 新增专项脚本类型（MaaEnd / M9A 等）端到端适配 |
+| `mas-script-specialized-adapter` | 专项适配（按 MAA/SRC/MXU/MFAA 架构线；**脚本架构问诊**：优先用户贴仓库 URL，Agent 读后对齐结论） |
 
 ## 路由（摘要）
 
@@ -29,7 +29,7 @@ description: Master entrypoint for MAS engineering standards and code convention
 4. 函数拆分、返回值、错误 → `mas-function-design`
 5. 接口入出参、WS 载荷 → `mas-api-contract`
 6. 模型结构、类型、兼容演进 → `mas-data-model`
-7. 新增专项脚本类型、全量接入某外部程序 → `mas-script-specialized-adapter`
+7. 新增 ScriptType / 专项适配 → `mas-script-specialized-adapter`（**先脚本架构问诊**：优先仓库 URL → Agent 研判 → 用户确认架构线）
 
 多项并存时建议顺序见 [references/guide.md](references/guide.md)。专项适配在模型与边界清晰后执行，见 `mas-script-specialized-adapter` 内推荐顺序。
 
