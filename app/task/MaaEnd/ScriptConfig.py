@@ -106,7 +106,7 @@ class ScriptConfigTask(TaskExecuteBase):
                 break
         else:
             for instance in maaend_instances:
-                if instance["id"] == maaend_set["lastActiveInstanceId"]:
+                if instance["id"] == maaend_set.get("lastActiveInstanceId"):
                     selected_instance = instance
                     break
         if selected_instance is None:
@@ -121,15 +121,9 @@ class ScriptConfigTask(TaskExecuteBase):
         selected_instance["id"] = "automas"
         selected_instance["name"] = "AUTO-MAS"
         maaend_set["instances"] = [selected_instance]
-        maaend_set["lastActiveInstanceId"] = "automas"
 
-        # 移除冗余任务项信息
-        maaend_set["recentlyClosed"] = []
-
-        # 不直接运行任务
-        maaend_set["settings"]["autoStartInstanceId"] = "automas"
+        # 配置模式只打开界面，不触发自动执行。
         maaend_set["settings"]["autoRunOnLaunch"] = False
-        maaend_set["settings"].pop("autoStartRemovedInstanceName", None)
 
         (self.maaend_set_path / "mxu-MaaEnd.json").write_text(
             json.dumps(maaend_set, ensure_ascii=False, indent=4), encoding="utf-8"
