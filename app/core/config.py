@@ -559,6 +559,19 @@ class AppConfig(GlobalConfig):
         raise TypeError(f"PluginData.Config 必须是 dict 或 JSON 字符串: {type(raw).__name__}")
 
     @staticmethod
+    def _merge_plugin_form_payload(
+        base: dict[str, Any],
+        override: dict[str, Any],
+    ) -> dict[str, Any]:
+        merged = copy.deepcopy(base or {})
+        for key, value in (override or {}).items():
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                merged[key] = AppConfig._merge_plugin_form_payload(merged[key], value)
+            else:
+                merged[key] = copy.deepcopy(value)
+        return merged
+
+    @staticmethod
     def _script_record_name(
         provider: Any,
         config_data: dict[str, Any],
@@ -880,6 +893,15 @@ class AppConfig(GlobalConfig):
                 payload_data = update_data
 
             if payload_data is not None:
+                current_form_payload = await storage_to_form(
+                    provider,
+                    config.get("PluginData", "Config"),
+                    "script",
+                )
+                payload_data = self._merge_plugin_form_payload(
+                    current_form_payload,
+                    payload_data,
+                )
                 payload_data = await form_to_storage(provider, payload_data, "script")
                 await config.set(
                     "PluginData", "Config",
@@ -1160,6 +1182,15 @@ class AppConfig(GlobalConfig):
             elif update_data:
                 payload_data = update_data
             if payload_data is not None:
+                current_form_payload = await storage_to_form(
+                    provider,
+                    user_config.get("PluginData", "Config"),
+                    "user",
+                )
+                payload_data = self._merge_plugin_form_payload(
+                    current_form_payload,
+                    payload_data,
+                )
                 payload_data = await form_to_storage(provider, payload_data, "user")
                 await user_config.set(
                     "PluginData", "Config",
