@@ -61,6 +61,17 @@ export {
     DependencyProgressCallback
 } from './dependencyService'
 
+// 插件预装服务
+export {
+    PluginBootstrapService,
+    PluginBootstrapCheckResult,
+    PluginBootstrapProgress,
+    PluginBootstrapProgressCallback,
+    PluginBootstrapInstallResult,
+    PluginBootstrapWarning,
+    PluginBootstrapState,
+} from './pluginBootstrapService'
+
 // 初始化总流程服务
 export {
     InitializationService,
