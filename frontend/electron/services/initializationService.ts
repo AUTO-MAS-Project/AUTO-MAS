@@ -7,6 +7,7 @@ import { MirrorService } from './mirrorService'
 import { PythonInstaller, PipInstaller, GitInstaller } from './environmentService'
 import { RepositoryService } from './repositoryService'
 import { DependencyService } from './dependencyService'
+import { PluginBootstrapService } from './pluginBootstrapService'
 import { BackendService } from './backendService'
 
 // 导入日志服务
@@ -16,7 +17,16 @@ const logger = getLogger('初始化服务')
 // ==================== 类型定义 ====================
 
 export interface InitializationProgress {
-    stage: 'mirror' | 'python' | 'uv' | 'git' | 'repository' | 'dependency' | 'backend' | 'complete'
+    stage:
+        | 'mirror'
+        | 'python'
+        | 'uv'
+        | 'git'
+        | 'repository'
+        | 'dependency'
+        | 'plugin-bootstrap'
+        | 'backend'
+        | 'complete'
     stageIndex: number
     totalStages: number
     progress: number
@@ -28,6 +38,9 @@ export interface InitializationProgress {
         downloadSpeed?: number
         downloadSize?: number
         operationDesc?: string
+        currentPackage?: string
+        failedPackages?: string[]
+        warnings?: Array<{ packageName: string; message: string; kind: string }>
     }
 }
 
@@ -60,7 +73,7 @@ export class InitializationService {
      */
     async initialize(onProgress?: InitializationProgressCallback, startBackend: boolean = true): Promise<InitializationResult> {
         const completedStages: string[] = []
-        const totalStages = startBackend ? 7 : 6
+        const totalStages = startBackend ? 8 : 7
 
         try {
             // 阶段 1: 初始化镜像源配置
@@ -243,11 +256,43 @@ export class InitializationService {
 
             completedStages.push('dependency')
 
-            // 阶段 7: 启动后端（可选）
+            // 阶段 7: 预装推荐插件包
+            onProgress?.({
+                stage: 'plugin-bootstrap',
+                stageIndex: 7,
+                totalStages,
+                progress: 0,
+                message: '正在预装推荐插件包...'
+            })
+
+            const pluginBootstrapService = new PluginBootstrapService(this.appRoot, this.mirrorService)
+            const bootstrapResult = await pluginBootstrapService.installPackages((bootstrapProgress) => {
+                onProgress?.({
+                    stage: 'plugin-bootstrap',
+                    stageIndex: 7,
+                    totalStages,
+                    progress: bootstrapProgress.progress,
+                    message: bootstrapProgress.message,
+                    details: bootstrapProgress.details,
+                })
+            })
+
+            if (!bootstrapResult.success) {
+                return {
+                    success: false,
+                    error: bootstrapResult.error,
+                    completedStages,
+                    failedStage: 'plugin-bootstrap'
+                }
+            }
+
+            completedStages.push('plugin-bootstrap')
+
+            // 阶段 8: 启动后端（可选）
             if (startBackend) {
                 onProgress?.({
                     stage: 'backend',
-                    stageIndex: 7,
+                    stageIndex: 8,
                     totalStages,
                     progress: 0,
                     message: '正在启动后端服务...'
@@ -267,7 +312,7 @@ export class InitializationService {
                 const status = this.backendService.getStatus()
                 onProgress?.({
                     stage: 'backend',
-                    stageIndex: 7,
+                    stageIndex: 8,
                     totalStages,
                     progress: 100,
                     message: `后端服务已启动，PID: ${status.pid}`

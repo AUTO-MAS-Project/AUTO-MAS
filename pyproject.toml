@@ -38,3 +38,10 @@ dependencies = [
 
 [dependency-groups]
 dev = []
+
+[tool.auto-mas.plugin-bootstrap]
+# 支持两种写法：
+# 1) 仅声明包名： "automas_script_maa"
+# 2) 声明固定版本： { name = "automas_script_maa", version = "0.0.5-alpha" }
+# 3) 声明任意版本约束： { name = "automas_script_maa", specifier = ">=0.0.5-alpha,<0.1.0" }
+packages = []
