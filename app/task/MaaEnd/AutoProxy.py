@@ -250,7 +250,12 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info(f"运行脚本任务: {self.maaend_exe_path}")
             self.wait_event.clear()
             await self.maaend_process_manager.open_process(
-                self.maaend_exe_path, stdout=asyncio.subprocess.PIPE
+                self.maaend_exe_path,
+                "--autostart",
+                "--instance",
+                "AUTO-MAS",
+                "--quit-after-run",
+                stdout=asyncio.subprocess.PIPE,
             )
             await asyncio.sleep(3)  # 等待 MaaEnd 启动完成
             # 静默模式隐藏 MaaEnd 窗口
@@ -384,20 +389,17 @@ class AutoProxyTask(TaskExecuteBase):
                 maaend_instance = instance
                 break
         else:
-            maaend_instance = {"id": "automas", "name": "AUTO-MAS", "tasks": []}
+            maaend_instance = {
+                "id": "automas",
+                "name": "AUTO-MAS",
+                "tasks": [],
+            }
         maaend_set["instances"] = [maaend_instance]
+        maaend_instance["name"] = "AUTO-MAS"
         maaend_tasks = maaend_instance["tasks"]
 
         # 建立全局设置引用
         settings = maaend_set["settings"]
-
-        # 移除冗余任务项信息
-        maaend_set["recentlyClosed"] = []
-
-        # 直接运行任务
-        settings["autoStartInstanceId"] = "automas"
-        settings["autoRunOnLaunch"] = True
-        settings.pop("autoStartRemovedInstanceName", None)
 
         # 模拟器相关配置
         maaend_instance["controllerName"] = self.script_config.get(
