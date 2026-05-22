@@ -124,6 +124,7 @@ def apply_maaend_sanity_task_config(
                 continue
 
             protocol_space_configured = True
+            task.setdefault("optionValues", {})
             task["optionValues"]["ProtocolSpaceTab"] = {
                 "type": "select",
                 "caseName": sanity_task_type,
@@ -169,17 +170,13 @@ def build_maaend_preset_config(
 
     config_data = load_maaend_preset_template()
     instance = get_maaend_preset_instance(config_data, controller_type)
-    template_tasks = {
-        task.get("taskName"): task
-        for task in instance["tasks"]
-    }
     stored_options = json.loads(config.get("Task", "Options"))
 
     tasks: list[dict[str, Any]] = []
     for template_task in instance["tasks"]:
         task_name = template_task["taskName"]
         task_config = MAAEND_PRESET_TASK_CONFIG.get(task_name, {})
-        task = deepcopy(template_tasks[task_name])
+        task = deepcopy(template_task)
         if "enabled" in task_config:
             task["enabled"] = bool(config.get("Task", task_config["enabled"]))
             if task_name == "ProtocolSpace":
@@ -193,11 +190,10 @@ def build_maaend_preset_config(
                     and config.get("Task", "SanityTaskType") == "Essence"
                 )
         if task_name in stored_options:
-            for field, option in stored_options[task_name].items():
-                if field in task.get("optionValues", {}):
-                    task["optionValues"][field] = deepcopy(option)
+            task["optionValues"] = deepcopy(stored_options[task_name])
         for field in task_config.get("core_options", []):
             option_field = MAAEND_CORE_OPTION_FIELD_BOOK.get(field, field)
+            task.setdefault("optionValues", {})
             task["optionValues"].setdefault(option_field, {"type": "select"})[
                 "caseName"
             ] = (
@@ -220,28 +216,28 @@ async def save_maaend_preset_options(
 
     instance = get_maaend_active_instance(config_data)
     options: dict[str, dict[str, Any]] = {}
-    defaults = load_maaend_preset_template()
-    default_instance = get_maaend_preset_instance(defaults, controller_type)
-    default_options_map = {
-        task.get("taskName"): task.get("optionValues", {})
-        for task in default_instance["tasks"]
+    preset_task_names = {
+        task.get("taskName")
+        for task in get_maaend_preset_instance(
+            load_maaend_preset_template(), controller_type
+        )["tasks"]
     }
     for task in instance["tasks"]:
         task_name = task.get("taskName")
-        if task_name not in default_options_map:
+        if task_name not in preset_task_names:
             continue
         task_config = MAAEND_PRESET_TASK_CONFIG.get(task_name, {})
         option_values = task.get("optionValues", {})
         options[task_name] = deepcopy(option_values)
-        default_options = default_options_map.get(task_name, {})
         for field in task_config.get("core_options", []):
             option_field = MAAEND_CORE_OPTION_FIELD_BOOK.get(field, field)
+            option = option_values.get(option_field)
+            if not option or "caseName" not in option:
+                continue
             await config.set(
                 "Task",
                 field,
-                option_values.get(option_field, default_options[option_field])[
-                    "caseName"
-                ],
+                option["caseName"],
             )
 
     await config.set("Task", "Options", json.dumps(options, ensure_ascii=False))
