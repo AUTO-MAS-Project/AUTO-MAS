@@ -769,21 +769,15 @@ onMounted(async () => {
   background: var(--ant-color-primary-bg);
 }
 
-.notice-alert {
+.maaend-tip {
   margin-bottom: 24px;
-  border-radius: 12px;
+  border-radius: 8px;
 }
 
-.notice-content p {
-  margin: 0;
-}
-
-.notice-content p + p {
-  margin-top: 6px;
-}
-
-.notice-content a {
-  font-weight: 600;
+.maaend-tip :deep(.ant-alert-description) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .form-section {
