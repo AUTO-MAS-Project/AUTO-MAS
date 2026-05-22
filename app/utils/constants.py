@@ -207,6 +207,25 @@ MAAEND_PROTOCOL_SPACE_TABS = (
 MAAEND_SANITY_TASK_TYPES = (*MAAEND_PROTOCOL_SPACE_TABS, "Essence")
 """MAAEnd理智任务类型列表"""
 
+MAAEND_PRESET_TASK_SWITCHES = (
+    "VisitFriends",
+    "DijiangRewards",
+    "CreditShoppingN2",
+    "DeliveryJobs",
+    "SellProduct",
+    "AutoStockpile",
+    "AutoStockStaple",
+    "AutoSell",
+    "EnvironmentMonitoring",
+    "DailyRewards",
+    "SeizeEntrustTask",
+    "AutoCollect",
+    "AutoUseSpMedication",
+    "ResourceRecycleStation",
+    "AutoEcoFarm",
+)
+"""MaaEnd预设任务开关列表"""
+
 MAAEND_PROTOCOL_SPACE_FIELDS = (
     "OperatorProgression",
     "WeaponProgression",

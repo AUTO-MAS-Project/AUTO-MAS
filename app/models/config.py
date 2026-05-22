@@ -34,6 +34,7 @@ from app.utils.constants import (
     MAA_STAGE_KEY,
     PLAN_CONSUMER_VALUES,
     MAAEND_PLAN_FIELDS,
+    MAAEND_PRESET_TASK_SWITCHES,
     MAAEND_PROTOCOL_SPACE_TABS,
     MAAEND_SANITY_TASK_TYPES,
     MAAEND_STAGE_BOOK,
@@ -67,31 +68,11 @@ from . import schema as schema_model
 from .schema import TagItem
 
 
-MAAEND_PRESET_TASK_SWITCHES = [
-    ("Sanity", "理智任务"),
-    ("VisitFriends", "🤝拜访好友"),
-    ("DijiangRewards", "🎁基建任务"),
-    ("CreditShoppingN2", "🛍️信用点购物"),
-    ("DeliveryJobs", "🚚转交委托"),
-    ("SellProduct", "🛒售卖产品"),
-    ("AutoStockpile", "📦自动囤货"),
-    ("AutoStockStaple", "🏪购买稳定物资"),
-    ("AutoSell", "💰售卖弹性物资"),
-    ("EnvironmentMonitoring", "🌿环境监测"),
-    ("DailyRewards", "📅日常奖励领取"),
-    ("SeizeEntrustTask", "🌆抢委托"),
-    ("AutoCollect", "🧺自动采集"),
-    ("AutoUseSpMedication", "💊应急理智加强剂"),
-    ("ResourceRecycleStation", "🦉资源回收站"),
-    ("AutoEcoFarm", "🌾生态农场"),
-]
-
-
 def init_maaend_task_config(config) -> None:
     """初始化 MaaEnd 预设任务配置"""
 
     ## 预设任务开关
-    for task_name, _ in MAAEND_PRESET_TASK_SWITCHES:
+    for task_name in ("Sanity", *MAAEND_PRESET_TASK_SWITCHES):
         setattr(
             config,
             f"Task_If{task_name}",

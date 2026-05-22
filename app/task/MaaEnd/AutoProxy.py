@@ -39,9 +39,10 @@ from app.utils.constants import (
     UTC8,
 )
 from .constants import (
+    MAAEND_DEFAULT_CONTROLLER,
+    MAAEND_FRONT_CONTROLLER,
+    MAAEND_RUN_INSTANCE_NAME_MAP,
     MAAEND_TASK_NAME_MAP,
-    get_maaend_run_instance_name,
-    is_maaend_front_controller,
 )
 from .tools import login, push_notification
 from .preset import (
@@ -325,11 +326,16 @@ class AutoProxyTask(TaskExecuteBase):
 
             logger.info(f"运行脚本任务: {self.maaend_exe_path}")
             self.wait_event.clear()
+            controller_type = self.script_config.get("Game", "ControllerType")
+            instance_name = MAAEND_RUN_INSTANCE_NAME_MAP.get(
+                controller_type,
+                MAAEND_RUN_INSTANCE_NAME_MAP[MAAEND_DEFAULT_CONTROLLER],
+            )
             await self.maaend_process_manager.open_process(
                 self.maaend_exe_path,
                 "--autostart",
                 "--instance",
-                self.get_maaend_run_instance_name(),
+                instance_name,
                 "--quit-after-run",
                 stdout=asyncio.subprocess.PIPE,
             )
@@ -340,9 +346,7 @@ class AutoProxyTask(TaskExecuteBase):
                     logger.success("静默模式: 成功隐藏 MaaEnd 窗口")
                 else:
                     logger.error("静默模式: 隐藏 MaaEnd 窗口失败")
-            if is_maaend_front_controller(
-                self.script_config.get("Game", "ControllerType")
-            ):
+            if controller_type == MAAEND_FRONT_CONTROLLER:
                 if await self.game_process_manager.activate_window():
                     logger.success("前置 Endfield 窗口成功")
                 else:
@@ -438,13 +442,6 @@ class AutoProxyTask(TaskExecuteBase):
                 )
         except Exception as e:
             logger.exception(f"关闭模拟器失败: {e}")
-
-    def get_maaend_run_instance_name(self) -> str:
-        """获取 MXU 启动参数使用的实例名"""
-
-        return get_maaend_run_instance_name(
-            self.script_config.get("Game", "ControllerType")
-        )
 
     async def set_maaend(self, _device_info: DeviceInfo | None) -> None:
         """写入 MaaEnd 运行前配置"""

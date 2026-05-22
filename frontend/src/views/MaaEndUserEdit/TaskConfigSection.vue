@@ -225,147 +225,105 @@ const formData = props.formData
 const showSanityMode = computed(() => props.source === 'user')
 const optionColumnSpan = computed(() => (showSanityMode.value ? 8 : 12))
 
-const maaEndPresetTaskNamesByController: Record<string, string[]> = {
-  'Win32-Window': [
-    'VisitFriends',
-    'DijiangRewards',
-    'CreditShoppingN2',
-    'DeliveryJobs',
-    'SellProduct',
-    'AutoStockpile',
-    'AutoStockStaple',
-    'DailyRewards',
-    'SeizeEntrustTask',
-  ],
-  'Win32-Front': [
-    'VisitFriends',
-    'DijiangRewards',
-    'CreditShoppingN2',
-    'DeliveryJobs',
-    'SellProduct',
-    'AutoStockpile',
-    'AutoStockStaple',
-    'AutoSell',
-    'EnvironmentMonitoring',
-    'DailyRewards',
-    'SeizeEntrustTask',
-    'AutoCollect',
-    'AutoUseSpMedication',
-    'ResourceRecycleStation',
-    'AutoEcoFarm',
-    'AutoEssence',
-    'ProtocolSpace',
-  ],
-}
-
 const allPresetTaskSwitches = [
   {
     label: '理智任务',
     field: 'IfSanity',
     tooltip: '是否启用协议空间或基质刷取任务',
-    taskNames: ['ProtocolSpace', 'AutoEssence'],
   },
   {
     label: '🤝拜访好友',
     field: 'IfVisitFriends',
     tooltip: '是否启用🤝拜访好友',
-    taskNames: ['VisitFriends'],
   },
   {
     label: '🎁基建任务',
     field: 'IfDijiangRewards',
     tooltip: '是否启用🎁基建任务',
-    taskNames: ['DijiangRewards'],
   },
   {
     label: '🛍️信用点购物',
     field: 'IfCreditShoppingN2',
     tooltip: '是否启用🛍️信用点购物',
-    taskNames: ['CreditShoppingN2'],
   },
   {
     label: '🚚转交委托',
     field: 'IfDeliveryJobs',
     tooltip: '是否启用🚚转交委托',
-    taskNames: ['DeliveryJobs'],
   },
   {
     label: '🛒售卖产品',
     field: 'IfSellProduct',
     tooltip: '是否启用🛒售卖产品',
-    taskNames: ['SellProduct'],
   },
   {
     label: '📦自动囤货',
     field: 'IfAutoStockpile',
     tooltip: '是否启用📦自动囤货',
-    taskNames: ['AutoStockpile'],
   },
   {
     label: '🏪购买稳定物资',
     field: 'IfAutoStockStaple',
     tooltip: '是否启用🏪购买稳定物资',
-    taskNames: ['AutoStockStaple'],
   },
   {
     label: '💰售卖弹性物资',
     field: 'IfAutoSell',
     tooltip: '是否启用💰售卖弹性物资',
-    taskNames: ['AutoSell'],
   },
   {
     label: '🌿环境监测',
     field: 'IfEnvironmentMonitoring',
     tooltip: '是否启用🌿环境监测',
-    taskNames: ['EnvironmentMonitoring'],
   },
   {
     label: '📅日常奖励领取',
     field: 'IfDailyRewards',
     tooltip: '是否启用📅日常奖励领取',
-    taskNames: ['DailyRewards'],
   },
   {
     label: '🌆抢委托',
     field: 'IfSeizeEntrustTask',
     tooltip: '是否启用🌆抢委托',
-    taskNames: ['SeizeEntrustTask'],
   },
   {
     label: '🧺自动采集',
     field: 'IfAutoCollect',
     tooltip: '是否启用🧺自动采集',
-    taskNames: ['AutoCollect'],
   },
   {
     label: '💊应急理智加强剂',
     field: 'IfAutoUseSpMedication',
     tooltip: '是否启用💊应急理智加强剂',
-    taskNames: ['AutoUseSpMedication'],
   },
   {
     label: '🦉资源回收站',
     field: 'IfResourceRecycleStation',
     tooltip: '是否启用🦉资源回收站',
-    taskNames: ['ResourceRecycleStation'],
   },
   {
     label: '🌾生态农场',
     field: 'IfAutoEcoFarm',
     tooltip: '是否启用🌾生态农场',
-    taskNames: ['AutoEcoFarm'],
   },
 ]
 
-const presetTaskSwitches = computed(() => {
-  const templateTaskNames = props.controllerType
-    ? maaEndPresetTaskNamesByController[props.controllerType]
-    : null
-  if (!templateTaskNames) return allPresetTaskSwitches
+const defaultPresetTaskFields = new Set([
+  'IfVisitFriends',
+  'IfDijiangRewards',
+  'IfCreditShoppingN2',
+  'IfDeliveryJobs',
+  'IfSellProduct',
+  'IfAutoStockpile',
+  'IfAutoStockStaple',
+  'IfDailyRewards',
+  'IfSeizeEntrustTask',
+])
 
-  return allPresetTaskSwitches.filter(task =>
-    task.taskNames.some(taskName => templateTaskNames.includes(taskName))
-  )
+const presetTaskSwitches = computed(() => {
+  if (props.controllerType !== 'Win32-Window') return allPresetTaskSwitches
+
+  return allPresetTaskSwitches.filter(task => defaultPresetTaskFields.has(task.field))
 })
 
 const controlsDisabled = computed(() => {
