@@ -34,7 +34,6 @@ from app.utils.constants import (
     MAA_STAGE_KEY,
     PLAN_CONSUMER_VALUES,
     MAAEND_PLAN_FIELDS,
-    MAAEND_PRESET_TASK_SWITCHES,
     MAAEND_PROTOCOL_SPACE_TABS,
     MAAEND_SANITY_TASK_TYPES,
     MAAEND_STAGE_BOOK,
@@ -70,14 +69,6 @@ from .schema import TagItem
 
 def init_maaend_task_config(config) -> None:
     """初始化 MaaEnd 预设任务配置"""
-
-    ## 预设任务开关
-    for task_name in ("Sanity", *MAAEND_PRESET_TASK_SWITCHES):
-        setattr(
-            config,
-            f"Task_If{task_name}",
-            ConfigItem("Task", f"If{task_name}", True, BoolValidator()),
-        )
 
     ## 理智任务类型
     config.Task_SanityTaskType = ConfigItem(
@@ -115,10 +106,6 @@ def init_maaend_task_config(config) -> None:
         "AutoEssenceSpecifiedLocation",
         "VFTheHub",
     )
-    ## MaaEnd 原始预设任务选项
-    config.Task_Options = ConfigItem("Task", "Options", "{ }", JSONValidator())
-
-
 def _normalize_maaend_sanity_task_type(task_data: dict[str, Any]) -> None:
     """将旧版 MaaEnd 理智任务配置迁移到当前结构"""
 
@@ -785,11 +772,6 @@ class MaaEndUserConfig(ConfigBase):
         )
         ## 是否通过检查
         self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
-        ## 是否已完成预设配置采集
-        self.Data_IfPresetConfigured = ConfigItem(
-            "Data", "IfPresetConfigured", False, BoolValidator()
-        )
-
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())

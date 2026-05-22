@@ -303,7 +303,9 @@
           mode="简洁"
           source="script"
           :controller-type="maaEndConfig.Game.ControllerType"
+          :preset-tasks="presetTasks"
           @save="handleTaskChange"
+          @toggle-preset-tasks="handlePresetTaskToggle"
         />
         <a-alert
           v-else
@@ -396,6 +398,10 @@ import type { ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
 import { useScriptApi } from '@/composables/useScriptApi'
+import {
+  useMaaEndPresetTasks,
+  type MaaEndPresetTask,
+} from '@/composables/useMaaEndPresetTasks'
 import TaskConfigSection from '../../MaaEndUserEdit/TaskConfigSection.vue'
 import { handleExternalLink } from '@/utils/openExternal'
 import {
@@ -407,12 +413,14 @@ import {
 const route = useRoute()
 const router = useRouter()
 const { getScript, updateScript } = useScriptApi()
+const { loadPresetTasks, updatePresetTasks } = useMaaEndPresetTasks()
 
 const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true)
 const isSaving = ref(false)
+const presetTasks = ref<MaaEndPresetTask[]>([])
 
 const formData = reactive({
   name: '',
@@ -445,29 +453,12 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     CloseOnFinish: false,
   },
   Task: {
-    IfSanity: true,
-    IfVisitFriends: true,
-    IfDijiangRewards: true,
-    IfCreditShoppingN2: true,
-    IfDeliveryJobs: true,
-    IfSellProduct: true,
-    IfAutoStockpile: true,
-    IfAutoStockStaple: true,
-    IfAutoSell: true,
-    IfEnvironmentMonitoring: true,
-    IfDailyRewards: true,
-    IfSeizeEntrustTask: true,
-    IfAutoCollect: true,
-    IfAutoUseSpMedication: true,
-    IfResourceRecycleStation: true,
-    IfAutoEcoFarm: true,
     SanityTaskType: 'OperatorProgression',
     OperatorProgression: 'OperatorEXP',
     WeaponProgression: 'WeaponEXP',
     CrisisDrills: 'AdvancedProgression1',
     RewardsSetOption: 'RewardsSetA',
     AutoEssenceSpecifiedLocation: 'VFTheHub',
-    Options: '{}',
   },
 })
 
@@ -534,6 +525,15 @@ const refreshScript = async () => {
   if (!scriptDetail) return
   applyMaaEndConfig(scriptDetail.config as MaaEndScriptConfig)
   formData.name = scriptDetail.name
+  await refreshPresetTasks()
+}
+
+const refreshPresetTasks = async () => {
+  if (!isPresetController.value) {
+    presetTasks.value = []
+    return
+  }
+  presetTasks.value = await loadPresetTasks(scriptId)
 }
 
 const loadEmulatorOptions = async () => {
@@ -588,6 +588,7 @@ const loadScript = async () => {
     if (maaEndConfig.Game.EmulatorId) {
       await loadEmulatorDeviceOptions(maaEndConfig.Game.EmulatorId)
     }
+    await refreshPresetTasks()
   } finally {
     pageLoading.value = false
   }
@@ -597,6 +598,12 @@ const handleTaskChange = async (key: string, value: unknown) => {
   const [, taskKey] = key.split('.')
   if (!taskKey) return
   await handleChange('Task', taskKey, value)
+}
+
+const handlePresetTaskToggle = async (taskIds: string[], enabled: boolean) => {
+  if (await updatePresetTasks(scriptId, 'Default', taskIds, enabled)) {
+    await refreshPresetTasks()
+  }
 }
 
 const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['ControllerType']) => {

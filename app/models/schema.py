@@ -576,30 +576,6 @@ class MaaEndUserConfig_Info(BaseModel):
 
 
 class MaaEndUserConfig_Task(BaseModel):
-    IfSanity: Optional[bool] = Field(default=None, description="是否启用刷理智")
-    IfVisitFriends: Optional[bool] = Field(default=None, description="是否启用🤝拜访好友")
-    IfDijiangRewards: Optional[bool] = Field(default=None, description="是否启用🎁基建任务")
-    IfCreditShoppingN2: Optional[bool] = Field(
-        default=None, description="是否启用🛍️信用点购物"
-    )
-    IfDeliveryJobs: Optional[bool] = Field(default=None, description="是否启用🚚转交委托")
-    IfSellProduct: Optional[bool] = Field(default=None, description="是否启用🛒售卖产品")
-    IfAutoStockpile: Optional[bool] = Field(default=None, description="是否启用📦自动囤货")
-    IfAutoStockStaple: Optional[bool] = Field(default=None, description="是否启用🏪购买稳定物资")
-    IfAutoSell: Optional[bool] = Field(default=None, description="是否启用💰售卖弹性物资")
-    IfEnvironmentMonitoring: Optional[bool] = Field(
-        default=None, description="是否启用🌿环境监测"
-    )
-    IfDailyRewards: Optional[bool] = Field(default=None, description="是否启用📅日常奖励领取")
-    IfSeizeEntrustTask: Optional[bool] = Field(default=None, description="是否启用🌆抢委托")
-    IfAutoCollect: Optional[bool] = Field(default=None, description="是否启用🧺自动采集")
-    IfAutoUseSpMedication: Optional[bool] = Field(
-        default=None, description="是否启用💊应急理智加强剂"
-    )
-    IfResourceRecycleStation: Optional[bool] = Field(
-        default=None, description="是否启用🦉资源回收站"
-    )
-    IfAutoEcoFarm: Optional[bool] = Field(default=None, description="是否启用🌾生态农场")
     SanityTaskType: Optional[
         Literal["OperatorProgression", "WeaponProgression", "CrisisDrills", "Essence"]
     ] = Field(default=None, description="理智任务类型")
@@ -631,9 +607,6 @@ class MaaEndUserConfig_Task(BaseModel):
             "WLQingboStockade",
         ]
     ] = Field(default=None, description="基质刷取指定地点")
-    Options: Optional[str] = Field(default=None, description="MaaEnd 原始预设任务选项")
-
-
 class MaaEndUserConfig_Notify(BaseModel):
     Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
     IfSendStatistic: Optional[bool] = Field(
@@ -653,9 +626,6 @@ class MaaEndUserConfig_Data(BaseModel):
     )
     LastSklandDate: Optional[str] = Field(default=None, description="上次森空岛签到日期")
     IfPassCheck: Optional[bool] = Field(default=None, description="是否通过检查")
-    IfPresetConfigured: Optional[bool] = Field(
-        default=None, description="是否已完成预设配置采集"
-    )
 
 
 class MaaEndUserConfig(BaseModel):
@@ -693,30 +663,6 @@ class MaaEndConfig_Game(BaseModel):
 
 
 class MaaEndConfig_Task(BaseModel):
-    IfSanity: Optional[bool] = Field(default=None, description="是否启用理智任务")
-    IfVisitFriends: Optional[bool] = Field(default=None, description="是否启用🤝拜访好友")
-    IfDijiangRewards: Optional[bool] = Field(default=None, description="是否启用🎁基建任务")
-    IfCreditShoppingN2: Optional[bool] = Field(
-        default=None, description="是否启用🛍️信用点购物"
-    )
-    IfDeliveryJobs: Optional[bool] = Field(default=None, description="是否启用🚚转交委托")
-    IfSellProduct: Optional[bool] = Field(default=None, description="是否启用🛒售卖产品")
-    IfAutoStockpile: Optional[bool] = Field(default=None, description="是否启用📦自动囤货")
-    IfAutoStockStaple: Optional[bool] = Field(default=None, description="是否启用🏪购买稳定物资")
-    IfAutoSell: Optional[bool] = Field(default=None, description="是否启用💰售卖弹性物资")
-    IfEnvironmentMonitoring: Optional[bool] = Field(
-        default=None, description="是否启用🌿环境监测"
-    )
-    IfDailyRewards: Optional[bool] = Field(default=None, description="是否启用📅日常奖励领取")
-    IfSeizeEntrustTask: Optional[bool] = Field(default=None, description="是否启用🌆抢委托")
-    IfAutoCollect: Optional[bool] = Field(default=None, description="是否启用🧺自动采集")
-    IfAutoUseSpMedication: Optional[bool] = Field(
-        default=None, description="是否启用💊应急理智加强剂"
-    )
-    IfResourceRecycleStation: Optional[bool] = Field(
-        default=None, description="是否启用🦉资源回收站"
-    )
-    IfAutoEcoFarm: Optional[bool] = Field(default=None, description="是否启用🌾生态农场")
     SanityTaskType: Optional[
         Literal["OperatorProgression", "WeaponProgression", "CrisisDrills", "Essence"]
     ] = Field(default=None, description="理智任务类型")
@@ -748,9 +694,6 @@ class MaaEndConfig_Task(BaseModel):
             "WLQingboStockade",
         ]
     ] = Field(default=None, description="基质刷取指定地点")
-    Options: Optional[str] = Field(default=None, description="MaaEnd 原始预设任务选项")
-
-
 class MaaEndConfig(BaseModel):
     Info: Optional[MaaEndConfig_Info] = Field(default=None, description="脚本信息")
     Run: Optional[MaaEndConfig_Run] = Field(default=None, description="运行配置")
@@ -1166,9 +1109,7 @@ class ScriptGetOut(OutBase):
 
 class ScriptUpdateIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
-    data: Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig, M9AConfig] = Field(
-        ..., description="脚本更新数据"
-    )
+    data: Dict[str, Dict[str, Any]] = Field(..., description="脚本更新数据")
 
 
 class ScriptDeleteIn(BaseModel):
@@ -1200,6 +1141,27 @@ class UserInBase(BaseModel):
     scriptId: str = Field(..., description="所属脚本ID")
 
 
+class MaaEndPresetTaskIn(UserInBase):
+    userId: str = Field(default="Default", description="预设配置所属用户ID")
+
+
+class MaaEndPresetTaskUpdateIn(MaaEndPresetTaskIn):
+    taskIds: List[str] = Field(..., description="MaaEnd 预设任务 ID 列表")
+    enabled: bool = Field(..., description="任务启用状态")
+
+
+class MaaEndPresetTaskItem(BaseModel):
+    id: str = Field(..., description="MaaEnd 任务 ID")
+    taskName: str = Field(..., description="MaaEnd 任务类型")
+    enabled: bool = Field(..., description="任务启用状态")
+
+
+class MaaEndPresetTaskOut(OutBase):
+    data: List[MaaEndPresetTaskItem] = Field(
+        default_factory=list, description="MaaEnd 预设任务列表"
+    )
+
+
 class UserGetIn(UserInBase):
     userId: Optional[str] = Field(
         default=None, description="用户ID, 未携带时表示获取所有用户数据"
@@ -1222,9 +1184,7 @@ class UserCreateOut(OutBase):
 
 class UserUpdateIn(UserInBase):
     userId: str = Field(..., description="用户ID")
-    data: Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig, M9AUserConfig] = (
-        Field(..., description="用户更新数据")
-    )
+    data: Dict[str, Dict[str, Any]] = Field(..., description="用户更新数据")
 
 
 class UserDeleteIn(UserInBase):

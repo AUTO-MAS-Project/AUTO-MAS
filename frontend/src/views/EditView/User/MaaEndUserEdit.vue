@@ -62,11 +62,13 @@
             :is-plan-mode="isSanityPlanMode"
             :sanity-mode-options="sanityModeOptions"
             :plan-mode-config="planModeConfig"
+            :preset-tasks="presetTasks"
             :sanity-task-type-tooltip="sanityTaskTypeTooltip"
             :current-task-tooltip="currentTaskTooltip"
             :rewards-tooltip="rewardsTooltip"
             @save="handleFieldSave"
             @save-batch="handleFieldsSave"
+            @toggle-preset-tasks="handlePresetTaskToggle"
           />
           <SkylandConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
           <NotifyConfigSection
@@ -93,6 +95,10 @@ import type { MaaEndPlanConfig } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { usePlanApi } from '@/composables/usePlanApi'
+import {
+  useMaaEndPresetTasks,
+  type MaaEndPresetTask,
+} from '@/composables/useMaaEndPresetTasks'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { getWeekdayInTimezone } from '@/utils/dateUtils'
@@ -121,6 +127,7 @@ const route = useRoute()
 const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
 const { getScript } = useScriptApi()
 const { getPlans } = usePlanApi()
+const { loadPresetTasks, updatePresetTasks } = useMaaEndPresetTasks()
 const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
@@ -149,6 +156,7 @@ const sanityModeOptions = ref<Array<{ label: string; value: string }>>([
 const isSanityPlanMode = computed(() => formData.Info.SanityMode !== 'Fixed')
 const planModeConfig = ref<MaaEndSanityConfig | null>(null)
 const fullPlanData = ref<MaaEndPlanConfig | null>(null)
+const presetTasks = ref<MaaEndPresetTask[]>([])
 
 const getDefaultMaaEndUserData = () => ({
   Info: {
@@ -166,29 +174,12 @@ const getDefaultMaaEndUserData = () => ({
     Tag: '',
   },
   Task: {
-    IfSanity: true,
-    IfVisitFriends: true,
-    IfDijiangRewards: true,
-    IfCreditShoppingN2: true,
-    IfDeliveryJobs: true,
-    IfSellProduct: true,
-    IfAutoStockpile: true,
-    IfAutoStockStaple: true,
-    IfAutoSell: true,
-    IfEnvironmentMonitoring: true,
-    IfDailyRewards: true,
-    IfSeizeEntrustTask: true,
-    IfAutoCollect: true,
-    IfAutoUseSpMedication: true,
-    IfResourceRecycleStation: true,
-    IfAutoEcoFarm: true,
     SanityTaskType: 'OperatorProgression',
     OperatorProgression: 'OperatorEXP',
     WeaponProgression: 'WeaponEXP',
     CrisisDrills: 'AdvancedProgression1',
     RewardsSetOption: 'RewardsSetA',
     AutoEssenceSpecifiedLocation: 'VFTheHub',
-    Options: '{}',
   },
   Notify: {
     Enabled: false,
@@ -203,7 +194,6 @@ const getDefaultMaaEndUserData = () => ({
     LastSklandDate: '',
     ProxyTimes: 0,
     IfPassCheck: false,
-    IfPresetConfigured: false,
   },
 })
 
@@ -327,6 +317,23 @@ const handleFieldsSave = async (changes: FieldChange[]) => {
   await saveUserFields(changes)
 }
 
+const getPresetTaskUserId = () => (formData.Info.Mode === '详细' ? userId : 'Default')
+
+const refreshPresetTasks = async () => {
+  if (!presetSupported.value || !userId) {
+    presetTasks.value = []
+    return
+  }
+  presetTasks.value = await loadPresetTasks(scriptId, getPresetTaskUserId())
+}
+
+const handlePresetTaskToggle = async (taskIds: string[], enabled: boolean) => {
+  const presetTaskUserId = getPresetTaskUserId()
+  if (await updatePresetTasks(scriptId, presetTaskUserId, taskIds, enabled)) {
+    await refreshPresetTasks()
+  }
+}
+
 const loadScriptInfo = async () => {
   const scriptDetail = await getScript(scriptId)
   if (scriptDetail) {
@@ -446,6 +453,7 @@ const loadUserData = async () => {
 
     await nextTick()
     formData.userName = formData.Info.Name || ''
+    await refreshPresetTasks()
   } catch (error) {
     message.error(error instanceof Error ? error.message : '加载用户失败')
     router.push('/scripts')
@@ -548,6 +556,12 @@ onMounted(async () => {
       await loadSanityPlan(newMode)
     },
     { immediate: false }
+  )
+  watch(
+    () => formData.Info.Mode,
+    async () => {
+      await refreshPresetTasks()
+    }
   )
 
   if (isEdit.value) {

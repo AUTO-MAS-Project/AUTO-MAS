@@ -100,29 +100,12 @@ export interface SRCScriptConfig {
 }
 
 export interface MaaEndTaskConfig {
-  IfSanity: boolean
-  IfVisitFriends: boolean
-  IfDijiangRewards: boolean
-  IfCreditShoppingN2: boolean
-  IfDeliveryJobs: boolean
-  IfSellProduct: boolean
-  IfAutoStockpile: boolean
-  IfAutoStockStaple: boolean
-  IfAutoSell: boolean
-  IfEnvironmentMonitoring: boolean
-  IfDailyRewards: boolean
-  IfSeizeEntrustTask: boolean
-  IfAutoCollect: boolean
-  IfAutoUseSpMedication: boolean
-  IfResourceRecycleStation: boolean
-  IfAutoEcoFarm: boolean
   SanityTaskType: SanityTaskType
   OperatorProgression: ProtocolSpaceTaskValue
   WeaponProgression: ProtocolSpaceTaskValue
   CrisisDrills: ProtocolSpaceTaskValue
   RewardsSetOption: RewardSetOption
   AutoEssenceSpecifiedLocation: AutoEssenceLocation
-  Options: string
 }
 
 // MaaEnd脚本配置
@@ -188,7 +171,6 @@ export interface User {
     LastProxyDate: string
     LastSklandDate: string
     ProxyTimes: number
-    IfPresetConfigured?: boolean
   }
   Info: {
     Annihilation: string
@@ -245,29 +227,12 @@ export interface User {
     IfReclamation: boolean
     IfRecruit: boolean
     IfStartUp: boolean
-    IfSanity?: boolean
-    IfVisitFriends?: boolean
-    IfDijiangRewards?: boolean
-    IfCreditShoppingN2?: boolean
-    IfDeliveryJobs?: boolean
-    IfSellProduct?: boolean
-    IfAutoStockpile?: boolean
-    IfAutoStockStaple?: boolean
-    IfAutoSell?: boolean
-    IfEnvironmentMonitoring?: boolean
-    IfDailyRewards?: boolean
-    IfSeizeEntrustTask?: boolean
-    IfAutoCollect?: boolean
-    IfAutoUseSpMedication?: boolean
-    IfResourceRecycleStation?: boolean
-    IfAutoEcoFarm?: boolean
     SanityTaskType?: MaaEndTaskConfig['SanityTaskType']
     OperatorProgression?: MaaEndTaskConfig['OperatorProgression']
     WeaponProgression?: MaaEndTaskConfig['WeaponProgression']
     CrisisDrills?: MaaEndTaskConfig['CrisisDrills']
     RewardsSetOption?: MaaEndTaskConfig['RewardsSetOption']
     AutoEssenceSpecifiedLocation?: MaaEndTaskConfig['AutoEssenceSpecifiedLocation']
-    Options?: string
   }
   QFluentWidgets: {
     ThemeColor: string

@@ -855,6 +855,68 @@ class AppConfig(GlobalConfig):
                     .set(group, name, value)
                 )
 
+    @staticmethod
+    def _get_maaend_preset_config_dir(script_id: str, user_id: str) -> Path:
+        if user_id != "Default":
+            user_id = str(uuid.UUID(user_id))
+        return Path.cwd() / f"data/{script_id}/{user_id}/ConfigFile"
+
+    async def get_maaend_preset_tasks(
+        self, script_id: str, user_id: str
+    ) -> list[dict[str, str | bool]]:
+        """读取 MaaEnd 保存配置中的预设任务状态"""
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if not isinstance(script_config, MaaEndConfig):
+            raise TypeError(f"脚本 {script_id} 不是 MaaEnd 脚本配置")
+
+        from app.task.MaaEnd.preset import (
+            get_maaend_active_instance,
+            load_or_create_maaend_preset_config,
+        )
+
+        config_data = load_or_create_maaend_preset_config(
+            self._get_maaend_preset_config_dir(script_id, user_id),
+            script_config.get("Game", "ControllerType"),
+        )
+        return [
+            {
+                "id": task["id"],
+                "taskName": task["taskName"],
+                "enabled": bool(task.get("enabled", True)),
+            }
+            for task in get_maaend_active_instance(config_data).get("tasks", [])
+            if isinstance(task.get("id"), str) and isinstance(task.get("taskName"), str)
+        ]
+
+    async def update_maaend_preset_tasks(
+        self, script_id: str, user_id: str, task_ids: list[str], enabled: bool
+    ) -> None:
+        """更新 MaaEnd 保存配置中的预设任务状态"""
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if not isinstance(script_config, MaaEndConfig):
+            raise TypeError(f"脚本 {script_id} 不是 MaaEnd 脚本配置")
+        if script_config.is_locked:
+            raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
+
+        from app.task.MaaEnd.preset import (
+            get_maaend_active_instance,
+            load_or_create_maaend_preset_config,
+            save_maaend_config,
+        )
+
+        config_dir = self._get_maaend_preset_config_dir(script_id, user_id)
+        config_data = load_or_create_maaend_preset_config(
+            config_dir, script_config.get("Game", "ControllerType")
+        )
+        task_id_set = set(task_ids)
+        for task in get_maaend_active_instance(config_data).get("tasks", []):
+            if task.get("id") in task_id_set:
+                task["enabled"] = enabled
+
+        save_maaend_config(config_dir, config_data)
+
     async def del_user(self, script_id: str, user_id: str) -> None:
         """删除用户配置"""
 

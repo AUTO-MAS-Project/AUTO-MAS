@@ -20,7 +20,9 @@
 
 
 import re
+import json
 import uuid
+import json5
 import shutil
 import asyncio
 from pathlib import Path
@@ -42,17 +44,16 @@ from .constants import (
     MAAEND_DEFAULT_CONTROLLER,
     MAAEND_FRONT_CONTROLLER,
     MAAEND_RUN_INSTANCE_NAME_MAP,
-    MAAEND_TASK_NAME_MAP,
 )
 from .tools import login, push_notification
 from .preset import (
     apply_maaend_sanity_task_config,
-    build_maaend_preset_config,
+    apply_maaend_local_metadata,
     get_maaend_active_instance,
     is_maaend_preset_supported,
     load_maaend_config,
+    load_or_create_maaend_preset_config,
     save_maaend_config,
-    save_maaend_preset_options,
 )
 
 logger = get_logger("MaaEnd 自动代理")
@@ -85,12 +86,54 @@ class AutoProxyTask(TaskExecuteBase):
         self.effective_sanity_task_config: dict[str, str] | None = None
 
     @staticmethod
-    def get_maaend_task_name(task: dict[str, str]) -> str:
+    def get_maaend_task_name(
+        task: dict[str, str], stdout_task_name_book: dict[str, str]
+    ) -> str:
         """获取 MaaEnd 任务的显示名称"""
 
-        return task.get("customName") or MAAEND_TASK_NAME_MAP.get(
+        return task.get("customName") or stdout_task_name_book.get(
             task["taskName"], task["taskName"]
         )
+
+    def load_maaend_stdout_task_name_book(
+        self, config_data: dict[str, object]
+    ) -> dict[str, str]:
+        """读取旧版 stdout 中使用的 MaaEnd 任务显示名"""
+
+        settings = config_data.get("settings")
+        language = settings.get("language") if isinstance(settings, dict) else None
+        language = "zh-CN" if language in (None, "system") else str(language)
+        locale_path = (
+            self.maaend_root_path
+            / f"locales/interface/{language.lower().replace('-', '_')}.json"
+        )
+
+        try:
+            locale_data = json.loads(locale_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            logger.warning(f"读取 MaaEnd stdout 任务语言包失败: {e}")
+            locale_data = {}
+
+        stdout_task_name_book: dict[str, str] = {}
+        for task_definition_file in self.maaend_root_path.glob("tasks/*.json"):
+            try:
+                task_definition = json5.loads(  # type: ignore
+                    task_definition_file.read_text(encoding="utf-8")
+                )["task"][0]
+            except (AttributeError, KeyError, IndexError, TypeError, ValueError) as e:
+                logger.warning(f"读取 MaaEnd 任务定义失败: {task_definition_file}: {e}")
+                continue
+
+            task_name = task_definition.get("name")
+            label = task_definition.get("label")
+            if not isinstance(task_name, str) or not isinstance(label, str):
+                continue
+
+            if label.startswith("$"):
+                label = locale_data.get(label.lstrip("$"), label)
+            stdout_task_name_book[task_name] = label
+
+        return stdout_task_name_book
 
     async def check(self) -> str:
 
@@ -113,51 +156,21 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.status = "异常"
             return "当前控制器暂不支持 MaaEnd 预设模式, 请切换用户配置模式为「自定义」"
 
-        if (
-            self.cur_user_config.get("Info", "Mode") == "详细"
-            and not self.cur_user_config.get("Data", "IfPresetConfigured")
-        ):
-            legacy_config_path = (
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile/mxu-MaaEnd.json"
+        config_user_id = (
+            "Default"
+            if self.cur_user_config.get("Info", "Mode") == "简洁"
+            else self.cur_user_uid
+        )
+        config_dir = (
+            Path.cwd() / f"data/{self.script_info.script_id}/{config_user_id}/ConfigFile"
+        )
+        if self.cur_user_config.get("Info", "Mode") != "自定义":
+            load_or_create_maaend_preset_config(
+                config_dir, self.script_config.get("Game", "ControllerType")
             )
-            if legacy_config_path.exists():
-                try:
-                    legacy_config = load_maaend_config(legacy_config_path.parent)
-                    await save_maaend_preset_options(
-                        self.cur_user_config,
-                        legacy_config,
-                        mark_configured=True,
-                        controller_type=self.script_config.get(
-                            "Game", "ControllerType"
-                        ),
-                    )
-                    logger.info(f"用户 {self.cur_user_uid} 已导入旧 MaaEnd 预设配置")
-                except Exception as e:
-                    self.cur_user_item.status = "异常"
-                    logger.exception(
-                        f"用户 {self.cur_user_uid} 导入旧 MaaEnd 预设配置失败: {e}"
-                    )
-                    return (
-                        "旧 MaaEnd 预设配置读取失败, 请在用户配置页重新完成「MaaEnd 配置」步骤"
-                    )
-            else:
-                self.cur_user_item.status = "异常"
-                return (
-                    "未找到用户的 MaaEnd 预设配置, 请先在用户配置页完成「MaaEnd 配置」步骤"
-                )
-
-        if (
-            self.cur_user_config.get("Info", "Mode") == "自定义"
-            and not (
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile/mxu-MaaEnd.json"
-            ).exists()
-        ):
+        elif not (config_dir / "mxu-MaaEnd.json").exists():
             self.cur_user_item.status = "异常"
-            return (
-                "未找到用户的 MaaEnd 自定义配置文件, 请先在用户配置页完成「MaaEnd 配置」步骤"
-            )
+            return "未找到用户的 MaaEnd 配置文件, 请先完成「MaaEnd 配置」步骤"
 
         if self.cur_user_config.get("Info", "Mode") != "自定义":
             try:
@@ -452,30 +465,30 @@ class AutoProxyTask(TaskExecuteBase):
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
+        maaend_local_config = None
+        if (self.maaend_set_path / "mxu-MaaEnd.json").exists():
+            maaend_local_config = load_maaend_config(self.maaend_set_path)
+
         shutil.rmtree(self.maaend_set_path, ignore_errors=True)
         self.maaend_set_path.mkdir(parents=True, exist_ok=True)
 
-        if self.cur_user_config.get("Info", "Mode") == "自定义":
-            maaend_config_path = (
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-            )
-            shutil.copytree(maaend_config_path, self.maaend_set_path, dirs_exist_ok=True)
-            maaend_set = load_maaend_config(self.maaend_set_path)
-        else:
-            preset_config = (
-                self.script_config
-                if self.cur_user_config.get("Info", "Mode") == "简洁"
-                else self.cur_user_config
-            )
-            maaend_set = build_maaend_preset_config(
-                preset_config,
-                self.script_config.get("Game", "ControllerType"),
-            )
+        config_user_id = (
+            "Default"
+            if self.cur_user_config.get("Info", "Mode") == "简洁"
+            else self.cur_user_uid
+        )
+        maaend_config_path = (
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{config_user_id}/ConfigFile"
+        )
+        shutil.copytree(maaend_config_path, self.maaend_set_path, dirs_exist_ok=True)
+        maaend_set = load_maaend_config(self.maaend_set_path)
 
+        apply_maaend_local_metadata(maaend_set, maaend_local_config)
         maaend_instance = get_maaend_active_instance(maaend_set)
         maaend_instance.setdefault("tasks", [])
         maaend_tasks = maaend_instance["tasks"]
+        stdout_task_name_book = self.load_maaend_stdout_task_name_book(maaend_set)
 
         # 配置任务启用状态
         if self.task_dict is None:
@@ -484,14 +497,14 @@ class AutoProxyTask(TaskExecuteBase):
             for task in maaend_tasks:
                 if task["taskName"].startswith("__MXU_"):
                     continue
-                task_name = self.get_maaend_task_name(task)
+                task_name = self.get_maaend_task_name(task, stdout_task_name_book)
                 if task_name not in self.task_dict:
                     self.task_dict[task_name] = {}
                 self.task_dict[task_name][task["id"]] = task["enabled"]
         else:
             # 任务列表不为空则配置任务
             for task in maaend_tasks:
-                task_name = self.get_maaend_task_name(task)
+                task_name = self.get_maaend_task_name(task, stdout_task_name_book)
                 if task_name in self.task_dict:
                     task["enabled"] = self.task_dict[task_name][task["id"]]
 
@@ -503,21 +516,19 @@ class AutoProxyTask(TaskExecuteBase):
             protocol_space_configured, auto_essence_configured = (
                 apply_maaend_sanity_task_config(
                     maaend_tasks,
-                    bool(preset_config.get("Task", "IfSanity")),
                     self.effective_sanity_task_config,
                 )
             )
 
             sanity_task_type = self.effective_sanity_task_config["SanityTaskType"]
-            if bool(preset_config.get("Task", "IfSanity")):
-                if sanity_task_type != "Essence" and not protocol_space_configured:
-                    logger.warning(
-                        f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 ProtocolSpace 任务，已跳过协议空间注入"
-                    )
-                if sanity_task_type == "Essence" and not auto_essence_configured:
-                    logger.warning(
-                        f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 AutoEssence 任务，已跳过基质刷取注入"
-                    )
+            if sanity_task_type != "Essence" and not protocol_space_configured:
+                logger.warning(
+                    f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 ProtocolSpace 任务，已跳过协议空间注入"
+                )
+            if sanity_task_type == "Essence" and not auto_essence_configured:
+                logger.warning(
+                    f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 AutoEssence 任务，已跳过基质刷取注入"
+                )
 
         save_maaend_config(self.maaend_set_path, maaend_set)
         logger.success("MaaEnd 运行参数配置完成: 自动代理")

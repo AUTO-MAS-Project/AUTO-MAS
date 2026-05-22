@@ -4,7 +4,12 @@
     <div class="section-header">
       <h3>任务配置</h3>
       <a-button
-        v-if="isPlanMode && formData.Info.SanityMode && formData.Info.SanityMode !== 'Fixed'"
+        v-if="
+          showSanityOptions &&
+          isPlanMode &&
+          formData.Info.SanityMode &&
+          formData.Info.SanityMode !== 'Fixed'
+        "
         type="link"
         class="plans-button"
         @click="handleGoToPlans"
@@ -19,8 +24,8 @@
     <a-alert v-if="modeNotice" :message="modeNotice" type="info" show-icon class="mode-notice" />
 
     <a-row :gutter="24">
-      <a-col v-for="task in presetTaskSwitches" :key="task.field" :span="6">
-        <a-form-item :name="task.field">
+      <a-col v-for="task in presetTaskSwitches" :key="task.key" :span="6">
+        <a-form-item>
           <template #label>
             <a-tooltip :title="task.tooltip">
               <span>
@@ -30,15 +35,15 @@
             </a-tooltip>
           </template>
           <a-switch
-            v-model:checked="formData.Task[task.field]"
+            :checked="task.enabled"
             :disabled="controlsDisabled"
-            @change="emitSave(`Task.${task.field}`, formData.Task[task.field])"
+            @change="handlePresetTaskChange(task, Boolean($event))"
           />
         </a-form-item>
       </a-col>
     </a-row>
 
-    <a-row :gutter="24">
+    <a-row v-if="showSanityOptions" :gutter="24">
       <a-col v-if="showSanityMode" :span="8">
         <a-form-item>
           <template #label>
@@ -122,7 +127,7 @@
       </a-col>
     </a-row>
 
-    <a-row :gutter="24">
+    <a-row v-if="showSanityOptions" :gutter="24">
       <a-col :span="8">
         <a-form-item>
           <template #label>
@@ -166,6 +171,7 @@
 import { computed, watch } from 'vue'
 import { CalendarOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { navigateTo } from '@/router'
+import type { MaaEndPresetTask } from '@/composables/useMaaEndPresetTasks'
 import {
   AUTO_ESSENCE_LOCATION_OPTIONS,
   PROTOCOL_SPACE_TASK_FIELD_MAP,
@@ -198,6 +204,7 @@ const props = withDefaults(
     isPlanMode?: boolean
     sanityModeOptions?: Array<{ label: string; value: string }>
     planModeConfig?: MaaEndSanityConfig | null
+    presetTasks?: MaaEndPresetTask[]
     sanityTaskTypeTooltip?: string
     currentTaskTooltip?: string
     rewardsTooltip?: string
@@ -210,6 +217,7 @@ const props = withDefaults(
     isPlanMode: false,
     sanityModeOptions: () => [{ label: '固定配置', value: 'Fixed' }],
     planModeConfig: null,
+    presetTasks: () => [],
     sanityTaskTypeTooltip: '',
     currentTaskTooltip: '',
     rewardsTooltip: '',
@@ -219,111 +227,66 @@ const props = withDefaults(
 const emit = defineEmits<{
   save: [key: string, value: any]
   saveBatch: [changes: FieldChange[]]
+  togglePresetTasks: [taskIds: string[], enabled: boolean]
 }>()
 
 const formData = props.formData
-const showSanityMode = computed(() => props.source === 'user')
+const showSanityOptions = computed(() => props.controllerType !== 'Win32-Window')
+const showSanityMode = computed(() => showSanityOptions.value && props.source === 'user')
 const optionColumnSpan = computed(() => (showSanityMode.value ? 8 : 12))
 
-const allPresetTaskSwitches = [
-  {
-    label: '理智任务',
-    field: 'IfSanity',
-    tooltip: '是否启用协议空间或基质刷取任务',
-  },
-  {
-    label: '🤝拜访好友',
-    field: 'IfVisitFriends',
-    tooltip: '是否启用🤝拜访好友',
-  },
-  {
-    label: '🎁基建任务',
-    field: 'IfDijiangRewards',
-    tooltip: '是否启用🎁基建任务',
-  },
-  {
-    label: '🛍️信用点购物',
-    field: 'IfCreditShoppingN2',
-    tooltip: '是否启用🛍️信用点购物',
-  },
-  {
-    label: '🚚转交委托',
-    field: 'IfDeliveryJobs',
-    tooltip: '是否启用🚚转交委托',
-  },
-  {
-    label: '🛒售卖产品',
-    field: 'IfSellProduct',
-    tooltip: '是否启用🛒售卖产品',
-  },
-  {
-    label: '📦自动囤货',
-    field: 'IfAutoStockpile',
-    tooltip: '是否启用📦自动囤货',
-  },
-  {
-    label: '🏪购买稳定物资',
-    field: 'IfAutoStockStaple',
-    tooltip: '是否启用🏪购买稳定物资',
-  },
-  {
-    label: '💰售卖弹性物资',
-    field: 'IfAutoSell',
-    tooltip: '是否启用💰售卖弹性物资',
-  },
-  {
-    label: '🌿环境监测',
-    field: 'IfEnvironmentMonitoring',
-    tooltip: '是否启用🌿环境监测',
-  },
-  {
-    label: '📅日常奖励领取',
-    field: 'IfDailyRewards',
-    tooltip: '是否启用📅日常奖励领取',
-  },
-  {
-    label: '🌆抢委托',
-    field: 'IfSeizeEntrustTask',
-    tooltip: '是否启用🌆抢委托',
-  },
-  {
-    label: '🧺自动采集',
-    field: 'IfAutoCollect',
-    tooltip: '是否启用🧺自动采集',
-  },
-  {
-    label: '💊应急理智加强剂',
-    field: 'IfAutoUseSpMedication',
-    tooltip: '是否启用💊应急理智加强剂',
-  },
-  {
-    label: '🦉资源回收站',
-    field: 'IfResourceRecycleStation',
-    tooltip: '是否启用🦉资源回收站',
-  },
-  {
-    label: '🌾生态农场',
-    field: 'IfAutoEcoFarm',
-    tooltip: '是否启用🌾生态农场',
-  },
-]
+interface PresetTaskSwitch {
+  key: string
+  label: string
+  tooltip: string
+  taskIds: string[]
+  enabled: boolean
+}
 
-const defaultPresetTaskFields = new Set([
-  'IfVisitFriends',
-  'IfDijiangRewards',
-  'IfCreditShoppingN2',
-  'IfDeliveryJobs',
-  'IfSellProduct',
-  'IfAutoStockpile',
-  'IfAutoStockStaple',
-  'IfDailyRewards',
-  'IfSeizeEntrustTask',
-])
+const presetTaskInfo: Record<string, { label: string; tooltip: string }> = {
+  VisitFriends: { label: '🤝拜访好友', tooltip: '是否启用🤝拜访好友' },
+  DijiangRewards: { label: '🎁基建任务', tooltip: '是否启用🎁基建任务' },
+  CreditShoppingN2: { label: '🛍️信用点购物', tooltip: '是否启用🛍️信用点购物' },
+  DeliveryJobs: { label: '🚚转交委托', tooltip: '是否启用🚚转交委托' },
+  SellProduct: { label: '🛒售卖产品', tooltip: '是否启用🛒售卖产品' },
+  AutoStockpile: { label: '📦自动囤货', tooltip: '是否启用📦自动囤货' },
+  AutoStockStaple: { label: '🏪购买稳定物资', tooltip: '是否启用🏪购买稳定物资' },
+  AutoSell: { label: '💰售卖弹性物资', tooltip: '是否启用💰售卖弹性物资' },
+  EnvironmentMonitoring: { label: '🌿环境监测', tooltip: '是否启用🌿环境监测' },
+  DailyRewards: { label: '📅日常奖励领取', tooltip: '是否启用📅日常奖励领取' },
+  SeizeEntrustTask: { label: '🌆抢委托', tooltip: '是否启用🌆抢委托' },
+  AutoCollect: { label: '🧺自动采集', tooltip: '是否启用🧺自动采集' },
+  AutoUseSpMedication: { label: '💊应急理智加强剂', tooltip: '是否启用💊应急理智加强剂' },
+  ResourceRecycleStation: { label: '🦉资源回收站', tooltip: '是否启用🦉资源回收站' },
+  AutoEcoFarm: { label: '🌾生态农场', tooltip: '是否启用🌾生态农场' },
+}
 
 const presetTaskSwitches = computed(() => {
-  if (props.controllerType !== 'Win32-Window') return allPresetTaskSwitches
+  const sanityTasks = props.presetTasks.filter(task =>
+    ['ProtocolSpace', 'AutoEssence'].includes(task.taskName)
+  )
+  const switches: PresetTaskSwitch[] = []
+  if (sanityTasks.length) {
+    switches.push({
+      key: 'Sanity',
+      label: '理智任务',
+      tooltip: '是否启用协议空间或基质刷取任务',
+      taskIds: sanityTasks.map(task => task.id),
+      enabled: sanityTasks.some(task => task.enabled),
+    })
+  }
 
-  return allPresetTaskSwitches.filter(task => defaultPresetTaskFields.has(task.field))
+  props.presetTasks.forEach(task => {
+    const taskInfo = presetTaskInfo[task.taskName]
+    if (!taskInfo) return
+    switches.push({
+      key: task.id,
+      taskIds: [task.id],
+      enabled: task.enabled,
+      ...taskInfo,
+    })
+  })
+  return switches
 })
 
 const controlsDisabled = computed(() => {
@@ -332,7 +295,12 @@ const controlsDisabled = computed(() => {
   )
 })
 
-const optionControlsDisabled = computed(() => controlsDisabled.value || !formData.Task.IfSanity)
+const sanityTasksEnabled = computed(() =>
+  props.presetTasks
+    .filter(task => ['ProtocolSpace', 'AutoEssence'].includes(task.taskName))
+    .some(task => task.enabled)
+)
+const optionControlsDisabled = computed(() => controlsDisabled.value || !sanityTasksEnabled.value)
 
 const modeNotice = computed(() => {
   if (props.source === 'script') {
@@ -424,6 +392,11 @@ const emitSave = (key: string, value: any) => {
 const emitSaveBatch = (changes: FieldChange[]) => {
   if (controlsDisabled.value || !changes.length) return
   emit('saveBatch', changes)
+}
+
+const handlePresetTaskChange = (task: PresetTaskSwitch, enabled: boolean) => {
+  if (controlsDisabled.value) return
+  emit('togglePresetTasks', task.taskIds, enabled)
 }
 
 const handleGoToPlans = () => {

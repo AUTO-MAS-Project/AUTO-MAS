@@ -32,11 +32,12 @@ from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
 from .preset import (
-    build_maaend_preset_config,
+    apply_maaend_local_metadata,
     is_maaend_preset_supported,
     load_maaend_config,
+    load_or_create_maaend_preset_config,
+    merge_maaend_preset_options,
     save_maaend_config,
-    save_maaend_preset_options,
 )
 
 logger = get_logger("MaaEnd 脚本设置")
@@ -77,12 +78,10 @@ class ScriptConfigTask(TaskExecuteBase):
         )
         if self.cur_user_item.user_id == "Default":
             self.config_mode = "简洁"
-            self.target_config = self.script_config
         else:
             self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
             self.cur_user_config = self.user_config[self.cur_user_uid]
             self.config_mode = self.cur_user_config.get("Info", "Mode")
-            self.target_config = self.script_config.UserData[self.cur_user_uid]
 
     async def main_task(self):
 
@@ -102,10 +101,15 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
+        maaend_local_config = None
+        if (self.maaend_set_path / "mxu-MaaEnd.json").exists():
+            maaend_local_config = load_maaend_config(self.maaend_set_path)
+
         if self.config_mode == "自定义" and self.config_file_path.exists():
             shutil.copytree(
                 self.config_file_path, self.maaend_set_path, dirs_exist_ok=True
             )
+            maaend_set = load_maaend_config(self.maaend_set_path)
         elif self.config_mode != "自定义":
             if not is_maaend_preset_supported(
                 self.script_config.get("Game", "ControllerType")
@@ -113,17 +117,17 @@ class ScriptConfigTask(TaskExecuteBase):
                 raise RuntimeError(
                     "当前控制器暂不支持 MaaEnd 预设模式, 请使用自定义模式"
                 )
+            maaend_set = load_or_create_maaend_preset_config(
+                self.config_file_path,
+                self.script_config.get("Game", "ControllerType"),
+            )
             shutil.rmtree(self.maaend_set_path, ignore_errors=True)
             self.maaend_set_path.mkdir(parents=True, exist_ok=True)
-            save_maaend_config(
-                self.maaend_set_path,
-                build_maaend_preset_config(
-                    self.target_config,
-                    self.script_config.get("Game", "ControllerType"),
-                ),
-            )
+        else:
+            maaend_set = load_maaend_config(self.maaend_set_path)
 
-        load_maaend_config(self.maaend_set_path)
+        apply_maaend_local_metadata(maaend_set, maaend_local_config)
+        save_maaend_config(self.maaend_set_path, maaend_set)
         logger.success(
             f"MaaEnd 运行参数配置完成: 设置脚本 {self.cur_user_item.user_id}"
         )
@@ -139,18 +143,21 @@ class ScriptConfigTask(TaskExecuteBase):
             shutil.copytree(
                 self.maaend_set_path, self.config_file_path, dirs_exist_ok=True
             )
+            maaend_set = load_maaend_config(self.config_file_path)
+            apply_maaend_local_metadata(maaend_set, None)
+            save_maaend_config(self.config_file_path, maaend_set)
         else:
             maaend_set = load_maaend_config(self.maaend_set_path)
-            await self.script_config.unlock()
-            try:
-                await save_maaend_preset_options(
-                    self.target_config,
-                    maaend_set,
-                    mark_configured=self.cur_user_item.user_id != "Default",
-                    controller_type=self.script_config.get("Game", "ControllerType"),
-                )
-            finally:
-                await self.script_config.lock()
+            preset_config = load_or_create_maaend_preset_config(
+                self.config_file_path,
+                self.script_config.get("Game", "ControllerType"),
+            )
+            merge_maaend_preset_options(
+                preset_config,
+                maaend_set,
+                controller_type=self.script_config.get("Game", "ControllerType"),
+            )
+            save_maaend_config(self.config_file_path, preset_config)
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"

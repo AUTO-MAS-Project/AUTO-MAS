@@ -1,5 +1,4 @@
 {
-  "version": "1.0",
   "instances": [
     {
       "id": "cbek8en",
@@ -9,39 +8,48 @@
       "tasks": [
         {
           "id": "66exzd1",
-          "taskName": "VisitFriends"
+          "taskName": "VisitFriends",
+          "enabled": true
         },
         {
           "id": "sl6ekn7",
-          "taskName": "DijiangRewards"
+          "taskName": "DijiangRewards", 
+          "enabled": true
         },
         {
           "id": "1ve46wq",
-          "taskName": "CreditShoppingN2"
+          "taskName": "CreditShoppingN2",
+          "enabled": true
         },
         {
           "id": "tlyl98l",
-          "taskName": "DeliveryJobs"
+          "taskName": "DeliveryJobs",
+          "enabled": true
         },
         {
           "id": "jur6jog",
-          "taskName": "SellProduct"
+          "taskName": "SellProduct",
+          "enabled": true
         },
         {
           "id": "xy8ubx9",
-          "taskName": "AutoStockpile"
+          "taskName": "AutoStockpile",
+          "enabled": true
         },
         {
           "id": "p9vhp9n",
-          "taskName": "AutoStockStaple"
+          "taskName": "AutoStockStaple",
+          "enabled": true
         },
         {
           "id": "l9lmqbs",
-          "taskName": "DailyRewards"
+          "taskName": "DailyRewards",
+          "enabled": true
         },
         {
           "id": "ki9tsg4",
-          "taskName": "SeizeEntrustTask"
+          "taskName": "SeizeEntrustTask",
+          "enabled": true
         }
       ]
     },
@@ -53,71 +61,88 @@
       "tasks": [
         {
           "id": "5zqhjux",
-          "taskName": "VisitFriends"
+          "taskName": "VisitFriends",
+          "enabled": true
         },
         {
           "id": "diyt9yn",
-          "taskName": "DijiangRewards"
+          "taskName": "DijiangRewards",
+          "enabled": true
         },
         {
           "id": "g8597rn",
-          "taskName": "CreditShoppingN2"
+          "taskName": "CreditShoppingN2",
+          "enabled": true
         },
         {
           "id": "0bzqbf2",
-          "taskName": "DeliveryJobs"
+          "taskName": "DeliveryJobs",
+          "enabled": true
         },
         {
           "id": "8vfq6y1",
-          "taskName": "SellProduct"
+          "taskName": "SellProduct",
+          "enabled": true
         },
         {
           "id": "es8dug8",
-          "taskName": "AutoStockpile"
+          "taskName": "AutoStockpile",
+          "enabled": true
         },
         {
           "id": "740f85h",
-          "taskName": "AutoStockStaple"
+          "taskName": "AutoStockStaple",
+          "enabled": true
         },
         {
           "id": "jjusssw",
-          "taskName": "AutoSell"
+          "taskName": "AutoSell",
+          "enabled": true
         },
         {
           "id": "gj70e22",
-          "taskName": "EnvironmentMonitoring"
+          "taskName": "EnvironmentMonitoring",
+          "enabled": true
         },
         {
           "id": "hiu9ttk",
-          "taskName": "DailyRewards"
+          "taskName": "DailyRewards",
+          "enabled": true
         },
         {
           "id": "mwg371e",
-          "taskName": "SeizeEntrustTask"
+          "taskName": "SeizeEntrustTask",
+          "enabled": true
         },
         {
           "id": "7u9ebfh",
-          "taskName": "AutoCollect"
+          "taskName": "AutoCollect",
+          "enabled": true
         },
         {
           "id": "y0k1zue",
-          "taskName": "AutoUseSpMedication"
+          "taskName": "AutoUseSpMedication",
+          "enabled": true       
         },
         {
           "id": "agfpwsh",
-          "taskName": "ResourceRecycleStation"
+          "taskName": "ResourceRecycleStation",
+          "enabled": true
         },
         {
           "id": "qmwzjgu",
-          "taskName": "AutoEcoFarm"
+          "taskName": "AutoEcoFarm",
+          "enabled": true
         },
         {
           "id": "5ej6pg9",
-          "taskName": "AutoEssence"
+          "taskName": "AutoEssence",
+          "enabled": true
         },
         {
           "id": "d947el4",
-          "taskName": "ProtocolSpace"
+          "taskName": "ProtocolSpace",
+          "enabled": true
         }
       ]
     }
@@ -128,43 +153,5 @@
   },
   "customAccents": [],
   "newTaskNames": [],
-  "presetInitialized": true,
-  "interfaceTaskSnapshot": [
-    "SellProduct",
-    "SeizeEntrustTask",
-    "DeliveryJobs",
-    "AutoStockpile",
-    "AutoStockStaple",
-    "AutoSell",
-    "EnvironmentMonitoring",
-    "GearAssembly",
-    "Weapon",
-    "BatchUseDetector",
-    "AutoUseSpMedication",
-    "EssenceFilter",
-    "AutoArtificing",
-    "ResourceRecycleStation",
-    "AutoCollect",
-    "AutoEcoFarm",
-    "PuzzleSolver",
-    "ImportBluePrints",
-    "AutoEssence",
-    "ProtocolSpace",
-    "DijiangRewards",
-    "VisitFriends",
-    "GiftOperator",
-    "BatchAddFriends",
-    "BakerEntry",
-    "ReadAllWiki",
-    "DailyRewards",
-    "ClaimSimulationRewards",
-    "CreditShoppingN2",
-    "AndroidOpenGame",
-    "RealTimeTask",
-    "ItemTransfer",
-    "Crafting",
-    "SimpleProductionBatchStart",
-    "ReceiveProdManual",
-    "StashBackpack"
-  ]
+  "presetInitialized": true
 }

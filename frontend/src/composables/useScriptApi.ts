@@ -648,70 +648,6 @@ export function useScriptApi() {
                           maaEndUserData.Info?.Tag !== undefined ? maaEndUserData.Info.Tag : null,
                       },
                       Task: {
-                        IfSanity:
-                          maaEndUserData.Task?.IfSanity !== undefined
-                            ? maaEndUserData.Task.IfSanity
-                            : true,
-                        IfVisitFriends:
-                          maaEndUserData.Task?.IfVisitFriends !== undefined
-                            ? maaEndUserData.Task.IfVisitFriends
-                            : true,
-                        IfDijiangRewards:
-                          maaEndUserData.Task?.IfDijiangRewards !== undefined
-                            ? maaEndUserData.Task.IfDijiangRewards
-                            : true,
-                        IfCreditShoppingN2:
-                          maaEndUserData.Task?.IfCreditShoppingN2 !== undefined
-                            ? maaEndUserData.Task.IfCreditShoppingN2
-                            : true,
-                        IfDeliveryJobs:
-                          maaEndUserData.Task?.IfDeliveryJobs !== undefined
-                            ? maaEndUserData.Task.IfDeliveryJobs
-                            : true,
-                        IfSellProduct:
-                          maaEndUserData.Task?.IfSellProduct !== undefined
-                            ? maaEndUserData.Task.IfSellProduct
-                            : true,
-                        IfAutoStockpile:
-                          maaEndUserData.Task?.IfAutoStockpile !== undefined
-                            ? maaEndUserData.Task.IfAutoStockpile
-                            : true,
-                        IfAutoStockStaple:
-                          maaEndUserData.Task?.IfAutoStockStaple !== undefined
-                            ? maaEndUserData.Task.IfAutoStockStaple
-                            : true,
-                        IfAutoSell:
-                          maaEndUserData.Task?.IfAutoSell !== undefined
-                            ? maaEndUserData.Task.IfAutoSell
-                            : true,
-                        IfEnvironmentMonitoring:
-                          maaEndUserData.Task?.IfEnvironmentMonitoring !== undefined
-                            ? maaEndUserData.Task.IfEnvironmentMonitoring
-                            : true,
-                        IfDailyRewards:
-                          maaEndUserData.Task?.IfDailyRewards !== undefined
-                            ? maaEndUserData.Task.IfDailyRewards
-                            : true,
-                        IfSeizeEntrustTask:
-                          maaEndUserData.Task?.IfSeizeEntrustTask !== undefined
-                            ? maaEndUserData.Task.IfSeizeEntrustTask
-                            : true,
-                        IfAutoCollect:
-                          maaEndUserData.Task?.IfAutoCollect !== undefined
-                            ? maaEndUserData.Task.IfAutoCollect
-                            : true,
-                        IfAutoUseSpMedication:
-                          maaEndUserData.Task?.IfAutoUseSpMedication !== undefined
-                            ? maaEndUserData.Task.IfAutoUseSpMedication
-                            : true,
-                        IfResourceRecycleStation:
-                          maaEndUserData.Task?.IfResourceRecycleStation !== undefined
-                            ? maaEndUserData.Task.IfResourceRecycleStation
-                            : true,
-                        IfAutoEcoFarm:
-                          maaEndUserData.Task?.IfAutoEcoFarm !== undefined
-                            ? maaEndUserData.Task.IfAutoEcoFarm
-                            : true,
                         SanityTaskType:
                           maaEndUserData.Task?.SanityTaskType !== undefined
                             ? maaEndUserData.Task.SanityTaskType
@@ -736,8 +672,6 @@ export function useScriptApi() {
                           maaEndUserData.Task?.AutoEssenceSpecifiedLocation !== undefined
                             ? maaEndUserData.Task.AutoEssenceSpecifiedLocation
                             : 'VFTheHub',
-                        Options:
-                          maaEndUserData.Task?.Options !== undefined ? maaEndUserData.Task.Options : '{}',
                       },
                       Notify: {
                         Enabled:
@@ -785,10 +719,6 @@ export function useScriptApi() {
                         IfPassCheck:
                           maaEndUserData.Data?.IfPassCheck !== undefined
                             ? maaEndUserData.Data.IfPassCheck
-                            : false,
-                        IfPresetConfigured:
-                          maaEndUserData.Data?.IfPresetConfigured !== undefined
-                            ? maaEndUserData.Data.IfPresetConfigured
                             : false,
                       },
                     }

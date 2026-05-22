@@ -108,9 +108,7 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
 async def update_script(script: ScriptUpdateIn = Body(...)) -> OutBase:
 
     try:
-        await Config.update_script(
-            script.scriptId, script.data.model_dump(exclude_unset=True)
-        )
+        await Config.update_script(script.scriptId, script.data)
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
@@ -292,8 +290,48 @@ async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
 async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
 
     try:
-        await Config.update_user(
-            user.scriptId, user.userId, user.data.model_dump(exclude_unset=True)
+        await Config.update_user(user.scriptId, user.userId, user.data)
+    except Exception as e:
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    return OutBase()
+
+
+@router.post(
+    "/maaend/preset/tasks",
+    tags=["Get"],
+    summary="查询 MaaEnd 预设任务状态",
+    response_model=MaaEndPresetTaskOut,
+    status_code=200,
+)
+async def get_maaend_preset_tasks(
+    config: MaaEndPresetTaskIn = Body(...),
+) -> MaaEndPresetTaskOut:
+
+    try:
+        tasks = await Config.get_maaend_preset_tasks(config.scriptId, config.userId)
+    except Exception as e:
+        return MaaEndPresetTaskOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    return MaaEndPresetTaskOut(data=[MaaEndPresetTaskItem(**task) for task in tasks])
+
+
+@router.post(
+    "/maaend/preset/tasks/update",
+    tags=["Update"],
+    summary="更新 MaaEnd 预设任务状态",
+    response_model=OutBase,
+    status_code=200,
+)
+async def update_maaend_preset_tasks(
+    config: MaaEndPresetTaskUpdateIn = Body(...),
+) -> OutBase:
+
+    try:
+        await Config.update_maaend_preset_tasks(
+            config.scriptId, config.userId, config.taskIds, config.enabled
         )
     except Exception as e:
         return OutBase(
