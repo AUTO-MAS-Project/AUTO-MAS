@@ -197,58 +197,26 @@ MAAEND_STAGE_BOOK = {
 MAAEND_STAGE_WITH_AB = set(["OperatorEXP", "Promotions", "SkillUp", "WeaponTune"])
 """MAAEnd任务包含AB关的关卡列表"""
 
-MAAEND_PROTOCOL_SPACE_TABS = (
+MAAEND_SANITY_TASK_TYPES = (
     "OperatorProgression",
     "WeaponProgression",
     "CrisisDrills",
+    "Essence",
 )
-"""MAAEnd协议空间任务分类列表"""
+"""MaaEnd理智任务类型列表"""
 
-MAAEND_SANITY_TASK_TYPES = (*MAAEND_PROTOCOL_SPACE_TABS, "Essence")
-"""MAAEnd理智任务类型列表"""
-
-MAAEND_PROTOCOL_SPACE_FIELDS = (
-    "OperatorProgression",
-    "WeaponProgression",
-    "CrisisDrills",
-    "RewardsSetOption",
-)
-"""MAAEnd协议空间任务字段列表"""
-
-MAAEND_ESSENCE_FIELDS = ("AutoEssenceSpecifiedLocation",)
-"""MAAEnd基质刷取任务字段列表"""
-
-MAAEND_AUTO_ESSENCE_LOCATIONS = (
-    "VFTheHub",
-    "VFOriginiumSciencePark",
-    "VFOriginLodespring",
-    "VFPowerPlateau",
-    "WLWulingCity",
-    "WLQingboStockade",
-)
-"""MAAEnd基质刷取地点列表"""
-
-MAAEND_PLAN_FIELDS = (
-    "SanityTaskType",
-    *MAAEND_PROTOCOL_SPACE_FIELDS,
-    *MAAEND_ESSENCE_FIELDS,
-)
-"""MAAEnd计划表字段列表"""
-
-
-MAAEND_KILLPROC_TASK = {
-    "id": "jobstop",
-    "taskName": "__MXU_KILLPROC__",
-    "enabled": True,
-    "optionValues": {
-        "__MXU_KILLPROC_SELF_OPTION__": {"type": "switch", "value": True},
-        "__MXU_KILLPROC_NAME_OPTION__": {
-            "type": "input",
-            "values": {"process_name": ""},
-        },
-    },
+MAAEND_PLAN_FIELD_DEFAULTS = {
+    "SanityTaskType": "OperatorProgression",
+    "OperatorProgression": "OperatorEXP",
+    "WeaponProgression": "WeaponEXP",
+    "CrisisDrills": "AdvancedProgression1",
+    "RewardsSetOption": "RewardsSetA",
+    "AutoEssenceSpecifiedLocation": "VFTheHub",
 }
-"""MAAEnd任务完成后退出任务配置"""
+"""MaaEnd计划表字段默认值"""
+
+MAAEND_PLAN_FIELDS = tuple(MAAEND_PLAN_FIELD_DEFAULTS)
+"""MAAEnd计划表字段列表"""
 
 EMULATOR_PATH_BOOK = {
     "mumu": {

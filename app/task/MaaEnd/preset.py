@@ -69,6 +69,21 @@ def apply_maaend_local_metadata(
         if local_config_data is not None and field in local_config_data:
             config_data[field] = deepcopy(local_config_data[field])
 
+    settings = config_data.get("settings")
+    if isinstance(settings, dict):
+        settings.pop("welcomeShownHash", None)
+
+    if local_config_data is None:
+        return
+
+    local_settings = local_config_data.get("settings")
+    if not isinstance(local_settings, dict) or "welcomeShownHash" not in local_settings:
+        return
+
+    config_data.setdefault("settings", {})["welcomeShownHash"] = deepcopy(
+        local_settings["welcomeShownHash"]
+    )
+
 
 def get_maaend_preset_instance(
     config_data: dict[str, Any], controller_type: str
@@ -102,86 +117,6 @@ def get_maaend_active_instance(config_data: dict[str, Any]) -> dict[str, Any]:
     return instances[0]
 
 
-def apply_maaend_sanity_task_config(
-    tasks: list[dict[str, Any]], sanity_task_config: dict[str, Any]
-) -> tuple[bool, bool]:
-    """将 MAS 理智配置写入 MaaEnd 任务配置"""
-
-    protocol_space_configured = False
-    auto_essence_configured = False
-    sanity_enabled = any(
-        task.get("enabled", True)
-        for task in tasks
-        if task.get("taskName") in ("ProtocolSpace", "AutoEssence")
-    )
-    if not sanity_enabled:
-        return True, True
-
-    sanity_task_type = sanity_task_config["SanityTaskType"]
-    auto_essence_location = ""
-    if sanity_task_type == "Essence":
-        auto_essence_location = sanity_task_config.get(
-            "AutoEssenceSpecifiedLocation", ""
-        )
-
-    for task in tasks:
-        if task["taskName"] == "ProtocolSpace":
-            task["enabled"] = (
-                sanity_task_type != "Essence" and not protocol_space_configured
-            )
-            if not task["enabled"]:
-                continue
-
-            protocol_space_configured = True
-            task.setdefault("optionValues", {})
-            task["optionValues"]["ProtocolSpaceTab"] = {
-                "type": "select",
-                "caseName": sanity_task_type,
-            }
-            task["optionValues"]["OperatorProgression"] = {
-                "type": "select",
-                "caseName": sanity_task_config["OperatorProgression"],
-            }
-            task["optionValues"]["WeaponProgression"] = {
-                "type": "select",
-                "caseName": sanity_task_config["WeaponProgression"],
-            }
-            task["optionValues"]["CrisisDrills"] = {
-                "type": "select",
-                "caseName": sanity_task_config["CrisisDrills"],
-            }
-            task["optionValues"]["RewardsSetOption"] = {
-                "type": "select",
-                "caseName": sanity_task_config["RewardsSetOption"],
-            }
-        elif task["taskName"] == "AutoEssence":
-            task["enabled"] = (
-                sanity_task_type == "Essence" and not auto_essence_configured
-            )
-            if not task["enabled"]:
-                continue
-
-            auto_essence_configured = True
-            task.setdefault("optionValues", {})
-            task["optionValues"]["AutoEssenceSpecifiedLocation"] = {
-                "type": "select",
-                "caseName": auto_essence_location,
-            }
-
-    return protocol_space_configured, auto_essence_configured
-
-
-def build_maaend_preset_config(controller_type: str) -> dict[str, Any]:
-    """使用当前 MAS 模板生成 MaaEnd 预设配置"""
-
-    config_data = load_maaend_preset_template()
-    instance = get_maaend_preset_instance(config_data, controller_type)
-    for task in instance["tasks"]:
-        task.setdefault("enabled", True)
-    config_data["instances"] = [instance]
-    return config_data
-
-
 def load_or_create_maaend_preset_config(
     config_dir: Path, controller_type: str
 ) -> dict[str, Any]:
@@ -192,7 +127,11 @@ def load_or_create_maaend_preset_config(
         return load_maaend_config(config_dir)
 
     config_dir.mkdir(parents=True, exist_ok=True)
-    config_data = build_maaend_preset_config(controller_type)
+    config_data = load_maaend_preset_template()
+    instance = get_maaend_preset_instance(config_data, controller_type)
+    for task in instance["tasks"]:
+        task.setdefault("enabled", True)
+    config_data["instances"] = [instance]
     save_maaend_config(config_dir, config_data)
     return config_data
 

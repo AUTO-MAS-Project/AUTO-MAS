@@ -33,8 +33,8 @@ from app.utils.constants import (
     RESOURCE_STAGE_INFO,
     MAA_STAGE_KEY,
     PLAN_CONSUMER_VALUES,
+    MAAEND_PLAN_FIELD_DEFAULTS,
     MAAEND_PLAN_FIELDS,
-    MAAEND_PROTOCOL_SPACE_TABS,
     MAAEND_SANITY_TASK_TYPES,
     MAAEND_STAGE_BOOK,
     MAAEND_STAGE_WITH_AB,
@@ -74,38 +74,40 @@ def init_maaend_task_config(config) -> None:
     config.Task_SanityTaskType = ConfigItem(
         "Task",
         "SanityTaskType",
-        "OperatorProgression",
+        MAAEND_PLAN_FIELD_DEFAULTS["SanityTaskType"],
     )
     ## 干员养成任务
     config.Task_OperatorProgression = ConfigItem(
         "Task",
         "OperatorProgression",
-        "OperatorEXP",
+        MAAEND_PLAN_FIELD_DEFAULTS["OperatorProgression"],
     )
     ## 武器养成任务
     config.Task_WeaponProgression = ConfigItem(
         "Task",
         "WeaponProgression",
-        "WeaponEXP",
+        MAAEND_PLAN_FIELD_DEFAULTS["WeaponProgression"],
     )
     ## 危境预演任务
     config.Task_CrisisDrills = ConfigItem(
         "Task",
         "CrisisDrills",
-        "AdvancedProgression1",
+        MAAEND_PLAN_FIELD_DEFAULTS["CrisisDrills"],
     )
     ## 奖励套组选项
     config.Task_RewardsSetOption = ConfigItem(
         "Task",
         "RewardsSetOption",
-        "RewardsSetA",
+        MAAEND_PLAN_FIELD_DEFAULTS["RewardsSetOption"],
     )
     ## 基质刷取地点
     config.Task_AutoEssenceSpecifiedLocation = ConfigItem(
         "Task",
         "AutoEssenceSpecifiedLocation",
-        "VFTheHub",
+        MAAEND_PLAN_FIELD_DEFAULTS["AutoEssenceSpecifiedLocation"],
     )
+
+
 def _normalize_maaend_sanity_task_type(task_data: dict[str, Any]) -> None:
     """将旧版 MaaEnd 理智任务配置迁移到当前结构"""
 
@@ -118,11 +120,11 @@ def _normalize_maaend_sanity_task_type(task_data: dict[str, Any]) -> None:
 
     if sanity_task_type == "ProtocolSpace":
         protocol_space_tab = task_data.get("ProtocolSpaceTab")
-        if protocol_space_tab in MAAEND_PROTOCOL_SPACE_TABS:
+        if protocol_space_tab in MAAEND_SANITY_TASK_TYPES[:-1]:
             task_data["SanityTaskType"] = protocol_space_tab
             return
 
-    task_data["SanityTaskType"] = "OperatorProgression"
+    task_data["SanityTaskType"] = MAAEND_PLAN_FIELD_DEFAULTS["SanityTaskType"]
 
 
 class EmulatorConfig(ConfigBase):
@@ -1640,36 +1642,8 @@ class MaaEndPlanConfig(ConfigBase):
         for group in ["ALL", *calendar.day_name]:
             self.config_item_dict[group] = {}
 
-            self.config_item_dict[group]["OperatorProgression"] = ConfigItem(
-                group,
-                "OperatorProgression",
-                "OperatorEXP",
-            )
-            self.config_item_dict[group]["WeaponProgression"] = ConfigItem(
-                group,
-                "WeaponProgression",
-                "WeaponEXP",
-            )
-            self.config_item_dict[group]["CrisisDrills"] = ConfigItem(
-                group,
-                "CrisisDrills",
-                "AdvancedProgression1",
-            )
-            self.config_item_dict[group]["RewardsSetOption"] = ConfigItem(
-                group,
-                "RewardsSetOption",
-                "RewardsSetA",
-            )
-            self.config_item_dict[group]["SanityTaskType"] = ConfigItem(
-                group,
-                "SanityTaskType",
-                "OperatorProgression",
-            )
-            self.config_item_dict[group]["AutoEssenceSpecifiedLocation"] = ConfigItem(
-                group,
-                "AutoEssenceSpecifiedLocation",
-                "VFTheHub",
-            )
+            for name, default in MAAEND_PLAN_FIELD_DEFAULTS.items():
+                self.config_item_dict[group][name] = ConfigItem(group, name, default)
 
             for name in MAAEND_PLAN_FIELDS:
                 setattr(self, f"{group}_{name}", self.config_item_dict[group][name])

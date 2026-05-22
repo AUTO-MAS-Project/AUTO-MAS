@@ -32,7 +32,7 @@ from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaEndConfig, MaaEndUserConfig
-from app.models.emulator import DeviceBase, DeviceInfo
+from app.models.emulator import DeviceBase
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
 from app.tools import skland_sign_in
@@ -47,7 +47,6 @@ from .constants import (
 )
 from .tools import login, push_notification
 from .preset import (
-    apply_maaend_sanity_task_config,
     apply_maaend_local_metadata,
     get_maaend_active_instance,
     is_maaend_preset_supported,
@@ -84,16 +83,6 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_config = self.user_config[self.cur_user_uid]
         self.check_result = "-"
         self.effective_sanity_task_config: dict[str, str] | None = None
-
-    @staticmethod
-    def get_maaend_task_name(
-        task: dict[str, str], stdout_task_name_book: dict[str, str]
-    ) -> str:
-        """获取 MaaEnd 任务的显示名称"""
-
-        return task.get("customName") or stdout_task_name_book.get(
-            task["taskName"], task["taskName"]
-        )
 
     def load_maaend_stdout_task_name_book(
         self, config_data: dict[str, object]
@@ -335,7 +324,7 @@ class AutoProxyTask(TaskExecuteBase):
 
             self.script_info.log = "正在启动游戏...\n游戏启动成功\n正在登录「明日方舟：终末地」\n「明日方舟：终末地」登录成功"
 
-            await self.set_maaend(emulator_info)
+            await self.set_maaend()
 
             logger.info(f"运行脚本任务: {self.maaend_exe_path}")
             self.wait_event.clear()
@@ -456,7 +445,7 @@ class AutoProxyTask(TaskExecuteBase):
         except Exception as e:
             logger.exception(f"关闭模拟器失败: {e}")
 
-    async def set_maaend(self, _device_info: DeviceInfo | None) -> None:
+    async def set_maaend(self) -> None:
         """写入 MaaEnd 运行前配置"""
 
         logger.info("开始配置 MaaEnd 运行参数: 自动代理")
@@ -497,14 +486,18 @@ class AutoProxyTask(TaskExecuteBase):
             for task in maaend_tasks:
                 if task["taskName"].startswith("__MXU_"):
                     continue
-                task_name = self.get_maaend_task_name(task, stdout_task_name_book)
+                task_name = task.get("customName") or stdout_task_name_book.get(
+                    task["taskName"], task["taskName"]
+                )
                 if task_name not in self.task_dict:
                     self.task_dict[task_name] = {}
                 self.task_dict[task_name][task["id"]] = task["enabled"]
         else:
             # 任务列表不为空则配置任务
             for task in maaend_tasks:
-                task_name = self.get_maaend_task_name(task, stdout_task_name_book)
+                task_name = task.get("customName") or stdout_task_name_book.get(
+                    task["taskName"], task["taskName"]
+                )
                 if task_name in self.task_dict:
                     task["enabled"] = self.task_dict[task_name][task["id"]]
 
@@ -513,14 +506,55 @@ class AutoProxyTask(TaskExecuteBase):
             if self.effective_sanity_task_config is None:
                 raise RuntimeError("未找到当前生效的理智任务配置")
 
-            protocol_space_configured, auto_essence_configured = (
-                apply_maaend_sanity_task_config(
-                    maaend_tasks,
-                    self.effective_sanity_task_config,
-                )
-            )
-
             sanity_task_type = self.effective_sanity_task_config["SanityTaskType"]
+            sanity_enabled = any(
+                task.get("enabled", True)
+                for task in maaend_tasks
+                if task.get("taskName") in ("ProtocolSpace", "AutoEssence")
+            )
+            protocol_space_configured = not sanity_enabled
+            auto_essence_configured = not sanity_enabled
+
+            for task in maaend_tasks:
+                if task["taskName"] == "ProtocolSpace":
+                    task["enabled"] = (
+                        sanity_task_type != "Essence" and not protocol_space_configured
+                    )
+                    if not task["enabled"]:
+                        continue
+
+                    protocol_space_configured = True
+                    task.setdefault("optionValues", {})
+                    task["optionValues"]["ProtocolSpaceTab"] = {
+                        "type": "select",
+                        "caseName": sanity_task_type,
+                    }
+                    for option in (
+                        "OperatorProgression",
+                        "WeaponProgression",
+                        "CrisisDrills",
+                        "RewardsSetOption",
+                    ):
+                        task["optionValues"][option] = {
+                            "type": "select",
+                            "caseName": self.effective_sanity_task_config[option],
+                        }
+                elif task["taskName"] == "AutoEssence":
+                    task["enabled"] = (
+                        sanity_task_type == "Essence" and not auto_essence_configured
+                    )
+                    if not task["enabled"]:
+                        continue
+
+                    auto_essence_configured = True
+                    task.setdefault("optionValues", {})
+                    task["optionValues"]["AutoEssenceSpecifiedLocation"] = {
+                        "type": "select",
+                        "caseName": self.effective_sanity_task_config.get(
+                            "AutoEssenceSpecifiedLocation", ""
+                        ),
+                    }
+
             if sanity_task_type != "Essence" and not protocol_space_configured:
                 logger.warning(
                     f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 ProtocolSpace 任务，已跳过协议空间注入"
