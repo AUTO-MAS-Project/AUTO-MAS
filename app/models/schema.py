@@ -633,7 +633,7 @@ class MaaEndConfig_Game(BaseModel):
     ] = Field(default=None, description="控制器类型")
     Path: Optional[str] = Field(default=None, description="终末地客户端路径")
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
-    WaitTime: Optional[int] = Field(default=None, description="游戏等待时间")
+    WaitTime: Optional[int] = Field(default=None, ge=60, description="游戏等待时间")
     EmulatorId: Optional[str] = Field(default=None, description="模拟器ID")
     EmulatorIndex: Optional[str] = Field(default=None, description="模拟器索引")
     CloseOnFinish: Optional[bool] = Field(default=None, description="结束后关闭游戏")

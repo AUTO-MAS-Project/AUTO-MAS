@@ -176,7 +176,7 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input-number v-model:value="maaEndConfig.Game.WaitTime" :min="0" :max="9999" size="large"
+                <a-input-number v-model:value="maaEndConfig.Game.WaitTime" :min="60" :max="9999" size="large"
                   style="width: 100%" @blur="handleChange('Game', 'WaitTime', maaEndConfig.Game.WaitTime)" />
               </a-form-item>
             </a-col>
@@ -458,7 +458,7 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
             ControllerType: value,
             Path: '',
             Arguments: '',
-            WaitTime: 90,
+            WaitTime: 60,
           }
         : {
             ControllerType: value,
