@@ -40,6 +40,61 @@ from app.utils import get_logger
 logger = get_logger("模拟器管理")
 
 
+class _AutoRetryDeviceManager:
+    """为模拟器启动失败补充等待时间修正与二次失败提示"""
+
+    def __init__(
+        self, emulator_uid: uuid.UUID, manager: DeviceBase, config: EmulatorConfig
+    ) -> None:
+
+        self.emulator_uid = emulator_uid
+        self.manager = manager
+        self.config = config
+
+    def __getattr__(self, name: str):
+
+        return getattr(self.manager, name)
+
+    async def open(self, idx: str, package_name: str = ""):
+
+        try:
+            return await self.manager.open(idx, package_name=package_name)
+        except Exception as e:
+            logger.warning(
+                f"模拟器 {idx} 启动失败, "
+                f"正在将最大等待时间调整为 300 秒后重试: {e}"
+            )
+
+        await Config.EmulatorConfig[self.emulator_uid].set("Info", "MaxWaitTime", 300)
+        await self.config.set("Info", "MaxWaitTime", 300)
+
+        try:
+            return await self.manager.open(idx, package_name=package_name)
+        except Exception as e:
+            await Config.send_websocket_message(
+                id="EmulatorManager",
+                type="Message",
+                data={
+                    "type": "Question",
+                    "message_id": f"emulator_launch_failed_{self.emulator_uid}_{idx}_{uuid.uuid4()}",
+                    "title": "模拟器启动失败",
+                    "message": (
+                        f"模拟器 {idx} 启动失败。\n\n"
+                        f"已自动将最大等待时间调整为 300 秒并重试, "
+                        f"但仍未成功。\n\n"
+                        f"请加入 AUTO-MAS 用户 QQ 群 957750551 上报问题。\n\n"
+                        f"失败原因: {e}"
+                    ),
+                    "options": ["我知道了"],
+                },
+            )
+            raise RuntimeError(
+                f"模拟器 {idx} 启动失败, 已自动将最大等待时间调整为 "
+                f"300 秒后重试, 仍未成功。"
+                f"请加入 AUTO-MAS 用户 QQ 群 957750551 上报问题。失败原因: {e}"
+            ) from e
+
+
 class _EmulatorManager:
     """模拟器实例管理器"""
 
@@ -77,7 +132,8 @@ class _EmulatorManager:
                         timeout=config.get("Info", "MaxWaitTime"),
                     )
 
-            return EMULATOR_TYPE_BOOK[config.get("Info", "Type")](config)
+            emulator_manager = EMULATOR_TYPE_BOOK[config.get("Info", "Type")](config)
+            return _AutoRetryDeviceManager(emulator_uid, emulator_manager, config)
         else:
             raise ValueError(f"不支持的模拟器类型: {config.get('Info', 'Type')}")
 
