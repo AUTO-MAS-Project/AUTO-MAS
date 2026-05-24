@@ -24,11 +24,26 @@ import uuid
 import asyncio
 from typing import Dict, Literal
 
-from .config import Config, MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig, M9AConfig
+from .config import (
+    Config,
+    MaaConfig,
+    SrcConfig,
+    GeneralConfig,
+    MaaEndConfig,
+    M9AConfig,
+    OkwwConfig,
+)
 from app.services import System
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
 from app.utils import get_logger
-from app.task import MaaManager, SrcManager, GeneralManager, MaaEndManager, M9AManager
+from app.task import (
+    MaaManager,
+    SrcManager,
+    GeneralManager,
+    MaaEndManager,
+    M9AManager,
+    OkwwManager,
+)
 from app.utils.constants import POWER_SIGN_MAP
 
 
@@ -157,6 +172,8 @@ class Task(TaskExecuteBase):
                 task_item = SrcManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], GeneralConfig):
                 task_item = GeneralManager(script_item)
+            elif isinstance(Config.ScriptConfig[current_script_uid], OkwwConfig):
+                task_item = OkwwManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], MaaEndConfig):
                 task_item = MaaEndManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], M9AConfig):

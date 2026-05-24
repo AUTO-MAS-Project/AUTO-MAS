@@ -1674,6 +1674,120 @@ class GeneralUserConfig(ConfigBase):
         return json.dumps(tags, ensure_ascii=False)
 
 
+class OkwwUserConfig(ConfigBase):
+    """OK-WW 用户配置（ok-script 线）"""
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
+        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        self.Info_RemainedDay = ConfigItem(
+            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+        )
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", str(Path.cwd()), FileValidator()
+        )
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", str(Path.cwd()), FileValidator()
+        )
+        self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        self.Info_Tag = ConfigItem(
+            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
+        )
+
+        ## Task ------------------------------------------------------------
+        # ok-ww.exe -t N -e
+        self.Task_TaskIndex = ConfigItem(
+            "Task", "TaskIndex", 1, RangeValidator(1, 9999)
+        )
+        self.Task_ExitOnFinish = ConfigItem("Task", "ExitOnFinish", True, BoolValidator())
+
+        ## Data ------------------------------------------------------------
+        self.Data_LastProxyDate = ConfigItem(
+            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        self.Data_ProxyTimes = ConfigItem(
+            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
+        )
+
+        ## Notify ----------------------------------------------------------
+        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        self.Notify_IfSendStatistic = ConfigItem(
+            "Notify", "IfSendStatistic", False, BoolValidator()
+        )
+        self.Notify_IfSendMail = ConfigItem("Notify", "IfSendMail", False, BoolValidator())
+        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        self.Notify_IfServerChan = ConfigItem(
+            "Notify", "IfServerChan", False, BoolValidator()
+        )
+        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
+
+        super().__init__()
+
+    def getTags(self) -> str:
+        tags = []
+
+        if (
+            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
+            == datetime.now(tz=UTC4).date()
+        ):
+            tags.append(
+                {
+                    "text": f"任务：已代理{self.get('Data', 'ProxyTimes')}次",
+                    "color": "green",
+                }
+            )
+        else:
+            tags.append({"text": "任务：未代理", "color": "orange"})
+
+        remained_day = self.get("Info", "RemainedDay")
+        if remained_day == -1:
+            tag_color = "gold"
+        elif remained_day == 0:
+            tag_color = "red"
+        elif remained_day <= 3:
+            tag_color = "orange"
+        elif remained_day <= 7:
+            tag_color = "yellow"
+        elif remained_day <= 30:
+            tag_color = "blue"
+        else:
+            tag_color = "green"
+        tags.append(
+            {
+                "text": (
+                    f"剩余天数：{remained_day}天"
+                    if remained_day >= 0
+                    else "剩余天数：无期限"
+                ),
+                "color": tag_color,
+            }
+        )
+
+        notes = self.get("Info", "Notes")
+        tags.append(
+            {
+                "text": (
+                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
+                ),
+                "color": "pink",
+            }
+        )
+
+        return json.dumps(tags, ensure_ascii=False)
+
+
 class GeneralConfig(ConfigBase):
     """通用配置"""
 
@@ -1793,6 +1907,108 @@ class GeneralConfig(ConfigBase):
         )
 
         self.UserData = MultipleConfig([GeneralUserConfig])
+
+        super().__init__()
+
+
+class OkwwConfig(ConfigBase):
+    """OK-WW 配置（ok-script 线）"""
+
+    related_config: dict[str, MultipleConfig] = {}
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        self.Info_Name = ConfigItem("Info", "Name", "新 OK-WW 脚本")
+        self.Info_RootPath = ConfigItem(
+            "Info", "RootPath", str(Path.cwd()), FileValidator()
+        )
+
+        ## Script ----------------------------------------------------------
+        self.Script_ScriptPath = ConfigItem(
+            "Script", "ScriptPath", str(Path.cwd()), FileValidator()
+        )
+        # Okww 运行参数建议由用户配置（-t / -e 由用户配置 Task 决定），但仍保留高级参数入口
+        self.Script_Arguments = ConfigItem(
+            "Script", "Arguments", "", AdvancedArgumentValidator()
+        )
+        self.Script_IfTrackProcess = ConfigItem(
+            "Script", "IfTrackProcess", True, BoolValidator()
+        )
+        self.Script_TrackProcessName = ConfigItem("Script", "TrackProcessName", "")
+        self.Script_TrackProcessExe = ConfigItem("Script", "TrackProcessExe", "")
+        self.Script_TrackProcessCmdline = ConfigItem(
+            "Script", "TrackProcessCmdline", "", ArgumentValidator()
+        )
+        self.Script_ConfigPath = ConfigItem(
+            "Script", "ConfigPath", str(Path.cwd()), FileValidator()
+        )
+        self.Script_ConfigPathMode = ConfigItem(
+            "Script", "ConfigPathMode", "Folder", OptionsValidator(["File", "Folder"])
+        )
+        self.Script_UpdateConfigMode = ConfigItem(
+            "Script",
+            "UpdateConfigMode",
+            "Always",
+            OptionsValidator(["Never", "Success", "Failure", "Always"]),
+        )
+        self.Script_LogPath = ConfigItem(
+            "Script", "LogPath", str(Path.cwd()), FileValidator()
+        )
+        self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "")
+        self.Script_LogTimeStart = ConfigItem(
+            "Script", "LogTimeStart", 1, RangeValidator(1, 9999)
+        )
+        self.Script_LogTimeEnd = ConfigItem(
+            "Script", "LogTimeEnd", 23, RangeValidator(1, 9999)
+        )
+        self.Script_LogTimeFormat = ConfigItem(
+            "Script", "LogTimeFormat", "%Y-%m-%d %H:%M:%S,%f"
+        )
+        self.Script_SuccessLog = ConfigItem(
+            "Script", "SuccessLog", "任务执行完成 | task completed"
+        )
+        # ok-ww 日志中更贴近“整场失败”的片段（`|` 分隔）；过宽词易误判，勿照搬通用脚本的 ERROR/异常大包
+        self.Script_ErrorLog = ConfigItem(
+            "Script",
+            "ErrorLog",
+            "connected:False|游戏更新成功, 游戏即将重启|错误",
+        )
+
+        ## Game ------------------------------------------------------------
+        self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
+        self.Game_Type = ConfigItem(
+            "Game", "Type", "Client", OptionsValidator(["Emulator", "Client", "URL"])
+        )
+        self.Game_Path = ConfigItem("Game", "Path", str(Path.cwd()), FileValidator())
+        self.Game_URL = ConfigItem("Game", "URL", "")
+        self.Game_ProcessName = ConfigItem("Game", "ProcessName", "")
+        self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
+        self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
+        self.Game_IfForceClose = ConfigItem("Game", "IfForceClose", True, BoolValidator())
+        self.Game_CloseOnFinish = ConfigItem(
+            "Game", "CloseOnFinish", True, BoolValidator()
+        )
+        self.Game_EmulatorId = ConfigItem(
+            "Game",
+            "EmulatorId",
+            "-",
+            MultipleUIDValidator("-", self.related_config, "EmulatorConfig"),
+        )
+        self.Game_EmulatorIndex = ConfigItem("Game", "EmulatorIndex", "-")
+
+        ## Run -------------------------------------------------------------
+        self.Run_ProxyTimesLimit = ConfigItem(
+            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
+        )
+        self.Run_RunTimesLimit = ConfigItem(
+            "Run", "RunTimesLimit", 1, RangeValidator(1, 9999)
+        )
+        self.Run_RunTimeLimit = ConfigItem(
+            "Run", "RunTimeLimit", 60, RangeValidator(1, 9999)
+        )
+
+        self.UserData = MultipleConfig([OkwwUserConfig])
 
         super().__init__()
 
@@ -2063,7 +2279,7 @@ class GlobalConfig(ConfigBase):
         self.PlanConfig = MultipleConfig([MaaPlanConfig])
         ## 脚本配置列表
         self.ScriptConfig = MultipleConfig(
-            [MaaConfig, MaaEndConfig, SrcConfig, M9AConfig, GeneralConfig]
+            [MaaConfig, MaaEndConfig, SrcConfig, M9AConfig, GeneralConfig, OkwwConfig]
         )
         ## 队列配置列表
         self.QueueConfig = MultipleConfig([QueueConfig])
@@ -2075,6 +2291,7 @@ class GlobalConfig(ConfigBase):
         SrcConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         M9AConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
+        OkwwConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
 
@@ -2148,5 +2365,6 @@ CLASS_BOOK = {
     "MaaEnd": MaaEndConfig,
     "M9A": M9AConfig,
     "General": GeneralConfig,
+    "Okww": OkwwConfig,
 }
 """配置类映射表"""
