@@ -915,6 +915,8 @@ class M9AUserConfig_Info(BaseModel):
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
     Notes: Optional[str] = Field(default=None, description="备注")
     Tag: Optional[str] = Field(default=None, description="用户标签信息")
+    Resource: Optional[str] = Field(default=None, description="服务器资源名称")
+    Account: Optional[str] = Field(default=None, description="账号信息（用于切换账号，仅官服生效）")
 
 
 class M9AUserConfig_Task(BaseModel):
@@ -959,6 +961,7 @@ class M9AConfig_Run(BaseModel):
     ProxyTimesLimit: Optional[int] = Field(default=None, description="代理次数限制")
     RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
     RunTimeLimit: Optional[int] = Field(default=None, description="运行时间限制（分钟）")
+    IfAutoUpdateAfterQueue: Optional[bool] = Field(default=None, description="是否在队列结束后自动更新M9A")
 
 
 class M9AConfig(BaseModel):

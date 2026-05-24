@@ -1335,6 +1335,10 @@ class M9AUserConfig(ConfigBase):
         self.Info_Tag = ConfigItem(
             "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
         )
+        ## 服务器资源
+        self.Info_Resource = ConfigItem("Info", "Resource", "官服")
+        ## 账号信息（用于切换账号）
+        self.Info_Account = ConfigItem("Info", "Account", "")
 
         ## Task -------------------------------------------------------------
         ## 可用任务列表（从 M9A 配置文件读取）
@@ -1479,6 +1483,10 @@ class M9AConfig(ConfigBase):
         ## 运行时间限制（分钟）
         self.Run_RunTimeLimit = ConfigItem(
             "Run", "RunTimeLimit", 10, RangeValidator(1, 9999)
+        )
+        ## 是否在队列结束后自动更新
+        self.Run_IfAutoUpdateAfterQueue = ConfigItem(
+            "Run", "IfAutoUpdateAfterQueue", False, BoolValidator()
         )
 
         self.UserData = MultipleConfig([M9AUserConfig])

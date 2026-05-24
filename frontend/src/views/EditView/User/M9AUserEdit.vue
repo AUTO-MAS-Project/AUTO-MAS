@@ -61,6 +61,8 @@ const getDefaultM9AUserData = () => ({
     RemainedDay: -1,
     Notes: '',
     Tag: '',
+    Resource: '官服',
+    Account: '',
   },
   Task: {
     AvailableTasks: '[]',
@@ -224,7 +226,11 @@ const loadUserData = async () => {
 
           if (userData.Task?.Queue) {
             try {
-              taskQueue.value = JSON.parse(userData.Task.Queue)
+              const RESERVED_TASK_NAMES = ['启动游戏', '关闭游戏', '切换账号']
+              const parsedQueue = JSON.parse(userData.Task.Queue)
+              taskQueue.value = parsedQueue.filter(
+                (item: M9ATaskQueueItem) => !RESERVED_TASK_NAMES.includes(item.name)
+              )
             } catch (e) {
               taskQueue.value = []
             }
