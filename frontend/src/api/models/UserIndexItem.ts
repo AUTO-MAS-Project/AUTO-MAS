@@ -19,6 +19,7 @@ export namespace UserIndexItem {
     export enum type {
         MAA_USER_CONFIG = 'MaaUserConfig',
         GENERAL_USER_CONFIG = 'GeneralUserConfig',
+        OKWW_USER_CONFIG = 'OkwwUserConfig',
         SRC_USER_CONFIG = 'SrcUserConfig',
         MAA_END_USER_CONFIG = 'MaaEndUserConfig',
         M9AUSER_CONFIG = 'M9AUserConfig',

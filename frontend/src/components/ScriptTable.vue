@@ -19,6 +19,7 @@
                   <img v-else-if="script.type === 'MaaEnd'" src="@/assets/MaaEnd.png" alt="MaaEnd"
                     class="script-logo" />
                   <img v-else-if="script.type === 'M9A'" src="@/assets/M9A.png" alt="M9A" class="script-logo" />
+                  <img v-else-if="script.type === 'Okww'" src="@/assets/ok-ww.ico" alt="ok-ww" class="script-logo" />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
@@ -33,7 +34,7 @@
                           ? 'cyan'
                           : 'green'
                     " class="script-type">
-                    {{ script.type }}
+                    {{ getScriptTypeLabel(script.type) }}
                   </a-tag>
                 </div>
               </div>
@@ -74,6 +75,20 @@
                   配置MaaEnd
                 </a-button>
                 <a-button v-if="script.type === 'MaaEnd' && props.activeConnections.has(script.id)" type="default"
+                  size="middle" disabled style="color: #52c41a; border-color: #52c41a">
+                  <template #icon>
+                    <SettingOutlined />
+                  </template>
+                  正在配置
+                </a-button>
+                <a-button v-if="script.type === 'Okww' && !props.activeConnections.has(script.id)" type="primary"
+                  ghost size="middle" @click="handleStartOkwwConfig(script)">
+                  <template #icon>
+                    <SettingOutlined />
+                  </template>
+                  配置ok-ww
+                </a-button>
+                <a-button v-if="script.type === 'Okww' && props.activeConnections.has(script.id)" type="default"
                   size="middle" disabled style="color: #52c41a; border-color: #52c41a">
                   <template #icon>
                     <SettingOutlined />
@@ -274,6 +289,8 @@ interface Emits {
 
   (e: 'saveMaaEndConfig', script: Script): void
 
+  (e: 'startOkwwConfig', script: Script): void
+
   (e: 'toggleUserStatus', user: User): void
 
   (e: 'passCheckUser', user: User): void
@@ -369,8 +386,17 @@ const handleSaveMaaEndConfig = (script: Script) => {
   emit('saveMaaEndConfig', script)
 }
 
+const handleStartOkwwConfig = (script: Script) => {
+  emit('startOkwwConfig', script)
+}
+
 const handleToggleUserStatus = (user: User) => {
   emit('toggleUserStatus', user)
+}
+
+const getScriptTypeLabel = (type: Script['type']) => {
+  if (type === 'Okww') return 'ok-ww'
+  return type
 }
 
 const handlePassCheck = (user: User) => {

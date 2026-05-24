@@ -321,7 +321,14 @@ class QueueConfig(BaseModel):
 
 class ScriptIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: Literal["MaaConfig", "GeneralConfig", "SrcConfig", "MaaEndConfig", "M9AConfig"] = Field(
+    type: Literal[
+        "MaaConfig",
+        "GeneralConfig",
+        "OkwwConfig",
+        "SrcConfig",
+        "MaaEndConfig",
+        "M9AConfig",
+    ] = Field(
         ..., description="配置类型"
     )
 
@@ -329,7 +336,12 @@ class ScriptIndexItem(BaseModel):
 class UserIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
     type: Literal[
-        "MaaUserConfig", "GeneralUserConfig", "SrcUserConfig", "MaaEndUserConfig", "M9AUserConfig"
+        "MaaUserConfig",
+        "GeneralUserConfig",
+        "OkwwUserConfig",
+        "SrcUserConfig",
+        "MaaEndUserConfig",
+        "M9AUserConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -488,6 +500,34 @@ class GeneralUserConfig(BaseModel):
     )
 
 
+class OkwwUserConfig_Task(BaseModel):
+    TaskIndex: Optional[int] = Field(default=None, description="启动后执行第 N 个任务（-t N，从 1 开始）")
+    ExitOnFinish: Optional[bool] = Field(default=None, description="任务结束后退出（-e）")
+
+
+class OkwwUserConfig_Info(GeneralUserConfig_Info):
+    """OK-WW 用户信息（复用通用字段）"""
+
+    Mode: Optional[Literal["简洁", "详细"]] = Field(
+        default=None, description="用户配置模式（简洁/详细）"
+    )
+
+
+class OkwwUserConfig_Data(GeneralUserConfig_Data):
+    """OK-WW 用户数据（复用通用字段）"""
+
+
+class OkwwUserConfig_Notify(GeneralUserConfig_Notify):
+    """OK-WW 用户通知（复用通用字段）"""
+
+
+class OkwwUserConfig(BaseModel):
+    Info: Optional[OkwwUserConfig_Info] = Field(default=None, description="用户信息")
+    Task: Optional[OkwwUserConfig_Task] = Field(default=None, description="任务配置")
+    Data: Optional[OkwwUserConfig_Data] = Field(default=None, description="用户数据")
+    Notify: Optional[OkwwUserConfig_Notify] = Field(default=None, description="单独通知")
+
+
 class GeneralConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="脚本名称")
     RootPath: Optional[str] = Field(default=None, description="脚本根目录")
@@ -553,6 +593,33 @@ class GeneralConfig(BaseModel):
     Script: Optional[GeneralConfig_Script] = Field(default=None, description="脚本配置")
     Game: Optional[GeneralConfig_Game] = Field(default=None, description="游戏配置")
     Run: Optional[GeneralConfig_Run] = Field(default=None, description="运行配置")
+
+
+class OkwwConfig_Info(GeneralConfig_Info):
+    """OK-WW 脚本基础信息（复用通用字段）"""
+
+
+class OkwwConfig_Script(GeneralConfig_Script):
+    """OK-WW 脚本配置（复用通用字段）"""
+
+
+class OkwwConfig_Game(GeneralConfig_Game):
+    """OK-WW 游戏配置（复用通用字段）"""
+
+    CloseOnFinish: Optional[bool] = Field(
+        default=None, description="任务结束后是否关闭游戏/模拟器"
+    )
+
+
+class OkwwConfig_Run(GeneralConfig_Run):
+    """OK-WW 运行配置（复用通用字段）"""
+
+
+class OkwwConfig(BaseModel):
+    Info: Optional[OkwwConfig_Info] = Field(default=None, description="脚本基础信息")
+    Script: Optional[OkwwConfig_Script] = Field(default=None, description="脚本配置")
+    Game: Optional[OkwwConfig_Game] = Field(default=None, description="游戏配置")
+    Run: Optional[OkwwConfig_Run] = Field(default=None, description="运行配置")
 
 
 class MaaEndUserConfig_Info(BaseModel):
@@ -962,8 +1029,8 @@ class HistoryData(BaseModel):
 
 
 class ScriptCreateIn(BaseModel):
-    type: Literal["MAA", "SRC", "General", "MaaEnd", "M9A"] = Field(
-        ..., description="脚本类型: MAA脚本, 通用脚本, SRC脚本, MaaEnd脚本, M9A脚本"
+    type: Literal["MAA", "SRC", "General", "Okww", "MaaEnd", "M9A"] = Field(
+        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, SRC脚本, MaaEnd脚本, M9A脚本"
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -972,7 +1039,7 @@ class ScriptCreateIn(BaseModel):
 
 class ScriptCreateOut(OutBase):
     scriptId: str = Field(..., description="新创建的脚本ID")
-    data: Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig, M9AConfig] = Field(
+    data: Union[MaaConfig, SrcConfig, GeneralConfig, OkwwConfig, MaaEndConfig, M9AConfig] = Field(
         ..., description="脚本配置数据"
     )
 
@@ -985,14 +1052,16 @@ class ScriptGetIn(BaseModel):
 
 class ScriptGetOut(OutBase):
     index: List[ScriptIndexItem] = Field(..., description="脚本索引列表")
-    data: Dict[str, Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig, M9AConfig]] = Field(
+    data: Dict[
+        str, Union[MaaConfig, SrcConfig, GeneralConfig, OkwwConfig, MaaEndConfig, M9AConfig]
+    ] = Field(
         ..., description="脚本数据字典, key来自于index列表的uid"
     )
 
 
 class ScriptUpdateIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
-    data: Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig, M9AConfig] = Field(
+    data: Union[MaaConfig, SrcConfig, GeneralConfig, OkwwConfig, MaaEndConfig, M9AConfig] = Field(
         ..., description="脚本更新数据"
     )
 
@@ -1035,20 +1104,42 @@ class UserGetIn(UserInBase):
 class UserGetOut(OutBase):
     index: List[UserIndexItem] = Field(..., description="用户索引列表")
     data: Dict[
-        str, Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig, M9AUserConfig]
+        str,
+        Union[
+            MaaUserConfig,
+            SrcUserConfig,
+            GeneralUserConfig,
+            OkwwUserConfig,
+            MaaEndUserConfig,
+            M9AUserConfig,
+        ],
     ] = Field(..., description="用户数据字典, key来自于index列表的uid")
 
 
 class UserCreateOut(OutBase):
     userId: str = Field(..., description="新创建的用户ID")
-    data: Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig, M9AUserConfig] = (
+    data: Union[
+        MaaUserConfig,
+        SrcUserConfig,
+        GeneralUserConfig,
+        OkwwUserConfig,
+        MaaEndUserConfig,
+        M9AUserConfig,
+    ] = (
         Field(..., description="用户配置数据")
     )
 
 
 class UserUpdateIn(UserInBase):
     userId: str = Field(..., description="用户ID")
-    data: Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig, M9AUserConfig] = (
+    data: Union[
+        MaaUserConfig,
+        SrcUserConfig,
+        GeneralUserConfig,
+        OkwwUserConfig,
+        MaaEndUserConfig,
+        M9AUserConfig,
+    ] = (
         Field(..., description="用户更新数据")
     )
 
