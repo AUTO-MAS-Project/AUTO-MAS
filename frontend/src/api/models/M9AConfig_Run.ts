@@ -15,5 +15,9 @@ export type M9AConfig_Run = {
      * 运行时间限制（分钟）
      */
     RunTimeLimit?: (number | null);
+    /**
+     * 是否在队列结束后自动更新M9A
+     */
+    IfAutoUpdateAfterQueue?: (boolean | null);
 };
 

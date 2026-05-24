@@ -39,6 +39,55 @@
 
     <a-row :gutter="24">
       <a-col :span="12">
+        <a-form-item name="resource">
+          <template #label>
+            <a-tooltip title="选择当前用户使用的游戏服务器">
+              <span class="form-label">
+                服务器
+                <QuestionCircleOutlined class="help-icon" />
+              </span>
+            </a-tooltip>
+          </template>
+          <a-select
+            v-model:value="formData.Info.Resource"
+            placeholder="请选择服务器"
+            :disabled="loading"
+            size="large"
+            :options="resourceOptions"
+            @change="emitSave('Info.Resource', formData.Info.Resource)"
+          />
+        </a-form-item>
+      </a-col>
+      <a-col :span="12">
+        <a-form-item name="account">
+          <template #label>
+            <a-tooltip>
+              <template #title>
+                <div style="max-width: 260px; white-space: normal;">
+                  填写目标账号时会在账号列表中逐页下滑查找并切换，找不到则任务失败<br><br>
+                  目前该功能仅支持官服，且仅支持 1280×720 实际未缩放分辨率
+                </div>
+              </template>
+              <span class="form-label">
+                账号信息
+                <QuestionCircleOutlined class="help-icon" />
+              </span>
+            </a-tooltip>
+          </template>
+          <a-input
+            v-model:value="formData.Info.Account"
+            placeholder="留空则不切换账号"
+            :disabled="loading"
+            size="large"
+            class="modern-input"
+            @blur="emitSave('Info.Account', formData.Info.Account)"
+          />
+        </a-form-item>
+      </a-col>
+    </a-row>
+
+    <a-row :gutter="24">
+      <a-col :span="12">
         <a-form-item name="remainedDay">
           <template #label>
             <a-tooltip title="账号剩余的有效天数，「-1」表示无限">
@@ -73,6 +122,18 @@
 <script setup lang="ts">
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 
+const resourceOptions = [
+  { label: '官服', value: '官服' },
+  { label: 'B 服', value: 'B 服' },
+  { label: 'OPPO 服', value: 'OPPO 服' },
+  { label: '小米服', value: '小米服' },
+  { label: '华为服', value: '华为服' },
+  { label: '国际服（EN）', value: '国际服（EN）' },
+  { label: '国际服（JP）', value: '国际服（JP）' },
+  { label: '港澳台服', value: '港澳台服' },
+  { label: '国际服（KR）', value: '国际服（KR）' },
+]
+
 defineProps<{
   formData: any
   loading: boolean
@@ -89,12 +150,12 @@ const emitSave = (key: string, value: any) => {
 
 <style scoped>
 .form-section {
-  margin-bottom: 32px;
+  margin-bottom: 40px;
 }
 
 .section-header {
-  margin-bottom: 20px;
-  padding-bottom: 8px;
+  margin-bottom: 24px;
+  padding-bottom: 12px;
   border-bottom: 2px solid var(--ant-color-border-secondary);
   display: flex;
   justify-content: space-between;
@@ -151,7 +212,7 @@ const emitSave = (key: string, value: any) => {
 
 .modern-input:focus,
 .modern-input.ant-input-focused {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+  border-color: #13c2c2;
+  box-shadow: 0 0 0 4px rgba(19, 194, 194, 0.15);
 }
 </style>

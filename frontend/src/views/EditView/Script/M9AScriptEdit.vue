@@ -175,10 +175,44 @@
               </a-form-item>
             </a-col>
           </a-row>
+          <a-row :gutter="24" style="margin-top: 16px">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="开启后，当此脚本在调度队列中运行时，所有用户任务完成后将自动更新M9A资源版本，须提前手动打开M9A应用配置更新源">
+                    <span class="form-label">
+                      队列结束后自动更新
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select v-model:value="m9aConfig.Run.IfAutoUpdateAfterQueue" size="large"
+                  @change="handleChange('Run', 'IfAutoUpdateAfterQueue', $event)">
+                  <a-select-option :value="true">是</a-select-option>
+                  <a-select-option :value="false">否</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+          </a-row>
         </div>
 
       </a-form>
     </a-card>
+
+    <!-- M9A 配置指南（页面底部常驻提示） -->
+    <div class="guide-footer">
+      <div class="guide-footer-content">
+        <img src="@/assets/M9A.png" alt="M9A" class="guide-logo" />
+        <div class="guide-message">
+          <span class="guide-text">提醒您：阁下若是遇到了难题，不妨查看</span>
+          <a href="https://doc.auto-mas.top/docs/script-guide/m9a.html"
+             target="_blank" class="guide-link">
+            M9A 官方配置指南
+          </a>
+          <span class="guide-text">，其中清晰写明了所有配置步骤。</span>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -194,6 +228,7 @@ import {
   ArrowLeftOutlined,
   FolderOpenOutlined,
   QuestionCircleOutlined,
+  BookOutlined,
 } from '@ant-design/icons-vue'
 
 const logger = window.electronAPI.getLogger('M9A脚本编辑')
@@ -228,6 +263,7 @@ const m9aConfig = reactive<M9AScriptConfig>({
     ProxyTimesLimit: 0,
     RunTimesLimit: 3,
     RunTimeLimit: 30,
+    IfAutoUpdateAfterQueue: false,
   },
   Emulator: {
     Id: '',
@@ -790,5 +826,60 @@ const selectM9APath = async () => {
 .float-button {
   width: 60px;
   height: 60px;
+}
+
+.guide-footer {
+  margin-top: 32px;
+  padding: 20px 28px;
+  background: linear-gradient(135deg, rgba(19, 194, 194, 0.06), rgba(19, 194, 194, 0.02));
+  border: 1px solid rgba(19, 194, 194, 0.2);
+  border-radius: 12px;
+  animation: fadeInUp 0.6s ease-out;
+}
+
+.guide-footer-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.guide-logo {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 4px rgba(19, 194, 194, 0.3));
+}
+
+.guide-message {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--ant-color-text-secondary);
+}
+
+.guide-text {
+  color: var(--ant-color-text-secondary);
+}
+
+.guide-link {
+  font-size: 14px;
+  font-weight: 600;
+  color: #13c2c2 !important;
+  padding: 0 2px;
+  line-height: inherit;
+  vertical-align: baseline;
+  display: inline;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.guide-link:hover {
+  color: #36cfc9 !important;
+  text-decoration: underline;
 }
 </style>
