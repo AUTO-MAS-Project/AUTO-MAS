@@ -6,6 +6,7 @@ import type { GeneralUserConfig } from './GeneralUserConfig';
 import type { M9AUserConfig } from './M9AUserConfig';
 import type { MaaEndUserConfig } from './MaaEndUserConfig';
 import type { MaaUserConfig } from './MaaUserConfig';
+import type { OkwwUserConfig } from './OkwwUserConfig';
 import type { SrcUserConfig } from './SrcUserConfig';
 export type UserCreateOut = {
     /**
@@ -27,6 +28,6 @@ export type UserCreateOut = {
     /**
      * 用户配置数据
      */
-    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | MaaEndUserConfig | M9AUserConfig);
+    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | MaaEndUserConfig | M9AUserConfig);
 };
 

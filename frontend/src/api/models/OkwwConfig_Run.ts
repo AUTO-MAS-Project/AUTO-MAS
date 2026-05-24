@@ -2,22 +2,21 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type M9AConfig_Run = {
+/**
+ * OK-WW 运行配置（复用通用字段）
+ */
+export type OkwwConfig_Run = {
     /**
-     * 代理次数限制
+     * 每日代理次数限制
      */
     ProxyTimesLimit?: (number | null);
     /**
-     * 运行次数限制
+     * 重试次数限制
      */
     RunTimesLimit?: (number | null);
     /**
-     * 运行时间限制（分钟）
+     * 日志超时限制
      */
     RunTimeLimit?: (number | null);
-    /**
-     * 是否在队列结束后自动更新M9A
-     */
-    IfAutoUpdateAfterQueue?: (boolean | null);
 };
 

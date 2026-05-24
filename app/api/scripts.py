@@ -36,6 +36,7 @@ SCRIPT_BOOK = {
     "MaaEndConfig": MaaEndConfig,
     "M9AConfig": M9AConfig,
     "GeneralConfig": GeneralConfig,
+    "OkwwConfig": OkwwConfig,
 }
 USER_BOOK = {
     "MaaConfig": MaaUserConfig,
@@ -43,6 +44,7 @@ USER_BOOK = {
     "MaaEndConfig": MaaEndUserConfig,
     "M9AConfig": M9AUserConfig,
     "GeneralConfig": GeneralUserConfig,
+    "OkwwConfig": OkwwUserConfig,
 }
 
 

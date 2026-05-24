@@ -9,7 +9,7 @@
         <div class="column-header">
           <span>任务队列</span>
           <a-dropdown v-model:visible="addTaskDropdownVisible" trigger="click">
-            <a-button type="primary" size="small" :loading="loading">
+            <a-button type="primary" size="middle" :loading="loading">
               <template #icon><PlusOutlined /></template>
               添加任务 ({{ availableTasks.length }})
             </a-button>
@@ -24,7 +24,51 @@
         </div>
         
         <div class="task-list">
+          <!-- 预设模板区域（队列为空时显示） -->
+          <div v-if="localTaskQueue.length === 0" class="preset-section">
+            <div class="preset-card">
+              <div class="preset-card-inner">
+                <div class="preset-header">
+                  <div class="preset-icon-wrap">
+                    <span class="preset-icon">📋</span>
+                  </div>
+                  <div class="preset-info">
+                    <h3 class="preset-name">{{ dailyPreset.name }}</h3>
+                    <p class="preset-desc">{{ dailyPreset.description }}</p>
+                  </div>
+                  <div class="preset-badge">
+                    <a-tag :color="matchedCount > 0 ? 'processing' : 'default'">
+                      {{ matchedCount }}/{{ dailyPreset.taskNames.length }} 可用
+                    </a-tag>
+                  </div>
+                </div>
+
+                <div class="preset-tasks-preview">
+                  <div class="task-chip" v-for="(item, idx) in matchedTasks" :key="idx">
+                    <span class="task-dot" :class="{ 'task-dot-miss': !item.matched }"></span>
+                    <span class="task-name" :class="{ 'task-name-miss': !item.matched }">{{ item.name }}</span>
+                    <CheckCircleFilled v-if="item.matched" class="task-check" />
+                    <CloseCircleFilled v-else class="task-check task-check-miss" />
+                  </div>
+                </div>
+
+                <div class="preset-actions">
+                  <a-button type="primary" size="large" block :loading="addingFromPreset"
+                    :disabled="matchedCount === 0"
+                    @click="addFromPreset">
+                    <template #icon><ThunderboltOutlined /></template>
+                    一键添加 {{ matchedCount }} 个任务
+                  </a-button>
+                  <p v-if="matchedCount < dailyPreset.taskNames.length" class="preset-hint">
+                    部分任务未找到对应脚本，已自动跳过
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <draggable
+            v-else
             v-model="localTaskQueue"
             item-key="name"
             :animation="200"
@@ -45,7 +89,7 @@
                   <div class="task-actions">
                     <a-button
                       type="text"
-                      size="small"
+                      size="middle"
                       :disabled="index === 0"
                       @click.stop="moveTaskUp(index)"
                     >
@@ -53,19 +97,11 @@
                     </a-button>
                     <a-button
                       type="text"
-                      size="small"
+                      size="middle"
                       :disabled="index === localTaskQueue.length - 1"
                       @click.stop="moveTaskDown(index)"
                     >
                       <DownOutlined />
-                    </a-button>
-                    <a-button
-                      type="text"
-                      size="small"
-                      danger
-                      @click.stop="deleteTask(index)"
-                    >
-                      <DeleteOutlined />
                     </a-button>
                   </div>
                 </div>
@@ -91,15 +127,12 @@
             @update="handleOptionUpdate"
           />
           
-          <a-button
-            type="primary"
-            danger
-            block
-            style="margin-top: 24px"
-            @click="deleteSelectedTask"
-          >
-            删除此任务
-          </a-button>
+          <a-popconfirm title="确定要删除这个任务吗？" ok-text="确定" cancel-text="取消" @confirm="deleteSelectedTask">
+            <a-button danger block style="margin-top: 24px; height: 40px; font-size: 14px;">
+              <template #icon><DeleteOutlined /></template>
+              删除此任务
+            </a-button>
+          </a-popconfirm>
         </div>
         
         <div class="no-selection" v-else>
@@ -112,7 +145,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
-import { PlusOutlined, UpOutlined, DownOutlined, DeleteOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, UpOutlined, DownOutlined, DeleteOutlined, ThunderboltOutlined, CheckCircleFilled, CloseCircleFilled } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import draggable from 'vuedraggable'
 import { Service } from '@/api'
@@ -137,6 +170,40 @@ const selectedTaskIndex = ref<number | null>(null)
 const taskDefinitions = ref<Record<string, any>>({})
 const localTaskQueue = ref<M9ATaskQueueItem[]>([])
 const isDragging = ref(false)
+
+// 预设模板常量
+const dailyPreset = {
+  name: '日常-长草',
+  description: '无活动或换完商店时使用，进行常规刷取',
+  taskNames: [
+    '收取荒原',
+    '每日心相（意志解析）',
+    '常规作战',
+    '自动深眠',
+    '自动醒梦',
+    '银行购物',
+    '领取奖励',
+    '使用兑换码',
+  ],
+}
+
+// 一键添加状态
+const addingFromPreset = ref(false)
+
+// 匹配预设任务（根据 availableTasks 做名称匹配）
+interface MatchedTaskItem {
+  name: string
+  matched: boolean
+}
+
+const matchedTasks = computed<MatchedTaskItem[]>(() => {
+  return dailyPreset.taskNames.map(name => ({
+    name,
+    matched: availableTasks.value.some(t => t.name === name),
+  }))
+})
+
+const matchedCount = computed(() => matchedTasks.value.filter(t => t.matched).length)
 
 const buildDefaultOptions = (taskDef: any): M9ATaskOption[] => {
   const options: M9ATaskOption[] = []
@@ -189,8 +256,13 @@ const loadAvailableTasks = async () => {
       availableTasks.value = []
       taskDefinitions.value = {}
       
+      const RESERVED_ENTRIES = ['StartUp', 'Close1999', 'SwitchAccount']
+
       response.data.forEach((task: any) => {
-        if (!task.group || !task.group.includes('standalone')) {
+        if (
+          (!task.group || !task.group.includes('standalone')) &&
+          !RESERVED_ENTRIES.includes(task.entry)
+        ) {
           availableTasks.value.push(task)
           taskDefinitions.value[task.name] = task
         }
@@ -218,6 +290,32 @@ const handleAddTask = ({ key }: { key: string }) => {
     selectedTaskIndex.value = newQueue.length - 1
   }
   addTaskDropdownVisible.value = false
+}
+
+// 从预设模板一键添加任务
+const addFromPreset = () => {
+  const validTasks = matchedTasks.value.filter(t => t.matched)
+  if (validTasks.length === 0) return
+
+  addingFromPreset.value = true
+  let newQueue = [...localTaskQueue.value]
+
+  try {
+    for (const task of validTasks) {
+      const taskDef = taskDefinitions.value[task.name]
+      if (taskDef) {
+        newQueue.push({
+          name: task.name,
+          options: buildDefaultOptions(taskDef),
+        })
+      }
+    }
+
+    emit('update:taskQueue', newQueue)
+    message.success(`成功添加 ${validTasks.length} 个任务`)
+  } finally {
+    addingFromPreset.value = false
+  }
 }
 
 const selectTask = (index: number) => {
@@ -367,18 +465,23 @@ onMounted(() => {
 .task-queue-list {
   height: 100%;
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
 }
 
 .draggable-task-item {
-  padding: 12px 16px;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--ant-color-border);
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: all 0.25s ease;
+  border-left: 3px solid transparent;
 }
 
-.draggable-task-item:hover {
+/* 未选中状态的 hover 效果 */
+.draggable-task-item:not(.selected-item):hover {
   background-color: var(--ant-color-primary-bg-hover);
+  border-left-color: var(--ant-color-primary);
 }
 
 .draggable-task-item:last-child {
@@ -394,29 +497,55 @@ onMounted(() => {
 
 .task-name {
   flex: 1;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ant-color-text);
 }
 
 .task-actions {
   display: flex;
-  gap: 4px;
+  gap: 8px;
 }
 
+.task-actions :deep(.ant-btn) {
+  transition: all 0.2s ease;
+  border-radius: 6px;
+}
+
+.task-actions :deep(.ant-btn:hover) {
+  background-color: var(--ant-color-primary-bg-hover);
+}
+
+/* 选中状态的样式（始终显示，使用 !important 确保不被 hover 覆盖）*/
 .selected-item {
-  background-color: var(--ant-color-primary-bg);
+  background-color: var(--ant-color-primary-bg) !important;
+  border-left-color: var(--ant-color-primary) !important;
+}
+
+/* 选中 + hover 时：保持高亮不变 */
+.selected-item:hover {
+  background-color: var(--ant-color-primary-bg) !important;
+  border-left-color: var(--ant-color-primary-hover, #1890ff) !important;
 }
 
 .task-config {
-  padding: 16px;
+  padding: 24px;
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  background: var(--ant-color-bg-container);
 }
 
 .selected-task-name {
-  font-size: 18px;
-  font-weight: 600;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--ant-color-border);
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--ant-color-border-secondary);
+  color: var(--ant-color-text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .no-selection {
@@ -439,5 +568,184 @@ onMounted(() => {
 
 .drag {
   opacity: 0.8;
+}
+
+/* 预设模板区域 */
+.preset-section {
+  height: 100%;
+}
+
+.preset-card {
+  height: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+  animation: presetFadeIn 0.4s ease-out;
+}
+
+.preset-card-inner {
+  background: linear-gradient(135deg, rgba(24, 144, 255, 0.04) 0%, rgba(24, 144, 255, 0.01) 100%);
+  border: 1px solid rgba(24, 144, 255, 0.15);
+  border-radius: 10px;
+  padding: 18px 20px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.3s ease;
+}
+
+.preset-card-inner:hover {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 4px 16px rgba(24, 144, 255, 0.1);
+}
+
+.preset-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.preset-icon-wrap {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #1677ff 0%, #4096ff 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.25);
+}
+
+.preset-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.preset-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.preset-name {
+  margin: 0 0 3px 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ant-color-text);
+  letter-spacing: -0.2px;
+}
+
+.preset-desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+  line-height: 1.5;
+}
+
+.preset-badge {
+  flex-shrink: 0;
+}
+
+.preset-tasks-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  background: var(--ant-color-bg-container);
+  border-radius: 8px;
+  border: 1px solid var(--ant-color-border-secondary);
+}
+
+.task-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px 3px 7px;
+  border-radius: 20px;
+  font-size: 13px;
+  background: var(--ant-color-fill-quaternary);
+  color: var(--ant-color-text);
+  transition: all 0.2s ease;
+}
+
+.task-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ant-color-success);
+  flex-shrink: 0;
+  box-shadow: 0 0 4px rgba(82, 196, 26, 0.35);
+}
+
+.task-dot-miss {
+  background: var(--ant-color-text-disabled);
+  box-shadow: none;
+}
+
+.task-name {
+  white-space: nowrap;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-name-miss {
+  text-decoration: line-through;
+  opacity: 0.45;
+}
+
+.task-check {
+  font-size: 11px;
+  color: var(--ant-color-success);
+  flex-shrink: 0;
+}
+
+.task-check-miss {
+  color: var(--ant-color-text-disabled);
+}
+
+.preset-actions {
+  margin-top: auto;
+}
+
+.preset-actions :deep(.ant-btn-primary) {
+  height: 40px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #1677ff 0%, #4096ff 100%);
+  border: none;
+  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.2);
+  transition: all 0.25s ease;
+}
+
+.preset-actions :deep(.ant-btn-primary:hover:not(:disabled)) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(22, 119, 255, 0.3);
+}
+
+.preset-actions :deep(.ant-btn-primary:active:not(:disabled)) {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(22, 119, 255, 0.2);
+}
+
+.preset-hint {
+  margin: 8px 0 0 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+  line-height: 1.4;
+}
+
+@keyframes presetFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style>

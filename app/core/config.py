@@ -44,6 +44,7 @@ from app.models.config import (
     SrcConfig,
     M9AConfig,
     MaaEndConfig,
+    OkwwConfig,
     MaaPlanConfig,
     QueueConfig,
     QueueItem,
@@ -52,6 +53,7 @@ from app.models.config import (
     M9AUserConfig,
     MaaEndUserConfig,
     GeneralUserConfig,
+    OkwwUserConfig,
     GlobalConfig,
     CLASS_BOOK,
     Webhook,
@@ -83,7 +85,7 @@ except ImportError:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.3.0-beta.1"
+    VERSION = "v5.3.0-beta.2"
 
     def __init__(self) -> None:
         super().__init__()
@@ -527,9 +529,12 @@ class AppConfig(GlobalConfig):
 
     async def add_script(
         self,
-        script: Literal["MAA", "SRC", "General", "MaaEnd", "M9A"],
+        script: Literal["MAA", "SRC", "General", "MaaEnd", "M9A", "Okww"],
         script_id: str | None = None,
-    ) -> tuple[uuid.UUID, MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig | M9AConfig]:
+    ) -> tuple[
+        uuid.UUID,
+        MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig | M9AConfig | OkwwConfig,
+    ]:
         """添加脚本配置"""
 
         logger.info(f"添加脚本配置: {script}, 从 {script_id} 复制")
@@ -806,10 +811,13 @@ class AppConfig(GlobalConfig):
         index = data.pop("instances", [])
         return list(index), data
 
-    async def add_user(
-        self, script_id: str
-    ) -> tuple[
-        uuid.UUID, MaaUserConfig | SrcUserConfig | GeneralUserConfig | MaaEndUserConfig | M9AUserConfig
+    async def add_user(self, script_id: str) -> tuple[
+        uuid.UUID,
+        MaaUserConfig
+        | SrcUserConfig
+        | GeneralUserConfig
+        | MaaEndUserConfig
+        | M9AUserConfig,
     ]:
         """添加用户配置"""
 
@@ -824,6 +832,8 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(SrcUserConfig)
         elif isinstance(script_config, GeneralConfig):
             uid, config = await script_config.UserData.add(GeneralUserConfig)
+        elif isinstance(script_config, OkwwConfig):
+            uid, config = await script_config.UserData.add(OkwwUserConfig)
         elif isinstance(script_config, MaaEndConfig):
             uid, config = await script_config.UserData.add(MaaEndUserConfig)
         elif isinstance(script_config, M9AConfig):
