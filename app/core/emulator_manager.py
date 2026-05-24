@@ -29,7 +29,7 @@ from typing import Dict, Literal
 
 from .config import Config
 from app.models.config import EmulatorConfig
-from app.models.emulator import DeviceBase
+from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
 from app.models.schema import DeviceInfo as SchemaDeviceInfo
 from app.utils import ProcessRunner, EMULATOR_TYPE_BOOK
 from app.utils.constants import EMULATOR_SPLASH_ADS_PATH_BOOK
@@ -40,7 +40,7 @@ from app.utils import get_logger
 logger = get_logger("模拟器管理")
 
 
-class _AutoRetryDeviceManager:
+class _AutoRetryDeviceManager(DeviceBase):
     """为模拟器启动失败补充等待时间修正与二次失败提示"""
 
     def __init__(
@@ -51,11 +51,7 @@ class _AutoRetryDeviceManager:
         self.manager = manager
         self.config = config
 
-    def __getattr__(self, name: str):
-
-        return getattr(self.manager, name)
-
-    async def open(self, idx: str, package_name: str = ""):
+    async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
 
         try:
             return await self.manager.open(idx, package_name=package_name)
@@ -93,6 +89,22 @@ class _AutoRetryDeviceManager:
                 f"300 秒后重试, 仍未成功。"
                 f"请加入 AUTO-MAS 用户 QQ 群 957750551 上报问题。失败原因: {e}"
             ) from e
+
+    async def close(self, idx: str) -> DeviceStatus:
+
+        return await self.manager.close(idx)
+
+    async def getStatus(self, idx: str) -> DeviceStatus:
+
+        return await self.manager.getStatus(idx)
+
+    async def getInfo(self, idx: str | None) -> dict[str, DeviceInfo]:
+
+        return await self.manager.getInfo(idx)
+
+    async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
+
+        return await self.manager.setVisible(idx, is_visible)
 
 
 class _EmulatorManager:
