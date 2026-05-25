@@ -255,7 +255,7 @@ USER_GROUPS = (
                 size="large",
                 placeholder="填写该用户的备注信息",
             ),
-            PluginField.virtual(
+            PluginField.tag(
                 "Tag",
                 "用户标签",
                 "[ ]",
