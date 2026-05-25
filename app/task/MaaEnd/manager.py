@@ -91,13 +91,11 @@ class MaaEndManager(TaskExecuteBase):
         ).exists():
             return "MaaEnd 配置文件不存在, 请检查 MaaEnd 路径设置或先启动 MaaEnd 完成配置文件生成！"
 
-        if (
-            self.task_info.mode != "ScriptConfig"
-            and not (
-                Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
-            ).exists()
-        ):
+        if self.task_info.mode != "ScriptConfig" and not (
+            Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
+        ).exists():
             return "未完成 MaaEnd 全局设置, 请先设置 MaaEnd！"
+
         return "Pass"
 
     async def prepare(self):

@@ -7,11 +7,16 @@ import type {
   MaaEndConfig,
   M9AConfig,
 } from '@/api'
+import type {
+  AutoEssenceLocation,
+  ProtocolSpaceTaskValue,
+  RewardSetOption,
+  SanityTaskType,
+} from '@/utils/maaEndProtocolSpace'
 
 export type ScriptType = 'MAA' | 'General' | 'Okww' | 'SRC' | 'MaaEnd' | 'M9A'
 
 export type OkwwScriptConfig = OkwwConfig
-
 // MAA脚本配置
 export interface MAAScriptConfig {
   Info: {
@@ -104,6 +109,15 @@ export interface SRCScriptConfig {
   }
 }
 
+export interface MaaEndTaskConfig {
+  SanityTaskType: SanityTaskType
+  OperatorProgression: ProtocolSpaceTaskValue
+  WeaponProgression: ProtocolSpaceTaskValue
+  CrisisDrills: ProtocolSpaceTaskValue
+  RewardsSetOption: RewardSetOption
+  AutoEssenceSpecifiedLocation: AutoEssenceLocation
+}
+
 // MaaEnd脚本配置
 export interface MaaEndScriptConfig {
   Info: {
@@ -124,6 +138,7 @@ export interface MaaEndScriptConfig {
     EmulatorIndex: string
     CloseOnFinish: boolean
   }
+  Task: MaaEndTaskConfig
 }
 
 // M9A脚本配置
@@ -178,6 +193,7 @@ export interface User {
     MedicineNumb: number
     Mode: string
     Name: string
+    SanityMode?: string
     Notes: string
     Password: string
     RemainedDay: number
@@ -222,6 +238,12 @@ export interface User {
     IfReclamation: boolean
     IfRecruit: boolean
     IfStartUp: boolean
+    SanityTaskType?: MaaEndTaskConfig['SanityTaskType']
+    OperatorProgression?: MaaEndTaskConfig['OperatorProgression']
+    WeaponProgression?: MaaEndTaskConfig['WeaponProgression']
+    CrisisDrills?: MaaEndTaskConfig['CrisisDrills']
+    RewardsSetOption?: MaaEndTaskConfig['RewardsSetOption']
+    AutoEssenceSpecifiedLocation?: MaaEndTaskConfig['AutoEssenceSpecifiedLocation']
   }
   QFluentWidgets: {
     ThemeColor: string
