@@ -41,5 +41,25 @@ export type PluginsGetOut = {
      * 插件实例运行态
      */
     runtime_states?: Record<string, PluginRuntimeStateModel>;
+    /**
+     * 前端页面声明
+     */
+    pages?: Array<{
+        id: string;
+        path: string;
+        title: string;
+        menu_label: string;
+        icon?: string;
+        component: string;
+        section?: string;
+        order?: number;
+        visible?: boolean;
+        dev_only?: boolean;
+        source?: string;
+    }>;
+    /**
+     * 页面声明警告
+     */
+    page_errors?: Array<string>;
 };
 

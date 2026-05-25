@@ -163,6 +163,31 @@ class PluginLoader:
         spec = ServiceSpec.load(plugin_class)
         return spec.sets()
 
+    def _register_declared_pages(self, record: PluginRecord, plugin_class: type[Any]) -> None:
+        raw_pages = None
+        if record.module is not None:
+            raw_pages = getattr(record.module, "PAGES", None)
+            if raw_pages is None:
+                raw_pages = getattr(record.module, "pages", None)
+        if raw_pages is None:
+            raw_pages = getattr(plugin_class, "pages", None)
+        if raw_pages is None:
+            raw_pages = getattr(plugin_class, "PAGES", None)
+        if raw_pages is None:
+            return
+        if isinstance(raw_pages, dict):
+            raw_pages = [raw_pages]
+        if not isinstance(raw_pages, (list, tuple)):
+            logger.warning(f"插件页面声明必须是对象列表，已跳过: instance={record.instance_id}")
+            return
+
+        from app.core.page_registry import page_registry
+
+        page_registry.register_many(
+            list(raw_pages),
+            source=f"plugin:{record.instance_id}",
+        )
+
     def _plan(self, instances: Iterable[Any]) -> tuple[list[str], dict[str, set[str]], dict[str, tuple[set[str], set[str], set[str]]]]:
         enabled: dict[str, Any] = {}
         order: list[str] = []
@@ -881,6 +906,7 @@ class PluginLoader:
             await self._call_optional_lifecycle_method(record.plugin_instance, "on_load", record.context)
             self._mark_lifecycle_phase(record, "on_start")
             await self._call_lifecycle_method(record.plugin_instance, "on_start")
+            self._register_declared_pages(record, plugin_class)
 
             self._mark_status(record, "active")
             self._mark_lifecycle_phase(record, "active")
@@ -888,16 +914,20 @@ class PluginLoader:
         except PluginDefinitionError as e:
             self._unregister_record_listeners(record)
             await plugin_server.unregister_owner(record.instance_id)
+            from app.core.page_registry import page_registry
             from app.core.script_types import script_type_registry
 
+            page_registry.unregister_source(f"plugin:{record.instance_id}")
             script_type_registry.unregister_by_owner(record.instance_id)
             self._mark_error(record, str(e))
             logger.error(f"插件加载失败: {plugin_name}, error={e}")
         except Exception as e:
             self._unregister_record_listeners(record)
             await plugin_server.unregister_owner(record.instance_id)
+            from app.core.page_registry import page_registry
             from app.core.script_types import script_type_registry
 
+            page_registry.unregister_source(f"plugin:{record.instance_id}")
             script_type_registry.unregister_by_owner(record.instance_id)
             self._mark_error(record, f"{type(e).__name__}: {e}")
             logger.exception(f"插件加载失败: {plugin_name}, error={e}")
@@ -1018,6 +1048,7 @@ class PluginLoader:
             await self._call_optional_lifecycle_method(record.plugin_instance, "on_load", record.context)
             self._mark_lifecycle_phase(record, "on_start")
             await self._call_lifecycle_method(record.plugin_instance, "on_start")
+            self._register_declared_pages(record, plugin_class)
 
             self._mark_status(record, "active")
             self._mark_lifecycle_phase(record, "active")
@@ -1025,16 +1056,20 @@ class PluginLoader:
         except PluginDefinitionError as e:
             self._unregister_record_listeners(record)
             await plugin_server.unregister_owner(record.instance_id)
+            from app.core.page_registry import page_registry
             from app.core.script_types import script_type_registry
 
+            page_registry.unregister_source(f"plugin:{record.instance_id}")
             script_type_registry.unregister_by_owner(record.instance_id)
             self._mark_error(record, str(e))
             logger.error(f"插件实例加载失败: {instance_id}, error={e}")
         except Exception as e:
             self._unregister_record_listeners(record)
             await plugin_server.unregister_owner(record.instance_id)
+            from app.core.page_registry import page_registry
             from app.core.script_types import script_type_registry
 
+            page_registry.unregister_source(f"plugin:{record.instance_id}")
             script_type_registry.unregister_by_owner(record.instance_id)
             self._mark_error(record, f"{type(e).__name__}: {e}")
             logger.error(f"插件实例加载失败: {instance_id}, error={type(e).__name__}: {e}")
@@ -1160,9 +1195,11 @@ class PluginLoader:
             self._unregister_record_listeners(record)
             self.service.drop(record.instance_id)
             await plugin_server.unregister_owner(record.instance_id)
+            from app.core.page_registry import page_registry
             from app.core.script_types import script_type_registry
 
             script_type_registry.unregister_by_owner(record.instance_id)
+            page_registry.unregister_source(f"plugin:{record.instance_id}")
 
         self._mark_status(record, "unloaded")
         self._mark_lifecycle_phase(record, "unloaded")

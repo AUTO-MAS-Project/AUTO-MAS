@@ -35,6 +35,7 @@ class PluginContext:
     runtime: RuntimeFacade
     cache: PluginCacheManager
     log: LogFacade
+    page: Any
 
     def __init__(
         self,
@@ -80,6 +81,13 @@ class PluginContext:
             registry=server_registry or plugin_server,
             plugin_name=self.plugin_name,
             instance_id=self.instance_id,
+        )
+
+        from app.core.page_registry import PageFacade, page_registry
+
+        self.page = PageFacade(
+            instance_id=self.instance_id,
+            registry=page_registry,
         )
 
         # 解释器能力函数集合

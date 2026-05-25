@@ -10,6 +10,7 @@ from fastapi import APIRouter, Body, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from app.core.page_registry import page_registry
 from app.plugins import PluginConfigStore, PluginManager
 from app.plugins.realtime import publish_plugin_snapshot
 from app.plugins.server import plugin_server
@@ -80,6 +81,20 @@ class PluginPackageModel(BaseModel):
     path: Optional[str] = Field(default=None, description="本地工程路径")
 
 
+class PageDeclarationModel(BaseModel):
+    id: str = Field(..., description="页面 ID")
+    path: str = Field(..., description="前端路由路径")
+    title: str = Field(..., description="页面标题")
+    menu_label: str = Field(..., description="菜单显示名称")
+    icon: str = Field(default="app", description="菜单图标键")
+    component: str = Field(..., description="前端组件键")
+    section: str = Field(default="main", description="菜单区域")
+    order: int = Field(default=1000, description="排序权重")
+    visible: bool = Field(default=True, description="是否显示在菜单中")
+    dev_only: bool = Field(default=False, description="是否仅开发环境显示")
+    source: str = Field(default="host:core", description="声明来源")
+
+
 class PluginsGetOut(OutBase):
     version: int = Field(default=1, description="配置版本")
     discovered_plugins: List[str] = Field(default_factory=list, description="已发现插件")
@@ -106,6 +121,9 @@ class PluginsGetOut(OutBase):
         default_factory=dict,
         description="插件实例运行态",
     )
+
+    pages: List[PageDeclarationModel] = Field(default_factory=list, description="前端页面声明")
+    page_errors: List[str] = Field(default_factory=list, description="页面声明警告")
 
 
 class PluginAddIn(BaseModel):
@@ -557,6 +575,8 @@ async def get_plugins() -> PluginsGetOut:
             plugin_packages=_build_plugin_packages(discovered),
             instances=_build_instances(root),
             runtime_states=_build_runtime_states(root),
+            pages=[PageDeclarationModel(**item) for item in page_registry.snapshot()],
+            page_errors=page_registry.warnings(),
         )
     except Exception as e:
         return PluginsGetOut(
@@ -573,6 +593,8 @@ async def get_plugins() -> PluginsGetOut:
             plugin_packages={},
             instances=[],
             runtime_states={},
+            pages=[],
+            page_errors=[],
         )
 
 

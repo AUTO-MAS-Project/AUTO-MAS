@@ -9,18 +9,41 @@
       <div class="app-background-overlay" />
     </div>
 
-    <a-layout-sider :width="SIDER_WIDTH" :theme="isDark ? 'dark' : 'light'" class="app-sider" :style="{
-      background: 'var(--app-layout-sider-bg, var(--ant-color-bg-elevated))',
-      borderRight: '1px solid var(--ant-color-border)',
-    }">
+    <a-layout-sider
+      :width="SIDER_WIDTH"
+      :theme="isDark ? 'dark' : 'light'"
+      class="app-sider"
+      :style="{
+        background: 'var(--app-layout-sider-bg, var(--ant-color-bg-elevated))',
+        borderRight: '1px solid var(--ant-color-border)',
+      }"
+    >
       <div class="sider-content">
-        <a-menu v-model:selected-keys="selectedKeys" mode="inline" :theme="isDark ? 'dark' : 'light'"
-          :items="mainMenuItems" @click="onMenuClick" />
+        <a-menu
+          v-model:selected-keys="selectedKeys"
+          mode="inline"
+          :theme="isDark ? 'dark' : 'light'"
+          :items="declaredMainMenuItems"
+          @click="onMenuClick"
+        />
         <!-- 测试路由分隔区域 -->
-        <a-menu v-if="isDevelopment" v-model:selected-keys="selectedKeys" mode="inline"
-          :theme="isDark ? 'dark' : 'light'" class="dev-menu" :items="devMenuItems" @click="onMenuClick" />
-        <a-menu v-model:selected-keys="selectedKeys" mode="inline" :theme="isDark ? 'dark' : 'light'"
-          class="bottom-menu" :items="bottomMenuItems" @click="onMenuClick" />
+        <a-menu
+          v-if="isDevelopment"
+          v-model:selected-keys="selectedKeys"
+          mode="inline"
+          :theme="isDark ? 'dark' : 'light'"
+          class="dev-menu"
+          :items="declaredDevMenuItems"
+          @click="onMenuClick"
+        />
+        <a-menu
+          v-model:selected-keys="selectedKeys"
+          mode="inline"
+          :theme="isDark ? 'dark' : 'light'"
+          class="bottom-menu"
+          :items="declaredBottomMenuItems"
+          @click="onMenuClick"
+        />
       </div>
     </a-layout-sider>
 
@@ -65,6 +88,14 @@ import { useTheme } from '../composables/useTheme.ts'
 import { useRouteLock } from '../composables/useRouteLock.ts'
 import { useAppBackground } from '../composables/useAppBackground.ts'
 import { useWebSocket, type WebSocketBaseMessage } from '../composables/useWebSocket.ts'
+import { OpenAPI } from '@/api'
+import {
+  FALLBACK_PAGE_DECLARATIONS,
+  normalizePageDeclarations,
+  sortPageDeclarations,
+  syncDeclaredPageRoutes,
+  type PageDeclaration,
+} from '../router/pageDeclarations.ts'
 import type { MenuProps } from 'ant-design-vue'
 
 const SIDER_WIDTH = 160
@@ -73,7 +104,11 @@ const router = useRouter()
 const route = useRoute()
 const { isDark } = useTheme()
 const { isRouteLocked, triggerBlockCallback } = useRouteLock()
-const { enabled: backgroundEnabled, cssVars: backgroundCssVars, loadBackground } = useAppBackground()
+const {
+  enabled: backgroundEnabled,
+  cssVars: backgroundCssVars,
+  loadBackground,
+} = useAppBackground()
 const { subscribe, unsubscribe } = useWebSocket()
 
 let backgroundSubscriptionId = ''
@@ -81,6 +116,7 @@ let backgroundRefreshTimer: ReturnType<typeof window.setTimeout> | undefined
 let hmrOverlayTimer: ReturnType<typeof window.setTimeout> | undefined
 const HMR_SOFT_RELOAD_FLAG = 'auto-mas-hmr-soft-reload'
 const hmrOverlayVisible = ref(false)
+const declaredPages = ref<PageDeclaration[]>(FALLBACK_PAGE_DECLARATIONS)
 const hmrOverlayText = ref('正在重载插件界面')
 
 onMounted(() => {
@@ -92,7 +128,9 @@ onMounted(() => {
   backgroundSubscriptionId = subscribe({ id: 'PluginSystem' }, handlePluginSystemMessage)
   backgroundRefreshTimer = window.setTimeout(() => {
     void loadBackground()
+    void fetchPageDeclarations()
   }, 1500)
+  syncDeclaredPageRoutes(router, declaredPages.value)
 })
 
 onUnmounted(() => {
@@ -128,6 +166,35 @@ interface PluginSystemHmrMessage {
   changed_files?: string[]
   action?: string
   status?: string
+}
+
+interface PluginSystemSnapshotMessage {
+  kind?: string
+  pages?: PageDeclaration[]
+}
+
+const applyPageDeclarations = (rawPages: unknown) => {
+  const pages = normalizePageDeclarations(rawPages)
+  declaredPages.value = sortPageDeclarations(pages)
+  syncDeclaredPageRoutes(router, declaredPages.value)
+}
+
+const fetchPageDeclarations = async () => {
+  const base = OpenAPI.BASE || 'http://localhost:36163'
+  try {
+    const response = await fetch(`${base.replace(/\/+$/, '')}/api/plugins/get`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    if (!response.ok) {
+      return
+    }
+    const data = await response.json()
+    applyPageDeclarations(data?.pages)
+  } catch {
+    // 后端未就绪时继续使用本地 fallback 页面声明。
+  }
 }
 
 const isBackgroundHmr = (payload: PluginSystemHmrMessage) => {
@@ -176,9 +243,13 @@ const refreshPluginFrontend = () => {
 }
 
 const handlePluginSystemMessage = (message: WebSocketBaseMessage) => {
-  const payload = message.data as { kind?: string } | PluginSystemHmrMessage | undefined
+  const payload = message.data as PluginSystemSnapshotMessage | PluginSystemHmrMessage | undefined
   if (!payload || typeof payload !== 'object') {
     return
+  }
+
+  if (Array.isArray((payload as PluginSystemSnapshotMessage).pages)) {
+    applyPageDeclarations((payload as PluginSystemSnapshotMessage).pages)
   }
 
   if (payload.kind !== 'hmr') {
@@ -200,35 +271,41 @@ const handlePluginSystemMessage = (message: WebSocketBaseMessage) => {
   }
 }
 
-const mainMenuItems = [
-  { key: '/home', label: '主页', icon: icon(HomeOutlined) },
-  { key: '/scripts', label: '脚本管理', icon: icon(FileTextOutlined) },
-  { key: '/plans', label: '计划管理', icon: icon(CalendarOutlined) },
-  { key: '/emulators', label: '模拟器管理', icon: icon(DatabaseOutlined) },
-  { key: '/plugins', label: '插件管理', icon: icon(ApiOutlined) },
-  { key: '/plugins-market', label: '插件市场', icon: icon(AppstoreOutlined) },
-  { key: '/queue', label: '调度队列', icon: icon(UnorderedListOutlined) },
-  { key: '/scheduler', label: '调度中心', icon: icon(ControlOutlined) },
-]
+const pageIconMap: Record<string, any> = {
+  home: HomeOutlined,
+  script: FileTextOutlined,
+  plan: CalendarOutlined,
+  emulator: DatabaseOutlined,
+  plugin: ApiOutlined,
+  market: AppstoreOutlined,
+  queue: UnorderedListOutlined,
+  scheduler: ControlOutlined,
+  history: HistoryOutlined,
+  tool: ToolOutlined,
+  settings: SettingOutlined,
+  dev: SettingOutlined,
+  api: ApiOutlined,
+  app: AppstoreOutlined,
+}
 
-// 开发环境专用菜单项
-const devMenuItems = [
-  { key: '/TestRouter', label: '测试路由', icon: icon(SettingOutlined) },
-  { key: '/OCRdev', label: 'OCR测试', icon: icon(SettingOutlined) },
-  { key: '/WSdev', label: 'WebSocket测试', icon: icon(ApiOutlined) },
-  { key: '/OverlayMaskDev', label: '遮罩彩蛋测试', icon: icon(SettingOutlined) },
-]
+const buildMenuItems = (section: string) =>
+  declaredPages.value
+    .filter(page => page.visible && page.section === section)
+    .filter(page => !page.dev_only || isDevelopment.value)
+    .map(page => ({
+      key: page.path,
+      label: page.menu_label,
+      icon: icon(pageIconMap[page.icon] || AppstoreOutlined),
+    }))
 
-const bottomMenuItems = [
-  { key: '/history', label: '历史记录', icon: icon(HistoryOutlined) },
-  { key: '/tools', label: '工具', icon: icon(ToolOutlined) },
-  { key: '/settings', label: '设置', icon: icon(SettingOutlined) },
-]
+const declaredMainMenuItems = computed(() => buildMenuItems('main'))
+const declaredDevMenuItems = computed(() => buildMenuItems('dev'))
+const declaredBottomMenuItems = computed(() => buildMenuItems('bottom'))
 
 const allItems = computed(() => [
-  ...mainMenuItems,
-  ...(isDevelopment.value ? devMenuItems : []),
-  ...bottomMenuItems,
+  ...declaredMainMenuItems.value,
+  ...(isDevelopment.value ? declaredDevMenuItems.value : []),
+  ...declaredBottomMenuItems.value,
 ])
 
 // 选中项：根据当前路径前缀匹配
@@ -283,11 +360,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
     var(--ant-color-bg-elevated) var(--app-background-card-opacity),
     transparent
   );
-  --app-layout-sider-bg: color-mix(
-    in srgb,
-    var(--ant-color-bg-elevated) 88%,
-    transparent
-  );
+  --app-layout-sider-bg: color-mix(in srgb, var(--ant-color-bg-elevated) 88%, transparent);
 }
 
 .app-layout-shell.has-background :deep(.plugin-page) {
@@ -498,7 +571,6 @@ const onMenuClick: MenuProps['onClick'] = info => {
   opacity: 0;
   backdrop-filter: blur(0);
 }
-
 </style>
 
 <!-- 使用标准 Sider 布局，去除 fixed 与 marginLeft，保持菜单样式与滚动行为 -->
