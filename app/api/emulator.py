@@ -21,8 +21,10 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
 from fastapi import APIRouter, Body
 from app.core import Config, EmulatorManager
+from app.utils.emulator.tools import search_all_emulators
 from app.models.schema import (
     OutBase,
     EmulatorConfig,
@@ -184,11 +186,9 @@ async def get_status(emulator: EmulatorGetIn = Body(...)) -> EmulatorStatusOut:
     status_code=200,
 )
 async def search_emulators() -> EmulatorSearchOut:
-    """自动搜索系统中已安装的模拟器"""
+    """枚举卸载表并解析主管理器路径（不依赖 ADB 设备枚举）。"""
     try:
-        from app.utils import search_all_emulators
-
-        emulators = await search_all_emulators()
+        emulators = await asyncio.to_thread(search_all_emulators)
         results = [EmulatorSearchResult(**emulator) for emulator in emulators]
     except Exception as e:
         return EmulatorSearchOut(
