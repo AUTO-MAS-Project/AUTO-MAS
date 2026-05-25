@@ -105,10 +105,56 @@
                       </a-tooltip>
                     </span>
                   </template>
-                  <a-select v-model:value="formData.Info.Status" size="large" @change="saveField('Info.Status', formData.Info.Status)">
+                  <a-select
+                    v-model:value="formData.Info.Status"
+                    size="large"
+                    class="modern-select"
+                    @change="saveField('Info.Status', formData.Info.Status)"
+                  >
                     <a-select-option :value="true">是</a-select-option>
                     <a-select-option :value="false">否</a-select-option>
                   </a-select>
+                </a-form-item>
+              </a-col>
+            </a-row>
+
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">
+                      账号
+                      <a-tooltip title="用于切换账号，无需切换则留空。官服输入 11 位手机号">
+                        <QuestionCircleOutlined class="help-icon" />
+                      </a-tooltip>
+                    </span>
+                  </template>
+                  <a-input
+                    v-model:value="formData.Info.Id"
+                    placeholder="请输入账号"
+                    size="large"
+                    class="modern-input"
+                    @blur="saveField('Info.Id', formData.Info.Id)"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">
+                      密码
+                      <a-tooltip title="PC 端需要切换账号时必须填写">
+                        <QuestionCircleOutlined class="help-icon" />
+                      </a-tooltip>
+                    </span>
+                  </template>
+                  <a-input-password
+                    v-model:value="formData.Info.Password"
+                    placeholder="请输入密码"
+                    size="large"
+                    class="modern-input"
+                    @blur="saveField('Info.Password', formData.Info.Password)"
+                  />
                 </a-form-item>
               </a-col>
             </a-row>
@@ -124,10 +170,35 @@
                       </a-tooltip>
                     </span>
                   </template>
-                  <a-select v-model:value="formData.Info.Mode" size="large" @change="handleModeChange">
+                  <a-select
+                    v-model:value="formData.Info.Mode"
+                    size="large"
+                    class="modern-select"
+                    @change="handleModeChange"
+                  >
                     <a-select-option value="简洁">简洁</a-select-option>
                     <a-select-option value="详细">详细</a-select-option>
                   </a-select>
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">
+                      游戏资源
+                      <a-tooltip title="选择当前用户使用的游戏资源">
+                        <QuestionCircleOutlined class="help-icon" />
+                      </a-tooltip>
+                    </span>
+                  </template>
+                  <a-select
+                    v-model:value="formData.Info.Resource"
+                    placeholder="请选择资源"
+                    size="large"
+                    class="modern-select"
+                    :options="resourceOptions"
+                    @change="saveField('Info.Resource', formData.Info.Resource)"
+                  />
                 </a-form-item>
               </a-col>
               <a-col :span="8">
@@ -140,23 +211,35 @@
                       </a-tooltip>
                     </span>
                   </template>
-                  <a-input-number v-model:value="formData.Info.RemainedDay" :min="-1" :max="9999" size="large" style="width: 100%" @blur="saveField('Info.RemainedDay', formData.Info.RemainedDay)" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="16">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      备注
-                      <a-tooltip title="为用户添加备注信息">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-textarea v-model:value="formData.Info.Notes" :rows="4" class="modern-input" @blur="saveField('Info.Notes', formData.Info.Notes)" />
+                  <a-input-number
+                    v-model:value="formData.Info.RemainedDay"
+                    :min="-1"
+                    :max="9999"
+                    size="large"
+                    style="width: 100%"
+                    @blur="saveField('Info.RemainedDay', formData.Info.RemainedDay)"
+                  />
                 </a-form-item>
               </a-col>
             </a-row>
+
+            <a-form-item>
+              <template #label>
+                <span class="form-label">
+                  备注
+                  <a-tooltip title="为用户添加备注信息">
+                    <QuestionCircleOutlined class="help-icon" />
+                  </a-tooltip>
+                </span>
+              </template>
+              <a-textarea
+                v-model:value="formData.Info.Notes"
+                placeholder="请输入备注"
+                :rows="4"
+                class="modern-input"
+                @blur="saveField('Info.Notes', formData.Info.Notes)"
+              />
+            </a-form-item>
           </div>
 
           <div class="form-section">
@@ -311,18 +394,20 @@ const websocketId = ref<string | null>(null)
 const isInitializing = ref(true)
 const isSaving = ref(false)
 
+/** ok-ww 已适配任务（-t 1..8）；9–11 不提供选项 */
+const OKWW_MAX_TASK_INDEX = 8
+
+const resourceOptions = [{ label: '官服', value: '官服' }]
+
 const okwwTaskOptions = [
   { label: '1 - DailyTask（日常）', value: 1 },
   { label: '2 - MultiAccountDailyTask（多账号日常）', value: 2 },
   { label: '3 - FarmEchoTask（刷声骸）', value: 3 },
-  { label: '4 - AutoRogueTask（自动索拉里斯）', value: 4 },
-  { label: '5 - ForgeryTask（锻造）', value: 5 },
+  { label: '4 - AutoRogueTask（半自动肉鸽）', value: 4 },
+  { label: '5 - ForgeryTask（凝素领域）', value: 5 },
   { label: '6 - NightmareNestTask（梦魇巢穴）', value: 6 },
-  { label: '7 - SimulationTask（模拟）', value: 7 },
+  { label: '7 - SimulationTask（模拟领域）', value: 7 },
   { label: '8 - TacetTask（无音区）', value: 8 },
-  { label: '9 - EnhanceEchoTask（强化声骸）', value: 9 },
-  { label: '10 - ChangeEchoTask（换声骸）', value: 10 },
-  { label: '11 - DiagnosisTask（诊断）', value: 11 },
 ]
 
 type OkwwConfigMessage = {
@@ -337,7 +422,10 @@ const getDefaultUserData = () => ({
   Info: {
     Name: '',
     Status: true,
+    Id: '',
+    Password: '',
     Mode: '简洁',
+    Resource: '官服',
     RemainedDay: -1,
     Notes: '',
   },
@@ -447,9 +535,9 @@ const loadUser = async () => {
       await createUserImmediately()
     }
     const resp = await getUsers(scriptId, userId)
-    const idx = resp?.index?.find(i => i.uid === userId)
+    const userIndex = resp?.index?.find(i => i.uid === userId)
     const data = resp?.data?.[userId]
-    if (!idx || !data) {
+    if (!userIndex || !data) {
       throw new Error('用户不存在或加载失败')
     }
 
@@ -460,6 +548,10 @@ const loadUser = async () => {
       Data: { ...getDefaultUserData().Data, ...(data.Data || {}) },
     })
     formData.Task.ExitOnFinish = true
+    const taskIndex = Number(formData.Task.TaskIndex)
+    if (!Number.isFinite(taskIndex) || taskIndex < 1 || taskIndex > OKWW_MAX_TASK_INDEX) {
+      formData.Task.TaskIndex = 1
+    }
     await nextTick()
     formData.userName = formData.Info.Name || ''
   } catch (e) {
@@ -634,6 +726,15 @@ onMounted(async () => {
 .modern-input {
   border-radius: 8px;
   border: 2px solid var(--ant-color-border);
+}
+
+.modern-select {
+  width: 100%;
+}
+
+.modern-select :deep(.ant-select-selector) {
+  border: 2px solid var(--ant-color-border) !important;
+  border-radius: 8px !important;
 }
 
 /* 与 Scripts.vue / MAAUserEdit 配置遮罩一致 */
