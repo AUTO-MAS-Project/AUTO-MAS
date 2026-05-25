@@ -2534,6 +2534,15 @@ const toggleInstanceEnabled = async (instance: PluginInstance, enabled: boolean)
       throw new Error(data.message || '更新启用状态失败')
     }
 
+    instances.value = instances.value.map(item =>
+      item.id === instance.id
+        ? {
+            ...item,
+            enabled,
+          }
+        : item
+    )
+
     if (selectedInstanceId.value === instance.id && !isDirty.value) {
       editForm.enabled = enabled
       if (hasEnableSchema(editForm.plugin)) {

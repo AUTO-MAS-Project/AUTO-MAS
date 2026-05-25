@@ -13,7 +13,7 @@ import typing
 from enum import Enum
 from dataclasses import dataclass
 from pathlib import Path
-from types import NoneType, UnionType
+from types import ModuleType, NoneType, UnionType
 from typing import Annotated, Any, Callable, Dict, ForwardRef, Literal, Mapping, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
@@ -270,6 +270,74 @@ class PluginSchemaManager:
 
         return self._normalize_schema_fields(plugin_name, schema)
 
+    def _find_package_root_for_file(self, file_path: Path) -> Path | None:
+        """解析文件所属的顶层包目录，用于兼容相对导入。"""
+        package_root = file_path.parent
+        init_file = package_root / "__init__.py"
+        if not init_file.exists():
+            return None
+
+        while (package_root.parent / "__init__.py").exists():
+            package_root = package_root.parent
+        return package_root
+
+    def _should_retry_with_package_context(self, error: Exception) -> bool:
+        """仅在典型的裸文件相对导入失败时，回退到包上下文重试。"""
+        if not isinstance(error, ImportError):
+            return False
+        return "attempted relative import with no known parent package" in str(error)
+
+    def _import_module_from_file_in_package_context(
+        self,
+        module_name: str,
+        file_path: Path,
+        package_root: Path,
+    ) -> Any:
+        """以临时包上下文加载文件，保证 `from .foo import ...` 可用。"""
+        import sys
+
+        synthetic_package_name = f"{module_name}__pkg"
+        relative_parts = file_path.relative_to(package_root).with_suffix("").parts
+        if relative_parts == ("__init__",):
+            synthetic_module_name = synthetic_package_name
+        else:
+            synthetic_module_name = (
+                f"{synthetic_package_name}.{'.'.join(relative_parts)}"
+            )
+
+        package_module = ModuleType(synthetic_package_name)
+        package_module.__file__ = str(package_root / "__init__.py")
+        package_module.__package__ = synthetic_package_name
+        package_module.__path__ = [str(package_root)]  # type: ignore[attr-defined]
+        package_module.__spec__ = importlib.util.spec_from_file_location(
+            synthetic_package_name,
+            str(package_root / "__init__.py"),
+            submodule_search_locations=[str(package_root)],
+        )
+
+        spec = importlib.util.spec_from_file_location(
+            synthetic_module_name,
+            str(file_path),
+        )
+        if spec is None or spec.loader is None:
+            raise PluginSchemaError(f"无法加载 Python 模块: {file_path}")
+
+        module = importlib.util.module_from_spec(spec)
+        cleanup_prefix = f"{synthetic_package_name}."
+        sys.modules[synthetic_package_name] = package_module
+        sys.modules[synthetic_module_name] = module
+        try:
+            spec.loader.exec_module(module)
+        except Exception as e:
+            raise PluginSchemaError(
+                f"执行 Python 模块失败: {file_path.name}, error={type(e).__name__}: {e}"
+            ) from e
+        finally:
+            for key in list(sys.modules):
+                if key == synthetic_package_name or key.startswith(cleanup_prefix):
+                    sys.modules.pop(key, None)
+        return module
+
     def _import_module_from_file(self, module_name: str, file_path: Path) -> Any:
         """
         从文件路径导入 Python 模块对象。
@@ -298,6 +366,14 @@ class PluginSchemaManager:
             spec.loader.exec_module(module)
         except Exception as e:
             sys.modules.pop(module_name, None)
+            if self._should_retry_with_package_context(e):
+                package_root = self._find_package_root_for_file(file_path)
+                if package_root is not None:
+                    return self._import_module_from_file_in_package_context(
+                        module_name,
+                        file_path,
+                        package_root,
+                    )
             raise PluginSchemaError(
                 f"执行 Python 模块失败: {file_path.name}, error={type(e).__name__}: {e}"
             ) from e

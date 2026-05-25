@@ -84,6 +84,7 @@ def main():
         @asynccontextmanager
         async def lifespan(app: FastAPI):
             from app.core import Config, MainTimer, TaskManager, PluginManager
+            from app.core.page_registry import register_builtin_pages
             from app.MaaFW import ArknightWin32Toolkit
             from app.core.script_types import validate_script_type_registry
 
@@ -103,6 +104,7 @@ def main():
                         shutil.rmtree(pycache, ignore_errors=True)
                 logger.debug("DEV 模式：已清理 plugins 目录下的 __pycache__")
 
+            register_builtin_pages()
             await PluginManager.start()
 
             missing_script_types = validate_script_type_registry(Config)

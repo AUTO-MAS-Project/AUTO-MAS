@@ -155,6 +155,7 @@ async def build_plugin_snapshot(*, discovered: Dict[str, Any] | None = None) -> 
         }
 
     from .server import plugin_server
+    from app.core.page_registry import page_registry
 
     server_snapshot = plugin_server.snapshot()
     return {
@@ -171,6 +172,8 @@ async def build_plugin_snapshot(*, discovered: Dict[str, Any] | None = None) -> 
         "plugin_packages": plugin_packages,
         "instances": deepcopy(root.get("instances", [])),
         "runtime_states": runtime_states,
+        "pages": page_registry.snapshot(),
+        "page_errors": page_registry.warnings(),
     }
 
 
