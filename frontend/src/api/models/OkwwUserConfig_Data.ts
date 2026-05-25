@@ -14,5 +14,13 @@ export type OkwwUserConfig_Data = {
      * 代理次数
      */
     ProxyTimes?: (number | null);
+    /**
+     * 上次代理状态（未知/成功/失败）
+     */
+    LastProxyStatus?: (string | null);
+    /**
+     * 上次运行的 ok-ww 任务序号（-t N）
+     */
+    LastTaskIndex?: (number | null);
 };
 
