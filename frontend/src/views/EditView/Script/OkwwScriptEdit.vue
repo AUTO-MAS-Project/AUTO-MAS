@@ -357,7 +357,7 @@ const buildAutoPaths = (rootPath: string) => {
   return {
     rootPath: norm,
     scriptPath: `${norm}/ok-ww.exe`,
-    configPath: `${norm}/configs`,
+    configPath: `${norm}/data/apps/ok-ww/working/configs`,
     logPath: `${norm}/data/apps/ok-ww/working/logs/ok-script.log`,
     trackProcessExe: `${norm}/data/apps/ok-ww/python/pythonw.exe`,
   }
