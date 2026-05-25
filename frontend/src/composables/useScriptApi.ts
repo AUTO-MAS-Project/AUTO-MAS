@@ -4,6 +4,8 @@ import {
   type GeneralConfig,
   type MaaConfig,
   type MaaEndConfig,
+  type M9AConfig,
+  type OkwwConfig,
   type SrcConfig,
   ScriptCreateIn,
   type ScriptReorderIn,
@@ -32,7 +34,11 @@ export function useScriptApi() {
               ? ScriptCreateIn.type.SRC
               : type === 'MaaEnd'
                 ? ScriptCreateIn.type.MAA_END
-                : ScriptCreateIn.type.GENERAL,
+                : type === 'M9A'
+                  ? ScriptCreateIn.type.M9A
+                  : type === 'Okww'
+                    ? ScriptCreateIn.type.OKWW
+                    : ScriptCreateIn.type.GENERAL,
         scriptId: scriptId || null,
       }
 
@@ -73,7 +79,7 @@ export function useScriptApi() {
       uid: string
       type: string
       name: string
-      config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
+      config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig | M9AConfig
     }[]
   > => {
     if (manageLoading) {
@@ -101,9 +107,13 @@ export function useScriptApi() {
             ? 'MAA'
             : indexItem.type === 'SrcConfig'
               ? 'SRC'
+              : indexItem.type === 'OkwwConfig'
+                ? 'Okww'
               : indexItem.type === 'MaaEndConfig'
                 ? 'MaaEnd'
-                : 'General',
+                : indexItem.type === 'M9AConfig'
+                  ? 'M9A'
+                  : 'General',
         name: response.data[indexItem.uid]?.Info?.Name || `${indexItem.type}脚本`,
         config: response.data[indexItem.uid],
       }))
@@ -128,7 +138,7 @@ export function useScriptApi() {
           uid: string
           type: string
           name: string
-          config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
+          config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig | M9AConfig
           users: (
             | {
                 id: string
@@ -215,14 +225,14 @@ export function useScriptApi() {
           uid: string
           type: string
           name: string
-          config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
+          config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig
           users: any[]
         }
       | {
           uid: string
           type: string
           name: string
-          config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig
+          config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig
           users: any[]
         }
     >[]
@@ -709,6 +719,185 @@ export function useScriptApi() {
                             : false,
                       },
                     }
+                  } else if (userIndex.type === 'M9AUserConfig' && userData) {
+                    const m9aUserData = userData as any
+                    return {
+                      id: userIndex.uid,
+                      name: m9aUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name:
+                          m9aUserData.Info?.Name !== undefined
+                            ? m9aUserData.Info.Name
+                            : `用户${userIndex.uid}`,
+                        Status:
+                          m9aUserData.Info?.Status !== undefined ? m9aUserData.Info.Status : true,
+                        RemainedDay:
+                          m9aUserData.Info?.RemainedDay !== undefined
+                            ? m9aUserData.Info.RemainedDay
+                            : -1,
+                        Notes:
+                          m9aUserData.Info?.Notes !== undefined ? m9aUserData.Info.Notes : '',
+                        Tag: m9aUserData.Info?.Tag !== undefined ? m9aUserData.Info.Tag : null,
+                        Resource:
+                          m9aUserData.Info?.Resource !== undefined
+                            ? m9aUserData.Info.Resource
+                            : '官服',
+                        Account:
+                          m9aUserData.Info?.Account !== undefined
+                            ? m9aUserData.Info.Account
+                            : '',
+                        EmulatorId:
+                          m9aUserData.Info?.EmulatorId !== undefined
+                            ? m9aUserData.Info.EmulatorId
+                            : '',
+                        EmulatorIndex:
+                          m9aUserData.Info?.EmulatorIndex !== undefined
+                            ? m9aUserData.Info.EmulatorIndex
+                            : 0,
+                      },
+                      Task: {
+                        AvailableTasks:
+                          m9aUserData.Task?.AvailableTasks !== undefined
+                            ? m9aUserData.Task.AvailableTasks
+                            : '[]',
+                        Queue:
+                          m9aUserData.Task?.Queue !== undefined ? m9aUserData.Task.Queue : '[]',
+                      },
+                      Notify: {
+                        Enabled:
+                          m9aUserData.Notify?.Enabled !== undefined
+                            ? m9aUserData.Notify.Enabled
+                            : false,
+                        IfSendStatistic:
+                          m9aUserData.Notify?.IfSendStatistic !== undefined
+                            ? m9aUserData.Notify.IfSendStatistic
+                            : false,
+                        IfSendMail:
+                          m9aUserData.Notify?.IfSendMail !== undefined
+                            ? m9aUserData.Notify.IfSendMail
+                            : false,
+                        ToAddress:
+                          m9aUserData.Notify?.ToAddress !== undefined
+                            ? m9aUserData.Notify.ToAddress
+                            : '',
+                        IfServerChan:
+                          m9aUserData.Notify?.IfServerChan !== undefined
+                            ? m9aUserData.Notify.IfServerChan
+                            : false,
+                        ServerChanKey:
+                          m9aUserData.Notify?.ServerChanKey !== undefined
+                            ? m9aUserData.Notify.ServerChanKey
+                            : '',
+                        CustomWebhooks:
+                          m9aUserData.Notify?.CustomWebhooks !== undefined
+                            ? m9aUserData.Notify.CustomWebhooks
+                            : [],
+                      },
+                      Data: {
+                        LastProxyDate:
+                          m9aUserData.Data?.LastProxyDate !== undefined
+                            ? m9aUserData.Data.LastProxyDate
+                            : '',
+                        ProxyTimes:
+                          m9aUserData.Data?.ProxyTimes !== undefined
+                            ? m9aUserData.Data.ProxyTimes
+                            : 0,
+                        IfPassCheck:
+                          m9aUserData.Data?.IfPassCheck !== undefined
+                            ? m9aUserData.Data.IfPassCheck
+                            : false,
+                      },
+                    }
+                  } else if (userIndex.type === 'OkwwUserConfig' && userData) {
+                    const okwwUserData = userData as any
+                    return {
+                      id: userIndex.uid,
+                      name: okwwUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name:
+                          okwwUserData.Info?.Name !== undefined
+                            ? okwwUserData.Info.Name
+                            : `用户${userIndex.uid}`,
+                        Status:
+                          okwwUserData.Info?.Status !== undefined
+                            ? okwwUserData.Info.Status
+                            : true,
+                        RemainedDay:
+                          okwwUserData.Info?.RemainedDay !== undefined
+                            ? okwwUserData.Info.RemainedDay
+                            : -1,
+                        IfScriptBeforeTask:
+                          okwwUserData.Info?.IfScriptBeforeTask !== undefined
+                            ? okwwUserData.Info.IfScriptBeforeTask
+                            : false,
+                        ScriptBeforeTask:
+                          okwwUserData.Info?.ScriptBeforeTask !== undefined
+                            ? okwwUserData.Info.ScriptBeforeTask
+                            : '',
+                        IfScriptAfterTask:
+                          okwwUserData.Info?.IfScriptAfterTask !== undefined
+                            ? okwwUserData.Info.IfScriptAfterTask
+                            : false,
+                        ScriptAfterTask:
+                          okwwUserData.Info?.ScriptAfterTask !== undefined
+                            ? okwwUserData.Info.ScriptAfterTask
+                            : '',
+                        Notes:
+                          okwwUserData.Info?.Notes !== undefined
+                            ? okwwUserData.Info.Notes
+                            : '',
+                      },
+                      Task: {
+                        TaskIndex:
+                          okwwUserData.Task?.TaskIndex !== undefined
+                            ? okwwUserData.Task.TaskIndex
+                            : 1,
+                        ExitOnFinish:
+                          okwwUserData.Task?.ExitOnFinish !== undefined
+                            ? okwwUserData.Task.ExitOnFinish
+                            : true,
+                      },
+                      Notify: {
+                        Enabled:
+                          okwwUserData.Notify?.Enabled !== undefined
+                            ? okwwUserData.Notify.Enabled
+                            : false,
+                        IfSendStatistic:
+                          okwwUserData.Notify?.IfSendStatistic !== undefined
+                            ? okwwUserData.Notify.IfSendStatistic
+                            : false,
+                        IfSendMail:
+                          okwwUserData.Notify?.IfSendMail !== undefined
+                            ? okwwUserData.Notify.IfSendMail
+                            : false,
+                        ToAddress:
+                          okwwUserData.Notify?.ToAddress !== undefined
+                            ? okwwUserData.Notify.ToAddress
+                            : '',
+                        IfServerChan:
+                          okwwUserData.Notify?.IfServerChan !== undefined
+                            ? okwwUserData.Notify.IfServerChan
+                            : false,
+                        ServerChanKey:
+                          okwwUserData.Notify?.ServerChanKey !== undefined
+                            ? okwwUserData.Notify.ServerChanKey
+                            : '',
+                        CustomWebhooks:
+                          okwwUserData.Notify?.CustomWebhooks !== undefined
+                            ? okwwUserData.Notify.CustomWebhooks
+                            : [],
+                      },
+                      Data: {
+                        LastProxyDate:
+                          okwwUserData.Data?.LastProxyDate !== undefined
+                            ? okwwUserData.Data.LastProxyDate
+                            : '',
+                        ProxyTimes:
+                          okwwUserData.Data?.ProxyTimes !== undefined
+                            ? okwwUserData.Data.ProxyTimes
+                            : 0,
+                      },
+                    }
                   }
 
                   return null
@@ -776,9 +965,13 @@ export function useScriptApi() {
           ? 'MAA'
           : item.type === 'SrcConfig'
             ? 'SRC'
+            : item.type === 'OkwwConfig'
+              ? 'Okww'
             : item.type === 'MaaEndConfig'
               ? 'MaaEnd'
-              : 'General'
+              : item.type === 'M9AConfig'
+                ? 'M9A'
+                : 'General'
 
       return {
         uid: item.uid,

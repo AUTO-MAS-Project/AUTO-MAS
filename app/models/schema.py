@@ -321,7 +321,14 @@ class QueueConfig(BaseModel):
 
 class ScriptIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: Literal["MaaConfig", "GeneralConfig", "SrcConfig", "MaaEndConfig"] = Field(
+    type: Literal[
+        "MaaConfig",
+        "GeneralConfig",
+        "OkwwConfig",
+        "SrcConfig",
+        "MaaEndConfig",
+        "M9AConfig",
+    ] = Field(
         ..., description="配置类型"
     )
 
@@ -329,7 +336,12 @@ class ScriptIndexItem(BaseModel):
 class UserIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
     type: Literal[
-        "MaaUserConfig", "GeneralUserConfig", "SrcUserConfig", "MaaEndUserConfig"
+        "MaaUserConfig",
+        "GeneralUserConfig",
+        "OkwwUserConfig",
+        "SrcUserConfig",
+        "MaaEndUserConfig",
+        "M9AUserConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -488,6 +500,34 @@ class GeneralUserConfig(BaseModel):
     )
 
 
+class OkwwUserConfig_Task(BaseModel):
+    TaskIndex: Optional[int] = Field(default=None, description="启动后执行第 N 个任务（-t N，从 1 开始）")
+    ExitOnFinish: Optional[bool] = Field(default=None, description="任务结束后退出（-e）")
+
+
+class OkwwUserConfig_Info(GeneralUserConfig_Info):
+    """OK-WW 用户信息（复用通用字段）"""
+
+    Mode: Optional[Literal["简洁", "详细"]] = Field(
+        default=None, description="用户配置模式（简洁/详细）"
+    )
+
+
+class OkwwUserConfig_Data(GeneralUserConfig_Data):
+    """OK-WW 用户数据（复用通用字段）"""
+
+
+class OkwwUserConfig_Notify(GeneralUserConfig_Notify):
+    """OK-WW 用户通知（复用通用字段）"""
+
+
+class OkwwUserConfig(BaseModel):
+    Info: Optional[OkwwUserConfig_Info] = Field(default=None, description="用户信息")
+    Task: Optional[OkwwUserConfig_Task] = Field(default=None, description="任务配置")
+    Data: Optional[OkwwUserConfig_Data] = Field(default=None, description="用户数据")
+    Notify: Optional[OkwwUserConfig_Notify] = Field(default=None, description="单独通知")
+
+
 class GeneralConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="脚本名称")
     RootPath: Optional[str] = Field(default=None, description="脚本根目录")
@@ -553,6 +593,33 @@ class GeneralConfig(BaseModel):
     Script: Optional[GeneralConfig_Script] = Field(default=None, description="脚本配置")
     Game: Optional[GeneralConfig_Game] = Field(default=None, description="游戏配置")
     Run: Optional[GeneralConfig_Run] = Field(default=None, description="运行配置")
+
+
+class OkwwConfig_Info(GeneralConfig_Info):
+    """OK-WW 脚本基础信息（复用通用字段）"""
+
+
+class OkwwConfig_Script(GeneralConfig_Script):
+    """OK-WW 脚本配置（复用通用字段）"""
+
+
+class OkwwConfig_Game(GeneralConfig_Game):
+    """OK-WW 游戏配置（复用通用字段）"""
+
+    CloseOnFinish: Optional[bool] = Field(
+        default=None, description="任务结束后是否关闭游戏/模拟器"
+    )
+
+
+class OkwwConfig_Run(GeneralConfig_Run):
+    """OK-WW 运行配置（复用通用字段）"""
+
+
+class OkwwConfig(BaseModel):
+    Info: Optional[OkwwConfig_Info] = Field(default=None, description="脚本基础信息")
+    Script: Optional[OkwwConfig_Script] = Field(default=None, description="脚本配置")
+    Game: Optional[OkwwConfig_Game] = Field(default=None, description="游戏配置")
+    Run: Optional[OkwwConfig_Run] = Field(default=None, description="运行配置")
 
 
 class MaaEndUserConfig_Info(BaseModel):
@@ -633,7 +700,7 @@ class MaaEndConfig_Game(BaseModel):
     ] = Field(default=None, description="控制器类型")
     Path: Optional[str] = Field(default=None, description="终末地客户端路径")
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
-    WaitTime: Optional[int] = Field(default=None, description="游戏等待时间")
+    WaitTime: Optional[int] = Field(default=None, ge=60, description="游戏等待时间")
     EmulatorId: Optional[str] = Field(default=None, description="模拟器ID")
     EmulatorIndex: Optional[str] = Field(default=None, description="模拟器索引")
     CloseOnFinish: Optional[bool] = Field(default=None, description="结束后关闭游戏")
@@ -842,6 +909,67 @@ class SrcConfig(BaseModel):
     Run: Optional[SrcConfig_Run] = Field(default=None, description="脚本运行配置")
 
 
+class M9AUserConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="用户名称")
+    Status: Optional[bool] = Field(default=None, description="是否启用")
+    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    Notes: Optional[str] = Field(default=None, description="备注")
+    Tag: Optional[str] = Field(default=None, description="用户标签信息")
+    Resource: Optional[str] = Field(default=None, description="服务器资源名称")
+    Account: Optional[str] = Field(default=None, description="账号信息（用于切换账号，仅官服生效）")
+
+
+class M9AUserConfig_Task(BaseModel):
+    AvailableTasks: Optional[Union[str, List]] = Field(default=None, description="可用任务列表 JSON 数组字符串或数组")
+    Queue: Optional[Union[str, List]] = Field(default=None, description="运行任务队列 JSON 数组字符串或数组")
+
+class M9AUserConfig_Data(BaseModel):
+    LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
+    ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
+    IfPassCheck: Optional[bool] = Field(default=None, description="是否通过检查")
+
+
+class M9AUserConfig_Notify(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
+    IfSendStatistic: Optional[bool] = Field(
+        default=None, description="是否发送统计信息"
+    )
+    IfSendMail: Optional[bool] = Field(default=None, description="是否发送邮件")
+    ToAddress: Optional[str] = Field(default=None, description="收件地址")
+    IfServerChan: Optional[bool] = Field(default=None, description="是否启用 Server 酱")
+    ServerChanKey: Optional[str] = Field(default=None, description="Server 酱密钥")
+
+
+class M9AUserConfig(BaseModel):
+    Info: Optional[M9AUserConfig_Info] = Field(default=None, description="基础信息")
+    Task: Optional[M9AUserConfig_Task] = Field(default=None, description="任务配置")
+    Data: Optional[M9AUserConfig_Data] = Field(default=None, description="用户数据")
+    Notify: Optional[M9AUserConfig_Notify] = Field(default=None, description="单独通知")
+
+
+class M9AConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="M9A 脚本名称")
+    Path: Optional[str] = Field(default=None, description="M9A 路径")
+
+
+class M9AConfig_Emulator(BaseModel):
+    Id: Optional[str] = Field(default=None, description="模拟器 ID")
+    Index: Optional[str] = Field(default=None, description="模拟器索引")
+
+
+class M9AConfig_Run(BaseModel):
+    ProxyTimesLimit: Optional[int] = Field(default=None, description="代理次数限制")
+    RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
+    RunTimeLimit: Optional[int] = Field(default=None, description="运行时间限制（分钟）")
+    IfAutoUpdateAfterQueue: Optional[bool] = Field(default=None, description="是否在队列结束后自动更新M9A")
+
+
+class M9AConfig(BaseModel):
+    Info: Optional[M9AConfig_Info] = Field(default=None, description="脚本基础信息")
+    Emulator: Optional[M9AConfig_Emulator] = Field(default=None, description="模拟器配置")
+    Run: Optional[M9AConfig_Run] = Field(default=None, description="脚本运行配置")
+
+
 class PlanIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
     type: Literal["MaaPlanConfig"] = Field(..., description="配置类型")
@@ -904,8 +1032,8 @@ class HistoryData(BaseModel):
 
 
 class ScriptCreateIn(BaseModel):
-    type: Literal["MAA", "SRC", "General", "MaaEnd"] = Field(
-        ..., description="脚本类型: MAA脚本, 通用脚本, SRC脚本, MaaEnd脚本"
+    type: Literal["MAA", "SRC", "General", "Okww", "MaaEnd", "M9A"] = Field(
+        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, SRC脚本, MaaEnd脚本, M9A脚本"
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -914,7 +1042,7 @@ class ScriptCreateIn(BaseModel):
 
 class ScriptCreateOut(OutBase):
     scriptId: str = Field(..., description="新创建的脚本ID")
-    data: Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig] = Field(
+    data: Union[MaaConfig, SrcConfig, GeneralConfig, OkwwConfig, MaaEndConfig, M9AConfig] = Field(
         ..., description="脚本配置数据"
     )
 
@@ -927,14 +1055,16 @@ class ScriptGetIn(BaseModel):
 
 class ScriptGetOut(OutBase):
     index: List[ScriptIndexItem] = Field(..., description="脚本索引列表")
-    data: Dict[str, Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig]] = Field(
+    data: Dict[
+        str, Union[MaaConfig, SrcConfig, GeneralConfig, OkwwConfig, MaaEndConfig, M9AConfig]
+    ] = Field(
         ..., description="脚本数据字典, key来自于index列表的uid"
     )
 
 
 class ScriptUpdateIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
-    data: Union[MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig] = Field(
+    data: Union[MaaConfig, SrcConfig, GeneralConfig, OkwwConfig, MaaEndConfig, M9AConfig] = Field(
         ..., description="脚本更新数据"
     )
 
@@ -977,20 +1107,42 @@ class UserGetIn(UserInBase):
 class UserGetOut(OutBase):
     index: List[UserIndexItem] = Field(..., description="用户索引列表")
     data: Dict[
-        str, Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig]
+        str,
+        Union[
+            MaaUserConfig,
+            SrcUserConfig,
+            GeneralUserConfig,
+            OkwwUserConfig,
+            MaaEndUserConfig,
+            M9AUserConfig,
+        ],
     ] = Field(..., description="用户数据字典, key来自于index列表的uid")
 
 
 class UserCreateOut(OutBase):
     userId: str = Field(..., description="新创建的用户ID")
-    data: Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig] = (
+    data: Union[
+        MaaUserConfig,
+        SrcUserConfig,
+        GeneralUserConfig,
+        OkwwUserConfig,
+        MaaEndUserConfig,
+        M9AUserConfig,
+    ] = (
         Field(..., description="用户配置数据")
     )
 
 
 class UserUpdateIn(UserInBase):
     userId: str = Field(..., description="用户ID")
-    data: Union[MaaUserConfig, SrcUserConfig, GeneralUserConfig, MaaEndUserConfig] = (
+    data: Union[
+        MaaUserConfig,
+        SrcUserConfig,
+        GeneralUserConfig,
+        OkwwUserConfig,
+        MaaEndUserConfig,
+        M9AUserConfig,
+    ] = (
         Field(..., description="用户更新数据")
     )
 
@@ -1268,6 +1420,10 @@ class DispatchIn(BaseModel):
 class TaskCreateIn(DispatchIn):
     mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"] = Field(
         ..., description="任务模式"
+    )
+    resumeFromScriptId: str | None = Field(
+        default=None,
+        description="可选：仅对队列任务生效；从指定脚本ID开始执行（之前的脚本将被标记为跳过）",
     )
 
 

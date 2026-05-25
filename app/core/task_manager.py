@@ -24,11 +24,26 @@ import uuid
 import asyncio
 from typing import Dict, Literal
 
-from .config import Config, MaaConfig, SrcConfig, GeneralConfig, MaaEndConfig
+from .config import (
+    Config,
+    MaaConfig,
+    SrcConfig,
+    GeneralConfig,
+    MaaEndConfig,
+    M9AConfig,
+    OkwwConfig,
+)
 from app.services import System
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
 from app.utils import get_logger
-from app.task import MaaManager, SrcManager, GeneralManager, MaaEndManager
+from app.task import (
+    MaaManager,
+    SrcManager,
+    GeneralManager,
+    MaaEndManager,
+    M9AManager,
+    OkwwManager,
+)
 from app.utils.constants import POWER_SIGN_MAP
 
 
@@ -97,10 +112,30 @@ class Task(TaskExecuteBase):
             f"开始运行任务: {self.task_info.task_id}, 模式: {self.task_info.mode}"
         )
 
-        # 依次运行任务
-        for self.task_info.current_index, script_item in enumerate(
-            self.task_info.script_list
+        # 可选：从指定脚本开始执行（仅队列任务）
+        start_index = 0
+        if (
+            getattr(self.task_info, "resume_from_script_id", None)
+            and self.task_info.queue_id is not None
         ):
+            resume_id = str(self.task_info.resume_from_script_id)
+            for idx, item in enumerate(self.task_info.script_list):
+                if item.script_id == resume_id:
+                    start_index = idx
+                    break
+            else:
+                logger.warning(
+                    f"未找到 resume_from_script_id={resume_id}，将从队列首项开始执行"
+                )
+
+        for i in range(start_index):
+            self.task_info.script_list[i].status = "跳过"
+
+        # 依次运行任务
+        for self.task_info.current_index in range(
+            start_index, len(self.task_info.script_list)
+        ):
+            script_item = self.task_info.script_list[self.task_info.current_index]
             current_script_uid = uuid.UUID(script_item.script_id)
 
             # 检查任务对应脚本是否仍存在
@@ -137,8 +172,12 @@ class Task(TaskExecuteBase):
                 task_item = SrcManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], GeneralConfig):
                 task_item = GeneralManager(script_item)
+            elif isinstance(Config.ScriptConfig[current_script_uid], OkwwConfig):
+                task_item = OkwwManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], MaaEndConfig):
                 task_item = MaaEndManager(script_item)
+            elif isinstance(Config.ScriptConfig[current_script_uid], M9AConfig):
+                task_item = M9AManager(script_item)
             else:
                 logger.error(
                     f"不支持的脚本类型: {type(Config.ScriptConfig[current_script_uid]).__name__}"
@@ -196,6 +235,7 @@ class _TaskManager:
         mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"],
         id: str,
         new_task_info: dict | None = None,
+        resume_from_script_id: str | None = None,
     ) -> uuid.UUID:
         """
         添加任务, 根据 id 值搜索实际指向的任务配置
@@ -257,6 +297,7 @@ class _TaskManager:
             queue_id=str(queue_id) if queue_id else None,
             script_id=str(script_uid) if script_uid else None,
             user_id=str(user_uid) if user_uid else None,
+            resume_from_script_id=resume_from_script_id,
         )
         self.task_handler[task_uid] = Task(self.task_info[task_uid])
         self.task_handler[task_uid].execute()

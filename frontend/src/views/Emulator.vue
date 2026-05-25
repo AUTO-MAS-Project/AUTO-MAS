@@ -195,7 +195,7 @@ const getEditingData = (uuid: string): EmulatorInfo => {
       name: configData?.Info?.Name || '',
       type: configData?.Info?.Type || '',
       path: configData?.Info?.Path || '',
-      max_wait_time: configData?.Info?.MaxWaitTime || 60,
+      max_wait_time: configData?.Info?.MaxWaitTime || 300,
       boss_keys: safeJsonParse(configData?.Info?.BossKey, []),
     })
   }
@@ -229,7 +229,7 @@ const loadEmulators = async () => {
           name: configData?.Info?.Name || '',
           type: configData?.Info?.Type || '',
           path: configData?.Info?.Path || '',
-          max_wait_time: configData?.Info?.MaxWaitTime || 60,
+          max_wait_time: configData?.Info?.MaxWaitTime || 300,
           boss_keys: bossKeys,
         })
         // 同步 boss_keys 到输入框显示
@@ -298,7 +298,7 @@ const refreshEmulatorConfig = async (uuid?: string) => {
             name: configData?.Info?.Name || '',
             type: configData?.Info?.Type || '',
             path: configData?.Info?.Path || '',
-            max_wait_time: configData?.Info?.MaxWaitTime || 60,
+            max_wait_time: configData?.Info?.MaxWaitTime || 300,
             boss_keys: bossKeys,
           })
           // 同步 boss_keys 到输入框显示
@@ -319,7 +319,7 @@ const refreshEmulatorConfig = async (uuid?: string) => {
             name: configData?.Info?.Name || '',
             type: configData?.Info?.Type || '',
             path: configData?.Info?.Path || '',
-            max_wait_time: configData?.Info?.MaxWaitTime || 60,
+            max_wait_time: configData?.Info?.MaxWaitTime || 300,
             boss_keys: bossKeys,
           })
           // 同步 boss_keys 到输入框显示
@@ -450,7 +450,7 @@ const handleImportFromSearch = async (result: EmulatorSearchResult) => {
             Name: result.name,
             Type: result.type as 'general' | 'mumu' | 'ldplayer',
             Path: result.path,
-            MaxWaitTime: 60,
+            MaxWaitTime: 300,
             BossKey: JSON.stringify([]),
           },
         },
