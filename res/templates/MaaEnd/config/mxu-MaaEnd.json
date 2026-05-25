@@ -1,0 +1,157 @@
+{
+  "instances": [
+    {
+      "id": "cbek8en",
+      "name": "电脑端-默认",
+      "controllerName": "Win32-Window",
+      "resourceName": "官服",
+      "tasks": [
+        {
+          "id": "66exzd1",
+          "taskName": "VisitFriends",
+          "enabled": true
+        },
+        {
+          "id": "sl6ekn7",
+          "taskName": "DijiangRewards",
+          "enabled": true
+        },
+        {
+          "id": "1ve46wq",
+          "taskName": "CreditShoppingN2",
+          "enabled": true
+        },
+        {
+          "id": "tlyl98l",
+          "taskName": "DeliveryJobs",
+          "enabled": true
+        },
+        {
+          "id": "jur6jog",
+          "taskName": "SellProduct",
+          "enabled": true
+        },
+        {
+          "id": "xy8ubx9",
+          "taskName": "AutoStockpile",
+          "enabled": true
+        },
+        {
+          "id": "p9vhp9n",
+          "taskName": "AutoStockStaple",
+          "enabled": true
+        },
+        {
+          "id": "l9lmqbs",
+          "taskName": "DailyRewards",
+          "enabled": true
+        },
+        {
+          "id": "ki9tsg4",
+          "taskName": "SeizeEntrustTask",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "44d6qo2",
+      "name": "电脑端-前台",
+      "controllerName": "Win32-Front",
+      "resourceName": "官服",
+      "tasks": [
+        {
+          "id": "5zqhjux",
+          "taskName": "VisitFriends",
+          "enabled": true
+        },
+        {
+          "id": "diyt9yn",
+          "taskName": "DijiangRewards",
+          "enabled": true
+        },
+        {
+          "id": "g8597rn",
+          "taskName": "CreditShoppingN2",
+          "enabled": true
+        },
+        {
+          "id": "0bzqbf2",
+          "taskName": "DeliveryJobs",
+          "enabled": true
+        },
+        {
+          "id": "8vfq6y1",
+          "taskName": "SellProduct",
+          "enabled": true
+        },
+        {
+          "id": "es8dug8",
+          "taskName": "AutoStockpile",
+          "enabled": true
+        },
+        {
+          "id": "740f85h",
+          "taskName": "AutoStockStaple",
+          "enabled": true
+        },
+        {
+          "id": "jjusssw",
+          "taskName": "AutoSell",
+          "enabled": true
+        },
+        {
+          "id": "gj70e22",
+          "taskName": "EnvironmentMonitoring",
+          "enabled": true
+        },
+        {
+          "id": "hiu9ttk",
+          "taskName": "DailyRewards",
+          "enabled": true
+        },
+        {
+          "id": "mwg371e",
+          "taskName": "SeizeEntrustTask",
+          "enabled": true
+        },
+        {
+          "id": "7u9ebfh",
+          "taskName": "AutoCollect",
+          "enabled": true
+        },
+        {
+          "id": "y0k1zue",
+          "taskName": "AutoUseSpMedication",
+          "enabled": true
+        },
+        {
+          "id": "agfpwsh",
+          "taskName": "ResourceRecycleStation",
+          "enabled": true
+        },
+        {
+          "id": "qmwzjgu",
+          "taskName": "AutoEcoFarm",
+          "enabled": true
+        },
+        {
+          "id": "5ej6pg9",
+          "taskName": "AutoEssence",
+          "enabled": true
+        },
+        {
+          "id": "d947el4",
+          "taskName": "ProtocolSpace",
+          "enabled": true
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "language": "zh-CN",
+    "onboardingCompleted": true
+  },
+  "customAccents": [],
+  "newTaskNames": [],
+  "presetInitialized": true
+}
