@@ -73,6 +73,30 @@
     </div>
   </div>
 
+  <div v-if="showOkwwConfigMask" class="maa-config-mask">
+    <div class="mask-content">
+      <div class="mask-icon">
+        <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
+      </div>
+      <h2 class="mask-title">正在进行 ok-ww 配置</h2>
+      <p class="mask-description">
+        当前正在配置 ok-ww 脚本，请在 ok-ww 配置界面完成相关设置。
+        <br />
+        配置完成后，点击“保存配置”解除页面锁定。
+      </p>
+      <div class="mask-actions">
+        <a-button
+          v-if="currentConfigScript"
+          type="primary"
+          size="large"
+          @click="handleSaveOkwwConfig(currentConfigScript)"
+        >
+          保存配置
+        </a-button>
+      </div>
+    </div>
+  </div>
+
   <!-- 主要内容 -->
   <div class="scripts-header">
     <div class="header-left">
@@ -119,6 +143,7 @@
     @save-src-config="handleSaveSRCConfig"
     @start-maa-end-config="handleStartMaaEndConfig"
     @save-maa-end-config="handleSaveMaaEndConfig"
+    @start-okww-config="handleStartOkwwConfig"
     @toggle-user-status="handleToggleUserStatus"
     @pass-check-user="handlePassCheckUser"
   />
@@ -212,6 +237,18 @@
                 alt="MaaEnd"
                 class="type-icon"
               />
+              <img
+                v-else-if="script.type === 'M9A'"
+                src="@/assets/M9A.png"
+                alt="M9A"
+                class="type-icon"
+              />
+              <img
+                v-else-if="script.type === 'Okww'"
+                src="@/assets/ok-ww.ico"
+                alt="ok-ww"
+                class="type-icon"
+              />
               <img v-else src="@/assets/AUTO-MAS.ico" alt="General" class="type-icon" />
             </div>
             <div class="script-info">
@@ -224,7 +261,11 @@
                       ? 'SRC脚本'
                       : script.type === 'MaaEnd'
                         ? 'MaaEnd脚本'
-                        : '通用脚本'
+                        : script.type === 'M9A'
+                          ? 'M9A脚本'
+                          : script.type === 'Okww'
+                            ? 'ok-ww脚本'
+                          : '通用脚本'
                 }}</span>
                 <span class="script-users">
                   <UserOutlined />
@@ -284,6 +325,30 @@
               <div class="type-description">
                 MaaEnd 自动化脚本，沿用 SRC 风格的多账号代理管理界面
               </div>
+            </div>
+          </div>
+        </a-radio-button>
+        <a-radio-button value="M9A" class="type-option">
+          <div class="type-content">
+            <div class="type-logo-container">
+              <img src="@/assets/M9A.png" alt="M9A" class="type-logo" />
+            </div>
+            <div class="type-info">
+              <div class="type-title">M9A脚本</div>
+              <div class="type-description">
+                重返未来: 1999 自动化脚本，支持多账号日常代理等功能
+              </div>
+            </div>
+          </div>
+        </a-radio-button>
+        <a-radio-button value="Okww" class="type-option">
+          <div class="type-content">
+            <div class="type-logo-container">
+              <img src="@/assets/ok-ww.ico" alt="ok-ww" class="type-logo" />
+            </div>
+            <div class="type-info">
+              <div class="type-title">ok-ww脚本</div>
+              <div class="type-description">ok-script 线专项：通过 -t/-e 启动参数运行任务</div>
             </div>
           </div>
         </a-radio-button>
@@ -372,15 +437,18 @@
             </div>
             <div class="search-container">
               <a-input
-                v-model:value="searchKeyword"
+                v-model:value="pendingSearchKeyword"
                 placeholder="搜索模板名称、作者或描述..."
                 allow-clear
                 class="template-search"
+                @press-enter="handleSearchTemplates"
+                @change="handleSearchInputChange"
               >
                 <template #prefix>
                   <FileSearchOutlined />
                 </template>
               </a-input>
+              <a-button type="primary" @click="handleSearchTemplates">搜索</a-button>
             </div>
           </div>
           <div class="templates-list">
@@ -389,41 +457,38 @@
               <p>未找到匹配的模板</p>
               <p class="no-results-tip">请尝试其他关键词</p>
             </div>
-            <div
-              v-for="template in filteredTemplates"
-              :key="template.configName"
-              :class="[
-                'template-item',
-                { selected: selectedTemplate?.configName === template.configName },
-              ]"
-              @click="selectedTemplate = template"
-            >
-              <div class="template-content">
-                <div class="template-header">
-                  <div class="template-info">
-                    <h3 class="template-name">{{ template.configName }}</h3>
-                    <div class="template-meta">
-                      <span class="template-author">
-                        <UserOutlined />
-                        {{ template.author || '未知作者' }}
-                      </span>
-                      <span class="template-time">
-                        <ClockCircleOutlined />
-                        {{ template.createTime || '未知时间' }}
-                      </span>
+            <template v-else>
+              <div
+                v-for="(template, index) in filteredTemplates"
+                :key="getTemplateKey(template, index)"
+                :class="['template-item', { selected: isSelectedTemplate(template) }]"
+                @click="selectedTemplate = template"
+              >
+                <div class="template-content">
+                  <div class="template-header">
+                    <div class="template-info">
+                      <h3 class="template-name">{{ template.configName }}</h3>
+                      <div class="template-meta">
+                        <span class="template-author">
+                          <UserOutlined />
+                          {{ template.author || '未知作者' }}
+                        </span>
+                        <span class="template-time">
+                          <ClockCircleOutlined />
+                          {{ template.createTime || '未知时间' }}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                  <!--                  <div class="template-selector">-->
-                  <!--                    <a-radio :checked="selectedTemplate?.configName === template.configName" />-->
-                  <!--                  </div>-->
-                </div>
 
-                <div
-                  class="template-description"
-                  v-html="parseMarkdown(template.description)"
-                ></div>
+                  <div
+                    class="template-description"
+                    @click="handleTemplateDescriptionClick"
+                    v-html="parseMarkdown(template.description)"
+                  ></div>
+                </div>
               </div>
-            </div>
+            </template>
           </div>
         </div>
       </a-spin>
@@ -432,7 +497,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
@@ -452,6 +517,7 @@ import { useTemplateApi, type WebConfigTemplate } from '@/composables/useTemplat
 import { usePlanApi } from '@/composables/usePlanApi'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import { openExternalUrl } from '@/utils/openExternal'
 import MarkdownIt from 'markdown-it'
 const logger = window.electronAPI.getLogger('脚本管理')
 
@@ -487,10 +553,12 @@ const selectedTemplate = ref<WebConfigTemplate | null>(null)
 const templates = ref<WebConfigTemplate[]>([])
 const addLoading = ref(false)
 const templateLoading = ref(false)
-const searchKeyword = ref('')
+const pendingSearchKeyword = ref('')
+const appliedSearchKeyword = ref('')
 const showMAAConfigMask = ref(false) // 控制MAA配置遮罩层的显示
 const showSRCConfigMask = ref(false) // 控制SRC配置遮罩层的显示
 const showMaaEndConfigMask = ref(false) // 控制MaaEnd配置遮罩层的显示
+const showOkwwConfigMask = ref(false) // 控制ok-ww配置遮罩层的显示
 const currentConfigScript = ref<Script | null>(null) // 当前正在配置的脚本
 
 // WebSocket连接管理
@@ -504,19 +572,53 @@ const parseMarkdown = (text: string) => {
   return md.render(text)
 }
 
+const getTemplateKey = (template: WebConfigTemplate, index: number) =>
+  [template.downloadUrl, template.configName, template.author, template.createTime, index]
+    .filter(value => value !== undefined && value !== '')
+    .join('::')
+
+const isSelectedTemplate = (template: WebConfigTemplate) => selectedTemplate.value === template
+
+const handleTemplateDescriptionClick = (event: MouseEvent) => {
+  const link = (event.target as HTMLElement | null)?.closest('a')
+  if (!link) return
+
+  event.preventDefault()
+  const url = link.getAttribute('href')
+  if (url) {
+    openExternalUrl(url)
+  }
+}
+
 // 过滤模板
 const filteredTemplates = computed(() => {
-  if (!searchKeyword.value.trim()) {
+  if (!appliedSearchKeyword.value.trim()) {
     return templates.value
   }
 
-  const keyword = searchKeyword.value.toLowerCase()
+  const keyword = appliedSearchKeyword.value.toLowerCase()
   return templates.value.filter(
     template =>
       template.configName.toLowerCase().includes(keyword) ||
       (template.author && template.author.toLowerCase().includes(keyword)) ||
       (template.description && template.description.toLowerCase().includes(keyword))
   )
+})
+
+const handleSearchTemplates = () => {
+  appliedSearchKeyword.value = pendingSearchKeyword.value.trim()
+}
+
+const handleSearchInputChange = () => {
+  if (!pendingSearchKeyword.value.trim()) {
+    appliedSearchKeyword.value = ''
+  }
+}
+
+watch(filteredTemplates, filtered => {
+  if (selectedTemplate.value && !filtered.includes(selectedTemplate.value)) {
+    selectedTemplate.value = null
+  }
 })
 
 onMounted(() => {
@@ -658,7 +760,11 @@ const handleConfirmAddScript = async () => {
             ? 'src'
             : selectedType.value === 'MaaEnd'
               ? 'maaend'
-              : 'general'
+              : selectedType.value === 'M9A'
+                ? 'm9a'
+                : selectedType.value === 'Okww'
+                  ? 'okww'
+                : 'general'
       router.push({
         path: `/scripts/${result.scriptId}/edit/${editPath}`,
         state: {
@@ -779,6 +885,10 @@ const handleEditScript = (script: Script) => {
     router.push(`/scripts/${script.id}/edit/src`)
   } else if (script.type === 'MaaEnd') {
     router.push(`/scripts/${script.id}/edit/maaend`)
+  } else if (script.type === 'M9A') {
+    router.push(`/scripts/${script.id}/edit/m9a`)
+  } else if (script.type === 'Okww') {
+    router.push(`/scripts/${script.id}/edit/okww`)
   } else {
     router.push(`/scripts/${script.id}/edit/general`)
   }
@@ -799,6 +909,10 @@ const handleAddUser = (script: Script) => {
     router.push(`/scripts/${script.id}/users/add/src`)
   } else if (script.type === 'MaaEnd') {
     router.push(`/scripts/${script.id}/users/add/maaend`)
+  } else if (script.type === 'M9A') {
+    router.push(`/scripts/${script.id}/users/add/m9a`)
+  } else if (script.type === 'Okww') {
+    router.push(`/scripts/${script.id}/users/add/okww`)
   } else {
     router.push(`/scripts/${script.id}/users/add/general`)
   }
@@ -815,6 +929,10 @@ const handleEditUser = (user: User) => {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/src`)
     } else if (script.type === 'MaaEnd') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/maaend`)
+    } else if (script.type === 'M9A') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/m9a`)
+    } else if (script.type === 'Okww') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/okww`)
     } else {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
     }
@@ -1219,6 +1337,116 @@ const handleSaveMaaEndConfig = async (script: Script) => {
   }
 }
 
+const handleStartOkwwConfig = async (script: Script) => {
+  try {
+    const existingConnection = activeConnections.value.get(script.id)
+    if (existingConnection) {
+      message.warning('该脚本已在配置中，请先保存当前配置')
+      return
+    }
+
+    const response = await Service.addTaskApiDispatchStartPost({
+      taskId: script.id,
+      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+    })
+
+    if (response.code === 200) {
+      showOkwwConfigMask.value = true
+      currentConfigScript.value = script
+
+      const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
+        if (wsMessage.type === 'error') {
+          const errorMsg =
+            wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
+          logger.error(`脚本 ${script.name} 连接错误: ${errorMsg}`)
+          message.error(`ok-ww 配置连接失败: ${errorMsg}`)
+          activeConnections.value.delete(script.id)
+          showOkwwConfigMask.value = false
+          currentConfigScript.value = null
+          return
+        }
+
+        if (wsMessage.type === 'Info' && wsMessage.data && wsMessage.data.Error) {
+          const errorMsg =
+            wsMessage.data.Error instanceof Error
+              ? wsMessage.data.Error.message
+              : String(wsMessage.data.Error)
+          logger.error(`脚本 ${script.name} 配置异常: ${errorMsg}`)
+          message.error(`ok-ww 配置失败: ${errorMsg}`)
+          return
+        }
+
+        if (
+          wsMessage.type === 'Signal' &&
+          wsMessage.data &&
+          wsMessage.data.Accomplish !== undefined
+        ) {
+          unsubscribe(subscriptionId)
+          activeConnections.value.delete(script.id)
+          showOkwwConfigMask.value = false
+          currentConfigScript.value = null
+        }
+      })
+
+      activeConnections.value.set(script.id, {
+        subscriptionId,
+        websocketId: response.taskId,
+      })
+      message.success(`已启动 ${script.name} 的 ok-ww 配置`)
+
+      setTimeout(
+        () => {
+          if (activeConnections.value.has(script.id)) {
+            const connection = activeConnections.value.get(script.id)
+            if (connection) {
+              unsubscribe(connection.subscriptionId)
+            }
+            activeConnections.value.delete(script.id)
+            showOkwwConfigMask.value = false
+            currentConfigScript.value = null
+            message.info(`${script.name} 配置会话已超时断开`)
+          }
+        },
+        30 * 60 * 1000
+      )
+    } else {
+      message.error(response.message || '启动 ok-ww 配置失败')
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`启动 ok-ww 配置失败: ${errorMsg}`)
+    message.error(`启动 ok-ww 配置失败: ${errorMsg}`)
+  }
+}
+
+const handleSaveOkwwConfig = async (script: Script) => {
+  try {
+    const connection = activeConnections.value.get(script.id)
+    if (!connection) {
+      message.error('未找到活动的配置会话')
+      return
+    }
+
+    const response = await Service.stopTaskApiDispatchStopPost({
+      taskId: connection.websocketId,
+    })
+
+    if (response.code === 200) {
+      unsubscribe(connection.subscriptionId)
+      activeConnections.value.delete(script.id)
+      showOkwwConfigMask.value = false
+      currentConfigScript.value = null
+      message.success(`${script.name} 的配置已保存`)
+    } else {
+      message.error(response.message || '保存配置失败')
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存 ok-ww 配置失败: ${errorMsg}`)
+    message.error(`保存 ok-ww 配置失败: ${errorMsg}`)
+  }
+}
+
 const handleToggleUserStatus = async (user: User) => {
   try {
     // 找到该用户对应的脚本
@@ -1617,12 +1845,20 @@ const handlePassCheckUser = async (user: User) => {
 
 .search-container {
   flex: 1;
-  max-width: 300px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 380px;
   margin-left: 16px;
 }
 
 .template-search {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
+}
+
+.search-container .ant-btn {
+  flex-shrink: 0;
 }
 
 .templates-list {
@@ -1631,6 +1867,26 @@ const handlePassCheckUser = async (user: User) => {
   border: 1px solid var(--ant-color-border);
   border-radius: 6px;
   background: var(--ant-color-bg-container);
+  scrollbar-width: thin;
+  scrollbar-color: var(--ant-color-border) transparent;
+}
+
+.templates-list::-webkit-scrollbar {
+  width: 6px !important;
+  display: block !important;
+}
+
+.templates-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.templates-list::-webkit-scrollbar-thumb {
+  background-color: var(--ant-color-border);
+  border-radius: 3px;
+}
+
+.templates-list::-webkit-scrollbar-thumb:hover {
+  background-color: var(--ant-color-border-secondary);
 }
 
 .template-item {

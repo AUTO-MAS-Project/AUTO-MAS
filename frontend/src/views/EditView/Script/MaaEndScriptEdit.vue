@@ -30,6 +30,24 @@
         <a-tag class="type-tag">MaaEnd</a-tag>
       </template>
 
+      <a-alert class="maaend-tip" type="info" show-icon>
+        <template #message>MaaEnd 启动提示</template>
+        <template #description>
+          <span>电脑端默认等待时间建议设置为 60 秒。需要帮助或反馈问题时，可以查看</span>
+          <a href="https://qm.qq.com/q/2AK5MoVfOQ" target="_blank" rel="noopener noreferrer"
+            >用户 QQ 群</a
+          >
+          <span>或</span>
+          <a
+            href="https://github.com/MaaEnd/MaaEnd/issues"
+            target="_blank"
+            rel="noopener noreferrer"
+            >BUG 收集页</a
+          >
+          <span>。</span>
+        </template>
+      </a-alert>
+
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div class="form-section">
           <div class="section-header">
@@ -158,7 +176,7 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input-number v-model:value="maaEndConfig.Game.WaitTime" :min="0" :max="9999" size="large"
+                <a-input-number v-model:value="maaEndConfig.Game.WaitTime" :min="60" :max="9999" size="large"
                   style="width: 100%" @blur="handleChange('Game', 'WaitTime', maaEndConfig.Game.WaitTime)" />
               </a-form-item>
             </a-col>
@@ -437,16 +455,16 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
     const gamePayload =
       value === 'ADB'
         ? {
-          ControllerType: value,
-          Path: '',
-          Arguments: '',
-          WaitTime: 15,
-        }
+            ControllerType: value,
+            Path: '',
+            Arguments: '',
+            WaitTime: 60,
+          }
         : {
-          ControllerType: value,
-          EmulatorId: '',
-          EmulatorIndex: '',
-        }
+            ControllerType: value,
+            EmulatorId: '',
+            EmulatorIndex: '',
+          }
 
     if (value !== 'ADB') {
       emulatorDeviceOptions.value = []
@@ -599,6 +617,17 @@ onMounted(async () => {
   border: 1px solid var(--ant-color-primary-border);
   color: var(--ant-color-primary);
   background: var(--ant-color-primary-bg);
+}
+
+.maaend-tip {
+  margin-bottom: 24px;
+  border-radius: 8px;
+}
+
+.maaend-tip :deep(.ant-alert-description) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .form-section {

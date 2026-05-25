@@ -40,6 +40,9 @@ TYPE_BOOK = {
     "SrcConfig": "SRC",
     "MaaEndConfig": "MaaEnd",
     "GeneralConfig": "通用",
+    "OkwwConfig": "ok-ww",
+    "M9AConfig": "M9A",
+    "M9AUserConfig": "M9A",
 }
 """配置类型映射表"""
 
