@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from dataclasses import dataclass
 from types import NoneType, UnionType
 from typing import Any, Callable, Literal, get_args, get_origin
@@ -361,6 +362,9 @@ def _field_from_model_field(name: str, field_info: Any) -> PluginFieldDeclaratio
         field_type = "string"
         field_kwargs["format"] = "password"
         field_kwargs["sensitive"] = True
+    if field_type == "tag":
+        field_kwargs["readonly"] = True
+        field_kwargs["hidden"] = True
 
     return PluginFieldDeclaration(
         name=name,
@@ -384,7 +388,7 @@ def _build_validator(
     field: PluginFieldDeclaration,
 ) -> ValidatorBase:
     if field.virtual_handler is not None:
-        return VirtualConfigValidator(lambda: str(field.virtual_handler(config)))
+        return VirtualConfigValidator(lambda: _serialize_virtual_value(field.virtual_handler(config)))
 
     if field.validator == "username":
         return UserNameValidator()
@@ -423,6 +427,14 @@ def _build_validator(
 
     _ = group
     return StringValidator()
+
+
+def _serialize_virtual_value(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (list, dict)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
 
 
 def _build_schema_field(
