@@ -265,6 +265,17 @@ class PluginFieldFactory:
     ) -> PluginFieldDeclaration:
         return _virtual(name, label, default, handler=handler, **kwargs)
 
+    def tag(
+        self,
+        name: str,
+        label: str,
+        default: str = "[ ]",
+        *,
+        handler: Any | None = None,
+        **kwargs: Any,
+    ) -> PluginFieldDeclaration:
+        return _tag(name, label, default, handler=handler, **kwargs)
+
     def button(self, name: str, label: str, button: dict[str, Any], **kwargs: Any) -> PluginFieldDeclaration:
         return _button(name, label, button, **kwargs)
 
@@ -442,6 +453,27 @@ def _virtual(
         default,
         readonly=True,
         virtual_handler=handler,
+        **kwargs,
+    )
+
+
+def _tag(
+    name: str,
+    label: str,
+    default: str = "[ ]",
+    *,
+    handler: Any | None = None,
+    **kwargs: Any,
+) -> PluginFieldDeclaration:
+    if handler is not None:
+        kwargs["virtual_handler"] = handler
+    kwargs.setdefault("hidden", True)
+    return _declaration(
+        name,
+        label,
+        "tag",
+        default,
+        readonly=True,
         **kwargs,
     )
 

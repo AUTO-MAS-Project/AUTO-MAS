@@ -572,6 +572,22 @@ class AppConfig(GlobalConfig):
         return merged
 
     @staticmethod
+    def _strip_virtual_fields_from_plugin_form_payload(
+        config_class: type[Any],
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        cleaned = copy.deepcopy(payload or {})
+        field_groups = getattr(config_class, "_field_groups", ())
+        for group in field_groups:
+            group_data = cleaned.get(group.key)
+            if not isinstance(group_data, dict):
+                continue
+            for field in group.fields:
+                if field.virtual_handler is not None:
+                    group_data.pop(field.name, None)
+        return cleaned
+
+    @staticmethod
     def _script_record_name(
         provider: Any,
         config_data: dict[str, Any],
@@ -898,8 +914,16 @@ class AppConfig(GlobalConfig):
                     config.get("PluginData", "Config"),
                     "script",
                 )
+                current_form_payload = self._strip_virtual_fields_from_plugin_form_payload(
+                    provider.script_config_class,
+                    current_form_payload,
+                )
                 payload_data = self._merge_plugin_form_payload(
                     current_form_payload,
+                    payload_data,
+                )
+                payload_data = self._strip_virtual_fields_from_plugin_form_payload(
+                    provider.script_config_class,
                     payload_data,
                 )
                 payload_data = await form_to_storage(provider, payload_data, "script")
@@ -1187,8 +1211,16 @@ class AppConfig(GlobalConfig):
                     user_config.get("PluginData", "Config"),
                     "user",
                 )
+                current_form_payload = self._strip_virtual_fields_from_plugin_form_payload(
+                    provider.user_config_class,
+                    current_form_payload,
+                )
                 payload_data = self._merge_plugin_form_payload(
                     current_form_payload,
+                    payload_data,
+                )
+                payload_data = self._strip_virtual_fields_from_plugin_form_payload(
+                    provider.user_config_class,
                     payload_data,
                 )
                 payload_data = await form_to_storage(provider, payload_data, "user")

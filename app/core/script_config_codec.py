@@ -92,6 +92,22 @@ def _normalize_json_fields_for_form(
     return data
 
 
+def _strip_virtual_fields_for_storage(
+    config_class: type[ConfigBase],
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    data = copy.deepcopy(payload or {})
+    field_groups = getattr(config_class, "_field_groups", ())
+    for group in field_groups:
+        group_data = data.get(group.key)
+        if not isinstance(group_data, dict):
+            continue
+        for field in group.fields:
+            if field.virtual_handler is not None:
+                group_data.pop(field.name, None)
+    return data
+
+
 async def build_config_model(
     provider: "ScriptTypeProvider",
     raw_payload: Any,
@@ -140,5 +156,6 @@ async def form_to_storage(
 
     model = await build_config_model(provider, form_payload, kind)
     if isinstance(model, ConfigBase):
-        return await model.toDict(if_decrypt=False)
+        payload = await model.toDict(if_decrypt=False)
+        return _strip_virtual_fields_for_storage(type(model), payload)
     return model.model_dump(mode="json")

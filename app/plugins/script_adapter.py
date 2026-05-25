@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 import inspect
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -137,6 +138,14 @@ def _schema_options(annotation: Any, extra: dict[str, Any]) -> list[Any] | None:
     return [{"label": str(value), "value": value} for value in values]
 
 
+def _serialize_virtual_value(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (list, dict)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
 def _config_validator(
     group: str,
     name: str,
@@ -148,7 +157,9 @@ def _config_validator(
 ) -> ValidatorBase:
     field_key = f"{group}.{name}"
     if field_key in virtual_handlers:
-        return VirtualConfigValidator(lambda: str(virtual_handlers[field_key](related_config["_self"])))
+        return VirtualConfigValidator(
+            lambda: _serialize_virtual_value(virtual_handlers[field_key](related_config["_self"]))
+        )
 
     validator_name = str(extra.get("validator") or "").strip()
     if validator_name == "username":

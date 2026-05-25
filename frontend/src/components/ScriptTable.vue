@@ -117,9 +117,9 @@
                         <!-- 用户详细信息 -->
                         <div v-if="shouldShowStatusTags(user)" class="user-info-tags">
                           <!-- 直接使用后端提供的Tag字段 -->
-                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
-                            :title="tag.text" :class="['info-tag', { 'clickable-tag': tag.text === '人工排查未通过' }]"
-                            :color="tag.color" @click="tag.text === '人工排查未通过' ? handlePassCheck(user) : undefined">
+                          <a-tag v-for="(tag, index) in getUserStatusTags(user)" :key="index"
+                            :title="tag.text" :class="['info-tag', { 'clickable-tag': isPassCheckTag(tag) }]"
+                            :color="tag.color || 'default'" @click="isPassCheckTag(tag) ? handlePassCheck(user) : undefined">
                             {{ tag.text }}
                           </a-tag>
                         </div>
@@ -187,6 +187,7 @@ import { Service } from '@/api'
 import { message, Modal } from 'ant-design-vue'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import { parseStatusTagList } from '@/composables/useStatusTag'
+import type { StatusTag } from '@/composables/useStatusTag'
 import { getTodayInTimezone, isDateEqual, getWeekdayInTimezone } from '@/utils/dateUtils'
 import { getScriptIcon, getScriptTypeTagColor } from '@/utils/scriptRegistry'
 
@@ -341,6 +342,47 @@ const hasInfoDisplayValue = (user: any, field: string): boolean => {
   return value !== undefined && value !== null && String(value).length > 0
 }
 
+const getValueByPath = (source: Record<string, any> | null | undefined, path: string): unknown => {
+  if (!source || !path) {
+    return undefined
+  }
+  return path.split('.').reduce<unknown>((current, key) => {
+    if (!current || typeof current !== 'object') {
+      return undefined
+    }
+    return (current as Record<string, unknown>)[key]
+  }, source)
+}
+
+const getSchemaFields = (schema: any): any[] => {
+  if (!schema) {
+    return []
+  }
+  if (Array.isArray(schema.groups)) {
+    return schema.groups.flatMap((group: any) => Array.isArray(group.fields) ? group.fields : [])
+  }
+  if (typeof schema === 'object') {
+    return Object.entries(schema).map(([key, field]) => ({
+      ...(field && typeof field === 'object' ? field : {}),
+      key,
+    }))
+  }
+  return []
+}
+
+const getUserStatusTags = (user: any): StatusTag[] => {
+  const tagFields = getSchemaFields(user?.schema).filter(field => field?.type === 'tag')
+  const tags = tagFields.flatMap(field =>
+    parseStatusTagList(getValueByPath(user?.config || user, field.key || field.name || ''))
+  )
+  if (tags.length > 0) {
+    return tags
+  }
+  return parseStatusTagList(user?.Info?.Tag)
+}
+
+const isPassCheckTag = (tag: StatusTag): boolean => tag.text === '人工排查未通过'
+
 const shouldShowServerTag = (user: any): boolean => {
   return hasInfoDisplayValue(user, 'Server') || hasInfoDisplayValue(user, 'Resource')
 }
@@ -354,7 +396,7 @@ const shouldShowPasswordTag = (user: any): boolean => {
 }
 
 const shouldShowStatusTags = (user: any): boolean => {
-  return hasInfoDisplayValue(user, 'Tag')
+  return getUserStatusTags(user).length > 0
 }
 
 const truncateText = (text: string, maxLength: number = 10): string => {
