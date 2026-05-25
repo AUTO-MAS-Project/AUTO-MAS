@@ -25,6 +25,13 @@ from .broadcast import Broadcast
 from .config import Config
 from .emulator_manager import EmulatorManager
 from .maa_manager import MaaFWManager
+from .page_registry import (
+    PageDeclaration,
+    PageFacade,
+    PageRegistry,
+    page_registry,
+    register_builtin_pages,
+)
 from app.plugins import PluginManager
 from .task_manager import TaskManager
 from .timer import MainTimer
@@ -37,4 +44,9 @@ __all__ = [
     "EmulatorManager",
     "MaaFWManager",
     "PluginManager",
+    "PageDeclaration",
+    "PageFacade",
+    "PageRegistry",
+    "page_registry",
+    "register_builtin_pages",
 ]
