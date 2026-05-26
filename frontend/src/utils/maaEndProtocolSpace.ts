@@ -25,6 +25,7 @@ export type AutoEssenceLocation =
   | 'VFPowerPlateau'
   | 'WLWulingCity'
   | 'WLQingboStockade'
+  | 'WLMarkerStone'
 export type CurrentTaskValue = ProtocolSpaceTaskValue | AutoEssenceLocation
 export type MaaEndTaskSwitch =
   | 'Sanity'
@@ -101,6 +102,7 @@ export const AUTO_ESSENCE_LOCATION_OPTIONS: Array<{
   { label: '供能高地', value: 'VFPowerPlateau' },
   { label: '武陵城区', value: 'WLWulingCity' },
   { label: '清波寨', value: 'WLQingboStockade' },
+  { label: '首墩', value: 'WLMarkerStone' },
 ]
 
 export const MAAEND_TASK_GROUPS: MaaEndTaskSwitchGroup[] = [

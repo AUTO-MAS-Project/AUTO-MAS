@@ -682,6 +682,7 @@ class MaaEndUserConfig_Task(BaseModel):
             "VFPowerPlateau",
             "WLWulingCity",
             "WLQingboStockade",
+            "WLMarkerStone",
         ]
     ] = Field(default=None, description="基质刷取指定地点")
     IfSanity: Optional[bool] = Field(default=None, description="理智任务")
@@ -793,6 +794,7 @@ class MaaEndConfig_Task(BaseModel):
             "VFPowerPlateau",
             "WLWulingCity",
             "WLQingboStockade",
+            "WLMarkerStone",
         ]
     ] = Field(default=None, description="基质刷取指定地点")
     IfSanity: Optional[bool] = Field(default=None, description="理智任务")

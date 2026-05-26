@@ -203,7 +203,7 @@ MAAEND_SANITY_TASK_DETAIL_LABELS = {
     "VFPowerPlateau": "供能高地",
     "WLWulingCity": "武陵城区",
     "WLQingboStockade": "清波寨",
-    "WLMarkerStone":"首墩",
+    "WLMarkerStone": "首墩",
 }
 """MaaEnd理智任务详细选项展示文案"""
 
@@ -214,6 +214,30 @@ MAAEND_SANITY_TASK_TYPES = (
     "Essence",
 )
 """MaaEnd理智任务类型列表"""
+
+MAAEND_PROTOCOL_SPACE_TASK_OPTIONS = {
+    "OperatorProgression": ("OperatorEXP", "Promotions", "T-Creds", "SkillUp"),
+    "WeaponProgression": ("WeaponEXP", "WeaponTune"),
+    "CrisisDrills": (
+        "AdvancedProgression1",
+        "AdvancedProgression2",
+        "AdvancedProgression3",
+        "AdvancedProgression4",
+        "AdvancedProgression5",
+    ),
+}
+"""MaaEnd协议空间任务选项列表"""
+
+MAAEND_AUTO_ESSENCE_LOCATION_OPTIONS = (
+    "VFTheHub",
+    "VFOriginiumSciencePark",
+    "VFOriginLodespring",
+    "VFPowerPlateau",
+    "WLWulingCity",
+    "WLQingboStockade",
+    "WLMarkerStone",
+)
+"""MaaEnd基质刷取地点选项列表"""
 
 MAAEND_STAGE_WITH_AB = set(["OperatorEXP", "Promotions", "SkillUp", "WeaponTune"])
 """MAAEnd任务包含AB关的关卡列表"""

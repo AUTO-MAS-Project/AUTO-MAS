@@ -247,14 +247,11 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info(f"运行脚本任务: {self.maaend_exe_path}")
             self.wait_event.clear()
             controller_type = self.script_config.get("Game", "ControllerType")
-            instance_name = (
-                "电脑端-前台" if controller_type == "Win32-Front" else "电脑端-默认"
-            )
             await self.maaend_process_manager.open_process(
                 self.maaend_exe_path,
                 "--autostart",
                 "--instance",
-                instance_name,
+                self.maaend_instance_name,
                 "--quit-after-run",
                 stdout=asyncio.subprocess.PIPE,
             )
@@ -388,7 +385,8 @@ class AutoProxyTask(TaskExecuteBase):
             Path.cwd()
             / f"data/{self.script_info.script_id}/{config_user_id}/ConfigFile"
         )
-        shutil.copytree(maaend_config_path, self.maaend_set_path, dirs_exist_ok=True)
+        shutil.rmtree(self.maaend_set_path, ignore_errors=True)
+        shutil.copytree(maaend_config_path, self.maaend_set_path)
         maaend_set = json.loads(
             (self.maaend_set_path / "mxu-MaaEnd.json").read_text(encoding="utf-8")
         )
@@ -419,6 +417,9 @@ class AutoProxyTask(TaskExecuteBase):
                 break
         if maaend_instance is None:
             raise ValueError(f"配置文件中未找到控制器 {controller_type} 对应的实例")
+        self.maaend_instance_name = (
+            maaend_instance.get("name") or maaend_instance.get("id") or "AUTO-MAS"
+        )
         if device_info is not None:
             from app.core import MaaFWManager
 

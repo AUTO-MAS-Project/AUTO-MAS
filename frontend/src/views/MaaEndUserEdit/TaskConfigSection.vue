@@ -371,7 +371,10 @@ watch(
   () => {
     if (optionControlsDisabled.value) return
     ensureCurrentTaskValue()
-    normalizeRewardGroupState()
+    const rewardGroupChange = normalizeRewardGroupState()
+    if (rewardGroupChange) {
+      emitSaveBatch([rewardGroupChange])
+    }
   },
   { immediate: true }
 )
