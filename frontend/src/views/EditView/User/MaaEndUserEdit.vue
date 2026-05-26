@@ -77,7 +77,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { SettingOutlined } from '@ant-design/icons-vue'
@@ -145,6 +145,22 @@ const getDefaultMaaEndUserData = () => ({
     CrisisDrills: 'AdvancedProgression1',
     RewardsSetOption: 'RewardsSetA',
     AutoEssenceSpecifiedLocation: 'VFTheHub',
+    IfSanity: true,
+    IfAutoUseSpMedication: true,
+    IfDijiangRewards: true,
+    IfDeliveryJobs: true,
+    IfSellProduct: true,
+    IfAutoStockpile: true,
+    IfAutoStockStaple: true,
+    IfVisitFriends: true,
+    IfCreditShoppingN2: true,
+    IfSeizeEntrustTask: true,
+    IfAutoEcoFarm: true,
+    IfAutoSell: true,
+    IfEnvironmentMonitoring: true,
+    IfAutoCollect: true,
+    IfDailyRewards: true,
+    IfResourceRecycleStation: true,
   },
   Notify: {
     Enabled: false,
@@ -364,12 +380,6 @@ const handleCancel = () => {
 
 onMounted(async () => {
   await loadScriptInfo()
-  watch(
-    () => formData.Info.Mode,
-    async () => {
-      await refreshPresetTasks()
-    }
-  )
 
   if (isEdit.value) {
     await loadUserData()

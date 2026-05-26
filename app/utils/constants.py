@@ -218,6 +218,74 @@ MAAEND_SANITY_TASK_TYPES = (
 MAAEND_STAGE_WITH_AB = set(["OperatorEXP", "Promotions", "SkillUp", "WeaponTune"])
 """MAAEnd任务包含AB关的关卡列表"""
 
+MAAEND_TASK_GROUPS = {
+    "Sanity": {
+        "label": "理智作战",
+        "tasks": (
+            ("Sanity", "理智任务"),
+            ("AutoUseSpMedication", "应急理智加强剂"),
+        ),
+    },
+    "Infrastructure": {
+        "label": "基建任务",
+        "tasks": (
+            ("DijiangRewards", "基建任务"),
+            ("DeliveryJobs", "转交委托"),
+            ("SellProduct", "售卖产品"),
+            ("AutoStockpile", "自动囤货"),
+            ("AutoStockStaple", "购买稳定物资"),
+        ),
+    },
+    "Credit": {
+        "label": "信用收支",
+        "tasks": (
+            ("VisitFriends", "拜访好友"),
+            ("CreditShoppingN2", "信用点购物"),
+            ("SeizeEntrustTask", "抢委托"),
+        ),
+    },
+    "Frontend": {
+        "label": "前台任务",
+        "tasks": (
+            ("AutoEcoFarm", "生态农场"),
+            ("AutoSell", "售卖弹性物资"),
+            ("EnvironmentMonitoring", "环境监测"),
+            ("AutoCollect", "自动采集"),
+        ),
+    },
+    "Rewards": {
+        "label": "奖励领取",
+        "tasks": (
+            ("DailyRewards", "日常奖励领取"),
+            ("ResourceRecycleStation", "资源回收站"),
+        ),
+    },
+}
+"""MaaEnd任务分组"""
+
+MAAEND_TASKS = tuple(
+    task_name
+    for group in MAAEND_TASK_GROUPS.values()
+    for task_name, _ in group["tasks"]
+)
+"""MaaEnd托管任务列表"""
+
+MAAEND_CONTROLLER_TASKS = {
+    "Win32-Window": (
+        "VisitFriends",
+        "DijiangRewards",
+        "CreditShoppingN2",
+        "DeliveryJobs",
+        "SellProduct",
+        "AutoStockpile",
+        "AutoStockStaple",
+        "DailyRewards",
+        "SeizeEntrustTask",
+    ),
+    "Win32-Front": MAAEND_TASKS,
+}
+"""MaaEnd控制器支持的托管任务列表"""
+
 MAAEND_SANITY_TASK_DEFAULTS = {
     "SanityTaskType": "OperatorProgression",
     "OperatorProgression": "OperatorEXP",

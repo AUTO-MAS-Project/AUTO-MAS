@@ -9,6 +9,7 @@ import type {
 } from '@/api'
 import type {
   AutoEssenceLocation,
+  MaaEndTaskSwitch,
   ProtocolSpaceTaskValue,
   RewardSetOption,
   SanityTaskType,
@@ -109,7 +110,9 @@ export interface SRCScriptConfig {
   }
 }
 
-export interface MaaEndTaskConfig {
+export type MaaEndTaskSwitchConfig = Record<`If${MaaEndTaskSwitch}`, boolean>
+
+export type MaaEndTaskConfig = MaaEndTaskSwitchConfig & {
   SanityTaskType: SanityTaskType
   OperatorProgression: ProtocolSpaceTaskValue
   WeaponProgression: ProtocolSpaceTaskValue

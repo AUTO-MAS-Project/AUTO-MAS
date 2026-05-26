@@ -671,6 +671,30 @@ class MaaEndUserConfig_Task(BaseModel):
             "WLQingboStockade",
         ]
     ] = Field(default=None, description="基质刷取指定地点")
+    IfSanity: Optional[bool] = Field(default=None, description="理智任务")
+    IfAutoUseSpMedication: Optional[bool] = Field(
+        default=None, description="应急理智加强剂"
+    )
+    IfDijiangRewards: Optional[bool] = Field(default=None, description="基建任务")
+    IfDeliveryJobs: Optional[bool] = Field(default=None, description="转交委托")
+    IfSellProduct: Optional[bool] = Field(default=None, description="售卖产品")
+    IfAutoStockpile: Optional[bool] = Field(default=None, description="自动囤货")
+    IfAutoStockStaple: Optional[bool] = Field(default=None, description="购买稳定物资")
+    IfVisitFriends: Optional[bool] = Field(default=None, description="拜访好友")
+    IfCreditShoppingN2: Optional[bool] = Field(default=None, description="信用点购物")
+    IfSeizeEntrustTask: Optional[bool] = Field(default=None, description="抢委托")
+    IfAutoEcoFarm: Optional[bool] = Field(default=None, description="生态农场")
+    IfAutoSell: Optional[bool] = Field(default=None, description="售卖弹性物资")
+    IfEnvironmentMonitoring: Optional[bool] = Field(
+        default=None, description="环境监测"
+    )
+    IfAutoCollect: Optional[bool] = Field(default=None, description="自动采集")
+    IfDailyRewards: Optional[bool] = Field(default=None, description="日常奖励领取")
+    IfResourceRecycleStation: Optional[bool] = Field(
+        default=None, description="资源回收站"
+    )
+
+
 class MaaEndUserConfig_Notify(BaseModel):
     Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
     IfSendStatistic: Optional[bool] = Field(
@@ -758,6 +782,30 @@ class MaaEndConfig_Task(BaseModel):
             "WLQingboStockade",
         ]
     ] = Field(default=None, description="基质刷取指定地点")
+    IfSanity: Optional[bool] = Field(default=None, description="理智任务")
+    IfAutoUseSpMedication: Optional[bool] = Field(
+        default=None, description="应急理智加强剂"
+    )
+    IfDijiangRewards: Optional[bool] = Field(default=None, description="基建任务")
+    IfDeliveryJobs: Optional[bool] = Field(default=None, description="转交委托")
+    IfSellProduct: Optional[bool] = Field(default=None, description="售卖产品")
+    IfAutoStockpile: Optional[bool] = Field(default=None, description="自动囤货")
+    IfAutoStockStaple: Optional[bool] = Field(default=None, description="购买稳定物资")
+    IfVisitFriends: Optional[bool] = Field(default=None, description="拜访好友")
+    IfCreditShoppingN2: Optional[bool] = Field(default=None, description="信用点购物")
+    IfSeizeEntrustTask: Optional[bool] = Field(default=None, description="抢委托")
+    IfAutoEcoFarm: Optional[bool] = Field(default=None, description="生态农场")
+    IfAutoSell: Optional[bool] = Field(default=None, description="售卖弹性物资")
+    IfEnvironmentMonitoring: Optional[bool] = Field(
+        default=None, description="环境监测"
+    )
+    IfAutoCollect: Optional[bool] = Field(default=None, description="自动采集")
+    IfDailyRewards: Optional[bool] = Field(default=None, description="日常奖励领取")
+    IfResourceRecycleStation: Optional[bool] = Field(
+        default=None, description="资源回收站"
+    )
+
+
 class MaaEndConfig(BaseModel):
     Info: Optional[MaaEndConfig_Info] = Field(default=None, description="脚本信息")
     Run: Optional[MaaEndConfig_Run] = Field(default=None, description="运行配置")
