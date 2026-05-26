@@ -96,10 +96,12 @@ class ScriptConfigTask(TaskExecuteBase):
 
         if self.config_mode == "自定义":
             # 自定义模式直接打开用户完整配置，并临时收束为单个 AUTOMAS 实例
-            if self.config_file_path.exists():
-                shutil.copytree(
-                    self.config_file_path, self.maaend_set_path, dirs_exist_ok=True
+            if not (self.config_file_path / "mxu-MaaEnd.json").exists():
+                raise FileNotFoundError(
+                    "未找到用户的 MaaEnd 配置文件, 请先完成「MaaEnd 配置」步骤"
                 )
+            shutil.rmtree(self.maaend_set_path, ignore_errors=True)
+            shutil.copytree(self.config_file_path, self.maaend_set_path)
             maaend_set = json.loads(
                 (self.maaend_set_path / "mxu-MaaEnd.json").read_text(
                     encoding="utf-8"

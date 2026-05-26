@@ -1037,6 +1037,7 @@ class MultipleConfig(Generic[T]):
             _.__name__: _ for _ in sub_config_type
         }
         self.file: Path | None = None
+        self.parent_config: Any | None = None
         self.order: list[uuid.UUID] = []
         self.data: dict[uuid.UUID, T] = {}
         self.is_locked = False
@@ -1174,6 +1175,7 @@ class MultipleConfig(Generic[T]):
             if type_name in self.sub_config_type:
                 self.order.append(uuid.UUID(instance["uid"]))
                 self.data[self.order[-1]] = self.sub_config_type[type_name]()
+                setattr(self.data[self.order[-1]], "parent_config", self.parent_config)
                 await self.data[self.order[-1]].load(source_data[instance["uid"]])
 
         normalized_data = await self.toDict(if_decrypt=False)
@@ -1286,6 +1288,7 @@ class MultipleConfig(Generic[T]):
         uid = uuid.uuid4()
         self.order.append(uid)
         self.data[uid] = config_type()
+        setattr(self.data[uid], "parent_config", self.parent_config)
 
         for save_method in self._save_methods:
             await self.data[uid].add_save_method(save_method)

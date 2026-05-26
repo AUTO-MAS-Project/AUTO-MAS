@@ -32,6 +32,8 @@ from app.utils.constants import (
     MATERIALS_MAP,
     RESOURCE_STAGE_INFO,
     MAA_STAGE_KEY,
+    MAAEND_AUTO_ESSENCE_LOCATION_OPTIONS,
+    MAAEND_PROTOCOL_SPACE_TASK_OPTIONS,
     MAAEND_SANITY_TASK_DEFAULTS,
     MAAEND_SANITY_TASK_DETAIL_LABELS,
     MAAEND_SANITY_TASK_FIELDS,
@@ -75,36 +77,44 @@ def init_maaend_task_config(config) -> None:
         "Task",
         "SanityTaskType",
         MAAEND_SANITY_TASK_DEFAULTS["SanityTaskType"],
+        OptionsValidator(list(MAAEND_SANITY_TASK_TYPES)),
     )
     ## 干员养成任务
     config.Task_OperatorProgression = ConfigItem(
         "Task",
         "OperatorProgression",
         MAAEND_SANITY_TASK_DEFAULTS["OperatorProgression"],
+        OptionsValidator(
+            list(MAAEND_PROTOCOL_SPACE_TASK_OPTIONS["OperatorProgression"])
+        ),
     )
     ## 武器养成任务
     config.Task_WeaponProgression = ConfigItem(
         "Task",
         "WeaponProgression",
         MAAEND_SANITY_TASK_DEFAULTS["WeaponProgression"],
+        OptionsValidator(list(MAAEND_PROTOCOL_SPACE_TASK_OPTIONS["WeaponProgression"])),
     )
     ## 危境预演任务
     config.Task_CrisisDrills = ConfigItem(
         "Task",
         "CrisisDrills",
         MAAEND_SANITY_TASK_DEFAULTS["CrisisDrills"],
+        OptionsValidator(list(MAAEND_PROTOCOL_SPACE_TASK_OPTIONS["CrisisDrills"])),
     )
     ## 奖励套组选项
     config.Task_RewardsSetOption = ConfigItem(
         "Task",
         "RewardsSetOption",
         MAAEND_SANITY_TASK_DEFAULTS["RewardsSetOption"],
+        OptionsValidator(["RewardsSetA", "RewardsSetB"]),
     )
     ## 基质刷取地点
     config.Task_AutoEssenceSpecifiedLocation = ConfigItem(
         "Task",
         "AutoEssenceSpecifiedLocation",
         MAAEND_SANITY_TASK_DEFAULTS["AutoEssenceSpecifiedLocation"],
+        OptionsValidator(list(MAAEND_AUTO_ESSENCE_LOCATION_OPTIONS)),
     )
 
     for task_name in MAAEND_TASKS:
@@ -822,6 +832,17 @@ class MaaEndUserConfig(ConfigBase):
     def get_effective_sanity_task_config(self) -> tuple[dict[str, str], str]:
         """获取当前生效的理智任务配置"""
 
+        if self.get("Info", "Mode") == "简洁":
+            parent_config = getattr(self, "parent_config", None)
+            if isinstance(parent_config, MaaEndConfig):
+                return (
+                    {
+                        field: parent_config.get("Task", field)
+                        for field in MAAEND_SANITY_TASK_FIELDS
+                    },
+                    "Script",
+                )
+
         return (
             {field: self.get("Task", field) for field in MAAEND_SANITY_TASK_FIELDS},
             "Fixed",
@@ -1013,6 +1034,7 @@ class MaaEndConfig(ConfigBase):
         init_maaend_task_config(self)
 
         self.UserData = MultipleConfig([MaaEndUserConfig])
+        self.UserData.parent_config = self
 
         super().__init__()
 
