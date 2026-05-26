@@ -8,7 +8,7 @@ export type GlobalConfig_Update = {
      */
     IfAutoUpdate?: (boolean | null);
     /**
-      * 更新源: GitHub源, Mirror酱源, 自建源, CNB源
+     * 更新源: GitHub源, Mirror酱源, 自建源, CNB 镜像源
      */
     Source?: ('GitHub' | 'MirrorChyan' | 'AutoSite' | 'CNB' | null);
     /**
