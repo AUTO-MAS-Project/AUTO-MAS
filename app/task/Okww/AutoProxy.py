@@ -196,7 +196,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.run_book = False
 
     def _game_config_summary_lines(self) -> list[str]:
-        """游戏配置摘要行（调度台展示与 history 落盘共用文案源）。"""
+        """游戏配置摘要行（调度台展示用）。"""
 
         game_args = str(self.script_config.get("Game", "Arguments") or "").strip()
         return [
@@ -206,20 +206,6 @@ class AutoProxyTask(TaskExecuteBase):
             f"  任务后关闭游戏: {_yes_no(bool(self.script_config.get('Game', 'CloseOnFinish')))}",
             f"  启动参数: {game_args or '（无）'}",
         ]
-
-    def _game_config_history_header_lines(self) -> list[str]:
-        """写入 history 时前置的 MAS 摘要（保存时拼接，运行期不写入 log_record.content）。"""
-
-        return [f"{line}\n" for line in self._game_config_summary_lines()]
-
-    def _build_okww_history_log_content(self, log_item: LogRecord) -> list[str]:
-        """在脚本日志前拼接游戏配置摘要；log_item.content 仍为脚本日志镜像。"""
-
-        header = self._game_config_history_header_lines()
-        script_content = list(log_item.content)
-        if not script_content:
-            return header
-        return header + ["\n", "---------- OK-WW 脚本日志 ----------\n"] + script_content
 
     async def _push_dispatch_log(self, line: str) -> None:
         """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
@@ -500,11 +486,7 @@ class AutoProxyTask(TaskExecuteBase):
                 log_item.content = ["未捕获到任何日志内容"]
                 log_item.status = "未捕获到日志"
 
-            await Config.save_general_log(
-                log_path,
-                self._build_okww_history_log_content(log_item),
-                log_item.status,
-            )
+            await Config.save_general_log(log_path, log_item.content, log_item.status)
 
         await self._persist_user_run_result()
 
