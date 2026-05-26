@@ -55,4 +55,3 @@ export type OkwwConfig_Game = {
      */
     EmulatorIndex?: (string | null);
 };
-
