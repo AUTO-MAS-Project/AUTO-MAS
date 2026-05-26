@@ -508,13 +508,23 @@ class OkwwUserConfig_Task(BaseModel):
 class OkwwUserConfig_Info(GeneralUserConfig_Info):
     """OK-WW 用户信息（复用通用字段）"""
 
+    Id: Optional[str] = Field(default=None, description="账号")
+    Password: Optional[str] = Field(default=None, description="密码")
     Mode: Optional[Literal["简洁", "详细"]] = Field(
         default=None, description="用户配置模式（简洁/详细）"
     )
+    Resource: Optional[Literal["官服"]] = Field(default=None, description="游戏资源")
 
 
 class OkwwUserConfig_Data(GeneralUserConfig_Data):
     """OK-WW 用户数据（复用通用字段）"""
+
+    LastProxyStatus: Optional[str] = Field(
+        default=None, description="上次代理状态（未知/成功/失败）"
+    )
+    LastTaskIndex: Optional[int] = Field(
+        default=None, description="上次运行的 ok-ww 任务序号（-t N）"
+    )
 
 
 class OkwwUserConfig_Notify(GeneralUserConfig_Notify):
@@ -606,6 +616,9 @@ class OkwwConfig_Script(GeneralConfig_Script):
 class OkwwConfig_Game(GeneralConfig_Game):
     """OK-WW 游戏配置（复用通用字段）"""
 
+    LaunchBeforeTask: Optional[bool] = Field(
+        default=None, description="任务开始前是否由 MAS 启动游戏/模拟器"
+    )
     CloseOnFinish: Optional[bool] = Field(
         default=None, description="任务结束后是否关闭游戏/模拟器"
     )
