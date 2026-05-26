@@ -51,6 +51,8 @@ class OkwwManager(TaskExecuteBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.check_result = "-"
+        self.temp_path: Path | None = None
+        self.script_config_path: Path | None = None
 
     async def check(self) -> str:
         if self.task_info.mode not in METHOD_BOOK:
@@ -120,7 +122,6 @@ class OkwwManager(TaskExecuteBase):
         if self.task_info.mode == "AutoProxy":
             self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
             self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
-            shutil.rmtree(self.temp_path, ignore_errors=True)
             self.temp_path.mkdir(parents=True, exist_ok=True)
             if self.script_config_path.exists():
                 if self.script_config.get("Script", "ConfigPathMode") == "Folder":
@@ -170,13 +171,18 @@ class OkwwManager(TaskExecuteBase):
                 return
 
             if self.task_info.mode == "AutoProxy":
-                if hasattr(self, "temp_path") and self.temp_path.exists():
+                if self.temp_path and self.temp_path.exists():
                     if self.script_config.get("Script", "ConfigPathMode") == "Folder":
                         logger.info(f"复原 OK-WW 脚本配置文件: {self.temp_path}")
-                        shutil.rmtree(self.script_config_path, ignore_errors=True)
-                        shutil.copytree(
-                            self.temp_path, self.script_config_path, dirs_exist_ok=True
+                        tmp_dst = self.script_config_path.with_name(
+                            self.script_config_path.name + ".tmp"
                         )
+                        shutil.rmtree(tmp_dst, ignore_errors=True)
+                        shutil.copytree(
+                            self.temp_path, tmp_dst, dirs_exist_ok=True
+                        )
+                        shutil.rmtree(self.script_config_path, ignore_errors=True)
+                        tmp_dst.rename(self.script_config_path)
                     elif (
                         self.script_config.get("Script", "ConfigPathMode") == "File"
                         and (self.temp_path / "config.temp").exists()
@@ -192,14 +198,15 @@ class OkwwManager(TaskExecuteBase):
             if script_cfg.is_locked:
                 await script_cfg.unlock()
 
-            if self.task_info.mode == "AutoProxy" and hasattr(self, "user_config"):
+            if self.task_info.mode == "AutoProxy":
                 await script_cfg.UserData.load(await self.user_config.toDict())
 
-            self.script_info.status = "完成"
         finally:
             if script_cfg.is_locked:
                 with suppress(Exception):
                     await script_cfg.unlock()
+
+        self.script_info.status = "完成"
 
     async def on_crash(self, e: Exception):
         self.script_info.status = "异常"
@@ -207,21 +214,34 @@ class OkwwManager(TaskExecuteBase):
         script_uid = uuid.UUID(self.script_info.script_id)
         if (
             self.task_info.mode == "AutoProxy"
-            and hasattr(self, "script_config")
-            and hasattr(self, "temp_path")
+            and self.temp_path is not None
             and self.temp_path.exists()
         ):
             if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-                shutil.rmtree(self.script_config_path, ignore_errors=True)
-                shutil.copytree(
-                    self.temp_path, self.script_config_path, dirs_exist_ok=True
+                tmp_dst = self.script_config_path.with_name(
+                    self.script_config_path.name + ".tmp"
                 )
+                shutil.rmtree(tmp_dst, ignore_errors=True)
+                shutil.copytree(
+                    self.temp_path, tmp_dst, dirs_exist_ok=True
+                )
+                shutil.rmtree(self.script_config_path, ignore_errors=True)
+                tmp_dst.rename(self.script_config_path)
             elif (
                 self.script_config.get("Script", "ConfigPathMode") == "File"
                 and (self.temp_path / "config.temp").exists()
             ):
                 shutil.copy(self.temp_path / "config.temp", self.script_config_path)
             shutil.rmtree(self.temp_path, ignore_errors=True)
+
+        try:
+            if self.task_info.mode == "AutoProxy":
+                await Config.ScriptConfig[script_uid].UserData.load(
+                    await self.user_config.toDict()
+                )
+        except Exception:
+            logger.exception("on_crash 写回 UserConfig 失败，放弃本次状态变更")
+
         script_cfg = Config.ScriptConfig[script_uid]
         if script_cfg.is_locked:
             with suppress(Exception):
