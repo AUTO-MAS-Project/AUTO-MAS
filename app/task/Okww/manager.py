@@ -106,10 +106,11 @@ class OkwwManager(TaskExecuteBase):
                 if config.get("Info", "Status")
             ]
 
-        # 启动与收尾解耦：Enabled=由 MAS 拉起游戏；CloseOnFinish=由 MAS 结束游戏（可单独开启）
+        # Enabled=游戏管理总开关；LaunchBeforeTask/CloseOnFinish=启动与收尾子项（可单独开启）
         self.game_manager: ProcessManager | DeviceBase | None = None
-        if self.script_config.get("Game", "Enabled") or self.script_config.get(
-            "Game", "CloseOnFinish"
+        if self.script_config.get("Game", "Enabled") and (
+            self.script_config.get("Game", "LaunchBeforeTask")
+            or self.script_config.get("Game", "CloseOnFinish")
         ):
             if self.script_config.get("Game", "Type") == "Emulator":
                 self.game_manager = EmulatorManager()
