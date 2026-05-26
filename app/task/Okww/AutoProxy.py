@@ -45,20 +45,8 @@ _OKWW_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
 # prepare 中 ErrorLog 经清洗后为空时回退（与 OkwwConfig 默认串一致）
 _DEFAULT_OKWW_ERROR_LOG = "connected:False|游戏更新成功, 游戏即将重启|错误"
 
-# 曾从通用脚本照搬、作为独立 `|` 段配置时极易与 ok-ww 正常日志误撞
-_OKWW_ERROR_LOG_LEGACY_TOKENS = frozenset({"error", "异常", "任务失败"})
-
-
 def _sanitize_okww_error_log_tokens(tokens: list[str]) -> list[str]:
-    out: list[str] = []
-    for raw in tokens:
-        t = raw.strip()
-        if not t:
-            continue
-        if t.lower() in _OKWW_ERROR_LOG_LEGACY_TOKENS:
-            continue
-        out.append(t)
-    return out
+    return [t for raw in tokens if (t := raw.strip())]
 
 
 def _okww_log_indicates_success(log: str, success_log: list[str]) -> bool:
@@ -192,6 +180,11 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def main_task(self):
         await self.prepare()
+        self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+        if self.cur_user_config.get("Data", "LastProxyDate") != self.curdate:
+            await self.cur_user_config.set("Data", "LastProxyDate", self.curdate)
+            await self.cur_user_config.set("Data", "ProxyTimes", 0)
+
         self.cur_user_item.status = "运行"
 
         run_limit = int(self.script_config.get("Run", "RunTimesLimit"))
@@ -206,8 +199,12 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.log_record[self.log_start_time] = LogRecord()
             self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
 
-            # 仅当「启用游戏配置」时由 MAS 拉起游戏；与 CloseOnFinish 无关
-            if self.script_config.get("Game", "Enabled") and self.game_manager is not None:
+            # 总开关开启且勾选「任务前启动」时由 MAS 拉起游戏
+            if (
+                self.script_config.get("Game", "Enabled")
+                and self.script_config.get("Game", "LaunchBeforeTask")
+                and self.game_manager is not None
+            ):
                 try:
                     self.script_info.log = "正在启动游戏 / 模拟器"
                     if isinstance(self.game_manager, ProcessManager):
@@ -318,13 +315,18 @@ class AutoProxyTask(TaskExecuteBase):
                 )
                 await asyncio.sleep(10)
 
+    def _game_management_enabled(self) -> bool:
+        return bool(self.script_config.get("Game", "Enabled"))
+
     def _mas_should_close_game_after_success(self) -> bool:
-        return bool(self.script_config.get("Game", "CloseOnFinish"))
+        return self._game_management_enabled() and bool(
+            self.script_config.get("Game", "CloseOnFinish")
+        )
 
     def _mas_should_close_game_on_retry(self) -> bool:
-        """失败/重试/启动游戏失败：仅当用户允许 MAS 管理游戏生命周期时才结束游戏"""
-        return bool(
-            self.script_config.get("Game", "Enabled")
+        """失败/重试/启动游戏失败：总开关开启且任一生周期子项启用时结束游戏"""
+        return self._game_management_enabled() and bool(
+            self.script_config.get("Game", "LaunchBeforeTask")
             or self.script_config.get("Game", "CloseOnFinish")
         )
 
@@ -415,6 +417,36 @@ class AutoProxyTask(TaskExecuteBase):
 
             await Config.save_general_log(log_path, log_item.content, log_item.status)
 
+        await self._persist_user_run_result()
+
+    async def _persist_user_run_result(self) -> None:
+        if self.cur_user_config is None:
+            return
+
+        await self.cur_user_config.set("Data", "LastTaskIndex", getattr(self, "task_index", 0))
+        if self.run_book:
+            if (
+                self.cur_user_config.get("Data", "ProxyTimes") == 0
+                and self.cur_user_config.get("Info", "RemainedDay") != -1
+            ):
+                await self.cur_user_config.set(
+                    "Info",
+                    "RemainedDay",
+                    self.cur_user_config.get("Info", "RemainedDay") - 1,
+                )
+            await self.cur_user_config.set(
+                "Data",
+                "ProxyTimes",
+                self.cur_user_config.get("Data", "ProxyTimes") + 1,
+            )
+            await self.cur_user_config.set("Data", "LastProxyStatus", "成功")
+            self.cur_user_item.status = "完成"
+            logger.success(f"用户 {self.cur_user_uid} 的 OK-WW 自动代理任务已完成")
+        else:
+            await self.cur_user_config.set("Data", "LastProxyStatus", "失败")
+            if self.cur_user_item.status != "完成":
+                self.cur_user_item.status = "异常"
+
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
         if hasattr(self, "cur_user_log"):
@@ -430,6 +462,7 @@ class AutoProxyTask(TaskExecuteBase):
         await self.kill_managed_process(
             kill_game=self._mas_should_close_game_on_retry()
         )
+        await self._persist_user_run_result()
 
         # 推送通知（复用 Notify）
         try:
@@ -455,7 +488,7 @@ class AutoProxyTask(TaskExecuteBase):
             pass
 
     async def _kill_game_process(self) -> None:
-        """结束游戏/模拟器：不依赖 Game.Enabled（可由用户自行开游戏，仅由 CloseOnFinish/失败重试触发）"""
+        """结束游戏/模拟器：不依赖 LaunchBeforeTask（可自行开游戏，由 CloseOnFinish/失败重试触发）"""
         game_type = self.script_config.get("Game", "Type")
         try:
             if isinstance(self.game_manager, ProcessManager):
