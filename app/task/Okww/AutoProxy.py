@@ -191,6 +191,60 @@ class AutoProxyTask(TaskExecuteBase):
 
         self.run_book = False
 
+    async def _push_dispatch_log(self, line: str) -> None:
+        """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
+
+        prev = self.script_info.log
+        self.script_info.log = f"{prev}\n{line}" if prev else line
+        await asyncio.sleep(0)
+
+    async def _mas_launch_game_before_task(self) -> None:
+        """MAS 接管启动游戏/模拟器，并将各步骤写入调度台日志。"""
+
+        game_type = self.script_config.get("Game", "Type")
+        await self._push_dispatch_log("正在准备由 MAS 启动游戏 / 模拟器...")
+
+        if isinstance(self.game_manager, ProcessManager) and game_type == "Client":
+            await self._push_dispatch_log(
+                f"正在检查鸣潮客户端进程 ({_WUWA_CLIENT_PROCESS})..."
+            )
+            if _wuthering_waves_client_running():
+                logger.info(
+                    "检测到鸣潮客户端进程已在运行，跳过由 MAS 重复启动游戏"
+                )
+                await self._push_dispatch_log("检测到客户端已在运行，跳过启动")
+                return
+
+            await self._push_dispatch_log("未检测到运行中的客户端，正在拉起游戏...")
+            await self.game_manager.open_process(
+                self.game_path,
+                *str(self.script_config.get("Game", "Arguments")).split(" "),
+            )
+            wait_time = int(self.script_config.get("Game", "WaitTime"))
+            await self._push_dispatch_log(
+                f"正在等待游戏完成启动（{wait_time}s）..."
+            )
+            await asyncio.sleep(wait_time)
+            await self._push_dispatch_log("游戏启动完成")
+            return
+
+        if isinstance(self.game_manager, ProcessManager) and game_type == "URL":
+            await self._push_dispatch_log("正在通过 URL 协议启动游戏...")
+            await self.game_manager.open_protocol(
+                self.game_url,
+                ProcessInfo(name=self.game_process_name or None),
+            )
+            await asyncio.sleep(2)
+            await self._push_dispatch_log("游戏启动指令已发送")
+            return
+
+        if isinstance(self.game_manager, DeviceBase):
+            await self._push_dispatch_log("正在启动模拟器...")
+            await self.game_manager.open(
+                self.script_config.get("Game", "EmulatorIndex")
+            )
+            await self._push_dispatch_log("模拟器启动完成")
+
     async def main_task(self):
         await self.prepare()
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
@@ -219,38 +273,10 @@ class AutoProxyTask(TaskExecuteBase):
                 and self.game_manager is not None
             ):
                 try:
-                    self.script_info.log = "正在启动游戏 / 模拟器"
-                    if (
-                        isinstance(self.game_manager, ProcessManager)
-                        and self.script_config.get("Game", "Type") == "Client"
-                        and _wuthering_waves_client_running()
-                    ):
-                        logger.info(
-                            "检测到鸣潮客户端进程已在运行，跳过由 MAS 重复启动游戏"
-                        )
-                        self.script_info.log = "检测到游戏已在运行，跳过启动"
-                    elif isinstance(self.game_manager, ProcessManager):
-                        if self.script_config.get("Game", "Type") == "URL":
-                            await self.game_manager.open_protocol(
-                                self.game_url,
-                                ProcessInfo(name=self.game_process_name or None),
-                            )
-                            await asyncio.sleep(2)
-                        else:
-                            await self.game_manager.open_process(
-                                self.game_path,
-                                *str(self.script_config.get("Game", "Arguments")).split(" "),
-                            )
-                            self.script_info.log = (
-                                "正在等待游戏完成启动\n"
-                                f"请等待{self.script_config.get('Game', 'WaitTime')}s"
-                            )
-                            await asyncio.sleep(self.script_config.get("Game", "WaitTime"))
-                    elif isinstance(self.game_manager, DeviceBase):
-                        await self.game_manager.open(
-                            self.script_config.get("Game", "EmulatorIndex")
-                        )
+                    self.script_info.log = ""
+                    await self._mas_launch_game_before_task()
                 except Exception as e:
+                    await self._push_dispatch_log(f"游戏/模拟器启动失败: {e}")
                     self.cur_user_log.status = f"游戏/模拟器启动失败: {e}"
                     self.cur_user_log.content = [f"游戏/模拟器启动失败: {e}"]
                     await Config.send_websocket_message(
@@ -271,7 +297,7 @@ class AutoProxyTask(TaskExecuteBase):
                     except Exception:
                         pass
                     if i + 1 < run_limit:
-                        self.script_info.log = (
+                        await self._push_dispatch_log(
                             f"游戏/模拟器启动失败，将在稍后重试 ({i + 1}/{run_limit})"
                         )
                         await asyncio.sleep(10)
@@ -279,7 +305,7 @@ class AutoProxyTask(TaskExecuteBase):
                         self.cur_user_item.status = "异常"
                     continue
 
-            self.script_info.log = (
+            await self._push_dispatch_log(
                 f"启动 OK-WW: -t {self.task_index}"
                 + (" -e" if self.exit_on_finish else "")
             )
