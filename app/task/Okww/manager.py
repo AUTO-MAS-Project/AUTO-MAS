@@ -22,11 +22,10 @@ from contextlib import suppress
 
 from pathlib import Path
 
-from app.core import Config, EmulatorManager
+from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem
 from app.models.config import OkwwConfig, OkwwUserConfig
 from app.models.ConfigBase import MultipleConfig
-from app.models.emulator import DeviceBase
 from app.utils import get_logger, ProcessManager
 
 from .AutoProxy import AutoProxyTask
@@ -110,15 +109,12 @@ class OkwwManager(TaskExecuteBase):
             ]
 
         # Enabled=游戏管理总开关；LaunchBeforeTask/CloseOnFinish=启动与收尾子项（可单独开启）
-        self.game_manager: ProcessManager | DeviceBase | None = None
+        self.game_manager: ProcessManager | None = None
         if self.script_config.get("Game", "Enabled") and (
             self.script_config.get("Game", "LaunchBeforeTask")
             or self.script_config.get("Game", "CloseOnFinish")
         ):
-            if self.script_config.get("Game", "Type") == "Emulator":
-                self.game_manager = EmulatorManager()
-            elif self.script_config.get("Game", "Type") == "Client":
-                self.game_manager = ProcessManager()
+            self.game_manager = ProcessManager()
 
         if self.task_info.mode == "AutoProxy":
             self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))

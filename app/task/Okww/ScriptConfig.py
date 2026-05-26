@@ -25,7 +25,6 @@ from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import OkwwConfig, OkwwUserConfig
-from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
 
@@ -40,7 +39,7 @@ class ScriptConfigTask(TaskExecuteBase):
         script_info: ScriptItem,
         script_config: OkwwConfig,
         user_config: MultipleConfig[OkwwUserConfig],
-        game_manager: ProcessManager | DeviceBase | None,
+        game_manager: ProcessManager | None,
     ):
         super().__init__()
 
