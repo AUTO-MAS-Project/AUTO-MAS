@@ -194,10 +194,17 @@ class AutoProxyTask(TaskExecuteBase):
         self.game_process_name = self.script_config.get("Game", "ProcessName")
 
         self.run_book = False
+        # 每次代理尝试的 MAS 侧日志前缀，写入 history/，不写入 OK-WW 脚本目录日志
+        self._history_prefix: dict[datetime, list[str]] = {}
+
+    def _append_mas_history_line(self, line: str) -> None:
+        entry = line if line.endswith("\n") else f"{line}\n"
+        self._history_prefix.setdefault(self.log_start_time, []).append(entry)
 
     async def _push_dispatch_log(self, line: str) -> None:
-        """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
+        """向调度台追加流程日志，并同步记入 history 前缀（不写入脚本目录日志）。"""
 
+        self._append_mas_history_line(line)
         prev = self.script_info.log
         self.script_info.log = f"{prev}\n{line}" if prev else line
         await asyncio.sleep(0)
@@ -213,6 +220,8 @@ class AutoProxyTask(TaskExecuteBase):
             f"  任务后关闭游戏: {_yes_no(bool(self.script_config.get('Game', 'CloseOnFinish')))}",
             f"  启动参数: {game_args or '（无）'}",
         ]
+        for line in lines:
+            self._append_mas_history_line(line)
         self.script_info.log = "\n".join(lines)
         await asyncio.sleep(0)
 
@@ -283,6 +292,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.log_start_time = datetime.now()
             self.cur_user_item.log_record[self.log_start_time] = LogRecord()
             self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
+            self._history_prefix[self.log_start_time] = []
 
             await self._log_game_config_summary()
 
@@ -478,11 +488,26 @@ class AutoProxyTask(TaskExecuteBase):
             if log_item.status == "OK-WW 正常运行中":
                 log_item.status = "任务被用户手动中止"
 
-            if len(log_item.content) == 0:
-                log_item.content = ["未捕获到任何日志内容"]
+            mas_prefix = self._history_prefix.get(t, [])
+            script_content = list(log_item.content)
+            if len(script_content) == 0 and not mas_prefix:
+                script_content = ["未捕获到任何日志内容"]
                 log_item.status = "未捕获到日志"
+            elif len(script_content) == 0:
+                log_item.status = log_item.status or "未捕获到脚本日志"
 
-            await Config.save_general_log(log_path, log_item.content, log_item.status)
+            history_content = mas_prefix
+            if mas_prefix and script_content:
+                history_content = mas_prefix + [
+                    "\n",
+                    "---------- OK-WW 脚本日志 ----------\n",
+                ] + script_content
+            elif script_content:
+                history_content = script_content
+
+            await Config.save_general_log(
+                log_path, history_content, log_item.status
+            )
 
         await self._persist_user_run_result()
 
