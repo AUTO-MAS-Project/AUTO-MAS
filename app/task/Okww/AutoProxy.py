@@ -48,6 +48,10 @@ def _wuthering_waves_client_running() -> bool:
                 return True
     return False
 
+
+def _yes_no(value: bool) -> str:
+    return "是" if value else "否"
+
 # 对齐 MaaEnd：专项内置致命日志片段（非用户 Success/Error 配置）；`Script.ErrorLog` 仅追加补充子串
 _OKWW_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
     ("connected:False", "OK-WW 未连接游戏客户端"),
@@ -198,6 +202,20 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_info.log = f"{prev}\n{line}" if prev else line
         await asyncio.sleep(0)
 
+    async def _log_game_config_summary(self) -> None:
+        """在调度台开头输出当前脚本的游戏相关配置，便于用户确认与问题排查。"""
+
+        game_args = str(self.script_config.get("Game", "Arguments") or "").strip()
+        lines = [
+            f"[游戏配置] 用户: {self.cur_user_item.name}",
+            f"  启用游戏配置: {_yes_no(bool(self.script_config.get('Game', 'Enabled')))}",
+            f"  任务前启动游戏: {_yes_no(bool(self.script_config.get('Game', 'LaunchBeforeTask')))}",
+            f"  任务后关闭游戏: {_yes_no(bool(self.script_config.get('Game', 'CloseOnFinish')))}",
+            f"  启动参数: {game_args or '（无）'}",
+        ]
+        self.script_info.log = "\n".join(lines)
+        await asyncio.sleep(0)
+
     async def _mas_launch_game_before_task(self) -> None:
         """MAS 接管启动游戏/模拟器，并将各步骤写入调度台日志。"""
 
@@ -266,6 +284,8 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.log_record[self.log_start_time] = LogRecord()
             self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
 
+            await self._log_game_config_summary()
+
             # 总开关开启且勾选「任务前启动」时由 MAS 拉起游戏
             if (
                 self.script_config.get("Game", "Enabled")
@@ -273,7 +293,6 @@ class AutoProxyTask(TaskExecuteBase):
                 and self.game_manager is not None
             ):
                 try:
-                    self.script_info.log = ""
                     await self._mas_launch_game_before_task()
                 except Exception as e:
                     await self._push_dispatch_log(f"游戏/模拟器启动失败: {e}")
