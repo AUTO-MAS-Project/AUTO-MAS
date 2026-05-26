@@ -209,26 +209,32 @@ const modeNotice = computed(() => {
   return ''
 })
 
+const normalizedSanityTaskType = computed<SanityTaskType>(() =>
+  SANITY_TASK_TYPE_OPTIONS.some(option => option.value === formData.Task.SanityTaskType)
+    ? formData.Task.SanityTaskType
+    : 'OperatorProgression'
+)
+
 const currentField = computed(
-  () => PROTOCOL_SPACE_TASK_FIELD_MAP[formData.Task.SanityTaskType as ProtocolSpaceTab]
+  () => PROTOCOL_SPACE_TASK_FIELD_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab]
 )
 
 const currentTaskOptions = computed(() => {
-  if (formData.Task.SanityTaskType === 'Essence') {
+  if (normalizedSanityTaskType.value === 'Essence') {
     return AUTO_ESSENCE_LOCATION_OPTIONS
   }
-  return PROTOCOL_SPACE_TASK_OPTIONS_MAP[formData.Task.SanityTaskType as ProtocolSpaceTab]
+  return PROTOCOL_SPACE_TASK_OPTIONS_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab] ?? []
 })
 
 const currentTaskValue = computed({
   get: () => {
-    if (formData.Task.SanityTaskType === 'Essence') {
+    if (normalizedSanityTaskType.value === 'Essence') {
       return formData.Task.AutoEssenceSpecifiedLocation
     }
     return formData.Task[currentField.value]
   },
   set: value => {
-    if (formData.Task.SanityTaskType === 'Essence') {
+    if (normalizedSanityTaskType.value === 'Essence') {
       formData.Task.AutoEssenceSpecifiedLocation = value
       return
     }
@@ -241,21 +247,21 @@ const currentTaskOption = computed(() =>
 )
 
 const rewardGroupEnabled = computed(() => {
-  if (formData.Task.SanityTaskType === 'Essence') return false
+  if (normalizedSanityTaskType.value === 'Essence') return false
   return Boolean(currentTaskOption.value?.rewards)
 })
 
 const taskOptionLabel = computed(() =>
-  formData.Task.SanityTaskType === 'Essence'
+  normalizedSanityTaskType.value === 'Essence'
     ? '基质地点'
-    : (PROTOCOL_SPACE_TASK_TITLE_MAP[formData.Task.SanityTaskType as ProtocolSpaceTab] ??
+    : (PROTOCOL_SPACE_TASK_TITLE_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab] ??
       '协议空间任务')
 )
 
 const taskOptionTooltip = computed(() =>
-  formData.Task.SanityTaskType === 'Essence'
+  normalizedSanityTaskType.value === 'Essence'
     ? '选择当前基质刷取地点'
-    : (PROTOCOL_SPACE_TASK_TOOLTIP_MAP[formData.Task.SanityTaskType as ProtocolSpaceTab] ??
+    : (PROTOCOL_SPACE_TASK_TOOLTIP_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab] ??
       '选择当前协议空间任务')
 )
 
@@ -306,6 +312,7 @@ const emitSaveBatch = (changes: FieldChange[]) => {
 const ensureCurrentTaskValue = () => {
   if (optionControlsDisabled.value) return
   const options = currentTaskOptions.value
+  if (!options.length) return
   if (!options.some(option => option.value === currentTaskValue.value)) {
     currentTaskValue.value = options[0].value
   }
@@ -349,7 +356,7 @@ const handleTaskOptionChange = () => {
   if (optionControlsDisabled.value) return
   const changes: FieldChange[] = []
 
-  if (formData.Task.SanityTaskType === 'Essence') {
+  if (normalizedSanityTaskType.value === 'Essence') {
     changes.push({
       key: 'Task.AutoEssenceSpecifiedLocation',
       value: formData.Task.AutoEssenceSpecifiedLocation,
@@ -370,10 +377,18 @@ watch(
   () => formData.Task.SanityTaskType,
   () => {
     if (optionControlsDisabled.value) return
+    const changes: FieldChange[] = []
+    if (formData.Task.SanityTaskType !== normalizedSanityTaskType.value) {
+      formData.Task.SanityTaskType = normalizedSanityTaskType.value
+      changes.push({ key: 'Task.SanityTaskType', value: formData.Task.SanityTaskType })
+    }
     ensureCurrentTaskValue()
     const rewardGroupChange = normalizeRewardGroupState()
     if (rewardGroupChange) {
-      emitSaveBatch([rewardGroupChange])
+      changes.push(rewardGroupChange)
+    }
+    if (changes.length) {
+      emitSaveBatch(changes)
     }
   },
   { immediate: true }

@@ -654,91 +654,91 @@ export function useScriptApi() {
                       },
                       Task: {
                         SanityTaskType:
-                          maaEndUserData.Task?.SanityTaskType !== undefined
+                          maaEndUserData.Task?.SanityTaskType != null
                             ? maaEndUserData.Task.SanityTaskType
                             : 'OperatorProgression',
                         OperatorProgression:
-                          maaEndUserData.Task?.OperatorProgression !== undefined
+                          maaEndUserData.Task?.OperatorProgression != null
                             ? maaEndUserData.Task.OperatorProgression
                             : 'OperatorEXP',
                         WeaponProgression:
-                          maaEndUserData.Task?.WeaponProgression !== undefined
+                          maaEndUserData.Task?.WeaponProgression != null
                             ? maaEndUserData.Task.WeaponProgression
                             : 'WeaponEXP',
                         CrisisDrills:
-                          maaEndUserData.Task?.CrisisDrills !== undefined
+                          maaEndUserData.Task?.CrisisDrills != null
                             ? maaEndUserData.Task.CrisisDrills
                             : 'AdvancedProgression1',
                         RewardsSetOption:
-                          maaEndUserData.Task?.RewardsSetOption !== undefined
+                          maaEndUserData.Task?.RewardsSetOption != null
                             ? maaEndUserData.Task.RewardsSetOption
                             : 'RewardsSetA',
                         AutoEssenceSpecifiedLocation:
-                          maaEndUserData.Task?.AutoEssenceSpecifiedLocation !== undefined
+                          maaEndUserData.Task?.AutoEssenceSpecifiedLocation != null
                             ? maaEndUserData.Task.AutoEssenceSpecifiedLocation
                             : 'VFTheHub',
                         IfSanity:
-                          maaEndUserData.Task?.IfSanity !== undefined
+                          maaEndUserData.Task?.IfSanity != null
                             ? maaEndUserData.Task.IfSanity
                             : true,
                         IfAutoUseSpMedication:
-                          maaEndUserData.Task?.IfAutoUseSpMedication !== undefined
+                          maaEndUserData.Task?.IfAutoUseSpMedication != null
                             ? maaEndUserData.Task.IfAutoUseSpMedication
                             : true,
                         IfDijiangRewards:
-                          maaEndUserData.Task?.IfDijiangRewards !== undefined
+                          maaEndUserData.Task?.IfDijiangRewards != null
                             ? maaEndUserData.Task.IfDijiangRewards
                             : true,
                         IfDeliveryJobs:
-                          maaEndUserData.Task?.IfDeliveryJobs !== undefined
+                          maaEndUserData.Task?.IfDeliveryJobs != null
                             ? maaEndUserData.Task.IfDeliveryJobs
                             : true,
                         IfSellProduct:
-                          maaEndUserData.Task?.IfSellProduct !== undefined
+                          maaEndUserData.Task?.IfSellProduct != null
                             ? maaEndUserData.Task.IfSellProduct
                             : true,
                         IfAutoStockpile:
-                          maaEndUserData.Task?.IfAutoStockpile !== undefined
+                          maaEndUserData.Task?.IfAutoStockpile != null
                             ? maaEndUserData.Task.IfAutoStockpile
                             : true,
                         IfAutoStockStaple:
-                          maaEndUserData.Task?.IfAutoStockStaple !== undefined
+                          maaEndUserData.Task?.IfAutoStockStaple != null
                             ? maaEndUserData.Task.IfAutoStockStaple
                             : true,
                         IfVisitFriends:
-                          maaEndUserData.Task?.IfVisitFriends !== undefined
+                          maaEndUserData.Task?.IfVisitFriends != null
                             ? maaEndUserData.Task.IfVisitFriends
                             : true,
                         IfCreditShoppingN2:
-                          maaEndUserData.Task?.IfCreditShoppingN2 !== undefined
+                          maaEndUserData.Task?.IfCreditShoppingN2 != null
                             ? maaEndUserData.Task.IfCreditShoppingN2
                             : true,
                         IfSeizeEntrustTask:
-                          maaEndUserData.Task?.IfSeizeEntrustTask !== undefined
+                          maaEndUserData.Task?.IfSeizeEntrustTask != null
                             ? maaEndUserData.Task.IfSeizeEntrustTask
                             : true,
                         IfAutoEcoFarm:
-                          maaEndUserData.Task?.IfAutoEcoFarm !== undefined
+                          maaEndUserData.Task?.IfAutoEcoFarm != null
                             ? maaEndUserData.Task.IfAutoEcoFarm
                             : true,
                         IfAutoSell:
-                          maaEndUserData.Task?.IfAutoSell !== undefined
+                          maaEndUserData.Task?.IfAutoSell != null
                             ? maaEndUserData.Task.IfAutoSell
                             : true,
                         IfEnvironmentMonitoring:
-                          maaEndUserData.Task?.IfEnvironmentMonitoring !== undefined
+                          maaEndUserData.Task?.IfEnvironmentMonitoring != null
                             ? maaEndUserData.Task.IfEnvironmentMonitoring
                             : true,
                         IfAutoCollect:
-                          maaEndUserData.Task?.IfAutoCollect !== undefined
+                          maaEndUserData.Task?.IfAutoCollect != null
                             ? maaEndUserData.Task.IfAutoCollect
                             : true,
                         IfDailyRewards:
-                          maaEndUserData.Task?.IfDailyRewards !== undefined
+                          maaEndUserData.Task?.IfDailyRewards != null
                             ? maaEndUserData.Task.IfDailyRewards
                             : true,
                         IfResourceRecycleStation:
-                          maaEndUserData.Task?.IfResourceRecycleStation !== undefined
+                          maaEndUserData.Task?.IfResourceRecycleStation != null
                             ? maaEndUserData.Task.IfResourceRecycleStation
                             : true,
                       },
