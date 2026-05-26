@@ -9,47 +9,56 @@
         {
           "id": "66exzd1",
           "taskName": "VisitFriends",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "sl6ekn7",
           "taskName": "DijiangRewards",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "1ve46wq",
           "taskName": "CreditShoppingN2",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "tlyl98l",
           "taskName": "DeliveryJobs",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "jur6jog",
           "taskName": "SellProduct",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}  
         },
         {
           "id": "xy8ubx9",
           "taskName": "AutoStockpile",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "p9vhp9n",
           "taskName": "AutoStockStaple",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "l9lmqbs",
           "taskName": "DailyRewards",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "ki9tsg4",
           "taskName": "SeizeEntrustTask",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}  
         }
       ]
     },
@@ -62,87 +71,100 @@
         {
           "id": "5zqhjux",
           "taskName": "VisitFriends",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "diyt9yn",
           "taskName": "DijiangRewards",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "g8597rn",
           "taskName": "CreditShoppingN2",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "0bzqbf2",
           "taskName": "DeliveryJobs",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}  
         },
         {
           "id": "8vfq6y1",
           "taskName": "SellProduct",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "es8dug8",
           "taskName": "AutoStockpile",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "740f85h",
           "taskName": "AutoStockStaple",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "jjusssw",
           "taskName": "AutoSell",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "gj70e22",
           "taskName": "EnvironmentMonitoring",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "hiu9ttk",
           "taskName": "DailyRewards",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "mwg371e",
           "taskName": "SeizeEntrustTask",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "7u9ebfh",
           "taskName": "AutoCollect",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}  
         },
         {
           "id": "y0k1zue",
           "taskName": "AutoUseSpMedication",
-          "enabled": true
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "agfpwsh",
           "taskName": "ResourceRecycleStation",
-          "enabled": true
+          "enabled": true,"optionValues": {}
         },
         {
           "id": "qmwzjgu",
           "taskName": "AutoEcoFarm",
-          "enabled": true
+          "enabled": true,"optionValues": {}
         },
         {
           "id": "5ej6pg9",
           "taskName": "AutoEssence",
-          "enabled": true
+          "enabled": true,"optionValues": {}
         },
         {
           "id": "d947el4",
           "taskName": "ProtocolSpace",
-          "enabled": true
+          "enabled": true,"optionValues": {}
         }
       ]
     }

@@ -282,7 +282,7 @@ const enabledGroupTaskCount = (group: (typeof visibleTaskGroups.value)[number]) 
   group.tasks.filter(task => isTaskEnabled(task.name)).length
 
 const isGroupEnabled = (group: (typeof visibleTaskGroups.value)[number]) =>
-  enabledGroupTaskCount(group) > 0
+  enabledGroupTaskCount(group) === group.tasks.length
 
 const handleGroupSwitchChange = (
   group: (typeof visibleTaskGroups.value)[number],

@@ -677,6 +677,70 @@ export function useScriptApi() {
                           maaEndUserData.Task?.AutoEssenceSpecifiedLocation !== undefined
                             ? maaEndUserData.Task.AutoEssenceSpecifiedLocation
                             : 'VFTheHub',
+                        IfSanity:
+                          maaEndUserData.Task?.IfSanity !== undefined
+                            ? maaEndUserData.Task.IfSanity
+                            : true,
+                        IfAutoUseSpMedication:
+                          maaEndUserData.Task?.IfAutoUseSpMedication !== undefined
+                            ? maaEndUserData.Task.IfAutoUseSpMedication
+                            : true,
+                        IfDijiangRewards:
+                          maaEndUserData.Task?.IfDijiangRewards !== undefined
+                            ? maaEndUserData.Task.IfDijiangRewards
+                            : true,
+                        IfDeliveryJobs:
+                          maaEndUserData.Task?.IfDeliveryJobs !== undefined
+                            ? maaEndUserData.Task.IfDeliveryJobs
+                            : true,
+                        IfSellProduct:
+                          maaEndUserData.Task?.IfSellProduct !== undefined
+                            ? maaEndUserData.Task.IfSellProduct
+                            : true,
+                        IfAutoStockpile:
+                          maaEndUserData.Task?.IfAutoStockpile !== undefined
+                            ? maaEndUserData.Task.IfAutoStockpile
+                            : true,
+                        IfAutoStockStaple:
+                          maaEndUserData.Task?.IfAutoStockStaple !== undefined
+                            ? maaEndUserData.Task.IfAutoStockStaple
+                            : true,
+                        IfVisitFriends:
+                          maaEndUserData.Task?.IfVisitFriends !== undefined
+                            ? maaEndUserData.Task.IfVisitFriends
+                            : true,
+                        IfCreditShoppingN2:
+                          maaEndUserData.Task?.IfCreditShoppingN2 !== undefined
+                            ? maaEndUserData.Task.IfCreditShoppingN2
+                            : true,
+                        IfSeizeEntrustTask:
+                          maaEndUserData.Task?.IfSeizeEntrustTask !== undefined
+                            ? maaEndUserData.Task.IfSeizeEntrustTask
+                            : true,
+                        IfAutoEcoFarm:
+                          maaEndUserData.Task?.IfAutoEcoFarm !== undefined
+                            ? maaEndUserData.Task.IfAutoEcoFarm
+                            : true,
+                        IfAutoSell:
+                          maaEndUserData.Task?.IfAutoSell !== undefined
+                            ? maaEndUserData.Task.IfAutoSell
+                            : true,
+                        IfEnvironmentMonitoring:
+                          maaEndUserData.Task?.IfEnvironmentMonitoring !== undefined
+                            ? maaEndUserData.Task.IfEnvironmentMonitoring
+                            : true,
+                        IfAutoCollect:
+                          maaEndUserData.Task?.IfAutoCollect !== undefined
+                            ? maaEndUserData.Task.IfAutoCollect
+                            : true,
+                        IfDailyRewards:
+                          maaEndUserData.Task?.IfDailyRewards !== undefined
+                            ? maaEndUserData.Task.IfDailyRewards
+                            : true,
+                        IfResourceRecycleStation:
+                          maaEndUserData.Task?.IfResourceRecycleStation !== undefined
+                            ? maaEndUserData.Task.IfResourceRecycleStation
+                            : true,
                       },
                       Notify: {
                         Enabled:
