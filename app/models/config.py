@@ -37,6 +37,7 @@ from app.utils.constants import (
     MAAEND_SANITY_TASK_FIELDS,
     MAAEND_SANITY_TASK_LABELS,
     MAAEND_STAGE_WITH_AB,
+    MAAEND_TASKS,
     MAAEND_SANITY_TASK_TYPES,
     STARRAIL_STAGE_BOOK,
 )
@@ -105,7 +106,14 @@ def init_maaend_task_config(config) -> None:
         "AutoEssenceSpecifiedLocation",
         MAAEND_SANITY_TASK_DEFAULTS["AutoEssenceSpecifiedLocation"],
     )
-    
+
+    for task_name in MAAEND_TASKS:
+        setattr(
+            config,
+            f"Task_If{task_name}",
+            ConfigItem("Task", f"If{task_name}", True, BoolValidator()),
+        )
+
 """
 脚本级和用户级的理智任务配置项完全一样, 但为了兼容旧版 MaaEnd 的用户配置, 需要在 MaaEndUserConfig 中重复定义一次, 并在加载时进行迁移处理
 """
@@ -888,38 +896,39 @@ class MaaEndUserConfig(ConfigBase):
         )
 
         # 理智任务标签
-        task_config, _ = self.get_effective_sanity_task_config()
-        sanity_task_type = task_config["SanityTaskType"]
-        tags.append(
-            {
-                "text": f"理智任务：{MAAEND_SANITY_TASK_LABELS[sanity_task_type]}",
-                "color": "blue",
-            }
-        )
-
-        detail_key = (
-            task_config["AutoEssenceSpecifiedLocation"]
-            if sanity_task_type == "Essence"
-            else task_config[sanity_task_type]
-        )
-        tags.append(
-            {
-                "text": f"详细任务：{MAAEND_SANITY_TASK_DETAIL_LABELS[detail_key]}",
-                "color": "blue",
-            }
-        )
-
-        if detail_key in MAAEND_STAGE_WITH_AB:
+        if self.get("Task", "IfSanity"):
+            task_config, _ = self.get_effective_sanity_task_config()
+            sanity_task_type = task_config["SanityTaskType"]
             tags.append(
                 {
-                    "text": (
-                        "奖励组：奖励组 A"
-                        if task_config["RewardsSetOption"] == "RewardsSetA"
-                        else "奖励组：奖励组 B"
-                    ),
+                    "text": f"理智任务：{MAAEND_SANITY_TASK_LABELS[sanity_task_type]}",
                     "color": "blue",
                 }
             )
+
+            detail_key = (
+                task_config["AutoEssenceSpecifiedLocation"]
+                if sanity_task_type == "Essence"
+                else task_config[sanity_task_type]
+            )
+            tags.append(
+                {
+                    "text": f"详细任务：{MAAEND_SANITY_TASK_DETAIL_LABELS[detail_key]}",
+                    "color": "blue",
+                }
+            )
+
+            if detail_key in MAAEND_STAGE_WITH_AB:
+                tags.append(
+                    {
+                        "text": (
+                            "奖励组：奖励组 A"
+                            if task_config["RewardsSetOption"] == "RewardsSetA"
+                            else "奖励组：奖励组 B"
+                        ),
+                        "color": "blue",
+                    }
+                )
 
         # 备注标签
         notes = self.get("Info", "Notes")

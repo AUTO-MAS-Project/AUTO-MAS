@@ -36,7 +36,7 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
 from app.tools import skland_sign_in
-from app.utils.constants import UTC4, UTC8, MAAEND_SANITY_TASK_FIELDS
+from app.utils.constants import UTC4, UTC8, MAAEND_SANITY_TASK_FIELDS, MAAEND_TASKS
 from .tools import login, push_notification
 
 logger = get_logger("MaaEnd 自动代理")
@@ -457,16 +457,26 @@ class AutoProxyTask(TaskExecuteBase):
                 field: self.cur_user_config.get("Task", field)
                 for field in MAAEND_SANITY_TASK_FIELDS
             }
+            task_enabled_map = {
+                task_name: self.cur_user_config.get("Task", f"If{task_name}")
+                for task_name in MAAEND_TASKS
+            }
             sanity_task_type = sanity_task_config["SanityTaskType"]
             target_task_name = (
                 "AutoEssence" if sanity_task_type == "Essence" else "ProtocolSpace"
+            )
+            sanity_enabled = task_enabled_map["Sanity"] and any(
+                task.get("taskName") in ("ProtocolSpace", "AutoEssence")
+                for task in maaend_tasks
             )
             configured = False
 
             for task in maaend_tasks:
                 if task["taskName"] == "ProtocolSpace":
                     task["enabled"] = (
-                        task["taskName"] == target_task_name and not configured
+                        sanity_enabled
+                        and task["taskName"] == target_task_name
+                        and not configured
                     )
                     if not task["enabled"]:
                         continue
@@ -489,7 +499,9 @@ class AutoProxyTask(TaskExecuteBase):
                         }
                 elif task["taskName"] == "AutoEssence":
                     task["enabled"] = (
-                        task["taskName"] == target_task_name and not configured
+                        sanity_enabled
+                        and task["taskName"] == target_task_name
+                        and not configured
                     )
                     if not task["enabled"]:
                         continue
@@ -502,12 +514,22 @@ class AutoProxyTask(TaskExecuteBase):
                             "AutoEssenceSpecifiedLocation", ""
                         ),
                     }
+                elif task["taskName"] in task_enabled_map:
+                    task["enabled"] = task_enabled_map[task["taskName"]]
 
-            if target_task_name == "ProtocolSpace" and not configured:
+            if (
+                sanity_enabled
+                and target_task_name == "ProtocolSpace"
+                and not configured
+            ):
                 logger.warning(
                     f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 ProtocolSpace 任务，已跳过协议空间注入"
                 )
-            if target_task_name == "AutoEssence" and not configured:
+            if (
+                sanity_enabled
+                and target_task_name == "AutoEssence"
+                and not configured
+            ):
                 logger.warning(
                     f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 AutoEssence 任务，已跳过基质刷取注入"
                 )

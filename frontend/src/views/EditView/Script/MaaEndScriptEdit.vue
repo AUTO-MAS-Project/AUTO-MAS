@@ -304,6 +304,7 @@
           source="script"
           :controller-type="maaEndConfig.Game.ControllerType"
           @save="handleTaskChange"
+          @save-batch="handleTaskChanges"
         />
         <a-alert
           v-else
@@ -451,6 +452,22 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     CrisisDrills: 'AdvancedProgression1',
     RewardsSetOption: 'RewardsSetA',
     AutoEssenceSpecifiedLocation: 'VFTheHub',
+    IfSanity: true,
+    IfAutoUseSpMedication: true,
+    IfDijiangRewards: true,
+    IfDeliveryJobs: true,
+    IfSellProduct: true,
+    IfAutoStockpile: true,
+    IfAutoStockStaple: true,
+    IfVisitFriends: true,
+    IfCreditShoppingN2: true,
+    IfSeizeEntrustTask: true,
+    IfAutoEcoFarm: true,
+    IfAutoSell: true,
+    IfEnvironmentMonitoring: true,
+    IfAutoCollect: true,
+    IfDailyRewards: true,
+    IfResourceRecycleStation: true,
   },
 })
 
@@ -580,6 +597,29 @@ const handleTaskChange = async (key: string, value: unknown) => {
   const [, taskKey] = key.split('.')
   if (!taskKey) return
   await handleChange('Task', taskKey, value)
+}
+
+const handleTaskChanges = async (changes: Array<{ key: string; value: unknown }>) => {
+  if (isInitializing.value || isSaving.value || !changes.length) return
+
+  const payload: Record<string, unknown> = {}
+  for (const change of changes) {
+    const [, taskKey] = change.key.split('.')
+    if (taskKey) {
+      payload[taskKey] = change.value
+    }
+  }
+  if (!Object.keys(payload).length) return
+
+  isSaving.value = true
+  try {
+    const success = await updateScript(scriptId, { Task: payload })
+    if (success) {
+      await refreshScript()
+    }
+  } finally {
+    isSaving.value = false
+  }
 }
 
 const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['ControllerType']) => {

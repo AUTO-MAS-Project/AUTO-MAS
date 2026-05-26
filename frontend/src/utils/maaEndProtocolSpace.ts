@@ -26,6 +26,23 @@ export type AutoEssenceLocation =
   | 'WLWulingCity'
   | 'WLQingboStockade'
 export type CurrentTaskValue = ProtocolSpaceTaskValue | AutoEssenceLocation
+export type MaaEndTaskSwitch =
+  | 'Sanity'
+  | 'AutoUseSpMedication'
+  | 'DijiangRewards'
+  | 'DeliveryJobs'
+  | 'SellProduct'
+  | 'AutoStockpile'
+  | 'AutoStockStaple'
+  | 'VisitFriends'
+  | 'CreditShoppingN2'
+  | 'SeizeEntrustTask'
+  | 'AutoEcoFarm'
+  | 'AutoSell'
+  | 'EnvironmentMonitoring'
+  | 'AutoCollect'
+  | 'DailyRewards'
+  | 'ResourceRecycleStation'
 
 export interface ProtocolSpaceTaskOption {
   label: string
@@ -40,6 +57,17 @@ export interface MaaEndSanityConfig {
   CrisisDrills: ProtocolSpaceTaskValue
   RewardsSetOption: RewardSetOption
   AutoEssenceSpecifiedLocation: AutoEssenceLocation
+}
+
+export interface MaaEndTaskSwitchItem {
+  name: MaaEndTaskSwitch
+  label: string
+}
+
+export interface MaaEndTaskSwitchGroup {
+  key: string
+  label: string
+  tasks: MaaEndTaskSwitchItem[]
 }
 
 // 保留旧别名，避免历史引用爆炸
@@ -74,6 +102,70 @@ export const AUTO_ESSENCE_LOCATION_OPTIONS: Array<{
   { label: '武陵城区', value: 'WLWulingCity' },
   { label: '清波寨', value: 'WLQingboStockade' },
 ]
+
+export const MAAEND_TASK_GROUPS: MaaEndTaskSwitchGroup[] = [
+  {
+    key: 'Sanity',
+    label: '🧠 理智作战',
+    tasks: [
+      { name: 'Sanity', label: '🧠 理智任务' },
+      { name: 'AutoUseSpMedication', label: '💊 应急理智加强剂' },
+    ],
+  },
+  {
+    key: 'Infrastructure',
+    label: '🏗️ 基建任务',
+    tasks: [
+      { name: 'DijiangRewards', label: '🎁 基建任务' },
+      { name: 'DeliveryJobs', label: '🚚 转交委托' },
+      { name: 'SellProduct', label: '🛒 售卖产品' },
+      { name: 'AutoStockpile', label: '📦 自动囤货' },
+      { name: 'AutoStockStaple', label: '🏪 购买稳定物资' },
+    ],
+  },
+  {
+    key: 'Credit',
+    label: '💳 信用收支',
+    tasks: [
+      { name: 'VisitFriends', label: '🤝 拜访好友' },
+      { name: 'CreditShoppingN2', label: '🛍️ 信用点购物' },
+      { name: 'SeizeEntrustTask', label: '🌆 抢委托' },
+    ],
+  },
+  {
+    key: 'Frontend',
+    label: '🌾 前台任务',
+    tasks: [
+      { name: 'AutoEcoFarm', label: '🌾 生态农场' },
+      { name: 'AutoSell', label: '💰 售卖弹性物资' },
+      { name: 'EnvironmentMonitoring', label: '🌿 环境监测' },
+      { name: 'AutoCollect', label: '🧺 自动采集' },
+    ],
+  },
+  {
+    key: 'Rewards',
+    label: '🎖️ 奖励领取',
+    tasks: [
+      { name: 'DailyRewards', label: '📅 日常奖励领取' },
+      { name: 'ResourceRecycleStation', label: '🦉 资源回收站' },
+    ],
+  },
+]
+
+export const MAAEND_CONTROLLER_TASKS: Record<string, MaaEndTaskSwitch[]> = {
+  'Win32-Window': [
+    'VisitFriends',
+    'DijiangRewards',
+    'CreditShoppingN2',
+    'DeliveryJobs',
+    'SellProduct',
+    'AutoStockpile',
+    'AutoStockStaple',
+    'DailyRewards',
+    'SeizeEntrustTask',
+  ],
+  'Win32-Front': MAAEND_TASK_GROUPS.flatMap(group => group.tasks.map(task => task.name)),
+}
 
 export const PROTOCOL_SPACE_TASK_OPTIONS_MAP: Record<ProtocolSpaceTab, ProtocolSpaceTaskOption[]> =
   {
