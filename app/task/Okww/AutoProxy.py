@@ -35,6 +35,13 @@ from app.utils import get_logger, ProcessManager, ProcessInfo
 from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
 
+from .config_io import (
+    config_owner_for_mode,
+    deploy_mas_config_to_script,
+    pull_script_config_to_mas,
+    script_config_path,
+)
+
 logger = get_logger("OK-WW 自动代理")
 
 # 鸣潮 PC 客户端窗口进程名固定，MAS 接管启动前据此避免重复拉起
@@ -192,8 +199,32 @@ class AutoProxyTask(TaskExecuteBase):
         self.game_path = Path(self.script_config.get("Game", "Path"))
         self.game_url = self.script_config.get("Game", "URL")
         self.game_process_name = self.script_config.get("Game", "ProcessName")
+        self.script_config_path = script_config_path(self.script_config)
 
         self.run_book = False
+
+    def _config_owner(self) -> str:
+        mode = str(self.cur_user_config.get("Info", "Mode") or "简洁")
+        return config_owner_for_mode(mode, str(self.cur_user_uid))
+
+    async def set_okww(self) -> None:
+        """将 MAS 侧 OK-WW 任务配置下发到脚本 working 目录（对齐 General.set_general）。"""
+
+        await System.kill_process(self.script_exe_path)
+        deploy_mas_config_to_script(
+            self.script_config,
+            self.script_info.script_id,
+            self._config_owner(),
+        )
+
+    async def update_config(self) -> None:
+        """将脚本侧配置回写 MAS ConfigFile（对齐 General.update_config）。"""
+
+        pull_script_config_to_mas(
+            self.script_config,
+            self.script_info.script_id,
+            self._config_owner(),
+        )
 
     def _game_config_summary_lines(self) -> list[str]:
         """游戏配置摘要行（调度台展示用）。"""
@@ -328,6 +359,7 @@ class AutoProxyTask(TaskExecuteBase):
                         self.cur_user_item.status = "异常"
                     continue
 
+            await self.set_okww()
             await self._push_dispatch_log(
                 f"启动 OK-WW: -t {self.task_index}"
                 + (" -e" if self.exit_on_finish else "")
@@ -359,6 +391,11 @@ class AutoProxyTask(TaskExecuteBase):
                 )
                 # 对齐 MaaEnd：成功时先只结束 ok-ww；是否关游戏由 Game.CloseOnFinish 在 final_task 决定
                 await self._kill_okww_process()
+                if self.script_config.get("Script", "UpdateConfigMode") in (
+                    "Success",
+                    "Always",
+                ):
+                    await self.update_config()
                 await asyncio.sleep(3)
                 break
 
@@ -380,6 +417,11 @@ class AutoProxyTask(TaskExecuteBase):
                 )
             except Exception:
                 pass
+            if self.script_config.get("Script", "UpdateConfigMode") in (
+                "Failure",
+                "Always",
+            ):
+                await self.update_config()
             if i + 1 < run_limit:
                 self.script_info.log += (
                     f"\n将在稍后重试 ({i + 1}/{run_limit})"
