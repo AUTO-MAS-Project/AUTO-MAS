@@ -28,6 +28,8 @@ from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
 
+from .config_io import deploy_mas_config_to_script, mas_config_dir, mas_config_ready, pull_script_config_to_mas
+
 logger = get_logger("OK-WW 脚本设置")
 
 
@@ -63,6 +65,13 @@ class ScriptConfigTask(TaskExecuteBase):
     async def main_task(self):
         self.okww_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
+
+        config_owner = self.task_info.user_id or "Default"
+        mas_dir = mas_config_dir(self.script_info.script_id, config_owner)
+        if mas_config_ready(mas_dir):
+            deploy_mas_config_to_script(
+                self.script_config, self.script_info.script_id, config_owner
+            )
 
         exe = Path(self.script_config.get("Script", "ScriptPath"))
 
@@ -104,20 +113,14 @@ class ScriptConfigTask(TaskExecuteBase):
             except Exception:
                 pass
 
-    def _write_config_marker(self) -> None:
-        # 脚本页（user_id == Default）与用户页各写独立 ConfigFile 标记
-        config_owner = self.task_info.user_id or "Default"
-        config_marker = (
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{config_owner}/ConfigFile"
-        )
-        config_marker.mkdir(parents=True, exist_ok=True)
-
     async def final_task(self):
         if hasattr(self, "wait_event"):
             self.wait_event.set()
         await self._kill_okww_processes()
-        self._write_config_marker()
+        config_owner = self.task_info.user_id or "Default"
+        pull_script_config_to_mas(
+            self.script_config, self.script_info.script_id, config_owner
+        )
 
     async def on_crash(self, e: Exception):
         logger.exception(f"OK-WW 配置任务出现异常: {e}")

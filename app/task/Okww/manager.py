@@ -17,6 +17,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 import uuid
+from contextlib import suppress
 
 from pathlib import Path
 
@@ -29,6 +30,14 @@ from app.utils import get_logger, ProcessManager
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
+from .config_io import (
+    backup_script_config,
+    config_owner_for_mode,
+    mas_config_dir,
+    mas_config_ready,
+    restore_script_config,
+    script_config_path,
+)
 
 logger = get_logger("OK-WW 调度器")
 
@@ -75,10 +84,8 @@ class OkwwManager(TaskExecuteBase):
             user_uid = uuid.UUID(self.script_info.user_list[self.script_info.current_index].user_id)
             user_cfg = Config.ScriptConfig[script_uid].UserData[user_uid]
             mode = str(user_cfg.get("Info", "Mode") or "简洁")
-            config_owner = "Default" if mode == "简洁" else str(user_uid)
-            if not (
-                Path.cwd() / f"data/{script_uid}/{config_owner}/ConfigFile"
-            ).exists():
+            config_owner = config_owner_for_mode(mode, str(user_uid))
+            if not mas_config_ready(mas_config_dir(str(script_uid), config_owner)):
                 if mode == "简洁":
                     return "未找到共享的 OK-WW 配置文件，请先在脚本页完成「配置 ok-ww」步骤"
                 return "未找到用户的 OK-WW 配置文件，请先在用户配置页完成「配置 ok-ww」步骤"
@@ -86,7 +93,9 @@ class OkwwManager(TaskExecuteBase):
         return "Pass"
 
     async def prepare(self):
-        self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        script_uid = uuid.UUID(self.script_info.script_id)
+        await Config.ScriptConfig[script_uid].lock()
+        self.script_config = Config.ScriptConfig[script_uid]
         self.user_config = self.script_config.UserData
 
         if not isinstance(self.script_config, OkwwConfig):
@@ -117,6 +126,13 @@ class OkwwManager(TaskExecuteBase):
             elif self.script_config.get("Game", "Type") == "Client":
                 self.game_manager = ProcessManager()
 
+        if self.task_info.mode == "AutoProxy":
+            self._script_config_path = script_config_path(self.script_config)
+            self._temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
+            self._temp_path.mkdir(parents=True, exist_ok=True)
+            if self._script_config_path.exists():
+                backup_script_config(self.script_config, self._temp_path)
+
     async def main_task(self):
         await self.prepare()
 
@@ -143,18 +159,25 @@ class OkwwManager(TaskExecuteBase):
             self.script_info.status = "异常"
             return
 
-        await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
-
+        script_uid = uuid.UUID(self.script_info.script_id)
         if self.task_info.mode == "AutoProxy":
-            await Config.ScriptConfig[
-                uuid.UUID(self.script_info.script_id)
-            ].UserData.load(await self.user_config.toDict())
+            if hasattr(self, "_temp_path") and hasattr(self, "_script_config_path"):
+                restore_script_config(self.script_config, self._temp_path)
+            await Config.ScriptConfig[script_uid].UserData.load(
+                await self.user_config.toDict()
+            )
 
+        await Config.ScriptConfig[script_uid].unlock()
         self.script_info.status = "完成"
 
     async def on_crash(self, e: Exception):
         self.script_info.status = "异常"
         logger.exception(f"OK-WW任务出现异常: {e}")
+        script_uid = uuid.UUID(self.script_info.script_id)
+        if self.task_info.mode == "AutoProxy" and hasattr(self, "_temp_path"):
+            restore_script_config(self.script_config, self._temp_path)
+        with suppress(Exception):
+            await Config.ScriptConfig[script_uid].unlock()
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",
