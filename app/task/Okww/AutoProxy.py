@@ -211,8 +211,13 @@ class AutoProxyTask(TaskExecuteBase):
 
         mas_config_dir = self._okww_mas_config_dir()
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            tmp_dst = self.script_config_path.with_name(
+                self.script_config_path.name + ".tmp"
+            )
+            shutil.rmtree(tmp_dst, ignore_errors=True)
+            shutil.copytree(mas_config_dir, tmp_dst, dirs_exist_ok=True)
             shutil.rmtree(self.script_config_path, ignore_errors=True)
-            shutil.copytree(mas_config_dir, self.script_config_path, dirs_exist_ok=True)
+            tmp_dst.rename(self.script_config_path)
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
             shutil.copy(
                 mas_config_dir / self.script_config_path.name,
