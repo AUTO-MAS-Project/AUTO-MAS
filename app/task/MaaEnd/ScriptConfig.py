@@ -131,10 +131,21 @@ class ScriptConfigTask(TaskExecuteBase):
         else:
             # 预设模式保留完整实例列表，仅切换到当前控制器对应实例
             config_path = self.config_file_path / "mxu-MaaEnd.json"
+            maaend_set = None
             if config_path.exists():
                 maaend_set = json.loads(config_path.read_text(encoding="utf-8"))
-            else:
-                # 首次进入预设模式时，用模板初始化完整配置
+                preset_controllers = {
+                    instance.get("controllerName")
+                    for instance in maaend_set.get("instances", [])
+                }
+                if not {"Win32-Window", "Win32-Front"}.issubset(preset_controllers):
+                    logger.warning(
+                        f"用户 {self.cur_user_item.user_id} 的 MaaEnd 预设配置不完整，已使用模板重新初始化"
+                    )
+                    maaend_set = None
+
+            if maaend_set is None:
+                # 首次进入或从自定义切回预设时，用模板初始化完整配置
                 self.config_file_path.mkdir(parents=True, exist_ok=True)
                 maaend_set = json.loads(
                     (
