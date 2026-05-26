@@ -1,101 +1,29 @@
-export type SanityTaskType =
-  | 'OperatorProgression'
-  | 'WeaponProgression'
-  | 'CrisisDrills'
-  | 'Essence'
-export type ProtocolSpaceTab = Exclude<SanityTaskType, 'Essence'>
+// Frontend mirror of app/utils/constants.py. Keep values in sync with the backend
+// constants and regenerate frontend/src/api when OpenAPI schemas change.
+export const PROTOCOL_SPACE_OPTIONS = [
+  { label: '干员养成', value: 'OperatorProgression' },
+  { label: '武器养成', value: 'WeaponProgression' },
+  { label: '危境预演', value: 'CrisisDrills' },
+] as const
+
+export type ProtocolSpaceTab = (typeof PROTOCOL_SPACE_OPTIONS)[number]['value']
 export type CurrentTaskField = ProtocolSpaceTab
-export type RewardSetOption = 'RewardsSetA' | 'RewardsSetB'
-export type ProtocolSpaceTaskValue =
-  | 'OperatorEXP'
-  | 'Promotions'
-  | 'T-Creds'
-  | 'SkillUp'
-  | 'WeaponEXP'
-  | 'WeaponTune'
-  | 'AdvancedProgression1'
-  | 'AdvancedProgression2'
-  | 'AdvancedProgression3'
-  | 'AdvancedProgression4'
-  | 'AdvancedProgression5'
-export type AutoEssenceLocation =
-  | 'VFTheHub'
-  | 'VFOriginiumSciencePark'
-  | 'VFOriginLodespring'
-  | 'VFPowerPlateau'
-  | 'WLWulingCity'
-  | 'WLQingboStockade'
-  | 'WLMarkerStone'
-export type CurrentTaskValue = ProtocolSpaceTaskValue | AutoEssenceLocation
-export type MaaEndTaskSwitch =
-  | 'Sanity'
-  | 'AutoUseSpMedication'
-  | 'DijiangRewards'
-  | 'DeliveryJobs'
-  | 'SellProduct'
-  | 'AutoStockpile'
-  | 'AutoStockStaple'
-  | 'VisitFriends'
-  | 'CreditShoppingN2'
-  | 'SeizeEntrustTask'
-  | 'AutoEcoFarm'
-  | 'AutoSell'
-  | 'EnvironmentMonitoring'
-  | 'AutoCollect'
-  | 'DailyRewards'
-  | 'ResourceRecycleStation'
 
-export interface ProtocolSpaceTaskOption {
-  label: string
-  value: ProtocolSpaceTaskValue
-  rewards?: boolean
-}
-
-export interface MaaEndSanityConfig {
-  SanityTaskType: SanityTaskType
-  OperatorProgression: ProtocolSpaceTaskValue
-  WeaponProgression: ProtocolSpaceTaskValue
-  CrisisDrills: ProtocolSpaceTaskValue
-  RewardsSetOption: RewardSetOption
-  AutoEssenceSpecifiedLocation: AutoEssenceLocation
-}
-
-export interface MaaEndTaskSwitchItem {
-  name: MaaEndTaskSwitch
-  label: string
-}
-
-export interface MaaEndTaskSwitchGroup {
-  key: string
-  label: string
-  tasks: MaaEndTaskSwitchItem[]
-}
-
-// 保留旧别名，避免历史引用爆炸
-export type ProtocolSpaceConfig = MaaEndSanityConfig
-
-export const SANITY_TASK_TYPE_OPTIONS: Array<{ label: string; value: SanityTaskType }> = [
-  { label: '干员养成', value: 'OperatorProgression' },
-  { label: '武器养成', value: 'WeaponProgression' },
-  { label: '危境预演', value: 'CrisisDrills' },
+export const SANITY_TASK_TYPE_OPTIONS = [
+  ...PROTOCOL_SPACE_OPTIONS,
   { label: '基质刷取', value: 'Essence' },
-]
+] as const
 
-export const PROTOCOL_SPACE_OPTIONS: Array<{ label: string; value: ProtocolSpaceTab }> = [
-  { label: '干员养成', value: 'OperatorProgression' },
-  { label: '武器养成', value: 'WeaponProgression' },
-  { label: '危境预演', value: 'CrisisDrills' },
-]
+export type SanityTaskType = (typeof SANITY_TASK_TYPE_OPTIONS)[number]['value']
 
-export const REWARD_OPTIONS: Array<{ label: string; value: RewardSetOption }> = [
+export const REWARD_OPTIONS = [
   { label: '奖励组 A', value: 'RewardsSetA' },
   { label: '奖励组 B', value: 'RewardsSetB' },
-]
+] as const
 
-export const AUTO_ESSENCE_LOCATION_OPTIONS: Array<{
-  label: string
-  value: AutoEssenceLocation
-}> = [
+export type RewardSetOption = (typeof REWARD_OPTIONS)[number]['value']
+
+export const AUTO_ESSENCE_LOCATION_OPTIONS = [
   { label: '枢纽区', value: 'VFTheHub' },
   { label: '源石研究园', value: 'VFOriginiumSciencePark' },
   { label: '矿脉源区', value: 'VFOriginLodespring' },
@@ -103,9 +31,35 @@ export const AUTO_ESSENCE_LOCATION_OPTIONS: Array<{
   { label: '武陵城区', value: 'WLWulingCity' },
   { label: '清波寨', value: 'WLQingboStockade' },
   { label: '首墩', value: 'WLMarkerStone' },
-]
+] as const
 
-export const MAAEND_TASK_GROUPS: MaaEndTaskSwitchGroup[] = [
+export type AutoEssenceLocation = (typeof AUTO_ESSENCE_LOCATION_OPTIONS)[number]['value']
+
+export const PROTOCOL_SPACE_TASK_OPTIONS_MAP = {
+  OperatorProgression: [
+    { label: '干员经验', value: 'OperatorEXP', rewards: true },
+    { label: '干员进阶', value: 'Promotions', rewards: true },
+    { label: '钱币收集', value: 'T-Creds' },
+    { label: '技能提升', value: 'SkillUp', rewards: true },
+  ],
+  WeaponProgression: [
+    { label: '武器经验', value: 'WeaponEXP' },
+    { label: '武器进阶', value: 'WeaponTune', rewards: true },
+  ],
+  CrisisDrills: [
+    { label: '高阶培养 I - D96钢样品四', value: 'AdvancedProgression1' },
+    { label: '高阶培养 II - 超距辉映管', value: 'AdvancedProgression2' },
+    { label: '高阶培养 III - 快子遴捡晶格', value: 'AdvancedProgression3' },
+    { label: '高阶培养 IV - 象限拟合液', value: 'AdvancedProgression4' },
+    { label: '高阶培养 V - 三相纳米片', value: 'AdvancedProgression5' },
+  ],
+} as const
+
+export type ProtocolSpaceTaskValue =
+  (typeof PROTOCOL_SPACE_TASK_OPTIONS_MAP)[ProtocolSpaceTab][number]['value']
+export type CurrentTaskValue = ProtocolSpaceTaskValue | AutoEssenceLocation
+
+export const MAAEND_TASK_GROUPS = [
   {
     key: 'Sanity',
     label: '🧠 理智作战',
@@ -152,7 +106,38 @@ export const MAAEND_TASK_GROUPS: MaaEndTaskSwitchGroup[] = [
       { name: 'ResourceRecycleStation', label: '🦉 资源回收站' },
     ],
   },
-]
+] as const
+
+export type MaaEndTaskSwitch = (typeof MAAEND_TASK_GROUPS)[number]['tasks'][number]['name']
+
+export interface ProtocolSpaceTaskOption {
+  label: string
+  value: ProtocolSpaceTaskValue
+  rewards?: boolean
+}
+
+export interface MaaEndSanityConfig {
+  SanityTaskType: SanityTaskType
+  OperatorProgression: ProtocolSpaceTaskValue
+  WeaponProgression: ProtocolSpaceTaskValue
+  CrisisDrills: ProtocolSpaceTaskValue
+  RewardsSetOption: RewardSetOption
+  AutoEssenceSpecifiedLocation: AutoEssenceLocation
+}
+
+export interface MaaEndTaskSwitchItem {
+  name: MaaEndTaskSwitch
+  label: string
+}
+
+export interface MaaEndTaskSwitchGroup {
+  key: string
+  label: string
+  tasks: MaaEndTaskSwitchItem[]
+}
+
+// 保留旧别名，避免历史引用爆炸
+export type ProtocolSpaceConfig = MaaEndSanityConfig
 
 export const MAAEND_CONTROLLER_TASKS: Record<string, MaaEndTaskSwitch[]> = {
   'Win32-Window': [
@@ -168,27 +153,6 @@ export const MAAEND_CONTROLLER_TASKS: Record<string, MaaEndTaskSwitch[]> = {
   ],
   'Win32-Front': MAAEND_TASK_GROUPS.flatMap(group => group.tasks.map(task => task.name)),
 }
-
-export const PROTOCOL_SPACE_TASK_OPTIONS_MAP: Record<ProtocolSpaceTab, ProtocolSpaceTaskOption[]> =
-  {
-    OperatorProgression: [
-      { label: '干员经验', value: 'OperatorEXP', rewards: true },
-      { label: '干员进阶', value: 'Promotions', rewards: true },
-      { label: '钱币收集', value: 'T-Creds' },
-      { label: '技能提升', value: 'SkillUp', rewards: true },
-    ],
-    WeaponProgression: [
-      { label: '武器经验', value: 'WeaponEXP' },
-      { label: '武器进阶', value: 'WeaponTune', rewards: true },
-    ],
-    CrisisDrills: [
-      { label: '高阶培养 I - D96钢样品四', value: 'AdvancedProgression1' },
-      { label: '高阶培养 II - 超距辉映管', value: 'AdvancedProgression2' },
-      { label: '高阶培养 III - 快子遴捡晶格', value: 'AdvancedProgression3' },
-      { label: '高阶培养 IV - 象限拟合液', value: 'AdvancedProgression4' },
-      { label: '高阶培养 V - 三相纳米片', value: 'AdvancedProgression5' },
-    ],
-  }
 
 export const PROTOCOL_SPACE_TASK_FIELD_MAP: Record<ProtocolSpaceTab, CurrentTaskField> = {
   OperatorProgression: 'OperatorProgression',

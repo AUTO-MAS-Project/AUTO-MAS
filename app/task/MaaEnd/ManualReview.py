@@ -66,6 +66,7 @@ class ManualReviewTask(TaskExecuteBase):
         if self.emulator_manager is not None:
             return "暂不支持使用模拟器进行人工排查"
 
+        # 人工检查模式只启动游戏并等待用户确认登陆，不启动 MaaEnd，也不依赖 ConfigFile。
         return "Pass"
 
     async def prepare(self):

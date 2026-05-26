@@ -530,16 +530,16 @@ class AutoProxyTask(TaskExecuteBase):
                 and target_task_name == "ProtocolSpace"
                 and not sanity_configured
             ):
-                logger.warning(
-                    f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 ProtocolSpace 任务，已跳过协议空间注入"
+                raise ValueError(
+                    f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 ProtocolSpace 任务，无法注入协议空间配置"
                 )
             if (
                 sanity_enabled
                 and target_task_name == "AutoEssence"
                 and not sanity_configured
             ):
-                logger.warning(
-                    f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 AutoEssence 任务，已跳过基质刷取注入"
+                raise ValueError(
+                    f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 AutoEssence 任务，无法注入基质刷取配置"
                 )
 
         # 按本轮任务表写回 MaaEnd 运行配置
