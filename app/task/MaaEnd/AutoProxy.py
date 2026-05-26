@@ -451,76 +451,73 @@ class AutoProxyTask(TaskExecuteBase):
             else:
                 maaend_i18n[task_definition["name"]] = task_definition["label"]
 
-        # 配置理智任务
+        def get_task_book_name(task: dict[str, object]) -> str:
+            if self.cur_user_config.get("Info", "Mode") == "自定义":
+                return str(
+                    task.get("customName")
+                    or maaend_i18n.get(str(task["taskName"]), str(task["taskName"]))
+                )
+            return maaend_i18n.get(str(task["taskName"]), str(task["taskName"]))
+
+        sanity_task_config = {}
+        sanity_task_type = ""
+        target_task_name = ""
+        task_config_source = (
+            self.script_config
+            if self.cur_user_config.get("Info", "Mode") == "简洁"
+            else self.cur_user_config
+        )
         if self.cur_user_config.get("Info", "Mode") != "自定义":
             sanity_task_config = {
-                field: self.cur_user_config.get("Task", field)
+                field: task_config_source.get("Task", field)
                 for field in MAAEND_SANITY_TASK_FIELDS
-            }
-            task_enabled_map = {
-                task_name: self.cur_user_config.get("Task", f"If{task_name}")
-                for task_name in MAAEND_TASKS
             }
             sanity_task_type = sanity_task_config["SanityTaskType"]
             target_task_name = (
                 "AutoEssence" if sanity_task_type == "Essence" else "ProtocolSpace"
             )
-            sanity_enabled = task_enabled_map["Sanity"] and any(
-                task.get("taskName") in ("ProtocolSpace", "AutoEssence")
-                for task in maaend_tasks
+
+        if self.task_dict is None:
+            # 首次运行时按 MAS 配置生成本轮任务表，后续重试只收束这张表
+            self.task_dict = {}
+            sanity_configured = False
+            sanity_enabled = (
+                self.cur_user_config.get("Info", "Mode") != "自定义"
+                and task_config_source.get("Task", "IfSanity")
+                and any(
+                    task.get("taskName") in ("ProtocolSpace", "AutoEssence")
+                    for task in maaend_tasks
+                )
             )
-            configured = False
 
             for task in maaend_tasks:
-                if task["taskName"] == "ProtocolSpace":
-                    task["enabled"] = (
-                        sanity_enabled
-                        and task["taskName"] == target_task_name
-                        and not configured
-                    )
-                    if not task["enabled"]:
-                        continue
+                if task["taskName"].startswith("__MXU_"):
+                    continue
 
-                    configured = True
-                    task.setdefault("optionValues", {})
-                    task["optionValues"]["ProtocolSpaceTab"] = {
-                        "type": "select",
-                        "caseName": sanity_task_type,
-                    }
-                    for option in (
-                        "OperatorProgression",
-                        "WeaponProgression",
-                        "CrisisDrills",
-                        "RewardsSetOption",
-                    ):
-                        task["optionValues"][option] = {
-                            "type": "select",
-                            "caseName": sanity_task_config[option],
-                        }
-                elif task["taskName"] == "AutoEssence":
-                    task["enabled"] = (
-                        sanity_enabled
-                        and task["taskName"] == target_task_name
-                        and not configured
-                    )
-                    if not task["enabled"]:
-                        continue
+                task_enabled = task["enabled"]
+                if self.cur_user_config.get("Info", "Mode") != "自定义":
+                    if task["taskName"] in ("ProtocolSpace", "AutoEssence"):
+                        task_enabled = (
+                            sanity_enabled
+                            and task["taskName"] == target_task_name
+                            and not sanity_configured
+                        )
+                        if task_enabled:
+                            sanity_configured = True
+                    elif task["taskName"] in MAAEND_TASKS:
+                        task_enabled = task_config_source.get(
+                            "Task", f"If{task['taskName']}"
+                        )
 
-                    configured = True
-                    task.setdefault("optionValues", {})
-                    task["optionValues"]["AutoEssenceSpecifiedLocation"] = {
-                        "type": "select",
-                        "caseName": sanity_task_config.get(
-                            "AutoEssenceSpecifiedLocation", ""
-                        ),
-                    }
-                elif task["taskName"] in task_enabled_map:
-                    task["enabled"] = task_enabled_map[task["taskName"]]
+                task_name = get_task_book_name(task)
+                if task_name not in self.task_dict:
+                    self.task_dict[task_name] = {}
+                self.task_dict[task_name][task["id"]] = task_enabled
 
             if (
                 sanity_enabled
                 and target_task_name == "ProtocolSpace"
-                and not configured
+                and not sanity_configured
             ):
                 logger.warning(
                     f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 ProtocolSpace 任务，已跳过协议空间注入"
@@ -528,34 +525,54 @@ class AutoProxyTask(TaskExecuteBase):
             if (
                 sanity_enabled
                 and target_task_name == "AutoEssence"
-                and not configured
+                and not sanity_configured
             ):
                 logger.warning(
                     f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 AutoEssence 任务，已跳过基质刷取注入"
                 )
 
-        # 配置任务启用状态
-        if self.task_dict is None:
-            # 任务列表为空则记录任务
-            self.task_dict = {}
-            task = {}
-            for task in maaend_tasks:
-                if task["taskName"].startswith("__MXU_"):
-                    continue
-                task_name = task.get("customName") or maaend_i18n.get(
-                    task["taskName"], task["taskName"]
-                )
-                if task_name not in self.task_dict:
-                    self.task_dict[task_name] = {}
-                self.task_dict[task_name][task["id"]] = task["enabled"]
-        else:
-            # 任务列表不为空则配置任务
-            for task in maaend_tasks:
-                task_name = task.get("customName") or maaend_i18n.get(
-                    task["taskName"], task["taskName"]
-                )
-                if task_name in self.task_dict:
-                    task["enabled"] = self.task_dict[task_name][task["id"]]
+        # 按本轮任务表写回 MaaEnd 运行配置
+        for task in maaend_tasks:
+            if task["taskName"].startswith("__MXU_"):
+                continue
+
+            task_name = get_task_book_name(task)
+            if task_name in self.task_dict and task["id"] in self.task_dict[task_name]:
+                task["enabled"] = self.task_dict[task_name][task["id"]]
+
+            if not task["enabled"]:
+                continue
+
+            if (
+                self.cur_user_config.get("Info", "Mode") != "自定义"
+                and task["taskName"] == target_task_name
+                and target_task_name == "ProtocolSpace"
+            ):
+                task.setdefault("optionValues", {})
+                task["optionValues"]["ProtocolSpaceTab"] = {
+                    "type": "select",
+                    "caseName": sanity_task_type,
+                }
+                for option in (
+                    "OperatorProgression",
+                    "WeaponProgression",
+                    "CrisisDrills",
+                    "RewardsSetOption",
+                ):
+                    task["optionValues"][option] = {
+                        "type": "select",
+                        "caseName": sanity_task_config[option],
+                    }
+            elif (
+                self.cur_user_config.get("Info", "Mode") != "自定义"
+                and task["taskName"] == target_task_name
+                and target_task_name == "AutoEssence"
+            ):
+                task.setdefault("optionValues", {})
+                task["optionValues"]["AutoEssenceSpecifiedLocation"] = {
+                    "type": "select",
+                    "caseName": sanity_task_config["AutoEssenceSpecifiedLocation"],
+                }
 
         (self.maaend_set_path / "mxu-MaaEnd.json").write_text(
             json.dumps(maaend_set, ensure_ascii=False, indent=4), encoding="utf-8"

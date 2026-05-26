@@ -129,42 +129,38 @@ class ScriptConfigTask(TaskExecuteBase):
             maaend_set["instances"] = [selected_instance]
             maaend_set["settings"]["autoRunOnLaunch"] = False
         else:
-            # 预设模式只打开当前控制器对应实例，缺失时从模板初始化
+            # 预设模式保留完整实例列表，仅切换到当前控制器对应实例
             config_path = self.config_file_path / "mxu-MaaEnd.json"
             if config_path.exists():
                 maaend_set = json.loads(config_path.read_text(encoding="utf-8"))
             else:
-                # 首次进入预设模式时，用模板初始化对应控制器实例
+                # 首次进入预设模式时，用模板初始化完整配置
                 self.config_file_path.mkdir(parents=True, exist_ok=True)
                 maaend_set = json.loads(
                     (
                         Path.cwd() / "res/templates/MaaEnd/config/mxu-MaaEnd.json"
                     ).read_text(encoding="utf-8")
                 )
-                if self.script_config.get("Game", "ControllerType") == "Win32-Front":
-                    maaend_instance = maaend_set["instances"][1]
-                elif self.script_config.get("Game", "ControllerType") == "Win32-Window":
-                    maaend_instance = maaend_set["instances"][0]
-                else:
-                    raise ValueError(
-                        f"控制器 {self.script_config.get('Game', 'ControllerType')} 暂不支持 MaaEnd 预设模式"
-                    )
-                for task in maaend_instance["tasks"]:
-                    task["enabled"] = True
-                maaend_set["instances"] = [maaend_instance]
+                for maaend_instance in maaend_set.get("instances", []):
+                    for task in maaend_instance.get("tasks", []):
+                        task["enabled"] = True
                 config_path.write_text(
                     json.dumps(maaend_set, ensure_ascii=False, indent=4),
                     encoding="utf-8",
                 )
-            # 运行时预设配置应只保留目标控制器实例
-            if not maaend_set["instances"]:
-                raise ValueError("预设配置中未找到目标控制器实例，建议重新配置")
-            if maaend_set["instances"][0].get("controllerName") != self.script_config.get(
-                "Game", "ControllerType"
-            ):
+
+            target_instance = None
+            for instance in maaend_set.get("instances", []):
+                if instance.get("controllerName") == self.script_config.get(
+                    "Game", "ControllerType"
+                ):
+                    target_instance = instance
+                    break
+            if target_instance is None:
                 raise ValueError(
-                    f"预设配置实例控制器为 {maaend_set['instances'][0].get('controllerName')}，与脚本配置控制器 {self.script_config.get('Game', 'ControllerType')} 不一致，建议重新配置"
+                    f"预设配置中未找到控制器 {self.script_config.get('Game', 'ControllerType')} 对应的实例，建议重新配置"
                 )
+            maaend_set["lastActiveInstanceId"] = target_instance["id"]
             shutil.rmtree(self.maaend_set_path, ignore_errors=True)
             self.maaend_set_path.mkdir(parents=True, exist_ok=True)
 
@@ -195,25 +191,29 @@ class ScriptConfigTask(TaskExecuteBase):
             )
             config_path = self.config_file_path / "mxu-MaaEnd.json"
             preset_config = json.loads(config_path.read_text(encoding="utf-8"))
-            preset_instance = preset_config["instances"][0]
-            if preset_instance.get("controllerName") != self.script_config.get(
-                "Game", "ControllerType"
-            ):
+
+            preset_instance = None
+            for instance in preset_config.get("instances", []):
+                if instance.get("controllerName") == self.script_config.get(
+                    "Game", "ControllerType"
+                ):
+                    preset_instance = instance
+                    break
+            if preset_instance is None:
                 raise ValueError(
-                    f"预设配置实例控制器为 {preset_instance.get('controllerName')}，与脚本配置控制器 {self.script_config.get('Game', 'ControllerType')} 不一致，建议重新配置"
+                    f"预设配置中未找到控制器 {self.script_config.get('Game', 'ControllerType')} 对应的实例，建议重新配置"
                 )
 
-            # 运行配置进入 ScriptConfig 前已按目标控制器收束为单实例
-            if not maaend_set["instances"]:
+            edited_instance = None
+            for instance in maaend_set.get("instances", []):
+                if instance.get("controllerName") == self.script_config.get(
+                    "Game", "ControllerType"
+                ):
+                    edited_instance = instance
+                    break
+            if edited_instance is None:
                 raise ValueError(
-                    "运行配置中未找到目标控制器实例，建议重新打开 ScriptConfig 后重新配置"
-                )
-            edited_instance = maaend_set["instances"][0]
-            if edited_instance.get("controllerName") != self.script_config.get(
-                "Game", "ControllerType"
-            ):
-                raise ValueError(
-                    f"当前激活实例控制器为 {edited_instance.get('controllerName')}，与脚本配置控制器 {self.script_config.get('Game', 'ControllerType')} 不一致，建议重新配置"
+                    f"运行配置中未找到控制器 {self.script_config.get('Game', 'ControllerType')} 对应的实例，建议重新打开 ScriptConfig 后重新配置"
                 )
 
             # 预设模式只同步任务选项，实例结构和其他本地设置保留用户配置原状
