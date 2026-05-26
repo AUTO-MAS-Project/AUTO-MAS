@@ -2009,7 +2009,7 @@ class OkwwConfig(ConfigBase):
             "Game", "LaunchBeforeTask", False, BoolValidator()
         )
         self.Game_Type = ConfigItem(
-            "Game", "Type", "Client", OptionsValidator(["Client"])
+            "Game", "Type", "Client", OptionsValidator(["Emulator", "Client", "URL"])
         )
         self.Game_Path = ConfigItem("Game", "Path", str(Path.cwd()), FileValidator())
         self.Game_URL = ConfigItem("Game", "URL", "")
@@ -2020,6 +2020,13 @@ class OkwwConfig(ConfigBase):
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
         )
+        self.Game_EmulatorId = ConfigItem(
+            "Game",
+            "EmulatorId",
+            "-",
+            MultipleUIDValidator("-", self.related_config, "EmulatorConfig"),
+        )
+        self.Game_EmulatorIndex = ConfigItem("Game", "EmulatorIndex", "-")
 
         ## Run -------------------------------------------------------------
         self.Run_ProxyTimesLimit = ConfigItem(
@@ -2315,6 +2322,7 @@ class GlobalConfig(ConfigBase):
         SrcConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         M9AConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
+        OkwwConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
 

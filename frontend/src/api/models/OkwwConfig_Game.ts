@@ -3,31 +3,27 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * OK-WW 游戏配置（鸣潮 PC 客户端）
+ * OK-WW 游戏配置（复用通用字段）
  */
 export type OkwwConfig_Game = {
     /**
-     * 游戏管理相关功能是否启用
+     * 游戏/模拟器相关功能是否启用
      */
     Enabled?: (boolean | null);
     /**
-     * 任务开始前是否由 MAS 启动游戏
+     * 任务开始前是否由 MAS 启动游戏/模拟器
      */
     LaunchBeforeTask?: (boolean | null);
     /**
-     * 任务结束后是否关闭游戏
+     * 类型: 模拟器, PC端, URL协议
      */
-    CloseOnFinish?: (boolean | null);
+    Type?: ('Emulator' | 'Client' | 'URL' | null);
     /**
-     * 类型: PC 客户端
-     */
-    Type?: ('Client' | null);
-    /**
-     * 游戏客户端路径
+     * 游戏/模拟器程序路径
      */
     Path?: (string | null);
     /**
-     * 自定义协议 URL
+     * 自定义协议URL
      */
     URL?: (string | null);
     /**
@@ -35,15 +31,27 @@ export type OkwwConfig_Game = {
      */
     ProcessName?: (string | null);
     /**
-     * 游戏启动参数
+     * 游戏/模拟器启动参数
      */
     Arguments?: (string | null);
     /**
-     * 游戏启动等待时间（秒）
+     * 游戏/模拟器等待启动时间
      */
     WaitTime?: (number | null);
     /**
-     * 是否强制关闭游戏进程
+     * 是否强制关闭游戏/模拟器进程
      */
     IfForceClose?: (boolean | null);
+    /**
+     * 任务结束后是否关闭游戏/模拟器
+     */
+    CloseOnFinish?: (boolean | null);
+    /**
+     * 模拟器ID
+     */
+    EmulatorId?: (string | null);
+    /**
+     * 模拟器多开实例索引
+     */
+    EmulatorIndex?: (string | null);
 };
