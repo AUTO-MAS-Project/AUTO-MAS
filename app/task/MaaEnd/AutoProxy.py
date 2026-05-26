@@ -79,14 +79,18 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.status = "跳过"
             return "今日代理次数已达上限, 跳过该用户"
 
-        if self.cur_user_config.get("Info", "Mode") == "自定义":
-            config_dir = (
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-            )
-            if not (config_dir / "mxu-MaaEnd.json").exists():
-                self.cur_user_item.status = "异常"
-                return "未找到用户的 MaaEnd 配置文件, 请先完成「MaaEnd 配置」步骤"
+        config_user_id = (
+            "Default"
+            if self.cur_user_config.get("Info", "Mode") == "简洁"
+            else self.cur_user_uid
+        )
+        config_file = (
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{config_user_id}/ConfigFile/mxu-MaaEnd.json"
+        )
+        if not config_file.exists():
+            self.cur_user_item.status = "异常"
+            return "未找到 MaaEnd 配置文件, 请先完成「MaaEnd 配置」步骤"
 
         return "Pass"
 
@@ -385,6 +389,12 @@ class AutoProxyTask(TaskExecuteBase):
             Path.cwd()
             / f"data/{self.script_info.script_id}/{config_user_id}/ConfigFile"
         )
+        maaend_config_file = maaend_config_path / "mxu-MaaEnd.json"
+        if not maaend_config_file.exists():
+            raise FileNotFoundError(
+                "未找到 MaaEnd 配置文件, 请先完成「MaaEnd 配置」步骤"
+            )
+
         shutil.rmtree(self.maaend_set_path, ignore_errors=True)
         shutil.copytree(maaend_config_path, self.maaend_set_path)
         maaend_set = json.loads(
