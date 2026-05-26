@@ -18,13 +18,13 @@
 
 import asyncio
 import shlex
+import shutil
 from pathlib import Path
 
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import OkwwConfig, OkwwUserConfig
-from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
 
@@ -39,7 +39,7 @@ class ScriptConfigTask(TaskExecuteBase):
         script_info: ScriptItem,
         script_config: OkwwConfig,
         user_config: MultipleConfig[OkwwUserConfig],
-        game_manager: ProcessManager | DeviceBase | None,
+        game_manager: ProcessManager | None,
     ):
         super().__init__()
 
@@ -63,6 +63,23 @@ class ScriptConfigTask(TaskExecuteBase):
     async def main_task(self):
         self.okww_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
+
+        self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
+        config_owner = self.task_info.user_id or "Default"
+        mas_config_dir = (
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{config_owner}/ConfigFile"
+        )
+        if mas_config_dir.exists():
+            if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+                shutil.copytree(
+                    mas_config_dir, self.script_config_path, dirs_exist_ok=True
+                )
+            elif self.script_config.get("Script", "ConfigPathMode") == "File":
+                shutil.copy(
+                    mas_config_dir / self.script_config_path.name,
+                    self.script_config_path,
+                )
 
         exe = Path(self.script_config.get("Script", "ScriptPath"))
 
@@ -104,20 +121,30 @@ class ScriptConfigTask(TaskExecuteBase):
             except Exception:
                 pass
 
-    def _write_config_marker(self) -> None:
-        # 脚本页（user_id == Default）与用户页各写独立 ConfigFile 标记
-        config_owner = self.task_info.user_id or "Default"
-        config_marker = (
-            Path.cwd()
-            / f"data/{self.script_info.script_id}/{config_owner}/ConfigFile"
-        )
-        config_marker.mkdir(parents=True, exist_ok=True)
-
     async def final_task(self):
         if hasattr(self, "wait_event"):
             self.wait_event.set()
         await self._kill_okww_processes()
-        self._write_config_marker()
+
+        config_owner = self.task_info.user_id or "Default"
+        mas_config_dir = (
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{config_owner}/ConfigFile"
+        )
+        shutil.rmtree(mas_config_dir, ignore_errors=True)
+        mas_config_dir.mkdir(parents=True, exist_ok=True)
+        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            shutil.copytree(
+                self.script_config_path, mas_config_dir, dirs_exist_ok=True
+            )
+        elif self.script_config.get("Script", "ConfigPathMode") == "File":
+            shutil.copy(
+                self.script_config_path,
+                mas_config_dir / self.script_config_path.name,
+            )
+        logger.success(
+            f"OK-WW 配置已保存到: {mas_config_dir}"
+        )
 
     async def on_crash(self, e: Exception):
         logger.exception(f"OK-WW 配置任务出现异常: {e}")
@@ -128,4 +155,3 @@ class ScriptConfigTask(TaskExecuteBase):
         )
         if hasattr(self, "wait_event"):
             self.wait_event.set()
-
