@@ -359,8 +359,6 @@ const okwwConfig = reactive<OkwwConfig>({
     WaitTime: 60,
     IfForceClose: true,
     CloseOnFinish: true,
-    EmulatorId: '-',
-    EmulatorIndex: '-',
   },
   Run: { ProxyTimesLimit: 0, RunTimesLimit: 1, RunTimeLimit: 60 },
 })

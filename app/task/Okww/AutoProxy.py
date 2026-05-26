@@ -30,7 +30,6 @@ from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import OkwwConfig, OkwwUserConfig
-from app.models.emulator import DeviceBase
 from app.services import Notify, System
 from app.utils import get_logger, ProcessManager, ProcessInfo
 from app.utils.LogMonitor import LogMonitor
@@ -81,7 +80,7 @@ class AutoProxyTask(TaskExecuteBase):
         script_info: ScriptItem,
         script_config: OkwwConfig,
         user_config: MultipleConfig[OkwwUserConfig],
-        game_manager: ProcessManager | DeviceBase | None,
+        game_manager: ProcessManager | None,
     ):
         super().__init__()
         if script_info.task_info is None:
@@ -262,10 +261,10 @@ class AutoProxyTask(TaskExecuteBase):
         await asyncio.sleep(0)
 
     async def _mas_launch_game_before_task(self) -> None:
-        """MAS 接管启动游戏/模拟器，并将各步骤写入调度台日志。"""
+        """MAS 接管启动游戏，并将各步骤写入调度台日志。"""
 
         game_type = self.script_config.get("Game", "Type")
-        await self._push_dispatch_log("正在准备由 MAS 启动游戏 / 模拟器...")
+        await self._push_dispatch_log("正在准备由 MAS 启动游戏...")
 
         if isinstance(self.game_manager, ProcessManager) and game_type == "Client":
             await self._push_dispatch_log(
@@ -301,13 +300,6 @@ class AutoProxyTask(TaskExecuteBase):
             await self._push_dispatch_log("游戏启动指令已发送")
             return
 
-        if isinstance(self.game_manager, DeviceBase):
-            await self._push_dispatch_log("正在启动模拟器...")
-            await self.game_manager.open(
-                self.script_config.get("Game", "EmulatorIndex")
-            )
-            await self._push_dispatch_log("模拟器启动完成")
-
     async def main_task(self):
         await self.prepare()
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
@@ -340,13 +332,13 @@ class AutoProxyTask(TaskExecuteBase):
                 try:
                     await self._mas_launch_game_before_task()
                 except Exception as e:
-                    await self._push_dispatch_log(f"游戏/模拟器启动失败: {e}")
-                    self.cur_user_log.status = f"游戏/模拟器启动失败: {e}"
-                    self.cur_user_log.content = [f"游戏/模拟器启动失败: {e}"]
+                    await self._push_dispatch_log(f"游戏启动失败: {e}")
+                    self.cur_user_log.status = f"游戏启动失败: {e}"
+                    self.cur_user_log.content = [f"游戏启动失败: {e}"]
                     await Config.send_websocket_message(
                         id=self.task_info.task_id,
                         type="Info",
-                        data={"Error": f"游戏/模拟器启动失败: {e}"},
+                        data={"Error": f"游戏启动失败: {e}"},
                     )
                     await self.kill_managed_process(
                         kill_game=self._mas_should_close_game_on_retry()
@@ -354,7 +346,7 @@ class AutoProxyTask(TaskExecuteBase):
                     try:
                         await Notify.push_plyer(
                             "OK-WW 自动代理出现异常！",
-                            f"用户 {self.cur_user_item.name} 游戏/模拟器启动失败",
+                            f"用户 {self.cur_user_item.name} 游戏启动失败",
                             f"{self.cur_user_item.name}的自动代理出现异常",
                             3,
                         )
@@ -362,7 +354,7 @@ class AutoProxyTask(TaskExecuteBase):
                         pass
                     if i + 1 < run_limit:
                         await self._push_dispatch_log(
-                            f"游戏/模拟器启动失败，将在稍后重试 ({i + 1}/{run_limit})"
+                            f"游戏启动失败，将在稍后重试 ({i + 1}/{run_limit})"
                         )
                         await asyncio.sleep(10)
                     else:
@@ -611,15 +603,11 @@ class AutoProxyTask(TaskExecuteBase):
             pass
 
     async def _kill_game_process(self) -> None:
-        """结束游戏/模拟器：不依赖 LaunchBeforeTask（可自行开游戏，由 CloseOnFinish/失败重试触发）"""
+        """结束游戏：不依赖 LaunchBeforeTask（可自行开游戏，由 CloseOnFinish/失败重试触发）"""
         game_type = self.script_config.get("Game", "Type")
         try:
             if isinstance(self.game_manager, ProcessManager):
                 await self.game_manager.kill()
-            elif isinstance(self.game_manager, DeviceBase):
-                await self.game_manager.close(
-                    self.script_config.get("Game", "EmulatorIndex")
-                )
             if game_type == "Client":
                 gp = self.game_path
                 if gp.is_file():

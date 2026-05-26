@@ -613,14 +613,28 @@ class OkwwConfig_Script(GeneralConfig_Script):
     """OK-WW 脚本配置（复用通用字段）"""
 
 
-class OkwwConfig_Game(GeneralConfig_Game):
-    """OK-WW 游戏配置（复用通用字段）"""
+class OkwwConfig_Game(BaseModel):
+    """OK-WW 游戏配置（鸣潮 PC 客户端）"""
 
+    Enabled: Optional[bool] = Field(
+        default=None, description="游戏管理相关功能是否启用"
+    )
     LaunchBeforeTask: Optional[bool] = Field(
-        default=None, description="任务开始前是否由 MAS 启动游戏/模拟器"
+        default=None, description="任务开始前是否由 MAS 启动游戏"
     )
     CloseOnFinish: Optional[bool] = Field(
-        default=None, description="任务结束后是否关闭游戏/模拟器"
+        default=None, description="任务结束后是否关闭游戏"
+    )
+    Type: Optional[Literal["Client"]] = Field(
+        default=None, description="类型: PC 客户端"
+    )
+    Path: Optional[str] = Field(default=None, description="游戏客户端路径")
+    URL: Optional[str] = Field(default=None, description="自定义协议 URL")
+    ProcessName: Optional[str] = Field(default=None, description="游戏进程名称")
+    Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
+    WaitTime: Optional[int] = Field(default=None, description="游戏启动等待时间（秒）")
+    IfForceClose: Optional[bool] = Field(
+        default=None, description="是否强制关闭游戏进程"
     )
 
 
