@@ -51,10 +51,22 @@ const routes = [
     meta: { title: '编辑MaaEnd脚本' },
   },
   {
+    path: '/scripts/:id/edit/m9a',
+    name: 'M9AScriptEdit',
+    component: () => import('../views/EditView/Script/M9AScriptEdit.vue'),
+    meta: { title: '编辑M9A脚本' },
+  },
+  {
     path: '/scripts/:id/edit/general',
     name: 'GeneralScriptEdit',
     component: () => import('../views/EditView/Script/GeneralScriptEdit.vue'),
     meta: { title: '编辑通用脚本' },
+  },
+  {
+    path: '/scripts/:id/edit/okww',
+    name: 'OkwwScriptEdit',
+    component: () => import('../views/EditView/Script/OkwwScriptEdit.vue'),
+    meta: { title: '编辑ok-ww脚本' },
   },
   {
     path: '/scripts/:scriptId/users/add/maa',
@@ -81,6 +93,12 @@ const routes = [
     meta: { title: '添加MaaEnd用户' },
   },
   {
+    path: '/scripts/:scriptId/users/add/m9a',
+    name: 'M9AUserAdd',
+    component: () => import('../views/EditView/User/M9AUserEdit.vue'),
+    meta: { title: '添加M9A用户' },
+  },
+  {
     path: '/scripts/:scriptId/users/:userId/edit/src',
     name: 'SRCUserEdit',
     component: () => import('../views/EditView/User/SRCUserEdit.vue'),
@@ -93,6 +111,12 @@ const routes = [
     meta: { title: '编辑MaaEnd用户' },
   },
   {
+    path: '/scripts/:scriptId/users/:userId/edit/m9a',
+    name: 'M9AUserEdit',
+    component: () => import('../views/EditView/User/M9AUserEdit.vue'),
+    meta: { title: '编辑M9A用户' },
+  },
+  {
     path: '/scripts/:scriptId/users/add/general',
     name: 'GeneralUserAdd',
     component: () => import('../views/EditView/User/GeneralUserEdit.vue'),
@@ -103,6 +127,18 @@ const routes = [
     name: 'GeneralUserEdit',
     component: () => import('../views/EditView/User/GeneralUserEdit.vue'),
     meta: { title: '编辑通用用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/add/okww',
+    name: 'OkwwUserAdd',
+    component: () => import('../views/EditView/User/OkwwUserEdit.vue'),
+    meta: { title: '添加ok-ww用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/okww',
+    name: 'OkwwUserEdit',
+    component: () => import('../views/EditView/User/OkwwUserEdit.vue'),
+    meta: { title: '编辑ok-ww用户' },
   },
   {
     path: '/plans',

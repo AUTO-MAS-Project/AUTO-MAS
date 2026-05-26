@@ -195,7 +195,7 @@ const getEditingData = (uuid: string): EmulatorInfo => {
       name: configData?.Info?.Name || '',
       type: configData?.Info?.Type || '',
       path: configData?.Info?.Path || '',
-      max_wait_time: configData?.Info?.MaxWaitTime || 60,
+      max_wait_time: configData?.Info?.MaxWaitTime || 300,
       boss_keys: safeJsonParse(configData?.Info?.BossKey, []),
     })
   }
@@ -229,7 +229,7 @@ const loadEmulators = async () => {
           name: configData?.Info?.Name || '',
           type: configData?.Info?.Type || '',
           path: configData?.Info?.Path || '',
-          max_wait_time: configData?.Info?.MaxWaitTime || 60,
+          max_wait_time: configData?.Info?.MaxWaitTime || 300,
           boss_keys: bossKeys,
         })
         // 同步 boss_keys 到输入框显示
@@ -298,7 +298,7 @@ const refreshEmulatorConfig = async (uuid?: string) => {
             name: configData?.Info?.Name || '',
             type: configData?.Info?.Type || '',
             path: configData?.Info?.Path || '',
-            max_wait_time: configData?.Info?.MaxWaitTime || 60,
+            max_wait_time: configData?.Info?.MaxWaitTime || 300,
             boss_keys: bossKeys,
           })
           // 同步 boss_keys 到输入框显示
@@ -319,7 +319,7 @@ const refreshEmulatorConfig = async (uuid?: string) => {
             name: configData?.Info?.Name || '',
             type: configData?.Info?.Type || '',
             path: configData?.Info?.Path || '',
-            max_wait_time: configData?.Info?.MaxWaitTime || 60,
+            max_wait_time: configData?.Info?.MaxWaitTime || 300,
             boss_keys: bossKeys,
           })
           // 同步 boss_keys 到输入框显示
@@ -450,7 +450,7 @@ const handleImportFromSearch = async (result: EmulatorSearchResult) => {
             Name: result.name,
             Type: result.type as 'general' | 'mumu' | 'ldplayer',
             Path: result.path,
-            MaxWaitTime: 60,
+            MaxWaitTime: 300,
             BossKey: JSON.stringify([]),
           },
         },
@@ -1039,25 +1039,14 @@ const handleBossKeyInputChange = (uuid: string) => {
           <!-- 添加模拟器的特殊 Tab -->
           <template #rightExtra>
             <div class="tab-extra-actions">
-              <a-dropdown :trigger="['hover']" placement="bottomRight">
-                <a-button type="text" size="small" :icon="h(PlusOutlined)" />
-                <template #overlay>
-                  <a-menu>
-                    <a-menu-item key="search" @click="handleSearch">
-                      <template #icon>
-                        <SearchOutlined />
-                      </template>
-                      自动搜索模拟器
-                    </a-menu-item>
-                    <a-menu-item key="add" @click="handleAddWithSwitch">
-                      <template #icon>
-                        <PlusOutlined />
-                      </template>
-                      手动添加多开器
-                    </a-menu-item>
-                  </a-menu>
-                </template>
-              </a-dropdown>
+              <a-space :size="8">
+                <a-button type="default" size="middle" :icon="h(SearchOutlined)" :loading="searching" @click="handleSearch()">
+                  自动搜索模拟器
+                </a-button>
+                <a-button type="primary" size="middle" :icon="h(PlusOutlined)" @click="handleAddWithSwitch">
+                  手动添加多开器
+                </a-button>
+              </a-space>
             </div>
           </template>
         </a-tabs>

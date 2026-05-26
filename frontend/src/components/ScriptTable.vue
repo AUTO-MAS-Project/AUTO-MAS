@@ -18,6 +18,8 @@
                   <img v-else-if="script.type === 'SRC'" src="@/assets/SRC.png" alt="SRC" class="script-logo" />
                   <img v-else-if="script.type === 'MaaEnd'" src="@/assets/MaaEnd.png" alt="MaaEnd"
                     class="script-logo" />
+                  <img v-else-if="script.type === 'M9A'" src="@/assets/M9A.png" alt="M9A" class="script-logo" />
+                  <img v-else-if="script.type === 'Okww'" src="@/assets/ok-ww.ico" alt="ok-ww" class="script-logo" />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
@@ -28,9 +30,13 @@
                       ? 'purple'
                       : script.type === 'MaaEnd'
                         ? 'blue'
-                        : 'green'
+                        : script.type === 'M9A'
+                          ? 'cyan'
+                          : script.type === 'Okww'
+                            ? 'blue'
+                            : 'green'
                     " class="script-type">
-                    {{ script.type }}
+                    {{ getScriptTypeLabel(script.type) }}
                   </a-tag>
                 </div>
               </div>
@@ -71,6 +77,20 @@
                   配置MaaEnd
                 </a-button>
                 <a-button v-if="script.type === 'MaaEnd' && props.activeConnections.has(script.id)" type="default"
+                  size="middle" disabled style="color: #52c41a; border-color: #52c41a">
+                  <template #icon>
+                    <SettingOutlined />
+                  </template>
+                  正在配置
+                </a-button>
+                <a-button v-if="script.type === 'Okww' && !props.activeConnections.has(script.id)" type="primary"
+                  ghost size="middle" @click="handleStartOkwwConfig(script)">
+                  <template #icon>
+                    <SettingOutlined />
+                  </template>
+                  配置ok-ww
+                </a-button>
+                <a-button v-if="script.type === 'Okww' && props.activeConnections.has(script.id)" type="default"
                   size="middle" disabled style="color: #52c41a; border-color: #52c41a">
                   <template #icon>
                     <SettingOutlined />
@@ -129,6 +149,11 @@
                               getServerDisplayName(user.Info.Server) }}
                           </a-tag>
 
+                          <!-- M9A 脚本显示服务器标签 -->
+                          <a-tag v-if="script.type === 'M9A'" :color="getM9AServerTagColor(user.Info.Resource)" class="server-tag">
+                            {{ user.Info.Resource || '官服' }}
+                          </a-tag>
+
                           <!-- 账号标签 -->
                           <a-tag v-if="
                             script.type === 'MAA' ||
@@ -172,6 +197,27 @@
                           <!-- 直接使用后端提供的Tag字段 -->
                           <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
                             :title="tag.text" class="info-tag" :color="tag.color">
+                            {{ tag.text }}
+                          </a-tag>
+                        </div>
+                        <!-- 用户详细信息 - ok-ww 脚本用户 -->
+                        <div v-if="script.type === 'Okww'" class="user-info-tags">
+                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
+                            :title="tag.text" class="info-tag" :color="tag.color">
+                            {{ tag.text }}
+                          </a-tag>
+                        </div>
+                        <!-- 用户详细信息 - M9A脚本用户 -->
+                        <div v-if="script.type === 'M9A'" class="user-info-tags">
+                          <!-- 显示备注（仅当有值时）-->
+                          <a-tag v-if="user.Info.Notes && user.Info.Notes !== '无' && user.Info.Notes.trim() !== ''"
+                                 color="geekblue" class="info-tag" :title="user.Info.Notes">
+                            {{ truncateText(user.Info.Notes, 10) }}
+                          </a-tag>
+
+                          <!-- 后端提供的Tag字段 -->
+                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
+                                 :title="tag.text" class="info-tag" :color="tag.color">
                             {{ tag.text }}
                           </a-tag>
                         </div>
@@ -271,6 +317,8 @@ interface Emits {
 
   (e: 'saveMaaEndConfig', script: Script): void
 
+  (e: 'startOkwwConfig', script: Script): void
+
   (e: 'toggleUserStatus', user: User): void
 
   (e: 'passCheckUser', user: User): void
@@ -366,8 +414,17 @@ const handleSaveMaaEndConfig = (script: Script) => {
   emit('saveMaaEndConfig', script)
 }
 
+const handleStartOkwwConfig = (script: Script) => {
+  emit('startOkwwConfig', script)
+}
+
 const handleToggleUserStatus = (user: User) => {
   emit('toggleUserStatus', user)
+}
+
+const getScriptTypeLabel = (type: Script['type']) => {
+  if (type === 'Okww') return 'ok-ww'
+  return type
 }
 
 const handlePassCheck = (user: User) => {
@@ -566,6 +623,27 @@ const getServerDisplayName = (server: string): string => {
     default:
       return server || '未知'
   }
+}
+
+// M9A服务器标签颜色映射
+const getM9AServerTagColor = (_resource: string): string => {
+  return 'blue'
+}
+
+// M9A剩余天数颜色（智能着色）
+const getM9ARemainedDayColor = (remainedDay: number): string => {
+  if (remainedDay === -1) return 'gold'
+  if (remainedDay === 0) return 'red'
+  if (remainedDay <= 3) return 'orange'
+  if (remainedDay <= 7) return 'yellow'
+  return 'blue'
+}
+
+// M9A剩余天数友好文本
+const getM9ARemainedDayText = (remainedDay: number): string => {
+  if (remainedDay === -1) return '长期有效'
+  if (remainedDay === 0) return '已到期'
+  return `${remainedDay}天`
 }
 
 // 获取基建模式显示名称
