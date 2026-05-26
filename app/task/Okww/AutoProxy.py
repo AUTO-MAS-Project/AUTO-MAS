@@ -194,17 +194,36 @@ class AutoProxyTask(TaskExecuteBase):
         self.game_process_name = self.script_config.get("Game", "ProcessName")
 
         self.run_book = False
-        # 每次代理尝试的 MAS 侧日志前缀，写入 history/，不写入 OK-WW 脚本目录日志
-        self._history_prefix: dict[datetime, list[str]] = {}
 
-    def _append_mas_history_line(self, line: str) -> None:
-        entry = line if line.endswith("\n") else f"{line}\n"
-        self._history_prefix.setdefault(self.log_start_time, []).append(entry)
+    def _game_config_summary_lines(self) -> list[str]:
+        """游戏配置摘要行（调度台展示与 history 落盘共用文案源）。"""
+
+        game_args = str(self.script_config.get("Game", "Arguments") or "").strip()
+        return [
+            f"[游戏配置] 用户: {self.cur_user_item.name}",
+            f"  启用游戏配置: {_yes_no(bool(self.script_config.get('Game', 'Enabled')))}",
+            f"  任务前启动游戏: {_yes_no(bool(self.script_config.get('Game', 'LaunchBeforeTask')))}",
+            f"  任务后关闭游戏: {_yes_no(bool(self.script_config.get('Game', 'CloseOnFinish')))}",
+            f"  启动参数: {game_args or '（无）'}",
+        ]
+
+    def _game_config_history_header_lines(self) -> list[str]:
+        """写入 history 时前置的 MAS 摘要（保存时拼接，运行期不写入 log_record.content）。"""
+
+        return [f"{line}\n" for line in self._game_config_summary_lines()]
+
+    def _build_okww_history_log_content(self, log_item: LogRecord) -> list[str]:
+        """在脚本日志前拼接游戏配置摘要；log_item.content 仍为脚本日志镜像。"""
+
+        header = self._game_config_history_header_lines()
+        script_content = list(log_item.content)
+        if not script_content:
+            return header
+        return header + ["\n", "---------- OK-WW 脚本日志 ----------\n"] + script_content
 
     async def _push_dispatch_log(self, line: str) -> None:
-        """向调度台追加流程日志，并同步记入 history 前缀（不写入脚本目录日志）。"""
+        """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
 
-        self._append_mas_history_line(line)
         prev = self.script_info.log
         self.script_info.log = f"{prev}\n{line}" if prev else line
         await asyncio.sleep(0)
@@ -212,17 +231,7 @@ class AutoProxyTask(TaskExecuteBase):
     async def _log_game_config_summary(self) -> None:
         """在调度台开头输出当前脚本的游戏相关配置，便于用户确认与问题排查。"""
 
-        game_args = str(self.script_config.get("Game", "Arguments") or "").strip()
-        lines = [
-            f"[游戏配置] 用户: {self.cur_user_item.name}",
-            f"  启用游戏配置: {_yes_no(bool(self.script_config.get('Game', 'Enabled')))}",
-            f"  任务前启动游戏: {_yes_no(bool(self.script_config.get('Game', 'LaunchBeforeTask')))}",
-            f"  任务后关闭游戏: {_yes_no(bool(self.script_config.get('Game', 'CloseOnFinish')))}",
-            f"  启动参数: {game_args or '（无）'}",
-        ]
-        for line in lines:
-            self._append_mas_history_line(line)
-        self.script_info.log = "\n".join(lines)
+        self.script_info.log = "\n".join(self._game_config_summary_lines())
         await asyncio.sleep(0)
 
     async def _mas_launch_game_before_task(self) -> None:
@@ -292,7 +301,6 @@ class AutoProxyTask(TaskExecuteBase):
             self.log_start_time = datetime.now()
             self.cur_user_item.log_record[self.log_start_time] = LogRecord()
             self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
-            self._history_prefix[self.log_start_time] = []
 
             await self._log_game_config_summary()
 
@@ -488,25 +496,14 @@ class AutoProxyTask(TaskExecuteBase):
             if log_item.status == "OK-WW 正常运行中":
                 log_item.status = "任务被用户手动中止"
 
-            mas_prefix = self._history_prefix.get(t, [])
-            script_content = list(log_item.content)
-            if len(script_content) == 0 and not mas_prefix:
-                script_content = ["未捕获到任何日志内容"]
+            if len(log_item.content) == 0:
+                log_item.content = ["未捕获到任何日志内容"]
                 log_item.status = "未捕获到日志"
-            elif len(script_content) == 0:
-                log_item.status = log_item.status or "未捕获到脚本日志"
-
-            history_content = mas_prefix
-            if mas_prefix and script_content:
-                history_content = mas_prefix + [
-                    "\n",
-                    "---------- OK-WW 脚本日志 ----------\n",
-                ] + script_content
-            elif script_content:
-                history_content = script_content
 
             await Config.save_general_log(
-                log_path, history_content, log_item.status
+                log_path,
+                self._build_okww_history_log_content(log_item),
+                log_item.status,
             )
 
         await self._persist_user_run_result()
