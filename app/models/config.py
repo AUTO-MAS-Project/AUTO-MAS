@@ -832,17 +832,6 @@ class MaaEndUserConfig(ConfigBase):
     def get_effective_sanity_task_config(self) -> tuple[dict[str, str], str]:
         """获取当前生效的理智任务配置"""
 
-        if self.get("Info", "Mode") == "简洁":
-            parent_config = getattr(self, "parent_config", None)
-            if isinstance(parent_config, MaaEndConfig):
-                return (
-                    {
-                        field: parent_config.get("Task", field)
-                        for field in MAAEND_SANITY_TASK_FIELDS
-                    },
-                    "Script",
-                )
-
         return (
             {field: self.get("Task", field) for field in MAAEND_SANITY_TASK_FIELDS},
             "Fixed",
@@ -1034,7 +1023,6 @@ class MaaEndConfig(ConfigBase):
         init_maaend_task_config(self)
 
         self.UserData = MultipleConfig([MaaEndUserConfig])
-        self.UserData.parent_config = self
 
         super().__init__()
 
