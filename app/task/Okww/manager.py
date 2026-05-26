@@ -17,6 +17,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 import uuid
+import shutil
 from contextlib import suppress
 
 from pathlib import Path
@@ -30,14 +31,6 @@ from app.utils import get_logger, ProcessManager
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
-from .config_io import (
-    backup_script_config,
-    config_owner_for_mode,
-    mas_config_dir,
-    mas_config_ready,
-    restore_script_config,
-    script_config_path,
-)
 
 logger = get_logger("OK-WW 调度器")
 
@@ -84,8 +77,9 @@ class OkwwManager(TaskExecuteBase):
             user_uid = uuid.UUID(self.script_info.user_list[self.script_info.current_index].user_id)
             user_cfg = Config.ScriptConfig[script_uid].UserData[user_uid]
             mode = str(user_cfg.get("Info", "Mode") or "简洁")
-            config_owner = config_owner_for_mode(mode, str(user_uid))
-            if not mas_config_ready(mas_config_dir(str(script_uid), config_owner)):
+            config_owner = "Default" if mode == "简洁" else str(user_uid)
+            mas_config_dir = Path.cwd() / f"data/{script_uid}/{config_owner}/ConfigFile"
+            if not (mas_config_dir.is_dir() and any(mas_config_dir.iterdir())):
                 if mode == "简洁":
                     return "未找到共享的 OK-WW 配置文件，请先在脚本页完成「配置 ok-ww」步骤"
                 return "未找到用户的 OK-WW 配置文件，请先在用户配置页完成「配置 ok-ww」步骤"
@@ -127,11 +121,17 @@ class OkwwManager(TaskExecuteBase):
                 self.game_manager = ProcessManager()
 
         if self.task_info.mode == "AutoProxy":
-            self._script_config_path = script_config_path(self.script_config)
-            self._temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
-            self._temp_path.mkdir(parents=True, exist_ok=True)
-            if self._script_config_path.exists():
-                backup_script_config(self.script_config, self._temp_path)
+            self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
+            self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
+            shutil.rmtree(self.temp_path, ignore_errors=True)
+            self.temp_path.mkdir(parents=True, exist_ok=True)
+            if self.script_config_path.exists():
+                if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+                    shutil.copytree(
+                        self.script_config_path, self.temp_path, dirs_exist_ok=True
+                    )
+                elif self.script_config.get("Script", "ConfigPathMode") == "File":
+                    shutil.copy(self.script_config_path, self.temp_path / "config.temp")
 
     async def main_task(self):
         await self.prepare()
@@ -161,8 +161,24 @@ class OkwwManager(TaskExecuteBase):
 
         script_uid = uuid.UUID(self.script_info.script_id)
         if self.task_info.mode == "AutoProxy":
-            if hasattr(self, "_temp_path") and hasattr(self, "_script_config_path"):
-                restore_script_config(self.script_config, self._temp_path)
+            if self.temp_path.exists():
+                if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+                    logger.info(f"复原 OK-WW 脚本配置文件: {self.temp_path}")
+                    shutil.rmtree(self.script_config_path, ignore_errors=True)
+                    shutil.copytree(
+                        self.temp_path, self.script_config_path, dirs_exist_ok=True
+                    )
+                elif (
+                    self.script_config.get("Script", "ConfigPathMode") == "File"
+                    and (self.temp_path / "config.temp").exists()
+                ):
+                    logger.info(
+                        f"复原 OK-WW 脚本配置文件: {self.temp_path / 'config.temp'}"
+                    )
+                    shutil.copy(
+                        self.temp_path / "config.temp", self.script_config_path
+                    )
+                shutil.rmtree(self.temp_path, ignore_errors=True)
             await Config.ScriptConfig[script_uid].UserData.load(
                 await self.user_config.toDict()
             )
@@ -174,8 +190,22 @@ class OkwwManager(TaskExecuteBase):
         self.script_info.status = "异常"
         logger.exception(f"OK-WW任务出现异常: {e}")
         script_uid = uuid.UUID(self.script_info.script_id)
-        if self.task_info.mode == "AutoProxy" and hasattr(self, "_temp_path"):
-            restore_script_config(self.script_config, self._temp_path)
+        if (
+            self.task_info.mode == "AutoProxy"
+            and hasattr(self, "temp_path")
+            and self.temp_path.exists()
+        ):
+            if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+                shutil.rmtree(self.script_config_path, ignore_errors=True)
+                shutil.copytree(
+                    self.temp_path, self.script_config_path, dirs_exist_ok=True
+                )
+            elif (
+                self.script_config.get("Script", "ConfigPathMode") == "File"
+                and (self.temp_path / "config.temp").exists()
+            ):
+                shutil.copy(self.temp_path / "config.temp", self.script_config_path)
+            shutil.rmtree(self.temp_path, ignore_errors=True)
         with suppress(Exception):
             await Config.ScriptConfig[script_uid].unlock()
         await Config.send_websocket_message(
@@ -183,4 +213,3 @@ class OkwwManager(TaskExecuteBase):
             type="Info",
             data={"Error": f"OK-WW任务出现异常: {e}"},
         )
-

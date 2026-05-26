@@ -18,6 +18,7 @@
 
 import asyncio
 import shlex
+import shutil
 import uuid
 from contextlib import suppress
 from datetime import datetime, timedelta
@@ -34,13 +35,6 @@ from app.services import Notify, System
 from app.utils import get_logger, ProcessManager, ProcessInfo
 from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
-
-from .config_io import (
-    config_owner_for_mode,
-    deploy_mas_config_to_script,
-    pull_script_config_to_mas,
-    script_config_path,
-)
 
 logger = get_logger("OK-WW 自动代理")
 
@@ -199,32 +193,48 @@ class AutoProxyTask(TaskExecuteBase):
         self.game_path = Path(self.script_config.get("Game", "Path"))
         self.game_url = self.script_config.get("Game", "URL")
         self.game_process_name = self.script_config.get("Game", "ProcessName")
-        self.script_config_path = script_config_path(self.script_config)
+        self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
 
         self.run_book = False
 
-    def _config_owner(self) -> str:
+    def _okww_mas_config_dir(self) -> Path:
         mode = str(self.cur_user_config.get("Info", "Mode") or "简洁")
-        return config_owner_for_mode(mode, str(self.cur_user_uid))
+        config_owner = (
+            "Default" if mode == "简洁" else str(self.cur_user_uid)
+        )
+        return Path.cwd() / f"data/{self.script_info.script_id}/{config_owner}/ConfigFile"
 
     async def set_okww(self) -> None:
         """将 MAS 侧 OK-WW 任务配置下发到脚本 working 目录（对齐 General.set_general）。"""
 
+        logger.info("开始配置 OK-WW 运行参数: 自动代理")
         await System.kill_process(self.script_exe_path)
-        deploy_mas_config_to_script(
-            self.script_config,
-            self.script_info.script_id,
-            self._config_owner(),
-        )
+
+        mas_config_dir = self._okww_mas_config_dir()
+        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            shutil.rmtree(self.script_config_path, ignore_errors=True)
+            shutil.copytree(mas_config_dir, self.script_config_path, dirs_exist_ok=True)
+        elif self.script_config.get("Script", "ConfigPathMode") == "File":
+            shutil.copy(
+                mas_config_dir / self.script_config_path.name,
+                self.script_config_path,
+            )
+        logger.info(f"OK-WW 运行参数配置完成: 自动代理")
 
     async def update_config(self) -> None:
         """将脚本侧配置回写 MAS ConfigFile（对齐 General.update_config）。"""
 
-        pull_script_config_to_mas(
-            self.script_config,
-            self.script_info.script_id,
-            self._config_owner(),
-        )
+        mas_config_dir = self._okww_mas_config_dir()
+        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            shutil.copytree(
+                self.script_config_path, mas_config_dir, dirs_exist_ok=True
+            )
+        elif self.script_config.get("Script", "ConfigPathMode") == "File":
+            shutil.copy(
+                self.script_config_path,
+                mas_config_dir / self.script_config_path.name,
+            )
+        logger.success("OK-WW 配置文件已更新")
 
     def _game_config_summary_lines(self) -> list[str]:
         """游戏配置摘要行（调度台展示用）。"""

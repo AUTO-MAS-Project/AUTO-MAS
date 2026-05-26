@@ -18,6 +18,7 @@
 
 import asyncio
 import shlex
+import shutil
 from pathlib import Path
 
 from app.core import Config
@@ -27,8 +28,6 @@ from app.models.config import OkwwConfig, OkwwUserConfig
 from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
-
-from .config_io import deploy_mas_config_to_script, mas_config_dir, mas_config_ready, pull_script_config_to_mas
 
 logger = get_logger("OK-WW 脚本设置")
 
@@ -66,12 +65,22 @@ class ScriptConfigTask(TaskExecuteBase):
         self.okww_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
 
+        self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
         config_owner = self.task_info.user_id or "Default"
-        mas_dir = mas_config_dir(self.script_info.script_id, config_owner)
-        if mas_config_ready(mas_dir):
-            deploy_mas_config_to_script(
-                self.script_config, self.script_info.script_id, config_owner
-            )
+        mas_config_dir = (
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{config_owner}/ConfigFile"
+        )
+        if mas_config_dir.exists():
+            if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+                shutil.copytree(
+                    mas_config_dir, self.script_config_path, dirs_exist_ok=True
+                )
+            elif self.script_config.get("Script", "ConfigPathMode") == "File":
+                shutil.copy(
+                    mas_config_dir / self.script_config_path.name,
+                    self.script_config_path,
+                )
 
         exe = Path(self.script_config.get("Script", "ScriptPath"))
 
@@ -117,9 +126,25 @@ class ScriptConfigTask(TaskExecuteBase):
         if hasattr(self, "wait_event"):
             self.wait_event.set()
         await self._kill_okww_processes()
+
         config_owner = self.task_info.user_id or "Default"
-        pull_script_config_to_mas(
-            self.script_config, self.script_info.script_id, config_owner
+        mas_config_dir = (
+            Path.cwd()
+            / f"data/{self.script_info.script_id}/{config_owner}/ConfigFile"
+        )
+        shutil.rmtree(mas_config_dir, ignore_errors=True)
+        mas_config_dir.mkdir(parents=True, exist_ok=True)
+        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            shutil.copytree(
+                self.script_config_path, mas_config_dir, dirs_exist_ok=True
+            )
+        elif self.script_config.get("Script", "ConfigPathMode") == "File":
+            shutil.copy(
+                self.script_config_path,
+                mas_config_dir / self.script_config_path.name,
+            )
+        logger.success(
+            f"OK-WW 配置已保存到: {mas_config_dir}"
         )
 
     async def on_crash(self, e: Exception):
@@ -131,4 +156,3 @@ class ScriptConfigTask(TaskExecuteBase):
         )
         if hasattr(self, "wait_event"):
             self.wait_event.set()
-
