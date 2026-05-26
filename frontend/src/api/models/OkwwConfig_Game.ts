@@ -11,6 +11,10 @@ export type OkwwConfig_Game = {
      */
     Enabled?: (boolean | null);
     /**
+     * 任务开始前是否由 MAS 启动游戏/模拟器
+     */
+    LaunchBeforeTask?: (boolean | null);
+    /**
      * 类型: 模拟器, PC端, URL协议
      */
     Type?: ('Emulator' | 'Client' | 'URL' | null);

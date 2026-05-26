@@ -254,7 +254,10 @@
             <div class="script-info">
               <div class="script-name">{{ script.name }}</div>
               <div class="script-meta">
-                <span class="script-type">{{
+                <span
+                  class="script-type"
+                  :class="{ 'script-type-okww': script.type === 'Okww' }"
+                >{{
                   script.type === 'MAA'
                     ? 'MAA脚本'
                     : script.type === 'SRC'
@@ -2135,6 +2138,10 @@ const handlePassCheckUser = async (user: User) => {
 
 .script-type {
   font-weight: 500;
+}
+
+.script-type-okww {
+  color: var(--ant-color-primary);
 }
 
 .script-users {

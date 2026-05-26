@@ -310,63 +310,74 @@ EMULATOR_PATH_BOOK = {
     "mumu": {
         "name": "MuMu模拟器",
         "executables": ["MuMuManager.exe", "MuMuPlayer.exe"],
-        "registry_paths": [
-            r"SOFTWARE\NetEase\MuMu Player 12",
-            r"SOFTWARE\NetEase\MuMuPlayer-12.0",
-            r"SOFTWARE\NetEase\MuMu\nx_main",  # mumu5
+        # DisplayName 子串匹配；避免裸 "MuMu" 以防误匹配 MuMuPlugin 等。
+        "registry_display_keywords": [
+            "MuMu Player",
+            "MuMuPlayer",
+            "Netease MuMu",
+            "MuMu模拟器",
+            "YXArkNights",
+            "YXReverse1999",
         ],
-        "default_paths": [
-            r"C:\Program Files\Netease\MuMu Player 12",
-            r"C:\Program Files (x86)\Netease\MuMu Player 12",
-            r"C:\Program Files\Netease\MuMu\nx_main",
-            r"C:\Program Files (x86)\Netease\MuMu\nx_main",
-            r"D:\Program Files\Netease\MuMu Player 12",
-            r"D:\Program Files (x86)\Netease\MuMu Player 12",
-            r"D:\Program Files\Netease\MuMu\nx_main",
-            r"D:\Program Files (x86)\Netease\MuMu\nx_main",
-            (Path.home() / "AppData/Local/MuMu Player 12").as_posix(),
+        "registry_paths": [
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
     },
     "ldplayer": {
         "name": "雷电模拟器",
         "executables": ["ldconsole.exe", "LDPlayer.exe", "dnplayer.exe"],
-        "registry_paths": [r"SOFTWARE\ChangZhi", r"SOFTWARE\leidian\ldplayer"],
-        "default_paths": [
-            r"C:\LDPlayer\LDPlayer4.0",
-            r"C:\Program Files\LDPlayer",
-            r"D:\LDPlayer\LDPlayer4.0",
-            r"D:\Program Files\LDPlayer",
+        # 关键词用完整产品名/英文，避免单字「雷电」误匹配。
+        "registry_display_keywords": [
+            "LDPlayer",
+            "雷电模拟器",
+            "leidian",
+            "XuanZhi LDPlayer",
+        ],
+        "registry_paths": [
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
     },
     "nox": {
         "name": "夜神模拟器",
-        "executables": ["Nox.exe", "NoxVMHandle.exe"],
-        "registry_paths": [r"SOFTWARE\BigNox\VirtualBox"],
-        "default_paths": [
-            r"C:\Program Files\Nox\bin",
-            r"C:\Program Files (x86)\Nox\bin",
-            r"D:\Program Files\Nox\bin",
-            r"D:\Program Files (x86)\Nox\bin",
+        # executables[0] 为多开管理器；卸载项常见旁路为 Nox.exe（同 bin 目录）
+        "executables": ["MultiPlayerManager.exe", "Nox.exe", "NoxVMHandle.exe"],
+        "registry_display_keywords": [
+            "NoxPlayer",
+            "Nox APP Player",
+            "BigNox",
+        ],
+        "registry_paths": [
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
     },
     "memu": {
         "name": "逍遥模拟器",
-        "executables": ["MEmu.exe", "MemuManager.exe"],
-        "registry_paths": [r"SOFTWARE\Microvirt\MEmu"],
-        "default_paths": [
-            r"C:\Program Files\Microvirt\MEmu",
-            r"D:\Program Files\Microvirt\MEmu",
+        "executables": ["MEmuConsole.exe", "MEmu.exe", "MemuManager.exe"],
+        "registry_display_keywords": [
+            "MEmu",
+            "Microvirt",
+            "逍遥",
+            "逍遥模拟器",
+        ],
+        "registry_paths": [
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
     },
     "bluestacks": {
         "name": "BlueStacks",
-        "executables": ["BlueStacks.exe", "HD-Player.exe"],
-        "registry_paths": [r"SOFTWARE\BlueStacks", r"SOFTWARE\BlueStacks_nxt"],
-        "default_paths": [
-            r"C:\Program Files\BlueStacks",
-            r"C:\Program Files\BlueStacks_nxt",
-            r"D:\Program Files\BlueStacks",
-            r"D:\Program Files\BlueStacks_nxt",
+        # executables[0] 为多开管理器；卸载项/快捷方式常见旁路为 HD-Player.exe
+        "executables": [
+            "HD-MultiInstanceManager.exe",
+            "HD-Player.exe",
+            "BlueStacks.exe",
+        ],
+        "registry_display_keywords": [
+            "BlueStacks",
+            "BlueStacks_nxt",
+            "BlueStacks X",
+        ],
+        "registry_paths": [
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
         ],
     },
 }

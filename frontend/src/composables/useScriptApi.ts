@@ -894,6 +894,20 @@ export function useScriptApi() {
                           okwwUserData.Info?.Status !== undefined
                             ? okwwUserData.Info.Status
                             : true,
+                        Id:
+                          okwwUserData.Info?.Id !== undefined ? okwwUserData.Info.Id : '',
+                        Password:
+                          okwwUserData.Info?.Password !== undefined
+                            ? okwwUserData.Info.Password
+                            : '',
+                        Mode:
+                          okwwUserData.Info?.Mode !== undefined
+                            ? okwwUserData.Info.Mode
+                            : '简洁',
+                        Resource:
+                          okwwUserData.Info?.Resource !== undefined
+                            ? okwwUserData.Info.Resource
+                            : '官服',
                         RemainedDay:
                           okwwUserData.Info?.RemainedDay !== undefined
                             ? okwwUserData.Info.RemainedDay
@@ -918,6 +932,10 @@ export function useScriptApi() {
                           okwwUserData.Info?.Notes !== undefined
                             ? okwwUserData.Info.Notes
                             : '',
+                        Tag:
+                          okwwUserData.Info?.Tag !== undefined
+                            ? okwwUserData.Info.Tag
+                            : null,
                       },
                       Task: {
                         TaskIndex:
