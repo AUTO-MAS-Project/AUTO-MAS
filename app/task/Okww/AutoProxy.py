@@ -23,6 +23,8 @@ from contextlib import suppress
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import psutil
+
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
@@ -34,6 +36,17 @@ from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
 
 logger = get_logger("OK-WW 自动代理")
+
+# 鸣潮 PC 客户端窗口进程名固定，MAS 接管启动前据此避免重复拉起
+_WUWA_CLIENT_PROCESS = "Client-Win64-Shipping.exe"
+
+
+def _wuthering_waves_client_running() -> bool:
+    for proc in psutil.process_iter(["name"]):
+        with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+            if proc.info.get("name") == _WUWA_CLIENT_PROCESS:
+                return True
+    return False
 
 # 对齐 MaaEnd：专项内置致命日志片段（非用户 Success/Error 配置）；`Script.ErrorLog` 仅追加补充子串
 _OKWW_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
@@ -207,7 +220,16 @@ class AutoProxyTask(TaskExecuteBase):
             ):
                 try:
                     self.script_info.log = "正在启动游戏 / 模拟器"
-                    if isinstance(self.game_manager, ProcessManager):
+                    if (
+                        isinstance(self.game_manager, ProcessManager)
+                        and self.script_config.get("Game", "Type") == "Client"
+                        and _wuthering_waves_client_running()
+                    ):
+                        logger.info(
+                            "检测到鸣潮客户端进程已在运行，跳过由 MAS 重复启动游戏"
+                        )
+                        self.script_info.log = "检测到游戏已在运行，跳过启动"
+                    elif isinstance(self.game_manager, ProcessManager):
                         if self.script_config.get("Game", "Type") == "URL":
                             await self.game_manager.open_protocol(
                                 self.game_url,
