@@ -51,6 +51,8 @@ export type PluginsGetOut = {
         menu_label: string;
         icon?: string;
         component: string;
+        renderer?: string;
+        url?: string | null;
         section?: string;
         order?: number;
         visible?: boolean;
@@ -62,4 +64,3 @@ export type PluginsGetOut = {
      */
     page_errors?: Array<string>;
 };
-

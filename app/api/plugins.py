@@ -88,6 +88,8 @@ class PageDeclarationModel(BaseModel):
     menu_label: str = Field(..., description="菜单显示名称")
     icon: str = Field(default="app", description="菜单图标键")
     component: str = Field(..., description="前端组件键")
+    renderer: str = Field(default="component", description="页面渲染方式")
+    url: Optional[str] = Field(default=None, description="插件页面入口 URL")
     section: str = Field(default="main", description="菜单区域")
     order: int = Field(default=1000, description="排序权重")
     visible: bool = Field(default=True, description="是否显示在菜单中")

@@ -11,6 +11,7 @@ from app.utils import get_logger
 logger = get_logger("页面注册")
 
 PageSection = Literal["main", "bottom", "dev"]
+PageRenderer = Literal["component", "iframe"]
 
 
 class PageDeclaration(BaseModel):
@@ -23,7 +24,9 @@ class PageDeclaration(BaseModel):
     title: str = Field(..., min_length=1)
     menu_label: str = Field(..., min_length=1)
     icon: str = Field(default="app")
-    component: str = Field(..., min_length=1)
+    component: str = Field(default="PluginPage", min_length=1)
+    renderer: PageRenderer = Field(default="component")
+    url: str | None = Field(default=None)
     section: PageSection = Field(default="main")
     order: int = Field(default=1000)
     visible: bool = Field(default=True)
@@ -58,6 +61,22 @@ class PageDeclaration(BaseModel):
         if text not in {"main", "bottom", "dev"}:
             raise ValueError("页面 section 仅支持 main、bottom 或 dev")
         return text  # type: ignore[return-value]
+
+    @field_validator("renderer", mode="before")
+    @classmethod
+    def _normalize_renderer(cls, raw: Any) -> PageRenderer:
+        text = str(raw or "component").strip().lower()
+        if text not in {"component", "iframe"}:
+            raise ValueError("页面 renderer 仅支持 component 或 iframe")
+        return text  # type: ignore[return-value]
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def _strip_optional_url(cls, raw: Any) -> str | None:
+        if raw is None:
+            return None
+        text = str(raw or "").strip()
+        return text or None
 
 
 class PageRegistry:
