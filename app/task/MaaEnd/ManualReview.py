@@ -21,7 +21,6 @@
 
 import uuid
 import asyncio
-from pathlib import Path
 from datetime import datetime
 
 from app.core import Broadcast, Config
@@ -64,21 +63,10 @@ class ManualReviewTask(TaskExecuteBase):
 
     async def check(self) -> str:
 
-        if (
-            self.cur_user_config.get("Info", "Mode") == "详细"
-            and not (
-                Path.cwd()
-                / f"data/{self.script_info.script_id}/{self.cur_user_uid}/ConfigFile"
-            ).exists()
-        ):
-            self.cur_user_item.status = "异常"
-            return (
-                "未找到用户的 MaaEnd 配置文件, 请先在用户配置页完成「MaaEnd 配置」步骤"
-            )
-
         if self.emulator_manager is not None:
             return "暂不支持使用模拟器进行人工排查"
 
+        # 人工检查模式只启动游戏并等待用户确认登陆，不启动 MaaEnd，也不依赖 ConfigFile。
         return "Pass"
 
     async def prepare(self):

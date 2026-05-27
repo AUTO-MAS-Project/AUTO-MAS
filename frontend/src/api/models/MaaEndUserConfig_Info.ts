@@ -22,7 +22,11 @@ export type MaaEndUserConfig_Info = {
     /**
      * 配置模式
      */
-    Mode?: ('简洁' | '详细' | null);
+    Mode?: ('简洁' | '详细' | '自定义' | null);
+    /**
+     * 理智任务配置模式
+     */
+    SanityMode?: (string | null);
     /**
      * 资源名称
      */

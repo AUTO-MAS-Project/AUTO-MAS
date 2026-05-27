@@ -177,7 +177,15 @@ MAA_REMAIN_FIGHT_BASE = {
 }
 """MAA剩余理智作战基础配置"""
 
-MAAEND_STAGE_BOOK = {
+MAAEND_SANITY_TASK_LABELS = {
+    "OperatorProgression": "干员养成",
+    "WeaponProgression": "武器养成",
+    "CrisisDrills": "危境预演",
+    "Essence": "基质刷取",
+}
+"""MaaEnd理智任务类型展示文案"""
+
+MAAEND_SANITY_TASK_DETAIL_LABELS = {
     "OperatorEXP": "干员经验",
     "Promotions": "干员进阶",
     "T-Creds": "钱币收集",
@@ -189,26 +197,138 @@ MAAEND_STAGE_BOOK = {
     "AdvancedProgression3": "高阶培养 III - 快子遴捡晶格",
     "AdvancedProgression4": "高阶培养 IV - 象限拟合液",
     "AdvancedProgression5": "高阶培养 V - 三相纳米片",
+    "VFTheHub": "枢纽区",
+    "VFOriginiumSciencePark": "源石研究园",
+    "VFOriginLodespring": "矿脉源区",
+    "VFPowerPlateau": "供能高地",
+    "WLWulingCity": "武陵城区",
+    "WLQingboStockade": "清波寨",
+    "WLMarkerStone": "首墩",
 }
-"""MAAEnd任务关卡中文映射表"""
+"""MaaEnd理智任务详细选项展示文案"""
+
+MAAEND_SANITY_TASK_TYPES = (
+    "OperatorProgression",
+    "WeaponProgression",
+    "CrisisDrills",
+    "Essence",
+)
+"""MaaEnd理智任务类型列表"""
+
+MAAEND_PROTOCOL_SPACE_TASK_OPTIONS = {
+    "OperatorProgression": ("OperatorEXP", "Promotions", "T-Creds", "SkillUp"),
+    "WeaponProgression": ("WeaponEXP", "WeaponTune"),
+    "CrisisDrills": (
+        "AdvancedProgression1",
+        "AdvancedProgression2",
+        "AdvancedProgression3",
+        "AdvancedProgression4",
+        "AdvancedProgression5",
+    ),
+}
+"""MaaEnd协议空间任务选项列表"""
+
+MAAEND_AUTO_ESSENCE_LOCATION_OPTIONS = (
+    "VFTheHub",
+    "VFOriginiumSciencePark",
+    "VFOriginLodespring",
+    "VFPowerPlateau",
+    "WLWulingCity",
+    "WLQingboStockade",
+    "WLMarkerStone",
+)
+"""MaaEnd基质刷取地点选项列表"""
 
 MAAEND_STAGE_WITH_AB = set(["OperatorEXP", "Promotions", "SkillUp", "WeaponTune"])
 """MAAEnd任务包含AB关的关卡列表"""
 
-
-MAAEND_KILLPROC_TASK = {
-    "id": "jobstop",
-    "taskName": "__MXU_KILLPROC__",
-    "enabled": True,
-    "optionValues": {
-        "__MXU_KILLPROC_SELF_OPTION__": {"type": "switch", "value": True},
-        "__MXU_KILLPROC_NAME_OPTION__": {
-            "type": "input",
-            "values": {"process_name": ""},
-        },
+MAAEND_TASK_GROUPS = {
+    "Sanity": {
+        "label": "理智作战",
+        "tasks": (
+            ("Sanity", "理智任务"),
+            ("AutoUseSpMedication", "应急理智加强剂"),
+        ),
+    },
+    "Infrastructure": {
+        "label": "基建任务",
+        "tasks": (
+            ("DijiangRewards", "基建任务"),
+            ("DeliveryJobs", "转交委托"),
+            ("SellProduct", "售卖产品"),
+            ("AutoStockpile", "自动囤货"),
+            ("AutoStockStaple", "购买稳定物资"),
+        ),
+    },
+    "Credit": {
+        "label": "信用收支",
+        "tasks": (
+            ("VisitFriends", "拜访好友"),
+            ("CreditShoppingN2", "信用点购物"),
+            ("SeizeEntrustTask", "抢委托"),
+        ),
+    },
+    "Frontend": {
+        "label": "前台任务",
+        "tasks": (
+            ("AutoEcoFarm", "生态农场"),
+            ("AutoSell", "售卖弹性物资"),
+            ("EnvironmentMonitoring", "环境监测"),
+            ("AutoCollect", "自动采集"),
+        ),
+    },
+    "Rewards": {
+        "label": "奖励领取",
+        "tasks": (
+            ("DailyRewards", "日常奖励领取"),
+            ("ResourceRecycleStation", "资源回收站"),
+        ),
     },
 }
-"""MAAEnd任务完成后退出任务配置"""
+"""MaaEnd任务分组"""
+
+MAAEND_TASKS = tuple(
+    task_name
+    for group in MAAEND_TASK_GROUPS.values()
+    for task_name, _ in group["tasks"]
+)
+"""MaaEnd托管任务列表"""
+
+MAAEND_CONTROLLER_TASKS = {
+    "Win32-Window": (
+        "VisitFriends",
+        "DijiangRewards",
+        "CreditShoppingN2",
+        "DeliveryJobs",
+        "SellProduct",
+        "AutoStockpile",
+        "AutoStockStaple",
+        "DailyRewards",
+        "SeizeEntrustTask",
+    ),
+    "Win32-Front": MAAEND_TASKS,
+}
+"""MaaEnd控制器支持的托管任务列表"""
+
+MAAEND_SANITY_TASK_DEFAULTS = {
+    "SanityTaskType": "OperatorProgression",
+    "OperatorProgression": "OperatorEXP",
+    "WeaponProgression": "WeaponEXP",
+    "CrisisDrills": "AdvancedProgression1",
+    "RewardsSetOption": "RewardsSetA",
+    "AutoEssenceSpecifiedLocation": "VFTheHub",
+}
+"""MaaEnd理智任务字段默认值"""
+
+MAAEND_SANITY_TASK_FIELDS = (
+    "SanityTaskType",
+    "OperatorProgression",
+    "WeaponProgression",
+    "CrisisDrills",
+    "RewardsSetOption",
+    "AutoEssenceSpecifiedLocation",
+)
+"""MaaEnd理智任务字段列表"""
 
 EMULATOR_PATH_BOOK = {
     "mumu": {

@@ -640,9 +640,10 @@ class MaaEndUserConfig_Info(BaseModel):
     Status: Optional[bool] = Field(default=None, description="用户状态")
     Id: Optional[str] = Field(default=None, description="用户ID")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["简洁", "详细"]] = Field(
+    Mode: Optional[Literal["简洁", "详细", "自定义"]] = Field(
         default=None, description="配置模式"
     )
+    SanityMode: Optional[str] = Field(default=None, description="理智任务配置模式")
     Resource: Optional[Literal["官服"]] = Field(default=None, description="资源名称")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
     Notes: Optional[str] = Field(default=None, description="备注")
@@ -652,9 +653,9 @@ class MaaEndUserConfig_Info(BaseModel):
 
 
 class MaaEndUserConfig_Task(BaseModel):
-    ProtocolSpaceTab: Optional[
-        Literal["OperatorProgression", "WeaponProgression", "CrisisDrills"]
-    ] = Field(default=None, description="协议空间选项卡")
+    SanityTaskType: Optional[
+        Literal["OperatorProgression", "WeaponProgression", "CrisisDrills", "Essence"]
+    ] = Field(default=None, description="理智任务类型")
     OperatorProgression: Optional[
         Literal["OperatorEXP", "Promotions", "T-Creds", "SkillUp"]
     ] = Field(default=None, description="干员养成任务")
@@ -671,7 +672,40 @@ class MaaEndUserConfig_Task(BaseModel):
         ]
     ] = Field(default=None, description="危境预演任务")
     RewardsSetOption: Optional[Literal["RewardsSetA", "RewardsSetB"]] = Field(
-        default=None, description="奖励套组选项"
+        default=None, description="奖励组选项"
+    )
+    AutoEssenceSpecifiedLocation: Optional[
+        Literal[
+            "VFTheHub",
+            "VFOriginiumSciencePark",
+            "VFOriginLodespring",
+            "VFPowerPlateau",
+            "WLWulingCity",
+            "WLQingboStockade",
+            "WLMarkerStone",
+        ]
+    ] = Field(default=None, description="基质刷取指定地点")
+    IfSanity: Optional[bool] = Field(default=None, description="理智任务")
+    IfAutoUseSpMedication: Optional[bool] = Field(
+        default=None, description="应急理智加强剂"
+    )
+    IfDijiangRewards: Optional[bool] = Field(default=None, description="基建任务")
+    IfDeliveryJobs: Optional[bool] = Field(default=None, description="转交委托")
+    IfSellProduct: Optional[bool] = Field(default=None, description="售卖产品")
+    IfAutoStockpile: Optional[bool] = Field(default=None, description="自动囤货")
+    IfAutoStockStaple: Optional[bool] = Field(default=None, description="购买稳定物资")
+    IfVisitFriends: Optional[bool] = Field(default=None, description="拜访好友")
+    IfCreditShoppingN2: Optional[bool] = Field(default=None, description="信用点购物")
+    IfSeizeEntrustTask: Optional[bool] = Field(default=None, description="抢委托")
+    IfAutoEcoFarm: Optional[bool] = Field(default=None, description="生态农场")
+    IfAutoSell: Optional[bool] = Field(default=None, description="售卖弹性物资")
+    IfEnvironmentMonitoring: Optional[bool] = Field(
+        default=None, description="环境监测"
+    )
+    IfAutoCollect: Optional[bool] = Field(default=None, description="自动采集")
+    IfDailyRewards: Optional[bool] = Field(default=None, description="日常奖励领取")
+    IfResourceRecycleStation: Optional[bool] = Field(
+        default=None, description="资源回收站"
     )
 
 
@@ -686,9 +720,20 @@ class MaaEndUserConfig_Notify(BaseModel):
     ServerChanKey: Optional[str] = Field(default=None, description="Server酱密钥")
 
 
+class MaaEndUserConfig_Data(BaseModel):
+    LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
+    ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
+    LastProxyStatus: Optional[Literal["未知", "成功", "失败"]] = Field(
+        default=None, description="上次代理状态"
+    )
+    LastSklandDate: Optional[str] = Field(default=None, description="上次森空岛签到日期")
+    IfPassCheck: Optional[bool] = Field(default=None, description="是否通过检查")
+
+
 class MaaEndUserConfig(BaseModel):
     Info: Optional[MaaEndUserConfig_Info] = Field(default=None, description="用户信息")
     Task: Optional[MaaEndUserConfig_Task] = Field(default=None, description="任务配置")
+    Data: Optional[MaaEndUserConfig_Data] = Field(default=None, description="运行数据")
     Notify: Optional[MaaEndUserConfig_Notify] = Field(
         default=None, description="通知配置"
     )
@@ -719,10 +764,68 @@ class MaaEndConfig_Game(BaseModel):
     CloseOnFinish: Optional[bool] = Field(default=None, description="结束后关闭游戏")
 
 
+class MaaEndConfig_Task(BaseModel):
+    SanityTaskType: Optional[
+        Literal["OperatorProgression", "WeaponProgression", "CrisisDrills", "Essence"]
+    ] = Field(default=None, description="理智任务类型")
+    OperatorProgression: Optional[
+        Literal["OperatorEXP", "Promotions", "T-Creds", "SkillUp"]
+    ] = Field(default=None, description="干员养成任务")
+    WeaponProgression: Optional[Literal["WeaponEXP", "WeaponTune"]] = Field(
+        default=None, description="武器养成任务"
+    )
+    CrisisDrills: Optional[
+        Literal[
+            "AdvancedProgression1",
+            "AdvancedProgression2",
+            "AdvancedProgression3",
+            "AdvancedProgression4",
+            "AdvancedProgression5",
+        ]
+    ] = Field(default=None, description="危境预演任务")
+    RewardsSetOption: Optional[Literal["RewardsSetA", "RewardsSetB"]] = Field(
+        default=None, description="奖励套组选项"
+    )
+    AutoEssenceSpecifiedLocation: Optional[
+        Literal[
+            "VFTheHub",
+            "VFOriginiumSciencePark",
+            "VFOriginLodespring",
+            "VFPowerPlateau",
+            "WLWulingCity",
+            "WLQingboStockade",
+            "WLMarkerStone",
+        ]
+    ] = Field(default=None, description="基质刷取指定地点")
+    IfSanity: Optional[bool] = Field(default=None, description="理智任务")
+    IfAutoUseSpMedication: Optional[bool] = Field(
+        default=None, description="应急理智加强剂"
+    )
+    IfDijiangRewards: Optional[bool] = Field(default=None, description="基建任务")
+    IfDeliveryJobs: Optional[bool] = Field(default=None, description="转交委托")
+    IfSellProduct: Optional[bool] = Field(default=None, description="售卖产品")
+    IfAutoStockpile: Optional[bool] = Field(default=None, description="自动囤货")
+    IfAutoStockStaple: Optional[bool] = Field(default=None, description="购买稳定物资")
+    IfVisitFriends: Optional[bool] = Field(default=None, description="拜访好友")
+    IfCreditShoppingN2: Optional[bool] = Field(default=None, description="信用点购物")
+    IfSeizeEntrustTask: Optional[bool] = Field(default=None, description="抢委托")
+    IfAutoEcoFarm: Optional[bool] = Field(default=None, description="生态农场")
+    IfAutoSell: Optional[bool] = Field(default=None, description="售卖弹性物资")
+    IfEnvironmentMonitoring: Optional[bool] = Field(
+        default=None, description="环境监测"
+    )
+    IfAutoCollect: Optional[bool] = Field(default=None, description="自动采集")
+    IfDailyRewards: Optional[bool] = Field(default=None, description="日常奖励领取")
+    IfResourceRecycleStation: Optional[bool] = Field(
+        default=None, description="资源回收站"
+    )
+
+
 class MaaEndConfig(BaseModel):
     Info: Optional[MaaEndConfig_Info] = Field(default=None, description="脚本信息")
     Run: Optional[MaaEndConfig_Run] = Field(default=None, description="运行配置")
     Game: Optional[MaaEndConfig_Game] = Field(default=None, description="游戏配置")
+    Task: Optional[MaaEndConfig_Task] = Field(default=None, description="预设任务配置")
 
 
 class SrcUserConfig_Info(BaseModel):
