@@ -24,7 +24,7 @@ import json
 import calendar
 from pathlib import Path
 from datetime import datetime
-from typing import Callable, Any
+from typing import Callable
 
 from app.utils.constants import (
     UTC4,
@@ -128,7 +128,7 @@ def init_maaend_task_config(config) -> None:
 脚本级和用户级的理智任务配置项完全一样, 但为了兼容旧版 MaaEnd 的用户配置, 需要在 MaaEndUserConfig 中重复定义一次, 并在加载时进行迁移处理
 """
 
-def _normalize_maaend_sanity_task_type(task_data: dict[str, Any]) -> None:
+def _normalize_maaend_sanity_task_type(task_data: object) -> None:
     """将旧版 MaaEnd 理智任务配置迁移到当前结构"""
 
     if not isinstance(task_data, dict):
