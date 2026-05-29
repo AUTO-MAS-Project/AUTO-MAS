@@ -32,7 +32,9 @@
                         ? 'blue'
                         : script.type === 'M9A'
                           ? 'cyan'
-                          : 'green'
+                          : script.type === 'Okww'
+                            ? 'blue'
+                            : 'green'
                     " class="script-type">
                     {{ getScriptTypeLabel(script.type) }}
                   </a-tag>
@@ -67,15 +69,15 @@
                   </template>
                   正在配置
                 </a-button>
-                <a-button v-if="script.type === 'MaaEnd' && !props.activeConnections.has(script.id)" type="primary"
-                  ghost size="middle" @click="handleStartMaaEndConfig(script)">
+                <a-button v-if="isMaaEndPresetSupported(script) && !props.activeConnections.has(script.id)"
+                  type="primary" ghost size="middle" @click="handleStartMaaEndConfig(script)">
                   <template #icon>
                     <SettingOutlined />
                   </template>
                   配置MaaEnd
                 </a-button>
-                <a-button v-if="script.type === 'MaaEnd' && props.activeConnections.has(script.id)" type="default"
-                  size="middle" disabled style="color: #52c41a; border-color: #52c41a">
+                <a-button v-if="isMaaEndPresetSupported(script) && props.activeConnections.has(script.id)"
+                  type="default" size="middle" disabled style="color: #52c41a; border-color: #52c41a">
                   <template #icon>
                     <SettingOutlined />
                   </template>
@@ -193,6 +195,13 @@
                         <!-- 用户详细信息 - 通用脚本用户 -->
                         <div v-if="script.type === 'General'" class="user-info-tags">
                           <!-- 直接使用后端提供的Tag字段 -->
+                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
+                            :title="tag.text" class="info-tag" :color="tag.color">
+                            {{ tag.text }}
+                          </a-tag>
+                        </div>
+                        <!-- 用户详细信息 - ok-ww 脚本用户 -->
+                        <div v-if="script.type === 'Okww'" class="user-info-tags">
                           <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
                             :title="tag.text" class="info-tag" :color="tag.color">
                             {{ tag.text }}
@@ -399,6 +408,14 @@ const handleSaveSRCConfig = (script: Script) => {
 
 const handleStartMaaEndConfig = (script: Script) => {
   emit('startMaaEndConfig', script)
+}
+
+const isMaaEndPresetSupported = (script: Script) => {
+  const controllerType = (script.config as any).Game?.ControllerType
+  return (
+    script.type === 'MaaEnd' &&
+    (controllerType === 'Win32-Window' || controllerType === 'Win32-Front')
+  )
 }
 
 const handleSaveMaaEndConfig = (script: Script) => {

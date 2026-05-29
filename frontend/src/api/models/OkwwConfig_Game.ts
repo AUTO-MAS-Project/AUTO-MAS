@@ -39,10 +39,6 @@ export type OkwwConfig_Game = {
      */
     IfForceClose?: (boolean | null);
     /**
-     * 任务结束后是否关闭游戏/模拟器
-     */
-    CloseOnFinish?: (boolean | null);
-    /**
      * 模拟器ID
      */
     EmulatorId?: (string | null);
@@ -50,5 +46,13 @@ export type OkwwConfig_Game = {
      * 模拟器多开实例索引
      */
     EmulatorIndex?: (string | null);
+    /**
+     * 任务开始前是否由 MAS 启动游戏/模拟器
+     */
+    LaunchBeforeTask?: (boolean | null);
+    /**
+     * 任务结束后是否关闭游戏/模拟器
+     */
+    CloseOnFinish?: (boolean | null);
 };
 

@@ -2,10 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-/**
- * OK-WW 用户数据（复用通用字段）
- */
-export type OkwwUserConfig_Data = {
+export type MaaEndUserConfig_Data = {
     /**
      * 上次代理日期
      */
@@ -15,12 +12,16 @@ export type OkwwUserConfig_Data = {
      */
     ProxyTimes?: (number | null);
     /**
-     * 上次代理状态（未知/成功/失败）
+     * 上次代理状态
      */
-    LastProxyStatus?: (string | null);
+    LastProxyStatus?: ('未知' | '成功' | '失败' | null);
     /**
-     * 上次运行的 ok-ww 任务序号（-t N）
+     * 上次森空岛签到日期
      */
-    LastTaskIndex?: (number | null);
+    LastSklandDate?: (string | null);
+    /**
+     * 是否通过检查
+     */
+    IfPassCheck?: (boolean | null);
 };
 

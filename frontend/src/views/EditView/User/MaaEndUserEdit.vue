@@ -50,9 +50,18 @@
             :form-data="formData"
             :loading="loading"
             :resource-options="resourceOptions"
+            :preset-supported="presetSupported"
             @save="handleFieldSave"
           />
-          <TaskConfigSection :form-data="formData" @save="handleFieldSave" />
+          <TaskConfigSection
+            :form-data="formData"
+            :loading="loading"
+            :mode="formData.Info.Mode"
+            source="user"
+            :controller-type="controllerType"
+            @save="handleFieldSave"
+            @save-batch="handleFieldsSave"
+          />
           <SkylandConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
           <NotifyConfigSection
             :form-data="formData"
@@ -73,10 +82,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
+import { Service } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
-import { Service } from '@/api'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 
 import MaaEndUserEditHeader from '../../MaaEndUserEdit/MaaEndUserEditHeader.vue'
@@ -102,6 +111,10 @@ const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId)
 const scriptName = ref('')
+const controllerType = ref<string | null>(null)
+const presetSupported = computed(
+  () => controllerType.value === 'Win32-Window' || controllerType.value === 'Win32-Front'
+)
 
 const maaEndConfigLoading = ref(false)
 const showMaaEndConfigMask = ref(false)
@@ -117,6 +130,7 @@ const getDefaultMaaEndUserData = () => ({
     Id: '',
     Password: '',
     Mode: '简洁',
+    SanityMode: 'Fixed',
     Resource: '官服',
     RemainedDay: -1,
     IfSkland: false,
@@ -125,11 +139,28 @@ const getDefaultMaaEndUserData = () => ({
     Tag: '',
   },
   Task: {
-    ProtocolSpaceTab: 'OperatorProgression',
+    SanityTaskType: 'OperatorProgression',
     OperatorProgression: 'OperatorEXP',
     WeaponProgression: 'WeaponEXP',
     CrisisDrills: 'AdvancedProgression1',
     RewardsSetOption: 'RewardsSetA',
+    AutoEssenceSpecifiedLocation: 'VFTheHub',
+    IfSanity: true,
+    IfAutoUseSpMedication: true,
+    IfDijiangRewards: true,
+    IfDeliveryJobs: true,
+    IfSellProduct: true,
+    IfAutoStockpile: true,
+    IfAutoStockStaple: true,
+    IfVisitFriends: true,
+    IfCreditShoppingN2: true,
+    IfSeizeEntrustTask: true,
+    IfAutoEcoFarm: true,
+    IfAutoSell: true,
+    IfEnvironmentMonitoring: true,
+    IfAutoCollect: true,
+    IfDailyRewards: true,
+    IfResourceRecycleStation: true,
   },
   Notify: {
     Enabled: false,
@@ -146,6 +177,11 @@ const getDefaultMaaEndUserData = () => ({
     IfPassCheck: false,
   },
 })
+
+interface FieldChange {
+  key: string
+  value: any
+}
 
 const formData = reactive({
   userName: '',
@@ -165,26 +201,34 @@ const syncUserName = () => {
   }
 }
 
-const handleFieldSave = async (key: string, value: any) => {
-  if (isInitializing.value || isSaving.value || !userId) return
+const setNestedValue = (target: Record<string, any>, path: string, value: any) => {
+  const parts = path.split('.')
+  let current = target
 
-  if (key === 'userName') {
-    syncUserName()
-    key = 'Info.Name'
-    value = formData.Info.Name
+  for (let index = 0; index < parts.length - 1; index += 1) {
+    current[parts[index]] = current[parts[index]] ?? {}
+    current = current[parts[index]]
   }
+
+  current[parts[parts.length - 1]] = value
+}
+
+const saveUserFields = async (changes: FieldChange[]) => {
+  if (isInitializing.value || isSaving.value || !userId || !changes.length) return
 
   isSaving.value = true
   try {
-    const parts = key.split('.')
     const userData: Record<string, any> = {}
-    let current = userData
 
-    for (let i = 0; i < parts.length - 1; i++) {
-      current[parts[i]] = {}
-      current = current[parts[i]]
-    }
-    current[parts[parts.length - 1]] = value
+    changes.forEach(change => {
+      if (change.key === 'userName') {
+        syncUserName()
+        setNestedValue(userData, 'Info.Name', formData.Info.Name)
+        return
+      }
+
+      setNestedValue(userData, change.key, change.value)
+    })
 
     await updateUser(scriptId, userId, userData)
   } catch (error) {
@@ -194,11 +238,26 @@ const handleFieldSave = async (key: string, value: any) => {
   }
 }
 
+const handleFieldSave = async (key: string, value: any) => {
+  await saveUserFields([{ key, value }])
+}
+
+const handleFieldsSave = async (changes: FieldChange[]) => {
+  await saveUserFields(changes)
+}
+
 const loadScriptInfo = async () => {
   const scriptDetail = await getScript(scriptId)
   if (scriptDetail) {
     scriptName.value = scriptDetail.name
+    controllerType.value = (scriptDetail.config as any).Game?.ControllerType ?? null
   }
+}
+
+const normalizeModeForController = async () => {
+  if (presetSupported.value || formData.Info.Mode === '自定义' || !userId) return
+  formData.Info.Mode = '自定义'
+  await updateUser(scriptId, userId, { Info: { Mode: '自定义' } })
 }
 
 const loadUserData = async () => {
@@ -315,18 +374,22 @@ const handleSaveMaaEndConfig = async () => {
 }
 
 const handleCancel = () => {
+  cleanupConfigSession()
   router.push('/scripts')
 }
 
 onMounted(async () => {
   await loadScriptInfo()
+
   if (isEdit.value) {
     await loadUserData()
+    await normalizeModeForController()
   } else {
     const result = await addUser(scriptId)
     if (result?.userId) {
       userId = result.userId
       isEdit.value = true
+      await normalizeModeForController()
     } else {
       message.error('创建用户失败')
       router.push('/scripts')

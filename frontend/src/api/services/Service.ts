@@ -888,7 +888,7 @@ export class Service {
     }
     /**
      * 搜索已安装的模拟器
-     * 自动搜索系统中已安装的模拟器
+     * 枚举卸载表并解析主管理器路径（不依赖 ADB 设备枚举）。
      * @returns EmulatorSearchOut Successful Response
      * @throws ApiError
      */

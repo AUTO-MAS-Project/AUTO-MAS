@@ -254,7 +254,10 @@
             <div class="script-info">
               <div class="script-name">{{ script.name }}</div>
               <div class="script-meta">
-                <span class="script-type">{{
+                <span
+                  class="script-type"
+                  :class="{ 'script-type-okww': script.type === 'Okww' }"
+                >{{
                   script.type === 'MAA'
                     ? 'MAA脚本'
                     : script.type === 'SRC'
@@ -1229,6 +1232,12 @@ const handleSaveSRCConfig = async (script: Script) => {
 
 const handleStartMaaEndConfig = async (script: Script) => {
   try {
+    const controllerType = (script.config as any).Game?.ControllerType
+    if (controllerType !== 'Win32-Window' && controllerType !== 'Win32-Front') {
+      message.warning('当前控制器暂不支持 MaaEnd 预设模式，请使用用户自定义模式')
+      return
+    }
+
     const existingConnection = activeConnections.value.get(script.id)
     if (existingConnection) {
       message.warning('该脚本已在配置中，请先保存当前配置')
@@ -2129,6 +2138,10 @@ const handlePassCheckUser = async (user: User) => {
 
 .script-type {
   font-weight: 500;
+}
+
+.script-type-okww {
+  color: var(--ant-color-primary);
 }
 
 .script-users {
