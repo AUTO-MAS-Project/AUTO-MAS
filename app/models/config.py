@@ -184,6 +184,10 @@ class EmulatorConfig(ConfigBase):
         self.Info_MaxWaitTime = ConfigItem(
             "Info", "MaxWaitTime", 300, RangeValidator(1, 9999), legacy_group="Data"
         )
+        ## 关闭 MuMu 时强力清理残留进程
+        self.Info_ForceKillOnClose = ConfigItem(
+            "Info", "ForceKillOnClose", True, BoolValidator()
+        )
 
         super().__init__()
 
