@@ -124,6 +124,24 @@ class M9AManager(TaskExecuteBase):
         except Exception:
             logger.warning("读写 M9A config.json 失败，跳过自动更新控制")
 
+    async def _set_m9a_silent_mode(self):
+        if not self.m9a_config_path:
+            return
+        config_json = self.m9a_config_path / "config.json"
+        if not config_json.exists():
+            return
+        try:
+            config = json.loads(config_json.read_text(encoding="utf-8"))
+            is_silent = Config.get("Function", "IfSilence")
+            config["AutoMinimize"] = is_silent
+            config["AutoHide"] = is_silent
+            config["ShouldMinimizeToTray"] = is_silent
+            config_json.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
+            status = "开启" if is_silent else "关闭"
+            logger.info(f"已{status} M9A 静默模式（AutoMinimize={is_silent}, AutoHide={is_silent}, ShouldMinimizeToTray={is_silent}）")
+        except Exception as e:
+            logger.warning(f"读写 M9A config.json 失败，跳过静默模式配置: {e}")
+
     async def prepare(self):
         """运行前准备"""
 
@@ -174,6 +192,7 @@ class M9AManager(TaskExecuteBase):
         await System.kill_process(m9a_exe)
 
         await self._set_m9a_auto_update(False)
+        await self._set_m9a_silent_mode()
 
         self.auto_update_fix_enabled = self.script_config.get("Run", "IfAutoUpdateAfterQueue")
         if self.auto_update_fix_enabled:

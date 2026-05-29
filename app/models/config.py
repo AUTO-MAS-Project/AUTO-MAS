@@ -32,8 +32,15 @@ from app.utils.constants import (
     MATERIALS_MAP,
     RESOURCE_STAGE_INFO,
     MAA_STAGE_KEY,
-    MAAEND_STAGE_BOOK,
+    MAAEND_AUTO_ESSENCE_LOCATION_OPTIONS,
+    MAAEND_PROTOCOL_SPACE_TASK_OPTIONS,
+    MAAEND_SANITY_TASK_DEFAULTS,
+    MAAEND_SANITY_TASK_DETAIL_LABELS,
+    MAAEND_SANITY_TASK_FIELDS,
+    MAAEND_SANITY_TASK_LABELS,
     MAAEND_STAGE_WITH_AB,
+    MAAEND_TASKS,
+    MAAEND_SANITY_TASK_TYPES,
     STARRAIL_STAGE_BOOK,
 )
 from .ConfigBase import (
@@ -60,6 +67,84 @@ from .ConfigBase import (
     AdvancedArgumentValidator,
 )
 from .schema import TagItem
+
+
+def init_maaend_task_config(config) -> None:
+    """初始化 MaaEnd 预设任务配置"""
+
+    ## 理智任务类型
+    config.Task_SanityTaskType = ConfigItem(
+        "Task",
+        "SanityTaskType",
+        MAAEND_SANITY_TASK_DEFAULTS["SanityTaskType"],
+        OptionsValidator(list(MAAEND_SANITY_TASK_TYPES)),
+    )
+    ## 干员养成任务
+    config.Task_OperatorProgression = ConfigItem(
+        "Task",
+        "OperatorProgression",
+        MAAEND_SANITY_TASK_DEFAULTS["OperatorProgression"],
+        OptionsValidator(
+            list(MAAEND_PROTOCOL_SPACE_TASK_OPTIONS["OperatorProgression"])
+        ),
+    )
+    ## 武器养成任务
+    config.Task_WeaponProgression = ConfigItem(
+        "Task",
+        "WeaponProgression",
+        MAAEND_SANITY_TASK_DEFAULTS["WeaponProgression"],
+        OptionsValidator(list(MAAEND_PROTOCOL_SPACE_TASK_OPTIONS["WeaponProgression"])),
+    )
+    ## 危境预演任务
+    config.Task_CrisisDrills = ConfigItem(
+        "Task",
+        "CrisisDrills",
+        MAAEND_SANITY_TASK_DEFAULTS["CrisisDrills"],
+        OptionsValidator(list(MAAEND_PROTOCOL_SPACE_TASK_OPTIONS["CrisisDrills"])),
+    )
+    ## 奖励套组选项
+    config.Task_RewardsSetOption = ConfigItem(
+        "Task",
+        "RewardsSetOption",
+        MAAEND_SANITY_TASK_DEFAULTS["RewardsSetOption"],
+        OptionsValidator(["RewardsSetA", "RewardsSetB"]),
+    )
+    ## 基质刷取地点
+    config.Task_AutoEssenceSpecifiedLocation = ConfigItem(
+        "Task",
+        "AutoEssenceSpecifiedLocation",
+        MAAEND_SANITY_TASK_DEFAULTS["AutoEssenceSpecifiedLocation"],
+        OptionsValidator(list(MAAEND_AUTO_ESSENCE_LOCATION_OPTIONS)),
+    )
+
+    for task_name in MAAEND_TASKS:
+        setattr(
+            config,
+            f"Task_If{task_name}",
+            ConfigItem("Task", f"If{task_name}", True, BoolValidator()),
+        )
+
+"""
+脚本级和用户级的理智任务配置项完全一样, 但为了兼容旧版 MaaEnd 的用户配置, 需要在 MaaEndUserConfig 中重复定义一次, 并在加载时进行迁移处理
+"""
+
+def _normalize_maaend_sanity_task_type(task_data: object) -> None:
+    """将旧版 MaaEnd 理智任务配置迁移到当前结构"""
+
+    if not isinstance(task_data, dict):
+        return
+
+    sanity_task_type = task_data.get("SanityTaskType")
+    if sanity_task_type in MAAEND_SANITY_TASK_TYPES:
+        return
+
+    if sanity_task_type == "ProtocolSpace":
+        protocol_space_tab = task_data.get("ProtocolSpaceTab")
+        if protocol_space_tab in MAAEND_SANITY_TASK_TYPES[:-1]:
+            task_data["SanityTaskType"] = protocol_space_tab
+            return
+
+    task_data["SanityTaskType"] = MAAEND_SANITY_TASK_DEFAULTS["SanityTaskType"]
 
 
 class EmulatorConfig(ConfigBase):
@@ -639,6 +724,8 @@ class MaaConfig(ConfigBase):
 class MaaEndUserConfig(ConfigBase):
     """MaaEnd用户配置"""
 
+    related_config: dict[str, MultipleConfig] = {}
+
     def __init__(self) -> None:
 
         ## Info ------------------------------------------------------------
@@ -652,8 +739,10 @@ class MaaEndUserConfig(ConfigBase):
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
         ## 配置模式
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细", "自定义"])
         )
+        ## 理智任务配置模式
+        self.Info_SanityMode = ConfigItem("Info", "SanityMode", "Fixed")
         ## 资源名称
         self.Info_Resource = ConfigItem(
             "Info", "Resource", "官服", OptionsValidator(["官服"])
@@ -676,47 +765,7 @@ class MaaEndUserConfig(ConfigBase):
         )
 
         ## Task ------------------------------------------------------------
-        ## 协议空间选项
-        self.Task_ProtocolSpaceTab = ConfigItem(
-            "Task",
-            "ProtocolSpaceTab",
-            "OperatorProgression",
-            OptionsValidator(
-                ["OperatorProgression", "WeaponProgression", "CrisisDrills"]
-            ),
-        )
-        self.Task_OperatorProgression = ConfigItem(
-            "Task",
-            "OperatorProgression",
-            "OperatorEXP",
-            OptionsValidator(["OperatorEXP", "Promotions", "T-Creds", "SkillUp"]),
-        )
-        self.Task_WeaponProgression = ConfigItem(
-            "Task",
-            "WeaponProgression",
-            "WeaponEXP",
-            OptionsValidator(["WeaponEXP", "WeaponTune"]),
-        )
-        self.Task_CrisisDrills = ConfigItem(
-            "Task",
-            "CrisisDrills",
-            "AdvancedProgression1",
-            OptionsValidator(
-                [
-                    "AdvancedProgression1",
-                    "AdvancedProgression2",
-                    "AdvancedProgression3",
-                    "AdvancedProgression4",
-                    "AdvancedProgression5",
-                ]
-            ),
-        )
-        self.Task_RewardsSetOption = ConfigItem(
-            "Task",
-            "RewardsSetOption",
-            "RewardsSetA",
-            OptionsValidator(["RewardsSetA", "RewardsSetB"]),
-        )
+        init_maaend_task_config(self)
 
         ## Data ------------------------------------------------------------
         ## 上次代理日期
@@ -740,7 +789,6 @@ class MaaEndUserConfig(ConfigBase):
         )
         ## 是否通过检查
         self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
-
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
         self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
@@ -764,6 +812,30 @@ class MaaEndUserConfig(ConfigBase):
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
         super().__init__()
+
+    async def load(self, data: dict):
+        info_data = data.get("Info")
+        # 兼容旧版 MaaEnd 用户配置:
+        # 老版本没有 SanityMode，旧版“简洁/详细”都归并到新版“自定义”。
+        if (
+            isinstance(info_data, dict)
+            and info_data.get("Mode") in ("简洁", "详细")
+            and "SanityMode" not in info_data
+        ):
+            info_data["Mode"] = "自定义"
+
+        task_data = data.get("Task")
+        if isinstance(task_data, dict):
+            _normalize_maaend_sanity_task_type(task_data)
+        await super().load(data)
+
+    def get_effective_sanity_task_config(self) -> tuple[dict[str, str], str]:
+        """获取当前生效的理智任务配置"""
+
+        return (
+            {field: self.get("Task", field) for field in MAAEND_SANITY_TASK_FIELDS},
+            "Fixed",
+        )
 
     def getTags(self) -> str:
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
@@ -833,14 +905,40 @@ class MaaEndUserConfig(ConfigBase):
             }
         )
 
-        # 关卡信息标签
-        stage = self.get("Task", self.get("Task", "ProtocolSpaceTab"))
-        stage_ab = (
-            f" - {self.get("Task", "RewardsSetOption")[-1]}"
-            if stage in MAAEND_STAGE_WITH_AB
-            else ""
-        )
-        tags.append({"text": MAAEND_STAGE_BOOK[stage] + stage_ab, "color": "blue"})
+        # 理智任务标签
+        if self.get("Task", "IfSanity"):
+            task_config, _ = self.get_effective_sanity_task_config()
+            sanity_task_type = task_config["SanityTaskType"]
+            tags.append(
+                {
+                    "text": f"理智任务：{MAAEND_SANITY_TASK_LABELS[sanity_task_type]}",
+                    "color": "blue",
+                }
+            )
+
+            detail_key = (
+                task_config["AutoEssenceSpecifiedLocation"]
+                if sanity_task_type == "Essence"
+                else task_config[sanity_task_type]
+            )
+            tags.append(
+                {
+                    "text": f"详细任务：{MAAEND_SANITY_TASK_DETAIL_LABELS[detail_key]}",
+                    "color": "blue",
+                }
+            )
+
+            if detail_key in MAAEND_STAGE_WITH_AB:
+                tags.append(
+                    {
+                        "text": (
+                            "奖励组：奖励组 A"
+                            if task_config["RewardsSetOption"] == "RewardsSetA"
+                            else "奖励组：奖励组 B"
+                        ),
+                        "color": "blue",
+                    }
+                )
 
         # 备注标签
         notes = self.get("Info", "Notes")
@@ -919,6 +1017,10 @@ class MaaEndConfig(ConfigBase):
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
         )
+
+        ## Task ------------------------------------------------------------
+        ## 脚本级预设任务配置（简洁模式数据源）
+        init_maaend_task_config(self)
 
         self.UserData = MultipleConfig([MaaEndUserConfig])
 
@@ -1685,11 +1787,28 @@ class GeneralUserConfig(ConfigBase):
 class OkwwUserConfig(ConfigBase):
     """OK-WW 用户配置（ok-script 线）"""
 
+    # 用户卡 Tag 仅展示中文简称（与编辑页下拉的 English（中文） 区分）
+    OKWW_TASK_BOOK: dict[int, str] = {
+        1: "日常",
+        2: "多账号日常",
+        3: "刷声骸",
+        4: "半自动肉鸽",
+        5: "凝素领域",
+        6: "梦魇巢穴",
+        7: "模拟领域",
+        8: "无音区",
+    }
+
     def __init__(self) -> None:
 
         ## Info ------------------------------------------------------------
         self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
         self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        self.Info_Id = ConfigItem("Info", "Id", "")
+        self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
+        self.Info_Resource = ConfigItem(
+            "Info", "Resource", "官服", OptionsValidator(["官服"])
+        )
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
@@ -1716,7 +1835,7 @@ class OkwwUserConfig(ConfigBase):
         ## Task ------------------------------------------------------------
         # ok-ww.exe -t N -e
         self.Task_TaskIndex = ConfigItem(
-            "Task", "TaskIndex", 1, RangeValidator(1, 9999)
+            "Task", "TaskIndex", 1, RangeValidator(1, 8)
         )
         self.Task_ExitOnFinish = ConfigItem("Task", "ExitOnFinish", True, BoolValidator())
 
@@ -1726,6 +1845,15 @@ class OkwwUserConfig(ConfigBase):
         )
         self.Data_ProxyTimes = ConfigItem(
             "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
+        )
+        self.Data_LastProxyStatus = ConfigItem(
+            "Data",
+            "LastProxyStatus",
+            "未知",
+            OptionsValidator(["未知", "成功", "失败"]),
+        )
+        self.Data_LastTaskIndex = ConfigItem(
+            "Data", "LastTaskIndex", 0, RangeValidator(0, 9999)
         )
 
         ## Notify ----------------------------------------------------------
@@ -1746,18 +1874,12 @@ class OkwwUserConfig(ConfigBase):
     def getTags(self) -> str:
         tags = []
 
-        if (
-            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-            == datetime.now(tz=UTC4).date()
-        ):
-            tags.append(
-                {
-                    "text": f"任务：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
-                }
-            )
-        else:
-            tags.append({"text": "任务：未代理", "color": "orange"})
+        last_status = self.get("Data", "LastProxyStatus")
+        tags.append({"text": f"上次：{last_status}", "color": "green"})
+
+        last_task_index = int(self.get("Data", "LastTaskIndex") or 0)
+        task_label = self.OKWW_TASK_BOOK.get(last_task_index, "未知")
+        tags.append({"text": f"任务：{task_label}", "color": "orange"})
 
         remained_day = self.get("Info", "RemainedDay")
         if remained_day == -1:
@@ -1985,6 +2107,9 @@ class OkwwConfig(ConfigBase):
 
         ## Game ------------------------------------------------------------
         self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
+        self.Game_LaunchBeforeTask = ConfigItem(
+            "Game", "LaunchBeforeTask", False, BoolValidator()
+        )
         self.Game_Type = ConfigItem(
             "Game", "Type", "Client", OptionsValidator(["Emulator", "Client", "URL"])
         )

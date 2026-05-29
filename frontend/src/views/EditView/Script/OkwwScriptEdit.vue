@@ -27,7 +27,7 @@
   <div class="script-edit-content">
     <a-card title="ok-ww 脚本配置" :loading="pageLoading" class="config-card">
       <template #extra>
-        <a-tag color="purple" class="type-tag">ok-ww</a-tag>
+        <a-tag color="blue" class="type-tag">ok-ww</a-tag>
       </template>
 
       <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
@@ -89,42 +89,65 @@
           <div class="section-header">
             <h3>游戏配置</h3>
           </div>
-          <a-row :gutter="24">
-            <a-col :span="6">
+          <a-row :gutter="24" class="game-control-row">
+            <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    启用游戏配置
-                    <a-tooltip title="开启后，由 MAS 在任务开始前启动游戏并等待；关闭则表示游戏由您自行启动，与是否由 MAS 关闭游戏无关">
+                  <a-tooltip title="游戏管理总开关：关闭后 MAS 不启动也不关闭游戏；开启后可分别配置任务前启动与任务后关闭">
+                    <span class="form-label">
+                      启用游戏配置
                       <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                    </span>
+                  </a-tooltip>
                 </template>
                 <a-select
                   v-model:value="okwwConfig.Game.Enabled"
                   size="large"
                   class="modern-input"
-                  @change="handleChange('Game', 'Enabled', $event)"
+                  @change="handleGameEnabledChange"
                 >
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
-            <a-col :span="6">
+            <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <span class="form-label">
-                    任务结束后关闭游戏
-                    <a-tooltip title="任务成功结束后，是否由 MAS 关闭游戏客户端；与「启用游戏配置」无关（可自行开游戏、仍由 MAS 收尾关闭）。失败重试前仍会关闭游戏以便重新拉起">
+                  <a-tooltip title="任务开始前是否由 MAS 启动游戏并等待">
+                    <span class="form-label">
+                      任务前启动游戏
                       <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="okwwConfig.Game.LaunchBeforeTask"
+                  size="large"
+                  class="modern-input"
+                  :disabled="!okwwConfig.Game.Enabled"
+                  @change="handleChange('Game', 'LaunchBeforeTask', $event)"
+                >
+                  <a-select-option :value="true">是</a-select-option>
+                  <a-select-option :value="false">否</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="任务成功结束后是否由 MAS 关闭游戏；失败重试前若需重拉游戏也会尝试关闭">
+                    <span class="form-label">
+                      任务后关闭游戏
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
                 </template>
                 <a-select
                   v-model:value="okwwConfig.Game.CloseOnFinish"
                   size="large"
                   class="modern-input"
+                  :disabled="!okwwConfig.Game.Enabled"
                   @change="handleChange('Game', 'CloseOnFinish', $event)"
                 >
                   <a-select-option :value="true">是</a-select-option>
@@ -133,20 +156,31 @@
               </a-form-item>
             </a-col>
           </a-row>
+
           <a-row :gutter="24">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
                     游戏根目录
-                    <a-tooltip title="选择 Wuthering Waves Game 目录，系统自动拼接客户端路径">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
+                    <span class="label-hint">选择 <strong>Wuthering Waves Game</strong> 文件夹，自动匹配客户端 exe</span>
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">
-                  <a-input v-model:value="okwwConfig.Game.Path" placeholder="请选择游戏根目录（自动匹配到 Client-Win64-Shipping.exe）" size="large" class="path-input" readonly />
-                  <a-button size="large" class="path-button" @click="selectGameRootPath">
+                  <a-input
+                    v-model:value="okwwConfig.Game.Path"
+                    placeholder="请选择游戏根目录（自动匹配到 Client-Win64-Shipping.exe）"
+                    size="large"
+                    class="path-input"
+                    readonly
+                    :disabled="!okwwConfig.Game.Enabled"
+                  />
+                  <a-button
+                    size="large"
+                    class="path-button"
+                    :disabled="!okwwConfig.Game.Enabled"
+                    @click="selectGameRootPath"
+                  >
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
@@ -170,6 +204,7 @@
                   placeholder="请输入游戏启动参数"
                   size="large"
                   class="modern-input"
+                  :disabled="!okwwConfig.Game.Enabled"
                   @blur="handleChange('Game', 'Arguments', okwwConfig.Game.Arguments)"
                 />
               </a-form-item>
@@ -190,6 +225,7 @@
                   :max="9999"
                   size="large"
                   style="width: 100%"
+                  :disabled="!okwwConfig.Game.Enabled"
                   @blur="handleChange('Game', 'WaitTime', okwwConfig.Game.WaitTime)"
                 />
               </a-form-item>
@@ -317,6 +353,7 @@ const okwwConfig = reactive<OkwwConfig>({
   },
   Game: {
     Enabled: false,
+    LaunchBeforeTask: false,
     Type: 'Client',
     Path: '.',
     WaitTime: 60,
@@ -334,6 +371,11 @@ const rules = {
 }
 
 const handleCancel = () => router.push('/scripts')
+
+const handleGameEnabledChange = async (enabled: boolean) => {
+  okwwConfig.Game.Enabled = enabled
+  await handleChange('Game', 'Enabled', enabled)
+}
 
 const handleChange = async (category: string, key: string, value: unknown) => {
   if (isInitializing.value || isSaving.value) return
@@ -444,6 +486,7 @@ const buildGameClientPath = (gameRootPath: string) => {
 }
 
 const selectGameRootPath = async () => {
+  if (!okwwConfig.Game.Enabled) return
   const picked = await window.electronAPI.selectFolder({ title: '选择游戏根目录（Wuthering Waves Game）' })
   if (!picked) return
   okwwConfig.Game.Path = buildGameClientPath(picked)
@@ -567,6 +610,17 @@ onMounted(loadScript)
   font-weight: 600;
 }
 
+.label-hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ant-color-text-tertiary);
+}
+
+.label-hint strong {
+  font-weight: 600;
+  color: var(--ant-color-text-secondary);
+}
+
 .help-icon {
   color: var(--ant-color-text-tertiary);
   cursor: help;
@@ -602,6 +656,14 @@ onMounted(loadScript)
 
 .config-form :deep(.ant-form-item) {
   margin-bottom: 24px;
+}
+
+.game-control-row {
+  margin-bottom: 8px;
+}
+
+.game-control-row :deep(.ant-form-item) {
+  margin-bottom: 0;
 }
 
 @media (max-width: 768px) {

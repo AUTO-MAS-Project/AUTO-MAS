@@ -42,5 +42,21 @@ export type OkwwUserConfig_Info = {
      * 用户标签列表（JSON字符串，TagItem的dict列表）
      */
     Tag?: (string | null);
+    /**
+     * 账号
+     */
+    Id?: (string | null);
+    /**
+     * 密码
+     */
+    Password?: (string | null);
+    /**
+     * 用户配置模式（简洁/详细）
+     */
+    Mode?: ('简洁' | '详细' | null);
+    /**
+     * 游戏资源
+     */
+    Resource?: (string | null);
 };
 
