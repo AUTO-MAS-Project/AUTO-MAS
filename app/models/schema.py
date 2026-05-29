@@ -107,6 +107,9 @@ class EmulatorConfig_Info(BaseModel):
     Path: Optional[str] = Field(default=None, description="模拟器路径")
     BossKey: Optional[str] = Field(default=None, description="老板键快捷键配置")
     MaxWaitTime: Optional[int] = Field(default=None, description="最大等待时间（秒）")
+    ForceKillOnClose: Optional[bool] = Field(
+        default=None, description="关闭 MuMu 时强力清理残留进程"
+    )
 
 
 class EmulatorConfig(BaseModel):
