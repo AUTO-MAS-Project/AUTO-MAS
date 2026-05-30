@@ -25,7 +25,13 @@ from .constants import *
 from .logger import get_logger
 from .ImageUtils import ImageUtils
 from .LogMonitor import LogMonitor, strptime
-from .ProcessManager import ProcessManager, ProcessRunner, ProcessInfo, ProcessResult
+from .ProcessManager import (
+    ProcessManager,
+    ProcessRunner,
+    ProcessInfo,
+    ProcessResult,
+    is_process_running,
+)
 from .security import dpapi_encrypt, dpapi_decrypt, sanitize_log_message
 from .emulator import MumuManager, LDManager, search_all_emulators, EMULATOR_TYPE_BOOK
 from .tools import decode_bytes, busy_wait
@@ -40,6 +46,7 @@ __all__ = [
     "ProcessRunner",
     "ProcessInfo",
     "ProcessResult",
+    "is_process_running",
     "dpapi_encrypt",
     "dpapi_decrypt",
     "sanitize_log_message",

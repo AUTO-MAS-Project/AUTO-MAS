@@ -34,12 +34,15 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.services import Notify, System
-from app.utils import get_logger, LogMonitor, ProcessManager
+from app.utils import get_logger, LogMonitor, ProcessManager, is_process_running
 from app.tools import skland_sign_in
 from app.utils.constants import UTC4, UTC8, MAAEND_SANITY_TASK_FIELDS, MAAEND_TASKS
 from .tools import login, push_notification
 
 logger = get_logger("MaaEnd 自动代理")
+
+# 终末地 PC 客户端进程名固定，MAS 接管启动前据此避免重复拉起
+_ENDFIELD_CLIENT_PROCESS = "Endfield.exe"
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -207,15 +210,23 @@ class AutoProxyTask(TaskExecuteBase):
 
             self.script_info.log = "正在启动游戏..."
             # 启动游戏
+            controller_type = self.script_config.get("Game", "ControllerType")
             try:
                 if self.emulator_manager is None:
-                    logger.info(
-                        f"启动终末地: {self.script_config.get('Game', 'Path')} - {self.script_config.get('Game', 'Arguments')}"
-                    )
-                    await self.game_process_manager.open_process(
-                        self.script_config.get("Game", "Path"),
-                        *str(self.script_config.get("Game", "Arguments")).split(" "),
-                    )
+                    if controller_type != "ADB" and is_process_running(
+                        _ENDFIELD_CLIENT_PROCESS
+                    ):
+                        logger.info(
+                            "检测到终末地客户端进程已在运行，跳过由 MAS 重复启动游戏"
+                        )
+                    else:
+                        logger.info(
+                            f"启动终末地: {self.script_config.get('Game', 'Path')} - {self.script_config.get('Game', 'Arguments')}"
+                        )
+                        await self.game_process_manager.open_process(
+                            self.script_config.get("Game", "Path"),
+                            *str(self.script_config.get("Game", "Arguments")).split(" "),
+                        )
                     emulator_info = None
                     await asyncio.sleep(self.script_config.get("Game", "WaitTime"))
                 else:
@@ -250,7 +261,6 @@ class AutoProxyTask(TaskExecuteBase):
 
             logger.info(f"运行脚本任务: {self.maaend_exe_path}")
             self.wait_event.clear()
-            controller_type = self.script_config.get("Game", "ControllerType")
             await self.maaend_process_manager.open_process(
                 self.maaend_exe_path,
                 "--autostart",
