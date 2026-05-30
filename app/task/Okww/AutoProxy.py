@@ -24,14 +24,12 @@ from contextlib import suppress
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import psutil
-
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import OkwwConfig, OkwwUserConfig
 from app.services import Notify, System
-from app.utils import get_logger, ProcessManager, ProcessInfo
+from app.utils import get_logger, ProcessManager, ProcessInfo, is_process_running
 from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
 
@@ -39,14 +37,6 @@ logger = get_logger("OK-WW 自动代理")
 
 # 鸣潮 PC 客户端窗口进程名固定，MAS 接管启动前据此避免重复拉起
 _WUWA_CLIENT_PROCESS = "Client-Win64-Shipping.exe"
-
-
-def _wuthering_waves_client_running() -> bool:
-    for proc in psutil.process_iter(["name"]):
-        with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
-            if proc.info.get("name") == _WUWA_CLIENT_PROCESS:
-                return True
-    return False
 
 
 def _yes_no(value: bool) -> str:
@@ -275,7 +265,7 @@ class AutoProxyTask(TaskExecuteBase):
             await self._push_dispatch_log(
                 f"正在检查鸣潮客户端进程 ({_WUWA_CLIENT_PROCESS})..."
             )
-            if _wuthering_waves_client_running():
+            if is_process_running(_WUWA_CLIENT_PROCESS):
                 logger.info(
                     "检测到鸣潮客户端进程已在运行，跳过由 MAS 重复启动游戏"
                 )
@@ -625,4 +615,3 @@ class AutoProxyTask(TaskExecuteBase):
         await self._kill_okww_process()
         if kill_game:
             await self._kill_game_process()
-
