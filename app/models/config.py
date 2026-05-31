@@ -2111,7 +2111,7 @@ class OkwwConfig(ConfigBase):
             "Game", "LaunchBeforeTask", False, BoolValidator()
         )
         self.Game_Type = ConfigItem(
-            "Game", "Type", "Client", OptionsValidator(["Emulator", "Client", "URL"])
+            "Game", "Type", "Client", OptionsValidator(["Client", "URL"])
         )
         self.Game_Path = ConfigItem("Game", "Path", str(Path.cwd()), FileValidator())
         self.Game_URL = ConfigItem("Game", "URL", "")
