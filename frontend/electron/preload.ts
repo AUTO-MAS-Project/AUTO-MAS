@@ -138,6 +138,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFile: (filePath: string) => ipcRenderer.invoke('open-file', filePath),
   showItemInFolder: (filePath: string) => ipcRenderer.invoke('show-item-in-folder', filePath),
   readFile: (filePath: string) => ipcRenderer.invoke('read-file', filePath),
+  fileExists: (filePath: string) => ipcRenderer.invoke('file-exists', filePath),
 
   // 主题信息获取
   getThemeInfo: () => ipcRenderer.invoke('get-theme-info'),
