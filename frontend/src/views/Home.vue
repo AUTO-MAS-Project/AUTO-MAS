@@ -7,6 +7,17 @@
 
       <div class="header-actions">
         <a-button
+          :type="layoutEditing ? 'primary' : 'default'"
+          class="layout-edit-button"
+          @click="toggleLayoutEditing"
+        >
+          <template #icon>
+            <CheckOutlined v-if="layoutEditing" />
+            <EditOutlined v-else />
+          </template>
+          {{ layoutEditing ? '完成' : '编辑布局' }}
+        </a-button>
+        <a-button
           type="primary"
           ghost
           :loading="noticeLoading"
@@ -28,237 +39,286 @@
     />
 
     <div class="home-content">
-      <a-card class="command-card">
-        <section class="command-panel" aria-label="调度快速启动">
-          <div class="command-main">
-            <div class="command-title">准备好下一轮自动化</div>
-          </div>
-
-          <div class="scheduler-launcher">
-            <div class="launcher-header">
-              <div>
-                <div class="launcher-title">快速开始</div>
-              </div>
-            </div>
-
-            <div class="launcher-controls">
-              <a-select
-                v-model:value="selectedHomeTaskId"
-                class="launcher-select"
-                :options="schedulerTaskOptions"
-                :loading="schedulerTasksLoading"
-                size="large"
-                placeholder="选择任务"
-                @dropdown-visible-change="onSchedulerDropdownVisibleChange"
+      <template v-for="moduleKey in homeModuleOrder" :key="moduleKey">
+        <section
+          v-if="isHomeModuleVisible(moduleKey)"
+          class="home-module"
+          :class="{ 'is-editing': layoutEditing }"
+        >
+          <div v-if="layoutEditing" class="module-editor-bar">
+            <div class="module-editor-title">{{ moduleTitleMap[moduleKey] }}</div>
+            <div v-if="moduleKey === 'arknights'" class="module-editor-extra">
+              <span>默认展开</span>
+              <a-switch
+                size="small"
+                :checked="arknightsDefaultExpanded"
+                @change="setArknightsDefaultExpanded"
               />
-              <a-button
-                type="primary"
-                size="large"
-                class="launcher-start"
-                :loading="startingHomeTask"
-                :disabled="!selectedHomeTaskId"
-                @click="startHomeTask"
-              >
-                <template #icon>
-                  <PlayCircleOutlined />
-                </template>
-                开始
-              </a-button>
+            </div>
+            <div class="module-editor-actions">
+              <a-tooltip title="上移">
+                <a-button
+                  type="text"
+                  size="small"
+                  :disabled="!canMoveHomeModule(moduleKey, 'up')"
+                  @click="moveHomeModule(moduleKey, 'up')"
+                >
+                  <template #icon>
+                    <ArrowUpOutlined />
+                  </template>
+                </a-button>
+              </a-tooltip>
+              <a-tooltip title="下移">
+                <a-button
+                  type="text"
+                  size="small"
+                  :disabled="!canMoveHomeModule(moduleKey, 'down')"
+                  @click="moveHomeModule(moduleKey, 'down')"
+                >
+                  <template #icon>
+                    <ArrowDownOutlined />
+                  </template>
+                </a-button>
+              </a-tooltip>
             </div>
           </div>
-        </section>
-      </a-card>
 
-      <a-card class="shortcut-card" title="常用入口">
-        <section class="quick-actions" aria-label="快捷入口">
-          <button
-            v-for="action in quickActions"
-            :key="action.path"
-            type="button"
-            class="quick-action"
-            @click="navigateTo(action.path)"
-          >
-            <span class="quick-action-icon">
-              <component :is="action.icon" />
-            </span>
-            <span class="quick-action-text">
-              <span class="quick-action-title">{{ action.title }}</span>
-              <span class="quick-action-desc">{{ action.description }}</span>
-            </span>
-          </button>
-        </section>
-      </a-card>
+          <a-card v-if="moduleKey === 'command'" class="command-card">
+            <section class="command-panel" aria-label="调度快速启动">
+              <div class="command-main">
+                <div class="command-title">准备好下一轮自动化</div>
+              </div>
 
-      <section class="overview-grid" aria-label="代理状态">
-        <a-card class="proxy-card" title="代理状态" :loading="loading">
-
-          <div v-if="Object.keys(proxyData).length > 0" class="proxy-list">
-            <a-row :gutter="[16, 16]">
-              <a-col
-                v-for="(proxy, username) in proxyData"
-                :key="username"
-                :xs="24"
-                :lg="12"
-                :xl="8"
-              >
-                <div class="proxy-item">
-                  <div class="proxy-header">
-                    <div class="proxy-username">
-                      <UserOutlined class="user-icon" />
-                      <span class="username">{{ username }}</span>
-                    </div>
-                  </div>
-
-                  <div class="proxy-stats">
-                    <div class="stat-item full-width">
-                      <a-statistic
-                        title="最后代理时间"
-                        :value="formatProxyDisplay(proxy.LastProxyDate)"
-                      />
-                    </div>
-                    <div class="stat-pair">
-                      <a-statistic title="代理次数" :value="proxy.ProxyTimes" />
-                      <a-statistic
-                        title="错误次数"
-                        :value="proxy.ErrorTimes"
-                        :value-style="{ color: proxy.ErrorTimes > 0 ? '#ff4d4f' : undefined }"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </a-col>
-            </a-row>
-          </div>
-
-          <div v-else-if="!loading" class="empty-state">
-            <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
-          </div>
-        </a-card>
-      </section>
-
-      <a-collapse
-        v-if="hasArknightsData"
-        v-model:active-key="activeCollapseKeys"
-        class="arknights-collapse"
-      >
-        <a-collapse-panel key="arknights" header="明日方舟活动信息">
-          <div v-if="error" class="error-message">
-            <a-alert :message="error" type="error" show-icon closable @close="error = ''" />
-          </div>
-
-          <a-card
-            v-if="activityData?.length"
-            title="当期活动关卡"
-            class="activity-card"
-            :loading="loading"
-          >
-            <div v-if="currentActivity && !loading" class="activity-info">
-              <div class="activity-header">
-                <div class="activity-left">
-                  <div class="activity-name">
-                    <span class="activity-title">{{ currentActivity.Tip }}</span>
-                  </div>
-                  <div class="activity-end-time">
-                    <ClockCircleOutlined class="time-icon" />
-                    <span class="time-label">结束时间：</span>
-                    <span class="time-value">{{ formatTime(currentActivity.UtcExpireTime) }}</span>
+              <div class="scheduler-launcher">
+                <div class="launcher-header">
+                  <div>
+                    <div class="launcher-title">快速开始</div>
                   </div>
                 </div>
 
-                <div class="activity-right">
-                  <a-statistic-countdown
-                    v-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'ended'"
-                    title=""
-                    :value="getCountdownValue(currentActivity.UtcExpireTime)"
-                    format="活动已结束"
-                    :value-style="{
-                      color: '#ff4d4f',
-                      fontWeight: 'bold',
-                      fontSize: '18px',
-                    }"
-                    @finish="onCountdownFinish"
+                <div class="launcher-controls">
+                  <a-select
+                    v-model:value="selectedHomeTaskId"
+                    class="launcher-select"
+                    :options="schedulerTaskOptions"
+                    :loading="schedulerTasksLoading"
+                    size="large"
+                    placeholder="选择任务"
+                    @dropdown-visible-change="onSchedulerDropdownVisibleChange"
                   />
-
-                  <a-statistic-countdown
-                    v-else-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'warning'"
-                    title="当期活动剩余时间"
-                    :value="getCountdownValue(currentActivity.UtcExpireTime)"
-                    format="D 天 H 时 m 分 ss 秒 SSS 毫秒"
-                    class="rainbow-text"
-                    @finish="onCountdownFinish"
-                  />
-
-                  <a-statistic-countdown
-                    v-else
-                    title="当期活动剩余时间"
-                    :value="getCountdownValue(currentActivity.UtcExpireTime)"
-                    format="D 天 H 时 m 分"
-                    :value-style="{
-                      color: 'var(--ant-color-text)',
-                      fontWeight: '600',
-                      fontSize: '20px',
-                    }"
-                    @finish="onCountdownFinish"
-                  />
+                  <a-button
+                    type="primary"
+                    size="large"
+                    class="launcher-start"
+                    :loading="startingHomeTask"
+                    :disabled="!selectedHomeTaskId"
+                    @click="startHomeTask"
+                  >
+                    <template #icon>
+                      <PlayCircleOutlined />
+                    </template>
+                    开始
+                  </a-button>
                 </div>
               </div>
-            </div>
-
-            <div class="activity-list">
-              <div v-for="item in activityData" :key="item.Value" class="activity-item">
-                <div class="stage-info">
-                  <div class="stage-name">{{ item.Display }}</div>
-                </div>
-
-                <div class="drop-info">
-                  <div class="drop-image">
-                    <img
-                      v-if="getMaterialImage(item.Drop)"
-                      :src="getMaterialImage(item.Drop)"
-                      :alt="item.DropName"
-                      @error="handleImageError"
-                    />
-                  </div>
-
-                  <div class="drop-details">
-                    <div class="drop-name">{{ item.DropName }}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            </section>
           </a-card>
 
-          <a-card title="今日开放资源收集关卡" class="resource-card" :loading="loading">
-            <div v-if="resourceData?.length" class="resource-list">
-              <div v-for="item in resourceData" :key="item.Value" class="resource-item">
-                <div class="stage-info">
-                  <div class="stage-name">{{ item.Display }}</div>
-                </div>
-
-                <div class="drop-info">
-                  <div class="drop-image">
-                    <img
-                      v-if="getMaterialImage(item.Drop)"
-                      :src="getMaterialImage(item.Drop)"
-                      :alt="item.DropName"
-                      @error="handleImageError"
-                    />
-                  </div>
-
-                  <div class="drop-details">
-                    <div class="drop-name">{{ item.DropName }}</div>
-                    <div class="drop-tip">{{ item.Activity.Tip }}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div v-else-if="!loading" class="empty-state">
-              <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
-            </div>
+          <a-card v-else-if="moduleKey === 'quick'" class="shortcut-card" title="常用入口">
+            <section class="quick-actions" aria-label="快捷入口">
+              <button
+                v-for="action in quickActions"
+                :key="action.path"
+                type="button"
+                class="quick-action"
+                @click="navigateTo(action.path)"
+              >
+                <span class="quick-action-icon">
+                  <component :is="action.icon" />
+                </span>
+                <span class="quick-action-text">
+                  <span class="quick-action-title">{{ action.title }}</span>
+                  <span class="quick-action-desc">{{ action.description }}</span>
+                </span>
+              </button>
+            </section>
           </a-card>
-        </a-collapse-panel>
-      </a-collapse>
+
+          <section v-else-if="moduleKey === 'proxy'" class="overview-grid" aria-label="代理状态">
+            <a-card class="proxy-card" title="代理状态" :loading="loading">
+              <div v-if="Object.keys(proxyData).length > 0" class="proxy-list">
+                <a-row :gutter="[16, 16]">
+                  <a-col
+                    v-for="(proxy, username) in proxyData"
+                    :key="username"
+                    :xs="24"
+                    :lg="12"
+                    :xl="8"
+                  >
+                    <div class="proxy-item">
+                      <div class="proxy-header">
+                        <div class="proxy-username">
+                          <UserOutlined class="user-icon" />
+                          <span class="username">{{ username }}</span>
+                        </div>
+                      </div>
+
+                      <div class="proxy-stats">
+                        <div class="stat-item full-width">
+                          <a-statistic
+                            title="最后代理时间"
+                            :value="formatProxyDisplay(proxy.LastProxyDate)"
+                          />
+                        </div>
+                        <div class="stat-pair">
+                          <a-statistic title="代理次数" :value="proxy.ProxyTimes" />
+                          <a-statistic
+                            title="错误次数"
+                            :value="proxy.ErrorTimes"
+                            :value-style="{ color: proxy.ErrorTimes > 0 ? '#ff4d4f' : undefined }"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </a-col>
+                </a-row>
+              </div>
+
+              <div v-else-if="!loading" class="empty-state">
+                <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
+              </div>
+            </a-card>
+          </section>
+
+          <a-collapse
+            v-else-if="moduleKey === 'arknights'"
+            v-model:active-key="activeCollapseKeys"
+            class="arknights-collapse"
+          >
+            <a-collapse-panel key="arknights" header="明日方舟活动信息">
+              <div v-if="error" class="error-message">
+                <a-alert :message="error" type="error" show-icon closable @close="error = ''" />
+              </div>
+
+              <a-card
+                v-if="activityData?.length"
+                title="当期活动关卡"
+                class="activity-card"
+                :loading="loading"
+              >
+                <div v-if="currentActivity && !loading" class="activity-info">
+                  <div class="activity-header">
+                    <div class="activity-left">
+                      <div class="activity-name">
+                        <span class="activity-title">{{ currentActivity.Tip }}</span>
+                      </div>
+                      <div class="activity-end-time">
+                        <ClockCircleOutlined class="time-icon" />
+                        <span class="time-label">结束时间：</span>
+                        <span class="time-value">{{
+                          formatTime(currentActivity.UtcExpireTime)
+                        }}</span>
+                      </div>
+                    </div>
+
+                    <div class="activity-right">
+                      <a-statistic-countdown
+                        v-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'ended'"
+                        title=""
+                        :value="getCountdownValue(currentActivity.UtcExpireTime)"
+                        format="活动已结束"
+                        :value-style="{
+                          color: '#ff4d4f',
+                          fontWeight: 'bold',
+                          fontSize: '18px',
+                        }"
+                        @finish="onCountdownFinish"
+                      />
+
+                      <a-statistic-countdown
+                        v-else-if="
+                          getActivityTimeStatus(currentActivity.UtcExpireTime) === 'warning'
+                        "
+                        title="当期活动剩余时间"
+                        :value="getCountdownValue(currentActivity.UtcExpireTime)"
+                        format="D 天 H 时 m 分 ss 秒 SSS 毫秒"
+                        class="rainbow-text"
+                        @finish="onCountdownFinish"
+                      />
+
+                      <a-statistic-countdown
+                        v-else
+                        title="当期活动剩余时间"
+                        :value="getCountdownValue(currentActivity.UtcExpireTime)"
+                        format="D 天 H 时 m 分"
+                        :value-style="{
+                          color: 'var(--ant-color-text)',
+                          fontWeight: '600',
+                          fontSize: '20px',
+                        }"
+                        @finish="onCountdownFinish"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div class="activity-list">
+                  <div v-for="item in activityData" :key="item.Value" class="activity-item">
+                    <div class="stage-info">
+                      <div class="stage-name">{{ item.Display }}</div>
+                    </div>
+
+                    <div class="drop-info">
+                      <div class="drop-image">
+                        <img
+                          v-if="getMaterialImage(item.Drop)"
+                          :src="getMaterialImage(item.Drop)"
+                          :alt="item.DropName"
+                          @error="handleImageError"
+                        />
+                      </div>
+
+                      <div class="drop-details">
+                        <div class="drop-name">{{ item.DropName }}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </a-card>
+
+              <a-card title="今日开放资源收集关卡" class="resource-card" :loading="loading">
+                <div v-if="resourceData?.length" class="resource-list">
+                  <div v-for="item in resourceData" :key="item.Value" class="resource-item">
+                    <div class="stage-info">
+                      <div class="stage-name">{{ item.Display }}</div>
+                    </div>
+
+                    <div class="drop-info">
+                      <div class="drop-image">
+                        <img
+                          v-if="getMaterialImage(item.Drop)"
+                          :src="getMaterialImage(item.Drop)"
+                          :alt="item.DropName"
+                          @error="handleImageError"
+                        />
+                      </div>
+
+                      <div class="drop-details">
+                        <div class="drop-name">{{ item.DropName }}</div>
+                        <div class="drop-tip">{{ item.Activity.Tip }}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-else-if="!loading" class="empty-state">
+                  <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
+                </div>
+              </a-card>
+            </a-collapse-panel>
+          </a-collapse>
+        </section>
+      </template>
     </div>
   </div>
 </template>
@@ -267,11 +327,15 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import {
+  ArrowDownOutlined,
+  ArrowUpOutlined,
   BellOutlined,
   CalendarOutlined,
+  CheckOutlined,
   ClockCircleOutlined,
   ControlOutlined,
   DatabaseOutlined,
+  EditOutlined,
   FileTextOutlined,
   PlayCircleOutlined,
   UnorderedListOutlined,
@@ -335,6 +399,23 @@ interface ResourceItem {
   }
 }
 
+type HomeModuleKey = 'command' | 'quick' | 'proxy' | 'arknights'
+type HomeModuleDirection = 'up' | 'down'
+
+interface HomeLayoutConfig {
+  moduleOrder: HomeModuleKey[]
+  arknightsDefaultExpanded: boolean
+}
+
+const HOME_LAYOUT_STORAGE_KEY = 'auto-mas.home.layout'
+const defaultHomeModuleOrder: HomeModuleKey[] = ['command', 'quick', 'proxy', 'arknights']
+const moduleTitleMap: Record<HomeModuleKey, string> = {
+  command: '快速开始',
+  quick: '常用入口',
+  proxy: '代理状态',
+  arknights: '明日方舟活动信息',
+}
+
 const quickActions = [
   {
     title: '脚本管理',
@@ -379,6 +460,9 @@ const schedulerTasksLoading = ref(false)
 const startingHomeTask = ref(false)
 const error = ref('')
 const activeCollapseKeys = ref<string[]>([])
+const layoutEditing = ref(false)
+const arknightsDefaultExpanded = ref(false)
+const homeModuleOrder = ref<HomeModuleKey[]>([...defaultHomeModuleOrder])
 const activityData = ref<ActivityItem[]>([])
 const resourceData = ref<ResourceItem[]>([])
 const proxyData = ref<Record<string, ProxyInfo>>({})
@@ -400,6 +484,93 @@ const currentActivity = computed(() => {
 const hasArknightsData = computed(() => {
   return activityData.value.length > 0 || resourceData.value.length > 0
 })
+
+const isHomeModuleKey = (value: unknown): value is HomeModuleKey => {
+  return typeof value === 'string' && defaultHomeModuleOrder.includes(value as HomeModuleKey)
+}
+
+const normalizeHomeModuleOrder = (order: unknown): HomeModuleKey[] => {
+  const configuredOrder = Array.isArray(order) ? order.filter(isHomeModuleKey) : []
+  const uniqueOrder = configuredOrder.filter((key, index, array) => array.indexOf(key) === index)
+  const missingOrder = defaultHomeModuleOrder.filter(key => !uniqueOrder.includes(key))
+  return [...uniqueOrder, ...missingOrder]
+}
+
+const persistHomeLayoutConfig = () => {
+  try {
+    const config: HomeLayoutConfig = {
+      moduleOrder: homeModuleOrder.value,
+      arknightsDefaultExpanded: arknightsDefaultExpanded.value,
+    }
+    localStorage.setItem(HOME_LAYOUT_STORAGE_KEY, JSON.stringify(config))
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`保存首页布局配置失败: ${errorMsg}`)
+  }
+}
+
+const applyArknightsDefaultExpanded = () => {
+  activeCollapseKeys.value = arknightsDefaultExpanded.value ? ['arknights'] : []
+}
+
+const loadHomeLayoutConfig = () => {
+  try {
+    const rawConfig = localStorage.getItem(HOME_LAYOUT_STORAGE_KEY)
+    if (rawConfig) {
+      const config = JSON.parse(rawConfig) as Partial<HomeLayoutConfig>
+      homeModuleOrder.value = normalizeHomeModuleOrder(config.moduleOrder)
+      arknightsDefaultExpanded.value = Boolean(config.arknightsDefaultExpanded)
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`读取首页布局配置失败: ${errorMsg}`)
+  }
+
+  applyArknightsDefaultExpanded()
+}
+
+const toggleLayoutEditing = () => {
+  layoutEditing.value = !layoutEditing.value
+}
+
+const canMoveHomeModule = (key: HomeModuleKey, direction: HomeModuleDirection) => {
+  const currentIndex = homeModuleOrder.value.indexOf(key)
+  if (currentIndex < 0) {
+    return false
+  }
+
+  return direction === 'up' ? currentIndex > 0 : currentIndex < homeModuleOrder.value.length - 1
+}
+
+const moveHomeModule = (key: HomeModuleKey, direction: HomeModuleDirection) => {
+  if (!canMoveHomeModule(key, direction)) {
+    return
+  }
+
+  const currentIndex = homeModuleOrder.value.indexOf(key)
+  const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
+  const nextOrder = [...homeModuleOrder.value]
+  const currentModule = nextOrder[currentIndex]
+  const targetModule = nextOrder[targetIndex]
+  if (!currentModule || !targetModule) {
+    return
+  }
+
+  nextOrder[currentIndex] = targetModule
+  nextOrder[targetIndex] = currentModule
+  homeModuleOrder.value = nextOrder
+  persistHomeLayoutConfig()
+}
+
+const setArknightsDefaultExpanded = (checked: boolean | string | number) => {
+  arknightsDefaultExpanded.value = Boolean(checked)
+  applyArknightsDefaultExpanded()
+  persistHomeLayoutConfig()
+}
+
+const isHomeModuleVisible = (key: HomeModuleKey) => {
+  return key !== 'arknights' || layoutEditing.value || hasArknightsData.value
+}
 
 const greeting = computed(() => {
   const hour = new Date().getHours()
@@ -575,11 +746,6 @@ const fetchActivityData = async () => {
   }
 }
 
-const getProxyStatusColor = () => {
-  const hasError = Object.values(proxyData.value).some(proxy => proxy.ErrorTimes > 0)
-  return hasError ? 'error' : 'success'
-}
-
 const fetchNoticeData = async () => {
   try {
     const response = await Service.getNoticeInfoApiInfoNoticeGetPost()
@@ -637,6 +803,8 @@ const loadHomeData = () => {
 }
 
 onMounted(() => {
+  loadHomeLayoutConfig()
+
   if (isBootstrapping.value) {
     loading.value = true
     noticeLoading.value = true
@@ -686,6 +854,12 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.layout-edit-button {
+  min-width: 104px;
 }
 
 .notice-button {
@@ -696,6 +870,54 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 24px;
+}
+
+.home-module {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.module-editor-bar {
+  min-height: 40px;
+  padding: 7px 10px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+}
+
+.module-editor-title {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.module-editor-extra {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.module-editor-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.module-editor-extra + .module-editor-actions {
+  margin-left: 0;
 }
 
 .command-card,
@@ -1195,6 +1417,10 @@ onMounted(() => {
     flex-direction: column;
     gap: 16px;
     align-items: stretch;
+  }
+
+  .header-actions {
+    justify-content: flex-start;
   }
 
   .command-card :deep(.ant-card-body) {
