@@ -616,11 +616,14 @@ class OkwwConfig_Script(GeneralConfig_Script):
 class OkwwConfig_Game(GeneralConfig_Game):
     """OK-WW 游戏配置（复用通用字段）"""
 
+    Type: Optional[Literal["Client", "URL"]] = Field(
+        default=None, description="类型: PC端, URL协议"
+    )
     LaunchBeforeTask: Optional[bool] = Field(
-        default=None, description="任务开始前是否由 MAS 启动游戏/模拟器"
+        default=None, description="任务开始前是否由 MAS 启动游戏"
     )
     CloseOnFinish: Optional[bool] = Field(
-        default=None, description="任务结束后是否关闭游戏/模拟器"
+        default=None, description="任务结束后是否关闭游戏"
     )
 
 
