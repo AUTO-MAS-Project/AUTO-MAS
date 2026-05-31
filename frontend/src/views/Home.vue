@@ -1,245 +1,296 @@
 <template>
-  <div class="header">
-    <a-typography-title>{{ greeting }}</a-typography-title>
-    <!-- 右上角公告按钮 -->
-    <div class="header-actions">
-      <a-button
-        type="primary"
-        ghost
-        :loading="noticeLoading"
-        class="notice-button"
-        @click="showNotice"
-      >
-        <template #icon>
-          <BellOutlined />
-        </template>
-        查看公告
-      </a-button>
+  <div class="home-page">
+    <div class="home-header">
+      <div>
+        <a-typography-title :level="2" class="home-title">{{ greeting }}</a-typography-title>
+      </div>
+
+      <div class="header-actions">
+        <a-button
+          type="primary"
+          ghost
+          :loading="noticeLoading"
+          class="notice-button"
+          @click="showNotice"
+        >
+          <template #icon>
+            <BellOutlined />
+          </template>
+          查看公告
+        </a-button>
+      </div>
     </div>
-  </div>
 
-  <!-- 公告模态框 -->
-  <NoticeModal
-    v-model:visible="noticeVisible"
-    :notice-data="noticeData"
-    @confirmed="onNoticeConfirmed"
-  />
+    <NoticeModal
+      v-model:visible="noticeVisible"
+      :notice-data="noticeData"
+      @confirmed="onNoticeConfirmed"
+    />
 
-  <div class="content">
-    <!-- 当期活动关卡 -->
-    <a-card
-      v-if="activityData?.length"
-      title="当期活动关卡"
-      class="activity-card"
-      :loading="loading"
-    >
-      <div v-if="error" class="error-message">
-        <a-alert :message="error" type="error" show-icon closable @close="error = ''" />
-      </div>
-
-      <!-- 活动信息展示 -->
-      <div v-if="currentActivity && !loading" class="activity-info">
-        <div class="activity-header">
-          <div class="activity-left">
-            <div class="activity-name">
-              <span class="activity-title">{{ currentActivity.Tip }}</span>
-              <!--              <a-tag color="blue" class="activity-tip">{{ currentActivity.StageName }}</a-tag>-->
-            </div>
-            <div class="activity-end-time">
-              <ClockCircleOutlined class="time-icon" />
-              <span class="time-label">结束时间：</span>
-              <span class="time-value">{{ formatTime(currentActivity.UtcExpireTime) }}</span>
-            </div>
+    <div class="home-content">
+      <a-card class="command-card">
+        <section class="command-panel" aria-label="调度快速启动">
+          <div class="command-main">
+            <div class="command-title">准备好下一轮自动化</div>
           </div>
 
-          <div class="activity-right">
-            <!-- 活动已结束时显示提示 -->
-            <a-statistic-countdown
-              v-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'ended'"
-              title=""
-              :value="getCountdownValue(currentActivity.UtcExpireTime)"
-              format="活动已结束"
-              :value-style="{
-                color: '#ff4d4f',
-                fontWeight: 'bold',
-                fontSize: '18px',
-              }"
-              @finish="onCountdownFinish"
-            />
-
-            <!-- 剩余时间小于两天时显示炫彩倒计时 -->
-            <a-statistic-countdown
-              v-else-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'warning'"
-              title="当期活动剩余时间"
-              :value="getCountdownValue(currentActivity.UtcExpireTime)"
-              format="D 天 H 时 m 分 ss 秒 SSS 毫秒"
-              class="rainbow-text"
-              @finish="onCountdownFinish"
-            />
-
-            <!-- 剩余时间大于等于两天时显示常规倒计时 -->
-            <a-statistic-countdown
-              v-else
-              title="当期活动剩余时间"
-              :value="getCountdownValue(currentActivity.UtcExpireTime)"
-              format="D 天 H 时 m 分"
-              :value-style="{
-                color: 'var(--ant-color-text)',
-                fontWeight: '600',
-                fontSize: '20px',
-              }"
-              @finish="onCountdownFinish"
-            />
-          </div>
-        </div>
-      </div>
-
-      <div class="activity-list">
-        <div v-for="item in activityData" :key="item.Value" class="activity-item">
-          <div class="stage-info">
-            <div class="stage-name">{{ item.Display }}</div>
-          </div>
-
-          <div class="drop-info">
-            <div class="drop-image">
-              <img
-                v-if="getMaterialImage(item.Drop)"
-                :src="getMaterialImage(item.Drop)"
-                :alt="item.DropName"
-                @error="handleImageError"
-              />
-            </div>
-
-            <div class="drop-details">
-              <div class="drop-name">
-                {{ item.DropName }}
+          <div class="scheduler-launcher">
+            <div class="launcher-header">
+              <div>
+                <div class="launcher-title">快速开始</div>
               </div>
             </div>
-          </div>
-        </div>
-      </div>
-    </a-card>
 
-    <!-- 资源收集关卡 -->
-    <a-card title="今日开放资源收集关卡" class="resource-card" :loading="loading">
-      <div v-if="error" class="error-message">
-        <a-alert :message="error" type="error" show-icon closable @close="error = ''" />
-      </div>
-
-      <div v-if="resourceData?.length" class="resource-list">
-        <div v-for="item in resourceData" :key="item.Value" class="resource-item">
-          <div class="stage-info">
-            <div class="stage-name">{{ item.Display }}</div>
-          </div>
-
-          <div class="drop-info">
-            <div class="drop-image">
-              <img
-                v-if="getMaterialImage(item.Drop)"
-                :src="getMaterialImage(item.Drop)"
-                :alt="item.DropName"
-                @error="handleImageError"
+            <div class="launcher-controls">
+              <a-select
+                v-model:value="selectedHomeTaskId"
+                class="launcher-select"
+                :options="schedulerTaskOptions"
+                :loading="schedulerTasksLoading"
+                size="large"
+                placeholder="选择任务"
+                @dropdown-visible-change="onSchedulerDropdownVisibleChange"
               />
-            </div>
-
-            <div class="drop-details">
-              <div class="drop-name">{{ item.DropName }}</div>
-              <div class="drop-tip">{{ item.Activity.Tip }}</div>
+              <a-button
+                type="primary"
+                size="large"
+                class="launcher-start"
+                :loading="startingHomeTask"
+                :disabled="!selectedHomeTaskId"
+                @click="startHomeTask"
+              >
+                <template #icon>
+                  <PlayCircleOutlined />
+                </template>
+                开始
+              </a-button>
             </div>
           </div>
-        </div>
-      </div>
+        </section>
+      </a-card>
 
-      <div v-else-if="!loading" class="empty-state">
-        <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
-      </div>
-    </a-card>
+      <a-card class="shortcut-card" title="常用入口">
+        <section class="quick-actions" aria-label="快捷入口">
+          <button
+            v-for="action in quickActions"
+            :key="action.path"
+            type="button"
+            class="quick-action"
+            @click="navigateTo(action.path)"
+          >
+            <span class="quick-action-icon">
+              <component :is="action.icon" />
+            </span>
+            <span class="quick-action-text">
+              <span class="quick-action-title">{{ action.title }}</span>
+              <span class="quick-action-desc">{{ action.description }}</span>
+            </span>
+          </button>
+        </section>
+      </a-card>
 
-    <!-- 代理状态 -->
-    <a-card title="代理状态" class="proxy-card" :loading="loading">
-      <template #extra>
-        <a-tag :color="getProxyStatusColor()"> {{ Object.keys(proxyData).length }} 个用户</a-tag>
-      </template>
+      <section class="overview-grid" aria-label="代理状态">
+        <a-card class="proxy-card" title="代理状态" :loading="loading">
 
-      <div v-if="Object.keys(proxyData).length > 0" class="proxy-list">
-        <a-row :gutter="16">
-          <a-col v-for="(proxy, username) in proxyData" :key="username" :span="8">
-            <div class="proxy-item">
-              <div class="proxy-header">
-                <div class="proxy-username">
-                  <UserOutlined class="user-icon" />
-                  <span class="username">{{ username }}</span>
+          <div v-if="Object.keys(proxyData).length > 0" class="proxy-list">
+            <a-row :gutter="[16, 16]">
+              <a-col
+                v-for="(proxy, username) in proxyData"
+                :key="username"
+                :xs="24"
+                :lg="12"
+                :xl="8"
+              >
+                <div class="proxy-item">
+                  <div class="proxy-header">
+                    <div class="proxy-username">
+                      <UserOutlined class="user-icon" />
+                      <span class="username">{{ username }}</span>
+                    </div>
+                  </div>
+
+                  <div class="proxy-stats">
+                    <div class="stat-item full-width">
+                      <a-statistic
+                        title="最后代理时间"
+                        :value="formatProxyDisplay(proxy.LastProxyDate)"
+                      />
+                    </div>
+                    <div class="stat-pair">
+                      <a-statistic title="代理次数" :value="proxy.ProxyTimes" />
+                      <a-statistic
+                        title="错误次数"
+                        :value="proxy.ErrorTimes"
+                        :value-style="{ color: proxy.ErrorTimes > 0 ? '#ff4d4f' : undefined }"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <!--                <div class="proxy-status">-->
-                <!--                  <a-tag :color="proxy.ErrorTimes > 0 ? 'error' : 'success'" size="small">-->
-                <!--                    {{ proxy.ErrorTimes > 0 ? '有错误' : '正常' }}-->
-                <!--                  </a-tag>-->
-                <!--                </div>-->
-              </div>
+              </a-col>
+            </a-row>
+          </div>
 
-              <div class="proxy-stats">
-                <!-- 第一行：最后代理时间，独占一行 -->
-                <div class="stat-item full-width">
-                  <a-statistic
-                    title="最后代理时间"
-                    :value="formatProxyDisplay(proxy.LastProxyDate)"
+          <div v-else-if="!loading" class="empty-state">
+            <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
+          </div>
+        </a-card>
+      </section>
+
+      <a-collapse
+        v-if="hasArknightsData"
+        v-model:active-key="activeCollapseKeys"
+        class="arknights-collapse"
+      >
+        <a-collapse-panel key="arknights" header="明日方舟活动信息">
+          <div v-if="error" class="error-message">
+            <a-alert :message="error" type="error" show-icon closable @close="error = ''" />
+          </div>
+
+          <a-card
+            v-if="activityData?.length"
+            title="当期活动关卡"
+            class="activity-card"
+            :loading="loading"
+          >
+            <div v-if="currentActivity && !loading" class="activity-info">
+              <div class="activity-header">
+                <div class="activity-left">
+                  <div class="activity-name">
+                    <span class="activity-title">{{ currentActivity.Tip }}</span>
+                  </div>
+                  <div class="activity-end-time">
+                    <ClockCircleOutlined class="time-icon" />
+                    <span class="time-label">结束时间：</span>
+                    <span class="time-value">{{ formatTime(currentActivity.UtcExpireTime) }}</span>
+                  </div>
+                </div>
+
+                <div class="activity-right">
+                  <a-statistic-countdown
+                    v-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'ended'"
+                    title=""
+                    :value="getCountdownValue(currentActivity.UtcExpireTime)"
+                    format="活动已结束"
+                    :value-style="{
+                      color: '#ff4d4f',
+                      fontWeight: 'bold',
+                      fontSize: '18px',
+                    }"
+                    @finish="onCountdownFinish"
+                  />
+
+                  <a-statistic-countdown
+                    v-else-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'warning'"
+                    title="当期活动剩余时间"
+                    :value="getCountdownValue(currentActivity.UtcExpireTime)"
+                    format="D 天 H 时 m 分 ss 秒 SSS 毫秒"
+                    class="rainbow-text"
+                    @finish="onCountdownFinish"
+                  />
+
+                  <a-statistic-countdown
+                    v-else
+                    title="当期活动剩余时间"
+                    :value="getCountdownValue(currentActivity.UtcExpireTime)"
+                    format="D 天 H 时 m 分"
+                    :value-style="{
+                      color: 'var(--ant-color-text)',
+                      fontWeight: '600',
+                      fontSize: '20px',
+                    }"
+                    @finish="onCountdownFinish"
                   />
                 </div>
+              </div>
+            </div>
 
-                <!-- 第二行：代理次数 和 错误次数 -->
-                <div class="stat-item half-width">
-                  <a-statistic title="代理次数" :value="proxy.ProxyTimes" />
+            <div class="activity-list">
+              <div v-for="item in activityData" :key="item.Value" class="activity-item">
+                <div class="stage-info">
+                  <div class="stage-name">{{ item.Display }}</div>
                 </div>
-                <div class="stat-item half-width">
-                  <a-statistic
-                    title="错误次数"
-                    :value="proxy.ErrorTimes"
-                    :value-style="{ color: proxy.ErrorTimes > 0 ? '#ff4d4f' : undefined }"
-                  />
+
+                <div class="drop-info">
+                  <div class="drop-image">
+                    <img
+                      v-if="getMaterialImage(item.Drop)"
+                      :src="getMaterialImage(item.Drop)"
+                      :alt="item.DropName"
+                      @error="handleImageError"
+                    />
+                  </div>
+
+                  <div class="drop-details">
+                    <div class="drop-name">{{ item.DropName }}</div>
+                  </div>
                 </div>
               </div>
-
-              <!--              &lt;!&ndash; 错误信息 &ndash;&gt;-->
-              <!--              <div-->
-              <!--                v-if="proxy.ErrorTimes > 0 && Object.keys(proxy.ErrorInfo).length > 0"-->
-              <!--                class="proxy-errors"-->
-              <!--              >-->
-              <!--                <a-alert message="错误信息" type="error" show-icon size="small" class="error-alert">-->
-              <!--                  <template #description>-->
-              <!--                    <div class="error-list">-->
-              <!--                      <div-->
-              <!--                        v-for="(errorMsg, errorKey) in proxy.ErrorInfo"-->
-              <!--                        :key="errorKey"-->
-              <!--                        class="error-item"-->
-              <!--                      >-->
-              <!--                        <strong>{{ errorKey }}:</strong> {{ errorMsg }}-->
-              <!--                      </div>-->
-              <!--                    </div>-->
-              <!--                  </template>-->
-              <!--                </a-alert>-->
-              <!--              </div>-->
             </div>
-          </a-col>
-        </a-row>
-      </div>
+          </a-card>
 
-      <div v-else-if="!loading" class="empty-state">
-        <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
-      </div>
-    </a-card>
+          <a-card title="今日开放资源收集关卡" class="resource-card" :loading="loading">
+            <div v-if="resourceData?.length" class="resource-list">
+              <div v-for="item in resourceData" :key="item.Value" class="resource-item">
+                <div class="stage-info">
+                  <div class="stage-name">{{ item.Display }}</div>
+                </div>
+
+                <div class="drop-info">
+                  <div class="drop-image">
+                    <img
+                      v-if="getMaterialImage(item.Drop)"
+                      :src="getMaterialImage(item.Drop)"
+                      :alt="item.DropName"
+                      @error="handleImageError"
+                    />
+                  </div>
+
+                  <div class="drop-details">
+                    <div class="drop-name">{{ item.DropName }}</div>
+                    <div class="drop-tip">{{ item.Activity.Tip }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-else-if="!loading" class="empty-state">
+              <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
+            </div>
+          </a-card>
+        </a-collapse-panel>
+      </a-collapse>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { ClockCircleOutlined, UserOutlined, BellOutlined } from '@ant-design/icons-vue'
+import {
+  BellOutlined,
+  CalendarOutlined,
+  ClockCircleOutlined,
+  ControlOutlined,
+  DatabaseOutlined,
+  FileTextOutlined,
+  PlayCircleOutlined,
+  UnorderedListOutlined,
+  UserOutlined,
+} from '@ant-design/icons-vue'
 import { Service } from '@/api/services/Service'
+import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import NoticeModal from '@/components/NoticeModal.vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { OpenAPI } from '@/api'
+import type { ComboBoxItem } from '@/api'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
+import { navigateTo } from '@/router'
+
+defineOptions({
+  name: 'HomeView',
+})
+
 const logger = window.electronAPI.getLogger('首页')
 
 interface ActivityInfo {
@@ -284,25 +335,85 @@ interface ResourceItem {
   }
 }
 
+const quickActions = [
+  {
+    title: '脚本管理',
+    description: '配置自动化脚本',
+    path: '/scripts',
+    icon: FileTextOutlined,
+  },
+  {
+    title: '计划管理',
+    description: '编排运行计划',
+    path: '/plans',
+    icon: CalendarOutlined,
+  },
+  {
+    title: '模拟器管理',
+    description: '维护设备环境',
+    path: '/emulators',
+    icon: DatabaseOutlined,
+  },
+  {
+    title: '调度队列',
+    description: '查看排队任务',
+    path: '/queue',
+    icon: UnorderedListOutlined,
+  },
+  {
+    title: '调度中心',
+    description: '控制执行状态',
+    path: '/scheduler',
+    icon: ControlOutlined,
+  },
+]
+
+const mockSchedulerTasks: ComboBoxItem[] = [
+  { label: '队列 - 每日自动化', value: 'mock-daily-queue' },
+  { label: '脚本 - 通用巡检', value: 'mock-general-check' },
+  { label: '队列 - 夜间批处理', value: 'mock-nightly-queue' },
+]
+
 const loading = ref(false)
+const schedulerTasksLoading = ref(false)
+const startingHomeTask = ref(false)
 const error = ref('')
+const activeCollapseKeys = ref<string[]>([])
 const activityData = ref<ActivityItem[]>([])
 const resourceData = ref<ResourceItem[]>([])
 const proxyData = ref<Record<string, ProxyInfo>>({})
+const schedulerTaskOptions = ref<ComboBoxItem[]>(mockSchedulerTasks)
+const selectedHomeTaskId = ref<string | null>(mockSchedulerTasks[0]?.value ?? null)
+const selectedHomeMode = ref<TaskCreateIn.mode>(TaskCreateIn.mode.AUTO_PROXY)
 
-// 公告系统相关状态
 const noticeVisible = ref(false)
 const noticeData = ref<Record<string, string>>({})
 const noticeLoading = ref(false)
 const { isBootstrapping } = useAppInitialization()
-
-// 音频播放器
 const { playSound } = useAudioPlayer()
 
-// 获取当前活动信息
 const currentActivity = computed(() => {
   if (!activityData.value.length) return null
   return activityData.value[0]?.Activity
+})
+
+const hasArknightsData = computed(() => {
+  return activityData.value.length > 0 || resourceData.value.length > 0
+})
+
+const greeting = computed(() => {
+  const hour = new Date().getHours()
+  if (hour >= 5 && hour < 11) {
+    return '早上好！欢迎使用 AUTO-MAS'
+  } else if (hour >= 11 && hour < 14) {
+    return '中午好！欢迎使用 AUTO-MAS'
+  } else if (hour >= 14 && hour < 18) {
+    return '下午好！欢迎使用 AUTO-MAS'
+  } else if (hour >= 18 && hour < 23) {
+    return '晚上好！欢迎使用 AUTO-MAS'
+  } else {
+    return '夜深了，欢迎使用 AUTO-MAS'
+  }
 })
 
 const formatProxyDisplay = (dateStr: string) => {
@@ -312,10 +423,8 @@ const formatProxyDisplay = (dateStr: string) => {
   return formatBackendDateTime(dateStr)
 }
 
-// 格式化时间显示 - 直接使用给定时间，不进行时区转换
 const formatTime = (timeString: string) => {
   try {
-    // 直接使用给定的时间字符串，因为已经是中国时间
     const date = new Date(timeString)
     return date.toLocaleString('zh-CN', {
       year: 'numeric',
@@ -329,7 +438,6 @@ const formatTime = (timeString: string) => {
   }
 }
 
-// 获取倒计时的目标时间戳
 const getCountdownValue = (expireTime: string) => {
   try {
     return new Date(expireTime).getTime()
@@ -338,7 +446,6 @@ const getCountdownValue = (expireTime: string) => {
   }
 }
 
-// 检查剩余时间状态：normal（>2天）、warning（<=2天>0）、ended（<=0）
 const getActivityTimeStatus = (expireTime: string): 'normal' | 'warning' | 'ended' => {
   try {
     const expire = new Date(expireTime)
@@ -353,10 +460,8 @@ const getActivityTimeStatus = (expireTime: string): 'normal' | 'warning' | 'ende
   }
 }
 
-// 倒计时结束回调
 const onCountdownFinish = () => {
   message.warning('活动已结束')
-  // 重新获取数据
   fetchActivityData()
 }
 
@@ -364,13 +469,82 @@ const getMaterialImage = (dropName: string) => {
   if (!dropName) {
     return ''
   }
-  // 直接拼接后端图片接口地址
   return `${OpenAPI.BASE}/api/res/materials/${dropName}.png`
 }
 
 const handleImageError = (event: Event) => {
   const img = event.target as HTMLImageElement
   img.style.display = 'none'
+}
+
+const fetchSchedulerTaskOptions = async (options?: { quiet?: boolean }) => {
+  schedulerTasksLoading.value = true
+
+  try {
+    const response = await Service.getTaskComboxApiInfoComboxTaskPost()
+    if (response.code === 200 && response.data?.length) {
+      schedulerTaskOptions.value = response.data
+      if (
+        !selectedHomeTaskId.value ||
+        !response.data.some(item => item.value === selectedHomeTaskId.value)
+      ) {
+        selectedHomeTaskId.value = response.data[0]?.value ?? null
+      }
+      return
+    }
+
+    schedulerTaskOptions.value = mockSchedulerTasks
+    selectedHomeTaskId.value = mockSchedulerTasks[0]?.value ?? null
+    if (!options?.quiet) {
+      message.warning('任务列表暂不可用，已显示占位任务')
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`获取首页任务列表失败: ${errorMsg}`)
+    schedulerTaskOptions.value = mockSchedulerTasks
+    selectedHomeTaskId.value = mockSchedulerTasks[0]?.value ?? null
+  } finally {
+    schedulerTasksLoading.value = false
+  }
+}
+
+const onSchedulerDropdownVisibleChange = (open: boolean) => {
+  if (open) {
+    fetchSchedulerTaskOptions({ quiet: true })
+  }
+}
+
+const startHomeTask = async () => {
+  if (!selectedHomeTaskId.value) {
+    message.error('请选择任务项')
+    return
+  }
+
+  if (selectedHomeTaskId.value.startsWith('mock-')) {
+    message.info('当前为首页占位任务，接入真实任务列表后可直接启动')
+    return
+  }
+
+  startingHomeTask.value = true
+  try {
+    const response = await Service.addTaskApiDispatchStartPost({
+      taskId: selectedHomeTaskId.value,
+      mode: selectedHomeMode.value,
+    })
+
+    if (response.code === 200) {
+      message.success('任务已开始')
+      await playSound('task_started')
+    } else {
+      message.error(response.message || '开始任务失败')
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`首页开始任务失败: ${errorMsg}`)
+    message.error('开始任务失败，请检查调度服务状态')
+  } finally {
+    startingHomeTask.value = false
+  }
 }
 
 const fetchActivityData = async () => {
@@ -401,38 +575,19 @@ const fetchActivityData = async () => {
   }
 }
 
-// 获取代理状态颜色
 const getProxyStatusColor = () => {
   const hasError = Object.values(proxyData.value).some(proxy => proxy.ErrorTimes > 0)
   return hasError ? 'error' : 'success'
 }
 
-const greeting = computed(() => {
-  const hour = new Date().getHours()
-  if (hour >= 5 && hour < 11) {
-    return '早上好，博士，咕~'
-  } else if (hour >= 11 && hour < 14) {
-    return '中午好，博士，咕~'
-  } else if (hour >= 14 && hour < 18) {
-    return '下午好，博士，咕~'
-  } else if (hour >= 18 && hour < 23) {
-    return '晚上好，博士，咕~'
-  } else {
-    return '夜深了，博士，请注意休息，咕~'
-  }
-})
-
-// 获取公告信息
 const fetchNoticeData = async () => {
   try {
     const response = await Service.getNoticeInfoApiInfoNoticeGetPost()
 
     if (response.code === 200) {
-      // 检查是否需要显示公告
       if (response.if_need_show && response.data && Object.keys(response.data).length > 0) {
         noticeData.value = response.data
         noticeVisible.value = true
-        // 播放公告展示音频
         await playSound('announcement_display')
       }
     } else {
@@ -441,26 +596,24 @@ const fetchNoticeData = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`获取公告失败: ${errorMsg}`)
+  } finally {
+    noticeLoading.value = false
   }
 }
 
-// 公告确认回调
 const onNoticeConfirmed = () => {
   noticeVisible.value = false
 }
 
-// 显示公告的处理函数
 const showNotice = async () => {
   noticeLoading.value = true
   try {
     const response = await Service.getNoticeInfoApiInfoNoticeGetPost()
 
     if (response.code === 200) {
-      // 忽略 if_need_show 字段，只要有公告数据就显示
       if (response.data && Object.keys(response.data).length > 0) {
         noticeData.value = response.data
         noticeVisible.value = true
-        // 手动查看公告时也播放音频
         await playSound('announcement_display')
       } else {
         message.info('暂无公告信息')
@@ -478,6 +631,7 @@ const showNotice = async () => {
 }
 
 const loadHomeData = () => {
+  fetchSchedulerTaskOptions({ quiet: true })
   fetchActivityData()
   fetchNoticeData()
 }
@@ -503,18 +657,29 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.header {
+.home-page {
+  max-width: 1480px;
+  margin: 0 auto;
+}
+
+.home-header {
   margin-bottom: 24px;
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 24px;
 }
 
-.header h1 {
-  margin: 0;
+.home-title {
+  margin: 0 0 4px;
   color: var(--ant-color-text);
   font-size: 24px;
   font-weight: 600;
+  letter-spacing: 0;
+}
+
+.home-subtitle {
+  color: var(--ant-color-text-secondary);
 }
 
 .header-actions {
@@ -527,31 +692,240 @@ onMounted(() => {
   min-width: 120px;
 }
 
-.activity-card,
-.resource-card,
-.proxy-card {
-  margin-bottom: 24px;
+.home-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
+.command-card,
+.shortcut-card,
+.proxy-card,
+.activity-card,
+.resource-card {
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.command-card :deep(.ant-card-body) {
+  padding: 24px;
+}
+
+.shortcut-card :deep(.ant-card-body) {
+  padding: 0;
+}
+
+.shortcut-card :deep(.ant-card-head-title),
+.proxy-card :deep(.ant-card-head-title),
 .activity-card :deep(.ant-card-head-title),
-.resource-card :deep(.ant-card-head-title),
-.proxy-card :deep(.ant-card-head-title) {
+.resource-card :deep(.ant-card-head-title) {
   font-size: 18px;
   font-weight: 600;
+}
+
+.command-panel {
+  min-height: 148px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: 24px;
+  color: var(--ant-color-text);
+}
+
+.command-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.command-kicker {
+  width: fit-content;
+  margin-bottom: 10px;
+  color: var(--ant-color-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.command-title {
+  font-size: 30px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: var(--ant-color-text);
+}
+
+.command-meta {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.command-meta span {
+  padding-right: 12px;
+  color: var(--ant-color-text-secondary);
+  border-right: 1px solid var(--ant-color-border);
+  font-size: 13px;
+}
+
+.command-meta span:last-child {
+  border-right: none;
+}
+
+.scheduler-launcher {
+  min-width: 0;
+  padding: 0 0 0 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-left: 1px solid var(--ant-color-border);
+}
+
+.launcher-header {
+  margin-bottom: 18px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.launcher-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ant-color-text);
+}
+
+.launcher-subtitle {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--ant-color-text-tertiary);
+}
+
+.launcher-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 112px;
+  gap: 12px;
+}
+
+.launcher-select,
+.launcher-start {
+  width: 100%;
+}
+
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0;
+}
+
+.quick-action {
+  min-height: 108px;
+  padding: 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+  color: var(--ant-color-text);
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--ant-color-border-secondary);
+  cursor: pointer;
+  transition:
+    color 0.16s ease,
+    transform 0.16s ease;
+}
+
+.quick-action:last-child {
+  border-right: none;
+}
+
+.quick-action:hover {
+  color: var(--ant-color-primary);
+  transform: translateY(-1px);
+}
+
+.quick-action:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: 2px;
+}
+
+.quick-action-icon {
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 42px;
+  color: var(--ant-color-primary);
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  font-size: 20px;
+}
+
+.quick-action-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.quick-action-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.quick-action-desc {
+  font-size: 13px;
+  color: var(--ant-color-text-tertiary);
+  white-space: normal;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.proxy-card {
+  width: 100%;
+}
+
+.arknights-collapse {
+  background: transparent;
+  border-radius: 8px;
+}
+
+.arknights-collapse :deep(.ant-collapse-content-box) {
+  padding: 18px 0 0;
+}
+
+.arknights-collapse :deep(.ant-collapse-header) {
+  align-items: center;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.activity-card {
+  margin-bottom: 16px;
+}
+
+.resource-card {
+  margin-bottom: 0;
 }
 
 .resource-list {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 16px;
+  gap: 12px;
 }
 
 .resource-item,
 .activity-item {
+  min-height: 82px;
   display: flex;
   align-items: center;
   padding: 16px;
-  background: var(--ant-color-bg-container);
   border: 1px solid var(--ant-color-border);
   border-radius: 8px;
   transition: all 0.2s ease;
@@ -576,7 +950,6 @@ onMounted(() => {
 .activity-info {
   margin-bottom: 24px;
   padding: 16px;
-  background: var(--ant-color-bg-container);
   border: 1px solid var(--ant-color-border);
   border-radius: 8px;
 }
@@ -660,6 +1033,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   flex: 2;
+  min-width: 0;
 }
 
 .drop-image {
@@ -698,12 +1072,17 @@ onMounted(() => {
   padding: 40px 0;
 }
 
+.empty-image {
+  max-width: 180px;
+  width: 48%;
+  opacity: 0.82;
+}
+
 .proxy-list .proxy-item {
+  min-height: 164px;
   padding: 16px;
-  background: var(--ant-color-bg-container);
   border: 1px solid var(--ant-color-border);
   border-radius: 8px;
-  margin-bottom: 16px;
 }
 
 .proxy-header {
@@ -714,6 +1093,7 @@ onMounted(() => {
 }
 
 .proxy-username {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -724,8 +1104,12 @@ onMounted(() => {
 }
 
 .username {
+  min-width: 0;
   font-weight: 600;
   color: var(--ant-color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .proxy-stats {
@@ -738,14 +1122,9 @@ onMounted(() => {
   grid-column: 1 / -1;
 }
 
-.stat-item.half-width {
-  display: inline-block;
-}
-
-.proxy-stats .stat-item.half-width:nth-child(2),
-.proxy-stats .stat-item.half-width:nth-child(3) {
-  display: inline-grid;
-  grid-template-columns: 1fr 1fr;
+.stat-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -770,7 +1149,6 @@ onMounted(() => {
   }
 }
 
-/* 响应式设计 */
 @media (max-width: 1500px) {
   .activity-list,
   .resource-list {
@@ -779,6 +1157,33 @@ onMounted(() => {
 }
 
 @media (max-width: 1240px) {
+  .command-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .scheduler-launcher {
+    max-width: 100%;
+    padding: 18px 0 0;
+    border-left: none;
+    border-top: 1px solid var(--ant-color-border);
+  }
+
+  .quick-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .quick-action:nth-child(3n) {
+    border-right: none;
+  }
+
+  .quick-action:nth-child(n + 4) {
+    border-top: 1px solid var(--ant-color-border-secondary);
+  }
+
+  .overview-grid {
+    grid-template-columns: 1fr;
+  }
+
   .activity-list,
   .resource-list {
     grid-template-columns: repeat(3, 1fr);
@@ -786,15 +1191,74 @@ onMounted(() => {
 }
 
 @media (max-width: 800px) {
-  .header {
+  .home-header {
     flex-direction: column;
     gap: 16px;
     align-items: stretch;
   }
 
+  .command-card :deep(.ant-card-body) {
+    padding: 18px;
+  }
+
+  .command-title {
+    font-size: 24px;
+  }
+
+  .quick-actions,
   .activity-list,
   .resource-list {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quick-action:nth-child(2n) {
+    border-right: none;
+  }
+
+  .quick-action:nth-child(3n) {
+    border-right: 1px solid var(--ant-color-border-secondary);
+  }
+
+  .quick-action:nth-child(n + 3) {
+    border-top: 1px solid var(--ant-color-border-secondary);
+  }
+
+  .activity-header {
+    flex-direction: column;
+  }
+
+  .activity-right {
+    text-align: left;
+  }
+}
+
+@media (max-width: 560px) {
+  .launcher-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .quick-actions,
+  .activity-list,
+  .resource-list {
+    grid-template-columns: 1fr;
+  }
+
+  .quick-action {
+    min-height: 82px;
+    border-right: none;
+    border-top: 1px solid var(--ant-color-border-secondary);
+  }
+
+  .quick-action:nth-child(3n) {
+    border-right: none;
+  }
+
+  .quick-action:first-child {
+    border-top: none;
+  }
+
+  .stat-pair {
+    grid-template-columns: 1fr;
   }
 }
 </style>
