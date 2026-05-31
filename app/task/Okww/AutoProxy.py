@@ -29,12 +29,14 @@ from app.models.task import TaskExecuteBase, ScriptItem, UserItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import OkwwConfig, OkwwUserConfig
 from app.services import Notify, System
-from app.task.Okww.wuthering_game_path import WUWA_CLIENT_PROCESS_NAME
 from app.utils import get_logger, ProcessManager, ProcessInfo, is_process_running
 from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
 
 logger = get_logger("OK-WW 自动代理")
+
+# 鸣潮 PC 客户端窗口进程名固定，MAS 接管启动前据此避免重复拉起
+_WUWA_CLIENT_PROCESS = "Client-Win64-Shipping.exe"
 
 
 def _yes_no(value: bool) -> str:
@@ -228,13 +230,6 @@ class AutoProxyTask(TaskExecuteBase):
             )
         logger.success("OK-WW 配置文件已更新")
 
-    def _game_path_summary(self) -> str:
-        gp = self.game_path
-        path_text = str(gp) if str(gp) not in ("", ".") else "（未配置）"
-        if gp.is_file():
-            return f"{path_text}（有效）"
-        return f"{path_text}（无效或不存在）"
-
     def _game_config_summary_lines(self) -> list[str]:
         """游戏配置摘要行（调度台展示用）。"""
 
@@ -244,7 +239,6 @@ class AutoProxyTask(TaskExecuteBase):
             f"  启用游戏配置: {_yes_no(bool(self.script_config.get('Game', 'Enabled')))}",
             f"  任务前启动游戏: {_yes_no(bool(self.script_config.get('Game', 'LaunchBeforeTask')))}",
             f"  任务后关闭游戏: {_yes_no(bool(self.script_config.get('Game', 'CloseOnFinish')))}",
-            f"  游戏路径: {self._game_path_summary()}",
             f"  启动参数: {game_args or '（无）'}",
         ]
 
@@ -258,9 +252,7 @@ class AutoProxyTask(TaskExecuteBase):
     async def _log_game_config_summary(self) -> None:
         """在调度台开头输出当前脚本的游戏相关配置，便于用户确认与问题排查。"""
 
-        summary = "\n".join(self._game_config_summary_lines())
-        self.script_info.log = summary
-        logger.info(summary)
+        self.script_info.log = "\n".join(self._game_config_summary_lines())
         await asyncio.sleep(0)
 
     async def _mas_launch_game_before_task(self) -> None:
@@ -271,9 +263,9 @@ class AutoProxyTask(TaskExecuteBase):
 
         if isinstance(self.game_manager, ProcessManager) and game_type == "Client":
             await self._push_dispatch_log(
-                f"正在检查鸣潮客户端进程 ({WUWA_CLIENT_PROCESS_NAME})..."
+                f"正在检查鸣潮客户端进程 ({_WUWA_CLIENT_PROCESS})..."
             )
-            if is_process_running(WUWA_CLIENT_PROCESS_NAME):
+            if is_process_running(_WUWA_CLIENT_PROCESS):
                 logger.info(
                     "检测到鸣潮客户端进程已在运行，跳过由 MAS 重复启动游戏"
                 )
@@ -615,16 +607,11 @@ class AutoProxyTask(TaskExecuteBase):
                 gp = self.game_path
                 if gp.is_file():
                     await System.kill_process(gp)
-                else:
-                    logger.warning(
-                        f"游戏路径无效或不存在，跳过按路径结束进程: {gp}"
-                    )
         except Exception as e:
             logger.exception(f"关闭游戏进程失败: {e}")
 
     async def kill_managed_process(self, *, kill_game: bool = True) -> None:
         """中止 ok-ww；kill_game 为真时结束游戏（失败重试恒为真；成功收尾看 CloseOnFinish）"""
-        logger.info(f"清理 OK-WW 相关进程（结束游戏: {_yes_no(kill_game)}）")
         await self._kill_okww_process()
         if kill_game:
             await self._kill_game_process()
