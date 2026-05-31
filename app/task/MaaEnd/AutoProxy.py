@@ -656,7 +656,9 @@ class AutoProxyTask(TaskExecuteBase):
 
                     if unfinished_tasks:
                         logger.info(f"MaaEnd 未完成任务列表: {unfinished_tasks}")
-                        self.cur_user_log.status = "MaaEnd 部分任务执行失败"
+                        self.cur_user_log.status = (
+                            f"MaaEnd 部分任务执行失败: {'、'.join(unfinished_tasks)}"
+                        )
                     else:
                         self.cur_user_log.status = "Success!"
                 except:
