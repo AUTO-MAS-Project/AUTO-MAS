@@ -230,13 +230,6 @@ class AutoProxyTask(TaskExecuteBase):
             )
         logger.success("OK-WW 配置文件已更新")
 
-    def _game_path_summary(self) -> str:
-        gp = self.game_path
-        path_text = str(gp) if str(gp) not in ("", ".") else "（未配置）"
-        if gp.is_file():
-            return f"{path_text}（有效）"
-        return f"{path_text}（无效或不存在）"
-
     def _game_config_summary_lines(self) -> list[str]:
         """游戏配置摘要行（调度台展示用）。"""
 
@@ -246,7 +239,6 @@ class AutoProxyTask(TaskExecuteBase):
             f"  启用游戏配置: {_yes_no(bool(self.script_config.get('Game', 'Enabled')))}",
             f"  任务前启动游戏: {_yes_no(bool(self.script_config.get('Game', 'LaunchBeforeTask')))}",
             f"  任务后关闭游戏: {_yes_no(bool(self.script_config.get('Game', 'CloseOnFinish')))}",
-            f"  游戏路径: {self._game_path_summary()}",
             f"  启动参数: {game_args or '（无）'}",
         ]
 
@@ -260,9 +252,7 @@ class AutoProxyTask(TaskExecuteBase):
     async def _log_game_config_summary(self) -> None:
         """在调度台开头输出当前脚本的游戏相关配置，便于用户确认与问题排查。"""
 
-        summary = "\n".join(self._game_config_summary_lines())
-        self.script_info.log = summary
-        logger.info(summary)
+        self.script_info.log = "\n".join(self._game_config_summary_lines())
         await asyncio.sleep(0)
 
     async def _mas_launch_game_before_task(self) -> None:
@@ -617,16 +607,11 @@ class AutoProxyTask(TaskExecuteBase):
                 gp = self.game_path
                 if gp.is_file():
                     await System.kill_process(gp)
-                else:
-                    logger.warning(
-                        f"游戏路径无效或不存在，跳过按路径结束进程: {gp}"
-                    )
-        except Exception as e:
-            logger.warning(f"结束游戏进程时出现异常: {e}")
+        except Exception:
+            pass
 
     async def kill_managed_process(self, *, kill_game: bool = True) -> None:
         """中止 ok-ww；kill_game 为真时结束游戏（失败重试恒为真；成功收尾看 CloseOnFinish）"""
-        logger.info(f"清理 OK-WW 相关进程（结束游戏: {_yes_no(kill_game)}）")
         await self._kill_okww_process()
         if kill_game:
             await self._kill_game_process()

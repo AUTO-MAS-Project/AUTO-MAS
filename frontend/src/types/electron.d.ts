@@ -100,7 +100,6 @@ export interface ElectronAPI {
   openFile: (filePath: string) => Promise<void>
   showItemInFolder: (filePath: string) => Promise<void>
   readFile: (filePath: string) => Promise<string>
-  fileExists: (filePath: string) => Promise<boolean>
 
   // 主题信息获取
   getThemeInfo: () => Promise<{
