@@ -594,8 +594,8 @@ class AutoProxyTask(TaskExecuteBase):
         try:
             await self.okww_process_manager.kill()
             await System.kill_process(self.script_exe_path)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception(f"中止 OK-WW 进程失败: {e}")
 
     async def _kill_game_process(self) -> None:
         """结束游戏：不依赖 LaunchBeforeTask（可自行开游戏，由 CloseOnFinish/失败重试触发）"""
@@ -607,8 +607,8 @@ class AutoProxyTask(TaskExecuteBase):
                 gp = self.game_path
                 if gp.is_file():
                     await System.kill_process(gp)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception(f"关闭游戏进程失败: {e}")
 
     async def kill_managed_process(self, *, kill_game: bool = True) -> None:
         """中止 ok-ww；kill_game 为真时结束游戏（失败重试恒为真；成功收尾看 CloseOnFinish）"""
