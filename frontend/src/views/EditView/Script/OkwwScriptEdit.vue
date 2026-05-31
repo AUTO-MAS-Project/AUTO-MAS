@@ -169,7 +169,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="okwwConfig.Game.Path"
-                    placeholder="请选择游戏根目录（自动匹配到 Client-Win64-Shipping.exe）"
+                    :placeholder="`请选择游戏根目录（自动匹配到 ${WUWA_CLIENT_PROCESS_NAME}）`"
                     size="large"
                     class="path-input"
                     readonly
@@ -314,8 +314,9 @@ import { type OkwwConfig } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
 import {
   buildWutheringClientExePath,
-  validateWutheringGameRootSelection,
-} from '@/utils/wutheringGamePath'
+  WUWA_CLIENT_PROCESS_NAME,
+} from './okww/wutheringGamePath'
+import { validateWutheringGameRootSelection } from './okww/validateGameRoot'
 
 const logger = window.electronAPI.getLogger('ok-ww脚本编辑')
 const route = useRoute()
@@ -499,14 +500,11 @@ const selectGameRootPath = async () => {
         Type: 'Client',
       },
     })
-    if (success) {
-      logger.info('配置已保存: Game.Path')
-    }
+    if (!success) return
 
-    const validation = await validateWutheringGameRootSelection(
-      picked,
-      path => window.electronAPI.fileExists(path),
-    )
+    logger.info('配置已保存: Game.Path')
+
+    const validation = await validateWutheringGameRootSelection(picked)
     if (validation.valid) {
       message.success('鸣潮游戏路径已自动匹配')
     } else {

@@ -29,14 +29,12 @@ from app.models.task import TaskExecuteBase, ScriptItem, UserItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import OkwwConfig, OkwwUserConfig
 from app.services import Notify, System
+from app.task.Okww.wuthering_game_path import WUWA_CLIENT_PROCESS_NAME
 from app.utils import get_logger, ProcessManager, ProcessInfo, is_process_running
 from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
 
 logger = get_logger("OK-WW 自动代理")
-
-# 鸣潮 PC 客户端窗口进程名固定，MAS 接管启动前据此避免重复拉起
-_WUWA_CLIENT_PROCESS = "Client-Win64-Shipping.exe"
 
 
 def _yes_no(value: bool) -> str:
@@ -273,9 +271,9 @@ class AutoProxyTask(TaskExecuteBase):
 
         if isinstance(self.game_manager, ProcessManager) and game_type == "Client":
             await self._push_dispatch_log(
-                f"正在检查鸣潮客户端进程 ({_WUWA_CLIENT_PROCESS})..."
+                f"正在检查鸣潮客户端进程 ({WUWA_CLIENT_PROCESS_NAME})..."
             )
-            if is_process_running(_WUWA_CLIENT_PROCESS):
+            if is_process_running(WUWA_CLIENT_PROCESS_NAME):
                 logger.info(
                     "检测到鸣潮客户端进程已在运行，跳过由 MAS 重复启动游戏"
                 )
@@ -604,8 +602,8 @@ class AutoProxyTask(TaskExecuteBase):
         try:
             await self.okww_process_manager.kill()
             await System.kill_process(self.script_exe_path)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception(f"中止 OK-WW 进程失败: {e}")
 
     async def _kill_game_process(self) -> None:
         """结束游戏：不依赖 LaunchBeforeTask（可自行开游戏，由 CloseOnFinish/失败重试触发）"""
@@ -622,7 +620,7 @@ class AutoProxyTask(TaskExecuteBase):
                         f"游戏路径无效或不存在，跳过按路径结束进程: {gp}"
                     )
         except Exception as e:
-            logger.warning(f"结束游戏进程时出现异常: {e}")
+            logger.exception(f"关闭游戏进程失败: {e}")
 
     async def kill_managed_process(self, *, kill_game: bool = True) -> None:
         """中止 ok-ww；kill_game 为真时结束游戏（失败重试恒为真；成功收尾看 CloseOnFinish）"""
