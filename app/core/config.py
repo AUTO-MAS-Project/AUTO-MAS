@@ -591,7 +591,13 @@ class AppConfig(GlobalConfig):
     ) -> None:
         """更新脚本配置"""
 
-        logger.info(f"更新脚本配置: {script_id}")
+        changed_keys = [
+            f"{group}.{name}" for group, items in data.items() for name in items
+        ]
+        logger.info(
+            f"更新脚本配置: {script_id}"
+            + (f", 字段: {', '.join(changed_keys)}" if changed_keys else "")
+        )
 
         uid = uuid.UUID(script_id)
 
