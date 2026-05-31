@@ -169,7 +169,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="okwwConfig.Game.Path"
-                    :placeholder="`请选择游戏根目录（自动匹配到 ${WUWA_CLIENT_PROCESS_NAME}）`"
+                    placeholder="请选择游戏根目录（自动匹配到 Client-Win64-Shipping.exe）"
                     size="large"
                     class="path-input"
                     readonly
@@ -312,11 +312,6 @@ import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { type OkwwConfig } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
-import {
-  buildWutheringClientExePath,
-  WUWA_CLIENT_PROCESS_NAME,
-} from './okww/wutheringGamePath'
-import { validateWutheringGameRootSelection } from './okww/validateGameRoot'
 
 const logger = window.electronAPI.getLogger('ok-ww脚本编辑')
 const route = useRoute()
@@ -442,7 +437,6 @@ const applyRootPathDefaults = async (rootPath: string) => {
       },
     })
     if (success) {
-      logger.info('ok-ww 根路径及关联路径已保存')
       message.success('ok-ww 路径已自动匹配')
     }
   } finally {
@@ -486,31 +480,25 @@ const selectRootPath = async () => {
   await applyRootPathDefaults(normalized)
 }
 
+const buildGameClientPath = (gameRootPath: string) => {
+  const norm = gameRootPath.replace(/\\/g, '/').replace(/\/+$/g, '')
+  return `${norm}/Client/Binaries/Win64/Client-Win64-Shipping.exe`
+}
+
 const selectGameRootPath = async () => {
   if (!okwwConfig.Game.Enabled) return
   const picked = await window.electronAPI.selectFolder({ title: '选择游戏根目录（Wuthering Waves Game）' })
   if (!picked) return
-  okwwConfig.Game.Path = buildWutheringClientExePath(picked)
+  okwwConfig.Game.Path = buildGameClientPath(picked)
   okwwConfig.Game.Type = 'Client'
   isSaving.value = true
   try {
-    const success = await updateScript(scriptId, {
+    await updateScript(scriptId, {
       Game: {
         Path: okwwConfig.Game.Path,
         Type: 'Client',
       },
     })
-    if (!success) return
-
-    logger.info('配置已保存: Game.Path')
-
-    const validation = await validateWutheringGameRootSelection(picked)
-    if (validation.valid) {
-      message.success('鸣潮游戏路径已自动匹配')
-    } else {
-      message.error(validation.message)
-      logger.warn(`游戏根目录选择可能有误: ${validation.message}`)
-    }
   } finally {
     isSaving.value = false
   }
