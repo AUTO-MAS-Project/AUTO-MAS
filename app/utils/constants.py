@@ -1005,6 +1005,22 @@ TASK_MODE_ZH = {
 APPDATA_PATH = Path(os.getenv("APPDATA") or "")
 """APPDATA路径"""
 
+FORBIDDEN_PATH_PREFIXES: tuple[Path, ...] = tuple(
+    Path(env_value).resolve()
+    for key in ("SystemRoot",)
+    for env_value in [os.environ.get(key, r"C:\Windows")]
+    if env_value and Path(env_value).is_dir()
+)
+"""禁止作为配置路径的前缀目录（自身、子目录或父目录均非法，如系统目录；校验时另含当前工作目录）"""
+
+FORBIDDEN_PATH_EXACT: tuple[Path, ...] = tuple(
+    Path(env_value).resolve()
+    for key in ("ProgramFiles", "ProgramFiles(x86)")
+    for env_value in [os.environ.get(key, "")]
+    if env_value and Path(env_value).is_dir()
+)
+"""禁止精确匹配的目录根（仅根目录非法，子目录如软件配置路径仍允许）"""
+
 EMULATOR_SPLASH_ADS_PATH_BOOK = {
     "mumu": [
         APPDATA_PATH / "Netease/MuMuPlayer-12.0/data/startupImage",
