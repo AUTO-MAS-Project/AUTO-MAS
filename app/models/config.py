@@ -589,7 +589,7 @@ class MaaConfig(ConfigBase):
         ## MAA 脚本名称
         self.Info_Name = ConfigItem("Info", "Name", "新 MAA 脚本")
         ## MAA 路径
-        self.Info_Path = ConfigItem("Info", "Path", str(Path.cwd()), FolderValidator())
+        self.Info_Path = ConfigItem("Info", "Path", "", FolderValidator())
 
         ## Emulator --------------------------------------------------------
         ## 模拟器 ID
@@ -867,7 +867,7 @@ class MaaEndConfig(ConfigBase):
         ## MaaEnd 脚本名称
         self.Info_Name = ConfigItem("Info", "Name", "新 MaaEnd 脚本")
         ## MaaEnd 路径
-        self.Info_Path = ConfigItem("Info", "Path", str(Path.cwd()), FolderValidator())
+        self.Info_Path = ConfigItem("Info", "Path", "", FolderValidator())
 
         ## Run -------------------------------------------------------------
         ## 运行超时阈值
@@ -899,7 +899,7 @@ class MaaEndConfig(ConfigBase):
             ),
         )
         ## 终末地游戏路径
-        self.Game_Path = ConfigItem("Game", "Path", str(Path.cwd()), FileValidator())
+        self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
         ## 终末地游戏启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 等待时间（秒）
@@ -1273,7 +1273,7 @@ class SrcConfig(ConfigBase):
         ## SRC 脚本名称
         self.Info_Name = ConfigItem("Info", "Name", "新 SRC 脚本")
         ## SRC 路径
-        self.Info_Path = ConfigItem("Info", "Path", str(Path.cwd()), FolderValidator())
+        self.Info_Path = ConfigItem("Info", "Path", "", FolderValidator())
 
         ## Emulator --------------------------------------------------------
         ## 模拟器 ID
@@ -1391,7 +1391,7 @@ class GeneralUserConfig(ConfigBase):
         )
         ## 任务前脚本路径
         self.Info_ScriptBeforeTask = ConfigItem(
-            "Info", "ScriptBeforeTask", str(Path.cwd()), FileValidator()
+            "Info", "ScriptBeforeTask", "", FileValidator()
         )
         ## 是否在任务后执行脚本
         self.Info_IfScriptAfterTask = ConfigItem(
@@ -1399,7 +1399,7 @@ class GeneralUserConfig(ConfigBase):
         )
         ## 任务后脚本路径
         self.Info_ScriptAfterTask = ConfigItem(
-            "Info", "ScriptAfterTask", str(Path.cwd()), FileValidator()
+            "Info", "ScriptAfterTask", "", FileValidator()
         )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
@@ -1510,15 +1510,11 @@ class GeneralConfig(ConfigBase):
         ## 脚本名称
         self.Info_Name = ConfigItem("Info", "Name", "新通用脚本")
         ## 根目录路径
-        self.Info_RootPath = ConfigItem(
-            "Info", "RootPath", str(Path.cwd()), FileValidator()
-        )
+        self.Info_RootPath = ConfigItem("Info", "RootPath", "", FileValidator())
 
         ## Script ----------------------------------------------------------
         ## 脚本路径
-        self.Script_ScriptPath = ConfigItem(
-            "Script", "ScriptPath", str(Path.cwd()), FileValidator()
-        )
+        self.Script_ScriptPath = ConfigItem("Script", "ScriptPath", "", FileValidator())
         ## 脚本参数
         self.Script_Arguments = ConfigItem(
             "Script", "Arguments", "", AdvancedArgumentValidator()
@@ -1535,9 +1531,7 @@ class GeneralConfig(ConfigBase):
         self.Script_TrackProcessCmdline = ConfigItem(
             "Script", "TrackProcessCmdline", "", ArgumentValidator()
         )
-        self.Script_ConfigPath = ConfigItem(
-            "Script", "ConfigPath", str(Path.cwd()), FileValidator()
-        )
+        self.Script_ConfigPath = ConfigItem("Script", "ConfigPath", "", FileValidator())
         ## 配置路径模式
         self.Script_ConfigPathMode = ConfigItem(
             "Script", "ConfigPathMode", "File", OptionsValidator(["File", "Folder"])
@@ -1550,9 +1544,7 @@ class GeneralConfig(ConfigBase):
             OptionsValidator(["Never", "Success", "Failure", "Always"]),
         )
         ## 日志路径
-        self.Script_LogPath = ConfigItem(
-            "Script", "LogPath", str(Path.cwd()), FileValidator()
-        )
+        self.Script_LogPath = ConfigItem("Script", "LogPath", "", FileValidator())
         ## 日志路径格式
         self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "%Y-%m-%d")
         ## 日志时间戳开始位置
@@ -1580,7 +1572,7 @@ class GeneralConfig(ConfigBase):
             "Game", "Type", "Emulator", OptionsValidator(["Emulator", "Client", "URL"])
         )
         ## 游戏路径
-        self.Game_Path = ConfigItem("Game", "Path", str(Path.cwd()), FileValidator())
+        self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
         ## 自定义协议URL
         self.Game_URL = ConfigItem("Game", "URL", "")
         ## 游戏进程名称
