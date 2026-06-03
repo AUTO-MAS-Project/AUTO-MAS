@@ -144,6 +144,10 @@
             </section>
           </a-card>
 
+          <section v-else-if="moduleKey === 'satellite'" class="satellite-animation-section">
+            <SatelliteAnimation />
+          </section>
+
           <section v-else-if="moduleKey === 'proxy'" class="overview-grid" aria-label="代理状态">
             <a-card class="proxy-card" title="代理状态" :loading="loading">
               <div v-if="Object.keys(proxyData).length > 0" class="proxy-list">
@@ -346,6 +350,7 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import NoticeModal from '@/components/NoticeModal.vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { useAppInitialization } from '@/composables/useAppInitialization'
+import SatelliteAnimation from '@/components/SatelliteAnimation.vue'
 import { OpenAPI } from '@/api'
 import type { ComboBoxItem } from '@/api'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
@@ -399,7 +404,7 @@ interface ResourceItem {
   }
 }
 
-type HomeModuleKey = 'command' | 'quick' | 'proxy' | 'arknights'
+type HomeModuleKey = 'command' | 'quick' | 'satellite' | 'proxy' | 'arknights'
 type HomeModuleDirection = 'up' | 'down'
 
 interface HomeLayoutConfig {
@@ -408,10 +413,17 @@ interface HomeLayoutConfig {
 }
 
 const HOME_LAYOUT_STORAGE_KEY = 'auto-mas.home.layout'
-const defaultHomeModuleOrder: HomeModuleKey[] = ['command', 'quick', 'proxy', 'arknights']
+const defaultHomeModuleOrder: HomeModuleKey[] = [
+  'command',
+  'quick',
+  'satellite',
+  'proxy',
+  'arknights',
+]
 const moduleTitleMap: Record<HomeModuleKey, string> = {
   command: '快速开始',
   quick: '常用入口',
+  satellite: '卫星环绕',
   proxy: '代理状态',
   arknights: '明日方舟活动信息',
 }
@@ -870,6 +882,11 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 24px;
+}
+
+.satellite-animation-section {
+  margin-top: 0px;
+  width: 100%;
 }
 
 .home-module {
