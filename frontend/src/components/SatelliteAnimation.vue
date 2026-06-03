@@ -1,0 +1,651 @@
+<template>
+  <div ref="container" class="satellite-container">
+    <div v-if="loading" class="loading-spinner"></div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { useTheme } from '@/composables/useTheme'
+import { useScriptApi } from '@/composables/useScriptApi'
+import { satelliteModules, centerIconUrl } from '@/composables/satellite-config'
+import type { ScriptType } from '@/types/script'
+import { Service, type QueueGetIn, type QueueItemGetIn } from '@/api'
+import * as THREE from 'three'
+
+const CONFIG = {
+  containerHeight: 400,
+  orbitRadiusX: 400,
+  orbitRadiusY: 170,
+  orbitTilt: 0.35,
+  orbitOpacity: 0.4,
+  centerCardSize: 90,
+  centerCardDepth: 10,
+  satelliteCardSize: 60,
+  satelliteCardDepth: 8,
+  satelliteOrbitSpeed: 0.0006,
+  satelliteFloatAmplitude: 10,
+  satelliteFloatSpeed: 1.2,
+  centerFloatAmplitude: 4,
+  centerFloatSpeed: 0.8,
+  cameraFov: 50,
+  cardAppearDelay: 150,
+  cardAppearDuration: 400,
+  glowSizeMultiplier: 3.5,
+  glowZOffset: -5,
+  statusUpdateInterval: 10000,
+}
+
+const container = ref<HTMLDivElement | null>(null)
+const loading = ref(true)
+
+let orbitScene: THREE.Scene | null = null
+let glowScene: THREE.Scene | null = null
+let cardScene: THREE.Scene | null = null
+let camera: THREE.PerspectiveCamera | null = null
+let orbitRenderer: THREE.WebGLRenderer | null = null
+let glowRenderer: THREE.WebGLRenderer | null = null
+let cardRenderer: THREE.WebGLRenderer | null = null
+let animationFrameId: number | null = null
+let satellites: THREE.Mesh[] = []
+let orbitLine: THREE.Line | null = null
+let centerCard: THREE.Mesh | null = null
+
+interface SatelliteState {
+  type: ScriptType
+  glowSprite: THREE.Sprite | null
+  status: 'idle' | 'queued'
+}
+let satelliteStates: Map<THREE.Mesh, SatelliteState> = new Map()
+let centerGlowSprite: THREE.Sprite | null = null
+let updateInterval: ReturnType<typeof setInterval> | null = null
+const centerGlowMode = ref<'rainbow' | 'green'>('green')
+
+const { isDark } = useTheme()
+const { getScripts } = useScriptApi()
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+  if (animationFrameId !== null) {
+    cancelAnimationFrame(animationFrameId)
+  }
+  if (orbitRenderer && container.value) {
+    const el = orbitRenderer.domElement
+    if (el.parentElement === container.value) container.value.removeChild(el)
+  }
+  if (glowRenderer && container.value) {
+    const el = glowRenderer.domElement
+    if (el.parentElement === container.value) container.value.removeChild(el)
+  }
+  if (cardRenderer && container.value) {
+    const el = cardRenderer.domElement
+    if (el.parentElement === container.value) container.value.removeChild(el)
+  }
+  orbitScene?.clear()
+  glowScene?.clear()
+  cardScene?.clear()
+
+  satelliteStates.forEach(state => {
+    state.glowSprite?.material.map?.dispose()
+    state.glowSprite?.material.dispose()
+    state.glowSprite?.dispose()
+  })
+  satelliteStates.clear()
+
+  if (centerGlowSprite) {
+    centerGlowSprite.material.map?.dispose()
+    centerGlowSprite.material.dispose()
+    centerGlowSprite.dispose()
+    centerGlowSprite = null
+  }
+
+  if (updateInterval) {
+    clearInterval(updateInterval)
+    updateInterval = null
+  }
+})
+
+function createGlowTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas')
+  canvas.width = 128
+  canvas.height = 128
+  const ctx = canvas.getContext('2d')!
+  const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64)
+  gradient.addColorStop(0, 'rgba(255, 255, 255, 0.85)')
+  gradient.addColorStop(0.15, 'rgba(255, 255, 255, 0.55)')
+  gradient.addColorStop(0.35, 'rgba(255, 255, 255, 0.2)')
+  gradient.addColorStop(0.6, 'rgba(255, 255, 255, 0.05)')
+  gradient.addColorStop(1, 'rgba(255, 255, 255, 0)')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, 128, 128)
+  return new THREE.CanvasTexture(canvas)
+}
+
+async function loadImageToCanvas(url: string): Promise<HTMLCanvasElement> {
+  return new Promise(resolve => {
+    const img = new Image()
+    let settled = false
+    const finish = (canvas: HTMLCanvasElement) => {
+      if (settled) return
+      settled = true
+      resolve(canvas)
+    }
+    const fallback = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = 64
+      canvas.height = 64
+      const ctx = canvas.getContext('2d')!
+      ctx.fillStyle = '#888888'
+      ctx.fillRect(0, 0, 64, 64)
+      finish(canvas)
+    }
+    const timer = window.setTimeout(fallback, 5000)
+    img.onload = () => {
+      window.clearTimeout(timer)
+      const canvas = document.createElement('canvas')
+      canvas.width = img.width
+      canvas.height = img.height
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(img, 0, 0)
+      finish(canvas)
+    }
+    img.onerror = () => {
+      window.clearTimeout(timer)
+      fallback()
+    }
+    img.src = url
+  })
+}
+
+function getThemeColors() {
+  if (isDark.value) {
+    return {
+      sideColor: '#2a2a2a',
+      ambientColor: 0x404040,
+      light1Color: 0x999999,
+      light2Color: 0x777777,
+      orbitColor: 0x555555,
+    }
+  }
+  return {
+    sideColor: '#f0f0f0',
+    ambientColor: 0xffffff,
+    light1Color: 0xffffff,
+    light2Color: 0xdddddd,
+    orbitColor: 0xbbbbbb,
+  }
+}
+
+async function createCard(size: number, depth: number, imageUrl: string): Promise<THREE.Mesh> {
+  const canvas = await loadImageToCanvas(imageUrl)
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.needsUpdate = true
+  texture.colorSpace = THREE.SRGBColorSpace
+
+  const colors = getThemeColors()
+  const frontMat = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    opacity: 0,
+  })
+  const sideMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(colors.sideColor),
+    roughness: 0.9,
+    metalness: 0,
+  })
+
+  const box = new THREE.Mesh(new THREE.BoxGeometry(size, size, depth), [
+    sideMat,
+    sideMat,
+    sideMat,
+    sideMat,
+    frontMat,
+    sideMat,
+  ])
+  box.scale.set(0.01, 0.01, 0.01)
+  box.castShadow = false
+  box.receiveShadow = false
+  return box
+}
+
+function createEllipticalOrbit(): THREE.Line {
+  const curve = new THREE.EllipseCurve(
+    0,
+    0,
+    CONFIG.orbitRadiusX,
+    CONFIG.orbitRadiusY,
+    0,
+    2 * Math.PI,
+    false,
+    0
+  )
+  const points = curve.getPoints(128)
+  const geometry = new THREE.BufferGeometry().setFromPoints(points)
+  const colors = getThemeColors()
+  const material = new THREE.LineBasicMaterial({
+    color: colors.orbitColor,
+    transparent: true,
+    opacity: CONFIG.orbitOpacity,
+  })
+  const line = new THREE.Line(geometry, material)
+  line.rotation.x = CONFIG.orbitTilt
+  return line
+}
+
+function updateAllThemeColors() {
+  const colors = getThemeColors()
+  const sideColor = new THREE.Color(colors.sideColor)
+  const orbitColor = new THREE.Color(colors.orbitColor)
+
+  cardScene?.traverse((obj: any) => {
+    if (obj.isMesh && obj.material) {
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material]
+      for (const mat of mats) {
+        if (mat.isMeshStandardMaterial && !mat.map) {
+          mat.color.copy(sideColor)
+        }
+      }
+    }
+    if (obj.isAmbientLight) obj.color.setHex(colors.ambientColor)
+    if (obj.isDirectionalLight) {
+      obj.color.setHex(obj === obj.parent?.children[1] ? colors.light1Color : colors.light2Color)
+    }
+  })
+
+  orbitScene?.traverse((obj: any) => {
+    if (obj.isLine && obj.material) {
+      obj.material.color.copy(orbitColor)
+    }
+  })
+}
+
+async function initScene(): Promise<void> {
+  if (!container.value) return
+  try {
+    await initSceneInternal()
+  } catch (err) {
+    console.error('[SatelliteAnimation] 初始化场景失败:', err)
+  } finally {
+    loading.value = false
+  }
+}
+
+async function initSceneInternal(): Promise<void> {
+  if (!container.value) return
+
+  let userScripts: Awaited<ReturnType<typeof getScripts>> = []
+  try {
+    userScripts = await getScripts(false)
+  } catch (err) {
+    console.warn('[SatelliteAnimation] 获取脚本列表失败，按空集合处理:', err)
+  }
+
+  const userScriptTypes = new Set<ScriptType>(userScripts.map(s => s.type as ScriptType))
+  const enabledModules = satelliteModules.filter(
+    m => m.enabled && userScriptTypes.has(m.scriptType)
+  )
+  const numSatellites = enabledModules.length
+
+  if (numSatellites === 0) {
+    console.warn('[SatelliteAnimation] 没有可显示的卫星模块（用户尚未创建对应类型脚本），跳过渲染')
+    return
+  }
+
+  const w = container.value.clientWidth
+
+  camera = new THREE.PerspectiveCamera(CONFIG.cameraFov, w / CONFIG.containerHeight, 0.1, 5000)
+  camera.position.set(0, 80, 500)
+  camera.lookAt(0, 0, 0)
+
+  orbitScene = new THREE.Scene()
+  orbitRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+  orbitRenderer.setSize(w, CONFIG.containerHeight)
+  orbitRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  orbitRenderer.setClearColor(0x000000, 0)
+  orbitRenderer.domElement.style.position = 'absolute'
+  orbitRenderer.domElement.style.top = '0'
+  orbitRenderer.domElement.style.left = '0'
+  orbitRenderer.domElement.style.zIndex = '1'
+  container.value.appendChild(orbitRenderer.domElement)
+
+  glowScene = new THREE.Scene()
+  glowRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+  glowRenderer.setSize(w, CONFIG.containerHeight)
+  glowRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  glowRenderer.setClearColor(0x000000, 0)
+  glowRenderer.domElement.style.position = 'absolute'
+  glowRenderer.domElement.style.top = '0'
+  glowRenderer.domElement.style.left = '0'
+  glowRenderer.domElement.style.zIndex = '1.5'
+  glowRenderer.domElement.style.pointerEvents = 'none'
+  container.value.appendChild(glowRenderer.domElement)
+
+  cardScene = new THREE.Scene()
+  cardRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
+  cardRenderer.setSize(w, CONFIG.containerHeight)
+  cardRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  cardRenderer.setClearColor(0x000000, 0)
+  cardRenderer.domElement.style.position = 'absolute'
+  cardRenderer.domElement.style.top = '0'
+  cardRenderer.domElement.style.left = '0'
+  cardRenderer.domElement.style.zIndex = '2'
+  cardRenderer.domElement.style.pointerEvents = 'none'
+  container.value.appendChild(cardRenderer.domElement)
+
+  const colors = getThemeColors()
+  const ambient = new THREE.AmbientLight(colors.ambientColor, 0.6)
+  cardScene.add(ambient)
+  const dl1 = new THREE.DirectionalLight(colors.light1Color, 0.5)
+  dl1.position.set(200, 300, 400)
+  cardScene.add(dl1)
+  const dl2 = new THREE.DirectionalLight(colors.light2Color, 0.3)
+  dl2.position.set(-200, -100, 200)
+  cardScene.add(dl2)
+
+  orbitLine = createEllipticalOrbit()
+  orbitScene.add(orbitLine)
+
+  const glowTexture = createGlowTexture()
+
+  centerCard = await createCard(CONFIG.centerCardSize, CONFIG.centerCardDepth, centerIconUrl)
+  centerCard.position.set(0, 0, 0)
+  cardScene.add(centerCard)
+
+  const centerGlowMaterial = new THREE.SpriteMaterial({
+    map: glowTexture,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    color: new THREE.Color(0xffaa66),
+    opacity: 0,
+  })
+  centerGlowSprite = new THREE.Sprite(centerGlowMaterial)
+  centerGlowSprite.scale.set(
+    CONFIG.centerCardSize * CONFIG.glowSizeMultiplier * 0.9,
+    CONFIG.centerCardSize * CONFIG.glowSizeMultiplier * 0.9,
+    1
+  )
+  glowScene.add(centerGlowSprite)
+
+  for (let i = 0; i < numSatellites; i++) {
+    const module = enabledModules[i]
+    const sat = await createCard(
+      CONFIG.satelliteCardSize,
+      CONFIG.satelliteCardDepth,
+      module.iconUrl
+    )
+    sat.userData.angle = (i / numSatellites) * Math.PI * 2
+    sat.userData.index = i
+    satellites.push(sat)
+    cardScene.add(sat)
+
+    const glowMaterial = new THREE.SpriteMaterial({
+      map: glowTexture,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      color: new THREE.Color(0x6ce08a),
+      opacity: 0,
+    })
+    const glowSprite = new THREE.Sprite(glowMaterial)
+    glowSprite.scale.set(
+      CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier,
+      CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier,
+      1
+    )
+    glowScene.add(glowSprite)
+
+    satelliteStates.set(sat, {
+      type: module.scriptType,
+      glowSprite,
+      status: 'idle',
+    })
+  }
+
+  loading.value = false
+
+  animateAppear()
+}
+
+function animateAppear() {
+  const appearStart = Date.now()
+  const totalDuration = CONFIG.cardAppearDelay * (satellites.length + 1) + CONFIG.cardAppearDuration
+
+  function step() {
+    const elapsed = Date.now() - appearStart
+    if (elapsed > totalDuration) {
+      if (centerCard) {
+        centerCard.material[4].opacity = 1
+        centerCard.scale.set(1, 1, 1)
+      }
+      satellites.forEach(sat => {
+        sat.material[4].opacity = 1
+        sat.scale.set(1, 1, 1)
+      })
+      return
+    }
+
+    const centerProgress = Math.min(1, elapsed / CONFIG.cardAppearDuration)
+    const easedCenter = easeOutCubic(centerProgress)
+    if (centerCard) {
+      centerCard.material[4].opacity = easedCenter
+      centerCard.scale.set(easedCenter, easedCenter, easedCenter)
+    }
+
+    satellites.forEach((sat, i) => {
+      const delay = CONFIG.cardAppearDelay * (i + 1)
+      const progress = Math.min(1, (elapsed - delay) / CONFIG.cardAppearDuration)
+      const eased = easeOutCubic(Math.max(0, progress))
+      sat.material[4].opacity = eased
+      sat.scale.set(eased, eased, eased)
+    })
+
+    requestAnimationFrame(step)
+  }
+
+  requestAnimationFrame(step)
+}
+
+function easeOutCubic(t: number): number {
+  return 1 - Math.pow(1 - t, 3)
+}
+
+function animate(): void {
+  if (!camera) return
+
+  const time = Date.now()
+  const numSatellites = satellites.length
+
+  for (let i = 0; i < numSatellites; i++) {
+    const sat = satellites[i]
+    const angle = sat.userData.angle + time * CONFIG.satelliteOrbitSpeed
+    const x = Math.cos(angle) * CONFIG.orbitRadiusX
+    const y = Math.sin(angle) * CONFIG.orbitRadiusY
+    const tiltedY = y * Math.cos(CONFIG.orbitTilt)
+    const z = y * Math.sin(CONFIG.orbitTilt)
+    const floatOffset =
+      Math.sin(time * CONFIG.satelliteFloatSpeed * 0.001 + i * ((Math.PI * 2) / numSatellites)) *
+      CONFIG.satelliteFloatAmplitude
+
+    sat.position.set(x, tiltedY + floatOffset, z)
+    sat.lookAt(camera.position)
+    sat.rotation.z = 0
+  }
+
+  if (centerCard) {
+    centerCard.lookAt(camera.position)
+    centerCard.rotation.z = 0
+    const centerFloat =
+      Math.sin(time * CONFIG.centerFloatSpeed * 0.001) * CONFIG.centerFloatAmplitude
+    centerCard.position.y = centerFloat
+  }
+
+  satelliteStates.forEach((state, sat) => {
+    if (state.glowSprite) {
+      state.glowSprite.position.set(
+        sat.position.x,
+        sat.position.y,
+        sat.position.z + CONFIG.glowZOffset
+      )
+
+      switch (state.status) {
+        case 'queued':
+          const breathe = 0.5 + 0.5 * Math.sin(time * 0.003)
+          state.glowSprite.material.color.setHex(0x6ce08a)
+          state.glowSprite.material.opacity = 0.4 + breathe * 0.55
+          const baseScale = CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier
+          const pulseFactor = 1 + breathe * 0.12
+          state.glowSprite.scale.set(baseScale * pulseFactor, baseScale * pulseFactor, 1)
+          break
+        default:
+          state.glowSprite.material.opacity = 0
+      }
+    }
+  })
+
+  if (centerGlowSprite && centerCard) {
+    centerGlowSprite.position.set(
+      centerCard.position.x,
+      centerCard.position.y,
+      centerCard.position.z + CONFIG.glowZOffset
+    )
+
+    if (centerGlowMode.value === 'rainbow') {
+      const hue = (time * 0.0008) % 1
+      centerGlowSprite.material.color.setHSL(hue, 0.75, 0.6)
+      centerGlowSprite.material.opacity = 0.85 + Math.sin(time * 0.0015) * 0.12
+      centerGlowSprite.scale.setScalar(
+        CONFIG.centerCardSize * (CONFIG.glowSizeMultiplier * 0.85 + Math.sin(time * 0.0015) * 0.05)
+      )
+    } else {
+      centerGlowSprite.material.color.setHex(0x6ce08a)
+      centerGlowSprite.material.opacity = 0.85
+      centerGlowSprite.scale.setScalar(
+        CONFIG.centerCardSize * CONFIG.glowSizeMultiplier * 0.85
+      )
+    }
+  }
+
+  if (orbitRenderer && orbitScene) orbitRenderer.render(orbitScene, camera)
+  if (glowRenderer && glowScene) glowRenderer.render(glowScene, camera)
+  if (cardRenderer && cardScene) cardRenderer.render(cardScene, camera)
+
+  animationFrameId = requestAnimationFrame(animate)
+}
+
+function handleResize(): void {
+  if (!container.value || !camera) return
+  const w = container.value.clientWidth
+  camera.aspect = w / CONFIG.containerHeight
+  camera.position.set(0, 80, 500)
+  camera.updateProjectionMatrix()
+  if (orbitRenderer) orbitRenderer.setSize(w, CONFIG.containerHeight)
+  if (glowRenderer) glowRenderer.setSize(w, CONFIG.containerHeight)
+  if (cardRenderer) cardRenderer.setSize(w, CONFIG.containerHeight)
+}
+
+watch(isDark, () => {
+  updateAllThemeColors()
+})
+
+async function updateSatelliteStates() {
+  try {
+    const queueResponse = await Service.getQueuesApiQueueGetPost({} as QueueGetIn)
+
+    const queuedScriptIds: Set<string> = new Set()
+
+    if (queueResponse.code === 200 && queueResponse.index.length > 0) {
+      for (const queueIndex of queueResponse.index) {
+        const queueItemsResponse = await Service.getItemApiQueueItemGetPost({
+          queueId: queueIndex.uid,
+        } as QueueItemGetIn)
+
+        if (queueItemsResponse.code === 200) {
+          for (const itemIndex of queueItemsResponse.index) {
+            const item = queueItemsResponse.data[itemIndex.uid]
+            if (item?.Info?.ScriptId && item.Info.ScriptId !== '-') {
+              queuedScriptIds.add(item.Info.ScriptId)
+            }
+          }
+        }
+      }
+    }
+
+    const allScripts = await getScripts(false)
+    const scriptMap = new Map(allScripts.map(s => [s.uid, s]))
+
+    const queuedTypes: Set<ScriptType> = new Set()
+
+    for (const [scriptId, script] of scriptMap) {
+      const scriptType = script.type as ScriptType
+
+      if (queuedScriptIds.has(scriptId)) {
+        queuedTypes.add(scriptType)
+      }
+    }
+
+    satelliteStates.forEach(state => {
+      if (queuedTypes.has(state.type)) {
+        state.status = 'queued'
+      } else {
+        state.status = 'idle'
+      }
+    })
+  } catch (error) {
+    console.error('[SatelliteAnimation] 更新状态失败:', error)
+  }
+}
+
+onMounted(async () => {
+  try {
+    await initScene()
+  } catch (e) {
+    console.error('[SatelliteAnimation] init failed:', e)
+  }
+  animate()
+  window.addEventListener('resize', handleResize)
+
+  updateSatelliteStates()
+  updateInterval = setInterval(updateSatelliteStates, CONFIG.statusUpdateInterval)
+
+  // 检查更新状态
+  const version = (import.meta as any).env?.VITE_APP_VERSION || '1.0.0'
+  try {
+    const updateRes = await Service.checkUpdateApiUpdateCheckPost({
+      current_version: version,
+      if_force: false,
+    })
+    if (updateRes.code === 200 && updateRes.if_need_update) {
+      centerGlowMode.value = 'rainbow'
+    }
+  } catch {
+    // 静默失败，保持绿色
+  }
+})
+</script>
+
+<style scoped>
+.satellite-container {
+  width: 100%;
+  height: 400px;
+  position: relative;
+  overflow: hidden;
+}
+
+.loading-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 32px;
+  height: 32px;
+  margin: -16px 0 0 -16px;
+  border: 2px solid var(--ant-color-border);
+  border-top-color: var(--ant-color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+</style>
