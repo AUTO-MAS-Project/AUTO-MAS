@@ -2,6 +2,12 @@
     "version": "v5.3.0-beta.3",
     "version_info": {
         "v5.3.0-beta.3": {
+            "新增功能": [
+                "okww专项 新增前端表单化配置编辑器，支持直接在 MAS 编辑 ok-ww 配置，无需启动 ok-ww GUI",
+                "okww专项 配置编辑器覆盖 17 个配置文件（8 任务 + 5 子配置 + 4 全局配置），支持 bool/int/float/string/select/list/hotkey 字段类型",
+                "okww专项 配置编辑器选项值中文翻译（如 Forgery Challenge 显示为凝素领域），配置文件中仍存储英文原值",
+                "okww专项 配置目录自动初始化，per-user 目录为空时自动从 ok-ww configs 复制默认配置"
+            ],
             "程序优化": [
                 "优化模拟器搜索功能",
                 "优化模拟器管理页面样式",
@@ -15,6 +21,8 @@
                 "okww专项 配置会话保存先校验源配置存在，避免源缺失时清空 MAS 侧旧配置",
                 "okww专项 任务收尾时若原 ok-ww 配置不存在则清理任务期写入的临时配置，不再留下空目录",
                 "okww专项 Game.Type 移除模拟器选项，仅保留 Client / URL",
+                "okww专项 移除用户编辑页的详细/简洁模式切换，配置编辑器替代 ok-ww GUI 配置会话",
+                "okww专项 配置编辑器退出页面时自动保存，无需手动点击",
                 "MAAEND专项 配置重构，优化样式",
                 "MAAEND专项 优化日志展示，显示未完成的任务"
             ],
@@ -24,6 +32,7 @@
                 "okww专项 修复多用户 AutoProxy 只执行最后一个用户的问题",
                 "okww专项 单用户配置文件检查下沉到逐用户校验，避免前面的用户配置缺失被忽略",
                 "okww专项 异常路径下对 user_config 是否已加载做防护，避免 prepare 之前抛错时再次触发 AttributeError",
+                "okww专项 修复手动终止任务时 final_task/on_crash 因配置锁定导致 UserData 写回失败的问题",
                 "游戏管理 MAS 接管启动时若游戏客户端已在运行则跳过重复拉起"
             ]
         },
