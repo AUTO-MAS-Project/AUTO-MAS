@@ -107,15 +107,6 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.status = "跳过"
             return "用户剩余天数为 0, 跳过该用户"
 
-        mode = str(self.cur_user_config.get("Info", "Mode") or "简洁")
-        config_owner = "Default" if mode == "简洁" else str(self.cur_user_uid)
-        mas_config_dir = Path.cwd() / f"data/{self.script_info.script_id}/{config_owner}/ConfigFile"
-        if not (mas_config_dir.is_dir() and any(mas_config_dir.iterdir())):
-            self.cur_user_item.status = "异常"
-            if mode == "简洁":
-                return "未找到共享的 OK-WW 配置文件，请先在脚本页完成「配置 ok-ww」步骤"
-            return "未找到用户的 OK-WW 配置文件，请先在用户配置页完成「配置 ok-ww」步骤"
-
         if (
             self.script_config.get("Game", "Enabled")
             and self.script_config.get("Game", "Type") == "Client"
