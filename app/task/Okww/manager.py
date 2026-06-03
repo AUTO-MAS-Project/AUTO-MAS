@@ -197,6 +197,10 @@ class OkwwManager(TaskExecuteBase):
         try:
             await self._restore_script_config_from_temp()
 
+            # 先解锁，再写回 UserData（load() 在锁定状态下会抛异常）
+            if script_cfg.is_locked:
+                await script_cfg.unlock()
+
             if self.check_result != "Pass" and not any(
                 user.status == "完成" for user in self.script_info.user_list
             ):
@@ -207,9 +211,6 @@ class OkwwManager(TaskExecuteBase):
 
             if self.task_info.mode == "AutoProxy" and hasattr(self, "user_config"):
                 await script_cfg.UserData.load(await self.user_config.toDict())
-
-            if script_cfg.is_locked:
-                await script_cfg.unlock()
 
             if any(user.status == "异常" for user in self.script_info.user_list):
                 self.script_info.status = "异常"
@@ -227,18 +228,19 @@ class OkwwManager(TaskExecuteBase):
 
         await self._restore_script_config_from_temp()
 
-        try:
-            if self.task_info.mode == "AutoProxy" and hasattr(self, "user_config"):
-                await Config.ScriptConfig[script_uid].UserData.load(
-                    await self.user_config.toDict()
-                )
-        except Exception:
-            logger.exception("on_crash 写回 UserConfig 失败，放弃本次状态变更")
-
+        # 先解锁，再写回 UserData（load() 在锁定状态下会抛异常）
         script_cfg = Config.ScriptConfig[script_uid]
         if script_cfg.is_locked:
             with suppress(Exception):
                 await script_cfg.unlock()
+
+        try:
+            if self.task_info.mode == "AutoProxy" and hasattr(self, "user_config"):
+                await script_cfg.UserData.load(
+                    await self.user_config.toDict()
+                )
+        except Exception:
+            logger.exception("on_crash 写回 UserConfig 失败，放弃本次状态变更")
         await Config.send_websocket_message(
             id=self.task_info.task_id,
             type="Info",
