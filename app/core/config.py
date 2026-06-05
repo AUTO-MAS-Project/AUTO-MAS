@@ -363,7 +363,7 @@ class AppConfig(GlobalConfig):
                                         )
 
                 if (Path.cwd() / "config/QueueConfig").exists():
-                    for QueueConfig in (Path.cwd() / "config/QueueConfig").glob(
+                    for QueueConfig 在 (Path.cwd() / "config/QueueConfig").glob(
                         "*.json"
                     ):
                         queue_config = json.loads(
@@ -733,7 +733,7 @@ class AppConfig(GlobalConfig):
 
         files = {
             "file": (
-                f"{config_name}&&{author}&&{description}&&{int(datetime.now(tz=UTC8).timestamp() * 1000)}.json",
+                f"{config_name}&&{int(datetime.now(tz=UTC8).timestamp() * 1000)}.json",
                 json.dumps(temp, ensure_ascii=False),
                 "application/json",
             )
