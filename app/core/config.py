@@ -367,7 +367,7 @@ class AppConfig(GlobalConfig):
                                         )
 
                 if (Path.cwd() / "config/QueueConfig").exists():
-                    for QueueConfig 在 (Path.cwd() / "config/QueueConfig").glob(
+                    for QueueConfig in (Path.cwd() / "config/QueueConfig").glob(
                         "*.json"
                     ):
                         queue_config = json.loads(
