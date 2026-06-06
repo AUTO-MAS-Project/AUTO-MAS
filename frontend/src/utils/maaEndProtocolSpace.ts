@@ -140,7 +140,7 @@ export interface MaaEndTaskSwitchGroup {
 export type ProtocolSpaceConfig = MaaEndSanityConfig
 
 export const MAAEND_CONTROLLER_TASKS: Record<string, MaaEndTaskSwitch[]> = {
-  'Win32-Window': [
+  'Win32-Window-Background': [
     'VisitFriends',
     'DijiangRewards',
     'CreditShoppingN2',
