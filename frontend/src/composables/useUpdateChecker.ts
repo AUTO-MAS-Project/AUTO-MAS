@@ -21,6 +21,13 @@ const isPolling = ref(false)
 // 防止重复弹出的状态
 let lastShownVersion: string | null = null
 
+const showUpdateModal = (data: Record<string, string[]>, version: string) => {
+  updateData.value = data
+  latestVersion.value = version
+  updateVisible.value = true
+  lastShownVersion = version
+}
+
 // 检查自动更新设置是否开启
 const checkAutoUpdateEnabled = async (): Promise<boolean> => {
   try {
@@ -75,10 +82,7 @@ export function useUpdateChecker() {
           const { playSound } = useAudioPlayer()
           await playSound('new_version_available')
 
-          updateData.value = response.update_info
-          latestVersion.value = response.latest_version
-          updateVisible.value = true
-          lastShownVersion = response.latest_version // 记录已显示的版本
+          showUpdateModal(response.update_info, response.latest_version)
         }
       }
     } catch (error: any) {
@@ -102,9 +106,7 @@ export function useUpdateChecker() {
         if (response.if_need_update) {
           // 播放有新版本音频
           await playSound('new_version_available')
-          updateData.value = response.update_info
-          latestVersion.value = response.latest_version
-          updateVisible.value = true
+          showUpdateModal(response.update_info, response.latest_version)
         } else {
           // 播放无新版本音频
           if (!silent) {
@@ -182,6 +184,7 @@ export function useUpdateChecker() {
     updateVisible,
     updateData,
     latestVersion,
+    showUpdateModal,
     checkUpdate,
     onUpdateConfirmed,
     startPolling,
@@ -196,6 +199,7 @@ export function useUpdateModal() {
     updateVisible,
     updateData,
     latestVersion,
+    showUpdateModal,
     onUpdateConfirmed: () => {
       updateVisible.value = false
     },
