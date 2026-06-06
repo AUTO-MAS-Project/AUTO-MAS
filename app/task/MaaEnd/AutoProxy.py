@@ -41,6 +41,29 @@ from .tools import login, push_notification
 
 logger = get_logger("MaaEnd 自动代理")
 
+_PROTOCOL_SPACE_REWARD_OPTION_MAP = {
+    "OperatorEXP": {
+        "option_name": "OperatorEXPRewardsSetOption",
+        "RewardsSetA": "AdvancedCombatRecord",
+        "RewardsSetB": "CognitiveCarriers",
+    },
+    "Promotions": {
+        "option_name": "PromotionsRewardsSetOption",
+        "RewardsSetA": "Protodisk",
+        "RewardsSetB": "Protoset",
+    },
+    "SkillUp": {
+        "option_name": "SkillUpRewardsSetOption",
+        "RewardsSetA": "Protoprism",
+        "RewardsSetB": "Protohedron",
+    },
+    "WeaponTune": {
+        "option_name": "WeaponTuneRewardsSetOption",
+        "RewardsSetA": "CastDie",
+        "RewardsSetB": "HeavyCastDie",
+    },
+}
+
 
 class AutoProxyTask(TaskExecuteBase):
     """MaaEnd 自动代理模式"""
@@ -460,9 +483,10 @@ class AutoProxyTask(TaskExecuteBase):
         # 配置协议空间
         for task in maaend_tasks:
             if task["taskName"] == "ProtocolSpace":
+                protocol_space_tab = self.cur_user_config.get("Task", "ProtocolSpaceTab")
                 task["optionValues"]["ProtocolSpaceTab"] = {
                     "type": "select",
-                    "caseName": self.cur_user_config.get("Task", "ProtocolSpaceTab"),
+                    "caseName": protocol_space_tab,
                 }
                 task["optionValues"]["OperatorProgression"] = {
                     "type": "select",
@@ -476,10 +500,21 @@ class AutoProxyTask(TaskExecuteBase):
                     "type": "select",
                     "caseName": self.cur_user_config.get("Task", "CrisisDrills"),
                 }
-                task["optionValues"]["RewardsSetOption"] = {
-                    "type": "select",
-                    "caseName": self.cur_user_config.get("Task", "RewardsSetOption"),
-                }
+                selected_protocol_task = self.cur_user_config.get(
+                    "Task", protocol_space_tab
+                )
+                reward_option = _PROTOCOL_SPACE_REWARD_OPTION_MAP.get(
+                    selected_protocol_task
+                )
+                if reward_option is not None:
+                    reward_case_name = reward_option.get(
+                        self.cur_user_config.get("Task", "RewardsSetOption")
+                    )
+                    if reward_case_name is not None:
+                        task["optionValues"][reward_option["option_name"]] = {
+                            "type": "select",
+                            "caseName": reward_case_name,
+                        }
                 break
 
         # 完成任务后退出脚本
