@@ -133,7 +133,7 @@ export interface MaaEndScriptConfig {
     RunTimesLimit: number
   }
   Game: {
-    ControllerType: 'Win32-Front' | 'Win32-Window-Background' | 'ADB' | null
+    ControllerType: 'Win32-Front' | 'ADB' | null
     Path: string
     Arguments: string
     WaitTime: number

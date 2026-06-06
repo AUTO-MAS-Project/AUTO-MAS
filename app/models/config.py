@@ -990,7 +990,6 @@ class MaaEndConfig(ConfigBase):
             OptionsValidator(
                 [
                     "Win32-Front",
-                    "Win32-Window-Background",
                     "ADB",
                 ]
             ),
