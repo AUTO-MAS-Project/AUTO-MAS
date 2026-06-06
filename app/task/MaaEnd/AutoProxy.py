@@ -578,12 +578,62 @@ class AutoProxyTask(TaskExecuteBase):
                     "OperatorProgression",
                     "WeaponProgression",
                     "CrisisDrills",
-                    "RewardsSetOption",
                 ):
                     task["optionValues"][option] = {
                         "type": "select",
                         "caseName": sanity_task_config[option],
                     }
+                reward_option = sanity_task_config.get("RewardsSetOption")
+                if reward_option == "RewardsSetA":
+                    if sanity_task_type == "OperatorProgression":
+                        if sanity_task_config["OperatorProgression"] == "OperatorEXP":
+                            task["optionValues"]["OperatorEXPRewardsSetOption"] = {
+                                "type": "select",
+                                "caseName": "AdvancedCombatRecord",
+                            }
+                        elif sanity_task_config["OperatorProgression"] == "Promotions":
+                            task["optionValues"]["PromotionsRewardsSetOption"] = {
+                                "type": "select",
+                                "caseName": "Protodisk",
+                            }
+                        elif sanity_task_config["OperatorProgression"] == "SkillUp":
+                            task["optionValues"]["SkillUpRewardsSetOption"] = {
+                                "type": "select",
+                                "caseName": "Protoprism",
+                            }
+                    elif (
+                        sanity_task_type == "WeaponProgression"
+                        and sanity_task_config["WeaponProgression"] == "WeaponTune"
+                    ):
+                        task["optionValues"]["WeaponTuneRewardsSetOption"] = {
+                            "type": "select",
+                            "caseName": "CastDie",
+                        }
+                elif reward_option == "RewardsSetB":
+                    if sanity_task_type == "OperatorProgression":
+                        if sanity_task_config["OperatorProgression"] == "OperatorEXP":
+                            task["optionValues"]["OperatorEXPRewardsSetOption"] = {
+                                "type": "select",
+                                "caseName": "CognitiveCarriers",
+                            }
+                        elif sanity_task_config["OperatorProgression"] == "Promotions":
+                            task["optionValues"]["PromotionsRewardsSetOption"] = {
+                                "type": "select",
+                                "caseName": "Protoset",
+                            }
+                        elif sanity_task_config["OperatorProgression"] == "SkillUp":
+                            task["optionValues"]["SkillUpRewardsSetOption"] = {
+                                "type": "select",
+                                "caseName": "Protohedron",
+                            }
+                    elif (
+                        sanity_task_type == "WeaponProgression"
+                        and sanity_task_config["WeaponProgression"] == "WeaponTune"
+                    ):
+                        task["optionValues"]["WeaponTuneRewardsSetOption"] = {
+                            "type": "select",
+                            "caseName": "HeavyCastDie",
+                        }
             elif (
                 self.cur_user_config.get("Info", "Mode") != "自定义"
                 and task["taskName"] == target_task_name
