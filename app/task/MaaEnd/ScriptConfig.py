@@ -140,10 +140,7 @@ class ScriptConfigTask(TaskExecuteBase):
                     instance.get("controllerName")
                     for instance in maaend_set.get("instances", [])
                 }
-                if not {
-                    "Win32-Front",
-                    "Win32-Window-Background",
-                }.issubset(preset_controllers):
+                if "Win32-Front" not in preset_controllers:
                     logger.warning(
                         f"用户 {self.cur_user_item.user_id} 的 MaaEnd 预设配置不完整，已使用模板重新初始化"
                     )

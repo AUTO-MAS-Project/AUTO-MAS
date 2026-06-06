@@ -112,11 +112,7 @@ let userId = route.params.userId as string
 const isEdit = ref(!!userId)
 const scriptName = ref('')
 const controllerType = ref<string | null>(null)
-const presetSupported = computed(
-  () =>
-    controllerType.value === 'Win32-Front' ||
-    controllerType.value === 'Win32-Window-Background'
-)
+const presetSupported = computed(() => controllerType.value === 'Win32-Front')
 
 const maaEndConfigLoading = ref(false)
 const showMaaEndConfigMask = ref(false)
