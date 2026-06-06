@@ -107,13 +107,20 @@ import {
   getCachedStageOptions,
 } from '@/composables/usePlanDataCoordinator'
 
+interface PlanChangeOptions {
+  refresh?: boolean
+  forceCustomStages?: boolean
+}
+
+/* eslint-disable no-unused-vars */
 interface Props {
   tableData: Record<string, any> | null
   currentMode: 'ALL' | 'Weekly'
   viewMode: 'config' | 'simple'
   planId?: string
-  handlePlanChange: (path: string, value: any) => Promise<void>
+  handlePlanChange(path: string, value: any, options?: PlanChangeOptions): Promise<boolean>
 }
+/* eslint-enable no-unused-vars */
 
 const props = defineProps<Props>()
 
@@ -122,6 +129,16 @@ const coordinator = usePlanDataCoordinator()
 
 // 临时自定义关卡输入
 const tempCustomStages = ref({
+  custom_stage_1: '',
+  custom_stage_2: '',
+  custom_stage_3: '',
+  custom_stage_4: '',
+})
+
+// 记录最近一次从后端加载或保存成功的自定义关卡。
+// 输入事件会为了实时刷新下拉选项提前修改 coordinator，
+// 因此保存判断必须和这份快照比较，不能直接读取当前定义。
+const savedCustomStages = ref({
   custom_stage_1: '',
   custom_stage_2: '',
   custom_stage_3: '',
@@ -190,7 +207,7 @@ const updateConfigValue = async (rowKey: string, timeKey: TimeKey, value: any) =
 const saveCustomStage = async (index: 1 | 2 | 3 | 4) => {
   const key = `custom_stage_${index}` as keyof typeof tempCustomStages.value
   const newValue = tempCustomStages.value[key].trim()
-  const oldValue = coordinator.planData.customStageDefinitions[key]
+  const oldValue = savedCustomStages.value[key].trim()
 
   // 如果值没有变化，不需要保存
   if (newValue === oldValue) {
@@ -215,7 +232,9 @@ const saveCustomStage = async (index: 1 | 2 | 3 | 4) => {
     'Saturday',
     'Sunday',
   ]
-  for (const timeKey of timeKeys) {
+  let allSaved = true
+  for (let i = 0; i < timeKeys.length; i++) {
+    const timeKey = timeKeys[i]
     const timeConfig = planConfig[timeKey] as Record<string, any>
     if (timeConfig) {
       // 检查每个关卡字段是否使用了旧的自定义关卡
@@ -227,8 +246,16 @@ const saveCustomStage = async (index: 1 | 2 | 3 | 4) => {
         }
       }
       // 保存更新后的时间配置
-      await props.handlePlanChange(timeKey, timeConfig)
+      const saved = await props.handlePlanChange(timeKey, timeConfig, {
+        refresh: i === timeKeys.length - 1,
+        forceCustomStages: false,
+      })
+      allSaved = allSaved && saved
     }
+  }
+
+  if (allSaved) {
+    savedCustomStages.value = { ...coordinator.planData.customStageDefinitions }
   }
 }
 
@@ -483,6 +510,11 @@ watch(
       coordinator.fromApiData(cleanData, isInitialLoad)
       // 同步到临时输入框
       tempCustomStages.value = { ...coordinator.planData.customStageDefinitions }
+      // 非初始刷新可能保留了 fromApiData(false) 续住的未保存输入，
+      // 不能把它们当作后端确认值写入 savedCustomStages。
+      if (isInitialLoad) {
+        savedCustomStages.value = { ...coordinator.planData.customStageDefinitions }
+      }
     }
   },
   { immediate: true }
