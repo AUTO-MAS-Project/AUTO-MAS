@@ -295,7 +295,7 @@ MAAEND_TASKS = tuple(
 """MaaEnd托管任务列表"""
 
 MAAEND_CONTROLLER_TASKS = {
-    "Win32-Window": (
+    "Win32-Window-Background": (
         "VisitFriends",
         "DijiangRewards",
         "CreditShoppingN2",

@@ -113,7 +113,9 @@ const isEdit = ref(!!userId)
 const scriptName = ref('')
 const controllerType = ref<string | null>(null)
 const presetSupported = computed(
-  () => controllerType.value === 'Win32-Window' || controllerType.value === 'Win32-Front'
+  () =>
+    controllerType.value === 'Win32-Front' ||
+    controllerType.value === 'Win32-Window-Background'
 )
 
 const maaEndConfigLoading = ref(false)

@@ -414,7 +414,7 @@ const isMaaEndPresetSupported = (script: Script) => {
   const controllerType = (script.config as any).Game?.ControllerType
   return (
     script.type === 'MaaEnd' &&
-    (controllerType === 'Win32-Window' || controllerType === 'Win32-Front')
+    (controllerType === 'Win32-Front' || controllerType === 'Win32-Window-Background')
   )
 }
 

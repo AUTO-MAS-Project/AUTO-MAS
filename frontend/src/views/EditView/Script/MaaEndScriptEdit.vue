@@ -437,7 +437,7 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     RunTimesLimit: 3,
   },
   Game: {
-    ControllerType: 'Win32-Window',
+    ControllerType: 'Win32-Front',
     Path: '',
     Arguments: '',
     WaitTime: 60,
@@ -477,9 +477,8 @@ const rules = {
 }
 
 const controllerOptions = [
-  { label: '电脑端-通用', value: 'Win32-Window' },
-  { label: '电脑端-后台', value: 'Win32-Window-Background' },
   { label: '电脑端-前台', value: 'Win32-Front' },
+  { label: '电脑端-后台', value: 'Win32-Window-Background' },
   { label: '安卓端', value: 'ADB' },
 ]
 
@@ -496,8 +495,8 @@ const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
 const isWinController = computed(() => maaEndConfig.Game.ControllerType !== 'ADB')
 const isPresetController = computed(
   () =>
-    maaEndConfig.Game.ControllerType === 'Win32-Window' ||
-    maaEndConfig.Game.ControllerType === 'Win32-Front'
+    maaEndConfig.Game.ControllerType === 'Win32-Front' ||
+    maaEndConfig.Game.ControllerType === 'Win32-Window-Background'
 )
 const showManualEmulatorIndexInput = computed(
   () =>

@@ -986,10 +986,9 @@ class MaaEndConfig(ConfigBase):
         self.Game_ControllerType = ConfigItem(
             "Game",
             "ControllerType",
-            "Win32-Window",
+            "Win32-Front",
             OptionsValidator(
                 [
-                    "Win32-Window",
                     "Win32-Front",
                     "Win32-Window-Background",
                     "ADB",

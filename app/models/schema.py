@@ -757,7 +757,7 @@ class MaaEndConfig_Run(BaseModel):
 
 class MaaEndConfig_Game(BaseModel):
     ControllerType: Optional[
-        Literal["Win32-Window", "Win32-Window-Background", "Win32-Front", "ADB"]
+        Literal["Win32-Front", "Win32-Window-Background", "ADB"]
     ] = Field(default=None, description="控制器类型")
     Path: Optional[str] = Field(default=None, description="终末地客户端路径")
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
