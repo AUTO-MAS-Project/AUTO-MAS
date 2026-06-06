@@ -9,7 +9,11 @@
         <span class="title-text">AUTO-MAS</span>
         <span class="version-text">
           {{ version }}
-          <span v-if="updateInfo?.if_need_update" class="update-hint">
+          <span
+            v-if="updateInfo?.if_need_update"
+            class="update-hint clickable"
+            @click="handleAppUpdateClick"
+          >
             检测到更新 {{ updateInfo.latest_version }} 请尽快更新
           </span>
           <span v-if="backendUpdateInfo?.if_need_update" class="update-hint clickable"
@@ -44,6 +48,7 @@
 import { useAppClosing } from '@/composables/useAppClosing'
 import { useTheme } from '@/composables/useTheme'
 import { updateInfo, backendUpdateInfo } from '@/composables/useVersionService'
+import { useUpdateModal } from '@/composables/useUpdateChecker'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { BorderOutlined, CloseOutlined, MinusOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
@@ -53,6 +58,7 @@ import { useRouter } from 'vue-router'
 const logger = window.electronAPI.getLogger('标题栏')
 const router = useRouter()
 const { resetInitializationStatus } = useAppInitialization()
+const { showUpdateModal } = useUpdateModal()
 
 // 检查是否有运行中的队列任务
 const hasRunningTasks = (): boolean => {
@@ -93,6 +99,13 @@ const getUpdateTooltip = () => {
     }
   }
   return updateDetails.join('\n')
+}
+
+// 处理版本更新点击
+const handleAppUpdateClick = () => {
+  if (!updateInfo.value?.if_need_update) return
+
+  showUpdateModal(updateInfo.value.update_info || {}, updateInfo.value.latest_version || '')
 }
 
 // 处理后端更新点击
