@@ -70,7 +70,7 @@ from .schema import TagItem
 
 
 def init_maaend_task_config(config) -> None:
-    """初始化 MaaEnd 预设任务配置"""
+    """初始化 MaaEnd 托管任务配置"""
 
     ## 理智任务类型
     config.Task_SanityTaskType = ConfigItem(
@@ -125,7 +125,8 @@ def init_maaend_task_config(config) -> None:
         )
 
 """
-脚本级和用户级的理智任务配置项完全一样, 但为了兼容旧版 MaaEnd 的用户配置, 需要在 MaaEndUserConfig 中重复定义一次, 并在加载时进行迁移处理
+脚本级和用户级的 MaaEnd 任务配置项结构相同。简洁模式只继承脚本任务开关,
+理智任务选项始终读取用户配置, 并在加载时兼容旧版 MaaEnd 用户配置。
 """
 
 def _normalize_maaend_sanity_task_type(task_data: object) -> None:
@@ -834,7 +835,7 @@ class MaaEndUserConfig(ConfigBase):
 
         return (
             {field: self.get("Task", field) for field in MAAEND_SANITY_TASK_FIELDS},
-            "Fixed",
+            self.get("Info", "SanityMode"),
         )
 
     def getTags(self) -> str:
@@ -1017,7 +1018,7 @@ class MaaEndConfig(ConfigBase):
         )
 
         ## Task ------------------------------------------------------------
-        ## 脚本级预设任务配置（简洁模式数据源）
+        ## 脚本级预设任务开关配置（简洁模式数据源）
         init_maaend_task_config(self)
 
         self.UserData = MultipleConfig([MaaEndUserConfig])
