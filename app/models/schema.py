@@ -643,9 +643,10 @@ class MaaEndUserConfig_Info(BaseModel):
     Status: Optional[bool] = Field(default=None, description="用户状态")
     Id: Optional[str] = Field(default=None, description="用户ID")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["简洁", "详细", "自定义"]] = Field(
-        default=None, description="配置模式"
+    Mode: Optional[Literal["简洁", "详细"]] = Field(
+        default=None, description="配置文件来源"
     )
+    IfQuickConfig: Optional[bool] = Field(default=None, description="是否启用快速配置")
     SanityMode: Optional[str] = Field(default=None, description="理智任务配置模式")
     Resource: Optional[Literal["官服"]] = Field(default=None, description="资源名称")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
@@ -828,7 +829,7 @@ class MaaEndConfig(BaseModel):
     Info: Optional[MaaEndConfig_Info] = Field(default=None, description="脚本信息")
     Run: Optional[MaaEndConfig_Run] = Field(default=None, description="运行配置")
     Game: Optional[MaaEndConfig_Game] = Field(default=None, description="游戏配置")
-    Task: Optional[MaaEndConfig_Task] = Field(default=None, description="预设任务配置")
+    Task: Optional[MaaEndConfig_Task] = Field(default=None, description="快速任务配置")
 
 
 class SrcUserConfig_Info(BaseModel):

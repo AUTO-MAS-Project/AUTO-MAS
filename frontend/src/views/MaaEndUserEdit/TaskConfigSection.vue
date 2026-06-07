@@ -28,7 +28,7 @@
               :checked="isGroupEnabled(group)"
               :disabled="controlsDisabled"
               size="small"
-              @change="checked => handleGroupSwitchChange(group, checked)"
+              @change="handleGroupSwitchChange(group, $event)"
             />
           </span>
         </button>
@@ -149,12 +149,14 @@ const props = withDefaults(
     formData: any
     loading?: boolean
     mode?: string
+    ifQuickConfig?: boolean
     source?: 'script' | 'user'
     controllerType?: string | null
   }>(),
   {
     loading: false,
     mode: '详细',
+    ifQuickConfig: true,
     source: 'user',
     controllerType: null,
   }
@@ -169,7 +171,7 @@ const formData = props.formData
 const optionColumnSpan = 12
 const activeGroupKey = ref('')
 const showManagedTaskConfig = computed(
-  () => !(props.source === 'user' && props.mode === '简洁') && props.mode !== '自定义'
+  () => props.ifQuickConfig && !(props.source === 'user' && props.mode === '简洁')
 )
 const supportedTaskNames = computed(
   () => new Set(MAAEND_CONTROLLER_TASKS[props.controllerType ?? ''] ?? [])
@@ -189,22 +191,20 @@ const activeGroupHasSanity = computed(
 )
 
 const controlsDisabled = computed(() => {
-  return (
-    props.loading || (props.source === 'user' && props.mode === '简洁') || props.mode === '自定义'
-  )
+  return props.loading || !props.ifQuickConfig || (props.source === 'user' && props.mode === '简洁')
 })
 
 const optionControlsDisabled = computed(() => controlsDisabled.value)
 
 const modeNotice = computed(() => {
+  if (!props.ifQuickConfig) {
+    return '快速配置已关闭，将直接运行所选来源的完整 MaaEnd 配置文件。'
+  }
   if (props.source === 'script') {
-    return '简洁模式用户将使用这里的脚本级预设任务配置。'
+    return '脚本配置文件来源的用户将使用这里的脚本级快速配置。'
   }
   if (props.mode === '简洁') {
-    return '简洁模式使用脚本级预设配置，请在脚本配置页调整任务开关和选项。'
-  }
-  if (props.mode === '自定义') {
-    return '自定义模式运行用户完整 MaaEnd 配置，MAS 不托管业务任务队列。'
+    return '配置文件来源为脚本，请在脚本配置页调整任务开关和选项。'
   }
   return ''
 })
@@ -248,7 +248,11 @@ const currentTaskOption = computed(() =>
 
 const rewardGroupEnabled = computed(() => {
   if (normalizedSanityTaskType.value === 'Essence') return false
-  return Boolean(currentTaskOption.value?.rewards)
+  return Boolean(
+    currentTaskOption.value &&
+      'rewards' in currentTaskOption.value &&
+      currentTaskOption.value.rewards
+  )
 })
 
 const taskOptionLabel = computed(() =>
@@ -276,7 +280,11 @@ const isTaskEnabled = (taskName: MaaEndTaskSwitch) =>
   Boolean(formData.Task[taskSwitchKey(taskName)])
 
 const showSanityDetail = computed(
-  () => activeGroupHasSanity.value && showSanityOptions.value && isTaskEnabled('Sanity')
+  () =>
+    props.ifQuickConfig &&
+    activeGroupHasSanity.value &&
+    showSanityOptions.value &&
+    isTaskEnabled('Sanity')
 )
 const showRewardGroupSelect = computed(() => showSanityDetail.value && rewardGroupEnabled.value)
 

@@ -430,21 +430,10 @@ class AutoProxyTask(TaskExecuteBase):
                 )
 
         controller_type = self.script_config.get("Game", "ControllerType")
-        maaend_instance = None
         maaend_instances = maaend_set.get("instances", [])
-        for inst in maaend_instances:
-            if inst.get("id") == maaend_set.get("lastActiveInstanceId"):
-                maaend_instance = inst
-                break
-        if maaend_instance is None:
-            for inst in maaend_instances:
-                if inst.get("id") == "automas":
-                    maaend_instance = inst
-                    break
-        if maaend_instance is None and len(maaend_instances) > 0:
-            maaend_instance = maaend_instances[0]
-        if maaend_instance is None:
+        if not maaend_instances:
             raise ValueError("MaaEnd 配置文件中未找到可运行实例")
+        maaend_instance = maaend_instances[0]
         maaend_instance["controllerName"] = controller_type
         if maaend_instance.get("id") is not None:
             maaend_set["lastActiveInstanceId"] = maaend_instance.get("id")
@@ -483,8 +472,10 @@ class AutoProxyTask(TaskExecuteBase):
             else:
                 maaend_i18n[task_definition["name"]] = task_definition["label"]
 
+        if_quick_config = self.cur_user_config.get("Info", "IfQuickConfig")
+
         def get_task_book_name(task: dict[str, object]) -> str:
-            if self.cur_user_config.get("Info", "Mode") == "自定义":
+            if not if_quick_config:
                 return str(
                     task.get("customName")
                     or maaend_i18n.get(str(task["taskName"]), str(task["taskName"]))
@@ -499,7 +490,7 @@ class AutoProxyTask(TaskExecuteBase):
             if self.cur_user_config.get("Info", "Mode") == "简洁"
             else self.cur_user_config
         )
-        if self.cur_user_config.get("Info", "Mode") != "自定义":
+        if if_quick_config:
             sanity_task_config, _ = (
                 self.cur_user_config.get_effective_sanity_task_config()
             )
@@ -513,7 +504,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.task_dict = {}
             sanity_configured = False
             sanity_enabled = (
-                self.cur_user_config.get("Info", "Mode") != "自定义"
+                if_quick_config
                 and task_switch_config_source.get("Task", "IfSanity")
                 and any(
                     task.get("taskName") in ("ProtocolSpace", "AutoEssence")
@@ -526,7 +517,7 @@ class AutoProxyTask(TaskExecuteBase):
                     continue
 
                 task_enabled = task["enabled"]
-                if self.cur_user_config.get("Info", "Mode") != "自定义":
+                if if_quick_config:
                     if task["taskName"] in ("ProtocolSpace", "AutoEssence"):
                         task_enabled = (
                             sanity_enabled
@@ -575,7 +566,7 @@ class AutoProxyTask(TaskExecuteBase):
                 continue
 
             if (
-                self.cur_user_config.get("Info", "Mode") != "自定义"
+                if_quick_config
                 and task["taskName"] == target_task_name
                 and target_task_name == "ProtocolSpace"
             ):
@@ -645,7 +636,7 @@ class AutoProxyTask(TaskExecuteBase):
                             "caseName": "HeavyCastDie",
                         }
             elif (
-                self.cur_user_config.get("Info", "Mode") != "自定义"
+                if_quick_config
                 and task["taskName"] == target_task_name
                 and target_task_name == "AutoEssence"
             ):
