@@ -28,7 +28,7 @@
           "id": "0bzqbf2",
           "taskName": "DeliveryJobs",
           "enabled": true,
-          "optionValues": {}  
+          "optionValues": {}
         },
         {
           "id": "8vfq6y1",
@@ -61,12 +61,6 @@
           "optionValues": {}
         },
         {
-          "id": "hiu9ttk",
-          "taskName": "DailyRewards",
-          "enabled": true,
-          "optionValues": {}
-        },
-        {
           "id": "mwg371e",
           "taskName": "SeizeEntrustTask",
           "enabled": true,
@@ -76,7 +70,7 @@
           "id": "7u9ebfh",
           "taskName": "AutoCollect",
           "enabled": true,
-          "optionValues": {}  
+          "optionValues": {}
         },
         {
           "id": "y0k1zue",
@@ -87,22 +81,32 @@
         {
           "id": "agfpwsh",
           "taskName": "ResourceRecycleStation",
-          "enabled": true,"optionValues": {}
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "qmwzjgu",
           "taskName": "AutoEcoFarm",
-          "enabled": true,"optionValues": {}
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "5ej6pg9",
           "taskName": "AutoEssence",
-          "enabled": true,"optionValues": {}
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "d947el4",
           "taskName": "ProtocolSpace",
-          "enabled": true,"optionValues": {}
+          "enabled": true,
+          "optionValues": {}
+        },
+        {
+          "id": "hiu9ttk",
+          "taskName": "DailyRewards",
+          "enabled": true,
+          "optionValues": {}
         }
       ]
     }
