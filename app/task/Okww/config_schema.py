@@ -311,6 +311,10 @@ def build_fields_for_config(
     """
     seen: set[str] = set()
 
+    def _is_internal(name: str) -> bool:
+        """ok-ww 框架内部字段（_enabled 等），不暴露给 MAS 用户编辑。"""
+        return name.startswith("_")
+
     def make_field(name: str, raw_value: Any) -> dict[str, Any]:
         seen.add(name)
         opts = _get_select_options(filename, name)
@@ -344,12 +348,16 @@ def build_fields_for_config(
             "step": None,
         }
 
-    fields = [make_field(k, v) for k, v in json_data.items()]
+    fields = [
+        make_field(k, v)
+        for k, v in json_data.items()
+        if not _is_internal(k)  # 屏蔽 _enabled 等 ok-ww 框架内部字段
+    ]
 
     # 补充：SELECT_OPTIONS 中有定义但 JSON 中没有的字段（ok-ww 新增配置项）
     known_options = SELECT_OPTIONS.get(filename, {})
     for name in known_options:
-        if name not in seen:
+        if name not in seen and not _is_internal(name):
             fields.append(make_field(name, None))
 
     return fields
