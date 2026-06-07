@@ -562,9 +562,19 @@ async def get_okww_configs_list(script_id: str):
     """
     try:
         import shutil
-        from app.task.Okww.config_schema import get_all_config_info, CONFIG_SCHEMA_MAP, OPTION_LABELS
+        from app.task.Okww.config_schema import (
+            get_all_config_info, CONFIG_SCHEMA_MAP, OPTION_LABELS, load_okww_option_labels
+        )
 
         script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+
+        # 尝试从 ok-ww 安装目录加载官方翻译文件，覆盖硬编码映射
+        raw_root_path = script_config.get("Info", "RootPath")
+        if raw_root_path:
+            loaded_labels = load_okww_option_labels(raw_root_path)
+            option_labels = {**OPTION_LABELS, **loaded_labels}  # 动态覆盖静态
+        else:
+            option_labels = dict(OPTION_LABELS)
 
         # per-user 配置目录（始终使用 Default，因为配置编辑器是脚本级的）
         mas_config_dir = Path.cwd() / f"data/{script_id}/Default/ConfigFile"
@@ -656,7 +666,7 @@ async def get_okww_configs_list(script_id: str):
             "status": "success",
             "message": f"共 {len(result)} 个配置文件",
             "data": result,
-            "optionLabels": OPTION_LABELS,
+            "optionLabels": option_labels,
             "configPath": str(mas_config_dir) if mas_config_dir else None,
         }
     except Exception as e:

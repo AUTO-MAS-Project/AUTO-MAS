@@ -25,6 +25,9 @@ OK-WW 配置文件 Schema 定义
 
 from __future__ import annotations
 from typing import Any, Literal
+from pathlib import Path
+import re
+import struct
 
 # 字段类型枚举
 # bool    — 开关 (a-switch)
@@ -50,7 +53,118 @@ def _field(
     return schema
 
 
+# ─── OK-WW 翻译文件自动加载 ─────────────────────────────────────────────────
+
+# .po 文件解析正则
+_PO_ENTRY_RE = re.compile(
+    r'^msgid\s+"((?:[^"\\]|\\.)*)"\s*\nmsgstr\s+"((?:[^"\\]|\\.)*)"',
+    re.MULTILINE,
+)
+
+
+def _parse_po_file(po_path: Path) -> dict[str, str]:
+    """解析 .po 翻译文件，返回 {msgid: msgstr} 映射。"""
+    labels: dict[str, str] = {}
+    try:
+        text = po_path.read_text(encoding="utf-8")
+        for match in _PO_ENTRY_RE.finditer(text):
+            msgid = match.group(1)
+            msgstr = match.group(2)
+            if msgid and msgstr:  # 跳过空 msgid（PO 头部元数据）
+                labels[msgid] = msgstr
+    except Exception:
+        pass
+    return labels
+
+
+def _parse_mo_file(mo_path: Path) -> dict[str, str]:
+    """解析 .mo 编译翻译文件，返回 {msgid: msgstr} 映射。
+
+    .mo 二进制格式（小端）：
+        magic: u32 = 0x950412de
+        revision: u32 (通常为 0)
+        n_strings: u32
+        orig_table_offset: u32
+        trans_table_offset: u32
+        ...
+    每个字符串表条目：length: u32, offset: u32
+    """
+    labels: dict[str, str] = {}
+    try:
+        data = mo_path.read_bytes()
+        if len(data) < 20:
+            return labels
+
+        magic, _rev, n_strings, orig_off, trans_off = struct.unpack_from(
+            "<IIIII", data, 0
+        )
+
+        # 验证魔数（同时支持大小端）
+        if magic not in (0x950412DE, 0xDE120495):
+            return labels
+
+        le = magic == 0x950412DE
+        fmt = "<II" if le else ">II"
+
+        def read_strings(table_offset: int) -> list[str]:
+            strings: list[str] = []
+            for i in range(n_strings):
+                length, offset = struct.unpack_from(
+                    fmt, data, table_offset + i * 8
+                )
+                if length > 0:
+                    s = data[offset : offset + length]
+                    strings.append(s.decode("utf-8", errors="replace"))
+                else:
+                    strings.append("")
+            return strings
+
+        orig_strings = read_strings(orig_off)
+        trans_strings = read_strings(trans_off)
+
+        for orig, trans in zip(orig_strings, trans_strings):
+            if orig and trans:  # 跳过空 msgid（头部）
+                labels[orig] = trans
+    except Exception:
+        pass
+    return labels
+
+
+def load_okww_option_labels(root_path: Path | str) -> dict[str, str]:
+    """从 ok-ww 安装目录自动加载选项的英文→中文翻译映射。
+
+    搜索优先级：ok.mo（编译） > ok.po（源文件）。
+    返回与 OPTION_LABELS 相同格式的 {English: 中文} 字典，
+    调用方应合并到硬编码 OPTION_LABELS 之上。
+    """
+    root = Path(root_path)
+
+    # 可能的 i18n 目录位置（覆盖不同打包方式）
+    i18n_candidates = [
+        root / "i18n",
+        root / "_internal" / "i18n",
+        root / "data" / "apps" / "ok-ww" / "i18n",
+    ]
+
+    for i18n_dir in i18n_candidates:
+        mo_file = i18n_dir / "zh_CN" / "LC_MESSAGES" / "ok.mo"
+        if mo_file.is_file():
+            labels = _parse_mo_file(mo_file)
+            if labels:
+                return labels
+
+        po_file = i18n_dir / "zh_CN" / "LC_MESSAGES" / "ok.po"
+        if po_file.is_file():
+            labels = _parse_po_file(po_file)
+            if labels:
+                return labels
+
+    return {}
+
+
 # 选项值的中文翻译映射（key=英文原值, value=中文显示）
+# 运行时优先使用 load_okww_option_labels() 从 ok-ww 目录加载的翻译，
+# 此处保留为兜底默认值。
 OPTION_LABELS: dict[str, str] = {
     # 通用
     "Yes": "是",
