@@ -210,20 +210,6 @@ SELECT_OPTIONS: dict[str, dict[str, list[str]]] = {
             "Resonator EXP", "Weapon EXP", "Shell Credit",
         ],
     },
-    # ── 任务子配置 ──
-    "EnhanceEchoTask.json": {
-        "有效词条": [
-            "暴击伤害", "暴击", "攻击百分比",
-            "生命百分比", "防御百分比",
-            "攻击", "生命", "防御",
-            "共鸣效率", "普攻伤害加成",
-            "重击伤害加成", "共鸣解放伤害加成", "共鸣技能伤害加成",
-        ],
-    },
-    "AutoPickTask.json": {
-        "Pick Up White List": ["吸收", "Absorb", "拾取", "Pick Up"],
-        "Pick Up Black List": ["开始合成", "领取奖励", "Claim", "合成台"],
-    },
     # ── 全局配置 ──
     "Basic Options.json": {
         "Use DirectML": ["Auto", "Yes", "No"],
@@ -251,13 +237,6 @@ CONFIG_GROUPS = {
         "SimulationTask.json",
         "TacetTask.json",
     ],
-    "任务子配置": [
-        "EnhanceEchoTask.json",
-        "AutoCombatTask.json",
-        "AutoPickTask.json",
-        "AutoDialogTask.json",
-        "ChangeEchoTask.json",
-    ],
     "全局配置": [
         "Game Hotkey.json",
         "Character Config.json",
@@ -275,11 +254,6 @@ CONFIG_DISPLAY_NAMES: dict[str, str] = {
     "NightmareNestTask.json": "梦魇巢穴",
     "SimulationTask.json": "模拟领域",
     "TacetTask.json": "无音区",
-    "EnhanceEchoTask.json": "批量强化声骸",
-    "AutoCombatTask.json": "自动战斗",
-    "AutoPickTask.json": "自动拾取",
-    "AutoDialogTask.json": "任务跳过对话",
-    "ChangeEchoTask.json": "批量修改声骸主属性",
     "Game Hotkey.json": "游戏快捷键",
     "Character Config.json": "角色设置",
     "Monthly Card Config.json": "小月卡设置",
