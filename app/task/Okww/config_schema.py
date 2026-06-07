@@ -60,7 +60,6 @@ OPTION_LABELS: dict[str, str] = {
     "Forgery Challenge": "凝素领域",
     "Tacet Suppression": "无音区",
     "Simulation": "模拟领域",
-    "Nightmare Nest": "梦魇巢穴",
     # DailyTask / SimulationTask - Material Selection
     "Weapon EXP": "武器经验",
     "Shell Credit": "贝币",
@@ -90,7 +89,6 @@ DAILY_TASK_SCHEMA: dict[str, FieldSchema] = {
             "Forgery Challenge",
             "Tacet Suppression",
             "Simulation",
-            "Nightmare Nest",
         ],
     ),
     "Which Tacet Suppression to Farm": _field(
