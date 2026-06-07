@@ -73,8 +73,10 @@ OPTION_LABELS: dict[str, str] = {
     "Nightmare Purification": "梦魇祓除",
     "Tacet Discord Nest": "残像聚落",
     # Basic Options - Blur Algorithm
-    "Inpaint": "修复",
-    "Gaussian": "高斯",
+    "Blur": "模糊",
+    "Inpaint": "内容填充",
+    # Use DirectML
+    "None": "无",
 }
 
 
@@ -412,64 +414,69 @@ CHANGE_ECHO_TASK_SCHEMA: dict[str, FieldSchema] = {
 GAME_HOTKEY_SCHEMA: dict[str, FieldSchema] = {
     "Echo Key": _field(
         "hotkey",
-        label="声骸技能键",
-        description="声骸技能快捷键",
+        label="声骸按键",
+        description="声骸技能快捷键（默认 Q）",
     ),
     "Liberation Key": _field(
         "hotkey",
-        label="解放技能键",
-        description="解放技能快捷键",
+        label="共鸣解放快捷键",
+        description="共鸣解放快捷键（默认 R）",
     ),
     "Resonance Key": _field(
         "hotkey",
-        label="共鸣技能键",
-        description="共鸣技能快捷键",
+        label="共鸣技能快捷键",
+        description="共鸣技能快捷键（默认 E）",
     ),
     "Tool Key": _field(
         "hotkey",
-        label="工具键",
-        description="工具快捷键",
+        label="探索工具快捷键",
+        description="探索工具快捷键（默认 T）",
     ),
     "Jump Key": _field(
         "hotkey",
         label="跳跃键",
-        description="跳跃快捷键",
+        description="跳跃键（默认 Space）",
     ),
     "Dodge Key": _field(
         "hotkey",
         label="闪避键",
-        description="闪避快捷键",
+        description="闪避键（默认 LShift）",
     ),
     "Wheel Key": _field(
         "hotkey",
         label="轮盘键",
-        description="轮盘快捷键",
+        description="轮盘键（默认 Tab）",
     ),
 }
 
 CHARACTER_CONFIG_SCHEMA: dict[str, FieldSchema] = {
     "Iuno C6": _field(
         "bool",
-        label="伊努诺 C6",
-        description="是否启用伊努诺 C6 配置",
+        label="尤诺6链",
+        description="是否启用尤诺6链配置",
     ),
     "Chisa DPS": _field(
         "bool",
-        label="千纱 DPS",
-        description="是否启用千纱 DPS 配置",
+        label="千咲主C",
+        description="是否启用千咲主C配置",
+    ),
+    "Verina C2": _field(
+        "bool",
+        label="维里奈2链",
+        description="是否启用维里奈2链配置",
     ),
 }
 
 MONTHLY_CARD_CONFIG_SCHEMA: dict[str, FieldSchema] = {
     "Check Monthly Card": _field(
         "bool",
-        label="检查月卡",
-        description="是否检查月卡弹窗",
+        label="是否检查月卡",
+        description="设置避免小月卡弹窗打断任务",
     ),
     "Monthly Card Time": _field(
         "int",
-        label="月卡弹出时间",
-        description="电脑本地时间，月卡弹出的小时（1-24）",
+        label="月卡时间",
+        description="几点会弹出月卡提示，本地计算机时间（1-24）",
         min=1,
         max=24,
     ),
@@ -478,46 +485,47 @@ MONTHLY_CARD_CONFIG_SCHEMA: dict[str, FieldSchema] = {
 BASIC_OPTIONS_SCHEMA: dict[str, FieldSchema] = {
     "Auto Start Game When App Starts": _field(
         "bool",
-        label="启动时自动开始游戏",
-        description="应用启动时是否自动开始游戏",
+        label="APP启动后自动启动游戏",
+        description="程序启动时自动启动游戏",
     ),
     "Minimize Window to System Tray when Closing": _field(
         "bool",
-        label="关闭时最小化到托盘",
+        label="点击关闭按钮时最小化到系统托盘",
         description="关闭窗口时是否最小化到系统托盘",
     ),
     "Mute Game while in Background": _field(
         "bool",
-        label="后台时静音游戏",
+        label="游戏后台时静音",
         description="游戏在后台时是否静音",
     ),
     "Auto Resize Game Window": _field(
         "bool",
-        label="自动调整游戏窗口",
-        description="是否自动调整游戏窗口大小",
+        label="自动调整游戏分辨率",
+        description="是否自动调整游戏窗口分辨率",
     ),
     "Exit App when Game Exits": _field(
         "bool",
-        label="游戏退出时关闭应用",
-        description="游戏退出后是否关闭应用",
+        label="游戏退出时，自动退出应用",
+        description="游戏退出后是否自动关闭应用",
     ),
     "Use DirectML": _field(
         "select",
-        label="使用 DirectML",
-        description="DirectML 加速选项",
+        label="使用DirectML",
+        description="使用 GPU 加速改善性能",
         options=["Auto", "Yes", "No"],
     ),
     "Trigger Interval": _field(
         "int",
-        label="触发间隔（秒）",
-        description="任务触发间隔时间",
+        label="触发器间隔",
+        description="增加触发任务之间的延迟以降低 CPU/GPU 消耗（毫秒）",
         min=1,
         max=60,
     ),
     "Start/Stop": _field(
-        "hotkey",
-        label="启动/停止快捷键",
-        description="启动或停止任务的快捷键",
+        "select",
+        label="开始/停止",
+        description="开始或停止任务的快捷键",
+        options=["None", "F9", "F10", "F11", "F12"],
     ),
     "Kill Launcher after Start": _field(
         "bool",
@@ -526,25 +534,25 @@ BASIC_OPTIONS_SCHEMA: dict[str, FieldSchema] = {
     ),
     "Launch with DX11": _field(
         "bool",
-        label="使用 DX11 启动",
+        label="使用DX11启动",
         description="是否使用 DirectX 11 启动游戏",
     ),
     "Enable Blur": _field(
         "bool",
-        label="启用模糊",
-        description="是否启用界面模糊效果",
+        label="启用模糊遮挡",
+        description="模糊游戏 UID 等固定内容以延长 OLED 屏幕寿命",
     ),
     "Blur Algorithm": _field(
         "select",
-        label="模糊算法",
-        description="选择模糊算法",
-        options=["Inpaint", "Gaussian"],
+        label="遮挡算法",
+        description="用于遮挡配置区域的处理方式",
+        options=["Blur", "Inpaint"],
     ),
     "Blur Interval": _field(
         "int",
-        label="模糊间隔",
-        description="模糊处理间隔",
-        min=1,
+        label="遮挡检查间隔",
+        description="处理后遮挡层的更新间隔（秒）",
+        min=0,
         max=10,
     ),
 }
@@ -593,10 +601,10 @@ CONFIG_DISPLAY_NAMES: dict[str, str] = {
     "AutoPickTask.json": "自动拾取",
     "AutoDialogTask.json": "自动对话",
     "ChangeEchoTask.json": "切换声骸",
-    "Game Hotkey.json": "游戏热键",
-    "Character Config.json": "角色配置",
-    "Monthly Card Config.json": "月卡配置",
-    "Basic Options.json": "基础选项",
+    "Game Hotkey.json": "游戏快捷键",
+    "Character Config.json": "角色设置",
+    "Monthly Card Config.json": "小月卡设置",
+    "Basic Options.json": "基本设置",
 }
 
 # 文件名 -> 任务序号（用于与 TaskIndex 关联）
