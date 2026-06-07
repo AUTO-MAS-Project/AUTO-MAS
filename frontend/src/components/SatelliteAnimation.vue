@@ -9,8 +9,12 @@ import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useTheme } from '@/composables/useTheme'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { satelliteModules, centerIconUrl } from '@/composables/satellite-config'
+import {
+  getSatelliteModuleStatuses,
+  type SatelliteModuleStatus,
+} from '@/composables/useSatelliteStatus'
 import type { ScriptType } from '@/types/script'
-import { Service, type QueueGetIn, type QueueItemGetIn } from '@/api'
+import { Service } from '@/api'
 import * as THREE from 'three'
 
 const CONFIG = {
@@ -32,7 +36,8 @@ const CONFIG = {
   cardAppearDelay: 150,
   cardAppearDuration: 400,
   glowSizeMultiplier: 3.5,
-  glowZOffset: -5,
+  activityGlowZOffset: -5,
+  errorGlowZOffset: -3,
   statusUpdateInterval: 10000,
 }
 
@@ -58,8 +63,9 @@ let centerCard: CardMesh | null = null
 
 interface SatelliteState {
   type: ScriptType
-  glowSprite: THREE.Sprite | null
-  status: 'idle' | 'queued'
+  activityGlowSprite: THREE.Sprite | null
+  errorGlowSprite: THREE.Sprite | null
+  status: SatelliteModuleStatus
 }
 let satelliteStates: Map<CardMesh, SatelliteState> = new Map()
 let centerGlowSprite: THREE.Sprite | null = null
@@ -435,25 +441,45 @@ async function initSceneInternal(): Promise<void> {
     satellites.push(sat)
     cardScene.add(sat)
 
-    const glowMaterial = new THREE.SpriteMaterial({
+    const activityGlowMaterial = new THREE.SpriteMaterial({
       map: glowTexture,
       transparent: true,
       blending: THREE.AdditiveBlending,
       color: new THREE.Color(0x6ce08a),
       opacity: 0,
     })
-    const glowSprite = new THREE.Sprite(glowMaterial)
-    glowSprite.scale.set(
+    const activityGlowSprite = new THREE.Sprite(activityGlowMaterial)
+    activityGlowSprite.scale.set(
       CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier,
       CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier,
       1
     )
-    glowScene.add(glowSprite)
+    glowScene.add(activityGlowSprite)
+
+    const errorGlowMaterial = new THREE.SpriteMaterial({
+      map: glowTexture,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      color: new THREE.Color(0xff5a5f),
+      opacity: 0,
+    })
+    const errorGlowSprite = new THREE.Sprite(errorGlowMaterial)
+    errorGlowSprite.scale.set(
+      CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier * 1.08,
+      CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier * 1.08,
+      1
+    )
+    glowScene.add(errorGlowSprite)
 
     satelliteStates.set(sat, {
       type: module.scriptType,
-      glowSprite,
-      status: 'idle',
+      activityGlowSprite,
+      errorGlowSprite,
+      status: {
+        queued: false,
+        running: false,
+        errorVisible: false,
+      },
     })
   }
 
@@ -542,25 +568,51 @@ function animate(): void {
   }
 
   satelliteStates.forEach((state, sat) => {
-    if (state.glowSprite) {
-      state.glowSprite.position.set(
+    if (state.activityGlowSprite) {
+      state.activityGlowSprite.position.set(
         sat.position.x,
         sat.position.y,
-        sat.position.z + CONFIG.glowZOffset
+        sat.position.z + CONFIG.activityGlowZOffset
       )
 
-      switch (state.status) {
-        case 'queued': {
-          const breathe = 0.5 + 0.5 * Math.sin(time * 0.003)
-          state.glowSprite.material.color.setHex(0x6ce08a)
-          state.glowSprite.material.opacity = 0.4 + breathe * 0.55
-          const baseScale = CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier
-          const pulseFactor = 1 + breathe * 0.12
-          state.glowSprite.scale.set(baseScale * pulseFactor, baseScale * pulseFactor, 1)
-          break
-        }
-        default:
-          state.glowSprite.material.opacity = 0
+      const baseScale = CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier
+      if (state.status.errorVisible) {
+        state.activityGlowSprite.material.opacity = 0
+      } else if (state.status.running) {
+        const breathe = 0.5 + 0.5 * Math.sin(time * 0.003)
+        const pulseFactor = 1 + breathe * 0.12
+        state.activityGlowSprite.material.color.setHex(0x6ce08a)
+        state.activityGlowSprite.material.opacity = 0.4 + breathe * 0.55
+        state.activityGlowSprite.scale.set(baseScale * pulseFactor, baseScale * pulseFactor, 1)
+      } else if (state.status.queued) {
+        state.activityGlowSprite.material.color.setHex(0x6ce08a)
+        state.activityGlowSprite.material.opacity = 0.62
+        state.activityGlowSprite.scale.set(baseScale, baseScale, 1)
+      } else {
+        state.activityGlowSprite.material.opacity = 0
+      }
+    }
+
+    if (state.errorGlowSprite) {
+      state.errorGlowSprite.position.set(
+        sat.position.x,
+        sat.position.y,
+        sat.position.z + CONFIG.errorGlowZOffset
+      )
+
+      if (state.status.errorVisible) {
+        const faintPulse = state.status.running
+          ? 0.5 + 0.5 * Math.sin(time * 0.003)
+          : 0.5 + 0.5 * Math.sin(time * 0.0016)
+        const baseScale = CONFIG.satelliteCardSize * CONFIG.glowSizeMultiplier * 1.08
+        const pulseFactor = state.status.running ? 1 + faintPulse * 0.12 : 1 + faintPulse * 0.04
+        state.errorGlowSprite.material.color.setHex(state.status.running ? 0xffc247 : 0xff5a5f)
+        state.errorGlowSprite.material.opacity = state.status.running
+          ? 0.4 + faintPulse * 0.32
+          : 0.42
+        state.errorGlowSprite.scale.set(baseScale * pulseFactor, baseScale * pulseFactor, 1)
+      } else {
+        state.errorGlowSprite.material.opacity = 0
       }
     }
   })
@@ -569,15 +621,16 @@ function animate(): void {
     centerGlowSprite.position.set(
       centerCard.position.x,
       centerCard.position.y,
-      centerCard.position.z + CONFIG.glowZOffset
+      centerCard.position.z + CONFIG.activityGlowZOffset
     )
 
     if (centerGlowMode.value === 'rainbow') {
       const hue = (time * 0.0008) % 1
+      const flash = 0.5 + 0.5 * Math.sin(time * 0.006)
       centerGlowSprite.material.color.setHSL(hue, 0.75, 0.6)
-      centerGlowSprite.material.opacity = 0.85 + Math.sin(time * 0.0015) * 0.12
+      centerGlowSprite.material.opacity = 0.58 + flash * 0.34
       centerGlowSprite.scale.setScalar(
-        CONFIG.centerCardSize * (CONFIG.glowSizeMultiplier * 0.85 + Math.sin(time * 0.0015) * 0.05)
+        CONFIG.centerCardSize * (CONFIG.glowSizeMultiplier * 0.82 + flash * 0.1)
       )
     } else {
       centerGlowSprite.material.color.setHex(0x6ce08a)
@@ -610,45 +663,13 @@ watch(isDark, () => {
 
 async function updateSatelliteStates() {
   try {
-    const queueResponse = await Service.getQueuesApiQueueGetPost({} as QueueGetIn)
-
-    const queuedScriptIds: Set<string> = new Set()
-
-    if (queueResponse.code === 200 && queueResponse.index.length > 0) {
-      for (const queueIndex of queueResponse.index) {
-        const queueItemsResponse = await Service.getItemApiQueueItemGetPost({
-          queueId: queueIndex.uid,
-        } as QueueItemGetIn)
-
-        if (queueItemsResponse.code === 200) {
-          for (const itemIndex of queueItemsResponse.index) {
-            const item = queueItemsResponse.data[itemIndex.uid]
-            if (item?.Info?.ScriptId && item.Info.ScriptId !== '-') {
-              queuedScriptIds.add(item.Info.ScriptId)
-            }
-          }
-        }
-      }
-    }
-
-    const allScripts = await getScripts(false)
-    const scriptMap = new Map(allScripts.map(s => [s.uid, s]))
-
-    const queuedTypes: Set<ScriptType> = new Set()
-
-    for (const [scriptId, script] of scriptMap) {
-      const scriptType = script.type as ScriptType
-
-      if (queuedScriptIds.has(scriptId)) {
-        queuedTypes.add(scriptType)
-      }
-    }
+    const statusByType = await getSatelliteModuleStatuses()
 
     satelliteStates.forEach(state => {
-      if (queuedTypes.has(state.type)) {
-        state.status = 'queued'
-      } else {
-        state.status = 'idle'
+      state.status = statusByType.get(state.type) ?? {
+        queued: false,
+        running: false,
+        errorVisible: false,
       }
     })
   } catch (error) {
