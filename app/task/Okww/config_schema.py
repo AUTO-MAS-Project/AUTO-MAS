@@ -28,6 +28,7 @@ from typing import Any, Literal
 from pathlib import Path
 import re
 import struct
+from xml.etree import ElementTree
 
 # 字段类型枚举
 # bool    — 开关 (a-switch)
@@ -130,36 +131,75 @@ def _parse_mo_file(mo_path: Path) -> dict[str, str]:
     return labels
 
 
+def _parse_ts_file(ts_path: Path) -> dict[str, str]:
+    """解析 Qt .ts 翻译文件（ok-script 框架级翻译），返回 {source: translation} 映射。"""
+    labels: dict[str, str] = {}
+    try:
+        root = ElementTree.parse(str(ts_path)).getroot()
+        for message in root.iter("message"):
+            source = message.find("source")
+            translation = message.find("translation")
+            if (
+                source is not None
+                and translation is not None
+                and source.text
+                and translation.text
+                and translation.attrib.get("type") != "unfinished"
+            ):
+                labels[source.text] = translation.text
+    except Exception:
+        pass
+    return labels
+
+
 def load_okww_option_labels(root_path: Path | str) -> dict[str, str]:
     """从 ok-ww 安装目录自动加载选项的英文→中文翻译映射。
 
-    搜索优先级：ok.mo（编译） > ok.po（源文件）。
+    搜索优先级：ok.mo（编译） > ok.po（源文件），
+    同时加载 ok-script 框架的 zh_CN.ts 翻译。
     返回与 OPTION_LABELS 相同格式的 {English: 中文} 字典，
     调用方应合并到硬编码 OPTION_LABELS 之上。
     """
     root = Path(root_path)
+    labels: dict[str, str] = {}
 
     # 可能的 i18n 目录位置（覆盖不同打包方式）
     i18n_candidates = [
         root / "i18n",
         root / "_internal" / "i18n",
-        root / "data" / "apps" / "ok-ww" / "i18n",
+        root / "data" / "apps" / "ok-ww" / "repo" / "i18n",
+        root / "data" / "apps" / "ok-ww" / "working" / "i18n",
     ]
 
     for i18n_dir in i18n_candidates:
         mo_file = i18n_dir / "zh_CN" / "LC_MESSAGES" / "ok.mo"
         if mo_file.is_file():
-            labels = _parse_mo_file(mo_file)
-            if labels:
-                return labels
+            loaded = _parse_mo_file(mo_file)
+            if loaded:
+                labels.update(loaded)
+                break  # .mo 优先，找到即停止
 
         po_file = i18n_dir / "zh_CN" / "LC_MESSAGES" / "ok.po"
         if po_file.is_file():
-            labels = _parse_po_file(po_file)
-            if labels:
-                return labels
+            loaded = _parse_po_file(po_file)
+            if loaded:
+                labels.update(loaded)
+                break  # .po 次选，找到即停止
 
-    return {}
+    # 额外加载 ok-script 框架翻译（zh_CN.ts），覆盖 Basic Options 等框架级标签
+    ts_candidates = [
+        root / "ok" / "gui" / "i18n" / "zh_CN.ts",
+        root / "_internal" / "ok" / "gui" / "i18n" / "zh_CN.ts",
+        root / "data" / "apps" / "ok-ww" / "repo" / "ok" / "gui" / "i18n" / "zh_CN.ts",
+    ]
+    for ts_file in ts_candidates:
+        if ts_file.is_file():
+            loaded = _parse_ts_file(ts_file)
+            if loaded:
+                labels.update(loaded)  # .ts 补充框架标签（不覆盖 .po 已有）
+                break
+
+    return labels
 
 
 # 选项值的中文翻译映射（key=英文原值, value=中文显示）
