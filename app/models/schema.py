@@ -616,11 +616,14 @@ class OkwwConfig_Script(GeneralConfig_Script):
 class OkwwConfig_Game(GeneralConfig_Game):
     """OK-WW 游戏配置（复用通用字段）"""
 
+    Type: Optional[Literal["Client", "URL"]] = Field(
+        default=None, description="类型: PC端, URL协议"
+    )
     LaunchBeforeTask: Optional[bool] = Field(
-        default=None, description="任务开始前是否由 MAS 启动游戏/模拟器"
+        default=None, description="任务开始前是否由 MAS 启动游戏"
     )
     CloseOnFinish: Optional[bool] = Field(
-        default=None, description="任务结束后是否关闭游戏/模拟器"
+        default=None, description="任务结束后是否关闭游戏"
     )
 
 
@@ -753,9 +756,9 @@ class MaaEndConfig_Run(BaseModel):
 
 
 class MaaEndConfig_Game(BaseModel):
-    ControllerType: Optional[
-        Literal["Win32-Window", "Win32-Window-Background", "Win32-Front", "ADB"]
-    ] = Field(default=None, description="控制器类型")
+    ControllerType: Optional[Literal["Win32-Front", "ADB"]] = Field(
+        default=None, description="控制器类型"
+    )
     Path: Optional[str] = Field(default=None, description="终末地客户端路径")
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(default=None, ge=60, description="游戏等待时间")

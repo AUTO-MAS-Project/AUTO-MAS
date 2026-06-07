@@ -412,10 +412,7 @@ const handleStartMaaEndConfig = (script: Script) => {
 
 const isMaaEndPresetSupported = (script: Script) => {
   const controllerType = (script.config as any).Game?.ControllerType
-  return (
-    script.type === 'MaaEnd' &&
-    (controllerType === 'Win32-Window' || controllerType === 'Win32-Front')
-  )
+  return script.type === 'MaaEnd' && controllerType === 'Win32-Front'
 }
 
 const handleSaveMaaEndConfig = (script: Script) => {

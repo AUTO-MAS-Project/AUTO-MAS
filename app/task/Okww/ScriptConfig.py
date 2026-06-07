@@ -54,10 +54,8 @@ class ScriptConfigTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
 
     async def check(self) -> str:
-        if not Path(self.script_config.get("Info", "RootPath")).exists():
-            return "OK-WW 根目录不存在，请检查脚本根目录"
-        if not Path(self.script_config.get("Script", "ScriptPath")).exists():
-            return "OK-WW 可执行文件不存在，请检查主程序路径"
+        if not Path(self.script_config.get("Script", "ScriptPath")).is_file():
+            return "请设置ok-ww脚本路径"
         return "Pass"
 
     async def main_task(self):
@@ -102,14 +100,14 @@ class ScriptConfigTask(TaskExecuteBase):
         if hasattr(self, "okww_process_manager"):
             try:
                 await self.okww_process_manager.kill()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.exception(f"通过进程管理器中止 OK-WW 配置进程失败: {e}")
 
         exe = Path(self.script_config.get("Script", "ScriptPath"))
         try:
             await System.kill_process(exe)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception(f"中止 OK-WW 配置主进程失败: {e}")
 
         root = Path(self.script_config.get("Info", "RootPath"))
         track_exe = str(self.script_config.get("Script", "TrackProcessExe") or "").strip()
@@ -118,8 +116,8 @@ class ScriptConfigTask(TaskExecuteBase):
         if track_exe:
             try:
                 await System.kill_process(Path(track_exe))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.exception(f"中止 OK-WW 配置追踪进程失败: {e}")
 
     async def final_task(self):
         if hasattr(self, "wait_event"):
@@ -131,6 +129,13 @@ class ScriptConfigTask(TaskExecuteBase):
             Path.cwd()
             / f"data/{self.script_info.script_id}/{config_owner}/ConfigFile"
         )
+        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            if not self.script_config_path.is_dir():
+                raise FileNotFoundError("未找到 ok-ww 配置目录，请先在 ok-ww 中完成配置保存")
+        elif self.script_config.get("Script", "ConfigPathMode") == "File":
+            if not self.script_config_path.is_file():
+                raise FileNotFoundError("未找到 ok-ww 配置文件，请先在 ok-ww 中完成配置保存")
+
         shutil.rmtree(mas_config_dir, ignore_errors=True)
         mas_config_dir.mkdir(parents=True, exist_ok=True)
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":

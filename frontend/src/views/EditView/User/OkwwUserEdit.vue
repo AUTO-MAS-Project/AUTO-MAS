@@ -1,26 +1,5 @@
 <template>
   <div class="user-edit-container">
-    <teleport to="body">
-      <div v-if="showConfigMask" class="maa-config-mask">
-        <div class="mask-content">
-          <div class="mask-icon">
-            <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
-          </div>
-          <h2 class="mask-title">正在进行 ok-ww 配置</h2>
-          <p class="mask-description">
-            当前正在为这个用户打开 ok-ww 配置界面，请在 ok-ww 中完成相关设置。
-            <br />
-            配置完成后，点击“保存配置”结束本次会话。
-          </p>
-          <div class="mask-actions">
-            <a-button v-if="websocketId" type="primary" size="large" @click="handleSaveOkwwConfig">
-              保存配置
-            </a-button>
-          </div>
-        </div>
-      </div>
-    </teleport>
-
     <div class="user-edit-header">
       <div class="header-nav">
         <a-breadcrumb class="breadcrumb">
@@ -39,31 +18,6 @@
       </div>
 
       <a-space size="middle">
-        <a-button
-          v-if="formData.Info.Mode === '详细' && !showConfigMask"
-          type="primary"
-          ghost
-          size="large"
-          :loading="configLoading"
-          @click="handleOkwwConfig"
-        >
-          <template #icon>
-            <SettingOutlined />
-          </template>
-          ok-ww 配置
-        </a-button>
-        <a-button
-          v-if="formData.Info.Mode === '详细' && showConfigMask"
-          type="default"
-          size="large"
-          disabled
-          style="color: #52c41a; border-color: #52c41a"
-        >
-          <template #icon>
-            <SettingOutlined />
-          </template>
-          正在配置
-        </a-button>
         <a-button size="large" class="cancel-button" @click="handleCancel">
           <template #icon>
             <ArrowLeftOutlined />
@@ -160,28 +114,7 @@
             </a-row>
 
             <a-row :gutter="24">
-              <a-col :span="8">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      用户配置模式
-                      <a-tooltip title="简洁模式共用脚本页配置；详细模式每个用户独立配置">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-select
-                    v-model:value="formData.Info.Mode"
-                    size="large"
-                    class="modern-select"
-                    @change="handleModeChange"
-                  >
-                    <a-select-option value="简洁">简洁</a-select-option>
-                    <a-select-option value="详细">详细</a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
+              <a-col :span="12">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
@@ -201,7 +134,7 @@
                   />
                 </a-form-item>
               </a-col>
-              <a-col :span="8">
+              <a-col :span="12">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
@@ -280,7 +213,16 @@
               </a-col>
             </a-row>
           </div>
+        </a-form>
+      </a-card>
 
+      <!-- OK-WW 配置编辑器 -->
+      <a-card class="config-card" style="margin-top: 24px">
+        <OkwwConfigEditor :script-id="scriptId" @saved="handleConfigSaved" />
+      </a-card>
+
+      <a-card class="config-card" style="margin-top: 24px">
+        <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
               <h3>通知配置</h3>
@@ -368,12 +310,12 @@
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
-import { Service, TaskCreateIn, type OkwwUserConfig } from '@/api'
+import { ArrowLeftOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import type { OkwwUserConfig } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { subscribe, unsubscribe } from '@/composables/useWebSocket'
 import WebhookManager from '@/components/WebhookManager.vue'
+import OkwwConfigEditor from '@/views/M9AUserEdit/OkwwConfigEditor.vue'
 
 const logger = window.electronAPI.getLogger('ok-ww用户编辑')
 const route = useRoute()
@@ -387,10 +329,6 @@ const isEdit = ref(!!userId)
 const scriptName = ref('ok-ww脚本')
 
 const pageLoading = ref(true)
-const showConfigMask = ref(false)
-const configLoading = ref(false)
-const subscriptionId = ref<string | null>(null)
-const websocketId = ref<string | null>(null)
 const isInitializing = ref(true)
 const isSaving = ref(false)
 
@@ -409,14 +347,6 @@ const okwwTaskOptions = [
   { label: '7 - SimulationTask（模拟领域）', value: 7 },
   { label: '8 - TacetTask（无音区）', value: 8 },
 ]
-
-type OkwwConfigMessage = {
-  type?: string
-  data?: {
-    Accomplish?: unknown
-    [key: string]: unknown
-  }
-}
 
 const getDefaultUserData = () => ({
   Info: {
@@ -516,11 +446,6 @@ const handleTaskIndexChange = async (value: number) => {
   }
 }
 
-const handleModeChange = async (value: '简洁' | '详细') => {
-  formData.Info.Mode = value
-  await saveField('Info.Mode', value)
-}
-
 const loadScriptInfo = async () => {
   const detail = await getScript(scriptId)
   if (detail) {
@@ -564,75 +489,8 @@ const loadUser = async () => {
   }
 }
 
-const cleanupWs = () => {
-  if (subscriptionId.value) {
-    unsubscribe(subscriptionId.value)
-    subscriptionId.value = null
-  }
-  websocketId.value = null
-  showConfigMask.value = false
-}
-
-const handleOkwwConfig = async () => {
-  if (!userId) {
-    message.error('用户未就绪，请稍后重试')
-    return
-  }
-  if (formData.Info.Mode !== '详细') {
-    message.info('当前为简洁模式，请在脚本页使用「配置 ok-ww」按钮')
-    return
-  }
-  try {
-    configLoading.value = true
-    cleanupWs()
-
-    const resp = await Service.addTaskApiDispatchStartPost({
-      taskId: userId,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-    })
-
-    if (resp?.code !== 200 || !resp?.taskId) {
-      throw new Error(resp?.message || '启动 ok-ww 配置失败')
-    }
-
-    websocketId.value = resp.taskId
-    const subId = subscribe({ id: resp.taskId }, (wsMessage: OkwwConfigMessage) => {
-      if (wsMessage.type === 'error') {
-        message.error(`ok-ww 配置连接失败: ${wsMessage.data}`)
-        cleanupWs()
-        return
-      }
-      if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
-        cleanupWs()
-      }
-    })
-    subscriptionId.value = subId
-    showConfigMask.value = true
-    message.success('已开始 ok-ww 配置会话')
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : '启动 ok-ww 配置失败')
-  } finally {
-    configLoading.value = false
-  }
-}
-
-const handleSaveOkwwConfig = async () => {
-  const wsId = websocketId.value
-  if (!wsId) {
-    message.error('未找到活动的配置会话')
-    return
-  }
-  try {
-    const resp = await Service.stopTaskApiDispatchStopPost({ taskId: wsId })
-    if (resp?.code === 200) {
-      cleanupWs()
-      message.success('ok-ww 配置已保存')
-    } else {
-      message.error(resp?.message || '保存配置失败')
-    }
-  } catch {
-    message.error('保存配置失败')
-  }
+const handleConfigSaved = () => {
+  logger.info('OK-WW 配置已保存')
 }
 
 onMounted(async () => {
@@ -735,57 +593,6 @@ onMounted(async () => {
 .modern-select :deep(.ant-select-selector) {
   border: 2px solid var(--ant-color-border) !important;
   border-radius: 8px !important;
-}
-
-/* 与 Scripts.vue / MAAUserEdit 配置遮罩一致 */
-.maa-config-mask {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-}
-
-.mask-content {
-  background: var(--ant-color-bg-elevated);
-  border-radius: 8px;
-  padding: 24px;
-  max-width: 480px;
-  width: 100%;
-  text-align: center;
-  box-shadow:
-    0 6px 16px 0 rgba(0, 0, 0, 0.08),
-    0 3px 6px -4px rgba(0, 0, 0, 0.12),
-    0 9px 28px 8px rgba(0, 0, 0, 0.05);
-  border: 1px solid var(--ant-color-border);
-}
-
-.mask-icon {
-  margin-bottom: 16px;
-}
-
-.mask-title {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0 0 8px;
-  color: var(--ant-color-text);
-}
-
-.mask-description {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  margin: 0 0 24px;
-  line-height: 1.5;
-}
-
-.mask-actions {
-  display: flex;
-  justify-content: center;
 }
 
 @media (max-width: 768px) {
