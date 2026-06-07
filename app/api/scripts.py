@@ -561,21 +561,27 @@ async def get_okww_configs_list(script_id: str):
         dict: 包含配置文件列表和 schema 的响应
     """
     try:
+        import json
         import shutil
-        from app.task.Okww.config_schema import get_all_config_info, CONFIG_SCHEMA_MAP, OPTION_LABELS
+        from app.task.Okww.config_schema import (
+            get_all_config_info, build_fields_for_config, load_okww_option_labels,
+        )
 
         script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+
+        # 从 ok-ww 安装目录加载翻译 → option_labels
+        root_path = script_config.get("Info", "RootPath")
+        option_labels = load_okww_option_labels(root_path) if root_path else {}
 
         # per-user 配置目录（始终使用 Default，因为配置编辑器是脚本级的）
         mas_config_dir = Path.cwd() / f"data/{script_id}/Default/ConfigFile"
 
         # ok-ww 源配置目录（用于自动初始化）
         raw_config_path = script_config.get("Script", "ConfigPath")
-        raw_root_path = script_config.get("Info", "RootPath")
         okww_configs_dir = Path(raw_config_path) if raw_config_path else None
         if not okww_configs_dir or not okww_configs_dir.exists():
-            if raw_root_path:
-                okww_configs_dir = Path(raw_root_path) / "data" / "apps" / "ok-ww" / "working" / "configs"
+            if root_path:
+                okww_configs_dir = Path(root_path) / "data" / "apps" / "ok-ww" / "working" / "configs"
 
         # 自动初始化：per-user 目录为空时从 ok-ww configs 复制默认配置
         need_init = not mas_config_dir.exists() or not any(mas_config_dir.iterdir())
@@ -585,65 +591,20 @@ async def get_okww_configs_list(script_id: str):
 
         configs_info = get_all_config_info()
 
-        # 从 per-user 目录读取配置
-        configs_data = {}
-        if mas_config_dir.is_dir():
-            for info in configs_info:
-                filepath = mas_config_dir / info["filename"]
-                if filepath.exists():
-                    try:
-                        import json
-                        with open(filepath, "r", encoding="utf-8") as f:
-                            configs_data[info["filename"]] = json.load(f)
-                    except Exception:
-                        configs_data[info["filename"]] = {}
-
-        # 构建完整 schema（包含当前值）
+        # 读取 per-user JSON 配置，通过 build_fields_for_config 构建字段列表
         result = []
         for info in configs_info:
             filename = info["filename"]
-            schema = CONFIG_SCHEMA_MAP.get(filename, {})
-            current_data = configs_data.get(filename, {})
+            filepath = mas_config_dir / filename
+            current_data: dict[str, Any] = {}
+            if filepath.exists():
+                try:
+                    current_data = json.loads(filepath.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
 
-            fields = []
-            for field_name, field_def in schema.items():
-                fields.append({
-                    "name": field_name,
-                    "type": field_def["type"],
-                    "label": field_def.get("label", field_name),
-                    "description": field_def.get("description", ""),
-                    "value": current_data.get(field_name),
-                    "options": field_def.get("options"),
-                    "min": field_def.get("min"),
-                    "max": field_def.get("max"),
-                    "step": field_def.get("step"),
-                })
-
-            # 也包含 schema 中未定义但配置文件中存在的字段
-            for field_name, field_value in current_data.items():
-                if not any(f["name"] == field_name for f in fields):
-                    # 推断类型
-                    if isinstance(field_value, bool):
-                        field_type = "bool"
-                    elif isinstance(field_value, int):
-                        field_type = "int"
-                    elif isinstance(field_value, float):
-                        field_type = "float"
-                    elif isinstance(field_value, list):
-                        field_type = "list"
-                    else:
-                        field_type = "string"
-                    fields.append({
-                        "name": field_name,
-                        "type": field_type,
-                        "label": field_name,
-                        "description": "",
-                        "value": field_value,
-                        "options": None,
-                        "min": None,
-                        "max": None,
-                        "step": None,
-                    })
+            # 核心：JSON 自动发现字段 + 选项映射 + 翻译标签
+            fields = build_fields_for_config(filename, current_data, option_labels)
 
             result.append({
                 **info,
@@ -656,7 +617,7 @@ async def get_okww_configs_list(script_id: str):
             "status": "success",
             "message": f"共 {len(result)} 个配置文件",
             "data": result,
-            "optionLabels": OPTION_LABELS,
+            "optionLabels": option_labels,
             "configPath": str(mas_config_dir) if mas_config_dir else None,
         }
     except Exception as e:
