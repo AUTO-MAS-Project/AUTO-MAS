@@ -29,13 +29,11 @@ from app.models.ConfigBase import MultipleConfig
 from app.utils import get_logger, ProcessManager
 
 from .AutoProxy import AutoProxyTask
-from .ScriptConfig import ScriptConfigTask
 
 logger = get_logger("OK-WW 调度器")
 
-METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
+METHOD_BOOK: dict[str, type[AutoProxyTask]] = {
     "AutoProxy": AutoProxyTask,
-    "ScriptConfig": ScriptConfigTask,
 }
 
 
@@ -92,18 +90,13 @@ class OkwwManager(TaskExecuteBase):
         if not isinstance(self.script_config, OkwwConfig):
             raise TypeError("脚本配置类型错误")
 
-        # 构建用户列表：ScriptConfig 模式使用 task_info.user_id（Default 或具体用户），AutoProxy 模式遍历脚本用户
-        if self.task_info.mode == "ScriptConfig":
-            self.script_info.user_list = [
-                UserItem(user_id=self.task_info.user_id or "Default", name="", status="等待")
-            ]
-        else:
-            self.script_info.user_list = [
-                UserItem(user_id=str(uid), name=config.get("Info", "Name"), status="等待")
-                for uid, config in self.user_config.items()
-                if config.get("Info", "Status")
-                and config.get("Info", "RemainedDay") != 0
-            ]
+        # 构建用户列表：遍历脚本用户，筛选启用且剩余天数不为 0 的
+        self.script_info.user_list = [
+            UserItem(user_id=str(uid), name=config.get("Info", "Name"), status="等待")
+            for uid, config in self.user_config.items()
+            if config.get("Info", "Status")
+            and config.get("Info", "RemainedDay") != 0
+        ]
 
         # Enabled=游戏管理总开关；LaunchBeforeTask/CloseOnFinish=启动与收尾子项（可单独开启）
         self.game_manager: ProcessManager | None = None
