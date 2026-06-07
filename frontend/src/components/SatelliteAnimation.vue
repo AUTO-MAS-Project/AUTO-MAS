@@ -47,16 +47,21 @@ let orbitRenderer: THREE.WebGLRenderer | null = null
 let glowRenderer: THREE.WebGLRenderer | null = null
 let cardRenderer: THREE.WebGLRenderer | null = null
 let animationFrameId: number | null = null
-let satellites: THREE.Mesh[] = []
-let orbitLine: THREE.Line | null = null
-let centerCard: THREE.Mesh | null = null
+let appearAnimationFrameId: number | null = null
+let isUnmounted = false
+
+type CardMesh = THREE.Mesh<THREE.BoxGeometry, THREE.Material[]>
+
+let satellites: CardMesh[] = []
+let orbitLine: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial> | null = null
+let centerCard: CardMesh | null = null
 
 interface SatelliteState {
   type: ScriptType
   glowSprite: THREE.Sprite | null
   status: 'idle' | 'queued'
 }
-let satelliteStates: Map<THREE.Mesh, SatelliteState> = new Map()
+let satelliteStates: Map<CardMesh, SatelliteState> = new Map()
 let centerGlowSprite: THREE.Sprite | null = null
 let updateInterval: ReturnType<typeof setInterval> | null = null
 const centerGlowMode = ref<'rainbow' | 'green'>('green')
@@ -65,45 +70,95 @@ const { isDark } = useTheme()
 const { getScripts } = useScriptApi()
 
 onUnmounted(() => {
+  isUnmounted = true
   window.removeEventListener('resize', handleResize)
   if (animationFrameId !== null) {
     cancelAnimationFrame(animationFrameId)
+    animationFrameId = null
   }
-  if (orbitRenderer && container.value) {
-    const el = orbitRenderer.domElement
-    if (el.parentElement === container.value) container.value.removeChild(el)
-  }
-  if (glowRenderer && container.value) {
-    const el = glowRenderer.domElement
-    if (el.parentElement === container.value) container.value.removeChild(el)
-  }
-  if (cardRenderer && container.value) {
-    const el = cardRenderer.domElement
-    if (el.parentElement === container.value) container.value.removeChild(el)
-  }
-  orbitScene?.clear()
-  glowScene?.clear()
-  cardScene?.clear()
-
-  satelliteStates.forEach(state => {
-    state.glowSprite?.material.map?.dispose()
-    state.glowSprite?.material.dispose()
-    state.glowSprite?.dispose()
-  })
-  satelliteStates.clear()
-
-  if (centerGlowSprite) {
-    centerGlowSprite.material.map?.dispose()
-    centerGlowSprite.material.dispose()
-    centerGlowSprite.dispose()
-    centerGlowSprite = null
+  if (appearAnimationFrameId !== null) {
+    cancelAnimationFrame(appearAnimationFrameId)
+    appearAnimationFrameId = null
   }
 
   if (updateInterval) {
     clearInterval(updateInterval)
     updateInterval = null
   }
+
+  disposeSceneResources(orbitScene)
+  disposeSceneResources(glowScene)
+  disposeSceneResources(cardScene)
+  disposeRenderer(orbitRenderer)
+  disposeRenderer(glowRenderer)
+  disposeRenderer(cardRenderer)
+
+  orbitScene = null
+  glowScene = null
+  cardScene = null
+  camera = null
+  orbitRenderer = null
+  glowRenderer = null
+  cardRenderer = null
+  satellites = []
+  orbitLine = null
+  centerCard = null
+  centerGlowSprite = null
+  satelliteStates.clear()
 })
+
+function disposeRenderer(renderer: THREE.WebGLRenderer | null): void {
+  if (!renderer) return
+  const el = renderer.domElement
+  if (el.parentElement) {
+    el.parentElement.removeChild(el)
+  }
+  renderer.dispose()
+}
+
+function disposeMaterial(
+  material: THREE.Material,
+  disposedMaterials: Set<THREE.Material>,
+  disposedTextures: Set<THREE.Texture>
+): void {
+  if (disposedMaterials.has(material)) return
+  disposedMaterials.add(material)
+
+  const materialWithMap = material as THREE.Material & { map?: THREE.Texture | null }
+  if (materialWithMap.map && !disposedTextures.has(materialWithMap.map)) {
+    disposedTextures.add(materialWithMap.map)
+    materialWithMap.map.dispose()
+  }
+  material.dispose()
+}
+
+function disposeSceneResources(scene: THREE.Scene | null): void {
+  if (!scene) return
+  const disposedGeometries = new Set<THREE.BufferGeometry>()
+  const disposedMaterials = new Set<THREE.Material>()
+  const disposedTextures = new Set<THREE.Texture>()
+
+  scene.traverse(object => {
+    const objectWithResources = object as THREE.Object3D & {
+      geometry?: THREE.BufferGeometry
+      material?: THREE.Material | THREE.Material[]
+    }
+
+    if (objectWithResources.geometry && !disposedGeometries.has(objectWithResources.geometry)) {
+      disposedGeometries.add(objectWithResources.geometry)
+      objectWithResources.geometry.dispose()
+    }
+
+    const { material } = objectWithResources
+    if (Array.isArray(material)) {
+      material.forEach(mat => disposeMaterial(mat, disposedMaterials, disposedTextures))
+    } else if (material) {
+      disposeMaterial(material, disposedMaterials, disposedTextures)
+    }
+  })
+
+  scene.clear()
+}
 
 function createGlowTexture(): THREE.CanvasTexture {
   const canvas = document.createElement('canvas')
@@ -176,7 +231,7 @@ function getThemeColors() {
   }
 }
 
-async function createCard(size: number, depth: number, imageUrl: string): Promise<THREE.Mesh> {
+async function createCard(size: number, depth: number, imageUrl: string): Promise<CardMesh> {
   const canvas = await loadImageToCanvas(imageUrl)
   const texture = new THREE.CanvasTexture(canvas)
   texture.needsUpdate = true
@@ -194,21 +249,18 @@ async function createCard(size: number, depth: number, imageUrl: string): Promis
     metalness: 0,
   })
 
-  const box = new THREE.Mesh(new THREE.BoxGeometry(size, size, depth), [
-    sideMat,
-    sideMat,
-    sideMat,
-    sideMat,
-    frontMat,
-    sideMat,
-  ])
+  const materials: THREE.Material[] = [sideMat, sideMat, sideMat, sideMat, frontMat, sideMat]
+  const box = new THREE.Mesh<THREE.BoxGeometry, THREE.Material[]>(
+    new THREE.BoxGeometry(size, size, depth),
+    materials
+  )
   box.scale.set(0.01, 0.01, 0.01)
   box.castShadow = false
   box.receiveShadow = false
   return box
 }
 
-function createEllipticalOrbit(): THREE.Line {
+function createEllipticalOrbit(): THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial> {
   const curve = new THREE.EllipseCurve(
     0,
     0,
@@ -227,9 +279,14 @@ function createEllipticalOrbit(): THREE.Line {
     transparent: true,
     opacity: CONFIG.orbitOpacity,
   })
-  const line = new THREE.Line(geometry, material)
+  const line = new THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>(geometry, material)
   line.rotation.x = CONFIG.orbitTilt
   return line
+}
+
+function getCardFrontMaterial(card: CardMesh): THREE.MeshBasicMaterial | null {
+  const material = card.material[4]
+  return material instanceof THREE.MeshBasicMaterial ? material : null
 }
 
 function updateAllThemeColors() {
@@ -287,8 +344,7 @@ async function initSceneInternal(): Promise<void> {
   const numSatellites = enabledModules.length
 
   if (numSatellites === 0) {
-    console.warn('[SatelliteAnimation] 没有可显示的卫星模块（用户尚未创建对应类型脚本），跳过渲染')
-    return
+    console.info('[SatelliteAnimation] 没有可显示的卫星模块，仅渲染中心图标和轨道')
   }
 
   const w = container.value.clientWidth
@@ -358,13 +414,14 @@ async function initSceneInternal(): Promise<void> {
     color: new THREE.Color(0xffaa66),
     opacity: 0,
   })
-  centerGlowSprite = new THREE.Sprite(centerGlowMaterial)
-  centerGlowSprite.scale.set(
+  const centerGlow = new THREE.Sprite(centerGlowMaterial)
+  centerGlow.scale.set(
     CONFIG.centerCardSize * CONFIG.glowSizeMultiplier * 0.9,
     CONFIG.centerCardSize * CONFIG.glowSizeMultiplier * 0.9,
     1
   )
-  glowScene.add(centerGlowSprite)
+  centerGlowSprite = centerGlow
+  glowScene.add(centerGlow)
 
   for (let i = 0; i < numSatellites; i++) {
     const module = enabledModules[i]
@@ -410,14 +467,18 @@ function animateAppear() {
   const totalDuration = CONFIG.cardAppearDelay * (satellites.length + 1) + CONFIG.cardAppearDuration
 
   function step() {
+    if (isUnmounted) return
+
     const elapsed = Date.now() - appearStart
     if (elapsed > totalDuration) {
       if (centerCard) {
-        centerCard.material[4].opacity = 1
+        const frontMaterial = getCardFrontMaterial(centerCard)
+        if (frontMaterial) frontMaterial.opacity = 1
         centerCard.scale.set(1, 1, 1)
       }
       satellites.forEach(sat => {
-        sat.material[4].opacity = 1
+        const frontMaterial = getCardFrontMaterial(sat)
+        if (frontMaterial) frontMaterial.opacity = 1
         sat.scale.set(1, 1, 1)
       })
       return
@@ -426,7 +487,8 @@ function animateAppear() {
     const centerProgress = Math.min(1, elapsed / CONFIG.cardAppearDuration)
     const easedCenter = easeOutCubic(centerProgress)
     if (centerCard) {
-      centerCard.material[4].opacity = easedCenter
+      const frontMaterial = getCardFrontMaterial(centerCard)
+      if (frontMaterial) frontMaterial.opacity = easedCenter
       centerCard.scale.set(easedCenter, easedCenter, easedCenter)
     }
 
@@ -434,14 +496,15 @@ function animateAppear() {
       const delay = CONFIG.cardAppearDelay * (i + 1)
       const progress = Math.min(1, (elapsed - delay) / CONFIG.cardAppearDuration)
       const eased = easeOutCubic(Math.max(0, progress))
-      sat.material[4].opacity = eased
+      const frontMaterial = getCardFrontMaterial(sat)
+      if (frontMaterial) frontMaterial.opacity = eased
       sat.scale.set(eased, eased, eased)
     })
 
-    requestAnimationFrame(step)
+    appearAnimationFrameId = requestAnimationFrame(step)
   }
 
-  requestAnimationFrame(step)
+  appearAnimationFrameId = requestAnimationFrame(step)
 }
 
 function easeOutCubic(t: number): number {
@@ -449,7 +512,7 @@ function easeOutCubic(t: number): number {
 }
 
 function animate(): void {
-  if (!camera) return
+  if (isUnmounted || !camera) return
 
   const time = Date.now()
   const numSatellites = satellites.length
@@ -487,7 +550,7 @@ function animate(): void {
       )
 
       switch (state.status) {
-        case 'queued':
+        case 'queued': {
           const breathe = 0.5 + 0.5 * Math.sin(time * 0.003)
           state.glowSprite.material.color.setHex(0x6ce08a)
           state.glowSprite.material.opacity = 0.4 + breathe * 0.55
@@ -495,6 +558,7 @@ function animate(): void {
           const pulseFactor = 1 + breathe * 0.12
           state.glowSprite.scale.set(baseScale * pulseFactor, baseScale * pulseFactor, 1)
           break
+        }
         default:
           state.glowSprite.material.opacity = 0
       }
@@ -518,9 +582,7 @@ function animate(): void {
     } else {
       centerGlowSprite.material.color.setHex(0x6ce08a)
       centerGlowSprite.material.opacity = 0.85
-      centerGlowSprite.scale.setScalar(
-        CONFIG.centerCardSize * CONFIG.glowSizeMultiplier * 0.85
-      )
+      centerGlowSprite.scale.setScalar(CONFIG.centerCardSize * CONFIG.glowSizeMultiplier * 0.85)
     }
   }
 
@@ -595,6 +657,7 @@ async function updateSatelliteStates() {
 }
 
 onMounted(async () => {
+  isUnmounted = false
   try {
     await initScene()
   } catch (e) {
