@@ -43,17 +43,22 @@
         <section
           v-if="isHomeModuleVisible(moduleKey)"
           class="home-module"
-          :class="{ 'is-editing': layoutEditing }"
+          :class="{
+            'is-editing': layoutEditing,
+            'is-hidden': layoutEditing && !isHomeModuleShown(moduleKey),
+          }"
         >
           <div v-if="layoutEditing" class="module-editor-bar">
             <div class="module-editor-title">{{ moduleTitleMap[moduleKey] }}</div>
-            <div v-if="moduleKey === 'arknights'" class="module-editor-extra">
-              <span>默认展开</span>
-              <a-switch
-                size="small"
-                :checked="arknightsDefaultExpanded"
-                @change="setArknightsDefaultExpanded"
-              />
+            <div class="module-editor-options">
+              <div class="module-editor-option">
+                <span>展示</span>
+                <a-switch
+                  size="small"
+                  :checked="isHomeModuleShown(moduleKey)"
+                  @change="setHomeModuleShown(moduleKey, $event)"
+                />
+              </div>
             </div>
             <div class="module-editor-actions">
               <a-tooltip title="上移">
@@ -86,7 +91,7 @@
           <a-card v-if="moduleKey === 'command'" class="command-card">
             <section class="command-panel" aria-label="调度快速启动">
               <div class="command-main">
-                <div class="command-title">准备好下一轮自动化</div>
+                <div class="command-title">{{ commandTitle }}</div>
               </div>
 
               <div class="scheduler-launcher">
@@ -193,134 +198,6 @@
               </div>
             </a-card>
           </section>
-
-          <a-collapse
-            v-else-if="moduleKey === 'arknights'"
-            v-model:active-key="activeCollapseKeys"
-            class="arknights-collapse"
-          >
-            <a-collapse-panel key="arknights" header="明日方舟活动信息">
-              <div v-if="error" class="error-message">
-                <a-alert :message="error" type="error" show-icon closable @close="error = ''" />
-              </div>
-
-              <a-card
-                v-if="activityData?.length"
-                title="当期活动关卡"
-                class="activity-card"
-                :loading="loading"
-              >
-                <div v-if="currentActivity && !loading" class="activity-info">
-                  <div class="activity-header">
-                    <div class="activity-left">
-                      <div class="activity-name">
-                        <span class="activity-title">{{ currentActivity.Tip }}</span>
-                      </div>
-                      <div class="activity-end-time">
-                        <ClockCircleOutlined class="time-icon" />
-                        <span class="time-label">结束时间：</span>
-                        <span class="time-value">{{
-                          formatTime(currentActivity.UtcExpireTime)
-                        }}</span>
-                      </div>
-                    </div>
-
-                    <div class="activity-right">
-                      <a-statistic-countdown
-                        v-if="getActivityTimeStatus(currentActivity.UtcExpireTime) === 'ended'"
-                        title=""
-                        :value="getCountdownValue(currentActivity.UtcExpireTime)"
-                        format="活动已结束"
-                        :value-style="{
-                          color: '#ff4d4f',
-                          fontWeight: 'bold',
-                          fontSize: '18px',
-                        }"
-                        @finish="onCountdownFinish"
-                      />
-
-                      <a-statistic-countdown
-                        v-else-if="
-                          getActivityTimeStatus(currentActivity.UtcExpireTime) === 'warning'
-                        "
-                        title="当期活动剩余时间"
-                        :value="getCountdownValue(currentActivity.UtcExpireTime)"
-                        format="D 天 H 时 m 分 ss 秒 SSS 毫秒"
-                        class="rainbow-text"
-                        @finish="onCountdownFinish"
-                      />
-
-                      <a-statistic-countdown
-                        v-else
-                        title="当期活动剩余时间"
-                        :value="getCountdownValue(currentActivity.UtcExpireTime)"
-                        format="D 天 H 时 m 分"
-                        :value-style="{
-                          color: 'var(--ant-color-text)',
-                          fontWeight: '600',
-                          fontSize: '20px',
-                        }"
-                        @finish="onCountdownFinish"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div class="activity-list">
-                  <div v-for="item in activityData" :key="item.Value" class="activity-item">
-                    <div class="stage-info">
-                      <div class="stage-name">{{ item.Display }}</div>
-                    </div>
-
-                    <div class="drop-info">
-                      <div class="drop-image">
-                        <img
-                          v-if="getMaterialImage(item.Drop)"
-                          :src="getMaterialImage(item.Drop)"
-                          :alt="item.DropName"
-                          @error="handleImageError"
-                        />
-                      </div>
-
-                      <div class="drop-details">
-                        <div class="drop-name">{{ item.DropName }}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </a-card>
-
-              <a-card title="今日开放资源收集关卡" class="resource-card" :loading="loading">
-                <div v-if="resourceData?.length" class="resource-list">
-                  <div v-for="item in resourceData" :key="item.Value" class="resource-item">
-                    <div class="stage-info">
-                      <div class="stage-name">{{ item.Display }}</div>
-                    </div>
-
-                    <div class="drop-info">
-                      <div class="drop-image">
-                        <img
-                          v-if="getMaterialImage(item.Drop)"
-                          :src="getMaterialImage(item.Drop)"
-                          :alt="item.DropName"
-                          @error="handleImageError"
-                        />
-                      </div>
-
-                      <div class="drop-details">
-                        <div class="drop-name">{{ item.DropName }}</div>
-                        <div class="drop-tip">{{ item.Activity.Tip }}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div v-else-if="!loading" class="empty-state">
-                  <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
-                </div>
-              </a-card>
-            </a-collapse-panel>
-          </a-collapse>
         </section>
       </template>
     </div>
@@ -336,7 +213,6 @@ import {
   BellOutlined,
   CalendarOutlined,
   CheckOutlined,
-  ClockCircleOutlined,
   ControlOutlined,
   DatabaseOutlined,
   EditOutlined,
@@ -351,7 +227,6 @@ import NoticeModal from '@/components/NoticeModal.vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import SatelliteAnimation from '@/components/SatelliteAnimation.vue'
-import { OpenAPI } from '@/api'
 import type { ComboBoxItem } from '@/api'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
 import { navigateTo } from '@/router'
@@ -362,22 +237,6 @@ defineOptions({
 
 const logger = window.electronAPI.getLogger('首页')
 
-interface ActivityInfo {
-  Tip: string
-  StageName: string
-  UtcStartTime: string
-  UtcExpireTime: string
-  TimeZone: number
-}
-
-interface ActivityItem {
-  Display: string
-  Value: string
-  Drop: string
-  DropName: string
-  Activity: ActivityInfo
-}
-
 interface ProxyInfo {
   LastProxyDate: string
   ProxyTimes: number
@@ -386,46 +245,24 @@ interface ProxyInfo {
 }
 
 interface ApiResponse {
-  Stage: {
-    Activity: ActivityItem[]
-    Resource: ResourceItem[]
-  }
   Proxy: Record<string, ProxyInfo>
 }
 
-interface ResourceItem {
-  Display: string
-  Value: string
-  Drop: string
-  DropName: string
-  Activity: {
-    Tip: string
-    StageName: string
-  }
-}
-
-type HomeModuleKey = 'command' | 'quick' | 'satellite' | 'proxy' | 'arknights'
+type HomeModuleKey = 'command' | 'quick' | 'satellite' | 'proxy'
 type HomeModuleDirection = 'up' | 'down'
 
 interface HomeLayoutConfig {
   moduleOrder: HomeModuleKey[]
-  arknightsDefaultExpanded: boolean
+  hiddenModules: HomeModuleKey[]
 }
 
 const HOME_LAYOUT_STORAGE_KEY = 'auto-mas.home.layout'
-const defaultHomeModuleOrder: HomeModuleKey[] = [
-  'command',
-  'quick',
-  'satellite',
-  'proxy',
-  'arknights',
-]
+const defaultHomeModuleOrder: HomeModuleKey[] = ['command', 'quick', 'satellite', 'proxy']
 const moduleTitleMap: Record<HomeModuleKey, string> = {
   command: '快速开始',
   quick: '常用入口',
   satellite: '卫星环绕',
   proxy: '代理状态',
-  arknights: '明日方舟活动信息',
 }
 
 const quickActions = [
@@ -467,16 +304,45 @@ const mockSchedulerTasks: ComboBoxItem[] = [
   { label: '队列 - 夜间批处理', value: 'mock-nightly-queue' },
 ]
 
+const homeGreetingMessages = [
+  '坐和放宽，脚本正在为你努力运行中。',
+  '启动前请确认脚本路径已正确，否则它将无法找到自己。',
+  '请给软件充足的权限，以获得100%完全“听话”的运行效果。',
+  '放心，运行过程中不会修改你的游戏数据（修改）。',
+  '所有脚本文件都已归位，文件不会被删除（删除）。',
+  '请勿™强制关闭AUTO-MAS，正在处理一些事情。',
+  '好东西就要来了……别来无恙啊！',
+  'AUTO-MAS正在为你的设备匹配专属脚本设置。',
+  '按下启动按钮for3秒，轰！嚓-嚓-嚓！脚本跑起来了。',
+  '启动AUTO-MAS脚本系统，不要说我们没有警告过你。',
+  '这下尴尬了，脚本遇到了意想不到的问题。',
+  '需要重启脚本是正常现象，请不要惊慌。',
+  '请打开设置面板，选择滚回到上一个可用版本。',
+  '或启动修复函数，它可能会修也可能不会修。',
+  '脚本运行进度0%，请不要断开网络（断了也没办法）。',
+  '你的设备正在准备就绪，准备好迎接脚本运行了吗？',
+  '运行完成后，你的游戏进度可能会发生位移。',
+  '我们的脚本协议更新了，你只能同意不能不同意。',
+  '请耐心等待，进度条只是看起来不动而已。',
+  '感谢你使用AUTO-MAS，你永远可以相信脚本的力量。',
+  '正在应用最适合当前宇宙版本的脚本设置。',
+  '你的请求很重要，AUTO-MAS正在以看似安静的方式处理它。',
+  '配置即将完成，如果没有完成，也将显示为即将完成。',
+  'AUTO-MAS检测到一切正常，除非稍后它不正常。',
+  '请稍候，系统正在把复杂问题包装成一个按钮。',
+]
+
+const pickHomeGreeting = () => {
+  const index = Math.floor(Math.random() * homeGreetingMessages.length)
+  return homeGreetingMessages[index] ?? homeGreetingMessages[0]
+}
+
 const loading = ref(false)
 const schedulerTasksLoading = ref(false)
 const startingHomeTask = ref(false)
-const error = ref('')
-const activeCollapseKeys = ref<string[]>([])
 const layoutEditing = ref(false)
-const arknightsDefaultExpanded = ref(false)
 const homeModuleOrder = ref<HomeModuleKey[]>([...defaultHomeModuleOrder])
-const activityData = ref<ActivityItem[]>([])
-const resourceData = ref<ResourceItem[]>([])
+const hiddenHomeModules = ref<HomeModuleKey[]>([])
 const proxyData = ref<Record<string, ProxyInfo>>({})
 const schedulerTaskOptions = ref<ComboBoxItem[]>(mockSchedulerTasks)
 const selectedHomeTaskId = ref<string | null>(mockSchedulerTasks[0]?.value ?? null)
@@ -487,15 +353,7 @@ const noticeData = ref<Record<string, string>>({})
 const noticeLoading = ref(false)
 const { isBootstrapping } = useAppInitialization()
 const { playSound } = useAudioPlayer()
-
-const currentActivity = computed(() => {
-  if (!activityData.value.length) return null
-  return activityData.value[0]?.Activity
-})
-
-const hasArknightsData = computed(() => {
-  return activityData.value.length > 0 || resourceData.value.length > 0
-})
+const commandTitle = ref(pickHomeGreeting())
 
 const isHomeModuleKey = (value: unknown): value is HomeModuleKey => {
   return typeof value === 'string' && defaultHomeModuleOrder.includes(value as HomeModuleKey)
@@ -508,11 +366,18 @@ const normalizeHomeModuleOrder = (order: unknown): HomeModuleKey[] => {
   return [...uniqueOrder, ...missingOrder]
 }
 
+const normalizeHomeHiddenModules = (hiddenModules: unknown): HomeModuleKey[] => {
+  const configuredHiddenModules = Array.isArray(hiddenModules)
+    ? hiddenModules.filter(isHomeModuleKey)
+    : []
+  return configuredHiddenModules.filter((key, index, array) => array.indexOf(key) === index)
+}
+
 const persistHomeLayoutConfig = () => {
   try {
     const config: HomeLayoutConfig = {
       moduleOrder: homeModuleOrder.value,
-      arknightsDefaultExpanded: arknightsDefaultExpanded.value,
+      hiddenModules: hiddenHomeModules.value,
     }
     localStorage.setItem(HOME_LAYOUT_STORAGE_KEY, JSON.stringify(config))
   } catch (error) {
@@ -521,24 +386,18 @@ const persistHomeLayoutConfig = () => {
   }
 }
 
-const applyArknightsDefaultExpanded = () => {
-  activeCollapseKeys.value = arknightsDefaultExpanded.value ? ['arknights'] : []
-}
-
 const loadHomeLayoutConfig = () => {
   try {
     const rawConfig = localStorage.getItem(HOME_LAYOUT_STORAGE_KEY)
     if (rawConfig) {
       const config = JSON.parse(rawConfig) as Partial<HomeLayoutConfig>
       homeModuleOrder.value = normalizeHomeModuleOrder(config.moduleOrder)
-      arknightsDefaultExpanded.value = Boolean(config.arknightsDefaultExpanded)
+      hiddenHomeModules.value = normalizeHomeHiddenModules(config.hiddenModules)
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.warn(`读取首页布局配置失败: ${errorMsg}`)
   }
-
-  applyArknightsDefaultExpanded()
 }
 
 const toggleLayoutEditing = () => {
@@ -574,14 +433,22 @@ const moveHomeModule = (key: HomeModuleKey, direction: HomeModuleDirection) => {
   persistHomeLayoutConfig()
 }
 
-const setArknightsDefaultExpanded = (checked: boolean | string | number) => {
-  arknightsDefaultExpanded.value = Boolean(checked)
-  applyArknightsDefaultExpanded()
+const isHomeModuleShown = (key: HomeModuleKey) => {
+  return !hiddenHomeModules.value.includes(key)
+}
+
+const setHomeModuleShown = (key: HomeModuleKey, checked: boolean | string | number) => {
+  const shouldShow = Boolean(checked)
+  if (shouldShow) {
+    hiddenHomeModules.value = hiddenHomeModules.value.filter(hiddenKey => hiddenKey !== key)
+  } else if (!hiddenHomeModules.value.includes(key)) {
+    hiddenHomeModules.value = [...hiddenHomeModules.value, key]
+  }
   persistHomeLayoutConfig()
 }
 
 const isHomeModuleVisible = (key: HomeModuleKey) => {
-  return key !== 'arknights' || layoutEditing.value || hasArknightsData.value
+  return layoutEditing.value || isHomeModuleShown(key)
 }
 
 const greeting = computed(() => {
@@ -604,60 +471,6 @@ const formatProxyDisplay = (dateStr: string) => {
     return dateStr
   }
   return formatBackendDateTime(dateStr)
-}
-
-const formatTime = (timeString: string) => {
-  try {
-    const date = new Date(timeString)
-    return date.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  } catch {
-    return timeString
-  }
-}
-
-const getCountdownValue = (expireTime: string) => {
-  try {
-    return new Date(expireTime).getTime()
-  } catch {
-    return Date.now()
-  }
-}
-
-const getActivityTimeStatus = (expireTime: string): 'normal' | 'warning' | 'ended' => {
-  try {
-    const expire = new Date(expireTime)
-    const now = new Date()
-    const remaining = expire.getTime() - now.getTime()
-    const twoDaysInMs = 2 * 24 * 60 * 60 * 1000
-    if (remaining <= 0) return 'ended'
-    if (remaining <= twoDaysInMs) return 'warning'
-    return 'normal'
-  } catch {
-    return 'ended'
-  }
-}
-
-const onCountdownFinish = () => {
-  message.warning('活动已结束')
-  fetchActivityData()
-}
-
-const getMaterialImage = (dropName: string) => {
-  if (!dropName) {
-    return ''
-  }
-  return `${OpenAPI.BASE}/api/res/materials/${dropName}.png`
-}
-
-const handleImageError = (event: Event) => {
-  const img = event.target as HTMLImageElement
-  img.style.display = 'none'
 }
 
 const fetchSchedulerTaskOptions = async (options?: { quiet?: boolean }) => {
@@ -730,29 +543,23 @@ const startHomeTask = async () => {
   }
 }
 
-const fetchActivityData = async () => {
+const fetchOverviewData = async () => {
   loading.value = true
-  error.value = ''
 
   try {
     const response = await Service.getOverviewApiInfoGetOverviewPost()
 
     if (response.code === 200) {
       const data = response.data as ApiResponse
-      if (data.Stage) {
-        activityData.value = data.Stage.Activity || []
-        resourceData.value = data.Stage.Resource || []
-      }
       if (data.Proxy) {
         proxyData.value = data.Proxy
       }
     } else {
-      error.value = response.message || '获取数据失败'
+      logger.warn(`获取首页概览失败: ${response.message || '获取数据失败'}`)
     }
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err)
-    logger.error(`获取数据失败: ${errorMsg}`)
-    error.value = '网络请求失败，请检查连接'
+    logger.error(`获取首页概览失败: ${errorMsg}`)
   } finally {
     loading.value = false
   }
@@ -810,7 +617,7 @@ const showNotice = async () => {
 
 const loadHomeData = () => {
   fetchSchedulerTaskOptions({ quiet: true })
-  fetchActivityData()
+  fetchOverviewData()
   fetchNoticeData()
 }
 
@@ -916,8 +723,15 @@ onMounted(() => {
   white-space: nowrap;
 }
 
-.module-editor-extra {
+.module-editor-options {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.module-editor-option {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -933,15 +747,18 @@ onMounted(() => {
   gap: 4px;
 }
 
-.module-editor-extra + .module-editor-actions {
+.module-editor-options + .module-editor-actions {
   margin-left: 0;
+}
+
+.home-module.is-hidden > :not(.module-editor-bar) {
+  opacity: 0.42;
+  filter: grayscale(0.18);
 }
 
 .command-card,
 .shortcut-card,
-.proxy-card,
-.activity-card,
-.resource-card {
+.proxy-card {
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
 }
@@ -955,9 +772,7 @@ onMounted(() => {
 }
 
 .shortcut-card :deep(.ant-card-head-title),
-.proxy-card :deep(.ant-card-head-title),
-.activity-card :deep(.ant-card-head-title),
-.resource-card :deep(.ant-card-head-title) {
+.proxy-card :deep(.ant-card-head-title) {
   font-size: 18px;
   font-weight: 600;
 }
@@ -1130,182 +945,6 @@ onMounted(() => {
   width: 100%;
 }
 
-.arknights-collapse {
-  background: transparent;
-  border-radius: 8px;
-}
-
-.arknights-collapse :deep(.ant-collapse-content-box) {
-  padding: 18px 0 0;
-}
-
-.arknights-collapse :deep(.ant-collapse-header) {
-  align-items: center;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.activity-card {
-  margin-bottom: 16px;
-}
-
-.resource-card {
-  margin-bottom: 0;
-}
-
-.resource-list {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 12px;
-}
-
-.resource-item,
-.activity-item {
-  min-height: 82px;
-  display: flex;
-  align-items: center;
-  padding: 16px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  transition: all 0.2s ease;
-}
-
-.resource-item:hover,
-.activity-item:hover {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.drop-tip {
-  font-size: 12px;
-  color: var(--ant-color-text-tertiary);
-  margin-top: 2px;
-}
-
-.error-message {
-  margin-bottom: 16px;
-}
-
-.activity-info {
-  margin-bottom: 24px;
-  padding: 16px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-}
-
-.activity-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 24px;
-}
-
-.activity-left {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.activity-right {
-  flex-shrink: 0;
-  text-align: right;
-}
-
-.activity-end-time {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-}
-
-.activity-name {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.activity-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.time-icon {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-}
-
-.time-label {
-  color: var(--ant-color-text-secondary);
-  min-width: 80px;
-}
-
-.time-value {
-  color: var(--ant-color-text);
-  font-weight: 500;
-}
-
-.activity-list {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-}
-
-.stage-info {
-  flex: 1;
-  margin-right: 16px;
-  text-align: center;
-  min-width: 50px;
-  max-width: 80px;
-}
-
-.stage-name {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  margin-bottom: 4px;
-}
-
-.drop-info {
-  display: flex;
-  align-items: center;
-  flex: 2;
-  min-width: 0;
-}
-
-.drop-image {
-  flex-shrink: 0;
-  width: 48px;
-  height: 48px;
-  margin-right: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.drop-image img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.drop-details {
-  flex: 1;
-  min-width: 70px;
-}
-
-.drop-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--ant-color-text);
-  margin-bottom: 4px;
-  word-break: break-all;
-}
-
 .empty-state {
   text-align: center;
   padding: 40px 0;
@@ -1367,34 +1006,6 @@ onMounted(() => {
   gap: 16px;
 }
 
-.rainbow-text {
-  font-weight: bold;
-  font-size: 18px;
-  background: linear-gradient(270deg, #ff4d4f, #fffa00, #00ffea, #ff4d4f, #ff4d4f);
-  background-size: 400% 400%;
-  color: transparent;
-  background-clip: text;
-  -webkit-background-clip: text;
-  animation: rainbow-move 4s linear infinite;
-}
-
-@keyframes rainbow-move {
-  0% {
-    background-position: 0 50%;
-  }
-
-  100% {
-    background-position: 100% 50%;
-  }
-}
-
-@media (max-width: 1500px) {
-  .activity-list,
-  .resource-list {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
-
 @media (max-width: 1240px) {
   .command-panel {
     grid-template-columns: 1fr;
@@ -1422,11 +1033,6 @@ onMounted(() => {
   .overview-grid {
     grid-template-columns: 1fr;
   }
-
-  .activity-list,
-  .resource-list {
-    grid-template-columns: repeat(3, 1fr);
-  }
 }
 
 @media (max-width: 800px) {
@@ -1448,9 +1054,7 @@ onMounted(() => {
     font-size: 24px;
   }
 
-  .quick-actions,
-  .activity-list,
-  .resource-list {
+  .quick-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1465,14 +1069,6 @@ onMounted(() => {
   .quick-action:nth-child(n + 3) {
     border-top: 1px solid var(--ant-color-border-secondary);
   }
-
-  .activity-header {
-    flex-direction: column;
-  }
-
-  .activity-right {
-    text-align: left;
-  }
 }
 
 @media (max-width: 560px) {
@@ -1480,9 +1076,7 @@ onMounted(() => {
     grid-template-columns: 1fr;
   }
 
-  .quick-actions,
-  .activity-list,
-  .resource-list {
+  .quick-actions {
     grid-template-columns: 1fr;
   }
 
