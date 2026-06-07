@@ -308,7 +308,7 @@
         />
         <a-alert
           v-else
-          message="当前控制器暂不支持 MaaEnd 预设模式，用户仅可使用自定义模式。"
+          message="当前控制器暂不支持 MaaEnd 快速配置，请直接使用配置文件。"
           type="info"
           show-icon
           style="margin-bottom: 24px"
