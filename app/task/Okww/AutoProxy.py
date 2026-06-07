@@ -18,6 +18,7 @@
 
 import asyncio
 import shlex
+import shutil
 import uuid
 from contextlib import suppress
 from datetime import datetime, timedelta
@@ -27,23 +28,34 @@ from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import OkwwConfig, OkwwUserConfig
-from app.models.emulator import DeviceBase
 from app.services import Notify, System
-from app.utils import get_logger, ProcessManager, ProcessInfo
+from app.utils import get_logger, ProcessManager, ProcessInfo, is_process_running
 from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
+from app.task.general.tools import execute_script_task
 
 logger = get_logger("OK-WW 自动代理")
+
+# 鸣潮 PC 客户端窗口进程名固定，MAS 接管启动前据此避免重复拉起
+_WUWA_CLIENT_PROCESS = "Client-Win64-Shipping.exe"
+
+
+def _yes_no(value: bool) -> str:
+    return "是" if value else "否"
 
 # 对齐 MaaEnd：专项内置致命日志片段（非用户 Success/Error 配置）；`Script.ErrorLog` 仅追加补充子串
 _OKWW_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
     ("connected:False", "OK-WW 未连接游戏客户端"),
     ("游戏更新成功, 游戏即将重启", "游戏更新成功，即将重启任务"),
-    ("失败", "OK-WW 任务失败"),
 )
 
 # prepare 中 ErrorLog 经清洗后为空时回退（与 OkwwConfig 默认串一致）
 _DEFAULT_OKWW_ERROR_LOG = "connected:False|游戏更新成功, 游戏即将重启|错误"
+
+
+def _split_args(raw: object) -> list[str]:
+    value = str(raw or "").strip()
+    return shlex.split(value, posix=False) if value else []
 
 def _sanitize_okww_error_log_tokens(tokens: list[str]) -> list[str]:
     return [t for raw in tokens if (t := raw.strip())]
@@ -63,7 +75,7 @@ class AutoProxyTask(TaskExecuteBase):
         script_info: ScriptItem,
         script_config: OkwwConfig,
         user_config: MultipleConfig[OkwwUserConfig],
-        game_manager: ProcessManager | DeviceBase | None,
+        game_manager: ProcessManager | None,
     ):
         super().__init__()
         if script_info.task_info is None:
@@ -77,13 +89,34 @@ class AutoProxyTask(TaskExecuteBase):
 
         self.cur_user_item: UserItem = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
-        self.cur_user_config: OkwwUserConfig | None = None
+        self.cur_user_config: OkwwUserConfig = self.user_config[self.cur_user_uid]
 
     async def check(self) -> str:
-        if not Path(self.script_config.get("Info", "RootPath")).exists():
-            return "OK-WW 根目录不存在，请检查脚本根目录"
-        if not Path(self.script_config.get("Script", "ScriptPath")).exists():
-            return "OK-WW 可执行文件不存在，请检查主程序路径"
+        if not Path(self.script_config.get("Info", "RootPath")).is_dir():
+            return "请设置ok-ww脚本路径"
+        if not Path(self.script_config.get("Script", "ScriptPath")).is_file():
+            return "请设置ok-ww脚本路径"
+        if (
+            self.script_config.get("Run", "ProxyTimesLimit") != 0
+            and self.cur_user_config.get("Data", "ProxyTimes")
+            >= self.script_config.get("Run", "ProxyTimesLimit")
+        ):
+            self.cur_user_item.status = "跳过"
+            return "今日代理次数已达上限, 跳过该用户"
+        if self.cur_user_config.get("Info", "RemainedDay") == 0:
+            self.cur_user_item.status = "跳过"
+            return "用户剩余天数为 0, 跳过该用户"
+
+        if (
+            self.script_config.get("Game", "Enabled")
+            and self.script_config.get("Game", "Type") == "Client"
+            and (
+                self.script_config.get("Game", "LaunchBeforeTask")
+                or self.script_config.get("Game", "CloseOnFinish")
+            )
+            and not Path(self.script_config.get("Game", "Path")).is_file()
+        ):
+            return "请设置鸣潮游戏路径"
         return "Pass"
 
     async def prepare(self):
@@ -156,15 +189,11 @@ class AutoProxyTask(TaskExecuteBase):
             )
 
         # 当前用户配置
-        self.cur_user_config = self.user_config[self.cur_user_uid]
 
         self.task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
         self.exit_on_finish = bool(self.cur_user_config.get("Task", "ExitOnFinish"))
 
-        extra_args = []
-        raw_extra = str(self.script_config.get("Script", "Arguments")).strip()
-        if raw_extra:
-            extra_args.extend(shlex.split(raw_extra, posix=False))
+        extra_args = _split_args(self.script_config.get("Script", "Arguments"))
 
         self.okww_args = ["-t", str(self.task_index)]
         if self.exit_on_finish:
@@ -175,8 +204,118 @@ class AutoProxyTask(TaskExecuteBase):
         self.game_path = Path(self.script_config.get("Game", "Path"))
         self.game_url = self.script_config.get("Game", "URL")
         self.game_process_name = self.script_config.get("Game", "ProcessName")
+        self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
 
         self.run_book = False
+
+    def _okww_mas_config_dir(self) -> Path:
+        mode = str(self.cur_user_config.get("Info", "Mode") or "简洁")
+        config_owner = (
+            "Default" if mode == "简洁" else str(self.cur_user_uid)
+        )
+        return Path.cwd() / f"data/{self.script_info.script_id}/{config_owner}/ConfigFile"
+
+    async def set_okww(self) -> None:
+        """将 MAS 侧 OK-WW 任务配置下发到脚本 working 目录（对齐 General.set_general）。"""
+
+        logger.info("开始配置 OK-WW 运行参数: 自动代理")
+        await System.kill_process(self.script_exe_path)
+
+        mas_config_dir = self._okww_mas_config_dir()
+        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            tmp_dst = self.script_config_path.with_name(
+                self.script_config_path.name + ".tmp"
+            )
+            shutil.rmtree(tmp_dst, ignore_errors=True)
+            shutil.copytree(mas_config_dir, tmp_dst, dirs_exist_ok=True)
+            shutil.rmtree(self.script_config_path, ignore_errors=True)
+            tmp_dst.rename(self.script_config_path)
+        elif self.script_config.get("Script", "ConfigPathMode") == "File":
+            shutil.copy(
+                mas_config_dir / self.script_config_path.name,
+                self.script_config_path,
+            )
+        logger.info(f"OK-WW 运行参数配置完成: 自动代理")
+
+    async def update_config(self) -> None:
+        """将脚本侧配置回写 MAS ConfigFile（对齐 General.update_config）。"""
+
+        mas_config_dir = self._okww_mas_config_dir()
+        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            shutil.copytree(
+                self.script_config_path, mas_config_dir, dirs_exist_ok=True
+            )
+        elif self.script_config.get("Script", "ConfigPathMode") == "File":
+            shutil.copy(
+                self.script_config_path,
+                mas_config_dir / self.script_config_path.name,
+            )
+        logger.success("OK-WW 配置文件已更新")
+
+    def _game_config_summary_lines(self) -> list[str]:
+        """游戏配置摘要行（调度台展示用）。"""
+
+        game_args = str(self.script_config.get("Game", "Arguments") or "").strip()
+        return [
+            f"[游戏配置] 用户: {self.cur_user_item.name}",
+            f"  启用游戏配置: {_yes_no(bool(self.script_config.get('Game', 'Enabled')))}",
+            f"  任务前启动游戏: {_yes_no(bool(self.script_config.get('Game', 'LaunchBeforeTask')))}",
+            f"  任务后关闭游戏: {_yes_no(bool(self.script_config.get('Game', 'CloseOnFinish')))}",
+            f"  启动参数: {game_args or '（无）'}",
+        ]
+
+    async def _push_dispatch_log(self, line: str) -> None:
+        """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
+
+        prev = self.script_info.log
+        self.script_info.log = f"{prev}\n{line}" if prev else line
+        await asyncio.sleep(0)
+
+    async def _log_game_config_summary(self) -> None:
+        """在调度台开头输出当前脚本的游戏相关配置，便于用户确认与问题排查。"""
+
+        self.script_info.log = "\n".join(self._game_config_summary_lines())
+        await asyncio.sleep(0)
+
+    async def _mas_launch_game_before_task(self) -> None:
+        """MAS 接管启动游戏，并将各步骤写入调度台日志。"""
+
+        game_type = self.script_config.get("Game", "Type")
+        await self._push_dispatch_log("正在准备由 MAS 启动游戏...")
+
+        if isinstance(self.game_manager, ProcessManager) and game_type == "Client":
+            await self._push_dispatch_log(
+                f"正在检查鸣潮客户端进程 ({_WUWA_CLIENT_PROCESS})..."
+            )
+            if is_process_running(_WUWA_CLIENT_PROCESS):
+                logger.info(
+                    "检测到鸣潮客户端进程已在运行，跳过由 MAS 重复启动游戏"
+                )
+                await self._push_dispatch_log("检测到客户端已在运行，跳过启动")
+                return
+
+            await self._push_dispatch_log("未检测到运行中的客户端，正在拉起游戏...")
+            await self.game_manager.open_process(
+                self.game_path,
+                *_split_args(self.script_config.get("Game", "Arguments")),
+            )
+            wait_time = int(self.script_config.get("Game", "WaitTime"))
+            await self._push_dispatch_log(
+                f"正在等待游戏完成启动（{wait_time}s）..."
+            )
+            await asyncio.sleep(wait_time)
+            await self._push_dispatch_log("游戏启动完成")
+            return
+
+        if isinstance(self.game_manager, ProcessManager) and game_type == "URL":
+            await self._push_dispatch_log("正在通过 URL 协议启动游戏...")
+            await self.game_manager.open_protocol(
+                self.game_url,
+                ProcessInfo(name=self.game_process_name or None),
+            )
+            await asyncio.sleep(2)
+            await self._push_dispatch_log("游戏启动指令已发送")
+            return
 
     async def main_task(self):
         await self.prepare()
@@ -199,6 +338,14 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.log_record[self.log_start_time] = LogRecord()
             self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
 
+            if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
+                await execute_script_task(
+                    Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
+                    "脚本前任务",
+                )
+
+            await self._log_game_config_summary()
+
             # 总开关开启且勾选「任务前启动」时由 MAS 拉起游戏
             if (
                 self.script_config.get("Game", "Enabled")
@@ -206,35 +353,15 @@ class AutoProxyTask(TaskExecuteBase):
                 and self.game_manager is not None
             ):
                 try:
-                    self.script_info.log = "正在启动游戏 / 模拟器"
-                    if isinstance(self.game_manager, ProcessManager):
-                        if self.script_config.get("Game", "Type") == "URL":
-                            await self.game_manager.open_protocol(
-                                self.game_url,
-                                ProcessInfo(name=self.game_process_name or None),
-                            )
-                            await asyncio.sleep(2)
-                        else:
-                            await self.game_manager.open_process(
-                                self.game_path,
-                                *str(self.script_config.get("Game", "Arguments")).split(" "),
-                            )
-                            self.script_info.log = (
-                                "正在等待游戏完成启动\n"
-                                f"请等待{self.script_config.get('Game', 'WaitTime')}s"
-                            )
-                            await asyncio.sleep(self.script_config.get("Game", "WaitTime"))
-                    elif isinstance(self.game_manager, DeviceBase):
-                        await self.game_manager.open(
-                            self.script_config.get("Game", "EmulatorIndex")
-                        )
+                    await self._mas_launch_game_before_task()
                 except Exception as e:
-                    self.cur_user_log.status = f"游戏/模拟器启动失败: {e}"
-                    self.cur_user_log.content = [f"游戏/模拟器启动失败: {e}"]
+                    await self._push_dispatch_log(f"游戏启动失败: {e}")
+                    self.cur_user_log.status = f"游戏启动失败: {e}"
+                    self.cur_user_log.content = [f"游戏启动失败: {e}"]
                     await Config.send_websocket_message(
                         id=self.task_info.task_id,
                         type="Info",
-                        data={"Error": f"游戏/模拟器启动失败: {e}"},
+                        data={"Error": f"游戏启动失败: {e}"},
                     )
                     await self.kill_managed_process(
                         kill_game=self._mas_should_close_game_on_retry()
@@ -242,22 +369,23 @@ class AutoProxyTask(TaskExecuteBase):
                     try:
                         await Notify.push_plyer(
                             "OK-WW 自动代理出现异常！",
-                            f"用户 {self.cur_user_item.name} 游戏/模拟器启动失败",
+                            f"用户 {self.cur_user_item.name} 游戏启动失败",
                             f"{self.cur_user_item.name}的自动代理出现异常",
                             3,
                         )
                     except Exception:
                         pass
                     if i + 1 < run_limit:
-                        self.script_info.log = (
-                            f"游戏/模拟器启动失败，将在稍后重试 ({i + 1}/{run_limit})"
+                        await self._push_dispatch_log(
+                            f"游戏启动失败，将在稍后重试 ({i + 1}/{run_limit})"
                         )
                         await asyncio.sleep(10)
                     else:
                         self.cur_user_item.status = "异常"
                     continue
 
-            self.script_info.log = (
+            await self.set_okww()
+            await self._push_dispatch_log(
                 f"启动 OK-WW: -t {self.task_index}"
                 + (" -e" if self.exit_on_finish else "")
             )
@@ -288,6 +416,16 @@ class AutoProxyTask(TaskExecuteBase):
                 )
                 # 对齐 MaaEnd：成功时先只结束 ok-ww；是否关游戏由 Game.CloseOnFinish 在 final_task 决定
                 await self._kill_okww_process()
+                if self.script_config.get("Script", "UpdateConfigMode") in (
+                    "Success",
+                    "Always",
+                ):
+                    await self.update_config()
+                if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+                    await execute_script_task(
+                        Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
+                        "脚本后任务",
+                    )
                 await asyncio.sleep(3)
                 break
 
@@ -309,6 +447,16 @@ class AutoProxyTask(TaskExecuteBase):
                 )
             except Exception:
                 pass
+            if self.script_config.get("Script", "UpdateConfigMode") in (
+                "Failure",
+                "Always",
+            ):
+                await self.update_config()
+            if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+                await execute_script_task(
+                    Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
+                    "脚本后任务",
+                )
             if i + 1 < run_limit:
                 self.script_info.log += (
                     f"\n将在稍后重试 ({i + 1}/{run_limit})"
@@ -483,30 +631,36 @@ class AutoProxyTask(TaskExecuteBase):
     async def _kill_okww_process(self) -> None:
         try:
             await self.okww_process_manager.kill()
+        except Exception as e:
+            logger.exception(f"通过进程管理器中止 OK-WW 进程失败: {e}")
+        try:
             await System.kill_process(self.script_exe_path)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception(f"中止 OK-WW 主进程失败: {e}")
+        track_exe = str(self.script_config.get("Script", "TrackProcessExe") or "").strip()
+        if not track_exe:
+            track_exe = str(self.script_root_path / "data/apps/ok-ww/python/pythonw.exe")
+        if track_exe:
+            try:
+                await System.kill_process(Path(track_exe))
+            except Exception as e:
+                logger.exception(f"中止 OK-WW 追踪进程失败: {e}")
 
     async def _kill_game_process(self) -> None:
-        """结束游戏/模拟器：不依赖 LaunchBeforeTask（可自行开游戏，由 CloseOnFinish/失败重试触发）"""
+        """结束游戏：不依赖 LaunchBeforeTask（可自行开游戏，由 CloseOnFinish/失败重试触发）"""
         game_type = self.script_config.get("Game", "Type")
         try:
             if isinstance(self.game_manager, ProcessManager):
                 await self.game_manager.kill()
-            elif isinstance(self.game_manager, DeviceBase):
-                await self.game_manager.close(
-                    self.script_config.get("Game", "EmulatorIndex")
-                )
             if game_type == "Client":
                 gp = self.game_path
                 if gp.is_file():
                     await System.kill_process(gp)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception(f"关闭游戏进程失败: {e}")
 
     async def kill_managed_process(self, *, kill_game: bool = True) -> None:
         """中止 ok-ww；kill_game 为真时结束游戏（失败重试恒为真；成功收尾看 CloseOnFinish）"""
         await self._kill_okww_process()
         if kill_game:
             await self._kill_game_process()
-

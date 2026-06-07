@@ -7,11 +7,17 @@ import type {
   MaaEndConfig,
   M9AConfig,
 } from '@/api'
+import type {
+  AutoEssenceLocation,
+  MaaEndTaskSwitch,
+  ProtocolSpaceTaskValue,
+  RewardSetOption,
+  SanityTaskType,
+} from '@/utils/maaEndProtocolSpace'
 
 export type ScriptType = 'MAA' | 'General' | 'Okww' | 'SRC' | 'MaaEnd' | 'M9A'
 
 export type OkwwScriptConfig = OkwwConfig
-
 // MAA脚本配置
 export interface MAAScriptConfig {
   Info: {
@@ -104,6 +110,17 @@ export interface SRCScriptConfig {
   }
 }
 
+export type MaaEndTaskSwitchConfig = Record<`If${MaaEndTaskSwitch}`, boolean>
+
+export type MaaEndTaskConfig = MaaEndTaskSwitchConfig & {
+  SanityTaskType: SanityTaskType
+  OperatorProgression: ProtocolSpaceTaskValue
+  WeaponProgression: ProtocolSpaceTaskValue
+  CrisisDrills: ProtocolSpaceTaskValue
+  RewardsSetOption: RewardSetOption
+  AutoEssenceSpecifiedLocation: AutoEssenceLocation
+}
+
 // MaaEnd脚本配置
 export interface MaaEndScriptConfig {
   Info: {
@@ -116,7 +133,7 @@ export interface MaaEndScriptConfig {
     RunTimesLimit: number
   }
   Game: {
-    ControllerType: 'Win32-Window' | 'Win32-Window-Background' | 'Win32-Front' | 'ADB' | null
+    ControllerType: 'Win32-Front' | 'ADB' | null
     Path: string
     Arguments: string
     WaitTime: number
@@ -124,6 +141,7 @@ export interface MaaEndScriptConfig {
     EmulatorIndex: string
     CloseOnFinish: boolean
   }
+  Task: MaaEndTaskConfig
 }
 
 // M9A脚本配置
@@ -178,6 +196,7 @@ export interface User {
     MedicineNumb: number
     Mode: string
     Name: string
+    SanityMode?: string
     Notes: string
     Password: string
     RemainedDay: number
@@ -222,6 +241,12 @@ export interface User {
     IfReclamation: boolean
     IfRecruit: boolean
     IfStartUp: boolean
+    SanityTaskType?: MaaEndTaskConfig['SanityTaskType']
+    OperatorProgression?: MaaEndTaskConfig['OperatorProgression']
+    WeaponProgression?: MaaEndTaskConfig['WeaponProgression']
+    CrisisDrills?: MaaEndTaskConfig['CrisisDrills']
+    RewardsSetOption?: MaaEndTaskConfig['RewardsSetOption']
+    AutoEssenceSpecifiedLocation?: MaaEndTaskConfig['AutoEssenceSpecifiedLocation']
   }
   QFluentWidgets: {
     ThemeColor: string
