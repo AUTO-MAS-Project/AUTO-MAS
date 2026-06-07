@@ -34,7 +34,14 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.emulator import DeviceBase
 from app.services import Notify, System
-from app.utils import get_logger, LogMonitor, ProcessManager, ProcessInfo, strptime
+from app.utils import (
+    get_logger,
+    LogMonitor,
+    ProcessManager,
+    ProcessInfo,
+    strptime,
+    is_process_running,
+)
 from app.utils.constants import UTC4
 from .tools import execute_script_task, push_notification
 
@@ -224,27 +231,47 @@ class AutoProxyTask(TaskExecuteBase):
                     if isinstance(self.game_manager, ProcessManager):
 
                         if self.script_config.get("Game", "Type") == "URL":
-                            logger.info(
-                                f"启动游戏: {self.game_process_name}, 参数{self.game_url}"
-                            )
-                            await self.game_manager.open_protocol(
-                                self.game_url, ProcessInfo(name=self.game_process_name)
-                            )
-                            await asyncio.sleep(2)
+                            if self.game_process_name and is_process_running(
+                                self.game_process_name
+                            ):
+                                logger.info(
+                                    f"检测到游戏进程已在运行，跳过由 MAS 重复启动游戏: {self.game_process_name}"
+                                )
+                                await asyncio.sleep(2)
+                            else:
+                                logger.info(
+                                    f"启动游戏: {self.game_process_name}, 参数{self.game_url}"
+                                )
+                                await self.game_manager.open_protocol(
+                                    self.game_url,
+                                    ProcessInfo(name=self.game_process_name),
+                                )
+                                await asyncio.sleep(2)
                         else:
-                            logger.info(
-                                f"启动游戏: {self.game_path}, 参数: {self.script_config.get('Game','Arguments')}"
-                            )
-                            await self.game_manager.open_process(
-                                self.game_path,
-                                *str(self.script_config.get("Game", "Arguments")).split(
-                                    " "
-                                ),
-                            )
-                            self.script_info.log = f"正在等待游戏完成启动\n请等待{self.script_config.get('Game', 'WaitTime')}s"
-                            await asyncio.sleep(
-                                self.script_config.get("Game", "WaitTime")
-                            )
+                            game_process_name = self.game_path.name
+                            if game_process_name and is_process_running(
+                                game_process_name
+                            ):
+                                logger.info(
+                                    f"检测到游戏进程已在运行，跳过由 MAS 重复启动游戏: {game_process_name}"
+                                )
+                                await asyncio.sleep(
+                                    self.script_config.get("Game", "WaitTime")
+                                )
+                            else:
+                                logger.info(
+                                    f"启动游戏: {self.game_path}, 参数: {self.script_config.get('Game','Arguments')}"
+                                )
+                                await self.game_manager.open_process(
+                                    self.game_path,
+                                    *str(
+                                        self.script_config.get("Game", "Arguments")
+                                    ).split(" "),
+                                )
+                                self.script_info.log = f"正在等待游戏完成启动\n请等待{self.script_config.get('Game', 'WaitTime')}s"
+                                await asyncio.sleep(
+                                    self.script_config.get("Game", "WaitTime")
+                                )
                     elif isinstance(self.game_manager, DeviceBase):
                         logger.info(
                             f"启动模拟器: {self.script_config.get('Game', 'EmulatorIndex')}"

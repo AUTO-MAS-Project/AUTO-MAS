@@ -1,68 +1,6 @@
 {
   "instances": [
     {
-      "id": "cbek8en",
-      "name": "电脑端-默认",
-      "controllerName": "Win32-Window",
-      "resourceName": "官服",
-      "tasks": [
-        {
-          "id": "66exzd1",
-          "taskName": "VisitFriends",
-          "enabled": true,
-          "optionValues": {}
-        },
-        {
-          "id": "sl6ekn7",
-          "taskName": "DijiangRewards",
-          "enabled": true,
-          "optionValues": {}
-        },
-        {
-          "id": "1ve46wq",
-          "taskName": "CreditShoppingN2",
-          "enabled": true,
-          "optionValues": {}
-        },
-        {
-          "id": "tlyl98l",
-          "taskName": "DeliveryJobs",
-          "enabled": true,
-          "optionValues": {}
-        },
-        {
-          "id": "jur6jog",
-          "taskName": "SellProduct",
-          "enabled": true,
-          "optionValues": {}  
-        },
-        {
-          "id": "xy8ubx9",
-          "taskName": "AutoStockpile",
-          "enabled": true,
-          "optionValues": {}
-        },
-        {
-          "id": "p9vhp9n",
-          "taskName": "AutoStockStaple",
-          "enabled": true,
-          "optionValues": {}
-        },
-        {
-          "id": "l9lmqbs",
-          "taskName": "DailyRewards",
-          "enabled": true,
-          "optionValues": {}
-        },
-        {
-          "id": "ki9tsg4",
-          "taskName": "SeizeEntrustTask",
-          "enabled": true,
-          "optionValues": {}  
-        }
-      ]
-    },
-    {
       "id": "44d6qo2",
       "name": "电脑端-前台",
       "controllerName": "Win32-Front",

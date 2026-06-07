@@ -740,7 +740,7 @@ class AppConfig(GlobalConfig):
 
         files = {
             "file": (
-                f"{config_name}&&{author}&&{description}&&{int(datetime.now(tz=UTC8).timestamp() * 1000)}.json",
+                f"{config_name}&&{int(datetime.now(tz=UTC8).timestamp() * 1000)}.json",
                 json.dumps(temp, ensure_ascii=False),
                 "application/json",
             )
