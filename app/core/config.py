@@ -85,7 +85,7 @@ except ImportError:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.3.0-beta.2"
+    VERSION = "v5.3.0"
 
     def __init__(self) -> None:
         super().__init__()
@@ -740,7 +740,7 @@ class AppConfig(GlobalConfig):
 
         files = {
             "file": (
-                f"{config_name}&&{author}&&{description}&&{int(datetime.now(tz=UTC8).timestamp() * 1000)}.json",
+                f"{config_name}&&{int(datetime.now(tz=UTC8).timestamp() * 1000)}.json",
                 json.dumps(temp, ensure_ascii=False),
                 "application/json",
             )

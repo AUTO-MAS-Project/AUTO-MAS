@@ -1,0 +1,117 @@
+{
+  "instances": [
+    {
+      "id": "44d6qo2",
+      "name": "电脑端-前台",
+      "controllerName": "Win32-Front",
+      "resourceName": "官服",
+      "tasks": [
+        {
+          "id": "5zqhjux",
+          "taskName": "VisitFriends",
+          "enabled": true,
+          "optionValues": {}
+        },
+        {
+          "id": "diyt9yn",
+          "taskName": "DijiangRewards",
+          "enabled": true,
+          "optionValues": {}
+        },
+        {
+          "id": "g8597rn",
+          "taskName": "CreditShoppingN2",
+          "enabled": true,
+          "optionValues": {}
+        },
+        {
+          "id": "0bzqbf2",
+          "taskName": "DeliveryJobs",
+          "enabled": true,
+          "optionValues": {}  
+        },
+        {
+          "id": "8vfq6y1",
+          "taskName": "SellProduct",
+          "enabled": true,
+          "optionValues": {}
+        },
+        {
+          "id": "es8dug8",
+          "taskName": "AutoStockpile",
+          "enabled": true,
+          "optionValues": {}
+        },
+        {
+          "id": "740f85h",
+          "taskName": "AutoStockStaple",
+          "enabled": true,
+          "optionValues": {}
+        },
+        {
+          "id": "jjusssw",
+          "taskName": "AutoSell",
+          "enabled": true,
+          "optionValues": {}
+        },
+        {
+          "id": "gj70e22",
+          "taskName": "EnvironmentMonitoring",
+          "enabled": true,
+          "optionValues": {}
+        },
+        {
+          "id": "hiu9ttk",
+          "taskName": "DailyRewards",
+          "enabled": true,
+          "optionValues": {}
+        },
+        {
+          "id": "mwg371e",
+          "taskName": "SeizeEntrustTask",
+          "enabled": true,
+          "optionValues": {}
+        },
+        {
+          "id": "7u9ebfh",
+          "taskName": "AutoCollect",
+          "enabled": true,
+          "optionValues": {}  
+        },
+        {
+          "id": "y0k1zue",
+          "taskName": "AutoUseSpMedication",
+          "enabled": true,
+          "optionValues": {}
+        },
+        {
+          "id": "agfpwsh",
+          "taskName": "ResourceRecycleStation",
+          "enabled": true,"optionValues": {}
+        },
+        {
+          "id": "qmwzjgu",
+          "taskName": "AutoEcoFarm",
+          "enabled": true,"optionValues": {}
+        },
+        {
+          "id": "5ej6pg9",
+          "taskName": "AutoEssence",
+          "enabled": true,"optionValues": {}
+        },
+        {
+          "id": "d947el4",
+          "taskName": "ProtocolSpace",
+          "enabled": true,"optionValues": {}
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "language": "zh-CN",
+    "onboardingCompleted": true
+  },
+  "customAccents": [],
+  "newTaskNames": [],
+  "presetInitialized": true
+}

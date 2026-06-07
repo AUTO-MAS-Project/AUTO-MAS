@@ -22,6 +22,7 @@
 import json
 import shutil
 import asyncio
+import uuid
 from pathlib import Path
 
 from app.core import Config
@@ -68,6 +69,12 @@ class ScriptConfigTask(TaskExecuteBase):
             Path.cwd()
             / f"data/{self.script_info.script_id}/{self.cur_user_item.user_id}/ConfigFile"
         )
+        if self.cur_user_item.user_id == "Default":
+            self.config_mode = "简洁"
+        else:
+            self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
+            self.cur_user_config = self.user_config[self.cur_user_uid]
+            self.config_mode = self.cur_user_config.get("Info", "Mode")
 
     async def main_task(self):
 
@@ -87,46 +94,92 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
-        if self.config_file_path.exists():
-            shutil.copytree(
-                self.config_file_path, self.maaend_set_path, dirs_exist_ok=True
+        if self.config_mode == "自定义":
+            # 自定义模式直接打开用户完整配置，并临时收束为单个 AUTOMAS 实例
+            if not (self.config_file_path / "mxu-MaaEnd.json").exists():
+                raise FileNotFoundError(
+                    "未找到用户的 MaaEnd 配置文件, 请先完成「MaaEnd 配置」步骤"
+                )
+            shutil.rmtree(self.maaend_set_path, ignore_errors=True)
+            shutil.copytree(self.config_file_path, self.maaend_set_path)
+            maaend_set = json.loads(
+                (self.maaend_set_path / "mxu-MaaEnd.json").read_text(
+                    encoding="utf-8"
+                )
             )
-
-        # 初始化任务实例
-        maaend_set = json.loads(
-            (self.maaend_set_path / "mxu-MaaEnd.json").read_text(encoding="utf-8")
-        )
-        maaend_instances = maaend_set["instances"]
-
-        # 创建任务项单例
-        selected_instance = None
-        for instance in maaend_instances:
-            if instance["id"] == "automas":
-                selected_instance = instance
-                break
-        else:
-            for instance in maaend_instances:
-                if instance["id"] == maaend_set.get("lastActiveInstanceId"):
+            selected_instance = None
+            for instance in maaend_set["instances"]:
+                if instance["id"] == "automas":
                     selected_instance = instance
                     break
-        if selected_instance is None:
-            selected_instance = (
-                maaend_instances[0]
-                if len(maaend_instances) > 0
-                else {"id": "automas", "name": "AUTO-MAS", "tasks": []}
-            )
+            else:
+                for instance in maaend_set["instances"]:
+                    if instance["id"] == maaend_set.get("lastActiveInstanceId"):
+                        selected_instance = instance
+                        break
+            if selected_instance is None:
+                selected_instance = (
+                    maaend_set["instances"][0]
+                    if len(maaend_set["instances"]) > 0
+                    else {"id": "automas", "name": "AUTO-MAS", "tasks": []}
+                )
 
-        if "tasks" not in selected_instance:
-            selected_instance["tasks"] = []
-        selected_instance["id"] = "automas"
-        selected_instance["name"] = "AUTO-MAS"
-        maaend_set["instances"] = [selected_instance]
+            if "tasks" not in selected_instance:
+                selected_instance["tasks"] = []
+            selected_instance["id"] = "automas"
+            selected_instance["name"] = "AUTO-MAS"
+            maaend_set["instances"] = [selected_instance]
+            maaend_set["settings"]["autoRunOnLaunch"] = False
+        else:
+            # 预设模式保留完整实例列表，仅切换到当前控制器对应实例
+            config_path = self.config_file_path / "mxu-MaaEnd.json"
+            maaend_set = None
+            if config_path.exists():
+                maaend_set = json.loads(config_path.read_text(encoding="utf-8"))
+                preset_controllers = {
+                    instance.get("controllerName")
+                    for instance in maaend_set.get("instances", [])
+                }
+                if "Win32-Front" not in preset_controllers:
+                    logger.warning(
+                        f"用户 {self.cur_user_item.user_id} 的 MaaEnd 预设配置不完整，已使用模板重新初始化"
+                    )
+                    maaend_set = None
 
-        # 配置模式只打开界面，不触发自动执行。
-        maaend_set["settings"]["autoRunOnLaunch"] = False
+            if maaend_set is None:
+                # 首次进入或从自定义切回预设时，用模板初始化完整配置
+                self.config_file_path.mkdir(parents=True, exist_ok=True)
+                maaend_set = json.loads(
+                    (
+                        Path.cwd() / "res/templates/MaaEnd/config/mxu-MaaEnd.json"
+                    ).read_text(encoding="utf-8")
+                )
+                for maaend_instance in maaend_set.get("instances", []):
+                    for task in maaend_instance.get("tasks", []):
+                        task["enabled"] = True
+                config_path.write_text(
+                    json.dumps(maaend_set, ensure_ascii=False, indent=4),
+                    encoding="utf-8",
+                )
+
+            target_instance = None
+            for instance in maaend_set.get("instances", []):
+                if instance.get("controllerName") == self.script_config.get(
+                    "Game", "ControllerType"
+                ):
+                    target_instance = instance
+                    break
+            if target_instance is None:
+                raise ValueError(
+                    f"预设配置中未找到控制器 {self.script_config.get('Game', 'ControllerType')} 对应的实例，建议重新配置"
+                )
+            maaend_set["lastActiveInstanceId"] = target_instance["id"]
+            shutil.rmtree(self.maaend_set_path, ignore_errors=True)
+            self.maaend_set_path.mkdir(parents=True, exist_ok=True)
 
         (self.maaend_set_path / "mxu-MaaEnd.json").write_text(
-            json.dumps(maaend_set, ensure_ascii=False, indent=4), encoding="utf-8"
+            json.dumps(maaend_set, ensure_ascii=False, indent=4),
+            encoding="utf-8",
         )
         logger.success(
             f"MaaEnd 运行参数配置完成: 设置脚本 {self.cur_user_item.user_id}"
@@ -137,9 +190,57 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
-        shutil.rmtree(self.config_file_path, ignore_errors=True)
-        self.config_file_path.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(self.maaend_set_path, self.config_file_path, dirs_exist_ok=True)
+        if self.config_mode == "自定义":
+            # 自定义模式直接回写 MaaEnd 当前完整配置
+            shutil.rmtree(self.config_file_path, ignore_errors=True)
+            self.config_file_path.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(self.maaend_set_path, self.config_file_path, dirs_exist_ok=True)
+        else:
+            # 预设模式仅提取编辑后的 OptionValues，覆盖回对应预设实例
+            maaend_set = json.loads(
+                (self.maaend_set_path / "mxu-MaaEnd.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            config_path = self.config_file_path / "mxu-MaaEnd.json"
+            preset_config = json.loads(config_path.read_text(encoding="utf-8"))
+
+            preset_instance = None
+            for instance in preset_config.get("instances", []):
+                if instance.get("controllerName") == self.script_config.get(
+                    "Game", "ControllerType"
+                ):
+                    preset_instance = instance
+                    break
+            if preset_instance is None:
+                raise ValueError(
+                    f"预设配置中未找到控制器 {self.script_config.get('Game', 'ControllerType')} 对应的实例，建议重新配置"
+                )
+
+            edited_instance = None
+            for instance in maaend_set.get("instances", []):
+                if instance.get("controllerName") == self.script_config.get(
+                    "Game", "ControllerType"
+                ):
+                    edited_instance = instance
+                    break
+            if edited_instance is None:
+                raise ValueError(
+                    f"运行配置中未找到控制器 {self.script_config.get('Game', 'ControllerType')} 对应的实例，建议重新打开 ScriptConfig 后重新配置"
+                )
+
+            # 预设模式只同步任务选项，实例结构和其他本地设置保留用户配置原状
+            preset_tasks = {
+                task.get("taskName"): task for task in preset_instance.get("tasks", [])
+            }
+            for task in edited_instance.get("tasks", []):
+                preset_task = preset_tasks.get(task.get("taskName"))
+                if preset_task is not None:
+                    preset_task["optionValues"] = task.get("optionValues", {})
+            config_path.write_text(
+                json.dumps(preset_config, ensure_ascii=False, indent=4),
+                encoding="utf-8",
+            )
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"

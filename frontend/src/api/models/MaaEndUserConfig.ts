@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { MaaEndUserConfig_Data } from './MaaEndUserConfig_Data';
 import type { MaaEndUserConfig_Info } from './MaaEndUserConfig_Info';
 import type { MaaEndUserConfig_Notify } from './MaaEndUserConfig_Notify';
 import type { MaaEndUserConfig_Task } from './MaaEndUserConfig_Task';
@@ -14,6 +15,10 @@ export type MaaEndUserConfig = {
      * 任务配置
      */
     Task?: (MaaEndUserConfig_Task | null);
+    /**
+     * 运行数据
+     */
+    Data?: (MaaEndUserConfig_Data | null);
     /**
      * 通知配置
      */
