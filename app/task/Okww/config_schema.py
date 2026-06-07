@@ -59,23 +59,35 @@ OPTION_LABELS: dict[str, str] = {
     # DailyTask - Which to Farm
     "Forgery Challenge": "凝素领域",
     "Tacet Suppression": "无音区",
-    "Simulation": "模拟领域",
+    "Simulation Challenge": "模拟领域",
     # DailyTask / SimulationTask - Material Selection
+    "Resonator EXP": "共鸣者经验",
     "Weapon EXP": "武器经验",
     "Shell Credit": "贝币",
-    "Character EXP": "角色经验",
+    # FarmEchoTask - Teleport to Boss
+    "Weekly Challenge": "战歌重奏",
+    "Boss Challenge": "讨伐强敌",
     # FarmEchoTask - Echo Pickup Method
-    "Yolo": "自动拾取",
-    "Click": "点击拾取",
+    "Yolo": "Yolo模型",
+    "Run in Circle": "转圈奔跑",
+    "Walk": "后退再前进",
     # FarmEchoTask - Boss
-    "Other": "其他",
+    "Other": "其它",
+    "Hyvatia": "海维夏",
+    "Fallacy of No Return": "无归的谬误",
+    "Sentry Construct": "异构武装",
+    "Lorelei": "罗蕾莱",
+    "Lioness of Glory": "荣耀狮像",
+    "Nightmare: Hecate": "梦魇·赫卡忒",
+    "Fenrico": "芬莱克",
+    "Nameless Explorer": "无铭探索者",
     # NightmareNestTask - Which to Farm
     "Nightmare Purification": "梦魇祓除",
     "Tacet Discord Nest": "残像聚落",
     # Basic Options - Blur Algorithm
     "Blur": "模糊",
     "Inpaint": "内容填充",
-    # Use DirectML
+    # Start/Stop
     "None": "无",
 }
 
@@ -90,7 +102,7 @@ DAILY_TASK_SCHEMA: dict[str, FieldSchema] = {
         options=[
             "Forgery Challenge",
             "Tacet Suppression",
-            "Simulation",
+            "Simulation Challenge",
         ],
     ),
     "Which Tacet Suppression to Farm": _field(
@@ -112,9 +124,9 @@ DAILY_TASK_SCHEMA: dict[str, FieldSchema] = {
         label="材料选择",
         description="选择要刷取的材料",
         options=[
+            "Resonator EXP",
             "Weapon EXP",
             "Shell Credit",
-            "Character EXP",
         ],
     ),
     "Auto Farm all Nightmare Nest": _field(
@@ -145,64 +157,75 @@ MULTI_ACCOUNT_DAILY_TASK_SCHEMA: dict[str, FieldSchema] = {
 FARM_ECHO_TASK_SCHEMA: dict[str, FieldSchema] = {
     "Teleport to Boss": _field(
         "select",
-        label="传送到Boss",
-        description="选择是否传送到Boss",
-        options=["No", "Yes"],
+        label="传送至Boss",
+        description="在F2菜单中传送至Boss",
+        options=["No", "Weekly Challenge", "Boss Challenge"],
     ),
     "Boss Level": _field(
         "select",
         label="Boss等级",
-        description="选择Boss等级",
-        options=["60", "70", "80", "90"],
+        description="选择会掉落声骸的最低等级",
+        options=["50", "60", "70", "80"],
     ),
     "Boss": _field(
-        "string",
-        label="Boss名称",
-        description="指定要刷的Boss名称，填 Other 使用默认",
+        "select",
+        label="Boss",
+        description="选择Boss配置（已包含战斗等待时间）",
+        options=[
+            "Other",
+            "Hyvatia",
+            "Fallacy of No Return",
+            "Sentry Construct",
+            "Lorelei",
+            "Lioness of Glory",
+            "Nightmare: Hecate",
+            "Fenrico",
+            "Nameless Explorer",
+        ],
     ),
     "Repeat Farm Count": _field(
         "int",
-        label="重复刷取次数",
+        label="刷多少次",
         description="重复刷取的次数上限",
         min=1,
         max=99999,
     ),
     "Combat Wait Time": _field(
         "int",
-        label="战斗等待时间（秒）",
-        description="战斗结束后等待的时间",
+        label="战斗开始前等待时间（秒）",
+        description="若设定大于0则覆盖Boss配置",
         min=0,
         max=60,
     ),
     "Echo Pickup Method": _field(
         "select",
-        label="声骸拾取方式",
-        description="选择声骸拾取方式",
-        options=["Yolo", "Click"],
+        label="搜索声骸方法",
+        description="选择搜索声骸的方法",
+        options=["Yolo", "Run in Circle", "Walk"],
     ),
     "Use Liberation": _field(
         "bool",
-        label="使用解放技能",
-        description="是否在战斗中使用解放技能",
+        label="使用共鸣解放",
+        description="高练度情况下，不使用共鸣解放以节约时间",
     ),
     "Switch to Healer after Combat": _field(
         "bool",
-        label="战斗后切换治疗角色",
-        description="战斗结束后是否切换到治疗角色",
+        label="战斗结束后切换到治疗角色",
+        description="提高角色生存率",
     ),
     "Which Weekly Boss to Teleport": _field(
         "int",
-        label="周本Boss序号",
-        description="选择要传送的周本Boss（从 1 开始）",
+        label="传送到第几个周常Boss",
+        description="例如德尼亚，从上到下，从1开始",
         min=1,
-        max=10,
+        max=9,
     ),
     "Which Boss Challenge to Teleport": _field(
         "int",
-        label="Boss挑战序号",
-        description="选择要传送的Boss挑战（从 1 开始）",
+        label="传送到第几个Boss挑战",
+        description="例如无铭探索者，从上到下，从1开始",
         min=1,
-        max=10,
+        max=20,
     ),
     "Exit After Task": _field(
         "bool",
@@ -215,12 +238,12 @@ AUTO_ROGUE_TASK_SCHEMA: dict[str, FieldSchema] = {
     "_enabled": _field(
         "bool",
         label="启用",
-        description="是否启用半自动肉鸽任务",
+        description="在周常门口或者任务内开始，卡墙时会提示人工接管",
     ),
     "Stop When Treasure Found": _field(
         "bool",
-        label="发现宝藏时停止",
-        description="发现宝藏后是否停止任务",
+        label="出现声骸奖励时停止运行",
+        description="如果选择否，将在体力足够时领取声骸奖励",
     ),
 }
 
@@ -257,9 +280,9 @@ SIMULATION_TASK_SCHEMA: dict[str, FieldSchema] = {
         label="材料选择",
         description="选择要刷取的材料",
         options=[
-            "Shell Credit",
-            "Character EXP",
+            "Resonator EXP",
             "Weapon EXP",
+            "Shell Credit",
         ],
     ),
 }
@@ -323,14 +346,16 @@ ENHANCE_ECHO_TASK_SCHEMA: dict[str, FieldSchema] = {
             "暴击伤害",
             "暴击",
             "攻击百分比",
-            "共鸣效率",
-            "共鸣解放伤害加成",
-            "普攻伤害加成",
-            "重击伤害加成",
-            "共鸣技能伤害加成",
-            "攻击",
             "生命百分比",
             "防御百分比",
+            "攻击",
+            "生命",
+            "防御",
+            "共鸣效率",
+            "普攻伤害加成",
+            "重击伤害加成",
+            "共鸣解放伤害加成",
+            "共鸣技能伤害加成",
         ],
     ),
     "Pause after Success": _field(
@@ -344,22 +369,22 @@ AUTO_COMBAT_TASK_SCHEMA: dict[str, FieldSchema] = {
     "_enabled": _field(
         "bool",
         label="启用",
-        description="是否启用自动战斗",
+        description="在大世界、深渊、无音区等开启自动战斗",
     ),
     "Auto Target": _field(
         "bool",
-        label="自动锁定目标",
-        description="是否自动锁定敌人",
+        label="自动选取敌人",
+        description="关闭时仅在手动鼠标中键选取敌人后才会自动战斗",
     ),
     "Use Liberation": _field(
         "bool",
-        label="使用解放技能",
-        description="是否使用解放技能",
+        label="使用共鸣解放",
+        description="在大世界中，不使用共鸣解放以节约时间",
     ),
     "Check Levitator": _field(
         "bool",
-        label="检测悬浮道具",
-        description="是否检测悬浮道具",
+        label="检查探索工具是否为控物",
+        description="在秘境中自动战斗时切换控物以判断角色是否处于空中",
     ),
 }
 
@@ -404,8 +429,8 @@ AUTO_DIALOG_TASK_SCHEMA: dict[str, FieldSchema] = {
 CHANGE_ECHO_TASK_SCHEMA: dict[str, FieldSchema] = {
     "Use OCR": _field(
         "bool",
-        label="使用OCR",
-        description="是否使用OCR识别",
+        label="使用文字识别(中英文客户端适用)",
+        description="高配置CPU请打开，增加拾取声骸准确度",
     ),
 }
 
@@ -588,19 +613,19 @@ CONFIG_GROUPS = {
 
 # 文件名 -> 显示名
 CONFIG_DISPLAY_NAMES: dict[str, str] = {
-    "DailyTask.json": "日常任务",
-    "MultiAccountDailyTask.json": "多账号日常",
-    "FarmEchoTask.json": "刷声骸",
-    "AutoRogueTask.json": "半自动肉鸽",
+    "DailyTask.json": "日常一条龙",
+    "MultiAccountDailyTask.json": "多账号一条龙",
+    "FarmEchoTask.json": "刷4C(大世界/副本)",
+    "AutoRogueTask.json": "半自动肉鸽(周常)",
     "ForgeryTask.json": "凝素领域",
     "NightmareNestTask.json": "梦魇巢穴",
     "SimulationTask.json": "模拟领域",
     "TacetTask.json": "无音区",
-    "EnhanceEchoTask.json": "声骸强化",
+    "EnhanceEchoTask.json": "批量强化声骸",
     "AutoCombatTask.json": "自动战斗",
     "AutoPickTask.json": "自动拾取",
-    "AutoDialogTask.json": "自动对话",
-    "ChangeEchoTask.json": "切换声骸",
+    "AutoDialogTask.json": "任务跳过对话",
+    "ChangeEchoTask.json": "批量修改声骸主属性",
     "Game Hotkey.json": "游戏快捷键",
     "Character Config.json": "角色设置",
     "Monthly Card Config.json": "小月卡设置",
