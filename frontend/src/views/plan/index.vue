@@ -161,8 +161,15 @@ const savePlanField = async (changes: Record<string, any>): Promise<boolean> => 
   }
 }
 
+interface PlanChangeOptions {
+  refresh?: boolean
+  // 仅在初次加载或切换计划时强制推断自定义关卡。
+  // 普通保存刷新需要保留当前定义，避免未被选中的自定义关卡被清空。
+  forceCustomStages?: boolean
+}
+
 // 刷新计划数据
-const refreshPlanData = async () => {
+const refreshPlanData = async (forceCustomStages = false) => {
   if (!activePlanId.value) return
 
   try {
@@ -170,7 +177,7 @@ const refreshPlanData = async () => {
     const planData = response.data[activePlanId.value]
     if (planData) {
       currentPlanData.value = response.data
-      tableData.value = { ...planData, _isInitialLoad: true }
+      tableData.value = { ...planData, _isInitialLoad: forceCustomStages }
 
       if (planData.Info) {
         currentMode.value = planData.Info.Mode || 'ALL'
@@ -187,15 +194,21 @@ const refreshPlanData = async () => {
 }
 
 // 处理计划字段变更 - 遵循设置页面的模式
-const handlePlanChange = async (path: string, value: any) => {
+const handlePlanChange = async (
+  path: string,
+  value: any,
+  options: PlanChangeOptions = {}
+): Promise<boolean> => {
   // 构建只包含修改字段的更新数据
   const changes = buildNestedObject(path, value)
   const success = await savePlanField(changes)
 
   // 更新成功后重新获取最新配置
-  if (success) {
-    await refreshPlanData()
+  if (success && options.refresh !== false) {
+    await refreshPlanData(options.forceCustomStages === true)
   }
+
+  return success
 }
 
 // 辅助函数：根据路径构建嵌套对象
