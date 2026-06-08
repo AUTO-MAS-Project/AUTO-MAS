@@ -53,14 +53,13 @@
             @save="handleFieldSave"
             @configure="handleMaaEndConfig"
             @import-config="handleImportMaaEndConfig"
+            @script-config="handleScriptConfig"
           />
           <TaskConfigSection
             v-if="formData.Info.IfQuickConfig"
             :form-data="formData"
             :loading="loading"
-            :mode="formData.Info.Mode"
             :if-quick-config="formData.Info.IfQuickConfig"
-            source="user"
             :controller-type="controllerType"
             @save="handleFieldSave"
             @save-batch="handleFieldsSave"
@@ -247,6 +246,11 @@ const handleFieldSave = async (key: string, value: any) => {
 
 const handleFieldsSave = async (changes: FieldChange[]) => {
   await saveUserFields(changes)
+}
+
+const handleScriptConfig = () => {
+  cleanupConfigSession()
+  router.push(`/scripts/${scriptId}/edit/maaend`)
 }
 
 const loadScriptInfo = async () => {
