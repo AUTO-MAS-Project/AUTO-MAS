@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 from importlib import resources
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any, Literal
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
+from urllib.request import Request, urlopen
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -79,6 +81,67 @@ class PluginFrontendManifest(BaseModel):
         return [_normalize_asset_path(item) for item in items]
 
 
+class PluginFrontendDevManifest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: int = Field(default=0, ge=0)
+    renderer: PluginFrontendRenderer = Field(default="custom-element")
+    entry_url: str = Field(..., min_length=1)
+    style_urls: list[str] = Field(default_factory=list)
+    elements: list[PluginFrontendElement] = Field(default_factory=list)
+    command: str | None = Field(default=None)
+
+    @field_validator("renderer", mode="before")
+    @classmethod
+    def _normalize_renderer(cls, raw: Any) -> PluginFrontendRenderer:
+        text = str(raw or "custom-element").strip().lower()
+        if text != "custom-element":
+            raise ValueError("插件前端 dev manifest.renderer 仅支持 custom-element")
+        return text  # type: ignore[return-value]
+
+    @field_validator("entry_url", mode="before")
+    @classmethod
+    def _normalize_entry_url(cls, raw: Any) -> str:
+        text = str(raw or "").strip()
+        if not text:
+            raise ValueError("插件前端开发入口不能为空")
+        if not _is_local_dev_url(text):
+            raise ValueError("插件前端开发入口仅允许 localhost / 127.0.0.1 / ::1")
+        return text
+
+    @field_validator("style_urls", mode="before")
+    @classmethod
+    def _normalize_style_urls(cls, raw: Any) -> list[str]:
+        if raw is None:
+            return []
+        items = raw if isinstance(raw, list) else [raw]
+        result: list[str] = []
+        for item in items:
+            text = str(item or "").strip()
+            if not text:
+                continue
+            if not _is_local_dev_url(text):
+                raise ValueError("插件前端开发样式仅允许 localhost / 127.0.0.1 / ::1")
+            result.append(text)
+        return result
+
+    @field_validator("command", mode="before")
+    @classmethod
+    def _normalize_command(cls, raw: Any) -> str | None:
+        if raw is None:
+            return None
+        text = str(raw or "").strip()
+        return text or None
+
+
+def _is_local_dev_url(raw_url: str) -> bool:
+    parsed = urlparse(str(raw_url or "").strip())
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    host = (parsed.hostname or "").lower()
+    return host in {"localhost", "127.0.0.1", "::1"}
+
+
 def _plugin_package_root(plugin_source: Any) -> str:
     module_name = str(getattr(plugin_source, "module_name", "") or "").strip()
     if not module_name:
@@ -115,6 +178,43 @@ def load_frontend_manifest(plugin_name: str, plugin_source: Any) -> PluginFronte
         ) from exc
 
     return PluginFrontendManifest.model_validate(payload)
+
+
+def _load_frontend_dev_manifest(
+    plugin_name: str,
+    plugin_source: Any,
+) -> PluginFrontendDevManifest | None:
+    if os.getenv("AUTO_MAS_DEV") != "1":
+        return None
+    source_path = getattr(plugin_source, "path", None)
+    if source_path is None:
+        return None
+    manifest_path = Path(source_path) / "frontend-src" / "plugin.frontend.dev.json"
+    if not manifest_path.is_file():
+        return None
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        return PluginFrontendDevManifest.model_validate(payload)
+    except Exception as exc:
+        raise ValueError(
+            f"插件前端 dev manifest 无效: plugin={plugin_name}, error={type(exc).__name__}: {exc}"
+        ) from exc
+
+
+def _dev_server_error(manifest: PluginFrontendDevManifest) -> str | None:
+    try:
+        request = Request(manifest.entry_url, method="GET")
+        with urlopen(request, timeout=0.45) as response:
+            if int(getattr(response, "status", 200) or 200) < 400:
+                return None
+    except Exception as exc:
+        command = manifest.command or "npm run dev:frontend"
+        return (
+            "插件前端开发服务未启动或不可访问: "
+            f"{manifest.entry_url}。请在插件目录运行: {command}。"
+            f"原始错误: {type(exc).__name__}: {exc}"
+        )
+    return f"插件前端开发服务返回异常状态: {manifest.entry_url}"
 
 
 def load_frontend_asset(
@@ -203,7 +303,12 @@ def build_page_snapshot(
             continue
 
         try:
-            manifest = load_frontend_manifest(frontend_plugin, plugin_source)
+            dev_manifest = _load_frontend_dev_manifest(frontend_plugin, plugin_source)
+            manifest = (
+                dev_manifest
+                if dev_manifest is not None
+                else load_frontend_manifest(frontend_plugin, plugin_source)
+            )
         except Exception as exc:
             _append_error(
                 errors,
@@ -213,15 +318,21 @@ def build_page_snapshot(
             continue
 
         payload["manifest_version"] = manifest.version
-        payload["entry_asset_url"] = build_frontend_asset_url(
-            frontend_plugin,
-            manifest.entry,
-            version=manifest.version,
-        )
-        payload["style_asset_urls"] = [
-            build_frontend_asset_url(frontend_plugin, style_path, version=manifest.version)
-            for style_path in manifest.style
-        ]
+        if isinstance(manifest, PluginFrontendDevManifest):
+            payload["entry_asset_url"] = manifest.entry_url
+            payload["style_asset_urls"] = list(manifest.style_urls)
+            payload["dev_frontend_command"] = manifest.command
+            payload["dev_frontend_error"] = _dev_server_error(manifest)
+        else:
+            payload["entry_asset_url"] = build_frontend_asset_url(
+                frontend_plugin,
+                manifest.entry,
+                version=manifest.version,
+            )
+            payload["style_asset_urls"] = [
+                build_frontend_asset_url(frontend_plugin, style_path, version=manifest.version)
+                for style_path in manifest.style
+            ]
 
         declared_tag = str(page.element_tag or "").strip() or None
         manifest_tags = [item.tag for item in manifest.elements]
