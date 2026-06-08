@@ -11,7 +11,7 @@ from app.utils import get_logger
 logger = get_logger("页面注册")
 
 PageSection = Literal["main", "bottom", "dev"]
-PageRenderer = Literal["component", "iframe"]
+PageRenderer = Literal["component", "iframe", "custom-element"]
 
 
 class PageDeclaration(BaseModel):
@@ -27,13 +27,26 @@ class PageDeclaration(BaseModel):
     component: str = Field(default="PluginPage", min_length=1)
     renderer: PageRenderer = Field(default="component")
     url: str | None = Field(default=None)
+    frontend_plugin: str | None = Field(default=None)
+    element_tag: str | None = Field(default=None)
+    entry_asset_url: str | None = Field(default=None)
+    style_asset_urls: list[str] = Field(default_factory=list)
+    manifest_version: int | None = Field(default=None)
     section: PageSection = Field(default="main")
     order: int = Field(default=1000)
     visible: bool = Field(default=True)
     dev_only: bool = Field(default=False)
     source: str = Field(default="host:core")
 
-    @field_validator("id", "title", "menu_label", "icon", "component", "source", mode="before")
+    @field_validator(
+        "id",
+        "title",
+        "menu_label",
+        "icon",
+        "component",
+        "source",
+        mode="before",
+    )
     @classmethod
     def _strip_text(cls, raw: Any) -> str:
         text = str(raw or "").strip()
@@ -66,17 +79,30 @@ class PageDeclaration(BaseModel):
     @classmethod
     def _normalize_renderer(cls, raw: Any) -> PageRenderer:
         text = str(raw or "component").strip().lower()
-        if text not in {"component", "iframe"}:
-            raise ValueError("页面 renderer 仅支持 component 或 iframe")
+        if text not in {"component", "iframe", "custom-element"}:
+            raise ValueError("页面 renderer 仅支持 component、iframe 或 custom-element")
         return text  # type: ignore[return-value]
 
-    @field_validator("url", mode="before")
+    @field_validator("url", "frontend_plugin", "element_tag", "entry_asset_url", mode="before")
     @classmethod
-    def _strip_optional_url(cls, raw: Any) -> str | None:
+    def _strip_optional_text(cls, raw: Any) -> str | None:
         if raw is None:
             return None
         text = str(raw or "").strip()
         return text or None
+
+    @field_validator("style_asset_urls", mode="before")
+    @classmethod
+    def _normalize_style_asset_urls(cls, raw: Any) -> list[str]:
+        if raw is None:
+            return []
+        items = raw if isinstance(raw, list) else [raw]
+        result: list[str] = []
+        for item in items:
+            text = str(item or "").strip()
+            if text:
+                result.append(text)
+        return result
 
 
 class PageRegistry:
@@ -92,15 +118,29 @@ class PageRegistry:
         self._path_index.clear()
         self._warnings.clear()
 
-    def register(self, declaration: PageDeclaration | dict[str, Any], *, source: str | None = None) -> PageDeclaration:
-        payload = declaration.model_dump() if isinstance(declaration, PageDeclaration) else deepcopy(declaration)
+    def register(
+        self,
+        declaration: PageDeclaration | dict[str, Any],
+        *,
+        source: str | None = None,
+        frontend_plugin: str | None = None,
+    ) -> PageDeclaration:
+        payload = (
+            declaration.model_dump()
+            if isinstance(declaration, PageDeclaration)
+            else deepcopy(declaration)
+        )
         if source is not None:
             payload["source"] = source
+        if frontend_plugin and not payload.get("frontend_plugin"):
+            payload["frontend_plugin"] = frontend_plugin
         page = PageDeclaration.model_validate(payload)
 
         existing_id = self._pages.get(page.id)
         if existing_id is not None and not self._should_replace(page, existing_id):
-            self._warn(f"页面 id 冲突，已保留既有声明: id={page.id}, source={page.source}, existing={existing_id.source}")
+            self._warn(
+                f"页面 id 冲突，已保留既有声明: id={page.id}, source={page.source}, existing={existing_id.source}"
+            )
             return existing_id
 
         existing_path_id = self._path_index.get(page.path)
@@ -121,12 +161,24 @@ class PageRegistry:
         self._path_index[page.path] = page.id
         return page
 
-    def register_many(self, declarations: list[Any] | tuple[Any, ...], *, source: str) -> None:
+    def register_many(
+        self,
+        declarations: list[Any] | tuple[Any, ...],
+        *,
+        source: str,
+        frontend_plugin: str | None = None,
+    ) -> None:
         for declaration in declarations:
             try:
-                self.register(declaration, source=source)
+                self.register(
+                    declaration,
+                    source=source,
+                    frontend_plugin=frontend_plugin,
+                )
             except Exception as exc:
-                self._warn(f"页面声明无效，已跳过: source={source}, error={type(exc).__name__}: {exc}")
+                self._warn(
+                    f"页面声明无效，已跳过: source={source}, error={type(exc).__name__}: {exc}"
+                )
 
     def unregister_source(self, source: str) -> None:
         normalized = str(source or "").strip()
@@ -141,7 +193,12 @@ class PageRegistry:
     def list_pages(self) -> list[PageDeclaration]:
         return sorted(
             self._pages.values(),
-            key=lambda item: (self._section_rank(item.section), int(item.order), item.menu_label, item.id),
+            key=lambda item: (
+                self._section_rank(item.section),
+                int(item.order),
+                item.menu_label,
+                item.id,
+            ),
         )
 
     def snapshot(self) -> list[dict[str, Any]]:
@@ -184,15 +241,30 @@ class PageRegistry:
 class PageFacade:
     """插件上下文中的页面声明门面。"""
 
-    def __init__(self, *, instance_id: str, registry: PageRegistry) -> None:
+    def __init__(
+        self,
+        *,
+        instance_id: str,
+        plugin_name: str | None,
+        registry: PageRegistry,
+    ) -> None:
         self._source = f"plugin:{instance_id}"
+        self._frontend_plugin = str(plugin_name or "").strip() or None
         self._registry = registry
 
     def register(self, **kwargs: Any) -> PageDeclaration:
-        return self._registry.register(kwargs, source=self._source)
+        return self._registry.register(
+            kwargs,
+            source=self._source,
+            frontend_plugin=self._frontend_plugin,
+        )
 
     def register_many(self, pages: list[Any] | tuple[Any, ...]) -> None:
-        self._registry.register_many(pages, source=self._source)
+        self._registry.register_many(
+            pages,
+            source=self._source,
+            frontend_plugin=self._frontend_plugin,
+        )
 
     def unregister_all(self) -> None:
         self._registry.unregister_source(self._source)
@@ -202,21 +274,160 @@ page_registry = PageRegistry()
 
 
 BUILTIN_PAGES: list[dict[str, Any]] = [
-    {"id": "home", "path": "/home", "title": "主页", "menu_label": "主页", "icon": "home", "component": "Home", "section": "main", "order": 10},
-    {"id": "scripts", "path": "/scripts", "title": "脚本管理", "menu_label": "脚本管理", "icon": "script", "component": "Scripts", "section": "main", "order": 20},
-    {"id": "plans", "path": "/plans", "title": "计划管理", "menu_label": "计划管理", "icon": "plan", "component": "Plans", "section": "main", "order": 30},
-    {"id": "emulators", "path": "/emulators", "title": "模拟器管理", "menu_label": "模拟器管理", "icon": "emulator", "component": "Emulators", "section": "main", "order": 40},
-    {"id": "plugins", "path": "/plugins", "title": "插件管理", "menu_label": "插件管理", "icon": "plugin", "component": "Plugin", "section": "main", "order": 50},
-    {"id": "plugins-market", "path": "/plugins-market", "title": "插件市场", "menu_label": "插件市场", "icon": "market", "component": "PluginMarket", "section": "main", "order": 60},
-    {"id": "queue", "path": "/queue", "title": "调度队列", "menu_label": "调度队列", "icon": "queue", "component": "Queue", "section": "main", "order": 70},
-    {"id": "scheduler", "path": "/scheduler", "title": "调度中心", "menu_label": "调度中心", "icon": "scheduler", "component": "Scheduler", "section": "main", "order": 80},
-    {"id": "history", "path": "/history", "title": "历史记录", "menu_label": "历史记录", "icon": "history", "component": "History", "section": "bottom", "order": 10},
-    {"id": "tools", "path": "/tools", "title": "工具", "menu_label": "工具", "icon": "tool", "component": "Tools", "section": "bottom", "order": 20},
-    {"id": "settings", "path": "/settings", "title": "设置", "menu_label": "设置", "icon": "settings", "component": "Settings", "section": "bottom", "order": 30},
-    {"id": "test-router", "path": "/TestRouter", "title": "测试路由", "menu_label": "测试路由", "icon": "dev", "component": "TestRouter", "section": "dev", "order": 10, "dev_only": True},
-    {"id": "ocr-dev", "path": "/OCRdev", "title": "OCR 测试", "menu_label": "OCR测试", "icon": "dev", "component": "OCRdev", "section": "dev", "order": 20, "dev_only": True},
-    {"id": "ws-dev", "path": "/WSdev", "title": "WebSocket 测试", "menu_label": "WebSocket测试", "icon": "api", "component": "WSdev", "section": "dev", "order": 30, "dev_only": True},
-    {"id": "overlay-mask-dev", "path": "/OverlayMaskDev", "title": "遮罩测试", "menu_label": "遮罩测试", "icon": "dev", "component": "OverlayMaskDev", "section": "dev", "order": 40, "dev_only": True},
+    {
+        "id": "home",
+        "path": "/home",
+        "title": "主页",
+        "menu_label": "主页",
+        "icon": "home",
+        "component": "Home",
+        "section": "main",
+        "order": 10,
+    },
+    {
+        "id": "scripts",
+        "path": "/scripts",
+        "title": "脚本管理",
+        "menu_label": "脚本管理",
+        "icon": "script",
+        "component": "Scripts",
+        "section": "main",
+        "order": 20,
+    },
+    {
+        "id": "plans",
+        "path": "/plans",
+        "title": "计划管理",
+        "menu_label": "计划管理",
+        "icon": "plan",
+        "component": "Plans",
+        "section": "main",
+        "order": 30,
+    },
+    {
+        "id": "emulators",
+        "path": "/emulators",
+        "title": "模拟器管理",
+        "menu_label": "模拟器管理",
+        "icon": "emulator",
+        "component": "Emulators",
+        "section": "main",
+        "order": 40,
+    },
+    {
+        "id": "plugins",
+        "path": "/plugins",
+        "title": "插件管理",
+        "menu_label": "插件管理",
+        "icon": "plugin",
+        "component": "Plugin",
+        "section": "main",
+        "order": 50,
+    },
+    {
+        "id": "plugins-market",
+        "path": "/plugins-market",
+        "title": "插件市场",
+        "menu_label": "插件市场",
+        "icon": "market",
+        "component": "PluginMarket",
+        "section": "main",
+        "order": 60,
+    },
+    {
+        "id": "queue",
+        "path": "/queue",
+        "title": "调度队列",
+        "menu_label": "调度队列",
+        "icon": "queue",
+        "component": "Queue",
+        "section": "main",
+        "order": 70,
+    },
+    {
+        "id": "scheduler",
+        "path": "/scheduler",
+        "title": "调度中心",
+        "menu_label": "调度中心",
+        "icon": "scheduler",
+        "component": "Scheduler",
+        "section": "main",
+        "order": 80,
+    },
+    {
+        "id": "history",
+        "path": "/history",
+        "title": "历史记录",
+        "menu_label": "历史记录",
+        "icon": "history",
+        "component": "History",
+        "section": "bottom",
+        "order": 10,
+    },
+    {
+        "id": "tools",
+        "path": "/tools",
+        "title": "工具",
+        "menu_label": "工具",
+        "icon": "tool",
+        "component": "Tools",
+        "section": "bottom",
+        "order": 20,
+    },
+    {
+        "id": "settings",
+        "path": "/settings",
+        "title": "设置",
+        "menu_label": "设置",
+        "icon": "settings",
+        "component": "Settings",
+        "section": "bottom",
+        "order": 30,
+    },
+    {
+        "id": "test-router",
+        "path": "/TestRouter",
+        "title": "测试路由",
+        "menu_label": "测试路由",
+        "icon": "dev",
+        "component": "TestRouter",
+        "section": "dev",
+        "order": 10,
+        "dev_only": True,
+    },
+    {
+        "id": "ocr-dev",
+        "path": "/OCRdev",
+        "title": "OCR 测试",
+        "menu_label": "OCR测试",
+        "icon": "dev",
+        "component": "OCRdev",
+        "section": "dev",
+        "order": 20,
+        "dev_only": True,
+    },
+    {
+        "id": "ws-dev",
+        "path": "/WSdev",
+        "title": "WebSocket 测试",
+        "menu_label": "WebSocket测试",
+        "icon": "api",
+        "component": "WSdev",
+        "section": "dev",
+        "order": 30,
+        "dev_only": True,
+    },
+    {
+        "id": "overlay-mask-dev",
+        "path": "/OverlayMaskDev",
+        "title": "遮罩测试",
+        "menu_label": "遮罩测试",
+        "icon": "dev",
+        "component": "OverlayMaskDev",
+        "section": "dev",
+        "order": 40,
+        "dev_only": True,
+    },
 ]
 
 
