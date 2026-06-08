@@ -50,6 +50,8 @@ def normalize_maaend_config(
 
         last_active_instance_id = source_set.get("lastActiveInstanceId")
         for instance in instances:
+            if instance.get("id") == "automas" or instance.get("name") == "AUTO-MAS":
+                return instance
             if isinstance(instance, dict) and instance.get("id") == last_active_instance_id:
                 return instance
 
