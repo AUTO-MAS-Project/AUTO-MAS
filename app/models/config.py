@@ -819,14 +819,15 @@ class MaaEndUserConfig(ConfigBase):
     async def load(self, data: dict):
         info_data = data.get("Info")
         # 兼容旧版 MaaEnd 用户配置:
-        # 旧“自定义”以及没有 SanityMode 的旧“简洁/详细”都等价于用户配置文件且关闭快速配置。
+        # 旧“自定义”仍等价于用户配置文件且关闭快速配置。
+        # 没有 SanityMode 的旧“简洁/详细”回落为脚本配置来源，快速配置使用默认值。
         if isinstance(info_data, dict):
             if info_data.get("Mode") == "自定义":
                 info_data["Mode"] = "详细"
                 info_data["IfQuickConfig"] = False
             elif info_data.get("Mode") in ("简洁", "详细") and "SanityMode" not in info_data:
-                info_data["Mode"] = "详细"
-                info_data["IfQuickConfig"] = False
+                info_data["Mode"] = "简洁"
+                info_data.pop("IfQuickConfig", None)
 
         task_data = data.get("Task")
         if isinstance(task_data, dict):
@@ -1019,10 +1020,6 @@ class MaaEndConfig(ConfigBase):
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
         )
-
-        ## Task ------------------------------------------------------------
-        ## 脚本级快速任务开关配置（脚本配置文件来源数据源）
-        init_maaend_task_config(self)
 
         self.UserData = MultipleConfig([MaaEndUserConfig])
 
