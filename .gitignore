@@ -26,6 +26,7 @@ uv.lock
 /debug/
 /history/
 /script/
+/environment/
 
 # Frontend dependencies & caches
 /frontend/node_modules/
