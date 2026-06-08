@@ -35,7 +35,7 @@ RELOAD_FILENAMES = {
     "schema.json",
     "plugin.json",
 }
-FRONTEND_DIR_NAMES = {"frontend", "ui", "web"}
+FRONTEND_DIR_NAMES = {"frontend", "frontend-src", "ui", "web"}
 FRONTEND_SUFFIXES = {".vue", ".ts", ".tsx", ".js", ".jsx", ".css", ".scss", ".html"}
 RESOURCE_SUFFIXES = {
     ".json",

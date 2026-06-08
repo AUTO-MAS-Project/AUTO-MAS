@@ -14,6 +14,8 @@ export interface PageDeclaration {
   entry_asset_url: string | null
   style_asset_urls: string[]
   manifest_version: number | null
+  dev_frontend_command?: string | null
+  dev_frontend_error?: string | null
   section: 'main' | 'bottom' | 'dev' | string
   order: number
   visible: boolean
@@ -85,6 +87,8 @@ function hostPage(
     entry_asset_url: null,
     style_asset_urls: [],
     manifest_version: null,
+    dev_frontend_command: null,
+    dev_frontend_error: null,
     section,
     order,
     visible: true,
@@ -132,6 +136,8 @@ export function normalizePageDeclarations(raw: unknown): PageDeclaration[] {
       entry_asset_url: normalizeOptionalText(item.entry_asset_url),
       style_asset_urls: normalizeStringList(item.style_asset_urls),
       manifest_version: normalizeOptionalNumber(item.manifest_version),
+      dev_frontend_command: normalizeOptionalText(item.dev_frontend_command),
+      dev_frontend_error: normalizeOptionalText(item.dev_frontend_error),
       section: String(item.section || 'main').trim(),
       order: Number.isFinite(Number(item.order)) ? Number(item.order) : 1000,
       visible: item.visible !== false,
