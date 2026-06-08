@@ -11,9 +11,9 @@ export type OkwwConfig_Game = {
      */
     Enabled?: (boolean | null);
     /**
-     * 类型: 模拟器, PC端, URL协议
+     * 类型: PC端, URL协议
      */
-    Type?: ('Emulator' | 'Client' | 'URL' | null);
+    Type?: ('Client' | 'URL' | null);
     /**
      * 游戏/模拟器程序路径
      */
@@ -47,11 +47,11 @@ export type OkwwConfig_Game = {
      */
     EmulatorIndex?: (string | null);
     /**
-     * 任务开始前是否由 MAS 启动游戏/模拟器
+     * 任务开始前是否由 MAS 启动游戏
      */
     LaunchBeforeTask?: (boolean | null);
     /**
-     * 任务结束后是否关闭游戏/模拟器
+     * 任务结束后是否关闭游戏
      */
     CloseOnFinish?: (boolean | null);
 };
