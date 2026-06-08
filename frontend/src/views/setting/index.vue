@@ -282,9 +282,7 @@ onMounted(() => {
         </a-tab-pane>
         <a-tab-pane key="function" tab="功能设置">
           <TabFunction :settings="settings" :history-retention-options="historyRetentionOptions"
-            :update-source-options="updateSourceOptions" :update-channel-options="updateChannelOptions"
-            :voice-type-options="voiceTypeOptions" :handle-setting-change="handleSettingChange"
-            :check-update="checkUpdate" />
+            :voice-type-options="voiceTypeOptions" :handle-setting-change="handleSettingChange" />
         </a-tab-pane>
         <a-tab-pane key="notify" tab="通知设置">
           <TabNotify :settings="settings" :send-task-result-time-options="sendTaskResultTimeOptions"
@@ -294,7 +292,9 @@ onMounted(() => {
           <TabAdvanced :open-dev-tools="openDevTools" />
         </a-tab-pane>
         <a-tab-pane key="others" tab="关于">
-          <TabOthers :version="version" :backend-update-info="backendUpdateInfo" />
+          <TabOthers :version="version" :backend-update-info="backendUpdateInfo" :settings="settings"
+            :update-source-options="updateSourceOptions" :update-channel-options="updateChannelOptions"
+            :handle-setting-change="handleSettingChange" :check-update="checkUpdate" />
         </a-tab-pane>
       </a-tabs>
     </div>
