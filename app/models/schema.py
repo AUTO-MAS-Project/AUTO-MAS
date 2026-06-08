@@ -1218,6 +1218,12 @@ class UserInBase(BaseModel):
     scriptId: str = Field(..., description="所属脚本ID")
 
 
+class ScriptConfigImportIn(UserInBase):
+    userId: Optional[str] = Field(
+        default=None, description="用户ID, 未携带时导入到脚本级配置文件"
+    )
+
+
 class UserGetIn(UserInBase):
     userId: Optional[str] = Field(
         default=None, description="用户ID, 未携带时表示获取所有用户数据"
