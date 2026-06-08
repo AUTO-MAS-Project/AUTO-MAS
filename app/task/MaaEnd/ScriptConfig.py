@@ -23,6 +23,7 @@ import json
 import shutil
 import asyncio
 from pathlib import Path
+from typing import Any
 
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem
@@ -33,6 +34,45 @@ from app.services import System
 from app.utils import get_logger, ProcessManager
 
 logger = get_logger("MaaEnd 脚本设置")
+
+
+def normalize_maaend_config(
+    maaend_set: dict[str, Any],
+    controller_type: str,
+    template_set: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """将 MaaEnd 配置收束为 AUTO-MAS 单实例配置"""
+
+    def select_instance(source_set: dict[str, Any]) -> dict[str, Any] | None:
+        instances = source_set.get("instances")
+        if not isinstance(instances, list) or len(instances) == 0:
+            return None
+
+        last_active_instance_id = source_set.get("lastActiveInstanceId")
+        for instance in instances:
+            if isinstance(instance, dict) and instance.get("id") == last_active_instance_id:
+                return instance
+
+        for instance in instances:
+            if isinstance(instance, dict):
+                return instance
+        return None
+
+    selected_instance = select_instance(maaend_set)
+    if selected_instance is None and template_set is not None:
+        selected_instance = select_instance(template_set)
+    if selected_instance is None:
+        raise ValueError("MaaEnd 配置文件中未找到可用实例")
+
+    selected_instance["id"] = "automas"
+    selected_instance["name"] = "AUTO-MAS"
+    selected_instance.pop("customName", None)
+    selected_instance["controllerName"] = controller_type
+    selected_instance.setdefault("tasks", [])
+
+    maaend_set["instances"] = [selected_instance]
+    maaend_set["lastActiveInstanceId"] = "automas"
+    return maaend_set
 
 
 class ScriptConfigTask(TaskExecuteBase):
@@ -107,42 +147,19 @@ class ScriptConfigTask(TaskExecuteBase):
             )
 
         maaend_set = json.loads(maaend_set_path.read_text(encoding="utf-8"))
-        instances = maaend_set.get("instances")
-        if not isinstance(instances, list) or len(instances) == 0:
-            logger.warning(
-                "MaaEnd 配置文件缺少实例，已自动回退到模板实例: %s",
-                self.cur_user_item.user_id,
-            )
-            maaend_set = json.loads(
-                (
-                    Path.cwd() / "res/templates/MaaEnd/config/mxu-MaaEnd.json"
-                ).read_text(encoding="utf-8")
-            )
-            instances = maaend_set.get("instances")
-            if not isinstance(instances, list) or len(instances) == 0:
-                instances = [
-                    {
-                        "id": "automas",
-                        "name": "AUTO-MAS",
-                        "controllerName": self.script_config.get(
-                            "Game", "ControllerType"
-                        ),
-                        "tasks": [],
-                    }
-                ]
-                maaend_set["instances"] = instances
-
-        selected_instance = None
-        for instance in instances:
-            if instance.get("id") == maaend_set.get("lastActiveInstanceId"):
-                selected_instance = instance
-                break
-        if selected_instance is None:
-            selected_instance = instances[0]
-        selected_instance["controllerName"] = self.script_config.get(
-            "Game", "ControllerType"
+        maaend_template_path = (
+            Path.cwd() / "res/templates/MaaEnd/config/mxu-MaaEnd.json"
         )
-        maaend_set["lastActiveInstanceId"] = selected_instance["id"]
+        template_config = (
+            json.loads(maaend_template_path.read_text(encoding="utf-8"))
+            if maaend_template_path.exists()
+            else None
+        )
+        maaend_set = normalize_maaend_config(
+            maaend_set,
+            self.script_config.get("Game", "ControllerType"),
+            template_config,
+        )
 
         maaend_set_path.write_text(
             json.dumps(maaend_set, ensure_ascii=False, indent=4),
@@ -160,6 +177,14 @@ class ScriptConfigTask(TaskExecuteBase):
         shutil.rmtree(self.config_file_path, ignore_errors=True)
         self.config_file_path.mkdir(parents=True, exist_ok=True)
         shutil.copytree(self.maaend_set_path, self.config_file_path, dirs_exist_ok=True)
+        config_path = self.config_file_path / "mxu-MaaEnd.json"
+        maaend_set = json.loads(config_path.read_text(encoding="utf-8"))
+        maaend_set = normalize_maaend_config(
+            maaend_set, self.script_config.get("Game", "ControllerType")
+        )
+        config_path.write_text(
+            json.dumps(maaend_set, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
