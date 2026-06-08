@@ -54,9 +54,13 @@
       <div class="mask-icon">
         <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
       </div>
-      <h2 class="mask-title">正在进行 MaaEnd 配置</h2>
+      <h2 class="mask-title">
+        {{ currentMaaEndConfigUser ? '正在进行 MaaEnd 用户级配置' : '正在进行 MaaEnd 脚本级配置' }}
+      </h2>
       <p class="mask-description">
-        当前正在配置 MaaEnd 脚本，请在 MaaEnd 配置界面完成相关设置。
+        当前正在配置
+        {{ currentMaaEndConfigUser ? `用户 ${currentMaaEndConfigUser.Info.Name}` : '脚本级 MaaEnd 配置' }}
+        ，请在 MaaEnd 配置界面完成相关设置。
         <br />
         配置完成后，点击“保存配置”解除页面锁定。
       </p>
@@ -142,6 +146,7 @@
     @start-src-config="handleStartSRCConfig"
     @save-src-config="handleSaveSRCConfig"
     @start-maa-end-config="handleStartMaaEndConfig"
+    @start-maa-end-user-config="handleStartMaaEndUserConfig"
     @save-maa-end-config="handleSaveMaaEndConfig"
     @start-okww-config="handleStartOkwwConfig"
     @toggle-user-status="handleToggleUserStatus"
@@ -563,6 +568,7 @@ const showSRCConfigMask = ref(false) // 控制SRC配置遮罩层的显示
 const showMaaEndConfigMask = ref(false) // 控制MaaEnd配置遮罩层的显示
 const showOkwwConfigMask = ref(false) // 控制ok-ww配置遮罩层的显示
 const currentConfigScript = ref<Script | null>(null) // 当前正在配置的脚本
+const currentMaaEndConfigUser = ref<User | null>(null)
 
 // WebSocket连接管理
 const activeConnections = ref<Map<string, { subscriptionId: string; websocketId: string }>>(
@@ -1230,28 +1236,30 @@ const handleSaveSRCConfig = async (script: Script) => {
   }
 }
 
-const handleStartMaaEndConfig = async (script: Script) => {
+const handleStartMaaEndConfig = async (script: Script, user: User | null = null) => {
   try {
     const controllerType = (script.config as any).Game?.ControllerType
-    if (controllerType !== 'Win32-Front') {
-      message.warning('当前控制器暂不支持 MaaEnd 预设模式，请使用用户自定义模式')
+    if (!user && controllerType !== 'Win32-Front') {
+      message.warning('当前控制器暂不支持脚本级 MaaEnd 配置，请使用用户级配置入口')
       return
     }
 
-    const existingConnection = activeConnections.value.get(script.id)
+    const targetId = user?.id ?? script.id
+    const existingConnection = activeConnections.value.get(targetId)
     if (existingConnection) {
-      message.warning('该脚本已在配置中，请先保存当前配置')
+      message.warning('该配置目标已在配置中，请先保存当前配置')
       return
     }
 
     const response = await Service.addTaskApiDispatchStartPost({
-      taskId: script.id,
+      taskId: targetId,
       mode: TaskCreateIn.mode.SCRIPT_CONFIG,
     })
 
     if (response.code === 200) {
       showMaaEndConfigMask.value = true
       currentConfigScript.value = script
+      currentMaaEndConfigUser.value = user
 
       const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
         if (wsMessage.type === 'error') {
@@ -1259,9 +1267,10 @@ const handleStartMaaEndConfig = async (script: Script) => {
             wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
           logger.error(`脚本 ${script.name} 连接错误: ${errorMsg}`)
           message.error(`MaaEnd 配置连接失败: ${errorMsg}`)
-          activeConnections.value.delete(script.id)
+          activeConnections.value.delete(targetId)
           showMaaEndConfigMask.value = false
           currentConfigScript.value = null
+          currentMaaEndConfigUser.value = null
           return
         }
 
@@ -1281,29 +1290,39 @@ const handleStartMaaEndConfig = async (script: Script) => {
           wsMessage.data.Accomplish !== undefined
         ) {
           unsubscribe(subscriptionId)
-          activeConnections.value.delete(script.id)
+          activeConnections.value.delete(targetId)
           showMaaEndConfigMask.value = false
           currentConfigScript.value = null
+          currentMaaEndConfigUser.value = null
         }
       })
 
-      activeConnections.value.set(script.id, {
+      activeConnections.value.set(targetId, {
         subscriptionId,
         websocketId: response.taskId,
       })
-      message.success(`已启动 ${script.name} 的 MaaEnd 配置`)
+      message.success(
+        user
+          ? `已启动 ${script.name} / ${user.Info.Name} 的 MaaEnd 配置`
+          : `已启动 ${script.name} 的 MaaEnd 配置`
+      )
 
       setTimeout(
         () => {
-          if (activeConnections.value.has(script.id)) {
-            const connection = activeConnections.value.get(script.id)
+          if (activeConnections.value.has(targetId)) {
+            const connection = activeConnections.value.get(targetId)
             if (connection) {
               unsubscribe(connection.subscriptionId)
             }
-            activeConnections.value.delete(script.id)
+            activeConnections.value.delete(targetId)
             showMaaEndConfigMask.value = false
             currentConfigScript.value = null
-            message.info(`${script.name} 配置会话已超时断开`)
+            currentMaaEndConfigUser.value = null
+            message.info(
+              user
+                ? `${script.name} / ${user.Info.Name} 配置会话已超时断开`
+                : `${script.name} 配置会话已超时断开`
+            )
           }
         },
         30 * 60 * 1000
@@ -1318,9 +1337,14 @@ const handleStartMaaEndConfig = async (script: Script) => {
   }
 }
 
+const handleStartMaaEndUserConfig = async (script: Script, user: User) => {
+  await handleStartMaaEndConfig(script, user)
+}
+
 const handleSaveMaaEndConfig = async (script: Script) => {
   try {
-    const connection = activeConnections.value.get(script.id)
+    const targetId = currentMaaEndConfigUser.value?.id ?? script.id
+    const connection = activeConnections.value.get(targetId)
     if (!connection) {
       message.error('未找到活动的配置会话')
       return
@@ -1332,10 +1356,16 @@ const handleSaveMaaEndConfig = async (script: Script) => {
 
     if (response.code === 200) {
       unsubscribe(connection.subscriptionId)
-      activeConnections.value.delete(script.id)
+      activeConnections.value.delete(targetId)
       showMaaEndConfigMask.value = false
       currentConfigScript.value = null
-      message.success(`${script.name} 的配置已保存`)
+      const currentUser = currentMaaEndConfigUser.value
+      currentMaaEndConfigUser.value = null
+      message.success(
+        currentUser
+          ? `${script.name} / ${currentUser.Info.Name} 的配置已保存`
+          : `${script.name} 的配置已保存`
+      )
     } else {
       message.error(response.message || '保存配置失败')
     }

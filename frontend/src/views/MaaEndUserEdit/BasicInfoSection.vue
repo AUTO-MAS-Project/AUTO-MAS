@@ -112,16 +112,15 @@
             />
             <a-button
               v-if="formData.Info.Mode === '简洁'"
-              type="primary"
-              ghost
+              type="default"
               size="large"
               :disabled="loading || showConfigMask"
               @click="$emit('scriptConfig')"
             >
               <template #icon>
-                <SettingOutlined />
+                <EditOutlined />
               </template>
-              脚本配置
+              编辑脚本设定
             </a-button>
             <a-button
               v-else
@@ -242,7 +241,12 @@
 </template>
 
 <script setup lang="ts">
-import { ImportOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import {
+  EditOutlined,
+  ImportOutlined,
+  QuestionCircleOutlined,
+  SettingOutlined,
+} from '@ant-design/icons-vue'
 
 const emit = defineEmits<{
   save: [key: string, value: any]
