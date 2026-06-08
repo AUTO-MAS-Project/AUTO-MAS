@@ -104,19 +104,14 @@ class ScriptConfigTask(TaskExecuteBase):
         if not maaend_set_path.exists():
             raise FileNotFoundError(
                 "未找到 MaaEnd 配置文件, 请检查 MaaEnd 路径设置或先启动 MaaEnd 完成配置文件生成"
-            )
+        )
 
         maaend_set = json.loads(maaend_set_path.read_text(encoding="utf-8"))
-        maaend_instances = maaend_set.get("instances", [])
-        if not maaend_instances:
-            raise ValueError("MaaEnd 配置文件中未找到可配置实例")
-        selected_instance = maaend_instances[0]
-
+        selected_instance = maaend_set["instances"][0]
         selected_instance["controllerName"] = self.script_config.get(
             "Game", "ControllerType"
         )
-        if selected_instance.get("id") is not None:
-            maaend_set["lastActiveInstanceId"] = selected_instance.get("id")
+        maaend_set["lastActiveInstanceId"] = selected_instance["id"]
 
         maaend_set_path.write_text(
             json.dumps(maaend_set, ensure_ascii=False, indent=4),
