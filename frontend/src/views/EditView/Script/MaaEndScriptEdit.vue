@@ -1,4 +1,30 @@
 <template>
+  <teleport to="body">
+    <div v-if="showMaaEndConfigMask" class="maaend-config-mask">
+      <div class="mask-content">
+        <div class="mask-icon">
+          <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
+        </div>
+        <h2 class="mask-title">正在进行 MaaEnd 配置</h2>
+        <p class="mask-description">
+          当前正在打开脚本级 MaaEnd 配置界面，请在 MaaEnd 中完成相关设置。
+          <br />
+          配置完成后，点击“保存配置”结束本次会话。
+        </p>
+        <div class="mask-actions">
+          <a-button
+            v-if="maaEndWebsocketId"
+            type="primary"
+            size="large"
+            @click="handleSaveMaaEndConfig"
+          >
+            保存配置
+          </a-button>
+        </div>
+      </div>
+    </div>
+  </teleport>
+
   <div class="script-edit-header">
     <div class="header-nav">
       <a-breadcrumb class="breadcrumb">
@@ -15,6 +41,18 @@
     </div>
 
     <a-space size="middle">
+      <a-button
+        type="primary"
+        size="large"
+        :loading="maaEndConfigLoading"
+        :disabled="pageLoading || showMaaEndConfigMask"
+        @click="handleMaaEndConfig"
+      >
+        <template #icon>
+          <SettingOutlined />
+        </template>
+        {{ showMaaEndConfigMask ? '正在配置' : '配置 MaaEnd' }}
+      </a-button>
       <a-button size="large" class="cancel-button" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
@@ -371,7 +409,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
@@ -379,22 +417,31 @@ import type { ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useWebSocket } from '@/composables/useWebSocket'
+import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { handleExternalLink } from '@/utils/openExternal'
 import {
   ArrowLeftOutlined,
   FolderOpenOutlined,
   QuestionCircleOutlined,
+  SettingOutlined,
 } from '@ant-design/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
 const { getScript, updateScript } = useScriptApi()
+const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true)
 const isSaving = ref(false)
+const maaEndConfigLoading = ref(false)
+const showMaaEndConfigMask = ref(false)
+const maaEndSubscriptionId = ref<string | null>(null)
+const maaEndWebsocketId = ref<string | null>(null)
+let maaEndConfigTimeout: number | null = null
 
 const formData = reactive({
   name: '',
@@ -630,7 +677,89 @@ const selectGamePath = async () => {
   await handleChange('Game', 'Path', path)
 }
 
+const cleanupConfigSession = () => {
+  if (maaEndSubscriptionId.value) {
+    unsubscribe(maaEndSubscriptionId.value)
+    maaEndSubscriptionId.value = null
+  }
+  maaEndWebsocketId.value = null
+  showMaaEndConfigMask.value = false
+  if (maaEndConfigTimeout) {
+    window.clearTimeout(maaEndConfigTimeout)
+    maaEndConfigTimeout = null
+  }
+}
+
+const handleMaaEndConfig = async () => {
+  try {
+    maaEndConfigLoading.value = true
+    cleanupConfigSession()
+
+    const response = await Service.addTaskApiDispatchStartPost({
+      taskId: scriptId,
+      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+    })
+
+    if (!response?.taskId) {
+      throw new Error(response?.message || '启动 MaaEnd 配置失败')
+    }
+
+    const subscriptionId = subscribe({ id: response.taskId }, (wsMessage: any) => {
+      if (wsMessage.type === 'error') {
+        message.error(`MaaEnd 配置连接失败: ${wsMessage.data}`)
+        cleanupConfigSession()
+        return
+      }
+
+      if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
+        message.error(`MaaEnd 配置异常: ${wsMessage.data.Error}`)
+        return
+      }
+
+      if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
+        cleanupConfigSession()
+      }
+    })
+
+    maaEndSubscriptionId.value = subscriptionId
+    maaEndWebsocketId.value = response.taskId
+    showMaaEndConfigMask.value = true
+    message.success('已启动脚本级 MaaEnd 配置')
+
+    maaEndConfigTimeout = window.setTimeout(
+      () => {
+        cleanupConfigSession()
+        message.info('MaaEnd 配置会话已超时断开')
+      },
+      30 * 60 * 1000
+    )
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '启动 MaaEnd 配置失败')
+  } finally {
+    maaEndConfigLoading.value = false
+  }
+}
+
+const handleSaveMaaEndConfig = async () => {
+  try {
+    if (!maaEndWebsocketId.value) {
+      throw new Error('未找到活动配置会话')
+    }
+
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId: maaEndWebsocketId.value })
+    if (response.code !== 200) {
+      throw new Error(response.message || '保存配置失败')
+    }
+
+    cleanupConfigSession()
+    message.success('MaaEnd 配置已保存')
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '保存配置失败')
+  }
+}
+
 const handleCancel = () => {
+  cleanupConfigSession()
   router.push('/scripts')
 }
 
@@ -638,6 +767,10 @@ onMounted(async () => {
   await loadScript()
   await loadEmulatorOptions()
   isInitializing.value = false
+})
+
+onBeforeUnmount(() => {
+  cleanupConfigSession()
 })
 </script>
 
@@ -793,6 +926,48 @@ onMounted(async () => {
 
 .config-form :deep(.ant-form-item) {
   margin-bottom: 24px;
+}
+
+.maaend-config-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.mask-content {
+  background: var(--ant-color-bg-elevated);
+  border-radius: 8px;
+  padding: 24px;
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+  border: 1px solid var(--ant-color-border);
+}
+
+.mask-icon {
+  margin-bottom: 16px;
+}
+
+.mask-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.mask-description {
+  font-size: 14px;
+  color: var(--ant-color-text-secondary);
+  margin: 0 0 24px;
+  line-height: 1.5;
+}
+
+.mask-actions {
+  display: flex;
+  justify-content: center;
 }
 
 @media (max-width: 768px) {
