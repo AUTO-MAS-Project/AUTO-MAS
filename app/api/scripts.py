@@ -233,6 +233,26 @@ async def upload_script_to_web(script: ScriptUploadIn = Body(...)) -> OutBase:
 
 
 @router.post(
+    "/config/import",
+    tags=["Action"],
+    summary="从脚本目录导入配置文件",
+    response_model=OutBase,
+    status_code=200,
+)
+async def import_script_config_file(
+    config: ScriptConfigImportIn = Body(...),
+) -> OutBase:
+
+    try:
+        await Config.import_script_config_file(config.scriptId, config.userId)
+    except Exception as e:
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    return OutBase(message="脚本配置文件已导入")
+
+
+@router.post(
     "/user/get",
     tags=["Get"],
     summary="查询用户",

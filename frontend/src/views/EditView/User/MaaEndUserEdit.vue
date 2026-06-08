@@ -30,10 +30,6 @@
       :script-id="scriptId"
       :script-name="scriptName"
       :is-edit="isEdit"
-      :user-mode="formData.Info.Mode"
-      :maa-end-config-loading="maaEndConfigLoading"
-      :show-maa-end-config-mask="showMaaEndConfigMask"
-      @handle-maa-end-config="handleMaaEndConfig"
       @handle-cancel="handleCancel"
     />
 
@@ -51,13 +47,19 @@
             :loading="loading"
             :resource-options="resourceOptions"
             :preset-supported="presetSupported"
+            :config-loading="maaEndConfigLoading"
+            :import-loading="maaEndImportLoading"
+            :show-config-mask="showMaaEndConfigMask"
             @save="handleFieldSave"
+            @configure="handleMaaEndConfig"
+            @import-config="handleImportMaaEndConfig"
+            @script-config="handleScriptConfig"
           />
           <TaskConfigSection
+            v-if="formData.Info.IfQuickConfig"
             :form-data="formData"
             :loading="loading"
-            :mode="formData.Info.Mode"
-            source="user"
+            :if-quick-config="formData.Info.IfQuickConfig"
             :controller-type="controllerType"
             @save="handleFieldSave"
             @save-batch="handleFieldsSave"
@@ -82,7 +84,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
-import { Service } from '@/api'
+import { OpenAPI, Service } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
@@ -115,6 +117,7 @@ const controllerType = ref<string | null>(null)
 const presetSupported = computed(() => controllerType.value === 'Win32-Front')
 
 const maaEndConfigLoading = ref(false)
+const maaEndImportLoading = ref(false)
 const showMaaEndConfigMask = ref(false)
 const maaEndSubscriptionId = ref<string | null>(null)
 const maaEndWebsocketId = ref<string | null>(null)
@@ -128,6 +131,7 @@ const getDefaultMaaEndUserData = () => ({
     Id: '',
     Password: '',
     Mode: '简洁',
+    IfQuickConfig: true,
     SanityMode: 'Fixed',
     Resource: '官服',
     RemainedDay: -1,
@@ -244,6 +248,11 @@ const handleFieldsSave = async (changes: FieldChange[]) => {
   await saveUserFields(changes)
 }
 
+const handleScriptConfig = () => {
+  cleanupConfigSession()
+  router.push(`/scripts/${scriptId}/edit/maaend`)
+}
+
 const loadScriptInfo = async () => {
   const scriptDetail = await getScript(scriptId)
   if (scriptDetail) {
@@ -252,10 +261,25 @@ const loadScriptInfo = async () => {
   }
 }
 
-const normalizeModeForController = async () => {
-  if (presetSupported.value || formData.Info.Mode === '自定义' || !userId) return
-  formData.Info.Mode = '自定义'
-  await updateUser(scriptId, userId, { Info: { Mode: '自定义' } })
+const normalizeQuickConfig = async () => {
+  if (!userId) return
+
+  const infoPayload: Record<string, unknown> = {}
+  if (formData.Info.Mode === '自定义') {
+    formData.Info.Mode = '详细'
+    formData.Info.IfQuickConfig = false
+    infoPayload.Mode = formData.Info.Mode
+    infoPayload.IfQuickConfig = formData.Info.IfQuickConfig
+  }
+
+  if (!presetSupported.value && formData.Info.IfQuickConfig) {
+    formData.Info.IfQuickConfig = false
+    infoPayload.IfQuickConfig = false
+  }
+
+  if (Object.keys(infoPayload).length) {
+    await updateUser(scriptId, userId, { Info: infoPayload })
+  }
 }
 
 const loadUserData = async () => {
@@ -308,8 +332,9 @@ const handleMaaEndConfig = async () => {
     maaEndConfigLoading.value = true
     cleanupConfigSession()
 
+    const configTaskTargetId = formData.Info.Mode === '简洁' ? scriptId : userId
     const response = await Service.addTaskApiDispatchStartPost({
-      taskId: userId,
+      taskId: configTaskTargetId,
       mode: TaskCreateIn.mode.SCRIPT_CONFIG,
     })
 
@@ -337,7 +362,7 @@ const handleMaaEndConfig = async () => {
     maaEndSubscriptionId.value = subscriptionId
     maaEndWebsocketId.value = response.taskId
     showMaaEndConfigMask.value = true
-    message.success(`已启动用户 ${formData.Info.Name || formData.userName} 的 MaaEnd 配置`)
+    message.success(`已启动 ${formData.Info.Mode === '简洁' ? '脚本' : '用户'} MaaEnd 配置`)
 
     maaEndConfigTimeout = window.setTimeout(
       () => {
@@ -350,6 +375,29 @@ const handleMaaEndConfig = async () => {
     message.error(error instanceof Error ? error.message : '启动 MaaEnd 配置失败')
   } finally {
     maaEndConfigLoading.value = false
+  }
+}
+
+const handleImportMaaEndConfig = async () => {
+  try {
+    maaEndImportLoading.value = true
+    const response = await fetch(`${OpenAPI.BASE}/api/scripts/config/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scriptId,
+        userId: formData.Info.Mode === '简洁' ? null : userId,
+      }),
+    })
+    const result = await response.json()
+    if (!response.ok || result.code !== 200) {
+      throw new Error(result.message || '导入脚本配置文件失败')
+    }
+    message.success(`已导入${formData.Info.Mode === '简洁' ? '脚本' : '用户'}配置文件`)
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '导入脚本配置文件失败')
+  } finally {
+    maaEndImportLoading.value = false
   }
 }
 
@@ -381,13 +429,13 @@ onMounted(async () => {
 
   if (isEdit.value) {
     await loadUserData()
-    await normalizeModeForController()
+    await normalizeQuickConfig()
   } else {
     const result = await addUser(scriptId)
     if (result?.userId) {
       userId = result.userId
       isEdit.value = true
-      await normalizeModeForController()
+      await normalizeQuickConfig()
     } else {
       message.error('创建用户失败')
       router.push('/scripts')

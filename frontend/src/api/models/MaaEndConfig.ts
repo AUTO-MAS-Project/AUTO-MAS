@@ -5,7 +5,6 @@
 import type { MaaEndConfig_Game } from './MaaEndConfig_Game';
 import type { MaaEndConfig_Info } from './MaaEndConfig_Info';
 import type { MaaEndConfig_Run } from './MaaEndConfig_Run';
-import type { MaaEndConfig_Task } from './MaaEndConfig_Task';
 export type MaaEndConfig = {
     /**
      * 脚本信息
@@ -19,9 +18,5 @@ export type MaaEndConfig = {
      * 游戏配置
      */
     Game?: (MaaEndConfig_Game | null);
-    /**
-     * 预设任务配置
-     */
-    Task?: (MaaEndConfig_Task | null);
 };
 
