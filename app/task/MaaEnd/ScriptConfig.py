@@ -132,7 +132,13 @@ class ScriptConfigTask(TaskExecuteBase):
                 ]
                 maaend_set["instances"] = instances
 
-        selected_instance = instances[0]
+        selected_instance = None
+        for instance in instances:
+            if instance.get("id") == maaend_set.get("lastActiveInstanceId"):
+                selected_instance = instance
+                break
+        if selected_instance is None:
+            selected_instance = instances[0]
         selected_instance["controllerName"] = self.script_config.get(
             "Game", "ControllerType"
         )

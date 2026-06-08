@@ -434,7 +434,13 @@ class AutoProxyTask(TaskExecuteBase):
         if not isinstance(instances, list) or len(instances) == 0:
             raise ValueError("MaaEnd 配置文件中未找到可运行实例，请先完成「MaaEnd 配置」步骤")
 
-        maaend_instance = instances[0]
+        maaend_instance = None
+        for instance in instances:
+            if instance.get("id") == maaend_set.get("lastActiveInstanceId"):
+                maaend_instance = instance
+                break
+        if maaend_instance is None:
+            maaend_instance = instances[0]
         maaend_instance["controllerName"] = controller_type
         maaend_set["lastActiveInstanceId"] = maaend_instance["id"]
         self.maaend_instance_name = (
