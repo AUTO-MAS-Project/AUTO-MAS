@@ -48,11 +48,14 @@
             :resource-options="resourceOptions"
             :preset-supported="presetSupported"
             :config-loading="maaEndConfigLoading"
+            :import-loading="maaEndImportLoading"
             :show-config-mask="showMaaEndConfigMask"
             @save="handleFieldSave"
             @configure="handleMaaEndConfig"
+            @import-config="handleImportMaaEndConfig"
           />
           <TaskConfigSection
+            v-if="formData.Info.IfQuickConfig"
             :form-data="formData"
             :loading="loading"
             :mode="formData.Info.Mode"
@@ -82,7 +85,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
-import { Service } from '@/api'
+import { OpenAPI, Service } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
@@ -115,6 +118,7 @@ const controllerType = ref<string | null>(null)
 const presetSupported = computed(() => controllerType.value === 'Win32-Front')
 
 const maaEndConfigLoading = ref(false)
+const maaEndImportLoading = ref(false)
 const showMaaEndConfigMask = ref(false)
 const maaEndSubscriptionId = ref<string | null>(null)
 const maaEndWebsocketId = ref<string | null>(null)
@@ -367,6 +371,29 @@ const handleMaaEndConfig = async () => {
     message.error(error instanceof Error ? error.message : '启动 MaaEnd 配置失败')
   } finally {
     maaEndConfigLoading.value = false
+  }
+}
+
+const handleImportMaaEndConfig = async () => {
+  try {
+    maaEndImportLoading.value = true
+    const response = await fetch(`${OpenAPI.BASE}/api/scripts/config/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scriptId,
+        userId: formData.Info.Mode === '简洁' ? null : userId,
+      }),
+    })
+    const result = await response.json()
+    if (!response.ok || result.code !== 200) {
+      throw new Error(result.message || '导入脚本配置文件失败')
+    }
+    message.success(`已导入${formData.Info.Mode === '简洁' ? '脚本' : '用户'}配置文件`)
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '导入脚本配置文件失败')
+  } finally {
+    maaEndImportLoading.value = false
   }
 }
 

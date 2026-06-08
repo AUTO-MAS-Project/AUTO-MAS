@@ -123,6 +123,18 @@
               </template>
               {{ showConfigMask ? '正在配置' : '配置' }}
             </a-button>
+            <a-button
+              type="default"
+              size="large"
+              :loading="importLoading"
+              :disabled="loading || showConfigMask"
+              @click="$emit('importConfig')"
+            >
+              <template #icon>
+                <ImportOutlined />
+              </template>
+              导入
+            </a-button>
           </div>
         </a-form-item>
       </a-col>
@@ -138,11 +150,11 @@
               </a-tooltip>
             </span>
           </template>
-          <a-switch
-            v-model:checked="formData.Info.IfQuickConfig"
+          <a-select
+            v-model:value="formData.Info.IfQuickConfig"
+            size="large"
             :disabled="loading || presetSupported === false"
-            checked-children="开"
-            un-checked-children="关"
+            :options="quickConfigOptions"
             @change="emitSave('Info.IfQuickConfig', formData.Info.IfQuickConfig)"
           />
         </a-form-item>
@@ -215,11 +227,12 @@
 </template>
 
 <script setup lang="ts">
-import { QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { ImportOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
 
 const emit = defineEmits<{
   save: [key: string, value: any]
   configure: []
+  importConfig: []
 }>()
 
 defineProps<{
@@ -228,12 +241,18 @@ defineProps<{
   resourceOptions: Array<{ label: string; value: string }>
   presetSupported?: boolean
   configLoading?: boolean
+  importLoading?: boolean
   showConfigMask?: boolean
 }>()
 
 const modeOptions = [
   { label: '脚本', value: '简洁' },
   { label: '用户', value: '详细' },
+]
+
+const quickConfigOptions = [
+  { label: '启用', value: true },
+  { label: '关闭', value: false },
 ]
 
 const emitSave = (key: string, value: any) => {

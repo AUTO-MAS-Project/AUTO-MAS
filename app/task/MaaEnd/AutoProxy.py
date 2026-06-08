@@ -430,23 +430,16 @@ class AutoProxyTask(TaskExecuteBase):
                 )
 
         controller_type = self.script_config.get("Game", "ControllerType")
-        maaend_instances = maaend_set.get("instances", [])
-        if not maaend_instances:
-            raise ValueError("MaaEnd 配置文件中未找到可运行实例")
-        maaend_instance = maaend_instances[0]
+        maaend_instance = maaend_set["instances"][0]
         maaend_instance["controllerName"] = controller_type
-        if maaend_instance.get("id") is not None:
-            maaend_set["lastActiveInstanceId"] = maaend_instance.get("id")
-        self.maaend_instance_name = (
-            maaend_instance.get("name") or maaend_instance.get("id") or "AUTO-MAS"
-        )
+        maaend_set["lastActiveInstanceId"] = maaend_instance["id"]
+        self.maaend_instance_name = maaend_instance["name"]
         if device_info is not None:
             from app.core import MaaFWManager
 
             maaend_instance["savedDevice"] = {
                 "adbDeviceName": (await MaaFWManager.convert_adb(device_info)).name
             }
-        maaend_instance.setdefault("tasks", [])
         maaend_tasks = maaend_instance["tasks"]
 
         # 加载 i18n 配置
@@ -503,13 +496,15 @@ class AutoProxyTask(TaskExecuteBase):
             # 首次运行时按 MAS 配置生成本轮任务表，后续重试只收束这张表
             self.task_dict = {}
             sanity_configured = False
-            sanity_enabled = (
-                if_quick_config
-                and task_switch_config_source.get("Task", "IfSanity")
-                and any(
-                    task.get("taskName") in ("ProtocolSpace", "AutoEssence")
-                    for task in maaend_tasks
-                )
+            sanity_switch_enabled = (
+                if_quick_config and task_switch_config_source.get("Task", "IfSanity")
+            )
+            target_sanity_task_exists = any(
+                task.get("taskName") == target_task_name for task in maaend_tasks
+            )
+            sanity_missing = sanity_switch_enabled and not target_sanity_task_exists
+            sanity_managed = if_quick_config and (
+                not sanity_switch_enabled or target_sanity_task_exists
             )
 
             for task in maaend_tasks:
@@ -519,13 +514,14 @@ class AutoProxyTask(TaskExecuteBase):
                 task_enabled = task["enabled"]
                 if if_quick_config:
                     if task["taskName"] in ("ProtocolSpace", "AutoEssence"):
-                        task_enabled = (
-                            sanity_enabled
-                            and task["taskName"] == target_task_name
-                            and not sanity_configured
-                        )
-                        if task_enabled:
-                            sanity_configured = True
+                        if sanity_managed:
+                            task_enabled = (
+                                sanity_switch_enabled
+                                and task["taskName"] == target_task_name
+                                and not sanity_configured
+                            )
+                            if task_enabled:
+                                sanity_configured = True
                     elif task["taskName"] in MAAEND_TASKS:
                         task_enabled = task_switch_config_source.get(
                             "Task", f"If{task['taskName']}"
@@ -536,21 +532,16 @@ class AutoProxyTask(TaskExecuteBase):
                     self.task_dict[task_name] = {}
                 self.task_dict[task_name][task["id"]] = task_enabled
 
-            if (
-                sanity_enabled
-                and target_task_name == "ProtocolSpace"
-                and not sanity_configured
-            ):
-                raise ValueError(
-                    f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 ProtocolSpace 任务，无法注入协议空间配置"
+            if sanity_missing:
+                warning_message = (
+                    f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 {target_task_name} 任务，"
+                    "已跳过理智任务快速配置"
                 )
-            if (
-                sanity_enabled
-                and target_task_name == "AutoEssence"
-                and not sanity_configured
-            ):
-                raise ValueError(
-                    f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 AutoEssence 任务，无法注入基质刷取配置"
+                logger.warning(warning_message)
+                await Config.send_websocket_message(
+                    id=self.task_info.task_id,
+                    type="Info",
+                    data={"Warning": warning_message},
                 )
 
         # 按本轮任务表写回 MaaEnd 运行配置
