@@ -85,7 +85,7 @@ except ImportError:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.3.0"
+    VERSION = "v5.3.1-beta.1"
 
     def __init__(self) -> None:
         super().__init__()
@@ -860,6 +860,29 @@ class AppConfig(GlobalConfig):
                     .UserData[user_uid]
                     .set(group, name, value)
                 )
+
+    async def import_script_config_file(
+        self, script_id: str, user_id: Optional[str]
+    ) -> None:
+        """从目标脚本目录导入配置文件"""
+
+        logger.info(f"{script_id} - {user_id or 'Default'} 导入脚本配置文件")
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if not isinstance(script_config, MaaEndConfig):
+            raise TypeError("当前脚本类型暂不支持导入配置文件")
+
+        source_config_dir = Path(script_config.get("Info", "Path")) / "config"
+        if not (source_config_dir / "mxu-MaaEnd.json").exists():
+            raise FileNotFoundError(
+                "MaaEnd 配置文件不存在, 请检查 MaaEnd 路径设置或先启动 MaaEnd 完成配置文件生成"
+            )
+
+        config_owner = user_id or "Default"
+        target_config_dir = Path.cwd() / f"data/{script_id}/{config_owner}/ConfigFile"
+        shutil.rmtree(target_config_dir, ignore_errors=True)
+        target_config_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source_config_dir, target_config_dir, dirs_exist_ok=True)
 
     async def del_user(self, script_id: str, user_id: str) -> None:
         """删除用户配置"""

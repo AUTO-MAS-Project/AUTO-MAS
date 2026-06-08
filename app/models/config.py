@@ -125,8 +125,8 @@ def init_maaend_task_config(config) -> None:
         )
 
 """
-脚本级和用户级的 MaaEnd 任务配置项结构相同。简洁模式只继承脚本任务开关,
-理智任务选项始终读取用户配置, 并在加载时兼容旧版 MaaEnd 用户配置。
+脚本级和用户级的 MaaEnd 任务配置项结构相同。配置文件来源为脚本且启用快速配置时,
+任务开关读取脚本配置；理智任务选项始终读取用户配置。
 """
 
 def _normalize_maaend_sanity_task_type(task_data: object) -> None:
@@ -738,10 +738,12 @@ class MaaEndUserConfig(ConfigBase):
         self.Info_Id = ConfigItem("Info", "Id", "")
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
-        ## 配置模式
+        ## 配置文件来源
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细", "自定义"])
+            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
         )
+        ## 是否启用快速配置
+        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
         ## 理智任务配置模式
         self.Info_SanityMode = ConfigItem("Info", "SanityMode", "Fixed")
         ## 资源名称
@@ -817,13 +819,15 @@ class MaaEndUserConfig(ConfigBase):
     async def load(self, data: dict):
         info_data = data.get("Info")
         # 兼容旧版 MaaEnd 用户配置:
-        # 老版本没有 SanityMode，旧版“简洁/详细”都归并到新版“自定义”。
-        if (
-            isinstance(info_data, dict)
-            and info_data.get("Mode") in ("简洁", "详细")
-            and "SanityMode" not in info_data
-        ):
-            info_data["Mode"] = "自定义"
+        # 旧“自定义”仍等价于用户配置文件且关闭快速配置。
+        # 没有 SanityMode 的旧“简洁/详细”回落为脚本配置来源，快速配置使用默认值。
+        if isinstance(info_data, dict):
+            if info_data.get("Mode") == "自定义":
+                info_data["Mode"] = "详细"
+                info_data["IfQuickConfig"] = False
+            elif info_data.get("Mode") in ("简洁", "详细") and "SanityMode" not in info_data:
+                info_data["Mode"] = "简洁"
+                info_data.pop("IfQuickConfig", None)
 
         task_data = data.get("Task")
         if isinstance(task_data, dict):
@@ -1016,10 +1020,6 @@ class MaaEndConfig(ConfigBase):
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
         )
-
-        ## Task ------------------------------------------------------------
-        ## 脚本级预设任务开关配置（简洁模式数据源）
-        init_maaend_task_config(self)
 
         self.UserData = MultipleConfig([MaaEndUserConfig])
 
