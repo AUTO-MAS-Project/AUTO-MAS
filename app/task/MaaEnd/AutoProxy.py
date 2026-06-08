@@ -430,10 +430,18 @@ class AutoProxyTask(TaskExecuteBase):
                 )
 
         controller_type = self.script_config.get("Game", "ControllerType")
-        maaend_instance = maaend_set["instances"][0]
+        instances = maaend_set.get("instances")
+        if not isinstance(instances, list) or len(instances) == 0:
+            raise ValueError("MaaEnd 配置文件中未找到可运行实例，请先完成「MaaEnd 配置」步骤")
+
+        maaend_instance = instances[0]
         maaend_instance["controllerName"] = controller_type
         maaend_set["lastActiveInstanceId"] = maaend_instance["id"]
-        self.maaend_instance_name = maaend_instance["name"]
+        self.maaend_instance_name = (
+            maaend_instance.get("name")
+            or maaend_instance.get("customName")
+            or "AUTO-MAS"
+        )
         if device_info is not None:
             from app.core import MaaFWManager
 

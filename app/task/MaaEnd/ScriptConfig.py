@@ -104,10 +104,35 @@ class ScriptConfigTask(TaskExecuteBase):
         if not maaend_set_path.exists():
             raise FileNotFoundError(
                 "未找到 MaaEnd 配置文件, 请检查 MaaEnd 路径设置或先启动 MaaEnd 完成配置文件生成"
-        )
+            )
 
         maaend_set = json.loads(maaend_set_path.read_text(encoding="utf-8"))
-        selected_instance = maaend_set["instances"][0]
+        instances = maaend_set.get("instances")
+        if not isinstance(instances, list) or len(instances) == 0:
+            logger.warning(
+                "MaaEnd 配置文件缺少实例，已自动回退到模板实例: %s",
+                self.cur_user_item.user_id,
+            )
+            maaend_set = json.loads(
+                (
+                    Path.cwd() / "res/templates/MaaEnd/config/mxu-MaaEnd.json"
+                ).read_text(encoding="utf-8")
+            )
+            instances = maaend_set.get("instances")
+            if not isinstance(instances, list) or len(instances) == 0:
+                instances = [
+                    {
+                        "id": "automas",
+                        "name": "AUTO-MAS",
+                        "controllerName": self.script_config.get(
+                            "Game", "ControllerType"
+                        ),
+                        "tasks": [],
+                    }
+                ]
+                maaend_set["instances"] = instances
+
+        selected_instance = instances[0]
         selected_instance["controllerName"] = self.script_config.get(
             "Game", "ControllerType"
         )
