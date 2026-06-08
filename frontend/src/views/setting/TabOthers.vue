@@ -63,6 +63,7 @@ const copyAllInfo = async () => {
     document.body.removeChild(textArea)
   }
 }
+
 </script>
 <template>
   <div class="tab-content">
