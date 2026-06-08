@@ -81,7 +81,7 @@ class MaaEndManager(TaskExecuteBase):
         ):
             return "未完成游戏配置, 请检查脚本配置中的游戏设置！"
 
-        if not (
+        if self.task_info.mode == "AutoProxy" and not (
             Path(
                 Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
                     "Info", "Path"
