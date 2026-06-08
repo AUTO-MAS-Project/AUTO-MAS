@@ -288,7 +288,7 @@ onMounted(() => {
           <TabNotify :settings="settings" :send-task-result-time-options="sendTaskResultTimeOptions"
             :handle-setting-change="handleSettingChange" :test-notify="testNotify" :testing-notify="testingNotify" />
         </a-tab-pane>
-        <a-tab-pane key="advanced" tab="高级设置">
+        <a-tab-pane key="advanced" tab="日志管理">
           <TabAdvanced :open-dev-tools="openDevTools" />
         </a-tab-pane>
         <a-tab-pane key="others" tab="关于">
