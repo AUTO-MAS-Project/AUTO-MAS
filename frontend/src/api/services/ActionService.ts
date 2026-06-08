@@ -9,6 +9,7 @@ import type { DispatchIn } from '../models/DispatchIn';
 import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
 import type { OutBase } from '../models/OutBase';
 import type { PowerIn } from '../models/PowerIn';
+import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
 import type { ScriptFileIn } from '../models/ScriptFileIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
@@ -60,6 +61,25 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/Upload/web',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 从脚本目录导入配置文件
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static importScriptConfigFileApiScriptsConfigImportPost(
+        requestBody: ScriptConfigImportIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/config/import',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
