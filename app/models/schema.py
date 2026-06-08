@@ -643,9 +643,10 @@ class MaaEndUserConfig_Info(BaseModel):
     Status: Optional[bool] = Field(default=None, description="用户状态")
     Id: Optional[str] = Field(default=None, description="用户ID")
     Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["简洁", "详细", "自定义"]] = Field(
-        default=None, description="配置模式"
+    Mode: Optional[Literal["简洁", "详细"]] = Field(
+        default=None, description="配置文件来源"
     )
+    IfQuickConfig: Optional[bool] = Field(default=None, description="是否启用快速配置")
     SanityMode: Optional[str] = Field(default=None, description="理智任务配置模式")
     Resource: Optional[Literal["官服"]] = Field(default=None, description="资源名称")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
@@ -767,68 +768,10 @@ class MaaEndConfig_Game(BaseModel):
     CloseOnFinish: Optional[bool] = Field(default=None, description="结束后关闭游戏")
 
 
-class MaaEndConfig_Task(BaseModel):
-    SanityTaskType: Optional[
-        Literal["OperatorProgression", "WeaponProgression", "CrisisDrills", "Essence"]
-    ] = Field(default=None, description="理智任务类型")
-    OperatorProgression: Optional[
-        Literal["OperatorEXP", "Promotions", "T-Creds", "SkillUp"]
-    ] = Field(default=None, description="干员养成任务")
-    WeaponProgression: Optional[Literal["WeaponEXP", "WeaponTune"]] = Field(
-        default=None, description="武器养成任务"
-    )
-    CrisisDrills: Optional[
-        Literal[
-            "AdvancedProgression1",
-            "AdvancedProgression2",
-            "AdvancedProgression3",
-            "AdvancedProgression4",
-            "AdvancedProgression5",
-        ]
-    ] = Field(default=None, description="危境预演任务")
-    RewardsSetOption: Optional[Literal["RewardsSetA", "RewardsSetB"]] = Field(
-        default=None, description="奖励套组选项"
-    )
-    AutoEssenceSpecifiedLocation: Optional[
-        Literal[
-            "VFTheHub",
-            "VFOriginiumSciencePark",
-            "VFOriginLodespring",
-            "VFPowerPlateau",
-            "WLWulingCity",
-            "WLQingboStockade",
-            "WLMarkerStone",
-        ]
-    ] = Field(default=None, description="基质刷取指定地点")
-    IfSanity: Optional[bool] = Field(default=None, description="理智任务")
-    IfAutoUseSpMedication: Optional[bool] = Field(
-        default=None, description="应急理智加强剂"
-    )
-    IfDijiangRewards: Optional[bool] = Field(default=None, description="基建任务")
-    IfDeliveryJobs: Optional[bool] = Field(default=None, description="转交委托")
-    IfSellProduct: Optional[bool] = Field(default=None, description="售卖产品")
-    IfAutoStockpile: Optional[bool] = Field(default=None, description="自动囤货")
-    IfAutoStockStaple: Optional[bool] = Field(default=None, description="购买稳定物资")
-    IfVisitFriends: Optional[bool] = Field(default=None, description="拜访好友")
-    IfCreditShoppingN2: Optional[bool] = Field(default=None, description="信用点购物")
-    IfSeizeEntrustTask: Optional[bool] = Field(default=None, description="抢委托")
-    IfAutoEcoFarm: Optional[bool] = Field(default=None, description="生态农场")
-    IfAutoSell: Optional[bool] = Field(default=None, description="售卖弹性物资")
-    IfEnvironmentMonitoring: Optional[bool] = Field(
-        default=None, description="环境监测"
-    )
-    IfAutoCollect: Optional[bool] = Field(default=None, description="自动采集")
-    IfDailyRewards: Optional[bool] = Field(default=None, description="日常奖励领取")
-    IfResourceRecycleStation: Optional[bool] = Field(
-        default=None, description="资源回收站"
-    )
-
-
 class MaaEndConfig(BaseModel):
     Info: Optional[MaaEndConfig_Info] = Field(default=None, description="脚本信息")
     Run: Optional[MaaEndConfig_Run] = Field(default=None, description="运行配置")
     Game: Optional[MaaEndConfig_Game] = Field(default=None, description="游戏配置")
-    Task: Optional[MaaEndConfig_Task] = Field(default=None, description="预设任务配置")
 
 
 class SrcUserConfig_Info(BaseModel):
@@ -1215,6 +1158,12 @@ class ScriptUploadIn(BaseModel):
 
 class UserInBase(BaseModel):
     scriptId: str = Field(..., description="所属脚本ID")
+
+
+class ScriptConfigImportIn(UserInBase):
+    userId: Optional[str] = Field(
+        default=None, description="用户ID, 未携带时导入到脚本级配置文件"
+    )
 
 
 class UserGetIn(UserInBase):

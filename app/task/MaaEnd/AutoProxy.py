@@ -429,27 +429,24 @@ class AutoProxyTask(TaskExecuteBase):
                     local_settings["welcomeShownHash"]
                 )
 
-        controller_type = self.script_config.get("Game", "ControllerType")
+        instances = maaend_set.get("instances")
+        if not isinstance(instances, list) or len(instances) == 0:
+            raise ValueError("MaaEnd 配置文件中未找到可运行实例，请先完成「MaaEnd 配置」步骤")
+
         maaend_instance = None
-        maaend_instances = maaend_set.get("instances", [])
-        for inst in maaend_instances:
-            if inst.get("id") == maaend_set.get("lastActiveInstanceId"):
-                maaend_instance = inst
+        for instance in instances:
+            if instance.get("id") == "automas" or instance.get("name") == "AUTO-MAS":
+                maaend_instance = instance
+                break
+            if instance.get("id") == maaend_set.get("lastActiveInstanceId"):
+                maaend_instance = instance
                 break
         if maaend_instance is None:
-            for inst in maaend_instances:
-                if inst.get("id") == "automas":
-                    maaend_instance = inst
-                    break
-        if maaend_instance is None and len(maaend_instances) > 0:
-            maaend_instance = maaend_instances[0]
-        if maaend_instance is None:
-            raise ValueError("MaaEnd 配置文件中未找到可运行实例")
-        maaend_instance["controllerName"] = controller_type
-        if maaend_instance.get("id") is not None:
-            maaend_set["lastActiveInstanceId"] = maaend_instance.get("id")
+            maaend_instance = instances[0]
         self.maaend_instance_name = (
-            maaend_instance.get("name") or maaend_instance.get("id") or "AUTO-MAS"
+            maaend_instance.get("name")
+            or maaend_instance.get("customName")
+            or "AUTO-MAS"
         )
         if device_info is not None:
             from app.core import MaaFWManager
@@ -457,7 +454,6 @@ class AutoProxyTask(TaskExecuteBase):
             maaend_instance["savedDevice"] = {
                 "adbDeviceName": (await MaaFWManager.convert_adb(device_info)).name
             }
-        maaend_instance.setdefault("tasks", [])
         maaend_tasks = maaend_instance["tasks"]
 
         # 加载 i18n 配置
@@ -483,8 +479,10 @@ class AutoProxyTask(TaskExecuteBase):
             else:
                 maaend_i18n[task_definition["name"]] = task_definition["label"]
 
+        if_quick_config = self.cur_user_config.get("Info", "IfQuickConfig")
+
         def get_task_book_name(task: dict[str, object]) -> str:
-            if self.cur_user_config.get("Info", "Mode") == "自定义":
+            if not if_quick_config:
                 return str(
                     task.get("customName")
                     or maaend_i18n.get(str(task["taskName"]), str(task["taskName"]))
@@ -494,12 +492,7 @@ class AutoProxyTask(TaskExecuteBase):
         sanity_task_config = {}
         sanity_task_type = ""
         target_task_name = ""
-        task_switch_config_source = (
-            self.script_config
-            if self.cur_user_config.get("Info", "Mode") == "简洁"
-            else self.cur_user_config
-        )
-        if self.cur_user_config.get("Info", "Mode") != "自定义":
+        if if_quick_config:
             sanity_task_config, _ = (
                 self.cur_user_config.get_effective_sanity_task_config()
             )
@@ -512,13 +505,15 @@ class AutoProxyTask(TaskExecuteBase):
             # 首次运行时按 MAS 配置生成本轮任务表，后续重试只收束这张表
             self.task_dict = {}
             sanity_configured = False
-            sanity_enabled = (
-                self.cur_user_config.get("Info", "Mode") != "自定义"
-                and task_switch_config_source.get("Task", "IfSanity")
-                and any(
-                    task.get("taskName") in ("ProtocolSpace", "AutoEssence")
-                    for task in maaend_tasks
-                )
+            sanity_switch_enabled = (
+                if_quick_config and self.cur_user_config.get("Task", "IfSanity")
+            )
+            target_sanity_task_exists = any(
+                task.get("taskName") == target_task_name for task in maaend_tasks
+            )
+            sanity_missing = sanity_switch_enabled and not target_sanity_task_exists
+            sanity_managed = if_quick_config and (
+                not sanity_switch_enabled or target_sanity_task_exists
             )
 
             for task in maaend_tasks:
@@ -526,17 +521,18 @@ class AutoProxyTask(TaskExecuteBase):
                     continue
 
                 task_enabled = task["enabled"]
-                if self.cur_user_config.get("Info", "Mode") != "自定义":
+                if if_quick_config:
                     if task["taskName"] in ("ProtocolSpace", "AutoEssence"):
-                        task_enabled = (
-                            sanity_enabled
-                            and task["taskName"] == target_task_name
-                            and not sanity_configured
-                        )
-                        if task_enabled:
-                            sanity_configured = True
+                        if sanity_managed:
+                            task_enabled = (
+                                sanity_switch_enabled
+                                and task["taskName"] == target_task_name
+                                and not sanity_configured
+                            )
+                            if task_enabled:
+                                sanity_configured = True
                     elif task["taskName"] in MAAEND_TASKS:
-                        task_enabled = task_switch_config_source.get(
+                        task_enabled = self.cur_user_config.get(
                             "Task", f"If{task['taskName']}"
                         )
 
@@ -545,21 +541,16 @@ class AutoProxyTask(TaskExecuteBase):
                     self.task_dict[task_name] = {}
                 self.task_dict[task_name][task["id"]] = task_enabled
 
-            if (
-                sanity_enabled
-                and target_task_name == "ProtocolSpace"
-                and not sanity_configured
-            ):
-                raise ValueError(
-                    f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 ProtocolSpace 任务，无法注入协议空间配置"
+            if sanity_missing:
+                warning_message = (
+                    f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 {target_task_name} 任务，"
+                    "已跳过理智任务快速配置"
                 )
-            if (
-                sanity_enabled
-                and target_task_name == "AutoEssence"
-                and not sanity_configured
-            ):
-                raise ValueError(
-                    f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 AutoEssence 任务，无法注入基质刷取配置"
+                logger.warning(warning_message)
+                await Config.send_websocket_message(
+                    id=self.task_info.task_id,
+                    type="Info",
+                    data={"Warning": warning_message},
                 )
 
         # 按本轮任务表写回 MaaEnd 运行配置
@@ -575,7 +566,7 @@ class AutoProxyTask(TaskExecuteBase):
                 continue
 
             if (
-                self.cur_user_config.get("Info", "Mode") != "自定义"
+                if_quick_config
                 and task["taskName"] == target_task_name
                 and target_task_name == "ProtocolSpace"
             ):
@@ -645,7 +636,7 @@ class AutoProxyTask(TaskExecuteBase):
                             "caseName": "HeavyCastDie",
                         }
             elif (
-                self.cur_user_config.get("Info", "Mode") != "自定义"
+                if_quick_config
                 and task["taskName"] == target_task_name
                 and target_task_name == "AutoEssence"
             ):
