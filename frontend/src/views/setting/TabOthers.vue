@@ -83,8 +83,8 @@ const copyAllInfo = async () => {
         <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
-              <span class="form-label">自动检查更新</span>
-              <a-tooltip title="启动时自动检测软件更新">
+              <span class="form-label">启动时尝试更新后端</span>
+              <a-tooltip title="启动时尝试更新后端组件">
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
