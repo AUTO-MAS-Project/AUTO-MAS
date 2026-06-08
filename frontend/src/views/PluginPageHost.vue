@@ -11,25 +11,30 @@
       v-else
       status="warning"
       title="插件页面缺少入口"
-      sub-title="该页面声明未提供可加载的 url。"
+      sub-title="该页面声明未提供可加载的 iframe url。"
     />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+
 import { OpenAPI } from '@/api'
-import type { PageDeclaration } from '../router/pageDeclarations'
+import type { PageDeclaration } from '@/router/pageDeclarations'
 
 const props = defineProps<{
   page: PageDeclaration
 }>()
 
-const backendBase = computed(() => (OpenAPI.BASE || 'http://localhost:36163').replace(/\/+$/, ''))
+const backendBase = computed(() => {
+  return (OpenAPI.BASE || 'http://localhost:36163').replace(/\/+$/, '')
+})
 
 const frameSrc = computed(() => {
   const rawUrl = props.page.url?.trim()
-  if (!rawUrl) return ''
+  if (!rawUrl) {
+    return ''
+  }
   if (/^https?:\/\//i.test(rawUrl) || rawUrl.startsWith('//')) {
     return rawUrl
   }

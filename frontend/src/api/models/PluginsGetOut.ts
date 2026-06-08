@@ -53,6 +53,11 @@ export type PluginsGetOut = {
         component: string;
         renderer?: string;
         url?: string | null;
+        frontend_plugin?: string | null;
+        element_tag?: string | null;
+        entry_asset_url?: string | null;
+        style_asset_urls?: Array<string>;
+        manifest_version?: number | null;
         section?: string;
         order?: number;
         visible?: boolean;

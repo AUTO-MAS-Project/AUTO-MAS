@@ -7,8 +7,13 @@ export interface PageDeclaration {
   menu_label: string
   icon: string
   component: string
-  renderer: 'component' | 'iframe' | string
+  renderer: 'component' | 'iframe' | 'custom-element' | string
   url: string | null
+  frontend_plugin: string | null
+  element_tag: string | null
+  entry_asset_url: string | null
+  style_asset_urls: string[]
+  manifest_version: number | null
   section: 'main' | 'bottom' | 'dev' | string
   order: number
   visible: boolean
@@ -18,6 +23,7 @@ export interface PageDeclaration {
 
 const SchedulerView = () => import('../views/scheduler/index.vue')
 const PluginPageHostView = () => import('../views/PluginPageHost.vue')
+const PluginElementHostView = () => import('../views/PluginElementHost.vue')
 
 export const PAGE_COMPONENTS: Record<string, RouteRecordRaw['component']> = {
   Home: () => import('../views/Home.vue'),
@@ -55,237 +61,62 @@ const BUILTIN_ROUTE_NAMES: Record<string, string> = {
   'overlay-mask-dev': 'OverlayMaskDev',
 }
 
+function hostPage(
+  id: string,
+  path: string,
+  title: string,
+  icon: string,
+  component: string,
+  section: 'main' | 'bottom' | 'dev',
+  order: number,
+  devOnly = false,
+): PageDeclaration {
+  return {
+    id,
+    path,
+    title,
+    menu_label: title,
+    icon,
+    component,
+    renderer: 'component',
+    url: null,
+    frontend_plugin: null,
+    element_tag: null,
+    entry_asset_url: null,
+    style_asset_urls: [],
+    manifest_version: null,
+    section,
+    order,
+    visible: true,
+    dev_only: devOnly,
+    source: 'host:core',
+  }
+}
+
 export const FALLBACK_PAGE_DECLARATIONS: PageDeclaration[] = [
-  {
-    id: 'home',
-    path: '/home',
-    title: '\u4e3b\u9875',
-    menu_label: '\u4e3b\u9875',
-    icon: 'home',
-    component: 'Home',
-    renderer: 'component',
-    url: null,
-    section: 'main',
-    order: 10,
-    visible: true,
-    dev_only: false,
-    source: 'host:core',
-  },
-  {
-    id: 'scripts',
-    path: '/scripts',
-    title: '\u811a\u672c\u7ba1\u7406',
-    menu_label: '\u811a\u672c\u7ba1\u7406',
-    icon: 'script',
-    component: 'Scripts',
-    renderer: 'component',
-    url: null,
-    section: 'main',
-    order: 20,
-    visible: true,
-    dev_only: false,
-    source: 'host:core',
-  },
-  {
-    id: 'plans',
-    path: '/plans',
-    title: '\u8ba1\u5212\u7ba1\u7406',
-    menu_label: '\u8ba1\u5212\u7ba1\u7406',
-    icon: 'plan',
-    component: 'Plans',
-    renderer: 'component',
-    url: null,
-    section: 'main',
-    order: 30,
-    visible: true,
-    dev_only: false,
-    source: 'host:core',
-  },
-  {
-    id: 'emulators',
-    path: '/emulators',
-    title: '\u6a21\u62df\u5668\u7ba1\u7406',
-    menu_label: '\u6a21\u62df\u5668\u7ba1\u7406',
-    icon: 'emulator',
-    component: 'Emulators',
-    renderer: 'component',
-    url: null,
-    section: 'main',
-    order: 40,
-    visible: true,
-    dev_only: false,
-    source: 'host:core',
-  },
-  {
-    id: 'plugins',
-    path: '/plugins',
-    title: '\u63d2\u4ef6\u7ba1\u7406',
-    menu_label: '\u63d2\u4ef6\u7ba1\u7406',
-    icon: 'plugin',
-    component: 'Plugin',
-    renderer: 'component',
-    url: null,
-    section: 'main',
-    order: 50,
-    visible: true,
-    dev_only: false,
-    source: 'host:core',
-  },
-  {
-    id: 'plugins-market',
-    path: '/plugins-market',
-    title: '\u63d2\u4ef6\u5e02\u573a',
-    menu_label: '\u63d2\u4ef6\u5e02\u573a',
-    icon: 'market',
-    component: 'PluginMarket',
-    renderer: 'component',
-    url: null,
-    section: 'main',
-    order: 60,
-    visible: true,
-    dev_only: false,
-    source: 'host:core',
-  },
-  {
-    id: 'queue',
-    path: '/queue',
-    title: '\u8c03\u5ea6\u961f\u5217',
-    menu_label: '\u8c03\u5ea6\u961f\u5217',
-    icon: 'queue',
-    component: 'Queue',
-    renderer: 'component',
-    url: null,
-    section: 'main',
-    order: 70,
-    visible: true,
-    dev_only: false,
-    source: 'host:core',
-  },
-  {
-    id: 'scheduler',
-    path: '/scheduler',
-    title: '\u8c03\u5ea6\u4e2d\u5fc3',
-    menu_label: '\u8c03\u5ea6\u4e2d\u5fc3',
-    icon: 'scheduler',
-    component: 'Scheduler',
-    renderer: 'component',
-    url: null,
-    section: 'main',
-    order: 80,
-    visible: true,
-    dev_only: false,
-    source: 'host:core',
-  },
-  {
-    id: 'history',
-    path: '/history',
-    title: '\u5386\u53f2\u8bb0\u5f55',
-    menu_label: '\u5386\u53f2\u8bb0\u5f55',
-    icon: 'history',
-    component: 'History',
-    renderer: 'component',
-    url: null,
-    section: 'bottom',
-    order: 10,
-    visible: true,
-    dev_only: false,
-    source: 'host:core',
-  },
-  {
-    id: 'tools',
-    path: '/tools',
-    title: '\u5de5\u5177',
-    menu_label: '\u5de5\u5177',
-    icon: 'tool',
-    component: 'Tools',
-    renderer: 'component',
-    url: null,
-    section: 'bottom',
-    order: 20,
-    visible: true,
-    dev_only: false,
-    source: 'host:core',
-  },
-  {
-    id: 'settings',
-    path: '/settings',
-    title: '\u8bbe\u7f6e',
-    menu_label: '\u8bbe\u7f6e',
-    icon: 'settings',
-    component: 'Settings',
-    renderer: 'component',
-    url: null,
-    section: 'bottom',
-    order: 30,
-    visible: true,
-    dev_only: false,
-    source: 'host:core',
-  },
-  {
-    id: 'test-router',
-    path: '/TestRouter',
-    title: '\u6d4b\u8bd5\u8def\u7531',
-    menu_label: '\u6d4b\u8bd5\u8def\u7531',
-    icon: 'dev',
-    component: 'TestRouter',
-    renderer: 'component',
-    url: null,
-    section: 'dev',
-    order: 10,
-    visible: true,
-    dev_only: true,
-    source: 'host:core',
-  },
-  {
-    id: 'ocr-dev',
-    path: '/OCRdev',
-    title: 'OCR \u6d4b\u8bd5',
-    menu_label: 'OCR\u6d4b\u8bd5',
-    icon: 'dev',
-    component: 'OCRdev',
-    renderer: 'component',
-    url: null,
-    section: 'dev',
-    order: 20,
-    visible: true,
-    dev_only: true,
-    source: 'host:core',
-  },
-  {
-    id: 'ws-dev',
-    path: '/WSdev',
-    title: 'WebSocket \u6d4b\u8bd5',
-    menu_label: 'WebSocket\u6d4b\u8bd5',
-    icon: 'api',
-    component: 'WSdev',
-    renderer: 'component',
-    url: null,
-    section: 'dev',
-    order: 30,
-    visible: true,
-    dev_only: true,
-    source: 'host:core',
-  },
-  {
-    id: 'overlay-mask-dev',
-    path: '/OverlayMaskDev',
-    title: '\u906e\u7f69\u6d4b\u8bd5',
-    menu_label: '\u906e\u7f69\u6d4b\u8bd5',
-    icon: 'dev',
-    component: 'OverlayMaskDev',
-    renderer: 'component',
-    url: null,
-    section: 'dev',
-    order: 40,
-    visible: true,
-    dev_only: true,
-    source: 'host:core',
-  },
+  hostPage('home', '/home', '主页', 'home', 'Home', 'main', 10),
+  hostPage('scripts', '/scripts', '脚本管理', 'script', 'Scripts', 'main', 20),
+  hostPage('plans', '/plans', '计划管理', 'plan', 'Plans', 'main', 30),
+  hostPage('emulators', '/emulators', '模拟器管理', 'emulator', 'Emulators', 'main', 40),
+  hostPage('plugins', '/plugins', '插件管理', 'plugin', 'Plugin', 'main', 50),
+  hostPage('plugins-market', '/plugins-market', '插件市场', 'market', 'PluginMarket', 'main', 60),
+  hostPage('queue', '/queue', '调度队列', 'queue', 'Queue', 'main', 70),
+  hostPage('scheduler', '/scheduler', '调度中心', 'scheduler', 'Scheduler', 'main', 80),
+  hostPage('history', '/history', '历史记录', 'history', 'History', 'bottom', 10),
+  hostPage('tools', '/tools', '工具', 'tool', 'Tools', 'bottom', 20),
+  hostPage('settings', '/settings', '设置', 'settings', 'Settings', 'bottom', 30),
+  hostPage('test-router', '/TestRouter', '测试路由', 'dev', 'TestRouter', 'dev', 10, true),
+  hostPage('ocr-dev', '/OCRdev', 'OCR 测试', 'dev', 'OCRdev', 'dev', 20, true),
+  hostPage('ws-dev', '/WSdev', 'WebSocket 测试', 'api', 'WSdev', 'dev', 30, true),
+  hostPage('overlay-mask-dev', '/OverlayMaskDev', '遮罩测试', 'dev', 'OverlayMaskDev', 'dev', 40, true),
 ]
 
 export function normalizePageDeclarations(raw: unknown): PageDeclaration[] {
-  if (!Array.isArray(raw)) return FALLBACK_PAGE_DECLARATIONS
-  const result = raw
+  if (!Array.isArray(raw)) {
+    return FALLBACK_PAGE_DECLARATIONS
+  }
+
+  const pages = raw
     .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
     .map(item => ({
       id: String(item.id || '').trim(),
@@ -295,15 +126,21 @@ export function normalizePageDeclarations(raw: unknown): PageDeclaration[] {
       icon: String(item.icon || 'app').trim(),
       component: String(item.component || 'PluginPage').trim(),
       renderer: String(item.renderer || 'component').trim(),
-      url: normalizeOptionalUrl(item.url),
+      url: normalizeOptionalText(item.url),
+      frontend_plugin: normalizeOptionalText(item.frontend_plugin),
+      element_tag: normalizeOptionalText(item.element_tag),
+      entry_asset_url: normalizeOptionalText(item.entry_asset_url),
+      style_asset_urls: normalizeStringList(item.style_asset_urls),
+      manifest_version: normalizeOptionalNumber(item.manifest_version),
       section: String(item.section || 'main').trim(),
       order: Number.isFinite(Number(item.order)) ? Number(item.order) : 1000,
       visible: item.visible !== false,
       dev_only: item.dev_only === true,
       source: String(item.source || '').trim(),
     }))
-    .filter(item => item.id && item.path && item.title && item.menu_label && canRenderPage(item))
-  return result.length > 0 ? sortPageDeclarations(result) : FALLBACK_PAGE_DECLARATIONS
+    .filter(page => page.id && page.path && page.title && page.menu_label && canRenderPage(page))
+
+  return pages.length > 0 ? sortPageDeclarations(pages) : FALLBACK_PAGE_DECLARATIONS
 }
 
 export function sortPageDeclarations(pages: PageDeclaration[]): PageDeclaration[] {
@@ -317,16 +154,19 @@ export function sortPageDeclarations(pages: PageDeclaration[]): PageDeclaration[
 }
 
 export function createPageRoutes(pages: PageDeclaration[]): RouteRecordRaw[] {
-  return pages.map(createPageRoute).filter((item): item is RouteRecordRaw => item !== null)
+  return pages
+    .map(createPageRoute)
+    .filter((route): route is RouteRecordRaw => route !== null)
 }
 
 export function syncDeclaredPageRoutes(router: Router, pages: PageDeclaration[]): void {
   const routes = createPageRoutes(pages)
   const nextRouteNames = new Set(routes.map(route => String(route.name)))
+
   for (const existingRoute of router.getRoutes()) {
-    const existingName = existingRoute.name ? String(existingRoute.name) : ''
-    if (existingName.startsWith('page:') && !nextRouteNames.has(existingName)) {
-      router.removeRoute(existingName)
+    const routeName = existingRoute.name ? String(existingRoute.name) : ''
+    if (routeName.startsWith('page:') && !nextRouteNames.has(routeName)) {
+      router.removeRoute(routeName)
     }
   }
 
@@ -339,28 +179,33 @@ export function syncDeclaredPageRoutes(router: Router, pages: PageDeclaration[])
         continue
       }
     }
+
     const existsByPath = router.getRoutes().find(item => item.path === route.path)
     if (existsByPath) {
-      const existingName = existsByPath.name ? String(existsByPath.name) : ''
-      if (existingName.startsWith('page:')) {
-        router.removeRoute(existingName)
+      const existsName = existsByPath.name ? String(existsByPath.name) : ''
+      if (existsName.startsWith('page:')) {
+        router.removeRoute(existsName)
       } else {
         continue
       }
     }
+
     router.addRoute(route)
   }
 }
 
 function createPageRoute(page: PageDeclaration): RouteRecordRaw | null {
-  const component = PAGE_COMPONENTS[page.component]
-  const routeComponent = shouldUsePluginPageHost(page) ? PluginPageHostView : component
-  if (!routeComponent) return null
+  const routeComponent = resolveRouteComponent(page)
+  if (!routeComponent) {
+    return null
+  }
+
+  const usesHostProps = page.renderer === 'iframe' || page.renderer === 'custom-element'
   return {
     path: page.path,
     name: BUILTIN_ROUTE_NAMES[page.id] || `page:${page.id}`,
     component: routeComponent,
-    props: shouldUsePluginPageHost(page) ? { page } : undefined,
+    props: usesHostProps ? { page } : undefined,
     meta: {
       title: page.title,
       keepAlive: page.component === 'Scheduler',
@@ -371,25 +216,61 @@ function createPageRoute(page: PageDeclaration): RouteRecordRaw | null {
   }
 }
 
+function resolveRouteComponent(page: PageDeclaration): RouteRecordRaw['component'] | null {
+  if (page.renderer === 'iframe') {
+    return PluginPageHostView
+  }
+  if (page.renderer === 'custom-element') {
+    return PluginElementHostView
+  }
+  return PAGE_COMPONENTS[page.component] || null
+}
+
 function canRenderPage(page: PageDeclaration): boolean {
-  if (PAGE_COMPONENTS[page.component]) return true
-  return shouldUsePluginPageHost(page)
+  if (page.renderer === 'iframe') {
+    return true
+  }
+  if (page.renderer === 'custom-element') {
+    return true
+  }
+  return Boolean(PAGE_COMPONENTS[page.component])
 }
 
-function shouldUsePluginPageHost(page: PageDeclaration): boolean {
-  return page.renderer === 'iframe' || !PAGE_COMPONENTS[page.component]
-}
-
-function normalizeOptionalUrl(raw: unknown): string | null {
-  if (raw === null || raw === undefined) return null
+function normalizeOptionalText(raw: unknown): string | null {
+  if (raw === null || raw === undefined) {
+    return null
+  }
   const text = String(raw || '').trim()
   return text || null
 }
 
+function normalizeOptionalNumber(raw: unknown): number | null {
+  if (raw === null || raw === undefined || raw === '') {
+    return null
+  }
+  const value = Number(raw)
+  return Number.isFinite(value) ? value : null
+}
+
+function normalizeStringList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) {
+    return []
+  }
+  return raw
+    .map(item => String(item || '').trim())
+    .filter(Boolean)
+}
+
 function normalizePath(value: string): string {
   const trimmed = value.trim()
-  if (!trimmed) return ''
-  return `/${trimmed.replace(/^\/+/, '')}`.replace(/\/+/g, '/').replace(/\/$/, '') || '/'
+  if (!trimmed) {
+    return ''
+  }
+  const normalized = `/${trimmed.replace(/^\/+/, '')}`.replace(/\/+/g, '/')
+  if (normalized !== '/' && normalized.endsWith('/')) {
+    return normalized.slice(0, -1)
+  }
+  return normalized
 }
 
 function sectionRank(section: string): number {

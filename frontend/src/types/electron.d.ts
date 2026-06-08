@@ -209,8 +209,28 @@ export interface ElectronAPI {
   removeBackendStatusListener?: () => void
 }
 
+export interface PluginPageContext {
+  pageId: string
+  path: string
+  title: string
+  renderer: string
+  source: string
+  pluginId: string | null
+  elementTag: string | null
+}
+
+export interface PluginAPI {
+  call: (path: string, payload?: unknown) => Promise<unknown>
+  subscribe: (
+    topic: string,
+    handler: (message: { id?: string; type: string; data?: unknown }) => void
+  ) => () => void
+  getPageContext: () => PluginPageContext | null
+}
+
 declare global {
   interface Window {
     electronAPI: ElectronAPI
+    pluginAPI: PluginAPI
   }
 }
