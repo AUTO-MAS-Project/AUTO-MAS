@@ -478,11 +478,6 @@ class AutoProxyTask(TaskExecuteBase):
         sanity_task_config = {}
         sanity_task_type = ""
         target_task_name = ""
-        task_switch_config_source = (
-            self.script_config
-            if self.cur_user_config.get("Info", "Mode") == "简洁"
-            else self.cur_user_config
-        )
         if if_quick_config:
             sanity_task_config, _ = (
                 self.cur_user_config.get_effective_sanity_task_config()
@@ -497,7 +492,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.task_dict = {}
             sanity_configured = False
             sanity_switch_enabled = (
-                if_quick_config and task_switch_config_source.get("Task", "IfSanity")
+                if_quick_config and self.cur_user_config.get("Task", "IfSanity")
             )
             target_sanity_task_exists = any(
                 task.get("taskName") == target_task_name for task in maaend_tasks
@@ -523,7 +518,7 @@ class AutoProxyTask(TaskExecuteBase):
                             if task_enabled:
                                 sanity_configured = True
                     elif task["taskName"] in MAAEND_TASKS:
-                        task_enabled = task_switch_config_source.get(
+                        task_enabled = self.cur_user_config.get(
                             "Task", f"If{task['taskName']}"
                         )
 

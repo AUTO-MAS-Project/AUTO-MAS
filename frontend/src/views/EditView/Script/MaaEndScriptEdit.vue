@@ -296,24 +296,6 @@
           </a-row>
         </div>
 
-        <TaskConfigSection
-          v-if="isPresetController"
-          :form-data="maaEndConfig"
-          :loading="pageLoading"
-          mode="简洁"
-          source="script"
-          :controller-type="maaEndConfig.Game.ControllerType"
-          @save="handleTaskChange"
-          @save-batch="handleTaskChanges"
-        />
-        <a-alert
-          v-else
-          message="当前控制器暂不支持 MaaEnd 快速配置，请直接使用配置文件。"
-          type="info"
-          show-icon
-          style="margin-bottom: 24px"
-        />
-
         <div class="form-section">
           <div class="section-header">
             <h3>运行配置</h3>
@@ -397,7 +379,6 @@ import type { ComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import type { MaaEndScriptConfig, ScriptType } from '@/types/script'
 import { useScriptApi } from '@/composables/useScriptApi'
-import TaskConfigSection from '../../MaaEndUserEdit/TaskConfigSection.vue'
 import { handleExternalLink } from '@/utils/openExternal'
 import {
   ArrowLeftOutlined,
@@ -445,30 +426,6 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     EmulatorIndex: '',
     CloseOnFinish: false,
   },
-  Task: {
-    SanityTaskType: 'OperatorProgression',
-    OperatorProgression: 'OperatorEXP',
-    WeaponProgression: 'WeaponEXP',
-    CrisisDrills: 'AdvancedProgression1',
-    RewardsSetOption: 'RewardsSetA',
-    AutoEssenceSpecifiedLocation: 'VFTheHub',
-    IfSanity: true,
-    IfAutoUseSpMedication: true,
-    IfDijiangRewards: true,
-    IfDeliveryJobs: true,
-    IfSellProduct: true,
-    IfAutoStockpile: true,
-    IfAutoStockStaple: true,
-    IfVisitFriends: true,
-    IfCreditShoppingN2: true,
-    IfSeizeEntrustTask: true,
-    IfAutoEcoFarm: true,
-    IfAutoSell: true,
-    IfEnvironmentMonitoring: true,
-    IfAutoCollect: true,
-    IfDailyRewards: true,
-    IfResourceRecycleStation: true,
-  },
 })
 
 const rules = {
@@ -492,7 +449,6 @@ const emulatorOptions = ref<ComboBoxItem[]>([])
 const emulatorDeviceOptions = ref<ComboBoxItem[]>([])
 
 const isWinController = computed(() => maaEndConfig.Game.ControllerType !== 'ADB')
-const isPresetController = computed(() => maaEndConfig.Game.ControllerType === 'Win32-Front')
 const showManualEmulatorIndexInput = computed(
   () =>
     emulatorDeviceOptions.value.length === 0 &&
@@ -520,7 +476,6 @@ const applyMaaEndConfig = (config: MaaEndScriptConfig) => {
   Object.assign(maaEndConfig.Info, config.Info ?? {})
   Object.assign(maaEndConfig.Run, config.Run ?? {})
   Object.assign(maaEndConfig.Game, config.Game ?? {})
-  Object.assign(maaEndConfig.Task, config.Task ?? {})
 }
 
 const refreshScript = async () => {
@@ -584,35 +539,6 @@ const loadScript = async () => {
     }
   } finally {
     pageLoading.value = false
-  }
-}
-
-const handleTaskChange = async (key: string, value: unknown) => {
-  const [, taskKey] = key.split('.')
-  if (!taskKey) return
-  await handleChange('Task', taskKey, value)
-}
-
-const handleTaskChanges = async (changes: Array<{ key: string; value: unknown }>) => {
-  if (isInitializing.value || isSaving.value || !changes.length) return
-
-  const payload: Record<string, unknown> = {}
-  for (const change of changes) {
-    const [, taskKey] = change.key.split('.')
-    if (taskKey) {
-      payload[taskKey] = change.value
-    }
-  }
-  if (!Object.keys(payload).length) return
-
-  isSaving.value = true
-  try {
-    const success = await updateScript(scriptId, { Task: payload })
-    if (success) {
-      await refreshScript()
-    }
-  } finally {
-    isSaving.value = false
   }
 }
 
