@@ -87,6 +87,7 @@ class PluginContext:
 
         self.page = PageFacade(
             instance_id=self.instance_id,
+            plugin_name=self.plugin_name,
             registry=page_registry,
         )
 

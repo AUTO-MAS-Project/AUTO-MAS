@@ -186,6 +186,7 @@ class PluginLoader:
         page_registry.register_many(
             list(raw_pages),
             source=f"plugin:{record.instance_id}",
+            frontend_plugin=record.plugin_name,
         )
 
     def _plan(self, instances: Iterable[Any]) -> tuple[list[str], dict[str, set[str]], dict[str, tuple[set[str], set[str], set[str]]]]:

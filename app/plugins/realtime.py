@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, Literal
 
 from app.utils import get_logger
+from app.plugins.frontend_extensions import build_page_snapshot
 
 PLUGIN_SYSTEM_WS_ID = "PluginSystem"
 
@@ -155,9 +156,12 @@ async def build_plugin_snapshot(*, discovered: Dict[str, Any] | None = None) -> 
         }
 
     from .server import plugin_server
-    from app.core.page_registry import page_registry
 
     server_snapshot = plugin_server.snapshot()
+    page_items, page_errors = build_page_snapshot(
+        discovered=discovered,
+        records=getattr(PluginManager.loader, "records", {}),
+    )
     return {
         "code": 200,
         "status": "success",
@@ -172,8 +176,8 @@ async def build_plugin_snapshot(*, discovered: Dict[str, Any] | None = None) -> 
         "plugin_packages": plugin_packages,
         "instances": deepcopy(root.get("instances", [])),
         "runtime_states": runtime_states,
-        "pages": page_registry.snapshot(),
-        "page_errors": page_registry.warnings(),
+        "pages": page_items,
+        "page_errors": page_errors,
     }
 
 

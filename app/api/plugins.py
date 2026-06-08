@@ -7,11 +7,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
-from app.core.page_registry import page_registry
 from app.plugins import PluginConfigStore, PluginManager
+from app.plugins.frontend_extensions import build_page_snapshot, load_frontend_asset
 from app.plugins.realtime import publish_plugin_snapshot
 from app.plugins.server import plugin_server
 from app.api.ws_command import ws_command
@@ -90,6 +90,11 @@ class PageDeclarationModel(BaseModel):
     component: str = Field(..., description="前端组件键")
     renderer: str = Field(default="component", description="页面渲染方式")
     url: Optional[str] = Field(default=None, description="插件页面入口 URL")
+    frontend_plugin: Optional[str] = Field(default=None, description="插件前端扩展插件 ID")
+    element_tag: Optional[str] = Field(default=None, description="custom element 标签")
+    entry_asset_url: Optional[str] = Field(default=None, description="前端扩展入口资源 URL")
+    style_asset_urls: List[str] = Field(default_factory=list, description="前端扩展样式资源 URL 列表")
+    manifest_version: Optional[int] = Field(default=None, description="前端扩展 manifest 版本")
     section: str = Field(default="main", description="菜单区域")
     order: int = Field(default=1000, description="排序权重")
     visible: bool = Field(default=True, description="是否显示在菜单中")
@@ -124,7 +129,7 @@ class PluginsGetOut(OutBase):
         description="插件实例运行态",
     )
 
-    pages: List[PageDeclarationModel] = Field(default_factory=list, description="前端页面声明")
+    pages: List[Dict[str, Any]] = Field(default_factory=list, description="前端页面声明")
     page_errors: List[str] = Field(default_factory=list, description="页面声明警告")
 
 
@@ -499,6 +504,34 @@ async def get_frontend_background_image() -> FileResponse:
     return FileResponse(str(image_path), media_type=media_type)
 
 
+@router.get(
+    "/assets/{plugin_id}/{asset_path:path}",
+    tags=["Get"],
+    summary="获取插件前端扩展静态资源",
+    response_class=Response,
+    status_code=200,
+)
+async def get_plugin_frontend_asset(plugin_id: str, asset_path: str) -> Response:
+    try:
+        discovered = await _discover_plugins(Path.cwd() / "plugins")
+        plugin_source = discovered.get(plugin_id)
+        if plugin_source is None:
+            raise HTTPException(status_code=404, detail=f"未找到插件: {plugin_id}")
+
+        asset = load_frontend_asset(plugin_id, plugin_source, asset_path)
+        media_type = mimetypes.guess_type(asset.name)[0] or "application/octet-stream"
+        return Response(
+            content=asset.read_bytes(),
+            media_type=media_type,
+        )
+    except HTTPException:
+        raise
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 def _build_runtime_states(root: Dict[str, Any]) -> Dict[str, PluginRuntimeStateModel]:
     """构建插件实例运行态快照。
 
@@ -566,6 +599,10 @@ async def get_plugins() -> PluginsGetOut:
         schemas, schema_errors = _build_schemas(discovered)
         plugin_services = _build_plugin_services(discovered)
         server_snapshot = plugin_server.snapshot()
+        page_items, page_errors = build_page_snapshot(
+            discovered=discovered,
+            records=getattr(PluginManager.loader, "records", {}),
+        )
         return PluginsGetOut(
             version=int(root.get("version", 1)),
             discovered_plugins=list(discovered.keys()),
@@ -577,8 +614,8 @@ async def get_plugins() -> PluginsGetOut:
             plugin_packages=_build_plugin_packages(discovered),
             instances=_build_instances(root),
             runtime_states=_build_runtime_states(root),
-            pages=[PageDeclarationModel(**item) for item in page_registry.snapshot()],
-            page_errors=page_registry.warnings(),
+            pages=page_items,
+            page_errors=page_errors,
         )
     except Exception as e:
         return PluginsGetOut(
