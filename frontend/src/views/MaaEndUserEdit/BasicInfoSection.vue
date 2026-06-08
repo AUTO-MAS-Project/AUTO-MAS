@@ -111,6 +111,20 @@
               @change="emitSave('Info.Mode', formData.Info.Mode)"
             />
             <a-button
+              v-if="formData.Info.Mode === '简洁'"
+              type="primary"
+              ghost
+              size="large"
+              :disabled="loading || showConfigMask"
+              @click="$emit('scriptConfig')"
+            >
+              <template #icon>
+                <SettingOutlined />
+              </template>
+              脚本配置
+            </a-button>
+            <a-button
+              v-else
               type="primary"
               ghost
               size="large"
@@ -124,6 +138,7 @@
               {{ showConfigMask ? '正在配置' : '配置' }}
             </a-button>
             <a-button
+              v-if="formData.Info.Mode !== '简洁'"
               type="default"
               size="large"
               :loading="importLoading"
@@ -233,6 +248,7 @@ const emit = defineEmits<{
   save: [key: string, value: any]
   configure: []
   importConfig: []
+  scriptConfig: []
 }>()
 
 defineProps<{

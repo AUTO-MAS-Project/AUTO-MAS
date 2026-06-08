@@ -5,8 +5,6 @@
       <h3>任务配置</h3>
     </div>
 
-    <a-alert v-if="modeNotice" :message="modeNotice" type="info" show-icon class="mode-notice" />
-
     <div v-if="showManagedTaskConfig && visibleTaskGroups.length" class="task-switch-layout">
       <div class="task-group-sidebar">
         <button
@@ -148,16 +146,12 @@ const props = withDefaults(
   defineProps<{
     formData: any
     loading?: boolean
-    mode?: string
     ifQuickConfig?: boolean
-    source?: 'script' | 'user'
     controllerType?: string | null
   }>(),
   {
     loading: false,
-    mode: '详细',
     ifQuickConfig: true,
-    source: 'user',
     controllerType: null,
   }
 )
@@ -170,9 +164,7 @@ const emit = defineEmits<{
 const formData = props.formData
 const optionColumnSpan = 12
 const activeGroupKey = ref('')
-const showManagedTaskConfig = computed(
-  () => props.ifQuickConfig && !(props.source === 'user' && props.mode === '简洁')
-)
+const showManagedTaskConfig = computed(() => props.ifQuickConfig)
 const supportedTaskNames = computed(
   () => new Set(MAAEND_CONTROLLER_TASKS[props.controllerType ?? ''] ?? [])
 )
@@ -191,23 +183,10 @@ const activeGroupHasSanity = computed(
 )
 
 const controlsDisabled = computed(() => {
-  return props.loading || !props.ifQuickConfig || (props.source === 'user' && props.mode === '简洁')
+  return props.loading || !props.ifQuickConfig
 })
 
 const optionControlsDisabled = computed(() => controlsDisabled.value)
-
-const modeNotice = computed(() => {
-  if (!props.ifQuickConfig) {
-    return '快速配置已关闭，将直接运行所选来源的完整 MaaEnd 配置文件。'
-  }
-  if (props.source === 'script') {
-    return '脚本配置文件来源的用户将使用这里的脚本级快速配置。'
-  }
-  if (props.mode === '简洁') {
-    return '配置文件来源为脚本，请在脚本配置页调整任务开关和选项。'
-  }
-  return ''
-})
 
 const normalizedSanityTaskType = computed<SanityTaskType>(() =>
   SANITY_TASK_TYPE_OPTIONS.some(option => option.value === formData.Task.SanityTaskType)
