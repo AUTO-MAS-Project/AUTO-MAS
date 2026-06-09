@@ -1,0 +1,11 @@
+{
+  "version": 0,
+  "renderer": "custom-element",
+  "entry_url": "${plugin_dev_entry_url}",
+  "style_urls": [],
+  "elements": [
+    {
+      "tag": "${plugin_element_tag}"
+    }
+  ]
+}

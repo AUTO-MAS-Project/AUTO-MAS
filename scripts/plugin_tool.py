@@ -23,6 +23,7 @@ except Exception:  # pragma: no cover
 PLUGIN_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 ENTRY_POINT_GROUPS = ("auto_mas.plugins", "automas.plugins")
 TEMPLATE_DIR_NAME = "plugin_templates"
+PAGE_TEMPLATE_DIR_NAME = "plugin_page_templates"
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,37 @@ SCRIPT_ADAPTER_TEMPLATE_OUTPUTS = {
     ),
     Path("src/${plugin_name}/adapter/runtime.py"): Path(
         "script_adapter/adapter/runtime.py.template"
+    ),
+    Path(".github/workflows/publish.yml"): Path("publish.yml.template"),
+    Path(".gitattributes"): Path(".gitattributes.template"),
+    Path(".editorconfig"): Path(".editorconfig.template"),
+    Path(".gitignore"): Path(".gitignore.template"),
+}
+
+PLUGIN_PAGE_TEMPLATE_OUTPUTS = {
+    Path("pyproject.toml"): Path("pyproject.toml.template"),
+    Path("README.md"): Path("README.md.template"),
+    Path("package.json"): Path("package.json.template"),
+    Path("src/${plugin_name}/__init__.py"): Path("__init__.py.template"),
+    Path("src/${plugin_name}/plugin.py"): Path("plugin.py.template"),
+    Path("src/${plugin_name}/schema.py"): Path("schema.py.template"),
+    Path("src/${plugin_name}/frontend/manifest.json"): Path(
+        "frontend/manifest.json.template"
+    ),
+    Path("src/${plugin_name}/frontend/dist/index.js"): Path(
+        "frontend/dist/index.js.template"
+    ),
+    Path("frontend-src/package.json"): Path("frontend-src/package.json.template"),
+    Path("frontend-src/plugin.frontend.dev.json"): Path(
+        "frontend-src/plugin.frontend.dev.json.template"
+    ),
+    Path("frontend-src/vite.config.mjs"): Path("frontend-src/vite.config.mjs.template"),
+    Path("frontend-src/scripts/write-manifest.mjs"): Path(
+        "frontend-src/scripts/write-manifest.mjs.template"
+    ),
+    Path("frontend-src/src/main.ts"): Path("frontend-src/src/main.ts.template"),
+    Path("frontend-src/src/${plugin_page_component}.ce.vue"): Path(
+        "frontend-src/src/PluginPage.ce.vue.template"
     ),
     Path(".github/workflows/publish.yml"): Path("publish.yml.template"),
     Path(".gitattributes"): Path(".gitattributes.template"),
@@ -100,6 +132,11 @@ def get_pypi_site_dir(plugins_dir: Path) -> Path:
 def get_template_dir() -> Path:
     """获取模板目录。"""
     return Path(__file__).resolve().parent / TEMPLATE_DIR_NAME
+
+
+def get_page_template_dir() -> Path:
+    """获取带页面插件模板目录。"""
+    return Path(__file__).resolve().parent / PAGE_TEMPLATE_DIR_NAME
 
 
 def is_inside_git_repo(path: Path) -> bool:
@@ -169,6 +206,39 @@ def to_pascal_case(value: str) -> str:
     return "".join(part.capitalize() for part in value.split("_") if part)
 
 
+def to_kebab_case(value: str) -> str:
+    """把蛇形命名转换为 kebab-case。"""
+    return "-".join(part for part in value.split("_") if part)
+
+
+def build_template_variables(
+    plugin_name: str,
+    description: str,
+    workspace_dir: Path,
+) -> Dict[str, str]:
+    """构建脚手架模板变量。"""
+    plugin_class_name = to_pascal_case(plugin_name)
+    plugin_element_tag = f"{to_kebab_case(plugin_name)}-panel"
+    plugin_page_component = f"{plugin_class_name}Page"
+    return {
+        "plugin_name": plugin_name,
+        "plugin_title": plugin_name.replace("_", " ").title(),
+        "plugin_class_name": plugin_class_name,
+        "plugin_element_tag": plugin_element_tag,
+        "plugin_page_component": plugin_page_component,
+        "plugin_page_id": f"{plugin_name}-page",
+        "plugin_page_path": f"/{plugin_name}",
+        "script_type_key": plugin_name.upper(),
+        "description": description,
+        "description_escaped": description.replace('"', '\\"'),
+        "workspace_dir": workspace_dir.resolve().as_posix(),
+        "plugin_dev_entry_url": (
+            "http://127.0.0.1:5173/@fs/"
+            f"{(workspace_dir / 'plugins' / plugin_name / 'frontend-src' / 'src' / 'main.ts').resolve().as_posix()}"
+        ),
+    }
+
+
 def render_template(content: str, variables: Dict[str, str]) -> str:
     """渲染模板内容。"""
     try:
@@ -177,7 +247,12 @@ def render_template(content: str, variables: Dict[str, str]) -> str:
         raise ScaffoldError(f"模板变量缺失: {exc}") from exc
 
 
-def build_template_files(plugin_name: str, description: str, kind: str) -> Dict[Path, str]:
+def build_template_files(
+    plugin_name: str,
+    description: str,
+    kind: str,
+    workspace_dir: Path,
+) -> Dict[Path, str]:
     """构建目标文件内容。"""
     template_dir = get_template_dir()
     preset = TEMPLATE_PRESETS.get(kind)
@@ -186,20 +261,38 @@ def build_template_files(plugin_name: str, description: str, kind: str) -> Dict[
     if not template_dir.exists():
         raise ScaffoldError(f"模板目录不存在: {template_dir}")
 
-    variables = {
-        "plugin_name": plugin_name,
-        "plugin_title": plugin_name.replace("_", " ").title(),
-        "plugin_class_name": to_pascal_case(plugin_name),
-        "script_type_key": plugin_name.upper(),
-        "description": description,
-        "description_escaped": description.replace('"', '\\"'),
-    }
+    variables = build_template_variables(plugin_name, description, workspace_dir)
 
     files: Dict[Path, str] = {}
     for output_template, source_template in preset.outputs.items():
         source_path = template_dir / source_template
         if not source_path.exists():
             raise ScaffoldError(f"模板文件不存在: {source_path}")
+        output_path = Path(render_template(output_template.as_posix(), variables))
+        files[output_path] = render_template(
+            source_path.read_text(encoding="utf-8"),
+            variables,
+        )
+    return files
+
+
+def build_page_template_files(
+    plugin_name: str,
+    description: str,
+    workspace_dir: Path,
+) -> Dict[Path, str]:
+    """构建带页面插件目标文件内容。"""
+    template_dir = get_page_template_dir()
+    if not template_dir.exists():
+        raise ScaffoldError(f"带页面插件模板目录不存在: {template_dir}")
+
+    variables = build_template_variables(plugin_name, description, workspace_dir)
+
+    files: Dict[Path, str] = {}
+    for output_template, source_template in PLUGIN_PAGE_TEMPLATE_OUTPUTS.items():
+        source_path = template_dir / source_template
+        if not source_path.exists():
+            raise ScaffoldError(f"带页面插件模板文件不存在: {source_path}")
         output_path = Path(render_template(output_template.as_posix(), variables))
         files[output_path] = render_template(
             source_path.read_text(encoding="utf-8"),
@@ -321,6 +414,20 @@ def prompt_optional(message: str) -> str:
     return read_input(message).strip()
 
 
+def prompt_yes_no(message: str, *, default: bool = False) -> bool:
+    """提示用户选择是/否。"""
+    suffix = "Y/n" if default else "y/N"
+    while True:
+        value = read_input(f"{message} ({suffix})").strip().lower()
+        if not value:
+            return default
+        if value in {"y", "yes", "是"}:
+            return True
+        if value in {"n", "no", "否"}:
+            return False
+        print("请输入 y 或 n。")
+
+
 def parse_args() -> argparse.Namespace:
     """解析命令行参数。"""
     parser = argparse.ArgumentParser(description="AUTO-MAS 插件脚手架工具")
@@ -336,6 +443,19 @@ def parse_args() -> argparse.Namespace:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--init-git", action="store_true", help="生成后初始化 Git 仓库")
     group.add_argument("--no-git", action="store_true", help="生成后不初始化 Git 仓库")
+    page_group = parser.add_mutually_exclusive_group()
+    page_group.add_argument(
+        "--with-page",
+        action="store_true",
+        default=None,
+        help="生成带 Vue 页面插件（仅支持 --kind plugin）",
+    )
+    page_group.add_argument(
+        "--no-page",
+        action="store_false",
+        dest="with_page",
+        help="生成普通无页面插件",
+    )
     return parser.parse_args()
 
 
@@ -370,6 +490,13 @@ def main() -> int:
     else:
         description = validate_description(args.description or "")
 
+    with_page = bool(args.with_page)
+    if args.with_page is None and interactive and args.kind == "plugin":
+        with_page = prompt_yes_no("是否需要带页面？", default=False)
+    if with_page and args.kind != "plugin":
+        print("生成失败: 带页面模板仅支持普通插件（--kind plugin）")
+        return 1
+
     target_dir = (plugins_dir / plugin_name).resolve()
     parent_in_git_repo = is_inside_git_repo(target_dir.parent)
     init_git = not args.no_git
@@ -378,8 +505,20 @@ def main() -> int:
         init_git = False
         skip_git_reason = "当前环境未检测到 git，已自动跳过初始化"
 
-    preset = TEMPLATE_PRESETS[args.kind]
-    files = build_template_files(plugin_name, description, args.kind)
+    preset = (
+        TemplatePreset(
+            key="plugin-page",
+            label="带页面插件",
+            outputs=PLUGIN_PAGE_TEMPLATE_OUTPUTS,
+        )
+        if with_page
+        else TEMPLATE_PRESETS[args.kind]
+    )
+    files = (
+        build_page_template_files(plugin_name, description, workspace)
+        if with_page
+        else build_template_files(plugin_name, description, args.kind, workspace)
+    )
 
     try:
         target_dir.mkdir(parents=True, exist_ok=False)

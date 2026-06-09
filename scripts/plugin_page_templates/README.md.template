@@ -1,0 +1,28 @@
+# automas_${plugin_name}
+
+[![PyPI version](https://img.shields.io/pypi/v/automas_plugin_${plugin_name}?logo=pypi&logoColor=white)](https://pypi.org/project/automas_plugin_${plugin_name}/)
+
+${description}
+
+这是一个带 Vue 页面插件。
+
+## 开发
+
+开发时复用主程序前端 Vite，不需要给插件单独启动 Vite。
+
+```powershell
+cd ${workspace_dir}/frontend
+yarn web
+```
+
+后端以 `AUTO_MAS_DEV=1` 启动后，会按 `frontend-src/plugin.frontend.dev.json` 直接加载 `frontend-src/src/main.ts`。
+
+## 构建
+
+发布前生成生产前端产物：
+
+```powershell
+npm run build:frontend
+```
+
+生产包只需要携带 `src/${plugin_name}/frontend/manifest.json` 和 `src/${plugin_name}/frontend/dist/*`。
