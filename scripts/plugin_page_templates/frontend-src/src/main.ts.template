@@ -1,0 +1,9 @@
+import { defineCustomElement } from 'vue'
+
+import ${plugin_page_component} from './${plugin_page_component}.ce.vue'
+
+const ${plugin_class_name}Element = defineCustomElement(${plugin_page_component})
+
+if (!customElements.get('${plugin_element_tag}')) {
+  customElements.define('${plugin_element_tag}', ${plugin_class_name}Element)
+}

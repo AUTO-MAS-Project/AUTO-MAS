@@ -1,0 +1,57 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
+
+from .schema import Config
+
+if TYPE_CHECKING:
+    from app.plugins import PluginContext
+
+
+DEFAULT_INSTANCE = {
+    "name": "${plugin_title}",
+    "enabled": True,
+    "config": {
+        "hello": "来自 ${plugin_title} 插件的问候",
+    },
+}
+
+
+class Plugin:
+    """${plugin_title} 带页面插件。"""
+
+    def __init__(self, ctx: "PluginContext") -> None:
+        self.ctx = ctx
+
+    async def on_start(self) -> None:
+        self.ctx.server.http("/hello", self._handle_hello, methods=["GET", "POST"])
+        self.ctx.page.register(
+            id="${plugin_page_id}",
+            path="${plugin_page_path}",
+            title="${plugin_title}",
+            menu_label="${plugin_title}",
+            icon="app",
+            component="PluginPage",
+            renderer="custom-element",
+            frontend_plugin="${plugin_name}",
+            element_tag="${plugin_element_tag}",
+            section="main",
+            order=100,
+        )
+
+    def _handle_hello(self) -> dict[str, Any]:
+        now = datetime.now().astimezone()
+        return {
+            "message": str(self.ctx.config.get("hello", "你好，这里是 ${plugin_title}。")),
+            "plugin": self.ctx.plugin_name,
+            "instance_id": self.ctx.instance_id,
+            "page_path": "${plugin_page_path}",
+            "element_tag": "${plugin_element_tag}",
+            "server_time": now.isoformat(timespec="seconds"),
+        }
+
+    async def on_stop(self, reason: str) -> None:
+        self.ctx.logger.info(
+            "[{}] 插件停止, reason={}".format(self.ctx.plugin_name, reason)
+        )
