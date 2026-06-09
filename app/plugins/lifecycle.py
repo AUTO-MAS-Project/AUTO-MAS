@@ -19,6 +19,8 @@ class PluginLifecycle:
     - 加载器会以反射方式校验方法是否存在且可调用。
     """
 
+    ctx: PluginContext
+
     def __init__(self, ctx: PluginContext) -> None:
         """初始化插件实例。
 
@@ -28,7 +30,7 @@ class PluginLifecycle:
         Returns:
             None: 无返回值。
         """
-        self.ctx = ctx
+        self.ctx: PluginContext = ctx
 
     async def on_load(self, ctx: PluginContext) -> None:
         """生命周期（可选）：代码加载后、启动前。"""

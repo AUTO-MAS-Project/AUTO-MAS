@@ -635,8 +635,10 @@ class ScriptAdapterDefinition:
 class ScriptAdapterPlugin:
     """用于专项适配插件的基类。"""
 
+    ctx: PluginContext
+
     def __init__(self, ctx: PluginContext) -> None:
-        self.ctx = ctx
+        self.ctx: PluginContext = ctx
 
     def build_script_adapters(self) -> Sequence[ScriptAdapterDefinition]:
         return ()
