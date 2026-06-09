@@ -11,6 +11,9 @@ function toAbsoluteUrl(rawUrl: string): string {
   if (/^https?:\/\//i.test(rawUrl)) {
     return rawUrl
   }
+  if (import.meta.env.DEV && rawUrl.startsWith('/@fs/')) {
+    return `${window.location.origin}${rawUrl}`
+  }
   const base = (OpenAPI.BASE || 'http://localhost:36163').replace(/\/+$/, '')
   const path = rawUrl.startsWith('/') ? rawUrl : `/${rawUrl}`
   return `${base}${path}`
@@ -39,7 +42,7 @@ function loadEntryScript(url: string, cacheKey: string): Promise<void> {
     script.onerror = () => {
       reject(
         new Error(
-          `插件前端入口脚本加载失败: ${url}。如果这是 Vite 开发入口，请确认插件前端开发服务正在运行。`,
+          `插件前端入口脚本加载失败: ${url}。如果这是开发入口，请确认主前端 Vite 正在运行，且 vite.config.ts 允许访问插件源码目录。`,
         ),
       )
     }
@@ -96,7 +99,10 @@ export async function ensurePluginFrontendPage(page: PageDeclaration): Promise<v
     ensureStyle(toAbsoluteUrl(styleUrl))
   }
 
-  const isDevEntry = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|::1)(:|\/)/i.test(entryUrl)
+  const isDevEntry =
+    import.meta.env.DEV &&
+    (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|::1)(:|\/)/i.test(entryUrl) ||
+      entryUrl.includes('/@fs/'))
   const cacheKey = isDevEntry
     ? `${page.frontend_plugin}:dev:${entryUrl}`
     : `${page.frontend_plugin}:${page.manifest_version || 0}:${entryUrl}`
