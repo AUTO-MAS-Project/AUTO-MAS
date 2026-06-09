@@ -163,7 +163,7 @@
                 <template #label>
                   <span class="form-label">
                     游戏根目录
-                    <span class="label-hint">选择 <strong>Wuthering Waves Game</strong> 文件夹，自动匹配客户端 exe</span>
+                    <span class="label-hint">选择 <strong>Wuthering Waves Game</strong> 文件夹，自动匹配 Client-Win64-Shipping.exe</span>
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">
