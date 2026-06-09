@@ -315,7 +315,7 @@ import type { OkwwUserConfig } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import WebhookManager from '@/components/WebhookManager.vue'
-import OkwwConfigEditor from '@/views/M9AUserEdit/OkwwConfigEditor.vue'
+import OkwwConfigEditor from '@/views/OkwwUserEdit/OkwwConfigEditor.vue'
 
 const logger = window.electronAPI.getLogger('ok-ww用户编辑')
 const route = useRoute()
