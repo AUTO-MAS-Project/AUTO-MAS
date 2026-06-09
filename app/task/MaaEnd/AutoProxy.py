@@ -477,7 +477,7 @@ class AutoProxyTask(TaskExecuteBase):
                     task_definition["label"].lstrip("$")
                 )
                 if locale_text is None:
-                    continue
+                    raise RuntimeError("MaaEnd 文件不完整，卸载后重新安装MaaEnd")
                 maaend_i18n[task_definition["name"]] = locale_text
             else:
                 maaend_i18n[task_definition["name"]] = task_definition["label"]
