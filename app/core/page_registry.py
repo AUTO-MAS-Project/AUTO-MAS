@@ -252,9 +252,48 @@ class PageFacade:
         self._frontend_plugin = str(plugin_name or "").strip() or None
         self._registry = registry
 
-    def register(self, **kwargs: Any) -> PageDeclaration:
+    def register(
+        self,
+        *,
+        id: str,
+        path: str,
+        title: str,
+        menu_label: str,
+        icon: str = "app",
+        component: str = "PluginPage",
+        renderer: PageRenderer = "component",
+        url: str | None = None,
+        frontend_plugin: str | None = None,
+        element_tag: str | None = None,
+        entry_asset_url: str | None = None,
+        style_asset_urls: list[str] | None = None,
+        manifest_version: int | None = None,
+        section: PageSection = "main",
+        order: int = 1000,
+        visible: bool = True,
+        dev_only: bool = False,
+    ) -> PageDeclaration:
+        """Register a frontend page exposed by the current plugin."""
         return self._registry.register(
-            kwargs,
+            {
+                "id": id,
+                "path": path,
+                "title": title,
+                "menu_label": menu_label,
+                "icon": icon,
+                "component": component,
+                "renderer": renderer,
+                "url": url,
+                "frontend_plugin": frontend_plugin,
+                "element_tag": element_tag,
+                "entry_asset_url": entry_asset_url,
+                "style_asset_urls": style_asset_urls or [],
+                "manifest_version": manifest_version,
+                "section": section,
+                "order": order,
+                "visible": visible,
+                "dev_only": dev_only,
+            },
             source=self._source,
             frontend_plugin=self._frontend_plugin,
         )

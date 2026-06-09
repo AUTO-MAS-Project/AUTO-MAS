@@ -20,6 +20,7 @@ from .server import PluginServerFacade, PluginServerRegistry, plugin_server
 
 if TYPE_CHECKING:
     from loguru import Logger
+    from app.core.page_registry import PageFacade
 
 class PluginContext:
     """面向插件的上下文对象，公开受控的 MAS 功能。"""
@@ -35,7 +36,7 @@ class PluginContext:
     runtime: RuntimeFacade
     cache: PluginCacheManager
     log: LogFacade
-    page: Any
+    page: PageFacade
 
     def __init__(
         self,

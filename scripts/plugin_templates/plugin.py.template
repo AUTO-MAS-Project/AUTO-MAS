@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from .schema import Config
-
-if TYPE_CHECKING:
-    from app.plugins import PluginContext
+from ._automas_typing import PluginContext
 
 
 class Plugin:
-    def __init__(self, ctx: "PluginContext") -> None:
-        self.ctx = ctx
+    ctx: PluginContext
+
+    def __init__(self, ctx: PluginContext) -> None:
+        self.ctx: PluginContext = ctx
 
     async def on_start(self) -> None:
         # 从此处开始
