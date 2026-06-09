@@ -473,9 +473,12 @@ class AutoProxyTask(TaskExecuteBase):
                 task_definition_file.read_text(encoding="utf-8")
             )["task"][0]
             if task_definition["label"].startswith("$"):
-                maaend_i18n[task_definition["name"]] = maaend_i18n_raw[
+                locale_text = maaend_i18n_raw.get(
                     task_definition["label"].lstrip("$")
-                ]
+                )
+                if locale_text is None:
+                    continue
+                maaend_i18n[task_definition["name"]] = locale_text
             else:
                 maaend_i18n[task_definition["name"]] = task_definition["label"]
 
