@@ -281,10 +281,10 @@ const saveAll = async (silent = true) => {
   saving.value = true
   try {
     const configsToUpdate = { ...localChanges.value }
-    const resp = await OkwwService.batchUpdateOkwwConfigsApiScriptsOkwwConfigsBatchUpdatePost(
-      props.scriptId,
-      configsToUpdate
-    )
+    const resp = await OkwwService.batchUpdateOkwwConfigsApiScriptsOkwwConfigsBatchUpdatePost({
+      script_id: props.scriptId,
+      configs: configsToUpdate
+    })
     if (resp?.code === 200) {
       // 更新本地数据
       for (const [filename, data] of Object.entries(configsToUpdate)) {
