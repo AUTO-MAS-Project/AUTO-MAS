@@ -156,7 +156,7 @@
         <a-form-item>
           <template #label>
             <span class="form-label">
-              启用快速配置
+              接管具体任务配置
               <a-tooltip
                 title="开启后运行前会用本页高频配置项覆盖 MaaEnd 任务；关闭后直接运行配置文件内的完整任务配置"
               >
