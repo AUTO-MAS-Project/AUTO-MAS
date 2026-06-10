@@ -348,8 +348,8 @@ const okwwConfig = reactive<OkwwConfig>({
     LogTimeStart: 1,
     LogTimeEnd: 23,
     LogTimeFormat: '%Y-%m-%d %H:%M:%S,%f',
-    SuccessLog: '任务执行完成 | task completed',
-    ErrorLog: 'connected:False|游戏更新成功, 游戏即将重启|错误',
+    SuccessLog: '',
+    ErrorLog: '',
   },
   Game: {
     Enabled: false,
