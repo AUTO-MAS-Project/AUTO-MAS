@@ -50,7 +50,7 @@ _OKWW_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
 )
 
 # prepare 中 ErrorLog 经清洗后为空时回退（与 OkwwConfig 默认串一致）
-_DEFAULT_OKWW_ERROR_LOG = "connected:False|游戏更新成功, 游戏即将重启|错误"
+_DEFAULT_OKWW_ERROR_LOG = "connected:False|游戏更新成功, 游戏即将重启|info_set 错误"
 
 
 def _split_args(raw: object) -> list[str]:
