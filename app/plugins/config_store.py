@@ -327,16 +327,26 @@ class PluginConfigStore:
         changed = False
         normalized_defaults = default_instances or {}
         for plugin_name, default_instance in normalized_defaults.items():
-            if plugin_name in existing_plugins:
-                continue
             if not isinstance(default_instance, dict):
                 raise ValueError(f"插件 {plugin_name} 的默认实例声明必须是对象")
+
+            is_system = bool(default_instance.get("system") or default_instance.get("locked"))
+            if plugin_name in existing_plugins:
+                if is_system:
+                    for item in instances:
+                        if not isinstance(item, dict) or item.get("plugin") != plugin_name:
+                            continue
+                        if item.get("enabled") is not True:
+                            item["enabled"] = True
+                            changed = True
+                continue
 
             name = str(
                 default_instance.get("name") or f"{plugin_name} 默认实例"
             ).strip()
             enabled = default_instance.get("enabled", True)
             config = default_instance.get("config", {})
+            instance_id = default_instance.get("id")
 
             if not isinstance(enabled, bool):
                 raise ValueError(f"插件 {plugin_name} 的默认实例 enabled 必须为布尔值")
@@ -345,9 +355,9 @@ class PluginConfigStore:
 
             instances.append(
                 {
-                    "id": self.generate_instance_id(plugin_name),
+                    "id": str(instance_id or self.generate_instance_id(plugin_name)),
                     "plugin": plugin_name,
-                    "enabled": enabled,
+                    "enabled": True if is_system else enabled,
                     "name": name or f"{plugin_name} 默认实例",
                     "config": copy.deepcopy(config),
                 }

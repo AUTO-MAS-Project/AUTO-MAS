@@ -85,12 +85,13 @@
                       <span class="instance-name">
                         {{ element.name || element.id }}
                       </span>
+                      <a-tag v-if="element.system" color="blue" class="system-tag">系统</a-tag>
                       <a-switch
                         class="instance-switch"
                         size="small"
-                        :checked="element.enabled"
+                        :checked="getInstanceSwitchChecked(element)"
                         :loading="togglingInstanceId === element.id"
-                        :disabled="togglingInstanceId === element.id"
+                        :disabled="element.locked || togglingInstanceId === element.id"
                         @update:checked="(val: boolean) => toggleInstanceEnabled(element, val)"
                         @click.stop
                       />
@@ -134,8 +135,12 @@
                   卸载插件
                 </a-button>
               </a-popconfirm>
-              <a-popconfirm title="确认删除该实例？" @confirm="deleteInstance(editForm.instanceId)">
-                <a-button danger>删除实例</a-button>
+              <a-popconfirm
+                title="确认删除该实例？"
+                :disabled="Boolean(selectedInstance?.locked)"
+                @confirm="deleteInstance(editForm.instanceId)"
+              >
+                <a-button danger :disabled="Boolean(selectedInstance?.locked)">删除实例</a-button>
               </a-popconfirm>
             </a-space>
           </template>
@@ -422,6 +427,9 @@ interface PluginInstance {
   enabled: boolean
   name: string
   config: Record<string, unknown>
+  system?: boolean
+  locked?: boolean
+  visible?: boolean
 }
 
 interface PluginSchemaField {
@@ -803,7 +811,9 @@ const selectedPluginPackage = computed(() => {
 })
 
 const selectedPluginPackageName = computed(() => selectedPluginPackage.value?.package || '')
-const canUninstallSelectedPlugin = computed(() => Boolean(selectedPluginPackageName.value))
+const canUninstallSelectedPlugin = computed(
+  () => Boolean(selectedPluginPackageName.value) && !selectedInstance.value?.locked
+)
 
 const hasServiceListItems = (items?: string[]) => Array.isArray(items) && items.length > 0
 
@@ -969,16 +979,22 @@ const pluginInstanceCountMap = computed(() => {
   return counts
 })
 
+const systemPluginNames = computed(
+  () => new Set(instances.value.filter(item => item.system).map(item => item.plugin))
+)
+
 const discoveredPluginOptions = computed<DiscoveredPluginOption[]>(() =>
-  sortedDiscoveredPlugins.value.map(name => ({
-    name,
-    instanceCount: pluginInstanceCountMap.value[name] || 0,
-    serviceCount: getPluginServiceCount(name),
-    routeCount: getPluginRouteCount(name),
-    schemaError: schemaErrors.value[name] || '',
-    description: buildPluginOptionDescription(name),
-    searchText: buildPluginSearchText(name),
-  }))
+  sortedDiscoveredPlugins.value
+    .filter(name => !systemPluginNames.value.has(name))
+    .map(name => ({
+      name,
+      instanceCount: pluginInstanceCountMap.value[name] || 0,
+      serviceCount: getPluginServiceCount(name),
+      routeCount: getPluginRouteCount(name),
+      schemaError: schemaErrors.value[name] || '',
+      description: buildPluginOptionDescription(name),
+      searchText: buildPluginSearchText(name),
+    }))
 )
 
 const filteredDiscoveredPluginOptions = computed(() => {
@@ -2319,7 +2335,7 @@ const fetchData = async () => {
 }
 
 const openAddModal = () => {
-  addForm.plugin = sortedDiscoveredPlugins.value[0] || ''
+  addForm.plugin = discoveredPluginOptions.value[0]?.name || ''
   addForm.name = ''
   addForm.enabled = true
   addPluginKeyword.value = ''
@@ -2426,6 +2442,11 @@ const submitEdit = async () => {
 }
 
 const deleteInstance = async (instanceId: string) => {
+  const target = instances.value.find(item => item.id === instanceId)
+  if (target?.locked) {
+    message.info('系统插件不可删除')
+    return
+  }
   try {
     const data = await requestPluginAction<any>('plugins.delete', '/api/plugins/delete', {
       instanceId,
@@ -2498,6 +2519,10 @@ const reloadPlugin = async (plugin: string) => {
 }
 
 const uninstallPluginPackage = async (plugin: string) => {
+  if (selectedInstance.value?.locked) {
+    message.info('系统插件不可卸载')
+    return
+  }
   const packageName = pluginPackages.value[plugin]?.package || ''
   if (!packageName) {
     message.warning('当前插件缺少安装包信息，无法卸载')
@@ -2524,6 +2549,10 @@ const uninstallPluginPackage = async (plugin: string) => {
 }
 
 const toggleInstanceEnabled = async (instance: PluginInstance, enabled: boolean) => {
+  if (instance.locked) {
+    message.info('系统插件不可禁用')
+    return
+  }
   togglingInstanceId.value = instance.id
   try {
     const data = await requestPluginAction<any>('plugins.update', '/api/plugins/update', {
@@ -2874,6 +2903,11 @@ onUnmounted(() => {
 .instance-switch {
   flex: 0 0 auto;
   margin-left: auto;
+}
+
+.system-tag {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
 }
 
 .runtime-observer-card {
