@@ -2101,7 +2101,7 @@ class OkwwConfig(ConfigBase):
         self.Script_ErrorLog = ConfigItem(
             "Script",
             "ErrorLog",
-            "connected:False|游戏更新成功, 游戏即将重启|错误",
+            "connected:False|游戏更新成功, 游戏即将重启|info_set 错误",
         )
 
         ## Game ------------------------------------------------------------
