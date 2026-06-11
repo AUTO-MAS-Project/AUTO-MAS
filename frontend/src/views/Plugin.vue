@@ -2775,7 +2775,10 @@ onUnmounted(() => {
   padding: 8px 10px;
   margin-bottom: 6px;
   cursor: pointer;
-  background: var(--ant-color-bg-container);
+  background: var(
+    --app-background-panel-bg,
+    var(--app-background-card-bg, var(--ant-color-bg-container))
+  );
   transition: all 0.2s ease;
   outline: none;
 }
@@ -2791,8 +2794,15 @@ onUnmounted(() => {
   border-color: var(--ant-color-primary);
   background: linear-gradient(
     135deg,
-    var(--ant-color-primary-bg),
-    color-mix(in srgb, var(--ant-color-primary-bg) 80%, white)
+    color-mix(in srgb, var(--ant-color-primary-bg) 82%, transparent),
+    color-mix(
+      in srgb,
+      var(
+        --app-background-panel-bg,
+        var(--app-background-card-bg, var(--ant-color-bg-container))
+      ) 72%,
+      var(--ant-color-primary-bg)
+    )
   );
   box-shadow: 0 4px 16px color-mix(in srgb, var(--ant-color-primary) 12%, transparent);
 }
@@ -2955,7 +2965,10 @@ onUnmounted(() => {
   border-color: var(--ant-color-border-secondary);
   background: color-mix(
     in srgb,
-    var(--ant-color-bg-container) 96%,
+    var(
+      --app-background-panel-bg,
+      var(--app-background-card-bg, var(--ant-color-bg-container))
+    ) 96%,
     var(--ant-color-fill-quaternary)
   );
 }
@@ -2990,7 +3003,10 @@ onUnmounted(() => {
   padding: 14px 16px;
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
-  background: var(--ant-color-bg-container);
+  background: var(
+    --app-background-panel-bg,
+    var(--app-background-card-bg, var(--ant-color-bg-container))
+  );
 }
 
 .schema-item :deep(.ant-form-item-label) {
@@ -3022,6 +3038,10 @@ onUnmounted(() => {
 
 .detail-card :deep(.ant-alert) {
   border-radius: 10px;
+  background: var(
+    --app-background-panel-bg,
+    var(--app-background-card-bg, var(--ant-color-bg-container))
+  );
 }
 
 .detail-card :deep(.ant-form-item) {
@@ -3035,6 +3055,10 @@ onUnmounted(() => {
 
 .detail-card :deep(.ant-card-small > .ant-card-body) {
   padding: 14px;
+  background: var(
+    --app-background-panel-bg,
+    var(--app-background-card-bg, var(--ant-color-bg-container))
+  );
 }
 
 .add-plugin-modal-body {
@@ -3125,7 +3149,10 @@ onUnmounted(() => {
   border-radius: 10px;
   padding: 11px 12px 10px;
   text-align: left;
-  background: var(--ant-color-bg-container);
+  background: var(
+    --app-background-panel-bg,
+    var(--app-background-card-bg, var(--ant-color-bg-container))
+  );
   cursor: pointer;
   transition:
     border-color 0.2s ease,
@@ -3143,8 +3170,15 @@ onUnmounted(() => {
   border-color: var(--ant-color-primary);
   background: linear-gradient(
     135deg,
-    var(--ant-color-primary-bg),
-    color-mix(in srgb, var(--ant-color-primary-bg) 82%, white)
+    color-mix(in srgb, var(--ant-color-primary-bg) 82%, transparent),
+    color-mix(
+      in srgb,
+      var(
+        --app-background-panel-bg,
+        var(--app-background-card-bg, var(--ant-color-bg-container))
+      ) 72%,
+      var(--ant-color-primary-bg)
+    )
   );
   box-shadow: 0 8px 22px color-mix(in srgb, var(--ant-color-primary) 14%, transparent);
 }
@@ -3207,6 +3241,7 @@ onUnmounted(() => {
 .add-plugin-side-card {
   border-color: var(--ant-color-border-secondary);
   border-radius: 10px;
+  background: var(--app-background-card-elevated-bg, var(--ant-color-bg-container));
 }
 
 .add-plugin-side-card :deep(.ant-card-body) {

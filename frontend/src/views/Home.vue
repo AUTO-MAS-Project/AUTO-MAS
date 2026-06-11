@@ -551,7 +551,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   padding: 16px;
-  background: var(--ant-color-bg-container);
+  background: var(--app-background-panel-bg, var(--ant-color-bg-container));
   border: 1px solid var(--ant-color-border);
   border-radius: 8px;
   transition: all 0.2s ease;
@@ -576,7 +576,7 @@ onMounted(() => {
 .activity-info {
   margin-bottom: 24px;
   padding: 16px;
-  background: var(--ant-color-bg-container);
+  background: var(--app-background-panel-bg, var(--ant-color-bg-container));
   border: 1px solid var(--ant-color-border);
   border-radius: 8px;
 }
@@ -700,7 +700,7 @@ onMounted(() => {
 
 .proxy-list .proxy-item {
   padding: 16px;
-  background: var(--ant-color-bg-container);
+  background: var(--app-background-panel-bg, var(--ant-color-bg-container));
   border: 1px solid var(--ant-color-border);
   border-radius: 8px;
   margin-bottom: 16px;

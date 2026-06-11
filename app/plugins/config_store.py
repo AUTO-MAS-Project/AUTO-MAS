@@ -69,6 +69,26 @@ class PluginConfigStore:
             return base_path
         return plugins_root / raw_name
 
+    def _normalize_path_text(self, value: Any) -> str:
+        text = str(value or "").strip()
+        if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
+            text = text[1:-1].strip()
+        return text
+
+    def _normalize_background_config(self, raw_config: Dict[str, Any]) -> Dict[str, Any]:
+        config = copy.deepcopy(raw_config)
+        image_path = self._normalize_path_text(config.get("image_path"))
+        local_path = self._normalize_path_text(config.get("local_path"))
+
+        if not image_path and local_path:
+            image_path = local_path
+        if image_path:
+            config["image_path"] = image_path
+
+        for legacy_key in ("source", "builtin_name", "local_path"):
+            config.pop(legacy_key, None)
+        return config
+
     async def _read_root(self) -> Dict[str, Any]:
         """从插件独立配置读取统一配置根对象。"""
         from app.core import Config
@@ -95,6 +115,8 @@ class PluginConfigStore:
 
             if not plugin_name:
                 continue
+
+            config = self.normalize_raw_config(plugin_name, config)
 
             instances.append(
                 {
@@ -473,7 +495,10 @@ class PluginConfigStore:
         """
         if not isinstance(raw_config, dict):
             raise ValueError(f"插件配置必须是对象: {plugin_name}")
-        return copy.deepcopy(raw_config)
+        normalized = copy.deepcopy(raw_config)
+        if str(plugin_name or "").split("@", 1)[0] == "background":
+            normalized = self._normalize_background_config(normalized)
+        return normalized
 
     def load_schema(
         self, plugin_name: str, plugin_path: Path | None
