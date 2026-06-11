@@ -8,7 +8,7 @@ version = "0.0.1"
 description = "${description_escaped}"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
-dependencies = ["pydantic>=2.0"]
+dependencies = ["pydantic>=2.0", "auto-mas-core>=5.2.0"]
 
 [project.entry-points."auto_mas.plugins"]
 ${plugin_name} = "${plugin_name}.plugin:Plugin"
