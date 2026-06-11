@@ -500,7 +500,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
@@ -563,6 +563,8 @@ const showSRCConfigMask = ref(false) // 控制SRC配置遮罩层的显示
 const showMaaEndConfigMask = ref(false) // 控制MaaEnd配置遮罩层的显示
 const showOkwwConfigMask = ref(false) // 控制ok-ww配置遮罩层的显示
 const currentConfigScript = ref<Script | null>(null) // 当前正在配置的脚本
+const taskCompletionSubscriptionId = ref<string | null>(null)
+let refreshTimer: number | null = null
 
 // WebSocket连接管理
 const activeConnections = ref<Map<string, { subscriptionId: string; websocketId: string }>>(
@@ -624,9 +626,58 @@ watch(filteredTemplates, filtered => {
   }
 })
 
+const refreshScriptsData = async (reason: string) => {
+  logger.info(`刷新脚本管理数据: ${reason}`)
+  await Promise.all([loadScripts(), loadCurrentPlan()])
+}
+
+const scheduleRefreshScriptsData = (reason: string) => {
+  if (refreshTimer !== null) {
+    window.clearTimeout(refreshTimer)
+  }
+
+  refreshTimer = window.setTimeout(() => {
+    refreshTimer = null
+    void refreshScriptsData(reason)
+  }, 300)
+}
+
+const handleWindowFocus = () => {
+  scheduleRefreshScriptsData('窗口重新获得焦点')
+}
+
+const handleVisibilityChange = () => {
+  if (!document.hidden) {
+    scheduleRefreshScriptsData('页面重新可见')
+  }
+}
+
 onMounted(() => {
-  loadScripts()
-  loadCurrentPlan()
+  void refreshScriptsData('页面挂载')
+
+  taskCompletionSubscriptionId.value = subscribe({ type: 'Signal' }, wsMessage => {
+    if (wsMessage.data && wsMessage.data.Accomplish !== undefined) {
+      scheduleRefreshScriptsData('任务完成信号')
+    }
+  })
+
+  window.addEventListener('focus', handleWindowFocus)
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+})
+
+onBeforeUnmount(() => {
+  if (taskCompletionSubscriptionId.value) {
+    unsubscribe(taskCompletionSubscriptionId.value)
+    taskCompletionSubscriptionId.value = null
+  }
+
+  if (refreshTimer !== null) {
+    window.clearTimeout(refreshTimer)
+    refreshTimer = null
+  }
+
+  window.removeEventListener('focus', handleWindowFocus)
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 
 const loadScripts = async () => {
