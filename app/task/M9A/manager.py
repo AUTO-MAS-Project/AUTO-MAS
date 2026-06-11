@@ -34,7 +34,7 @@ from app.models.config import M9AConfig, M9AUserConfig
 from app.services import Notify, System
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
-from .tools import push_notification
+from .tools import push_notification, push_version_update
 from .AutoProxy import AutoProxyTask
 
 
@@ -369,14 +369,17 @@ class M9AManager(TaskExecuteBase):
                 logger.exception(f"版本更新桌面通知发送失败: {e}")
 
             update_result = {
-                "start_time": datetime.now().strftime("%H:%M:%S"),
-                "end_time": datetime.now().strftime("%H:%M:%S"),
+                "title": update_title,
+                "script_name": self.script_info.name or "空白",
+                "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "completed_count": 1,
                 "uncompleted_count": 0,
                 "result": update_message,
             }
+            # 版本更新通知为系统事件，不经过 SendTaskResultTime 过滤器，始终推送
             try:
-                await push_notification("代理结果", update_title, update_result, None)
+                await push_version_update(update_title, update_result)
                 logger.info(f"已发送版本更新通知: {update_message}")
             except Exception as e:
                 logger.exception(f"版本更新通知发送失败: {e}")
@@ -407,15 +410,19 @@ class M9AManager(TaskExecuteBase):
             except Exception as e:
                 logger.exception(f"版本更新失败桌面通知发送失败: {e}")
 
+            fail_message = f"更新失败（{virtual_status}），当前版本: v{self._virtual_user_old_version}"
             fail_result = {
-                "start_time": datetime.now().strftime("%H:%M:%S"),
-                "end_time": datetime.now().strftime("%H:%M:%S"),
+                "title": fail_title,
+                "script_name": self.script_info.name or "空白",
+                "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "completed_count": 0,
                 "uncompleted_count": 1,
-                "result": f"更新失败（{virtual_status}），当前版本: v{self._virtual_user_old_version}",
+                "result": fail_message,
             }
+            # 版本更新失败通知为系统事件，不经过 SendTaskResultTime 过滤器，始终推送
             try:
-                await push_notification("代理结果", fail_title, fail_result, None)
+                await push_version_update(fail_title, fail_result)
             except Exception as e:
                 logger.exception(f"版本更新失败通知发送失败: {e}")
             logger.warning(f"M9A 自动更新失败: {virtual_status}（完整原因: {full_reason}）")
