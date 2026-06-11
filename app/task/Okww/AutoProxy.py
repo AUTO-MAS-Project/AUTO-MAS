@@ -110,10 +110,6 @@ class AutoProxyTask(TaskExecuteBase):
         if (
             self.script_config.get("Game", "Enabled")
             and self.script_config.get("Game", "Type") == "Client"
-            and (
-                self.script_config.get("Game", "LaunchBeforeTask")
-                or self.script_config.get("Game", "CloseOnFinish")
-            )
             and not Path(self.script_config.get("Game", "Path")).is_file()
         ):
             return "请设置鸣潮游戏路径"
