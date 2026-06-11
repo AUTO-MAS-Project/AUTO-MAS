@@ -15,6 +15,7 @@
   ],
   "extraPaths": [
     ".",
+    "plugins/auto_mas_core/src",
     "plugins/pypi/site-packages"
   ],
   "venvPath": ".",
@@ -39,6 +40,7 @@
       "root": "plugins",
       "extraPaths": [
         ".",
+        "plugins/auto_mas_core/src",
         "plugins/pypi/site-packages"
       ],
       "reportMissingImports": true,
