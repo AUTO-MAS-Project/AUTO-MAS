@@ -25,6 +25,7 @@ from .realtime import publish_runtime_record
 from .service_registry import ServiceRegistry
 from .service_spec import ServiceSpec
 from .server import plugin_server
+from .system import get_system_plugin_spec
 from .pypi_site import (
     ensure_pypi_site_packages_on_syspath,
     iter_plugin_entry_points,
@@ -90,6 +91,9 @@ class PluginLoader:
         module_name: Optional[str] = None
         distribution: Optional[str] = None
         version: Optional[str] = None
+        system: bool = False
+        locked: bool = False
+        visible: bool = True
 
     def __init__(
         self,
@@ -145,14 +149,18 @@ class PluginLoader:
             distribution = getattr(dist, "name", None)
             version = getattr(dist, "version", None)
             editable_path = resolve_entry_point_editable_project_path(ep)
+            system_spec = get_system_plugin_spec(plugin_name)
 
             discovered[plugin_name] = self.PluginSource(
                 source="pypi",
                 path=editable_path,
                 entry_point=ep,
                 module_name=getattr(ep, "module", None),
-                distribution=distribution,
+                distribution=system_spec.distribution_name if system_spec else distribution,
                 version=version,
+                system=system_spec is not None,
+                locked=system_spec is not None,
+                visible=system_spec.visible if system_spec else True,
             )
 
         self.discovered_plugins = discovered
