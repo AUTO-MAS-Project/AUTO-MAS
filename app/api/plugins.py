@@ -179,13 +179,15 @@ class PluginFrontendBackgroundOut(OutBase):
     opacity: int = Field(default=100, description="图片透明度百分比")
     overlay_opacity: int = Field(default=0, description="遮罩透明度百分比")
     card_opacity: int = Field(default=92, description="卡片透明度百分比")
+    panel_opacity: int = Field(default=92, description="面板透明度百分比")
+    elevated_opacity: int = Field(default=92, description="浮层透明度百分比")
+    sider_opacity: int = Field(default=88, description="侧边栏透明度百分比")
     position: str = Field(default="center", description="背景位置")
     fit: str = Field(default="cover", description="背景填充方式")
 
 
 BACKGROUND_SERVICE_NAME = "frontend_background"
 BACKGROUND_ALLOWED_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
-BACKGROUND_PLUGIN_ASSET_DIR = Path.cwd() / "plugins" / "background" / "assets"
 
 
 def _clamp_int(raw: Any, default: int, low: int, high: int) -> int:
@@ -207,10 +209,6 @@ def _normalize_background_payload(raw: Any) -> Dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
 
-    source = str(raw.get("source") or "builtin").strip().lower()
-    if source not in {"builtin", "local"}:
-        source = "builtin"
-
     position = str(raw.get("position") or "center").strip().lower()
     if position not in {"center", "top", "bottom"}:
         position = "center"
@@ -220,14 +218,19 @@ def _normalize_background_payload(raw: Any) -> Dict[str, Any] | None:
         fit = "cover"
 
     return {
-        "source": source,
-        "builtin_name": str(raw.get("builtin_name") or "default-background.jpg").strip(),
-        "local_path": _strip_wrapping_quotes(raw.get("local_path")),
+        "image_path": _strip_wrapping_quotes(raw.get("image_path") or raw.get("local_path")),
         "blur_px": _clamp_int(raw.get("blur_px"), 8, 0, 40),
         "brightness": _clamp_int(raw.get("brightness"), 85, 20, 160),
         "opacity": _clamp_int(raw.get("opacity"), 100, 0, 100),
         "overlay_opacity": _clamp_int(raw.get("overlay_opacity"), 35, 0, 90),
         "card_opacity": _clamp_int(raw.get("card_opacity"), 92, 0, 100),
+        "panel_opacity": _clamp_int(
+            raw.get("panel_opacity", raw.get("card_opacity")), 92, 0, 100
+        ),
+        "elevated_opacity": _clamp_int(
+            raw.get("elevated_opacity", raw.get("card_opacity")), 92, 0, 100
+        ),
+        "sider_opacity": _clamp_int(raw.get("sider_opacity"), 88, 0, 100),
         "position": position,
         "fit": fit,
     }
@@ -238,22 +241,13 @@ def _is_safe_image_path(path: Path) -> bool:
 
 
 def _resolve_background_image_path(payload: Dict[str, Any]) -> Path | None:
-    source = payload.get("source")
-    if source == "local":
-        local_path = str(payload.get("local_path") or "").strip()
-        if not local_path:
-            return None
-        candidate = Path(local_path).expanduser()
-        if not candidate.is_absolute():
-            candidate = Path.cwd() / candidate
-        candidate = candidate.resolve()
-        return candidate if _is_safe_image_path(candidate) else None
-
-    asset_dir = BACKGROUND_PLUGIN_ASSET_DIR.resolve()
-    filename = Path(str(payload.get("builtin_name") or "default-background.jpg")).name
-    candidate = (asset_dir / filename).resolve()
-    if candidate != asset_dir and asset_dir not in candidate.parents:
+    image_path = str(payload.get("image_path") or "").strip()
+    if not image_path:
         return None
+    candidate = Path(image_path).expanduser()
+    if not candidate.is_absolute():
+        candidate = Path.cwd() / candidate
+    candidate = candidate.resolve()
     return candidate if _is_safe_image_path(candidate) else None
 
 
@@ -500,6 +494,9 @@ async def get_frontend_background() -> PluginFrontendBackgroundOut:
         opacity=payload["opacity"],
         overlay_opacity=payload["overlay_opacity"],
         card_opacity=payload["card_opacity"],
+        panel_opacity=payload["panel_opacity"],
+        elevated_opacity=payload["elevated_opacity"],
+        sider_opacity=payload["sider_opacity"],
         position=payload["position"],
         fit=payload["fit"],
     )

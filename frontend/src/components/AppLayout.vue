@@ -88,7 +88,6 @@ import { useTheme } from '../composables/useTheme.ts'
 import { useRouteLock } from '../composables/useRouteLock.ts'
 import { useAppBackground } from '../composables/useAppBackground.ts'
 import { useWebSocket, type WebSocketBaseMessage } from '../composables/useWebSocket.ts'
-import { OpenAPI } from '@/api'
 import {
   FALLBACK_PAGE_DECLARATIONS,
   normalizePageDeclarations,
@@ -112,9 +111,11 @@ const {
 const { subscribe, unsubscribe } = useWebSocket()
 
 let backgroundSubscriptionId = ''
-let backgroundRefreshTimer: ReturnType<typeof window.setTimeout> | undefined
 let hmrOverlayTimer: ReturnType<typeof window.setTimeout> | undefined
+let backgroundServiceSignature = ''
+let hasBackgroundServiceSnapshot = false
 const HMR_SOFT_RELOAD_FLAG = 'auto-mas-hmr-soft-reload'
+const BACKGROUND_SERVICE_NAME = 'frontend_background'
 const hmrOverlayVisible = ref(false)
 const declaredPages = ref<PageDeclaration[]>(FALLBACK_PAGE_DECLARATIONS)
 const hmrOverlayText = ref('正在重载插件界面')
@@ -126,10 +127,6 @@ onMounted(() => {
     showHmrOverlay('插件界面已刷新', 800)
   }
   backgroundSubscriptionId = subscribe({ id: 'PluginSystem' }, handlePluginSystemMessage)
-  backgroundRefreshTimer = window.setTimeout(() => {
-    void loadBackground()
-    void fetchPageDeclarations()
-  }, 1500)
   syncDeclaredPageRoutes(router, declaredPages.value)
 })
 
@@ -137,10 +134,6 @@ onUnmounted(() => {
   if (backgroundSubscriptionId) {
     unsubscribe(backgroundSubscriptionId)
     backgroundSubscriptionId = ''
-  }
-  if (backgroundRefreshTimer !== undefined) {
-    window.clearTimeout(backgroundRefreshTimer)
-    backgroundRefreshTimer = undefined
   }
   if (hmrOverlayTimer !== undefined) {
     window.clearTimeout(hmrOverlayTimer)
@@ -171,6 +164,13 @@ interface PluginSystemHmrMessage {
 interface PluginSystemSnapshotMessage {
   kind?: string
   pages?: PageDeclaration[]
+  instances?: Array<{
+    id?: string
+    plugin?: string
+    enabled?: boolean
+    config?: Record<string, unknown>
+  }>
+  plugin_services?: Record<string, { provides?: string[] }>
 }
 
 const applyPageDeclarations = (rawPages: unknown) => {
@@ -179,32 +179,52 @@ const applyPageDeclarations = (rawPages: unknown) => {
   syncDeclaredPageRoutes(router, declaredPages.value)
 }
 
-const fetchPageDeclarations = async () => {
-  const base = OpenAPI.BASE || 'http://localhost:36163'
-  try {
-    const response = await fetch(`${base.replace(/\/+$/, '')}/api/plugins/get`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
-    })
-    if (!response.ok) {
-      return
-    }
-    const data = await response.json()
-    applyPageDeclarations(data?.pages)
-  } catch {
-    // 后端未就绪时继续使用本地 fallback 页面声明。
-  }
+const getBackgroundProviderPlugins = (payload: PluginSystemSnapshotMessage) => {
+  const services = payload.plugin_services || {}
+  return new Set(
+    Object.entries(services)
+      .filter(
+        ([, service]) =>
+          Array.isArray(service?.provides) && service.provides.includes(BACKGROUND_SERVICE_NAME)
+      )
+      .map(([plugin]) => plugin)
+  )
 }
 
-const isBackgroundHmr = (payload: PluginSystemHmrMessage) => {
-  if (payload.plugin === 'background') {
-    return true
+const buildBackgroundServiceSignature = (payload: PluginSystemSnapshotMessage) => {
+  const providers = getBackgroundProviderPlugins(payload)
+  if (providers.size === 0) {
+    return ''
   }
-  return (payload.changed_files || []).some(file => {
-    const normalized = file.replace(/\\/g, '/')
-    return normalized.startsWith('plugins/background/') || normalized.includes('/assets/')
-  })
+
+  const instances = Array.isArray(payload.instances) ? payload.instances : []
+  return JSON.stringify(
+    instances
+      .filter(instance => instance.plugin && providers.has(instance.plugin))
+      .map(instance => ({
+        id: instance.id || '',
+        plugin: instance.plugin || '',
+        enabled: Boolean(instance.enabled),
+        config: instance.config || {},
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id))
+  )
+}
+
+const refreshBackgroundFromSnapshotIfNeeded = (payload: PluginSystemSnapshotMessage) => {
+  const nextSignature = buildBackgroundServiceSignature(payload)
+  if (!hasBackgroundServiceSnapshot) {
+    hasBackgroundServiceSnapshot = true
+    backgroundServiceSignature = nextSignature
+    return
+  }
+
+  if (nextSignature === backgroundServiceSignature) {
+    return
+  }
+
+  backgroundServiceSignature = nextSignature
+  void loadBackground()
 }
 
 const showHmrOverlay = (text: string, autoHideMs?: number) => {
@@ -249,18 +269,16 @@ const handlePluginSystemMessage = (message: WebSocketBaseMessage) => {
   }
 
   if (Array.isArray((payload as PluginSystemSnapshotMessage).pages)) {
-    applyPageDeclarations((payload as PluginSystemSnapshotMessage).pages)
+    const snapshotPayload = payload as PluginSystemSnapshotMessage
+    applyPageDeclarations(snapshotPayload.pages)
+    refreshBackgroundFromSnapshotIfNeeded(snapshotPayload)
   }
 
   if (payload.kind !== 'hmr') {
-    void loadBackground()
     return
   }
 
   const hmrPayload = payload as PluginSystemHmrMessage
-  if (isBackgroundHmr(hmrPayload)) {
-    void loadBackground()
-  }
   if (hmrPayload.status === 'running') {
     showHmrOverlay('正在重载插件界面')
   } else if (hmrPayload.status === 'success' || hmrPayload.status === 'error') {
@@ -357,10 +375,19 @@ const onMenuClick: MenuProps['onClick'] = info => {
   );
   --app-background-card-elevated-bg: color-mix(
     in srgb,
-    var(--ant-color-bg-elevated) var(--app-background-card-opacity),
+    var(--ant-color-bg-elevated) var(--app-background-elevated-opacity),
     transparent
   );
-  --app-layout-sider-bg: color-mix(in srgb, var(--ant-color-bg-elevated) 88%, transparent);
+  --app-background-panel-bg: color-mix(
+    in srgb,
+    var(--ant-color-bg-container) var(--app-background-panel-opacity),
+    transparent
+  );
+  --app-layout-sider-bg: color-mix(
+    in srgb,
+    var(--ant-color-bg-elevated) var(--app-background-sider-opacity),
+    transparent
+  );
 }
 
 .app-layout-shell.has-background :deep(.plugin-page) {
@@ -378,8 +405,14 @@ const onMenuClick: MenuProps['onClick'] = info => {
 .app-layout-shell.has-background :deep(.ant-collapse),
 .app-layout-shell.has-background :deep(.ant-collapse-item),
 .app-layout-shell.has-background :deep(.ant-collapse-content),
-.app-layout-shell.has-background :deep(.ant-tabs-content-holder) {
-  background: var(--app-background-card-bg) !important;
+.app-layout-shell.has-background :deep(.ant-tabs-content-holder),
+.app-layout-shell.has-background :deep(.ant-alert),
+.app-layout-shell.has-background :deep(.ant-descriptions-view),
+.app-layout-shell.has-background :deep(.ant-descriptions-item-label),
+.app-layout-shell.has-background :deep(.ant-descriptions-item-content),
+.app-layout-shell.has-background :deep(.ant-form-item),
+.app-layout-shell.has-background :deep(.schema-item) {
+  background: var(--app-background-panel-bg) !important;
 }
 
 .app-layout-shell.has-background :deep(.ant-modal-content),

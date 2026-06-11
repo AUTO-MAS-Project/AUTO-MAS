@@ -12,6 +12,9 @@ interface AppBackgroundResponse {
   opacity?: number
   overlay_opacity?: number
   card_opacity?: number
+  panel_opacity?: number
+  elevated_opacity?: number
+  sider_opacity?: number
   position?: string
   fit?: string
 }
@@ -82,6 +85,13 @@ export function useAppBackground() {
     '--app-background-opacity': `${toPercent(background.value.opacity, 100) / 100}`,
     '--app-background-overlay-opacity': `${toPercent(background.value.overlay_opacity, 0) / 100}`,
     '--app-background-card-opacity': `${toPercent(background.value.card_opacity, 92)}%`,
+    '--app-background-panel-opacity': `${
+      toPercent(background.value.panel_opacity ?? background.value.card_opacity, 92)
+    }%`,
+    '--app-background-elevated-opacity': `${
+      toPercent(background.value.elevated_opacity ?? background.value.card_opacity, 92)
+    }%`,
+    '--app-background-sider-opacity': `${toPercent(background.value.sider_opacity, 88)}%`,
     '--app-background-position': toPosition(background.value.position),
     '--app-background-size': toFit(background.value.fit),
   }))
