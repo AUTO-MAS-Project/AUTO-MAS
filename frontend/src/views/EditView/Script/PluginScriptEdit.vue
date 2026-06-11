@@ -10,10 +10,17 @@
     </div>
 
     <a-space size="middle">
-      <a-button type="primary" :loading="saving" @click="handleSave">保存配置</a-button>
+      <HeaderSchemaActionButton
+        v-for="action in headerSchemaActions"
+        :key="action.key"
+        :action="action"
+        :loading="actionLoadingId === action.key"
+        @click="handleFieldAction(action.key, action.field)"
+      />
       <a-button v-if="script?.docsUrl" :href="script.docsUrl || undefined" target="_blank">
         查看文档
       </a-button>
+      <a-button type="primary" :loading="saving" @click="handleSave">保存配置</a-button>
       <a-button @click="router.push('/scripts')">返回</a-button>
     </a-space>
   </div>
@@ -42,6 +49,7 @@
       ref="schemaFormRef"
       v-model="formModel"
       :schema="script.schema || {}"
+      :hide-fields="headerSchemaActionKeys"
       :action-loading-id="actionLoadingId"
       @trigger-action="({ field, fieldSchema }) => handleFieldAction(field, fieldSchema)"
       @validation-change="(errors) => (fieldErrors = errors)"
@@ -61,9 +69,10 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
+import HeaderSchemaActionButton from '@/components/HeaderSchemaActionButton.vue'
 import SchemaForm from '@/components/SchemaForm.vue'
 import SchemaActionSessionMask from '@/components/SchemaActionSessionMask.vue'
 import { useSchemaActionRunner } from '@/composables/useSchemaActionRunner'
@@ -77,6 +86,7 @@ import {
   getScriptTypeTagColor,
   normalizeScriptRecord,
 } from '@/utils/scriptRegistry'
+import { collectHeaderSchemaActions } from '@/utils/schemaActions'
 
 const logger = window.electronAPI.getLogger('插件脚本编辑')
 
@@ -92,6 +102,8 @@ const formModel = ref<Record<string, any>>({})
 const fieldErrors = ref<SchemaValidationErrorMap>({})
 const schemaFormRef = ref<InstanceType<typeof SchemaForm> | null>(null)
 const schemaRefreshInFlight = ref(false)
+const headerSchemaActions = computed(() => collectHeaderSchemaActions(script.value?.schema || null))
+const headerSchemaActionKeys = computed(() => headerSchemaActions.value.map(action => action.key))
 
 const scriptId = route.params.id as string
 let pluginSystemSubscriptionId: string | null = null

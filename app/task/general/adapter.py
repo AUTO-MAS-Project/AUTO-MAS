@@ -393,6 +393,7 @@ class GeneralAdapterHooks(ScriptAdapterHooks):
                 "name": "GeneralConfig",
                 "label": "通用配置",
                 "type": "button",
+                "icon": "SettingOutlined",
                 "help": "启动该用户的脚本配置会话，完成后点击保存配置结束会话。",
                 "button": {
                     "label": "通用配置",

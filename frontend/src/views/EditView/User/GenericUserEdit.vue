@@ -13,6 +13,13 @@
     </div>
 
     <a-space size="middle">
+      <HeaderSchemaActionButton
+        v-for="action in headerSchemaActions"
+        :key="action.key"
+        :action="action"
+        :loading="actionLoadingId === action.key"
+        @click="handleFieldAction(action.key, action.field)"
+      />
       <a-button type="primary" :loading="saving" @click="handleSave">保存配置</a-button>
       <a-button @click="router.push('/scripts')">返回</a-button>
     </a-space>
@@ -31,6 +38,7 @@
       ref="schemaFormRef"
       v-model="formModel"
       :schema="userSchema"
+      :hide-fields="headerSchemaActionKeys"
       :action-loading-id="actionLoadingId"
       @trigger-action="({ field, fieldSchema }) => handleFieldAction(field, fieldSchema)"
       @validation-change="(errors) => (fieldErrors = errors)"
@@ -51,6 +59,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
+import HeaderSchemaActionButton from '@/components/HeaderSchemaActionButton.vue'
 import SchemaForm from '@/components/SchemaForm.vue'
 import SchemaActionSessionMask from '@/components/SchemaActionSessionMask.vue'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
@@ -62,6 +71,7 @@ import type {
 } from '@/types/schemaForm'
 import { descriptorMapFromList } from '@/utils/scriptRegistry'
 import { getScriptTypeTagColor } from '@/utils/scriptRegistry'
+import { collectHeaderSchemaActions } from '@/utils/schemaActions'
 
 const logger = window.electronAPI.getLogger('通用用户编辑')
 
@@ -84,6 +94,8 @@ const scriptType = ref('')
 const scriptDisplayName = ref('')
 const userSchema = ref<SchemaDefinition | null>(null)
 const formModel = ref<Record<string, any>>({})
+const headerSchemaActions = computed(() => collectHeaderSchemaActions(userSchema.value))
+const headerSchemaActionKeys = computed(() => headerSchemaActions.value.map(action => action.key))
 
 const displayNameFromForm = computed(() => {
   const info = formModel.value?.Info

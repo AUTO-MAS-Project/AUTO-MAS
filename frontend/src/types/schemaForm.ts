@@ -23,6 +23,7 @@ export interface SchemaActionFilePickerDefinition {
 
 export interface SchemaActionDefinition {
   label?: string
+  icon?: string
   path?: string
   method?: string
   payload?: unknown
@@ -58,6 +59,7 @@ export interface SchemaFieldDefinition {
   group?: string
   name?: string
   label?: string
+  icon?: string
   type: string
   title?: string
   format?: string
