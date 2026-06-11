@@ -29,7 +29,7 @@
               <a-tag class="type-tag" color="processing">{{ getTypeLabel(field) }}</a-tag>
               <a-tag v-if="field.required" color="error">必填</a-tag>
               <a-tag v-if="isPasswordField(field)" color="gold">敏感</a-tag>
-              <a-tag v-if="field.readonly" color="default">只读</a-tag>
+              <a-tag v-if="field.readonly && !isButtonField(field)" color="default">只读</a-tag>
             </a-space>
           </div>
 
@@ -716,7 +716,13 @@ const toFiniteNumber = (value: unknown) => {
 
 const getSchemaConstraint = (field: SchemaFieldDefinition, key: string) => field.constraints?.[key]
 
-const isButtonField = (field: SchemaFieldDefinition) => field.type === 'button' || field.type === 'action'
+const hasFieldAction = (field: SchemaFieldDefinition) =>
+  Boolean(
+    (field.action && typeof field.action === 'object') ||
+    (field.button && typeof field.button === 'object')
+  )
+const isButtonField = (field: SchemaFieldDefinition) =>
+  field.type === 'button' || field.type === 'action' || hasFieldAction(field)
 const isAutocompleteField = (field: SchemaFieldDefinition) =>
   Boolean(field.allow_custom) && isStringField(field) && hasSelectableOptions(field)
 const isOrderedMultiSelectField = (field: SchemaFieldDefinition) =>
