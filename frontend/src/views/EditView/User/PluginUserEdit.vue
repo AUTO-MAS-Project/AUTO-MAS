@@ -13,8 +13,15 @@
     </div>
 
     <a-space size="middle">
-      <a-button type="primary" :loading="saving" @click="handleSave">保存配置</a-button>
+      <HeaderSchemaActionButton
+        v-for="action in headerSchemaActions"
+        :key="action.key"
+        :action="action"
+        :loading="actionLoadingId === action.key"
+        @click="handleFieldAction(action.key, action.field)"
+      />
       <a-button v-if="docsUrl" :href="docsUrl" target="_blank">查看文档</a-button>
+      <a-button type="primary" :loading="saving" @click="handleSave">保存配置</a-button>
       <a-button @click="router.push('/scripts')">返回</a-button>
     </a-space>
   </div>
@@ -40,6 +47,7 @@
       ref="schemaFormRef"
       v-model="formModel"
       :schema="userSchema"
+      :hide-fields="headerSchemaActionKeys"
       :action-loading-id="actionLoadingId"
       @trigger-action="({ field, fieldSchema }) => handleFieldAction(field, fieldSchema)"
       @validation-change="(errors) => (fieldErrors = errors)"
@@ -62,6 +70,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
+import HeaderSchemaActionButton from '@/components/HeaderSchemaActionButton.vue'
 import SchemaForm from '@/components/SchemaForm.vue'
 import SchemaActionSessionMask from '@/components/SchemaActionSessionMask.vue'
 import { useSchemaActionRunner } from '@/composables/useSchemaActionRunner'
@@ -73,6 +82,7 @@ import type {
   SchemaValidationErrorMap,
 } from '@/types/schemaForm'
 import { descriptorMapFromList, getScriptTypeTagColor, normalizeScriptRecord } from '@/utils/scriptRegistry'
+import { collectHeaderSchemaActions } from '@/utils/schemaActions'
 
 const logger = window.electronAPI.getLogger('插件用户编辑')
 
@@ -100,6 +110,8 @@ const docsUrl = ref<string | null>(null)
 const supportedModes = ref<string[]>([])
 const userSchema = ref<SchemaDefinition | null>(null)
 const formModel = ref<Record<string, any>>({})
+const headerSchemaActions = computed(() => collectHeaderSchemaActions(userSchema.value))
+const headerSchemaActionKeys = computed(() => headerSchemaActions.value.map(action => action.key))
 let pluginSystemSubscriptionId: string | null = null
 
 interface PluginSystemSnapshotMessage {

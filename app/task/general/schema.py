@@ -340,6 +340,7 @@ USER_GROUPS = (
                         ),
                     },
                 },
+                icon="SettingOutlined",
                 help="启动该用户的脚本配置会话，完成后点击保存配置结束会话。",
             ),
         ],
