@@ -30,6 +30,9 @@ class PluginInstanceModel(BaseModel):
     enabled: bool = Field(default=True, description="是否启用")
     name: str = Field(..., description="实例名称")
     config: Dict[str, Any] = Field(default_factory=dict, description="插件配置")
+    system: bool = Field(default=False, description="是否系统插件")
+    locked: bool = Field(default=False, description="是否锁定")
+    visible: bool = Field(default=True, description="是否显示")
 
 
 class PluginRuntimeStateModel(BaseModel):
@@ -380,12 +383,30 @@ def _resolve_effective_config(
 
 
 
-def _build_instances(root: Dict[str, Any]) -> List[PluginInstanceModel]:
+def _build_instances(
+    root: Dict[str, Any],
+    discovered: Dict[str, Any],
+) -> List[PluginInstanceModel]:
     instances: List[PluginInstanceModel] = []
     for item in root.get("instances", []):
         if not isinstance(item, dict):
             continue
-        instances.append(PluginInstanceModel(**item))
+        plugin_name = str(item.get("plugin") or "")
+        plugin_source = discovered.get(plugin_name)
+        system = bool(getattr(plugin_source, "system", False))
+        locked = bool(getattr(plugin_source, "locked", False))
+        visible = bool(getattr(plugin_source, "visible", True))
+        instances.append(
+            PluginInstanceModel(
+                **{
+                    **item,
+                    "enabled": True if system else item.get("enabled", True),
+                    "system": system,
+                    "locked": locked,
+                    "visible": visible,
+                }
+            )
+        )
     return instances
 
 
@@ -612,7 +633,7 @@ async def get_plugins() -> PluginsGetOut:
             plugin_routes=server_snapshot["plugin_routes"],
             plugin_actions=server_snapshot["plugin_actions"],
             plugin_packages=_build_plugin_packages(discovered),
-            instances=_build_instances(root),
+            instances=_build_instances(root, discovered),
             runtime_states=_build_runtime_states(root),
             pages=page_items,
             page_errors=page_errors,
@@ -749,6 +770,8 @@ async def uninstall_plugin_package(data: PluginPackageIn = Body(...)) -> OutBase
         无。接口内部会捕获异常并转换为统一错误响应。
     """
     try:
+        if PluginManager.is_system_plugin_package(data.package):
+            raise ValueError(f"系统插件包不可卸载: {data.package}")
         await PluginManager.uninstall_plugin_package(data.package)
         await publish_plugin_snapshot(
             reason="api.plugins.uninstall_package",
@@ -774,6 +797,8 @@ async def add_plugin_instance(data: PluginAddIn = Body(...)) -> PluginAddOut:
 
         if data.plugin not in discovered:
             raise ValueError(f"未发现插件: {data.plugin}")
+        if PluginManager.is_system_plugin(data.plugin):
+            raise ValueError(f"系统插件不允许新增实例: {data.plugin}")
 
         # 先校验配置是否合法（包含默认值注入）
         plugin_path = getattr(discovered[data.plugin], "path", None)
@@ -846,6 +871,12 @@ async def update_plugin_instance(data: PluginUpdateIn = Body(...)) -> OutBase:
 
         if target is None:
             raise ValueError(f"未找到插件实例: {data.instanceId}")
+        target_plugin = str(target.get("plugin") or "")
+        if PluginManager.is_system_plugin(target_plugin):
+            if data.plugin is not None and data.plugin != target_plugin:
+                raise ValueError(f"系统插件不可变更插件类型: {target_plugin}")
+            if data.enabled is False:
+                raise ValueError(f"系统插件不可禁用: {target_plugin}")
 
         was_enabled = bool(target.get("enabled", False))
 
@@ -919,6 +950,8 @@ async def delete_plugin_instance(data: PluginDeleteIn = Body(...)) -> OutBase:
             if isinstance(item, dict) and item.get("id") == data.instanceId
         )
         target_plugin = str(target_instance.get("plugin") or "")
+        if PluginManager.is_system_plugin(target_plugin):
+            raise ValueError(f"系统插件不可删除: {target_plugin}")
 
         if PluginManager.started:
             await PluginManager.ensure_instance_can_delete(

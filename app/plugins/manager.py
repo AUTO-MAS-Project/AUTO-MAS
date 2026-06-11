@@ -17,6 +17,11 @@ from .config_store import PluginConfigStore
 from .loader import PluginLoader
 from .realtime import schedule_plugin_snapshot
 from .service_registry import ServiceRegistry
+from .system import (
+    get_system_plugin_default_instances,
+    is_system_plugin,
+    is_system_plugin_package,
+)
 from .uv_backend import uv_pip_install, uv_pip_install_with_mirror_fallback, uv_pip_uninstall
 from .pypi_site import ENTRY_POINT_GROUPS, get_installed_plugin_entry_points, get_pypi_site_packages_dir
 
@@ -77,6 +82,12 @@ class _PluginManager:
         self._discover_cache = None
         self._discover_cache_time = 0.0
         self._discover_cache_plugins_dir = None
+
+    def is_system_plugin(self, plugin_name: str) -> bool:
+        return is_system_plugin(plugin_name)
+
+    def is_system_plugin_package(self, package_name: str) -> bool:
+        return is_system_plugin_package(package_name)
 
     def _discover_plugins(self) -> Dict[str, Any]:
         """发现插件（统一基于 Entry Point）。"""
@@ -314,12 +325,18 @@ class _PluginManager:
     async def _ensure_default_instances(self, discovered: Dict[str, Any]) -> None:
         """按插件声明补齐默认实例。"""
 
-        default_instances: Dict[str, Dict[str, Any]] = {}
+        default_instances: Dict[str, Dict[str, Any]] = get_system_plugin_default_instances()
         for plugin_name, plugin_source in discovered.items():
             spec = self.loader.get_default_instance_spec(plugin_name, plugin_source)
             if spec is None:
                 continue
-            default_instances[plugin_name] = spec
+            if is_system_plugin(plugin_name):
+                default_instances.setdefault(plugin_name, {}).update(spec)
+                default_instances[plugin_name]["enabled"] = True
+                default_instances[plugin_name]["system"] = True
+                default_instances[plugin_name]["locked"] = True
+            else:
+                default_instances[plugin_name] = spec
 
         if not default_instances:
             return
@@ -465,6 +482,9 @@ class _PluginManager:
                 2) 安装后未发现任何插件入口点。
         """
         normalized = self._validate_package_name(package_name)
+        if self.is_system_plugin_package(normalized):
+            raise ValueError(f"系统插件包不可卸载: {package_name}")
+
         target_dir = get_pypi_site_packages_dir(self.plugins_dir)
 
         try:
@@ -529,6 +549,9 @@ class _PluginManager:
         预留策略：
         - update_source="pip-index" 为未来在线源更新入口（当前仅记录日志）。
         """
+        if self.is_system_plugin(plugin_name):
+            return
+
         plugin_source = discovered.get(plugin_name)
         if plugin_source is None or getattr(plugin_source, "source", "") != "pypi":
             return
@@ -560,6 +583,8 @@ class _PluginManager:
         """批量更新已发现的 PyPI 插件。"""
         for plugin_name, plugin_source in discovered.items():
             if getattr(plugin_source, "source", "") != "pypi":
+                continue
+            if self.is_system_plugin(plugin_name):
                 continue
             await self._update_pypi_plugin(plugin_name, discovered)
 
@@ -608,6 +633,16 @@ class _PluginManager:
         discovered: Dict[str, Any] | None = None,
     ) -> bool:
         snapshot = discovered or await self.discover_plugins()
+        if not enabled:
+            instances = await self.config_store.load_instances(
+                self.plugins_dir,
+                snapshot,
+                auto_create_missing=False,
+            )
+            target = next((item for item in instances if item.id == instance_id), None)
+            if target is not None and self.is_system_plugin(target.plugin):
+                return False
+
         root = await self.config_store.get_root(
             self.plugins_dir,
             snapshot,
@@ -891,6 +926,9 @@ class _PluginManager:
     ) -> None:
         """校验插件实例是否允许删除。"""
 
+        if plugin_name and self.is_system_plugin(plugin_name):
+            raise RuntimeError(f"系统插件不可删除: {plugin_name}")
+
         bound_refs = self._collect_instance_bound_script_refs(instance_id)
         if not bound_refs and plugin_name:
             bound_refs = self._collect_declared_instance_bound_script_refs(
@@ -915,6 +953,9 @@ class _PluginManager:
         target = next((item for item in instances if item.id == instance_id), None)
         if target is None:
             raise ValueError(f"未找到插件实例: {instance_id}")
+
+        if not enabled and target is not None and self.is_system_plugin(target.plugin):
+            raise ValueError(f"系统插件不可禁用: {target.plugin}")
 
         if enabled:
             record = await self.loader.load_instance(
