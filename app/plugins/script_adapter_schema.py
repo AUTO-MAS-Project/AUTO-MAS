@@ -382,6 +382,16 @@ def _is_runtime_field(field: PluginFieldDeclaration) -> bool:
     return field.configurable
 
 
+class _DynamicMultipleOptionsValidator(ValidatorBase):
+    def validate(self, value: Any) -> bool:
+        return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+    def correct(self, value: Any) -> list[str]:
+        if self.validate(value):
+            return value
+        return []
+
+
 def _build_validator(
     config: ConfigBase,
     group: str,
@@ -415,9 +425,15 @@ def _build_validator(
     if field.field_type == "url" or field.format == "url":
         return URLValidator(default=str(_copy_default(field.default) or ""))
     if field.field_type == "select":
-        return OptionsValidator(_option_values(field.options or []))
+        options = _option_values(field.options or [])
+        if options or field.options_provider is None:
+            return OptionsValidator(options)
+        return StringValidator()
     if field.field_type == "multiselect":
-        return MultipleOptionsValidator(_option_values(field.options or []))
+        options = _option_values(field.options or [])
+        if options or field.options_provider is None:
+            return MultipleOptionsValidator(options)
+        return _DynamicMultipleOptionsValidator()
     if field.field_type == "boolean":
         return BoolValidator()
     if field.field_type == "number":
