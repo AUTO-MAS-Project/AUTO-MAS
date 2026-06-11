@@ -156,12 +156,6 @@ def main():
         from app.api import (
             core_router,
             info_router,
-            scripts_router,
-            scripts2_router,
-            script_types_router,
-            plan_router,
-            emulator_router,
-            queue_router,
             dispatch_router,
             history_router,
             tools_router,
@@ -172,6 +166,7 @@ def main():
             plugins_router,
             plugin_gateway_router,
         )
+        from app.plugins.system import get_core_plugin_routers
 
         app = FastAPI(
             title="AUTO-MAS",
@@ -190,12 +185,8 @@ def main():
 
         app.include_router(core_router)
         app.include_router(info_router)
-        app.include_router(scripts_router)
-        app.include_router(scripts2_router)
-        app.include_router(script_types_router)
-        app.include_router(plan_router)
-        app.include_router(emulator_router)
-        app.include_router(queue_router)
+        for core_plugin_router in get_core_plugin_routers():
+            app.include_router(core_plugin_router)
         app.include_router(dispatch_router)
         app.include_router(history_router)
         app.include_router(tools_router)

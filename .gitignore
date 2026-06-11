@@ -50,5 +50,7 @@ uv.lock
 # Local AI/agent metadata
 /.claude/
 
-/plugins
+/plugins/*
+!/plugins/auto_mas_core/
+!/plugins/auto_mas_core/**
 /app/core/plugins/_generated/
