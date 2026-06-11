@@ -23,6 +23,7 @@
 import uuid
 import json
 import shutil
+import asyncio
 from pathlib import Path
 from datetime import datetime
 
@@ -338,6 +339,9 @@ class M9AManager(TaskExecuteBase):
                     data={"Error": f"推送代理结果时出现异常: {e}"},
                 )
 
+            # 延迟 2 秒再推版本更新，避免与代理结果通知在同一毫秒内连发，
+            # 导致企业微信 webhook 因短时间重复消息被去重/折叠而丢失。
+            await asyncio.sleep(2)
             await self._notify_version_update_result()
 
         if (self.temp_path).exists():
@@ -396,7 +400,7 @@ class M9AManager(TaskExecuteBase):
                 else:
                     virtual_status = "未知错误"
 
-            fail_title = "M9A 资源更新失败"
+            fail_title = f"M9A 资源更新失败 ({datetime.now().strftime('%m-%d')})"
             fail_message = f"M9A 资源更新失败（{virtual_status}）\n当前版本: v{self._virtual_user_old_version}"
             try:
                 await Notify.push_plyer(fail_title, fail_message, fail_message, 10)
