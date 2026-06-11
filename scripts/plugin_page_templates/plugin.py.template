@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .schema import Config
-from ._automas_typing import PluginContext
+
+if TYPE_CHECKING:
+    from auto_mas_core import PluginContext
 
 
 DEFAULT_INSTANCE = {
@@ -19,10 +21,10 @@ DEFAULT_INSTANCE = {
 class Plugin:
     """${plugin_title} 带页面插件。"""
 
-    ctx: PluginContext
+    ctx: "PluginContext"
 
-    def __init__(self, ctx: PluginContext) -> None:
-        self.ctx: PluginContext = ctx
+    def __init__(self, ctx: "PluginContext") -> None:
+        self.ctx: "PluginContext" = ctx
 
     async def on_start(self) -> None:
         self.ctx.server.http("/hello", self._handle_hello, methods=["GET", "POST"])
