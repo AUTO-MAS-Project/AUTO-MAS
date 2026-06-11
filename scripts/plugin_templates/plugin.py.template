@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-from .schema import Config
-from ._automas_typing import PluginContext
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from auto_mas_core import PluginContext
 
 
 class Plugin:
-    ctx: PluginContext
+    ctx: "PluginContext"
 
-    def __init__(self, ctx: PluginContext) -> None:
-        self.ctx: PluginContext = ctx
+    def __init__(self, ctx: "PluginContext") -> None:
+        self.ctx: "PluginContext" = ctx
 
     async def on_start(self) -> None:
         # 从此处开始

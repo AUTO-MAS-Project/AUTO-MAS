@@ -39,7 +39,6 @@ PLUGIN_TEMPLATE_OUTPUTS = {
     Path("pyproject.toml"): Path("pyproject.toml.template"),
     Path("README.md"): Path("README.md.template"),
     Path("src/${plugin_name}/__init__.py"): Path("__init__.py.template"),
-    Path("src/${plugin_name}/_automas_typing.py"): Path("_automas_typing.py.template"),
     Path("src/${plugin_name}/plugin.py"): Path("plugin.py.template"),
     Path("src/${plugin_name}/schema.py"): Path("schema.py.template"),
     Path(".github/workflows/publish.yml"): Path("publish.yml.template"),
@@ -71,7 +70,6 @@ PLUGIN_PAGE_TEMPLATE_OUTPUTS = {
     Path("README.md"): Path("README.md.template"),
     Path("package.json"): Path("package.json.template"),
     Path("src/${plugin_name}/__init__.py"): Path("__init__.py.template"),
-    Path("src/${plugin_name}/_automas_typing.py"): Path("_automas_typing.py.template"),
     Path("src/${plugin_name}/plugin.py"): Path("plugin.py.template"),
     Path("src/${plugin_name}/schema.py"): Path("schema.py.template"),
     Path("src/${plugin_name}/frontend/manifest.json"): Path(
