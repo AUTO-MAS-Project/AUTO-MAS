@@ -847,25 +847,6 @@ ipcMain.handle('window-is-maximized', () => {
   return mainWindow ? mainWindow.isMaximized() : false
 })
 
-ipcMain.handle('select-folder', async () => {
-  if (!mainWindow) return null
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openDirectory'],
-    title: '选择文件夹',
-  })
-  return result.canceled ? null : result.filePaths[0]
-})
-
-ipcMain.handle('select-file', async (event, filters = []) => {
-  if (!mainWindow) return []
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openFile'],
-    title: '选择文件',
-    filters: filters.length > 0 ? filters : [{ name: '所有文件', extensions: ['*'] }],
-  })
-  return result.canceled ? [] : result.filePaths
-})
-
 // 在系统默认浏览器中打开URL
 ipcMain.handle('open-url', async (_event, url: string) => {
   try {
