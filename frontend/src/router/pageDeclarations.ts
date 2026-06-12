@@ -101,7 +101,6 @@ export const FALLBACK_PAGE_DECLARATIONS: PageDeclaration[] = [
   hostPage('home', '/home', '主页', 'home', 'Home', 'main', 10),
   hostPage('scripts', '/scripts', '脚本管理', 'script', 'Scripts', 'main', 20),
   hostPage('plans', '/plans', '计划管理', 'plan', 'Plans', 'main', 30),
-  hostPage('emulators', '/emulators', '模拟器管理', 'emulator', 'Emulators', 'main', 40),
   hostPage('plugins', '/plugins', '插件管理', 'plugin', 'Plugin', 'main', 50),
   hostPage('plugins-market', '/plugins-market', '插件市场', 'market', 'PluginMarket', 'main', 60),
   hostPage('queue', '/queue', '调度队列', 'queue', 'Queue', 'main', 70),
