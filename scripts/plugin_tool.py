@@ -353,6 +353,33 @@ def ensure_pycharm_vcs_mapping(workspace_dir: Path, plugin_name: str) -> tuple[b
         return False, f"写入 PyCharm VCS 映射失败: {type(exc).__name__}: {exc}"
 
 
+def sync_uv_plugin_workspace(workspace_dir: Path) -> tuple[bool, str]:
+    """Run the workspace synchronization helper after scaffolding a plugin."""
+    script_path = Path(__file__).resolve().parent / "sync_plugin_workspace.py"
+    if not script_path.exists():
+        return False, f"workspace sync helper not found: {script_path}"
+
+    command = [
+        sys.executable,
+        str(script_path),
+        "--write",
+        "--sync-idea",
+    ]
+    result = subprocess.run(
+        command,
+        cwd=str(workspace_dir),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    detail = (result.stdout or "").strip()
+    if result.returncode == 0:
+        return True, detail or "uv workspace synchronized"
+
+    error = (result.stderr or "").strip() or detail or "unknown error"
+    return False, f"uv workspace sync failed: {error}"
+
+
 def maybe_init_git(target_dir: Path) -> tuple[bool, list[str]]:
     """按需初始化 Git 仓库并提交初始内容。"""
     warnings: list[str] = []
@@ -543,6 +570,10 @@ def main() -> int:
             if vcs_message:
                 print(f"- PyCharm VCS 映射: {vcs_message}")
 
+    workspace_sync_ok, workspace_sync_message = sync_uv_plugin_workspace(workspace)
+    if not workspace_sync_ok:
+        warnings.append(workspace_sync_message)
+
     print("\n插件脚手架生成成功")
     print(f"- 模板类型: {preset.label}")
     print(f"- 输出目录: {target_dir}")
@@ -553,6 +584,10 @@ def main() -> int:
     else:
         print("- Git 模式: 已禁用")
     print(f"- Git 初始化: {'成功' if git_ok else '未执行'}")
+    print(f"- UV workspace: {'已同步' if workspace_sync_ok else '未同步'}")
+    if workspace_sync_ok and workspace_sync_message:
+        for line in workspace_sync_message.splitlines():
+            print(f"  * {line}")
     print("- 已创建文件:")
     for item in created:
         print(f"  * {item}")
