@@ -3,7 +3,8 @@ from __future__ import annotations
 import inspect
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
+from enum import Enum
 from typing import Any, Callable, Dict, Iterable
 
 from fastapi import WebSocket
@@ -498,10 +499,18 @@ class PluginServerFacade:
 def serialize_plugin_result(result: Any) -> Any:
     """将插件返回值转换为 FastAPI 可响应对象。"""
     if isinstance(result, BaseModel):
-        return result.model_dump()
+        return result.model_dump(mode="json")
     if isinstance(result, PluginHttpResponse):
         return result
-    if isinstance(result, (dict, list, str, int, float, bool)) or result is None:
+    if isinstance(result, dict):
+        return {str(key): serialize_plugin_result(value) for key, value in result.items()}
+    if isinstance(result, (list, tuple, set)):
+        return [serialize_plugin_result(item) for item in result]
+    if isinstance(result, Enum):
+        return result.value
+    if is_dataclass(result) and not isinstance(result, type):
+        return serialize_plugin_result(asdict(result))
+    if isinstance(result, (str, int, float, bool)) or result is None:
         return result
     try:
         json.dumps(result)

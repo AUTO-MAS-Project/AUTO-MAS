@@ -52,6 +52,7 @@ plugins = [
     "automas_notification_test",
     "automas_notification_webhook",
     "automas_plugin_ces",
+    "automas_plugin_emulator",
     "automas_plugin_kill_process",
     "automas_plugin_mirrorc",
     "automas_plugin_page",
@@ -73,6 +74,7 @@ members = [
     "plugins/auto_mas_core",
     "plugins/background",
     "plugins/ces",
+    "plugins/emulator",
     "plugins/kill_process",
     "plugins/mirrorc",
     "plugins/notification",
@@ -106,6 +108,7 @@ exclude = [
 "automas_notification_test" = { workspace = true }
 "automas_notification_webhook" = { workspace = true }
 "automas_plugin_ces" = { workspace = true }
+"automas_plugin_emulator" = { workspace = true }
 "automas_plugin_kill_process" = { workspace = true }
 "automas_plugin_mirrorc" = { workspace = true }
 "automas_plugin_page" = { workspace = true }
