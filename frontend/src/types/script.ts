@@ -141,7 +141,6 @@ export interface MaaEndScriptConfig {
     EmulatorIndex: string
     CloseOnFinish: boolean
   }
-  Task: MaaEndTaskConfig
 }
 
 // M9A脚本配置

@@ -83,20 +83,6 @@
                   </template>
                   正在配置
                 </a-button>
-                <a-button v-if="script.type === 'Okww' && !props.activeConnections.has(script.id)" type="primary"
-                  ghost size="middle" @click="handleStartOkwwConfig(script)">
-                  <template #icon>
-                    <SettingOutlined />
-                  </template>
-                  配置ok-ww
-                </a-button>
-                <a-button v-if="script.type === 'Okww' && props.activeConnections.has(script.id)" type="default"
-                  size="middle" disabled style="color: #52c41a; border-color: #52c41a">
-                  <template #icon>
-                    <SettingOutlined />
-                  </template>
-                  正在配置
-                </a-button>
                 <a-button type="default" size="middle" @click="handleEdit(script)">
                   <template #icon>
                     <EditOutlined />
@@ -231,6 +217,33 @@
                       </div>
 
                       <div class="user-actions">
+                        <a-tooltip v-if="shouldShowMaaEndUserConfigButton(script, user)" title="配置用户级 MaaEnd">
+                          <a-button
+                            v-if="!props.activeConnections.has(user.id)"
+                            type="default"
+                            size="middle"
+                            class="user-action-btn"
+                            @click="handleStartMaaEndUserConfig(script, user)"
+                          >
+                            <template #icon>
+                              <SettingOutlined />
+                            </template>
+                            配置MaaEnd
+                          </a-button>
+                          <a-button
+                            v-else
+                            type="default"
+                            size="middle"
+                            class="user-action-btn"
+                            disabled
+                            style="color: #52c41a; border-color: #52c41a"
+                          >
+                            <template #icon>
+                              <SettingOutlined />
+                            </template>
+                            正在配置
+                          </a-button>
+                        </a-tooltip>
                         <a-tooltip title="编辑用户配置">
                           <a-button type="default" size="middle" class="user-action-btn" @click="handleEditUser(user)">
                             <template #icon>
@@ -315,9 +328,9 @@ interface Emits {
 
   (e: 'startMaaEndConfig', script: Script): void
 
-  (e: 'saveMaaEndConfig', script: Script): void
+  (e: 'startMaaEndUserConfig', script: Script, user: User): void
 
-  (e: 'startOkwwConfig', script: Script): void
+  (e: 'saveMaaEndConfig', script: Script): void
 
   (e: 'toggleUserStatus', user: User): void
 
@@ -410,17 +423,21 @@ const handleStartMaaEndConfig = (script: Script) => {
   emit('startMaaEndConfig', script)
 }
 
+const handleStartMaaEndUserConfig = (script: Script, user: User) => {
+  emit('startMaaEndUserConfig', script, user)
+}
+
 const isMaaEndPresetSupported = (script: Script) => {
   const controllerType = (script.config as any).Game?.ControllerType
   return script.type === 'MaaEnd' && controllerType === 'Win32-Front'
 }
 
-const handleSaveMaaEndConfig = (script: Script) => {
-  emit('saveMaaEndConfig', script)
+const shouldShowMaaEndUserConfigButton = (script: Script, user: User) => {
+  return script.type === 'MaaEnd' && user.Info?.Mode === '详细'
 }
 
-const handleStartOkwwConfig = (script: Script) => {
-  emit('startOkwwConfig', script)
+const handleSaveMaaEndConfig = (script: Script) => {
+  emit('saveMaaEndConfig', script)
 }
 
 const handleToggleUserStatus = (user: User) => {

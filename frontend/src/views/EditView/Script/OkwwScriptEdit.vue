@@ -163,7 +163,7 @@
                 <template #label>
                   <span class="form-label">
                     游戏根目录
-                    <span class="label-hint">选择 <strong>Wuthering Waves Game</strong> 文件夹，自动匹配客户端 exe</span>
+                    <span class="label-hint">选择包含 <strong>Wuthering Waves Game</strong> 的任意目录，自动定位 Client-Win64-Shipping.exe</span>
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">
@@ -308,7 +308,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import { ArrowLeftOutlined, FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { type OkwwConfig } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -348,8 +348,8 @@ const okwwConfig = reactive<OkwwConfig>({
     LogTimeStart: 1,
     LogTimeEnd: 23,
     LogTimeFormat: '%Y-%m-%d %H:%M:%S,%f',
-    SuccessLog: '任务执行完成 | task completed',
-    ErrorLog: 'connected:False|游戏更新成功, 游戏即将重启|错误',
+    SuccessLog: '',
+    ErrorLog: '',
   },
   Game: {
     Enabled: false,
@@ -368,6 +368,14 @@ const okwwConfig = reactive<OkwwConfig>({
 const rules = {
   name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
   path: [{ required: true, message: '请选择 ok-ww 路径', trigger: 'blur' }],
+}
+
+// 鸣潮游戏路径预设锚点与相对路径
+const WUWA_GAME_ANCHOR = 'Wuthering Waves Game'
+const WUWA_EXE_RELATIVE = 'Client/Binaries/Win64/Client-Win64-Shipping.exe'
+
+const showPathRejectModal = (title: string, content: string) => {
+  Modal.error({ title, content, okText: '我知道了' })
 }
 
 const handleCancel = () => router.push('/scripts')
@@ -476,20 +484,43 @@ const selectRootPath = async () => {
   const picked = await window.electronAPI.selectFolder({ title: '选择脚本根目录' })
   if (!picked) return
   const normalized = picked.replace(/\\/g, '/')
+  const exePath = normalized + '/ok-ww.exe'
+  if (!(await window.electronAPI.fileExists(exePath))) {
+    showPathRejectModal('所选目录无效', '所选目录下未找到 ok-ww.exe，请选择包含 ok-ww.exe 的 OK-WW 脚本根目录。')
+    return
+  }
   formData.path = normalized
   await applyRootPathDefaults(normalized)
-}
-
-const buildGameClientPath = (gameRootPath: string) => {
-  const norm = gameRootPath.replace(/\\/g, '/').replace(/\/+$/g, '')
-  return `${norm}/Client/Binaries/Win64/Client-Win64-Shipping.exe`
 }
 
 const selectGameRootPath = async () => {
   if (!okwwConfig.Game.Enabled) return
   const picked = await window.electronAPI.selectFolder({ title: '选择游戏根目录（Wuthering Waves Game）' })
   if (!picked) return
-  okwwConfig.Game.Path = buildGameClientPath(picked)
+
+  const normalized = picked.replace(/\\/g, '/')
+
+  // 在路径中查找锚点 "Wuthering Waves Game"（大小写不敏感），取锚点之前的 prefix
+  const idx = normalized.toLowerCase().indexOf(WUWA_GAME_ANCHOR.toLowerCase())
+  if (idx === -1) {
+    showPathRejectModal(
+      '所选目录无效',
+      '当前选择的路径不在鸣潮游戏目录内，无法自动匹配。\n\n请选择包含 Wuthering Waves Game 的目录（如游戏根目录本身，或其下的 Client、Binaries、Win64 等子目录）。'
+    )
+    return
+  }
+
+  // 截断锚点之后的内容，拼接预设相对路径
+  const prefix = normalized.substring(0, idx)
+  const candidateExe = prefix + WUWA_GAME_ANCHOR + '/' + WUWA_EXE_RELATIVE
+
+  // 校验 exe 是否真实存在
+  if (!(await window.electronAPI.fileExists(candidateExe))) {
+    showPathRejectModal('所选目录无效', '检测到鸣潮目录但未找到 Client-Win64-Shipping.exe，请验证游戏完整性。')
+    return
+  }
+
+  okwwConfig.Game.Path = candidateExe
   okwwConfig.Game.Type = 'Client'
   isSaving.value = true
   try {
@@ -499,6 +530,7 @@ const selectGameRootPath = async () => {
         Type: 'Client',
       },
     })
+    message.success('已自动匹配游戏路径至 Client-Win64-Shipping.exe')
   } finally {
     isSaving.value = false
   }
