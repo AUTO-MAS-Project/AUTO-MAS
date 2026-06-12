@@ -29,6 +29,7 @@ IGNORED_DIR_NAMES = {
     "site-packages",
 }
 IGNORED_DIR_SUFFIXES = (".egg-info", ".dist-info", ".data")
+IGNORED_PLUGIN_NAMES = {"auto_mas_core"}
 
 RELOAD_SUFFIXES = {".py", ".pyi", ".toml"}
 RELOAD_FILENAMES = {
@@ -171,6 +172,9 @@ class DevPluginHMR:
         except ValueError:
             return True
 
+        if relative.parts and relative.parts[0].lower() in IGNORED_PLUGIN_NAMES:
+            return True
+
         for part in relative.parts:
             normalized = part.lower()
             if normalized in IGNORED_DIR_NAMES:
@@ -186,6 +190,9 @@ class DevPluginHMR:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self.debounce_seconds
         plugin_name = self._resolve_plugin_for_path(path)
+        if plugin_name is not None and plugin_name.lower() in IGNORED_PLUGIN_NAMES:
+            return
+
         key = plugin_name or "__unknown__"
         pending = self._pending.setdefault(key, _PendingChange())
         pending.files.add(path)
