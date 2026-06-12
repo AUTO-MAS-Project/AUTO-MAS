@@ -568,6 +568,11 @@ class _PluginManager:
             )
             return
 
+        logger.info(
+            f"PyPI plugin has a local project; skip implicit directory update to avoid replacing editable install: plugin={plugin_name}, path={package_dir}"
+        )
+        return
+
         target_dir = self.plugins_dir / "pypi" / "site-packages"
 
         try:
@@ -1187,7 +1192,7 @@ class _PluginManager:
         await self.start()
         schedule_plugin_snapshot(reason="manager.reload", discovered=discovered)
 
-    async def reload_instance(self, instance_id: str) -> None:
+    async def reload_instance(self, instance_id: str, *, refresh_package: bool = False) -> None:
         """
         重载指定插件实例。
 
@@ -1213,7 +1218,8 @@ class _PluginManager:
         if target is None:
             raise ValueError(f"未找到插件实例: {instance_id}")
 
-        await self._update_pypi_plugin(target.plugin, discovered)
+        if refresh_package:
+            await self._update_pypi_plugin(target.plugin, discovered)
 
         if target.enabled:
             record = await self.loader.reload_instance(
@@ -1245,7 +1251,7 @@ class _PluginManager:
             discovered=discovered,
         )
 
-    async def reload_plugin(self, plugin_name: str, *, refresh_package: bool = True) -> None:
+    async def reload_plugin(self, plugin_name: str, *, refresh_package: bool = False) -> None:
         """
         重载指定插件的全部实例。
 

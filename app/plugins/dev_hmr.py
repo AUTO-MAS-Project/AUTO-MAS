@@ -26,8 +26,9 @@ IGNORED_DIR_NAMES = {
     "dist",
     "node_modules",
     "pypi",
+    "site-packages",
 }
-IGNORED_DIR_SUFFIXES = (".egg-info",)
+IGNORED_DIR_SUFFIXES = (".egg-info", ".dist-info", ".data")
 
 RELOAD_SUFFIXES = {".py", ".pyi", ".toml"}
 RELOAD_FILENAMES = {
@@ -171,9 +172,10 @@ class DevPluginHMR:
             return True
 
         for part in relative.parts:
-            if part in IGNORED_DIR_NAMES:
+            normalized = part.lower()
+            if normalized in IGNORED_DIR_NAMES:
                 return True
-            if part.endswith(IGNORED_DIR_SUFFIXES):
+            if normalized.endswith(IGNORED_DIR_SUFFIXES):
                 return True
         return False
 
@@ -303,6 +305,9 @@ class DevPluginHMR:
         async with self._processing_lock:
             changed_files = [self._relative_path(path) for path in files]
             action = self._choose_action(plugin_name, files)
+            logger.info(
+                f"Plugin HMR change detected: plugin={plugin_name}, action={action}, files={changed_files}"
+            )
             await self._publish_hmr(
                 event="change",
                 plugin=plugin_name,
@@ -324,10 +329,9 @@ class DevPluginHMR:
                     self.plugin_manager.invalidate_discover_cache()
                     self._clear_python_bytecode(files)
                     if await self._has_configured_instances(plugin_name):
-                        refresh_package = self._needs_package_refresh(files)
                         await self.plugin_manager.reload_plugin(
                             plugin_name,
-                            refresh_package=refresh_package,
+                            refresh_package=False,
                         )
                     else:
                         discovered = await self.plugin_manager.discover_plugins(
@@ -394,9 +398,6 @@ class DevPluginHMR:
                 else "snapshot"
             )
         return "snapshot"
-
-    def _needs_package_refresh(self, files: list[Path]) -> bool:
-        return any(path.name.lower() == "pyproject.toml" for path in files)
 
     def _clear_python_bytecode(self, files: list[Path]) -> None:
         pycache_dirs: set[Path] = set()
