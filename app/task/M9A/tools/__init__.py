@@ -21,6 +21,6 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .notify import push_notification
+from .notify import push_notification, push_version_update
 
-__all__ = ["push_notification"]
+__all__ = ["push_notification", "push_version_update"]

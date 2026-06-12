@@ -17,31 +17,6 @@
     </div>
 
     <a-space size="middle">
-      <a-button
-        v-if="userMode !== '简洁' && !showMaaEndConfigMask"
-        type="primary"
-        ghost
-        size="large"
-        :loading="maaEndConfigLoading"
-        @click="$emit('handleMaaEndConfig')"
-      >
-        <template #icon>
-          <SettingOutlined />
-        </template>
-        MaaEnd 配置
-      </a-button>
-      <a-button
-        v-if="userMode !== '简洁' && showMaaEndConfigMask"
-        type="default"
-        size="large"
-        disabled
-        style="color: #52c41a; border-color: #52c41a"
-      >
-        <template #icon>
-          <SettingOutlined />
-        </template>
-        正在配置
-      </a-button>
       <a-button size="large" class="cancel-button" @click="$emit('handleCancel')">
         <template #icon>
           <ArrowLeftOutlined />
@@ -53,19 +28,15 @@
 </template>
 
 <script setup lang="ts">
-import { ArrowLeftOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 
 defineProps<{
   scriptId: string
   scriptName: string
   isEdit: boolean
-  userMode: string
-  maaEndConfigLoading: boolean
-  showMaaEndConfigMask: boolean
 }>()
 
 defineEmits<{
-  handleMaaEndConfig: []
   handleCancel: []
 }>()
 </script>

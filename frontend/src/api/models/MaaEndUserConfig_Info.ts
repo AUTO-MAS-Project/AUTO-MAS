@@ -20,9 +20,13 @@ export type MaaEndUserConfig_Info = {
      */
     Password?: (string | null);
     /**
-     * 配置模式
+     * 配置文件来源
      */
-    Mode?: ('简洁' | '详细' | '自定义' | null);
+    Mode?: ('简洁' | '详细' | null);
+    /**
+     * 是否启用快速配置
+     */
+    IfQuickConfig?: (boolean | null);
     /**
      * 理智任务配置模式
      */
