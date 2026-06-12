@@ -40,6 +40,26 @@ dependencies = [
 dev = [
     "auto-mas-core",
 ]
+plugins = [
+    "auto-mas-core",
+    "automas_background",
+    "automas_notification",
+    "automas_notification_koishi",
+    "automas_notification_mail",
+    "automas_notification_onebot",
+    "automas_notification_serverchan",
+    "automas_notification_system",
+    "automas_notification_test",
+    "automas_notification_webhook",
+    "automas_plugin_ces",
+    "automas_plugin_kill_process",
+    "automas_plugin_mirrorc",
+    "automas_plugin_page",
+    "automas_plugin_schema_showcase",
+    "automas_script_maa",
+    "automas_scritp_src",
+    "automas_test",
+]
 
 [tool.auto-mas.plugin-bootstrap]
 # 支持两种写法：
@@ -51,7 +71,45 @@ packages = []
 [tool.uv.workspace]
 members = [
     "plugins/auto_mas_core",
+    "plugins/background",
+    "plugins/ces",
+    "plugins/kill_process",
+    "plugins/mirrorc",
+    "plugins/notification",
+    "plugins/notification_koishi",
+    "plugins/notification_mail",
+    "plugins/notification_onebot",
+    "plugins/notification_serverchan",
+    "plugins/notification_system",
+    "plugins/notification_test",
+    "plugins/notification_webhook",
+    "plugins/page",
+    "plugins/schema_showcase",
+    "plugins/script_maa",
+    "plugins/scritp_src",
+    "plugins/test",
+]
+exclude = [
+    "plugins/pypi",
+    "plugins/_generated",
 ]
 
 [tool.uv.sources]
-auto-mas-core = { workspace = true, editable = true }
+"auto-mas-core" = { workspace = true }
+"automas_background" = { workspace = true }
+"automas_notification" = { workspace = true }
+"automas_notification_koishi" = { workspace = true }
+"automas_notification_mail" = { workspace = true }
+"automas_notification_onebot" = { workspace = true }
+"automas_notification_serverchan" = { workspace = true }
+"automas_notification_system" = { workspace = true }
+"automas_notification_test" = { workspace = true }
+"automas_notification_webhook" = { workspace = true }
+"automas_plugin_ces" = { workspace = true }
+"automas_plugin_kill_process" = { workspace = true }
+"automas_plugin_mirrorc" = { workspace = true }
+"automas_plugin_page" = { workspace = true }
+"automas_plugin_schema_showcase" = { workspace = true }
+"automas_script_maa" = { workspace = true }
+"automas_scritp_src" = { workspace = true }
+"automas_test" = { workspace = true }
