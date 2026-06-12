@@ -1439,8 +1439,8 @@ class AppConfig(GlobalConfig):
         from app.plugins.schema_utils import SchemaOptionsProviderContext
 
         options_providers = provider.metadata.get("options_providers")
-        if not isinstance(options_providers, dict) or not options_providers:
-            return schema
+        if not isinstance(options_providers, dict):
+            options_providers = {}
 
         config_class = (
             provider.script_config_class if kind == "script" else provider.user_config_class
@@ -1451,6 +1451,25 @@ class AppConfig(GlobalConfig):
             global_config=self,
             related_config=getattr(config_class, "related_config", {}),
         )
+        options_providers = dict(options_providers)
+
+        async def _external_options_resolver(
+            *,
+            options_provider: dict[str, Any],
+            field_schema: dict[str, Any],
+            config_data: dict[str, Any],
+            ctx: SchemaOptionsProviderContext,
+        ) -> list[dict[str, Any]] | None:
+            return await self._resolve_external_schema_options(
+                source=str(options_provider.get("source") or "").strip(),
+                options_provider=options_provider,
+                field_schema=field_schema,
+                config_data=config_data,
+                ctx=ctx,
+            )
+
+        for external_source in ("emulator_options", "emulator_device_options"):
+            options_providers.setdefault(external_source, _external_options_resolver)
 
         groups = schema.get("groups")
         if not isinstance(groups, list):
@@ -1497,6 +1516,40 @@ class AppConfig(GlobalConfig):
                 )
 
         return schema
+
+    async def _resolve_external_schema_options(
+        self,
+        *,
+        source: str,
+        options_provider: dict[str, Any],
+        field_schema: dict[str, Any],
+        config_data: dict[str, Any],
+        ctx: Any,
+    ) -> list[dict[str, Any]] | None:
+        _ = field_schema, ctx
+        if source not in {"emulator_options", "emulator_device_options"}:
+            return None
+
+        try:
+            from app.plugins import PluginManager
+
+            emulator_service = PluginManager.service.get("emulator")
+        except Exception:
+            emulator_service = None
+
+        resolver = getattr(emulator_service, "resolve_options_provider", None)
+        if not callable(resolver):
+            return None
+
+        result = resolver(
+            options_provider=options_provider,
+            config_data=config_data,
+        )
+        import inspect
+
+        if inspect.isawaitable(result):
+            result = await result
+        return result if isinstance(result, list) else None
 
     def _resolve_script_type_label(self, script_config: ConfigBase) -> str:
         """获取脚本类型的显示标签，兼容插件脚本。"""

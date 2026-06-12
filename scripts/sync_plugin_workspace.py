@@ -14,6 +14,8 @@ from pathlib import Path
 ENTRY_POINT_GROUPS = ("auto_mas.plugins", "automas.plugins")
 ROOT_SDK_NAME = "uv (AUTO-MAS)"
 ROOT_SDK_TYPE = "Python SDK"
+ROOT_MODULE_NAME = "auto-mas"
+CORE_PLUGIN_MODULE_NAME = "auto-mas-core"
 WORKSPACE_EXCLUDES = {"pypi", "_generated"}
 
 
@@ -170,10 +172,11 @@ def sync_pycharm_modules(workspace: Path, projects: list[PluginProject]) -> list
         if manager is None:
             continue
 
-        has_jdk = any(entry.get("type") == "jdk" for entry in manager.findall("orderEntry"))
-        if not has_jdk:
+        order_entries = manager.findall("orderEntry")
+        jdk_entry = next((entry for entry in order_entries if entry.get("type") == "jdk"), None)
+        if jdk_entry is None:
             source_entry = next(
-                (entry for entry in manager.findall("orderEntry") if entry.get("type") == "sourceFolder"),
+                (entry for entry in order_entries if entry.get("type") == "sourceFolder"),
                 None,
             )
             jdk_entry = ET.Element(
@@ -185,6 +188,48 @@ def sync_pycharm_modules(workspace: Path, projects: list[PluginProject]) -> list
             else:
                 insert_at = list(manager).index(source_entry)
                 manager.insert(insert_at, jdk_entry)
+        else:
+            jdk_entry.set("jdkName", ROOT_SDK_NAME)
+            jdk_entry.set("jdkType", ROOT_SDK_TYPE)
+
+        has_root_module_dep = any(
+            entry.get("type") == "module" and entry.get("module-name") == ROOT_MODULE_NAME
+            for entry in manager.findall("orderEntry")
+        )
+        if not has_root_module_dep:
+            source_entry = next(
+                (entry for entry in manager.findall("orderEntry") if entry.get("type") == "sourceFolder"),
+                None,
+            )
+            module_entry = ET.Element(
+                "orderEntry",
+                {"type": "module", "module-name": ROOT_MODULE_NAME},
+            )
+            if source_entry is None:
+                manager.append(module_entry)
+            else:
+                insert_at = list(manager).index(source_entry)
+                manager.insert(insert_at, module_entry)
+
+        if project.distribution != "auto-mas-core":
+            has_core_module_dep = any(
+                entry.get("type") == "module" and entry.get("module-name") == CORE_PLUGIN_MODULE_NAME
+                for entry in manager.findall("orderEntry")
+            )
+            if not has_core_module_dep:
+                source_entry = next(
+                    (entry for entry in manager.findall("orderEntry") if entry.get("type") == "sourceFolder"),
+                    None,
+                )
+                module_entry = ET.Element(
+                    "orderEntry",
+                    {"type": "module", "module-name": CORE_PLUGIN_MODULE_NAME},
+                )
+                if source_entry is None:
+                    manager.append(module_entry)
+                else:
+                    insert_at = list(manager).index(source_entry)
+                    manager.insert(insert_at, module_entry)
 
         content = manager.find("content")
         if content is not None:

@@ -88,6 +88,7 @@ import { useTheme } from '../composables/useTheme.ts'
 import { useRouteLock } from '../composables/useRouteLock.ts'
 import { useAppBackground } from '../composables/useAppBackground.ts'
 import { useWebSocket, type WebSocketBaseMessage } from '../composables/useWebSocket.ts'
+import { OpenAPI } from '../api'
 import {
   FALLBACK_PAGE_DECLARATIONS,
   normalizePageDeclarations,
@@ -128,6 +129,7 @@ onMounted(() => {
   }
   backgroundSubscriptionId = subscribe({ id: 'PluginSystem' }, handlePluginSystemMessage)
   syncDeclaredPageRoutes(router, declaredPages.value)
+  void fetchInitialPluginSnapshot()
 })
 
 onUnmounted(() => {
@@ -162,6 +164,9 @@ interface PluginSystemHmrMessage {
 }
 
 interface PluginSystemSnapshotMessage {
+  code?: number
+  status?: string
+  message?: string
   kind?: string
   pages?: PageDeclaration[]
   instances?: Array<{
@@ -177,6 +182,32 @@ const applyPageDeclarations = (rawPages: unknown) => {
   const pages = normalizePageDeclarations(rawPages)
   declaredPages.value = sortPageDeclarations(pages)
   syncDeclaredPageRoutes(router, declaredPages.value)
+}
+
+const toBackendUrl = (path: string) => {
+  const base = (OpenAPI.BASE || 'http://localhost:36163').replace(/\/+$/, '')
+  return `${base}${path.startsWith('/') ? path : `/${path}`}`
+}
+
+const fetchInitialPluginSnapshot = async () => {
+  try {
+    const response = await fetch(toBackendUrl('/api/plugins/get'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    const payload = (await response.json()) as PluginSystemSnapshotMessage
+    if (!response.ok || (payload.code !== undefined && payload.code !== 200)) {
+      throw new Error(payload.message || `HTTP ${response.status}`)
+    }
+    if (Array.isArray(payload.pages)) {
+      applyPageDeclarations(payload.pages)
+      refreshBackgroundFromSnapshotIfNeeded(payload)
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn(`加载插件页面声明失败，等待实时更新: ${message}`)
+  }
 }
 
 const getBackgroundProviderPlugins = (payload: PluginSystemSnapshotMessage) => {

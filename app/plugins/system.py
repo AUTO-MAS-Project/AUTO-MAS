@@ -26,6 +26,13 @@ SYSTEM_PLUGIN_SPECS: dict[str, SystemPluginSpec] = {
         source_dir=Path.cwd() / "plugins" / "auto_mas_core",
         default_instance_name="AUTO-MAS Core",
     ),
+    "emulator": SystemPluginSpec(
+        plugin_name="emulator",
+        distribution_name="automas-plugin-emulator",
+        package_name="automas-plugin-emulator",
+        source_dir=Path.cwd() / "plugins" / "emulator",
+        default_instance_name="模拟器管理",
+    ),
 }
 
 SYSTEM_PLUGIN_PACKAGES = {

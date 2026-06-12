@@ -210,14 +210,16 @@ class PageRegistry:
     @staticmethod
     def _priority(page: PageDeclaration) -> tuple[int, int, str]:
         source = page.source
-        if source == "host:core":
+        if source.startswith("plugin:"):
             rank = 0
-        elif source.startswith("host:"):
+        elif source == "host:core":
             rank = 1
-        elif source.startswith("module:"):
+        elif source.startswith("host:"):
             rank = 2
-        else:
+        elif source.startswith("module:"):
             rank = 3
+        else:
+            rank = 4
         return rank, int(page.order), source
 
     @staticmethod
@@ -342,16 +344,6 @@ BUILTIN_PAGES: list[dict[str, Any]] = [
         "component": "Plans",
         "section": "main",
         "order": 30,
-    },
-    {
-        "id": "emulators",
-        "path": "/emulators",
-        "title": "模拟器管理",
-        "menu_label": "模拟器管理",
-        "icon": "emulator",
-        "component": "Emulators",
-        "section": "main",
-        "order": 40,
     },
     {
         "id": "plugins",
