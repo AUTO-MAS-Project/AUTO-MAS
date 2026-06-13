@@ -232,10 +232,6 @@ def build_template_variables(
         "description": description,
         "description_escaped": description.replace('"', '\\"'),
         "workspace_dir": workspace_dir.resolve().as_posix(),
-        "plugin_dev_entry_url": (
-            "http://127.0.0.1:5173/@fs/"
-            f"{(workspace_dir / 'plugins' / plugin_name / 'frontend-src' / 'src' / 'main.ts').resolve().as_posix()}"
-        ),
     }
 
 
