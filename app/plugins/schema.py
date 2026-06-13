@@ -26,6 +26,53 @@ def _make_literal(values: tuple[Any, ...]) -> Any:
     return Literal.__getitem__(values)  # type: ignore[attr-defined]
 
 
+def normalize_schema_options(
+    options: list[Any] | tuple[Any, ...] | None,
+    option_labels: Mapping[Any, str] | None = None,
+) -> list[dict[str, Any]] | None:
+    """Normalize schema options to the frontend `{label, value}` shape."""
+
+    if options is None:
+        return None
+
+    labels = option_labels if isinstance(option_labels, Mapping) else {}
+    normalized: list[dict[str, Any]] = []
+    for option in options:
+        if isinstance(option, dict) and "value" in option:
+            item = copy.deepcopy(option)
+            if "label" not in item:
+                item["label"] = _option_label(item["value"], labels)
+            normalized.append(item)
+            continue
+
+        normalized.append(
+            {
+                "label": _option_label(option, labels),
+                "value": copy.deepcopy(option),
+            }
+        )
+    return normalized
+
+
+def option_values(options: list[Any] | tuple[Any, ...] | None) -> list[Any]:
+    """Extract runtime values from normalized or shorthand schema options."""
+
+    values: list[Any] = []
+    for option in options or []:
+        if isinstance(option, dict) and "value" in option:
+            values.append(option["value"])
+        else:
+            values.append(option)
+    return values
+
+
+def _option_label(value: Any, labels: Mapping[Any, str]) -> str:
+    for key, label in labels.items():
+        if key == value:
+            return str(label)
+    return str(value)
+
+
 class PluginSchemaError(Exception):
     """插件 Schema 与配置处理错误。"""
 
@@ -660,6 +707,14 @@ class PluginSchemaManager:
                         f"Config 字段 json_schema_extra 必须是对象: {plugin_name}.{field_name}"
                     )
                 field_schema.update(copy.deepcopy(extra))
+
+            option_labels = field_schema.pop("option_labels", None)
+            labels = option_labels if isinstance(option_labels, dict) else None
+            options = field_schema.get("options")
+            if isinstance(options, list):
+                field_schema["options"] = normalize_schema_options(options, labels)
+            elif labels is not None and isinstance(field_schema.get("enum"), list):
+                field_schema["options"] = normalize_schema_options(field_schema["enum"], labels)
 
             result[field_name] = field_schema
 

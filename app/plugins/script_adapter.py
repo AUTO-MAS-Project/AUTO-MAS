@@ -36,6 +36,7 @@ from app.models.task import ScriptItem, TaskExecuteBase, TaskItem
 from app.utils import get_logger
 
 from .context import PluginContext
+from .schema import normalize_schema_options
 
 logger = get_logger("脚本适配框架")
 
@@ -129,13 +130,15 @@ def _field_constraints(field_info: Any) -> dict[str, Any]:
 
 
 def _schema_options(annotation: Any, extra: dict[str, Any]) -> list[Any] | None:
+    option_labels = extra.get("option_labels")
+    labels = option_labels if isinstance(option_labels, dict) else None
     options = extra.get("options")
     if isinstance(options, list):
-        return options
+        return normalize_schema_options(options, labels)
     values = _literal_values(annotation) or _list_literal_values(annotation)
     if values is None:
         return None
-    return [{"label": str(value), "value": value} for value in values]
+    return normalize_schema_options(values, labels)
 
 
 def _serialize_virtual_value(value: Any) -> str:

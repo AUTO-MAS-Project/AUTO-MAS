@@ -9,10 +9,6 @@ from app.plugins.fields import PluginField
 from app.utils.constants import UTC4
 
 
-def _option_values(values: list[str]) -> list[dict[str, str]]:
-    return [{"label": value, "value": value} for value in values]
-
-
 def _build_user_tags(config: Any) -> str:
     """生成通用脚本用户标签。"""
 
@@ -86,7 +82,7 @@ WEBHOOK_GROUPS = (
                 "Method",
                 "请求方法",
                 "POST",
-                _option_values(["POST", "GET"]),
+                ["POST", "GET"],
             ),
         ],
     ),
@@ -142,13 +138,13 @@ SCRIPT_GROUPS = (
                 "ConfigPathMode",
                 "配置路径模式",
                 "File",
-                _option_values(["File", "Folder"]),
+                ["File", "Folder"],
             ),
             PluginField.select(
                 "UpdateConfigMode",
                 "配置回写策略",
                 "Never",
-                _option_values(["Never", "Success", "Failure", "Always"]),
+                ["Never", "Success", "Failure", "Always"],
             ),
             PluginField.file(
                 "LogPath",
@@ -188,7 +184,7 @@ SCRIPT_GROUPS = (
                 "Type",
                 "游戏类型",
                 "Emulator",
-                _option_values(["Emulator", "Client", "URL"]),
+                ["Emulator", "Client", "URL"],
             ),
             PluginField.file(
                 "Path",
