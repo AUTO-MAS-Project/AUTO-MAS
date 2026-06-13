@@ -9,6 +9,7 @@ from typing import Any, Callable, Literal, get_args, get_origin
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
+from app.plugins.schema import normalize_schema_options, option_values
 from app.models.ConfigBase import (
     BoolValidator,
     ConfigBase,
@@ -296,13 +297,15 @@ def _field_type(annotation: Any, extra: dict[str, Any]) -> str:
 
 
 def _field_options(annotation: Any, extra: dict[str, Any]) -> list[Any] | None:
+    option_labels = extra.get("option_labels")
+    labels = option_labels if isinstance(option_labels, dict) else None
     options = extra.get("options")
     if isinstance(options, list):
-        return copy.deepcopy(options)
+        return normalize_schema_options(options, labels)
     values = _literal_values(annotation)
     if values is None:
         return None
-    return [{"label": str(value), "value": value} for value in values]
+    return normalize_schema_options(values, labels)
 
 
 def _field_from_model_field(name: str, field_info: Any) -> PluginFieldDeclaration:
@@ -325,6 +328,7 @@ def _field_from_model_field(name: str, field_info: Any) -> PluginFieldDeclaratio
     field_type = _field_type(field_info.annotation, extra)
     field_kwargs: dict[str, Any] = {
         "options": _field_options(field_info.annotation, extra),
+        "option_labels": extra.pop("option_labels", None),
         "options_provider": extra.pop("options_provider", None),
         "placeholder": extra.pop("placeholder", None),
         "help": extra.pop("help", None),
@@ -352,6 +356,7 @@ def _field_from_model_field(name: str, field_info: Any) -> PluginFieldDeclaratio
         "virtual_handler": extra.pop("virtual_handler", None),
         "include_in_schema": bool(extra.pop("include_in_schema", True)),
     }
+    extra.pop("options", None)
     if field_type == "json" and field_kwargs["json_type"] is None:
         field_kwargs["json_type"] = "object"
     if field_type == "folder" and field_kwargs["path_kind"] is None:
@@ -425,12 +430,12 @@ def _build_validator(
     if field.field_type == "url" or field.format == "url":
         return URLValidator(default=str(_copy_default(field.default) or ""))
     if field.field_type == "select":
-        options = _option_values(field.options or [])
+        options = option_values(field.options)
         if options or field.options_provider is None:
             return OptionsValidator(options)
         return StringValidator()
     if field.field_type == "multiselect":
-        options = _option_values(field.options or [])
+        options = option_values(field.options)
         if options or field.options_provider is None:
             return MultipleOptionsValidator(options)
         return _DynamicMultipleOptionsValidator()
@@ -477,7 +482,7 @@ def _build_schema_field(
     if field.sensitive:
         schema["sensitive"] = True
     if field.options is not None:
-        schema["options"] = copy.deepcopy(field.options)
+        schema["options"] = normalize_schema_options(field.options, field.option_labels)
     if field.options_provider is not None:
         schema["options_provider"] = copy.deepcopy(field.options_provider)
 
@@ -503,16 +508,6 @@ def _build_schema_field(
 def _copy_optional(schema: dict[str, Any], key: str, value: Any) -> None:
     if value is not None:
         schema[key] = copy.deepcopy(value)
-
-
-def _option_values(options: list[Any]) -> list[Any]:
-    values: list[Any] = []
-    for option in options:
-        if isinstance(option, dict) and "value" in option:
-            values.append(option["value"])
-        else:
-            values.append(option)
-    return values
 
 
 def _copy_default(default: Any) -> Any:
