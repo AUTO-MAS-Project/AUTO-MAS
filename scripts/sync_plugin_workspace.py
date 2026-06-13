@@ -155,6 +155,72 @@ def _module_file_name(distribution: str) -> str:
     return distribution.replace("-", "_") + ".iml"
 
 
+def _create_pycharm_module_tree(project: PluginProject) -> ET.ElementTree:
+    root = ET.Element(
+        "module",
+        {
+            "external.system.id": "pyproject.toml",
+            "type": "PYTHON_MODULE",
+            "version": "4",
+        },
+    )
+    manager = ET.SubElement(root, "component", {"name": "NewModuleRootManager"})
+    content = ET.SubElement(manager, "content", {"url": f"file://$MODULE_DIR$/{project.member}"})
+    if (project.path / "src").exists():
+        ET.SubElement(
+            content,
+            "sourceFolder",
+            {"url": f"file://$MODULE_DIR$/{project.member}/src", "isTestSource": "false"},
+        )
+    if (project.path / ".venv").exists():
+        ET.SubElement(content, "excludeFolder", {"url": f"file://$MODULE_DIR$/{project.member}/.venv"})
+
+    ET.SubElement(manager, "orderEntry", {"type": "module", "module-name": ROOT_MODULE_NAME})
+    if project.distribution != "auto-mas-core":
+        ET.SubElement(manager, "orderEntry", {"type": "module", "module-name": CORE_PLUGIN_MODULE_NAME})
+    ET.SubElement(manager, "orderEntry", {"type": "sourceFolder", "forTests": "false"})
+    ET.SubElement(
+        manager,
+        "orderEntry",
+        {"type": "jdk", "jdkName": ROOT_SDK_NAME, "jdkType": ROOT_SDK_TYPE},
+    )
+    return ET.ElementTree(root)
+
+
+def _register_pycharm_module(idea_dir: Path, iml_path: Path) -> Path | None:
+    modules_xml = idea_dir / "modules.xml"
+    if modules_xml.exists():
+        tree = ET.parse(modules_xml)
+        root = tree.getroot()
+    else:
+        root = ET.Element("project", {"version": "4"})
+        tree = ET.ElementTree(root)
+
+    manager = root.find("component[@name='ProjectModuleManager']")
+    if manager is None:
+        manager = ET.SubElement(root, "component", {"name": "ProjectModuleManager"})
+
+    modules = manager.find("modules")
+    if modules is None:
+        modules = ET.SubElement(manager, "modules")
+
+    fileurl = f"file://$PROJECT_DIR$/.idea/{iml_path.name}"
+    filepath = f"$PROJECT_DIR$/.idea/{iml_path.name}"
+    has_module = any(
+        module.get("fileurl") == fileurl or module.get("filepath") == filepath
+        for module in modules.findall("module")
+    )
+    if has_module:
+        return None
+
+    ET.SubElement(modules, "module", {"fileurl": fileurl, "filepath": filepath})
+    ET.indent(tree, space="  ")
+    before = modules_xml.read_text(encoding="utf-8") if modules_xml.exists() else ""
+    tree.write(modules_xml, encoding="utf-8", xml_declaration=True)
+    after = modules_xml.read_text(encoding="utf-8")
+    return modules_xml if before != after else None
+
+
 def sync_pycharm_modules(workspace: Path, projects: list[PluginProject]) -> list[Path]:
     idea_dir = workspace / ".idea"
     if not idea_dir.exists():
@@ -163,10 +229,17 @@ def sync_pycharm_modules(workspace: Path, projects: list[PluginProject]) -> list
     changed: list[Path] = []
     for project in projects:
         iml_path = idea_dir / _module_file_name(project.distribution)
-        if not iml_path.exists():
-            continue
+        if iml_path.exists():
+            tree = ET.parse(iml_path)
+            before = iml_path.read_text(encoding="utf-8")
+        else:
+            tree = _create_pycharm_module_tree(project)
+            before = ""
 
-        tree = ET.parse(iml_path)
+        modules_xml = _register_pycharm_module(idea_dir, iml_path)
+        if modules_xml is not None and modules_xml not in changed:
+            changed.append(modules_xml)
+
         root = tree.getroot()
         manager = root.find("component[@name='NewModuleRootManager']")
         if manager is None:
@@ -242,7 +315,6 @@ def sync_pycharm_modules(workspace: Path, projects: list[PluginProject]) -> list
                 ET.SubElement(content, "sourceFolder", {"url": src_url, "isTestSource": "false"})
 
         ET.indent(tree, space="  ")
-        before = iml_path.read_text(encoding="utf-8")
         tree.write(iml_path, encoding="utf-8", xml_declaration=True)
         after = iml_path.read_text(encoding="utf-8")
         if before != after:
