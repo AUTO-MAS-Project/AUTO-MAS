@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "auto-mas"
 version = "5.2.0"
@@ -116,3 +120,6 @@ exclude = [
 "automas_script_maa" = { workspace = true }
 "automas_scritp_src" = { workspace = true }
 "automas_test" = { workspace = true }
+
+[tool.setuptools.packages.find]
+include = ["app*"]
