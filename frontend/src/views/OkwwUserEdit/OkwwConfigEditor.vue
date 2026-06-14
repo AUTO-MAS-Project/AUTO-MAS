@@ -45,13 +45,13 @@
         <a-col :span="16" class="right-panel">
           <div v-if="selectedConfig" class="config-form">
             <div class="form-header">
-              <h4>{{ selectedConfig.displayName }}</h4>
-              <span class="form-filename">{{ selectedConfig.filename }}</span>
+              <h4>{{ selectedConfigForTemplate.displayName }}</h4>
+              <span class="form-filename">{{ selectedConfigForTemplate.filename }}</span>
             </div>
 
             <a-form layout="vertical" class="form-fields">
               <a-form-item
-                v-for="field in selectedConfig.fields"
+                v-for="field in selectedConfigForTemplate.fields"
                 :key="field.name"
                 :label="field.label || field.name"
               >
@@ -62,16 +62,16 @@
                 <!-- bool 类型：开关 -->
                 <a-switch
                   v-if="field.type === 'bool'"
-                  :checked="getFieldValue(selectedConfig.filename, field.name, field.value)"
-                  @change="(val: boolean) => setFieldValue(selectedConfig.filename, field.name, val)"
+                  :checked="getFieldValue(selectedConfigForTemplate.filename, field.name, field.value)"
+                  @change="(val: boolean) => setFieldValue(selectedConfigForTemplate.filename, field.name, val)"
                 />
 
                 <!-- select 类型：下拉选择 -->
                 <a-select
                   v-else-if="field.type === 'select'"
-                  :value="getFieldValue(selectedConfig.filename, field.name, field.value)"
+                  :value="getFieldValue(selectedConfigForTemplate.filename, field.name, field.value)"
                   style="width: 100%"
-                  @change="(val: string) => setFieldValue(selectedConfig.filename, field.name, val)"
+                  @change="(val: string) => setFieldValue(selectedConfigForTemplate.filename, field.name, val)"
                 >
                   <a-select-option
                     v-for="opt in (field.options || [])"
@@ -85,11 +85,11 @@
                 <!-- list 类型：多选 -->
                 <a-select
                   v-else-if="field.type === 'list'"
-                  :value="getFieldValue(selectedConfig.filename, field.name, field.value)"
+                  :value="getFieldValue(selectedConfigForTemplate.filename, field.name, field.value)"
                   mode="multiple"
                   style="width: 100%"
                   placeholder="请选择"
-                  @change="(val: string[]) => setFieldValue(selectedConfig.filename, field.name, val)"
+                  @change="(val: string[]) => setFieldValue(selectedConfigForTemplate.filename, field.name, val)"
                 >
                   <a-select-option
                     v-for="opt in (field.options || [])"
@@ -103,42 +103,42 @@
                 <!-- int 类型：整数输入 -->
                 <a-input-number
                   v-else-if="field.type === 'int'"
-                  :value="getFieldValue(selectedConfig.filename, field.name, field.value)"
+                  :value="getFieldValue(selectedConfigForTemplate.filename, field.name, field.value)"
                   :min="field.min"
                   :max="field.max"
                   style="width: 100%"
-                  @change="(val: number | null) => { if (val !== null) setFieldValue(selectedConfig.filename, field.name, val) }"
+                  @change="(val: number | null) => { if (val !== null) setFieldValue(selectedConfigForTemplate.filename, field.name, val) }"
                 />
 
                 <!-- float 类型：浮点数输入 -->
                 <a-input-number
                   v-else-if="field.type === 'float'"
-                  :value="getFieldValue(selectedConfig.filename, field.name, field.value)"
+                  :value="getFieldValue(selectedConfigForTemplate.filename, field.name, field.value)"
                   :min="field.min"
                   :max="field.max"
                   :step="field.step || 0.1"
                   style="width: 100%"
-                  @change="(val: number | null) => { if (val !== null) setFieldValue(selectedConfig.filename, field.name, val) }"
+                  @change="(val: number | null) => { if (val !== null) setFieldValue(selectedConfigForTemplate.filename, field.name, val) }"
                 />
 
                 <!-- hotkey 类型：快捷键输入 -->
                 <a-input
                   v-else-if="field.type === 'hotkey'"
-                  :value="getFieldValue(selectedConfig.filename, field.name, field.value)"
+                  :value="getFieldValue(selectedConfigForTemplate.filename, field.name, field.value)"
                   style="width: 100%"
-                  @change="(e: Event) => setFieldValue(selectedConfig.filename, field.name, (e.target as HTMLInputElement).value)"
+                  @change="(e: Event) => setFieldValue(selectedConfigForTemplate.filename, field.name, (e.target as HTMLInputElement).value)"
                 />
 
                 <!-- string 类型：文本输入 -->
                 <a-input
                   v-else
-                  :value="getFieldValue(selectedConfig.filename, field.name, field.value)"
+                  :value="getFieldValue(selectedConfigForTemplate.filename, field.name, field.value)"
                   style="width: 100%"
-                  @change="(e: Event) => setFieldValue(selectedConfig.filename, field.name, (e.target as HTMLInputElement).value)"
+                  @change="(e: Event) => setFieldValue(selectedConfigForTemplate.filename, field.name, (e.target as HTMLInputElement).value)"
                 />
               </a-form-item>
 
-              <div v-if="selectedConfig.fields.length === 0" class="empty-fields">
+              <div v-if="selectedConfigForTemplate.fields.length === 0" class="empty-fields">
                 <a-empty description="该配置文件暂无可编辑的字段" />
               </div>
             </a-form>
@@ -182,6 +182,7 @@ interface ConfigFile {
 
 const props = defineProps<{
   scriptId: string
+  userId: string
 }>()
 
 const emit = defineEmits<{
@@ -198,6 +199,16 @@ const changedFiles = ref(new Set<string>())
 const localChanges = ref<Record<string, Record<string, any>>>({})
 const optionLabels = ref<Record<string, string>>({})
 
+const emptyConfig: ConfigFile = {
+  filename: '',
+  displayName: '',
+  group: '',
+  taskIndex: null,
+  fieldCount: 0,
+  fields: [],
+  currentData: {},
+}
+
 const groupedConfigs = computed(() => {
   const groups: Record<string, ConfigFile[]> = {}
   for (const config of configs.value) {
@@ -213,6 +224,7 @@ const selectedConfig = computed(() => {
   return configs.value.find(c => c.filename === selectedFilename.value) || null
 })
 
+const selectedConfigForTemplate = computed<ConfigFile>(() => selectedConfig.value || emptyConfig)
 const hasChanges = computed(() => changedFiles.value.size > 0)
 
 const getOptionLabel = (value: string) => {
@@ -255,13 +267,22 @@ const selectConfig = (filename: string) => {
 }
 
 const loadConfigs = async () => {
+  if (!props.scriptId || !props.userId) return
   loading.value = true
   try {
-    const resp = await OkwwService.getOkwwConfigsListApiScriptsOkwwConfigsListPost(props.scriptId)
+    const resp = await OkwwService.getOkwwConfigsListApiScriptsOkwwConfigsListPost(
+      props.scriptId,
+      props.userId,
+    )
     if (resp?.code === 200 && resp?.data) {
       configs.value = resp.data
       optionLabels.value = resp.optionLabels || {}
-      // 默认选中第一个
+      if (
+        selectedFilename.value &&
+        !configs.value.some(config => config.filename === selectedFilename.value)
+      ) {
+        selectedFilename.value = null
+      }
       if (configs.value.length > 0 && !selectedFilename.value) {
         selectedFilename.value = configs.value[0].filename
       }
@@ -281,10 +302,13 @@ const saveAll = async (silent = true) => {
   saving.value = true
   try {
     const configsToUpdate = { ...localChanges.value }
-    const resp = await OkwwService.batchUpdateOkwwConfigsApiScriptsOkwwConfigsBatchUpdatePost({
-      script_id: props.scriptId,
-      configs: configsToUpdate
-    })
+    const resp = await OkwwService.batchUpdateOkwwConfigsApiScriptsOkwwConfigsBatchUpdatePost(
+      {
+        script_id: props.scriptId,
+        user_id: props.userId,
+        configs: configsToUpdate,
+      },
+    )
     if (resp?.code === 200) {
       // 更新本地数据
       for (const [filename, data] of Object.entries(configsToUpdate)) {
@@ -325,9 +349,15 @@ onBeforeUnmount(async () => {
   }
 })
 
-watch(() => props.scriptId, () => {
-  if (props.scriptId) {
-    loadConfigs()
+watch(() => [props.scriptId, props.userId], async () => {
+  if (props.scriptId && props.userId) {
+    if (hasChanges.value) {
+      await saveAll(true)
+    }
+    selectedFilename.value = null
+    changedFiles.value = new Set()
+    localChanges.value = {}
+    await loadConfigs()
   }
 })
 </script>

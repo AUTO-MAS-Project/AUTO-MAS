@@ -220,7 +220,12 @@
 
       <!-- OK-WW 配置编辑器 -->
       <a-card class="config-card" style="margin-top: 24px">
-        <OkwwConfigEditor :script-id="scriptId" @saved="handleConfigSaved" />
+        <OkwwConfigEditor
+          v-if="userId"
+          :script-id="scriptId"
+          :user-id="userId"
+          @saved="handleConfigSaved"
+        />
       </a-card>
 
       <a-card class="config-card" style="margin-top: 24px">
@@ -313,7 +318,6 @@ import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
-import type { OkwwUserConfig } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import WebhookManager from '@/components/WebhookManager.vue'
@@ -327,8 +331,8 @@ const { addUser, getUsers, updateUser } = useUserApi()
 const { getScript } = useScriptApi()
 
 const scriptId = route.params.scriptId as string
-let userId = (route.params.userId as string) || ''
-const isEdit = ref(!!userId)
+const userId = ref((route.params.userId as string) || '')
+const isEdit = ref(!!userId.value)
 const scriptName = ref('ok-ww脚本')
 
 const pageLoading = ref(true)
@@ -351,13 +355,56 @@ const okwwTaskOptions = [
   { label: '8 - TacetTask（无音区）', value: 8 },
 ]
 
-const getDefaultUserData = () => ({
+interface OkwwUserInfoForm {
+  Name: string
+  Status: boolean
+  Id: string
+  Password: string
+  Mode: '详细'
+  Resource: '官服'
+  RemainedDay: number
+  IfScriptBeforeTask: boolean
+  ScriptBeforeTask: string
+  IfScriptAfterTask: boolean
+  ScriptAfterTask: string
+  Notes: string
+}
+
+interface OkwwUserTaskForm {
+  TaskIndex: number
+  ExitOnFinish: boolean
+}
+
+interface OkwwUserNotifyForm {
+  Enabled: boolean
+  IfSendStatistic: boolean
+  IfSendMail: boolean
+  ToAddress: string
+  IfServerChan: boolean
+  ServerChanKey: string
+  CustomWebhooks: any[]
+}
+
+interface OkwwUserDataForm {
+  LastProxyDate: string
+  ProxyTimes: number
+}
+
+interface OkwwUserFormData {
+  userName: string
+  Info: OkwwUserInfoForm
+  Task: OkwwUserTaskForm
+  Notify: OkwwUserNotifyForm
+  Data: OkwwUserDataForm
+}
+
+const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
   Info: {
     Name: '',
     Status: true,
     Id: '',
     Password: '',
-    Mode: '简洁',
+    Mode: '详细',
     Resource: '官服',
     RemainedDay: -1,
     IfScriptBeforeTask: false,
@@ -385,9 +432,9 @@ const getDefaultUserData = () => ({
   },
 })
 
-const formData = reactive({
+const formData = reactive<OkwwUserFormData>({
   userName: '',
-  ...(getDefaultUserData() as unknown as OkwwUserConfig),
+  ...getDefaultUserData(),
 })
 
 const currentStartupArguments = computed(() => `-t ${formData.Task.TaskIndex || 1} -e`)
@@ -399,16 +446,16 @@ const createUserImmediately = async () => {
   if (!resp?.userId) {
     throw new Error(resp?.message || '创建用户失败')
   }
-  userId = resp.userId
+  userId.value = resp.userId
   isEdit.value = true
   await router.replace({
     name: 'OkwwUserEdit',
-    params: { scriptId, userId },
+    params: { scriptId, userId: userId.value },
   })
 }
 
 const saveField = async (key: string, value: unknown) => {
-  if (isInitializing.value || isSaving.value || !userId) return
+  if (isInitializing.value || isSaving.value || !userId.value) return
 
   isSaving.value = true
   try {
@@ -425,7 +472,7 @@ const saveField = async (key: string, value: unknown) => {
       formData.userName = String(value || '')
     }
 
-    await updateUser(scriptId, userId, patch)
+    await updateUser(scriptId, userId.value, patch)
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
   } finally {
@@ -434,9 +481,9 @@ const saveField = async (key: string, value: unknown) => {
 }
 
 const saveTaskConfig = async () => {
-  if (isInitializing.value || !userId) return
+  if (isInitializing.value || !userId.value) return
   formData.Task.ExitOnFinish = true
-  await updateUser(scriptId, userId, {
+  await updateUser(scriptId, userId.value, {
     Task: {
       TaskIndex: formData.Task.TaskIndex,
       ExitOnFinish: true,
@@ -463,26 +510,42 @@ const loadScriptInfo = async () => {
 const loadUser = async () => {
   pageLoading.value = true
   try {
-    if (!userId) {
+    if (!userId.value) {
       await createUserImmediately()
     }
-    const resp = await getUsers(scriptId, userId)
-    const userIndex = resp?.index?.find(i => i.uid === userId)
-    const data = resp?.data?.[userId]
+    const resp = await getUsers(scriptId, userId.value)
+    const userIndex = resp?.index?.find(i => i.uid === userId.value)
+    const data = resp?.data?.[userId.value]
     if (!userIndex || !data) {
       throw new Error('用户不存在或加载失败')
     }
 
+    const userData = data as Partial<OkwwUserFormData>
+    const shouldPersistExitOnFinish = userData.Task?.ExitOnFinish !== true
+
     Object.assign(formData, {
-      Info: { ...getDefaultUserData().Info, ...(data.Info || {}) },
-      Task: { ...getDefaultUserData().Task, ...(data.Task || {}) },
-      Notify: { ...getDefaultUserData().Notify, ...(data.Notify || {}) },
-      Data: { ...getDefaultUserData().Data, ...(data.Data || {}) },
+      Info: { ...getDefaultUserData().Info, ...(userData.Info || {}) },
+      Task: { ...getDefaultUserData().Task, ...(userData.Task || {}) },
+      Notify: { ...getDefaultUserData().Notify, ...(userData.Notify || {}) },
+      Data: { ...getDefaultUserData().Data, ...(userData.Data || {}) },
     })
+    formData.Info.Mode = '详细'
     formData.Task.ExitOnFinish = true
     const taskIndex = Number(formData.Task.TaskIndex)
+    let shouldPersistTaskIndex = false
     if (!Number.isFinite(taskIndex) || taskIndex < 1 || taskIndex > OKWW_MAX_TASK_INDEX) {
       formData.Task.TaskIndex = 1
+      shouldPersistTaskIndex = true
+    }
+    const patch: Record<string, any> = {}
+    if (shouldPersistExitOnFinish || shouldPersistTaskIndex) {
+      patch.Task = {
+        TaskIndex: formData.Task.TaskIndex,
+        ExitOnFinish: true,
+      }
+    }
+    if (Object.keys(patch).length > 0) {
+      await updateUser(scriptId, userId.value, patch)
     }
     await nextTick()
     formData.userName = formData.Info.Name || ''
