@@ -37,6 +37,7 @@ from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager, strptime
 from app.utils.constants import STARRAIL_PACKAGE_NAME, UTC4
 from .tools import login, push_notification, poor_yaml_read, poor_yaml_write
+from app.task.general.tools import execute_script_task
 
 logger = get_logger("SRC脚本自动代理")
 
@@ -142,6 +143,13 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log = (
                 LogRecord()
             )
+
+            # 执行任务前脚本
+            if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
+                await execute_script_task(
+                    Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
+                    "脚本前任务",
+                )
 
             self.script_info.log = "正在启动模拟器..."
             # 启动模拟器
@@ -256,6 +264,13 @@ class AutoProxyTask(TaskExecuteBase):
                     dirs_exist_ok=True,
                 )
                 logger.success("SRC 脚本配置文件已更新")
+
+            # 执行任务后脚本
+            if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+                await execute_script_task(
+                    Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
+                    "脚本后任务",
+                )
 
     async def handle_pre_src_error(
         self, error_message: str, e: Exception | None = None
