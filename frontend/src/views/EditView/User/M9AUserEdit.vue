@@ -11,6 +11,8 @@
 
           <TaskQueueSection :script-id="scriptId" v-model:task-queue="taskQueue" :loading="loading" />
 
+          <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
+
           <NotifyConfigSection :form-data="formData" :loading="loading" :script-id="scriptId" :user-id="userId"
             @save="handleFieldSave" />
         </a-form>
@@ -34,6 +36,7 @@ import M9AUserEditHeader from '../../M9AUserEdit/M9AUserEditHeader.vue'
 import BasicInfoSection from '../../M9AUserEdit/BasicInfoSection.vue'
 import TaskQueueSection from '../../M9AUserEdit/TaskQueueSection.vue'
 import NotifyConfigSection from '../../M9AUserEdit/NotifyConfigSection.vue'
+import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -59,6 +62,10 @@ const getDefaultM9AUserData = () => ({
     Name: '',
     Status: true,
     RemainedDay: -1,
+    IfScriptBeforeTask: false,
+    ScriptBeforeTask: '',
+    IfScriptAfterTask: false,
+    ScriptAfterTask: '',
     Notes: '',
     Tag: '',
     Resource: '官服',

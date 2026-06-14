@@ -70,6 +70,16 @@ def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
     return True
 
 
+def is_process_running(process_name: str) -> bool:
+    """检查指定进程名是否正在运行"""
+
+    for proc in psutil.process_iter(["name"]):
+        with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+            if proc.info.get("name") == process_name:
+                return True
+    return False
+
+
 def get_window_handles(pid: int) -> list[int]:
     """获取指定进程的所有窗口句柄"""
 

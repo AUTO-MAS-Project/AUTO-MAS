@@ -58,6 +58,9 @@
           <!-- 森空岛配置组件 -->
           <SkylandConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
 
+          <!-- 额外脚本组件 -->
+          <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
+
           <!-- 通知配置组件 -->
           <NotifyConfigSection :form-data="formData" :loading="loading" :script-id="scriptId" :user-id="userId"
             @save="handleFieldSave" />
@@ -91,6 +94,7 @@ import StageConfigSection from '../../MAAUserEdit/StageConfigSection.vue'
 import TaskConfigSection from '../../MAAUserEdit/TaskConfigSection.vue'
 import SkylandConfigSection from '../../MAAUserEdit/SkylandConfigSection.vue'
 import NotifyConfigSection from '../../MAAUserEdit/NotifyConfigSection.vue'
+import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -379,6 +383,10 @@ const getDefaultMAAUserData = () => ({
     Server: 'Official',
     MedicineNumb: 0,
     RemainedDay: -1,
+    IfScriptBeforeTask: false,
+    ScriptBeforeTask: '',
+    IfScriptAfterTask: false,
+    ScriptAfterTask: '',
     SeriesNumb: '0',
     Notes: '',
     Status: true,

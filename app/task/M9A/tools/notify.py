@@ -360,6 +360,22 @@ async def push_notification(
         await _push_statistics(title, message, user_config)
 
 
+async def push_version_update(title: str, message: dict) -> None:
+    """推送版本更新通知（系统事件，不经过 SendTaskResultTime 过滤器）
+
+    Args:
+        title: 通知标题
+        message: 通知内容字典，需包含以下字段：
+            title, script_name, start_time, end_time, completed_count,
+            uncompleted_count, result
+    """
+    logger.info(f"开始推送版本更新通知: {title}")
+    # 提取纯文本消息（result 字段作为正文，不附加任务统计前缀）
+    message_text = message["result"]
+    message_html = Config.notify_env.get_template("general_result.html").render(message)
+    await _send_to_all_global_channels(title, message_text, message_html)
+
+
 async def _push_proxy_result(title: str, message: dict) -> None:
     """推送全局代理结果通知"""
     result_time_setting = Config.get("Notify", "SendTaskResultTime")
