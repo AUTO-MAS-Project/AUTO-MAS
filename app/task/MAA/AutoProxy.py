@@ -48,6 +48,7 @@ from app.utils.constants import (
     MAA_TASK_TRANSITION_METHOD_BOOK,
 )
 from .tools import push_notification, agree_bilibili, update_maa
+from app.task.general.tools import execute_script_task
 
 logger = get_logger("MAA 自动代理")
 
@@ -201,6 +202,13 @@ class AutoProxyTask(TaskExecuteBase):
                 },
             )
 
+        # 执行任务前脚本（每用户仅一次）
+        if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
+            await execute_script_task(
+                Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
+                "脚本前任务",
+            )
+
         # 执行剿灭 + 日常
         for self.mode in ["Annihilation", "Routine"]:
             if self.run_book[self.mode]:
@@ -320,6 +328,13 @@ class AutoProxyTask(TaskExecuteBase):
 
                 await update_maa(self.maa_root_path)
                 await asyncio.sleep(3)
+
+        # 执行任务后脚本（每用户仅一次）
+        if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+            await execute_script_task(
+                Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
+                "脚本后任务",
+            )
 
     async def set_maa(self, emulator_info: DeviceInfo):
         """配置MAA运行参数"""

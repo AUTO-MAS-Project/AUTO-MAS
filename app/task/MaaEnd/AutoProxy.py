@@ -38,6 +38,7 @@ from app.utils import get_logger, LogMonitor, ProcessManager, is_process_running
 from app.tools import skland_sign_in
 from app.utils.constants import UTC4, UTC8, MAAEND_SANITY_TASK_FIELDS, MAAEND_TASKS
 from .tools import login, push_notification
+from app.task.general.tools import execute_script_task
 
 logger = get_logger("MaaEnd 自动代理")
 
@@ -208,6 +209,13 @@ class AutoProxyTask(TaskExecuteBase):
                 LogRecord()
             )
 
+            # 执行任务前脚本
+            if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
+                await execute_script_task(
+                    Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
+                    "脚本前任务",
+                )
+
             self.script_info.log = "正在启动游戏..."
             # 启动游戏
             controller_type = self.script_config.get("Game", "ControllerType")
@@ -302,6 +310,13 @@ class AutoProxyTask(TaskExecuteBase):
                 await self.maaend_process_manager.kill()
                 await System.kill_process(self.maaend_exe_path)
 
+                # 执行任务后脚本
+                if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+                    await execute_script_task(
+                        Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
+                        "脚本后任务",
+                    )
+
             else:
                 logger.error(
                     f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
@@ -317,6 +332,14 @@ class AutoProxyTask(TaskExecuteBase):
                     f"{self.cur_user_item.name}的自动代理出现异常",
                     3,
                 )
+
+                # 执行任务后脚本
+                if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+                    await execute_script_task(
+                        Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
+                        "脚本后任务",
+                    )
+
                 if "游戏分辨率设置错误" in self.cur_user_log.status:
                     logger.info("检测到游戏分辨率设置错误，跳过后续重试")
                     break
