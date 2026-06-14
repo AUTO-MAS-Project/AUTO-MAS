@@ -2,8 +2,8 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'path'
 
-// 读取package.json中的版本号
-const packageJson = require('./package.json')
+// 读取主程序版本号
+const versionJson = require('../res/version.json')
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -17,7 +17,7 @@ export default defineConfig({
   },
   define: {
     // 在编译时将版本号注入到环境变量中
-    'import.meta.env.VITE_APP_VERSION': JSON.stringify(packageJson.version),
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(versionJson.version),
   },
   // 开发服务器配置
   server: {
