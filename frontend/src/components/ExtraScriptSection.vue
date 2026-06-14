@@ -70,7 +70,7 @@ import { FileOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 
 const logger = window.electronAPI.getLogger('额外脚本配置')
 
-defineProps<{
+const props = defineProps<{
   formData: any
   loading: boolean
 }>()
@@ -92,6 +92,7 @@ const selectScriptBeforeTask = async () => {
     ])
 
     if (path && path.length > 0) {
+      props.formData.Info.ScriptBeforeTask = path[0]
       message.success('任务前脚本路径选择成功')
       emitSave('Info.ScriptBeforeTask', path[0])
     }
@@ -111,6 +112,7 @@ const selectScriptAfterTask = async () => {
     ])
 
     if (path && path.length > 0) {
+      props.formData.Info.ScriptAfterTask = path[0]
       message.success('任务后脚本路径选择成功')
       emitSave('Info.ScriptAfterTask', path[0])
     }
