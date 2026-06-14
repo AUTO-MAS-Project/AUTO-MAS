@@ -5,7 +5,6 @@
 - 开发、贡献、分支、提交、版本记录与 PR/Issue 正文规范：<https://doc.auto-mas.top/developer/>
 - Agent Skill 与工程规则：<https://github.com/AUTO-MAS-Project/skills>
 - 社区贡献摘要：[CONTRIBUTING.md](CONTRIBUTING.md)
-- 用户提交 Issue / PR 的本仓模板：[.github/ISSUE_PR_GUIDE.md](.github/ISSUE_PR_GUIDE.md)
 
 若本文件与文档站或 skills 仓库冲突，以文档站和 skills 仓库为准。
 
@@ -25,7 +24,7 @@
 
 ## Issue / PR 正文
 
-AI 助手可以按用户要求撰写 Issue 或 PR 正文，但正文必须遵守文档站与本仓模板：
+AI 助手可以按用户要求撰写 Issue 或 PR 正文，但正文必须遵守文档站与 `AUTO-MAS-Project/skills` 的规范：
 
 - Issue 只描述用户可观察的问题、需求、复现信息、环境与日志；不要要求用户提供实现步骤、API/Schema 设计、代码路径、行号或冗长验收清单。
 - PR 正文保持 1 到 4 条摘要；关联 Issue 时使用 `Closes #n`。
