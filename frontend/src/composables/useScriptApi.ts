@@ -789,6 +789,10 @@ export function useScriptApi() {
                           maaEndUserData.Data?.IfPassCheck !== undefined
                             ? maaEndUserData.Data.IfPassCheck
                             : false,
+                        LastProxyStatus:
+                          maaEndUserData.Data?.LastProxyStatus !== undefined
+                            ? maaEndUserData.Data.LastProxyStatus
+                            : '未知',
                       },
                     }
                   } else if (userIndex.type === 'M9AUserConfig' && userData) {
@@ -986,6 +990,10 @@ export function useScriptApi() {
                           okwwUserData.Data?.ProxyTimes !== undefined
                             ? okwwUserData.Data.ProxyTimes
                             : 0,
+                        LastProxyStatus:
+                          okwwUserData.Data?.LastProxyStatus !== undefined
+                            ? okwwUserData.Data.LastProxyStatus
+                            : '未知',
                       },
                     }
                   }

@@ -22,12 +22,30 @@
 
 
 import uuid
+from pathlib import Path
+from typing import Any
+
 from fastapi import APIRouter, Body
 
 from app.core import Config
 from app.models.schema import *
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
+
+
+def _okww_mas_config_dir(script_id: str, user_id: str) -> Path:
+    return Path.cwd() / "data" / script_id / user_id / "ConfigFile"
+
+
+def _okww_config_file_path(config_dir: Path, filename: str) -> Path:
+    file_path = Path(filename)
+    if (
+        file_path.name != filename
+        or file_path.is_absolute()
+        or ".." in file_path.parts
+    ):
+        raise ValueError("配置文件名非法")
+    return config_dir / filename
 
 
 SCRIPT_BOOK = {
@@ -228,6 +246,26 @@ async def upload_script_to_web(script: ScriptUploadIn = Body(...)) -> OutBase:
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
+
+
+@router.post(
+    "/config/import",
+    tags=["Action"],
+    summary="从脚本目录导入配置文件",
+    response_model=OutBase,
+    status_code=200,
+)
+async def import_script_config_file(
+    config: ScriptConfigImportIn = Body(...),
+) -> OutBase:
+
+    try:
+        await Config.import_script_config_file(config.scriptId, config.userId)
+    except Exception as e:
+        return OutBase(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    return OutBase(message="脚本配置文件已导入")
 
 
 @router.post(
@@ -537,4 +575,207 @@ async def get_m9a_available_tasks(script_id: str):
             "status": "error",
             "message": f"{type(e).__name__}: {str(e)}",
             "data": []
+        }
+
+
+@router.post(
+    "/okww/configs/list",
+    tags=["OKWW"],
+    summary="获取 OK-WW 配置文件列表及 schema",
+    status_code=200,
+)
+async def get_okww_configs_list(script_id: str, user_id: str):
+    """
+    获取 OK-WW 配置文件列表及 schema 定义。
+    读写用户配置目录（data/{script_id}/{user_id}/ConfigFile/），
+    若为空则自动从 ok-ww configs 目录初始化默认配置。
+
+    Args:
+        script_id: OK-WW 脚本 ID
+        user_id: 用户 ID
+
+    Returns:
+        dict: 包含配置文件列表和 schema 的响应
+    """
+    try:
+        import json
+        import shutil
+        from app.task.Okww.config_schema import (
+            get_all_config_info, build_fields_for_config, load_okww_option_labels,
+        )
+
+        script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+
+        # 从 ok-ww 安装目录加载翻译 → option_labels
+        root_path = script_config.get("Info", "RootPath")
+        option_labels = load_okww_option_labels(root_path) if root_path else {}
+
+        # 详细模式：每个用户独立持有一份 OK-WW 配置。
+        mas_config_dir = _okww_mas_config_dir(script_id, user_id)
+
+        # ok-ww 源配置目录（用于自动初始化）
+        raw_config_path = script_config.get("Script", "ConfigPath")
+        okww_configs_dir = Path(raw_config_path) if raw_config_path else None
+        if not okww_configs_dir or not okww_configs_dir.exists():
+            if root_path:
+                okww_configs_dir = Path(root_path) / "data" / "apps" / "ok-ww" / "working" / "configs"
+
+        # 自动初始化：用户目录为空时从 ok-ww configs 复制默认配置
+        need_init = not mas_config_dir.exists() or not any(mas_config_dir.iterdir())
+        if need_init and okww_configs_dir and okww_configs_dir.is_dir():
+            mas_config_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(okww_configs_dir, mas_config_dir, dirs_exist_ok=True)
+
+        configs_info = get_all_config_info()
+
+        # 读取 per-user JSON 配置，通过 build_fields_for_config 构建字段列表
+        result = []
+        for info in configs_info:
+            filename = info["filename"]
+            filepath = mas_config_dir / filename
+            current_data: dict[str, Any] = {}
+            if filepath.exists():
+                try:
+                    current_data = json.loads(filepath.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+
+            # 核心：JSON 自动发现字段 + 选项映射 + 翻译标签
+            fields = build_fields_for_config(filename, current_data, option_labels)
+
+            result.append({
+                **info,
+                "fields": fields,
+                "currentData": current_data,
+            })
+
+        return {
+            "code": 200,
+            "status": "success",
+            "message": f"共 {len(result)} 个配置文件",
+            "data": result,
+            "optionLabels": option_labels,
+            "configPath": str(mas_config_dir) if mas_config_dir else None,
+        }
+    except Exception as e:
+        return {
+            "code": 500,
+            "status": "error",
+            "message": f"{type(e).__name__}: {str(e)}",
+            "data": [],
+        }
+
+
+@router.post(
+    "/okww/configs/update",
+    tags=["OKWW"],
+    summary="更新 OK-WW 配置文件",
+    status_code=200,
+)
+async def update_okww_config(
+    script_id: str = Body(...),
+    user_id: str = Body(...),
+    filename: str = Body(...),
+    data: dict = Body(...),
+):
+    """
+    更新 OK-WW 配置文件
+
+    Args:
+        script_id: OK-WW 脚本 ID
+        user_id: 用户 ID
+        filename: 配置文件名（如 DailyTask.json）
+        data: 要更新的配置数据
+
+    Returns:
+        dict: 操作结果
+    """
+    try:
+        import json
+
+        # 写入用户配置目录
+        mas_config_dir = _okww_mas_config_dir(script_id, user_id)
+        mas_config_dir.mkdir(parents=True, exist_ok=True)
+
+        filepath = _okww_config_file_path(mas_config_dir, filename)
+
+        # 读取现有配置
+        existing_data = {}
+        if filepath.exists():
+            with open(filepath, "r", encoding="utf-8") as f:
+                existing_data = json.load(f)
+
+        # 合并更新
+        existing_data.update(data)
+
+        # 写入用户目录
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(existing_data, f, ensure_ascii=False, indent=4)
+
+        return {
+            "code": 200,
+            "status": "success",
+            "message": f"配置文件 {filename} 已更新",
+            "data": existing_data,
+        }
+    except Exception as e:
+        return {
+            "code": 500,
+            "status": "error",
+            "message": f"{type(e).__name__}: {str(e)}",
+        }
+
+
+@router.post(
+    "/okww/configs/batch-update",
+    tags=["OKWW"],
+    summary="批量更新 OK-WW 配置文件",
+    status_code=200,
+)
+async def batch_update_okww_configs(
+    script_id: str = Body(...),
+    user_id: str = Body(...),
+    configs: dict = Body(...),
+):
+    """
+    批量更新 OK-WW 配置文件
+
+    Args:
+        script_id: OK-WW 脚本 ID
+        user_id: 用户 ID
+        configs: { filename: data } 格式的配置数据
+
+    Returns:
+        dict: 操作结果
+    """
+    try:
+        import json
+
+        # 写入用户配置目录
+        mas_config_dir = _okww_mas_config_dir(script_id, user_id)
+        mas_config_dir.mkdir(parents=True, exist_ok=True)
+
+        updated_files = []
+        for filename, data in configs.items():
+            filepath = _okww_config_file_path(mas_config_dir, filename)
+            existing_data = {}
+            if filepath.exists():
+                with open(filepath, "r", encoding="utf-8") as f:
+                    existing_data = json.load(f)
+            existing_data.update(data)
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(existing_data, f, ensure_ascii=False, indent=4)
+            updated_files.append(filename)
+
+        return {
+            "code": 200,
+            "status": "success",
+            "message": f"已更新 {len(updated_files)} 个配置文件",
+            "data": updated_files,
+        }
+    except Exception as e:
+        return {
+            "code": 500,
+            "status": "error",
+            "message": f"{type(e).__name__}: {str(e)}",
         }

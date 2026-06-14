@@ -163,7 +163,7 @@
                 <template #label>
                   <span class="form-label">
                     游戏根目录
-                    <span class="label-hint">选择 <strong>Wuthering Waves Game</strong> 文件夹，自动匹配客户端 exe</span>
+                    <span class="label-hint">选择包含 <strong>Wuthering Waves Game</strong> 的任意目录，自动定位 Client-Win64-Shipping.exe</span>
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">
@@ -308,9 +308,8 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import { ArrowLeftOutlined, FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
-import { type OkwwConfig } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
 
 const logger = window.electronAPI.getLogger('ok-ww脚本编辑')
@@ -323,6 +322,56 @@ const pageLoading = ref(true)
 const isSaving = ref(false)
 const isInitializing = ref(true)
 
+interface OkwwInfoForm {
+  Name: string
+  RootPath: string
+}
+
+interface OkwwScriptForm {
+  ScriptPath: string
+  Arguments: string
+  IfTrackProcess: boolean
+  TrackProcessName: string
+  TrackProcessExe: string
+  TrackProcessCmdline: string
+  ConfigPath: string
+  ConfigPathMode: 'File' | 'Folder'
+  UpdateConfigMode: 'Never' | 'Success' | 'Failure' | 'Always'
+  LogPath: string
+  LogPathFormat: string
+  LogTimeStart: number
+  LogTimeEnd: number
+  LogTimeFormat: string
+}
+
+interface OkwwGameForm {
+  Enabled: boolean
+  LaunchBeforeTask: boolean
+  Type: 'Client' | 'URL'
+  Path: string
+  URL: string
+  ProcessName: string
+  Arguments: string
+  WaitTime: number
+  IfForceClose: boolean
+  CloseOnFinish: boolean
+  EmulatorId: string
+  EmulatorIndex: string
+}
+
+interface OkwwRunForm {
+  ProxyTimesLimit: number
+  RunTimesLimit: number
+  RunTimeLimit: number
+}
+
+interface OkwwScriptConfigForm {
+  Info: OkwwInfoForm
+  Script: OkwwScriptForm
+  Game: OkwwGameForm
+  Run: OkwwRunForm
+}
+
 const formData = reactive({
   name: '',
   get path() {
@@ -333,13 +382,15 @@ const formData = reactive({
   },
 })
 
-const okwwConfig = reactive<OkwwConfig>({
+const okwwConfig = reactive<OkwwScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
   Script: {
     ScriptPath: '.',
     Arguments: '',
     IfTrackProcess: true,
+    TrackProcessName: 'pythonw.exe',
     TrackProcessExe: '',
+    TrackProcessCmdline: '',
     ConfigPath: '.',
     ConfigPathMode: 'Folder',
     UpdateConfigMode: 'Always',
@@ -348,14 +399,15 @@ const okwwConfig = reactive<OkwwConfig>({
     LogTimeStart: 1,
     LogTimeEnd: 23,
     LogTimeFormat: '%Y-%m-%d %H:%M:%S,%f',
-    SuccessLog: '任务执行完成 | task completed',
-    ErrorLog: 'connected:False|游戏更新成功, 游戏即将重启|错误',
   },
   Game: {
     Enabled: false,
     LaunchBeforeTask: false,
     Type: 'Client',
     Path: '.',
+    URL: '',
+    ProcessName: '',
+    Arguments: '',
     WaitTime: 60,
     IfForceClose: true,
     CloseOnFinish: true,
@@ -368,6 +420,14 @@ const okwwConfig = reactive<OkwwConfig>({
 const rules = {
   name: [{ required: true, message: '请输入脚本名称', trigger: 'blur' }],
   path: [{ required: true, message: '请选择 ok-ww 路径', trigger: 'blur' }],
+}
+
+// 鸣潮游戏路径预设锚点与相对路径
+const WUWA_GAME_ANCHOR = 'Wuthering Waves Game'
+const WUWA_EXE_RELATIVE = 'Client/Binaries/Win64/Client-Win64-Shipping.exe'
+
+const showPathRejectModal = (title: string, content: string) => {
+  Modal.error({ title, content, okText: '我知道了' })
 }
 
 const handleCancel = () => router.push('/scripts')
@@ -460,10 +520,11 @@ const loadScript = async () => {
       return
     }
     formData.name = detail.name
-    Object.assign(okwwConfig.Info, detail.config.Info || {})
-    Object.assign(okwwConfig.Script, detail.config.Script || {})
-    Object.assign(okwwConfig.Game, detail.config.Game || {})
-    Object.assign(okwwConfig.Run, detail.config.Run || {})
+    const config = detail.config as Partial<OkwwScriptConfigForm>
+    Object.assign(okwwConfig.Info, config.Info || {})
+    Object.assign(okwwConfig.Script, config.Script || {})
+    Object.assign(okwwConfig.Game, config.Game || {})
+    Object.assign(okwwConfig.Run, config.Run || {})
   } catch {
     message.error('加载脚本失败')
   } finally {
@@ -473,23 +534,46 @@ const loadScript = async () => {
 }
 
 const selectRootPath = async () => {
-  const picked = await window.electronAPI.selectFolder({ title: '选择脚本根目录' })
+  const picked = await window.electronAPI.selectFolder()
   if (!picked) return
   const normalized = picked.replace(/\\/g, '/')
+  const exePath = normalized + '/ok-ww.exe'
+  if (!(await window.electronAPI.fileExists(exePath))) {
+    showPathRejectModal('所选目录无效', '所选目录下未找到 ok-ww.exe，请选择包含 ok-ww.exe 的 OK-WW 脚本根目录。')
+    return
+  }
   formData.path = normalized
   await applyRootPathDefaults(normalized)
 }
 
-const buildGameClientPath = (gameRootPath: string) => {
-  const norm = gameRootPath.replace(/\\/g, '/').replace(/\/+$/g, '')
-  return `${norm}/Client/Binaries/Win64/Client-Win64-Shipping.exe`
-}
-
 const selectGameRootPath = async () => {
   if (!okwwConfig.Game.Enabled) return
-  const picked = await window.electronAPI.selectFolder({ title: '选择游戏根目录（Wuthering Waves Game）' })
+  const picked = await window.electronAPI.selectFolder()
   if (!picked) return
-  okwwConfig.Game.Path = buildGameClientPath(picked)
+
+  const normalized = picked.replace(/\\/g, '/')
+
+  // 在路径中查找锚点 "Wuthering Waves Game"（大小写不敏感），取锚点之前的 prefix
+  const idx = normalized.toLowerCase().indexOf(WUWA_GAME_ANCHOR.toLowerCase())
+  if (idx === -1) {
+    showPathRejectModal(
+      '所选目录无效',
+      '当前选择的路径不在鸣潮游戏目录内，无法自动匹配。\n\n请选择包含 Wuthering Waves Game 的目录（如游戏根目录本身，或其下的 Client、Binaries、Win64 等子目录）。'
+    )
+    return
+  }
+
+  // 截断锚点之后的内容，拼接预设相对路径
+  const prefix = normalized.substring(0, idx)
+  const candidateExe = prefix + WUWA_GAME_ANCHOR + '/' + WUWA_EXE_RELATIVE
+
+  // 校验 exe 是否真实存在
+  if (!(await window.electronAPI.fileExists(candidateExe))) {
+    showPathRejectModal('所选目录无效', '检测到鸣潮目录但未找到 Client-Win64-Shipping.exe，请验证游戏完整性。')
+    return
+  }
+
+  okwwConfig.Game.Path = candidateExe
   okwwConfig.Game.Type = 'Client'
   isSaving.value = true
   try {
@@ -499,6 +583,7 @@ const selectGameRootPath = async () => {
         Type: 'Client',
       },
     })
+    message.success('已自动匹配游戏路径至 Client-Win64-Shipping.exe')
   } finally {
     isSaving.value = false
   }

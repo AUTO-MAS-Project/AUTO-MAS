@@ -20,9 +20,13 @@ export type MaaEndUserConfig_Info = {
      */
     Password?: (string | null);
     /**
-     * 配置模式
+     * 配置文件来源
      */
-    Mode?: ('简洁' | '详细' | '自定义' | null);
+    Mode?: ('简洁' | '详细' | null);
+    /**
+     * 是否启用快速配置
+     */
+    IfQuickConfig?: (boolean | null);
     /**
      * 理智任务配置模式
      */
@@ -35,6 +39,22 @@ export type MaaEndUserConfig_Info = {
      * 剩余天数
      */
     RemainedDay?: (number | null);
+    /**
+     * 是否在任务前执行脚本
+     */
+    IfScriptBeforeTask?: (boolean | null);
+    /**
+     * 任务前脚本路径
+     */
+    ScriptBeforeTask?: (string | null);
+    /**
+     * 是否在任务后执行脚本
+     */
+    IfScriptAfterTask?: (boolean | null);
+    /**
+     * 任务后脚本路径
+     */
+    ScriptAfterTask?: (string | null);
     /**
      * 备注
      */

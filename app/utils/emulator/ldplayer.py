@@ -111,6 +111,10 @@ class LDManager(DeviceBase):
                     and self.config.get("Info", "MaxWaitTime") > 60
                     else 3
                 )  # 等待模拟器的 ADB 等服务完全启动, 低性能设备额外等待应用启动
+                from app.core import Config
+
+                if Config.get("Function", "IfBlockAd"):
+                    await self._block_ads_via_adb(idx)
                 return (await self.getInfo(idx))[idx]
 
             await asyncio.sleep(0.1)
@@ -268,6 +272,28 @@ class LDManager(DeviceBase):
         return emulators
 
     # ?wk雷电你都返回了什么啊
+
+    async def _block_ads_via_adb(self, idx: str) -> None:
+        adb_path = self.emulator_path.parent / "adb.exe"
+        adb_serial = f"emulator-{5554 + int(idx) * 2}"  # 雷电模拟器 ADB 设备名固定格式
+
+        for package in ["com.android.flysilkworm"]:
+            result = await ProcessRunner.run_process(
+                adb_path,
+                "-s",
+                adb_serial,
+                "shell",
+                "pm",
+                "disable-user",
+                "--user",
+                "0",
+                package,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                logger.success(f"已禁用广告包: {package}")
+            else:
+                logger.warning(f"禁用广告包 {package} 失败, returncode={result.returncode}, stdout={result.stdout!r}, stderr={result.stderr!r}")
 
     async def get_adb_ports(self, pid: int) -> int:
         """使用psutil获取adb端口"""

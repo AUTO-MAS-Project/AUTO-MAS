@@ -70,7 +70,7 @@ from .schema import TagItem
 
 
 def init_maaend_task_config(config) -> None:
-    """初始化 MaaEnd 预设任务配置"""
+    """初始化 MaaEnd 托管任务配置"""
 
     ## 理智任务类型
     config.Task_SanityTaskType = ConfigItem(
@@ -125,7 +125,8 @@ def init_maaend_task_config(config) -> None:
         )
 
 """
-脚本级和用户级的理智任务配置项完全一样, 但为了兼容旧版 MaaEnd 的用户配置, 需要在 MaaEndUserConfig 中重复定义一次, 并在加载时进行迁移处理
+脚本级和用户级的 MaaEnd 任务配置项结构相同。配置文件来源为脚本且启用快速配置时,
+任务开关读取脚本配置；理智任务选项始终读取用户配置。
 """
 
 def _normalize_maaend_sanity_task_type(task_data: object) -> None:
@@ -376,6 +377,20 @@ class MaaUserConfig(ConfigBase):
         ## 基建配置索引
         self.Info_InfrastIndex = ConfigItem(
             "Info", "InfrastIndex", "-", VirtualConfigValidator(self.getInfrastIndex)
+        )
+        ## 任务前执行脚本
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        ## 任务后执行脚本
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
         )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
@@ -678,7 +693,7 @@ class MaaConfig(ConfigBase):
         ## MAA 脚本名称
         self.Info_Name = ConfigItem("Info", "Name", "新 MAA 脚本")
         ## MAA 路径
-        self.Info_Path = ConfigItem("Info", "Path", str(Path.cwd()), FolderValidator())
+        self.Info_Path = ConfigItem("Info", "Path", "", FolderValidator())
 
         ## Emulator --------------------------------------------------------
         ## 模拟器 ID
@@ -741,10 +756,12 @@ class MaaEndUserConfig(ConfigBase):
         self.Info_Id = ConfigItem("Info", "Id", "")
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
-        ## 配置模式
+        ## 配置文件来源
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细", "自定义"])
+            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
         )
+        ## 是否启用快速配置
+        self.Info_IfQuickConfig = ConfigItem("Info", "IfQuickConfig", True, BoolValidator())
         ## 理智任务配置模式
         self.Info_SanityMode = ConfigItem("Info", "SanityMode", "Fixed")
         ## 资源名称
@@ -754,6 +771,20 @@ class MaaEndUserConfig(ConfigBase):
         ## 剩余天数
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        ## 任务前执行脚本
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        ## 任务后执行脚本
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
         )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
@@ -820,13 +851,15 @@ class MaaEndUserConfig(ConfigBase):
     async def load(self, data: dict):
         info_data = data.get("Info")
         # 兼容旧版 MaaEnd 用户配置:
-        # 老版本没有 SanityMode，旧版“简洁/详细”都归并到新版“自定义”。
-        if (
-            isinstance(info_data, dict)
-            and info_data.get("Mode") in ("简洁", "详细")
-            and "SanityMode" not in info_data
-        ):
-            info_data["Mode"] = "自定义"
+        # 旧“自定义”仍等价于用户配置文件且关闭快速配置。
+        # 没有 SanityMode 的旧“简洁/详细”回落为脚本配置来源，快速配置使用默认值。
+        if isinstance(info_data, dict):
+            if info_data.get("Mode") == "自定义":
+                info_data["Mode"] = "详细"
+                info_data["IfQuickConfig"] = False
+            elif info_data.get("Mode") in ("简洁", "详细") and "SanityMode" not in info_data:
+                info_data["Mode"] = "简洁"
+                info_data.pop("IfQuickConfig", None)
 
         task_data = data.get("Task")
         if isinstance(task_data, dict):
@@ -838,7 +871,7 @@ class MaaEndUserConfig(ConfigBase):
 
         return (
             {field: self.get("Task", field) for field in MAAEND_SANITY_TASK_FIELDS},
-            "Fixed",
+            self.get("Info", "SanityMode"),
         )
 
     def getTags(self) -> str:
@@ -969,7 +1002,7 @@ class MaaEndConfig(ConfigBase):
         ## MaaEnd 脚本名称
         self.Info_Name = ConfigItem("Info", "Name", "新 MaaEnd 脚本")
         ## MaaEnd 路径
-        self.Info_Path = ConfigItem("Info", "Path", str(Path.cwd()), FolderValidator())
+        self.Info_Path = ConfigItem("Info", "Path", "", FolderValidator())
 
         ## Run -------------------------------------------------------------
         ## 运行超时阈值
@@ -990,18 +1023,16 @@ class MaaEndConfig(ConfigBase):
         self.Game_ControllerType = ConfigItem(
             "Game",
             "ControllerType",
-            "Win32-Window",
+            "Win32-Front",
             OptionsValidator(
                 [
-                    "Win32-Window",
                     "Win32-Front",
-                    "Win32-Window-Background",
                     "ADB",
                 ]
             ),
         )
         ## 终末地游戏路径
-        self.Game_Path = ConfigItem("Game", "Path", str(Path.cwd()), FileValidator())
+        self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
         ## 终末地游戏启动参数
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 等待时间（秒）
@@ -1021,10 +1052,6 @@ class MaaEndConfig(ConfigBase):
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
         )
-
-        ## Task ------------------------------------------------------------
-        ## 脚本级预设任务配置（简洁模式数据源）
-        init_maaend_task_config(self)
 
         self.UserData = MultipleConfig([MaaEndUserConfig])
 
@@ -1071,6 +1098,20 @@ class SrcUserConfig(ConfigBase):
         ## 剩余天数
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        ## 任务前执行脚本
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        ## 任务后执行脚本
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
         )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
@@ -1381,7 +1422,7 @@ class SrcConfig(ConfigBase):
         ## SRC 脚本名称
         self.Info_Name = ConfigItem("Info", "Name", "新 SRC 脚本")
         ## SRC 路径
-        self.Info_Path = ConfigItem("Info", "Path", str(Path.cwd()), FolderValidator())
+        self.Info_Path = ConfigItem("Info", "Path", "", FolderValidator())
 
         ## Emulator --------------------------------------------------------
         ## 模拟器 ID
@@ -1434,6 +1475,20 @@ class M9AUserConfig(ConfigBase):
         ## 剩余天数
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        ## 任务前执行脚本
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        ## 任务后执行脚本
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
         )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
@@ -1564,7 +1619,7 @@ class M9AConfig(ConfigBase):
         ## M9A 脚本名称
         self.Info_Name = ConfigItem("Info", "Name", "新 M9A 脚本")
         ## M9A 路径
-        self.Info_Path = ConfigItem("Info", "Path", str(Path.cwd()), FolderValidator())
+        self.Info_Path = ConfigItem("Info", "Path", "", FolderValidator())
 
         ## Emulator --------------------------------------------------------
         ## 模拟器 ID
@@ -1680,7 +1735,7 @@ class GeneralUserConfig(ConfigBase):
         )
         ## 任务前脚本路径
         self.Info_ScriptBeforeTask = ConfigItem(
-            "Info", "ScriptBeforeTask", str(Path.cwd()), FileValidator()
+            "Info", "ScriptBeforeTask", "", FileValidator()
         )
         ## 是否在任务后执行脚本
         self.Info_IfScriptAfterTask = ConfigItem(
@@ -1688,7 +1743,7 @@ class GeneralUserConfig(ConfigBase):
         )
         ## 任务后脚本路径
         self.Info_ScriptAfterTask = ConfigItem(
-            "Info", "ScriptAfterTask", str(Path.cwd()), FileValidator()
+            "Info", "ScriptAfterTask", "", FileValidator()
         )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
@@ -1817,19 +1872,19 @@ class OkwwUserConfig(ConfigBase):
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+            "Info", "Mode", "详细", OptionsValidator(["简洁", "详细"])
         )
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()
         )
         self.Info_ScriptBeforeTask = ConfigItem(
-            "Info", "ScriptBeforeTask", str(Path.cwd()), FileValidator()
+            "Info", "ScriptBeforeTask", "", FileValidator()
         )
         self.Info_IfScriptAfterTask = ConfigItem(
             "Info", "IfScriptAfterTask", False, BoolValidator()
         )
         self.Info_ScriptAfterTask = ConfigItem(
-            "Info", "ScriptAfterTask", str(Path.cwd()), FileValidator()
+            "Info", "ScriptAfterTask", "", FileValidator()
         )
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
         self.Info_Tag = ConfigItem(
@@ -1934,13 +1989,13 @@ class GeneralConfig(ConfigBase):
         self.Info_Name = ConfigItem("Info", "Name", "新通用脚本")
         ## 根目录路径
         self.Info_RootPath = ConfigItem(
-            "Info", "RootPath", str(Path.cwd()), FileValidator()
+            "Info", "RootPath", "", FileValidator()
         )
 
         ## Script ----------------------------------------------------------
         ## 脚本路径
         self.Script_ScriptPath = ConfigItem(
-            "Script", "ScriptPath", str(Path.cwd()), FileValidator()
+            "Script", "ScriptPath", "", FileValidator()
         )
         ## 脚本参数
         self.Script_Arguments = ConfigItem(
@@ -1959,7 +2014,7 @@ class GeneralConfig(ConfigBase):
             "Script", "TrackProcessCmdline", "", ArgumentValidator()
         )
         self.Script_ConfigPath = ConfigItem(
-            "Script", "ConfigPath", str(Path.cwd()), FileValidator()
+            "Script", "ConfigPath", "", FileValidator()
         )
         ## 配置路径模式
         self.Script_ConfigPathMode = ConfigItem(
@@ -1974,7 +2029,7 @@ class GeneralConfig(ConfigBase):
         )
         ## 日志路径
         self.Script_LogPath = ConfigItem(
-            "Script", "LogPath", str(Path.cwd()), FileValidator()
+            "Script", "LogPath", "", FileValidator()
         )
         ## 日志路径格式
         self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "%Y-%m-%d")
@@ -2003,7 +2058,7 @@ class GeneralConfig(ConfigBase):
             "Game", "Type", "Emulator", OptionsValidator(["Emulator", "Client", "URL"])
         )
         ## 游戏路径
-        self.Game_Path = ConfigItem("Game", "Path", str(Path.cwd()), FileValidator())
+        self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
         ## 自定义协议URL
         self.Game_URL = ConfigItem("Game", "URL", "")
         ## 游戏进程名称
@@ -2055,12 +2110,12 @@ class OkwwConfig(ConfigBase):
         ## Info ------------------------------------------------------------
         self.Info_Name = ConfigItem("Info", "Name", "新 OK-WW 脚本")
         self.Info_RootPath = ConfigItem(
-            "Info", "RootPath", str(Path.cwd()), FileValidator()
+            "Info", "RootPath", "", FileValidator()
         )
 
         ## Script ----------------------------------------------------------
         self.Script_ScriptPath = ConfigItem(
-            "Script", "ScriptPath", str(Path.cwd()), FileValidator()
+            "Script", "ScriptPath", "", FileValidator()
         )
         # Okww 运行参数建议由用户配置（-t / -e 由用户配置 Task 决定），但仍保留高级参数入口
         self.Script_Arguments = ConfigItem(
@@ -2075,7 +2130,7 @@ class OkwwConfig(ConfigBase):
             "Script", "TrackProcessCmdline", "", ArgumentValidator()
         )
         self.Script_ConfigPath = ConfigItem(
-            "Script", "ConfigPath", str(Path.cwd()), FileValidator()
+            "Script", "ConfigPath", "", FileValidator()
         )
         self.Script_ConfigPathMode = ConfigItem(
             "Script", "ConfigPathMode", "Folder", OptionsValidator(["File", "Folder"])
@@ -2087,7 +2142,7 @@ class OkwwConfig(ConfigBase):
             OptionsValidator(["Never", "Success", "Failure", "Always"]),
         )
         self.Script_LogPath = ConfigItem(
-            "Script", "LogPath", str(Path.cwd()), FileValidator()
+            "Script", "LogPath", "", FileValidator()
         )
         self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "")
         self.Script_LogTimeStart = ConfigItem(
@@ -2099,15 +2154,6 @@ class OkwwConfig(ConfigBase):
         self.Script_LogTimeFormat = ConfigItem(
             "Script", "LogTimeFormat", "%Y-%m-%d %H:%M:%S,%f"
         )
-        self.Script_SuccessLog = ConfigItem(
-            "Script", "SuccessLog", "任务执行完成 | task completed"
-        )
-        # ok-ww 日志中更贴近“整场失败”的片段（`|` 分隔）；过宽词易误判，勿照搬通用脚本的 ERROR/异常大包
-        self.Script_ErrorLog = ConfigItem(
-            "Script",
-            "ErrorLog",
-            "connected:False|游戏更新成功, 游戏即将重启|错误",
-        )
 
         ## Game ------------------------------------------------------------
         self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
@@ -2115,9 +2161,9 @@ class OkwwConfig(ConfigBase):
             "Game", "LaunchBeforeTask", False, BoolValidator()
         )
         self.Game_Type = ConfigItem(
-            "Game", "Type", "Client", OptionsValidator(["Emulator", "Client", "URL"])
+            "Game", "Type", "Client", OptionsValidator(["Client", "URL"])
         )
-        self.Game_Path = ConfigItem("Game", "Path", str(Path.cwd()), FileValidator())
+        self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
         self.Game_URL = ConfigItem("Game", "URL", "")
         self.Game_ProcessName = ConfigItem("Game", "ProcessName", "")
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
