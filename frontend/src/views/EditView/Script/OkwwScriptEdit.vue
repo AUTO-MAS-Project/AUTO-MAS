@@ -310,7 +310,6 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import { ArrowLeftOutlined, FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
-import { type OkwwConfig } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
 
 const logger = window.electronAPI.getLogger('ok-ww脚本编辑')
@@ -323,6 +322,56 @@ const pageLoading = ref(true)
 const isSaving = ref(false)
 const isInitializing = ref(true)
 
+interface OkwwInfoForm {
+  Name: string
+  RootPath: string
+}
+
+interface OkwwScriptForm {
+  ScriptPath: string
+  Arguments: string
+  IfTrackProcess: boolean
+  TrackProcessName: string
+  TrackProcessExe: string
+  TrackProcessCmdline: string
+  ConfigPath: string
+  ConfigPathMode: 'File' | 'Folder'
+  UpdateConfigMode: 'Never' | 'Success' | 'Failure' | 'Always'
+  LogPath: string
+  LogPathFormat: string
+  LogTimeStart: number
+  LogTimeEnd: number
+  LogTimeFormat: string
+}
+
+interface OkwwGameForm {
+  Enabled: boolean
+  LaunchBeforeTask: boolean
+  Type: 'Client' | 'URL'
+  Path: string
+  URL: string
+  ProcessName: string
+  Arguments: string
+  WaitTime: number
+  IfForceClose: boolean
+  CloseOnFinish: boolean
+  EmulatorId: string
+  EmulatorIndex: string
+}
+
+interface OkwwRunForm {
+  ProxyTimesLimit: number
+  RunTimesLimit: number
+  RunTimeLimit: number
+}
+
+interface OkwwScriptConfigForm {
+  Info: OkwwInfoForm
+  Script: OkwwScriptForm
+  Game: OkwwGameForm
+  Run: OkwwRunForm
+}
+
 const formData = reactive({
   name: '',
   get path() {
@@ -333,13 +382,15 @@ const formData = reactive({
   },
 })
 
-const okwwConfig = reactive<OkwwConfig>({
+const okwwConfig = reactive<OkwwScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
   Script: {
     ScriptPath: '.',
     Arguments: '',
     IfTrackProcess: true,
+    TrackProcessName: 'pythonw.exe',
     TrackProcessExe: '',
+    TrackProcessCmdline: '',
     ConfigPath: '.',
     ConfigPathMode: 'Folder',
     UpdateConfigMode: 'Always',
@@ -348,14 +399,15 @@ const okwwConfig = reactive<OkwwConfig>({
     LogTimeStart: 1,
     LogTimeEnd: 23,
     LogTimeFormat: '%Y-%m-%d %H:%M:%S,%f',
-    SuccessLog: '',
-    ErrorLog: '',
   },
   Game: {
     Enabled: false,
     LaunchBeforeTask: false,
     Type: 'Client',
     Path: '.',
+    URL: '',
+    ProcessName: '',
+    Arguments: '',
     WaitTime: 60,
     IfForceClose: true,
     CloseOnFinish: true,
@@ -468,10 +520,11 @@ const loadScript = async () => {
       return
     }
     formData.name = detail.name
-    Object.assign(okwwConfig.Info, detail.config.Info || {})
-    Object.assign(okwwConfig.Script, detail.config.Script || {})
-    Object.assign(okwwConfig.Game, detail.config.Game || {})
-    Object.assign(okwwConfig.Run, detail.config.Run || {})
+    const config = detail.config as Partial<OkwwScriptConfigForm>
+    Object.assign(okwwConfig.Info, config.Info || {})
+    Object.assign(okwwConfig.Script, config.Script || {})
+    Object.assign(okwwConfig.Game, config.Game || {})
+    Object.assign(okwwConfig.Run, config.Run || {})
   } catch {
     message.error('加载脚本失败')
   } finally {
@@ -481,7 +534,7 @@ const loadScript = async () => {
 }
 
 const selectRootPath = async () => {
-  const picked = await window.electronAPI.selectFolder({ title: '选择脚本根目录' })
+  const picked = await window.electronAPI.selectFolder()
   if (!picked) return
   const normalized = picked.replace(/\\/g, '/')
   const exePath = normalized + '/ok-ww.exe'
@@ -495,7 +548,7 @@ const selectRootPath = async () => {
 
 const selectGameRootPath = async () => {
   if (!okwwConfig.Game.Enabled) return
-  const picked = await window.electronAPI.selectFolder({ title: '选择游戏根目录（Wuthering Waves Game）' })
+  const picked = await window.electronAPI.selectFolder()
   if (!picked) return
 
   const normalized = picked.replace(/\\/g, '/')
