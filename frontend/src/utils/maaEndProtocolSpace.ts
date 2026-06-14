@@ -140,17 +140,6 @@ export interface MaaEndTaskSwitchGroup {
 export type ProtocolSpaceConfig = MaaEndSanityConfig
 
 export const MAAEND_CONTROLLER_TASKS: Record<string, MaaEndTaskSwitch[]> = {
-  'Win32-Window': [
-    'VisitFriends',
-    'DijiangRewards',
-    'CreditShoppingN2',
-    'DeliveryJobs',
-    'SellProduct',
-    'AutoStockpile',
-    'AutoStockStaple',
-    'DailyRewards',
-    'SeizeEntrustTask',
-  ],
   'Win32-Front': MAAEND_TASK_GROUPS.flatMap(group => group.tasks.map(task => task.name)),
 }
 

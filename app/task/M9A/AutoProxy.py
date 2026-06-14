@@ -36,6 +36,7 @@ from app.services import Notify, System
 from app.utils import get_logger, LogMonitor, ProcessManager
 from app.utils.constants import UTC4,UTC8
 from .tools import push_notification
+from app.task.general.tools import execute_script_task
 from .tools.notify import M9ALogAnalyzer
 from .task_loader import M9ATaskLoader
 
@@ -148,6 +149,13 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_log
             ) = LogRecord()
 
+            # 执行任务前脚本
+            if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
+                await execute_script_task(
+                    Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
+                    "脚本前任务",
+                )
+
             try:
                 if self.is_virtual_update_user:
                     emulator_info = None
@@ -245,6 +253,12 @@ class AutoProxyTask(TaskExecuteBase):
                     "检测到 M9A 完成代理任务\n正在等待相关程序结束"
                 )
                 self.run_complete = True
+                # 执行任务后脚本
+                if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+                    await execute_script_task(
+                        Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
+                        "脚本后任务",
+                    )
                 break
             else:
                 logger.error(
@@ -272,6 +286,13 @@ class AutoProxyTask(TaskExecuteBase):
                 )        
 
                 await asyncio.sleep(3)
+
+                # 执行任务后脚本
+                if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+                    await execute_script_task(
+                        Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
+                        "脚本后任务",
+                    )
 
     async def write_m9a_config(self, queue: list, emulator_info: DeviceInfo, resource: str = "官服", account: str = ""):
         """向 M9A 目录写入运行配置文件，并保存 debug 备份"""

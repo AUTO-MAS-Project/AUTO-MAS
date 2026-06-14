@@ -307,12 +307,15 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="指示实时生成日志文件名的格式，日志文件名固定时留空">
-                    <span class="form-label">
-                      日志文件名格式
+                  <span class="form-label">
+                    日志文件名格式
+                    <a-tooltip title="指示实时生成日志文件名的格式（strptime 格式），文件名固定时留空">
                       <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
+                    </a-tooltip>
+                    <a-tooltip title="针对 mxu 按日期+自增序号命名的日志：末尾加 ****** 启用mxu日志前缀匹配（如 %Y-%m-%d******）">
+                      <QuestionCircleOutlined class="help-icon" style="margin-left: 2px;" />
+                    </a-tooltip>
+                  </span>
                 </template>
                 <a-input v-model:value="generalConfig.Script.LogPathFormat" placeholder="日志文件名格式，文件名固定时留空" size="large"
                   class="modern-input" @blur="

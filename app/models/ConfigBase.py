@@ -44,6 +44,8 @@ from app.utils.constants import (
     ILLEGAL_CHARS,
     DEFAULT_DATETIME,
     EMULATOR_PATH_BOOK,
+    FORBIDDEN_PATH_PREFIXES,
+    FORBIDDEN_PATH_EXACT,
 )
 
 logger = get_logger("配置基类")
@@ -283,11 +285,26 @@ class FileValidator(ValidatorBase):
             return False
         if Path(value).suffix == ".lnk":
             return False
+        try:
+            resolved = Path(value).resolve()
+        except (OSError, ValueError):
+            return False
+        if len(resolved.parts) == 1:
+            return False
+        for forbidden in (*FORBIDDEN_PATH_PREFIXES, Path.cwd().resolve()):
+            if (
+                resolved == forbidden
+                or resolved.is_relative_to(forbidden)
+                or forbidden.is_relative_to(resolved)
+            ):
+                return False
+        if resolved in FORBIDDEN_PATH_EXACT:
+            return False
         return True
 
     def correct(self, value):
         if not isinstance(value, str):
-            value = str(Path.cwd())
+            value = ""
         # 空字符串直接返回
         if value == "":
             return ""
@@ -302,7 +319,22 @@ class FileValidator(ValidatorBase):
                 value = shortcut.TargetPath
             except Exception:
                 pass
-        return Path(value).resolve().as_posix()
+        try:
+            resolved = Path(value).resolve()
+        except (OSError, ValueError):
+            return ""
+        if len(resolved.parts) == 1:
+            return ""
+        for forbidden in (*FORBIDDEN_PATH_PREFIXES, Path.cwd().resolve()):
+            if (
+                resolved == forbidden
+                or resolved.is_relative_to(forbidden)
+                or forbidden.is_relative_to(resolved)
+            ):
+                return ""
+        if resolved in FORBIDDEN_PATH_EXACT:
+            return ""
+        return resolved.as_posix()
 
 
 class FolderValidator(ValidatorBase):
@@ -311,20 +343,54 @@ class FolderValidator(ValidatorBase):
     def validate(self, value):
         if not isinstance(value, str):
             return False
+        if value == "":
+            return True
         if not Path(value).is_absolute():
             return False
         if not Path(value).is_dir():
+            return False
+        try:
+            resolved = Path(value).resolve()
+        except (OSError, ValueError):
+            return False
+        if len(resolved.parts) == 1:
+            return False
+        for forbidden in (*FORBIDDEN_PATH_PREFIXES, Path.cwd().resolve()):
+            if (
+                resolved == forbidden
+                or resolved.is_relative_to(forbidden)
+                or forbidden.is_relative_to(resolved)
+            ):
+                return False
+        if resolved in FORBIDDEN_PATH_EXACT:
             return False
         return True
 
     def correct(self, value):
         if not isinstance(value, str):
-            value = str(Path.cwd())
+            value = ""
+        if value == "":
+            return ""
         if "%APPDATA%" in value:
             value = value.replace("%APPDATA%", os.getenv("APPDATA") or "")
         if not Path(value).is_dir():
             value = Path(value).with_suffix("")
-        return Path(value).resolve().as_posix()
+        try:
+            resolved = Path(value).resolve()
+        except (OSError, ValueError):
+            return ""
+        if len(resolved.parts) == 1:
+            return ""
+        for forbidden in (*FORBIDDEN_PATH_PREFIXES, Path.cwd().resolve()):
+            if (
+                resolved == forbidden
+                or resolved.is_relative_to(forbidden)
+                or forbidden.is_relative_to(resolved)
+            ):
+                return ""
+        if resolved in FORBIDDEN_PATH_EXACT:
+            return ""
+        return resolved.as_posix()
 
 
 class EmulatorPathValidator(FileValidator):
@@ -405,7 +471,7 @@ class EmulatorPathValidator(FileValidator):
     def correct(self, value):
 
         if not isinstance(value, str):
-            value = str(Path.cwd())
+            value = ""
         # 空字符串直接返回
         if value == "":
             return ""

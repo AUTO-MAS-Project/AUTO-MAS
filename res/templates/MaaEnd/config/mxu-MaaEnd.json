@@ -1,68 +1,6 @@
 {
   "instances": [
     {
-      "id": "cbek8en",
-      "name": "电脑端-默认",
-      "controllerName": "Win32-Window",
-      "resourceName": "官服",
-      "tasks": [
-        {
-          "id": "66exzd1",
-          "taskName": "VisitFriends",
-          "enabled": true,
-          "optionValues": {}
-        },
-        {
-          "id": "sl6ekn7",
-          "taskName": "DijiangRewards",
-          "enabled": true,
-          "optionValues": {}
-        },
-        {
-          "id": "1ve46wq",
-          "taskName": "CreditShoppingN2",
-          "enabled": true,
-          "optionValues": {}
-        },
-        {
-          "id": "tlyl98l",
-          "taskName": "DeliveryJobs",
-          "enabled": true,
-          "optionValues": {}
-        },
-        {
-          "id": "jur6jog",
-          "taskName": "SellProduct",
-          "enabled": true,
-          "optionValues": {}  
-        },
-        {
-          "id": "xy8ubx9",
-          "taskName": "AutoStockpile",
-          "enabled": true,
-          "optionValues": {}
-        },
-        {
-          "id": "p9vhp9n",
-          "taskName": "AutoStockStaple",
-          "enabled": true,
-          "optionValues": {}
-        },
-        {
-          "id": "l9lmqbs",
-          "taskName": "DailyRewards",
-          "enabled": true,
-          "optionValues": {}
-        },
-        {
-          "id": "ki9tsg4",
-          "taskName": "SeizeEntrustTask",
-          "enabled": true,
-          "optionValues": {}  
-        }
-      ]
-    },
-    {
       "id": "44d6qo2",
       "name": "电脑端-前台",
       "controllerName": "Win32-Front",
@@ -90,7 +28,7 @@
           "id": "0bzqbf2",
           "taskName": "DeliveryJobs",
           "enabled": true,
-          "optionValues": {}  
+          "optionValues": {}
         },
         {
           "id": "8vfq6y1",
@@ -123,12 +61,6 @@
           "optionValues": {}
         },
         {
-          "id": "hiu9ttk",
-          "taskName": "DailyRewards",
-          "enabled": true,
-          "optionValues": {}
-        },
-        {
           "id": "mwg371e",
           "taskName": "SeizeEntrustTask",
           "enabled": true,
@@ -138,7 +70,7 @@
           "id": "7u9ebfh",
           "taskName": "AutoCollect",
           "enabled": true,
-          "optionValues": {}  
+          "optionValues": {}
         },
         {
           "id": "y0k1zue",
@@ -149,22 +81,32 @@
         {
           "id": "agfpwsh",
           "taskName": "ResourceRecycleStation",
-          "enabled": true,"optionValues": {}
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "qmwzjgu",
           "taskName": "AutoEcoFarm",
-          "enabled": true,"optionValues": {}
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "5ej6pg9",
           "taskName": "AutoEssence",
-          "enabled": true,"optionValues": {}
+          "enabled": true,
+          "optionValues": {}
         },
         {
           "id": "d947el4",
           "taskName": "ProtocolSpace",
-          "enabled": true,"optionValues": {}
+          "enabled": true,
+          "optionValues": {}
+        },
+        {
+          "id": "hiu9ttk",
+          "taskName": "DailyRewards",
+          "enabled": true,
+          "optionValues": {}
         }
       ]
     }
