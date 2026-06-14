@@ -23,6 +23,7 @@
 
 import uuid
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Body
 
@@ -30,6 +31,21 @@ from app.core import Config
 from app.models.schema import *
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
+
+
+def _okww_mas_config_dir(script_id: str, user_id: str) -> Path:
+    return Path.cwd() / "data" / script_id / user_id / "ConfigFile"
+
+
+def _okww_config_file_path(config_dir: Path, filename: str) -> Path:
+    file_path = Path(filename)
+    if (
+        file_path.name != filename
+        or file_path.is_absolute()
+        or ".." in file_path.parts
+    ):
+        raise ValueError("配置文件名非法")
+    return config_dir / filename
 
 
 SCRIPT_BOOK = {
@@ -568,14 +584,15 @@ async def get_m9a_available_tasks(script_id: str):
     summary="获取 OK-WW 配置文件列表及 schema",
     status_code=200,
 )
-async def get_okww_configs_list(script_id: str):
+async def get_okww_configs_list(script_id: str, user_id: str):
     """
     获取 OK-WW 配置文件列表及 schema 定义。
-    读写 per-user 配置目录（data/{script_id}/Default/ConfigFile/），
+    读写用户配置目录（data/{script_id}/{user_id}/ConfigFile/），
     若为空则自动从 ok-ww configs 目录初始化默认配置。
 
     Args:
         script_id: OK-WW 脚本 ID
+        user_id: 用户 ID
 
     Returns:
         dict: 包含配置文件列表和 schema 的响应
@@ -593,8 +610,8 @@ async def get_okww_configs_list(script_id: str):
         root_path = script_config.get("Info", "RootPath")
         option_labels = load_okww_option_labels(root_path) if root_path else {}
 
-        # per-user 配置目录（始终使用 Default，因为配置编辑器是脚本级的）
-        mas_config_dir = Path.cwd() / f"data/{script_id}/Default/ConfigFile"
+        # 详细模式：每个用户独立持有一份 OK-WW 配置。
+        mas_config_dir = _okww_mas_config_dir(script_id, user_id)
 
         # ok-ww 源配置目录（用于自动初始化）
         raw_config_path = script_config.get("Script", "ConfigPath")
@@ -603,7 +620,7 @@ async def get_okww_configs_list(script_id: str):
             if root_path:
                 okww_configs_dir = Path(root_path) / "data" / "apps" / "ok-ww" / "working" / "configs"
 
-        # 自动初始化：per-user 目录为空时从 ok-ww configs 复制默认配置
+        # 自动初始化：用户目录为空时从 ok-ww configs 复制默认配置
         need_init = not mas_config_dir.exists() or not any(mas_config_dir.iterdir())
         if need_init and okww_configs_dir and okww_configs_dir.is_dir():
             mas_config_dir.mkdir(parents=True, exist_ok=True)
@@ -657,6 +674,7 @@ async def get_okww_configs_list(script_id: str):
 )
 async def update_okww_config(
     script_id: str = Body(...),
+    user_id: str = Body(...),
     filename: str = Body(...),
     data: dict = Body(...),
 ):
@@ -665,6 +683,7 @@ async def update_okww_config(
 
     Args:
         script_id: OK-WW 脚本 ID
+        user_id: 用户 ID
         filename: 配置文件名（如 DailyTask.json）
         data: 要更新的配置数据
 
@@ -674,11 +693,11 @@ async def update_okww_config(
     try:
         import json
 
-        # 写入 per-user 配置目录
-        mas_config_dir = Path.cwd() / f"data/{script_id}/Default/ConfigFile"
+        # 写入用户配置目录
+        mas_config_dir = _okww_mas_config_dir(script_id, user_id)
         mas_config_dir.mkdir(parents=True, exist_ok=True)
 
-        filepath = mas_config_dir / filename
+        filepath = _okww_config_file_path(mas_config_dir, filename)
 
         # 读取现有配置
         existing_data = {}
@@ -689,7 +708,7 @@ async def update_okww_config(
         # 合并更新
         existing_data.update(data)
 
-        # 写入 per-user 目录
+        # 写入用户目录
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(existing_data, f, ensure_ascii=False, indent=4)
 
@@ -715,6 +734,7 @@ async def update_okww_config(
 )
 async def batch_update_okww_configs(
     script_id: str = Body(...),
+    user_id: str = Body(...),
     configs: dict = Body(...),
 ):
     """
@@ -722,6 +742,7 @@ async def batch_update_okww_configs(
 
     Args:
         script_id: OK-WW 脚本 ID
+        user_id: 用户 ID
         configs: { filename: data } 格式的配置数据
 
     Returns:
@@ -730,13 +751,13 @@ async def batch_update_okww_configs(
     try:
         import json
 
-        # 写入 per-user 配置目录
-        mas_config_dir = Path.cwd() / f"data/{script_id}/Default/ConfigFile"
+        # 写入用户配置目录
+        mas_config_dir = _okww_mas_config_dir(script_id, user_id)
         mas_config_dir.mkdir(parents=True, exist_ok=True)
 
         updated_files = []
         for filename, data in configs.items():
-            filepath = mas_config_dir / filename
+            filepath = _okww_config_file_path(mas_config_dir, filename)
             existing_data = {}
             if filepath.exists():
                 with open(filepath, "r", encoding="utf-8") as f:
