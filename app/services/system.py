@@ -76,9 +76,9 @@ class _SystemHandler:
             程序是否开机自启
         """
 
-        if if_self_start and not await self.is_startup():
+        if if_self_start:
 
-            # 创建任务计划
+            # 创建或更新任务计划
 
             # 获取当前用户和时间
             current_user = getpass.getuser()
@@ -152,15 +152,15 @@ class _SystemHandler:
 
                 if result.returncode == 0:
                     logger.success(
-                        f"程序自启动任务计划已创建: {Path.cwd() / 'AUTO-MAS.exe'}"
+                        f"程序自启动任务计划已创建或更新: {Path.cwd() / 'AUTO-MAS.exe'}"
                     )
                 else:
-                    logger.error(f"程序自启动任务计划创建失败({result.returncode}):")
+                    logger.error(f"程序自启动任务计划创建或更新失败({result.returncode}):")
                     logger.error(f"  - 标准输出:{result.stdout}")
                     logger.error(f"  - 错误输出:{result.stderr}")
 
             except Exception as e:
-                logger.exception(f"程序自启动任务计划创建失败: {e}")
+                logger.exception(f"程序自启动任务计划创建或更新失败: {e}")
 
             finally:
                 # 删除临时文件
