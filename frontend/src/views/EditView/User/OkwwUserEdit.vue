@@ -213,6 +213,8 @@
               </a-col>
             </a-row>
           </div>
+
+          <ExtraScriptSection :form-data="formData" :loading="pageLoading" @save="saveField" />
         </a-form>
       </a-card>
 
@@ -316,6 +318,7 @@ import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import WebhookManager from '@/components/WebhookManager.vue'
 import OkwwConfigEditor from '@/views/OkwwUserEdit/OkwwConfigEditor.vue'
+import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const logger = window.electronAPI.getLogger('ok-ww用户编辑')
 const route = useRoute()
@@ -357,6 +360,10 @@ const getDefaultUserData = () => ({
     Mode: '简洁',
     Resource: '官服',
     RemainedDay: -1,
+    IfScriptBeforeTask: false,
+    ScriptBeforeTask: '',
+    IfScriptAfterTask: false,
+    ScriptAfterTask: '',
     Notes: '',
   },
   Task: {

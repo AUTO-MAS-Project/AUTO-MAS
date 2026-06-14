@@ -372,6 +372,14 @@ class MaaUserConfig_Info(BaseModel):
     InfrastName: Optional[str] = Field(default=None, description="基建方案名称")
     InfrastIndex: Optional[str] = Field(default=None, description="基建方案索引")
     Password: Optional[str] = Field(default=None, description="密码")
+    IfScriptBeforeTask: Optional[bool] = Field(
+        default=None, description="是否在任务前执行脚本"
+    )
+    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
+    IfScriptAfterTask: Optional[bool] = Field(
+        default=None, description="是否在任务后执行脚本"
+    )
+    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
     Notes: Optional[str] = Field(default=None, description="备注")
     MedicineNumb: Optional[int] = Field(default=None, description="吃理智药数量")
     SeriesNumb: Optional[Literal["0", "6", "5", "4", "3", "2", "1", "-1"]] = Field(
@@ -650,6 +658,14 @@ class MaaEndUserConfig_Info(BaseModel):
     SanityMode: Optional[str] = Field(default=None, description="理智任务配置模式")
     Resource: Optional[Literal["官服"]] = Field(default=None, description="资源名称")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    IfScriptBeforeTask: Optional[bool] = Field(
+        default=None, description="是否在任务前执行脚本"
+    )
+    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
+    IfScriptAfterTask: Optional[bool] = Field(
+        default=None, description="是否在任务后执行脚本"
+    )
+    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
     Notes: Optional[str] = Field(default=None, description="备注")
     IfSkland: Optional[bool] = Field(default=None, description="是否启用森空岛签到")
     SklandToken: Optional[str] = Field(default=None, description="SklandToken")
@@ -794,6 +810,14 @@ class SrcUserConfig_Info(BaseModel):
         ]
     ] = Field(default=None, description="游戏服务器")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    IfScriptBeforeTask: Optional[bool] = Field(
+        default=None, description="是否在任务前执行脚本"
+    )
+    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
+    IfScriptAfterTask: Optional[bool] = Field(
+        default=None, description="是否在任务后执行脚本"
+    )
+    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
     Notes: Optional[str] = Field(default=None, description="备注")
     Tag: Optional[str] = Field(default=None, description="用户标签信息")
 
@@ -975,6 +999,14 @@ class M9AUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名称")
     Status: Optional[bool] = Field(default=None, description="是否启用")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    IfScriptBeforeTask: Optional[bool] = Field(
+        default=None, description="是否在任务前执行脚本"
+    )
+    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
+    IfScriptAfterTask: Optional[bool] = Field(
+        default=None, description="是否在任务后执行脚本"
+    )
+    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
     Notes: Optional[str] = Field(default=None, description="备注")
     Tag: Optional[str] = Field(default=None, description="用户标签信息")
     Resource: Optional[str] = Field(default=None, description="服务器资源名称")

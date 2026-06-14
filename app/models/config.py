@@ -374,6 +374,20 @@ class MaaUserConfig(ConfigBase):
         self.Info_InfrastIndex = ConfigItem(
             "Info", "InfrastIndex", "-", VirtualConfigValidator(self.getInfrastIndex)
         )
+        ## 任务前执行脚本
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        ## 任务后执行脚本
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
+        )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
         ## 理智药数量
@@ -754,6 +768,20 @@ class MaaEndUserConfig(ConfigBase):
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
+        ## 任务前执行脚本
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        ## 任务后执行脚本
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
+        )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
         ## 是否启用森空岛签到
@@ -1066,6 +1094,20 @@ class SrcUserConfig(ConfigBase):
         ## 剩余天数
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        ## 任务前执行脚本
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        ## 任务后执行脚本
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
         )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
@@ -1429,6 +1471,20 @@ class M9AUserConfig(ConfigBase):
         ## 剩余天数
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        ## 任务前执行脚本
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        ## 任务后执行脚本
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
         )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
