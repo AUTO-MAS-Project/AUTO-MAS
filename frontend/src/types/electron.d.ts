@@ -80,6 +80,15 @@ export interface ElectronAPI {
   updateTraySettings: (uiSettings: any) => Promise<boolean>
   syncBackendConfig: (backendSettings: any) => Promise<boolean>
 
+  // 数据备份/恢复
+  exportBackup: () => Promise<{ success: boolean; message?: string; zipPath?: string; error?: string }>
+  importBackup: () => Promise<{
+    success: boolean
+    message?: string
+    restored?: string[]
+    error?: string
+  }>
+
   // 日志文件操作
   exportLogs: () => Promise<{ success: boolean; path?: string; sourceDir?: string; error?: string }>
   getLogs: (lines?: number, fileName?: string) => Promise<string>

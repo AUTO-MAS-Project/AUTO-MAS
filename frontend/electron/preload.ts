@@ -67,6 +67,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   syncBackendConfig: (backendSettings: any) =>
     ipcRenderer.invoke('sync-backend-config', backendSettings),
 
+  // 数据备份/恢复
+  exportBackup: () => ipcRenderer.invoke('backup:export'),
+  importBackup: () => ipcRenderer.invoke('backup:import'),
+
   // 日志文件操作
   exportLogs: () => ipcRenderer.invoke('log:export'),
   getLogs: (lines?: number, fileName?: string) => ipcRenderer.invoke('log:getContent', lines, fileName),

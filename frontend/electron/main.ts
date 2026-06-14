@@ -701,6 +701,139 @@ ipcMain.handle('log:export', async () => {
   }
 })
 
+// 需要备份/恢复的核心数据文件夹
+const BACKUP_FOLDERS = ['data', 'config', 'history']
+
+// 导出数据备份：将 data/config/history 打包为 zip
+ipcMain.handle('backup:export', async () => {
+  try {
+    if (!mainWindow) return { success: false, error: '窗口未初始化' }
+
+    const appRoot = getAppRoot()
+    const existingFolders = BACKUP_FOLDERS.filter((folder) =>
+      fs.existsSync(path.join(appRoot, folder))
+    )
+
+    if (existingFolders.length === 0) {
+      return { success: false, error: '没有可备份的数据（未找到 data/config/history 文件夹）' }
+    }
+
+    // 选择保存位置
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '导出数据备份',
+      defaultPath: `AUTO-MAS-backup-${new Date().toISOString().slice(0, 10)}.zip`,
+      filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
+    })
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, error: '用户取消' }
+    }
+
+    const zipPath = result.filePath
+
+    // 创建 ZIP 文件，逐个文件夹添加（保留顶层文件夹名）
+    const zip = new AdmZip()
+    for (const folder of existingFolders) {
+      zip.addLocalFolder(path.join(appRoot, folder), folder)
+      logger.info(`添加文件夹到备份包: ${folder}`)
+    }
+
+    zip.writeZip(zipPath)
+    logger.info(`数据备份已导出: ${zipPath}`)
+
+    return {
+      success: true,
+      message: '数据备份导出成功',
+      zipPath: zipPath,
+    }
+  } catch (error) {
+    logger.error('导出数据备份失败:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+})
+
+// 导入数据备份：选择 zip 文件，覆盖 data/config/history 后自动重启
+ipcMain.handle('backup:import', async () => {
+  try {
+    if (!mainWindow) return { success: false, error: '窗口未初始化' }
+
+    // 选择备份文件
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择数据备份文件',
+      properties: ['openFile'],
+      filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, error: '用户取消' }
+    }
+
+    const zipPath = result.filePaths[0]
+    const appRoot = getAppRoot()
+
+    // 校验备份包：顶层至少包含一个目标文件夹
+    const zip = new AdmZip(zipPath)
+    const topDirs = new Set(
+      zip.getEntries().map((entry) => entry.entryName.replace(/\\/g, '/').split('/')[0])
+    )
+    const foldersToRestore = BACKUP_FOLDERS.filter((folder) => topDirs.has(folder))
+
+    if (foldersToRestore.length === 0) {
+      return {
+        success: false,
+        error: '无效的备份文件：未找到 data/config/history 文件夹',
+      }
+    }
+
+    // 先解压到临时目录，校验通过后再替换，避免解压失败导致数据丢失
+    const tmpDir = path.join(appRoot, `.restore-${Date.now()}`)
+    zip.extractAllTo(tmpDir, true)
+
+    // 停止后端，释放对 data.db 等文件的占用
+    logger.info('恢复数据前停止后端进程...')
+    await forceKillRelatedProcesses()
+    // 等待操作系统释放文件句柄
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+
+    // 用备份内容替换现有文件夹
+    for (const folder of foldersToRestore) {
+      const target = path.join(appRoot, folder)
+      const source = path.join(tmpDir, folder)
+      if (fs.existsSync(target)) {
+        fs.rmSync(target, { recursive: true, force: true })
+      }
+      fs.renameSync(source, target)
+      logger.info(`已恢复文件夹: ${folder}`)
+    }
+
+    // 清理临时目录
+    fs.rmSync(tmpDir, { recursive: true, force: true })
+    logger.info(`数据恢复完成: ${foldersToRestore.join(', ')}，即将重启应用`)
+
+    // 延迟重启，确保 IPC 结果先返回给渲染进程
+    setTimeout(() => {
+      isQuitting = true
+      app.relaunch()
+      app.exit(0)
+    }, 1000)
+
+    return {
+      success: true,
+      message: '数据恢复成功，应用即将重启',
+      restored: foldersToRestore,
+    }
+  } catch (error) {
+    logger.error('导入数据备份失败:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+})
+
 ipcMain.handle('log:getContent', async (_event, lines?: number, fileName?: string) => {
   try {
     const appRoot = getAppRoot()
