@@ -11,13 +11,9 @@ export type OkwwConfig_Game = {
      */
     Enabled?: (boolean | null);
     /**
-     * 任务开始前是否由 MAS 启动游戏/模拟器
+     * 类型: PC端, URL协议
      */
-    LaunchBeforeTask?: (boolean | null);
-    /**
-     * 类型: 模拟器, PC端, URL协议
-     */
-    Type?: ('Emulator' | 'Client' | 'URL' | null);
+    Type?: ('Client' | 'URL' | null);
     /**
      * 游戏/模拟器程序路径
      */
@@ -43,10 +39,6 @@ export type OkwwConfig_Game = {
      */
     IfForceClose?: (boolean | null);
     /**
-     * 任务结束后是否关闭游戏/模拟器
-     */
-    CloseOnFinish?: (boolean | null);
-    /**
      * 模拟器ID
      */
     EmulatorId?: (string | null);
@@ -54,4 +46,13 @@ export type OkwwConfig_Game = {
      * 模拟器多开实例索引
      */
     EmulatorIndex?: (string | null);
+    /**
+     * 任务开始前是否由 MAS 启动游戏
+     */
+    LaunchBeforeTask?: (boolean | null);
+    /**
+     * 任务结束后是否关闭游戏
+     */
+    CloseOnFinish?: (boolean | null);
 };
+

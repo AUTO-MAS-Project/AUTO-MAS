@@ -1,26 +1,5 @@
 <template>
   <div class="user-edit-container">
-    <teleport to="body">
-      <div v-if="showConfigMask" class="maa-config-mask">
-        <div class="mask-content">
-          <div class="mask-icon">
-            <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
-          </div>
-          <h2 class="mask-title">正在进行 ok-ww 配置</h2>
-          <p class="mask-description">
-            当前正在为这个用户打开 ok-ww 配置界面，请在 ok-ww 中完成相关设置。
-            <br />
-            配置完成后，点击“保存配置”结束本次会话。
-          </p>
-          <div class="mask-actions">
-            <a-button v-if="websocketId" type="primary" size="large" @click="handleSaveOkwwConfig">
-              保存配置
-            </a-button>
-          </div>
-        </div>
-      </div>
-    </teleport>
-
     <div class="user-edit-header">
       <div class="header-nav">
         <a-breadcrumb class="breadcrumb">
@@ -39,31 +18,6 @@
       </div>
 
       <a-space size="middle">
-        <a-button
-          v-if="formData.Info.Mode === '详细' && !showConfigMask"
-          type="primary"
-          ghost
-          size="large"
-          :loading="configLoading"
-          @click="handleOkwwConfig"
-        >
-          <template #icon>
-            <SettingOutlined />
-          </template>
-          ok-ww 配置
-        </a-button>
-        <a-button
-          v-if="formData.Info.Mode === '详细' && showConfigMask"
-          type="default"
-          size="large"
-          disabled
-          style="color: #52c41a; border-color: #52c41a"
-        >
-          <template #icon>
-            <SettingOutlined />
-          </template>
-          正在配置
-        </a-button>
         <a-button size="large" class="cancel-button" @click="handleCancel">
           <template #icon>
             <ArrowLeftOutlined />
@@ -160,28 +114,7 @@
             </a-row>
 
             <a-row :gutter="24">
-              <a-col :span="8">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      用户配置模式
-                      <a-tooltip title="简洁模式共用脚本页配置；详细模式每个用户独立配置">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-select
-                    v-model:value="formData.Info.Mode"
-                    size="large"
-                    class="modern-select"
-                    @change="handleModeChange"
-                  >
-                    <a-select-option value="简洁">简洁</a-select-option>
-                    <a-select-option value="详细">详细</a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
+              <a-col :span="12">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
@@ -201,7 +134,7 @@
                   />
                 </a-form-item>
               </a-col>
-              <a-col :span="8">
+              <a-col :span="12">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
@@ -281,6 +214,22 @@
             </a-row>
           </div>
 
+          <ExtraScriptSection :form-data="formData" :loading="pageLoading" @save="saveField" />
+        </a-form>
+      </a-card>
+
+      <!-- OK-WW 配置编辑器 -->
+      <a-card class="config-card" style="margin-top: 24px">
+        <OkwwConfigEditor
+          v-if="userId"
+          :script-id="scriptId"
+          :user-id="userId"
+          @saved="handleConfigSaved"
+        />
+      </a-card>
+
+      <a-card class="config-card" style="margin-top: 24px">
+        <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
               <h3>通知配置</h3>
@@ -368,12 +317,12 @@
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
-import { Service, TaskCreateIn, type OkwwUserConfig } from '@/api'
+import { ArrowLeftOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { subscribe, unsubscribe } from '@/composables/useWebSocket'
 import WebhookManager from '@/components/WebhookManager.vue'
+import OkwwConfigEditor from '@/views/OkwwUserEdit/OkwwConfigEditor.vue'
+import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const logger = window.electronAPI.getLogger('ok-ww用户编辑')
 const route = useRoute()
@@ -382,15 +331,11 @@ const { addUser, getUsers, updateUser } = useUserApi()
 const { getScript } = useScriptApi()
 
 const scriptId = route.params.scriptId as string
-let userId = (route.params.userId as string) || ''
-const isEdit = ref(!!userId)
+const userId = ref((route.params.userId as string) || '')
+const isEdit = ref(!!userId.value)
 const scriptName = ref('ok-ww脚本')
 
 const pageLoading = ref(true)
-const showConfigMask = ref(false)
-const configLoading = ref(false)
-const subscriptionId = ref<string | null>(null)
-const websocketId = ref<string | null>(null)
 const isInitializing = ref(true)
 const isSaving = ref(false)
 
@@ -410,23 +355,62 @@ const okwwTaskOptions = [
   { label: '8 - TacetTask（无音区）', value: 8 },
 ]
 
-type OkwwConfigMessage = {
-  type?: string
-  data?: {
-    Accomplish?: unknown
-    [key: string]: unknown
-  }
+interface OkwwUserInfoForm {
+  Name: string
+  Status: boolean
+  Id: string
+  Password: string
+  Mode: '详细'
+  Resource: '官服'
+  RemainedDay: number
+  IfScriptBeforeTask: boolean
+  ScriptBeforeTask: string
+  IfScriptAfterTask: boolean
+  ScriptAfterTask: string
+  Notes: string
 }
 
-const getDefaultUserData = () => ({
+interface OkwwUserTaskForm {
+  TaskIndex: number
+  ExitOnFinish: boolean
+}
+
+interface OkwwUserNotifyForm {
+  Enabled: boolean
+  IfSendStatistic: boolean
+  IfSendMail: boolean
+  ToAddress: string
+  IfServerChan: boolean
+  ServerChanKey: string
+  CustomWebhooks: any[]
+}
+
+interface OkwwUserDataForm {
+  LastProxyDate: string
+  ProxyTimes: number
+}
+
+interface OkwwUserFormData {
+  userName: string
+  Info: OkwwUserInfoForm
+  Task: OkwwUserTaskForm
+  Notify: OkwwUserNotifyForm
+  Data: OkwwUserDataForm
+}
+
+const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
   Info: {
     Name: '',
     Status: true,
     Id: '',
     Password: '',
-    Mode: '简洁',
+    Mode: '详细',
     Resource: '官服',
     RemainedDay: -1,
+    IfScriptBeforeTask: false,
+    ScriptBeforeTask: '',
+    IfScriptAfterTask: false,
+    ScriptAfterTask: '',
     Notes: '',
   },
   Task: {
@@ -448,9 +432,9 @@ const getDefaultUserData = () => ({
   },
 })
 
-const formData = reactive({
+const formData = reactive<OkwwUserFormData>({
   userName: '',
-  ...(getDefaultUserData() as unknown as OkwwUserConfig),
+  ...getDefaultUserData(),
 })
 
 const currentStartupArguments = computed(() => `-t ${formData.Task.TaskIndex || 1} -e`)
@@ -462,16 +446,16 @@ const createUserImmediately = async () => {
   if (!resp?.userId) {
     throw new Error(resp?.message || '创建用户失败')
   }
-  userId = resp.userId
+  userId.value = resp.userId
   isEdit.value = true
   await router.replace({
     name: 'OkwwUserEdit',
-    params: { scriptId, userId },
+    params: { scriptId, userId: userId.value },
   })
 }
 
 const saveField = async (key: string, value: unknown) => {
-  if (isInitializing.value || isSaving.value || !userId) return
+  if (isInitializing.value || isSaving.value || !userId.value) return
 
   isSaving.value = true
   try {
@@ -488,7 +472,7 @@ const saveField = async (key: string, value: unknown) => {
       formData.userName = String(value || '')
     }
 
-    await updateUser(scriptId, userId, patch)
+    await updateUser(scriptId, userId.value, patch)
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
   } finally {
@@ -497,9 +481,9 @@ const saveField = async (key: string, value: unknown) => {
 }
 
 const saveTaskConfig = async () => {
-  if (isInitializing.value || !userId) return
+  if (isInitializing.value || !userId.value) return
   formData.Task.ExitOnFinish = true
-  await updateUser(scriptId, userId, {
+  await updateUser(scriptId, userId.value, {
     Task: {
       TaskIndex: formData.Task.TaskIndex,
       ExitOnFinish: true,
@@ -516,11 +500,6 @@ const handleTaskIndexChange = async (value: number) => {
   }
 }
 
-const handleModeChange = async (value: '简洁' | '详细') => {
-  formData.Info.Mode = value
-  await saveField('Info.Mode', value)
-}
-
 const loadScriptInfo = async () => {
   const detail = await getScript(scriptId)
   if (detail) {
@@ -531,26 +510,42 @@ const loadScriptInfo = async () => {
 const loadUser = async () => {
   pageLoading.value = true
   try {
-    if (!userId) {
+    if (!userId.value) {
       await createUserImmediately()
     }
-    const resp = await getUsers(scriptId, userId)
-    const userIndex = resp?.index?.find(i => i.uid === userId)
-    const data = resp?.data?.[userId]
+    const resp = await getUsers(scriptId, userId.value)
+    const userIndex = resp?.index?.find(i => i.uid === userId.value)
+    const data = resp?.data?.[userId.value]
     if (!userIndex || !data) {
       throw new Error('用户不存在或加载失败')
     }
 
+    const userData = data as Partial<OkwwUserFormData>
+    const shouldPersistExitOnFinish = userData.Task?.ExitOnFinish !== true
+
     Object.assign(formData, {
-      Info: { ...getDefaultUserData().Info, ...(data.Info || {}) },
-      Task: { ...getDefaultUserData().Task, ...(data.Task || {}) },
-      Notify: { ...getDefaultUserData().Notify, ...(data.Notify || {}) },
-      Data: { ...getDefaultUserData().Data, ...(data.Data || {}) },
+      Info: { ...getDefaultUserData().Info, ...(userData.Info || {}) },
+      Task: { ...getDefaultUserData().Task, ...(userData.Task || {}) },
+      Notify: { ...getDefaultUserData().Notify, ...(userData.Notify || {}) },
+      Data: { ...getDefaultUserData().Data, ...(userData.Data || {}) },
     })
+    formData.Info.Mode = '详细'
     formData.Task.ExitOnFinish = true
     const taskIndex = Number(formData.Task.TaskIndex)
+    let shouldPersistTaskIndex = false
     if (!Number.isFinite(taskIndex) || taskIndex < 1 || taskIndex > OKWW_MAX_TASK_INDEX) {
       formData.Task.TaskIndex = 1
+      shouldPersistTaskIndex = true
+    }
+    const patch: Record<string, any> = {}
+    if (shouldPersistExitOnFinish || shouldPersistTaskIndex) {
+      patch.Task = {
+        TaskIndex: formData.Task.TaskIndex,
+        ExitOnFinish: true,
+      }
+    }
+    if (Object.keys(patch).length > 0) {
+      await updateUser(scriptId, userId.value, patch)
     }
     await nextTick()
     formData.userName = formData.Info.Name || ''
@@ -564,75 +559,8 @@ const loadUser = async () => {
   }
 }
 
-const cleanupWs = () => {
-  if (subscriptionId.value) {
-    unsubscribe(subscriptionId.value)
-    subscriptionId.value = null
-  }
-  websocketId.value = null
-  showConfigMask.value = false
-}
-
-const handleOkwwConfig = async () => {
-  if (!userId) {
-    message.error('用户未就绪，请稍后重试')
-    return
-  }
-  if (formData.Info.Mode !== '详细') {
-    message.info('当前为简洁模式，请在脚本页使用「配置 ok-ww」按钮')
-    return
-  }
-  try {
-    configLoading.value = true
-    cleanupWs()
-
-    const resp = await Service.addTaskApiDispatchStartPost({
-      taskId: userId,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-    })
-
-    if (resp?.code !== 200 || !resp?.taskId) {
-      throw new Error(resp?.message || '启动 ok-ww 配置失败')
-    }
-
-    websocketId.value = resp.taskId
-    const subId = subscribe({ id: resp.taskId }, (wsMessage: OkwwConfigMessage) => {
-      if (wsMessage.type === 'error') {
-        message.error(`ok-ww 配置连接失败: ${wsMessage.data}`)
-        cleanupWs()
-        return
-      }
-      if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
-        cleanupWs()
-      }
-    })
-    subscriptionId.value = subId
-    showConfigMask.value = true
-    message.success('已开始 ok-ww 配置会话')
-  } catch (e) {
-    message.error(e instanceof Error ? e.message : '启动 ok-ww 配置失败')
-  } finally {
-    configLoading.value = false
-  }
-}
-
-const handleSaveOkwwConfig = async () => {
-  const wsId = websocketId.value
-  if (!wsId) {
-    message.error('未找到活动的配置会话')
-    return
-  }
-  try {
-    const resp = await Service.stopTaskApiDispatchStopPost({ taskId: wsId })
-    if (resp?.code === 200) {
-      cleanupWs()
-      message.success('ok-ww 配置已保存')
-    } else {
-      message.error(resp?.message || '保存配置失败')
-    }
-  } catch {
-    message.error('保存配置失败')
-  }
+const handleConfigSaved = () => {
+  logger.info('OK-WW 配置已保存')
 }
 
 onMounted(async () => {
@@ -735,57 +663,6 @@ onMounted(async () => {
 .modern-select :deep(.ant-select-selector) {
   border: 2px solid var(--ant-color-border) !important;
   border-radius: 8px !important;
-}
-
-/* 与 Scripts.vue / MAAUserEdit 配置遮罩一致 */
-.maa-config-mask {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-}
-
-.mask-content {
-  background: var(--ant-color-bg-elevated);
-  border-radius: 8px;
-  padding: 24px;
-  max-width: 480px;
-  width: 100%;
-  text-align: center;
-  box-shadow:
-    0 6px 16px 0 rgba(0, 0, 0, 0.08),
-    0 3px 6px -4px rgba(0, 0, 0, 0.12),
-    0 9px 28px 8px rgba(0, 0, 0, 0.05);
-  border: 1px solid var(--ant-color-border);
-}
-
-.mask-icon {
-  margin-bottom: 16px;
-}
-
-.mask-title {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0 0 8px;
-  color: var(--ant-color-text);
-}
-
-.mask-description {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  margin: 0 0 24px;
-  line-height: 1.5;
-}
-
-.mask-actions {
-  display: flex;
-  justify-content: center;
 }
 
 @media (max-width: 768px) {

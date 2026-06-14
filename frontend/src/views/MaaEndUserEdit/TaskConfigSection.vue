@@ -5,23 +5,76 @@
       <h3>任务配置</h3>
     </div>
 
-    <a-row :gutter="24">
-      <a-col :span="8">
+    <div v-if="showManagedTaskConfig && visibleTaskGroups.length" class="task-switch-layout">
+      <div class="task-group-sidebar">
+        <button
+          v-for="group in visibleTaskGroups"
+          :key="group.key"
+          class="task-group-item"
+          :class="{ active: group.key === activeGroupKey }"
+          type="button"
+          @click="activeGroupKey = group.key"
+        >
+          <span class="task-group-main">
+            <span class="task-group-title">{{ group.label }}</span>
+            <span class="task-group-count">
+              {{ enabledGroupTaskCount(group) }}/{{ group.tasks.length }}
+            </span>
+          </span>
+          <span class="task-group-switch" @click.stop>
+            <a-switch
+              :checked="isGroupEnabled(group)"
+              :disabled="controlsDisabled"
+              size="small"
+              @change="handleGroupSwitchChange(group, $event)"
+            />
+          </span>
+        </button>
+      </div>
+
+      <div v-if="activeGroup" class="task-group-detail">
+        <div class="task-group-detail-header">
+          <span>{{ activeGroup.label }}</span>
+          <span class="task-group-count">
+            {{ enabledGroupTaskCount(activeGroup) }}/{{ activeGroup.tasks.length }}
+          </span>
+        </div>
+
+        <div class="task-switch-list">
+          <div v-for="task in activeGroup.tasks" :key="task.name" class="task-switch-row">
+            <span class="task-switch-label">{{ task.label }}</span>
+            <a-switch
+              v-model:checked="formData.Task[taskSwitchKey(task.name)]"
+              :disabled="controlsDisabled"
+              @change="handleTaskSwitchChange(task.name)"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <a-row v-if="showSanityDetail" :gutter="24">
+      <a-col :span="optionColumnSpan">
         <a-form-item>
           <template #label>
-            <a-tooltip title="选择当前要执行的协议空间任务分类">
+            <a-tooltip title="选择当前执行的理智任务类型">
               <span class="form-label">
-                协议空间
+                理智任务
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
-          <a-select v-model:value="formData.Task.ProtocolSpaceTab" :options="protocolSpaceOptions" size="large"
-            @change="handleProtocolSpaceChange" />
+          <a-select
+            v-model:value="formData.Task.SanityTaskType"
+            :options="SANITY_TASK_TYPE_OPTIONS"
+            :disabled="optionControlsDisabled"
+            size="large"
+            @change="handleSanityTaskTypeChange"
+          />
         </a-form-item>
       </a-col>
 
-      <a-col :span="8">
+      <a-col :span="optionColumnSpan">
         <a-form-item>
           <template #label>
             <a-tooltip :title="taskOptionTooltip">
@@ -31,154 +84,313 @@
               </span>
             </a-tooltip>
           </template>
-          <a-select v-model:value="currentTaskValue" :options="currentTaskOptions" size="large"
-            @change="handleTaskOptionChange" />
+          <a-select
+            v-model:value="currentTaskValue"
+            :options="currentTaskOptions"
+            :disabled="optionControlsDisabled"
+            size="large"
+            @change="handleTaskOptionChange"
+          />
         </a-form-item>
       </a-col>
+    </a-row>
 
+    <a-row v-if="showRewardGroupSelect" :gutter="24">
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip title="当前任务支持奖励组切换时，可在这里选择对应奖励组">
+            <a-tooltip title="协议空间奖励任务可在这里选择奖励组">
               <span class="form-label">
                 可选奖励组
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
-          <a-select v-model:value="formData.Task.RewardsSetOption" :options="rewardOptions"
-            :disabled="!rewardGroupEnabled" size="large"
-            @change="emitSave('Task.RewardsSetOption', formData.Task.RewardsSetOption)" />
+          <a-select
+            v-model:value="formData.Task.RewardsSetOption"
+            :options="REWARD_OPTIONS"
+            :disabled="optionControlsDisabled"
+            size="large"
+            @change="emitSave('Task.RewardsSetOption', formData.Task.RewardsSetOption)"
+          />
         </a-form-item>
       </a-col>
     </a-row>
-
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import {
+  AUTO_ESSENCE_LOCATION_OPTIONS,
+  MAAEND_CONTROLLER_TASKS,
+  MAAEND_TASK_GROUPS,
+  PROTOCOL_SPACE_TASK_FIELD_MAP,
+  PROTOCOL_SPACE_TASK_OPTIONS_MAP,
+  PROTOCOL_SPACE_TASK_TITLE_MAP,
+  PROTOCOL_SPACE_TASK_TOOLTIP_MAP,
+  REWARD_OPTIONS,
+  SANITY_TASK_TYPE_OPTIONS,
+  type MaaEndTaskSwitch,
+  type ProtocolSpaceTab,
+  type SanityTaskType,
+} from '@/utils/maaEndProtocolSpace'
 
-const props = defineProps<{
-  formData: any
-}>()
+interface FieldChange {
+  key: string
+  value: any
+}
+
+const props = withDefaults(
+  defineProps<{
+    formData: any
+    loading?: boolean
+    ifQuickConfig?: boolean
+    controllerType?: string | null
+  }>(),
+  {
+    loading: false,
+    ifQuickConfig: true,
+    controllerType: null,
+  }
+)
 
 const emit = defineEmits<{
   save: [key: string, value: any]
+  saveBatch: [changes: FieldChange[]]
 }>()
 
-const protocolSpaceOptions = [
-  { label: '干员养成', value: 'OperatorProgression' },
-  { label: '武器养成', value: 'WeaponProgression' },
-  { label: '危境预演', value: 'CrisisDrills' },
-]
-
-const taskOptionsMap: Record<string, Array<{ label: string; value: string; rewards?: boolean }>> = {
-  OperatorProgression: [
-    { label: '干员经验', value: 'OperatorEXP', rewards: true },
-    { label: '干员进阶', value: 'Promotions', rewards: true },
-    { label: '钱币收集', value: 'T-Creds', rewards: false },
-    { label: '技能提升', value: 'SkillUp', rewards: true },
-  ],
-  WeaponProgression: [
-    { label: '武器经验', value: 'WeaponEXP', rewards: false },
-    { label: '武器进阶', value: 'WeaponTune', rewards: true },
-  ],
-  CrisisDrills: [
-    { label: '高阶培养 I - D96钢样品四', value: 'AdvancedProgression1', rewards: false },
-    { label: '高阶培养 II - 超距辉映管', value: 'AdvancedProgression2', rewards: false },
-    { label: '高阶培养 III - 快子遴捡晶格', value: 'AdvancedProgression3', rewards: false },
-    { label: '高阶培养 IV - 象限拟合液', value: 'AdvancedProgression4', rewards: false },
-    { label: '高阶培养 V - 三相纳米片', value: 'AdvancedProgression5', rewards: false },
-  ],
-}
-
-const rewardOptions = [
-  { label: '奖励组 A', value: 'RewardsSetA' },
-  { label: '奖励组 B', value: 'RewardsSetB' },
-]
-
-const protocolTaskFieldMap: Record<string, string> = {
-  OperatorProgression: 'OperatorProgression',
-  WeaponProgression: 'WeaponProgression',
-  CrisisDrills: 'CrisisDrills',
-}
-
-const taskLabelMap: Record<string, string> = {
-  OperatorProgression: '干员养成任务',
-  WeaponProgression: '武器养成任务',
-  CrisisDrills: '危境预演任务',
-}
-
-const taskTooltipMap: Record<string, string> = {
-  OperatorProgression: '选择要执行的干员养成任务',
-  WeaponProgression: '选择要执行的武器养成任务',
-  CrisisDrills: '选择要执行的危境预演任务',
-}
-
-const currentField = computed(() => protocolTaskFieldMap[props.formData.Task.ProtocolSpaceTab])
-
-const currentTaskOptions = computed(
-  () => taskOptionsMap[props.formData.Task.ProtocolSpaceTab] ?? taskOptionsMap.OperatorProgression
+const formData = props.formData
+const optionColumnSpan = 12
+const activeGroupKey = ref('')
+const showManagedTaskConfig = computed(() => props.ifQuickConfig)
+const supportedTaskNames = computed(
+  () => new Set(MAAEND_CONTROLLER_TASKS[props.controllerType ?? ''] ?? [])
+)
+const showSanityOptions = computed(() => supportedTaskNames.value.has('Sanity'))
+const visibleTaskGroups = computed(() =>
+  MAAEND_TASK_GROUPS.map(group => ({
+    ...group,
+    tasks: group.tasks.filter(task => supportedTaskNames.value.has(task.name)),
+  })).filter(group => group.tasks.length > 0)
+)
+const activeGroup = computed(
+  () => visibleTaskGroups.value.find(group => group.key === activeGroupKey.value) ?? null
+)
+const activeGroupHasSanity = computed(
+  () => activeGroup.value?.tasks.some(task => task.name === 'Sanity') ?? false
 )
 
+const controlsDisabled = computed(() => {
+  return props.loading || !props.ifQuickConfig
+})
+
+const optionControlsDisabled = computed(() => controlsDisabled.value)
+
+const normalizedSanityTaskType = computed<SanityTaskType>(() =>
+  SANITY_TASK_TYPE_OPTIONS.some(option => option.value === formData.Task.SanityTaskType)
+    ? formData.Task.SanityTaskType
+    : 'OperatorProgression'
+)
+
+const currentField = computed(
+  () => PROTOCOL_SPACE_TASK_FIELD_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab]
+)
+
+const currentTaskOptions = computed(() => {
+  if (normalizedSanityTaskType.value === 'Essence') {
+    return AUTO_ESSENCE_LOCATION_OPTIONS
+  }
+  return PROTOCOL_SPACE_TASK_OPTIONS_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab] ?? []
+})
+
 const currentTaskValue = computed({
-  get: () => props.formData.Task[currentField.value],
+  get: () => {
+    if (normalizedSanityTaskType.value === 'Essence') {
+      return formData.Task.AutoEssenceSpecifiedLocation
+    }
+    return formData.Task[currentField.value]
+  },
   set: value => {
-    props.formData.Task[currentField.value] = value
+    if (normalizedSanityTaskType.value === 'Essence') {
+      formData.Task.AutoEssenceSpecifiedLocation = value
+      return
+    }
+    formData.Task[currentField.value] = value
   },
 })
 
-const currentTaskOption = computed(() => {
-  return currentTaskOptions.value.find(option => option.value === currentTaskValue.value)
+const currentTaskOption = computed(() =>
+  currentTaskOptions.value.find(option => option.value === currentTaskValue.value)
+)
+
+const rewardGroupEnabled = computed(() => {
+  if (normalizedSanityTaskType.value === 'Essence') return false
+  return Boolean(
+    currentTaskOption.value &&
+      'rewards' in currentTaskOption.value &&
+      currentTaskOption.value.rewards
+  )
 })
 
-const taskOptionLabel = computed(
-  () => taskLabelMap[props.formData.Task.ProtocolSpaceTab] ?? '干员养成任务'
+const taskOptionLabel = computed(() =>
+  normalizedSanityTaskType.value === 'Essence'
+    ? '基质地点'
+    : (PROTOCOL_SPACE_TASK_TITLE_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab] ??
+      '协议空间任务')
 )
 
-const taskOptionTooltip = computed(
-  () => taskTooltipMap[props.formData.Task.ProtocolSpaceTab] ?? '选择要执行的干员养成任务'
+const taskOptionTooltip = computed(() =>
+  normalizedSanityTaskType.value === 'Essence'
+    ? '选择当前基质刷取地点'
+    : (PROTOCOL_SPACE_TASK_TOOLTIP_MAP[normalizedSanityTaskType.value as ProtocolSpaceTab] ??
+      '选择当前协议空间任务')
 )
-
-const rewardGroupEnabled = computed(() => Boolean(currentTaskOption.value?.rewards))
 
 const emitSave = (key: string, value: any) => {
+  if (controlsDisabled.value) return
   emit('save', key, value)
 }
 
+const taskSwitchKey = (taskName: MaaEndTaskSwitch) => `If${taskName}` as const
+
+const isTaskEnabled = (taskName: MaaEndTaskSwitch) =>
+  Boolean(formData.Task[taskSwitchKey(taskName)])
+
+const showSanityDetail = computed(
+  () =>
+    props.ifQuickConfig &&
+    activeGroupHasSanity.value &&
+    showSanityOptions.value &&
+    isTaskEnabled('Sanity')
+)
+const showRewardGroupSelect = computed(() => showSanityDetail.value && rewardGroupEnabled.value)
+
+const handleTaskSwitchChange = (taskName: MaaEndTaskSwitch) => {
+  emitSave(`Task.${taskSwitchKey(taskName)}`, formData.Task[taskSwitchKey(taskName)])
+}
+
+const enabledGroupTaskCount = (group: (typeof visibleTaskGroups.value)[number]) =>
+  group.tasks.filter(task => isTaskEnabled(task.name)).length
+
+const isGroupEnabled = (group: (typeof visibleTaskGroups.value)[number]) =>
+  enabledGroupTaskCount(group) === group.tasks.length
+
+const handleGroupSwitchChange = (
+  group: (typeof visibleTaskGroups.value)[number],
+  checked: boolean | string | number
+) => {
+  if (controlsDisabled.value) return
+  const enabled = Boolean(checked)
+  const changes = group.tasks.map(task => {
+    const key = taskSwitchKey(task.name)
+    formData.Task[key] = enabled
+    return { key: `Task.${key}`, value: enabled }
+  })
+  emitSaveBatch(changes)
+}
+
+const emitSaveBatch = (changes: FieldChange[]) => {
+  if (controlsDisabled.value || !changes.length) return
+  emit('saveBatch', changes)
+}
+
 const ensureCurrentTaskValue = () => {
+  if (optionControlsDisabled.value) return
   const options = currentTaskOptions.value
+  if (!options.length) return
   if (!options.some(option => option.value === currentTaskValue.value)) {
     currentTaskValue.value = options[0].value
   }
 }
 
-const ensureRewardGroupState = () => {
-  if (!rewardGroupEnabled.value && props.formData.Task.RewardsSetOption !== 'RewardsSetA') {
-    props.formData.Task.RewardsSetOption = 'RewardsSetA'
-    emitSave('Task.RewardsSetOption', props.formData.Task.RewardsSetOption)
+const normalizeRewardGroupState = (): FieldChange | null => {
+  if (!rewardGroupEnabled.value && formData.Task.RewardsSetOption !== 'RewardsSetA') {
+    formData.Task.RewardsSetOption = 'RewardsSetA'
+    return { key: 'Task.RewardsSetOption', value: formData.Task.RewardsSetOption }
   }
+  return null
 }
 
-const handleProtocolSpaceChange = () => {
+const handleSanityTaskTypeChange = (value: SanityTaskType) => {
+  if (optionControlsDisabled.value) return
+  formData.Task.SanityTaskType = value
   ensureCurrentTaskValue()
-  emitSave('Task.ProtocolSpaceTab', props.formData.Task.ProtocolSpaceTab)
-  emitSave(`Task.${currentField.value}`, currentTaskValue.value)
-  ensureRewardGroupState()
+
+  const changes: FieldChange[] = [
+    { key: 'Task.SanityTaskType', value: formData.Task.SanityTaskType },
+  ]
+
+  if (value === 'Essence') {
+    changes.push({
+      key: 'Task.AutoEssenceSpecifiedLocation',
+      value: formData.Task.AutoEssenceSpecifiedLocation ?? 'VFTheHub',
+    })
+  } else {
+    changes.push({ key: `Task.${currentField.value}`, value: currentTaskValue.value })
+  }
+
+  const rewardGroupChange = normalizeRewardGroupState()
+  if (rewardGroupChange) {
+    changes.push(rewardGroupChange)
+  }
+
+  emitSaveBatch(changes)
 }
 
 const handleTaskOptionChange = () => {
-  emitSave(`Task.${currentField.value}`, currentTaskValue.value)
-  ensureRewardGroupState()
+  if (optionControlsDisabled.value) return
+  const changes: FieldChange[] = []
+
+  if (normalizedSanityTaskType.value === 'Essence') {
+    changes.push({
+      key: 'Task.AutoEssenceSpecifiedLocation',
+      value: formData.Task.AutoEssenceSpecifiedLocation,
+    })
+  } else {
+    changes.push({ key: `Task.${currentField.value}`, value: currentTaskValue.value })
+  }
+
+  const rewardGroupChange = normalizeRewardGroupState()
+  if (rewardGroupChange) {
+    changes.push(rewardGroupChange)
+  }
+
+  emitSaveBatch(changes)
 }
 
 watch(
-  () => props.formData.Task.ProtocolSpaceTab,
+  () => formData.Task.SanityTaskType,
   () => {
+    if (optionControlsDisabled.value) return
+    const changes: FieldChange[] = []
+    if (formData.Task.SanityTaskType !== normalizedSanityTaskType.value) {
+      formData.Task.SanityTaskType = normalizedSanityTaskType.value
+      changes.push({ key: 'Task.SanityTaskType', value: formData.Task.SanityTaskType })
+    }
     ensureCurrentTaskValue()
-    ensureRewardGroupState()
+    const rewardGroupChange = normalizeRewardGroupState()
+    if (rewardGroupChange) {
+      changes.push(rewardGroupChange)
+    }
+    if (changes.length) {
+      emitSaveBatch(changes)
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  visibleTaskGroups,
+  groups => {
+    if (!groups.length) {
+      activeGroupKey.value = ''
+      return
+    }
+    if (!groups.some(group => group.key === activeGroupKey.value)) {
+      activeGroupKey.value = groups[0].key
+    }
   },
   { immediate: true }
 )
@@ -196,6 +408,100 @@ watch(
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.mode-notice {
+  margin-bottom: 16px;
+}
+
+.task-switch-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) minmax(360px, 1fr);
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.task-group-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-group-item {
+  width: 100%;
+  min-height: 52px;
+  padding: 10px 12px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+
+.task-group-item.active {
+  border-color: var(--ant-color-primary);
+  background: var(--ant-color-primary-bg);
+}
+
+.task-group-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.task-group-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.task-group-count {
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+}
+
+.task-group-detail {
+  min-height: 220px;
+  padding: 4px 0;
+}
+
+.task-group-detail-header {
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--ant-color-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.task-switch-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px 20px;
+}
+
+.task-switch-row {
+  min-height: 44px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.task-switch-label {
+  color: var(--ant-color-text);
+  font-size: 14px;
 }
 
 .section-header h3 {
@@ -234,5 +540,20 @@ watch(
 
 .help-icon:hover {
   color: var(--ant-color-primary);
+}
+
+@media (max-width: 900px) {
+  .task-switch-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .task-group-sidebar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .task-switch-list {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
