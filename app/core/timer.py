@@ -20,7 +20,8 @@
 #   Contact: DLmaster_361@163.com
 
 import asyncio
-from datetime import datetime
+import random
+from datetime import datetime, timedelta
 
 from app.services import Matomo
 from app.MaaFW import ArknightWin32Toolkit
@@ -70,6 +71,8 @@ class _MainTimer:
 
             if Config.ToolsConfig.get("ArknightsPC", "Enabled"):
                 await ArknightWin32Toolkit.scheduled_task()
+
+            await self.check_game_sign()
 
             await asyncio.sleep(1)
 
@@ -133,6 +136,93 @@ class _MainTimer:
                         },
                     )
                     await queue.set("Data", "LastTimedStart", curtime)
+
+    async def check_game_sign(self) -> None:
+        """检查并执行游戏社区签到"""
+
+        if not Config.ToolsConfig.get("GameSign", "Enabled"):
+            return
+
+        now = datetime.now()
+        today = now.strftime("%Y-%m-%d")
+
+        # 如果今天已经签到，跳过
+        if Config.ToolsConfig.get("GameSign", "LastSignDate") == today:
+            return
+
+        # 解析签到窗口
+        try:
+            window_start_str = Config.ToolsConfig.get("GameSign", "WindowStart")
+            window_end_str = Config.ToolsConfig.get("GameSign", "WindowEnd")
+            window_start = datetime.strptime(window_start_str, "%H:%M").replace(
+                year=now.year, month=now.month, day=now.day
+            )
+            window_end = datetime.strptime(window_end_str, "%H:%M").replace(
+                year=now.year, month=now.month, day=now.day
+            )
+        except (ValueError, TypeError):
+            return
+
+        # 如果在窗口开始之前，跳过
+        if now < window_start:
+            return
+
+        # 如果在窗口结束之后，立即补签
+        if now > window_end:
+            await self._execute_game_sign()
+            return
+
+        # 确定计划签到时间
+        scheduled_time_str = Config.ToolsConfig.get("GameSign", "ScheduledTime")
+
+        if not scheduled_time_str:
+            # 首次进入窗口：计算今天的随机时间
+            remaining_seconds = int((window_end - now).total_seconds())
+            if remaining_seconds <= 0:
+                await self._execute_game_sign()
+                return
+            random_offset = random.randint(0, remaining_seconds)
+            scheduled_time = now + timedelta(seconds=random_offset)
+            await Config.ToolsConfig.set(
+                "GameSign", "ScheduledTime", scheduled_time.strftime("%H:%M")
+            )
+            return
+
+        # 检查是否到达计划时间（分钟精度）
+        if now.strftime("%H:%M") == scheduled_time_str:
+            await self._execute_game_sign()
+
+    async def _execute_game_sign(self) -> None:
+        """执行游戏签到并处理结果"""
+        import json
+        from app.tools.game_sign import run_all_sign_in, format_sign_results
+
+        try:
+            logger.info("开始执行游戏社区签到")
+            results = await run_all_sign_in()
+
+            # 格式化并存储结果
+            formatted = format_sign_results(results)
+            Config.ToolsConfig._game_sign_result_data = formatted
+
+            # 标记今天已签到
+            await Config.ToolsConfig.set(
+                "GameSign", "LastSignDate", datetime.now().strftime("%Y-%m-%d")
+            )
+            # 清除计划时间
+            await Config.ToolsConfig.set("GameSign", "ScheduledTime", "")
+
+            logger.success("游戏社区签到执行完成")
+
+            # 如果启用通知，发送签到结果
+            if Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
+                from app.tools.game_sign_notify import push_game_sign_notification
+
+                await push_game_sign_notification(results)
+
+        except Exception as e:
+            logger.error(f"游戏社区签到执行失败: {e}")
+            Config.ToolsConfig._game_sign_result_data = {"error": str(e)}
 
 
 MainTimer = _MainTimer()
