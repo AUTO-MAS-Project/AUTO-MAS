@@ -433,10 +433,11 @@ async def skland_sign_in(
         result = {"成功": [], "重复": [], "失败": [], "总计": len(characters)}
 
         for character in characters:
-            character_name = (
-                f"{character.get('nickName')}（{character.get('channelName')}）"
-            )
-            uid = character.get("uid")
+            nick_name = character.get("nickName", "")
+            channel_name = character.get("channelName", "森空岛")
+            uid = character.get("uid", "")
+            # 统一 account 格式: 别名/昵称(uid)
+            character_name = f"{nick_name}/{nick_name}({uid})" if uid else f"{nick_name}/{channel_name}"
             game_id = character.get("channelMasterId")
 
             if await check_attendance_today(cred, sign_token, uid, game_id):
@@ -446,8 +447,8 @@ async def skland_sign_in(
                 continue
 
             body = {
-                "uid": uid,
                 "gameId": game_id,
+                "uid": uid,
             }
 
             try:
@@ -489,7 +490,7 @@ async def skland_sign_in(
         headers = await get_sign_header(
             endfield_sign_url,
             "post",
-            None,
+            "",  # 终末地签到不发 body，签名计算使用空字符串
             copy_header(cred, sign_token),
             sign_token,
         )
@@ -519,7 +520,9 @@ async def skland_sign_in(
 
             for role in roles:
                 nickname = str(role.get("nickname") or "").strip()
-                character_name = f"{nickname}（{channel_name}）"
+                role_id = role.get("roleId", "")
+                # 统一 account 格式: 别名/昵称(角色ID)
+                character_name = f"{nickname}/{nickname}({role_id})" if role_id else f"{nickname}/{channel_name}"
 
                 try:
                     rsp = await do_sign_for_endfield(cred, sign_token, role)
