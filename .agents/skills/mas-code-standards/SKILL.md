@@ -1,6 +1,6 @@
 ---
 name: mas-code-standards
-description: Apply AUTO-MAS code standards derived from representative DLmaster_361 commits on dev. Use when editing modules mainly authored by DLmaster_361, especially frontend/electron/services, frontend/electron/ipc, initialization UI code, or when the user asks to follow AUTO-MAS code standards or code conventions.
+description: Use when a task asks for AUTO-MAS project code style, DLmaster_361 maintainer style, Conventional Commit wording, backend docstrings, config-item comments, or general code convention review.
 ---
 
 # MAS Code Standards
@@ -9,12 +9,12 @@ description: Apply AUTO-MAS code standards derived from representative DLmaster_
 Reproduce the practical implementation style used by `DLmaster_361` in current `dev` without copying obsolete behavior or broadening scope unnecessarily.
 
 ## Scope
-Primary reference samples:
+Primary style reference samples:
 1. `frontend/electron/services`
 2. `frontend/electron/ipc`
 3. `frontend/src/views/Initialization`
 
-For Python modules, carry over the same values of explicit orchestration, compatibility-first changes, and operational logging, but always compare nearby files before applying style assumptions.
+Use these samples as style lenses only. For frontend engineering or UI decisions, prefer `mas-frontend-standards` and `mas-frontend-ui`; for Python modules, carry over the same values of explicit orchestration, compatibility-first changes, and operational logging, but always compare nearby files before applying style assumptions.
 
 ## Workflow
 1. Read [references/style-observations.md](references/style-observations.md), with priority on commit lenses `e541fa5f`, `727aafb`, and `e5d72bdb`.

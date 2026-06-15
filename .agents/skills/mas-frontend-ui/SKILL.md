@@ -8,13 +8,8 @@ description: Use when working on AUTO-MAS frontend UI, Ant Design Vue components
 ## Objective
 Keep AUTO-MAS UI changes consistent with an Electron desktop business operations platform: dense enough for repeated work, quiet enough for long sessions, and aligned with Ant Design Vue 4.x.
 
-## Required Source Documents
-Before UI work, read these files in the main repository:
-
-1. `frontend/docs/frontend-ui-standard.md`
-2. `frontend/docs/frontend-standard.md`
-
-This skill summarizes the execution rules. The source documents and nearby existing pages are the authority for detail.
+## Authority
+This skill is self-contained for AUTO-MAS UI rules. Nearby existing pages are still the authority for module-specific layout, wording, and visual rhythm when they do not conflict with this skill.
 
 ## UI Intake
 Before editing UI:
@@ -24,6 +19,7 @@ Before editing UI:
 3. Confirm theme variables come from `src/style.css` and `src/composables/useTheme.ts`.
 4. Prefer existing components, layout classes, theme tokens, and wording before adding new ones.
 5. Check both light and dark mode for readability when UI colors, borders, backgrounds, or status colors change.
+6. Keep the UI inside the existing Electron desktop business-product language.
 
 ## Visual Direction
 
@@ -33,6 +29,7 @@ Before editing UI:
 4. Use page structure appropriate to the app: title, query/filter area, action area, table/list/card content, pagination or footer actions.
 5. Keep page margins at 24px or 32px unless a local pattern requires otherwise.
 6. Avoid nested cards except for repeated list items or genuinely framed subtools.
+7. Do not use marketing-style hero sections, decorative gradients, ornamental backgrounds, or unrelated illustrations in business screens.
 
 ## Ant Design Vue Usage
 
@@ -78,6 +75,7 @@ When overriding Ant Design Vue internals:
 4. Long forms should be grouped by business meaning.
 5. Submit failures must preserve user input and show a concrete reason.
 6. Similar create/edit flows should reuse an edit component with `isEdit` or route parameters.
+7. Read-only detail views must not reuse editable controls in an active editing state.
 
 ### Tables And Lists
 1. Standard data lists prefer `a-table`; use custom lists for drag, complex cards, or virtual logs.
@@ -94,6 +92,7 @@ When overriding Ant Design Vue internals:
 4. Titles use concrete wording such as "新增 XX", "编辑 XX", "查看 XX", "删除确认".
 5. Footer buttons follow "取消 / 确定" or "取消 / 保存".
 6. Avoid browser-native `alert` and `confirm`.
+7. Close protection is required when dismissing a form would lose unsaved changes.
 
 ## Page States
 Every page or major panel should account for:
@@ -143,6 +142,7 @@ Before declaring UI work complete:
 3. Confirm loading, empty, error, disabled, success, and failure states affected by the task.
 4. Run the relevant project verification from `mas-frontend-standards`.
 5. If UI cannot be visually checked, state what was not checked and why.
+6. Confirm interactive elements are visually discoverable and disabled elements are clearly non-interactive.
 
 ## Red Lines
 
