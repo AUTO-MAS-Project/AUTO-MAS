@@ -92,7 +92,7 @@
     "@vue/tsconfig": "^0.7.0",
     "concurrently": "^9.2.0",
     "cross-env": "^10.0.0",
-    "electron": "^37.2.5",
+    "electron": "^37.10.3",
     "electron-builder": "26.8.1",
     "eslint": "^9.32.0",
     "eslint-config-prettier": "^10.1.8",
