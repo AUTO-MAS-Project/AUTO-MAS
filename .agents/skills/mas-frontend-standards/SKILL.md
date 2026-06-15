@@ -8,13 +8,8 @@ description: Use when working on AUTO-MAS frontend Vue, TypeScript, Vite, Electr
 ## Objective
 Keep AUTO-MAS frontend changes aligned with the current Vue 3, TypeScript, Vite, Electron, Ant Design Vue, Vue Router, OpenAPI, ESLint, Prettier, and Yarn 4 project conventions.
 
-## Required Source Documents
-Before frontend work, read these files in the main repository:
-
-1. `frontend/docs/frontend-standard.md`
-2. `frontend/docs/frontend-ui-standard.md`
-
-This skill is a routing and execution summary. If details differ, follow the source documents and existing code in the touched module.
+## Authority
+This skill is self-contained for frontend engineering rules. If local code differs from this summary, inspect neighboring implementations and prefer the current module pattern unless it violates a red line here.
 
 ## Mandatory Intake
 Before editing frontend code:
@@ -49,6 +44,7 @@ Use the narrowest module boundary first. Promote to shared directories only afte
 4. Keep computed values for derived state; keep watchers for side effects only.
 5. Split components that exceed 500 lines or contain multiple independent business regions.
 6. Extract repeated logic into composables or module logic files instead of growing templates.
+7. Do not introduce a new UI, state, request, or routing library for a small task.
 
 ## API And Data Flow
 
@@ -59,6 +55,7 @@ Use the narrowest module boundary first. Promote to shared directories only afte
 5. API composables should expose loading, error, and business functions.
 6. Pages own business flow such as navigation, closing dialogs, and local state updates.
 7. Static-resource checks such as audio `HEAD` requests are not precedent for backend business API calls.
+8. Backend schema changes require regenerating frontend API clients; do not manually patch OpenAPI output.
 
 ## Routing, State, Config
 
@@ -69,6 +66,7 @@ Use the narrowest module boundary first. Promote to shared directories only afte
 5. Prefer local state first; use composables for cross-component, persistent, or coordinated state.
 6. Do not invent token, login, permission, or security storage in pages.
 7. API and WebSocket endpoints come from Electron config helpers; do not hardcode backend addresses in business pages.
+8. Vite-exposed environment variables use the `VITE_` prefix.
 
 ## Style And Code Quality
 
@@ -80,6 +78,7 @@ Use the narrowest module boundary first. Promote to shared directories only afte
 6. Avoid `any`; if unavoidable, narrow the scope and explain why.
 7. Do not use `console.log` in business code; use `window.electronAPI.getLogger('module')`.
 8. Extract magic values such as intervals, timeouts, status codes, and route names into constants when they repeat or carry meaning.
+9. Keep Ant Design Vue default CSS unless a local layout or readability need requires scoped customization.
 
 ## Verification Gate
 

@@ -14,7 +14,7 @@
 
 ## 已有 Skill
 
-- `mas-skills`：统一入口，用于按任务类型分发并组合后端规范类 skill。
+- `mas-skills`：统一入口，用于按任务类型分发并组合工程规范类 Skill。
 - `mas-frontend-standards`：用于约束 Vue 3、TypeScript、Vite、Electron renderer、路由、API composable、状态、样式、表单与前端验证。
 - `mas-frontend-ui`：用于约束 Ant Design Vue UI、桌面端业务布局、视觉 token、表单、表格、弹窗、反馈、拖拽与深色模式。
 - `mas-api-contract`：用于约束 FastAPI 接口与 WebSocket 的请求、响应和错误契约。
