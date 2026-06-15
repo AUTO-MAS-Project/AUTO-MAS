@@ -1,20 +1,22 @@
 # AUTO-MAS Skills
 
-本仓库是 AUTO-MAS 官方 Agent Skill 的权威来源。主程序仓库只保留最小
-`AGENTS.md` 入口，并指向本仓库与文档站；不要在主程序仓库维护完整 Skill 副本。
+本目录是 AUTO-MAS 主程序仓库的附属 Agent Skills，用于沉淀本项目的 Agent
+执行规则、工程约束和任务路由。主入口为仓库根目录 `AGENTS.md`，工程规则入口为
+`mas-skills/SKILL.md`。
 
-## 仓库分工
+## 规则分工
 
-- 主程序：<https://github.com/AUTO-MAS-Project/AUTO-MAS>
 - 开发文档与贡献规范：<https://doc.auto-mas.top/developer/>
-- Agent Skill 与工程规则：<https://github.com/AUTO-MAS-Project/skills>
+- Agent Skill 与工程规则：本目录 `.agents/skills`
 
 分支、提交信息、版本记录、Issue/PR 正文规范以文档站为准。代码风格、模块边界、
-数据模型、API 契约、专项适配等 Agent 执行规则以本仓库的 `mas-*` Skill 为准。
+数据模型、API 契约、前端规范、专项适配等 Agent 执行规则以本目录的 `mas-*` Skill 为准。
 
 ## 已有 Skill
 
 - `mas-skills`：统一入口，用于按任务类型分发并组合后端规范类 skill。
+- `mas-frontend-standards`：用于约束 Vue 3、TypeScript、Vite、Electron renderer、路由、API composable、状态、样式、表单与前端验证。
+- `mas-frontend-ui`：用于约束 Ant Design Vue UI、桌面端业务布局、视觉 token、表单、表格、弹窗、反馈、拖拽与深色模式。
 - `mas-api-contract`：用于约束 FastAPI 接口与 WebSocket 的请求、响应和错误契约。
 - `mas-data-model`：用于规范后端数据模型的结构、类型、默认值和兼容性演进。
 - `mas-function-design`：用于规范后端函数的职责划分、参数设计、返回约定和副作用控制。
@@ -31,8 +33,3 @@
 2. 按任务意图选择最小必要的子 Skill。
 3. 若任务涉及贡献流程、分支、提交、PR/Issue 正文或版本记录，回到文档站确认。
 4. 若任务涉及主程序代码，仍需在主程序仓库中查看相邻实现并遵守本地风格。
-
-## 主程序仓库中的本地副本
-
-主程序仓库不应提交完整 `skills/` 副本。若开发者在本地把本仓库检出到主程序目录旁边，
-该检出仅作为本地缓存；规则冲突时以本仓库最新内容为准。
