@@ -1,12 +1,12 @@
 ---
 name: mas-code-standards
-description: Use when a task asks for AUTO-MAS project code style, DLmaster_361 maintainer style, Conventional Commit wording, backend docstrings, config-item comments, or general code convention review.
+description: Use when a task asks for AUTO-MAS project code style, maintainer-aligned style, Conventional Commit wording, backend docstrings, config-item comments, or general code convention review.
 ---
 
 # MAS Code Standards
 
 ## Objective
-Reproduce the practical implementation style used by `DLmaster_361` in current `dev` without copying obsolete behavior or broadening scope unnecessarily.
+Reproduce the practical implementation style used in current `dev` without copying obsolete behavior or broadening scope unnecessarily.
 
 ## Scope
 Primary style reference samples:
@@ -78,7 +78,7 @@ Protect these comments especially:
 11. Do not delete useful comments just to make a diff look cleaner.
 
 ## Review Checklist
-1. The new code reads like neighboring `DLmaster_361` files.
+1. The new code reads like neighboring project-standard files.
 2. Logs and comments are concise, operational, and consistent with the touched module.
 3. The main path is still easy to trace top-to-bottom.
 4. Compatibility and existing behavior were preserved unless the task explicitly changed them.

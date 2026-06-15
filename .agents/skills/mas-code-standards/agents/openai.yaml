@@ -1,4 +1,4 @@
 interface:
   display_name: "MAS Code Standards"
   short_description: "Apply AUTO-MAS code standards"
-  default_prompt: "Edit this AUTO-MAS code following the project code standards derived from DLmaster_361's representative dev commits."
+  default_prompt: "Edit this AUTO-MAS code following the project code standards derived from representative dev commits and existing modules."
