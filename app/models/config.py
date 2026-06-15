@@ -52,6 +52,7 @@ from .ConfigBase import (
     OptionsValidator,
     MultipleOptionsValidator,
     RangeValidator,
+    StringValidator,
     VirtualConfigValidator,
     FileValidator,
     FolderValidator,
@@ -2145,6 +2146,31 @@ class OkwwConfig(ConfigBase):
         super().__init__()
 
 
+class GameSignAccountGroup(ConfigBase):
+    """游戏签到账号组配置"""
+
+    def __init__(self) -> None:
+
+        ## GameSignAccount - 账号组名称
+        self.Name = ConfigItem(
+            "GameSignAccount", "Name", "账号组 1", StringValidator()
+        )
+        ## GameSignAccount - 米游社登录凭证 (DPAPI 加密)
+        self.MiyousheToken = ConfigItem(
+            "GameSignAccount", "MiyousheToken", "", EncryptValidator()
+        )
+        ## GameSignAccount - 库街区登录凭证 (DPAPI 加密)
+        self.KuroToken = ConfigItem(
+            "GameSignAccount", "KuroToken", "", EncryptValidator()
+        )
+        ## GameSignAccount - 森空岛登录凭证 (DPAPI 加密)
+        self.SklandToken = ConfigItem(
+            "GameSignAccount", "SklandToken", "", EncryptValidator()
+        )
+
+        super().__init__()
+
+
 class ToolsConfig(ConfigBase):
     """工具配置"""
 
@@ -2178,8 +2204,50 @@ class ToolsConfig(ConfigBase):
             VirtualConfigValidator(self.arknights_pc_status),
         )
 
+        ## GameSign - 启用签到
+        self.GameSign_Enabled = ConfigItem(
+            "GameSign", "Enabled", False, BoolValidator()
+        )
+        ## GameSign - 签到后发送通知
+        self.GameSign_NotifyEnabled = ConfigItem(
+            "GameSign", "NotifyEnabled", False, BoolValidator()
+        )
+        ## GameSign - 签到窗口起点 (HH:mm)
+        self.GameSign_WindowStart = ConfigItem(
+            "GameSign", "WindowStart", "08:00", DateTimeValidator("%H:%M")
+        )
+        ## GameSign - 签到窗口终点 (HH:mm)
+        self.GameSign_WindowEnd = ConfigItem(
+            "GameSign", "WindowEnd", "22:00", DateTimeValidator("%H:%M")
+        )
+        ## GameSign - 账号组 (MultipleConfig)
+        self.GameSign_Accounts = MultipleConfig([GameSignAccountGroup])
+        ## GameSign - 上次签到日期 (防止重复触发)
+        self.GameSign_LastSignDate = ConfigItem(
+            "GameSign", "LastSignDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        ## GameSign - 今日签到随机时间点 (HH:mm)
+        self.GameSign_ScheduledTime = ConfigItem(
+            "GameSign", "ScheduledTime", "", StringValidator()
+        )
+        ## GameSign - 签到状态标签 (虚拟字段)
+        self.GameSign_Status = ConfigItem(
+            "GameSign",
+            "Status",
+            "-",
+            VirtualConfigValidator(self.game_sign_status),
+        )
+        ## GameSign - 签到结果详情 (虚拟字段)
+        self.GameSign_Result = ConfigItem(
+            "GameSign",
+            "Result",
+            "{}",
+            VirtualConfigValidator(self.game_sign_result),
+        )
+
         self.arknights_pc_running = False
         self.arknights_pc_get_connected: Callable[[], bool] = lambda: False
+        self._game_sign_result_data: dict = {}
 
         super().__init__()
 
@@ -2215,6 +2283,22 @@ class ToolsConfig(ConfigBase):
                 "AnotherQuitKey",
             )
         ]
+
+    def game_sign_status(self) -> str:
+        """游戏签到状态标签"""
+
+        if not self.get("GameSign", "Enabled"):
+            return TagItem(text="未启用", color="gray").model_dump_json()
+        last_date = self.get("GameSign", "LastSignDate")
+        today = datetime.now().strftime("%Y-%m-%d")
+        if last_date == today:
+            return TagItem(text="已签到", color="green").model_dump_json()
+        return TagItem(text="待签到", color="blue").model_dump_json()
+
+    def game_sign_result(self) -> str:
+        """游戏签到结果 JSON"""
+
+        return json.dumps(self._game_sign_result_data, ensure_ascii=False)
 
 
 class GlobalConfig(ConfigBase):

@@ -59,6 +59,7 @@ from app.models.config import (
     Webhook,
     TimeSet,
     EmulatorConfig,
+    GameSignAccountGroup,
 )
 from app.models.schema import WebSocketMessage
 from app.utils.constants import (
@@ -147,6 +148,16 @@ class AppConfig(GlobalConfig):
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
         await self.ToolsConfig.connect(self.config_path / "ToolsConfig.json")
+
+        # 游戏签到：连接账号组 MultipleConfig
+        await self.ToolsConfig.GameSign_Accounts.connect(
+            self.config_path / "GameSignAccounts.json"
+        )
+
+        # 游戏签到：如果不是今天签到的，清除计划时间以便重新计算
+        last_sign_date = self.ToolsConfig.get("GameSign", "LastSignDate")
+        if last_sign_date != datetime.now().strftime("%Y-%m-%d"):
+            await self.ToolsConfig.set("GameSign", "ScheduledTime", "")
 
         from app.services import System
 
@@ -1300,6 +1311,63 @@ class AppConfig(GlobalConfig):
                 await self.ToolsConfig.set(group, name, value)
 
         logger.success("工具设置更新成功")
+
+    # ==================== 游戏签到账号组 CRUD ====================
+
+    async def get_game_sign_accounts(self) -> Dict[str, Any]:
+        """获取所有游戏签到账号组"""
+
+        logger.debug("获取所有游戏签到账号组")
+
+        return await self.ToolsConfig.GameSign_Accounts.toDict()
+
+    async def add_game_sign_account(self) -> tuple[uuid.UUID, Any]:
+        """添加游戏签到账号组"""
+
+        logger.info("添加游戏签到账号组")
+
+        uid, config = await self.ToolsConfig.GameSign_Accounts.add(
+            GameSignAccountGroup
+        )
+        return uid, config
+
+    async def get_game_sign_account(self, account_id: str) -> Dict[str, Any]:
+        """获取游戏签到账号组详情"""
+
+        logger.debug(f"获取游戏签到账号组: {account_id}")
+
+        account_uid = uuid.UUID(account_id)
+        return await self.ToolsConfig.GameSign_Accounts[account_uid].toDict()
+
+    async def update_game_sign_account(
+        self, account_id: str, data: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """更新游戏签到账号组配置"""
+
+        logger.info(f"更新游戏签到账号组: {account_id}")
+
+        account_uid = uuid.UUID(account_id)
+        account = self.ToolsConfig.GameSign_Accounts[account_uid]
+        for group, items in data.items():
+            for name, value in items.items():
+                await account.set(group, name, value)
+
+    async def delete_game_sign_account(self, account_id: str) -> None:
+        """删除游戏签到账号组"""
+
+        logger.info(f"删除游戏签到账号组: {account_id}")
+
+        account_uid = uuid.UUID(account_id)
+        await self.ToolsConfig.GameSign_Accounts.remove(account_uid)
+
+    async def reorder_game_sign_accounts(self, order: list[str]) -> None:
+        """调整游戏签到账号组顺序"""
+
+        logger.info("调整游戏签到账号组顺序")
+
+        await self.ToolsConfig.GameSign_Accounts.setOrder(
+            [uuid.UUID(_) for _ in order]
+        )
 
     async def get_setting(self) -> Dict[str, Any]:
         """获取全局设置"""
