@@ -1,6 +1,6 @@
 ---
 name: mas-skills
-description: Master entrypoint for MAS engineering standards and code conventions. Use when a task needs consistent conventions across code standards, schema naming, module boundaries, function design, API contracts, or data modeling, and route the work to one or more MAS sub-skills.
+description: Master entrypoint for MAS engineering standards and code conventions. Use when a task needs consistent conventions across frontend, UI, code standards, schema naming, module boundaries, function design, API contracts, or data modeling, and route the work to one or more MAS sub-skills.
 ---
 
 # MAS Skills
@@ -14,7 +14,7 @@ AUTO-MAS splits responsibilities across repositories:
 
 1. `AUTO-MAS-Project/AUTO-MAS` keeps application code and a minimal `AGENTS.md` entrypoint.
 2. `AUTO-MAS-Project/AUTO-MAS-docs` / <https://doc.auto-mas.top/developer/> owns branch, contribution, commit, version, Issue, and PR writing rules.
-3. `AUTO-MAS-Project/skills` owns Agent Skill behavior and engineering routing rules.
+3. Local `.agents/skills` owns the project-affiliated Agent Skill behavior and engineering routing rules for this checkout.
 
 When these areas overlap, use this skill for engineering decisions and use the docs site for contribution-process decisions.
 
@@ -24,19 +24,22 @@ Apply these project rules directly when they overlap with a task:
 1. API work follows the schema-first route flow: define `app/models/schema.py`, wire the matching `app/api/` module, then regenerate frontend API clients.
 2. Config work follows `ConfigBase` and `ConfigItem` ownership: declare fields before `super().__init__()`, use validators as auto-correction behavior, and register multi-config classes in the owning collection.
 3. Script adaptation must be complete across config, schema, API, task dispatch, task folder, and frontend entry points.
-4. Contribution style follows Conventional Commits, Google-style backend docstrings where useful, config-item comments, and keyword arguments for booleans or multi-argument calls.
+4. Frontend work follows `frontend/docs/frontend-standard.md`, `frontend/docs/frontend-ui-standard.md`, and the dedicated frontend skills.
+5. Contribution style follows Conventional Commits, Google-style backend docstrings where useful, config-item comments, and keyword arguments for booleans or multi-argument calls.
 
 ## Sub-Skills
 Use these skills as needed:
 
-1. `mas-code-standards`: project code standards derived from representative `dev` commits, especially for modules mainly authored by `DLmaster_361`.
-2. `mas-schema-naming`: canonical naming for shared schema semantics in future domain work.
-3. `mas-module-boundary`: module ownership and dependency direction across backend layers.
-4. `mas-function-design`: function-level design for responsibility, signatures, side effects, and errors.
-5. `mas-api-contract`: endpoint contract standards for HTTP/WS request-response behavior.
-6. `mas-data-model`: modeling standards for schema/config/task layers and compatibility evolution.
-7. `mas-script-specialized-adapter`: specialized script integration by script frontend architecture line; requires intake before implementation.
-8. `mas-plan-schedule`: plan schedule type registration, backend/frontend plan dispatch, plan combobox consumers, and per-type table integration.
+1. `mas-frontend-standards`: Vue 3, TypeScript, Vite, Electron renderer, routing, API composables, state, styles, forms, validation, and frontend verification.
+2. `mas-frontend-ui`: Ant Design Vue UI, desktop business layout, visual tokens, forms, tables, dialogs, feedback, drag interactions, dark mode, and UX constraints.
+3. `mas-code-standards`: project code standards derived from representative `dev` commits, especially for modules mainly authored by `DLmaster_361`.
+4. `mas-schema-naming`: canonical naming for shared schema semantics in future domain work.
+5. `mas-module-boundary`: module ownership and dependency direction across backend layers.
+6. `mas-function-design`: function-level design for responsibility, signatures, side effects, and errors.
+7. `mas-api-contract`: endpoint contract standards for HTTP/WS request-response behavior.
+8. `mas-data-model`: modeling standards for schema/config/task layers and compatibility evolution.
+9. `mas-script-specialized-adapter`: specialized script integration by script frontend architecture line; requires intake before implementation.
+10. `mas-plan-schedule`: plan schedule type registration, backend/frontend plan dispatch, plan combobox consumers, and per-type table integration.
 
 ## Global Constraints
 Apply these constraints before selecting or combining sub-skills.
@@ -46,43 +49,50 @@ Apply these constraints before selecting or combining sub-skills.
 3. Avoid over-engineering, over-abstraction, and defensive programming that does not match existing code patterns.
 4. Study similar existing implementations deeply before coding and follow established local patterns.
 5. Never edit files generated by OpenAPI code generation under any circumstance. If regeneration is needed, explicitly tell the developer to run the generation process manually.
-6. When local patterns and generalized guidance differ, prefer concrete maintainer review comments, especially from `DLmaster361`, and fold them back into the selected sub-skills.
+6. For frontend work, read `frontend/docs/frontend-standard.md` and `frontend/docs/frontend-ui-standard.md` before implementation.
+7. When local patterns and generalized guidance differ, prefer concrete maintainer review comments, especially from `DLmaster361`, and fold them back into the selected sub-skills.
 
 ## Routing Rules
 Choose sub-skills by task intent.
 
 1. Task mentions field names, shared terms, schema key consistency:
 Use `mas-schema-naming`.
-2. Task mentions project code standards, code conventions, matching representative `dev` commit style, or asks to follow current AUTO-MAS coding style:
+2. Task touches `frontend`, `src/views`, `src/components`, `src/composables`, `src/router`, `src/types`, `src/utils`, Vue, TypeScript, Vite, Electron renderer, API composables, forms, validation, or frontend verification:
+Use `mas-frontend-standards`.
+3. Task touches UI, layout, style, Ant Design Vue, components, forms, tables, modals, drawers, feedback, loading, empty, error states, drag interactions, dark mode, or visual polish:
+Use `mas-frontend-ui` with `mas-frontend-standards`.
+4. Task mentions project code standards, code conventions, matching representative `dev` commit style, or asks to follow current AUTO-MAS coding style:
 Use `mas-code-standards`.
-3. Task mentions layer ownership, imports, coupling, or where code should live:
+5. Task mentions layer ownership, imports, coupling, or where code should live:
 Use `mas-module-boundary`.
-4. Task mentions function splitting, signature quality, return/error behavior:
+6. Task mentions function splitting, signature quality, return/error behavior:
 Use `mas-function-design`.
-5. Task mentions endpoint payloads, response model, error contract, websocket payloads:
+7. Task mentions endpoint payloads, response model, error contract, websocket payloads:
 Use `mas-api-contract`.
-6. Task mentions model structure, typing/defaults/constraints, migration of model fields:
+8. Task mentions model structure, typing/defaults/constraints, migration of model fields:
 Use `mas-data-model`.
-7. Task mentions adding a new script, script-specific adaptation, or task lifecycle:
+9. Task mentions adding a new script, script-specific adaptation, or task lifecycle:
 Use `mas-script-specialized-adapter` first, then combine `mas-module-boundary`, `mas-data-model`, `mas-function-design`, and `mas-api-contract` as needed.
-8. Task mentions commit messages, docstrings, config comments, or project contribution style:
+10. Task mentions commit messages, docstrings, config comments, or project contribution style:
 Use `mas-code-standards` for code-style decisions; use the docs site for contribution-process wording.
-9. Task mentions plan schedules, schedule types, `PlanConfig`, `PLAN_BOOK`, plan comboboxes, or adding a new plan table:
+11. Task mentions plan schedules, schedule types, `PlanConfig`, `PLAN_BOOK`, plan comboboxes, or adding a new plan table:
 Use `mas-plan-schedule`.
 
 ## Combined Execution Order
 When multiple concerns appear, apply this order:
 
-1. `mas-code-standards`
-2. `mas-module-boundary`
-3. `mas-data-model`
-4. `mas-schema-naming`
-5. `mas-function-design`
-6. `mas-api-contract`
-7. `mas-script-specialized-adapter` after architecture intake, when the task is a specialized adapter.
-8. `mas-plan-schedule`
+1. `mas-frontend-standards`, when the task touches frontend code or docs.
+2. `mas-frontend-ui`, when the task touches UI or user-facing component behavior.
+3. `mas-code-standards`
+4. `mas-module-boundary`
+5. `mas-data-model`
+6. `mas-schema-naming`
+7. `mas-function-design`
+8. `mas-api-contract`
+9. `mas-script-specialized-adapter` after architecture intake, when the task is a specialized adapter.
+10. `mas-plan-schedule`
 
-Reason: establish local conventions first, place code correctly second, stabilize model structure third, then naming, then function behavior, then transport contract. Specialized adapters add a mandatory architecture-intake step, and plan schedule rules apply when the task touches scheduler registration.
+Reason: frontend tasks need their source documents and UI constraints loaded before implementation decisions; then establish local conventions, place code correctly, stabilize model structure, then naming, function behavior, and transport contract. Specialized adapters add a mandatory architecture-intake step, and plan schedule rules apply when the task touches scheduler registration.
 
 ## Output Requirements
 When using this hub:
@@ -93,11 +103,13 @@ When using this hub:
 4. Keep compatibility-first decisions for legacy modules unless explicitly asked to refactor broadly.
 5. In review tasks, call out where findings follow known maintainer preferences rather than only generic engineering taste.
 6. For Issue/PR body writing, follow the docs site instead of inventing repository-specific text here.
+7. For frontend tasks, state whether `mas-frontend-standards` and `mas-frontend-ui` were selected and why.
 
 ## Review Checklist
 1. Selected sub-skills match the user request scope.
-2. No layer-boundary violations are introduced.
-3. Shared schema semantics remain canonical.
-4. Function behavior and API contract stay consistent after changes.
-5. Relevant project rules were considered for API, config, script task, and contribution-style changes.
-6. Contribution-process details were not duplicated from the docs site except as links or brief reminders.
+2. Frontend tasks loaded the frontend source docs and the correct frontend skill pair.
+3. No layer-boundary violations are introduced.
+4. Shared schema semantics remain canonical.
+5. Function behavior and API contract stay consistent after changes.
+6. Relevant project rules were considered for API, config, script task, frontend task, and contribution-style changes.
+7. Contribution-process details were not duplicated from the docs site except as links or brief reminders.

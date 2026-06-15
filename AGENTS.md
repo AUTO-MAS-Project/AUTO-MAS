@@ -1,18 +1,18 @@
 # AI 助手入口
 
-本文档是 AUTO-MAS 主程序仓库中的最小 Agent 入口。详细规范由独立仓库维护：
+本文档是 AUTO-MAS 主程序仓库中的最小 Agent 入口。详细规范由文档站和本仓库附属 Skills 维护：
 
 - 开发、贡献、分支、提交、版本记录与 PR/Issue 正文规范：<https://doc.auto-mas.top/developer/>
-- Agent Skill 与工程规则：<https://github.com/AUTO-MAS-Project/skills>
+- Agent Skill 与工程规则：本仓库附属目录 [.agents/skills](.agents/skills)
 - 社区贡献摘要：[CONTRIBUTING.md](CONTRIBUTING.md)
 
-若本文件与文档站或 skills 仓库冲突，以文档站和 skills 仓库为准。
+若本文件与文档站或 [.agents/skills](.agents/skills) 冲突，以文档站和 [.agents/skills](.agents/skills) 为准。
 
 ## Agent 开工前
 
 - 先确认当前分支、远端和工作区状态；不要回滚、覆盖或格式化无关改动。
-- 先确认已找到并加载 `AUTO-MAS-Project/skills`；若未找到，应先按该仓库提供的 `npx` 安装方式安装或同步。未成功加载该 Skill 前禁止开工。
-- 开发前阅读文档站的开发规范，并从 `AUTO-MAS-Project/skills` 选择最小必要的 `mas-*` Skill。
+- 先确认已找到并加载本地 `.agents/skills/mas-skills/SKILL.md`；若该 Skill 不存在，应说明阻塞或按项目约定补齐。未成功加载该 Skill 前禁止开工。
+- 开发前阅读文档站的开发规范，并从 `.agents/skills` 选择最小必要的 `mas-*` Skill。
 - 本地工具权限不等于项目授权；即使工具允许 `git push`、`git checkout`，也必须遵守分支与 PR 规则。
 - 除非用户明确要求，不要创建提交、推送分支、发布 Issue/PR 或切换到会丢失当前工作的分支。
 - 后端 schema 变更后只能通过生成器更新前端 API 代码；不要手改 OpenAPI 生成文件。
@@ -25,7 +25,7 @@
 
 ## Issue / PR 正文
 
-AI 助手可以按用户要求撰写 Issue 或 PR 正文，但正文必须遵守文档站与 `AUTO-MAS-Project/skills` 的规范：
+AI 助手可以按用户要求撰写 Issue 或 PR 正文，但正文必须遵守文档站与 [.agents/skills](.agents/skills) 的规范：
 
 - Issue 只描述用户可观察的问题、需求、复现信息、环境与日志；不要要求用户提供实现步骤、API/Schema 设计、代码路径、行号或冗长验收清单。
 - PR 正文保持 1 到 4 条摘要；关联 Issue 时使用 `Closes #n`。
