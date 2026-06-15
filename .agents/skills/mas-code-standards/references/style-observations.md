@@ -27,7 +27,7 @@ The initialization refactor introduced in commit `30eb8504` is still a useful se
 ## Commit Lenses
 
 ### `e541fa5f` - Small Refactor Lens
-This commit shows how `DLmaster_361` tends to handle small cleanup work:
+This commit shows how small cleanup work is handled in the project:
 
 1. Remove a helper when it is used once and forces the reader to jump away from the live branch condition.
 2. Expand the condition inline if that makes the decisive behavior more obvious in the hot path.
@@ -59,7 +59,7 @@ Signal examples:
 - `frontend/src/views/SRCUserEdit/BasicInfoSection.vue` uses small focused UI sections with explicit save emits and descriptive labels.
 
 ### `e5d72bdb` - Dev Integration Lens
-This merge commit is useful less as a source of fresh logic and more as a signal for how `DLmaster_361` integrates a feature branch back into `dev`:
+This merge commit is useful less as a source of fresh logic and more as a signal for how a feature branch is integrated back into `dev`:
 
 1. Keep the feature branch structure largely intact.
 2. Adjust shared integration points in place:
