@@ -138,7 +138,10 @@ class _MainTimer:
                     await queue.set("Data", "LastTimedStart", curtime)
 
     async def check_game_sign(self) -> None:
-        """检查并执行游戏社区签到"""
+        """检查并执行游戏社区签到
+
+        启用签到 + 时间窗口内随机时刻执行，窗口外补签
+        """
 
         if not Config.ToolsConfig.get("GameSign", "Enabled"):
             return

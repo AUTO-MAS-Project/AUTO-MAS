@@ -136,6 +136,9 @@ class ToolsConfig_GameSign(BaseModel):
     NotifyEnabled: bool | None = Field(default=None, description="签到后是否发送通知")
     WindowStart: str | None = Field(default=None, description="签到窗口起点 HH:mm")
     WindowEnd: str | None = Field(default=None, description="签到窗口终点 HH:mm")
+    RunOnStartup: bool | None = Field(default=None, description="启动时运行")
+    ScheduledRun: bool | None = Field(default=None, description="定时运行")
+    AutoStart: bool | None = Field(default=None, description="是否立即开始")
     LastSignDate: str | None = Field(default=None, description="上次签到日期")
     ScheduledTime: str | None = Field(default=None, description="今日计划签到时间")
     Status: str | None = Field(default=None, description="签到状态标签")
@@ -146,8 +149,12 @@ class GameSignAccountGroupConfig(BaseModel):
     """游戏签到账号组配置"""
 
     Name: str | None = Field(default=None, description="账号组名称")
+    Enabled: bool | None = Field(default=None, description="是否启用")
+    MiyousheEnabled: bool | None = Field(default=None, description="米游社是否启用")
     MiyousheToken: str | None = Field(default=None, description="米游社登录凭证")
+    KuroEnabled: bool | None = Field(default=None, description="库街区是否启用")
     KuroToken: str | None = Field(default=None, description="库街区登录凭证")
+    SklandEnabled: bool | None = Field(default=None, description="森空岛是否启用")
     SklandToken: str | None = Field(default=None, description="森空岛登录凭证")
 
 

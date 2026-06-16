@@ -20,6 +20,18 @@ export type ToolsConfig_GameSign = {
      */
     WindowEnd?: (string | null);
     /**
+     * 启动时运行
+     */
+    RunOnStartup?: (boolean | null);
+    /**
+     * 定时运行
+     */
+    ScheduledRun?: (boolean | null);
+    /**
+     * 是否立即开始
+     */
+    AutoStart?: (boolean | null);
+    /**
      * 上次签到日期
      */
     LastSignDate?: (string | null);
