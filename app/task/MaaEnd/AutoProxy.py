@@ -42,6 +42,14 @@ from app.task.general.tools import execute_script_task
 
 logger = get_logger("MaaEnd 自动代理")
 
+_MAAEND_STOP_PATTERNS = (
+    "任务完成: 停止任务",
+    "任务完成: ⛔ 结束进程",
+    "任务完成: __MXU_KILLPROC__",
+    "任务完成: StopTask",
+)
+
+
 class AutoProxyTask(TaskExecuteBase):
     """MaaEnd 自动代理模式"""
 
@@ -742,13 +750,16 @@ class AutoProxyTask(TaskExecuteBase):
             if log_content:
                 self.cur_user_log.content = log_content
             if (
-                "任务完成: 停止任务" in log
-                or "任务完成: ⛔ 结束进程" in log
-                or "任务完成: __MXU_KILLPROC__" in log
-                or "任务完成: StopTask" in log
+                any(stop_pattern in log for stop_pattern in _MAAEND_STOP_PATTERNS)
                 or not await self.maaend_process_manager.is_running()
             ):
                 logger.info("MaaEnd 更新进程已退出，日志锁已释放")
+                self.wait_event.set()
+            elif datetime.now() - latest_time > timedelta(
+                minutes=self.script_config.get("Run", "RunTimeLimit")
+            ):
+                logger.warning("MaaEnd 更新进程超时，日志锁已释放")
+                self.cur_user_log.status = "MaaEnd 更新超时"
                 self.wait_event.set()
             return
 
@@ -762,10 +773,7 @@ class AutoProxyTask(TaskExecuteBase):
         elif "resolution check failed" in log or "分辨率不符合要求" in log:
             self.cur_user_log.status = "游戏分辨率设置错误，请重设分辨率比例为16:9"
         elif (
-            "任务完成: 停止任务" in log
-            or "任务完成: ⛔ 结束进程" in log
-            or "任务完成: __MXU_KILLPROC__" in log
-            or "任务完成: StopTask" in log
+            any(stop_pattern in log for stop_pattern in _MAAEND_STOP_PATTERNS)
             or not await self.maaend_process_manager.is_running()
         ):
             if self.task_dict is None:
