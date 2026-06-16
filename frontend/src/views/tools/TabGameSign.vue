@@ -8,11 +8,12 @@ import type { ToolsConfig_GameSign, GameSignAccountGroupConfig } from '@/api'
 import { Service } from '@/api'
 import { useGameSignAccountApi } from '@/composables/useGameSignAccountApi'
 
-const { config, disabled, onFieldChange, onSelectVisibleChange } = defineProps<{
+const { config, disabled, onFieldChange, onSelectVisibleChange, onRefreshConfig } = defineProps<{
     config: ToolsConfig_GameSign
     disabled?: boolean
     onFieldChange?: (key: string, value: any) => void
     onSelectVisibleChange?: (visible: boolean) => void
+    onRefreshConfig?: () => Promise<void>
 }>()
 
 const logger = window.electronAPI.getLogger('游戏签到')
@@ -184,6 +185,7 @@ interface GameItem {
 
 interface AccountGroup {
     account_alias: string
+    account_uid: string
     games: GameItem[]
 }
 
@@ -208,23 +210,30 @@ const platformGames: Record<string, string[]> = {
     '库街区': ['鸣潮'],
 }
 
-// 获取某用户在某社区的签到结果（只绑定该用户数据）
+// 获取某用户在某社区的签到结果（按 account_uid 隔离）
 const getUserPlatformGames = (account: AccountInstance, platform: string): GameItem[] => {
     const platformData = signResult.value[platform]
     if (!platformData) return []
 
-    // 用用户名匹配 account_alias（别名 = account 中 '/' 前的部分）
-    const userAlias = account.Name
+    const games: GameItem[] = []
     for (const group of platformData) {
-        if (group.account_alias === userAlias) {
-            return group.games
+        if (group.account_uid === account.uid) {
+            games.push(...group.games)
         }
     }
-    return []
+    return games
+}
+
+// 获取某用户在某社区的所有账号组（按 account_uid 隔离，用于 Tooltip 展示）
+const getAccountGroupsForPlatform = (account: AccountInstance, platform: string): AccountGroup[] => {
+    const platformData = signResult.value[platform]
+    if (!platformData) return []
+
+    return platformData.filter(group => group.account_uid === account.uid)
 }
 
 // 标签云状态类型
-type TagStatus = 'signed' | 'partial' | 'unsigned' | 'unconfigured'
+type TagStatus = 'signed' | 'partial' | 'unsigned' | 'failed' | 'unconfigured'
 
 // 获取某用户在某社区的标签状态
 const getUserPlatformStatus = (account: AccountInstance, platform: string): {
@@ -232,68 +241,52 @@ const getUserPlatformStatus = (account: AccountInstance, platform: string): {
     games: GameItem[]
     signedCount: number
     totalCount: number
+    failedCount: number
 } => {
     const hasToken =
-        (platform === '米游社' && account.MiyousheToken && account.MiyousheEnabled) ||
-        (platform === '库街区' && account.KuroToken && account.KuroEnabled) ||
-        (platform === '森空岛' && account.SklandToken && account.SklandEnabled)
+        (platform === '米游社' && !!account.MiyousheToken) ||
+        (platform === '库街区' && !!account.KuroToken) ||
+        (platform === '森空岛' && !!account.SklandToken)
 
     if (!hasToken) {
-        return { status: 'unconfigured', games: [], signedCount: 0, totalCount: 0 }
+        return { status: 'unconfigured', games: [], signedCount: 0, totalCount: 0, failedCount: 0 }
     }
 
     const games = getUserPlatformGames(account, platform)
     const totalCount = games.length
     const signedCount = games.filter(g => g.status === '成功' || g.status === '已签到').length
+    const failedCount = games.filter(g => g.status === '失败').length
 
     if (totalCount === 0) {
-        return { status: 'unsigned', games, signedCount: 0, totalCount: 0 }
+        return { status: 'unsigned', games, signedCount: 0, totalCount: 0, failedCount: 0 }
+    }
+    if (failedCount > 0) {
+        return { status: 'failed', games, signedCount, totalCount, failedCount }
     }
     if (signedCount === totalCount) {
-        return { status: 'signed', games, signedCount, totalCount }
+        return { status: 'signed', games, signedCount, totalCount, failedCount }
     }
     if (signedCount > 0) {
-        return { status: 'partial', games, signedCount, totalCount }
+        return { status: 'partial', games, signedCount, totalCount, failedCount }
     }
-    return { status: 'unsigned', games, signedCount, totalCount }
+    return { status: 'unsigned', games, signedCount, totalCount, failedCount }
 }
 
-// 获取某用户的所有社区标签（含未配置）
+// 获取某用户的所有社区标签（仅已配置）
 const getUserPlatformTags = (account: AccountInstance) => {
-    const tags: { platform: string; status: TagStatus; games: GameItem[]; signedCount: number; totalCount: number }[] = []
+    const tags: { platform: string; status: TagStatus; games: GameItem[]; signedCount: number; totalCount: number; failedCount: number }[] = []
     for (const platform of ['米游社', '森空岛', '库街区']) {
         const ps = getUserPlatformStatus(account, platform)
-        tags.push({ platform, ...ps })
+        if (ps.status !== 'unconfigured') {
+            tags.push({ platform, ...ps })
+        }
     }
     return tags
 }
 
-// 计算距离上次签到的相对时间
-const getLastSignRelative = () => {
-    const d = config.LastSignDate
-    if (!d || d === '2000-01-01') return ''
-    const signDay = dayjs(d, 'YYYY-MM-DD')
-    const now = dayjs()
-    const diffMinutes = now.diff(signDay, 'minute')
-    if (diffMinutes < 1) return '刚刚'
-    if (diffMinutes < 60) return `${diffMinutes}分钟前`
-    const diffHours = now.diff(signDay, 'hour')
-    if (diffHours < 24) return `${diffHours}小时前`
-    const diffDays = now.diff(signDay, 'day')
-    if (diffDays < 30) return `${diffDays}天前`
-    return signDay.format('MM-DD')
-}
-
-const lastSignRelative = computed(() => getLastSignRelative())
-
 // 标签文字
-const getTagText = (tag: { platform: string; status: TagStatus; signedCount: number; totalCount: number }) => {
-    switch (tag.status) {
-        case 'signed': return `${tag.platform} ✓ ${lastSignRelative.value}`
-        case 'partial': return `${tag.platform} ! ${tag.signedCount}/${tag.totalCount}`
-        case 'unsigned': return `${tag.platform} ✗`
-        case 'unconfigured': return `${tag.platform} -`
-    }
+const getTagText = (tag: { platform: string; status: TagStatus; signedCount: number; totalCount: number; failedCount: number }) => {
+    return `● ${tag.platform}`
 }
 
 // 标签 CSS 类
@@ -336,6 +329,8 @@ const handleManualSign = async () => {
         }
         logger.info('游戏签到完成')
         message.success('签到完成')
+        // 立即刷新签到结果（不等父组件轮询）
+        if (onRefreshConfig) await onRefreshConfig()
         await loadAccounts()
     } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)
@@ -476,17 +471,21 @@ onMounted(() => {
                             </div>
                             <!-- 社区签到情况（标签云） -->
                             <div class="row-cell tags-cell">
-                                <a-space :size="8" wrap>
+                                <a-space :size="6" wrap>
                                     <a-tooltip v-for="tag in getUserPlatformTags(account)" :key="tag.platform">
                                         <template #title>
                                             <div class="sign-tooltip">
                                                 <div class="sign-tooltip-title">{{ tag.platform }} - 签到详情</div>
-                                                <div v-for="game in tag.games" :key="game.game" class="sign-tooltip-row">
-                                                    <span>{{ game.game }}</span>
-                                                    <span :class="game.status === '成功' || game.status === '已签到' ? 'tt-signed' : 'tt-unsigned'">
-                                                        ● {{ game.status === '成功' || game.status === '已签到' ? '已签' : '未签' }}
-                                                    </span>
-                                                </div>
+                                                <template v-for="(group, gIdx) in getAccountGroupsForPlatform(account, tag.platform)" :key="gIdx">
+                                                    <div class="sign-tooltip-alias">{{ group.account_alias }}</div>
+                                                    <div v-for="game in group.games" :key="game.game" class="sign-tooltip-row">
+                                                        <span>{{ game.game }}</span>
+                                                        <span :class="game.status === '成功' || game.status === '已签到' ? 'tt-signed' : game.status === '失败' ? 'tt-failed' : 'tt-unsigned'">
+                                                            ● {{ game.status === '成功' || game.status === '已签到' ? '已签' : game.status === '失败' ? '失败' : '未签' }}
+                                                        </span>
+                                                        <span v-if="game.reward" class="tt-reward">{{ game.reward }}</span>
+                                                    </div>
+                                                </template>
                                                 <div v-if="tag.games.length === 0" class="sign-tooltip-empty">暂无签到数据</div>
                                             </div>
                                         </template>
@@ -526,53 +525,25 @@ onMounted(() => {
 
         <!-- 编辑 Token 模态框 -->
         <a-modal v-model:open="editModalVisible" :title="`编辑 — ${editingAccount?.Name || ''}`"
-            @ok="handleEditModalOk" ok-text="保存" cancel-text="取消" :width="520">
+            @ok="handleEditModalOk" ok-text="保存" cancel-text="取消" :width="560">
             <div v-if="editingAccount" class="modal-form">
                 <div class="form-item-vertical">
                     <span class="form-label">用户名称</span>
-                    <a-input v-model:value="editingAccount.Name" />
-                </div>
-                <div class="form-item-vertical">
-                    <span class="form-label">是否启用</span>
-                    <a-select v-model:value="editingAccount.Enabled" style="width: 100%">
-                        <a-select-option :value="true">启用</a-select-option>
-                        <a-select-option :value="false">禁用</a-select-option>
-                    </a-select>
+                    <a-input v-model:value="editingAccount.Name" size="large" />
                 </div>
                 <a-divider orientation="left" style="font-size: 13px; color: #666;">米游社</a-divider>
                 <div class="form-item-vertical">
-                    <div class="modal-platform-row">
-                        <a-select v-model:value="editingAccount.MiyousheEnabled" size="small" style="width: 72px">
-                            <a-select-option :value="true">启用</a-select-option>
-                            <a-select-option :value="false">禁用</a-select-option>
-                        </a-select>
-                        <span class="modal-platform-label">米游社签到</span>
-                    </div>
-                    <a-input-password v-model:value="editingAccount.MiyousheToken"
+                    <a-input-password v-model:value="editingAccount.MiyousheToken" size="large"
                         placeholder="浏览器 F12 → document.cookie 获取" allow-clear />
                 </div>
                 <a-divider orientation="left" style="font-size: 13px; color: #666;">库街区</a-divider>
                 <div class="form-item-vertical">
-                    <div class="modal-platform-row">
-                        <a-select v-model:value="editingAccount.KuroEnabled" size="small" style="width: 72px">
-                            <a-select-option :value="true">启用</a-select-option>
-                            <a-select-option :value="false">禁用</a-select-option>
-                        </a-select>
-                        <span class="modal-platform-label">库街区签到</span>
-                    </div>
-                    <a-input-password v-model:value="editingAccount.KuroToken"
+                    <a-input-password v-model:value="editingAccount.KuroToken" size="large"
                         placeholder="抓包或短信验证码获取 Token" allow-clear />
                 </div>
                 <a-divider orientation="left" style="font-size: 13px; color: #666;">森空岛</a-divider>
                 <div class="form-item-vertical">
-                    <div class="modal-platform-row">
-                        <a-select v-model:value="editingAccount.SklandEnabled" size="small" style="width: 72px">
-                            <a-select-option :value="true">启用</a-select-option>
-                            <a-select-option :value="false">禁用</a-select-option>
-                        </a-select>
-                        <span class="modal-platform-label">森空岛签到</span>
-                    </div>
-                    <a-input-password v-model:value="editingAccount.SklandToken"
+                    <a-input-password v-model:value="editingAccount.SklandToken" size="large"
                         placeholder="鹰角网络通行证登录凭证" allow-clear />
                 </div>
             </div>
@@ -588,118 +559,231 @@ onMounted(() => {
 
 /* ==================== 用户列表表格 ==================== */
 .user-table-container {
-    border: 1px solid var(--ant-color-border-secondary);
-    border-radius: 8px;
+    border: 1px solid var(--ant-color-border);
+    border-radius: 6px;
     overflow: hidden;
 }
 
 .user-table-header {
     display: flex;
     align-items: center;
-    background: var(--ant-color-fill-quaternary);
-    border-bottom: 1px solid var(--ant-color-border-secondary);
+    background-color: var(--ant-color-fill-quaternary);
+    border-bottom: 1px solid var(--ant-color-border);
     font-size: 14px;
     font-weight: 600;
-    color: var(--ant-color-text-secondary);
+    color: var(--ant-color-text);
     min-height: 48px;
 }
 
 .user-table-header .header-cell {
-    padding: 14px 16px;
+    padding: 12px 16px;
+    border-right: 1px solid var(--ant-color-border);
 }
 
-.drag-cell { width: 52px; min-width: 52px; text-align: center; }
+.user-table-header .header-cell:last-child {
+    border-right: none;
+}
+
+.drag-cell { width: 36px; min-width: 36px; max-width: 36px; text-align: center; }
 .name-cell { width: 140px; min-width: 140px; }
-.status-cell { width: 110px; min-width: 110px; }
+.status-cell { width: 120px; min-width: 120px; }
 .tags-cell { flex: 1; min-width: 0; }
 .actions-cell { width: 180px; min-width: 180px; text-align: right; }
 
-.user-draggable { min-height: 56px; }
+.user-draggable { min-height: 60px; }
 
 .user-row {
     display: flex;
     align-items: center;
-    min-height: 60px;
-    border-bottom: 1px solid var(--ant-color-border-secondary);
-    padding: 10px 0;
-    transition: background 0.15s ease;
+    min-height: 64px;
+    border-bottom: 1px solid var(--ant-color-border);
+    padding: 0;
+    transition: background 0.2s ease;
+    cursor: default;
 }
 
 .user-row:last-child { border-bottom: none; }
-.user-row:hover { background: var(--ant-color-fill-quaternary); }
+.user-row:hover { background-color: var(--ant-color-fill-quaternary); }
 
-.row-cell { padding: 8px 16px; }
-
-/* 拖拽手柄 */
-.drag-handle { cursor: grab; display: inline-flex; align-items: center; justify-content: center; }
-.drag-handle:active { cursor: grabbing; }
-.drag-dots {
-    width: 14px; height: 20px; display: block;
-    background-image: radial-gradient(currentColor 1.4px, transparent 1.4px);
-    background-size: 6px 6px; opacity: 0.5;
+.row-cell {
+    padding: 14px 16px;
+    text-align: center;
+    border-right: 1px solid var(--ant-color-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
+.row-cell:last-child { border-right: none; }
+
+.row-cell.name-cell { justify-content: flex-start; }
+.row-cell.tags-cell { justify-content: flex-start; }
+.row-cell.actions-cell { justify-content: flex-end; }
+
+/* 拖拽手柄 - 对齐 TimeSetManager */
+.drag-handle {
+    width: 16px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ant-color-text-tertiary);
+    background: transparent;
+    border: none;
+    cursor: grab;
+    user-select: none;
+}
+
+.drag-handle:active { cursor: grabbing; }
+
+.drag-dots {
+    width: 10px;
+    height: 16px;
+    display: block;
+    background-image: radial-gradient(currentColor 1.2px, transparent 1.2px);
+    background-size: 5px 5px;
+    opacity: 0.65;
+}
+
+.drag-handle:hover .drag-dots { opacity: 0.85; }
+
 /* 拖拽视觉反馈 */
-.user-ghost { opacity: 0.4; background: #e6f7ff; }
-.user-chosen { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); }
-.user-drag { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15); }
+.user-ghost { opacity: 0 !important; background: transparent !important; border-color: transparent !important; }
+.user-chosen { cursor: grabbing !important; }
+.user-drag { transform: rotate(3deg); opacity: 1 !important; }
 
 /* 用户名 */
-.user-name-text { font-weight: 600; font-size: 15px; color: var(--ant-color-text); }
+.user-name-text { font-weight: 600; font-size: 14px; color: var(--ant-color-text); }
 
-/* ==================== 社区标签云（多色） ==================== */
+/* ==================== 状态下拉框 - 对齐 TimeSetManager ==================== */
+.status-select :deep(.ant-select-selector) {
+    background: transparent !important;
+    border: none !important;
+    padding: 0 6px !important;
+    min-height: 28px !important;
+    line-height: 26px !important;
+    box-shadow: none !important;
+    text-align: center;
+}
+
+.status-select :deep(.ant-select-selection-item) {
+    line-height: 26px !important;
+    color: var(--ant-color-text) !important;
+    font-weight: 500;
+    padding: 0;
+    margin: 0;
+}
+
+.status-select :deep(.ant-select-selection-placeholder) {
+    line-height: 26px !important;
+    color: var(--ant-color-text-placeholder) !important;
+    padding: 0;
+    margin: 0;
+}
+
+.status-select :deep(.ant-select-clear) { display: none !important; }
+
+.status-select :deep(.ant-select-selection-search) { margin: 0 !important; padding: 0; }
+
+.status-select :deep(.ant-select-selection-search-input) {
+    padding: 0 !important;
+    margin: 0 !important;
+    height: 26px !important;
+}
+
+.status-select:hover :deep(.ant-select-selector) {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+}
+
+.status-select:focus-within :deep(.ant-select-selector),
+.status-select.ant-select-focused :deep(.ant-select-selector) {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    outline: none !important;
+}
+
+.status-select :deep(.ant-select-arrow) {
+    right: 4px;
+    color: var(--ant-color-text-tertiary);
+    font-size: 10px;
+}
+
+.status-select :deep(.ant-select-arrow:hover) {
+    color: var(--ant-color-primary);
+}
+
+/* ==================== 社区标签云（小标签 + 红绿黄） ==================== */
 .platform-tag {
-    display: inline-block;
-    padding: 4px 12px;
-    border-radius: 4px;
-    font-size: 13px;
-    line-height: 1.6;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+    line-height: 1.5;
     border: 1px solid transparent;
     cursor: default;
     white-space: nowrap;
 }
 
+/* 绿色：签到成功 */
 .tag-signed {
     background: #f6ffed;
     border-color: #b7eb8f;
     color: #52c41a;
 }
 
+/* 黄色：已配置但今日未签 */
+.tag-unsigned {
+    background: #fffbe6;
+    border-color: #ffe58f;
+    color: #d4b106;
+}
+
+/* 红色：签到失败 */
+.tag-failed {
+    background: #fff1f0;
+    border-color: #ffa39e;
+    color: #f5222d;
+}
+
+/* 橙色：部分签到 */
 .tag-partial {
     background: #fff7e6;
     border-color: #ffd591;
     color: #fa8c16;
 }
 
-.tag-unsigned {
-    background: #fff1f0;
-    border-color: #ffa39e;
-    color: #f5222d;
-}
-
-.tag-unconfigured {
-    background: #f5f5f5;
-    border-color: #d9d9d9;
-    color: #999;
-}
-
 /* ==================== Tooltip 签到详情 ==================== */
-.sign-tooltip { min-width: 200px; }
+.sign-tooltip { min-width: 220px; }
 .sign-tooltip-title {
-    font-size: 14px; font-weight: 600;
+    font-size: 13px; font-weight: 600;
     padding-bottom: 8px; margin-bottom: 6px;
     border-bottom: 1px solid #f0f0f0;
 }
-.sign-tooltip-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 14px; }
+.sign-tooltip-alias {
+    font-size: 12px; font-weight: 600; color: var(--ant-color-text);
+    padding: 4px 0 2px; margin-top: 4px;
+}
+.sign-tooltip-alias:first-of-type { margin-top: 0; }
+.sign-tooltip-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 2px 0; font-size: 13px; gap: 12px;
+}
 .tt-signed { color: #52c41a; }
-.tt-unsigned { color: #fa8c16; }
+.tt-unsigned { color: #d4b106; }
+.tt-failed { color: #f5222d; }
+.tt-reward { color: var(--ant-color-text-tertiary); font-size: 12px; }
 .sign-tooltip-empty { color: var(--ant-color-text-quaternary); font-size: 13px; text-align: center; padding: 8px 0; }
 
 /* ==================== 操作按钮 ==================== */
 .action-btn {
-    padding: 5px 14px;
+    padding: 4px 12px;
     border-radius: 4px;
-    font-size: 14px;
+    font-size: 13px;
     border: 1px solid;
     background: transparent;
     cursor: pointer;
@@ -735,6 +819,4 @@ onMounted(() => {
 
 /* ==================== 模态框 ==================== */
 .modal-form .form-item-vertical { margin-bottom: 16px; }
-.modal-platform-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.modal-platform-label { font-size: 14px; font-weight: 500; color: var(--ant-color-text); }
 </style>
