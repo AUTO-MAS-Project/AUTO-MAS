@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined, EditOutlined, DeleteOutlined, PlusOutlined, SwapOutlined } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
 import dayjs from 'dayjs'
+import draggable from 'vuedraggable'
 import type { ToolsConfig_GameSign, GameSignAccountGroupConfig } from '@/api'
 import { Service } from '@/api'
 import { useGameSignAccountApi } from '@/composables/useGameSignAccountApi'
@@ -17,21 +18,25 @@ const { config, disabled, onFieldChange, onSelectVisibleChange } = defineProps<{
 const logger = window.electronAPI.getLogger('游戏签到')
 const signLoading = ref(false)
 
-// ==================== 账号组管理 ====================
+// ==================== 账号管理 ====================
 
 interface AccountInstance {
     uid: string
     type: string
     Name: string
+    Enabled: boolean
+    MiyousheEnabled: boolean
     MiyousheToken: string
+    KuroEnabled: boolean
     KuroToken: string
+    SklandEnabled: boolean
     SklandToken: string
 }
 
 const { addAccount, updateAccount, deleteAccount } = useGameSignAccountApi()
 const accounts = ref<AccountInstance[]>([])
-const activeCollapseKeys = ref<string[]>([])
 const addLoading = ref(false)
+const isDragging = ref(false)
 
 const loadAccounts = async () => {
     try {
@@ -39,7 +44,6 @@ const loadAccounts = async () => {
         if (response.code !== 200) return
         const data = response.data as any
         const instances: AccountInstance[] = []
-        // MultipleConfig.toDict() 格式: { instances: [{uid, type}], <uuid>: {GameSignAccount: {...}} }
         const instanceList = data?.instances || []
         for (const inst of instanceList) {
             const uid = inst.uid as string
@@ -47,46 +51,55 @@ const loadAccounts = async () => {
             instances.push({
                 uid,
                 type: inst.type || 'GameSignAccountGroup',
-                Name: accountData.Name || '默认账号',
+                Name: accountData.Name || '用户',
+                Enabled: accountData.Enabled ?? true,
+                MiyousheEnabled: accountData.MiyousheEnabled ?? true,
                 MiyousheToken: accountData.MiyousheToken || '',
+                KuroEnabled: accountData.KuroEnabled ?? true,
                 KuroToken: accountData.KuroToken || '',
+                SklandEnabled: accountData.SklandEnabled ?? true,
                 SklandToken: accountData.SklandToken || '',
             })
         }
         accounts.value = instances
-        // 默认展开第一个
-        if (instances.length > 0 && activeCollapseKeys.value.length === 0) {
-            activeCollapseKeys.value = [instances[0].uid]
-        }
     } catch {
         // 静默失败
     }
 }
+
+const getAccountAllData = (account: AccountInstance): GameSignAccountGroupConfig => ({
+    Name: account.Name,
+    Enabled: account.Enabled,
+    MiyousheEnabled: account.MiyousheEnabled,
+    MiyousheToken: account.MiyousheToken,
+    KuroEnabled: account.KuroEnabled,
+    KuroToken: account.KuroToken,
+    SklandEnabled: account.SklandEnabled,
+    SklandToken: account.SklandToken,
+})
 
 const handleAddAccount = async () => {
     addLoading.value = true
     try {
         const result = await addAccount()
         if (result) {
-            // 自动命名：账号组 1、账号组 2、...
-            const defaultName = `账号组 ${accounts.value.length + 1}`
-            accounts.value.push({
+            const defaultName = `用户 ${accounts.value.length + 1}`
+            const newAccount: AccountInstance = {
                 uid: result.accountId,
                 type: 'GameSignAccountGroup',
                 Name: defaultName,
-                MiyousheToken: result.data.MiyousheToken || '',
-                KuroToken: result.data.KuroToken || '',
-                SklandToken: result.data.SklandToken || '',
-            })
-            activeCollapseKeys.value = [result.accountId]
-            // 立即更新后端名称
-            await updateAccount(result.accountId, {
-                Name: defaultName,
+                Enabled: true,
+                MiyousheEnabled: true,
                 MiyousheToken: '',
+                KuroEnabled: true,
                 KuroToken: '',
+                SklandEnabled: true,
                 SklandToken: '',
-            })
-            message.success('账号组已添加')
+            }
+            accounts.value.push(newAccount)
+            await updateAccount(result.accountId, getAccountAllData(newAccount))
+            message.success('用户已添加')
+            openEditModal(newAccount)
         }
     } finally {
         addLoading.value = false
@@ -95,7 +108,7 @@ const handleAddAccount = async () => {
 
 const handleDeleteAccount = (account: AccountInstance) => {
     Modal.confirm({
-        title: '删除账号组',
+        title: '删除用户',
         content: `确定要删除「${account.Name}」吗？该操作不可撤销。`,
         okText: '删除',
         okType: 'danger',
@@ -103,33 +116,64 @@ const handleDeleteAccount = (account: AccountInstance) => {
         onOk: async () => {
             await deleteAccount(account.uid)
             accounts.value = accounts.value.filter(a => a.uid !== account.uid)
-            activeCollapseKeys.value = activeCollapseKeys.value.filter(k => k !== account.uid)
         },
     })
 }
 
-const handleTokenBlur = async (account: AccountInstance, field: keyof AccountInstance) => {
+const handleAccountFieldSave = async (account: AccountInstance) => {
     try {
-        await updateAccount(account.uid, {
-            Name: account.Name,
-            MiyousheToken: account.MiyousheToken,
-            KuroToken: account.KuroToken,
-            SklandToken: account.SklandToken,
-        })
+        await updateAccount(account.uid, getAccountAllData(account))
     } catch {
         message.error('保存失败，请重试')
     }
 }
 
-const getAccountSummary = (account: AccountInstance): string => {
-    const platforms: string[] = []
-    if (account.MiyousheToken) platforms.push('米游社 ✓')
-    if (account.KuroToken) platforms.push('库街区 ✓')
-    if (account.SklandToken) platforms.push('森空岛 ✓')
-    return platforms.length > 0 ? platforms.join('  ') : '未配置任何平台'
+// ==================== 拖拽排序 ====================
+
+const onDragEnd = async (evt: any) => {
+    if (evt.oldIndex === evt.newIndex) return
+    isDragging.value = true
+    try {
+        const order = accounts.value.map(a => a.uid)
+        await Service.reorderGameSignAccountsApiToolsSignAccountReorderPost({ order })
+        logger.info('用户排序已保存')
+    } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.error(`排序保存失败: ${errorMsg}`)
+        message.error('排序保存失败')
+        await loadAccounts()
+    } finally {
+        isDragging.value = false
+    }
 }
 
-// ==================== 签到结果解析 ====================
+// ==================== 编辑 Token 模态框 ====================
+
+const editModalVisible = ref(false)
+const editingAccount = ref<AccountInstance | null>(null)
+
+const openEditModal = (account: AccountInstance) => {
+    editingAccount.value = { ...account }
+    editModalVisible.value = true
+}
+
+const handleEditModalOk = async () => {
+    if (!editingAccount.value) return
+    try {
+        const uid = editingAccount.value.uid
+        const idx = accounts.value.findIndex(a => a.uid === uid)
+        if (idx >= 0) {
+            accounts.value[idx] = { ...editingAccount.value }
+            await updateAccount(uid, getAccountAllData(editingAccount.value))
+            message.success('Token 已保存')
+        }
+    } catch {
+        message.error('保存失败，请重试')
+    }
+    editModalVisible.value = false
+}
+
+// ==================== 签到结果解析（按用户绑定） ====================
 
 interface GameItem {
     game: string
@@ -157,36 +201,119 @@ const signResult = computed<PlatformResult>(() => {
     }
 })
 
-const platformOrder = ['米游社', '库街区', '森空岛']
-const sortedPlatforms = computed(() => {
-    const platforms = Object.keys(signResult.value)
-    return platformOrder.filter(p => platforms.includes(p))
-})
-// 未出现在结果中的平台，用于填充空位卡片
-const emptyPlatforms = computed(() => {
-    return platformOrder.filter(p => !sortedPlatforms.value.includes(p))
-})
+// 社区与游戏的映射
+const platformGames: Record<string, string[]> = {
+    '米游社': ['原神', '崩坏：星穹铁道', '绝区零', '崩坏3rd'],
+    '森空岛': ['明日方舟', '终末地'],
+    '库街区': ['鸣潮'],
+}
+
+// 获取某用户在某社区的签到结果（只绑定该用户数据）
+const getUserPlatformGames = (account: AccountInstance, platform: string): GameItem[] => {
+    const platformData = signResult.value[platform]
+    if (!platformData) return []
+
+    // 用用户名匹配 account_alias（别名 = account 中 '/' 前的部分）
+    const userAlias = account.Name
+    for (const group of platformData) {
+        if (group.account_alias === userAlias) {
+            return group.games
+        }
+    }
+    return []
+}
+
+// 标签云状态类型
+type TagStatus = 'signed' | 'partial' | 'unsigned' | 'unconfigured'
+
+// 获取某用户在某社区的标签状态
+const getUserPlatformStatus = (account: AccountInstance, platform: string): {
+    status: TagStatus
+    games: GameItem[]
+    signedCount: number
+    totalCount: number
+} => {
+    const hasToken =
+        (platform === '米游社' && account.MiyousheToken && account.MiyousheEnabled) ||
+        (platform === '库街区' && account.KuroToken && account.KuroEnabled) ||
+        (platform === '森空岛' && account.SklandToken && account.SklandEnabled)
+
+    if (!hasToken) {
+        return { status: 'unconfigured', games: [], signedCount: 0, totalCount: 0 }
+    }
+
+    const games = getUserPlatformGames(account, platform)
+    const totalCount = games.length
+    const signedCount = games.filter(g => g.status === '成功' || g.status === '已签到').length
+
+    if (totalCount === 0) {
+        return { status: 'unsigned', games, signedCount: 0, totalCount: 0 }
+    }
+    if (signedCount === totalCount) {
+        return { status: 'signed', games, signedCount, totalCount }
+    }
+    if (signedCount > 0) {
+        return { status: 'partial', games, signedCount, totalCount }
+    }
+    return { status: 'unsigned', games, signedCount, totalCount }
+}
+
+// 获取某用户的所有社区标签（含未配置）
+const getUserPlatformTags = (account: AccountInstance) => {
+    const tags: { platform: string; status: TagStatus; games: GameItem[]; signedCount: number; totalCount: number }[] = []
+    for (const platform of ['米游社', '森空岛', '库街区']) {
+        const ps = getUserPlatformStatus(account, platform)
+        tags.push({ platform, ...ps })
+    }
+    return tags
+}
+
+// 计算距离上次签到的相对时间
+const getLastSignRelative = () => {
+    const d = config.LastSignDate
+    if (!d || d === '2000-01-01') return ''
+    const signDay = dayjs(d, 'YYYY-MM-DD')
+    const now = dayjs()
+    const diffMinutes = now.diff(signDay, 'minute')
+    if (diffMinutes < 1) return '刚刚'
+    if (diffMinutes < 60) return `${diffMinutes}分钟前`
+    const diffHours = now.diff(signDay, 'hour')
+    if (diffHours < 24) return `${diffHours}小时前`
+    const diffDays = now.diff(signDay, 'day')
+    if (diffDays < 30) return `${diffDays}天前`
+    return signDay.format('MM-DD')
+}
+
+const lastSignRelative = computed(() => getLastSignRelative())
+
+// 标签文字
+const getTagText = (tag: { platform: string; status: TagStatus; signedCount: number; totalCount: number }) => {
+    switch (tag.status) {
+        case 'signed': return `${tag.platform} ✓ ${lastSignRelative.value}`
+        case 'partial': return `${tag.platform} ! ${tag.signedCount}/${tag.totalCount}`
+        case 'unsigned': return `${tag.platform} ✗`
+        case 'unconfigured': return `${tag.platform} -`
+    }
+}
+
+// 标签 CSS 类
+const getTagClass = (status: TagStatus) => `tag-${status}`
 
 // ==================== 时间选择器 ====================
 
 const windowStartValue = computed(() => {
-    if (config.WindowStart) {
-        return dayjs(config.WindowStart, 'HH:mm')
-    }
+    if (config.WindowStart) return dayjs(config.WindowStart, 'HH:mm')
     return null
 })
 
 const windowEndValue = computed(() => {
-    if (config.WindowEnd) {
-        return dayjs(config.WindowEnd, 'HH:mm')
-    }
+    if (config.WindowEnd) return dayjs(config.WindowEnd, 'HH:mm')
     return null
 })
 
 const handleTimeChange = (key: string, dayjsValue: any) => {
     if (dayjsValue) {
-        const timeStr = dayjsValue.format('HH:mm')
-        handleChange(key, timeStr)
+        handleChange(key, dayjsValue.format('HH:mm'))
     } else {
         handleChange(key, '')
     }
@@ -195,9 +322,7 @@ const handleTimeChange = (key: string, dayjsValue: any) => {
 // ==================== 通用变更处理 ====================
 
 const handleChange = (key: string, value: any) => {
-    if (onFieldChange) {
-        onFieldChange(key, value)
-    }
+    if (onFieldChange) onFieldChange(key, value)
 }
 
 // ==================== 手动签到 ====================
@@ -211,6 +336,7 @@ const handleManualSign = async () => {
         }
         logger.info('游戏签到完成')
         message.success('签到完成')
+        await loadAccounts()
     } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)
         logger.error(`签到失败: ${errorMsg}`)
@@ -229,66 +355,19 @@ onMounted(() => {
 
 <template>
     <div class="tab-content">
-        <!-- 签到结果面板 -->
+        <!-- 全局设置区 -->
         <div class="form-section">
             <div class="section-header">
-                <h3>签到结果</h3>
-            </div>
-            <a-row :gutter="16">
-                <a-col :span="8" v-for="platform in sortedPlatforms" :key="platform">
-                    <div class="result-panel">
-                        <div class="panel-header">{{ platform }}</div>
-                        <div class="panel-body">
-                            <template v-if="signResult[platform]?.length">
-                                <div v-for="account in signResult[platform]" :key="account.account_alias"
-                                    class="account-row">
-                                    <div class="account-name">{{ account.account_alias }}</div>
-                                    <div v-for="game in account.games" :key="game.game" class="game-row">
-                                        <a-tag :color="game.status === '成功' || game.status === '已签到' ? 'success' : 'error'"
-                                            style="margin: 0;">
-                                            {{ game.game }}
-                                        </a-tag>
-                                        <span class="game-detail">
-                                            <template v-if="game.status === '成功'">
-                                                成功<template v-if="game.reward"> ({{ game.reward }})</template>
-                                            </template>
-                                            <template v-else-if="game.status === '已签到'">
-                                                已签
-                                            </template>
-                                            <template v-else>
-                                                失败<template v-if="game.reason"> ({{ game.reason }})</template>
-                                            </template>
-                                        </span>
-                                    </div>
-                                </div>
-                            </template>
-                            <div v-else class="no-data">暂无数据</div>
-                        </div>
-                    </div>
-                </a-col>
-                <!-- 空位填充（平台不足3个时） -->
-                <a-col :span="8" v-for="platform in emptyPlatforms" :key="'empty-' + platform">
-                    <div class="result-panel">
-                        <div class="panel-header">{{ platform }}</div>
-                        <div class="panel-body">
-                            <div class="no-data">暂无数据</div>
-                        </div>
-                    </div>
-                </a-col>
-            </a-row>
-        </div>
-
-        <!-- 签到设置 -->
-        <div class="form-section">
-            <div class="section-header">
-                <h3>签到设置</h3>
-                <a-button type="primary" :loading="signLoading" size="small"
-                    :disabled="disabled || !config.Enabled" @click="handleManualSign">
-                    立即签到
+                <h3>游戏社区签到</h3>
+                <a-button type="primary" :loading="signLoading"
+                    :disabled="disabled || !config.Enabled"
+                    @click="handleManualSign">
+                    <template #icon><SwapOutlined /></template>
+                    全部签到
                 </a-button>
             </div>
             <a-row :gutter="24">
-                <a-col :span="8">
+                <a-col :span="6">
                     <div class="form-item-vertical">
                         <div class="form-label-wrapper">
                             <span class="form-label">启用签到</span>
@@ -297,17 +376,16 @@ onMounted(() => {
                             </a-tooltip>
                         </div>
                         <a-select v-model:value="config.Enabled" size="large" style="width: 100%" :disabled="disabled"
-                            @change="handleChange('Enabled', $event)"
-                            @dropdownVisibleChange="onSelectVisibleChange">
+                            @change="handleChange('Enabled', $event)" @dropdownVisibleChange="onSelectVisibleChange">
                             <a-select-option :value="true">启用</a-select-option>
                             <a-select-option :value="false">禁用</a-select-option>
                         </a-select>
                     </div>
                 </a-col>
-                <a-col :span="8">
+                <a-col :span="6">
                     <div class="form-item-vertical">
                         <div class="form-label-wrapper">
-                            <span class="form-label">签到后发送通知</span>
+                            <span class="form-label">签到后通知</span>
                             <a-tooltip title="签到完成后通过已配置的通知渠道推送结果">
                                 <QuestionCircleOutlined class="help-icon" />
                             </a-tooltip>
@@ -320,30 +398,28 @@ onMounted(() => {
                         </a-select>
                     </div>
                 </a-col>
-            </a-row>
-            <a-row :gutter="24" style="margin-top: 16px;">
-                <a-col :span="8">
+                <a-col :span="6">
                     <div class="form-item-vertical">
                         <div class="form-label-wrapper">
-                            <span class="form-label">签到窗口起点</span>
+                            <span class="form-label">窗口起点</span>
                             <a-tooltip title="每日签到的最早时间">
                                 <QuestionCircleOutlined class="help-icon" />
                             </a-tooltip>
                         </div>
-                        <a-time-picker :value="windowStartValue" format="HH:mm" placeholder="请选择时间" size="large"
+                        <a-time-picker :value="windowStartValue" format="HH:mm" placeholder="08:00" size="large"
                             style="width: 100%" :disabled="disabled"
                             @change="handleTimeChange('WindowStart', $event)" />
                     </div>
                 </a-col>
-                <a-col :span="8">
+                <a-col :span="6">
                     <div class="form-item-vertical">
                         <div class="form-label-wrapper">
-                            <span class="form-label">签到窗口终点</span>
+                            <span class="form-label">窗口终点</span>
                             <a-tooltip title="每日签到的最晚时间">
                                 <QuestionCircleOutlined class="help-icon" />
                             </a-tooltip>
                         </div>
-                        <a-time-picker :value="windowEndValue" format="HH:mm" placeholder="请选择时间" size="large"
+                        <a-time-picker :value="windowEndValue" format="HH:mm" placeholder="22:00" size="large"
                             style="width: 100%" :disabled="disabled"
                             @change="handleTimeChange('WindowEnd', $event)" />
                     </div>
@@ -351,169 +427,314 @@ onMounted(() => {
             </a-row>
         </div>
 
-        <!-- 账号管理（折叠式） -->
+        <!-- 用户列表 -->
         <div class="form-section">
             <div class="section-header">
-                <h3>账号管理</h3>
-                <a-button type="dashed" size="small" :loading="addLoading" :disabled="disabled"
+                <h3>用户列表</h3>
+                <a-button type="primary" ghost size="middle" :loading="addLoading" :disabled="disabled"
                     @click="handleAddAccount">
-                    + 添加账号组
+                    <template #icon><PlusOutlined /></template>
+                    添加用户
                 </a-button>
             </div>
-            <a-collapse v-model:activeKey="activeCollapseKeys" :bordered="false" class="account-collapse">
-                <a-collapse-panel v-for="account in accounts" :key="account.uid">
-                    <template #header>
-                        <div class="account-panel-header">
-                            <span class="account-panel-name">{{ account.Name }}</span>
-                            <span class="account-panel-summary">{{ getAccountSummary(account) }}</span>
+
+            <div class="user-table-container">
+                <!-- 表头 -->
+                <div class="user-table-header">
+                    <div class="header-cell drag-cell"></div>
+                    <div class="header-cell name-cell">用户名</div>
+                    <div class="header-cell status-cell">状态</div>
+                    <div class="header-cell tags-cell">各社区签到情况</div>
+                    <div class="header-cell actions-cell">操作</div>
+                </div>
+
+                <!-- 拖拽内容 -->
+                <draggable v-model="accounts" item-key="uid" :animation="200" :disabled="disabled || isDragging"
+                    ghost-class="user-ghost" chosen-class="user-chosen" drag-class="user-drag" handle=".drag-handle"
+                    class="user-draggable" @end="onDragEnd">
+                    <template #item="{ element: account }">
+                        <div class="user-row">
+                            <!-- 拖拽手柄 -->
+                            <div class="row-cell drag-cell">
+                                <span class="drag-handle" title="拖拽排序">
+                                    <span class="drag-dots"></span>
+                                </span>
+                            </div>
+                            <!-- 用户名 -->
+                            <div class="row-cell name-cell">
+                                <span class="user-name-text">{{ account.Name }}</span>
+                            </div>
+                            <!-- 状态 -->
+                            <div class="row-cell status-cell">
+                                <a-select v-model:value="account.Enabled" size="middle" style="width: 100px"
+                                    :disabled="disabled" @change="handleAccountFieldSave(account)"
+                                    @dropdownVisibleChange="onSelectVisibleChange"
+                                    :class="{ 'select-enabled': account.Enabled }">
+                                    <a-select-option :value="true">启用</a-select-option>
+                                    <a-select-option :value="false">禁用</a-select-option>
+                                </a-select>
+                            </div>
+                            <!-- 社区签到情况（标签云） -->
+                            <div class="row-cell tags-cell">
+                                <a-space :size="8" wrap>
+                                    <a-tooltip v-for="tag in getUserPlatformTags(account)" :key="tag.platform">
+                                        <template #title>
+                                            <div class="sign-tooltip">
+                                                <div class="sign-tooltip-title">{{ tag.platform }} - 签到详情</div>
+                                                <div v-for="game in tag.games" :key="game.game" class="sign-tooltip-row">
+                                                    <span>{{ game.game }}</span>
+                                                    <span :class="game.status === '成功' || game.status === '已签到' ? 'tt-signed' : 'tt-unsigned'">
+                                                        ● {{ game.status === '成功' || game.status === '已签到' ? '已签' : '未签' }}
+                                                    </span>
+                                                </div>
+                                                <div v-if="tag.games.length === 0" class="sign-tooltip-empty">暂无签到数据</div>
+                                            </div>
+                                        </template>
+                                        <span :class="['platform-tag', getTagClass(tag.status)]">
+                                            {{ getTagText(tag) }}
+                                        </span>
+                                    </a-tooltip>
+                                </a-space>
+                            </div>
+                            <!-- 操作 -->
+                            <div class="row-cell actions-cell">
+                                <a-space :size="8">
+                                    <a-button size="middle" class="action-btn edit-btn" @click="openEditModal(account)">
+                                        <template #icon><EditOutlined /></template>
+                                        编辑
+                                    </a-button>
+                                    <a-popconfirm title="确定要删除此用户吗？" ok-text="确定" cancel-text="取消"
+                                        @confirm="handleDeleteAccount(account)">
+                                        <a-button size="middle" class="action-btn delete-btn">
+                                            <template #icon><DeleteOutlined /></template>
+                                            删除
+                                        </a-button>
+                                    </a-popconfirm>
+                                </a-space>
+                            </div>
                         </div>
                     </template>
-                    <a-row :gutter="24">
-                        <a-col :span="8">
-                            <div class="form-item-vertical">
-                                <span class="form-label">米游社登录凭证</span>
-                                <a-input-password v-model:value="account.MiyousheToken" size="large"
-                                    placeholder="浏览器 F12 → document.cookie 获取" allow-clear :disabled="disabled"
-                                    @blur="handleTokenBlur(account, 'MiyousheToken')" />
-                            </div>
-                        </a-col>
-                        <a-col :span="8">
-                            <div class="form-item-vertical">
-                                <span class="form-label">库街区登录凭证</span>
-                                <a-input-password v-model:value="account.KuroToken" size="large"
-                                    placeholder="抓包或短信验证码获取 Token" allow-clear :disabled="disabled"
-                                    @blur="handleTokenBlur(account, 'KuroToken')" />
-                            </div>
-                        </a-col>
-                        <a-col :span="8">
-                            <div class="form-item-vertical">
-                                <span class="form-label">森空岛登录凭证</span>
-                                <a-input-password v-model:value="account.SklandToken" size="large"
-                                    placeholder="鹰角网络通行证登录凭证" allow-clear :disabled="disabled"
-                                    @blur="handleTokenBlur(account, 'SklandToken')" />
-                            </div>
-                        </a-col>
-                    </a-row>
-                    <div class="account-actions">
-                        <a-button type="text" danger size="small" @click="handleDeleteAccount(account)">
-                            删除账号组
-                        </a-button>
-                    </div>
-                </a-collapse-panel>
-            </a-collapse>
-            <div v-if="accounts.length === 0" class="no-accounts">
-                <span>暂无账号组，请点击「+ 添加账号组」创建</span>
+                </draggable>
+
+                <!-- 空状态 -->
+                <div v-if="accounts.length === 0" class="empty-state">
+                    <div class="empty-hint">暂无用户</div>
+                    <div class="empty-guide">点击右上角「添加用户」创建</div>
+                </div>
             </div>
         </div>
+
+        <!-- 编辑 Token 模态框 -->
+        <a-modal v-model:open="editModalVisible" :title="`编辑 — ${editingAccount?.Name || ''}`"
+            @ok="handleEditModalOk" ok-text="保存" cancel-text="取消" :width="520">
+            <div v-if="editingAccount" class="modal-form">
+                <div class="form-item-vertical">
+                    <span class="form-label">用户名称</span>
+                    <a-input v-model:value="editingAccount.Name" />
+                </div>
+                <div class="form-item-vertical">
+                    <span class="form-label">是否启用</span>
+                    <a-select v-model:value="editingAccount.Enabled" style="width: 100%">
+                        <a-select-option :value="true">启用</a-select-option>
+                        <a-select-option :value="false">禁用</a-select-option>
+                    </a-select>
+                </div>
+                <a-divider orientation="left" style="font-size: 13px; color: #666;">米游社</a-divider>
+                <div class="form-item-vertical">
+                    <div class="modal-platform-row">
+                        <a-select v-model:value="editingAccount.MiyousheEnabled" size="small" style="width: 72px">
+                            <a-select-option :value="true">启用</a-select-option>
+                            <a-select-option :value="false">禁用</a-select-option>
+                        </a-select>
+                        <span class="modal-platform-label">米游社签到</span>
+                    </div>
+                    <a-input-password v-model:value="editingAccount.MiyousheToken"
+                        placeholder="浏览器 F12 → document.cookie 获取" allow-clear />
+                </div>
+                <a-divider orientation="left" style="font-size: 13px; color: #666;">库街区</a-divider>
+                <div class="form-item-vertical">
+                    <div class="modal-platform-row">
+                        <a-select v-model:value="editingAccount.KuroEnabled" size="small" style="width: 72px">
+                            <a-select-option :value="true">启用</a-select-option>
+                            <a-select-option :value="false">禁用</a-select-option>
+                        </a-select>
+                        <span class="modal-platform-label">库街区签到</span>
+                    </div>
+                    <a-input-password v-model:value="editingAccount.KuroToken"
+                        placeholder="抓包或短信验证码获取 Token" allow-clear />
+                </div>
+                <a-divider orientation="left" style="font-size: 13px; color: #666;">森空岛</a-divider>
+                <div class="form-item-vertical">
+                    <div class="modal-platform-row">
+                        <a-select v-model:value="editingAccount.SklandEnabled" size="small" style="width: 72px">
+                            <a-select-option :value="true">启用</a-select-option>
+                            <a-select-option :value="false">禁用</a-select-option>
+                        </a-select>
+                        <span class="modal-platform-label">森空岛签到</span>
+                    </div>
+                    <a-input-password v-model:value="editingAccount.SklandToken"
+                        placeholder="鹰角网络通行证登录凭证" allow-clear />
+                </div>
+            </div>
+        </a-modal>
     </div>
 </template>
 
 <style scoped>
-/* 签到结果面板 */
-.result-panel {
-    background: var(--ant-color-bg-container);
-    border: 1px solid var(--ant-color-border);
+/* ==================== 选中启用时边框变绿 ==================== */
+.select-enabled :deep(.ant-select-selector) {
+    border-color: #52c41a !important;
+}
+
+/* ==================== 用户列表表格 ==================== */
+.user-table-container {
+    border: 1px solid var(--ant-color-border-secondary);
     border-radius: 8px;
-    padding: 12px;
-    min-height: 120px;
-    transition: all 0.3s ease;
-}
-
-.result-panel:hover {
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.panel-header {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--ant-color-text);
-    margin-bottom: 8px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
-.panel-body {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.account-row {
-    margin-bottom: 6px;
-}
-
-.account-name {
-    font-weight: 600;
-    font-size: 13px;
-    color: var(--ant-color-text);
-    margin-bottom: 4px;
-    padding-left: 8px;
-    border-left: 3px solid var(--ant-color-primary);
-}
-
-.game-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    line-height: 1.6;
-}
-
-.game-detail {
-    color: var(--ant-color-text-secondary);
-}
-
-.no-data {
-    color: var(--ant-color-text-tertiary);
-    font-size: 13px;
-    text-align: center;
-    padding: 16px 0;
-}
-
-/* 账号管理折叠面板 */
-.account-collapse {
-    background: transparent;
-}
-
-.account-collapse :deep(.ant-collapse-item) {
-    border: 1px solid var(--ant-color-border);
-    border-radius: 8px !important;
-    margin-bottom: 8px;
     overflow: hidden;
 }
 
-.account-collapse :deep(.ant-collapse-header) {
-    align-items: center !important;
-}
-
-.account-panel-header {
+.user-table-header {
     display: flex;
     align-items: center;
-    gap: 12px;
-}
-
-.account-panel-name {
-    font-weight: 600;
+    background: var(--ant-color-fill-quaternary);
+    border-bottom: 1px solid var(--ant-color-border-secondary);
     font-size: 14px;
-    color: var(--ant-color-text);
-}
-
-.account-panel-summary {
-    font-size: 12px;
+    font-weight: 600;
     color: var(--ant-color-text-secondary);
+    min-height: 48px;
 }
 
-.account-actions {
-    margin-top: 12px;
-    padding-top: 8px;
-    border-top: 1px solid var(--ant-color-border-secondary);
-    text-align: right;
+.user-table-header .header-cell {
+    padding: 14px 16px;
 }
 
-.no-accounts {
-    color: var(--ant-color-text-tertiary);
+.drag-cell { width: 52px; min-width: 52px; text-align: center; }
+.name-cell { width: 140px; min-width: 140px; }
+.status-cell { width: 110px; min-width: 110px; }
+.tags-cell { flex: 1; min-width: 0; }
+.actions-cell { width: 180px; min-width: 180px; text-align: right; }
+
+.user-draggable { min-height: 56px; }
+
+.user-row {
+    display: flex;
+    align-items: center;
+    min-height: 60px;
+    border-bottom: 1px solid var(--ant-color-border-secondary);
+    padding: 10px 0;
+    transition: background 0.15s ease;
+}
+
+.user-row:last-child { border-bottom: none; }
+.user-row:hover { background: var(--ant-color-fill-quaternary); }
+
+.row-cell { padding: 8px 16px; }
+
+/* 拖拽手柄 */
+.drag-handle { cursor: grab; display: inline-flex; align-items: center; justify-content: center; }
+.drag-handle:active { cursor: grabbing; }
+.drag-dots {
+    width: 14px; height: 20px; display: block;
+    background-image: radial-gradient(currentColor 1.4px, transparent 1.4px);
+    background-size: 6px 6px; opacity: 0.5;
+}
+
+/* 拖拽视觉反馈 */
+.user-ghost { opacity: 0.4; background: #e6f7ff; }
+.user-chosen { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); }
+.user-drag { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15); }
+
+/* 用户名 */
+.user-name-text { font-weight: 600; font-size: 15px; color: var(--ant-color-text); }
+
+/* ==================== 社区标签云（多色） ==================== */
+.platform-tag {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 4px;
     font-size: 13px;
-    text-align: center;
-    padding: 24px 0;
+    line-height: 1.6;
+    border: 1px solid transparent;
+    cursor: default;
+    white-space: nowrap;
 }
+
+.tag-signed {
+    background: #f6ffed;
+    border-color: #b7eb8f;
+    color: #52c41a;
+}
+
+.tag-partial {
+    background: #fff7e6;
+    border-color: #ffd591;
+    color: #fa8c16;
+}
+
+.tag-unsigned {
+    background: #fff1f0;
+    border-color: #ffa39e;
+    color: #f5222d;
+}
+
+.tag-unconfigured {
+    background: #f5f5f5;
+    border-color: #d9d9d9;
+    color: #999;
+}
+
+/* ==================== Tooltip 签到详情 ==================== */
+.sign-tooltip { min-width: 200px; }
+.sign-tooltip-title {
+    font-size: 14px; font-weight: 600;
+    padding-bottom: 8px; margin-bottom: 6px;
+    border-bottom: 1px solid #f0f0f0;
+}
+.sign-tooltip-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 14px; }
+.tt-signed { color: #52c41a; }
+.tt-unsigned { color: #fa8c16; }
+.sign-tooltip-empty { color: var(--ant-color-text-quaternary); font-size: 13px; text-align: center; padding: 8px 0; }
+
+/* ==================== 操作按钮 ==================== */
+.action-btn {
+    padding: 5px 14px;
+    border-radius: 4px;
+    font-size: 14px;
+    border: 1px solid;
+    background: transparent;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.edit-btn {
+    border-color: #d9d9d9;
+    color: #666;
+}
+
+.edit-btn:hover {
+    border-color: #1890ff;
+    color: #1890ff;
+}
+
+.delete-btn {
+    border-color: #ff4d4f;
+    color: #ff4d4f;
+}
+
+.delete-btn:hover {
+    border-color: #ff7875;
+    color: #ff7875;
+}
+
+/* ==================== 空状态 ==================== */
+.empty-state { text-align: center; padding: 48px 0; }
+.empty-hint { color: var(--ant-color-text-tertiary); font-size: 15px; margin-bottom: 6px; }
+.empty-guide { color: var(--ant-color-text-quaternary); font-size: 13px; }
+
+/* ==================== 模态框 ==================== */
+.modal-form .form-item-vertical { margin-bottom: 16px; }
+.modal-platform-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.modal-platform-label { font-size: 14px; font-weight: 500; color: var(--ant-color-text); }
 </style>

@@ -2497,13 +2497,29 @@ class GameSignAccountGroup(ConfigBase):
         self.Name = ConfigItem(
             "GameSignAccount", "Name", "账号组 1", StringValidator()
         )
+        ## GameSignAccount - 是否启用（该用户是否参与签到）
+        self.Enabled = ConfigItem(
+            "GameSignAccount", "Enabled", True, BoolValidator()
+        )
+        ## GameSignAccount - 米游社是否启用
+        self.MiyousheEnabled = ConfigItem(
+            "GameSignAccount", "MiyousheEnabled", True, BoolValidator()
+        )
         ## GameSignAccount - 米游社登录凭证 (DPAPI 加密)
         self.MiyousheToken = ConfigItem(
             "GameSignAccount", "MiyousheToken", "", EncryptValidator()
         )
+        ## GameSignAccount - 库街区是否启用
+        self.KuroEnabled = ConfigItem(
+            "GameSignAccount", "KuroEnabled", True, BoolValidator()
+        )
         ## GameSignAccount - 库街区登录凭证 (DPAPI 加密)
         self.KuroToken = ConfigItem(
             "GameSignAccount", "KuroToken", "", EncryptValidator()
+        )
+        ## GameSignAccount - 森空岛是否启用
+        self.SklandEnabled = ConfigItem(
+            "GameSignAccount", "SklandEnabled", True, BoolValidator()
         )
         ## GameSignAccount - 森空岛登录凭证 (DPAPI 加密)
         self.SklandToken = ConfigItem(
@@ -2561,6 +2577,18 @@ class ToolsConfig(ConfigBase):
         ## GameSign - 签到窗口终点 (HH:mm)
         self.GameSign_WindowEnd = ConfigItem(
             "GameSign", "WindowEnd", "22:00", DateTimeValidator("%H:%M")
+        )
+        ## GameSign - 启动时运行
+        self.GameSign_RunOnStartup = ConfigItem(
+            "GameSign", "RunOnStartup", False, BoolValidator()
+        )
+        ## GameSign - 定时运行
+        self.GameSign_ScheduledRun = ConfigItem(
+            "GameSign", "ScheduledRun", True, BoolValidator()
+        )
+        ## GameSign - 是否立即开始
+        self.GameSign_AutoStart = ConfigItem(
+            "GameSign", "AutoStart", False, BoolValidator()
         )
         ## GameSign - 账号组 (MultipleConfig)
         self.GameSign_Accounts = MultipleConfig([GameSignAccountGroup])
