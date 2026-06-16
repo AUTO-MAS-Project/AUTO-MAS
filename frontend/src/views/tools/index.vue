@@ -105,6 +105,24 @@ const updateStatus = async () => {
     }
 }
 
+// 签到完成后立即刷新配置（不等轮询）
+const refreshGameSignConfig = async () => {
+    try {
+        const response = await Service.getToolsApiToolsGetPost()
+        if (response.code !== 200 || !response.data) return
+        const data = response.data
+        if (data.GameSign?.Status) {
+            toolsConfig.GameSign!.Status = data.GameSign.Status
+        }
+        if (data.GameSign?.Result) {
+            toolsConfig.GameSign!.Result = data.GameSign.Result
+            editingConfig.GameSign!.Result = data.GameSign.Result
+        }
+    } catch {
+        // 静默失败
+    }
+}
+
 // 启动状态轮询
 const startStatusPolling = () => {
     if (pollTimer) {
@@ -147,9 +165,6 @@ const loadTools = async () => {
                 NotifyEnabled: false,
                 WindowStart: '08:00',
                 WindowEnd: '22:00',
-                RunOnStartup: false,
-                ScheduledRun: true,
-                AutoStart: false,
                 LastSignDate: '2000-01-01',
                 ScheduledTime: '',
                 Status: '-',
@@ -313,7 +328,8 @@ onUnmounted(() => {
                     </template>
                     <TabGameSign v-if="editingConfig.GameSign" :config="editingConfig.GameSign"
                         :disabled="loading" :on-field-change="handleGameSignFieldChange"
-                        :on-select-visible-change="handleSelectVisibleChange" />
+                        :on-select-visible-change="handleSelectVisibleChange"
+                        :on-refresh-config="refreshGameSignConfig" />
                 </a-tab-pane>
             </a-tabs>
         </div>
