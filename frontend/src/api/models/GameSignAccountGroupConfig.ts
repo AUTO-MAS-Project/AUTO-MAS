@@ -11,13 +11,29 @@ export type GameSignAccountGroupConfig = {
      */
     Name?: (string | null);
     /**
+     * 是否启用
+     */
+    Enabled?: (boolean | null);
+    /**
+     * 米游社是否启用
+     */
+    MiyousheEnabled?: (boolean | null);
+    /**
      * 米游社登录凭证
      */
     MiyousheToken?: (string | null);
     /**
+     * 库街区是否启用
+     */
+    KuroEnabled?: (boolean | null);
+    /**
      * 库街区登录凭证
      */
     KuroToken?: (string | null);
+    /**
+     * 森空岛是否启用
+     */
+    SklandEnabled?: (boolean | null);
     /**
      * 森空岛登录凭证
      */
