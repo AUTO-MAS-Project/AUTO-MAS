@@ -40,10 +40,16 @@ async def run_all_sign_in() -> list[dict]:
 
     for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
         account_name = account.get("GameSignAccount", "Name") or "默认账号"
+        account_enabled = account.get("GameSignAccount", "Enabled")
+
+        # 跳过已禁用的用户
+        if not account_enabled:
+            continue
 
         # 森空岛签到（方舟 + 终末地）
         skland_token = account.get("GameSignAccount", "SklandToken")
-        if skland_token:
+        skland_enabled = account.get("GameSignAccount", "SklandEnabled")
+        if skland_token and skland_enabled:
             logger.info(f"[{account_name}] 开始森空岛签到")
             try:
                 from .skland import skland_sign_in
@@ -123,7 +129,8 @@ async def run_all_sign_in() -> list[dict]:
 
         # 米游社签到
         miyoushe_token = account.get("GameSignAccount", "MiyousheToken")
-        if miyoushe_token:
+        miyoushe_enabled = account.get("GameSignAccount", "MiyousheEnabled")
+        if miyoushe_token and miyoushe_enabled:
             logger.info(f"[{account_name}] 开始米游社签到")
             try:
                 from .miyoushe import miyoushe_sign_in
@@ -143,7 +150,8 @@ async def run_all_sign_in() -> list[dict]:
 
         # 库街区签到
         kuro_token = account.get("GameSignAccount", "KuroToken")
-        if kuro_token:
+        kuro_enabled = account.get("GameSignAccount", "KuroEnabled")
+        if kuro_token and kuro_enabled:
             logger.info(f"[{account_name}] 开始库街区签到")
             try:
                 from .kuro import kuro_sign_in
