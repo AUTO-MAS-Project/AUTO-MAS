@@ -20,6 +20,7 @@
                     class="script-logo" />
                   <img v-else-if="script.type === 'M9A'" src="@/assets/M9A.png" alt="M9A" class="script-logo" />
                   <img v-else-if="script.type === 'Okww'" src="@/assets/ok-ww.ico" alt="ok-ww" class="script-logo" />
+                  <img v-else-if="script.type === 'OkNte'" src="@/assets/ok-nte.ico" alt="ok-nte" class="script-logo" />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
@@ -34,6 +35,8 @@
                           ? 'cyan'
                           : script.type === 'Okww'
                             ? 'blue'
+                            : script.type === 'OkNte'
+                              ? 'blue'
                             : 'green'
                     " class="script-type">
                     {{ getScriptTypeLabel(script.type) }}
@@ -186,8 +189,8 @@
                             {{ tag.text }}
                           </a-tag>
                         </div>
-                        <!-- 用户详细信息 - ok-ww 脚本用户 -->
-                        <div v-if="script.type === 'Okww'" class="user-info-tags">
+                        <!-- 用户详细信息 - ok-script 脚本用户 -->
+                        <div v-if="script.type === 'Okww' || script.type === 'OkNte'" class="user-info-tags">
                           <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
                             :title="tag.text" class="info-tag" :color="tag.color">
                             {{ tag.text }}
@@ -446,6 +449,7 @@ const handleToggleUserStatus = (user: User) => {
 
 const getScriptTypeLabel = (type: Script['type']) => {
   if (type === 'Okww') return 'ok-ww'
+  if (type === 'OkNte') return 'ok-nte'
   return type
 }
 

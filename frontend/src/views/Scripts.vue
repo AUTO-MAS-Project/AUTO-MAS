@@ -229,6 +229,12 @@
                 alt="ok-ww"
                 class="type-icon"
               />
+              <img
+                v-else-if="script.type === 'OkNte'"
+                src="@/assets/ok-nte.ico"
+                alt="ok-nte"
+                class="type-icon"
+              />
               <img v-else src="@/assets/AUTO-MAS.ico" alt="General" class="type-icon" />
             </div>
             <div class="script-info">
@@ -236,7 +242,10 @@
               <div class="script-meta">
                 <span
                   class="script-type"
-                  :class="{ 'script-type-okww': script.type === 'Okww' }"
+                  :class="{
+                    'script-type-okww': script.type === 'Okww',
+                    'script-type-oknte': script.type === 'OkNte',
+                  }"
                 >{{
                   script.type === 'MAA'
                     ? 'MAA脚本'
@@ -248,6 +257,8 @@
                           ? 'M9A脚本'
                           : script.type === 'Okww'
                             ? 'ok-ww脚本'
+                            : script.type === 'OkNte'
+                              ? 'ok-nte脚本'
                           : '通用脚本'
                 }}</span>
                 <span class="script-users">
@@ -332,6 +343,17 @@
             <div class="type-info">
               <div class="type-title">ok-ww脚本</div>
               <div class="type-description">ok-script 线专项：通过 -t/-e 启动参数运行任务</div>
+            </div>
+          </div>
+        </a-radio-button>
+        <a-radio-button value="OkNte" class="type-option">
+          <div class="type-content">
+            <div class="type-logo-container">
+              <img src="@/assets/ok-nte.ico" alt="ok-nte" class="type-logo" />
+            </div>
+            <div class="type-info">
+              <div class="type-title">ok-nte脚本</div>
+              <div class="type-description">异环 OK-NTE 自动化脚本，支持 -t/-e 任务启动</div>
             </div>
           </div>
         </a-radio-button>
@@ -747,6 +769,8 @@ const handleConfirmAddScript = async () => {
                 ? 'm9a'
                 : selectedType.value === 'Okww'
                   ? 'okww'
+                  : selectedType.value === 'OkNte'
+                    ? 'oknte'
                 : 'general'
       router.push({
         path: `/scripts/${result.scriptId}/edit/${editPath}`,
@@ -872,6 +896,8 @@ const handleEditScript = (script: Script) => {
     router.push(`/scripts/${script.id}/edit/m9a`)
   } else if (script.type === 'Okww') {
     router.push(`/scripts/${script.id}/edit/okww`)
+  } else if (script.type === 'OkNte') {
+    router.push(`/scripts/${script.id}/edit/oknte`)
   } else {
     router.push(`/scripts/${script.id}/edit/general`)
   }
@@ -896,6 +922,8 @@ const handleAddUser = (script: Script) => {
     router.push(`/scripts/${script.id}/users/add/m9a`)
   } else if (script.type === 'Okww') {
     router.push(`/scripts/${script.id}/users/add/okww`)
+  } else if (script.type === 'OkNte') {
+    router.push(`/scripts/${script.id}/users/add/oknte`)
   } else {
     router.push(`/scripts/${script.id}/users/add/general`)
   }
@@ -916,6 +944,8 @@ const handleEditUser = (user: User) => {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/m9a`)
     } else if (script.type === 'Okww') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/okww`)
+    } else if (script.type === 'OkNte') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/oknte`)
     } else {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
     }
@@ -2035,6 +2065,10 @@ const handlePassCheckUser = async (user: User) => {
 }
 
 .script-type-okww {
+  color: var(--ant-color-primary);
+}
+
+.script-type-oknte {
   color: var(--ant-color-primary);
 }
 

@@ -32,6 +32,7 @@ from .config import (
     MaaEndConfig,
     M9AConfig,
     OkwwConfig,
+    OkNteConfig,
 )
 from app.services import System
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
@@ -43,6 +44,7 @@ from app.task import (
     MaaEndManager,
     M9AManager,
     OkwwManager,
+    OkNteManager,
 )
 from app.utils.constants import POWER_SIGN_MAP
 
@@ -174,6 +176,8 @@ class Task(TaskExecuteBase):
                 task_item = GeneralManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], OkwwConfig):
                 task_item = OkwwManager(script_item)
+            elif isinstance(Config.ScriptConfig[current_script_uid], OkNteConfig):
+                task_item = OkNteManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], MaaEndConfig):
                 task_item = MaaEndManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], M9AConfig):
