@@ -229,6 +229,12 @@
                 alt="ok-ww"
                 class="type-icon"
               />
+              <img
+                v-else-if="script.type === 'HSR'"
+                src="@/assets/hsr.png"
+                alt="HSR"
+                class="type-icon"
+              />
               <img v-else src="@/assets/AUTO-MAS.ico" alt="General" class="type-icon" />
             </div>
             <div class="script-info">
@@ -332,6 +338,19 @@
             <div class="type-info">
               <div class="type-title">ok-ww脚本</div>
               <div class="type-description">ok-script 线专项：通过 -t/-e 启动参数运行任务</div>
+            </div>
+          </div>
+        </a-radio-button>
+        <a-radio-button value="HSR" class="type-option">
+          <div class="type-content">
+            <div class="type-logo-container">
+              <img src="@/assets/hsr.png" alt="HSR" class="type-logo" />
+            </div>
+            <div class="type-info">
+              <div class="type-title">HSR 脚本</div>
+              <div class="type-description">
+                崩坏：星穹铁道 三月七 / SRA 双脚本适配
+              </div>
             </div>
           </div>
         </a-radio-button>
@@ -747,7 +766,9 @@ const handleConfirmAddScript = async () => {
                 ? 'm9a'
                 : selectedType.value === 'Okww'
                   ? 'okww'
-                : 'general'
+                  : selectedType.value === 'HSR'
+                    ? 'hsr'
+                  : 'general'
       router.push({
         path: `/scripts/${result.scriptId}/edit/${editPath}`,
         state: {
@@ -872,6 +893,8 @@ const handleEditScript = (script: Script) => {
     router.push(`/scripts/${script.id}/edit/m9a`)
   } else if (script.type === 'Okww') {
     router.push(`/scripts/${script.id}/edit/okww`)
+  } else if (script.type === 'HSR') {
+    router.push(`/scripts/${script.id}/edit/hsr`)
   } else {
     router.push(`/scripts/${script.id}/edit/general`)
   }
@@ -896,6 +919,8 @@ const handleAddUser = (script: Script) => {
     router.push(`/scripts/${script.id}/users/add/m9a`)
   } else if (script.type === 'Okww') {
     router.push(`/scripts/${script.id}/users/add/okww`)
+  } else if (script.type === 'HSR') {
+    router.push(`/scripts/${script.id}/users/add/hsr`)
   } else {
     router.push(`/scripts/${script.id}/users/add/general`)
   }
@@ -916,6 +941,8 @@ const handleEditUser = (user: User) => {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/m9a`)
     } else if (script.type === 'Okww') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/okww`)
+    } else if (script.type === 'HSR') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/hsr`)
     } else {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
     }
@@ -1360,12 +1387,9 @@ const handleToggleUserStatus = async (user: User) => {
     }
     const newStatus = !user.Info.Status
 
-    // 调用 updateUser API
+    // 后端是单字段 set：只发送 Status，避免 Info.Tag 等虚拟字段混入触发后端报错
     const result = await updateUser(script.id, user.id, {
-      Info: {
-        ...user.Info,
-        Status: newStatus,
-      },
+      Info: { Status: newStatus },
     })
 
     if (result) {

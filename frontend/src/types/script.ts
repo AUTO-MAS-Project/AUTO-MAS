@@ -1,5 +1,8 @@
 // 脚本类型定义
 import type {
+  HSRConfig,
+  HSRConfig_TaskMapping,
+  HSRUserConfig,
   MaaConfig,
   GeneralConfig,
   OkwwConfig,
@@ -15,7 +18,7 @@ import type {
   SanityTaskType,
 } from '@/utils/maaEndProtocolSpace'
 
-export type ScriptType = 'MAA' | 'General' | 'Okww' | 'SRC' | 'MaaEnd' | 'M9A'
+export type ScriptType = 'MAA' | 'General' | 'Okww' | 'SRC' | 'MaaEnd' | 'M9A' | 'HSR'
 
 export type OkwwScriptConfig = OkwwConfig
 // MAA脚本配置
@@ -166,12 +169,39 @@ export interface M9AScriptConfig {
   }
 }
 
+// HSR 脚本配置（后端已通过 HSRConfig OpenAPI 暴露类型）
+export type HSRScriptConfig = HSRConfig
+
+// HSR TaskMapping 默认值（Daily / ReceiveRewards / DivergentUniverse / CurrencyWars 默认走 SRA）
+export const DEFAULT_HSR_TASK_MAPPING: HSRConfig_TaskMapping = {
+  Daily: 'SRA',
+  ReceiveRewards: 'SRA',
+  DivergentUniverse: 'SRA',
+  CurrencyWars: 'SRA',
+}
+
+/**
+ * 解析 HSR 单个模块的执行脚本。
+ * current 可用且在 available 中时优先保留，否则回退到仍可用的脚本。
+ */
+export function resolveTaskMappingValue(
+  current: string | undefined,
+  available: Set<'M7A' | 'SRA'>,
+): 'M7A' | 'SRA' | undefined {
+  if (current && available.has(current as 'M7A' | 'SRA')) {
+    return current as 'M7A' | 'SRA'
+  }
+  if (available.has('M7A')) return 'M7A'
+  if (available.has('SRA')) return 'SRA'
+  return undefined
+}
+
 // 脚本基础信息
 export interface Script {
   id: string
   type: ScriptType
   name: string
-  config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig | M9AConfig
+  config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig | M9AConfig | HSRConfig
   users: User[]
 }
 
@@ -259,13 +289,27 @@ export interface AddScriptResponse {
   status: string
   message: string
   scriptId: string
-  data: MAAScriptConfig | GeneralScriptConfig | OkwwScriptConfig | SRCScriptConfig | MaaEndScriptConfig | M9AScriptConfig
+  data:
+    | MAAScriptConfig
+    | GeneralScriptConfig
+    | OkwwScriptConfig
+    | SRCScriptConfig
+    | MaaEndScriptConfig
+    | M9AScriptConfig
+    | HSRScriptConfig
 }
 
 // 脚本索引项
 export interface ScriptIndexItem {
   uid: string
-  type: 'MaaConfig' | 'GeneralConfig' | 'OkwwConfig' | 'SrcConfig' | 'MaaEndConfig' | 'M9AConfig'
+  type:
+    | 'MaaConfig'
+    | 'GeneralConfig'
+    | 'OkwwConfig'
+    | 'SrcConfig'
+    | 'MaaEndConfig'
+    | 'M9AConfig'
+    | 'HSRConfig'
 }
 
 // 获取脚本API响应
@@ -274,7 +318,16 @@ export interface GetScriptsResponse {
   status: string
   message: string
   index: ScriptIndexItem[]
-  data: Record<string, MAAScriptConfig | GeneralScriptConfig | OkwwScriptConfig | SRCScriptConfig | MaaEndScriptConfig | M9AScriptConfig>
+  data: Record<
+    string,
+    | MAAScriptConfig
+    | GeneralScriptConfig
+    | OkwwScriptConfig
+    | SRCScriptConfig
+    | MaaEndScriptConfig
+    | M9AScriptConfig
+    | HSRScriptConfig
+  >
 }
 
 // 脚本详情（用于前端展示）
@@ -282,7 +335,7 @@ export interface ScriptDetail {
   uid: string
   type: ScriptType
   name: string
-  config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig | M9AConfig
+  config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig | M9AConfig | HSRConfig
   users?: User[]
   createTime?: string
 }
