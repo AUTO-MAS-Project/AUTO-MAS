@@ -49,7 +49,7 @@ router = APIRouter(prefix="/api/tools", tags=["工具设置"])
     status_code=200,
 )
 async def get_tools() -> ToolsGetOut:
-    """查询工具配置"""
+    """获取工具设置"""
 
     try:
         data = await Config.get_tools()
@@ -158,6 +158,7 @@ async def add_game_sign_account() -> GameSignAccountCreateOut:
         raw = await config.toDict()
         flat = raw.get("GameSignAccount", raw)
         data = GameSignAccountGroupConfig(**flat)
+        # 新增账号无需清空结果，因为新账号没有历史结果
     except Exception as e:
         return GameSignAccountCreateOut(
             code=500,
@@ -213,6 +214,18 @@ async def update_game_sign_account(
         flat_data = account.data.model_dump(exclude_unset=True)
         data = {"GameSignAccount": flat_data}
         await Config.update_game_sign_account(account.accountId, data)
+        # Token 变更后只清空该账号的签到结果
+        token_fields = {"MiyousheToken", "KuroToken", "SklandToken"}
+        if token_fields & set(flat_data.keys()):
+            result = Config.ToolsConfig._game_sign_result_data
+            account_uid = str(account.accountId)
+            for platform in list(result.keys()):
+                result[platform] = [
+                    group for group in result[platform]
+                    if group.get("account_uid") != account_uid
+                ]
+                if not result[platform]:
+                    del result[platform]
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
