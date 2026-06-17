@@ -235,13 +235,50 @@ class AutoProxyTask(TaskExecuteBase):
     def _oknte_mas_config_dir(self) -> Path:
         return Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
 
+    def _oknte_source_config_dir(self, mas_config_dir: Path) -> Path | None:
+        candidates = [
+            self.script_config_path,
+            self.script_root_path / "data" / "apps" / "ok-nte" / "working" / "configs",
+            self.script_root_path / "configs",
+        ]
+        for config_dir in candidates:
+            if not config_dir.is_dir():
+                continue
+            with suppress(OSError):
+                if config_dir.resolve() == mas_config_dir.resolve():
+                    continue
+            return config_dir
+        return None
+
+    def _ensure_oknte_mas_config_dir(self) -> Path:
+        mas_config_dir = self._oknte_mas_config_dir()
+        if mas_config_dir.exists() and any(mas_config_dir.iterdir()):
+            return mas_config_dir
+
+        mas_config_dir.mkdir(parents=True, exist_ok=True)
+        if self.script_config.get("Script", "ConfigPathMode") == "File":
+            if not self.script_config_path.is_file():
+                raise FileNotFoundError("OK-NTE 配置文件未初始化，请先设置有效配置路径")
+            shutil.copy(
+                self.script_config_path,
+                mas_config_dir / self.script_config_path.name,
+            )
+            return mas_config_dir
+
+        source_config_dir = self._oknte_source_config_dir(mas_config_dir)
+        if source_config_dir is None:
+            raise FileNotFoundError("OK-NTE 配置目录未初始化，请先设置有效配置路径")
+
+        shutil.copytree(source_config_dir, mas_config_dir, dirs_exist_ok=True)
+        return mas_config_dir
+
     async def set_oknte(self) -> None:
         """将 MAS 侧 OK-NTE 任务配置下发到脚本 working 目录（对齐 General.set_general）。"""
 
         logger.info("开始配置 OK-NTE 运行参数: 自动代理")
         await System.kill_process(self.script_exe_path)
 
-        mas_config_dir = self._oknte_mas_config_dir()
+        mas_config_dir = self._ensure_oknte_mas_config_dir()
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
             tmp_dst = self.script_config_path.with_name(
                 self.script_config_path.name + ".tmp"
@@ -261,6 +298,7 @@ class AutoProxyTask(TaskExecuteBase):
         """将脚本侧配置回写 MAS ConfigFile（对齐 General.update_config）。"""
 
         mas_config_dir = self._oknte_mas_config_dir()
+        mas_config_dir.mkdir(parents=True, exist_ok=True)
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
             shutil.copytree(
                 self.script_config_path, mas_config_dir, dirs_exist_ok=True

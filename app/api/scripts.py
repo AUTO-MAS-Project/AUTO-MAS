@@ -48,8 +48,17 @@ def _okww_config_file_path(config_dir: Path, filename: str) -> Path:
     return config_dir / filename
 
 
+def _oknte_script_config(script_id: str) -> tuple[uuid.UUID, OkNteConfig]:
+    script_uid = uuid.UUID(script_id)
+    script_config = Config.ScriptConfig[script_uid]
+    if not isinstance(script_config, OkNteConfig):
+        raise ValueError("脚本配置类型错误, 不是 OK-NTE 类型")
+    return script_uid, script_config
+
+
 def _oknte_mas_config_dir(script_id: str) -> Path:
-    return Path.cwd() / "data" / script_id / "Default" / "ConfigFile"
+    script_uid, _ = _oknte_script_config(script_id)
+    return Path.cwd() / "data" / str(script_uid) / "Default" / "ConfigFile"
 
 
 def _oknte_config_file_path(config_dir: Path, filename: str) -> Path:
@@ -823,7 +832,7 @@ async def get_oknte_configs_list(script_id: str):
             get_all_config_info, build_fields_for_config, load_oknte_option_labels,
         )
 
-        script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+        _, script_config = _oknte_script_config(script_id)
 
         # 从 ok-nte 安装目录加载翻译 → option_labels
         root_path = script_config.get("Info", "RootPath")
