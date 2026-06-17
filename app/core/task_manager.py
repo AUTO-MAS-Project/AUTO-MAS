@@ -32,6 +32,7 @@ from .config import (
     MaaEndConfig,
     M9AConfig,
     OkwwConfig,
+    HSRConfig,
 )
 from app.services import System
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
@@ -43,6 +44,7 @@ from app.task import (
     MaaEndManager,
     M9AManager,
     OkwwManager,
+    HSRManager,
 )
 from app.utils.constants import POWER_SIGN_MAP
 
@@ -178,6 +180,8 @@ class Task(TaskExecuteBase):
                 task_item = MaaEndManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], M9AConfig):
                 task_item = M9AManager(script_item)
+            elif isinstance(Config.ScriptConfig[current_script_uid], HSRConfig):
+                task_item = HSRManager(script_item)
             else:
                 logger.error(
                     f"不支持的脚本类型: {type(Config.ScriptConfig[current_script_uid]).__name__}"
