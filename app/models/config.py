@@ -185,6 +185,10 @@ class EmulatorConfig(ConfigBase):
         self.Info_MaxWaitTime = ConfigItem(
             "Info", "MaxWaitTime", 300, RangeValidator(1, 9999), legacy_group="Data"
         )
+        ## 关闭 MuMu 时强力清理残留进程
+        self.Info_ForceKillOnClose = ConfigItem(
+            "Info", "ForceKillOnClose", True, BoolValidator()
+        )
 
         super().__init__()
 
@@ -1868,7 +1872,7 @@ class OkwwUserConfig(ConfigBase):
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
         )
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "简洁", OptionsValidator(["简洁", "详细"])
+            "Info", "Mode", "详细", OptionsValidator(["简洁", "详细"])
         )
         self.Info_IfScriptBeforeTask = ConfigItem(
             "Info", "IfScriptBeforeTask", False, BoolValidator()
@@ -2149,15 +2153,6 @@ class OkwwConfig(ConfigBase):
         )
         self.Script_LogTimeFormat = ConfigItem(
             "Script", "LogTimeFormat", "%Y-%m-%d %H:%M:%S,%f"
-        )
-        self.Script_SuccessLog = ConfigItem(
-            "Script", "SuccessLog", "任务执行完成 | task completed"
-        )
-        # ok-ww 日志中更贴近“整场失败”的片段（`|` 分隔）；过宽词易误判，勿照搬通用脚本的 ERROR/异常大包
-        self.Script_ErrorLog = ConfigItem(
-            "Script",
-            "ErrorLog",
-            "connected:False|游戏更新成功, 游戏即将重启|info_set 错误",
         )
 
         ## Game ------------------------------------------------------------

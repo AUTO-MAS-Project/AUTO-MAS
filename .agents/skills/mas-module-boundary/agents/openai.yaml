@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAS Module Boundary"
+  short_description: "Enforce backend boundaries"
+  default_prompt: "Apply module boundary rules for backend layers, including schema/api/core/services/task/utils ownership and dependency direction."

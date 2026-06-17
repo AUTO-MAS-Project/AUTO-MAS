@@ -23,5 +23,9 @@ export type EmulatorConfig_Info = {
      * 最大等待时间（秒）
      */
     MaxWaitTime?: (number | null);
+    /**
+     * 关闭 MuMu 时强力清理残留进程
+     */
+    ForceKillOnClose?: (boolean | null);
 };
 
