@@ -28,6 +28,7 @@ from typing import Any
 from fastapi import APIRouter, Body
 
 from app.core import Config
+from app.models.config import OkNteConfig as RuntimeOkNteConfig
 from app.models.schema import *
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
@@ -48,10 +49,10 @@ def _okww_config_file_path(config_dir: Path, filename: str) -> Path:
     return config_dir / filename
 
 
-def _oknte_script_config(script_id: str) -> tuple[uuid.UUID, OkNteConfig]:
+def _oknte_script_config(script_id: str) -> tuple[uuid.UUID, RuntimeOkNteConfig]:
     script_uid = uuid.UUID(script_id)
     script_config = Config.ScriptConfig[script_uid]
-    if not isinstance(script_config, OkNteConfig):
+    if not isinstance(script_config, RuntimeOkNteConfig):
         raise ValueError("脚本配置类型错误, 不是 OK-NTE 类型")
     return script_uid, script_config
 
