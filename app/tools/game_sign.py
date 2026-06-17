@@ -21,11 +21,35 @@
 
 
 import asyncio
+import time
 
 from app.core import Config
 from app.utils.logger import get_logger
 
 logger = get_logger("游戏社区签到")
+
+
+def _check_system_time() -> bool:
+    """校准系统时间，避免因时间偏差导致签到失败
+
+    Returns:
+        True: 时间正常; False: 偏差过大
+    """
+    try:
+        import httpx
+        resp = httpx.get("http://worldtimeapi.org/api/timezone/Asia/Shanghai", timeout=5)
+        api_time = resp.json().get("unixtime", 0)
+        local_time = time.time()
+        offset = abs(api_time - local_time)
+        if offset > 300:
+            logger.warning(f"系统时间偏差 {offset:.0f} 秒，签到可能失败，请校准系统时间")
+            return False
+        if offset > 30:
+            logger.info(f"系统时间偏差 {offset:.0f} 秒，在可接受范围内")
+        return True
+    except Exception as e:
+        logger.debug(f"时间校准跳过: {e}")
+        return True
 
 
 async def run_all_sign_in() -> list[dict]:
@@ -38,6 +62,9 @@ async def run_all_sign_in() -> list[dict]:
     """
     results = []
 
+    # 时间校准
+    _check_system_time()
+
     for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
         account_name = account.get("GameSignAccount", "Name") or "默认账号"
         account_enabled = account.get("GameSignAccount", "Enabled")
@@ -46,7 +73,7 @@ async def run_all_sign_in() -> list[dict]:
         if not account_enabled:
             continue
 
-        # 森空岛签到（方舟 + 终末地）
+        # 森空岛签到（方舟 + 终末地，一次调用获取两个游戏结果）
         skland_token = account.get("GameSignAccount", "SklandToken")
         skland_enabled = account.get("GameSignAccount", "SklandEnabled")
         if skland_token and skland_enabled:
@@ -54,62 +81,32 @@ async def run_all_sign_in() -> list[dict]:
             try:
                 from .skland import skland_sign_in
 
-                # 方舟签到
-                arknights_results = await skland_sign_in(skland_token, app_code="arknights")
-                for item in arknights_results.get("成功", []):
+                skland_results = await skland_sign_in(skland_token, app_code="all")
+                for item in skland_results.get("成功", []):
                     results.append({
-                        "account": item if "/" in item else f"{item}/森空岛",
-                        "game": "明日方舟",
+                        "account": account_name,
+                        "account_uid": str(uid),
+                        "game": "森空岛",
                         "platform": "森空岛",
                         "status": "成功",
                         "reward": "",
                         "reason": "",
                     })
-                for item in arknights_results.get("重复", []):
+                for item in skland_results.get("重复", []):
                     results.append({
-                        "account": item if "/" in item else f"{item}/森空岛",
-                        "game": "明日方舟",
+                        "account": account_name,
+                        "account_uid": str(uid),
+                        "game": "森空岛",
                         "platform": "森空岛",
                         "status": "已签到",
                         "reward": "",
                         "reason": "",
                     })
-                for item in arknights_results.get("失败", []):
+                for item in skland_results.get("失败", []):
                     results.append({
-                        "account": item if "/" in item else f"{item}/森空岛",
-                        "game": "明日方舟",
-                        "platform": "森空岛",
-                        "status": "失败",
-                        "reward": "",
-                        "reason": "签到失败",
-                    })
-
-                await asyncio.sleep(3)
-
-                # 终末地签到
-                endfield_results = await skland_sign_in(skland_token, app_code="endfield")
-                for item in endfield_results.get("成功", []):
-                    results.append({
-                        "account": item if "/" in item else f"{item}/森空岛",
-                        "game": "终末地",
-                        "platform": "森空岛",
-                        "status": "成功",
-                        "reward": "",
-                        "reason": "",
-                    })
-                for item in endfield_results.get("重复", []):
-                    results.append({
-                        "account": item if "/" in item else f"{item}/森空岛",
-                        "game": "终末地",
-                        "platform": "森空岛",
-                        "status": "已签到",
-                        "reward": "",
-                        "reason": "",
-                    })
-                for item in endfield_results.get("失败", []):
-                    results.append({
-                        "account": item if "/" in item else f"{item}/森空岛",
-                        "game": "终末地",
+                        "account": account_name,
+                        "account_uid": str(uid),
+                        "game": "森空岛",
                         "platform": "森空岛",
                         "status": "失败",
                         "reward": "",
@@ -119,7 +116,8 @@ async def run_all_sign_in() -> list[dict]:
             except Exception as e:
                 logger.error(f"[{account_name}] 森空岛签到异常: {e}")
                 results.append({
-                    "account": "未知/森空岛",
+                    "account": account_name,
+                    "account_uid": str(uid),
                     "game": "森空岛",
                     "platform": "森空岛",
                     "status": "失败",
@@ -136,11 +134,14 @@ async def run_all_sign_in() -> list[dict]:
                 from .miyoushe import miyoushe_sign_in
 
                 miyoushe_results = await miyoushe_sign_in(miyoushe_token)
+                for item in miyoushe_results:
+                    item["account"] = account_name
+                    item["account_uid"] = str(uid)
                 results.extend(miyoushe_results)
             except Exception as e:
                 logger.error(f"[{account_name}] 米游社签到异常: {e}")
                 results.append({
-                    "account": "未知/米游社",
+                    "account": account_name,
                     "game": "米游社",
                     "platform": "米游社",
                     "status": "失败",
@@ -157,11 +158,14 @@ async def run_all_sign_in() -> list[dict]:
                 from .kuro import kuro_sign_in
 
                 kuro_results = await kuro_sign_in(kuro_token)
+                for item in kuro_results:
+                    item["account"] = account_name
+                    item["account_uid"] = str(uid)
                 results.extend(kuro_results)
             except Exception as e:
                 logger.error(f"[{account_name}] 库街区签到异常: {e}")
                 results.append({
-                    "account": "未知/库街区",
+                    "account": account_name,
                     "game": "库街区",
                     "platform": "库街区",
                     "status": "失败",
@@ -181,13 +185,14 @@ def format_sign_results(results: list[dict]) -> dict:
     按平台分组，平台内按别名去重
 
     Returns:
-        {platform: [{account_alias, games: [{game, status, reward, reason}]}]}
+        {platform: [{account_alias, account_uid, games: [{game, status, reward, reason}]}]}
     """
     platforms: dict[str, dict[str, dict]] = {}
 
     for item in results:
         platform = item.get("platform", "未知")
         account = item.get("account", "未知")
+        account_uid = item.get("account_uid", "")
         # 别名 = account 中 '/' 前的部分
         alias = account.split("/")[0] if "/" in account else account
 
@@ -197,6 +202,7 @@ def format_sign_results(results: list[dict]) -> dict:
         if alias not in platforms[platform]:
             platforms[platform][alias] = {
                 "account_alias": alias,
+                "account_uid": account_uid,
                 "games": [],
             }
 
