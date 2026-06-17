@@ -1460,6 +1460,339 @@ class SrcConfig(ConfigBase):
 
         super().__init__()
 
+
+class HSRUserConfig(ConfigBase):
+    """HSR用户配置"""
+
+    related_config: dict[str, MultipleConfig] = {}
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## 用户名称
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
+        ## 是否启用
+        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        ## 用户 ID（账号）
+        self.Info_Id = ConfigItem("Info", "Id", "", EncryptValidator())
+        ## 密码
+        self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
+        ## 游戏服务器
+        self.Info_Server = ConfigItem(
+            "Info",
+            "Server",
+            "CN-Official",
+            OptionsValidator(["CN-Official"]),
+        )
+        ## 剩余天数
+        self.Info_RemainedDay = ConfigItem(
+            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        ## 备注
+        self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        ## 用户标签信息（虚拟字段，供前端显示）
+        self.Info_Tag = ConfigItem(
+            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
+        )
+
+        ## Data ------------------------------------------------------------
+        ## 上次代理日期
+        self.Data_LastProxyDate = ConfigItem(
+            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        ## 代理次数
+        self.Data_ProxyTimes = ConfigItem(
+            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
+        )
+        ## 是否通过检查
+        self.Data_IfPassCheck = ConfigItem("Data", "IfPassCheck", True, BoolValidator())
+        ## 本周是否已完成历战余响
+        self.Data_EchoOfWarCompletedThisWeek = ConfigItem(
+            "Data", "EchoOfWarCompletedThisWeek", False, BoolValidator()
+        )
+        ## 历战余响上次重置 ISO 周（形如 "2025-W23"）
+        self.Data_EchoOfWarLastResetWeek = ConfigItem(
+            "Data", "EchoOfWarLastResetWeek", "2000-W01"
+        )
+        ## 历战余响最近一次完成日期
+        self.Data_EchoOfWarLastCompletionDate = ConfigItem(
+            "Data", "EchoOfWarLastCompletionDate", "2000-01-01",
+            DateTimeValidator("%Y-%m-%d"),
+        )
+        ## 周常（差分宇宙/货币战争）最近一次完成日期
+        self.Data_WeeklyLastCompletionDate = ConfigItem(
+            "Data", "WeeklyLastCompletionDate", "2000-01-01",
+            DateTimeValidator("%Y-%m-%d"),
+        )
+        ## 本周是否已完成周常（仅依据 Data 字段判断）
+        self.Data_WeeklyCompletedThisWeek = ConfigItem(
+            "Data", "WeeklyCompletedThisWeek", False, BoolValidator()
+        )
+        ## 周常上次重置 ISO 周（形如 "2025-W23"）
+        self.Data_WeeklyLastResetWeek = ConfigItem(
+            "Data", "WeeklyLastResetWeek", "2000-W01"
+        )
+        ## HSR 三深渊月度（每月一次）—— 三深渊最近一次完成日期
+        self.Data_AbyssLastCompletionDate = ConfigItem(
+            "Data", "AbyssLastCompletionDate", "2000-01-01",
+            DateTimeValidator("%Y-%m-%d"),
+        )
+        ## HSR 三深渊月度（每月一次）—— 本月是否已完成三深渊（仅依据 Data 字段判断）
+        self.Data_AbyssCompletedThisMonth = ConfigItem(
+            "Data", "AbyssCompletedThisMonth", False, BoolValidator()
+        )
+        ## HSR 三深渊月度（每月一次）—— 三深渊上次重置自然月（形如 "2025-06"）
+        self.Data_AbyssLastResetMonth = ConfigItem(
+            "Data", "AbyssLastResetMonth", "2000-01"
+        )
+        ## TaskSwitch ------------------------------------------------------
+        ## 模块执行开关
+        self.TaskSwitch_Daily = ConfigItem("TaskSwitch", "Daily", True, BoolValidator())
+        self.TaskSwitch_ReceiveRewards = ConfigItem(
+            "TaskSwitch", "ReceiveRewards", True, BoolValidator()
+        )
+        self.TaskSwitch_DivergentUniverse = ConfigItem(
+            "TaskSwitch", "DivergentUniverse", False, BoolValidator()
+        )
+        self.TaskSwitch_CurrencyWars = ConfigItem(
+            "TaskSwitch", "CurrencyWars", False, BoolValidator()
+        )
+        self.TaskSwitch_ForgottenHall = ConfigItem(
+            "TaskSwitch", "ForgottenHall", False, BoolValidator()
+        )
+
+        ## Stage -----------------------------------------------------------
+        ## 关卡通道
+        self.Stage_Channel = ConfigItem(
+            "Stage",
+            "Channel",
+            "CalyxGolden",
+            OptionsValidator(["CalyxGolden", "CalyxCrimson", "Relic", "Ornament"]),
+        )
+        ## 主刷关卡的脚本原生字段 JSON（SRA: id+level；M7A: instance_type+name）
+        self.Stage_ScriptStage = ConfigItem(
+            "Stage", "ScriptStage", "{ }", JSONValidator()
+        )
+        ## 历战余响的脚本原生字段 JSON
+        self.Stage_ScriptEchoOfWar = ConfigItem(
+            "Stage", "ScriptEchoOfWar", "{ }", JSONValidator()
+        )
+
+        ## TaskOpt ---------------------------------------------------------
+        ## 历战余响开始刷的星期（周一 ~ 周日）
+        self.TaskOpt_EchoOfWarWeekday = ConfigItem(
+            "TaskOpt", "EchoOfWarWeekday", "Monday",
+            OptionsValidator(
+                ["Monday", "Tuesday", "Wednesday", "Thursday",
+                 "Friday", "Saturday", "Sunday"]
+            ),
+        )
+
+        ## Abyss (三深渊) ---------------------------------------------------
+        ## 三深渊快照集合（从 M7A config.yaml 导入的 JSON 对象）
+        self.Abyss_Snapshots = ConfigItem("Abyss", "Snapshots", "{}", JSONValidator())
+
+        ## Notify ----------------------------------------------------------
+        ## 是否启用通知
+        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否发送统计信息
+        self.Notify_IfSendStatistic = ConfigItem(
+            "Notify", "IfSendStatistic", False, BoolValidator()
+        )
+        ## 是否发送邮件
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
+        ## 收件地址
+        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否启用 Server 酱
+        self.Notify_IfServerChan = ConfigItem(
+            "Notify", "IfServerChan", False, BoolValidator()
+        )
+        ## Server 酱密钥
+        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 自定义 Webhook 列表
+        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
+
+        super().__init__()
+
+    def getTags(self) -> str:
+        """生成 HSR 用户标签列表，返回JSON字符串格式的TagItem列表。"""
+        tags: list[dict] = []
+
+        # 人工排查状态标签
+        if not self.get("Data", "IfPassCheck"):
+            tags.append({"text": "人工排查未通过", "color": "red"})
+
+        server = self.get("Info", "Server")
+        server_label_map = {"CN-Official": "官服"}
+        server_label = server_label_map.get(server, server or "未知")
+        tags.append({"text": f"服务器：{server_label}", "color": "blue"})
+
+        # 日常代理标签（使用东4区时间）
+        if (
+            datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
+            == datetime.now(tz=UTC4).date()
+        ):
+            tags.append(
+                {
+                    "text": f"日常：已代理{self.get('Data', 'ProxyTimes')}次",
+                    "color": "green",
+                }
+            )
+        else:
+            tags.append({"text": "日常：未代理", "color": "orange"})
+
+        # 剩余天数标签
+        remained_day = self.get("Info", "RemainedDay")
+        if remained_day == -1:
+            tag_color = "gold"
+        elif remained_day == 0:
+            tag_color = "red"
+        elif remained_day <= 3:
+            tag_color = "orange"
+        elif remained_day <= 7:
+            tag_color = "yellow"
+        elif remained_day <= 30:
+            tag_color = "blue"
+        else:
+            tag_color = "green"
+        tags.append(
+            {
+                "text": (
+                    f"剩余天数：{remained_day}天"
+                    if remained_day >= 0
+                    else "剩余天数：无期限"
+                ),
+                "color": tag_color,
+            }
+        )
+
+        now = datetime.now(tz=UTC8)
+        iso_year, iso_week, _ = now.isocalendar()
+        current_week = f"{iso_year:04d}-W{iso_week:02d}"
+        current_month = now.strftime("%Y-%m")
+
+        eow_done = (
+            bool(self.get("Data", "EchoOfWarCompletedThisWeek"))
+            and self.get("Data", "EchoOfWarLastResetWeek") == current_week
+        )
+        tags.append(
+            {
+                "text": "历战余响：已完成" if eow_done else "历战余响：未完成",
+                "color": "green" if eow_done else "orange",
+            }
+        )
+
+        weekly_done = (
+            bool(self.get("Data", "WeeklyCompletedThisWeek"))
+            and self.get("Data", "WeeklyLastResetWeek") == current_week
+        )
+        du_on = bool(self.get("TaskSwitch", "DivergentUniverse"))
+        cw_on = bool(self.get("TaskSwitch", "CurrencyWars"))
+        if weekly_done:
+            if du_on:
+                weekly_text, weekly_color = "差分宇宙 已完成", "green"
+            elif cw_on:
+                weekly_text, weekly_color = "货币战争 已完成", "green"
+            else:
+                weekly_text, weekly_color = "周常 已完成", "green"
+        else:
+            weekly_text, weekly_color = "周常：未完成", "orange"
+        tags.append({"text": weekly_text, "color": weekly_color})
+
+        abyss_done = (
+            bool(self.get("Data", "AbyssCompletedThisMonth"))
+            and self.get("Data", "AbyssLastResetMonth") == current_month
+        )
+        tags.append(
+            {
+                "text": "三深渊：已完成" if abyss_done else "三深渊：未完成",
+                "color": "green" if abyss_done else "orange",
+            }
+        )
+
+        notes = self.get("Info", "Notes")
+        tags.append(
+            {
+                "text": (
+                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
+                ),
+                "color": "pink",
+            }
+        )
+
+        return json.dumps(tags, ensure_ascii=False)
+
+
+class HSRConfig(ConfigBase):
+    """HSR配置"""
+
+    related_config: dict[str, MultipleConfig] = {}
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## HSR 脚本名称
+        self.Info_Name = ConfigItem("Info", "Name", "新 HSR 脚本")
+        ## M7A 路径
+        self.Info_M7APath = ConfigItem("Info", "M7APath", "", FolderValidator())
+        ## SRA 路径
+        self.Info_SRAPath = ConfigItem("Info", "SRAPath", "", FolderValidator())
+
+        ## Game ------------------------------------------------------------
+        ## 游戏路径
+        self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
+        ## 游戏启动参数
+        self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
+        ## 等待时间（秒）
+        self.Game_WaitTime = ConfigItem(
+            "Game", "WaitTime", 60, RangeValidator(0, 9999)
+        )
+
+        ## Run -------------------------------------------------------------
+        ## 失败任务最大尝试次数
+        self.Run_RunTimesLimit = ConfigItem(
+            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
+        )
+        ## 日常任务超时限制（分钟）
+        self.Run_DailyTimeLimit = ConfigItem(
+            "Run", "DailyTimeLimit", 20, RangeValidator(1, 9999)
+        )
+        ## 周常任务超时限制（分钟）
+        self.Run_WeeklyTimeLimit = ConfigItem(
+            "Run", "WeeklyTimeLimit", 60, RangeValidator(1, 9999)
+        )
+        ## 月常任务超时限制（分钟）
+        self.Run_MonthlyTimeLimit = ConfigItem(
+            "Run", "MonthlyTimeLimit", 60, RangeValidator(1, 9999)
+        )
+        ## 低性能兼容模式（仅三月七差分宇宙使用，映射到 weekly_divergent_stable_mode）
+        self.Run_LowPerformanceMode = ConfigItem(
+            "Run", "LowPerformanceMode", False, BoolValidator()
+        )
+        ## TaskMapping -----------------------------------------------------
+        ## 模块脚本分配（延迟导入以避免循环依赖）
+        from app.task.HSR.task_mapping import HSR_TASK_MODULES as _HSR_TASK_MODULES
+
+        for module in _HSR_TASK_MODULES:
+            if module.key == "ForgottenHall":
+                continue
+            self.__setattr__(
+                f"TaskMapping_{module.key}",
+                ConfigItem(
+                    "TaskMapping",
+                    module.key,
+                    module.default_script,
+                    OptionsValidator(list(module.supported_scripts)),
+                ),
+            )
+
+        self.UserData = MultipleConfig([HSRUserConfig])
+
+        super().__init__()
+
+
 class M9AUserConfig(ConfigBase):
     """M9A用户配置"""
 
@@ -2462,7 +2795,7 @@ class GlobalConfig(ConfigBase):
         self.PlanConfig = MultipleConfig([MaaPlanConfig])
         ## 脚本配置列表
         self.ScriptConfig = MultipleConfig(
-            [MaaConfig, MaaEndConfig, SrcConfig, M9AConfig, GeneralConfig, OkwwConfig]
+            [MaaConfig, MaaEndConfig, SrcConfig, M9AConfig, GeneralConfig, OkwwConfig, HSRConfig]
         )
         ## 队列配置列表
         self.QueueConfig = MultipleConfig([QueueConfig])
@@ -2549,5 +2882,6 @@ CLASS_BOOK = {
     "M9A": M9AConfig,
     "General": GeneralConfig,
     "Okww": OkwwConfig,
+    "HSR": HSRConfig,
 }
 """配置类映射表"""

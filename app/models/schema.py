@@ -331,6 +331,7 @@ class ScriptIndexItem(BaseModel):
         "SrcConfig",
         "MaaEndConfig",
         "M9AConfig",
+        "HSRConfig",
     ] = Field(
         ..., description="配置类型"
     )
@@ -345,6 +346,7 @@ class UserIndexItem(BaseModel):
         "SrcUserConfig",
         "MaaEndUserConfig",
         "M9AUserConfig",
+        "HSRUserConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -1024,6 +1026,219 @@ class SrcConfig(BaseModel):
     Run: Optional[SrcConfig_Run] = Field(default=None, description="脚本运行配置")
 
 
+class HSRConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="HSR 脚本名称")
+    M7APath: Optional[str] = Field(default=None, description="M7A 路径")
+    SRAPath: Optional[str] = Field(default=None, description="SRA 路径")
+
+
+class HSRConfig_Game(BaseModel):
+    Path: Optional[str] = Field(default=None, description="游戏路径")
+    Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
+    WaitTime: Optional[int] = Field(default=None, description="等待时间（秒）")
+
+
+class HSRConfig_Run(BaseModel):
+    RunTimesLimit: Optional[int] = Field(default=None, description="失败任务最大尝试次数")
+    DailyTimeLimit: Optional[int] = Field(default=None, description="日常任务超时限制（分钟）")
+    WeeklyTimeLimit: Optional[int] = Field(default=None, description="周常任务超时限制（分钟）")
+    MonthlyTimeLimit: Optional[int] = Field(default=None, description="月常任务超时限制（分钟）")
+    LowPerformanceMode: Optional[bool] = Field(default=None, description="低性能兼容模式（仅三月七差分宇宙）")
+
+
+class HSRConfig_TaskMapping(BaseModel):
+    Daily: Optional[Literal["M7A", "SRA"]] = Field(
+        default=None, description="日常模块执行脚本"
+    )
+    ReceiveRewards: Optional[Literal["M7A", "SRA"]] = Field(
+        default=None, description="领取奖励模块执行脚本"
+    )
+    DivergentUniverse: Optional[Literal["M7A", "SRA"]] = Field(
+        default=None, description="差分宇宙模块执行脚本"
+    )
+    CurrencyWars: Optional[Literal["M7A", "SRA"]] = Field(
+        default=None, description="货币战争模块执行脚本"
+    )
+
+
+class HSRConfig(BaseModel):
+    Info: Optional[HSRConfig_Info] = Field(default=None, description="脚本基础信息")
+    Game: Optional[HSRConfig_Game] = Field(default=None, description="游戏配置")
+    Run: Optional[HSRConfig_Run] = Field(default=None, description="运行配置")
+    TaskMapping: Optional[HSRConfig_TaskMapping] = Field(
+        default=None, description="模块脚本分配"
+    )
+
+
+class HSRUserConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="用户名称")
+    Status: Optional[bool] = Field(default=None, description="是否启用")
+    Id: Optional[str] = Field(default=None, description="用户ID（账号）")
+    Password: Optional[str] = Field(default=None, description="密码")
+    Server: Optional[Literal["CN-Official"]] = Field(
+        default=None, description="游戏服务器"
+    )
+    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    Notes: Optional[str] = Field(default=None, description="备注")
+    Tag: Optional[str] = Field(default=None, description="用户标签列表")
+
+
+class HSRUserConfig_Data(BaseModel):
+    LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
+    ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
+    IfPassCheck: Optional[bool] = Field(default=None, description="是否通过检查")
+    # 历战余响
+    EchoOfWarCompletedThisWeek: Optional[bool] = Field(
+        default=None, description="本周是否已完成历战余响"
+    )
+    EchoOfWarLastResetWeek: Optional[str] = Field(
+        default=None, description="历战余响上次重置 ISO 周（形如 2025-W23）"
+    )
+    EchoOfWarLastCompletionDate: Optional[str] = Field(
+        default=None, description="历战余响最近一次完成日期"
+    )
+    # 周常（差分宇宙/货币战争）
+    WeeklyLastCompletionDate: Optional[str] = Field(
+        default=None, description="周常最近一次完成日期"
+    )
+    WeeklyCompletedThisWeek: Optional[bool] = Field(
+        default=None, description="本周是否已完成周常"
+    )
+    WeeklyLastResetWeek: Optional[str] = Field(
+        default=None, description="周常上次重置 ISO 周（形如 2025-W23）"
+    )
+    # HSR 三深渊月度（每月一次）
+    AbyssCompletedThisMonth: Optional[bool] = Field(
+        default=None, description="本月是否已完成三深渊"
+    )
+    AbyssLastResetMonth: Optional[str] = Field(
+        default=None, description="三深渊上次重置自然月（形如 2025-06）"
+    )
+    AbyssLastCompletionDate: Optional[str] = Field(
+        default=None, description="三深渊最近一次完成日期"
+    )
+
+
+class HSRUserConfig_TaskSwitch(BaseModel):
+    Daily: Optional[bool] = Field(default=None, description="日常模块开关")
+    ReceiveRewards: Optional[bool] = Field(default=None, description="领取奖励模块开关")
+    DivergentUniverse: Optional[bool] = Field(
+        default=None, description="差分宇宙模块开关"
+    )
+    CurrencyWars: Optional[bool] = Field(
+        default=None, description="货币战争模块开关"
+    )
+    ForgottenHall: Optional[bool] = Field(
+        default=None, description="三深渊模块开关"
+    )
+
+
+class HSRUserConfig_Stage(BaseModel):
+    Channel: Optional[
+        Literal["CalyxGolden", "CalyxCrimson", "Relic", "Ornament"]
+    ] = Field(
+        default=None, description="体力关卡通道"
+    )
+    ScriptStage: Optional[str] = Field(
+        default=None, description="主刷关卡脚本原生字段 JSON"
+    )
+    ScriptEchoOfWar: Optional[str] = Field(
+        default=None, description="历战余响脚本原生字段 JSON"
+    )
+
+
+class HSRUserConfig_TaskOpt(BaseModel):
+    # 历战余响开始刷的星期
+    EchoOfWarWeekday: Optional[
+        Literal["Monday", "Tuesday", "Wednesday", "Thursday",
+                "Friday", "Saturday", "Sunday"]
+    ] = Field(
+        default=None, description="历战余响开始刷的星期（周一 ~ 周日）"
+    )
+
+
+class HSRUserConfig_Notify(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
+    IfSendStatistic: Optional[bool] = Field(
+        default=None, description="是否发送统计信息"
+    )
+    IfSendMail: Optional[bool] = Field(default=None, description="是否发送邮件")
+    ToAddress: Optional[str] = Field(default=None, description="收件地址")
+    IfServerChan: Optional[bool] = Field(default=None, description="是否启用 Server 酱")
+    ServerChanKey: Optional[str] = Field(default=None, description="Server 酱密钥")
+
+
+class HSRUserConfig_Abyss(BaseModel):
+    """三深渊配置快照"""
+    Snapshots: Optional[str] = Field(
+        default=None, description="三深渊快照集合（JSON，from M7A config.yaml）"
+    )
+
+
+class HSRUserConfig(BaseModel):
+    Info: Optional[HSRUserConfig_Info] = Field(default=None, description="基础信息")
+    Data: Optional[HSRUserConfig_Data] = Field(default=None, description="用户数据")
+    TaskSwitch: Optional[HSRUserConfig_TaskSwitch] = Field(
+        default=None, description="模块执行开关"
+    )
+    Stage: Optional[HSRUserConfig_Stage] = Field(default=None, description="关卡配置")
+    TaskOpt: Optional[HSRUserConfig_TaskOpt] = Field(
+        default=None, description="模块执行参数"
+    )
+    Notify: Optional[HSRUserConfig_Notify] = Field(
+        default=None, description="单独通知"
+    )
+    Abyss: Optional[HSRUserConfig_Abyss] = Field(
+        default=None, description="三深渊配置"
+    )
+
+
+class HSRDynamicStageM7A(BaseModel):
+    instanceType: Optional[str] = Field(default=None, description="M7A 副本类型")
+    instanceName: Optional[str] = Field(default=None, description="M7A 副本名称")
+
+
+class HSRDynamicStageSRA(BaseModel):
+    id: Optional[str] = Field(default=None, description="SRA 体力任务 ID")
+    level: Optional[int] = Field(default=None, description="SRA 体力任务层级")
+
+
+class HSRDynamicStageOption(BaseModel):
+    label: str = Field(..., description="副本展示名称")
+    detail: Optional[str] = Field(default=None, description="副本说明")
+    value: str = Field(..., description="副本选项值")
+    categoryKey: str = Field(..., description="副本分类键")
+    categoryLabel: str = Field(..., description="副本分类名称")
+    cost: Optional[int] = Field(default=None, description="单次体力消耗")
+    maxCount: Optional[int] = Field(default=None, description="最大执行次数")
+    m7a: Optional[HSRDynamicStageM7A] = Field(default=None, description="M7A 原生字段")
+    sra: Optional[HSRDynamicStageSRA] = Field(default=None, description="SRA 原生字段")
+
+
+class HSRDynamicStageCategory(BaseModel):
+    categoryKey: str = Field(..., description="副本分类键")
+    categoryLabel: str = Field(..., description="副本分类名称")
+    cost: Optional[int] = Field(default=None, description="单次体力消耗")
+    maxCount: Optional[int] = Field(default=None, description="最大执行次数")
+    options: List[HSRDynamicStageOption] = Field(
+        default_factory=list, description="副本选项列表"
+    )
+
+
+class HSRStageOptionsData(BaseModel):
+    engine: Literal["M7A", "SRA"] = Field(..., description="体力副本执行脚本")
+    source: Optional[str] = Field(default=None, description="选项来源文件或目录")
+    categories: List[HSRDynamicStageCategory] = Field(
+        default_factory=list, description="体力副本分类列表"
+    )
+
+
+class HSRStageOptionsOut(OutBase):
+    data: Optional[HSRStageOptionsData] = Field(
+        default=None, description="HSR 体力副本动态选项"
+    )
+
+
 class M9AUserConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="用户名称")
     Status: Optional[bool] = Field(default=None, description="是否启用")
@@ -1155,8 +1370,8 @@ class HistoryData(BaseModel):
 
 
 class ScriptCreateIn(BaseModel):
-    type: Literal["MAA", "SRC", "General", "Okww", "MaaEnd", "M9A"] = Field(
-        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, SRC脚本, MaaEnd脚本, M9A脚本"
+    type: Literal["MAA", "SRC", "General", "Okww", "MaaEnd", "M9A", "HSR"] = Field(
+        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, SRC脚本, MaaEnd脚本, M9A脚本, HSR脚本"
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -1165,7 +1380,7 @@ class ScriptCreateIn(BaseModel):
 
 class ScriptCreateOut(OutBase):
     scriptId: str = Field(..., description="新创建的脚本ID")
-    data: Union[MaaConfig, SrcConfig, GeneralConfig, OkwwConfig, MaaEndConfig, M9AConfig] = Field(
+    data: Union[MaaConfig, SrcConfig, GeneralConfig, OkwwConfig, MaaEndConfig, M9AConfig, HSRConfig] = Field(
         ..., description="脚本配置数据"
     )
 
@@ -1179,7 +1394,7 @@ class ScriptGetIn(BaseModel):
 class ScriptGetOut(OutBase):
     index: List[ScriptIndexItem] = Field(..., description="脚本索引列表")
     data: Dict[
-        str, Union[MaaConfig, SrcConfig, GeneralConfig, OkwwConfig, MaaEndConfig, M9AConfig]
+        str, Union[MaaConfig, SrcConfig, GeneralConfig, OkwwConfig, MaaEndConfig, M9AConfig, HSRConfig]
     ] = Field(
         ..., description="脚本数据字典, key来自于index列表的uid"
     )
@@ -1187,7 +1402,7 @@ class ScriptGetOut(OutBase):
 
 class ScriptUpdateIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
-    data: Union[MaaConfig, SrcConfig, GeneralConfig, OkwwConfig, MaaEndConfig, M9AConfig] = Field(
+    data: Union[MaaConfig, SrcConfig, GeneralConfig, OkwwConfig, MaaEndConfig, M9AConfig, HSRConfig] = Field(
         ..., description="脚本更新数据"
     )
 
@@ -1244,6 +1459,7 @@ class UserGetOut(OutBase):
             OkwwUserConfig,
             MaaEndUserConfig,
             M9AUserConfig,
+            HSRUserConfig,
         ],
     ] = Field(..., description="用户数据字典, key来自于index列表的uid")
 
@@ -1257,6 +1473,7 @@ class UserCreateOut(OutBase):
         OkwwUserConfig,
         MaaEndUserConfig,
         M9AUserConfig,
+        HSRUserConfig,
     ] = (
         Field(..., description="用户配置数据")
     )
@@ -1271,6 +1488,7 @@ class UserUpdateIn(UserInBase):
         OkwwUserConfig,
         MaaEndUserConfig,
         M9AUserConfig,
+        HSRUserConfig,
     ] = (
         Field(..., description="用户更新数据")
     )
@@ -1287,6 +1505,39 @@ class UserReorderIn(UserInBase):
 class UserSetIn(UserInBase):
     userId: str = Field(..., description="用户ID")
     jsonFile: str = Field(..., description="JSON文件路径, 用于导入自定义基建文件")
+
+
+class AbyssSnapshotImportItem(BaseModel):
+    """单个三深渊快照的导入结果摘要"""
+
+    snapshotKey: str = Field(
+        ...,
+        description="深渊快照键: ForgottenHall / PureFiction / Apocalyptic",
+    )
+    success: bool = Field(..., description="是否成功从 M7A config.yaml 读取并写入")
+    level: Optional[List[Optional[int]]] = Field(
+        default=None, description="关卡范围（[min, max]），缺失时为 None"
+    )
+    teamKeys: List[str] = Field(
+        default_factory=list, description="快照中包含的队伍字段，如 team1/team2/team3"
+    )
+    error: Optional[str] = Field(default=None, description="错误描述（导入失败时）")
+
+
+class AbyssSnapshotImportOut(OutBase):
+    """从 M7A config.yaml 导入三深渊快照的结果"""
+    m7aConfigPath: str = Field(..., description="读取的 M7A config.yaml 路径")
+    items: List[AbyssSnapshotImportItem] = Field(
+        default_factory=list, description="三个深渊的导入结果摘要"
+    )
+    updatedUserData: HSRUserConfig = Field(
+        ..., description="更新后的完整 HSR 用户配置（前端可用来同步 formData）"
+    )
+
+
+class UserImportAbyssSnapshotIn(UserInBase):
+    """用户请求从 M7A 导入三深渊快照"""
+    userId: str = Field(..., description="用户ID")
 
 
 class EmulatorGetIn(BaseModel):
