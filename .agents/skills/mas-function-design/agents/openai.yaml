@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAS Function Design"
+  short_description: "Guide backend function design"
+  default_prompt: "Apply backend function design standards for responsibilities, signatures, return contracts, side effects, and error handling in Python backend modules."

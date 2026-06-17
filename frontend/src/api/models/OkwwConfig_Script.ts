@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * OK-WW 脚本配置（复用通用字段）
+ * OK-WW 脚本配置
  */
 export type OkwwConfig_Script = {
     /**
@@ -62,13 +62,5 @@ export type OkwwConfig_Script = {
      * 日志时间戳格式
      */
     LogTimeFormat?: (string | null);
-    /**
-     * 成功时日志
-     */
-    SuccessLog?: (string | null);
-    /**
-     * 错误时日志
-     */
-    ErrorLog?: (string | null);
 };
 

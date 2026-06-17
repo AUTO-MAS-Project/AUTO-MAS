@@ -51,7 +51,7 @@ export type OkwwUserConfig_Info = {
      */
     Password?: (string | null);
     /**
-     * 用户配置模式（简洁/详细）
+     * 用户配置模式（OK-WW 固定为详细模式）
      */
     Mode?: ('简洁' | '详细' | null);
     /**

@@ -259,13 +259,13 @@ export interface AddScriptResponse {
   status: string
   message: string
   scriptId: string
-  data: MAAScriptConfig | GeneralScriptConfig | SRCScriptConfig | MaaEndScriptConfig | M9AScriptConfig
+  data: MAAScriptConfig | GeneralScriptConfig | OkwwScriptConfig | SRCScriptConfig | MaaEndScriptConfig | M9AScriptConfig
 }
 
 // 脚本索引项
 export interface ScriptIndexItem {
   uid: string
-  type: 'MaaConfig' | 'GeneralConfig' | 'SrcConfig' | 'MaaEndConfig' | 'M9AConfig'
+  type: 'MaaConfig' | 'GeneralConfig' | 'OkwwConfig' | 'SrcConfig' | 'MaaEndConfig' | 'M9AConfig'
 }
 
 // 获取脚本API响应
@@ -274,7 +274,7 @@ export interface GetScriptsResponse {
   status: string
   message: string
   index: ScriptIndexItem[]
-  data: Record<string, MAAScriptConfig | GeneralScriptConfig | SRCScriptConfig | MaaEndScriptConfig | M9AScriptConfig>
+  data: Record<string, MAAScriptConfig | GeneralScriptConfig | OkwwScriptConfig | SRCScriptConfig | MaaEndScriptConfig | M9AScriptConfig>
 }
 
 // 脚本详情（用于前端展示）
@@ -282,7 +282,7 @@ export interface ScriptDetail {
   uid: string
   type: ScriptType
   name: string
-  config: MaaConfig | GeneralConfig | SrcConfig | MaaEndConfig | M9AConfig
+  config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig | M9AConfig
   users?: User[]
   createTime?: string
 }
