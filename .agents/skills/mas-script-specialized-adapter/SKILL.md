@@ -58,7 +58,7 @@ description: >-
 | MXU 线 | MaaEnd + MXU、`mxu-*.json` | `MaaEnd` |
 | MFAA 线 | M9A 队列 JSON，无 ScriptConfig 壳 | `M9A` |
 | General | 通用路径/进程/日志 | `General` |
-| ok-script | `-t`/`-e` CLI + 表单化配置编辑器 | `Okww` |
+| ok-script | `-t`/`-e` CLI + 表单化配置编辑器（纯内置判态，AutoProxy 唯一模式） | `Okww` |
 
 确认架构后读上游 **自启动**（argv vs 写盘）与 **配置落盘**（表单编辑器 vs ScriptConfig GUI vs 仅写 JSON）。MFAA 见 [examples-m9a.md](references/examples-m9a.md)；MXU 见 [examples-maaend.md](references/examples-maaend.md)；ok-script 见 [examples-okww.md](references/examples-okww.md)。
 
@@ -76,7 +76,7 @@ description: >-
 | 脚本/用户编辑 | `EditView/Script/`、`EditView/User/`；Section 单职责 + `@save` |
 | 映射 | `types/script.ts`、`useScriptApi.ts`（**含 UserConfig→users[]**） |
 | 路由 | `router/index.ts` 与 Hub 片段一致 |
-| 配置入口 | ok-script 线：**表单化编辑器**（非 ScriptConfig GUI）；MXU/MAA：ScriptConfig `teleport` 遮罩 + WebSocket |
+| 配置入口 | ok-script 线：**表单化编辑器**（非 ScriptConfig GUI）；Okww: 全内置判态，无 SuccessLog/ErrorLog；MXU/MAA：ScriptConfig `teleport` 遮罩 + WebSocket |
 | 配置 Schema | 表单化编辑器需 `config_schema.py`（字段类型/选项/翻译）+ API 端点 + 前端 Service |
 
 ### 后端切面
