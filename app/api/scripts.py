@@ -48,6 +48,21 @@ def _okww_config_file_path(config_dir: Path, filename: str) -> Path:
     return config_dir / filename
 
 
+def _oknte_mas_config_dir(script_id: str) -> Path:
+    return Path.cwd() / "data" / script_id / "Default" / "ConfigFile"
+
+
+def _oknte_config_file_path(config_dir: Path, filename: str) -> Path:
+    file_path = Path(filename)
+    if (
+        file_path.name != filename
+        or file_path.is_absolute()
+        or ".." in file_path.parts
+    ):
+        raise ValueError("配置文件名非法")
+    return config_dir / filename
+
+
 SCRIPT_BOOK = {
     "MaaConfig": MaaConfig,
     "SrcConfig": SrcConfig,
@@ -55,6 +70,7 @@ SCRIPT_BOOK = {
     "M9AConfig": M9AConfig,
     "GeneralConfig": GeneralConfig,
     "OkwwConfig": OkwwConfig,
+    "OkNteConfig": OkNteConfig,
 }
 USER_BOOK = {
     "MaaConfig": MaaUserConfig,
@@ -63,6 +79,7 @@ USER_BOOK = {
     "M9AConfig": M9AUserConfig,
     "GeneralConfig": GeneralUserConfig,
     "OkwwConfig": OkwwUserConfig,
+    "OkNteConfig": OkNteUserConfig,
 }
 
 
@@ -758,6 +775,203 @@ async def batch_update_okww_configs(
         updated_files = []
         for filename, data in configs.items():
             filepath = _okww_config_file_path(mas_config_dir, filename)
+            existing_data = {}
+            if filepath.exists():
+                with open(filepath, "r", encoding="utf-8") as f:
+                    existing_data = json.load(f)
+            existing_data.update(data)
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(existing_data, f, ensure_ascii=False, indent=4)
+            updated_files.append(filename)
+
+        return {
+            "code": 200,
+            "status": "success",
+            "message": f"已更新 {len(updated_files)} 个配置文件",
+            "data": updated_files,
+        }
+    except Exception as e:
+        return {
+            "code": 500,
+            "status": "error",
+            "message": f"{type(e).__name__}: {str(e)}",
+        }
+
+
+@router.post(
+    "/oknte/configs/list",
+    tags=["OKNTE"],
+    summary="获取 OK-NTE 配置文件列表及 schema",
+    status_code=200,
+)
+async def get_oknte_configs_list(script_id: str):
+    """
+    获取 OK-NTE 配置文件列表及 schema 定义。
+    读写 per-user 配置目录（data/{script_id}/Default/ConfigFile/），
+    若为空则自动从 ok-nte configs 目录初始化默认配置。
+
+    Args:
+        script_id: OK-NTE 脚本 ID
+
+    Returns:
+        dict: 包含配置文件列表和 schema 的响应
+    """
+    try:
+        import json
+        import shutil
+        from app.task.OkNte.config_schema import (
+            get_all_config_info, build_fields_for_config, load_oknte_option_labels,
+        )
+
+        script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+
+        # 从 ok-nte 安装目录加载翻译 → option_labels
+        root_path = script_config.get("Info", "RootPath")
+        option_labels = load_oknte_option_labels(root_path) if root_path else {}
+
+        # per-user 配置目录（始终使用 Default，因为配置编辑器是脚本级的）
+        mas_config_dir = _oknte_mas_config_dir(script_id)
+
+        # ok-nte 源配置目录（用于自动初始化）
+        raw_config_path = script_config.get("Script", "ConfigPath")
+        oknte_configs_dir = Path(raw_config_path) if raw_config_path else None
+        if not oknte_configs_dir or not oknte_configs_dir.exists():
+            if root_path:
+                root = Path(root_path)
+                packaged_dir = root / "data" / "apps" / "ok-nte" / "working" / "configs"
+                source_dir = root / "configs"
+                oknte_configs_dir = packaged_dir if packaged_dir.is_dir() else source_dir
+
+        # 自动初始化：per-user 目录为空时从 ok-nte configs 复制默认配置
+        need_init = not mas_config_dir.exists() or not any(mas_config_dir.iterdir())
+        if need_init and oknte_configs_dir and oknte_configs_dir.is_dir():
+            mas_config_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(oknte_configs_dir, mas_config_dir, dirs_exist_ok=True)
+
+        configs_info = get_all_config_info()
+
+        # 读取 per-user JSON 配置，通过 build_fields_for_config 构建字段列表
+        result = []
+        for info in configs_info:
+            filename = info["filename"]
+            filepath = _oknte_config_file_path(mas_config_dir, filename)
+            current_data: dict[str, Any] = {}
+            if filepath.exists():
+                try:
+                    current_data = json.loads(filepath.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+
+            fields = build_fields_for_config(filename, current_data, option_labels)
+
+            result.append({
+                **info,
+                "fields": fields,
+                "currentData": current_data,
+            })
+
+        return {
+            "code": 200,
+            "status": "success",
+            "message": f"共 {len(result)} 个配置文件",
+            "data": result,
+            "optionLabels": option_labels,
+            "configPath": str(mas_config_dir) if mas_config_dir else None,
+        }
+    except Exception as e:
+        return {
+            "code": 500,
+            "status": "error",
+            "message": f"{type(e).__name__}: {str(e)}",
+            "data": [],
+        }
+
+
+@router.post(
+    "/oknte/configs/update",
+    tags=["OKNTE"],
+    summary="更新 OK-NTE 配置文件",
+    status_code=200,
+)
+async def update_oknte_config(
+    script_id: str = Body(...),
+    filename: str = Body(...),
+    data: dict = Body(...),
+):
+    """
+    更新 OK-NTE 配置文件
+
+    Args:
+        script_id: OK-NTE 脚本 ID
+        filename: 配置文件名（如 DailyTask.json）
+        data: 要更新的配置数据
+
+    Returns:
+        dict: 操作结果
+    """
+    try:
+        import json
+
+        # 写入 per-user 配置目录
+        mas_config_dir = _oknte_mas_config_dir(script_id)
+        mas_config_dir.mkdir(parents=True, exist_ok=True)
+
+        filepath = _oknte_config_file_path(mas_config_dir, filename)
+
+        existing_data = {}
+        if filepath.exists():
+            with open(filepath, "r", encoding="utf-8") as f:
+                existing_data = json.load(f)
+
+        existing_data.update(data)
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(existing_data, f, ensure_ascii=False, indent=4)
+
+        return {
+            "code": 200,
+            "status": "success",
+            "message": f"配置文件 {filename} 已更新",
+            "data": existing_data,
+        }
+    except Exception as e:
+        return {
+            "code": 500,
+            "status": "error",
+            "message": f"{type(e).__name__}: {str(e)}",
+        }
+
+
+@router.post(
+    "/oknte/configs/batch-update",
+    tags=["OKNTE"],
+    summary="批量更新 OK-NTE 配置文件",
+    status_code=200,
+)
+async def batch_update_oknte_configs(
+    script_id: str = Body(...),
+    configs: dict = Body(...),
+):
+    """
+    批量更新 OK-NTE 配置文件
+
+    Args:
+        script_id: OK-NTE 脚本 ID
+        configs: { filename: data } 格式的配置数据
+
+    Returns:
+        dict: 操作结果
+    """
+    try:
+        import json
+
+        # 写入 per-user 配置目录
+        mas_config_dir = _oknte_mas_config_dir(script_id)
+        mas_config_dir.mkdir(parents=True, exist_ok=True)
+
+        updated_files = []
+        for filename, data in configs.items():
+            filepath = _oknte_config_file_path(mas_config_dir, filename)
             existing_data = {}
             if filepath.exists():
                 with open(filepath, "r", encoding="utf-8") as f:

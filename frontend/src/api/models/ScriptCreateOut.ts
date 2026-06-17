@@ -6,6 +6,7 @@ import type { GeneralConfig } from './GeneralConfig';
 import type { M9AConfig } from './M9AConfig';
 import type { MaaConfig } from './MaaConfig';
 import type { MaaEndConfig } from './MaaEndConfig';
+import type { OkNteConfig } from './OkNteConfig';
 import type { OkwwConfig } from './OkwwConfig';
 import type { SrcConfig } from './SrcConfig';
 export type ScriptCreateOut = {
@@ -28,6 +29,6 @@ export type ScriptCreateOut = {
     /**
      * 脚本配置数据
      */
-    data: (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | MaaEndConfig | M9AConfig);
+    data: (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | M9AConfig);
 };
 

@@ -3,6 +3,7 @@ import type {
   MaaConfig,
   GeneralConfig,
   OkwwConfig,
+  OkNteConfig,
   SrcConfig,
   MaaEndConfig,
   M9AConfig,
@@ -15,9 +16,10 @@ import type {
   SanityTaskType,
 } from '@/utils/maaEndProtocolSpace'
 
-export type ScriptType = 'MAA' | 'General' | 'Okww' | 'SRC' | 'MaaEnd' | 'M9A'
+export type ScriptType = 'MAA' | 'General' | 'Okww' | 'OkNte' | 'SRC' | 'MaaEnd' | 'M9A'
 
 export type OkwwScriptConfig = OkwwConfig
+export type OkNteScriptConfig = OkNteConfig
 // MAA脚本配置
 export interface MAAScriptConfig {
   Info: {
@@ -171,7 +173,7 @@ export interface Script {
   id: string
   type: ScriptType
   name: string
-  config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig | M9AConfig
+  config: MaaConfig | GeneralConfig | OkwwConfig | OkNteConfig | SrcConfig | MaaEndConfig | M9AConfig
   users: User[]
 }
 
@@ -259,13 +261,27 @@ export interface AddScriptResponse {
   status: string
   message: string
   scriptId: string
-  data: MAAScriptConfig | GeneralScriptConfig | OkwwScriptConfig | SRCScriptConfig | MaaEndScriptConfig | M9AScriptConfig
+  data:
+    | MAAScriptConfig
+    | GeneralScriptConfig
+    | OkwwScriptConfig
+    | OkNteScriptConfig
+    | SRCScriptConfig
+    | MaaEndScriptConfig
+    | M9AScriptConfig
 }
 
 // 脚本索引项
 export interface ScriptIndexItem {
   uid: string
-  type: 'MaaConfig' | 'GeneralConfig' | 'OkwwConfig' | 'SrcConfig' | 'MaaEndConfig' | 'M9AConfig'
+  type:
+    | 'MaaConfig'
+    | 'GeneralConfig'
+    | 'OkwwConfig'
+    | 'OkNteConfig'
+    | 'SrcConfig'
+    | 'MaaEndConfig'
+    | 'M9AConfig'
 }
 
 // 获取脚本API响应
@@ -274,7 +290,16 @@ export interface GetScriptsResponse {
   status: string
   message: string
   index: ScriptIndexItem[]
-  data: Record<string, MAAScriptConfig | GeneralScriptConfig | OkwwScriptConfig | SRCScriptConfig | MaaEndScriptConfig | M9AScriptConfig>
+  data: Record<
+    string,
+    | MAAScriptConfig
+    | GeneralScriptConfig
+    | OkwwScriptConfig
+    | OkNteScriptConfig
+    | SRCScriptConfig
+    | MaaEndScriptConfig
+    | M9AScriptConfig
+  >
 }
 
 // 脚本详情（用于前端展示）
@@ -282,7 +307,7 @@ export interface ScriptDetail {
   uid: string
   type: ScriptType
   name: string
-  config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig | M9AConfig
+  config: MaaConfig | GeneralConfig | OkwwConfig | OkNteConfig | SrcConfig | MaaEndConfig | M9AConfig
   users?: User[]
   createTime?: string
 }

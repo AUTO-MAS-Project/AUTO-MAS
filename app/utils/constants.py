@@ -41,6 +41,7 @@ TYPE_BOOK = {
     "MaaEndConfig": "MaaEnd",
     "GeneralConfig": "通用",
     "OkwwConfig": "ok-ww",
+    "OkNteConfig": "OK-NTE",
     "M9AConfig": "M9A",
     "M9AUserConfig": "M9A",
 }

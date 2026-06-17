@@ -45,6 +45,7 @@ from app.models.config import (
     M9AConfig,
     MaaEndConfig,
     OkwwConfig,
+    OkNteConfig,
     MaaPlanConfig,
     QueueConfig,
     QueueItem,
@@ -54,6 +55,7 @@ from app.models.config import (
     MaaEndUserConfig,
     GeneralUserConfig,
     OkwwUserConfig,
+    OkNteUserConfig,
     GlobalConfig,
     CLASS_BOOK,
     Webhook,
@@ -529,11 +531,17 @@ class AppConfig(GlobalConfig):
 
     async def add_script(
         self,
-        script: Literal["MAA", "SRC", "General", "MaaEnd", "M9A", "Okww"],
+        script: Literal["MAA", "SRC", "General", "MaaEnd", "M9A", "Okww", "OkNte"],
         script_id: str | None = None,
     ) -> tuple[
         uuid.UUID,
-        MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig | M9AConfig | OkwwConfig,
+        MaaConfig
+        | SrcConfig
+        | GeneralConfig
+        | MaaEndConfig
+        | M9AConfig
+        | OkwwConfig
+        | OkNteConfig,
     ]:
         """添加脚本配置"""
 
@@ -817,7 +825,8 @@ class AppConfig(GlobalConfig):
         | SrcUserConfig
         | GeneralUserConfig
         | MaaEndUserConfig
-        | M9AUserConfig,
+        | M9AUserConfig
+        | OkNteUserConfig,
     ]:
         """添加用户配置"""
 
@@ -834,6 +843,8 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(GeneralUserConfig)
         elif isinstance(script_config, OkwwConfig):
             uid, config = await script_config.UserData.add(OkwwUserConfig)
+        elif isinstance(script_config, OkNteConfig):
+            uid, config = await script_config.UserData.add(OkNteUserConfig)
         elif isinstance(script_config, MaaEndConfig):
             uid, config = await script_config.UserData.add(MaaEndUserConfig)
         elif isinstance(script_config, M9AConfig):

@@ -6,6 +6,7 @@ import {
   type MaaEndConfig,
   type M9AConfig,
   type OkwwConfig,
+  type OkNteConfig,
   type SrcConfig,
   ScriptCreateIn,
   type ScriptReorderIn,
@@ -35,10 +36,12 @@ export function useScriptApi() {
               : type === 'MaaEnd'
                 ? ScriptCreateIn.type.MAA_END
                 : type === 'M9A'
-                  ? ScriptCreateIn.type.M9A
-                  : type === 'Okww'
-                    ? ScriptCreateIn.type.OKWW
-                    : ScriptCreateIn.type.GENERAL,
+                ? ScriptCreateIn.type.M9A
+                : type === 'Okww'
+                  ? ScriptCreateIn.type.OKWW
+                  : type === 'OkNte'
+                    ? ScriptCreateIn.type.OK_NTE
+                  : ScriptCreateIn.type.GENERAL,
         scriptId: scriptId || null,
       }
 
@@ -79,7 +82,7 @@ export function useScriptApi() {
       uid: string
       type: string
       name: string
-      config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig | M9AConfig
+      config: MaaConfig | GeneralConfig | OkwwConfig | OkNteConfig | SrcConfig | MaaEndConfig | M9AConfig
     }[]
   > => {
     if (manageLoading) {
@@ -109,6 +112,8 @@ export function useScriptApi() {
               ? 'SRC'
               : indexItem.type === 'OkwwConfig'
                 ? 'Okww'
+                : indexItem.type === 'OkNteConfig'
+                  ? 'OkNte'
               : indexItem.type === 'MaaEndConfig'
                 ? 'MaaEnd'
                 : indexItem.type === 'M9AConfig'
@@ -138,7 +143,7 @@ export function useScriptApi() {
           uid: string
           type: string
           name: string
-          config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig | M9AConfig
+          config: MaaConfig | GeneralConfig | OkwwConfig | OkNteConfig | SrcConfig | MaaEndConfig | M9AConfig
           users: (
             | {
                 id: string
@@ -225,14 +230,14 @@ export function useScriptApi() {
           uid: string
           type: string
           name: string
-          config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig
+          config: MaaConfig | GeneralConfig | OkwwConfig | OkNteConfig | SrcConfig | MaaEndConfig | M9AConfig
           users: any[]
         }
       | {
           uid: string
           type: string
           name: string
-          config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig
+          config: MaaConfig | GeneralConfig | OkwwConfig | OkNteConfig | SrcConfig | MaaEndConfig | M9AConfig
           users: any[]
         }
     >[]
@@ -884,7 +889,10 @@ export function useScriptApi() {
                             : false,
                       },
                     }
-                  } else if (userIndex.type === 'OkwwUserConfig' && userData) {
+                  } else if (
+                    (userIndex.type === 'OkwwUserConfig' || userIndex.type === 'OkNteUserConfig') &&
+                    userData
+                  ) {
                     const okwwUserData = userData as any
                     return {
                       id: userIndex.uid,
@@ -945,7 +953,9 @@ export function useScriptApi() {
                         TaskIndex:
                           okwwUserData.Task?.TaskIndex !== undefined
                             ? okwwUserData.Task.TaskIndex
-                            : 1,
+                            : userIndex.type === 'OkNteUserConfig'
+                              ? 2
+                              : 1,
                         ExitOnFinish:
                           okwwUserData.Task?.ExitOnFinish !== undefined
                             ? okwwUserData.Task.ExitOnFinish
@@ -1065,6 +1075,8 @@ export function useScriptApi() {
             ? 'SRC'
             : item.type === 'OkwwConfig'
               ? 'Okww'
+              : item.type === 'OkNteConfig'
+                ? 'OkNte'
             : item.type === 'MaaEndConfig'
               ? 'MaaEnd'
               : item.type === 'M9AConfig'
