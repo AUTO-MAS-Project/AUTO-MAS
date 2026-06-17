@@ -565,6 +565,11 @@ async def skland_sign_in(
     try:
         cred, sign_token = await login_by_token(token)
         await asyncio.sleep(1)
+        if app_code == "all":
+            ar = await sign_for_arknights(cred, sign_token)
+            await asyncio.sleep(3)
+            ef = await sign_for_endfield(cred, sign_token)
+            return {"成功": ar["成功"] + ef["成功"], "重复": ar["重复"] + ef["重复"], "失败": ar["失败"] + ef["失败"], "总计": ar["总计"] + ef["总计"]}
         if app_code == "endfield":
             return await sign_for_endfield(cred, sign_token)
         return await sign_for_arknights(cred, sign_token)
