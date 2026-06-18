@@ -195,6 +195,7 @@ class _SystemHandler:
             "Hibernate",
             "Sleep",
             "KillSelf",
+            "Logoff",
         ],
         from_frontend: bool = False,
     ) -> None:
@@ -247,6 +248,12 @@ class _SystemHandler:
                     )
                 Config.server.should_exit = True
 
+            elif mode == "Logoff":
+
+                await self.kill_emulator_processes()
+                logger.info("执行注销此账户操作")
+                subprocess.run(["shutdown", "/l"])
+
         elif sys.platform.startswith("linux"):
 
             if mode == "NoAction":
@@ -282,6 +289,11 @@ class _SystemHandler:
                     )
                 Config.server.should_exit = True
 
+            elif mode == "Logoff":
+
+                logger.info("执行注销此账户操作")
+                subprocess.run(["loginctl", "terminate-user", getpass.getuser()])
+
     async def _power_task(
         self,
         power_sign: Literal[
@@ -292,6 +304,7 @@ class _SystemHandler:
             "Hibernate",
             "Sleep",
             "KillSelf",
+            "Logoff",
         ],
     ) -> None:
         """电源任务"""
