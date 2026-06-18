@@ -20,6 +20,7 @@
 #   Contact: DLmaster_361@163.com
 
 import asyncio
+import json
 import random
 from datetime import datetime, timedelta
 
@@ -209,7 +210,6 @@ class _MainTimer:
 
     async def _execute_game_sign(self) -> None:
         """执行游戏签到并处理结果"""
-        import json
         from app.tools.game_sign import run_all_sign_in, format_sign_results
         from app.tools.game_sign import merge_sign_results
 
