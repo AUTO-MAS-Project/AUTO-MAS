@@ -303,14 +303,14 @@ class _MainTimer:
                 await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
                 await Config.ToolsConfig.set("GameSign", "ScheduledTime", "")
 
-            logger.info("Task-triggered game sign-in completed")
+            logger.info("任务触发的游戏签到已完成")
 
             if Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
                 from app.tools.game_sign_notify import push_game_sign_notification
                 await push_game_sign_notification(results)
 
         except Exception as e:
-            logger.error(f"Task-triggered game sign-in failed: {e}")
+            logger.error(f"任务触发的游戏签到失败: {e}")
 
 
 MainTimer = _MainTimer()
