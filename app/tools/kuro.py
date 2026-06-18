@@ -30,7 +30,9 @@
 
 
 import uuid
+import asyncio
 import httpx
+from datetime import datetime
 
 from typing import Dict, Any
 
@@ -169,7 +171,6 @@ async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict]:
             logger.error(f"{account} {game_cfg['name']} 签到异常: {e}")
 
         # 间隔
-        import asyncio
         await asyncio.sleep(3)
 
     return results
@@ -242,7 +243,6 @@ async def _do_sign(
     game_cfg: dict,
 ) -> dict:
     """执行库街区签到"""
-    from datetime import datetime
 
     headers = GAME_HEADERS.copy()
     headers["token"] = token
