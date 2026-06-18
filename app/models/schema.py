@@ -147,11 +147,8 @@ class GameSignAccountGroupConfig(BaseModel):
 
     Name: str | None = Field(default=None, description="账号组名称")
     Enabled: bool | None = Field(default=None, description="是否启用")
-    MiyousheEnabled: bool | None = Field(default=None, description="米游社是否启用")
     MiyousheToken: str | None = Field(default=None, description="米游社登录凭证")
-    KuroEnabled: bool | None = Field(default=None, description="库街区是否启用")
     KuroToken: str | None = Field(default=None, description="库街区登录凭证")
-    SklandEnabled: bool | None = Field(default=None, description="森空岛是否启用")
     SklandToken: str | None = Field(default=None, description="森空岛登录凭证")
 
 

@@ -137,6 +137,9 @@ class _MainTimer:
                     )
                     await queue.set("Data", "LastTimedStart", curtime)
 
+                    # 定时任务触发游戏签到
+                    await self.try_game_sign_for_task()
+
     async def check_game_sign(self) -> None:
         """检查并执行游戏社区签到
 
@@ -149,8 +152,15 @@ class _MainTimer:
         now = datetime.now()
         today = now.strftime("%Y-%m-%d")
 
-        # 如果今天已经签到，跳过
-        if Config.ToolsConfig.get("GameSign", "LastSignDate") == today:
+        # 检查是否所有启用的用户今日都已签到
+        all_users_signed = True
+        for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
+            if account.get("GameSignAccount", "Enabled"):
+                if account.get("GameSignAccount", "LastSignDate") != today:
+                    all_users_signed = False
+                    break
+
+        if all_users_signed:
             return
 
         # 解析签到窗口
@@ -194,38 +204,113 @@ class _MainTimer:
         # 检查是否到达计划时间（分钟精度）
         if now.strftime("%H:%M") == scheduled_time_str:
             await self._execute_game_sign()
+            # Prevent duplicate trigger within same minute
+            await Config.ToolsConfig.set("GameSign", "ScheduledTime", "")
 
     async def _execute_game_sign(self) -> None:
         """执行游戏签到并处理结果"""
         import json
         from app.tools.game_sign import run_all_sign_in, format_sign_results
+        from app.tools.game_sign import merge_sign_results
+
+        today = datetime.now().strftime("%Y-%m-%d")
 
         try:
             logger.info("开始执行游戏社区签到")
-            results = await run_all_sign_in()
+            results = await run_all_sign_in(force=False)
 
-            # 格式化并存储结果
+            # 如果所有用户都已签到（无新结果），保留已有结果
+            if not results:
+                logger.info("所有用户今日已签到，跳过")
+                await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
+                await Config.ToolsConfig.set("GameSign", "ScheduledTime", "")
+                return
+
+            # 格式化并合并结果
             formatted = format_sign_results(results)
-            Config.ToolsConfig._game_sign_result_data = formatted
-
-            # 标记今天已签到
-            await Config.ToolsConfig.set(
-                "GameSign", "LastSignDate", datetime.now().strftime("%Y-%m-%d")
+            Config.ToolsConfig._game_sign_result_data = merge_sign_results(
+                Config.ToolsConfig._game_sign_result_data, formatted
             )
+
             # 清除计划时间
             await Config.ToolsConfig.set("GameSign", "ScheduledTime", "")
+
+            # 检查是否所有用户都已签到，更新全局 LastSignDate
+            all_signed_after = True
+            for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
+                if account.get("GameSignAccount", "Enabled"):
+                    if account.get("GameSignAccount", "LastSignDate") != today:
+                        all_signed_after = False
+                        break
+            if all_signed_after:
+                await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
 
             logger.success("游戏社区签到执行完成")
 
             # 如果启用通知，发送签到结果
             if Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
                 from app.tools.game_sign_notify import push_game_sign_notification
-
                 await push_game_sign_notification(results)
 
         except Exception as e:
             logger.error(f"游戏社区签到执行失败: {e}")
-            Config.ToolsConfig._game_sign_result_data = {"error": str(e)}
+            # 保留已有结果，不覆盖为错误信息
+            logger.exception("游戏社区签到执行异常堆栈")
+
+    async def try_game_sign_for_task(self) -> None:
+        """任务生命周期触发的游戏签到（跳过已签到用户）
+
+        由定时任务启动、任务结束等事件触发。
+        不受全局 LastSignDate 限制，仅按用户 LastSignDate 过滤。
+        """
+        if not Config.ToolsConfig.get("GameSign", "Enabled"):
+            return
+
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        # 快速检查：是否所有用户都已签到
+        all_signed = True
+        for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
+            if account.get("GameSignAccount", "Enabled"):
+                if account.get("GameSignAccount", "LastSignDate") != today:
+                    all_signed = False
+                    break
+        if all_signed:
+            return
+
+        from app.tools.game_sign import run_all_sign_in, format_sign_results
+
+        try:
+            from app.tools.game_sign import merge_sign_results
+
+            results = await run_all_sign_in(force=False)
+            if not results:
+                return
+
+            formatted = format_sign_results(results)
+            Config.ToolsConfig._game_sign_result_data = merge_sign_results(
+                Config.ToolsConfig._game_sign_result_data, formatted
+            )
+
+            # 签到后检查是否所有用户都已完成
+            all_signed_after = True
+            for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
+                if account.get("GameSignAccount", "Enabled"):
+                    if account.get("GameSignAccount", "LastSignDate") != today:
+                        all_signed_after = False
+                        break
+            if all_signed_after:
+                await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
+                await Config.ToolsConfig.set("GameSign", "ScheduledTime", "")
+
+            logger.info("Task-triggered game sign-in completed")
+
+            if Config.ToolsConfig.get("GameSign", "NotifyEnabled"):
+                from app.tools.game_sign_notify import push_game_sign_notification
+                await push_game_sign_notification(results)
+
+        except Exception as e:
+            logger.error(f"Task-triggered game sign-in failed: {e}")
 
 
 MainTimer = _MainTimer()

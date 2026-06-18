@@ -22,6 +22,7 @@
 
 import asyncio
 import time
+from datetime import datetime
 
 from app.core import Config
 from app.utils.logger import get_logger
@@ -52,15 +53,19 @@ def _check_system_time() -> bool:
         return True
 
 
-async def run_all_sign_in() -> list[dict]:
+async def run_all_sign_in(force: bool = False) -> list[dict]:
     """执行所有已配置平台的签到
 
     遍历所有账号组，对每个账号组中有配置的平台执行签到
+
+    Args:
+        force: 为 True 时忽略每用户 LastSignDate，强制重新签到（手动签到用）
 
     Returns:
         签到结果列表，每项包含 account, game, platform, status, reward, reason
     """
     results = []
+    today = datetime.now().strftime("%Y-%m-%d")
 
     # 时间校准
     _check_system_time()
@@ -69,54 +74,69 @@ async def run_all_sign_in() -> list[dict]:
         account_name = account.get("GameSignAccount", "Name") or "默认账号"
         account_enabled = account.get("GameSignAccount", "Enabled")
 
+        # 非强制模式：跳过今日已签到的用户
+        if not force:
+            user_last_sign = account.get("GameSignAccount", "LastSignDate")
+            if user_last_sign == today:
+                logger.debug(f"[{account_name}] 今日已签到，跳过")
+                continue
+
         # 跳过已禁用的用户
         if not account_enabled:
             continue
 
         # 森空岛签到（方舟 + 终末地，一次调用获取两个游戏结果）
         skland_token = account.get("GameSignAccount", "SklandToken")
-        skland_enabled = account.get("GameSignAccount", "SklandEnabled")
-        if skland_token and skland_enabled:
+        if skland_token:
             logger.info(f"[{account_name}] 开始森空岛签到")
             try:
                 from .skland import skland_sign_in
 
                 skland_results = await skland_sign_in(skland_token, app_code="all")
-                for item in skland_results.get("成功", []):
-                    results.append({
-                        "account": account_name,
-                        "account_uid": str(uid),
-                        "game": "森空岛",
-                        "platform": "森空岛",
-                        "status": "成功",
-                        "reward": "",
-                        "reason": "",
-                    })
-                for item in skland_results.get("重复", []):
-                    results.append({
-                        "account": account_name,
-                        "account_uid": str(uid),
-                        "game": "森空岛",
-                        "platform": "森空岛",
-                        "status": "已签到",
-                        "reward": "",
-                        "reason": "",
-                    })
-                for item in skland_results.get("失败", []):
-                    results.append({
-                        "account": account_name,
-                        "account_uid": str(uid),
-                        "game": "森空岛",
-                        "platform": "森空岛",
-                        "status": "失败",
-                        "reward": "",
-                        "reason": "签到失败",
-                    })
+                # 按游戏分组的结果：{"arknights": {成功/重复/失败}, "endfield": {成功/重复/失败}}
+                game_mapping = {
+                    "arknights": "明日方舟",
+                    "endfield": "终末地",
+                }
+                for game_key, game_name in game_mapping.items():
+                    game_data = skland_results.get(game_key, {})
+                    if not game_data:
+                        continue
+                    for item in game_data.get("成功", []):
+                        results.append({
+                            "account": item if isinstance(item, str) else str(item),
+                            "account_uid": str(uid),
+                            "game": game_name,
+                            "platform": "森空岛",
+                            "status": "成功",
+                            "reward": "",
+                            "reason": "",
+                        })
+                    for item in game_data.get("重复", []):
+                        results.append({
+                            "account": item if isinstance(item, str) else str(item),
+                            "account_uid": str(uid),
+                            "game": game_name,
+                            "platform": "森空岛",
+                            "status": "已签到",
+                            "reward": "",
+                            "reason": "",
+                        })
+                    for item in game_data.get("失败", []):
+                        results.append({
+                            "account": item if isinstance(item, str) else str(item),
+                            "account_uid": str(uid),
+                            "game": game_name,
+                            "platform": "森空岛",
+                            "status": "失败",
+                            "reward": "",
+                            "reason": "签到失败",
+                        })
 
             except Exception as e:
                 logger.error(f"[{account_name}] 森空岛签到异常: {e}")
                 results.append({
-                    "account": account_name,
+                    "account": f"{account_name}/森空岛",
                     "account_uid": str(uid),
                     "game": "森空岛",
                     "platform": "森空岛",
@@ -127,8 +147,7 @@ async def run_all_sign_in() -> list[dict]:
 
         # 米游社签到
         miyoushe_token = account.get("GameSignAccount", "MiyousheToken")
-        miyoushe_enabled = account.get("GameSignAccount", "MiyousheEnabled")
-        if miyoushe_token and miyoushe_enabled:
+        if miyoushe_token:
             logger.info(f"[{account_name}] 开始米游社签到")
             try:
                 from .miyoushe import miyoushe_sign_in
@@ -141,7 +160,7 @@ async def run_all_sign_in() -> list[dict]:
             except Exception as e:
                 logger.error(f"[{account_name}] 米游社签到异常: {e}")
                 results.append({
-                    "account": account_name,
+                    "account": f"{account_name}/米游社",
                     "game": "米游社",
                     "platform": "米游社",
                     "status": "失败",
@@ -151,8 +170,7 @@ async def run_all_sign_in() -> list[dict]:
 
         # 库街区签到
         kuro_token = account.get("GameSignAccount", "KuroToken")
-        kuro_enabled = account.get("GameSignAccount", "KuroEnabled")
-        if kuro_token and kuro_enabled:
+        if kuro_token:
             logger.info(f"[{account_name}] 开始库街区签到")
             try:
                 from .kuro import kuro_sign_in
@@ -165,7 +183,7 @@ async def run_all_sign_in() -> list[dict]:
             except Exception as e:
                 logger.error(f"[{account_name}] 库街区签到异常: {e}")
                 results.append({
-                    "account": account_name,
+                    "account": f"{account_name}/库街区",
                     "game": "库街区",
                     "platform": "库街区",
                     "status": "失败",
@@ -173,10 +191,56 @@ async def run_all_sign_in() -> list[dict]:
                     "reason": str(e),
                 })
 
+        # 标记该用户今日已签到
+        has_signed = any(
+            r.get("account_uid") == str(uid)
+            and r.get("status") in ("成功", "已签到")
+            for r in results
+        )
+        if has_signed:
+            try:
+                await account.set("GameSignAccount", "LastSignDate", today)
+            except Exception:
+                pass
+
     if not results:
         logger.info("没有配置任何签到平台")
 
     return results
+
+
+def merge_sign_results(existing: dict, formatted: dict, replace: bool = False) -> dict:
+    """将新签到结果合并到已有结果中
+
+    Args:
+        existing: 已有的 _game_sign_result_data
+        formatted: 本次 format_sign_results 的新结果
+        replace: True 时按 account_uid 替换旧数据（手动签到用）；
+                 False 时仅追加不存在的 account_uid
+
+    Returns:
+        合并后的 _game_sign_result_data
+    """
+    if not existing:
+        return formatted
+
+    for platform, accounts in formatted.items():
+        if platform not in existing:
+            existing[platform] = accounts
+        elif replace:
+            new_uids = {g.get("account_uid") for g in accounts}
+            existing[platform] = [
+                g for g in existing[platform]
+                if g.get("account_uid") not in new_uids
+            ]
+            existing[platform].extend(accounts)
+        else:
+            existing_uids = {g.get("account_uid") for g in existing[platform]}
+            for account in accounts:
+                if account.get("account_uid") not in existing_uids:
+                    existing[platform].append(account)
+
+    return existing
 
 
 def format_sign_results(results: list[dict]) -> dict:
