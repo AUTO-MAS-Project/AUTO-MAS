@@ -2495,35 +2495,27 @@ class GameSignAccountGroup(ConfigBase):
 
         ## GameSignAccount - 账号组名称
         self.Name = ConfigItem(
-            "GameSignAccount", "Name", "账号组 1", StringValidator()
+            "GameSignAccount", "Name", "用户 1", StringValidator()
         )
         ## GameSignAccount - 是否启用（该用户是否参与签到）
         self.Enabled = ConfigItem(
             "GameSignAccount", "Enabled", True, BoolValidator()
         )
-        ## GameSignAccount - 米游社是否启用
-        self.MiyousheEnabled = ConfigItem(
-            "GameSignAccount", "MiyousheEnabled", True, BoolValidator()
-        )
         ## GameSignAccount - 米游社登录凭证 (DPAPI 加密)
         self.MiyousheToken = ConfigItem(
             "GameSignAccount", "MiyousheToken", "", EncryptValidator()
-        )
-        ## GameSignAccount - 库街区是否启用
-        self.KuroEnabled = ConfigItem(
-            "GameSignAccount", "KuroEnabled", True, BoolValidator()
         )
         ## GameSignAccount - 库街区登录凭证 (DPAPI 加密)
         self.KuroToken = ConfigItem(
             "GameSignAccount", "KuroToken", "", EncryptValidator()
         )
-        ## GameSignAccount - 森空岛是否启用
-        self.SklandEnabled = ConfigItem(
-            "GameSignAccount", "SklandEnabled", True, BoolValidator()
-        )
         ## GameSignAccount - 森空岛登录凭证 (DPAPI 加密)
         self.SklandToken = ConfigItem(
             "GameSignAccount", "SklandToken", "", EncryptValidator()
+        )
+        ## GameSignAccount - 上次签到日期 (按用户隔离，防止重复触发)
+        self.LastSignDate = ConfigItem(
+            "GameSignAccount", "LastSignDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
         )
 
         super().__init__()

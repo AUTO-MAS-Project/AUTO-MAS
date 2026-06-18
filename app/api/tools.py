@@ -96,12 +96,16 @@ async def manual_game_sign() -> OutBase:
 
     try:
         from app.tools.game_sign import run_all_sign_in, format_sign_results
+        from app.tools.game_sign import merge_sign_results
 
-        results = await run_all_sign_in()
+        results = await run_all_sign_in(force=True)
 
         # 格式化并存储结果
         formatted = format_sign_results(results)
-        Config.ToolsConfig._game_sign_result_data = formatted
+        # 合并结果（手动签到按 account_uid 替换旧数据）
+        Config.ToolsConfig._game_sign_result_data = merge_sign_results(
+            Config.ToolsConfig._game_sign_result_data, formatted, replace=True
+        )
 
         # 标记今天已签到
         await Config.ToolsConfig.set(
