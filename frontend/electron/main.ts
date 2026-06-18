@@ -90,6 +90,7 @@ let tray: Tray | null = null
 let isQuitting = false
 let saveWindowStateTimeout: NodeJS.Timeout | null = null
 let isInitialStartup = true // 标记是否为初次启动
+const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自启动任务计划拉起
 
 // 配置接口
 interface AppConfig {
@@ -362,8 +363,8 @@ function createWindow() {
 
   // 页面加载完成后再显示窗口，避免白屏闪烁
   win.webContents.on('did-finish-load', () => {
-    // 根据配置决定是否显示窗口
-    if (!config.Start.IfMinimizeDirectly) {
+    // 仅开机自启动且开启"启动后直接最小化"时才隐藏窗口，手动双击启动始终显示
+    if (!(isAutoStart && config.Start.IfMinimizeDirectly)) {
       win.show()
       logger.info('页面加载完成，窗口已显示')
     }
@@ -547,8 +548,8 @@ function createWindow() {
     // 根据配置初始化托盘
     updateTrayVisibility(currentConfig)
 
-    // 处理启动后直接最小化（只在初次启动时执行）
-    if (isInitialStartup && currentConfig.Start.IfMinimizeDirectly) {
+    // 处理启动后直接最小化（仅开机自启动时执行）
+    if (isAutoStart && isInitialStartup && currentConfig.Start.IfMinimizeDirectly) {
       if (currentConfig.UI.IfToTray) {
         win.hide()
         win.setSkipTaskbar(true)

@@ -16,6 +16,12 @@
 - 除非用户明确要求，不要创建提交、推送分支、发布 Issue/PR，或切换到会丢失当前工作的分支。
 - 后端 schema 变更后只能通过生成器更新前端 API 代码；不要手改 OpenAPI 生成文件。
 
+## 分支与 PR
+
+- `main`：禁止协助 push / force push；禁止以 `main` 为 base 创建 PR。仅维护者将 `dev` 合入 `main` 用于发布。
+- `dev`：上游社区贡献的合并目标。外部贡献者应在自己的 fork 中从上游 `dev` 拉出开发分支，再向 `AUTO-MAS-Project/AUTO-MAS:dev` 提 PR。
+- `release/{version}`：由发布流程与 cherry-pick 维护，外部贡献者不要直接改。
+
 ## 写作约束
 
 - Issue 只描述用户可观察的问题、需求、复现信息、环境与日志。

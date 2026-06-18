@@ -2,15 +2,17 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from '../models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
+import type { Body_update_oknte_config_api_scripts_oknte_configs_update_post } from '../models/Body_update_oknte_config_api_scripts_oknte_configs_update_post';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
-export class OkNteService {
+export class OknteService {
     /**
      * 获取 OK-NTE 配置文件列表及 schema
      * 获取 OK-NTE 配置文件列表及 schema 定义。
      * 读写 per-user 配置目录（data/{script_id}/Default/ConfigFile/），
-     * 若为空则自动从 OK-NTE configs 目录初始化默认配置。
+     * 若为空则自动从 ok-nte configs 目录初始化默认配置。
      *
      * Args:
      * script_id: OK-NTE 脚本 ID
@@ -21,7 +23,7 @@ export class OkNteService {
      * @returns any Successful Response
      * @throws ApiError
      */
-    public static getOkNteConfigsListApiScriptsOkNteConfigsListPost(
+    public static getOknteConfigsListApiScriptsOknteConfigsListPost(
         scriptId: string,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
@@ -50,8 +52,8 @@ export class OkNteService {
      * @returns any Successful Response
      * @throws ApiError
      */
-    public static updateOkNteConfigApiScriptsOkNteConfigsUpdatePost(
-        requestBody: any,
+    public static updateOknteConfigApiScriptsOknteConfigsUpdatePost(
+        requestBody: Body_update_oknte_config_api_scripts_oknte_configs_update_post,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -77,8 +79,8 @@ export class OkNteService {
      * @returns any Successful Response
      * @throws ApiError
      */
-    public static batchUpdateOkNteConfigsApiScriptsOkNteConfigsBatchUpdatePost(
-        requestBody: any,
+    public static batchUpdateOknteConfigsApiScriptsOknteConfigsBatchUpdatePost(
+        requestBody: Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -91,5 +93,3 @@ export class OkNteService {
         });
     }
 }
-
-

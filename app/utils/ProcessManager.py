@@ -225,6 +225,7 @@ class ProcessManager:
         *args: str,
         cwd: Path | None = None,
         target_process: ProcessInfo | None = None,
+        stdin: int = asyncio.subprocess.DEVNULL,
         stdout: int = asyncio.subprocess.DEVNULL,
         stderr: int = asyncio.subprocess.DEVNULL,
     ) -> None:
@@ -236,6 +237,7 @@ class ProcessManager:
             *args (str): 传递给可执行文件的参数
             cwd (Path | None): 可选的工作目录, 默认为可执行文件所在目录
             target_process (ProcessInfo | None): 期望目标进程信息, 用于跟踪主进程及其子进程, 默认为 None 表示跟踪直接启动的子进程
+            stdin (int): 标准输入重定向选项, 默认为 asyncio.subprocess.DEVNULL
             stdout (int): 标准输出重定向选项, 默认为 asyncio.subprocess.DEVNULL
             stderr (int): 标准错误重定向选项, 默认为 asyncio.subprocess.DEVNULL
         """
@@ -258,7 +260,7 @@ class ProcessManager:
             program,
             *args,
             cwd=cwd or (Path(program).parent if Path(program).is_file() else None),
-            stdin=asyncio.subprocess.DEVNULL,
+            stdin=stdin,
             stdout=stdout,
             stderr=stderr,
             creationflags=CREATION_FLAGS,

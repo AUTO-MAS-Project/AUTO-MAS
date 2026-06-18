@@ -25,5 +25,3 @@ export type OkNteConfig = {
     Run?: (OkNteConfig_Run | null);
 };
 
-
-

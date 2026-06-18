@@ -56,5 +56,3 @@ export type OkNteConfig_Game = {
     CloseOnFinish?: (boolean | null);
 };
 
-
-

@@ -46,6 +46,8 @@ from app.models.config import (
     MaaEndConfig,
     OkwwConfig,
     OkNteConfig,
+    HSRConfig,
+    HSRUserConfig,
     MaaPlanConfig,
     QueueConfig,
     QueueItem,
@@ -87,7 +89,7 @@ except ImportError:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.3.1"
+    VERSION = "v5.4.0-beta.1"
 
     def __init__(self) -> None:
         super().__init__()
@@ -133,6 +135,7 @@ class AppConfig(GlobalConfig):
             "Hibernate",
             "Sleep",
             "KillSelf",
+            "Logoff",
         ] = "NoAction"
         self.temp_task: List[asyncio.Task] = []
 
@@ -531,7 +534,7 @@ class AppConfig(GlobalConfig):
 
     async def add_script(
         self,
-        script: Literal["MAA", "SRC", "General", "MaaEnd", "M9A", "Okww", "OkNte"],
+        script: Literal["MAA", "SRC", "General", "MaaEnd", "M9A", "Okww", "OkNte", "HSR"],
         script_id: str | None = None,
     ) -> tuple[
         uuid.UUID,
@@ -541,7 +544,8 @@ class AppConfig(GlobalConfig):
         | MaaEndConfig
         | M9AConfig
         | OkwwConfig
-        | OkNteConfig,
+        | OkNteConfig
+        | HSRConfig,
     ]:
         """添加脚本配置"""
 
@@ -826,7 +830,9 @@ class AppConfig(GlobalConfig):
         | GeneralUserConfig
         | MaaEndUserConfig
         | M9AUserConfig
-        | OkNteUserConfig,
+        | OkwwUserConfig
+        | OkNteUserConfig
+        | HSRUserConfig,
     ]:
         """添加用户配置"""
 
@@ -849,6 +855,8 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(MaaEndUserConfig)
         elif isinstance(script_config, M9AConfig):
             uid, config = await script_config.UserData.add(M9AUserConfig)
+        elif isinstance(script_config, HSRConfig):
+            uid, config = await script_config.UserData.add(HSRUserConfig)
         else:
             raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 
@@ -2055,6 +2063,30 @@ class AppConfig(GlobalConfig):
 
         logger.success(f"通用日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
 
+    async def save_hsr_log(self, log_path: Path, logs: list, hsr_result: str) -> None:
+        """
+        保存 HSR 专项日志并生成对应统计数据
+
+        :param log_path: 日志文件保存路径
+        :param logs: 日志内容列表
+        :param hsr_result: 待保存的日志结果信息
+        """
+
+        logger.info(
+            f"开始处理 HSR 专项日志, 日志长度: {len(logs)}, 日志标记: {hsr_result}"
+        )
+
+        data: Dict[str, str] = {"hsr_result": hsr_result}
+
+        # 保存日志
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
+        log_path.with_suffix(".json").write_text(
+            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+        )
+
+        logger.success(f"HSR 专项日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
+
     async def merge_statistic_info(self, statistic_path_list: List[Path]) -> dict:
         """
         合并指定数据统计信息文件
@@ -2067,6 +2099,19 @@ class AppConfig(GlobalConfig):
         """
 
         data: Dict[str, Any] = {"index": {}}
+        hsr_success_results = {
+            "HSR 任务结束",
+            "HSR 用户任务完成",
+            "HSR 失败任务补跑完成",
+            "HSR 本轮无需执行，已跳过",
+        }
+
+        def is_success_result(result_key: str, result_value: Any) -> bool:
+            if result_value == "Success!":
+                return True
+            if result_key == "hsr_result" and result_value in hsr_success_results:
+                return True
+            return False
 
         for json_file in statistic_path_list:
             try:
@@ -2109,6 +2154,7 @@ class AppConfig(GlobalConfig):
                     "maaend_result",
                     "src_result",
                     "general_result",
+                    "hsr_result",
                 ]:
                     actual_date = (
                         datetime.strptime(
@@ -2119,7 +2165,9 @@ class AppConfig(GlobalConfig):
                         .astimezone()
                     )
 
-                    if single_data[key] != "Success!":
+                    success = is_success_result(key, single_data[key])
+
+                    if not success:
                         if "error_info" not in data:
                             data["error_info"] = {}
                         data["error_info"][
@@ -2128,9 +2176,7 @@ class AppConfig(GlobalConfig):
 
                     data["index"][actual_date] = {
                         "date": actual_date.strftime("%Y-%m-%d %H:%M:%S"),
-                        "status": (
-                            "DONE" if single_data[key] == "Success!" else "ERROR"
-                        ),
+                        "status": "DONE" if success else "ERROR",
                         "jsonFile": str(json_file),
                     }
 

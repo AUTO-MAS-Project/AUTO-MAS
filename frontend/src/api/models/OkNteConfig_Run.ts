@@ -20,5 +20,3 @@ export type OkNteConfig_Run = {
     RunTimeLimit?: (number | null);
 };
 
-
-

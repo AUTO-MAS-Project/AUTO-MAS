@@ -32,5 +32,3 @@ export type OkNteUserConfig_Notify = {
     ServerChanKey?: (string | null);
 };
 
-
-

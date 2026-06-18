@@ -19,10 +19,8 @@ export type OkNteUserConfig_Data = {
      */
     LastProxyStatus?: (string | null);
     /**
-     * 上次运行的 OK-NTE 任务序号（-t N）
+     * 上次运行的 ok-nte 任务序号（-t N）
      */
     LastTaskIndex?: (number | null);
 };
-
-
 

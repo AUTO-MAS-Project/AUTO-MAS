@@ -60,5 +60,3 @@ export type OkNteUserConfig_Info = {
     Resource?: (string | null);
 };
 
-
-

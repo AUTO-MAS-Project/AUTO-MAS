@@ -16,5 +16,3 @@ export type OkNteConfig_Info = {
     RootPath?: (string | null);
 };
 
-
-

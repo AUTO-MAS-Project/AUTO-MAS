@@ -156,7 +156,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { OkNteService } from '@/api/services/OkNteService'
+import { OknteService } from '@/api/services/OknteService'
 
 interface ConfigField {
   name: string
@@ -257,7 +257,7 @@ const selectConfig = (filename: string) => {
 const loadConfigs = async () => {
   loading.value = true
   try {
-    const resp = await OkNteService.getOkNteConfigsListApiScriptsOkNteConfigsListPost(props.scriptId)
+    const resp = await OknteService.getOknteConfigsListApiScriptsOknteConfigsListPost(props.scriptId)
     if (resp?.code === 200 && resp?.data) {
       configs.value = resp.data
       optionLabels.value = resp.optionLabels || {}
@@ -281,7 +281,7 @@ const saveAll = async (silent = true) => {
   saving.value = true
   try {
     const configsToUpdate = { ...localChanges.value }
-    const resp = await OkNteService.batchUpdateOkNteConfigsApiScriptsOkNteConfigsBatchUpdatePost({
+    const resp = await OknteService.batchUpdateOknteConfigsApiScriptsOknteConfigsBatchUpdatePost({
       script_id: props.scriptId,
       configs: configsToUpdate
     })

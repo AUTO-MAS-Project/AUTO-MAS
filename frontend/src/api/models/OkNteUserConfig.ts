@@ -25,5 +25,3 @@ export type OkNteUserConfig = {
     Notify?: (OkNteUserConfig_Notify | null);
 };
 
-
-
