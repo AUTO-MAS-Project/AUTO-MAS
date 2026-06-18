@@ -57,8 +57,9 @@ const loadAccounts = async () => {
             })
         }
         accounts.value = instances
-    } catch {
-        // 静默失败
+    } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.error(`加载用户列表失败: ${errorMsg}`)
     }
 }
 
