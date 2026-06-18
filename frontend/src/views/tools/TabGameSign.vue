@@ -192,7 +192,7 @@ const signResult = computed<PlatformResult>(() => {
 })
 
 // 标签云状态类型
-type TagStatus = 'signed' | 'partial' | 'unsigned' | 'failed' | 'unconfigured'
+type TagStatus = 'signed' | 'partial' | 'unsigned' | 'failed' | 'risk' | 'unconfigured'
 
 // 平台标签数据结构
 interface PlatformTag {
@@ -203,6 +203,7 @@ interface PlatformTag {
     signedCount: number
     totalCount: number
     failedCount: number
+    riskCount: number
 }
 
 // 将每个用户的社区标签预计算为响应式 Map
@@ -235,10 +236,13 @@ const userTagsMap = computed<Map<string, PlatformTag[]>>(() => {
             const totalCount = games.length
             const signedCount = games.filter(g => g.status === '成功' || g.status === '已签到').length
             const failedCount = games.filter(g => g.status === '失败').length
+            const riskCount = games.filter(g => g.status === '风控').length
 
             let status: TagStatus
             if (totalCount === 0) {
                 status = 'unsigned'
+            } else if (riskCount > 0) {
+                status = 'risk'
             } else if (failedCount > 0) {
                 status = 'failed'
             } else if (signedCount === totalCount) {
@@ -257,6 +261,7 @@ const userTagsMap = computed<Map<string, PlatformTag[]>>(() => {
                 signedCount: status === 'unsigned' ? 0 : signedCount,
                 totalCount: status === 'unsigned' ? 0 : totalCount,
                 failedCount: status === 'unsigned' ? 0 : failedCount,
+                riskCount: status === 'unsigned' ? 0 : riskCount,
             })
         }
         map.set(account.uid, tags)
@@ -472,8 +477,8 @@ onMounted(() => {
                                                     <div class="sign-tooltip-alias">{{ group.account_alias }}</div>
                                                     <div v-for="game in group.games" :key="game.game" class="sign-tooltip-row">
                                                         <span>{{ game.game }}</span>
-                                                        <span :class="game.status === '成功' || game.status === '已签到' ? 'tt-signed' : game.status === '失败' ? 'tt-failed' : 'tt-unsigned'">
-                                                            ● {{ game.status === '成功' || game.status === '已签到' ? '已签' : game.status === '失败' ? '失败' : '未签' }}
+                                                        <span :class="game.status === '成功' || game.status === '已签到' ? 'tt-signed' : game.status === '风控' ? 'tt-risk' : game.status === '失败' ? 'tt-failed' : 'tt-unsigned'">
+                                                            ● {{ game.status === '成功' || game.status === '已签到' ? '已签' : game.status === '风控' ? '风控' : game.status === '失败' ? '失败' : '未签' }}
                                                         </span>
                                                         <span v-if="game.reward" class="tt-reward">{{ game.reward }}</span>
                                                     </div>
@@ -742,6 +747,13 @@ onMounted(() => {
     color: #f5222d;
 }
 
+/* 橙色：账号风控 */
+.tag-risk {
+    background: #fff2e8;
+    border-color: #ffbb96;
+    color: #e8590c;
+}
+
 /* 橙色：部分签到 */
 .tag-partial {
     background: #fff7e6;
@@ -767,6 +779,7 @@ onMounted(() => {
 }
 .tt-signed { color: #52c41a; }
 .tt-unsigned { color: #d4b106; }
+.tt-risk { color: #e8590c; }
 .tt-failed { color: #f5222d; }
 .tt-reward { color: var(--ant-color-text-tertiary); font-size: 12px; }
 .sign-tooltip-empty { color: var(--ant-color-text-quaternary); font-size: 13px; text-align: center; padding: 8px 0; }
