@@ -218,7 +218,8 @@ class Task(TaskExecuteBase):
 
         # 任务结束时触发游戏签到
         from app.core.timer import MainTimer
-        asyncio.create_task(MainTimer.try_game_sign_for_task())
+        task = asyncio.create_task(MainTimer.try_game_sign_for_task())
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
     async def on_crash(self, e: Exception) -> None:
         logger.exception(f"任务 {self.task_info.task_id} 出现异常: {e}")

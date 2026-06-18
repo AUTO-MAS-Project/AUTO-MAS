@@ -30,15 +30,17 @@ from app.utils.logger import get_logger
 logger = get_logger("游戏社区签到")
 
 
-def _check_system_time() -> bool:
+async def _check_system_time() -> bool:
     """校准系统时间，避免因时间偏差导致签到失败
 
     Returns:
         True: 时间正常; False: 偏差过大
     """
     try:
-        import httpx
-        resp = httpx.get("http://worldtimeapi.org/api/timezone/Asia/Shanghai", timeout=5)
+        async with httpx.AsyncClient(proxy=Config.proxy) as client:
+            resp = await client.get(
+                "http://worldtimeapi.org/api/timezone/Asia/Shanghai", timeout=5
+            )
         api_time = resp.json().get("unixtime", 0)
         local_time = time.time()
         offset = abs(api_time - local_time)
@@ -68,7 +70,7 @@ async def run_all_sign_in(force: bool = False) -> list[dict]:
     today = datetime.now().strftime("%Y-%m-%d")
 
     # 时间校准
-    _check_system_time()
+    await _check_system_time()
 
     for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
         account_name = account.get("GameSignAccount", "Name") or "默认账号"
