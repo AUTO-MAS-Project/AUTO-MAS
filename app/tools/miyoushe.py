@@ -126,6 +126,34 @@ BASE_HEADERS = {
 # ==================== 工具函数 ====================
 
 
+class _RiskControlError(Exception):
+    """风控异常：API 返回空响应或非 JSON 内容"""
+    pass
+
+
+def _safe_json_parse(response: httpx.Response) -> dict:
+    """安全解析 API 响应 JSON
+
+    当响应为空或非 JSON 时（通常是风控拦截），抛出 _RiskControlError。
+
+    Args:
+        response: httpx 响应对象
+
+    Returns:
+        解析后的 JSON 字典
+
+    Raises:
+        _RiskControlError: 响应为空或非 JSON（疑似风控）
+    """
+    text = response.text.strip()
+    if not text:
+        raise _RiskControlError("API 返回空响应，疑似被风控")
+    try:
+        return response.json()
+    except Exception:
+        raise _RiskControlError(f"API 返回非 JSON 内容，疑似被风控: {text[:100]}")
+
+
 def _parse_cookie(cookie_str: str) -> Dict[str, str]:
     """解析 cookie 字符串为字典"""
     cookies: Dict[str, str] = {}
@@ -231,7 +259,7 @@ async def _derive_cookie_token(
             cookies=stoken_cookies,
             timeout=30.0,
         )
-        rsp = response.json()
+        rsp = _safe_json_parse(response)
 
     if rsp.get("retcode") != 0:
         raise Exception(f"派生 cookie_token 失败: {rsp.get('message')}")
@@ -334,6 +362,16 @@ async def miyoushe_sign_in(cookie: str, proxy: str | None = None) -> list[dict]:
     # 获取游戏角色列表
     try:
         roles = await _get_game_roles(effective_cookie)
+    except _RiskControlError:
+        logger.warning(f"获取米游社游戏角色被风控")
+        return [{
+            "account": f"{stuid}/米游社",
+            "game": "米游社",
+            "platform": "米游社",
+            "status": "风控",
+            "reward": "",
+            "reason": "账号被风控，接口返回异常",
+        }]
     except Exception as e:
         logger.error(f"获取米游社游戏角色失败: {e}")
         return [{
@@ -377,6 +415,17 @@ async def miyoushe_sign_in(cookie: str, proxy: str | None = None) -> list[dict]:
                 })
                 logger.info(f"{account} {game_cfg['name']} 今日已签到")
                 continue
+        except _RiskControlError:
+            results.append({
+                "account": account,
+                "game": game_cfg["name"],
+                "platform": "米游社",
+                "status": "风控",
+                "reward": "",
+                "reason": "账号被风控，签到接口返回异常",
+            })
+            logger.warning(f"{account} {game_cfg['name']} 账号被风控")
+            continue
         except Exception as e:
             logger.warning(f"检查签到状态异常: {e}")
 
@@ -384,6 +433,16 @@ async def miyoushe_sign_in(cookie: str, proxy: str | None = None) -> list[dict]:
         try:
             sign_result = await _do_sign(effective_cookie, game_cfg, region, game_uid)
             results.append(sign_result)
+        except _RiskControlError:
+            results.append({
+                "account": account,
+                "game": game_cfg["name"],
+                "platform": "米游社",
+                "status": "风控",
+                "reward": "",
+                "reason": "账号被风控，签到接口返回异常",
+            })
+            logger.warning(f"{account} {game_cfg['name']} 签到时被风控")
         except Exception as e:
             results.append({
                 "account": account,
@@ -420,7 +479,7 @@ async def _get_game_roles(cookie: str) -> list[dict]:
             cookies=_parse_cookie(cookie),
             timeout=30.0,
         )
-        rsp = response.json()
+        rsp = _safe_json_parse(response)
 
     if rsp.get("retcode") != 0:
         raise Exception(f"获取角色列表失败: {rsp.get('message')}")
@@ -466,7 +525,7 @@ async def _check_sign_info(
             cookies=_parse_cookie(cookie),
             timeout=30.0,
         )
-        rsp = response.json()
+        rsp = _safe_json_parse(response)
 
     if rsp.get("retcode") != 0:
         return False
@@ -500,7 +559,7 @@ async def _do_sign(
             cookies=cookies,
             timeout=30.0,
         )
-        rsp = response.json()
+        rsp = _safe_json_parse(response)
 
     stuid = _get_stuid(cookies)
     account = f"{stuid}/{stuid}({uid})" if uid else f"{stuid}/米游社"
