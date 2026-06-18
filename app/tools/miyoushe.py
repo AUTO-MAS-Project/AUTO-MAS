@@ -36,6 +36,7 @@ import hashlib
 import httpx
 import random
 import string
+import asyncio
 
 from typing import Dict
 
@@ -431,7 +432,7 @@ async def miyoushe_sign_in(cookie: str, proxy: str | None = None) -> list[dict]:
 
         # 执行签到
         try:
-            sign_result = await _do_sign(effective_cookie, game_cfg, region, game_uid)
+            sign_result = await _do_sign(effective_cookie, game_cfg, region, game_uid, account)
             results.append(sign_result)
         except _RiskControlError:
             results.append({
@@ -455,7 +456,6 @@ async def miyoushe_sign_in(cookie: str, proxy: str | None = None) -> list[dict]:
             logger.error(f"{account} {game_cfg['name']} 签到异常: {e}")
 
         # 间隔防风控
-        import asyncio
         await asyncio.sleep(3 + random.uniform(1, 5))
 
     return results
@@ -536,9 +536,17 @@ async def _check_sign_info(
 
 
 async def _do_sign(
-    cookie: str, game_cfg: dict, region: str, uid: str
+    cookie: str, game_cfg: dict, region: str, uid: str, account: str = ""
 ) -> dict:
-    """执行签到"""
+    """执行签到
+
+    Args:
+        cookie: cookie 字符串
+        game_cfg: 游戏配置
+        region: 服务器区号
+        uid: 游戏 UID
+        account: 账号标识（如 nickname/nickname(uid)），为空时用 stuid 构造
+    """
     headers = BASE_HEADERS.copy()
     body = json.dumps(
         {"act_id": game_cfg["act_id"], "region": region, "uid": uid},
@@ -562,7 +570,8 @@ async def _do_sign(
         rsp = _safe_json_parse(response)
 
     stuid = _get_stuid(cookies)
-    account = f"{stuid}/{stuid}({uid})" if uid else f"{stuid}/米游社"
+    if not account:
+        account = f"{stuid}/{stuid}({uid})" if uid else f"{stuid}/米游社"
 
     if rsp.get("retcode") == 0:
         # 尝试获取奖励信息
