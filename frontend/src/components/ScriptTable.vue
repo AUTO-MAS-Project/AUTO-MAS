@@ -20,6 +20,7 @@
                     class="script-logo" />
                   <img v-else-if="script.type === 'M9A'" src="@/assets/M9A.png" alt="M9A" class="script-logo" />
                   <img v-else-if="script.type === 'Okww'" src="@/assets/ok-ww.ico" alt="ok-ww" class="script-logo" />
+                  <img v-else-if="script.type === 'HSR'" src="@/assets/hsr.png" alt="HSR" class="script-logo" />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
@@ -34,7 +35,9 @@
                           ? 'cyan'
                           : script.type === 'Okww'
                             ? 'blue'
-                            : 'green'
+                            : script.type === 'HSR'
+                              ? 'purple'
+                              : 'green'
                     " class="script-type">
                     {{ getScriptTypeLabel(script.type) }}
                   </a-tag>
@@ -122,7 +125,7 @@
                       <div class="user-details-row">
                         <div class="user-name-section">
                           <span class="user-name">{{ user.Info.Name }}</span>
-                          <!-- MAA、SRC 和 MaaEnd 脚本显示服务器标签 -->
+                          <!-- MAA、SRC、MaaEnd 和 HSR 脚本显示服务器标签 -->
                           <a-tag v-if="
                             script.type === 'MAA' ||
                             script.type === 'SRC' ||
@@ -140,7 +143,7 @@
                             {{ user.Info.Resource || '官服' }}
                           </a-tag>
 
-                          <!-- 账号标签 -->
+                          <!-- 账号标签 (HSR 不显示账号/密码) -->
                           <a-tag v-if="
                             script.type === 'MAA' ||
                             script.type === 'SRC' ||
@@ -152,7 +155,7 @@
                             {{ getUserIdDisplayText(user) }}
                           </a-tag>
 
-                          <!-- 密码标签 -->
+                          <!-- 密码标签 (HSR 不显示账号/密码) -->
                           <a-tag v-if="
                             script.type === 'MAA' ||
                             script.type === 'SRC' ||
@@ -204,6 +207,13 @@
                           <!-- 后端提供的Tag字段 -->
                           <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
                                  :title="tag.text" class="info-tag" :color="tag.color">
+                            {{ tag.text }}
+                          </a-tag>
+                        </div>
+                        <!-- 用户详细信息 - HSR脚本用户 -->
+                        <div v-if="script.type === 'HSR'" class="user-info-tags">
+                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
+                            :title="tag.text" class="info-tag" :color="tag.color">
                             {{ tag.text }}
                           </a-tag>
                         </div>

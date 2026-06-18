@@ -48,7 +48,8 @@ export const POWER_ACTION_TEXT: Record<PowerIn.signal, string> = {
   [PowerIn.signal.REBOOT]: '重启',
   [PowerIn.signal.HIBERNATE]: '休眠',
   [PowerIn.signal.SLEEP]: '睡眠',
-  [PowerIn.signal.KILL_SELF]: '退出软件'
+  [PowerIn.signal.KILL_SELF]: '退出软件',
+  [PowerIn.signal.LOGOFF]: '注销此账户',
 }
 export const getPowerActionText = (action: PowerIn.signal) => POWER_ACTION_TEXT[action] || '无动作'
 
