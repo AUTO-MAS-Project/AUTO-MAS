@@ -577,10 +577,10 @@ onMounted(() => {
 }
 
 .drag-cell { width: 36px; min-width: 36px; max-width: 36px; text-align: center; }
-.name-cell { width: 140px; min-width: 140px; }
+.name-cell { width: 140px; min-width: 140px; text-align: center; }
 .status-cell { width: 120px; min-width: 120px; }
 .tags-cell { flex: 1; min-width: 0; }
-.actions-cell { width: 180px; min-width: 180px; text-align: right; }
+.actions-cell { width: 200px; min-width: 200px; text-align: center; }
 
 .user-draggable { min-height: 60px; }
 
@@ -608,9 +608,9 @@ onMounted(() => {
 
 .row-cell:last-child { border-right: none; }
 
-.row-cell.name-cell { justify-content: flex-start; }
-.row-cell.tags-cell { justify-content: flex-start; padding-right: 16px; }
-.row-cell.actions-cell { justify-content: flex-end; padding-left: 24px; }
+.row-cell.name-cell { justify-content: center; }
+.row-cell.tags-cell { justify-content: flex-start; padding-right: 20px; }
+.row-cell.actions-cell { justify-content: center; padding: 14px 24px; }
 
 /* 拖拽手柄 - 对齐 TimeSetManager */
 .drag-handle {
