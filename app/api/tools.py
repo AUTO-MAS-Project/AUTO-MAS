@@ -257,6 +257,16 @@ async def delete_game_sign_account(
 
     try:
         await Config.delete_game_sign_account(account.accountId)
+        # 删除账号后清理该用户的签到结果
+        account_uid = str(account.accountId)
+        result = Config.ToolsConfig._game_sign_result_data
+        for platform in list(result.keys()):
+            result[platform] = [
+                group for group in result[platform]
+                if group.get("account_uid") != account_uid
+            ]
+            if not result[platform]:
+                del result[platform]
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"

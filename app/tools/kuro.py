@@ -246,7 +246,7 @@ async def _do_sign(
 
     headers = GAME_HEADERS.copy()
     headers["token"] = token
-    headers["devCode"] = f"{dev_code}, Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) "
+    headers["devcode"] = f"{dev_code}, Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) "
 
     req_month = datetime.now().strftime("%m")
     body = f"gameId={game_id}&serverId={server_id}&roleId={role_id}&userId={user_id}&reqMonth={req_month}"
