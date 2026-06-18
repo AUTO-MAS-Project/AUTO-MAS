@@ -747,6 +747,7 @@ POWER_SIGN_MAP = {
     "Hibernate": "休眠",
     "Sleep": "睡眠",
     "KillSelf": "退出程序",
+    "Logoff": "注销此账户",
 }
 """电源操作类型索引表"""
 
