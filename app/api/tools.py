@@ -107,10 +107,16 @@ async def manual_game_sign() -> OutBase:
             Config.ToolsConfig._game_sign_result_data, formatted, replace=True
         )
 
-        # 标记今天已签到
-        await Config.ToolsConfig.set(
-            "GameSign", "LastSignDate", datetime.now().strftime("%Y-%m-%d")
-        )
+        # 标记今天已签到（仅当所有启用的用户都已签到时标记全局）
+        today = datetime.now().strftime("%Y-%m-%d")
+        all_signed = True
+        for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
+            if account.get("GameSignAccount", "Enabled"):
+                if account.get("GameSignAccount", "LastSignDate") != today:
+                    all_signed = False
+                    break
+        if all_signed:
+            await Config.ToolsConfig.set("GameSign", "LastSignDate", today)
         # 清除计划时间
         await Config.ToolsConfig.set("GameSign", "ScheduledTime", "")
 
