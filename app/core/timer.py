@@ -144,10 +144,15 @@ class _MainTimer:
     async def check_game_sign(self) -> None:
         """检查并执行游戏社区签到
 
-        启用签到 + 时间窗口内随机时刻执行，窗口外补签
+        启用签到 + 时间窗口内随机时刻执行，窗口外补签。
+        仅在整分钟时执行（秒数 != 0 时跳过），因为调度精度为分钟级。
         """
 
         if not Config.ToolsConfig.get("GameSign", "Enabled"):
+            return
+
+        # 节流：非整分钟跳过，避免每秒都执行
+        if datetime.now().second != 0:
             return
 
         now = datetime.now()
