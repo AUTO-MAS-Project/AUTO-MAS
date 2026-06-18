@@ -133,6 +133,7 @@ class AppConfig(GlobalConfig):
             "Hibernate",
             "Sleep",
             "KillSelf",
+            "Logoff",
         ] = "NoAction"
         self.temp_task: List[asyncio.Task] = []
 

@@ -907,6 +907,9 @@ export function useSchedulerLogic() {
       case 'KillSelf':
         newPowerAction = PowerIn.signal.KILL_SELF
         break
+      case 'Logoff':
+        newPowerAction = PowerIn.signal.LOGOFF
+        break
       default:
         logger.warn(`未知的PowerSign值: ${powerSign}`)
         return
@@ -991,6 +994,7 @@ export function useSchedulerLogic() {
           'Hibernate': PowerIn.signal.HIBERNATE,
           'Sleep': PowerIn.signal.SLEEP,
           'KillSelf': PowerIn.signal.KILL_SELF,
+          'Logoff': PowerIn.signal.LOGOFF,
         }
         const mappedSignal = signalMap[response.signal]
         if (mappedSignal) {

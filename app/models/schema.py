@@ -314,6 +314,7 @@ class QueueConfig_Info(BaseModel):
             "Hibernate",
             "Sleep",
             "KillSelf",
+            "Logoff",
         ]
     ] = Field(default=None, description="完成后操作")
 
@@ -1829,6 +1830,7 @@ class PowerIn(BaseModel):
         "Hibernate",
         "Sleep",
         "KillSelf",
+        "Logoff",
     ] = Field(..., description="电源操作信号")
 
 
@@ -1841,6 +1843,7 @@ class PowerOut(OutBase):
         "Hibernate",
         "Sleep",
         "KillSelf",
+        "Logoff",
     ] = Field(..., description="电源操作信号")
 
 
