@@ -74,16 +74,16 @@ async def run_all_sign_in(force: bool = False) -> list[dict]:
         account_name = account.get("GameSignAccount", "Name") or "默认账号"
         account_enabled = account.get("GameSignAccount", "Enabled")
 
+        # 跳过已禁用的用户
+        if not account_enabled:
+            continue
+
         # 非强制模式：跳过今日已签到的用户
         if not force:
             user_last_sign = account.get("GameSignAccount", "LastSignDate")
             if user_last_sign == today:
                 logger.debug(f"[{account_name}] 今日已签到，跳过")
                 continue
-
-        # 跳过已禁用的用户
-        if not account_enabled:
-            continue
 
         # 森空岛签到（方舟 + 终末地，一次调用获取两个游戏结果）
         skland_token = account.get("GameSignAccount", "SklandToken")
