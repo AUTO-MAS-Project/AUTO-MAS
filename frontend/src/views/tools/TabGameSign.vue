@@ -26,11 +26,8 @@ interface AccountInstance {
     type: string
     Name: string
     Enabled: boolean
-    MiyousheEnabled: boolean
     MiyousheToken: string
-    KuroEnabled: boolean
     KuroToken: string
-    SklandEnabled: boolean
     SklandToken: string
 }
 
@@ -54,11 +51,8 @@ const loadAccounts = async () => {
                 type: inst.type || 'GameSignAccountGroup',
                 Name: accountData.Name || '用户',
                 Enabled: accountData.Enabled ?? true,
-                MiyousheEnabled: accountData.MiyousheEnabled ?? true,
                 MiyousheToken: accountData.MiyousheToken || '',
-                KuroEnabled: accountData.KuroEnabled ?? true,
                 KuroToken: accountData.KuroToken || '',
-                SklandEnabled: accountData.SklandEnabled ?? true,
                 SklandToken: accountData.SklandToken || '',
             })
         }
@@ -71,11 +65,8 @@ const loadAccounts = async () => {
 const getAccountAllData = (account: AccountInstance): GameSignAccountGroupConfig => ({
     Name: account.Name,
     Enabled: account.Enabled,
-    MiyousheEnabled: account.MiyousheEnabled,
     MiyousheToken: account.MiyousheToken,
-    KuroEnabled: account.KuroEnabled,
     KuroToken: account.KuroToken,
-    SklandEnabled: account.SklandEnabled,
     SklandToken: account.SklandToken,
 })
 
@@ -90,11 +81,8 @@ const handleAddAccount = async () => {
                 type: 'GameSignAccountGroup',
                 Name: defaultName,
                 Enabled: true,
-                MiyousheEnabled: true,
                 MiyousheToken: '',
-                KuroEnabled: true,
                 KuroToken: '',
-                SklandEnabled: true,
                 SklandToken: '',
             }
             accounts.value.push(newAccount)
@@ -203,90 +191,94 @@ const signResult = computed<PlatformResult>(() => {
     }
 })
 
-// 社区与游戏的映射
-const platformGames: Record<string, string[]> = {
-    '米游社': ['原神', '崩坏：星穹铁道', '绝区零', '崩坏3rd'],
-    '森空岛': ['明日方舟', '终末地'],
-    '库街区': ['鸣潮'],
-}
-
-// 获取某用户在某社区的签到结果（按 account_uid 隔离）
-const getUserPlatformGames = (account: AccountInstance, platform: string): GameItem[] => {
-    const platformData = signResult.value[platform]
-    if (!platformData) return []
-
-    const games: GameItem[] = []
-    for (const group of platformData) {
-        if (group.account_uid === account.uid) {
-            games.push(...group.games)
-        }
-    }
-    return games
-}
-
-// 获取某用户在某社区的所有账号组（按 account_uid 隔离，用于 Tooltip 展示）
-const getAccountGroupsForPlatform = (account: AccountInstance, platform: string): AccountGroup[] => {
-    const platformData = signResult.value[platform]
-    if (!platformData) return []
-
-    return platformData.filter(group => group.account_uid === account.uid)
-}
-
 // 标签云状态类型
 type TagStatus = 'signed' | 'partial' | 'unsigned' | 'failed' | 'unconfigured'
 
-// 获取某用户在某社区的标签状态
-const getUserPlatformStatus = (account: AccountInstance, platform: string): {
+// 平台标签数据结构
+interface PlatformTag {
+    platform: string
     status: TagStatus
     games: GameItem[]
+    groups: AccountGroup[]
     signedCount: number
     totalCount: number
     failedCount: number
-} => {
-    const hasToken =
-        (platform === '米游社' && !!account.MiyousheToken) ||
-        (platform === '库街区' && !!account.KuroToken) ||
-        (platform === '森空岛' && !!account.SklandToken)
-
-    if (!hasToken) {
-        return { status: 'unconfigured', games: [], signedCount: 0, totalCount: 0, failedCount: 0 }
-    }
-
-    const games = getUserPlatformGames(account, platform)
-    const totalCount = games.length
-    const signedCount = games.filter(g => g.status === '成功' || g.status === '已签到').length
-    const failedCount = games.filter(g => g.status === '失败').length
-
-    if (totalCount === 0) {
-        return { status: 'unsigned', games, signedCount: 0, totalCount: 0, failedCount: 0 }
-    }
-    if (failedCount > 0) {
-        return { status: 'failed', games, signedCount, totalCount, failedCount }
-    }
-    if (signedCount === totalCount) {
-        return { status: 'signed', games, signedCount, totalCount, failedCount }
-    }
-    if (signedCount > 0) {
-        return { status: 'partial', games, signedCount, totalCount, failedCount }
-    }
-    return { status: 'unsigned', games, signedCount, totalCount, failedCount }
 }
 
-// 获取某用户的所有社区标签（仅已配置）
-const getUserPlatformTags = (account: AccountInstance) => {
-    const tags: { platform: string; status: TagStatus; games: GameItem[]; signedCount: number; totalCount: number; failedCount: number }[] = []
-    for (const platform of ['米游社', '森空岛', '库街区']) {
-        const ps = getUserPlatformStatus(account, platform)
-        if (ps.status !== 'unconfigured') {
-            tags.push({ platform, ...ps })
+// 将每个用户的社区标签预计算为响应式 Map
+// 使用 computed 确保当 signResult 或 accounts 变化时自动重新计算
+const userTagsMap = computed<Map<string, PlatformTag[]>>(() => {
+    const result = signResult.value
+    const map = new Map<string, PlatformTag[]>()
+
+    for (const account of accounts.value) {
+        const tags: PlatformTag[] = []
+        for (const platform of ['米游社', '森空岛', '库街区']) {
+            const hasToken =
+                (platform === '米游社' && !!account.MiyousheToken) ||
+                (platform === '库街区' && !!account.KuroToken) ||
+                (platform === '森空岛' && !!account.SklandToken)
+            if (!hasToken) continue
+
+            const platformData = result[platform]
+            const games: GameItem[] = []
+            const groups: AccountGroup[] = []
+            if (platformData) {
+                for (const group of platformData) {
+                    if (group.account_uid === account.uid) {
+                        games.push(...group.games)
+                        groups.push(group)
+                    }
+                }
+            }
+
+            const totalCount = games.length
+            const signedCount = games.filter(g => g.status === '成功' || g.status === '已签到').length
+            const failedCount = games.filter(g => g.status === '失败').length
+
+            let status: TagStatus
+            if (totalCount === 0) {
+                status = 'unsigned'
+            } else if (failedCount > 0) {
+                status = 'failed'
+            } else if (signedCount === totalCount) {
+                status = 'signed'
+            } else if (signedCount > 0) {
+                status = 'partial'
+            } else {
+                status = 'unsigned'
+            }
+
+            tags.push({
+                platform,
+                status,
+                games,
+                groups,
+                signedCount: status === 'unsigned' ? 0 : signedCount,
+                totalCount: status === 'unsigned' ? 0 : totalCount,
+                failedCount: status === 'unsigned' ? 0 : failedCount,
+            })
         }
+        map.set(account.uid, tags)
     }
-    return tags
+    return map
+})
+
+// 获取某用户的所有社区标签（响应式版本）
+const getUserPlatformTagsReactive = (account: AccountInstance): PlatformTag[] => {
+    return userTagsMap.value.get(account.uid) || []
 }
 
-// 标签文字
+// 获取某用户在某社区的账号组（响应式版本，用于 Tooltip）
+const getAccountGroupsForPlatformReactive = (account: AccountInstance, platform: string): AccountGroup[] => {
+    const tags = userTagsMap.value.get(account.uid) || []
+    const tag = tags.find(t => t.platform === platform)
+    return tag?.groups || []
+ }
+
+// 标签文字 — 只显示社区名，状态由标签颜色表达
 const getTagText = (tag: { platform: string; status: TagStatus; signedCount: number; totalCount: number; failedCount: number }) => {
-    return `● ${tag.platform}`
+    return tag.platform
 }
 
 // 标签 CSS 类
@@ -472,11 +464,11 @@ onMounted(() => {
                             <!-- 社区签到情况（标签云） -->
                             <div class="row-cell tags-cell">
                                 <a-space :size="6" wrap>
-                                    <a-tooltip v-for="tag in getUserPlatformTags(account)" :key="tag.platform">
+                                    <a-tooltip v-for="tag in getUserPlatformTagsReactive(account)" :key="tag.platform">
                                         <template #title>
                                             <div class="sign-tooltip">
                                                 <div class="sign-tooltip-title">{{ tag.platform }} - 签到详情</div>
-                                                <template v-for="(group, gIdx) in getAccountGroupsForPlatform(account, tag.platform)" :key="gIdx">
+                                                <template v-for="(group, gIdx) in getAccountGroupsForPlatformReactive(account, tag.platform)" :key="gIdx">
                                                     <div class="sign-tooltip-alias">{{ group.account_alias }}</div>
                                                     <div v-for="game in group.games" :key="game.game" class="sign-tooltip-row">
                                                         <span>{{ game.game }}</span>
@@ -617,8 +609,8 @@ onMounted(() => {
 .row-cell:last-child { border-right: none; }
 
 .row-cell.name-cell { justify-content: flex-start; }
-.row-cell.tags-cell { justify-content: flex-start; }
-.row-cell.actions-cell { justify-content: flex-end; }
+.row-cell.tags-cell { justify-content: flex-start; padding-right: 16px; }
+.row-cell.actions-cell { justify-content: flex-end; padding-left: 24px; }
 
 /* 拖拽手柄 - 对齐 TimeSetManager */
 .drag-handle {
@@ -736,11 +728,11 @@ onMounted(() => {
     color: #52c41a;
 }
 
-/* 黄色：已配置但今日未签 */
+/* 灰色：有 Token 但暂无签到数据 */
 .tag-unsigned {
-    background: #fffbe6;
-    border-color: #ffe58f;
-    color: #d4b106;
+    background: #f5f5f5;
+    border-color: #e8e8e8;
+    color: #999;
 }
 
 /* 红色：签到失败 */

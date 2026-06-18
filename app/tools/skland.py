@@ -366,8 +366,13 @@ async def skland_sign_in(
             )
         return rsp["data"]["code"]
 
-    async def get_binding_list(cred, sign_token):
-        """查询已绑定的角色列表"""
+    async def get_binding_list(cred, sign_token, app_code_override: str | None = None):
+        """查询已绑定的角色列表
+
+        Args:
+            app_code_override: 覆盖外层 app_code，用于 all 模式下按游戏过滤
+        """
+        code = app_code_override if app_code_override else app_code
         v = []
         async with httpx.AsyncClient(proxy=Config.proxy) as client:
             response = await client.get(
@@ -387,7 +392,7 @@ async def skland_sign_in(
                 logger.error("用户登录可能失效了, 请重新登录！")
                 return v
         for item in rsp["data"]["list"]:
-            if item.get("appCode") != app_code:
+            if item.get("appCode") != code:
                 continue
             v.extend(item.get("bindingList"))
         return v
@@ -429,7 +434,7 @@ async def skland_sign_in(
 
     async def sign_for_arknights(cred, sign_token) -> dict:
         """方舟签到"""
-        characters = await get_binding_list(cred, sign_token)
+        characters = await get_binding_list(cred, sign_token, app_code_override="arknights")
         result = {"成功": [], "重复": [], "失败": [], "总计": len(characters)}
 
         for character in characters:
@@ -509,7 +514,7 @@ async def skland_sign_in(
 
     async def sign_for_endfield(cred, sign_token) -> dict:
         """终末地签到"""
-        characters = await get_binding_list(cred, sign_token)
+        characters = await get_binding_list(cred, sign_token, app_code_override="endfield")
         result = {"成功": [], "重复": [], "失败": [], "总计": 0}
 
         for character in characters:
@@ -569,7 +574,7 @@ async def skland_sign_in(
             ar = await sign_for_arknights(cred, sign_token)
             await asyncio.sleep(3)
             ef = await sign_for_endfield(cred, sign_token)
-            return {"成功": ar["成功"] + ef["成功"], "重复": ar["重复"] + ef["重复"], "失败": ar["失败"] + ef["失败"], "总计": ar["总计"] + ef["总计"]}
+            return {"arknights": ar, "endfield": ef}
         if app_code == "endfield":
             return await sign_for_endfield(cred, sign_token)
         return await sign_for_arknights(cred, sign_token)
