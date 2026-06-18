@@ -163,7 +163,7 @@
                 <template #label>
                   <span class="form-label">
                     游戏根目录
-                    <span class="label-hint">选择包含 <strong>Wuthering Waves Game</strong> 的任意目录，自动定位 Client-Win64-Shipping.exe</span>
+                    <span class="label-hint">选择 <strong>Wuthering Waves Game</strong>（官方）或其下 <strong>Client</strong>/<strong>Binaries</strong>/<strong>Win64</strong> 目录，自动定位 Client-Win64-Shipping.exe；WeGame 版选择 <strong>Client</strong>/<strong>Binaries</strong>/<strong>Win64</strong> 即可</span>
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">
@@ -423,8 +423,15 @@ const rules = {
 }
 
 // 鸣潮游戏路径预设锚点与相对路径
-const WUWA_GAME_ANCHOR = 'Wuthering Waves Game'
-const WUWA_EXE_RELATIVE = 'Client/Binaries/Win64/Client-Win64-Shipping.exe'
+// 相对路径结构: Wuthering Waves/Wuthering Waves Game/Client/Binaries/Win64/Client-Win64-Shipping.exe
+// 按深度倒序排列（最深的最先匹配），选中目录名匹配任一关键词后拼接对应后缀
+const WUWA_PATH_KEYWORDS = [
+  { keyword: 'Win64', suffix: 'Client-Win64-Shipping.exe' },
+  { keyword: 'Binaries', suffix: 'Win64/Client-Win64-Shipping.exe' },
+  { keyword: 'Client', suffix: 'Binaries/Win64/Client-Win64-Shipping.exe' },
+  { keyword: 'Wuthering Waves Game', suffix: 'Client/Binaries/Win64/Client-Win64-Shipping.exe' },
+  { keyword: 'Wuthering Waves', suffix: 'Wuthering Waves Game/Client/Binaries/Win64/Client-Win64-Shipping.exe' },
+]
 
 const showPathRejectModal = (title: string, content: string) => {
   Modal.error({ title, content, okText: '我知道了' })
@@ -553,40 +560,41 @@ const selectGameRootPath = async () => {
 
   const normalized = picked.replace(/\\/g, '/')
 
-  // 在路径中查找锚点 "Wuthering Waves Game"（大小写不敏感），取锚点之前的 prefix
-  const idx = normalized.toLowerCase().indexOf(WUWA_GAME_ANCHOR.toLowerCase())
-  if (idx === -1) {
-    showPathRejectModal(
-      '所选目录无效',
-      '当前选择的路径不在鸣潮游戏目录内，无法自动匹配。\n\n请选择包含 Wuthering Waves Game 的目录（如游戏根目录本身，或其下的 Client、Binaries、Win64 等子目录）。'
-    )
-    return
+  // 按深度倒序在全路径中搜索关键词（最深的最先匹配），
+  // 保留关键词之前的路径前缀，丢弃之后的部分，拼接完整相对路径
+  for (const { keyword, suffix } of WUWA_PATH_KEYWORDS) {
+    const idx = normalized.toLowerCase().indexOf(keyword.toLowerCase())
+    if (idx === -1) continue
+
+    const prefix = normalized.substring(0, idx)
+    const candidateExe = prefix + keyword + '/' + suffix
+    if (await window.electronAPI.fileExists(candidateExe)) {
+      okwwConfig.Game.Path = candidateExe
+      okwwConfig.Game.Type = 'Client'
+      isSaving.value = true
+      try {
+        await updateScript(scriptId, {
+          Game: { Path: okwwConfig.Game.Path, Type: 'Client' },
+        })
+        message.success('已自动匹配游戏路径至 Client-Win64-Shipping.exe')
+      } finally {
+        isSaving.value = false
+      }
+      return
+    }
   }
 
-  // 截断锚点之后的内容，拼接预设相对路径
-  const prefix = normalized.substring(0, idx)
-  const candidateExe = prefix + WUWA_GAME_ANCHOR + '/' + WUWA_EXE_RELATIVE
-
-  // 校验 exe 是否真实存在
-  if (!(await window.electronAPI.fileExists(candidateExe))) {
-    showPathRejectModal('所选目录无效', '检测到鸣潮目录但未找到 Client-Win64-Shipping.exe，请验证游戏完整性。')
-    return
-  }
-
-  okwwConfig.Game.Path = candidateExe
-  okwwConfig.Game.Type = 'Client'
-  isSaving.value = true
-  try {
-    await updateScript(scriptId, {
-      Game: {
-        Path: okwwConfig.Game.Path,
-        Type: 'Client',
-      },
-    })
-    message.success('已自动匹配游戏路径至 Client-Win64-Shipping.exe')
-  } finally {
-    isSaving.value = false
-  }
+  // 所有关键词均未命中或 exe 不存在
+  showPathRejectModal(
+    '所选目录无效',
+    '当前选择的路径不在鸣潮游戏目录内，无法自动匹配。\n\n请选择以下任一目录：\n' +
+    '  • Win64  —— 位于 Client\\Binaries\\Win64\n' +
+    '  • Binaries—— 位于 Client\\Binaries\n' +
+    '  • Client —— 鸣潮客户端目录\n' +
+    '  • Wuthering Waves Game —— 官方启动器根目录\n' +
+    '  • Wuthering Waves —— 鸣潮总目录\n' +
+    '支持 WeGame 版（目录名为 Wuthering Waves(NNNNNNN)），选择其下的 Client/Binaries/Win64 即可。'
+  )
 }
 
 onMounted(loadScript)
