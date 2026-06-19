@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict, Unpack
 
 from pydantic import Field
 from pydantic_core import PydanticUndefined
@@ -25,6 +25,122 @@ PluginFieldSize = Literal[
 PluginPathKind = Literal["file", "folder"]
 
 
+class PluginFieldCommonKwargs(TypedDict, total=False):
+    title: str | None
+    description: str | None
+    icon: str | None
+    group: str | None
+    filters: list[dict[str, Any]] | None
+    option_labels: dict[Any, str] | None
+    options_provider: dict[str, Any] | None
+    placeholder: str | None
+    help: str | None
+    hidden: bool
+    readonly: bool
+    sensitive: bool
+    required: bool
+    rows: int | None
+    size: PluginFieldSize | None
+    item_type: str | None
+    path_kind: PluginPathKind | None
+    validator: str | None
+    related_default: Any
+    action: dict[str, Any] | None
+    configurable: bool
+    legacy_group: str | None
+    legacy_name: str | None
+    virtual_handler: Any | None
+    multiple_groups: tuple["PluginFieldGroup", ...]
+    multiple_class_name: str | None
+
+
+class PluginFieldDeclarationKwargs(PluginFieldCommonKwargs, total=False):
+    options: list[Any] | tuple[Any, ...]
+    min: int | float | None
+    max: int | float | None
+    step: int | float | None
+    format: str | None
+    json_type: Literal["object", "array"] | None
+    related_config: str | None
+    button: dict[str, Any] | None
+    include_in_schema: bool
+
+
+class PluginFieldSelectKwargs(PluginFieldCommonKwargs, total=False):
+    min: int | float | None
+    max: int | float | None
+    step: int | float | None
+    format: str | None
+    json_type: Literal["object", "array"] | None
+    related_config: str | None
+    button: dict[str, Any] | None
+    include_in_schema: bool
+
+
+class PluginFieldNumberKwargs(PluginFieldCommonKwargs, total=False):
+    options: list[Any] | tuple[Any, ...]
+    format: str | None
+    json_type: Literal["object", "array"] | None
+    related_config: str | None
+    button: dict[str, Any] | None
+    include_in_schema: bool
+
+
+class PluginFieldJsonKwargs(PluginFieldCommonKwargs, total=False):
+    options: list[Any] | tuple[Any, ...]
+    min: int | float | None
+    max: int | float | None
+    step: int | float | None
+    format: str | None
+    related_config: str | None
+    button: dict[str, Any] | None
+    include_in_schema: bool
+
+
+class PluginFieldDatetimeKwargs(PluginFieldCommonKwargs, total=False):
+    options: list[Any] | tuple[Any, ...]
+    min: int | float | None
+    max: int | float | None
+    step: int | float | None
+    json_type: Literal["object", "array"] | None
+    related_config: str | None
+    button: dict[str, Any] | None
+    include_in_schema: bool
+
+
+class PluginFieldRelatedIdKwargs(PluginFieldCommonKwargs, total=False):
+    options: list[Any] | tuple[Any, ...]
+    min: int | float | None
+    max: int | float | None
+    step: int | float | None
+    format: str | None
+    json_type: Literal["object", "array"] | None
+    button: dict[str, Any] | None
+    include_in_schema: bool
+
+
+class PluginFieldButtonKwargs(PluginFieldCommonKwargs, total=False):
+    options: list[Any] | tuple[Any, ...]
+    min: int | float | None
+    max: int | float | None
+    step: int | float | None
+    format: str | None
+    json_type: Literal["object", "array"] | None
+    related_config: str | None
+    include_in_schema: bool
+
+
+class PluginFieldMultipleKwargs(PluginFieldCommonKwargs, total=False):
+    options: list[Any] | tuple[Any, ...]
+    min: int | float | None
+    max: int | float | None
+    step: int | float | None
+    format: str | None
+    json_type: Literal["object", "array"] | None
+    related_config: str | None
+    button: dict[str, Any] | None
+
+
 @dataclass(frozen=True, slots=True)
 class PluginFieldDeclaration:
     """声明式配置字段。
@@ -36,6 +152,7 @@ class PluginFieldDeclaration:
     name: str
     label: str
     field_type: str
+    title: str | None = None
     default: Any = PydanticUndefined
     options: list[Any] | None = None
     option_labels: dict[Any, str] | None = None
@@ -86,6 +203,10 @@ class PluginFieldFactory:
         self,
         default: Any = PydanticUndefined,
         *,
+        title: str | None = None,
+        description: str | None = None,
+        icon: str | None = None,
+        group: str | None = None,
         format: PluginFieldFormat | None = None,
         rows: int | None = None,
         placeholder: str | None = None,
@@ -103,6 +224,8 @@ class PluginFieldFactory:
         readonly: bool | None = None,
         sensitive: bool | None = None,
         size: PluginFieldSize | None = None,
+        min: int | float | None = None,
+        max: int | float | None = None,
         step: int | float | None = None,
         path_kind: PluginPathKind | None = None,
         validator: str | None = None,
@@ -119,6 +242,14 @@ class PluginFieldFactory:
         """声明插件配置字段，并把插件 UI 元数据写入 Pydantic schema extra。"""
 
         extra = dict(json_schema_extra or {})
+        if title is not None:
+            kwargs["title"] = title
+        if description is not None:
+            kwargs["description"] = description
+        if icon is not None:
+            extra["icon"] = icon
+        if group is not None:
+            extra["group"] = group
         if format is not None:
             extra["format"] = format
         if rows is not None:
@@ -153,6 +284,10 @@ class PluginFieldFactory:
             extra["sensitive"] = sensitive
         if size is not None:
             extra["size"] = size
+        if min is not None:
+            extra["min"] = min
+        if max is not None:
+            extra["max"] = max
         if step is not None:
             extra["step"] = step
         if path_kind is not None:
@@ -190,10 +325,22 @@ class PluginFieldFactory:
     ) -> PluginFieldGroup:
         return _group(key, label, fields)
 
-    def string(self, name: str, label: str, default: str = "", **kwargs: Any) -> PluginFieldDeclaration:
+    def string(
+        self,
+        name: str,
+        label: str,
+        default: str = "",
+        **kwargs: Unpack[PluginFieldDeclarationKwargs],
+    ) -> PluginFieldDeclaration:
         return _string(name, label, default, **kwargs)
 
-    def boolean(self, name: str, label: str, default: bool = False, **kwargs: Any) -> PluginFieldDeclaration:
+    def boolean(
+        self,
+        name: str,
+        label: str,
+        default: bool = False,
+        **kwargs: Unpack[PluginFieldDeclarationKwargs],
+    ) -> PluginFieldDeclaration:
         return _boolean(name, label, default, **kwargs)
 
     def select(
@@ -202,7 +349,7 @@ class PluginFieldFactory:
         label: str,
         default: Any,
         options: list[Any] | tuple[Any, ...],
-        **kwargs: Any,
+        **kwargs: Unpack[PluginFieldSelectKwargs],
     ) -> PluginFieldDeclaration:
         return _select(name, label, default, options, **kwargs)
 
@@ -215,14 +362,26 @@ class PluginFieldFactory:
         min: int | float | None = None,
         max: int | float | None = None,
         step: int | float | None = None,
-        **kwargs: Any,
+        **kwargs: Unpack[PluginFieldNumberKwargs],
     ) -> PluginFieldDeclaration:
         return _number(name, label, default, min=min, max=max, step=step, **kwargs)
 
-    def file(self, name: str, label: str, default: str = "", **kwargs: Any) -> PluginFieldDeclaration:
+    def file(
+        self,
+        name: str,
+        label: str,
+        default: str = "",
+        **kwargs: Unpack[PluginFieldDeclarationKwargs],
+    ) -> PluginFieldDeclaration:
         return _file(name, label, default, **kwargs)
 
-    def folder(self, name: str, label: str, default: str = "", **kwargs: Any) -> PluginFieldDeclaration:
+    def folder(
+        self,
+        name: str,
+        label: str,
+        default: str = "",
+        **kwargs: Unpack[PluginFieldDeclarationKwargs],
+    ) -> PluginFieldDeclaration:
         return _folder(name, label, default, **kwargs)
 
     def json(
@@ -232,7 +391,7 @@ class PluginFieldFactory:
         default: str = "{ }",
         *,
         json_type: Literal["object", "array"] = "object",
-        **kwargs: Any,
+        **kwargs: Unpack[PluginFieldJsonKwargs],
     ) -> PluginFieldDeclaration:
         return _json(name, label, default, json_type=json_type, **kwargs)
 
@@ -243,7 +402,7 @@ class PluginFieldFactory:
         default: str,
         *,
         format: str = "%Y-%m-%d",
-        **kwargs: Any,
+        **kwargs: Unpack[PluginFieldDatetimeKwargs],
     ) -> PluginFieldDeclaration:
         return _datetime(name, label, default, format=format, **kwargs)
 
@@ -254,7 +413,7 @@ class PluginFieldFactory:
         default: str = "-",
         *,
         related_config: str,
-        **kwargs: Any,
+        **kwargs: Unpack[PluginFieldRelatedIdKwargs],
     ) -> PluginFieldDeclaration:
         return _related_id(name, label, default, related_config=related_config, **kwargs)
 
@@ -265,7 +424,7 @@ class PluginFieldFactory:
         default: str = "",
         *,
         handler: Any,
-        **kwargs: Any,
+        **kwargs: Unpack[PluginFieldDeclarationKwargs],
     ) -> PluginFieldDeclaration:
         return _virtual(name, label, default, handler=handler, **kwargs)
 
@@ -276,11 +435,17 @@ class PluginFieldFactory:
         default: str = "[ ]",
         *,
         handler: Any | None = None,
-        **kwargs: Any,
+        **kwargs: Unpack[PluginFieldDeclarationKwargs],
     ) -> PluginFieldDeclaration:
         return _tag(name, label, default, handler=handler, **kwargs)
 
-    def button(self, name: str, label: str, button: dict[str, Any], **kwargs: Any) -> PluginFieldDeclaration:
+    def button(
+        self,
+        name: str,
+        label: str,
+        button: dict[str, Any],
+        **kwargs: Unpack[PluginFieldButtonKwargs],
+    ) -> PluginFieldDeclaration:
         return _button(name, label, button, **kwargs)
 
     def multiple(
@@ -291,7 +456,7 @@ class PluginFieldFactory:
         *,
         class_name: str | None = None,
         include_in_schema: bool = False,
-        **kwargs: Any,
+        **kwargs: Unpack[PluginFieldMultipleKwargs],
     ) -> PluginFieldDeclaration:
         return _multiple(
             name,
@@ -314,6 +479,7 @@ def _declaration(
 
     known_keys = {
         "options",
+        "title",
         "option_labels",
         "options_provider",
         "placeholder",
@@ -515,13 +681,14 @@ def _multiple(
     )
 
 
-PluginField = PluginFieldFactory()
+PluginField: PluginFieldFactory = PluginFieldFactory()
 
 
 __all__ = [
     "PluginField",
     "PluginFieldDeclaration",
     "PluginFieldFactory",
+    "PluginFieldDeclarationKwargs",
     "PluginFieldFormat",
     "PluginFieldGroup",
     "PluginFieldSize",
