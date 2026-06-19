@@ -218,7 +218,7 @@ def _config_validator(
 
 @dataclass(slots=True)
 class ScriptAdapterRuntime:
-    """脚本适配运行时上下文。"""
+    """专项适配运行时上下文。"""
 
     definition: "ScriptAdapterDefinition"
     script_info: ScriptItem

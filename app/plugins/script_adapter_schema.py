@@ -317,6 +317,7 @@ def _field_from_model_field(name: str, field_info: Any) -> PluginFieldDeclaratio
             name=name,
             label=str(field_info.title or field_info.description or name),
             field_type="multiple",
+            title=field_info.title,
             default=_field_default(field_info),
             multiple_groups=multiple_groups,
             multiple_class_name=str(extra.pop("multiple_class_name", "") or item_model.__name__),
@@ -375,6 +376,7 @@ def _field_from_model_field(name: str, field_info: Any) -> PluginFieldDeclaratio
         name=name,
         label=str(field_info.title or field_info.description or name),
         field_type=field_type,
+        title=field_info.title,
         default=_field_default(field_info),
         extra=extra,
         **field_kwargs,
@@ -475,6 +477,7 @@ def _build_schema_field(
         schema["order"] = field_order
     if field.default is not PydanticUndefined:
         schema["default"] = _copy_default(field.default)
+    _copy_optional(schema, "title", field.title)
     if field.readonly:
         schema["readonly"] = True
     if field.hidden:
