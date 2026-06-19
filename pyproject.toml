@@ -1,7 +1,3 @@
-[build-system]
-requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "auto-mas"
 version = "5.2.0"
@@ -62,6 +58,7 @@ plugins = [
     "automas_plugin_page",
     "automas_plugin_schema_showcase",
     "automas_script_maa",
+    "automas_script_src",
     "automas_scritp_src",
     "automas_test",
 ]
@@ -72,6 +69,9 @@ plugins = [
 # 2) 声明固定版本： { name = "automas_script_maa", version = "0.0.5-alpha" }
 # 3) 声明任意版本约束： { name = "automas_script_maa", specifier = ">=0.0.5-alpha,<0.1.0" }
 packages = []
+
+[tool.uv]
+package = false
 
 [tool.uv.workspace]
 members = [
@@ -92,6 +92,7 @@ members = [
     "plugins/page",
     "plugins/schema_showcase",
     "plugins/script_maa",
+    "plugins/script_src",
     "plugins/scritp_src",
     "plugins/test",
 ]
@@ -118,8 +119,6 @@ exclude = [
 "automas_plugin_page" = { workspace = true }
 "automas_plugin_schema_showcase" = { workspace = true }
 "automas_script_maa" = { workspace = true }
+"automas_script_src" = { workspace = true }
 "automas_scritp_src" = { workspace = true }
 "automas_test" = { workspace = true }
-
-[tool.setuptools.packages.find]
-include = ["app*"]
