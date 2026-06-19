@@ -35,6 +35,20 @@ class TemplatePreset:
     outputs: dict[Path, Path]
 
 
+@dataclass(frozen=True)
+class GitInitResult:
+    initialized: bool
+    staged: bool
+    committed: bool
+    messages: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class SyncResult:
+    ok: bool
+    detail: str
+
+
 PLUGIN_TEMPLATE_OUTPUTS = {
     Path("pyproject.toml"): Path("pyproject.toml.template"),
     Path("README.md"): Path("README.md.template"),
@@ -115,8 +129,16 @@ class ScaffoldError(Exception):
 
 
 def get_workspace_dir() -> Path:
-    """获取当前工作目录。"""
-    return Path.cwd()
+    """Find the AUTO-MAS root even when invoked from a subdirectory."""
+    cwd = Path.cwd().resolve()
+    candidates = (cwd, *cwd.parents, Path(__file__).resolve().parent.parent)
+    for candidate in candidates:
+        if (
+            (candidate / "pyproject.toml").is_file()
+            and (candidate / "scripts" / "sync_plugin_workspace.py").is_file()
+        ):
+            return candidate
+    raise ScaffoldError("未找到 AUTO-MAS 工作区，请在仓库目录内运行此命令")
 
 
 def get_plugins_dir(workspace_dir: Path) -> Path:
@@ -349,11 +371,30 @@ def ensure_pycharm_vcs_mapping(workspace_dir: Path, plugin_name: str) -> tuple[b
         return False, f"写入 PyCharm VCS 映射失败: {type(exc).__name__}: {exc}"
 
 
-def sync_uv_plugin_workspace(workspace_dir: Path) -> tuple[bool, str]:
-    """Run the workspace synchronization helper after scaffolding a plugin."""
+def run_command(command: list[str], *, cwd: Path) -> SyncResult:
+    """Run a child command and return concise, user-facing diagnostics."""
+    try:
+        result = subprocess.run(
+            command,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        return SyncResult(False, f"{type(exc).__name__}: {exc}")
+
+    stdout = (result.stdout or "").strip()
+    stderr = (result.stderr or "").strip()
+    detail = stdout if result.returncode == 0 else stderr or stdout
+    return SyncResult(result.returncode == 0, detail or f"exit code {result.returncode}")
+
+
+def sync_uv_plugin_workspace(workspace_dir: Path) -> SyncResult:
+    """Register local plugins in the uv workspace and PyCharm modules."""
     script_path = Path(__file__).resolve().parent / "sync_plugin_workspace.py"
     if not script_path.exists():
-        return False, f"workspace sync helper not found: {script_path}"
+        return SyncResult(False, f"workspace sync helper not found: {script_path}")
 
     command = [
         sys.executable,
@@ -361,61 +402,77 @@ def sync_uv_plugin_workspace(workspace_dir: Path) -> tuple[bool, str]:
         "--write",
         "--sync-idea",
     ]
-    result = subprocess.run(
-        command,
-        cwd=str(workspace_dir),
-        capture_output=True,
-        text=True,
-        check=False,
+    return run_command(command, cwd=workspace_dir)
+
+
+def sync_uv_environment(workspace_dir: Path) -> SyncResult:
+    """Install development and local-plugin dependency groups."""
+    uv_cmd = shutil.which("uv")
+    if not uv_cmd:
+        return SyncResult(False, "未检测到 uv 命令")
+    return run_command(
+        [uv_cmd, "sync", "--dev", "--group", "plugins"],
+        cwd=workspace_dir,
     )
-    detail = (result.stdout or "").strip()
-    if result.returncode == 0:
-        return True, detail or "uv workspace synchronized"
-
-    error = (result.stderr or "").strip() or detail or "unknown error"
-    return False, f"uv workspace sync failed: {error}"
 
 
-def maybe_init_git(target_dir: Path) -> tuple[bool, list[str]]:
-    """按需初始化 Git 仓库并提交初始内容。"""
-    warnings: list[str] = []
+def maybe_init_git(target_dir: Path, *, create_commit: bool = True) -> GitInitResult:
+    """Initialize an independent Git repository and optionally create a commit."""
+    messages: list[str] = []
     if (target_dir / ".git").exists():
-        warnings.append("检测到目标目录已存在 .git，已跳过初始化")
-        return False, warnings
+        return GitInitResult(True, False, False, ("目标目录已经是 Git 仓库",))
 
     git_cmd = shutil.which("git")
     if not git_cmd:
-        warnings.append("未检测到 git 命令，已跳过初始化")
-        return False, warnings
+        return GitInitResult(False, False, False, ("未检测到 git 命令",))
 
-    for command in (
-        [git_cmd, "init"],
-        [git_cmd, "add", "."],
-        [git_cmd, "commit", "-m", "initial commit"],
-    ):
-        result = subprocess.run(
-            command,
-            cwd=str(target_dir),
-            capture_output=True,
-            text=True,
-            check=False,
+    init_result = run_command(
+        [git_cmd, "init", "--initial-branch=main"],
+        cwd=target_dir,
+    )
+    if not init_result.ok:
+        init_result = run_command([git_cmd, "init"], cwd=target_dir)
+    initialized = init_result.ok and (target_dir / ".git").exists()
+    if not initialized:
+        return GitInitResult(False, False, False, (f"git init 失败: {init_result.detail}",))
+
+    root_result = run_command([git_cmd, "rev-parse", "--show-toplevel"], cwd=target_dir)
+    try:
+        actual_root = Path(root_result.detail).resolve() if root_result.ok else None
+    except OSError:
+        actual_root = None
+    if actual_root != target_dir.resolve():
+        return GitInitResult(
+            False,
+            False,
+            False,
+            (f"Git 仓库根目录异常: {root_result.detail}",),
         )
-        if result.returncode == 0:
-            continue
-        detail = (result.stderr or "").strip() or (result.stdout or "").strip() or "unknown error"
-        warnings.append(f"{' '.join(command[1:])} 失败: {detail}")
-        if command[-1] == "initial commit":
-            warnings.append("请检查 Git 用户名和邮箱是否已配置")
-        return False, warnings
 
-    return True, warnings
+    add_result = run_command([git_cmd, "add", "."], cwd=target_dir)
+    if not add_result.ok:
+        return GitInitResult(True, False, False, (f"git add 失败: {add_result.detail}",))
+
+    if not create_commit:
+        return GitInitResult(True, True, False)
+
+    commit_result = run_command(
+        [git_cmd, "commit", "-m", "chore: initialize plugin"],
+        cwd=target_dir,
+    )
+    if not commit_result.ok:
+        messages.append(f"首次提交失败: {commit_result.detail}")
+        messages.append("仓库已经初始化并暂存文件；请检查 Git user.name 和 user.email")
+        return GitInitResult(True, True, False, tuple(messages))
+
+    return GitInitResult(True, True, True)
 
 
 def read_input(prompt: str) -> str:
-    """读取交互输入。"""
+    """Read one interactive value with a compact inline prompt."""
     if not sys.stdin.isatty():
         raise ScaffoldError("当前终端不支持交互输入，请使用命令行参数")
-    sys.stdout.write(f"\n{prompt}\n")
+    sys.stdout.write(f"{prompt}: ")
     sys.stdout.flush()
     line = sys.stdin.readline()
     if line == "":
@@ -441,7 +498,7 @@ def prompt_yes_no(message: str, *, default: bool = False) -> bool:
     """提示用户选择是/否。"""
     suffix = "Y/n" if default else "y/N"
     while True:
-        value = read_input(f"{message} ({suffix})").strip().lower()
+        value = read_input(f"{message} [{suffix}]").strip().lower()
         if not value:
             return default
         if value in {"y", "yes", "是"}:
@@ -463,9 +520,49 @@ def parse_args() -> argparse.Namespace:
         choices=sorted(TEMPLATE_PRESETS.keys()),
         help="脚手架模板类型",
     )
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("--init-git", action="store_true", help="生成后初始化 Git 仓库")
-    group.add_argument("--no-git", action="store_true", help="生成后不初始化 Git 仓库")
+    git_group = parser.add_mutually_exclusive_group()
+    git_group.add_argument(
+        "--git",
+        "--init-git",
+        action="store_true",
+        dest="init_git",
+        help="初始化独立 Git 仓库（默认）",
+    )
+    git_group.add_argument(
+        "--no-git",
+        action="store_false",
+        dest="init_git",
+        help="不初始化 Git 仓库",
+    )
+    parser.set_defaults(init_git=True)
+    commit_group = parser.add_mutually_exclusive_group()
+    commit_group.add_argument(
+        "--commit",
+        action="store_true",
+        dest="create_commit",
+        help="创建首次提交（默认）",
+    )
+    commit_group.add_argument(
+        "--no-commit",
+        action="store_false",
+        dest="create_commit",
+        help="只初始化并暂存仓库，不创建首次提交",
+    )
+    parser.set_defaults(create_commit=True)
+    sync_group = parser.add_mutually_exclusive_group()
+    sync_group.add_argument(
+        "--sync",
+        action="store_true",
+        dest="sync_workspace",
+        help="同步 workspace、PyCharm 模块和 uv 环境（默认）",
+    )
+    sync_group.add_argument(
+        "--no-sync",
+        action="store_false",
+        dest="sync_workspace",
+        help="跳过 workspace 和 uv 环境同步",
+    )
+    parser.set_defaults(sync_workspace=True)
     page_group = parser.add_mutually_exclusive_group()
     page_group.add_argument(
         "--with-page",
@@ -482,13 +579,28 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def print_step(label: str, state: str, detail: str = "") -> None:
+    """Print one stable status line suitable for terminals and CI logs."""
+    detail = "; ".join(line.strip() for line in detail.splitlines() if line.strip())
+    suffix = f": {detail}" if detail else ""
+    print(f"[{state}] {label}{suffix}")
+
+
 def main() -> int:
     """脚手架主入口。"""
     args = parse_args()
 
-    workspace = get_workspace_dir()
+    try:
+        workspace = get_workspace_dir()
+    except ScaffoldError as exc:
+        print(f"生成失败: {exc}")
+        return 1
     plugins_dir = get_plugins_dir(workspace)
-    plugins_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        plugins_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        print(f"生成失败: 无法创建插件目录: {exc}")
+        return 1
 
     input_name = (args.name or "").strip()
     interactive = not bool(input_name)
@@ -522,29 +634,30 @@ def main() -> int:
 
     target_dir = (plugins_dir / plugin_name).resolve()
     parent_in_git_repo = is_inside_git_repo(target_dir.parent)
-    init_git = not args.no_git
-    skip_git_reason = ""
-    if init_git and shutil.which("git") is None:
-        init_git = False
-        skip_git_reason = "当前环境未检测到 git，已自动跳过初始化"
-
-    preset = (
-        TemplatePreset(
-            key="plugin-page",
-            label="带页面插件",
-            outputs=PLUGIN_PAGE_TEMPLATE_OUTPUTS,
-        )
-        if with_page
-        else TEMPLATE_PRESETS[args.kind]
-    )
-    files = (
-        build_page_template_files(plugin_name, description, workspace)
-        if with_page
-        else build_template_files(plugin_name, description, args.kind, workspace)
-    )
 
     try:
+        preset = (
+            TemplatePreset(
+                key="plugin-page",
+                label="带页面插件",
+                outputs=PLUGIN_PAGE_TEMPLATE_OUTPUTS,
+            )
+            if with_page
+            else TEMPLATE_PRESETS[args.kind]
+        )
+        files = (
+            build_page_template_files(plugin_name, description, workspace)
+            if with_page
+            else build_template_files(plugin_name, description, args.kind, workspace)
+        )
+    except ScaffoldError as exc:
+        print(f"生成失败: {exc}")
+        return 1
+
+    created_target = False
+    try:
         target_dir.mkdir(parents=True, exist_ok=False)
+        created_target = True
         created: list[str] = []
         for rel_path, content in files.items():
             file_path = target_dir / rel_path
@@ -552,46 +665,87 @@ def main() -> int:
             file_path.write_text(content, encoding="utf-8")
             created.append(str((Path(plugin_name) / rel_path).as_posix()))
     except Exception as exc:
+        if created_target and target_dir.exists():
+            shutil.rmtree(target_dir, ignore_errors=True)
         print(f"生成失败: {type(exc).__name__}: {exc}")
         return 1
 
-    git_ok = False
+    print()
+    print(f"已创建插件 {plugin_name}")
+    print(f"目录: {target_dir}")
+    print(f"模板: {preset.label}")
+    print(f"文件: {len(created)} 个")
+    print()
+
     warnings: list[str] = []
-    if skip_git_reason:
-        warnings.append(skip_git_reason)
-    if init_git:
-        git_ok, warnings = maybe_init_git(target_dir)
-        if git_ok:
-            _, vcs_message = ensure_pycharm_vcs_mapping(workspace, plugin_name)
-            if vcs_message:
-                print(f"- PyCharm VCS 映射: {vcs_message}")
-
-    workspace_sync_ok, workspace_sync_message = sync_uv_plugin_workspace(workspace)
-    if not workspace_sync_ok:
-        warnings.append(workspace_sync_message)
-
-    print("\n插件脚手架生成成功")
-    print(f"- 模板类型: {preset.label}")
-    print(f"- 输出目录: {target_dir}")
-    print(f"- Entry Point: auto_mas.plugins / {plugin_name}")
-    if init_git:
-        git_mode = "子仓库模式" if parent_in_git_repo else "独立仓库模式"
-        print(f"- Git 模式: {git_mode}")
+    git_result = GitInitResult(False, False, False)
+    if args.init_git:
+        git_result = maybe_init_git(
+            target_dir,
+            create_commit=args.create_commit,
+        )
+        if git_result.initialized:
+            mode = "嵌套独立仓库" if parent_in_git_repo else "独立仓库"
+            print_step("Git 仓库", "OK", mode)
+            vcs_ok, vcs_message = ensure_pycharm_vcs_mapping(workspace, plugin_name)
+            if vcs_ok:
+                vcs_state = "OK"
+            elif "未检测到 .idea" in vcs_message:
+                vcs_state = "SKIP"
+            else:
+                vcs_state = "WARN"
+            print_step("PyCharm VCS 映射", vcs_state, vcs_message)
+        else:
+            print_step("Git 仓库", "FAIL")
+        if args.create_commit:
+            if git_result.committed:
+                print_step("首次提交", "OK", "chore: initialize plugin")
+            elif git_result.initialized:
+                print_step("首次提交", "WARN", "仓库已创建，但提交未完成")
+        else:
+            print_step("首次提交", "SKIP", "--no-commit，文件已暂存")
+        warnings.extend(git_result.messages)
     else:
-        print("- Git 模式: 已禁用")
-    print(f"- Git 初始化: {'成功' if git_ok else '未执行'}")
-    print(f"- UV workspace: {'已同步' if workspace_sync_ok else '未同步'}")
-    if workspace_sync_ok and workspace_sync_message:
-        for line in workspace_sync_message.splitlines():
-            print(f"  * {line}")
-    print("- 已创建文件:")
-    for item in created:
-        print(f"  * {item}")
-    if warnings:
-        print("- 注意事项:")
-        for item in warnings:
-            print(f"  * {item}")
+        print_step("Git 仓库", "SKIP", "--no-git")
 
+    workspace_sync = SyncResult(True, "")
+    environment_sync = SyncResult(True, "")
+    if args.sync_workspace:
+        workspace_sync = sync_uv_plugin_workspace(workspace)
+        print_step(
+            "workspace 与 PyCharm 模块",
+            "OK" if workspace_sync.ok else "FAIL",
+            workspace_sync.detail,
+        )
+        if workspace_sync.ok:
+            environment_sync = sync_uv_environment(workspace)
+            print_step(
+                "uv 开发环境",
+                "OK" if environment_sync.ok else "FAIL",
+                environment_sync.detail,
+            )
+        else:
+            environment_sync = SyncResult(False, "workspace 同步失败，未执行 uv sync")
+            print_step("uv 开发环境", "SKIP", environment_sync.detail)
+    else:
+        print_step("workspace 与 PyCharm 模块", "SKIP", "--no-sync")
+        print_step("uv 开发环境", "SKIP", "--no-sync")
+
+    if warnings:
+        print()
+        print("注意:")
+        for item in warnings:
+            print(f"- {item}")
+
+    print()
+    print(f"Entry Point: auto_mas.plugins / {plugin_name}")
+    if args.sync_workspace and (not workspace_sync.ok or not environment_sync.ok):
+        print("插件文件已创建，但开发环境同步未完成。")
+        return 2
+    if args.init_git and not git_result.initialized:
+        print("插件文件已创建，但 Git 仓库初始化失败。")
+        return 2
+    print("完成。")
     return 0
 
 
