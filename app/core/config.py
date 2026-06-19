@@ -1875,20 +1875,68 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"删除全局模拟器配置: {emulator_id}")
 
-        script_list = []
+        from app.models.plugin_script_config import PluginScriptConfig
 
-        for script in self.ScriptConfig.values():
-            if is_script_config_compatible_with_type_key(script, "MAA"):
-                if script.get("Emulator", "Id") == str(emulator_id):
+        script_list: list[tuple[uuid.UUID, ConfigBase, str]] = []
+
+        async def get_plugin_script_payload(script: PluginScriptConfig) -> dict[str, Any]:
+            provider = self._resolve_record_provider(script)
+            raw = script.get("PluginData", "Config")
+            return await storage_to_form(provider, raw, "script")
+
+        async def set_plugin_script_payload(
+            script: PluginScriptConfig,
+            payload: dict[str, Any],
+        ) -> None:
+            provider = self._resolve_record_provider(script)
+            storage_payload = await form_to_storage(provider, payload, "script")
+            await script.set(
+                "PluginData",
+                "Config",
+                json.dumps(storage_payload, ensure_ascii=False),
+            )
+
+        for script_uid, script in self.ScriptConfig.items():
+            if (
+                is_script_config_compatible_with_type_key(script, "MAA")
+                or is_script_config_compatible_with_type_key(script, "SRC")
+            ):
+                if isinstance(script, PluginScriptConfig):
+                    script_payload = await get_plugin_script_payload(script)
+                    emulator_group = script_payload.get("Emulator")
+                    script_emulator_id = (
+                        emulator_group.get("Id")
+                        if isinstance(emulator_group, dict)
+                        else None
+                    )
+                else:
+                    script_emulator_id = script.get("Emulator", "Id")
+
+                if script_emulator_id == str(emulator_id):
                     if script.is_locked:
                         raise RuntimeError(
                             f"脚本 {script.get('Info','Name')} 正在使用此模拟器且被锁定, 无法完成删除"
                         )
-                    script_list.append(script)
+                    script_list.append((script_uid, script, "emulator_group"))
+            elif is_script_config_compatible_with_type_key(script, "MaaEnd"):
+                if isinstance(script, PluginScriptConfig):
+                    script_payload = await get_plugin_script_payload(script)
+                    game_group = script_payload.get("Game")
+                    script_emulator_id = (
+                        game_group.get("EmulatorId")
+                        if isinstance(game_group, dict)
+                        else None
+                    )
+                else:
+                    script_emulator_id = script.get("Game", "EmulatorId")
+
+                if script_emulator_id == str(emulator_id):
+                    if script.is_locked:
+                        raise RuntimeError(
+                            f"脚本 {script.get('Info','Name')} 正在使用此模拟器且被锁定, 无法完成删除"
+                        )
+                    script_list.append((script_uid, script, "game_group"))
             elif self._is_general_script_config(script):
-                script_uid = next(
-                    uid for uid, current_script in self.ScriptConfig.items() if current_script is script
-                )
                 general_payload = await self._read_general_script_payload(script_uid)
                 game_group = general_payload.get("Game")
                 if (
@@ -1900,15 +1948,28 @@ class AppConfig(GlobalConfig):
                         raise RuntimeError(
                             f"脚本 {script.get('Info','Name')} 正在使用此模拟器且被锁定, 无法完成删除"
                         )
-                    script_list.append(script)
+                    script_list.append((script_uid, script, "general_game_group"))
 
-        for script in script_list:
-            if is_script_config_compatible_with_type_key(script, "MAA"):
-                await script.set("Emulator", "Id", "-")
-            elif self._is_general_script_config(script):
-                script_uid = next(
-                    uid for uid, current_script in self.ScriptConfig.items() if current_script is script
-                )
+        for script_uid, script, emulator_field_kind in script_list:
+            if emulator_field_kind == "emulator_group":
+                if isinstance(script, PluginScriptConfig):
+                    script_payload = await get_plugin_script_payload(script)
+                    emulator_group = script_payload.setdefault("Emulator", {})
+                    if isinstance(emulator_group, dict):
+                        emulator_group["Id"] = "-"
+                    await set_plugin_script_payload(script, script_payload)
+                else:
+                    await script.set("Emulator", "Id", "-")
+            elif emulator_field_kind == "game_group":
+                if isinstance(script, PluginScriptConfig):
+                    script_payload = await get_plugin_script_payload(script)
+                    game_group = script_payload.setdefault("Game", {})
+                    if isinstance(game_group, dict):
+                        game_group["EmulatorId"] = "-"
+                    await set_plugin_script_payload(script, script_payload)
+                else:
+                    await script.set("Game", "EmulatorId", "-")
+            elif emulator_field_kind == "general_game_group":
                 general_payload = await self._read_general_script_payload(script_uid)
                 game_group = general_payload.setdefault("Game", {})
                 if isinstance(game_group, dict):
