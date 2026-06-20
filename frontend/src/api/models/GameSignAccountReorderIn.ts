@@ -11,4 +11,3 @@ export type GameSignAccountReorderIn = {
      */
     order: Array<string>;
 };
-
