@@ -39,4 +39,3 @@ export type GameSignAccountGroupConfig = {
      */
     SklandToken?: (string | null);
 };
-

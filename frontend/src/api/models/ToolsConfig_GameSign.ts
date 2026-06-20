@@ -48,4 +48,3 @@ export type ToolsConfig_GameSign = {
      */
     Result?: (string | null);
 };
-
