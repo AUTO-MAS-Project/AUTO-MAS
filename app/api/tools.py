@@ -184,6 +184,7 @@ async def add_game_sign_account() -> GameSignAccountCreateOut:
     "/sign/account/get",
     tags=["GameSign"],
     summary="获取游戏签到账号组详情",
+    response_model=GameSignAccountCreateOut,
     status_code=200,
 )
 async def get_game_sign_account(
