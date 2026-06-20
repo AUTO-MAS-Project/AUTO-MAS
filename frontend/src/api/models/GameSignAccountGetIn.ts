@@ -11,4 +11,3 @@ export type GameSignAccountGetIn = {
      */
     accountId: string;
 };
-

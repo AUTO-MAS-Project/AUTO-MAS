@@ -283,11 +283,9 @@ class _MainTimer:
         if all_signed:
             return
 
-        from app.tools.game_sign import run_all_sign_in, format_sign_results
+        from app.tools.game_sign import run_all_sign_in, format_sign_results, merge_sign_results
 
         try:
-            from app.tools.game_sign import merge_sign_results
-
             results = await run_all_sign_in(force=False)
             if not results:
                 return
