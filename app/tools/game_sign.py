@@ -24,6 +24,8 @@ import asyncio
 import time
 from datetime import datetime
 
+import httpx
+
 from app.core import Config
 from app.utils.logger import get_logger
 
@@ -69,12 +71,16 @@ async def run_all_sign_in(force: bool = False) -> list[dict]:
     results = []
     today = datetime.now().strftime("%Y-%m-%d")
 
-    # 时间校准
-    await _check_system_time()
+    # 时间校准：偏差过大时跳过本轮签到，避免因时间错误导致 API 失败
+    if not await _check_system_time():
+        logger.warning("系统时间偏差过大，跳过本轮游戏社区签到")
+        return results
 
     for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
         account_name = account.get("GameSignAccount", "Name") or "默认账号"
         account_enabled = account.get("GameSignAccount", "Enabled")
+        account_uid = str(uid)
+        enabled_platforms = []
 
         # 跳过已禁用的用户
         if not account_enabled:
@@ -90,6 +96,7 @@ async def run_all_sign_in(force: bool = False) -> list[dict]:
         # 森空岛签到（方舟 + 终末地，一次调用获取两个游戏结果）
         skland_token = account.get("GameSignAccount", "SklandToken")
         if skland_token:
+            enabled_platforms.append("森空岛")
             logger.info(f"[{account_name}] 开始森空岛签到")
             try:
                 from .skland import skland_sign_in
@@ -107,7 +114,7 @@ async def run_all_sign_in(force: bool = False) -> list[dict]:
                     for item in game_data.get("成功", []):
                         results.append({
                             "account": item if isinstance(item, str) else str(item),
-                            "account_uid": str(uid),
+                            "account_uid": account_uid,
                             "game": game_name,
                             "platform": "森空岛",
                             "status": "成功",
@@ -117,7 +124,7 @@ async def run_all_sign_in(force: bool = False) -> list[dict]:
                     for item in game_data.get("重复", []):
                         results.append({
                             "account": item if isinstance(item, str) else str(item),
-                            "account_uid": str(uid),
+                            "account_uid": account_uid,
                             "game": game_name,
                             "platform": "森空岛",
                             "status": "已签到",
@@ -127,7 +134,7 @@ async def run_all_sign_in(force: bool = False) -> list[dict]:
                     for item in game_data.get("失败", []):
                         results.append({
                             "account": item if isinstance(item, str) else str(item),
-                            "account_uid": str(uid),
+                            "account_uid": account_uid,
                             "game": game_name,
                             "platform": "森空岛",
                             "status": "失败",
@@ -139,7 +146,7 @@ async def run_all_sign_in(force: bool = False) -> list[dict]:
                 logger.error(f"[{account_name}] 森空岛签到异常: {e}")
                 results.append({
                     "account": f"{account_name}/森空岛",
-                    "account_uid": str(uid),
+                    "account_uid": account_uid,
                     "game": "森空岛",
                     "platform": "森空岛",
                     "status": "失败",
@@ -150,6 +157,7 @@ async def run_all_sign_in(force: bool = False) -> list[dict]:
         # 米游社签到
         miyoushe_token = account.get("GameSignAccount", "MiyousheToken")
         if miyoushe_token:
+            enabled_platforms.append("米游社")
             logger.info(f"[{account_name}] 开始米游社签到")
             try:
                 from .miyoushe import miyoushe_sign_in
@@ -157,12 +165,13 @@ async def run_all_sign_in(force: bool = False) -> list[dict]:
                 miyoushe_results = await miyoushe_sign_in(miyoushe_token)
                 for item in miyoushe_results:
                     item["account"] = account_name
-                    item["account_uid"] = str(uid)
+                    item["account_uid"] = account_uid
                 results.extend(miyoushe_results)
             except Exception as e:
                 logger.error(f"[{account_name}] 米游社签到异常: {e}")
                 results.append({
                     "account": f"{account_name}/米游社",
+                    "account_uid": account_uid,
                     "game": "米游社",
                     "platform": "米游社",
                     "status": "失败",
@@ -173,6 +182,7 @@ async def run_all_sign_in(force: bool = False) -> list[dict]:
         # 库街区签到
         kuro_token = account.get("GameSignAccount", "KuroToken")
         if kuro_token:
+            enabled_platforms.append("库街区")
             logger.info(f"[{account_name}] 开始库街区签到")
             try:
                 from .kuro import kuro_sign_in
@@ -180,12 +190,13 @@ async def run_all_sign_in(force: bool = False) -> list[dict]:
                 kuro_results = await kuro_sign_in(kuro_token)
                 for item in kuro_results:
                     item["account"] = account_name
-                    item["account_uid"] = str(uid)
+                    item["account_uid"] = account_uid
                 results.extend(kuro_results)
             except Exception as e:
                 logger.error(f"[{account_name}] 库街区签到异常: {e}")
                 results.append({
                     "account": f"{account_name}/库街区",
+                    "account_uid": account_uid,
                     "game": "库街区",
                     "platform": "库街区",
                     "status": "失败",
@@ -193,13 +204,14 @@ async def run_all_sign_in(force: bool = False) -> list[dict]:
                     "reason": str(e),
                 })
 
-        # 标记该用户今日已签到
-        has_signed = any(
-            r.get("account_uid") == str(uid)
-            and r.get("status") in ("成功", "已签到")
+        # 所有已配置平台均完成后，才标记该用户今日已签到
+        signed_platforms = {
+            r.get("platform")
             for r in results
-        )
-        if has_signed:
+            if r.get("account_uid") == account_uid
+            and r.get("status") in ("成功", "已签到")
+        }
+        if enabled_platforms and set(enabled_platforms).issubset(signed_platforms):
             try:
                 await account.set("GameSignAccount", "LastSignDate", today)
             except Exception:
@@ -230,17 +242,23 @@ def merge_sign_results(existing: dict, formatted: dict, replace: bool = False) -
         if platform not in existing:
             existing[platform] = accounts
         elif replace:
-            new_uids = {g.get("account_uid") for g in accounts}
-            existing[platform] = [
-                g for g in existing[platform]
-                if g.get("account_uid") not in new_uids
-            ]
+            new_uids = {g.get("account_uid") for g in accounts if g.get("account_uid")}
+            if new_uids:
+                existing[platform] = [
+                    g for g in existing[platform]
+                    if g.get("account_uid") not in new_uids
+                ]
             existing[platform].extend(accounts)
         else:
-            existing_uids = {g.get("account_uid") for g in existing[platform]}
-            for account in accounts:
-                if account.get("account_uid") not in existing_uids:
-                    existing[platform].append(account)
+            # 自动签到也按 platform + account_uid 替换整组结果，避免失败/风控
+            # 状态被旧的成功结果遮蔽；同 uid 多账号组需批量替换后一次性追加。
+            new_uids = {g.get("account_uid") for g in accounts if g.get("account_uid")}
+            if new_uids:
+                existing[platform] = [
+                    g for g in existing[platform]
+                    if g.get("account_uid") not in new_uids
+                ]
+            existing[platform].extend(accounts)
 
     return existing
 

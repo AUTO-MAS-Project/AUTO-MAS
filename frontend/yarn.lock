@@ -3112,7 +3112,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"electron@npm:^37.10.3":
+"electron@npm:^37.2.5":
   version: 37.10.3
   resolution: "electron@npm:37.10.3"
   dependencies:
@@ -3749,7 +3749,7 @@ __metadata:
     concurrently: "npm:^9.2.0"
     cross-env: "npm:^10.0.0"
     dayjs: "npm:^1.11.13"
-    electron: "npm:^37.10.3"
+    electron: "npm:^37.2.5"
     electron-builder: "npm:26.8.1"
     electron-log: "npm:^5.4.3"
     eslint: "npm:^9.32.0"
