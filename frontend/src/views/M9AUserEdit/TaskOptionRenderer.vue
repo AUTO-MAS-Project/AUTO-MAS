@@ -1,7 +1,7 @@
 <template>
   <div class="task-option-renderer">
     <div v-for="(option, index) in currentOptions" :key="index" class="option-item">
-      <div class="option-label">{{ option.name }}</div>
+      <div class="option-label">{{ getOptionLabel(option.name) }}</div>
       
       <template v-if="optionDefinitions && optionDefinitions[option.name]">
         <a-radio-group
@@ -14,12 +14,12 @@
             :key="getCaseIndex(optionDefinitions[option.name], caseItem)"
             :value="getCaseIndex(optionDefinitions[option.name], caseItem)"
           >
-            {{ caseItem.name }}
+            {{ getCaseLabel(caseItem) }}
           </a-radio>
         </a-radio-group>
         
         <a-select
-          v-else-if="optionDefinitions[option.name].type === 'select'"
+          v-else-if="['select', 'scan_select'].includes(optionDefinitions[option.name].type)"
           v-model:value="option.index"
           style="width: 100%"
           @change="handleOptionChange(index)"
@@ -29,18 +29,18 @@
             :key="caseIndex"
             :value="caseIndex"
           >
-            {{ caseItem.name }}
+            {{ getCaseLabel(caseItem) }}
           </a-select-option>
         </a-select>
         
         <div
-          v-else-if="optionDefinitions[option.name].type === 'input'"
+          v-else-if="optionDefinitions[option.name].type === 'input' && option.input_values"
           class="input-fields"
         >
           <a-form-item
             v-for="input in optionDefinitions[option.name].inputs"
             :key="input.name"
-            :label="input.name"
+            :label="getInputLabel(input)"
           >
             <a-input-number
               v-if="input.pipeline_type === 'int'"
@@ -90,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch } from 'vue'
 import type { M9ATaskOption } from '@/types/script'
 
 const props = defineProps<{
@@ -103,6 +103,15 @@ const emit = defineEmits<{
 }>()
 
 const currentOptions = ref<M9ATaskOption[]>([])
+
+const getOptionLabel = (optionName: string) => {
+  const optionDef = props.optionDefinitions?.[optionName]
+  return optionDef?.label || optionName
+}
+
+const getCaseLabel = (caseItem: any) => caseItem?.label || caseItem?.name
+
+const getInputLabel = (input: any) => input?.label || input?.name
 
 const getDisplayCases = (optionDef: any) => {
   if (!optionDef || !optionDef.cases) {
