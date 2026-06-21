@@ -16,7 +16,7 @@
             <template #overlay>
               <a-menu @click="handleAddTask">
                 <a-menu-item v-for="task in availableTasks" :key="task.name" :value="task.name">
-                  {{ task.name }}
+                  {{ getTaskLabel(task) }}
                 </a-menu-item>
               </a-menu>
             </template>
@@ -85,7 +85,7 @@
                 @click="selectTask(index)"
               >
                 <div class="task-item-content">
-                  <span class="task-name">{{ item.name }}</span>
+                  <span class="task-name">{{ getQueuedTaskLabel(item) }}</span>
                   <div class="task-actions">
                     <a-button
                       type="text"
@@ -118,7 +118,7 @@
         
         <div class="task-config" v-if="selectedTaskIndex !== null && taskQueue[selectedTaskIndex]">
           <div class="selected-task-name">
-            {{ taskQueue[selectedTaskIndex].name }}
+            {{ getQueuedTaskLabel(taskQueue[selectedTaskIndex]) }}
           </div>
           
           <TaskOptionRenderer
@@ -205,6 +205,20 @@ const matchedTasks = computed<MatchedTaskItem[]>(() => {
 
 const matchedCount = computed(() => matchedTasks.value.filter(t => t.matched).length)
 
+const getTaskLabel = (task: any) => task.label || task.name
+
+const getQueuedTaskLabel = (task: M9ATaskQueueItem) => {
+  return taskDefinitions.value[task.name]?.label || task.name
+}
+
+const getDefaultCaseIndex = (optDef: any) => {
+  if (!optDef || !Array.isArray(optDef.cases) || typeof optDef.default_case !== 'string') {
+    return 0
+  }
+  const defaultIndex = optDef.cases.findIndex((caseItem: any) => caseItem.name === optDef.default_case)
+  return defaultIndex >= 0 ? defaultIndex : 0
+}
+
 const buildDefaultOptions = (taskDef: any): M9ATaskOption[] => {
   const options: M9ATaskOption[] = []
   const optionNames = taskDef.option || []
@@ -215,6 +229,9 @@ const buildDefaultOptions = (taskDef: any): M9ATaskOption[] => {
     
     const optDef = optionDefs[optName]
     if (optDef) {
+      if (['select', 'switch', 'scan_select'].includes(optDef.type)) {
+        optItem.index = getDefaultCaseIndex(optDef)
+      }
       if (optDef.type === 'input' && optDef.inputs) {
         optItem.input_values = {}
         for (const input of optDef.inputs) {
@@ -227,7 +244,7 @@ const buildDefaultOptions = (taskDef: any): M9ATaskOption[] => {
           }
         }
       } else if (optDef.cases && optDef.cases.length > 0) {
-        const currentCase = optDef.cases[0]
+        const currentCase = optDef.cases[optItem.index] || optDef.cases[0]
         if (currentCase.option) {
           const subOpts = buildDefaultOptions({
             option: currentCase.option,
