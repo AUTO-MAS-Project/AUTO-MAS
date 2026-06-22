@@ -16,7 +16,7 @@
             <template #overlay>
               <a-menu @click="handleAddTask">
                 <a-menu-item v-for="task in availableTasks" :key="task.name" :value="task.name">
-                  {{ task.name }}
+                  {{ getTaskLabel(task) }}
                 </a-menu-item>
               </a-menu>
             </template>
@@ -85,7 +85,7 @@
                 @click="selectTask(index)"
               >
                 <div class="task-item-content">
-                  <span class="task-name">{{ item.name }}</span>
+                  <span class="task-name">{{ getQueuedTaskLabel(item) }}</span>
                   <div class="task-actions">
                     <a-button
                       type="text"
@@ -118,7 +118,7 @@
         
         <div class="task-config" v-if="selectedTaskIndex !== null && taskQueue[selectedTaskIndex]">
           <div class="selected-task-name">
-            {{ taskQueue[selectedTaskIndex].name }}
+            {{ getQueuedTaskLabel(taskQueue[selectedTaskIndex]) }}
           </div>
           
           <TaskOptionRenderer
@@ -205,6 +205,38 @@ const matchedTasks = computed<MatchedTaskItem[]>(() => {
 
 const matchedCount = computed(() => matchedTasks.value.filter(t => t.matched).length)
 
+const getDisplayLabel = (label: string | undefined, fallback: string) => {
+  return label && !label.startsWith('$') ? label : fallback
+}
+
+const getTaskLabel = (task: any) => getDisplayLabel(task.label, task.name)
+
+const getQueuedTaskLabel = (task: M9ATaskQueueItem) => {
+  return getDisplayLabel(taskDefinitions.value[task.name]?.label, task.name)
+}
+
+const getDefaultCaseIndex = (optDef: any) => {
+  if (!optDef || !Array.isArray(optDef.cases) || typeof optDef.default_case !== 'string') {
+    return 0
+  }
+  const defaultIndex = optDef.cases.findIndex((caseItem: any) => caseItem.name === optDef.default_case)
+  return defaultIndex >= 0 ? defaultIndex : 0
+}
+
+const getDefaultCaseNames = (optDef: any) => {
+  if (!optDef || !Array.isArray(optDef.cases)) {
+    return []
+  }
+  const defaultCases = Array.isArray(optDef.default_case)
+    ? optDef.default_case
+    : typeof optDef.default_case === 'string'
+      ? [optDef.default_case]
+      : []
+  return optDef.cases
+    .filter((caseItem: any) => defaultCases.includes(caseItem.name))
+    .map((caseItem: any) => caseItem.name)
+}
+
 const buildDefaultOptions = (taskDef: any): M9ATaskOption[] => {
   const options: M9ATaskOption[] = []
   const optionNames = taskDef.option || []
@@ -215,6 +247,25 @@ const buildDefaultOptions = (taskDef: any): M9ATaskOption[] => {
     
     const optDef = optionDefs[optName]
     if (optDef) {
+      if (optDef.type === 'checkbox') {
+        optItem.selected_cases = getDefaultCaseNames(optDef)
+        const subOptionNames = Array.isArray(optDef.cases)
+          ? optDef.cases
+            .filter((caseItem: any) => optItem.selected_cases?.includes(caseItem.name))
+            .flatMap((caseItem: any) => Array.isArray(caseItem.option) ? caseItem.option : [])
+          : []
+        if (subOptionNames.length > 0) {
+          const subOpts = buildDefaultOptions({
+            option: Array.from(new Set(subOptionNames)),
+            _option_definitions: optionDefs
+          })
+          if (subOpts.length > 0) {
+            optItem.sub_options = subOpts
+          }
+        }
+      } else if (['select', 'switch', 'scan_select'].includes(optDef.type)) {
+        optItem.index = getDefaultCaseIndex(optDef)
+      }
       if (optDef.type === 'input' && optDef.inputs) {
         optItem.input_values = {}
         for (const input of optDef.inputs) {
@@ -226,8 +277,8 @@ const buildDefaultOptions = (taskDef: any): M9ATaskOption[] => {
             }
           }
         }
-      } else if (optDef.cases && optDef.cases.length > 0) {
-        const currentCase = optDef.cases[0]
+      } else if (optDef.type !== 'checkbox' && optDef.cases && optDef.cases.length > 0) {
+        const currentCase = optDef.cases[optItem.index] || optDef.cases[0]
         if (currentCase.option) {
           const subOpts = buildDefaultOptions({
             option: currentCase.option,
