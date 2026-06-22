@@ -20,7 +20,9 @@
 #   Contact: DLmaster_361@163.com
 
 
+import hashlib
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import json5
@@ -33,12 +35,212 @@ logger = get_logger("M9A 任务加载器")
 class M9ATaskLoader:
     """M9A 任务加载器"""
 
+    _disk_cache_version = 1
+    _loader_cache: dict[Path, tuple[tuple, "M9ATaskLoader"]] = {}
+
     def __init__(self, m9a_root_path: Path):
-        self.root_path = m9a_root_path
-        self.tasks_dir = m9a_root_path / "resource/tasks"
+        self.root_path = m9a_root_path.resolve()
+        self.tasks_dir = self.root_path / "resource/tasks"
         self._task_cache: dict[str, dict] = {}
         self._raw_data_cache: dict[str, dict] = {}
+        self._dependency_paths: set[Path] = set()
+        self._scan_select_specs: set[tuple[Path, str]] = set()
+        self._loaded_from_interface = False
         self._load_all_tasks()
+
+    @classmethod
+    def get_cached(cls, m9a_root_path: Path, force_reload: bool = False) -> "M9ATaskLoader":
+        """获取按 M9A 根目录缓存的任务加载器。"""
+        root_path = m9a_root_path.resolve()
+        cached = cls._loader_cache.get(root_path)
+        if cached and not force_reload:
+            signature, loader = cached
+            current_signature = cls._build_signature(
+                root_path,
+                loader._dependency_paths,
+                loader._scan_select_specs,
+                include_tasks_dir=not loader._loaded_from_interface,
+            )
+            if current_signature == signature:
+                logger.debug(f"复用 M9A 任务缓存：{root_path}")
+                return loader
+            logger.info(f"M9A 任务缓存已失效，重新加载：{root_path}")
+
+        if not force_reload:
+            loader = cls._load_from_disk_cache(root_path)
+            if loader is not None:
+                cls._loader_cache[root_path] = (loader._current_signature(), loader)
+                return loader
+
+        loader = cls(root_path)
+        if loader._task_cache:
+            signature = loader._current_signature()
+            cls._loader_cache[root_path] = (signature, loader)
+            loader._save_disk_cache(signature)
+        else:
+            cls._loader_cache.pop(root_path, None)
+        return loader
+
+    @classmethod
+    def _disk_cache_dir(cls) -> Path:
+        return Path.cwd() / "data/cache/m9a_task_loader"
+
+    @classmethod
+    def _disk_cache_path(cls, root_path: Path) -> Path:
+        cache_key = hashlib.sha256(str(root_path).casefold().encode("utf-8")).hexdigest()
+        return cls._disk_cache_dir() / f"{cache_key}.json"
+
+    @staticmethod
+    def _signature_to_json(signature: tuple) -> list[list]:
+        return [list(part) for part in signature]
+
+    @classmethod
+    def _load_from_disk_cache(cls, root_path: Path) -> "M9ATaskLoader | None":
+        cache_path = cls._disk_cache_path(root_path)
+        if not cache_path.is_file():
+            return None
+
+        try:
+            payload = json.loads(cache_path.read_text(encoding="utf-8"))
+            if payload.get("version") != cls._disk_cache_version:
+                return None
+
+            dependency_paths = {
+                Path(path)
+                for path in payload.get("dependency_paths", [])
+                if isinstance(path, str)
+            }
+            scan_select_specs = {
+                (Path(item[0]), item[1])
+                for item in payload.get("scan_select_specs", [])
+                if isinstance(item, list) and len(item) == 2 and isinstance(item[0], str) and isinstance(item[1], str)
+            }
+            loaded_from_interface = bool(payload.get("loaded_from_interface"))
+            current_signature = cls._build_signature(
+                root_path,
+                dependency_paths,
+                scan_select_specs,
+                include_tasks_dir=not loaded_from_interface,
+            )
+
+            if payload.get("signature") != cls._signature_to_json(current_signature):
+                logger.info(f"M9A 本地任务缓存已失效：{root_path}")
+                return None
+
+            loader = cls.__new__(cls)
+            loader.root_path = root_path
+            loader.tasks_dir = root_path / "resource/tasks"
+            loader._task_cache = deepcopy(payload.get("task_cache", {}))
+            loader._raw_data_cache = deepcopy(payload.get("raw_data_cache", {}))
+            loader._dependency_paths = dependency_paths
+            loader._scan_select_specs = scan_select_specs
+            loader._loaded_from_interface = loaded_from_interface
+
+            if not loader._task_cache:
+                return None
+
+            logger.info(f"读取 M9A 本地任务缓存：{root_path}")
+            return loader
+        except Exception as e:
+            logger.warning(f"读取 M9A 本地任务缓存失败，回退实时解析：{e}")
+            return None
+
+    def _save_disk_cache(self, signature: tuple | None = None) -> None:
+        if not self._task_cache:
+            return
+
+        signature = signature or self._current_signature()
+        cache_path = self._disk_cache_path(self.root_path)
+        payload = {
+            "version": self._disk_cache_version,
+            "root_path": str(self.root_path),
+            "loaded_from_interface": self._loaded_from_interface,
+            "dependency_paths": [str(path) for path in sorted(self._dependency_paths, key=lambda p: str(p))],
+            "scan_select_specs": [
+                [str(path), scan_filter]
+                for path, scan_filter in sorted(self._scan_select_specs, key=lambda item: (str(item[0]), item[1]))
+            ],
+            "signature": self._signature_to_json(signature),
+            "task_cache": self._task_cache,
+            "raw_data_cache": self._raw_data_cache,
+        }
+
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = cache_path.with_suffix(".tmp")
+            temp_path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            temp_path.replace(cache_path)
+            logger.debug(f"已写入 M9A 本地任务缓存：{cache_path}")
+        except Exception as e:
+            logger.warning(f"写入 M9A 本地任务缓存失败：{e}")
+
+    @staticmethod
+    def _file_signature(path: Path) -> tuple:
+        try:
+            stat = path.stat()
+        except OSError:
+            return ("missing", str(path), 0, 0)
+        return ("file", str(path), stat.st_mtime_ns, stat.st_size)
+
+    @staticmethod
+    def _interface_candidates(root_path: Path) -> list[Path]:
+        return [
+            base_dir / file_name
+            for base_dir in (root_path, root_path / "assets", root_path / "resource")
+            for file_name in ("interface.json", "interface.jsonc")
+        ]
+
+    @classmethod
+    def _build_signature(
+        cls,
+        root_path: Path,
+        dependency_paths: set[Path],
+        scan_select_specs: set[tuple[Path, str]],
+        include_tasks_dir: bool,
+    ) -> tuple:
+        signature_parts = []
+
+        interface_candidates = cls._interface_candidates(root_path)
+        interface_candidate_set = {path.resolve() for path in interface_candidates}
+
+        for path in interface_candidates:
+            signature_parts.append(cls._file_signature(path))
+
+        for path in sorted(dependency_paths, key=lambda p: str(p)):
+            if path.resolve() not in interface_candidate_set:
+                signature_parts.append(cls._file_signature(path))
+
+        if include_tasks_dir:
+            tasks_dir = root_path / "resource/tasks"
+            signature_parts.append(cls._file_signature(tasks_dir))
+            for json_file in sorted(tasks_dir.glob("*.json")):
+                signature_parts.append(cls._file_signature(json_file.resolve()))
+
+        for scan_path, scan_filter in sorted(scan_select_specs, key=lambda item: (str(item[0]), item[1])):
+            signature_parts.append(("scan", str(scan_path), scan_filter))
+            signature_parts.append(cls._file_signature(scan_path))
+            try:
+                scan_files = sorted(scan_path.glob(scan_filter))
+            except Exception as e:
+                signature_parts.append(("scan-error", str(scan_path), scan_filter, type(e).__name__, str(e)))
+                continue
+
+            for file in scan_files:
+                if file.is_file():
+                    signature_parts.append(cls._file_signature(file.resolve()))
+
+        return tuple(signature_parts)
+
+    def _current_signature(self) -> tuple:
+        return self._build_signature(
+            self.root_path,
+            self._dependency_paths,
+            self._scan_select_specs,
+            include_tasks_dir=not self._loaded_from_interface,
+        )
 
     def _load_all_tasks(self):
         """加载所有任务定义（包括 standalone 任务）"""
@@ -81,10 +283,9 @@ class M9ATaskLoader:
         """优先从新版 M9A interface.json 读取任务定义。"""
         interface_path = next(
             (
-                base_dir / file_name
-                for base_dir in (self.root_path, self.root_path / "assets", self.root_path / "resource")
-                for file_name in ("interface.json", "interface.jsonc")
-                if (base_dir / file_name).is_file()
+                path
+                for path in self._interface_candidates(self.root_path)
+                if path.is_file()
             ),
             None,
         )
@@ -102,6 +303,7 @@ class M9ATaskLoader:
             if resolved_path in stack:
                 raise ValueError(f"检测到 interface 循环导入：{resolved_path}")
 
+            self._dependency_paths.add(resolved_path)
             data = json5.loads(path.read_text(encoding="utf-8"))
             if not isinstance(data, dict):
                 raise ValueError(f"interface 必须是 JSON 对象：{path}")
@@ -125,6 +327,7 @@ class M9ATaskLoader:
                 if not scan_filter or Path(scan_filter).is_absolute() or ".." in scan_filter.split("/"):
                     raise ValueError(f"路径不允许使用绝对路径或包含 ..：{scan_filter}")
                 scan_path = resolve_path(self.root_path, scan_dir)
+                self._scan_select_specs.add((scan_path, scan_filter))
                 option_data["cases"] = [
                     {"name": file.relative_to(scan_path).as_posix(), "label": file.name}
                     for file in sorted(scan_path.glob(scan_filter))
@@ -161,6 +364,7 @@ class M9ATaskLoader:
         if not self._task_cache:
             return False
 
+        self._loaded_from_interface = True
         logger.success(f"M9A interface 任务加载完成，共 {len(self._task_cache)} 个任务")
         return True
 
@@ -259,13 +463,13 @@ class M9ATaskLoader:
         if not task_def:
             return None
 
-        result = dict(task_def)
+        result = deepcopy(task_def)
 
         # 添加 option 定义对象（用于构建 TaskItems）
         if task_name in self._raw_data_cache:
             raw_data = self._raw_data_cache[task_name]
             if "option" in raw_data:
-                result["_option_definitions"] = raw_data["option"]
+                result["_option_definitions"] = deepcopy(raw_data["option"])
 
         return result
 
@@ -279,7 +483,8 @@ class M9ATaskLoader:
         Returns:
             任务定义字典，如果不存在返回 None
         """
-        return self._task_cache.get(task_name)
+        task_def = self._task_cache.get(task_name)
+        return deepcopy(task_def) if task_def else None
 
     def get_all_task_names(self) -> list[str]:
         """
@@ -309,4 +514,13 @@ class M9ATaskLoader:
         """重新加载所有任务（用于热更新）"""
         self._task_cache.clear()
         self._raw_data_cache.clear()
+        self._dependency_paths.clear()
+        self._scan_select_specs.clear()
+        self._loaded_from_interface = False
         self._load_all_tasks()
+        if self._task_cache:
+            signature = self._current_signature()
+            self._loader_cache[self.root_path] = (signature, self)
+            self._save_disk_cache(signature)
+        else:
+            self._loader_cache.pop(self.root_path, None)

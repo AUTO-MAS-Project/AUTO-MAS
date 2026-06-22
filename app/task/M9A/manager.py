@@ -36,6 +36,7 @@ from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
 from .tools import push_notification, push_version_update
 from .AutoProxy import AutoProxyTask
+from .task_loader import M9ATaskLoader
 
 
 logger = get_logger("M9A 调度器")
@@ -155,6 +156,9 @@ class M9AManager(TaskExecuteBase):
 
         self.m9a_config_path = Path(self.script_config.get("Info", "Path")) / "config"
         self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
+        self.m9a_task_loader = M9ATaskLoader.get_cached(
+            Path(self.script_config.get("Info", "Path"))
+        )
 
         # 初始化模拟器管理器
         self.emulator_manager = await EmulatorManager.get_emulator_instance(
@@ -225,6 +229,7 @@ class M9AManager(TaskExecuteBase):
                 self.script_config,
                 self.user_config,
                 self.emulator_manager,
+                self.m9a_task_loader,
             )
             if self.auto_update_fix_enabled and self.script_info.current_index == 0:
                 task.is_first_user_for_version_check = True
@@ -268,6 +273,7 @@ class M9AManager(TaskExecuteBase):
                 self.script_config,
                 virtual_user_config,
                 self.emulator_manager,
+                self.m9a_task_loader,
             )
             virtual_task.is_virtual_update_user = True
 
@@ -278,6 +284,7 @@ class M9AManager(TaskExecuteBase):
 
             virtual_user_item = self.script_info.user_list[-1]
             if virtual_user_item.status == "完成":
+                self._refresh_m9a_task_cache_after_update()
                 logger.success(f"M9A 自动更新完成: v{self._virtual_user_old_version} → v{self._virtual_user_new_version}")
             else:
                 logger.warning(f"虚拟用户未正常完成，状态: {virtual_user_item.status}")
@@ -350,6 +357,18 @@ class M9AManager(TaskExecuteBase):
         shutil.rmtree(self.temp_path, ignore_errors=True)
 
         self.script_info.status = "完成"
+
+    def _refresh_m9a_task_cache_after_update(self):
+        """资源更新成功后预热 M9A 任务缓存。"""
+        if not getattr(self.script_info, '_m9a_update_success', False):
+            return
+
+        try:
+            m9a_root = Path(self.script_config.get("Info", "Path"))
+            self.m9a_task_loader = M9ATaskLoader.get_cached(m9a_root, force_reload=True)
+            logger.info("M9A 资源更新后任务缓存已刷新")
+        except Exception as e:
+            logger.warning(f"M9A 资源更新后刷新任务缓存失败: {e}")
 
     async def _notify_version_update_result(self):
 
