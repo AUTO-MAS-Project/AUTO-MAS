@@ -91,4 +91,5 @@ export function registerFileHandlers() {
       return false
     }
   })
+
 }

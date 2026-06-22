@@ -26,6 +26,7 @@ interface EmulatorInfo {
   path: string
   max_wait_time: number
   boss_keys: string[]
+  force_kill_on_close: boolean
 }
 
 // 安全的 JSON 解析函数
@@ -187,17 +188,20 @@ const canStopDevice = (status: number) => {
   return status === DeviceStatus.ONLINE || status === DeviceStatus.STARTING
 }
 
+const buildEditingData = (configData: any): EmulatorInfo => ({
+  name: configData?.Info?.Name || '',
+  type: configData?.Info?.Type || '',
+  path: configData?.Info?.Path || '',
+  max_wait_time: configData?.Info?.MaxWaitTime || 300,
+  boss_keys: safeJsonParse(configData?.Info?.BossKey, []),
+  force_kill_on_close: configData?.Info?.ForceKillOnClose !== false,
+})
+
 // 获取当前模拟器的编辑数据
 const getEditingData = (uuid: string): EmulatorInfo => {
   if (!editingDataMap.value.has(uuid)) {
     const configData = emulatorData.value[uuid]
-    editingDataMap.value.set(uuid, {
-      name: configData?.Info?.Name || '',
-      type: configData?.Info?.Type || '',
-      path: configData?.Info?.Path || '',
-      max_wait_time: configData?.Info?.MaxWaitTime || 300,
-      boss_keys: safeJsonParse(configData?.Info?.BossKey, []),
-    })
+    editingDataMap.value.set(uuid, buildEditingData(configData))
   }
   return editingDataMap.value.get(uuid)!
 }
@@ -224,17 +228,11 @@ const loadEmulators = async () => {
       // 初始化所有模拟器的编辑数据
       emulatorIndex.value.forEach(item => {
         const configData = emulatorData.value[item.uid]
-        const bossKeys = safeJsonParse(configData?.Info?.BossKey, [])
-        editingDataMap.value.set(item.uid, {
-          name: configData?.Info?.Name || '',
-          type: configData?.Info?.Type || '',
-          path: configData?.Info?.Path || '',
-          max_wait_time: configData?.Info?.MaxWaitTime || 300,
-          boss_keys: bossKeys,
-        })
+        const editData = buildEditingData(configData)
+        editingDataMap.value.set(item.uid, editData)
         // 同步 boss_keys 到输入框显示
-        if (bossKeys.length > 0) {
-          bossKeyInputMap.value[item.uid] = bossKeys[0]
+        if (editData.boss_keys.length > 0) {
+          bossKeyInputMap.value[item.uid] = editData.boss_keys[0]
         }
       })
     } else {
@@ -293,17 +291,11 @@ const refreshEmulatorConfig = async (uuid?: string) => {
 
           // 更新编辑数据
           const configData = updatedData[uuid]
-          const bossKeys = safeJsonParse(configData?.Info?.BossKey, [])
-          editingDataMap.value.set(uuid, {
-            name: configData?.Info?.Name || '',
-            type: configData?.Info?.Type || '',
-            path: configData?.Info?.Path || '',
-            max_wait_time: configData?.Info?.MaxWaitTime || 300,
-            boss_keys: bossKeys,
-          })
+          const editData = buildEditingData(configData)
+          editingDataMap.value.set(uuid, editData)
           // 同步 boss_keys 到输入框显示
-          if (bossKeys.length > 0) {
-            bossKeyInputMap.value[uuid] = bossKeys[0]
+          if (editData.boss_keys.length > 0) {
+            bossKeyInputMap.value[uuid] = editData.boss_keys[0]
           }
         }
       } else {
@@ -314,17 +306,11 @@ const refreshEmulatorConfig = async (uuid?: string) => {
         // 更新编辑数据
         emulatorIndex.value.forEach(item => {
           const configData = emulatorData.value[item.uid]
-          const bossKeys = safeJsonParse(configData?.Info?.BossKey, [])
-          editingDataMap.value.set(item.uid, {
-            name: configData?.Info?.Name || '',
-            type: configData?.Info?.Type || '',
-            path: configData?.Info?.Path || '',
-            max_wait_time: configData?.Info?.MaxWaitTime || 300,
-            boss_keys: bossKeys,
-          })
+          const editData = buildEditingData(configData)
+          editingDataMap.value.set(item.uid, editData)
           // 同步 boss_keys 到输入框显示
-          if (bossKeys.length > 0) {
-            bossKeyInputMap.value[item.uid] = bossKeys[0]
+          if (editData.boss_keys.length > 0) {
+            bossKeyInputMap.value[item.uid] = editData.boss_keys[0]
           }
         })
       }
@@ -355,6 +341,8 @@ const handleSaveChange = async (uuid: string, key: string, value: any) => {
       configData = { Info: { MaxWaitTime: value } }
     } else if (key === 'boss_keys') {
       configData = { Info: { BossKey: JSON.stringify(value) } }
+    } else if (key === 'force_kill_on_close') {
+      configData = { Info: { ForceKillOnClose: value } }
     }
 
     const response = await Service.updateEmulatorApiEmulatorUpdatePost({
@@ -945,6 +933,20 @@ const handleBossKeyInputChange = (uuid: string) => {
                       <span v-else style="color: var(--text-color-tertiary); font-size: 12px">
                         MuMu模拟器无需配置老板键
                       </span>
+                    </a-descriptions-item>
+                    <a-descriptions-item v-if="getEditingData(element.uid).type === 'mumu'">
+                      <template #label>
+                        <span>强力关闭</span>
+                        <a-tooltip title="按进程名清理 MuMu 残留进程，可能影响其他实例，多开慎用">
+                          <QuestionCircleOutlined style="margin-left: 4px" />
+                        </a-tooltip>
+                      </template>
+                      <a-switch
+                        v-model:checked="getEditingData(element.uid).force_kill_on_close"
+                        checked-children="开"
+                        un-checked-children="关"
+                        @change="handleSaveChange(element.uid, 'force_kill_on_close', $event)"
+                      />
                     </a-descriptions-item>
                   </a-descriptions>
                 </div>
