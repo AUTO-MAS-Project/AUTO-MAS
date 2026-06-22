@@ -4,35 +4,35 @@
 /* eslint-disable */
 export type HSRUserConfig_Info = {
     /**
-     * 閻劍鍩涢崥宥囆?
+     * 用户名称
      */
     Name?: (string | null);
     /**
-     * 閺勵垰鎯侀崥顖滄暏
+     * 是否启用
      */
     Status?: (boolean | null);
     /**
-     * 閻劍鍩汭D閿涘牐澶勯崣鍑ょ礆
+     * 用户ID（账号）
      */
     Id?: (string | null);
     /**
-     * 鐎靛棛鐖?
+     * 密码
      */
     Password?: (string | null);
     /**
-     * 濞撳憡鍨欓張宥呭閸?
+     * 游戏服务器
      */
     Server?: (string | null);
     /**
-     * 閸撯晙缍戞径鈺傛殶
+     * 剩余天数
      */
     RemainedDay?: (number | null);
     /**
-     * 婢跺洦鏁?
+     * 备注
      */
     Notes?: (string | null);
     /**
-     * 閻劍鍩涢弽鍥╊劮閸掓銆?
+     * 用户标签列表
      */
     Tag?: (string | null);
 };

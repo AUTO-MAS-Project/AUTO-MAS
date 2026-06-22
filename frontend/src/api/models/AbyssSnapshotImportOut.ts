@@ -5,31 +5,31 @@
 import type { AbyssSnapshotImportItem } from './AbyssSnapshotImportItem';
 import type { HSRUserConfig } from './HSRUserConfig';
 /**
- * 娴?M7A config.yaml 鐎电厧鍙嗘稉澶嬬箒濞撳﹤鎻╅悡褏娈戠紒鎾寸亯
+ * 从 M7A config.yaml 导入三深渊快照的结果
  */
 export type AbyssSnapshotImportOut = {
     /**
-     * 閻樿埖鈧胶鐖?
+     * 状态码
      */
     code?: number;
     /**
-     * 閹垮秳缍旈悩鑸碘偓?
+     * 操作状态
      */
     status?: string;
     /**
-     * 閹垮秳缍斿☉鍫熶紖
+     * 操作消息
      */
     message?: string;
     /**
-     * 鐠囪褰囬惃?M7A config.yaml 鐠侯垰绶?
+     * 读取的 M7A config.yaml 路径
      */
     m7aConfigPath: string;
     /**
-     * 娑撳閲滃ǎ杈ㄧ瑐閻ㄥ嫬顕遍崗銉х波閺嬫粍鎲崇憰?
+     * 三个深渊的导入结果摘要
      */
     items?: Array<AbyssSnapshotImportItem>;
     /**
-     * 閺囧瓨鏌婇崥搴ｆ畱鐎瑰本鏆?HSR 閻劍鍩涢柊宥囩枂閿涘牆澧犵粩顖氬讲閻劍娼甸崥灞绢劄 formData閿?
+     * 更新后的完整 HSR 用户配置（前端可用来同步 formData）
      */
     updatedUserData: HSRUserConfig;
 };

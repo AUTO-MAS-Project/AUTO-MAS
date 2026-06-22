@@ -4,51 +4,51 @@
 /* eslint-disable */
 export type HSRUserConfig_Data = {
     /**
-     * 娑撳﹥顐兼禒锝囨倞閺冦儲婀?
+     * 上次代理日期
      */
     LastProxyDate?: (string | null);
     /**
-     * 娴狅絿鎮婂▎鈩冩殶
+     * 代理次数
      */
     ProxyTimes?: (number | null);
     /**
-     * 閺勵垰鎯侀柅姘崇箖濡偓閺?
+     * 是否通过检查
      */
     IfPassCheck?: (boolean | null);
     /**
-     * 閺堫剙鎳嗛弰顖氭儊瀹告彃鐣幋鎰坊閹存ü缍戦崫?
+     * 本周是否已完成历战余响
      */
     EchoOfWarCompletedThisWeek?: (boolean | null);
     /**
-     * 閸樺棙鍨担娆忔惙娑撳﹥顐奸柌宥囩枂 ISO 閸涱煉绱欒ぐ銏狀洤 2025-W23閿?
+     * 历战余响上次重置 ISO 周（形如 2025-W23）
      */
     EchoOfWarLastResetWeek?: (string | null);
     /**
-     * 閸樺棙鍨担娆忔惙閺堚偓鏉╂垳绔村▎鈥崇暚閹存劖妫╅張?
+     * 历战余响最近一次完成日期
      */
     EchoOfWarLastCompletionDate?: (string | null);
     /**
-     * 閸涖劌鐖堕張鈧潻鎴滅濞嗏€崇暚閹存劖妫╅張?
+     * 周常最近一次完成日期
      */
     WeeklyLastCompletionDate?: (string | null);
     /**
-     * 閺堫剙鎳嗛弰顖氭儊瀹告彃鐣幋鎰噯鐢?
+     * 本周是否已完成周常
      */
     WeeklyCompletedThisWeek?: (boolean | null);
     /**
-     * 閸涖劌鐖舵稉濠冾偧闁插秶鐤?ISO 閸涱煉绱欒ぐ銏狀洤 2025-W23閿?
+     * 周常上次重置 ISO 周（形如 2025-W23）
      */
     WeeklyLastResetWeek?: (string | null);
     /**
-     * 閺堫剚婀€閺勵垰鎯佸鎻掔暚閹存劒绗佸ǎ杈ㄧ瑐
+     * 本月是否已完成三深渊
      */
     AbyssCompletedThisMonth?: (boolean | null);
     /**
-     * 娑撳绻佸〒濠佺瑐濞嗭繝鍣哥純顔垮殰閻掕埖婀€閿涘牆鑸版俊?2025-06閿?
+     * 三深渊上次重置自然月（形如 2025-06）
      */
     AbyssLastResetMonth?: (string | null);
     /**
-     * 娑撳绻佸〒濠冩付鏉╂垳绔村▎鈥崇暚閹存劖妫╅張?
+     * 三深渊最近一次完成日期
      */
     AbyssLastCompletionDate?: (string | null);
 };
