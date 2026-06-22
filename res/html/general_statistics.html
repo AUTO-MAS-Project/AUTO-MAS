@@ -195,6 +195,11 @@
                 {% endif %}
             </p>
 
+            {% if task_details %}
+            <p class="result-label">任务详情</p>
+            <div class="result-box">{{ task_details }}</div>
+            {% endif %}
+
         </div>
 
         <p class="signature">AUTO-MAS 敬上</p>
