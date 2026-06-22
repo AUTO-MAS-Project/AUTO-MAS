@@ -24,6 +24,7 @@ import hashlib
 import json
 from copy import deepcopy
 from pathlib import Path
+from threading import RLock
 
 import json5
 
@@ -37,6 +38,7 @@ class M9ATaskLoader:
 
     _disk_cache_version = 1
     _loader_cache: dict[Path, tuple[tuple, "M9ATaskLoader"]] = {}
+    _cache_lock = RLock()
 
     def __init__(self, m9a_root_path: Path):
         self.root_path = m9a_root_path.resolve()
@@ -52,34 +54,35 @@ class M9ATaskLoader:
     def get_cached(cls, m9a_root_path: Path, force_reload: bool = False) -> "M9ATaskLoader":
         """获取按 M9A 根目录缓存的任务加载器。"""
         root_path = m9a_root_path.resolve()
-        cached = cls._loader_cache.get(root_path)
-        if cached and not force_reload:
-            signature, loader = cached
-            current_signature = cls._build_signature(
-                root_path,
-                loader._dependency_paths,
-                loader._scan_select_specs,
-                include_tasks_dir=not loader._loaded_from_interface,
-            )
-            if current_signature == signature:
-                logger.debug(f"复用 M9A 任务缓存：{root_path}")
-                return loader
-            logger.info(f"M9A 任务缓存已失效，重新加载：{root_path}")
+        with cls._cache_lock:
+            cached = cls._loader_cache.get(root_path)
+            if cached and not force_reload:
+                signature, loader = cached
+                current_signature = cls._build_signature(
+                    root_path,
+                    loader._dependency_paths,
+                    loader._scan_select_specs,
+                    include_tasks_dir=not loader._loaded_from_interface,
+                )
+                if current_signature == signature:
+                    logger.debug(f"复用 M9A 任务缓存：{root_path}")
+                    return loader
+                logger.info(f"M9A 任务缓存已失效，重新加载：{root_path}")
 
-        if not force_reload:
-            loader = cls._load_from_disk_cache(root_path)
-            if loader is not None:
-                cls._loader_cache[root_path] = (loader._current_signature(), loader)
-                return loader
+            if not force_reload:
+                loader = cls._load_from_disk_cache(root_path)
+                if loader is not None:
+                    cls._loader_cache[root_path] = (loader._current_signature(), loader)
+                    return loader
 
-        loader = cls(root_path)
-        if loader._task_cache:
-            signature = loader._current_signature()
-            cls._loader_cache[root_path] = (signature, loader)
-            loader._save_disk_cache(signature)
-        else:
-            cls._loader_cache.pop(root_path, None)
-        return loader
+            loader = cls(root_path)
+            if loader._task_cache:
+                signature = loader._current_signature()
+                cls._loader_cache[root_path] = (signature, loader)
+                loader._save_disk_cache(signature)
+            else:
+                cls._loader_cache.pop(root_path, None)
+            return loader
 
     @classmethod
     def _disk_cache_dir(cls) -> Path:
@@ -94,6 +97,16 @@ class M9ATaskLoader:
     def _signature_to_json(signature: tuple) -> list[list]:
         return [list(part) for part in signature]
 
+    @staticmethod
+    def _is_valid_disk_cache_payload(payload: dict) -> bool:
+        return (
+            isinstance(payload.get("task_cache"), dict)
+            and isinstance(payload.get("raw_data_cache"), dict)
+            and isinstance(payload.get("dependency_paths"), list)
+            and isinstance(payload.get("scan_select_specs"), list)
+            and isinstance(payload.get("signature"), list)
+        )
+
     @classmethod
     def _load_from_disk_cache(cls, root_path: Path) -> "M9ATaskLoader | None":
         cache_path = cls._disk_cache_path(root_path)
@@ -102,7 +115,13 @@ class M9ATaskLoader:
 
         try:
             payload = json.loads(cache_path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                return None
+
             if payload.get("version") != cls._disk_cache_version:
+                return None
+            if not cls._is_valid_disk_cache_payload(payload):
+                logger.info(f"M9A 本地任务缓存结构已过期：{root_path}")
                 return None
 
             dependency_paths = {
@@ -518,9 +537,10 @@ class M9ATaskLoader:
         self._scan_select_specs.clear()
         self._loaded_from_interface = False
         self._load_all_tasks()
-        if self._task_cache:
-            signature = self._current_signature()
-            self._loader_cache[self.root_path] = (signature, self)
-            self._save_disk_cache(signature)
-        else:
-            self._loader_cache.pop(self.root_path, None)
+        with self._cache_lock:
+            if self._task_cache:
+                signature = self._current_signature()
+                self._loader_cache[self.root_path] = (signature, self)
+                self._save_disk_cache(signature)
+            else:
+                self._loader_cache.pop(self.root_path, None)

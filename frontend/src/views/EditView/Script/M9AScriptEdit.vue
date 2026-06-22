@@ -121,38 +121,6 @@
                 </a-select>
               </a-form-item>
             </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip title="开启后，同一用户每日心相当天成功完成过时，本日后续构建将跳过该任务">
-                    <span class="form-label">
-                      每日心相每日只执行一次
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-switch
-                  v-model:checked="m9aConfig.Run.IfPsychubeDailyOnce"
-                  @change="handleChange('Run', 'IfPsychubeDailyOnce', $event)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip title="开启后，同一用户自动深眠或自动醒梦本月成功完成过时，本月后续构建将分别跳过对应任务">
-                    <span class="form-label">
-                      深眠浅梦每月只执行一次
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-switch
-                  v-model:checked="m9aConfig.Run.IfSleepDreamMonthlyOnce"
-                  @change="handleChange('Run', 'IfSleepDreamMonthlyOnce', $event)"
-                />
-              </a-form-item>
-            </a-col>
           </a-row>
         </div>
 
@@ -204,6 +172,38 @@
                 <a-input-number v-model:value="m9aConfig.Run.RunTimesLimit" :min="1" :max="9999" size="large"
                   class="modern-number-input" style="width: 100%"
                   @blur="handleChange('Run', 'RunTimesLimit', m9aConfig.Run.RunTimesLimit)" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="开启后，同一用户每日心相当天成功完成过时，本日后续运行将跳过该任务">
+                    <span class="form-label">
+                      每日心相每日只执行一次
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-switch
+                  v-model:checked="m9aConfig.Run.IfPsychubeDailyOnce"
+                  @change="handleChange('Run', 'IfPsychubeDailyOnce', $event)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="开启后，同一用户自动深眠或自动醒梦本月成功完成过时，本月后续运行将分别跳过对应任务">
+                    <span class="form-label">
+                      深眠浅梦每月只执行一次
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-switch
+                  v-model:checked="m9aConfig.Run.IfSleepDreamMonthlyOnce"
+                  @change="handleChange('Run', 'IfSleepDreamMonthlyOnce', $event)"
+                />
               </a-form-item>
             </a-col>
           </a-row>
