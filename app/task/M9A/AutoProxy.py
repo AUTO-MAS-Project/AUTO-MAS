@@ -42,6 +42,17 @@ from .task_loader import M9ATaskLoader
 
 logger = get_logger("M9A 自动代理")
 
+RESERVED_TASK_NAMES = {"启动游戏", "关闭游戏", "切换账号"}
+PSYCHUBE_ENTRY = "Psychube"
+LIMBO_ENTRY = "Limbo"
+LUCIDSCAPE_ENTRY = "Lucidscape"
+ENTRY_FALLBACK_NAMES = {
+    "每日心相（意志解析）": PSYCHUBE_ENTRY,
+    "每日心相": PSYCHUBE_ENTRY,
+    "自动深眠": LIMBO_ENTRY,
+    "自动醒梦": LUCIDSCAPE_ENTRY,
+}
+
 
 class AutoProxyTask(TaskExecuteBase):
     """自动代理模式"""
@@ -82,6 +93,11 @@ class AutoProxyTask(TaskExecuteBase):
 
         self.is_first_user_for_version_check = False
         self.is_virtual_update_user = False
+        self.run_complete = False
+        self.skip_proxy_count = False
+        self.completed_task_entries: set[str] = set()
+        self.emulator_opened = False
+        self.m9a_started = False
 
     async def check(self) -> str:
 
@@ -149,6 +165,29 @@ class AutoProxyTask(TaskExecuteBase):
                 self.cur_user_log
             ) = LogRecord()
 
+            if self.is_virtual_update_user:
+                queue = []
+                resource = "官服"
+                account = ""
+            else:
+                queue = self._load_user_queue()
+                resource = self.cur_user_config.get("Info", "Resource") or "官服"
+                account = self.cur_user_config.get("Info", "Account") or ""
+
+                if not queue:
+                    logger.warning(f"用户 {self.cur_user_uid} 未配置任务队列或队列为空")
+                    self.cur_user_item.status = "异常"
+                    return
+
+                queue = self._filter_queue_for_run(queue)
+                if not queue:
+                    logger.info(f"用户 {self.cur_user_uid} 的目标任务均已完成，跳过 M9A 启动")
+                    self.run_complete = True
+                    self.skip_proxy_count = True
+                    self.cur_user_log.content = ["所有目标任务已完成，本次跳过 M9A 启动"]
+                    self.cur_user_log.status = "Success!"
+                    break
+
             # 执行任务前脚本
             if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
                 await execute_script_task(
@@ -164,6 +203,7 @@ class AutoProxyTask(TaskExecuteBase):
                     emulator_info = await self.emulator_manager.open(
                         self.script_config.get("Emulator", "Index"),
                     )
+                    self.emulator_opened = True
             except Exception as e:
                 logger.exception(f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}")
                 await Config.send_websocket_message(
@@ -200,9 +240,6 @@ class AutoProxyTask(TaskExecuteBase):
                     logger.exception(f"模拟器隐藏失败: {e}")
 
             # 读取用户队列
-            queue = self.cur_user_config.get("Task", "Queue")
-            resource = self.cur_user_config.get("Info", "Resource") or "官服"
-            account = self.cur_user_config.get("Info", "Account") or ""
             logger.info(f"用户 {self.cur_user_uid} 的任务队列 (原始): {queue}, 类型: {type(queue)}")
 
             # 确保 queue 是列表
@@ -231,6 +268,7 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info(f"启动 M9A 进程：{self.m9a_exe_path}")
             self.wait_event.clear()
             await self.m9a_process_manager.open_process(self.m9a_exe_path)
+            self.m9a_started = True
             # 等待 M9A 处理日志文件与初始化
             logger.info("等待 M9A 初始化...")
             await asyncio.sleep(5)
@@ -246,6 +284,11 @@ class AutoProxyTask(TaskExecuteBase):
             )
             await self.wait_event.wait()
             await self.m9a_log_monitor.stop()
+
+            if not self.is_virtual_update_user:
+                completed_entries = self._collect_completed_task_entries()
+                self.completed_task_entries.update(completed_entries)
+                await self._update_completed_task_state(completed_entries)
 
             if self.cur_user_log.status == "Success!":
                 logger.info(f"用户: {self.cur_user_uid} - M9A进程完成代理任务")
@@ -269,14 +312,17 @@ class AutoProxyTask(TaskExecuteBase):
                 )
 
                 await self.m9a_process_manager.kill()
+                self.m9a_started = False
                 if not self.is_virtual_update_user:
                     try:
                         await self.emulator_manager.close(
                             self.script_config.get("Emulator", "Index")
                         )
+                        self.emulator_opened = False
                     except Exception as e:
                         logger.exception(f"关闭模拟器失败: {e}")
                 await System.kill_process(self.m9a_exe_path)
+                self.m9a_started = False
 
                 await Notify.push_plyer(
                     "用户自动代理出现异常！",
@@ -293,6 +339,114 @@ class AutoProxyTask(TaskExecuteBase):
                         Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
                         "脚本后任务",
                     )
+
+    def _load_user_queue(self) -> list:
+        queue = self.cur_user_config.get("Task", "Queue")
+        logger.info(f"用户 {self.cur_user_uid} 的任务队列(原始): {queue}, 类型: {type(queue)}")
+
+        if isinstance(queue, str):
+            try:
+                queue = json.loads(queue)
+                logger.info(f"任务队列已从 JSON 字符串解析: {queue}")
+            except Exception as e:
+                logger.error(f"任务队列 JSON 解析失败: {e}")
+                return []
+
+        if not isinstance(queue, list):
+            logger.warning(f"用户 {self.cur_user_uid} 的任务队列类型异常: {type(queue)}")
+            return []
+
+        return [
+            item
+            for item in queue
+            if self._get_queue_item_name(item) not in RESERVED_TASK_NAMES
+        ]
+
+    @staticmethod
+    def _get_queue_item_name(queue_item) -> str:
+        if isinstance(queue_item, str):
+            return queue_item
+        if isinstance(queue_item, dict):
+            return queue_item.get("name", "")
+        return ""
+
+    def _get_queue_item_entry(self, queue_item) -> str:
+        if isinstance(queue_item, dict) and queue_item.get("entry"):
+            return queue_item["entry"]
+        return self._resolve_task_entry(self._get_queue_item_name(queue_item))
+
+    def _resolve_task_entry(self, task_name: str) -> str:
+        task_def = self.m9a_task_loader.get_full_definition(task_name)
+        if task_def and task_def.get("entry"):
+            return task_def["entry"]
+        return ENTRY_FALLBACK_NAMES.get(task_name, task_name)
+
+    def _filter_queue_for_run(self, queue: list) -> list:
+        today = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+        current_month = datetime.now(tz=UTC4).strftime("%Y-%m")
+        filtered_queue = []
+
+        for queue_item in queue:
+            task_name = self._get_queue_item_name(queue_item)
+            entry = self._get_queue_item_entry(queue_item)
+
+            if entry in self.completed_task_entries:
+                logger.info(f"跳过上一轮已完成任务: {task_name} ({entry})")
+                continue
+
+            if (
+                entry == PSYCHUBE_ENTRY
+                and self.script_config.get("Run", "IfPsychubeDailyOnce")
+                and self.cur_user_config.get("Data", "LastPsychubeDate") == today
+            ):
+                logger.info(f"每日心相今日已完成，跳过任务: {task_name}")
+                continue
+
+            if (
+                entry == LIMBO_ENTRY
+                and self.script_config.get("Run", "IfSleepDreamMonthlyOnce")
+                and self.cur_user_config.get("Data", "LastLimboMonth") == current_month
+            ):
+                logger.info(f"自动深眠本月已完成，跳过任务: {task_name}")
+                continue
+
+            if (
+                entry == LUCIDSCAPE_ENTRY
+                and self.script_config.get("Run", "IfSleepDreamMonthlyOnce")
+                and self.cur_user_config.get("Data", "LastLucidscapeMonth") == current_month
+            ):
+                logger.info(f"自动醒梦本月已完成，跳过任务: {task_name}")
+                continue
+
+            filtered_queue.append(queue_item)
+
+        logger.info(f"用户 {self.cur_user_uid} 将执行 {len(filtered_queue)} 个任务: {filtered_queue}")
+        return filtered_queue
+
+    def _collect_completed_task_entries(self) -> set[str]:
+        analysis = M9ALogAnalyzer.parse_lines(self.cur_user_log.content)
+        completed_entries = set()
+        for task in analysis.get("tasks", []):
+            if task.get("status") != "完成":
+                continue
+            entry = self._resolve_task_entry(task.get("name", ""))
+            if entry:
+                completed_entries.add(entry)
+        return completed_entries
+
+    async def _update_completed_task_state(self, completed_entries: set[str]) -> None:
+        if not completed_entries:
+            return
+
+        today = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+        current_month = datetime.now(tz=UTC4).strftime("%Y-%m")
+
+        if PSYCHUBE_ENTRY in completed_entries:
+            await self.cur_user_config.set("Data", "LastPsychubeDate", today)
+        if LIMBO_ENTRY in completed_entries:
+            await self.cur_user_config.set("Data", "LastLimboMonth", current_month)
+        if LUCIDSCAPE_ENTRY in completed_entries:
+            await self.cur_user_config.set("Data", "LastLucidscapeMonth", current_month)
 
     async def write_m9a_config(self, queue: list, emulator_info: DeviceInfo, resource: str = "官服", account: str = ""):
         """向 M9A 目录写入运行配置文件，并保存 debug 备份"""
@@ -537,24 +691,26 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info("虚拟用户任务结束")
             return
 
-        # 结束 M9A 进程
-        try:
-            await self.m9a_process_manager.kill()
-        except Exception as e:
-            logger.warning(f"结束 M9A 进程失败: {e}")
-        try:
-            await System.kill_process(self.m9a_exe_path)
-        except Exception as e:
-            logger.warning(f"强制结束 M9A.exe 失败: {e}")
+        if self.m9a_started:
+            # 结束 M9A 进程
+            try:
+                await self.m9a_process_manager.kill()
+            except Exception as e:
+                logger.warning(f"结束 M9A 进程失败: {e}")
+            try:
+                await System.kill_process(self.m9a_exe_path)
+            except Exception as e:
+                logger.warning(f"强制结束 M9A.exe 失败: {e}")
 
-        # 关闭模拟器
-        logger.info("用户任务结束，关闭模拟器")
-        try:
-            await self.emulator_manager.close(
-                self.script_config.get("Emulator", "Index")
-            )
-        except Exception as e:
-            logger.warning(f"关闭模拟器失败: {e}")
+        if self.emulator_opened:
+            # 关闭模拟器
+            logger.info("用户任务结束，关闭模拟器")
+            try:
+                await self.emulator_manager.close(
+                    self.script_config.get("Emulator", "Index")
+                )
+            except Exception as e:
+                logger.warning(f"关闭模拟器失败: {e}")
 
         # 保存历史记录并合并统计信息
         user_logs_list = []
@@ -599,23 +755,24 @@ class AutoProxyTask(TaskExecuteBase):
                 # 正常完成
                 self.cur_user_item.status = "完成"
                 
-                # 如果是第一次代理，减少剩余天数
-                if (
-                    self.cur_user_config.get("Data", "ProxyTimes") == 0
-                    and self.cur_user_config.get("Info", "RemainedDay") != -1
-                ):
+                if not self.skip_proxy_count:
+                    # 如果是第一次代理，减少剩余天数
+                    if (
+                        self.cur_user_config.get("Data", "ProxyTimes") == 0
+                        and self.cur_user_config.get("Info", "RemainedDay") != -1
+                    ):
+                        await self.cur_user_config.set(
+                            "Info",
+                            "RemainedDay",
+                            self.cur_user_config.get("Info", "RemainedDay") - 1,
+                        )
+
+                    # 增加代理次数
                     await self.cur_user_config.set(
-                        "Info",
-                        "RemainedDay",
-                        self.cur_user_config.get("Info", "RemainedDay") - 1,
+                        "Data", "ProxyTimes",
+                        self.cur_user_config.get("Data", "ProxyTimes") + 1
                     )
-                
-                # 增加代理次数
-                await self.cur_user_config.set(
-                    "Data", "ProxyTimes",
-                    self.cur_user_config.get("Data", "ProxyTimes") + 1
-                )
-                
+
                 logger.success(f"用户 {self.cur_user_uid} 的自动代理任务已完成")
                 
                 # 发送桌面通知
