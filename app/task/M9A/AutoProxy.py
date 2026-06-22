@@ -170,13 +170,15 @@ class AutoProxyTask(TaskExecuteBase):
                 resource = "官服"
                 account = ""
             else:
-                queue = self._load_user_queue()
+                queue, queue_error = self._load_user_queue()
                 resource = self.cur_user_config.get("Info", "Resource") or "官服"
                 account = self.cur_user_config.get("Info", "Account") or ""
 
                 if not queue:
-                    logger.warning(f"用户 {self.cur_user_uid} 未配置任务队列或队列为空")
+                    result_message = queue_error or "未配置任务队列或队列为空"
+                    logger.warning(f"用户 {self.cur_user_uid} {result_message}")
                     self.cur_user_item.status = "异常"
+                    self.cur_user_item.result = result_message
                     return
 
                 queue = self._filter_queue_for_run(queue)
@@ -320,7 +322,7 @@ class AutoProxyTask(TaskExecuteBase):
                         "脚本后任务",
                     )
 
-    def _load_user_queue(self) -> list:
+    def _load_user_queue(self) -> tuple[list, str | None]:
         queue = self.cur_user_config.get("Task", "Queue")
         logger.info(f"用户 {self.cur_user_uid} 的任务队列(原始): {queue}, 类型: {type(queue)}")
 
@@ -329,18 +331,20 @@ class AutoProxyTask(TaskExecuteBase):
                 queue = json.loads(queue)
                 logger.info(f"任务队列已从 JSON 字符串解析: {queue}")
             except Exception as e:
-                logger.error(f"任务队列 JSON 解析失败: {e}")
-                return []
+                error = f"任务队列 JSON 解析失败: {e}"
+                logger.error(error)
+                return [], error
 
         if not isinstance(queue, list):
-            logger.warning(f"用户 {self.cur_user_uid} 的任务队列类型异常: {type(queue)}")
-            return []
+            error = f"任务队列类型异常: {type(queue).__name__}"
+            logger.warning(f"用户 {self.cur_user_uid} 的{error}")
+            return [], error
 
         return [
             item
             for item in queue
             if self._get_queue_item_name(item) not in RESERVED_TASK_NAMES
-        ]
+        ], None
 
     @staticmethod
     def _get_queue_item_name(queue_item) -> str:

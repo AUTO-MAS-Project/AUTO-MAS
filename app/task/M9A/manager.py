@@ -156,8 +156,9 @@ class M9AManager(TaskExecuteBase):
 
         self.m9a_config_path = Path(self.script_config.get("Info", "Path")) / "config"
         self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
-        self.m9a_task_loader = M9ATaskLoader.get_cached(
-            Path(self.script_config.get("Info", "Path"))
+        self.m9a_task_loader = await asyncio.to_thread(
+            M9ATaskLoader.get_cached,
+            Path(self.script_config.get("Info", "Path")),
         )
 
         # 初始化模拟器管理器
@@ -284,7 +285,7 @@ class M9AManager(TaskExecuteBase):
 
             virtual_user_item = self.script_info.user_list[-1]
             if virtual_user_item.status == "完成":
-                self._refresh_m9a_task_cache_after_update()
+                await self._refresh_m9a_task_cache_after_update()
                 logger.success(f"M9A 自动更新完成: v{self._virtual_user_old_version} → v{self._virtual_user_new_version}")
             else:
                 logger.warning(f"虚拟用户未正常完成，状态: {virtual_user_item.status}")
@@ -358,14 +359,18 @@ class M9AManager(TaskExecuteBase):
 
         self.script_info.status = "完成"
 
-    def _refresh_m9a_task_cache_after_update(self):
+    async def _refresh_m9a_task_cache_after_update(self):
         """资源更新成功后预热 M9A 任务缓存。"""
         if not getattr(self.script_info, '_m9a_update_success', False):
             return
 
         try:
             m9a_root = Path(self.script_config.get("Info", "Path"))
-            self.m9a_task_loader = M9ATaskLoader.get_cached(m9a_root, force_reload=True)
+            self.m9a_task_loader = await asyncio.to_thread(
+                M9ATaskLoader.get_cached,
+                m9a_root,
+                force_reload=True,
+            )
             logger.info("M9A 资源更新后任务缓存已刷新")
         except Exception as e:
             logger.warning(f"M9A 资源更新后刷新任务缓存失败: {e}")

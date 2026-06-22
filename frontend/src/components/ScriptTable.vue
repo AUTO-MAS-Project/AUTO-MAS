@@ -701,6 +701,10 @@ const getM9AOnceStatusTags = (script: Script, user: User) => {
   const data = (user as any).Data || {}
   const tags: Array<{ text: string; color: string }> = []
 
+  if (data.IfPassCheck === false) {
+    return tags
+  }
+
   if (runConfig.IfPsychubeDailyOnce && hasM9ATaskInQueue(queue, M9A_PSYCHUBE_NAMES)) {
     const completed = data.LastPsychubeDate === getM9ATodayString()
     tags.push({
