@@ -8,19 +8,19 @@ import type { HSRConfig_Run } from './HSRConfig_Run';
 import type { HSRConfig_TaskMapping } from './HSRConfig_TaskMapping';
 export type HSRConfig = {
     /**
-     * 閼存碍婀伴崺铏诡攨娣団剝浼?
+     * 脚本基础信息
      */
     Info?: (HSRConfig_Info | null);
     /**
-     * 濞撳憡鍨欓柊宥囩枂
+     * 游戏配置
      */
     Game?: (HSRConfig_Game | null);
     /**
-     * 鏉╂劘顢戦柊宥囩枂
+     * 运行配置
      */
     Run?: (HSRConfig_Run | null);
     /**
-     * 濡€虫健閼存碍婀伴崚鍡涘帳
+     * 模块脚本分配
      */
     TaskMapping?: (HSRConfig_TaskMapping | null);
 };

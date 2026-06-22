@@ -4,15 +4,15 @@
 /* eslint-disable */
 export type HSRConfig_Game = {
     /**
-     * 濞撳憡鍨欑捄顖氱窞
+     * 游戏路径
      */
     Path?: (string | null);
     /**
-     * 濞撳憡鍨欓崥顖氬З閸欏倹鏆?
+     * 游戏启动参数
      */
     Arguments?: (string | null);
     /**
-     * 缁涘绶熼弮鍫曟？閿涘牏顫楅敍?
+     * 等待时间（秒）
      */
     WaitTime?: (number | null);
 };
