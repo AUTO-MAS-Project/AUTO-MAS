@@ -448,7 +448,7 @@ async def _push_statistics(
         f"{detail_str}\n"
     )
 
-    template = Config.notify_env.get_template("general_statistics.html")
+    template = Config.notify_env.get_template("m9a_statistics.html")
     message_html = template.render(message)
 
     if Config.get("Notify", "IfSendStatistic"):

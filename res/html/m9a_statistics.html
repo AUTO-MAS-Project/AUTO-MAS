@@ -1,4 +1,4 @@
-<!-- general_statistics.html -->
+<!-- m9a_statistics.html -->
 <html>
 
 <head>
@@ -117,6 +117,32 @@
             background-color: #007f8c;
         }
 
+        .result-box {
+            background-color: #f0f8f0;
+            border: none;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 12px;
+            margin-bottom: 10px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.8;
+            color: #1a5c3a;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+
+        .result-label {
+            margin-bottom: 0px;
+            margin-top: 30px;
+            padding-bottom: 12px;
+            font-weight: bold;
+            font-size: 18px;
+            color: #009faa;
+            text-align: center;
+        }
+
         .signature {
             margin: 10px 30px 0 30px;
             text-align: center;
@@ -160,14 +186,19 @@
             <p><strong>开始时间：</strong>{{ start_time }}</p>
             <p><strong>结束时间：</strong>{{ end_time }}</p>
             <p><strong>执行结果：</strong>
-                {% if user_result == '代理成功' %}
+                {% if user_result == '代理成功' or user_result == '代理任务全部完成' %}
                 <span class="greenhighlight">{{ user_result }}</span>
-                {% elif user_result == '代理失败' %}
+                {% elif user_result == '代理失败' or user_result == '代理任务失败' %}
                 <span class="redhighlight">{{ user_result }}</span>
                 {% else %}
                 {{ user_result }}
                 {% endif %}
             </p>
+
+            {% if task_details %}
+            <p class="result-label">任务详情</p>
+            <div class="result-box">{{ task_details }}</div>
+            {% endif %}
 
         </div>
 
