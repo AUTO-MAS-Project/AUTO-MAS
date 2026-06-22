@@ -218,7 +218,12 @@
 
       <!-- OK-NTE 配置编辑器 -->
       <a-card class="config-card" style="margin-top: 24px">
-        <OkNteConfigEditor :script-id="scriptId" @saved="handleConfigSaved" />
+        <OkNteConfigEditor
+          v-if="activeUserId"
+          :script-id="scriptId"
+          :user-id="activeUserId"
+          @saved="handleConfigSaved"
+        />
       </a-card>
 
       <a-card class="config-card" style="margin-top: 24px">
@@ -326,6 +331,7 @@ const { getScript } = useScriptApi()
 const scriptId = route.params.scriptId as string
 let userId = (route.params.userId as string) || ''
 const isEdit = ref(!!userId)
+const activeUserId = ref(userId)
 const scriptName = ref('OK-NTE脚本')
 
 const pageLoading = ref(true)
@@ -396,6 +402,7 @@ const createUserImmediately = async () => {
     throw new Error(resp?.message || '创建用户失败')
   }
   userId = resp.userId
+  activeUserId.value = userId
   isEdit.value = true
   await router.replace({
     name: 'OkNteUserEdit',

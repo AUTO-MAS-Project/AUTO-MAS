@@ -182,6 +182,7 @@ interface ConfigFile {
 
 const props = defineProps<{
   scriptId: string
+  userId: string
 }>()
 
 const emit = defineEmits<{
@@ -255,9 +256,13 @@ const selectConfig = (filename: string) => {
 }
 
 const loadConfigs = async () => {
+  if (!props.scriptId || !props.userId) return
   loading.value = true
   try {
-    const resp = await OknteService.getOknteConfigsListApiScriptsOknteConfigsListPost(props.scriptId)
+    const resp = await OknteService.getOknteConfigsListApiScriptsOknteConfigsListPost(
+      props.scriptId,
+      props.userId,
+    )
     if (resp?.code === 200 && resp?.data) {
       configs.value = resp.data
       optionLabels.value = resp.optionLabels || {}
@@ -283,7 +288,8 @@ const saveAll = async (silent = true) => {
     const configsToUpdate = { ...localChanges.value }
     const resp = await OknteService.batchUpdateOknteConfigsApiScriptsOknteConfigsBatchUpdatePost({
       script_id: props.scriptId,
-      configs: configsToUpdate
+      user_id: props.userId,
+      configs: configsToUpdate,
     })
     if (resp?.code === 200) {
       // 更新本地数据

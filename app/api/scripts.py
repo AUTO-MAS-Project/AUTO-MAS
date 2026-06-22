@@ -57,9 +57,15 @@ def _oknte_script_config(script_id: str) -> tuple[uuid.UUID, RuntimeOkNteConfig]
     return script_uid, script_config
 
 
-def _oknte_mas_config_dir(script_id: str) -> Path:
+def _oknte_legacy_mas_config_dir(script_id: str) -> Path:
     script_uid, _ = _oknte_script_config(script_id)
     return Path.cwd() / "data" / str(script_uid) / "Default" / "ConfigFile"
+
+
+def _oknte_mas_config_dir(script_id: str, user_id: str) -> Path:
+    script_uid, _ = _oknte_script_config(script_id)
+    user_uid = uuid.UUID(user_id)
+    return Path.cwd() / "data" / str(script_uid) / str(user_uid) / "ConfigFile"
 
 
 def _oknte_config_file_path(config_dir: Path, filename: str) -> Path:
@@ -913,14 +919,15 @@ async def batch_update_okww_configs(
     summary="获取 OK-NTE 配置文件列表及 schema",
     status_code=200,
 )
-async def get_oknte_configs_list(script_id: str):
+async def get_oknte_configs_list(script_id: str, user_id: str):
     """
     获取 OK-NTE 配置文件列表及 schema 定义。
-    读写 per-user 配置目录（data/{script_id}/Default/ConfigFile/），
+    读写用户配置目录（data/{script_id}/{user_id}/ConfigFile/），
     若为空则自动从 ok-nte configs 目录初始化默认配置。
 
     Args:
         script_id: OK-NTE 脚本 ID
+        user_id: 用户 ID
 
     Returns:
         dict: 包含配置文件列表和 schema 的响应
@@ -938,12 +945,19 @@ async def get_oknte_configs_list(script_id: str):
         root_path = script_config.get("Info", "RootPath")
         option_labels = load_oknte_option_labels(root_path) if root_path else {}
 
-        # per-user 配置目录（始终使用 Default，因为配置编辑器是脚本级的）
-        mas_config_dir = _oknte_mas_config_dir(script_id)
+        # 用户配置目录；旧版 Default 目录仅作为升级后的初始化来源。
+        mas_config_dir = _oknte_mas_config_dir(script_id, user_id)
 
         # ok-nte 源配置目录（用于自动初始化）
-        raw_config_path = script_config.get("Script", "ConfigPath")
-        oknte_configs_dir = Path(raw_config_path) if raw_config_path else None
+        legacy_config_dir = _oknte_legacy_mas_config_dir(script_id)
+        oknte_configs_dir = (
+            legacy_config_dir
+            if legacy_config_dir.is_dir() and any(legacy_config_dir.iterdir())
+            else None
+        )
+        if oknte_configs_dir is None:
+            raw_config_path = script_config.get("Script", "ConfigPath")
+            oknte_configs_dir = Path(raw_config_path) if raw_config_path else None
         if not oknte_configs_dir or not oknte_configs_dir.exists():
             if root_path:
                 root = Path(root_path)
@@ -951,7 +965,7 @@ async def get_oknte_configs_list(script_id: str):
                 source_dir = root / "configs"
                 oknte_configs_dir = packaged_dir if packaged_dir.is_dir() else source_dir
 
-        # 自动初始化：per-user 目录为空时从 ok-nte configs 复制默认配置
+        # 自动初始化：用户目录为空时从旧版共享目录或 ok-nte configs 复制默认配置
         need_init = not mas_config_dir.exists() or not any(mas_config_dir.iterdir())
         if need_init and oknte_configs_dir and oknte_configs_dir.is_dir():
             mas_config_dir.mkdir(parents=True, exist_ok=True)
@@ -1004,6 +1018,7 @@ async def get_oknte_configs_list(script_id: str):
 )
 async def update_oknte_config(
     script_id: str = Body(...),
+    user_id: str = Body(...),
     filename: str = Body(...),
     data: dict = Body(...),
 ):
@@ -1012,6 +1027,7 @@ async def update_oknte_config(
 
     Args:
         script_id: OK-NTE 脚本 ID
+        user_id: 用户 ID
         filename: 配置文件名（如 DailyTask.json）
         data: 要更新的配置数据
 
@@ -1021,8 +1037,8 @@ async def update_oknte_config(
     try:
         import json
 
-        # 写入 per-user 配置目录
-        mas_config_dir = _oknte_mas_config_dir(script_id)
+        # 写入用户配置目录
+        mas_config_dir = _oknte_mas_config_dir(script_id, user_id)
         mas_config_dir.mkdir(parents=True, exist_ok=True)
 
         filepath = _oknte_config_file_path(mas_config_dir, filename)
@@ -1059,6 +1075,7 @@ async def update_oknte_config(
 )
 async def batch_update_oknte_configs(
     script_id: str = Body(...),
+    user_id: str = Body(...),
     configs: dict = Body(...),
 ):
     """
@@ -1066,6 +1083,7 @@ async def batch_update_oknte_configs(
 
     Args:
         script_id: OK-NTE 脚本 ID
+        user_id: 用户 ID
         configs: { filename: data } 格式的配置数据
 
     Returns:
@@ -1074,8 +1092,8 @@ async def batch_update_oknte_configs(
     try:
         import json
 
-        # 写入 per-user 配置目录
-        mas_config_dir = _oknte_mas_config_dir(script_id)
+        # 写入用户配置目录
+        mas_config_dir = _oknte_mas_config_dir(script_id, user_id)
         mas_config_dir.mkdir(parents=True, exist_ok=True)
 
         updated_files = []

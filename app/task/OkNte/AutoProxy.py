@@ -232,11 +232,15 @@ class AutoProxyTask(TaskExecuteBase):
 
         self.run_book = False
 
+    def _oknte_legacy_mas_config_dir(self) -> Path:
+        return Path.cwd() / "data" / self.script_info.script_id / "Default" / "ConfigFile"
+
     def _oknte_mas_config_dir(self) -> Path:
-        return Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
+        return Path.cwd() / "data" / self.script_info.script_id / str(self.cur_user_uid) / "ConfigFile"
 
     def _oknte_source_config_dir(self, mas_config_dir: Path) -> Path | None:
         candidates = [
+            self._oknte_legacy_mas_config_dir(),
             self.script_config_path,
             self.script_root_path / "data" / "apps" / "ok-nte" / "working" / "configs",
             self.script_root_path / "configs",

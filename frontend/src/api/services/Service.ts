@@ -830,26 +830,30 @@ export class Service {
     /**
      * 获取 OK-NTE 配置文件列表及 schema
      * 获取 OK-NTE 配置文件列表及 schema 定义。
-     * 读写 per-user 配置目录（data/{script_id}/Default/ConfigFile/），
+     * 读写用户配置目录（data/{script_id}/{user_id}/ConfigFile/），
      * 若为空则自动从 ok-nte configs 目录初始化默认配置。
      *
      * Args:
      * script_id: OK-NTE 脚本 ID
+     * user_id: 用户 ID
      *
      * Returns:
      * dict: 包含配置文件列表和 schema 的响应
      * @param scriptId
+     * @param userId
      * @returns any Successful Response
      * @throws ApiError
      */
     public static getOknteConfigsListApiScriptsOknteConfigsListPost(
         scriptId: string,
+        userId: string,
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/oknte/configs/list',
             query: {
                 'script_id': scriptId,
+                'user_id': userId,
             },
             errors: {
                 422: `Validation Error`,
@@ -862,6 +866,7 @@ export class Service {
      *
      * Args:
      * script_id: OK-NTE 脚本 ID
+     * user_id: 用户 ID
      * filename: 配置文件名（如 DailyTask.json）
      * data: 要更新的配置数据
      *
@@ -890,6 +895,7 @@ export class Service {
      *
      * Args:
      * script_id: OK-NTE 脚本 ID
+     * user_id: 用户 ID
      * configs: { filename: data } 格式的配置数据
      *
      * Returns:

@@ -588,6 +588,19 @@ const showMaaEndConfigMask = ref(false) // 控制MaaEnd配置遮罩层的显示
 const currentConfigScript = ref<Script | null>(null) // 当前正在配置的脚本
 const currentMaaEndConfigUser = ref<User | null>(null)
 
+const scriptEditPathMap: Record<ScriptType, string> = {
+  MAA: 'maa',
+  General: 'general',
+  Okww: 'okww',
+  OkNte: 'oknte',
+  SRC: 'src',
+  MaaEnd: 'maaend',
+  M9A: 'm9a',
+  HSR: 'hsr',
+}
+
+const getScriptEditPath = (type: ScriptType) => scriptEditPathMap[type]
+
 // WebSocket连接管理
 const activeConnections = ref<Map<string, { subscriptionId: string; websocketId: string }>>(
   new Map()
@@ -738,14 +751,7 @@ const handleConfirmScriptSelect = async () => {
     if (result) {
       scriptSelectVisible.value = false
       // 跳转到编辑页面
-      const editPath =
-        selectedScript.type === 'MAA'
-          ? 'maa'
-          : selectedScript.type === 'SRC'
-            ? 'src'
-            : selectedScript.type === 'MaaEnd'
-              ? 'maaend'
-              : 'general'
+      const editPath = getScriptEditPath(selectedScript.type)
       router.push({
         path: `/scripts/${result.scriptId}/edit/${editPath}`,
         state: {
@@ -780,22 +786,7 @@ const handleConfirmAddScript = async () => {
     if (result) {
       typeSelectVisible.value = false
       // 跳转到编辑页面，传递API返回的数据
-      const editPath =
-        selectedType.value === 'MAA'
-          ? 'maa'
-          : selectedType.value === 'SRC'
-            ? 'src'
-            : selectedType.value === 'MaaEnd'
-              ? 'maaend'
-              : selectedType.value === 'M9A'
-                ? 'm9a'
-                : selectedType.value === 'Okww'
-                  ? 'okww'
-                  : selectedType.value === 'OkNte'
-                    ? 'oknte'
-                    : selectedType.value === 'HSR'
-                      ? 'hsr'
-                      : 'general'
+      const editPath = getScriptEditPath(selectedType.value)
       router.push({
         path: `/scripts/${result.scriptId}/edit/${editPath}`,
         state: {
@@ -909,24 +900,7 @@ const handleCancelTemplate = () => {
 }
 
 const handleEditScript = (script: Script) => {
-  // 根据脚本类型跳转到对应的编辑页面
-  if (script.type === 'MAA') {
-    router.push(`/scripts/${script.id}/edit/maa`)
-  } else if (script.type === 'SRC') {
-    router.push(`/scripts/${script.id}/edit/src`)
-  } else if (script.type === 'MaaEnd') {
-    router.push(`/scripts/${script.id}/edit/maaend`)
-  } else if (script.type === 'M9A') {
-    router.push(`/scripts/${script.id}/edit/m9a`)
-  } else if (script.type === 'Okww') {
-    router.push(`/scripts/${script.id}/edit/okww`)
-  } else if (script.type === 'OkNte') {
-    router.push(`/scripts/${script.id}/edit/oknte`)
-  } else if (script.type === 'HSR') {
-    router.push(`/scripts/${script.id}/edit/hsr`)
-  } else {
-    router.push(`/scripts/${script.id}/edit/general`)
-  }
+  router.push(`/scripts/${script.id}/edit/${getScriptEditPath(script.type)}`)
 }
 
 const handleDeleteScript = async (script: Script) => {
