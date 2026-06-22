@@ -1851,6 +1851,18 @@ class M9AUserConfig(ConfigBase):
         self.Data_LastProxyDate = ConfigItem(
             "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
         )
+        ## 上次完成每日心相日期
+        self.Data_LastPsychubeDate = ConfigItem(
+            "Data", "LastPsychubeDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        ## 上次完成自动深眠月份
+        self.Data_LastLimboMonth = ConfigItem(
+            "Data", "LastLimboMonth", "2000-01", DateTimeValidator("%Y-%m")
+        )
+        ## 上次完成自动醒梦月份
+        self.Data_LastLucidscapeMonth = ConfigItem(
+            "Data", "LastLucidscapeMonth", "2000-01", DateTimeValidator("%Y-%m")
+        )
         ## 代理次数
         self.Data_ProxyTimes = ConfigItem(
             "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
@@ -1982,6 +1994,14 @@ class M9AConfig(ConfigBase):
         ## 是否在队列结束后自动更新
         self.Run_IfAutoUpdateAfterQueue = ConfigItem(
             "Run", "IfAutoUpdateAfterQueue", False, BoolValidator()
+        )
+        ## 每日心相每日只执行一次
+        self.Run_IfPsychubeDailyOnce = ConfigItem(
+            "Run", "IfPsychubeDailyOnce", False, BoolValidator()
+        )
+        ## 深眠浅梦每月只执行一次
+        self.Run_IfSleepDreamMonthlyOnce = ConfigItem(
+            "Run", "IfSleepDreamMonthlyOnce", False, BoolValidator()
         )
 
         self.UserData = MultipleConfig([M9AUserConfig])
