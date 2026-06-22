@@ -19,6 +19,7 @@
 #   Contact: DLmaster_361@163.com
 
 import re
+from collections.abc import Awaitable
 from pathlib import Path
 
 from app.core import Config
@@ -37,6 +38,9 @@ class M9ALogAnalyzer:
 
     DROP_KEYWORDS = ("掉落统计:", "材料掉落总结:")
     """掉落物统计行的关键词"""
+
+    SOURCE_TAGS = ("src=Monitor", "src=Worker", "src=Core")
+    """支持解析的 M9A 日志来源标记"""
 
     RARITY_TAGS_RE = re.compile(r"^\[.+?\]$")
     """稀有度标签正则，匹配 [黄色] [紫色] 等括号标签，在最终输出中过滤掉"""
@@ -81,6 +85,10 @@ class M9ALogAnalyzer:
         return any(kw in line for kw in M9ALogAnalyzer.DROP_KEYWORDS)
 
     @staticmethod
+    def _is_supported_source(line: str) -> bool:
+        return any(tag in line for tag in M9ALogAnalyzer.SOURCE_TAGS)
+
+    @staticmethod
     def parse_log(log_path: Path) -> dict:
         """解析 M9A 运行日志文件
 
@@ -114,7 +122,7 @@ class M9ALogAnalyzer:
         except Exception:
             return {
                 "tasks": [],
-                "overall_status": "失败",
+                "overall_status": "解析失败",
                 "duration": "",
             }
 
@@ -135,7 +143,7 @@ class M9ALogAnalyzer:
             in_drops = False
 
         for i, line in enumerate(lines):
-            if "src=Monitor" not in line and "src=Worker" not in line:
+            if not M9ALogAnalyzer._is_supported_source(line):
                 continue
 
             task_name = M9ALogAnalyzer._extract_task_start(line)
@@ -181,7 +189,7 @@ class M9ALogAnalyzer:
                     idx = line.find("MonitorMarkdown")
                     raw = line[idx + len("MonitorMarkdown"):].lstrip("] ")
                     drop_text = M9ALogAnalyzer._strip_html(raw.strip())
-                    if drop_text and drop_text not in ("",) + M9ALogAnalyzer.DROP_KEYWORDS:
+                    if drop_text and drop_text not in M9ALogAnalyzer.DROP_KEYWORDS:
                         drops.append(drop_text)
                     continue
                 if "MonitorLog" not in line:
@@ -266,6 +274,14 @@ class M9ALogAnalyzer:
 # ==================== 通知推送辅助函数 ====================
 
 
+async def _safe_send_channel(channel_name: str, send_coro: Awaitable[None]) -> None:
+    """单个通知渠道失败时不影响其他渠道。"""
+    try:
+        await send_coro
+    except Exception as e:
+        logger.warning(f"{channel_name} 通知发送失败: {e}")
+
+
 async def _send_to_all_global_channels(
     title: str, message_text: str, message_html: str
 ) -> None:
@@ -279,22 +295,35 @@ async def _send_to_all_global_channels(
     serverchan_message = message_text.replace("\n", "\n\n")
 
     if Config.get("Notify", "IfSendMail"):
-        await Notify.send_mail(
-            "网页", title, message_html, Config.get("Notify", "ToAddress")
+        await _safe_send_channel(
+            "全局邮件",
+            Notify.send_mail(
+                "网页", title, message_html, Config.get("Notify", "ToAddress")
+            ),
         )
 
     if Config.get("Notify", "IfServerChan"):
-        await Notify.ServerChanPush(
-            title,
-            f"{serverchan_message}\n\nAUTO-MAS 敬上",
-            Config.get("Notify", "ServerChanKey"),
+        await _safe_send_channel(
+            "全局 ServerChan",
+            Notify.ServerChanPush(
+                title,
+                f"{serverchan_message}\n\nAUTO-MAS 敬上",
+                Config.get("Notify", "ServerChanKey"),
+            ),
         )
 
-    for webhook in Config.Notify_CustomWebhooks.values():
-        await Notify.WebhookPush(title, f"{message_text}\n\nAUTO-MAS 敬上", webhook)
+    custom_webhooks = Config.Notify_CustomWebhooks
+    for webhook in custom_webhooks.values():
+        await _safe_send_channel(
+            "全局自定义 Webhook",
+            Notify.WebhookPush(title, f"{message_text}\n\nAUTO-MAS 敬上", webhook),
+        )
 
     if Config.get("Notify", "IfKoishiSupport"):
-        await Notify.send_koishi(f"{title}\n\n{message_text}\n\nAUTO-MAS 敬上")
+        await _safe_send_channel(
+            "全局 Koishi",
+            Notify.send_koishi(f"{title}\n\n{message_text}\n\nAUTO-MAS 敬上"),
+        )
 
 
 async def _send_to_user_channels(
@@ -317,22 +346,32 @@ async def _send_to_user_channels(
         if not user_config.get("Notify", "ToAddress"):
             logger.error("用户邮箱地址为空，无法发送邮件通知")
         else:
-            await Notify.send_mail(
-                "网页", title, message_html, user_config.get("Notify", "ToAddress")
+            await _safe_send_channel(
+                "用户邮件",
+                Notify.send_mail(
+                    "网页", title, message_html, user_config.get("Notify", "ToAddress")
+                ),
             )
 
     if user_config.get("Notify", "IfServerChan"):
         if not user_config.get("Notify", "ServerChanKey"):
             logger.error("用户 ServerChan 密钥为空，无法发送通知")
         else:
-            await Notify.ServerChanPush(
-                title,
-                f"{serverchan_message}\n\nAUTO-MAS 敬上",
-                user_config.get("Notify", "ServerChanKey"),
+            await _safe_send_channel(
+                "用户 ServerChan",
+                Notify.ServerChanPush(
+                    title,
+                    f"{serverchan_message}\n\nAUTO-MAS 敬上",
+                    user_config.get("Notify", "ServerChanKey"),
+                ),
             )
 
-    for webhook in user_config.Notify_CustomWebhooks.values():
-        await Notify.WebhookPush(title, f"{message_text}\n\nAUTO-MAS 敬上", webhook)
+    custom_webhooks = user_config.Notify_CustomWebhooks
+    for webhook in custom_webhooks.values():
+        await _safe_send_channel(
+            "用户自定义 Webhook",
+            Notify.WebhookPush(title, f"{message_text}\n\nAUTO-MAS 敬上", webhook),
+        )
 
 
 # ==================== 对外接口 ====================

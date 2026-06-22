@@ -186,9 +186,9 @@
             <p><strong>开始时间：</strong>{{ start_time }}</p>
             <p><strong>结束时间：</strong>{{ end_time }}</p>
             <p><strong>执行结果：</strong>
-                {% if user_result == '代理成功' %}
+                {% if user_result == '代理成功' or user_result == '代理任务全部完成' %}
                 <span class="greenhighlight">{{ user_result }}</span>
-                {% elif user_result == '代理失败' %}
+                {% elif user_result == '代理失败' or user_result == '代理任务失败' %}
                 <span class="redhighlight">{{ user_result }}</span>
                 {% else %}
                 {{ user_result }}
