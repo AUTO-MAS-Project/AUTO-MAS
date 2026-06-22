@@ -610,7 +610,7 @@ async def get_m9a_available_tasks(script_id: str):
     try:
         script_config = Config.ScriptConfig[uuid.UUID(script_id)]
         m9a_path = Path(script_config.get("Info", "Path"))
-        loader = M9ATaskLoader(m9a_path)
+        loader = M9ATaskLoader.get_cached(m9a_path)
         
         # 获取可用任务，并添加完整定义（包括 option 和 _option_definitions）
         available_tasks = loader.get_available_tasks()

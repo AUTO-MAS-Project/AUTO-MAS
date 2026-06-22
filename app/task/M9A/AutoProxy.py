@@ -63,6 +63,7 @@ class AutoProxyTask(TaskExecuteBase):
         script_config: M9AConfig,
         user_config: MultipleConfig[M9AUserConfig],
         emulator_manager: DeviceBase,
+        task_loader: M9ATaskLoader,
     ):
         super().__init__()
 
@@ -74,6 +75,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_config = script_config
         self.user_config = user_config
         self.emulator_manager = emulator_manager
+        self.m9a_task_loader = task_loader
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
@@ -87,8 +89,6 @@ class AutoProxyTask(TaskExecuteBase):
         self.m9a_exe_path = self.m9a_root_path / "M9A.exe"
         self.m9a_tasks_path = self.m9a_config_path / "instances/default.json"
 
-        # 初始化任务加载器
-        self.m9a_task_loader = M9ATaskLoader(self.m9a_root_path)
         self.template_path = self.m9a_root_path / "config/instances/default.json"
 
         self.is_first_user_for_version_check = False
@@ -238,26 +238,6 @@ class AutoProxyTask(TaskExecuteBase):
                     )
                 except Exception as e:
                     logger.exception(f"模拟器隐藏失败: {e}")
-
-            # 读取用户队列
-            logger.info(f"用户 {self.cur_user_uid} 的任务队列 (原始): {queue}, 类型: {type(queue)}")
-
-            # 确保 queue 是列表
-            if isinstance(queue, str):
-                try:
-                    queue = json.loads(queue)
-                    logger.info(f"任务队列已从 JSON 字符串解析: {queue}")
-                except Exception as e:
-                    logger.error(f"任务队列 JSON 解析失败: {e}")
-                    queue = []
-
-            if not queue and not self.is_virtual_update_user:
-                logger.warning(f"用户 {self.cur_user_uid} 未配置任务队列或队列为空")
-                self.cur_user_item.status = "异常"
-                return
-
-            RESERVED_NAMES = {"启动游戏", "关闭游戏", "切换账号"}
-            queue = [item for item in queue if (item if isinstance(item, str) else item.get("name", "")) not in RESERVED_NAMES]
 
             logger.info(f"用户 {self.cur_user_uid} 将执行 {len(queue)} 个任务: {queue}")
 
@@ -714,7 +694,8 @@ class AutoProxyTask(TaskExecuteBase):
 
         # 保存历史记录并合并统计信息
         user_logs_list = []
-        for t, log_item in self.cur_user_item.log_record.items():
+        user_log_records = []
+        for t, log_item in sorted(self.cur_user_item.log_record.items(), key=lambda item: item[0]):
 
             if log_item.status == "M9A 正常运行中":
                 log_item.status = "任务被用户手动中止"
@@ -725,6 +706,14 @@ class AutoProxyTask(TaskExecuteBase):
                 / f"history/{dt.strftime('%Y-%m-%d')}/{self.cur_user_item.name}/{dt.strftime('%H-%M-%S')}.log"
             )
             user_logs_list.append(log_path.with_suffix(".json"))
+            user_log_records.append(
+                {
+                    "start_time": t,
+                    "log_path": log_path,
+                    "status": log_item.status,
+                    "content": list(log_item.content),
+                }
+            )
 
             await Config.save_maa_log(log_path, log_item.content, log_item.status)
 
@@ -741,10 +730,7 @@ class AutoProxyTask(TaskExecuteBase):
         # 分析运行日志，获取任务详情
         task_details_text = ""
         try:
-            latest_log_path = self._get_latest_history_log()
-            if latest_log_path and latest_log_path.exists():
-                analysis = M9ALogAnalyzer.parse_log(latest_log_path)
-                task_details_text = M9ALogAnalyzer.build_notification_text(analysis)
+            task_details_text = self._build_attempt_task_details(user_log_records)
         except Exception as e:
             logger.exception(f"日志分析失败: {e}")
         statistics["task_details"] = task_details_text
@@ -1250,17 +1236,32 @@ class AutoProxyTask(TaskExecuteBase):
             "AgentPath": "./MaaAgentBinary"
         }
 
-    def _get_latest_history_log(self) -> Path | None:
-        history_dir = Path.cwd() / "history"
-        if not history_dir.exists():
-            return None
+    def _build_attempt_task_details(self, user_log_records: list[dict]) -> str:
+        """按本轮尝试顺序汇总 M9A 任务详情。"""
+        if not user_log_records:
+            return ""
 
-        log_files = sorted(
-            history_dir.rglob(f"{self.cur_user_item.name}/*.log"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True
-        )
-        return log_files[0] if log_files else None
+        multiple_attempts = len(user_log_records) > 1
+        detail_blocks = []
+
+        for index, record in enumerate(user_log_records, start=1):
+            try:
+                analysis = M9ALogAnalyzer.parse_lines(record["content"])
+                detail_text = M9ALogAnalyzer.build_notification_text(analysis)
+            except Exception as e:
+                logger.exception(f"解析第 {index} 次 M9A 尝试日志失败: {e}")
+                detail_text = ""
+
+            if not multiple_attempts:
+                return detail_text
+
+            start_time = record["start_time"].strftime("%H:%M:%S")
+            status = record["status"] or "-"
+            if not detail_text:
+                detail_text = "未解析到任务详情"
+            detail_blocks.append(f"第 {index} 次尝试（{start_time}，{status}）\n{detail_text}")
+
+        return "\n\n".join(detail_blocks)
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
