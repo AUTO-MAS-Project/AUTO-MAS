@@ -6,39 +6,39 @@ import type { HSRDynamicStageM7A } from './HSRDynamicStageM7A';
 import type { HSRDynamicStageSRA } from './HSRDynamicStageSRA';
 export type HSRDynamicStageOption = {
     /**
-     * 閸擃垱婀扮仦鏇犮仛閸氬秶袨
+     * 副本展示名称
      */
     label: string;
     /**
-     * 閸擃垱婀扮拠瀛樻
+     * 副本说明
      */
     detail?: (string | null);
     /**
-     * 閸擃垱婀伴柅澶愩€嶉崐?
+     * 副本选项值
      */
     value: string;
     /**
-     * 閸擃垱婀伴崚鍡欒闁?
+     * 副本分类键
      */
     categoryKey: string;
     /**
-     * 閸擃垱婀伴崚鍡欒閸氬秶袨
+     * 副本分类名称
      */
     categoryLabel: string;
     /**
-     * 閸楁洘顐兼担鎾冲濞戝牐鈧?
+     * 单次体力消耗
      */
     cost?: (number | null);
     /**
-     * 閺堚偓婢堆勫⒔鐞涘本顐奸弫?
+     * 最大执行次数
      */
     maxCount?: (number | null);
     /**
-     * M7A 閸樼喓鏁撶€涙顔?
+     * M7A 原生字段
      */
     m7a?: (HSRDynamicStageM7A | null);
     /**
-     * SRA 閸樼喓鏁撶€涙顔?
+     * SRA 原生字段
      */
     sra?: (HSRDynamicStageSRA | null);
 };

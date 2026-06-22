@@ -3,11 +3,11 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 娑撳绻佸〒濠囧帳缂冾喖鎻╅悡?
+ * 三深渊配置快照
  */
 export type HSRUserConfig_Abyss = {
     /**
-     * 娑撳绻佸〒濠傛彥閻撗囨肠閸氬牞绱橨SON閿涘畺rom M7A config.yaml閿?
+     * 三深渊快照集合（JSON，from M7A config.yaml）
      */
     Snapshots?: (string | null);
 };

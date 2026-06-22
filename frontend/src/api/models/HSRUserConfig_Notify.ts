@@ -4,27 +4,27 @@
 /* eslint-disable */
 export type HSRUserConfig_Notify = {
     /**
-     * 閺勵垰鎯侀崥顖滄暏闁氨鐓?
+     * 是否启用通知
      */
     Enabled?: (boolean | null);
     /**
-     * 閺勵垰鎯侀崣鎴︹偓浣虹埠鐠佲€蹭繆閹?
+     * 是否发送统计信息
      */
     IfSendStatistic?: (boolean | null);
     /**
-     * 閺勵垰鎯侀崣鎴︹偓渚€鍋栨禒?
+     * 是否发送邮件
      */
     IfSendMail?: (boolean | null);
     /**
-     * 閺€鏈垫閸︽澘娼?
+     * 收件地址
      */
     ToAddress?: (string | null);
     /**
-     * 閺勵垰鎯侀崥顖滄暏 Server 闁?
+     * 是否启用 Server 酱
      */
     IfServerChan?: (boolean | null);
     /**
-     * Server 闁板崬鐦戦柦?
+     * Server 酱密钥
      */
     ServerChanKey?: (string | null);
 };

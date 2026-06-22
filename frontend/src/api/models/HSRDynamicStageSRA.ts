@@ -4,11 +4,11 @@
 /* eslint-disable */
 export type HSRDynamicStageSRA = {
     /**
-     * SRA 娴ｆ挸濮忔禒璇插 ID
+     * SRA 体力任务 ID
      */
     id?: (string | null);
     /**
-     * SRA 娴ｆ挸濮忔禒璇插鐏炲倻楠?
+     * SRA 体力任务层级
      */
     level?: (number | null);
 };

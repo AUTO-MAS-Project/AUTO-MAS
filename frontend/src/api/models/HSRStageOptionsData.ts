@@ -5,21 +5,21 @@
 import type { HSRDynamicStageCategory } from './HSRDynamicStageCategory';
 export type HSRStageOptionsData = {
     /**
-     * 娴ｆ挸濮忛崜顖涙拱閹笛嗩攽閼存碍婀?
+     * 体力副本执行脚本
      */
     engine: HSRStageOptionsData.engine;
     /**
-     * 闁銆嶉弶銉︾爱閺傚洣娆㈤幋鏍窗瑜?
+     * 选项来源文件或目录
      */
     source?: (string | null);
     /**
-     * 娴ｆ挸濮忛崜顖涙拱閸掑棛琚崚妤勩€?
+     * 体力副本分类列表
      */
     categories?: Array<HSRDynamicStageCategory>;
 };
 export namespace HSRStageOptionsData {
     /**
-     * 娴ｆ挸濮忛崜顖涙拱閹笛嗩攽閼存碍婀?
+     * 体力副本执行脚本
      */
     export enum engine {
         M7A = 'M7A',

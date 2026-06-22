@@ -4,15 +4,15 @@
 /* eslint-disable */
 export type HSRConfig_Info = {
     /**
-     * HSR 閼存碍婀伴崥宥囆?
+     * HSR 脚本名称
      */
     Name?: (string | null);
     /**
-     * M7A 鐠侯垰绶?
+     * M7A 路径
      */
     M7APath?: (string | null);
     /**
-     * SRA 鐠侯垰绶?
+     * SRA 路径
      */
     SRAPath?: (string | null);
 };

@@ -3,27 +3,27 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 閸楁洑閲滄稉澶嬬箒濞撳﹤鎻╅悡褏娈戠€电厧鍙嗙紒鎾寸亯閹芥顩?
+ * 单个三深渊快照的导入结果摘要
  */
 export type AbyssSnapshotImportItem = {
     /**
-     * 濞ｈ鲸绗傝箛顐ゅ弾闁? ForgottenHall / PureFiction / Apocalyptic
+     * 深渊快照键: ForgottenHall / PureFiction / Apocalyptic
      */
     snapshotKey: string;
     /**
-     * 閺勵垰鎯侀幋鎰娴?M7A config.yaml 鐠囪褰囬獮璺哄晸閸?
+     * 是否成功从 M7A config.yaml 读取并写入
      */
     success: boolean;
     /**
-     * 閸忓啿宕遍懠鍐ㄦ纯閿涘溂min, max]閿涘绱濈紓鍝勩亼閺冩湹璐?None
+     * 关卡范围（[min, max]），缺失时为 None
      */
     level?: null;
     /**
-     * 韫囶偆鍙庢稉顓炲瘶閸氼偆娈戦梼鐔剁礊鐎涙顔岄敍灞筋洤 team1/team2/team3
+     * 快照中包含的队伍字段，如 team1/team2/team3
      */
     teamKeys?: Array<string>;
     /**
-     * 闁挎瑨顕ら幓蹇氬牚閿涘牆顕遍崗銉ャ亼鐠愩儲妞傞敍?
+     * 错误描述（导入失败时）
      */
     error?: (string | null);
 };
