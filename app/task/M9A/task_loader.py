@@ -22,6 +22,7 @@
 
 import hashlib
 import json
+import time
 from copy import deepcopy
 from pathlib import Path
 from threading import RLock
@@ -37,8 +38,11 @@ class M9ATaskLoader:
     """M9A 任务加载器"""
 
     _disk_cache_version = 1
+    _disk_cache_max_age_seconds = 30 * 24 * 60 * 60
+    _disk_cache_cleanup_interval_seconds = 24 * 60 * 60
     _loader_cache: dict[Path, tuple[tuple, "M9ATaskLoader"]] = {}
     _cache_lock = RLock()
+    _last_disk_cache_cleanup_at = 0.0
 
     def __init__(self, m9a_root_path: Path):
         self.root_path = m9a_root_path.resolve()
@@ -55,6 +59,9 @@ class M9ATaskLoader:
         """获取按 M9A 根目录缓存的任务加载器。"""
         root_path = m9a_root_path.resolve()
         with cls._cache_lock:
+            cache_path = cls._disk_cache_path(root_path)
+            cls._cleanup_expired_disk_cache(cache_path)
+
             cached = cls._loader_cache.get(root_path)
             if cached and not force_reload:
                 signature, loader = cached
@@ -65,6 +72,7 @@ class M9ATaskLoader:
                     include_tasks_dir=not loader._loaded_from_interface,
                 )
                 if current_signature == signature:
+                    cls._touch_disk_cache(cache_path)
                     logger.debug(f"复用 M9A 任务缓存：{root_path}")
                     return loader
                 logger.info(f"M9A 任务缓存已失效，重新加载：{root_path}")
@@ -92,6 +100,38 @@ class M9ATaskLoader:
     def _disk_cache_path(cls, root_path: Path) -> Path:
         cache_key = hashlib.sha256(str(root_path).casefold().encode("utf-8")).hexdigest()
         return cls._disk_cache_dir() / f"{cache_key}.json"
+
+    @classmethod
+    def _cleanup_expired_disk_cache(cls, protected_cache_path: Path) -> None:
+        """清理 30 天未使用的 M9A 任务磁盘缓存。"""
+        now = time.time()
+        if now - cls._last_disk_cache_cleanup_at < cls._disk_cache_cleanup_interval_seconds:
+            return
+
+        cls._last_disk_cache_cleanup_at = now
+        cache_dir = cls._disk_cache_dir()
+        if not cache_dir.is_dir():
+            return
+
+        cutoff = now - cls._disk_cache_max_age_seconds
+        protected_cache_path = protected_cache_path.resolve()
+        for cache_file in cache_dir.glob("*.json"):
+            try:
+                if cache_file.resolve() == protected_cache_path:
+                    continue
+                if cache_file.stat().st_mtime < cutoff:
+                    cache_file.unlink()
+                    logger.info(f"已清理过期 M9A 本地任务缓存：{cache_file}")
+            except Exception as e:
+                logger.warning(f"清理 M9A 本地任务缓存失败：{cache_file}，{e}")
+
+    @staticmethod
+    def _touch_disk_cache(cache_path: Path) -> None:
+        try:
+            if cache_path.is_file():
+                cache_path.touch()
+        except Exception as e:
+            logger.debug(f"更新 M9A 本地任务缓存使用时间失败：{e}")
 
     @staticmethod
     def _signature_to_json(signature: tuple) -> list[list]:
@@ -158,6 +198,7 @@ class M9ATaskLoader:
             if not loader._task_cache:
                 return None
 
+            cls._touch_disk_cache(cache_path)
             logger.info(f"读取 M9A 本地任务缓存：{root_path}")
             return loader
         except Exception as e:
