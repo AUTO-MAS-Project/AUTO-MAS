@@ -82,7 +82,7 @@ class M9ATaskLoader:
         interface_path = next(
             (
                 base_dir / file_name
-                for base_dir in (self.root_path, self.root_path / "resource")
+                for base_dir in (self.root_path, self.root_path / "assets", self.root_path / "resource")
                 for file_name in ("interface.json", "interface.jsonc")
                 if (base_dir / file_name).is_file()
             ),
@@ -124,7 +124,7 @@ class M9ATaskLoader:
                 scan_filter = scan_filter.strip().replace("\\", "/")
                 if not scan_filter or Path(scan_filter).is_absolute() or ".." in scan_filter.split("/"):
                     raise ValueError(f"路径不允许使用绝对路径或包含 ..：{scan_filter}")
-                scan_path = resolve_path(path.parent, scan_dir)
+                scan_path = resolve_path(self.root_path, scan_dir)
                 option_data["cases"] = [
                     {"name": file.relative_to(scan_path).as_posix(), "label": file.name}
                     for file in sorted(scan_path.glob(scan_filter))
@@ -135,7 +135,7 @@ class M9ATaskLoader:
                 if not isinstance(import_path, str) or not import_path.strip():
                     continue
 
-                child_tasks, child_options = read_interface(resolve_path(path.parent, import_path), [*stack, resolved_path])
+                child_tasks, child_options = read_interface(resolve_path(self.root_path, import_path), [*stack, resolved_path])
                 tasks.extend(child_tasks)
                 options.update(child_options)
 
