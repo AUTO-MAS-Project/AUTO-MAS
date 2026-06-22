@@ -35,9 +35,6 @@ class M9ALogAnalyzer:
     并提供格式化通知文本的方法。
     """
 
-    SPECIAL_TASKS = {"切换账号", "常规作战"}
-    """需要提取额外详情的任务名集合"""
-
     DROP_KEYWORDS = ("掉落统计:", "材料掉落总结:")
     """掉落物统计行的关键词"""
 
@@ -99,9 +96,9 @@ class M9ALogAnalyzer:
                         "status": "完成" | "失败" | "开始",
                         "details": ["文本内容", ...],
                         "extra": {
-                            "stage": "12-5, 难度：Hard",   # 仅常规作战
-                            "count": "1",                   # 仅常规作战
-                            "drops": ["物品 x1", ...]       # 仅常规作战
+                            "stage": "12-5, 难度：Hard",
+                            "count": "1",
+                            "drops": ["物品 x1", ...]
                         }
                     },
                     ...
@@ -126,6 +123,13 @@ class M9ALogAnalyzer:
                 "duration": "",
             }
 
+        def save_drops():
+            nonlocal drops, in_drops
+            if current_task and drops:
+                current_task["extra"]["drops"] = drops
+            drops = []
+            in_drops = False
+
         for i, line in enumerate(lines):
             if "src=Monitor" not in line and "src=Worker" not in line:
                 continue
@@ -134,6 +138,7 @@ class M9ALogAnalyzer:
             if task_name:
                 if current_task and current_task["status"] == "开始":
                     current_task["status"] = "失败"
+                    save_drops()
                 current_task = {
                     "name": task_name,
                     "status": "开始",
@@ -153,26 +158,21 @@ class M9ALogAnalyzer:
                         duration = m.group(1).rstrip(")")
                 if current_task and current_task["status"] == "开始":
                     current_task["status"] = "完成"
+                    save_drops()
                 continue
 
             if M9ALogAnalyzer._is_task_complete(line):
                 if current_task and current_task["status"] == "开始":
                     current_task["status"] = "完成"
-                    if current_task["name"] == "常规作战" and drops:
-                        current_task["extra"]["drops"] = drops
-                    drops = []
-                    in_drops = False
+                    save_drops()
                 continue
 
             if M9ALogAnalyzer._is_drop_line(line):
-                # 只在"材料掉落总结:"时开始采集，"掉落统计:"部分重复，直接忽略
-                if "材料掉落总结:" in line:
-                    in_drops = True
-                    drops.clear()
-                # 遇到"掉落统计:"时不启用采集
+                in_drops = True
+                drops.clear()
                 continue
 
-            if in_drops and current_task and current_task["name"] == "常规作战":
+            if in_drops and current_task:
                 if "MonitorMarkdown" in line:
                     idx = line.find("MonitorMarkdown")
                     raw = line[idx + len("MonitorMarkdown"):].lstrip("] ")
@@ -187,18 +187,18 @@ class M9ALogAnalyzer:
                 record = M9ALogAnalyzer._extract_record(line)
                 if record:
                     current_task["details"].append(record)
-                    if current_task["name"] == "常规作战":
-                        if "当前关卡" in record:
-                            current_task["extra"]["stage"] = record.replace(
-                                "当前关卡：", ""
-                            )
-                        elif "任务结束，总共刷了" in record:
-                            m = re.search(r"总共刷了 (\d+) 次", record)
-                            if m:
-                                current_task["extra"]["count"] = m.group(1)
+                    if "当前关卡" in record:
+                        current_task["extra"]["stage"] = record.replace(
+                            "当前关卡：", ""
+                        )
+                    elif "任务结束，总共刷了" in record:
+                        m = re.search(r"总共刷了 (\d+) 次", record)
+                        if m:
+                            current_task["extra"]["count"] = m.group(1)
 
         if current_task and current_task["status"] == "开始":
             current_task["status"] = "失败"
+            save_drops()
 
         return {
             "tasks": tasks,
@@ -210,9 +210,9 @@ class M9ALogAnalyzer:
     def build_notification_text(analysis: dict) -> str:
         """根据 parse_log 的分析结果构建可读的通知文本
 
-        特殊任务（切换账号、常规作战）会附加额外信息：
+        特殊任务会附加额外信息：
         - 切换账号：附加匹配到的目标账号
-        - 常规作战：附加关卡信息、刷图次数、每项掉落物
+        - 有关卡、刷图次数、掉落总结的任务：附加对应信息
 
         Args:
             analysis: parse_log 返回的分析结果字典
@@ -224,10 +224,6 @@ class M9ALogAnalyzer:
         for task in analysis["tasks"]:
             line = f"{task['name']} - {task['status']}"
 
-            if task["name"] not in M9ALogAnalyzer.SPECIAL_TASKS:
-                lines.append(line)
-                continue
-
             if task["name"] == "切换账号":
                 account_match = None
                 for d in task["details"]:
@@ -237,24 +233,23 @@ class M9ALogAnalyzer:
                 if account_match:
                     line += f"（{account_match}）"
 
-            elif task["name"] == "常规作战":
-                parts = []
-                stage = task["extra"].get("stage", "")
-                count = task["extra"].get("count", "")
-                if stage:
-                    parts.append(stage)
-                if count:
-                    parts.append(f"刷图{count}次")
-                if parts:
-                    line += f"（{', '.join(parts)}）"
+            parts = []
+            stage = task["extra"].get("stage", "")
+            count = task["extra"].get("count", "")
+            if stage:
+                parts.append(stage)
+            if count:
+                parts.append(f"刷图{count}次")
+            if parts:
+                line += f"（{', '.join(parts)}）"
 
-                drops = task["extra"].get("drops", [])
-                drops = [d for d in drops if not M9ALogAnalyzer.RARITY_TAGS_RE.match(d)]
-                if drops:
-                    lines.append(line)
-                    for d in drops:
-                        lines.append(f"  掉落：{d}")
-                    continue
+            drops = task["extra"].get("drops", [])
+            drops = [d for d in drops if not M9ALogAnalyzer.RARITY_TAGS_RE.match(d)]
+            if drops:
+                lines.append(line)
+                for d in drops:
+                    lines.append(f"  掉落：{d}")
+                continue
 
             lines.append(line)
 
