@@ -49,3 +49,7 @@ uv.lock
 # Local AI/agent metadata
 /.claude/
 /.trae/
+
+# Local checkouts of split repositories
+/AUTO-MAS-docs/
+/skills/

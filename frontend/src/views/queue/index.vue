@@ -201,6 +201,8 @@ const afterAccomplishOptions = [
   { label: '休眠', value: 'Hibernate' },
   { label: '睡眠', value: 'Sleep' },
   { label: '退出软件', value: 'KillSelf' },
+
+  { label: '注销此账户', value: 'Logoff' },
 ]
 
 // 当前队列的定时项和队列项

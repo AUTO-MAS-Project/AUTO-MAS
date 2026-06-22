@@ -32,6 +32,22 @@ export type SrcUserConfig_Info = {
      */
     RemainedDay?: (number | null);
     /**
+     * 是否在任务前执行脚本
+     */
+    IfScriptBeforeTask?: (boolean | null);
+    /**
+     * 任务前脚本路径
+     */
+    ScriptBeforeTask?: (string | null);
+    /**
+     * 是否在任务后执行脚本
+     */
+    IfScriptAfterTask?: (boolean | null);
+    /**
+     * 任务后脚本路径
+     */
+    ScriptAfterTask?: (string | null);
+    /**
      * 备注
      */
     Notes?: (string | null);
