@@ -107,21 +107,25 @@ class M9ALogAnalyzer:
                 "duration": "00:05:30"
             }
         """
-        tasks = []
-        current_task = None
-        in_drops = False
-        drops = []
-        overall_status = "失败"
-        duration = ""
-
         try:
-            lines = log_path.read_text(encoding="utf-8").splitlines()
+            return M9ALogAnalyzer.parse_lines(
+                log_path.read_text(encoding="utf-8").splitlines()
+            )
         except Exception:
             return {
                 "tasks": [],
                 "overall_status": "失败",
                 "duration": "",
             }
+
+    @staticmethod
+    def parse_lines(lines: list[str]) -> dict:
+        tasks = []
+        current_task = None
+        in_drops = False
+        drops = []
+        overall_status = "失败"
+        duration = ""
 
         def save_drops():
             nonlocal drops, in_drops

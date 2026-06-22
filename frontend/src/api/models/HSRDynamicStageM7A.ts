@@ -4,11 +4,11 @@
 /* eslint-disable */
 export type HSRDynamicStageM7A = {
     /**
-     * M7A 副本类型
+     * M7A 閸擃垱婀扮猾璇茬€?
      */
     instanceType?: (string | null);
     /**
-     * M7A 副本名称
+     * M7A 閸擃垱婀伴崥宥囆?
      */
     instanceName?: (string | null);
 };

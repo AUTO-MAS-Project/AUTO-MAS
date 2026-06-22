@@ -4,23 +4,23 @@
 /* eslint-disable */
 export type HSRUserConfig_TaskSwitch = {
     /**
-     * 日常模块开关
+     * 閺冦儱鐖跺Ο鈥虫健瀵偓閸?
      */
     Daily?: (boolean | null);
     /**
-     * 领取奖励模块开关
+     * 妫板棗褰囨總鏍уС濡€虫健瀵偓閸?
      */
     ReceiveRewards?: (boolean | null);
     /**
-     * 差分宇宙模块开关
+     * 瀹割喖鍨庣€瑰洤鐣藉Ο鈥虫健瀵偓閸?
      */
     DivergentUniverse?: (boolean | null);
     /**
-     * 货币战争模块开关
+     * 鐠愌冪閹存ü绨ゅΟ鈥虫健瀵偓閸?
      */
     CurrencyWars?: (boolean | null);
     /**
-     * 三深渊模块开关
+     * 娑撳绻佸〒濠兡侀崸妤€绱戦崗?
      */
     ForgottenHall?: (boolean | null);
 };

@@ -5,23 +5,23 @@
 import type { HSRDynamicStageOption } from './HSRDynamicStageOption';
 export type HSRDynamicStageCategory = {
     /**
-     * 副本分类键
+     * 閸擃垱婀伴崚鍡欒闁?
      */
     categoryKey: string;
     /**
-     * 副本分类名称
+     * 閸擃垱婀伴崚鍡欒閸氬秶袨
      */
     categoryLabel: string;
     /**
-     * 单次体力消耗
+     * 閸楁洘顐兼担鎾冲濞戝牐鈧?
      */
     cost?: (number | null);
     /**
-     * 最大执行次数
+     * 閺堚偓婢堆勫⒔鐞涘本顐奸弫?
      */
     maxCount?: (number | null);
     /**
-     * 副本选项列表
+     * 閸擃垱婀伴柅澶愩€嶉崚妤勩€?
      */
     options?: Array<HSRDynamicStageOption>;
 };

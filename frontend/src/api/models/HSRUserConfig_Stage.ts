@@ -4,15 +4,15 @@
 /* eslint-disable */
 export type HSRUserConfig_Stage = {
     /**
-     * 体力关卡通道
+     * 娴ｆ挸濮忛崗鍐插幢闁岸浜?
      */
     Channel?: ('CalyxGolden' | 'CalyxCrimson' | 'Relic' | 'Ornament' | null);
     /**
-     * 主刷关卡脚本原生字段 JSON
+     * 娑撹鍩涢崗鍐插幢閼存碍婀伴崢鐔烘晸鐎涙顔?JSON
      */
     ScriptStage?: (string | null);
     /**
-     * 历战余响脚本原生字段 JSON
+     * 閸樺棙鍨担娆忔惙閼存碍婀伴崢鐔烘晸鐎涙顔?JSON
      */
     ScriptEchoOfWar?: (string | null);
 };

@@ -3,15 +3,15 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 用户请求从 M7A 导入三深渊快照
+ * 閻劍鍩涚拠閿嬬湴娴?M7A 鐎电厧鍙嗘稉澶嬬箒濞撳﹤鎻╅悡?
  */
 export type UserImportAbyssSnapshotIn = {
     /**
-     * 所属脚本ID
+     * 閹碘偓鐏炵偠鍓奸張鐞丏
      */
     scriptId: string;
     /**
-     * 用户ID
+     * 閻劍鍩汭D
      */
     userId: string;
 };
