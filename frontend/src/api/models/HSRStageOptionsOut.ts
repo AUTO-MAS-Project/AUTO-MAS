@@ -5,19 +5,19 @@
 import type { HSRStageOptionsData } from './HSRStageOptionsData';
 export type HSRStageOptionsOut = {
     /**
-     * 状态码
+     * 閻樿埖鈧胶鐖?
      */
     code?: number;
     /**
-     * 操作状态
+     * 閹垮秳缍旈悩鑸碘偓?
      */
     status?: string;
     /**
-     * 操作消息
+     * 閹垮秳缍斿☉鍫熶紖
      */
     message?: string;
     /**
-     * HSR 体力副本动态选项
+     * HSR 娴ｆ挸濮忛崜顖涙拱閸斻劍鈧線鈧銆?
      */
     data?: (HSRStageOptionsData | null);
 };

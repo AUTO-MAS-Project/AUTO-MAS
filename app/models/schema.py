@@ -1264,6 +1264,9 @@ class M9AUserConfig_Task(BaseModel):
 
 class M9AUserConfig_Data(BaseModel):
     LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
+    LastPsychubeDate: Optional[str] = Field(default=None, description="上次完成每日心相日期，格式 YYYY-MM-DD")
+    LastLimboMonth: Optional[str] = Field(default=None, description="上次完成自动深眠月份，格式 YYYY-MM")
+    LastLucidscapeMonth: Optional[str] = Field(default=None, description="上次完成自动醒梦月份，格式 YYYY-MM")
     ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
     IfPassCheck: Optional[bool] = Field(default=None, description="是否通过检查")
 
@@ -1301,6 +1304,8 @@ class M9AConfig_Run(BaseModel):
     RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
     RunTimeLimit: Optional[int] = Field(default=None, description="运行时间限制（分钟）")
     IfAutoUpdateAfterQueue: Optional[bool] = Field(default=None, description="是否在队列结束后自动更新M9A")
+    IfPsychubeDailyOnce: Optional[bool] = Field(default=None, description="每日心相每日只执行一次")
+    IfSleepDreamMonthlyOnce: Optional[bool] = Field(default=None, description="深眠浅梦每月只执行一次")
 
 
 class M9AConfig(BaseModel):
