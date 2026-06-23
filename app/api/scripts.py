@@ -21,8 +21,10 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
 import uuid
 from pathlib import Path
+from typing import Any, Literal
 
 from fastapi import APIRouter, Body
 
@@ -32,6 +34,21 @@ from app.models.schema import *
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 
 
+def _okww_mas_config_dir(script_id: str, user_id: str) -> Path:
+    return Path.cwd() / "data" / script_id / user_id / "ConfigFile"
+
+
+def _okww_config_file_path(config_dir: Path, filename: str) -> Path:
+    file_path = Path(filename)
+    if (
+        file_path.name != filename
+        or file_path.is_absolute()
+        or ".." in file_path.parts
+    ):
+        raise ValueError("配置文件名非法")
+    return config_dir / filename
+
+
 SCRIPT_BOOK = {
     "MaaConfig": MaaConfig,
     "SrcConfig": SrcConfig,
@@ -39,6 +56,7 @@ SCRIPT_BOOK = {
     "M9AConfig": M9AConfig,
     "GeneralConfig": GeneralConfig,
     "OkwwConfig": OkwwConfig,
+    "HSRConfig": HSRConfig,
 }
 USER_BOOK = {
     "MaaConfig": MaaUserConfig,
@@ -47,6 +65,7 @@ USER_BOOK = {
     "M9AConfig": M9AUserConfig,
     "GeneralConfig": GeneralUserConfig,
     "OkwwConfig": OkwwUserConfig,
+    "HSRConfig": HSRUserConfig,
 }
 
 
@@ -327,6 +346,62 @@ async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
 
 
 @router.post(
+    "/user/import-m7a-abyss-snapshot",
+    tags=["Update"],
+    summary="从 M7A config.yaml 导入三深渊快照",
+    response_model=AbyssSnapshotImportOut,
+    status_code=200,
+)
+async def import_m7a_abyss_snapshot(
+    payload: UserImportAbyssSnapshotIn = Body(...),
+) -> AbyssSnapshotImportOut:
+    """从 M7A config.yaml 读取三深渊白名单字段，写入指定 HSR 用户配置。"""
+    import json
+
+    from app.task.HSR.tools.m7a_config import read_m7a_abyss_snapshots
+
+    items: list[AbyssSnapshotImportItem] = []
+    m7a_config_path: Path | None = None
+
+    try:
+        script_config = Config.ScriptConfig[uuid.UUID(payload.scriptId)]
+        m7a_path_str = str(script_config.get("Info", "M7APath") or "").strip()
+        if not m7a_path_str:
+            raise ValueError("请先在脚本配置页配置三月七路径")
+
+        m7a_config_path = Path(m7a_path_str) / "config.yaml"
+        write_snapshots, raw_items = read_m7a_abyss_snapshots(m7a_config_path)
+        items = [AbyssSnapshotImportItem(**item) for item in raw_items]
+
+        await Config.update_user(
+            payload.scriptId,
+            payload.userId,
+            {"Abyss": {"Snapshots": json.dumps(write_snapshots, ensure_ascii=False)}},
+        )
+        _, user_data_dict = await Config.get_user(payload.scriptId, payload.userId)
+        updated_user_data = HSRUserConfig(**user_data_dict)
+    except Exception as e:
+        return AbyssSnapshotImportOut(
+            code=400 if isinstance(e, (FileNotFoundError, ValueError)) else 500,
+            status="error",
+            message=f"导入三深渊快照失败: {type(e).__name__}: {e}",
+            m7aConfigPath=str(m7a_config_path) if m7a_config_path else "",
+            items=items,
+            updatedUserData=HSRUserConfig(),
+        )
+
+    success_count = len(items)
+    return AbyssSnapshotImportOut(
+        code=200,
+        status="success",
+        message=f"已从 M7A config.yaml 导入 {success_count}/3 个三深渊快照",
+        m7aConfigPath=str(m7a_config_path),
+        items=items,
+        updatedUserData=updated_user_data,
+    )
+
+
+@router.post(
     "/user/delete",
     tags=["Delete"],
     summary="删除用户",
@@ -536,7 +611,7 @@ async def get_m9a_available_tasks(script_id: str):
     try:
         script_config = Config.ScriptConfig[uuid.UUID(script_id)]
         m9a_path = Path(script_config.get("Info", "Path"))
-        loader = M9ATaskLoader(m9a_path)
+        loader = await asyncio.to_thread(M9ATaskLoader.get_cached, m9a_path)
         
         # 获取可用任务，并添加完整定义（包括 option 和 _option_definitions）
         available_tasks = loader.get_available_tasks()
@@ -562,20 +637,62 @@ async def get_m9a_available_tasks(script_id: str):
         }
 
 
+@router.get(
+    "/hsr/stage-options",
+    tags=["HSR"],
+    summary="获取 HSR 体力副本动态选项",
+    response_model=HSRStageOptionsOut,
+    status_code=200,
+)
+async def get_hsr_stage_options_api(
+    scriptId: str | None = None,
+    engine: Literal["M7A", "SRA"] = "M7A",
+) -> HSRStageOptionsOut:
+    """按体力执行脚本返回 M7A / SRA 原生副本字段。"""
+
+    from app.task.HSR.tools.stage_provider import get_hsr_stage_options
+
+    try:
+        if not scriptId:
+            return HSRStageOptionsOut(
+                code=400,
+                status="error",
+                message="缺少 scriptId",
+            )
+
+        script_config = Config.ScriptConfig[uuid.UUID(scriptId)]
+        data = HSRStageOptionsData(**get_hsr_stage_options(script_config, engine))
+        option_count = sum(
+            len(category.options)
+            for category in data.categories
+        )
+        return HSRStageOptionsOut(
+            message=f"共 {option_count} 个 HSR 体力副本选项",
+            data=data,
+        )
+    except Exception as e:
+        return HSRStageOptionsOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
 @router.post(
     "/okww/configs/list",
     tags=["OKWW"],
     summary="获取 OK-WW 配置文件列表及 schema",
     status_code=200,
 )
-async def get_okww_configs_list(script_id: str):
+async def get_okww_configs_list(script_id: str, user_id: str):
     """
     获取 OK-WW 配置文件列表及 schema 定义。
-    读写 per-user 配置目录（data/{script_id}/Default/ConfigFile/），
+    读写用户配置目录（data/{script_id}/{user_id}/ConfigFile/），
     若为空则自动从 ok-ww configs 目录初始化默认配置。
 
     Args:
         script_id: OK-WW 脚本 ID
+        user_id: 用户 ID
 
     Returns:
         dict: 包含配置文件列表和 schema 的响应
@@ -593,8 +710,8 @@ async def get_okww_configs_list(script_id: str):
         root_path = script_config.get("Info", "RootPath")
         option_labels = load_okww_option_labels(root_path) if root_path else {}
 
-        # per-user 配置目录（始终使用 Default，因为配置编辑器是脚本级的）
-        mas_config_dir = Path.cwd() / f"data/{script_id}/Default/ConfigFile"
+        # 详细模式：每个用户独立持有一份 OK-WW 配置。
+        mas_config_dir = _okww_mas_config_dir(script_id, user_id)
 
         # ok-ww 源配置目录（用于自动初始化）
         raw_config_path = script_config.get("Script", "ConfigPath")
@@ -603,7 +720,7 @@ async def get_okww_configs_list(script_id: str):
             if root_path:
                 okww_configs_dir = Path(root_path) / "data" / "apps" / "ok-ww" / "working" / "configs"
 
-        # 自动初始化：per-user 目录为空时从 ok-ww configs 复制默认配置
+        # 自动初始化：用户目录为空时从 ok-ww configs 复制默认配置
         need_init = not mas_config_dir.exists() or not any(mas_config_dir.iterdir())
         if need_init and okww_configs_dir and okww_configs_dir.is_dir():
             mas_config_dir.mkdir(parents=True, exist_ok=True)
@@ -657,6 +774,7 @@ async def get_okww_configs_list(script_id: str):
 )
 async def update_okww_config(
     script_id: str = Body(...),
+    user_id: str = Body(...),
     filename: str = Body(...),
     data: dict = Body(...),
 ):
@@ -665,6 +783,7 @@ async def update_okww_config(
 
     Args:
         script_id: OK-WW 脚本 ID
+        user_id: 用户 ID
         filename: 配置文件名（如 DailyTask.json）
         data: 要更新的配置数据
 
@@ -674,11 +793,11 @@ async def update_okww_config(
     try:
         import json
 
-        # 写入 per-user 配置目录
-        mas_config_dir = Path.cwd() / f"data/{script_id}/Default/ConfigFile"
+        # 写入用户配置目录
+        mas_config_dir = _okww_mas_config_dir(script_id, user_id)
         mas_config_dir.mkdir(parents=True, exist_ok=True)
 
-        filepath = mas_config_dir / filename
+        filepath = _okww_config_file_path(mas_config_dir, filename)
 
         # 读取现有配置
         existing_data = {}
@@ -689,7 +808,7 @@ async def update_okww_config(
         # 合并更新
         existing_data.update(data)
 
-        # 写入 per-user 目录
+        # 写入用户目录
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(existing_data, f, ensure_ascii=False, indent=4)
 
@@ -715,6 +834,7 @@ async def update_okww_config(
 )
 async def batch_update_okww_configs(
     script_id: str = Body(...),
+    user_id: str = Body(...),
     configs: dict = Body(...),
 ):
     """
@@ -722,6 +842,7 @@ async def batch_update_okww_configs(
 
     Args:
         script_id: OK-WW 脚本 ID
+        user_id: 用户 ID
         configs: { filename: data } 格式的配置数据
 
     Returns:
@@ -730,13 +851,13 @@ async def batch_update_okww_configs(
     try:
         import json
 
-        # 写入 per-user 配置目录
-        mas_config_dir = Path.cwd() / f"data/{script_id}/Default/ConfigFile"
+        # 写入用户配置目录
+        mas_config_dir = _okww_mas_config_dir(script_id, user_id)
         mas_config_dir.mkdir(parents=True, exist_ok=True)
 
         updated_files = []
         for filename, data in configs.items():
-            filepath = mas_config_dir / filename
+            filepath = _okww_config_file_path(mas_config_dir, filename)
             existing_data = {}
             if filepath.exists():
                 with open(filepath, "r", encoding="utf-8") as f:

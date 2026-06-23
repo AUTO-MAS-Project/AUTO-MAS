@@ -36,6 +36,9 @@
           <!-- 关卡配置组件 -->
           <StageConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
 
+          <!-- 额外脚本组件 -->
+          <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
+
           <!-- 通知配置组件 -->
           <NotifyConfigSection :form-data="formData" :loading="loading" :script-id="scriptId" :user-id="userId"
             @save="handleFieldSave" />
@@ -64,6 +67,7 @@ import SRCUserEditHeader from '../../SRCUserEdit/SRCUserEditHeader.vue'
 import BasicInfoSection from '../../SRCUserEdit/BasicInfoSection.vue'
 import StageConfigSection from '../../SRCUserEdit/StageConfigSection.vue'
 import NotifyConfigSection from '../../SRCUserEdit/NotifyConfigSection.vue'
+import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -112,6 +116,10 @@ const getDefaultSRCUserData = () => ({
     Mode: '简洁',
     Server: 'CN-Official',
     RemainedDay: -1,
+    IfScriptBeforeTask: false,
+    ScriptBeforeTask: '',
+    IfScriptAfterTask: false,
+    ScriptAfterTask: '',
     Notes: '',
     Tag: '',
   },

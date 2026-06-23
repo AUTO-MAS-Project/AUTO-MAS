@@ -37,6 +37,12 @@ from app.utils import ProcessRunner, get_logger
 
 logger = get_logger("MuMu模拟器管理")
 
+MUMU_FORCE_KILL_KEYWORDS = (
+    "mumunxdevice",
+    "mumunxmain",
+    "mumuvmmheadless",
+)
+
 
 class MumuManager(DeviceBase):
     """
@@ -117,38 +123,85 @@ class MumuManager(DeviceBase):
             raise RuntimeError(f"模拟器 {idx} 启动超时, 当前状态码: {status}")
 
     async def close(self, idx: str) -> DeviceStatus:
-        status = await self.getStatus(idx)
-        if status not in [DeviceStatus.ONLINE, DeviceStatus.STARTING]:
-            logger.warning(f"设备{idx}未在线，当前状态: {status}")
-            return status
-
-        result = await ProcessRunner.run_process(
-            self.emulator_path,
-            "control",
-            "-v",
-            idx,
-            "shutdown",
-            timeout=self.config.get("Info", "MaxWaitTime"),
-            if_merge_std=True,
-        )
-        # 参考命令 MuMuManager.exe control -v 2 shutdown
-
-        if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result.stdout}")
-
-        t = datetime.now()
-        while datetime.now() - t < timedelta(
-            seconds=self.config.get("Info", "MaxWaitTime")
-        ):
+        try:
             status = await self.getStatus(idx)
-            if status == DeviceStatus.OFFLINE:
-                return DeviceStatus.OFFLINE
-            await asyncio.sleep(0.1)
+            if status not in [DeviceStatus.ONLINE, DeviceStatus.STARTING]:
+                logger.warning(f"设备{idx}未在线，当前状态: {status}")
+                return status
 
+            result = await ProcessRunner.run_process(
+                self.emulator_path,
+                "control",
+                "-v",
+                idx,
+                "shutdown",
+                timeout=self.config.get("Info", "MaxWaitTime"),
+                if_merge_std=True,
+            )
+            # 参考命令 MuMuManager.exe control -v 2 shutdown
+
+            if result.returncode != 0:
+                raise RuntimeError(f"命令执行失败: {result.stdout}")
+
+            t = datetime.now()
+            while datetime.now() - t < timedelta(
+                seconds=self.config.get("Info", "MaxWaitTime")
+            ):
+                status = await self.getStatus(idx)
+                if status == DeviceStatus.OFFLINE:
+                    return DeviceStatus.OFFLINE
+                await asyncio.sleep(0.1)
+
+            else:
+                if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
+                    raise RuntimeError(f"模拟器 {idx} 关闭失败, 状态码: {status}")
+                raise RuntimeError(f"模拟器 {idx} 关闭超时, 当前状态码: {status}")
+        finally:
+            if self.config.get("Info", "ForceKillOnClose"):
+                self._force_kill_mumu_processes()
+
+    def _force_kill_mumu_processes(self) -> None:
+        """按 MuMu 固定进程白名单清理关闭后的残留进程。"""
+
+        killed_count = 0
+        for proc in psutil.process_iter(["pid", "name", "exe"]):
+            try:
+                proc_name = proc.info.get("name") or ""
+                proc_exe = proc.info.get("exe") or ""
+                if not self._is_mumu_force_kill_target(proc_name, proc_exe):
+                    continue
+
+                killed_count += self._kill_process_tree(proc)
+            except (psutil.NoSuchProcess, psutil.AccessDenied, OSError) as e:
+                logger.warning(f"强力清理 MuMu 残留进程失败: {e}")
+
+        if killed_count > 0:
+            logger.info(f"MuMu 残留进程清理完成，共结束 {killed_count} 个进程")
         else:
-            if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
-                raise RuntimeError(f"模拟器 {idx} 关闭失败, 状态码: {status}")
-            raise RuntimeError(f"模拟器 {idx} 关闭超时, 当前状态码: {status}")
+            logger.info("未发现需要强力清理的 MuMu 残留进程")
+
+    def _kill_process_tree(self, proc: psutil.Process) -> int:
+        killed_count = 0
+        for child in proc.children(recursive=True):
+            killed_count += self._kill_process(child)
+        killed_count += self._kill_process(proc)
+        return killed_count
+
+    @staticmethod
+    def _kill_process(proc: psutil.Process) -> int:
+        try:
+            proc.kill()
+            return 1
+        except psutil.NoSuchProcess:
+            return 0
+        except (psutil.AccessDenied, OSError) as e:
+            logger.warning(f"强力清理 MuMu 残留进程失败: {e}")
+            return 0
+
+    @staticmethod
+    def _is_mumu_force_kill_target(proc_name: str, proc_exe: str) -> bool:
+        target_text = f"{proc_name} {proc_exe}".lower()
+        return any(keyword in target_text for keyword in MUMU_FORCE_KILL_KEYWORDS)
 
     async def getStatus(self, idx: str, data: str | None = None) -> DeviceStatus:
         if data is None:

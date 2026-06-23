@@ -20,6 +20,7 @@
                     class="script-logo" />
                   <img v-else-if="script.type === 'M9A'" src="@/assets/M9A.png" alt="M9A" class="script-logo" />
                   <img v-else-if="script.type === 'Okww'" src="@/assets/ok-ww.ico" alt="ok-ww" class="script-logo" />
+                  <img v-else-if="script.type === 'HSR'" src="@/assets/hsr.png" alt="HSR" class="script-logo" />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
@@ -34,7 +35,9 @@
                           ? 'cyan'
                           : script.type === 'Okww'
                             ? 'blue'
-                            : 'green'
+                            : script.type === 'HSR'
+                              ? 'purple'
+                              : 'green'
                     " class="script-type">
                     {{ getScriptTypeLabel(script.type) }}
                   </a-tag>
@@ -122,7 +125,7 @@
                       <div class="user-details-row">
                         <div class="user-name-section">
                           <span class="user-name">{{ user.Info.Name }}</span>
-                          <!-- MAA、SRC 和 MaaEnd 脚本显示服务器标签 -->
+                          <!-- MAA、SRC、MaaEnd 和 HSR 脚本显示服务器标签 -->
                           <a-tag v-if="
                             script.type === 'MAA' ||
                             script.type === 'SRC' ||
@@ -140,7 +143,7 @@
                             {{ user.Info.Resource || '官服' }}
                           </a-tag>
 
-                          <!-- 账号标签 -->
+                          <!-- 账号标签 (HSR 不显示账号/密码) -->
                           <a-tag v-if="
                             script.type === 'MAA' ||
                             script.type === 'SRC' ||
@@ -152,7 +155,7 @@
                             {{ getUserIdDisplayText(user) }}
                           </a-tag>
 
-                          <!-- 密码标签 -->
+                          <!-- 密码标签 (HSR 不显示账号/密码) -->
                           <a-tag v-if="
                             script.type === 'MAA' ||
                             script.type === 'SRC' ||
@@ -201,9 +204,21 @@
                             {{ truncateText(user.Info.Notes, 10) }}
                           </a-tag>
 
+                          <a-tag v-for="(tag, index) in getM9AOnceStatusTags(script, user)" :key="`m9a-once-${index}`"
+                                 :title="tag.text" class="info-tag" :color="tag.color">
+                            {{ tag.text }}
+                          </a-tag>
+
                           <!-- 后端提供的Tag字段 -->
                           <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
                                  :title="tag.text" class="info-tag" :color="tag.color">
+                            {{ tag.text }}
+                          </a-tag>
+                        </div>
+                        <!-- 用户详细信息 - HSR脚本用户 -->
+                        <div v-if="script.type === 'HSR'" class="user-info-tags">
+                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
+                            :title="tag.text" class="info-tag" :color="tag.color">
                             {{ tag.text }}
                           </a-tag>
                         </div>
@@ -363,6 +378,10 @@ const STAGE_NAME_MAP: Record<string, string> = {
   'PR-D-1': '近/特芯片',
   'PR-D-2': '近/特芯片组',
 }
+
+const M9A_PSYCHUBE_NAMES = ['每日心相（意志解析）', '每日心相']
+const M9A_LIMBO_NAMES = ['自动深眠']
+const M9A_LUCIDSCAPE_NAMES = ['自动醒梦']
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
@@ -650,6 +669,67 @@ const getServerDisplayName = (server: string): string => {
 // M9A服务器标签颜色映射
 const getM9AServerTagColor = (_resource: string): string => {
   return 'blue'
+}
+
+const getM9ATodayString = (): string => {
+  return new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+
+const getM9ACurrentMonthString = (): string => {
+  return getM9ATodayString().slice(0, 7)
+}
+
+const parseM9ATaskQueue = (queue: unknown): Array<{ name?: string }> => {
+  if (Array.isArray(queue)) return queue as Array<{ name?: string }>
+  if (typeof queue !== 'string') return []
+
+  try {
+    const parsed = JSON.parse(queue)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+const hasM9ATaskInQueue = (queue: Array<{ name?: string }>, names: string[]): boolean => {
+  return queue.some(item => item.name && names.includes(item.name))
+}
+
+const getM9AOnceStatusTags = (script: Script, user: User) => {
+  const runConfig = (script.config as any)?.Run || {}
+  const queue = parseM9ATaskQueue((user as any).Task?.Queue)
+  const data = (user as any).Data || {}
+  const tags: Array<{ text: string; color: string }> = []
+
+  if (data.IfPassCheck === false) {
+    return tags
+  }
+
+  if (runConfig.IfPsychubeDailyOnce && hasM9ATaskInQueue(queue, M9A_PSYCHUBE_NAMES)) {
+    const completed = data.LastPsychubeDate === getM9ATodayString()
+    tags.push({
+      text: `每日心相：${completed ? '已完成' : '未完成'}`,
+      color: completed ? 'green' : 'orange',
+    })
+  }
+
+  if (runConfig.IfSleepDreamMonthlyOnce) {
+    const hasLimbo = hasM9ATaskInQueue(queue, M9A_LIMBO_NAMES)
+    const hasLucidscape = hasM9ATaskInQueue(queue, M9A_LUCIDSCAPE_NAMES)
+    if (hasLimbo || hasLucidscape) {
+      const currentMonth = getM9ACurrentMonthString()
+      const completed =
+        (!hasLimbo || data.LastLimboMonth === currentMonth) &&
+        (!hasLucidscape || data.LastLucidscapeMonth === currentMonth)
+
+      tags.push({
+        text: `深眠浅梦：${completed ? '已完成' : '未完成'}`,
+        color: completed ? 'green' : 'orange',
+      })
+    }
+  }
+
+  return tags
 }
 
 // M9A剩余天数颜色（智能着色）

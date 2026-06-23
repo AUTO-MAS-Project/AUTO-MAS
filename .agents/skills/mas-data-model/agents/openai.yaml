@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAS Data Model"
+  short_description: "Standardize backend data modeling"
+  default_prompt: "Apply backend data modeling standards for schema/config/task models, including typing, defaults, validation, and compatibility evolution."
