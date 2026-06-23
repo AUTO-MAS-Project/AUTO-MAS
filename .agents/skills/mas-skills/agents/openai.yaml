@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAS Skills Hub"
+  short_description: "Route MAS engineering standards"
+  default_prompt: "Route AUTO-MAS tasks to the right MAS sub-skills and apply a consistent standards workflow across code standards, boundary, data model, naming, function design, and API contract."

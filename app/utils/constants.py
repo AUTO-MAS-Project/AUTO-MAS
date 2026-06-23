@@ -43,6 +43,7 @@ TYPE_BOOK = {
     "OkwwConfig": "ok-ww",
     "M9AConfig": "M9A",
     "M9AUserConfig": "M9A",
+    "HSRConfig": "HSR",
 }
 """配置类型映射表"""
 
@@ -637,6 +638,7 @@ STARRAIL_STAGE_BOOK = {
     "Calyx_Golden_Memories_Jarilo_VI": "材料：角色经验（回忆之蕾 雅利洛-Ⅵ）",
     "Calyx_Golden_Aether_Jarilo_VI": "材料：武器经验（以太之蕾 雅利洛-Ⅵ）",
     "Calyx_Golden_Treasures_Jarilo_VI": "材料：信用点（藏珍之蕾 雅利洛-Ⅵ）",
+    "Calyx_Crimson_Destruction_Amphoreus_InkfordHermitage": "行迹材料：毁灭（渡画泉隐）",
     "Calyx_Crimson_Destruction_Herta_StorageZone": "行迹材料：毁灭（收容舱段）",
     "Calyx_Crimson_Destruction_Luofu_ScalegorgeWaterscape": "行迹材料：毁灭（鳞渊境）",
     "Calyx_Crimson_Preservation_Herta_SupplyZone": "行迹材料：存护（支援舱段）",
@@ -652,6 +654,8 @@ STARRAIL_STAGE_BOOK = {
     "Calyx_Crimson_Harmony_Penacony_TheReverieDreamscape": "行迹材料：同谐（白日梦酒店-梦境）",
     "Calyx_Crimson_Nihility_Jarilo_GreatMine": "行迹材料：虚无（大矿区）",
     "Calyx_Crimson_Nihility_Luofu_AlchemyCommission": "行迹材料：虚无（丹鼎司）",
+    "Calyx_Crimson_Nihility_Amphoreus_SacredTracewoodGroveofDivineInsight": "行迹材料：虚无（「辉痕圣林」神悟树庭）",
+    "Calyx_Crimson_Erudition_Amphoreus_SeafeldTVTower": "行迹材料：智识（海原电视塔）",
     "Calyx_Crimson_Remembrance_Amphoreus_StrifeRuinsCastrumKremnos": "行迹材料：记忆（纷争荒墟悬锋城）",
     "Calyx_Crimson_Elation_Planarcadia_WorldEndTavern": "行迹材料：欢愉（世界尽头酒馆）",
     "Stagnant_Shadow_Quanta": "晋阶材料：量子（银狼 / 希儿 / 青雀）",
@@ -681,7 +685,9 @@ STARRAIL_STAGE_BOOK = {
     "Stagnant_Shadow_Cinders": "晋阶材料：风（刻律德菈）",
     "Stagnant_Shadow_Sirens": "晋阶材料：冰（长夜月 / 昔涟）",
     "Stagnant_Shadow_Ashes": "晋阶材料：火（大丽花 / 火花）",
-    "Stagnant_Shadow_Soundburst": "-",
+    "Stagnant_Shadow_Soundburst": "晋阶材料：雷（狂雷扫弦）",
+    "Stagnant_Shadow_Devour": "晋阶材料：量子（嗤笑丑面）",
+    "Cavern_of_Corrosion_Path_of_Insight": "遗器：领航员 & 名冶（观火之径）",
     "Cavern_of_Corrosion_Path_of_Possession": "遗器：魔法少女 & 卜者（魔占之径）",
     "Cavern_of_Corrosion_Path_of_Hidden_Salvation": "遗器：救世主 & 隐士（隐救之径）",
     "Cavern_of_Corrosion_Path_of_Thundersurge": "遗器：烈阳 & 船长（雳涌之径）",
@@ -701,10 +707,11 @@ STARRAIL_STAGE_BOOK = {
     "Echo_of_War_Glance_of_Twilight": "晨昏的回眸（翁法罗斯）",
     "Echo_of_War_Inner_Beast_Battlefield": "心兽的战场（仙舟「罗浮」）",
     "Echo_of_War_Salutations_of_Ashen_Dreams": "尘梦的赞礼（匹诺康尼）",
-    "Echo_of_War_Borehole_Planet_Past_Nightmares": "蛀星的旧魇（空间站「黑塔」）",
+    "Echo_of_War_Borehole_Planet_Past_Nightmares": "蛀星的旧靥（空间站「黑塔」）",
     "Echo_of_War_Divine_Seed": "不死的神实（仙舟「罗浮」）",
     "Echo_of_War_End_of_the_Eternal_Freeze": "寒潮的落幕（雅利洛-Ⅵ）",
     "Echo_of_War_Destruction_Beginning": "毁灭的开端（空间站「黑塔」）",
+    "Divergent_Universe_Gilded_Reminiscence": "饰品：朋克洛德 & 千星（鎏金追忆）",
     "Divergent_Universe_Within_the_West_Wind": "饰品：翁法罗斯 & 天国（西风丛中）",
     "Divergent_Universe_Moonlit_Blood": "饰品：妖精 & 沉醉（月下朱殷）",
     "Divergent_Universe_Unceasing_Strife": "饰品：拾骨地 & 巨树（纷争不休）",
@@ -740,6 +747,7 @@ POWER_SIGN_MAP = {
     "Hibernate": "休眠",
     "Sleep": "睡眠",
     "KillSelf": "退出程序",
+    "Logoff": "注销此账户",
 }
 """电源操作类型索引表"""
 
