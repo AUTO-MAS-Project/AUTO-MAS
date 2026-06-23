@@ -2669,8 +2669,6 @@ class OkwwConfig(ConfigBase):
 class OkNteConfig(ConfigBase):
     """OK-NTE 配置（ok-script 线）"""
 
-    related_config: dict[str, MultipleConfig] = {}
-
     def __init__(self) -> None:
 
         ## Info ------------------------------------------------------------
@@ -2747,13 +2745,6 @@ class OkNteConfig(ConfigBase):
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
         )
-        self.Game_EmulatorId = ConfigItem(
-            "Game",
-            "EmulatorId",
-            "-",
-            MultipleUIDValidator("-", self.related_config, "EmulatorConfig"),
-        )
-        self.Game_EmulatorIndex = ConfigItem("Game", "EmulatorIndex", "-")
 
         ## Run -------------------------------------------------------------
         self.Run_ProxyTimesLimit = ConfigItem(
@@ -3059,7 +3050,6 @@ class GlobalConfig(ConfigBase):
         M9AConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         OkwwConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
-        OkNteConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
 

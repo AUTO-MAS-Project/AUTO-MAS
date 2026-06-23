@@ -726,11 +726,22 @@ class OkNteConfig_Script(GeneralConfig_Script):
     """OK-NTE 脚本配置（复用通用字段）"""
 
 
-class OkNteConfig_Game(GeneralConfig_Game):
-    """OK-NTE 游戏配置（复用通用字段）"""
+class OkNteConfig_Game(BaseModel):
+    """OK-NTE 游戏配置"""
 
+    Enabled: Optional[bool] = Field(
+        default=None, description="游戏相关功能是否启用"
+    )
     Type: Optional[Literal["Client", "URL"]] = Field(
         default=None, description="类型: PC端, URL协议"
+    )
+    Path: Optional[str] = Field(default=None, description="游戏程序路径")
+    URL: Optional[str] = Field(default=None, description="自定义协议URL")
+    ProcessName: Optional[str] = Field(default=None, description="游戏进程名称")
+    Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
+    WaitTime: Optional[int] = Field(default=None, description="游戏等待启动时间")
+    IfForceClose: Optional[bool] = Field(
+        default=None, description="是否强制关闭游戏进程"
     )
     LaunchBeforeTask: Optional[bool] = Field(
         default=None, description="任务开始前是否由 MAS 启动游戏"
