@@ -43,28 +43,24 @@ _WUWA_CLIENT_PROCESS = "Client-Win64-Shipping.exe"
 def _yes_no(value: bool) -> str:
     return "是" if value else "否"
 
-# 对齐 MaaEnd：专项内置致命日志片段（非用户 Success/Error 配置）；`Script.ErrorLog` 仅追加补充子串
+# 对齐 MaaEnd：专项内置日志片段，Okww 不向用户暴露成功/失败日志关键词配置。
 _OKWW_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
     ("connected:False", "OK-WW 未连接游戏客户端"),
     ("游戏更新成功, 游戏即将重启", "游戏更新成功，即将重启任务"),
+    ("info_set 错误", "OK-WW 流程产生错误，请检查游戏状态"),
 )
 
-# prepare 中 ErrorLog 经清洗后为空时回退（与 OkwwConfig 默认串一致）
-_DEFAULT_OKWW_ERROR_LOG = "connected:False|游戏更新成功, 游戏即将重启|info_set 错误"
+_OKWW_BUILTIN_SUCCESS: tuple[str, ...] = ("任务执行完成", "task completed")
 
 
 def _split_args(raw: object) -> list[str]:
     value = str(raw or "").strip()
     return shlex.split(value, posix=False) if value else []
 
-def _sanitize_okww_error_log_tokens(tokens: list[str]) -> list[str]:
-    return [t for raw in tokens if (t := raw.strip())]
 
-
-def _okww_log_indicates_success(log: str, success_log: list[str]) -> bool:
-    if "任务执行完成" in log or "task completed" in log.lower():
-        return True
-    return any(k in log for k in success_log if k)
+def _okww_log_indicates_success(log: str) -> bool:
+    normalized_log = log.lower()
+    return any(needle in normalized_log for needle in _OKWW_BUILTIN_SUCCESS)
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -113,6 +109,24 @@ class AutoProxyTask(TaskExecuteBase):
             and not Path(self.script_config.get("Game", "Path")).is_file()
         ):
             return "请设置鸣潮游戏路径"
+
+        mas_config_dir = self._okww_mas_config_dir()
+        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
+            has_config_files = mas_config_dir.is_dir() and any(
+                item.is_file() for item in mas_config_dir.rglob("*")
+            )
+            if not has_config_files:
+                return (
+                    f"用户 {self.cur_user_item.name} 未完成 OK-WW 配置，"
+                    "请先在用户编辑页保存配置"
+                )
+        elif self.script_config.get("Script", "ConfigPathMode") == "File":
+            config_name = Path(str(self.script_config.get("Script", "ConfigPath"))).name
+            if not config_name or not (mas_config_dir / config_name).is_file():
+                return (
+                    f"用户 {self.cur_user_item.name} 未完成 OK-WW 配置，"
+                    "请先在用户编辑页保存配置"
+                )
         return "Pass"
 
     async def prepare(self):
@@ -163,27 +177,6 @@ class AutoProxyTask(TaskExecuteBase):
             self.log_time_format,
             self.check_log,
         )
-        self.success_log = [
-            _.strip()
-            for _ in str(self.script_config.get("Script", "SuccessLog")).split("|")
-            if _.strip()
-        ]
-        raw_error_tokens = [
-            _.strip()
-            for _ in str(self.script_config.get("Script", "ErrorLog")).split("|")
-            if _.strip()
-        ]
-        self.error_log = _sanitize_okww_error_log_tokens(raw_error_tokens)
-        if not self.error_log:
-            self.error_log = [
-                _.strip()
-                for _ in _DEFAULT_OKWW_ERROR_LOG.split("|")
-                if _.strip()
-            ]
-            logger.warning(
-                "OK-WW ErrorLog 去掉过宽容词后为空，已回退为内置默认失败关键词"
-            )
-
         # 当前用户配置
 
         self.task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
@@ -205,11 +198,13 @@ class AutoProxyTask(TaskExecuteBase):
         self.run_book = False
 
     def _okww_mas_config_dir(self) -> Path:
-        mode = str(self.cur_user_config.get("Info", "Mode") or "简洁")
-        config_owner = (
-            "Default" if mode == "简洁" else str(self.cur_user_uid)
+        return (
+            Path.cwd()
+            / "data"
+            / self.script_info.script_id
+            / str(self.cur_user_uid)
+            / "ConfigFile"
         )
-        return Path.cwd() / f"data/{self.script_info.script_id}/{config_owner}/ConfigFile"
 
     async def set_okww(self) -> None:
         """将 MAS 侧 OK-WW 任务配置下发到脚本 working 目录（对齐 General.set_general）。"""
@@ -242,6 +237,7 @@ class AutoProxyTask(TaskExecuteBase):
                 self.script_config_path, mas_config_dir, dirs_exist_ok=True
             )
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
+            mas_config_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy(
                 self.script_config_path,
                 mas_config_dir / self.script_config_path.name,
@@ -485,11 +481,7 @@ class AutoProxyTask(TaskExecuteBase):
         return self.script_log_path
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
-        """与 MaaEnd 类似：内置致命片段优先，再读配置补充；成功；进程结束；超时；否则为运行中。
-
-        `Script.ErrorLog` / `SuccessLog` 仅在 AutoProxy.prepare → 本回调中使用，全仓无第二处运行时判据，
-        避免「配置一套、代码另一套」的分裂；内置项保证未改配置时也有基线行为。
-        """
+        """与 MaaEnd 类似：内置失败；成功；进程结束；超时；否则为运行中。"""
         log = "".join(log_content)
         self.cur_user_log.content = log_content
         self.script_info.log = log[-4000:] if len(log) > 4000 else log
@@ -503,23 +495,17 @@ class AutoProxyTask(TaskExecuteBase):
                 user_item_status = "异常"
                 break
         else:
-            for k in self.error_log:
-                if k and k in log:
-                    log_status = f"OK-WW：{k}"
-                    user_item_status = "异常"
-                    break
-            else:
-                if _okww_log_indicates_success(log, self.success_log):
-                    log_status = "Success!"
-                    user_item_status = "完成"
-                elif not await self.okww_process_manager.is_running():
-                    log_status = "OK-WW 在完成任务前退出"
-                    user_item_status = "异常"
-                elif datetime.now() - latest_time > timedelta(
-                    minutes=self.script_config.get("Run", "RunTimeLimit")
-                ):
-                    log_status = "OK-WW 运行超时"
-                    user_item_status = "异常"
+            if _okww_log_indicates_success(log):
+                log_status = "Success!"
+                user_item_status = "完成"
+            elif not await self.okww_process_manager.is_running():
+                log_status = "OK-WW 在完成任务前退出"
+                user_item_status = "异常"
+            elif datetime.now() - latest_time > timedelta(
+                minutes=self.script_config.get("Run", "RunTimeLimit")
+            ):
+                log_status = "OK-WW 运行超时"
+                user_item_status = "异常"
 
         self.cur_user_log.status = log_status
         if user_item_status is not None:
