@@ -624,33 +624,15 @@ class OkwwConfig_Info(GeneralConfig_Info):
 
 
 class OkwwConfig_Script(BaseModel):
-    """OK-WW 脚本配置"""
+    """OK-WW 脚本配置（路径/进程/日志等由 RootPath 派生，不暴露为可配置字段）"""
 
-    ScriptPath: Optional[str] = Field(default=None, description="脚本可执行文件路径")
     Arguments: Optional[str] = Field(default=None, description="脚本启动附加命令参数")
-    IfTrackProcess: Optional[bool] = Field(
-        default=None, description="是否追踪脚本子进程"
-    )
-    TrackProcessName: Optional[str] = Field(default=None, description="追踪进程名称")
-    TrackProcessExe: Optional[str] = Field(default=None, description="追踪进程文件路径")
-    TrackProcessCmdline: Optional[str] = Field(
-        default=None, description="追踪进程启动命令行参数"
-    )
-    ConfigPath: Optional[str] = Field(default=None, description="配置文件路径")
-    ConfigPathMode: Optional[Literal["File", "Folder"]] = Field(
-        default=None, description="配置文件类型: 单个文件, 文件夹"
-    )
     UpdateConfigMode: Optional[Literal["Never", "Success", "Failure", "Always"]] = (
         Field(
             default=None,
             description="更新配置时机, 从不, 仅成功时, 仅失败时, 任务结束时",
         )
     )
-    LogPath: Optional[str] = Field(default=None, description="日志文件路径")
-    LogPathFormat: Optional[str] = Field(default=None, description="日志文件名格式")
-    LogTimeStart: Optional[int] = Field(default=None, description="日志时间戳开始位置")
-    LogTimeEnd: Optional[int] = Field(default=None, description="日志时间戳结束位置")
-    LogTimeFormat: Optional[str] = Field(default=None, description="日志时间戳格式")
 
 
 class OkwwConfig_Game(GeneralConfig_Game):
@@ -661,9 +643,6 @@ class OkwwConfig_Game(GeneralConfig_Game):
     )
     LaunchBeforeTask: Optional[bool] = Field(
         default=None, description="任务开始前是否由 MAS 启动游戏"
-    )
-    CloseOnFinish: Optional[bool] = Field(
-        default=None, description="任务结束后是否关闭游戏"
     )
 
 
