@@ -23,6 +23,39 @@
 
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Union, Optional, Literal
+from functools import reduce
+import types as _types
+
+from app.models.config import SCRIPT_REGISTRY as _REG
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 以下类型全部从 SCRIPT_REGISTRY 自动派生，新增专项无需手动维护
+# Pydantic Schema 类名 = ConfigBase 类名（命名约定），通过 globals() 查找
+# ═══════════════════════════════════════════════════════════════════════════
+def _schema(name: str) -> type:
+    cls = globals().get(name)
+    if cls is None:
+        raise ImportError(f"schema.py 缺少 {name} 定义（需与 config.py 同名）")
+    return cls
+
+def _union(*classes: type):
+    """a | b | c ... -> UnionType（等价于 typing.Union[a, b, c]）"""
+    return reduce(_types.UnionType.__or__, classes)
+
+# config 类型名字符串
+_SCRIPT_TYPE_KEYS: tuple[str, ...] = tuple(_REG.keys())
+_SCRIPT_CONFIG_NAMES: tuple[str, ...] = tuple(v.config.__name__ for v in _REG.values())
+_USER_CONFIG_NAMES: tuple[str, ...] = tuple(
+    v.user_config.__name__ for v in _REG.values() if v.user_config is not None
+)
+
+# Pydantic Schema 类
+_SCRIPT_SCHEMAS = tuple(_schema(n) for n in _SCRIPT_CONFIG_NAMES)
+_USER_SCHEMAS = tuple(_schema(n) for n in _USER_CONFIG_NAMES)
+
+# 动态 Union 类型
+ScriptConfigUnion = _union(*_SCRIPT_SCHEMAS)
+UserConfigUnion = _union(*_USER_SCHEMAS)
 
 
 class OutBase(BaseModel):
@@ -325,30 +358,16 @@ class QueueConfig(BaseModel):
 
 class ScriptIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: Literal[
-        "MaaConfig",
-        "GeneralConfig",
-        "OkwwConfig",
-        "SrcConfig",
-        "MaaEndConfig",
-        "M9AConfig",
-        "HSRConfig",
-    ] = Field(
+    type: Literal[_SCRIPT_CONFIG_NAMES] = Field(  # type: ignore[valid-type]
         ..., description="配置类型"
     )
 
 
 class UserIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: Literal[
-        "MaaUserConfig",
-        "GeneralUserConfig",
-        "OkwwUserConfig",
-        "SrcUserConfig",
-        "MaaEndUserConfig",
-        "M9AUserConfig",
-        "HSRUserConfig",
-    ] = Field(..., description="配置类型")
+    type: Literal[_USER_CONFIG_NAMES] = Field(  # type: ignore[valid-type]
+        ..., description="配置类型"
+    )
 
 
 class MaaUserConfig_Info(BaseModel):
@@ -1376,8 +1395,8 @@ class HistoryData(BaseModel):
 
 
 class ScriptCreateIn(BaseModel):
-    type: Literal["MAA", "SRC", "General", "Okww", "MaaEnd", "M9A", "HSR"] = Field(
-        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, SRC脚本, MaaEnd脚本, M9A脚本, HSR脚本"
+    type: Literal[_SCRIPT_TYPE_KEYS] = Field(  # type: ignore[valid-type]
+        ..., description="脚本类型"
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -1386,9 +1405,7 @@ class ScriptCreateIn(BaseModel):
 
 class ScriptCreateOut(OutBase):
     scriptId: str = Field(..., description="新创建的脚本ID")
-    data: Union[MaaConfig, SrcConfig, GeneralConfig, OkwwConfig, MaaEndConfig, M9AConfig, HSRConfig] = Field(
-        ..., description="脚本配置数据"
-    )
+    data: ScriptConfigUnion = Field(..., description="脚本配置数据")  # type: ignore[valid-type]
 
 
 class ScriptGetIn(BaseModel):
@@ -1399,18 +1416,14 @@ class ScriptGetIn(BaseModel):
 
 class ScriptGetOut(OutBase):
     index: List[ScriptIndexItem] = Field(..., description="脚本索引列表")
-    data: Dict[
-        str, Union[MaaConfig, SrcConfig, GeneralConfig, OkwwConfig, MaaEndConfig, M9AConfig, HSRConfig]
-    ] = Field(
+    data: Dict[str, ScriptConfigUnion] = Field(  # type: ignore[valid-type]
         ..., description="脚本数据字典, key来自于index列表的uid"
     )
 
 
 class ScriptUpdateIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
-    data: Union[MaaConfig, SrcConfig, GeneralConfig, OkwwConfig, MaaEndConfig, M9AConfig, HSRConfig] = Field(
-        ..., description="脚本更新数据"
-    )
+    data: ScriptConfigUnion = Field(..., description="脚本更新数据")  # type: ignore[valid-type]
 
 
 class ScriptDeleteIn(BaseModel):
@@ -1456,33 +1469,14 @@ class UserGetIn(UserInBase):
 
 class UserGetOut(OutBase):
     index: List[UserIndexItem] = Field(..., description="用户索引列表")
-    data: Dict[
-        str,
-        Union[
-            MaaUserConfig,
-            SrcUserConfig,
-            GeneralUserConfig,
-            OkwwUserConfig,
-            MaaEndUserConfig,
-            M9AUserConfig,
-            HSRUserConfig,
-        ],
-    ] = Field(..., description="用户数据字典, key来自于index列表的uid")
+    data: Dict[str, UserConfigUnion] = Field(  # type: ignore[valid-type]
+        ..., description="用户数据字典, key来自于index列表的uid"
+    )
 
 
 class UserCreateOut(OutBase):
     userId: str = Field(..., description="新创建的用户ID")
-    data: Union[
-        MaaUserConfig,
-        SrcUserConfig,
-        GeneralUserConfig,
-        OkwwUserConfig,
-        MaaEndUserConfig,
-        M9AUserConfig,
-        HSRUserConfig,
-    ] = (
-        Field(..., description="用户配置数据")
-    )
+    data: UserConfigUnion = Field(..., description="用户配置数据")  # type: ignore[valid-type]
 
 
 class UserUpdateIn(UserInBase):
