@@ -98,26 +98,20 @@ class OkwwManager(TaskExecuteBase):
             and config.get("Info", "RemainedDay") != 0
         ]
 
-        # Enabled=游戏管理总开关；LaunchBeforeTask/CloseOnFinish=启动与收尾子项（可单独开启）
+        # Enabled=游戏管理总开关；开启后任务结束时始终关闭游戏，LaunchBeforeTask 控制启动
         self.game_manager: ProcessManager | None = None
-        if self.script_config.get("Game", "Enabled") and (
-            self.script_config.get("Game", "LaunchBeforeTask")
-            or self.script_config.get("Game", "CloseOnFinish")
-        ):
+        if self.script_config.get("Game", "Enabled"):
             self.game_manager = ProcessManager()
 
         if self.task_info.mode == "AutoProxy":
-            self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
+            self.script_config_path = Path(self.script_config.get("Info", "RootPath")) / "data/apps/ok-ww/working/configs"
             self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
             self.temp_path.mkdir(parents=True, exist_ok=True)
             if self.script_config_path.exists():
                 self.had_original_script_config = True
-                if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-                    shutil.copytree(
-                        self.script_config_path, self.temp_path, dirs_exist_ok=True
-                    )
-                elif self.script_config.get("Script", "ConfigPathMode") == "File":
-                    shutil.copy(self.script_config_path, self.temp_path / "config.temp")
+                shutil.copytree(
+                    self.script_config_path, self.temp_path, dirs_exist_ok=True
+                )
 
     async def _restore_script_config_from_temp(self) -> None:
         if not (
@@ -127,27 +121,18 @@ class OkwwManager(TaskExecuteBase):
             and self.script_config_path
         ):
             return
-        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-            if not self.had_original_script_config:
-                logger.info(f"清理任务期写入的 OK-WW 脚本配置目录: {self.script_config_path}")
-                shutil.rmtree(self.script_config_path, ignore_errors=True)
-            else:
-                logger.info(f"复原 OK-WW 脚本配置文件: {self.temp_path}")
-                tmp_dst = self.script_config_path.with_name(
-                    self.script_config_path.name + ".tmp"
-                )
-                shutil.rmtree(tmp_dst, ignore_errors=True)
-                shutil.copytree(self.temp_path, tmp_dst, dirs_exist_ok=True)
-                shutil.rmtree(self.script_config_path, ignore_errors=True)
-                tmp_dst.rename(self.script_config_path)
-        elif self.script_config.get("Script", "ConfigPathMode") == "File":
-            if (self.temp_path / "config.temp").exists():
-                logger.info(f"复原 OK-WW 脚本配置文件: {self.temp_path / 'config.temp'}")
-                shutil.copy(self.temp_path / "config.temp", self.script_config_path)
-            elif not self.had_original_script_config:
-                logger.info(f"清理任务期写入的 OK-WW 脚本配置文件: {self.script_config_path}")
-                with suppress(FileNotFoundError):
-                    self.script_config_path.unlink()
+        if not self.had_original_script_config:
+            logger.info(f"清理任务期写入的 OK-WW 脚本配置目录: {self.script_config_path}")
+            shutil.rmtree(self.script_config_path, ignore_errors=True)
+        else:
+            logger.info(f"复原 OK-WW 脚本配置文件: {self.temp_path}")
+            tmp_dst = self.script_config_path.with_name(
+                self.script_config_path.name + ".tmp"
+            )
+            shutil.rmtree(tmp_dst, ignore_errors=True)
+            shutil.copytree(self.temp_path, tmp_dst, dirs_exist_ok=True)
+            shutil.rmtree(self.script_config_path, ignore_errors=True)
+            tmp_dst.rename(self.script_config_path)
         shutil.rmtree(self.temp_path, ignore_errors=True)
 
     async def main_task(self):
