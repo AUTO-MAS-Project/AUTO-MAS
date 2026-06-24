@@ -29,11 +29,13 @@ from app.models.ConfigBase import MultipleConfig
 from app.utils import get_logger, ProcessManager
 
 from .AutoProxy import AutoProxyTask
+from .ScriptConfig import ScriptConfigTask
 
 logger = get_logger("OK-NTE 调度器")
 
-METHOD_BOOK: dict[str, type[AutoProxyTask]] = {
+METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
     "AutoProxy": AutoProxyTask,
+    "ScriptConfig": ScriptConfigTask,
 }
 
 
@@ -61,12 +63,28 @@ class OkNteManager(TaskExecuteBase):
         if self.task_info.mode not in METHOD_BOOK:
             return "不支持的任务模式, 请检查任务配置！"
 
-        if not isinstance(Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], OkNteConfig):
+        script_uid = uuid.UUID(self.script_info.script_id)
+        script_config = Config.ScriptConfig[script_uid]
+        if not isinstance(script_config, OkNteConfig):
             return "脚本配置类型错误, 不是 OK-NTE 类型"
+
+        if self.task_info.mode == "ScriptConfig":
+            if not Path(script_config.get("Info", "RootPath")).is_dir():
+                return "请设置 OK-NTE 脚本路径"
+            if not Path(script_config.get("Script", "ScriptPath")).is_file():
+                return "请设置 OK-NTE 脚本路径"
+            if not str(script_config.get("Script", "ConfigPath") or "").strip():
+                return "请设置 OK-NTE 配置路径"
+            if self.task_info.user_id and self.task_info.user_id != "Default":
+                try:
+                    user_uid = uuid.UUID(self.task_info.user_id)
+                except ValueError:
+                    return "OK-NTE 用户不存在，请刷新后重试"
+                if user_uid not in script_config.UserData:
+                    return "OK-NTE 用户不存在，请刷新后重试"
 
         # AutoProxy 模式只做用户列表可用性校验；逐用户配置文件检查放到 AutoProxyTask.check()
         if self.task_info.mode == "AutoProxy":
-            script_uid = uuid.UUID(self.script_info.script_id)
             if (not self.script_info.user_list) or (
                 self.script_info.user_list
                 and self.script_info.user_list[0].name == "暂未加载"
@@ -95,13 +113,28 @@ class OkNteManager(TaskExecuteBase):
         await self.user_config.load(await self.script_config.UserData.toDict())
         logger.success(f"{self.script_info.script_id} 已锁定，OK-NTE 用户配置已提取")
 
-        # 构建用户列表：遍历脚本用户，筛选启用且剩余天数不为 0 的
-        self.script_info.user_list = [
-            UserItem(user_id=str(uid), name=config.get("Info", "Name"), status="等待")
-            for uid, config in self.user_config.items()
-            if config.get("Info", "Status")
-            and config.get("Info", "RemainedDay") != 0
-        ]
+        if self.task_info.mode == "ScriptConfig":
+            target_user_id = self.task_info.user_id or "Default"
+            target_user_name = ""
+            with suppress(ValueError):
+                target_user_uid = uuid.UUID(target_user_id)
+                if target_user_uid in self.user_config:
+                    target_user_name = self.user_config[target_user_uid].get(
+                        "Info", "Name"
+                    )
+            self.script_info.user_list = [
+                UserItem(user_id=target_user_id, name=target_user_name, status="等待")
+            ]
+        else:
+            # 构建用户列表：遍历脚本用户，筛选启用且剩余天数不为 0 的
+            self.script_info.user_list = [
+                UserItem(
+                    user_id=str(uid), name=config.get("Info", "Name"), status="等待"
+                )
+                for uid, config in self.user_config.items()
+                if config.get("Info", "Status")
+                and config.get("Info", "RemainedDay") != 0
+            ]
 
         # Enabled=游戏管理总开关；LaunchBeforeTask/CloseOnFinish=启动与收尾子项（可单独开启）
         self.game_manager = None
@@ -111,9 +144,12 @@ class OkNteManager(TaskExecuteBase):
         ):
             self.game_manager = ProcessManager()
 
-        if self.task_info.mode == "AutoProxy":
-            self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
+        if self.task_info.mode in ("AutoProxy", "ScriptConfig"):
+            self.script_config_path = Path(
+                self.script_config.get("Script", "ConfigPath")
+            )
             self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
+            shutil.rmtree(self.temp_path, ignore_errors=True)
             self.temp_path.mkdir(parents=True, exist_ok=True)
             if self.script_config_path.exists():
                 self.had_original_script_config = True
@@ -126,7 +162,7 @@ class OkNteManager(TaskExecuteBase):
 
     async def _restore_script_config_from_temp(self) -> None:
         if not (
-            self.task_info.mode == "AutoProxy"
+            self.task_info.mode in ("AutoProxy", "ScriptConfig")
             and self.temp_path
             and self.temp_path.exists()
             and self.script_config_path

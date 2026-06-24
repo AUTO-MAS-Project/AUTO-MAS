@@ -11,11 +11,7 @@
         <!-- 左侧：配置文件列表 -->
         <a-col :span="8" class="left-panel">
           <div class="config-groups">
-            <div
-              v-for="(group, groupName) in groupedConfigs"
-              :key="groupName"
-              class="config-group"
-            >
+            <div v-for="(group, groupName) in groupedConfigs" :key="groupName" class="config-group">
               <div class="group-header">{{ groupName }}</div>
               <div class="group-items">
                 <div
@@ -55,7 +51,7 @@
                 :key="field.name"
                 :label="field.label || field.name"
               >
-                <template #extra v-if="field.description">
+                <template v-if="field.description" #extra>
                   {{ field.description }}
                 </template>
 
@@ -63,7 +59,9 @@
                 <a-switch
                   v-if="field.type === 'bool'"
                   :checked="getFieldValue(selectedConfig.filename, field.name, field.value)"
-                  @change="(val: boolean) => setFieldValue(selectedConfig.filename, field.name, val)"
+                  @change="
+                    (val: boolean) => setFieldValue(selectedConfig.filename, field.name, val)
+                  "
                 />
 
                 <!-- select 类型：下拉选择 -->
@@ -73,11 +71,7 @@
                   style="width: 100%"
                   @change="(val: string) => setFieldValue(selectedConfig.filename, field.name, val)"
                 >
-                  <a-select-option
-                    v-for="opt in (field.options || [])"
-                    :key="opt"
-                    :value="opt"
-                  >
+                  <a-select-option v-for="opt in field.options || []" :key="opt" :value="opt">
                     {{ getOptionLabel(opt) }}
                   </a-select-option>
                 </a-select>
@@ -89,13 +83,11 @@
                   mode="multiple"
                   style="width: 100%"
                   placeholder="请选择"
-                  @change="(val: string[]) => setFieldValue(selectedConfig.filename, field.name, val)"
+                  @change="
+                    (val: string[]) => setFieldValue(selectedConfig.filename, field.name, val)
+                  "
                 >
-                  <a-select-option
-                    v-for="opt in (field.options || [])"
-                    :key="opt"
-                    :value="opt"
-                  >
+                  <a-select-option v-for="opt in field.options || []" :key="opt" :value="opt">
                     {{ getOptionLabel(opt) }}
                   </a-select-option>
                 </a-select>
@@ -107,7 +99,11 @@
                   :min="field.min"
                   :max="field.max"
                   style="width: 100%"
-                  @change="(val: number | null) => { if (val !== null) setFieldValue(selectedConfig.filename, field.name, val) }"
+                  @change="
+                    (val: number | null) => {
+                      if (val !== null) setFieldValue(selectedConfig.filename, field.name, val)
+                    }
+                  "
                 />
 
                 <!-- float 类型：浮点数输入 -->
@@ -118,7 +114,11 @@
                   :max="field.max"
                   :step="field.step || 0.1"
                   style="width: 100%"
-                  @change="(val: number | null) => { if (val !== null) setFieldValue(selectedConfig.filename, field.name, val) }"
+                  @change="
+                    (val: number | null) => {
+                      if (val !== null) setFieldValue(selectedConfig.filename, field.name, val)
+                    }
+                  "
                 />
 
                 <!-- hotkey 类型：快捷键输入 -->
@@ -126,7 +126,14 @@
                   v-else-if="field.type === 'hotkey'"
                   :value="getFieldValue(selectedConfig.filename, field.name, field.value)"
                   style="width: 100%"
-                  @change="(e: Event) => setFieldValue(selectedConfig.filename, field.name, (e.target as HTMLInputElement).value)"
+                  @change="
+                    (e: Event) =>
+                      setFieldValue(
+                        selectedConfig.filename,
+                        field.name,
+                        (e.target as HTMLInputElement).value
+                      )
+                  "
                 />
 
                 <!-- string 类型：文本输入 -->
@@ -134,7 +141,14 @@
                   v-else
                   :value="getFieldValue(selectedConfig.filename, field.name, field.value)"
                   style="width: 100%"
-                  @change="(e: Event) => setFieldValue(selectedConfig.filename, field.name, (e.target as HTMLInputElement).value)"
+                  @change="
+                    (e: Event) =>
+                      setFieldValue(
+                        selectedConfig.filename,
+                        field.name,
+                        (e.target as HTMLInputElement).value
+                      )
+                  "
                 />
               </a-form-item>
 
@@ -183,6 +197,7 @@ interface ConfigFile {
 const props = defineProps<{
   scriptId: string
   userId: string
+  refreshToken?: number
 }>()
 
 const emit = defineEmits<{
@@ -261,13 +276,23 @@ const loadConfigs = async () => {
   try {
     const resp = await OknteService.getOknteConfigsListApiScriptsOknteConfigsListPost(
       props.scriptId,
-      props.userId,
+      props.userId
     )
     if (resp?.code === 200 && resp?.data) {
+      const previousSelected = selectedFilename.value
       configs.value = resp.data
       optionLabels.value = resp.optionLabels || {}
-      // 默认选中第一个
-      if (configs.value.length > 0 && !selectedFilename.value) {
+      changedFiles.value = new Set()
+      localChanges.value = {}
+
+      if (configs.value.length === 0) {
+        selectedFilename.value = null
+      } else if (
+        previousSelected &&
+        configs.value.some(config => config.filename === previousSelected)
+      ) {
+        selectedFilename.value = previousSelected
+      } else {
         selectedFilename.value = configs.value[0].filename
       }
     } else {
@@ -331,11 +356,14 @@ onBeforeUnmount(async () => {
   }
 })
 
-watch(() => props.scriptId, () => {
-  if (props.scriptId) {
-    loadConfigs()
+watch(
+  () => [props.scriptId, props.userId, props.refreshToken],
+  () => {
+    if (props.scriptId && props.userId) {
+      loadConfigs()
+    }
   }
-})
+)
 </script>
 
 <style scoped>

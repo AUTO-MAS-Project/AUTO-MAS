@@ -18,6 +18,32 @@
       </div>
 
       <a-space size="middle">
+        <a-button
+          v-if="!showOkNteConfigMask"
+          type="primary"
+          ghost
+          size="large"
+          :loading="oknteConfigLoading"
+          :disabled="pageLoading || !activeUserId"
+          @click="handleOkNteConfig"
+        >
+          <template #icon>
+            <SettingOutlined />
+          </template>
+          配置 OK-NTE
+        </a-button>
+        <a-button
+          v-if="showOkNteConfigMask"
+          type="default"
+          size="large"
+          disabled
+          class="configuring-button"
+        >
+          <template #icon>
+            <SettingOutlined />
+          </template>
+          正在配置
+        </a-button>
         <a-button size="large" class="cancel-button" @click="handleCancel">
           <template #icon>
             <ArrowLeftOutlined />
@@ -26,6 +52,32 @@
         </a-button>
       </a-space>
     </div>
+
+    <teleport to="body">
+      <div v-if="showOkNteConfigMask" class="oknte-config-mask">
+        <div class="mask-content">
+          <div class="mask-icon">
+            <SettingOutlined :style="{ fontSize: '48px', color: '#1890ff' }" />
+          </div>
+          <h2 class="mask-title">正在进行 OK-NTE 配置</h2>
+          <p class="mask-description">
+            当前正在进行该用户的 OK-NTE GUI 配置，请在 OK-NTE 界面完成相关设置。
+            <br />
+            配置完成后，请点击“保存配置”按钮来结束配置会话。
+          </p>
+          <div class="mask-actions">
+            <a-button
+              v-if="oknteWebsocketId"
+              type="primary"
+              size="large"
+              @click="handleSaveOkNteConfig"
+            >
+              保存配置
+            </a-button>
+          </div>
+        </div>
+      </div>
+    </teleport>
 
     <div class="user-edit-content">
       <a-card class="config-card" :loading="pageLoading">
@@ -46,7 +98,13 @@
                       </a-tooltip>
                     </span>
                   </template>
-                  <a-input v-model:value="formData.userName" placeholder="请输入用户名" size="large" class="modern-input" @blur="saveField('Info.Name', formData.userName)" />
+                  <a-input
+                    v-model:value="formData.userName"
+                    placeholder="请输入用户名"
+                    size="large"
+                    class="modern-input"
+                    @blur="saveField('Info.Name', formData.userName)"
+                  />
                 </a-form-item>
               </a-col>
               <a-col :span="12">
@@ -191,8 +249,16 @@
                       </a-tooltip>
                     </span>
                   </template>
-                  <a-select v-model:value="formData.Task.TaskIndex" size="large" @change="handleTaskIndexChange">
-                    <a-select-option v-for="item in oknteTaskOptions" :key="item.value" :value="item.value">
+                  <a-select
+                    v-model:value="formData.Task.TaskIndex"
+                    size="large"
+                    @change="handleTaskIndexChange"
+                  >
+                    <a-select-option
+                      v-for="item in oknteTaskOptions"
+                      :key="item.value"
+                      :value="item.value"
+                    >
                       {{ item.label }}
                     </a-select-option>
                   </a-select>
@@ -208,7 +274,12 @@
                       </a-tooltip>
                     </span>
                   </template>
-                  <a-input :value="currentStartupArguments" size="large" readonly class="modern-input" />
+                  <a-input
+                    :value="currentStartupArguments"
+                    size="large"
+                    readonly
+                    class="modern-input"
+                  />
                 </a-form-item>
               </a-col>
             </a-row>
@@ -222,6 +293,7 @@
           v-if="activeUserId"
           :script-id="scriptId"
           :user-id="activeUserId"
+          :refresh-token="oknteConfigRefreshToken"
           @saved="handleConfigSaved"
         />
       </a-card>
@@ -315,10 +387,12 @@
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
-import type { OkNteUserConfig } from '@/api'
+import { ArrowLeftOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { Service, type OkNteUserConfig } from '@/api'
+import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useWebSocket } from '@/composables/useWebSocket'
 import WebhookManager from '@/components/WebhookManager.vue'
 import OkNteConfigEditor from '@/views/OkNteUserEdit/OkNteConfigEditor.vue'
 
@@ -327,6 +401,7 @@ const route = useRoute()
 const router = useRouter()
 const { addUser, getUsers, updateUser } = useUserApi()
 const { getScript } = useScriptApi()
+const { subscribe, unsubscribe } = useWebSocket()
 
 const scriptId = route.params.scriptId as string
 let userId = (route.params.userId as string) || ''
@@ -337,6 +412,12 @@ const scriptName = ref('OK-NTE脚本')
 const pageLoading = ref(true)
 const isInitializing = ref(true)
 const isSaving = ref(false)
+const oknteConfigLoading = ref(false)
+const oknteSubscriptionId = ref<string | null>(null)
+const oknteWebsocketId = ref<string | null>(null)
+const showOkNteConfigMask = ref(false)
+const oknteConfigRefreshToken = ref(0)
+let oknteConfigTimeout: number | null = null
 
 /** OK-NTE 已适配任务（-t 1..11）；上游 DailyTask 是 -t 2 */
 const OKNTE_MAX_TASK_INDEX = 11
@@ -394,7 +475,27 @@ const formData = reactive({
 
 const currentStartupArguments = computed(() => `-t ${formData.Task.TaskIndex || 2} -e`)
 
-const handleCancel = () => router.push('/scripts')
+const clearOkNteConfigSession = () => {
+  if (oknteSubscriptionId.value) {
+    unsubscribe(oknteSubscriptionId.value)
+    oknteSubscriptionId.value = null
+  }
+  oknteWebsocketId.value = null
+  showOkNteConfigMask.value = false
+  if (oknteConfigTimeout) {
+    window.clearTimeout(oknteConfigTimeout)
+    oknteConfigTimeout = null
+  }
+}
+
+const handleCancel = () => {
+  clearOkNteConfigSession()
+  router.push('/scripts')
+}
+
+const refreshOkNteConfigEditor = () => {
+  oknteConfigRefreshToken.value += 1
+}
 
 const createUserImmediately = async () => {
   const resp = await addUser(scriptId)
@@ -453,6 +554,99 @@ const handleTaskIndexChange = async (value: number) => {
     await saveTaskConfig()
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
+const handleOkNteConfig = async () => {
+  if (!userId) {
+    message.error('请先创建用户后再配置 OK-NTE')
+    return
+  }
+
+  try {
+    oknteConfigLoading.value = true
+    showOkNteConfigMask.value = true
+    clearOkNteConfigSession()
+    showOkNteConfigMask.value = true
+
+    const response = await Service.addTaskApiDispatchStartPost({
+      taskId: userId,
+      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
+    })
+
+    if (!response?.taskId) {
+      message.error(response?.message || '启动 OK-NTE 配置失败')
+      showOkNteConfigMask.value = false
+      return
+    }
+
+    const wsId = response.taskId
+    const subscriptionId = subscribe({ id: wsId }, (wsMessage: any) => {
+      if (wsMessage.type === 'error') {
+        logger.error(`用户 ${formData.userName} OK-NTE 配置连接失败: ${wsMessage.data}`)
+        message.error(`OK-NTE 配置连接失败: ${wsMessage.data}`)
+        clearOkNteConfigSession()
+        return
+      }
+
+      if (wsMessage.type === 'Info' && wsMessage.data?.Error) {
+        logger.error(`用户 ${formData.userName} OK-NTE 配置异常: ${wsMessage.data.Error}`)
+        message.error(`OK-NTE 配置失败: ${wsMessage.data.Error}`)
+        return
+      }
+
+      if (wsMessage.type === 'Signal' && wsMessage.data?.Accomplish !== undefined) {
+        logger.info(`用户 ${formData.userName} OK-NTE 配置任务已结束`)
+        const result = String(wsMessage.data.Accomplish || '')
+        if (!result.includes('异常') && !result.includes('错误')) {
+          refreshOkNteConfigEditor()
+          message.success(`用户 ${formData.userName} 的 OK-NTE 配置已完成`)
+        }
+        clearOkNteConfigSession()
+      }
+    })
+
+    oknteSubscriptionId.value = subscriptionId
+    oknteWebsocketId.value = wsId
+    message.success(`已开始配置用户 ${formData.userName} 的 OK-NTE 设置`)
+
+    oknteConfigTimeout = window.setTimeout(
+      async () => {
+        if (oknteWebsocketId.value) {
+          message.warning('OK-NTE 配置会话已超时，正在自动保存配置')
+          await handleSaveOkNteConfig()
+        }
+      },
+      30 * 60 * 1000
+    )
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    message.error('启动 OK-NTE 配置失败')
+    showOkNteConfigMask.value = false
+  } finally {
+    oknteConfigLoading.value = false
+  }
+}
+
+const handleSaveOkNteConfig = async () => {
+  const websocketId = oknteWebsocketId.value
+  if (!websocketId) {
+    message.error('未找到活动的 OK-NTE 配置会话')
+    return
+  }
+
+  try {
+    const response = await Service.stopTaskApiDispatchStopPost({ taskId: websocketId })
+    if (response?.code === 200) {
+      refreshOkNteConfigEditor()
+      clearOkNteConfigSession()
+      message.success('用户的 OK-NTE 配置已保存')
+    } else {
+      message.error(response?.message || '保存 OK-NTE 配置失败')
+    }
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    message.error('保存 OK-NTE 配置失败')
   }
 }
 
@@ -538,6 +732,11 @@ onMounted(async () => {
   color: var(--ant-color-text);
 }
 
+.configuring-button {
+  color: #52c41a;
+  border-color: #52c41a;
+}
+
 .user-edit-content {
   max-width: 1200px;
   margin: 0 auto;
@@ -603,6 +802,53 @@ onMounted(async () => {
 .modern-select :deep(.ant-select-selector) {
   border: 2px solid var(--ant-color-border) !important;
   border-radius: 8px !important;
+}
+
+.oknte-config-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.mask-content {
+  width: 100%;
+  max-width: 480px;
+  padding: 24px;
+  text-align: center;
+  background: var(--ant-color-bg-elevated);
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+  box-shadow:
+    0 6px 16px 0 rgba(0, 0, 0, 0.08),
+    0 3px 6px -4px rgba(0, 0, 0, 0.12),
+    0 9px 28px 8px rgba(0, 0, 0, 0.05);
+}
+
+.mask-icon {
+  margin-bottom: 16px;
+}
+
+.mask-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.mask-description {
+  margin: 0 0 24px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ant-color-text-secondary);
+}
+
+.mask-actions {
+  display: flex;
+  justify-content: center;
 }
 
 @media (max-width: 768px) {
