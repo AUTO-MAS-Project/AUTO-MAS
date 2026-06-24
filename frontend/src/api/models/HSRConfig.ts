@@ -24,3 +24,4 @@ export type HSRConfig = {
      */
     TaskMapping?: (HSRConfig_TaskMapping | null);
 };
+
