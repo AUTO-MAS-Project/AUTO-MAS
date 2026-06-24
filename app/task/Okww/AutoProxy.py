@@ -217,11 +217,12 @@ class AutoProxyTask(TaskExecuteBase):
         """游戏配置摘要行（调度台展示用）。"""
 
         game_args = str(self.script_config.get("Game", "Arguments") or "").strip()
+        game_enabled = bool(self.script_config.get("Game", "Enabled"))
         return [
             f"[游戏配置] 用户: {self.cur_user_item.name}",
-            f"  启用游戏配置: {_yes_no(bool(self.script_config.get('Game', 'Enabled')))}",
+            f"  启用游戏配置: {_yes_no(game_enabled)}",
             f"  任务前启动游戏: {_yes_no(bool(self.script_config.get('Game', 'LaunchBeforeTask')))}",
-            f"  任务后关闭游戏: 是（始终）",
+            f"  任务后关闭游戏: {'是（始终）' if game_enabled else '不启用'}",
             f"  启动参数: {game_args or '（无）'}",
         ]
 
