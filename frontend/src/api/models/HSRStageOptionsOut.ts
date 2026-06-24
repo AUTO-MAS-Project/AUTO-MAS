@@ -21,3 +21,4 @@ export type HSRStageOptionsOut = {
      */
     data?: (HSRStageOptionsData | null);
 };
+

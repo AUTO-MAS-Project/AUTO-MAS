@@ -24,3 +24,4 @@ export type HSRUserConfig_TaskSwitch = {
      */
     ForgottenHall?: (boolean | null);
 };
+

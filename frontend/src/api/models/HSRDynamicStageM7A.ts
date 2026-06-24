@@ -12,3 +12,4 @@ export type HSRDynamicStageM7A = {
      */
     instanceName?: (string | null);
 };
+
