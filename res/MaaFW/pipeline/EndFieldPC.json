@@ -89,7 +89,8 @@
         ],
         "on_error": [
             "其他账号登录兜底[EndFieldPC]"
-        ]
+        ],
+        "timeout": 60000
     },
     "密码登录[EndFieldPC]": {
         "recognition": {
@@ -467,7 +468,8 @@
     "切换账号-展开下拉框[EndFieldPC]": {
         "next": [
             "登录下拉框展开[EndFieldPC]"
-        ]
+        ],
+        "timeout": 60000
     },
     "验证登录表单[EndFieldPC]": {
         "recognition": {
@@ -525,7 +527,8 @@
     "切换账号-下拉框切换[EndFieldPC]": {
         "next": [
             "选中账号[EndFieldPC]"
-        ]
+        ],
+        "timeout": 60000
     },
     "同意协议兜底[EndFieldPC]": {
         "max_hit": 10,
