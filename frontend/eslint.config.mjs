@@ -21,14 +21,33 @@ export default [
 
   // -------- 渲染端（Vite + Vue）类型感知 ----------
   {
-    files: ['src/**/*.{ts,tsx,vue}', 'vite.config.ts'],
+    files: ['src/**/*.{ts,tsx}', 'vite.config.ts'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: { ...globals.browser, ...globals.node },
+      parser: tseslint.parser,
+      parserOptions: {
+        project: [path.join(__dirname, 'tsconfig.app.json')],
+        tsconfigRootDir: __dirname,
+      },
+    },
+    plugins: { '@typescript-eslint': tseslint.plugin },
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+    },
+  },
+  {
+    files: ['src/**/*.vue'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
       globals: { ...globals.browser, ...globals.node },
       parserOptions: {
         extraFileExtensions: ['.vue'],
-        // 让 <script lang="ts"> 用 TS 解析器
         parser: tseslint.parser,
         project: [path.join(__dirname, 'tsconfig.app.json')],
         tsconfigRootDir: __dirname,
