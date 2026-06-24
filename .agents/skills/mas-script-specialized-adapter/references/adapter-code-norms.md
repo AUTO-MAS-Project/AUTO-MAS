@@ -8,7 +8,7 @@
 |------|------|
 | `XxxConfig` / `XxxUserConfig` + `schema.py` | `app/models/` |
 | `SCRIPT_BOOK`、`USER_BOOK`、`task_manager` 分支 | `app/core/`、`app/models/config.py` |
-| `TYPE_BOOK["XxxConfig"]` → 展示文案 | `app/utils/constants.py`（否则调度 `combox/task` KeyError） |
+| `SCRIPT_REGISTRY` 注册（Config+UserConfig+展示名） | `app/models/config.py`（`TYPE_BOOK` 自动派生） |
 | 后端改 schema 后 `yarn openapi` | `frontend/`；**禁止**手改 `src/api/models/*` |
 | OpenAPI 生效 | 重启后端 → `openapi.json` **文本**含新类型名（勿只靠 PowerShell 对象键）→ 确认 36163 为当前 `main.py` |
 

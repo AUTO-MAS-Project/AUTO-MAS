@@ -113,9 +113,9 @@ description: >-
 ### 阶段 3：后端注册
 12. `app/models/config.py`：`XxxConfig` / `XxxUserConfig`
 13. `app/models/schema.py`：schema 注册
-14. `app/core/config.py`：`isinstance` 分支
-15. `app/api/scripts.py`：`SCRIPT_BOOK` / `USER_BOOK`
-16. `app/utils/constants.py`：`TYPE_BOOK` 展示文案
+14. `app/core/config.py`：Manager dispatch map（_SCRIPT_MANAGER_MAP）
+15. `app/api/scripts.py`：`SCRIPT_BOOK` / `USER_BOOK`（从 SCRIPT_REGISTRY 自动派生）
+16. `app/models/config.py`：`SCRIPT_REGISTRY` 注册（`TYPE_BOOK` 自动派生）
 17. `yarn openapi` → 确认 `openapi.json` 含新类型
 
 ### 阶段 4：任务模块

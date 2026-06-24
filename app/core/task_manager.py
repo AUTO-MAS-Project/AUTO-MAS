@@ -24,17 +24,9 @@ import uuid
 import asyncio
 from typing import Dict, Literal
 
-from .config import (
-    Config,
-    MaaConfig,
-    SrcConfig,
-    GeneralConfig,
-    MaaEndConfig,
-    M9AConfig,
-    OkwwConfig,
-    HSRConfig,
-)
+from .config import Config
 from app.services import System
+from app.models.config import SCRIPT_REGISTRY
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
 from app.utils import get_logger
 from app.task import (
@@ -47,6 +39,18 @@ from app.task import (
     HSRManager,
 )
 from app.utils.constants import POWER_SIGN_MAP
+
+# ── Manager 分发：遵循 XxxConfig → XxxManager 命名约定，从 SCRIPT_REGISTRY 自动派生 ──
+_MANAGER_BY_NAME = {
+    cls.__name__: cls
+    for cls in (MaaManager, SrcManager, GeneralManager, MaaEndManager,
+                M9AManager, OkwwManager, HSRManager)
+}
+_SCRIPT_MANAGER_MAP: dict[type, type] = {}
+for _ad in SCRIPT_REGISTRY.values():
+    _name = _ad.config.__name__.replace("Config", "Manager")
+    if _name in _MANAGER_BY_NAME:
+        _SCRIPT_MANAGER_MAP[_ad.config] = _MANAGER_BY_NAME[_name]
 
 
 logger = get_logger("业务调度")
@@ -168,21 +172,10 @@ class Task(TaskExecuteBase):
             script_item.status = "运行"
             logger.info(f"任务开始: {current_script_uid}")
 
-            if isinstance(Config.ScriptConfig[current_script_uid], MaaConfig):
-                task_item = MaaManager(script_item)
-            elif isinstance(Config.ScriptConfig[current_script_uid], SrcConfig):
-                task_item = SrcManager(script_item)
-            elif isinstance(Config.ScriptConfig[current_script_uid], GeneralConfig):
-                task_item = GeneralManager(script_item)
-            elif isinstance(Config.ScriptConfig[current_script_uid], OkwwConfig):
-                task_item = OkwwManager(script_item)
-            elif isinstance(Config.ScriptConfig[current_script_uid], MaaEndConfig):
-                task_item = MaaEndManager(script_item)
-            elif isinstance(Config.ScriptConfig[current_script_uid], M9AConfig):
-                task_item = M9AManager(script_item)
-            elif isinstance(Config.ScriptConfig[current_script_uid], HSRConfig):
-                task_item = HSRManager(script_item)
-            else:
+            manager_cls = _SCRIPT_MANAGER_MAP.get(
+                type(Config.ScriptConfig[current_script_uid])
+            )
+            if manager_cls is None:
                 logger.error(
                     f"不支持的脚本类型: {type(Config.ScriptConfig[current_script_uid]).__name__}"
                 )
@@ -192,6 +185,7 @@ class Task(TaskExecuteBase):
                     data={"Error": "脚本类型不支持"},
                 )
                 continue
+            task_item = manager_cls(script_item)
 
             # 运行任务
             await self.spawn(task_item)

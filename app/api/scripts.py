@@ -29,6 +29,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Body
 
 from app.core import Config
+from app.models.config import SCRIPT_REGISTRY
 from app.models.schema import *
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
@@ -49,24 +50,18 @@ def _okww_config_file_path(config_dir: Path, filename: str) -> Path:
     return config_dir / filename
 
 
-SCRIPT_BOOK = {
-    "MaaConfig": MaaConfig,
-    "SrcConfig": SrcConfig,
-    "MaaEndConfig": MaaEndConfig,
-    "M9AConfig": M9AConfig,
-    "GeneralConfig": GeneralConfig,
-    "OkwwConfig": OkwwConfig,
-    "HSRConfig": HSRConfig,
-}
-USER_BOOK = {
-    "MaaConfig": MaaUserConfig,
-    "SrcConfig": SrcUserConfig,
-    "MaaEndConfig": MaaEndUserConfig,
-    "M9AConfig": M9AUserConfig,
-    "GeneralConfig": GeneralUserConfig,
-    "OkwwConfig": OkwwUserConfig,
-    "HSRConfig": HSRUserConfig,
-}
+# 从 SCRIPT_REGISTRY 自动派生 —— 键为 ConfigBase.__name__，值为对应 schema.py Pydantic 类
+def _pick_schema(name: str) -> type:
+    cls = globals().get(name)
+    if cls is None:
+        raise ImportError(f"schema.py 缺少 {name}（需与 config.py 同名）")
+    return cls
+
+_SCRIPTS_REG = SCRIPT_REGISTRY  # 别名避免与 schema 中的同名符号冲突
+SCRIPT_BOOK = {v.config.__name__: _pick_schema(v.config.__name__)
+               for v in _SCRIPTS_REG.values()}
+USER_BOOK = {v.config.__name__: _pick_schema(v.user_config.__name__)
+             for v in _SCRIPTS_REG.values() if v.user_config is not None}
 
 
 @router.post(

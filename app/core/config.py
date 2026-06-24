@@ -58,6 +58,8 @@ from app.models.config import (
     OkwwUserConfig,
     GlobalConfig,
     CLASS_BOOK,
+    SCRIPT_USER_CONFIG_MAP,
+    TYPE_BOOK,
     Webhook,
     TimeSet,
     EmulatorConfig,
@@ -68,7 +70,6 @@ from app.utils.constants import (
     UTC8,
     RESOURCE_STAGE_INFO,
     RESOURCE_STAGE_DROP_INFO,
-    TYPE_BOOK,
     RESOURCE_STAGE_DATE_TEXT,
 )
 from app.utils import get_logger
@@ -532,7 +533,7 @@ class AppConfig(GlobalConfig):
 
     async def add_script(
         self,
-        script: Literal["MAA", "SRC", "General", "MaaEnd", "M9A", "Okww", "HSR"],
+        script: str,
         script_id: str | None = None,
     ) -> tuple[
         uuid.UUID,
@@ -830,23 +831,11 @@ class AppConfig(GlobalConfig):
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
 
-        # 根据脚本类型选择添加对应用户配置
-        if isinstance(script_config, MaaConfig):
-            uid, config = await script_config.UserData.add(MaaUserConfig)
-        elif isinstance(script_config, SrcConfig):
-            uid, config = await script_config.UserData.add(SrcUserConfig)
-        elif isinstance(script_config, GeneralConfig):
-            uid, config = await script_config.UserData.add(GeneralUserConfig)
-        elif isinstance(script_config, OkwwConfig):
-            uid, config = await script_config.UserData.add(OkwwUserConfig)
-        elif isinstance(script_config, MaaEndConfig):
-            uid, config = await script_config.UserData.add(MaaEndUserConfig)
-        elif isinstance(script_config, M9AConfig):
-            uid, config = await script_config.UserData.add(M9AUserConfig)
-        elif isinstance(script_config, HSRConfig):
-            uid, config = await script_config.UserData.add(HSRUserConfig)
-        else:
+        # 根据脚本类型分发（从 SCRIPT_REGISTRY 自动派生）
+        user_cls = SCRIPT_USER_CONFIG_MAP.get(type(script_config))
+        if user_cls is None:
             raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
+        uid, config = await script_config.UserData.add(user_cls)
 
         return uid, config
 

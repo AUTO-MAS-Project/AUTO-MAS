@@ -35,17 +35,7 @@ UTC4 = timezone(timedelta(hours=4))
 UTC8 = timezone(timedelta(hours=8))
 """东8区时区对象"""
 
-TYPE_BOOK = {
-    "MaaConfig": "MAA",
-    "SrcConfig": "SRC",
-    "MaaEndConfig": "MaaEnd",
-    "GeneralConfig": "通用",
-    "OkwwConfig": "ok-ww",
-    "M9AConfig": "M9A",
-    "M9AUserConfig": "M9A",
-    "HSRConfig": "HSR",
-}
-"""配置类型映射表"""
+# ── TYPE_BOOK 已迁移至 app.models.config（从 SCRIPT_REGISTRY 自动派生）──
 
 MAA_RUN_MOOD_BOOK = {"Annihilation": "剿灭", "Routine": "日常"}
 """MAA运行模式映射表"""

@@ -24,7 +24,7 @@ import json
 import calendar
 from pathlib import Path
 from datetime import datetime
-from typing import Callable
+from typing import Callable, NamedTuple
 
 from app.utils.constants import (
     UTC4,
@@ -2814,21 +2814,15 @@ class GlobalConfig(ConfigBase):
         self.EmulatorConfig = MultipleConfig([EmulatorConfig])
         ## 计划表配置列表
         self.PlanConfig = MultipleConfig([MaaPlanConfig])
-        ## 脚本配置列表
-        self.ScriptConfig = MultipleConfig(
-            [MaaConfig, MaaEndConfig, SrcConfig, M9AConfig, GeneralConfig, OkwwConfig, HSRConfig]
-        )
+        ## 脚本配置列表（从 SCRIPT_REGISTRY 自动派生）
+        self.ScriptConfig = MultipleConfig(SCRIPT_CONFIG_CLASSES)  # type: ignore[arg-type]
         ## 队列配置列表
         self.QueueConfig = MultipleConfig([QueueConfig])
         ## 工具箱配置
         self.ToolsConfig = ToolsConfig()
 
-        MaaConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
-        MaaEndConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
-        SrcConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
-        M9AConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
-        GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
-        OkwwConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
+        for cls in SCRIPT_CONFIG_CLASSES:
+            cls.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
 
@@ -2895,14 +2889,40 @@ class GlobalConfig(ConfigBase):
         return json.dumps(stage_data, ensure_ascii=False)
 
 
-CLASS_BOOK = {
-    "MAA": MaaConfig,
-    "MaaPlan": MaaPlanConfig,
-    "SRC": SrcConfig,
-    "MaaEnd": MaaEndConfig,
-    "M9A": M9AConfig,
-    "General": GeneralConfig,
-    "Okww": OkwwConfig,
-    "HSR": HSRConfig,
+# ═══════════════════════════════════════════════════════════════════════════
+# 脚本专项注册表（唯一真源）
+# 新增脚本适配时只需在此加一行，其余 CLASS_BOOK / SCRIPT_BOOK / USER_BOOK /
+# MultipleConfig 列表 / display 名称全部自动派生。
+# ═══════════════════════════════════════════════════════════════════════════
+class _Adapter(NamedTuple):
+    config: type
+    user_config: type | None = None
+    display: str = ""
+
+SCRIPT_REGISTRY: dict[str, _Adapter] = {
+    "MAA":     _Adapter(MaaConfig,     MaaUserConfig,     "MAA计划"),
+    "SRC":     _Adapter(SrcConfig,     SrcUserConfig,     "SRC"),
+    "General": _Adapter(GeneralConfig, GeneralUserConfig, "通用脚本"),
+    "MaaEnd":  _Adapter(MaaEndConfig,  MaaEndUserConfig,  "MaaEnd"),
+    "M9A":     _Adapter(M9AConfig,     M9AUserConfig,     "M9A"),
+    "Okww":    _Adapter(OkwwConfig,    OkwwUserConfig,    "ok-ww"),
+    "HSR":     _Adapter(HSRConfig,     HSRUserConfig,     "HSR"),
 }
-"""配置类映射表"""
+
+# ── 以下全部从 SCRIPT_REGISTRY 自动派生，新增专项时无需手动修改 ──────────
+CLASS_BOOK = {k: v.config for k, v in SCRIPT_REGISTRY.items()}
+CLASS_BOOK["MaaPlan"] = MaaPlanConfig  # MAA 计划表非脚本适配器，手动追加
+
+SCRIPT_CONFIG_CLASSES = [v.config for v in SCRIPT_REGISTRY.values()]
+
+# type(config) → UserConfig class（替代 core/config.py 中的 isinstance 链）
+SCRIPT_USER_CONFIG_MAP: dict[type, type] = {
+    v.config: v.user_config
+    for v in SCRIPT_REGISTRY.values()
+    if v.user_config is not None
+}
+
+# ConfigBase.__name__ → 前端展示文案（原 constants.py TYPE_BOOK，现从注册表派生）
+TYPE_BOOK: dict[str, str] = {
+    v.config.__name__: v.display for v in SCRIPT_REGISTRY.values()
+}
