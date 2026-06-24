@@ -9,6 +9,7 @@
     :z-index="9999"
     class="update-download-modal"
     centered
+    @cancel="handleModalCancel"
   >
     <div class="download-container">
       <!-- 下载进度区域 -->
@@ -78,7 +79,7 @@
           <template #extra>
             <div class="failed-actions">
               <a-button type="primary" @click="retry"> 重试下载 </a-button>
-              <a-button @click="background">关闭</a-button>
+              <a-button @click="reset">关闭</a-button>
             </div>
           </template>
         </a-result>
@@ -119,6 +120,7 @@ const {
   cancel,
   background,
   retry,
+  reset,
   install,
   installLater,
 } = useUpdateDownload()
@@ -131,8 +133,15 @@ const confirmCancel = () => {
     cancelText: '继续下载',
     okType: 'danger',
     centered: true,
+    zIndex: 10001,
     onOk: cancel,
   })
+}
+
+const handleModalCancel = () => {
+  if (status.value === 'failed') {
+    reset()
+  }
 }
 </script>
 

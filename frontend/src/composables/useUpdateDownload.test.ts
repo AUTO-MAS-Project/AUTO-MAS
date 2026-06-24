@@ -1,14 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const downloadRequest = vi.fn()
+const installRequest = vi.fn()
 const cancelRequest = vi.fn()
 const switchRequest = vi.fn()
 const subscribe = vi.fn(() => 'update-subscription')
+const unsubscribe = vi.fn()
 
 vi.mock('@/api/services/Service', () => ({
   Service: {
     downloadUpdateApiUpdateDownloadPost: downloadRequest,
-    installUpdateApiUpdateInstallPost: vi.fn(),
+    installUpdateApiUpdateInstallPost: installRequest,
   },
 }))
 
@@ -21,6 +23,7 @@ vi.mock('@/services/updateDownloadApi', () => ({
 
 vi.mock('@/composables/useWebSocket', () => ({
   subscribe,
+  unsubscribe,
 }))
 
 vi.mock('ant-design-vue', () => ({
@@ -55,12 +58,22 @@ describe('useUpdateDownload', () => {
     vi.clearAllMocks()
     vi.useRealTimers()
     downloadRequest.mockResolvedValue({ code: 200 })
+    installRequest.mockResolvedValue({ code: 200 })
     cancelRequest.mockResolvedValue({ code: 200 })
     switchRequest.mockResolvedValue({ code: 200 })
   })
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('starts download with the requested target version', async () => {
+    const download = await loadDownload()
+
+    await download.start('v9.9.9', {})
+
+    expect(downloadRequest).toHaveBeenCalledWith('v9.9.9')
+    expect(download.status.value).toBe('downloading')
   })
 
   it('closes the modal after cancellation succeeds', async () => {
@@ -71,6 +84,7 @@ describe('useUpdateDownload', () => {
 
     expect(download.status.value).toBe('idle')
     expect(download.modalVisible.value).toBe(false)
+    expect(unsubscribe).toHaveBeenCalledWith('update-subscription')
   })
 
   it('keeps the current download when cancellation fails', async () => {
@@ -107,6 +121,18 @@ describe('useUpdateDownload', () => {
 
     expect(download.status.value).toBe('failed')
     expect(download.modalVisible.value).toBe(true)
+  })
+
+  it('clears failed state when the user closes the failed modal', async () => {
+    const download = await loadDownload()
+    await download.start('v9.9.9', {})
+    download.receiveSignal({ Failed: '下载失败' })
+
+    download.reset()
+
+    expect(download.status.value).toBe('idle')
+    expect(download.modalVisible.value).toBe(false)
+    expect(unsubscribe).toHaveBeenCalledWith('update-subscription')
   })
 
   it('moves to failed after the download timeout', async () => {

@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { Modal, message } from 'ant-design-vue'
 import { Service } from '@/api/services/Service'
-import { subscribe } from '@/composables/useWebSocket'
+import { subscribe, unsubscribe, type WebSocketBaseMessage } from '@/composables/useWebSocket'
 import { createLowSpeedDetector } from '@/composables/updateDownloadSpeed'
 import { updateDownloadApi } from '@/services/updateDownloadApi'
 
@@ -29,12 +29,6 @@ export interface UpdateDownloadSignal {
   Cancelled?: boolean
   Accomplish?: string
   Failed?: string
-}
-
-interface UpdateWebSocketMessage {
-  id: string
-  type: 'Update' | 'Signal' | string
-  data: UpdateDownloadProgress | UpdateDownloadSignal
 }
 
 const status = ref<UpdateDownloadStatus>('idle')
@@ -146,8 +140,15 @@ const startRuntimeMonitoring = () => {
   }, SUBSCRIPTION_HEALTH_CHECK_MS)
 }
 
+const clearSubscription = () => {
+  if (!subscriptionId) return
+  unsubscribe(subscriptionId)
+  subscriptionId = ''
+}
+
 const resetState = () => {
   stopRuntimeMonitoring()
+  clearSubscription()
   status.value = 'idle'
   source.value = ''
   downloadedSize.value = 0
@@ -165,10 +166,11 @@ const receiveProgress = (data: UpdateDownloadProgress) => {
 
   if (lowSpeedDetector.update(data.source, data.speed)) {
     Modal.confirm({
-      title: 'GitHub 下载速度较慢',
+      title: `${sourceLabel.value || '当前来源'}下载速度较慢`,
       content: '下载速度已连续 10 秒低于 50 KB/s，是否切换至 CNB 源并重新下载？',
       okText: '切换至 CNB 源',
       cancelText: '继续下载',
+      zIndex: 10001,
       centered: true,
       onOk: switchToCnb,
       onCancel: () => lowSpeedDetector.suppress(),
@@ -201,7 +203,7 @@ const receiveSignal = (data: UpdateDownloadSignal) => {
   }
 }
 
-function handleMessage(wsMessage: UpdateWebSocketMessage) {
+function handleMessage(wsMessage: WebSocketBaseMessage) {
   if (wsMessage.id !== 'Update') return
 
   if (wsMessage.type === 'Update') {
@@ -222,7 +224,7 @@ const start = async (version: string, data: Record<string, string[]>) => {
   ensureSubscription()
 
   try {
-    const response = await Service.downloadUpdateApiUpdateDownloadPost()
+    const response = await Service.downloadUpdateApiUpdateDownloadPost(version || undefined)
     if (response.code !== 200) {
       status.value = 'failed'
       failureReason.value = response.message || '下载请求失败'
