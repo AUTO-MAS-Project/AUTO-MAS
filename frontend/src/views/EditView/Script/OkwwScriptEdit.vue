@@ -430,7 +430,7 @@ const applyRootPathDefaults = async (rootPath: string) => {
       Info: { RootPath: norm },
     })
     if (success) {
-      message.success('ok-ww 路径已自动匹配')
+      message.success('ok-ww 根目录已保存')
     }
   } finally {
     isSaving.value = false

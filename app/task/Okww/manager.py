@@ -28,7 +28,7 @@ from app.models.config import OkwwConfig, OkwwUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.utils import get_logger, ProcessManager
 
-from .AutoProxy import AutoProxyTask
+from .AutoProxy import AutoProxyTask, _OKWW_REL_CONFIG_DIR
 
 logger = get_logger("OK-WW 调度器")
 
@@ -104,7 +104,7 @@ class OkwwManager(TaskExecuteBase):
             self.game_manager = ProcessManager()
 
         if self.task_info.mode == "AutoProxy":
-            self.script_config_path = Path(self.script_config.get("Info", "RootPath")) / "data/apps/ok-ww/working/configs"
+            self.script_config_path = Path(self.script_config.get("Info", "RootPath")) / _OKWW_REL_CONFIG_DIR
             self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
             self.temp_path.mkdir(parents=True, exist_ok=True)
             if self.script_config_path.exists():
