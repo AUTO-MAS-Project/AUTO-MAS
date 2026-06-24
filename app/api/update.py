@@ -22,7 +22,7 @@
 
 
 import asyncio
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Query
 
 from app.core import Config
 from app.services import Updater
@@ -65,9 +65,13 @@ async def check_update(version: UpdateCheckIn = Body(...)) -> UpdateCheckOut:
     response_model=OutBase,
     status_code=200,
 )
-async def download_update() -> OutBase:
+async def download_update(
+    target_version: str | None = Query(default=None, alias="version")
+) -> OutBase:
 
     try:
+        if target_version:
+            Updater.remote_version = target_version
         if not await Updater.start_download():
             return OutBase(
                 code=409,
