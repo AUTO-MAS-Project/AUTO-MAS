@@ -2468,45 +2468,15 @@ class OkwwConfig(ConfigBase):
         )
 
         ## Script ----------------------------------------------------------
-        self.Script_ScriptPath = ConfigItem(
-            "Script", "ScriptPath", "", FileValidator()
-        )
         # Okww 运行参数建议由用户配置（-t / -e 由用户配置 Task 决定），但仍保留高级参数入口
         self.Script_Arguments = ConfigItem(
             "Script", "Arguments", "", AdvancedArgumentValidator()
-        )
-        self.Script_IfTrackProcess = ConfigItem(
-            "Script", "IfTrackProcess", True, BoolValidator()
-        )
-        self.Script_TrackProcessName = ConfigItem("Script", "TrackProcessName", "")
-        self.Script_TrackProcessExe = ConfigItem("Script", "TrackProcessExe", "")
-        self.Script_TrackProcessCmdline = ConfigItem(
-            "Script", "TrackProcessCmdline", "", ArgumentValidator()
-        )
-        self.Script_ConfigPath = ConfigItem(
-            "Script", "ConfigPath", "", FileValidator()
-        )
-        self.Script_ConfigPathMode = ConfigItem(
-            "Script", "ConfigPathMode", "Folder", OptionsValidator(["File", "Folder"])
         )
         self.Script_UpdateConfigMode = ConfigItem(
             "Script",
             "UpdateConfigMode",
             "Always",
             OptionsValidator(["Never", "Success", "Failure", "Always"]),
-        )
-        self.Script_LogPath = ConfigItem(
-            "Script", "LogPath", "", FileValidator()
-        )
-        self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "")
-        self.Script_LogTimeStart = ConfigItem(
-            "Script", "LogTimeStart", 1, RangeValidator(1, 9999)
-        )
-        self.Script_LogTimeEnd = ConfigItem(
-            "Script", "LogTimeEnd", 23, RangeValidator(1, 9999)
-        )
-        self.Script_LogTimeFormat = ConfigItem(
-            "Script", "LogTimeFormat", "%Y-%m-%d %H:%M:%S,%f"
         )
 
         ## Game ------------------------------------------------------------

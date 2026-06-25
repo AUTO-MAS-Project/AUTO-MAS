@@ -30,6 +30,7 @@ from fastapi import APIRouter, Body
 
 from app.core import Config
 from app.models.schema import *
+from app.task.Okww.AutoProxy import _OKWW_REL_CONFIG_DIR
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 
@@ -713,12 +714,8 @@ async def get_okww_configs_list(script_id: str, user_id: str):
         # 详细模式：每个用户独立持有一份 OK-WW 配置。
         mas_config_dir = _okww_mas_config_dir(script_id, user_id)
 
-        # ok-ww 源配置目录（用于自动初始化）
-        raw_config_path = script_config.get("Script", "ConfigPath")
-        okww_configs_dir = Path(raw_config_path) if raw_config_path else None
-        if not okww_configs_dir or not okww_configs_dir.exists():
-            if root_path:
-                okww_configs_dir = Path(root_path) / "data" / "apps" / "ok-ww" / "working" / "configs"
+        # ok-ww 源配置目录（从 RootPath 派生，用于自动初始化）
+        okww_configs_dir = Path(root_path) / _OKWW_REL_CONFIG_DIR if root_path else None
 
         # 自动初始化：用户目录为空时从 ok-ww configs 复制默认配置
         need_init = not mas_config_dir.exists() or not any(mas_config_dir.iterdir())
