@@ -90,10 +90,10 @@
             <h3>游戏配置</h3>
           </div>
           <a-row :gutter="24" class="game-control-row">
-            <a-col :span="8">
+            <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="游戏管理总开关：关闭后 MAS 不启动也不关闭游戏；开启后可分别配置任务前启动与任务后关闭">
+                  <a-tooltip title="游戏管理总开关：关闭后 MAS 不启动也不关闭游戏；开启后可配置任务前启动（任务结束后始终关闭游戏）">
                     <span class="form-label">
                       启用游戏配置
                       <QuestionCircleOutlined class="help-icon" />
@@ -111,7 +111,7 @@
                 </a-select>
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="12">
               <a-form-item>
                 <template #label>
                   <a-tooltip title="任务开始前是否由 MAS 启动游戏并等待">
@@ -133,28 +133,6 @@
                 </a-select>
               </a-form-item>
             </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip title="任务成功结束后是否由 MAS 关闭游戏；失败重试前若需重拉游戏也会尝试关闭">
-                    <span class="form-label">
-                      任务后关闭游戏
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-select
-                  v-model:value="okwwConfig.Game.CloseOnFinish"
-                  size="large"
-                  class="modern-input"
-                  :disabled="!okwwConfig.Game.Enabled"
-                  @change="handleChange('Game', 'CloseOnFinish', $event)"
-                >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
           </a-row>
 
           <a-row :gutter="24">
@@ -163,7 +141,7 @@
                 <template #label>
                   <span class="form-label">
                     游戏根目录
-                    <span class="label-hint">选择 <strong>Wuthering Waves Game</strong>（官方）或其下 <strong>Client</strong>/<strong>Binaries</strong>/<strong>Win64</strong> 目录，自动定位 Client-Win64-Shipping.exe；WeGame 版选择 <strong>Client</strong>/<strong>Binaries</strong>/<strong>Win64</strong> 即可</span>
+                    <span class="label-hint">选任意层级目录，自动定位 <strong>Client-Win64-Shipping.exe</strong></span>
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">
@@ -322,26 +300,17 @@ const pageLoading = ref(true)
 const isSaving = ref(false)
 const isInitializing = ref(true)
 
+// ══ okww 项目结构常量（需与 app/task/Okww/AutoProxy.py 中的 _OKWW_REL_* 保持同步）══
+const OKWW_EXE_NAME = 'ok-ww.exe'
+
 interface OkwwInfoForm {
   Name: string
   RootPath: string
 }
 
 interface OkwwScriptForm {
-  ScriptPath: string
   Arguments: string
-  IfTrackProcess: boolean
-  TrackProcessName: string
-  TrackProcessExe: string
-  TrackProcessCmdline: string
-  ConfigPath: string
-  ConfigPathMode: 'File' | 'Folder'
   UpdateConfigMode: 'Never' | 'Success' | 'Failure' | 'Always'
-  LogPath: string
-  LogPathFormat: string
-  LogTimeStart: number
-  LogTimeEnd: number
-  LogTimeFormat: string
 }
 
 interface OkwwGameForm {
@@ -354,7 +323,6 @@ interface OkwwGameForm {
   Arguments: string
   WaitTime: number
   IfForceClose: boolean
-  CloseOnFinish: boolean
   EmulatorId: string
   EmulatorIndex: string
 }
@@ -385,20 +353,8 @@ const formData = reactive({
 const okwwConfig = reactive<OkwwScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
   Script: {
-    ScriptPath: '.',
     Arguments: '',
-    IfTrackProcess: true,
-    TrackProcessName: 'pythonw.exe',
-    TrackProcessExe: '',
-    TrackProcessCmdline: '',
-    ConfigPath: '.',
-    ConfigPathMode: 'Folder',
     UpdateConfigMode: 'Always',
-    LogPath: '.',
-    LogPathFormat: '',
-    LogTimeStart: 1,
-    LogTimeEnd: 23,
-    LogTimeFormat: '%Y-%m-%d %H:%M:%S,%f',
   },
   Game: {
     Enabled: false,
@@ -410,7 +366,6 @@ const okwwConfig = reactive<OkwwScriptConfigForm>({
     Arguments: '',
     WaitTime: 60,
     IfForceClose: true,
-    CloseOnFinish: true,
     EmulatorId: '-',
     EmulatorIndex: '-',
   },
@@ -461,50 +416,21 @@ const handleChange = async (category: string, key: string, value: unknown) => {
   }
 }
 
-const buildAutoPaths = (rootPath: string) => {
-  const norm = rootPath.replace(/\\/g, '/').replace(/\/+$/g, '')
-  return {
-    rootPath: norm,
-    scriptPath: `${norm}/ok-ww.exe`,
-    configPath: `${norm}/data/apps/ok-ww/working/configs`,
-    logPath: `${norm}/data/apps/ok-ww/working/logs/ok-script.log`,
-    trackProcessExe: `${norm}/data/apps/ok-ww/python/pythonw.exe`,
-  }
-}
-
 const applyRootPathDefaults = async (rootPath: string) => {
   if (!rootPath || rootPath === '.') {
     message.warning('请先选择脚本根目录')
     return
   }
-  const { rootPath: norm, scriptPath, configPath, logPath, trackProcessExe } = buildAutoPaths(rootPath)
+  const norm = rootPath.replace(/\\/g, '/').replace(/\/+$/g, '')
   okwwConfig.Info.RootPath = norm
-  okwwConfig.Script.ScriptPath = scriptPath
-  okwwConfig.Script.ConfigPath = configPath
-  okwwConfig.Script.LogPath = logPath
-  okwwConfig.Script.TrackProcessName = 'pythonw.exe'
-  okwwConfig.Script.TrackProcessExe = trackProcessExe
-  okwwConfig.Script.TrackProcessCmdline = ''
 
   isSaving.value = true
   try {
     const success = await updateScript(scriptId, {
       Info: { RootPath: norm },
-      Script: {
-        ScriptPath: scriptPath,
-        ConfigPathMode: 'Folder',
-        ConfigPath: configPath,
-        UpdateConfigMode: 'Always',
-        LogPath: logPath,
-        LogPathFormat: '',
-        IfTrackProcess: true,
-        TrackProcessName: 'pythonw.exe',
-        TrackProcessExe: trackProcessExe,
-        TrackProcessCmdline: '',
-      },
     })
     if (success) {
-      message.success('ok-ww 路径已自动匹配')
+      message.success('ok-ww 根目录已保存')
     }
   } finally {
     isSaving.value = false
@@ -544,9 +470,12 @@ const selectRootPath = async () => {
   const picked = await window.electronAPI.selectFolder()
   if (!picked) return
   const normalized = picked.replace(/\\/g, '/')
-  const exePath = normalized + '/ok-ww.exe'
+  const exePath = normalized + '/' + OKWW_EXE_NAME
   if (!(await window.electronAPI.fileExists(exePath))) {
-    showPathRejectModal('所选目录无效', '所选目录下未找到 ok-ww.exe，请选择包含 ok-ww.exe 的 OK-WW 脚本根目录。')
+    showPathRejectModal(
+      '所选目录无效',
+      `所选目录下未找到 ${OKWW_EXE_NAME}，请选择包含 ${OKWW_EXE_NAME} 的 OK-WW 脚本根目录。`
+    )
     return
   }
   formData.path = normalized

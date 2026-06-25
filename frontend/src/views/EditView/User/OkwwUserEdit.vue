@@ -175,6 +175,12 @@
             </a-form-item>
           </div>
 
+        </a-form>
+      </a-card>
+
+      <!-- OK-WW 配置编辑器 -->
+      <a-card class="config-card" style="margin-top: 24px">
+        <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
               <h3>任务配置</h3>
@@ -213,19 +219,20 @@
               </a-col>
             </a-row>
           </div>
-
-          <ExtraScriptSection :form-data="formData" :loading="pageLoading" @save="saveField" />
         </a-form>
-      </a-card>
 
-      <!-- OK-WW 配置编辑器 -->
-      <a-card class="config-card" style="margin-top: 24px">
         <OkwwConfigEditor
           v-if="userId"
           :script-id="scriptId"
           :user-id="userId"
           @saved="handleConfigSaved"
         />
+      </a-card>
+
+      <a-card class="config-card" style="margin-top: 24px">
+        <a-form :model="formData" layout="vertical" class="config-form">
+          <ExtraScriptSection :form-data="formData" :loading="pageLoading" @save="saveField" />
+        </a-form>
       </a-card>
 
       <a-card class="config-card" style="margin-top: 24px">
