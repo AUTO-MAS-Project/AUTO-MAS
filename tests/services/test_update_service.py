@@ -60,7 +60,7 @@ class UpdateHandlerTest(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(asyncio.CancelledError):
                 await handler.download_update()
 
-    async def test_progress_message_contains_selected_source(self):
+    async def test_get_download_source_returns_selected_source(self):
         handler = _UpdateHandler()
         handler.remote_version = "v9.9.9"
         with patch.object(

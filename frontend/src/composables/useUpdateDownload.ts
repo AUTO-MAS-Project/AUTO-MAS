@@ -218,8 +218,6 @@ const start = async (version: string, data: Record<string, string[]>) => {
   resetState()
   latestVersion.value = version
   updateData.value = data
-  status.value = 'downloading'
-  modalVisible.value = true
 
   ensureSubscription()
 
@@ -230,6 +228,8 @@ const start = async (version: string, data: Record<string, string[]>) => {
       failureReason.value = response.message || '下载请求失败'
       return
     }
+    status.value = 'downloading'
+    modalVisible.value = true
     startRuntimeMonitoring()
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
@@ -238,7 +238,6 @@ const start = async (version: string, data: Record<string, string[]>) => {
     failureReason.value = '网络请求失败，请检查网络连接'
   }
 }
-
 const cancel = async () => {
   if (status.value !== 'downloading') return
 

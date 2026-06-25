@@ -142,7 +142,6 @@ class _UpdateHandler:
                 temp_file.unlink()
         except OSError as error:
             logger.exception(f"清理更新下载临时文件失败: {error}")
-            raise RuntimeError(f"清理更新下载临时文件失败: {error}") from error
         finally:
             if not self.is_switching_source:
                 self.is_locked = False
