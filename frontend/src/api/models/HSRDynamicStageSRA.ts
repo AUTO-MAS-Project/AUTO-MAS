@@ -12,3 +12,4 @@ export type HSRDynamicStageSRA = {
      */
     level?: (number | null);
 };
+

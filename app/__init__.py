@@ -27,4 +27,8 @@ from .models import *
 from .services import *
 from .utils import *
 
-__all__ = ["api", "core", "models", "services", "utils"]
+from importlib import import_module as _import_module
+
+task = _import_module(".task", __name__)
+
+__all__ = ["api", "core", "models", "services", "task", "utils"]

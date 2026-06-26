@@ -16,3 +16,4 @@ export type HSRConfig_Game = {
      */
     WaitTime?: (number | null);
 };
+
