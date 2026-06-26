@@ -351,10 +351,10 @@ class AutoProxyTask(TaskExecuteBase):
             if self.cur_user_log.status == "Success!":
                 self.run_book = True
                 self.script_info.log = (
-                    "检测到 OK-WW 已完成任务\n正在等待相关进程结束"
+                    "检测到 OK-WW 已完成任务\n正在等待 OK-WW 自行退出"
                 )
-                # 成功时先只结束 ok-ww；关游戏统一在 final_task 处理
-                await self._kill_okww_process()
+                # 等待 OK-WW 自然退出（-e 标志使其任务完成后自行关闭游戏并退出）
+                await self._wait_okww_exit(timeout=30)
                 await self.update_config()
                 if self.cur_user_config.get("Info", "IfScriptAfterTask"):
                     await execute_script_task(
@@ -519,6 +519,17 @@ class AutoProxyTask(TaskExecuteBase):
                 )
         except Exception:
             pass
+
+    async def _wait_okww_exit(self, *, timeout: int = 30) -> None:
+        """等待 OK-WW 自然退出（-e 触发），超时后兜底强杀。"""
+        deadline = datetime.now() + timedelta(seconds=timeout)
+        while datetime.now() < deadline:
+            if not await self.okww_process_manager.is_running():
+                logger.info("OK-WW 已自行退出")
+                return
+            await asyncio.sleep(1)
+        logger.warning(f"OK-WW 未在 {timeout}s 内自行退出，兜底强杀")
+        await self._kill_okww_process()
 
     async def _kill_okww_process(self) -> None:
         try:
