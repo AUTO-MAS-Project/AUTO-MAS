@@ -51,8 +51,6 @@ _OKWW_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
     ("info_set 错误", "OK-WW 流程产生错误，请检查游戏状态"),
 )
 
-_OKWW_BUILTIN_SUCCESS: tuple[str, ...] = ("任务执行完成", "task completed")
-
 # ok-ww 项目结构固定相对路径（从 RootPath 派生，不依赖用户存储值）
 # ⚠️ 与前端 OkwwScriptEdit.vue 的 OKWW_EXE_NAME 保持同步，改这里时需同步改前端
 _OKWW_REL_EXE = "ok-ww.exe"
@@ -69,10 +67,6 @@ def _split_args(raw: object) -> list[str]:
     value = str(raw or "").strip()
     return shlex.split(value, posix=False) if value else []
 
-
-def _okww_log_indicates_success(log: str) -> bool:
-    normalized_log = log.lower()
-    return any(needle in normalized_log for needle in _OKWW_BUILTIN_SUCCESS)
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -118,7 +112,6 @@ class AutoProxyTask(TaskExecuteBase):
 
         if (
             self.script_config.get("Game", "Enabled")
-            and self.script_config.get("Game", "Type") == "Client"
             and not Path(self.script_config.get("Game", "Path")).is_file()
         ):
             return "请设置鸣潮游戏路径"
@@ -151,7 +144,6 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
         self.script_log_path = self.script_root_path / _OKWW_REL_LOG_FILE
-        self.log_format = self.script_log_path.name
 
         self.log_time_range = (_OKWW_LOG_TIME_START - 1, _OKWW_LOG_TIME_END)
         self.log_time_format = _OKWW_LOG_TIME_FORMAT
@@ -162,19 +154,10 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
         self.task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
-        self.exit_on_finish = bool(self.cur_user_config.get("Task", "ExitOnFinish"))
-
-        extra_args = _split_args(self.script_config.get("Script", "Arguments"))
-
-        self.okww_args = ["-t", str(self.task_index)]
-        if self.exit_on_finish:
-            self.okww_args.append("-e")
-        self.okww_args.extend(extra_args)
+        self.okww_args = ["-t", str(self.task_index), "-e"]
 
         # 游戏配置（对齐通用脚本逻辑）
         self.game_path = Path(self.script_config.get("Game", "Path"))
-        self.game_url = self.script_config.get("Game", "URL")
-        self.game_process_name = self.script_config.get("Game", "ProcessName")
         self.script_config_path = self.script_root_path / _OKWW_REL_CONFIG_DIR
 
         self.run_book = False
@@ -218,11 +201,12 @@ class AutoProxyTask(TaskExecuteBase):
 
         game_args = str(self.script_config.get("Game", "Arguments") or "").strip()
         game_enabled = bool(self.script_config.get("Game", "Enabled"))
+        always = "是（始终）" if game_enabled else "不启用"
         return [
             f"[游戏配置] 用户: {self.cur_user_item.name}",
             f"  启用游戏配置: {_yes_no(game_enabled)}",
-            f"  任务前启动游戏: {_yes_no(bool(self.script_config.get('Game', 'LaunchBeforeTask')))}",
-            f"  任务后关闭游戏: {'是（始终）' if game_enabled else '不启用'}",
+            f"  任务前启动游戏: {always}",
+            f"  任务后关闭游戏: {always}",
             f"  启动参数: {game_args or '（无）'}",
         ]
 
@@ -242,10 +226,9 @@ class AutoProxyTask(TaskExecuteBase):
     async def _mas_launch_game_before_task(self) -> None:
         """MAS 接管启动游戏，并将各步骤写入调度台日志。"""
 
-        game_type = self.script_config.get("Game", "Type")
         await self._push_dispatch_log("正在准备由 MAS 启动游戏...")
 
-        if isinstance(self.game_manager, ProcessManager) and game_type == "Client":
+        if isinstance(self.game_manager, ProcessManager):
             await self._push_dispatch_log(
                 f"正在检查鸣潮客户端进程 ({_WUWA_CLIENT_PROCESS})..."
             )
@@ -267,16 +250,6 @@ class AutoProxyTask(TaskExecuteBase):
             )
             await asyncio.sleep(wait_time)
             await self._push_dispatch_log("游戏启动完成")
-            return
-
-        if isinstance(self.game_manager, ProcessManager) and game_type == "URL":
-            await self._push_dispatch_log("正在通过 URL 协议启动游戏...")
-            await self.game_manager.open_protocol(
-                self.game_url,
-                ProcessInfo(name=self.game_process_name or None),
-            )
-            await asyncio.sleep(2)
-            await self._push_dispatch_log("游戏启动指令已发送")
             return
 
     async def main_task(self):
@@ -308,10 +281,9 @@ class AutoProxyTask(TaskExecuteBase):
 
             await self._log_game_config_summary()
 
-            # 总开关开启且勾选「任务前启动」时由 MAS 拉起游戏
+            # 启用游戏配置时始终由 MAS 拉起游戏
             if (
                 self.script_config.get("Game", "Enabled")
-                and self.script_config.get("Game", "LaunchBeforeTask")
                 and self.game_manager is not None
             ):
                 try:
@@ -326,7 +298,7 @@ class AutoProxyTask(TaskExecuteBase):
                         data={"Error": f"游戏启动失败: {e}"},
                     )
                     await self.kill_managed_process(
-                        kill_game=self._mas_should_close_game()
+                        kill_game=self._game_management_enabled()
                     )
                     try:
                         await Notify.push_plyer(
@@ -348,8 +320,7 @@ class AutoProxyTask(TaskExecuteBase):
 
             await self.set_okww()
             await self._push_dispatch_log(
-                f"启动 OK-WW: -t {self.task_index}"
-                + (" -e" if self.exit_on_finish else "")
+                f"启动 OK-WW: -t {self.task_index} -e"
             )
             logger.info(
                 f"启动 OK-WW 进程: {self.script_exe_path} {' '.join(self.okww_args)}"
@@ -364,7 +335,7 @@ class AutoProxyTask(TaskExecuteBase):
             # 启动日志监控（文件日志）
             await asyncio.sleep(1)
             await self.log_monitor.start_monitor_file(
-                self._resolve_log_path(), self.log_start_time
+                self.script_log_path, self.log_start_time
             )
 
             self.wait_event.clear()
@@ -374,15 +345,11 @@ class AutoProxyTask(TaskExecuteBase):
             if self.cur_user_log.status == "Success!":
                 self.run_book = True
                 self.script_info.log = (
-                    "检测到 OK-WW 已完成任务\n正在等待相关进程结束"
+                    "检测到 OK-WW 已完成任务\n正在等待 OK-WW 自行退出"
                 )
-                # 成功时先只结束 ok-ww；关游戏统一在 final_task 处理
-                await self._kill_okww_process()
-                if self.script_config.get("Script", "UpdateConfigMode") in (
-                    "Success",
-                    "Always",
-                ):
-                    await self.update_config()
+                # 等待 OK-WW 自然退出（-e 标志使其任务完成后自行关闭游戏并退出）
+                await self._wait_okww_exit(timeout=30)
+                await self.update_config()
                 if self.cur_user_config.get("Info", "IfScriptAfterTask"):
                     await execute_script_task(
                         Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
@@ -398,7 +365,7 @@ class AutoProxyTask(TaskExecuteBase):
                 f"{self.cur_user_log.status}\n正在中止相关程序"
             )
             await self.kill_managed_process(
-                kill_game=self._mas_should_close_game()
+                kill_game=self._game_management_enabled()
             )
             try:
                 await Notify.push_plyer(
@@ -409,11 +376,7 @@ class AutoProxyTask(TaskExecuteBase):
                 )
             except Exception:
                 pass
-            if self.script_config.get("Script", "UpdateConfigMode") in (
-                "Failure",
-                "Always",
-            ):
-                await self.update_config()
+            await self.update_config()
             if self.cur_user_config.get("Info", "IfScriptAfterTask"):
                 await execute_script_task(
                     Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
@@ -428,22 +391,9 @@ class AutoProxyTask(TaskExecuteBase):
     def _game_management_enabled(self) -> bool:
         return bool(self.script_config.get("Game", "Enabled"))
 
-    def _mas_should_close_game(self) -> bool:
-        """Game.Enabled 开启时结束游戏（任务结束/失败重试统一入口）"""
-        return self._game_management_enabled()
-
-    def _resolve_log_path(self) -> Path:
-        # 若用户给了带日期模板的日志路径，则按启动时间格式化文件名
-        if self.log_format and self.script_log_path.name != self.log_format:
-            try:
-                filename = self.log_start_time.strftime(self.log_format)
-                return self.script_log_path.with_name(filename)
-            except Exception:
-                return self.script_log_path
-        return self.script_log_path
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
-        """与 MaaEnd 类似：内置失败；成功；进程结束；超时；否则为运行中。"""
+        """失败靠内置日志关键词；成功靠进程窗口关闭（-e 自然退出）。"""
         log = "".join(log_content)
         self.cur_user_log.content = log_content
         self.script_info.log = log[-4000:] if len(log) > 4000 else log
@@ -457,12 +407,9 @@ class AutoProxyTask(TaskExecuteBase):
                 user_item_status = "异常"
                 break
         else:
-            if _okww_log_indicates_success(log):
+            if not await self.okww_process_manager.is_running():
                 log_status = "Success!"
                 user_item_status = "完成"
-            elif not await self.okww_process_manager.is_running():
-                log_status = "OK-WW 在完成任务前退出"
-                user_item_status = "异常"
             elif datetime.now() - latest_time > timedelta(
                 minutes=self.script_config.get("Run", "RunTimeLimit")
             ):
@@ -544,7 +491,7 @@ class AutoProxyTask(TaskExecuteBase):
             data={"Error": f"OK-WW 自动代理任务出现异常: {e}"},
         )
         await self.kill_managed_process(
-            kill_game=self._mas_should_close_game()
+            kill_game=self._game_management_enabled()
         )
         await self._persist_user_run_result()
 
@@ -564,6 +511,17 @@ class AutoProxyTask(TaskExecuteBase):
         except Exception:
             pass
 
+    async def _wait_okww_exit(self, *, timeout: int = 30) -> None:
+        """等待 OK-WW 自然退出（-e 触发），超时后兜底强杀。"""
+        deadline = datetime.now() + timedelta(seconds=timeout)
+        while datetime.now() < deadline:
+            if not await self.okww_process_manager.is_running():
+                logger.info("OK-WW 已自行退出")
+                return
+            await asyncio.sleep(1)
+        logger.warning(f"OK-WW 未在 {timeout}s 内自行退出，兜底强杀")
+        await self._kill_okww_process()
+
     async def _kill_okww_process(self) -> None:
         try:
             await self.okww_process_manager.kill()
@@ -580,15 +538,12 @@ class AutoProxyTask(TaskExecuteBase):
             logger.exception(f"中止 OK-WW 追踪进程失败: {e}")
 
     async def _kill_game_process(self) -> None:
-        """结束游戏：不依赖 LaunchBeforeTask（可自行开游戏，任务结束/失败重试时触发）"""
-        game_type = self.script_config.get("Game", "Type")
+        """结束游戏：任务结束/失败/异常时始终触发（由 Game.Enabled 总开关控制）"""
         try:
             if isinstance(self.game_manager, ProcessManager):
                 await self.game_manager.kill()
-            if game_type == "Client":
-                gp = self.game_path
-                if gp.is_file():
-                    await System.kill_process(gp)
+            if self.game_path.is_file():
+                await System.kill_process(self.game_path)
         except Exception as e:
             logger.exception(f"关闭游戏进程失败: {e}")
 

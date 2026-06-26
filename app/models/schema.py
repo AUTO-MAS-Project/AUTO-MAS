@@ -516,7 +516,6 @@ class GeneralUserConfig(BaseModel):
 
 class OkwwUserConfig_Task(BaseModel):
     TaskIndex: Optional[int] = Field(default=None, description="启动后执行第 N 个任务（-t N，从 1 开始）")
-    ExitOnFinish: Optional[bool] = Field(default=None, description="任务结束后退出（-e）")
 
 
 class OkwwUserConfig_Info(GeneralUserConfig_Info):
@@ -626,24 +625,19 @@ class OkwwConfig_Info(GeneralConfig_Info):
 class OkwwConfig_Script(BaseModel):
     """OK-WW 脚本配置（路径/进程/日志等由 RootPath 派生，不暴露为可配置字段）"""
 
-    Arguments: Optional[str] = Field(default=None, description="脚本启动附加命令参数")
-    UpdateConfigMode: Optional[Literal["Never", "Success", "Failure", "Always"]] = (
-        Field(
-            default=None,
-            description="更新配置时机, 从不, 仅成功时, 仅失败时, 任务结束时",
-        )
-    )
 
-
-class OkwwConfig_Game(GeneralConfig_Game):
+class OkwwConfig_Game(BaseModel):
     """OK-WW 游戏配置（复用通用字段）"""
 
-    Type: Optional[Literal["Client", "URL"]] = Field(
-        default=None, description="类型: PC端, URL协议"
+    Enabled: Optional[bool] = Field(
+        default=None, description="游戏相关功能是否启用"
     )
     LaunchBeforeTask: Optional[bool] = Field(
         default=None, description="任务开始前是否由 MAS 启动游戏"
     )
+    Path: Optional[str] = Field(default=None, description="游戏程序路径")
+    Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
+    WaitTime: Optional[int] = Field(default=None, description="游戏等待启动时间")
 
 
 class OkwwConfig_Run(GeneralConfig_Run):
