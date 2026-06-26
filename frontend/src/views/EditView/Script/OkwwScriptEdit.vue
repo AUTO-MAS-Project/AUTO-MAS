@@ -93,7 +93,7 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="游戏管理总开关：开启后 MAS 在任务前始终启动游戏，任务结束后始终关闭游戏">
+                  <a-tooltip title="开启后由 MAS 接管游戏启停">
                     <span class="form-label">
                       启用游戏配置
                       <QuestionCircleOutlined class="help-icon" />
