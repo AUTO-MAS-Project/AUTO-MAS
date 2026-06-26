@@ -289,7 +289,6 @@ interface OkwwInfoForm {
 
 interface OkwwGameForm {
   Enabled: boolean
-  LaunchBeforeTask: boolean
   Path: string
   Arguments: string
   WaitTime: number
@@ -323,7 +322,6 @@ const okwwConfig = reactive<OkwwScriptConfigForm>({
   Script: {},
   Game: {
     Enabled: false,
-    LaunchBeforeTask: false,
     Path: '.',
     Arguments: '',
     WaitTime: 60,
