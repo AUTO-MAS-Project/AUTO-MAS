@@ -31,6 +31,7 @@ from .config import (
     GeneralConfig,
     MaaEndConfig,
     M9AConfig,
+    MaaFWConfig,
     OkwwConfig,
     HSRConfig,
 )
@@ -43,6 +44,7 @@ from app.task import (
     GeneralManager,
     MaaEndManager,
     M9AManager,
+    MaaFWManager,
     OkwwManager,
     HSRManager,
 )
@@ -55,17 +57,32 @@ logger = get_logger("业务调度")
 class TaskInfo(TaskItem):
 
     async def on_change(self):
+        object.__setattr__(self, "_change_dirty", True)
+        if getattr(self, "_change_pending", False):
+            return
+
+        object.__setattr__(self, "_change_pending", True)
+        try:
+            await asyncio.sleep(0.1)
+            while getattr(self, "_change_dirty", False):
+                object.__setattr__(self, "_change_dirty", False)
+                await self._send_change()
+                if getattr(self, "_change_dirty", False):
+                    await asyncio.sleep(0.1)
+        finally:
+            object.__setattr__(self, "_change_pending", False)
+            if getattr(self, "_change_dirty", False):
+                asyncio.create_task(self.on_change())
+
+    async def _send_change(self):
+        data = {"task_info": self.asdict}
+        if self.current_index != -1:
+            data["log"] = self.script_list[self.current_index].log
         await Config.send_websocket_message(
             id=self.task_id,
             type="Update",
-            data={"task_info": self.asdict},
+            data=data,
         )
-        if self.current_index != -1:
-            await Config.send_websocket_message(
-                id=self.task_id,
-                type="Update",
-                data={"log": self.script_list[self.current_index].log},
-            )
 
 
 class Task(TaskExecuteBase):
@@ -180,6 +197,8 @@ class Task(TaskExecuteBase):
                 task_item = MaaEndManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], M9AConfig):
                 task_item = M9AManager(script_item)
+            elif isinstance(Config.ScriptConfig[current_script_uid], MaaFWConfig):
+                task_item = MaaFWManager(script_item)
             elif isinstance(Config.ScriptConfig[current_script_uid], HSRConfig):
                 task_item = HSRManager(script_item)
             else:

@@ -5,12 +5,15 @@ import {
   type MaaConfig,
   type MaaEndConfig,
   type M9AConfig,
+  type MaaFWConfig,
   type OkwwConfig,
+  ScriptIndexItem,
   type SrcConfig,
   type HSRConfig,
   type HSRStageOptionsData,
   ScriptCreateIn,
   type ScriptReorderIn,
+  UserIndexItem,
   HsrService,
   Service,
 } from '@/api'
@@ -26,6 +29,7 @@ type ScriptListConfig =
   | SrcConfig
   | MaaEndConfig
   | M9AConfig
+  | MaaFWConfig
   | HSRConfig
 
 type HSRStageEngine = 'M7A' | 'SRA'
@@ -35,18 +39,20 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   SRC: ScriptCreateIn.type.SRC,
   MaaEnd: ScriptCreateIn.type.MAA_END,
   M9A: ScriptCreateIn.type.M9A,
+  MaaFW: ScriptCreateIn.type.MAA_FW,
   Okww: ScriptCreateIn.type.OKWW,
   HSR: ScriptCreateIn.type.HSR,
   General: ScriptCreateIn.type.GENERAL,
 }
 
 const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
-  MaaConfig: 'MAA',
-  SrcConfig: 'SRC',
-  OkwwConfig: 'Okww',
-  MaaEndConfig: 'MaaEnd',
-  M9AConfig: 'M9A',
-  HSRConfig: 'HSR',
+  [ScriptIndexItem.type.MAA_CONFIG]: 'MAA',
+  [ScriptIndexItem.type.SRC_CONFIG]: 'SRC',
+  [ScriptIndexItem.type.OKWW_CONFIG]: 'Okww',
+  [ScriptIndexItem.type.MAA_END_CONFIG]: 'MaaEnd',
+  [ScriptIndexItem.type.M9ACONFIG]: 'M9A',
+  [ScriptIndexItem.type.MAA_FWCONFIG]: 'MaaFW',
+  [ScriptIndexItem.type.HSRCONFIG]: 'HSR',
 }
 
 const resolveScriptType = (configType: string): ScriptType => {
@@ -908,6 +914,139 @@ export function useScriptApi() {
                             : false,
                       },
                     }
+                  } else if (userIndex.type === UserIndexItem.type.MAA_FWUSER_CONFIG && userData) {
+                    const maafwUserData = userData as any
+                    return {
+                      id: userIndex.uid,
+                      name: maafwUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name:
+                          maafwUserData.Info?.Name !== undefined
+                            ? maafwUserData.Info.Name
+                            : `用户${userIndex.uid}`,
+                        Status:
+                          maafwUserData.Info?.Status !== undefined
+                            ? maafwUserData.Info.Status
+                            : true,
+                        RemainedDay:
+                          maafwUserData.Info?.RemainedDay !== undefined
+                            ? maafwUserData.Info.RemainedDay
+                            : -1,
+                        IfScriptBeforeTask:
+                          maafwUserData.Info?.IfScriptBeforeTask !== undefined
+                            ? maafwUserData.Info.IfScriptBeforeTask
+                            : false,
+                        ScriptBeforeTask:
+                          maafwUserData.Info?.ScriptBeforeTask !== undefined
+                            ? maafwUserData.Info.ScriptBeforeTask
+                            : '',
+                        IfScriptAfterTask:
+                          maafwUserData.Info?.IfScriptAfterTask !== undefined
+                            ? maafwUserData.Info.IfScriptAfterTask
+                            : false,
+                        ScriptAfterTask:
+                          maafwUserData.Info?.ScriptAfterTask !== undefined
+                            ? maafwUserData.Info.ScriptAfterTask
+                            : '',
+                        Notes:
+                          maafwUserData.Info?.Notes !== undefined ? maafwUserData.Info.Notes : '',
+                        Tag: maafwUserData.Info?.Tag !== undefined ? maafwUserData.Info.Tag : null,
+                        Controller:
+                          maafwUserData.Info?.Controller !== undefined
+                            ? maafwUserData.Info.Controller
+                            : '',
+                        Resource:
+                          maafwUserData.Info?.Resource !== undefined
+                            ? maafwUserData.Info.Resource
+                            : '',
+                        Account:
+                          maafwUserData.Info?.Account !== undefined
+                            ? maafwUserData.Info.Account
+                            : '',
+                        Password:
+                          maafwUserData.Info?.Password !== undefined
+                            ? maafwUserData.Info.Password
+                            : '',
+                      },
+                      Task: {
+                        SelectedPreset:
+                          maafwUserData.Task?.SelectedPreset !== undefined
+                            ? maafwUserData.Task.SelectedPreset
+                            : '',
+                        TaskSnapshot:
+                          maafwUserData.Task?.TaskSnapshot !== undefined
+                            ? maafwUserData.Task.TaskSnapshot
+                            : '{ }',
+                      },
+                      Device: {
+                        AdbAddress:
+                          maafwUserData.Device?.AdbAddress !== undefined
+                            ? maafwUserData.Device.AdbAddress
+                            : '',
+                        HWnd:
+                          maafwUserData.Device?.HWnd !== undefined ? maafwUserData.Device.HWnd : 0,
+                        PlayCoverAddress:
+                          maafwUserData.Device?.PlayCoverAddress !== undefined
+                            ? maafwUserData.Device.PlayCoverAddress
+                            : '',
+                        PlayCoverUuid:
+                          maafwUserData.Device?.PlayCoverUuid !== undefined
+                            ? maafwUserData.Device.PlayCoverUuid
+                            : '',
+                      },
+                      Notify: {
+                        Enabled:
+                          maafwUserData.Notify?.Enabled !== undefined
+                            ? maafwUserData.Notify.Enabled
+                            : false,
+                        IfSendStatistic:
+                          maafwUserData.Notify?.IfSendStatistic !== undefined
+                            ? maafwUserData.Notify.IfSendStatistic
+                            : false,
+                        IfSendMail:
+                          maafwUserData.Notify?.IfSendMail !== undefined
+                            ? maafwUserData.Notify.IfSendMail
+                            : false,
+                        ToAddress:
+                          maafwUserData.Notify?.ToAddress !== undefined
+                            ? maafwUserData.Notify.ToAddress
+                            : '',
+                        IfServerChan:
+                          maafwUserData.Notify?.IfServerChan !== undefined
+                            ? maafwUserData.Notify.IfServerChan
+                            : false,
+                        ServerChanKey:
+                          maafwUserData.Notify?.ServerChanKey !== undefined
+                            ? maafwUserData.Notify.ServerChanKey
+                            : '',
+                        CustomWebhooks:
+                          maafwUserData.Notify?.CustomWebhooks !== undefined
+                            ? maafwUserData.Notify.CustomWebhooks
+                            : [],
+                      },
+                      Data: {
+                        LastProxyDate:
+                          maafwUserData.Data?.LastProxyDate !== undefined
+                            ? maafwUserData.Data.LastProxyDate
+                            : '',
+                        ProxyTimes:
+                          maafwUserData.Data?.ProxyTimes !== undefined
+                            ? maafwUserData.Data.ProxyTimes
+                            : 0,
+                        IfPassCheck:
+                          maafwUserData.Data?.IfPassCheck !== undefined
+                            ? maafwUserData.Data.IfPassCheck
+                            : false,
+                        LastProxyStatus:
+                          maafwUserData.Data?.LastProxyStatus !== undefined
+                            ? maafwUserData.Data.LastProxyStatus
+                            : '未知',
+                        PeriodTaskRecords:
+                          maafwUserData.Data?.PeriodTaskRecords !== undefined
+                            ? maafwUserData.Data.PeriodTaskRecords
+                            : '{ }',
+                      },
+                    }
                   } else if (userIndex.type === 'OkwwUserConfig' && userData) {
                     const okwwUserData = userData as any
                     return {
@@ -1260,7 +1399,7 @@ export function useScriptApi() {
 
     try {
       // 创建数据副本并移除 SubConfigsInfo 字段
-      const { SubConfigsInfo, ...dataToSend } = data
+      const { SubConfigsInfo: _SubConfigsInfo, ...dataToSend } = data
 
       const response = await Service.updateScriptApiScriptsUpdatePost({
         scriptId,

@@ -26,7 +26,8 @@ import uuid
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi.responses import FileResponse
 
 from app.core import Config
 from app.models.schema import *
@@ -50,11 +51,62 @@ def _okww_config_file_path(config_dir: Path, filename: str) -> Path:
     return config_dir / filename
 
 
+_MAAFW_IMAGE_SUFFIXES = {
+    ".avif",
+    ".bmp",
+    ".gif",
+    ".ico",
+    ".jpeg",
+    ".jpg",
+    ".png",
+    ".svg",
+    ".webp",
+}
+
+
+def _maafw_asset_file_path(root: str, asset_path: str) -> Path:
+    root_path = Path(root).resolve()
+    if not root_path.is_dir():
+        raise ValueError("MaaFW 项目目录不存在")
+
+    normalized_asset_path = asset_path.replace("\\", "/").strip()
+    relative_path = Path(normalized_asset_path)
+    if (
+        not normalized_asset_path
+        or relative_path.is_absolute()
+        or ".." in relative_path.parts
+    ):
+        raise ValueError("MaaFW 资源路径非法")
+
+    file_path = (root_path / relative_path).resolve()
+    if root_path not in file_path.parents:
+        raise ValueError("MaaFW 资源路径越界")
+    if file_path.suffix.lower() not in _MAAFW_IMAGE_SUFFIXES:
+        raise ValueError("仅支持 MaaFW 图片资源")
+    if not file_path.is_file():
+        raise FileNotFoundError("MaaFW 图片资源不存在")
+    return file_path
+
+
+def _build_maafw_agent_env_info_items(agent_plans: list[Any]) -> list[MaaFWAgentEnvInfo]:
+    return [
+        MaaFWAgentEnvInfo(
+            childExec=agent.childExec,
+            executable=agent.executable,
+            runtimeKind=agent.runtimeKind,
+            isolatedVenvPath=agent.isolatedVenvPath,
+            fallbackReason=agent.fallbackReason,
+        )
+        for agent in agent_plans
+    ]
+
+
 SCRIPT_BOOK = {
     "MaaConfig": MaaConfig,
     "SrcConfig": SrcConfig,
     "MaaEndConfig": MaaEndConfig,
     "M9AConfig": M9AConfig,
+    "MaaFWConfig": MaaFWConfig,
     "GeneralConfig": GeneralConfig,
     "OkwwConfig": OkwwConfig,
     "HSRConfig": HSRConfig,
@@ -64,6 +116,7 @@ USER_BOOK = {
     "SrcConfig": SrcUserConfig,
     "MaaEndConfig": MaaEndUserConfig,
     "M9AConfig": M9AUserConfig,
+    "MaaFWConfig": MaaFWUserConfig,
     "GeneralConfig": GeneralUserConfig,
     "OkwwConfig": OkwwUserConfig,
     "HSRConfig": HSRUserConfig,
@@ -636,6 +689,237 @@ async def get_m9a_available_tasks(script_id: str):
             "message": f"{type(e).__name__}: {str(e)}",
             "data": []
         }
+
+
+@router.post(
+    "/maafw/interface/preview",
+    tags=["MaaFW"],
+    summary="预览 MaaFW ProjectInterface",
+    response_model=MaaFWInterfacePreviewOut,
+    status_code=200,
+)
+async def preview_maafw_interface(
+    payload: MaaFWInterfacePreviewIn = Body(...),
+) -> MaaFWInterfacePreviewOut:
+    """读取 MaaFW 项目目录中的 interface.json，返回 MAS UI 可消费的摘要。"""
+    from app.task.MaaFW.interface_loader import (
+        MaaFWInterfaceLoadError,
+        load_interface_model_cached,
+    )
+    from app.task.MaaFW.interface_preview import build_maafw_interface_preview_data
+
+    try:
+        root_path = Path(payload.path).resolve()
+        interface = load_interface_model_cached(root_path)
+        data = build_maafw_interface_preview_data(root_path, interface)
+    except MaaFWInterfaceLoadError as e:
+        return MaaFWInterfacePreviewOut(
+            code=400,
+            status="error",
+            message=str(e),
+            data=None,
+        )
+    except Exception as e:
+        return MaaFWInterfacePreviewOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=None,
+        )
+
+    return MaaFWInterfacePreviewOut(
+        message=f"已读取 MaaFW 项目 {data.project.name}，共 {len(data.tasks)} 个任务",
+        data=data,
+    )
+
+
+@router.post(
+    "/maafw/agent-env/prepare",
+    tags=["MaaFW"],
+    summary="Prepare MaaFW agent Python env",
+    response_model=MaaFWAgentEnvPrepareOut,
+    status_code=200,
+)
+async def prepare_maafw_agent_env(
+    payload: MaaFWAgentEnvPrepareIn = Body(...),
+) -> MaaFWAgentEnvPrepareOut:
+    """Prepare MaaFW agent Python envs without loading resources or starting agents."""
+
+    from app.task.MaaFW.interface_loader import (
+        MaaFWInterfaceLoadError,
+        load_interface_model_cached,
+    )
+    from app.task.MaaFW.runner import prepare_maafw_agent_python_envs
+
+    logs: list[str] = []
+    root_path: Path | None = None
+    agent_plans: list[Any] = []
+    try:
+        root_path = Path(payload.path).resolve()
+        interface = load_interface_model_cached(root_path)
+        agent_plans = await asyncio.to_thread(
+            prepare_maafw_agent_python_envs,
+            root_path,
+            interface,
+            send_log=logs.append,
+        )
+        agents = _build_maafw_agent_env_info_items(agent_plans)
+        data = MaaFWAgentEnvPrepareData(
+            path=str(root_path),
+            agentCount=len(agents),
+            agents=agents,
+            logs=logs,
+        )
+    except MaaFWInterfaceLoadError as e:
+        return MaaFWAgentEnvPrepareOut(
+            code=400,
+            status="error",
+            message=str(e),
+            data=MaaFWAgentEnvPrepareData(
+                path=str(root_path or Path(payload.path)),
+                agentCount=0,
+                agents=[],
+                logs=logs,
+            ),
+        )
+    except Exception as e:
+        agents = _build_maafw_agent_env_info_items(agent_plans)
+        return MaaFWAgentEnvPrepareOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=MaaFWAgentEnvPrepareData(
+                path=str(root_path or Path(payload.path)),
+                agentCount=len(agents),
+                agents=agents,
+                logs=logs,
+            ),
+        )
+
+    return MaaFWAgentEnvPrepareOut(
+        message=f"Agent Python env prepared, agent count: {data.agentCount}",
+        data=data,
+    )
+
+
+@router.get(
+    "/maafw/asset",
+    tags=["MaaFW"],
+    summary="读取 MaaFW 本地图片资源",
+    response_class=FileResponse,
+    status_code=200,
+)
+async def get_maafw_asset(
+    root: str = Query(..., description="MaaFW 项目根目录"),
+    path: str = Query(..., description="相对 MaaFW 项目根目录的图片路径"),
+) -> FileResponse:
+    """读取 MaaFW interface 描述、任务、选项中引用的本地图片资源。"""
+
+    try:
+        file_path = _maafw_asset_file_path(root, path)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    return FileResponse(file_path)
+
+
+def _select_maafw_window_controllers(interface, controller_name: str | None):
+    controllers = [
+        controller
+        for controller in interface.controller
+        if controller.type in {"Win32", "Gamepad"}
+    ]
+    if not controller_name:
+        return controllers
+
+    controller = next(
+        (
+            item
+            for item in interface.controller
+            if item.name == controller_name
+        ),
+        None,
+    )
+    if controller is None:
+        raise ValueError(f"未找到 controller: {controller_name}")
+    if controller.type not in {"Win32", "Gamepad"}:
+        raise ValueError(f"controller {controller_name} 不是 PC 窗口类型")
+    return [controller]
+
+
+@router.post(
+    "/maafw/windows/preview",
+    tags=["MaaFW"],
+    summary="扫描 MaaFW PC 客户端窗口",
+    response_model=MaaFWWindowPreviewOut,
+    status_code=200,
+)
+async def preview_maafw_windows(
+    payload: MaaFWWindowPreviewIn = Body(...),
+) -> MaaFWWindowPreviewOut:
+    """按 interface.json 中的 Win32/Gamepad 窗口规则扫描本机桌面窗口。"""
+    from app.task.MaaFW.interface_loader import (
+        MaaFWInterfaceLoadError,
+        load_interface_model_cached,
+    )
+    from app.task.MaaFW.window_service import (
+        list_desktop_windows,
+        match_controller_windows,
+    )
+
+    try:
+        root_path = Path(payload.path).resolve()
+        interface = load_interface_model_cached(root_path)
+        controllers = _select_maafw_window_controllers(
+            interface,
+            payload.controllerName,
+        )
+        desktop_windows = list_desktop_windows()
+        windows: list[MaaFWDesktopWindowInfo] = []
+        for controller in controllers:
+            for window in match_controller_windows(controller, desktop_windows):
+                windows.append(
+                    MaaFWDesktopWindowInfo(
+                        hWnd=window.hWnd,
+                        className=window.className,
+                        windowName=window.windowName,
+                        controllerName=window.controllerName,
+                        controllerType=window.controllerType,
+                    )
+                )
+        data = MaaFWWindowPreviewData(
+            path=str(root_path),
+            controllerName=payload.controllerName,
+            windows=windows,
+        )
+    except MaaFWInterfaceLoadError as e:
+        return MaaFWWindowPreviewOut(
+            code=400,
+            status="error",
+            message=str(e),
+            data=None,
+        )
+    except ValueError as e:
+        return MaaFWWindowPreviewOut(
+            code=400,
+            status="error",
+            message=str(e),
+            data=None,
+        )
+    except Exception as e:
+        return MaaFWWindowPreviewOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=None,
+        )
+
+    return MaaFWWindowPreviewOut(
+        message=f"已扫描到 {len(data.windows)} 个 MaaFW PC 客户端窗口",
+        data=data,
+    )
 
 
 @router.get(

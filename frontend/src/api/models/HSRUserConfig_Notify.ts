@@ -28,3 +28,4 @@ export type HSRUserConfig_Notify = {
      */
     ServerChanKey?: (string | null);
 };
+

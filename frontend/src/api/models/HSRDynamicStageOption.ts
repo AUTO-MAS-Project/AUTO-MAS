@@ -42,3 +42,4 @@ export type HSRDynamicStageOption = {
      */
     sra?: (HSRDynamicStageSRA | null);
 };
+

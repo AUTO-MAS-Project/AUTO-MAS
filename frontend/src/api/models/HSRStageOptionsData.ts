@@ -26,3 +26,4 @@ export namespace HSRStageOptionsData {
         SRA = 'SRA',
     }
 }
+

@@ -43,6 +43,7 @@ from app.models.config import (
     MaaConfig,
     SrcConfig,
     M9AConfig,
+    MaaFWConfig,
     MaaEndConfig,
     OkwwConfig,
     HSRConfig,
@@ -53,6 +54,7 @@ from app.models.config import (
     MaaUserConfig,
     SrcUserConfig,
     M9AUserConfig,
+    MaaFWUserConfig,
     MaaEndUserConfig,
     GeneralUserConfig,
     OkwwUserConfig,
@@ -532,18 +534,25 @@ class AppConfig(GlobalConfig):
 
     async def add_script(
         self,
-        script: Literal["MAA", "SRC", "General", "MaaEnd", "M9A", "Okww", "HSR"],
+        script: Literal["MAA", "SRC", "General", "MaaEnd", "M9A", "MaaFW", "Okww", "HSR"],
         script_id: str | None = None,
     ) -> tuple[
         uuid.UUID,
-        MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig | M9AConfig | OkwwConfig | HSRConfig,
+        MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig | M9AConfig | MaaFWConfig | OkwwConfig | HSRConfig,
     ]:
         """添加脚本配置"""
 
         logger.info(f"添加脚本配置: {script}, 从 {script_id} 复制")
 
         if script_id is None:
-            return await self.ScriptConfig.add(CLASS_BOOK[script])
+            uid, config = await self.ScriptConfig.add(CLASS_BOOK[script])
+            if isinstance(config, MaaFWConfig):
+                await config.set(
+                    "Update",
+                    "MirrorChyanCDK",
+                    self.get("Update", "MirrorChyanCDK"),
+                )
+            return uid, config
         else:
             script_uid = uuid.UUID(script_id)
 
@@ -821,6 +830,7 @@ class AppConfig(GlobalConfig):
         | GeneralUserConfig
         | MaaEndUserConfig
         | M9AUserConfig
+        | MaaFWUserConfig
         | OkwwUserConfig
         | HSRUserConfig,
     ]:
@@ -843,6 +853,8 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(MaaEndUserConfig)
         elif isinstance(script_config, M9AConfig):
             uid, config = await script_config.UserData.add(M9AUserConfig)
+        elif isinstance(script_config, MaaFWConfig):
+            uid, config = await script_config.UserData.add(MaaFWUserConfig)
         elif isinstance(script_config, HSRConfig):
             uid, config = await script_config.UserData.add(HSRUserConfig)
         else:
