@@ -135,6 +135,7 @@ class AutoProxyTask(TaskExecuteBase):
     async def prepare(self):
         self.okww_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
+        self._exit_waiter: asyncio.Task | None = None
 
         self.user_start_time = datetime.now()
         self.log_start_time = datetime.now()
@@ -350,18 +351,15 @@ class AutoProxyTask(TaskExecuteBase):
 
             if self.cur_user_log.status == "Success!":
                 self.run_book = True
-                self.script_info.log = (
-                    "检测到 OK-WW 已完成任务\n正在等待 OK-WW 自行退出"
-                )
-                # 等待 OK-WW 自然退出（-e 标志使其任务完成后自行关闭游戏并退出）
-                await self._wait_okww_exit(timeout=30)
+                self.script_info.log = "检测到 OK-WW 已完成任务"
+                # 后台静默等待 OK-WW 自然退出，不阻塞主流程
+                self._schedule_okww_exit_watch()
                 await self.update_config()
                 if self.cur_user_config.get("Info", "IfScriptAfterTask"):
                     await execute_script_task(
                         Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
                         "脚本后任务",
                     )
-                await asyncio.sleep(3)
                 break
 
             logger.error(
@@ -373,6 +371,8 @@ class AutoProxyTask(TaskExecuteBase):
             await self.kill_managed_process(
                 kill_game=self._game_management_enabled()
             )
+            # 延时复检：确认进程确实已终止（手动终止任务时有概率关闭失败）
+            self._schedule_kill_verify()
             try:
                 await Notify.push_plyer(
                     "OK-WW 自动代理出现异常！",
@@ -389,6 +389,10 @@ class AutoProxyTask(TaskExecuteBase):
                     "脚本后任务",
                 )
             if i + 1 < run_limit:
+                # 重试前等待退出监控完成，确保进程已清理
+                if self._exit_waiter is not None:
+                    await self._exit_waiter
+                    self._exit_waiter = None
                 self.script_info.log += (
                     f"\n将在稍后重试 ({i + 1}/{run_limit})"
                 )
@@ -435,7 +439,10 @@ class AutoProxyTask(TaskExecuteBase):
             self.wait_event.set()
 
     async def final_task(self):
-        # 结束时先清理进程与监控；任务结束后始终关闭游戏（由 Game.Enabled 总开关控制）
+        # 先等待后台退出监控完成，再清理进程；任务结束后始终关闭游戏
+        if self._exit_waiter is not None:
+            await self._exit_waiter
+            self._exit_waiter = None
         with suppress(Exception):
             await self.log_monitor.stop()
         await self.kill_managed_process(kill_game=self._game_management_enabled())
@@ -520,16 +527,36 @@ class AutoProxyTask(TaskExecuteBase):
         except Exception:
             pass
 
-    async def _wait_okww_exit(self, *, timeout: int = 30) -> None:
-        """等待 OK-WW 自然退出（-e 触发），超时后兜底强杀。"""
-        deadline = datetime.now() + timedelta(seconds=timeout)
-        while datetime.now() < deadline:
-            if not await self.okww_process_manager.is_running():
-                logger.info("OK-WW 已自行退出")
-                return
-            await asyncio.sleep(1)
-        logger.warning(f"OK-WW 未在 {timeout}s 内自行退出，兜底强杀")
-        await self._kill_okww_process()
+    def _schedule_okww_exit_watch(self, *, timeout: int = 30) -> None:
+        """后台静默等待 OK-WW 自然退出（-e 触发），超时则显式提示并兜底强杀。"""
+
+        async def _watch() -> None:
+            deadline = datetime.now() + timedelta(seconds=timeout)
+            while datetime.now() < deadline:
+                if not await self.okww_process_manager.is_running():
+                    return
+                await asyncio.sleep(1)
+            logger.warning(f"OK-WW 未在 {timeout}s 内自行退出，兜底强杀")
+            await self._push_dispatch_log(
+                f"OK-WW 未在 {timeout}s 内自行退出，正在强制中止"
+            )
+            await self._kill_okww_process()
+
+        self._exit_waiter = asyncio.create_task(_watch())
+
+    def _schedule_kill_verify(self, *, delay: int = 5) -> None:
+        """kill_managed_process 后的延时复检：确认进程确实已终止。"""
+
+        async def _verify() -> None:
+            await asyncio.sleep(delay)
+            if await self.okww_process_manager.is_running():
+                logger.warning("延时复检发现 OK-WW 进程残留，兜底强杀")
+                await self._push_dispatch_log(
+                    "检测到 OK-WW 进程残留，正在强制中止"
+                )
+                await self._kill_okww_process()
+
+        self._exit_waiter = asyncio.create_task(_verify())
 
     async def _kill_okww_process(self) -> None:
         try:
