@@ -181,16 +181,9 @@
                             {{ tag.text }}
                           </a-tag>
                         </div>
-                        <!-- 用户详细信息 - 通用脚本用户 -->
-                        <div v-if="script.type === 'General'" class="user-info-tags">
+                        <!-- 用户详细信息 - 后端提供 Tag 的脚本用户 -->
+                        <div v-if="script.type === 'General' || script.type === 'Okww'" class="user-info-tags">
                           <!-- 直接使用后端提供的Tag字段 -->
-                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
-                            :title="tag.text" class="info-tag" :color="tag.color">
-                            {{ tag.text }}
-                          </a-tag>
-                        </div>
-                        <!-- 用户详细信息 - ok-ww 脚本用户 -->
-                        <div v-if="script.type === 'Okww'" class="user-info-tags">
                           <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
                             :title="tag.text" class="info-tag" :color="tag.color">
                             {{ tag.text }}
