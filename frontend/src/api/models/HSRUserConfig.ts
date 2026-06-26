@@ -39,3 +39,4 @@ export type HSRUserConfig = {
      */
     Abyss?: (HSRUserConfig_Abyss | null);
 };
+
