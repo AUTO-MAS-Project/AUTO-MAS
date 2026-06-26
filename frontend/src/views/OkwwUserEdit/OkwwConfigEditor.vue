@@ -192,7 +192,6 @@ const emit = defineEmits<{
 const logger = window.electronAPI.getLogger('OKWW配置编辑')
 
 const loading = ref(false)
-const saving = ref(false)
 const configs = ref<ConfigFile[]>([])
 const selectedFilename = ref<string | null>(null)
 const changedFiles = ref(new Set<string>())
@@ -299,7 +298,6 @@ const loadConfigs = async () => {
 
 const saveAll = async (silent = true) => {
   if (!hasChanges.value) return
-  saving.value = true
   try {
     const configsToUpdate = { ...localChanges.value }
     const resp = await OkwwService.batchUpdateOkwwConfigsApiScriptsOkwwConfigsBatchUpdatePost(
@@ -334,8 +332,6 @@ const saveAll = async (silent = true) => {
   } catch (e) {
     logger.error(`保存配置失败: ${e instanceof Error ? e.message : String(e)}`)
     message.error('保存配置失败')
-  } finally {
-    saving.value = false
   }
 }
 

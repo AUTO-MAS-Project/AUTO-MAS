@@ -2250,7 +2250,6 @@ class OkwwUserConfig(ConfigBase):
         self.Task_TaskIndex = ConfigItem(
             "Task", "TaskIndex", 1, RangeValidator(1, 8)
         )
-        self.Task_ExitOnFinish = ConfigItem("Task", "ExitOnFinish", True, BoolValidator())
 
         ## Data ------------------------------------------------------------
         self.Data_LastProxyDate = ConfigItem(
@@ -2467,43 +2466,14 @@ class OkwwConfig(ConfigBase):
             "Info", "RootPath", "", FileValidator()
         )
 
-        ## Script ----------------------------------------------------------
-        # Okww 运行参数建议由用户配置（-t / -e 由用户配置 Task 决定），但仍保留高级参数入口
-        self.Script_Arguments = ConfigItem(
-            "Script", "Arguments", "", AdvancedArgumentValidator()
-        )
-        self.Script_UpdateConfigMode = ConfigItem(
-            "Script",
-            "UpdateConfigMode",
-            "Always",
-            OptionsValidator(["Never", "Success", "Failure", "Always"]),
-        )
-
         ## Game ------------------------------------------------------------
         self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
         self.Game_LaunchBeforeTask = ConfigItem(
             "Game", "LaunchBeforeTask", False, BoolValidator()
         )
-        self.Game_Type = ConfigItem(
-            "Game", "Type", "Client", OptionsValidator(["Client", "URL"])
-        )
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
-        self.Game_URL = ConfigItem("Game", "URL", "")
-        self.Game_ProcessName = ConfigItem("Game", "ProcessName", "")
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
-        self.Game_IfForceClose = ConfigItem("Game", "IfForceClose", True, BoolValidator())
-        self.Game_CloseOnFinish = ConfigItem(
-            "Game", "CloseOnFinish", True, BoolValidator()
-        )
-        self.Game_EmulatorId = ConfigItem(
-            "Game",
-            "EmulatorId",
-            "-",
-            MultipleUIDValidator("-", self.related_config, "EmulatorConfig"),
-        )
-        self.Game_EmulatorIndex = ConfigItem("Game", "EmulatorIndex", "-")
-
         ## Run -------------------------------------------------------------
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)

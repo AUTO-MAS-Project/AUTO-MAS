@@ -32,10 +32,6 @@ from .AutoProxy import AutoProxyTask, _OKWW_REL_CONFIG_DIR
 
 logger = get_logger("OK-WW 调度器")
 
-METHOD_BOOK: dict[str, type[AutoProxyTask]] = {
-    "AutoProxy": AutoProxyTask,
-}
-
 
 class OkwwManager(TaskExecuteBase):
     """OK-WW 控制器（ok-script 线）"""
@@ -49,12 +45,13 @@ class OkwwManager(TaskExecuteBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.check_result = "-"
+        self.user_config: MultipleConfig[OkwwUserConfig] | None = None
         self.temp_path: Path | None = None
         self.script_config_path: Path | None = None
         self.had_original_script_config = False
 
     async def check(self) -> str:
-        if self.task_info.mode not in METHOD_BOOK:
+        if self.task_info.mode != "AutoProxy":
             return "不支持的任务模式, 请检查任务配置！"
 
         if not isinstance(Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], OkwwConfig):
@@ -98,7 +95,7 @@ class OkwwManager(TaskExecuteBase):
             and config.get("Info", "RemainedDay") != 0
         ]
 
-        # Enabled=游戏管理总开关；开启后任务结束时始终关闭游戏，LaunchBeforeTask 控制启动
+        # Enabled=游戏管理总开关；开启后任务前始终启动游戏，任务结束/失败时始终关闭游戏
         self.game_manager: ProcessManager | None = None
         if self.script_config.get("Game", "Enabled"):
             self.game_manager = ProcessManager()
@@ -146,12 +143,11 @@ class OkwwManager(TaskExecuteBase):
 
         await self.prepare()
 
-        method_cls = METHOD_BOOK[self.task_info.mode]
         for self.script_info.current_index in range(len(self.script_info.user_list)):
-            method = method_cls(
+            method = AutoProxyTask(
                 script_info=self.script_info,
-                script_config=self.script_config,  # type: ignore[arg-type]
-                user_config=self.user_config,  # type: ignore[arg-type]
+                script_config=self.script_config,
+                user_config=self.user_config,
                 game_manager=self.game_manager,
             )
 
@@ -182,12 +178,12 @@ class OkwwManager(TaskExecuteBase):
             if self.check_result != "Pass" and not any(
                 user.status == "完成" for user in self.script_info.user_list
             ):
-                if self.task_info.mode == "AutoProxy" and hasattr(self, "user_config"):
+                if self.task_info.mode == "AutoProxy" and self.user_config is not None:
                     await script_cfg.UserData.load(await self.user_config.toDict())
                 self.script_info.status = "异常"
                 return
 
-            if self.task_info.mode == "AutoProxy" and hasattr(self, "user_config"):
+            if self.task_info.mode == "AutoProxy" and self.user_config is not None:
                 await script_cfg.UserData.load(await self.user_config.toDict())
 
             if any(user.status == "异常" for user in self.script_info.user_list):
@@ -213,7 +209,7 @@ class OkwwManager(TaskExecuteBase):
                 await script_cfg.unlock()
 
         try:
-            if self.task_info.mode == "AutoProxy" and hasattr(self, "user_config"):
+            if self.task_info.mode == "AutoProxy" and self.user_config is not None:
                 await script_cfg.UserData.load(
                     await self.user_config.toDict()
                 )

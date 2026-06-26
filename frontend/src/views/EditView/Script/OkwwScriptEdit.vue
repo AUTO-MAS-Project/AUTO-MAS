@@ -93,7 +93,7 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="游戏管理总开关：关闭后 MAS 不启动也不关闭游戏；开启后可配置任务前启动（任务结束后始终关闭游戏）">
+                  <a-tooltip title="开启后由 MAS 接管游戏启停">
                     <span class="form-label">
                       启用游戏配置
                       <QuestionCircleOutlined class="help-icon" />
@@ -104,29 +104,7 @@
                   v-model:value="okwwConfig.Game.Enabled"
                   size="large"
                   class="modern-input"
-                  @change="handleGameEnabledChange"
-                >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip title="任务开始前是否由 MAS 启动游戏并等待">
-                    <span class="form-label">
-                      任务前启动游戏
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-select
-                  v-model:value="okwwConfig.Game.LaunchBeforeTask"
-                  size="large"
-                  class="modern-input"
-                  :disabled="!okwwConfig.Game.Enabled"
-                  @change="handleChange('Game', 'LaunchBeforeTask', $event)"
+                  @change="handleChange('Game', 'Enabled', $event)"
                 >
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
@@ -308,23 +286,12 @@ interface OkwwInfoForm {
   RootPath: string
 }
 
-interface OkwwScriptForm {
-  Arguments: string
-  UpdateConfigMode: 'Never' | 'Success' | 'Failure' | 'Always'
-}
 
 interface OkwwGameForm {
   Enabled: boolean
-  LaunchBeforeTask: boolean
-  Type: 'Client' | 'URL'
   Path: string
-  URL: string
-  ProcessName: string
   Arguments: string
   WaitTime: number
-  IfForceClose: boolean
-  EmulatorId: string
-  EmulatorIndex: string
 }
 
 interface OkwwRunForm {
@@ -335,7 +302,7 @@ interface OkwwRunForm {
 
 interface OkwwScriptConfigForm {
   Info: OkwwInfoForm
-  Script: OkwwScriptForm
+  Script: Record<string, never>
   Game: OkwwGameForm
   Run: OkwwRunForm
 }
@@ -352,22 +319,12 @@ const formData = reactive({
 
 const okwwConfig = reactive<OkwwScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
-  Script: {
-    Arguments: '',
-    UpdateConfigMode: 'Always',
-  },
+  Script: {},
   Game: {
     Enabled: false,
-    LaunchBeforeTask: false,
-    Type: 'Client',
     Path: '.',
-    URL: '',
-    ProcessName: '',
     Arguments: '',
     WaitTime: 60,
-    IfForceClose: true,
-    EmulatorId: '-',
-    EmulatorIndex: '-',
   },
   Run: { ProxyTimesLimit: 0, RunTimesLimit: 1, RunTimeLimit: 60 },
 })
@@ -393,11 +350,6 @@ const showPathRejectModal = (title: string, content: string) => {
 }
 
 const handleCancel = () => router.push('/scripts')
-
-const handleGameEnabledChange = async (enabled: boolean) => {
-  okwwConfig.Game.Enabled = enabled
-  await handleChange('Game', 'Enabled', enabled)
-}
 
 const handleChange = async (category: string, key: string, value: unknown) => {
   if (isInitializing.value || isSaving.value) return
@@ -499,11 +451,10 @@ const selectGameRootPath = async () => {
     const candidateExe = prefix + keyword + '/' + suffix
     if (await window.electronAPI.fileExists(candidateExe)) {
       okwwConfig.Game.Path = candidateExe
-      okwwConfig.Game.Type = 'Client'
       isSaving.value = true
       try {
         await updateScript(scriptId, {
-          Game: { Path: okwwConfig.Game.Path, Type: 'Client' },
+          Game: { Path: okwwConfig.Game.Path },
         })
         message.success('已自动匹配游戏路径至 Client-Win64-Shipping.exe')
       } finally {
@@ -572,17 +523,11 @@ onMounted(loadScript)
 }
 
 .config-card {
-  border-radius: 16px;
-  box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.08),
-    0 1px 3px rgba(0, 0, 0, 0.1);
-  border: 1px solid var(--ant-color-border-secondary);
   overflow: hidden;
 }
 
 .config-card :deep(.ant-card-head) {
   background: var(--ant-color-bg-container);
-  border-bottom: 2px solid var(--ant-color-border-secondary);
   padding: 24px 32px;
 }
 
@@ -599,13 +544,12 @@ onMounted(loadScript)
 
 .form-section {
   margin-bottom: 12px;
-  animation: fadeInUp 0.6s ease-out;
 }
 
 .section-header {
   margin-bottom: 6px;
   padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
+  border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
 .section-header h3 {
@@ -614,15 +558,6 @@ onMounted(loadScript)
   font-weight: 700;
   display: flex;
   align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
 }
 
 .form-label {
@@ -648,16 +583,10 @@ onMounted(loadScript)
   cursor: help;
 }
 
-.modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-}
-
 .path-input-group {
   display: flex;
-  border-radius: 8px;
   overflow: hidden;
-  border: 2px solid var(--ant-color-border);
+  border: 1px solid var(--ant-color-border);
 }
 
 .path-input {
@@ -700,15 +629,5 @@ onMounted(loadScript)
   }
 }
 
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
 </style>
 
