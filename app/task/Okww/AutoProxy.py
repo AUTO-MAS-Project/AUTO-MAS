@@ -51,8 +51,6 @@ _OKWW_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
     ("info_set 错误", "OK-WW 流程产生错误，请检查游戏状态"),
 )
 
-_OKWW_BUILTIN_SUCCESS: tuple[str, ...] = ("任务执行完成", "task completed")
-
 # ok-ww 项目结构固定相对路径（从 RootPath 派生，不依赖用户存储值）
 # ⚠️ 与前端 OkwwScriptEdit.vue 的 OKWW_EXE_NAME 保持同步，改这里时需同步改前端
 _OKWW_REL_EXE = "ok-ww.exe"
@@ -69,10 +67,6 @@ def _split_args(raw: object) -> list[str]:
     value = str(raw or "").strip()
     return shlex.split(value, posix=False) if value else []
 
-
-def _okww_log_indicates_success(log: str) -> bool:
-    normalized_log = log.lower()
-    return any(needle in normalized_log for needle in _OKWW_BUILTIN_SUCCESS)
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -135,7 +129,6 @@ class AutoProxyTask(TaskExecuteBase):
     async def prepare(self):
         self.okww_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
-        self._success_log_seen = False
 
         self.user_start_time = datetime.now()
         self.log_start_time = datetime.now()
@@ -400,17 +393,13 @@ class AutoProxyTask(TaskExecuteBase):
 
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
-        """成功判定延后至进程退出：成功日志出现时仅标记，进程真正退出后才判成功。"""
+        """失败靠内置日志关键词；成功靠进程窗口关闭（-e 自然退出）。"""
         log = "".join(log_content)
         self.cur_user_log.content = log_content
         self.script_info.log = log[-4000:] if len(log) > 4000 else log
 
         log_status = "OK-WW 正常运行中"
         user_item_status: str | None = None
-
-        # 记录成功日志出现（不立即判成功，等待进程退出确认）
-        if _okww_log_indicates_success(log):
-            self._success_log_seen = True
 
         for needle, msg in _OKWW_BUILTIN_FATAL:
             if needle in log:
@@ -419,12 +408,8 @@ class AutoProxyTask(TaskExecuteBase):
                 break
         else:
             if not await self.okww_process_manager.is_running():
-                if self._success_log_seen:
-                    log_status = "Success!"
-                    user_item_status = "完成"
-                else:
-                    log_status = "OK-WW 在完成任务前退出"
-                    user_item_status = "异常"
+                log_status = "Success!"
+                user_item_status = "完成"
             elif datetime.now() - latest_time > timedelta(
                 minutes=self.script_config.get("Run", "RunTimeLimit")
             ):
