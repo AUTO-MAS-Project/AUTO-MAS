@@ -28,6 +28,7 @@ import httpx
 
 from app.core import Config
 from app.utils.logger import get_logger
+from .game_sign_result import build_skland_sign_results
 
 logger = get_logger("游戏社区签到")
 
@@ -102,6 +103,18 @@ async def run_all_sign_in(force: bool = False) -> list[dict]:
                 from .skland import skland_sign_in
 
                 skland_results = await skland_sign_in(skland_token, app_code="all")
+                if not any(
+                    game_key in skland_results
+                    for game_key in ("arknights", "endfield")
+                ):
+                    results.extend(
+                        build_skland_sign_results(
+                            skland_results,
+                            account_name=account_name,
+                            account_uid=account_uid,
+                        )
+                    )
+                    skland_results = {}
                 # 按游戏分组的结果：{"arknights": {成功/重复/失败}, "endfield": {成功/重复/失败}}
                 game_mapping = {
                     "arknights": "明日方舟",
