@@ -66,7 +66,8 @@ from .ConfigBase import (
     ArgumentValidator,
     AdvancedArgumentValidator,
 )
-from .schema import TagItem
+# TagItem 导入已移至文件末尾（SCRIPT_REGISTRY 之后），
+# 避免与 schema.py 形成循环导入。
 
 
 def init_maaend_task_config(config) -> None:
@@ -2926,3 +2927,7 @@ SCRIPT_USER_CONFIG_MAP: dict[type, type] = {
 TYPE_BOOK: dict[str, str] = {
     v.config.__name__: v.display for v in SCRIPT_REGISTRY.values()
 }
+
+# TagItem 导入必须放在 SCRIPT_REGISTRY 之后，避免与 schema.py 形成循环导入
+# （schema.py 末尾需要 import SCRIPT_REGISTRY，而 config.py 需要 schema.py 的 TagItem）
+from .schema import TagItem

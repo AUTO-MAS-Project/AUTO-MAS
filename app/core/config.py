@@ -58,6 +58,7 @@ from app.models.config import (
     OkwwUserConfig,
     GlobalConfig,
     CLASS_BOOK,
+    SCRIPT_REGISTRY,
     SCRIPT_USER_CONFIG_MAP,
     TYPE_BOOK,
     Webhook,
@@ -540,6 +541,9 @@ class AppConfig(GlobalConfig):
         MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig | M9AConfig | OkwwConfig | HSRConfig,
     ]:
         """添加脚本配置"""
+
+        if script not in SCRIPT_REGISTRY:
+            raise ValueError(f"未知脚本类型: {script}")
 
         logger.info(f"添加脚本配置: {script}, 从 {script_id} 复制")
 

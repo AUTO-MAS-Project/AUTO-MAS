@@ -20,42 +20,15 @@
 
 #   Contact: DLmaster_361@163.com
 
+from __future__ import annotations
 
 from pydantic import BaseModel, Field
 from typing import Any, Dict, List, Union, Optional, Literal
-from functools import reduce
-import types as _types
 
-from app.models.config import SCRIPT_REGISTRY as _REG
-
-# ═══════════════════════════════════════════════════════════════════════════
-# 以下类型全部从 SCRIPT_REGISTRY 自动派生，新增专项无需手动维护
-# Pydantic Schema 类名 = ConfigBase 类名（命名约定），通过 globals() 查找
-# ═══════════════════════════════════════════════════════════════════════════
-def _schema(name: str) -> type:
-    cls = globals().get(name)
-    if cls is None:
-        raise ImportError(f"schema.py 缺少 {name} 定义（需与 config.py 同名）")
-    return cls
-
-def _union(*classes: type):
-    """a | b | c ... -> UnionType（等价于 typing.Union[a, b, c]）"""
-    return reduce(_types.UnionType.__or__, classes)
-
-# config 类型名字符串
-_SCRIPT_TYPE_KEYS: tuple[str, ...] = tuple(_REG.keys())
-_SCRIPT_CONFIG_NAMES: tuple[str, ...] = tuple(v.config.__name__ for v in _REG.values())
-_USER_CONFIG_NAMES: tuple[str, ...] = tuple(
-    v.user_config.__name__ for v in _REG.values() if v.user_config is not None
-)
-
-# Pydantic Schema 类
-_SCRIPT_SCHEMAS = tuple(_schema(n) for n in _SCRIPT_CONFIG_NAMES)
-_USER_SCHEMAS = tuple(_schema(n) for n in _USER_CONFIG_NAMES)
-
-# 动态 Union 类型
-ScriptConfigUnion = _union(*_SCRIPT_SCHEMAS)
-UserConfigUnion = _union(*_USER_SCHEMAS)
+# _SCRIPT_TYPE_KEYS / _SCRIPT_CONFIG_NAMES / _USER_CONFIG_NAMES /
+# ScriptConfigUnion / UserConfigUnion 等动态类型在文件末尾定义，
+# 因为 _schema() 需要通过 globals() 按名查找 Schema 类——
+# 必须等所有 class 定义完成后才能解析。
 
 
 class OutBase(BaseModel):
@@ -1396,7 +1369,7 @@ class HistoryData(BaseModel):
 
 class ScriptCreateIn(BaseModel):
     type: Literal[_SCRIPT_TYPE_KEYS] = Field(  # type: ignore[valid-type]
-        ..., description="脚本类型"
+        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, SRC脚本, MaaEnd脚本, M9A脚本, HSR脚本"
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -1997,3 +1970,37 @@ class WSCommandsOut(OutBase):
     """可用命令列表响应"""
 
     data: Optional[Dict[str, Any]] = Field(default=None, description="命令列表")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 以下类型全部从 SCRIPT_REGISTRY 自动派生，新增专项无需手动维护
+# 必须放在所有 Schema 类定义之后：_schema() 通过 globals() 按名查找，
+# 而 Schema 类（如 MaaConfig、GeneralConfig 等）在此之前尚未定义。
+# ═══════════════════════════════════════════════════════════════════════════
+from functools import reduce
+import operator
+
+from app.models.config import SCRIPT_REGISTRY as _REG
+
+
+def _schema(name: str) -> type:
+    cls = globals().get(name)
+    if cls is None:
+        raise ImportError(f"schema.py 缺少 {name} 定义（需与 config.py 同名）")
+    return cls
+
+
+# config 类型名字符串
+_SCRIPT_TYPE_KEYS: tuple[str, ...] = tuple(_REG.keys())
+_SCRIPT_CONFIG_NAMES: tuple[str, ...] = tuple(v.config.__name__ for v in _REG.values())
+_USER_CONFIG_NAMES: tuple[str, ...] = tuple(
+    v.user_config.__name__ for v in _REG.values() if v.user_config is not None
+)
+
+# Pydantic Schema 类（通过 globals() 按命名约定查找）
+_SCRIPT_SCHEMAS = tuple(_schema(n) for n in _SCRIPT_CONFIG_NAMES)
+_USER_SCHEMAS = tuple(_schema(n) for n in _USER_CONFIG_NAMES)
+
+# 动态 Union 类型（reduce + operator.or_ → 等价于 A | B | C | ...，公开 API）
+ScriptConfigUnion = reduce(operator.or_, _SCRIPT_SCHEMAS)
+UserConfigUnion = reduce(operator.or_, _USER_SCHEMAS)

@@ -29,28 +29,16 @@ from app.services import System
 from app.models.config import SCRIPT_REGISTRY
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
 from app.utils import get_logger
-from app.task import (
-    MaaManager,
-    SrcManager,
-    GeneralManager,
-    MaaEndManager,
-    M9AManager,
-    OkwwManager,
-    HSRManager,
-)
+import app.task as _task_module
 from app.utils.constants import POWER_SIGN_MAP
 
 # ── Manager 分发：遵循 XxxConfig → XxxManager 命名约定，从 SCRIPT_REGISTRY 自动派生 ──
-_MANAGER_BY_NAME = {
-    cls.__name__: cls
-    for cls in (MaaManager, SrcManager, GeneralManager, MaaEndManager,
-                M9AManager, OkwwManager, HSRManager)
-}
 _SCRIPT_MANAGER_MAP: dict[type, type] = {}
 for _ad in SCRIPT_REGISTRY.values():
-    _name = _ad.config.__name__.replace("Config", "Manager")
-    if _name in _MANAGER_BY_NAME:
-        _SCRIPT_MANAGER_MAP[_ad.config] = _MANAGER_BY_NAME[_name]
+    _manager_name = _ad.config.__name__.replace("Config", "Manager")
+    _manager_cls = getattr(_task_module, _manager_name, None)
+    if _manager_cls is not None:
+        _SCRIPT_MANAGER_MAP[_ad.config] = _manager_cls
 
 
 logger = get_logger("业务调度")
