@@ -50,6 +50,7 @@ from typing import Dict, Any
 from app.core import Config
 from app.utils.constants import SKLAND_SM_CONFIG, BROWSER_ENV, DES_RULE
 from app.utils.logger import get_logger
+from .skland_response import is_skland_already_signed
 
 logger = get_logger("森空岛签到任务")
 
@@ -473,7 +474,7 @@ async def skland_sign_in(
                     rsp = response.json()
 
                 if rsp["code"] != 0:
-                    if rsp.get("message") == "请勿重复签到！":
+                    if is_skland_already_signed(rsp):
                         result["重复"].append(character_name)
                         logger.info(f"{character_name} 重复签到")
                     else:
@@ -580,4 +581,4 @@ async def skland_sign_in(
         return await sign_for_arknights(cred, sign_token)
     except Exception as e:
         logger.error(f"森空岛签到失败: {e}")
-        return {"成功": [], "重复": [], "失败": [], "总计": 0}
+        return {"成功": [], "重复": [], "失败": [str(e)], "总计": 0}
