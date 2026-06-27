@@ -9,11 +9,11 @@
             placeholder="选择任务项"
             style="width: 200px"
             :loading="taskOptionsLoading"
-            :options="taskOptions"
+            :options="filteredTaskOptions"
             :disabled="disabled"
             size="large"
             @change="onTaskChange"
-            @dropdownVisibleChange="onDropdownVisibleChange"
+            @dropdown-visible-change="onDropdownVisibleChange"
           />
           <a-select
             v-if="status !== '运行'"
@@ -57,7 +57,7 @@
             allow-clear
             size="large"
             @change="onResumeScriptChange"
-            @dropdownVisibleChange="onResumeDropdownVisibleChange"
+            @dropdown-visible-change="onResumeDropdownVisibleChange"
           />
           <a-button
             :type="status === '运行' ? 'default' : 'primary'"
@@ -76,6 +76,25 @@
           </a-button>
         </a-space>
       </div>
+      <div v-if="showCyclePreview" class="cycle-preview">
+        <div class="cycle-preview-head">
+          <span class="cycle-preview-title">下轮任务</span>
+          <span class="cycle-preview-meta">按当前队列循环配置预览</span>
+        </div>
+        <div class="cycle-preview-grid">
+          <div
+            v-for="item in cyclePreviewItems"
+            :key="`${item.isPlaceholder ? 'empty' : item.queueItemId}-${item.slotIndex}`"
+            class="cycle-preview-item"
+            :class="{ 'is-running': item.isRunning, 'is-empty': item.isPlaceholder }"
+          >
+            <div class="cycle-preview-name" :title="item.scriptName">{{ item.scriptName }}</div>
+            <div class="cycle-preview-time">
+              {{ formatCyclePreviewTime(item) }}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -85,7 +104,12 @@ import { computed, ref, watch } from 'vue'
 import { PlayCircleOutlined, StopOutlined } from '@ant-design/icons-vue'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
-import { type SchedulerStatus, TASK_MODE_OPTIONS } from './schedulerConstants'
+import {
+  CYCLE_RUN_MODE,
+  type CycleNextInfo,
+  type SchedulerStatus,
+  TASK_MODE_OPTIONS,
+} from './schedulerConstants'
 
 interface Props {
   selectedTaskId: string | null
@@ -99,32 +123,43 @@ interface Props {
   disabled?: boolean
   runningTaskLabel?: string
   runningModeLabel?: string
+  cycleNext?: CycleNextInfo | null
+  cycleNextList?: CycleNextInfo[]
 }
 
-interface Emits {
-  (e: 'update:selectedTaskId', value: string | null): void
-
-  (e: 'update:selectedMode', value: TaskCreateIn.mode | null): void
-  (e: 'update:resumeFromScriptId', value: string | null): void
-
-  (e: 'start'): void
-
-  (e: 'stop'): void
-
-  (e: 'update:runningTaskLabel', value: string): void
-
-  (e: 'update:runningModeLabel', value: string): void
-
-  (e: 'refresh-tasks'): void
-  (e: 'task-changed', value: string | null): void
-  (e: 'refresh-resume-scripts'): void
+type Emits = {
+  'update:selectedTaskId': [value: string | null]
+  'update:selectedMode': [value: TaskCreateIn.mode | null]
+  'update:resumeFromScriptId': [value: string | null]
+  start: []
+  stop: []
+  'update:runningTaskLabel': [value: string]
+  'update:runningModeLabel': [value: string]
+  'refresh-tasks': []
+  'task-changed': [value: string | null]
+  'mode-changed': [value: TaskCreateIn.mode]
+  'refresh-resume-scripts': []
 }
 
 const props = withDefaults(defineProps<Props>(), {
   disabled: false,
+  resumeFromScriptId: null,
+  resumeScriptOptions: () => [],
+  resumeScriptLoading: false,
+  runningTaskLabel: '',
+  runningModeLabel: '',
+  cycleNext: null,
+  cycleNextList: () => [],
 })
 
 const emit = defineEmits<Emits>()
+
+const cyclePreviewSlotCount = 4
+
+type CyclePreviewSlot = CycleNextInfo & {
+  slotIndex: number
+  isPlaceholder?: boolean
+}
 
 // 本地状态，用于双向绑定
 const localSelectedTaskId = ref(props.selectedTaskId)
@@ -134,6 +169,51 @@ const localResumeFromScriptId = ref(props.resumeFromScriptId ?? null)
 // 模式选项
 const modeOptions = TASK_MODE_OPTIONS
 
+const isQueueOption = (option?: ComboBoxItem | null) => {
+  return Boolean(option?.label?.startsWith('队列 - '))
+}
+
+const filteredTaskOptions = computed(() => {
+  if (localSelectedMode.value !== CYCLE_RUN_MODE) return props.taskOptions
+  return props.taskOptions.filter(option => option.value == null || isQueueOption(option))
+})
+
+const showCyclePreview = computed(() => localSelectedMode.value === CYCLE_RUN_MODE)
+
+const cyclePreviewItems = computed(() => {
+  const sourceItems = props.cycleNextList?.length
+    ? props.cycleNextList.slice(0, cyclePreviewSlotCount)
+    : props.cycleNext
+      ? [props.cycleNext]
+      : []
+
+  const previewItems: CyclePreviewSlot[] = sourceItems.map((item, index) => ({
+    ...item,
+    slotIndex: index,
+  }))
+
+  while (previewItems.length < cyclePreviewSlotCount) {
+    previewItems.push({
+      queueItemId: `empty-${previewItems.length}`,
+      scriptId: '',
+      scriptName: '',
+      nextRunAt: '',
+      isDue: false,
+      isPlaceholder: true,
+      slotIndex: previewItems.length,
+    })
+  }
+
+  return previewItems
+})
+
+const formatCyclePreviewTime = (item: CyclePreviewSlot) => {
+  if (item.isPlaceholder) return ''
+  if (item.isRunning) return '运行中'
+  if (item.isDue) return '等待执行'
+  return item.nextRunAt || '启动后计算'
+}
+
 // 仅当选中队列任务时显示恢复脚本下拉框。
 // 注：通过任务选项 label 的 "队列 - " 前缀判断，与 useSchedulerLogic.isQueueTask 保持同步。
 const showResumeScriptSelect = computed(() => {
@@ -141,7 +221,7 @@ const showResumeScriptSelect = computed(() => {
   if (!selectedTaskId) return false
 
   const taskOption = props.taskOptions.find(opt => opt.value === selectedTaskId)
-  return Boolean(taskOption?.label.startsWith('队列 - '))
+  return localSelectedMode.value !== CYCLE_RUN_MODE && isQueueOption(taskOption)
 })
 
 // 运行时的显示文本 - 直接使用 props，不再需要本地 ref
@@ -197,6 +277,19 @@ const onTaskChange = (value: string) => {
 
 const onModeChange = (value: TaskCreateIn.mode) => {
   emit('update:selectedMode', value)
+  emit('mode-changed', value)
+
+  if (value === CYCLE_RUN_MODE) {
+    const selectedTaskId = localSelectedTaskId.value
+    const taskOption = props.taskOptions.find(opt => opt.value === selectedTaskId)
+    if (selectedTaskId && !isQueueOption(taskOption)) {
+      localSelectedTaskId.value = null
+      emit('update:selectedTaskId', null)
+      emit('task-changed', null)
+    }
+    localResumeFromScriptId.value = null
+    emit('update:resumeFromScriptId', null)
+  }
 }
 
 const onResumeScriptChange = (value: string | undefined) => {
@@ -249,6 +342,79 @@ const onDropdownVisibleChange = (open: boolean) => {
   flex: 1;
 }
 
+.cycle-preview {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+
+.cycle-preview-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.cycle-preview-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.cycle-preview-meta {
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+}
+
+.cycle-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cycle-preview-item {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-fill-quaternary);
+}
+
+.cycle-preview-item.is-running {
+  border-color: var(--ant-color-primary-border);
+  background: var(--ant-color-primary-bg);
+}
+
+.cycle-preview-item.is-empty {
+  border-style: dashed;
+  background: transparent;
+}
+
+.cycle-preview-name {
+  min-height: 20px;
+  overflow: hidden;
+  color: var(--ant-color-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cycle-preview-time {
+  min-height: 20px;
+  margin-top: 2px;
+  color: var(--ant-color-primary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.cycle-preview-item.is-empty .cycle-preview-name,
+.cycle-preview-item.is-empty .cycle-preview-time {
+  color: var(--ant-color-text-secondary);
+}
+
 /* 响应式 - 移动端适配 */
 @media (max-width: 768px) {
   .control-row {
@@ -262,6 +428,10 @@ const onDropdownVisibleChange = (open: boolean) => {
 
   .control-card {
     padding: 12px;
+  }
+
+  .cycle-preview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

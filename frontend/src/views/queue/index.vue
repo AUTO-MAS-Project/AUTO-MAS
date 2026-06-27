@@ -20,9 +20,14 @@
             新建队列
           </a-button>
 
-          <a-popconfirm v-if="queueList.length > 0" title="确定要删除这个队列吗？" ok-text="确定" cancel-text="取消"
-            @confirm="handleRemoveQueue(activeQueueId)">
-            <a-button danger size="large" :disabled="!activeQueueId">
+          <a-popconfirm
+            v-if="queueList.length > 0"
+            title="确定要删除这个队列吗？"
+            ok-text="确定"
+            cancel-text="取消"
+            @confirm="handleRemoveQueue(activeQueueId)"
+          >
+            <a-button danger size="large" :disabled="!activeQueueId || currentQueueEditingDisabled">
               <template #icon>
                 <DeleteOutlined />
               </template>
@@ -63,9 +68,14 @@
           <!-- 队列按钮组 -->
           <div class="queue-buttons-container">
             <a-space wrap size="middle">
-              <a-button v-for="queue in queueList" :key="queue.id"
-                :type="activeQueueId === queue.id ? 'primary' : 'default'" size="large" class="queue-button"
-                @click="onQueueChange(queue.id)">
+              <a-button
+                v-for="queue in queueList"
+                :key="queue.id"
+                :type="activeQueueId === queue.id ? 'primary' : 'default'"
+                size="large"
+                class="queue-button"
+                @click="onQueueChange(queue.id)"
+              >
                 {{ queue.name }}
               </a-button>
             </a-space>
@@ -78,22 +88,39 @@
         <template #title>
           <div class="queue-title-container">
             <div v-if="!isEditingQueueName" class="queue-title-display">
-              <span class="queue-title-text">{{ currentQueueName || '队列配置' }}</span>
-              <a-button type="text" size="small" class="queue-edit-btn" @click="startEditQueueName">
-                <template #icon>
-                  <EditOutlined />
-                </template>
-              </a-button>
+              <div class="queue-title-main">
+                <span class="queue-title-text">{{ currentQueueName || '队列配置' }}</span>
+                <a-button
+                  type="text"
+                  size="small"
+                  class="queue-edit-btn"
+                  :disabled="currentQueueEditingDisabled"
+                  @click="startEditQueueName"
+                >
+                  <template #icon>
+                    <EditOutlined />
+                  </template>
+                </a-button>
+              </div>
+              <a-tag :color="currentQueueTypeTagColor" class="queue-type-tag">
+                {{ currentQueueTypeLabel }}
+              </a-tag>
             </div>
             <div v-else class="queue-title-edit">
-              <a-input ref="queueNameInputRef" v-model:value="currentQueueName" placeholder="请输入队列名称"
-                class="queue-title-input" :maxlength="50" @blur="finishEditQueueName"
-                @press-enter="finishEditQueueName" />
+              <a-input
+                ref="queueNameInputRef"
+                v-model:value="currentQueueName"
+                placeholder="请输入队列名称"
+                class="queue-title-input"
+                :maxlength="50"
+                @blur="finishEditQueueName"
+                @press-enter="finishEditQueueName"
+              />
             </div>
           </div>
         </template>
 
-        <!-- 队列开关配置 -->
+        <!-- 队列基础配置 -->
         <div class="config-section">
           <a-row :gutter="24">
             <a-col :span="6">
@@ -104,29 +131,39 @@
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
-                <a-select v-model:value="currentStartUpEnabled" style="width: 100%" size="large"
-                  @change="(value: any) => handleConfigChange('StartUpEnabled', value)">
+                <a-select
+                  v-model:value="currentStartUpEnabled"
+                  style="width: 100%"
+                  size="large"
+                  :disabled="currentQueueEditingDisabled"
+                  @change="(value: any) => handleConfigChange('StartUpEnabled', value)"
+                >
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
               </div>
             </a-col>
-            <a-col :span="6">
+            <a-col v-if="currentQueueType === 'timed'" :span="6">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
                   <span class="form-label">定时运行</span>
-                  <a-tooltip title="在设定的时间自动运行此队列">
+                  <a-tooltip title="启用后按定时列表自动运行此队列">
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
-                <a-select v-model:value="currentTimeEnabled" style="width: 100%" size="large"
-                  @change="(value: any) => handleConfigChange('TimeEnabled', value)">
+                <a-select
+                  v-model:value="currentTimeEnabled"
+                  style="width: 100%"
+                  size="large"
+                  :disabled="currentQueueEditingDisabled"
+                  @change="(value: any) => handleConfigChange('TimeEnabled', value)"
+                >
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
               </div>
             </a-col>
-            <a-col :span="12">
+            <a-col v-if="currentQueueType === 'timed'" :span="12">
               <div class="form-item-vertical">
                 <div class="form-label-wrapper">
                   <span class="form-label">完成后操作</span>
@@ -134,28 +171,84 @@
                     <QuestionCircleOutlined class="help-icon" />
                   </a-tooltip>
                 </div>
-                <a-select v-model:value="currentAfterAccomplish" style="width: 100%" :options="afterAccomplishOptions"
-                  placeholder="请选择操作" size="large"
-                  @change="(value: any) => handleConfigChange('AfterAccomplish', value)" />
+                <a-select
+                  v-model:value="currentAfterAccomplish"
+                  style="width: 100%"
+                  :options="afterAccomplishOptions"
+                  placeholder="请选择操作"
+                  size="large"
+                  :disabled="currentQueueEditingDisabled"
+                  @change="(value: any) => handleConfigChange('AfterAccomplish', value)"
+                />
               </div>
             </a-col>
           </a-row>
         </div>
         <a-divider />
 
+        <a-alert
+          v-if="currentQueueEditingDisabled"
+          class="queue-running-alert"
+          type="warning"
+          show-icon
+          message="循环队列正在运行，停止后才能修改配置。"
+        />
+
         <!-- 定时项管理 -->
         <a-col :span="24" class="manager-col">
-          <TimeSetManager v-if="activeQueueId && currentQueueData" :queue-id="activeQueueId"
-            :time-sets="currentTimeSets" style="font-size: 14px" @refresh="refreshTimeSets" />
+          <TimeSetManager
+            v-if="activeQueueId && currentQueueData && currentQueueType === 'timed'"
+            :queue-id="activeQueueId"
+            :time-sets="currentTimeSets"
+            style="font-size: 14px"
+            @refresh="refreshTimeSets"
+          />
         </a-col>
 
         <!-- 队列项管理 -->
         <a-col :span="24" class="manager-col">
-          <QueueItemManager v-if="activeQueueId && currentQueueData" :queue-id="activeQueueId"
-            :queue-items="currentQueueItems" style="font-size: 14px" @refresh="refreshQueueItems" />
+          <QueueItemManager
+            v-if="activeQueueId && currentQueueData"
+            :queue-id="activeQueueId"
+            :queue-items="currentQueueItems"
+            :show-cycle-config="currentQueueType === 'cycle'"
+            :disabled="currentQueueEditingDisabled"
+            style="font-size: 14px"
+            @refresh="refreshQueueItems"
+          />
         </a-col>
       </a-card>
     </div>
+
+    <a-modal
+      v-model:open="queueCreateModalOpen"
+      title="新建队列"
+      :footer="null"
+      :closable="!queueCreating"
+      :mask-closable="!queueCreating"
+      width="520px"
+    >
+      <div class="queue-create-options">
+        <button
+          class="queue-create-option"
+          type="button"
+          :disabled="queueCreating"
+          @click="createQueue('timed')"
+        >
+          <span class="queue-create-option-title">定时队列</span>
+          <span class="queue-create-option-desc">按队列定时列表运行排好的脚本。</span>
+        </button>
+        <button
+          class="queue-create-option"
+          type="button"
+          :disabled="queueCreating"
+          @click="createQueue('cycle')"
+        >
+          <span class="queue-create-option-title">循环队列</span>
+          <span class="queue-create-option-desc">按每个脚本自己的循环配置运行。</span>
+        </button>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -170,23 +263,26 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
-import { useAudioPlayer } from '@/composables/useAudioPlayer'
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 
 const logger = window.electronAPI.getLogger('调度队列')
-const { playSound } = useAudioPlayer()
+
+defineOptions({
+  name: 'QueuePage',
+})
 
 // 队列列表和当前选中的队列
 const queueList = ref<Array<{ id: string; name: string }>>([])
 const activeQueueId = ref<string>('')
 const currentQueueData = ref<Record<string, any> | null>(null)
+type QueueKind = 'timed' | 'cycle'
 
 // 当前队列的名称和状态
 const currentQueueName = ref<string>('')
-const currentQueueEnabled = ref<boolean>(true)
 // 新增：启动时运行和定时运行的开关状态
 const currentStartUpEnabled = ref<boolean>(false)
 const currentTimeEnabled = ref<boolean>(false)
+const currentCycleEnabled = ref<boolean>(false)
 // 新增：完成后操作状态
 const currentAfterAccomplish = ref<string>('NoAction')
 // 队列名称编辑状态
@@ -210,6 +306,55 @@ const currentTimeSets = ref<any[]>([])
 const currentQueueItems = ref<any[]>([])
 
 const loading = ref(true)
+const queueCreateModalOpen = ref(false)
+const queueCreating = ref(false)
+const runningCycleQueueIds = ref<Set<string>>(new Set())
+let runningQueueTimer: ReturnType<typeof setInterval> | null = null
+
+const currentQueueType = computed<QueueKind>(() => {
+  return currentCycleEnabled.value ? 'cycle' : 'timed'
+})
+
+const currentQueueTypeLabel = computed(() => {
+  return currentQueueType.value === 'cycle' ? '循环队列' : '定时队列'
+})
+
+const currentQueueTypeTagColor = computed(() => {
+  return currentQueueType.value === 'cycle' ? 'processing' : 'success'
+})
+
+const currentQueueEditingDisabled = computed(() => {
+  return currentQueueType.value === 'cycle' && runningCycleQueueIds.value.has(activeQueueId.value)
+})
+
+const getCurrentTimeText = () => {
+  return new Date().toTimeString().slice(0, 5)
+}
+
+const refreshRunningCycleQueueIds = () => {
+  try {
+    const tabs = JSON.parse(sessionStorage.getItem('scheduler-tabs-session') || '[]')
+    if (!Array.isArray(tabs)) {
+      runningCycleQueueIds.value = new Set()
+      return
+    }
+
+    runningCycleQueueIds.value = new Set(
+      tabs
+        .filter(
+          tab =>
+            tab?.status === '运行' &&
+            tab?.selectedMode === 'CycleRun' &&
+            typeof tab?.selectedTaskId === 'string'
+        )
+        .map(tab => tab.selectedTaskId)
+    )
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`读取循环队列运行状态失败: ${errorMsg}`)
+    runningCycleQueueIds.value = new Set()
+  }
+}
 
 // 获取队列列表
 const fetchQueues = async () => {
@@ -298,16 +443,21 @@ const loadQueueData = async (queueId: string) => {
       // 更新开关状态 - 从API响应中获取
       currentStartUpEnabled.value = queueData.Info?.StartUpEnabled ?? false
       currentTimeEnabled.value = queueData.Info?.TimeEnabled ?? false
+      currentCycleEnabled.value = queueData.Info?.CycleEnabled ?? false
       // 更新完成后操作状态 - 从API响应中获取
       currentAfterAccomplish.value = queueData.Info?.AfterAccomplish ?? 'NoAction'
       await new Promise(resolve => setTimeout(resolve, 50))
 
       // 加载定时项和队列项数据 - 添加错误处理
-      try {
-        await refreshTimeSets()
-      } catch (timeError) {
-        const errorMsg = timeError instanceof Error ? timeError.message : String(timeError)
-        logger.error(`刷新定时项失败: ${errorMsg}`)
+      if (currentQueueType.value === 'timed') {
+        try {
+          await refreshTimeSets()
+        } catch (timeError) {
+          const errorMsg = timeError instanceof Error ? timeError.message : String(timeError)
+          logger.error(`刷新定时项失败: ${errorMsg}`)
+        }
+      } else {
+        currentTimeSets.value = []
       }
 
       try {
@@ -422,6 +572,15 @@ const refreshQueueItems = async () => {
             queueItems.push({
               id: queueItemId,
               script: queueItemData.Info.ScriptId || '',
+              scheduleEnabled: queueItemData.Schedule?.Enabled ?? true,
+              scheduleMode: queueItemData.Schedule?.Mode || 'fixed_time',
+              scheduleDays: queueItemData.Schedule?.Days || [],
+              scheduleTime: queueItemData.Schedule?.Time || getCurrentTimeText(),
+              intervalMinutes: queueItemData.Schedule?.IntervalMinutes || 480,
+              intervalAnchor: queueItemData.Schedule?.IntervalAnchor || 'start',
+              nextRunAt: queueItemData.Schedule?.NextRunAt || '2000-01-01 00:00:00',
+              lastCycleStartedAt: queueItemData.Data?.LastCycleStartedAt || '2000-01-01 00:00:00',
+              lastCycleFinishedAt: queueItemData.Data?.LastCycleFinishedAt || '2000-01-01 00:00:00',
             })
           }
         } catch (itemError) {
@@ -445,6 +604,8 @@ const refreshQueueItems = async () => {
 
 // 队列名称编辑失焦处理 - 保存到后端
 const onQueueNameBlur = async () => {
+  if (currentQueueEditingDisabled.value) return
+
   // 当用户编辑完队列名称后，更新按钮显示的名称并保存
   if (activeQueueId.value) {
     const currentQueue = queueList.value.find(queue => queue.id === activeQueueId.value)
@@ -459,6 +620,11 @@ const onQueueNameBlur = async () => {
 
 // 开始编辑队列名称
 const startEditQueueName = () => {
+  if (currentQueueEditingDisabled.value) {
+    message.warning('循环队列正在运行，停止后才能修改配置')
+    return
+  }
+
   isEditingQueueName.value = true
   // 使用 nextTick 确保 DOM 更新后再获取焦点
   setTimeout(() => {
@@ -478,21 +644,48 @@ const finishEditQueueName = () => {
 
 // 统一的配置字段变更处理 - 即时保存单个字段
 const handleConfigChange = async (key: string, value: any) => {
+  if (currentQueueEditingDisabled.value) {
+    message.warning('循环队列正在运行，停止后才能修改配置')
+    return
+  }
+
   await handleSaveChange(key, value)
 }
 
-// 添加队列
 const handleAddQueue = async () => {
+  queueCreateModalOpen.value = true
+}
+
+// 添加队列
+const createQueue = async (queueKind: QueueKind) => {
   try {
+    queueCreating.value = true
     const response = await Service.addQueueApiQueueAddPost()
 
     if (response.code === 200 && response.queueId) {
+      const defaultName = queueKind === 'cycle' ? '新循环队列' : '新定时队列'
+      const typeUpdateResponse = await Service.updateQueueApiQueueUpdatePost({
+        queueId: response.queueId,
+        data: {
+          Info: {
+            Name: defaultName,
+            TimeEnabled: queueKind === 'timed',
+            CycleEnabled: queueKind === 'cycle',
+            AfterAccomplish: 'NoAction',
+          },
+        },
+      })
+
+      if (typeUpdateResponse.code !== 200) {
+        message.error(typeUpdateResponse.message || '队列类型保存失败')
+        return
+      }
+
       // 播放添加队列成功音频
       const { useAudioPlayer } = await import('@/composables/useAudioPlayer')
       const { playSound } = useAudioPlayer()
       await playSound('add_queue')
 
-      const defaultName = '新队列'
       const newQueue = {
         id: response.queueId,
         name: defaultName,
@@ -502,10 +695,12 @@ const handleAddQueue = async () => {
 
       // 设置默认名称到输入框中
       currentQueueName.value = defaultName
-      currentQueueEnabled.value = true
+      currentTimeEnabled.value = queueKind === 'timed'
+      currentCycleEnabled.value = queueKind === 'cycle'
 
       await loadQueueData(newQueue.id)
 
+      queueCreateModalOpen.value = false
       // 显示名称修改提示
       message.info('已创建新的调度队列，建议您修改为更有意义的名称', 3)
     } else {
@@ -515,11 +710,18 @@ const handleAddQueue = async () => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`添加队列失败: ${errorMsg}`)
     message.error(`添加队列失败: ${errorMsg}`)
+  } finally {
+    queueCreating.value = false
   }
 }
 
 // 删除队列
 const handleRemoveQueue = async (queueId: string) => {
+  if (currentQueueEditingDisabled.value && queueId === activeQueueId.value) {
+    message.warning('循环队列正在运行，停止后才能删除')
+    return
+  }
+
   try {
     const response = await Service.deleteQueueApiQueueDeletePost({ queueId })
 
@@ -585,6 +787,7 @@ const refreshQueueConfig = async () => {
         currentQueueName.value = queueData.Info.Name || ''
         currentStartUpEnabled.value = queueData.Info.StartUpEnabled ?? false
         currentTimeEnabled.value = queueData.Info.TimeEnabled ?? false
+        currentCycleEnabled.value = queueData.Info.CycleEnabled ?? false
         currentAfterAccomplish.value = queueData.Info.AfterAccomplish ?? 'NoAction'
 
         // 更新队列列表中的名称
@@ -603,6 +806,7 @@ const refreshQueueConfig = async () => {
 // 即时保存单个字段变更 - 只发送修改的字段（遵循最小原则）
 const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
   if (!activeQueueId.value) return false
+  if (currentQueueEditingDisabled.value) return false
 
   try {
     // 构建只包含变更字段的数据
@@ -636,11 +840,20 @@ const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
 // 初始化
 onMounted(async () => {
   try {
+    refreshRunningCycleQueueIds()
+    runningQueueTimer = setInterval(refreshRunningCycleQueueIds, 1000)
     await fetchQueues()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`初始化失败: ${errorMsg}`)
     loading.value = false
+  }
+})
+
+onUnmounted(() => {
+  if (runningQueueTimer) {
+    clearInterval(runningQueueTimer)
+    runningQueueTimer = null
   }
 })
 </script>
@@ -785,7 +998,6 @@ onMounted(async () => {
 }
 
 @keyframes pulse {
-
   0%,
   100% {
     opacity: 0.6;
@@ -862,6 +1074,13 @@ onMounted(async () => {
 
 .queue-title-display {
   display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.queue-title-main {
+  display: flex;
   align-items: center;
   gap: 8px;
 }
@@ -875,6 +1094,11 @@ onMounted(async () => {
 .queue-edit-btn {
   color: var(--ant-color-primary);
   padding: 0;
+}
+
+.queue-type-tag {
+  margin: 0;
+  font-weight: 500;
 }
 
 /* 队列名称输入框 */
@@ -898,6 +1122,57 @@ onMounted(async () => {
 .manager-col {
   display: flex;
   flex-direction: column;
+}
+
+.queue-running-alert {
+  margin-bottom: 16px;
+}
+
+.queue-create-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.queue-create-option {
+  display: flex;
+  min-height: 112px;
+  padding: 16px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-text);
+  cursor: pointer;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  text-align: left;
+  transition:
+    border-color 0.2s,
+    background-color 0.2s;
+}
+
+.queue-create-option:hover:not(:disabled) {
+  border-color: var(--ant-color-primary);
+  background: var(--ant-color-fill-quaternary);
+}
+
+.queue-create-option:disabled {
+  color: var(--ant-color-text-disabled);
+  cursor: not-allowed;
+}
+
+.queue-create-option-title {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.queue-create-option-desc {
+  margin-top: 6px;
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
+  line-height: 20px;
 }
 
 /* 垂直排列的表单项 */
@@ -988,6 +1263,10 @@ onMounted(async () => {
 
   .queue-title-input {
     max-width: 100%;
+  }
+
+  .queue-create-options {
+    grid-template-columns: 1fr;
   }
 
   .header-actions {

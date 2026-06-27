@@ -275,7 +275,48 @@ class QueueItem_Info(BaseModel):
     )
 
 
+class QueueItem_Schedule(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="是否启用循环调度")
+    Mode: Optional[Literal["fixed_time", "interval"]] = Field(
+        default=None, description="循环调度模式"
+    )
+    Days: Optional[
+        List[
+            Literal[
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ]
+        ]
+    ] = Field(default=None, description="固定时间调度执行周期")
+    Time: Optional[str] = Field(default=None, description="固定时间调度执行时间，格式 HH:mm")
+    IntervalMinutes: Optional[int] = Field(default=None, description="间隔调度分钟数")
+    IntervalAnchor: Optional[Literal["start", "finish"]] = Field(
+        default=None, description="间隔调度基准"
+    )
+    NextRunAt: Optional[str] = Field(
+        default=None, description="下一次运行时间，格式 YYYY-MM-DD HH:mm:ss"
+    )
+
+
+class QueueItem_Data(BaseModel):
+    LastCycleStartedAt: Optional[str] = Field(
+        default=None, description="上次循环开始时间"
+    )
+    LastCycleFinishedAt: Optional[str] = Field(
+        default=None, description="上次循环完成时间"
+    )
+
+
 class QueueItem(BaseModel):
+    Schedule: Optional[QueueItem_Schedule] = Field(
+        default=None, description="循环调度配置"
+    )
+    Data: Optional[QueueItem_Data] = Field(default=None, description="循环运行数据")
     Info: Optional[QueueItem_Info] = Field(default=None, description="队列项")
 
 
@@ -305,6 +346,7 @@ class QueueConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="队列名称")
     TimeEnabled: Optional[bool] = Field(default=None, description="是否启用定时")
     StartUpEnabled: Optional[bool] = Field(default=None, description="是否启动时运行")
+    CycleEnabled: Optional[bool] = Field(default=None, description="是否允许循环运行")
     AfterAccomplish: Optional[
         Literal[
             "NoAction",
@@ -1777,7 +1819,7 @@ class DispatchIn(BaseModel):
 
 
 class TaskCreateIn(DispatchIn):
-    mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"] = Field(
+    mode: Literal["AutoProxy", "ManualReview", "ScriptConfig", "CycleRun"] = Field(
         ..., description="任务模式"
     )
     resumeFromScriptId: str | None = Field(

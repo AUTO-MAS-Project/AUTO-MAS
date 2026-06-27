@@ -1,6 +1,8 @@
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { PowerIn } from '@/api/models/PowerIn'
 
+export const CYCLE_RUN_MODE: TaskCreateIn.mode = 'CycleRun'
+
 // 调度台状态
 export type SchedulerStatus = '空闲' | '运行' | '结束'
 
@@ -36,8 +38,9 @@ export const getQueueStatusColor = (status: string): string => {
 
 // 任务模式选项（直接复用后端枚举值）
 export const TASK_MODE_OPTIONS = [
-  { label: "自动代理", value: TaskCreateIn.mode.AUTO_PROXY },
-  { label: "人工排查", value: TaskCreateIn.mode.MANUAL_REVIEW },
+  { label: '自动代理', value: TaskCreateIn.mode.AUTO_PROXY },
+  { label: '人工排查', value: TaskCreateIn.mode.MANUAL_REVIEW },
+  { label: '循环运行', value: CYCLE_RUN_MODE },
 ]
 
 // 电源操作映射
@@ -61,6 +64,15 @@ export type LogType = 'info' | 'error' | 'warning' | 'success'
 export interface QueueItem {
   name: string
   status: string
+}
+
+export interface CycleNextInfo {
+  queueItemId: string
+  scriptId: string
+  scriptName: string
+  nextRunAt: string
+  isDue: boolean
+  isRunning?: boolean
 }
 
 export interface LogEntry {
@@ -95,6 +107,8 @@ export interface SchedulerTab {
   // 新增：运行时任务/模式文本快照（用于持久化显示）
   runningTaskLabel?: string
   runningModeLabel?: string
+  cycleNext?: CycleNextInfo | null
+  cycleNextList?: CycleNextInfo[]
   // 新增：日志显示模式
   logMode?: 'follow' | 'browse'
 }

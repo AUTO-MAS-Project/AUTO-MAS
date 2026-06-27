@@ -21,7 +21,7 @@
               </span>
             </div>
             <a-tag :color="getStatusColor(script.status)" size="small" class="status-tag">
-              {{ script.status }}
+              {{ getStatusText(script.status) }}
             </a-tag>
           </div>
         </div>
@@ -33,12 +33,16 @@
               <span class="no-users-text">暂无用户</span>
             </div>
           </div>
-          <div v-for="(user, index) in script.user_list" :key="`user-${script.script_id}-${user.user_id}`"
-            class="user-item" :class="{ 'last-item': index === script.user_list.length - 1 }">
+          <div
+            v-for="(user, index) in script.user_list"
+            :key="`user-${script.script_id}-${user.user_id}`"
+            class="user-item"
+            :class="{ 'last-item': index === script.user_list.length - 1 }"
+          >
             <div class="user-content">
               <span class="user-name">{{ user.name }}</span>
               <a-tag :color="getStatusColor(user.status)" size="small" class="status-tag">
-                {{ user.status }}
+                {{ getStatusText(user.status) }}
               </a-tag>
             </div>
           </div>
@@ -83,6 +87,10 @@ const toggleScript = (scriptId: string) => {
   } else {
     expandedScripts.value.add(scriptId)
   }
+}
+
+const getStatusText = (status: string) => {
+  return status === '等待重试' ? '等待' : status
 }
 
 // 获取状态颜色 - 使用更全面的映射和后备逻辑
@@ -145,8 +153,10 @@ watch(
   (newData, oldData) => {
     const newScriptCount = newData?.length ?? 0
     const oldScriptCount = oldData?.length ?? 0
-    const newUserCount = newData?.reduce((total, script) => total + (script.user_list?.length || 0), 0) ?? 0
-    const oldUserCount = oldData?.reduce((total, script) => total + (script.user_list?.length || 0), 0) ?? 0
+    const newUserCount =
+      newData?.reduce((total, script) => total + (script.user_list?.length || 0), 0) ?? 0
+    const oldUserCount =
+      oldData?.reduce((total, script) => total + (script.user_list?.length || 0), 0) ?? 0
 
     if (newScriptCount !== oldScriptCount || newUserCount !== oldUserCount) {
       logger.debug(
@@ -223,17 +233,21 @@ defineExpose({
 .script-header {
   cursor: pointer;
   padding: 12px 16px;
-  background: linear-gradient(135deg,
-      var(--ant-color-fill-quaternary) 0%,
-      var(--ant-color-fill-tertiary) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--ant-color-fill-quaternary) 0%,
+    var(--ant-color-fill-tertiary) 100%
+  );
   /* 保留hover过渡，但减少时间 */
   transition: background 0.1s ease;
 }
 
 .script-header:hover {
-  background: linear-gradient(135deg,
-      var(--ant-color-fill-tertiary) 0%,
-      var(--ant-color-fill-secondary) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--ant-color-fill-tertiary) 0%,
+    var(--ant-color-fill-secondary) 100%
+  );
 }
 
 .script-content {

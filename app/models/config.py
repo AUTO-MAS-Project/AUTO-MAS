@@ -234,6 +234,64 @@ class QueueItem(ConfigBase):
             "-",
             MultipleUIDValidator("-", self.related_config, "ScriptConfig"),
         )
+        ## Schedule --------------------------------------------------------
+        ## 是否启用循环调度
+        self.Schedule_Enabled = ConfigItem("Schedule", "Enabled", True, BoolValidator())
+        ## 循环调度模式：fixed_time 为固定时间，interval 为间隔
+        self.Schedule_Mode = ConfigItem(
+            "Schedule",
+            "Mode",
+            "fixed_time",
+            OptionsValidator(["fixed_time", "interval"]),
+        )
+        ## 固定时间调度的执行周期
+        self.Schedule_Days = ConfigItem(
+            "Schedule",
+            "Days",
+            list(calendar.day_name),
+            MultipleOptionsValidator(list(calendar.day_name)),
+        )
+        ## 固定时间调度的执行时间
+        self.Schedule_Time = ConfigItem(
+            "Schedule",
+            "Time",
+            datetime.now().strftime("%H:%M"),
+            DateTimeValidator("%H:%M"),
+        )
+        ## 间隔调度分钟数
+        self.Schedule_IntervalMinutes = ConfigItem(
+            "Schedule", "IntervalMinutes", 480, RangeValidator(1, 10080)
+        )
+        ## 间隔调度基准：start 为开始到开始，finish 为结束到开始
+        self.Schedule_IntervalAnchor = ConfigItem(
+            "Schedule",
+            "IntervalAnchor",
+            "start",
+            OptionsValidator(["start", "finish"]),
+        )
+        ## 下一次运行时间
+        self.Schedule_NextRunAt = ConfigItem(
+            "Schedule",
+            "NextRunAt",
+            "2000-01-01 00:00:00",
+            DateTimeValidator("%Y-%m-%d %H:%M:%S"),
+        )
+
+        ## Data ------------------------------------------------------------
+        ## 上次循环开始时间
+        self.Data_LastCycleStartedAt = ConfigItem(
+            "Data",
+            "LastCycleStartedAt",
+            "2000-01-01 00:00:00",
+            DateTimeValidator("%Y-%m-%d %H:%M:%S"),
+        )
+        ## 上次循环完成时间
+        self.Data_LastCycleFinishedAt = ConfigItem(
+            "Data",
+            "LastCycleFinishedAt",
+            "2000-01-01 00:00:00",
+            DateTimeValidator("%Y-%m-%d %H:%M:%S"),
+        )
 
         super().__init__()
 
@@ -274,6 +332,9 @@ class QueueConfig(ConfigBase):
         ## 是否在启动时自动运行
         self.Info_StartUpEnabled = ConfigItem(
             "Info", "StartUpEnabled", False, BoolValidator()
+        )
+        self.Info_CycleEnabled = ConfigItem(
+            "Info", "CycleEnabled", False, BoolValidator()
         )
         ## 完成后操作
         self.Info_AfterAccomplish = ConfigItem(

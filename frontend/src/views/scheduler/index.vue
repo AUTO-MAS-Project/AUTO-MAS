@@ -85,11 +85,19 @@
               v-model:running-mode-label="tab.runningModeLabel"
               :resume-script-options="tab.resumeScriptOptions || []"
               :resume-script-loading="tab.resumeScriptLoading"
+              :cycle-next="tab.cycleNext"
+              :cycle-next-list="tab.cycleNextList || []"
               :task-options="taskOptions"
               :task-options-loading="taskOptionsLoading"
               :status="tab.status"
               :disabled="tab.status === '运行'"
               @task-changed="(taskId: string | null) => handleTaskSelectionChange(tab, taskId)"
+              @mode-changed="
+                mode => {
+                  tab.selectedMode = mode
+                  refreshCyclePreview(tab)
+                }
+              "
               @refresh-resume-scripts="() => loadResumeScriptOptions(tab)"
               @start="onStartTaskClick(tab)"
               @stop="stopTask(tab)"
@@ -153,7 +161,7 @@
 
 <script lang="ts">
 export default {
-  name: 'Scheduler', // 用于 keep-alive 识别
+  name: 'SchedulerCenter', // 用于 keep-alive 识别
 }
 </script>
 
@@ -191,6 +199,7 @@ const {
   stopTask,
   handleTaskSelectionChange,
   loadResumeScriptOptions,
+  refreshCyclePreview,
 
   // 日志操作
   onLogScroll,

@@ -136,6 +136,7 @@ class AppConfig(GlobalConfig):
             "Logoff",
         ] = "NoAction"
         self.temp_task: List[asyncio.Task] = []
+        self.running_cycle_queue_ids: set[uuid.UUID] = set()
 
         truststore.inject_into_ssl()
 
@@ -1136,6 +1137,7 @@ class AppConfig(GlobalConfig):
         logger.info(f"更新调度队列配置: {queue_id}")
 
         queue_uid = uuid.UUID(queue_id)
+        self._ensure_queue_editable(queue_uid)
 
         for group, items in data.items():
             for name, value in items.items():
@@ -1146,7 +1148,10 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"删除调度队列配置: {queue_id}")
 
-        await self.QueueConfig.remove(uuid.UUID(queue_id))
+        queue_uid = uuid.UUID(queue_id)
+        self._ensure_queue_editable(queue_uid)
+
+        await self.QueueConfig.remove(queue_uid)
 
     async def reorder_queue(self, index_list: list[str]) -> None:
         """重新排序调度队列"""
@@ -1178,6 +1183,7 @@ class AppConfig(GlobalConfig):
         logger.info(f"{queue_id} 添加时间设置配置")
 
         queue_uid = uuid.UUID(queue_id)
+        self._ensure_queue_editable(queue_uid)
         uid, config = await self.QueueConfig[queue_uid].TimeSet.add(TimeSet)
 
         return uid, config
@@ -1191,6 +1197,7 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
         time_set_uid = uuid.UUID(time_set_id)
+        self._ensure_queue_editable(queue_uid)
 
         for group, items in data.items():
             for name, value in items.items():
@@ -1207,6 +1214,7 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
         time_set_uid = uuid.UUID(time_set_id)
+        self._ensure_queue_editable(queue_uid)
 
         await self.QueueConfig[queue_uid].TimeSet.remove(time_set_uid)
 
@@ -1216,6 +1224,7 @@ class AppConfig(GlobalConfig):
         logger.info(f"{queue_id} 重新排序时间设置: {index_list}")
 
         queue_uid = uuid.UUID(queue_id)
+        self._ensure_queue_editable(queue_uid)
 
         await self.QueueConfig[queue_uid].TimeSet.setOrder(
             list(map(uuid.UUID, index_list))
@@ -1246,6 +1255,7 @@ class AppConfig(GlobalConfig):
         logger.info(f"{queue_id} 添加队列项配置")
 
         queue_uid = uuid.UUID(queue_id)
+        self._ensure_queue_editable(queue_uid)
 
         uid, config = await self.QueueConfig[queue_uid].QueueItem.add(QueueItem)
 
@@ -1260,6 +1270,7 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
         queue_item_uid = uuid.UUID(queue_item_id)
+        self._ensure_queue_editable(queue_uid)
 
         for group, items in data.items():
             for name, value in items.items():
@@ -1276,6 +1287,7 @@ class AppConfig(GlobalConfig):
 
         queue_uid = uuid.UUID(queue_id)
         queue_item_uid = uuid.UUID(queue_item_id)
+        self._ensure_queue_editable(queue_uid)
 
         await self.QueueConfig[queue_uid].QueueItem.remove(queue_item_uid)
 
@@ -1285,10 +1297,22 @@ class AppConfig(GlobalConfig):
         logger.info(f"{queue_id} 重新排序队列项: {index_list}")
 
         queue_uid = uuid.UUID(queue_id)
+        self._ensure_queue_editable(queue_uid)
 
         await self.QueueConfig[queue_uid].QueueItem.setOrder(
             list(map(uuid.UUID, index_list))
         )
+
+    def _ensure_queue_editable(self, queue_uid: uuid.UUID) -> None:
+        """阻止用户修改正在循环运行的队列配置。"""
+
+        if queue_uid in self.running_cycle_queue_ids:
+            queue_name = (
+                self.QueueConfig[queue_uid].get("Info", "Name")
+                if queue_uid in self.QueueConfig
+                else str(queue_uid)
+            )
+            raise RuntimeError(f"循环队列 {queue_name} 正在运行，无法修改")
 
     async def get_tools(self) -> Dict[str, Any]:
         """获取工具设置"""

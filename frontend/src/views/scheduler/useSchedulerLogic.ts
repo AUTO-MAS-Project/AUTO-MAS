@@ -8,13 +8,25 @@ import { useWebSocket, ExternalWSHandlers } from '@/composables/useWebSocket'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import schedulerHandlers from './schedulerHandlers'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
-import type { QueueItem, Script } from './schedulerConstants'
-import { type SchedulerTab, type TaskMessage, type SchedulerStatus } from './schedulerConstants'
+import {
+  CYCLE_RUN_MODE,
+  type CycleNextInfo,
+  type QueueItem,
+  type SchedulerTab,
+  type TaskMessage,
+  type SchedulerStatus,
+} from './schedulerConstants'
 const logger = window.electronAPI.getLogger('调度台逻辑')
 
 // 使用 sessionStorage 存储调度台状态，支持页面刷新时保留数据
 // sessionStorage 在页面刷新时保留数据，但在关闭标签页/重启应用时清除
 const SCHEDULER_TABS_KEY = 'scheduler-tabs-session'
+const CYCLE_SCHEDULE_UPDATED_EVENT = 'queue-cycle-schedule-updated'
+const EMPTY_CYCLE_TIME = '2000-01-01 00:00:00'
+
+type CyclePreviewCandidate = CycleNextInfo & {
+  queueIndex: number
+}
 
 // 从 sessionStorage 加载调度台状态
 const loadTabsFromStorage = (): SchedulerTab[] => {
@@ -54,6 +66,8 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
       logs: [],
       isLogAtBottom: true,
       lastLogContent: '',
+      cycleNext: null,
+      cycleNextList: [],
       logMode: 'follow',
     },
   ]
@@ -140,20 +154,30 @@ export function useSchedulerLogic() {
       const queueId = data.queueId
       const taskName = data.taskName
       const taskType = data.taskType
+      const taskMode = Object.values(TaskCreateIn.mode).includes(data.mode)
+        ? (data.mode as TaskCreateIn.mode)
+        : TaskCreateIn.mode.AUTO_PROXY
       logger.info(`收到新任务信号: 任务ID=${taskId}, 队列ID=${queueId}, 任务名称=${taskName}, 任务类型=${taskType}`)
 
       // 创建新的调度台
-      createSchedulerTabForTask(taskId, queueId, taskName, taskType)
+      createSchedulerTabForTask(taskId, queueId, taskName, taskType, taskMode)
     }
   }
 
-  const createSchedulerTabForTask = (taskId: string, queueId?: string, taskName?: string, taskType?: string) => {
+  const createSchedulerTabForTask = (
+    taskId: string,
+    queueId?: string,
+    taskName?: string,
+    taskType?: string,
+    taskMode?: TaskCreateIn.mode
+  ) => {
     // 使用现有的addSchedulerTab函数创建新调度台，并传入特定的配置选项
     const newTab = addSchedulerTab({
       title: `调度台${tabCounter}`,
       status: '运行',
       websocketId: taskId,
       selectedTaskId: queueId, // 传入队列ID作为选中的任务ID
+      selectedMode: taskMode,
     })
 
     // 设置运行时文本快照，确保自动启动的任务也能正确显示
@@ -197,7 +221,13 @@ export function useSchedulerLogic() {
   watchTabsChanges()
 
   // Tab 管理
-  const addSchedulerTab = (options?: { title?: string; status?: string; websocketId?: string; selectedTaskId?: string }) => {
+  const addSchedulerTab = (options?: {
+    title?: string
+    status?: string
+    websocketId?: string
+    selectedTaskId?: string
+    selectedMode?: TaskCreateIn.mode
+  }) => {
     tabCounter++
     const status = options?.status || '空闲'
     // 使用更安全的类型断言，确保状态值是有效的SchedulerStatus
@@ -211,7 +241,7 @@ export function useSchedulerLogic() {
       closable: true,
       status: validStatus,
       selectedTaskId: options?.selectedTaskId || options?.websocketId || null,
-      selectedMode: TaskCreateIn.mode.AUTO_PROXY,
+      selectedMode: options?.selectedMode || TaskCreateIn.mode.AUTO_PROXY,
       resumeFromScriptId: null,
       resumeScriptOptions: [],
       resumeScriptLoading: false,
@@ -221,6 +251,8 @@ export function useSchedulerLogic() {
       logs: [],
       isLogAtBottom: true,
       lastLogContent: '',
+      cycleNext: null,
+      cycleNextList: [],
     }
     schedulerTabs.value.push(tab)
     activeSchedulerTab.value = tab.key
@@ -351,6 +383,76 @@ export function useSchedulerLogic() {
     }
   }
 
+  const formatDateTime = (date: Date) => {
+    const pad = (value: number) => String(value).padStart(2, '0')
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  }
+
+  const isEmptyCycleTime = (value?: string | null) => {
+    return !value || value === EMPTY_CYCLE_TIME
+  }
+
+  const refreshCyclePreview = async (tab: SchedulerTab) => {
+    if (tab.selectedMode !== CYCLE_RUN_MODE || !tab.selectedTaskId) {
+      tab.cycleNext = null
+      tab.cycleNextList = []
+      return
+    }
+
+    try {
+      await loadScriptLabelMap()
+      const response = await Service.getItemApiQueueItemGetPost({ queueId: tab.selectedTaskId })
+      if (response.code !== 200) {
+        tab.cycleNext = null
+        tab.cycleNextList = []
+        return
+      }
+
+      const nowText = formatDateTime(new Date())
+      const previewItems: CyclePreviewCandidate[] = []
+      ;(response.index || []).forEach((item: { uid?: string }, queueIndex: number) => {
+        const queueItemId = item.uid
+        if (!queueItemId) return
+
+        const queueItem = response.data?.[queueItemId]
+        if (!queueItem?.Schedule?.Enabled) return
+
+        const scriptId = queueItem.Info?.ScriptId
+        if (!scriptId || scriptId === '-') return
+
+        const nextRunAt = isEmptyCycleTime(queueItem.Schedule?.NextRunAt)
+          ? ''
+          : queueItem.Schedule.NextRunAt
+
+        previewItems.push({
+          queueItemId,
+          scriptId,
+          scriptName: scriptOptionsMap.value[scriptId] || scriptId,
+          nextRunAt,
+          isDue: Boolean(nextRunAt && nextRunAt <= nowText),
+          queueIndex,
+        })
+      })
+
+      previewItems.sort((left, right) => {
+        if (left.isDue !== right.isDue) return left.isDue ? -1 : 1
+        if (left.isDue && right.isDue) return left.queueIndex - right.queueIndex
+        if (!left.nextRunAt && right.nextRunAt) return 1
+        if (left.nextRunAt && !right.nextRunAt) return -1
+        const timeOrder = left.nextRunAt.localeCompare(right.nextRunAt)
+        return timeOrder || left.queueIndex - right.queueIndex
+      })
+
+      tab.cycleNextList = previewItems
+        .slice(0, 4)
+        .map(({ queueIndex: _queueIndex, ...item }) => item)
+      tab.cycleNext = tab.cycleNextList[0] || null
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(`加载循环任务预览失败: ${errorMsg}`)
+    }
+  }
+
   const loadResumeScriptOptions = async (tab: SchedulerTab) => {
     if (!tab.selectedTaskId || !isQueueTask(tab)) {
       tab.resumeScriptOptions = []
@@ -399,11 +501,17 @@ export function useSchedulerLogic() {
     tab.selectedTaskId = taskId
     tab.resumeFromScriptId = null
     await loadResumeScriptOptions(tab)
+    await refreshCyclePreview(tab)
   }
 
   const startTask = async (tab: SchedulerTab) => {
     if (!tab.selectedTaskId || !tab.selectedMode) {
       message.error('请选择任务项和执行模式')
+      return
+    }
+
+    if (tab.selectedMode === CYCLE_RUN_MODE && !isQueueTask(tab)) {
+      message.error('循环运行只能选择调度队列')
       return
     }
 
@@ -435,6 +543,8 @@ export function useSchedulerLogic() {
         tab.logs.splice(0)
         tab.isLogAtBottom = true
         tab.lastLogContent = ''
+        tab.cycleNext = null
+        tab.cycleNextList = []
         tab.logMode = 'follow' // 任务开始时设置日志为保持最新模式
 
         subscribeToTask(tab)
@@ -571,6 +681,13 @@ export function useSchedulerLogic() {
 
   const handleUpdateMessage = (tab: SchedulerTab, data: any) => {
     // 添加消息去重机制
+    if (data.cycleNext !== undefined) {
+      tab.cycleNext = data.cycleNext
+    }
+    if (data.cycleNextList !== undefined) {
+      tab.cycleNextList = data.cycleNextList || []
+      tab.cycleNext = tab.cycleNextList[0] || data.cycleNext || null
+    }
     const messageKey = `${tab.key}_${JSON.stringify(data.task_info || {})}`
     const currentTime = Date.now()
 
@@ -771,6 +888,8 @@ export function useSchedulerLogic() {
 
       // 使用Vue的响应式更新方式
       tab.status = '结束'
+      tab.cycleNext = null
+      tab.cycleNextList = []
       logger.info(`已更新tab.status为结束，当前tab状态: ${JSON.stringify(tab.status)}`)
 
       // 强制触发Vue响应式更新
@@ -809,6 +928,7 @@ export function useSchedulerLogic() {
       await playSound('task_completed')
 
       message.success('任务完成')
+      await refreshCyclePreview(tab)
       saveTabsToStorage(schedulerTabs.value)
 
       // 触发Vue的响应式更新
@@ -968,6 +1088,11 @@ export function useSchedulerLogic() {
       const response = await Service.getTaskComboxApiInfoComboxTaskPost()
       if (response.code === 200) {
         taskOptions.value = response.data
+        schedulerTabs.value.forEach(tab => {
+          if (tab.status !== '运行' && tab.selectedMode === CYCLE_RUN_MODE) {
+            refreshCyclePreview(tab)
+          }
+        })
       } else {
         message.error('获取任务列表失败')
       }
@@ -1017,6 +1142,19 @@ export function useSchedulerLogic() {
     getPowerState()
   }
 
+  const handleQueueCycleScheduleUpdated = (event: Event) => {
+    const queueId = (event as CustomEvent<{ queueId?: string }>).detail?.queueId
+    schedulerTabs.value.forEach(tab => {
+      if (
+        tab.selectedMode === CYCLE_RUN_MODE &&
+        tab.status !== '运行' &&
+        (!queueId || tab.selectedTaskId === queueId)
+      ) {
+        refreshCyclePreview(tab)
+      }
+    })
+  }
+
   // 初始化函数 - 使用单例标志确保核心初始化只执行一次
   const initialize = () => {
     // 核心初始化只执行一次
@@ -1033,6 +1171,7 @@ export function useSchedulerLogic() {
       // 监听电源状态变更事件（从 GlobalPowerCountdown 组件触发）
       window.addEventListener('power-state-changed', handlePowerStateChanged)
       logger.info('已注册电源状态变更事件监听器')
+      window.addEventListener(CYCLE_SCHEDULE_UPDATED_EVENT, handleQueueCycleScheduleUpdated)
 
       // 注册 UI hooks 到 schedulerHandlers，使其能在 schedulerHandlers 检测到 pending 时回放到当前 UI
       try {
@@ -1082,6 +1221,9 @@ export function useSchedulerLogic() {
     schedulerTabs.value.forEach(tab => {
       if (tab.status !== '运行' && isQueueTask(tab)) {
         loadResumeScriptOptions(tab)
+      }
+      if (tab.status !== '运行' && tab.selectedMode === CYCLE_RUN_MODE) {
+        refreshCyclePreview(tab)
       }
     })
 
@@ -1198,6 +1340,7 @@ export function useSchedulerLogic() {
 
     // 移除电源状态变更事件监听器
     window.removeEventListener('power-state-changed', handlePowerStateChanged)
+    window.removeEventListener(CYCLE_SCHEDULE_UPDATED_EVENT, handleQueueCycleScheduleUpdated)
     logger.info('已移除电源状态变更事件监听器')
 
     // 注意：由于keep-alive机制，路由切换时组件不会卸载
@@ -1255,6 +1398,7 @@ export function useSchedulerLogic() {
     stopTask,
     handleTaskSelectionChange,
     loadResumeScriptOptions,
+    refreshCyclePreview,
 
     // 日志操作
     onLogScroll,

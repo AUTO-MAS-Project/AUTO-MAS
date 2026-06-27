@@ -109,6 +109,9 @@ class _MainTimer:
 
         for uid, queue in Config.QueueConfig.items():
 
+            if queue.get("Info", "CycleEnabled"):
+                continue
+
             if not queue.get("Info", "TimeEnabled"):
                 continue
 

@@ -11,7 +11,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, shallowRef } from 'vue'
+import { ref } from 'vue'
 import TaskTree from '@/components/TaskTree.vue'
 const logger = window.electronAPI.getLogger('任务总览面板')
 
@@ -76,9 +76,26 @@ const getScriptStats = (scripts: Script[]) => {
   return { scriptCount, userCount }
 }
 
+const isOverviewVisibleStatus = (status?: string) => {
+  return /运行|进行|执行|等待重试/.test(status || '')
+}
+
+const filterOverviewTasks = (scripts: Script[]) => {
+  return scripts
+    .map(script => {
+      const userList = (script.user_list || []).filter(user => isOverviewVisibleStatus(user.status))
+      if (!isOverviewVisibleStatus(script.status) && userList.length === 0) return null
+
+      return {
+        ...script,
+        user_list: userList,
+      }
+    })
+    .filter((script): script is Script => Boolean(script))
+}
+
 // 处理 WebSocket 消息
 const handleWSMessage = (message: WSMessage) => {
-
   if (message.type === 'Update') {
     // 处理 task_info 数据（完整的脚本和用户数据）
     if (message.data?.task_info && Array.isArray(message.data.task_info)) {
@@ -92,11 +109,12 @@ const handleWSMessage = (message: WSMessage) => {
         status: task.status || '等待',
         user_list: task.userList ? [...task.userList] : [], // 注意：后端使用 userList，前端使用 user_list
       }))
+      const visibleTaskData = filterOverviewTasks(newTaskData)
 
       // 直接比较当前数据和新数据，只有真正不同时才更新
-      if (!deepEqual(taskData.value, newTaskData)) {
+      if (!deepEqual(taskData.value, visibleTaskData)) {
         logger.debug('数据发生实际变化，更新组件')
-        taskData.value = newTaskData
+        taskData.value = visibleTaskData
         const { scriptCount, userCount } = getScriptStats(taskData.value)
         logger.debug(`设置后的 taskData: 脚本数=${scriptCount}, 用户数=${userCount}`)
       } else {

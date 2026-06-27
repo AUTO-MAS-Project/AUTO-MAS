@@ -109,7 +109,7 @@ class ScriptItem:
 class TaskItem(ABC):
     """任务信息基类，管理任务的信息和脚本列表"""
 
-    mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"]  # 任务模式
+    mode: Literal["AutoProxy", "ManualReview", "ScriptConfig", "CycleRun"]  # 任务模式
     task_id: str  # 任务唯一标识符
     queue_id: str | None  # 执行的队列ID
     script_id: str | None  # 执行的脚本ID
@@ -117,6 +117,8 @@ class TaskItem(ABC):
     script_list: List[ScriptItem] = field(default_factory=list)  # 脚本信息列表
     current_index: int = -1  # 当前执行的脚本索引，-1 表示未开始
     resume_from_script_id: str | None = None  # 可选：从指定脚本ID开始执行（仅队列任务）
+    cycle_next: dict | None = None  # 循环运行的下轮脚本预览
+    cycle_next_list: list[dict] = field(default_factory=list)  # 循环运行的后续脚本预览
 
     def __setattr__(self, name, value):
         super().__setattr__(name, value)
