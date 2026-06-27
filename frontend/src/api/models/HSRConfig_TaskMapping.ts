@@ -20,3 +20,4 @@ export type HSRConfig_TaskMapping = {
      */
     CurrencyWars?: ('M7A' | 'SRA' | null);
 };
+

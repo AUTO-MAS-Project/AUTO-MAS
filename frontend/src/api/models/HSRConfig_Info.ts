@@ -16,3 +16,4 @@ export type HSRConfig_Info = {
      */
     SRAPath?: (string | null);
 };
+

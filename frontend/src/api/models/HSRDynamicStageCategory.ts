@@ -25,3 +25,4 @@ export type HSRDynamicStageCategory = {
      */
     options?: Array<HSRDynamicStageOption>;
 };
+
