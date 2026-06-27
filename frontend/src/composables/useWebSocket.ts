@@ -3,6 +3,7 @@ import { ref, type Ref } from 'vue'
 import schedulerHandlers from '@/views/scheduler/schedulerHandlers'
 import { Modal } from 'ant-design-vue'
 import { useAppClosing } from '@/composables/useAppClosing'
+import { beginBootstrap, markAsInitialized } from '@/composables/useAppInitialization'
 const logger = window.electronAPI.getLogger('WebSocket连接')
 
 // ====== 配置项 ======
@@ -965,9 +966,11 @@ const createGlobalWebSocket = (): WebSocket => {
       logger.warn('尝试创建新连接但当前连接仍有效，直接返回现有连接')
       return global.wsRef
     }
+    // ponytail: 休眠后 Chromium WS 可能卡在 CONNECTING，关闭重建
     if (global.wsRef.readyState === WebSocket.CONNECTING) {
-      logger.warn('尝试创建新连接但当前连接正在建立中，直接返回现有连接')
-      return global.wsRef
+      logger.warn('旧连接卡在 CONNECTING 状态，强制关闭并重建')
+      try { global.wsRef.close() } catch (_) {}
+      global.wsRef = null
     }
     // 清理已关闭或错误状态的连接
     logger.info(`清理旧的WebSocket连接，状态: ${global.wsRef.readyState}`)
@@ -1514,3 +1517,23 @@ window.addEventListener('beforeunload', () => {
 // ====== 模块加载计数 ======
 const global = getGlobalStorage()
 if (global.moduleLoadCount === 0) global.moduleLoadCount = 1
+
+// ponytail: 页面重载（如休眠恢复）后无 WS 时自动连接
+// 连接锁防并发，不会与正常初始化流程冲突
+// beginBootstrap 保证 App.vue 不黑屏
+setTimeout(async () => {
+  const g = getGlobalStorage()
+  if (!g.wsRef || g.wsRef.readyState !== WebSocket.OPEN) {
+    beginBootstrap()
+    logger.info('页面重载后检测到无 WebSocket，自动尝试连接')
+    setConnectionPermission(true, 'WebSocket自动重连')
+    await connectGlobalWebSocket('WebSocket自动重连')
+    for (let i = 0; i < 50; i++) {
+      if (g.wsRef?.readyState === WebSocket.OPEN) break
+      await new Promise(r => setTimeout(r, 200))
+    }
+    if (g.wsRef?.readyState === WebSocket.OPEN) {
+      markAsInitialized()
+    }
+  }
+}, 2000)
