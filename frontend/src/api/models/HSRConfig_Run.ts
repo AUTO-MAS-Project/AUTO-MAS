@@ -24,3 +24,4 @@ export type HSRConfig_Run = {
      */
     LowPerformanceMode?: (boolean | null);
 };
+
