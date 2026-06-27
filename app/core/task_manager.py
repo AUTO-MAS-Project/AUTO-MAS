@@ -65,9 +65,9 @@ logger = get_logger("业务调度")
 CYCLE_RETRY_SLEEP_SECONDS = 30
 CYCLE_RUNNING_PREVIEW_REFRESH_SECONDS = 5
 CYCLE_EMPTY_QUEUE_SLEEP_SECONDS = 60
-CYCLE_MAX_RETRY_COUNT = 3
+CYCLE_LOG_RECORD_KEEP_COUNT = 50
 CYCLE_ERROR_STATUS = "异常"
-CYCLE_WAIT_STATUS = "等待重试"
+CYCLE_WAIT_STATUS = "等待"
 CYCLE_SCRIPT_RUN_MODE = "AutoProxy"
 
 
@@ -239,8 +239,6 @@ class Task(TaskExecuteBase):
             Config.running_cycle_queue_ids.discard(queue_uid)
 
     async def _run_cycle_loop(self, queue_uid: uuid.UUID) -> None:
-        retry_counts: dict[str, int] = {}
-
         while True:
             now = datetime.now()
             queue = Config.QueueConfig[queue_uid]
@@ -276,13 +274,12 @@ class Task(TaskExecuteBase):
                 script_uid = uuid.UUID(entry.script_id)
                 script_item = self.task_info.script_list[entry.index]
                 self.task_info.current_index = entry.index
-                retry_key = entry.queue_item_id
                 await self._set_cycle_preview(entries, entry)
 
                 if Config.ScriptConfig[script_uid].is_locked:
                     script_item.status = CYCLE_WAIT_STATUS
                     logger.info(
-                        f"循环队列脚本冲突，等待重试: {entry.script_name} ({entry.script_id})"
+                        f"循环队列脚本冲突，进入等待序列: {entry.script_name} ({entry.script_id})"
                     )
                     await self.task_info.on_change()
                     pending.append(entry)
@@ -329,6 +326,8 @@ class Task(TaskExecuteBase):
                             "Error": f"循环任务 {entry.script_name} 运行异常: {type(e).__name__}: {str(e)}"
                         },
                     )
+                else:
+                    self._trim_cycle_log_records(script_item)
 
                 finished_at = datetime.now()
                 await queue_item.set(
@@ -336,7 +335,6 @@ class Task(TaskExecuteBase):
                 )
 
                 if run_success:
-                    retry_counts.pop(retry_key, None)
                     if queue_item.get("Schedule", "IntervalAnchor") == "start":
                         await queue_item.set(
                             "Schedule",
@@ -360,22 +358,9 @@ class Task(TaskExecuteBase):
                     await self._refresh_cycle_preview(queue_uid)
                     continue
 
-                retry_counts[retry_key] = retry_counts.get(retry_key, 0) + 1
-                if retry_counts[retry_key] <= CYCLE_MAX_RETRY_COUNT:
-                    script_item.status = CYCLE_WAIT_STATUS
-                    logger.info(
-                        f"循环队列脚本失败，优先重试: {entry.script_name} ({entry.script_id}) "
-                        f"{retry_counts[retry_key]}/{CYCLE_MAX_RETRY_COUNT}"
-                    )
-                    pending.insert(0, entry)
-                    await self._set_cycle_preview(entries, entry)
-                    await asyncio.sleep(CYCLE_RETRY_SLEEP_SECONDS)
-                    continue
-
-                retry_counts.pop(retry_key, None)
                 script_item.status = CYCLE_ERROR_STATUS
                 logger.warning(
-                    f"循环队列脚本失败超过重试上限，跳过: {entry.script_name} ({entry.script_id})"
+                    f"循环队列脚本失败，跳过: {entry.script_name} ({entry.script_id})"
                 )
                 if queue_item.get("Schedule", "IntervalAnchor") == "start":
                     await queue_item.set(
@@ -456,6 +441,23 @@ class Task(TaskExecuteBase):
         queue = Config.QueueConfig[queue_uid]
         entries = collect_queue_cycle_entries(queue, Config.ScriptConfig, datetime.now())
         await self._set_cycle_preview(entries)
+
+    def _trim_cycle_log_records(self, script_item: ScriptItem) -> None:
+        trimmed_count = 0
+        for user_item in script_item.user_list:
+            remove_count = len(user_item.log_record) - CYCLE_LOG_RECORD_KEEP_COUNT
+            if remove_count <= 0:
+                continue
+
+            for log_time in sorted(user_item.log_record)[:remove_count]:
+                user_item.log_record.pop(log_time, None)
+                trimmed_count += 1
+
+        if trimmed_count:
+            logger.debug(
+                f"循环队列清理用户历史日志: {script_item.name} "
+                f"清理 {trimmed_count} 条，保留最近 {CYCLE_LOG_RECORD_KEEP_COUNT} 条"
+            )
 
     async def _refresh_cycle_preview_while_running(
         self, queue_uid: uuid.UUID, active_entry: QueueCycleEntry
