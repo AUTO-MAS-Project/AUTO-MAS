@@ -57,7 +57,7 @@ INFO_URL = "https://api-takumi.miyoushe.com/event/luna/info"
 
 # Passport Token 派生 API
 PASSPORT_COOKIE_URL = (
-    "https://passport-api.miyoushe.com/account/auth/api/getCookieAccountInfoBySToken"
+    "https://passport-api.mihoyo.com/account/auth/api/getCookieAccountInfoBySToken"
 )
 
 # DS 签名 Salt
