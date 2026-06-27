@@ -21,7 +21,8 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier . --write",
-    "openapi": "openapi --input http://127.0.0.1:36163/openapi.json --output ./src/api --client axios"
+    "openapi": "openapi --input http://127.0.0.1:36163/openapi.json --output ./src/api --client axios",
+    "test": "vitest run"
   },
   "build": {
     "asar": true,
@@ -101,6 +102,7 @@
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.45.0",
     "vite": "^7.0.4",
+    "vitest": "^4.1.9",
     "vue-eslint-parser": "^10.2.0",
     "vue-tsc": "^2.2.12",
     "wait-on": "^8.0.4"

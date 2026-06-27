@@ -16,3 +16,4 @@ export type HSRUserConfig_Stage = {
      */
     ScriptEchoOfWar?: (string | null);
 };
+

@@ -22,7 +22,7 @@
 
 
 import asyncio
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Query
 
 from app.core import Config
 from app.services import Updater
@@ -65,15 +65,68 @@ async def check_update(version: UpdateCheckIn = Body(...)) -> UpdateCheckOut:
     response_model=OutBase,
     status_code=200,
 )
-async def download_update() -> OutBase:
+async def download_update(
+    target_version: str | None = Query(default=None, alias="version")
+) -> OutBase:
 
     try:
-        task = asyncio.create_task(Updater.download_update())
-        Config.temp_task.append(task)
-        task.add_done_callback(lambda t: Config.temp_task.remove(t))
+        if target_version:
+            Updater.remote_version = target_version
+        if not await Updater.start_download():
+            return OutBase(
+                code=409,
+                status="error",
+                message="已有更新任务在进行中, 请勿重复操作",
+            )
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+    return OutBase()
+
+
+@router.post(
+    "/cancel-download",
+    tags=["Action"],
+    summary="取消下载更新",
+    response_model=OutBase,
+    status_code=200,
+)
+async def cancel_update_download() -> OutBase:
+
+    try:
+        if not await Updater.cancel_download():
+            return OutBase(code=409, status="error", message="当前没有正在进行中的下载任务")
+    except Exception as e:
+        return OutBase(
+            code=500,
+            status="error",
+            message=f"取消更新下载失败: {type(e).__name__}: {str(e)}",
+        )
+    return OutBase()
+
+
+@router.post(
+    "/switch-to-cnb",
+    tags=["Action"],
+    summary="切换下载源到 CNB",
+    response_model=OutBase,
+    status_code=200,
+)
+async def switch_update_download_to_cnb() -> OutBase:
+
+    try:
+        if not await Updater.switch_to_cnb():
+            return OutBase(
+                code=409,
+                status="error",
+                message="当前无法切换到 CNB 下载源, 请确认正在从 GitHub 源下载",
+            )
+    except Exception as e:
+        return OutBase(
+            code=500,
+            status="error",
+            message=f"切换至 CNB 源失败: {type(e).__name__}: {str(e)}",
         )
     return OutBase()
 
