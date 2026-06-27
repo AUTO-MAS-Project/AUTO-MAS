@@ -119,6 +119,7 @@ interface Props {
   resumeScriptLoading?: boolean
   taskOptions: ComboBoxItem[]
   taskOptionsLoading: boolean
+  queueTaskIds?: string[]
   status: SchedulerStatus
   disabled?: boolean
   runningTaskLabel?: string
@@ -146,6 +147,7 @@ const props = withDefaults(defineProps<Props>(), {
   resumeFromScriptId: null,
   resumeScriptOptions: () => [],
   resumeScriptLoading: false,
+  queueTaskIds: () => [],
   runningTaskLabel: '',
   runningModeLabel: '',
   cycleNext: null,
@@ -169,8 +171,10 @@ const localResumeFromScriptId = ref(props.resumeFromScriptId ?? null)
 // 模式选项
 const modeOptions = TASK_MODE_OPTIONS
 
+const queueTaskIdSet = computed(() => new Set(props.queueTaskIds))
+
 const isQueueOption = (option?: ComboBoxItem | null) => {
-  return Boolean(option?.label?.startsWith('队列 - '))
+  return Boolean(option?.value && queueTaskIdSet.value.has(option.value))
 }
 
 const filteredTaskOptions = computed(() => {
@@ -215,7 +219,7 @@ const formatCyclePreviewTime = (item: CyclePreviewSlot) => {
 }
 
 // 仅当选中队列任务时显示恢复脚本下拉框。
-// 注：通过任务选项 label 的 "队列 - " 前缀判断，与 useSchedulerLogic.isQueueTask 保持同步。
+// 与 useSchedulerLogic 共享后端队列 ID 集合，避免依赖下拉框显示文本。
 const showResumeScriptSelect = computed(() => {
   const selectedTaskId = localSelectedTaskId.value
   if (!selectedTaskId) return false

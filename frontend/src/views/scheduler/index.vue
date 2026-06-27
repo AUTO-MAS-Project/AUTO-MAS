@@ -89,6 +89,7 @@
               :cycle-next-list="tab.cycleNextList || []"
               :task-options="taskOptions"
               :task-options-loading="taskOptionsLoading"
+              :queue-task-ids="queueTaskIds"
               :status="tab.status"
               :disabled="tab.status === '运行'"
               @task-changed="(taskId: string | null) => handleTaskSelectionChange(tab, taskId)"
@@ -184,6 +185,7 @@ const {
   activeSchedulerTab,
   taskOptionsLoading,
   taskOptions,
+  queueTaskIds,
   powerAction,
   messageModalVisible,
   currentMessage,

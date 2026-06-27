@@ -113,6 +113,8 @@ initTabCounter()
 // 任务选项
 const taskOptionsLoading = ref(false)
 const taskOptions = ref<ComboBoxItem[]>([])
+const queueTaskIds = ref<string[]>([])
+const queueTaskIdSet = computed(() => new Set(queueTaskIds.value))
 const scriptOptionsMap = ref<Record<string, string>>({})
 
 // 电源操作状态
@@ -358,11 +360,8 @@ export function useSchedulerLogic() {
   }
 
   // 任务操作
-  // 注：当前通过任务选项 label 的 "队列 - " 前缀判断是否为队列任务。
-  //     这是对后端 ComboBox label 格式的隐式依赖；若 label 格式变更需同步调整。
   const isQueueTask = (tab: SchedulerTab) => {
-    const taskOption = taskOptions.value.find(item => item.value === tab.selectedTaskId)
-    return Boolean(taskOption?.label.startsWith('队列 - '))
+    return Boolean(tab.selectedTaskId && queueTaskIdSet.value.has(tab.selectedTaskId))
   }
 
   const loadScriptLabelMap = async () => {
@@ -1085,21 +1084,35 @@ export function useSchedulerLogic() {
   const loadTaskOptions = async () => {
     try {
       taskOptionsLoading.value = true
-      const response = await Service.getTaskComboxApiInfoComboxTaskPost()
-      if (response.code === 200) {
-        taskOptions.value = response.data
+      const [taskResponse, queueResponse] = await Promise.all([
+        Service.getTaskComboxApiInfoComboxTaskPost(),
+        Service.getQueuesApiQueueGetPost({}),
+      ])
+
+      if (taskResponse.code === 200) {
+        taskOptions.value = taskResponse.data
+      } else {
+        message.error('获取任务列表失败')
+      }
+
+      if (queueResponse.code === 200) {
+        queueTaskIds.value = (queueResponse.index || []).map(item => item.uid)
+      } else {
+        queueTaskIds.value = []
+        message.error('获取队列列表失败')
+      }
+
+      if (taskResponse.code === 200 && queueResponse.code === 200) {
         schedulerTabs.value.forEach(tab => {
           if (tab.status !== '运行' && tab.selectedMode === CYCLE_RUN_MODE) {
             refreshCyclePreview(tab)
           }
         })
-      } else {
-        message.error('获取任务列表失败')
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`获取任务列表失败: ${errorMsg}`)
-      message.error('获取任务列表失败')
+      logger.error(`获取任务/队列列表失败: ${errorMsg}`)
+      message.error('获取任务/队列列表失败')
     } finally {
       taskOptionsLoading.value = false
     }
@@ -1377,6 +1390,7 @@ export function useSchedulerLogic() {
 
     taskOptionsLoading,
     taskOptions,
+    queueTaskIds,
     powerAction,
     powerCountdownVisible,
     powerCountdownData,
