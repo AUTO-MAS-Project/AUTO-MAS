@@ -334,34 +334,12 @@ class Task(TaskExecuteBase):
                     "Data", "LastCycleFinishedAt", format_cycle_time(finished_at)
                 )
 
-                if run_success:
-                    if queue_item.get("Schedule", "IntervalAnchor") == "start":
-                        await queue_item.set(
-                            "Schedule",
-                            "NextRunAt",
-                            format_cycle_time(
-                                calculate_next_after_start(
-                                    queue_item,
-                                    started_at,
-                                    after=finished_at,
-                                )
-                            ),
-                        )
-                    elif queue_item.get("Schedule", "IntervalAnchor") == "finish":
-                        await queue_item.set(
-                            "Schedule",
-                            "NextRunAt",
-                            format_cycle_time(
-                                calculate_next_after_finish(queue_item, finished_at)
-                            ),
-                        )
-                    await self._refresh_cycle_preview(queue_uid)
-                    continue
+                if not run_success:
+                    script_item.status = CYCLE_ERROR_STATUS
+                    logger.warning(
+                        f"循环队列脚本失败，跳过: {entry.script_name} ({entry.script_id})"
+                    )
 
-                script_item.status = CYCLE_ERROR_STATUS
-                logger.warning(
-                    f"循环队列脚本失败，跳过: {entry.script_name} ({entry.script_id})"
-                )
                 if queue_item.get("Schedule", "IntervalAnchor") == "start":
                     await queue_item.set(
                         "Schedule",

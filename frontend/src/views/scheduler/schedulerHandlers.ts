@@ -2,7 +2,7 @@
 // 提供在调度中心 UI 未加载前也能工作的消息处理实现。
 // 核心策略：将重要事件保存到 localStorage（或内存队列），并暴露注册点供 UI 在挂载时接收并回放。
 
-// no types needed here to avoid circular/unused imports
+import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useAppClosing } from '@/composables/useAppClosing'
 const logger = window.electronAPI.getLogger('调度器处理器')
 
@@ -11,8 +11,14 @@ const PENDING_COUNTDOWN_KEY = 'scheduler-pending-countdown'
 const POWER_ACTION_KEY = 'scheduler-power-action'
 
 type UIHooks = {
-  onNewTab?: (tab: any) => void
+  onNewTab?: (tab: PendingSchedulerTab & { title: string; websocketId: string }) => void
   onCountdown?: (data: any) => void
+}
+
+type PendingSchedulerTab = {
+  taskId: string
+  queueId?: string
+  mode?: TaskCreateIn.mode
 }
 
 let uiHooks: UIHooks = {}
@@ -22,7 +28,7 @@ export function registerSchedulerUI(hooks: UIHooks) {
 }
 
 // helper: push pending tab id to localStorage
-function pushPendingTab(taskInfo: string | { taskId: string; queueId?: string }) {
+function pushPendingTab(taskInfo: string | PendingSchedulerTab) {
   try {
     const raw = localStorage.getItem(PENDING_TABS_KEY)
     const arr = raw ? JSON.parse(raw) : []
@@ -42,6 +48,10 @@ function pushPendingTab(taskInfo: string | { taskId: string; queueId?: string })
   } catch (e) {
     // ignore
   }
+}
+
+function isTaskMode(value: unknown): value is TaskCreateIn.mode {
+  return Object.values(TaskCreateIn.mode).includes(value as TaskCreateIn.mode)
 }
 
 function popPendingTabs(): any[] {
@@ -90,9 +100,10 @@ export function handleTaskManagerMessage(wsMessage: any) {
     if (type === 'Signal' && data && data.newTask) {
       const taskId = String(data.newTask)
       const queueId = data.queueId ? String(data.queueId) : undefined
+      const mode = isTaskMode(data.mode) ? data.mode : undefined
 
       // 将任务 ID 和 队列 ID 写入 pending 队列，UI 在挂载时会回放
-      pushPendingTab({ taskId, queueId })
+      pushPendingTab({ taskId, queueId, mode })
 
       // 如果 UI 已注册回调，则立即通知
       if (uiHooks.onNewTab) {
@@ -100,7 +111,9 @@ export function handleTaskManagerMessage(wsMessage: any) {
           uiHooks.onNewTab({
             title: `调度台自动-${taskId}`,
             websocketId: taskId,
-            queueId: queueId
+            queueId: queueId,
+            taskId,
+            mode,
           })
         } catch (e) {
           const errorMsg = e instanceof Error ? e.message : String(e)

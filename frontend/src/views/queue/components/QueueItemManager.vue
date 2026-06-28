@@ -71,7 +71,7 @@
                     checked-children="开"
                     un-checked-children="关"
                     :disabled="isEditingDisabled"
-                    @change="value => updateQueueItemSchedule(record, { Enabled: Boolean(value) })"
+                    @change="(value: unknown) => handleScheduleEnabledChange(record, value)"
                   />
                 </div>
               </div>
@@ -84,7 +84,7 @@
                     size="middle"
                     class="cycle-mode-select"
                     :disabled="isEditingDisabled"
-                    @change="value => updateQueueItemSchedule(record, { Mode: value })"
+                    @change="(value: unknown) => handleScheduleModeChange(record, value)"
                   >
                     <a-select-option value="interval">间隔</a-select-option>
                     <a-select-option value="fixed_time">固定时间</a-select-option>
@@ -98,16 +98,14 @@
                       :min="1"
                       :max="10080"
                       :disabled="isEditingDisabled"
-                      @change="
-                        value => updateQueueItemSchedule(record, { IntervalMinutes: value || 1 })
-                      "
+                      @change="(value: unknown) => handleIntervalMinutesChange(record, value)"
                     />
                     <a-select
                       v-model:value="record.intervalAnchor"
                       size="middle"
                       class="anchor-select"
                       :disabled="isEditingDisabled"
-                      @change="value => updateQueueItemSchedule(record, { IntervalAnchor: value })"
+                      @change="(value: unknown) => handleIntervalAnchorChange(record, value)"
                     >
                       <a-select-option value="start">从开始算</a-select-option>
                       <a-select-option value="finish">从结束算</a-select-option>
@@ -120,9 +118,14 @@
                       size="middle"
                       class="schedule-time-picker"
                       :disabled="isEditingDisabled"
-                      @update:value="value => handleScheduleTimeDraft(record, value)"
-                      @change="(_, value) => commitScheduleTime(record, value || '00:00')"
-                      @open-change="open => handleScheduleTimeOpenChange(record, open)"
+                      @update:value="
+                        (value: Dayjs | null) => handleScheduleTimeDraft(record, value)
+                      "
+                      @change="
+                        (_value: Dayjs | null, value: string) =>
+                          commitScheduleTime(record, value || '00:00')
+                      "
+                      @open-change="(open: boolean) => handleScheduleTimeOpenChange(record, open)"
                     />
                     <a-select
                       v-model:value="record.scheduleDays"
@@ -131,7 +134,7 @@
                       class="days-select"
                       :options="weekdayOptions"
                       :disabled="isEditingDisabled"
-                      @change="value => updateQueueItemSchedule(record, { Days: value })"
+                      @change="(value: unknown) => handleScheduleDaysChange(record, value)"
                     >
                       <template #tagRender="{ value, closable, onClose }">
                         <a-tag
@@ -156,9 +159,12 @@
                     class="next-run-picker"
                     placeholder="不插入"
                     :disabled="isEditingDisabled"
-                    @update:value="value => handleNextRunDraft(record, value)"
-                    @change="(_, value) => commitNextRunAt(record, value || emptyDateTime)"
-                    @open-change="open => handleNextRunOpenChange(record, open)"
+                    @update:value="(value: Dayjs | null) => handleNextRunDraft(record, value)"
+                    @change="
+                      (_value: Dayjs | null, value: string) =>
+                        commitNextRunAt(record, value || emptyDateTime)
+                    "
+                    @open-change="(open: boolean) => handleNextRunOpenChange(record, open)"
                   />
                 </div>
               </div>
@@ -209,16 +215,20 @@ type QueueItemRecord = {
   id: string
   script: string | null
   scheduleEnabled: boolean
-  scheduleMode: NonNullable<QueueItem_Schedule['Mode']>
-  scheduleDays: NonNullable<QueueItem_Schedule['Days']>
+  scheduleMode: ScheduleMode
+  scheduleDays: ScheduleDays
   scheduleTime: string
   intervalMinutes: number
-  intervalAnchor: NonNullable<QueueItem_Schedule['IntervalAnchor']>
+  intervalAnchor: IntervalAnchor
   nextRunAt: string
   lastCycleStartedAt?: string
   lastCycleFinishedAt?: string
 }
 
+type ScheduleMode = NonNullable<QueueItem_Schedule['Mode']>
+type ScheduleDays = NonNullable<QueueItem_Schedule['Days']>
+type Weekday = ScheduleDays[number]
+type IntervalAnchor = NonNullable<QueueItem_Schedule['IntervalAnchor']>
 type QueueItemSchedulePatch = Partial<QueueItem_Schedule>
 
 type DragEndEvent = {
@@ -256,7 +266,7 @@ const pendingNextRunAtById = ref<Record<string, string>>({})
 
 // 选项数据
 const scriptOptions = ref<ComboBoxItem[]>([])
-const weekdayOptions = [
+const weekdayOptions: Array<{ label: string; value: Weekday }> = [
   { label: '周一', value: 'Monday' },
   { label: '周二', value: 'Tuesday' },
   { label: '周三', value: 'Wednesday' },
@@ -265,6 +275,7 @@ const weekdayOptions = [
   { label: '周六', value: 'Saturday' },
   { label: '周日', value: 'Sunday' },
 ]
+const weekdayValues = weekdayOptions.map(item => item.value)
 const weekdayShortMap: Record<string, string> = {
   Monday: '一',
   Tuesday: '二',
@@ -277,6 +288,22 @@ const weekdayShortMap: Record<string, string> = {
 
 const emptyDateTime = '2000-01-01 00:00:00'
 const cycleScheduleUpdatedEvent = 'queue-cycle-schedule-updated'
+
+const normalizeScheduleEnabled = (value: QueueItem_Schedule['Enabled']) => value ?? true
+const normalizeScheduleMode = (value: QueueItem_Schedule['Mode']): ScheduleMode =>
+  value ?? 'fixed_time'
+const normalizeScheduleDays = (value: QueueItem_Schedule['Days']): ScheduleDays => value ?? []
+const normalizeScheduleTime = (value: QueueItem_Schedule['Time']) => value ?? '00:00'
+const normalizeIntervalMinutes = (value: QueueItem_Schedule['IntervalMinutes']) => value ?? 480
+const normalizeIntervalAnchor = (value: QueueItem_Schedule['IntervalAnchor']): IntervalAnchor =>
+  value ?? 'start'
+const normalizeNextRunAt = (value: QueueItem_Schedule['NextRunAt']) => value ?? emptyDateTime
+
+const isScheduleMode = (value: unknown): value is ScheduleMode =>
+  value === 'fixed_time' || value === 'interval'
+const isIntervalAnchor = (value: unknown): value is IntervalAnchor =>
+  value === 'start' || value === 'finish'
+const isWeekday = (value: unknown): value is Weekday => weekdayValues.includes(value as Weekday)
 
 const notifyCycleScheduleUpdated = () => {
   window.dispatchEvent(
@@ -312,13 +339,39 @@ const formatWeekdayShort = (value: unknown) => {
 }
 
 const applySchedulePatchToRecord = (record: QueueItemRecord, patch: QueueItemSchedulePatch) => {
-  if ('Enabled' in patch) record.scheduleEnabled = patch.Enabled
-  if ('Mode' in patch) record.scheduleMode = patch.Mode
-  if ('Days' in patch) record.scheduleDays = patch.Days
-  if ('Time' in patch) record.scheduleTime = patch.Time
-  if ('IntervalMinutes' in patch) record.intervalMinutes = patch.IntervalMinutes
-  if ('IntervalAnchor' in patch) record.intervalAnchor = patch.IntervalAnchor
-  if ('NextRunAt' in patch) record.nextRunAt = patch.NextRunAt
+  if ('Enabled' in patch) record.scheduleEnabled = normalizeScheduleEnabled(patch.Enabled)
+  if ('Mode' in patch) record.scheduleMode = normalizeScheduleMode(patch.Mode)
+  if ('Days' in patch) record.scheduleDays = normalizeScheduleDays(patch.Days)
+  if ('Time' in patch) record.scheduleTime = normalizeScheduleTime(patch.Time)
+  if ('IntervalMinutes' in patch)
+    record.intervalMinutes = normalizeIntervalMinutes(patch.IntervalMinutes)
+  if ('IntervalAnchor' in patch)
+    record.intervalAnchor = normalizeIntervalAnchor(patch.IntervalAnchor)
+  if ('NextRunAt' in patch) record.nextRunAt = normalizeNextRunAt(patch.NextRunAt)
+}
+
+const handleScheduleEnabledChange = async (record: QueueItemRecord, value: unknown) => {
+  await updateQueueItemSchedule(record, { Enabled: Boolean(value) })
+}
+
+const handleScheduleModeChange = async (record: QueueItemRecord, value: unknown) => {
+  if (!isScheduleMode(value)) return
+  await updateQueueItemSchedule(record, { Mode: value })
+}
+
+const handleIntervalMinutesChange = async (record: QueueItemRecord, value: unknown) => {
+  const minutes = typeof value === 'number' ? value : Number(value)
+  await updateQueueItemSchedule(record, { IntervalMinutes: minutes || 1 })
+}
+
+const handleIntervalAnchorChange = async (record: QueueItemRecord, value: unknown) => {
+  if (!isIntervalAnchor(value)) return
+  await updateQueueItemSchedule(record, { IntervalAnchor: value })
+}
+
+const handleScheduleDaysChange = async (record: QueueItemRecord, value: unknown) => {
+  const days = Array.isArray(value) ? value.filter(isWeekday) : []
+  await updateQueueItemSchedule(record, { Days: days })
 }
 
 const handleScheduleTimeDraft = (record: QueueItemRecord, value: Dayjs | null) => {

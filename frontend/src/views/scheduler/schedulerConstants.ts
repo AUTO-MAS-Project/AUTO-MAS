@@ -1,7 +1,7 @@
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { PowerIn } from '@/api/models/PowerIn'
 
-export const CYCLE_RUN_MODE: TaskCreateIn.mode = 'CycleRun'
+export const CYCLE_RUN_MODE: TaskCreateIn.mode = TaskCreateIn.mode.CYCLE_RUN
 
 // 调度台状态
 export type SchedulerStatus = '空闲' | '运行' | '结束'
