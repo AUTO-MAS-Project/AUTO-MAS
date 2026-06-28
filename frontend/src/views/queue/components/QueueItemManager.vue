@@ -150,14 +150,14 @@
                   </template>
                 </div>
                 <div class="cycle-panel-row cycle-next-row">
-                  <span class="next-run-label">插入一次</span>
+                  <span class="next-run-label">指定下次</span>
                   <a-date-picker
                     :value="toDateTimeValue(record.nextRunAt)"
                     show-time
                     format="YYYY-MM-DD HH:mm:ss"
                     size="middle"
                     class="next-run-picker"
-                    placeholder="不插入"
+                    placeholder="按规则运行"
                     :disabled="isEditingDisabled"
                     @update:value="(value: Dayjs | null) => handleNextRunDraft(record, value)"
                     @change="
@@ -166,6 +166,9 @@
                     "
                     @open-change="(open: boolean) => handleNextRunOpenChange(record, open)"
                   />
+                  <span class="cycle-next-tip">
+                    循环运行需指定下次运行时间；该时间会优先于固定/间隔规则
+                  </span>
                 </div>
               </div>
             </div>
@@ -1091,6 +1094,11 @@ onMounted(() => {
 
 .next-run-picker {
   width: 220px;
+}
+
+.cycle-next-tip {
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
 }
 
 /* 拖拽状态样式 */
