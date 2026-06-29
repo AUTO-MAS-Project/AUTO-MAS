@@ -9,23 +9,13 @@ import {
 } from './scriptCreateFlow'
 
 describe('scriptCreateFlow', () => {
-  it('builds the copy path', () => {
-    expect(buildCreateSteps({ mode: 'copy', type: 'MAA' }).map(step => step.key)).toEqual([
-      'mode',
-      'script',
-    ])
+  it('starts with script type and adds the config step only for General scripts', () => {
+    expect(buildCreateSteps({ type: 'General' }).map(step => step.key)).toEqual(['type', 'config'])
+    expect(buildCreateSteps({ type: 'M9A' }).map(step => step.key)).toEqual(['type'])
   })
 
-  it('adds the config step only for General scripts', () => {
-    expect(buildCreateSteps({ mode: 'new', type: 'General' }).map(step => step.key)).toEqual([
-      'mode',
-      'type',
-      'config',
-    ])
-    expect(buildCreateSteps({ mode: 'new', type: 'M9A' }).map(step => step.key)).toEqual([
-      'mode',
-      'type',
-    ])
+  it('places General before specialized adapters', () => {
+    expect(SCRIPT_TYPE_OPTIONS[0].value).toBe('General')
   })
 
   it('filters script types by aliases and group', () => {
@@ -51,30 +41,24 @@ describe('scriptCreateFlow', () => {
   it('builds submit requests only when required selections exist', () => {
     expect(
       buildCreateRequest({
-        mode: 'new',
         type: 'SRC',
         configMode: 'template',
-        scriptId: null,
         template: null,
       })
     ).toEqual({ kind: 'new', type: 'SRC' })
 
     expect(
       buildCreateRequest({
-        mode: 'new',
         type: 'General',
         configMode: 'custom',
-        scriptId: null,
         template: null,
       })
     ).toEqual({ kind: 'general-custom' })
 
     expect(
       buildCreateRequest({
-        mode: 'copy',
-        type: 'MAA',
+        type: 'General',
         configMode: 'template',
-        scriptId: null,
         template: null,
       })
     ).toBeNull()
