@@ -1522,7 +1522,13 @@ if (global.moduleLoadCount === 0) global.moduleLoadCount = 1
 // ponytail: 页面重载（如休眠恢复）后无 WS 时自动连接
 // 连接锁防并发，不会与正常初始化流程冲突
 // beginBootstrap 保证 App.vue 不黑屏
+// 仅在非初始化页面触发：初始化页面有独立的 connectAfterBackendStart 流程
 setTimeout(async () => {
+  // 正在初始化页面时跳过 — 正常初始化流程会在后端启动后调用 connectAfterBackendStart
+  if (window.location.hash.startsWith('#/initialization')) {
+    logger.info('当前在初始化页面，跳过页面重载自动重连（由正常初始化流程接管）')
+    return
+  }
   const g = getGlobalStorage()
   if (!g.wsRef || g.wsRef.readyState !== WebSocket.OPEN) {
     beginBootstrap()
