@@ -115,8 +115,10 @@
   <ScriptTable
     :scripts="scripts"
     :active-connections="activeConnections"
+    :copying-script-id="copyingScriptId"
     :all-plans-data="allPlansData"
     @edit="handleEditScript"
+    @copy="handleCopyScript"
     @delete="handleDeleteScript"
     @add-user="handleAddUser"
     @edit-user="handleEditUser"
@@ -134,7 +136,6 @@
 
   <ScriptCreateDialog
     v-model:open="scriptCreateVisible"
-    :scripts="scripts"
     :templates="templates"
     :submitting="addLoading || templateLoading"
     :template-loading="templateLoading"
@@ -573,6 +574,7 @@ const selectedGeneralMode = ref('template')
 const selectedTemplate = ref<WebConfigTemplate | null>(null)
 const templates = ref<WebConfigTemplate[]>([])
 const addLoading = ref(false)
+const copyingScriptId = ref<string | null>(null)
 const templateLoading = ref(false)
 const pendingSearchKeyword = ref('')
 const appliedSearchKeyword = ref('')
@@ -714,20 +716,6 @@ const navigateToCreatedScript = (
 const handleSubmitScriptCreate = async (request: ScriptCreateRequest) => {
   addLoading.value = true
   try {
-    if (request.kind === 'copy') {
-      const source = scripts.value.find(script => script.id === request.scriptId)
-      if (!source) {
-        message.error('所选脚本不存在，请重新选择')
-        return
-      }
-      const result = await addScript(source.type, source.id)
-      if (result) {
-        scriptCreateVisible.value = false
-        navigateToCreatedScript(result.scriptId, source.type, result.data)
-      }
-      return
-    }
-
     const type = request.kind === 'new' ? request.type : 'General'
     const result = await addScript(type)
     if (!result) return
@@ -977,6 +965,21 @@ const handleDeleteScript = async (script: Script) => {
   const result = await deleteScript(script.id)
   if (result) {
     loadScripts()
+  }
+}
+
+const handleCopyScript = async (script: Script) => {
+  addLoading.value = true
+  copyingScriptId.value = script.id
+  try {
+    const result = await addScript(script.type, script.id)
+    if (result) {
+      await loadScripts()
+      message.success(`已复制脚本「${script.name}」`)
+    }
+  } finally {
+    addLoading.value = false
+    copyingScriptId.value = null
   }
 }
 
