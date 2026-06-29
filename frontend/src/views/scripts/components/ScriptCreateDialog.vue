@@ -12,64 +12,8 @@
     @cancel="handleCancel"
   >
     <div class="create-layout">
-      <aside class="step-sidebar" aria-label="新建脚本步骤">
-        <button
-          v-for="(step, index) in steps"
-          :key="step.key"
-          type="button"
-          :class="[
-            'step-item',
-            {
-              active: step.key === currentStep,
-              completed: index < currentStepIndex,
-              clickable: index < currentStepIndex && !submitting,
-            },
-          ]"
-          :disabled="index >= currentStepIndex || submitting"
-          @click="goToStep(step.key)"
-        >
-          <span class="step-index">
-            <CheckOutlined v-if="index < currentStepIndex" />
-            <template v-else>{{ index + 1 }}</template>
-          </span>
-          <span class="step-copy">
-            <span class="step-title">{{ step.title }}</span>
-            <span class="step-status">{{ getStepStatus(index) }}</span>
-          </span>
-        </button>
-      </aside>
-
       <section class="step-content">
-        <template v-if="currentStep === 'mode'">
-          <StepHeading title="选择创建方式" description="创建空白脚本，或复用已有脚本的配置。" />
-          <a-radio-group v-model:value="selectedMode" class="choice-list">
-            <label :class="['choice-row', { selected: selectedMode === 'new' }]">
-              <a-radio value="new" />
-              <span class="choice-icon"><FileAddOutlined /></span>
-              <span class="choice-copy">
-                <span class="choice-title">创建全新脚本</span>
-                <span class="choice-description">从脚本类型开始，配置一个新的脚本实例</span>
-              </span>
-            </label>
-            <label
-              :class="[
-                'choice-row',
-                { selected: selectedMode === 'copy', disabled: scripts.length === 0 },
-              ]"
-            >
-              <a-radio value="copy" :disabled="scripts.length === 0" />
-              <span class="choice-icon"><CopyOutlined /></span>
-              <span class="choice-copy">
-                <span class="choice-title">复制已有脚本</span>
-                <span class="choice-description">
-                  {{ scripts.length === 0 ? '暂无可复制脚本' : '复制现有配置，再进入编辑页调整' }}
-                </span>
-              </span>
-            </label>
-          </a-radio-group>
-        </template>
-
-        <template v-else-if="currentStep === 'type'">
+        <template v-if="currentStep === 'type'">
           <StepHeading title="选择脚本类型" description="按名称、游戏或脚本框架快速查找。" />
           <div class="list-toolbar single">
             <a-input v-model:value="typeKeyword" allow-clear placeholder="搜索脚本类型">
@@ -81,10 +25,29 @@
             v-model:value="selectedType"
             class="type-sections"
           >
-            <section v-if="typeSections.specialized.length" class="type-section">
+            <section v-if="typeSections.general.length" class="type-section">
+              <div class="type-section-heading">
+                <span class="type-section-title">通用脚本</span>
+              </div>
+              <label
+                v-for="option in typeSections.general"
+                :key="option.value"
+                :class="['type-row general-type-row', { selected: selectedType === option.value }]"
+              >
+                <img :src="option.icon" :alt="option.title" class="type-icon" />
+                <span class="choice-copy">
+                  <span class="choice-title">{{ option.title }}</span>
+                  <span class="choice-description">{{ option.description }}</span>
+                </span>
+                <a-radio :value="option.value" />
+              </label>
+            </section>
+            <section
+              v-if="typeSections.specialized.length"
+              class="type-section specialized-section"
+            >
               <div class="type-section-heading">
                 <span class="type-section-title">专项适配</span>
-                <span class="type-section-count">{{ typeSections.specialized.length }} 种</span>
               </div>
               <div class="type-grid">
                 <label
@@ -101,62 +64,9 @@
                 </label>
               </div>
             </section>
-            <section v-if="typeSections.general.length" class="type-section general-section">
-              <div class="type-section-heading">
-                <span class="type-section-title">通用脚本</span>
-                <span class="type-section-hint">适合尚未提供专项适配的脚本</span>
-              </div>
-              <label
-                v-for="option in typeSections.general"
-                :key="option.value"
-                :class="['type-row general-type-row', { selected: selectedType === option.value }]"
-              >
-                <img :src="option.icon" :alt="option.title" class="type-icon" />
-                <span class="choice-copy">
-                  <span class="choice-title">{{ option.title }}</span>
-                  <span class="choice-description">{{ option.description }}</span>
-                </span>
-                <a-radio :value="option.value" />
-              </label>
-            </section>
           </a-radio-group>
           <a-empty v-else description="未找到匹配的脚本类型">
             <a-button @click="clearTypeFilters">清空搜索</a-button>
-          </a-empty>
-        </template>
-
-        <template v-else-if="currentStep === 'script'">
-          <StepHeading title="选择要复制的脚本" description="复制配置后会创建新的脚本实例。" />
-          <div class="list-toolbar single">
-            <a-input v-model:value="scriptKeyword" allow-clear placeholder="搜索脚本名称或类型">
-              <template #prefix><SearchOutlined /></template>
-            </a-input>
-          </div>
-          <a-radio-group
-            v-if="filteredScripts.length"
-            v-model:value="selectedScriptId"
-            class="entity-list"
-          >
-            <label
-              v-for="script in filteredScripts"
-              :key="script.id"
-              :class="['entity-row', { selected: selectedScriptId === script.id }]"
-            >
-              <img :src="getTypeOption(script.type).icon" :alt="script.type" class="type-icon" />
-              <span class="choice-copy">
-                <a-tooltip :title="script.name">
-                  <span class="choice-title ellipsis">{{ script.name }}</span>
-                </a-tooltip>
-                <span class="choice-description">
-                  {{ getTypeOption(script.type).title }} · {{ script.users?.length || 0 }} 个用户
-                </span>
-              </span>
-              <a-radio :value="script.id" />
-            </label>
-          </a-radio-group>
-          <a-empty v-else description="没有匹配的脚本">
-            <a-button v-if="scriptKeyword" @click="scriptKeyword = ''">清空搜索</a-button>
-            <a-button v-else type="primary" @click="switchToNew">改为创建全新脚本</a-button>
           </a-empty>
         </template>
 
@@ -253,17 +163,12 @@
 
         <template v-else>
           <StepHeading
-            :title="selectedMode === 'copy' ? '确认复制脚本' : '确认创建脚本'"
+            title="确认创建脚本"
             description="确认以下信息后再创建，避免产生错误实例。"
           />
           <a-descriptions bordered :column="1" class="confirm-summary">
-            <a-descriptions-item label="创建方式">
-              {{ selectedMode === 'copy' ? '复制已有脚本' : '创建全新脚本' }}
-            </a-descriptions-item>
-            <a-descriptions-item v-if="selectedMode === 'copy'" label="复制来源">
-              {{ selectedScript?.name }}
-            </a-descriptions-item>
-            <a-descriptions-item v-else label="脚本类型">
+            <a-descriptions-item label="创建方式"> 创建全新脚本 </a-descriptions-item>
+            <a-descriptions-item label="脚本类型">
               {{ getTypeOption(selectedType).title }}
             </a-descriptions-item>
             <a-descriptions-item v-if="selectedType === 'General'" label="配置来源">
@@ -297,17 +202,14 @@
 import { computed, defineComponent, h, ref, watch } from 'vue'
 import {
   ArrowLeftOutlined,
-  CheckOutlined,
   ClockCircleOutlined,
-  CopyOutlined,
   DatabaseOutlined,
-  FileAddOutlined,
   SearchOutlined,
   SettingOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
 import MarkdownIt from 'markdown-it'
-import type { Script, ScriptType } from '@/types/script'
+import type { ScriptType } from '@/types/script'
 import type { WebConfigTemplate } from '@/composables/useTemplateApi'
 import { openExternalUrl } from '@/utils/openExternal'
 import {
@@ -317,7 +219,6 @@ import {
   SCRIPT_TYPE_OPTIONS,
   splitScriptTypeOptions,
   type ConfigMode,
-  type CreateMode,
   type CreateStepKey,
   type ScriptCreateRequest,
 } from './scriptCreateFlow'
@@ -332,7 +233,6 @@ const StepHeading = defineComponent({
 
 const props = defineProps<{
   open: boolean
-  scripts: Script[]
   templates: WebConfigTemplate[]
   submitting: boolean
   templateLoading: boolean
@@ -346,20 +246,15 @@ const emit = defineEmits<{
 }>()
 
 const md = new MarkdownIt({ html: false, linkify: true, typographer: true })
-const currentStep = ref<CreateStepKey>('mode')
-const selectedMode = ref<CreateMode>('new')
+const currentStep = ref<CreateStepKey>('type')
 const selectedType = ref<ScriptType>('MAA')
 const selectedConfigMode = ref<ConfigMode>('template')
-const selectedScriptId = ref<string | null>(null)
 const selectedTemplateUrl = ref<string | null>(null)
 const configView = ref<'choice' | 'templates'>('choice')
 const typeKeyword = ref('')
-const scriptKeyword = ref('')
 const templateKeyword = ref('')
 
-const steps = computed(() =>
-  buildCreateSteps({ mode: selectedMode.value, type: selectedType.value })
-)
+const steps = computed(() => buildCreateSteps({ type: selectedType.value }))
 const currentStepIndex = computed(() =>
   Math.max(
     0,
@@ -375,12 +270,6 @@ const filteredTypes = computed(() =>
   filterScriptTypeOptions(SCRIPT_TYPE_OPTIONS, typeKeyword.value)
 )
 const typeSections = computed(() => splitScriptTypeOptions(filteredTypes.value))
-const filteredScripts = computed(() => {
-  const keyword = scriptKeyword.value.trim().toLowerCase()
-  return props.scripts.filter(script =>
-    [script.name, script.type].join(' ').toLowerCase().includes(keyword)
-  )
-})
 const filteredTemplates = computed(() => {
   const keyword = templateKeyword.value.trim().toLowerCase()
   return props.templates.filter(template =>
@@ -390,22 +279,17 @@ const filteredTemplates = computed(() => {
       .includes(keyword)
   )
 })
-const selectedScript = computed(() =>
-  props.scripts.find(script => script.id === selectedScriptId.value)
-)
 const selectedTemplate = computed(() =>
   props.templates.find(template => template.downloadUrl === selectedTemplateUrl.value)
 )
 const nextDisabled = computed(() => {
   if (props.submitting) return true
-  if (currentStep.value === 'script') return !selectedScriptId.value
   if (currentStep.value === 'config' && configView.value === 'templates') {
     return !selectedTemplateUrl.value
   }
   return false
 })
 const primaryButtonText = computed(() => {
-  if (currentStep.value === 'script') return '复制并编辑'
   if (currentStep.value === 'type' && selectedType.value !== 'General') return '创建并配置'
   if (currentStep.value === 'config' && selectedConfigMode.value === 'custom') {
     return '创建并配置'
@@ -424,34 +308,17 @@ watch(
 )
 
 const resetDialog = () => {
-  currentStep.value = 'mode'
-  selectedMode.value = 'new'
+  currentStep.value = 'type'
   selectedType.value = 'MAA'
   selectedConfigMode.value = 'template'
-  selectedScriptId.value = null
   selectedTemplateUrl.value = null
   configView.value = 'choice'
   typeKeyword.value = ''
-  scriptKeyword.value = ''
   templateKeyword.value = ''
 }
 
 const getTypeOption = (type: ScriptType) =>
   SCRIPT_TYPE_OPTIONS.find(option => option.value === type) ?? SCRIPT_TYPE_OPTIONS[0]
-
-const getStepStatus = (index: number) => {
-  if (index < currentStepIndex.value) return '已完成'
-  if (index === currentStepIndex.value) return '进行中'
-  return '待进行'
-}
-
-const goToStep = (step: CreateStepKey) => {
-  if (props.submitting) return
-  const targetIndex = steps.value.findIndex(item => item.key === step)
-  if (targetIndex >= 0 && targetIndex < currentStepIndex.value) {
-    currentStep.value = step
-  }
-}
 
 const handleBack = () => {
   if (props.submitting) return
@@ -464,20 +331,12 @@ const handleBack = () => {
 }
 
 const handleNext = () => {
-  if (currentStep.value === 'mode') {
-    currentStep.value = selectedMode.value === 'copy' ? 'script' : 'type'
-    return
-  }
   if (currentStep.value === 'type') {
     if (selectedType.value === 'General') {
       currentStep.value = 'config'
     } else {
       submitCurrentSelection()
     }
-    return
-  }
-  if (currentStep.value === 'script') {
-    if (selectedScriptId.value) submitCurrentSelection()
     return
   }
   if (currentStep.value === 'config') {
@@ -493,10 +352,8 @@ const handleNext = () => {
 
 const submitCurrentSelection = () => {
   const request = buildCreateRequest({
-    mode: selectedMode.value,
     type: selectedType.value,
     configMode: selectedConfigMode.value,
-    scriptId: selectedScriptId.value,
     template: selectedTemplate.value ?? null,
   })
   if (request) emit('submit', request)
@@ -504,11 +361,6 @@ const submitCurrentSelection = () => {
 
 const handleCancel = () => {
   if (!props.submitting) emit('update:open', false)
-}
-
-const switchToNew = () => {
-  selectedMode.value = 'new'
-  currentStep.value = 'type'
 }
 
 const clearTypeFilters = () => {
@@ -533,73 +385,49 @@ const handleTemplateDescriptionClick = (event: MouseEvent) => {
 
 <style scoped>
 .create-layout {
-  display: grid;
-  grid-template-columns: 184px minmax(0, 1fr);
   min-height: 500px;
   margin: -8px -24px 0;
 }
 
-.step-sidebar {
-  padding: 24px 16px;
-  border-right: 1px solid var(--ant-color-border-secondary);
-  background: var(--ant-color-bg-elevated);
+.type-grid,
+.type-sections,
+.entity-list {
+  scrollbar-color: var(--ant-color-border) transparent;
+  scrollbar-width: thin;
 }
 
-.step-item {
-  display: flex;
-  width: 100%;
-  gap: 10px;
-  align-items: flex-start;
-  padding: 10px;
-  border: 0;
+.type-grid::-webkit-scrollbar,
+.type-sections::-webkit-scrollbar,
+.entity-list::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+  display: block !important;
+}
+
+.type-grid::-webkit-scrollbar-track,
+.type-sections::-webkit-scrollbar-track,
+.entity-list::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.type-grid::-webkit-scrollbar-thumb,
+.type-sections::-webkit-scrollbar-thumb,
+.entity-list::-webkit-scrollbar-thumb {
   border-radius: 8px;
-  color: var(--ant-color-text-tertiary);
-  text-align: left;
-  background: transparent;
+  background: var(--ant-color-border) !important;
 }
 
-.step-item.active {
-  color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
+.type-grid::-webkit-scrollbar-thumb:hover,
+.type-sections::-webkit-scrollbar-thumb:hover,
+.entity-list::-webkit-scrollbar-thumb:hover {
+  background: var(--ant-color-border-secondary) !important;
 }
 
-.step-item.completed {
-  color: var(--ant-color-text-secondary);
-}
-
-.step-item.clickable {
-  cursor: pointer;
-}
-
-.step-index {
-  display: inline-flex;
-  width: 22px;
-  height: 22px;
-  flex: 0 0 22px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid currentColor;
-  border-radius: 50%;
-  font-size: 11px;
-}
-
-.step-copy,
 .choice-copy {
   display: flex;
   min-width: 0;
   flex: 1;
   flex-direction: column;
-}
-
-.step-title {
-  color: inherit;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.step-status {
-  margin-top: 2px;
-  font-size: 11px;
 }
 
 .step-content {
@@ -736,7 +564,7 @@ const handleTemplateDescriptionClick = (event: MouseEvent) => {
   font-size: 11px;
 }
 
-.general-section {
+.specialized-section {
   padding-top: 14px;
   border-top: 1px solid var(--ant-color-border-secondary);
 }
@@ -807,22 +635,6 @@ const handleTemplateDescriptionClick = (event: MouseEvent) => {
 }
 
 @media (max-width: 760px) {
-  .create-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .step-sidebar {
-    display: flex;
-    gap: 6px;
-    overflow-x: auto;
-    border-right: 0;
-    border-bottom: 1px solid var(--ant-color-border-secondary);
-  }
-
-  .step-item {
-    min-width: 132px;
-  }
-
   .type-grid {
     grid-template-columns: 1fr;
   }
