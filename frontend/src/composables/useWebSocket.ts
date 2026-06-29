@@ -37,6 +37,11 @@ const WS_RECONNECT_DELAY = 3000 // WebSocket重连延迟（3秒）
 const WS_RECONNECT_DELAY_MAX = 30000 // WebSocket重连最大延迟（30秒）
 const WS_RECONNECT_BACKOFF = 1.5 // WebSocket重连退避倍数
 
+// 页面重载自动重连
+const PAGE_RELOAD_RECONNECT_DELAY = 2000 // 页面重载后等待 2s 再尝试重连
+const PAGE_RELOAD_RECONNECT_POLL_INTERVAL = 200 // 轮询 WS 连接状态间隔
+const PAGE_RELOAD_RECONNECT_MAX_POLLS = 50 // 最大轮询次数
+
 // ====== 类型定义 ======
 
 // ====== 类型定义 ======
@@ -1519,10 +1524,10 @@ window.addEventListener('beforeunload', () => {
 const global = getGlobalStorage()
 if (global.moduleLoadCount === 0) global.moduleLoadCount = 1
 
-// ponytail: 页面重载（如休眠恢复）后无 WS 时自动连接
-// 连接锁防并发，不会与正常初始化流程冲突
-// beginBootstrap 保证 App.vue 不黑屏
-// 仅在非初始化页面触发：初始化页面有独立的 connectAfterBackendStart 流程
+// ====== 页面重载自动重连 ======
+// beginBootstrap 在模块顶层立即调用，保证 App.vue 不黑屏
+// WS 重连延迟 2s，避免与正常初始化流程竞争
+beginBootstrap()
 setTimeout(async () => {
   // 正在初始化页面时跳过 — 正常初始化流程会在后端启动后调用 connectAfterBackendStart
   if (window.location.hash.startsWith('#/initialization')) {
@@ -1531,23 +1536,25 @@ setTimeout(async () => {
   }
   const g = getGlobalStorage()
   if (!g.wsRef || g.wsRef.readyState !== WebSocket.OPEN) {
-    beginBootstrap()
     logger.info('页面重载后检测到无 WebSocket，自动尝试连接')
     setConnectionPermission(true, 'WebSocket自动重连')
     try {
       await connectGlobalWebSocket('WebSocket自动重连')
-      for (let i = 0; i < 50; i++) {
+      for (let i = 0; i < PAGE_RELOAD_RECONNECT_MAX_POLLS; i++) {
         if (g.wsRef?.readyState === WebSocket.OPEN) break
-        await new Promise(r => setTimeout(r, 200))
+        await new Promise(r => setTimeout(r, PAGE_RELOAD_RECONNECT_POLL_INTERVAL))
       }
       if (g.wsRef?.readyState !== WebSocket.OPEN) {
         logger.warn('页面重载后自动重连轮询超时，标记初始化完成以允许应用继续运行')
       }
-      markAsInitialized()
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : String(e)
       logger.warn(`页面重载后自动重连异常: ${errorMsg}，标记初始化完成以允许应用继续运行`)
+    } finally {
       markAsInitialized()
     }
+  } else {
+    // 已有有效连接，无需重连
+    markAsInitialized()
   }
-}, 2000)
+}, PAGE_RELOAD_RECONNECT_DELAY)
