@@ -8,9 +8,8 @@ import m9aIcon from '@/assets/M9A.png'
 import okwwIcon from '@/assets/ok-ww.ico'
 import srcIcon from '@/assets/SRC.png'
 
-export type CreateMode = 'new' | 'copy'
 export type ConfigMode = 'template' | 'custom'
-export type CreateStepKey = 'mode' | 'type' | 'script' | 'config'
+export type CreateStepKey = 'type' | 'config'
 export type ScriptTypeGroup = 'all' | 'specialized' | 'general'
 
 export interface ScriptTypeOption {
@@ -28,10 +27,8 @@ export interface CreateStep {
 }
 
 export interface CreateRequestState {
-  mode: CreateMode
   type: ScriptType
   configMode: ConfigMode
-  scriptId: string | null
   template: WebConfigTemplate | null
 }
 
@@ -39,9 +36,16 @@ export type ScriptCreateRequest =
   | { kind: 'new'; type: Exclude<ScriptType, 'General'> }
   | { kind: 'general-custom' }
   | { kind: 'general-template'; template: WebConfigTemplate }
-  | { kind: 'copy'; scriptId: string }
 
 export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
+  {
+    value: 'General',
+    title: '通用脚本',
+    description: '适用于具备日志文件的自动化脚本',
+    keywords: ['general', '通用', '自定义'],
+    group: 'general',
+    icon: generalIcon,
+  },
   {
     value: 'MAA',
     title: 'MAA 脚本',
@@ -90,31 +94,10 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     group: 'specialized',
     icon: hsrIcon,
   },
-  {
-    value: 'General',
-    title: '通用脚本',
-    description: '适用于具备日志文件的自动化脚本',
-    keywords: ['general', '通用', '自定义'],
-    group: 'general',
-    icon: generalIcon,
-  },
 ]
 
-export const buildCreateSteps = ({
-  mode,
-  type,
-}: Pick<CreateRequestState, 'mode' | 'type'>): CreateStep[] => {
-  if (mode === 'copy') {
-    return [
-      { key: 'mode', title: '创建方式' },
-      { key: 'script', title: '选择脚本' },
-    ]
-  }
-
-  const steps: CreateStep[] = [
-    { key: 'mode', title: '创建方式' },
-    { key: 'type', title: '脚本类型' },
-  ]
+export const buildCreateSteps = ({ type }: Pick<CreateRequestState, 'type'>): CreateStep[] => {
+  const steps: CreateStep[] = [{ key: 'type', title: '脚本类型' }]
   if (type === 'General') {
     steps.push({ key: 'config', title: '配置来源' })
   }
@@ -149,9 +132,6 @@ const EDIT_SEGMENT_BY_TYPE: Record<ScriptType, string> = {
 export const getScriptEditSegment = (type: ScriptType) => EDIT_SEGMENT_BY_TYPE[type]
 
 export const buildCreateRequest = (state: CreateRequestState): ScriptCreateRequest | null => {
-  if (state.mode === 'copy') {
-    return state.scriptId ? { kind: 'copy', scriptId: state.scriptId } : null
-  }
   if (state.type !== 'General') {
     return { kind: 'new', type: state.type }
   }
