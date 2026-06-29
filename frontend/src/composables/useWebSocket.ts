@@ -971,10 +971,11 @@ const createGlobalWebSocket = (): WebSocket => {
       logger.warn('旧连接卡在 CONNECTING 状态，强制关闭并重建')
       try { global.wsRef.close() } catch (_) {}
       global.wsRef = null
+    } else {
+      // 清理已关闭或错误状态的连接
+      logger.info(`清理旧的WebSocket连接，状态: ${global.wsRef.readyState}`)
+      global.wsRef = null
     }
-    // 清理已关闭或错误状态的连接
-    logger.info(`清理旧的WebSocket连接，状态: ${global.wsRef.readyState}`)
-    global.wsRef = null
   }
 
   logger.info(`创建新的WebSocket连接: ${BASE_WS_URL}`)
@@ -1527,12 +1528,19 @@ setTimeout(async () => {
     beginBootstrap()
     logger.info('页面重载后检测到无 WebSocket，自动尝试连接')
     setConnectionPermission(true, 'WebSocket自动重连')
-    await connectGlobalWebSocket('WebSocket自动重连')
-    for (let i = 0; i < 50; i++) {
-      if (g.wsRef?.readyState === WebSocket.OPEN) break
-      await new Promise(r => setTimeout(r, 200))
-    }
-    if (g.wsRef?.readyState === WebSocket.OPEN) {
+    try {
+      await connectGlobalWebSocket('WebSocket自动重连')
+      for (let i = 0; i < 50; i++) {
+        if (g.wsRef?.readyState === WebSocket.OPEN) break
+        await new Promise(r => setTimeout(r, 200))
+      }
+      if (g.wsRef?.readyState !== WebSocket.OPEN) {
+        logger.warn('页面重载后自动重连轮询超时，标记初始化完成以允许应用继续运行')
+      }
+      markAsInitialized()
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : String(e)
+      logger.warn(`页面重载后自动重连异常: ${errorMsg}，标记初始化完成以允许应用继续运行`)
       markAsInitialized()
     }
   }
