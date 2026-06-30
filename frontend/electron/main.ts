@@ -313,7 +313,7 @@ function createWindow() {
   const config = loadConfig()
 
   // 解析配置
-  const [cfgW, cfgH] = config.UI.size.split(',').map((s: string) => parseInt(s.trim(), 10) || 1600)
+  const [cfgW, cfgH] = config.UI.size.split(',').map((s: string) => parseInt(s.trim(), 10) || 960)
   const [cfgX, cfgY] = config.UI.location
     .split(',')
     .map((s: string) => parseInt(s.trim(), 10) || 100)
@@ -323,7 +323,7 @@ function createWindow() {
   const sf = targetDisplay.scaleFactor
 
   // 逻辑最小尺寸（DIP）
-  const minDipW = Math.floor(1600 / sf)
+  const minDipW = Math.floor(960 / sf)
   const minDipH = Math.floor(900 / sf)
 
   // 初始窗口逻辑尺寸（DIP）
@@ -376,7 +376,7 @@ function createWindow() {
     const bounds = win.getBounds()
     const disp = screen.getDisplayMatching(bounds)
     const s = disp.scaleFactor
-    const w = Math.floor(1600 / s)
+    const w = Math.floor(960 / s)
     const h = Math.floor(900 / s)
 
     const [curMinW, curMinH] = win.getMinimumSize()
