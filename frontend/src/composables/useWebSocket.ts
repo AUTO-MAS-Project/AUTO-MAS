@@ -3,6 +3,7 @@ import { ref, type Ref } from 'vue'
 import schedulerHandlers from '@/views/scheduler/schedulerHandlers'
 import { Modal } from 'ant-design-vue'
 import { useAppClosing } from '@/composables/useAppClosing'
+import { beginBootstrap, markAsInitialized } from '@/composables/useAppInitialization'
 const logger = window.electronAPI.getLogger('WebSocket连接')
 
 // ====== 配置项 ======
@@ -35,6 +36,11 @@ const MAX_WS_RECONNECT_ATTEMPTS = 5 // WebSocket最大重连尝试次数
 const WS_RECONNECT_DELAY = 3000 // WebSocket重连延迟（3秒）
 const WS_RECONNECT_DELAY_MAX = 30000 // WebSocket重连最大延迟（30秒）
 const WS_RECONNECT_BACKOFF = 1.5 // WebSocket重连退避倍数
+
+// 页面重载自动重连
+const PAGE_RELOAD_RECONNECT_DELAY = 2000 // 页面重载后等待 2s 再尝试重连
+const PAGE_RELOAD_RECONNECT_POLL_INTERVAL = 200 // 轮询 WS 连接状态间隔
+const PAGE_RELOAD_RECONNECT_MAX_POLLS = 50 // 最大轮询次数
 
 // ====== 类型定义 ======
 
@@ -965,13 +971,16 @@ const createGlobalWebSocket = (): WebSocket => {
       logger.warn('尝试创建新连接但当前连接仍有效，直接返回现有连接')
       return global.wsRef
     }
+    // ponytail: 休眠后 Chromium WS 可能卡在 CONNECTING，关闭重建
     if (global.wsRef.readyState === WebSocket.CONNECTING) {
-      logger.warn('尝试创建新连接但当前连接正在建立中，直接返回现有连接')
-      return global.wsRef
+      logger.warn('旧连接卡在 CONNECTING 状态，强制关闭并重建')
+      try { global.wsRef.close() } catch (_) {}
+      global.wsRef = null
+    } else {
+      // 清理已关闭或错误状态的连接
+      logger.info(`清理旧的WebSocket连接，状态: ${global.wsRef.readyState}`)
+      global.wsRef = null
     }
-    // 清理已关闭或错误状态的连接
-    logger.info(`清理旧的WebSocket连接，状态: ${global.wsRef.readyState}`)
-    global.wsRef = null
   }
 
   logger.info(`创建新的WebSocket连接: ${BASE_WS_URL}`)
@@ -1506,11 +1515,43 @@ export function useWebSocket() {
   }
 }
 
-// ====== 页面卸载保护 ======
-window.addEventListener('beforeunload', () => {
-  // 保持连接
-})
-
 // ====== 模块加载计数 ======
 const global = getGlobalStorage()
 if (global.moduleLoadCount === 0) global.moduleLoadCount = 1
+
+// ====== 页面重载自动重连 ======
+// 延迟 2s 重连 WS，避免与正常初始化流程竞争（beginBootstrap 已由正常流程或此处发起）
+// 不放在模块顶层，否则首次加载时 isBootstrapping=true 会误导路由守卫跳过的初始化决策
+setTimeout(() => {
+  // 正在初始化页面时跳过 — 正常初始化流程会在后端启动后调用 connectAfterBackendStart
+  if (window.location.hash.startsWith('#/initialization')) {
+    logger.info('当前在初始化页面，跳过页面重载自动重连（由正常初始化流程接管）')
+    return
+  }
+  const g = getGlobalStorage()
+  if (!g.wsRef || g.wsRef.readyState !== WebSocket.OPEN) {
+    beginBootstrap()
+    logger.info('页面重载后检测到无 WebSocket，自动尝试连接')
+    setConnectionPermission(true, 'WebSocket自动重连')
+    ;(async () => {
+      try {
+        await connectGlobalWebSocket('WebSocket自动重连')
+        for (let i = 0; i < PAGE_RELOAD_RECONNECT_MAX_POLLS; i++) {
+          if (g.wsRef?.readyState === WebSocket.OPEN) break
+          await new Promise(r => setTimeout(r, PAGE_RELOAD_RECONNECT_POLL_INTERVAL))
+        }
+        if (g.wsRef?.readyState !== WebSocket.OPEN) {
+          logger.warn('页面重载后自动重连轮询超时，标记初始化完成以允许应用继续运行')
+        }
+      } catch (e) {
+        const errorMsg = e instanceof Error ? e.message : String(e)
+        logger.warn(`页面重载后自动重连异常: ${errorMsg}，标记初始化完成以允许应用继续运行`)
+      } finally {
+        markAsInitialized()
+      }
+    })()
+  } else {
+    // 已有有效连接，无需重连
+    markAsInitialized()
+  }
+}, PAGE_RELOAD_RECONNECT_DELAY)
