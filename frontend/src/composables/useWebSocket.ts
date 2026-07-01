@@ -1515,20 +1515,14 @@ export function useWebSocket() {
   }
 }
 
-// ====== 页面卸载保护 ======
-window.addEventListener('beforeunload', () => {
-  // 保持连接
-})
-
 // ====== 模块加载计数 ======
 const global = getGlobalStorage()
 if (global.moduleLoadCount === 0) global.moduleLoadCount = 1
 
 // ====== 页面重载自动重连 ======
-// beginBootstrap 在模块顶层立即调用，保证 App.vue 不黑屏
-// WS 重连延迟 2s，避免与正常初始化流程竞争
-beginBootstrap()
-setTimeout(async () => {
+// 延迟 2s 重连 WS，避免与正常初始化流程竞争（beginBootstrap 已由正常流程或此处发起）
+// 不放在模块顶层，否则首次加载时 isBootstrapping=true 会误导路由守卫跳过的初始化决策
+setTimeout(() => {
   // 正在初始化页面时跳过 — 正常初始化流程会在后端启动后调用 connectAfterBackendStart
   if (window.location.hash.startsWith('#/initialization')) {
     logger.info('当前在初始化页面，跳过页面重载自动重连（由正常初始化流程接管）')
@@ -1536,23 +1530,26 @@ setTimeout(async () => {
   }
   const g = getGlobalStorage()
   if (!g.wsRef || g.wsRef.readyState !== WebSocket.OPEN) {
+    beginBootstrap()
     logger.info('页面重载后检测到无 WebSocket，自动尝试连接')
     setConnectionPermission(true, 'WebSocket自动重连')
-    try {
-      await connectGlobalWebSocket('WebSocket自动重连')
-      for (let i = 0; i < PAGE_RELOAD_RECONNECT_MAX_POLLS; i++) {
-        if (g.wsRef?.readyState === WebSocket.OPEN) break
-        await new Promise(r => setTimeout(r, PAGE_RELOAD_RECONNECT_POLL_INTERVAL))
+    ;(async () => {
+      try {
+        await connectGlobalWebSocket('WebSocket自动重连')
+        for (let i = 0; i < PAGE_RELOAD_RECONNECT_MAX_POLLS; i++) {
+          if (g.wsRef?.readyState === WebSocket.OPEN) break
+          await new Promise(r => setTimeout(r, PAGE_RELOAD_RECONNECT_POLL_INTERVAL))
+        }
+        if (g.wsRef?.readyState !== WebSocket.OPEN) {
+          logger.warn('页面重载后自动重连轮询超时，标记初始化完成以允许应用继续运行')
+        }
+      } catch (e) {
+        const errorMsg = e instanceof Error ? e.message : String(e)
+        logger.warn(`页面重载后自动重连异常: ${errorMsg}，标记初始化完成以允许应用继续运行`)
+      } finally {
+        markAsInitialized()
       }
-      if (g.wsRef?.readyState !== WebSocket.OPEN) {
-        logger.warn('页面重载后自动重连轮询超时，标记初始化完成以允许应用继续运行')
-      }
-    } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : String(e)
-      logger.warn(`页面重载后自动重连异常: ${errorMsg}，标记初始化完成以允许应用继续运行`)
-    } finally {
-      markAsInitialized()
-    }
+    })()
   } else {
     // 已有有效连接，无需重连
     markAsInitialized()
