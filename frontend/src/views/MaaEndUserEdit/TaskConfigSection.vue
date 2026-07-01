@@ -229,8 +229,8 @@ const rewardGroupEnabled = computed(() => {
   if (normalizedSanityTaskType.value === 'Essence') return false
   return Boolean(
     currentTaskOption.value &&
-      'rewards' in currentTaskOption.value &&
-      currentTaskOption.value.rewards
+    'rewards' in currentTaskOption.value &&
+    currentTaskOption.value.rewards
   )
 })
 

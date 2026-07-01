@@ -221,11 +221,13 @@ const checkUpdate = async () => {
 
   try {
     await globalCheckUpdate(false, true) // silent=false, forceCheck=true
-    logger.info(`全局更新检查完成，状态: ${JSON.stringify({
-      updateVisible: updateVisible.value,
-      updateData: updateData.value,
-      latestVersion: latestVersion.value,
-    })}`)
+    logger.info(
+      `全局更新检查完成，状态: ${JSON.stringify({
+        updateVisible: updateVisible.value,
+        updateData: updateData.value,
+        latestVersion: latestVersion.value,
+      })}`
+    )
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`全局更新检查失败: ${errorMsg}`)
@@ -275,26 +277,47 @@ onMounted(() => {
     <div class="settings-content">
       <a-tabs v-model:active-key="activeKey" type="card" :loading="loading" class="settings-tabs">
         <a-tab-pane key="basic" tab="界面设置">
-          <TabBasic :settings="settings" :theme-mode="themeMode" :theme-color="themeColor"
-            :theme-mode-options="themeModeOptions" :theme-color-options="themeColorOptions"
-            :handle-theme-mode-change="handleThemeModeChange" :handle-theme-color-change="handleThemeColorChange"
-            :handle-setting-change="handleSettingChange" />
+          <TabBasic
+            :settings="settings"
+            :theme-mode="themeMode"
+            :theme-color="themeColor"
+            :theme-mode-options="themeModeOptions"
+            :theme-color-options="themeColorOptions"
+            :handle-theme-mode-change="handleThemeModeChange"
+            :handle-theme-color-change="handleThemeColorChange"
+            :handle-setting-change="handleSettingChange"
+          />
         </a-tab-pane>
         <a-tab-pane key="function" tab="功能设置">
-          <TabFunction :settings="settings" :history-retention-options="historyRetentionOptions"
-            :voice-type-options="voiceTypeOptions" :handle-setting-change="handleSettingChange" />
+          <TabFunction
+            :settings="settings"
+            :history-retention-options="historyRetentionOptions"
+            :voice-type-options="voiceTypeOptions"
+            :handle-setting-change="handleSettingChange"
+          />
         </a-tab-pane>
         <a-tab-pane key="notify" tab="通知设置">
-          <TabNotify :settings="settings" :send-task-result-time-options="sendTaskResultTimeOptions"
-            :handle-setting-change="handleSettingChange" :test-notify="testNotify" :testing-notify="testingNotify" />
+          <TabNotify
+            :settings="settings"
+            :send-task-result-time-options="sendTaskResultTimeOptions"
+            :handle-setting-change="handleSettingChange"
+            :test-notify="testNotify"
+            :testing-notify="testingNotify"
+          />
         </a-tab-pane>
         <a-tab-pane key="advanced" tab="日志管理">
           <TabAdvanced :open-dev-tools="openDevTools" />
         </a-tab-pane>
         <a-tab-pane key="others" tab="关于">
-          <TabOthers :version="version" :backend-update-info="backendUpdateInfo" :settings="settings"
-            :update-source-options="updateSourceOptions" :update-channel-options="updateChannelOptions"
-            :handle-setting-change="handleSettingChange" :check-update="checkUpdate" />
+          <TabOthers
+            :version="version"
+            :backend-update-info="backendUpdateInfo"
+            :settings="settings"
+            :update-source-options="updateSourceOptions"
+            :update-channel-options="updateChannelOptions"
+            :handle-setting-change="handleSettingChange"
+            :check-update="checkUpdate"
+          />
         </a-tab-pane>
       </a-tabs>
     </div>

@@ -49,24 +49,28 @@ logger = get_logger("米游社签到任务")
 
 # ==================== 常量 ====================
 
-# 签到 API
-ROLES_URL = "https://api-takumi.miyoushe.com/binding/api/getUserGameRolesByCookie"
-SIGN_URL = "https://api-takumi.miyoushe.com/event/luna/sign"
+# 签到 API（对齐参考项目域名）
+ROLES_URL = "https://api-takumi.mihoyo.com/binding/api/getUserGameRolesByCookie"
+SIGN_URL = "https://api-takumi.mihoyo.com/event/luna/sign"
 ZZZ_SIGN_URL = "https://act-nap-api.mihoyo.com/event/luna/zzz/sign"
-HOME_URL = "https://api-takumi.miyoushe.com/event/luna/home"
-INFO_URL = "https://api-takumi.miyoushe.com/event/luna/info"
+ZZZ_INFO_URL = "https://act-nap-api.mihoyo.com/event/luna/zzz/info"
+HOME_URL = "https://api-takumi.mihoyo.com/event/luna/home"
+INFO_URL = "https://api-takumi.mihoyo.com/event/luna/info"
 
-# Passport Token 派生 API
+# Passport Token 派生 API（对齐 MihoyoBBSTools 域名）
 PASSPORT_COOKIE_URL = (
-    "https://passport-api.mihoyo.com/account/auth/api/getCookieAccountInfoBySToken"
+    "https://api-takumi.mihoyo.com/auth/api/getCookieAccountInfoBySToken"
 )
 
-# DS 签名 Salt
-SALT_IOS = "9ttJY72HxbjwWRNHJvn0n2AYue47nYsK"
-SALT_DATA = "t0qEgfub6cvueAPgR5m9aQWWVciEer7v"
-SALT_PARAMS = "xV8v4Qu54lUKrEYFZkJhB8cuOh9Asafs"
+# DS 签名 Salt（对齐 MihoyoBBSTools）
+SALT_WEB = "DlOUwIupfU6YespEUWDJmXtutuXV6owG"       # web 端 salt（游戏签到 GET 请求）
+SALT_DATA = "t0qEgfub6cvueAPgR5m9aQWWVciEer7v"      # 有 body/query 的请求（x6）
 
-# 游戏配置
+# 验证码重试配置
+CAPTCHA_MAX_RETRIES = 3
+CAPTCHA_RETRY_DELAY = (6, 15)  # 秒，随机范围
+
+# 游戏配置（整合 MihoyoBBSTools 全部支持的游戏）
 GAME_CONFIG = {
     "hk4e_cn": {
         "name": "原神",
@@ -83,9 +87,8 @@ GAME_CONFIG = {
         "name": "星穹铁道",
         "act_id": "e202304121516551",
         "sign_url": SIGN_URL,
-        "signgame": "hkrpg",
+        "signgame": "",
         "extra_headers": {
-            "x-rpc-signgame": "hkrpg",
             "Origin": "https://act.mihoyo.com",
             "Referer": "https://act.mihoyo.com/",
         },
@@ -94,6 +97,7 @@ GAME_CONFIG = {
         "name": "绝区零",
         "act_id": "e202406242138391",
         "sign_url": ZZZ_SIGN_URL,
+        "info_url": ZZZ_INFO_URL,
         "signgame": "zzz",
         "extra_headers": {
             "x-rpc-signgame": "zzz",
@@ -102,26 +106,55 @@ GAME_CONFIG = {
             "Host": "act-nap-api.mihoyo.com",
         },
     },
+    "bh2_cn": {
+        "name": "崩坏学园2",
+        "act_id": "e202203291431091",
+        "sign_url": SIGN_URL,
+        "signgame": "",
+        "extra_headers": {
+            "Origin": "https://act.mihoyo.com",
+            "Referer": "https://act.mihoyo.com/",
+        },
+    },
+    "bh3_cn": {
+        "name": "崩坏3",
+        "act_id": "e202306201626331",
+        "sign_url": SIGN_URL,
+        "signgame": "",
+        "extra_headers": {
+            "Origin": "https://act.mihoyo.com",
+            "Referer": "https://act.mihoyo.com/",
+        },
+    },
+    "nxx_cn": {
+        "name": "未定事件簿",
+        "act_id": "e202202251749321",
+        "sign_url": SIGN_URL,
+        "signgame": "",
+        "extra_headers": {
+            "Origin": "https://act.mihoyo.com",
+            "Referer": "https://act.mihoyo.com/",
+        },
+    },
 }
 
-# 通用请求头
+# 通用请求头（对齐 MihoyoBBSTools 游戏签到 headers）
 BASE_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_4 like Mac OS X) "
-    "AppleWebKit/605.1.15 (KHTML, like Gecko) miHoYoBBS/2.55.1",
-    "Referer": "https://webstatic.mihoyo.com/",
-    "Origin": "https://webstatic.mihoyo.com",
-    "Connection": "keep-alive",
     "Accept": "application/json, text/plain, */*",
-    "Content-Type": "application/json;charset=utf-8",
-    "Accept-Encoding": "gzip, deflate, br",
-    "x-rpc-device_model": "iPhone10,2",
-    "x-rpc-device_name": "iPhone",
-    "x-rpc-channel": "appstore",
-    "x-rpc-app_version": "2.63.1",
-    "Accept-Language": "zh-CN,zh-Hans;q=0.9",
-    "x-rpc-sys_version": "16.4",
-    "x-rpc-platform": "ios",
+    "Origin": "https://webstatic.mihoyo.com",
+    "x-rpc-app_version": "2.99.1",
+    "User-Agent": "Mozilla/5.0 (Linux; Android 12; Unspecified Device) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Version/4.0 Chrome/103.0.5060.129 Mobile Safari/537.36 "
+    "miHoYoBBS/2.99.1",
     "x-rpc-client_type": "5",
+    "Referer": "https://act.mihoyo.com/",
+    "Accept-Encoding": "gzip, deflate",
+    "Accept-Language": "zh-CN,en-US;q=0.8",
+    "X-Requested-With": "com.mihoyo.hyperion",
+    "x-rpc-channel": "miyousheluodi",
+    "Connection": "keep-alive",
+    "Content-Type": "application/json;charset=utf-8",
 }
 
 
@@ -175,12 +208,15 @@ def _build_cookie_str(cookies: Dict[str, str]) -> str:
 def _generate_ds(body: str = "", query: str = "") -> str:
     """生成 DS (Dynamic Secret) 签名
 
+    对齐 MihoyoBBSTools：游戏签到 GET 请求使用 SALT_WEB，
+    POST 请求（有 body）使用 SALT_DATA。
+
     Args:
         body: 请求体 JSON 字符串
         query: URL 查询参数字符串
 
     Returns:
-        DS 签名字符串
+        DS 签名字符串，格式 "t,r,md5hash"
     """
     t = str(int(time.time()))
     r = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
@@ -189,11 +225,26 @@ def _generate_ds(body: str = "", query: str = "") -> str:
         salt = SALT_DATA
         raw = f"salt={salt}&t={t}&r={r}&b={body}&q={query}"
     else:
-        salt = SALT_IOS
+        salt = SALT_WEB
         raw = f"salt={salt}&t={t}&r={r}"
 
     md5_hash = hashlib.md5(raw.encode()).hexdigest()
     return f"{t},{r},{md5_hash}"
+
+
+def _generate_device_id(cookie: str) -> str:
+    """从 cookie 生成确定性 device_id
+
+    使用 UUID3 基于 cookie 内容生成，同一 cookie 始终得到同一 device_id，
+    与 MihoyoBBSTools 的设备指纹策略一致。
+
+    Args:
+        cookie: cookie 字符串
+
+    Returns:
+        大写的 UUID 字符串
+    """
+    return str(uuid.uuid3(uuid.NAMESPACE_URL, cookie))
 
 
 def _get_stuid(cookies: Dict[str, str]) -> str:
@@ -245,7 +296,7 @@ async def _derive_cookie_token(
         Exception: 派生失败时抛出
     """
     headers = BASE_HEADERS.copy()
-    headers["x-rpc-device_id"] = str(uuid.uuid4()).upper()
+    headers["x-rpc-device_id"] = _generate_device_id(stoken + mid)
 
     # stoken_v2 需要搭配 mid 和 stuid
     stoken_cookies = {
@@ -456,8 +507,8 @@ async def miyoushe_sign_in(cookie: str, proxy: str | None = None) -> list[dict]:
             })
             logger.error(f"{account} {game_cfg['name']} 签到异常: {e}")
 
-        # 间隔防风控
-        await asyncio.sleep(3 + random.uniform(1, 5))
+        # 间隔防风控（对齐 MihoyoBBSTools：随机 2-8 秒）
+        await asyncio.sleep(random.uniform(2.0, 8.0))
 
     return results
 
@@ -471,7 +522,7 @@ async def _get_game_roles(cookie: str) -> list[dict]:
     """
     headers = BASE_HEADERS.copy()
     headers["DS"] = _generate_ds()
-    headers["x-rpc-device_id"] = str(uuid.uuid4()).upper()
+    headers["x-rpc-device_id"] = _generate_device_id(cookie)
 
     async with httpx.AsyncClient(proxy=Config.proxy) as client:
         response = await client.get(
@@ -514,10 +565,10 @@ async def _check_sign_info(
     headers = BASE_HEADERS.copy()
     query = f"lang=zh-cn&act_id={game_cfg['act_id']}&region={region}&uid={uid}"
     headers["DS"] = _generate_ds(query=query)
-    headers["x-rpc-device_id"] = str(uuid.uuid4()).upper()
+    headers["x-rpc-device_id"] = _generate_device_id(cookie)
     headers.update(game_cfg.get("extra_headers", {}))
 
-    url = f"{INFO_URL}?{query}"
+    url = f"{game_cfg.get('info_url', INFO_URL)}?{query}"
 
     async with httpx.AsyncClient(proxy=Config.proxy) as client:
         response = await client.get(
@@ -539,7 +590,10 @@ async def _check_sign_info(
 async def _do_sign(
     cookie: str, game_cfg: dict, region: str, uid: str, account: str = ""
 ) -> dict:
-    """执行签到
+    """执行签到（含验证码重试）
+
+    当签到返回极验（Geetest）验证码时，自动重试最多 CAPTCHA_MAX_RETRIES 次。
+    两次重试之间有随机延迟以防触发更严格的风控。
 
     Args:
         cookie: cookie 字符串
@@ -548,60 +602,167 @@ async def _do_sign(
         uid: 游戏 UID
         account: 账号标识（如 nickname/nickname(uid)），为空时用 stuid 构造
     """
-    headers = BASE_HEADERS.copy()
-    body = json.dumps(
-        {"act_id": game_cfg["act_id"], "region": region, "uid": uid},
-        separators=(",", ":"),
-    )
-    headers["DS"] = _generate_ds(body=body)
-    headers["x-rpc-device_id"] = str(uuid.uuid4()).upper()
-    headers.update(game_cfg.get("extra_headers", {}))
-
-    sign_url = game_cfg["sign_url"]
     cookies = _parse_cookie(cookie)
-
-    async with httpx.AsyncClient(proxy=Config.proxy) as client:
-        response = await client.post(
-            sign_url,
-            headers=headers,
-            content=body,
-            cookies=cookies,
-            timeout=30.0,
-        )
-        rsp = _safe_json_parse(response)
-
     stuid = _get_stuid(cookies)
     if not account:
         account = f"{stuid}/{stuid}({uid})" if uid else f"{stuid}/米游社"
 
-    if rsp.get("retcode") == 0:
-        # 尝试获取奖励信息
-        reward = ""
-        data = rsp.get("data", {})
-        if data:
+    body = json.dumps(
+        {"act_id": game_cfg["act_id"], "region": region, "uid": uid},
+        separators=(",", ":"),
+    )
+    sign_url = game_cfg["sign_url"]
+
+    for attempt in range(CAPTCHA_MAX_RETRIES + 1):
+        headers = BASE_HEADERS.copy()
+        headers["DS"] = _generate_ds(body=body)
+        headers["x-rpc-device_id"] = _generate_device_id(cookie)
+        headers.update(game_cfg.get("extra_headers", {}))
+
+        async with httpx.AsyncClient(proxy=Config.proxy) as client:
+            response = await client.post(
+                sign_url,
+                headers=headers,
+                content=body,
+                cookies=cookies,
+                timeout=30.0,
+            )
+            rsp = _safe_json_parse(response)
+
+        retcode = rsp.get("retcode", 0)
+        data = rsp.get("data") or {}
+
+        # ---- 成功 ----
+        if retcode == 0:
+            reward = ""
             award = data.get("award", {})
             if award:
                 reward = f"{award.get('name', '')}x{award.get('cnt', 1)}"
-        logger.info(f"{account} {game_cfg['name']} 签到成功")
-        return {
-            "account": account,
-            "game": game_cfg["name"],
-            "platform": "米游社",
-            "status": "成功",
-            "reward": reward,
-            "reason": "",
-        }
-    elif rsp.get("retcode") == -5003 or "请勿重复签到" in rsp.get("message", ""):
-        # -5003 = 已签到
-        return {
-            "account": account,
-            "game": game_cfg["name"],
-            "platform": "米游社",
-            "status": "已签到",
-            "reward": "",
-            "reason": "",
-        }
-    else:
+            logger.info(f"{account} {game_cfg['name']} 签到成功")
+            return {
+                "account": account,
+                "game": game_cfg["name"],
+                "platform": "米游社",
+                "status": "成功",
+                "reward": reward,
+                "reason": "",
+            }
+
+        # ---- 已签到 ----
+        if retcode == -5003 or "请勿重复签到" in rsp.get("message", ""):
+            return {
+                "account": account,
+                "game": game_cfg["name"],
+                "platform": "米游社",
+                "status": "已签到",
+                "reward": "",
+                "reason": "",
+            }
+
+        # ---- -100: cookie_token 过期，尝试多种方式恢复 ----
+        if retcode == -100:
+            parsed = _parse_cookie(cookie)
+            has_stoken = "stoken" in parsed
+            has_v2 = "cookie_token_v2" in parsed
+
+            refreshed = False
+
+            # 方式 1: 用 stoken 派生新 cookie_token
+            if has_stoken and "mid" in parsed and attempt < CAPTCHA_MAX_RETRIES:
+                stuid = _get_stuid(parsed)
+                logger.warning(
+                    f"{account} {game_cfg['name']} cookie_token 过期，"
+                    f"尝试用 stoken 刷新"
+                )
+                try:
+                    new_token, new_uid = await _derive_cookie_token(
+                        parsed["stoken"], parsed["mid"], stuid,
+                    )
+                    parsed["cookie_token"] = new_token
+                    if new_uid:
+                        _ensure_uid_aliases(parsed, new_uid)
+                    cookie = _build_cookie_str(parsed)
+                    refreshed = True
+                except Exception as e:
+                    logger.error(f"stoken 刷新失败: {e}")
+
+            # 方式 2: 用 cookie_token_v2 替换 cookie_token
+            if not refreshed and has_v2 and attempt < CAPTCHA_MAX_RETRIES:
+                logger.info(
+                    f"{account} {game_cfg['name']} 尝试用 cookie_token_v2 替代"
+                )
+                parsed["cookie_token"] = parsed["cookie_token_v2"]
+                cookie = _build_cookie_str(parsed)
+                refreshed = True
+
+            # 方式 3: 用 ltoken 替换 cookie_token
+            if not refreshed and "ltoken" in parsed and attempt < CAPTCHA_MAX_RETRIES:
+                logger.info(
+                    f"{account} {game_cfg['name']} 尝试用 ltoken 替代"
+                )
+                parsed["cookie_token"] = parsed["ltoken"]
+                cookie = _build_cookie_str(parsed)
+                refreshed = True
+
+            if refreshed:
+                await asyncio.sleep(random.uniform(1.0, 3.0))
+                continue
+
+            return {
+                "account": account,
+                "game": game_cfg["name"],
+                "platform": "米游社",
+                "status": "失败",
+                "reward": "",
+                "reason": "请登录后重试（cookie_token 过期，无可用替代 token）",
+            }
+
+        # ---- 需要验证码（极验风控） ----
+        if data.get("gt") and data.get("challenge"):
+            if attempt < CAPTCHA_MAX_RETRIES:
+                delay = random.uniform(*CAPTCHA_RETRY_DELAY)
+                logger.warning(
+                    f"{account} {game_cfg['name']} 触发验证码 "
+                    f"(第 {attempt + 1}/{CAPTCHA_MAX_RETRIES} 次)，"
+                    f"等待 {delay:.0f} 秒后重试"
+                )
+                await asyncio.sleep(delay)
+                continue
+            else:
+                logger.error(
+                    f"{account} {game_cfg['name']} 验证码重试耗尽，签到失败"
+                )
+                return {
+                    "account": account,
+                    "game": game_cfg["name"],
+                    "platform": "米游社",
+                    "status": "风控",
+                    "reward": "",
+                    "reason": "触发极验验证码，重试次数耗尽",
+                }
+
+        # ---- retcode 1034：高频风控 ----
+        if retcode == 1034:
+            if attempt < CAPTCHA_MAX_RETRIES:
+                delay = random.uniform(*CAPTCHA_RETRY_DELAY)
+                logger.warning(
+                    f"{account} {game_cfg['name']} 高频风控 (retcode=1034) "
+                    f"(第 {attempt + 1}/{CAPTCHA_MAX_RETRIES} 次)，"
+                    f"等待 {delay:.0f} 秒后重试"
+                )
+                await asyncio.sleep(delay)
+                continue
+            else:
+                return {
+                    "account": account,
+                    "game": game_cfg["name"],
+                    "platform": "米游社",
+                    "status": "风控",
+                    "reward": "",
+                    "reason": "高频风控 (retcode=1034)，重试次数耗尽",
+                }
+
+        # ---- 其他失败 ----
         message = rsp.get("message", "未知错误")
         logger.error(f"{account} {game_cfg['name']} 签到失败: {message}")
         return {
@@ -612,3 +773,13 @@ async def _do_sign(
             "reward": "",
             "reason": message,
         }
+
+    # 理论上不会到这里
+    return {
+        "account": account,
+        "game": game_cfg["name"],
+        "platform": "米游社",
+        "status": "失败",
+        "reward": "",
+        "reason": "签到流程异常退出",
+    }
