@@ -13,8 +13,14 @@
       <!-- 计划按钮组 -->
       <div class="plan-buttons-container">
         <a-space wrap size="middle">
-          <a-button v-for="plan in planList" :key="plan.id" :type="activePlanId === plan.id ? 'primary' : 'default'"
-            size="large" class="plan-button" @click="handlePlanClick(plan.id)">
+          <a-button
+            v-for="plan in planList"
+            :key="plan.id"
+            :type="activePlanId === plan.id ? 'primary' : 'default'"
+            size="large"
+            class="plan-button"
+            @click="handlePlanClick(plan.id)"
+          >
             <span class="plan-name">{{ plan.name }}</span>
             <a-tag v-if="shouldShowPlanTypeTag()" size="small" color="blue" class="plan-type-tag">
               {{ getPlanTypeLabel(plan.type) }}

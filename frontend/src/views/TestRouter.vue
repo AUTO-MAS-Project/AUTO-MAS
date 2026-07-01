@@ -21,12 +21,22 @@
     </div>
 
     <!-- 应用对话框 -->
-    <Modal v-model:open="isModalOpen" :title="modalTitle" :closable="false" :maskClosable="false" :keyboard="true"
-      centered>
+    <Modal
+      v-model:open="isModalOpen"
+      :title="modalTitle"
+      :closable="false"
+      :mask-closable="false"
+      :keyboard="true"
+      centered
+    >
       <p class="modal-message">{{ modalMessage }}</p>
       <template #footer>
-        <Button v-for="(option, index) in modalOptions" :key="index" :type="index === 0 ? 'primary' : 'default'"
-          @click="handleChoice(index === 0)">
+        <Button
+          v-for="(option, index) in modalOptions"
+          :key="index"
+          :type="index === 0 ? 'primary' : 'default'"
+          @click="handleChoice(index === 0)"
+        >
           {{ option }}
         </Button>
       </template>
@@ -37,7 +47,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { Modal, Button } from 'ant-design-vue'
-
 
 defineOptions({
   name: 'TestRouterView',

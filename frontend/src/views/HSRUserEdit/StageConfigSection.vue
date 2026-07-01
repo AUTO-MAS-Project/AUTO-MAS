@@ -531,10 +531,7 @@ const handleEowWeekdayChange = (value: string) => {
   emitSave('TaskOpt.EchoOfWarWeekday', value)
 }
 
-const filterOption = (
-  input: unknown,
-  option?: { label?: unknown; children?: unknown }
-) => {
+const filterOption = (input: unknown, option?: { label?: unknown; children?: unknown }) => {
   const text = (option?.label ?? option?.children ?? '').toString()
   return text.toLowerCase().includes(String(input ?? '').toLowerCase())
 }

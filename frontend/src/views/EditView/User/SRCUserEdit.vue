@@ -14,7 +14,12 @@
             配置完成后，请点击"保存配置"按钮来结束配置会话。
           </p>
           <div class="mask-actions">
-            <a-button v-if="srcWebsocketId" type="primary" size="large" @click="handleSaveSRCConfig">
+            <a-button
+              v-if="srcWebsocketId"
+              type="primary"
+              size="large"
+              @click="handleSaveSRCConfig"
+            >
               保存配置
             </a-button>
           </div>
@@ -22,16 +27,34 @@
       </div>
     </teleport>
     <!-- 头部组件 -->
-    <SRCUserEditHeader :script-id="scriptId" :script-name="scriptName" :is-edit="isEdit" :user-mode="formData.Info.Mode"
-      :src-config-loading="srcConfigLoading" :show-src-config-mask="showSrcConfigMask" :loading="loading"
-      @handle-s-r-c-config="handleSRCConfig" @handle-cancel="handleCancel" />
+    <SRCUserEditHeader
+      :script-id="scriptId"
+      :script-name="scriptName"
+      :is-edit="isEdit"
+      :user-mode="formData.Info.Mode"
+      :src-config-loading="srcConfigLoading"
+      :show-src-config-mask="showSrcConfigMask"
+      :loading="loading"
+      @handle-s-r-c-config="handleSRCConfig"
+      @handle-cancel="handleCancel"
+    />
 
     <div class="user-edit-content">
       <a-card class="config-card">
-        <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
+        <a-form
+          ref="formRef"
+          :model="formData"
+          :rules="rules"
+          layout="vertical"
+          class="config-form"
+        >
           <!-- 基本信息组件 -->
-          <BasicInfoSection :form-data="formData" :loading="loading" :server-options="serverOptions"
-            @save="handleFieldSave" />
+          <BasicInfoSection
+            :form-data="formData"
+            :loading="loading"
+            :server-options="serverOptions"
+            @save="handleFieldSave"
+          />
 
           <!-- 关卡配置组件 -->
           <StageConfigSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
@@ -40,8 +63,13 @@
           <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
 
           <!-- 通知配置组件 -->
-          <NotifyConfigSection :form-data="formData" :loading="loading" :script-id="scriptId" :user-id="userId"
-            @save="handleFieldSave" />
+          <NotifyConfigSection
+            :form-data="formData"
+            :loading="loading"
+            :script-id="scriptId"
+            :user-id="userId"
+            @save="handleFieldSave"
+          />
         </a-form>
       </a-card>
     </div>
@@ -177,7 +205,9 @@ const syncUserName = () => {
 const handleFieldSave = async (key: string, value: any) => {
   // 如果正在初始化或正在保存，或者是新用户（还没有userId），不执行保存
   if (isInitializing.value || isSaving.value || !userId) {
-    logger.debug(`跳过保存: 初始化=${isInitializing.value}, 保存中=${isSaving.value}, userId=${userId}`)
+    logger.debug(
+      `跳过保存: 初始化=${isInitializing.value}, 保存中=${isSaving.value}, userId=${userId}`
+    )
     return
   }
 
@@ -338,10 +368,12 @@ const handleSRCConfig = async () => {
         }
 
         // 处理任务结束消息（Signal类型且包含Accomplish字段）
-        if (wsMessage.type === 'Signal' && wsMessage.data && wsMessage.data.Accomplish !== undefined) {
-          logger.info(
-            `用户 ${formData.Info?.Name || formData.userName} SRC配置任务已结束`
-          )
+        if (
+          wsMessage.type === 'Signal' &&
+          wsMessage.data &&
+          wsMessage.data.Accomplish !== undefined
+        ) {
+          logger.info(`用户 ${formData.Info?.Name || formData.userName} SRC配置任务已结束`)
           // 根据结果显示不同消息
           const result = wsMessage.data.Accomplish
           if (result && !result.includes('异常') && !result.includes('错误')) {

@@ -59,7 +59,11 @@
       </h2>
       <p class="mask-description">
         当前正在配置
-        {{ currentMaaEndConfigUser ? `用户 ${currentMaaEndConfigUser.Info.Name}` : '脚本级 MaaEnd 配置' }}
+        {{
+          currentMaaEndConfigUser
+            ? `用户 ${currentMaaEndConfigUser.Info.Name}`
+            : '脚本级 MaaEnd 配置'
+        }}
         ，请在 MaaEnd 配置界面完成相关设置。
         <br />
         配置完成后，点击“保存配置”解除页面锁定。
@@ -240,10 +244,7 @@
             <div class="script-info">
               <div class="script-name">{{ script.name }}</div>
               <div class="script-meta">
-                <span
-                  class="script-type"
-                  :class="{ 'script-type-okww': script.type === 'Okww' }"
-                >{{
+                <span class="script-type" :class="{ 'script-type-okww': script.type === 'Okww' }">{{
                   script.type === 'MAA'
                     ? 'MAA脚本'
                     : script.type === 'SRC'
@@ -254,7 +255,7 @@
                           ? 'M9A脚本'
                           : script.type === 'Okww'
                             ? 'ok-ww脚本'
-                          : '通用脚本'
+                            : '通用脚本'
                 }}</span>
                 <span class="script-users">
                   <UserOutlined />
@@ -348,9 +349,7 @@
             </div>
             <div class="type-info">
               <div class="type-title">HSR 脚本</div>
-              <div class="type-description">
-                崩坏：星穹铁道 三月七 / SRA 双脚本适配
-              </div>
+              <div class="type-description">崩坏：星穹铁道 三月七 / SRA 双脚本适配</div>
             </div>
           </div>
         </a-radio-button>
@@ -768,7 +767,7 @@ const handleConfirmAddScript = async () => {
                   ? 'okww'
                   : selectedType.value === 'HSR'
                     ? 'hsr'
-                  : 'general'
+                    : 'general'
       router.push({
         path: `/scripts/${result.scriptId}/edit/${editPath}`,
         state: {

@@ -17,15 +17,26 @@
     </div>
 
     <a-space size="middle">
-      <a-button v-if="!showGeneralConfigMask" type="primary" ghost size="large" :loading="generalConfigLoading"
-        @click="handleGeneralConfig">
+      <a-button
+        v-if="!showGeneralConfigMask"
+        type="primary"
+        ghost
+        size="large"
+        :loading="generalConfigLoading"
+        @click="handleGeneralConfig"
+      >
         <template #icon>
           <SettingOutlined />
         </template>
         通用配置
       </a-button>
-      <a-button v-if="showGeneralConfigMask" type="default" size="large" disabled
-        style="color: #52c41a; border-color: #52c41a">
+      <a-button
+        v-if="showGeneralConfigMask"
+        type="default"
+        size="large"
+        disabled
+        style="color: #52c41a; border-color: #52c41a"
+      >
         <template #icon>
           <SettingOutlined />
         </template>
@@ -54,7 +65,12 @@
           配置完成后，请点击"保存配置"按钮来结束配置会话。
         </p>
         <div class="mask-actions">
-          <a-button v-if="generalWebsocketId" type="primary" size="large" @click="handleSaveGeneralConfig">
+          <a-button
+            v-if="generalWebsocketId"
+            type="primary"
+            size="large"
+            @click="handleSaveGeneralConfig"
+          >
             保存配置
           </a-button>
         </div>
@@ -81,8 +97,14 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input v-model:value="formData.userName" placeholder="请输入用户名" :disabled="loading" size="large"
-                  class="modern-input" @blur="handleFieldSave('userName', formData.userName)" />
+                <a-input
+                  v-model:value="formData.userName"
+                  placeholder="请输入用户名"
+                  :disabled="loading"
+                  size="large"
+                  class="modern-input"
+                  @blur="handleFieldSave('userName', formData.userName)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="6">
@@ -95,8 +117,11 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select v-model:value="formData.Info.Status" size="large"
-                  @change="handleFieldSave('Info.Status', formData.Info.Status)">
+                <a-select
+                  v-model:value="formData.Info.Status"
+                  size="large"
+                  @change="handleFieldSave('Info.Status', formData.Info.Status)"
+                >
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
@@ -112,9 +137,16 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input-number v-model:value="formData.Info.RemainedDay" :min="-1" :max="9999" placeholder="-1"
-                  :disabled="loading" size="large" style="width: 100%"
-                  @blur="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)" />
+                <a-input-number
+                  v-model:value="formData.Info.RemainedDay"
+                  :min="-1"
+                  :max="9999"
+                  placeholder="-1"
+                  :disabled="loading"
+                  size="large"
+                  style="width: 100%"
+                  @blur="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
+                />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -131,8 +163,14 @@
                 </span>
               </a-tooltip>
             </template>
-            <a-textarea v-model:value="formData.Info.Notes" placeholder="请输入备注信息" :rows="4" :disabled="loading"
-              class="modern-input" @blur="handleFieldSave('Info.Notes', formData.Info.Notes)" />
+            <a-textarea
+              v-model:value="formData.Info.Notes"
+              placeholder="请输入备注信息"
+              :rows="4"
+              :disabled="loading"
+              class="modern-input"
+              @blur="handleFieldSave('Info.Notes', formData.Info.Notes)"
+            />
           </a-form-item>
         </div>
 
@@ -149,8 +187,11 @@
               <span style="font-weight: 500">启用通知</span>
             </a-col>
             <a-col :span="18">
-              <a-switch v-model:checked="formData.Notify.Enabled" :disabled="loading"
-                @change="handleFieldSave('Notify.Enabled', formData.Notify.Enabled)" />
+              <a-switch
+                v-model:checked="formData.Notify.Enabled"
+                :disabled="loading"
+                @change="handleFieldSave('Notify.Enabled', formData.Notify.Enabled)"
+              />
               <span class="switch-description">启用后将发送任务通知</span>
             </a-col>
           </a-row>
@@ -161,9 +202,11 @@
               <span style="font-weight: 500">通知内容</span>
             </a-col>
             <a-col :span="18">
-              <a-checkbox v-model:checked="formData.Notify.IfSendStatistic"
+              <a-checkbox
+                v-model:checked="formData.Notify.IfSendStatistic"
                 :disabled="loading || !formData.Notify.Enabled"
-                @change="handleFieldSave('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)">统计信息
+                @change="handleFieldSave('Notify.IfSendStatistic', formData.Notify.IfSendStatistic)"
+                >统计信息
               </a-checkbox>
             </a-col>
           </a-row>
@@ -171,34 +214,55 @@
           <!-- 邮件通知 -->
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :span="6">
-              <a-checkbox v-model:checked="formData.Notify.IfSendMail" :disabled="loading || !formData.Notify.Enabled"
-                @change="handleFieldSave('Notify.IfSendMail', formData.Notify.IfSendMail)">邮件通知
+              <a-checkbox
+                v-model:checked="formData.Notify.IfSendMail"
+                :disabled="loading || !formData.Notify.Enabled"
+                @change="handleFieldSave('Notify.IfSendMail', formData.Notify.IfSendMail)"
+                >邮件通知
               </a-checkbox>
             </a-col>
             <a-col :span="18">
-              <a-input v-model:value="formData.Notify.ToAddress" placeholder="请输入收件人邮箱地址"
-                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail" size="large"
-                style="width: 100%" @blur="handleFieldSave('Notify.ToAddress', formData.Notify.ToAddress)" />
+              <a-input
+                v-model:value="formData.Notify.ToAddress"
+                placeholder="请输入收件人邮箱地址"
+                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfSendMail"
+                size="large"
+                style="width: 100%"
+                @blur="handleFieldSave('Notify.ToAddress', formData.Notify.ToAddress)"
+              />
             </a-col>
           </a-row>
 
           <!-- Server酱通知 -->
           <a-row :gutter="24" style="margin-top: 16px">
             <a-col :span="6">
-              <a-checkbox v-model:checked="formData.Notify.IfServerChan" :disabled="loading || !formData.Notify.Enabled"
-                @change="handleFieldSave('Notify.IfServerChan', formData.Notify.IfServerChan)">Server酱
+              <a-checkbox
+                v-model:checked="formData.Notify.IfServerChan"
+                :disabled="loading || !formData.Notify.Enabled"
+                @change="handleFieldSave('Notify.IfServerChan', formData.Notify.IfServerChan)"
+                >Server酱
               </a-checkbox>
             </a-col>
             <a-col :span="18">
-              <a-input v-model:value="formData.Notify.ServerChanKey" placeholder="请输入SENDKEY"
-                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan" size="large"
-                style="width: 100%" @blur="handleFieldSave('Notify.ServerChanKey', formData.Notify.ServerChanKey)" />
+              <a-input
+                v-model:value="formData.Notify.ServerChanKey"
+                placeholder="请输入SENDKEY"
+                :disabled="loading || !formData.Notify.Enabled || !formData.Notify.IfServerChan"
+                size="large"
+                style="width: 100%"
+                @blur="handleFieldSave('Notify.ServerChanKey', formData.Notify.ServerChanKey)"
+              />
             </a-col>
           </a-row>
 
           <!-- 自定义 Webhook 通知 -->
           <div style="margin-top: 16px">
-            <WebhookManager mode="user" :script-id="scriptId" :user-id="userId" @change="handleWebhookChange" />
+            <WebhookManager
+              mode="user"
+              :script-id="scriptId"
+              :user-id="userId"
+              @change="handleWebhookChange"
+            />
           </div>
         </div>
       </a-form>
@@ -477,7 +541,6 @@ const loadUserData = async () => {
 }
 
 const handleGeneralConfig = async () => {
-
   try {
     generalConfigLoading.value = true
 
@@ -535,7 +598,11 @@ const handleGeneralConfig = async () => {
         }
 
         // 处理任务结束消息（Signal类型且包含Accomplish字段）
-        if (wsMessage.type === 'Signal' && wsMessage.data && wsMessage.data.Accomplish !== undefined) {
+        if (
+          wsMessage.type === 'Signal' &&
+          wsMessage.data &&
+          wsMessage.data.Accomplish !== undefined
+        ) {
           logger.info(`用户 ${formData.userName} 通用配置任务已结束`)
           // 根据结果显示不同消息
           const result = wsMessage.data.Accomplish
@@ -566,7 +633,9 @@ const handleGeneralConfig = async () => {
         async () => {
           if (generalSubscriptionId.value && generalWebsocketId.value) {
             // 超时后自动保存配置
-            message.warning(`用户 ${formData.userName} 的配置会话已超时（30分钟），正在自动保存配置...`)
+            message.warning(
+              `用户 ${formData.userName} 的配置会话已超时（30分钟），正在自动保存配置...`
+            )
             logger.warn('配置会话已超时，自动执行保存操作')
 
             try {
