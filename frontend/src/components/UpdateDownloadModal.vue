@@ -1,6 +1,15 @@
 <template>
-  <a-modal v-model:open="visible" :title="`下载更新 ${latestVersion}`" :width="600" :footer="null" :mask-closable="false"
-    :closable="false" :z-index="9999" class="update-download-modal" centered>
+  <a-modal
+    v-model:open="visible"
+    :title="`下载更新 ${latestVersion}`"
+    :width="600"
+    :footer="null"
+    :mask-closable="false"
+    :closable="false"
+    :z-index="9999"
+    class="update-download-modal"
+    centered
+  >
     <div class="download-container">
       <!-- 下载进度区域 -->
       <div v-if="isDownloading" class="download-progress-section">
@@ -11,21 +20,32 @@
               <a-spin :spinning="true" size="small" />
               <span class="download-title">下载进度</span>
             </div>
-            <div class="progress-percent" :class="{
-              'animate-pulse': downloadProgressPercent > 0 && downloadProgressPercent < 100,
-            }">
+            <div
+              class="progress-percent"
+              :class="{
+                'animate-pulse': downloadProgressPercent > 0 && downloadProgressPercent < 100,
+              }"
+            >
               {{ downloadProgressPercent.toFixed(1) }}%
             </div>
           </div>
 
-          <a-progress :percent="downloadProgressPercent" :show-info="false" stroke-color="var(--ant-color-primary)"
-            trail-color="var(--ant-color-fill-secondary)" :stroke-width="8" class="progress-bar" />
+          <a-progress
+            :percent="downloadProgressPercent"
+            :show-info="false"
+            stroke-color="var(--ant-color-primary)"
+            trail-color="var(--ant-color-fill-secondary)"
+            :stroke-width="8"
+            class="progress-bar"
+          />
 
           <!-- 进度信息行 -->
           <div class="progress-info-row">
             <div class="left-info">
-              <span class="file-progress">{{ formatBytes(downloadProgress.downloaded_size) }} /
-                {{ formatBytes(downloadProgress.file_size) }}</span>
+              <span class="file-progress"
+                >{{ formatBytes(downloadProgress.downloaded_size) }} /
+                {{ formatBytes(downloadProgress.file_size) }}</span
+              >
               <span class="download-speed">{{ formatSpeed(downloadProgress.speed) }}</span>
             </div>
             <div v-if="estimatedTimeRemaining" class="right-info">
@@ -319,7 +339,6 @@ const handleInstall = async () => {
 
 // WebSocket 消息处理
 const handleUpdateMessage = (wsMessage: any) => {
-
   if (wsMessage.id === 'Update') {
     if (wsMessage.type === 'Update') {
       // 更新下载进度
@@ -335,13 +354,15 @@ const handleUpdateMessage = (wsMessage: any) => {
 
       // 强制触发Vue的响应式更新
       nextTick(() => {
-        logger.debug(`进度更新后状态: ${JSON.stringify({
-          进度: downloadProgress.value,
-          百分比: downloadProgressPercent.value.toFixed(2) + '%',
-          正在下载: isDownloading.value,
-          订阅ID: updateSubscriptionId,
-          时间戳: new Date().toISOString(),
-        })}`)
+        logger.debug(
+          `进度更新后状态: ${JSON.stringify({
+            进度: downloadProgress.value,
+            百分比: downloadProgressPercent.value.toFixed(2) + '%',
+            正在下载: isDownloading.value,
+            订阅ID: updateSubscriptionId,
+            时间戳: new Date().toISOString(),
+          })}`
+        )
       })
     } else if (wsMessage.type === 'Signal') {
       logger.debug(`收到Signal消息: ${JSON.stringify(wsMessage.data)}`)
@@ -446,11 +467,13 @@ watch(
   () => props.visible,
   newVisible => {
     logger.debug(`visible变化: ${newVisible}`)
-    logger.debug(`当前props: ${JSON.stringify({
-      visible: props.visible,
-      latestVersion: props.latestVersion,
-      updateData: props.updateData,
-    })}`)
+    logger.debug(
+      `当前props: ${JSON.stringify({
+        visible: props.visible,
+        latestVersion: props.latestVersion,
+        updateData: props.updateData,
+      })}`
+    )
 
     if (newVisible) {
       logger.info('窗口显示，确保WebSocket订阅并开始下载')
@@ -631,7 +654,6 @@ onUnmounted(() => {
 }
 
 @keyframes pulse {
-
   0%,
   100% {
     opacity: 1;

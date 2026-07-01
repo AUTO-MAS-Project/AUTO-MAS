@@ -93,7 +93,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="游戏管理总开关：关闭后 MAS 不启动也不关闭游戏；开启后可分别配置任务前启动与任务后关闭">
+                  <a-tooltip
+                    title="游戏管理总开关：关闭后 MAS 不启动也不关闭游戏；开启后可分别配置任务前启动与任务后关闭"
+                  >
                     <span class="form-label">
                       启用游戏配置
                       <QuestionCircleOutlined class="help-icon" />
@@ -136,7 +138,9 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="任务成功结束后是否由 MAS 关闭游戏；失败重试前若需重拉游戏也会尝试关闭">
+                  <a-tooltip
+                    title="任务成功结束后是否由 MAS 关闭游戏；失败重试前若需重拉游戏也会尝试关闭"
+                  >
                     <span class="form-label">
                       任务后关闭游戏
                       <QuestionCircleOutlined class="help-icon" />
@@ -163,7 +167,13 @@
                 <template #label>
                   <span class="form-label">
                     游戏根目录
-                    <span class="label-hint">选择 <strong>Wuthering Waves Game</strong>（官方）或其下 <strong>Client</strong>/<strong>Binaries</strong>/<strong>Win64</strong> 目录，自动定位 Client-Win64-Shipping.exe；WeGame 版选择 <strong>Client</strong>/<strong>Binaries</strong>/<strong>Win64</strong> 即可</span>
+                    <span class="label-hint"
+                      >选择 <strong>Wuthering Waves Game</strong>（官方）或其下
+                      <strong>Client</strong>/<strong>Binaries</strong>/<strong>Win64</strong>
+                      目录，自动定位 Client-Win64-Shipping.exe；WeGame 版选择
+                      <strong>Client</strong>/<strong>Binaries</strong>/<strong>Win64</strong>
+                      即可</span
+                    >
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">
@@ -309,7 +319,11 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import { ArrowLeftOutlined, FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import {
+  ArrowLeftOutlined,
+  FolderOpenOutlined,
+  QuestionCircleOutlined,
+} from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 
 const logger = window.electronAPI.getLogger('ok-ww脚本编辑')
@@ -430,7 +444,10 @@ const WUWA_PATH_KEYWORDS = [
   { keyword: 'Binaries', suffix: 'Win64/Client-Win64-Shipping.exe' },
   { keyword: 'Client', suffix: 'Binaries/Win64/Client-Win64-Shipping.exe' },
   { keyword: 'Wuthering Waves Game', suffix: 'Client/Binaries/Win64/Client-Win64-Shipping.exe' },
-  { keyword: 'Wuthering Waves', suffix: 'Wuthering Waves Game/Client/Binaries/Win64/Client-Win64-Shipping.exe' },
+  {
+    keyword: 'Wuthering Waves',
+    suffix: 'Wuthering Waves Game/Client/Binaries/Win64/Client-Win64-Shipping.exe',
+  },
 ]
 
 const showPathRejectModal = (title: string, content: string) => {
@@ -477,7 +494,13 @@ const applyRootPathDefaults = async (rootPath: string) => {
     message.warning('请先选择脚本根目录')
     return
   }
-  const { rootPath: norm, scriptPath, configPath, logPath, trackProcessExe } = buildAutoPaths(rootPath)
+  const {
+    rootPath: norm,
+    scriptPath,
+    configPath,
+    logPath,
+    trackProcessExe,
+  } = buildAutoPaths(rootPath)
   okwwConfig.Info.RootPath = norm
   okwwConfig.Script.ScriptPath = scriptPath
   okwwConfig.Script.ConfigPath = configPath
@@ -546,7 +569,10 @@ const selectRootPath = async () => {
   const normalized = picked.replace(/\\/g, '/')
   const exePath = normalized + '/ok-ww.exe'
   if (!(await window.electronAPI.fileExists(exePath))) {
-    showPathRejectModal('所选目录无效', '所选目录下未找到 ok-ww.exe，请选择包含 ok-ww.exe 的 OK-WW 脚本根目录。')
+    showPathRejectModal(
+      '所选目录无效',
+      '所选目录下未找到 ok-ww.exe，请选择包含 ok-ww.exe 的 OK-WW 脚本根目录。'
+    )
     return
   }
   formData.path = normalized
@@ -588,12 +614,12 @@ const selectGameRootPath = async () => {
   showPathRejectModal(
     '所选目录无效',
     '当前选择的路径不在鸣潮游戏目录内，无法自动匹配。\n\n请选择以下任一目录：\n' +
-    '  • Win64  —— 位于 Client\\Binaries\\Win64\n' +
-    '  • Binaries—— 位于 Client\\Binaries\n' +
-    '  • Client —— 鸣潮客户端目录\n' +
-    '  • Wuthering Waves Game —— 官方启动器根目录\n' +
-    '  • Wuthering Waves —— 鸣潮总目录\n' +
-    '支持 WeGame 版（目录名为 Wuthering Waves(NNNNNNN)），选择其下的 Client/Binaries/Win64 即可。'
+      '  • Win64  —— 位于 Client\\Binaries\\Win64\n' +
+      '  • Binaries—— 位于 Client\\Binaries\n' +
+      '  • Client —— 鸣潮客户端目录\n' +
+      '  • Wuthering Waves Game —— 官方启动器根目录\n' +
+      '  • Wuthering Waves —— 鸣潮总目录\n' +
+      '支持 WeGame 版（目录名为 Wuthering Waves(NNNNNNN)），选择其下的 Client/Binaries/Win64 即可。'
   )
 }
 
@@ -782,4 +808,3 @@ onMounted(loadScript)
   }
 }
 </style>
-

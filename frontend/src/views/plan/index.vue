@@ -8,8 +8,12 @@
     <!-- 主要内容 -->
     <div v-else class="plans-main">
       <!-- 页面头部 -->
-      <PlanHeader :plan-list="planList" :active-plan-id="activePlanId" @add-plan="handleAddPlan"
-        @remove-plan="handleRemovePlan" />
+      <PlanHeader
+        :plan-list="planList"
+        :active-plan-id="activePlanId"
+        @add-plan="handleAddPlan"
+        @remove-plan="handleRemovePlan"
+      />
 
       <!-- 空状态 -->
       <div v-if="!planList.length || !currentPlanData" class="empty-state">
@@ -27,18 +31,35 @@
       <!-- 计划内容 -->
       <div v-else class="plans-content">
         <!-- 计划选择器 -->
-        <PlanSelector :plan-list="planList" :active-plan-id="activePlanId" @plan-change="onPlanChange" />
+        <PlanSelector
+          :plan-list="planList"
+          :active-plan-id="activePlanId"
+          @plan-change="onPlanChange"
+        />
 
         <!-- 计划配置 -->
-        <PlanConfig :current-plan-name="currentPlanName" :current-mode="currentMode" :view-mode="viewMode"
-          :is-editing-plan-name="isEditingPlanName" @update:current-plan-name="currentPlanName = $event"
-          @update:current-mode="currentMode = $event" @update:view-mode="viewMode = $event"
-          @start-edit-plan-name="startEditPlanName" @finish-edit-plan-name="finishEditPlanName"
-          @mode-change="onModeChange">
+        <PlanConfig
+          :current-plan-name="currentPlanName"
+          :current-mode="currentMode"
+          :view-mode="viewMode"
+          :is-editing-plan-name="isEditingPlanName"
+          @update:current-plan-name="currentPlanName = $event"
+          @update:current-mode="currentMode = $event"
+          @update:view-mode="viewMode = $event"
+          @start-edit-plan-name="startEditPlanName"
+          @finish-edit-plan-name="finishEditPlanName"
+          @mode-change="onModeChange"
+        >
           <!-- 动态渲染不同类型的表格 -->
-          <component :is="currentTableComponent" :table-data="tableData" :current-mode="currentMode"
-            :view-mode="viewMode" :options-loaded="!loading" :plan-id="activePlanId"
-            :handle-plan-change="handlePlanChange" />
+          <component
+            :is="currentTableComponent"
+            :table-data="tableData"
+            :current-mode="currentMode"
+            :view-mode="viewMode"
+            :options-loaded="!loading"
+            :plan-id="activePlanId"
+            :handle-plan-change="handlePlanChange"
+          />
         </PlanConfig>
       </div>
     </div>
@@ -517,7 +538,6 @@ onUnmounted(() => {
 }
 
 @keyframes pulse {
-
   0%,
   100% {
     opacity: 0.6;

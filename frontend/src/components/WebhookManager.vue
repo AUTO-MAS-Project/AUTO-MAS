@@ -12,8 +12,12 @@
 
     <!-- Webhook 列表 -->
     <div v-if="displayWebhooks.length > 0" class="webhook-list">
-      <div v-for="webhook in displayWebhooks" :key="webhook.uid" class="webhook-item"
-        :class="{ 'webhook-disabled': !webhook.enabled }">
+      <div
+        v-for="webhook in displayWebhooks"
+        :key="webhook.uid"
+        class="webhook-item"
+        :class="{ 'webhook-disabled': !webhook.enabled }"
+      >
         <div class="webhook-info">
           <div class="webhook-name">
             <span class="name-text">{{ webhook.name }}</span>
@@ -24,9 +28,20 @@
           <div class="webhook-url">{{ webhook.url }}</div>
         </div>
         <div class="webhook-actions">
-          <a-switch v-model:checked="webhook.enabled" size="small" :checked-children="'启用'" :un-checked-children="'禁用'"
-            class="webhook-switch" @change="toggleWebhookEnabled(webhook)" />
-          <a-button type="text" size="small" :loading="testingWebhooks[webhook.uid]" @click="testWebhook(webhook)">
+          <a-switch
+            v-model:checked="webhook.enabled"
+            size="small"
+            :checked-children="'启用'"
+            :un-checked-children="'禁用'"
+            class="webhook-switch"
+            @change="toggleWebhookEnabled(webhook)"
+          />
+          <a-button
+            type="text"
+            size="small"
+            :loading="testingWebhooks[webhook.uid]"
+            @click="testWebhook(webhook)"
+          >
             <template #icon>
               <PlayCircleOutlined />
             </template>
@@ -57,13 +72,29 @@
     </div>
 
     <!-- 添加/编辑 Webhook 弹窗 -->
-    <a-modal v-model:open="modalVisible" :title="isEditing ? '编辑 Webhook' : '添加 Webhook'" width="800px"
-      :ok-text="isEditing ? '更新' : '添加'" :confirm-loading="submitting" @ok="handleSubmit" @cancel="handleCancel">
+    <a-modal
+      v-model:open="modalVisible"
+      :title="isEditing ? '编辑 Webhook' : '添加 Webhook'"
+      width="800px"
+      :ok-text="isEditing ? '更新' : '添加'"
+      :confirm-loading="submitting"
+      @ok="handleSubmit"
+      @cancel="handleCancel"
+    >
       <a-form ref="formRef" :model="formData" layout="vertical">
         <!-- 模板选择放在最上面 -->
         <a-form-item label="选择模板">
-          <a-select v-model:value="selectedTemplate" placeholder="选择预设模板或自定义" allow-clear @change="applyTemplate">
-            <a-select-option v-for="template in WEBHOOK_TEMPLATES" :key="template.name" :value="template.name">
+          <a-select
+            v-model:value="selectedTemplate"
+            placeholder="选择预设模板或自定义"
+            allow-clear
+            @change="applyTemplate"
+          >
+            <a-select-option
+              v-for="template in WEBHOOK_TEMPLATES"
+              :key="template.name"
+              :value="template.name"
+            >
               {{ template.name }} - {{ template.description }}
             </a-select-option>
           </a-select>
@@ -71,7 +102,11 @@
 
         <a-row :gutter="16">
           <a-col :span="12">
-            <a-form-item label="Webhook 名称" name="name" :rules="[{ required: true, message: '请输入 Webhook 名称' }]">
+            <a-form-item
+              label="Webhook 名称"
+              name="name"
+              :rules="[{ required: true, message: '请输入 Webhook 名称' }]"
+            >
               <a-input v-model:value="formData.name" placeholder="请输入 Webhook 名称" />
             </a-form-item>
           </a-col>
@@ -85,13 +120,23 @@
           </a-col>
         </a-row>
 
-        <a-form-item label="Webhook URL" name="url" :rules="[{ required: true, message: '请输入 Webhook URL' }]">
-          <a-input v-model:value="formData.url" placeholder="https://your-webhook-url.com/api/notify" />
+        <a-form-item
+          label="Webhook URL"
+          name="url"
+          :rules="[{ required: true, message: '请输入 Webhook URL' }]"
+        >
+          <a-input
+            v-model:value="formData.url"
+            placeholder="https://your-webhook-url.com/api/notify"
+          />
         </a-form-item>
 
         <a-form-item label="消息模板">
-          <a-textarea v-model:value="formData.template" :rows="6"
-            placeholder="请输入消息模板，支持变量: {title}, {content}, {datetime}, {date}, {time}" />
+          <a-textarea
+            v-model:value="formData.template"
+            :rows="6"
+            placeholder="请输入消息模板，支持变量: {title}, {content}, {datetime}, {date}, {time}"
+          />
           <div class="template-help">
             <a-typography-text type="secondary" style="font-size: 12px">
               支持的变量：
@@ -105,15 +150,28 @@
         <a-form-item label="自定义请求头 (可选)">
           <div class="headers-input">
             <div v-for="(header, index) in formData.headersList" :key="index" class="header-row">
-              <a-input v-model:value="header.key" placeholder="Header 名称" style="width: 40%; margin-right: 8px" />
-              <a-input v-model:value="header.value" placeholder="Header 值" style="width: 40%; margin-right: 8px" />
+              <a-input
+                v-model:value="header.key"
+                placeholder="Header 名称"
+                style="width: 40%; margin-right: 8px"
+              />
+              <a-input
+                v-model:value="header.value"
+                placeholder="Header 值"
+                style="width: 40%; margin-right: 8px"
+              />
               <a-button type="text" danger size="small" @click="removeHeader(index)">
                 <template #icon>
                   <DeleteOutlined />
                 </template>
               </a-button>
             </div>
-            <a-button type="dashed" size="small" style="width: 100%; margin-top: 8px" @click="addHeader">
+            <a-button
+              type="dashed"
+              size="small"
+              style="width: 100%; margin-top: 8px"
+              @click="addHeader"
+            >
               <template #icon>
                 <PlusOutlined />
               </template>
@@ -486,7 +544,8 @@ const testWebhook = async (webhook: WebhookItem) => {
       message.error(`Webhook 测试失败: ${response.message || '未知错误'}`)
     }
   } catch (error: any) {
-    const errorMsg = error.response?.data?.message || (error instanceof Error ? error.message : '网络错误')
+    const errorMsg =
+      error.response?.data?.message || (error instanceof Error ? error.message : '网络错误')
     logger.error(`Webhook测试错误: ${errorMsg}`)
     message.error(`Webhook 测试失败: ${errorMsg}`)
   } finally {
