@@ -21,6 +21,7 @@
 #   Contact: DLmaster_361@163.com
 
 
+import os
 import time
 import asyncio
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -33,6 +34,13 @@ from app.utils import get_logger
 
 router = APIRouter(prefix="/api/core", tags=["核心信息"])
 logger = get_logger("DEV")
+
+
+def is_backend_dev_mode() -> bool:
+    """判断后端是否处于开发模式。"""
+
+    raw = str(os.getenv("AUTO_MAS_DEV", "")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 @router.websocket("/ws")
@@ -82,10 +90,10 @@ async def connect_websocket(websocket: WebSocket):
             break
 
     Config.websocket = None
-    # ponytail: 不因 WS 断联自动 KillSelf。
-    # 机器休眠/网络抖动导致的断联不应杀死后端。
-    # 前端关闭时通过 /api/core/close 显式退出，Electron before-quit 也会 taskkill 兜底。
-    logger.info("WebSocket 连接已断开，等待前端重连...")
+    if is_backend_dev_mode():
+        logger.warning("后端开发模式下检测到 WS 断链，跳过 KillSelf 自动退出")
+    else:
+        await System.set_power("KillSelf", from_frontend=True)
 
 
 @ws_command("core.close")
