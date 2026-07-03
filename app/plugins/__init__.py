@@ -21,7 +21,11 @@
 
 当前模块：EventBus（事件总线）
   合入 PR：feat/plugin-eventbus
-  回召状态：pyproject.toml 中无对应声明（EventBus 为框架基础设施，不涉及子插件）
+  说明：EventBus 为框架基础设施，不涉及子插件声明。
+
+核心事件接入点：
+  app/core/task_manager.py 在任务/脚本生命周期节点发布
+  PluginEventNames 中的标准事件，插件通过 event_bus.on 订阅。
 
 后续模块会逐步在此包下扩展。
 """
@@ -35,12 +39,16 @@ from .event_contract import (
     is_valid_source,
 )
 
+event_bus = EventBus()
+"""全局事件总线单例，核心与插件统一通过它收发事件。"""
+
 __all__ = [
     "EventBus",
     "EventDispatchError",
     "EVENT_CONTRACT_VERSION",
     "PluginEventNames",
     "SCRIPT_LIFECYCLE_EVENTS",
+    "event_bus",
     "is_script_event",
     "is_valid_source",
 ]

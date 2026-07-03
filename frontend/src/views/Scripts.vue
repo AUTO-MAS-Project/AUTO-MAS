@@ -518,7 +518,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, type HistoryState } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   ClockCircleOutlined,
@@ -729,7 +729,7 @@ const navigateToCreatedScript = (
   type: ScriptType,
   data?: Record<string, unknown>
 ) => {
-  const route = {
+  router.push({
     path: `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}`,
     ...(data
       ? {
@@ -738,12 +738,11 @@ const navigateToCreatedScript = (
               id: scriptId,
               type,
               config: data,
-            },
+            } as unknown as HistoryState[string],
           },
         }
       : {}),
-  }
-  router.push(route)
+  })
 }
 
 const handleSubmitScriptCreate = async (request: ScriptCreateRequest) => {

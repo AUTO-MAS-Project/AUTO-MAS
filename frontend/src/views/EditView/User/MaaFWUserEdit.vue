@@ -704,17 +704,8 @@ const accountRecordTooltip =
   '账号 / 密码仅用于本地记录，不会自动传入脚本；需要传参请在下方任务选项中配置'
 
 const controllerOptions = computed(() => previewData.value?.controllers || [])
-const presetOptions = computed(() => {
-  const controllerName = effectiveControllerName.value
-  const resourceName = effectiveResourceName.value
-  return (previewData.value?.presets || []).filter(preset => {
-    const controllerList = preset.controller || []
-    const resourceList = preset.resource || []
-    const controllerOk = controllerList.length === 0 || controllerList.includes(controllerName)
-    const resourceOk = resourceList.length === 0 || resourceList.includes(resourceName)
-    return controllerOk && resourceOk
-  })
-})
+// 预设 schema（MaaFWPresetInfo）不携带 controller/resource 约束，直接展示全部预设
+const presetOptions = computed(() => previewData.value?.presets || [])
 const taskByName = computed(() => {
   const entries = (previewData.value?.tasks || []).map(task => [task.name, task] as const)
   return new Map<string, MaaFWTaskInfo>(entries)
@@ -785,7 +776,9 @@ const orderedTasks = computed(() => {
   const tasks = taskByName.value
   return taskSnapshot.value.taskOrder
     .map(taskName => tasks.get(taskName))
-    .filter((task): task is MaaFWTaskInfo => Boolean(task) && isTaskActiveForCurrentContext(task))
+    .filter(
+      (task): task is MaaFWTaskInfo => task !== undefined && isTaskActiveForCurrentContext(task)
+    )
 })
 const queuedTaskNames = computed({
   get: () => orderedTasks.value.map(task => task.name),
@@ -1315,7 +1308,7 @@ const loadUserData = async () => {
       if (String(userIndex?.type) === 'MaaFWUserConfig' && userData) {
         applyUserData(userData)
         taskSnapshot.value = normalizeTaskSnapshot(formData.Task.TaskSnapshot, previewData.value)
-        await syncControllerResourceSelection(true)
+        await syncControllerResourceSelection()
         formData.Task.TaskSnapshot = JSON.stringify(taskSnapshot.value)
         await nextTick()
         formData.userName = formData.Info.Name || ''

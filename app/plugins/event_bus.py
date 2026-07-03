@@ -25,7 +25,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from collections import defaultdict
 from typing import Any, Callable, DefaultDict
 
@@ -57,7 +57,19 @@ class RegisteredHandler:
 
 
 class EventBus:
-    """插件系统进程内事件总线（纯异步并发分发）。"""
+    """
+    插件系统进程内事件总线（纯异步并发分发）。
+
+    线程模型：
+        emit 内部使用 asyncio.Lock 保护监听器快照与 once 解绑；
+        on/off/off_by_instance/clear 为同步方法，必须在事件循环线程调用，
+        不要在 asyncio.to_thread 执行的同步 handler 内直接调用。
+
+    作用域语义：
+        global 与 instance 两个作用域完全隔离：
+        global 事件只送达 global 监听器，instance 事件只送达
+        同 instance_id 的 instance 监听器。
+    """
 
     def __init__(self) -> None:
         self._handlers: DefaultDict[str, list[RegisteredHandler]] = defaultdict(list)
@@ -130,6 +142,10 @@ class EventBus:
 
         for existing in handlers:
             if existing.handler is handler:
+                logger.warning(
+                    f"重复注册监听器，忽略新参数并返回已有监听器 ID: "
+                    f"event={normalized_event}, handler={handler}"
+                )
                 return existing.listener_id
 
         handlers.append(record)
