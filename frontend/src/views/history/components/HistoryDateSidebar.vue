@@ -240,8 +240,6 @@ const formatDateGroup = (date: string) => formatHistoryGroupLabel(date)
   font-size: 13px;
   color: var(--ant-color-text-secondary);
 }
-
-
 </style>
 
 <style>

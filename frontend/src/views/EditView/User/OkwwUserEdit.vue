@@ -46,7 +46,13 @@
                       </a-tooltip>
                     </span>
                   </template>
-                  <a-input v-model:value="formData.userName" placeholder="请输入用户名" size="large" class="modern-input" @blur="saveField('Info.Name', formData.userName)" />
+                  <a-input
+                    v-model:value="formData.userName"
+                    placeholder="请输入用户名"
+                    size="large"
+                    class="modern-input"
+                    @blur="saveField('Info.Name', formData.userName)"
+                  />
                 </a-form-item>
               </a-col>
               <a-col :span="12">
@@ -197,8 +203,16 @@
                       </a-tooltip>
                     </span>
                   </template>
-                  <a-select v-model:value="formData.Task.TaskIndex" size="large" @change="handleTaskIndexChange">
-                    <a-select-option v-for="item in okwwTaskOptions" :key="item.value" :value="item.value">
+                  <a-select
+                    v-model:value="formData.Task.TaskIndex"
+                    size="large"
+                    @change="handleTaskIndexChange"
+                  >
+                    <a-select-option
+                      v-for="item in okwwTaskOptions"
+                      :key="item.value"
+                      :value="item.value"
+                    >
                       {{ item.label }}
                     </a-select-option>
                   </a-select>
@@ -214,7 +228,12 @@
                       </a-tooltip>
                     </span>
                   </template>
-                  <a-input :value="currentStartupArguments" size="large" readonly class="modern-input" />
+                  <a-input
+                    :value="currentStartupArguments"
+                    size="large"
+                    readonly
+                    class="modern-input"
+                  />
                 </a-form-item>
               </a-col>
             </a-row>
@@ -657,4 +676,3 @@ onMounted(async () => {
   }
 }
 </style>
-

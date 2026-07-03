@@ -93,6 +93,10 @@ function getLevelColor(level: string): string {
  */
 export function initializeLogger(): void {
 
+    if (!app) {
+        console.error('日志初始化失败: electron.app 不可用')
+        return
+    }
     const appPath = path.dirname(app.getPath('exe'))
 
     // 设置日志级别

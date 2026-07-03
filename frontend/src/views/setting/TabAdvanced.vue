@@ -50,7 +50,9 @@ const exportLogsZip = async () => {
       <a-row :gutter="24">
         <a-col :span="24">
           <a-space direction="vertical" size="middle">
-            <div class="section-description">导出当前日志压缩包，便于备份或反馈问题时提供附件。</div>
+            <div class="section-description">
+              导出当前日志压缩包，便于备份或反馈问题时提供附件。
+            </div>
             <a-button type="primary" :loading="exportingLogs" @click="exportLogsZip">
               <template #icon>
                 <DownloadOutlined />
