@@ -1,6 +1,10 @@
 <template>
-  <div v-if="isDev" class="debug-panel" :class="{ collapsed: isCollapsed, dragging: isDragging }"
-    :style="{ left: `${panelPosition.x}px`, top: `${panelPosition.y}px` }">
+  <div
+    v-if="isDev"
+    class="debug-panel"
+    :class="{ collapsed: isCollapsed, dragging: isDragging }"
+    :style="{ left: `${panelPosition.x}px`, top: `${panelPosition.y}px` }"
+  >
     <div class="debug-header">
       <span class="debug-title drag-handle" @mousedown="startDrag">
         调试面板 <span v-if="isDragging" class="drag-indicator">📌</span>
@@ -15,8 +19,13 @@
     <div v-if="!isCollapsed" class="debug-content" @mousedown.stop>
       <!-- 页面切换选项卡 -->
       <div class="debug-tabs">
-        <button v-for="tab in tabs" :key="tab.key" class="tab-btn" :class="{ active: activeTab === tab.key }"
-          @click="setActiveTab(tab.key)">
+        <button
+          v-for="tab in tabs"
+          :key="tab.key"
+          class="tab-btn"
+          :class="{ active: activeTab === tab.key }"
+          @click="setActiveTab(tab.key)"
+        >
           {{ tab.icon }} {{ tab.title }}
         </button>
       </div>
@@ -50,8 +59,8 @@ const tabs = [
 // 开发环境检测
 const isDev = ref(
   process.env.NODE_ENV === 'development' ||
-  (import.meta as any).env?.DEV === true ||
-  window.location.hostname === 'localhost'
+    (import.meta as any).env?.DEV === true ||
+    window.location.hostname === 'localhost'
 )
 
 // 面板状态

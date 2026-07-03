@@ -2,7 +2,10 @@
   <div class="statistics-card">
     <div class="card-content">
       <!-- 公招统计 -->
-      <div v-if="recruitStatistics && Object.keys(recruitStatistics).length > 0" class="stat-section">
+      <div
+        v-if="recruitStatistics && Object.keys(recruitStatistics).length > 0"
+        class="stat-section"
+      >
         <div class="section-header">
           <TeamOutlined class="section-icon" />
           <span class="section-title">公招统计</span>
@@ -13,15 +16,26 @@
               <div class="stat-label" :class="`star-${star}`">{{ star }}</div>
               <div class="stat-value">{{ count }}</div>
             </div>
-            <a-divider v-if="index < Object.keys(recruitStatistics).length - 1" type="vertical" class="stat-divider" />
+            <a-divider
+              v-if="index < Object.keys(recruitStatistics).length - 1"
+              type="vertical"
+              class="stat-divider"
+            />
           </template>
         </div>
       </div>
 
       <!-- 分割线 -->
       <a-divider
-        v-if="recruitStatistics && Object.keys(recruitStatistics).length > 0 && dropStatistics && Object.keys(dropStatistics).length > 0"
-        type="vertical" class="section-divider" />
+        v-if="
+          recruitStatistics &&
+          Object.keys(recruitStatistics).length > 0 &&
+          dropStatistics &&
+          Object.keys(dropStatistics).length > 0
+        "
+        type="vertical"
+        class="section-divider"
+      />
 
       <!-- 掉落统计 -->
       <div v-if="dropStatistics && Object.keys(dropStatistics).length > 0" class="stat-section">
@@ -31,7 +45,12 @@
         </div>
         <div class="drop-container">
           <div class="drop-stages">
-            <a-popover v-for="(items, stage) in dropStatistics" :key="stage" placement="bottom" trigger="hover">
+            <a-popover
+              v-for="(items, stage) in dropStatistics"
+              :key="stage"
+              placement="bottom"
+              trigger="hover"
+            >
               <template #content>
                 <div class="drop-popover-content">
                   <div class="popover-stage-title">{{ stage }}</div>
@@ -52,10 +71,13 @@
       </div>
 
       <!-- 空状态 -->
-      <div v-if="
-        (!recruitStatistics || Object.keys(recruitStatistics).length === 0) &&
-        (!dropStatistics || Object.keys(dropStatistics).length === 0)
-      " class="empty-stats">
+      <div
+        v-if="
+          (!recruitStatistics || Object.keys(recruitStatistics).length === 0) &&
+          (!dropStatistics || Object.keys(dropStatistics).length === 0)
+        "
+        class="empty-stats"
+      >
         <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
       </div>
     </div>

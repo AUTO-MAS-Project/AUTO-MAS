@@ -1,20 +1,39 @@
 <template>
   <div class="user-edit-container">
-    <M9AUserEditHeader :script-id="scriptId" :script-name="scriptName" :is-edit="isEdit" :loading="loading"
-      @handle-cancel="handleCancel" />
+    <M9AUserEditHeader
+      :script-id="scriptId"
+      :script-name="scriptName"
+      :is-edit="isEdit"
+      :loading="loading"
+      @handle-cancel="handleCancel"
+    />
 
     <div class="user-edit-content">
       <a-card class="config-card">
-        <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
-          <BasicInfoSection :form-data="formData" :loading="loading"
-            @save="handleFieldSave" />
+        <a-form
+          ref="formRef"
+          :model="formData"
+          :rules="rules"
+          layout="vertical"
+          class="config-form"
+        >
+          <BasicInfoSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
 
-          <TaskQueueSection :script-id="scriptId" v-model:task-queue="taskQueue" :loading="loading" />
+          <TaskQueueSection
+            v-model:task-queue="taskQueue"
+            :script-id="scriptId"
+            :loading="loading"
+          />
 
           <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
 
-          <NotifyConfigSection :form-data="formData" :loading="loading" :script-id="scriptId" :user-id="userId"
-            @save="handleFieldSave" />
+          <NotifyConfigSection
+            :form-data="formData"
+            :loading="loading"
+            :script-id="scriptId"
+            :user-id="userId"
+            @save="handleFieldSave"
+          />
         </a-form>
       </a-card>
     </div>
@@ -54,8 +73,6 @@ const isEdit = ref(!!userId)
 
 const scriptName = ref('')
 const taskQueue = ref<M9ATaskQueueItem[]>([])
-
-
 
 const getDefaultM9AUserData = () => ({
   Info: {

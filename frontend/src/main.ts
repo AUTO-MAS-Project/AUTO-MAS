@@ -20,7 +20,8 @@ dayjs.locale('zh-cn')
 
 // 从 Electron 获取 API 端点并设置 OpenAPI.BASE
 if (window.electronAPI?.getApiEndpoint) {
-  window.electronAPI.getApiEndpoint('local')
+  window.electronAPI
+    .getApiEndpoint('local')
     .then(endpoint => {
       OpenAPI.BASE = endpoint
       logger.info('前端应用开始初始化')

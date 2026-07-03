@@ -32,18 +32,38 @@
       <div class="custom-form">
         <div class="form-group">
           <label>标题:</label>
-          <input v-model="customMessage.title" type="text" placeholder="请输入弹窗标题" class="form-input" />
+          <input
+            v-model="customMessage.title"
+            type="text"
+            placeholder="请输入弹窗标题"
+            class="form-input"
+          />
         </div>
         <div class="form-group">
           <label>消息内容:</label>
-          <textarea v-model="customMessage.message" placeholder="请输入消息内容" class="form-textarea" rows="3"></textarea>
+          <textarea
+            v-model="customMessage.message"
+            placeholder="请输入消息内容"
+            class="form-textarea"
+            rows="3"
+          ></textarea>
         </div>
         <div class="form-group">
           <label>发送数量:</label>
-          <input v-model.number="sendCount" type="number" min="1" max="10" class="form-input" style="width: 80px" />
+          <input
+            v-model.number="sendCount"
+            type="number"
+            min="1"
+            max="10"
+            class="form-input"
+            style="width: 80px"
+          />
         </div>
-        <button class="test-btn primary" :disabled="!customMessage.title || !customMessage.message"
-          @click="sendCustomMessage">
+        <button
+          class="test-btn primary"
+          :disabled="!customMessage.title || !customMessage.message"
+          @click="sendCustomMessage"
+        >
           发送自定义弹窗
         </button>
       </div>
@@ -58,7 +78,12 @@
         </div>
         <div v-if="testHistory.length === 0" class="no-history">暂无测试历史</div>
       </div>
-      <button v-if="testHistory.length > 0" class="test-btn secondary" style="margin-top: 8px" @click="clearHistory">
+      <button
+        v-if="testHistory.length > 0"
+        class="test-btn secondary"
+        style="margin-top: 8px"
+        @click="clearHistory"
+      >
         清空历史
       </button>
     </div>
@@ -287,7 +312,8 @@ const sendCustomMessage = () => {
   const count = Math.min(Math.max(sendCount.value, 1), 10)
 
   for (let i = 0; i < count; i++) {
-    const title = count > 1 ? `${customMessage.value.title} (${i + 1}/${count})` : customMessage.value.title
+    const title =
+      count > 1 ? `${customMessage.value.title} (${i + 1}/${count})` : customMessage.value.title
     triggerModalViaDebugApi({
       title,
       message: customMessage.value.message,
@@ -295,9 +321,8 @@ const sendCustomMessage = () => {
     })
   }
 
-  lastResponse.value = count > 1
-    ? `已触发 ${count} 个自定义弹窗`
-    : `已触发自定义弹窗: ${customMessage.value.title}`
+  lastResponse.value =
+    count > 1 ? `已触发 ${count} 个自定义弹窗` : `已触发自定义弹窗: ${customMessage.value.title}`
 
   setTimeout(() => {
     isTesting.value = false
@@ -681,7 +706,6 @@ onUnmounted(() => {
 
 /* 减少动画模式适配 */
 @media (prefers-reduced-motion: reduce) {
-
   .test-btn,
   .form-input,
   .form-textarea,

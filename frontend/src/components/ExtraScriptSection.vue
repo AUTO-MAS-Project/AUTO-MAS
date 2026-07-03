@@ -14,15 +14,29 @@
       </template>
       <a-row :gutter="24" align="middle">
         <a-col :span="4">
-          <a-switch v-model:checked="formData.Info.IfScriptBeforeTask" :disabled="loading" size="default"
-            @change="emitSave('Info.IfScriptBeforeTask', formData.Info.IfScriptBeforeTask)" />
+          <a-switch
+            v-model:checked="formData.Info.IfScriptBeforeTask"
+            :disabled="loading"
+            size="default"
+            @change="emitSave('Info.IfScriptBeforeTask', formData.Info.IfScriptBeforeTask)"
+          />
         </a-col>
         <a-col :span="20">
           <a-input-group compact class="path-input-group">
-            <a-input v-model:value="formData.Info.ScriptBeforeTask" placeholder="请选择脚本文件"
-              :disabled="loading || !formData.Info.IfScriptBeforeTask" size="large" class="path-input" readonly />
-            <a-button size="large" :disabled="loading || !formData.Info.IfScriptBeforeTask" class="path-button"
-              @click="selectScriptBeforeTask">
+            <a-input
+              v-model:value="formData.Info.ScriptBeforeTask"
+              placeholder="请选择脚本文件"
+              :disabled="loading || !formData.Info.IfScriptBeforeTask"
+              size="large"
+              class="path-input"
+              readonly
+            />
+            <a-button
+              size="large"
+              :disabled="loading || !formData.Info.IfScriptBeforeTask"
+              class="path-button"
+              @click="selectScriptBeforeTask"
+            >
               <template #icon>
                 <FileOutlined />
               </template>
@@ -43,15 +57,29 @@
       </template>
       <a-row :gutter="24" align="middle">
         <a-col :span="4">
-          <a-switch v-model:checked="formData.Info.IfScriptAfterTask" :disabled="loading" size="default"
-            @change="emitSave('Info.IfScriptAfterTask', formData.Info.IfScriptAfterTask)" />
+          <a-switch
+            v-model:checked="formData.Info.IfScriptAfterTask"
+            :disabled="loading"
+            size="default"
+            @change="emitSave('Info.IfScriptAfterTask', formData.Info.IfScriptAfterTask)"
+          />
         </a-col>
         <a-col :span="20">
           <a-input-group compact class="path-input-group">
-            <a-input v-model:value="formData.Info.ScriptAfterTask" placeholder="请选择脚本文件"
-              :disabled="loading || !formData.Info.IfScriptAfterTask" size="large" class="path-input" readonly />
-            <a-button size="large" :disabled="loading || !formData.Info.IfScriptAfterTask" class="path-button"
-              @click="selectScriptAfterTask">
+            <a-input
+              v-model:value="formData.Info.ScriptAfterTask"
+              placeholder="请选择脚本文件"
+              :disabled="loading || !formData.Info.IfScriptAfterTask"
+              size="large"
+              class="path-input"
+              readonly
+            />
+            <a-button
+              size="large"
+              :disabled="loading || !formData.Info.IfScriptAfterTask"
+              class="path-button"
+              @click="selectScriptAfterTask"
+            >
               <template #icon>
                 <FileOutlined />
               </template>

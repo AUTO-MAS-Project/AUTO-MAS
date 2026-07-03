@@ -235,6 +235,16 @@ class Task(TaskExecuteBase):
                     id="Main", type="Update", data={"PowerSign": Config.power_sign}
                 )
 
+        # 任务结束时触发游戏签到
+        from app.core.timer import MainTimer
+        task = asyncio.create_task(MainTimer.try_game_sign_for_task())
+        def _on_task_done(t):
+            if not t.cancelled():
+                e = t.exception()
+                if e:
+                    logger.error("任务触发的游戏签到执行异常", exc_info=e)
+        task.add_done_callback(_on_task_done)
+
     async def on_crash(self, e: Exception) -> None:
         logger.exception(f"任务 {self.task_info.task_id} 出现异常: {e}")
         await Config.send_websocket_message(
