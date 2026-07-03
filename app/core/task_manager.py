@@ -37,6 +37,7 @@ from .config import (
 )
 from app.services import System
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
+from app.plugins import PluginEventNames, event_bus
 from app.utils import get_logger
 from app.task import (
     MaaManager,
@@ -130,6 +131,17 @@ class Task(TaskExecuteBase):
         logger.info(
             f"开始运行任务: {self.task_info.task_id}, 模式: {self.task_info.mode}"
         )
+        await event_bus.emit(
+            PluginEventNames.TASK_START,
+            {
+                "task_id": self.task_info.task_id,
+                "mode": self.task_info.mode,
+                "queue_id": self.task_info.queue_id,
+                "script_ids": [
+                    item.script_id for item in self.task_info.script_list
+                ],
+            },
+        )
 
         # 可选：从指定脚本开始执行（仅队列任务）
         start_index = 0
@@ -213,11 +225,38 @@ class Task(TaskExecuteBase):
                 continue
 
             # 运行任务
+            await event_bus.emit(
+                PluginEventNames.SCRIPT_START,
+                {
+                    "task_id": self.task_info.task_id,
+                    "script_id": script_item.script_id,
+                    "script_name": script_item.name,
+                },
+            )
             await self.spawn(task_item)
+            await event_bus.emit(
+                PluginEventNames.SCRIPT_EXIT,
+                {
+                    "task_id": self.task_info.task_id,
+                    "script_id": script_item.script_id,
+                    "script_name": script_item.name,
+                    "status": script_item.status,
+                },
+            )
 
     async def final_task(self) -> None:
 
         logger.info(f"任务结束: {self.task_info.task_id}")
+
+        await event_bus.emit(
+            PluginEventNames.TASK_EXIT,
+            {
+                "task_id": self.task_info.task_id,
+                "mode": self.task_info.mode,
+                "queue_id": self.task_info.queue_id,
+                "result": self.task_info.result,
+            },
+        )
 
         await Config.send_websocket_message(
             id=str(self.task_info.task_id),

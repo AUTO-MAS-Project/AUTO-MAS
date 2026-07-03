@@ -207,9 +207,7 @@
 
             <!-- 用户列表 -->
             <div
-              v-if="
-                !collapsedScriptIds.has(script.id) && script.users && script.users.length > 0
-              "
+              v-if="!collapsedScriptIds.has(script.id) && script.users && script.users.length > 0"
               class="users-section"
             >
               <!-- 使用vuedraggable包装用户列表 -->
@@ -233,7 +231,7 @@
                       <div class="user-details-row">
                         <div class="user-name-section">
                           <span class="user-name">{{ user.Info.Name }}</span>
-                          <!-- MAA、SRC、MaaEnd 和 HSR 脚本显示服务器标签 -->
+                          <!-- MAA、SRC 和 MaaEnd 脚本显示服务器标签 -->
                           <a-tag
                             v-if="
                               script.type === 'MAA' ||
@@ -327,7 +325,10 @@
                           </a-tag>
                         </div>
                         <!-- 用户详细信息 - 后端提供 Tag 的脚本用户 -->
-                        <div v-if="script.type === 'General' || script.type === 'Okww'" class="user-info-tags">
+                        <div
+                          v-if="script.type === 'General' || script.type === 'Okww'"
+                          class="user-info-tags"
+                        >
                           <!-- 直接使用后端提供的Tag字段 -->
                           <a-tag
                             v-for="(tag, index) in parseStatusTagList(user.Info.Tag)"
