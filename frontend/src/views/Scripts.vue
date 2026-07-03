@@ -59,7 +59,11 @@
       </h2>
       <p class="mask-description">
         当前正在配置
-        {{ currentMaaEndConfigUser ? `用户 ${currentMaaEndConfigUser.Info.Name}` : '脚本级 MaaEnd 配置' }}
+        {{
+          currentMaaEndConfigUser
+            ? `用户 ${currentMaaEndConfigUser.Info.Name}`
+            : '脚本级 MaaEnd 配置'
+        }}
         ，请在 MaaEnd 配置界面完成相关设置。
         <br />
         配置完成后，点击“保存配置”解除页面锁定。
@@ -224,6 +228,12 @@
                 class="type-icon"
               />
               <img
+                v-else-if="script.type === 'MaaFW'"
+                src="@/assets/AUTO-MAS.ico"
+                alt="MaaFramework"
+                class="type-icon"
+              />
+              <img
                 v-else-if="script.type === 'Okww'"
                 src="@/assets/ok-ww.ico"
                 alt="ok-ww"
@@ -240,21 +250,8 @@
             <div class="script-info">
               <div class="script-name">{{ script.name }}</div>
               <div class="script-meta">
-                <span
-                  class="script-type"
-                  :class="{ 'script-type-okww': script.type === 'Okww' }"
-                >{{
-                  script.type === 'MAA'
-                    ? 'MAA脚本'
-                    : script.type === 'SRC'
-                      ? 'SRC脚本'
-                      : script.type === 'MaaEnd'
-                        ? 'MaaEnd脚本'
-                        : script.type === 'M9A'
-                          ? 'M9A脚本'
-                          : script.type === 'Okww'
-                            ? 'ok-ww脚本'
-                          : '通用脚本'
+                <span class="script-type" :class="{ 'script-type-okww': script.type === 'Okww' }">{{
+                  getScriptDisplayLabel(script.type)
                 }}</span>
                 <span class="script-users">
                   <UserOutlined />
@@ -330,6 +327,17 @@
             </div>
           </div>
         </a-radio-button>
+        <a-radio-button value="MaaFW" class="type-option">
+          <div class="type-content">
+            <div class="type-logo-container">
+              <img src="@/assets/AUTO-MAS.ico" alt="MaaFramework" class="type-logo" />
+            </div>
+            <div class="type-info">
+              <div class="type-title">MaaFramework 项目</div>
+              <div class="type-description">读取 interface.json，在 MAS 中统一配置和调度</div>
+            </div>
+          </div>
+        </a-radio-button>
         <a-radio-button value="Okww" class="type-option">
           <div class="type-content">
             <div class="type-logo-container">
@@ -348,9 +356,7 @@
             </div>
             <div class="type-info">
               <div class="type-title">HSR 脚本</div>
-              <div class="type-description">
-                崩坏：星穹铁道 三月七 / SRA 双脚本适配
-              </div>
+              <div class="type-description">崩坏：星穹铁道 三月七 / SRA 双脚本适配</div>
             </div>
           </div>
         </a-radio-button>
@@ -568,6 +574,32 @@ const activeConnections = ref<Map<string, { subscriptionId: string; websocketId:
   new Map()
 ) // scriptId -> { subscriptionId, websocketId }
 
+const SCRIPT_ROUTE_SEGMENTS: Record<ScriptType, string> = {
+  MAA: 'maa',
+  SRC: 'src',
+  MaaEnd: 'maaend',
+  M9A: 'm9a',
+  MaaFW: 'maafw',
+  Okww: 'okww',
+  HSR: 'hsr',
+  General: 'general',
+}
+
+const SCRIPT_DISPLAY_LABELS: Record<ScriptType, string> = {
+  MAA: 'MAA脚本',
+  SRC: 'SRC脚本',
+  MaaEnd: 'MaaEnd脚本',
+  M9A: 'M9A脚本',
+  MaaFW: 'MaaFramework 项目',
+  Okww: 'ok-ww脚本',
+  HSR: 'HSR脚本',
+  General: '通用脚本',
+}
+
+const getScriptRouteSegment = (type: ScriptType) => SCRIPT_ROUTE_SEGMENTS[type] ?? 'general'
+
+const getScriptDisplayLabel = (type: ScriptType) => SCRIPT_DISPLAY_LABELS[type] ?? '通用脚本'
+
 // 解析模板描述的markdown
 const parseMarkdown = (text: string) => {
   if (!text) return '暂无描述信息'
@@ -713,14 +745,7 @@ const handleConfirmScriptSelect = async () => {
     if (result) {
       scriptSelectVisible.value = false
       // 跳转到编辑页面
-      const editPath =
-        selectedScript.type === 'MAA'
-          ? 'maa'
-          : selectedScript.type === 'SRC'
-            ? 'src'
-            : selectedScript.type === 'MaaEnd'
-              ? 'maaend'
-              : 'general'
+      const editPath = getScriptRouteSegment(selectedScript.type)
       router.push({
         path: `/scripts/${result.scriptId}/edit/${editPath}`,
         state: {
@@ -755,20 +780,7 @@ const handleConfirmAddScript = async () => {
     if (result) {
       typeSelectVisible.value = false
       // 跳转到编辑页面，传递API返回的数据
-      const editPath =
-        selectedType.value === 'MAA'
-          ? 'maa'
-          : selectedType.value === 'SRC'
-            ? 'src'
-            : selectedType.value === 'MaaEnd'
-              ? 'maaend'
-              : selectedType.value === 'M9A'
-                ? 'm9a'
-                : selectedType.value === 'Okww'
-                  ? 'okww'
-                  : selectedType.value === 'HSR'
-                    ? 'hsr'
-                  : 'general'
+      const editPath = getScriptRouteSegment(selectedType.value)
       router.push({
         path: `/scripts/${result.scriptId}/edit/${editPath}`,
         state: {
@@ -882,22 +894,7 @@ const handleCancelTemplate = () => {
 }
 
 const handleEditScript = (script: Script) => {
-  // 根据脚本类型跳转到对应的编辑页面
-  if (script.type === 'MAA') {
-    router.push(`/scripts/${script.id}/edit/maa`)
-  } else if (script.type === 'SRC') {
-    router.push(`/scripts/${script.id}/edit/src`)
-  } else if (script.type === 'MaaEnd') {
-    router.push(`/scripts/${script.id}/edit/maaend`)
-  } else if (script.type === 'M9A') {
-    router.push(`/scripts/${script.id}/edit/m9a`)
-  } else if (script.type === 'Okww') {
-    router.push(`/scripts/${script.id}/edit/okww`)
-  } else if (script.type === 'HSR') {
-    router.push(`/scripts/${script.id}/edit/hsr`)
-  } else {
-    router.push(`/scripts/${script.id}/edit/general`)
-  }
+  router.push(`/scripts/${script.id}/edit/${getScriptRouteSegment(script.type)}`)
 }
 
 const handleDeleteScript = async (script: Script) => {
@@ -908,44 +905,14 @@ const handleDeleteScript = async (script: Script) => {
 }
 
 const handleAddUser = (script: Script) => {
-  // 根据脚本类型跳转到对应的用户添加页面
-  if (script.type === 'MAA') {
-    router.push(`/scripts/${script.id}/users/add/maa`)
-  } else if (script.type === 'SRC') {
-    router.push(`/scripts/${script.id}/users/add/src`)
-  } else if (script.type === 'MaaEnd') {
-    router.push(`/scripts/${script.id}/users/add/maaend`)
-  } else if (script.type === 'M9A') {
-    router.push(`/scripts/${script.id}/users/add/m9a`)
-  } else if (script.type === 'Okww') {
-    router.push(`/scripts/${script.id}/users/add/okww`)
-  } else if (script.type === 'HSR') {
-    router.push(`/scripts/${script.id}/users/add/hsr`)
-  } else {
-    router.push(`/scripts/${script.id}/users/add/general`)
-  }
+  router.push(`/scripts/${script.id}/users/add/${getScriptRouteSegment(script.type)}`)
 }
 
 const handleEditUser = (user: User) => {
   // 从用户数据中找到对应的脚本
   const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
   if (script) {
-    // 根据脚本类型跳转到对应的用户编辑页面
-    if (script.type === 'MAA') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/maa`)
-    } else if (script.type === 'SRC') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/src`)
-    } else if (script.type === 'MaaEnd') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/maaend`)
-    } else if (script.type === 'M9A') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/m9a`)
-    } else if (script.type === 'Okww') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/okww`)
-    } else if (script.type === 'HSR') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/hsr`)
-    } else {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
-    }
+    router.push(`/scripts/${script.id}/users/${user.id}/edit/${getScriptRouteSegment(script.type)}`)
   } else {
     message.error('找不到对应的脚本')
   }

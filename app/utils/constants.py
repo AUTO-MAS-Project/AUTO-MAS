@@ -43,6 +43,8 @@ TYPE_BOOK = {
     "OkwwConfig": "ok-ww",
     "M9AConfig": "M9A",
     "M9AUserConfig": "M9A",
+    "MaaFWConfig": "MaaFramework 项目",
+    "MaaFWUserConfig": "MaaFramework 项目",
     "HSRConfig": "HSR",
 }
 """配置类型映射表"""

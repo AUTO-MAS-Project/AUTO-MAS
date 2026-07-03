@@ -34,12 +34,14 @@ export default [
     },
     plugins: { '@typescript-eslint': tseslint.plugin },
     rules: {
+      'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': [
         'warn',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
     },
   },
+
   {
     files: ['src/**/*.vue'],
     languageOptions: {
@@ -55,6 +57,7 @@ export default [
     },
     plugins: { '@typescript-eslint': tseslint.plugin },
     rules: {
+      'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': [
         'warn',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
@@ -69,6 +72,7 @@ export default [
       ecmaVersion: 'latest',
       sourceType: 'module',
       globals: globals.node,
+      parser: tseslint.parser,
       parserOptions: {
         project: [path.join(__dirname, 'tsconfig.electron.json')],
         tsconfigRootDir: __dirname,
@@ -76,6 +80,7 @@ export default [
     },
     plugins: { '@typescript-eslint': tseslint.plugin },
     rules: {
+      'no-unused-vars': 'off',
       '@typescript-eslint/no-require-imports': 'off',
       '@typescript-eslint/no-unused-vars': [
         'warn',
