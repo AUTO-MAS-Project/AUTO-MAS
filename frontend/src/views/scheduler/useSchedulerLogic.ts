@@ -1,5 +1,4 @@
 import { computed, ref, watch } from 'vue'
-import { useLocalStorage } from '@vueuse/core'
 import { message, Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
@@ -8,13 +7,76 @@ import { useWebSocket, ExternalWSHandlers } from '@/composables/useWebSocket'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import schedulerHandlers from './schedulerHandlers'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
-import type { QueueItem, Script } from './schedulerConstants'
+import type { QueueItem } from './schedulerConstants'
 import { type SchedulerTab, type TaskMessage, type SchedulerStatus } from './schedulerConstants'
 const logger = window.electronAPI.getLogger('调度台逻辑')
 
 // 使用 sessionStorage 存储调度台状态，支持页面刷新时保留数据
 // sessionStorage 在页面刷新时保留数据，但在关闭标签页/重启应用时清除
 const SCHEDULER_TABS_KEY = 'scheduler-tabs-session'
+const STORAGE_SAVE_DEBOUNCE_MS = 800
+const LOG_RENDER_INTERVAL_MS = 200
+const LOG_RENDER_MAX_CHARS = 120000
+
+let storageSaveTimer: ReturnType<typeof window.setTimeout> | null = null
+const pendingLogUpdates = new Map<string, ReturnType<typeof window.setTimeout>>()
+const pendingLogContents = new Map<string, string>()
+
+const getDefaultTabRuntimeState = () => ({
+  taskQueue: [],
+  userQueue: [],
+  logs: [],
+  isLogAtBottom: true,
+  lastLogContent: '',
+  overviewData: undefined,
+  lastMessageHash: '',
+  lastMessageTime: 0,
+})
+
+const trimLogForRender = (content: string) => {
+  if (content.length <= LOG_RENDER_MAX_CHARS) return content
+
+  const trimmed = content.slice(-LOG_RENDER_MAX_CHARS)
+  const firstLineBreak = trimmed.indexOf('\n')
+  const tail = firstLineBreak >= 0 ? trimmed.slice(firstLineBreak + 1) : trimmed
+  return `前方日志较长，调度台仅显示最近内容；完整日志仍会写入历史记录。\n\n${tail}`
+}
+
+const clearPendingLogUpdate = (tabKey: string) => {
+  const timer = pendingLogUpdates.get(tabKey)
+  if (timer) {
+    window.clearTimeout(timer)
+    pendingLogUpdates.delete(tabKey)
+  }
+  pendingLogContents.delete(tabKey)
+}
+
+const toPersistedTab = (tab: SchedulerTab): SchedulerTab => ({
+  key: tab.key,
+  title: tab.title,
+  closable: tab.closable,
+  status: tab.status,
+  selectedTaskId: tab.selectedTaskId,
+  selectedMode: tab.selectedMode,
+  resumeFromScriptId: tab.resumeFromScriptId ?? null,
+  resumeScriptOptions: tab.resumeScriptOptions ? [...tab.resumeScriptOptions] : [],
+  resumeScriptLoading: false,
+  websocketId: tab.websocketId,
+  subscriptionId: null,
+  runningTaskLabel: tab.runningTaskLabel,
+  runningModeLabel: tab.runningModeLabel,
+  logMode: tab.logMode || 'follow',
+  ...getDefaultTabRuntimeState(),
+})
+
+const normalizePersistedTab = (tab: SchedulerTab): SchedulerTab => ({
+  ...tab,
+  ...getDefaultTabRuntimeState(),
+  resumeScriptOptions: tab.resumeScriptOptions || [],
+  resumeScriptLoading: false,
+  subscriptionId: null,
+  logMode: tab.logMode || 'follow',
+})
 
 // 从 sessionStorage 加载调度台状态
 const loadTabsFromStorage = (): SchedulerTab[] => {
@@ -25,7 +87,7 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
       // 验证数据格式
       if (Array.isArray(parsed) && parsed.length > 0) {
         logger.info(`从 sessionStorage 恢复调度台状态: ${parsed.length} 个调度台`)
-        return parsed
+        return parsed.map(normalizePersistedTab)
       }
     }
   } catch (error) {
@@ -60,13 +122,23 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
 }
 
 // 保存调度台状态到 sessionStorage
-const saveTabsToStorage = (tabs: SchedulerTab[]) => {
+const saveTabsToStorageNow = (tabs: SchedulerTab[]) => {
   try {
-    sessionStorage.setItem(SCHEDULER_TABS_KEY, JSON.stringify(tabs))
+    sessionStorage.setItem(SCHEDULER_TABS_KEY, JSON.stringify(tabs.map(toPersistedTab)))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存调度台状态到 sessionStorage 失败: ${errorMsg}`)
   }
+}
+
+const saveTabsToStorage = (tabs: SchedulerTab[]) => {
+  if (storageSaveTimer) {
+    window.clearTimeout(storageSaveTimer)
+  }
+  storageSaveTimer = window.setTimeout(() => {
+    saveTabsToStorageNow(tabs)
+    storageSaveTimer = null
+  }, STORAGE_SAVE_DEBOUNCE_MS)
 }
 
 // ============================================
@@ -140,14 +212,21 @@ export function useSchedulerLogic() {
       const queueId = data.queueId
       const taskName = data.taskName
       const taskType = data.taskType
-      logger.info(`收到新任务信号: 任务ID=${taskId}, 队列ID=${queueId}, 任务名称=${taskName}, 任务类型=${taskType}`)
+      logger.info(
+        `收到新任务信号: 任务ID=${taskId}, 队列ID=${queueId}, 任务名称=${taskName}, 任务类型=${taskType}`
+      )
 
       // 创建新的调度台
       createSchedulerTabForTask(taskId, queueId, taskName, taskType)
     }
   }
 
-  const createSchedulerTabForTask = (taskId: string, queueId?: string, taskName?: string, taskType?: string) => {
+  const createSchedulerTabForTask = (
+    taskId: string,
+    queueId?: string,
+    taskName?: string,
+    taskType?: string
+  ) => {
     // 使用现有的addSchedulerTab函数创建新调度台，并传入特定的配置选项
     const newTab = addSchedulerTab({
       title: `调度台${tabCounter}`,
@@ -185,11 +264,10 @@ export function useSchedulerLogic() {
     _watchInitialized = true
     // 使用Vue的watch API来监听数组变化，而不是重写原生方法
     watch(
-      schedulerTabs,
-      newTabs => {
-        saveTabsToStorage(newTabs)
-      },
-      { deep: true }
+      () => schedulerTabs.value.map(toPersistedTab),
+      () => {
+        saveTabsToStorage(schedulerTabs.value)
+      }
     )
   }
 
@@ -197,7 +275,12 @@ export function useSchedulerLogic() {
   watchTabsChanges()
 
   // Tab 管理
-  const addSchedulerTab = (options?: { title?: string; status?: string; websocketId?: string; selectedTaskId?: string }) => {
+  const addSchedulerTab = (options?: {
+    title?: string
+    status?: string
+    websocketId?: string
+    selectedTaskId?: string
+  }) => {
     tabCounter++
     const status = options?.status || '空闲'
     // 使用更安全的类型断言，确保状态值是有效的SchedulerStatus
@@ -263,6 +346,7 @@ export function useSchedulerLogic() {
 
         // 清理日志引用
         logRefs.value.delete(key)
+        clearPendingLogUpdate(key)
 
         // 清理任务总览面板引用
         overviewRefs.value.delete(key)
@@ -305,6 +389,7 @@ export function useSchedulerLogic() {
 
           // 清理日志引用
           logRefs.value.delete(tab.key)
+          clearPendingLogUpdate(tab.key)
 
           // 清理任务总览面板引用
           overviewRefs.value.delete(tab.key)
@@ -491,25 +576,28 @@ export function useSchedulerLogic() {
     }
 
     // 创建新订阅，不再needCache，因为keep-alive保持组件存活
-    const subscriptionId = ws.subscribe(
-      { id: tab.websocketId },
-      message => handleWebSocketMessage(tab, message)
+    const subscriptionId = ws.subscribe({ id: tab.websocketId }, message =>
+      handleWebSocketMessage(tab, message)
     )
 
     // 将订阅ID保存到tab中，以便后续取消订阅
     tab.subscriptionId = subscriptionId
-    logger.info(`新建WebSocket订阅: ${JSON.stringify({
-      key: tab.key,
-      websocketId: tab.websocketId,
-      subscriptionId,
-    })}`)
+    logger.info(
+      `新建WebSocket订阅: ${JSON.stringify({
+        key: tab.key,
+        websocketId: tab.websocketId,
+        subscriptionId,
+      })}`
+    )
 
     // 验证订阅是否成功建立
     if (!subscriptionId) {
-      logger.error(`WebSocket订阅创建失败！: ${JSON.stringify({
-        key: tab.key,
-        websocketId: tab.websocketId,
-      })}`)
+      logger.error(
+        `WebSocket订阅创建失败！: ${JSON.stringify({
+          key: tab.key,
+          websocketId: tab.websocketId,
+        })}`
+      )
       message.error('WebSocket订阅创建失败，可能无法接收任务消息')
     }
   }
@@ -534,7 +622,9 @@ export function useSchedulerLogic() {
 
     switch (type) {
       case 'Update':
-        logger.debug(`处理Update消息: ${JSON.stringify(data)}`)
+        logger.debug(
+          `处理Update消息: taskInfo=${Array.isArray(data?.task_info) ? data.task_info.length : 0}, logLength=${typeof data?.log === 'string' ? data.log.length : 0}`
+        )
         handleUpdateMessage(tab, data)
         break
       case 'Info':
@@ -569,22 +659,72 @@ export function useSchedulerLogic() {
     }
   }
 
+  const buildTaskInfoSignature = (taskInfo: any[] | undefined) => {
+    if (!Array.isArray(taskInfo)) return ''
+
+    return taskInfo
+      .map((task, index) => {
+        const users = Array.isArray(task.userList)
+          ? task.userList.map((user: any) => `${user.name || ''}:${user.status || ''}`).join(',')
+          : ''
+        return `${task.script_id || index}:${task.name || ''}:${task.status || ''}[${users}]`
+      })
+      .join('|')
+  }
+
+  const applyLogContentUpdate = (tab: SchedulerTab, content: string) => {
+    const nextContent = trimLogForRender(content)
+    if (tab.lastLogContent !== nextContent) {
+      tab.lastLogContent = nextContent
+    }
+  }
+
+  const scheduleLogContentUpdate = (tab: SchedulerTab, content: string, immediate = false) => {
+    pendingLogContents.set(tab.key, content)
+
+    if (immediate) {
+      clearPendingLogUpdate(tab.key)
+      applyLogContentUpdate(tab, content)
+      return
+    }
+
+    if (pendingLogUpdates.has(tab.key)) return
+
+    const timer = window.setTimeout(() => {
+      const latestContent = pendingLogContents.get(tab.key)
+      if (latestContent !== undefined) {
+        applyLogContentUpdate(tab, latestContent)
+      }
+      pendingLogUpdates.delete(tab.key)
+      pendingLogContents.delete(tab.key)
+    }, LOG_RENDER_INTERVAL_MS)
+    pendingLogUpdates.set(tab.key, timer)
+  }
+
   const handleUpdateMessage = (tab: SchedulerTab, data: any) => {
     // 添加消息去重机制
-    const messageKey = `${tab.key}_${JSON.stringify(data.task_info || {})}`
+    const taskInfoSignature = buildTaskInfoSignature(data.task_info)
+    const messageKey = `${tab.key}_${taskInfoSignature}`
     const currentTime = Date.now()
 
     // 检查是否是重复消息
     if (!tab.lastMessageHash) tab.lastMessageHash = ''
     if (!tab.lastMessageTime) tab.lastMessageTime = 0
 
-    if (tab.lastMessageHash === messageKey && currentTime - tab.lastMessageTime < 100) {
+    if (
+      taskInfoSignature &&
+      tab.lastMessageHash === messageKey &&
+      currentTime - tab.lastMessageTime < 100 &&
+      data.log === undefined
+    ) {
       logger.debug(`重复的Update消息被过滤: ${tab.key}`)
       return
     }
 
-    tab.lastMessageHash = messageKey
-    tab.lastMessageTime = currentTime
+    if (taskInfoSignature) {
+      tab.lastMessageHash = messageKey
+      tab.lastMessageTime = currentTime
+    }
 
     // 直接将 WebSocket 消消息传递给 TaskOverviewPanel
     const overviewPanel = overviewRefs.value.get(tab.key)
@@ -594,7 +734,6 @@ export function useSchedulerLogic() {
         id: tab.websocketId,
         data: data,
       }
-      logger.debug(`传递 WebSocket 消息给 TaskOverviewPanel: ${JSON.stringify(wsMessage)}`)
       overviewPanel.handleWSMessage(wsMessage)
     }
 
@@ -603,7 +742,8 @@ export function useSchedulerLogic() {
       if (data.task_info && Array.isArray(data.task_info)) {
         // 完整脚本+用户数据，直接保存
         tab.overviewData = (data.task_info as any[]).map(s => ({
-          script_id: s.script_id || `script_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          script_id:
+            s.script_id || `script_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
           name: s.name || '未知脚本',
           status: s.status || '等待',
           user_list: s.userList ? [...s.userList] : [],
@@ -650,11 +790,13 @@ export function useSchedulerLogic() {
       if (typeof data.log === 'string') {
         const newContent = data.log
         if (tab.lastLogContent !== newContent) {
-          tab.lastLogContent = newContent
-          logger.debug(`更新日志内容: ${JSON.stringify({
-            tabKey: tab.key,
-            contentLength: newContent.length
-          })}`)
+          scheduleLogContentUpdate(tab, newContent)
+          logger.debug(
+            `更新日志内容: ${JSON.stringify({
+              tabKey: tab.key,
+              contentLength: newContent.length,
+            })}`
+          )
         }
       } else if (typeof data.log === 'object') {
         let newContent = ''
@@ -664,11 +806,13 @@ export function useSchedulerLogic() {
         else newContent = JSON.stringify(data.log)
 
         if (tab.lastLogContent !== newContent) {
-          tab.lastLogContent = newContent
-          logger.debug(`更新日志对象: ${JSON.stringify({
-            tabKey: tab.key,
-            contentLength: newContent.length
-          })}`)
+          scheduleLogContentUpdate(tab, newContent)
+          logger.debug(
+            `更新日志对象: ${JSON.stringify({
+              tabKey: tab.key,
+              contentLength: newContent.length,
+            })}`
+          )
         }
       }
     }
@@ -683,9 +827,17 @@ export function useSchedulerLogic() {
       const errorMsg = String(data.Error).toLowerCase()
 
       // 根据错误内容匹配具体的 noisy 模式音频
-      if (errorMsg.includes('adb') && (errorMsg.includes('连接') || errorMsg.includes('connection'))) {
+      if (
+        errorMsg.includes('adb') &&
+        (errorMsg.includes('连接') || errorMsg.includes('connection'))
+      ) {
         await playSound('maa_adb_connection_error')
-      } else if (errorMsg.includes('模拟器') && (errorMsg.includes('未检测') || errorMsg.includes('not detected') || errorMsg.includes('找不到'))) {
+      } else if (
+        errorMsg.includes('模拟器') &&
+        (errorMsg.includes('未检测') ||
+          errorMsg.includes('not detected') ||
+          errorMsg.includes('找不到'))
+      ) {
         await playSound('maa_no_emulator_detected')
       } else if (errorMsg.includes('登录') && errorMsg.includes('失败')) {
         await playSound('maa_prts_login_failed')
@@ -712,12 +864,24 @@ export function useSchedulerLogic() {
 
       // 匹配成功信息的 noisy 模式音频
       if (infoMsg.includes('skland') || infoMsg.includes('森空岛')) {
-        if (infoMsg.includes('签到成功') || infoMsg.includes('checkin success') || infoMsg.includes('成功')) {
+        if (
+          infoMsg.includes('签到成功') ||
+          infoMsg.includes('checkin success') ||
+          infoMsg.includes('成功')
+        ) {
           await playSound('skland_checkin_success')
-        } else if (infoMsg.includes('签到失败') || infoMsg.includes('checkin failed') || infoMsg.includes('失败')) {
+        } else if (
+          infoMsg.includes('签到失败') ||
+          infoMsg.includes('checkin failed') ||
+          infoMsg.includes('失败')
+        ) {
           await playSound('skland_checkin_failed')
         }
-      } else if (infoMsg.includes('六星') || infoMsg.includes('6星') || infoMsg.includes('six star')) {
+      } else if (
+        infoMsg.includes('六星') ||
+        infoMsg.includes('6星') ||
+        infoMsg.includes('six star')
+      ) {
         await playSound('six_star_report')
       } else if (infoMsg.includes('adb') && infoMsg.includes('成功')) {
         await playSound('adb_success')
@@ -761,7 +925,7 @@ export function useSchedulerLogic() {
       // 清空日志并显示原始代理结果信息
       const resultText = data.Accomplish
       if (resultText && typeof resultText === 'string') {
-        tab.lastLogContent = resultText
+        scheduleLogContentUpdate(tab, resultText, true)
         logger.info('已清空日志并显示任务结果')
       }
 
@@ -778,15 +942,19 @@ export function useSchedulerLogic() {
       if (tabIndex !== -1) {
         const updatedTab: SchedulerTab = { ...tab }
         schedulerTabs.value.splice(tabIndex, 1, updatedTab)
-        logger.debug(`已强制更新schedulerTabs，当前tabs状态: ${JSON.stringify(schedulerTabs.value)}`)
+        logger.debug(
+          `已强制更新schedulerTabs，当前tabs状态: ${JSON.stringify(schedulerTabs.value)}`
+        )
       }
 
       if (tab.subscriptionId) {
-        logger.info(`任务完成，清理WebSocket订阅: ${JSON.stringify({
-          key: tab.key,
-          subscriptionId: tab.subscriptionId,
-          websocketId: tab.websocketId,
-        })}`)
+        logger.info(
+          `任务完成，清理WebSocket订阅: ${JSON.stringify({
+            key: tab.key,
+            subscriptionId: tab.subscriptionId,
+            websocketId: tab.websocketId,
+          })}`
+        )
         try {
           ws.unsubscribe(tab.subscriptionId)
         } catch (error) {
@@ -797,10 +965,12 @@ export function useSchedulerLogic() {
       }
 
       if (tab.websocketId) {
-        logger.info(`任务完成，清理websocketId: ${JSON.stringify({
-          key: tab.key,
-          websocketId: tab.websocketId,
-        })}`)
+        logger.info(
+          `任务完成，清理websocketId: ${JSON.stringify({
+            key: tab.key,
+            websocketId: tab.websocketId,
+          })}`
+        )
         tab.websocketId = null
       }
 
@@ -849,7 +1019,7 @@ export function useSchedulerLogic() {
               name: s.name,
               status: s.status,
               userList: s.user_list, // 转换回后端格式
-            }))
+            })),
           },
         }
         try {
@@ -987,14 +1157,14 @@ export function useSchedulerLogic() {
       if (response.code === 200 && response.signal) {
         // 将后端返回的 PowerOut.signal 转换为 PowerIn.signal
         const signalMap: Record<string, PowerIn.signal> = {
-          'NoAction': PowerIn.signal.NO_ACTION,
-          'Shutdown': PowerIn.signal.SHUTDOWN,
-          'ShutdownForce': PowerIn.signal.SHUTDOWN_FORCE,
-          'Reboot': PowerIn.signal.REBOOT,
-          'Hibernate': PowerIn.signal.HIBERNATE,
-          'Sleep': PowerIn.signal.SLEEP,
-          'KillSelf': PowerIn.signal.KILL_SELF,
-          'Logoff': PowerIn.signal.LOGOFF,
+          NoAction: PowerIn.signal.NO_ACTION,
+          Shutdown: PowerIn.signal.SHUTDOWN,
+          ShutdownForce: PowerIn.signal.SHUTDOWN_FORCE,
+          Reboot: PowerIn.signal.REBOOT,
+          Hibernate: PowerIn.signal.HIBERNATE,
+          Sleep: PowerIn.signal.SLEEP,
+          KillSelf: PowerIn.signal.KILL_SELF,
+          Logoff: PowerIn.signal.LOGOFF,
         }
         const mappedSignal = signalMap[response.signal]
         if (mappedSignal) {
@@ -1130,11 +1300,13 @@ export function useSchedulerLogic() {
     try {
       schedulerTabs.value.forEach(tab => {
         if (tab.status === '运行' && tab.websocketId) {
-          logger.info(`初始化阶段检查运行中标签的订阅: ${JSON.stringify({
-            key: tab.key,
-            websocketId: tab.websocketId,
-            hasSubscription: !!tab.subscriptionId,
-          })}`)
+          logger.info(
+            `初始化阶段检查运行中标签的订阅: ${JSON.stringify({
+              key: tab.key,
+              websocketId: tab.websocketId,
+              hasSubscription: !!tab.subscriptionId,
+            })}`
+          )
           // subscribeToTask 会自动跳过已有订阅，保持缓存标记不丢失
           subscribeToTask(tab)
         }
@@ -1175,12 +1347,14 @@ export function useSchedulerLogic() {
   const debugSubscriptionStatus = () => {
     logger.info('当前调度台订阅状态:')
     schedulerTabs.value.forEach(tab => {
-      logger.info(`- Tab ${tab.key} (${tab.title}): ${JSON.stringify({
-        status: tab.status,
-        websocketId: tab.websocketId,
-        subscriptionId: tab.subscriptionId,
-        hasSubscription: !!tab.subscriptionId,
-      })}`)
+      logger.info(
+        `- Tab ${tab.key} (${tab.title}): ${JSON.stringify({
+          status: tab.status,
+          websocketId: tab.websocketId,
+          subscriptionId: tab.subscriptionId,
+          hasSubscription: !!tab.subscriptionId,
+        })}`
+      )
     })
     logger.info(`WebSocket状态: ${JSON.stringify(ws.status.value)}`)
   }
@@ -1195,6 +1369,14 @@ export function useSchedulerLogic() {
       clearInterval(powerCountdownTimer)
       powerCountdownTimer = null
     }
+    if (storageSaveTimer) {
+      window.clearTimeout(storageSaveTimer)
+      storageSaveTimer = null
+      saveTabsToStorageNow(schedulerTabs.value)
+    }
+    pendingLogUpdates.forEach(timer => window.clearTimeout(timer))
+    pendingLogUpdates.clear()
+    pendingLogContents.clear()
 
     // 移除电源状态变更事件监听器
     window.removeEventListener('power-state-changed', handlePowerStateChanged)
@@ -1206,11 +1388,13 @@ export function useSchedulerLogic() {
     logger.info('清理所有WebSocket订阅')
     schedulerTabs.value.forEach(tab => {
       if (tab.subscriptionId) {
-        logger.info(`清理订阅: ${JSON.stringify({
-          key: tab.key,
-          status: tab.status,
-          subscriptionId: tab.subscriptionId,
-        })}`)
+        logger.info(
+          `清理订阅: ${JSON.stringify({
+            key: tab.key,
+            status: tab.status,
+            subscriptionId: tab.subscriptionId,
+          })}`
+        )
         try {
           ws.unsubscribe(tab.subscriptionId)
         } catch (error) {
@@ -1221,7 +1405,7 @@ export function useSchedulerLogic() {
       }
     })
 
-    saveTabsToStorage(schedulerTabs.value)
+    saveTabsToStorageNow(schedulerTabs.value)
     // useLocalStorage 会自动同步 powerAction，无需手动保存
   }
 
