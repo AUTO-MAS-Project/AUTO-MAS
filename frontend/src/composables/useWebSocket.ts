@@ -11,7 +11,8 @@ let BASE_WS_URL = 'ws://localhost:36163/api/core/ws'
 
 // 从 Electron 获取实际端点
 if (window.electronAPI?.getApiEndpoint) {
-  window.electronAPI.getApiEndpoint('websocket')
+  window.electronAPI
+    .getApiEndpoint('websocket')
     .then(endpoint => {
       BASE_WS_URL = `${endpoint}/api/core/ws`
       logger.info(`WebSocket 端点已更新: ${BASE_WS_URL}`)
@@ -150,7 +151,7 @@ const initGlobalStorage = (): GlobalWSStorage => ({
 
 const getGlobalStorage = (): GlobalWSStorage => {
   if (!(window as any)[WS_STORAGE_KEY]) {
-    ; (window as any)[WS_STORAGE_KEY] = initGlobalStorage()
+    ;(window as any)[WS_STORAGE_KEY] = initGlobalStorage()
   }
   return (window as any)[WS_STORAGE_KEY]
 }
@@ -221,7 +222,7 @@ const restartBackend = async (): Promise<boolean> => {
     }
     setBackendStatus('error')
     return false
-  } catch (e) {
+  } catch {
     setBackendStatus('error')
     return false
   } finally {
@@ -234,7 +235,9 @@ const startAutoReconnect = () => {
   logger.info('startAutoReconnect函数被调用')
   const global = getGlobalStorage()
 
-  logger.info(`重连状态检查: isAutoReconnecting=${global.isAutoReconnecting}, reconnectFailureModalShown=${global.reconnectFailureModalShown}`)
+  logger.info(
+    `重连状态检查: isAutoReconnecting=${global.isAutoReconnecting}, reconnectFailureModalShown=${global.reconnectFailureModalShown}`
+  )
 
   // 如果已经在重连中或者已经显示过失败弹窗，则不再重连
   if (global.isAutoReconnecting || global.reconnectFailureModalShown) {
@@ -286,7 +289,9 @@ const startAutoReconnect = () => {
 
     global.wsReconnectTimer = window.setTimeout(async () => {
       try {
-        logger.info(`执行第 ${attempt} 次重连尝试，当前wsReconnectAttempts=${global.wsReconnectAttempts}`)
+        logger.info(
+          `执行第 ${attempt} 次重连尝试，当前wsReconnectAttempts=${global.wsReconnectAttempts}`
+        )
         setConnectionPermission(true, 'WebSocket自动重连')
 
         // 不要在这里设置isConnecting，让connectGlobalWebSocket函数内部处理
@@ -309,7 +314,11 @@ const startAutoReconnect = () => {
             if (global.wsRef && global.wsRef.readyState === WebSocket.OPEN) {
               logger.info('WebSocket连接确认成功')
               startBackendMonitoring() // 启动后端监控
-            } else if (global.wsRef && (global.wsRef.readyState === WebSocket.CLOSED || global.wsRef.readyState === WebSocket.CLOSING)) {
+            } else if (
+              global.wsRef &&
+              (global.wsRef.readyState === WebSocket.CLOSED ||
+                global.wsRef.readyState === WebSocket.CLOSING)
+            ) {
               logger.info('WebSocket连接失败，继续下一次重连尝试')
               // 连接失败，继续下一次尝试
               global.isConnecting = false
@@ -440,7 +449,8 @@ const showReconnectFailureModal = () => {
 
   Modal.confirm({
     title: 'WebSocket连接异常',
-    content: 'WebSocket连接已断开且多次重连失败，这可能是因为后端服务异常。请选择处理方式：（10秒后将自动重启后端服务）',
+    content:
+      'WebSocket连接已断开且多次重连失败，这可能是因为后端服务异常。请选择处理方式：（10秒后将自动重启后端服务）',
     okText: '重启整个应用',
     cancelText: '重启后端服务',
     centered: true,
@@ -460,9 +470,9 @@ const showReconnectFailureModal = () => {
 
       // 重启整个应用
       if ((window.electronAPI as any)?.appRestart) {
-        ; (window.electronAPI as any).appRestart()
+        ;(window.electronAPI as any).appRestart()
       } else if ((window.electronAPI as any)?.windowClose) {
-        ; (window.electronAPI as any).windowClose()
+        ;(window.electronAPI as any).windowClose()
       } else {
         window.location.reload()
       }
@@ -589,9 +599,9 @@ const handleBackendFailure = async () => {
         showClosingOverlay()
 
         if ((window.electronAPI as any)?.appRestart) {
-          ; (window.electronAPI as any).appRestart()
+          ;(window.electronAPI as any).appRestart()
         } else if ((window.electronAPI as any)?.windowClose) {
-          ; (window.electronAPI as any).windowClose()
+          ;(window.electronAPI as any).windowClose()
         } else {
           window.location.reload()
         }
@@ -694,7 +704,9 @@ const startGlobalHeartbeat = (ws: WebSocket) => {
             data: { Ping: pingTime, connectionId: global.connectionId },
           })
         )
-      } catch { }
+      } catch {
+        logger.debug('Heartbeat ping send failed')
+      }
     }
   }, HEARTBEAT_INTERVAL)
 }
@@ -792,31 +804,22 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
   const now = Date.now()
 
   const subscriptionCount = global.subscriptions.value.size
-  logger.debug(`处理消息: type=${raw.type}, id=${raw.id}, 订阅数=${subscriptionCount}`)
+  if (raw.type !== 'Update') {
+    logger.debug(`处理消息: type=${raw.type}, id=${raw.id}, 订阅数=${subscriptionCount}`)
+  }
 
   let dispatched = false
-  let matchingSubscriptions = 0
-
   // 使用副本进行迭代，防止在处理函数中修改订阅列表导致的问题
   const subscriptionsCopy = new Map(global.subscriptions.value)
-
-  // 输出所有订阅的详细信息
-  logger.debug(`当前所有订阅:`)
-  subscriptionsCopy.forEach((subscription, id) => {
-    logger.debug(`  - ${id}: ${JSON.stringify(subscription.filter)}`)
-  })
 
   // 分发给所有匹配的订阅者
   subscriptionsCopy.forEach(subscription => {
     if (messageMatchesFilter(raw, subscription.filter)) {
-      matchingSubscriptions++
-      logger.debug(`匹配订阅: ${subscription.subscriptionId}`)
       try {
         // 再次检查订阅是否仍然存在，因为在同一个事件循环中它可能已被删除
         if (global.subscriptions.value.has(subscription.subscriptionId)) {
           subscription.handler(raw)
           dispatched = true
-          logger.debug(`已分发给: ${subscription.subscriptionId}`)
         } else {
           logger.warn(`订阅已被删除: ${subscription.subscriptionId}`)
         }
@@ -834,7 +837,9 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
     if (global.cachedMessages.value.length > MAX_QUEUE_SIZE) {
       global.cachedMessages.value = global.cachedMessages.value.slice(-MAX_QUEUE_SIZE)
     }
-    logger.debug(`消息已缓存: type=${raw.type}, id=${raw.id}`)
+    if (raw.type !== 'Update') {
+      logger.debug(`消息已缓存: type=${raw.type}, id=${raw.id}`)
+    }
   }
 
   // 定期清理过期消息（每处理50条消息触发一次，避免频繁且更可预测）
@@ -843,7 +848,7 @@ const handleMessage = (raw: WebSocketBaseMessage) => {
   }
 
   if (!dispatched) {
-    logger.debug(`无订阅者接收此消息: ${JSON.stringify(raw)}`)
+    logger.debug(`无订阅者接收此消息: type=${raw.type}, id=${raw.id}`)
   }
 }
 
@@ -1089,7 +1094,8 @@ const createGlobalWebSocket = (): WebSocket => {
         // 直接调用attemptReconnect来继续重连流程
         // 但是我们需要访问attemptReconnect函数，这里先用一个简单的方法
         setTimeout(() => {
-          if (global.wsReconnectAttempts < 5) { // MAX_WS_RECONNECT_ATTEMPTS
+          if (global.wsReconnectAttempts < 5) {
+            // MAX_WS_RECONNECT_ATTEMPTS
             logger.info('延迟触发下一次重连尝试')
             // 这里我们需要一个方法来继续重连，暂时重置状态让新的重连开始
             global.isAutoReconnecting = false
@@ -1341,13 +1347,17 @@ const initializeGlobalSubscriptions = () => {
   }
 
   // 创建新的订阅
-  global.globalTaskManagerSubscriptionId = subscribe({ id: 'TaskManager' }, (msg: WebSocketBaseMessage) => {
-    try {
-      ExternalWSHandlers.taskManagerMessage(msg)
-    } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : String(e)
+  global.globalTaskManagerSubscriptionId = subscribe(
+    { id: 'TaskManager' },
+    (msg: WebSocketBaseMessage) => {
+      try {
+        ExternalWSHandlers.taskManagerMessage(msg)
+      } catch (e) {
+        const errorMsg = e instanceof Error ? e.message : String(e)
+        logger.warn('External taskManagerMessage handler error:', errorMsg)
+      }
     }
-  })
+  )
 
   global.globalMainSubscriptionId = subscribe({ id: 'Main' }, (msg: WebSocketBaseMessage) => {
     if (msg.type === 'Signal' && msg.data) {
@@ -1366,7 +1376,9 @@ const initializeGlobalSubscriptions = () => {
                 data: { Pong: msg.data.Ping, connectionId: global.connectionId },
               })
             )
-          } catch { }
+          } catch {
+            logger.debug('Heartbeat pong send failed')
+          }
         }
         return
       }
@@ -1378,7 +1390,9 @@ const initializeGlobalSubscriptions = () => {
     }
   })
 
-  logger.info(`全局订阅已初始化: TaskManager=${global.globalTaskManagerSubscriptionId}, Main=${global.globalMainSubscriptionId}`)
+  logger.info(
+    `全局订阅已初始化: TaskManager=${global.globalTaskManagerSubscriptionId}, Main=${global.globalMainSubscriptionId}`
+  )
   logger.info(`初始化后订阅数量: ${global.subscriptions.value.size}`)
 }
 
@@ -1403,7 +1417,9 @@ export function useWebSocket() {
         return false
       }
     } else {
-      logger.warn(`WebSocket未连接，无法发送消息: ${JSON.stringify({ readyState: ws?.readyState, message: { id, type, data } })}`)
+      logger.warn(
+        `WebSocket未连接，无法发送消息: ${JSON.stringify({ readyState: ws?.readyState, message: { id, type, data } })}`
+      )
       return false
     }
   }

@@ -36,6 +36,16 @@ from app.utils import ProcessRunner, get_logger
 logger = get_logger("雷电模拟器管理")
 
 
+def _format_ldplayer_failure(action: str, result) -> str:
+    """格式化 LDPlayer dnconsole 命令失败信息，包含 returncode（十六进制）、stdout、stderr。"""
+    parts = [f"雷电模拟器 {action} 失败: returncode={result.returncode} (0x{result.returncode & 0xFFFFFFFF:08X})"]
+    if result.stdout:
+        parts.append(f"stdout={result.stdout.strip()!r}")
+    if result.stderr:
+        parts.append(f"stderr={result.stderr.strip()!r}")
+    return ", ".join(parts)
+
+
 class LDPlayerDevice(BaseModel):
     idx: int
     title: str
@@ -85,19 +95,22 @@ class LDManager(DeviceBase):
         else:
             raise RuntimeError(f"模拟器 {idx} 无法启动, 当前状态码: {status}")
 
-        result = await ProcessRunner.run_process(
-            self.emulator_path,
-            "launch",
-            "--index",
-            idx,
-            *(["--packagename", f'"{package_name}"'] if package_name else []),
-            timeout=self.config.get("Info", "MaxWaitTime"),
-            if_merge_std=True,
-        )
+        try:
+            result = await ProcessRunner.run_process(
+                self.emulator_path,
+                "launch",
+                "--index",
+                idx,
+                *(["--packagename", f'"{package_name}"'] if package_name else []),
+                timeout=self.config.get("Info", "MaxWaitTime"),
+                if_merge_std=True,
+            )
+        except asyncio.TimeoutError:
+            raise RuntimeError(f"雷电模拟器 launch 超时（{self.config.get('Info', 'MaxWaitTime')}s）")
         # 参考命令 dnconsole.exe launch --index 0
 
         if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result.stdout}")
+            raise RuntimeError(_format_ldplayer_failure("launch", result))
 
         t = datetime.now()
         while datetime.now() - t < timedelta(
@@ -125,22 +138,32 @@ class LDManager(DeviceBase):
 
     async def close(self, idx: str) -> DeviceStatus:
         status = await self.getStatus(idx)
-        if status not in [DeviceStatus.ONLINE, DeviceStatus.STARTING]:
+        if status not in [
+            DeviceStatus.ONLINE,
+            DeviceStatus.STARTING,
+            DeviceStatus.ERROR,
+            DeviceStatus.UNKNOWN,
+        ]:
             logger.warning(f"设备{idx}未在线，当前状态: {status}")
             return status
+        if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
+            logger.warning(f"设备{idx}状态无法确认，仍尝试发送雷电关闭命令")
 
-        result = await ProcessRunner.run_process(
-            self.emulator_path,
-            "quit",
-            "--index",
-            idx,
-            timeout=self.config.get("Info", "MaxWaitTime"),
-            if_merge_std=True,
-        )
+        try:
+            result = await ProcessRunner.run_process(
+                self.emulator_path,
+                "quit",
+                "--index",
+                idx,
+                timeout=self.config.get("Info", "MaxWaitTime"),
+                if_merge_std=True,
+            )
+        except asyncio.TimeoutError:
+            raise RuntimeError(f"雷电模拟器 quit 超时（{self.config.get('Info', 'MaxWaitTime')}s）")
         # 参考命令 dnconsole.exe quit --index 0
 
         if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result.stdout}")
+            raise RuntimeError(_format_ldplayer_failure("quit", result))
         t = datetime.now()
         while datetime.now() - t < timedelta(
             seconds=self.config.get("Info", "MaxWaitTime")
@@ -152,7 +175,8 @@ class LDManager(DeviceBase):
 
         else:
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
-                raise RuntimeError(f"模拟器 {idx} 关闭失败, 状态码: {status}")
+                logger.warning(f"雷电模拟器 {idx} 关闭命令已发送，但状态无法确认: {status}")
+                return status
             raise RuntimeError(f"模拟器 {idx} 关闭超时, 当前状态码: {status}")
 
     async def getStatus(
@@ -185,15 +209,10 @@ class LDManager(DeviceBase):
 
         for idx, info in data.items():
             status = await self.getStatus(idx, info)
-            adb_port = await self.get_adb_ports(info.vbox_pid)
             result[idx] = DeviceInfo(
                 title=info.title,
                 status=status,
-                adb_address=(
-                    f"127.0.0.1:{adb_port}"
-                    if adb_port != 0
-                    else f"emulator-{5554 + int(idx) * 2}"
-                ),
+                adb_address=f"emulator-{5554 + int(idx) * 2}",
             )
 
         return result
@@ -232,15 +251,18 @@ class LDManager(DeviceBase):
     async def get_device_info(self, idx: str | None) -> dict[str, LDPlayerDevice]:
         """获取模拟器的信息"""
 
-        result = await ProcessRunner.run_process(
-            self.emulator_path,
-            "list2",
-            timeout=self.config.get("Info", "MaxWaitTime"),
-            if_merge_std=True,
-        )
+        try:
+            result = await ProcessRunner.run_process(
+                self.emulator_path,
+                "list2",
+                timeout=self.config.get("Info", "MaxWaitTime"),
+                if_merge_std=True,
+            )
+        except asyncio.TimeoutError:
+            raise RuntimeError(f"雷电模拟器 list2 超时（{self.config.get('Info', 'MaxWaitTime')}s）")
 
         if result.returncode != 0:
-            raise RuntimeError(f"命令执行失败: {result.stdout}")
+            raise RuntimeError(_format_ldplayer_failure("list2", result))
         emulators: dict[str, LDPlayerDevice] = {}
         data = result.stdout.strip()
 
