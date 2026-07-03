@@ -148,9 +148,7 @@ const mirrorMirrors = computed(() => props.mirrors.filter(m => m.type === 'mirro
 const sortedOfficialMirrors = computed(() =>
   sortMirrorsBySpeedAndRecommendation(officialMirrors.value)
 )
-const sortedMirrorMirrors = computed(() =>
-  sortMirrorsBySpeedAndRecommendation(mirrorMirrors.value)
-)
+const sortedMirrorMirrors = computed(() => sortMirrorsBySpeedAndRecommendation(mirrorMirrors.value))
 
 function handleMirrorSelect(key: string) {
   emit('update:selectedMirror', key)
