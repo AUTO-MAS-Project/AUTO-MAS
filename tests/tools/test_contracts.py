@@ -50,10 +50,11 @@ class GameSignContractTest(unittest.TestCase):
         self.assertEqual(results[0]["status"], "失败")
         self.assertEqual(results[0]["reason"], "认证失败")
 
-    def test_stoken_exchange_uses_passport_api_domain(self) -> None:
+    def test_stoken_exchange_uses_takumi_api_domain(self) -> None:
+        # e0911845 起对齐 MihoyoBBSTools 域名，由 passport-api 切换到 api-takumi
         self.assertEqual(
             PASSPORT_COOKIE_URL,
-            "https://passport-api.mihoyo.com/account/auth/api/getCookieAccountInfoBySToken",
+            "https://api-takumi.mihoyo.com/auth/api/getCookieAccountInfoBySToken",
         )
 
 

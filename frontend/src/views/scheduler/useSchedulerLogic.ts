@@ -18,8 +18,8 @@ const STORAGE_SAVE_DEBOUNCE_MS = 800
 const LOG_RENDER_INTERVAL_MS = 200
 const LOG_RENDER_MAX_CHARS = 120000
 
-let storageSaveTimer: ReturnType<typeof window.setTimeout> | null = null
-const pendingLogUpdates = new Map<string, ReturnType<typeof window.setTimeout>>()
+let storageSaveTimer: number | null = null
+const pendingLogUpdates = new Map<string, number>()
 const pendingLogContents = new Map<string, string>()
 
 const getDefaultTabRuntimeState = () => ({

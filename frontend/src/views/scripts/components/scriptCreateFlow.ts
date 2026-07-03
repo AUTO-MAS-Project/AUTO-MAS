@@ -94,6 +94,14 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     group: 'specialized',
     icon: hsrIcon,
   },
+  {
+    value: 'MaaFW',
+    title: 'MaaFramework 项目',
+    description: '读取 interface 并运行 MaaFramework 项目',
+    keywords: ['maafw', 'maaframework', 'interface'],
+    group: 'specialized',
+    icon: generalIcon,
+  },
 ]
 
 export const buildCreateSteps = ({ type }: Pick<CreateRequestState, 'type'>): CreateStep[] => {
@@ -124,6 +132,7 @@ const EDIT_SEGMENT_BY_TYPE: Record<ScriptType, string> = {
   SRC: 'src',
   MaaEnd: 'maaend',
   M9A: 'm9a',
+  MaaFW: 'maafw',
   Okww: 'okww',
   HSR: 'hsr',
   General: 'general',
