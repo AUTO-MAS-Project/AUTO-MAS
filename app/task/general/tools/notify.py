@@ -19,6 +19,8 @@
 
 #   Contact: DLmaster_361@163.com
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from app.core import Config
