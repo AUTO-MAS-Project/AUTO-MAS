@@ -8,6 +8,10 @@ export type MaaFWConfig_Info = {
      */
     Name?: (string | null);
     /**
+     * MaaFW 项目显示标签
+     */
+    ProjectLabel?: (string | null);
+    /**
      * MaaFW 项目根目录
      */
     Path?: (string | null);

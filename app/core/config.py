@@ -44,6 +44,7 @@ from app.models.config import (
     QueueConfig,
     QueueItem,
     GlobalConfig,
+    ConfigBase,
     CLASS_BOOK,
     Webhook,
     TimeSet,
@@ -2602,16 +2603,25 @@ class AppConfig(GlobalConfig):
 
         return json.loads(self.get("Data", "Stage"))
 
+    def _get_script_combox_label(self, script: ConfigBase) -> str:
+        script_name = script.get("Info", "Name")
+        if isinstance(script, MaaFWConfig):
+            return script_name or "MaaFW"
+        type_label = self._resolve_script_type_label(script)
+        return f"{type_label} - {script_name}"
+
+    def _get_task_combox_label(self, script: ConfigBase) -> str:
+        return f"脚本 - {self._get_script_combox_label(script)}"
+
     async def get_script_combox(self):
         """获取脚本下拉框信息"""
 
         logger.info("开始获取脚本下拉框信息")
         data = [{"label": "未选择", "value": "-"}]
         for uid, script in self.ScriptConfig.items():
-            type_label = self._resolve_script_type_label(script)
             data.append(
                 {
-                    "label": f"{type_label} - {script.get('Info', 'Name')}",
+                    "label": self._get_script_combox_label(script),
                     "value": str(uid),
                 }
             )
@@ -2633,10 +2643,9 @@ class AppConfig(GlobalConfig):
             )
         for uid, script in self.ScriptConfig.items():
             if not script.is_locked:
-                type_label = self._resolve_script_type_label(script)
                 data.append(
                     {
-                        "label": f"脚本 - {type_label} - {script.get('Info', 'Name')}",
+                        "label": self._get_task_combox_label(script),
                         "value": str(uid),
                     }
                 )

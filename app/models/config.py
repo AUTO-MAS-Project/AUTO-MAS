@@ -2068,7 +2068,7 @@ class MaaFWUserConfig(ConfigBase):
         ## Device ----------------------------------------------------------
         ## 当前用户覆盖 ADB 地址，留空时使用脚本级模拟器配置
         self.Device_AdbAddress = ConfigItem("Device", "AdbAddress", "")
-        ## Win32 / Gamepad 窗口句柄，0 表示未指定
+        ## Win32 窗口句柄，0 表示未指定
         self.Device_HWnd = ConfigItem(
             "Device", "HWnd", 0, RangeValidator(0, 999999999999)
         )
@@ -2123,8 +2123,16 @@ class MaaFWUserConfig(ConfigBase):
         """生成 MaaFW 用户标签列表"""
         tags = []
 
-        last_status = self.get("Data", "LastProxyStatus")
-        tags.append({"text": f"上次：{last_status}", "color": "green"})
+        last_status = self._normalize_maafw_last_status(
+            self.get("Data", "LastProxyStatus")
+        )
+        status_color = {
+            "成功": "green",
+            "失败": "red",
+            "运行中": "blue",
+            "未知": "orange",
+        }.get(last_status, "orange")
+        tags.append({"text": f"上次：{last_status}", "color": status_color})
 
         if not self.get("Data", "IfPassCheck"):
             tags.append({"text": "人工排查未通过", "color": "red"})
@@ -2133,14 +2141,27 @@ class MaaFWUserConfig(ConfigBase):
             datetime.strptime(self.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
             == datetime.now(tz=UTC4).date()
         ):
+            proxy_times = self.get("Data", "ProxyTimes")
+            if proxy_times > 0:
+                today_text = f"今日：已运行{proxy_times}次"
+                today_color = "green"
+            elif last_status == "运行中":
+                today_text = "今日：运行中"
+                today_color = "blue"
+            elif last_status == "失败":
+                today_text = "今日：运行失败"
+                today_color = "red"
+            else:
+                today_text = "今日：已尝试0次"
+                today_color = "orange"
             tags.append(
                 {
-                    "text": f"任务：已代理{self.get('Data', 'ProxyTimes')}次",
-                    "color": "green",
+                    "text": today_text,
+                    "color": today_color,
                 }
             )
         else:
-            tags.append({"text": "任务：未代理", "color": "orange"})
+            tags.append({"text": "今日：未运行", "color": "orange"})
 
         remained_day = self.get("Info", "RemainedDay")
         if remained_day == -1:
@@ -2178,6 +2199,16 @@ class MaaFWUserConfig(ConfigBase):
 
         return json.dumps(tags, ensure_ascii=False)
 
+    @staticmethod
+    def _normalize_maafw_last_status(status: str) -> str:
+        status_map = {
+            "鏈煡": "未知",
+            "鎴愬姛": "成功",
+            "澶辫触": "失败",
+            "杩愯涓?": "运行中",
+        }
+        return status_map.get(status, status or "未知")
+
 
 class MaaFWConfig(ConfigBase):
     """MaaFW 项目配置"""
@@ -2189,6 +2220,8 @@ class MaaFWConfig(ConfigBase):
         ## Info ------------------------------------------------------------
         ## MaaFW 脚本名称
         self.Info_Name = ConfigItem("Info", "Name", "新 MaaFW 脚本")
+        ## MaaFW 项目显示标签，用于脚本列表区分不同 ProjectInterface 项目
+        self.Info_ProjectLabel = ConfigItem("Info", "ProjectLabel", "")
         ## MaaFW 项目根目录，应包含 interface.json
         self.Info_Path = ConfigItem("Info", "Path", "", FolderValidator())
         ## MaaFW controller 名称，留空时按 interface 和设备配置自动选择
@@ -2220,7 +2253,7 @@ class MaaFWConfig(ConfigBase):
         self.Device_AdbInputMethods = ConfigItem(
             "Device", "AdbInputMethods", -1, RangeValidator(-999, 999999999999)
         )
-        ## Win32 / Gamepad 窗口句柄，0 表示未指定
+        ## Win32 窗口句柄，0 表示未指定
         self.Device_HWnd = ConfigItem(
             "Device", "HWnd", 0, RangeValidator(0, 999999999999)
         )
@@ -2262,12 +2295,12 @@ class MaaFWConfig(ConfigBase):
         self.Update_IfAutoUpdate = ConfigItem(
             "Update", "IfAutoUpdate", True, BoolValidator()
         )
-        ## 更新源，留空时使用全局更新源
+        ## 更新源，暂仅支持 MirrorChyan
         self.Update_Source = ConfigItem(
             "Update",
             "Source",
-            "",
-            OptionsValidator(["", "MirrorChyan", "GitHub"]),
+            "MirrorChyan",
+            OptionsValidator(["MirrorChyan"]),
         )
         ## 更新渠道，留空时使用全局更新渠道
         self.Update_Channel = ConfigItem(
