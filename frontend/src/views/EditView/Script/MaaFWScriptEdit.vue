@@ -101,7 +101,7 @@
                     <template #icon>
                       <ToolOutlined />
                     </template>
-                    准备 Agent 环境
+                    准备运行环境
                   </a-button>
                 </a-input-group>
               </a-form-item>
@@ -149,13 +149,13 @@
           <a-empty v-else class="interface-empty" description="尚未读取 interface.json" />
 
           <div v-if="agentEnvLoading || agentEnvResult" class="agent-env-panel">
-            <a-spin :spinning="agentEnvLoading" tip="正在准备 Agent Python 环境...">
+            <a-spin :spinning="agentEnvLoading" tip="正在准备 MaaFW 运行环境...">
               <a-alert
                 v-if="agentEnvLoading"
                 type="info"
                 show-icon
-                message="正在准备 Agent 运行环境"
-                description="项目内二进制 Agent 直接使用；项目自带 Python 只做健康检查；embedded Agent 会按隔离子进程准备，缺少项目 Python 时创建/复用项目专属 venv 并安装依赖。"
+                message="正在准备 MaaFW 运行环境"
+                description="将预热 AUTO-MAS Runner 隔离 venv，并检查或准备项目 Agent Python 环境。"
               />
               <template v-else-if="agentEnvResult">
                 <a-alert
@@ -232,8 +232,10 @@
                     v-for="item in controllerOptions"
                     :key="item.name"
                     :value="item.name"
+                    :disabled="!isDirectControllerType(item.type)"
                   >
                     {{ item.label || item.name }} · {{ item.type }}
+                    <span v-if="!isDirectControllerType(item.type)"> · 建议使用原 UI</span>
                   </a-select-option>
                 </a-select>
               </a-form-item>
@@ -269,6 +271,13 @@
               </a-form-item>
             </a-col>
           </a-row>
+          <a-alert
+            v-if="unsupportedControllerOptions.length"
+            class="control-strategy-alert"
+            type="info"
+            show-icon
+            :message="unsupportedControllerMessage"
+          />
 
           <template v-if="isAdbController">
             <a-row :gutter="24" class="control-detail-row">
@@ -455,9 +464,7 @@
               <a-col :span="18">
                 <a-form-item>
                   <template #label>
-                    <a-tooltip
-                      title="扫描并选择 MaaFW Win32/Gamepad controller 要连接的游戏客户端窗口"
-                    >
+                    <a-tooltip title="扫描并选择 MaaFW Win32 controller 要连接的游戏客户端窗口">
                       <span class="form-label">
                         游戏客户端
                         <QuestionCircleOutlined class="help-icon" />
@@ -505,7 +512,7 @@
               class="control-strategy-alert"
               type="info"
               show-icon
-              message="Win32 / Gamepad 控制方式会连接已打开的游戏客户端；未选择时按 interface 规则自动匹配。"
+              message="Win32 控制方式会连接已打开的游戏客户端；未选择时按 interface 规则自动匹配。"
             />
           </template>
         </div>
@@ -521,28 +528,7 @@
             show-icon
             message="当前脚本未声明版本，无法判断更新"
           />
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip
-                    title="运行 MaaFW 任务前先检查项目更新，更新完成后再读取 interface 与加载资源"
-                  >
-                    <span class="form-label">
-                      运行前自动更新
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-switch
-                  v-model:checked="maafwConfig.Update.IfAutoUpdate"
-                  :disabled="isAutoUpdateDisabled"
-                  checked-children="开启"
-                  un-checked-children="关闭"
-                  @change="handleChange('Update', 'IfAutoUpdate', maafwConfig.Update.IfAutoUpdate)"
-                />
-              </a-form-item>
-            </a-col>
+          <a-row :gutter="24" class="update-config-row">
             <a-col :span="8">
               <a-form-item label="更新源">
                 <a-select
@@ -563,23 +549,7 @@
                 />
               </a-form-item>
             </a-col>
-          </a-row>
-          <a-descriptions v-if="previewData" :column="2" size="small" class="update-meta">
-            <a-descriptions-item label="当前版本">
-              {{ previewData.project.version || '未声明' }}
-            </a-descriptions-item>
-            <a-descriptions-item label="GitHub">
-              {{ previewData.project.github || '未声明' }}
-            </a-descriptions-item>
-            <a-descriptions-item label="MirrorChyan RID">
-              {{ previewData.project.mirrorchyanRid || '未声明' }}
-            </a-descriptions-item>
-            <a-descriptions-item label="多平台">
-              {{ previewData.project.mirrorchyanMultiplatform ? '是' : '否' }}
-            </a-descriptions-item>
-          </a-descriptions>
-          <a-row :gutter="24">
-            <a-col :span="12">
+            <a-col :span="8">
               <a-form-item>
                 <template #label>
                   <a-tooltip
@@ -603,6 +573,77 @@
               </a-form-item>
             </a-col>
           </a-row>
+          <a-row :gutter="24" class="update-action-row">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip
+                    title="运行 MaaFW 任务前先检查项目更新，更新完成后再读取 interface 与加载资源"
+                  >
+                    <span class="form-label">
+                      运行前自动更新
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-switch
+                  v-model:checked="maafwConfig.Update.IfAutoUpdate"
+                  :disabled="isAutoUpdateDisabled"
+                  checked-children="开启"
+                  un-checked-children="关闭"
+                  @change="handleChange('Update', 'IfAutoUpdate', maafwConfig.Update.IfAutoUpdate)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="手动更新">
+                <a-button
+                  type="primary"
+                  size="large"
+                  class="manual-update-button"
+                  :loading="projectUpdateLoading"
+                  :disabled="projectUpdateDisabled"
+                  @click="handleManualProjectUpdate"
+                >
+                  <template #icon>
+                    <SyncOutlined />
+                  </template>
+                  立即更新资源
+                </a-button>
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <div v-if="projectUpdateLogs.length" class="agent-env-log-box project-update-log-box">
+            <div
+              v-for="(log, index) in projectUpdateLogs"
+              :key="`${index}-${log}`"
+              class="agent-env-log-line"
+            >
+              {{ log }}
+            </div>
+          </div>
+          <div v-if="previewData" class="update-info-grid">
+            <div class="update-info-item">
+              <div class="update-info-label">当前版本</div>
+              <div class="update-info-value">{{ previewData.project.version || '未声明' }}</div>
+            </div>
+            <div class="update-info-item">
+              <div class="update-info-label">GitHub</div>
+              <div class="update-info-value">{{ previewData.project.github || '未声明' }}</div>
+            </div>
+            <div class="update-info-item">
+              <div class="update-info-label">MirrorChyan RID</div>
+              <div class="update-info-value">
+                {{ previewData.project.mirrorchyanRid || '未声明' }}
+              </div>
+            </div>
+            <div class="update-info-item">
+              <div class="update-info-label">多平台</div>
+              <div class="update-info-value">
+                {{ previewData.project.mirrorchyanMultiplatform ? '是' : '否' }}
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="form-section">
@@ -717,6 +758,7 @@ import {
   FileSearchOutlined,
   FolderOpenOutlined,
   QuestionCircleOutlined,
+  SyncOutlined,
   ToolOutlined,
 } from '@ant-design/icons-vue'
 import { Service, type ComboBoxItem } from '@/api'
@@ -740,6 +782,7 @@ const { getSettings } = useSettingsApi()
 const { loading: interfaceLoading, previewInterface } = useMaaFWApi()
 const { loading: windowLoading, previewWindows } = useMaaFWApi()
 const { loading: agentEnvLoading, prepareAgentEnv } = useMaaFWApi()
+const { loading: projectUpdateLoading, updateProjectResources } = useMaaFWApi()
 
 const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
@@ -748,6 +791,7 @@ const isInitializing = ref(true)
 const isSaving = ref(false)
 const previewData = ref<MaaFWInterfacePreviewData | null>(null)
 const agentEnvResult = ref<MaaFWAgentEnvPrepareData | null>(null)
+const projectUpdateLogs = ref<string[]>([])
 const desktopWindows = ref<MaaFWDesktopWindowInfo[]>([])
 const weeklyOnceTasks = ref<string[]>([])
 const monthlyOnceTasks = ref<string[]>([])
@@ -755,6 +799,15 @@ const globalUpdateSource = ref<string>('')
 const globalUpdateChannel = ref<string>('')
 const isAutoUpdateDisabled = computed(() =>
   Boolean(previewData.value && !previewData.value.project.version)
+)
+const projectUpdateDisabled = computed(
+  () =>
+    !maafwConfig.Info.Path ||
+    !previewData.value ||
+    isAutoUpdateDisabled.value ||
+    isSaving.value ||
+    interfaceLoading.value ||
+    projectUpdateLoading.value
 )
 const periodTaskOptions = computed(() =>
   (previewData.value?.tasks || []).map(task => ({
@@ -766,8 +819,16 @@ const periodTaskOptions = computed(() =>
 type MaaFWConcreteUpdateSource = Exclude<MaaFWScriptConfig['Update']['Source'], ''>
 type MaaFWConcreteUpdateChannel = Exclude<MaaFWScriptConfig['Update']['Channel'], ''>
 
-const MAAFW_UPDATE_SOURCES: MaaFWConcreteUpdateSource[] = ['MirrorChyan', 'GitHub']
+const MAAFW_UPDATE_SOURCES: MaaFWConcreteUpdateSource[] = ['MirrorChyan']
 const MAAFW_UPDATE_CHANNELS: MaaFWConcreteUpdateChannel[] = ['stable', 'beta']
+const MAAFW_DIRECT_CONTROLLER_TYPES = ['Adb', 'Win32'] as const
+
+type MaaFWDirectControllerType = (typeof MAAFW_DIRECT_CONTROLLER_TYPES)[number]
+
+const isDirectControllerType = (
+  controllerType?: string | null
+): controllerType is MaaFWDirectControllerType =>
+  MAAFW_DIRECT_CONTROLLER_TYPES.includes(controllerType as MaaFWDirectControllerType)
 
 const updateSourceOptions = MAAFW_UPDATE_SOURCES.map(value => ({ label: value, value }))
 
@@ -793,6 +854,7 @@ const EMULATOR_TYPE_LABELS: Record<EmulatorType, string> = {
 const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
   Info: {
     Name: '',
+    ProjectLabel: '',
     Path: '',
     Controller: '',
     Resource: '',
@@ -870,6 +932,47 @@ const previewProjectTitle = computed(() => {
   return project.title || project.label || project.name
 })
 
+const normalizeProjectScriptName = (rawName?: string | null) => {
+  if (!rawName) return ''
+
+  const primaryName = rawName
+    .split(/[|｜]/)[0]
+    .trim()
+    .replace(/\s+(?:版本号\s*[:：]?\s*)?v?\d+(?:\.\d+)+(?:[-+][\w.]+)?$/i, '')
+    .trim()
+
+  return primaryName || rawName.trim()
+}
+
+const resolveProjectScriptName = (data: MaaFWInterfacePreviewData) => {
+  const project = data.project
+  return (
+    normalizeProjectScriptName(project.title) ||
+    normalizeProjectScriptName(project.label) ||
+    normalizeProjectScriptName(project.name)
+  )
+}
+
+const resolveProjectLabel = (data: MaaFWInterfacePreviewData) => {
+  return resolveProjectScriptName(data)
+}
+
+const syncScriptNameFromProject = async (data: MaaFWInterfacePreviewData) => {
+  const nextName = resolveProjectScriptName(data)
+  if (!nextName || nextName === maafwConfig.Info.Name) return
+
+  maafwConfig.Info.Name = nextName
+  await handleChange('Info', 'Name', nextName, true)
+}
+
+const syncProjectLabelFromProject = async (data: MaaFWInterfacePreviewData) => {
+  const nextLabel = resolveProjectLabel(data)
+  if (!nextLabel || nextLabel === maafwConfig.Info.ProjectLabel) return
+
+  maafwConfig.Info.ProjectLabel = nextLabel
+  await handleChange('Info', 'ProjectLabel', nextLabel, true)
+}
+
 const getAgentRuntimeLabel = (runtimeKind?: string | null) => {
   if (runtimeKind === 'embedded') return '主进程内嵌'
   if (runtimeKind === 'project_python') return '项目自带 Python'
@@ -896,9 +999,9 @@ const agentEnvAlertType = computed(() => {
 
 const agentEnvSummary = computed(() => {
   if (!agentEnvResult.value) return ''
-  if (agentEnvResult.value.status === 'error') return 'Agent 运行环境准备失败'
-  if (agentEnvResult.value.agentCount === 0) return '当前 MaaFW 项目没有声明 Agent'
-  return `Agent 运行环境已准备完成，共 ${agentEnvResult.value.agentCount} 个 Agent`
+  if (agentEnvResult.value.status === 'error') return 'MaaFW 运行环境准备失败'
+  if (agentEnvResult.value.agentCount === 0) return 'MaaFW Runner 环境已准备完成'
+  return `MaaFW 运行环境已准备完成，共 ${agentEnvResult.value.agentCount} 个 Agent`
 })
 
 const agentEnvDescription = computed(() => {
@@ -907,24 +1010,36 @@ const agentEnvDescription = computed(() => {
     return agentEnvResult.value.message || '请查看下方准备日志定位失败步骤'
   }
   if (agentEnvResult.value.agentCount === 0) {
-    return '无需准备 Agent 运行环境'
+    return '当前 MaaFW 项目没有声明 Agent，无需准备 Agent 子进程环境。'
   }
-  return '项目内二进制 Agent 直接使用；项目自带 Python 只做健康检查；embedded Agent 会切换为隔离子进程，缺少项目 Python 时使用项目专属隔离 venv。'
+  return 'Runner 隔离 venv 已预热；项目内二进制 Agent 直接使用；项目自带 Python 只做健康检查；缺少项目 Python 时使用项目专属隔离 venv。'
 })
 
 const controllerOptions = computed(() => previewData.value?.controllers || [])
+const directControllerOptions = computed(() =>
+  controllerOptions.value.filter(controller => isDirectControllerType(controller.type))
+)
+const unsupportedControllerOptions = computed(() =>
+  controllerOptions.value.filter(controller => !isDirectControllerType(controller.type))
+)
+const unsupportedControllerMessage = computed(() => {
+  const names = unsupportedControllerOptions.value
+    .map(controller => `${controller.label || controller.name}(${controller.type})`)
+    .join('、')
+  return `AUTO-MAS MaaFW Direct 只联动 ADB / Win32；${names} 建议使用项目原 UI。`
+})
 
 const getDefaultControllerName = () => {
   const wantsAdb = maafwConfig.Emulator.Id && maafwConfig.Emulator.Id !== '-'
   if (wantsAdb) {
-    const adbController = controllerOptions.value.find(c => c.type === 'Adb')
+    const adbController = directControllerOptions.value.find(c => c.type === 'Adb')
     if (adbController) return adbController.name
   }
-  return controllerOptions.value[0]?.name || ''
+  return directControllerOptions.value[0]?.name || ''
 }
 
 const resolveControllerName = (controllerName?: string) => {
-  if (controllerName && controllerOptions.value.some(c => c.name === controllerName)) {
+  if (controllerName && directControllerOptions.value.some(c => c.name === controllerName)) {
     return controllerName
   }
   return getDefaultControllerName()
@@ -936,9 +1051,7 @@ const effectiveController = computed(
 )
 const effectiveControllerType = computed(() => effectiveController.value?.type || '')
 const isAdbController = computed(() => effectiveControllerType.value === 'Adb')
-const isDesktopController = computed(
-  () => effectiveControllerType.value === 'Win32' || effectiveControllerType.value === 'Gamepad'
-)
+const isDesktopController = computed(() => effectiveControllerType.value === 'Win32')
 
 const getResourceOptionsByController = (controllerName: string) => {
   const resources = previewData.value?.resources || []
@@ -1134,8 +1247,13 @@ const applyScriptConfig = (config: Partial<MaaFWScriptConfig> | null | undefined
   maafwConfig.Run.MonthlyOnceTasks = stringifyTaskNameList(monthlyOnceTasks.value)
 }
 
-const handleChange = async (category: keyof MaaFWScriptConfig, key: string, value: unknown) => {
-  if (isInitializing.value || isSaving.value) return
+const handleChange = async (
+  category: keyof MaaFWScriptConfig,
+  key: string,
+  value: unknown,
+  force = false
+) => {
+  if ((!force && isInitializing.value) || isSaving.value) return
 
   isSaving.value = true
   try {
@@ -1192,6 +1310,8 @@ const handlePreviewInterface = async () => {
   const data = await previewInterface(maafwConfig.Info.Path)
   if (data) {
     previewData.value = data
+    await syncScriptNameFromProject(data)
+    await syncProjectLabelFromProject(data)
     syncControllerResourceSelection(!isInitializing.value)
     await prunePeriodTaskSelections()
     if (isDesktopController.value) {
@@ -1213,14 +1333,53 @@ const handlePrepareAgentEnv = async () => {
 
   agentEnvResult.value = data
   if (data.status === 'error') {
-    message.error(data.message || 'Agent 环境准备失败')
+    message.error(data.message || 'MaaFW 运行环境准备失败')
     return
   }
   if (data.agentCount === 0) {
-    message.info('当前 MaaFW 项目没有声明 Agent')
+    message.info('MaaFW Runner 环境已准备完成，当前项目没有声明 Agent')
     return
   }
-  message.success(`Agent 环境已准备完成，共 ${data.agentCount} 个 Agent`)
+  message.success(`MaaFW 运行环境已准备完成，共 ${data.agentCount} 个 Agent`)
+}
+
+const handleManualProjectUpdate = async () => {
+  if (!maafwConfig.Info.Path) {
+    message.warning('请先选择 MaaFramework 项目目录')
+    return
+  }
+  if (!previewData.value) {
+    message.warning('请先读取 interface')
+    return
+  }
+  if (isAutoUpdateDisabled.value) {
+    message.warning('当前脚本未声明版本，无法判断更新')
+    return
+  }
+  if (isSaving.value || projectUpdateLoading.value) return
+
+  projectUpdateLogs.value = []
+  isSaving.value = true
+  try {
+    const saved = await updateScript(scriptId, {
+      Update: { ...maafwConfig.Update },
+    })
+    if (!saved) return
+  } finally {
+    isSaving.value = false
+  }
+
+  const response = await updateProjectResources(scriptId)
+  projectUpdateLogs.value = response?.data?.logs ?? []
+  if (!response?.data || response.code !== 200) return
+
+  await refreshPreviewIfPossible()
+  if (response.data.updated) {
+    message.success(response.message || 'MaaFW 项目资源已更新')
+    return
+  }
+
+  message.info(response.message || 'MaaFW 项目已是最新')
 }
 
 const refreshPreviewIfPossible = async () => {
@@ -1228,6 +1387,8 @@ const refreshPreviewIfPossible = async () => {
   const data = await previewInterface(maafwConfig.Info.Path)
   if (data) {
     previewData.value = data
+    await syncScriptNameFromProject(data)
+    await syncProjectLabelFromProject(data)
     syncControllerResourceSelection(!isInitializing.value)
     await prunePeriodTaskSelections()
     if (isDesktopController.value) {
@@ -1493,9 +1654,41 @@ onMounted(async () => {
   margin-bottom: 0;
 }
 
-.update-alert,
-.update-meta {
+.update-alert {
   margin-bottom: 16px;
+}
+
+.manual-update-button {
+  min-width: 160px;
+}
+
+.project-update-log-box {
+  margin-bottom: 16px;
+}
+
+.update-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 24px;
+  margin-top: 4px;
+}
+
+.update-info-item {
+  min-width: 0;
+}
+
+.update-info-label {
+  margin-bottom: 6px;
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.update-info-value {
+  min-height: 22px;
+  color: var(--ant-color-text);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .control-strategy-alert {
@@ -1682,6 +1875,10 @@ onMounted(async () => {
 
   .config-card :deep(.ant-card-body) {
     padding: 16px;
+  }
+
+  .update-info-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

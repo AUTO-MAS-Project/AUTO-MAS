@@ -17,12 +17,6 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 
-from .interface_loader import MaaFWInterfaceLoadError, load_interface_model
-from .interface_models import MaaFWInterface
-from .manager import MaaFWManager
-from .runner import MaaFWDeviceConfig, MaaFWRunner, MaaFWRunResult
-from .run_plan import MaaFWRunPlanError, build_maafw_run_plan
-
 __all__ = [
     "MaaFWDeviceConfig",
     "MaaFWInterface",
@@ -34,3 +28,43 @@ __all__ = [
     "build_maafw_run_plan",
     "load_interface_model",
 ]
+
+
+def __getattr__(name: str):
+    if name == "MaaFWDeviceConfig":
+        from .runner import MaaFWDeviceConfig
+
+        return MaaFWDeviceConfig
+    if name == "MaaFWInterface":
+        from .interface_models import MaaFWInterface
+
+        return MaaFWInterface
+    if name == "MaaFWInterfaceLoadError":
+        from .interface_loader import MaaFWInterfaceLoadError
+
+        return MaaFWInterfaceLoadError
+    if name == "MaaFWManager":
+        from .manager import MaaFWManager
+
+        return MaaFWManager
+    if name == "MaaFWRunResult":
+        from .runner import MaaFWRunResult
+
+        return MaaFWRunResult
+    if name == "MaaFWRunner":
+        from .runner import MaaFWRunner
+
+        return MaaFWRunner
+    if name == "MaaFWRunPlanError":
+        from .run_plan import MaaFWRunPlanError
+
+        return MaaFWRunPlanError
+    if name == "build_maafw_run_plan":
+        from .run_plan import build_maafw_run_plan
+
+        return build_maafw_run_plan
+    if name == "load_interface_model":
+        from .interface_loader import load_interface_model
+
+        return load_interface_model
+    raise AttributeError(name)

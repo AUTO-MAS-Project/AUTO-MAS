@@ -19,7 +19,7 @@
                 <div class="script-details">
                   <h3 class="script-name">{{ script.name }}</h3>
                   <a-tag :color="getScriptTypeTagColor(script.type)" class="script-type">
-                    {{ script.displayName || script.type }}
+                    {{ getScriptTypeLabel(script) }}
                   </a-tag>
                   <a-tag v-if="script.available === false" color="orange" class="script-type">
                     未启用
@@ -174,7 +174,7 @@
 </template>
 
 <script setup lang="ts">
-import type { Script, User } from '../types/script'
+import type { MaaFWScriptConfig, Script, User } from '../types/script'
 import {
   DeleteOutlined,
   EditOutlined,
@@ -314,6 +314,16 @@ const handleSaveMaaEndConfig = (script: Script) => {
 
 const handleToggleUserStatus = (user: User) => {
   emit('toggleUserStatus', user)
+}
+
+const getMaaFWProjectLabel = (script: Script) => {
+  const config = script.config as Partial<MaaFWScriptConfig> | undefined
+  return config?.Info?.ProjectLabel?.trim() || 'MaaFW'
+}
+
+const getScriptTypeLabel = (script: Script) => {
+  if (script.type === 'MaaFW') return getMaaFWProjectLabel(script)
+  return script.displayName || script.type
 }
 
 const handlePassCheck = (user: User) => {

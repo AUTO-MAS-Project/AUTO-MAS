@@ -60,6 +60,7 @@ class MaaFWManager(TaskExecuteBase):
         self.emulator_manager: DeviceBase | None = None
         self.check_result = "-"
         self.begin_time = ""
+        self.project_update_logs: list[str] = []
 
     async def check(self) -> str:
         """校验 MaaFW 项目配置是否可用"""
@@ -107,6 +108,7 @@ class MaaFWManager(TaskExecuteBase):
         await self.user_config.load(await self.script_config.UserData.toDict())
         logger.success(f"{self.script_info.script_id} 已锁定，MaaFW 配置提取完成")
 
+        self.project_update_logs = []
         await self._update_project_before_run()
 
         emulator_id = self.script_config.get("Emulator", "Id")
@@ -149,13 +151,11 @@ class MaaFWManager(TaskExecuteBase):
             self.script_config.get("Update", "MirrorChyanCDK")
             or Config.get("Update", "MirrorChyanCDK")
         )
-        source = self.script_config.get("Update", "Source") or Config.get("Update", "Source")
         channel = self.script_config.get("Update", "Channel") or Config.get("Update", "Channel")
         try:
             update_result = await update_maafw_project_if_needed(
                 project_path,
                 interface_model,
-                source=source,
                 mirror_cdk=mirror_cdk,
                 channel=channel,
                 proxy=Config.proxy,
@@ -167,18 +167,24 @@ class MaaFWManager(TaskExecuteBase):
                     force_reload=True,
                 )
                 self._send_update_log("MaaFW project updated, preparing agent Python env")
-                await asyncio.to_thread(
-                    prepare_maafw_agent_python_envs,
-                    project_path,
-                    refreshed_interface,
-                    send_log=self._send_update_log,
-                )
+                agent_prepare_logs: list[str] = []
+                try:
+                    await asyncio.to_thread(
+                        prepare_maafw_agent_python_envs,
+                        project_path,
+                        refreshed_interface,
+                        send_log=agent_prepare_logs.append,
+                    )
+                finally:
+                    for log_line in agent_prepare_logs:
+                        self._send_update_log(log_line)
         except Exception as exc:
             self._send_update_log(f"MaaFW 项目更新失败，继续使用当前目录: {exc}")
 
     def _send_update_log(self, message: str) -> None:
         logger.info(message)
-        self.script_info.log = message
+        self.project_update_logs.extend(_format_update_log_lines(message))
+        self.script_info.log = "".join(self.project_update_logs[-80:])
 
     async def main_task(self):
         self.check_result = await self.check()
@@ -203,6 +209,7 @@ class MaaFWManager(TaskExecuteBase):
                 self.script_config,
                 self.user_config,
                 self.emulator_manager,
+                self.project_update_logs,
             )
             await self.spawn(task)
 
@@ -220,6 +227,7 @@ class MaaFWManager(TaskExecuteBase):
 
         if self.user_config is not None and self.task_info.mode == "AutoProxy":
             await script_cfg.UserData.load(await self.user_config.toDict())
+            await Config.ScriptConfig.save()
 
         error_user = [u.name for u in self.script_info.user_list if u.status == "异常"]
         over_user = [u.name for u in self.script_info.user_list if u.status == "完成"]
@@ -255,3 +263,9 @@ class MaaFWManager(TaskExecuteBase):
             type="Info",
             data={"Error": f"MaaFW 任务出现异常: {e}"},
         )
+
+
+def _format_update_log_lines(message: str) -> list[str]:
+    timestamp = datetime.now().astimezone().strftime("%H:%M:%S")
+    lines = str(message).splitlines() or [""]
+    return [f"[{timestamp}] {line}\n" for line in lines]

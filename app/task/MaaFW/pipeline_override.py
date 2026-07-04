@@ -22,15 +22,26 @@ from typing import Any, cast
 
 import json5
 
-from .interface_models import (
-    MaaFWController,
-    MaaFWInterface,
-    MaaFWOption,
-    MaaFWPipelineOverride,
-    MaaFWResource,
-    MaaFWTask,
-    MaaFWTaskOptionValue,
-)
+try:
+    from .interface_models import (
+        MaaFWController,
+        MaaFWInterface,
+        MaaFWOption,
+        MaaFWPipelineOverride,
+        MaaFWResource,
+        MaaFWTask,
+        MaaFWTaskOptionValue,
+    )
+except ImportError:
+    from interface_models import (  # type: ignore[no-redef]
+        MaaFWController,
+        MaaFWInterface,
+        MaaFWOption,
+        MaaFWPipelineOverride,
+        MaaFWResource,
+        MaaFWTask,
+        MaaFWTaskOptionValue,
+    )
 
 
 def deep_merge_pipeline_override(

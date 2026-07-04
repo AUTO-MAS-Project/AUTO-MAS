@@ -8,9 +8,9 @@ export type MaaFWConfig_Update = {
      */
     IfAutoUpdate?: (boolean | null);
     /**
-     * 项目更新源，留空时使用全局更新源
+     * 项目更新源，暂仅支持 MirrorChyan
      */
-    Source?: ('' | 'MirrorChyan' | 'GitHub' | null);
+    Source?: (string | null);
     /**
      * 项目更新渠道，留空时使用全局更新渠道
      */

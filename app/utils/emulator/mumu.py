@@ -231,6 +231,18 @@ class MumuManager(DeviceBase):
         else:
             return DeviceStatus.OFFLINE
 
+    @staticmethod
+    def _resolve_adb_address(data: dict[str, object], index: str | int) -> str:
+        host = data.get("adb_host_ip")
+        port = data.get("adb_port")
+        if host and port:
+            return f"{host}:{port}"
+
+        try:
+            return f"127.0.0.1:{5555 + int(index) * 2}"
+        except (TypeError, ValueError):
+            return "Unknown"
+
     async def getInfo(self, idx: str | None) -> dict[str, DeviceInfo]:
         data = await self.get_device_info(idx or "all")
 
@@ -245,12 +257,7 @@ class MumuManager(DeviceBase):
             index = data_json["index"]
             name = data_json["name"]
             status = await self.getStatus(index, data)
-            adb_address = (
-                f"{data_json.get('adb_host_ip')}:{data_json.get('adb_port')}"
-                if data_json.get("adb_host_ip", None)
-                and data_json.get("adb_port", None)
-                else "Unknown"
-            )
+            adb_address = self._resolve_adb_address(data_json, index)
             result[index] = DeviceInfo(
                 title=name, status=status, adb_address=adb_address
             )
@@ -261,12 +268,7 @@ class MumuManager(DeviceBase):
                     index = value["index"]
                     name = value["name"]
                     status = await self.getStatus(index)
-                    adb_address = (
-                        f"{value.get('adb_host_ip')}:{value.get('adb_port')}"
-                        if value.get("adb_host_ip", None)
-                        and value.get("adb_port", None)
-                        else "Unknown"
-                    )
+                    adb_address = self._resolve_adb_address(value, index)
                     result[index] = DeviceInfo(
                         title=name, status=status, adb_address=adb_address
                     )

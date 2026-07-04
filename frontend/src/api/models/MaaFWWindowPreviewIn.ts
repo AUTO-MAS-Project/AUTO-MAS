@@ -8,7 +8,7 @@ export type MaaFWWindowPreviewIn = {
      */
     path: string;
     /**
-     * 指定 controller 名称；留空时扫描全部 Win32/Gamepad controller
+     * 指定 controller 名称；留空时扫描全部 Win32 controller
      */
     controllerName?: (string | null);
 };
