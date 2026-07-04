@@ -20,7 +20,27 @@
 
 #   Contact: DLmaster_361@163.com
 
+from importlib import import_module
+from typing import Any
 
-from .manager import GeneralManager
+__all__ = ["GeneralAdapterHooks", "AutoProxyTask", "ScriptConfigTask"]
 
-__all__ = ["GeneralManager"]
+_LAZY_EXPORTS = {
+    "GeneralAdapterHooks": ("app.task.general.adapter", "GeneralAdapterHooks"),
+    "AutoProxyTask": ("app.task.general.AutoProxy", "AutoProxyTask"),
+    "ScriptConfigTask": ("app.task.general.ScriptConfig", "ScriptConfigTask"),
+}
+
+
+def __getattr__(name: str) -> Any:
+    """按需导出通用脚本任务组件，避免初始化期加载运行时依赖。"""
+
+    target = _LAZY_EXPORTS.get(name)
+    if target is None:
+        raise AttributeError(name)
+
+    module_path, attr_name = target
+    module = import_module(module_path)
+    value = getattr(module, attr_name)
+    globals()[name] = value
+    return value

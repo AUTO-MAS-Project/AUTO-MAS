@@ -23,6 +23,7 @@
 import os
 import re
 import sys
+import copy
 import httpx
 import shutil
 import asyncio
@@ -32,32 +33,16 @@ import truststore
 from pathlib import Path
 from fastapi import WebSocket
 from collections import defaultdict
-from jinja2 import Environment, FileSystemLoader
 from datetime import datetime, timedelta, date
 from typing import Literal, Optional, Union, Dict, Any, List
 import uuid
 import json
 
+from app.models.ConfigBase import ConfigBase, JSONValidator
 from app.models.config import (
-    GeneralConfig,
-    MaaConfig,
-    SrcConfig,
-    M9AConfig,
-    MaaFWConfig,
-    MaaEndConfig,
-    OkwwConfig,
-    HSRConfig,
-    HSRUserConfig,
     MaaPlanConfig,
     QueueConfig,
     QueueItem,
-    MaaUserConfig,
-    SrcUserConfig,
-    M9AUserConfig,
-    MaaFWUserConfig,
-    MaaEndUserConfig,
-    GeneralUserConfig,
-    OkwwUserConfig,
     GlobalConfig,
     CLASS_BOOK,
     Webhook,
@@ -66,6 +51,7 @@ from app.models.config import (
     GameSignAccountGroup,
 )
 from app.models.schema import WebSocketMessage
+from app.models.script_api import ScriptRecord, ScriptTypeDescriptor, ScriptUserRecord
 from app.utils.constants import (
     UTC4,
     UTC8,
@@ -75,6 +61,16 @@ from app.utils.constants import (
     RESOURCE_STAGE_DATE_TEXT,
 )
 from app.utils import get_logger
+from .script_types import (
+    apply_script_type_registry_to_global_config,
+    build_legacy_fallback_provider_by_script_config,
+    build_legacy_fallback_provider_by_type_key,
+    build_descriptor,
+    is_script_config_compatible_with_type_key,
+    script_type_registry,
+    strip_sub_configs,
+)
+from .script_config_codec import form_to_storage, storage_to_form
 
 logger = get_logger("配置管理")
 
@@ -94,6 +90,7 @@ class AppConfig(GlobalConfig):
 
     def __init__(self) -> None:
         super().__init__()
+        apply_script_type_registry_to_global_config(self)
 
         logger.info("")
         logger.info("===================================")
@@ -122,12 +119,9 @@ class AppConfig(GlobalConfig):
             logger.warning(f"Git仓库初始化失败: {e}")
             self.repo = None
 
-        self.notify_env = Environment(
-            loader=FileSystemLoader(str(Path.cwd() / "res/html"))
-        )
-
         self.server: Optional[uvicorn.Server] = None
         self.websocket: Optional[WebSocket] = None
+        self._websocket_missing_logged = False
         self.power_sign: Literal[
             "NoAction",
             "Shutdown",
@@ -151,8 +145,10 @@ class AppConfig(GlobalConfig):
         await self.EmulatorConfig.connect(self.config_path / "EmulatorConfig.json")
         await self.PlanConfig.connect(self.config_path / "PlanConfig.json")
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
+        await self._migrate_general_scripts_to_plugin_storage()
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
         await self.ToolsConfig.connect(self.config_path / "ToolsConfig.json")
+        await self.PluginConfig.connect(self.config_path / "PluginConfig.json")
 
         # 游戏签到：连接账号组 MultipleConfig
         await self.ToolsConfig.GameSign_Accounts.connect(
@@ -284,7 +280,7 @@ class AppConfig(GlobalConfig):
 
                             uid, sc = await self.add_script("MAA")
                             script_dict[MaaConfig.name] = str(uid)
-                            await sc.load(maa_config)
+                            await self.update_script(str(uid), maa_config)
 
                             if (MaaConfig / "Default/gui.json").exists():
                                 (Path.cwd() / f"data/{uid}/Default/ConfigFile").mkdir(
@@ -310,7 +306,7 @@ class AppConfig(GlobalConfig):
                                     user_config["Info"]["Password"] = ""
 
                                     user_uid, uc = await self.add_user(str(uid))
-                                    await uc.load(user_config)
+                                    await self.update_user(str(uid), str(user_uid), user_config)
 
                                     if (user / "Routine/gui.json").exists():
                                         (
@@ -359,7 +355,7 @@ class AppConfig(GlobalConfig):
 
                             uid, sc = await self.add_script("General")
                             script_dict[GeneralConfig.name] = str(uid)
-                            await sc.load(general_config)
+                            await self.update_script(str(uid), general_config)
 
                             for user in (GeneralConfig / "SubData").iterdir():
                                 if user.is_dir() and (user / "config.json").exists():
@@ -370,7 +366,7 @@ class AppConfig(GlobalConfig):
                                     )
 
                                     user_uid, uc = await self.add_user(str(uid))
-                                    await uc.load(user_config)
+                                    await self.update_user(str(uid), str(user_uid), user_config)
 
                                     if (user / "ConfigFiles").exists():
                                         (Path.cwd() / f"data/{uid}/{user_uid}").mkdir(
@@ -488,9 +484,9 @@ class AppConfig(GlobalConfig):
     async def send_json(self, data: dict) -> None:
         """通过WebSocket发送JSON数据"""
         if Config.websocket is None:
-            logger.warning("WebSocket 未连接")
-        else:
-            await Config.websocket.send_json(data)
+            self._log_websocket_missing_once()
+            return
+        await Config.websocket.send_json(data)
 
     async def send_websocket_message(
         self,
@@ -500,11 +496,17 @@ class AppConfig(GlobalConfig):
     ) -> None:
         """通过WebSocket发送消息"""
         if Config.websocket is None:
-            logger.warning("WebSocket 未连接")
-        else:
-            await Config.websocket.send_json(
-                WebSocketMessage(id=id, type=type, data=data).model_dump()
-            )
+            self._log_websocket_missing_once()
+            return
+        await Config.websocket.send_json(
+            WebSocketMessage(id=id, type=type, data=data).model_dump()
+        )
+
+    def _log_websocket_missing_once(self) -> None:
+        if self._websocket_missing_logged:
+            return
+        self._websocket_missing_logged = True
+        logger.debug("WebSocket 未连接")
 
     async def get_git_version(self) -> tuple[bool, str, str]:
         """获取Git版本信息，如果Git不可用则返回默认值"""
@@ -543,83 +545,413 @@ class AppConfig(GlobalConfig):
         )
         return is_latest, commit_hash, commit_time
 
+    @staticmethod
+    def _is_configbase_class(config_class: type[Any]) -> bool:
+        return isinstance(config_class, type) and issubclass(config_class, ConfigBase)
+
+    async def _build_provider_default_payload(self, config_class: type[Any]) -> dict[str, Any]:
+        if self._is_configbase_class(config_class):
+            return await config_class().toDict()
+        return config_class().model_dump(mode="json")
+
+    @staticmethod
+    def _read_plugin_payload(raw: Any) -> dict[str, Any]:
+        if raw is None:
+            return {}
+        if isinstance(raw, str):
+            text = raw.strip()
+            if not text or text == "{}":
+                return {}
+            parsed = json.loads(text)
+            if not isinstance(parsed, dict):
+                raise TypeError("PluginData.Config 必须是 JSON 对象")
+            return parsed
+        if isinstance(raw, dict):
+            return copy.deepcopy(raw)
+        raise TypeError(f"PluginData.Config 必须是 dict 或 JSON 字符串: {type(raw).__name__}")
+
+    @staticmethod
+    def _merge_plugin_form_payload(
+        base: dict[str, Any],
+        override: dict[str, Any],
+    ) -> dict[str, Any]:
+        merged = copy.deepcopy(base or {})
+        for key, value in (override or {}).items():
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                merged[key] = AppConfig._merge_plugin_form_payload(merged[key], value)
+            else:
+                merged[key] = copy.deepcopy(value)
+        return merged
+
+    @staticmethod
+    def _strip_virtual_fields_from_plugin_form_payload(
+        config_class: type[Any],
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        cleaned = copy.deepcopy(payload or {})
+        field_groups = getattr(config_class, "_field_groups", ())
+        for group in field_groups:
+            group_data = cleaned.get(group.key)
+            if not isinstance(group_data, dict):
+                continue
+            for field in group.fields:
+                if field.virtual_handler is not None:
+                    group_data.pop(field.name, None)
+        return cleaned
+
+    @staticmethod
+    def _script_record_name(
+        provider: Any,
+        config_data: dict[str, Any],
+        fallback: str | None = None,
+    ) -> str:
+        script_name = config_data.get("script_name")
+        if isinstance(script_name, str) and script_name.strip():
+            return script_name.strip()
+
+        info = config_data.get("Info")
+        if isinstance(info, dict) and isinstance(info.get("Name"), str):
+            info_name = info["Name"].strip()
+            if info_name:
+                return info_name
+
+        if isinstance(fallback, str) and fallback.strip():
+            return fallback.strip()
+        return provider.display_name
+
+    @staticmethod
+    def _user_record_name(config_data: dict[str, Any], fallback: str) -> str:
+        user_name = config_data.get("user_name")
+        if isinstance(user_name, str) and user_name.strip():
+            return user_name.strip()
+
+        info = config_data.get("Info")
+        if isinstance(info, dict) and isinstance(info.get("Name"), str):
+            info_name = info["Name"].strip()
+            if info_name:
+                return info_name
+
+        return fallback
+
+    def _normalize_configbase_payload_for_form(
+        self,
+        config_class: type[Any],
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
+        normalized = copy.deepcopy(data or {})
+        if not self._is_configbase_class(config_class):
+            return normalized
+
+        config = config_class()
+        for group, items in config._config_item_index.items():
+            group_data = normalized.get(group)
+            if not isinstance(group_data, dict):
+                continue
+            for name, item in items.items():
+                if not isinstance(item.validator, JSONValidator):
+                    continue
+                raw_value = group_data.get(name)
+                if not isinstance(raw_value, str):
+                    continue
+                try:
+                    group_data[name] = json.loads(raw_value)
+                except json.JSONDecodeError:
+                    group_data[name] = {} if item.validator.type is dict else []
+
+        return normalized
+
+    def _normalize_configbase_payload_for_storage(
+        self,
+        config_class: type[Any],
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
+        normalized = copy.deepcopy(data or {})
+        normalized.pop("SubConfigsInfo", None)
+        if not self._is_configbase_class(config_class):
+            return normalized
+
+        config = config_class()
+        for group, items in config._config_item_index.items():
+            group_data = normalized.get(group)
+            if not isinstance(group_data, dict):
+                continue
+            for name, item in items.items():
+                if not isinstance(item.validator, JSONValidator) or name not in group_data:
+                    continue
+                value = group_data[name]
+                if isinstance(value, str):
+                    continue
+                if value is None:
+                    value = {} if item.validator.type is dict else []
+                group_data[name] = json.dumps(value, ensure_ascii=False)
+
+        return normalized
+
+    def _is_general_script_config(self, script_config: ConfigBase) -> bool:
+        """判断脚本是否属于通用脚本类型。"""
+
+        return is_script_config_compatible_with_type_key(script_config, "General")
+
+    async def _read_general_script_payload(
+        self,
+        script_uid: uuid.UUID,
+        *,
+        if_decrypt: bool = False,
+    ) -> dict[str, Any]:
+        """读取通用脚本的结构化配置数据。"""
+
+        from app.models.plugin_script_config import PluginScriptConfig
+
+        script_config = self.ScriptConfig[script_uid]
+        if not self._is_general_script_config(script_config):
+            raise TypeError(f"脚本 {script_uid} 不是通用脚本配置")
+
+        if isinstance(script_config, PluginScriptConfig):
+            provider = self._resolve_record_provider(script_config)
+            raw = script_config.get("PluginData", "Config")
+            return await storage_to_form(provider, raw, "script")
+
+        return strip_sub_configs(await script_config.toDict(if_decrypt=if_decrypt))
+
+    async def _write_general_script_payload(
+        self,
+        script_uid: uuid.UUID,
+        data: dict[str, Any],
+    ) -> None:
+        """写回通用脚本的结构化配置数据。"""
+
+        from app.models.plugin_script_config import PluginScriptConfig
+
+        script_config = self.ScriptConfig[script_uid]
+        if not self._is_general_script_config(script_config):
+            raise TypeError(f"脚本 {script_uid} 不是通用脚本配置")
+
+        if isinstance(script_config, PluginScriptConfig):
+            provider = self._resolve_record_provider(script_config)
+            payload = await form_to_storage(provider, data, "script")
+            await script_config.set(
+                "PluginData",
+                "Config",
+                json.dumps(payload, ensure_ascii=False),
+            )
+            form_payload = await storage_to_form(provider, payload, "script")
+            await script_config.set(
+                "Info",
+                "Name",
+                self._script_record_name(provider, form_payload, script_config.get("Info", "Name")),
+            )
+            return
+
+        await script_config.load(data)
+
+    async def _migrate_general_scripts_to_plugin_storage(self) -> None:
+        """把旧的 GeneralConfig 实例迁移到插件脚本容器。"""
+
+        from app.models.plugin_script_config import PluginScriptConfig, PluginUserConfig
+
+        migrate_list = [
+            script_uid
+            for script_uid, script_config in self.ScriptConfig.items()
+            if self._is_general_script_config(script_config)
+            and not isinstance(script_config, PluginScriptConfig)
+        ]
+        if not migrate_list:
+            return
+
+        logger.info(f"检测到 {len(migrate_list)} 个旧通用脚本，开始迁移到插件脚本容器")
+
+        for script_uid in migrate_list:
+            legacy_script = self.ScriptConfig[script_uid]
+            script_payload = strip_sub_configs(
+                await legacy_script.toDict(if_decrypt=False)
+            )
+
+            plugin_script = PluginScriptConfig()
+            await plugin_script.set("Meta", "PluginTypeKey", "General")
+            await plugin_script.set("Info", "Name", legacy_script.get("Info", "Name"))
+            await plugin_script.set(
+                "PluginData",
+                "Config",
+                json.dumps(script_payload, ensure_ascii=False),
+            )
+
+            for user_uid, legacy_user in legacy_script.UserData.items():
+                user_payload = strip_sub_configs(await legacy_user.toDict(if_decrypt=False))
+                plugin_user = PluginUserConfig()
+                await plugin_user.set("Meta", "PluginTypeKey", "General")
+                await plugin_user.set("Info", "Name", legacy_user.get("Info", "Name"))
+                await plugin_user.set(
+                    "PluginData",
+                    "Config",
+                    json.dumps(user_payload, ensure_ascii=False),
+                )
+                plugin_script.UserData.order.append(user_uid)
+                plugin_script.UserData.data[user_uid] = plugin_user
+
+            if self.ScriptConfig.file is not None:
+                await plugin_script.add_save_method(self.ScriptConfig.save)
+            for save_method in self.ScriptConfig._save_methods:
+                await plugin_script.add_save_method(save_method)
+
+            self.ScriptConfig.data[script_uid] = plugin_script
+
+        await self.ScriptConfig.save()
+        logger.success("旧通用脚本已迁移到插件脚本容器")
+
     async def add_script(
         self,
-        script: Literal["MAA", "SRC", "General", "MaaEnd", "M9A", "MaaFW", "Okww", "HSR"],
+        script: str,
         script_id: str | None = None,
-    ) -> tuple[
-        uuid.UUID,
-        MaaConfig | SrcConfig | GeneralConfig | MaaEndConfig | M9AConfig | MaaFWConfig | OkwwConfig | HSRConfig,
-    ]:
-        """添加脚本配置"""
+    ) -> tuple[uuid.UUID, ConfigBase]:
+        """添加脚本配置。"""
 
         logger.info(f"添加脚本配置: {script}, 从 {script_id} 复制")
 
-        if script_id is None:
-            uid, config = await self.ScriptConfig.add(CLASS_BOOK[script])
-            if isinstance(config, MaaFWConfig):
-                await config.set(
-                    "Update",
-                    "MirrorChyanCDK",
-                    self.get("Update", "MirrorChyanCDK"),
-                )
-            return uid, config
-        else:
-            script_uid = uuid.UUID(script_id)
+        provider = script_type_registry.get(script)
 
-            if not isinstance(self.ScriptConfig[script_uid], CLASS_BOOK[script]):
-                raise TypeError(f"脚本配置类型不匹配: {script_id} {script}")
+        if not provider.is_builtin:
+            from app.models.plugin_script_config import PluginScriptConfig
 
-            new_uid, new_config = await self.ScriptConfig.add(CLASS_BOOK[script])
+            new_uid, new_config = await self.ScriptConfig.add(PluginScriptConfig)
+            await new_config.set("Meta", "PluginTypeKey", provider.type_key)
 
-            await new_config.load(
-                await self.ScriptConfig[script_uid].toDict(regenerate_uuids=True)
+            defaults = await form_to_storage(provider, {}, "script")
+            default_form = await storage_to_form(provider, defaults, "script")
+            script_name = self._script_record_name(provider, default_form)
+            await new_config.set("Info", "Name", script_name)
+            await new_config.set(
+                "PluginData", "Config",
+                json.dumps(defaults, ensure_ascii=False),
             )
 
-            # 复制用户数据
-            if (Path.cwd() / f"data/{script_id}").exists():
-                shutil.copytree(
-                    Path.cwd() / f"data/{script_id}",
-                    Path.cwd() / f"data/{new_uid}",
-                    dirs_exist_ok=True,
+            if script_id is not None:
+                source_uid = uuid.UUID(script_id)
+                source_config = self.ScriptConfig[source_uid]
+                source_provider = self._resolve_record_provider(source_config)
+                if source_provider.type_key != provider.type_key:
+                    raise TypeError(f"脚本配置类型不匹配: {script_id} {script}")
+                if isinstance(source_config, PluginScriptConfig):
+                    source_payload = self._read_plugin_payload(
+                        source_config.get("PluginData", "Config")
+                    )
+                else:
+                    source_payload = await source_config.toDict(
+                        if_decrypt=False,
+                        regenerate_uuids=True,
+                    )
+                storage_payload = await form_to_storage(provider, source_payload, "script")
+                await new_config.set(
+                    "PluginData", "Config",
+                    json.dumps(storage_payload, ensure_ascii=False),
                 )
-                for old_user, new_user in zip(
-                    self.ScriptConfig[script_uid].UserData.keys(),
-                    new_config.UserData.keys(),
-                ):
-                    if (Path.cwd() / f"data/{new_uid}/{old_user}").exists():
-                        (Path.cwd() / f"data/{new_uid}/{old_user}").rename(
-                            Path.cwd() / f"data/{new_uid}/{new_user}"
-                        )
+                await new_config.set("Info", "Name", source_config.get("Info", "Name"))
 
             return new_uid, new_config
 
+        if script_id is None:
+            return await self.ScriptConfig.add(provider.script_config_class)
+
+        script_uid = uuid.UUID(script_id)
+        source_provider = script_type_registry.get_by_script_config(
+            self.ScriptConfig[script_uid]
+        )
+        if source_provider.type_key != provider.type_key:
+            raise TypeError(f"脚本配置类型不匹配: {script_id} {script}")
+
+        new_uid, new_config = await self.ScriptConfig.add(provider.script_config_class)
+        await new_config.load(
+            await self.ScriptConfig[script_uid].toDict(regenerate_uuids=True)
+        )
+
+        if (Path.cwd() / f"data/{script_id}").exists():
+            shutil.copytree(
+                Path.cwd() / f"data/{script_id}",
+                Path.cwd() / f"data/{new_uid}",
+                dirs_exist_ok=True,
+            )
+            for old_user, new_user in zip(
+                self.ScriptConfig[script_uid].UserData.keys(),
+                new_config.UserData.keys(),
+            ):
+                if (Path.cwd() / f"data/{new_uid}/{old_user}").exists():
+                    (Path.cwd() / f"data/{new_uid}/{old_user}").rename(
+                        Path.cwd() / f"data/{new_uid}/{new_user}"
+                    )
+
+        return new_uid, new_config
+
     async def get_script(self, script_id: str | None) -> tuple[list, dict]:
-        """获取脚本配置"""
+        """获取脚本配置。"""
 
         logger.info(f"获取脚本配置: {script_id}")
 
         if script_id is None:
-            # 获取所有脚本配置
             data = await self.ScriptConfig.toDict()
         else:
-            # 获取指定脚本配置
             data = await self.ScriptConfig.get(uuid.UUID(script_id))
 
         index = data.pop("instances", [])
         return list(index), data
 
     async def update_script(
-        self, script_id: str, data: Dict[str, Dict[str, Any]]
+        self, script_id: str, data: Dict[str, Any]
     ) -> None:
         """更新脚本配置"""
 
         logger.info(f"更新脚本配置: {script_id}")
 
         uid = uuid.UUID(script_id)
+        config = self.ScriptConfig[uid]
 
-        if self.ScriptConfig[uid].is_locked:
+        if config.is_locked:
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
+
+        from app.models.plugin_script_config import PluginScriptConfig
+
+        if isinstance(config, PluginScriptConfig):
+            provider = self._resolve_record_provider(config)
+            self._require_provider_available(provider, "更新脚本配置")
+            update_data = copy.deepcopy(data or {})
+            plugin_data = update_data.pop("PluginData", None)
+            payload_data: dict[str, Any] | None = None
+            if isinstance(plugin_data, dict) and "Config" in plugin_data:
+                raw = plugin_data["Config"]
+                payload_data = self._read_plugin_payload(raw)
+            elif update_data:
+                payload_data = update_data
+
+            if payload_data is not None:
+                current_form_payload = await storage_to_form(
+                    provider,
+                    config.get("PluginData", "Config"),
+                    "script",
+                )
+                current_form_payload = self._strip_virtual_fields_from_plugin_form_payload(
+                    provider.script_config_class,
+                    current_form_payload,
+                )
+                payload_data = self._merge_plugin_form_payload(
+                    current_form_payload,
+                    payload_data,
+                )
+                payload_data = self._strip_virtual_fields_from_plugin_form_payload(
+                    provider.script_config_class,
+                    payload_data,
+                )
+                payload_data = await form_to_storage(provider, payload_data, "script")
+                await config.set(
+                    "PluginData", "Config",
+                    json.dumps(payload_data, ensure_ascii=False),
+                )
+
+            raw_config = config.get("PluginData", "Config")
+            form_payload = await storage_to_form(provider, raw_config, "script")
+            await config.set(
+                "Info",
+                "Name",
+                self._script_record_name(provider, form_payload, config.get("Info", "Name")),
+            )
+            return
 
         for group, items in data.items():
             for name, value in items.items():
@@ -662,7 +994,7 @@ class AppConfig(GlobalConfig):
         if uid not in self.ScriptConfig:
             logger.error(f"{script_id} 不存在")
             raise KeyError(f"脚本 {script_id} 不存在")
-        if not isinstance(self.ScriptConfig[uid], GeneralConfig):
+        if not self._is_general_script_config(self.ScriptConfig[uid]):
             logger.error(f"{script_id} 不是通用脚本配置")
             raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
         if not Path(file_path).exists():
@@ -670,7 +1002,7 @@ class AppConfig(GlobalConfig):
             raise FileNotFoundError(f"文件不存在: {file_path}")
 
         data = json.loads(file_path.read_text(encoding="utf-8"))
-        await self.ScriptConfig[uid].load(data)
+        await self._write_general_script_payload(uid, data)
 
         logger.success(f"{script_id} 配置加载成功")
 
@@ -685,12 +1017,11 @@ class AppConfig(GlobalConfig):
         if uid not in self.ScriptConfig:
             logger.error(f"{script_id} 不存在")
             raise KeyError(f"脚本 {script_id} 不存在")
-        if not isinstance(self.ScriptConfig[uid], GeneralConfig):
+        if not self._is_general_script_config(self.ScriptConfig[uid]):
             logger.error(f"{script_id} 不是通用脚本配置")
             raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
 
-        temp = await self.ScriptConfig[uid].toDict(if_decrypt=False)
-        temp.pop("SubConfigsInfo", None)
+        temp = await self._read_general_script_payload(uid, if_decrypt=False)
         temp = await self.remove_privacy_info(temp, Path(file_path).stem)
 
         file_path.write_text(
@@ -708,7 +1039,7 @@ class AppConfig(GlobalConfig):
         if uid not in self.ScriptConfig:
             logger.error(f"{script_id} 不存在")
             raise KeyError(f"脚本 {script_id} 不存在")
-        if not isinstance(self.ScriptConfig[uid], GeneralConfig):
+        if not self._is_general_script_config(self.ScriptConfig[uid]):
             logger.error(f"{script_id} 不是通用脚本配置")
             raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
 
@@ -737,7 +1068,7 @@ class AppConfig(GlobalConfig):
                 f"从 AUTO-MAS 服务器获取配置内容失败: {data.get('message')}"
             )
 
-        await self.ScriptConfig[uid].load(data)
+        await self._write_general_script_payload(uid, data)
 
         logger.success(f"{script_id} 配置加载成功")
 
@@ -753,12 +1084,11 @@ class AppConfig(GlobalConfig):
         if uid not in self.ScriptConfig:
             logger.error(f"{script_id} 不存在")
             raise KeyError(f"脚本 {script_id} 不存在")
-        if not isinstance(self.ScriptConfig[uid], GeneralConfig):
+        if not self._is_general_script_config(self.ScriptConfig[uid]):
             logger.error(f"{script_id} 不是通用脚本配置")
             raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
 
-        temp = await self.ScriptConfig[uid].toDict(if_decrypt=False)
-        temp.pop("SubConfigsInfo", None)
+        temp = await self._read_general_script_payload(uid, if_decrypt=False)
         temp = await self.remove_privacy_info(temp, config_name)
 
         files = {
@@ -834,47 +1164,37 @@ class AppConfig(GlobalConfig):
         index = data.pop("instances", [])
         return list(index), data
 
-    async def add_user(self, script_id: str) -> tuple[
-        uuid.UUID,
-        MaaUserConfig
-        | SrcUserConfig
-        | GeneralUserConfig
-        | MaaEndUserConfig
-        | M9AUserConfig
-        | MaaFWUserConfig
-        | OkwwUserConfig
-        | HSRUserConfig,
-    ]:
-        """添加用户配置"""
+    async def add_user(self, script_id: str) -> tuple[uuid.UUID, ConfigBase]:
+        """添加用户配置。"""
 
         logger.info(f"{script_id} 添加用户配置")
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        provider = self._resolve_record_provider(script_config)
 
-        # 根据脚本类型选择添加对应用户配置
-        if isinstance(script_config, MaaConfig):
-            uid, config = await script_config.UserData.add(MaaUserConfig)
-        elif isinstance(script_config, SrcConfig):
-            uid, config = await script_config.UserData.add(SrcUserConfig)
-        elif isinstance(script_config, GeneralConfig):
-            uid, config = await script_config.UserData.add(GeneralUserConfig)
-        elif isinstance(script_config, OkwwConfig):
-            uid, config = await script_config.UserData.add(OkwwUserConfig)
-        elif isinstance(script_config, MaaEndConfig):
-            uid, config = await script_config.UserData.add(MaaEndUserConfig)
-        elif isinstance(script_config, M9AConfig):
-            uid, config = await script_config.UserData.add(M9AUserConfig)
-        elif isinstance(script_config, MaaFWConfig):
-            uid, config = await script_config.UserData.add(MaaFWUserConfig)
-        elif isinstance(script_config, HSRConfig):
-            uid, config = await script_config.UserData.add(HSRUserConfig)
-        else:
-            raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
+        from app.models.plugin_script_config import PluginScriptConfig, PluginUserConfig
 
-        return uid, config
+        if isinstance(script_config, PluginScriptConfig):
+            self._require_provider_available(provider, "新增用户配置")
+            new_uid, new_user = await script_config.UserData.add(PluginUserConfig)
+            await new_user.set("Meta", "PluginTypeKey", provider.type_key)
+            defaults = await form_to_storage(provider, {}, "user")
+            default_form = await storage_to_form(provider, defaults, "user")
+            await new_user.set(
+                "Info",
+                "Name",
+                self._user_record_name(default_form, "新用户"),
+            )
+            await new_user.set(
+                "PluginData", "Config",
+                json.dumps(defaults, ensure_ascii=False),
+            )
+            return new_uid, new_user
+
+        return await script_config.UserData.add(provider.user_config_class)
 
     async def update_user(
-        self, script_id: str, user_id: str, data: Dict[str, Dict[str, Any]]
+        self, script_id: str, user_id: str, data: Dict[str, Any]
     ) -> None:
         """更新用户配置"""
 
@@ -882,6 +1202,52 @@ class AppConfig(GlobalConfig):
 
         script_uid = uuid.UUID(script_id)
         user_uid = uuid.UUID(user_id)
+
+        from app.models.plugin_script_config import PluginUserConfig
+
+        user_config = self.ScriptConfig[script_uid].UserData[user_uid]
+        if isinstance(user_config, PluginUserConfig):
+            provider = self._resolve_record_provider(self.ScriptConfig[script_uid])
+            self._require_provider_available(provider, "更新用户配置")
+            update_data = copy.deepcopy(data or {})
+            plugin_data = update_data.pop("PluginData", None)
+            payload_data: dict[str, Any] | None = None
+            if isinstance(plugin_data, dict) and "Config" in plugin_data:
+                raw = plugin_data["Config"]
+                payload_data = self._read_plugin_payload(raw)
+            elif update_data:
+                payload_data = update_data
+            if payload_data is not None:
+                current_form_payload = await storage_to_form(
+                    provider,
+                    user_config.get("PluginData", "Config"),
+                    "user",
+                )
+                current_form_payload = self._strip_virtual_fields_from_plugin_form_payload(
+                    provider.user_config_class,
+                    current_form_payload,
+                )
+                payload_data = self._merge_plugin_form_payload(
+                    current_form_payload,
+                    payload_data,
+                )
+                payload_data = self._strip_virtual_fields_from_plugin_form_payload(
+                    provider.user_config_class,
+                    payload_data,
+                )
+                payload_data = await form_to_storage(provider, payload_data, "user")
+                await user_config.set(
+                    "PluginData", "Config",
+                    json.dumps(payload_data, ensure_ascii=False),
+                )
+            raw_config = user_config.get("PluginData", "Config")
+            form_payload = await storage_to_form(provider, raw_config, "user")
+            await user_config.set(
+                "Info",
+                "Name",
+                self._user_record_name(form_payload, user_config.get("Info", "Name")),
+            )
+            return
 
         for group, items in data.items():
             for name, value in items.items():
@@ -937,6 +1303,423 @@ class AppConfig(GlobalConfig):
             list(map(uuid.UUID, index_list))
         )
 
+    async def get_script_type_descriptors(self) -> list[ScriptTypeDescriptor]:
+        """获取脚本类型描述列表。"""
+
+        return [
+            ScriptTypeDescriptor(**build_descriptor(provider))
+            for provider in script_type_registry.list()
+        ]
+
+    @staticmethod
+    def _provider_is_available(provider: Any) -> bool:
+        """判断脚本类型 provider 当前是否可操作。"""
+
+        return provider.metadata.get("available", True) is not False
+
+    @classmethod
+    def _require_provider_available(cls, provider: Any, action: str) -> None:
+        """阻止对未启用脚本类型执行写操作。"""
+
+        if cls._provider_is_available(provider):
+            return
+        raise RuntimeError(f"脚本类型 {provider.type_key} 当前未启用，无法{action}")
+
+    def _resolve_plugin_record_provider(self, script_config: Any):
+        """解析插件脚本容器对应的 provider，缺失时回退到离线描述。"""
+
+        type_key = str(script_config.get("Meta", "PluginTypeKey") or "").strip()
+        if not type_key:
+            raise KeyError("插件脚本记录缺少 Meta.PluginTypeKey")
+        try:
+            return script_type_registry.get(type_key)
+        except KeyError as exc:
+            provider = build_legacy_fallback_provider_by_type_key(type_key)
+            if provider is None:
+                raise exc
+            script_name = str(script_config.get("Info", "Name") or "").strip()
+            label = script_name or type_key
+            logger.warning(
+                "插件脚本类型 provider 未启用，使用离线回退描述: "
+                f"script_name={label}, type_key={type_key}"
+            )
+            return provider
+
+    def _resolve_record_provider(self, script_config: ConfigBase):
+        """解析脚本记录展示所需的 provider，缺失时回退到离线描述。"""
+
+        from app.models.plugin_script_config import PluginScriptConfig
+
+        if isinstance(script_config, PluginScriptConfig):
+            return self._resolve_plugin_record_provider(script_config)
+
+        try:
+            return script_type_registry.get_by_script_config(script_config)
+        except KeyError as exc:
+            provider = build_legacy_fallback_provider_by_script_config(script_config)
+            if provider is None:
+                raise exc
+            logger.warning(
+                f"脚本类型 provider 未启用，使用离线回退描述: {type(script_config).__name__}"
+            )
+            return provider
+
+    @staticmethod
+    def _find_schema_group(schema: dict[str, Any], group_key: str) -> dict[str, Any] | None:
+        from app.plugins.schema_utils import find_schema_group
+        return find_schema_group(schema, group_key)
+
+    @classmethod
+    def _find_schema_field(cls, schema: dict[str, Any], field_key: str) -> dict[str, Any] | None:
+        from app.plugins.schema_utils import find_schema_field
+        return find_schema_field(schema, field_key)
+
+    @classmethod
+    def _set_schema_group_label(
+        cls,
+        schema: dict[str, Any],
+        group_key: str,
+        label: str,
+    ) -> None:
+        from app.plugins.schema_utils import set_schema_group_label
+        set_schema_group_label(schema, group_key, label)
+
+    @classmethod
+    def _set_schema_field_label(
+        cls,
+        schema: dict[str, Any],
+        field_key: str,
+        label: str,
+    ) -> None:
+        from app.plugins.schema_utils import set_schema_field_label
+        set_schema_field_label(schema, field_key, label)
+
+    @classmethod
+    def _set_schema_field_options(
+        cls,
+        schema: dict[str, Any],
+        field_key: str,
+        options: list[dict[str, Any]],
+        *,
+        allow_custom: bool | None = None,
+    ) -> None:
+        from app.plugins.schema_utils import set_schema_field_options
+        set_schema_field_options(schema, field_key, options, allow_custom=allow_custom)
+
+    @classmethod
+    def _set_schema_field_state(
+        cls,
+        schema: dict[str, Any],
+        field_key: str,
+        *,
+        readonly: bool | None = None,
+        help_text: str | None = None,
+        placeholder: str | None = None,
+        rows: int | None = None,
+        size: str | None = None,
+    ) -> None:
+        from app.plugins.schema_utils import set_schema_field_state
+        set_schema_field_state(
+            schema, field_key,
+            readonly=readonly, help_text=help_text,
+            placeholder=placeholder, rows=rows, size=size,
+        )
+
+    @classmethod
+    def _append_schema_field(
+        cls,
+        schema: dict[str, Any],
+        group_key: str,
+        field_schema: dict[str, Any],
+    ) -> None:
+        from app.plugins.schema_utils import append_schema_field
+        append_schema_field(schema, group_key, field_schema)
+
+    async def _apply_schema_decoration(
+        self,
+        provider: Any,
+        schema: dict[str, Any],
+        config_data: dict[str, Any],
+        kind: str,
+    ) -> dict[str, Any]:
+        schema = await self._apply_schema_options_providers(
+            provider,
+            schema,
+            config_data,
+            kind,
+        )
+        hooks_factory = provider.metadata.get("hooks_factory")
+        if hooks_factory is None:
+            return schema
+        from app.plugins.schema_utils import SchemaDecorationContext
+
+        hooks = hooks_factory()
+        ctx = SchemaDecorationContext(
+            get_emulator_combox=self.get_emulator_combox,
+            get_emulator_devices_combox=self.get_emulator_devices_combox,
+            get_plan_combox=self.get_plan_combox,
+            get_stage_info=self.get_stage_info,
+        )
+        if kind == "script":
+            return await hooks.decorate_script_schema(schema, config_data, ctx)
+        return await hooks.decorate_user_schema(schema, config_data, ctx)
+
+    async def _apply_schema_options_providers(
+        self,
+        provider: Any,
+        schema: dict[str, Any],
+        config_data: dict[str, Any],
+        kind: str,
+    ) -> dict[str, Any]:
+        from app.plugins.schema_utils import SchemaOptionsProviderContext
+
+        options_providers = provider.metadata.get("options_providers")
+        if not isinstance(options_providers, dict):
+            options_providers = {}
+
+        config_class = (
+            provider.script_config_class if kind == "script" else provider.user_config_class
+        )
+        ctx = SchemaOptionsProviderContext(
+            kind=kind,
+            provider=provider,
+            global_config=self,
+            related_config=getattr(config_class, "related_config", {}),
+        )
+        options_providers = dict(options_providers)
+
+        async def _external_options_resolver(
+            *,
+            options_provider: dict[str, Any],
+            field_schema: dict[str, Any],
+            config_data: dict[str, Any],
+            ctx: SchemaOptionsProviderContext,
+        ) -> list[dict[str, Any]] | None:
+            return await self._resolve_external_schema_options(
+                source=str(options_provider.get("source") or "").strip(),
+                options_provider=options_provider,
+                field_schema=field_schema,
+                config_data=config_data,
+                ctx=ctx,
+            )
+
+        for external_source in ("emulator_options", "emulator_device_options"):
+            options_providers.setdefault(external_source, _external_options_resolver)
+
+        groups = schema.get("groups")
+        if not isinstance(groups, list):
+            return schema
+
+        for group in groups:
+            if not isinstance(group, dict):
+                continue
+            fields = group.get("fields")
+            if not isinstance(fields, list):
+                continue
+            for field in fields:
+                if not isinstance(field, dict):
+                    continue
+                options_provider = field.get("options_provider")
+                if not isinstance(options_provider, dict):
+                    continue
+                source = str(options_provider.get("source") or "").strip()
+                if not source:
+                    continue
+                resolver = options_providers.get(source)
+                if not callable(resolver):
+                    logger.warning(
+                        f"动态 options provider 未注册: type={provider.type_key}, source={source}"
+                    )
+                    continue
+                options = await resolver(
+                    options_provider=copy.deepcopy(options_provider),
+                    field_schema=copy.deepcopy(field),
+                    config_data=copy.deepcopy(config_data),
+                    ctx=ctx,
+                )
+                if not isinstance(options, list):
+                    continue
+                self._set_schema_field_options(
+                    schema,
+                    str(field.get("key") or ""),
+                    options,
+                    allow_custom=(
+                        bool(options_provider.get("allow_custom"))
+                        if "allow_custom" in options_provider
+                        else None
+                    ),
+                )
+
+        return schema
+
+    async def _resolve_external_schema_options(
+        self,
+        *,
+        source: str,
+        options_provider: dict[str, Any],
+        field_schema: dict[str, Any],
+        config_data: dict[str, Any],
+        ctx: Any,
+    ) -> list[dict[str, Any]] | None:
+        _ = field_schema, ctx
+        if source not in {"emulator_options", "emulator_device_options"}:
+            return None
+
+        try:
+            from app.plugins import PluginManager
+
+            emulator_service = PluginManager.service.get("emulator")
+        except Exception:
+            emulator_service = None
+
+        resolver = getattr(emulator_service, "resolve_options_provider", None)
+        if not callable(resolver):
+            return None
+
+        result = resolver(
+            options_provider=options_provider,
+            config_data=config_data,
+        )
+        import inspect
+
+        if inspect.isawaitable(result):
+            result = await result
+        return result if isinstance(result, list) else None
+
+    def _resolve_script_type_label(self, script_config: ConfigBase) -> str:
+        """获取脚本类型的显示标签，兼容插件脚本。"""
+        class_name = type(script_config).__name__
+        if class_name in TYPE_BOOK:
+            return TYPE_BOOK[class_name]
+        try:
+            provider = self._resolve_record_provider(script_config)
+            return provider.display_name
+        except (KeyError, Exception):
+            return class_name
+
+    async def get_script_records(self, script_id: str | None = None) -> list[ScriptRecord]:
+        """获取通用脚本记录。"""
+
+        from app.models.plugin_script_config import PluginScriptConfig
+
+        if script_id is None:
+            script_pairs = [(uid, config) for uid, config in self.ScriptConfig.items()]
+        else:
+            uid = uuid.UUID(script_id)
+            script_pairs = [(uid, self.ScriptConfig[uid])]
+
+        records: list[ScriptRecord] = []
+        for uid, config in script_pairs:
+            provider = self._resolve_record_provider(config)
+
+            if isinstance(config, PluginScriptConfig):
+                raw = config.get("PluginData", "Config")
+                config_data = await storage_to_form(provider, raw, "script")
+                name = self._script_record_name(
+                    provider,
+                    config_data,
+                    config.get("Info", "Name") or provider.display_name,
+                )
+                if not isinstance(config_data.get("script_name"), str) or not str(
+                    config_data.get("script_name") or ""
+                ).strip():
+                    config_data["script_name"] = name
+                config_data.setdefault("Info", {})["Name"] = name
+            else:
+                config_data = await storage_to_form(
+                    provider,
+                    await config.toDict(),
+                    "script",
+                )
+                name = provider.display_name
+                if (
+                    "Info" in config._config_item_index
+                    and "Name" in config._config_item_index["Info"]
+                ):
+                    name = config.get("Info", "Name")
+
+            schema = copy.deepcopy(provider.build_script_schema())
+            schema = await self._apply_schema_decoration(
+                provider, schema, config_data, "script"
+            )
+
+            records.append(
+                ScriptRecord(
+                    id=str(uid),
+                    type=provider.type_key,
+                    name=name,
+                    config=config_data,
+                    schema=schema,
+                    editor_kind=provider.editor_kind,
+                    supported_modes=list(provider.supported_modes),
+                    icon=provider.icon,
+                    docs_url=provider.docs_url,
+                    user_count=len(config.UserData) if hasattr(config, "UserData") else 0,
+                )
+            )
+
+        return records
+
+    async def get_user_records(
+        self, script_id: str, user_id: str | None = None
+    ) -> list[ScriptUserRecord]:
+        """获取通用用户记录。"""
+
+        from app.models.plugin_script_config import PluginUserConfig
+
+        script_uid = uuid.UUID(script_id)
+        script_config = self.ScriptConfig[script_uid]
+        provider = self._resolve_record_provider(script_config)
+
+        if user_id is None:
+            user_pairs = [(uid, config) for uid, config in script_config.UserData.items()]
+        else:
+            uid = uuid.UUID(user_id)
+            user_pairs = [(uid, script_config.UserData[uid])]
+
+        records: list[ScriptUserRecord] = []
+        for uid, config in user_pairs:
+            if isinstance(config, PluginUserConfig):
+                raw = config.get("PluginData", "Config")
+                config_data = await storage_to_form(provider, raw, "user")
+                name = config.get("Info", "Name") or str(uid)
+                name = self._user_record_name(config_data, name)
+                if not isinstance(config_data.get("user_name"), str) or not str(
+                    config_data.get("user_name") or ""
+                ).strip():
+                    config_data["user_name"] = name
+                config_data.setdefault("Info", {})["Name"] = name
+            else:
+                config_data = await storage_to_form(
+                    provider,
+                    await config.toDict(),
+                    "user",
+                )
+                name = str(uid)
+                if (
+                    "Info" in config._config_item_index
+                    and "Name" in config._config_item_index["Info"]
+                ):
+                    name = config.get("Info", "Name")
+
+            schema = copy.deepcopy(provider.build_user_schema())
+            schema = await self._apply_schema_decoration(
+                provider, schema, config_data, "user"
+            )
+
+            records.append(
+                ScriptUserRecord(
+                    id=str(uid),
+                    script_id=str(script_uid),
+                    type=provider.type_key,
+                    name=name,
+                    config=config_data,
+                    schema=schema,
+                )
+            )
+
+        return records
+
     async def set_infrastructure(
         self, script_id: str, user_id: str, jsonFile: str
     ) -> None:
@@ -949,7 +1732,9 @@ class AppConfig(GlobalConfig):
         if not json_path.exists():
             raise FileNotFoundError(f"文件未找到: {json_path}")
 
-        if not isinstance(self.ScriptConfig[script_uid], MaaConfig):
+        if not is_script_config_compatible_with_type_key(
+            self.ScriptConfig[script_uid], "MAA"
+        ):
             raise TypeError(f"脚本 {script_id} 不是 MAA 脚本, 无法设置基建配置")
 
         infrast_data = json.loads(json_path.read_text(encoding="utf-8"))
@@ -961,7 +1746,26 @@ class AppConfig(GlobalConfig):
         if infrast_data.get("title", "文件标题") == "文件标题":
             infrast_data["title"] = json_path.stem
 
-        await self.ScriptConfig[script_uid].UserData[user_uid].set(
+        from app.models.plugin_script_config import PluginUserConfig
+
+        user_config = self.ScriptConfig[script_uid].UserData[user_uid]
+        if isinstance(user_config, PluginUserConfig):
+            provider = self._resolve_record_provider(self.ScriptConfig[script_uid])
+            self._require_provider_available(provider, "设置基建配置")
+            form_payload = await storage_to_form(
+                provider,
+                user_config.get("PluginData", "Config"),
+                "user",
+            )
+            form_payload.setdefault("Data", {})["CustomInfrast"] = infrast_data
+            storage_payload = await form_to_storage(provider, form_payload, "user")
+            await user_config.set(
+                "PluginData", "Config",
+                json.dumps(storage_payload, ensure_ascii=False),
+            )
+            return
+
+        await user_config.set(
             "Data", "CustomInfrast", json.dumps(infrast_data, ensure_ascii=False)
         )
 
@@ -976,17 +1780,27 @@ class AppConfig(GlobalConfig):
         script_config = self.ScriptConfig[script_uid]
 
         # 根据脚本类型选择添加对应用户配置
-        if not isinstance(script_config, MaaConfig):
+        if not is_script_config_compatible_with_type_key(script_config, "MAA"):
             raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 
         logger.info("开始获取用户自定义基建排班下拉框信息")
 
+        from app.models.plugin_script_config import PluginUserConfig
+
+        user_config = script_config.UserData[user_uid]
+        if isinstance(user_config, PluginUserConfig):
+            provider = self._resolve_record_provider(script_config)
+            form_payload = await storage_to_form(
+                provider,
+                user_config.get("PluginData", "Config"),
+                "user",
+            )
+            custom_infrast = form_payload.get("Data", {}).get("CustomInfrast", {})
+        else:
+            custom_infrast = json.loads(user_config.get("Data", "CustomInfrast"))
+
         data = []
-        for i, plan in enumerate(
-            json.loads(
-                script_config.UserData[user_uid].get("Data", "CustomInfrast")
-            ).get("plans", [])
-        ):
+        for i, plan in enumerate(custom_infrast.get("plans", [])):
             data.append({"label": plan.get("name", f"排班 {i+1}"), "value": str(i)})
 
         logger.success("用户自定义基建排班下拉框信息获取成功")
@@ -1036,7 +1850,7 @@ class AppConfig(GlobalConfig):
         user_list = []
 
         for script in self.ScriptConfig.values():
-            if isinstance(script, MaaConfig):
+            if is_script_config_compatible_with_type_key(script, "MAA"):
                 for user in script.UserData.values():
                     if user.get("Info", "StageMode") == str(plan_uid):
                         if user.is_locked:
@@ -1096,31 +1910,106 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"删除全局模拟器配置: {emulator_id}")
 
-        script_list = []
+        from app.models.plugin_script_config import PluginScriptConfig
 
-        for script in self.ScriptConfig.values():
-            if isinstance(script, MaaConfig):
-                if script.get("Emulator", "Id") == str(emulator_id):
+        script_list: list[tuple[uuid.UUID, ConfigBase, str]] = []
+
+        async def get_plugin_script_payload(script: PluginScriptConfig) -> dict[str, Any]:
+            provider = self._resolve_record_provider(script)
+            raw = script.get("PluginData", "Config")
+            return await storage_to_form(provider, raw, "script")
+
+        async def set_plugin_script_payload(
+            script: PluginScriptConfig,
+            payload: dict[str, Any],
+        ) -> None:
+            provider = self._resolve_record_provider(script)
+            storage_payload = await form_to_storage(provider, payload, "script")
+            await script.set(
+                "PluginData",
+                "Config",
+                json.dumps(storage_payload, ensure_ascii=False),
+            )
+
+        for script_uid, script in self.ScriptConfig.items():
+            if (
+                is_script_config_compatible_with_type_key(script, "MAA")
+                or is_script_config_compatible_with_type_key(script, "SRC")
+            ):
+                if isinstance(script, PluginScriptConfig):
+                    script_payload = await get_plugin_script_payload(script)
+                    emulator_group = script_payload.get("Emulator")
+                    script_emulator_id = (
+                        emulator_group.get("Id")
+                        if isinstance(emulator_group, dict)
+                        else None
+                    )
+                else:
+                    script_emulator_id = script.get("Emulator", "Id")
+
+                if script_emulator_id == str(emulator_id):
                     if script.is_locked:
                         raise RuntimeError(
                             f"脚本 {script.get('Info','Name')} 正在使用此模拟器且被锁定, 无法完成删除"
                         )
-                    script_list.append(script)
-            elif isinstance(script, GeneralConfig):
-                if script.get("Game", "Type") == "Emulator" and script.get(
-                    "Game", "EmulatorId"
-                ) == str(emulator_id):
+                    script_list.append((script_uid, script, "emulator_group"))
+            elif is_script_config_compatible_with_type_key(script, "MaaEnd"):
+                if isinstance(script, PluginScriptConfig):
+                    script_payload = await get_plugin_script_payload(script)
+                    game_group = script_payload.get("Game")
+                    script_emulator_id = (
+                        game_group.get("EmulatorId")
+                        if isinstance(game_group, dict)
+                        else None
+                    )
+                else:
+                    script_emulator_id = script.get("Game", "EmulatorId")
+
+                if script_emulator_id == str(emulator_id):
                     if script.is_locked:
                         raise RuntimeError(
                             f"脚本 {script.get('Info','Name')} 正在使用此模拟器且被锁定, 无法完成删除"
                         )
-                    script_list.append(script)
+                    script_list.append((script_uid, script, "game_group"))
+            elif self._is_general_script_config(script):
+                general_payload = await self._read_general_script_payload(script_uid)
+                game_group = general_payload.get("Game")
+                if (
+                    isinstance(game_group, dict)
+                    and game_group.get("Type") == "Emulator"
+                    and game_group.get("EmulatorId") == str(emulator_id)
+                ):
+                    if script.is_locked:
+                        raise RuntimeError(
+                            f"脚本 {script.get('Info','Name')} 正在使用此模拟器且被锁定, 无法完成删除"
+                        )
+                    script_list.append((script_uid, script, "general_game_group"))
 
-        for script in script_list:
-            if isinstance(script, MaaConfig):
-                await script.set("Emulator", "Id", "-")
-            elif isinstance(script, GeneralConfig):
-                await script.set("Game", "EmulatorId", "-")
+        for script_uid, script, emulator_field_kind in script_list:
+            if emulator_field_kind == "emulator_group":
+                if isinstance(script, PluginScriptConfig):
+                    script_payload = await get_plugin_script_payload(script)
+                    emulator_group = script_payload.setdefault("Emulator", {})
+                    if isinstance(emulator_group, dict):
+                        emulator_group["Id"] = "-"
+                    await set_plugin_script_payload(script, script_payload)
+                else:
+                    await script.set("Emulator", "Id", "-")
+            elif emulator_field_kind == "game_group":
+                if isinstance(script, PluginScriptConfig):
+                    script_payload = await get_plugin_script_payload(script)
+                    game_group = script_payload.setdefault("Game", {})
+                    if isinstance(game_group, dict):
+                        game_group["EmulatorId"] = "-"
+                    await set_plugin_script_payload(script, script_payload)
+                else:
+                    await script.set("Game", "EmulatorId", "-")
+            elif emulator_field_kind == "general_game_group":
+                general_payload = await self._read_general_script_payload(script_uid)
+                game_group = general_payload.setdefault("Game", {})
+                if isinstance(game_group, dict):
+                    game_group["EmulatorId"] = "-"
+                await self._write_general_script_payload(script_uid, general_payload)
 
         await self.EmulatorConfig.remove(emulator_uid)
 
@@ -1719,9 +2608,10 @@ class AppConfig(GlobalConfig):
         logger.info("开始获取脚本下拉框信息")
         data = [{"label": "未选择", "value": "-"}]
         for uid, script in self.ScriptConfig.items():
+            type_label = self._resolve_script_type_label(script)
             data.append(
                 {
-                    "label": f"{TYPE_BOOK[type(script).__name__]} - {script.get('Info', 'Name')}",
+                    "label": f"{type_label} - {script.get('Info', 'Name')}",
                     "value": str(uid),
                 }
             )
@@ -1743,9 +2633,10 @@ class AppConfig(GlobalConfig):
             )
         for uid, script in self.ScriptConfig.items():
             if not script.is_locked:
+                type_label = self._resolve_script_type_label(script)
                 data.append(
                     {
-                        "label": f"脚本 - {TYPE_BOOK[type(script).__name__]} - {script.get('Info', 'Name')}",
+                        "label": f"脚本 - {type_label} - {script.get('Info', 'Name')}",
                         "value": str(uid),
                     }
                 )

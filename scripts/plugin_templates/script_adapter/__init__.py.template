@@ -1,0 +1,6 @@
+"""${plugin_name} 专项适配插件。"""
+
+from .plugin import Plugin
+from .schema import Config, PluginConfig, ScriptSchema, UserSchema
+
+__all__ = ["Plugin", "Config", "PluginConfig", "ScriptSchema", "UserSchema"]

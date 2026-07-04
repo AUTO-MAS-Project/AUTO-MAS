@@ -19,10 +19,14 @@
 
 #   Contact: DLmaster_361@163.com
 
+from typing import TYPE_CHECKING
+
 from app.core import Config
 from app.services import Notify
 from app.utils import get_logger
-from app.models.config import GeneralUserConfig
+
+if TYPE_CHECKING:
+    from ..schema import GeneralUserConfig
 
 logger = get_logger("通用通知工具")
 
@@ -49,8 +53,7 @@ async def push_notification(
         )
 
         # 生成HTML通知内容
-        template = Config.notify_env.get_template("general_result.html")
-        message_html = template.render(message)
+        message_html = Notify.render_mail_template("general_result.html", message)
 
         # ServerChan的换行是两个换行符。故而将\n替换为\n\n
         serverchan_message = message_text.replace("\n", "\n\n")
@@ -84,8 +87,7 @@ async def push_notification(
         )
 
         # 生成HTML通知内容
-        template = Config.notify_env.get_template("general_statistics.html")
-        message_html = template.render(message)
+        message_html = Notify.render_mail_template("general_statistics.html", message)
 
         # ServerChan的换行是两个换行符。故而将\n替换为\n\n
         serverchan_message = message_text.replace("\n", "\n\n")

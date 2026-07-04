@@ -28,10 +28,10 @@ from pathlib import Path
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem
 from app.models.ConfigBase import MultipleConfig
-from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.emulator import DeviceBase
 from app.services import System
 from app.utils import get_logger, ProcessManager
+from .schema import GeneralConfig, GeneralUserConfig
 
 logger = get_logger("通用脚本设置")
 
