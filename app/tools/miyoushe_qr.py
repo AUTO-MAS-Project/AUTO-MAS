@@ -139,11 +139,11 @@ async def check_qr_status(
         qr_data = data.get("data", {})
         status = qr_data.get("status", "Init")
 
-        if status == "Init":
+        if status in ("Init", "Created"):
             return {"status": "Init"}
-        elif status == "Scanned":
+        if status == "Scanned":
             return {"status": "Scanned"}
-        else:
+        if status == "Confirmed":
             # Confirmed — 从 Set-Cookie 响应头提取 cookies
             cookies_str = _extract_cookies_from_headers(resp)
             logger.info(f"QR 确认成功, 获取到 cookies: {bool(cookies_str)}")
@@ -151,6 +151,12 @@ async def check_qr_status(
                 "status": "Confirmed",
                 "cookies_str": cookies_str,
             }
+        if status in ("Expired", "Canceled"):
+            return {"status": status}
+        return {
+            "status": "Error",
+            "error": f"未知扫码状态: {status}",
+        }
     except json.JSONDecodeError as e:
         logger.error(f"解析扫码状态 JSON 失败: {e}")
         return {"status": "Error", "error": "响应解析失败"}
