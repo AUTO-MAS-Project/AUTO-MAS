@@ -271,6 +271,27 @@ const handleQrConfirmed = async (cookiesStr: string) => {
   // Passport 模式：cookies 直接从响应头获取，无需 exchange
   if (editingAccount.value) {
     editingAccount.value.MiyousheToken = cookiesStr
+    try {
+      const accountId = editingAccount.value.uid
+      const saveResponse = await qrFetch('/save', {
+        account_uid: accountId,
+        cookie: cookiesStr,
+      })
+      if (saveResponse.code !== 200 || saveResponse.status === 'error') {
+        throw new Error(saveResponse.message || '保存 Token 失败')
+      }
+      await loadAccounts()
+      if (onRefreshConfig) {
+        await onRefreshConfig()
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`扫码保存 Token 失败: ${errorMsg}`)
+      message.error('扫码成功，但保存 Token 失败')
+      qrStatus.value = 'error'
+      qrStatusText.value = '扫码成功，但保存 Token 失败'
+      return
+    }
   }
   qrStatus.value = 'done'
   qrStatusText.value = '登录成功！Token 已自动填入'
