@@ -1,0 +1,118 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from app.models.task import LogRecord, TaskExecuteBase, UserItem
+from app.plugins import ScriptAdapterHooks, ScriptAdapterRuntime
+from app.utils import get_logger
+
+logger = get_logger("${plugin_name} 适配")
+
+
+def _read_text(model: Any, *names: str, default: str = "") -> str:
+    """按候选字段读取文本值。"""
+    for name in names:
+        value = getattr(model, name, None)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return default
+
+
+def _read_bool(model: Any, *names: str, default: bool = True) -> bool:
+    """按候选字段读取布尔值。"""
+    for name in names:
+        value = getattr(model, name, None)
+        if isinstance(value, bool):
+            return value
+    return default
+
+
+class _AdapterModeTask(TaskExecuteBase):
+    """示例模式任务。"""
+
+    def __init__(self, runtime: ScriptAdapterRuntime, user_index: int, mode_label: str) -> None:
+        super().__init__()
+        self.runtime = runtime
+        self.user_index = user_index
+        self.mode_label = mode_label
+
+    async def main_task(self) -> None:
+        user = self.runtime.script_info.user_list[self.user_index]
+        user.status = "运行中"
+        script_name = _read_text(self.runtime.script_config, "script_name", default=self.runtime.type_key)
+        logger.info(
+            f"[{self.mode_label}] 开始执行脚本 {script_name}，用户 {user.name}({user.user_id})"
+        )
+        user.log_record[datetime.now()] = LogRecord(
+            content=[f"{self.mode_label} 示例任务已执行。"],
+            status="完成",
+        )
+        user.status = "完成"
+
+    async def final_task(self) -> None:
+        user = self.runtime.script_info.user_list[self.user_index]
+        if user.status == "运行中":
+            user.status = "完成"
+
+    async def on_crash(self, error: Exception) -> None:
+        user = self.runtime.script_info.user_list[self.user_index]
+        user.status = "异常"
+        logger.exception(
+            f"[{self.mode_label}] 用户 {user.name}({user.user_id}) 执行失败: {error}"
+        )
+
+
+class ${plugin_class_name}AdapterHooks(ScriptAdapterHooks):
+    """${plugin_title} 适配钩子示例。"""
+
+    async def check(self, runtime: ScriptAdapterRuntime) -> str:
+        supported = {"AutoProxy", "ScriptConfig", "ManualReview"}
+        if runtime.mode not in supported:
+            return f"不支持的模式: {runtime.mode}"
+        return "Pass"
+
+    async def prepare(self, runtime: ScriptAdapterRuntime) -> None:
+        runtime.script_config = await runtime.build_script_model()
+        user_pairs = await runtime.build_user_models()
+        runtime.extra["user_models"] = {user_id: model for user_id, model in user_pairs}
+
+        if runtime.mode == "ScriptConfig":
+            target_user_id = runtime.task_info.user_id or (
+                user_pairs[0][0] if user_pairs else "default"
+            )
+            target_model = runtime.extra["user_models"].get(target_user_id)
+            target_name = _read_text(target_model, "user_name", "name", default=target_user_id)
+            runtime.script_info.user_list = [
+                UserItem(user_id=target_user_id, name=target_name, status="等待")
+            ]
+            return
+
+        runtime.script_info.user_list = [
+            UserItem(
+                user_id=user_id,
+                name=_read_text(model, "user_name", "name", default=user_id),
+                status="等待",
+            )
+            for user_id, model in user_pairs
+            if _read_bool(model, "enabled", default=True)
+        ]
+
+    async def finalize(self, runtime: ScriptAdapterRuntime) -> None:
+        if any(user.status == "异常" for user in runtime.script_info.user_list):
+            runtime.script_info.status = "异常"
+            return
+        runtime.script_info.status = "完成"
+
+    async def on_crash(self, runtime: ScriptAdapterRuntime, error: Exception) -> None:
+        runtime.script_info.status = "异常"
+        logger.exception(f"${plugin_title} 适配运行失败: {error}")
+
+    def run_auto_proxy(self, runtime: ScriptAdapterRuntime, user_index: int) -> TaskExecuteBase:
+        return _AdapterModeTask(runtime, user_index, "AutoProxy")
+
+    def run_script_config(self, runtime: ScriptAdapterRuntime, user_index: int) -> TaskExecuteBase:
+        return _AdapterModeTask(runtime, user_index, "ScriptConfig")
+
+    def run_manual_review(self, runtime: ScriptAdapterRuntime, user_index: int) -> TaskExecuteBase:
+        return _AdapterModeTask(runtime, user_index, "ManualReview")

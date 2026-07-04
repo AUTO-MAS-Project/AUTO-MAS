@@ -1,6 +1,7 @@
 // websocket.ts
 import { ref, type Ref } from 'vue'
 import schedulerHandlers from '@/views/scheduler/schedulerHandlers'
+import { OpenAPI } from '@/api'
 import { Modal } from 'ant-design-vue'
 import { useAppClosing } from '@/composables/useAppClosing'
 const logger = window.electronAPI.getLogger('WebSocket连接')
@@ -8,6 +9,16 @@ const logger = window.electronAPI.getLogger('WebSocket连接')
 // ====== 配置项 ======
 // 动态获取 WebSocket 端点
 let BASE_WS_URL = 'ws://localhost:36163/api/core/ws'
+const DEFAULT_WS_PATH = '/api/core/ws'
+const WS_META_URL = '/api/core/ws_meta'
+const WS_META_TIMEOUT = 3000
+const DEV_MODE_RETRY_DELAY = 3000
+const FRONTEND_DEV_MODE = (import.meta as any).env?.DEV === true || window.location.hostname === 'localhost'
+
+interface NegotiatedWebSocketMeta {
+  devMode?: boolean
+  wsPath?: string
+}
 
 // 从 Electron 获取实际端点
 if (window.electronAPI?.getApiEndpoint) {
@@ -88,6 +99,7 @@ interface GlobalWSStorage {
   hasEverConnected: boolean
   reconnectAttempts: number
   backendStatus: Ref<BackendStatus>
+  backendDevMode: boolean
   backendCheckTimer?: number
   backendRestartAttempts: number
   isRestartingBackend: boolean
@@ -127,6 +139,7 @@ const initGlobalStorage = (): GlobalWSStorage => ({
   hasEverConnected: false,
   reconnectAttempts: 0,
   backendStatus: ref<BackendStatus>('unknown'),
+  backendDevMode: FRONTEND_DEV_MODE,
   backendCheckTimer: undefined,
   backendRestartAttempts: 0,
   isRestartingBackend: false,
@@ -162,6 +175,99 @@ const setGlobalStatus = (status: WebSocketStatus) => {
 }
 const setBackendStatus = (status: BackendStatus) => {
   getGlobalStorage().backendStatus.value = status
+}
+
+const normalizeWsPath = (value?: string): string => {
+  if (!value) return DEFAULT_WS_PATH
+  return value.startsWith('/') ? value : `/${value}`
+}
+
+const joinBaseAndPath = (base: string, path: string): string => {
+  const normalizedBase = base.replace(/\/+$/, '')
+  const normalizedPath = normalizeWsPath(path)
+  return `${normalizedBase}${normalizedPath}`
+}
+
+const toWebSocketBase = (value: string): string => {
+  if (value.startsWith('ws://') || value.startsWith('wss://')) {
+    return value.replace(/\/+$/, '')
+  }
+  if (value.startsWith('https://')) {
+    return `wss://${value.slice('https://'.length)}`.replace(/\/+$/, '')
+  }
+  if (value.startsWith('http://')) {
+    return `ws://${value.slice('http://'.length)}`.replace(/\/+$/, '')
+  }
+  return `ws://${value}`.replace(/\/+$/, '')
+}
+
+const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}, timeoutMs: number) => {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(input, { ...init, signal: controller.signal })
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
+const negotiateWebSocketUrl = async (reason: string): Promise<string> => {
+  let httpBase = OpenAPI.BASE || 'http://localhost:36163'
+  let websocketBase = toWebSocketBase(httpBase)
+  let wsPath = DEFAULT_WS_PATH
+  let negotiatedDevMode = FRONTEND_DEV_MODE
+
+  if (window.electronAPI?.getApiEndpoint) {
+    try {
+      httpBase = await window.electronAPI.getApiEndpoint('local')
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(`获取 HTTP 端点失败，继续使用当前 OpenAPI.BASE: ${errorMsg}`)
+    }
+
+    try {
+      const endpoint = await window.electronAPI.getApiEndpoint('websocket')
+      websocketBase = toWebSocketBase(endpoint)
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(`获取 WebSocket 基础端点失败，将从 HTTP 端点推导: ${errorMsg}`)
+      websocketBase = toWebSocketBase(httpBase)
+    }
+  }
+
+  try {
+    const response = await fetchWithTimeout(
+      `${httpBase.replace(/\/+$/, '')}${WS_META_URL}`,
+      {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+      },
+      WS_META_TIMEOUT
+    )
+
+    if (response.ok) {
+      const meta = await response.json() as NegotiatedWebSocketMeta
+      if (typeof meta.devMode === 'boolean') {
+        negotiatedDevMode = meta.devMode
+      }
+      if (typeof meta.wsPath === 'string' && meta.wsPath.trim()) {
+        wsPath = normalizeWsPath(meta.wsPath.trim())
+      }
+    } else {
+      logger.warn(`协商 WebSocket 元信息失败，HTTP 状态: ${response.status}`)
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`协商 WebSocket 元信息失败，继续使用本地回退配置: ${errorMsg}`)
+  }
+
+  OpenAPI.BASE = httpBase
+  BASE_WS_URL = joinBaseAndPath(websocketBase, wsPath)
+  const global = getGlobalStorage()
+  global.backendDevMode = negotiatedDevMode
+  logger.info(`已协商 WebSocket 链接 (${reason}): ${BASE_WS_URL}, devMode=${negotiatedDevMode}`)
+  return BASE_WS_URL
 }
 
 // ====== 后端管理 ======
@@ -271,6 +377,15 @@ const startAutoReconnect = () => {
     if (global.wsReconnectAttempts >= MAX_WS_RECONNECT_ATTEMPTS) {
       logger.debug(`达到最大重连次数 ${MAX_WS_RECONNECT_ATTEMPTS}，显示失败弹窗`)
       global.isAutoReconnecting = false
+      if (global.backendDevMode) {
+        logger.warn('后端开发模式下跳过 WebSocket 异常弹窗，稍后继续协商新的连接地址')
+        global.wsReconnectAttempts = 0
+        global.reconnectFailureModalShown = false
+        global.wsReconnectTimer = window.setTimeout(() => {
+          startAutoReconnect()
+        }, DEV_MODE_RETRY_DELAY)
+        return
+      }
       showReconnectFailureModal()
       return
     }
@@ -592,7 +707,9 @@ const handleBackendFailure = async () => {
     Modal.error({
       title: '后端服务异常',
       content: '后端服务多次重启失败，请重启整个应用程序。',
+      okCancel: true,
       okText: '重启应用',
+      cancelText: '取消',
       onOk: () => {
         // 显示关闭遮罩
         const { showClosingOverlay } = useAppClosing()
@@ -605,6 +722,9 @@ const handleBackendFailure = async () => {
         } else {
           window.location.reload()
         }
+      },
+      onCancel: () => {
+        return
       },
     })
     return
@@ -1049,10 +1169,16 @@ const createGlobalWebSocket = (): WebSocket => {
   }
 
   ws.onclose = event => {
-    logger.info(`WebSocket连接关闭事件触发: code=${event.code}, reason="${event.reason}"`)
+    const isHeartbeatTimeout = event.code === 1000 && (event.reason === 'Ping超时' || event.reason === '心跳超时')
+
+    if (isHeartbeatTimeout) {
+      logger.error(`WebSocket连接因心跳超时关闭: code=${event.code}, reason="${event.reason}"`)
+    } else {
+      logger.info(`WebSocket连接关闭事件触发: code=${event.code}, reason="${event.reason}"`)
+    }
     setGlobalStatus('已断开')
     // WebSocket断开时设置后端状态
-    if (event.code === 1000 && (event.reason === 'Ping超时' || event.reason === '心跳超时')) {
+    if (isHeartbeatTimeout) {
       setBackendStatus('error')
     } else {
       setBackendStatus('stopped')
@@ -1060,13 +1186,15 @@ const createGlobalWebSocket = (): WebSocket => {
     stopGlobalHeartbeat()
     global.isConnecting = false
 
-    logger.info(`WebSocket连接关闭详情: code=${event.code}, reason="${event.reason}"`)
+    if (!isHeartbeatTimeout) {
+      logger.info(`WebSocket连接关闭详情: code=${event.code}, reason="${event.reason}"`)
+    }
 
     // 重置一些可能阻止重连的状态
     global.lastConnectAttempt = 0
 
     // 根据关闭原因决定处理方式
-    if (event.code === 1000 && (event.reason === 'Ping超时' || event.reason === '心跳超时')) {
+    if (isHeartbeatTimeout) {
       // 心跳超时通常意味着后端有问题，直接处理后端故障
       handleBackendFailure().catch(e => {
         const errorMsg = e instanceof Error ? e.message : String(e)
@@ -1173,6 +1301,7 @@ const connectGlobalWebSocket = async (reason: string = '手动重连'): Promise<
     }
 
     logger.info('开始创建新的WebSocket连接')
+    await negotiateWebSocketUrl(reason)
     global.isConnecting = true
     global.lastConnectAttempt = now
     if (global.wsRef?.readyState === WebSocket.CLOSED) global.wsRef = null

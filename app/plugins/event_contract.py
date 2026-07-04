@@ -1,23 +1,6 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
-#   This file is part of AUTO-MAS.
-
-#   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU Affero General Public License as
-#   published by the Free Software Foundation, either version 3 of
-#   the License, or (at your option) any later version.
-
-#   AUTO-MAS is distributed in the hope that it will be useful,
-#   but WITHOUT ANY WARRANTY; without even the implied warranty
-#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU Affero General Public License for more details.
-
-#   You should have received a copy of the GNU Affero General Public License
-#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
-#   Contact: DLmaster_361@163.com
-
 from typing import Final, Literal
 
 
@@ -63,13 +46,33 @@ SCRIPT_LIFECYCLE_EVENTS: Final[set[str]] = {
 
 
 def is_script_event(event: str) -> bool:
+    """
+    判断给定事件名是否属于脚本生命周期标准事件集合。
+
+    Args:
+        event (str): 待判断的事件名。
+
+    Returns:
+        bool: 若事件名属于标准脚本生命周期事件则返回 True，否则返回 False。
+    """
     return event in SCRIPT_LIFECYCLE_EVENTS
 
 
 def is_valid_source(source: str) -> bool:
+    """
+    校验事件来源字符串是否满足基础格式约束。
+
+    Args:
+        source (str): 事件来源字符串，建议使用点分格式（例如 core.task_manager）。
+
+    Returns:
+        bool: 来源格式合法返回 True，否则返回 False。
+    """
     if not isinstance(source, str):
         return False
+
     value = source.strip()
     if not value:
         return False
+
     return "." in value

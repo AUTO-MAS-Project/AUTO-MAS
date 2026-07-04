@@ -63,28 +63,15 @@
               v-for="client in sortedClientList"
               :key="client.name"
               class="client-item"
-              :class="{
-                active: selectedClient === client.name,
-                connected: client.is_connected,
-                system: client.is_system,
-              }"
+              :class="{ active: selectedClient === client.name, connected: client.is_connected, system: client.is_system }"
               @click="selectClient(client.name)"
             >
               <div class="client-info">
                 <div class="client-name">
                   <a-badge :status="client.is_connected ? 'success' : 'default'" />
-                  <LockOutlined
-                    v-if="client.is_system"
-                    style="margin-right: 4px; color: var(--ant-color-warning)"
-                  />
+                  <LockOutlined v-if="client.is_system" style="margin-right: 4px; color: var(--ant-color-warning)" />
                   {{ client.name }}
-                  <a-tag
-                    v-if="client.is_system"
-                    color="orange"
-                    size="small"
-                    style="margin-left: 4px"
-                    >系统</a-tag
-                  >
+                  <a-tag v-if="client.is_system" color="orange" size="small" style="margin-left: 4px">系统</a-tag>
                 </div>
                 <div class="client-url">{{ client.url }}</div>
               </div>
@@ -117,7 +104,11 @@
                   <DeleteOutlined />
                 </a-button>
                 <a-tooltip v-else title="系统客户端不可删除">
-                  <a-button type="link" size="small" disabled>
+                  <a-button
+                    type="link"
+                    size="small"
+                    disabled
+                  >
                     <DeleteOutlined />
                   </a-button>
                 </a-tooltip>
@@ -195,7 +186,12 @@
             </template>
 
             <a-form-item>
-              <a-button type="primary" block :loading="sending" @click="sendMessage">
+              <a-button
+                type="primary"
+                block
+                :loading="sending"
+                @click="sendMessage"
+              >
                 <template #icon><SendOutlined /></template>
                 发送消息
               </a-button>
@@ -214,7 +210,11 @@
                 checked-children="自动滚动"
                 un-checked-children="手动滚动"
               />
-              <a-select v-model:value="messageFilter" style="width: 120px" size="small">
+              <a-select
+                v-model:value="messageFilter"
+                style="width: 120px"
+                size="small"
+              >
                 <a-select-option value="all">全部消息</a-select-option>
                 <a-select-option value="sent">仅发送</a-select-option>
                 <a-select-option value="received">仅接收</a-select-option>
@@ -254,15 +254,21 @@
     <a-modal
       v-model:open="createModalVisible"
       title="创建 WebSocket 客户端"
-      :confirm-loading="creating"
       @ok="createClient"
+      :confirmLoading="creating"
     >
       <a-form layout="vertical">
         <a-form-item label="客户端名称" required>
-          <a-input v-model:value="createForm.name" placeholder="输入客户端名称，如 Koishi" />
+          <a-input
+            v-model:value="createForm.name"
+            placeholder="输入客户端名称，如 Koishi"
+          />
         </a-form-item>
         <a-form-item label="服务器 URL" required>
-          <a-input v-model:value="createForm.url" placeholder="ws://localhost:5140/AUTO_MAS" />
+          <a-input
+            v-model:value="createForm.url"
+            placeholder="ws://localhost:5140/AUTO_MAS"
+          />
         </a-form-item>
         <a-row :gutter="12">
           <a-col :span="12">
@@ -327,7 +333,7 @@ import {
   LockOutlined,
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
-import { WebSocketService } from '@/api'
+import { OpenAPI, WebSocketService } from '@/api'
 
 // ============== 类型定义 ==============
 
@@ -395,11 +401,14 @@ const createForm = ref({
 
 // 实时 WebSocket 连接
 let liveWs: WebSocket | null = null
+let reconnectAttempts = 0
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+let manualClose = false
 
 // ============== 计算属性 ==============
 
 const connectedCount = computed(() => {
-  return clientList.value.filter(c => c.is_connected).length
+  return clientList.value.filter((c) => c.is_connected).length
 })
 
 const totalMessageCount = computed(() => {
@@ -419,7 +428,7 @@ const sortedClientList = computed(() => {
 
 const isSelectedClientConnected = computed(() => {
   if (!selectedClient.value) return false
-  const client = clientList.value.find(c => c.name === selectedClient.value)
+  const client = clientList.value.find((c) => c.name === selectedClient.value)
   return client?.is_connected ?? false
 })
 
@@ -427,7 +436,7 @@ const filteredMessages = computed(() => {
   if (messageFilter.value === 'all') {
     return messages.value
   }
-  return messages.value.filter(m => m.direction === messageFilter.value)
+  return messages.value.filter((m) => m.direction === messageFilter.value)
 })
 
 // ============== 方法 ==============
@@ -456,14 +465,12 @@ function formatTime(timestamp: number): string {
 
 // 刷新客户端列表
 async function refreshClientList() {
-  try {
-    const response = await WebSocketService.listClientsApiWsDebugClientListGet()
-    if (response.code === 200 && response.data) {
-      clientList.value = response.data.clients || []
-    }
-  } catch (error: any) {
-    console.error('刷新客户端列表失败:', error)
+  if (liveWs && liveWs.readyState === WebSocket.OPEN) {
+    liveWs.send(JSON.stringify({ action: 'request_snapshot' }))
+    return
   }
+
+  message.warning('实时通道未连接，暂时无法刷新快照')
 }
 
 // 选择客户端
@@ -534,14 +541,13 @@ async function createClient() {
       reconnect_interval: createForm.value.reconnectInterval,
       max_reconnect_attempts: createForm.value.maxReconnectAttempts,
     }
-    logApiRequest('/api/ws_debug/client/create', 'POST', requestBody)
+    logApiRequest('/api/ws/client/create', 'POST', requestBody)
     const response = await WebSocketService.createClientApiWsDebugClientCreatePost(requestBody)
-    logApiResponse('/api/ws_debug/client/create', response)
+    logApiResponse('/api/ws/client/create', response)
 
     if (response.code === 200) {
       message.success(`客户端 [${createForm.value.name}] 创建成功`)
       createModalVisible.value = false
-      await refreshClientList()
       selectedClient.value = createForm.value.name
     } else {
       message.error(response.message || '创建失败')
@@ -558,13 +564,12 @@ async function connectClient(name: string) {
   connectingClients.value[name] = true
   try {
     const requestBody = { name }
-    logApiRequest('/api/ws_debug/client/connect', 'POST', requestBody)
+    logApiRequest('/api/ws/client/connect', 'POST', requestBody)
     const response = await WebSocketService.connectClientApiWsDebugClientConnectPost(requestBody)
-    logApiResponse('/api/ws_debug/client/connect', response)
+    logApiResponse('/api/ws/client/connect', response)
 
     if (response.code === 200) {
       message.success(`客户端 [${name}] 连接成功`)
-      await refreshClientList()
     } else {
       message.error(response.message || '连接失败')
     }
@@ -579,14 +584,12 @@ async function connectClient(name: string) {
 async function disconnectClient(name: string) {
   try {
     const requestBody = { name }
-    logApiRequest('/api/ws_debug/client/disconnect', 'POST', requestBody)
-    const response =
-      await WebSocketService.disconnectClientApiWsDebugClientDisconnectPost(requestBody)
-    logApiResponse('/api/ws_debug/client/disconnect', response)
+    logApiRequest('/api/ws/client/disconnect', 'POST', requestBody)
+    const response = await WebSocketService.disconnectClientApiWsDebugClientDisconnectPost(requestBody)
+    logApiResponse('/api/ws/client/disconnect', response)
 
     if (response.code === 200) {
       message.success(`客户端 [${name}] 已断开`)
-      await refreshClientList()
     } else {
       message.error(response.message || '断开失败')
     }
@@ -599,16 +602,15 @@ async function disconnectClient(name: string) {
 async function removeClient(name: string) {
   try {
     const requestBody = { name }
-    logApiRequest('/api/ws_debug/client/remove', 'POST', requestBody)
+    logApiRequest('/api/ws/client/remove', 'POST', requestBody)
     const response = await WebSocketService.removeClientApiWsDebugClientRemovePost(requestBody)
-    logApiResponse('/api/ws_debug/client/remove', response)
+    logApiResponse('/api/ws/client/remove', response)
 
     if (response.code === 200) {
       message.success(`客户端 [${name}] 已删除`)
       if (selectedClient.value === name) {
         selectedClient.value = null
       }
-      await refreshClientList()
     } else {
       message.error(response.message || '删除失败')
     }
@@ -643,10 +645,9 @@ async function sendMessage() {
         msg_type: formattedMessage.value.type,
         data,
       }
-      logApiRequest('/api/ws_debug/message/send_json', 'POST', jsonRequestBody)
-      response =
-        await WebSocketService.sendJsonMessageApiWsDebugMessageSendJsonPost(jsonRequestBody)
-      logApiResponse('/api/ws_debug/message/send_json', response)
+      logApiRequest('/api/ws/message/send_json', 'POST', jsonRequestBody)
+      response = await WebSocketService.sendJsonMessageApiWsDebugMessageSendJsonPost(jsonRequestBody)
+      logApiResponse('/api/ws/message/send_json', response)
     } else if (sendMode.value === 'raw') {
       let messageObj: any
       try {
@@ -660,9 +661,9 @@ async function sendMessage() {
         name: selectedClient.value,
         message: messageObj,
       }
-      logApiRequest('/api/ws_debug/message/send', 'POST', rawRequestBody)
+      logApiRequest('/api/ws/message/send', 'POST', rawRequestBody)
       response = await WebSocketService.sendMessageApiWsDebugMessageSendPost(rawRequestBody)
-      logApiResponse('/api/ws_debug/message/send', response)
+      logApiResponse('/api/ws/message/send', response)
     } else if (sendMode.value === 'auth') {
       if (!authMessage.value.token) {
         message.error('请输入认证 Token')
@@ -685,9 +686,9 @@ async function sendMessage() {
         auth_type: authMessage.value.type,
         extra_data: extraData,
       }
-      logApiRequest('/api/ws_debug/message/auth', 'POST', authRequestBody)
+      logApiRequest('/api/ws/message/auth', 'POST', authRequestBody)
       response = await WebSocketService.sendAuthApiWsDebugMessageAuthPost(authRequestBody)
-      logApiResponse('/api/ws_debug/message/auth', response)
+      logApiResponse('/api/ws/message/auth', response)
     }
 
     if (response?.code === 200) {
@@ -730,22 +731,28 @@ function addMessage(record: MessageRecord) {
 
 // 建立实时 WebSocket 连接
 function connectLiveWs() {
-  const wsUrl = `ws://${window.location.host}/api/ws_debug/live`
+  const wsUrl = buildLiveWsUrl()
 
   try {
     liveWs = new WebSocket(wsUrl)
 
     liveWs.onopen = () => {
       console.log('实时消息连接已建立')
+      reconnectAttempts = 0
+
+      if (liveWs && liveWs.readyState === WebSocket.OPEN) {
+        liveWs.send(JSON.stringify({ action: 'request_snapshot' }))
+      }
     }
 
-    liveWs.onmessage = event => {
+    liveWs.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
 
         if (data.type === 'init') {
           // 初始化客户端列表
           clientList.value = data.clients || []
+          messages.value = []
         } else if (data.type === 'message') {
           // 添加消息记录
           addMessage({
@@ -755,9 +762,9 @@ function connectLiveWs() {
             client: data.client,
           })
         } else if (data.type === 'event') {
-          // 处理事件
-          if (data.event === 'connected' || data.event === 'disconnected') {
-            refreshClientList()
+          // 后端事件统一携带最新客户端快照
+          if (Array.isArray(data.clients)) {
+            clientList.value = data.clients
           }
         }
       } catch (error) {
@@ -765,56 +772,76 @@ function connectLiveWs() {
       }
     }
 
-    liveWs.onerror = error => {
+    liveWs.onerror = (error) => {
       console.error('实时消息连接错误:', error)
     }
 
     liveWs.onclose = () => {
       console.log('实时消息连接已关闭')
       liveWs = null
-      // 5秒后重连
-      setTimeout(connectLiveWs, 5000)
+
+      if (manualClose) {
+        return
+      }
+
+      reconnectAttempts += 1
+      const delay = getReconnectDelay(reconnectAttempts)
+      reconnectTimer = setTimeout(connectLiveWs, delay)
     }
   } catch (error) {
     console.error('创建实时消息连接失败:', error)
+
+    if (!manualClose) {
+      reconnectAttempts += 1
+      const delay = getReconnectDelay(reconnectAttempts)
+      reconnectTimer = setTimeout(connectLiveWs, delay)
+    }
   }
+}
+
+function getReconnectDelay(attempt: number): number {
+  const baseMs = 1000
+  const maxMs = 30000
+  const delay = baseMs * 2 ** Math.max(attempt - 1, 0)
+  return Math.min(delay, maxMs)
+}
+
+// 根据 OpenAPI.BASE 构建 WS 地址，确保和 HTTP API 指向同一后端
+function buildLiveWsUrl(): string {
+  const base = (OpenAPI.BASE || '').trim()
+  if (base) {
+    if (base.startsWith('https://')) {
+      return `${base.replace('https://', 'wss://')}/api/ws/wsdev`
+    }
+    if (base.startsWith('http://')) {
+      return `${base.replace('http://', 'ws://')}/api/ws/wsdev`
+    }
+    if (base.startsWith('wss://') || base.startsWith('ws://')) {
+      return `${base}/api/ws/wsdev`
+    }
+  }
+
+  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+  return `${protocol}://${window.location.host}/api/ws/wsdev`
 }
 
 // 断开实时 WebSocket
 function disconnectLiveWs() {
+  manualClose = true
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+
   if (liveWs) {
     liveWs.close()
     liveWs = null
   }
 }
 
-// 加载历史消息
-async function loadHistory() {
-  try {
-    const response = await WebSocketService.getHistoryApiWsDebugHistoryGet()
-    if (response.code === 200 && response.data?.history) {
-      messages.value = []
-      const history = response.data.history
-      for (const clientName of Object.keys(history)) {
-        for (const msg of history[clientName]) {
-          messages.value.push({
-            ...msg,
-            client: clientName,
-          })
-        }
-      }
-      // 按时间排序
-      messages.value.sort((a, b) => a.timestamp - b.timestamp)
-    }
-  } catch (error: any) {
-    console.error('加载历史消息失败:', error)
-  }
-}
-
 // 页面加载时
 onMounted(async () => {
-  await refreshClientList()
-  await loadHistory()
+  manualClose = false
   connectLiveWs()
 })
 
@@ -930,6 +957,33 @@ onUnmounted(() => {
   max-height: 400px;
   overflow-y: auto;
   padding: 8px;
+}
+
+.demo-trend {
+  margin-top: 16px;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.demo-point {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 4px;
+  border-bottom: 1px dashed var(--ant-color-border-secondary);
+}
+
+.demo-point:last-child {
+  border-bottom: none;
+}
+
+.demo-point-time {
+  font-family: 'Consolas', 'Monaco', monospace;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
 }
 
 .message-item {

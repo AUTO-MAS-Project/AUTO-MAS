@@ -296,6 +296,7 @@ onMounted(() => {
 <style scoped>
 .queue-item-card {
   margin-bottom: 24px;
+  background: var(--app-background-card-bg, var(--ant-color-bg-container));
 }
 
 .queue-item-card :deep(.ant-card-head-title) {
@@ -416,7 +417,7 @@ onMounted(() => {
   font-weight: 600;
   padding: 8px 12px;
   text-align: center;
-  background-color: var(--ant-color-bg-container);
+  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
   border-bottom: 1px solid var(--ant-color-border);
 }
 
@@ -510,7 +511,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   padding: 12px 16px;
-  background: var(--ant-color-bg-container);
+  background: var(--app-background-card-bg, var(--ant-color-bg-container));
   border: 1px solid var(--ant-color-border);
   border-radius: 6px;
   transition: all 0.2s ease;
@@ -557,7 +558,7 @@ onMounted(() => {
 
 .draggable-table-header {
   display: flex;
-  background-color: var(--ant-color-fill-quaternary);
+  background-color: var(--app-background-card-elevated-bg, var(--ant-color-fill-quaternary));
   border-bottom: 1px solid var(--ant-color-border);
 }
 
@@ -603,7 +604,7 @@ onMounted(() => {
 .draggable-row {
   display: flex;
   align-items: center;
-  background: var(--ant-color-bg-container);
+  background: var(--app-background-card-bg, var(--ant-color-bg-container));
   border-bottom: 1px solid var(--ant-color-border);
   transition: all 0.2s ease;
   cursor: default;
@@ -614,7 +615,7 @@ onMounted(() => {
 }
 
 .draggable-row:hover {
-  background-color: var(--ant-color-fill-quaternary);
+  background-color: var(--app-background-card-elevated-bg, var(--ant-color-fill-quaternary));
 }
 
 .draggable-row.row-dragging {

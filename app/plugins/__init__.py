@@ -1,54 +1,175 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 #   Copyright © 2025-2026 AUTO-MAS Team
 
-#   This file is part of AUTO-MAS.
+# ── 核心上下文 ──
+from .cache_store import JsonPluginCache, PluginCacheManager
+from .config_store import PluginConfigStore
+from .context import PluginConfigProxy, PluginContext, PluginEventFacade, RuntimeFacade, ServiceFacade
+from .fields import PluginField
+from .runtime_api import RuntimeAPI
 
-#   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU Affero General Public License as
-#   published by the Free Software Foundation, either version 3 of
-#   the License, or (at your option) any later version.
-
-#   AUTO-MAS is distributed in the hope that it will be useful,
-#   but WITHOUT ANY WARRANTY; without even the implied warranty
-#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU Affero General Public License for more details.
-
-#   You should have received a copy of the GNU Affero General Public License
-#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
-"""
-插件框架 — 按模块逐步合入自动对轨主线。
-
-当前模块：EventBus（事件总线）
-  合入 PR：feat/plugin-eventbus
-  说明：EventBus 为框架基础设施，不涉及子插件声明。
-
-核心事件接入点：
-  app/core/task_manager.py 在任务/脚本生命周期节点发布
-  PluginEventNames 中的标准事件，插件通过 event_bus.on 订阅。
-
-后续模块会逐步在此包下扩展。
-"""
-
-from .event_bus import EventBus, EventDispatchError
-from .event_contract import (
-    EVENT_CONTRACT_VERSION,
-    PluginEventNames,
-    SCRIPT_LIFECYCLE_EVENTS,
-    is_script_event,
-    is_valid_source,
+# ── 生命周期 ──
+from .lifecycle import OPTIONAL_LIFECYCLE_METHODS, REQUIRED_LIFECYCLE_METHODS, PluginLifecycle
+from .lifecycle_hooks import (
+    LIFECYCLE_HOOK_ATTR,
+    LifecycleHookRegistry,
+    LifecycleHookSpec,
+    PluginDefinitionError,
+    get_lifecycle_hooks,
+    hook,
+    inject_before_prepare,
+    inject_check,
+    inject_final_task,
+    inject_main_task,
+    inject_on_crash,
+    inject_prepare,
+    replace_check,
+    replace_final_task,
+    replace_main_task,
+    replace_on_crash,
+    replace_prepare,
+)
+from .script_adapter import (
+    BaseAdapterManager,
+    ScriptAdapterDefinition,
+    ScriptAdapterHooks,
+    ScriptAdapterPlugin,
+    ScriptAdapterRuntime,
+)
+from .schema_utils import (
+    SchemaDecorationContext,
+    SchemaOptionsProviderContext,
+    append_schema_field,
+    find_schema_field,
+    find_schema_group,
+    set_schema_field_label,
+    set_schema_field_options,
+    set_schema_field_state,
+    set_schema_group_label,
 )
 
-event_bus = EventBus()
-"""全局事件总线单例，核心与插件统一通过它收发事件。"""
+# ── 分组 API ──
+from .event import *  # noqa: F401,F403
+from .log import *  # noqa: F401,F403
+from .script import *  # noqa: F401,F403
+
+# ── 加载 / 管理 ──
+from .loader import PluginLoader, PluginRecord
+from .manager import PluginManager
+from .pypi_site import (
+    ENTRY_POINT_GROUPS,
+    ensure_pypi_site_packages_on_syspath,
+    get_pypi_root,
+    get_pypi_site_packages_dir,
+    iter_plugin_entry_points,
+)
+
+# ── 服务 ──
+from .server import (
+    PluginHttpRequest,
+    PluginHttpResponse,
+    PluginServerFacade,
+    PluginServerRegistry,
+    PluginWebSocketSession,
+    plugin_server,
+)
+from .service_registry import ServiceRegistry
+from .service_spec import ServiceSpec
 
 __all__ = [
+    # 核心上下文
+    "PluginContext",
+    "PluginConfigProxy",
+    "PluginEventFacade",
+    "RuntimeFacade",
+    "ServiceFacade",
+    "PluginCacheManager",
+    "JsonPluginCache",
+    "PluginConfigStore",
+    "PluginField",
+    "RuntimeAPI",
+    # 生命周期
+    "PluginLifecycle",
+    "REQUIRED_LIFECYCLE_METHODS",
+    "OPTIONAL_LIFECYCLE_METHODS",
+    "LifecycleHookSpec",
+    "LifecycleHookRegistry",
+    "PluginDefinitionError",
+    "LIFECYCLE_HOOK_ATTR",
+    "get_lifecycle_hooks",
+    "hook",
+    "inject_check",
+    "inject_before_prepare",
+    "inject_prepare",
+    "inject_main_task",
+    "inject_final_task",
+    "inject_on_crash",
+    "replace_check",
+    "replace_prepare",
+    "replace_main_task",
+    "replace_final_task",
+    "replace_on_crash",
+    # 事件 (from .event)
     "EventBus",
-    "EventDispatchError",
+    "on_event",
+    "EventSubscription",
+    "PluginEventFactory",
     "EVENT_CONTRACT_VERSION",
+    "EVENT_DISPATCH_MODEL",
+    "CORE_SOURCE_PREFIX",
     "PluginEventNames",
     "SCRIPT_LIFECYCLE_EVENTS",
-    "event_bus",
+    "EventScope",
+    "EventErrorPolicy",
     "is_script_event",
     "is_valid_source",
+    # 日志 (from .log)
+    "LogContext",
+    "LogPipeline",
+    "LogMonitorAdapter",
+    "LogHandlerSpec",
+    "LogFacade",
+    "LOG_HANDLER_ATTR",
+    "on_log",
+    "get_log_handlers",
+    # 脚本 (from .script)
+    "TaskContext",
+    "PluginScriptManager",
+    "PluginAutoProxyTask",
+    "PluginManualReviewTask",
+    "PluginScriptConfigTask",
+    "register_script_type",
+    "ScriptAdapterRuntime",
+    "ScriptAdapterHooks",
+    "ScriptAdapterDefinition",
+    "BaseAdapterManager",
+    "ScriptAdapterPlugin",
+    # Schema 工具
+    "SchemaDecorationContext",
+    "SchemaOptionsProviderContext",
+    "find_schema_group",
+    "find_schema_field",
+    "set_schema_group_label",
+    "set_schema_field_label",
+    "set_schema_field_options",
+    "set_schema_field_state",
+    "append_schema_field",
+    # 加载 / 管理
+    "PluginLoader",
+    "PluginRecord",
+    "PluginManager",
+    "ENTRY_POINT_GROUPS",
+    "get_pypi_root",
+    "get_pypi_site_packages_dir",
+    "ensure_pypi_site_packages_on_syspath",
+    "iter_plugin_entry_points",
+    # 服务
+    "ServiceRegistry",
+    "ServiceSpec",
+    "PluginHttpRequest",
+    "PluginHttpResponse",
+    "PluginServerFacade",
+    "PluginServerRegistry",
+    "PluginWebSocketSession",
+    "plugin_server",
 ]

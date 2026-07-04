@@ -26,6 +26,7 @@ uv.lock
 /debug/
 /history/
 /script/
+/environment/
 
 # Frontend dependencies & caches
 /frontend/node_modules/
@@ -53,3 +54,9 @@ uv.lock
 # Local checkouts of split repositories
 /AUTO-MAS-docs/
 /skills/
+
+# Plugin workspace (only auto_mas_core is tracked)
+/plugins/*
+!/plugins/auto_mas_core/
+!/plugins/auto_mas_core/**
+/app/core/plugins/_generated/

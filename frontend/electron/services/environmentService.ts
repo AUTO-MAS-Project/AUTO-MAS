@@ -37,10 +37,11 @@ export function checkEnvironment(appRoot: string) {
   const gitExists = fs.existsSync(gitPath)
   const backendExists = fs.existsSync(backendPath)
 
-  // 检查依赖是否已安装（简单检查是否存在site-packages目录）
-  const sitePackagesPath = path.join(pythonPath, 'Lib', 'site-packages')
+  // 检查依赖是否已安装（检查 .venv 是否存在且非空）
+  const venvPath = path.join(appRoot, '.venv')
+  const venvSitePackages = path.join(venvPath, 'Lib', 'site-packages')
   const dependenciesInstalled =
-    fs.existsSync(sitePackagesPath) && fs.readdirSync(sitePackagesPath).length > 10
+    fs.existsSync(venvSitePackages) && fs.readdirSync(venvSitePackages).length > 10
 
   return {
     pythonExists,
@@ -364,45 +365,41 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
   }
 }
 
-// ==================== Pip 安装器 ====================
+// ==================== uv 安装器（替代 Pip） ====================
 
-export class PipInstaller extends BaseEnvironmentInstaller {
+export class UvInstaller extends BaseEnvironmentInstaller {
   private readonly pythonPath: string
-  private readonly pythonExe: string
-  private readonly pipExe: string
+  private readonly uvExe: string
 
   constructor(appRoot: string, mirrorService: MirrorService) {
     super(appRoot, mirrorService)
     this.pythonPath = path.join(appRoot, 'environment', 'python')
-    this.pythonExe = path.join(this.pythonPath, 'python.exe')
-    this.pipExe = path.join(this.pythonPath, 'Scripts', 'pip.exe')
+    this.uvExe = path.join(appRoot, 'environment', 'python', 'Scripts', 'uv.exe')
   }
 
   protected async checkEnvironment(): Promise<EnvironmentCheckResult> {
-    logger.info('=== 检查 Pip 环境 ===')
+    logger.info('=== 检查 uv 环境 ===')
 
-    // 检查 pip.exe 是否存在
-    const exeExists = fs.existsSync(this.pipExe)
-    logger.info(`Pip 可执行文件存在: ${exeExists}`)
+    const exeExists = fs.existsSync(this.uvExe)
+    logger.info(`uv 可执行文件存在: ${exeExists}`)
 
     if (!exeExists) {
       return { exeExists: false, canRun: false }
     }
 
-    // 检查能否正常运行
     try {
-      const version = await this.getPipVersion()
-      logger.info(`Pip 版本: ${version}`)
+      const version = await this.getUvVersion()
+      logger.info(`uv 版本: ${version}`)
       return { exeExists: true, canRun: true, version }
     } catch (error) {
-      logger.error(`Pip 无法正常运行: ${error}`)
+      logger.error(`uv 无法正常运行: ${error}`)
       return { exeExists: true, canRun: false, error: String(error) }
     }
   }
 
-  private getPipVersion(): Promise<string> {
+  private getUvVersion(): Promise<string> {
     return new Promise((resolve, reject) => {
-      const proc = spawn(this.pythonExe, ['-m', 'pip', '--version'], { stdio: 'pipe' })
+      const proc = spawn(this.uvExe, ['--version'], { stdio: 'pipe' })
 
       let output = ''
       proc.stdout?.on('data', (data) => {
@@ -416,7 +413,7 @@ export class PipInstaller extends BaseEnvironmentInstaller {
         if (code === 0) {
           resolve(output.trim())
         } else {
-          reject(new Error(`Pip 版本检查失败，退出码: ${code}`))
+          reject(new Error(`uv 版本检查失败，退出码: ${code}`))
         }
       })
 
@@ -425,47 +422,13 @@ export class PipInstaller extends BaseEnvironmentInstaller {
   }
 
   protected async downloadPackage(onProgress?: ProgressCallback, selectedMirror?: string): Promise<{ success: boolean; error?: string }> {
-    logger.info('=== 下载 get-pip.py ===')
-
-    const mirrors = this.mirrorService.getMirrors('get_pip')
-    const getPipPath = path.join(this.pythonPath, 'get-pip.py')
-
-    // 使用镜像源轮替下载
-    const downloadOperation: NetworkOperationCallback = async (mirror, onOpProgress) => {
-      // 为此操作分配一个新的ID
-      const operationId = ++this.currentOperationId
-
-      onOpProgress({ progress: 0, description: `正在从 ${mirror.name} 下载...` })
-
-      const result = await this.downloader.download(mirror.url, getPipPath, (progress) => {
-        // 检查是否是当前活跃的操作
-        if (operationId !== this.currentOperationId) {
-          return
-        }
-
-        // 上报下载进度，包含速度和大小信息
-        onProgress?.({
-          progress: progress.progress,
-          speed: progress.speed,
-          downloadedSize: progress.downloadedSize,
-          totalSize: progress.totalSize
-        })
-        onOpProgress({
-          progress: progress.progress,
-          description: `下载中... ${progress.progress.toFixed(1)}%`
-        })
-      })
-
-      return result
-    }
-
-    const result = await this.rotationService.execute(mirrors, downloadOperation, undefined, selectedMirror)
-
-    if (!result.success) {
-      return { success: false, error: result.error }
-    }
-
-    logger.info(`get-pip.py 下载完成，使用镜像源: ${result.usedMirror?.name}`)
+    logger.info('=== 准备安装 uv ===')
+    onProgress?.({
+      progress: 100,
+      speed: 0,
+      downloadedSize: 0,
+      totalSize: 0,
+    })
     return { success: true }
   }
 
@@ -473,94 +436,91 @@ export class PipInstaller extends BaseEnvironmentInstaller {
     onProgress?: (progress: number, message: string, details?: any) => void,
     selectedMirror?: string
   ): Promise<{ success: boolean; error?: string }> {
-    logger.info('=== 安装 Pip ===')
+    logger.info('=== 安装 uv ===')
 
-    const getPipPath = path.join(this.pythonPath, 'get-pip.py')
-    const mirrors = this.mirrorService.getMirrors('pip_mirror')
+    const scriptsDir = path.join(this.pythonPath, 'Scripts')
 
-    // 定义pip安装操作
-    const installOperation: NetworkOperationCallback = async (mirror, onOpProgress) => {
-      try {
-        onOpProgress({ progress: 0, description: `使用 ${mirror.name} 安装 pip...` })
-
-        // 执行 pip 安装，使用指定的镜像源
-        await new Promise<void>((resolve, reject) => {
-          const hostname = new URL(mirror.url).hostname
-
-          const proc = spawn(this.pythonExe, [
-            getPipPath,
-            '-i',
-            mirror.url,
-            '--trusted-host',
-            hostname
-          ], {
-            cwd: this.pythonPath,
-            stdio: 'pipe'
-          })
-
-          proc.stdout?.on('data', (data) => {
-            const output = data.toString().trim()
-            logger.info(`pip 安装输出: ${output}`)
-
-            // 根据输出更新进度
-            if (output.includes('Collecting')) {
-              onOpProgress({ progress: 40, description: '正在下载 pip 组件...' })
-            } else if (output.includes('Installing')) {
-              onOpProgress({ progress: 70, description: '正在安装 pip...' })
-            }
-          })
-
-          proc.stderr?.on('data', (data) => {
-            logger.error(`pip 安装错误: ${data.toString().trim()}`)
-          })
-
-          proc.on('close', (code) => {
-            if (code === 0) {
-              logger.info('Pip 安装成功')
-              onOpProgress({ progress: 100, description: 'Pip 安装完成' })
-              resolve()
-            } else {
-              reject(new Error(`Pip 安装失败，退出码: ${code}`))
-            }
-          })
-
-          proc.on('error', reject)
-        })
-
-        return { success: true }
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error)
-        return { success: false, error: errorMsg }
+    try {
+      if (!fs.existsSync(scriptsDir)) {
+        fs.mkdirSync(scriptsDir, { recursive: true })
       }
-    }
 
-    // 使用镜像源轮替执行安装
-    const result = await this.rotationService.execute(mirrors, installOperation, (rotationProgress) => {
-      const totalProgress = rotationProgress.operationProgress.progress
-      const message = rotationProgress.operationProgress.description
-      const details = {
-        currentMirror: rotationProgress.currentMirror.name,
-        mirrorProgress: {
-          current: rotationProgress.mirrorIndex + 1,
-          total: rotationProgress.totalMirrors
-        },
-        operationDesc: rotationProgress.operationProgress.description
+      onProgress?.(20, '正在运行 uv 官方安装脚本...')
+      await this.runUvInstallScript(scriptsDir, progress => {
+        onProgress?.(progress, '正在安装 uv...')
+      })
+
+      onProgress?.(90, '验证 uv 安装...')
+      const check = await this.checkEnvironment()
+      if (!check.canRun) {
+        throw new Error('uv 安装后无法运行')
       }
-      onProgress?.(totalProgress, message, details)
-    }, selectedMirror)
 
-    if (!result.success) {
-      return { success: false, error: result.error }
+      onProgress?.(100, 'uv 安装完成')
+      logger.info('uv 安装完成')
+      return { success: true }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`uv 安装失败: ${errorMsg}`)
+      return { success: false, error: errorMsg }
     }
+  }
 
-    // 清理临时文件
-    logger.info('清理临时文件...')
-    if (fs.existsSync(getPipPath)) {
-      fs.unlinkSync(getPipPath)
-    }
+  private runUvInstallScript(installDir: string, onProgress?: (progress: number) => void): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const script = [
+        "$ErrorActionPreference = 'Stop'",
+        `$env:UV_INSTALL_DIR = ${this.quotePowerShellString(installDir)}`,
+        'irm https://astral.sh/uv/install.ps1 | iex',
+      ].join('; ')
 
-    logger.info(`Pip 安装完成，使用镜像源: ${result.usedMirror?.name}`)
-    return { success: true }
+      const proc = spawn('powershell.exe', [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        script,
+      ], {
+        cwd: this.appRoot,
+        stdio: 'pipe',
+      })
+
+      let output = ''
+
+      proc.stdout?.on('data', data => {
+        const text = data.toString().trim()
+        output += text
+        logger.info(`uv 安装输出: ${text}`)
+
+        if (text.includes('downloading')) {
+          onProgress?.(40)
+        } else if (text.includes('installing')) {
+          onProgress?.(70)
+        } else if (text.includes('everything')) {
+          onProgress?.(85)
+        }
+      })
+
+      proc.stderr?.on('data', data => {
+        const text = data.toString().trim()
+        output += text
+        logger.warn(`uv 安装输出: ${text}`)
+      })
+
+      proc.on('close', code => {
+        if (code === 0 && fs.existsSync(this.uvExe)) {
+          resolve()
+          return
+        }
+        reject(new Error(`uv 安装脚本失败，退出码: ${code}, output: ${output}`))
+      })
+
+      proc.on('error', reject)
+    })
+  }
+
+  private quotePowerShellString(value: string): string {
+    return `'${value.replace(/'/g, "''")}'`
   }
 }
 
@@ -757,3 +717,6 @@ export class GitInstaller extends BaseEnvironmentInstaller {
     }
   }
 }
+
+/** @deprecated 使用 UvInstaller 代替 */
+export const PipInstaller = UvInstaller

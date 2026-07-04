@@ -33,7 +33,11 @@ from .tools import router as tools_router
 from .setting import router as setting_router
 from .update import router as update_router
 from .ocr import router as ocr_router
-from .ws_debug import router as ws_debug_router
+from .websocket import router as ws_router
+from .plugins import router as plugins_router
+from .plugin_gateway import router as plugin_gateway_router
+from .scripts2 import router as scripts2_router
+from .script_types import router as script_types_router
 
 # 可选补丁：米游社扫码登录（可安全删除以下 2 行及 app/api/qr_login.py）
 try:
@@ -45,6 +49,8 @@ __all__ = [
     "core_router",
     "info_router",
     "scripts_router",
+    "scripts2_router",
+    "script_types_router",
     "plan_router",
     "emulator_router",
     "queue_router",
@@ -54,6 +60,8 @@ __all__ = [
     "setting_router",
     "update_router",
     "ocr_router",
-    "ws_debug_router",
+    "ws_router",
+    "plugins_router",
+    "plugin_gateway_router",
     "qr_login_router",
 ]

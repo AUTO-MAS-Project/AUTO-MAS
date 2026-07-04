@@ -1,0 +1,15 @@
+{
+  "name": "automas-plugin-${plugin_name}-vue",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node ../../../frontend/node_modules/vite/bin/vite.js build --config vite.config.mjs --configLoader native && node scripts/write-manifest.mjs"
+  },
+  "dependencies": {
+    "@vitejs/plugin-vue": "file:../../../frontend/node_modules/@vitejs/plugin-vue",
+    "typescript": "file:../../../frontend/node_modules/typescript",
+    "vite": "file:../../../frontend/node_modules/vite",
+    "vue": "file:../../../frontend/node_modules/vue"
+  },
+  "devDependencies": {}
+}

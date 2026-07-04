@@ -1,33 +1,12 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2024-2025 DLmaster361
-#   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
-
-#   This file is part of AUTO-MAS.
-
-#   AUTO-MAS is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU Affero General Public License as
-#   published by the Free Software Foundation, either version 3 of
-#   the License, or (at your option) any later version.
-
-#   AUTO-MAS is distributed in the hope that it will be useful,
-#   but WITHOUT ANY WARRANTY; without even the implied warranty
-#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
-#   the GNU Affero General Public License for more details.
-
-#   You should have received a copy of the GNU Affero General Public License
-#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
-
-#   Contact: DLmaster_361@163.com
-
-from __future__ import annotations
 
 import asyncio
 import inspect
 import uuid
 from dataclasses import dataclass
 from collections import defaultdict
-from typing import Any, Callable, DefaultDict
+from typing import Any, Callable, DefaultDict, Dict, List, Optional
 
 from app.utils import get_logger
 
@@ -52,27 +31,15 @@ class RegisteredHandler:
     scope: EventScope
     once: bool
     error_policy: EventErrorPolicy | None
-    owner_plugin_name: str | None
-    owner_instance_id: str | None
+    owner_plugin_name: Optional[str]
+    owner_instance_id: Optional[str]
 
 
 class EventBus:
-    """
-    插件系统进程内事件总线（纯异步并发分发）。
-
-    线程模型：
-        emit 内部使用 asyncio.Lock 保护监听器快照与 once 解绑；
-        on/off/off_by_instance/clear 为同步方法，必须在事件循环线程调用，
-        不要在 asyncio.to_thread 执行的同步 handler 内直接调用。
-
-    作用域语义：
-        global 与 instance 两个作用域完全隔离：
-        global 事件只送达 global 监听器，instance 事件只送达
-        同 instance_id 的 instance 监听器。
-    """
+    """插件系统进程内事件总线（纯异步并发分发）。"""
 
     def __init__(self) -> None:
-        self._handlers: DefaultDict[str, list[RegisteredHandler]] = defaultdict(list)
+        self._handlers: DefaultDict[str, List[RegisteredHandler]] = defaultdict(list)
         self._lock = asyncio.Lock()
 
     def on(
@@ -84,31 +51,31 @@ class EventBus:
         scope: EventScope = "global",
         once: bool = False,
         error_policy: EventErrorPolicy | None = None,
-        owner_plugin_name: str | None = None,
-        owner_instance_id: str | None = None,
+        owner_plugin_name: Optional[str] = None,
+        owner_instance_id: Optional[str] = None,
     ) -> str:
         """
         注册事件监听器并返回监听器 ID。
 
         Args:
-            event: 事件名。
-            handler: 监听函数或方法。
-            priority: 监听优先级，数值越大越先执行。
-            scope: 监听作用域。
-            once: 是否触发一次后自动解绑。
-            error_policy: 监听器级错误策略，None 表示继承事件级策略。
-            owner_plugin_name: 监听器所属插件名，用于批量解绑。
-            owner_instance_id: 监听器所属实例 ID，用于实例卸载自动解绑。
+            event (str): 事件名。
+            handler (Callable[[Any], Any]): 监听函数或方法。
+            priority (int): 监听优先级，数值越大越先执行。
+            scope (EventScope): 监听作用域。
+            once (bool): 是否触发一次后自动解绑。
+            error_policy (EventErrorPolicy | None): 监听器级错误策略，None 表示继承事件级策略。
+            owner_plugin_name (Optional[str]): 监听器所属插件名，用于批量解绑。
+            owner_instance_id (Optional[str]): 监听器所属实例 ID，用于实例卸载自动解绑。
 
         Returns:
-            注册成功后的监听器 ID。
+            str: 注册成功后的监听器 ID。
 
         Raises:
-            TypeError: event 不是字符串时抛出。
-            ValueError: event 为空字符串时抛出。
-            TypeError: handler 不可调用时抛出。
-            ValueError: scope 不在允许值集合时抛出。
-            ValueError: error_policy 不在允许值集合且不为 None 时抛出。
+            TypeError: `event` 不是字符串时抛出。
+            ValueError: `event` 为空字符串时抛出。
+            TypeError: `handler` 不可调用时抛出。
+            ValueError: `scope` 不在允许值集合时抛出。
+            ValueError: `error_policy` 不在允许值集合且不为 None 时抛出。
         """
         if not isinstance(event, str):
             raise TypeError("event 必须是字符串")
@@ -142,10 +109,6 @@ class EventBus:
 
         for existing in handlers:
             if existing.handler is handler:
-                logger.warning(
-                    f"重复注册监听器，忽略新参数并返回已有监听器 ID: "
-                    f"event={normalized_event}, handler={handler}"
-                )
                 return existing.listener_id
 
         handlers.append(record)
@@ -155,20 +118,23 @@ class EventBus:
     def off(
         self,
         event: str,
-        handler: Callable[[Any], Any] | None = None,
+        handler: Optional[Callable[[Any], Any]] = None,
         *,
-        listener_id: str | None = None,
+        listener_id: Optional[str] = None,
     ) -> None:
         """
         按事件名移除监听器，支持通过 handler 或 listener_id 精确解绑。
 
         Args:
-            event: 事件名。
-            handler: 目标监听函数。
-            listener_id: 监听器 ID。
+            event (str): 事件名。
+            handler (Optional[Callable[[Any], Any]]): 目标监听函数。
+            listener_id (Optional[str]): 监听器 ID。
+
+        Returns:
+            None: 无返回值。
 
         Raises:
-            ValueError: handler 与 listener_id 同时为空时抛出。
+            ValueError: `handler` 与 `listener_id` 同时为空时抛出。
         """
         if handler is None and listener_id is None:
             raise ValueError("off 需要提供 handler 或 listener_id")
@@ -177,7 +143,7 @@ class EventBus:
         if not handlers:
             return
 
-        filtered: list[RegisteredHandler] = []
+        filtered: List[RegisteredHandler] = []
         for item in handlers:
             matched = False
             if handler is not None and item.handler is handler:
@@ -193,7 +159,15 @@ class EventBus:
             self._handlers.pop(event, None)
 
     def off_by_instance(self, instance_id: str) -> None:
-        """移除指定插件实例注册的全部监听器。"""
+        """
+        移除指定插件实例注册的全部监听器。
+
+        Args:
+            instance_id (str): 插件实例 ID。
+
+        Returns:
+            None: 无返回值。
+        """
         for event in list(self._handlers.keys()):
             handlers = self._handlers.get(event, [])
             remained = [
@@ -210,24 +184,29 @@ class EventBus:
         payload: Any = None,
         *,
         scope: EventScope = "global",
-        source_instance_id: str | None = None,
+        source_instance_id: Optional[str] = None,
         error_policy: EventErrorPolicy = "continue",
     ) -> None:
         """
         异步广播事件。
 
-        使用方法：
-            await event_bus.emit("task.start", {"task_id": "..."})
+        该方法固定使用异步并发分发模型：
+        - 先按优先级降序分组。
+        - 同一优先级内并发执行监听器。
+        - 每个优先级组执行完后再进入下一组。
 
         Args:
-            event: 事件名。
-            payload: 事件载荷。
-            scope: 事件作用域。
-            source_instance_id: 事件来源实例 ID，instance 作用域下用于路由。
-            error_policy: 事件级错误策略。
+            event (str): 事件名。
+            payload (Any): 事件载荷。
+            scope (EventScope): 事件作用域。
+            source_instance_id (Optional[str]): 事件来源实例 ID，instance 作用域下用于路由。
+            error_policy (EventErrorPolicy): 事件级错误策略。
+
+        Returns:
+            None: 无返回值。
 
         Raises:
-            ValueError: scope 为 instance 且 source_instance_id 为空时抛出。
+            ValueError: `scope` 为 instance 且 `source_instance_id` 为空时抛出。
             EventDispatchError: 在 raise 策略下监听器执行失败时抛出聚合异常。
         """
         if scope == "instance" and not source_instance_id:
@@ -248,13 +227,13 @@ class EventBus:
         if not selected:
             return
 
-        priority_groups: dict[int, list[RegisteredHandler]] = defaultdict(list)
+        priority_groups: Dict[int, List[RegisteredHandler]] = defaultdict(list)
         for item in selected:
             priority_groups[item.priority].append(item)
 
         ordered_priorities = sorted(priority_groups.keys(), reverse=True)
-        errors: list[BaseException] = []
-        once_listener_ids: list[str] = []
+        errors: List[BaseException] = []
+        once_listener_ids: List[str] = []
 
         for priority in ordered_priorities:
             current_group = priority_groups[priority]
@@ -308,13 +287,15 @@ class EventBus:
         *,
         listener: RegisteredHandler,
         scope: EventScope,
-        source_instance_id: str | None,
+        source_instance_id: Optional[str],
     ) -> bool:
         """判断监听器是否命中当前事件路由规则。"""
         if scope == "global":
             return listener.scope == "global"
+
         if listener.scope != "instance":
             return False
+
         return listener.owner_instance_id == source_instance_id
 
     def _off_by_listener_id(self, listener_id: str) -> None:
@@ -332,6 +313,6 @@ class EventBus:
         self._handlers.clear()
 
     @property
-    def handler_count(self) -> dict[str, int]:
+    def handler_count(self) -> Dict[str, int]:
         """返回每个事件下的监听器数量。"""
         return {event: len(handlers) for event, handlers in self._handlers.items()}

@@ -20,15 +20,8 @@
 
 #   Contact: DLmaster_361@163.com
 
-
-from .MAA import MaaManager
-from .MaaEnd import MaaEndManager
-from .SRC import SrcManager
-from .M9A import M9AManager
-from .MaaFW import MaaFWManager
-from .general import GeneralManager
-from .Okww import OkwwManager
-from .HSR import HSRManager
+from importlib import import_module
+from typing import Any
 
 __all__ = [
     "MaaManager",
@@ -40,3 +33,28 @@ __all__ = [
     "OkwwManager",
     "HSRManager",
 ]
+
+_LAZY_EXPORTS = {
+    "MaaManager": ("app.task.MAA.manager", "MaaManager"),
+    "SrcManager": ("app.task.SRC.manager", "SrcManager"),
+    "M9AManager": ("app.task.M9A.manager", "M9AManager"),
+    "MaaFWManager": ("app.task.MaaFW.manager", "MaaFWManager"),
+    "GeneralManager": ("app.task.general.manager", "GeneralManager"),
+    "MaaEndManager": ("app.task.MaaEnd.manager", "MaaEndManager"),
+    "OkwwManager": ("app.task.Okww.manager", "OkwwManager"),
+    "HSRManager": ("app.task.HSR.manager", "HSRManager"),
+}
+
+
+def __getattr__(name: str) -> Any:
+    """按需导出任务管理器，避免包初始化时触发环形导入。"""
+
+    target = _LAZY_EXPORTS.get(name)
+    if target is None:
+        raise AttributeError(name)
+
+    module_path, attr_name = target
+    module = import_module(module_path)
+    value = getattr(module, attr_name)
+    globals()[name] = value
+    return value

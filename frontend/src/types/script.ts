@@ -17,8 +17,24 @@ import type {
   RewardSetOption,
   SanityTaskType,
 } from '@/utils/maaEndProtocolSpace'
+import type { SchemaDefinition } from './schemaForm'
 
-export type ScriptType = 'MAA' | 'General' | 'Okww' | 'SRC' | 'MaaEnd' | 'M9A' | 'MaaFW' | 'HSR'
+/**
+ * 内建脚本类型键。插件系统引入后，脚本类型键是开放集合（插件可注册任意
+ * type_key），因此 ScriptType 为 string；BuiltinScriptType 保留内建类型的
+ * 字面量枚举供需要穷举内建类型的场景使用。
+ */
+export type BuiltinScriptType =
+  | 'MAA'
+  | 'General'
+  | 'Okww'
+  | 'SRC'
+  | 'MaaEnd'
+  | 'M9A'
+  | 'MaaFW'
+  | 'HSR'
+
+export type ScriptType = string
 
 export type OkwwScriptConfig = OkwwConfig
 // MAA脚本配置
@@ -467,13 +483,29 @@ export interface Script {
     | ApiMaaFWConfig
     | MaaFWScriptConfig
     | HSRConfig
+    | Record<string, any>
   users: User[]
+  schema?: SchemaDefinition
+  userSchema?: SchemaDefinition
+  editorKind?: string
+  supportedModes?: string[]
+  icon?: string | null
+  docsUrl?: string | null
+  displayName?: string
+  isBuiltin?: boolean
+  available?: boolean
+  unavailableReason?: string | null
+  createTime?: string
 }
 
 // 用户配置
 export interface User {
   id: string
   name: string
+  scriptId?: string
+  type?: string
+  schema?: SchemaDefinition
+  config?: Record<string, any>
   Data: {
     IfPassCheck: boolean
     LastProxyDate: string

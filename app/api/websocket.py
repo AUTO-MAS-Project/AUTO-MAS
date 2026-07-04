@@ -28,11 +28,19 @@ WebSocket 客户端调试 API
 支持：创建客户端、连接、断开、发送消息、鉴权等
 """
 
-from typing import Optional
+import json
+import asyncio
+from pathlib import Path
+from typing import Optional, Dict, Any, Callable
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.utils.websocket import ws_client_manager
 from app.api.ws_command import list_ws_commands
+from app.plugins import PluginManager
+from app.plugins.market import (
+    fetch_market_snapshot,
+    collect_installed_distribution_names,
+)
 from app.utils.logger import get_logger
 from app.models.schema import (
     WSClientCreateIn,
@@ -51,10 +59,332 @@ from app.models.schema import (
     WSCommandsOut,
 )
 
-logger = get_logger("WS调试")
+logger = get_logger("WS端点")
 
-router = APIRouter(prefix="/api/ws_debug", tags=["WebSocket调试"])
+router = APIRouter(prefix="/api/ws", tags=["Websocket端点"])
+WSDEV_CHANNEL_NAME = "wsdev"
+PLUGIN_CHANNEL_NAME = "plugin"
+PLUGIN_CHANNEL_CLIENT_ID = "PluginMarket"
+_plugin_operation_lock = asyncio.Lock()
 
+
+def _normalize_distribution_name(name: str) -> str:
+    return str(name or "").strip().lower().replace("-", "_")
+
+
+async def _send_plugin_message(
+    event: str,
+    *,
+    request_id: str | None = None,
+    status: str = "success",
+    message: str = "",
+    payload: dict[str, Any] | None = None,
+) -> None:
+    session = ws_client_manager.get_session(PLUGIN_CHANNEL_NAME)
+    if session is None:
+        return
+
+    await session.send_json(
+        {
+            "id": PLUGIN_CHANNEL_CLIENT_ID,
+            "type": "Message",
+            "data": {
+                "event": event,
+                "request_id": request_id,
+                "status": status,
+                "message": message,
+                "payload": payload or {},
+            },
+        }
+    )
+
+
+async def _push_installed_sync(
+    package_name: str,
+    *,
+    request_id: str | None = None,
+) -> None:
+    plugins_dir = Path.cwd() / "plugins"
+    installed_names = collect_installed_distribution_names(plugins_dir=plugins_dir)
+    normalized = _normalize_distribution_name(package_name)
+    await _send_plugin_message(
+        "plugin.installed.sync",
+        request_id=request_id,
+        payload={
+            "package": package_name,
+            "installed": normalized in installed_names,
+        },
+    )
+
+
+async def _handle_plugin_channel_message(data: Dict[str, Any]) -> None:
+    action = str(data.get("action") or "").strip()
+    request_id = str(data.get("request_id") or "").strip() or None
+    payload = data.get("payload")
+    if not isinstance(payload, dict):
+        payload = {}
+
+    if not action:
+        await _send_plugin_message(
+            "plugin.error",
+            request_id=request_id,
+            status="error",
+            message="缺少 action 字段",
+        )
+        return
+
+    if action == "market.snapshot.request":
+        try:
+            limit = int(payload.get("per_prefix_limit") or 60)
+            snapshot = await fetch_market_snapshot(
+                plugins_dir=Path.cwd() / "plugins",
+                per_prefix_limit=max(1, min(limit, 200)),
+            )
+            await _send_plugin_message(
+                "market.snapshot.response",
+                request_id=request_id,
+                payload=snapshot,
+            )
+        except Exception as error:
+            logger.error(f"构建插件市场快照失败: {type(error).__name__}: {error}")
+            await _send_plugin_message(
+                "plugin.error",
+                request_id=request_id,
+                status="error",
+                message=f"构建插件市场快照失败: {type(error).__name__}: {error}",
+            )
+        return
+
+    if action == "plugin.install.request":
+        package_name = str(payload.get("package") or "").strip()
+        if not package_name:
+            await _send_plugin_message(
+                "plugin.error",
+                request_id=request_id,
+                status="error",
+                message="安装请求缺少 package",
+            )
+            return
+
+        await _send_plugin_message(
+            "plugin.install.progress",
+            request_id=request_id,
+            payload={"package": package_name, "progress": 5, "stage": "queued"},
+        )
+
+        async with _plugin_operation_lock:
+            await _send_plugin_message(
+                "plugin.install.progress",
+                request_id=request_id,
+                payload={"package": package_name, "progress": 30, "stage": "installing"},
+            )
+            try:
+                await PluginManager.install_plugin_package(package_name)
+                await _send_plugin_message(
+                    "plugin.install.progress",
+                    request_id=request_id,
+                    payload={"package": package_name, "progress": 100, "stage": "completed"},
+                )
+                await _send_plugin_message(
+                    "plugin.install.result",
+                    request_id=request_id,
+                    payload={"package": package_name, "success": True},
+                    message=f"安装成功: {package_name}",
+                )
+            except Exception as error:
+                await _send_plugin_message(
+                    "plugin.install.result",
+                    request_id=request_id,
+                    status="error",
+                    payload={"package": package_name, "success": False},
+                    message=f"安装失败: {type(error).__name__}: {error}",
+                )
+            finally:
+                await _push_installed_sync(package_name, request_id=request_id)
+        return
+
+    if action == "plugin.uninstall.request":
+        package_name = str(payload.get("package") or "").strip()
+        if not package_name:
+            await _send_plugin_message(
+                "plugin.error",
+                request_id=request_id,
+                status="error",
+                message="卸载请求缺少 package",
+            )
+            return
+
+        async with _plugin_operation_lock:
+            try:
+                await PluginManager.uninstall_plugin_package(package_name)
+                await _send_plugin_message(
+                    "plugin.uninstall.result",
+                    request_id=request_id,
+                    payload={"package": package_name, "success": True},
+                    message=f"卸载成功: {package_name}",
+                )
+            except Exception as error:
+                await _send_plugin_message(
+                    "plugin.uninstall.result",
+                    request_id=request_id,
+                    status="error",
+                    payload={"package": package_name, "success": False},
+                    message=f"卸载失败: {type(error).__name__}: {error}",
+                )
+            finally:
+                await _push_installed_sync(package_name, request_id=request_id)
+        return
+
+    if action == "plugin.installed.request":
+        package_name = str(payload.get("package") or "").strip()
+        if not package_name:
+            await _send_plugin_message(
+                "plugin.error",
+                request_id=request_id,
+                status="error",
+                message="installed 查询缺少 package",
+            )
+            return
+        await _push_installed_sync(package_name, request_id=request_id)
+        return
+
+    await _send_plugin_message(
+        "plugin.error",
+        request_id=request_id,
+        status="error",
+        message=f"未知 action: {action}",
+    )
+
+
+async def _on_plugin_channel_connect() -> None:
+    await _send_plugin_message(
+        "plugin.channel.ready",
+        payload={"channel": PLUGIN_CHANNEL_NAME},
+        message="plugin 通道已连接",
+    )
+
+
+async def _send_wsdev_snapshot(websocket: WebSocket):
+    """
+    发送 wsdev 初始化快照。
+
+    Args:
+        websocket: 当前调试前端的 WebSocket 连接。
+
+    Raises:
+        Exception: 发送初始化数据失败时抛出底层异常。
+    """
+    # 发送当前所有客户端状态
+    clients = ws_client_manager.list_clients()
+    await websocket.send_json({"type": "init", "clients": list(clients.values())})
+
+    # 发送历史消息
+    history = ws_client_manager.get_message_history()
+    for client_name, messages in history.items():
+        for msg in messages:
+            await websocket.send_json({"type": "message", "client": client_name, **msg})
+
+
+async def _invoke_declared_callback(callback: Optional[Callable], *args):
+    """
+    调用声明式回调并自动兼容同步/异步函数。
+
+    Args:
+        callback: 声明式回调函数。
+        *args: 传递给回调的参数。
+
+    Raises:
+        Exception: 回调执行过程中抛出的原始异常会向上抛出。
+    """
+    if callback is None:
+        return
+
+    result = callback(*args)
+    if hasattr(result, "__await__"):
+        await result
+
+
+def _build_channel_handlers(
+    channel_name: str,
+    websocket: WebSocket,
+    channel_config: Dict[str, Any],
+):
+    """
+    构建声明式通道的消息与生命周期回调。
+
+    Args:
+        channel_name: 通道名称。
+        websocket: 当前 WebSocket 连接。
+        channel_config: 通道声明配置。
+
+    Returns:
+        tuple: `(on_message, on_connect, on_disconnect)` 三个回调。
+    """
+    declared_on_message = channel_config.get("on_message")
+    declared_on_connect = channel_config.get("on_connect")
+    declared_on_disconnect = channel_config.get("on_disconnect")
+
+    if channel_name == WSDEV_CHANNEL_NAME:
+
+        async def on_message(data: Dict[str, Any]):
+            action = data.get("action") if isinstance(data, dict) else None
+            if action == "ping":
+                await websocket.send_text("pong")
+            elif action == "request_snapshot":
+                await _send_wsdev_snapshot(websocket)
+            await _invoke_declared_callback(declared_on_message, data)
+
+        async def on_connect():
+            ws_client_manager.add_debug_connection(websocket)
+            logger.info(f"调试前端已连接 (/api/ws/{channel_name}): {websocket.client}")
+            await _send_wsdev_snapshot(websocket)
+            await _invoke_declared_callback(declared_on_connect)
+
+        async def on_disconnect():
+            ws_client_manager.remove_debug_connection(websocket)
+            logger.info(f"调试前端已断开 (/api/ws/{channel_name}): {websocket.client}")
+            await _invoke_declared_callback(declared_on_disconnect)
+
+        return on_message, on_connect, on_disconnect
+
+    async def on_message(data: Dict[str, Any]):
+        await _invoke_declared_callback(declared_on_message, data)
+
+    async def on_connect():
+        logger.info(f"声明通道已连接 (/api/ws/{channel_name}): {websocket.client}")
+        await _invoke_declared_callback(declared_on_connect)
+
+    async def on_disconnect():
+        logger.info(f"声明通道已断开 (/api/ws/{channel_name}): {websocket.client}")
+        await _invoke_declared_callback(declared_on_disconnect)
+
+    return on_message, on_connect, on_disconnect
+
+
+def _register_builtin_reverse_channels():
+    """
+    注册内置声明式反向通道。
+
+    Raises:
+        ValueError: 当内置通道名称非法或与保留名称冲突时抛出。
+    """
+    ws_client_manager.register_reverse_channel(
+        name=WSDEV_CHANNEL_NAME,
+        ping_interval=15.0,
+        ping_timeout=30.0,
+        overwrite=True,
+    )
+    ws_client_manager.register_reverse_channel(
+        name=PLUGIN_CHANNEL_NAME,
+        ping_interval=15.0,
+        ping_timeout=30.0,
+        on_message=_handle_plugin_channel_message,
+        on_connect=_on_plugin_channel_connect,
+        overwrite=True,
+    )
+
+
+_register_builtin_reverse_channels()
 
 # ============== API 路由 ==============
 
@@ -454,44 +784,39 @@ async def get_commands() -> WSCommandsOut:
     )
 
 
-@router.websocket("/live")
-async def websocket_live(websocket: WebSocket):
+@router.websocket("/{channel_name}")
+async def websocket_dynamic_channel(websocket: WebSocket, channel_name: str):
     """
-    实时消息推送 WebSocket 端点
+    声明式动态 WebSocket 端点。
 
-    前端连接此端点后，可实时接收所有客户端的消息和事件
+    路由会根据 `channel_name` 查找管理器中的声明配置，
+    并统一通过 `openwsr` 接管当前连接。
+
+    Raises:
+        Exception: 会话创建或运行失败时抛出底层异常。
     """
+    channel_config = ws_client_manager.get_reverse_channel_config(channel_name)
+    if channel_config is None:
+        logger.warning(f"未声明的反向通道连接被拒绝: /api/ws/{channel_name}")
+        await websocket.close(code=1008, reason=f"未声明通道: {channel_name}")
+        return
+
     await websocket.accept()
-    ws_client_manager.add_debug_connection(websocket)
 
-    logger.info(f"调试前端已连接: {websocket.client}")
+    on_message, on_connect, on_disconnect = _build_channel_handlers(
+        channel_name=channel_name,
+        websocket=websocket,
+        channel_config=channel_config,
+    )
 
-    try:
-        # 发送当前所有客户端状态
-        clients = ws_client_manager.list_clients()
-        await websocket.send_json({"type": "init", "clients": list(clients.values())})
-
-        # 发送历史消息
-        history = ws_client_manager.get_message_history()
-        for client_name, messages in history.items():
-            for msg in messages:
-                await websocket.send_json(
-                    {"type": "message", "client": client_name, **msg}
-                )
-
-        # 保持连接，接收心跳
-        while True:
-            try:
-                data = await websocket.receive_text()
-                # 处理心跳或其他命令
-                if data == "ping":
-                    await websocket.send_text("pong")
-            except WebSocketDisconnect:
-                break
-            except Exception as e:
-                logger.error(f"WebSocket 错误: {e}")
-                break
-
-    finally:
-        ws_client_manager.remove_debug_connection(websocket)
-        logger.info(f"调试前端已断开: {websocket.client}")
+    session = await ws_client_manager.openwsr(
+        name=channel_name,
+        websocket=websocket,
+        ping_interval=float(channel_config.get("ping_interval", 15.0)),
+        ping_timeout=float(channel_config.get("ping_timeout", 30.0)),
+        auth_token=channel_config.get("auth_token"),
+        on_message=on_message,
+        on_connect=on_connect,
+        on_disconnect=on_disconnect,
+    )
+    await session.wait_closed()

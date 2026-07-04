@@ -92,6 +92,24 @@ let saveWindowStateTimeout: NodeJS.Timeout | null = null
 let isInitialStartup = true // 标记是否为初次启动
 const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自启动任务计划拉起
 
+const HEARTBEAT_LOG_KEYWORD_RE = /(\bping\b|\bpong\b|heartbeat|心跳)/i
+
+function shouldDropHeartbeatProcessLog(level: string, moduleName: string, message: string): boolean {
+  const isProd = app.isPackaged && process.env.NODE_ENV !== 'development'
+  if (!isProd) {
+    return false
+  }
+  if (!['debug', 'info'].includes(level)) {
+    return false
+  }
+  if (!HEARTBEAT_LOG_KEYWORD_RE.test(message)) {
+    return false
+  }
+
+  // 仅过滤心跳过程日志，避免影响其他模块的普通业务日志。
+  return moduleName.includes('WebSocket') || moduleName.includes('WS')
+}
+
 // 配置接口
 interface AppConfig {
   UI: {
@@ -617,6 +635,10 @@ ipcMain.handle(
         .map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg)))
         .join(' ')
 
+      if (shouldDropHeartbeatProcessLog(level, moduleName, message)) {
+        return
+      }
+
       switch (level) {
         case 'debug':
           rendererLogger.debug(message)
@@ -824,25 +846,6 @@ ipcMain.handle('kill-all-processes', async () => {
 
 ipcMain.handle('window-is-maximized', () => {
   return mainWindow ? mainWindow.isMaximized() : false
-})
-
-ipcMain.handle('select-folder', async () => {
-  if (!mainWindow) return null
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openDirectory'],
-    title: '选择文件夹',
-  })
-  return result.canceled ? null : result.filePaths[0]
-})
-
-ipcMain.handle('select-file', async (event, filters = []) => {
-  if (!mainWindow) return []
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openFile'],
-    title: '选择文件',
-    filters: filters.length > 0 ? filters : [{ name: '所有文件', extensions: ['*'] }],
-  })
-  return result.canceled ? [] : result.filePaths
 })
 
 // 在系统默认浏览器中打开URL

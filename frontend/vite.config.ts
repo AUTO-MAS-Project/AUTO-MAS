@@ -13,6 +13,8 @@ export default defineConfig({
     extensions: ['.js', '.ts', '.vue', '.json'],
     alias: {
       '@': path.resolve(__dirname, './src'),
+      'ant-design-vue': path.resolve(__dirname, './node_modules/ant-design-vue'),
+      vue: path.resolve(__dirname, './node_modules/vue/dist/vue.runtime.esm-bundler.js'),
     },
   },
   define: {
@@ -21,6 +23,9 @@ export default defineConfig({
   },
   // 开发服务器配置
   server: {
+    fs: {
+      allow: [path.resolve(__dirname, '..')],
+    },
     watch: {
       // 只排除构建产物，environment 不会被 Vite 监听（因为没有被 import）
       ignored: ['**/node_modules/**', '**/dist/**', '**/dist-electron/**'],
