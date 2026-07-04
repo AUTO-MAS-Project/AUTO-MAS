@@ -1,0 +1,33 @@
+from __future__ import annotations
+
+from app.plugins import ScriptAdapterDefinition, ScriptAdapterPlugin
+
+from .adapter import ${plugin_class_name}AdapterHooks
+from .schema import ScriptSchema, UserSchema
+
+DEFAULT_INSTANCE = {
+    "name": "${plugin_title} 专项适配",
+    "enabled": True,
+    "config": {},
+}
+
+SCRIPT_TYPE_BINDINGS: list[dict[str, str]] = []
+
+
+class Plugin(ScriptAdapterPlugin):
+    """${plugin_title} 专项适配插件。"""
+
+    def build_script_adapters(self) -> list[ScriptAdapterDefinition]:
+        return [
+            ScriptAdapterDefinition(
+                type_key="${script_type_key}",
+                display_name="${plugin_title} 脚本",
+                script_config_class=ScriptSchema,
+                user_config_class=UserSchema,
+                hooks_factory=${plugin_class_name}AdapterHooks,
+                supported_modes=("AutoProxy", "ScriptConfig", "ManualReview"),
+                icon="${script_type_key}",
+                editor_kind="plugin:${plugin_name}",
+                metadata={"framework": "script_adapter"},
+            )
+        ]

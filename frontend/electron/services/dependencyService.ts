@@ -1,6 +1,6 @@
 /**
  * 依赖安装服务
- * 重构版本 - 独立实现依赖安装
+ * 使用 uv sync 从 pyproject.toml 安装依赖到 .venv
  */
 
 import * as fs from 'fs'
@@ -16,7 +16,7 @@ const logger = getLogger('后端依赖安装服务')
 // ==================== 类型定义 ====================
 
 export interface DependencyCheckResult {
-    requirementsExists: boolean
+    pyprojectExists: boolean
     needsInstall: boolean
     currentHash?: string
     lastHash?: string
@@ -40,17 +40,19 @@ export type DependencyProgressCallback = (progress: DependencyProgress) => void
 
 export class DependencyService {
     private appRoot: string
+    private uvExe: string
     private pythonExe: string
-    private requirementsPath: string
+    private pyprojectPath: string
     private hashFilePath: string
     private mirrorService: MirrorService
     private rotationService: MirrorRotationService
 
     constructor(appRoot: string, mirrorService: MirrorService) {
         this.appRoot = appRoot
+        this.uvExe = path.join(appRoot, 'environment', 'python', 'Scripts', 'uv.exe')
         this.pythonExe = path.join(appRoot, 'environment', 'python', 'python.exe')
-        this.requirementsPath = path.join(appRoot, 'requirements.txt')
-        this.hashFilePath = path.join(appRoot, 'environment', '.requirements_hash')
+        this.pyprojectPath = path.join(appRoot, 'pyproject.toml')
+        this.hashFilePath = path.join(appRoot, 'environment', '.pyproject_hash')
         this.mirrorService = mirrorService
         this.rotationService = new MirrorRotationService()
     }
@@ -64,7 +66,6 @@ export class DependencyService {
         forceInstall: boolean = false
     ): Promise<{ success: boolean; error?: string; skipped?: boolean }> {
         try {
-            // 第一步：环境检查
             onProgress?.({
                 stage: 'check',
                 progress: 0,
@@ -73,7 +74,6 @@ export class DependencyService {
             })
             const checkResult = await this.checkDependencies()
 
-            // 上报检查结果
             onProgress?.({
                 stage: 'check',
                 progress: 50,
@@ -98,8 +98,6 @@ export class DependencyService {
 
             logger.info(`依赖检查结果: ${JSON.stringify(checkResult)}`)
 
-            // 第二步：安装依赖
-            // 不在这里发送 progress: 0，避免进度条跳回0
             const installResult = await this.performInstall((opProgress, mirrorName, mirrorIndex, totalMirrors) => {
                 onProgress?.({
                     stage: 'install',
@@ -117,7 +115,6 @@ export class DependencyService {
                 return { success: false, error: installResult.error }
             }
 
-            // 保存当前哈希值
             if (checkResult.currentHash) {
                 this.saveHash(checkResult.currentHash)
             }
@@ -137,30 +134,27 @@ export class DependencyService {
     }
 
     /**
-     * 检查依赖状态
+     * 检查依赖状态（基于 pyproject.toml 哈希）
      */
     private async checkDependencies(): Promise<DependencyCheckResult> {
         logger.info('=== 检查依赖状态 ===')
 
-        // 检查 requirements.txt 是否存在
-        if (!fs.existsSync(this.requirementsPath)) {
-            logger.info('requirements.txt 不存在')
-            return { requirementsExists: false, needsInstall: false }
+        if (!fs.existsSync(this.pyprojectPath)) {
+            logger.info('pyproject.toml 不存在')
+            return { pyprojectExists: false, needsInstall: false }
         }
 
-        // 计算当前哈希
         const currentHash = this.calculateHash()
         logger.info(`当前哈希: ${currentHash.substring(0, 8)}...`)
 
-        // 读取上次安装的哈希
         const lastHash = this.loadHash()
         logger.info(`上次哈希: ${lastHash ? lastHash.substring(0, 8) + '...' : 'null'}`)
 
-        // 判断是否需要安装
-        const needsInstall = lastHash === null || currentHash !== lastHash
+        const venvExists = fs.existsSync(path.join(this.appRoot, '.venv'))
+        const needsInstall = !venvExists || lastHash === null || currentHash !== lastHash
 
         return {
-            requirementsExists: true,
+            pyprojectExists: true,
             needsInstall,
             currentHash,
             lastHash: lastHash || undefined
@@ -168,16 +162,13 @@ export class DependencyService {
     }
 
     /**
-     * 计算 requirements.txt 的哈希值
+     * 计算 pyproject.toml 的哈希值
      */
     private calculateHash(): string {
-        const content = fs.readFileSync(this.requirementsPath, 'utf-8')
+        const content = fs.readFileSync(this.pyprojectPath, 'utf-8')
         return crypto.createHash('sha256').update(content.trim()).digest('hex')
     }
 
-    /**
-     * 加载上次安装的哈希值
-     */
     private loadHash(): string | null {
         try {
             if (!fs.existsSync(this.hashFilePath)) {
@@ -190,9 +181,6 @@ export class DependencyService {
         }
     }
 
-    /**
-     * 保存哈希值
-     */
     private saveHash(hash: string): void {
         try {
             const dir = path.dirname(this.hashFilePath)
@@ -207,7 +195,7 @@ export class DependencyService {
     }
 
     /**
-     * 执行依赖安装
+     * 执行依赖安装（uv sync）
      */
     private async performInstall(
         onProgress?: (progress: NetworkOperationProgress, mirrorName: string, mirrorIndex: number, totalMirrors: number) => void,
@@ -215,17 +203,14 @@ export class DependencyService {
     ): Promise<{ success: boolean; error?: string }> {
         const mirrors = this.mirrorService.getMirrors('pip_mirror')
 
-        // 定义依赖安装操作
         const installOperation: NetworkOperationCallback = async (mirror, onOpProgress) => {
             try {
-                // 1. 检查并安装基础工具
-                onOpProgress({ progress: 20, description: '检查基础工具...' })
-                await this.ensureBasicTools(mirror)
+                onOpProgress({ progress: 20, description: '检查 uv 可用性...' })
+                await this.ensureUvReady()
 
-                // 2. 安装依赖
-                onOpProgress({ progress: 40, description: '安装依赖包...' })
-                await this.installRequirements(mirror, (progress) => {
-                    onOpProgress({ progress, description: '安装依赖包...' })
+                onOpProgress({ progress: 40, description: '正在同步依赖 (uv sync)...' })
+                await this.runUvSync(mirror, (progress) => {
+                    onOpProgress({ progress, description: '正在同步依赖...' })
                 })
 
                 onOpProgress({ progress: 100, description: '安装完成' })
@@ -236,7 +221,6 @@ export class DependencyService {
             }
         }
 
-        // 使用镜像源轮替
         const result = await this.rotationService.execute(mirrors, installOperation, (rotationProgress) => {
             onProgress?.(
                 rotationProgress.operationProgress,
@@ -254,183 +238,64 @@ export class DependencyService {
         return { success: true }
     }
 
-    /**
-     * 确保基础工具已安装（setuptools, wheel）
-     */
-    private async ensureBasicTools(mirror: MirrorSource): Promise<void> {
-        logger.info('=== 检查基础工具 ===')
-
-        // 检查 setuptools 和 wheel 是否已安装
-        const toolsInstalled = await this.checkBasicTools()
-
-        if (toolsInstalled) {
-            logger.info('基础工具已安装')
-            return
+    private async ensureUvReady(): Promise<void> {
+        if (!fs.existsSync(this.uvExe)) {
+            throw new Error('uv.exe 不存在，请先完成环境初始化')
         }
-
-        logger.info('正在安装基础工具...')
-
-        await new Promise<void>((resolve, reject) => {
-            const hostname = new URL(mirror.url).hostname
-
-            const proc = spawn(this.pythonExe, [
-                '-m',
-                'pip',
-                'install',
-                '--upgrade',
-                'setuptools',
-                'wheel',
-                '-i',
-                mirror.url,
-                '--trusted-host',
-                hostname
-            ], {
-                cwd: this.appRoot,
-                stdio: 'pipe'
-            })
-
-            proc.stdout?.on('data', (data) => {
-                logger.info(`setuptools/wheel: ${data.toString().trim()}`)
-            })
-
-            proc.stderr?.on('data', (data) => {
-                logger.info(`setuptools/wheel error: ${data.toString().trim()}`)
-            })
-
-            proc.on('close', (code) => {
-                if (code === 0) {
-                    logger.info('基础工具安装完成')
-                    resolve()
-                } else {
-                    // 即使失败也继续，因为可能已经存在
-                    logger.warn('⚠️ 基础工具安装失败，但继续')
-                    resolve()
-                }
-            })
-
-            proc.on('error', (error) => {
-                logger.warn(`基础工具安装进程错误: ${error}`)
-                resolve()
-            })
-        })
     }
 
     /**
-     * 检查基础工具是否已安装
+     * 执行 uv sync 从 pyproject.toml 安装依赖
+     * 通过 UV_INDEX_URL 环境变量传递镜像源
      */
-    private checkBasicTools(): Promise<boolean> {
-        return new Promise((resolve) => {
-            const proc = spawn(this.pythonExe, ['-m', 'pip', 'list'], {
-                cwd: this.appRoot,
-                stdio: 'pipe'
-            })
-
-            let output = ''
-            proc.stdout?.on('data', (data) => {
-                output += data.toString()
-            })
-
-            proc.on('close', (code) => {
-                if (code === 0) {
-                    const hasSetuptools = output.includes('setuptools')
-                    const hasWheel = output.includes('wheel')
-                    resolve(hasSetuptools && hasWheel)
-                } else {
-                    resolve(false)
-                }
-            })
-
-            proc.on('error', () => {
-                resolve(false)
-            })
-        })
-    }
-
-    /**
-     * 安装 requirements.txt 中的依赖
-     */
-    private installRequirements(mirror: MirrorSource, onProgress?: (progress: number) => void): Promise<void> {
+    private runUvSync(mirror: MirrorSource, onProgress?: (progress: number) => void): Promise<void> {
         return new Promise((resolve, reject) => {
-            const hostname = new URL(mirror.url).hostname
+            const env = {
+                ...process.env,
+                UV_INDEX_URL: mirror.url,
+            }
 
-            const proc = spawn(this.pythonExe, [
-                '-m',
-                'pip',
-                'install',
-                '-r',
-                this.requirementsPath,
-                '-i',
-                mirror.url,
-                '--trusted-host',
-                hostname,
-                '--no-warn-script-location'
+            const proc = spawn(this.uvExe, [
+                'sync',
+                '--python', this.pythonExe,
+                '--no-install-project',
             ], {
                 cwd: this.appRoot,
-                stdio: 'pipe'
+                stdio: 'pipe',
+                env,
             })
 
             let stdoutData = ''
             let stderrData = ''
-            let totalPackages = 0
-            let installedPackages = 0
 
             proc.stdout?.on('data', (data) => {
                 const output = data.toString().trim()
                 stdoutData += output
-                logger.info(`pip install: ${output}`)
-
-                // 解析pip输出，统计安装进度
-                // 匹配 "Collecting xxx" 来统计总包数
-                const collectingMatches = output.match(/Collecting\s+\S+/g)
-                if (collectingMatches) {
-                    totalPackages += collectingMatches.length
-                }
-
-                // 匹配 "Installing collected packages:" 或 "Successfully installed" 来统计已安装包数
-                const installingMatch = output.match(/Installing collected packages:/)
-                if (installingMatch) {
-                    // 开始安装阶段
-                    installedPackages = Math.floor(totalPackages * 0.8) // 假设收集完成后进度到80%
-                    if (onProgress) {
-                        const progress = 40 + (installedPackages / Math.max(totalPackages, 1)) * 50 // 40% - 90%
-                        onProgress(Math.min(progress, 90))
-                    }
-                }
-
-                const successMatch = output.match(/Successfully installed/)
-                if (successMatch) {
-                    installedPackages = totalPackages
-                    if (onProgress) {
-                        onProgress(95) // 安装完成，进度到95%
-                    }
-                }
+                logger.info(`uv sync: ${output}`)
             })
 
             proc.stderr?.on('data', (data) => {
                 const output = data.toString().trim()
                 stderrData += output
-                logger.info(`pip install error: ${output}`)
+                logger.info(`uv sync stderr: ${output}`)
+
+                if (output.includes('Resolved')) {
+                    onProgress?.(60)
+                } else if (output.includes('Prepared') || output.includes('Downloading')) {
+                    onProgress?.(75)
+                } else if (output.includes('Installed') || output.includes('installed')) {
+                    onProgress?.(95)
+                }
             })
 
             proc.on('close', (code) => {
-                logger.info(`pip install 退出码: ${code}`)
+                logger.info(`uv sync 退出码: ${code}`)
 
-                // 检查是否有实际错误
-                const hasActualError =
-                    stderrData.toLowerCase().includes('error:') ||
-                    stderrData.toLowerCase().includes('failed') ||
-                    stderrData.toLowerCase().includes('could not find')
-
-                // 检查是否成功安装
-                const hasSuccess =
-                    stdoutData.toLowerCase().includes('successfully installed') ||
-                    stdoutData.toLowerCase().includes('requirement already satisfied')
-
-                if (code === 0 || hasSuccess || !hasActualError) {
-                    logger.info('依赖安装成功')
+                if (code === 0) {
+                    logger.info('uv sync 成功')
                     resolve()
                 } else {
-                    reject(new Error(`依赖安装失败，退出码: ${code}`))
+                    reject(new Error(`uv sync 失败，退出码: ${code}\nstderr: ${stderrData}`))
                 }
             })
 

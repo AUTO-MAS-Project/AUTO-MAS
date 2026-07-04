@@ -2,7 +2,7 @@
  * 文件操作相关的 IPC 处理器
  */
 
-import { ipcMain } from 'electron'
+import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { promises as fsPromises } from 'fs'
 import path from 'path'
 import { getLogger } from '../services/logger'
@@ -22,6 +22,31 @@ export function registerFileHandlers() {
     return
   }
   isRegistered = true
+
+  ipcMain.handle('select-folder', async () => {
+    const parent = BrowserWindow.getFocusedWindow() ?? undefined
+    const options: Electron.OpenDialogOptions = {
+      properties: ['openDirectory'],
+      title: '选择文件夹',
+    }
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
+      : await dialog.showOpenDialog(options)
+    return result.canceled ? null : result.filePaths[0]
+  })
+
+  ipcMain.handle('select-file', async (_event, filters: Electron.FileFilter[] = []) => {
+    const parent = BrowserWindow.getFocusedWindow() ?? undefined
+    const options: Electron.OpenDialogOptions = {
+      properties: ['openFile'],
+      title: '选择文件',
+      filters: filters.length > 0 ? filters : [{ name: '所有文件', extensions: ['*'] }],
+    }
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
+      : await dialog.showOpenDialog(options)
+    return result.canceled ? [] : result.filePaths
+  })
 
   // ==================== 读取文件 ====================
   ipcMain.handle('read-file', async (event, filePath: string) => {

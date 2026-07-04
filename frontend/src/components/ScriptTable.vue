@@ -1,17 +1,9 @@
 <template>
   <div class="scripts-grid">
     <!-- 使用vuedraggable包装脚本列表 -->
-    <draggable
-      v-model="localScripts"
-      item-key="id"
-      :animation="200"
-      ghost-class="script-ghost"
-      chosen-class="script-chosen"
-      drag-class="script-drag"
-      handle=".script-drag-handle"
-      class="draggable-scripts"
-      @end="onScriptDragEnd"
-    >
+    <draggable v-model="localScripts" item-key="id" :animation="200" ghost-class="script-ghost"
+      chosen-class="script-chosen" drag-class="script-drag" handle=".script-drag-handle" class="draggable-scripts"
+      @end="onScriptDragEnd">
       <template #item="{ element: script }">
         <div :key="script.id" class="script-wrapper">
           <a-card :hoverable="false" class="script-card" :body-style="{ padding: '0' }">
@@ -22,206 +14,78 @@
                   <span class="script-drag-dots" aria-hidden="true"></span>
                 </span>
                 <div class="script-logo-container">
-                  <img
-                    v-if="script.type === 'MAA'"
-                    src="@/assets/MAA.png"
-                    alt="MAA"
-                    class="script-logo"
-                  />
-                  <img
-                    v-else-if="script.type === 'SRC'"
-                    src="@/assets/SRC.png"
-                    alt="SRC"
-                    class="script-logo"
-                  />
-                  <img
-                    v-else-if="script.type === 'MaaEnd'"
-                    src="@/assets/MaaEnd.png"
-                    alt="MaaEnd"
-                    class="script-logo"
-                  />
-                  <img
-                    v-else-if="script.type === 'M9A'"
-                    src="@/assets/M9A.png"
-                    alt="M9A"
-                    class="script-logo"
-                  />
-                  <img
-                    v-else-if="script.type === 'MaaFW'"
-                    src="@/assets/AUTO-MAS.ico"
-                    alt="MaaFramework"
-                    class="script-logo"
-                  />
-                  <img
-                    v-else-if="script.type === 'Okww'"
-                    src="@/assets/ok-ww.ico"
-                    alt="ok-ww"
-                    class="script-logo"
-                  />
-                  <img
-                    v-else-if="script.type === 'HSR'"
-                    src="@/assets/hsr.png"
-                    alt="HSR"
-                    class="script-logo"
-                  />
-                  <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
+                  <img :src="getScriptIcon(script.type)" :alt="script.type" class="script-logo" />
                 </div>
                 <div class="script-details">
                   <h3 class="script-name">{{ script.name }}</h3>
-                  <a-tag :color="getScriptTagColor(script.type)" class="script-type">
-                    {{ getScriptTypeLabel(script.type) }}
+                  <a-tag :color="getScriptTypeTagColor(script.type)" class="script-type">
+                    {{ script.displayName || script.type }}
+                  </a-tag>
+                  <a-tag v-if="script.available === false" color="orange" class="script-type">
+                    未启用
                   </a-tag>
                 </div>
               </div>
               <div class="header-actions">
-                <a-button
-                  v-if="script.type === 'MAA' && !props.activeConnections.has(script.id)"
-                  type="primary"
-                  ghost
-                  size="middle"
-                  @click="handleStartMAAConfig(script)"
-                >
-                  <template #icon>
-                    <SettingOutlined />
-                  </template>
-                  配置MAA
-                </a-button>
-                <a-button
-                  v-if="script.type === 'MAA' && props.activeConnections.has(script.id)"
-                  type="default"
-                  size="middle"
-                  disabled
-                  style="color: #52c41a; border-color: #52c41a"
-                >
-                  <template #icon>
-                    <SettingOutlined />
-                  </template>
-                  正在配置
-                </a-button>
-                <a-button
-                  v-if="script.type === 'SRC' && !props.activeConnections.has(script.id)"
-                  type="primary"
-                  ghost
-                  size="middle"
-                  @click="handleStartSRCConfig(script)"
-                >
+                <a-button v-if="script.type === 'SRC' && !props.activeConnections.has(script.id)" type="primary" ghost
+                  size="middle" :disabled="!isScriptOperable(script)" @click="handleStartSRCConfig(script)">
                   <template #icon>
                     <SettingOutlined />
                   </template>
                   配置SRC
                 </a-button>
-                <a-button
-                  v-if="script.type === 'SRC' && props.activeConnections.has(script.id)"
-                  type="default"
-                  size="middle"
-                  disabled
-                  style="color: #52c41a; border-color: #52c41a"
-                >
+                <a-button v-if="script.type === 'SRC' && props.activeConnections.has(script.id)" type="default"
+                  size="middle" disabled style="color: #52c41a; border-color: #52c41a">
                   <template #icon>
                     <SettingOutlined />
                   </template>
                   正在配置
                 </a-button>
-                <a-button
-                  v-if="isMaaEndPresetSupported(script) && !props.activeConnections.has(script.id)"
-                  type="primary"
-                  ghost
-                  size="middle"
-                  @click="handleStartMaaEndConfig(script)"
-                >
+                <a-button v-if="script.type === 'MaaEnd' && !props.activeConnections.has(script.id)" type="primary"
+                  ghost size="middle" :disabled="!isScriptOperable(script)" @click="handleStartMaaEndConfig(script)">
                   <template #icon>
                     <SettingOutlined />
                   </template>
                   配置MaaEnd
                 </a-button>
-                <a-button
-                  v-if="isMaaEndPresetSupported(script) && props.activeConnections.has(script.id)"
-                  type="default"
-                  size="middle"
-                  disabled
-                  style="color: #52c41a; border-color: #52c41a"
-                >
+                <a-button v-if="script.type === 'MaaEnd' && props.activeConnections.has(script.id)" type="default"
+                  size="middle" disabled style="color: #52c41a; border-color: #52c41a">
                   <template #icon>
                     <SettingOutlined />
                   </template>
                   正在配置
                 </a-button>
-                <a-button type="default" size="middle" @click="handleEdit(script)">
+                <a-button type="default" size="middle" :disabled="!isScriptOperable(script)" @click="handleEdit(script)">
                   <template #icon>
                     <EditOutlined />
                   </template>
                   编辑脚本
                 </a-button>
-                <a-button
-                  type="default"
-                  size="middle"
-                  class="action-button add-button"
-                  @click="handleAddUser(script)"
-                >
+                <a-button type="default" size="middle" class="action-button add-button"
+                  :disabled="!isScriptOperable(script)" @click="handleAddUser(script)">
                   <template #icon>
                     <UserAddOutlined />
                   </template>
                   添加用户
                 </a-button>
-                <a-dropdown :trigger="['click']">
-                  <a-button
-                    size="middle"
-                    class="action-button"
-                    :loading="props.copyingScriptId === script.id"
-                    :disabled="Boolean(props.copyingScriptId)"
-                  >
+                <a-popconfirm title="确定要删除这个脚本吗？" description="删除后将无法恢复，请谨慎操作" ok-text="确定" cancel-text="取消"
+                  @confirm="handleDelete(script)">
+                  <a-button danger size="middle" class="action-button delete-button">
                     <template #icon>
-                      <EllipsisOutlined />
+                      <DeleteOutlined />
                     </template>
-                    更多
+                    删除脚本
                   </a-button>
-                  <template #overlay>
-                    <a-menu>
-                      <a-menu-item key="copy" @click="handleCopy(script)">
-                        <CopyOutlined />
-                        复制脚本
-                      </a-menu-item>
-                      <a-menu-divider />
-                      <a-menu-item key="delete" danger @click="handleDeleteConfirm(script)">
-                        <DeleteOutlined />
-                        删除脚本
-                      </a-menu-item>
-                    </a-menu>
-                  </template>
-                </a-dropdown>
-                <a-tooltip :title="collapsedScriptIds.has(script.id) ? '展开用户' : '收起用户'">
-                  <a-button
-                    size="middle"
-                    class="action-button"
-                    :aria-label="collapsedScriptIds.has(script.id) ? '展开用户' : '收起用户'"
-                    @click="toggleUsersCollapsed(script.id)"
-                  >
-                    <template #icon>
-                      <DownOutlined v-if="collapsedScriptIds.has(script.id)" />
-                      <UpOutlined v-else />
-                    </template>
-                  </a-button>
-                </a-tooltip>
+                </a-popconfirm>
               </div>
             </div>
 
             <!-- 用户列表 -->
-            <div
-              v-if="!collapsedScriptIds.has(script.id) && script.users && script.users.length > 0"
-              class="users-section"
-            >
+            <div v-if="script.users && script.users.length > 0" class="users-section">
               <!-- 使用vuedraggable包装用户列表 -->
-              <draggable
-                v-model="script.users"
-                item-key="id"
-                :animation="200"
-                ghost-class="user-ghost"
-                chosen-class="user-chosen"
-                drag-class="user-drag"
-                handle=".user-drag-handle"
-                class="users-list"
-                @end="(evt: any) => onUserDragEnd(evt, script)"
-              >
+              <draggable v-model="script.users" item-key="id" :animation="200" ghost-class="user-ghost"
+                chosen-class="user-chosen" drag-class="user-drag" handle=".user-drag-handle" class="users-list"
+                @end="(evt: any) => onUserDragEnd(evt, script)">
                 <template #item="{ element: user }">
                   <div :key="user.id" class="user-item">
                     <span class="user-drag-handle" title="拖拽排序" aria-label="拖拽排序">
@@ -231,185 +95,31 @@
                       <div class="user-details-row">
                         <div class="user-name-section">
                           <span class="user-name">{{ user.Info.Name }}</span>
-                          <!-- MAA、SRC 和 MaaEnd 脚本显示服务器标签 -->
-                          <a-tag
-                            v-if="
-                              script.type === 'MAA' ||
-                              script.type === 'SRC' ||
-                              script.type === 'MaaEnd'
-                            "
-                            :color="
-                              script.type === 'MaaEnd'
-                                ? getMaaEndResourceTagColor(user)
-                                : getServerTagColor(user.Info.Server)
-                            "
-                            class="server-tag"
-                          >
-                            {{
-                              script.type === 'MaaEnd'
-                                ? getMaaEndResourceLabel(user)
-                                : getServerDisplayName(user.Info.Server)
-                            }}
+                          <!-- 有服务器或资源字段的用户显示来源标签 -->
+                          <a-tag v-if="shouldShowServerTag(user)" :color="getUserServerTagColor(user)"
+                            class="server-tag">
+                            {{ getUserServerDisplayName(user) }}
                           </a-tag>
 
-                          <!-- M9A 脚本显示服务器标签 -->
-                          <a-tag
-                            v-if="script.type === 'M9A'"
-                            :color="getM9AServerTagColor(user.Info.Resource)"
-                            class="server-tag"
-                          >
-                            {{ user.Info.Resource || '官服' }}
-                          </a-tag>
-
-                          <!-- 账号标签 (HSR 不显示账号/密码) -->
-                          <a-tag
-                            v-if="
-                              script.type === 'MAA' ||
-                              script.type === 'SRC' ||
-                              script.type === 'MaaEnd'
-                            "
-                            :color="
-                              script.type === 'MaaEnd'
-                                ? 'blue'
-                                : getServerTagColor(user.Info.Server)
-                            "
-                            class="clickable-tag"
-                            @click="handleUserIdClick(user)"
-                          >
+                          <!-- 账号标签 -->
+                          <a-tag v-if="shouldShowUserIdTag(user)" :color="getUserIdentityTagColor(user)"
+                            class="clickable-tag" @click="handleUserIdClick(user)">
                             {{ getUserIdDisplayText(user) }}
                           </a-tag>
 
-                          <!-- 密码标签 (HSR 不显示账号/密码) -->
-                          <a-tag
-                            v-if="
-                              script.type === 'MAA' ||
-                              script.type === 'SRC' ||
-                              script.type === 'MaaEnd'
-                            "
-                            :color="
-                              script.type === 'MaaEnd'
-                                ? 'blue'
-                                : getServerTagColor(user.Info.Server)
-                            "
-                            class="clickable-tag"
-                            @click="handlePasswordClick(user)"
-                          >
+                          <!-- 密码标签 -->
+                          <a-tag v-if="shouldShowPasswordTag(user)" :color="getUserIdentityTagColor(user)"
+                            class="clickable-tag" @click="handlePasswordClick(user)">
                             {{ getPasswordDisplayText(user) }}
                           </a-tag>
                         </div>
 
-                        <!-- 用户详细信息 - MAA和SRC脚本用户 -->
-                        <div
-                          v-if="
-                            script.type === 'MAA' ||
-                            script.type === 'SRC' ||
-                            script.type === 'MaaEnd'
-                          "
-                          class="user-info-tags"
-                        >
+                        <!-- 用户详细信息 -->
+                        <div v-if="shouldShowStatusTags(user)" class="user-info-tags">
                           <!-- 直接使用后端提供的Tag字段 -->
-                          <a-tag
-                            v-for="(tag, index) in parseStatusTagList(user.Info.Tag)"
-                            :key="index"
-                            :title="tag.text"
-                            :class="[
-                              'info-tag',
-                              { 'clickable-tag': tag.text === '人工排查未通过' },
-                            ]"
-                            :color="tag.color"
-                            @click="
-                              tag.text === '人工排查未通过' ? handlePassCheck(user) : undefined
-                            "
-                          >
-                            {{ tag.text }}
-                          </a-tag>
-                        </div>
-                        <!-- 用户详细信息 - 后端提供 Tag 的脚本用户 -->
-                        <div
-                          v-if="script.type === 'General' || script.type === 'Okww'"
-                          class="user-info-tags"
-                        >
-                          <!-- 直接使用后端提供的Tag字段 -->
-                          <a-tag
-                            v-for="(tag, index) in parseStatusTagList(user.Info.Tag)"
-                            :key="index"
-                            :title="tag.text"
-                            class="info-tag"
-                            :color="tag.color"
-                          >
-                            {{ tag.text }}
-                          </a-tag>
-                        </div>
-                        <!-- 用户详细信息 - M9A脚本用户 -->
-                        <div v-if="script.type === 'M9A'" class="user-info-tags">
-                          <!-- 显示备注（仅当有值时）-->
-                          <a-tag
-                            v-if="
-                              user.Info.Notes &&
-                              user.Info.Notes !== '无' &&
-                              user.Info.Notes.trim() !== ''
-                            "
-                            color="geekblue"
-                            class="info-tag"
-                            :title="user.Info.Notes"
-                          >
-                            {{ truncateText(user.Info.Notes, 10) }}
-                          </a-tag>
-
-                          <a-tag
-                            v-for="(tag, index) in getM9AOnceStatusTags(script, user)"
-                            :key="`m9a-once-${index}`"
-                            :title="tag.text"
-                            class="info-tag"
-                            :color="tag.color"
-                          >
-                            {{ tag.text }}
-                          </a-tag>
-
-                          <!-- 后端提供的Tag字段 -->
-                          <a-tag
-                            v-for="(tag, index) in parseStatusTagList(user.Info.Tag)"
-                            :key="index"
-                            :title="tag.text"
-                            class="info-tag"
-                            :color="tag.color"
-                          >
-                            {{ tag.text }}
-                          </a-tag>
-                        </div>
-                        <!-- 用户详细信息 - MaaFW 项目用户 -->
-                        <div v-if="script.type === 'MaaFW'" class="user-info-tags">
-                          <a-tag
-                            v-if="
-                              user.Info.Notes &&
-                              user.Info.Notes !== '无' &&
-                              user.Info.Notes.trim() !== ''
-                            "
-                            color="geekblue"
-                            class="info-tag"
-                            :title="user.Info.Notes"
-                          >
-                            {{ truncateText(user.Info.Notes, 10) }}
-                          </a-tag>
-                          <a-tag
-                            v-for="(tag, index) in parseStatusTagList(user.Info.Tag)"
-                            :key="index"
-                            :title="tag.text"
-                            class="info-tag"
-                            :color="tag.color"
-                          >
-                            {{ tag.text }}
-                          </a-tag>
-                        </div>
-                        <!-- 用户详细信息 - HSR脚本用户 -->
-                        <div v-if="script.type === 'HSR'" class="user-info-tags">
-                          <a-tag
-                            v-for="(tag, index) in parseStatusTagList(user.Info.Tag)"
-                            :key="index"
-                            :title="tag.text"
-                            class="info-tag"
-                            :color="tag.color"
-                          >
+                          <a-tag v-for="(tag, index) in getUserStatusTags(user)" :key="index"
+                            :title="tag.text" :class="['info-tag', { 'clickable-tag': isPassCheckTag(tag) }]"
+                            :color="tag.color || 'default'" @click="isPassCheckTag(tag) ? handlePassCheck(user) : undefined">
                             {{ tag.text }}
                           </a-tag>
                         </div>
@@ -418,66 +128,22 @@
 
                     <div class="user-controls">
                       <div class="user-status">
-                        <a-switch
-                          :checked="user.Info.Status"
-                          :checked-children="'启用'"
-                          :un-checked-children="'禁用'"
-                          class="status-switch"
-                          @click="handleToggleUserStatus(user)"
-                        />
+                        <a-switch :checked="user.Info.Status" :checked-children="'启用'" :un-checked-children="'禁用'"
+                          class="status-switch" :disabled="!isScriptOperable(script)" @click="handleToggleUserStatus(user)" />
                       </div>
 
                       <div class="user-actions">
-                        <a-tooltip
-                          v-if="shouldShowMaaEndUserConfigButton(script, user)"
-                          title="配置用户级 MaaEnd"
-                        >
-                          <a-button
-                            v-if="!props.activeConnections.has(user.id)"
-                            type="default"
-                            size="middle"
-                            class="user-action-btn"
-                            @click="handleStartMaaEndUserConfig(script, user)"
-                          >
-                            <template #icon>
-                              <SettingOutlined />
-                            </template>
-                            配置MaaEnd
-                          </a-button>
-                          <a-button
-                            v-else
-                            type="default"
-                            size="middle"
-                            class="user-action-btn"
-                            disabled
-                            style="color: #52c41a; border-color: #52c41a"
-                          >
-                            <template #icon>
-                              <SettingOutlined />
-                            </template>
-                            正在配置
-                          </a-button>
-                        </a-tooltip>
                         <a-tooltip title="编辑用户配置">
-                          <a-button
-                            type="default"
-                            size="middle"
-                            class="user-action-btn"
-                            @click="handleEditUser(user)"
-                          >
+                          <a-button type="default" size="middle" class="user-action-btn"
+                            :disabled="!isScriptOperable(script)" @click="handleEditUser(user)">
                             <template #icon>
                               <EditOutlined />
                             </template>
                             编辑
                           </a-button>
                         </a-tooltip>
-                        <a-popconfirm
-                          title="确定要删除这个用户吗？"
-                          description="删除后将无法恢复"
-                          ok-text="确定"
-                          cancel-text="取消"
-                          @confirm="handleDeleteUser(user)"
-                        >
+                        <a-popconfirm title="确定要删除这个用户吗？" description="删除后将无法恢复" ok-text="确定" cancel-text="取消"
+                          @confirm="handleDeleteUser(user)">
                           <a-tooltip title="删除用户">
                             <a-button type="default" size="middle" danger class="user-action-btn">
                               <template #icon>
@@ -495,7 +161,7 @@
             </div>
 
             <!-- 空状态 -->
-            <div v-else-if="!collapsedScriptIds.has(script.id)" class="empty-users">
+            <div v-else class="empty-users">
               <div class="empty-content">
                 <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
               </div>
@@ -510,28 +176,24 @@
 <script setup lang="ts">
 import type { Script, User } from '../types/script'
 import {
-  CopyOutlined,
   DeleteOutlined,
-  DownOutlined,
   EditOutlined,
-  EllipsisOutlined,
   SettingOutlined,
-  UpOutlined,
   UserAddOutlined,
 } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
 import { ref, watch } from 'vue'
 import { Service } from '@/api'
 import { message, Modal } from 'ant-design-vue'
-import { useScriptApi } from '@/composables/useScriptApi'
-import { useUserApi } from '@/composables/useUserApi'
+import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import { parseStatusTagList } from '@/composables/useStatusTag'
+import type { StatusTag } from '@/composables/useStatusTag'
 import { getTodayInTimezone, isDateEqual, getWeekdayInTimezone } from '@/utils/dateUtils'
+import { getScriptIcon, getScriptTypeTagColor } from '@/utils/scriptRegistry'
 
 interface Props {
   scripts: Script[]
   activeConnections: Map<string, { subscriptionId: string; websocketId: string }>
-  copyingScriptId?: string | null
   allPlansData?: Record<string, Record<string, any>>
   currentPlanData?: Record<string, any>
 }
@@ -541,25 +203,17 @@ interface Emits {
 
   (e: 'delete', script: Script): void
 
-  (e: 'copy', script: Script): void
-
   (e: 'addUser', script: Script): void
 
   (e: 'editUser', user: User): void
 
   (e: 'deleteUser', user: User): void
 
-  (e: 'startMaaConfig', script: Script): void
-
-  (e: 'saveMaaConfig', script: Script): void
-
   (e: 'startSrcConfig', script: Script): void
 
   (e: 'saveSrcConfig', script: Script): void
 
   (e: 'startMaaEndConfig', script: Script): void
-
-  (e: 'startMaaEndUserConfig', script: Script, user: User): void
 
   (e: 'saveMaaEndConfig', script: Script): void
 
@@ -595,16 +249,17 @@ const STAGE_NAME_MAP: Record<string, string> = {
   'PR-D-2': '近/特芯片组',
 }
 
-const M9A_PSYCHUBE_NAMES = ['每日心相（意志解析）', '每日心相']
-const M9A_LIMBO_NAMES = ['自动深眠']
-const M9A_LUCIDSCAPE_NAMES = ['自动醒梦']
+ANNIHILATION_MAP.Annihilation = '剿灭'
+ANNIHILATION_MAP['Chernobog@Annihilation'] = '切尔诺伯格'
+ANNIHILATION_MAP['LungmenOutskirts@Annihilation'] = '龙门外环'
+ANNIHILATION_MAP['LungmenDowntown@Annihilation'] = '龙门市区'
+ANNIHILATION_MAP.Close = '不使用剿灭'
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
 // 本地脚本列表状态
 const localScripts = ref<Script[]>([])
-const collapsedScriptIds = ref<Set<string>>(new Set())
 
 // 账号信息展开状态管理 - 使用用户ID作为key
 const expandedUserIds = ref<Set<string>>(new Set())
@@ -619,37 +274,14 @@ watch(
   { immediate: true, deep: true }
 )
 
+const isScriptOperable = (script: Script) => script.available !== false
+
 const handleEdit = (script: Script) => {
   emit('edit', script)
 }
 
 const handleDelete = (script: Script) => {
   emit('delete', script)
-}
-
-const handleCopy = (script: Script) => {
-  emit('copy', script)
-}
-
-const handleDeleteConfirm = (script: Script) => {
-  Modal.confirm({
-    title: '确定要删除这个脚本吗？',
-    content: '删除后将无法恢复，请谨慎操作',
-    okText: '确定',
-    okType: 'danger',
-    cancelText: '取消',
-    onOk: () => handleDelete(script),
-  })
-}
-
-const toggleUsersCollapsed = (scriptId: string) => {
-  const next = new Set(collapsedScriptIds.value)
-  if (next.has(scriptId)) {
-    next.delete(scriptId)
-  } else {
-    next.add(scriptId)
-  }
-  collapsedScriptIds.value = next
 }
 
 const handleAddUser = (script: Script) => {
@@ -664,14 +296,6 @@ const handleDeleteUser = (user: User) => {
   emit('deleteUser', user)
 }
 
-const handleStartMAAConfig = (script: Script) => {
-  emit('startMaaConfig', script)
-}
-
-const handleSaveMAAConfig = (script: Script) => {
-  emit('saveMaaConfig', script)
-}
-
 const handleStartSRCConfig = (script: Script) => {
   emit('startSrcConfig', script)
 }
@@ -684,42 +308,12 @@ const handleStartMaaEndConfig = (script: Script) => {
   emit('startMaaEndConfig', script)
 }
 
-const handleStartMaaEndUserConfig = (script: Script, user: User) => {
-  emit('startMaaEndUserConfig', script, user)
-}
-
-const isMaaEndPresetSupported = (script: Script) => {
-  const controllerType = (script.config as any).Game?.ControllerType
-  return script.type === 'MaaEnd' && controllerType === 'Win32-Front'
-}
-
-const shouldShowMaaEndUserConfigButton = (script: Script, user: User) => {
-  return script.type === 'MaaEnd' && user.Info?.Mode === '详细'
-}
-
 const handleSaveMaaEndConfig = (script: Script) => {
   emit('saveMaaEndConfig', script)
 }
 
 const handleToggleUserStatus = (user: User) => {
   emit('toggleUserStatus', user)
-}
-
-const getScriptTypeLabel = (type: Script['type']) => {
-  if (type === 'MaaFW') return 'MaaFramework'
-  if (type === 'Okww') return 'ok-ww'
-  return type
-}
-
-const getScriptTagColor = (type: Script['type']) => {
-  if (type === 'MAA') return 'blue'
-  if (type === 'SRC') return 'purple'
-  if (type === 'MaaEnd') return 'blue'
-  if (type === 'M9A') return 'cyan'
-  if (type === 'MaaFW') return 'geekblue'
-  if (type === 'Okww') return 'blue'
-  if (type === 'HSR') return 'purple'
-  return 'green'
 }
 
 const handlePassCheck = (user: User) => {
@@ -732,6 +326,77 @@ const handlePassCheck = (user: User) => {
       emit('passCheckUser', user)
     },
   })
+}
+
+const getInfoFieldValue = (user: any, field: string): any => {
+  return user?.Info?.[field]
+}
+
+const hasInfoField = (user: any, field: string): boolean => {
+  const info = user?.Info
+  return !!info && Object.prototype.hasOwnProperty.call(info, field)
+}
+
+const hasInfoDisplayValue = (user: any, field: string): boolean => {
+  const value = getInfoFieldValue(user, field)
+  return value !== undefined && value !== null && String(value).length > 0
+}
+
+const getValueByPath = (source: Record<string, any> | null | undefined, path: string): unknown => {
+  if (!source || !path) {
+    return undefined
+  }
+  return path.split('.').reduce<unknown>((current, key) => {
+    if (!current || typeof current !== 'object') {
+      return undefined
+    }
+    return (current as Record<string, unknown>)[key]
+  }, source)
+}
+
+const getSchemaFields = (schema: any): any[] => {
+  if (!schema) {
+    return []
+  }
+  if (Array.isArray(schema.groups)) {
+    return schema.groups.flatMap((group: any) => Array.isArray(group.fields) ? group.fields : [])
+  }
+  if (typeof schema === 'object') {
+    return Object.entries(schema).map(([key, field]) => ({
+      ...(field && typeof field === 'object' ? field : {}),
+      key,
+    }))
+  }
+  return []
+}
+
+const getUserStatusTags = (user: any): StatusTag[] => {
+  const tagFields = getSchemaFields(user?.schema).filter(field => field?.type === 'tag')
+  const tags = tagFields.flatMap(field =>
+    parseStatusTagList(getValueByPath(user?.config || user, field.key || field.name || ''))
+  )
+  if (tags.length > 0) {
+    return tags
+  }
+  return parseStatusTagList(user?.Info?.Tag)
+}
+
+const isPassCheckTag = (tag: StatusTag): boolean => tag.text === '人工排查未通过'
+
+const shouldShowServerTag = (user: any): boolean => {
+  return hasInfoDisplayValue(user, 'Server') || hasInfoDisplayValue(user, 'Resource')
+}
+
+const shouldShowUserIdTag = (user: any): boolean => {
+  return hasInfoDisplayValue(user, 'Id')
+}
+
+const shouldShowPasswordTag = (user: any): boolean => {
+  return hasInfoField(user, 'Password')
+}
+
+const shouldShowStatusTags = (user: any): boolean => {
+  return getUserStatusTags(user).length > 0
 }
 
 const truncateText = (text: string, maxLength: number = 10): string => {
@@ -823,6 +488,30 @@ const getMaaEndResourceTagColor = (user: any): string => {
     default:
       return 'blue'
   }
+}
+
+const getUserServerTagColor = (user: any): string => {
+  const server = getInfoFieldValue(user, 'Server')
+  if (server !== undefined && server !== null && String(server).length > 0) {
+    return getServerTagColor(String(server))
+  }
+  return getMaaEndResourceTagColor(user)
+}
+
+const getUserServerDisplayName = (user: any): string => {
+  const server = getInfoFieldValue(user, 'Server')
+  if (server !== undefined && server !== null && String(server).length > 0) {
+    return getServerDisplayName(String(server))
+  }
+  return getMaaEndResourceLabel(user)
+}
+
+const getUserIdentityTagColor = (user: any): string => {
+  const server = getInfoFieldValue(user, 'Server')
+  if (server !== undefined && server !== null && String(server).length > 0) {
+    return getServerTagColor(String(server))
+  }
+  return getMaaEndResourceTagColor(user)
 }
 
 // 获取剩余天数的颜色
@@ -918,88 +607,6 @@ const getServerDisplayName = (server: string): string => {
     default:
       return server || '未知'
   }
-}
-
-// M9A服务器标签颜色映射
-const getM9AServerTagColor = (_resource: string): string => {
-  return 'blue'
-}
-
-const getM9ATodayString = (): string => {
-  return new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString().slice(0, 10)
-}
-
-const getM9ACurrentMonthString = (): string => {
-  return getM9ATodayString().slice(0, 7)
-}
-
-const parseM9ATaskQueue = (queue: unknown): Array<{ name?: string }> => {
-  if (Array.isArray(queue)) return queue as Array<{ name?: string }>
-  if (typeof queue !== 'string') return []
-
-  try {
-    const parsed = JSON.parse(queue)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-const hasM9ATaskInQueue = (queue: Array<{ name?: string }>, names: string[]): boolean => {
-  return queue.some(item => item.name && names.includes(item.name))
-}
-
-const getM9AOnceStatusTags = (script: Script, user: User) => {
-  const runConfig = (script.config as any)?.Run || {}
-  const queue = parseM9ATaskQueue((user as any).Task?.Queue)
-  const data = (user as any).Data || {}
-  const tags: Array<{ text: string; color: string }> = []
-
-  if (data.IfPassCheck === false) {
-    return tags
-  }
-
-  if (runConfig.IfPsychubeDailyOnce && hasM9ATaskInQueue(queue, M9A_PSYCHUBE_NAMES)) {
-    const completed = data.LastPsychubeDate === getM9ATodayString()
-    tags.push({
-      text: `每日心相：${completed ? '已完成' : '未完成'}`,
-      color: completed ? 'green' : 'orange',
-    })
-  }
-
-  if (runConfig.IfSleepDreamMonthlyOnce) {
-    const hasLimbo = hasM9ATaskInQueue(queue, M9A_LIMBO_NAMES)
-    const hasLucidscape = hasM9ATaskInQueue(queue, M9A_LUCIDSCAPE_NAMES)
-    if (hasLimbo || hasLucidscape) {
-      const currentMonth = getM9ACurrentMonthString()
-      const completed =
-        (!hasLimbo || data.LastLimboMonth === currentMonth) &&
-        (!hasLucidscape || data.LastLucidscapeMonth === currentMonth)
-
-      tags.push({
-        text: `深眠浅梦：${completed ? '已完成' : '未完成'}`,
-        color: completed ? 'green' : 'orange',
-      })
-    }
-  }
-
-  return tags
-}
-
-// M9A剩余天数颜色（智能着色）
-const getM9ARemainedDayColor = (remainedDay: number): string => {
-  if (remainedDay === -1) return 'gold'
-  if (remainedDay === 0) return 'red'
-  if (remainedDay <= 3) return 'orange'
-  if (remainedDay <= 7) return 'yellow'
-  return 'blue'
-}
-
-// M9A剩余天数友好文本
-const getM9ARemainedDayText = (remainedDay: number): string => {
-  if (remainedDay === -1) return '长期有效'
-  if (remainedDay === 0) return '已到期'
-  return `${remainedDay}天`
 }
 
 // 获取基建模式显示名称
@@ -1340,20 +947,27 @@ const getCurrentPlanStageOld = (): string => {
 
   return ''
 }
-const { reorderScript } = useScriptApi()
-const { reorderUser } = useUserApi()
+const registryApi = useScriptRegistryApi()
 
 const onScriptDragEnd = async () => {
   const scriptIds = localScripts.value.map(s => s.id)
-  const success = await reorderScript(scriptIds)
-  if (success) {
+  try {
+    await registryApi.reorderScripts(scriptIds)
     emit('scriptsReordered', localScripts.value)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    message.error(`脚本排序失败: ${errorMsg}`)
   }
 }
 
 const onUserDragEnd = async (evt: any, script: Script) => {
   const userIds = script.users.map(u => u.id)
-  const success = await reorderUser(script.id, userIds)
+  try {
+    await registryApi.reorderUsers(script.id, userIds)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    message.error(`用户排序失败: ${errorMsg}`)
+  }
 }
 </script>
 
@@ -1582,6 +1196,10 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   background: var(--ant-color-primary-bg);
   border-color: var(--ant-color-primary-hover);
   color: var(--ant-color-primary-hover);
+}
+
+.delete-button:hover {
+  background: linear-gradient(135deg, var(--ant-color-error), var(--ant-color-error-hover));
 }
 
 /* 用户区域 */

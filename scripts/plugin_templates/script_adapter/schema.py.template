@@ -1,0 +1,107 @@
+from __future__ import annotations
+
+from pydantic import BaseModel, ConfigDict
+
+from app.plugins.fields import PluginField
+
+
+class PluginConfig(BaseModel):
+    """插件实例配置。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    log_prefix: str = PluginField(
+        default="${plugin_name}",
+        title="日志前缀",
+        description="用于区分当前插件输出的日志来源。",
+        json_schema_extra={"group": "插件", "size": "half"},
+    )
+    strict_check: bool = PluginField(
+        default=True,
+        title="严格检查",
+        description="启用后会在运行前执行更严格的前置校验。",
+        json_schema_extra={"group": "插件", "size": "half"},
+    )
+
+
+class Config(PluginConfig):
+    """宿主插件系统读取的实例配置入口。"""
+
+
+class ScriptSchema(BaseModel):
+    """脚本配置。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    script_name: str = PluginField(
+        default="新专项脚本",
+        title="脚本名称",
+        description="脚本列表中展示的名称。",
+        json_schema_extra={"group": "基础信息", "size": "half"},
+    )
+    enabled: bool = PluginField(
+        default=True,
+        title="启用脚本",
+        description="关闭后运行时可自行选择跳过。",
+        json_schema_extra={"group": "基础信息", "size": "half"},
+    )
+    launch_target: str = PluginField(
+        default="",
+        title="启动目标",
+        placeholder="例如游戏路径、URI 或业务关键字",
+        help="由专项运行时自行解释。",
+        json_schema_extra={"group": "运行设置", "size": "large"},
+    )
+    working_directory: str = PluginField(
+        default="",
+        title="工作目录",
+        placeholder="可选，用于指定专项运行目录",
+        ui_type="path",
+        path_kind="folder",
+        json_schema_extra={"group": "运行设置", "size": "large"},
+    )
+    notes: str = PluginField(
+        default="",
+        title="脚本备注",
+        format="textarea",
+        rows=4,
+        json_schema_extra={"group": "运行设置", "size": "large"},
+    )
+
+
+class UserSchema(BaseModel):
+    """用户配置。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    user_name: str = PluginField(
+        default="新用户",
+        title="用户名称",
+        description="用户列表中展示的名称。",
+        json_schema_extra={"group": "基础信息", "size": "half"},
+    )
+    enabled: bool = PluginField(
+        default=True,
+        title="启用用户",
+        description="关闭后自动代理和人工审核模式会默认跳过该用户。",
+        json_schema_extra={"group": "基础信息", "size": "half"},
+    )
+    account_id: str = PluginField(
+        default="",
+        title="业务账号",
+        placeholder="按需填写业务侧账号标识",
+        json_schema_extra={"group": "业务信息", "size": "half"},
+    )
+    profile: str = PluginField(
+        default="default",
+        title="运行档位",
+        description="示例字段，可映射不同档位或渠道。",
+        json_schema_extra={"group": "业务信息", "size": "half"},
+    )
+    notes: str = PluginField(
+        default="",
+        title="用户备注",
+        format="textarea",
+        rows=4,
+        json_schema_extra={"group": "业务信息", "size": "large"},
+    )

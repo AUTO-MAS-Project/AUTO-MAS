@@ -1,0 +1,21 @@
+import { mkdir, writeFile } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const rootDir = dirname(dirname(fileURLToPath(import.meta.url)))
+const manifestPath = resolve(rootDir, '../src/${plugin_name}/frontend/manifest.json')
+
+const manifest = {
+  version: Date.now(),
+  renderer: 'custom-element',
+  entry: 'frontend/dist/index.js',
+  style: [],
+  elements: [
+    {
+      tag: '${plugin_element_tag}',
+    },
+  ],
+}
+
+await mkdir(dirname(manifestPath), { recursive: true })
+await writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\\n', 'utf8')

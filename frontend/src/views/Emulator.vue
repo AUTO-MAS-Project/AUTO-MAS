@@ -1187,7 +1187,7 @@ const handleBossKeyInputChange = (uuid: string) => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--ant-color-bg-layout);
+  background: transparent;
 }
 
 .page-header {
@@ -1242,7 +1242,7 @@ const handleBossKeyInputChange = (uuid: string) => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background-color: var(--ant-color-bg-container);
+  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
   border-radius: 12px;
   padding: 16px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
@@ -1253,7 +1253,7 @@ const handleBossKeyInputChange = (uuid: string) => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: var(--ant-color-bg-container);
+  background-color: transparent;
 }
 
 .emulator-tabs :deep(.ant-tabs-nav) {
@@ -1292,7 +1292,7 @@ const handleBossKeyInputChange = (uuid: string) => {
 
 /* 配置区域 */
 .config-section {
-  background-color: var(--ant-color-bg-container);
+  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   border: 1px solid var(--ant-color-border-secondary);
@@ -1343,21 +1343,21 @@ const handleBossKeyInputChange = (uuid: string) => {
 
 .config-form :deep(.ant-input-borderless:hover),
 .config-form :deep(.ant-input-number-borderless:hover) {
-  background: var(--bg-color-elevated);
+  background: var(--app-background-card-elevated-bg, var(--bg-color-elevated));
 }
 
 .config-form :deep(.ant-input-borderless:focus),
 .config-form :deep(.ant-input-number-borderless:focus) {
-  background: var(--bg-color-elevated);
+  background: var(--app-background-card-elevated-bg, var(--bg-color-elevated));
   box-shadow: none;
 }
 
 .config-form :deep(.ant-select-borderless:hover .ant-select-selector) {
-  background: var(--bg-color-elevated) !important;
+  background: var(--app-background-card-elevated-bg, var(--bg-color-elevated)) !important;
 }
 
 .config-form :deep(.ant-select-focused.ant-select-borderless .ant-select-selector) {
-  background: var(--bg-color-elevated) !important;
+  background: var(--app-background-card-elevated-bg, var(--bg-color-elevated)) !important;
   box-shadow: none !important;
 }
 
@@ -1457,7 +1457,7 @@ const handleBossKeyInputChange = (uuid: string) => {
 
 .devices-grid :deep(.ant-table-thead > tr > th) {
   padding: 8px 12px;
-  background: var(--bg-color-container);
+  background: var(--app-background-card-bg, var(--bg-color-container));
   font-weight: 500;
   position: sticky;
   top: 0;
@@ -1469,7 +1469,7 @@ const handleBossKeyInputChange = (uuid: string) => {
 }
 
 .devices-grid :deep(.ant-table-tbody > tr:hover > td) {
-  background: var(--bg-color-elevated);
+  background: var(--app-background-card-elevated-bg, var(--bg-color-elevated));
 }
 
 /* 老板键列表 */
@@ -1504,12 +1504,12 @@ html.dark {
 
 html.dark .config-section,
 html.dark .devices-section {
-  background: #1a1a1a;
+  background: var(--app-background-card-bg, #1a1a1a);
 }
 
 html.dark .page-content {
-  background: #0a0a0a;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  background: transparent;
+  box-shadow: none;
 }
 
 /* 响应式 - 移动端适配 */

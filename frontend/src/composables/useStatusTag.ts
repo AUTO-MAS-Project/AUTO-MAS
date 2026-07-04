@@ -5,7 +5,7 @@ import { computed, type ComputedRef } from 'vue'
  */
 export interface StatusTag {
     text: string
-    color: string
+    color?: string
 }
 
 /**
@@ -76,10 +76,25 @@ export interface StatusTag {
  * @returns StatusTag对象或null
  */
 export function parseStatusTag(
-    status: string | null | undefined,
+    status: unknown,
     defaultTag: StatusTag | null = null
 ): StatusTag | null {
     if (!status) return defaultTag
+
+    if (typeof status === 'object') {
+        const tag = status as Partial<StatusTag>
+        if (typeof tag.text === 'string') {
+            return {
+                text: tag.text,
+                color: typeof tag.color === 'string' ? tag.color : 'default',
+            }
+        }
+        return defaultTag
+    }
+
+    if (typeof status !== 'string') {
+        return defaultTag
+    }
 
     if (status === '-') {
         return defaultTag
@@ -106,7 +121,7 @@ export function parseStatusTag(
  * @returns StatusTag对象数组
  */
 export function parseStatusTagList(
-    statusList: string | string[] | null | undefined,
+    statusList: unknown,
     defaultTags: StatusTag[] = []
 ): StatusTag[] {
     if (!statusList) {
@@ -114,6 +129,12 @@ export function parseStatusTagList(
     }
 
     try {
+        if (Array.isArray(statusList)) {
+            return statusList
+                .map(item => parseStatusTag(item, null))
+                .filter((tag): tag is StatusTag => tag !== null)
+        }
+
         // 如果是字符串，尝试解析
         if (typeof statusList === 'string') {
             if (statusList === '-') {
@@ -135,13 +156,6 @@ export function parseStatusTagList(
             }
 
             return defaultTags
-        }
-
-        // 如果已经是数组，处理每个元素
-        if (Array.isArray(statusList)) {
-            return statusList
-                .map(item => parseStatusTag(item, null))
-                .filter((tag): tag is StatusTag => tag !== null)
         }
 
         return defaultTags

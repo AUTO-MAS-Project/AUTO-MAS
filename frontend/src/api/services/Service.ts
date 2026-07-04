@@ -44,6 +44,15 @@ import type { PlanGetIn } from '../models/PlanGetIn';
 import type { PlanGetOut } from '../models/PlanGetOut';
 import type { PlanReorderIn } from '../models/PlanReorderIn';
 import type { PlanUpdateIn } from '../models/PlanUpdateIn';
+import type { PluginAddIn } from '../models/PluginAddIn';
+import type { PluginAddOut } from '../models/PluginAddOut';
+import type { PluginDeleteIn } from '../models/PluginDeleteIn';
+import type { PluginDevRebuildCtxStubIn } from '../models/PluginDevRebuildCtxStubIn';
+import type { PluginDevRebuildCtxStubOut } from '../models/PluginDevRebuildCtxStubOut';
+import type { PluginReloadInstanceIn } from '../models/PluginReloadInstanceIn';
+import type { PluginReloadPluginIn } from '../models/PluginReloadPluginIn';
+import type { PluginsGetOut } from '../models/PluginsGetOut';
+import type { PluginUpdateIn } from '../models/PluginUpdateIn';
 import type { PowerIn } from '../models/PowerIn';
 import type { PowerOut } from '../models/PowerOut';
 import type { QueueCreateOut } from '../models/QueueCreateOut';
@@ -1916,6 +1925,154 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/update/install',
+        });
+    }
+    /**
+     * 获取插件实例配置
+     * @returns PluginsGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getPluginsApiPluginsGetPost(): CancelablePromise<PluginsGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugins/get',
+        });
+    }
+    /**
+     * 重载插件实例
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static reloadPluginsApiPluginsReloadPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugins/reload',
+        });
+    }
+    /**
+     * 重载单个插件实例
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static reloadPluginInstanceApiPluginsReloadInstancePost(
+        requestBody: PluginReloadInstanceIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugins/reload_instance',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 按插件名重载所有实例
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static reloadPluginByNameApiPluginsReloadPluginPost(
+        requestBody: PluginReloadPluginIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugins/reload_plugin',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 重建插件 ctx 类型提示文件
+     * 手动触发插件上下文 .pyi 重建。
+     *
+     * 该接口用于插件开发阶段快速刷新类型提示，便于 IDE 立即获得最新签名。
+     *
+     * Args:
+     * data (PluginDevRebuildCtxStubIn): 重建参数。
+     *
+     * Returns:
+     * PluginDevRebuildCtxStubOut: 重建结果摘要。
+     *
+     * Raises:
+     * 无。接口内部会捕获异常并转换为统一错误响应。
+     * @param requestBody
+     * @returns PluginDevRebuildCtxStubOut Successful Response
+     * @throws ApiError
+     */
+    public static rebuildPluginCtxStubApiPluginsDevRebuildCtxStubPost(
+        requestBody: PluginDevRebuildCtxStubIn,
+    ): CancelablePromise<PluginDevRebuildCtxStubOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugins/dev/rebuild_ctx_stub',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 新增插件实例
+     * @param requestBody
+     * @returns PluginAddOut Successful Response
+     * @throws ApiError
+     */
+    public static addPluginInstanceApiPluginsAddPost(
+        requestBody: PluginAddIn,
+    ): CancelablePromise<PluginAddOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugins/add',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 更新插件实例
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updatePluginInstanceApiPluginsUpdatePost(
+        requestBody: PluginUpdateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugins/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 删除插件实例
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static deletePluginInstanceApiPluginsDeletePost(
+        requestBody: PluginDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugins/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
 }

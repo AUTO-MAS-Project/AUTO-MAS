@@ -23,6 +23,7 @@
 
 from .api import *
 from .core import *
+from . import plugins
 from .models import *
 from .services import *
 from .utils import *
@@ -31,4 +32,4 @@ from importlib import import_module as _import_module
 
 task = _import_module(".task", __name__)
 
-__all__ = ["api", "core", "models", "services", "task", "utils"]
+__all__ = ["api", "core", "plugins", "models", "services", "task", "utils"]

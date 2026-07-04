@@ -1,0 +1,5 @@
+"""${plugin_name} 适配运行时导出。"""
+
+from .runtime import ${plugin_class_name}AdapterHooks
+
+__all__ = ["${plugin_class_name}AdapterHooks"]

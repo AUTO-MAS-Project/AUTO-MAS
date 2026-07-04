@@ -1,0 +1,195 @@
+<template>
+  <section class="page-shell">
+    <header class="panel">
+      <div>
+        <span class="eyebrow">Plugin Page</span>
+        <h2>{{ title || '${plugin_title}' }}</h2>
+        <p>{{ message }}</p>
+      </div>
+      <button type="button" :disabled="loading" @click="handleRequestBackend">
+        {{ loading ? '同步中' : '刷新数据' }}
+      </button>
+    </header>
+
+    <section class="panel">
+      <div class="section-title">宿主上下文</div>
+      <dl>
+        <div v-for="item in contextRows" :key="item.label">
+          <dt>{{ item.label }}</dt>
+          <dd>{{ item.value }}</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="panel">
+      <div class="section-title">后端返回</div>
+      <pre>{{ responseText }}</pre>
+    </section>
+  </section>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
+
+interface BackendResponse {
+  message?: string
+  plugin?: string
+  instance_id?: string
+  page_path?: string
+  element_tag?: string
+  server_time?: string
+}
+
+defineProps<{
+  title?: string
+}>()
+
+const loading = ref(false)
+const response = ref<BackendResponse | null>(null)
+const responseText = ref('等待首次同步...')
+const pageContext = computed(() => window.pluginAPI?.getPageContext?.() || null)
+
+const message = computed(() => {
+  return response.value?.message || '这个页面由 ${plugin_name} 插件的 Vue 源码动态加载。'
+})
+
+const contextRows = computed(() => [
+  { label: 'pageId', value: pageContext.value?.pageId || 'unknown' },
+  { label: 'pluginId', value: pageContext.value?.pluginId || response.value?.plugin || 'unknown' },
+  { label: 'elementTag', value: pageContext.value?.elementTag || response.value?.element_tag || 'unknown' },
+  { label: 'instance', value: response.value?.instance_id || 'unknown' },
+  { label: 'serverTime', value: response.value?.server_time || 'unknown' },
+])
+
+async function handleRequestBackend(): Promise<void> {
+  loading.value = true
+  responseText.value = '正在请求插件后端...'
+  try {
+    const result = (await window.pluginAPI.call('hello')) as BackendResponse
+    response.value = result
+    responseText.value = JSON.stringify(result, null, 2)
+  } catch (error) {
+    responseText.value = error instanceof Error ? error.message : String(error)
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => {
+  void handleRequestBackend()
+})
+</script>
+
+<style>
+:host {
+  display: block;
+  min-height: 100%;
+  color: #172033;
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+.page-shell {
+  display: grid;
+  gap: 16px;
+  min-height: 100%;
+  padding: 24px;
+  background: #f7f9fc;
+}
+
+.panel {
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid rgba(23, 32, 51, 0.08);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.eyebrow,
+.section-title,
+dt {
+  color: #667085;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+h2 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+p {
+  margin: 8px 0 0;
+  color: #4b5873;
+  line-height: 1.7;
+}
+
+button {
+  width: max-content;
+  height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 6px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+dl {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+dl > div {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+}
+
+dd {
+  min-width: 0;
+  margin: 0;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+pre {
+  min-height: 120px;
+  max-height: 260px;
+  margin: 0;
+  overflow: auto;
+  padding: 14px;
+  border-radius: 6px;
+  background: #101828;
+  color: #d1fadf;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 760px) {
+  .page-shell {
+    padding: 14px;
+  }
+
+  button {
+    width: 100%;
+  }
+
+  dl > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+</style>

@@ -205,7 +205,7 @@
                 <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="maaEndConfig.Game.Path"
-                    placeholder="请选择游戏可执行文件"
+                    placeholder="请选择 Endfield.exe 文件的路径"
                     size="large"
                     class="path-input"
                     readonly

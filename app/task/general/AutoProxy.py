@@ -32,7 +32,6 @@ from datetime import datetime, timedelta
 from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
-from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.emulator import DeviceBase
 from app.services import Notify, System
 from app.utils import (
@@ -44,6 +43,7 @@ from app.utils import (
     is_process_running,
 )
 from app.utils.constants import UTC4
+from .schema import GeneralConfig, GeneralUserConfig
 from .tools import execute_script_task, push_notification
 
 logger = get_logger("通用脚本自动代理")

@@ -312,7 +312,7 @@ onDeactivated(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background-color: var(--ant-color-bg-layout);
+  background-color: transparent;
 }
 
 /* 页面头部样式 */
@@ -358,7 +358,7 @@ onDeactivated(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background-color: var(--ant-color-bg-container);
+  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
   border-radius: 8px;
   padding: 12px;
 }
@@ -367,7 +367,7 @@ onDeactivated(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: var(--ant-color-bg-container);
+  background-color: transparent;
 }
 
 /* 自定义标签页tab内容布局 */
@@ -429,7 +429,7 @@ onDeactivated(() => {
   height: 32px;
   border: 1px solid var(--ant-color-border);
   border-radius: 6px;
-  background-color: var(--ant-color-bg-container);
+  background-color: var(--app-background-card-elevated-bg, var(--ant-color-bg-container));
   color: var(--ant-color-text);
   display: flex;
   align-items: center;

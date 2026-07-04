@@ -66,6 +66,14 @@ def is_admin() -> bool:
 @logger.catch
 def main():
     if is_admin():
+        from app.plugins.uv_backend import ensure_uv
+
+        if not ensure_uv():
+            logger.error(
+                "uv 包管理器安装失败，请手动安装: https://docs.astral.sh/uv/getting-started/installation/"
+            )
+            sys.exit(1)
+
         import asyncio
         import uvicorn
         from fastapi import FastAPI
@@ -75,14 +83,42 @@ def main():
 
         @asynccontextmanager
         async def lifespan(app: FastAPI):
-            from app.core import Config, MainTimer, TaskManager
+            from app.core import Config, MainTimer, TaskManager, PluginManager
+            from app.core.page_registry import register_builtin_pages
             from app.MaaFW import ArknightWin32Toolkit
+            from app.core.script_types import validate_script_type_registry
+
+            hmr_service = None
 
             await Config.init_config()
             await Config.get_stage()
             await Config.clean_old_history()
             await ArknightWin32Toolkit.init()
             await MainTimer.start()
+
+            if os.getenv("AUTO_MAS_DEV") == "1":
+                import shutil
+                plugins_dir = Path.cwd() / "plugins"
+                for pycache in plugins_dir.rglob("__pycache__"):
+                    if pycache.is_dir():
+                        shutil.rmtree(pycache, ignore_errors=True)
+                logger.debug("DEV 模式：已清理 plugins 目录下的 __pycache__")
+
+            register_builtin_pages()
+            await PluginManager.start()
+
+            missing_script_types = validate_script_type_registry(Config)
+            if missing_script_types:
+                raise RuntimeError(
+                    "脚本类型注册不完整，以下脚本未找到可用 provider: "
+                    + "; ".join(missing_script_types)
+                )
+
+            if os.getenv("AUTO_MAS_DEV") == "1":
+                from app.plugins.dev_hmr import DevPluginHMR
+
+                hmr_service = DevPluginHMR(PluginManager)
+                hmr_service.start()
 
             # 初始化 Koishi 系统客户端（如果已启用）
             if Config.get("Notify", "IfKoishiSupport"):
@@ -100,10 +136,13 @@ def main():
                     (Path.cwd() / "AUTO_MAA.exe").unlink()
                 except Exception as e:
                     logger.error(f"删除AUTO_MAA.exe失败: {e}")
-
             yield
 
+            if hmr_service is not None:
+                await hmr_service.stop()
+
             await TaskManager.stop_task("ALL")
+            await PluginManager.stop()
 
             await MainTimer.stop()
 
@@ -117,19 +156,18 @@ def main():
         from app.api import (
             core_router,
             info_router,
-            scripts_router,
-            plan_router,
-            emulator_router,
-            queue_router,
             dispatch_router,
             history_router,
             tools_router,
             setting_router,
             update_router,
             ocr_router,
-            ws_debug_router,
+            ws_router,
+            plugins_router,
+            plugin_gateway_router,
             qr_login_router,
         )
+        from app.plugins.system import get_core_plugin_routers
 
         app = FastAPI(
             title="AUTO-MAS",
@@ -148,17 +186,17 @@ def main():
 
         app.include_router(core_router)
         app.include_router(info_router)
-        app.include_router(scripts_router)
-        app.include_router(plan_router)
-        app.include_router(emulator_router)
-        app.include_router(queue_router)
+        for core_plugin_router in get_core_plugin_routers():
+            app.include_router(core_plugin_router)
         app.include_router(dispatch_router)
         app.include_router(history_router)
         app.include_router(tools_router)
         app.include_router(setting_router)
         app.include_router(update_router)
         app.include_router(ocr_router)
-        app.include_router(ws_debug_router)
+        app.include_router(ws_router)
+        app.include_router(plugins_router)
+        app.include_router(plugin_gateway_router)
 
         # 可选补丁：米游社扫码登录
         if qr_login_router is not None:
