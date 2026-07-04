@@ -1,7 +1,8 @@
 import asyncio
 import unittest
 
-from app.plugins import EventBus, EventDispatchError
+from app.plugins import EventBus
+from app.plugins.event_bus import EventDispatchError
 
 
 class EventBusTest(unittest.TestCase):
