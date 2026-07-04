@@ -199,11 +199,13 @@ class OkwwManager(TaskExecuteBase):
             ):
                 if self.task_info.mode == "AutoProxy" and hasattr(self, "user_config"):
                     await script_cfg.UserData.load(await self.user_config.toDict())
+                    await Config.ScriptConfig.save()
                 self.script_info.status = "异常"
                 return
 
             if self.task_info.mode == "AutoProxy" and hasattr(self, "user_config"):
                 await script_cfg.UserData.load(await self.user_config.toDict())
+                await Config.ScriptConfig.save()
 
             if any(user.status == "异常" for user in self.script_info.user_list):
                 self.script_info.status = "异常"
