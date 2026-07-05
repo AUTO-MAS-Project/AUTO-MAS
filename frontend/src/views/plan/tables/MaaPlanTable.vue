@@ -112,7 +112,6 @@ interface PlanChangeOptions {
   forceCustomStages?: boolean
 }
 
-/* eslint-disable no-unused-vars */
 interface Props {
   tableData: Record<string, any> | null
   currentMode: 'ALL' | 'Weekly'
@@ -120,7 +119,6 @@ interface Props {
   planId?: string
   handlePlanChange(path: string, value: any, options?: PlanChangeOptions): Promise<boolean>
 }
-/* eslint-enable no-unused-vars */
 
 const props = defineProps<Props>()
 

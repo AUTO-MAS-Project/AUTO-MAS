@@ -175,7 +175,9 @@ const handleEditModalOk = async () => {
 
 const qrModalVisible = ref(false)
 const qrLoading = ref(false)
-const qrStatus = ref<'idle' | 'loading' | 'waiting' | 'scanned' | 'exchanging' | 'done' | 'error'>('idle')
+const qrStatus = ref<'idle' | 'loading' | 'waiting' | 'scanned' | 'exchanging' | 'done' | 'error'>(
+  'idle'
+)
 const qrUrl = ref('')
 const qrStatusText = ref('')
 const qrTicket = ref('')
@@ -795,12 +797,7 @@ onMounted(() => {
             placeholder="浏览器 F12 → document.cookie 获取"
             allow-clear
           />
-          <a-button
-            size="small"
-            style="margin-top: 6px"
-            :loading="qrLoading"
-            @click="startQrLogin"
-          >
+          <a-button size="small" style="margin-top: 6px" :loading="qrLoading" @click="startQrLogin">
             <template #icon><QrcodeOutlined /></template>
             扫码登录获取 Token
           </a-button>
@@ -852,9 +849,7 @@ onMounted(() => {
 
         <!-- 状态提示 -->
         <div v-if="qrStatus !== 'loading'" class="qr-status">
-          <span v-if="qrStatus === 'waiting'" style="color: #1890ff">
-            ⏳ {{ qrStatusText }}
-          </span>
+          <span v-if="qrStatus === 'waiting'" style="color: #1890ff"> ⏳ {{ qrStatusText }} </span>
           <span v-else-if="qrStatus === 'scanned'" style="color: #fa8c16">
             📱 {{ qrStatusText }}
           </span>
@@ -869,9 +864,7 @@ onMounted(() => {
           </span>
         </div>
 
-        <div class="qr-hint">
-          打开米游社 APP → 左上角扫码 → 扫描上方二维码
-        </div>
+        <div class="qr-hint">打开米游社 APP → 左上角扫码 → 扫描上方二维码</div>
       </div>
     </a-modal>
   </div>
