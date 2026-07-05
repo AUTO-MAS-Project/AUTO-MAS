@@ -724,7 +724,9 @@ const taskByName = computed(() => {
 })
 const getDefaultControllerName = () => {
   if (preferAdbController.value) {
-    const adbController = directControllerOptions.value.find(controller => controller.type === 'Adb')
+    const adbController = directControllerOptions.value.find(
+      controller => controller.type === 'Adb'
+    )
     if (adbController) return adbController.name
   }
   return directControllerOptions.value[0]?.name || ''

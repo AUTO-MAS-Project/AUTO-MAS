@@ -68,7 +68,8 @@ const ensureAction = (fieldSchema: SchemaFieldDefinition): SchemaActionDefinitio
   return action
 }
 
-const resolveRequestUrl = (path: string) => (path.startsWith('/') ? `${OpenAPI.BASE}${path}` : `${OpenAPI.BASE}/${path}`)
+const resolveRequestUrl = (path: string) =>
+  path.startsWith('/') ? `${OpenAPI.BASE}${path}` : `${OpenAPI.BASE}/${path}`
 
 const requestAction = async <T = any>(
   path: string,
@@ -115,16 +116,17 @@ export const useSchemaActionRunner = (options?: {
 
   const sessionVisible = computed(() => Boolean(activeSession.value))
   const sessionTitle = computed(
-    () => activeSession.value?.session.overlay_title || activeSession.value?.action.label || '正在执行配置动作'
+    () =>
+      activeSession.value?.session.overlay_title ||
+      activeSession.value?.action.label ||
+      '正在执行配置动作'
   )
   const sessionDescription = computed(
     () =>
       activeSession.value?.session.overlay_description ||
       '请在外部窗口完成相关设置，然后回到这里结束会话。'
   )
-  const sessionStopLabel = computed(
-    () => activeSession.value?.session.stop_label || '结束会话'
-  )
+  const sessionStopLabel = computed(() => activeSession.value?.session.stop_label || '结束会话')
 
   const cleanupSession = async (shouldRefresh = false) => {
     const current = activeSession.value
@@ -172,43 +174,48 @@ export const useSchemaActionRunner = (options?: {
     const completionField = session.completion_field || 'Accomplish'
     const errorField = session.error_field || 'Error'
 
-    const subscriptionId = subscribe({ id: websocketId }, async (wsMessage: WebSocketBaseMessage) => {
-      if (wsMessage.type === 'error') {
-        const errorMsg =
-          wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
-        message.error(`会话连接失败: ${errorMsg}`)
-        logger.error(`会话连接失败: ${errorMsg}`)
-        await cleanupSession(false)
-        return
-      }
-
-      if (
-        wsMessage.type === 'Info' &&
-        wsMessage.data &&
-        typeof wsMessage.data === 'object' &&
-        errorField in wsMessage.data
-      ) {
-        message.error(String((wsMessage.data as Record<string, unknown>)[errorField] || '会话执行失败'))
-        return
-      }
-
-      if (
-        wsMessage.type === completionType &&
-        wsMessage.data &&
-        typeof wsMessage.data === 'object' &&
-        completionField in wsMessage.data
-      ) {
-        const result = String((wsMessage.data as Record<string, unknown>)[completionField] || '')
-        if (result && !result.includes('异常') && !result.includes('错误')) {
-          const successText = resolveTemplateValue(
-            session.success_message || `${action.label || '配置动作'}已完成`,
-            sessionContext
-          )
-          message.success(String(successText))
+    const subscriptionId = subscribe(
+      { id: websocketId },
+      async (wsMessage: WebSocketBaseMessage) => {
+        if (wsMessage.type === 'error') {
+          const errorMsg =
+            wsMessage.data instanceof Error ? wsMessage.data.message : String(wsMessage.data)
+          message.error(`会话连接失败: ${errorMsg}`)
+          logger.error(`会话连接失败: ${errorMsg}`)
+          await cleanupSession(false)
+          return
         }
-        await cleanupSession(Boolean(action.refresh))
+
+        if (
+          wsMessage.type === 'Info' &&
+          wsMessage.data &&
+          typeof wsMessage.data === 'object' &&
+          errorField in wsMessage.data
+        ) {
+          message.error(
+            String((wsMessage.data as Record<string, unknown>)[errorField] || '会话执行失败')
+          )
+          return
+        }
+
+        if (
+          wsMessage.type === completionType &&
+          wsMessage.data &&
+          typeof wsMessage.data === 'object' &&
+          completionField in wsMessage.data
+        ) {
+          const result = String((wsMessage.data as Record<string, unknown>)[completionField] || '')
+          if (result && !result.includes('异常') && !result.includes('错误')) {
+            const successText = resolveTemplateValue(
+              session.success_message || `${action.label || '配置动作'}已完成`,
+              sessionContext
+            )
+            message.success(String(successText))
+          }
+          await cleanupSession(Boolean(action.refresh))
+        }
       }
-    })
+    )
 
     let timeoutId: number | null = null
     const timeoutMs = Number(session.timeout_ms || 0)
@@ -312,8 +319,7 @@ export const useSchemaActionRunner = (options?: {
       }
 
       const stopMessage = resolveTemplateValue(
-        current.session.stop_message ||
-          (fromTimeout ? '配置会话已自动结束' : '配置会话已结束'),
+        current.session.stop_message || (fromTimeout ? '配置会话已自动结束' : '配置会话已结束'),
         current.context
       )
       message.success(String(stopMessage))

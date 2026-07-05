@@ -162,7 +162,6 @@ interface PlanChangeOptions {
   forceCustomStages?: boolean
 }
 
-/* eslint-disable no-unused-vars */
 interface Props {
   tableData: Record<string, any> | null
   currentMode: 'ALL' | 'Weekly'
@@ -170,7 +169,6 @@ interface Props {
   planId?: string
   handlePlanChange(path: string, value: any, options?: PlanChangeOptions): Promise<boolean>
 }
-/* eslint-enable no-unused-vars */
 
 const props = defineProps<Props>()
 
@@ -397,7 +395,7 @@ const DAY_NUMBER_MAP = {
   Sunday: 7,
 } as const
 
-const getDayNumber = (columnKey: string) =>
+const _getDayNumber = (columnKey: string) =>
   DAY_NUMBER_MAP[columnKey as keyof typeof DAY_NUMBER_MAP] || 0
 
 const isColumnDisabled = (columnKey: string): boolean => {
@@ -550,7 +548,7 @@ watch(
       if (isInitialLoad) {
         try {
           await preloadAllStageOptions()
-        } catch (e) {
+        } catch {
           // 预加载失败时降级为不阻塞——仍然尝试加载配置
           // 错误已由 preloadAllStageOptions 内部记录
         }

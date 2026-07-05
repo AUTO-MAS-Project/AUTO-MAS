@@ -97,7 +97,7 @@ const getLoadTime = () => {
 }
 
 // 使用 VueUse 的 useIntervalFn 替代 setInterval
-const { pause: pauseInterval, resume: resumeInterval } = useIntervalFn(
+const { resume: resumeInterval } = useIntervalFn(
   () => {
     updateTime()
     updateMemoryInfo()

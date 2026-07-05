@@ -70,7 +70,7 @@ watch(
   () => {
     void loadPage()
   },
-  { deep: true },
+  { deep: true }
 )
 
 onMounted(() => {

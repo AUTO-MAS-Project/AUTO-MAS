@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, reactive, ref, computed } from 'vue'
+import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import type { ToolsConfig } from '@/api'
 import { Service } from '@/api'
@@ -100,7 +100,7 @@ const updateStatus = async () => {
       // 同步签到结果到编辑状态，否则展示组件读到的是初始空值
       editingConfig.GameSign!.Result = data.GameSign.Result
     }
-  } catch (error) {
+  } catch {
     // 静默失败，不影响用户操作
   }
 }

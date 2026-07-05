@@ -273,7 +273,7 @@ export function useLogHighlight() {
               [/\[\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2}(\.\d{1,6})?\]/, 'timestamp'],
 
               // 日期
-              [/\d{4}[-\/]\d{2}[-\/]\d{2}/, 'date'],
+              [/\d{4}[-/]\d{2}[-/]\d{2}/, 'date'],
 
               // 日志级别
               [/\b(ERROR|FATAL|CRITICAL|SEVERE)\b/i, 'log-error'],
@@ -311,9 +311,9 @@ export function useLogHighlight() {
               [/:\d{2,5}\b/, 'port'],
 
               // 文件路径 (Windows)
-              [/[A-Za-z]:[\\\/][\w\\\/.-]+/, 'log-path'],
+              [/[A-Za-z]:[\\/][\w\\/.-]+/, 'log-path'],
               // 文件路径 (Unix)
-              [/\/[\w\/.-]+\.\w+/, 'log-path'],
+              [/\/[\w/.-]+\.\w+/, 'log-path'],
               // 文件名
               [/\b[\w-]+\.(log|txt|json|xml|yaml|yml|conf|cfg|ini|properties)\b/i, 'filename'],
 

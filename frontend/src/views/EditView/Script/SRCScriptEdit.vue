@@ -289,7 +289,7 @@ const logger = window.electronAPI.getLogger('SRC脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript, loading } = useScriptApi()
+const { getScript, updateScript } = useScriptApi()
 
 const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
