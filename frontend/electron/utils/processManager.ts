@@ -32,49 +32,53 @@ export async function getRelatedProcesses(): Promise<ProcessInfo[]> {
       } | Select-Object ProcessId, Name, CommandLine | ConvertTo-Json -Compress
     `.replace(/\n/g, ' ')
 
-    exec(`powershell -NoProfile -Command "${psCommand}"`, { encoding: 'utf8' }, (error, stdout, stderr) => {
-      if (error) {
-        logger.error(`获取进程信息失败: ${error}`)
-        resolve([])
-        return
-      }
-
-      const processes: ProcessInfo[] = []
-
-      try {
-        if (!stdout.trim()) {
+    exec(
+      `powershell -NoProfile -Command "${psCommand}"`,
+      { encoding: 'utf8' },
+      (error, stdout, stderr) => {
+        if (error) {
+          logger.error(`获取进程信息失败: ${error}`)
           resolve([])
           return
         }
 
-        // PowerShell 返回的可能是单个对象或数组
-        let parsed = JSON.parse(stdout.trim())
-        if (!Array.isArray(parsed)) {
-          parsed = [parsed]
-        }
+        const processes: ProcessInfo[] = []
 
-        const pythonExePath = path.join(getAppRoot(), 'environment', 'python', 'python.exe')
-
-        for (const proc of parsed) {
-          const pid = proc.ProcessId || 0
-          const name = proc.Name || ''
-          const commandLine = proc.CommandLine || ''
-
-          if (
-            pid > 0 &&
-            (commandLine.includes(pythonExePath) ||
-              commandLine.includes('main.py') ||
-              name === 'AUTO-MAS.exe')
-          ) {
-            processes.push({ pid, name, commandLine })
+        try {
+          if (!stdout.trim()) {
+            resolve([])
+            return
           }
-        }
-      } catch (parseError) {
-        logger.error(`解析进程信息失败: ${parseError}`)
-      }
 
-      resolve(processes)
-    })
+          // PowerShell 返回的可能是单个对象或数组
+          let parsed = JSON.parse(stdout.trim())
+          if (!Array.isArray(parsed)) {
+            parsed = [parsed]
+          }
+
+          const pythonExePath = path.join(getAppRoot(), 'environment', 'python', 'python.exe')
+
+          for (const proc of parsed) {
+            const pid = proc.ProcessId || 0
+            const name = proc.Name || ''
+            const commandLine = proc.CommandLine || ''
+
+            if (
+              pid > 0 &&
+              (commandLine.includes(pythonExePath) ||
+                commandLine.includes('main.py') ||
+                name === 'AUTO-MAS.exe')
+            ) {
+              processes.push({ pid, name, commandLine })
+            }
+          }
+        } catch (parseError) {
+          logger.error(`解析进程信息失败: ${parseError}`)
+        }
+
+        resolve(processes)
+      }
+    )
   })
 }
 
@@ -110,7 +114,9 @@ export async function killAllRelatedProcesses(): Promise<void> {
   logger.info(`找到 ${processes.length} 个相关进程:`)
 
   for (const proc of processes) {
-    logger.info(`- PID: ${proc.pid}, Name: ${proc.name}, CMD: ${proc.commandLine.substring(0, 100)}...`)
+    logger.info(
+      `- PID: ${proc.pid}, Name: ${proc.name}, CMD: ${proc.commandLine.substring(0, 100)}...`
+    )
   }
 
   // 并行结束所有进程

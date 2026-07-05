@@ -119,7 +119,9 @@
                 <template #label>
                   <span class="form-label">
                     游戏根目录
-                    <span class="label-hint">选任意层级目录，自动定位 <strong>Client-Win64-Shipping.exe</strong></span>
+                    <span class="label-hint"
+                      >选任意层级目录，自动定位 <strong>Client-Win64-Shipping.exe</strong></span
+                    >
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">
@@ -265,7 +267,11 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import { ArrowLeftOutlined, FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import {
+  ArrowLeftOutlined,
+  FolderOpenOutlined,
+  QuestionCircleOutlined,
+} from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 
 const logger = window.electronAPI.getLogger('ok-ww脚本编辑')
@@ -285,7 +291,6 @@ interface OkwwInfoForm {
   Name: string
   RootPath: string
 }
-
 
 interface OkwwGameForm {
   Enabled: boolean
@@ -342,7 +347,10 @@ const WUWA_PATH_KEYWORDS = [
   { keyword: 'Binaries', suffix: 'Win64/Client-Win64-Shipping.exe' },
   { keyword: 'Client', suffix: 'Binaries/Win64/Client-Win64-Shipping.exe' },
   { keyword: 'Wuthering Waves Game', suffix: 'Client/Binaries/Win64/Client-Win64-Shipping.exe' },
-  { keyword: 'Wuthering Waves', suffix: 'Wuthering Waves Game/Client/Binaries/Win64/Client-Win64-Shipping.exe' },
+  {
+    keyword: 'Wuthering Waves',
+    suffix: 'Wuthering Waves Game/Client/Binaries/Win64/Client-Win64-Shipping.exe',
+  },
 ]
 
 const showPathRejectModal = (title: string, content: string) => {
@@ -468,12 +476,12 @@ const selectGameRootPath = async () => {
   showPathRejectModal(
     '所选目录无效',
     '当前选择的路径不在鸣潮游戏目录内，无法自动匹配。\n\n请选择以下任一目录：\n' +
-    '  • Win64  —— 位于 Client\\Binaries\\Win64\n' +
-    '  • Binaries—— 位于 Client\\Binaries\n' +
-    '  • Client —— 鸣潮客户端目录\n' +
-    '  • Wuthering Waves Game —— 官方启动器根目录\n' +
-    '  • Wuthering Waves —— 鸣潮总目录\n' +
-    '支持 WeGame 版（目录名为 Wuthering Waves(NNNNNNN)），选择其下的 Client/Binaries/Win64 即可。'
+      '  • Win64  —— 位于 Client\\Binaries\\Win64\n' +
+      '  • Binaries—— 位于 Client\\Binaries\n' +
+      '  • Client —— 鸣潮客户端目录\n' +
+      '  • Wuthering Waves Game —— 官方启动器根目录\n' +
+      '  • Wuthering Waves —— 鸣潮总目录\n' +
+      '支持 WeGame 版（目录名为 Wuthering Waves(NNNNNNN)），选择其下的 Client/Binaries/Win64 即可。'
   )
 }
 
@@ -628,6 +636,4 @@ onMounted(loadScript)
     padding: 20px;
   }
 }
-
 </style>
-
