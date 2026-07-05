@@ -39,9 +39,6 @@ async function forceKillRelatedProcesses(): Promise<void> {
 
     // 备用清理方法
     if (process.platform === 'win32') {
-      const appRoot = getAppRoot()
-      const pythonExePath = path.join(appRoot, 'environment', 'python', 'python.exe')
-
       return new Promise(resolve => {
         // 使用更简单的命令强制结束相关进程
         exec(`taskkill /f /im python.exe`, error => {
@@ -177,7 +174,7 @@ function loadConfig(): AppConfig {
       const config = JSON.parse(configData)
       return { ...defaultConfig, ...config }
     }
-  } catch (error) {
+  } catch {
     logger.error('加载配置失败')
   }
   return defaultConfig
@@ -195,7 +192,7 @@ function saveConfig(config: AppConfig) {
     }
 
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
-  } catch (error) {
+  } catch {
     logger.error('保存配置失败')
   }
 }
@@ -231,7 +228,7 @@ function createTray() {
       logger.warn('无法加载托盘图标，使用默认图标')
       trayIcon = nativeImage.createEmpty()
     }
-  } catch (error) {
+  } catch {
     logger.error('加载托盘图标失败')
     trayIcon = nativeImage.createEmpty()
   }
@@ -478,7 +475,7 @@ function createWindow() {
 
           saveConfig(config)
           logger.info('窗口状态已保存')
-        } catch (error) {
+        } catch {
           logger.error('保存窗口状态失败')
         }
       }
@@ -498,7 +495,7 @@ function createWindow() {
       setTimeout(async () => {
         try {
           await forceKillRelatedProcesses()
-        } catch (e) {
+        } catch {
           logger.error('最终清理失败')
         }
         process.exit(0)
@@ -552,7 +549,7 @@ function createWindow() {
 
           saveConfig(config)
           logger.info('窗口状态已自动保存')
-        } catch (error) {
+        } catch {
           logger.error('保存窗口状态失败')
         }
       }
@@ -846,7 +843,7 @@ ipcMain.handle('get-related-processes', async () => {
   try {
     const { getRelatedProcesses } = await import('./utils/processManager')
     return await getRelatedProcesses()
-  } catch (error) {
+  } catch {
     logger.error('获取进程信息失败')
     return []
   }
@@ -938,7 +935,7 @@ ipcMain.handle('check-critical-files', async () => {
 
     logger.info('关键文件检查结果')
     return result
-  } catch (error) {
+  } catch {
     logger.error('检查关键文件失败')
     return {
       pythonExists: false,
@@ -968,7 +965,7 @@ ipcMain.handle('get-theme-info', async () => {
         const config = JSON.parse(configData)
         themeMode = config.themeMode || 'system'
         themeColor = config.themeColor || 'blue'
-      } catch (error) {
+      } catch {
         logger.warn('读取主题配置失败，使用默认值')
       }
     }
@@ -1006,7 +1003,7 @@ ipcMain.handle('get-theme-info', async () => {
       isDark: actualTheme === 'dark',
       primaryColor: themeColors[themeColor] || themeColors.blue,
     }
-  } catch (error) {
+  } catch {
     logger.error('获取主题信息失败')
     return {
       themeMode: 'system',
@@ -1023,7 +1020,7 @@ ipcMain.handle('get-theme-info', async () => {
 ipcMain.handle('get-app-path', async (_event, name: any) => {
   try {
     return app.getPath(name)
-  } catch (error) {
+  } catch {
     logger.error(`获取路径 ${name} 失败`)
     return ''
   }
@@ -1043,7 +1040,7 @@ ipcMain.handle('get-theme', async () => {
         const configData = fs.readFileSync(configPath, 'utf8')
         const config = JSON.parse(configData)
         themeMode = config.themeMode || 'system'
-      } catch (error) {
+      } catch {
         logger.warn('读取主题配置失败，使用默认值')
       }
     }
@@ -1058,7 +1055,7 @@ ipcMain.handle('get-theme', async () => {
     }
 
     return actualTheme
-  } catch (error) {
+  } catch {
     logger.error('获取对话框主题失败')
     return nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
   }
@@ -1160,7 +1157,7 @@ ipcMain.handle('load-config', async () => {
     }
 
     return null
-  } catch (error) {
+  } catch {
     logger.error('加载配置文件失败')
     return null
   }
@@ -1259,7 +1256,7 @@ app.on('before-quit', async event => {
     try {
       await cleanupInitializationResources()
       logger.info('初始化资源清理完成')
-    } catch (e) {
+    } catch {
       logger.error('资源清理失败')
     }
 
@@ -1307,7 +1304,7 @@ app.on('before-quit', async event => {
       await Promise.race([Promise.all(cleanupPromises), timeoutPromise])
 
       logger.info('进程清理完成')
-    } catch (e) {
+    } catch {
       logger.error('进程清理时出错')
     }
 

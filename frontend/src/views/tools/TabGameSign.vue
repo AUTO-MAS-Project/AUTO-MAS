@@ -16,13 +16,21 @@ import { Service } from '@/api'
 import { OpenAPI } from '@/api/core/OpenAPI'
 import { useGameSignAccountApi } from '@/composables/useGameSignAccountApi'
 
-const { config, disabled, onFieldChange, onSelectVisibleChange, onRefreshConfig } = defineProps<{
-  config: ToolsConfig_GameSign
-  disabled?: boolean
-  onFieldChange?: (key: string, value: any) => void
-  onSelectVisibleChange?: (visible: boolean) => void
-  onRefreshConfig?: () => Promise<void>
-}>()
+const { config, disabled, onFieldChange, onSelectVisibleChange, onRefreshConfig } = withDefaults(
+  defineProps<{
+    config: ToolsConfig_GameSign
+    disabled?: boolean
+    onFieldChange?: (key: string, value: any) => void
+    onSelectVisibleChange?: (visible: boolean) => void
+    onRefreshConfig?: () => Promise<void>
+  }>(),
+  {
+    disabled: false,
+    onFieldChange: undefined,
+    onSelectVisibleChange: undefined,
+    onRefreshConfig: undefined,
+  }
+)
 
 const logger = window.electronAPI.getLogger('游戏签到')
 const signLoading = ref(false)

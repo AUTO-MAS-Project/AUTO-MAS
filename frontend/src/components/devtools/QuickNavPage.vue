@@ -19,13 +19,13 @@
       <h4>🚀 快捷导航</h4>
       <div class="quick-nav">
         <button
-          v-for="route in commonRoutes"
-          :key="route.path"
+          v-for="commonRoute in commonRoutes"
+          :key="commonRoute.path"
           class="nav-btn"
-          :class="{ active: currentRoute.path === route.path }"
-          @click="navigateTo(route.path)"
+          :class="{ active: currentRoute.path === commonRoute.path }"
+          @click="navigateTo(commonRoute.path)"
         >
-          {{ route.title }}
+          {{ commonRoute.title }}
         </button>
       </div>
     </div>
