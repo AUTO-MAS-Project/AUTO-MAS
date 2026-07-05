@@ -70,8 +70,9 @@ export class BackendService {
     this.resetStartupLogs()
 
     try {
-      const pythonExe =
-        options?.pythonPath || path.join(this.appRoot, '.venv', 'Scripts', 'python.exe')
+      const venvPythonExe = path.join(this.appRoot, '.venv', 'Scripts', 'python.exe')
+      const portablePythonExe = path.join(this.appRoot, 'environment', 'python', 'python.exe')
+      const pythonExe = options?.pythonPath || venvPythonExe
       const mainPy = options?.mainPyPath || path.join(this.appRoot, 'main.py')
       const cwd = options?.cwd || this.appRoot
       const timeout = options?.timeout || 60000
@@ -81,6 +82,11 @@ export class BackendService {
 
       // 检查文件是否存在
       if (!fs.existsSync(pythonExe)) {
+        if (!options?.pythonPath && fs.existsSync(portablePythonExe)) {
+          throw new Error(
+            `后端虚拟环境不存在: ${pythonExe}。请先完成依赖安装；基础 Python 位于: ${portablePythonExe}`
+          )
+        }
         throw new Error(`Python 可执行文件不存在: ${pythonExe}`)
       }
       if (!fs.existsSync(mainPy)) {
