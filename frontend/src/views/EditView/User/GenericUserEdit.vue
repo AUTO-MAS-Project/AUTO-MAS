@@ -41,7 +41,7 @@
       :hide-fields="headerSchemaActionKeys"
       :action-loading-id="actionLoadingId"
       @trigger-action="({ field, fieldSchema }) => handleFieldAction(field, fieldSchema)"
-      @validation-change="(errors) => (fieldErrors = errors)"
+      @validation-change="errors => (fieldErrors = errors)"
     />
   </a-card>
 
@@ -114,7 +114,10 @@ const displayNameFromForm = computed(() => {
 const loadData = async () => {
   loading.value = true
   try {
-    const [descriptors, scripts] = await Promise.all([api.getScriptTypes(), api.getScripts(scriptId)])
+    const [descriptors, scripts] = await Promise.all([
+      api.getScriptTypes(),
+      api.getScripts(scriptId),
+    ])
     const scriptRecord = scripts[0]
     if (!scriptRecord) {
       throw new Error('脚本不存在')

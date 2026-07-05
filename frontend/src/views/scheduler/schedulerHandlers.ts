@@ -100,7 +100,7 @@ export function handleTaskManagerMessage(wsMessage: any) {
           uiHooks.onNewTab({
             title: `调度台自动-${taskId}`,
             websocketId: taskId,
-            queueId: queueId
+            queueId: queueId,
           })
         } catch (e) {
           const errorMsg = e instanceof Error ? e.message : String(e)

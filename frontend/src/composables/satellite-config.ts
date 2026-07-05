@@ -6,10 +6,10 @@ export interface SatelliteModule {
   enabled: boolean
 }
 
-const iconModules = import.meta.glob<{ default: string }>(
-  '@/assets/satellite-icons/*.png',
-  { eager: true, query: 'url' }
-)
+const iconModules = import.meta.glob<{ default: string }>('@/assets/satellite-icons/*.png', {
+  eager: true,
+  query: 'url',
+})
 
 function getIconUrl(filename: string): string {
   const key = Object.keys(iconModules).find(k => k.endsWith(`/${filename}`))

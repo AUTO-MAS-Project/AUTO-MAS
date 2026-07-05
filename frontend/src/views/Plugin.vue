@@ -689,9 +689,7 @@ const normalizePluginListLayout = (
   }
 
   const rawInstanceGroups =
-    layout?.instanceGroups && typeof layout.instanceGroups === 'object'
-      ? layout.instanceGroups
-      : {}
+    layout?.instanceGroups && typeof layout.instanceGroups === 'object' ? layout.instanceGroups : {}
 
   for (const [instanceId, rawGroup] of Object.entries(rawInstanceGroups)) {
     if (limitToAvailableInstances && !availableSet.has(instanceId)) {
@@ -732,7 +730,10 @@ const loadPluginListLayout = (): PluginListLayoutState => {
 
 const pluginListLayout = ref<PluginListLayoutState>(loadPluginListLayout())
 
-const persistPluginListLayout = (nextLayout: PluginListLayoutState, availableInstanceIds?: string[]) => {
+const persistPluginListLayout = (
+  nextLayout: PluginListLayoutState,
+  availableInstanceIds?: string[]
+) => {
   const normalized = normalizePluginListLayout(
     nextLayout,
     availableInstanceIds ?? instances.value.map(item => item.id)
@@ -755,7 +756,10 @@ const updatePluginListLayout = (
 }
 
 const syncPluginListLayoutWithInstances = (nextInstances: PluginInstance[]) => {
-  persistPluginListLayout(pluginListLayout.value, nextInstances.map(item => item.id))
+  persistPluginListLayout(
+    pluginListLayout.value,
+    nextInstances.map(item => item.id)
+  )
 }
 
 const listColumns: TableColumn[] = [
@@ -900,7 +904,7 @@ const schemaFormModel = computed<Record<string, unknown>>({
       return {}
     }
   },
-  set: (value) => {
+  set: value => {
     setConfigObjectToText(value)
   },
 })
@@ -1305,7 +1309,9 @@ const createGroup = () => {
     content: h('div', [
       h(Input, {
         placeholder: '请输入分组名称',
-        onChange: (e: any) => { name = e.target?.value ?? e },
+        onChange: (e: any) => {
+          name = e.target?.value ?? e
+        },
       }),
     ]),
     onOk: async () => {
@@ -1334,7 +1340,9 @@ const handleGroupAction = (action: string, groupKey: string) => {
       content: h('div', [
         h(Input, {
           defaultValue: groupKey,
-          onChange: (e: any) => { newName = e.target?.value ?? e },
+          onChange: (e: any) => {
+            newName = e.target?.value ?? e
+          },
         }),
       ]),
       onOk: async () => {
@@ -1608,13 +1616,16 @@ const formatExampleText = (fieldSchema: PluginSchemaField) => {
 
 const isIpv4Host = (host: string) => {
   const parts = host.split('.')
-  return parts.length === 4 && parts.every(part => {
-    if (!/^\d{1,3}$/.test(part)) {
-      return false
-    }
-    const value = Number(part)
-    return value >= 0 && value <= 255
-  })
+  return (
+    parts.length === 4 &&
+    parts.every(part => {
+      if (!/^\d{1,3}$/.test(part)) {
+        return false
+      }
+      const value = Number(part)
+      return value >= 0 && value <= 255
+    })
+  )
 }
 
 const isIpv6Host = (host: string) => host.includes(':')
@@ -1628,9 +1639,7 @@ const isValidDomainHost = (host: string) => {
   if (!/^[a-zA-Z]{2,}$/.test(tld)) {
     return false
   }
-  return labels.every(label =>
-    /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/.test(label)
-  )
+  return labels.every(label => /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/.test(label))
 }
 
 const isValidHttpUrl = (value: string) => {
@@ -2801,10 +2810,8 @@ onUnmounted(() => {
     color-mix(in srgb, var(--ant-color-primary-bg) 82%, transparent),
     color-mix(
       in srgb,
-      var(
-        --app-background-panel-bg,
-        var(--app-background-card-bg, var(--ant-color-bg-container))
-      ) 72%,
+      var(--app-background-panel-bg, var(--app-background-card-bg, var(--ant-color-bg-container)))
+        72%,
       var(--ant-color-primary-bg)
     )
   );
@@ -2969,10 +2976,7 @@ onUnmounted(() => {
   border-color: var(--ant-color-border-secondary);
   background: color-mix(
     in srgb,
-    var(
-      --app-background-panel-bg,
-      var(--app-background-card-bg, var(--ant-color-bg-container))
-    ) 96%,
+    var(--app-background-panel-bg, var(--app-background-card-bg, var(--ant-color-bg-container))) 96%,
     var(--ant-color-fill-quaternary)
   );
 }
@@ -3177,10 +3181,8 @@ onUnmounted(() => {
     color-mix(in srgb, var(--ant-color-primary-bg) 82%, transparent),
     color-mix(
       in srgb,
-      var(
-        --app-background-panel-bg,
-        var(--app-background-card-bg, var(--ant-color-bg-container))
-      ) 72%,
+      var(--app-background-panel-bg, var(--app-background-card-bg, var(--ant-color-bg-container)))
+        72%,
       var(--ant-color-primary-bg)
     )
   );

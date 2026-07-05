@@ -184,7 +184,10 @@
         <div
           v-for="script in scripts"
           :key="script.id"
-          :class="['script-item', { selected: selectedScriptId === script.id, unavailable: script.available === false }]"
+          :class="[
+            'script-item',
+            { selected: selectedScriptId === script.id, unavailable: script.available === false },
+          ]"
           @click="script.available === false ? undefined : (selectedScriptId = script.id)"
         >
           <div class="script-item-content">
@@ -232,7 +235,11 @@
         >
           <div class="type-content">
             <div class="type-logo-container">
-              <img :src="getScriptIcon(descriptor.type_key)" :alt="descriptor.type_key" class="type-logo" />
+              <img
+                :src="getScriptIcon(descriptor.type_key)"
+                :alt="descriptor.type_key"
+                class="type-logo"
+              />
             </div>
             <div class="type-info">
               <div class="type-title">{{ descriptor.display_name }}</div>
@@ -594,7 +601,9 @@ const handleConfirmScriptSelect = async () => {
   try {
     const result = await registryApi.addScript(selectedScript.type, selectedScriptId.value)
     scriptSelectVisible.value = false
-    router.push(getScriptEditPath({ id: result.id, type: result.type, editorKind: result.editor_kind }))
+    router.push(
+      getScriptEditPath({ id: result.id, type: result.type, editorKind: result.editor_kind })
+    )
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`复制脚本失败: ${errorMsg}`)
@@ -616,7 +625,9 @@ const handleConfirmAddScript = async () => {
   try {
     const result = await registryApi.addScript(selectedType.value)
     typeSelectVisible.value = false
-    router.push(getScriptEditPath({ id: result.id, type: result.type, editorKind: result.editor_kind }))
+    router.push(
+      getScriptEditPath({ id: result.id, type: result.type, editorKind: result.editor_kind })
+    )
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`添加脚本失败: ${errorMsg}`)
@@ -637,7 +648,9 @@ const handleConfirmGeneralMode = async () => {
     addLoading.value = true
     try {
       const result = await registryApi.addScript('General')
-      router.push(getScriptEditPath({ id: result.id, type: result.type, editorKind: result.editor_kind }))
+      router.push(
+        getScriptEditPath({ id: result.id, type: result.type, editorKind: result.editor_kind })
+      )
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`添加脚本失败: ${errorMsg}`)
