@@ -1,9 +1,17 @@
 <template>
   <div class="scripts-grid">
     <!-- 使用vuedraggable包装脚本列表 -->
-    <draggable v-model="localScripts" item-key="id" :animation="200" ghost-class="script-ghost"
-      chosen-class="script-chosen" drag-class="script-drag" handle=".script-drag-handle" class="draggable-scripts"
-      @end="onScriptDragEnd">
+    <draggable
+      v-model="localScripts"
+      item-key="id"
+      :animation="200"
+      ghost-class="script-ghost"
+      chosen-class="script-chosen"
+      drag-class="script-drag"
+      handle=".script-drag-handle"
+      class="draggable-scripts"
+      @end="onScriptDragEnd"
+    >
       <template #item="{ element: script }">
         <div :key="script.id" class="script-wrapper">
           <a-card :hoverable="false" class="script-card" :body-style="{ padding: '0' }">
@@ -27,49 +35,86 @@
                 </div>
               </div>
               <div class="header-actions">
-                <a-button v-if="script.type === 'SRC' && !props.activeConnections.has(script.id)" type="primary" ghost
-                  size="middle" :disabled="!isScriptOperable(script)" @click="handleStartSRCConfig(script)">
+                <a-button
+                  v-if="script.type === 'SRC' && !props.activeConnections.has(script.id)"
+                  type="primary"
+                  ghost
+                  size="middle"
+                  :disabled="!isScriptOperable(script)"
+                  @click="handleStartSRCConfig(script)"
+                >
                   <template #icon>
                     <SettingOutlined />
                   </template>
                   配置SRC
                 </a-button>
-                <a-button v-if="script.type === 'SRC' && props.activeConnections.has(script.id)" type="default"
-                  size="middle" disabled style="color: #52c41a; border-color: #52c41a">
+                <a-button
+                  v-if="script.type === 'SRC' && props.activeConnections.has(script.id)"
+                  type="default"
+                  size="middle"
+                  disabled
+                  style="color: #52c41a; border-color: #52c41a"
+                >
                   <template #icon>
                     <SettingOutlined />
                   </template>
                   正在配置
                 </a-button>
-                <a-button v-if="script.type === 'MaaEnd' && !props.activeConnections.has(script.id)" type="primary"
-                  ghost size="middle" :disabled="!isScriptOperable(script)" @click="handleStartMaaEndConfig(script)">
+                <a-button
+                  v-if="script.type === 'MaaEnd' && !props.activeConnections.has(script.id)"
+                  type="primary"
+                  ghost
+                  size="middle"
+                  :disabled="!isScriptOperable(script)"
+                  @click="handleStartMaaEndConfig(script)"
+                >
                   <template #icon>
                     <SettingOutlined />
                   </template>
                   配置MaaEnd
                 </a-button>
-                <a-button v-if="script.type === 'MaaEnd' && props.activeConnections.has(script.id)" type="default"
-                  size="middle" disabled style="color: #52c41a; border-color: #52c41a">
+                <a-button
+                  v-if="script.type === 'MaaEnd' && props.activeConnections.has(script.id)"
+                  type="default"
+                  size="middle"
+                  disabled
+                  style="color: #52c41a; border-color: #52c41a"
+                >
                   <template #icon>
                     <SettingOutlined />
                   </template>
                   正在配置
                 </a-button>
-                <a-button type="default" size="middle" :disabled="!isScriptOperable(script)" @click="handleEdit(script)">
+                <a-button
+                  type="default"
+                  size="middle"
+                  :disabled="!isScriptOperable(script)"
+                  @click="handleEdit(script)"
+                >
                   <template #icon>
                     <EditOutlined />
                   </template>
                   编辑脚本
                 </a-button>
-                <a-button type="default" size="middle" class="action-button add-button"
-                  :disabled="!isScriptOperable(script)" @click="handleAddUser(script)">
+                <a-button
+                  type="default"
+                  size="middle"
+                  class="action-button add-button"
+                  :disabled="!isScriptOperable(script)"
+                  @click="handleAddUser(script)"
+                >
                   <template #icon>
                     <UserAddOutlined />
                   </template>
                   添加用户
                 </a-button>
-                <a-popconfirm title="确定要删除这个脚本吗？" description="删除后将无法恢复，请谨慎操作" ok-text="确定" cancel-text="取消"
-                  @confirm="handleDelete(script)">
+                <a-popconfirm
+                  title="确定要删除这个脚本吗？"
+                  description="删除后将无法恢复，请谨慎操作"
+                  ok-text="确定"
+                  cancel-text="取消"
+                  @confirm="handleDelete(script)"
+                >
                   <a-button danger size="middle" class="action-button delete-button">
                     <template #icon>
                       <DeleteOutlined />
@@ -83,9 +128,17 @@
             <!-- 用户列表 -->
             <div v-if="script.users && script.users.length > 0" class="users-section">
               <!-- 使用vuedraggable包装用户列表 -->
-              <draggable v-model="script.users" item-key="id" :animation="200" ghost-class="user-ghost"
-                chosen-class="user-chosen" drag-class="user-drag" handle=".user-drag-handle" class="users-list"
-                @end="(evt: any) => onUserDragEnd(evt, script)">
+              <draggable
+                v-model="script.users"
+                item-key="id"
+                :animation="200"
+                ghost-class="user-ghost"
+                chosen-class="user-chosen"
+                drag-class="user-drag"
+                handle=".user-drag-handle"
+                class="users-list"
+                @end="(evt: any) => onUserDragEnd(evt, script)"
+              >
                 <template #item="{ element: user }">
                   <div :key="user.id" class="user-item">
                     <span class="user-drag-handle" title="拖拽排序" aria-label="拖拽排序">
@@ -96,20 +149,31 @@
                         <div class="user-name-section">
                           <span class="user-name">{{ user.Info.Name }}</span>
                           <!-- 有服务器或资源字段的用户显示来源标签 -->
-                          <a-tag v-if="shouldShowServerTag(user)" :color="getUserServerTagColor(user)"
-                            class="server-tag">
+                          <a-tag
+                            v-if="shouldShowServerTag(user)"
+                            :color="getUserServerTagColor(user)"
+                            class="server-tag"
+                          >
                             {{ getUserServerDisplayName(user) }}
                           </a-tag>
 
                           <!-- 账号标签 -->
-                          <a-tag v-if="shouldShowUserIdTag(user)" :color="getUserIdentityTagColor(user)"
-                            class="clickable-tag" @click="handleUserIdClick(user)">
+                          <a-tag
+                            v-if="shouldShowUserIdTag(user)"
+                            :color="getUserIdentityTagColor(user)"
+                            class="clickable-tag"
+                            @click="handleUserIdClick(user)"
+                          >
                             {{ getUserIdDisplayText(user) }}
                           </a-tag>
 
                           <!-- 密码标签 -->
-                          <a-tag v-if="shouldShowPasswordTag(user)" :color="getUserIdentityTagColor(user)"
-                            class="clickable-tag" @click="handlePasswordClick(user)">
+                          <a-tag
+                            v-if="shouldShowPasswordTag(user)"
+                            :color="getUserIdentityTagColor(user)"
+                            class="clickable-tag"
+                            @click="handlePasswordClick(user)"
+                          >
                             {{ getPasswordDisplayText(user) }}
                           </a-tag>
                         </div>
@@ -117,9 +181,14 @@
                         <!-- 用户详细信息 -->
                         <div v-if="shouldShowStatusTags(user)" class="user-info-tags">
                           <!-- 直接使用后端提供的Tag字段 -->
-                          <a-tag v-for="(tag, index) in getUserStatusTags(user)" :key="index"
-                            :title="tag.text" :class="['info-tag', { 'clickable-tag': isPassCheckTag(tag) }]"
-                            :color="tag.color || 'default'" @click="isPassCheckTag(tag) ? handlePassCheck(user) : undefined">
+                          <a-tag
+                            v-for="(tag, index) in getUserStatusTags(user)"
+                            :key="index"
+                            :title="tag.text"
+                            :class="['info-tag', { 'clickable-tag': isPassCheckTag(tag) }]"
+                            :color="tag.color || 'default'"
+                            @click="isPassCheckTag(tag) ? handlePassCheck(user) : undefined"
+                          >
                             {{ tag.text }}
                           </a-tag>
                         </div>
@@ -128,22 +197,38 @@
 
                     <div class="user-controls">
                       <div class="user-status">
-                        <a-switch :checked="user.Info.Status" :checked-children="'启用'" :un-checked-children="'禁用'"
-                          class="status-switch" :disabled="!isScriptOperable(script)" @click="handleToggleUserStatus(user)" />
+                        <a-switch
+                          :checked="user.Info.Status"
+                          :checked-children="'启用'"
+                          :un-checked-children="'禁用'"
+                          class="status-switch"
+                          :disabled="!isScriptOperable(script)"
+                          @click="handleToggleUserStatus(user)"
+                        />
                       </div>
 
                       <div class="user-actions">
                         <a-tooltip title="编辑用户配置">
-                          <a-button type="default" size="middle" class="user-action-btn"
-                            :disabled="!isScriptOperable(script)" @click="handleEditUser(user)">
+                          <a-button
+                            type="default"
+                            size="middle"
+                            class="user-action-btn"
+                            :disabled="!isScriptOperable(script)"
+                            @click="handleEditUser(user)"
+                          >
                             <template #icon>
                               <EditOutlined />
                             </template>
                             编辑
                           </a-button>
                         </a-tooltip>
-                        <a-popconfirm title="确定要删除这个用户吗？" description="删除后将无法恢复" ok-text="确定" cancel-text="取消"
-                          @confirm="handleDeleteUser(user)">
+                        <a-popconfirm
+                          title="确定要删除这个用户吗？"
+                          description="删除后将无法恢复"
+                          ok-text="确定"
+                          cancel-text="取消"
+                          @confirm="handleDeleteUser(user)"
+                        >
                           <a-tooltip title="删除用户">
                             <a-button type="default" size="middle" danger class="user-action-btn">
                               <template #icon>
@@ -369,7 +454,7 @@ const getSchemaFields = (schema: any): any[] => {
     return []
   }
   if (Array.isArray(schema.groups)) {
-    return schema.groups.flatMap((group: any) => Array.isArray(group.fields) ? group.fields : [])
+    return schema.groups.flatMap((group: any) => (Array.isArray(group.fields) ? group.fields : []))
   }
   if (typeof schema === 'object') {
     return Object.entries(schema).map(([key, field]) => ({

@@ -1,9 +1,23 @@
 ﻿import { exec, spawn } from 'child_process'
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray, } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeImage,
+  nativeTheme,
+  screen,
+  shell,
+  Tray,
+} from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
 import { checkEnvironment, getAppRoot } from './services/environmentService'
-import { registerInitializationHandlers, cleanupInitializationResources } from './ipc/initializationHandlers'
+import {
+  registerInitializationHandlers,
+  cleanupInitializationResources,
+} from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
 
 import { getLogger, initializeLogger } from './services/logger'
@@ -94,7 +108,11 @@ const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自�
 
 const HEARTBEAT_LOG_KEYWORD_RE = /(\bping\b|\bpong\b|heartbeat|心跳)/i
 
-function shouldDropHeartbeatProcessLog(level: string, moduleName: string, message: string): boolean {
+function shouldDropHeartbeatProcessLog(
+  level: string,
+  moduleName: string,
+  message: string
+): boolean {
   const isProd = app.isPackaged && process.env.NODE_ENV !== 'development'
   if (!isProd) {
     return false

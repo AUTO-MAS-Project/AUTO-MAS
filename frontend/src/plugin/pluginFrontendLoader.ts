@@ -42,8 +42,8 @@ function loadEntryScript(url: string, cacheKey: string): Promise<void> {
     script.onerror = () => {
       reject(
         new Error(
-          `插件前端入口脚本加载失败: ${url}。如果这是开发入口，请确认主前端 Vite 正在运行，且 vite.config.ts 允许访问插件源码目录。`,
-        ),
+          `插件前端入口脚本加载失败: ${url}。如果这是开发入口，请确认主前端 Vite 正在运行，且 vite.config.ts 允许访问插件源码目录。`
+        )
       )
     }
     document.head.appendChild(script)
@@ -60,8 +60,8 @@ async function waitForElement(tag: string, timeoutMs = 8000): Promise<void> {
       window.clearInterval(timer)
       reject(
         new Error(
-          `插件前端入口已加载，但 custom element 未注册: ${tag}。请检查入口文件是否调用 customElements.define('${tag}', ...) 且标签名与 manifest 一致。`,
-        ),
+          `插件前端入口已加载，但 custom element 未注册: ${tag}。请检查入口文件是否调用 customElements.define('${tag}', ...) 且标签名与 manifest 一致。`
+        )
       )
     }, timeoutMs)
 

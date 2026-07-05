@@ -10,7 +10,7 @@
           @change="handleOptionChange(index)"
         >
           <a-radio
-            v-for="(caseItem, caseIndex) in getDisplayCases(optionDefinitions[option.name])"
+            v-for="caseItem in getDisplayCases(optionDefinitions[option.name])"
             :key="getCaseIndex(optionDefinitions[option.name], caseItem)"
             :value="getCaseIndex(optionDefinitions[option.name], caseItem)"
           >

@@ -1,16 +1,11 @@
 <template>
   <div class="schema-form" :class="`schema-form-${layout}`">
-    <div
-      v-for="group in normalizedGroups"
-      :key="group.key"
-      class="schema-group"
-    >
-      <div v-if="showGroupTitle(group)" class="schema-group-title">{{ group.label || group.key }}</div>
+    <div v-for="group in normalizedGroups" :key="group.key" class="schema-group">
+      <div v-if="showGroupTitle(group)" class="schema-group-title">
+        {{ group.label || group.key }}
+      </div>
 
-      <a-form
-        layout="vertical"
-        :class="{ 'schema-form-grid': layout === 'plugin-grid' }"
-      >
+      <a-form layout="vertical" :class="{ 'schema-form-grid': layout === 'plugin-grid' }">
         <a-form-item
           v-for="field in group.fields"
           :key="getFieldPath(field)"
@@ -64,7 +59,13 @@
                 :key="`${getFieldPath(field)}-${String(option.value)}`"
                 type="button"
                 class="schema-ordered-option"
-                :class="{ 'schema-ordered-option-active': isOrderedOptionChecked(getFieldPath(field), field, index) }"
+                :class="{
+                  'schema-ordered-option-active': isOrderedOptionChecked(
+                    getFieldPath(field),
+                    field,
+                    index
+                  ),
+                }"
                 :disabled="readonly || field.readonly"
                 @click="toggleOrderedOption(getFieldPath(field), field, index)"
               >
@@ -209,7 +210,12 @@
                       :disabled="readonly || field.readonly"
                       @update:checked="
                         (val: boolean) =>
-                          updateListRowValue(getFieldPath(field), index, val, getListItemType(field))
+                          updateListRowValue(
+                            getFieldPath(field),
+                            index,
+                            val,
+                            getListItemType(field)
+                          )
                       "
                     />
                     <a-input-number
@@ -295,7 +301,8 @@
                       :value="record.value"
                       :disabled="readonly || field.readonly"
                       @update:value="
-                        (val: string) => updateKeyValueRowValue(getFieldPath(field), record.key, val)
+                        (val: string) =>
+                          updateKeyValueRowValue(getFieldPath(field), record.key, val)
                       "
                     />
                   </template>
@@ -535,10 +542,7 @@ const getOptionValueByLabel = (field: SchemaFieldDefinition, label: string) => {
   return matched?.value
 }
 
-const normalizeOrderedMultiSelectValue = (
-  field: SchemaFieldDefinition,
-  value: unknown,
-) => {
+const normalizeOrderedMultiSelectValue = (field: SchemaFieldDefinition, value: unknown) => {
   const selected = new Set(Array.isArray(value) ? value : [])
   const normalized: unknown[] = []
   for (const option of getFieldOptions(field)) {
@@ -580,9 +584,12 @@ const schemaFieldSizes = [
 ] as const
 
 const isSchemaFieldSize = (value: unknown): value is NonNullable<SchemaFieldDefinition['size']> =>
-  typeof value === 'string' && schemaFieldSizes.includes(value as NonNullable<SchemaFieldDefinition['size']>)
+  typeof value === 'string' &&
+  schemaFieldSizes.includes(value as NonNullable<SchemaFieldDefinition['size']>)
 
-const normalizeFieldLayoutSize = (size: SchemaFieldDefinition['size']): keyof typeof schemaFieldSizeClasses => {
+const normalizeFieldLayoutSize = (
+  size: SchemaFieldDefinition['size']
+): keyof typeof schemaFieldSizeClasses => {
   if (typeof size !== 'string') {
     return '1/3'
   }
@@ -598,9 +605,8 @@ const normalizeFieldLayoutSize = (size: SchemaFieldDefinition['size']): keyof ty
   return '1/3'
 }
 
-const getFieldLayoutSize = (
-  field: SchemaFieldDefinition,
-): keyof typeof schemaFieldSizeClasses => schemaFieldSizeClasses[normalizeFieldLayoutSize(field.size)]
+const getFieldLayoutSize = (field: SchemaFieldDefinition): keyof typeof schemaFieldSizeClasses =>
+  schemaFieldSizeClasses[normalizeFieldLayoutSize(field.size)]
 
 const getValueByPath = (source: Record<string, any>, path: string) => {
   if (!path) {
@@ -641,7 +647,8 @@ const updateFieldValue = (field: string, value: unknown) => {
 
 const syncAutocompleteDraft = (field: string, fieldSchema: SchemaFieldDefinition) => {
   const rawValue = getFieldValue(field)
-  autocompleteDrafts.value[field] = getOptionLabelByValue(fieldSchema, rawValue) ?? String(rawValue ?? '')
+  autocompleteDrafts.value[field] =
+    getOptionLabelByValue(fieldSchema, rawValue) ?? String(rawValue ?? '')
 }
 
 const getAutocompleteInputValue = (field: string, fieldSchema: SchemaFieldDefinition) => {
@@ -660,7 +667,7 @@ const handleAutocompleteInput = (field: string, value: string) => {
 const handleAutocompleteSelect = (
   field: string,
   fieldSchema: SchemaFieldDefinition,
-  value: string,
+  value: string
 ) => {
   const matchedLabel = getOptionLabelByValue(fieldSchema, value)
   autocompleteDrafts.value[field] = matchedLabel ?? value
@@ -684,7 +691,8 @@ const handleAutocompleteBlur = (field: string, fieldSchema: SchemaFieldDefinitio
   const matchedByLabel = getOptionValueByLabel(fieldSchema, trimmedValue)
   if (matchedByLabel !== undefined) {
     updateFieldValue(field, matchedByLabel)
-    autocompleteDrafts.value[field] = getOptionLabelByValue(fieldSchema, matchedByLabel) ?? trimmedValue
+    autocompleteDrafts.value[field] =
+      getOptionLabelByValue(fieldSchema, matchedByLabel) ?? trimmedValue
     return
   }
 
@@ -731,16 +739,19 @@ const isSelectField = (field: SchemaFieldDefinition) =>
   field.type === 'select' ||
   (!isAutocompleteField(field) && !isMultiSelectField(field) && hasSelectableOptions(field))
 const isMultiSelectField = (field: SchemaFieldDefinition) =>
-  !isOrderedMultiSelectField(field)
-  && (field.type === 'multiselect' || (hasSelectableOptions(field) && isListField(field)))
-const isBooleanField = (field: SchemaFieldDefinition) => field.type === 'boolean' || field.type === 'bool'
+  !isOrderedMultiSelectField(field) &&
+  (field.type === 'multiselect' || (hasSelectableOptions(field) && isListField(field)))
+const isBooleanField = (field: SchemaFieldDefinition) =>
+  field.type === 'boolean' || field.type === 'bool'
 const isPathField = (field: SchemaFieldDefinition) =>
   ['folder', 'file', 'path'].includes(field.type)
-const isStringField = (field: SchemaFieldDefinition) => ['string', 'str', 'uuid', 'datetime', 'related-id', 'readonly'].includes(field.type)
+const isStringField = (field: SchemaFieldDefinition) =>
+  ['string', 'str', 'uuid', 'datetime', 'related-id', 'readonly'].includes(field.type)
 const isSliderField = (field: SchemaFieldDefinition) => field.type === 'slider'
 const isNumberField = (field: SchemaFieldDefinition) =>
   ['number', 'integer', 'int', 'float', 'slider'].includes(field.type)
-const isListField = (field: SchemaFieldDefinition) => field.type === 'list' || field.type.startsWith('list[')
+const isListField = (field: SchemaFieldDefinition) =>
+  field.type === 'list' || field.type.startsWith('list[')
 const isJsonField = (field: SchemaFieldDefinition) => field.type === 'json'
 const isDictionaryField = (field: SchemaFieldDefinition) =>
   field.type === 'dict' || field.type.startsWith('dict[')
@@ -790,18 +801,14 @@ const getOrderedMultiSelectValue = (field: string, fieldSchema: SchemaFieldDefin
 const isOrderedOptionChecked = (
   field: string,
   fieldSchema: SchemaFieldDefinition,
-  index: number,
+  index: number
 ) => {
   const options = getFieldOptions(fieldSchema)
   const current = getOrderedMultiSelectValue(field, fieldSchema)
   return current.includes(options[index]?.value)
 }
 
-const toggleOrderedOption = (
-  field: string,
-  fieldSchema: SchemaFieldDefinition,
-  index: number,
-) => {
+const toggleOrderedOption = (field: string, fieldSchema: SchemaFieldDefinition, index: number) => {
   const options = getFieldOptions(fieldSchema)
   const current = getOrderedMultiSelectValue(field, fieldSchema)
   const target = options[index]?.value
@@ -1250,9 +1257,9 @@ const getFieldHelp = (field: SchemaFieldDefinition) => {
     return field.help
   }
   if (
-    typeof field.description === 'string'
-    && field.description.trim()
-    && field.description !== getFieldLabel(field)
+    typeof field.description === 'string' &&
+    field.description.trim() &&
+    field.description !== getFieldLabel(field)
   ) {
     return field.description
   }
@@ -1443,7 +1450,10 @@ defineExpose({
   background: var(--ant-color-fill-quaternary);
   color: var(--ant-color-text);
   text-align: left;
-  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    transform 0.2s ease;
 }
 
 .schema-ordered-option:not(:disabled) {
