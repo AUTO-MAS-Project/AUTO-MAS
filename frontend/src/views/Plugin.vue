@@ -45,7 +45,7 @@
                   <a-dropdown v-if="group.key !== ''" :trigger="['click']">
                     <a-button size="small" type="text" class="group-menu-btn">...</a-button>
                     <template #overlay>
-                      <a-menu @click="({ key }: { key: string }) => handleGroupAction(key, group.key)">
+                      <a-menu @click="handleGroupMenuClick($event, group.key)">
                         <a-menu-item key="rename">重命名分组</a-menu-item>
                         <a-menu-item key="delete" danger>删除分组</a-menu-item>
                       </a-menu>
@@ -1368,6 +1368,10 @@ const handleGroupAction = (action: string, groupKey: string) => {
     })
     message.success(`分组 "${groupKey}" 已删除，实例已移回默认分组`)
   }
+}
+
+const handleGroupMenuClick = (event: { key: string | number }, groupKey: string) => {
+  handleGroupAction(String(event.key), groupKey)
 }
 
 const getPhaseTagColor = (phase?: string) => {
