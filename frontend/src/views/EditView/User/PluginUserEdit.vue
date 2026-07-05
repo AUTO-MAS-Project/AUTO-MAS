@@ -50,10 +50,18 @@
       :hide-fields="headerSchemaActionKeys"
       :action-loading-id="actionLoadingId"
       @trigger-action="({ field, fieldSchema }) => handleFieldAction(field, fieldSchema)"
-      @validation-change="(errors) => (fieldErrors = errors)"
+      @validation-change="errors => (fieldErrors = errors)"
     />
 
     <a-empty v-if="!userSchema && !loading" description="此插件脚本类型未提供用户配置表单" />
+  </a-card>
+
+  <a-card v-if="isOkwwAdapter && userId" class="config-card okww-config-card">
+    <OkwwConfigEditor
+      :script-id="scriptId"
+      :user-id="userId"
+      endpoint-prefix="/plugin/okww/configs"
+    />
   </a-card>
 
   <SchemaActionSessionMask
@@ -73,6 +81,7 @@ import { message } from 'ant-design-vue'
 import HeaderSchemaActionButton from '@/components/HeaderSchemaActionButton.vue'
 import SchemaForm from '@/components/SchemaForm.vue'
 import SchemaActionSessionMask from '@/components/SchemaActionSessionMask.vue'
+import OkwwConfigEditor from '@/views/OkwwUserEdit/OkwwConfigEditor.vue'
 import { useSchemaActionRunner } from '@/composables/useSchemaActionRunner'
 import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
@@ -81,7 +90,11 @@ import type {
   SchemaFieldDefinition,
   SchemaValidationErrorMap,
 } from '@/types/schemaForm'
-import { descriptorMapFromList, getScriptTypeTagColor, normalizeScriptRecord } from '@/utils/scriptRegistry'
+import {
+  descriptorMapFromList,
+  getScriptTypeTagColor,
+  normalizeScriptRecord,
+} from '@/utils/scriptRegistry'
 import { collectHeaderSchemaActions } from '@/utils/schemaActions'
 
 const logger = window.electronAPI.getLogger('插件用户编辑')
@@ -145,7 +158,7 @@ const displayNameFromForm = computed(() => {
   return ''
 })
 
-const cloneValue = <T>(value: T): T => JSON.parse(JSON.stringify(value))
+const cloneValue = <T,>(value: T): T => JSON.parse(JSON.stringify(value))
 
 const normalizePluginKey = (value?: string | null) =>
   String(value || '')
@@ -159,6 +172,8 @@ const currentPluginKey = () => {
   }
   return normalizePluginKey(editorKind.slice('plugin:'.length))
 }
+
+const isOkwwAdapter = computed(() => currentPluginKey() === 'okwwadapter')
 
 const isCurrentPluginEvent = (plugin?: string | null) => {
   const key = currentPluginKey()
@@ -183,7 +198,10 @@ const loadData = async ({
   loading.value = true
   const preservedFormModel = preserveFormModel ? cloneValue(formModel.value || {}) : null
   try {
-    const [descriptors, scripts] = await Promise.all([api.getScriptTypes(), api.getScripts(scriptId)])
+    const [descriptors, scripts] = await Promise.all([
+      api.getScriptTypes(),
+      api.getScripts(scriptId),
+    ])
     const scriptRecord = scripts[0]
     if (!scriptRecord) {
       throw new Error('脚本不存在')
@@ -285,10 +303,7 @@ const refreshImportedInfrastructure = async () => {
 }
 
 const handlePluginSystemMessage = (wsMessage: WebSocketBaseMessage) => {
-  const payload = wsMessage.data as
-    | PluginSystemSnapshotMessage
-    | PluginSystemHmrMessage
-    | undefined
+  const payload = wsMessage.data as PluginSystemSnapshotMessage | PluginSystemHmrMessage | undefined
   if (!payload || typeof payload !== 'object') {
     return
   }
@@ -299,9 +314,9 @@ const handlePluginSystemMessage = (wsMessage: WebSocketBaseMessage) => {
   }
 
   if (
-    payload.kind === 'hmr'
-    && payload.status === 'error'
-    && isCurrentPluginEvent(payload.plugin)
+    payload.kind === 'hmr' &&
+    payload.status === 'error' &&
+    isCurrentPluginEvent(payload.plugin)
   ) {
     message.warning(payload.message || `plugin hmr failed: ${payload.plugin || 'unknown'}`)
   }
@@ -321,7 +336,10 @@ const {
     await loadData()
   },
   onActionSuccess: async ({ field, action }) => {
-    if (field !== 'Data.ImportCustomInfrast' || action.path !== '/api/scripts/user/infrastructure') {
+    if (
+      field !== 'Data.ImportCustomInfrast' ||
+      action.path !== '/api/scripts/user/infrastructure'
+    ) {
       return false
     }
     await refreshImportedInfrastructure()
@@ -392,6 +410,10 @@ onUnmounted(() => {
 
 .config-card {
   border-radius: 16px;
+}
+
+.okww-config-card {
+  margin-top: 16px;
 }
 
 @media (max-width: 768px) {
