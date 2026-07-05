@@ -4,6 +4,7 @@ import {
   MaaFwService,
   OpenAPI,
   type MaaFWInterfacePreviewData as ApiMaaFWInterfacePreviewData,
+  type MaaFWProjectUpdateOut as ApiMaaFWProjectUpdateOut,
   type MaaFWTaskSnapshot as ApiMaaFWTaskSnapshot,
   type MaaFWWindowPreviewData as ApiMaaFWWindowPreviewData,
 } from '@/api'
@@ -254,7 +255,7 @@ export function useMaaFWApi() {
       })
 
       if (response.code !== 200 || !response.data) {
-        const errorMsg = response.message || '鍑嗗 MaaFW Agent Python 鐜澶辫触'
+        const errorMsg = response.message || '准备 MaaFW 运行环境失败'
         message.error(errorMsg)
         if (response.data) {
           error.value = errorMsg
@@ -265,9 +266,41 @@ export function useMaaFWApi() {
 
       return normalizeAgentEnvPrepareData(response.data, response.status, response.message)
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '鍑嗗 MaaFW Agent Python 鐜澶辫触'
+      const errorMsg = err instanceof Error ? err.message : '准备 MaaFW 运行环境失败'
       error.value = errorMsg
-      logger.error(`鍑嗗 MaaFW Agent Python 鐜澶辫触: ${errorMsg}`)
+      logger.error(`准备 MaaFW 运行环境失败: ${errorMsg}`)
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
+        message.error(errorMsg)
+      }
+      return null
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const updateProjectResources = async (
+    scriptId: string
+  ): Promise<ApiMaaFWProjectUpdateOut | null> => {
+    loading.value = true
+    error.value = null
+
+    try {
+      const response = await MaaFwService.updateMaafwProjectApiScriptsMaafwProjectUpdatePost({
+        scriptId,
+      })
+
+      if (response.code !== 200) {
+        const errorMsg = response.message || 'MaaFW 项目更新失败'
+        error.value = errorMsg
+        message.error(errorMsg)
+        return response
+      }
+
+      return response
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'MaaFW 项目更新失败'
+      error.value = errorMsg
+      logger.error(`MaaFW 项目更新失败: ${errorMsg}`)
       if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }
@@ -283,5 +316,6 @@ export function useMaaFWApi() {
     previewInterface,
     previewWindows,
     prepareAgentEnv,
+    updateProjectResources,
   }
 }

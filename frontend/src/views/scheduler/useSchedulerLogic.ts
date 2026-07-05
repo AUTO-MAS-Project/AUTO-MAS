@@ -701,6 +701,57 @@ export function useSchedulerLogic() {
     pendingLogUpdates.set(tab.key, timer)
   }
 
+  const applyTaskInfoSnapshot = (tab: SchedulerTab, data: any): boolean => {
+    if (!data.task_info || !Array.isArray(data.task_info)) {
+      logger.debug('没有task_info数据，保持现有overviewData')
+      return false
+    }
+
+    const overviewPanel = overviewRefs.value.get(tab.key)
+    if (overviewPanel && overviewPanel.handleWSMessage) {
+      overviewPanel.handleWSMessage({
+        type: 'Update',
+        id: tab.websocketId,
+        data,
+      })
+    }
+
+    try {
+      tab.overviewData = (data.task_info as any[]).map((s, index) => ({
+        script_id: s.script_id || `script_${index}`,
+        name: s.name || '未知脚本',
+        status: s.status || '等待',
+        user_list: s.userList ? [...s.userList] : [],
+      }))
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : String(e)
+      logger.warn(`维护 overviewData 快照时出现问题: ${errorMsg}`)
+    }
+
+    const newTaskQueue = data.task_info.map((item: any) => ({
+      name: item.name || '未知任务',
+      status: item.status || '等待',
+    }))
+
+    const newUserQueue: QueueItem[] = []
+    data.task_info.forEach((taskItem: any) => {
+      if (taskItem.userList && Array.isArray(taskItem.userList)) {
+        taskItem.userList.forEach((user: any) => {
+          if (user.status === '运行') {
+            newUserQueue.push({
+              name: `${taskItem.name}-${user.name}`,
+              status: user.status,
+            })
+          }
+        })
+      }
+    })
+
+    tab.taskQueue.splice(0, tab.taskQueue.length, ...newTaskQueue)
+    tab.userQueue.splice(0, tab.userQueue.length, ...newUserQueue)
+    return true
+  }
+
   const handleUpdateMessage = (tab: SchedulerTab, data: any) => {
     // 添加消息去重机制
     const taskInfoSignature = buildTaskInfoSignature(data.task_info)
@@ -726,64 +777,7 @@ export function useSchedulerLogic() {
       tab.lastMessageTime = currentTime
     }
 
-    // 直接将 WebSocket 消消息传递给 TaskOverviewPanel
-    const overviewPanel = overviewRefs.value.get(tab.key)
-    if (overviewPanel && overviewPanel.handleWSMessage) {
-      const wsMessage = {
-        type: 'Update',
-        id: tab.websocketId,
-        data: data,
-      }
-      overviewPanel.handleWSMessage(wsMessage)
-    }
-
-    // 同步维护 任务总览 快照 overviewData（用于路由返回后的快速恢复）
-    try {
-      if (data.task_info && Array.isArray(data.task_info)) {
-        // 完整脚本+用户数据，直接保存
-        tab.overviewData = (data.task_info as any[]).map(s => ({
-          script_id:
-            s.script_id || `script_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          name: s.name || '未知脚本',
-          status: s.status || '等待',
-          user_list: s.userList ? [...s.userList] : [],
-        }))
-      } else {
-        // 如果没有task_info数据，保持现有数据不变
-        logger.debug('没有task_info数据，保持现有overviewData')
-      }
-    } catch (e) {
-      const errorMsg = e instanceof Error ? e.message : String(e)
-      logger.warn(`维护 overviewData 快照时出现问题: ${errorMsg}`)
-    }
-
-    // 处理 队列与日志 显示
-    // 处理task_info初始化消息
-    if (data.task_info && Array.isArray(data.task_info)) {
-      // 初始化任务队列 - 保持原始状态
-      const newTaskQueue = data.task_info.map((item: any) => ({
-        name: item.name || '未知任务',
-        status: item.status || '等待',
-      }))
-
-      // 初始化用户队列（仅包含运行状态下的用户）
-      const newUserQueue: QueueItem[] = []
-      data.task_info.forEach((taskItem: any) => {
-        if (taskItem.userList && Array.isArray(taskItem.userList)) {
-          taskItem.userList.forEach((user: any) => {
-            if (user.status === '运行') {
-              newUserQueue.push({
-                name: `${taskItem.name}-${user.name}`,
-                status: user.status,
-              })
-            }
-          })
-        }
-      })
-
-      tab.taskQueue.splice(0, tab.taskQueue.length, ...newTaskQueue)
-      tab.userQueue.splice(0, tab.userQueue.length, ...newUserQueue)
-    }
+    applyTaskInfoSnapshot(tab, data)
 
     // 处理日志 - 直接显示完整日志内容，覆盖上次显示的内容
     if (data.log) {
@@ -921,6 +915,8 @@ export function useSchedulerLogic() {
     // 这确保了调度台状态与实际任务执行状态严格同步
     if (data && data.Accomplish) {
       logger.info('收到Accomplish信号，设置任务状态为结束')
+
+      applyTaskInfoSnapshot(tab, data)
 
       // 清空日志并显示原始代理结果信息
       const resultText = data.Accomplish

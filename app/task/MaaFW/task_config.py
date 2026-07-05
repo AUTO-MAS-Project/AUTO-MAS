@@ -21,14 +21,24 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .interface_models import (
-    MaaFWInterface,
-    MaaFWOption,
-    MaaFWPreset,
-    MaaFWPresetOptionValue,
-    MaaFWTaskOptionValue,
-    MaaFWTaskOptionsByTask,
-)
+try:
+    from .interface_models import (
+        MaaFWInterface,
+        MaaFWOption,
+        MaaFWPreset,
+        MaaFWPresetOptionValue,
+        MaaFWTaskOptionValue,
+        MaaFWTaskOptionsByTask,
+    )
+except ImportError:
+    from interface_models import (  # type: ignore[no-redef]
+        MaaFWInterface,
+        MaaFWOption,
+        MaaFWPreset,
+        MaaFWPresetOptionValue,
+        MaaFWTaskOptionValue,
+        MaaFWTaskOptionsByTask,
+    )
 
 
 CUSTOM_PRESET_NAME = "__auto_mas_custom_preset__"

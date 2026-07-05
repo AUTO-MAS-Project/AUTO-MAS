@@ -112,6 +112,7 @@
             :placeholder="inputItem.description || inputItem.name"
             class="option-control"
             @change="handleInputTextChange(option.name, inputItem, $event)"
+            @blur="handleInputTextBlur(inputItem, $event)"
           />
           <MaaFWDescriptionView
             v-if="inputItem.description"
@@ -388,12 +389,13 @@ const handleCheckboxChange = (optionName: string, value: unknown) => {
 const handleInputFieldChange = (
   optionName: string,
   inputItem: MaaFWOptionInputInfo,
-  value: string | number | boolean | null
+  value: string | number | boolean | null,
+  shouldValidate = true
 ) => {
   const option = optionMap.value.get(optionName)
   if (!option) return
   const inputValue = value === null ? '' : String(value)
-  if (!validateInputValue(inputItem, inputValue)) return
+  if (shouldValidate && !validateInputValue(inputItem, inputValue)) return
 
   emitOptionValue(optionName, {
     ...getInputValueObject(option),
@@ -424,7 +426,11 @@ const handleInputTextChange = (
   inputItem: MaaFWOptionInputInfo,
   event: InputChangeEvent
 ) => {
-  handleInputFieldChange(optionName, inputItem, event.target.value)
+  handleInputFieldChange(optionName, inputItem, event.target.value, false)
+}
+
+const handleInputTextBlur = (inputItem: MaaFWOptionInputInfo, event: InputChangeEvent) => {
+  validateInputValue(inputItem, event.target.value)
 }
 
 const getActiveNestedOptionGroups = (option: MaaFWOptionInfo) => {

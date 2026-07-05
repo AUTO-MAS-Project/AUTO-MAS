@@ -23,6 +23,7 @@
 
 import asyncio
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -734,21 +735,178 @@ async def preview_maafw_interface(
 
 
 @router.post(
+    "/maafw/project/update",
+    tags=["MaaFW"],
+    summary="手动更新 MaaFW 项目资源",
+    response_model=MaaFWProjectUpdateOut,
+    status_code=200,
+)
+async def update_maafw_project(
+    payload: MaaFWProjectUpdateIn = Body(...),
+) -> MaaFWProjectUpdateOut:
+    """按脚本更新配置手动检查并应用 MaaFW 项目资源更新。"""
+    from app.task.MaaFW.interface_loader import (
+        MaaFWInterfaceLoadError,
+        load_interface_model_cached,
+    )
+    from app.task.MaaFW.project_updater import update_maafw_project_if_needed
+    from app.task.MaaFW.runner import prepare_maafw_agent_python_envs
+
+    logs: list[str] = []
+    current_version = ""
+
+    def append_log(message: str) -> None:
+        timestamp = datetime.now().astimezone().strftime("%H:%M:%S")
+        for line in str(message).splitlines() or [""]:
+            logs.append(f"[{timestamp}] {line}")
+
+    try:
+        script_uuid = uuid.UUID(payload.scriptId)
+    except ValueError as e:
+        append_log(f"脚本 ID 无效: {e}")
+        return MaaFWProjectUpdateOut(
+            code=400,
+            status="error",
+            message=f"脚本 ID 无效: {e}",
+            data=MaaFWProjectUpdateData(
+                checked=False,
+                updated=False,
+                currentVersion=current_version,
+                logs=logs,
+            ),
+        )
+
+    try:
+        script_config = Config.ScriptConfig[script_uuid]
+        if type(script_config).__name__ != "MaaFWConfig":
+            append_log("指定脚本不是 MaaFW 项目")
+            return MaaFWProjectUpdateOut(
+                code=400,
+                status="error",
+                message="指定脚本不是 MaaFW 项目",
+                data=MaaFWProjectUpdateData(
+                    checked=False,
+                    updated=False,
+                    currentVersion=current_version,
+                    logs=logs,
+                ),
+            )
+
+        project_path_raw = str(script_config.get("Info", "Path") or "").strip()
+        if not project_path_raw:
+            append_log("请先配置 MaaFW 项目目录")
+            return MaaFWProjectUpdateOut(
+                code=400,
+                status="error",
+                message="请先配置 MaaFW 项目目录",
+                data=MaaFWProjectUpdateData(
+                    checked=False,
+                    updated=False,
+                    currentVersion=current_version,
+                    logs=logs,
+                ),
+            )
+
+        project_path = Path(project_path_raw).resolve()
+        interface_model = load_interface_model_cached(project_path)
+        current_version = interface_model.version or ""
+
+        mirror_cdk = (
+            script_config.get("Update", "MirrorChyanCDK")
+            or Config.get("Update", "MirrorChyanCDK")
+        )
+        channel = script_config.get("Update", "Channel") or Config.get("Update", "Channel")
+        update_result = await update_maafw_project_if_needed(
+            project_path,
+            interface_model,
+            mirror_cdk=mirror_cdk,
+            channel=channel,
+            proxy=Config.proxy,
+            send_log=append_log,
+        )
+
+        if update_result.updated:
+            refreshed_interface = load_interface_model_cached(
+                project_path,
+                force_reload=True,
+            )
+            append_log("MaaFW 项目已更新，准备 Agent Python 环境")
+            await asyncio.to_thread(
+                prepare_maafw_agent_python_envs,
+                project_path,
+                refreshed_interface,
+                send_log=append_log,
+            )
+
+        return MaaFWProjectUpdateOut(
+            message=update_result.message,
+            data=MaaFWProjectUpdateData(
+                checked=update_result.checked,
+                updated=update_result.updated,
+                currentVersion=update_result.current_version,
+                latestVersion=update_result.latest_version,
+                source=update_result.source,
+                logs=logs,
+            ),
+        )
+    except KeyError:
+        append_log("脚本不存在或已被删除")
+        return MaaFWProjectUpdateOut(
+            code=404,
+            status="error",
+            message="脚本不存在或已被删除",
+            data=MaaFWProjectUpdateData(
+                checked=False,
+                updated=False,
+                currentVersion=current_version,
+                logs=logs,
+            ),
+        )
+    except MaaFWInterfaceLoadError as e:
+        append_log(f"MaaFW 项目更新失败: {e}")
+        return MaaFWProjectUpdateOut(
+            code=400,
+            status="error",
+            message=str(e),
+            data=MaaFWProjectUpdateData(
+                checked=False,
+                updated=False,
+                currentVersion=current_version,
+                logs=logs,
+            ),
+        )
+    except Exception as e:
+        append_log(f"MaaFW 项目更新失败: {type(e).__name__}: {e}")
+        return MaaFWProjectUpdateOut(
+            code=500,
+            status="error",
+            message=f"MaaFW 项目更新失败: {type(e).__name__}: {e}",
+            data=MaaFWProjectUpdateData(
+                checked=False,
+                updated=False,
+                currentVersion=current_version,
+                logs=logs,
+            ),
+        )
+
+
+@router.post(
     "/maafw/agent-env/prepare",
     tags=["MaaFW"],
-    summary="Prepare MaaFW agent Python env",
+    summary="Prepare MaaFW runtime env",
     response_model=MaaFWAgentEnvPrepareOut,
     status_code=200,
 )
 async def prepare_maafw_agent_env(
     payload: MaaFWAgentEnvPrepareIn = Body(...),
 ) -> MaaFWAgentEnvPrepareOut:
-    """Prepare MaaFW agent Python envs without loading resources or starting agents."""
+    """Prepare MaaFW Runner and agent Python envs before starting tasks."""
 
     from app.task.MaaFW.interface_loader import (
         MaaFWInterfaceLoadError,
         load_interface_model_cached,
     )
+    from app.task.MaaFW.AutoProxy import prepare_maafw_runner_env
     from app.task.MaaFW.runner import prepare_maafw_agent_python_envs
 
     logs: list[str] = []
@@ -757,6 +915,11 @@ async def prepare_maafw_agent_env(
     try:
         root_path = Path(payload.path).resolve()
         interface = load_interface_model_cached(root_path)
+        await asyncio.to_thread(
+            prepare_maafw_runner_env,
+            root_path,
+            send_log=logs.append,
+        )
         agent_plans = await asyncio.to_thread(
             prepare_maafw_agent_python_envs,
             root_path,
@@ -797,7 +960,7 @@ async def prepare_maafw_agent_env(
         )
 
     return MaaFWAgentEnvPrepareOut(
-        message=f"Agent Python env prepared, agent count: {data.agentCount}",
+        message=f"MaaFW runtime env prepared, agent count: {data.agentCount}",
         data=data,
     )
 
@@ -829,7 +992,7 @@ def _select_maafw_window_controllers(interface, controller_name: str | None):
     controllers = [
         controller
         for controller in interface.controller
-        if controller.type in {"Win32", "Gamepad"}
+        if controller.type == "Win32"
     ]
     if not controller_name:
         return controllers
@@ -844,7 +1007,7 @@ def _select_maafw_window_controllers(interface, controller_name: str | None):
     )
     if controller is None:
         raise ValueError(f"未找到 controller: {controller_name}")
-    if controller.type not in {"Win32", "Gamepad"}:
+    if controller.type != "Win32":
         raise ValueError(f"controller {controller_name} 不是 PC 窗口类型")
     return [controller]
 
@@ -859,7 +1022,7 @@ def _select_maafw_window_controllers(interface, controller_name: str | None):
 async def preview_maafw_windows(
     payload: MaaFWWindowPreviewIn = Body(...),
 ) -> MaaFWWindowPreviewOut:
-    """按 interface.json 中的 Win32/Gamepad 窗口规则扫描本机桌面窗口。"""
+    """按 interface.json 中的 Win32 窗口规则扫描本机桌面窗口。"""
     from app.task.MaaFW.interface_loader import (
         MaaFWInterfaceLoadError,
         load_interface_model_cached,

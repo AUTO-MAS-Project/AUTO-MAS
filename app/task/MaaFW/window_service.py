@@ -44,7 +44,7 @@ def list_desktop_windows() -> list[MaaFWDesktopWindow]:
     """Return MaaFW Toolkit desktop windows with stable Python-native fields."""
 
     if sys.platform != "win32":
-        raise RuntimeError("Win32/Gamepad 窗口扫描仅支持 Windows")
+        raise RuntimeError("Win32 窗口扫描仅支持 Windows")
 
     return [
         MaaFWDesktopWindow(
@@ -60,9 +60,9 @@ def match_controller_windows(
     controller: MaaFWController,
     windows: Iterable[MaaFWDesktopWindow] | None = None,
 ) -> list[MaaFWWindowMatch]:
-    """Find windows matched by a Win32/Gamepad controller definition."""
+    """Find windows matched by a Win32 controller definition."""
 
-    if controller.type not in {"Win32", "Gamepad"}:
+    if controller.type != "Win32":
         return []
 
     class_regex, window_regex = _controller_window_regex(controller)
@@ -127,8 +127,6 @@ def resolve_window_handle(
 def _controller_window_regex(controller: MaaFWController) -> tuple[str | None, str | None]:
     if controller.type == "Win32" and controller.win32 is not None:
         return controller.win32.class_regex, controller.win32.window_regex
-    if controller.type == "Gamepad" and controller.gamepad is not None:
-        return controller.gamepad.class_regex, controller.gamepad.window_regex
     return None, None
 
 
