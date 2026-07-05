@@ -159,8 +159,7 @@ export function parseStatusTagList(
     }
 
     return defaultTags
-  } catch (error) {
-    console.warn('解析状态标签列表失败:', error, 'statusList=', statusList)
+  } catch {
     return defaultTags
   }
 }
