@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import shutil
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict
@@ -54,6 +55,7 @@ RESOURCE_SUFFIXES = {
     ".ts",
     ".vue",
 }
+RECENT_WRITE_WINDOW_SECONDS = 5.0
 
 
 @dataclass
@@ -70,7 +72,7 @@ class _PluginWatchHandler(FileSystemEventHandler):
     def on_any_event(self, event: FileSystemEvent) -> None:
         if event.is_directory:
             return
-        if event.event_type in {"opened", "closed_no_write"}:
+        if event.event_type in {"opened", "closed", "closed_no_write"}:
             return
 
         paths = [Path(str(event.src_path))]
@@ -79,6 +81,8 @@ class _PluginWatchHandler(FileSystemEventHandler):
             paths.append(Path(dest_path))
 
         for path in paths:
+            if event.event_type == "modified" and not self.hmr.is_recent_file_write(path):
+                continue
             self.hmr.enqueue_path(path)
 
 
@@ -200,6 +204,14 @@ class DevPluginHMR:
 
         if self._changed_event is not None:
             self._changed_event.set()
+
+    @staticmethod
+    def is_recent_file_write(path: Path) -> bool:
+        try:
+            modified_at = path.stat().st_mtime
+        except OSError:
+            return True
+        return time.time() - modified_at <= RECENT_WRITE_WINDOW_SECONDS
 
     async def _run(self) -> None:
         while self._running:

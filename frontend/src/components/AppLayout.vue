@@ -287,6 +287,9 @@ const refreshPluginFrontend = () => {
   window.setTimeout(() => {
     if (hot?.invalidate) {
       hot.invalidate()
+      window.setTimeout(() => {
+        window.location.reload()
+      }, 1200)
       return
     }
     window.location.reload()
