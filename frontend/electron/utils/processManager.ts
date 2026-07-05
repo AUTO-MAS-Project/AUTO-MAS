@@ -34,7 +34,7 @@ export async function getRelatedProcesses(): Promise<ProcessInfo[]> {
 
     exec(
       `powershell -NoProfile -Command "${psCommand}"`,
-      { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 },
+      { encoding: 'utf8' },
       (error, stdout, _stderr) => {
         if (error) {
           logger.error(`获取进程信息失败: ${error}`)
