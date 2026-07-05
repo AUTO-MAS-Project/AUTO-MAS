@@ -57,6 +57,7 @@ from .ConfigBase import (
     VirtualConfigValidator,
     FileValidator,
     FolderValidator,
+    ScriptRootPathValidator,
     EmulatorPathValidator,
     EncryptValidator,
     UUIDValidator,
@@ -2671,7 +2672,7 @@ class GeneralConfig(ConfigBase):
         self.Info_Name = ConfigItem("Info", "Name", "新通用脚本")
         ## 根目录路径
         self.Info_RootPath = ConfigItem(
-            "Info", "RootPath", "", FileValidator()
+            "Info", "RootPath", "", ScriptRootPathValidator()
         )
 
         ## Script ----------------------------------------------------------
@@ -2792,7 +2793,7 @@ class OkwwConfig(ConfigBase):
         ## Info ------------------------------------------------------------
         self.Info_Name = ConfigItem("Info", "Name", "新 OK-WW 脚本")
         self.Info_RootPath = ConfigItem(
-            "Info", "RootPath", "", FileValidator()
+            "Info", "RootPath", "", ScriptRootPathValidator()
         )
 
         ## Game ------------------------------------------------------------

@@ -40,6 +40,7 @@ from app.models.ConfigBase import (
     MultipleUIDValidator,
     OptionsValidator,
     RangeValidator,
+    ScriptRootPathValidator,
     StringValidator,
     URLValidator,
     UserNameValidator,
@@ -179,6 +180,8 @@ def _config_validator(
         )
 
     validator_name = str(extra.get("validator") or "").strip()
+    if validator_name == "script-root":
+        return ScriptRootPathValidator()
     if validator_name == "username":
         return UserNameValidator()
 

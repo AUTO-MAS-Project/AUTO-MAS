@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from app.plugins.fields import PluginField
@@ -95,12 +94,13 @@ SCRIPT_GROUPS = (
         "基础信息",
         [
             PluginField.string("Name", "脚本名称", "新通用脚本"),
-            PluginField.file(
+            PluginField.folder(
                 "RootPath",
                 "根目录路径",
-                str(Path.cwd()),
+                "",
                 placeholder="选择脚本根目录",
                 size="medium",
+                validator="script-root",
             ),
         ],
     ),
@@ -111,7 +111,7 @@ SCRIPT_GROUPS = (
             PluginField.file(
                 "ScriptPath",
                 "脚本入口",
-                str(Path.cwd()),
+                "",
                 placeholder="选择脚本可执行文件或入口目录",
                 size="large",
             ),
@@ -130,7 +130,7 @@ SCRIPT_GROUPS = (
             PluginField.file(
                 "ConfigPath",
                 "配置路径",
-                str(Path.cwd()),
+                "",
                 placeholder="选择脚本配置文件或配置目录",
                 size="large",
             ),
@@ -149,7 +149,7 @@ SCRIPT_GROUPS = (
             PluginField.file(
                 "LogPath",
                 "日志路径",
-                str(Path.cwd()),
+                "",
                 placeholder="选择日志文件路径",
                 size="large",
             ),
@@ -189,7 +189,7 @@ SCRIPT_GROUPS = (
             PluginField.file(
                 "Path",
                 "游戏路径",
-                str(Path.cwd()),
+                "",
                 placeholder="选择游戏可执行文件",
                 size="large",
             ),
@@ -231,7 +231,7 @@ USER_GROUPS = (
             PluginField.file(
                 "ScriptBeforeTask",
                 "任务前脚本路径",
-                str(Path.cwd()),
+                "",
                 placeholder="选择任务前脚本文件",
                 size="large",
             ),
@@ -239,7 +239,7 @@ USER_GROUPS = (
             PluginField.file(
                 "ScriptAfterTask",
                 "任务后脚本路径",
-                str(Path.cwd()),
+                "",
                 placeholder="选择任务后脚本文件",
                 size="large",
             ),
