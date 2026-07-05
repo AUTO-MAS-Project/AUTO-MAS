@@ -4,65 +4,65 @@ import { computed, type ComputedRef } from 'vue'
  * 状态标签接口定义
  */
 export interface StatusTag {
-    text: string
-    color?: string
+  text: string
+  color?: string
 }
 
 /**
  * 通用状态标签解析和管理 Composable
- * 
+ *
  * 该模块提供了一套完整的状态标签（Status Tag）管理方案，用于解析、序列化和显示状态标签。
  * 状态标签通常由后端以JSON字符串格式返回，格式为：{"text": "标签文本", "color": "颜色"}
- * 
+ *
  * 主要功能：
  * - 解析单个或多个状态标签
  * - 序列化标签为JSON字符串
  * - 提供Vue响应式的composable函数
  * - 自动适配深色模式（通过Ant Design Vue的Tag组件）
- * 
+ *
  * 使用示例：
- * 
+ *
  * 1. 基础解析：
  * ```typescript
  * import { parseStatusTag } from '@/composables/useStatusTag'
- * 
+ *
  * const status = '{"text": "运行中", "color": "green"}'
  * const tag = parseStatusTag(status, { text: '未启用', color: 'default' })
  * // 返回: { text: '运行中', color: 'green' }
  * ```
- * 
+ *
  * 2. 在组件中使用（推荐）：
  * ```vue
  * <script setup>
  * import { useStatusTag, createStatusTag } from '@/composables/useStatusTag'
- * 
+ *
  * const statusTag = useStatusTag(
  *   () => config.value.Status,
  *   createStatusTag('未启用', 'default')
  * )
  * </script>
- * 
+ *
  * <template>
  *   <a-tag v-if="statusTag" :color="statusTag.color">
  *     {{ statusTag.text }}
  *   </a-tag>
  * </template>
  * ```
- * 
+ *
  * 3. 解析标签列表：
  * ```typescript
  * import { parseStatusTagList } from '@/composables/useStatusTag'
- * 
+ *
  * const statusList = '[{"text": "状态1", "color": "blue"}, {"text": "状态2", "color": "green"}]'
  * const tags = parseStatusTagList(statusList)
  * // 返回: [{ text: '状态1', color: 'blue' }, { text: '状态2', color: 'green' }]
  * ```
- * 
+ *
  * 支持的颜色值：
  * - Ant Design预设颜色：success, processing, error, warning, default
  * - 标准颜色：blue, green, red, orange, cyan, purple, pink, magenta, volcano, geekblue, lime, gold
  * - 自定义十六进制颜色：#1890ff
- * 
+ *
  * 注意事项：
  * - Ant Design Vue的Tag组件会自动适配深色模式，无需手动处理
  * - 后端返回的Status字段应为JSON字符串或'-'（表示使用默认值）
@@ -76,42 +76,42 @@ export interface StatusTag {
  * @returns StatusTag对象或null
  */
 export function parseStatusTag(
-    status: unknown,
-    defaultTag: StatusTag | null = null
+  status: unknown,
+  defaultTag: StatusTag | null = null
 ): StatusTag | null {
-    if (!status) return defaultTag
+  if (!status) return defaultTag
 
-    if (typeof status === 'object') {
-        const tag = status as Partial<StatusTag>
-        if (typeof tag.text === 'string') {
-            return {
-                text: tag.text,
-                color: typeof tag.color === 'string' ? tag.color : 'default',
-            }
-        }
-        return defaultTag
+  if (typeof status === 'object') {
+    const tag = status as Partial<StatusTag>
+    if (typeof tag.text === 'string') {
+      return {
+        text: tag.text,
+        color: typeof tag.color === 'string' ? tag.color : 'default',
+      }
     }
+    return defaultTag
+  }
 
-    if (typeof status !== 'string') {
-        return defaultTag
-    }
+  if (typeof status !== 'string') {
+    return defaultTag
+  }
 
-    if (status === '-') {
-        return defaultTag
-    }
+  if (status === '-') {
+    return defaultTag
+  }
 
-    try {
-        const tag = JSON.parse(status) as StatusTag
-        // 确保必需字段存在
-        if (!tag.text) {
-            console.warn('解析状态标签时缺少text字段:', status)
-            return defaultTag
-        }
-        return tag
-    } catch (error) {
-        console.error('解析状态标签失败:', error, 'status=', status)
-        return defaultTag || { text: '未知', color: 'default' }
+  try {
+    const tag = JSON.parse(status) as StatusTag
+    // 确保必需字段存在
+    if (!tag.text) {
+      console.warn('解析状态标签时缺少text字段:', status)
+      return defaultTag
     }
+    return tag
+  } catch (error) {
+    console.error('解析状态标签失败:', error, 'status=', status)
+    return defaultTag || { text: '未知', color: 'default' }
+  }
 }
 
 /**
@@ -121,47 +121,47 @@ export function parseStatusTag(
  * @returns StatusTag对象数组
  */
 export function parseStatusTagList(
-    statusList: unknown,
-    defaultTags: StatusTag[] = []
+  statusList: unknown,
+  defaultTags: StatusTag[] = []
 ): StatusTag[] {
-    if (!statusList) {
-        return defaultTags
+  if (!statusList) {
+    return defaultTags
+  }
+
+  try {
+    if (Array.isArray(statusList)) {
+      return statusList
+        .map(item => parseStatusTag(item, null))
+        .filter((tag): tag is StatusTag => tag !== null)
     }
 
-    try {
-        if (Array.isArray(statusList)) {
-            return statusList
-                .map(item => parseStatusTag(item, null))
-                .filter((tag): tag is StatusTag => tag !== null)
-        }
-
-        // 如果是字符串，尝试解析
-        if (typeof statusList === 'string') {
-            if (statusList === '-') {
-                return defaultTags
-            }
-
-            const parsed = JSON.parse(statusList)
-
-            // 如果解析结果是数组
-            if (Array.isArray(parsed)) {
-                return parsed.filter((tag): tag is StatusTag => {
-                    return tag && typeof tag.text === 'string'
-                })
-            }
-
-            // 如果解析结果是单个对象
-            if (parsed && typeof parsed.text === 'string') {
-                return [parsed as StatusTag]
-            }
-
-            return defaultTags
-        }
-
+    // 如果是字符串，尝试解析
+    if (typeof statusList === 'string') {
+      if (statusList === '-') {
         return defaultTags
-    } catch (error) {
-        return defaultTags
+      }
+
+      const parsed = JSON.parse(statusList)
+
+      // 如果解析结果是数组
+      if (Array.isArray(parsed)) {
+        return parsed.filter((tag): tag is StatusTag => {
+          return tag && typeof tag.text === 'string'
+        })
+      }
+
+      // 如果解析结果是单个对象
+      if (parsed && typeof parsed.text === 'string') {
+        return [parsed as StatusTag]
+      }
+
+      return defaultTags
     }
+
+    return defaultTags
+  } catch {
+    return defaultTags
+  }
 }
 
 /**
@@ -170,7 +170,7 @@ export function parseStatusTagList(
  * @returns JSON字符串
  */
 export function serializeStatusTag(tag: StatusTag): string {
-    return JSON.stringify(tag)
+  return JSON.stringify(tag)
 }
 
 /**
@@ -179,7 +179,7 @@ export function serializeStatusTag(tag: StatusTag): string {
  * @returns JSON字符串
  */
 export function serializeStatusTagList(tags: StatusTag[]): string {
-    return JSON.stringify(tags)
+  return JSON.stringify(tags)
 }
 
 /**
@@ -189,10 +189,10 @@ export function serializeStatusTagList(tags: StatusTag[]): string {
  * @returns 计算属性，返回解析后的StatusTag或null
  */
 export function useStatusTag(
-    statusGetter: () => string | null | undefined,
-    defaultTag: StatusTag | null = null
+  statusGetter: () => string | null | undefined,
+  defaultTag: StatusTag | null = null
 ): ComputedRef<StatusTag | null> {
-    return computed(() => parseStatusTag(statusGetter(), defaultTag))
+  return computed(() => parseStatusTag(statusGetter(), defaultTag))
 }
 
 /**
@@ -202,10 +202,10 @@ export function useStatusTag(
  * @returns 计算属性，返回解析后的StatusTag数组
  */
 export function useStatusTagList(
-    statusListGetter: () => string | string[] | null | undefined,
-    defaultTags: StatusTag[] = []
+  statusListGetter: () => string | string[] | null | undefined,
+  defaultTags: StatusTag[] = []
 ): ComputedRef<StatusTag[]> {
-    return computed(() => parseStatusTagList(statusListGetter(), defaultTags))
+  return computed(() => parseStatusTagList(statusListGetter(), defaultTags))
 }
 
 /**
@@ -218,5 +218,5 @@ export function useStatusTagList(
  * createStatusTag('已停止', '#ff0000')
  */
 export function createStatusTag(text: string, color: string): StatusTag {
-    return { text, color }
+  return { text, color }
 }

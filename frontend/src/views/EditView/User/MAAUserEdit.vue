@@ -126,7 +126,7 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { SaveOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
@@ -583,7 +583,7 @@ const handleFieldSave = async (key: string, value: any) => {
 }
 
 // 保存完整用户数据（仅用于特殊批量操作）
-const saveFullUserData = async () => {
+const _saveFullUserData = async () => {
   if (isInitializing.value || isSaving.value || !userId) return
 
   isSaving.value = true

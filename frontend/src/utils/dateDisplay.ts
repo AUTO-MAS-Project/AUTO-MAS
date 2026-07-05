@@ -3,8 +3,7 @@ const ISO_MONTH_RE = /^\d{4}-\d{2}$/
 const ISO_WEEK_RE = /^(\d{4})-W(\d{2})$/
 const ISO_DATETIME_RE =
   /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d+))?(?:Z|[+-]\d{2}:?\d{2})?$/
-const CN_DATETIME_RE =
-  /^(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日\s*(\d{1,2}):(\d{2})(?::(\d{2}))?$/
+const CN_DATETIME_RE = /^(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日\s*(\d{1,2}):(\d{2})(?::(\d{2}))?$/
 
 const pad2 = (value: number) => String(value).padStart(2, '0')
 

@@ -37,7 +37,7 @@
 </template>
 
 <script setup lang="ts">
-const props = defineProps<{
+defineProps<{
   checking: boolean
   repoExists: boolean
   pulling: boolean

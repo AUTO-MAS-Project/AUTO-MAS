@@ -49,9 +49,9 @@
 
     <a-layout class="app-main-layout">
       <a-layout-content class="content-area">
-        <router-view v-slot="{ Component, route }">
+        <router-view v-slot="{ Component, route: viewRoute }">
           <keep-alive :include="['Scheduler']">
-            <component :is="Component" :key="route.path" />
+            <component :is="Component" :key="viewRoute.path" />
           </keep-alive>
         </router-view>
         <transition name="hmr-fade">

@@ -34,6 +34,7 @@ export default [
     },
     plugins: { '@typescript-eslint': tseslint.plugin },
     rules: {
+      'no-undef': 'off',
       'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': [
         'warn',
@@ -57,6 +58,7 @@ export default [
     },
     plugins: { '@typescript-eslint': tseslint.plugin },
     rules: {
+      'no-undef': 'off',
       'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': [
         'warn',
@@ -80,6 +82,7 @@ export default [
     },
     plugins: { '@typescript-eslint': tseslint.plugin },
     rules: {
+      'no-undef': 'off',
       'no-unused-vars': 'off',
       '@typescript-eslint/no-require-imports': 'off',
       '@typescript-eslint/no-unused-vars': [
@@ -90,6 +93,15 @@ export default [
   },
 
   // -------- 公共 JS/配置文件 ----------
+  {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: globals.node,
+    },
+  },
+
   {
     files: ['public/**/*.js', 'eslint.config.mjs'],
     languageOptions: {
@@ -109,6 +121,8 @@ export default [
     rules: {
       // 关掉换行符报错
       'linebreak-style': 'off',
+      'vue/multi-word-component-names': 'off',
+      'vue/no-mutating-props': ['error', { shallowOnly: true }],
     },
   },
 

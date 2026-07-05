@@ -1,8 +1,5 @@
 <template>
-  <a-button
-    :loading="loading"
-    @click="$emit('click')"
-  >
+  <a-button :loading="loading" @click="$emit('click')">
     <template v-if="iconComponent" #icon>
       <component :is="iconComponent" />
     </template>
