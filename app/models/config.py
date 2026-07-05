@@ -143,9 +143,6 @@ def _normalize_maaend_sanity_task_type(task_data: object) -> None:
         protocol_space_tab = task_data.get("ProtocolSpaceTab")
         if protocol_space_tab in MAAEND_SANITY_TASK_TYPES[:-1]:
             task_data["SanityTaskType"] = protocol_space_tab
-            return
-
-    task_data["SanityTaskType"] = MAAEND_SANITY_TASK_DEFAULTS["SanityTaskType"]
 
 
 class EmulatorConfig(ConfigBase):
