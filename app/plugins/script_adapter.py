@@ -3,17 +3,31 @@ from __future__ import annotations
 import uuid
 import inspect
 import json
+import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from types import NoneType, UnionType
-from typing import TYPE_CHECKING, Any, Callable, Literal, Sequence, get_args, get_origin
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Awaitable,
+    Callable,
+    Literal,
+    Sequence,
+    cast,
+    get_args,
+    get_origin,
+)
 
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
+    from app.models.emulator import DeviceBase
+
     from .fields import PluginFieldGroup
     from .schema_utils import SchemaDecorationContext
+    from .script_config_store import ScriptConfigStore
 
 from app.models.ConfigBase import (
     BoolValidator,
@@ -217,6 +231,31 @@ def _config_validator(
 
 
 @dataclass(slots=True)
+class ScriptConfigWorkspace:
+    """Runtime-managed temporary workspace for external script config files."""
+
+    source_path: Path
+    temp_path: Path
+
+    def backup(self, *, clean_temp: bool = True) -> None:
+        if clean_temp:
+            shutil.rmtree(self.temp_path, ignore_errors=True)
+        self.temp_path.mkdir(parents=True, exist_ok=True)
+        if self.source_path.exists():
+            shutil.copytree(self.source_path, self.temp_path, dirs_exist_ok=True)
+
+    def restore(self, *, cleanup: bool = True) -> None:
+        if self.temp_path.exists():
+            shutil.rmtree(self.source_path, ignore_errors=True)
+            shutil.copytree(self.temp_path, self.source_path, dirs_exist_ok=True)
+        if cleanup:
+            self.cleanup()
+
+    def cleanup(self) -> None:
+        shutil.rmtree(self.temp_path, ignore_errors=True)
+
+
+@dataclass(slots=True)
 class ScriptAdapterRuntime:
     """专项适配运行时上下文。"""
 
@@ -230,14 +269,143 @@ class ScriptAdapterRuntime:
     script_config: Any = None
     user_config: Any = None
     storage_script_config: Any = None
+    emulator_manager: DeviceBase | None = None
+    config_workspace: ScriptConfigWorkspace | None = None
+    _storage: ScriptConfigStore | None = None
     begin_time: str = ""
     check_result: str = "Pass"
     extra: dict[str, Any] = field(default_factory=dict)
 
-    def _resolve_provider(self):
+    def resolve_provider(self):
         from app.core.script_types import script_type_registry
 
         return script_type_registry.get(self.type_key)
+
+    def _resolve_provider(self):
+        """Compatibility alias for older adapters."""
+
+        return self.resolve_provider()
+
+    @property
+    def storage(self) -> ScriptConfigStore:
+        """Return the script configuration persistence facade."""
+
+        if self._storage is None:
+            from .script_config_store import ScriptConfigStore
+
+            self._storage = ScriptConfigStore(
+                provider=self.resolve_provider(),
+                storage_script_config=self.get_storage_script_config(),
+            )
+        return self._storage
+
+    def get_service(self, name: str, default: Any = None) -> Any:
+        """Return a declared plugin service, or ``default`` when unavailable."""
+
+        if self.plugin_context is None:
+            return default
+        return self.plugin_context.get(name, default)
+
+    def script_data_path(self, *parts: str | Path) -> Path:
+        """Return a host-managed per-script data path."""
+
+        return Path.cwd().joinpath("data", self.script_info.script_id, *parts)
+
+    def default_config_file_path(self) -> Path:
+        """Return the default config marker path used by script adapters."""
+
+        return self.script_data_path("Default", "ConfigFile")
+
+    def script_root_path(self, script_config: Any | None = None) -> Path:
+        """Return the external script root path from the runtime script model."""
+
+        config = script_config if script_config is not None else self.script_config
+        if config is None:
+            raise RuntimeError("当前脚本配置尚未初始化")
+
+        get_value = getattr(config, "get", None)
+        if callable(get_value):
+            raw_path = get_value("Info", "Path")
+        elif isinstance(config, BaseModel):
+            info = getattr(config, "Info", None)
+            raw_path = (
+                info.get("Path")
+                if isinstance(info, dict)
+                else getattr(info, "Path", None)
+            )
+        elif isinstance(config, dict):
+            info = config.get("Info")
+            raw_path = info.get("Path") if isinstance(info, dict) else None
+        else:
+            raw_path = None
+
+        if not isinstance(raw_path, (str, Path)) or not str(raw_path).strip():
+            raise RuntimeError("脚本配置缺少 Info.Path")
+        return Path(raw_path)
+
+    def script_config_dir(
+        self,
+        script_config: Any | None = None,
+        name: str | Path = "config",
+    ) -> Path:
+        """Return a child config directory under the external script root."""
+
+        return self.script_root_path(script_config) / name
+
+    def create_config_workspace(
+        self,
+        source_path: str | Path,
+        *,
+        temp_name: str | Path = "Temp",
+    ) -> ScriptConfigWorkspace:
+        """Create and remember a managed source/temp config workspace."""
+
+        workspace = ScriptConfigWorkspace(
+            source_path=Path(source_path),
+            temp_path=self.script_data_path(temp_name),
+        )
+        self.config_workspace = workspace
+        return workspace
+
+    def create_script_config_workspace(
+        self,
+        script_config: Any | None = None,
+        *,
+        config_dir_name: str | Path = "config",
+        temp_name: str | Path = "Temp",
+    ) -> ScriptConfigWorkspace:
+        """Create a workspace for the script root's config directory."""
+
+        return self.create_config_workspace(
+            self.script_config_dir(script_config, config_dir_name),
+            temp_name=temp_name,
+        )
+
+    async def initialize_emulator_manager(self, emulator_id: str) -> DeviceBase:
+        """按需通过 emulator 服务初始化当前脚本的模拟器实例。"""
+
+        emulator_service = self.get_service("emulator")
+        get_instance = getattr(emulator_service, "get_instance", None)
+        if not callable(get_instance):
+            raise RuntimeError("emulator 服务不可用或未提供 get_instance()")
+
+        load_emulator = cast(
+            "Callable[[str], Awaitable[DeviceBase | None]]",
+            get_instance,
+        )
+        emulator_manager = await load_emulator(emulator_id)
+        if emulator_manager is None:
+            raise RuntimeError(f"未找到模拟器配置: {emulator_id}")
+
+        self.emulator_manager = emulator_manager
+        return self.emulator_manager
+
+    def require_emulator_manager(self) -> DeviceBase:
+        """返回已初始化的模拟器实例，否则明确终止当前执行路径。"""
+
+        if self.emulator_manager is None:
+            raise RuntimeError("当前脚本尚未初始化模拟器")
+        return self.emulator_manager
 
     def build_action_context(self) -> dict[str, Any]:
         """构建可供前端 schema action 使用的上下文字段。"""
@@ -262,122 +430,22 @@ class ScriptAdapterRuntime:
     async def read_script_data(self) -> dict[str, Any]:
         """读取脚本配置的表单态数据。"""
 
-        from app.core.script_config_codec import storage_to_form
-        from app.models.plugin_script_config import PluginScriptConfig
-
-        provider = self._resolve_provider()
-        storage = self.get_storage_script_config()
-        if isinstance(storage, PluginScriptConfig):
-            return await storage_to_form(provider, storage.get("PluginData", "Config"), "script")
-        return await storage_to_form(provider, await storage.toDict(), "script")
+        return await self.storage.read_script_data()
 
     async def read_user_data_pairs(self) -> list[tuple[str, dict[str, Any]]]:
         """读取当前脚本下全部用户配置的表单态数据。"""
 
-        from app.core.script_config_codec import storage_to_form
-        from app.models.plugin_script_config import PluginUserConfig
-
-        provider = self._resolve_provider()
-        storage = self.get_storage_script_config()
-        pairs: list[tuple[str, dict[str, Any]]] = []
-        for user_uid, user_config in storage.UserData.items():
-            if isinstance(user_config, PluginUserConfig):
-                payload = user_config.get("PluginData", "Config")
-            else:
-                payload = await user_config.toDict()
-            pairs.append((str(user_uid), await storage_to_form(provider, payload, "user")))
-        return pairs
+        return await self.storage.read_user_data_pairs()
 
     async def build_script_model(self) -> Any:
         """按声明的 schema 类型重建脚本配置模型。"""
 
-        from app.core.script_config_codec import build_config_model
-        from app.models.plugin_script_config import PluginScriptConfig
-
-        provider = self._resolve_provider()
-        storage = self.get_storage_script_config()
-        if isinstance(storage, PluginScriptConfig):
-            payload = storage.get("PluginData", "Config")
-        else:
-            payload = await storage.toDict(if_decrypt=False)
-        return await build_config_model(provider, payload, "script")
+        return await self.storage.load_script_model()
 
     async def build_user_models(self) -> list[tuple[str, Any]]:
         """按声明的 schema 类型重建用户配置模型列表。"""
 
-        from app.core.script_config_codec import build_config_model
-        from app.models.plugin_script_config import PluginUserConfig
-
-        provider = self._resolve_provider()
-        storage = self.get_storage_script_config()
-        result: list[tuple[str, Any]] = []
-        for user_uid, user_config in storage.UserData.items():
-            if isinstance(user_config, PluginUserConfig):
-                payload = user_config.get("PluginData", "Config")
-            else:
-                payload = await user_config.toDict(if_decrypt=False)
-            result.append((str(user_uid), await build_config_model(provider, payload, "user")))
-        return result
-
-    async def read_script_data(self) -> dict[str, Any]:
-        """读取脚本配置的表单态数据。"""
-
-        from app.core.script_config_codec import storage_to_form
-        from app.models.plugin_script_config import PluginScriptConfig
-
-        provider = self._resolve_provider()
-        storage = self.get_storage_script_config()
-        if isinstance(storage, PluginScriptConfig):
-            return await storage_to_form(provider, storage.get("PluginData", "Config"), "script")
-        return await storage_to_form(provider, await storage.toDict(), "script")
-
-    async def read_user_data_pairs(self) -> list[tuple[str, dict[str, Any]]]:
-        """读取当前脚本下全部用户配置的表单态数据。"""
-
-        from app.core.script_config_codec import storage_to_form
-        from app.models.plugin_script_config import PluginUserConfig
-
-        provider = self._resolve_provider()
-        storage = self.get_storage_script_config()
-        pairs: list[tuple[str, dict[str, Any]]] = []
-        for user_uid, user_config in storage.UserData.items():
-            if isinstance(user_config, PluginUserConfig):
-                payload = user_config.get("PluginData", "Config")
-            else:
-                payload = await user_config.toDict()
-            pairs.append((str(user_uid), await storage_to_form(provider, payload, "user")))
-        return pairs
-
-    async def build_script_model(self) -> Any:
-        """按声明的配置类构造运行态脚本配置模型。"""
-
-        from app.core.script_config_codec import build_config_model
-        from app.models.plugin_script_config import PluginScriptConfig
-
-        provider = self._resolve_provider()
-        storage = self.get_storage_script_config()
-        if isinstance(storage, PluginScriptConfig):
-            payload = storage.get("PluginData", "Config")
-        else:
-            payload = await storage.toDict(if_decrypt=False)
-        return await build_config_model(provider, payload, "script")
-
-    async def build_user_models(self) -> list[tuple[str, Any]]:
-        """按声明的配置类构造运行态用户配置模型。"""
-
-        from app.core.script_config_codec import build_config_model
-        from app.models.plugin_script_config import PluginUserConfig
-
-        provider = self._resolve_provider()
-        storage = self.get_storage_script_config()
-        result: list[tuple[str, Any]] = []
-        for user_uid, user_config in storage.UserData.items():
-            if isinstance(user_config, PluginUserConfig):
-                payload = user_config.get("PluginData", "Config")
-            else:
-                payload = await user_config.toDict(if_decrypt=False)
-            result.append((str(user_uid), await build_config_model(provider, payload, "user")))
-        return result
+        return await self.storage.load_user_models()
 
 
 class ScriptAdapterHooks:
@@ -398,22 +466,16 @@ class ScriptAdapterHooks:
             f"脚本适配 {runtime.type_key} 运行异常: {type(error).__name__}: {error}"
         )
 
-    def run_auto_proxy(
-        self, runtime: ScriptAdapterRuntime, user_index: int
-    ) -> TaskExecuteBase:
-        _ = runtime, user_index
+    def run_auto_proxy(self, runtime: ScriptAdapterRuntime) -> TaskExecuteBase:
+        _ = runtime
         raise RuntimeError("当前适配未实现 AutoProxy 模式")
 
-    def run_script_config(
-        self, runtime: ScriptAdapterRuntime, user_index: int
-    ) -> TaskExecuteBase:
-        _ = runtime, user_index
+    def run_script_config(self, runtime: ScriptAdapterRuntime) -> TaskExecuteBase:
+        _ = runtime
         raise RuntimeError("当前适配未实现 ScriptConfig 模式")
 
-    def run_manual_review(
-        self, runtime: ScriptAdapterRuntime, user_index: int
-    ) -> TaskExecuteBase:
-        _ = runtime, user_index
+    def run_manual_review(self, runtime: ScriptAdapterRuntime) -> TaskExecuteBase:
+        _ = runtime
         raise RuntimeError("当前适配未实现 ManualReview 模式")
 
     async def decorate_script_schema(
@@ -462,14 +524,14 @@ class BaseAdapterManager(TaskExecuteBase):
             plugin_context=plugin_context,
         )
 
-    def _create_user_task(self, user_index: int) -> TaskExecuteBase:
+    def _create_user_task(self) -> TaskExecuteBase:
         mode = self.runtime.mode
         if mode == "AutoProxy":
-            return self.hooks.run_auto_proxy(self.runtime, user_index)
+            return self.hooks.run_auto_proxy(self.runtime)
         if mode == "ScriptConfig":
-            return self.hooks.run_script_config(self.runtime, user_index)
+            return self.hooks.run_script_config(self.runtime)
         if mode == "ManualReview":
-            return self.hooks.run_manual_review(self.runtime, user_index)
+            return self.hooks.run_manual_review(self.runtime)
         raise RuntimeError(f"不支持的任务模式: {mode}")
 
     async def _report_check_failure(self) -> None:
@@ -500,7 +562,7 @@ class BaseAdapterManager(TaskExecuteBase):
 
         for user_index in range(len(self.runtime.script_info.user_list)):
             self.runtime.script_info.current_index = user_index
-            task = self._create_user_task(user_index)
+            task = self._create_user_task()
             await self.spawn(task)
 
     async def final_task(self) -> None:
