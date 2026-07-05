@@ -1170,30 +1170,6 @@ class _PluginManager:
         """
         await self.events.emit(event, payload, **kwargs)
 
-    def emit(self, event: str, payload: Any = None, **kwargs: Any) -> None:
-        """
-        同步桥接方式广播事件。
-
-        该方法用于过渡期兼容：
-        - 若存在运行中的事件循环，则创建后台任务异步发送。
-        - 若不存在运行中的事件循环，则直接 `asyncio.run` 完成发送。
-
-        Args:
-            event (str): 事件名。
-            payload (Any): 事件载荷，默认为 None。
-            **kwargs (Any): 透传给事件总线的附加参数。
-
-        Returns:
-            None: 无返回值。
-        """
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            asyncio.run(self.emit_async(event, payload, **kwargs))
-            return
-
-        loop.create_task(self.emit_async(event, payload, **kwargs))
-
     def list_plugins(self) -> Dict[str, str]:
         """
         列出当前已加载插件实例及其状态。

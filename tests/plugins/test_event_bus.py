@@ -111,6 +111,17 @@ class EventBusTest(unittest.TestCase):
         self._run(scenario())
         self.assertEqual(hits, [])
 
+    def test_off_normalizes_event_name(self) -> None:
+        hits: list[int] = []
+
+        async def scenario():
+            listener_id = self.bus.on(" task.start ", lambda _: hits.append(1))
+            self.bus.off(" task.start ", listener_id=listener_id)
+            await self.bus.emit("task.start", {})
+
+        self._run(scenario())
+        self.assertEqual(hits, [])
+
     def test_off_by_instance_unbinds_all(self) -> None:
         hits: list[int] = []
 
@@ -167,6 +178,28 @@ class EventBusTest(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             self._run(scenario())
+
+    def test_emit_rejects_invalid_scope(self) -> None:
+        async def scenario():
+            await self.bus.emit("task.start", {}, scope="bad")
+
+        with self.assertRaises(ValueError):
+            self._run(scenario())
+
+    def test_emit_rejects_invalid_error_policy_before_dispatch(self) -> None:
+        hits: list[int] = []
+
+        def bad_handler(_):
+            hits.append(1)
+            raise RuntimeError("boom")
+
+        async def scenario():
+            self.bus.on("task.start", bad_handler)
+            await self.bus.emit("task.start", {}, error_policy="bad")
+
+        with self.assertRaises(ValueError):
+            self._run(scenario())
+        self.assertEqual(hits, [])
 
 
 if __name__ == "__main__":
