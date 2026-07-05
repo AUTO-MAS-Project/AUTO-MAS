@@ -757,7 +757,7 @@ onMounted(async () => {
     } else {
       logger.warn('配置中未找到 IfAutoUpdate，默认为 false')
     }
-  } catch (error) {
+  } catch {
     logger.warn('读取配置失败，默认执行完整初始化')
   }
 

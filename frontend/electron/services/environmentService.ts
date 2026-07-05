@@ -333,7 +333,7 @@ export class PythonInstaller extends BaseEnvironmentInstaller {
 
   protected async installEnvironment(
     onProgress?: (progress: number, message: string, details?: any) => void,
-    selectedMirror?: string
+    _selectedMirror?: string
   ): Promise<{ success: boolean; error?: string }> {
     logger.info('=== 安装 Python 环境 ===')
 
@@ -437,7 +437,7 @@ export class UvInstaller extends BaseEnvironmentInstaller {
 
   protected async downloadPackage(
     onProgress?: ProgressCallback,
-    selectedMirror?: string
+    _selectedMirror?: string
   ): Promise<{ success: boolean; error?: string }> {
     logger.info('=== 准备安装 uv ===')
     onProgress?.({
@@ -451,7 +451,7 @@ export class UvInstaller extends BaseEnvironmentInstaller {
 
   protected async installEnvironment(
     onProgress?: (progress: number, message: string, details?: any) => void,
-    selectedMirror?: string
+    _selectedMirror?: string
   ): Promise<{ success: boolean; error?: string }> {
     logger.info('=== 安装 uv ===')
 
@@ -661,7 +661,7 @@ export class GitInstaller extends BaseEnvironmentInstaller {
 
   protected async installEnvironment(
     onProgress?: (progress: number, message: string, details?: any) => void,
-    selectedMirror?: string
+    _selectedMirror?: string
   ): Promise<{ success: boolean; error?: string }> {
     logger.info('=== 安装 Git 环境 ===')
 

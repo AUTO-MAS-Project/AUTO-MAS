@@ -268,7 +268,6 @@ import {
 } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
 import { ref, watch } from 'vue'
-import { Service } from '@/api'
 import { message, Modal } from 'ant-design-vue'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import { parseStatusTagList } from '@/composables/useStatusTag'
@@ -385,7 +384,7 @@ const handleStartSRCConfig = (script: Script) => {
   emit('startSrcConfig', script)
 }
 
-const handleSaveSRCConfig = (script: Script) => {
+const _handleSaveSRCConfig = (script: Script) => {
   emit('saveSrcConfig', script)
 }
 
@@ -393,7 +392,7 @@ const handleStartMaaEndConfig = (script: Script) => {
   emit('startMaaEndConfig', script)
 }
 
-const handleSaveMaaEndConfig = (script: Script) => {
+const _handleSaveMaaEndConfig = (script: Script) => {
   emit('saveMaaEndConfig', script)
 }
 
@@ -494,7 +493,7 @@ const shouldShowStatusTags = (user: any): boolean => {
   return getUserStatusTags(user).length > 0
 }
 
-const truncateText = (text: string, maxLength: number = 10): string => {
+const _truncateText = (text: string, maxLength: number = 10): string => {
   if (!text || text.length === 0) return '无'
   return text.length > maxLength ? text.substring(0, maxLength) + '...' : text
 }
@@ -516,7 +515,7 @@ const handleUserIdClick = async (user: any) => {
     try {
       await navigator.clipboard.writeText(userIdValue)
       message.success('账号已复制到剪贴板')
-    } catch (error) {
+    } catch {
       message.error('复制失败')
     }
   }
@@ -539,7 +538,7 @@ const handlePasswordClick = async (user: any) => {
     try {
       await navigator.clipboard.writeText(passwordValue)
       message.success('密码已复制到剪贴板')
-    } catch (error) {
+    } catch {
       message.error('复制失败')
     }
   }
@@ -610,7 +609,7 @@ const getUserIdentityTagColor = (user: any): string => {
 }
 
 // 获取剩余天数的颜色
-const getRemainingDayColor = (remainedDay: number): string => {
+const _getRemainingDayColor = (remainedDay: number): string => {
   if (remainedDay === -1) return 'gold'
   if (remainedDay === 0) return 'red'
   if (remainedDay <= 3) return 'orange'
@@ -626,7 +625,7 @@ const convertStageNameToChinese = (stageName: string): string => {
 }
 
 // 获取关卡标签颜色
-const getStageTagColor = (stage: string, stageMode?: string): string => {
+const _getStageTagColor = (stage: string, stageMode?: string): string => {
   // 如果使用计划表模式（stageMode不是'Fixed'），用绿色
   if (stageMode && stageMode !== 'Fixed') return 'green'
   return 'blue' // 自定义关卡用蓝色
@@ -719,7 +718,7 @@ const getInfrastModeDisplayName = (mode: string): string => {
 }
 
 // 获取基建显示文本
-const getInfrastDisplayText = (user: User): string => {
+const _getInfrastDisplayText = (user: User): string => {
   const mode = user.Info.InfrastMode
 
   // 如果是自定义模式，只显示当前排班号
@@ -749,13 +748,13 @@ const isSklandCompletedToday = (lastSklandDate: string): boolean => {
 }
 
 // 获取森空岛标签颜色
-const getSklandTagColor = (ifSkland: boolean, lastSklandDate?: string): string => {
+const _getSklandTagColor = (ifSkland: boolean, lastSklandDate?: string): string => {
   if (!ifSkland) return 'red'
   return isSklandCompletedToday(lastSklandDate || '') ? 'green' : 'orange'
 }
 
 // 获取森空岛显示文本
-const getSklandDisplayText = (ifSkland: boolean, lastSklandDate?: string): string => {
+const _getSklandDisplayText = (ifSkland: boolean, lastSklandDate?: string): string => {
   if (!ifSkland) return '关闭'
   return isSklandCompletedToday(lastSklandDate || '') ? '已签到' : '未签到'
 }
@@ -772,12 +771,12 @@ const isRoutineCompletedToday = (lastProxyDate: string): boolean => {
 }
 
 // 获取日常代理标签颜色
-const getRoutineTagColor = (lastProxyDate?: string): string => {
+const _getRoutineTagColor = (lastProxyDate?: string): string => {
   return isRoutineCompletedToday(lastProxyDate || '') ? 'green' : 'orange'
 }
 
 // 获取日常代理显示文本
-const getRoutineDisplayText = (lastProxyDate?: string, proxyTimes?: number): string => {
+const _getRoutineDisplayText = (lastProxyDate?: string, proxyTimes?: number): string => {
   if (isRoutineCompletedToday(lastProxyDate || '')) {
     const times = proxyTimes || 0
     return `已代理${times}次`
@@ -787,7 +786,7 @@ const getRoutineDisplayText = (lastProxyDate?: string, proxyTimes?: number): str
 }
 
 // 获取主关卡显示文本
-const getMainStageDisplay = (user: any): string => {
+const _getMainStageDisplay = (user: any): string => {
   // 如果使用计划表模式
   if (user.Info.StageMode && user.Info.StageMode !== 'Fixed' && props.currentPlanData) {
     const planStage = getCurrentPlanStage()
@@ -806,7 +805,7 @@ const getMainStageDisplay = (user: any): string => {
 }
 
 // 获取备选关卡列表（过滤掉无效值）
-const getBackupStages = (user: any): string[] => {
+const _getBackupStages = (user: any): string[] => {
   const stages = [user.Info.Stage_1, user.Info.Stage_2, user.Info.Stage_3]
   return stages
     .filter(
@@ -822,7 +821,7 @@ const getBackupStages = (user: any): string[] => {
 }
 
 // 获取剩余关卡显示文本
-const getRemainStageDisplay = (user: any): string => {
+const _getRemainStageDisplay = (user: any): string => {
   if (
     user.Info.Stage_Remain &&
     user.Info.Stage_Remain !== '-' &&
@@ -837,7 +836,7 @@ const getRemainStageDisplay = (user: any): string => {
 }
 
 // 获取统一的关卡显示标签
-const getStageDisplayLabel = (originalLabel: string): string => {
+const _getStageDisplayLabel = (originalLabel: string): string => {
   switch (originalLabel) {
     case '关卡':
       return '主关卡'
@@ -853,14 +852,14 @@ const getStageDisplayLabel = (originalLabel: string): string => {
 }
 
 // 获取剩余天数的显示文本
-const getRemainingDayText = (remainedDay: number): string => {
+const _getRemainingDayText = (remainedDay: number): string => {
   if (remainedDay === -1) return '剩余天数: 长期有效'
   if (remainedDay === 0) return '剩余天数: 已到期'
   return `剩余天数: ${remainedDay}天`
 }
 
 // 获取关卡的显示文本
-const getDisplayStage = (stage: string, stageMode?: string): string => {
+const _getDisplayStage = (stage: string, stageMode?: string): string => {
   if (stage === '-') return '未选择'
 
   // 如果使用计划表模式且有计划表数据，显示计划表中的实际关卡
@@ -928,7 +927,7 @@ const getCurrentPlanStage = (): string => {
 }
 
 // 从用户的计划表获取主关卡显示文本
-const getUserPlanMainStageDisplay = (user: any): string => {
+const _getUserPlanMainStageDisplay = (user: any): string => {
   const planData = getUserPlanData(user)
   if (!planData) return ''
 
@@ -952,7 +951,7 @@ const getUserPlanMainStageDisplay = (user: any): string => {
 }
 
 // 从用户的计划表获取备选关卡列表
-const getUserPlanBackupStages = (user: any): string[] => {
+const _getUserPlanBackupStages = (user: any): string[] => {
   const planData = getUserPlanData(user)
   if (!planData) return []
 
@@ -985,7 +984,7 @@ const getUserPlanBackupStages = (user: any): string[] => {
 }
 
 // 从用户的计划表获取剩余关卡显示文本
-const getUserPlanRemainStageDisplay = (user: any): string => {
+const _getUserPlanRemainStageDisplay = (user: any): string => {
   const planData = getUserPlanData(user)
   if (!planData) return ''
 
@@ -1009,7 +1008,7 @@ const getUserPlanRemainStageDisplay = (user: any): string => {
 }
 
 // 从计划表获取当前关卡
-const getCurrentPlanStageOld = (): string => {
+const _getCurrentPlanStageOld = (): string => {
   if (!props.currentPlanData) return ''
 
   // 根据当前时间确定使用哪个时间段的配置
