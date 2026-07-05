@@ -243,6 +243,8 @@ class _TaskManager:
 
         self.task_info: Dict[uuid.UUID, TaskInfo] = {}
         self.task_handler: Dict[uuid.UUID, Task] = {}
+        self._startup_queue_started = False
+        self._startup_queue_running = False
 
     async def add_task(
         self,
@@ -374,22 +376,39 @@ class _TaskManager:
     async def start_startup_queue(self):
         """开始运行启动时运行的调度队列"""
 
-        await asyncio.sleep(10)
+        if self._startup_queue_started:
+            logger.info("启动时任务已触发，跳过重复运行")
+            return
+        if self._startup_queue_running:
+            logger.info("启动时任务正在等待运行，跳过重复触发")
+            return
 
-        logger.info("开始运行启动时任务")
-        for uid, queue in Config.QueueConfig.items():
+        self._startup_queue_running = True
 
-            if queue.get("Info", "StartUpEnabled"):
-                logger.info(f"启动时需要运行的队列：{uid}")
-                await TaskManager.add_task(
-                    "AutoProxy",
-                    str(uid),
-                    new_task_info={
-                        "queueId": str(uid),
-                        "taskName": f"队列 - {queue.get('Info', 'Name')}",
-                        "taskType": "启动时代理",
-                    },
-                )
+        try:
+            await asyncio.sleep(10)
+
+            if Config.websocket is None:
+                logger.info("主 WebSocket 已断开，启动时任务等待下次连接后运行")
+                return
+
+            self._startup_queue_started = True
+            logger.info("开始运行启动时任务")
+            for uid, queue in Config.QueueConfig.items():
+
+                if queue.get("Info", "StartUpEnabled"):
+                    logger.info(f"启动时需要运行的队列：{uid}")
+                    await TaskManager.add_task(
+                        "AutoProxy",
+                        str(uid),
+                        new_task_info={
+                            "queueId": str(uid),
+                            "taskName": f"队列 - {queue.get('Info', 'Name')}",
+                            "taskType": "启动时代理",
+                        },
+                    )
+        finally:
+            self._startup_queue_running = False
 
         logger.success("启动时任务开始运行")
 
