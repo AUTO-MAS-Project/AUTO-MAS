@@ -672,6 +672,7 @@ class _PluginManager:
 
         from app.core import Config
         from app.core.script_types import script_type_registry
+        from app.models.plugin_script_config import PluginScriptConfig
 
         owned_providers = [
             provider
@@ -684,6 +685,15 @@ class _PluginManager:
         bound_refs: list[str] = []
         for script_id, script in Config.ScriptConfig.items():
             for provider in owned_providers:
+                if isinstance(script, PluginScriptConfig):
+                    type_key = str(script.get("Meta", "PluginTypeKey") or "").strip()
+                    if type_key != provider.type_key:
+                        continue
+                    script_name = str(script.get("Info", "Name") or provider.display_name)
+                    bound_refs.append(
+                        f"{provider.type_key}:{script_name}({script_id})"
+                    )
+                    break
                 if not isinstance(script, provider.script_config_class):
                     continue
                 script_name = provider.display_name
@@ -716,6 +726,7 @@ class _PluginManager:
         from app.core import Config
         from app.models.ConfigBase import ConfigBase
         from app.models import config as config_models
+        from app.models.plugin_script_config import PluginScriptConfig
 
         _ = instance_id
         snapshot = discovered or self.loader.discovered_plugins or self._discover_plugins()
@@ -735,18 +746,33 @@ class _PluginManager:
             )
             return []
 
+        raw_adapter_type_keys = (
+            getattr(module, "SCRIPT_ADAPTER_TYPE_KEYS", None)
+            if module is not None
+            else None
+        ) or getattr(plugin_class, "SCRIPT_ADAPTER_TYPE_KEYS", ())
+        if not isinstance(raw_adapter_type_keys, tuple):
+            raw_adapter_type_keys = ()
+        adapter_type_keys = {
+            str(item).strip()
+            for item in raw_adapter_type_keys
+            if str(item or "").strip()
+        }
+
         raw_bindings = None
         if module is not None:
             raw_bindings = getattr(module, "SCRIPT_TYPE_BINDINGS", None)
         if raw_bindings is None:
             raw_bindings = getattr(plugin_class, "SCRIPT_TYPE_BINDINGS", None)
-        if raw_bindings is None:
+        if raw_bindings is None and not adapter_type_keys:
             return []
         if isinstance(raw_bindings, dict):
             raw_bindings = [raw_bindings]
+        if raw_bindings is None:
+            raw_bindings = []
         if not isinstance(raw_bindings, list):
             logger.warning(f"插件脚本类型绑定声明无效，已跳过: plugin={plugin_name}")
-            return []
+            raw_bindings = []
 
         bindings: list[tuple[str, str, type]] = []
         for item in raw_bindings:
@@ -762,6 +788,12 @@ class _PluginManager:
 
         bound_refs: list[str] = []
         for script_id, script in Config.ScriptConfig.items():
+            if isinstance(script, PluginScriptConfig):
+                type_key = str(script.get("Meta", "PluginTypeKey") or "").strip()
+                if type_key in adapter_type_keys:
+                    script_name = str(script.get("Info", "Name") or type_key)
+                    bound_refs.append(f"{type_key}:{script_name}({script_id})")
+                continue
             for type_key, display_name, config_class in bindings:
                 if not isinstance(script, config_class):
                     continue
