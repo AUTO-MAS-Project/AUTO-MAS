@@ -601,7 +601,6 @@ const selectEmulatorPath = async (uuid: string) => {
     ])
 
     if (paths && paths.length > 0) {
-      const originalPath = editData.path
       editData.path = paths[0]
       message.success('模拟器路径选择成功')
       // 立刻保存并从后端获取被纠正后的路径

@@ -170,12 +170,9 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
-import { useAudioPlayer } from '@/composables/useAudioPlayer'
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { nextTick, onMounted, ref } from 'vue'
 
 const logger = window.electronAPI.getLogger('调度队列')
-const { playSound } = useAudioPlayer()
-
 // 队列列表和当前选中的队列
 const queueList = ref<Array<{ id: string; name: string }>>([])
 const activeQueueId = ref<string>('')

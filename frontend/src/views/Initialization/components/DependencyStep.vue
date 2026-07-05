@@ -36,7 +36,7 @@
 </template>
 
 <script setup lang="ts">
-const props = defineProps<{
+defineProps<{
   checking: boolean
   needsInstall: boolean
   installing: boolean
