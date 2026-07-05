@@ -21,7 +21,7 @@ export async function getRelatedProcesses(): Promise<ProcessInfo[]> {
       return
     }
 
-    const appRoot = getAppRoot().replace(/\\/g, '\\\\')
+    const _appRoot = getAppRoot().replace(/\\/g, '\\\\')
 
     // 使用 PowerShell 获取进程信息
     const psCommand = `
@@ -35,7 +35,7 @@ export async function getRelatedProcesses(): Promise<ProcessInfo[]> {
     exec(
       `powershell -NoProfile -Command "${psCommand}"`,
       { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 },
-      (error, stdout, stderr) => {
+      (error, stdout, _stderr) => {
         if (error) {
           logger.error(`获取进程信息失败: ${error}`)
           resolve([])

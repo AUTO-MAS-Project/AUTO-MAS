@@ -583,7 +583,7 @@ const schemaFieldSizes = [
   ...Object.keys(schemaFieldSizeAliases),
 ] as const
 
-const isSchemaFieldSize = (value: unknown): value is NonNullable<SchemaFieldDefinition['size']> =>
+const _isSchemaFieldSize = (value: unknown): value is NonNullable<SchemaFieldDefinition['size']> =>
   typeof value === 'string' &&
   schemaFieldSizes.includes(value as NonNullable<SchemaFieldDefinition['size']>)
 
@@ -753,7 +753,7 @@ const isNumberField = (field: SchemaFieldDefinition) =>
 const isListField = (field: SchemaFieldDefinition) =>
   field.type === 'list' || field.type.startsWith('list[')
 const isJsonField = (field: SchemaFieldDefinition) => field.type === 'json'
-const isDictionaryField = (field: SchemaFieldDefinition) =>
+const _isDictionaryField = (field: SchemaFieldDefinition) =>
   field.type === 'dict' || field.type.startsWith('dict[')
 const isPasswordField = (field: SchemaFieldDefinition) =>
   (isStringField(field) && field.format === 'password') || field.type === 'password'

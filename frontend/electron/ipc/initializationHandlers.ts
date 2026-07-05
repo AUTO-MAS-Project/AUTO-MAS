@@ -44,11 +44,10 @@ function getBackendService(): BackendService {
 /**
  * 注册所有初始化相关的 IPC 处理器
  */
-export function registerInitializationHandlers(mainWindow: BrowserWindow) {
+export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
   // ==================== 镜像源初始化 ====================
 
-  ipcMain.handle('init-mirrors', async event => {
-    const appRoot = getAppRoot()
+  ipcMain.handle('init-mirrors', async () => {
     const initService = getInitService()
     const mirrorService = initService.getMirrorService()
 
@@ -205,7 +204,7 @@ export function registerInitializationHandlers(mainWindow: BrowserWindow) {
     return mirrorService.getApiEndpoint(key as any)
   })
 
-  ipcMain.handle('get-api-endpoints', async event => {
+  ipcMain.handle('get-api-endpoints', async () => {
     const initService = getInitService()
     const mirrorService = initService.getMirrorService()
 

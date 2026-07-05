@@ -10,15 +10,25 @@ const {
   startRecordKey,
   stopRecordKey,
   onSelectVisibleChange,
-} = defineProps<{
-  config: ToolsConfig_ArknightsPC
-  disabled?: boolean
-  onFieldChange?: (key: string, value: any) => void
-  recordingKeyField?: string | null
-  startRecordKey?: (fieldName: string) => void
-  stopRecordKey?: () => void
-  onSelectVisibleChange?: (visible: boolean) => void
-}>()
+} = withDefaults(
+  defineProps<{
+    config: ToolsConfig_ArknightsPC
+    disabled?: boolean
+    onFieldChange?: (key: string, value: any) => void
+    recordingKeyField?: string | null
+    startRecordKey?: (fieldName: string) => void
+    stopRecordKey?: () => void
+    onSelectVisibleChange?: (visible: boolean) => void
+  }>(),
+  {
+    disabled: false,
+    onFieldChange: undefined,
+    recordingKeyField: null,
+    startRecordKey: undefined,
+    stopRecordKey: undefined,
+    onSelectVisibleChange: undefined,
+  }
+)
 
 // 处理字段变更
 const handleChange = (key: string, value: any) => {
