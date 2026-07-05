@@ -13,8 +13,6 @@ const {
   editorConfig,
   defaultLightColors,
   defaultDarkColors,
-  defaultStyles,
-  defaultEditorConfig,
   setLightColors,
   setDarkColors,
   setStyles,

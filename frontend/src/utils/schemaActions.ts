@@ -20,24 +20,24 @@ const getFieldAction = (field: SchemaFieldDefinition): SchemaActionDefinition | 
 const isHeaderSchemaAction = (field: SchemaFieldDefinition) => {
   const fieldPath = getFieldPath(field)
   return Boolean(
-    getFieldAction(field)
-    && (field.group === 'Action' || fieldPath.startsWith('Action.'))
+    getFieldAction(field) && (field.group === 'Action' || fieldPath.startsWith('Action.'))
   )
 }
 
 export const collectHeaderSchemaActions = (
-  schema: SchemaDefinition | null | undefined,
+  schema: SchemaDefinition | null | undefined
 ): HeaderSchemaAction[] => {
   if (!schema) {
     return []
   }
 
-  const fields = ('groups' in schema && Array.isArray((schema as GroupedSchemaDefinition).groups))
-    ? (schema as GroupedSchemaDefinition).groups.flatMap(group => group.fields || [])
-    : Object.entries(schema as Record<string, SchemaFieldDefinition>).map(([key, field]) => ({
-      ...field,
-      key: field.key || key,
-    }))
+  const fields =
+    'groups' in schema && Array.isArray((schema as GroupedSchemaDefinition).groups)
+      ? (schema as GroupedSchemaDefinition).groups.flatMap(group => group.fields || [])
+      : Object.entries(schema as Record<string, SchemaFieldDefinition>).map(([key, field]) => ({
+          ...field,
+          key: field.key || key,
+        }))
 
   return fields
     .filter(isHeaderSchemaAction)

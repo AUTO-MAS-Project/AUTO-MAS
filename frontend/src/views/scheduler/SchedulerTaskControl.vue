@@ -122,6 +122,11 @@ interface Emits {
 
 const props = withDefaults(defineProps<Props>(), {
   disabled: false,
+  resumeFromScriptId: null,
+  resumeScriptOptions: () => [],
+  resumeScriptLoading: false,
+  runningTaskLabel: '',
+  runningModeLabel: '',
 })
 
 const emit = defineEmits<Emits>()

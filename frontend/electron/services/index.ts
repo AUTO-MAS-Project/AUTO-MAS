@@ -63,13 +63,13 @@ export {
 
 // 插件预装服务
 export {
-    PluginBootstrapService,
-    PluginBootstrapCheckResult,
-    PluginBootstrapProgress,
-    PluginBootstrapProgressCallback,
-    PluginBootstrapInstallResult,
-    PluginBootstrapWarning,
-    PluginBootstrapState,
+  PluginBootstrapService,
+  PluginBootstrapCheckResult,
+  PluginBootstrapProgress,
+  PluginBootstrapProgressCallback,
+  PluginBootstrapInstallResult,
+  PluginBootstrapWarning,
+  PluginBootstrapState,
 } from './pluginBootstrapService'
 
 // 初始化总流程服务

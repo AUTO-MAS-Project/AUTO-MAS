@@ -334,14 +334,13 @@ import {
   ArrowLeftOutlined,
   FolderOpenOutlined,
   QuestionCircleOutlined,
-  BookOutlined,
 } from '@ant-design/icons-vue'
 
 const logger = window.electronAPI.getLogger('M9A脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript, loading } = useScriptApi()
+const { getScript, updateScript } = useScriptApi()
 
 const formRef = ref<FormInstance>()
 const pageLoading = ref(false)

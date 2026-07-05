@@ -63,15 +63,28 @@
               v-for="client in sortedClientList"
               :key="client.name"
               class="client-item"
-              :class="{ active: selectedClient === client.name, connected: client.is_connected, system: client.is_system }"
+              :class="{
+                active: selectedClient === client.name,
+                connected: client.is_connected,
+                system: client.is_system,
+              }"
               @click="selectClient(client.name)"
             >
               <div class="client-info">
                 <div class="client-name">
                   <a-badge :status="client.is_connected ? 'success' : 'default'" />
-                  <LockOutlined v-if="client.is_system" style="margin-right: 4px; color: var(--ant-color-warning)" />
+                  <LockOutlined
+                    v-if="client.is_system"
+                    style="margin-right: 4px; color: var(--ant-color-warning)"
+                  />
                   {{ client.name }}
-                  <a-tag v-if="client.is_system" color="orange" size="small" style="margin-left: 4px">系统</a-tag>
+                  <a-tag
+                    v-if="client.is_system"
+                    color="orange"
+                    size="small"
+                    style="margin-left: 4px"
+                    >系统</a-tag
+                  >
                 </div>
                 <div class="client-url">{{ client.url }}</div>
               </div>
@@ -104,11 +117,7 @@
                   <DeleteOutlined />
                 </a-button>
                 <a-tooltip v-else title="系统客户端不可删除">
-                  <a-button
-                    type="link"
-                    size="small"
-                    disabled
-                  >
+                  <a-button type="link" size="small" disabled>
                     <DeleteOutlined />
                   </a-button>
                 </a-tooltip>
@@ -186,12 +195,7 @@
             </template>
 
             <a-form-item>
-              <a-button
-                type="primary"
-                block
-                :loading="sending"
-                @click="sendMessage"
-              >
+              <a-button type="primary" block :loading="sending" @click="sendMessage">
                 <template #icon><SendOutlined /></template>
                 发送消息
               </a-button>
@@ -210,11 +214,7 @@
                 checked-children="自动滚动"
                 un-checked-children="手动滚动"
               />
-              <a-select
-                v-model:value="messageFilter"
-                style="width: 120px"
-                size="small"
-              >
+              <a-select v-model:value="messageFilter" style="width: 120px" size="small">
                 <a-select-option value="all">全部消息</a-select-option>
                 <a-select-option value="sent">仅发送</a-select-option>
                 <a-select-option value="received">仅接收</a-select-option>
@@ -254,21 +254,15 @@
     <a-modal
       v-model:open="createModalVisible"
       title="创建 WebSocket 客户端"
+      :confirm-loading="creating"
       @ok="createClient"
-      :confirmLoading="creating"
     >
       <a-form layout="vertical">
         <a-form-item label="客户端名称" required>
-          <a-input
-            v-model:value="createForm.name"
-            placeholder="输入客户端名称，如 Koishi"
-          />
+          <a-input v-model:value="createForm.name" placeholder="输入客户端名称，如 Koishi" />
         </a-form-item>
         <a-form-item label="服务器 URL" required>
-          <a-input
-            v-model:value="createForm.url"
-            placeholder="ws://localhost:5140/AUTO_MAS"
-          />
+          <a-input v-model:value="createForm.url" placeholder="ws://localhost:5140/AUTO_MAS" />
         </a-form-item>
         <a-row :gutter="12">
           <a-col :span="12">
@@ -408,7 +402,7 @@ let manualClose = false
 // ============== 计算属性 ==============
 
 const connectedCount = computed(() => {
-  return clientList.value.filter((c) => c.is_connected).length
+  return clientList.value.filter(c => c.is_connected).length
 })
 
 const totalMessageCount = computed(() => {
@@ -426,9 +420,9 @@ const sortedClientList = computed(() => {
   })
 })
 
-const isSelectedClientConnected = computed(() => {
+const _isSelectedClientConnected = computed(() => {
   if (!selectedClient.value) return false
-  const client = clientList.value.find((c) => c.name === selectedClient.value)
+  const client = clientList.value.find(c => c.name === selectedClient.value)
   return client?.is_connected ?? false
 })
 
@@ -436,7 +430,7 @@ const filteredMessages = computed(() => {
   if (messageFilter.value === 'all') {
     return messages.value
   }
-  return messages.value.filter((m) => m.direction === messageFilter.value)
+  return messages.value.filter(m => m.direction === messageFilter.value)
 })
 
 // ============== 方法 ==============
@@ -585,7 +579,8 @@ async function disconnectClient(name: string) {
   try {
     const requestBody = { name }
     logApiRequest('/api/ws/client/disconnect', 'POST', requestBody)
-    const response = await WebSocketService.disconnectClientApiWsDebugClientDisconnectPost(requestBody)
+    const response =
+      await WebSocketService.disconnectClientApiWsDebugClientDisconnectPost(requestBody)
     logApiResponse('/api/ws/client/disconnect', response)
 
     if (response.code === 200) {
@@ -646,7 +641,8 @@ async function sendMessage() {
         data,
       }
       logApiRequest('/api/ws/message/send_json', 'POST', jsonRequestBody)
-      response = await WebSocketService.sendJsonMessageApiWsDebugMessageSendJsonPost(jsonRequestBody)
+      response =
+        await WebSocketService.sendJsonMessageApiWsDebugMessageSendJsonPost(jsonRequestBody)
       logApiResponse('/api/ws/message/send_json', response)
     } else if (sendMode.value === 'raw') {
       let messageObj: any
@@ -711,7 +707,7 @@ async function clearHistory() {
     })
     messages.value = []
     message.success('已清空消息历史')
-  } catch (error: any) {
+  } catch {
     message.error('清空失败')
   }
 }
@@ -745,7 +741,7 @@ function connectLiveWs() {
       }
     }
 
-    liveWs.onmessage = (event) => {
+    liveWs.onmessage = event => {
       try {
         const data = JSON.parse(event.data)
 
@@ -772,7 +768,7 @@ function connectLiveWs() {
       }
     }
 
-    liveWs.onerror = (error) => {
+    liveWs.onerror = error => {
       console.error('实时消息连接错误:', error)
     }
 
