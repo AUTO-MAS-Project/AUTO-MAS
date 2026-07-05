@@ -151,7 +151,7 @@ const sortDays = (days: string[]): DayOfWeek[] => {
 }
 
 // 表格列配置
-const timeColumns = [
+const _timeColumns = [
   {
     title: '序号',
     dataIndex: 'index',

@@ -424,14 +424,14 @@ const handleSaveSRCConfig = async () => {
 
 // 保存用户（用于新建时初始创建）
 // 在新建模式下，需要先创建用户获取userId，再更新数据
-const saveNewUser = async () => {
+const _saveNewUser = async () => {
   if (!formRef.value) return
 
   try {
     await formRef.value.validate()
     syncUserName()
 
-    const { userName, ...userData } = formData
+    const { userName: _userName, ...userData } = formData
 
     // 先创建用户
     const result = await addUser(scriptId)

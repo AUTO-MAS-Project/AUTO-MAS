@@ -63,7 +63,7 @@
 </template>
 
 <script setup lang="ts">
-import { GiftOutlined, InboxOutlined, TeamOutlined } from '@ant-design/icons-vue'
+import { GiftOutlined, TeamOutlined } from '@ant-design/icons-vue'
 
 interface Props {
   recruitStatistics: Record<string, number> | null

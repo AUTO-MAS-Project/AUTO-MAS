@@ -39,7 +39,7 @@ function pushPendingTab(taskInfo: string | { taskId: string; queueId?: string })
       arr.push(taskInfo)
       localStorage.setItem(PENDING_TABS_KEY, JSON.stringify(arr))
     }
-  } catch (e) {
+  } catch {
     // ignore
   }
 }
@@ -50,7 +50,7 @@ function popPendingTabs(): any[] {
     if (!raw) return []
     localStorage.removeItem(PENDING_TABS_KEY)
     return JSON.parse(raw)
-  } catch (e) {
+  } catch {
     return []
   }
 }
@@ -58,7 +58,7 @@ function popPendingTabs(): any[] {
 function storePendingCountdown(data: any) {
   try {
     localStorage.setItem(PENDING_COUNTDOWN_KEY, JSON.stringify(data))
-  } catch (e) {
+  } catch {
     // ignore
   }
 }
@@ -69,7 +69,7 @@ function consumePendingCountdownAndClear(): any | null {
     if (!raw) return null
     localStorage.removeItem(PENDING_COUNTDOWN_KEY)
     return JSON.parse(raw)
-  } catch (e) {
+  } catch {
     return null
   }
 }
@@ -77,7 +77,7 @@ function consumePendingCountdownAndClear(): any | null {
 function savePowerAction(value: string) {
   try {
     localStorage.setItem(POWER_ACTION_KEY, value)
-  } catch (e) {
+  } catch {
     // ignore
   }
 }

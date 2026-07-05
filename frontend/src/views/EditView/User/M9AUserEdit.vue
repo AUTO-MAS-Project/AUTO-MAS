@@ -238,7 +238,7 @@ const loadUserData = async () => {
               taskQueue.value = parsedQueue.filter(
                 (item: M9ATaskQueueItem) => !RESERVED_TASK_NAMES.includes(item.name)
               )
-            } catch (e) {
+            } catch {
               taskQueue.value = []
             }
           }

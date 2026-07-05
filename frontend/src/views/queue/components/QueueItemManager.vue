@@ -90,7 +90,7 @@ const isDraggingQueueItem = ref(false)
 const scriptOptions = ref<Array<{ label: string; value: string | null }>>([])
 
 // 表格列配置
-const queueColumns = [
+const _queueColumns = [
   {
     title: '序号',
     key: 'index',

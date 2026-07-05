@@ -22,9 +22,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-
-const props = defineProps<{
+defineProps<{
   loading: boolean
   success: boolean
   mirrorCount: number
