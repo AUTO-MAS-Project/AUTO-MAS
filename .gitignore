@@ -25,6 +25,7 @@ uv.lock
 /data/
 /debug/
 /history/
+/runtime/
 /script/
 /environment/
 
