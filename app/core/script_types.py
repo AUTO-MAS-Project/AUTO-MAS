@@ -263,12 +263,10 @@ class ScriptTypeRegistry:
             HSRUserConfig,
             M9AConfig,
             M9AUserConfig,
-            MaaConfig,
             MaaEndConfig,
             MaaEndUserConfig,
             MaaFWConfig,
             MaaFWUserConfig,
-            MaaUserConfig,
             OkwwConfig,
             OkwwUserConfig,
             SrcConfig,
@@ -290,17 +288,6 @@ class ScriptTypeRegistry:
             return _factory
 
         providers = [
-            ScriptTypeProvider(
-                type_key="MAA",
-                display_name="MAA脚本",
-                script_config_class=MaaConfig,
-                user_config_class=MaaUserConfig,
-                supported_modes=("AutoProxy", "ManualReview", "ScriptConfig"),
-                manager_factory=_lazy_manager("app.task.MAA.manager", "MaaManager"),
-                icon="MAA",
-                editor_kind="builtin:maa",
-                is_builtin=True,
-            ),
             ScriptTypeProvider(
                 type_key="SRC",
                 display_name="SRC脚本",
