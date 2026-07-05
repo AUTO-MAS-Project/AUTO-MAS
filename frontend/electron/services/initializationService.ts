@@ -157,11 +157,11 @@ export class InitializationService {
           success: false,
           error: pipResult.error,
           completedStages,
-          failedStage: 'uv',
+          failedStage: 'pip',
         }
       }
 
-      completedStages.push('uv')
+      completedStages.push('pip')
 
       // 阶段 4: 安装 Git
       onProgress?.({
