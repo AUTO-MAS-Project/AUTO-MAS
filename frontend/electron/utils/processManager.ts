@@ -27,7 +27,6 @@ export async function getRelatedProcesses(): Promise<ProcessInfo[]> {
     const psCommand = `
       Get-CimInstance Win32_Process | Where-Object {
         $_.Name -eq 'python.exe' -or 
-        $_.Name -eq 'AUTO-MAS.exe' -or 
         ($_.CommandLine -ne $null -and $_.CommandLine -like '*main.py*')
       } | Select-Object ProcessId, Name, CommandLine | ConvertTo-Json -Compress
     `.replace(/\n/g, ' ')
@@ -65,9 +64,7 @@ export async function getRelatedProcesses(): Promise<ProcessInfo[]> {
 
             if (
               pid > 0 &&
-              (commandLine.includes(pythonExePath) ||
-                commandLine.includes('main.py') ||
-                name === 'AUTO-MAS.exe')
+              (commandLine.includes(pythonExePath) || commandLine.includes('main.py'))
             ) {
               processes.push({ pid, name, commandLine })
             }

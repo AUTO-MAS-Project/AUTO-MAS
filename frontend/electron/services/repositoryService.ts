@@ -651,6 +651,8 @@ export class RepositoryService {
       'res',
       'scripts',
       'mas',
+      'plugins/auto_mas_core',
+      'plugins/okww_adapter',
       'main.py',
       'pyproject.toml',
       'requirements.txt',
