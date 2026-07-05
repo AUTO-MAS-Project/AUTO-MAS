@@ -55,6 +55,7 @@ uv.lock
 # Local checkouts of split repositories
 /AUTO-MAS-docs/
 /skills/
+.ace-tool/
 
 # Plugin workspace (only auto_mas_core is tracked)
 /plugins/*
