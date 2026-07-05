@@ -20,7 +20,9 @@
       <a-button v-if="script?.docsUrl" :href="script.docsUrl || undefined" target="_blank">
         查看文档
       </a-button>
-      <a-button type="primary" :loading="saving" @click="handleSave">保存配置</a-button>
+      <a-button type="primary" :loading="saving" :disabled="!script" @click="handleSave"
+        >保存配置</a-button
+      >
       <a-button @click="router.push('/scripts')">返回</a-button>
     </a-space>
   </div>
@@ -44,6 +46,19 @@
       </a-space>
     </template>
 
+    <a-alert
+      v-if="loadError"
+      class="config-load-error"
+      type="error"
+      show-icon
+      message="插件脚本配置加载失败"
+      :description="loadError"
+    >
+      <template #action>
+        <a-button size="small" @click="loadScript">重试</a-button>
+      </template>
+    </a-alert>
+
     <SchemaForm
       v-if="script"
       ref="schemaFormRef"
@@ -52,7 +67,7 @@
       :hide-fields="headerSchemaActionKeys"
       :action-loading-id="actionLoadingId"
       @trigger-action="({ field, fieldSchema }) => handleFieldAction(field, fieldSchema)"
-      @validation-change="(errors) => (fieldErrors = errors)"
+      @validation-change="errors => (fieldErrors = errors)"
     />
 
     <a-empty v-if="script && !script.schema" description="此插件脚本类型未提供配置表单" />
@@ -97,6 +112,7 @@ const { subscribe, unsubscribe } = useWebSocket()
 
 const loading = ref(true)
 const saving = ref(false)
+const loadError = ref<string | null>(null)
 const script = ref<Script | null>(null)
 const formModel = ref<Record<string, any>>({})
 const fieldErrors = ref<SchemaValidationErrorMap>({})
@@ -119,7 +135,7 @@ interface PluginSystemHmrMessage {
   message?: string
 }
 
-const cloneValue = <T>(value: T): T => JSON.parse(JSON.stringify(value))
+const cloneValue = <T,>(value: T): T => JSON.parse(JSON.stringify(value))
 
 const normalizePluginKey = (value?: string | null) =>
   String(value || '')
@@ -153,7 +169,7 @@ const modeLabels: Record<string, string> = {
 
 const loadScript = async ({
   preserveFormModel = false,
-  redirectOnError = true,
+  redirectOnError = false,
   showError = true,
 }: {
   preserveFormModel?: boolean
@@ -163,7 +179,10 @@ const loadScript = async ({
   loading.value = true
   const preservedFormModel = preserveFormModel ? cloneValue(formModel.value || {}) : null
   try {
-    const [descriptors, records] = await Promise.all([api.getScriptTypes(), api.getScripts(scriptId)])
+    const [descriptors, records] = await Promise.all([
+      api.getScriptTypes(),
+      api.getScripts(scriptId),
+    ])
     const record = records[0]
     if (!record) {
       throw new Error('脚本不存在')
@@ -175,8 +194,12 @@ const loadScript = async ({
       throw new Error(script.value.unavailableReason || `脚本类型 ${script.value.type} 当前未启用`)
     }
     formModel.value = preservedFormModel ?? cloneValue(record.config || {})
+    loadError.value = null
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
+    if (showError) {
+      loadError.value = errorMsg
+    }
     logger.error(`加载插件脚本失败: ${errorMsg}`)
     if (showError) {
       message.error(errorMsg)
@@ -206,10 +229,7 @@ const refreshSchemaFromPluginSystem = async () => {
 }
 
 const handlePluginSystemMessage = (wsMessage: WebSocketBaseMessage) => {
-  const payload = wsMessage.data as
-    | PluginSystemSnapshotMessage
-    | PluginSystemHmrMessage
-    | undefined
+  const payload = wsMessage.data as PluginSystemSnapshotMessage | PluginSystemHmrMessage | undefined
   if (!payload || typeof payload !== 'object') {
     return
   }
@@ -220,9 +240,9 @@ const handlePluginSystemMessage = (wsMessage: WebSocketBaseMessage) => {
   }
 
   if (
-    payload.kind === 'hmr'
-    && payload.status === 'error'
-    && isCurrentPluginEvent(payload.plugin)
+    payload.kind === 'hmr' &&
+    payload.status === 'error' &&
+    isCurrentPluginEvent(payload.plugin)
   ) {
     message.warning(payload.message || `plugin hmr failed: ${payload.plugin || 'unknown'}`)
   }
@@ -304,6 +324,10 @@ onUnmounted(() => {
 
 .config-card {
   border-radius: 16px;
+}
+
+.config-load-error {
+  margin-bottom: 16px;
 }
 
 .script-icon {

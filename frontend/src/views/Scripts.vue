@@ -67,7 +67,28 @@
 
   <!-- 空状态 -->
   <!-- 增加 loadedOnce 条件，避免初始渲染时闪烁 -->
-  <div v-if="!addLoading && loadedOnce && scripts.length === 0" class="empty-state">
+  <a-alert
+    v-if="scriptListError"
+    class="script-list-error"
+    type="error"
+    show-icon
+    message="脚本列表加载失败"
+    :description="scriptListError"
+  >
+    <template #action>
+      <a-button size="small" type="primary" @click="loadScripts">
+        <template #icon>
+          <ReloadOutlined />
+        </template>
+        重试
+      </a-button>
+    </template>
+  </a-alert>
+
+  <div
+    v-if="!scriptListError && !addLoading && loadedOnce && scripts.length === 0"
+    class="empty-state"
+  >
     <div class="empty-content">
       <div class="empty-image-container">
         <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image" />
@@ -80,6 +101,7 @@
   </div>
 
   <ScriptTable
+    v-if="scripts.length > 0 || !scriptListError"
     :scripts="scripts"
     :active-connections="activeConnections"
     :all-plans-data="allPlansData"
@@ -362,6 +384,7 @@ import {
   FileSearchOutlined,
   FileTextOutlined,
   PlusOutlined,
+  ReloadOutlined,
   SettingOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
@@ -400,6 +423,7 @@ const md = new MarkdownIt({
 
 const scripts = ref<Script[]>([])
 const scriptTypeDescriptors = ref<ScriptTypeDescriptor[]>([])
+const scriptListError = ref<string | null>(null)
 // 增加：标记是否已经完成过一次脚本列表加载（成功或失败都算一次）
 const loadedOnce = ref(false)
 // 所有计划表数据 (planId -> planData)
@@ -477,6 +501,7 @@ onMounted(() => {
 
 const loadScripts = async () => {
   try {
+    scriptListError.value = null
     const descriptors = await registryApi.getScriptTypes()
     scriptTypeDescriptors.value = descriptors
     if (!selectedType.value && descriptors.length > 0) {
@@ -485,13 +510,16 @@ const loadScripts = async () => {
 
     const descriptorMap = descriptorMapFromList(descriptors)
     const scriptRecords = await registryApi.getScripts()
-    const userRecords = await Promise.all(scriptRecords.map(record => registryApi.getUsers(record.id)))
+    const userRecords = await Promise.all(
+      scriptRecords.map(record => registryApi.getUsers(record.id))
+    )
 
     scripts.value = scriptRecords.map((record, index) =>
       normalizeScriptRecord(record, descriptorMap, userRecords[index] || [])
     )
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
+    scriptListError.value = errorMsg
     logger.error(`加载脚本列表失败: ${errorMsg}`)
     message.error(`加载脚本列表失败: ${errorMsg}`)
   } finally {
@@ -1120,6 +1148,10 @@ const handlePassCheckUser = async (user: User) => {
   align-items: center;
   justify-content: center;
   z-index: 9999;
+}
+
+.script-list-error {
+  margin-bottom: 16px;
 }
 
 .empty-state {
