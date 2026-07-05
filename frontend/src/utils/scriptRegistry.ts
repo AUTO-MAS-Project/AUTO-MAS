@@ -74,7 +74,6 @@ export const BUILTIN_SCRIPT_TYPES = new Set([
   'MaaEnd',
   'M9A',
   'MaaFW',
-  'Okww',
   'HSR',
 ])
 
@@ -128,7 +127,6 @@ const BUILTIN_EDITOR_SEGMENTS: Record<string, string> = {
   'builtin:maaend': 'maaend',
   'builtin:m9a': 'm9a',
   'builtin:maafw': 'maafw',
-  'builtin:okww': 'okww',
   'builtin:hsr': 'hsr',
 }
 
