@@ -50,6 +50,7 @@ from app.models.config import (
     TimeSet,
     EmulatorConfig,
     GameSignAccountGroup,
+    MaaFWConfig,
 )
 from app.models.schema import WebSocketMessage
 from app.models.script_api import ScriptRecord, ScriptTypeDescriptor, ScriptUserRecord
