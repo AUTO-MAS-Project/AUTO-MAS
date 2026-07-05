@@ -268,7 +268,6 @@ class ScriptTypeRegistry:
             MaaFWConfig,
             MaaFWUserConfig,
             OkwwConfig,
-            OkwwUserConfig,
             SrcConfig,
             SrcUserConfig,
         )
@@ -330,17 +329,6 @@ class ScriptTypeRegistry:
                 manager_factory=_lazy_manager("app.task.MaaFW.manager", "MaaFWManager"),
                 icon="MaaFW",
                 editor_kind="builtin:maafw",
-                is_builtin=True,
-            ),
-            ScriptTypeProvider(
-                type_key="Okww",
-                display_name="ok-ww脚本",
-                script_config_class=OkwwConfig,
-                user_config_class=OkwwUserConfig,
-                supported_modes=("AutoProxy", "ScriptConfig"),
-                manager_factory=_lazy_manager("app.task.Okww.manager", "OkwwManager"),
-                icon="Okww",
-                editor_kind="builtin:okww",
                 is_builtin=True,
             ),
             ScriptTypeProvider(
