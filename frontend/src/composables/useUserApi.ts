@@ -191,7 +191,7 @@ export function useUserApi() {
 
   const importM7aAbyssSnapshot = async (
     scriptId: string,
-    userId: string,
+    userId: string
   ): Promise<AbyssSnapshotImportOut | null> => {
     loading.value = true
     error.value = null

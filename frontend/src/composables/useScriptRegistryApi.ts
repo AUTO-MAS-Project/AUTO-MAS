@@ -77,7 +77,10 @@ export function useScriptRegistryApi() {
     }
   }
 
-  const getUsers = async (scriptId: string, userId?: string | null): Promise<ScriptUserRecord[]> => {
+  const getUsers = async (
+    scriptId: string,
+    userId?: string | null
+  ): Promise<ScriptUserRecord[]> => {
     const data = await post<ScriptUserRecordGetOut>('/api/scripts2/users/get', {
       scriptId,
       userId: userId || null,

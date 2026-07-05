@@ -13,7 +13,8 @@ const DEFAULT_WS_PATH = '/api/core/ws'
 const WS_META_URL = '/api/core/ws_meta'
 const WS_META_TIMEOUT = 3000
 const DEV_MODE_RETRY_DELAY = 3000
-const FRONTEND_DEV_MODE = (import.meta as any).env?.DEV === true || window.location.hostname === 'localhost'
+const FRONTEND_DEV_MODE =
+  (import.meta as any).env?.DEV === true || window.location.hostname === 'localhost'
 
 interface NegotiatedWebSocketMeta {
   devMode?: boolean
@@ -201,7 +202,11 @@ const toWebSocketBase = (value: string): string => {
   return `ws://${value}`.replace(/\/+$/, '')
 }
 
-const fetchWithTimeout = async (input: RequestInfo | URL, init: RequestInit = {}, timeoutMs: number) => {
+const fetchWithTimeout = async (
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs: number
+) => {
   const controller = new AbortController()
   const timer = window.setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -247,7 +252,7 @@ const negotiateWebSocketUrl = async (reason: string): Promise<string> => {
     )
 
     if (response.ok) {
-      const meta = await response.json() as NegotiatedWebSocketMeta
+      const meta = (await response.json()) as NegotiatedWebSocketMeta
       if (typeof meta.devMode === 'boolean') {
         negotiatedDevMode = meta.devMode
       }
@@ -1169,7 +1174,8 @@ const createGlobalWebSocket = (): WebSocket => {
   }
 
   ws.onclose = event => {
-    const isHeartbeatTimeout = event.code === 1000 && (event.reason === 'Ping超时' || event.reason === '心跳超时')
+    const isHeartbeatTimeout =
+      event.code === 1000 && (event.reason === 'Ping超时' || event.reason === '心跳超时')
 
     if (isHeartbeatTimeout) {
       logger.error(`WebSocket连接因心跳超时关闭: code=${event.code}, reason="${event.reason}"`)

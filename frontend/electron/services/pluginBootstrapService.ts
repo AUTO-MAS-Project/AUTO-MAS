@@ -113,7 +113,7 @@ export class PluginBootstrapService {
   async installPackages(
     onProgress?: PluginBootstrapProgressCallback,
     selectedMirror?: string,
-    forceInstall: boolean = false,
+    forceInstall: boolean = false
   ): Promise<PluginBootstrapInstallResult> {
     try {
       onProgress?.({
@@ -135,7 +135,9 @@ export class PluginBootstrapService {
 
       if (!forceInstall && !checkResult.needsInstall) {
         const state = this.loadState()
-        logger.info('Plugin bootstrap state is unchanged and system packages are present, skipping install')
+        logger.info(
+          'Plugin bootstrap state is unchanged and system packages are present, skipping install'
+        )
         return {
           success: true,
           skipped: true,
@@ -158,7 +160,7 @@ export class PluginBootstrapService {
         failedPackages,
         warnings,
         onProgress,
-        selectedMirror,
+        selectedMirror
       )
       if (!systemResult.success) {
         return {
@@ -178,7 +180,7 @@ export class PluginBootstrapService {
         failedPackages,
         warnings,
         onProgress,
-        selectedMirror,
+        selectedMirror
       )
 
       const state: PluginBootstrapState = {
@@ -239,11 +241,14 @@ export class PluginBootstrapService {
       packages,
       currentHash,
       lastHash,
-      needsInstall: !this.areSystemPackagesInstalled() || lastHash == null || lastHash !== currentHash,
+      needsInstall:
+        !this.areSystemPackagesInstalled() || lastHash == null || lastHash !== currentHash,
     }
   }
 
-  private getAllBootstrapPackages(declaredPackages: DeclaredBootstrapPackage[]): DeclaredBootstrapPackage[] {
+  private getAllBootstrapPackages(
+    declaredPackages: DeclaredBootstrapPackage[]
+  ): DeclaredBootstrapPackage[] {
     const result: DeclaredBootstrapPackage[] = []
     const seen = new Set<string>()
 
@@ -266,7 +271,10 @@ export class PluginBootstrapService {
       specifier: item.specifier || '',
       installSpec: item.installSpec,
     }))
-    return crypto.createHash('sha256').update(JSON.stringify({ packages: normalized })).digest('hex')
+    return crypto
+      .createHash('sha256')
+      .update(JSON.stringify({ packages: normalized }))
+      .digest('hex')
   }
 
   private async installSystemPackages(
@@ -274,7 +282,7 @@ export class PluginBootstrapService {
     failedPackages: string[],
     warnings: PluginBootstrapWarning[],
     onProgress?: PluginBootstrapProgressCallback,
-    selectedMirror?: string,
+    selectedMirror?: string
   ): Promise<{ success: boolean; error?: string }> {
     for (let index = 0; index < SYSTEM_BOOTSTRAP_PACKAGES.length; index += 1) {
       const systemPackage = SYSTEM_BOOTSTRAP_PACKAGES[index]
@@ -314,7 +322,7 @@ export class PluginBootstrapService {
             },
           })
         },
-        selectedMirror,
+        selectedMirror
       )
 
       if (!installResult.success) {
@@ -332,7 +340,8 @@ export class PluginBootstrapService {
       }
 
       if (!installResult.hasPluginEntryPoint) {
-        const message = 'Installed successfully, but no auto_mas.plugins / automas.plugins entry point was found'
+        const message =
+          'Installed successfully, but no auto_mas.plugins / automas.plugins entry point was found'
         failedPackages.push(packageName)
         warnings.push({
           packageName,
@@ -352,7 +361,9 @@ export class PluginBootstrapService {
     return { success: true }
   }
 
-  private withResolvedSystemInstallSpec(systemPackage: DeclaredBootstrapPackage): DeclaredBootstrapPackage {
+  private withResolvedSystemInstallSpec(
+    systemPackage: DeclaredBootstrapPackage
+  ): DeclaredBootstrapPackage {
     if (systemPackage.name !== 'auto-mas-core') {
       return systemPackage
     }
@@ -376,7 +387,7 @@ export class PluginBootstrapService {
     failedPackages: string[],
     warnings: PluginBootstrapWarning[],
     onProgress?: PluginBootstrapProgressCallback,
-    selectedMirror?: string,
+    selectedMirror?: string
   ): Promise<void> {
     for (let index = 0; index < declaredPackages.length; index += 1) {
       const declaredPackage = declaredPackages[index]
@@ -400,7 +411,7 @@ export class PluginBootstrapService {
           const packageSpan = 70 / Math.max(1, declaredPackages.length)
           const progress = Math.min(
             99,
-            Math.floor(25 + index * packageSpan + (operationProgress.progress / 100) * packageSpan),
+            Math.floor(25 + index * packageSpan + (operationProgress.progress / 100) * packageSpan)
           )
           onProgress?.({
             stage: 'install',
@@ -416,7 +427,7 @@ export class PluginBootstrapService {
             },
           })
         },
-        selectedMirror,
+        selectedMirror
       )
 
       if (!installResult.success) {
@@ -426,7 +437,9 @@ export class PluginBootstrapService {
           kind: 'install-failed',
           message: installResult.error || 'Unknown error',
         })
-        logger.warn(`Plugin bootstrap install failed and will be skipped: package=${packageName}, error=${installResult.error}`)
+        logger.warn(
+          `Plugin bootstrap install failed and will be skipped: package=${packageName}, error=${installResult.error}`
+        )
         continue
       }
 
@@ -435,7 +448,8 @@ export class PluginBootstrapService {
         const warning: PluginBootstrapWarning = {
           packageName,
           kind: 'missing-entry-point',
-          message: 'Installed successfully, but no auto_mas.plugins / automas.plugins entry point was found',
+          message:
+            'Installed successfully, but no auto_mas.plugins / automas.plugins entry point was found',
         }
         warnings.push(warning)
         logger.warn(`Plugin bootstrap package has no plugin entry point: package=${packageName}`)
@@ -447,7 +461,9 @@ export class PluginBootstrapService {
 
   private loadDeclaredPackageSpecs(): DeclaredBootstrapPackage[] {
     if (!fs.existsSync(this.pyprojectPath)) {
-      logger.warn(`pyproject.toml does not exist, skipping declared plugin bootstrap packages: ${this.pyprojectPath}`)
+      logger.warn(
+        `pyproject.toml does not exist, skipping declared plugin bootstrap packages: ${this.pyprojectPath}`
+      )
       return []
     }
 
@@ -629,7 +645,9 @@ export class PluginBootstrapService {
     }
 
     if (version && specifier) {
-      logger.warn(`Plugin bootstrap package declares both version and specifier; using specifier: ${name}`)
+      logger.warn(
+        `Plugin bootstrap package declares both version and specifier; using specifier: ${name}`
+      )
     }
 
     const effectiveSpecifier = specifier || (version ? `==${version}` : '')
@@ -708,16 +726,19 @@ export class PluginBootstrapService {
       progress: NetworkOperationProgress,
       mirrorName: string,
       mirrorIndex: number,
-      totalMirrors: number,
+      totalMirrors: number
     ) => void,
-    selectedMirror?: string,
+    selectedMirror?: string
   ): Promise<{ success: boolean; error?: string; hasPluginEntryPoint?: boolean }> {
     const mirrors = this.mirrorService.getMirrors('pip_mirror')
     const packageLabel = declaredPackage.displayLabel
 
     const installOperation: NetworkOperationCallback = async (mirror, onOpProgress) => {
       try {
-        onOpProgress({ progress: 10, description: `Installing ${packageLabel} from ${mirror.name}...` })
+        onOpProgress({
+          progress: 10,
+          description: `Installing ${packageLabel} from ${mirror.name}...`,
+        })
         await this.runUvInstall(declaredPackage, mirror, progress => {
           onOpProgress({
             progress,
@@ -741,10 +762,10 @@ export class PluginBootstrapService {
           rotationProgress.operationProgress,
           rotationProgress.currentMirror.name,
           rotationProgress.mirrorIndex,
-          rotationProgress.totalMirrors,
+          rotationProgress.totalMirrors
         )
       },
-      selectedMirror,
+      selectedMirror
     )
 
     if (!result.success) {
@@ -760,7 +781,7 @@ export class PluginBootstrapService {
   private runUvInstall(
     declaredPackage: DeclaredBootstrapPackage,
     mirror: MirrorSource,
-    onProgress?: (progress: number) => void,
+    onProgress?: (progress: number) => void
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       const proc = spawn(
@@ -778,7 +799,7 @@ export class PluginBootstrapService {
         {
           cwd: this.appRoot,
           stdio: 'pipe',
-        },
+        }
       )
 
       let stderrData = ''
@@ -811,8 +832,8 @@ export class PluginBootstrapService {
         }
         reject(
           new Error(
-            `uv pip install failed, exit code: ${code}\nstderr: ${stderrData || stdoutData || 'unknown error'}`,
-          ),
+            `uv pip install failed, exit code: ${code}\nstderr: ${stderrData || stdoutData || 'unknown error'}`
+          )
         )
       })
 
@@ -875,7 +896,9 @@ export class PluginBootstrapService {
     }
 
     const normalizedPackageName = this.normalizeDistributionName(packageName)
-    const normalizedDistName = this.normalizeDistributionName(distInfo.name.replace(/\.dist-info$/i, ''))
+    const normalizedDistName = this.normalizeDistributionName(
+      distInfo.name.replace(/\.dist-info$/i, '')
+    )
     const prefix = `${normalizedPackageName}_`
     if (normalizedDistName.startsWith(prefix)) {
       return normalizedDistName.slice(prefix.length)
@@ -896,10 +919,7 @@ export class PluginBootstrapService {
         return false
       }
       const distName = this.normalizeDistributionName(entry.name.replace(/\.dist-info$/i, ''))
-      return (
-        distName === normalizedPackageName ||
-        distName.startsWith(`${normalizedPackageName}_`)
-      )
+      return distName === normalizedPackageName || distName.startsWith(`${normalizedPackageName}_`)
     })
   }
 

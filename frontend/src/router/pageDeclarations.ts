@@ -71,7 +71,7 @@ function hostPage(
   component: string,
   section: 'main' | 'bottom' | 'dev',
   order: number,
-  devOnly = false,
+  devOnly = false
 ): PageDeclaration {
   return {
     id,
@@ -111,7 +111,16 @@ export const FALLBACK_PAGE_DECLARATIONS: PageDeclaration[] = [
   hostPage('test-router', '/TestRouter', '测试路由', 'dev', 'TestRouter', 'dev', 10, true),
   hostPage('ocr-dev', '/OCRdev', 'OCR 测试', 'dev', 'OCRdev', 'dev', 20, true),
   hostPage('ws-dev', '/WSdev', 'WebSocket 测试', 'api', 'WSdev', 'dev', 30, true),
-  hostPage('overlay-mask-dev', '/OverlayMaskDev', '遮罩测试', 'dev', 'OverlayMaskDev', 'dev', 40, true),
+  hostPage(
+    'overlay-mask-dev',
+    '/OverlayMaskDev',
+    '遮罩测试',
+    'dev',
+    'OverlayMaskDev',
+    'dev',
+    40,
+    true
+  ),
 ]
 
 export function normalizePageDeclarations(raw: unknown): PageDeclaration[] {
@@ -159,9 +168,7 @@ export function sortPageDeclarations(pages: PageDeclaration[]): PageDeclaration[
 }
 
 export function createPageRoutes(pages: PageDeclaration[]): RouteRecordRaw[] {
-  return pages
-    .map(createPageRoute)
-    .filter((route): route is RouteRecordRaw => route !== null)
+  return pages.map(createPageRoute).filter((route): route is RouteRecordRaw => route !== null)
 }
 
 export function syncDeclaredPageRoutes(router: Router, pages: PageDeclaration[]): void {
@@ -261,9 +268,7 @@ function normalizeStringList(raw: unknown): string[] {
   if (!Array.isArray(raw)) {
     return []
   }
-  return raw
-    .map(item => String(item || '').trim())
-    .filter(Boolean)
+  return raw.map(item => String(item || '').trim()).filter(Boolean)
 }
 
 function normalizePath(value: string): string {

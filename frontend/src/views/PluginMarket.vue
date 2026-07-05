@@ -85,7 +85,7 @@
             allow-clear
             placeholder="例如：automas_xxx"
             :disabled="manualInstallSubmitting"
-            @pressEnter="submitManualInstall"
+            @press-enter="submitManualInstall"
           />
         </a-form-item>
       </a-form>
@@ -162,7 +162,11 @@ const pendingManualPackage = ref('')
 const lastInfoType = ref<'success' | 'error' | 'info' | 'warning'>('info')
 const lastInfoMessage = ref('')
 
-const normalizeName = (name: string) => String(name || '').trim().toLowerCase().replace(/-/g, '_')
+const normalizeName = (name: string) =>
+  String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, '_')
 
 const setInfo = (msg: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
   lastInfoType.value = type
@@ -522,8 +526,12 @@ const filteredItems = computed(() => {
   }
   return snapshot.items.filter(item => {
     return (
-      String(item.package || '').toLowerCase().includes(keyword) ||
-      String(item.summary || '').toLowerCase().includes(keyword)
+      String(item.package || '')
+        .toLowerCase()
+        .includes(keyword) ||
+      String(item.summary || '')
+        .toLowerCase()
+        .includes(keyword)
     )
   })
 })

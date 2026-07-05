@@ -68,14 +68,7 @@ const DEFAULT_USER_SHAPE = {
   },
 }
 
-export const BUILTIN_SCRIPT_TYPES = new Set([
-  'MAA',
-  'SRC',
-  'MaaEnd',
-  'M9A',
-  'MaaFW',
-  'HSR',
-])
+export const BUILTIN_SCRIPT_TYPES = new Set(['MAA', 'SRC', 'MaaEnd', 'M9A', 'MaaFW', 'HSR'])
 
 export const isBuiltinScriptType = (type: string) => BUILTIN_SCRIPT_TYPES.has(type)
 
@@ -173,7 +166,8 @@ export const descriptorMapFromList = (items: ScriptTypeDescriptor[]) =>
   }, {})
 
 export const normalizeUserRecord = (record: ScriptUserRecord): User => {
-  const info = record.config?.Info && typeof record.config.Info === 'object' ? record.config.Info : {}
+  const info =
+    record.config?.Info && typeof record.config.Info === 'object' ? record.config.Info : {}
   return {
     ...DEFAULT_USER_SHAPE,
     ...record.config,
@@ -217,7 +211,8 @@ export const normalizeScriptRecord = (
 ): Script => {
   const descriptor = descriptorMap[record.type]
   const available = Boolean(descriptor)
-  const info = record.config?.Info && typeof record.config.Info === 'object' ? record.config.Info : {}
+  const info =
+    record.config?.Info && typeof record.config.Info === 'object' ? record.config.Info : {}
   return {
     id: record.id,
     type: record.type,
