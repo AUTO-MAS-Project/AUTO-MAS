@@ -72,7 +72,7 @@ const initCompleted = ref(false)
 const forceEnterVisible = ref(false)
 const isDev = import.meta.env.DEV
 const version = import.meta.env.VITE_APP_VERSION
-const targetBranch = ref(isDev ? 'dev' : `release/${version}`)
+const targetBranch = ref(isDev ? 'dev' : 'dev_v2')
 
 logger.info(`当前环境: ${isDev ? '开发环境' : '生产环境'}, 目标分支: ${targetBranch.value}`)
 
