@@ -35,7 +35,9 @@ from .script_adapter import (
     ScriptAdapterHooks,
     ScriptAdapterPlugin,
     ScriptAdapterRuntime,
+    ScriptConfigWorkspace,
 )
+from .script_config_store import ScriptConfigStore
 from .schema_utils import (
     SchemaDecorationContext,
     SchemaOptionsProviderContext,
@@ -144,6 +146,8 @@ __all__ = [
     "ScriptAdapterDefinition",
     "BaseAdapterManager",
     "ScriptAdapterPlugin",
+    "ScriptConfigWorkspace",
+    "ScriptConfigStore",
     # Schema 工具
     "SchemaDecorationContext",
     "SchemaOptionsProviderContext",
