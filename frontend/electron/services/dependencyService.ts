@@ -205,8 +205,38 @@ export class DependencyService {
       return false
     }
 
+    if (!this.ensureVenvPythonPathConfig()) {
+      return false
+    }
+
     const sitePackagesPath = path.join(this.venvPath, 'Lib', 'site-packages')
     return fs.existsSync(sitePackagesPath) && fs.readdirSync(sitePackagesPath).length > 0
+  }
+
+  private ensureVenvPythonPathConfig(): boolean {
+    try {
+      const sourceDir = path.dirname(this.pythonExe)
+      const sourceName = fs.readdirSync(sourceDir).find(name => /^python\d+._pth$/i.test(name))
+
+      if (!sourceName) {
+        return true
+      }
+
+      const sourcePath = path.join(sourceDir, sourceName)
+      const targetPath = path.join(path.dirname(this.venvPythonExe), sourceName)
+      const sourceContent = fs.readFileSync(sourcePath, 'utf-8')
+      const targetContent = fs.existsSync(targetPath) ? fs.readFileSync(targetPath, 'utf-8') : null
+
+      if (targetContent !== sourceContent) {
+        fs.copyFileSync(sourcePath, targetPath)
+        logger.info(`已同步虚拟环境 Python 路径配置: ${targetPath}`)
+      }
+
+      return true
+    } catch (error) {
+      logger.warn(`同步虚拟环境 Python 路径配置失败: ${error}`)
+      return false
+    }
   }
 
   private loadHash(): string | null {

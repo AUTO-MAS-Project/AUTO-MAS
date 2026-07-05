@@ -95,11 +95,7 @@ async def connect_websocket(websocket: WebSocket):
     Config.websocket = session
     asyncio.create_task(TaskManager.start_startup_queue())
     await session.wait_closed()
-
-    if is_backend_dev_mode():
-        logger.warning("后端开发模式下检测到 WS 断链，跳过 KillSelf 自动退出")
-    else:
-        await System.set_power("KillSelf", from_frontend=True)
+    logger.warning("主 WebSocket 已断开，等待前端重新连接")
 
 
 @ws_command("core.close")
