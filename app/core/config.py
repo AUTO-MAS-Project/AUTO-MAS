@@ -148,6 +148,7 @@ class AppConfig(GlobalConfig):
         await self.PlanConfig.connect(self.config_path / "PlanConfig.json")
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
         await self._migrate_general_scripts_to_plugin_storage()
+        await self._migrate_okww_scripts_to_plugin_storage()
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
         await self.ToolsConfig.connect(self.config_path / "ToolsConfig.json")
         await self.PluginConfig.connect(self.config_path / "PluginConfig.json")
@@ -694,6 +695,89 @@ class AppConfig(GlobalConfig):
 
         return is_script_config_compatible_with_type_key(script_config, "General")
 
+    @staticmethod
+    def _is_okww_legacy_script_config(script_config: ConfigBase) -> bool:
+        """Return whether the record is an old host-owned OkwwConfig."""
+
+        from app.models.config import OkwwConfig
+
+        return isinstance(script_config, OkwwConfig)
+
+    @staticmethod
+    def _pick_config_group(
+        data: dict[str, Any],
+        group: str,
+        fields: tuple[str, ...],
+    ) -> dict[str, Any]:
+        source = data.get(group)
+        if not isinstance(source, dict):
+            return {}
+        return {field: source[field] for field in fields if field in source}
+
+    def _okww_legacy_script_payload(self, data: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "Info": self._pick_config_group(data, "Info", ("Name", "RootPath")),
+            "Game": self._pick_config_group(
+                data,
+                "Game",
+                ("Enabled", "Path", "Arguments", "WaitTime"),
+            ),
+            "Run": self._pick_config_group(
+                data,
+                "Run",
+                ("ProxyTimesLimit", "RunTimesLimit", "RunTimeLimit"),
+            ),
+        }
+
+    def _okww_legacy_user_payload(self, data: dict[str, Any]) -> dict[str, Any]:
+        notify = self._pick_config_group(
+            data,
+            "Notify",
+            (
+                "Enabled",
+                "IfSendStatistic",
+                "IfSendMail",
+                "ToAddress",
+                "IfServerChan",
+                "ServerChanKey",
+            ),
+        )
+        custom_webhooks = (
+            data.get("SubConfigsInfo", {})
+            if isinstance(data.get("SubConfigsInfo"), dict)
+            else {}
+        ).get("Notify_CustomWebhooks")
+        if isinstance(custom_webhooks, dict):
+            notify["CustomWebhooks"] = json.dumps(custom_webhooks, ensure_ascii=False)
+
+        return {
+            "Info": self._pick_config_group(
+                data,
+                "Info",
+                (
+                    "Name",
+                    "Status",
+                    "Id",
+                    "Password",
+                    "Resource",
+                    "RemainedDay",
+                    "Mode",
+                    "IfScriptBeforeTask",
+                    "ScriptBeforeTask",
+                    "IfScriptAfterTask",
+                    "ScriptAfterTask",
+                    "Notes",
+                ),
+            ),
+            "Task": self._pick_config_group(data, "Task", ("TaskIndex",)),
+            "Data": self._pick_config_group(
+                data,
+                "Data",
+                ("LastProxyDate", "ProxyTimes", "LastProxyStatus", "LastTaskIndex"),
+            ),
+            "Notify": notify,
+        }
+
     async def _read_general_script_payload(
         self,
         script_uid: uuid.UUID,
@@ -799,6 +883,67 @@ class AppConfig(GlobalConfig):
 
         await self.ScriptConfig.save()
         logger.success("旧通用脚本已迁移到插件脚本容器")
+
+    async def _migrate_okww_scripts_to_plugin_storage(self) -> None:
+        """Move old OkwwConfig records into the plugin storage container.
+
+        This migration is intentionally narrow and temporary: it upgrades old
+        host-owned Okww records to plugin-owned records so the legacy Okww
+        provider fallback can be removed after the migration window.
+        """
+
+        from app.models.plugin_script_config import PluginScriptConfig, PluginUserConfig
+
+        migrate_list = [
+            script_uid
+            for script_uid, script_config in self.ScriptConfig.items()
+            if self._is_okww_legacy_script_config(script_config)
+            and not isinstance(script_config, PluginScriptConfig)
+        ]
+        if not migrate_list:
+            return
+
+        logger.info(f"检测到 {len(migrate_list)} 个旧 Okww 脚本，开始迁移到插件脚本容器")
+
+        for script_uid in migrate_list:
+            legacy_script = self.ScriptConfig[script_uid]
+            script_payload = self._okww_legacy_script_payload(
+                await legacy_script.toDict(if_decrypt=False)
+            )
+
+            plugin_script = PluginScriptConfig()
+            await plugin_script.set("Meta", "PluginTypeKey", "Okww")
+            await plugin_script.set("Info", "Name", legacy_script.get("Info", "Name"))
+            await plugin_script.set(
+                "PluginData",
+                "Config",
+                json.dumps(script_payload, ensure_ascii=False),
+            )
+
+            for user_uid, legacy_user in legacy_script.UserData.items():
+                user_payload = self._okww_legacy_user_payload(
+                    await legacy_user.toDict(if_decrypt=False)
+                )
+                plugin_user = PluginUserConfig()
+                await plugin_user.set("Meta", "PluginTypeKey", "Okww")
+                await plugin_user.set("Info", "Name", legacy_user.get("Info", "Name"))
+                await plugin_user.set(
+                    "PluginData",
+                    "Config",
+                    json.dumps(user_payload, ensure_ascii=False),
+                )
+                plugin_script.UserData.order.append(user_uid)
+                plugin_script.UserData.data[user_uid] = plugin_user
+
+            if self.ScriptConfig.file is not None:
+                await plugin_script.add_save_method(self.ScriptConfig.save)
+            for save_method in self.ScriptConfig._save_methods:
+                await plugin_script.add_save_method(save_method)
+
+            self.ScriptConfig.data[script_uid] = plugin_script
+
+        await self.ScriptConfig.save()
+        logger.success("旧 Okww 脚本已迁移到插件脚本容器")
 
     async def add_script(
         self,

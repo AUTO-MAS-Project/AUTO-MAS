@@ -42,6 +42,7 @@ dev = [
 ]
 plugins = [
     "auto-mas-core",
+    "automas_plugin_okww_adapter",
 ]
 
 [tool.auto-mas.plugin-bootstrap]
@@ -57,6 +58,7 @@ package = false
 [tool.uv.workspace]
 members = [
     "plugins/auto_mas_core",
+    "plugins/okww_adapter",
 ]
 exclude = [
     "plugins/pypi",
@@ -65,3 +67,4 @@ exclude = [
 
 [tool.uv.sources]
 "auto-mas-core" = { workspace = true }
+"automas_plugin_okww_adapter" = { workspace = true }
