@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from app.core import Config
+from app.core import Config as app_config
 from app.core.script_config_codec import storage_to_form
 from app.models.plugin_script_config import PluginScriptConfig
 from app.plugins import PluginHttpRequest, ScriptAdapterDefinition, ScriptAdapterPlugin
@@ -124,7 +124,7 @@ class Plugin(ScriptAdapterPlugin):
         )
 
     async def _script_form_config(self, script_id: str) -> dict[str, Any]:
-        script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+        script_config = app_config.ScriptConfig[uuid.UUID(script_id)]
         if not isinstance(script_config, PluginScriptConfig):
             raise ValueError("脚本不是 OK-WW 插件配置")
         if str(script_config.get("Meta", "PluginTypeKey") or "").strip() != "Okww":

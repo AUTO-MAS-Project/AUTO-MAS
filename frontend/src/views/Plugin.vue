@@ -86,15 +86,15 @@
                         {{ element.name || element.id }}
                       </span>
                       <a-tag v-if="element.system" color="blue" class="system-tag">系统</a-tag>
-                      <a-switch
-                        class="instance-switch"
-                        size="small"
-                        :checked="getInstanceSwitchChecked(element)"
-                        :loading="togglingInstanceId === element.id"
-                        :disabled="element.locked || togglingInstanceId === element.id"
-                        @update:checked="(val: boolean) => toggleInstanceEnabled(element, val)"
-                        @click.stop
-                      />
+                      <span class="instance-switch" @click.stop>
+                        <a-switch
+                          size="small"
+                          :checked="getInstanceSwitchChecked(element)"
+                          :loading="togglingInstanceId === element.id"
+                          :disabled="element.locked || togglingInstanceId === element.id"
+                          @update:checked="(val: boolean) => toggleInstanceEnabled(element, val)"
+                        />
+                      </span>
                     </div>
                   </template>
                 </draggable>
@@ -421,6 +421,10 @@ import { OpenAPI } from '@/api'
 import SchemaForm from '@/components/SchemaForm.vue'
 import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
 
+defineOptions({
+  name: 'PluginView',
+})
+
 interface PluginInstance {
   id: string
   plugin: string
@@ -689,9 +693,7 @@ const normalizePluginListLayout = (
   }
 
   const rawInstanceGroups =
-    layout?.instanceGroups && typeof layout.instanceGroups === 'object'
-      ? layout.instanceGroups
-      : {}
+    layout?.instanceGroups && typeof layout.instanceGroups === 'object' ? layout.instanceGroups : {}
 
   for (const [instanceId, rawGroup] of Object.entries(rawInstanceGroups)) {
     if (limitToAvailableInstances && !availableSet.has(instanceId)) {
@@ -732,7 +734,10 @@ const loadPluginListLayout = (): PluginListLayoutState => {
 
 const pluginListLayout = ref<PluginListLayoutState>(loadPluginListLayout())
 
-const persistPluginListLayout = (nextLayout: PluginListLayoutState, availableInstanceIds?: string[]) => {
+const persistPluginListLayout = (
+  nextLayout: PluginListLayoutState,
+  availableInstanceIds?: string[]
+) => {
   const normalized = normalizePluginListLayout(
     nextLayout,
     availableInstanceIds ?? instances.value.map(item => item.id)
@@ -755,15 +760,18 @@ const updatePluginListLayout = (
 }
 
 const syncPluginListLayoutWithInstances = (nextInstances: PluginInstance[]) => {
-  persistPluginListLayout(pluginListLayout.value, nextInstances.map(item => item.id))
+  persistPluginListLayout(
+    pluginListLayout.value,
+    nextInstances.map(item => item.id)
+  )
 }
 
-const listColumns: TableColumn[] = [
+const _listColumns: TableColumn[] = [
   { title: '值', dataIndex: 'value', key: 'value' },
   { title: '操作', dataIndex: 'action', key: 'action' },
 ]
 
-const keyValueColumns: TableColumn[] = [
+const _keyValueColumns: TableColumn[] = [
   { title: '键', dataIndex: 'key', key: 'key' },
   { title: '值', dataIndex: 'value', key: 'value' },
   { title: '操作', dataIndex: 'action', key: 'action' },
@@ -900,7 +908,7 @@ const schemaFormModel = computed<Record<string, unknown>>({
       return {}
     }
   },
-  set: (value) => {
+  set: value => {
     setConfigObjectToText(value)
   },
 })
@@ -1305,7 +1313,9 @@ const createGroup = () => {
     content: h('div', [
       h(Input, {
         placeholder: '请输入分组名称',
-        onChange: (e: any) => { name = e.target?.value ?? e },
+        onChange: (e: any) => {
+          name = e.target?.value ?? e
+        },
       }),
     ]),
     onOk: async () => {
@@ -1334,7 +1344,9 @@ const handleGroupAction = (action: string, groupKey: string) => {
       content: h('div', [
         h(Input, {
           defaultValue: groupKey,
-          onChange: (e: any) => { newName = e.target?.value ?? e },
+          onChange: (e: any) => {
+            newName = e.target?.value ?? e
+          },
         }),
       ]),
       onOk: async () => {
@@ -1401,7 +1413,7 @@ const getPhaseTagColor = (phase?: string) => {
   return 'geekblue'
 }
 
-const formatRuntimeTime = (value?: string | null) => {
+const _formatRuntimeTime = (value?: string | null) => {
   if (!value) {
     return '-'
   }
@@ -1431,9 +1443,9 @@ const getFieldValue = (field: string) => {
   }
 }
 
-const getBooleanValue = (field: string) => Boolean(getFieldValue(field))
+const _getBooleanValue = (field: string) => Boolean(getFieldValue(field))
 
-const getNumberValue = (field: string) => {
+const _getNumberValue = (field: string) => {
   const value = getFieldValue(field)
   if (typeof value === 'number') {
     return value
@@ -1462,18 +1474,18 @@ const toFiniteNumber = (value: unknown) => {
 const getFieldLabel = (field: string, fieldSchema: PluginSchemaField) =>
   fieldSchema.title || fieldSchema.description || field
 
-const getFieldPlaceholder = (fieldSchema: PluginSchemaField) =>
+const _getFieldPlaceholder = (fieldSchema: PluginSchemaField) =>
   typeof fieldSchema.placeholder === 'string' ? fieldSchema.placeholder : undefined
 
-const getStringMaxLength = (fieldSchema: PluginSchemaField) =>
+const _getStringMaxLength = (fieldSchema: PluginSchemaField) =>
   toFiniteNumber(getSchemaConstraint(fieldSchema, 'max_length'))
 
-const getTextareaRows = (fieldSchema: PluginSchemaField) => {
+const _getTextareaRows = (fieldSchema: PluginSchemaField) => {
   const rows = toFiniteNumber(fieldSchema.rows)
   return rows && rows > 0 ? rows : 4
 }
 
-const getNumberMin = (fieldSchema: PluginSchemaField) => {
+const _getNumberMin = (fieldSchema: PluginSchemaField) => {
   const ge = toFiniteNumber(getSchemaConstraint(fieldSchema, 'ge'))
   if (ge !== undefined) {
     return ge
@@ -1481,7 +1493,7 @@ const getNumberMin = (fieldSchema: PluginSchemaField) => {
   return toFiniteNumber(getSchemaConstraint(fieldSchema, 'gt'))
 }
 
-const getNumberMax = (fieldSchema: PluginSchemaField) => {
+const _getNumberMax = (fieldSchema: PluginSchemaField) => {
   const le = toFiniteNumber(getSchemaConstraint(fieldSchema, 'le'))
   if (le !== undefined) {
     return le
@@ -1489,7 +1501,7 @@ const getNumberMax = (fieldSchema: PluginSchemaField) => {
   return toFiniteNumber(getSchemaConstraint(fieldSchema, 'lt'))
 }
 
-const getNumberStep = (fieldSchema: PluginSchemaField) => {
+const _getNumberStep = (fieldSchema: PluginSchemaField) => {
   const multipleOf = toFiniteNumber(getSchemaConstraint(fieldSchema, 'multiple_of'))
   if (multipleOf && multipleOf > 0) {
     return multipleOf
@@ -1500,7 +1512,7 @@ const getNumberStep = (fieldSchema: PluginSchemaField) => {
 const isPasswordSchema = (fieldSchema: PluginSchemaField) =>
   isStringSchema(fieldSchema) && fieldSchema.format === 'password'
 
-const isTextareaSchema = (fieldSchema: PluginSchemaField) =>
+const _isTextareaSchema = (fieldSchema: PluginSchemaField) =>
   isStringSchema(fieldSchema) && fieldSchema.format === 'textarea'
 
 const isUrlSchema = (fieldSchema: PluginSchemaField) =>
@@ -1524,7 +1536,7 @@ const isNumberSchema = (fieldSchema: PluginSchemaField) =>
 const isListSchema = (fieldSchema: PluginSchemaField) =>
   fieldSchema.type === 'list' || fieldSchema.type.startsWith('list[')
 
-const getListItemType = (fieldSchema: PluginSchemaField) => {
+const _getListItemType = (fieldSchema: PluginSchemaField) => {
   if (fieldSchema.item_type) {
     return fieldSchema.item_type
   }
@@ -1554,18 +1566,18 @@ const isEnumListSchema = (fieldSchema: PluginSchemaField) =>
 const isButtonSchema = (fieldSchema: PluginSchemaField) =>
   fieldSchema.type === 'button' || fieldSchema.type === 'action'
 
-const getEnumOptions = (fieldSchema: PluginSchemaField) =>
+const _getEnumOptions = (fieldSchema: PluginSchemaField) =>
   (fieldSchema.enum || []).map(item => ({
     label: String(item),
     value: item as never,
   }))
 
-const getEnumListValue = (field: string) => {
+const _getEnumListValue = (field: string) => {
   const value = getFieldValue(field)
   return Array.isArray(value) ? value : []
 }
 
-const getTypeLabel = (fieldSchema: PluginSchemaField) => {
+const _getTypeLabel = (fieldSchema: PluginSchemaField) => {
   if (isButtonSchema(fieldSchema)) {
     return '按钮'
   }
@@ -1608,13 +1620,16 @@ const formatExampleText = (fieldSchema: PluginSchemaField) => {
 
 const isIpv4Host = (host: string) => {
   const parts = host.split('.')
-  return parts.length === 4 && parts.every(part => {
-    if (!/^\d{1,3}$/.test(part)) {
-      return false
-    }
-    const value = Number(part)
-    return value >= 0 && value <= 255
-  })
+  return (
+    parts.length === 4 &&
+    parts.every(part => {
+      if (!/^\d{1,3}$/.test(part)) {
+        return false
+      }
+      const value = Number(part)
+      return value >= 0 && value <= 255
+    })
+  )
 }
 
 const isIpv6Host = (host: string) => host.includes(':')
@@ -1628,9 +1643,7 @@ const isValidDomainHost = (host: string) => {
   if (!/^[a-zA-Z]{2,}$/.test(tld)) {
     return false
   }
-  return labels.every(label =>
-    /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/.test(label)
-  )
+  return labels.every(label => /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/.test(label))
 }
 
 const isValidHttpUrl = (value: string) => {
@@ -1754,7 +1767,7 @@ const refreshSchemaFieldErrors = () => {
   schemaFieldErrors.value = collectSchemaFieldErrors()
 }
 
-const getFieldHelp = (field: string, fieldSchema: PluginSchemaField) => {
+const _getFieldHelp = (field: string, fieldSchema: PluginSchemaField) => {
   const error = schemaFieldErrors.value[field]
   if (error) {
     return error
@@ -1765,7 +1778,7 @@ const getFieldHelp = (field: string, fieldSchema: PluginSchemaField) => {
   return formatExampleText(fieldSchema) || undefined
 }
 
-const getFieldValidateStatus = (field: string, fieldSchema: PluginSchemaField) =>
+const _getFieldValidateStatus = (field: string, _fieldSchema: PluginSchemaField) =>
   schemaFieldErrors.value[field] ? 'error' : undefined
 
 const validateActiveSchemaBeforeSubmit = () => {
@@ -1781,7 +1794,7 @@ const validateActiveSchemaBeforeSubmit = () => {
   )
 }
 
-const getJsonFieldText = (field: string) => {
+const _getJsonFieldText = (field: string) => {
   const value = getFieldValue(field)
   if (typeof value === 'string') {
     return value
@@ -1789,7 +1802,7 @@ const getJsonFieldText = (field: string) => {
   return JSON.stringify(value ?? null, null, 2)
 }
 
-const updateJsonFieldValue = (field: string, rawValue: string) => {
+const _updateJsonFieldValue = (field: string, rawValue: string) => {
   try {
     updateFieldValue(field, JSON.parse(rawValue))
   } catch {
@@ -1822,7 +1835,7 @@ const normalizeListValueByType = (value: unknown, itemType?: string) => {
   return String(value ?? '')
 }
 
-const getListRows = (field: string): ListRow[] => {
+const _getListRows = (field: string): ListRow[] => {
   const value = getFieldValue(field)
   if (!Array.isArray(value)) {
     return []
@@ -1833,7 +1846,7 @@ const getListRows = (field: string): ListRow[] => {
   }))
 }
 
-const addListRow = (field: string, itemType?: string) => {
+const _addListRow = (field: string, itemType?: string) => {
   const value = getFieldValue(field)
   const list = Array.isArray(value) ? [...value] : []
   if (itemType === 'number') {
@@ -1846,21 +1859,21 @@ const addListRow = (field: string, itemType?: string) => {
   updateFieldValue(field, list)
 }
 
-const removeListRow = (field: string, index: number) => {
+const _removeListRow = (field: string, index: number) => {
   const value = getFieldValue(field)
   const list = Array.isArray(value) ? [...value] : []
   list.splice(index, 1)
   updateFieldValue(field, list)
 }
 
-const updateListRowValue = (field: string, index: number, value: unknown, itemType?: string) => {
+const _updateListRowValue = (field: string, index: number, value: unknown, itemType?: string) => {
   const raw = getFieldValue(field)
   const list = Array.isArray(raw) ? [...raw] : []
   list[index] = normalizeListValueByType(value, itemType)
   updateFieldValue(field, list)
 }
 
-const getKeyValueRows = (field: string): KeyValueRow[] => {
+const _getKeyValueRows = (field: string): KeyValueRow[] => {
   const value = getFieldValue(field)
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return []
@@ -1872,7 +1885,7 @@ const getKeyValueRows = (field: string): KeyValueRow[] => {
   }))
 }
 
-const addKeyValueRow = (field: string) => {
+const _addKeyValueRow = (field: string) => {
   const value = getFieldValue(field)
   const obj =
     value && typeof value === 'object' && !Array.isArray(value)
@@ -1890,7 +1903,7 @@ const addKeyValueRow = (field: string) => {
   updateFieldValue(field, obj)
 }
 
-const removeKeyValueRow = (field: string, key: string) => {
+const _removeKeyValueRow = (field: string, key: string) => {
   const value = getFieldValue(field)
   const obj =
     value && typeof value === 'object' && !Array.isArray(value)
@@ -1900,7 +1913,7 @@ const removeKeyValueRow = (field: string, key: string) => {
   updateFieldValue(field, obj)
 }
 
-const updateKeyValueRowKey = (field: string, oldKey: string, newKey: string) => {
+const _updateKeyValueRowKey = (field: string, oldKey: string, newKey: string) => {
   const safeKey = newKey.trim()
   if (!safeKey || safeKey === oldKey) {
     return
@@ -1922,7 +1935,7 @@ const updateKeyValueRowKey = (field: string, oldKey: string, newKey: string) => 
   updateFieldValue(field, obj)
 }
 
-const updateKeyValueRowValue = (field: string, key: string, value: string) => {
+const _updateKeyValueRowValue = (field: string, key: string, value: string) => {
   const source = getFieldValue(field)
   const obj =
     source && typeof source === 'object' && !Array.isArray(source)
@@ -1981,7 +1994,7 @@ const getTableColumns = (field: string): TableColumn[] => {
   return columns
 }
 
-const addTableRow = (field: string) => {
+const _addTableRow = (field: string) => {
   const rows = getTableRows(field)
   const columns = getTableColumns(field)
   const row: Record<string, unknown> = {}
@@ -1997,14 +2010,14 @@ const addTableRow = (field: string) => {
   updateFieldValue(field, next)
 }
 
-const removeTableRow = (field: string, index: number) => {
+const _removeTableRow = (field: string, index: number) => {
   const rows = getTableRows(field)
   rows.splice(index, 1)
   const next = rows.map(({ __rowKey, ...rest }) => rest)
   updateFieldValue(field, next)
 }
 
-const addTableColumn = (field: string) => {
+const _addTableColumn = (field: string) => {
   const columnName = window.prompt('请输入列名')
   if (!columnName) {
     return
@@ -2036,7 +2049,7 @@ const addTableColumn = (field: string) => {
   updateFieldValue(field, next)
 }
 
-const updateTableCell = (field: string, index: number, key: string, value: string) => {
+const _updateTableCell = (field: string, index: number, key: string, value: string) => {
   const rows = getTableRows(field)
   if (!rows[index]) {
     return
@@ -2801,10 +2814,8 @@ onUnmounted(() => {
     color-mix(in srgb, var(--ant-color-primary-bg) 82%, transparent),
     color-mix(
       in srgb,
-      var(
-        --app-background-panel-bg,
-        var(--app-background-card-bg, var(--ant-color-bg-container))
-      ) 72%,
+      var(--app-background-panel-bg, var(--app-background-card-bg, var(--ant-color-bg-container)))
+        72%,
       var(--ant-color-primary-bg)
     )
   );
@@ -2969,10 +2980,7 @@ onUnmounted(() => {
   border-color: var(--ant-color-border-secondary);
   background: color-mix(
     in srgb,
-    var(
-      --app-background-panel-bg,
-      var(--app-background-card-bg, var(--ant-color-bg-container))
-    ) 96%,
+    var(--app-background-panel-bg, var(--app-background-card-bg, var(--ant-color-bg-container))) 96%,
     var(--ant-color-fill-quaternary)
   );
 }
@@ -3177,10 +3185,8 @@ onUnmounted(() => {
     color-mix(in srgb, var(--ant-color-primary-bg) 82%, transparent),
     color-mix(
       in srgb,
-      var(
-        --app-background-panel-bg,
-        var(--app-background-card-bg, var(--ant-color-bg-container))
-      ) 72%,
+      var(--app-background-panel-bg, var(--app-background-card-bg, var(--ant-color-bg-container)))
+        72%,
       var(--ant-color-primary-bg)
     )
   );
