@@ -191,34 +191,22 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { OkwwService } from '@/api/services/OkwwService'
+import {
+  useOkwwConfigApi,
+  type OkwwConfigFile as ConfigFile,
+  type OkwwConfigPatchMap,
+} from '@/composables/useOkwwConfigApi'
 
-interface ConfigField {
-  name: string
-  type: string
-  label: string
-  description: string
-  value: any
-  options: string[] | null
-  min: number | null
-  max: number | null
-  step: number | null
-}
-
-interface ConfigFile {
-  filename: string
-  displayName: string
-  group: string
-  taskIndex: number | null
-  fieldCount: number
-  fields: ConfigField[]
-  currentData: Record<string, any>
-}
-
-const props = defineProps<{
-  scriptId: string
-  userId: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    scriptId: string
+    userId: string
+    endpointPrefix?: string
+  }>(),
+  {
+    endpointPrefix: '/api/scripts/okww/configs',
+  }
+)
 
 const emit = defineEmits<{
   saved: []
@@ -260,6 +248,7 @@ const selectedConfig = computed(() => {
 
 const selectedConfigForTemplate = computed<ConfigFile>(() => selectedConfig.value || emptyConfig)
 const hasChanges = computed(() => changedFiles.value.size > 0)
+const okwwConfigApi = useOkwwConfigApi(props.endpointPrefix)
 
 const getOptionLabel = (value: string) => {
   return optionLabels.value[value] || value
@@ -304,10 +293,7 @@ const loadConfigs = async () => {
   if (!props.scriptId || !props.userId) return
   loading.value = true
   try {
-    const resp = await OkwwService.getOkwwConfigsListApiScriptsOkwwConfigsListPost(
-      props.scriptId,
-      props.userId
-    )
+    const resp = await okwwConfigApi.listConfigFiles(props.scriptId, props.userId)
     if (resp?.code === 200 && resp?.data) {
       configs.value = resp.data
       optionLabels.value = resp.optionLabels || {}
@@ -334,12 +320,12 @@ const loadConfigs = async () => {
 const saveAll = async (silent = true) => {
   if (!hasChanges.value) return
   try {
-    const configsToUpdate = { ...localChanges.value }
-    const resp = await OkwwService.batchUpdateOkwwConfigsApiScriptsOkwwConfigsBatchUpdatePost({
-      script_id: props.scriptId,
-      user_id: props.userId,
-      configs: configsToUpdate,
-    })
+    const configsToUpdate: OkwwConfigPatchMap = { ...localChanges.value }
+    const resp = await okwwConfigApi.batchUpdateConfigFiles(
+      props.scriptId,
+      props.userId,
+      configsToUpdate
+    )
     if (resp?.code === 200) {
       // 更新本地数据
       for (const [filename, data] of Object.entries(configsToUpdate)) {
