@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ask for Logs Divination"
+  short_description: "把模糊报错改写成算命口吻的日志录屏与复现信息取证请求"
+  default_prompt: "Use $ask-for-logs-divination to turn a vague Chinese bug report into a playful divination-style request for logs and screen recording."
