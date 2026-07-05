@@ -7,7 +7,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useTheme } from '@/composables/useTheme'
-import { useScriptApi } from '@/composables/useScriptApi'
+import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import { satelliteModules, centerIconUrl } from '@/composables/satellite-config'
 import {
   getSatelliteModuleStatuses,
@@ -73,7 +73,7 @@ let updateInterval: ReturnType<typeof setInterval> | null = null
 const centerGlowMode = ref<'rainbow' | 'green'>('green')
 
 const { isDark } = useTheme()
-const { getScripts } = useScriptApi()
+const { getScripts } = useScriptRegistryApi()
 
 onUnmounted(() => {
   isUnmounted = true
