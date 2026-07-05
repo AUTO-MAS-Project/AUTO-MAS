@@ -703,7 +703,19 @@ const rules = computed<Record<string, Rule[]>>(() => ({
 const accountRecordTooltip =
   '账号 / 密码仅用于本地记录，不会自动传入脚本；需要传参请在下方任务选项中配置'
 
+const MAAFW_DIRECT_CONTROLLER_TYPES = ['Adb', 'Win32'] as const
+
+type MaaFWDirectControllerType = (typeof MAAFW_DIRECT_CONTROLLER_TYPES)[number]
+
+const isDirectControllerType = (
+  controllerType?: string | null
+): controllerType is MaaFWDirectControllerType =>
+  MAAFW_DIRECT_CONTROLLER_TYPES.includes(controllerType as MaaFWDirectControllerType)
+
 const controllerOptions = computed(() => previewData.value?.controllers || [])
+const directControllerOptions = computed(() =>
+  controllerOptions.value.filter(controller => isDirectControllerType(controller.type))
+)
 // 预设 schema（MaaFWPresetInfo）不携带 controller/resource 约束，直接展示全部预设
 const presetOptions = computed(() => previewData.value?.presets || [])
 const taskByName = computed(() => {
@@ -712,13 +724,13 @@ const taskByName = computed(() => {
 })
 const getDefaultControllerName = () => {
   if (preferAdbController.value) {
-    const adbController = controllerOptions.value.find(controller => controller.type === 'Adb')
+    const adbController = directControllerOptions.value.find(controller => controller.type === 'Adb')
     if (adbController) return adbController.name
   }
-  return controllerOptions.value[0]?.name || ''
+  return directControllerOptions.value[0]?.name || ''
 }
 const resolveControllerName = (controllerName?: string) => {
-  if (controllerName && controllerOptions.value.some(item => item.name === controllerName)) {
+  if (controllerName && directControllerOptions.value.some(item => item.name === controllerName)) {
     return controllerName
   }
   return getDefaultControllerName()

@@ -33,6 +33,8 @@ import type { MaaFWAgentEnvPrepareIn } from '../models/MaaFWAgentEnvPrepareIn';
 import type { MaaFWAgentEnvPrepareOut } from '../models/MaaFWAgentEnvPrepareOut';
 import type { MaaFWInterfacePreviewIn } from '../models/MaaFWInterfacePreviewIn';
 import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOut';
+import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
+import type { MaaFWProjectUpdateOut } from '../models/MaaFWProjectUpdateOut';
 import type { MaaFWWindowPreviewIn } from '../models/MaaFWWindowPreviewIn';
 import type { MaaFWWindowPreviewOut } from '../models/MaaFWWindowPreviewOut';
 import type { NoticeOut } from '../models/NoticeOut';
@@ -753,6 +755,26 @@ export class Service {
         });
     }
     /**
+     * 手动更新 MaaFW 项目资源
+     * 按脚本更新配置手动检查并应用 MaaFW 项目资源更新。
+     * @param requestBody
+     * @returns MaaFWProjectUpdateOut Successful Response
+     * @throws ApiError
+     */
+    public static updateMaafwProjectApiScriptsMaafwProjectUpdatePost(
+        requestBody: MaaFWProjectUpdateIn,
+    ): CancelablePromise<MaaFWProjectUpdateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/project/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * Prepare MaaFW agent Python env
      * Prepare MaaFW agent Python envs without loading resources or starting agents.
      * @param requestBody
@@ -798,7 +820,7 @@ export class Service {
     }
     /**
      * 扫描 MaaFW PC 客户端窗口
-     * 按 interface.json 中的 Win32/Gamepad 窗口规则扫描本机桌面窗口。
+     * 按 interface.json 中的 Win32 窗口规则扫描本机桌面窗口。
      * @param requestBody
      * @returns MaaFWWindowPreviewOut Successful Response
      * @throws ApiError

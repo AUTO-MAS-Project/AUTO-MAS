@@ -191,6 +191,7 @@ export interface M9AScriptConfig {
 export interface MaaFWScriptConfig {
   Info: {
     Name: string
+    ProjectLabel?: string
     Path: string
     Controller: string
     Resource: string
@@ -220,7 +221,7 @@ export interface MaaFWScriptConfig {
   }
   Update: {
     IfAutoUpdate: boolean
-    Source: '' | 'MirrorChyan' | 'GitHub'
+    Source: 'MirrorChyan'
     Channel: '' | 'stable' | 'beta'
     MirrorChyanCDK: string
   }

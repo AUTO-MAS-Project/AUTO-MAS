@@ -165,15 +165,17 @@
           :class="['script-item', { selected: selectedScriptId === script.id, unavailable: script.available === false }]"
           @click="script.available === false ? undefined : (selectedScriptId = script.id)"
         >
-            <div class="script-item-content">
-              <div class="script-icon">
-                <img :src="getScriptIcon(script.type)" :alt="script.type" class="type-icon" />
-              </div>
-              <div class="script-info">
-                <div class="script-name">{{ script.name }}</div>
-                <div class="script-meta">
-                  <span class="script-type">{{ script.displayName || script.type }}</span>
-                  <span v-if="script.available === false" class="script-type script-unavailable">未启用</span>
+          <div class="script-item-content">
+            <div class="script-icon">
+              <img :src="getScriptIcon(script.type)" :alt="script.type" class="type-icon" />
+            </div>
+            <div class="script-info">
+              <div class="script-name">{{ script.name }}</div>
+              <div class="script-meta">
+                <span class="script-type">{{ getScriptDisplayLabel(script) }}</span>
+                <span v-if="script.available === false" class="script-type script-unavailable">
+                  未启用
+                </span>
                 <span class="script-users">
                   <UserOutlined />
                   {{ script.users?.length || 0 }} 个用户
@@ -364,7 +366,7 @@ import {
   UserOutlined,
 } from '@ant-design/icons-vue'
 import ScriptTable from '@/components/ScriptTable.vue'
-import type { Script, ScriptType, User } from '@/types/script'
+import type { MaaFWScriptConfig, Script, ScriptType, User } from '@/types/script'
 import type { ScriptTypeDescriptor } from '@/types/scriptRegistry'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import { useWebSocket } from '@/composables/useWebSocket'
@@ -424,6 +426,16 @@ const currentConfigScript = ref<Script | null>(null) // 当前正在配置的脚
 const activeConnections = ref<Map<string, { subscriptionId: string; websocketId: string }>>(
   new Map()
 ) // scriptId -> { subscriptionId, websocketId }
+
+const getMaaFWProjectLabel = (script: Script) => {
+  const config = script.config as Partial<MaaFWScriptConfig> | undefined
+  return config?.Info?.ProjectLabel?.trim() || 'MaaFW'
+}
+
+const getScriptDisplayLabel = (script: Script) => {
+  if (script.type === 'MaaFW') return getMaaFWProjectLabel(script)
+  return script.displayName || script.type
+}
 
 // 解析模板描述的markdown
 const parseMarkdown = (text: string) => {
