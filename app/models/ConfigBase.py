@@ -401,6 +401,66 @@ class FolderValidator(ValidatorBase):
         return resolved.as_posix()
 
 
+class ScriptRootPathValidator(FolderValidator):
+    """Validate an external script root directory.
+
+    Script roots may point at the AUTO-MAS checkout during development, so this
+    variant keeps system-directory checks but does not reject Path.cwd().
+    """
+
+    def validate(self, value):
+        if not isinstance(value, str):
+            return False
+        if value == "":
+            return True
+        if not Path(value).is_absolute():
+            return False
+        if not Path(value).is_dir():
+            return False
+        try:
+            resolved = Path(value).resolve()
+        except (OSError, ValueError):
+            return False
+        if len(resolved.parts) == 1:
+            return False
+        for forbidden in FORBIDDEN_PATH_PREFIXES:
+            if (
+                resolved == forbidden
+                or resolved.is_relative_to(forbidden)
+                or forbidden.is_relative_to(resolved)
+            ):
+                return False
+        if resolved in FORBIDDEN_PATH_EXACT:
+            return False
+        return True
+
+    def correct(self, value):
+        if not isinstance(value, str):
+            value = ""
+        if value == "":
+            return ""
+        if "%APPDATA%" in value:
+            value = value.replace("%APPDATA%", os.getenv("APPDATA") or "")
+        if not Path(value).is_dir():
+            value = Path(value).with_suffix("")
+        try:
+            resolved = Path(value).resolve()
+        except (OSError, ValueError):
+            return ""
+        if len(resolved.parts) == 1:
+            raise ValueError("Driver root cannot be used as a script root path")
+        for forbidden in FORBIDDEN_PATH_PREFIXES:
+            if (
+                resolved == forbidden
+                or resolved.is_relative_to(forbidden)
+                or forbidden.is_relative_to(resolved)
+            ):
+                raise ValueError(f"System directory cannot be used as a script root path: {value}")
+        if resolved in FORBIDDEN_PATH_EXACT:
+            raise ValueError(f"System program directory cannot be used as a script root path: {value}")
+        return resolved.as_posix()
+
+
 class EmulatorPathValidator(FileValidator):
     """模拟器管理器路径验证器"""
 

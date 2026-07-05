@@ -24,6 +24,7 @@ from app.models.ConfigBase import (
     MultipleUIDValidator,
     OptionsValidator,
     RangeValidator,
+    ScriptRootPathValidator,
     StringValidator,
     URLValidator,
     UserNameValidator,
@@ -407,6 +408,8 @@ def _build_validator(
     if field.virtual_handler is not None:
         return VirtualConfigValidator(lambda: _serialize_virtual_value(field.virtual_handler(config)))
 
+    if field.validator == "script-root":
+        return ScriptRootPathValidator()
     if field.validator == "username":
         return UserNameValidator()
     if field.field_type == "related-id":
