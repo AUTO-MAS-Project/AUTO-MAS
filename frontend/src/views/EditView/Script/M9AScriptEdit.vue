@@ -555,7 +555,7 @@ const selectM9APath = async () => {
       return
     }
 
-    const path = await (window.electronAPI as any).selectFolder()
+    const path = await window.electronAPI.selectFolder()
     if (path) {
       m9aConfig.Info.Path = path
       await handleChange('Info', 'Path', path)
