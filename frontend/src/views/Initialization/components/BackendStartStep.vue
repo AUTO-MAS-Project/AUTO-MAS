@@ -154,7 +154,7 @@ async function startBackend() {
     statusMessage.value = '正在启动后端进程...'
     progress.value = 10
 
-    const result = await (window.electronAPI as any).backendStart()
+    const result = await window.electronAPI.backendStart()
 
     if (!result.success) {
       backendLogs.value = result.logs || ''
@@ -162,7 +162,7 @@ async function startBackend() {
     }
 
     // 获取后端状态
-    const backendStatus = await (window.electronAPI as any).backendStatus()
+    const backendStatus = await window.electronAPI.backendStatus()
     backendPid.value = backendStatus.pid
 
     status.value = 'running'
@@ -208,7 +208,7 @@ async function startBackend() {
 
     try {
       // 尝试获取后端状态来验证连接
-      const finalStatus = await (window.electronAPI as any).backendStatus()
+      const finalStatus = await window.electronAPI.backendStatus()
       if (!finalStatus.isRunning) {
         throw new Error('后端服务未在运行状态')
       }
@@ -260,7 +260,7 @@ async function handleRetry() {
 
 // ==================== 生命周期 ====================
 onMounted(() => {
-  const api = window.electronAPI as any
+  const api = window.electronAPI
 
   api.onBackendStatus?.((status: any) => {
     logger.debug(`收到后端状态: ${JSON.stringify(status)}`)
@@ -274,7 +274,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   // 清理监听器
-  const api = window.electronAPI as any
+  const api = window.electronAPI
   api.removeBackendStatusListener?.()
 })
 </script>

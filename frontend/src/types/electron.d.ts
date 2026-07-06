@@ -21,6 +21,7 @@ export interface ElectronAPI {
   windowIsMaximized: () => Promise<boolean>
   windowFocus: () => Promise<void>
   appQuit: () => Promise<void>
+  appRestart: () => Promise<void>
 
   // 进程管理
   getRelatedProcesses: () => Promise<any[]>

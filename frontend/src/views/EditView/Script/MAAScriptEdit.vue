@@ -579,7 +579,7 @@ const selectMAAPath = async () => {
       return
     }
 
-    const path = await (window.electronAPI as any).selectFolder()
+    const path = await window.electronAPI.selectFolder()
     if (path) {
       maaConfig.Info.Path = path
       // 选择路径后立即保存

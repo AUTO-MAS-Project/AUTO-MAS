@@ -1361,6 +1361,26 @@ export function useScriptApi() {
     }
   }
 
+  // 从脚本目录导入配置文件
+  const importScriptConfigFile = async (scriptId: string, userId?: string | null) => {
+    error.value = null
+
+    try {
+      const response = await Service.importScriptConfigFileApiScriptsConfigImportPost({
+        scriptId,
+        userId,
+      })
+
+      if (response.code !== 200) {
+        throw new Error(response.message || '导入脚本配置文件失败')
+      }
+
+      return response
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '导入脚本配置文件失败'
+      throw err
+    }
+  }
   // 删除脚本
   const deleteScript = async (scriptId: string): Promise<boolean> => {
     loading.value = true
@@ -1464,6 +1484,7 @@ export function useScriptApi() {
     getScriptsWithUsers,
     getScript,
     getHsrStageOptions,
+    importScriptConfigFile,
     deleteScript,
     updateScript,
     reorderScript,

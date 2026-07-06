@@ -85,7 +85,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
-import { OpenAPI, Service } from '@/api'
+import { Service } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
@@ -103,7 +103,7 @@ const logger = window.electronAPI.getLogger('MaaEnd用户编辑')
 const router = useRouter()
 const route = useRoute()
 const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
-const { getScript } = useScriptApi()
+const { getScript, importScriptConfigFile } = useScriptApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
@@ -387,18 +387,7 @@ const handleMaaEndConfig = async () => {
 const handleImportMaaEndConfig = async () => {
   try {
     maaEndImportLoading.value = true
-    const response = await fetch(`${OpenAPI.BASE}/api/scripts/config/import`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        scriptId,
-        userId: formData.Info.Mode === '简洁' ? null : userId,
-      }),
-    })
-    const result = await response.json()
-    if (!response.ok || result.code !== 200) {
-      throw new Error(result.message || '导入脚本配置文件失败')
-    }
+    await importScriptConfigFile(scriptId, formData.Info.Mode === '简洁' ? null : userId)
     message.success(`已导入${formData.Info.Mode === '简洁' ? '脚本' : '用户'}配置文件`)
   } catch (error) {
     message.error(error instanceof Error ? error.message : '导入脚本配置文件失败')
