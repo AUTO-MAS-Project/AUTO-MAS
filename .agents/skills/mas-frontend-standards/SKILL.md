@@ -92,6 +92,15 @@ Use verification proportional to the touched surface:
 
 Never claim "complete", "fixed", or "passed" without verification evidence.
 
+## Pre-Commit Gate
+
+Before creating any commit, run these commands from `frontend` in order:
+
+1. `yarn format`
+2. `yarn lint`
+
+Review the diff produced by Prettier and include the intended formatting changes in the commit. If either command fails, fix the reported issues and rerun both commands; do not commit until both succeed.
+
 ## Red Lines
 
 | Temptation | Reality |
@@ -109,5 +118,6 @@ For frontend tasks, report:
 2. Verification commands and results.
 3. UI checks when applicable.
 4. Known risks or "no known residual risk".
+5. Pre-commit `yarn format` and `yarn lint` results when a commit is being prepared.
 
 State that no business code was changed when the task is documentation-only.
