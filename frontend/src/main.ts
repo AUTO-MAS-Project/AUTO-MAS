@@ -1,3 +1,4 @@
+import '@/utils/browserDevElectronAPI'
 import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router/index.ts'
@@ -10,6 +11,11 @@ import 'dayjs/locale/zh-cn'
 
 // 导入日志系统
 const logger = window.electronAPI.getLogger('前端主入口')
+if (
+  (window as Window & { __AUTO_MAS_BROWSER_DEV_MODE__?: boolean }).__AUTO_MAS_BROWSER_DEV_MODE__
+) {
+  OpenAPI.BASE = 'http://localhost:36163'
+}
 
 // 导入WebSocket消息监听组件
 import WebSocketMessageListener from '@/components/WebSocketMessageListener.vue'
