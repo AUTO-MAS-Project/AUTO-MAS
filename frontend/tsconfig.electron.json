@@ -8,22 +8,13 @@
     "outDir": "dist-electron",
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "types": [
-      "node",
-      "electron"
-    ],
+    "types": ["node", "electron"],
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "./src/*"
-      ],
-      "@electron/*": [
-        "./electron/*"
-      ]
+      "@/*": ["./src/*"],
+      "@electron/*": ["./electron/*"]
     },
     "verbatimModuleSyntax": false
   },
-  "include": [
-    "electron/**/*.ts"
-  ]
+  "include": ["electron/**/*.ts"]
 }
