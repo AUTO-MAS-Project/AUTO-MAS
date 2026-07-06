@@ -13,7 +13,7 @@ const exportingLogs = ref(false)
 const exportLogsZip = async () => {
   exportingLogs.value = true
   try {
-    const result = await (window as any).electronAPI?.exportLogs?.()
+    const result = await window.electronAPI.exportLogs()
 
     if (!result) {
       message.error('导出功能未响应，请检查程序')
@@ -25,7 +25,7 @@ const exportLogsZip = async () => {
       message.success(result.message || '日志压缩包导出成功')
       logger.info(`日志导出成功: ${result.zipPath}`)
       if (result.zipPath) {
-        await (window as any).electronAPI?.showItemInFolder?.(result.zipPath)
+        await window.electronAPI.showItemInFolder(result.zipPath)
       }
     } else {
       const errorMsg = result?.error || '日志导出失败'

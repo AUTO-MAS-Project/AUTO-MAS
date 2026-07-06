@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, type FileFilter } from 'electron'
 
 window.addEventListener('DOMContentLoaded', () => {
   // 预加载脚本已加载
@@ -8,7 +8,7 @@ window.addEventListener('DOMContentLoaded', () => {
 contextBridge.exposeInMainWorld('electronAPI', {
   openDevTools: () => ipcRenderer.invoke('open-dev-tools'),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
-  selectFile: (filters?: any[]) => ipcRenderer.invoke('select-file', filters),
+  selectFile: (filters?: FileFilter[]) => ipcRenderer.invoke('select-file', filters),
   openUrl: (url: string) => ipcRenderer.invoke('open-url', url),
 
   // 窗口控制
@@ -77,10 +77,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 获取模块化日志器（使用 electron-log）
   getLogger: (moduleName: string) => ({
-    debug: (...args: any[]) => ipcRenderer.invoke('log:write', 'debug', moduleName, ...args),
-    info: (...args: any[]) => ipcRenderer.invoke('log:write', 'info', moduleName, ...args),
-    warn: (...args: any[]) => ipcRenderer.invoke('log:write', 'warn', moduleName, ...args),
-    error: (...args: any[]) => ipcRenderer.invoke('log:write', 'error', moduleName, ...args),
+    debug: (...args: unknown[]) => ipcRenderer.invoke('log:write', 'debug', moduleName, ...args),
+    info: (...args: unknown[]) => ipcRenderer.invoke('log:write', 'info', moduleName, ...args),
+    warn: (...args: unknown[]) => ipcRenderer.invoke('log:write', 'warn', moduleName, ...args),
+    error: (...args: unknown[]) => ipcRenderer.invoke('log:write', 'error', moduleName, ...args),
   }),
 
   // 日志管理服务

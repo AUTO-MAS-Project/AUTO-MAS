@@ -1,8 +1,17 @@
+import type { FileFilter } from 'electron'
+
+export interface LogExportResult {
+  success: boolean
+  message?: string
+  zipPath?: string
+  error?: string
+}
+
 // Electron API 类型定义
 export interface ElectronAPI {
   openDevTools: () => Promise<void>
   selectFolder: () => Promise<string | null>
-  selectFile: (filters?: any[]) => Promise<string[]>
+  selectFile: (filters?: FileFilter[]) => Promise<string[]>
   openUrl: (url: string) => Promise<{ success: boolean; error?: string }>
 
   // 窗口控制
@@ -81,15 +90,15 @@ export interface ElectronAPI {
   syncBackendConfig: (backendSettings: any) => Promise<boolean>
 
   // 日志文件操作
-  exportLogs: () => Promise<{ success: boolean; path?: string; sourceDir?: string; error?: string }>
+  exportLogs: () => Promise<LogExportResult>
   getLogs: (lines?: number, fileName?: string) => Promise<string>
 
   // 获取模块化日志器（使用主进程配置）
   getLogger: (moduleName: string) => {
-    debug: (...args: any[]) => Promise<void>
-    info: (...args: any[]) => Promise<void>
-    warn: (...args: any[]) => Promise<void>
-    error: (...args: any[]) => Promise<void>
+    debug: (...args: unknown[]) => Promise<void>
+    info: (...args: unknown[]) => Promise<void>
+    warn: (...args: unknown[]) => Promise<void>
+    error: (...args: unknown[]) => Promise<void>
   }
 
   // 保留原有方法以兼容现有代码
