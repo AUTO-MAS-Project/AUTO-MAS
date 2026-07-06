@@ -1,3 +1,4 @@
+import '@/utils/browserDevElectronAPI'
 import { createApp } from 'vue'
 import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
@@ -11,6 +12,11 @@ import WebSocketMessageListener from '@/components/WebSocketMessageListener.vue'
 import { installPluginAPI } from '@/plugin/pluginAPI'
 
 const logger = window.electronAPI.getLogger('前端主入口')
+if (
+  (window as Window & { __AUTO_MAS_BROWSER_DEV_MODE__?: boolean }).__AUTO_MAS_BROWSER_DEV_MODE__
+) {
+  OpenAPI.BASE = 'http://localhost:36163'
+}
 
 dayjs.locale('zh-cn')
 installPluginAPI()
