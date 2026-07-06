@@ -84,7 +84,7 @@ const loadLogs = async (silent = false) => {
   }
   try {
     const fileName = selectedLogFile.value === 'app' ? 'app.log' : 'frontend.log'
-    const logContent = await (window as any).electronAPI?.getLogs?.(0, fileName)
+    const logContent = await window.electronAPI.getLogs(0, fileName)
     if (logContent) {
       logs.value = logContent
       // 只在保持最新模式下自动滚动
@@ -141,7 +141,7 @@ const toggleRealTime = () => {
 const exportLogsZip = async () => {
   exporting.value = true
   try {
-    const result = await (window as any).electronAPI?.exportLogs?.()
+    const result = await window.electronAPI.exportLogs()
 
     if (!result) {
       message.error('导出功能未响应，请检查程序')
@@ -154,7 +154,7 @@ const exportLogsZip = async () => {
       logger.info(`日志导出成功: ${result.zipPath}`)
       // 打开文件夹并定位到压缩包
       if (result.zipPath) {
-        await (window as any).electronAPI?.showItemInFolder?.(result.zipPath)
+        await window.electronAPI.showItemInFolder(result.zipPath)
       }
     } else {
       const errorMsg = result?.error || '日志导出失败'
