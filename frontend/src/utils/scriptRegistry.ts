@@ -124,6 +124,9 @@ const BUILTIN_EDITOR_SEGMENTS: Record<string, string> = {
 }
 
 export const getScriptEditPath = (script: Pick<Script, 'id' | 'type' | 'editorKind'>) => {
+  if (script.type === 'Okww') {
+    return `/scripts/${script.id}/edit/okww`
+  }
   const segment = BUILTIN_EDITOR_SEGMENTS[script.editorKind ?? '']
   if (segment) {
     return `/scripts/${script.id}/edit/${segment}`
@@ -134,7 +137,10 @@ export const getScriptEditPath = (script: Pick<Script, 'id' | 'type' | 'editorKi
   return `/scripts/${script.id}/edit/schema`
 }
 
-export const getUserCreatePath = (script: Pick<Script, 'id' | 'editorKind'>) => {
+export const getUserCreatePath = (script: Pick<Script, 'id' | 'type' | 'editorKind'>) => {
+  if (script.type === 'Okww') {
+    return `/scripts/${script.id}/users/add/okww`
+  }
   const segment = BUILTIN_EDITOR_SEGMENTS[script.editorKind ?? '']
   if (segment) {
     return `/scripts/${script.id}/users/add/${segment}`
@@ -146,9 +152,12 @@ export const getUserCreatePath = (script: Pick<Script, 'id' | 'editorKind'>) => 
 }
 
 export const getUserEditPath = (
-  script: Pick<Script, 'id' | 'editorKind'>,
+  script: Pick<Script, 'id' | 'type' | 'editorKind'>,
   user: Pick<User, 'id'>
 ) => {
+  if (script.type === 'Okww') {
+    return `/scripts/${script.id}/users/${user.id}/edit/okww`
+  }
   const segment = BUILTIN_EDITOR_SEGMENTS[script.editorKind ?? '']
   if (segment) {
     return `/scripts/${script.id}/users/${user.id}/edit/${segment}`
