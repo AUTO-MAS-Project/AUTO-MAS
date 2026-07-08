@@ -88,6 +88,18 @@
     </div>
     <div class="header-actions">
       <a-space size="middle">
+        <a-tooltip title="收起所有脚本的用户列表">
+          <a-button size="large" :disabled="scripts.length === 0" @click="handleCollapseAll">
+            <template #icon><UpOutlined /></template>
+            一键收起
+          </a-button>
+        </a-tooltip>
+        <a-tooltip title="展开所有脚本的用户列表">
+          <a-button size="large" :disabled="scripts.length === 0" @click="handleExpandAll">
+            <template #icon><DownOutlined /></template>
+            一键展开
+          </a-button>
+        </a-tooltip>
         <a-button type="primary" size="large" class="link" @click="handleAddScript">
           <template #icon>
             <PlusOutlined />
@@ -113,6 +125,7 @@
   </div>
 
   <ScriptTable
+    ref="scriptTableRef"
     :scripts="scripts"
     :active-connections="activeConnections"
     :copying-script-id="copyingScriptId"
@@ -515,10 +528,12 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   ClockCircleOutlined,
+  DownOutlined,
   FileSearchOutlined,
   FileTextOutlined,
   PlusOutlined,
   SettingOutlined,
+  UpOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
 import ScriptTable from '@/components/ScriptTable.vue'
@@ -557,6 +572,7 @@ const md = new MarkdownIt({
 })
 
 const scripts = ref<Script[]>([])
+const scriptTableRef = ref<InstanceType<typeof ScriptTable> | null>(null)
 // 增加：标记是否已经完成过一次脚本列表加载（成功或失败都算一次）
 const loadedOnce = ref(false)
 // 所有计划表数据 (planId -> planData)
@@ -689,6 +705,14 @@ const loadCurrentPlan = async () => {
 
 const handleAddScript = () => {
   scriptCreateVisible.value = true
+}
+
+const handleCollapseAll = () => {
+  scriptTableRef.value?.collapseAllUsers()
+}
+
+const handleExpandAll = () => {
+  scriptTableRef.value?.expandAllUsers()
 }
 
 const navigateToCreatedScript = (
