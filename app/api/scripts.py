@@ -52,6 +52,46 @@ def _okww_config_file_path(config_dir: Path, filename: str) -> Path:
     return config_dir / filename
 
 
+def _okww_read_json_file(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        import json
+
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _okww_write_json_file_atomic(path: Path, data: dict[str, Any]) -> None:
+    import json
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(path.name + ".tmp")
+    tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8")
+    tmp_path.replace(path)
+
+
+def _ensure_okww_user_config_defaults(config_dir: Path, source_dir: Path | None) -> None:
+    if source_dir is None or not source_dir.is_dir():
+        return
+    from app.task.Okww.config_schema import get_all_config_info
+
+    config_dir.mkdir(parents=True, exist_ok=True)
+    for info in get_all_config_info():
+        filename = str(info["filename"])
+        source_path = source_dir / filename
+        if not source_path.is_file():
+            continue
+        current_path = _okww_config_file_path(config_dir, filename)
+        source_data = _okww_read_json_file(source_path)
+        current_data = _okww_read_json_file(current_path)
+        merged_data = {**source_data, **current_data}
+        if merged_data != current_data:
+            _okww_write_json_file_atomic(current_path, merged_data)
+
+
 _MAAFW_IMAGE_SUFFIXES = {
     ".avif",
     ".bmp",
@@ -1147,7 +1187,6 @@ async def get_okww_configs_list(script_id: str, user_id: str):
     """
     try:
         import json
-        import shutil
         from app.task.Okww.config_schema import (
             get_all_config_info, build_fields_for_config, load_okww_option_labels,
         )
@@ -1164,11 +1203,8 @@ async def get_okww_configs_list(script_id: str, user_id: str):
         # ok-ww 源配置目录（从 RootPath 派生，用于自动初始化）
         okww_configs_dir = Path(root_path) / _OKWW_REL_CONFIG_DIR if root_path else None
 
-        # 自动初始化：用户目录为空时从 ok-ww configs 复制默认配置
-        need_init = not mas_config_dir.exists() or not any(mas_config_dir.iterdir())
-        if need_init and okww_configs_dir and okww_configs_dir.is_dir():
-            mas_config_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(okww_configs_dir, mas_config_dir, dirs_exist_ok=True)
+        # 自动补齐默认配置：保留用户已有值，只补缺失文件和字段
+        _ensure_okww_user_config_defaults(mas_config_dir, okww_configs_dir)
 
         configs_info = get_all_config_info()
 
