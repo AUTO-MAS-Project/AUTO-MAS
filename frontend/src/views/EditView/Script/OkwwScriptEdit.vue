@@ -272,12 +272,12 @@ import {
   FolderOpenOutlined,
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
-import { useScriptApi } from '@/composables/useScriptApi'
+import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 
 const logger = window.electronAPI.getLogger('ok-ww脚本编辑')
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript } = useScriptApi()
+const api = useScriptRegistryApi()
 
 const scriptId = route.params.id as string
 const pageLoading = ref(true)
@@ -359,20 +359,32 @@ const showPathRejectModal = (title: string, content: string) => {
 
 const handleCancel = () => router.push('/scripts')
 
-const handleChange = async (category: string, key: string, value: unknown) => {
-  if (isInitializing.value || isSaving.value) return
+const saveScriptPatch = async (
+  patch: Record<string, Record<string, unknown>>,
+  successMessage?: string
+) => {
   isSaving.value = true
   try {
-    const updateData = { [category]: { [key]: value } } as Record<string, Record<string, unknown>>
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info(`配置已保存: ${category}.${key}`)
+    await api.updateScript(scriptId, patch)
+    if (successMessage) {
+      message.success(successMessage)
     }
+    return true
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     logger.error(msg)
+    message.error(msg)
+    return false
   } finally {
     isSaving.value = false
+  }
+}
+
+const handleChange = async (category: string, key: string, value: unknown) => {
+  if (isInitializing.value || isSaving.value) return
+  const updateData = { [category]: { [key]: value } } as Record<string, Record<string, unknown>>
+  if (await saveScriptPatch(updateData)) {
+    logger.info(`Okww config saved: ${category}.${key}`)
   }
 }
 
@@ -384,48 +396,44 @@ const applyRootPathDefaults = async (rootPath: string) => {
   const norm = rootPath.replace(/\\/g, '/').replace(/\/+$/g, '')
   okwwConfig.Info.RootPath = norm
 
-  isSaving.value = true
-  try {
-    const success = await updateScript(scriptId, {
+  await saveScriptPatch(
+    {
       Info: { RootPath: norm },
-    })
-    if (success) {
-      message.success('ok-ww 根目录已保存')
-    }
-  } finally {
-    isSaving.value = false
-  }
+    },
+    'ok-ww 根目录已保存'
+  )
 }
-
 const loadScript = async () => {
   pageLoading.value = true
   isInitializing.value = true
   try {
-    const detail = await getScript(scriptId)
-    if (!detail) {
+    const records = await api.getScripts(scriptId)
+    const record = records[0]
+    if (!record) {
       message.error('脚本不存在或加载失败')
       handleCancel()
       return
     }
-    if (detail.type !== 'Okww') {
+    if (record.type !== 'Okww') {
       message.error('脚本类型不是 ok-ww')
       handleCancel()
       return
     }
-    formData.name = detail.name
-    const config = detail.config as Partial<OkwwScriptConfigForm>
+    formData.name = record.name
+    const config = record.config as Partial<OkwwScriptConfigForm>
     Object.assign(okwwConfig.Info, config.Info || {})
     Object.assign(okwwConfig.Script, config.Script || {})
     Object.assign(okwwConfig.Game, config.Game || {})
     Object.assign(okwwConfig.Run, config.Run || {})
-  } catch {
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    logger.error(msg)
     message.error('加载脚本失败')
   } finally {
     isInitializing.value = false
     pageLoading.value = false
   }
 }
-
 const selectRootPath = async () => {
   const picked = await window.electronAPI.selectFolder()
   if (!picked) return
@@ -461,10 +469,14 @@ const selectGameRootPath = async () => {
       okwwConfig.Game.Path = candidateExe
       isSaving.value = true
       try {
-        await updateScript(scriptId, {
+        await api.updateScript(scriptId, {
           Game: { Path: okwwConfig.Game.Path },
         })
         message.success('已自动匹配游戏路径至 Client-Win64-Shipping.exe')
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        logger.error(msg)
+        message.error(msg)
       } finally {
         isSaving.value = false
       }
