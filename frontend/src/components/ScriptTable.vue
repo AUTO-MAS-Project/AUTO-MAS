@@ -423,7 +423,32 @@ const emit = defineEmits<Emits>()
 
 // 本地脚本列表状态
 const localScripts = ref<Script[]>([])
-const collapsedScriptIds = ref<Set<string>>(new Set())
+// 脚本用户列表收起状态 - 持久化到 localStorage，切换页面后仍保持
+const COLLAPSED_SCRIPTS_STORAGE_KEY = 'scripts.collapsedScriptIds'
+
+const loadCollapsedScriptIds = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_SCRIPTS_STORAGE_KEY)
+    if (!raw) return new Set()
+    const parsed = JSON.parse(raw)
+    return new Set(Array.isArray(parsed) ? parsed.filter(id => typeof id === 'string') : [])
+  } catch {
+    return new Set()
+  }
+}
+
+const collapsedScriptIds = ref<Set<string>>(loadCollapsedScriptIds())
+
+const saveCollapsedScriptIds = () => {
+  try {
+    localStorage.setItem(
+      COLLAPSED_SCRIPTS_STORAGE_KEY,
+      JSON.stringify([...collapsedScriptIds.value])
+    )
+  } catch {
+    // 存储不可用时（如隐私模式）忽略，仅本次会话内生效
+  }
+}
 
 // 账号信息展开状态管理 - 使用用户ID作为key
 const expandedUserIds = ref<Set<string>>(new Set())
@@ -469,7 +494,20 @@ const toggleUsersCollapsed = (scriptId: string) => {
     next.add(scriptId)
   }
   collapsedScriptIds.value = next
+  saveCollapsedScriptIds()
 }
+
+const collapseAllUsers = () => {
+  collapsedScriptIds.value = new Set(localScripts.value.map(script => script.id))
+  saveCollapsedScriptIds()
+}
+
+const expandAllUsers = () => {
+  collapsedScriptIds.value = new Set()
+  saveCollapsedScriptIds()
+}
+
+defineExpose({ collapseAllUsers, expandAllUsers })
 
 const handleAddUser = (script: Script) => {
   emit('addUser', script)
