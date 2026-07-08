@@ -122,11 +122,27 @@
                     删除脚本
                   </a-button>
                 </a-popconfirm>
+                <a-tooltip :title="collapsedScriptIds.has(script.id) ? '展开用户' : '收起用户'">
+                  <a-button
+                    size="middle"
+                    class="action-button"
+                    :aria-label="collapsedScriptIds.has(script.id) ? '展开用户' : '收起用户'"
+                    @click="toggleUsersCollapsed(script.id)"
+                  >
+                    <template #icon>
+                      <DownOutlined v-if="collapsedScriptIds.has(script.id)" />
+                      <UpOutlined v-else />
+                    </template>
+                  </a-button>
+                </a-tooltip>
               </div>
             </div>
 
             <!-- 用户列表 -->
-            <div v-if="script.users && script.users.length > 0" class="users-section">
+            <div
+              v-if="!collapsedScriptIds.has(script.id) && script.users && script.users.length > 0"
+              class="users-section"
+            >
               <!-- 使用vuedraggable包装用户列表 -->
               <draggable
                 v-model="script.users"
@@ -246,7 +262,7 @@
             </div>
 
             <!-- 空状态 -->
-            <div v-else class="empty-users">
+            <div v-else-if="!collapsedScriptIds.has(script.id)" class="empty-users">
               <div class="empty-content">
                 <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
               </div>
@@ -262,8 +278,10 @@
 import type { MaaFWScriptConfig, Script, User } from '../types/script'
 import {
   DeleteOutlined,
+  DownOutlined,
   EditOutlined,
   SettingOutlined,
+  UpOutlined,
   UserAddOutlined,
 } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
@@ -344,6 +362,56 @@ const emit = defineEmits<Emits>()
 
 // 本地脚本列表状态
 const localScripts = ref<Script[]>([])
+
+// 脚本用户列表收起状态 - 持久化到 localStorage，切换页面后仍保持
+const COLLAPSED_SCRIPTS_STORAGE_KEY = 'scripts.collapsedScriptIds'
+
+const loadCollapsedScriptIds = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_SCRIPTS_STORAGE_KEY)
+    if (!raw) return new Set()
+    const parsed = JSON.parse(raw)
+    return new Set(Array.isArray(parsed) ? parsed.filter(id => typeof id === 'string') : [])
+  } catch {
+    return new Set()
+  }
+}
+
+const collapsedScriptIds = ref<Set<string>>(loadCollapsedScriptIds())
+
+const saveCollapsedScriptIds = () => {
+  try {
+    localStorage.setItem(
+      COLLAPSED_SCRIPTS_STORAGE_KEY,
+      JSON.stringify([...collapsedScriptIds.value])
+    )
+  } catch {
+    // 存储不可用时（如隐私模式）忽略，仅本次会话内生效
+  }
+}
+
+const toggleUsersCollapsed = (scriptId: string) => {
+  const next = new Set(collapsedScriptIds.value)
+  if (next.has(scriptId)) {
+    next.delete(scriptId)
+  } else {
+    next.add(scriptId)
+  }
+  collapsedScriptIds.value = next
+  saveCollapsedScriptIds()
+}
+
+const collapseAllUsers = () => {
+  collapsedScriptIds.value = new Set(localScripts.value.map(script => script.id))
+  saveCollapsedScriptIds()
+}
+
+const expandAllUsers = () => {
+  collapsedScriptIds.value = new Set()
+  saveCollapsedScriptIds()
+}
+
+defineExpose({ collapseAllUsers, expandAllUsers })
 
 // 账号信息展开状态管理 - 使用用户ID作为key
 const expandedUserIds = ref<Set<string>>(new Set())
