@@ -14,6 +14,11 @@ import type { EmulatorGetIn } from '../models/EmulatorGetIn';
 import type { EmulatorGetOut } from '../models/EmulatorGetOut';
 import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
+import type { GameGetIn } from '../models/GameGetIn';
+import type { GameGetOut } from '../models/GameGetOut';
+import type { GameOperateIn } from '../models/GameOperateIn';
+import type { GamePresetsOut } from '../models/GamePresetsOut';
+import type { GameTaskStatusOut } from '../models/GameTaskStatusOut';
 import type { GetStageIn } from '../models/GetStageIn';
 import type { HistoryDataGetIn } from '../models/HistoryDataGetIn';
 import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
@@ -25,6 +30,7 @@ import type { OCRScreenshotIn } from '../models/OCRScreenshotIn';
 import type { OCRScreenshotOut } from '../models/OCRScreenshotOut';
 import type { PlanGetIn } from '../models/PlanGetIn';
 import type { PlanGetOut } from '../models/PlanGetOut';
+import type { PluginFrontendBackgroundOut } from '../models/PluginFrontendBackgroundOut';
 import type { PluginsGetOut } from '../models/PluginsGetOut';
 import type { PowerOut } from '../models/PowerOut';
 import type { QueueGetIn } from '../models/QueueGetIn';
@@ -176,6 +182,56 @@ export class GetService {
         });
     }
     /**
+     * 查询模拟器配置
+     * @param requestBody
+     * @returns EmulatorGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getEmulatorApiEmulatorGetPost(
+        requestBody: EmulatorGetIn,
+    ): CancelablePromise<EmulatorGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询模拟器状态
+     * @param requestBody
+     * @returns EmulatorStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getStatusApiEmulatorStatusPost(
+        requestBody: EmulatorGetIn,
+    ): CancelablePromise<EmulatorStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator/status',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 搜索已安装的模拟器
+     * 自动搜索系统中已安装的模拟器
+     * @returns EmulatorSearchOut Successful Response
+     * @throws ApiError
+     */
+    public static searchEmulatorsApiEmulatorEmulatorSearchPost(): CancelablePromise<EmulatorSearchOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator/emulator/search',
+        });
+    }
+    /**
      * 查询脚本配置信息
      * @param requestBody
      * @returns ScriptGetOut Successful Response
@@ -252,75 +308,6 @@ export class GetService {
         });
     }
     /**
-     * 查询计划表
-     * @param requestBody
-     * @returns PlanGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getPlanApiPlanGetPost(
-        requestBody: PlanGetIn,
-    ): CancelablePromise<PlanGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plan/get',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询模拟器配置
-     * @param requestBody
-     * @returns EmulatorGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getEmulatorApiEmulatorGetPost(
-        requestBody: EmulatorGetIn,
-    ): CancelablePromise<EmulatorGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/get',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询模拟器状态
-     * @param requestBody
-     * @returns EmulatorStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static getStatusApiEmulatorStatusPost(
-        requestBody: EmulatorGetIn,
-    ): CancelablePromise<EmulatorStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/status',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 搜索已安装的模拟器
-     * 枚举卸载表并解析主管理器路径（不依赖 ADB 设备枚举）。
-     * @returns EmulatorSearchOut Successful Response
-     * @throws ApiError
-     */
-    public static searchEmulatorsApiEmulatorEmulatorSearchPost(): CancelablePromise<EmulatorSearchOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/emulator/search',
-        });
-    }
-    /**
      * 查询调度队列配置信息
      * @param requestBody
      * @returns QueueGetOut Successful Response
@@ -370,6 +357,25 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/queue/item/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询计划表
+     * @param requestBody
+     * @returns PlanGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getPlanApiPlanGetPost(
+        requestBody: PlanGetIn,
+    ): CancelablePromise<PlanGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plan/get',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -428,7 +434,7 @@ export class GetService {
     }
     /**
      * 查询工具配置
-     * 查询工具配置
+     * 获取工具设置
      * @returns ToolsGetOut Successful Response
      * @throws ApiError
      */
@@ -646,6 +652,51 @@ export class GetService {
         });
     }
     /**
+     * 获取主应用背景配置
+     * @returns PluginFrontendBackgroundOut Successful Response
+     * @throws ApiError
+     */
+    public static getFrontendBackgroundApiPluginsFrontendBackgroundGet(): CancelablePromise<PluginFrontendBackgroundOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/plugins/frontend/background',
+        });
+    }
+    /**
+     * 获取主应用背景图片
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getFrontendBackgroundImageApiPluginsFrontendBackgroundImageGet(): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/plugins/frontend/background/image',
+        });
+    }
+    /**
+     * 获取插件前端扩展静态资源
+     * @param pluginId
+     * @param assetPath
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getPluginFrontendAssetApiPluginsAssetsPluginIdAssetPathGet(
+        pluginId: string,
+        assetPath: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/plugins/assets/{plugin_id}/{asset_path}',
+            path: {
+                'plugin_id': pluginId,
+                'asset_path': assetPath,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 获取插件实例配置
      * @returns PluginsGetOut Successful Response
      * @throws ApiError
@@ -654,6 +705,55 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/plugins/get',
+        });
+    }
+    /**
+     * 查询游戏中心配置
+     * @param requestBody
+     * @returns GameGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getGameApiGameCenterGetPost(
+        requestBody: GameGetIn,
+    ): CancelablePromise<GameGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取内置游戏预设
+     * @returns GamePresetsOut Successful Response
+     * @throws ApiError
+     */
+    public static getPresetsApiGameCenterPresetsPost(): CancelablePromise<GamePresetsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/presets',
+        });
+    }
+    /**
+     * 查询任务状态 (轮询兜底)
+     * @param requestBody
+     * @returns GameTaskStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static taskStatusApiGameCenterTaskStatusPost(
+        requestBody: GameOperateIn,
+    ): CancelablePromise<GameTaskStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/task_status',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
 }

@@ -194,6 +194,72 @@ class EmulatorConfig(ConfigBase):
         super().__init__()
 
 
+class GameConfig(ConfigBase):
+    """游戏中心游戏条目配置"""
+
+    related_config: dict[str, MultipleConfig] = {}
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## 游戏名称
+        self.Info_Name = ConfigItem("Info", "Name", "新游戏")
+        ## 平台: pc / emulator
+        self.Info_Platform = ConfigItem(
+            "Info", "Platform", "pc", OptionsValidator(["pc", "emulator"])
+        )
+        ## Provider 类型
+        self.Info_Provider = ConfigItem(
+            "Info",
+            "Provider",
+            "mihoyo_pc",
+            OptionsValidator(["mihoyo_pc", "hypergryph_pc", "adb_apk"]),
+        )
+        ## 预设 key (决定 provider 内部的具体游戏参数, 见 app/core/game_center/presets.py)
+        self.Info_PresetKey = ConfigItem("Info", "PresetKey", "")
+
+        ## Data ------------------------------------------------------------
+        ## PC 游戏安装目录
+        self.Data_InstallPath = ConfigItem("Data", "InstallPath", "")
+        ## 安卓包名 (模拟器游戏)
+        self.Data_PackageName = ConfigItem("Data", "PackageName", "")
+        ## 关联模拟器 ID
+        self.Data_EmulatorId = ConfigItem(
+            "Data",
+            "EmulatorId",
+            "-",
+            MultipleUIDValidator("-", self.related_config, "EmulatorConfig"),
+        )
+        ## 模拟器多开索引
+        self.Data_EmulatorIndex = ConfigItem("Data", "EmulatorIndex", "0")
+        ## 通用型模拟器 adb 路径兜底
+        self.Data_AdbPath = ConfigItem("Data", "AdbPath", "")
+        ## 启动参数
+        self.Data_LaunchArgs = ConfigItem("Data", "LaunchArgs", "")
+        ## 鹰角高级自动更新开关 (默认关闭, 需用户显式开启并接受风险)
+        self.Data_HgAutoPatchEnabled = ConfigItem(
+            "Data", "HgAutoPatchEnabled", False, BoolValidator()
+        )
+
+        ## Cache ------------------------------------------------------------
+        ## 本地已装版本 (后端写入)
+        self.Cache_LocalVersion = ConfigItem("Cache", "LocalVersion", "")
+        ## 最新版本 (后端写入)
+        self.Cache_LatestVersion = ConfigItem("Cache", "LatestVersion", "")
+        ## 是否有更新
+        self.Cache_NeedsUpdate = ConfigItem(
+            "Cache", "NeedsUpdate", False, BoolValidator()
+        )
+        ## 最新版本原始信息 (JSON)
+        self.Cache_LatestInfo = ConfigItem("Cache", "LatestInfo", "{ }", JSONValidator())
+        ## 最近检查时间
+        self.Cache_LastChecked = ConfigItem(
+            "Cache", "LastChecked", "2000-01-01 00:00", DateTimeValidator("%Y-%m-%d %H:%M")
+        )
+
+        super().__init__()
+
+
 class Webhook(ConfigBase):
     """Webhook 配置"""
 
@@ -3312,6 +3378,8 @@ class GlobalConfig(ConfigBase):
         )
         ## 队列配置列表
         self.QueueConfig = MultipleConfig([QueueConfig])
+        ## 游戏中心配置列表
+        self.GameConfig = MultipleConfig([GameConfig])
         ## 工具箱配置
         self.ToolsConfig = ToolsConfig()
         ## 插件系统独立配置
@@ -3324,6 +3392,7 @@ class GlobalConfig(ConfigBase):
         MaaFWConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         OkwwConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
+        GameConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
 

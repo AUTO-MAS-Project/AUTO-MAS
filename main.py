@@ -107,6 +107,10 @@ def main():
             register_builtin_pages()
             await PluginManager.start()
 
+            # 初始化游戏中心管理器 (注册内置 provider)
+            from app.core.game_center import game_center_manager
+            game_center_manager.init()
+
             missing_script_types = validate_script_type_registry(Config)
             if missing_script_types:
                 raise RuntimeError(
@@ -141,6 +145,9 @@ def main():
             if hmr_service is not None:
                 await hmr_service.stop()
 
+            # 清理游戏中心后台任务
+            await game_center_manager.cleanup()
+
             await TaskManager.stop_task("ALL")
             await PluginManager.stop()
 
@@ -166,6 +173,7 @@ def main():
             plugins_router,
             plugin_gateway_router,
             qr_login_router,
+            game_center_router,
         )
         from app.plugins.system import get_core_plugin_routers
 
@@ -197,6 +205,7 @@ def main():
         app.include_router(ws_router)
         app.include_router(plugins_router)
         app.include_router(plugin_gateway_router)
+        app.include_router(game_center_router)
 
         # 可选补丁：米游社扫码登录
         if qr_login_router is not None:
@@ -223,6 +232,9 @@ def main():
         )
 
         mcp.mount_http()
+
+        from app.plugins.mcp_facade import plugin_mcp
+        plugin_mcp.attach(mcp)
 
         async def run_server():
             config = uvicorn.Config(

@@ -19,7 +19,7 @@ import type { WSMessageHistoryOut } from '../models/WSMessageHistoryOut';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
-export class WebSocketService {
+export class WebsocketService {
     /**
      * 创建 WebSocket 客户端
      * 创建一个新的 WebSocket 客户端实例
@@ -34,12 +34,12 @@ export class WebSocketService {
      * @returns WSClientCreateOut Successful Response
      * @throws ApiError
      */
-    public static createClientApiWsDebugClientCreatePost(
+    public static createClientApiWsClientCreatePost(
         requestBody: WSClientCreateIn,
     ): CancelablePromise<WSClientCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/ws_debug/client/create',
+            url: '/api/ws/client/create',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -54,12 +54,12 @@ export class WebSocketService {
      * @returns WSClientStatusOut Successful Response
      * @throws ApiError
      */
-    public static connectClientApiWsDebugClientConnectPost(
+    public static connectClientApiWsClientConnectPost(
         requestBody: WSClientConnectIn,
     ): CancelablePromise<WSClientStatusOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/ws_debug/client/connect',
+            url: '/api/ws/client/connect',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -74,12 +74,12 @@ export class WebSocketService {
      * @returns WSClientStatusOut Successful Response
      * @throws ApiError
      */
-    public static disconnectClientApiWsDebugClientDisconnectPost(
+    public static disconnectClientApiWsClientDisconnectPost(
         requestBody: WSClientDisconnectIn,
     ): CancelablePromise<WSClientStatusOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/ws_debug/client/disconnect',
+            url: '/api/ws/client/disconnect',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -96,12 +96,12 @@ export class WebSocketService {
      * @returns WSClientStatusOut Successful Response
      * @throws ApiError
      */
-    public static removeClientApiWsDebugClientRemovePost(
+    public static removeClientApiWsClientRemovePost(
         requestBody: WSClientRemoveIn,
     ): CancelablePromise<WSClientStatusOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/ws_debug/client/remove',
+            url: '/api/ws/client/remove',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -116,12 +116,12 @@ export class WebSocketService {
      * @returns WSClientStatusOut Successful Response
      * @throws ApiError
      */
-    public static getClientStatusApiWsDebugClientStatusPost(
+    public static getClientStatusApiWsClientStatusPost(
         requestBody: WSClientStatusIn,
     ): CancelablePromise<WSClientStatusOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/ws_debug/client/status',
+            url: '/api/ws/client/status',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -135,10 +135,10 @@ export class WebSocketService {
      * @returns WSClientListOut Successful Response
      * @throws ApiError
      */
-    public static listClientsApiWsDebugClientListGet(): CancelablePromise<WSClientListOut> {
+    public static listClientsApiWsClientListGet(): CancelablePromise<WSClientListOut> {
         return __request(OpenAPI, {
             method: 'GET',
-            url: '/api/ws_debug/client/list',
+            url: '/api/ws/client/list',
         });
     }
     /**
@@ -148,12 +148,12 @@ export class WebSocketService {
      * @returns WSClientStatusOut Successful Response
      * @throws ApiError
      */
-    public static sendMessageApiWsDebugMessageSendPost(
+    public static sendMessageApiWsMessageSendPost(
         requestBody: WSClientSendIn,
     ): CancelablePromise<WSClientStatusOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/ws_debug/message/send',
+            url: '/api/ws/message/send',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -168,12 +168,12 @@ export class WebSocketService {
      * @returns WSClientStatusOut Successful Response
      * @throws ApiError
      */
-    public static sendJsonMessageApiWsDebugMessageSendJsonPost(
+    public static sendJsonMessageApiWsMessageSendJsonPost(
         requestBody: WSClientSendJsonIn,
     ): CancelablePromise<WSClientStatusOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/ws_debug/message/send_json',
+            url: '/api/ws/message/send_json',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -193,12 +193,12 @@ export class WebSocketService {
      * @returns WSClientStatusOut Successful Response
      * @throws ApiError
      */
-    public static sendAuthApiWsDebugMessageAuthPost(
+    public static sendAuthApiWsMessageAuthPost(
         requestBody: WSClientAuthIn,
     ): CancelablePromise<WSClientStatusOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/ws_debug/message/auth',
+            url: '/api/ws/message/auth',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -215,12 +215,12 @@ export class WebSocketService {
      * @returns WSMessageHistoryOut Successful Response
      * @throws ApiError
      */
-    public static getHistoryApiWsDebugHistoryGet(
+    public static getHistoryApiWsHistoryGet(
         name?: (string | null),
     ): CancelablePromise<WSMessageHistoryOut> {
         return __request(OpenAPI, {
             method: 'GET',
-            url: '/api/ws_debug/history',
+            url: '/api/ws/history',
             query: {
                 'name': name,
             },
@@ -238,12 +238,12 @@ export class WebSocketService {
      * @returns WSClientStatusOut Successful Response
      * @throws ApiError
      */
-    public static clearHistoryApiWsDebugHistoryClearPost(
+    public static clearHistoryApiWsHistoryClearPost(
         requestBody: WSClearHistoryIn,
     ): CancelablePromise<WSClientStatusOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/ws_debug/history/clear',
+            url: '/api/ws/history/clear',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -257,10 +257,10 @@ export class WebSocketService {
      * @returns WSCommandsOut Successful Response
      * @throws ApiError
      */
-    public static getCommandsApiWsDebugCommandsGet(): CancelablePromise<WSCommandsOut> {
+    public static getCommandsApiWsCommandsGet(): CancelablePromise<WSCommandsOut> {
         return __request(OpenAPI, {
             method: 'GET',
-            url: '/api/ws_debug/commands',
+            url: '/api/ws/commands',
         });
     }
 }

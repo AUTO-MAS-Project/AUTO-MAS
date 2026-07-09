@@ -4,7 +4,6 @@
 /* eslint-disable */
 import type { AbyssSnapshotImportOut } from '../models/AbyssSnapshotImportOut';
 import type { Body_batch_update_okww_configs_api_scripts_okww_configs_batch_update_post } from '../models/Body_batch_update_okww_configs_api_scripts_okww_configs_batch_update_post';
-import type { Body_update_okww_config_api_scripts_okww_configs_update_post } from '../models/Body_update_okww_config_api_scripts_okww_configs_update_post';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { DispatchIn } from '../models/DispatchIn';
 import type { EmulatorCreateOut } from '../models/EmulatorCreateOut';
@@ -16,12 +15,24 @@ import type { EmulatorReorderIn } from '../models/EmulatorReorderIn';
 import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
 import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
+import type { GameAddIn } from '../models/GameAddIn';
+import type { GameCheckOut } from '../models/GameCheckOut';
+import type { GameCreateOut } from '../models/GameCreateOut';
+import type { GameDeleteIn } from '../models/GameDeleteIn';
+import type { GameGetIn } from '../models/GameGetIn';
+import type { GameGetOut } from '../models/GameGetOut';
+import type { GameInstallLocalApkIn } from '../models/GameInstallLocalApkIn';
+import type { GameOperateIn } from '../models/GameOperateIn';
+import type { GamePresetsOut } from '../models/GamePresetsOut';
+import type { GameReorderIn } from '../models/GameReorderIn';
 import type { GameSignAccountCreateOut } from '../models/GameSignAccountCreateOut';
 import type { GameSignAccountDeleteIn } from '../models/GameSignAccountDeleteIn';
 import type { GameSignAccountGetIn } from '../models/GameSignAccountGetIn';
 import type { GameSignAccountReorderIn } from '../models/GameSignAccountReorderIn';
 import type { GameSignAccountsListOut } from '../models/GameSignAccountsListOut';
 import type { GameSignAccountUpdateIn } from '../models/GameSignAccountUpdateIn';
+import type { GameTaskStatusOut } from '../models/GameTaskStatusOut';
+import type { GameUpdateIn } from '../models/GameUpdateIn';
 import type { GetStageIn } from '../models/GetStageIn';
 import type { HistoryDataGetIn } from '../models/HistoryDataGetIn';
 import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
@@ -49,14 +60,18 @@ import type { PlanUpdateIn } from '../models/PlanUpdateIn';
 import type { PluginAddIn } from '../models/PluginAddIn';
 import type { PluginAddOut } from '../models/PluginAddOut';
 import type { PluginDeleteIn } from '../models/PluginDeleteIn';
-import type { PluginDevRebuildCtxStubIn } from '../models/PluginDevRebuildCtxStubIn';
-import type { PluginDevRebuildCtxStubOut } from '../models/PluginDevRebuildCtxStubOut';
+import type { PluginFrontendBackgroundOut } from '../models/PluginFrontendBackgroundOut';
+import type { PluginPackageIn } from '../models/PluginPackageIn';
 import type { PluginReloadInstanceIn } from '../models/PluginReloadInstanceIn';
 import type { PluginReloadPluginIn } from '../models/PluginReloadPluginIn';
 import type { PluginsGetOut } from '../models/PluginsGetOut';
 import type { PluginUpdateIn } from '../models/PluginUpdateIn';
 import type { PowerIn } from '../models/PowerIn';
 import type { PowerOut } from '../models/PowerOut';
+import type { QrCheckIn } from '../models/QrCheckIn';
+import type { QrCheckOut } from '../models/QrCheckOut';
+import type { QrCreateOut } from '../models/QrCreateOut';
+import type { QrSaveIn } from '../models/QrSaveIn';
 import type { QueueCreateOut } from '../models/QueueCreateOut';
 import type { QueueDeleteIn } from '../models/QueueDeleteIn';
 import type { QueueGetIn } from '../models/QueueGetIn';
@@ -77,10 +92,25 @@ import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
 import type { ScriptFileIn } from '../models/ScriptFileIn';
 import type { ScriptGetIn } from '../models/ScriptGetIn';
 import type { ScriptGetOut } from '../models/ScriptGetOut';
+import type { ScriptRecordCreateIn } from '../models/ScriptRecordCreateIn';
+import type { ScriptRecordCreateOut } from '../models/ScriptRecordCreateOut';
+import type { ScriptRecordDeleteIn } from '../models/ScriptRecordDeleteIn';
+import type { ScriptRecordGetIn } from '../models/ScriptRecordGetIn';
+import type { ScriptRecordGetOut } from '../models/ScriptRecordGetOut';
+import type { ScriptRecordReorderIn } from '../models/ScriptRecordReorderIn';
+import type { ScriptRecordUpdateIn } from '../models/ScriptRecordUpdateIn';
 import type { ScriptReorderIn } from '../models/ScriptReorderIn';
+import type { ScriptTypeGetOut } from '../models/ScriptTypeGetOut';
 import type { ScriptUpdateIn } from '../models/ScriptUpdateIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
 import type { ScriptUrlIn } from '../models/ScriptUrlIn';
+import type { ScriptUserRecordCreateIn } from '../models/ScriptUserRecordCreateIn';
+import type { ScriptUserRecordCreateOut } from '../models/ScriptUserRecordCreateOut';
+import type { ScriptUserRecordDeleteIn } from '../models/ScriptUserRecordDeleteIn';
+import type { ScriptUserRecordGetIn } from '../models/ScriptUserRecordGetIn';
+import type { ScriptUserRecordGetOut } from '../models/ScriptUserRecordGetOut';
+import type { ScriptUserRecordReorderIn } from '../models/ScriptUserRecordReorderIn';
+import type { ScriptUserRecordUpdateIn } from '../models/ScriptUserRecordUpdateIn';
 import type { SettingGetOut } from '../models/SettingGetOut';
 import type { SettingUpdateIn } from '../models/SettingUpdateIn';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
@@ -113,10 +143,23 @@ import type { WebhookInBase } from '../models/WebhookInBase';
 import type { WebhookReorderIn } from '../models/WebhookReorderIn';
 import type { WebhookTestIn } from '../models/WebhookTestIn';
 import type { WebhookUpdateIn } from '../models/WebhookUpdateIn';
+import type { WebSocketMetaOut } from '../models/WebSocketMetaOut';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class Service {
+    /**
+     * 获取主 WebSocket 元信息
+     * 返回前端建立主 WebSocket 连接需要的元信息。
+     * @returns WebSocketMetaOut Successful Response
+     * @throws ApiError
+     */
+    public static getWsMetaApiCoreWsMetaGet(): CancelablePromise<WebSocketMetaOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/core/ws_meta',
+        });
+    }
     /**
      * 关闭后端程序
      * 关闭后端程序
@@ -264,6 +307,143 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/get/overview',
+        });
+    }
+    /**
+     * 查询模拟器配置
+     * @param requestBody
+     * @returns EmulatorGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getEmulatorApiEmulatorGetPost(
+        requestBody: EmulatorGetIn,
+    ): CancelablePromise<EmulatorGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 添加模拟器项
+     * @returns EmulatorCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static addEmulatorApiEmulatorAddPost(): CancelablePromise<EmulatorCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator/add',
+        });
+    }
+    /**
+     * 更新模拟器项
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updateEmulatorApiEmulatorUpdatePost(
+        requestBody: EmulatorUpdateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 删除模拟器项
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static deleteEmulatorApiEmulatorDeletePost(
+        requestBody: EmulatorDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 重新排序模拟器项
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static reorderEmulatorApiEmulatorOrderPost(
+        requestBody: EmulatorReorderIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator/order',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 操作模拟器
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static operationEmulatorApiEmulatorOperatePost(
+        requestBody: EmulatorOperateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator/operate',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询模拟器状态
+     * @param requestBody
+     * @returns EmulatorStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getStatusApiEmulatorStatusPost(
+        requestBody: EmulatorGetIn,
+    ): CancelablePromise<EmulatorStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator/status',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 搜索已安装的模拟器
+     * 自动搜索系统中已安装的模拟器
+     * @returns EmulatorSearchOut Successful Response
+     * @throws ApiError
+     */
+    public static searchEmulatorsApiEmulatorEmulatorSearchPost(): CancelablePromise<EmulatorSearchOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator/emulator/search',
         });
     }
     /**
@@ -775,8 +955,8 @@ export class Service {
         });
     }
     /**
-     * Prepare MaaFW agent Python env
-     * Prepare MaaFW agent Python envs without loading resources or starting agents.
+     * Prepare MaaFW runtime env
+     * Prepare MaaFW Runner and agent Python envs before starting tasks.
      * @param requestBody
      * @returns MaaFWAgentEnvPrepareOut Successful Response
      * @throws ApiError
@@ -896,35 +1076,6 @@ export class Service {
         });
     }
     /**
-     * 更新 OK-WW 配置文件
-     * 更新 OK-WW 配置文件
-     *
-     * Args:
-     * script_id: OK-WW 脚本 ID
-     * user_id: 用户 ID
-     * filename: 配置文件名（如 DailyTask.json）
-     * data: 要更新的配置数据
-     *
-     * Returns:
-     * dict: 操作结果
-     * @param requestBody
-     * @returns any Successful Response
-     * @throws ApiError
-     */
-    public static updateOkwwConfigApiScriptsOkwwConfigsUpdatePost(
-        requestBody: Body_update_okww_config_api_scripts_okww_configs_update_post,
-    ): CancelablePromise<any> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/okww/configs/update',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 批量更新 OK-WW 配置文件
      * 批量更新 OK-WW 配置文件
      *
@@ -953,17 +1104,17 @@ export class Service {
         });
     }
     /**
-     * 添加计划表
+     * 添加脚本
      * @param requestBody
-     * @returns PlanCreateOut Successful Response
+     * @returns ScriptRecordCreateOut Successful Response
      * @throws ApiError
      */
-    public static addPlanApiPlanAddPost(
-        requestBody: PlanCreateIn,
-    ): CancelablePromise<PlanCreateOut> {
+    public static addScriptApiScripts2AddPost(
+        requestBody: ScriptRecordCreateIn,
+    ): CancelablePromise<ScriptRecordCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/plan/add',
+            url: '/api/scripts2/add',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -972,17 +1123,17 @@ export class Service {
         });
     }
     /**
-     * 查询计划表
+     * 获取脚本
      * @param requestBody
-     * @returns PlanGetOut Successful Response
+     * @returns ScriptRecordGetOut Successful Response
      * @throws ApiError
      */
-    public static getPlanApiPlanGetPost(
-        requestBody: PlanGetIn,
-    ): CancelablePromise<PlanGetOut> {
+    public static getScriptApiScripts2GetPost(
+        requestBody: ScriptRecordGetIn,
+    ): CancelablePromise<ScriptRecordGetOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/plan/get',
+            url: '/api/scripts2/get',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -991,36 +1142,17 @@ export class Service {
         });
     }
     /**
-     * 更新计划表配置信息
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static updatePlanApiPlanUpdatePost(
-        requestBody: PlanUpdateIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plan/update',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 删除计划表
+     * 更新脚本
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
      */
-    public static deletePlanApiPlanDeletePost(
-        requestBody: PlanDeleteIn,
+    public static updateScriptApiScripts2UpdatePost(
+        requestBody: ScriptRecordUpdateIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/plan/delete',
+            url: '/api/scripts2/update',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1029,17 +1161,17 @@ export class Service {
         });
     }
     /**
-     * 重新排序计划表
+     * 删除脚本
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
      */
-    public static reorderPlanApiPlanOrderPost(
-        requestBody: PlanReorderIn,
+    public static deleteScriptApiScripts2DeletePost(
+        requestBody: ScriptRecordDeleteIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/plan/order',
+            url: '/api/scripts2/delete',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1048,47 +1180,17 @@ export class Service {
         });
     }
     /**
-     * 查询模拟器配置
-     * @param requestBody
-     * @returns EmulatorGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getEmulatorApiEmulatorGetPost(
-        requestBody: EmulatorGetIn,
-    ): CancelablePromise<EmulatorGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/get',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 添加模拟器项
-     * @returns EmulatorCreateOut Successful Response
-     * @throws ApiError
-     */
-    public static addEmulatorApiEmulatorAddPost(): CancelablePromise<EmulatorCreateOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/add',
-        });
-    }
-    /**
-     * 更新模拟器项
+     * 脚本排序
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
      */
-    public static updateEmulatorApiEmulatorUpdatePost(
-        requestBody: EmulatorUpdateIn,
+    public static reorderScriptApiScripts2OrderPost(
+        requestBody: ScriptRecordReorderIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/emulator/update',
+            url: '/api/scripts2/order',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1097,17 +1199,55 @@ export class Service {
         });
     }
     /**
-     * 删除模拟器项
+     * 获取用户
+     * @param requestBody
+     * @returns ScriptUserRecordGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getUsersApiScripts2UsersGetPost(
+        requestBody: ScriptUserRecordGetIn,
+    ): CancelablePromise<ScriptUserRecordGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts2/users/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 添加用户
+     * @param requestBody
+     * @returns ScriptUserRecordCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static addUserApiScripts2UsersAddPost(
+        requestBody: ScriptUserRecordCreateIn,
+    ): CancelablePromise<ScriptUserRecordCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts2/users/add',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 更新用户
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
      */
-    public static deleteEmulatorApiEmulatorDeletePost(
-        requestBody: EmulatorDeleteIn,
+    public static updateUserApiScripts2UsersUpdatePost(
+        requestBody: ScriptUserRecordUpdateIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/emulator/delete',
+            url: '/api/scripts2/users/update',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1116,17 +1256,17 @@ export class Service {
         });
     }
     /**
-     * 重新排序模拟器项
+     * 删除用户
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
      */
-    public static reorderEmulatorApiEmulatorOrderPost(
-        requestBody: EmulatorReorderIn,
+    public static deleteUserApiScripts2UsersDeletePost(
+        requestBody: ScriptUserRecordDeleteIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/emulator/order',
+            url: '/api/scripts2/users/delete',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1135,17 +1275,17 @@ export class Service {
         });
     }
     /**
-     * 操作模拟器
+     * 用户排序
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
      */
-    public static operationEmulatorApiEmulatorOperatePost(
-        requestBody: EmulatorOperateIn,
+    public static reorderUserApiScripts2UsersOrderPost(
+        requestBody: ScriptUserRecordReorderIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/emulator/operate',
+            url: '/api/scripts2/users/order',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1154,34 +1294,14 @@ export class Service {
         });
     }
     /**
-     * 查询模拟器状态
-     * @param requestBody
-     * @returns EmulatorStatusOut Successful Response
+     * 获取脚本类型描述
+     * @returns ScriptTypeGetOut Successful Response
      * @throws ApiError
      */
-    public static getStatusApiEmulatorStatusPost(
-        requestBody: EmulatorGetIn,
-    ): CancelablePromise<EmulatorStatusOut> {
+    public static getScriptTypesApiScriptTypesGetPost(): CancelablePromise<ScriptTypeGetOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/emulator/status',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 搜索已安装的模拟器
-     * 枚举卸载表并解析主管理器路径（不依赖 ADB 设备枚举）。
-     * @returns EmulatorSearchOut Successful Response
-     * @throws ApiError
-     */
-    public static searchEmulatorsApiEmulatorEmulatorSearchPost(): CancelablePromise<EmulatorSearchOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/emulator/search',
+            url: '/api/script-types/get',
         });
     }
     /**
@@ -1462,6 +1582,101 @@ export class Service {
         });
     }
     /**
+     * 添加计划表
+     * @param requestBody
+     * @returns PlanCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static addPlanApiPlanAddPost(
+        requestBody: PlanCreateIn,
+    ): CancelablePromise<PlanCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plan/add',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询计划表
+     * @param requestBody
+     * @returns PlanGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getPlanApiPlanGetPost(
+        requestBody: PlanGetIn,
+    ): CancelablePromise<PlanGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plan/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 更新计划表配置信息
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updatePlanApiPlanUpdatePost(
+        requestBody: PlanUpdateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plan/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 删除计划表
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static deletePlanApiPlanDeletePost(
+        requestBody: PlanDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plan/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 重新排序计划表
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static reorderPlanApiPlanOrderPost(
+        requestBody: PlanReorderIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plan/order',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 添加任务
      * @param requestBody
      * @returns TaskCreateOut Successful Response
@@ -1580,7 +1795,7 @@ export class Service {
     }
     /**
      * 查询工具配置
-     * 查询工具配置
+     * 获取工具设置
      * @returns ToolsGetOut Successful Response
      * @throws ApiError
      */
@@ -1950,6 +2165,51 @@ export class Service {
         });
     }
     /**
+     * 获取主应用背景配置
+     * @returns PluginFrontendBackgroundOut Successful Response
+     * @throws ApiError
+     */
+    public static getFrontendBackgroundApiPluginsFrontendBackgroundGet(): CancelablePromise<PluginFrontendBackgroundOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/plugins/frontend/background',
+        });
+    }
+    /**
+     * 获取主应用背景图片
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getFrontendBackgroundImageApiPluginsFrontendBackgroundImageGet(): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/plugins/frontend/background/image',
+        });
+    }
+    /**
+     * 获取插件前端扩展静态资源
+     * @param pluginId
+     * @param assetPath
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getPluginFrontendAssetApiPluginsAssetsPluginIdAssetPathGet(
+        pluginId: string,
+        assetPath: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/plugins/assets/{plugin_id}/{asset_path}',
+            path: {
+                'plugin_id': pluginId,
+                'asset_path': assetPath,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 获取插件实例配置
      * @returns PluginsGetOut Successful Response
      * @throws ApiError
@@ -2010,29 +2270,56 @@ export class Service {
         });
     }
     /**
-     * 重建插件 ctx 类型提示文件
-     * 手动触发插件上下文 .pyi 重建。
-     *
-     * 该接口用于插件开发阶段快速刷新类型提示，便于 IDE 立即获得最新签名。
+     * 下载安装插件包
+     * 下载安装指定插件包。
      *
      * Args:
-     * data (PluginDevRebuildCtxStubIn): 重建参数。
+     * data (PluginPackageIn): 包名参数。
      *
      * Returns:
-     * PluginDevRebuildCtxStubOut: 重建结果摘要。
+     * OutBase: 统一响应对象。
      *
      * Raises:
      * 无。接口内部会捕获异常并转换为统一错误响应。
      * @param requestBody
-     * @returns PluginDevRebuildCtxStubOut Successful Response
+     * @returns OutBase Successful Response
      * @throws ApiError
      */
-    public static rebuildPluginCtxStubApiPluginsDevRebuildCtxStubPost(
-        requestBody: PluginDevRebuildCtxStubIn,
-    ): CancelablePromise<PluginDevRebuildCtxStubOut> {
+    public static installPluginPackageApiPluginsInstallPackagePost(
+        requestBody: PluginPackageIn,
+    ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/plugins/dev/rebuild_ctx_stub',
+            url: '/api/plugins/install_package',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 卸载插件包
+     * 卸载指定插件包。
+     *
+     * Args:
+     * data (PluginPackageIn): 包名参数。
+     *
+     * Returns:
+     * OutBase: 统一响应对象。
+     *
+     * Raises:
+     * 无。接口内部会捕获异常并转换为统一错误响应。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static uninstallPluginPackageApiPluginsUninstallPackagePost(
+        requestBody: PluginPackageIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugins/uninstall_package',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -2090,6 +2377,295 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/plugins/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询游戏中心配置
+     * @param requestBody
+     * @returns GameGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getGameApiGameCenterGetPost(
+        requestBody: GameGetIn,
+    ): CancelablePromise<GameGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 添加游戏项
+     * @param requestBody
+     * @returns GameCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static addGameApiGameCenterAddPost(
+        requestBody?: GameAddIn,
+    ): CancelablePromise<GameCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/add',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 更新游戏项
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updateGameApiGameCenterUpdatePost(
+        requestBody: GameUpdateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 删除游戏项
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static deleteGameApiGameCenterDeletePost(
+        requestBody: GameDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 重新排序游戏项
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static reorderGameApiGameCenterOrderPost(
+        requestBody: GameReorderIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/order',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取内置游戏预设
+     * @returns GamePresetsOut Successful Response
+     * @throws ApiError
+     */
+    public static getPresetsApiGameCenterPresetsPost(): CancelablePromise<GamePresetsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/presets',
+        });
+    }
+    /**
+     * 检查游戏更新
+     * @param requestBody
+     * @returns GameCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static checkGameApiGameCenterCheckPost(
+        requestBody: GameOperateIn,
+    ): CancelablePromise<GameCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/check',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 安装或更新游戏 (后台任务)
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static installGameApiGameCenterInstallPost(
+        requestBody: GameOperateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/install',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 取消安装/更新任务
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static cancelGameApiGameCenterCancelPost(
+        requestBody: GameOperateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/cancel',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 启动游戏
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static launchGameApiGameCenterLaunchPost(
+        requestBody: GameOperateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/launch',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 打开官方启动器 (鹰角回退)
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static openOfficialLauncherApiGameCenterOpenOfficialLauncherPost(
+        requestBody: GameOperateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/open_official_launcher',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 手动安装本地 APK (ADB 游戏)
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static installLocalApkApiGameCenterInstallLocalApkPost(
+        requestBody: GameInstallLocalApkIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/install_local_apk',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询任务状态 (轮询兜底)
+     * @param requestBody
+     * @returns GameTaskStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static taskStatusApiGameCenterTaskStatusPost(
+        requestBody: GameOperateIn,
+    ): CancelablePromise<GameTaskStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/task_status',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 创建二维码
+     * @returns QrCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static qrCreateApiToolsSignMiyousheQrCreatePost(): CancelablePromise<QrCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/miyoushe/qr/create',
+        });
+    }
+    /**
+     * 轮询扫码状态
+     * 轮询状态，确认后 cookies 直接从响应头获取
+     * @param requestBody
+     * @returns QrCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static qrCheckApiToolsSignMiyousheQrCheckPost(
+        requestBody: QrCheckIn,
+    ): CancelablePromise<QrCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/miyoushe/qr/check',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 保存 cookie 到账号配置
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static qrSaveApiToolsSignMiyousheQrSavePost(
+        requestBody: QrSaveIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/miyoushe/qr/save',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

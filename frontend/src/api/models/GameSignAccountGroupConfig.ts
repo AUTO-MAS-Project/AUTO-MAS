@@ -15,27 +15,16 @@ export type GameSignAccountGroupConfig = {
      */
     Enabled?: (boolean | null);
     /**
-     * 米游社是否启用
-     */
-    MiyousheEnabled?: (boolean | null);
-    /**
      * 米游社登录凭证
      */
     MiyousheToken?: (string | null);
-    /**
-     * 库街区是否启用
-     */
-    KuroEnabled?: (boolean | null);
     /**
      * 库街区登录凭证
      */
     KuroToken?: (string | null);
     /**
-     * 森空岛是否启用
-     */
-    SklandEnabled?: (boolean | null);
-    /**
      * 森空岛登录凭证
      */
     SklandToken?: (string | null);
 };
+

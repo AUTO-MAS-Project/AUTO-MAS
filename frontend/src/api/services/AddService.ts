@@ -3,6 +3,8 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { EmulatorCreateOut } from '../models/EmulatorCreateOut';
+import type { GameAddIn } from '../models/GameAddIn';
+import type { GameCreateOut } from '../models/GameCreateOut';
 import type { PlanCreateIn } from '../models/PlanCreateIn';
 import type { PlanCreateOut } from '../models/PlanCreateOut';
 import type { PluginAddIn } from '../models/PluginAddIn';
@@ -21,6 +23,17 @@ import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class AddService {
+    /**
+     * 添加模拟器项
+     * @returns EmulatorCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static addEmulatorApiEmulatorAddPost(): CancelablePromise<EmulatorCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator/add',
+        });
+    }
     /**
      * 添加脚本
      * @param requestBody
@@ -79,36 +92,6 @@ export class AddService {
         });
     }
     /**
-     * 添加计划表
-     * @param requestBody
-     * @returns PlanCreateOut Successful Response
-     * @throws ApiError
-     */
-    public static addPlanApiPlanAddPost(
-        requestBody: PlanCreateIn,
-    ): CancelablePromise<PlanCreateOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plan/add',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 添加模拟器项
-     * @returns EmulatorCreateOut Successful Response
-     * @throws ApiError
-     */
-    public static addEmulatorApiEmulatorAddPost(): CancelablePromise<EmulatorCreateOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/add',
-        });
-    }
-    /**
      * 添加调度队列
      * @returns QueueCreateOut Successful Response
      * @throws ApiError
@@ -158,6 +141,25 @@ export class AddService {
         });
     }
     /**
+     * 添加计划表
+     * @param requestBody
+     * @returns PlanCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static addPlanApiPlanAddPost(
+        requestBody: PlanCreateIn,
+    ): CancelablePromise<PlanCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plan/add',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 添加webhook项
      * @returns WebhookCreateOut Successful Response
      * @throws ApiError
@@ -180,6 +182,25 @@ export class AddService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/plugins/add',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 添加游戏项
+     * @param requestBody
+     * @returns GameCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static addGameApiGameCenterAddPost(
+        requestBody?: GameAddIn,
+    ): CancelablePromise<GameCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/add',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

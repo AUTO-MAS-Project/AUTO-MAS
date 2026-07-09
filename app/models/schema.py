@@ -2021,6 +2021,124 @@ class EmulatorSearchOut(OutBase):
     )
 
 
+# ==================== 游戏中心 ====================
+
+
+class GameConfigIndexItem(BaseModel):
+    uid: str = Field(..., description="唯一标识符")
+    type: Literal["GameConfig"] = Field(..., description="配置类型")
+
+
+class GameConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="游戏名称")
+    Platform: Optional[Literal["pc", "emulator"]] = Field(
+        default=None, description="平台"
+    )
+    Provider: Optional[Literal["mihoyo_pc", "hypergryph_pc", "adb_apk"]] = Field(
+        default=None, description="Provider 类型"
+    )
+    PresetKey: Optional[str] = Field(default=None, description="预设 key")
+
+
+class GameConfig_Data(BaseModel):
+    InstallPath: Optional[str] = Field(default=None, description="PC 游戏安装目录")
+    PackageName: Optional[str] = Field(default=None, description="安卓包名")
+    EmulatorId: Optional[str] = Field(default=None, description="关联模拟器 ID")
+    EmulatorIndex: Optional[str] = Field(default=None, description="模拟器多开索引")
+    AdbPath: Optional[str] = Field(default=None, description="通用模拟器 adb 路径兜底")
+    LaunchArgs: Optional[str] = Field(default=None, description="启动参数")
+    HgAutoPatchEnabled: Optional[bool] = Field(
+        default=None, description="鹰角高级自动更新开关"
+    )
+
+
+class GameConfig_Cache(BaseModel):
+    LocalVersion: Optional[str] = Field(default=None, description="本地已装版本")
+    LatestVersion: Optional[str] = Field(default=None, description="最新版本")
+    NeedsUpdate: Optional[bool] = Field(default=None, description="是否有更新")
+    LatestInfo: Optional[str] = Field(default=None, description="最新版本原始信息 JSON")
+    LastChecked: Optional[str] = Field(default=None, description="最近检查时间")
+
+
+class GameConfig(BaseModel):
+    Info: Optional[GameConfig_Info] = Field(default=None, description="游戏基础信息")
+    Data: Optional[GameConfig_Data] = Field(default=None, description="游戏运行数据")
+    Cache: Optional[GameConfig_Cache] = Field(default=None, description="缓存信息")
+
+
+class GameGetIn(BaseModel):
+    gameId: Optional[str] = Field(
+        default=None, description="游戏 ID, 未携带时表示获取所有游戏数据"
+    )
+
+
+class GameGetOut(OutBase):
+    index: List[GameConfigIndexItem] = Field(..., description="游戏索引列表")
+    data: Dict[str, GameConfig] = Field(..., description="游戏数据字典, key来自index")
+
+
+class GameAddIn(BaseModel):
+    preset: Optional[str] = Field(default=None, description="预设 key, 可选")
+
+
+class GameCreateOut(OutBase):
+    gameId: str = Field(..., description="新创建的游戏 ID")
+    data: GameConfig = Field(..., description="游戏配置数据")
+
+
+class GameUpdateIn(BaseModel):
+    gameId: str = Field(..., description="游戏 ID")
+    data: GameConfig = Field(..., description="游戏更新数据")
+
+
+class GameDeleteIn(BaseModel):
+    gameId: str = Field(..., description="游戏 ID")
+
+
+class GameReorderIn(BaseModel):
+    indexList: List[str] = Field(..., description="游戏 ID列表, 按新顺序排列")
+
+
+class GamePresetItem(BaseModel):
+    key: str = Field(..., description="预设 key")
+    name: str = Field(..., description="游戏名称")
+    platform: str = Field(..., description="平台")
+    provider: str = Field(..., description="Provider 类型")
+    package_name: Optional[str] = Field(default=None, description="安卓包名")
+
+
+class GamePresetsOut(OutBase):
+    presets: List[GamePresetItem] = Field(
+        default_factory=list, description="内置预设列表"
+    )
+
+
+class GameOperateIn(BaseModel):
+    gameId: str = Field(..., description="游戏 ID")
+
+
+class GameCheckOut(OutBase):
+    local_version: str = Field(default="", description="本地已装版本")
+    latest_version: str = Field(default="", description="最新版本")
+    needs_update: bool = Field(default=False, description="是否有更新")
+    installed: bool = Field(default=False, description="是否已安装")
+
+
+class GameInstallLocalApkIn(BaseModel):
+    gameId: str = Field(..., description="游戏 ID")
+    apkPath: str = Field(..., description="本地 APK 文件路径")
+
+
+class GameTaskStatusOut(OutBase):
+    running: bool = Field(default=False, description="是否有任务运行中")
+    phase: str = Field(default="", description="当前阶段")
+    percent: float = Field(default=0.0, description="进度百分比")
+    downloaded: int = Field(default=0, description="已下载字节")
+    total: int = Field(default=0, description="总字节")
+    speed: float = Field(default=0.0, description="速度 B/s")
+    detail: str = Field(default="", description="详细信息")
+
+
 class WebhookInBase(BaseModel):
     scriptId: Optional[str] = Field(
         default=None, description="所属脚本ID, 获取全局设置的Webhook数据时无需携带"

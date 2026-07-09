@@ -376,6 +376,16 @@ BUILTIN_PAGES: list[dict[str, Any]] = [
         "order": 70,
     },
     {
+        "id": "game-center",
+        "path": "/game-center",
+        "title": "游戏中心",
+        "menu_label": "游戏中心",
+        "icon": "game",
+        "component": "GameCenter",
+        "section": "main",
+        "order": 75,
+    },
+    {
         "id": "scheduler",
         "path": "/scheduler",
         "title": "调度中心",

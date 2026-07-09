@@ -16,6 +16,7 @@ from .event_contract import EventErrorPolicy, EventScope
 from .log_pipeline import LogFacade, _LogPipelineHolder
 from .runtime_api import RuntimeAPI
 from .service_registry import ServiceRegistry
+from .mcp_facade import PluginMcpFacade, PluginMcpRegistry, plugin_mcp
 from .server import PluginServerFacade, PluginServerRegistry, plugin_server
 
 if TYPE_CHECKING:
@@ -32,6 +33,7 @@ class PluginContext:
     event: PluginEventFacade
     service: ServiceFacade
     server: PluginServerFacade
+    mcp: PluginMcpFacade
     runtime_api: RuntimeAPI
     runtime: RuntimeFacade
     cache: PluginCacheManager
@@ -49,6 +51,7 @@ class PluginContext:
         runtime_capabilities: Optional[Dict[str, Callable[..., Any]]] = None,
         service_registry: Optional[ServiceRegistry] = None,
         server_registry: Optional[PluginServerRegistry] = None,
+        mcp_registry: Optional[PluginMcpRegistry] = None,
         provides: Optional[set[str]] = None,
         needs: Optional[set[str]] = None,
         wants: Optional[set[str]] = None,
@@ -80,6 +83,13 @@ class PluginContext:
         # server 门面负责声明插件对外 HTTP/WS 能力与前端动作。
         self.server = PluginServerFacade(
             registry=server_registry or plugin_server,
+            plugin_name=self.plugin_name,
+            instance_id=self.instance_id,
+        )
+
+        # mcp 门面负责声明插件对外 MCP 工具，供 AI 客户端调用。
+        self.mcp = PluginMcpFacade(
+            registry=mcp_registry or plugin_mcp,
             plugin_name=self.plugin_name,
             instance_id=self.instance_id,
         )

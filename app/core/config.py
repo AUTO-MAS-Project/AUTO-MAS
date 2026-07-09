@@ -49,6 +49,7 @@ from app.models.config import (
     Webhook,
     TimeSet,
     EmulatorConfig,
+    GameConfig,
     GameSignAccountGroup,
     MaaFWConfig,
 )
@@ -150,6 +151,7 @@ class AppConfig(GlobalConfig):
         await self._migrate_general_scripts_to_plugin_storage()
         await self._migrate_okww_scripts_to_plugin_storage()
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
+        await self.GameConfig.connect(self.config_path / "GameConfig.json")
         await self.ToolsConfig.connect(self.config_path / "ToolsConfig.json")
         await self.PluginConfig.connect(self.config_path / "PluginConfig.json")
 
@@ -2166,6 +2168,54 @@ class AppConfig(GlobalConfig):
         logger.info(f"重新排序模拟器: {index_list}")
 
         await self.EmulatorConfig.setOrder(list(map(uuid.UUID, index_list)))
+
+    async def get_game(self, game_id: Optional[str]) -> tuple[list, dict]:
+        """获取游戏中心配置"""
+        logger.info(f"获取游戏中心配置: {game_id}")
+
+        if game_id is None:
+            data = await self.GameConfig.toDict()
+        else:
+            data = await self.GameConfig.get(uuid.UUID(game_id))
+
+        index = data.pop("instances", [])
+        return list(index), data
+
+    async def add_game(self) -> tuple[uuid.UUID, GameConfig]:
+        """添加游戏中心配置"""
+        logger.info("添加游戏中心配置")
+
+        uid, config = await self.GameConfig.add(GameConfig)
+        return uid, config
+
+    async def update_game(
+        self, game_id: str, data: Dict[str, Dict[str, Any]]
+    ) -> None:
+        """更新游戏中心配置"""
+
+        game_uid = uuid.UUID(game_id)
+
+        logger.info(f"更新游戏中心配置: {game_id}")
+
+        for group, items in data.items():
+            for name, value in items.items():
+                await self.GameConfig[game_uid].set(group, name, value)
+
+    async def del_game(self, game_id: str) -> None:
+        """删除游戏中心配置"""
+
+        game_uid = uuid.UUID(game_id)
+
+        logger.info(f"删除游戏中心配置: {game_id}")
+
+        await self.GameConfig.remove(game_uid)
+
+    async def reorder_game(self, index_list: list[str]) -> None:
+        """重新排序游戏中心"""
+
+        logger.info(f"重新排序游戏中心: {index_list}")
+
+        await self.GameConfig.setOrder(list(map(uuid.UUID, index_list)))
 
     async def add_queue(self) -> tuple[uuid.UUID, QueueConfig]:
         """添加调度队列"""

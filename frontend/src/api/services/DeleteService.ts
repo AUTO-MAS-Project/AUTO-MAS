@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { EmulatorDeleteIn } from '../models/EmulatorDeleteIn';
+import type { GameDeleteIn } from '../models/GameDeleteIn';
 import type { OutBase } from '../models/OutBase';
 import type { PlanDeleteIn } from '../models/PlanDeleteIn';
 import type { PluginDeleteIn } from '../models/PluginDeleteIn';
@@ -16,6 +17,25 @@ import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class DeleteService {
+    /**
+     * 删除模拟器项
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static deleteEmulatorApiEmulatorDeletePost(
+        requestBody: EmulatorDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
     /**
      * 删除脚本
      * @param requestBody
@@ -66,44 +86,6 @@ export class DeleteService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/webhook/delete',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 删除计划表
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static deletePlanApiPlanDeletePost(
-        requestBody: PlanDeleteIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plan/delete',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 删除模拟器项
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static deleteEmulatorApiEmulatorDeletePost(
-        requestBody: EmulatorDeleteIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/delete',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -169,6 +151,25 @@ export class DeleteService {
         });
     }
     /**
+     * 删除计划表
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static deletePlanApiPlanDeletePost(
+        requestBody: PlanDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plan/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 删除webhook项
      * @param requestBody
      * @returns OutBase Successful Response
@@ -199,6 +200,25 @@ export class DeleteService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/plugins/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 删除游戏项
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static deleteGameApiGameCenterDeletePost(
+        requestBody: GameDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/delete',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
