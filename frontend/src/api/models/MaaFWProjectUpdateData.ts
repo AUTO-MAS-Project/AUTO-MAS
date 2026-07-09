@@ -28,3 +28,4 @@ export type MaaFWProjectUpdateData = {
      */
     logs?: Array<string>;
 };
+

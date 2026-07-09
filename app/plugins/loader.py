@@ -24,6 +24,7 @@ from .lifecycle import REQUIRED_LIFECYCLE_METHODS
 from .realtime import publish_runtime_record
 from .service_registry import ServiceRegistry
 from .service_spec import ServiceSpec
+from .mcp_facade import plugin_mcp
 from .server import plugin_server
 from .system import get_system_plugin_spec
 from .pypi_site import (
@@ -888,6 +889,7 @@ class PluginLoader:
                 runtime_capabilities=self.runtime,
                 service_registry=self.service,
                 server_registry=plugin_server,
+                mcp_registry=plugin_mcp,
                 provides=provides,
                 needs=needs,
                 wants=wants,
@@ -923,6 +925,7 @@ class PluginLoader:
         except PluginDefinitionError as e:
             self._unregister_record_listeners(record)
             await plugin_server.unregister_owner(record.instance_id)
+            plugin_mcp.unregister_owner(record.instance_id)
             from app.core.page_registry import page_registry
             from app.core.script_types import script_type_registry
 
@@ -933,6 +936,7 @@ class PluginLoader:
         except Exception as e:
             self._unregister_record_listeners(record)
             await plugin_server.unregister_owner(record.instance_id)
+            plugin_mcp.unregister_owner(record.instance_id)
             from app.core.page_registry import page_registry
             from app.core.script_types import script_type_registry
 
@@ -1029,6 +1033,7 @@ class PluginLoader:
                 runtime_capabilities=self.runtime,
                 service_registry=self.service,
                 server_registry=plugin_server,
+                mcp_registry=plugin_mcp,
                 provides=merged_provides,
                 needs=merged_needs,
                 wants=merged_wants,
@@ -1065,6 +1070,7 @@ class PluginLoader:
         except PluginDefinitionError as e:
             self._unregister_record_listeners(record)
             await plugin_server.unregister_owner(record.instance_id)
+            plugin_mcp.unregister_owner(record.instance_id)
             from app.core.page_registry import page_registry
             from app.core.script_types import script_type_registry
 
@@ -1075,6 +1081,7 @@ class PluginLoader:
         except Exception as e:
             self._unregister_record_listeners(record)
             await plugin_server.unregister_owner(record.instance_id)
+            plugin_mcp.unregister_owner(record.instance_id)
             from app.core.page_registry import page_registry
             from app.core.script_types import script_type_registry
 
@@ -1204,6 +1211,7 @@ class PluginLoader:
             self._unregister_record_listeners(record)
             self.service.drop(record.instance_id)
             await plugin_server.unregister_owner(record.instance_id)
+            plugin_mcp.unregister_owner(record.instance_id)
             from app.core.page_registry import page_registry
             from app.core.script_types import script_type_registry
 

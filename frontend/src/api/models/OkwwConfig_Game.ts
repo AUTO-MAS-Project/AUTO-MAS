@@ -7,48 +7,24 @@
  */
 export type OkwwConfig_Game = {
     /**
-     * 游戏/模拟器相关功能是否启用
+     * 游戏相关功能是否启用
      */
     Enabled?: (boolean | null);
-    /**
-     * 类型: PC端, URL协议
-     */
-    Type?: ('Client' | 'URL' | null);
-    /**
-     * 游戏/模拟器程序路径
-     */
-    Path?: (string | null);
-    /**
-     * 自定义协议URL
-     */
-    URL?: (string | null);
-    /**
-     * 游戏进程名称
-     */
-    ProcessName?: (string | null);
-    /**
-     * 游戏/模拟器启动参数
-     */
-    Arguments?: (string | null);
-    /**
-     * 游戏/模拟器等待启动时间
-     */
-    WaitTime?: (number | null);
-    /**
-     * 是否强制关闭游戏/模拟器进程
-     */
-    IfForceClose?: (boolean | null);
-    /**
-     * 模拟器ID
-     */
-    EmulatorId?: (string | null);
-    /**
-     * 模拟器多开实例索引
-     */
-    EmulatorIndex?: (string | null);
     /**
      * 任务开始前是否由 MAS 启动游戏
      */
     LaunchBeforeTask?: (boolean | null);
+    /**
+     * 游戏程序路径
+     */
+    Path?: (string | null);
+    /**
+     * 游戏启动参数
+     */
+    Arguments?: (string | null);
+    /**
+     * 游戏等待启动时间
+     */
+    WaitTime?: (number | null);
 };
 

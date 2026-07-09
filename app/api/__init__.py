@@ -38,6 +38,7 @@ from .plugins import router as plugins_router
 from .plugin_gateway import router as plugin_gateway_router
 from .scripts2 import router as scripts2_router
 from .script_types import router as script_types_router
+from .game_center import router as game_center_router
 
 # 可选补丁：米游社扫码登录（可安全删除以下 2 行及 app/api/qr_login.py）
 try:
@@ -64,4 +65,5 @@ __all__ = [
     "plugins_router",
     "plugin_gateway_router",
     "qr_login_router",
+    "game_center_router",
 ]
