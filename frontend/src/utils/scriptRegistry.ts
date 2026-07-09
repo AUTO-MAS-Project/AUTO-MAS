@@ -68,7 +68,7 @@ const DEFAULT_USER_SHAPE = {
   },
 }
 
-export const BUILTIN_SCRIPT_TYPES = new Set(['MAA', 'SRC', 'MaaEnd', 'M9A', 'MaaFW', 'HSR'])
+export const BUILTIN_SCRIPT_TYPES = new Set(['MAA', 'SRC', 'MaaEnd', 'M9A', 'MaaFW', 'Okef', 'HSR'])
 
 export const isBuiltinScriptType = (type: string) => BUILTIN_SCRIPT_TYPES.has(type)
 
@@ -83,6 +83,7 @@ export const getScriptIcon = (type: string) => {
     case 'M9A':
       return m9aIcon
     case 'Okww':
+    case 'Okef':
       return okwwIcon
     case 'HSR':
       return hsrIcon
@@ -104,6 +105,7 @@ export const getScriptTypeTagColor = (type: string) => {
     case 'MaaFW':
       return 'geekblue'
     case 'Okww':
+    case 'Okef':
       return 'orange'
     case 'HSR':
       return 'purple'
@@ -120,6 +122,7 @@ const BUILTIN_EDITOR_SEGMENTS: Record<string, string> = {
   'builtin:maaend': 'maaend',
   'builtin:m9a': 'm9a',
   'builtin:maafw': 'maafw',
+  'builtin:okef': 'okef',
   'builtin:hsr': 'hsr',
 }
 

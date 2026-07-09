@@ -1077,7 +1077,6 @@ const handleToggleUserStatus = async (user: User) => {
     // 调用 updateUser API
     await registryApi.updateUser(script.id, user.id, {
       Info: {
-        ...user.Info,
         Status: newStatus,
       },
     })

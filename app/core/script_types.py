@@ -267,6 +267,8 @@ class ScriptTypeRegistry:
             MaaEndUserConfig,
             MaaFWConfig,
             MaaFWUserConfig,
+            OkefConfig,
+            OkefUserConfig,
             OkwwConfig,
             SrcConfig,
             SrcUserConfig,
@@ -340,6 +342,17 @@ class ScriptTypeRegistry:
                 manager_factory=_lazy_manager("app.task.HSR.manager", "HSRManager"),
                 icon="HSR",
                 editor_kind="builtin:hsr",
+                is_builtin=True,
+            ),
+            ScriptTypeProvider(
+                type_key="Okef",
+                display_name="ok-script 项目",
+                script_config_class=OkefConfig,
+                user_config_class=OkefUserConfig,
+                supported_modes=("AutoProxy",),
+                manager_factory=_lazy_manager("app.task.Okef.manager", "OkefManager"),
+                icon="Okef",
+                editor_kind="builtin:okef",
                 is_builtin=True,
             ),
             ScriptAdapterDefinition(
@@ -697,6 +710,7 @@ def _bind_builtin_script_config_models(global_config: Any) -> None:
         MaaEndUserConfig,
         MaaFWConfig,
         MaaUserConfig,
+        OkefConfig,
         OkwwConfig,
         SrcConfig,
         SrcUserConfig,
@@ -709,6 +723,7 @@ def _bind_builtin_script_config_models(global_config: Any) -> None:
         M9AConfig,
         MaaFWConfig,
         OkwwConfig,
+        OkefConfig,
         HSRConfig,
     )
     for config_class in builtin_script_types:
@@ -723,6 +738,7 @@ def _bind_builtin_script_config_models(global_config: Any) -> None:
     M9AConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
     MaaFWConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
     OkwwConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
+    OkefConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
     MaaUserConfig.related_config["PlanConfig"] = global_config.PlanConfig
 
     _ = LegacyGeneralUserConfig
