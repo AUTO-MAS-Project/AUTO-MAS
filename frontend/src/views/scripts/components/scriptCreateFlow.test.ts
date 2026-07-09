@@ -22,6 +22,9 @@ describe('scriptCreateFlow', () => {
     expect(filterScriptTypeOptions(SCRIPT_TYPE_OPTIONS, '1999').map(item => item.value)).toEqual([
       'M9A',
     ])
+    expect(
+      filterScriptTypeOptions(SCRIPT_TYPE_OPTIONS, 'endfield').map(item => item.value)
+    ).toEqual(['Okef'])
   })
 
   it('separates specialized adapters from the General option', () => {
@@ -34,6 +37,7 @@ describe('scriptCreateFlow', () => {
     expect(getScriptEditSegment('MAA')).toBe('maa')
     expect(getScriptEditSegment('MaaEnd')).toBe('maaend')
     expect(getScriptEditSegment('Okww')).toBe('okww')
+    expect(getScriptEditSegment('Okef')).toBe('okef')
     expect(getScriptEditSegment('HSR')).toBe('hsr')
     expect(getScriptEditSegment('General')).toBe('general')
   })

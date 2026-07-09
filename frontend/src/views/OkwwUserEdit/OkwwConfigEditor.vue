@@ -1,7 +1,7 @@
 <template>
   <div class="okww-config-editor">
     <div class="editor-header">
-      <h3>OK-WW 配置编辑</h3>
+      <h3>{{ title }}</h3>
       <a-tag v-if="hasChanges" color="warning">有未保存的更改</a-tag>
       <a-tag v-else color="success">已保存</a-tag>
     </div>
@@ -79,7 +79,11 @@
                       setFieldValue(selectedConfigForTemplate.filename, field.name, val)
                   "
                 >
-                  <a-select-option v-for="opt in field.options || []" :key="opt" :value="opt">
+                  <a-select-option
+                    v-for="opt in getFieldOptions(selectedConfigForTemplate.filename, field)"
+                    :key="opt"
+                    :value="opt"
+                  >
                     {{ getOptionLabel(opt) }}
                   </a-select-option>
                 </a-select>
@@ -90,15 +94,19 @@
                   :value="
                     getFieldValue(selectedConfigForTemplate.filename, field.name, field.value)
                   "
-                  mode="multiple"
+                  :mode="getListSelectMode(field)"
                   style="width: 100%"
-                  placeholder="请选择"
+                  placeholder="请选择或输入后回车"
                   @change="
                     (val: string[]) =>
                       setFieldValue(selectedConfigForTemplate.filename, field.name, val)
                   "
                 >
-                  <a-select-option v-for="opt in field.options || []" :key="opt" :value="opt">
+                  <a-select-option
+                    v-for="opt in getFieldOptions(selectedConfigForTemplate.filename, field)"
+                    :key="opt"
+                    :value="opt"
+                  >
                     {{ getOptionLabel(opt) }}
                   </a-select-option>
                 </a-select>
@@ -202,9 +210,11 @@ const props = withDefaults(
     scriptId: string
     userId: string
     endpointPrefix?: string
+    title?: string
   }>(),
   {
     endpointPrefix: '/api/scripts/okww/configs',
+    title: '配置编辑',
   }
 )
 
@@ -212,7 +222,7 @@ const emit = defineEmits<{
   saved: []
 }>()
 
-const logger = window.electronAPI.getLogger('OKWW配置编辑')
+const logger = window.electronAPI.getLogger('ok-script配置编辑')
 
 const loading = ref(false)
 const configs = ref<ConfigFile[]>([])
@@ -259,6 +269,26 @@ const getFieldValue = (filename: string, fieldName: string, fallback: any) => {
     return localChanges.value[filename][fieldName]
   }
   return fallback
+}
+
+const getFieldOptions = (filename: string, field: ConfigFile['fields'][number]) => {
+  const options = Array.isArray(field.options) ? [...field.options] : []
+  const value = getFieldValue(filename, field.name, field.value)
+  const values = Array.isArray(value) ? value : [value]
+
+  for (const item of values) {
+    if (item === null || item === undefined) continue
+    const text = String(item)
+    if (text && !options.includes(text)) {
+      options.push(text)
+    }
+  }
+
+  return options
+}
+
+const getListSelectMode = (field: ConfigFile['fields'][number]) => {
+  return Array.isArray(field.options) && field.options.length > 0 ? 'multiple' : 'tags'
 }
 
 const setFieldValue = (filename: string, fieldName: string, value: any) => {
@@ -311,7 +341,7 @@ const loadConfigs = async () => {
     }
   } catch (e) {
     logger.error(`加载配置失败: ${e instanceof Error ? e.message : String(e)}`)
-    message.error('加载 OK-WW 配置失败')
+    message.error('加载配置失败')
   } finally {
     loading.value = false
   }
@@ -385,10 +415,21 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 16px;
+  height: min(720px, calc(100vh - 260px));
+  min-height: 520px;
+}
+
+.okww-config-editor :deep(.ant-spin-nested-loading),
+.okww-config-editor :deep(.ant-spin-container) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .editor-header {
   display: flex;
+  flex-shrink: 0;
   justify-content: space-between;
   align-items: center;
   padding-bottom: 16px;
@@ -413,20 +454,26 @@ watch(
 }
 
 .editor-layout {
-  min-height: 500px;
+  flex: 1;
+  min-height: 0;
 }
 
 .left-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   border-right: 1px solid var(--ant-color-border);
   padding-right: 24px;
-  overflow-y: auto;
-  max-height: 600px;
+  overflow: hidden;
 }
 
 .config-groups {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .group-header {
@@ -498,17 +545,26 @@ watch(
 }
 
 .right-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   padding-left: 24px;
+  overflow: hidden;
 }
 
 .config-form {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 20px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .form-header {
   display: flex;
+  flex-shrink: 0;
   align-items: baseline;
   gap: 12px;
   padding-bottom: 16px;
@@ -530,8 +586,12 @@ watch(
 
 .form-fields {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .form-fields :deep(.ant-form-item) {
@@ -551,8 +611,16 @@ watch(
 
 .no-selection {
   display: flex;
+  flex: 1;
   align-items: center;
   justify-content: center;
-  height: 400px;
+  min-height: 0;
+}
+
+@media (max-width: 768px) {
+  .okww-config-editor {
+    height: calc(100vh - 180px);
+    min-height: 480px;
+  }
 }
 </style>

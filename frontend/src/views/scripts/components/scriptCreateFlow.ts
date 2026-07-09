@@ -80,9 +80,17 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
   },
   {
     value: 'Okww',
-    title: 'ok-ww 脚本',
-    description: 'ok-script 专项任务脚本',
-    keywords: ['okww', 'ok-ww', 'ok-script'],
+    title: '鸣潮 ok-script 项目',
+    description: '读取 ok-ww 项目配置并通过内置表单编辑用户配置',
+    keywords: ['okww', 'ok-ww', '鸣潮', 'wuthering waves', 'ok-script'],
+    group: 'specialized',
+    icon: okwwIcon,
+  },
+  {
+    value: 'Okef',
+    title: 'ok-script 项目',
+    description: '读取 ok-script 项目配置并通过内置表单编辑用户配置',
+    keywords: ['okef', 'ok-ef', '终末地', 'endfield', 'ok-script'],
     group: 'specialized',
     icon: okwwIcon,
   },
@@ -134,6 +142,7 @@ const EDIT_SEGMENT_BY_TYPE: Record<ScriptType, string> = {
   M9A: 'm9a',
   MaaFW: 'maafw',
   Okww: 'okww',
+  Okef: 'okef',
   HSR: 'hsr',
   General: 'general',
 }

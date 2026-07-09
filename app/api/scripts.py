@@ -32,13 +32,22 @@ from fastapi.responses import FileResponse
 
 from app.core import Config
 from app.models.schema import *
+from app.task.Ok.common.provider import ok_script_mas_config_dir
+from app.task.Ok.providers import detect_ok_script_provider
+from app.task.Ok.providers.okef import OKEF_PROVIDER
 from app.task.Okww.AutoProxy import _OKWW_REL_CONFIG_DIR
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 
+_OKEF_REL_CONFIG_DIR = OKEF_PROVIDER.config_dir
+
 
 def _okww_mas_config_dir(script_id: str, user_id: str) -> Path:
     return Path.cwd() / "data" / script_id / user_id / "ConfigFile"
+
+
+def _okef_mas_config_dir(script_id: str, user_id: str) -> Path:
+    return ok_script_mas_config_dir(script_id, user_id)
 
 
 def _okww_config_file_path(config_dir: Path, filename: str) -> Path:
@@ -90,6 +99,10 @@ def _ensure_okww_user_config_defaults(config_dir: Path, source_dir: Path | None)
         merged_data = {**source_data, **current_data}
         if merged_data != current_data:
             _okww_write_json_file_atomic(current_path, merged_data)
+
+
+def _okef_config_file_path(config_dir: Path, filename: str) -> Path:
+    return _okww_config_file_path(config_dir, filename)
 
 
 _MAAFW_IMAGE_SUFFIXES = {
@@ -150,6 +163,7 @@ SCRIPT_BOOK = {
     "MaaFWConfig": MaaFWConfig,
     "GeneralConfig": GeneralConfig,
     "OkwwConfig": OkwwConfig,
+    "OkefConfig": OkefConfig,
     "HSRConfig": HSRConfig,
 }
 USER_BOOK = {
@@ -160,6 +174,7 @@ USER_BOOK = {
     "MaaFWConfig": MaaFWUserConfig,
     "GeneralConfig": GeneralUserConfig,
     "OkwwConfig": OkwwUserConfig,
+    "OkefConfig": OkefUserConfig,
     "HSRConfig": HSRUserConfig,
 }
 
@@ -1278,6 +1293,142 @@ async def batch_update_okww_configs(
         updated_files = []
         for filename, data in configs.items():
             filepath = _okww_config_file_path(mas_config_dir, filename)
+            existing_data = {}
+            if filepath.exists():
+                with open(filepath, "r", encoding="utf-8") as f:
+                    existing_data = json.load(f)
+            existing_data.update(data)
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(existing_data, f, ensure_ascii=False, indent=4)
+            updated_files.append(filename)
+
+        return {
+            "code": 200,
+            "status": "success",
+            "message": f"已更新 {len(updated_files)} 个配置文件",
+            "data": updated_files,
+        }
+    except Exception as e:
+        return {
+            "code": 500,
+            "status": "error",
+            "message": f"{type(e).__name__}: {str(e)}",
+        }
+
+
+@router.post(
+    "/okef/configs/list",
+    tags=["OKEF"],
+    summary="获取 OK-EF 配置文件列表和 schema",
+    status_code=200,
+)
+async def get_okef_configs_list(script_id: str, user_id: str):
+    """
+    获取 OK-EF 配置文件列表和 schema 定义。
+    读取用户配置目录（data/{script_id}/{user_id}/ConfigFile/），
+    若为空则自动从 OK-EF working/configs 目录初始化默认配置。
+    """
+    try:
+        import json
+        import shutil
+
+        from app.task.Okef.config_schema import (
+            build_fields_for_config,
+            get_config_info_from_dir,
+            load_okef_option_labels,
+        )
+
+        script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+        if type(script_config).__name__ != "OkefConfig":
+            return {
+                "code": 400,
+                "status": "error",
+                "message": "指定脚本不是 ok-script 项目",
+                "data": [],
+            }
+
+        root_path = script_config.get("Info", "RootPath")
+        provider = detect_ok_script_provider(
+            root_path,
+            script_config.get("Info", "ResourceName"),
+        )
+        if provider is None:
+            return {
+                "code": 400,
+                "status": "error",
+                "message": "当前 ok-script 项目尚未适配",
+                "data": [],
+            }
+
+        option_labels = load_okef_option_labels(root_path) if root_path else {}
+        mas_config_dir = _okef_mas_config_dir(script_id, user_id)
+        okef_configs_dir = provider.config_path(Path(root_path)) if root_path else None
+
+        need_init = not mas_config_dir.exists() or not any(mas_config_dir.iterdir())
+        if need_init and okef_configs_dir and okef_configs_dir.is_dir():
+            mas_config_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(okef_configs_dir, mas_config_dir, dirs_exist_ok=True)
+
+        configs_info = get_config_info_from_dir(mas_config_dir)
+        result = []
+        for info in configs_info:
+            filename = info["filename"]
+            filepath = mas_config_dir / filename
+            current_data: dict[str, Any] = {}
+            if filepath.exists():
+                try:
+                    current_data = json.loads(filepath.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+
+            fields = build_fields_for_config(filename, current_data, option_labels)
+            result.append(
+                {
+                    **info,
+                    "fieldCount": len(fields),
+                    "fields": fields,
+                    "currentData": current_data,
+                }
+            )
+
+        return {
+            "code": 200,
+            "status": "success",
+            "message": f"共 {len(result)} 个配置文件",
+            "data": result,
+            "optionLabels": option_labels,
+            "configPath": str(mas_config_dir),
+        }
+    except Exception as e:
+        return {
+            "code": 500,
+            "status": "error",
+            "message": f"{type(e).__name__}: {str(e)}",
+            "data": [],
+        }
+
+
+@router.post(
+    "/okef/configs/batch-update",
+    tags=["OKEF"],
+    summary="批量更新 OK-EF 配置文件",
+    status_code=200,
+)
+async def batch_update_okef_configs(
+    script_id: str = Body(...),
+    user_id: str = Body(...),
+    configs: dict = Body(...),
+):
+    """批量更新 OK-EF 用户配置 JSON。"""
+    try:
+        import json
+
+        mas_config_dir = _okef_mas_config_dir(script_id, user_id)
+        mas_config_dir.mkdir(parents=True, exist_ok=True)
+
+        updated_files = []
+        for filename, data in configs.items():
+            filepath = _okef_config_file_path(mas_config_dir, filename)
             existing_data = {}
             if filepath.exists():
                 with open(filepath, "r", encoding="utf-8") as f:

@@ -2657,6 +2657,158 @@ class OkwwUserConfig(ConfigBase):
         return json.dumps(tags, ensure_ascii=False)
 
 
+class OkefUserConfig(ConfigBase):
+    """OK-EF 用户配置（ok-script 线）"""
+
+    # 用户卡 Tag 仅展示 OK-EF 任务简称（与编辑页下拉的完整名称区分）
+    OKEF_TASK_BOOK: dict[int, str] = {
+        1: "日常",
+        2: "收取派送",
+        3: "仓库转运",
+        4: "派送",
+        5: "战斗",
+        6: "抽卡演示",
+        7: "测试",
+        8: "莺鸵",
+        9: "启动游戏测试",
+        10: "实时识别",
+        11: "诊断",
+    }
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## 用户名称
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
+        ## 是否启用
+        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        ## 剩余天数
+        self.Info_RemainedDay = ConfigItem(
+            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        ## 是否在任务前执行脚本
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        ## 任务前脚本路径
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        ## 是否在任务后执行脚本
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        ## 任务后脚本路径
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
+        )
+        ## 备注
+        self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        ## 用户标签信息
+        self.Info_Tag = ConfigItem(
+            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
+        )
+
+        ## Task ------------------------------------------------------------
+        ## OK-EF 一次性任务序号：ok-ef.exe -t N -e
+        self.Task_TaskIndex = ConfigItem(
+            "Task", "TaskIndex", 1, RangeValidator(1, 11)
+        )
+
+        ## Data ------------------------------------------------------------
+        ## 上次代理日期
+        self.Data_LastProxyDate = ConfigItem(
+            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        ## 代理次数
+        self.Data_ProxyTimes = ConfigItem(
+            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
+        )
+        ## 上次代理状态
+        self.Data_LastProxyStatus = ConfigItem(
+            "Data",
+            "LastProxyStatus",
+            "未知",
+            OptionsValidator(["未知", "成功", "失败"]),
+        )
+        ## 上次执行的任务序号
+        self.Data_LastTaskIndex = ConfigItem(
+            "Data", "LastTaskIndex", 0, RangeValidator(0, 9999)
+        )
+
+        ## Notify ----------------------------------------------------------
+        ## 是否启用通知
+        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否发送统计信息
+        self.Notify_IfSendStatistic = ConfigItem(
+            "Notify", "IfSendStatistic", False, BoolValidator()
+        )
+        ## 是否发送邮件
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
+        ## 收件地址
+        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否启用 Server 酱
+        self.Notify_IfServerChan = ConfigItem(
+            "Notify", "IfServerChan", False, BoolValidator()
+        )
+        ## Server 酱密钥
+        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 自定义 Webhook 列表
+        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
+
+        super().__init__()
+
+    def getTags(self) -> str:
+        """生成 OK-EF 用户标签列表"""
+        tags = []
+
+        last_status = self.get("Data", "LastProxyStatus")
+        status_color = "green" if last_status == "成功" else "red" if last_status == "失败" else "gray"
+        tags.append({"text": f"上次：{last_status}", "color": status_color})
+
+        last_task_index = int(self.get("Data", "LastTaskIndex") or 0)
+        task_label = self.OKEF_TASK_BOOK.get(last_task_index, "未知")
+        tags.append({"text": f"任务：{task_label}", "color": "orange"})
+
+        remained_day = self.get("Info", "RemainedDay")
+        if remained_day == -1:
+            tag_color = "gold"
+        elif remained_day == 0:
+            tag_color = "red"
+        elif remained_day <= 3:
+            tag_color = "orange"
+        elif remained_day <= 7:
+            tag_color = "yellow"
+        elif remained_day <= 30:
+            tag_color = "blue"
+        else:
+            tag_color = "green"
+        tags.append(
+            {
+                "text": (
+                    f"剩余天数：{remained_day}天"
+                    if remained_day >= 0
+                    else "剩余天数：无期限"
+                ),
+                "color": tag_color,
+            }
+        )
+
+        notes = self.get("Info", "Notes")
+        tags.append(
+            {
+                "text": (
+                    f"备注：{notes}" if len(notes) <= 20 else f"备注：{notes[:20]}..."
+                ),
+                "color": "pink",
+            }
+        )
+
+        return json.dumps(tags, ensure_ascii=False)
+
+
 class GeneralConfig(ConfigBase):
     """通用配置"""
 
@@ -2788,7 +2940,7 @@ class OkwwConfig(ConfigBase):
     def __init__(self) -> None:
 
         ## Info ------------------------------------------------------------
-        self.Info_Name = ConfigItem("Info", "Name", "新 OK-WW 脚本")
+        self.Info_Name = ConfigItem("Info", "Name", "鸣潮")
         self.Info_RootPath = ConfigItem(
             "Info", "RootPath", "", ScriptRootPathValidator()
         )
@@ -2813,6 +2965,58 @@ class OkwwConfig(ConfigBase):
         )
 
         self.UserData = MultipleConfig([OkwwUserConfig])
+
+        super().__init__()
+
+
+class OkefConfig(ConfigBase):
+    """OK-EF 配置（ok-script 线）"""
+
+    related_config: dict[str, MultipleConfig] = {}
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## 脚本名称
+        self.Info_Name = ConfigItem("Info", "Name", "ok-script 项目")
+        ## ok-script 资源名（来自 pyappify.yml 或安装态 app.json）
+        self.Info_ResourceName = ConfigItem("Info", "ResourceName", "")
+        ## ok-script 项目显示标签
+        self.Info_ProjectLabel = ConfigItem("Info", "ProjectLabel", "")
+        ## 根目录路径
+        self.Info_RootPath = ConfigItem(
+            "Info", "RootPath", "", ScriptRootPathValidator()
+        )
+
+        ## Game ------------------------------------------------------------
+        ## 是否由 MAS 管理游戏进程
+        self.Game_Enabled = ConfigItem("Game", "Enabled", True, BoolValidator())
+        ## 兼容旧配置：ok-script 运行层固定先启动游戏，不再由该字段决定顺序
+        self.Game_LaunchBeforeTask = ConfigItem(
+            "Game", "LaunchBeforeTask", True, BoolValidator()
+        )
+        ## 游戏路径
+        self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
+        ## 游戏启动参数
+        self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
+        ## 等待时间（秒）
+        self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
+
+        ## Run -------------------------------------------------------------
+        ## 代理次数限制
+        self.Run_ProxyTimesLimit = ConfigItem(
+            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
+        )
+        ## 运行次数限制
+        self.Run_RunTimesLimit = ConfigItem(
+            "Run", "RunTimesLimit", 1, RangeValidator(1, 9999)
+        )
+        ## 运行时间限制（分钟）
+        self.Run_RunTimeLimit = ConfigItem(
+            "Run", "RunTimeLimit", 60, RangeValidator(1, 9999)
+        )
+
+        self.UserData = MultipleConfig([OkefUserConfig])
 
         super().__init__()
 
@@ -3308,7 +3512,17 @@ class GlobalConfig(ConfigBase):
         self.PlanConfig = MultipleConfig([MaaPlanConfig])
         ## 脚本配置列表
         self.ScriptConfig = MultipleConfig(
-            [MaaConfig, MaaEndConfig, SrcConfig, M9AConfig, MaaFWConfig, GeneralConfig, OkwwConfig, HSRConfig]
+            [
+                MaaConfig,
+                MaaEndConfig,
+                SrcConfig,
+                M9AConfig,
+                MaaFWConfig,
+                GeneralConfig,
+                OkwwConfig,
+                OkefConfig,
+                HSRConfig,
+            ]
         )
         ## 队列配置列表
         self.QueueConfig = MultipleConfig([QueueConfig])
@@ -3324,6 +3538,7 @@ class GlobalConfig(ConfigBase):
         MaaFWConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         OkwwConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
+        OkefConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
 
@@ -3399,6 +3614,7 @@ CLASS_BOOK = {
     "MaaFW": MaaFWConfig,
     "General": GeneralConfig,
     "Okww": OkwwConfig,
+    "Okef": OkefConfig,
     "HSR": HSRConfig,
 }
 """配置类映射表"""

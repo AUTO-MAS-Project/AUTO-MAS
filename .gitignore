@@ -62,3 +62,4 @@ uv.lock
 !/plugins/auto_mas_core/
 !/plugins/auto_mas_core/**
 /app/core/plugins/_generated/
+res/docs/ok-series-common-script-report.md
