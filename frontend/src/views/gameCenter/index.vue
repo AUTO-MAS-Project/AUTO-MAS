@@ -9,6 +9,7 @@ import {
   FolderOpenOutlined,
   PlayCircleOutlined,
   PlusOutlined,
+  PoweroffOutlined,
   ReloadOutlined,
   StopOutlined,
 } from '@ant-design/icons-vue'
@@ -37,6 +38,7 @@ interface GameActionState {
   checking: boolean
   installing: boolean
   launching: boolean
+  closing: boolean
   canceling: boolean
   phase: string
   percent: number
@@ -89,6 +91,7 @@ function getActionState(uid: string): GameActionState {
       checking: false,
       installing: false,
       launching: false,
+      closing: false,
       canceling: false,
       phase: '',
       percent: 0,
@@ -234,7 +237,10 @@ async function pickInstallPath(uid: string) {
 }
 
 async function pickLocalApk(uid: string) {
-  const filePath = await window.electronAPI.selectFile()
+  const selectedFiles = await window.electronAPI.selectFile([
+    { name: 'APK 文件', extensions: ['apk'] },
+  ])
+  const filePath = Array.isArray(selectedFiles) ? selectedFiles[0] : null
   if (!filePath) return
   const state = getActionState(uid)
   state.installing = true
@@ -413,6 +419,23 @@ async function launchGame(uid: string) {
     message.error(`启动失败: ${e instanceof Error ? e.message : String(e)}`)
   } finally {
     state.launching = false
+  }
+}
+
+async function closeGame(uid: string) {
+  const state = getActionState(uid)
+  state.closing = true
+  try {
+    const res = await Service.closeGameApiGameCenterClosePost({ gameId: uid })
+    if (res.code !== 200) {
+      message.error(res.message || '关闭失败')
+      return
+    }
+    message.success('已关闭游戏')
+  } catch (e) {
+    message.error(`关闭失败: ${e instanceof Error ? e.message : String(e)}`)
+  } finally {
+    state.closing = false
   }
 }
 
@@ -610,6 +633,13 @@ onUnmounted(() => {
             >
               <PlayCircleOutlined />
               启动
+            </span>
+            <span
+              :class="{ disabled: getActionState(g.uid).closing || isInstalling(g.uid) }"
+              @click="!getActionState(g.uid).closing && !isInstalling(g.uid) && closeGame(g.uid)"
+            >
+              <PoweroffOutlined />
+              关闭
             </span>
             <span
               v-if="isAdbApk(g.uid)"

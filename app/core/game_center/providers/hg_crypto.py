@@ -22,14 +22,13 @@
 AES-256-CBC + PKCS7 加密存储。本模块提供对称加解密, 供
 HypergryphPcProvider 读取/回写本地版本号使用。
 
-依赖: cryptography (已确认为项目可用依赖)。若后续需要替换实现,
-pyaes / PyCryptodome 均可提供等价 AES-CBC。
+依赖: pycryptodome (项目已声明依赖, 见 pyproject.toml)。
 """
 
 from __future__ import annotations
 
-from cryptography.hazmat.primitives import padding
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad, unpad
 
 # 固定密钥与初始向量 (32 字节 key / 16 字节 IV, 来自鹰角启动器)
 AES_KEY = bytes(
@@ -47,8 +46,8 @@ AES_IV = bytes(
     ]
 )
 
-# AES 块大小 (位), PKCS7 填充以块大小对齐
-_BLOCK_SIZE_BITS = algorithms.AES.block_size
+# AES 块大小 (字节), PKCS7 填充以块大小对齐
+_BLOCK_SIZE = AES.block_size
 
 
 def decrypt_config_to_str(raw: bytes) -> str:
@@ -63,12 +62,9 @@ def decrypt_config_to_str(raw: bytes) -> str:
     Raises:
         ValueError: 数据长度非块整数倍, 或 PKCS7 去填充失败 (密钥/数据错误)
     """
-    cipher = Cipher(algorithms.AES(AES_KEY), modes.CBC(AES_IV))
-    decryptor = cipher.decryptor()
-    decrypted = decryptor.update(raw) + decryptor.finalize()
-
-    unpadder = padding.PKCS7(_BLOCK_SIZE_BITS).unpadder()
-    plain = unpadder.update(decrypted) + unpadder.finalize()
+    cipher = AES.new(AES_KEY, AES.MODE_CBC, iv=AES_IV)
+    decrypted = cipher.decrypt(raw)
+    plain = unpad(decrypted, _BLOCK_SIZE)
     return plain.decode("utf-8")
 
 
@@ -82,10 +78,6 @@ def encrypt_str_to_config(text: str) -> bytes:
         AES-256-CBC + PKCS7 加密后的字节
     """
     data = text.encode("utf-8")
-
-    padder = padding.PKCS7(_BLOCK_SIZE_BITS).padder()
-    padded = padder.update(data) + padder.finalize()
-
-    cipher = Cipher(algorithms.AES(AES_KEY), modes.CBC(AES_IV))
-    encryptor = cipher.encryptor()
-    return encryptor.update(padded) + encryptor.finalize()
+    padded = pad(data, _BLOCK_SIZE)
+    cipher = AES.new(AES_KEY, AES.MODE_CBC, iv=AES_IV)
+    return cipher.encrypt(padded)

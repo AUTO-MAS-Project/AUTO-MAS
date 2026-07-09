@@ -106,7 +106,6 @@ export const FALLBACK_PAGE_DECLARATIONS: PageDeclaration[] = [
   hostPage('plugins', '/plugins', '插件管理', 'plugin', 'Plugin', 'main', 50),
   hostPage('plugins-market', '/plugins-market', '插件市场', 'market', 'PluginMarket', 'main', 60),
   hostPage('queue', '/queue', '调度队列', 'queue', 'Queue', 'main', 70),
-  hostPage('game-center', '/game-center', '游戏中心', 'game', 'GameCenter', 'main', 75),
   hostPage('scheduler', '/scheduler', '调度中心', 'scheduler', 'Scheduler', 'main', 80),
   hostPage('history', '/history', '历史记录', 'history', 'History', 'bottom', 10),
   hostPage('tools', '/tools', '工具', 'tool', 'Tools', 'bottom', 20),

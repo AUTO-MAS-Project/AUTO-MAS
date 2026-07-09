@@ -250,7 +250,7 @@ class GameCenterManager:
             state.phase = "cancelled"
             state.detail = "已取消"
             logger.info(f"安装任务已取消: {game_id}")
-            cb(ProgressEvent(phase="done", percent=0.0, message="已取消"))
+            cb(ProgressEvent(phase="cancelled", percent=0.0, message="已取消"))
         except Exception as e:
             state.running = False
             state.phase = "error"
@@ -286,6 +286,30 @@ class GameCenterManager:
             return {"code": 200, "status": "ok", "message": "已启动"}
         except Exception as e:
             logger.error(f"启动失败 [{game_id}]: {e}")
+            return {
+                "code": 500,
+                "status": "error",
+                "message": f"{type(e).__name__}: {e}",
+            }
+
+    async def close(self, game_id: str) -> dict[str, Any]:
+        """关闭游戏"""
+        if self.is_running(game_id):
+            return {
+                "code": 409,
+                "status": "conflict",
+                "message": "该游戏有安装任务运行中, 请先取消",
+            }
+
+        provider = self._create_provider(game_id)
+        if provider is None:
+            return {"code": 500, "status": "error", "message": "无法创建 provider"}
+
+        try:
+            await provider.close()
+            return {"code": 200, "status": "ok", "message": "已关闭"}
+        except Exception as e:
+            logger.error(f"关闭失败 [{game_id}]: {e}")
             return {
                 "code": 500,
                 "status": "error",

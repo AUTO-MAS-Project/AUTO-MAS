@@ -67,7 +67,6 @@ from .pypi_site import (
 )
 
 # ── 服务 ──
-from .mcp_facade import PluginMcpFacade, PluginMcpRegistry, plugin_mcp
 from .server import (
     PluginHttpRequest,
     PluginHttpResponse,
@@ -171,9 +170,6 @@ __all__ = [
     # 服务
     "ServiceRegistry",
     "ServiceSpec",
-    "PluginMcpFacade",
-    "PluginMcpRegistry",
-    "plugin_mcp",
     "PluginHttpRequest",
     "PluginHttpResponse",
     "PluginServerFacade",
