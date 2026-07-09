@@ -26,8 +26,12 @@ from __future__ import annotations
 
 import abc
 import asyncio
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Optional
+
+import psutil
 
 from app.utils import get_logger
 
@@ -39,13 +43,14 @@ class ProgressEvent:
     """单次操作进度事件, 通过 WebSocket 推送到前端
 
     phase 取值:
-      check    - 版本检查中
-      download - 下载中
-      verify   - 校验中
-      patch    - 打补丁中
-      install  - 安装中
-      done     - 完成
-      error    - 出错
+      check     - 版本检查中
+      download  - 下载中
+      verify    - 校验中
+      patch     - 打补丁中
+      install   - 安装中
+      done      - 完成
+      cancelled - 已取消
+      error     - 出错
     """
 
     phase: str = "check"
@@ -130,3 +135,35 @@ class GameProvider(abc.ABC):
     async def launch(self) -> None:
         """启动游戏"""
         ...
+
+    @abc.abstractmethod
+    async def close(self) -> None:
+        """关闭游戏"""
+        ...
+
+
+def kill_processes_under(directory: Path) -> int:
+    """结束可执行文件位于指定目录下的所有进程 (PC 游戏关闭用)
+
+    参考 app/utils/emulator/mumu.py 的 psutil 清理模式,
+    按 exe 路径前缀匹配, 连带结束游戏拉起的子进程。
+
+    Args:
+        directory: 游戏目录
+
+    Returns:
+        结束的进程数
+    """
+    root = str(directory.resolve()).lower().rstrip("\\/") + os.sep
+    killed = 0
+    for proc in psutil.process_iter(["pid", "name", "exe"]):
+        try:
+            exe = proc.info.get("exe") or ""
+            if not exe or not str(Path(exe).resolve()).lower().startswith(root):
+                continue
+            proc.kill()
+            killed += 1
+            logger.info(f"已结束游戏进程: {proc.info.get('name')} (PID {proc.info.get('pid')})")
+        except (psutil.NoSuchProcess, psutil.AccessDenied, OSError) as e:
+            logger.warning(f"结束游戏进程失败: {e}")
+    return killed

@@ -40,7 +40,12 @@ from typing import Any, Callable
 
 import httpx
 
-from app.core.game_center.base import GameProvider, LatestInfo, ProgressEvent
+from app.core.game_center.base import (
+    GameProvider,
+    LatestInfo,
+    ProgressEvent,
+    kill_processes_under,
+)
 from app.utils import get_logger
 from app.utils.constants import CREATION_FLAGS
 from app.utils.downloader import download_many
@@ -270,11 +275,23 @@ class HypergryphPcProvider(GameProvider):
         progress_cb(ProgressEvent(phase="done", percent=100.0, message="更新完成"))
 
     async def launch(self) -> None:
-        """启动游戏"""
+        """启动游戏 (LaunchArgs 作为附加启动参数)"""
         exe = self._exe_path()
         if not exe.exists():
             raise RuntimeError(f"游戏可执行文件不存在: {exe}")
-        os.startfile(str(exe))
+        launch_args = self.config.get("Data", "LaunchArgs")
+        if launch_args:
+            os.startfile(str(exe), arguments=launch_args)
+        else:
+            os.startfile(str(exe))
+
+    async def close(self) -> None:
+        """关闭游戏 (结束游戏目录下的所有进程)"""
+        killed = await asyncio.to_thread(
+            kill_processes_under, self._game_dir()
+        )
+        if killed == 0:
+            logger.info("未发现运行中的游戏进程")
 
     # ---------- 官方启动器 ----------
 
@@ -341,8 +358,10 @@ class HypergryphPcProvider(GameProvider):
                 }
             ],
         }
+        from app.core import Config
+
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(30.0, connect=10.0)
+            timeout=httpx.Timeout(30.0, connect=10.0), proxy=Config.proxy
         ) as client:
             resp = await client.post(params["api_url"], json=body)
             resp.raise_for_status()
@@ -674,7 +693,9 @@ async def _load_patch_manifest(
     if local_manifest.exists():
         data = json.loads(local_manifest.read_text(encoding="utf-8"))
     elif patch_info_url:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        from app.core import Config
+
+        async with httpx.AsyncClient(timeout=30.0, proxy=Config.proxy) as client:
             resp = await client.get(patch_info_url)
             resp.raise_for_status()
             data = resp.json()

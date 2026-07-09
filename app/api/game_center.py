@@ -19,8 +19,7 @@
 
 from fastapi import APIRouter, Body
 
-from app.core import Config
-from app.core.game_center import list_presets, get_preset, game_center_manager
+from app.plugins import PluginManager
 from app.models.schema import (
     OutBase,
     GameConfig,
@@ -40,11 +39,23 @@ from app.models.schema import (
     GameTaskStatusOut,
 )
 
-router = APIRouter(prefix="/api/game_center", tags=["游戏中心"])
+
+def _get_game_center_service():
+    service = PluginManager.service.get("game_center")
+    if service is None:
+        raise RuntimeError("game_center service is unavailable")
+    return service
+
+
+def _error_code(exc: Exception) -> int:
+    return 503 if "service is unavailable" in str(exc) else 500
 
 
 def _err(exc: Exception) -> str:
     return f"{type(exc).__name__}: {str(exc)}"
+
+
+router = APIRouter(prefix="/api/game_center", tags=["游戏中心"])
 
 
 @router.post(
@@ -56,12 +67,12 @@ def _err(exc: Exception) -> str:
 )
 async def get_game(game: GameGetIn = Body(...)) -> GameGetOut:
     try:
-        index, data = await Config.get_game(game.gameId)
+        index, data = await _get_game_center_service().get_config(game.gameId)
         index = [GameConfigIndexItem(**_) for _ in index]
         data = {uid: GameConfig(**cfg) for uid, cfg in data.items()}
     except Exception as e:
         return GameGetOut(
-            code=500, status="error", message=_err(e), index=[], data={}
+            code=_error_code(e), status="error", message=_err(e), index=[], data={}
         )
     return GameGetOut(index=index, data=data)
 
@@ -75,22 +86,11 @@ async def get_game(game: GameGetIn = Body(...)) -> GameGetOut:
 )
 async def add_game(game: GameAddIn = Body(default=GameAddIn())) -> GameCreateOut:
     try:
-        uid, config = await Config.add_game()
-        # 若指定预设, 用预设值预填新条目
-        if game.preset:
-            preset = get_preset(game.preset)
-            if preset is None:
-                raise ValueError(f"未知预设: {game.preset}")
-            await config.set("Info", "Name", preset.name)
-            await config.set("Info", "Platform", preset.platform)
-            await config.set("Info", "Provider", preset.provider)
-            await config.set("Info", "PresetKey", preset.key)
-            if preset.package_name:
-                await config.set("Data", "PackageName", preset.package_name)
+        uid, config = await _get_game_center_service().add(game.preset)
         data = GameConfig(**(await config.toDict()))
     except Exception as e:
         return GameCreateOut(
-            code=500,
+            code=_error_code(e),
             status="error",
             message=_err(e),
             gameId="",
@@ -108,11 +108,11 @@ async def add_game(game: GameAddIn = Body(default=GameAddIn())) -> GameCreateOut
 )
 async def update_game(game: GameUpdateIn = Body(...)) -> OutBase:
     try:
-        await Config.update_game(
+        await _get_game_center_service().update(
             game.gameId, game.data.model_dump(exclude_unset=True)
         )
     except Exception as e:
-        return OutBase(code=500, status="error", message=_err(e))
+        return OutBase(code=_error_code(e), status="error", message=_err(e))
     return OutBase()
 
 
@@ -125,9 +125,9 @@ async def update_game(game: GameUpdateIn = Body(...)) -> OutBase:
 )
 async def delete_game(game: GameDeleteIn = Body(...)) -> OutBase:
     try:
-        await Config.del_game(game.gameId)
+        await _get_game_center_service().delete(game.gameId)
     except Exception as e:
-        return OutBase(code=500, status="error", message=_err(e))
+        return OutBase(code=_error_code(e), status="error", message=_err(e))
     return OutBase()
 
 
@@ -140,9 +140,9 @@ async def delete_game(game: GameDeleteIn = Body(...)) -> OutBase:
 )
 async def reorder_game(game: GameReorderIn = Body(...)) -> OutBase:
     try:
-        await Config.reorder_game(game.indexList)
+        await _get_game_center_service().reorder(game.indexList)
     except Exception as e:
-        return OutBase(code=500, status="error", message=_err(e))
+        return OutBase(code=_error_code(e), status="error", message=_err(e))
     return OutBase()
 
 
@@ -155,13 +155,17 @@ async def reorder_game(game: GameReorderIn = Body(...)) -> OutBase:
 )
 async def get_presets() -> GamePresetsOut:
     try:
-        presets = [GamePresetItem(**p) for p in list_presets()]
+        presets = [
+            GamePresetItem(**p) for p in _get_game_center_service().presets()
+        ]
     except Exception as e:
-        return GamePresetsOut(code=500, status="error", message=_err(e), presets=[])
+        return GamePresetsOut(
+            code=_error_code(e), status="error", message=_err(e), presets=[]
+        )
     return GamePresetsOut(presets=presets)
 
 
-# ======================== 操作类路由 (M2+) ========================
+# ======================== 操作类路由 ========================
 
 
 @router.post(
@@ -173,7 +177,7 @@ async def get_presets() -> GamePresetsOut:
 )
 async def check_game(game: GameOperateIn = Body(...)) -> GameCheckOut:
     try:
-        result = await game_center_manager.check(game.gameId)
+        result = await _get_game_center_service().check(game.gameId)
         if result.get("code") != 200:
             return GameCheckOut(
                 code=result.get("code", 500),
@@ -189,7 +193,7 @@ async def check_game(game: GameOperateIn = Body(...)) -> GameCheckOut:
             installed=result.get("installed", False),
         )
     except Exception as e:
-        return GameCheckOut(code=500, status="error", message=_err(e))
+        return GameCheckOut(code=_error_code(e), status="error", message=_err(e))
 
 
 @router.post(
@@ -201,14 +205,14 @@ async def check_game(game: GameOperateIn = Body(...)) -> GameCheckOut:
 )
 async def install_game(game: GameOperateIn = Body(...)) -> OutBase:
     try:
-        result = await game_center_manager.install(game.gameId)
+        result = await _get_game_center_service().install(game.gameId)
         return OutBase(
             code=result.get("code", 500),
             status=result.get("status", "error"),
             message=result.get("message", ""),
         )
     except Exception as e:
-        return OutBase(code=500, status="error", message=_err(e))
+        return OutBase(code=_error_code(e), status="error", message=_err(e))
 
 
 @router.post(
@@ -220,14 +224,14 @@ async def install_game(game: GameOperateIn = Body(...)) -> OutBase:
 )
 async def cancel_game(game: GameOperateIn = Body(...)) -> OutBase:
     try:
-        result = await game_center_manager.cancel(game.gameId)
+        result = await _get_game_center_service().cancel(game.gameId)
         return OutBase(
             code=result.get("code", 200),
             status=result.get("status", "ok"),
             message=result.get("message", ""),
         )
     except Exception as e:
-        return OutBase(code=500, status="error", message=_err(e))
+        return OutBase(code=_error_code(e), status="error", message=_err(e))
 
 
 @router.post(
@@ -239,14 +243,33 @@ async def cancel_game(game: GameOperateIn = Body(...)) -> OutBase:
 )
 async def launch_game(game: GameOperateIn = Body(...)) -> OutBase:
     try:
-        result = await game_center_manager.launch(game.gameId)
+        result = await _get_game_center_service().launch(game.gameId)
         return OutBase(
             code=result.get("code", 500),
             status=result.get("status", "error"),
             message=result.get("message", ""),
         )
     except Exception as e:
-        return OutBase(code=500, status="error", message=_err(e))
+        return OutBase(code=_error_code(e), status="error", message=_err(e))
+
+
+@router.post(
+    "/close",
+    tags=["Update"],
+    summary="关闭游戏",
+    response_model=OutBase,
+    status_code=200,
+)
+async def close_game(game: GameOperateIn = Body(...)) -> OutBase:
+    try:
+        result = await _get_game_center_service().close(game.gameId)
+        return OutBase(
+            code=result.get("code", 500),
+            status=result.get("status", "error"),
+            message=result.get("message", ""),
+        )
+    except Exception as e:
+        return OutBase(code=_error_code(e), status="error", message=_err(e))
 
 
 @router.post(
@@ -258,14 +281,16 @@ async def launch_game(game: GameOperateIn = Body(...)) -> OutBase:
 )
 async def open_official_launcher(game: GameOperateIn = Body(...)) -> OutBase:
     try:
-        result = await game_center_manager.open_official_launcher(game.gameId)
+        result = await _get_game_center_service().open_official_launcher(
+            game.gameId
+        )
         return OutBase(
             code=result.get("code", 500),
             status=result.get("status", "error"),
             message=result.get("message", ""),
         )
     except Exception as e:
-        return OutBase(code=500, status="error", message=_err(e))
+        return OutBase(code=_error_code(e), status="error", message=_err(e))
 
 
 @router.post(
@@ -279,7 +304,7 @@ async def install_local_apk(
     game: GameInstallLocalApkIn = Body(...),
 ) -> OutBase:
     try:
-        result = await game_center_manager.install_local_apk(
+        result = await _get_game_center_service().install_local_apk(
             game.gameId, game.apkPath
         )
         return OutBase(
@@ -288,7 +313,7 @@ async def install_local_apk(
             message=result.get("message", ""),
         )
     except Exception as e:
-        return OutBase(code=500, status="error", message=_err(e))
+        return OutBase(code=_error_code(e), status="error", message=_err(e))
 
 
 @router.post(
@@ -300,7 +325,7 @@ async def install_local_apk(
 )
 async def task_status(game: GameOperateIn = Body(...)) -> GameTaskStatusOut:
     try:
-        result = game_center_manager.task_status(game.gameId)
+        result = _get_game_center_service().task_status(game.gameId)
         return GameTaskStatusOut(
             code=200,
             status="ok",
@@ -313,4 +338,6 @@ async def task_status(game: GameOperateIn = Body(...)) -> GameTaskStatusOut:
             detail=result.get("detail", ""),
         )
     except Exception as e:
-        return GameTaskStatusOut(code=500, status="error", detail=_err(e))
+        return GameTaskStatusOut(
+            code=_error_code(e), status="error", detail=_err(e)
+        )

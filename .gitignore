@@ -57,8 +57,10 @@ uv.lock
 /skills/
 .ace-tool/
 
-# Plugin workspace (only auto_mas_core is tracked)
+# Plugin workspace (only auto_mas_core and game_center are tracked)
 /plugins/*
 !/plugins/auto_mas_core/
 !/plugins/auto_mas_core/**
+!/plugins/game_center/
+!/plugins/game_center/**
 /app/core/plugins/_generated/

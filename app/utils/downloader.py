@@ -19,7 +19,7 @@
 """通用文件下载器
 
 支持:
-- httpx 流式下载
+- httpx 流式下载 (遵循 Config 代理设置)
 - .part 断点续传 (Range header)
 - md5 校验
 - 磁盘空间预检
@@ -105,10 +105,24 @@ async def download_file(
     if part_file.exists():
         resume_pos = part_file.stat().st_size
         if expected_size and resume_pos >= expected_size:
-            # .part 已完整, 重命名
-            part_file.rename(dest)
-            return dest
-        logger.debug(f"断点续传: 从 {resume_pos} 字节继续下载 {url}")
+            # .part 已达期望大小: 校验通过则收尾, 失败则删除重下
+            if expected_md5:
+                actual = await _md5_file(part_file)
+                if actual != expected_md5:
+                    logger.warning(
+                        f".part 文件 md5 校验失败, 删除重新下载: {part_file}"
+                    )
+                    part_file.unlink()
+                    resume_pos = 0
+            if resume_pos:
+                if dest.exists():
+                    dest.unlink()
+                part_file.rename(dest)
+                if progress:
+                    progress(expected_size, expected_size, 0.0)
+                return dest
+        else:
+            logger.debug(f"断点续传: 从 {resume_pos} 字节继续下载 {url}")
 
     req_headers = {}
     if headers:
@@ -120,9 +134,13 @@ async def download_file(
     last_reported = resume_pos
     last_time = asyncio.get_event_loop().time()
 
+    # 遵循全局代理设置 (延迟导入避免循环依赖, 参考 app/utils/emulator/mumu.py)
+    from app.core import Config
+
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(timeout, connect=30.0),
         follow_redirects=True,
+        proxy=Config.proxy,
     ) as client:
         async with client.stream("GET", url, headers=req_headers) as resp:
             resp.raise_for_status()

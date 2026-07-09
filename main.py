@@ -107,10 +107,6 @@ def main():
             register_builtin_pages()
             await PluginManager.start()
 
-            # 初始化游戏中心管理器 (注册内置 provider)
-            from app.core.game_center import game_center_manager
-            game_center_manager.init()
-
             missing_script_types = validate_script_type_registry(Config)
             if missing_script_types:
                 raise RuntimeError(
@@ -144,9 +140,6 @@ def main():
 
             if hmr_service is not None:
                 await hmr_service.stop()
-
-            # 清理游戏中心后台任务
-            await game_center_manager.cleanup()
 
             await TaskManager.stop_task("ALL")
             await PluginManager.stop()
@@ -232,9 +225,6 @@ def main():
         )
 
         mcp.mount_http()
-
-        from app.plugins.mcp_facade import plugin_mcp
-        plugin_mcp.attach(mcp)
 
         async def run_server():
             config = uvicorn.Config(

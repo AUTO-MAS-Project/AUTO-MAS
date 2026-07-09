@@ -2567,6 +2567,25 @@ export class Service {
         });
     }
     /**
+     * 关闭游戏
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static closeGameApiGameCenterClosePost(
+        requestBody: GameOperateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/game_center/close',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 打开官方启动器 (鹰角回退)
      * @param requestBody
      * @returns OutBase Successful Response

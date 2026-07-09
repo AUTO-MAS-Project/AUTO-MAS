@@ -38,7 +38,7 @@ import httpx
 from app.utils import get_logger
 from app.utils.downloader import download_file, download_many
 
-from ..base import GameProvider, LatestInfo, ProgressEvent
+from ..base import GameProvider, LatestInfo, ProgressEvent, kill_processes_under
 
 
 def _parse_version(ver: str) -> tuple[int, ...]:
@@ -144,6 +144,20 @@ def _check_cancel(cancel_event: asyncio.Event) -> None:
     """取消事件已置位则抛 CancelledError"""
     if cancel_event.is_set():
         raise asyncio.CancelledError("安装/更新已取消")
+
+
+def _resolve_inside(base: Path, rel: str) -> Optional[Path]:
+    """将相对路径解析到 base 目录内, 越界时返回 None
+
+    增量清单 (hdifffiles.txt / deletefiles.txt) 来自远端, 路径不可信,
+    防穿越模式参考 hypergryph.py 的 _apply_delete_list_sync。
+    """
+    target = (base / rel).resolve()
+    try:
+        target.relative_to(base.resolve())
+    except ValueError:
+        return None
+    return target
 
 
 # ==================== Provider ====================
@@ -271,9 +285,7 @@ class MihoyoPcProvider(GameProvider):
             )
             logger.info(f"miHoYo 游戏已更新到 {latest}")
         except asyncio.CancelledError:
-            progress_cb(
-                ProgressEvent(phase="error", message="安装/更新已取消")
-            )
+            # 取消事件的进度推送由 GameCenterManager 统一发出 (phase=cancelled)
             raise
         except Exception as e:
             logger.exception("miHoYo 安装/更新失败")
@@ -283,7 +295,7 @@ class MihoyoPcProvider(GameProvider):
     # ---------- 启动 ----------
 
     async def launch(self) -> None:
-        """启动游戏可执行文件"""
+        """启动游戏可执行文件 (LaunchArgs 作为附加启动参数)"""
         install_path = self.config.get("Data", "InstallPath")
         if not install_path:
             raise RuntimeError("未配置安装路径 (Data/InstallPath)")
@@ -293,8 +305,23 @@ class MihoyoPcProvider(GameProvider):
         exe_path = Path(install_path) / exe
         if not exe_path.is_file():
             raise RuntimeError(f"游戏可执行文件不存在: {exe_path}")
-        os.startfile(str(exe_path))
-        logger.info(f"启动游戏: {exe_path}")
+        launch_args = self.config.get("Data", "LaunchArgs")
+        if launch_args:
+            os.startfile(str(exe_path), arguments=launch_args)
+        else:
+            os.startfile(str(exe_path))
+        logger.info(f"启动游戏: {exe_path} {launch_args}".rstrip())
+
+    async def close(self) -> None:
+        """关闭游戏 (结束游戏目录下的所有进程)"""
+        install_path = self.config.get("Data", "InstallPath")
+        if not install_path:
+            raise RuntimeError("未配置安装路径 (Data/InstallPath)")
+        killed = await asyncio.to_thread(
+            kill_processes_under, Path(install_path)
+        )
+        if killed == 0:
+            logger.info("未发现运行中的游戏进程")
 
     # ---------- 内部: API ----------
 
@@ -307,8 +334,12 @@ class MihoyoPcProvider(GameProvider):
         if not launcher_id or not game_id:
             raise RuntimeError("preset 缺少 launcher_id / game_id")
         params = {"launcher_id": launcher_id, "game_ids[]": game_id}
+        from app.core import Config
+
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(30.0, connect=10.0), follow_redirects=True
+            timeout=httpx.Timeout(30.0, connect=10.0),
+            follow_redirects=True,
+            proxy=Config.proxy,
         ) as client:
             resp = await client.get(_HYP_API, params=params)
             resp.raise_for_status()
@@ -432,8 +463,13 @@ class MihoyoPcProvider(GameProvider):
             return
         for i, (game_rel, diff_rel) in enumerate(entries):
             _check_cancel(cancel_event)
-            old_file = install_dir / game_rel
-            diff_file = extract_dir / diff_rel
+            old_file = _resolve_inside(install_dir, game_rel)
+            diff_file = _resolve_inside(extract_dir, diff_rel)
+            if old_file is None or diff_file is None:
+                logger.warning(
+                    f"hdifffiles.txt 跳过越界路径: {game_rel};{diff_rel}"
+                )
+                continue
             if not diff_file.is_file():
                 logger.debug(f"跳过缺失的补丁文件: {diff_rel}")
                 continue
@@ -466,7 +502,10 @@ class MihoyoPcProvider(GameProvider):
             rel = rel.strip().lstrip("\\/")
             if not rel:
                 continue
-            target = install_dir / rel
+            target = _resolve_inside(install_dir, rel)
+            if target is None:
+                logger.warning(f"deletefiles.txt 跳过越界路径: {rel}")
+                continue
             if target.is_file():
                 try:
                     target.unlink()

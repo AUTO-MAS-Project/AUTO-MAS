@@ -33,6 +33,13 @@ SYSTEM_PLUGIN_SPECS: dict[str, SystemPluginSpec] = {
         source_dir=Path.cwd() / "plugins" / "emulator",
         default_instance_name="模拟器管理",
     ),
+    "game_center": SystemPluginSpec(
+        plugin_name="game_center",
+        distribution_name="automas-plugin-game-center",
+        package_name="automas-plugin-game-center",
+        source_dir=Path.cwd() / "plugins" / "game_center",
+        default_instance_name="游戏中心",
+    ),
 }
 
 SYSTEM_PLUGIN_PACKAGES = {

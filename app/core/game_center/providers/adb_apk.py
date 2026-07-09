@@ -262,6 +262,44 @@ class AdbApkProvider(GameProvider):
             )
         return address
 
+    # 支持自动启动的模拟器类型 (仅 MuMu / 雷电, 其余类型需用户自行启动)
+    _AUTO_START_EMULATOR_TYPES = ("mumu", "ldplayer")
+
+    async def _ensure_emulator_running(self) -> None:
+        """确保关联模拟器已启动, 未启动时自动拉起并等待就绪。
+
+        仅支持自动启动 MuMu / 雷电; 其他类型跳过自动启动,
+        由后续 ADB 连接检查报错提示用户手动启动。
+
+        Raises:
+            RuntimeError: 未配置模拟器 / 模拟器启动失败或超时。
+        """
+
+        emulator_id = self.config.get("Data", "EmulatorId")
+        if not emulator_id or emulator_id == "-":
+            raise RuntimeError("未配置关联模拟器 (Data.EmulatorId)")
+
+        from app.core.emulator_manager import EmulatorManager
+        from app.models.emulator import DeviceStatus
+
+        device = await EmulatorManager.get_emulator_instance(emulator_id)
+        emulator_type = device.config.get("Info", "Type")
+        if emulator_type not in self._AUTO_START_EMULATOR_TYPES:
+            logger.info(
+                f"模拟器类型 {emulator_type} 不支持自动启动 "
+                f"(仅支持 {'/'.join(self._AUTO_START_EMULATOR_TYPES)}), 跳过"
+            )
+            return
+
+        emulator_index = self.config.get("Data", "EmulatorIndex") or "0"
+        status = await device.getStatus(emulator_index)
+        if status == DeviceStatus.ONLINE:
+            return
+
+        logger.info(f"模拟器 {emulator_id}[{emulator_index}] 未在线, 正在启动...")
+        await device.open(emulator_index)
+        logger.info(f"模拟器 {emulator_id}[{emulator_index}] 已就绪")
+
     async def _ensure_connected(
         self, adb_path: str, serial: str, retries: int = 3
     ) -> None:
@@ -354,12 +392,16 @@ class AdbApkProvider(GameProvider):
 
         strategy = self.preset.params.get("version_strategy") if self.preset else None
 
+        from app.core import Config
+
         if strategy == "arknights":
             api_url = self.preset.params.get("version_api")
             if not api_url:
                 raise RuntimeError("预设缺少 version_api")
 
-            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+            async with httpx.AsyncClient(
+                timeout=15.0, follow_redirects=True, proxy=Config.proxy
+            ) as client:
                 resp = await client.get(api_url)
                 resp.raise_for_status()
                 data = resp.json()
@@ -382,7 +424,7 @@ class AdbApkProvider(GameProvider):
                 raise RuntimeError("预设缺少 apk_url")
 
             async with httpx.AsyncClient(
-                timeout=15.0, follow_redirects=True
+                timeout=15.0, follow_redirects=True, proxy=Config.proxy
             ) as client:
                 resp = await client.head(apk_url)
                 resp.raise_for_status()
@@ -418,6 +460,14 @@ class AdbApkProvider(GameProvider):
 
         apk_dir = _APK_DIR
         apk_path = apk_dir / f"{package}.apk"
+
+        # ---- 先启动模拟器, 后更新 (仅 MuMu / 雷电支持自动启动) ----
+        progress_cb(
+            ProgressEvent(phase="check", percent=0.0, message="正在启动模拟器...")
+        )
+        await self._ensure_emulator_running()
+        if cancel_event and cancel_event.is_set():
+            raise asyncio.CancelledError("安装前任务被取消")
 
         # ---- 下载阶段 ----
         def _download_progress(downloaded: int, total: int, speed: float) -> None:
@@ -482,11 +532,13 @@ class AdbApkProvider(GameProvider):
         logger.success(f"APK 安装成功: {package}")
 
     async def launch(self) -> None:
-        """通过 adb monkey 启动游戏。"""
+        """通过 adb monkey 启动游戏 (模拟器未启动时先自动拉起)。"""
 
         package = self.package_name
         if not package:
             raise RuntimeError("未配置包名 (preset.package_name)")
+
+        await self._ensure_emulator_running()
 
         adb_path = await resolve_adb_path(self.config)
         serial = await self._get_device_address()
@@ -506,6 +558,24 @@ class AdbApkProvider(GameProvider):
                 "android.intent.category.LAUNCHER",
                 "1",
             ],
+            timeout=30.0,
+        )
+
+    async def close(self) -> None:
+        """通过 adb 强制停止游戏包 (要求模拟器已启动)。"""
+
+        package = self.package_name
+        if not package:
+            raise RuntimeError("未配置包名 (preset.package_name)")
+
+        adb_path = await resolve_adb_path(self.config)
+        serial = await self._get_device_address()
+        await self._ensure_connected(adb_path, serial)
+
+        logger.info(f"关闭游戏: {serial} / {package}")
+        await run_adb(
+            adb_path,
+            ["-s", serial, "shell", "am", "force-stop", package],
             timeout=30.0,
         )
 
@@ -531,6 +601,8 @@ class AdbApkProvider(GameProvider):
 
         if cancel_event and cancel_event.is_set():
             raise asyncio.CancelledError("安装前任务被取消")
+
+        await self._ensure_emulator_running()
 
         if progress_cb:
             progress_cb(

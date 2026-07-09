@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "automas-plugin-game-center"
+version = "0.1.0"
+description = "Game center system plugin for AUTO-MAS"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+dependencies = []
+
+[project.entry-points."auto_mas.plugins"]
+game_center = "game_center_plugin.plugin:Plugin"
+
+[tool.setuptools.packages.find]
+where = ["src"]
