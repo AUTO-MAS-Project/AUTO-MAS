@@ -22,11 +22,19 @@
                   <span class="script-drag-dots" aria-hidden="true"></span>
                 </span>
                 <div class="script-logo-container">
-                  <img :src="getScriptIcon(script.type)" :alt="script.type" class="script-logo" />
+                  <img
+                    :src="getScriptIcon(script.type, script.iconUrl)"
+                    :alt="script.type"
+                    class="script-logo"
+                    @error="event => handleScriptIconError(event, script.type)"
+                  />
                 </div>
                 <div class="script-details">
                   <h3 class="script-name">{{ script.name }}</h3>
-                  <a-tag :color="getScriptTypeTagColor(script.type)" class="script-type">
+                  <a-tag
+                    :color="getScriptTypeTagColor(script.type, script.themeColor)"
+                    class="script-type"
+                  >
                     {{ getScriptTypeLabel(script) }}
                   </a-tag>
                   <a-tag v-if="script.available === false" color="orange" class="script-type">
@@ -291,7 +299,7 @@ import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import { parseStatusTagList } from '@/composables/useStatusTag'
 import type { StatusTag } from '@/composables/useStatusTag'
 import { getTodayInTimezone, isDateEqual, getWeekdayInTimezone } from '@/utils/dateUtils'
-import { getScriptIcon, getScriptTypeTagColor } from '@/utils/scriptRegistry'
+import { getScriptIcon, getScriptTypeTagColor, handleScriptIconError } from '@/utils/scriptRegistry'
 
 interface Props {
   scripts: Script[]

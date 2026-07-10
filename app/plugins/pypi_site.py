@@ -103,6 +103,28 @@ def _iter_editable_import_paths(site_dir: Path) -> List[Path]:
     return paths
 
 
+def get_plugin_import_paths(plugins_dir: Path | None = None) -> List[Path]:
+    """
+    返回插件 site-packages 及 editable 安装的导入路径列表。
+
+    用于为子进程构造 PYTHONPATH，使其能像主进程一样导入插件包及其依赖。
+    顺序与 ensure_pypi_site_packages_on_syspath 保持一致：editable 安装的
+    src 目录在前，插件 site-packages 在后。
+
+    Args:
+        plugins_dir (Path | None): 插件根目录；为 None 时使用默认 plugins 目录。
+
+    Returns:
+        List[Path]: 导入路径列表（仅返回已存在的路径）。
+    """
+    site_dir = get_pypi_site_packages_dir(plugins_dir)
+    paths: list[Path] = []
+    if site_dir.is_dir():
+        paths.extend(_iter_editable_import_paths(site_dir))
+        paths.append(site_dir)
+    return paths
+
+
 def iter_plugin_entry_points(plugins_dir: Path | None = None) -> List[importlib_metadata.EntryPoint]:
     """
     枚举本地插件 site-packages 中声明的插件入口点。

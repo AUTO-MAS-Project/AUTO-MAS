@@ -4,7 +4,6 @@ import generalIcon from '@/assets/AUTO-MAS.ico'
 import hsrIcon from '@/assets/hsr.png'
 import maaIcon from '@/assets/MAA.png'
 import maaEndIcon from '@/assets/MaaEnd.png'
-import m9aIcon from '@/assets/M9A.png'
 import okwwIcon from '@/assets/ok-ww.ico'
 import srcIcon from '@/assets/SRC.png'
 
@@ -76,7 +75,7 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     description: '重返未来：1999 自动化脚本',
     keywords: ['m9a', '1999', '重返未来'],
     group: 'specialized',
-    icon: m9aIcon,
+    icon: generalIcon,
   },
   {
     value: 'Okww',

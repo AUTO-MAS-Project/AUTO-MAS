@@ -24,7 +24,6 @@
 from .broadcast import Broadcast
 from .config import Config
 from .emulator_manager import EmulatorManager
-from .maa_manager import MaaFWManager
 from .page_registry import (
     PageDeclaration,
     PageFacade,
@@ -32,9 +31,22 @@ from .page_registry import (
     page_registry,
     register_builtin_pages,
 )
-from app.plugins import PluginManager
-from .task_manager import TaskManager
-from .timer import MainTimer
+
+def __getattr__(name: str):
+    if name == "MaaFWManager":
+        from .maa_manager import MaaFWManager
+
+        return MaaFWManager
+    if name == "TaskManager":
+        from .task_manager import TaskManager
+
+        return TaskManager
+    if name == "MainTimer":
+        from .timer import MainTimer
+
+        return MainTimer
+    raise AttributeError(name)
+
 
 __all__ = [
     "Broadcast",
@@ -43,7 +55,6 @@ __all__ = [
     "TaskManager",
     "EmulatorManager",
     "MaaFWManager",
-    "PluginManager",
     "PageDeclaration",
     "PageFacade",
     "PageRegistry",

@@ -1,165 +1,202 @@
 <template>
   <div class="maafw-option-editor">
+    <div v-if="showOptionToolbar" class="option-toolbar">
+      <a-input
+        v-model:value="optionSearchQuery"
+        allow-clear
+        placeholder="搜索配置项…"
+        class="option-search"
+      />
+    </div>
+
     <a-empty
-      v-if="visibleOptions.length === 0"
+      v-if="filteredOptions.length === 0"
       class="option-empty"
-      description="当前任务没有可配置项"
+      :description="optionSearchQuery ? '没有匹配的配置项' : '当前任务没有可配置项'"
     />
 
-    <div v-for="option in visibleOptions" :key="option.name" class="option-item">
-      <div class="option-label">
-        <img
-          v-if="resolveMaaFWAssetUrl(option.icon)"
-          :src="resolveMaaFWAssetUrl(option.icon)"
-          alt=""
-          class="option-icon"
-        />
-        <span>{{ getOptionLabel(option) }}</span>
-        <a-tooltip v-if="option.description" :title="option.description">
-          <QuestionCircleOutlined class="help-icon" />
-        </a-tooltip>
-      </div>
-
-      <a-radio-group
-        v-if="option.type === 'switch'"
-        :value="getStringValue(option)"
-        :disabled="props.disabled"
-        class="option-radio-group"
-        @change="handleChoiceChange(option.name, $event)"
-      >
-        <a-radio
-          v-for="caseItem in getDisplayCases(option)"
-          :key="caseItem.name"
-          :value="caseItem.name"
-        >
-          {{ getCaseLabel(caseItem) }}
-        </a-radio>
-      </a-radio-group>
-
-      <a-select
-        v-else-if="option.type === 'select' || option.type === 'scan_select'"
-        :value="getStringValue(option)"
-        :disabled="props.disabled"
-        class="option-control"
-        placeholder="请选择"
-        @change="handleSelectChange(option.name, $event)"
-      >
-        <a-select-option
-          v-for="caseItem in option.cases"
-          :key="caseItem.name"
-          :value="caseItem.name"
-        >
-          {{ getCaseLabel(caseItem) }}
-        </a-select-option>
-      </a-select>
-
-      <a-checkbox-group
-        v-else-if="option.type === 'checkbox'"
-        :value="getStringListValue(option)"
-        :disabled="props.disabled"
-        class="option-checkbox-group"
-        @change="handleCheckboxChange(option.name, $event)"
-      >
-        <a-checkbox v-for="caseItem in option.cases" :key="caseItem.name" :value="caseItem.name">
-          {{ getCaseLabel(caseItem) }}
-        </a-checkbox>
-      </a-checkbox-group>
-
-      <div v-else-if="option.type === 'input'" class="input-group">
-        <a-form-item
-          v-for="inputItem in option.inputs"
-          :key="inputItem.name"
-          class="input-form-item"
-        >
-          <template #label>
-            <span class="input-label">
-              <img
-                v-if="resolveMaaFWAssetUrl(inputItem.icon)"
-                :src="resolveMaaFWAssetUrl(inputItem.icon)"
-                alt=""
-                class="input-icon"
-              />
-              <span>{{ getInputLabel(inputItem) }}</span>
-            </span>
-          </template>
-          <a-input-number
-            v-if="isIntegerInput(inputItem)"
-            :value="getNumberInputValue(option, inputItem.name)"
-            :precision="0"
-            :disabled="props.disabled"
-            class="option-control"
-            @change="handleInputNumberChange(option.name, inputItem, $event)"
-          />
-          <a-input-number
-            v-else-if="isDecimalInput(inputItem)"
-            :value="getNumberInputValue(option, inputItem.name)"
-            :disabled="props.disabled"
-            class="option-control"
-            @change="handleInputNumberChange(option.name, inputItem, $event)"
-          />
-          <a-switch
-            v-else-if="isBooleanInput(inputItem)"
-            :checked="getBooleanInputValue(option, inputItem.name)"
-            :disabled="props.disabled"
-            checked-children="是"
-            un-checked-children="否"
-            @change="handleInputBooleanChange(option.name, inputItem, $event)"
-          />
-          <a-input
-            v-else
-            :value="getInputFieldValue(option, inputItem.name)"
-            :disabled="props.disabled"
-            :placeholder="inputItem.description || inputItem.name"
-            class="option-control"
-            @change="handleInputTextChange(option.name, inputItem, $event)"
-            @blur="handleInputTextBlur(inputItem, $event)"
-          />
-          <MaaFWDescriptionView
-            v-if="inputItem.description"
-            :content="inputItem.description"
-            :base-path="basePath"
-            class="input-description"
-          />
-        </a-form-item>
-      </div>
-
-      <a-alert
-        v-else
-        type="warning"
-        show-icon
-        :message="`不支持的配置项类型：${option.type || '未知'}`"
-      />
-
-      <MaaFWDescriptionView
-        v-if="option.description"
-        :content="option.description"
-        :base-path="basePath"
-        class="option-description"
-      />
-
-      <div
-        v-for="nestedOptionNames in getActiveNestedOptionGroups(option)"
-        :key="`${option.name}:${nestedOptionNames.join('|')}`"
-        class="sub-options"
-      >
+    <a-collapse
+      v-else-if="shouldGroupOptions"
+      v-model:active-key="activeOptionGroupKeys"
+      class="option-group-collapse"
+    >
+      <a-collapse-panel v-for="group in optionGroups" :key="group.key" :header="group.label">
         <MaaFWTaskOptionEditor
-          :option-names="nestedOptionNames"
+          :option-names="group.optionNames"
           :options="options"
           :task-options="taskOptions"
           :controller-name="controllerName"
           :resource-name="resourceName"
           :base-path="basePath"
-          :lineage="[...lineage, option.name]"
+          :lineage="lineage"
           :disabled="props.disabled"
+          :hide-toolbar="true"
           @update="emit('update', $event)"
         />
+      </a-collapse-panel>
+    </a-collapse>
+
+    <template v-else>
+      <div v-for="option in filteredOptions" :key="option.name" class="option-item">
+        <div class="option-label">
+          <img
+            v-if="resolveMaaFWAssetUrl(option.icon)"
+            :src="resolveMaaFWAssetUrl(option.icon)"
+            alt=""
+            width="18"
+            height="18"
+            class="option-icon"
+          />
+          <span>{{ getOptionLabel(option) }}</span>
+          <a-tooltip v-if="option.description" :title="option.description">
+            <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+          </a-tooltip>
+        </div>
+
+        <a-radio-group
+          v-if="option.type === 'switch'"
+          :value="getStringValue(option)"
+          :disabled="props.disabled"
+          class="option-radio-group"
+          @change="handleChoiceChange(option.name, $event)"
+        >
+          <a-radio
+            v-for="caseItem in getDisplayCases(option)"
+            :key="caseItem.name"
+            :value="caseItem.name"
+          >
+            {{ getCaseLabel(caseItem) }}
+          </a-radio>
+        </a-radio-group>
+
+        <a-select
+          v-else-if="option.type === 'select' || option.type === 'scan_select'"
+          :value="getStringValue(option)"
+          :disabled="props.disabled"
+          class="option-control"
+          placeholder="请选择"
+          @change="handleSelectChange(option.name, $event)"
+        >
+          <a-select-option
+            v-for="caseItem in option.cases"
+            :key="caseItem.name"
+            :value="caseItem.name"
+          >
+            {{ getCaseLabel(caseItem) }}
+          </a-select-option>
+        </a-select>
+
+        <a-checkbox-group
+          v-else-if="option.type === 'checkbox'"
+          :value="getStringListValue(option)"
+          :disabled="props.disabled"
+          class="option-checkbox-group"
+          @change="handleCheckboxChange(option.name, $event)"
+        >
+          <a-checkbox v-for="caseItem in option.cases" :key="caseItem.name" :value="caseItem.name">
+            {{ getCaseLabel(caseItem) }}
+          </a-checkbox>
+        </a-checkbox-group>
+
+        <div v-else-if="option.type === 'input'" class="input-group">
+          <a-form-item
+            v-for="inputItem in option.inputs"
+            :key="inputItem.name"
+            class="input-form-item"
+          >
+            <template #label>
+              <span class="input-label">
+                <img
+                  v-if="resolveMaaFWAssetUrl(inputItem.icon)"
+                  :src="resolveMaaFWAssetUrl(inputItem.icon)"
+                  alt=""
+                  width="18"
+                  height="18"
+                  class="input-icon"
+                />
+                <span>{{ getInputLabel(inputItem) }}</span>
+              </span>
+            </template>
+            <a-input-number
+              v-if="isIntegerInput(inputItem)"
+              :value="getNumberInputValue(option, inputItem.name)"
+              :precision="0"
+              :disabled="props.disabled"
+              class="option-control"
+              @change="handleInputNumberChange(option.name, inputItem, $event)"
+            />
+            <a-input-number
+              v-else-if="isDecimalInput(inputItem)"
+              :value="getNumberInputValue(option, inputItem.name)"
+              :disabled="props.disabled"
+              class="option-control"
+              @change="handleInputNumberChange(option.name, inputItem, $event)"
+            />
+            <a-switch
+              v-else-if="isBooleanInput(inputItem)"
+              :checked="getBooleanInputValue(option, inputItem.name)"
+              :disabled="props.disabled"
+              checked-children="是"
+              un-checked-children="否"
+              @change="handleInputBooleanChange(option.name, inputItem, $event)"
+            />
+            <a-input
+              v-else
+              :value="getInputFieldValue(option, inputItem.name)"
+              :disabled="props.disabled"
+              :placeholder="inputItem.description || inputItem.name"
+              class="option-control"
+              @change="handleInputTextChange(option.name, inputItem, $event)"
+              @blur="handleInputTextBlur(inputItem, $event)"
+            />
+            <MaaFWDescriptionView
+              v-if="inputItem.description"
+              :content="inputItem.description"
+              :base-path="basePath"
+              class="input-description"
+            />
+          </a-form-item>
+        </div>
+
+        <a-alert
+          v-else
+          type="warning"
+          show-icon
+          :message="`不支持的配置项类型：${option.type || '未知'}，请联系脚本作者或升级 AUTO-MAS`"
+        />
+
+        <MaaFWDescriptionView
+          v-if="option.description"
+          :content="option.description"
+          :base-path="basePath"
+          class="option-description"
+        />
+
+        <div
+          v-for="nestedOptionNames in getActiveNestedOptionGroups(option)"
+          :key="`${option.name}:${nestedOptionNames.join('|')}`"
+          class="sub-options"
+        >
+          <MaaFWTaskOptionEditor
+            :option-names="nestedOptionNames"
+            :options="options"
+            :task-options="taskOptions"
+            :controller-name="controllerName"
+            :resource-name="resourceName"
+            :base-path="basePath"
+            :lineage="[...lineage, option.name]"
+            :disabled="props.disabled"
+            :hide-toolbar="true"
+            @update="emit('update', $event)"
+          />
+        </div>
       </div>
-    </div>
+    </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
@@ -185,6 +222,7 @@ const props = withDefaults(
     basePath?: string
     lineage?: string[]
     disabled?: boolean
+    hideToolbar?: boolean
   }>(),
   {
     controllerName: '',
@@ -192,6 +230,7 @@ const props = withDefaults(
     basePath: '',
     lineage: () => [],
     disabled: false,
+    hideToolbar: false,
   }
 )
 
@@ -209,10 +248,29 @@ type ChoiceChangeEvent = {
   }
 }
 
+type OptionGroup = {
+  key: string
+  label: string
+  optionNames: string[]
+}
+
+const optionSearchQuery = ref('')
+const activeOptionGroupKeys = ref<string[]>([])
+
 const optionMap = computed(() => {
   const entries = props.options.map(option => [option.name, option] as const)
   return new Map<string, MaaFWOptionInfo>(entries)
 })
+
+const isOptionActive = (option: MaaFWOptionInfo) => {
+  if (option.controller.length > 0 && !option.controller.includes(props.controllerName)) {
+    return false
+  }
+  if (option.resource.length > 0 && !option.resource.includes(props.resourceName)) {
+    return false
+  }
+  return true
+}
 
 const visibleOptions = computed(() => {
   const seen = new Set<string>()
@@ -228,15 +286,51 @@ const visibleOptions = computed(() => {
   return result
 })
 
-const isOptionActive = (option: MaaFWOptionInfo) => {
-  if (option.controller.length > 0 && !option.controller.includes(props.controllerName)) {
-    return false
-  }
-  if (option.resource.length > 0 && !option.resource.includes(props.resourceName)) {
-    return false
-  }
-  return true
+const filteredOptions = computed(() => {
+  const keyword = optionSearchQuery.value.trim().toLowerCase()
+  if (!keyword) return visibleOptions.value
+  return visibleOptions.value.filter(option => {
+    return [option.name, option.label, option.description]
+      .filter((item): item is string => typeof item === 'string')
+      .some(item => item.toLowerCase().includes(keyword))
+  })
+})
+
+const optionTypeLabels: Record<string, string> = {
+  switch: '开关选项',
+  select: '单选选项',
+  scan_select: '扫描选择',
+  checkbox: '多选选项',
+  input: '输入选项',
 }
+
+const optionGroups = computed<OptionGroup[]>(() => {
+  const groups = new Map<string, OptionGroup>()
+  for (const option of filteredOptions.value) {
+    const key = option.type || 'unknown'
+    const group = groups.get(key) || {
+      key,
+      label: optionTypeLabels[key] || `其他选项：${key}`,
+      optionNames: [],
+    }
+    group.optionNames.push(option.name)
+    groups.set(key, group)
+  }
+  return Array.from(groups.values())
+})
+
+const showOptionToolbar = computed(() => !props.hideToolbar && visibleOptions.value.length > 5)
+const shouldGroupOptions = computed(
+  () => !props.hideToolbar && filteredOptions.value.length > 5 && optionGroups.value.length > 1
+)
+
+watch(
+  optionGroups,
+  groups => {
+    activeOptionGroupKeys.value = groups.map(group => group.key)
+  },
+  { immediate: true }
+)
 
 const getOptionLabel = (option: MaaFWOptionInfo) => option.label || option.name
 
@@ -462,6 +556,25 @@ const getActiveNestedOptionGroups = (option: MaaFWOptionInfo) => {
   border-radius: 8px;
 }
 
+.option-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.option-search {
+  max-width: 280px;
+}
+
+.option-group-collapse {
+  background: transparent;
+}
+
+.option-group-collapse :deep(.ant-collapse-content-box) {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .option-item {
   display: flex;
   flex-direction: column;
@@ -534,6 +647,14 @@ const getActiveNestedOptionGroups = (option: MaaFWOptionInfo) => {
 }
 
 @media (max-width: 768px) {
+  .option-toolbar {
+    justify-content: stretch;
+  }
+
+  .option-search {
+    max-width: none;
+  }
+
   .input-group {
     grid-template-columns: 1fr;
   }

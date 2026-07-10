@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "automas-maafw-interface"
+version = "0.1.0"
+description = "MaaFW ProjectInterface parser plugin for AUTO-MAS"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+dependencies = [
+    "json5>=0.9",
+    "pydantic>=2",
+]
+
+[project.entry-points."auto_mas.plugins"]
+automas_maafw_interface = "automas_maafw_interface.plugin:Plugin"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+automas_maafw_interface = ["py.typed"]

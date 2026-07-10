@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "automas-m9a"
+version = "0.1.0"
+description = "M9A 专项插件组合包 — 一键安装 M9A 全部运行所需插件"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+dependencies = [
+    "automas-maafw-interface>=0.1.0",
+    "automas-maafw-project-update>=0.1.0",
+    "automas-maafw-agent-env>=0.1.0",
+    "automas-maafw-runner>=0.1.0",
+    "automas-maafw-controller-adb>=0.1.0",
+    "automas-maafw-controller-win32>=0.1.0",
+    "automas-script-maafw>=0.1.0",
+    "automas-script-maafw-pack-m9a>=0.1.0",
+]
+
+[tool.setuptools]
+packages = []
