@@ -1,5 +1,5 @@
 <template>
-  <div class="okww-config-editor">
+  <div class="ok-script-config-editor">
     <div class="editor-header">
       <h3>{{ title }}</h3>
       <a-tag v-if="hasChanges" color="warning">有未保存的更改</a-tag>
@@ -200,10 +200,10 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import {
-  useOkwwConfigApi,
-  type OkwwConfigFile as ConfigFile,
-  type OkwwConfigPatchMap,
-} from '@/composables/useOkwwConfigApi'
+  useOkScriptConfigApi,
+  type OkScriptConfigFile as ConfigFile,
+  type OkScriptConfigPatchMap,
+} from '@/composables/useOkScriptConfigApi'
 
 const props = withDefaults(
   defineProps<{
@@ -213,7 +213,7 @@ const props = withDefaults(
     title?: string
   }>(),
   {
-    endpointPrefix: '/api/scripts/okww/configs',
+    endpointPrefix: '/api/scripts/ok-script/configs',
     title: '配置编辑',
   }
 )
@@ -258,7 +258,7 @@ const selectedConfig = computed(() => {
 
 const selectedConfigForTemplate = computed<ConfigFile>(() => selectedConfig.value || emptyConfig)
 const hasChanges = computed(() => changedFiles.value.size > 0)
-const okwwConfigApi = useOkwwConfigApi(props.endpointPrefix)
+const okScriptConfigApi = useOkScriptConfigApi(props.endpointPrefix)
 
 const getOptionLabel = (value: string) => {
   return optionLabels.value[value] || value
@@ -323,7 +323,7 @@ const loadConfigs = async () => {
   if (!props.scriptId || !props.userId) return
   loading.value = true
   try {
-    const resp = await okwwConfigApi.listConfigFiles(props.scriptId, props.userId)
+    const resp = await okScriptConfigApi.listConfigFiles(props.scriptId, props.userId)
     if (resp?.code === 200 && resp?.data) {
       configs.value = resp.data
       optionLabels.value = resp.optionLabels || {}
@@ -350,8 +350,8 @@ const loadConfigs = async () => {
 const saveAll = async (silent = true) => {
   if (!hasChanges.value) return
   try {
-    const configsToUpdate: OkwwConfigPatchMap = { ...localChanges.value }
-    const resp = await okwwConfigApi.batchUpdateConfigFiles(
+    const configsToUpdate: OkScriptConfigPatchMap = { ...localChanges.value }
+    const resp = await okScriptConfigApi.batchUpdateConfigFiles(
       props.scriptId,
       props.userId,
       configsToUpdate
@@ -411,7 +411,7 @@ watch(
 </script>
 
 <style scoped>
-.okww-config-editor {
+.ok-script-config-editor {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -419,8 +419,8 @@ watch(
   min-height: 520px;
 }
 
-.okww-config-editor :deep(.ant-spin-nested-loading),
-.okww-config-editor :deep(.ant-spin-container) {
+.ok-script-config-editor :deep(.ant-spin-nested-loading),
+.ok-script-config-editor :deep(.ant-spin-container) {
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -618,7 +618,7 @@ watch(
 }
 
 @media (max-width: 768px) {
-  .okww-config-editor {
+  .ok-script-config-editor {
     height: calc(100vh - 180px);
     min-height: 480px;
   }

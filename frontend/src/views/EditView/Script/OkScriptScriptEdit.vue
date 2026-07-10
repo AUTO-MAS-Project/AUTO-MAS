@@ -147,7 +147,7 @@
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input
-                    v-model:value="okefConfig.Game.Path"
+                    v-model:value="okScriptConfig.Game.Path"
                     placeholder="请选择游戏主程序"
                     size="large"
                     class="path-input"
@@ -173,11 +173,11 @@
                   </span>
                 </template>
                 <a-input
-                  v-model:value="okefConfig.Game.Arguments"
+                  v-model:value="okScriptConfig.Game.Arguments"
                   placeholder="请输入游戏启动参数"
                   size="large"
                   class="modern-input"
-                  @blur="handleChange('Game', 'Arguments', okefConfig.Game.Arguments)"
+                  @blur="handleChange('Game', 'Arguments', okScriptConfig.Game.Arguments)"
                 />
               </a-form-item>
             </a-col>
@@ -192,12 +192,12 @@
                   </span>
                 </template>
                 <a-input-number
-                  v-model:value="okefConfig.Game.WaitTime"
+                  v-model:value="okScriptConfig.Game.WaitTime"
                   :min="0"
                   :max="9999"
                   size="large"
                   style="width: 100%"
-                  @blur="handleChange('Game', 'WaitTime', okefConfig.Game.WaitTime)"
+                  @blur="handleChange('Game', 'WaitTime', okScriptConfig.Game.WaitTime)"
                 />
               </a-form-item>
             </a-col>
@@ -220,12 +220,12 @@
                   </span>
                 </template>
                 <a-input-number
-                  v-model:value="okefConfig.Run.ProxyTimesLimit"
+                  v-model:value="okScriptConfig.Run.ProxyTimesLimit"
                   :min="0"
                   :max="9999"
                   size="large"
                   style="width: 100%"
-                  @blur="handleChange('Run', 'ProxyTimesLimit', okefConfig.Run.ProxyTimesLimit)"
+                  @blur="handleChange('Run', 'ProxyTimesLimit', okScriptConfig.Run.ProxyTimesLimit)"
                 />
               </a-form-item>
             </a-col>
@@ -240,12 +240,12 @@
                   </span>
                 </template>
                 <a-input-number
-                  v-model:value="okefConfig.Run.RunTimesLimit"
+                  v-model:value="okScriptConfig.Run.RunTimesLimit"
                   :min="1"
                   :max="9999"
                   size="large"
                   style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimesLimit', okefConfig.Run.RunTimesLimit)"
+                  @blur="handleChange('Run', 'RunTimesLimit', okScriptConfig.Run.RunTimesLimit)"
                 />
               </a-form-item>
             </a-col>
@@ -260,12 +260,12 @@
                   </span>
                 </template>
                 <a-input-number
-                  v-model:value="okefConfig.Run.RunTimeLimit"
+                  v-model:value="okScriptConfig.Run.RunTimeLimit"
                   :min="1"
                   :max="9999"
                   size="large"
                   style="width: 100%"
-                  @blur="handleChange('Run', 'RunTimeLimit', okefConfig.Run.RunTimeLimit)"
+                  @blur="handleChange('Run', 'RunTimeLimit', okScriptConfig.Run.RunTimeLimit)"
                 />
               </a-form-item>
             </a-col>
@@ -287,6 +287,11 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
+import {
+  getOkScriptProjectProvider,
+  OK_SCRIPT_PROJECT_PROVIDERS,
+  type OkScriptProjectProvider,
+} from '@/features/ok-script/providers'
 
 const logger = window.electronAPI.getLogger('ok-script脚本编辑')
 const route = useRoute()
@@ -301,69 +306,40 @@ const isInitializing = ref(true)
 const OK_SCRIPT_CARD_TITLE = 'ok-script 项目配置'
 const OK_SCRIPT_PYAPPIFY_YML = 'pyappify.yml'
 
-interface OkScriptAdapterDefinition {
-  resourceName: string
-  displayName: string
-  exeName: string
-  configDir: string
-  appJsonFile: string
-  logFile: string
-  pythonwPath: string
-  gameProcessName: string
-  maxTaskIndex: number
-}
-
-const OK_SCRIPT_ADAPTERS: Record<string, OkScriptAdapterDefinition> = {
-  'ok-ef': {
-    resourceName: 'ok-ef',
-    displayName: '终末地',
-    exeName: 'ok-ef.exe',
-    configDir: 'data/apps/ok-ef/working/configs',
-    appJsonFile: 'data/apps/ok-ef/app.json',
-    logFile: 'data/apps/ok-ef/working/logs/ok-script.log',
-    pythonwPath: 'data/apps/ok-ef/python/pythonw.exe',
-    gameProcessName: 'Endfield.exe',
-    maxTaskIndex: 11,
-  },
-}
-const OK_SCRIPT_ADAPTER_LIST = Object.values(OK_SCRIPT_ADAPTERS)
-const OK_SCRIPT_DISPLAY_NAME_MAP: Record<string, string> = {
-  'ok-ef': '终末地',
-  'ok-ww': '鸣潮',
-}
+const OK_SCRIPT_ADAPTER_LIST = Object.values(OK_SCRIPT_PROJECT_PROVIDERS)
 
 interface OkScriptProjectMetadata {
   resourceName: string
   displayName: string
   source: string
-  adapter?: OkScriptAdapterDefinition
+  adapter?: OkScriptProjectProvider
 }
 
-interface OkefInfoForm {
+interface OkScriptInfoForm {
   Name: string
   ResourceName?: string
   ProjectLabel?: string
   RootPath: string
 }
 
-interface OkefGameForm {
+interface OkScriptGameForm {
   Enabled: boolean
   Path: string
   Arguments: string
   WaitTime: number
 }
 
-interface OkefRunForm {
+interface OkScriptRunForm {
   ProxyTimesLimit: number
   RunTimesLimit: number
   RunTimeLimit: number
 }
 
-interface OkefScriptConfigForm {
-  Info: OkefInfoForm
+interface OkScriptConfigForm {
+  Info: OkScriptInfoForm
   Script: Record<string, never>
-  Game: OkefGameForm
-  Run: OkefRunForm
+  Game: OkScriptGameForm
+  Run: OkScriptRunForm
 }
 
 const normalizePath = (path: string) => path.replace(/\\/g, '/').replace(/\/+$/g, '')
@@ -383,16 +359,11 @@ const normalizeResourceName = (value: unknown) => {
 }
 
 const displayNameForResource = (resourceName: string) => {
-  return (
-    OK_SCRIPT_ADAPTERS[resourceName]?.displayName ||
-    OK_SCRIPT_DISPLAY_NAME_MAP[resourceName] ||
-    resourceName
-  )
+  return getOkScriptProjectProvider(resourceName)?.displayName || resourceName
 }
 
 const getAdapterByResource = (resourceName?: string) => {
-  if (!resourceName) return undefined
-  return OK_SCRIPT_ADAPTERS[resourceName]
+  return getOkScriptProjectProvider(resourceName)
 }
 
 const buildMetadata = (resourceName: string, source: string): OkScriptProjectMetadata => {
@@ -474,14 +445,14 @@ const isSupportedOkScriptRootPath = async (
 const formData = reactive({
   name: '',
   get path() {
-    return okefConfig.Info.RootPath
+    return okScriptConfig.Info.RootPath
   },
   set path(value: string) {
-    okefConfig.Info.RootPath = value
+    okScriptConfig.Info.RootPath = value
   },
 })
 
-const okefConfig = reactive<OkefScriptConfigForm>({
+const okScriptConfig = reactive<OkScriptConfigForm>({
   Info: { Name: '', ResourceName: '', ProjectLabel: '', RootPath: '' },
   Script: {},
   Game: {
@@ -532,10 +503,10 @@ const saveProjectInfo = async (rootPath: string, metadata: OkScriptProjectMetada
   projectMetadata.value = metadata
   formData.path = rootPath
   formData.name = metadata.displayName
-  okefConfig.Info.Name = metadata.displayName
-  okefConfig.Info.ResourceName = metadata.resourceName
-  okefConfig.Info.ProjectLabel = metadata.displayName
-  okefConfig.Game.Enabled = true
+  okScriptConfig.Info.Name = metadata.displayName
+  okScriptConfig.Info.ResourceName = metadata.resourceName
+  okScriptConfig.Info.ProjectLabel = metadata.displayName
+  okScriptConfig.Game.Enabled = true
   isSaving.value = true
   try {
     const success = await updateScript(scriptId, {
@@ -559,7 +530,7 @@ const saveProjectInfo = async (rootPath: string, metadata: OkScriptProjectMetada
 }
 
 const saveGamePath = async (gamePath: string) => {
-  okefConfig.Game.Path = gamePath
+  okScriptConfig.Game.Path = gamePath
   isSaving.value = true
   try {
     const success = await updateScript(scriptId, {
@@ -583,18 +554,18 @@ const loadScript = async () => {
       handleCancel()
       return
     }
-    if (detail.type !== 'Okef') {
+    if (detail.type !== 'OkScript' && detail.type !== 'Okef') {
       message.error('脚本类型不是 ok-script 项目')
       handleCancel()
       return
     }
     formData.name = detail.name
-    const config = detail.config as Partial<OkefScriptConfigForm>
-    Object.assign(okefConfig.Info, config.Info || {})
-    Object.assign(okefConfig.Script, config.Script || {})
-    Object.assign(okefConfig.Game, config.Game || {})
-    Object.assign(okefConfig.Run, config.Run || {})
-    const normalizedRootPath = normalizePath(okefConfig.Info.RootPath || '')
+    const config = detail.config as Partial<OkScriptConfigForm>
+    Object.assign(okScriptConfig.Info, config.Info || {})
+    Object.assign(okScriptConfig.Script, config.Script || {})
+    Object.assign(okScriptConfig.Game, config.Game || {})
+    Object.assign(okScriptConfig.Run, config.Run || {})
+    const normalizedRootPath = normalizePath(okScriptConfig.Info.RootPath || '')
     const metadata = normalizedRootPath
       ? await resolveOkScriptProjectMetadata(normalizedRootPath)
       : null
@@ -657,7 +628,7 @@ const selectRootPath = async () => {
 
 const selectGamePath = async () => {
   const adapter =
-    projectMetadata.value?.adapter || getAdapterByResource(okefConfig.Info.ResourceName)
+    projectMetadata.value?.adapter || getAdapterByResource(okScriptConfig.Info.ResourceName)
   if (!adapter) {
     message.warning('请先选择已适配的 ok-script 项目')
     return

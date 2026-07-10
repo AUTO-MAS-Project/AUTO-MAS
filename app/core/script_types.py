@@ -34,6 +34,9 @@ logger = get_logger("脚本类型注册表")
 
 TASK_MODES = ("AutoProxy", "ManualReview", "ScriptConfig")
 SCRIPT_TYPE_ENTRY_POINT_GROUPS = ("auto_mas.script_types", "automas.script_types")
+SCRIPT_TYPE_ALIASES = {
+    "Okef": "OkScript",
+}
 LEGACY_SCRIPT_TYPE_METADATA = (
     {
         "type_key": "MAA",
@@ -208,6 +211,7 @@ class ScriptTypeRegistry:
     def get(self, type_key: str) -> ScriptTypeProvider:
         """根据脚本类型键获取提供者。"""
 
+        type_key = SCRIPT_TYPE_ALIASES.get(type_key, type_key)
         if type_key not in self._providers:
             raise KeyError(f"未注册的脚本类型: {type_key}")
         return self._providers[type_key]
@@ -345,14 +349,16 @@ class ScriptTypeRegistry:
                 is_builtin=True,
             ),
             ScriptTypeProvider(
-                type_key="Okef",
+                type_key="OkScript",
                 display_name="ok-script 项目",
                 script_config_class=OkefConfig,
                 user_config_class=OkefUserConfig,
                 supported_modes=("AutoProxy",),
-                manager_factory=_lazy_manager("app.task.Okef.manager", "OkefManager"),
-                icon="Okef",
-                editor_kind="builtin:okef",
+                manager_factory=_lazy_manager("app.task.Ok.manager", "OkScriptManager"),
+                icon="General",
+                editor_kind="builtin:ok-script",
+                legacy_config_class_name="OkefConfig",
+                legacy_user_config_class_name="OkefUserConfig",
                 is_builtin=True,
             ),
             ScriptAdapterDefinition(
@@ -605,6 +611,10 @@ def is_script_config_compatible_with_type_key(
     """判断脚本配置是否可兼容指定脚本类型键。"""
 
     normalized_type_key = str(type_key or "").strip()
+    normalized_type_key = SCRIPT_TYPE_ALIASES.get(
+        normalized_type_key,
+        normalized_type_key,
+    )
     if not normalized_type_key:
         return False
 
