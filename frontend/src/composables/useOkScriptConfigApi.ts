@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { OpenAPI } from '@/api/core/OpenAPI'
 
-export interface OkwwConfigField {
+export interface OkScriptConfigField {
   name: string
   type: string
   label: string
@@ -13,42 +13,56 @@ export interface OkwwConfigField {
   step: number | null
 }
 
-export interface OkwwConfigFile {
+export interface OkScriptConfigFile {
   filename: string
   displayName: string
   group: string
   taskIndex: number | null
   fieldCount: number
-  fields: OkwwConfigField[]
+  fields: OkScriptConfigField[]
   currentData: Record<string, unknown>
 }
 
-export interface OkwwConfigListResponse {
+export interface OkScriptProviderMetadata {
+  resourceName: string
+  displayName: string
+  taskOptions: Array<{ value: number; label: string }>
+  accountFields: {
+    enabledKey: string
+    independentKey: string
+    accountListKey: string
+  } | null
+  runtimeVerified?: boolean
+  runtimeBlockReason?: string
+}
+
+export interface OkScriptConfigListResponse {
   code?: number
   status?: string
   message?: string
-  data?: OkwwConfigFile[]
+  data?: OkScriptConfigFile[]
   optionLabels?: Record<string, string>
   configPath?: string
+  provider?: OkScriptProviderMetadata
 }
 
-export interface OkwwConfigUpdateResponse {
+export interface OkScriptConfigUpdateResponse {
   code?: number
   status?: string
   message?: string
   data?: string[]
 }
 
-export type OkwwConfigPatchMap = Record<string, Record<string, unknown>>
+export type OkScriptConfigPatchMap = Record<string, Record<string, unknown>>
 
-export const useOkwwConfigApi = (endpointPrefix: string) => {
+export const useOkScriptConfigApi = (endpointPrefix: string) => {
   const requestUrl = (path: string) => `${OpenAPI.BASE}${endpointPrefix}${path}`
   const isPluginEndpoint = () => endpointPrefix.startsWith('/plugin/')
 
   const listConfigFiles = async (
     scriptId: string,
     userId: string
-  ): Promise<OkwwConfigListResponse> => {
+  ): Promise<OkScriptConfigListResponse> => {
     if (isPluginEndpoint()) {
       const response = await axios.post(requestUrl('/list'), {
         script_id: scriptId,
@@ -69,8 +83,8 @@ export const useOkwwConfigApi = (endpointPrefix: string) => {
   const batchUpdateConfigFiles = async (
     scriptId: string,
     userId: string,
-    configsToUpdate: OkwwConfigPatchMap
-  ): Promise<OkwwConfigUpdateResponse> => {
+    configsToUpdate: OkScriptConfigPatchMap
+  ): Promise<OkScriptConfigUpdateResponse> => {
     const response = await axios.post(requestUrl('/batch-update'), {
       script_id: scriptId,
       user_id: userId,

@@ -23,13 +23,14 @@ describe('scriptCreateFlow', () => {
       'M9A',
     ])
     expect(
-      filterScriptTypeOptions(SCRIPT_TYPE_OPTIONS, 'endfield').map(item => item.value)
-    ).toEqual(['Okef'])
+      filterScriptTypeOptions(SCRIPT_TYPE_OPTIONS, 'ok-script').map(item => item.value)
+    ).toContain('OkScript')
   })
 
   it('separates specialized adapters from the General option', () => {
     const sections = splitScriptTypeOptions(SCRIPT_TYPE_OPTIONS)
     expect(sections.specialized.map(item => item.value)).not.toContain('General')
+    expect(sections.specialized.map(item => item.value)).not.toContain('Okww')
     expect(sections.general.map(item => item.value)).toEqual(['General'])
   })
 
@@ -37,7 +38,7 @@ describe('scriptCreateFlow', () => {
     expect(getScriptEditSegment('MAA')).toBe('maa')
     expect(getScriptEditSegment('MaaEnd')).toBe('maaend')
     expect(getScriptEditSegment('Okww')).toBe('okww')
-    expect(getScriptEditSegment('Okef')).toBe('okef')
+    expect(getScriptEditSegment('OkScript')).toBe('ok-script')
     expect(getScriptEditSegment('HSR')).toBe('hsr')
     expect(getScriptEditSegment('General')).toBe('general')
   })

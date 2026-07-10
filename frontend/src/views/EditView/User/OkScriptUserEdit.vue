@@ -7,7 +7,7 @@
             <router-link to="/scripts">脚本管理</router-link>
           </a-breadcrumb-item>
           <a-breadcrumb-item>
-            <router-link :to="`/scripts/${scriptId}/edit/okef`" class="breadcrumb-link">
+            <router-link :to="`/scripts/${scriptId}/edit/ok-script`" class="breadcrumb-link">
               {{ scriptName }}
             </router-link>
           </a-breadcrumb-item>
@@ -126,6 +126,21 @@
               <h3>任务配置</h3>
             </div>
 
+            <a-alert
+              v-if="providerMetadata?.runtimeVerified === false"
+              type="warning"
+              show-icon
+              :message="providerMetadata.runtimeBlockReason || '当前项目暂未完成运行验证'"
+              style="margin-bottom: 16px"
+            />
+            <a-alert
+              v-else-if="!providerMetadata && !pageLoading"
+              type="info"
+              show-icon
+              message="请先在脚本页选择已适配的 ok-script 项目"
+              style="margin-bottom: 16px"
+            />
+
             <a-row :gutter="24">
               <a-col :span="12">
                 <a-form-item>
@@ -141,10 +156,11 @@
                     v-model:value="formData.Task.TaskIndex"
                     size="large"
                     class="modern-select"
+                    :disabled="taskOptions.length === 0"
                     @change="handleTaskIndexChange"
                   >
                     <a-select-option
-                      v-for="item in okefTaskOptions"
+                      v-for="item in taskOptions"
                       :key="item.value"
                       :value="item.value"
                     >
@@ -165,6 +181,7 @@
                   </template>
                   <a-input
                     :value="currentStartupArguments"
+                    :placeholder="taskOptions.length ? '' : '选择项目后自动生成'"
                     size="large"
                     readonly
                     class="modern-input"
@@ -176,7 +193,7 @@
         </a-form>
       </a-card>
 
-      <a-card v-if="userId" class="config-card" style="margin-top: 24px">
+      <a-card v-if="userId && accountFields" class="config-card" style="margin-top: 24px">
         <a-spin :spinning="accountConfigLoading">
           <a-form layout="vertical" class="config-form">
             <div class="form-section">
@@ -232,11 +249,11 @@
         </a-spin>
       </a-card>
 
-      <a-card v-if="userId" class="config-card" style="margin-top: 24px">
+      <a-card v-if="userId && providerMetadata" class="config-card" style="margin-top: 24px">
         <OkScriptConfigEditor
           :script-id="scriptId"
           :user-id="userId"
-          endpoint-prefix="/api/scripts/okef/configs"
+          endpoint-prefix="/api/scripts/ok-script/configs"
           @saved="handleConfigSaved"
         />
       </a-card>
@@ -340,17 +357,21 @@ import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { useOkwwConfigApi, type OkwwConfigFile } from '@/composables/useOkwwConfigApi'
+import {
+  useOkScriptConfigApi,
+  type OkScriptConfigFile,
+  type OkScriptProviderMetadata,
+} from '@/composables/useOkScriptConfigApi'
 import WebhookManager from '@/components/WebhookManager.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
-import OkScriptConfigEditor from '@/views/OkwwUserEdit/OkwwConfigEditor.vue'
+import OkScriptConfigEditor from '@/views/OkScriptUserEdit/OkScriptConfigEditor.vue'
 
 const logger = window.electronAPI.getLogger('ok-script用户编辑')
 const route = useRoute()
 const router = useRouter()
 const { addUser, getUsers, updateUser } = useUserApi()
 const { getScript } = useScriptApi()
-const okefConfigApi = useOkwwConfigApi('/api/scripts/okef/configs')
+const okScriptConfigApi = useOkScriptConfigApi('/api/scripts/ok-script/configs')
 
 const scriptId = route.params.scriptId as string
 const userId = ref((route.params.userId as string) || '')
@@ -361,28 +382,7 @@ const pageLoading = ref(true)
 const isInitializing = ref(true)
 const isSaving = ref(false)
 
-const OKEF_MAX_TASK_INDEX = 11
-const OKEF_ACCOUNT_KEYS = {
-  enabled: '多账户模式',
-  independent: '多账户独立配置',
-  accountList: '账号列表',
-} as const
-
-const okefTaskOptions = [
-  { label: '1 - DailyTask（日常）', value: 1 },
-  { label: '2 - TakeDeliveryTask（收取派送）', value: 2 },
-  { label: '3 - WarehouseTransferTask（仓库转运）', value: 3 },
-  { label: '4 - DeliveryTask（派送）', value: 4 },
-  { label: '5 - BattleTask（战斗）', value: 5 },
-  { label: '6 - DemoDrawTask（抽卡演示）', value: 6 },
-  { label: '7 - Test（测试）', value: 7 },
-  { label: '8 - YingTuoTask（莺鸵）', value: 8 },
-  { label: '9 - TestStartGame（启动游戏测试）', value: 9 },
-  { label: '10 - RealtimeDetectTask（实时识别）', value: 10 },
-  { label: '11 - DiagnosisTask（诊断）', value: 11 },
-]
-
-interface OkefUserInfoForm {
+interface OkScriptUserInfoForm {
   Name: string
   Status: boolean
   RemainedDay: number
@@ -393,11 +393,11 @@ interface OkefUserInfoForm {
   Notes: string
 }
 
-interface OkefUserTaskForm {
+interface OkScriptUserTaskForm {
   TaskIndex: number
 }
 
-interface OkefUserNotifyForm {
+interface OkScriptUserNotifyForm {
   Enabled: boolean
   IfSendStatistic: boolean
   IfSendMail: boolean
@@ -407,35 +407,35 @@ interface OkefUserNotifyForm {
   CustomWebhooks: unknown[]
 }
 
-interface OkefUserDataForm {
+interface OkScriptUserDataForm {
   LastProxyDate: string
   ProxyTimes: number
   LastProxyStatus: string
   LastTaskIndex: number
 }
 
-interface OkefAccountConfigForm {
+interface OkScriptAccountConfigForm {
   enabled: boolean
   independent: boolean
   accountList: string
 }
 
-interface OkefUserFormData {
+interface OkScriptUserFormData {
   userName: string
-  Info: OkefUserInfoForm
-  Task: OkefUserTaskForm
-  Notify: OkefUserNotifyForm
-  Data: OkefUserDataForm
+  Info: OkScriptUserInfoForm
+  Task: OkScriptUserTaskForm
+  Notify: OkScriptUserNotifyForm
+  Data: OkScriptUserDataForm
 }
 
-type OkefUserApiData = Partial<{
-  Info: Partial<OkefUserInfoForm>
-  Task: Partial<OkefUserTaskForm>
-  Notify: Partial<OkefUserNotifyForm>
-  Data: Partial<OkefUserDataForm>
+type OkScriptUserApiData = Partial<{
+  Info: Partial<OkScriptUserInfoForm>
+  Task: Partial<OkScriptUserTaskForm>
+  Notify: Partial<OkScriptUserNotifyForm>
+  Data: Partial<OkScriptUserDataForm>
 }>
 
-const getDefaultUserData = (): Omit<OkefUserFormData, 'userName'> => ({
+const getDefaultUserData = (): Omit<OkScriptUserFormData, 'userName'> => ({
   Info: {
     Name: '',
     Status: true,
@@ -466,7 +466,7 @@ const getDefaultUserData = (): Omit<OkefUserFormData, 'userName'> => ({
   },
 })
 
-const formData = reactive<OkefUserFormData>({
+const formData = reactive<OkScriptUserFormData>({
   userName: '',
   ...getDefaultUserData(),
 })
@@ -474,14 +474,19 @@ const formData = reactive<OkefUserFormData>({
 const accountConfigLoading = ref(false)
 const accountConfigSaving = ref(false)
 const accountConfigLoaded = ref(false)
-const accountConfigRecords = ref<OkwwConfigFile[]>([])
-const accountForm = reactive<OkefAccountConfigForm>({
+const providerMetadata = ref<OkScriptProviderMetadata | null>(null)
+const accountConfigRecords = ref<OkScriptConfigFile[]>([])
+const accountForm = reactive<OkScriptAccountConfigForm>({
   enabled: false,
   independent: false,
   accountList: '',
 })
 
-const currentStartupArguments = computed(() => `-t ${formData.Task.TaskIndex || 1} -e`)
+const taskOptions = computed(() => providerMetadata.value?.taskOptions || [])
+const accountFields = computed(() => providerMetadata.value?.accountFields || null)
+const currentStartupArguments = computed(() =>
+  taskOptions.value.length ? `-t ${formData.Task.TaskIndex || 1} -e` : ''
+)
 const selectedAccountConfig = computed(
   () => accountConfigRecords.value.find(item => item.taskIndex === formData.Task.TaskIndex) || null
 )
@@ -497,7 +502,7 @@ const createUserImmediately = async () => {
   userId.value = resp.userId
   isEdit.value = true
   await router.replace({
-    name: 'OkefUserEdit',
+    name: 'OkScriptUserEdit',
     params: { scriptId, userId: userId.value },
   })
 }
@@ -547,13 +552,15 @@ const handleTaskIndexChange = async (value: number) => {
   }
 }
 
-const hasAccountConfigFields = (config: OkwwConfigFile) =>
-  Object.prototype.hasOwnProperty.call(config.currentData, OKEF_ACCOUNT_KEYS.accountList)
+const hasAccountConfigFields = (config: OkScriptConfigFile) =>
+  !!accountFields.value &&
+  Object.prototype.hasOwnProperty.call(config.currentData, accountFields.value.accountListKey)
 
-const syncAccountFormFromConfig = (config: OkwwConfigFile | null) => {
-  accountForm.enabled = Boolean(config?.currentData[OKEF_ACCOUNT_KEYS.enabled])
-  accountForm.independent = Boolean(config?.currentData[OKEF_ACCOUNT_KEYS.independent])
-  accountForm.accountList = String(config?.currentData[OKEF_ACCOUNT_KEYS.accountList] || '')
+const syncAccountFormFromConfig = (config: OkScriptConfigFile | null) => {
+  const fields = accountFields.value
+  accountForm.enabled = Boolean(fields && config?.currentData[fields.enabledKey])
+  accountForm.independent = Boolean(fields && config?.currentData[fields.independentKey])
+  accountForm.accountList = String(fields ? config?.currentData[fields.accountListKey] || '' : '')
 }
 
 const normalizeAccountList = (value: string) =>
@@ -563,22 +570,26 @@ const normalizeAccountList = (value: string) =>
     .filter(Boolean)
     .join('\n')
 
-const loadAccountConfig = async () => {
+const loadProjectConfig = async () => {
   if (!userId.value) return
   accountConfigLoading.value = true
   accountConfigLoaded.value = false
+  providerMetadata.value = null
+  accountConfigRecords.value = []
   try {
-    const resp = await okefConfigApi.listConfigFiles(scriptId, userId.value)
+    const resp = await okScriptConfigApi.listConfigFiles(scriptId, userId.value)
     if (resp?.code !== 200) {
-      throw new Error(resp?.message || '加载多账号配置失败')
+      logger.warn(`项目配置暂不可用: ${resp?.message || '未选择已适配项目'}`)
+      return
     }
 
+    providerMetadata.value = resp.provider || null
     accountConfigRecords.value = (resp.data || []).filter(hasAccountConfigFields)
     syncAccountFormFromConfig(selectedAccountConfig.value)
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
-    logger.error(`加载多账号配置失败: ${errorMsg}`)
-    message.error(`加载多账号配置失败: ${errorMsg}`)
+    logger.error(`加载项目配置失败: ${errorMsg}`)
+    message.error(`加载项目配置失败: ${errorMsg}`)
   } finally {
     accountConfigLoaded.value = true
     accountConfigLoading.value = false
@@ -587,28 +598,29 @@ const loadAccountConfig = async () => {
 
 const saveAccountConfig = async () => {
   const accountConfig = selectedAccountConfig.value
-  if (!userId.value || accountConfigSaving.value || !accountConfig) return
+  const fields = accountFields.value
+  if (!userId.value || accountConfigSaving.value || !accountConfig || !fields) return
 
   accountConfigSaving.value = true
   try {
     const normalizedAccountList = normalizeAccountList(accountForm.accountList)
     const patch = {
       [accountConfig.filename]: {
-        [OKEF_ACCOUNT_KEYS.enabled]: accountForm.enabled,
-        [OKEF_ACCOUNT_KEYS.independent]: accountForm.independent,
-        [OKEF_ACCOUNT_KEYS.accountList]: normalizedAccountList,
+        [fields.enabledKey]: accountForm.enabled,
+        [fields.independentKey]: accountForm.independent,
+        [fields.accountListKey]: normalizedAccountList,
       },
     }
 
-    const resp = await okefConfigApi.batchUpdateConfigFiles(scriptId, userId.value, patch)
+    const resp = await okScriptConfigApi.batchUpdateConfigFiles(scriptId, userId.value, patch)
     if (resp?.code !== 200) {
       throw new Error(resp?.message || '保存多账号配置失败')
     }
 
     accountForm.accountList = normalizedAccountList
-    accountConfig.currentData[OKEF_ACCOUNT_KEYS.enabled] = accountForm.enabled
-    accountConfig.currentData[OKEF_ACCOUNT_KEYS.independent] = accountForm.independent
-    accountConfig.currentData[OKEF_ACCOUNT_KEYS.accountList] = normalizedAccountList
+    accountConfig.currentData[fields.enabledKey] = accountForm.enabled
+    accountConfig.currentData[fields.independentKey] = accountForm.independent
+    accountConfig.currentData[fields.accountListKey] = normalizedAccountList
     message.success('多账号配置已保存')
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
@@ -630,7 +642,7 @@ const loadScriptInfo = async () => {
     handleCancel()
     return false
   }
-  if (detail.type !== 'Okef') {
+  if (detail.type !== 'OkScript' && detail.type !== 'Okef') {
     message.error('脚本类型不是 ok-script 项目')
     handleCancel()
     return false
@@ -639,12 +651,16 @@ const loadScriptInfo = async () => {
   return true
 }
 
-const clampTaskIndex = (value: unknown) => {
+const clampTaskIndex = (value: unknown): number | null => {
+  if (!taskOptions.value.length) return null
+
   const taskIndex = Number(value)
-  if (!Number.isFinite(taskIndex) || taskIndex < 1 || taskIndex > OKEF_MAX_TASK_INDEX) {
-    return 1
-  }
-  return Math.trunc(taskIndex)
+  const defaultTaskIndex = taskOptions.value[0]?.value || 1
+  if (!Number.isFinite(taskIndex)) return defaultTaskIndex
+  const normalizedTaskIndex = Math.trunc(taskIndex)
+  return taskOptions.value.some(option => option.value === normalizedTaskIndex)
+    ? normalizedTaskIndex
+    : defaultTaskIndex
 }
 
 const loadUser = async () => {
@@ -660,7 +676,7 @@ const loadUser = async () => {
       throw new Error('用户不存在或加载失败')
     }
 
-    const userData = data as OkefUserApiData
+    const userData = data as OkScriptUserApiData
     const defaults = getDefaultUserData()
 
     Object.assign(formData, {
@@ -670,8 +686,10 @@ const loadUser = async () => {
       Data: { ...defaults.Data, ...(userData.Data || {}) },
     })
 
+    await loadProjectConfig()
+
     const normalizedTaskIndex = clampTaskIndex(formData.Task.TaskIndex)
-    if (normalizedTaskIndex !== formData.Task.TaskIndex) {
+    if (normalizedTaskIndex !== null && normalizedTaskIndex !== formData.Task.TaskIndex) {
       formData.Task.TaskIndex = normalizedTaskIndex
       await updateUser(scriptId, userId.value, {
         Task: {
@@ -679,10 +697,10 @@ const loadUser = async () => {
         },
       })
     }
+    syncAccountFormFromConfig(selectedAccountConfig.value)
 
     await nextTick()
     formData.userName = formData.Info.Name || ''
-    await loadAccountConfig()
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
     message.error('加载用户失败')

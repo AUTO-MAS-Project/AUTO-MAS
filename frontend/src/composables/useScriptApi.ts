@@ -42,7 +42,8 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   M9A: ScriptCreateIn.type.M9A,
   MaaFW: ScriptCreateIn.type.MAA_FW,
   Okww: ScriptCreateIn.type.OKWW,
-  Okef: 'Okef' as ScriptCreateIn.type,
+  OkScript: ScriptCreateIn.type.OKEF,
+  Okef: ScriptCreateIn.type.OKEF,
   HSR: ScriptCreateIn.type.HSR,
   General: ScriptCreateIn.type.GENERAL,
 }
@@ -51,7 +52,7 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   [ScriptIndexItem.type.MAA_CONFIG]: 'MAA',
   [ScriptIndexItem.type.SRC_CONFIG]: 'SRC',
   [ScriptIndexItem.type.OKWW_CONFIG]: 'Okww',
-  OkefConfig: 'Okef',
+  OkefConfig: 'OkScript',
   [ScriptIndexItem.type.MAA_END_CONFIG]: 'MaaEnd',
   [ScriptIndexItem.type.M9ACONFIG]: 'M9A',
   [ScriptIndexItem.type.MAA_FWCONFIG]: 'MaaFW',
