@@ -22,6 +22,8 @@
 
 
 import asyncio
+import importlib
+import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -35,23 +37,12 @@ from app.core import Config
 from app.models.schema import *
 from app.task.Ok.common.provider import ok_script_mas_config_dir
 from app.task.Ok.providers import detect_ok_script_provider
-from app.task.Ok.providers.okef import OKEF_PROVIDER
-from app.task.Okww.AutoProxy import _OKWW_REL_CONFIG_DIR
+from app.task.Ok.providers.okww import OKWW_PROVIDER
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 
-_OKEF_REL_CONFIG_DIR = OKEF_PROVIDER.config_dir
 
-
-def _okww_mas_config_dir(script_id: str, user_id: str) -> Path:
-    return Path.cwd() / "data" / script_id / user_id / "ConfigFile"
-
-
-def _okef_mas_config_dir(script_id: str, user_id: str) -> Path:
-    return ok_script_mas_config_dir(script_id, user_id)
-
-
-def _okww_config_file_path(config_dir: Path, filename: str) -> Path:
+def _ok_script_config_file_path(config_dir: Path, filename: str) -> Path:
     file_path = Path(filename)
     if (
         file_path.name != filename
@@ -62,7 +53,7 @@ def _okww_config_file_path(config_dir: Path, filename: str) -> Path:
     return config_dir / filename
 
 
-def _okww_read_json_file(path: Path) -> dict[str, Any]:
+def _read_json_file(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {}
     try:
@@ -74,13 +65,27 @@ def _okww_read_json_file(path: Path) -> dict[str, Any]:
     return loaded if isinstance(loaded, dict) else {}
 
 
-def _okww_write_json_file_atomic(path: Path, data: dict[str, Any]) -> None:
+def _write_json_file_atomic(path: Path, data: dict[str, Any]) -> None:
     import json
 
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_name(path.name + ".tmp")
     tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8")
     tmp_path.replace(path)
+
+
+def _copy_tree_atomic(source_dir: Path, target_dir: Path) -> None:
+    """通过临时目录初始化用户配置，避免留下半份配置。"""
+
+    if not source_dir.is_dir():
+        return
+
+    target_dir.parent.mkdir(parents=True, exist_ok=True)
+    tmp_dir = target_dir.with_name(target_dir.name + ".tmp")
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+    shutil.copytree(source_dir, tmp_dir)
+    shutil.rmtree(target_dir, ignore_errors=True)
+    tmp_dir.rename(target_dir)
 
 
 def _ensure_okww_user_config_defaults(config_dir: Path, source_dir: Path | None) -> None:
@@ -94,16 +99,40 @@ def _ensure_okww_user_config_defaults(config_dir: Path, source_dir: Path | None)
         source_path = source_dir / filename
         if not source_path.is_file():
             continue
-        current_path = _okww_config_file_path(config_dir, filename)
-        source_data = _okww_read_json_file(source_path)
-        current_data = _okww_read_json_file(current_path)
+        current_path = _ok_script_config_file_path(config_dir, filename)
+        source_data = _read_json_file(source_path)
+        current_data = _read_json_file(current_path)
         merged_data = {**source_data, **current_data}
         if merged_data != current_data:
-            _okww_write_json_file_atomic(current_path, merged_data)
+            _write_json_file_atomic(current_path, merged_data)
 
 
-def _okef_config_file_path(config_dir: Path, filename: str) -> Path:
-    return _okww_config_file_path(config_dir, filename)
+def _resolve_ok_script_provider(script_id: str):
+    """读取当前通用 ok-script 脚本并解析其项目 provider。"""
+
+    script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+    if type(script_config).__name__ != "OkefConfig":
+        raise ValueError("指定脚本不是 ok-script 项目")
+
+    root_path = Path(str(script_config.get("Info", "RootPath") or ""))
+    provider = detect_ok_script_provider(
+        root_path,
+        script_config.get("Info", "ResourceName"),
+    )
+    if provider is None:
+        raise ValueError("当前 ok-script 项目尚未适配")
+    return script_config, root_path, provider
+
+
+def _load_ok_script_schema(provider):
+    """按 provider 载入隔离的配置 schema 实现。"""
+
+    schema_module = importlib.import_module(provider.config_schema_module)
+    return (
+        getattr(schema_module, "build_fields_for_config"),
+        getattr(schema_module, provider.config_info_loader),
+        getattr(schema_module, f"load_{provider.resource_name.replace('-', '')}_option_labels"),
+    )
 
 
 _MAAFW_IMAGE_SUFFIXES = {
@@ -1318,10 +1347,10 @@ async def get_okww_configs_list(script_id: str, user_id: str):
         option_labels = load_okww_option_labels(root_path) if root_path else {}
 
         # 详细模式：每个用户独立持有一份 OK-WW 配置。
-        mas_config_dir = _okww_mas_config_dir(script_id, user_id)
+        mas_config_dir = ok_script_mas_config_dir(script_id, user_id)
 
         # ok-ww 源配置目录（从 RootPath 派生，用于自动初始化）
-        okww_configs_dir = Path(root_path) / _OKWW_REL_CONFIG_DIR if root_path else None
+        okww_configs_dir = Path(root_path) / OKWW_PROVIDER.config_dir if root_path else None
 
         # 自动初始化并按需补齐字段：逐文件将源默认值与用户现值合并（tmp+rename 原子写），
         # 避免旧用户升级后缺失新配置字段，也避免非原子 copytree 中断损坏配置。
@@ -1393,12 +1422,12 @@ async def batch_update_okww_configs(
         import json
 
         # 写入用户配置目录
-        mas_config_dir = _okww_mas_config_dir(script_id, user_id)
+        mas_config_dir = ok_script_mas_config_dir(script_id, user_id)
         mas_config_dir.mkdir(parents=True, exist_ok=True)
 
         updated_files = []
         for filename, data in configs.items():
-            filepath = _okww_config_file_path(mas_config_dir, filename)
+            filepath = _ok_script_config_file_path(mas_config_dir, filename)
             existing_data = {}
             if filepath.exists():
                 with open(filepath, "r", encoding="utf-8") as f:
@@ -1423,59 +1452,38 @@ async def batch_update_okww_configs(
 
 
 @router.post(
-    "/okef/configs/list",
-    tags=["OKEF"],
-    summary="获取 OK-EF 配置文件列表和 schema",
+    "/ok-script/configs/list",
+    tags=["ok-script"],
+    summary="获取 ok-script 配置文件列表和 schema",
     status_code=200,
 )
-async def get_okef_configs_list(script_id: str, user_id: str):
-    """
-    获取 OK-EF 配置文件列表和 schema 定义。
-    读取用户配置目录（data/{script_id}/{user_id}/ConfigFile/），
-    若为空则自动从 OK-EF working/configs 目录初始化默认配置。
-    """
+async def get_ok_script_configs_list(script_id: str, user_id: str):
+    """根据当前 provider 获取隔离的用户配置文件和 schema。"""
     try:
         import json
-        import shutil
 
-        from app.task.Okef.config_schema import (
-            build_fields_for_config,
-            get_config_info_from_dir,
-            load_okef_option_labels,
+        _, root_path, provider = _resolve_ok_script_provider(script_id)
+        build_fields_for_config, get_config_info, load_option_labels = (
+            _load_ok_script_schema(provider)
         )
 
-        script_config = Config.ScriptConfig[uuid.UUID(script_id)]
-        if type(script_config).__name__ != "OkefConfig":
-            return {
-                "code": 400,
-                "status": "error",
-                "message": "指定脚本不是 ok-script 项目",
-                "data": [],
-            }
-
-        root_path = script_config.get("Info", "RootPath")
-        provider = detect_ok_script_provider(
-            root_path,
-            script_config.get("Info", "ResourceName"),
-        )
-        if provider is None:
-            return {
-                "code": 400,
-                "status": "error",
-                "message": "当前 ok-script 项目尚未适配",
-                "data": [],
-            }
-
-        option_labels = load_okef_option_labels(root_path) if root_path else {}
-        mas_config_dir = _okef_mas_config_dir(script_id, user_id)
-        okef_configs_dir = provider.config_path(Path(root_path)) if root_path else None
+        option_labels = load_option_labels(root_path)
+        mas_config_dir = ok_script_mas_config_dir(script_id, user_id)
+        source_configs_dir = provider.config_path(root_path)
 
         need_init = not mas_config_dir.exists() or not any(mas_config_dir.iterdir())
-        if need_init and okef_configs_dir and okef_configs_dir.is_dir():
-            mas_config_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(okef_configs_dir, mas_config_dir, dirs_exist_ok=True)
+        if need_init and source_configs_dir.is_dir():
+            await asyncio.to_thread(
+                _copy_tree_atomic,
+                source_configs_dir,
+                mas_config_dir,
+            )
 
-        configs_info = get_config_info_from_dir(mas_config_dir)
+        configs_info = (
+            get_config_info(mas_config_dir)
+            if provider.config_info_uses_directory
+            else get_config_info()
+        )
         result = []
         for info in configs_info:
             filename = info["filename"]
@@ -1504,6 +1512,14 @@ async def get_okef_configs_list(script_id: str, user_id: str):
             "data": result,
             "optionLabels": option_labels,
             "configPath": str(mas_config_dir),
+            "provider": provider.build_client_metadata(),
+        }
+    except ValueError as e:
+        return {
+            "code": 400,
+            "status": "error",
+            "message": str(e),
+            "data": [],
         }
     except Exception as e:
         return {
@@ -1515,33 +1531,35 @@ async def get_okef_configs_list(script_id: str, user_id: str):
 
 
 @router.post(
-    "/okef/configs/batch-update",
-    tags=["OKEF"],
-    summary="批量更新 OK-EF 配置文件",
+    "/ok-script/configs/batch-update",
+    tags=["ok-script"],
+    summary="批量更新 ok-script 配置文件",
     status_code=200,
 )
-async def batch_update_okef_configs(
+async def batch_update_ok_script_configs(
     script_id: str = Body(...),
     user_id: str = Body(...),
     configs: dict = Body(...),
 ):
-    """批量更新 OK-EF 用户配置 JSON。"""
+    """批量更新当前 provider 对应的用户配置 JSON。"""
     try:
         import json
 
-        mas_config_dir = _okef_mas_config_dir(script_id, user_id)
+        _resolve_ok_script_provider(script_id)
+        mas_config_dir = ok_script_mas_config_dir(script_id, user_id)
         mas_config_dir.mkdir(parents=True, exist_ok=True)
 
         updated_files = []
         for filename, data in configs.items():
-            filepath = _okef_config_file_path(mas_config_dir, filename)
+            if not isinstance(data, dict):
+                raise ValueError(f"配置文件 {filename} 的内容必须是对象")
+            filepath = _ok_script_config_file_path(mas_config_dir, filename)
             existing_data = {}
             if filepath.exists():
                 with open(filepath, "r", encoding="utf-8") as f:
                     existing_data = json.load(f)
             existing_data.update(data)
-            with open(filepath, "w", encoding="utf-8") as f:
-                json.dump(existing_data, f, ensure_ascii=False, indent=4)
+            _write_json_file_atomic(filepath, existing_data)
             updated_files.append(filename)
 
         return {
@@ -1550,9 +1568,43 @@ async def batch_update_okef_configs(
             "message": f"已更新 {len(updated_files)} 个配置文件",
             "data": updated_files,
         }
+    except ValueError as e:
+        return {
+            "code": 400,
+            "status": "error",
+            "message": str(e),
+        }
     except Exception as e:
         return {
             "code": 500,
             "status": "error",
             "message": f"{type(e).__name__}: {str(e)}",
         }
+
+
+@router.post(
+    "/okef/configs/list",
+    tags=["OKEF"],
+    summary="获取 ok-script 配置文件列表和 schema（兼容入口）",
+    status_code=200,
+)
+async def get_okef_configs_list(script_id: str, user_id: str):
+    """保留旧 OK-EF API 路径，内部统一走 ok-script provider。"""
+
+    return await get_ok_script_configs_list(script_id, user_id)
+
+
+@router.post(
+    "/okef/configs/batch-update",
+    tags=["OKEF"],
+    summary="批量更新 ok-script 配置文件（兼容入口）",
+    status_code=200,
+)
+async def batch_update_okef_configs(
+    script_id: str = Body(...),
+    user_id: str = Body(...),
+    configs: dict = Body(...),
+):
+    """保留旧 OK-EF API 路径，内部统一走 ok-script provider。"""
+
+    return await batch_update_ok_script_configs(script_id, user_id, configs)

@@ -20,11 +20,31 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.task.Ok.common.report import OkScriptReportHandler
 
 
 _VERSION_SUFFIX_RE = re.compile(r"[-_ ]?v?\d+(?:\.\d+)+(?:[-_.a-z0-9]*)?$", re.I)
 _PYAPPIFY_NAME_RE = re.compile(r"^\s*name\s*:\s*[\"']?([^\"'\r\n#]+)[\"']?", re.M)
+
+
+@dataclass(frozen=True)
+class OkScriptTaskOption:
+    """ok-script 一次性任务元数据。"""
+
+    index: int
+    label: str
+
+
+@dataclass(frozen=True)
+class OkScriptAccountConfig:
+    """脚本本体中可由 MAS 注入的多账号字段。"""
+
+    enabled_key: str
+    independent_key: str
+    account_list_key: str
 
 
 @dataclass(frozen=True)
@@ -46,6 +66,14 @@ class OkScriptProvider:
     fatal_patterns: tuple[tuple[str, str], ...]
     success_patterns: tuple[str, ...]
     max_task_index: int
+    task_options: tuple[OkScriptTaskOption, ...]
+    config_schema_module: str
+    config_info_loader: str
+    config_info_uses_directory: bool = False
+    account_config: OkScriptAccountConfig | None = None
+    report_handler_factory: Callable[[], "OkScriptReportHandler"] | None = None
+    runtime_verified: bool = True
+    runtime_block_reason: str = ""
     log_time_start: int = 1
     log_time_end: int = 23
     log_time_format: str = "%Y-%m-%d %H:%M:%S,%f"
@@ -76,6 +104,42 @@ class OkScriptProvider:
     def build_task_args(self, task_index: int) -> list[str]:
         return ["-t", str(task_index), "-e"]
 
+    def is_supported_task_index(self, task_index: int) -> bool:
+        """判断任务序号是否属于当前脚本项目。"""
+
+        return any(option.index == task_index for option in self.task_options)
+
+    def task_label(self, task_index: int) -> str:
+        """返回任务序号对应的项目内名称。"""
+
+        for option in self.task_options:
+            if option.index == task_index:
+                return option.label
+        return f"任务 {task_index}"
+
+    def build_client_metadata(self) -> dict[str, Any]:
+        """构建供 ok-script 前端消费的项目隔离元数据。"""
+
+        account_fields = None
+        if self.account_config is not None:
+            account_fields = {
+                "enabledKey": self.account_config.enabled_key,
+                "independentKey": self.account_config.independent_key,
+                "accountListKey": self.account_config.account_list_key,
+            }
+
+        return {
+            "resourceName": self.resource_name,
+            "displayName": self.display_name,
+            "taskOptions": [
+                {"value": option.index, "label": option.label}
+                for option in self.task_options
+            ],
+            "accountFields": account_fields,
+            "runtimeVerified": self.runtime_verified,
+            "runtimeBlockReason": self.runtime_block_reason,
+        }
+
 
 def normalize_ok_script_resource_name(value: Any) -> str:
     """把 pyappify/app.json 中的资源名规整为 provider 可匹配的 key。"""
@@ -92,7 +156,12 @@ def read_pyappify_resource_name(root_path: Path) -> str:
     if not pyappify_path.is_file():
         return ""
 
-    match = _PYAPPIFY_NAME_RE.search(pyappify_path.read_text(encoding="utf-8"))
+    try:
+        content = pyappify_path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeError):
+        return ""
+
+    match = _PYAPPIFY_NAME_RE.search(content)
     return normalize_ok_script_resource_name(match.group(1) if match else "")
 
 
@@ -100,7 +169,11 @@ def read_app_json_resource_name(app_json_path: Path) -> str:
     if not app_json_path.is_file():
         return ""
 
-    data = json.loads(app_json_path.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(app_json_path.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return ""
+
     if not isinstance(data, dict):
         return ""
     return normalize_ok_script_resource_name(data.get("name"))

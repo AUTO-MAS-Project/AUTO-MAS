@@ -28,10 +28,14 @@ from app.task.Ok.common.provider import (
 )
 
 from .okef import OKEF_PROVIDER
+from .oknte import OKNTE_PROVIDER
+from .okww import OKWW_PROVIDER
 
 
 OK_SCRIPT_PROVIDERS: dict[str, OkScriptProvider] = {
     OKEF_PROVIDER.resource_name: OKEF_PROVIDER,
+    OKWW_PROVIDER.resource_name: OKWW_PROVIDER,
+    OKNTE_PROVIDER.resource_name: OKNTE_PROVIDER,
 }
 
 
@@ -50,27 +54,24 @@ def detect_ok_script_provider(
 ) -> OkScriptProvider | None:
     """按已保存资源名或项目根目录识别 ok-script provider。"""
 
-    provider = get_ok_script_provider(resource_name)
-    if provider is not None:
-        return provider
-
     root = Path(root_path)
     if not root.is_dir():
         return None
 
-    provider = get_ok_script_provider(read_pyappify_resource_name(root))
-    if provider is not None:
-        return provider
+    # 根目录是当前运行的事实来源，避免切换项目目录后仍使用旧 ResourceName。
+    pyappify_resource_name = read_pyappify_resource_name(root)
+    if pyappify_resource_name:
+        return get_ok_script_provider(pyappify_resource_name)
 
     for candidate in OK_SCRIPT_PROVIDERS.values():
-        provider = get_ok_script_provider(
-            read_app_json_resource_name(candidate.app_json_path(root))
+        app_json_resource_name = read_app_json_resource_name(
+            candidate.app_json_path(root)
         )
-        if provider is not None:
-            return provider
+        if app_json_resource_name:
+            return get_ok_script_provider(app_json_resource_name)
 
     for candidate in OK_SCRIPT_PROVIDERS.values():
         if candidate.exe_path(root).is_file() and candidate.config_path(root).is_dir():
             return candidate
 
-    return None
+    return get_ok_script_provider(resource_name)

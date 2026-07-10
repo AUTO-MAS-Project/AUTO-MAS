@@ -16,7 +16,12 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-from app.task.Ok.common.provider import OkScriptProvider
+from app.task.Ok.common.provider import (
+    OkScriptAccountConfig,
+    OkScriptProvider,
+    OkScriptTaskOption,
+)
+from app.task.Ok.providers.okef_report import OkefDailySummaryReportHandler
 
 
 OKEF_PROVIDER = OkScriptProvider(
@@ -40,4 +45,26 @@ OKEF_PROVIDER = OkScriptProvider(
         "Successfully Executed Task, Exiting Game and App!",
     ),
     max_task_index=11,
+    task_options=(
+        OkScriptTaskOption(1, "DailyTask（日常）"),
+        OkScriptTaskOption(2, "TakeDeliveryTask（收取派送）"),
+        OkScriptTaskOption(3, "WarehouseTransferTask（仓库转运）"),
+        OkScriptTaskOption(4, "DeliveryTask（派送）"),
+        OkScriptTaskOption(5, "BattleTask（战斗）"),
+        OkScriptTaskOption(6, "DemoDrawTask（抽卡演示）"),
+        OkScriptTaskOption(7, "Test（测试）"),
+        OkScriptTaskOption(8, "YingTuoTask（莺鸵）"),
+        OkScriptTaskOption(9, "TestStartGame（启动游戏测试）"),
+        OkScriptTaskOption(10, "RealtimeDetectTask（实时识别）"),
+        OkScriptTaskOption(11, "DiagnosisTask（诊断）"),
+    ),
+    config_schema_module="app.task.Okef.config_schema",
+    config_info_loader="get_config_info_from_dir",
+    config_info_uses_directory=True,
+    account_config=OkScriptAccountConfig(
+        enabled_key="多账户模式",
+        independent_key="多账户独立配置",
+        account_list_key="账号列表",
+    ),
+    report_handler_factory=OkefDailySummaryReportHandler,
 )

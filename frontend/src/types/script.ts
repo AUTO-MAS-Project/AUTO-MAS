@@ -28,6 +28,7 @@ export type BuiltinScriptType =
   | 'MAA'
   | 'General'
   | 'Okww'
+  | 'OkScript'
   | 'Okef'
   | 'SRC'
   | 'MaaEnd'
@@ -63,6 +64,7 @@ export interface OkefScriptConfig {
     }
   }
 }
+export type OkScriptScriptConfig = OkefScriptConfig
 // MAA脚本配置
 export interface MAAScriptConfig {
   Info: {

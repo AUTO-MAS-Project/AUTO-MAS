@@ -59,7 +59,7 @@
   </a-card>
 
   <a-card v-if="isOkwwAdapter && userId" class="config-card okww-config-card">
-    <OkwwConfigEditor
+    <OkScriptConfigEditor
       :script-id="scriptId"
       :user-id="userId"
       endpoint-prefix="/plugin/okww/configs"
@@ -83,7 +83,7 @@ import { message } from 'ant-design-vue'
 import HeaderSchemaActionButton from '@/components/HeaderSchemaActionButton.vue'
 import SchemaForm from '@/components/SchemaForm.vue'
 import SchemaActionSessionMask from '@/components/SchemaActionSessionMask.vue'
-import OkwwConfigEditor from '@/views/OkwwUserEdit/OkwwConfigEditor.vue'
+import OkScriptConfigEditor from '@/views/OkScriptUserEdit/OkScriptConfigEditor.vue'
 import { useSchemaActionRunner } from '@/composables/useSchemaActionRunner'
 import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'

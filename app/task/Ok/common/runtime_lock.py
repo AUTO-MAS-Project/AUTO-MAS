@@ -16,8 +16,19 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""OK-EF 旧导入路径兼容层。"""
+import asyncio
+from pathlib import Path
 
-from app.task.Ok.runtime import OkScriptAutoProxyTask
 
-AutoProxyTask = OkScriptAutoProxyTask
+_ROOT_RUNTIME_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def get_ok_script_root_lock(root_path: Path) -> asyncio.Lock:
+    """Return the runtime lock for an ok-script physical root path."""
+
+    root_key = str(root_path.resolve(strict=False)).casefold()
+    lock = _ROOT_RUNTIME_LOCKS.get(root_key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _ROOT_RUNTIME_LOCKS[root_key] = lock
+    return lock
