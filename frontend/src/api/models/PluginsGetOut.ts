@@ -2,8 +2,12 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { PluginActionModel } from './PluginActionModel';
 import type { PluginInstanceModel } from './PluginInstanceModel';
+import type { PluginPackageModel } from './PluginPackageModel';
+import type { PluginRouteModel } from './PluginRouteModel';
 import type { PluginRuntimeStateModel } from './PluginRuntimeStateModel';
+import type { PluginServiceModel } from './PluginServiceModel';
 export type PluginsGetOut = {
     /**
      * 状态码
@@ -34,9 +38,25 @@ export type PluginsGetOut = {
      */
     schema_errors?: Record<string, string>;
     /**
+     * 插件服务声明
+     */
+    plugin_services?: Record<string, PluginServiceModel>;
+    /**
+     * 插件声明式服务路由
+     */
+    plugin_routes?: Record<string, Array<PluginRouteModel>>;
+    /**
+     * 插件声明式前端动作
+     */
+    plugin_actions?: Record<string, Array<PluginActionModel>>;
+    /**
      * 插件实例列表
      */
     instances?: Array<PluginInstanceModel>;
+    /**
+     * 插件安装包信息
+     */
+    plugin_packages?: Record<string, PluginPackageModel>;
     /**
      * 插件实例运行态
      */
@@ -44,28 +64,10 @@ export type PluginsGetOut = {
     /**
      * 前端页面声明
      */
-    pages?: Array<{
-        id: string;
-        path: string;
-        title: string;
-        menu_label: string;
-        icon?: string;
-        component: string;
-        renderer?: string;
-        url?: string | null;
-        frontend_plugin?: string | null;
-        element_tag?: string | null;
-        entry_asset_url?: string | null;
-        style_asset_urls?: Array<string>;
-        manifest_version?: number | null;
-        section?: string;
-        order?: number;
-        visible?: boolean;
-        dev_only?: boolean;
-        source?: string;
-    }>;
+    pages?: Array<Record<string, any>>;
     /**
      * 页面声明警告
      */
     page_errors?: Array<string>;
 };
+

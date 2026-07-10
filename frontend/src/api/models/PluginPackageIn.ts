@@ -2,10 +2,10 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type PluginDevRebuildCtxStubIn = {
+export type PluginPackageIn = {
     /**
-     * 是否在非开发模式下强制生成
+     * PyPI 包名
      */
-    force?: boolean;
+    package: string;
 };
 

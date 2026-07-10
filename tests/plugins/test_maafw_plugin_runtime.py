@@ -301,6 +301,80 @@ class MaaFWPluginRuntimeTest(unittest.TestCase):
 
 
 class MaaFWRunnerTaskTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _config(values: dict[tuple[str, str], object]) -> SimpleNamespace:
+        return SimpleNamespace(get=lambda section, key: values.get((section, key)))
+
+    def test_user_controller_and_resource_override_script_defaults(self) -> None:
+        task = object.__new__(MaaFWPluginAutoProxyTask)
+        task.script_config = self._config(
+            {
+                ("Info", "Controller"): "desktop",
+                ("Info", "Resource"): "official",
+                ("Emulator", "Id"): "-",
+            }
+        )
+        task.cur_user_config = self._config(
+            {
+                ("Info", "Controller"): "adb",
+                ("Info", "Resource"): "bilibili",
+            }
+        )
+        interface_model = MaaFWInterface.model_validate(
+            {
+                "interface_version": 2,
+                "name": "M9A",
+                "controller": [
+                    {"name": "desktop", "type": "Win32"},
+                    {"name": "adb", "type": "Adb"},
+                ],
+                "resource": [
+                    {"name": "official", "path": [], "controller": ["desktop"]},
+                    {"name": "bilibili", "path": [], "controller": ["adb"]},
+                ],
+                "task": [],
+            }
+        )
+
+        controller_name = task._select_controller_name(interface_model)
+        resource_name = task._select_resource_name(interface_model, controller_name)
+
+        self.assertEqual(controller_name, "adb")
+        self.assertEqual(resource_name, "bilibili")
+
+    def test_blank_user_controller_and_resource_inherit_script_defaults(self) -> None:
+        task = object.__new__(MaaFWPluginAutoProxyTask)
+        task.script_config = self._config(
+            {
+                ("Info", "Controller"): "desktop",
+                ("Info", "Resource"): "official",
+                ("Emulator", "Id"): "-",
+            }
+        )
+        task.cur_user_config = self._config(
+            {
+                ("Info", "Controller"): "",
+                ("Info", "Resource"): "",
+            }
+        )
+        interface_model = MaaFWInterface.model_validate(
+            {
+                "interface_version": 2,
+                "name": "M9A",
+                "controller": [{"name": "desktop", "type": "Win32"}],
+                "resource": [
+                    {"name": "official", "path": [], "controller": ["desktop"]}
+                ],
+                "task": [],
+            }
+        )
+
+        controller_name = task._select_controller_name(interface_model)
+        resource_name = task._select_resource_name(interface_model, controller_name)
+
+        self.assertEqual(controller_name, "desktop")
+        self.assertEqual(resource_name, "official")
+
     async def test_runner_environment_log_returns_to_event_loop_thread(self) -> None:
         event_loop_thread = threading.get_ident()
         log_threads: list[int] = []
