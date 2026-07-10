@@ -56,7 +56,6 @@ const getScriptTypeFromConfigType = (type: string): ScriptType | null => {
     SrcConfig: 'SRC',
     OkwwConfig: 'Okww',
     MaaEndConfig: 'MaaEnd',
-    M9AConfig: 'M9A',
     GeneralConfig: 'General',
   }
 

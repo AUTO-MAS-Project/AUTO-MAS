@@ -30,7 +30,9 @@
     <template #title>
       <a-space>
         <span>{{ userName || '用户配置' }}</span>
-        <a-tag :color="getScriptTypeTagColor(scriptType)">{{ scriptDisplayName }}</a-tag>
+        <a-tag :color="getScriptTypeTagColor(scriptType, scriptThemeColor)">
+          {{ scriptDisplayName }}
+        </a-tag>
       </a-space>
     </template>
 
@@ -118,6 +120,7 @@ const scriptName = ref('')
 const userName = ref('')
 const scriptType = ref('')
 const scriptEditorKind = ref('')
+const scriptThemeColor = ref<string | null>(null)
 const scriptDisplayName = ref('')
 const docsUrl = ref<string | null>(null)
 const supportedModes = ref<string[]>([])
@@ -219,6 +222,7 @@ const loadData = async ({
     scriptName.value = normalizedScript.name
     scriptType.value = normalizedScript.type
     scriptEditorKind.value = normalizedScript.editorKind || ''
+    scriptThemeColor.value = normalizedScript.themeColor || null
     scriptDisplayName.value = normalizedScript.displayName || normalizedScript.type
     docsUrl.value = normalizedScript.docsUrl || null
     supportedModes.value = normalizedScript.supportedModes || []

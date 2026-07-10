@@ -30,9 +30,15 @@
   <a-card class="config-card" :loading="loading">
     <template #title>
       <a-space>
-        <img v-if="script?.icon" :src="getScriptIcon(script.type)" alt="" class="script-icon" />
+        <img
+          v-if="script && (script.icon || script.iconUrl)"
+          :src="getScriptIcon(script.type, script.iconUrl)"
+          alt=""
+          class="script-icon"
+          @error="event => handleScriptIconError(event, script?.type ?? '')"
+        />
         <span>{{ script?.name || '脚本配置' }}</span>
-        <a-tag :color="getScriptTypeTagColor(script?.type || '')">
+        <a-tag :color="getScriptTypeTagColor(script?.type || '', script?.themeColor)">
           {{ script?.displayName || script?.type || '未知类型' }}
         </a-tag>
       </a-space>
@@ -99,6 +105,7 @@ import {
   descriptorMapFromList,
   getScriptIcon,
   getScriptTypeTagColor,
+  handleScriptIconError,
   normalizeScriptRecord,
 } from '@/utils/scriptRegistry'
 import { collectHeaderSchemaActions } from '@/utils/schemaActions'

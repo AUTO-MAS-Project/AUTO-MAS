@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "automas-script-maafw-pack-m9a"
+version = "0.1.0"
+description = "M9A project pack declarations for the AUTO-MAS MaaFW plugin"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+dependencies = [
+    "automas-script-maafw>=0.1.0",
+    "pydantic>=2",
+]
+
+[project.entry-points."auto_mas.plugins"]
+automas_script_maafw_pack_m9a = "automas_script_maafw_pack_m9a.plugin:Plugin"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+automas_script_maafw_pack_m9a = ["py.typed", "assets/*.png"]

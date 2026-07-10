@@ -83,7 +83,7 @@ class PluginEventFactory:
         该方法统一处理事件发送异常，避免业务链路被插件系统影响。
         """
         try:
-            from app.core import PluginManager
+            from app.plugins.manager import PluginManager
 
             await PluginManager.emit_async(event, payload)
         except Exception as e:
@@ -106,7 +106,7 @@ class PluginEventFactory:
             Dict[str, Any]: 原始事件载荷。
         """
         try:
-            from app.core import PluginManager
+            from app.plugins.manager import PluginManager
 
             PluginManager.emit(event, payload)
         except Exception as e:

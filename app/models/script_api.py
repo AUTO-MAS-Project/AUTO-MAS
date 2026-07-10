@@ -13,6 +13,8 @@ class ScriptTypeDescriptor(BaseModel):
     type_key: str = Field(..., description="脚本类型键")
     display_name: str = Field(..., description="脚本类型显示名称")
     icon: str | None = Field(default=None, description="脚本类型图标标识")
+    icon_url: str | None = Field(default=None, description="脚本类型图标资源地址")
+    theme_color: str | None = Field(default=None, description="脚本类型主题颜色")
     docs_url: str | None = Field(default=None, description="文档地址")
     editor_kind: str = Field(..., description="编辑器类型")
     supported_modes: list[str] = Field(..., description="支持的任务模式")
@@ -25,6 +27,7 @@ class ScriptTypeDescriptor(BaseModel):
         default=None, description="旧用户配置类名"
     )
     is_builtin: bool = Field(default=False, description="是否为内建脚本类型")
+    available: bool = Field(default=True, description="当前是否可用")
 
 
 class ScriptTypeGetOut(OutBase):
@@ -49,7 +52,13 @@ class ScriptRecord(BaseModel):
     editor_kind: str = Field(..., description="编辑器类型")
     supported_modes: list[str] = Field(..., description="支持的任务模式")
     icon: str | None = Field(default=None, description="图标标识")
+    icon_url: str | None = Field(default=None, description="图标资源地址")
+    theme_color: str | None = Field(default=None, description="主题颜色")
     docs_url: str | None = Field(default=None, description="文档地址")
+    edit_hint: dict[str, Any] | None = Field(
+        default=None,
+        description="脚本编辑页底部提示",
+    )
     user_count: int = Field(default=0, description="用户数量")
 
 

@@ -29,6 +29,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Body, HTTPException, Query
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from app.core import Config
 from app.models.schema import *
@@ -123,6 +124,15 @@ def _maafw_asset_file_path(root: str, asset_path: str) -> Path:
     if not root_path.is_dir():
         raise ValueError("MaaFW 项目目录不存在")
 
+    if not (root_path / "interface.json").is_file() and not (
+        root_path / "interface.jsonc"
+    ).is_file():
+        raise ValueError("MaaFW asset root must be an interface project root")
+
+    from automas_maafw_interface.service import MaaFWInterfaceService
+
+    MaaFWInterfaceService().load(root_path)
+
     normalized_asset_path = asset_path.replace("\\", "/").strip()
     relative_path = Path(normalized_asset_path)
     if (
@@ -155,7 +165,7 @@ def _build_maafw_agent_env_info_items(agent_plans: list[Any]) -> list[MaaFWAgent
     ]
 
 
-SCRIPT_BOOK = {
+SCRIPT_BOOK: dict[str, type[BaseModel]] = {
     "MaaConfig": MaaConfig,
     "SrcConfig": SrcConfig,
     "MaaEndConfig": MaaEndConfig,
@@ -165,8 +175,9 @@ SCRIPT_BOOK = {
     "OkwwConfig": OkwwConfig,
     "OkefConfig": OkefConfig,
     "HSRConfig": HSRConfig,
+    "PluginScriptConfig": PluginScriptConfig,
 }
-USER_BOOK = {
+USER_BOOK: dict[str, type[BaseModel]] = {
     "MaaConfig": MaaUserConfig,
     "SrcConfig": SrcUserConfig,
     "MaaEndConfig": MaaEndUserConfig,
@@ -176,7 +187,130 @@ USER_BOOK = {
     "OkwwConfig": OkwwUserConfig,
     "OkefConfig": OkefUserConfig,
     "HSRConfig": HSRUserConfig,
+    "PluginScriptConfig": PluginUserConfig,
 }
+
+
+def _is_plugin_payload(payload: dict[str, Any]) -> bool:
+    return isinstance(payload.get("PluginData"), dict) or payload.get("type") in {
+        "PluginScriptConfig",
+        "PluginUserConfig",
+    }
+
+
+def _is_plugin_type(type_key: str) -> bool:
+    try:
+        from app.core.script_types import script_type_registry
+
+        return not script_type_registry.get(type_key).is_builtin
+    except Exception:
+        return False
+
+
+def _script_schema_for_config(config: Any) -> type[BaseModel]:
+    return SCRIPT_BOOK.get(type(config).__name__, PluginScriptConfig)
+
+
+def _script_schema_for_payload(
+    type_key: str, payload: dict[str, Any]
+) -> type[BaseModel]:
+    if _is_plugin_payload(payload) or _is_plugin_type(type_key):
+        return PluginScriptConfig
+    return SCRIPT_BOOK.get(type_key, GeneralConfig)
+
+
+def _user_schema_for_script_config(config: Any) -> type[BaseModel]:
+    return USER_BOOK.get(type(config).__name__, PluginUserConfig)
+
+
+def _plugin_provider(type_key: str):
+    try:
+        from app.core.script_types import script_type_registry
+
+        return script_type_registry.get(type_key)
+    except Exception:
+        return None
+
+
+def _is_maafw_framework_script(script_config: Any) -> bool:
+    """判定脚本配置是否属于 MaaFW 框架运行链路（含 M9A 等 pack 形态）。"""
+
+    from app.core.script_types import script_type_registry
+
+    # 插件形态脚本统一存为 PluginScriptConfig，类名不进注册表，
+    # 必须按 Meta.PluginTypeKey 解析 provider，否则通用 MaaFW 项目会被误判。
+    try:
+        from app.models.plugin_script_config import PluginScriptConfig
+
+        if isinstance(script_config, PluginScriptConfig):
+            type_key = str(script_config.get("Meta", "PluginTypeKey") or "").strip()
+            if not type_key:
+                return False
+            provider = script_type_registry.get(type_key)
+            return provider.metadata.get("framework") == "maafw"
+    except Exception:
+        pass
+
+    config_class_name = type(script_config).__name__
+    try:
+        provider = script_type_registry.get_by_script_config(script_config)
+        return provider.metadata.get("framework") == "maafw"
+    except Exception:
+        # 注册表未就绪或类名未注册时，回退到已知 legacy 类名。
+        return config_class_name in {"MaaFWConfig", "M9AConfig"}
+
+
+async def _resolve_maafw_script_form(script_config: Any) -> dict[str, Any]:
+    """解析 MaaFW 框架脚本的表单态配置（插件形态与 legacy 均适用）。
+
+    插件形态脚本统一存为 PluginScriptConfig，真实配置在 PluginData.Config
+    （JSON 字符串），须经 storage_to_form 解码后才有 Info.Path / Update.* 字段；
+    legacy MaaFWConfig/M9AConfig 直接 toDict 即为表单态。
+    """
+    from app.models.plugin_script_config import PluginScriptConfig
+
+    if isinstance(script_config, PluginScriptConfig):
+        from app.core.script_config_codec import storage_to_form
+
+        type_key = str(script_config.get("Meta", "PluginTypeKey") or "").strip()
+        provider = _plugin_provider(type_key)
+        if provider is None:
+            raise RuntimeError(f"无法解析插件脚本类型: {type_key or '(空)'}")
+        raw = script_config.get("PluginData", "Config")
+        return await storage_to_form(provider, raw, "script")
+
+    payload = await script_config.toDict()
+    payload.pop("SubConfigsInfo", None)
+    return payload
+
+
+def _plugin_type_key_from_payload(payload: dict[str, Any]) -> str:
+    meta = payload.get("Meta")
+    if isinstance(meta, dict):
+        raw_type_key = meta.get("PluginTypeKey")
+        if isinstance(raw_type_key, str) and raw_type_key.strip():
+            return raw_type_key.strip()
+    return ""
+
+
+def _script_index_type(index_type: str, payload: dict[str, Any]) -> str:
+    if index_type != "PluginScriptConfig":
+        return index_type
+    provider = _plugin_provider(_plugin_type_key_from_payload(payload))
+    if provider is None:
+        return "PluginScriptConfig"
+    return provider.legacy_config_class_name or provider.script_config_class.__name__
+
+
+def _user_index_type(index_type: str, script_config: Any) -> str:
+    if index_type != "PluginUserConfig":
+        return index_type
+    get_value = getattr(script_config, "get", None)
+    raw_type_key = get_value("Meta", "PluginTypeKey") if callable(get_value) else ""
+    provider = _plugin_provider(str(raw_type_key or "").strip())
+    if provider is None:
+        return "PluginUserConfig"
+    return provider.legacy_user_config_class_name or provider.user_config_class.__name__
 
 
 @router.post(
@@ -190,7 +324,7 @@ async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
 
     try:
         uid, config = await Config.add_script(script.type, script.scriptId)
-        data = SCRIPT_BOOK[type(config).__name__](**(await config.toDict()))
+        data = _script_schema_for_config(config)(**(await config.toDict()))
     except Exception as e:
         return ScriptCreateOut(
             code=500,
@@ -213,11 +347,24 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
 
     try:
         index, data = await Config.get_script(script.scriptId)
-        index = [ScriptIndexItem(**_) for _ in index]
-        data = {
-            uid: SCRIPT_BOOK[next((_.type for _ in index if _.uid == uid), "General")](
-                **cfg
+        index = [
+            ScriptIndexItem(
+                **{
+                    **item,
+                    "type": _script_index_type(
+                        str(item.get("type") or ""),
+                        data.get(item.get("uid"), {}),
+                    ),
+                }
             )
+            for item in index
+            if isinstance(item, dict)
+        ]
+        data = {
+            uid: _script_schema_for_payload(
+                next((_.type for _ in index if _.uid == uid), "General"),
+                cfg,
+            )(**cfg)
             for uid, cfg in data.items()
         }
     except Exception as e:
@@ -392,11 +539,22 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
 
     try:
         index, data = await Config.get_user(user.scriptId, user.userId)
-        index = [UserIndexItem(**_) for _ in index]
+        script_config = Config.ScriptConfig[uuid.UUID(user.scriptId)]
+        index = [
+            UserIndexItem(
+                **{
+                    **item,
+                    "type": _user_index_type(str(item.get("type") or ""), script_config),
+                }
+            )
+            for item in index
+            if isinstance(item, dict)
+        ]
+        schema_model = _user_schema_for_script_config(
+            script_config
+        )
         data = {
-            uid: USER_BOOK[
-                type(Config.ScriptConfig[uuid.UUID(user.scriptId)]).__name__
-            ](**cfg)
+            uid: schema_model(**cfg)
             for uid, cfg in data.items()
         }
     except Exception as e:
@@ -421,9 +579,10 @@ async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
 
     try:
         uid, config = await Config.add_user(user.scriptId)
-        data = USER_BOOK[type(Config.ScriptConfig[uuid.UUID(user.scriptId)]).__name__](
-            **(await config.toDict())
+        schema_model = _user_schema_for_script_config(
+            Config.ScriptConfig[uuid.UUID(user.scriptId)]
         )
+        data = schema_model(**(await config.toDict()))
     except Exception as e:
         return UserCreateOut(
             code=500,
@@ -700,9 +859,13 @@ async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
     "/m9a/tasks/available",
     tags=["M9A"],
     summary="获取 M9A 可用任务列表（排除 standalone 任务）",
+    response_model=M9AAvailableTasksOut,
     status_code=200,
 )
-async def get_m9a_available_tasks(script_id: str):
+async def get_m9a_available_tasks(
+    payload: M9AAvailableTasksIn | None = Body(default=None),
+    script_id: str | None = Query(default=None),
+) -> M9AAvailableTasksOut:
     """
     获取 M9A 可用任务列表（排除 standalone 任务）
 
@@ -719,7 +882,16 @@ async def get_m9a_available_tasks(script_id: str):
     from pathlib import Path
 
     try:
-        script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+        resolved_script_id = (payload.scriptId if payload is not None else script_id) or ""
+        if not resolved_script_id:
+            return M9AAvailableTasksOut(
+                code=400,
+                status="error",
+                message="scriptId is required",
+                data=[],
+            )
+
+        script_config = Config.ScriptConfig[uuid.UUID(resolved_script_id)]
         m9a_path = Path(script_config.get("Info", "Path"))
         loader = await asyncio.to_thread(M9ATaskLoader.get_cached, m9a_path)
         
@@ -732,19 +904,17 @@ async def get_m9a_available_tasks(script_id: str):
             if full_def:
                 result_tasks.append(full_def)
         
-        return {
-            "code": 200,
-            "status": "success",
-            "message": f"共 {len(result_tasks)} 个可用任务",
-            "data": result_tasks
-        }
+        return M9AAvailableTasksOut(
+            message=f"共 {len(result_tasks)} 个可用任务",
+            data=result_tasks,
+        )
     except Exception as e:
-        return {
-            "code": 500,
-            "status": "error",
-            "message": f"{type(e).__name__}: {str(e)}",
-            "data": []
-        }
+        return M9AAvailableTasksOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
 
 
 @router.post(
@@ -758,16 +928,11 @@ async def preview_maafw_interface(
     payload: MaaFWInterfacePreviewIn = Body(...),
 ) -> MaaFWInterfacePreviewOut:
     """读取 MaaFW 项目目录中的 interface.json，返回 MAS UI 可消费的摘要。"""
-    from app.task.MaaFW.interface_loader import (
-        MaaFWInterfaceLoadError,
-        load_interface_model_cached,
-    )
-    from app.task.MaaFW.interface_preview import build_maafw_interface_preview_data
+    from automas_maafw_interface.loader import MaaFWInterfaceLoadError
+    from automas_maafw_interface.service import MaaFWInterfaceService
 
     try:
-        root_path = Path(payload.path).resolve()
-        interface = load_interface_model_cached(root_path)
-        data = build_maafw_interface_preview_data(root_path, interface)
+        data = MaaFWInterfaceService().preview(Path(payload.path).resolve())
     except MaaFWInterfaceLoadError as e:
         return MaaFWInterfacePreviewOut(
             code=400,
@@ -784,8 +949,8 @@ async def preview_maafw_interface(
         )
 
     return MaaFWInterfacePreviewOut(
-        message=f"已读取 MaaFW 项目 {data.project.name}，共 {len(data.tasks)} 个任务",
-        data=data,
+        message=f"已读取 MaaFW 项目 {data.project['name']}，共 {len(data.tasks)} 个任务",
+        data=data.model_dump(mode="json"),
     )
 
 
@@ -800,12 +965,10 @@ async def update_maafw_project(
     payload: MaaFWProjectUpdateIn = Body(...),
 ) -> MaaFWProjectUpdateOut:
     """按脚本更新配置手动检查并应用 MaaFW 项目资源更新。"""
-    from app.task.MaaFW.interface_loader import (
-        MaaFWInterfaceLoadError,
-        load_interface_model_cached,
-    )
-    from app.task.MaaFW.project_updater import update_maafw_project_if_needed
-    from app.task.MaaFW.runner import prepare_maafw_agent_python_envs
+    from automas_maafw_agent_env.service import MaaFWAgentEnvService
+    from automas_maafw_interface.loader import MaaFWInterfaceLoadError
+    from automas_maafw_interface.service import MaaFWInterfaceService
+    from automas_maafw_project_update.service import MaaFWProjectUpdateService
 
     logs: list[str] = []
     current_version = ""
@@ -833,7 +996,7 @@ async def update_maafw_project(
 
     try:
         script_config = Config.ScriptConfig[script_uuid]
-        if type(script_config).__name__ != "MaaFWConfig":
+        if not _is_maafw_framework_script(script_config):
             append_log("指定脚本不是 MaaFW 项目")
             return MaaFWProjectUpdateOut(
                 code=400,
@@ -847,7 +1010,14 @@ async def update_maafw_project(
                 ),
             )
 
-        project_path_raw = str(script_config.get("Info", "Path") or "").strip()
+        # 插件形态脚本的 Info.Path/Update.* 藏在 PluginData.Config，需先解码成表单态
+        script_form = await _resolve_maafw_script_form(script_config)
+        info_group = script_form.get("Info")
+        info_group = info_group if isinstance(info_group, dict) else {}
+        update_group = script_form.get("Update")
+        update_group = update_group if isinstance(update_group, dict) else {}
+
+        project_path_raw = str(info_group.get("Path") or "").strip()
         if not project_path_raw:
             append_log("请先配置 MaaFW 项目目录")
             return MaaFWProjectUpdateOut(
@@ -863,31 +1033,39 @@ async def update_maafw_project(
             )
 
         project_path = Path(project_path_raw).resolve()
-        interface_model = load_interface_model_cached(project_path)
+        interface_model = MaaFWInterfaceService().load(project_path)
         current_version = interface_model.version or ""
 
         mirror_cdk = (
-            script_config.get("Update", "MirrorChyanCDK")
+            update_group.get("MirrorChyanCDK")
             or Config.get("Update", "MirrorChyanCDK")
         )
-        channel = script_config.get("Update", "Channel") or Config.get("Update", "Channel")
-        update_result = await update_maafw_project_if_needed(
+        channel = update_group.get("Channel") or Config.get("Update", "Channel")
+        source_config = None
+        try:
+            from automas_script_maafw.schema import build_source_config
+
+            source_config = build_source_config(script_form)
+        except Exception as e:
+            append_log(f"读取脚本更新源配置失败，回退默认更新源: {type(e).__name__}: {e}")
+        update_result = await MaaFWProjectUpdateService().update_if_needed(
             project_path,
             interface_model,
             mirror_cdk=mirror_cdk,
             channel=channel,
             proxy=Config.proxy,
             send_log=append_log,
+            source_config=source_config,
         )
 
         if update_result.updated:
-            refreshed_interface = load_interface_model_cached(
+            refreshed_interface = MaaFWInterfaceService().load(
                 project_path,
                 force_reload=True,
             )
             append_log("MaaFW 项目已更新，准备 Agent Python 环境")
             await asyncio.to_thread(
-                prepare_maafw_agent_python_envs,
+                MaaFWAgentEnvService().prepare_env,
                 project_path,
                 refreshed_interface,
                 send_log=append_log,
@@ -957,30 +1135,23 @@ async def prepare_maafw_agent_env(
 ) -> MaaFWAgentEnvPrepareOut:
     """Prepare MaaFW Runner and agent Python envs before starting tasks."""
 
-    from app.task.MaaFW.interface_loader import (
-        MaaFWInterfaceLoadError,
-        load_interface_model_cached,
-    )
-    from app.task.MaaFW.AutoProxy import prepare_maafw_runner_env
-    from app.task.MaaFW.runner import prepare_maafw_agent_python_envs
+    from automas_maafw_agent_env.service import MaaFWAgentEnvService
+    from automas_maafw_interface.loader import MaaFWInterfaceLoadError
+    from automas_maafw_interface.service import MaaFWInterfaceService
 
     logs: list[str] = []
     root_path: Path | None = None
     agent_plans: list[Any] = []
     try:
         root_path = Path(payload.path).resolve()
-        interface = load_interface_model_cached(root_path)
-        await asyncio.to_thread(
-            prepare_maafw_runner_env,
-            root_path,
-            send_log=logs.append,
-        )
-        agent_plans = await asyncio.to_thread(
-            prepare_maafw_agent_python_envs,
+        interface = MaaFWInterfaceService().load(root_path)
+        prepare_result = await asyncio.to_thread(
+            MaaFWAgentEnvService().prepare_env,
             root_path,
             interface,
             send_log=logs.append,
         )
+        agent_plans = prepare_result.plans
         agents = _build_maafw_agent_env_info_items(agent_plans)
         data = MaaFWAgentEnvPrepareData(
             path=str(root_path),
@@ -1078,26 +1249,22 @@ async def preview_maafw_windows(
     payload: MaaFWWindowPreviewIn = Body(...),
 ) -> MaaFWWindowPreviewOut:
     """按 interface.json 中的 Win32 窗口规则扫描本机桌面窗口。"""
-    from app.task.MaaFW.interface_loader import (
-        MaaFWInterfaceLoadError,
-        load_interface_model_cached,
-    )
-    from app.task.MaaFW.window_service import (
-        list_desktop_windows,
-        match_controller_windows,
-    )
+    from automas_maafw_controller_win32.service import MaaFWWin32ControllerService
+    from automas_maafw_interface.loader import MaaFWInterfaceLoadError
+    from automas_maafw_interface.service import MaaFWInterfaceService
 
     try:
         root_path = Path(payload.path).resolve()
-        interface = load_interface_model_cached(root_path)
+        interface = MaaFWInterfaceService().load(root_path)
         controllers = _select_maafw_window_controllers(
             interface,
             payload.controllerName,
         )
-        desktop_windows = list_desktop_windows()
+        win32_service = MaaFWWin32ControllerService()
+        win32_windows = win32_service.list_windows()
         windows: list[MaaFWDesktopWindowInfo] = []
         for controller in controllers:
-            for window in match_controller_windows(controller, desktop_windows):
+            for window in win32_service.match_controller_windows(controller, win32_windows):
                 windows.append(
                     MaaFWDesktopWindowInfo(
                         hWnd=window.hWnd,
@@ -1218,7 +1385,8 @@ async def get_okww_configs_list(script_id: str, user_id: str):
         # ok-ww 源配置目录（从 RootPath 派生，用于自动初始化）
         okww_configs_dir = Path(root_path) / _OKWW_REL_CONFIG_DIR if root_path else None
 
-        # 自动补齐默认配置：保留用户已有值，只补缺失文件和字段
+        # 自动初始化并按需补齐字段：逐文件将源默认值与用户现值合并（tmp+rename 原子写），
+        # 避免旧用户升级后缺失新配置字段，也避免非原子 copytree 中断损坏配置。
         _ensure_okww_user_config_defaults(mas_config_dir, okww_configs_dir)
 
         configs_info = get_all_config_info()
