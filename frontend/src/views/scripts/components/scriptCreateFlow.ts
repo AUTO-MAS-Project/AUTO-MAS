@@ -4,7 +4,7 @@ import generalIcon from '@/assets/AUTO-MAS.ico'
 import hsrIcon from '@/assets/hsr.png'
 import maaIcon from '@/assets/MAA.png'
 import maaEndIcon from '@/assets/MaaEnd.png'
-import okwwIcon from '@/assets/ok-ww.ico'
+import m9aIcon from '@/assets/M9A.png'
 import srcIcon from '@/assets/SRC.png'
 
 export type ConfigMode = 'template' | 'custom'
@@ -75,23 +75,15 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     description: '重返未来：1999 自动化脚本',
     keywords: ['m9a', '1999', '重返未来'],
     group: 'specialized',
-    icon: generalIcon,
+    icon: m9aIcon,
   },
   {
-    value: 'Okww',
-    title: '鸣潮 ok-script 项目',
-    description: '读取 ok-ww 项目配置并通过内置表单编辑用户配置',
-    keywords: ['okww', 'ok-ww', '鸣潮', 'wuthering waves', 'ok-script'],
-    group: 'specialized',
-    icon: okwwIcon,
-  },
-  {
-    value: 'Okef',
+    value: 'OkScript',
     title: 'ok-script 项目',
-    description: '读取 ok-script 项目配置并通过内置表单编辑用户配置',
-    keywords: ['okef', 'ok-ef', '终末地', 'endfield', 'ok-script'],
+    description: '读取 pyappify.yml 并通过内置表单编辑用户配置',
+    keywords: ['ok-script', 'pyappify', 'ok-ef', 'ok-ww', 'ok-nte'],
     group: 'specialized',
-    icon: okwwIcon,
+    icon: generalIcon,
   },
   {
     value: 'HSR',
@@ -141,7 +133,8 @@ const EDIT_SEGMENT_BY_TYPE: Record<ScriptType, string> = {
   M9A: 'm9a',
   MaaFW: 'maafw',
   Okww: 'okww',
-  Okef: 'okef',
+  OkScript: 'ok-script',
+  Okef: 'ok-script',
   HSR: 'hsr',
   General: 'general',
 }

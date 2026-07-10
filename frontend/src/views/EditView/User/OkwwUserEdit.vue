@@ -239,7 +239,7 @@
           </div>
         </a-form>
 
-        <OkwwConfigEditor
+        <OkScriptConfigEditor
           v-if="userId"
           :script-id="scriptId"
           :user-id="userId"
@@ -346,7 +346,7 @@ import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import WebhookManager from '@/components/WebhookManager.vue'
-import OkwwConfigEditor from '@/views/OkwwUserEdit/OkwwConfigEditor.vue'
+import OkScriptConfigEditor from '@/views/OkScriptUserEdit/OkScriptConfigEditor.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const logger = window.electronAPI.getLogger('ok-ww用户编辑')

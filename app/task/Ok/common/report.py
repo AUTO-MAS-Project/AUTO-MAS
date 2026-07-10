@@ -16,8 +16,23 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""OK-EF 旧导入路径兼容层。"""
+from __future__ import annotations
 
-from app.task.Ok.runtime import OkScriptAutoProxyTask
+from typing import TYPE_CHECKING
 
-AutoProxyTask = OkScriptAutoProxyTask
+if TYPE_CHECKING:
+    from app.task.Ok.runtime import OkScriptAutoProxyTask
+
+
+class OkScriptReportHandler:
+    """项目专属执行汇报处理器。"""
+
+    async def capture(
+        self,
+        runtime: "OkScriptAutoProxyTask",
+        log: str,
+    ) -> None:
+        """从脚本日志接管项目专属汇报。"""
+
+    async def apply(self, runtime: "OkScriptAutoProxyTask") -> None:
+        """将项目专属汇报结果写入 MAS。"""

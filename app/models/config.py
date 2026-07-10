@@ -2666,22 +2666,10 @@ class OkwwUserConfig(ConfigBase):
 
 
 class OkefUserConfig(ConfigBase):
-    """OK-EF 用户配置（ok-script 线）"""
+    """ok-script 兼容用户配置。
 
-    # 用户卡 Tag 仅展示 OK-EF 任务简称（与编辑页下拉的完整名称区分）
-    OKEF_TASK_BOOK: dict[int, str] = {
-        1: "日常",
-        2: "收取派送",
-        3: "仓库转运",
-        4: "派送",
-        5: "战斗",
-        6: "抽卡演示",
-        7: "测试",
-        8: "莺鸵",
-        9: "启动游戏测试",
-        10: "实时识别",
-        11: "诊断",
-    }
+    类名用于兼容已持久化的 OK-EF 配置；任务名称和任务范围由运行时 provider 决定。
+    """
 
     def __init__(self) -> None:
 
@@ -2718,9 +2706,9 @@ class OkefUserConfig(ConfigBase):
         )
 
         ## Task ------------------------------------------------------------
-        ## OK-EF 一次性任务序号：ok-ef.exe -t N -e
+        ## ok-script 一次性任务序号：由当前 provider 生成 `-t N -e`
         self.Task_TaskIndex = ConfigItem(
-            "Task", "TaskIndex", 1, RangeValidator(1, 11)
+            "Task", "TaskIndex", 1, RangeValidator(1, 999)
         )
 
         ## Data ------------------------------------------------------------
@@ -2769,7 +2757,7 @@ class OkefUserConfig(ConfigBase):
         super().__init__()
 
     def getTags(self) -> str:
-        """生成 OK-EF 用户标签列表"""
+        """生成 ok-script 用户标签列表。"""
         tags = []
 
         last_status = self.get("Data", "LastProxyStatus")
@@ -2777,8 +2765,8 @@ class OkefUserConfig(ConfigBase):
         tags.append({"text": f"上次：{last_status}", "color": status_color})
 
         last_task_index = int(self.get("Data", "LastTaskIndex") or 0)
-        task_label = self.OKEF_TASK_BOOK.get(last_task_index, "未知")
-        tags.append({"text": f"任务：{task_label}", "color": "orange"})
+        task_label = str(last_task_index) if last_task_index > 0 else "未知"
+        tags.append({"text": f"任务序号：{task_label}", "color": "orange"})
 
         remained_day = self.get("Info", "RemainedDay")
         if remained_day == -1:
@@ -2978,7 +2966,10 @@ class OkwwConfig(ConfigBase):
 
 
 class OkefConfig(ConfigBase):
-    """OK-EF 配置（ok-script 线）"""
+    """ok-script 兼容配置。
+
+    类名用于兼容已持久化的 OK-EF 配置；具体项目差异由 provider 决定。
+    """
 
     related_config: dict[str, MultipleConfig] = {}
 
@@ -3622,6 +3613,7 @@ CLASS_BOOK = {
     "MaaFW": MaaFWConfig,
     "General": GeneralConfig,
     "Okww": OkwwConfig,
+    "OkScript": OkefConfig,
     "Okef": OkefConfig,
     "HSR": HSRConfig,
 }
