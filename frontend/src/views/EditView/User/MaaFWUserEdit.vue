@@ -35,7 +35,11 @@
             :selected-preset-label="selectedPresetLabel"
             :interface-dependent-disabled="interfaceDependentDisabled"
             :account-record-tooltip="accountRecordTooltip"
+            :controller-options="userControllerOptions"
+            :resource-options="userResourceOptions"
             @save="handleFieldSave"
+            @controller-change="handleControllerChange"
+            @resource-change="handleResourceChange"
             @preset-menu-click="handlePresetMenuClick"
           />
 
@@ -195,6 +199,8 @@ const getDefaultMaaFWUserData = (): MaaFWUserConfig => ({
     Tag: '',
     Account: '',
     Password: '',
+    Controller: '',
+    Resource: '',
   },
   Task: {
     SelectedPreset: '',
@@ -277,8 +283,9 @@ const resolveControllerName = (controllerName?: string) => {
   return getDefaultControllerName()
 }
 const effectiveControllerName = computed(() => {
+  const userController = formData.Info.Controller || ''
   const scriptController = scriptConfig.value?.Info.Controller || ''
-  return resolveControllerName(scriptController)
+  return resolveControllerName(userController || scriptController)
 })
 const getResourceOptionsByController = (controllerName: string) => {
   const resources = previewData.value?.resources || []
@@ -298,9 +305,30 @@ const resolveResourceName = (
   return resources[0]?.name || ''
 }
 const effectiveResourceName = computed(() => {
+  const userResource = formData.Info.Resource || ''
   const scriptResource = scriptConfig.value?.Info.Resource || ''
-  return resolveResourceName(scriptResource)
+  return resolveResourceName(userResource || scriptResource)
 })
+const userControllerOptions = computed(() => [
+  {
+    label: `继承脚本（${resolveControllerName(scriptConfig.value?.Info.Controller) || '自动选择'}）`,
+    value: '',
+  },
+  ...directControllerOptions.value.map(controller => ({
+    label: getDisplayName(controller),
+    value: controller.name,
+  })),
+])
+const userResourceOptions = computed(() => [
+  {
+    label: `继承脚本（${resolveResourceName(scriptConfig.value?.Info.Resource) || '自动选择'}）`,
+    value: '',
+  },
+  ...getResourceOptionsByController(effectiveControllerName.value).map(resource => ({
+    label: getDisplayName(resource),
+    value: resource.name,
+  })),
+])
 const interfaceDependentDisabled = computed(() => interfaceLoading.value || !previewData.value)
 const isTaskActiveForCurrentContext = (task: MaaFWTaskInfo) => {
   const controllerName = effectiveControllerName.value
@@ -537,6 +565,27 @@ const pruneQueuedTasksForCurrentContext = async (persist = true) => {
 const syncControllerResourceSelection = async () => {
   if (!previewData.value) return
   await pruneQueuedTasksForCurrentContext(false)
+}
+
+const handleControllerChange = async (controllerName: string) => {
+  formData.Info.Controller = controllerName
+  await handleFieldSave('Info.Controller', controllerName)
+
+  const availableResources = getResourceOptionsByController(effectiveControllerName.value)
+  if (
+    formData.Info.Resource &&
+    !availableResources.some(resource => resource.name === formData.Info.Resource)
+  ) {
+    formData.Info.Resource = ''
+    await handleFieldSave('Info.Resource', '')
+  }
+  await pruneQueuedTasksForCurrentContext()
+}
+
+const handleResourceChange = async (resourceName: string) => {
+  formData.Info.Resource = resourceName
+  await handleFieldSave('Info.Resource', resourceName)
+  await pruneQueuedTasksForCurrentContext()
 }
 
 const addTaskToQueue = async (taskName: string) => {

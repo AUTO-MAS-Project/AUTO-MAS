@@ -344,8 +344,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
     def _select_controller_name(self, interface_model: MaaFWInterface) -> str | None:
         configured_controller = str(
-            self.script_config.get("Info", "Controller")
-            or self.cur_user_config.get("Info", "Controller")
+            self.cur_user_config.get("Info", "Controller")
+            or self.script_config.get("Info", "Controller")
             or ""
         ).strip()
 
@@ -371,8 +371,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         controller_name: str | None,
     ) -> str | None:
         configured_resource = str(
-            self.script_config.get("Info", "Resource")
-            or self.cur_user_config.get("Info", "Resource")
+            self.cur_user_config.get("Info", "Resource")
+            or self.script_config.get("Info", "Resource")
             or ""
         ).strip()
         if configured_resource:

@@ -1582,14 +1582,6 @@ class MaaFWProjectUpdateOut(OutBase):
     data: Optional[MaaFWProjectUpdateData] = Field(default=None, description="MaaFW 项目更新结果")
 
 
-class M9AAvailableTasksIn(BaseModel):
-    scriptId: str = Field(..., description="M9A 脚本 ID")
-
-
-class M9AAvailableTasksOut(OutBase):
-    data: List[Dict[str, Any]] = Field(default_factory=list, description="M9A 可用任务列表")
-
-
 class MaaFWInterfacePreviewIn(BaseModel):
     path: str = Field(..., description="MaaFW 项目根目录，应包含 interface.json")
 

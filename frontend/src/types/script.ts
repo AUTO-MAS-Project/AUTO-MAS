@@ -285,6 +285,8 @@ export interface MaaFWUserConfig {
     Tag?: string | null
     Account: string
     Password: string
+    Controller: string
+    Resource: string
   }
   Task: {
     SelectedPreset: string

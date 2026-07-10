@@ -856,68 +856,6 @@ async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/m9a/tasks/available",
-    tags=["M9A"],
-    summary="获取 M9A 可用任务列表（排除 standalone 任务）",
-    response_model=M9AAvailableTasksOut,
-    status_code=200,
-)
-async def get_m9a_available_tasks(
-    payload: M9AAvailableTasksIn | None = Body(default=None),
-    script_id: str | None = Query(default=None),
-) -> M9AAvailableTasksOut:
-    """
-    获取 M9A 可用任务列表（排除 standalone 任务）
-
-    前端调用此接口获取可选择的任务列表，
-    用于展示在用户编辑界面的任务选择区域。
-
-    Args:
-        script_id: M9A 脚本 ID
-
-    Returns:
-        dict: 包含任务列表的响应
-    """
-    from app.task.M9A.task_loader import M9ATaskLoader
-    from pathlib import Path
-
-    try:
-        resolved_script_id = (payload.scriptId if payload is not None else script_id) or ""
-        if not resolved_script_id:
-            return M9AAvailableTasksOut(
-                code=400,
-                status="error",
-                message="scriptId is required",
-                data=[],
-            )
-
-        script_config = Config.ScriptConfig[uuid.UUID(resolved_script_id)]
-        m9a_path = Path(script_config.get("Info", "Path"))
-        loader = await asyncio.to_thread(M9ATaskLoader.get_cached, m9a_path)
-        
-        # 获取可用任务，并添加完整定义（包括 option 和 _option_definitions）
-        available_tasks = loader.get_available_tasks()
-        result_tasks = []
-        
-        for task in available_tasks:
-            full_def = loader.get_full_definition(task["name"])
-            if full_def:
-                result_tasks.append(full_def)
-        
-        return M9AAvailableTasksOut(
-            message=f"共 {len(result_tasks)} 个可用任务",
-            data=result_tasks,
-        )
-    except Exception as e:
-        return M9AAvailableTasksOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            data=[],
-        )
-
-
-@router.post(
     "/maafw/interface/preview",
     tags=["MaaFW"],
     summary="预览 MaaFW ProjectInterface",

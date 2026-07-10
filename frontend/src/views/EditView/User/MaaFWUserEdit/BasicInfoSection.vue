@@ -76,6 +76,38 @@
     </a-row>
 
     <a-row :gutter="24">
+      <a-col :xs="24" :md="12">
+        <a-form-item label="控制器覆盖">
+          <a-select
+            v-model:value="formData.Info.Controller"
+            :options="controllerOptions"
+            :disabled="interfaceDependentDisabled"
+            size="large"
+            @change="value => emit('controllerChange', String(value))"
+          />
+        </a-form-item>
+      </a-col>
+      <a-col :xs="24" :md="12">
+        <a-form-item label="资源覆盖">
+          <a-select
+            v-model:value="formData.Info.Resource"
+            :options="resourceOptions"
+            :disabled="interfaceDependentDisabled"
+            size="large"
+            @change="value => emit('resourceChange', String(value))"
+          />
+        </a-form-item>
+      </a-col>
+    </a-row>
+
+    <a-alert
+      class="context-override-alert"
+      type="info"
+      show-icon
+      message="控制器和资源留空时继承脚本配置；仅在当前用户需要不同服务器或连接方式时覆盖。"
+    />
+
+    <a-row :gutter="24">
       <a-col :xs="24" :md="8">
         <a-form-item>
           <template #label>
@@ -150,10 +182,14 @@ defineProps<{
   selectedPresetLabel: string
   interfaceDependentDisabled: boolean
   accountRecordTooltip: string
+  controllerOptions: Array<{ label: string; value: string }>
+  resourceOptions: Array<{ label: string; value: string }>
 }>()
 
 const emit = defineEmits<{
   save: [key: string, value: unknown]
+  controllerChange: [value: string]
+  resourceChange: [value: string]
   presetMenuClick: [event: MenuInfo]
 }>()
 
@@ -201,6 +237,10 @@ const emitSave = (key: string, value: unknown) => {
 }
 
 .account-record-alert {
+  margin-bottom: 16px;
+}
+
+.context-override-alert {
   margin-bottom: 16px;
 }
 

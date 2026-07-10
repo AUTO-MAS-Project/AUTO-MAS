@@ -243,7 +243,7 @@ export const normalizeScriptRecord = (
   users: ScriptUserRecord[] = []
 ): Script => {
   const descriptor = descriptorMap[record.type]
-  const available = Boolean(descriptor)
+  const available = Boolean(descriptor) && descriptor?.available !== false
   const info =
     record.config?.Info && typeof record.config.Info === 'object' ? record.config.Info : {}
   return {

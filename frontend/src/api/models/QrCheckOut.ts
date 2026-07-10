@@ -2,13 +2,13 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type PluginDevRebuildCtxStubOut = {
+export type QrCheckOut = {
     /**
      * 状态码
      */
     code?: number;
     /**
-     * 操作状态
+     * Init/Scanned/Confirmed/Error
      */
     status?: string;
     /**
@@ -16,16 +16,8 @@ export type PluginDevRebuildCtxStubOut = {
      */
     message?: string;
     /**
-     * 生成目录
+     * 确认后返回的完整 cookie 字符串
      */
-    output_dir?: (string | null);
-    /**
-     * 已更新文件
-     */
-    changed_files?: Array<string>;
-    /**
-     * 未变更文件
-     */
-    unchanged_files?: Array<string>;
+    cookies_str?: string;
 };
 
