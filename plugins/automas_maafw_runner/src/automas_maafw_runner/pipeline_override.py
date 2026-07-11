@@ -5,6 +5,7 @@ from typing import Any, cast
 
 import json5
 from automas_maafw_interface.models import (
+    SUPPORTED_OPTION_TYPES,
     MaaFWController,
     MaaFWInterface,
     MaaFWOption,
@@ -266,7 +267,11 @@ class MaaFWPipelineOverrideBuilder:
         lineage: set[str] | None = None,
     ) -> MaaFWPipelineOverride:
         option = self.interface_model.option.get(option_name)
-        if option is None or not self._is_option_active_for_context(option):
+        if (
+            option is None
+            or option.type not in SUPPORTED_OPTION_TYPES
+            or not self._is_option_active_for_context(option)
+        ):
             return {}
 
         lineage = lineage or set()

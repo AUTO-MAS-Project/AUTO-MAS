@@ -122,6 +122,7 @@
             chosen-class="task-row-chosen"
             drag-class="task-row-drag"
             class="task-queue-list"
+            :move="canDragTask"
             @end="emit('taskDragEnd')"
           >
             <template #item="{ element: taskName, index }">
@@ -160,7 +161,9 @@
                   <a-button
                     type="text"
                     size="small"
-                    :disabled="interfaceDependentDisabled || index === 0"
+                    :disabled="
+                      interfaceDependentDisabled || !canMoveTaskByOffset(taskName, index, -1)
+                    "
                     aria-label="上移任务"
                     @click="emit('moveTask', taskName, -1)"
                   >
@@ -171,7 +174,9 @@
                   <a-button
                     type="text"
                     size="small"
-                    :disabled="interfaceDependentDisabled || index === orderedTasks.length - 1"
+                    :disabled="
+                      interfaceDependentDisabled || !canMoveTaskByOffset(taskName, index, 1)
+                    "
                     aria-label="下移任务"
                     @click="emit('moveTask', taskName, 1)"
                   >
@@ -413,6 +418,21 @@ const getQueuedTaskDisplayName = (taskName: string) => {
   return task ? getDisplayName(task) : taskName
 }
 
+const isPretask = (taskName: string) => getQueuedTask(taskName)?.entry === 'MXU_PRETASK'
+
+const canMoveTaskByOffset = (taskName: string, index: number, direction: -1 | 1) => {
+  const targetTaskName = props.orderedTasks[index + direction]?.name
+  return Boolean(targetTaskName && isPretask(taskName) === isPretask(targetTaskName))
+}
+
+const canDragTask = (event: { draggedContext: { element: string; futureIndex: number } }) => {
+  const pretaskCount = props.orderedTasks.filter(task => task.entry === 'MXU_PRETASK').length
+  const isDraggedPretask = isPretask(event.draggedContext.element)
+  return isDraggedPretask
+    ? event.draggedContext.futureIndex < pretaskCount
+    : event.draggedContext.futureIndex >= pretaskCount
+}
+
 const uniqueOptionNames = (optionGroups: string[][]) => {
   const optionNames: string[] = []
   const seen = new Set<string>()
@@ -427,6 +447,9 @@ const uniqueOptionNames = (optionGroups: string[][]) => {
 }
 
 const getTaskOptionNames = (task: MaaFWTaskInfo) => {
+  if (task.entry === 'MXU_PRETASK') {
+    return uniqueOptionNames([task.option || []])
+  }
   const previewData = props.previewData
   const effectiveResource = previewData?.resources.find(
     item => item.name === props.effectiveResourceName

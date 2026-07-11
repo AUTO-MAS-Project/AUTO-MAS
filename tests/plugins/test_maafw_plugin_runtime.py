@@ -408,6 +408,68 @@ class MaaFWRunnerTaskTest(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0)
         self.assertEqual(log_threads, [event_loop_thread])
 
+    async def test_run_pretasks_executes_project_command_and_reports_success(self) -> None:
+        task = object.__new__(MaaFWPluginAutoProxyTask)
+        task.pretask_process = None
+        task.run_plan = SimpleNamespace(
+            path=str(Path.cwd()),
+            piEnv={"PI_INTERFACE_VERSION": "v2.8.1"},
+            pretasks=[
+                SimpleNamespace(
+                    name="GameSetting",
+                    label="游戏设置",
+                    executable="agent/go-service.exe",
+                    args=["--pretask", "GameSetting", '{"Region":"CN"}'],
+                )
+            ],
+        )
+        logs: list[str] = []
+        task._append_log = logs.append
+        process = SimpleNamespace(
+            returncode=0,
+            communicate=AsyncMock(return_value=(b"Pretask succeeded\n", None)),
+        )
+
+        with patch(
+            "automas_script_maafw.runner_task.asyncio.create_subprocess_exec",
+            new=AsyncMock(return_value=process),
+        ) as create_process:
+            await task._run_pretasks()
+
+        create_process.assert_awaited_once()
+        command = create_process.await_args.args
+        self.assertEqual(command[:3], ("agent/go-service.exe", "--pretask", "GameSetting"))
+        self.assertIn("开始应用运行前设置: 游戏设置", logs)
+        self.assertIn("运行前设置完成: 游戏设置", logs)
+
+    async def test_run_pretasks_stops_on_nonzero_exit(self) -> None:
+        task = object.__new__(MaaFWPluginAutoProxyTask)
+        task.pretask_process = None
+        task.run_plan = SimpleNamespace(
+            path=str(Path.cwd()),
+            piEnv={},
+            pretasks=[
+                SimpleNamespace(
+                    name="GameSetting",
+                    label=None,
+                    executable="agent/go-service.exe",
+                    args=["--pretask", "GameSetting"],
+                )
+            ],
+        )
+        task._append_log = lambda _message: None
+        process = SimpleNamespace(
+            returncode=1,
+            communicate=AsyncMock(return_value=(b"game is running\n", None)),
+        )
+
+        with patch(
+            "automas_script_maafw.runner_task.asyncio.create_subprocess_exec",
+            new=AsyncMock(return_value=process),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "game is running"):
+                await task._run_pretasks()
+
 
 class MaaFWAdapterConfigTest(unittest.IsolatedAsyncioTestCase):
     async def test_plugin_form_json_fields_reach_legacy_runtime(self) -> None:

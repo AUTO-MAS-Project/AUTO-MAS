@@ -22,12 +22,16 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .models import (
+    SUPPORTED_OPTION_TYPES,
     MaaFWInterface,
     MaaFWOption,
     MaaFWPreset,
     MaaFWPresetOptionValue,
     MaaFWTaskOptionValue,
     MaaFWTaskOptionsByTask,
+    build_pretask_task_name,
+    is_pretask_task_name,
+    iter_pretasks,
 )
 
 
@@ -100,12 +104,26 @@ def normalize_snapshot(
     interface_model: MaaFWInterface,
 ) -> MaaFWTaskPresetSnapshot:
     default_task_order = _build_default_task_order(interface_model)
-    valid_task_ids = set(default_task_order)
+    pretask_task_order = [
+        build_pretask_task_name(pretask) for pretask in iter_pretasks(interface_model)
+    ]
+    all_task_ids = [*pretask_task_order, *default_task_order]
+    valid_task_ids = set(all_task_ids)
     normalized_order: list[str] = []
     seen_task_ids: set[str] = set()
     raw_snapshot = _normalize_raw_snapshot(snapshot)
 
-    for task_id in raw_snapshot["taskOrder"]:
+    raw_task_order = [
+        task_id
+        for task_id in raw_snapshot["taskOrder"]
+        if task_id in valid_task_ids
+    ]
+    partitioned_task_order = [
+        task_id for task_id in raw_task_order if is_pretask_task_name(task_id)
+    ] + [
+        task_id for task_id in raw_task_order if not is_pretask_task_name(task_id)
+    ]
+    for task_id in partitioned_task_order:
         if task_id in valid_task_ids and task_id not in seen_task_ids:
             normalized_order.append(task_id)
             seen_task_ids.add(task_id)
@@ -114,7 +132,7 @@ def normalize_snapshot(
         if task_id not in seen_task_ids:
             normalized_order.append(task_id)
 
-    normalized_checked = {task_id: False for task_id in default_task_order}
+    normalized_checked = {task_id: False for task_id in all_task_ids}
     for task_id, checked in raw_snapshot["taskChecked"].items():
         if task_id in valid_task_ids:
             normalized_checked[task_id] = bool(checked)
@@ -174,7 +192,13 @@ def normalize_task_execution_payload(
     controller_name: str | None = None,
     resource_name: str | None = None,
 ) -> tuple[list[str], MaaFWTaskOptionsByTask]:
-    valid_task_names = {task.name for task in interface_model.task}
+    pretask_task_names = [
+        build_pretask_task_name(pretask) for pretask in iter_pretasks(interface_model)
+    ]
+    valid_task_names = {
+        *pretask_task_names,
+        *(task.name for task in interface_model.task),
+    }
     normalized_task_list: list[str] = []
     seen_task_names: set[str] = set()
 
@@ -186,6 +210,16 @@ def normalize_task_execution_payload(
                 continue
             normalized_task_list.append(task_name)
             seen_task_names.add(task_name)
+
+    normalized_task_list = [
+        task_name
+        for task_name in normalized_task_list
+        if is_pretask_task_name(task_name)
+    ] + [
+        task_name
+        for task_name in normalized_task_list
+        if not is_pretask_task_name(task_name)
+    ]
 
     normalized_task_options = normalize_task_options_by_task(
         raw_task_options if isinstance(raw_task_options, dict) else None,
@@ -354,6 +388,23 @@ def _build_task_option_maps(
         _collect_task_options(task.option or [], option_map, collected)
         task_option_maps[task.name] = collected
 
+    for pretask in iter_pretasks(interface_model):
+        if (
+            controller_name is not None
+            and pretask.controller
+            and controller_name not in pretask.controller
+        ):
+            continue
+        if (
+            resource_name is not None
+            and pretask.resource
+            and resource_name not in pretask.resource
+        ):
+            continue
+        collected: dict[str, MaaFWOption] = {}
+        _collect_task_options(pretask.option or [], interface_model.option, collected)
+        task_option_maps[build_pretask_task_name(pretask)] = collected
+
     return task_option_maps
 
 
@@ -388,7 +439,7 @@ def _collect_task_options(
         if option_name in target:
             continue
         option = option_map.get(option_name)
-        if option is None:
+        if option is None or option.type not in SUPPORTED_OPTION_TYPES:
             continue
 
         target[option_name] = option

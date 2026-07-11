@@ -28,13 +28,29 @@ from typing import Any
 
 import json5
 
-from .models import MaaFWInterface, MaaFWOption, MaaFWOptionCase
+from .models import (
+    SUPPORTED_OPTION_TYPES,
+    MaaFWInterface,
+    MaaFWOption,
+    MaaFWOptionCase,
+    MaaFWPretask,
+    build_pretask_task_name,
+    iter_pretasks,
+)
 
 
-IMPORTABLE_KEYS = {"task", "option", "preset", "import"}
+IMPORTABLE_KEYS = (
+    "task",
+    "option",
+    "global_option",
+    "preset",
+    "group",
+    "pretask",
+    "import",
+)
 logger = logging.getLogger("automas.maafw.interface.loader")
 
-DISK_CACHE_VERSION = 1
+DISK_CACHE_VERSION = 2
 DISK_CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 DISK_CACHE_CLEANUP_INTERVAL_SECONDS = 24 * 60 * 60
 _interface_cache: dict[Path, tuple[tuple, MaaFWInterface, set[Path], set[tuple[Path, str]]]] = {}
@@ -48,9 +64,9 @@ class MaaFWInterfaceLoadError(ValueError):
 
 class _MergeState:
     def __init__(self) -> None:
-        self.task_names: dict[str, Path] = {}
-        self.option_keys: dict[str, Path] = {}
-        self.preset_names: dict[str, Path] = {}
+        self.group_names: set[str] = set()
+        self.global_option_names: set[str] = set()
+        self.pretask_names: set[str] = set()
 
 
 class _LoadContext:
@@ -153,26 +169,31 @@ def _resolve_import_path(import_path: str, base_dir: Path) -> Path:
 
 
 def _validate_importable_fragment(data: dict[str, Any], source_path: Path) -> None:
-    invalid_keys = sorted(set(data) - IMPORTABLE_KEYS)
+    invalid_keys = sorted(set(data) - set(IMPORTABLE_KEYS))
     if invalid_keys:
-        raise MaaFWInterfaceLoadError(
-            f"导入文件只允许包含 task、option、preset、import 字段: {source_path}; "
-            f"发现非法字段 {', '.join(invalid_keys)}"
+        logger.warning(
+            "MaaFW ProjectInterface 导入文件包含暂不支持的字段，已忽略：%s；文件：%s",
+            ", ".join(invalid_keys),
+            source_path,
         )
 
 
-def _raise_conflict(
-    kind: str,
-    key: str,
-    source_path: Path,
-    existing_path: Path,
-) -> None:
-    raise MaaFWInterfaceLoadError(
-        f"{kind} 冲突: {key} 已在 {existing_path} 定义，无法再次从 {source_path} 导入"
-    )
+def _warn_unsupported_root_fields(data: dict[str, Any], source_path: Path) -> None:
+    supported_keys = {
+        field.alias or field_name
+        for field_name, field in MaaFWInterface.model_fields.items()
+    }
+    supported_keys.add("setting")
+    unsupported_keys = sorted(set(data) - supported_keys)
+    if unsupported_keys:
+        logger.warning(
+            "MaaFW ProjectInterface 包含暂不支持的顶层字段，已忽略：%s；文件：%s",
+            ", ".join(unsupported_keys),
+            source_path,
+        )
 
 
-def _register_tasks(tasks: Any, source_path: Path, state: _MergeState) -> None:
+def _validate_tasks(tasks: Any, source_path: Path) -> None:
     if tasks is None:
         return
     if not isinstance(tasks, list):
@@ -193,14 +214,8 @@ def _register_tasks(tasks: Any, source_path: Path, state: _MergeState) -> None:
                 f"task[{index}].entry 必须是非空字符串: {source_path}"
             )
 
-        existing_name = state.task_names.get(task_name)
-        if existing_name is not None:
-            _raise_conflict("task.name", task_name, source_path, existing_name)
 
-        state.task_names[task_name] = source_path
-
-
-def _register_options(options: Any, source_path: Path, state: _MergeState) -> None:
+def _validate_options(options: Any, source_path: Path) -> None:
     if options is None:
         return
     if not isinstance(options, dict):
@@ -210,13 +225,8 @@ def _register_options(options: Any, source_path: Path, state: _MergeState) -> No
         if not isinstance(option_key, str) or not option_key:
             raise MaaFWInterfaceLoadError(f"option 键必须是非空字符串: {source_path}")
 
-        existing_path = state.option_keys.get(option_key)
-        if existing_path is not None:
-            _raise_conflict("option", option_key, source_path, existing_path)
-        state.option_keys[option_key] = source_path
 
-
-def _register_presets(presets: Any, source_path: Path, state: _MergeState) -> None:
+def _validate_preset_section(presets: Any, source_path: Path) -> None:
     if presets is None:
         return
     if not isinstance(presets, list):
@@ -232,10 +242,143 @@ def _register_presets(presets: Any, source_path: Path, state: _MergeState) -> No
                 f"preset[{index}].name 必须是非空字符串: {source_path}"
             )
 
-        existing_path = state.preset_names.get(preset_name)
-        if existing_path is not None:
-            _raise_conflict("preset", preset_name, source_path, existing_path)
-        state.preset_names[preset_name] = source_path
+
+def _normalize_object_list(
+    raw_value: Any,
+    source_path: Path,
+    field_name: str,
+    *,
+    allow_single: bool = False,
+) -> list[dict[str, Any]]:
+    if raw_value is None:
+        return []
+    if isinstance(raw_value, list):
+        values = raw_value
+    elif allow_single and isinstance(raw_value, dict):
+        values = [raw_value]
+    else:
+        expected_type = "对象或对象数组" if allow_single else "对象数组"
+        raise MaaFWInterfaceLoadError(
+            f"{field_name} 字段必须是{expected_type}: {source_path}"
+        )
+    if not all(isinstance(item, dict) for item in values):
+        expected_type = "对象或对象数组" if allow_single else "对象数组"
+        raise MaaFWInterfaceLoadError(
+            f"{field_name} 字段必须是{expected_type}: {source_path}"
+        )
+    return values
+
+
+def _validate_string_list(
+    raw_value: Any,
+    source_path: Path,
+    field_name: str,
+) -> list[str]:
+    if raw_value is None:
+        return []
+    if not isinstance(raw_value, list) or not all(
+        isinstance(item, str) and item for item in raw_value
+    ):
+        raise MaaFWInterfaceLoadError(
+            f"{field_name} 字段必须是非空字符串数组: {source_path}"
+        )
+    return raw_value
+
+
+def _merge_groups(
+    target: dict[str, Any],
+    groups: Any,
+    source_path: Path,
+    state: _MergeState,
+) -> None:
+    group_items = _normalize_object_list(groups, source_path, "group")
+    if not group_items:
+        return
+
+    target.setdefault("group", [])
+    for index, group in enumerate(group_items):
+        group_name = group.get("name")
+        if not isinstance(group_name, str) or not group_name:
+            raise MaaFWInterfaceLoadError(
+                f"group[{index}].name 必须是非空字符串: {source_path}"
+            )
+        if group_name in state.group_names:
+            continue
+        state.group_names.add(group_name)
+        target["group"].append(copy.deepcopy(group))
+
+
+def _merge_global_options(
+    target: dict[str, Any],
+    global_options: Any,
+    source_path: Path,
+    state: _MergeState,
+) -> None:
+    option_names = _validate_string_list(global_options, source_path, "global_option")
+    if not option_names:
+        return
+
+    target.setdefault("global_option", [])
+    for option_name in option_names:
+        if option_name in state.global_option_names:
+            continue
+        state.global_option_names.add(option_name)
+        target["global_option"].append(option_name)
+
+
+def _normalize_pretask_items(
+    raw_value: Any,
+    source_path: Path,
+) -> list[dict[str, Any]]:
+    if raw_value is None:
+        return []
+    values = raw_value if isinstance(raw_value, list) else [raw_value]
+    normalized: list[dict[str, Any]] = []
+    for index, value in enumerate(values):
+        if not isinstance(value, dict):
+            logger.warning(
+                "MaaFW ProjectInterface pretask[%s] 不是对象，已忽略；文件：%s",
+                index,
+                source_path,
+            )
+            continue
+        try:
+            pretask = MaaFWPretask.model_validate(value)
+        except Exception as exc:
+            logger.warning(
+                "MaaFW ProjectInterface pretask[%s] 无效，已忽略：%s；文件：%s",
+                index,
+                exc,
+                source_path,
+            )
+            continue
+        normalized.append(pretask.model_dump(mode="json", exclude_none=True))
+    return normalized
+
+
+def _merge_pretasks(
+    target: dict[str, Any],
+    pretasks: Any,
+    source_path: Path,
+    state: _MergeState,
+) -> None:
+    pretask_items = _normalize_pretask_items(pretasks, source_path)
+    if not pretask_items:
+        return
+
+    target.setdefault("pretask", [])
+    for pretask_data in pretask_items:
+        pretask = MaaFWPretask.model_validate(pretask_data)
+        task_name = build_pretask_task_name(pretask)
+        if task_name in state.pretask_names:
+            logger.warning(
+                "MaaFW ProjectInterface pretask 重复，已保留首次定义：%s；文件：%s",
+                task_name,
+                source_path,
+            )
+            continue
+        state.pretask_names.add(task_name)
+        target["pretask"].append(copy.deepcopy(pretask_data))
 
 
 def _seed_root_sections(
@@ -243,9 +386,22 @@ def _seed_root_sections(
     source_path: Path,
     state: _MergeState,
 ) -> None:
-    _register_tasks(root_data.get("task"), source_path, state)
-    _register_options(root_data.get("option"), source_path, state)
-    _register_presets(root_data.get("preset"), source_path, state)
+    _validate_tasks(root_data.get("task"), source_path)
+    _validate_options(root_data.get("option"), source_path)
+    _validate_preset_section(root_data.get("preset"), source_path)
+
+    root_groups = root_data.pop("group", None)
+    root_global_options = root_data.pop("global_option", None)
+    root_pretasks = root_data.pop("pretask", None)
+    _merge_groups(root_data, root_groups, source_path, state)
+    _merge_global_options(root_data, root_global_options, source_path, state)
+    _merge_pretasks(root_data, root_pretasks, source_path, state)
+
+    if root_data.pop("setting", None) is not None:
+        logger.warning(
+            "MaaFW ProjectInterface setting 设置页声明暂不支持，已忽略；文件：%s",
+            source_path,
+        )
 
 
 def _merge_fragment_sections(
@@ -256,11 +412,14 @@ def _merge_fragment_sections(
 ) -> None:
     tasks = fragment.get("task")
     options = fragment.get("option")
+    global_options = fragment.get("global_option")
     presets = fragment.get("preset")
+    groups = fragment.get("group")
+    pretasks = fragment.get("pretask")
 
-    _register_tasks(tasks, source_path, state)
-    _register_options(options, source_path, state)
-    _register_presets(presets, source_path, state)
+    _validate_tasks(tasks, source_path)
+    _validate_options(options, source_path)
+    _validate_preset_section(presets, source_path)
 
     if tasks:
         target.setdefault("task", [])
@@ -268,9 +427,12 @@ def _merge_fragment_sections(
     if options:
         target.setdefault("option", {})
         target["option"].update(copy.deepcopy(options))
+    _merge_global_options(target, global_options, source_path, state)
     if presets:
         target.setdefault("preset", [])
         target["preset"].extend(copy.deepcopy(presets))
+    _merge_groups(target, groups, source_path, state)
+    _merge_pretasks(target, pretasks, source_path, state)
 
 
 def _merge_imports_into_target(
@@ -290,6 +452,8 @@ def _merge_imports_into_target(
         fragment = _read_json_dict(resolved_path, context)
         _validate_importable_fragment(fragment, resolved_path)
 
+        _merge_fragment_sections(target, fragment, resolved_path, state)
+
         child_imports = _normalize_import_list(fragment.get("import"), resolved_path)
         _merge_imports_into_target(
             target,
@@ -299,7 +463,6 @@ def _merge_imports_into_target(
             [*stack, resolved_path],
             context,
         )
-        _merge_fragment_sections(target, fragment, resolved_path, state)
 
 
 def _scan_scan_select_cases(
@@ -478,7 +641,6 @@ def _validate_task_context_constraints(interface_model: MaaFWInterface) -> None:
                     f"任务 {task_ref} 引用了不存在的 resource: {resource_name}"
                 )
 
-
 def _validate_option_references(interface_model: MaaFWInterface) -> None:
     option_map = interface_model.option
     _validate_option_name_list(
@@ -507,6 +669,56 @@ def _validate_option_references(interface_model: MaaFWInterface) -> None:
             option_map,
             location=f"task {task.name}",
         )
+
+
+
+def _sanitize_pretasks(interface_model: MaaFWInterface) -> None:
+    controller_names = {controller.name for controller in interface_model.controller}
+    resource_names = {resource.name for resource in interface_model.resource}
+    option_names = set(interface_model.option)
+    valid_pretasks: list[MaaFWPretask] = []
+
+    for pretask in iter_pretasks(interface_model):
+        task_name = build_pretask_task_name(pretask)
+        invalid_controllers = sorted(set(pretask.controller or []) - controller_names)
+        invalid_resources = sorted(set(pretask.resource or []) - resource_names)
+        if invalid_controllers or invalid_resources:
+            details: list[str] = []
+            if invalid_controllers:
+                details.append(f"controller={','.join(invalid_controllers)}")
+            if invalid_resources:
+                details.append(f"resource={','.join(invalid_resources)}")
+            logger.warning(
+                "MaaFW ProjectInterface pretask 引用了不存在的上下文，已忽略：%s（%s）",
+                task_name,
+                "; ".join(details),
+            )
+            continue
+
+        valid_options: list[str] = []
+        for option_name in pretask.option or []:
+            if option_name not in option_names:
+                logger.warning(
+                    "MaaFW ProjectInterface pretask 引用了不存在的 option，已忽略：%s.%s",
+                    task_name,
+                    option_name,
+                )
+                continue
+            valid_options.append(option_name)
+        pretask.option = valid_options
+        valid_pretasks.append(pretask)
+
+    interface_model.pretask = valid_pretasks or None
+
+
+def _warn_unsupported_option_types(interface_model: MaaFWInterface) -> None:
+    for option_name, option in interface_model.option.items():
+        if option.type not in SUPPORTED_OPTION_TYPES:
+            logger.warning(
+                "MaaFW ProjectInterface option 类型暂不支持，已忽略：%s（type=%s）",
+                option_name,
+                option.type,
+            )
 
 
 def _validate_presets(interface_model: MaaFWInterface) -> None:
@@ -586,6 +798,7 @@ def _load_interface_model_with_context(base_dir: str | Path) -> tuple[MaaFWInter
     context = _LoadContext()
     root_path = _resolve_interface_path(resolved_base_dir)
     root_data = _read_json_dict(root_path, context)
+    _warn_unsupported_root_fields(root_data, root_path)
     merged_data = copy.deepcopy(root_data)
     merge_state = _MergeState()
 
@@ -606,6 +819,8 @@ def _load_interface_model_with_context(base_dir: str | Path) -> tuple[MaaFWInter
     except Exception as exc:
         raise MaaFWInterfaceLoadError(f"校验 interface 配置失败: {exc}") from exc
 
+    _sanitize_pretasks(interface_model)
+    _warn_unsupported_option_types(interface_model)
     _validate_task_context_constraints(interface_model)
     _validate_option_references(interface_model)
     _validate_presets(interface_model)

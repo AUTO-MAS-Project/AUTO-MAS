@@ -8,7 +8,13 @@ from typing import Any
 import json5
 from pydantic import BaseModel, Field
 
-from .models import MaaFWInterface
+from .models import (
+    PRETASK_TASK_ENTRY,
+    SUPPORTED_OPTION_TYPES,
+    MaaFWInterface,
+    build_pretask_task_name,
+    iter_pretasks,
+)
 from .task_config import _build_task_option_maps, build_interface_preset_snapshot
 
 
@@ -77,6 +83,18 @@ def build_interface_preview_data(
     i18n_mapping = _load_i18n_mapping(root, interface)
     task_order = [task.name for task in interface.task]
     task_option_maps = _build_task_option_maps(interface)
+    supported_option_names = {
+        option_name
+        for option_name, option in interface.option.items()
+        if option.type in SUPPORTED_OPTION_TYPES
+    }
+
+    def filter_option_names(option_names: list[str] | None) -> list[str]:
+        return [
+            option_name
+            for option_name in option_names or []
+            if option_name in supported_option_names
+        ]
 
     def tr_text(value: str | None) -> str | None:
         translated = _resolve_i18n_value(value, i18n_mapping)
@@ -125,7 +143,7 @@ def build_interface_preview_data(
             "description": tr_description(interface.description),
             "icon": interface.icon,
         },
-        globalOption=interface.global_option or [],
+        globalOption=filter_option_names(interface.global_option),
         controllers=[
             {
                 "name": controller.name,
@@ -133,7 +151,7 @@ def build_interface_preview_data(
                 "type": controller.type,
                 "description": tr_description(controller.description),
                 "icon": controller.icon,
-                "option": controller.option or [],
+                "option": filter_option_names(controller.option),
                 "permissionRequired": bool(controller.permission_required),
             }
             for controller in interface.controller
@@ -146,7 +164,7 @@ def build_interface_preview_data(
                 "icon": resource.icon,
                 "path": resource.path,
                 "controller": resource.controller or [],
-                "option": resource.option or [],
+                "option": filter_option_names(resource.option),
             }
             for resource in interface.resource
         ],
@@ -161,19 +179,36 @@ def build_interface_preview_data(
             for group in interface.group or []
         ],
         tasks=[
-            {
-                "name": task.name,
-                "label": tr_text(task.label),
-                "entry": task.entry,
-                "description": tr_description(task.description),
-                "icon": task.icon,
-                "group": task.group or [],
-                "controller": task.controller or [],
-                "resource": task.resource or [],
-                "option": task.option or [],
-                "defaultCheck": bool(task.default_check),
-            }
-            for task in interface.task
+            *[
+                {
+                    "name": build_pretask_task_name(pretask),
+                    "label": tr_text(pretask.label) or pretask.name or pretask.exec,
+                    "entry": PRETASK_TASK_ENTRY,
+                    "description": tr_description(pretask.description),
+                    "icon": pretask.icon,
+                    "group": [],
+                    "controller": pretask.controller or [],
+                    "resource": pretask.resource or [],
+                    "option": filter_option_names(pretask.option),
+                    "defaultCheck": False,
+                }
+                for pretask in iter_pretasks(interface)
+            ],
+            *[
+                {
+                    "name": task.name,
+                    "label": tr_text(task.label),
+                    "entry": task.entry,
+                    "description": tr_description(task.description),
+                    "icon": task.icon,
+                    "group": task.group or [],
+                    "controller": task.controller or [],
+                    "resource": task.resource or [],
+                    "option": filter_option_names(task.option),
+                    "defaultCheck": bool(task.default_check),
+                }
+                for task in interface.task
+            ],
         ],
         options=[
             {
@@ -190,7 +225,7 @@ def build_interface_preview_data(
                         "label": tr_text(case.label),
                         "description": tr_description(case.description),
                         "icon": case.icon,
-                        "option": case.option or [],
+                        "option": filter_option_names(case.option),
                     }
                     for case in option.cases or []
                 ],
@@ -211,6 +246,7 @@ def build_interface_preview_data(
                 "defaultCase": option.default_case,
             }
             for option_name, option in interface.option.items()
+            if option.type in SUPPORTED_OPTION_TYPES
         ],
         presets=presets,
         importCount=len(interface.import_ or []),
