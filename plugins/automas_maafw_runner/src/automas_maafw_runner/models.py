@@ -41,6 +41,14 @@ class MaaFWSkippedTaskPlan(BaseModel):
     reason: str
 
 
+class MaaFWPretaskRunPlan(BaseModel):
+    name: str
+    label: str | None = None
+    executable: str
+    args: list[str] = Field(default_factory=list)
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
 class MaaFWRunPlan(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -52,6 +60,7 @@ class MaaFWRunPlan(BaseModel):
     resourceName: str
     resource: MaaFWResourceBundlePlan
     agents: list[MaaFWAgentCommandPlan] = Field(default_factory=list)
+    pretasks: list[MaaFWPretaskRunPlan] = Field(default_factory=list)
     piEnv: dict[str, str] = Field(default_factory=dict)
     tasks: list[MaaFWTaskRunPlan] = Field(default_factory=list)
     skippedTasks: list[MaaFWSkippedTaskPlan] = Field(default_factory=list)

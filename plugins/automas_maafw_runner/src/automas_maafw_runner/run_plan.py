@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from importlib import metadata
 from pathlib import Path
@@ -8,11 +9,17 @@ from typing import Any
 import json5
 from automas_maafw_agent_env import build_maafw_agent_command_plans
 from automas_maafw_interface.models import (
+    SUPPORTED_OPTION_TYPES,
     MaaFWController,
     MaaFWInterface,
+    MaaFWOption,
+    MaaFWPretask,
     MaaFWResource,
     MaaFWTask,
+    MaaFWTaskOptionValue,
     MaaFWTaskOptionsByTask,
+    find_pretask_by_task_name,
+    is_pretask_task_name,
 )
 from automas_maafw_interface.task_config import (
     MaaFWTaskPresetSnapshot,
@@ -23,6 +30,7 @@ from automas_maafw_interface.task_config import (
 
 from .models import (
     MaaFWResolvedPath,
+    MaaFWPretaskRunPlan,
     MaaFWResourceBundlePlan,
     MaaFWRunPlan,
     MaaFWSkippedTaskPlan,
@@ -31,7 +39,7 @@ from .models import (
 from .pipeline_override import MaaFWPipelineOverrideBuilder
 
 
-PI_INTERFACE_VERSION = "v2.5.0"
+PI_INTERFACE_VERSION = "v2.8.1"
 PI_CLIENT_LANGUAGE = "zh_cn"
 PI_CLIENT_NAME = "AUTO-MAS"
 MAAFW_DIRECT_CONTROLLER_TYPES = {"Adb", "Win32"}
@@ -88,6 +96,12 @@ def build_maafw_run_plan(
         task_names=task_names,
         task_options=task_options,
     )
+    selected_pretask_names = [
+        task_name for task_name in selected_task_names if is_pretask_task_name(task_name)
+    ]
+    selected_common_task_names = [
+        task_name for task_name in selected_task_names if not is_pretask_task_name(task_name)
+    ]
     task_map = {task.name: task for task in interface.task}
     controller_names = {controller.name}
     pipeline_builder = MaaFWPipelineOverrideBuilder(
@@ -98,7 +112,7 @@ def build_maafw_run_plan(
 
     runnable_tasks: list[MaaFWTaskRunPlan] = []
     skipped_tasks: list[MaaFWSkippedTaskPlan] = []
-    for task_name in selected_task_names:
+    for task_name in selected_common_task_names:
         task = task_map.get(task_name)
         if task is None:
             skipped_tasks.append(MaaFWSkippedTaskPlan(name=task_name, reason="任务不存在"))
@@ -152,6 +166,14 @@ def build_maafw_run_plan(
             resolved_base_dir,
             interface.agent,
             managed_env_root=managed_env_root,
+        ),
+        pretasks=_build_pretask_plans(
+            resolved_base_dir,
+            interface,
+            controller,
+            resource,
+            selected_pretask_names,
+            selected_task_options,
         ),
         piEnv=_build_pi_env(resolved_base_dir, interface, controller, resource),
         tasks=runnable_tasks,
@@ -237,13 +259,14 @@ def _select_tasks(
     task_options: dict[str, Any] | None,
 ) -> tuple[list[str], MaaFWTaskOptionsByTask]:
     if task_names is not None:
-        return normalize_task_execution_payload(
+        selected_names, selected_options = normalize_task_execution_payload(
             task_names,
             task_options,
             interface_model,
             controller_name=controller_name,
             resource_name=resource_name,
         )
+        return selected_names, selected_options
 
     snapshot = _resolve_snapshot(
         interface_model,
@@ -255,13 +278,14 @@ def _select_tasks(
         for task_name in snapshot.taskOrder
         if snapshot.taskChecked.get(task_name, False)
     ]
-    return normalize_task_execution_payload(
+    selected_names, selected_options = normalize_task_execution_payload(
         selected_names,
         snapshot.taskOptions,
         interface_model,
         controller_name=controller_name,
         resource_name=resource_name,
     )
+    return selected_names, selected_options
 
 
 def _resolve_snapshot(
@@ -309,6 +333,124 @@ def _check_task_compatible(
     if task.resource and resource_name not in task.resource:
         return False, f"当前资源不受支持，支持: {', '.join(task.resource)}"
     return True, ""
+
+
+def _build_pretask_plans(
+    base_dir: Path,
+    interface_model: MaaFWInterface,
+    controller: MaaFWController,
+    resource: MaaFWResource,
+    selected_names: list[str],
+    task_options: MaaFWTaskOptionsByTask,
+) -> list[MaaFWPretaskRunPlan]:
+    plans: list[MaaFWPretaskRunPlan] = []
+    for task_name in selected_names:
+        pretask = find_pretask_by_task_name(interface_model, task_name)
+        if pretask is None:
+            continue
+        if pretask.controller and controller.name not in pretask.controller:
+            continue
+        if pretask.resource and resource.name not in pretask.resource:
+            continue
+
+        serialized_options = _collect_pretask_option_values(
+            pretask,
+            interface_model,
+            task_options.get(task_name, {}),
+            controller_name=controller.name,
+            resource_name=resource.name,
+        )
+        args = list(pretask.args or [])
+        if pretask.option:
+            args.append(
+                json.dumps(
+                    serialized_options,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            )
+        plans.append(
+            MaaFWPretaskRunPlan(
+                name=task_name,
+                label=pretask.label,
+                executable=_resolve_pretask_executable(base_dir, pretask.exec),
+                args=args,
+                options=serialized_options,
+            )
+        )
+    return plans
+
+
+def _collect_pretask_option_values(
+    pretask: MaaFWPretask,
+    interface_model: MaaFWInterface,
+    option_values: dict[str, MaaFWTaskOptionValue],
+    *,
+    controller_name: str,
+    resource_name: str,
+) -> dict[str, MaaFWTaskOptionValue]:
+    result: dict[str, MaaFWTaskOptionValue] = {}
+
+    def collect(option_name: str, lineage: set[str]) -> None:
+        if option_name in lineage or option_name in result:
+            return
+        option = interface_model.option.get(option_name)
+        if (
+            option is None
+            or option.type not in SUPPORTED_OPTION_TYPES
+            or not _is_option_compatible(
+                option,
+                controller_name=controller_name,
+                resource_name=resource_name,
+            )
+        ):
+            return
+        value = option_values.get(option_name)
+        if value is None:
+            return
+        result[option_name] = copy.deepcopy(value)
+
+        next_lineage = {*lineage, option_name}
+        if option.type in {"select", "scan_select", "switch"} and isinstance(value, str):
+            active_case = next((case for case in option.cases or [] if case.name == value), None)
+            for nested_name in active_case.option if active_case and active_case.option else []:
+                collect(nested_name, next_lineage)
+        elif option.type == "checkbox" and isinstance(value, list):
+            selected_names = set(value)
+            for case in option.cases or []:
+                if case.name not in selected_names:
+                    continue
+                for nested_name in case.option or []:
+                    collect(nested_name, next_lineage)
+
+    for option_name in pretask.option or []:
+        collect(option_name, set())
+    return result
+
+
+def _is_option_compatible(
+    option: MaaFWOption,
+    *,
+    controller_name: str,
+    resource_name: str,
+) -> bool:
+    if option.controller and controller_name not in option.controller:
+        return False
+    if option.resource and resource_name not in option.resource:
+        return False
+    return True
+
+
+def _resolve_pretask_executable(base_dir: Path, raw_exec: str) -> str:
+    resolved = _resolve_project_path(base_dir, raw_exec)
+    candidate = Path(resolved.resolved)
+    if not candidate.is_file() and candidate.suffix == "":
+        windows_candidate = candidate.with_suffix(".exe")
+        if _is_within_base_dir(windows_candidate, base_dir) and windows_candidate.is_file():
+            candidate = windows_candidate
+    if not candidate.is_file():
+        raise MaaFWRunPlanError(f"pretask 可执行文件不存在: {raw_exec}")
+    return str(candidate)
 
 
 def _build_task_log_options(

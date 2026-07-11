@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shlex
+import subprocess
 import uuid
 from contextlib import suppress
 from dataclasses import dataclass
@@ -125,6 +127,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.game_process_manager = ProcessManager()
         self.project_lock_key: str | None = None
         self.runner_process: asyncio.subprocess.Process | None = None
+        self.pretask_process: asyncio.subprocess.Process | None = None
         self._cached_adb_address: str | None = None
         self._cached_device_info: DeviceInfo | None = None
         self._cached_adb_path: str | None = None
@@ -213,6 +216,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
 
         try:
+            await self._run_pretasks()
             for index in range(self.script_config.get("Run", "RunTimesLimit")):
                 if self.run_complete:
                     break
@@ -771,7 +775,63 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         raise RuntimeError(message)
 
     async def _shutdown_runner(self) -> None:
+        await self._terminate_pretask_process()
         await self._terminate_runner_process()
+
+    async def _run_pretasks(self) -> None:
+        if self.run_plan is None:
+            raise RuntimeError("MaaFW 运行计划尚未初始化")
+
+        env = os.environ.copy()
+        env.update(self.run_plan.piEnv)
+        creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        for pretask in self.run_plan.pretasks:
+            display_name = pretask.label or pretask.name
+            self._append_log(f"开始应用运行前设置: {display_name}")
+            process = await asyncio.create_subprocess_exec(
+                pretask.executable,
+                *pretask.args,
+                cwd=self.run_plan.path,
+                env=env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                creationflags=creationflags,
+            )
+            self.pretask_process = process
+            try:
+                output, _ = await process.communicate()
+            finally:
+                if process.returncode is not None and self.pretask_process is process:
+                    self.pretask_process = None
+
+            detail = _decode_subprocess_output(output).strip()
+            if detail:
+                for line in detail.splitlines():
+                    self._append_log(f"[运行前设置] {line}")
+            if process.returncode != 0:
+                error_detail = detail.splitlines()[-1] if detail else "没有输出错误详情"
+                raise RuntimeError(
+                    f"运行前设置 {display_name} 执行失败（退出码 {process.returncode}）: "
+                    f"{error_detail}"
+                )
+            self._append_log(f"运行前设置完成: {display_name}")
+
+    async def _terminate_pretask_process(self) -> None:
+        process = self.pretask_process
+        self.pretask_process = None
+        if process is None or process.returncode is not None:
+            return
+
+        try:
+            process.terminate()
+            await asyncio.wait_for(process.wait(), timeout=5)
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+        except ProcessLookupError:
+            return
+        except Exception as exc:
+            logger.warning(f"MaaFW 运行前设置进程清理失败: {exc}")
 
     async def _terminate_runner_process(self) -> None:
         process = self.runner_process

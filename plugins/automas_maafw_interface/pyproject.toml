@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "automas-maafw-interface"
-version = "0.1.0"
+version = "0.1.1"
 description = "MaaFW ProjectInterface parser plugin for AUTO-MAS"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"

@@ -28,6 +28,12 @@ MaaFWPresetOptionValue = str | list[str] | dict[str, str]
 MaaFWTaskOptionValue = str | list[str] | dict[str, str]
 MaaFWTaskOptionsByTask = dict[str, dict[str, MaaFWTaskOptionValue]]
 
+PRETASK_TASK_PREFIX = "__MXU_PRETASK__"
+PRETASK_TASK_ENTRY = "MXU_PRETASK"
+SUPPORTED_OPTION_TYPES = frozenset(
+    {"select", "checkbox", "input", "switch", "scan_select"}
+)
+
 
 class MaaFWAdbController(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -112,6 +118,20 @@ class MaaFWAgent(BaseModel):
     child_args: list[str] | None = None
     identifier: str | None = None
     embedded: bool | None = None
+
+
+class MaaFWPretask(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    exec: str
+    args: list[str] | None = None
+    name: str | None = None
+    label: str | None = None
+    description: str | None = None
+    icon: str | None = None
+    option: list[str] | None = None
+    resource: list[str] | None = None
+    controller: list[str] | None = None
 
 
 class MaaFWTask(BaseModel):
@@ -234,6 +254,7 @@ class MaaFWInterface(BaseModel):
     controller: list[MaaFWController] = Field(default_factory=list)
     resource: list[MaaFWResource] = Field(default_factory=list)
     group: list[MaaFWGroup] | None = None
+    pretask: MaaFWPretask | list[MaaFWPretask] | None = None
     agent: MaaFWAgent | list[MaaFWAgent] | None = None
     task: list[MaaFWTask] = Field(default_factory=list)
     option: dict[str, MaaFWOption] = Field(default_factory=dict)
@@ -248,3 +269,40 @@ class MaaFWInterface(BaseModel):
         if self.title is None and self.label and self.version:
             self.title = f"{self.label} {self.version}"
         return self
+
+
+def iter_pretasks(interface: MaaFWInterface) -> list[MaaFWPretask]:
+    """Return ProjectInterface pretasks as a stable list."""
+
+    raw_pretasks = interface.pretask
+    if isinstance(raw_pretasks, list):
+        return raw_pretasks
+    return [raw_pretasks] if raw_pretasks is not None else []
+
+
+def build_pretask_task_name(pretask: MaaFWPretask) -> str:
+    """Build the pseudo-task name used by MXU-compatible clients."""
+
+    return f"{PRETASK_TASK_PREFIX}{pretask.name or pretask.exec}"
+
+
+def is_pretask_task_name(task_name: str) -> bool:
+    """Return whether a persisted task name identifies a pretask pseudo-task."""
+
+    return task_name.startswith(PRETASK_TASK_PREFIX)
+
+
+def find_pretask_by_task_name(
+    interface: MaaFWInterface,
+    task_name: str,
+) -> MaaFWPretask | None:
+    """Resolve a persisted pseudo-task name to its ProjectInterface pretask."""
+
+    return next(
+        (
+            pretask
+            for pretask in iter_pretasks(interface)
+            if build_pretask_task_name(pretask) == task_name
+        ),
+        None,
+    )
