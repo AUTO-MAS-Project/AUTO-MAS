@@ -20,11 +20,13 @@ export namespace ScriptIndexItem {
         MAA_CONFIG = 'MaaConfig',
         GENERAL_CONFIG = 'GeneralConfig',
         OKWW_CONFIG = 'OkwwConfig',
+        OKEF_CONFIG = 'OkefConfig',
         SRC_CONFIG = 'SrcConfig',
         MAA_END_CONFIG = 'MaaEndConfig',
         M9ACONFIG = 'M9AConfig',
         MAA_FWCONFIG = 'MaaFWConfig',
         HSRCONFIG = 'HSRConfig',
+        PLUGIN_SCRIPT_CONFIG = 'PluginScriptConfig',
     }
 }
 

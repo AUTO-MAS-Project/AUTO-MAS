@@ -403,6 +403,7 @@ class ScriptIndexItem(BaseModel):
         "M9AConfig",
         "MaaFWConfig",
         "HSRConfig",
+        "PluginScriptConfig",
     ] = Field(
         ..., description="配置类型"
     )
@@ -420,6 +421,7 @@ class UserIndexItem(BaseModel):
         "M9AUserConfig",
         "MaaFWUserConfig",
         "HSRUserConfig",
+        "PluginUserConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -1543,6 +1545,9 @@ class MaaFWConfig_Run(BaseModel):
     ProxyTimesLimit: Optional[int] = Field(default=None, description="代理次数限制")
     RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
     RunTimeLimit: Optional[int] = Field(default=None, description="运行时间限制（分钟）")
+    DailyOnceTasks: Optional[str] = Field(
+        default=None, description="每日正常完成一次后今日跳过的 MaaFW 任务名列表"
+    )
     WeeklyOnceTasks: Optional[str] = Field(
         default=None, description="每周正常完成一次后本周跳过的 MaaFW 任务名列表"
     )
@@ -1858,9 +1863,32 @@ class ScriptCreateIn(BaseModel):
     )
 
 
+class PluginScriptConfig(BaseModel):
+    Meta: Optional[Dict[str, Any]] = Field(default=None, description="插件脚本元数据")
+    Info: Optional[Dict[str, Any]] = Field(default=None, description="插件脚本基本信息")
+    PluginData: Optional[Dict[str, Any]] = Field(default=None, description="插件脚本存储数据")
+
+
+class PluginUserConfig(BaseModel):
+    Meta: Optional[Dict[str, Any]] = Field(default=None, description="插件用户元数据")
+    Info: Optional[Dict[str, Any]] = Field(default=None, description="插件用户基本信息")
+    PluginData: Optional[Dict[str, Any]] = Field(default=None, description="插件用户存储数据")
+
+
 class ScriptCreateOut(OutBase):
     scriptId: str = Field(..., description="新创建的脚本ID")
-    data: Union[MaaConfig, SrcConfig, GeneralConfig, OkwwConfig, OkefConfig, MaaEndConfig, M9AConfig, MaaFWConfig, HSRConfig] = Field(
+    data: Union[
+        MaaConfig,
+        SrcConfig,
+        GeneralConfig,
+        OkwwConfig,
+        OkefConfig,
+        MaaEndConfig,
+        M9AConfig,
+        MaaFWConfig,
+        HSRConfig,
+        PluginScriptConfig,
+    ] = Field(
         ..., description="脚本配置数据"
     )
 
@@ -1874,7 +1902,19 @@ class ScriptGetIn(BaseModel):
 class ScriptGetOut(OutBase):
     index: List[ScriptIndexItem] = Field(..., description="脚本索引列表")
     data: Dict[
-        str, Union[MaaConfig, SrcConfig, GeneralConfig, OkwwConfig, OkefConfig, MaaEndConfig, M9AConfig, MaaFWConfig, HSRConfig]
+        str,
+        Union[
+            MaaConfig,
+            SrcConfig,
+            GeneralConfig,
+            OkwwConfig,
+            OkefConfig,
+            MaaEndConfig,
+            M9AConfig,
+            MaaFWConfig,
+            HSRConfig,
+            PluginScriptConfig,
+        ],
     ] = Field(
         ..., description="脚本数据字典, key来自于index列表的uid"
     )
@@ -1882,7 +1922,18 @@ class ScriptGetOut(OutBase):
 
 class ScriptUpdateIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
-    data: Union[MaaConfig, SrcConfig, GeneralConfig, OkwwConfig, OkefConfig, MaaEndConfig, M9AConfig, MaaFWConfig, HSRConfig] = Field(
+    data: Union[
+        MaaConfig,
+        SrcConfig,
+        GeneralConfig,
+        OkwwConfig,
+        OkefConfig,
+        MaaEndConfig,
+        M9AConfig,
+        MaaFWConfig,
+        HSRConfig,
+        PluginScriptConfig,
+    ] = Field(
         ..., description="脚本更新数据"
     )
 
@@ -1942,6 +1993,7 @@ class UserGetOut(OutBase):
             M9AUserConfig,
             MaaFWUserConfig,
             HSRUserConfig,
+            PluginUserConfig,
         ],
     ] = Field(..., description="用户数据字典, key来自于index列表的uid")
 
@@ -1958,6 +2010,7 @@ class UserCreateOut(OutBase):
         M9AUserConfig,
         MaaFWUserConfig,
         HSRUserConfig,
+        PluginUserConfig,
     ] = (
         Field(..., description="用户配置数据")
     )
@@ -1975,6 +2028,7 @@ class UserUpdateIn(UserInBase):
         M9AUserConfig,
         MaaFWUserConfig,
         HSRUserConfig,
+        PluginUserConfig,
     ] = (
         Field(..., description="用户更新数据")
     )

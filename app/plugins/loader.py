@@ -1302,5 +1302,20 @@ class PluginLoader:
         Returns:
             None: 无返回值。
         """
-        for plugin_name in list(self.records.keys()):
-            await self.unload_plugin(plugin_name)
+        self._pulse.clear()
+        dependency_sync_task = self._task
+        self._task = None
+        if dependency_sync_task is not None and not dependency_sync_task.done():
+            dependency_sync_task.cancel()
+            try:
+                await dependency_sync_task
+            except asyncio.CancelledError:
+                pass
+
+        self._busy = True
+        try:
+            for plugin_name in list(self.records.keys()):
+                await self.unload_plugin(plugin_name)
+        finally:
+            self._pulse.clear()
+            self._busy = False

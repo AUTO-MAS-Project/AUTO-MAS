@@ -3,6 +3,7 @@
 
 from pathlib import Path
 import asyncio
+import inspect
 import shutil
 import importlib.metadata as importlib_metadata
 import time
@@ -928,9 +929,25 @@ class _PluginManager:
                         script_name = str(script_id)
 
                     try:
-                        raw_data = await script.toDict(if_decrypt=False)
-                        new_script = provider.script_config_class()
-                        await new_script.load(raw_data)
+                        legacy_migrator = provider.metadata.get(
+                            "legacy_config_migrator"
+                        )
+                        if callable(legacy_migrator):
+                            new_script = legacy_migrator(script, provider)
+                            if inspect.isawaitable(new_script):
+                                new_script = await new_script
+                            if not isinstance(
+                                new_script,
+                                provider.script_config_class,
+                            ):
+                                raise TypeError(
+                                    "legacy_config_migrator must return "
+                                    f"{provider.script_config_class.__name__}"
+                                )
+                        else:
+                            raw_data = await script.toDict(if_decrypt=False)
+                            new_script = provider.script_config_class()
+                            await new_script.load(raw_data)
                         for save_method in Config.ScriptConfig._save_methods:
                             await new_script.add_save_method(save_method)
                         if Config.ScriptConfig.file:

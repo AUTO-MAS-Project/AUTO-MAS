@@ -2200,6 +2200,10 @@ class MaaFWUserConfig(ConfigBase):
     @staticmethod
     def _normalize_maafw_last_status(status: str) -> str:
         status_map = {
+            "未知": "未知",
+            "成功": "成功",
+            "失败": "失败",
+            "运行中": "运行中",
             "鏈煡": "未知",
             "鎴愬姛": "成功",
             "澶辫触": "失败",
@@ -2321,6 +2325,10 @@ class MaaFWConfig(ConfigBase):
         ## 单次运行时间限制（分钟）
         self.Run_RunTimeLimit = ConfigItem(
             "Run", "RunTimeLimit", 30, RangeValidator(1, 9999)
+        )
+        ## 每日正常完成一次后，今日剩余时间跳过的 MaaFW 任务名列表
+        self.Run_DailyOnceTasks = ConfigItem(
+            "Run", "DailyOnceTasks", "[ ]", JSONValidator(list)
         )
         ## 每周正常完成一次后，本周剩余时间跳过的 MaaFW 任务名列表
         self.Run_WeeklyOnceTasks = ConfigItem(

@@ -209,7 +209,12 @@
         >
           <div class="script-item-content">
             <div class="script-icon">
-              <img :src="getScriptIcon(script.type)" :alt="script.type" class="type-icon" />
+              <img
+                :src="getScriptIcon(script.type, script.iconUrl)"
+                :alt="script.type"
+                class="type-icon"
+                @error="event => handleScriptIconError(event, script.type)"
+              />
             </div>
             <div class="script-info">
               <div class="script-name">{{ script.name }}</div>
@@ -253,13 +258,22 @@
           <div class="type-content">
             <div class="type-logo-container">
               <img
-                :src="getScriptIcon(descriptor.type_key)"
+                :src="getScriptIcon(descriptor.type_key, descriptor.icon_url)"
                 :alt="descriptor.type_key"
                 class="type-logo"
+                @error="event => handleScriptIconError(event, descriptor.type_key)"
               />
             </div>
             <div class="type-info">
-              <div class="type-title">{{ descriptor.display_name }}</div>
+              <div class="type-title">
+                <span>{{ descriptor.display_name }}</span>
+                <a-tag
+                  :color="getScriptTypeTagColor(descriptor.type_key, descriptor.theme_color)"
+                  class="type-tag"
+                >
+                  {{ descriptor.type_key }}
+                </a-tag>
+              </div>
               <div class="type-description">
                 支持模式：{{ descriptor.supported_modes.join(' / ') || '未声明' }}
               </div>
@@ -427,8 +441,10 @@ import {
   descriptorMapFromList,
   getScriptEditPath,
   getScriptIcon,
+  getScriptTypeTagColor,
   getUserCreatePath,
   getUserEditPath,
+  handleScriptIconError,
   normalizeScriptRecord,
 } from '@/utils/scriptRegistry'
 import MarkdownIt from 'markdown-it'
@@ -509,7 +525,9 @@ const filteredTemplates = computed(() => {
   )
 })
 
-const availableScriptTypes = computed(() => scriptTypeDescriptors.value)
+const availableScriptTypes = computed(() =>
+  scriptTypeDescriptors.value.filter(descriptor => descriptor.available !== false)
+)
 
 const isScriptAvailable = (script: Script) => script.available !== false
 
@@ -653,9 +671,14 @@ const handleConfirmAddScript = async () => {
   try {
     const result = await registryApi.addScript(selectedType.value)
     typeSelectVisible.value = false
-    router.push(
-      getScriptEditPath({ id: result.id, type: result.type, editorKind: result.editor_kind })
-    )
+    // MaaFW / M9A 新建脚本进入引导流程，其余类型直接进入编辑页
+    if (result.type === 'MaaFW' || result.type === 'M9A') {
+      router.push(`/scripts/${result.id}/setup/maafw`)
+    } else {
+      router.push(
+        getScriptEditPath({ id: result.id, type: result.type, editorKind: result.editor_kind })
+      )
+    }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`添加脚本失败: ${errorMsg}`)
@@ -1410,6 +1433,18 @@ const handlePassCheckUser = async (user: User) => {
   font-weight: 500;
   margin: 0 0 6px;
   color: var(--ant-color-text);
+}
+
+.type-title {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  align-items: center;
+}
+
+.type-tag {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
 }
 
 .type-description,

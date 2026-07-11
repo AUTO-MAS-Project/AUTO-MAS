@@ -592,6 +592,7 @@ class ScriptAdapterDefinition:
     related_bindings: dict[str, str] | None = None
     supported_modes: tuple[str, ...] = ("AutoProxy", "ScriptConfig")
     icon: str | None = None
+    icon_path: str | None = None
     docs_url: str | None = None
     editor_kind: str = "schema"
     legacy_config_class_name: str | None = None
@@ -684,6 +685,7 @@ class ScriptAdapterDefinition:
             script_schema=artifacts.script_schema,
             user_schema=artifacts.user_schema,
             icon=self.icon,
+            icon_path=self.icon_path,
             docs_url=self.docs_url,
             editor_kind=self.editor_kind,
             legacy_config_class_name=self.legacy_config_class_name,

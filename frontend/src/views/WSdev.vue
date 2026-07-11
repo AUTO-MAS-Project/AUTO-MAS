@@ -327,7 +327,7 @@ import {
   LockOutlined,
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
-import { OpenAPI, WebSocketService } from '@/api'
+import { OpenAPI, WebsocketService } from '@/api'
 
 // ============== 类型定义 ==============
 
@@ -536,7 +536,7 @@ async function createClient() {
       max_reconnect_attempts: createForm.value.maxReconnectAttempts,
     }
     logApiRequest('/api/ws/client/create', 'POST', requestBody)
-    const response = await WebSocketService.createClientApiWsDebugClientCreatePost(requestBody)
+    const response = await WebsocketService.createClientApiWsClientCreatePost(requestBody)
     logApiResponse('/api/ws/client/create', response)
 
     if (response.code === 200) {
@@ -559,7 +559,7 @@ async function connectClient(name: string) {
   try {
     const requestBody = { name }
     logApiRequest('/api/ws/client/connect', 'POST', requestBody)
-    const response = await WebSocketService.connectClientApiWsDebugClientConnectPost(requestBody)
+    const response = await WebsocketService.connectClientApiWsClientConnectPost(requestBody)
     logApiResponse('/api/ws/client/connect', response)
 
     if (response.code === 200) {
@@ -579,8 +579,7 @@ async function disconnectClient(name: string) {
   try {
     const requestBody = { name }
     logApiRequest('/api/ws/client/disconnect', 'POST', requestBody)
-    const response =
-      await WebSocketService.disconnectClientApiWsDebugClientDisconnectPost(requestBody)
+    const response = await WebsocketService.disconnectClientApiWsClientDisconnectPost(requestBody)
     logApiResponse('/api/ws/client/disconnect', response)
 
     if (response.code === 200) {
@@ -598,7 +597,7 @@ async function removeClient(name: string) {
   try {
     const requestBody = { name }
     logApiRequest('/api/ws/client/remove', 'POST', requestBody)
-    const response = await WebSocketService.removeClientApiWsDebugClientRemovePost(requestBody)
+    const response = await WebsocketService.removeClientApiWsClientRemovePost(requestBody)
     logApiResponse('/api/ws/client/remove', response)
 
     if (response.code === 200) {
@@ -641,8 +640,7 @@ async function sendMessage() {
         data,
       }
       logApiRequest('/api/ws/message/send_json', 'POST', jsonRequestBody)
-      response =
-        await WebSocketService.sendJsonMessageApiWsDebugMessageSendJsonPost(jsonRequestBody)
+      response = await WebsocketService.sendJsonMessageApiWsMessageSendJsonPost(jsonRequestBody)
       logApiResponse('/api/ws/message/send_json', response)
     } else if (sendMode.value === 'raw') {
       let messageObj: any
@@ -658,7 +656,7 @@ async function sendMessage() {
         message: messageObj,
       }
       logApiRequest('/api/ws/message/send', 'POST', rawRequestBody)
-      response = await WebSocketService.sendMessageApiWsDebugMessageSendPost(rawRequestBody)
+      response = await WebsocketService.sendMessageApiWsMessageSendPost(rawRequestBody)
       logApiResponse('/api/ws/message/send', response)
     } else if (sendMode.value === 'auth') {
       if (!authMessage.value.token) {
@@ -683,7 +681,7 @@ async function sendMessage() {
         extra_data: extraData,
       }
       logApiRequest('/api/ws/message/auth', 'POST', authRequestBody)
-      response = await WebSocketService.sendAuthApiWsDebugMessageAuthPost(authRequestBody)
+      response = await WebsocketService.sendAuthApiWsMessageAuthPost(authRequestBody)
       logApiResponse('/api/ws/message/auth', response)
     }
 
@@ -702,7 +700,7 @@ async function sendMessage() {
 // 清空历史
 async function clearHistory() {
   try {
-    await WebSocketService.clearHistoryApiWsDebugHistoryClearPost({
+    await WebsocketService.clearHistoryApiWsHistoryClearPost({
       name: selectedClient.value || undefined,
     })
     messages.value = []
