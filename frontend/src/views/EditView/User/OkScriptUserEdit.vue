@@ -193,62 +193,6 @@
         </a-form>
       </a-card>
 
-      <a-card v-if="userId && accountFields" class="config-card" style="margin-top: 24px">
-        <a-spin :spinning="accountConfigLoading">
-          <a-form layout="vertical" class="config-form">
-            <div class="form-section">
-              <div class="section-header">
-                <h3>多账号</h3>
-              </div>
-
-              <a-alert
-                v-if="accountConfigLoaded && !hasAccountConfig"
-                type="warning"
-                show-icon
-                message="当前任务未发现多账号字段"
-                style="margin-bottom: 16px"
-              />
-
-              <a-row :gutter="24" align="middle">
-                <a-col :span="8">
-                  <a-form-item label="多账户模式">
-                    <a-switch v-model:checked="accountForm.enabled" :disabled="!hasAccountConfig" />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="8">
-                  <a-form-item label="多账户独立配置">
-                    <a-switch
-                      v-model:checked="accountForm.independent"
-                      :disabled="!hasAccountConfig || !accountForm.enabled"
-                    />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="8" class="account-action-col">
-                  <a-button
-                    type="primary"
-                    :loading="accountConfigSaving"
-                    :disabled="!hasAccountConfig"
-                    @click="saveAccountConfig"
-                  >
-                    保存
-                  </a-button>
-                </a-col>
-              </a-row>
-
-              <a-form-item label="账号列表">
-                <a-textarea
-                  v-model:value="accountForm.accountList"
-                  :rows="5"
-                  placeholder="每行一个账号"
-                  :disabled="!hasAccountConfig"
-                  class="modern-input"
-                />
-              </a-form-item>
-            </div>
-          </a-form>
-        </a-spin>
-      </a-card>
-
       <a-card v-if="userId && providerMetadata" class="config-card" style="margin-top: 24px">
         <OkScriptConfigEditor
           :script-id="scriptId"
@@ -359,7 +303,6 @@ import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import {
   useOkScriptConfigApi,
-  type OkScriptConfigFile,
   type OkScriptProviderMetadata,
 } from '@/composables/useOkScriptConfigApi'
 import WebhookManager from '@/components/WebhookManager.vue'
@@ -414,12 +357,6 @@ interface OkScriptUserDataForm {
   LastTaskIndex: number
 }
 
-interface OkScriptAccountConfigForm {
-  enabled: boolean
-  independent: boolean
-  accountList: string
-}
-
 interface OkScriptUserFormData {
   userName: string
   Info: OkScriptUserInfoForm
@@ -471,26 +408,12 @@ const formData = reactive<OkScriptUserFormData>({
   ...getDefaultUserData(),
 })
 
-const accountConfigLoading = ref(false)
-const accountConfigSaving = ref(false)
-const accountConfigLoaded = ref(false)
 const providerMetadata = ref<OkScriptProviderMetadata | null>(null)
-const accountConfigRecords = ref<OkScriptConfigFile[]>([])
-const accountForm = reactive<OkScriptAccountConfigForm>({
-  enabled: false,
-  independent: false,
-  accountList: '',
-})
 
 const taskOptions = computed(() => providerMetadata.value?.taskOptions || [])
-const accountFields = computed(() => providerMetadata.value?.accountFields || null)
 const currentStartupArguments = computed(() =>
   taskOptions.value.length ? `-t ${formData.Task.TaskIndex || 1} -e` : ''
 )
-const selectedAccountConfig = computed(
-  () => accountConfigRecords.value.find(item => item.taskIndex === formData.Task.TaskIndex) || null
-)
-const hasAccountConfig = computed(() => selectedAccountConfig.value !== null)
 
 const handleCancel = () => router.push('/scripts')
 
@@ -544,7 +467,6 @@ const saveTaskConfig = async () => {
 
 const handleTaskIndexChange = async (value: number) => {
   formData.Task.TaskIndex = value
-  syncAccountFormFromConfig(selectedAccountConfig.value)
   try {
     await saveTaskConfig()
   } catch (e) {
@@ -552,30 +474,9 @@ const handleTaskIndexChange = async (value: number) => {
   }
 }
 
-const hasAccountConfigFields = (config: OkScriptConfigFile) =>
-  !!accountFields.value &&
-  Object.prototype.hasOwnProperty.call(config.currentData, accountFields.value.accountListKey)
-
-const syncAccountFormFromConfig = (config: OkScriptConfigFile | null) => {
-  const fields = accountFields.value
-  accountForm.enabled = Boolean(fields && config?.currentData[fields.enabledKey])
-  accountForm.independent = Boolean(fields && config?.currentData[fields.independentKey])
-  accountForm.accountList = String(fields ? config?.currentData[fields.accountListKey] || '' : '')
-}
-
-const normalizeAccountList = (value: string) =>
-  value
-    .split(/\r?\n/)
-    .map(item => item.trim())
-    .filter(Boolean)
-    .join('\n')
-
 const loadProjectConfig = async () => {
   if (!userId.value) return
-  accountConfigLoading.value = true
-  accountConfigLoaded.value = false
   providerMetadata.value = null
-  accountConfigRecords.value = []
   try {
     const resp = await okScriptConfigApi.listConfigFiles(scriptId, userId.value)
     if (resp?.code !== 200) {
@@ -584,50 +485,10 @@ const loadProjectConfig = async () => {
     }
 
     providerMetadata.value = resp.provider || null
-    accountConfigRecords.value = (resp.data || []).filter(hasAccountConfigFields)
-    syncAccountFormFromConfig(selectedAccountConfig.value)
   } catch (e) {
     const errorMsg = e instanceof Error ? e.message : String(e)
     logger.error(`加载项目配置失败: ${errorMsg}`)
     message.error(`加载项目配置失败: ${errorMsg}`)
-  } finally {
-    accountConfigLoaded.value = true
-    accountConfigLoading.value = false
-  }
-}
-
-const saveAccountConfig = async () => {
-  const accountConfig = selectedAccountConfig.value
-  const fields = accountFields.value
-  if (!userId.value || accountConfigSaving.value || !accountConfig || !fields) return
-
-  accountConfigSaving.value = true
-  try {
-    const normalizedAccountList = normalizeAccountList(accountForm.accountList)
-    const patch = {
-      [accountConfig.filename]: {
-        [fields.enabledKey]: accountForm.enabled,
-        [fields.independentKey]: accountForm.independent,
-        [fields.accountListKey]: normalizedAccountList,
-      },
-    }
-
-    const resp = await okScriptConfigApi.batchUpdateConfigFiles(scriptId, userId.value, patch)
-    if (resp?.code !== 200) {
-      throw new Error(resp?.message || '保存多账号配置失败')
-    }
-
-    accountForm.accountList = normalizedAccountList
-    accountConfig.currentData[fields.enabledKey] = accountForm.enabled
-    accountConfig.currentData[fields.independentKey] = accountForm.independent
-    accountConfig.currentData[fields.accountListKey] = normalizedAccountList
-    message.success('多账号配置已保存')
-  } catch (e) {
-    const errorMsg = e instanceof Error ? e.message : String(e)
-    logger.error(`保存多账号配置失败: ${errorMsg}`)
-    message.error(`保存多账号配置失败: ${errorMsg}`)
-  } finally {
-    accountConfigSaving.value = false
   }
 }
 
@@ -697,7 +558,6 @@ const loadUser = async () => {
         },
       })
     }
-    syncAccountFormFromConfig(selectedAccountConfig.value)
 
     await nextTick()
     formData.userName = formData.Info.Name || ''
@@ -791,11 +651,6 @@ onMounted(async () => {
 
 .modern-select {
   width: 100%;
-}
-
-.account-action-col {
-  display: flex;
-  align-items: center;
 }
 
 @media (max-width: 768px) {
