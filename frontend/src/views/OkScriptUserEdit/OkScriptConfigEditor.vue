@@ -41,13 +41,27 @@
         <a-col :span="16" class="right-panel">
           <div v-if="selectedConfig" class="config-form">
             <div class="form-header">
-              <h4>{{ selectedConfigForTemplate.displayName }}</h4>
-              <span class="form-filename">{{ selectedConfigForTemplate.filename }}</span>
+              <div class="form-title">
+                <h4>{{ selectedConfigForTemplate.displayName }}</h4>
+                <span class="form-filename">{{ selectedConfigForTemplate.filename }}</span>
+              </div>
+              <label v-if="sectionOptions.length > 1" class="section-selector">
+                <span>配置选择</span>
+                <a-select v-model:value="currentSection" size="middle">
+                  <a-select-option
+                    v-for="section in sectionOptions"
+                    :key="section.value"
+                    :value="section.value"
+                  >
+                    {{ section.label }}
+                  </a-select-option>
+                </a-select>
+              </label>
             </div>
 
             <a-form layout="vertical" class="form-fields">
               <a-form-item
-                v-for="field in selectedConfigForTemplate.fields"
+                v-for="field in selectedFields"
                 :key="field.name"
                 :label="field.label || field.name"
               >
@@ -163,6 +177,27 @@
                   "
                 />
 
+                <!-- textarea 类型：多行文本配置 -->
+                <a-textarea
+                  v-else-if="field.type === 'textarea'"
+                  :value="
+                    String(
+                      getFieldValue(selectedConfigForTemplate.filename, field.name, field.value) ||
+                        ''
+                    )
+                  "
+                  :rows="5"
+                  :placeholder="field.name === '账号列表' ? '每行一个账号' : '请输入内容'"
+                  @change="
+                    (e: Event) =>
+                      setFieldValue(
+                        selectedConfigForTemplate.filename,
+                        field.name,
+                        (e.target as HTMLTextAreaElement).value
+                      )
+                  "
+                />
+
                 <!-- string 类型：文本输入 -->
                 <a-input
                   v-else
@@ -181,7 +216,7 @@
                 />
               </a-form-item>
 
-              <div v-if="selectedConfigForTemplate.fields.length === 0" class="empty-fields">
+              <div v-if="selectedFields.length === 0" class="empty-fields">
                 <a-empty description="该配置文件暂无可编辑的字段" />
               </div>
             </a-form>
@@ -204,6 +239,8 @@ import {
   type OkScriptConfigFile as ConfigFile,
   type OkScriptConfigPatchMap,
 } from '@/composables/useOkScriptConfigApi'
+
+type ConfigField = ConfigFile['fields'][number]
 
 const props = withDefaults(
   defineProps<{
@@ -230,6 +267,7 @@ const selectedFilename = ref<string | null>(null)
 const changedFiles = ref(new Set<string>())
 const localChanges = ref<Record<string, Record<string, any>>>({})
 const optionLabels = ref<Record<string, string>>({})
+const selectedSections = ref<Record<string, string>>({})
 
 const emptyConfig: ConfigFile = {
   filename: '',
@@ -259,6 +297,57 @@ const selectedConfig = computed(() => {
 const selectedConfigForTemplate = computed<ConfigFile>(() => selectedConfig.value || emptyConfig)
 const hasChanges = computed(() => changedFiles.value.size > 0)
 const okScriptConfigApi = useOkScriptConfigApi(props.endpointPrefix)
+
+const getFieldSection = (field: ConfigField) => field.section || '全部配置'
+
+const getSectionOptions = (config: ConfigFile | null) => {
+  if (!config) return []
+
+  const sections = new Map<string, number>()
+  for (const field of config.fields) {
+    const section = getFieldSection(field)
+    const priority = field.sectionPriority ?? field.priority ?? Number.MAX_SAFE_INTEGER
+    const currentPriority = sections.get(section)
+    if (currentPriority === undefined || priority < currentPriority) {
+      sections.set(section, priority)
+    }
+  }
+
+  return [...sections.entries()]
+    .sort(([leftSection, leftPriority], [rightSection, rightPriority]) => {
+      if (leftPriority !== rightPriority) return leftPriority - rightPriority
+      return leftSection.localeCompare(rightSection, 'zh-CN')
+    })
+    .map(([section]) => ({ label: section, value: section }))
+}
+
+const sectionOptions = computed(() => getSectionOptions(selectedConfig.value))
+
+const currentSection = computed({
+  get: () => {
+    const config = selectedConfig.value
+    if (!config) return ''
+    return selectedSections.value[config.filename] || sectionOptions.value[0]?.value || ''
+  },
+  set: (section: string) => {
+    const config = selectedConfig.value
+    if (config) {
+      selectedSections.value[config.filename] = section
+    }
+  },
+})
+
+const selectedFields = computed(() => {
+  const section = currentSection.value
+  return [...selectedConfigForTemplate.value.fields]
+    .filter(field => !section || getFieldSection(field) === section)
+    .sort((left, right) => {
+      const leftPriority = left.priority ?? Number.MAX_SAFE_INTEGER
+      const rightPriority = right.priority ?? Number.MAX_SAFE_INTEGER
+      if (leftPriority !== rightPriority) return leftPriority - rightPriority
+      return (left.label || left.name).localeCompare(right.label || right.name, 'zh-CN')
+    })
+})
 
 const getOptionLabel = (value: string) => {
   return optionLabels.value[value] || value
@@ -317,6 +406,14 @@ const setFieldValue = (filename: string, fieldName: string, value: any) => {
 
 const selectConfig = (filename: string) => {
   selectedFilename.value = filename
+  const config = configs.value.find(item => item.filename === filename) || null
+  const sections = getSectionOptions(config)
+  if (
+    sections.length > 0 &&
+    !sections.some(section => section.value === selectedSections.value[filename])
+  ) {
+    selectedSections.value[filename] = sections[0].value
+  }
 }
 
 const loadConfigs = async () => {
@@ -334,7 +431,9 @@ const loadConfigs = async () => {
         selectedFilename.value = null
       }
       if (configs.value.length > 0 && !selectedFilename.value) {
-        selectedFilename.value = configs.value[0].filename
+        selectConfig(configs.value[0].filename)
+      } else if (selectedFilename.value) {
+        selectConfig(selectedFilename.value)
       }
     } else {
       message.error(resp?.message || '加载配置失败')
@@ -404,6 +503,7 @@ watch(
       selectedFilename.value = null
       changedFiles.value = new Set()
       localChanges.value = {}
+      selectedSections.value = {}
       await loadConfigs()
     }
   }
@@ -449,7 +549,7 @@ watch(
   content: '';
   width: 4px;
   height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+  background: var(--ant-color-primary);
   border-radius: 2px;
 }
 
@@ -565,10 +665,17 @@ watch(
 .form-header {
   display: flex;
   flex-shrink: 0;
-  align-items: baseline;
-  gap: 12px;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.form-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .form-header h4 {
@@ -579,9 +686,20 @@ watch(
 }
 
 .form-filename {
+  margin-top: 4px;
   font-size: 12px;
   color: var(--ant-color-text-tertiary);
   font-family: monospace;
+}
+
+.section-selector {
+  display: flex;
+  flex: 0 0 260px;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .form-fields {
@@ -621,6 +739,15 @@ watch(
   .ok-script-config-editor {
     height: calc(100vh - 180px);
     min-height: 480px;
+  }
+
+  .form-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .section-selector {
+    flex-basis: auto;
   }
 }
 </style>

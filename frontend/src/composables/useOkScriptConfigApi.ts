@@ -11,6 +11,10 @@ export interface OkScriptConfigField {
   min: number | null
   max: number | null
   step: number | null
+  section?: string
+  sectionPriority?: number
+  priority?: number
+  advanced?: boolean
 }
 
 export interface OkScriptConfigFile {
