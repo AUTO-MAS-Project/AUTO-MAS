@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "automas-maafw-runner"
+version = "0.1.1"
+description = "Isolated MaaFW runner service plugin for AUTO-MAS"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+dependencies = [
+    "automas-maafw-agent-env>=0.1.0",
+    "automas-maafw-interface>=0.1.1",
+    "json5>=0.9",
+    "pydantic>=2",
+]
+
+[project.entry-points."auto_mas.plugins"]
+automas_maafw_runner = "automas_maafw_runner.plugin:Plugin"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+automas_maafw_runner = ["py.typed"]

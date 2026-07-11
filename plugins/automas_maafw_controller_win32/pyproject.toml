@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "automas-maafw-controller-win32"
+version = "0.1.0"
+description = "Win32 controller provider for AUTO-MAS MaaFW plugins"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+dependencies = [
+    "automas-maafw-interface>=0.1.0",
+    "pydantic>=2",
+]
+
+[project.entry-points."auto_mas.plugins"]
+automas_maafw_controller_win32 = "automas_maafw_controller_win32.plugin:Plugin"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+automas_maafw_controller_win32 = ["py.typed"]

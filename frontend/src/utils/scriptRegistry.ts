@@ -1,12 +1,12 @@
 import maaIcon from '@/assets/MAA.png'
 import srcIcon from '@/assets/SRC.png'
 import maaEndIcon from '@/assets/MaaEnd.png'
-import m9aIcon from '@/assets/M9A.png'
 import okwwIcon from '@/assets/ok-ww.ico'
 import hsrIcon from '@/assets/hsr.png'
 import autoMasIcon from '@/assets/AUTO-MAS.ico'
 import type { Script, User } from '@/types/script'
 import type { ScriptRecord, ScriptTypeDescriptor, ScriptUserRecord } from '@/types/scriptRegistry'
+import { OpenAPI } from '@/api/core/OpenAPI'
 
 const DEFAULT_USER_SHAPE = {
   Data: {
@@ -81,7 +81,7 @@ export const BUILTIN_SCRIPT_TYPES = new Set([
 
 export const isBuiltinScriptType = (type: string) => BUILTIN_SCRIPT_TYPES.has(type)
 
-export const getScriptIcon = (type: string) => {
+export const getFallbackScriptIcon = (type: string) => {
   switch (type) {
     case 'MAA':
       return maaIcon
@@ -89,8 +89,6 @@ export const getScriptIcon = (type: string) => {
       return srcIcon
     case 'MaaEnd':
       return maaEndIcon
-    case 'M9A':
-      return m9aIcon
     case 'Okww':
       return okwwIcon
     case 'OkScript':
@@ -103,7 +101,31 @@ export const getScriptIcon = (type: string) => {
   }
 }
 
-export const getScriptTypeTagColor = (type: string) => {
+export const getScriptIcon = (type: string, iconUrl?: string | null) => {
+  if (iconUrl) {
+    if (iconUrl.startsWith('/')) {
+      const base = (OpenAPI.BASE || 'http://localhost:36163').replace(/\/+$/, '')
+      return `${base}${iconUrl}`
+    }
+    return iconUrl
+  }
+  return getFallbackScriptIcon(type)
+}
+
+export const handleScriptIconError = (event: Event, type: string) => {
+  const image = event.currentTarget as HTMLImageElement | null
+  if (!image || image.dataset.scriptIconFallbackApplied === 'true') {
+    return
+  }
+
+  image.dataset.scriptIconFallbackApplied = 'true'
+  image.src = getFallbackScriptIcon(type)
+}
+
+export const getScriptTypeTagColor = (type: string, themeColor?: string | null) => {
+  const declaredColor = themeColor?.trim()
+  if (declaredColor) return declaredColor
+
   switch (type) {
     case 'MAA':
       return 'blue'
@@ -111,8 +133,6 @@ export const getScriptTypeTagColor = (type: string) => {
       return 'purple'
     case 'MaaEnd':
       return 'cyan'
-    case 'M9A':
-      return 'gold'
     case 'MaaFW':
       return 'geekblue'
     case 'Okww':
@@ -139,11 +159,16 @@ const BUILTIN_EDITOR_SEGMENTS: Record<string, string> = {
   'builtin:hsr': 'hsr',
 }
 
+const TYPE_KEY_EDITOR_SEGMENTS: Record<string, string> = {
+  MaaFW: 'maafw',
+  M9A: 'maafw',
+  // ok-ww 使用专属编辑页（/edit/okww 等），与 PR #287/#288 的视觉与配置字段保持一致
+  Okww: 'okww',
+}
+
 export const getScriptEditPath = (script: Pick<Script, 'id' | 'type' | 'editorKind'>) => {
-  if (script.type === 'Okww') {
-    return `/scripts/${script.id}/edit/okww`
-  }
-  const segment = BUILTIN_EDITOR_SEGMENTS[script.editorKind ?? '']
+  const segment =
+    BUILTIN_EDITOR_SEGMENTS[script.editorKind ?? ''] ?? TYPE_KEY_EDITOR_SEGMENTS[script.type]
   if (segment) {
     return `/scripts/${script.id}/edit/${segment}`
   }
@@ -154,10 +179,8 @@ export const getScriptEditPath = (script: Pick<Script, 'id' | 'type' | 'editorKi
 }
 
 export const getUserCreatePath = (script: Pick<Script, 'id' | 'type' | 'editorKind'>) => {
-  if (script.type === 'Okww') {
-    return `/scripts/${script.id}/users/add/okww`
-  }
-  const segment = BUILTIN_EDITOR_SEGMENTS[script.editorKind ?? '']
+  const segment =
+    BUILTIN_EDITOR_SEGMENTS[script.editorKind ?? ''] ?? TYPE_KEY_EDITOR_SEGMENTS[script.type]
   if (segment) {
     return `/scripts/${script.id}/users/add/${segment}`
   }
@@ -171,10 +194,8 @@ export const getUserEditPath = (
   script: Pick<Script, 'id' | 'type' | 'editorKind'>,
   user: Pick<User, 'id'>
 ) => {
-  if (script.type === 'Okww') {
-    return `/scripts/${script.id}/users/${user.id}/edit/okww`
-  }
-  const segment = BUILTIN_EDITOR_SEGMENTS[script.editorKind ?? '']
+  const segment =
+    BUILTIN_EDITOR_SEGMENTS[script.editorKind ?? ''] ?? TYPE_KEY_EDITOR_SEGMENTS[script.type]
   if (segment) {
     return `/scripts/${script.id}/users/${user.id}/edit/${segment}`
   }
@@ -235,7 +256,7 @@ export const normalizeScriptRecord = (
   users: ScriptUserRecord[] = []
 ): Script => {
   const descriptor = descriptorMap[record.type]
-  const available = Boolean(descriptor)
+  const available = Boolean(descriptor) && descriptor?.available !== false
   const info =
     record.config?.Info && typeof record.config.Info === 'object' ? record.config.Info : {}
   return {
@@ -249,7 +270,10 @@ export const normalizeScriptRecord = (
     editorKind: record.editor_kind,
     supportedModes: record.supported_modes,
     icon: record.icon ?? descriptor?.icon ?? null,
+    iconUrl: record.icon_url ?? descriptor?.icon_url ?? null,
+    themeColor: record.theme_color ?? descriptor?.theme_color ?? null,
     docsUrl: record.docs_url ?? descriptor?.docs_url ?? null,
+    editHint: record.edit_hint ?? null,
     displayName: descriptor?.display_name ?? record.type,
     isBuiltin: descriptor?.is_builtin ?? isBuiltinScriptType(record.type),
     available,

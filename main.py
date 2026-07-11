@@ -83,7 +83,8 @@ def main():
 
         @asynccontextmanager
         async def lifespan(app: FastAPI):
-            from app.core import Config, MainTimer, TaskManager, PluginManager
+            from app.core import Config, MainTimer, TaskManager
+            from app.plugins import PluginManager
             from app.core.page_registry import register_builtin_pages
             from app.MaaFW import ArknightWin32Toolkit
             from app.core.script_types import validate_script_type_registry
@@ -166,6 +167,7 @@ def main():
             plugins_router,
             plugin_gateway_router,
             qr_login_router,
+            script_types_router,
         )
         from app.plugins.system import get_core_plugin_routers
 
@@ -197,6 +199,7 @@ def main():
         app.include_router(ws_router)
         app.include_router(plugins_router)
         app.include_router(plugin_gateway_router)
+        app.include_router(script_types_router)
 
         # 可选补丁：米游社扫码登录
         if qr_login_router is not None:

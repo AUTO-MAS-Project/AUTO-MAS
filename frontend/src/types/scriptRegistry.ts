@@ -4,6 +4,8 @@ export interface ScriptTypeDescriptor {
   type_key: string
   display_name: string
   icon?: string | null
+  icon_url?: string | null
+  theme_color?: string | null
   docs_url?: string | null
   editor_kind: string
   supported_modes: string[]
@@ -12,6 +14,7 @@ export interface ScriptTypeDescriptor {
   legacy_config_class_name?: string | null
   legacy_user_config_class_name?: string | null
   is_builtin: boolean
+  available?: boolean
 }
 
 export interface ScriptTypeGetOut {
@@ -30,8 +33,18 @@ export interface ScriptRecord {
   editor_kind: string
   supported_modes: string[]
   icon?: string | null
+  icon_url?: string | null
+  theme_color?: string | null
   docs_url?: string | null
+  edit_hint?: ScriptEditHint | null
   user_count: number
+}
+
+export interface ScriptEditHint {
+  text?: string
+  link_text?: string
+  url?: string
+  suffix?: string
 }
 
 export interface ScriptRecordGetOut {

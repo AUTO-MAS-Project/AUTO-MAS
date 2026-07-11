@@ -42,6 +42,15 @@ dev = [
 ]
 plugins = [
     "auto-mas-core",
+    "automas-m9a",
+    "automas-maafw-agent-env",
+    "automas-maafw-controller-adb",
+    "automas-maafw-controller-win32",
+    "automas-maafw-interface",
+    "automas-maafw-project-update",
+    "automas-maafw-runner",
+    "automas-script-maafw",
+    "automas-script-maafw-pack-m9a",
     "automas_plugin_okww_adapter",
 ]
 
@@ -58,6 +67,15 @@ package = false
 [tool.uv.workspace]
 members = [
     "plugins/auto_mas_core",
+    "plugins/automas_m9a",
+    "plugins/automas_maafw_agent_env",
+    "plugins/automas_maafw_controller_adb",
+    "plugins/automas_maafw_controller_win32",
+    "plugins/automas_maafw_interface",
+    "plugins/automas_maafw_project_update",
+    "plugins/automas_maafw_runner",
+    "plugins/automas_script_maafw",
+    "plugins/automas_script_maafw_pack_m9a",
     "plugins/okww_adapter",
 ]
 exclude = [
@@ -67,4 +85,13 @@ exclude = [
 
 [tool.uv.sources]
 "auto-mas-core" = { workspace = true }
+"automas-m9a" = { workspace = true }
+"automas-maafw-agent-env" = { workspace = true }
+"automas-maafw-controller-adb" = { workspace = true }
+"automas-maafw-controller-win32" = { workspace = true }
+"automas-maafw-interface" = { workspace = true }
+"automas-maafw-project-update" = { workspace = true }
+"automas-maafw-runner" = { workspace = true }
+"automas-script-maafw" = { workspace = true }
+"automas-script-maafw-pack-m9a" = { workspace = true }
 "automas_plugin_okww_adapter" = { workspace = true }

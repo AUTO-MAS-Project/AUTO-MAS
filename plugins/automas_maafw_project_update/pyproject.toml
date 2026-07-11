@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "automas-maafw-project-update"
+version = "0.1.0"
+description = "Standalone MaaFW project update plugin for AUTO-MAS"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+dependencies = [
+    "aiofiles>=23",
+    "automas-maafw-interface>=0.1.0",
+    "httpx>=0.27",
+    "packaging>=23",
+]
+
+[project.entry-points."auto_mas.plugins"]
+automas_maafw_project_update = "automas_maafw_project_update.plugin:Plugin"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+automas_maafw_project_update = ["py.typed"]

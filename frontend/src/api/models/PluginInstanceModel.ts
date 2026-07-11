@@ -23,5 +23,17 @@ export type PluginInstanceModel = {
      * 插件配置
      */
     config?: Record<string, any>;
+    /**
+     * 是否系统插件
+     */
+    system?: boolean;
+    /**
+     * 是否锁定
+     */
+    locked?: boolean;
+    /**
+     * 是否显示
+     */
+    visible?: boolean;
 };
 

@@ -8,7 +8,9 @@ import type { M9AConfig } from './M9AConfig';
 import type { MaaConfig } from './MaaConfig';
 import type { MaaEndConfig } from './MaaEndConfig';
 import type { MaaFWConfig } from './MaaFWConfig';
+import type { OkefConfig } from './OkefConfig';
 import type { OkwwConfig } from './OkwwConfig';
+import type { PluginScriptConfig } from './PluginScriptConfig';
 import type { SrcConfig } from './SrcConfig';
 export type ScriptUpdateIn = {
     /**
@@ -18,6 +20,6 @@ export type ScriptUpdateIn = {
     /**
      * 脚本更新数据
      */
-    data: (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | MaaEndConfig | M9AConfig | MaaFWConfig | HSRConfig);
+    data: (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkefConfig | MaaEndConfig | M9AConfig | MaaFWConfig | HSRConfig | PluginScriptConfig);
 };
 

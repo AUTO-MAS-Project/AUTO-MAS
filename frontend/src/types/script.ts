@@ -249,14 +249,18 @@ export interface MaaFWScriptConfig {
   }
   Update: {
     IfAutoUpdate: boolean
-    Source: 'MirrorChyan'
+    Source: '' | 'MirrorChyan' | 'GitHub'
     Channel: '' | 'stable' | 'beta'
     MirrorChyanCDK: string
+    GitHubRepo: string
+    GitHubTag: string
+    GitHubAssetPattern: string
   }
   Run: {
     ProxyTimesLimit: number
     RunTimesLimit: number
     RunTimeLimit: number
+    DailyOnceTasks: string | string[]
     WeeklyOnceTasks: string | string[]
     MonthlyOnceTasks: string | string[]
   }
@@ -283,6 +287,8 @@ export interface MaaFWUserConfig {
     Tag?: string | null
     Account: string
     Password: string
+    Controller: string
+    Resource: string
   }
   Task: {
     SelectedPreset: string
@@ -520,7 +526,15 @@ export interface Script {
   editorKind?: string
   supportedModes?: string[]
   icon?: string | null
+  iconUrl?: string | null
+  themeColor?: string | null
   docsUrl?: string | null
+  editHint?: {
+    text?: string
+    link_text?: string
+    url?: string
+    suffix?: string
+  } | null
   displayName?: string
   isBuiltin?: boolean
   available?: boolean

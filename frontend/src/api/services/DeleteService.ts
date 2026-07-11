@@ -17,6 +17,25 @@ import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class DeleteService {
     /**
+     * 删除模拟器项
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static deleteEmulatorApiEmulatorDeletePost(
+        requestBody: EmulatorDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 删除脚本
      * @param requestBody
      * @returns OutBase Successful Response
@@ -74,44 +93,6 @@ export class DeleteService {
         });
     }
     /**
-     * 删除计划表
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static deletePlanApiPlanDeletePost(
-        requestBody: PlanDeleteIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plan/delete',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 删除模拟器项
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static deleteEmulatorApiEmulatorDeletePost(
-        requestBody: EmulatorDeleteIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/delete',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 删除调度队列
      * @param requestBody
      * @returns OutBase Successful Response
@@ -161,6 +142,25 @@ export class DeleteService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/queue/item/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 删除计划表
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static deletePlanApiPlanDeletePost(
+        requestBody: PlanDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plan/delete',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

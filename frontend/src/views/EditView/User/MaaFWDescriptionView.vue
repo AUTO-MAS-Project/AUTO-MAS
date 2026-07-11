@@ -8,7 +8,13 @@
   />
   <!-- eslint-enable vue/no-v-html -->
   <a-modal v-model:open="previewOpen" :footer="null" centered width="80%">
-    <img v-if="previewImage" :src="previewImage" alt="" class="description-preview-image" />
+    <img
+      v-if="previewImage"
+      :src="previewImage"
+      alt=""
+      loading="lazy"
+      class="description-preview-image"
+    />
   </a-modal>
 </template>
 
@@ -96,6 +102,10 @@ const sanitizeHtml = (html: string) => {
 
       for (const attr of Array.from(child.attributes)) {
         const attrName = attr.name.toLowerCase()
+        if (attrName === 'style') {
+          child.removeAttribute(attr.name)
+          continue
+        }
         const tagAttrs = allowedAttrs[tagName]
         if (!tagAttrs?.has(attrName)) {
           child.removeAttribute(attr.name)
@@ -120,6 +130,8 @@ const sanitizeHtml = (html: string) => {
           continue
         }
         child.setAttribute('src', src)
+        child.setAttribute('loading', 'lazy')
+        child.setAttribute('decoding', 'async')
       }
 
       walk(child)
