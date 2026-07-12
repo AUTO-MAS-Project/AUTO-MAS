@@ -42,15 +42,6 @@ dev = [
 ]
 plugins = [
     "auto-mas-core",
-    "automas-m9a",
-    "automas-maafw-agent-env",
-    "automas-maafw-controller-adb",
-    "automas-maafw-controller-win32",
-    "automas-maafw-interface",
-    "automas-maafw-project-update",
-    "automas-maafw-runner",
-    "automas-script-maafw",
-    "automas-script-maafw-pack-m9a",
     "automas_plugin_okww_adapter",
 ]
 
@@ -59,7 +50,16 @@ plugins = [
 # 1) 仅声明包名： "automas_script_maa"
 # 2) 声明固定版本： { name = "automas_script_maa", version = "0.0.5-alpha" }
 # 3) 声明任意版本约束： { name = "automas_script_maa", specifier = ">=0.0.5-alpha,<0.1.0" }
-packages = []
+packages = [
+    { name = "automas-maafw-interface", version = "0.1.1" },
+    { name = "automas-maafw-agent-env", version = "0.1.0" },
+    { name = "automas-maafw-controller-adb", version = "0.1.0" },
+    { name = "automas-maafw-controller-win32", version = "0.1.1" },
+    { name = "automas-maafw-project-update", version = "0.1.0" },
+    { name = "automas-maafw-runner", version = "0.1.1" },
+    { name = "automas-script-maafw", version = "0.1.2" },
+    { name = "automas-script-maafw-pack-m9a", version = "0.1.1" },
+]
 
 [tool.uv]
 package = false
@@ -67,15 +67,6 @@ package = false
 [tool.uv.workspace]
 members = [
     "plugins/auto_mas_core",
-    "plugins/automas_m9a",
-    "plugins/automas_maafw_agent_env",
-    "plugins/automas_maafw_controller_adb",
-    "plugins/automas_maafw_controller_win32",
-    "plugins/automas_maafw_interface",
-    "plugins/automas_maafw_project_update",
-    "plugins/automas_maafw_runner",
-    "plugins/automas_script_maafw",
-    "plugins/automas_script_maafw_pack_m9a",
     "plugins/okww_adapter",
 ]
 exclude = [
@@ -85,13 +76,4 @@ exclude = [
 
 [tool.uv.sources]
 "auto-mas-core" = { workspace = true }
-"automas-m9a" = { workspace = true }
-"automas-maafw-agent-env" = { workspace = true }
-"automas-maafw-controller-adb" = { workspace = true }
-"automas-maafw-controller-win32" = { workspace = true }
-"automas-maafw-interface" = { workspace = true }
-"automas-maafw-project-update" = { workspace = true }
-"automas-maafw-runner" = { workspace = true }
-"automas-script-maafw" = { workspace = true }
-"automas-script-maafw-pack-m9a" = { workspace = true }
 "automas_plugin_okww_adapter" = { workspace = true }
