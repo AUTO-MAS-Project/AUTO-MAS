@@ -1208,7 +1208,8 @@ def _match_controller_windows(controller: MaaFWController) -> list[Any]:
         from automas_maafw_controller_win32.service import MaaFWWin32ControllerService
 
         service = MaaFWWin32ControllerService()
-    return list(service.match_controller_windows(controller))
+    controller_payload = controller.model_dump(mode="json", by_alias=True)
+    return list(service.match_controller_windows(controller_payload))
 
 
 def _is_process_path_running(executable_path: Path) -> bool:

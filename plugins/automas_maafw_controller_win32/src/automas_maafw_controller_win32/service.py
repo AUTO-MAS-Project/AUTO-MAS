@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 from automas_maafw_interface.models import MaaFWController
+from pydantic import BaseModel
 
 MAX_REGEX_PATTERN_LENGTH = 256
 MAX_REGEX_VALUE_LENGTH = 4096
@@ -59,14 +60,18 @@ class MaaFWWin32ControllerService:
 
     def match_controller_windows(
         self,
-        controller: MaaFWController | dict[str, Any],
+        controller: BaseModel | dict[str, Any],
         windows: Iterable[MaaFWWin32Window] | None = None,
     ) -> list[MaaFWWindowMatch]:
-        controller_model = (
-            controller
-            if isinstance(controller, MaaFWController)
-            else MaaFWController.model_validate(controller)
-        )
+        if isinstance(controller, MaaFWController):
+            controller_model = controller
+        else:
+            controller_payload = (
+                controller.model_dump(mode="json", by_alias=True)
+                if hasattr(controller, "model_dump")
+                else controller
+            )
+            controller_model = MaaFWController.model_validate(controller_payload)
         if controller_model.type != "Win32":
             return []
 
