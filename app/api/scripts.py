@@ -1231,7 +1231,11 @@ async def preview_maafw_windows(
         win32_windows = win32_service.list_windows()
         windows: list[MaaFWDesktopWindowInfo] = []
         for controller in controllers:
-            for window in win32_service.match_controller_windows(controller, win32_windows):
+            controller_payload = controller.model_dump(mode="json", by_alias=True)
+            for window in win32_service.match_controller_windows(
+                controller_payload,
+                win32_windows,
+            ):
                 windows.append(
                     MaaFWDesktopWindowInfo(
                         hWnd=window.hWnd,
