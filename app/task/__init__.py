@@ -30,7 +30,6 @@ __all__ = [
     "GeneralManager",
     "MaaEndManager",
     "OkwwManager",
-    "HSRManager",
 ]
 
 _LAZY_EXPORTS = {
@@ -40,7 +39,6 @@ _LAZY_EXPORTS = {
     "GeneralManager": ("app.task.general.manager", "GeneralManager"),
     "MaaEndManager": ("app.task.MaaEnd.manager", "MaaEndManager"),
     "OkwwManager": ("app.task.Okww.manager", "OkwwManager"),
-    "HSRManager": ("app.task.HSR.manager", "HSRManager"),
 }
 
 

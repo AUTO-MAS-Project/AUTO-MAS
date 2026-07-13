@@ -164,14 +164,20 @@ def build_configbase_class(
         for group in normalized_groups:
             for field in group.fields:
                 if _is_runtime_field(field):
+                    validator = _build_validator(self, group.key, field)
+                    default = _copy_default(field.default)
+                    if isinstance(validator, JSONValidator) and not isinstance(
+                        default, str
+                    ):
+                        default = json.dumps(default, ensure_ascii=False)
                     setattr(
                         self,
                         _config_item_attr(group.key, field.name),
                         ConfigItem(
                             group.key,
                             field.name,
-                            _copy_default(field.default),
-                            _build_validator(self, group.key, field),
+                            default,
+                            validator,
                             legacy_group=field.legacy_group,
                             legacy_name=field.legacy_name,
                         ),

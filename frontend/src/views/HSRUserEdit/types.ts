@@ -1,20 +1,27 @@
-import type {
-  HSRDynamicStageCategory,
-  HSRDynamicStageOption,
-  HSRStageOptionsData,
-  HSRUserConfig_Abyss,
-  HSRUserConfig_Data,
-  HSRUserConfig_Info,
-  HSRUserConfig_Stage,
-  HSRUserConfig_TaskOpt,
-  HSRUserConfig_TaskSwitch,
-} from '@/api'
-
 export type HSRStageEngine = 'M7A' | 'SRA'
 
-export type { HSRDynamicStageCategory, HSRDynamicStageOption }
+export type HSRDynamicStageOption = {
+  label: string
+  detail?: string | null
+  value: string
+  categoryKey: string
+  categoryLabel: string
+  cost?: number | null
+  maxCount?: number | null
+  m7a?: { instanceType?: string; instanceName?: string } | null
+  sra?: { id?: string; level?: number | null } | null
+}
 
-export type HSRDynamicStageOptionsData = HSRStageOptionsData
+export type HSRDynamicStageCategory = {
+  categoryKey: string
+  categoryLabel: string
+  options?: HSRDynamicStageOption[]
+}
+
+export type HSRDynamicStageOptionsData = {
+  engine: HSRStageEngine
+  categories?: HSRDynamicStageCategory[]
+}
 
 export type HSRScriptStagePayload = {
   engine?: HSRStageEngine | ''
@@ -38,17 +45,68 @@ export type HSRScriptStageContainer = {
   stages?: Partial<Record<string, HSRScriptStagePayload>>
 }
 
-export type HSRUserConfigAbyss = HSRUserConfig_Abyss & {
-  Snapshots?: string | null
+export type HSRUserConfigAbyss = {
+  Snapshots?: string | Record<string, unknown> | null
+}
+
+export type HSRUserSRAConfig = {
+  Id?: string | null
+  Password?: string | null
+}
+
+export interface AbyssSnapshotImportResponse {
+  message?: string
+  items?: Array<{ key?: string; snapshot?: unknown; success?: boolean }>
+  updatedUserData?: { Abyss?: HSRUserConfigAbyss | null }
 }
 
 // HSR 内部非空 reactive 形态（OpenAPI 生成的类型全部字段为 optional | null，
 // 但前端用 reactive 实际为非空值；模板 / 计算属性通过该形态消除 strict null 警告）。
 export type HSRUserConfigData = {
-  Info: HSRUserConfig_Info
-  Stage: HSRUserConfig_Stage
-  TaskSwitch: HSRUserConfig_TaskSwitch
-  TaskOpt: HSRUserConfig_TaskOpt
-  Data: HSRUserConfig_Data
+  Info: {
+    Name?: string | null
+    Status?: boolean | null
+    Server?: 'CN-Official' | null
+    RemainedDay?: number | null
+    Notes?: string | null
+  }
+  SRA: HSRUserSRAConfig
+  Stage: {
+    Channel?: 'CalyxGolden' | 'CalyxCrimson' | 'Relic' | 'Ornament' | null
+    ScriptStage?: string | Record<string, unknown> | null
+    ScriptEchoOfWar?: string | Record<string, unknown> | null
+  }
+  TaskSwitch: {
+    Daily?: boolean | null
+    ReceiveRewards?: boolean | null
+    DivergentUniverse?: boolean | null
+    CurrencyWars?: boolean | null
+    ForgottenHall?: boolean | null
+  }
+  TaskOpt: {
+    EchoOfWarWeekday?:
+      | 'Monday'
+      | 'Tuesday'
+      | 'Wednesday'
+      | 'Thursday'
+      | 'Friday'
+      | 'Saturday'
+      | 'Sunday'
+      | null
+  }
+  Data: {
+    LastProxyDate?: string | null
+    ProxyTimes?: number | null
+    IfPassCheck?: boolean | null
+    EchoOfWarCompletedThisWeek?: boolean | null
+    EchoOfWarLastResetWeek?: string | null
+    EchoOfWarLastCompletionDate?: string | null
+    WeeklyLastCompletionDate?: string | null
+    WeeklyCompletedThisWeek?: boolean | null
+    WeeklyLastResetWeek?: string | null
+    AbyssCompletedThisMonth?: boolean | null
+    AbyssLastResetMonth?: string | null
+    AbyssLastCompletionDate?: string | null
+  }
   Abyss: HSRUserConfigAbyss
 }

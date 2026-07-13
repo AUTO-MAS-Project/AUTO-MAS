@@ -101,6 +101,15 @@ LEGACY_SCRIPT_TYPE_BY_TYPE_KEY = {
 }
 
 
+@dataclass(frozen=True, slots=True)
+class ScriptRecordCapability:
+    """单条脚本配置解析后的可用能力。"""
+
+    available: bool = True
+    unavailable_reason: str | None = None
+    supported_modes: tuple[str, ...] | None = None
+
+
 @dataclass(slots=True)
 class ScriptTypeProvider:
     """脚本类型提供者。"""
@@ -121,6 +130,9 @@ class ScriptTypeProvider:
     legacy_user_config_class_name: str | None = None
     is_builtin: bool = False
     bind_related_config: Callable[[Any], None] | None = None
+    record_capability_resolver: (
+        Callable[[dict[str, Any]], ScriptRecordCapability] | None
+    ) = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def build_script_schema(self) -> dict[str, Any]:
@@ -141,6 +153,38 @@ class ScriptTypeProvider:
         """创建脚本对应的运行管理器。"""
 
         return self.manager_factory(script_item)
+
+    def resolve_record_capability(
+        self,
+        config_data: dict[str, Any],
+    ) -> ScriptRecordCapability:
+        """解析单条脚本记录的可用状态和运行模式。"""
+
+        globally_available = self.metadata.get("available", True) is not False
+        global_reason = str(self.metadata.get("unavailable_reason") or "").strip() or None
+        if not globally_available:
+            return ScriptRecordCapability(
+                available=False,
+                unavailable_reason=global_reason,
+                supported_modes=(),
+            )
+
+        capability = (
+            self.record_capability_resolver(config_data)
+            if self.record_capability_resolver is not None
+            else ScriptRecordCapability()
+        )
+        modes = capability.supported_modes or self.supported_modes
+        invalid_modes = [mode for mode in modes if mode not in TASK_MODES]
+        if invalid_modes:
+            raise ValueError(
+                f"脚本类型 {self.type_key} 的记录能力包含非法模式: {invalid_modes}"
+            )
+        return ScriptRecordCapability(
+            available=capability.available,
+            unavailable_reason=capability.unavailable_reason,
+            supported_modes=tuple(modes) if capability.available else (),
+        )
 
 
 class ScriptTypeRegistry:
@@ -300,8 +344,6 @@ class ScriptTypeRegistry:
         """注册内建脚本类型。"""
 
         from app.models.config import (
-            HSRConfig,
-            HSRUserConfig,
             MaaEndConfig,
             MaaEndUserConfig,
             OkefConfig,
@@ -346,17 +388,6 @@ class ScriptTypeRegistry:
                 manager_factory=_lazy_manager("app.task.MaaEnd.manager", "MaaEndManager"),
                 icon="MaaEnd",
                 editor_kind="builtin:maaend",
-                is_builtin=True,
-            ),
-            ScriptTypeProvider(
-                type_key="HSR",
-                display_name="HSR脚本",
-                script_config_class=HSRConfig,
-                user_config_class=HSRUserConfig,
-                supported_modes=("AutoProxy", "ManualReview", "ScriptConfig"),
-                manager_factory=_lazy_manager("app.task.HSR.manager", "HSRManager"),
-                icon="HSR",
-                editor_kind="builtin:hsr",
                 is_builtin=True,
             ),
             ScriptTypeProvider(
@@ -485,6 +516,7 @@ def build_descriptor(provider: ScriptTypeProvider) -> dict[str, Any]:
         "legacy_user_config_class_name": provider.legacy_user_config_class_name,
         "is_builtin": provider.is_builtin,
         "available": provider.metadata.get("available", True) is not False,
+        "unavailable_reason": provider.metadata.get("unavailable_reason"),
     }
 
 
@@ -748,13 +780,15 @@ def _bind_builtin_script_config_models(global_config: Any) -> None:
         MaaFWConfig,
         OkwwConfig,
         OkefConfig,
-        HSRConfig,
     )
     for config_class in builtin_script_types:
         global_config.ScriptConfig.sub_config_type[config_class.__name__] = config_class
 
     # General 已迁移为插件脚本容器，这里只保留旧类名到旧模型的兼容装载映射。
     global_config.ScriptConfig.sub_config_type["GeneralConfig"] = LegacyGeneralConfig
+    # HSR is plugin-owned; retain only the legacy class-name loader so the
+    # plugin manager can deserialize and migrate existing records in place.
+    global_config.ScriptConfig.sub_config_type["HSRConfig"] = HSRConfig
 
     MaaConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
     MaaEndConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig

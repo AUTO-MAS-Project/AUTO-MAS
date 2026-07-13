@@ -8,10 +8,8 @@ import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class OkefService {
     /**
-     * 获取 OK-EF 配置文件列表和 schema
-     * 获取 OK-EF 配置文件列表和 schema 定义。
-     * 读取用户配置目录（data/{script_id}/{user_id}/ConfigFile/），
-     * 若为空则自动从 OK-EF working/configs 目录初始化默认配置。
+     * 获取 ok-script 配置文件列表和 schema（兼容入口）
+     * 保留旧 OK-EF API 路径，内部统一走 ok-script provider。
      * @param scriptId
      * @param userId
      * @returns any Successful Response
@@ -34,8 +32,8 @@ export class OkefService {
         });
     }
     /**
-     * 批量更新 OK-EF 配置文件
-     * 批量更新 OK-EF 用户配置 JSON。
+     * 批量更新 ok-script 配置文件（兼容入口）
+     * 保留旧 OK-EF API 路径，内部统一走 ok-script provider。
      * @param requestBody
      * @returns any Successful Response
      * @throws ApiError

@@ -62,5 +62,9 @@ export type ScriptTypeDescriptor = {
      * 当前是否可用
      */
     available?: boolean;
+    /**
+     * 当前不可用原因
+     */
+    unavailable_reason?: (string | null);
 };
 

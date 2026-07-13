@@ -28,6 +28,10 @@ class ScriptTypeDescriptor(BaseModel):
     )
     is_builtin: bool = Field(default=False, description="是否为内建脚本类型")
     available: bool = Field(default=True, description="当前是否可用")
+    unavailable_reason: str | None = Field(
+        default=None,
+        description="当前不可用原因",
+    )
 
 
 class ScriptTypeGetOut(OutBase):
@@ -51,6 +55,11 @@ class ScriptRecord(BaseModel):
     )
     editor_kind: str = Field(..., description="编辑器类型")
     supported_modes: list[str] = Field(..., description="支持的任务模式")
+    available: bool = Field(default=True, description="当前脚本记录是否可用")
+    unavailable_reason: str | None = Field(
+        default=None,
+        description="当前脚本记录不可用原因",
+    )
     icon: str | None = Field(default=None, description="图标标识")
     icon_url: str | None = Field(default=None, description="图标资源地址")
     theme_color: str | None = Field(default=None, description="主题颜色")
@@ -69,6 +78,10 @@ class ScriptRecordGetIn(BaseModel):
 class ScriptRecordCreateIn(BaseModel):
     type: str = Field(..., description="脚本类型键")
     scriptId: str | None = Field(default=None, description="复制来源脚本 ID")
+    initialConfig: dict[str, Any] | None = Field(
+        default=None,
+        description="新建脚本时一次性写入的初始配置",
+    )
 
 
 class ScriptRecordUpdateIn(BaseModel):

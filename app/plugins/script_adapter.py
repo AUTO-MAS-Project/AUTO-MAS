@@ -600,6 +600,7 @@ class ScriptAdapterDefinition:
     is_builtin: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
     options_providers: dict[str, Callable[..., Any]] | None = None
+    record_capability_resolver: Callable[[dict[str, Any]], Any] | None = None
 
     def _class_names(self) -> tuple[str, str]:
         return (
@@ -692,6 +693,7 @@ class ScriptAdapterDefinition:
             legacy_user_config_class_name=self.legacy_user_config_class_name,
             is_builtin=self.is_builtin,
             bind_related_config=artifacts.bind_related_config,
+            record_capability_resolver=self.record_capability_resolver,
             metadata=dict(self.metadata),
         )
         if owner is not None:

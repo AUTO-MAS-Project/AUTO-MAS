@@ -60,25 +60,24 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import type { AbyssSnapshotImportItem, AbyssSnapshotImportOut, HSRConfig_Info } from '@/api'
-import { useUserApi } from '@/composables/useUserApi'
+import { useHSRPluginApi } from '@/composables/useHSRPluginApi'
 import { parseAbyssSnapshots } from '@/views/HSRUserEdit/snapshot'
 import type { HSRAbyssKey } from '@/views/HSRUserEdit/snapshot'
-import type { HSRUserConfigAbyss } from '@/views/HSRUserEdit/types'
+import type { AbyssSnapshotImportResponse, HSRUserConfigAbyss } from '@/views/HSRUserEdit/types'
 
 const props = defineProps<{
   formData: { Abyss?: HSRUserConfigAbyss | null }
   loading: boolean
-  scriptConfig: { Info?: HSRConfig_Info | null } | null
+  scriptConfig: { M7A?: { Path?: string | null } | null } | null
   scriptId: string
   userId: string
 }>()
 
 const emit = defineEmits<{
-  imported: [AbyssSnapshotImportOut]
+  imported: [AbyssSnapshotImportResponse]
 }>()
 
-const { importM7aAbyssSnapshot } = useUserApi()
+const { importM7AAbyssSnapshot } = useHSRPluginApi()
 const isImporting = ref(false)
 
 interface SnapshotSummary {
@@ -95,7 +94,7 @@ interface SnapshotTeam {
   configured: boolean
 }
 
-const m7aPath = computed(() => props.scriptConfig?.Info?.M7APath ?? '')
+const m7aPath = computed(() => props.scriptConfig?.M7A?.Path ?? '')
 
 const handleImportClick = async () => {
   if (!m7aPath.value) {
@@ -109,14 +108,18 @@ const handleImportClick = async () => {
   if (isImporting.value) return
   isImporting.value = true
   try {
-    const response = await importM7aAbyssSnapshot(props.scriptId, props.userId)
-    if (!response) {
-      // useUserApi 内部已 message.error
-      return
+    const data = await importM7AAbyssSnapshot(props.scriptId, props.userId)
+    const response: AbyssSnapshotImportResponse = {
+      message: '已从 M7A config.yaml 导入三深渊快照',
+      items: Array.isArray(data.items) ? data.items : [],
+      updatedUserData:
+        data.userConfig && typeof data.userConfig === 'object'
+          ? (data.userConfig as AbyssSnapshotImportResponse['updatedUserData'])
+          : undefined,
     }
     // 摘要消息
     const successCount = Array.isArray(response?.items)
-      ? response.items.filter((item: AbyssSnapshotImportItem) => item.success).length
+      ? response.items.filter(item => item.success !== false).length
       : 0
     message.success(response?.message || `已从 M7A config.yaml 导入 ${successCount}/3 个三深渊快照`)
     emit('imported', response)

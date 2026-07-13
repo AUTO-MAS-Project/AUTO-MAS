@@ -23,6 +23,14 @@
 
     <div class="user-edit-content">
       <a-card class="config-card">
+        <a-alert
+          v-for="warning in capabilitySnapshot?.warnings || []"
+          :key="warning"
+          type="warning"
+          show-icon
+          :message="warning"
+          style="margin-bottom: 12px"
+        />
         <a-form ref="formRef" :model="formData" layout="vertical" class="config-form">
           <!-- 基本信息 -->
           <div class="form-section">
@@ -60,32 +68,32 @@
                   </a-select>
                 </a-form-item>
               </a-col>
-              <a-col :span="6">
+              <a-col v-if="effectiveEngines.has('SRA')" :span="6">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">账号</span>
                   </template>
                   <a-input
-                    v-model:value="formData.Info.Id"
+                    v-model:value="formData.SRA.Id"
                     placeholder="请输入账号"
                     size="large"
                     class="modern-input"
-                    @blur="handleFieldSave('Info.Id', formData.Info.Id)"
+                    @blur="handleFieldSave('SRA.Id', formData.SRA.Id)"
                   />
                 </a-form-item>
               </a-col>
-              <a-col :span="6">
+              <a-col v-if="effectiveEngines.has('SRA')" :span="6">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">密码</span>
                   </template>
                   <!-- 用 input-class 把 modern-input 挂到内部 <input>，避免 a-input-password 外层嵌套 div -->
                   <a-input-password
-                    v-model:value="formData.Info.Password"
+                    v-model:value="formData.SRA.Password"
                     placeholder="请输入密码"
                     size="large"
                     :input-class="'modern-input'"
-                    @blur="handleFieldSave('Info.Password', formData.Info.Password)"
+                    @blur="handleFieldSave('SRA.Password', formData.SRA.Password)"
                   />
                 </a-form-item>
               </a-col>
@@ -140,6 +148,7 @@
               </a-col>
             </a-row>
             <a-alert
+              v-if="effectiveEngines.has('SRA')"
               type="info"
               show-icon
               style="margin-top: 8px"
@@ -221,7 +230,7 @@
           <div class="form-section">
             <div class="section-header"><h3>周常/月常</h3></div>
             <a-row :gutter="24">
-              <a-col :span="12">
+              <a-col v-if="capabilityView.taskKeys.has('ForgottenHall')" :span="12">
                 <a-form-item label="三深渊（每月一次，三个一起执行）">
                   <a-tooltip title="前面的功能，以后再来探索吧~">
                     <a-switch
@@ -239,7 +248,7 @@
                   </div>
                 </a-form-item>
               </a-col>
-              <a-col :span="12">
+              <a-col :span="capabilityView.taskKeys.has('ForgottenHall') ? 12 : 24">
                 <a-form-item label="差分/货币">
                   <a-select
                     :value="weeklyTaskMode"
@@ -257,7 +266,12 @@
             </a-row>
 
             <!-- 三深渊子区域（开关开启时显示）：语义说明 + 导入按钮 + 三份快照摘要 -->
-            <div v-if="formData.TaskSwitch.ForgottenHall" class="weekly-subblock">
+            <div
+              v-if="
+                capabilityView.taskKeys.has('ForgottenHall') && formData.TaskSwitch.ForgottenHall
+              "
+              class="weekly-subblock"
+            >
               <a-alert type="info" show-icon>
                 <template #message>
                   <div>
@@ -490,24 +504,32 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
-import { useUserApi } from '@/composables/useUserApi'
-import { useScriptApi } from '@/composables/useScriptApi'
-import type { AbyssSnapshotImportOut, HSRConfig_TaskMapping, HSRUserConfig_TaskSwitch } from '@/api'
+import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
+import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
+import {
+  useHSRPluginApi,
+  type HSREngine,
+  type HSRCapabilitySnapshot,
+} from '@/composables/useHSRPluginApi'
 import { DEFAULT_HSR_TASK_MAPPING, resolveTaskMappingValue } from '@/types/script'
-import type { HSRScriptConfig } from '@/types/script'
 import StageConfigSection from '@/views/HSRUserEdit/StageConfigSection.vue'
 import AbyssConfigSection from '@/views/HSRUserEdit/AbyssConfigSection.vue'
 import { parseAbyssSnapshots } from '@/views/HSRUserEdit/snapshot'
 import type { HSRAbyssKey } from '@/views/HSRUserEdit/snapshot'
 import type {
+  AbyssSnapshotImportResponse,
   HSRDynamicStageOptionsData,
   HSRUserConfigAbyss,
   HSRUserConfigData,
 } from '@/views/HSRUserEdit/types'
+import {
+  buildHSRCapabilityView,
+  resolveCapabilityTaskEngine,
+} from '@/views/HSRUserEdit/capabilityView'
 
 const getCurrentISOWeek = (): string => {
   const d = new Date()
@@ -538,8 +560,16 @@ const logger = window.electronAPI.getLogger('HSR 用户编辑')
 
 const route = useRoute()
 const router = useRouter()
-const { addUser, updateUser, getUsers } = useUserApi()
-const { getScript, getHsrStageOptions } = useScriptApi()
+const registryApi = useScriptRegistryApi()
+const hsrPluginApi = useHSRPluginApi()
+const { subscribe, unsubscribe } = useWebSocket()
+const getScript = async (id: string) => (await registryApi.getScripts(id))[0] ?? null
+const addUser = async (id: string) => ({ userId: (await registryApi.addUser(id)).id })
+const updateUser = async (id: string, uid: string, config: Record<string, unknown>) => {
+  await registryApi.updateUser(id, uid, config)
+  return true
+}
+const getUsers = (id: string, uid: string) => registryApi.getUsers(id, uid)
 
 const isInitializing = ref(true)
 const isSaving = ref(false)
@@ -549,7 +579,32 @@ let userId = route.params.userId as string
 const isEdit = ref(!!userId)
 
 const scriptName = ref('')
+type HSRTaskMapping = Partial<
+  Record<'Daily' | 'ReceiveRewards' | 'DivergentUniverse' | 'CurrencyWars', HSREngine>
+>
+type HSRScriptConfig = {
+  Engine?: { EnabledEngines?: HSREngine[] }
+  SRA?: { Path?: string }
+  M7A?: { Path?: string; LowPerformanceMode?: boolean }
+  TaskMapping?: HSRTaskMapping
+}
 const scriptConfig = ref<HSRScriptConfig | null>(null)
+const capabilitySnapshot = ref<HSRCapabilitySnapshot | null>(null)
+const capabilityView = computed(() => buildHSRCapabilityView(capabilitySnapshot.value))
+const effectiveEngines = computed(() => capabilityView.value.effectiveEngines)
+let pluginSystemSubscriptionId: string | null = null
+
+const handlePluginSystemMessage = (message: WebSocketBaseMessage) => {
+  const payload = message.data as { kind?: string } | undefined
+  if (payload?.kind !== 'snapshot') return
+  void hsrPluginApi
+    .getCapabilities(scriptId)
+    .then(async snapshot => {
+      capabilitySnapshot.value = snapshot
+      await loadHsrStageOptions()
+    })
+    .catch(error => logger.warning(`刷新 HSR 能力失败: ${String(error)}`))
+}
 const hsrStageOptions = ref<HSRDynamicStageOptionsData | null>(null)
 const hsrStageOptionsLoading = ref(false)
 const hsrStageOptionsError = ref('')
@@ -570,11 +625,15 @@ const hasValidCompletionDate = (value?: string | null): boolean => {
 const getTaskMapping = (
   moduleKey: 'Daily' | 'ReceiveRewards' | 'DivergentUniverse' | 'CurrencyWars'
 ): 'SRA' | 'M7A' => {
-  const mapping: HSRConfig_TaskMapping = {
+  const mapping: HSRTaskMapping = {
     ...DEFAULT_HSR_TASK_MAPPING,
     ...(scriptConfig.value?.TaskMapping ?? {}),
   }
-  return resolveTaskMappingValue(mapping[moduleKey], new Set(['M7A', 'SRA'])) ?? 'M7A'
+  return (
+    resolveCapabilityTaskEngine(capabilitySnapshot.value, moduleKey, mapping[moduleKey]) ??
+    resolveTaskMappingValue(mapping[moduleKey], effectiveEngines.value) ??
+    'M7A'
+  )
 }
 
 const weeklyTaskMode = computed<WeeklyTaskMode>(() => {
@@ -620,8 +679,24 @@ const loadHsrStageOptions = async () => {
   hsrStageOptionsLoading.value = true
   hsrStageOptionsError.value = ''
   try {
-    const data = await getHsrStageOptions(scriptId, engine)
-    if (!data) throw new Error('接口未返回副本选项')
+    const pluginData = await hsrPluginApi.getStageOptions(scriptId, engine, userId || undefined)
+    const data: HSRDynamicStageOptionsData = {
+      engine,
+      categories: pluginData.categories.map(category => ({
+        categoryKey: category.key,
+        categoryLabel: category.label,
+        options: category.options.map(option => ({
+          label: option.label,
+          detail: option.detail,
+          value: option.id,
+          categoryKey: category.key,
+          categoryLabel: category.label,
+          cost: option.cost,
+          maxCount: option.max_count,
+          ...(option.native_payload || {}),
+        })),
+      })),
+    }
     const optionCount = (data.categories ?? []).reduce((sum, category) => {
       return sum + (category.options?.length ?? 0)
     }, 0)
@@ -678,7 +753,7 @@ const abyssCompletedThisMonth = computed<boolean>(() => {
 })
 
 const handleTaskSwitchToggle = async (
-  moduleKey: keyof HSRUserConfig_TaskSwitch,
+  moduleKey: keyof HSRUserConfigData['TaskSwitch'],
   enabled: boolean
 ) => {
   formData.TaskSwitch[moduleKey] = enabled
@@ -704,16 +779,15 @@ const formData = reactive<HSRUserConfigData>({
   Info: {
     Name: '',
     Status: true,
-    Id: '',
-    Password: '',
     Server: 'CN-Official',
     RemainedDay: -1,
     Notes: '',
   },
+  SRA: { Id: '', Password: '' },
   Stage: {
     Channel: 'CalyxGolden',
-    ScriptStage: '{ }',
-    ScriptEchoOfWar: '{ }',
+    ScriptStage: {},
+    ScriptEchoOfWar: {},
   },
   TaskSwitch: {
     Daily: false,
@@ -737,7 +811,7 @@ const formData = reactive<HSRUserConfigData>({
     AbyssLastCompletionDate: '',
   },
   Abyss: {
-    Snapshots: '{}',
+    Snapshots: {},
   },
 })
 
@@ -926,17 +1000,18 @@ const handleFieldSave = async (key: string, value: unknown) => {
 const handleCancel = () => router.push('/scripts')
 
 // 三深渊快照导入后回调：由父页面统一同步本地表单状态。
-const handleAbyssImported = (response: AbyssSnapshotImportOut) => {
+const handleAbyssImported = (response: AbyssSnapshotImportResponse) => {
   const updated = response?.updatedUserData
   if (updated?.Abyss) {
     formData.Abyss = {
-      Snapshots: (updated.Abyss as HSRUserConfigAbyss).Snapshots ?? '{}',
+      Snapshots: (updated.Abyss as HSRUserConfigAbyss).Snapshots ?? {},
     }
   }
   logger.info('三深渊快照导入完成')
 }
 
 onMounted(async () => {
+  pluginSystemSubscriptionId = subscribe({ id: 'PluginSystem' }, handlePluginSystemMessage)
   if (!scriptId) {
     message.error('缺少脚本ID参数')
     handleCancel()
@@ -951,6 +1026,7 @@ onMounted(async () => {
     }
     scriptName.value = script.name
     scriptConfig.value = script.config as HSRScriptConfig
+    capabilitySnapshot.value = await hsrPluginApi.getCapabilities(scriptId)
     await loadHsrStageOptions()
 
     if (isEdit.value) {
@@ -965,6 +1041,10 @@ onMounted(async () => {
   } finally {
     isInitializing.value = false
   }
+})
+
+onUnmounted(() => {
+  if (pluginSystemSubscriptionId) unsubscribe(pluginSystemSubscriptionId)
 })
 
 const createUserImmediately = async () => {
@@ -993,11 +1073,13 @@ const createUserImmediately = async () => {
 const loadUserData = async () => {
   try {
     const userResponse = await getUsers(scriptId, userId)
-    if (userResponse && userResponse.code === 200) {
-      const users = userResponse.data as Record<string, Partial<HSRUserConfigData> | undefined>
-      const userData = users?.[userId]
+    if (userResponse) {
+      const userData = userResponse.find(item => item.id === userId)?.config as
+        | Partial<HSRUserConfigData>
+        | undefined
       if (userData) {
         if (userData.Info) formData.Info = { ...formData.Info, ...userData.Info }
+        if (userData.SRA) formData.SRA = { ...formData.SRA, ...userData.SRA }
         if (userData.Stage) formData.Stage = { ...formData.Stage, ...userData.Stage }
         if (userData.TaskSwitch)
           formData.TaskSwitch = { ...formData.TaskSwitch, ...userData.TaskSwitch }
