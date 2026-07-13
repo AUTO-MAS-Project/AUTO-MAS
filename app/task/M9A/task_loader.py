@@ -33,18 +33,38 @@ class M9ATaskLoader:
 
     def __init__(self, m9a_root_path: Path):
         self.root_path = m9a_root_path
-        self.tasks_dir = m9a_root_path / "resource/tasks"
+        self.tasks_dir = self._resolve_tasks_dir()
         self._task_cache: dict[str, dict] = {}
         self._raw_data_cache: dict[str, dict] = {}
         self._load_all_tasks()
 
+    def _resolve_tasks_dir(self) -> Path:
+        """兼容新版和旧版 M9A 的任务目录结构。"""
+        candidates = (
+            self.root_path / "tasks",
+            self.root_path / "resource/tasks",
+        )
+
+        for tasks_dir in candidates:
+            if tasks_dir.is_dir() and any(tasks_dir.glob("*.json")):
+                return tasks_dir
+
+        # 保留确定的路径用于错误日志；新版路径优先。
+        return next((path for path in candidates if path.is_dir()), candidates[0])
+
     def _load_all_tasks(self):
         """加载所有任务定义（包括 standalone 任务）"""
-        if not self.tasks_dir.exists():
-            logger.error(f"任务目录不存在：{self.tasks_dir}")
+        # M9A 热更新可能会在进程运行期间迁移任务目录，因此每次加载都重新探测。
+        self.tasks_dir = self._resolve_tasks_dir()
+        json_files = list(self.tasks_dir.glob("*.json"))
+        if not json_files:
+            logger.error(
+                "M9A 任务定义不存在，已检查："
+                f"{self.root_path / 'tasks'}、{self.root_path / 'resource/tasks'}"
+            )
             return
 
-        for json_file in self.tasks_dir.glob("*.json"):
+        for json_file in json_files:
             try:
                 data = json.loads(json_file.read_text(encoding="utf-8"))
 
