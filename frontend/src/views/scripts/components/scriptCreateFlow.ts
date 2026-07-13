@@ -1,5 +1,7 @@
 import type { WebConfigTemplate } from '@/composables/useTemplateApi'
 import type { ScriptType } from '@/types/script'
+import type { ScriptTypeDescriptor } from '@/types/scriptRegistry'
+import { getScriptIcon } from '@/utils/scriptRegistry'
 import generalIcon from '@/assets/AUTO-MAS.ico'
 import hsrIcon from '@/assets/hsr.png'
 import maaIcon from '@/assets/MAA.png'
@@ -98,10 +100,24 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     title: 'MaaFramework 项目',
     description: '读取 interface 并运行 MaaFramework 项目',
     keywords: ['maafw', 'maaframework', 'interface'],
-    group: 'specialized',
+    group: 'general',
     icon: generalIcon,
   },
 ]
+
+export const createScriptTypeOptions = (descriptors: ScriptTypeDescriptor[]): ScriptTypeOption[] =>
+  descriptors
+    .filter(descriptor => descriptor.available !== false)
+    .map(descriptor => ({
+      value: descriptor.type_key,
+      title: descriptor.display_name,
+      description: descriptor.supported_modes.length
+        ? `支持模式：${descriptor.supported_modes.join(' / ')}`
+        : '由脚本类型插件提供',
+      keywords: [descriptor.type_key, descriptor.display_name, ...descriptor.supported_modes],
+      group: descriptor.create_group ?? 'specialized',
+      icon: getScriptIcon(descriptor.type_key, descriptor.icon_url),
+    }))
 
 export const buildCreateSteps = ({ type }: Pick<CreateRequestState, 'type'>): CreateStep[] => {
   const steps: CreateStep[] = [{ key: 'type', title: '脚本类型' }]

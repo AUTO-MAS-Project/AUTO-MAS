@@ -35,11 +35,7 @@
             :selected-preset-label="selectedPresetLabel"
             :interface-dependent-disabled="interfaceDependentDisabled"
             :account-record-tooltip="accountRecordTooltip"
-            :controller-options="userControllerOptions"
-            :resource-options="userResourceOptions"
             @save="handleFieldSave"
-            @controller-change="handleControllerChange"
-            @resource-change="handleResourceChange"
             @preset-menu-click="handlePresetMenuClick"
           />
 
@@ -199,18 +195,10 @@ const getDefaultMaaFWUserData = (): MaaFWUserConfig => ({
     Tag: '',
     Account: '',
     Password: '',
-    Controller: '',
-    Resource: '',
   },
   Task: {
     SelectedPreset: '',
     TaskSnapshot: '{ }',
-  },
-  Device: {
-    AdbAddress: '',
-    HWnd: 0,
-    PlayCoverAddress: '',
-    PlayCoverUuid: '',
   },
   Notify: {
     Enabled: false,
@@ -288,9 +276,8 @@ const resolveControllerName = (controllerName?: string) => {
   return getDefaultControllerName()
 }
 const effectiveControllerName = computed(() => {
-  const userController = formData.Info.Controller || ''
   const scriptController = scriptConfig.value?.Info.Controller || ''
-  return resolveControllerName(userController || scriptController)
+  return resolveControllerName(scriptController)
 })
 const getResourceOptionsByController = (controllerName: string) => {
   const resources = previewData.value?.resources || []
@@ -310,30 +297,9 @@ const resolveResourceName = (
   return resources[0]?.name || ''
 }
 const effectiveResourceName = computed(() => {
-  const userResource = formData.Info.Resource || ''
   const scriptResource = scriptConfig.value?.Info.Resource || ''
-  return resolveResourceName(userResource || scriptResource)
+  return resolveResourceName(scriptResource)
 })
-const userControllerOptions = computed(() => [
-  {
-    label: `继承脚本（${resolveControllerName(scriptConfig.value?.Info.Controller) || '自动选择'}）`,
-    value: '',
-  },
-  ...directControllerOptions.value.map(controller => ({
-    label: getDisplayName(controller),
-    value: controller.name,
-  })),
-])
-const userResourceOptions = computed(() => [
-  {
-    label: `继承脚本（${resolveResourceName(scriptConfig.value?.Info.Resource) || '自动选择'}）`,
-    value: '',
-  },
-  ...getResourceOptionsByController(effectiveControllerName.value).map(resource => ({
-    label: getDisplayName(resource),
-    value: resource.name,
-  })),
-])
 const interfaceDependentDisabled = computed(() => interfaceLoading.value || !previewData.value)
 const isTaskActiveForCurrentContext = (task: MaaFWTaskInfo) => {
   const controllerName = effectiveControllerName.value
@@ -573,27 +539,6 @@ const syncControllerResourceSelection = async () => {
   await pruneQueuedTasksForCurrentContext(false)
 }
 
-const handleControllerChange = async (controllerName: string) => {
-  formData.Info.Controller = controllerName
-  await handleFieldSave('Info.Controller', controllerName)
-
-  const availableResources = getResourceOptionsByController(effectiveControllerName.value)
-  if (
-    formData.Info.Resource &&
-    !availableResources.some(resource => resource.name === formData.Info.Resource)
-  ) {
-    formData.Info.Resource = ''
-    await handleFieldSave('Info.Resource', '')
-  }
-  await pruneQueuedTasksForCurrentContext()
-}
-
-const handleResourceChange = async (resourceName: string) => {
-  formData.Info.Resource = resourceName
-  await handleFieldSave('Info.Resource', resourceName)
-  await pruneQueuedTasksForCurrentContext()
-}
-
 const addTaskToQueue = async (taskName: string) => {
   if (!taskByName.value.has(taskName) || taskSnapshot.value.taskOrder.includes(taskName)) {
     addTaskCascaderValue.value = []
@@ -744,7 +689,6 @@ const applyUserData = (userData: Partial<MaaFWUserConfig>) => {
   const defaults = getDefaultMaaFWUserData()
   Object.assign(formData.Info, { ...defaults.Info, ...userData.Info })
   Object.assign(formData.Task, { ...defaults.Task, ...userData.Task })
-  Object.assign(formData.Device, { ...defaults.Device, ...userData.Device })
   Object.assign(formData.Notify, { ...defaults.Notify, ...userData.Notify })
   Object.assign(formData.Data, { ...defaults.Data, ...userData.Data })
 }

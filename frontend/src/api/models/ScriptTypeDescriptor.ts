@@ -27,6 +27,10 @@ export type ScriptTypeDescriptor = {
      */
     theme_color?: (string | null);
     /**
+     * 新建脚本时的展示分组
+     */
+    create_group?: ScriptTypeDescriptor.create_group;
+    /**
      * 文档地址
      */
     docs_url?: (string | null);
@@ -63,4 +67,13 @@ export type ScriptTypeDescriptor = {
      */
     available?: boolean;
 };
+export namespace ScriptTypeDescriptor {
+    /**
+     * 新建脚本时的展示分组
+     */
+    export enum create_group {
+        GENERAL = 'general',
+        SPECIALIZED = 'specialized',
+    }
+}
 
