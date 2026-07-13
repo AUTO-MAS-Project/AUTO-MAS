@@ -34,10 +34,13 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.core import Config
+from app.core.script_types import is_script_config_compatible_with_type_key
 from app.models.schema import *
 from app.task.Ok.common.provider import ok_script_mas_config_dir
 from app.task.Ok.providers import detect_ok_script_provider
 from app.task.Ok.providers.okww import OKWW_PROVIDER
+from app.task.Ok.shell.manifest import OkProjectInspectError, inspect_ok_project
+from app.task.Ok.shell.runtime import OkConfigStore
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 
@@ -107,21 +110,52 @@ def _ensure_okww_user_config_defaults(config_dir: Path, source_dir: Path | None)
             _write_json_file_atomic(current_path, merged_data)
 
 
-def _resolve_ok_script_provider(script_id: str):
-    """读取当前通用 ok-script 脚本并解析其项目 provider。"""
+def _resolve_ok_script_project(script_id: str):
+    """读取当前 ok-script 脚本并解析 Manifest 与可选专项 Provider。"""
 
     script_config = Config.ScriptConfig[uuid.UUID(script_id)]
-    if type(script_config).__name__ != "OkefConfig":
+    if not is_script_config_compatible_with_type_key(script_config, "OkScript"):
         raise ValueError("指定脚本不是 ok-script 项目")
 
     root_path = Path(str(script_config.get("Info", "RootPath") or ""))
+    try:
+        manifest = inspect_ok_project(root_path)
+    except OkProjectInspectError as exc:
+        raise ValueError(f"无法解析 ok-script 项目: {exc}") from exc
     provider = detect_ok_script_provider(
         root_path,
-        script_config.get("Info", "ResourceName"),
+        manifest.resource_name,
     )
-    if provider is None:
-        raise ValueError("当前 ok-script 项目尚未适配")
-    return script_config, root_path, provider
+    return script_config, root_path, manifest, provider
+
+
+def _build_generic_ok_script_fields(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """为未内置专项 schema 的 JSON 配置构建保守的顶层编辑字段。"""
+
+    fields: list[dict[str, Any]] = []
+    for name, value in data.items():
+        if isinstance(value, bool):
+            field_type = "bool"
+        elif isinstance(value, int):
+            field_type = "int"
+        elif isinstance(value, float):
+            field_type = "float"
+        elif isinstance(value, list):
+            field_type = "list"
+        elif isinstance(value, dict):
+            field_type = "json"
+        else:
+            field_type = "string"
+        fields.append(
+            {
+                "name": str(name),
+                "label": str(name),
+                "type": field_type,
+                "value": value,
+                "section": "通用",
+            }
+        )
+    return fields
 
 
 def _load_ok_script_schema(provider):
@@ -323,23 +357,17 @@ def _plugin_type_key_from_payload(payload: dict[str, Any]) -> str:
 
 
 def _script_index_type(index_type: str, payload: dict[str, Any]) -> str:
-    if index_type != "PluginScriptConfig":
-        return index_type
-    provider = _plugin_provider(_plugin_type_key_from_payload(payload))
-    if provider is None:
-        return "PluginScriptConfig"
-    return provider.legacy_config_class_name or provider.script_config_class.__name__
+    """保留插件容器的稳定公开索引类型。"""
+
+    _ = payload
+    return index_type
 
 
 def _user_index_type(index_type: str, script_config: Any) -> str:
-    if index_type != "PluginUserConfig":
-        return index_type
-    get_value = getattr(script_config, "get", None)
-    raw_type_key = get_value("Meta", "PluginTypeKey") if callable(get_value) else ""
-    provider = _plugin_provider(str(raw_type_key or "").strip())
-    if provider is None:
-        return "PluginUserConfig"
-    return provider.legacy_user_config_class_name or provider.user_config_class.__name__
+    """保留插件容器的稳定公开索引类型。"""
+
+    _ = script_config
+    return index_type
 
 
 @router.post(
@@ -1456,24 +1484,57 @@ async def batch_update_okww_configs(
 
 
 @router.post(
+    "/ok-script/inspect",
+    tags=["ok-script"],
+    summary="解析 ok-script 项目 Manifest",
+    status_code=200,
+)
+async def inspect_ok_script_project(root_path: str = Body(..., embed=True)):
+    """只读返回项目 Manifest，不导入或启动外部项目代码。"""
+
+    try:
+        manifest = await asyncio.to_thread(inspect_ok_project, Path(root_path))
+        provider = detect_ok_script_provider(
+            manifest.root_path,
+            manifest.resource_name,
+        )
+        return {
+            "code": 200,
+            "status": "success",
+            "message": "项目解析成功",
+            "data": manifest.to_dict(),
+            "provider": provider.build_client_metadata() if provider else None,
+        }
+    except OkProjectInspectError as exc:
+        return {
+            "code": 400,
+            "status": "error",
+            "message": str(exc),
+            "data": None,
+        }
+    except Exception as exc:
+        return {
+            "code": 500,
+            "status": "error",
+            "message": f"{type(exc).__name__}: {exc}",
+            "data": None,
+        }
+
+
+@router.post(
     "/ok-script/configs/list",
     tags=["ok-script"],
     summary="获取 ok-script 配置文件列表和 schema",
     status_code=200,
 )
 async def get_ok_script_configs_list(script_id: str, user_id: str):
-    """根据当前 provider 获取隔离的用户配置文件和 schema。"""
+    """获取隔离用户配置；专项优先 schema，未知项目回退通用 JSON。"""
     try:
         import json
 
-        _, root_path, provider = _resolve_ok_script_provider(script_id)
-        build_fields_for_config, get_config_info, load_option_labels = (
-            _load_ok_script_schema(provider)
-        )
-
-        option_labels = load_option_labels(root_path)
+        _, root_path, manifest, provider = _resolve_ok_script_project(script_id)
         mas_config_dir = ok_script_mas_config_dir(script_id, user_id)
-        source_configs_dir = provider.config_path(root_path)
+        source_configs_dir = manifest.config_dir
 
         need_init = not mas_config_dir.exists() or not any(mas_config_dir.iterdir())
         if need_init and source_configs_dir.is_dir():
@@ -1482,32 +1543,76 @@ async def get_ok_script_configs_list(script_id: str, user_id: str):
                 source_configs_dir,
                 mas_config_dir,
             )
-
-        configs_info = (
-            get_config_info(mas_config_dir)
-            if provider.config_info_uses_directory
-            else get_config_info()
-        )
-        result = []
-        for info in configs_info:
-            filename = info["filename"]
-            filepath = mas_config_dir / filename
-            current_data: dict[str, Any] = {}
-            if filepath.exists():
-                try:
-                    current_data = json.loads(filepath.read_text(encoding="utf-8"))
-                except Exception:
-                    pass
-
-            fields = build_fields_for_config(filename, current_data, option_labels)
-            result.append(
-                {
-                    **info,
-                    "fieldCount": len(fields),
-                    "fields": fields,
-                    "currentData": current_data,
-                }
+        elif source_configs_dir.is_dir():
+            await asyncio.to_thread(
+                OkConfigStore(mas_config_dir).copy_missing_from,
+                source_configs_dir,
             )
+
+        result: list[dict[str, Any]] = []
+        option_labels: dict[str, str] = {}
+        if provider is not None:
+            build_fields_for_config, get_config_info, load_option_labels = (
+                _load_ok_script_schema(provider)
+            )
+            option_labels = load_option_labels(root_path)
+            configs_info = (
+                get_config_info(mas_config_dir)
+                if provider.config_info_uses_directory
+                else get_config_info()
+            )
+            for info in configs_info:
+                filename = info["filename"]
+                filepath = mas_config_dir / filename
+                current_data: dict[str, Any] = {}
+                if filepath.exists():
+                    try:
+                        current_data = json.loads(filepath.read_text(encoding="utf-8"))
+                    except Exception:
+                        pass
+
+                fields = build_fields_for_config(filename, current_data, option_labels)
+                result.append(
+                    {
+                        **info,
+                        "fieldCount": len(fields),
+                        "fields": fields,
+                        "currentData": current_data,
+                    }
+                )
+        else:
+            store = OkConfigStore(mas_config_dir)
+            for filename in store.list():
+                if Path(filename).name != filename:
+                    continue
+                current_data = store.read(filename)
+                fields = _build_generic_ok_script_fields(current_data)
+                result.append(
+                    {
+                        "filename": filename,
+                        "displayName": filename,
+                        "group": "通用配置",
+                        "fieldCount": len(fields),
+                        "fields": fields,
+                        "currentData": current_data,
+                    }
+                )
+
+        provider_data = (
+            provider.build_client_metadata()
+            if provider is not None
+            else {
+                "resourceName": manifest.resource_name,
+                "displayName": manifest.display_name,
+                "taskOptions": [
+                    {"value": task.index, "label": task.label or task.selector}
+                    for task in manifest.tasks
+                ],
+                "accountFields": None,
+                "runtimeVerified": True,
+                "runtimeBlockReason": "",
+            }
+        )
 
         return {
             "code": 200,
@@ -1516,7 +1621,8 @@ async def get_ok_script_configs_list(script_id: str, user_id: str):
             "data": result,
             "optionLabels": option_labels,
             "configPath": str(mas_config_dir),
-            "provider": provider.build_client_metadata(),
+            "provider": provider_data,
+            "manifest": manifest.to_dict(),
         }
     except ValueError as e:
         return {
@@ -1549,7 +1655,7 @@ async def batch_update_ok_script_configs(
     try:
         import json
 
-        _resolve_ok_script_provider(script_id)
+        _resolve_ok_script_project(script_id)
         mas_config_dir = ok_script_mas_config_dir(script_id, user_id)
         mas_config_dir.mkdir(parents=True, exist_ok=True)
 

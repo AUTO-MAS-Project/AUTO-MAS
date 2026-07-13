@@ -80,6 +80,16 @@ LEGACY_SCRIPT_TYPE_METADATA = (
         "is_builtin": False,
     },
     {
+        "type_key": "MaaFW",
+        "display_name": "MaaFramework 项目",
+        "script_class_name": "MaaFWConfig",
+        "user_class_name": "MaaFWUserConfig",
+        "supported_modes": ("AutoProxy",),
+        "icon": "MaaFW",
+        "editor_kind": "plugin:automas_script_maafw",
+        "is_builtin": False,
+    },
+    {
         "type_key": "General",
         "display_name": "通用脚本",
         "script_class_name": "GeneralConfig",
@@ -87,6 +97,16 @@ LEGACY_SCRIPT_TYPE_METADATA = (
         "supported_modes": ("AutoProxy", "ScriptConfig"),
         "icon": "General",
         "editor_kind": "schema",
+        "is_builtin": False,
+    },
+    {
+        "type_key": "OkScript",
+        "display_name": "ok-script 项目",
+        "script_class_name": "OkefConfig",
+        "user_class_name": "OkefUserConfig",
+        "supported_modes": ("AutoProxy",),
+        "icon": "General",
+        "editor_kind": "builtin:ok-script",
         "is_builtin": False,
     },
 )
@@ -304,8 +324,6 @@ class ScriptTypeRegistry:
             HSRUserConfig,
             MaaEndConfig,
             MaaEndUserConfig,
-            OkefConfig,
-            OkefUserConfig,
             OkwwConfig,
             SrcConfig,
             SrcUserConfig,
@@ -357,19 +375,6 @@ class ScriptTypeRegistry:
                 manager_factory=_lazy_manager("app.task.HSR.manager", "HSRManager"),
                 icon="HSR",
                 editor_kind="builtin:hsr",
-                is_builtin=True,
-            ),
-            ScriptTypeProvider(
-                type_key="OkScript",
-                display_name="ok-script 项目",
-                script_config_class=OkefConfig,
-                user_config_class=OkefUserConfig,
-                supported_modes=("AutoProxy",),
-                manager_factory=_lazy_manager("app.task.Ok.manager", "OkScriptManager"),
-                icon="General",
-                editor_kind="builtin:ok-script",
-                legacy_config_class_name="OkefConfig",
-                legacy_user_config_class_name="OkefUserConfig",
                 is_builtin=True,
             ),
             ScriptAdapterDefinition(
@@ -802,6 +807,8 @@ def _resolve_legacy_config_classes(
         MaaFWConfig,
         MaaFWUserConfig,
         MaaUserConfig,
+        OkefConfig,
+        OkefUserConfig,
         SrcConfig,
         SrcUserConfig,
     )
@@ -812,6 +819,7 @@ def _resolve_legacy_config_classes(
         "MaaConfig": MaaConfig,
         "MaaEndConfig": MaaEndConfig,
         "MaaFWConfig": MaaFWConfig,
+        "OkefConfig": OkefConfig,
         "SrcConfig": SrcConfig,
     }
     user_classes: dict[str, type[ConfigBase]] = {
@@ -820,6 +828,7 @@ def _resolve_legacy_config_classes(
         "MaaEndUserConfig": MaaEndUserConfig,
         "MaaFWUserConfig": MaaFWUserConfig,
         "MaaUserConfig": MaaUserConfig,
+        "OkefUserConfig": OkefUserConfig,
         "SrcUserConfig": SrcUserConfig,
     }
 
