@@ -6,6 +6,7 @@ export interface ScriptTypeDescriptor {
   icon?: string | null
   icon_url?: string | null
   theme_color?: string | null
+  create_group?: 'general' | 'specialized'
   docs_url?: string | null
   editor_kind: string
   supported_modes: string[]

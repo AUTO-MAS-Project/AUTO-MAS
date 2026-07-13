@@ -116,20 +116,32 @@
                   </template>
                   添加用户
                 </a-button>
-                <a-popconfirm
-                  title="确定要删除这个脚本吗？"
-                  description="删除后将无法恢复，请谨慎操作"
-                  ok-text="确定"
-                  cancel-text="取消"
-                  @confirm="handleDelete(script)"
-                >
-                  <a-button danger size="middle" class="action-button delete-button">
+                <a-dropdown :trigger="['click']">
+                  <a-button
+                    size="middle"
+                    class="action-button"
+                    :loading="props.copyingScriptId === script.id"
+                    :disabled="Boolean(props.copyingScriptId) || !isScriptOperable(script)"
+                  >
                     <template #icon>
-                      <DeleteOutlined />
+                      <EllipsisOutlined />
                     </template>
-                    删除脚本
+                    更多
                   </a-button>
-                </a-popconfirm>
+                  <template #overlay>
+                    <a-menu>
+                      <a-menu-item key="copy" @click="handleCopy(script)">
+                        <CopyOutlined />
+                        复制脚本
+                      </a-menu-item>
+                      <a-menu-divider />
+                      <a-menu-item key="delete" danger @click="handleDeleteConfirm(script)">
+                        <DeleteOutlined />
+                        删除脚本
+                      </a-menu-item>
+                    </a-menu>
+                  </template>
+                </a-dropdown>
                 <a-tooltip :title="collapsedScriptIds.has(script.id) ? '展开用户' : '收起用户'">
                   <a-button
                     size="middle"
@@ -285,9 +297,11 @@
 <script setup lang="ts">
 import type { MaaFWScriptConfig, Script, User } from '../types/script'
 import {
+  CopyOutlined,
   DeleteOutlined,
   DownOutlined,
   EditOutlined,
+  EllipsisOutlined,
   SettingOutlined,
   UpOutlined,
   UserAddOutlined,
@@ -304,6 +318,7 @@ import { getScriptIcon, getScriptTypeTagColor, handleScriptIconError } from '@/u
 interface Props {
   scripts: Script[]
   activeConnections: Map<string, { subscriptionId: string; websocketId: string }>
+  copyingScriptId?: string | null
   allPlansData?: Record<string, Record<string, any>>
   currentPlanData?: Record<string, any>
 }
@@ -312,6 +327,8 @@ interface Emits {
   (e: 'edit', script: Script): void
 
   (e: 'delete', script: Script): void
+
+  (e: 'copy', script: Script): void
 
   (e: 'addUser', script: Script): void
 
@@ -442,6 +459,21 @@ const handleEdit = (script: Script) => {
 
 const handleDelete = (script: Script) => {
   emit('delete', script)
+}
+
+const handleCopy = (script: Script) => {
+  emit('copy', script)
+}
+
+const handleDeleteConfirm = (script: Script) => {
+  Modal.confirm({
+    title: '确定要删除这个脚本吗？',
+    content: '删除后将无法恢复，请谨慎操作',
+    okText: '确定',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: () => handleDelete(script),
+  })
 }
 
 const handleAddUser = (script: Script) => {

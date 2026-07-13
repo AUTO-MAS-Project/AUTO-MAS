@@ -287,18 +287,10 @@ export interface MaaFWUserConfig {
     Tag?: string | null
     Account: string
     Password: string
-    Controller: string
-    Resource: string
   }
   Task: {
     SelectedPreset: string
     TaskSnapshot: string | MaaFWTaskSnapshot
-  }
-  Device: {
-    AdbAddress: string
-    HWnd: number
-    PlayCoverAddress: string
-    PlayCoverUuid: string
   }
   Notify: {
     Enabled: boolean
