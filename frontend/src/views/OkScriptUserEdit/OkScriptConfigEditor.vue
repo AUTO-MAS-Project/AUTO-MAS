@@ -198,6 +198,26 @@
                   "
                 />
 
+                <!-- json 类型：未知项目的嵌套配置保留对象结构 -->
+                <a-textarea
+                  v-else-if="field.type === 'json'"
+                  :value="
+                    formatJsonValue(
+                      getFieldValue(selectedConfigForTemplate.filename, field.name, field.value)
+                    )
+                  "
+                  :rows="8"
+                  placeholder="请输入 JSON 对象或数组"
+                  @change="
+                    (e: Event) =>
+                      setJsonFieldValue(
+                        selectedConfigForTemplate.filename,
+                        field.name,
+                        (e.target as HTMLTextAreaElement).value
+                      )
+                  "
+                />
+
                 <!-- string 类型：文本输入 -->
                 <a-input
                   v-else
@@ -250,7 +270,7 @@ const props = withDefaults(
     title?: string
   }>(),
   {
-    endpointPrefix: '/api/scripts/ok-script/configs',
+    endpointPrefix: '/plugin/ok-script/configs',
     title: '配置编辑',
   }
 )
@@ -402,6 +422,16 @@ const setFieldValue = (filename: string, fieldName: string, value: any) => {
   }
   // 触发响应式更新
   changedFiles.value = new Set(changedFiles.value)
+}
+
+const formatJsonValue = (value: unknown) => JSON.stringify(value, null, 2) || ''
+
+const setJsonFieldValue = (filename: string, fieldName: string, text: string) => {
+  try {
+    setFieldValue(filename, fieldName, JSON.parse(text))
+  } catch {
+    message.warning('JSON 格式无效，未保存本次修改')
+  }
 }
 
 const selectConfig = (filename: string) => {

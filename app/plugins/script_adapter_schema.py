@@ -164,13 +164,14 @@ def build_configbase_class(
         for group in normalized_groups:
             for field in group.fields:
                 if _is_runtime_field(field):
+                    default = _config_item_default(field)
                     setattr(
                         self,
                         _config_item_attr(group.key, field.name),
                         ConfigItem(
                             group.key,
                             field.name,
-                            _copy_default(field.default),
+                            default,
                             _build_validator(self, group.key, field),
                             legacy_group=field.legacy_group,
                             legacy_name=field.legacy_name,
@@ -428,7 +429,7 @@ def _build_validator(
         return FileValidator()
     if field.field_type == "datetime":
         return DateTimeValidator(str(field.format or "%Y-%m-%d"))
-    if field.field_type == "json":
+    if field.field_type in {"json", "list"}:
         return JSONValidator(list if field.json_type == "array" else dict)
     if field.field_type == "password" or field.sensitive:
         return EncryptValidator()
@@ -520,6 +521,15 @@ def _copy_default(default: Any) -> Any:
     if default is PydanticUndefined:
         return None
     return copy.deepcopy(default)
+
+
+def _config_item_default(field: PluginFieldDeclaration) -> Any:
+    """将 JSON 表单默认值转换为 ConfigBase 的持久化格式。"""
+
+    default = _copy_default(field.default)
+    if field.field_type in {"json", "list"} and not isinstance(default, str):
+        return json.dumps(default, ensure_ascii=False)
+    return default
 
 
 def _config_item_attr(group: str, name: str) -> str:

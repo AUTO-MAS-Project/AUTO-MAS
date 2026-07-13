@@ -197,7 +197,7 @@
         <OkScriptConfigEditor
           :script-id="scriptId"
           :user-id="userId"
-          endpoint-prefix="/api/scripts/ok-script/configs"
+          endpoint-prefix="/plugin/ok-script/configs"
           @saved="handleConfigSaved"
         />
       </a-card>
@@ -314,7 +314,7 @@ const route = useRoute()
 const router = useRouter()
 const { addUser, getUsers, updateUser } = useUserApi()
 const { getScript } = useScriptApi()
-const okScriptConfigApi = useOkScriptConfigApi('/api/scripts/ok-script/configs')
+const okScriptConfigApi = useOkScriptConfigApi('/plugin/ok-script/configs')
 
 const scriptId = route.params.scriptId as string
 const userId = ref((route.params.userId as string) || '')

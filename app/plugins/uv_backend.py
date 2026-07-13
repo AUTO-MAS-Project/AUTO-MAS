@@ -141,6 +141,8 @@ async def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
         command,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
 

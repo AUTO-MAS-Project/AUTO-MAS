@@ -144,7 +144,7 @@ class OkwwAdapterHooks(ScriptAdapterHooks):
             data={"Error": f"OK-WW 插件任务出现异常: {error}"},
         )
 
-    def run_auto_proxy(self, runtime: ScriptAdapterRuntime, user_index: int) -> TaskExecuteBase:
+    def run_auto_proxy(self, runtime: ScriptAdapterRuntime) -> TaskExecuteBase:
         user_config = runtime.extra.get("user_config")
         if not isinstance(user_config, MultipleConfig):
             raise RuntimeError("OK-WW 用户配置未准备完成")
@@ -154,7 +154,6 @@ class OkwwAdapterHooks(ScriptAdapterHooks):
             user_config=user_config,
             game_manager=runtime.extra.get("game_manager"),
         )
-        _ = user_index
         return _CheckedAutoProxyTask(inner)
 
     async def _write_back_user_config(self, runtime: ScriptAdapterRuntime) -> None:

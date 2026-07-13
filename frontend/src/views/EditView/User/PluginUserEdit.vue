@@ -58,11 +58,11 @@
     <a-empty v-if="!userSchema && !loading" description="此插件脚本类型未提供用户配置表单" />
   </a-card>
 
-  <a-card v-if="isOkwwAdapter && userId" class="config-card okww-config-card">
+  <a-card v-if="isOkScriptAdapter && userId" class="config-card okww-config-card">
     <OkScriptConfigEditor
       :script-id="scriptId"
       :user-id="userId"
-      endpoint-prefix="/plugin/okww/configs"
+      :endpoint-prefix="okScriptConfigEndpoint"
     />
   </a-card>
 
@@ -176,7 +176,13 @@ const currentPluginKey = () => {
   return normalizePluginKey(editorKind.slice('plugin:'.length))
 }
 
-const isOkwwAdapter = computed(() => currentPluginKey() === 'okwwadapter')
+const isOkScriptAdapter = computed(() => {
+  const key = currentPluginKey()
+  return key === 'okwwadapter' || key === 'okscriptadapter'
+})
+const okScriptConfigEndpoint = computed(() =>
+  currentPluginKey() === 'okwwadapter' ? '/plugin/okww/configs' : '/plugin/ok-script/configs'
+)
 
 const isCurrentPluginEvent = (plugin?: string | null) => {
   const key = currentPluginKey()

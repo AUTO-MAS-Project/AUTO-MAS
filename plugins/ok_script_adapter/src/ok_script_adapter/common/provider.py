@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app.task.Ok.common.report import OkScriptReportHandler
+    from .report import OkScriptReportHandler
 
 
 _VERSION_SUFFIX_RE = re.compile(r"[-_ ]?v?\d+(?:\.\d+)+(?:[-_.a-z0-9]*)?$", re.I)
@@ -45,6 +45,15 @@ class OkScriptAccountConfig:
     enabled_key: str
     independent_key: str
     account_list_key: str
+
+
+@dataclass(frozen=True)
+class OkScriptRuntimeConfigOverride:
+    """仅在 MAS 托管运行期间生效的项目配置覆盖。"""
+
+    file_name: str
+    key: str
+    value: Any
 
 
 @dataclass(frozen=True)
@@ -72,6 +81,7 @@ class OkScriptProvider:
     config_info_uses_directory: bool = False
     account_config: OkScriptAccountConfig | None = None
     report_handler_factory: Callable[[], "OkScriptReportHandler"] | None = None
+    runtime_config_overrides: tuple[OkScriptRuntimeConfigOverride, ...] = ()
     runtime_verified: bool = True
     runtime_block_reason: str = ""
     log_time_start: int = 1

@@ -25,11 +25,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from app.core import Config
-from app.models.ConfigBase import MultipleConfig
-from app.models.config import OkefConfig, OkefUserConfig
+from app.models.ConfigBase import ConfigBase, MultipleConfig
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify, System
-from app.task.Ok.common.events import (
+from ..common.events import (
     OK_SCRIPT_EVENT_PROTOCOL_VERSION,
     OK_SCRIPT_PLUGIN_EVENT,
     OK_SCRIPT_PLUGIN_EVENT_SOURCE,
@@ -38,17 +37,19 @@ from app.task.Ok.common.events import (
     format_partial_success_status,
     read_ok_script_run_events,
 )
-from app.task.Ok.common.provider import (
+from ..common.provider import (
     OkScriptProvider,
+    OkScriptRuntimeConfigOverride,
     OkScriptTaskOption,
     ok_script_mas_config_dir,
 )
-from app.task.Ok.common.report import OkScriptReportHandler
-from app.task.Ok.common.runtime_lock import get_ok_script_root_lock
-from app.task.Ok.providers import detect_ok_script_provider
-from app.task.Ok.shell.manifest import OkProjectInspectError, OkProjectManifest, inspect_ok_project
-from app.task.Ok.shell.runtime import (
+from ..common.report import OkScriptReportHandler
+from ..common.runtime_lock import get_ok_script_root_lock
+from ..providers import detect_ok_script_provider
+from ..shell.manifest import OkProjectInspectError, OkProjectManifest, inspect_ok_project
+from ..shell.runtime import (
     PROTOCOL_LEGACY_EXE,
+    OkConfigStore,
     OkShellRunner,
     OkShellRuntimeError,
 )
@@ -75,6 +76,56 @@ def _replace_tree(src: Path, dst: Path) -> None:
     shutil.copytree(src, tmp_dst, dirs_exist_ok=True)
     shutil.rmtree(dst, ignore_errors=True)
     tmp_dst.rename(dst)
+
+
+def _apply_runtime_config_overrides(
+    config_dir: Path,
+    overrides: tuple[OkScriptRuntimeConfigOverride, ...],
+) -> dict[tuple[str, str], tuple[bool, object]]:
+    """应用项目运行期覆盖，并返回需要在写回前恢复的原值。"""
+
+    store = OkConfigStore(config_dir)
+    available = set(store.list())
+    pending: dict[str, dict[str, object]] = {}
+    originals: dict[tuple[str, str], tuple[bool, object]] = {}
+
+    for override in overrides:
+        if override.file_name not in available:
+            logger.warning(
+                f"运行期配置覆盖目标不存在，保留兼容兜底: {override.file_name}"
+            )
+            continue
+        if override.file_name not in pending:
+            pending[override.file_name] = store.read(override.file_name)
+
+        data = pending[override.file_name]
+        state_key = (override.file_name, override.key)
+        originals[state_key] = (override.key in data, data.get(override.key))
+        data[override.key] = override.value
+
+    for file_name, data in pending.items():
+        store.write(file_name, data, merge=False)
+    return originals
+
+
+def _restore_runtime_config_overrides(
+    config_dir: Path,
+    originals: dict[tuple[str, str], tuple[bool, object]],
+) -> None:
+    """恢复运行期覆盖前的字段，同时保留脚本对其他配置项的修改。"""
+
+    store = OkConfigStore(config_dir)
+    pending: dict[str, dict[str, object]] = {}
+    for (file_name, key), (existed, value) in originals.items():
+        if file_name not in pending:
+            pending[file_name] = store.read(file_name)
+        if existed:
+            pending[file_name][key] = value
+        else:
+            pending[file_name].pop(key, None)
+
+    for file_name, data in pending.items():
+        store.write(file_name, data, merge=False)
 
 
 def _build_manifest_provider(manifest: OkProjectManifest) -> OkScriptProvider:
@@ -119,8 +170,8 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
     def __init__(
         self,
         script_info: ScriptItem,
-        script_config: OkefConfig,
-        user_config: MultipleConfig[OkefUserConfig],
+        script_config: ConfigBase,
+        user_config: MultipleConfig[ConfigBase],
         game_manager: ProcessManager | None,
     ):
         super().__init__()
@@ -141,7 +192,7 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             self.script_info.current_index
         ]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
-        self.cur_user_config: OkefUserConfig = self.user_config[self.cur_user_uid]
+        self.cur_user_config: ConfigBase = self.user_config[self.cur_user_uid]
 
         self.script_process_manager: ProcessManager = ProcessManager()
         self.script_root_path: Path = Path()
@@ -153,6 +204,9 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         self.had_original_script_config = False
         self.script_config_swap_started = False
         self.script_config_injected = False
+        self.runtime_config_originals: dict[
+            tuple[str, str], tuple[bool, object]
+        ] = {}
         self.script_root_lock: asyncio.Lock | None = None
         self.script_root_lock_acquired = False
         self.script_log_path: Path = Path()
@@ -472,7 +526,16 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
                 self.mas_config_dir,
                 self.script_config_path,
             )
+            self.runtime_config_originals = await asyncio.to_thread(
+                _apply_runtime_config_overrides,
+                self.script_config_path,
+                self.provider.runtime_config_overrides,
+            )
             self.script_config_injected = True
+            if self.runtime_config_originals:
+                await self._push_dispatch_log(
+                    "已应用项目运行期策略，禁止脚本自动打开本地汇报"
+                )
             logger.info(f"已同步 {self.provider.display_name} 用户配置到脚本目录: {self.script_config_path}")
         except Exception as e:
             logger.exception(f"同步 {self.provider.display_name} 用户配置到脚本目录失败: {e}")
@@ -532,6 +595,7 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
                 self.had_original_script_config = False
                 self.script_config_swap_started = False
                 self.script_config_injected = False
+                self.runtime_config_originals = {}
 
     async def update_config(self) -> None:
         if self.script_config_path == Path() or self.mas_config_dir == Path():
@@ -540,10 +604,16 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
 
         try:
             await asyncio.to_thread(
+                _restore_runtime_config_overrides,
+                self.script_config_path,
+                self.runtime_config_originals,
+            )
+            await asyncio.to_thread(
                 _replace_tree,
                 self.script_config_path,
                 self.mas_config_dir,
             )
+            self.runtime_config_originals = {}
             logger.info(f"已写回 {self.provider.display_name} 用户配置: {self.mas_config_dir}")
         except Exception as e:
             logger.exception(f"写回 {self.provider.display_name} 用户配置失败: {e}")
