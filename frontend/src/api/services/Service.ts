@@ -2,7 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { AbyssSnapshotImportOut } from '../models/AbyssSnapshotImportOut';
+import type { Body_batch_update_ok_script_configs_api_scripts_ok_script_configs_batch_update_post } from '../models/Body_batch_update_ok_script_configs_api_scripts_ok_script_configs_batch_update_post';
 import type { Body_batch_update_okef_configs_api_scripts_okef_configs_batch_update_post } from '../models/Body_batch_update_okef_configs_api_scripts_okef_configs_batch_update_post';
 import type { Body_batch_update_okww_configs_api_scripts_okww_configs_batch_update_post } from '../models/Body_batch_update_okww_configs_api_scripts_okww_configs_batch_update_post';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
@@ -27,7 +27,6 @@ import type { HistoryDataGetIn } from '../models/HistoryDataGetIn';
 import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
 import type { HistorySearchIn } from '../models/HistorySearchIn';
 import type { HistorySearchOut } from '../models/HistorySearchOut';
-import type { HSRStageOptionsOut } from '../models/HSRStageOptionsOut';
 import type { InfoOut } from '../models/InfoOut';
 import type { MaaFWAgentEnvPrepareIn } from '../models/MaaFWAgentEnvPrepareIn';
 import type { MaaFWAgentEnvPrepareOut } from '../models/MaaFWAgentEnvPrepareOut';
@@ -118,7 +117,6 @@ import type { UserCreateOut } from '../models/UserCreateOut';
 import type { UserDeleteIn } from '../models/UserDeleteIn';
 import type { UserGetIn } from '../models/UserGetIn';
 import type { UserGetOut } from '../models/UserGetOut';
-import type { UserImportAbyssSnapshotIn } from '../models/UserImportAbyssSnapshotIn';
 import type { UserInBase } from '../models/UserInBase';
 import type { UserReorderIn } from '../models/UserReorderIn';
 import type { UserSetIn } from '../models/UserSetIn';
@@ -683,26 +681,6 @@ export class Service {
         });
     }
     /**
-     * 从 M7A config.yaml 导入三深渊快照
-     * 从 M7A config.yaml 读取三深渊白名单字段，写入指定 HSR 用户配置。
-     * @param requestBody
-     * @returns AbyssSnapshotImportOut Successful Response
-     * @throws ApiError
-     */
-    public static importM7AAbyssSnapshotApiScriptsUserImportM7AAbyssSnapshotPost(
-        requestBody: UserImportAbyssSnapshotIn,
-    ): CancelablePromise<AbyssSnapshotImportOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/user/import-m7a-abyss-snapshot',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 删除用户
      * @param requestBody
      * @returns OutBase Successful Response
@@ -978,30 +956,6 @@ export class Service {
         });
     }
     /**
-     * 获取 HSR 体力副本动态选项
-     * 按体力执行脚本返回 M7A / SRA 原生副本字段。
-     * @param scriptId
-     * @param engine
-     * @returns HSRStageOptionsOut Successful Response
-     * @throws ApiError
-     */
-    public static getHsrStageOptionsApiApiScriptsHsrStageOptionsGet(
-        scriptId?: (string | null),
-        engine: 'M7A' | 'SRA' = 'M7A',
-    ): CancelablePromise<HSRStageOptionsOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/scripts/hsr/stage-options',
-            query: {
-                'scriptId': scriptId,
-                'engine': engine,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 获取 OK-WW 配置文件列表及 schema
      * 获取 OK-WW 配置文件列表及 schema 定义。
      * 读写用户配置目录（data/{script_id}/{user_id}/ConfigFile/），
@@ -1063,10 +1017,52 @@ export class Service {
         });
     }
     /**
-     * 获取 OK-EF 配置文件列表和 schema
-     * 获取 OK-EF 配置文件列表和 schema 定义。
-     * 读取用户配置目录（data/{script_id}/{user_id}/ConfigFile/），
-     * 若为空则自动从 OK-EF working/configs 目录初始化默认配置。
+     * 获取 ok-script 配置文件列表和 schema
+     * 根据当前 provider 获取隔离的用户配置文件和 schema。
+     * @param scriptId
+     * @param userId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getOkScriptConfigsListApiScriptsOkScriptConfigsListPost(
+        scriptId: string,
+        userId: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/ok-script/configs/list',
+            query: {
+                'script_id': scriptId,
+                'user_id': userId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 批量更新 ok-script 配置文件
+     * 批量更新当前 provider 对应的用户配置 JSON。
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static batchUpdateOkScriptConfigsApiScriptsOkScriptConfigsBatchUpdatePost(
+        requestBody: Body_batch_update_ok_script_configs_api_scripts_ok_script_configs_batch_update_post,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/ok-script/configs/batch-update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 ok-script 配置文件列表和 schema（兼容入口）
+     * 保留旧 OK-EF API 路径，内部统一走 ok-script provider。
      * @param scriptId
      * @param userId
      * @returns any Successful Response
@@ -1089,8 +1085,8 @@ export class Service {
         });
     }
     /**
-     * 批量更新 OK-EF 配置文件
-     * 批量更新 OK-EF 用户配置 JSON。
+     * 批量更新 ok-script 配置文件（兼容入口）
+     * 保留旧 OK-EF API 路径，内部统一走 ok-script provider。
      * @param requestBody
      * @returns any Successful Response
      * @throws ApiError

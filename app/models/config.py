@@ -1774,19 +1774,21 @@ class HSRConfig(ConfigBase):
             "Run", "LowPerformanceMode", False, BoolValidator()
         )
         ## TaskMapping -----------------------------------------------------
-        ## 模块脚本分配（延迟导入以避免循环依赖）
-        from app.task.HSR.task_mapping import HSR_TASK_MODULES as _HSR_TASK_MODULES
-
-        for module in _HSR_TASK_MODULES:
-            if module.key == "ForgottenHall":
-                continue
+        ## 仅用于读取旧数据并迁移到 HSR 插件容器。
+        legacy_task_mapping = {
+            "Daily": (("M7A", "SRA"), "SRA"),
+            "ReceiveRewards": (("M7A", "SRA"), "SRA"),
+            "DivergentUniverse": (("M7A", "SRA"), "SRA"),
+            "CurrencyWars": (("M7A", "SRA"), "SRA"),
+        }
+        for module_key, (supported_scripts, default_script) in legacy_task_mapping.items():
             self.__setattr__(
-                f"TaskMapping_{module.key}",
+                f"TaskMapping_{module_key}",
                 ConfigItem(
                     "TaskMapping",
-                    module.key,
-                    module.default_script,
-                    OptionsValidator(list(module.supported_scripts)),
+                    module_key,
+                    default_script,
+                    OptionsValidator(list(supported_scripts)),
                 ),
             )
 
@@ -3520,7 +3522,6 @@ class GlobalConfig(ConfigBase):
                 GeneralConfig,
                 OkwwConfig,
                 OkefConfig,
-                HSRConfig,
             ]
         )
         ## 队列配置列表
@@ -3615,6 +3616,5 @@ CLASS_BOOK = {
     "Okww": OkwwConfig,
     "OkScript": OkefConfig,
     "Okef": OkefConfig,
-    "HSR": HSRConfig,
 }
 """配置类映射表"""

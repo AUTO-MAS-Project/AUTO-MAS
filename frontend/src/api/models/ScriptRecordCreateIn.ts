@@ -11,5 +11,9 @@ export type ScriptRecordCreateIn = {
      * 复制来源脚本 ID
      */
     scriptId?: (string | null);
+    /**
+     * 新建脚本时一次性写入的初始配置
+     */
+    initialConfig?: (Record<string, any> | null);
 };
 

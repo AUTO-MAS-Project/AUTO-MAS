@@ -56,10 +56,20 @@ uv.lock
 /AUTO-MAS-docs/
 /skills/
 .ace-tool/
+/.uv-cache/
 
 # Plugin workspace (external plugin sources stay ignored)
 /plugins/*
 !/plugins/auto_mas_core/
 !/plugins/auto_mas_core/**
+!/plugins/hsr_core/
+!/plugins/hsr_core/**
+!/plugins/hsr_adapter_sra/
+!/plugins/hsr_adapter_sra/**
+!/plugins/hsr_adapter_m7a/
+!/plugins/hsr_adapter_m7a/**
+/plugins/hsr_*/build/
+/plugins/hsr_*/src/*.egg-info/
+/plugins/hsr_*/**/__pycache__/
 /app/core/plugins/_generated/
 res/docs/ok-series-common-script-report.md

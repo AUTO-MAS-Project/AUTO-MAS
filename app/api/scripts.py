@@ -203,7 +203,6 @@ SCRIPT_BOOK: dict[str, type[BaseModel]] = {
     "GeneralConfig": GeneralConfig,
     "OkwwConfig": OkwwConfig,
     "OkefConfig": OkefConfig,
-    "HSRConfig": HSRConfig,
     "PluginScriptConfig": PluginScriptConfig,
 }
 USER_BOOK: dict[str, type[BaseModel]] = {
@@ -215,7 +214,6 @@ USER_BOOK: dict[str, type[BaseModel]] = {
     "GeneralConfig": GeneralUserConfig,
     "OkwwConfig": OkwwUserConfig,
     "OkefConfig": OkefUserConfig,
-    "HSRConfig": HSRUserConfig,
     "PluginScriptConfig": PluginUserConfig,
 }
 
@@ -641,62 +639,6 @@ async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
-
-
-@router.post(
-    "/user/import-m7a-abyss-snapshot",
-    tags=["Update"],
-    summary="从 M7A config.yaml 导入三深渊快照",
-    response_model=AbyssSnapshotImportOut,
-    status_code=200,
-)
-async def import_m7a_abyss_snapshot(
-    payload: UserImportAbyssSnapshotIn = Body(...),
-) -> AbyssSnapshotImportOut:
-    """从 M7A config.yaml 读取三深渊白名单字段，写入指定 HSR 用户配置。"""
-    import json
-
-    from app.task.HSR.tools.m7a_config import read_m7a_abyss_snapshots
-
-    items: list[AbyssSnapshotImportItem] = []
-    m7a_config_path: Path | None = None
-
-    try:
-        script_config = Config.ScriptConfig[uuid.UUID(payload.scriptId)]
-        m7a_path_str = str(script_config.get("Info", "M7APath") or "").strip()
-        if not m7a_path_str:
-            raise ValueError("请先在脚本配置页配置三月七路径")
-
-        m7a_config_path = Path(m7a_path_str) / "config.yaml"
-        write_snapshots, raw_items = read_m7a_abyss_snapshots(m7a_config_path)
-        items = [AbyssSnapshotImportItem(**item) for item in raw_items]
-
-        await Config.update_user(
-            payload.scriptId,
-            payload.userId,
-            {"Abyss": {"Snapshots": json.dumps(write_snapshots, ensure_ascii=False)}},
-        )
-        _, user_data_dict = await Config.get_user(payload.scriptId, payload.userId)
-        updated_user_data = HSRUserConfig(**user_data_dict)
-    except Exception as e:
-        return AbyssSnapshotImportOut(
-            code=400 if isinstance(e, (FileNotFoundError, ValueError)) else 500,
-            status="error",
-            message=f"导入三深渊快照失败: {type(e).__name__}: {e}",
-            m7aConfigPath=str(m7a_config_path) if m7a_config_path else "",
-            items=items,
-            updatedUserData=HSRUserConfig(),
-        )
-
-    success_count = len(items)
-    return AbyssSnapshotImportOut(
-        code=200,
-        status="success",
-        message=f"已从 M7A config.yaml 导入 {success_count}/3 个三深渊快照",
-        m7aConfigPath=str(m7a_config_path),
-        items=items,
-        updatedUserData=updated_user_data,
-    )
 
 
 @router.post(
@@ -1276,47 +1218,6 @@ async def preview_maafw_windows(
         message=f"已扫描到 {len(data.windows)} 个 MaaFW PC 客户端窗口",
         data=data,
     )
-
-
-@router.get(
-    "/hsr/stage-options",
-    tags=["HSR"],
-    summary="获取 HSR 体力副本动态选项",
-    response_model=HSRStageOptionsOut,
-    status_code=200,
-)
-async def get_hsr_stage_options_api(
-    scriptId: str | None = None,
-    engine: Literal["M7A", "SRA"] = "M7A",
-) -> HSRStageOptionsOut:
-    """按体力执行脚本返回 M7A / SRA 原生副本字段。"""
-
-    from app.task.HSR.tools.stage_provider import get_hsr_stage_options
-
-    try:
-        if not scriptId:
-            return HSRStageOptionsOut(
-                code=400,
-                status="error",
-                message="缺少 scriptId",
-            )
-
-        script_config = Config.ScriptConfig[uuid.UUID(scriptId)]
-        data = HSRStageOptionsData(**get_hsr_stage_options(script_config, engine))
-        option_count = sum(
-            len(category.options)
-            for category in data.categories
-        )
-        return HSRStageOptionsOut(
-            message=f"共 {option_count} 个 HSR 体力副本选项",
-            data=data,
-        )
-    except Exception as e:
-        return HSRStageOptionsOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-        )
 
 
 @router.post(

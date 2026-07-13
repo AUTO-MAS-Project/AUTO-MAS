@@ -402,7 +402,6 @@ class ScriptIndexItem(BaseModel):
         "MaaEndConfig",
         "M9AConfig",
         "MaaFWConfig",
-        "HSRConfig",
         "PluginScriptConfig",
     ] = Field(
         ..., description="配置类型"
@@ -420,7 +419,6 @@ class UserIndexItem(BaseModel):
         "MaaEndUserConfig",
         "M9AUserConfig",
         "MaaFWUserConfig",
-        "HSRUserConfig",
         "PluginUserConfig",
     ] = Field(..., description="配置类型")
 
@@ -1854,9 +1852,8 @@ class ScriptCreateIn(BaseModel):
         "MaaEnd",
         "M9A",
         "MaaFW",
-        "HSR",
     ] = Field(
-        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, ok-script项目, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本"
+        ..., description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, ok-script项目, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本"
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -1886,7 +1883,6 @@ class ScriptCreateOut(OutBase):
         MaaEndConfig,
         M9AConfig,
         MaaFWConfig,
-        HSRConfig,
         PluginScriptConfig,
     ] = Field(
         ..., description="脚本配置数据"
@@ -1912,7 +1908,6 @@ class ScriptGetOut(OutBase):
             MaaEndConfig,
             M9AConfig,
             MaaFWConfig,
-            HSRConfig,
             PluginScriptConfig,
         ],
     ] = Field(
@@ -1931,7 +1926,6 @@ class ScriptUpdateIn(BaseModel):
         MaaEndConfig,
         M9AConfig,
         MaaFWConfig,
-        HSRConfig,
         PluginScriptConfig,
     ] = Field(
         ..., description="脚本更新数据"
@@ -1992,7 +1986,6 @@ class UserGetOut(OutBase):
             MaaEndUserConfig,
             M9AUserConfig,
             MaaFWUserConfig,
-            HSRUserConfig,
             PluginUserConfig,
         ],
     ] = Field(..., description="用户数据字典, key来自于index列表的uid")
@@ -2009,7 +2002,6 @@ class UserCreateOut(OutBase):
         MaaEndUserConfig,
         M9AUserConfig,
         MaaFWUserConfig,
-        HSRUserConfig,
         PluginUserConfig,
     ] = (
         Field(..., description="用户配置数据")
@@ -2027,7 +2019,6 @@ class UserUpdateIn(UserInBase):
         MaaEndUserConfig,
         M9AUserConfig,
         MaaFWUserConfig,
-        HSRUserConfig,
         PluginUserConfig,
     ] = (
         Field(..., description="用户更新数据")

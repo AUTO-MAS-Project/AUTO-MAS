@@ -76,7 +76,6 @@ export const BUILTIN_SCRIPT_TYPES = new Set([
   'MaaFW',
   'OkScript',
   'Okef',
-  'HSR',
 ])
 
 export const isBuiltinScriptType = (type: string) => BUILTIN_SCRIPT_TYPES.has(type)
@@ -156,7 +155,6 @@ const BUILTIN_EDITOR_SEGMENTS: Record<string, string> = {
   'builtin:maafw': 'maafw',
   'builtin:ok-script': 'ok-script',
   'builtin:okef': 'ok-script',
-  'builtin:hsr': 'hsr',
 }
 
 const TYPE_KEY_EDITOR_SEGMENTS: Record<string, string> = {
@@ -164,6 +162,7 @@ const TYPE_KEY_EDITOR_SEGMENTS: Record<string, string> = {
   M9A: 'maafw',
   // ok-ww 使用专属编辑页（/edit/okww 等），与 PR #287/#288 的视觉与配置字段保持一致
   Okww: 'okww',
+  HSR: 'hsr',
 }
 
 export const getScriptEditPath = (script: Pick<Script, 'id' | 'type' | 'editorKind'>) => {
@@ -256,7 +255,7 @@ export const normalizeScriptRecord = (
   users: ScriptUserRecord[] = []
 ): Script => {
   const descriptor = descriptorMap[record.type]
-  const available = Boolean(descriptor) && descriptor?.available !== false
+  const available = record.available ?? (Boolean(descriptor) && descriptor?.available !== false)
   const info =
     record.config?.Info && typeof record.config.Info === 'object' ? record.config.Info : {}
   return {
@@ -277,7 +276,11 @@ export const normalizeScriptRecord = (
     displayName: descriptor?.display_name ?? record.type,
     isBuiltin: descriptor?.is_builtin ?? isBuiltinScriptType(record.type),
     available,
-    unavailableReason: available ? null : `脚本类型 ${record.type} 当前未启用，暂时不能操作`,
+    unavailableReason: available
+      ? null
+      : record.unavailable_reason ||
+        descriptor?.unavailable_reason ||
+        `脚本类型 ${record.type} 当前未启用，暂时不能操作`,
     createTime: new Date().toLocaleString(),
   }
 }

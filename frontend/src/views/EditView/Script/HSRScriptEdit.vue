@@ -30,6 +30,15 @@
         <a-tag color="purple" class="type-tag"> HSR (三月七 / SRA) </a-tag>
       </template>
 
+      <a-alert
+        v-for="warning in capabilitySnapshot?.warnings || []"
+        :key="warning"
+        type="warning"
+        show-icon
+        :message="warning"
+        style="margin-bottom: 12px"
+      />
+
       <a-form ref="formRef" :model="formData" layout="vertical" class="config-form">
         <!-- 脚本名称 -->
         <div class="form-section">
@@ -56,6 +65,16 @@
                 />
               </a-form-item>
             </a-col>
+            <a-col :span="24">
+              <a-form-item label="启用引擎">
+                <a-checkbox-group
+                  v-model:value="hsrConfig.Engine.EnabledEngines"
+                  :options="engineOptions"
+                  @change="handleEnabledEnginesChange"
+                />
+                <div class="form-item-hint">未选择的引擎不会展示、校验或参与当前脚本调度。</div>
+              </a-form-item>
+            </a-col>
           </a-row>
         </div>
 
@@ -65,7 +84,7 @@
             <h3>脚本与游戏配置</h3>
           </div>
           <a-row :gutter="24">
-            <a-col :span="12">
+            <a-col v-if="effectiveEngines.has('M7A')" :span="12">
               <a-form-item>
                 <template #label>
                   <a-tooltip title="March7th Assistant 安装目录（含 March7th Assistant.exe）">
@@ -77,24 +96,24 @@
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input
-                    v-model:value="hsrConfig.Info.M7APath"
+                    v-model:value="hsrConfig.M7A.Path"
                     placeholder="请选择三月七所在文件夹（含 March7th Assistant.exe）"
                     size="large"
                     class="path-input"
                     readonly
                   />
-                  <a-button size="large" class="path-button" @click="selectPath('M7APath')">
+                  <a-button size="large" class="path-button" @click="selectPath('M7A.Path')">
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
                     选择文件夹
                   </a-button>
                   <a-button
-                    v-if="hsrConfig.Info.M7APath"
+                    v-if="hsrConfig.M7A.Path"
                     title="清空三月七路径"
                     size="large"
                     class="path-clear-button"
-                    @click="clearPath('M7APath')"
+                    @click="clearPath('M7A.Path')"
                   >
                     ×
                   </a-button>
@@ -102,7 +121,7 @@
               </a-form-item>
             </a-col>
 
-            <a-col :span="12">
+            <a-col v-if="effectiveEngines.has('SRA')" :span="12">
               <a-form-item>
                 <template #label>
                   <a-tooltip title="StarRailAssistant 安装目录（含 SRA-cli.exe）">
@@ -114,24 +133,24 @@
                 </template>
                 <a-input-group compact class="path-input-group">
                   <a-input
-                    v-model:value="hsrConfig.Info.SRAPath"
+                    v-model:value="hsrConfig.SRA.Path"
                     placeholder="请选择 SRA 所在文件夹（含 SRA-cli.exe）"
                     size="large"
                     class="path-input"
                     readonly
                   />
-                  <a-button size="large" class="path-button" @click="selectPath('SRAPath')">
+                  <a-button size="large" class="path-button" @click="selectPath('SRA.Path')">
                     <template #icon>
                       <FolderOpenOutlined />
                     </template>
                     选择文件夹
                   </a-button>
                   <a-button
-                    v-if="hsrConfig.Info.SRAPath"
+                    v-if="hsrConfig.SRA.Path"
                     title="清空 SRA 路径"
                     size="large"
                     class="path-clear-button"
-                    @click="clearPath('SRAPath')"
+                    @click="clearPath('SRA.Path')"
                   >
                     ×
                   </a-button>
@@ -272,12 +291,12 @@
             </a-col>
           </a-row>
           <a-row :gutter="16">
-            <a-col :span="12">
+            <a-col v-if="effectiveEngines.has('M7A')" :span="12">
               <a-form-item label="启用低性能兼容模式">
                 <a-switch
-                  v-model:checked="hsrConfig.Run.LowPerformanceMode"
-                  :disabled="!hsrConfig.Info.M7APath"
-                  @change="handleRunConfigChange('LowPerformanceMode', $event)"
+                  v-model:checked="hsrConfig.M7A.LowPerformanceMode"
+                  :disabled="!hsrConfig.M7A.Path"
+                  @change="handleM7AConfigChange('LowPerformanceMode', $event)"
                 />
                 <div class="form-item-hint">
                   仅对三月七差分宇宙生效，映射到 weekly_divergent_stable_mode
@@ -288,7 +307,7 @@
         </div>
 
         <!-- 模块脚本分配 -->
-        <div class="form-section">
+        <div v-if="effectiveEngines.size > 1" class="form-section">
           <div class="section-header">
             <h3>模块脚本分配</h3>
           </div>
@@ -355,7 +374,7 @@
                     <div>- 启用积分奖励</div>
                     <div>- 周期演算</div>
                     <div>
-                      - 低性能兼容模式：{{ hsrConfig.Run.LowPerformanceMode ? '启用' : '关闭' }}
+                      - 低性能兼容模式：{{ hsrConfig.M7A.LowPerformanceMode ? '启用' : '关闭' }}
                     </div>
                     <div style="margin-top: 4px; color: var(--ant-color-text-tertiary)">
                       其它 DU 字段（球队 / 赐福 / 演算策略）由三月七客户端自行决定
@@ -417,7 +436,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
@@ -425,44 +444,81 @@ import {
   FolderOpenOutlined,
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
-import { useScriptApi } from '@/composables/useScriptApi'
+import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
+import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
+import {
+  useHSRPluginApi,
+  type HSREngine,
+  type HSRCapabilitySnapshot,
+} from '@/composables/useHSRPluginApi'
 import { DEFAULT_HSR_TASK_MAPPING, resolveTaskMappingValue } from '@/types/script'
-import type { HSRConfig_TaskMapping, HSRConfig_Info, HSRConfig_Game, HSRConfig_Run } from '@/api'
-import type { HSRScriptConfig } from '@/types/script'
+import { buildHSRCapabilityView } from '@/views/HSRUserEdit/capabilityView'
+
+type HSRTaskMapping = Partial<
+  Record<'Daily' | 'ReceiveRewards' | 'DivergentUniverse' | 'CurrencyWars', HSREngine>
+>
 
 // HSR 内部非空 reactive 形态（OpenAPI 生成类型字段全部为 optional | null，
 // 前端实际为非空；通过该形态消除 strict null 警告）。
 type HSRConfigData = {
-  Info: HSRConfig_Info
-  Game: HSRConfig_Game
-  Run: HSRConfig_Run
-  TaskMapping: HSRConfig_TaskMapping
+  Info: { Name: string }
+  Engine: { EnabledEngines: HSREngine[] }
+  SRA: { Path: string }
+  M7A: { Path: string; LowPerformanceMode: boolean }
+  Game: { Path: string; Arguments: string; WaitTime: number }
+  Run: {
+    RunTimesLimit: number
+    DailyTimeLimit: number
+    WeeklyTimeLimit: number
+    MonthlyTimeLimit: number
+  }
+  TaskMapping: HSRTaskMapping
 }
 
 const logger = window.electronAPI.getLogger('HSR 脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript } = useScriptApi()
+const registryApi = useScriptRegistryApi()
+const hsrPluginApi = useHSRPluginApi()
+const { subscribe, unsubscribe } = useWebSocket()
+const getScript = async (id: string) => (await registryApi.getScripts(id))[0] ?? null
+const updateScript = async (id: string, config: Record<string, unknown>) => {
+  await registryApi.updateScript(id, config)
+  return true
+}
 
 const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true)
 const isSaving = ref(false)
+const capabilitySnapshot = ref<HSRCapabilitySnapshot | null>(null)
+let pluginSystemSubscriptionId: string | null = null
+
+const handlePluginSystemMessage = (message: WebSocketBaseMessage) => {
+  const payload = message.data as { kind?: string } | undefined
+  if (payload?.kind !== 'snapshot') return
+  void hsrPluginApi
+    .getCapabilities(scriptId)
+    .then(snapshot => (capabilitySnapshot.value = snapshot))
+    .catch(error => logger.warning(`刷新 HSR 能力失败: ${String(error)}`))
+}
 
 const formData = reactive({
   infoName: '',
 })
 
 const hsrConfig = reactive<HSRConfigData>({
-  Info: { Name: '', M7APath: '', SRAPath: '' },
+  Info: { Name: '' },
+  Engine: { EnabledEngines: [] },
+  SRA: { Path: '' },
+  M7A: { Path: '', LowPerformanceMode: false },
   Game: { Path: '', Arguments: '', WaitTime: 60 },
   Run: {
     RunTimesLimit: 3,
     DailyTimeLimit: 20,
     WeeklyTimeLimit: 60,
     MonthlyTimeLimit: 60,
-    LowPerformanceMode: false,
   },
   TaskMapping: { ...DEFAULT_HSR_TASK_MAPPING },
 })
@@ -474,6 +530,15 @@ const moduleList = [
   { key: 'CurrencyWars', label: '货币战争', tooltip: 'PVP 货币战争' },
 ] as const
 
+const capabilityView = computed(() => buildHSRCapabilityView(capabilitySnapshot.value))
+const effectiveEngines = computed(() => capabilityView.value.effectiveEngines)
+const engineOptions = computed(() =>
+  (capabilitySnapshot.value?.candidate_engines || []).map(engine => ({
+    label: engine === 'M7A' ? '三月七助手' : 'StarRailAssistant',
+    value: engine,
+  }))
+)
+
 // 路径变更后重排 TaskMapping 的判断已统一到 getModuleOptions / reconcileTaskMapping。
 // 不再保留静态 engineOptions。
 
@@ -481,8 +546,8 @@ const moduleList = [
 // 其余纯本地赋值字段不重复请求，避免覆盖用户刚改的值。
 const FIELDS_REQUIRE_REFRESH_AFTER_SAVE = new Set<string>([
   'Info.Name',
-  'Info.M7APath',
-  'Info.SRAPath',
+  'M7A.Path',
+  'SRA.Path',
   'Game.Path',
 ])
 
@@ -505,12 +570,9 @@ const handleChange = async (category: string, key: string, value: any) => {
   }
 }
 
-// 当前可用脚本集合（来自 M7APath / SRAPath）
+// 当前可用脚本集合由插件注册表与脚本选择求交得到。
 const availableScripts = computed<Set<'M7A' | 'SRA'>>(() => {
-  const set = new Set<'M7A' | 'SRA'>()
-  if (hsrConfig.Info?.M7APath) set.add('M7A')
-  if (hsrConfig.Info?.SRAPath) set.add('SRA')
-  return set
+  return new Set(effectiveEngines.value)
 })
 
 // 任意可用路径都未配置
@@ -528,7 +590,7 @@ const getModuleOptions = (): Array<{ value: 'M7A' | 'SRA'; label: string }> => {
 const isModuleSelectable = () => getModuleOptions().length > 0
 
 // select 当前显示值；无可用路径时返回 undefined，避免显示默认值误导
-const getTaskMapping = (k: keyof HSRConfig_TaskMapping): 'M7A' | 'SRA' | undefined => {
+const getTaskMapping = (k: keyof HSRTaskMapping): 'M7A' | 'SRA' | undefined => {
   if (noPathConfigured.value) return undefined
   return resolveTaskMappingValue(hsrConfig.TaskMapping?.[k], availableScripts.value)
 }
@@ -546,35 +608,16 @@ const getModuleHint = (moduleKey: string) => {
   return baseTooltip
 }
 
-// 路径变更后强制重排 TaskMapping：
-//  - 没有任何可用路径：不保存空值
-//  - current 不可用时按 available 集合选三月七（首选）或 SRA
-const reconcileTaskMapping = async () => {
-  if (isInitializing.value || isSaving.value) return
-  if (noPathConfigured.value) return
-  const available = availableScripts.value
-  const changes: { key: string; value: 'M7A' | 'SRA' }[] = []
-  for (const m of moduleList) {
-    const current = hsrConfig.TaskMapping?.[m.key as keyof HSRConfig_TaskMapping]
-    if (!current || !available.has(current as 'M7A' | 'SRA')) {
-      const next = available.has('M7A') ? 'M7A' : 'SRA'
-      if (next !== current) {
-        changes.push({ key: m.key, value: next })
-      }
-    }
-  }
-  for (const c of changes) {
-    await handleChange('TaskMapping', c.key, c.value)
-  }
-}
-
 const refreshScript = async () => {
   try {
     const scriptDetail = await getScript(scriptId)
     if (!scriptDetail) return
     formData.infoName = scriptDetail.name
-    const cfg = scriptDetail.config as HSRScriptConfig
+    const cfg = scriptDetail.config as Partial<HSRConfigData>
     if (cfg.Info) Object.assign(hsrConfig.Info, cfg.Info)
+    if (cfg.Engine) Object.assign(hsrConfig.Engine, cfg.Engine)
+    if (cfg.SRA) Object.assign(hsrConfig.SRA, cfg.SRA)
+    if (cfg.M7A) Object.assign(hsrConfig.M7A, cfg.M7A)
     if (cfg.Game) {
       Object.assign(hsrConfig.Game, cfg.Game)
       if (hsrConfig.Game.Arguments === undefined || hsrConfig.Game.Arguments === null) {
@@ -590,11 +633,11 @@ const refreshScript = async () => {
       if (hsrConfig.Run.DailyTimeLimit === undefined) hsrConfig.Run.DailyTimeLimit = 20
       if (hsrConfig.Run.WeeklyTimeLimit === undefined) hsrConfig.Run.WeeklyTimeLimit = 60
       if (hsrConfig.Run.MonthlyTimeLimit === undefined) hsrConfig.Run.MonthlyTimeLimit = 60
-      if (hsrConfig.Run.LowPerformanceMode === undefined) hsrConfig.Run.LowPerformanceMode = false
     }
     if (cfg.TaskMapping) {
       hsrConfig.TaskMapping = { ...DEFAULT_HSR_TASK_MAPPING, ...cfg.TaskMapping }
     }
+    capabilitySnapshot.value = await hsrPluginApi.getCapabilities(scriptId)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`刷新配置失败: ${errorMsg}`)
@@ -603,10 +646,10 @@ const refreshScript = async () => {
 
 const handleTaskMappingChange = (module: string, value: 'M7A' | 'SRA') => {
   // 检查当前值是否与要保存的值一致，避免无意义保存
-  const current = hsrConfig.TaskMapping?.[module as keyof HSRConfig_TaskMapping]
+  const current = hsrConfig.TaskMapping?.[module as keyof HSRTaskMapping]
   if (current === value) return
   if (!hsrConfig.TaskMapping) hsrConfig.TaskMapping = {}
-  hsrConfig.TaskMapping[module as keyof HSRConfig_TaskMapping] = value
+  hsrConfig.TaskMapping[module as keyof HSRTaskMapping] = value
   handleChange('TaskMapping', module, value)
 }
 
@@ -626,6 +669,21 @@ const handleRunConfigChange = async (key: string, value: any) => {
   }
 }
 
+const handleM7AConfigChange = async (key: string, value: unknown) => {
+  await handleChange('M7A', key, value)
+}
+
+const handleEnabledEnginesChange = async (value: unknown[]) => {
+  const engines = value.filter((item): item is HSREngine => item === 'SRA' || item === 'M7A')
+  if (!engines.length) {
+    message.warning('至少选择一个 HSR 引擎')
+    hsrConfig.Engine.EnabledEngines = [...(capabilitySnapshot.value?.effective_engines || [])]
+    return
+  }
+  await handleChange('Engine', 'EnabledEngines', engines)
+  await refreshScript()
+}
+
 const handleGameConfigChange = async (key: 'WaitTime', value: number | null) => {
   if (isInitializing.value || isSaving.value) return
   const normalizedValue = value ?? 60
@@ -635,8 +693,8 @@ const handleGameConfigChange = async (key: 'WaitTime', value: number | null) => 
 
 // 路径选择时需校验的 exe 名（key -> exe 文件名）
 const PATH_VALIDATION: Record<string, string> = {
-  M7APath: 'March7th Assistant.exe',
-  SRAPath: 'SRA-cli.exe',
+  'M7A.Path': 'March7th Assistant.exe',
+  'SRA.Path': 'SRA-cli.exe',
   'Game.Path': 'StarRail.exe',
 }
 
@@ -666,12 +724,10 @@ const selectPath = async (key: string) => {
       }
     }
 
-    // M7APath / SRAPath 属于 Info 分组，Game.Path 属于 Game 分组
-    if (key === 'M7APath' || key === 'SRAPath') {
-      await handleChange('Info', key, path)
-      // 路径变更后刷新已分配 TaskMapping（refreshScript 已在白名单路径触发 GET，
-      // 这里仅根据最新路径重排模块）
-      await reconcileTaskMapping()
+    if (key === 'M7A.Path') {
+      await handleChange('M7A', 'Path', path)
+    } else if (key === 'SRA.Path') {
+      await handleChange('SRA', 'Path', path)
     } else if (key === 'Game.Path') {
       await handleChange('Game', 'Path', path)
     } else {
@@ -692,15 +748,17 @@ const handleCancel = () => {
 
 // 清空路径：保存空字符串到后端，然后级联重排 TaskMapping。
 const clearPath = async (key: string) => {
-  if (key === 'M7APath' || key === 'SRAPath') {
-    await handleChange('Info', key, '')
-    // 手动刷新本地 hsrConfig 以反映当前路径集合
-    hsrConfig.Info![key] = ''
-    await reconcileTaskMapping()
+  if (key === 'M7A.Path') {
+    await handleChange('M7A', 'Path', '')
+    hsrConfig.M7A.Path = ''
+  } else if (key === 'SRA.Path') {
+    await handleChange('SRA', 'Path', '')
+    hsrConfig.SRA.Path = ''
   }
 }
 
 onMounted(async () => {
+  pluginSystemSubscriptionId = subscribe({ id: 'PluginSystem' }, handlePluginSystemMessage)
   pageLoading.value = true
   try {
     const scriptDetail = await getScript(scriptId)
@@ -719,6 +777,10 @@ onMounted(async () => {
     pageLoading.value = false
     isInitializing.value = false
   }
+})
+
+onUnmounted(() => {
+  if (pluginSystemSubscriptionId) unsubscribe(pluginSystemSubscriptionId)
 })
 </script>
 

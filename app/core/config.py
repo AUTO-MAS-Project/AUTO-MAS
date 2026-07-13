@@ -37,6 +37,7 @@ from datetime import datetime, timedelta, date
 from typing import Literal, Optional, Union, Dict, Any, List
 import uuid
 import json
+import inspect
 
 from app.models.ConfigBase import ConfigBase, JSONValidator
 from app.models.config import (
@@ -949,27 +950,19 @@ class AppConfig(GlobalConfig):
         self,
         script: str,
         script_id: str | None = None,
+        initial_config: dict[str, Any] | None = None,
     ) -> tuple[uuid.UUID, ConfigBase]:
         """添加脚本配置。"""
 
         logger.info(f"添加脚本配置: {script}, 从 {script_id} 复制")
 
         provider = script_type_registry.get(script)
+        self._require_provider_available(provider, "新增脚本配置")
 
         if not provider.is_builtin:
             from app.models.plugin_script_config import PluginScriptConfig
 
-            new_uid, new_config = await self.ScriptConfig.add(PluginScriptConfig)
-            await new_config.set("Meta", "PluginTypeKey", provider.type_key)
-
-            defaults = await form_to_storage(provider, {}, "script")
-            default_form = await storage_to_form(provider, defaults, "script")
-            script_name = self._script_record_name(provider, default_form)
-            await new_config.set("Info", "Name", script_name)
-            await new_config.set(
-                "PluginData", "Config",
-                json.dumps(defaults, ensure_ascii=False),
-            )
+            form_payload: dict[str, Any] = {}
 
             if script_id is not None:
                 source_uid = uuid.UUID(script_id)
@@ -986,12 +979,41 @@ class AppConfig(GlobalConfig):
                         if_decrypt=False,
                         regenerate_uuids=True,
                     )
-                storage_payload = await form_to_storage(provider, source_payload, "script")
-                await new_config.set(
-                    "PluginData", "Config",
-                    json.dumps(storage_payload, ensure_ascii=False),
+                form_payload = await storage_to_form(
+                    provider,
+                    source_payload,
+                    "script",
                 )
-                await new_config.set("Info", "Name", source_config.get("Info", "Name"))
+
+            if script_id is None:
+                initial_factory = provider.metadata.get("initial_config_factory")
+                if callable(initial_factory):
+                    default_initial = initial_factory()
+                    if inspect.isawaitable(default_initial):
+                        default_initial = await default_initial
+                    if isinstance(default_initial, dict):
+                        form_payload = self._merge_plugin_form_payload(
+                            form_payload,
+                            default_initial,
+                        )
+
+            if initial_config:
+                form_payload = self._merge_plugin_form_payload(
+                    form_payload,
+                    initial_config,
+                )
+
+            storage_payload = await form_to_storage(provider, form_payload, "script")
+            default_form = await storage_to_form(provider, storage_payload, "script")
+            script_name = self._script_record_name(provider, default_form)
+            new_uid, new_config = await self.ScriptConfig.add(PluginScriptConfig)
+            await new_config.set("Meta", "PluginTypeKey", provider.type_key)
+            await new_config.set("Info", "Name", script_name)
+            await new_config.set(
+                "PluginData",
+                "Config",
+                json.dumps(storage_payload, ensure_ascii=False),
+            )
 
             return new_uid, new_config
 
@@ -1789,6 +1811,7 @@ class AppConfig(GlobalConfig):
             schema = await self._apply_schema_decoration(
                 provider, schema, config_data, "script"
             )
+            capability = provider.resolve_record_capability(config_data)
 
             records.append(
                 ScriptRecord(
@@ -1798,7 +1821,9 @@ class AppConfig(GlobalConfig):
                     config=config_data,
                     schema=schema,
                     editor_kind=provider.editor_kind,
-                    supported_modes=list(provider.supported_modes),
+                    supported_modes=list(capability.supported_modes or ()),
+                    available=capability.available,
+                    unavailable_reason=capability.unavailable_reason,
                     icon=provider.icon,
                     icon_url=f"/api/script-types/{provider.type_key}/icon" if provider.icon_path else None,
                     theme_color=provider.metadata.get("theme_color"),

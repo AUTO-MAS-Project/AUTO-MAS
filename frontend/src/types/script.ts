@@ -1,7 +1,5 @@
 // 脚本类型定义
 import type {
-  HSRConfig,
-  HSRConfig_TaskMapping,
   MaaConfig,
   GeneralConfig,
   OkwwConfig,
@@ -34,7 +32,6 @@ export type BuiltinScriptType =
   | 'MaaEnd'
   | 'M9A'
   | 'MaaFW'
-  | 'HSR'
 
 export type ScriptType = string
 
@@ -459,7 +456,6 @@ export interface MaaFWWindowPreviewData {
   windows: MaaFWDesktopWindowInfo[]
 }
 
-// HSR 脚本配置（后端已通过 HSRConfig OpenAPI 暴露类型）
 export interface MaaFWAgentEnvInfo {
   childExec: string
   executable: string
@@ -477,10 +473,29 @@ export interface MaaFWAgentEnvPrepareData {
   message?: string
 }
 
-export type HSRScriptConfig = HSRConfig
+// HSR is a plugin script. Keep its rich-editor form type local instead of
+// exposing the removed legacy HSRConfig through the host OpenAPI schema.
+export type HSRTaskMapping = Partial<
+  Record<'Daily' | 'ReceiveRewards' | 'DivergentUniverse' | 'CurrencyWars', 'SRA' | 'M7A'>
+>
+
+export interface HSRScriptConfig {
+  Info?: { Name?: string }
+  Engine?: { EnabledEngines?: Array<'SRA' | 'M7A'> }
+  SRA?: { Path?: string }
+  M7A?: { Path?: string; LowPerformanceMode?: boolean }
+  Game?: { Path?: string; Arguments?: string; WaitTime?: number }
+  Run?: {
+    RunTimesLimit?: number
+    DailyTimeLimit?: number
+    WeeklyTimeLimit?: number
+    MonthlyTimeLimit?: number
+  }
+  TaskMapping?: HSRTaskMapping
+}
 
 // HSR TaskMapping 默认值（Daily / ReceiveRewards / DivergentUniverse / CurrencyWars 默认走 SRA）
-export const DEFAULT_HSR_TASK_MAPPING: HSRConfig_TaskMapping = {
+export const DEFAULT_HSR_TASK_MAPPING: HSRTaskMapping = {
   Daily: 'SRA',
   ReceiveRewards: 'SRA',
   DivergentUniverse: 'SRA',
@@ -518,7 +533,7 @@ export interface Script {
     | M9AConfig
     | ApiMaaFWConfig
     | MaaFWScriptConfig
-    | HSRConfig
+    | HSRScriptConfig
     | Record<string, any>
   users: User[]
   schema?: SchemaDefinition
@@ -675,7 +690,6 @@ export interface ScriptIndexItem {
     | 'MaaEndConfig'
     | 'M9AConfig'
     | 'MaaFWConfig'
-    | 'HSRConfig'
 }
 
 // 获取脚本API响应
@@ -714,7 +728,7 @@ export interface ScriptDetail {
     | M9AConfig
     | ApiMaaFWConfig
     | MaaFWScriptConfig
-    | HSRConfig
+    | HSRScriptConfig
   users?: User[]
   createTime?: string
 }
