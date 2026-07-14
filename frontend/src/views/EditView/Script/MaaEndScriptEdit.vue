@@ -33,7 +33,7 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img src="../../../assets/MaaEnd.png" alt="MaaEnd" class="breadcrumb-logo" />
+            <img src="@/assets/MaaEnd.png" alt="MaaEnd" class="breadcrumb-logo" />
             编辑脚本
           </div>
         </a-breadcrumb-item>

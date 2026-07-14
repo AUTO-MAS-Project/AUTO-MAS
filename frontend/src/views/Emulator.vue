@@ -1,4 +1,3 @@
-<!-- eslint-disable vue/multi-word-component-names -->
 <script setup lang="ts">
 // 挂载和卸载键盘监听
 import { h, onMounted, onUnmounted, ref, watch } from 'vue'
