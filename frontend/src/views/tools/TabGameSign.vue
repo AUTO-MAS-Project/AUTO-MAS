@@ -201,7 +201,7 @@ const qrFetch = async (path: string, body?: any) => {
   const text = await resp.text()
   if (!text) throw new Error('服务器无响应')
   const data = JSON.parse(text)
-  console.debug(`[QR ${path}]`, data)
+  logger.debug(`[QR ${path}] ${JSON.stringify(data)}`)
   // 不在此处抛出 API 错误，由调用方根据 data.status / data.code 处理
   return data
 }
@@ -267,7 +267,7 @@ const pollQrStatus = async () => {
     // status === 'Init' 时不更新 UI，继续轮询
   } catch (e) {
     // 网络错误不停止轮询，但记录日志便于调试
-    console.warn('[QR poll] 轮询异常:', e)
+    logger.warn(`[QR poll] 轮询异常: ${String(e)}`)
   }
 }
 

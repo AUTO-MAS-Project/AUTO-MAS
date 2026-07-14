@@ -894,10 +894,10 @@ import { computed, onMounted, reactive, ref, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
-import type { GeneralScriptConfig, ScriptType } from '../../../types/script.ts'
-import { useScriptApi } from '../../../composables/useScriptApi.ts'
-import { Service, type ComboBoxItem } from '../../../api'
-import type { ScriptUploadIn } from '../../../api'
+import type { GeneralScriptConfig, ScriptType } from '@/types/script.ts'
+import { useScriptApi } from '@/composables/useScriptApi.ts'
+import { Service, type ComboBoxItem } from '@/api'
+import type { ScriptUploadIn } from '@/api'
 import {
   ArrowLeftOutlined,
   CloudUploadOutlined,

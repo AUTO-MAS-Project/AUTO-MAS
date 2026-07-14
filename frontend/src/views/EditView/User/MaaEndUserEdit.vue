@@ -91,11 +91,11 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 
-import MaaEndUserEditHeader from '../../MaaEndUserEdit/MaaEndUserEditHeader.vue'
-import BasicInfoSection from '../../MaaEndUserEdit/BasicInfoSection.vue'
-import TaskConfigSection from '../../MaaEndUserEdit/TaskConfigSection.vue'
-import SkylandConfigSection from '../../MaaEndUserEdit/SkylandConfigSection.vue'
-import NotifyConfigSection from '../../MaaEndUserEdit/NotifyConfigSection.vue'
+import MaaEndUserEditHeader from '@/views/MaaEndUserEdit/MaaEndUserEditHeader.vue'
+import BasicInfoSection from '@/views/MaaEndUserEdit/BasicInfoSection.vue'
+import TaskConfigSection from '@/views/MaaEndUserEdit/TaskConfigSection.vue'
+import SkylandConfigSection from '@/views/MaaEndUserEdit/SkylandConfigSection.vue'
+import NotifyConfigSection from '@/views/MaaEndUserEdit/NotifyConfigSection.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const logger = window.electronAPI.getLogger('MaaEnd用户编辑')
