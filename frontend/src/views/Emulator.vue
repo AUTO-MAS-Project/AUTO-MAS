@@ -16,7 +16,7 @@ import {
   StopOutlined,
 } from '@ant-design/icons-vue'
 import type { EmulatorConfigIndexItem, EmulatorSearchResult } from '@/api'
-import { Service } from '@/api'
+import { EmulatorOperateIn, Service } from '@/api'
 const logger = window.electronAPI.getLogger('模拟器管理')
 
 // 编辑数据接口
@@ -504,7 +504,7 @@ const startEmulator = async (uuid: string, index: string) => {
   try {
     const response = await Service.operationEmulatorApiEmulatorOperatePost({
       emulatorId: uuid,
-      operate: 'open' as any,
+      operate: EmulatorOperateIn.operate.OPEN,
       index: index,
     })
 
@@ -534,7 +534,7 @@ const stopEmulator = async (uuid: string, index: string) => {
   try {
     const response = await Service.operationEmulatorApiEmulatorOperatePost({
       emulatorId: uuid,
-      operate: 'close' as any,
+      operate: EmulatorOperateIn.operate.CLOSE,
       index: index,
     })
 
@@ -564,7 +564,7 @@ const showEmulator = async (uuid: string, index: string) => {
   try {
     const response = await Service.operationEmulatorApiEmulatorOperatePost({
       emulatorId: uuid,
-      operate: 'show' as any,
+      operate: EmulatorOperateIn.operate.SHOW,
       index: index,
     })
 
