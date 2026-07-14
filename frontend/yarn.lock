@@ -3760,7 +3760,7 @@ __metadata:
     globals: "npm:^16.4.0"
     markdown-it: "npm:^14.1.1"
     matter-js: "npm:^0.20.0"
-    monaco-editor: "npm:^0.54.0"
+    monaco-editor: "npm:0.54.0"
     openapi-typescript-codegen: "npm:^0.29.0"
     pinia: "npm:^3.0.3"
     prettier: "npm:^3.6.2"
@@ -5027,7 +5027,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"monaco-editor@npm:^0.54.0":
+"monaco-editor@npm:0.54.0":
   version: 0.54.0
   resolution: "monaco-editor@npm:0.54.0"
   dependencies:
