@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from app.core import Config
+from app.core import Config as app_config
 from app.core.script_config_codec import storage_to_form
 from app.models.plugin_script_config import PluginScriptConfig
 from app.plugins import PluginHttpRequest, ScriptAdapterDefinition, ScriptAdapterPlugin
@@ -16,7 +16,7 @@ from .common.provider import ok_script_mas_config_dir
 from .providers import detect_ok_script_provider
 from .shell.manifest import OkProjectInspectError, inspect_ok_project
 from .shell.runtime import OkConfigStore
-from .schema import OkScriptConfig, OkScriptUserConfig
+from .schema import Config, OkScriptConfig, OkScriptUserConfig
 
 
 DEFAULT_INSTANCE = {
@@ -34,8 +34,32 @@ SCRIPT_TYPE_BINDINGS = [
 ]
 
 
+def normalize_ok_script_form(data: dict[str, Any]) -> dict[str, Any]:
+    """根据项目 Manifest 回填可展示的 ok-script 元数据。"""
+
+    info = data.get("Info")
+    if not isinstance(info, dict):
+        return data
+
+    root_path = str(info.get("RootPath") or "").strip()
+    if not root_path:
+        return data
+
+    try:
+        manifest = inspect_ok_project(Path(root_path))
+    except (OSError, OkProjectInspectError):
+        return data
+
+    project_label = manifest.display_name or manifest.resource_name
+    info["ResourceName"] = manifest.resource_name
+    info["ProjectLabel"] = project_label
+    if str(info.get("Name") or "").strip() in {"", "ok-script 项目"}:
+        info["Name"] = project_label
+    return data
+
+
 def _read_form_config(script_id: str) -> Any:
-    return Config.ScriptConfig[uuid.UUID(script_id)]
+    return app_config.ScriptConfig[uuid.UUID(script_id)]
 
 
 async def _script_form_config(script_id: str) -> dict[str, Any]:
@@ -129,7 +153,7 @@ class Plugin(ScriptAdapterPlugin):
                 hooks_factory=OkScriptAdapterHooks,
                 supported_modes=("AutoProxy",),
                 icon="General",
-                editor_kind="builtin:ok-script",
+                editor_kind="plugin:ok_script_adapter",
                 script_class_name="OkScriptPluginConfig",
                 user_class_name="OkScriptPluginUserConfig",
                 legacy_config_class_name="OkefConfig",
@@ -138,6 +162,13 @@ class Plugin(ScriptAdapterPlugin):
                     "framework": "ok-script",
                     "source": "ok_script_adapter",
                     "legacy_config_migrator": migrate_legacy_okef_config,
+                    "normalize_script_form": normalize_ok_script_form,
+                    "client": {
+                        "config_editor": {
+                            "kind": "json-files",
+                            "endpoint_prefix": "/plugin/ok-script/configs",
+                        }
+                    },
                 },
             )
         ]

@@ -30,7 +30,13 @@ from app.core import Config
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem, LogRecord
 from app.models.ConfigBase import ConfigBase, MultipleConfig
 from app.services import Notify, System
-from app.utils import get_logger, ProcessManager, ProcessInfo, is_process_running
+from app.utils import (
+    ProcessInfo,
+    ProcessManager,
+    get_logger,
+    get_path_runtime_lock,
+    is_process_running,
+)
 from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
 from app.task.general.tools import execute_script_task
@@ -94,6 +100,8 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config: ConfigBase = self.user_config[self.cur_user_uid]
         self.manual_stop_requested = False
+        self.script_root_lock: asyncio.Lock | None = None
+        self.script_root_lock_acquired = False
 
     async def check(self) -> str:
         root = Path(self.script_config.get("Info", "RootPath"))
@@ -137,6 +145,11 @@ class AutoProxyTask(TaskExecuteBase):
 
         # ── 所有 Script 路径从 RootPath 实时派生，不依赖 ConfigItem 存储值 ──
         self.script_root_path = Path(self.script_config.get("Info", "RootPath"))
+        self.script_root_lock = get_path_runtime_lock(self.script_root_path)
+        if not self.script_root_lock_acquired:
+            self.script_info.log = "正在等待同一 ok-script 项目完成运行"
+            await self.script_root_lock.acquire()
+            self.script_root_lock_acquired = True
         self.script_exe_path = self.script_root_path / _OKWW_REL_EXE
 
         self.script_target_process_info = ProcessInfo(
@@ -433,6 +446,12 @@ class AutoProxyTask(TaskExecuteBase):
             self.wait_event.set()
 
     async def final_task(self):
+        try:
+            await self._finalize_task()
+        finally:
+            self._release_script_root_lock()
+
+    async def _finalize_task(self):
         # 结束时先清理进程与监控；任务结束后始终关闭游戏（由 Game.Enabled 总开关控制）
         with suppress(Exception):
             await self.log_monitor.stop()
@@ -456,6 +475,15 @@ class AutoProxyTask(TaskExecuteBase):
             await Config.save_general_log(log_path, log_item.content, log_item.status)
 
         await self._persist_user_run_result()
+
+    def _release_script_root_lock(self) -> None:
+        if (
+            self.script_root_lock_acquired
+            and self.script_root_lock is not None
+            and self.script_root_lock.locked()
+        ):
+            self.script_root_lock.release()
+        self.script_root_lock_acquired = False
 
     async def _persist_user_run_result(self) -> None:
         if self.cur_user_config is None:

@@ -16,16 +16,21 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""ok-script 控制台伪前端壳。"""
+"""已迁移到 ok-script 插件的旧 CLI 壳包兼容层。"""
 
-from .manifest import OkProjectManifest, OkTaskManifest, inspect_ok_project
-from .runtime import OkConfigStore, OkShellRunner, OkShellRuntimeError
+from __future__ import annotations
 
-__all__ = [
-    "OkConfigStore",
-    "OkProjectManifest",
-    "OkShellRunner",
-    "OkShellRuntimeError",
-    "OkTaskManifest",
-    "inspect_ok_project",
-]
+from typing import Any
+
+from .._plugin_compat import get_plugin_attribute, get_plugin_dir
+
+
+_TARGET_MODULE = "ok_script_adapter.shell"
+
+
+def __getattr__(name: str) -> Any:
+    return get_plugin_attribute(_TARGET_MODULE, name)
+
+
+def __dir__() -> list[str]:
+    return sorted({*globals(), *get_plugin_dir(_TARGET_MODULE)})

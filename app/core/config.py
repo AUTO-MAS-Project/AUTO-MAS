@@ -1083,6 +1083,12 @@ class AppConfig(GlobalConfig):
                     current_form_payload,
                     payload_data,
                 )
+                normalizer = provider.metadata.get("normalize_script_form")
+                if callable(normalizer):
+                    normalized_payload = normalizer(copy.deepcopy(payload_data))
+                    if not isinstance(normalized_payload, dict):
+                        raise TypeError("插件脚本配置标准化器必须返回 dict")
+                    payload_data = normalized_payload
                 payload_data = self._strip_virtual_fields_from_plugin_form_payload(
                     provider.script_config_class,
                     payload_data,

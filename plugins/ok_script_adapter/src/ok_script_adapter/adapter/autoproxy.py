@@ -54,11 +54,26 @@ from ..shell.runtime import (
     OkShellRuntimeError,
 )
 from app.task.general.tools import execute_script_task
-from app.utils import ProcessInfo, ProcessManager, get_logger, is_process_running
+from app.utils import (
+    ProcessInfo,
+    ProcessManager,
+    decode_bytes,
+    get_logger,
+    is_process_running,
+)
 from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
 
 logger = get_logger("ok-script 自动代理")
+
+
+# 调度台需要足够的近期上下文，但不能因为长时间 OCR 输出无限增长。
+DISPATCH_LOG_MAX_CHARS = 100_000
+DISPATCH_LOG_MAX_RUNTIME_LINES = 2_000
+DISPATCH_LOG_TRUNCATION_NOTICE = "[MAS] 调度台仅保留最近日志，完整历史请查看任务记录。"
+SCRIPT_EXIT_CHECK_TIMEOUT = 2
+SCRIPT_EXIT_KILL_TIMEOUT = 5
+SCRIPT_EXIT_EVENT_GRACE_SECONDS = 1
 
 
 def _split_args(raw: object) -> list[str]:
@@ -215,6 +230,7 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         self.event_monitor_task: asyncio.Task[None] | None = None
         self.event_log_offset = 0
         self.event_protocol_active = False
+        self.event_terminal_received = False
         self.event_failures: list[OkScriptRunFailure] = []
         self.runtime_log_lines: list[str] = []
         self.legacy_log_lines: list[str] = []
@@ -223,6 +239,7 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         self.task_index = 1
         self.script_args: list[str] = []
         self.script_cwd: Path = Path()
+        self.script_environment: dict[str, str] = {}
         self.execution_protocol = ""
         self.use_provider_process_tracking = False
         self.stream_reader_tasks: list[asyncio.Task[None]] = []
@@ -307,17 +324,23 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             await self.script_root_lock.acquire()
             self.script_root_lock_acquired = True
         self.task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
-        self.shell_runner = OkShellRunner(manifest)
+        self.script_event_log_path = manifest.log_path.with_name("mas-events.jsonl")
+        self.shell_runner = OkShellRunner(
+            manifest,
+            event_path=self.script_event_log_path,
+        )
         try:
-            self.execution_protocol, command = await asyncio.to_thread(
-                self.shell_runner.build_command,
+            launch_spec = await asyncio.to_thread(
+                self.shell_runner.build_launch_spec,
                 str(self.task_index),
             )
         except OkShellRuntimeError as exc:
             raise RuntimeError(f"无法构建 ok-script 运行命令: {exc}") from exc
-        self.script_exe_path = Path(command[0])
-        self.script_args = list(command[1:])
-        self.script_cwd = self.shell_runner.command_cwd(self.execution_protocol)
+        self.execution_protocol = launch_spec.protocol
+        self.script_exe_path = Path(launch_spec.command[0])
+        self.script_args = list(launch_spec.command[1:])
+        self.script_cwd = launch_spec.cwd
+        self.script_environment = launch_spec.environment
         self.use_provider_process_tracking = (
             detected_provider is not None
             and self.execution_protocol == PROTOCOL_LEGACY_EXE
@@ -348,7 +371,6 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             else None
         )
         self.script_log_path = manifest.log_path
-        self.script_event_log_path = manifest.log_path.with_name("mas-events.jsonl")
         self.log_monitor = LogMonitor(
             self.provider.log_time_range,
             self.provider.log_time_format,
@@ -392,6 +414,8 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
                 if self.provider.report_handler_factory is not None
                 else None
             )
+            if self.report_handler is not None:
+                await self.report_handler.start(self)
 
             if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
                 await execute_script_task(
@@ -421,11 +445,16 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
                 self.run_book = True
                 self.cur_user_item.status = "完成"
                 await self._push_dispatch_log("已确认整轮任务完成，等待脚本进程退出")
-                await self._wait_script_exit(timeout=30)
+                try:
+                    await self._wait_script_exit(timeout=10)
+                finally:
+                    # 成功日志出现后继续读取退出阶段输出，避免丢失脚本收尾信息。
+                    await self._stop_process_stream_readers()
                 await self.update_config()
                 await self._restore_script_config()
                 if self.report_handler is not None:
                     await self.report_handler.apply(self)
+                    await self.report_handler.stop(self)
                 await self._run_script_after_task()
                 break
 
@@ -435,6 +464,7 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         """初始化单次运行的日志与结构化事件观测状态。"""
 
         self.event_protocol_active = False
+        self.event_terminal_received = False
         self.event_failures = []
         self.runtime_log_lines = []
         self.legacy_log_lines = []
@@ -452,18 +482,46 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             *self.legacy_log_lines,
         ]
 
+    def _build_dispatch_log_snapshot(self) -> str:
+        """构建调度台的滚动日志窗口，优先保留最新运行上下文。"""
+
+        if self.cur_user_log is None or not self.cur_user_log.content:
+            return ""
+
+        lines: list[str] = []
+        remaining = DISPATCH_LOG_MAX_CHARS
+        truncated = False
+        for raw_line in reversed(self.cur_user_log.content):
+            line = str(raw_line).rstrip("\r\n")
+            separator_length = 1 if lines else 0
+            required_length = len(line) + separator_length
+            if required_length <= remaining:
+                lines.append(line)
+                remaining -= required_length
+                continue
+
+            if remaining > separator_length:
+                lines.append(line[-(remaining - separator_length) :])
+            truncated = True
+            break
+
+        snapshot = "\n".join(reversed(lines))
+        if not truncated:
+            return snapshot
+
+        snapshot_budget = DISPATCH_LOG_MAX_CHARS - len(DISPATCH_LOG_TRUNCATION_NOTICE) - 1
+        return f"{DISPATCH_LOG_TRUNCATION_NOTICE}\n{snapshot[-snapshot_budget:]}"
+
     async def _push_dispatch_log(self, message: str) -> None:
         """向 MAS 调度台与当前历史记录追加运行阶段日志。"""
 
         line = f"[MAS] {message}"
         self.runtime_log_lines.append(line)
         # stdout/stderr 可能持续高频输出，调度台仅保留最近窗口避免常驻内存增长。
-        if len(self.runtime_log_lines) > 1000:
-            del self.runtime_log_lines[:-1000]
+        if len(self.runtime_log_lines) > DISPATCH_LOG_MAX_RUNTIME_LINES:
+            del self.runtime_log_lines[:-DISPATCH_LOG_MAX_RUNTIME_LINES]
         self._refresh_current_log_content()
-        self.script_info.log = "\n".join(self.cur_user_log.content[-80:])[-4000:] if (
-            self.cur_user_log is not None
-        ) else line
+        self.script_info.log = self._build_dispatch_log_snapshot() or line
         logger.info(f"{self.provider.display_name} | {message}")
         await asyncio.sleep(0)
 
@@ -494,6 +552,8 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         await self.update_config()
         await self._restore_script_config()
         await self._run_script_after_task()
+        if self.report_handler is not None:
+            await self.report_handler.stop(self)
         with suppress(Exception):
             await Notify.push_plyer(
                 f"{self.provider.display_name} 自动代理出现异常！",
@@ -603,10 +663,11 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             return
 
         try:
+            runtime_config_originals = getattr(self, "runtime_config_originals", {})
             await asyncio.to_thread(
                 _restore_runtime_config_overrides,
                 self.script_config_path,
-                self.runtime_config_originals,
+                runtime_config_originals,
             )
             await asyncio.to_thread(
                 _replace_tree,
@@ -666,6 +727,7 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
                 self.script_exe_path,
                 *self.script_args,
                 cwd=self.script_cwd,
+                env=self.script_environment,
                 target_process=self.script_target_process_info,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -718,7 +780,9 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
 
         log = "".join(log_content)
         self.cur_user_log.content = log_content
-        self.script_info.log = log[-4000:] if len(log) > 4000 else log
+        self.legacy_log_lines = log_content
+        self._refresh_current_log_content()
+        self.script_info.log = self._build_dispatch_log_snapshot()
         if self.report_handler is not None:
             await self.report_handler.capture(self, log)
 
@@ -753,6 +817,8 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
 
         logger.debug(f"{self.provider.display_name} 日志分析结果: {self.cur_user_log.status}")
         if self.cur_user_log.status != self.provider.running_status:
+            if self.cur_user_log.status == "Success!":
+                self.run_book = True
             logger.info(
                 f"{self.provider.display_name} 任务结果: {self.cur_user_log.status}, 日志锁已释放"
             )
@@ -775,6 +841,7 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
                 self.script_exe_path,
                 *self.script_args,
                 cwd=self.script_cwd,
+                env=self.script_environment,
                 target_process=self.script_target_process_info,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -789,6 +856,14 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         try:
             self.wait_event.clear()
             await self._start_event_monitor()
+            if self.shell_runner is not None:
+                self.shell_runner.emit_event(
+                    "run_started",
+                    task=str(self.task_index),
+                    message="MAS 已启动项目进程，正在等待日志判态",
+                    protocol=self.execution_protocol,
+                    command=[str(self.script_exe_path), *self.script_args],
+                )
 
             deadline = datetime.now() + timedelta(seconds=60)
             while (
@@ -797,7 +872,7 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
                 and datetime.now() < deadline
             ):
                 if not await self.script_process_manager.is_running():
-                    exit_status = self._process_exit_status()
+                    exit_status = await self._process_exit_status()
                     if exit_status is not None:
                         return exit_status
                     return f"{self.provider.display_name} 在生成日志前退出"
@@ -825,16 +900,20 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
                 minutes=int(self.script_config.get("Run", "RunTimeLimit"))
             )
             while not self.wait_event.is_set():
-                if not self.event_protocol_active:
-                    if not await self.script_process_manager.is_running():
-                        exit_status = self._process_exit_status()
-                        if exit_status is not None:
-                            return exit_status
-                        if not self.script_log_path.exists():
-                            return f"{self.provider.display_name} 在返回结果前退出"
-                        return f"{self.provider.display_name} 在完成任务前退出"
-                    if not self.script_log_path.exists() and datetime.now() > run_deadline:
-                        return f"{self.provider.display_name} 未输出日志或结构化事件"
+                if not await self.script_process_manager.is_running():
+                    # 给 stdout 读取器与结构化事件监听器一个短暂窗口处理最终输出。
+                    await asyncio.sleep(SCRIPT_EXIT_EVENT_GRACE_SECONDS)
+                    if self.wait_event.is_set():
+                        return self._current_run_status()
+
+                    exit_status = await self._process_exit_status()
+                    if exit_status is not None:
+                        return exit_status
+                    if not self.script_log_path.exists():
+                        return f"{self.provider.display_name} 在返回结果前退出"
+                    return f"{self.provider.display_name} 在完成任务前退出"
+                if not self.script_log_path.exists() and datetime.now() > run_deadline:
+                    return f"{self.provider.display_name} 未输出日志或结构化事件"
                 await asyncio.sleep(1)
 
             return self._current_run_status()
@@ -843,7 +922,8 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
                 with suppress(Exception):
                     await self.log_monitor.stop()
             await self._stop_event_monitor()
-            await self._stop_process_stream_readers()
+            if not self.run_book:
+                await self._stop_process_stream_readers()
 
     def _current_run_status(self) -> str:
         if self.cur_user_log is None:
@@ -873,15 +953,58 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
                 raw_line = await stream.readline()
                 if not raw_line:
                     return
-                line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
+                line = decode_bytes(raw_line).rstrip("\r\n")
                 if line:
                     await self._push_dispatch_log(f"[{source}] {line}")
                     if self.report_handler is not None:
                         await self.report_handler.capture(self, line)
+                    await self._observe_stream_terminal_log(source, line)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             logger.warning(f"读取 ok-script {source} 失败: {type(exc).__name__}: {exc}")
+
+    async def _observe_stream_terminal_log(self, source: str, line: str) -> None:
+        """在未收到结构化终态时，以受管进程输出补足日志终态。"""
+
+        if (
+            self.event_terminal_received
+            or self.wait_event.is_set()
+            or self.cur_user_log is None
+        ):
+            return
+
+        status: str | None = None
+        user_item_status: str | None = None
+        for needle, message in self.provider.fatal_patterns:
+            if needle in line:
+                status = message
+                user_item_status = "异常"
+                break
+        else:
+            line_lower = line.lower()
+            if any(
+                success.lower() in line_lower
+                for success in self.provider.success_patterns
+            ):
+                status = "Success!"
+                user_item_status = "完成"
+
+        if status is None or user_item_status is None:
+            return
+
+        self.cur_user_log.status = status
+        self.cur_user_item.status = user_item_status
+        if status == "Success!":
+            self.run_book = True
+        await self._push_dispatch_log(
+            f"已通过 {source} 日志确认任务{'完成' if status == 'Success!' else '异常'}: {status}"
+        )
+        logger.info(
+            f"{self.provider.display_name} 任务结果: {status}, "
+            f"已通过 {source} 日志释放等待"
+        )
+        self.wait_event.set()
 
     async def _stop_process_stream_readers(self) -> None:
         stream_tasks = list(getattr(self, "stream_reader_tasks", []))
@@ -893,8 +1016,8 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
                 await task
         self.stream_reader_tasks = []
 
-    def _process_exit_status(self) -> str | None:
-        """CLI/main 进程退出码是通用终态；legacy EXE 保持日志判态。"""
+    async def _process_exit_status(self) -> str | None:
+        """进程退出只提供异常证据，成功仍必须等待日志或完成事件。"""
 
         if self.execution_protocol == PROTOCOL_LEGACY_EXE:
             return None
@@ -902,11 +1025,30 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         if process is None or process.returncode is None:
             return None
         if process.returncode == 0:
-            self.run_book = True
-            if self.cur_user_log is not None:
-                self.cur_user_log.status = "Success!"
-            self.cur_user_item.status = "完成"
-            return "Success!"
+            await asyncio.sleep(0.5)
+            if self.wait_event.is_set():
+                return self._current_run_status()
+            if self.shell_runner is not None:
+                self.shell_runner.emit_event(
+                    "process_exited",
+                    task=str(self.task_index),
+                    message="脚本进程已退出，未收到成功日志或结构化完成事件",
+                    protocol=self.execution_protocol,
+                    returnCode=0,
+                )
+            return (
+                f"{self.provider.display_name} 进程已退出，"
+                "但未收到成功日志或结构化完成事件"
+            )
+        if self.shell_runner is not None:
+            self.shell_runner.emit_event(
+                "run_failed",
+                task=str(self.task_index),
+                message=f"脚本进程异常退出，退出码 {process.returncode}",
+                success=False,
+                protocol=self.execution_protocol,
+                returnCode=process.returncode,
+            )
         return f"{self.provider.display_name} 异常退出，退出码 {process.returncode}"
 
     async def _start_event_monitor(self) -> None:
@@ -1033,6 +1175,7 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         if event.event == "run_failed" or (
             event.event == "run_completed" and event.success is False
         ):
+            self.event_terminal_received = True
             status = event.message or f"{self.provider.display_name} 运行失败"
             self.cur_user_log.status = status
             self.cur_user_item.status = "异常"
@@ -1046,6 +1189,7 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             return
 
         failures = tuple(self.event_failures)
+        self.event_terminal_received = True
         status = format_partial_success_status(failures) if failures else "Success!"
         self.cur_user_log.status = status
         self.cur_user_item.status = "完成"
@@ -1059,7 +1203,7 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         log_content: list[str],
         latest_time: datetime,
     ) -> None:
-        """旧文本日志兜底；结构化事件出现后只保留文本内容，不再判态。"""
+        """旧文本日志兜底；仅结构化终态可以停止传统日志判态。"""
 
         if self.cur_user_log is None:
             return
@@ -1070,10 +1214,12 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         if self.report_handler is not None:
             await self.report_handler.capture(self, log)
 
-        if self.event_protocol_active:
+        # 非终态事件只提供进度或专项失败明细，不能屏蔽传统成功/异常字段。
+        # 部分上游项目当前只会发送 run_started，最终仍由原始日志或 stdout 收尾。
+        if self.event_terminal_received or self.wait_event.is_set():
             return
 
-        self.script_info.log = log[-4000:] if len(log) > 4000 else log
+        self.script_info.log = self._build_dispatch_log_snapshot()
 
         log_status = self.provider.running_status
         user_item_status: str | None = None
@@ -1106,6 +1252,8 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
 
         logger.debug(f"{self.provider.display_name} 日志分析结果: {self.cur_user_log.status}")
         if self.cur_user_log.status != self.provider.running_status:
+            if self.cur_user_log.status == "Success!":
+                self.run_book = True
             logger.info(
                 f"{self.provider.display_name} 任务结果: {self.cur_user_log.status}, 日志锁已释放"
             )
@@ -1115,6 +1263,10 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         try:
             await self._finalize_task()
         finally:
+            report_handler = getattr(self, "report_handler", None)
+            if report_handler is not None:
+                with suppress(Exception):
+                    await report_handler.stop(self)
             self._release_script_root_lock()
 
     async def _finalize_task(self) -> None:
@@ -1187,6 +1339,9 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         with suppress(Exception):
             if self.log_monitor is not None:
                 await self.log_monitor.stop()
+        if self.report_handler is not None:
+            with suppress(Exception):
+                await self.report_handler.stop(self)
         logger.exception(f"{self.provider.display_name} 自动代理任务出现异常: {e}")
         try:
             await Config.send_websocket_message(
@@ -1236,15 +1391,40 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             self.script_root_lock.release()
         self.script_root_lock_acquired = False
 
-    async def _wait_script_exit(self, *, timeout: int = 30) -> None:
-        deadline = datetime.now() + timedelta(seconds=timeout)
-        while datetime.now() < deadline:
-            if not await self.script_process_manager.is_running():
+    async def _wait_script_exit(self, *, timeout: int = 10) -> None:
+        """等待脚本收尾退出，进程查询或清理超时不得阻塞调度终态。"""
+
+        deadline = asyncio.get_running_loop().time() + timeout
+        while True:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                break
+            try:
+                is_running = await asyncio.wait_for(
+                    self.script_process_manager.is_running(),
+                    timeout=min(SCRIPT_EXIT_CHECK_TIMEOUT, remaining),
+                )
+            except asyncio.TimeoutError:
+                await self._push_dispatch_log("确认脚本退出状态超时，开始受控收尾")
+                break
+
+            if not is_running:
                 logger.info(f"{self.provider.display_name} 已自行退出")
                 return
-            await asyncio.sleep(1)
+            await asyncio.sleep(min(1, remaining))
+
         logger.warning(f"{self.provider.display_name} 未在 {timeout}s 内自行退出，兜底强杀")
-        await self._kill_script_process()
+        await self._push_dispatch_log(
+            f"脚本未在 {timeout}s 内退出，正在执行受控收尾"
+        )
+        try:
+            await asyncio.wait_for(
+                self._kill_script_process(),
+                timeout=SCRIPT_EXIT_KILL_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"{self.provider.display_name} 受控收尾超时，继续结束调度任务")
+            await self._push_dispatch_log("脚本受控收尾超时，继续结束调度任务")
 
     async def _kill_script_process(self) -> None:
         await self._stop_process_stream_readers()
