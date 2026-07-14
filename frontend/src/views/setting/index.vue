@@ -109,8 +109,8 @@ const loadSettings = async () => {
 
     // 同步配置到 Electron 主进程
     try {
-      if ((window as any).electronAPI?.syncBackendConfig) {
-        await (window as any).electronAPI.syncBackendConfig({
+      if (window.electronAPI?.syncBackendConfig) {
+        await window.electronAPI.syncBackendConfig({
           UI: data.UI,
           Start: data.Start,
           Update: data.Update,
@@ -151,8 +151,8 @@ const refreshSettings = async () => {
 
     // 同步所有配置到 Electron
     try {
-      if ((window as any).electronAPI?.syncBackendConfig) {
-        await (window as any).electronAPI.syncBackendConfig({
+      if (window.electronAPI?.syncBackendConfig) {
+        await window.electronAPI.syncBackendConfig({
           UI: data.UI,
           Start: data.Start,
           Update: data.Update,
@@ -181,8 +181,8 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
   // 处理托盘相关配置（需要额外的实时更新调用）
   if (category === 'UI' && (key === 'IfShowTray' || key === 'IfToTray')) {
     try {
-      if ((window as any).electronAPI?.updateTraySettings) {
-        await (window as any).electronAPI.updateTraySettings({ [key]: value })
+      if (window.electronAPI?.updateTraySettings) {
+        await window.electronAPI.updateTraySettings({ [key]: value })
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
@@ -212,7 +212,7 @@ const handleThemeColorChange = (value: SelectValue) => {
 }
 
 // 其他操作
-const openDevTools = () => (window as any).electronAPI?.openDevTools?.()
+const openDevTools = () => window.electronAPI?.openDevTools?.()
 
 // 更新检查 - 使用全局更新检查器
 const checkUpdate = async () => {

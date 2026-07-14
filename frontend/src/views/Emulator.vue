@@ -596,9 +596,7 @@ const selectEmulatorPath = async (uuid: string) => {
     if (!editData) return
 
     // 选择任意文件
-    const paths = await (window.electronAPI as any).selectFile([
-      { name: '所有文件', extensions: ['*'] },
-    ])
+    const paths = await window.electronAPI.selectFile([{ name: '所有文件', extensions: ['*'] }])
 
     if (paths && paths.length > 0) {
       editData.path = paths[0]
