@@ -89,7 +89,7 @@ const getLoadTime = () => {
   if ('performance' in window) {
     const perfData = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming
     if (perfData) {
-      const loadTime = Math.round(perfData.loadEventEnd - perfData.navigationStart)
+      const loadTime = Math.round(perfData.duration)
       return `${loadTime}ms`
     }
   }

@@ -195,8 +195,9 @@ export const createDefaultMaaEndSanityConfig = (): MaaEndSanityConfig => ({
 export const getProtocolSpaceTaskField = (tab: ProtocolSpaceTab): CurrentTaskField =>
   PROTOCOL_SPACE_TASK_FIELD_MAP[tab]
 
-export const getProtocolSpaceTaskOptions = (tab: ProtocolSpaceTab): ProtocolSpaceTaskOption[] =>
-  PROTOCOL_SPACE_TASK_OPTIONS_MAP[tab]
+export const getProtocolSpaceTaskOptions = (
+  tab: ProtocolSpaceTab
+): readonly ProtocolSpaceTaskOption[] => PROTOCOL_SPACE_TASK_OPTIONS_MAP[tab]
 
 export const getCurrentProtocolTaskValue = (config: MaaEndSanityConfig): ProtocolSpaceTaskValue =>
   config[getProtocolSpaceTaskField(config.SanityTaskType as ProtocolSpaceTab)]

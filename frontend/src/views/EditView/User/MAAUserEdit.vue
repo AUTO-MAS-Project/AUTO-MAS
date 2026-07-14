@@ -716,7 +716,7 @@ const selectAndImportInfrastructureConfig = async () => {
 
   try {
     // 选择文件
-    const path = await (window as any).electronAPI?.selectFile([
+    const path = await window.electronAPI?.selectFile([
       { name: 'JSON 文件', extensions: ['json'] },
       { name: '所有文件', extensions: ['*'] },
     ])

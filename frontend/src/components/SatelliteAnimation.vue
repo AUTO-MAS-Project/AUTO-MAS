@@ -340,7 +340,7 @@ async function initSceneInternal(): Promise<void> {
 
   let userScripts: Awaited<ReturnType<typeof getScripts>> = []
   try {
-    userScripts = await getScripts(false)
+    userScripts = await getScripts()
   } catch (err) {
     logger.warn(`获取脚本列表失败，按空集合处理: ${String(err)}`)
   }

@@ -209,8 +209,8 @@ export function useHistoryLogic() {
 
     try {
       const logFilePath = currentJsonFile.value.replace(/\.json$/, '.log')
-      if (window.electronAPI && (window.electronAPI as any).openFile) {
-        await (window.electronAPI as any).openFile(logFilePath)
+      if (window.electronAPI && window.electronAPI.openFile) {
+        await window.electronAPI.openFile(logFilePath)
         message.success('日志文件已打开')
       } else {
         message.error('当前环境不支持打开文件功能')
@@ -231,8 +231,8 @@ export function useHistoryLogic() {
 
     try {
       const logFilePath = currentJsonFile.value.replace(/\.json$/, '.log')
-      if (window.electronAPI && (window.electronAPI as any).showItemInFolder) {
-        await (window.electronAPI as any).showItemInFolder(logFilePath)
+      if (window.electronAPI && window.electronAPI.showItemInFolder) {
+        await window.electronAPI.showItemInFolder(logFilePath)
         message.success('日志文件目录已打开')
       } else {
         message.error('当前环境不支持打开目录功能')
