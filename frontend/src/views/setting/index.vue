@@ -31,7 +31,7 @@ const {
 
 // 活动标签
 const activeKey = ref('basic')
-const version = (import.meta as any).env?.VITE_APP_VERSION || '获取版本失败！'
+const version = import.meta.env.VITE_APP_VERSION || '获取版本失败！'
 const backendUpdateInfo = ref<VersionOut | null>(null)
 
 // 设置数据 - 从API获取，不再使用硬编码初值
