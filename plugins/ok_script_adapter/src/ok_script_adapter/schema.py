@@ -11,6 +11,14 @@ class _ConfigModel(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class PluginConfig(_ConfigModel):
+    """ok-script 插件实例配置。"""
+
+
+class Config(PluginConfig):
+    """插件实例配置入口。"""
+
+
 class OkScriptInfo(_ConfigModel):
     Name: str = PluginField(default="ok-script 项目", title="脚本名称")
     ResourceName: str = PluginField(default="", title="资源名", readonly=True)

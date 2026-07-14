@@ -469,6 +469,20 @@ def inspect_ok_project(
     config_dir = _discover_config_dir(root, working_dir)
     log_path = _discover_log_path(root, working_dir)
 
+    if not any(
+        (
+            pyappify_path.is_file(),
+            app_json_path is not None,
+            config_source is not None,
+            main_script is not None,
+            executable is not None,
+        )
+    ):
+        raise OkProjectInspectError(
+            "目录缺少 pyappify.yml、app.json、任务配置、main.py 或可执行文件，"
+            "不是可识别的 ok-script 项目"
+        )
+
     project_version = str(
         app_data.get("version")
         or app_data.get("appVersion")
@@ -498,8 +512,6 @@ def inspect_ok_project(
         protocols.append(PROTOCOL_MAIN_SCRIPT)
     if executable is not None:
         protocols.append(PROTOCOL_LEGACY_EXE)
-    if not protocols:
-        protocols.append(PROTOCOL_FRAMEWORK_CLI)
 
     fingerprint_paths = [pyappify_path]
     if app_json_path is not None:
@@ -531,7 +543,7 @@ def inspect_ok_project(
         log_path=log_path,
         tasks=tasks,
         protocols=tuple(protocols),
-        default_protocol=protocols[0],
+        default_protocol=protocols[0] if protocols else "",
         fingerprint=_build_fingerprint(fingerprint_paths, executable),
     )
 

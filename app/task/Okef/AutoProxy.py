@@ -18,6 +18,6 @@
 
 """OK-EF 旧导入路径兼容层。"""
 
-from app.task.Ok.runtime import OkScriptAutoProxyTask
+from ok_script_adapter.adapter.autoproxy import OkScriptAutoProxyTask
 
 AutoProxyTask = OkScriptAutoProxyTask

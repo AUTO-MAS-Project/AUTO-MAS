@@ -117,7 +117,16 @@ class Plugin(ScriptAdapterPlugin):
                 supported_modes=("AutoProxy",),
                 icon="Okww",
                 editor_kind="plugin:okww_adapter",
-                metadata={"framework": "ok-script", "source": "okww_adapter"},
+                metadata={
+                    "framework": "ok-script",
+                    "source": "okww_adapter",
+                    "client": {
+                        "config_editor": {
+                            "kind": "json-files",
+                            "endpoint_prefix": "/plugin/okww/configs",
+                        }
+                    },
+                },
             )
         ]
 

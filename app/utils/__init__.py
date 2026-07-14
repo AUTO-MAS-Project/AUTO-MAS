@@ -36,6 +36,7 @@ from .security import dpapi_encrypt, dpapi_decrypt, sanitize_log_message
 from .emulator import MumuManager, LDManager, search_all_emulators, EMULATOR_TYPE_BOOK
 from .tools import decode_bytes, busy_wait
 from .websocket import WebSocketClient, create_ws_client
+from .runtime_lock import get_path_runtime_lock
 
 __all__ = [
     "constants",
@@ -59,4 +60,5 @@ __all__ = [
     "busy_wait",
     "WebSocketClient",
     "create_ws_client",
+    "get_path_runtime_lock",
 ]

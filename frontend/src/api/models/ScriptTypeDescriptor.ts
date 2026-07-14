@@ -51,6 +51,10 @@ export type ScriptTypeDescriptor = {
      */
     user_schema: Record<string, any>;
     /**
+     * 供宿主通用插件编辑器消费的客户端声明
+     */
+    client?: Record<string, any>;
+    /**
      * 旧脚本配置类名
      */
     legacy_config_class_name?: (string | null);

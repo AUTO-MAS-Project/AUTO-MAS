@@ -42,6 +42,7 @@ dev = [
 ]
 plugins = [
     "auto-mas-core",
+    "automas_plugin_ok_script_adapter",
     "automas_plugin_okww_adapter",
 ]
 
@@ -67,6 +68,7 @@ package = false
 [tool.uv.workspace]
 members = [
     "plugins/auto_mas_core",
+    "plugins/ok_script_adapter",
     "plugins/okww_adapter",
 ]
 exclude = [
@@ -76,4 +78,5 @@ exclude = [
 
 [tool.uv.sources]
 "auto-mas-core" = { workspace = true }
+"automas_plugin_ok_script_adapter" = { workspace = true }
 "automas_plugin_okww_adapter" = { workspace = true }
