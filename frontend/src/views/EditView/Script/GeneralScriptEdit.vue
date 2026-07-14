@@ -7,7 +7,7 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img src="../../../assets/AUTO-MAS.ico" alt="AUTO-MAS" class="breadcrumb-logo" />
+            <img src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="breadcrumb-logo" />
             编辑脚本
           </div>
         </a-breadcrumb-item>

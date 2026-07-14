@@ -9,7 +9,7 @@
           <a-breadcrumb-item>{{ scriptName }}</a-breadcrumb-item>
           <a-breadcrumb-item>
             <span class="breadcrumb-current">
-              <img src="../../../assets/hsr.png" alt="HSR" class="breadcrumb-logo" />
+              <img src="@/assets/hsr.png" alt="HSR" class="breadcrumb-logo" />
               {{ isEdit ? '编辑 HSR 用户' : '添加 HSR 用户' }}
             </span>
           </a-breadcrumb-item>

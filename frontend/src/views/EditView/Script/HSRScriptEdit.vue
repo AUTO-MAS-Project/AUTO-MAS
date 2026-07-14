@@ -7,7 +7,7 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img src="../../../assets/hsr.png" alt="HSR" class="breadcrumb-logo" />
+            <img src="@/assets/hsr.png" alt="HSR" class="breadcrumb-logo" />
             编辑 HSR 脚本
           </div>
         </a-breadcrumb-item>
