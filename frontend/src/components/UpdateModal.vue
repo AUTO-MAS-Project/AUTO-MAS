@@ -1,4 +1,3 @@
-<!-- eslint-disable vue/no-v-html -- 更新内容由结构化条目在本组件内生成 -->
 <template>
   <a-modal
     v-model:open="visible"

@@ -141,11 +141,13 @@
                       <span><UserOutlined /> {{ template.author || '未知作者' }}</span>
                       <span><ClockCircleOutlined /> {{ template.createTime || '未知时间' }}</span>
                     </span>
+                    <!-- eslint-disable vue/no-v-html -- MarkdownIt has raw HTML disabled, so template descriptions are escaped. -->
                     <span
                       class="template-description"
                       @click="handleTemplateDescriptionClick"
                       v-html="parseMarkdown(template.description)"
                     ></span>
+                    <!-- eslint-enable vue/no-v-html -->
                   </span>
                   <a-radio :value="template.downloadUrl" />
                 </label>
