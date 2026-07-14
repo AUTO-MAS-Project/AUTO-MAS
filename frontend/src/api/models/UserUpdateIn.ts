@@ -8,7 +8,9 @@ import type { M9AUserConfig } from './M9AUserConfig';
 import type { MaaEndUserConfig } from './MaaEndUserConfig';
 import type { MaaFWUserConfig } from './MaaFWUserConfig';
 import type { MaaUserConfig } from './MaaUserConfig';
+import type { OkefUserConfig } from './OkefUserConfig';
 import type { OkwwUserConfig } from './OkwwUserConfig';
+import type { PluginUserConfig } from './PluginUserConfig';
 import type { SrcUserConfig } from './SrcUserConfig';
 export type UserUpdateIn = {
     /**
@@ -22,6 +24,6 @@ export type UserUpdateIn = {
     /**
      * 用户更新数据
      */
-    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | HSRUserConfig);
+    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkefUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | HSRUserConfig | PluginUserConfig);
 };
 

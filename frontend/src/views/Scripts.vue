@@ -55,7 +55,29 @@
     </div>
     <div class="header-actions">
       <a-space size="middle">
-        <a-button type="primary" size="large" class="link" @click="handleAddScript">
+        <a-tooltip title="收起所有脚本的用户列表">
+          <a-button size="large" :disabled="scripts.length === 0" @click="handleCollapseAll">
+            <template #icon>
+              <UpOutlined />
+            </template>
+            一键收起
+          </a-button>
+        </a-tooltip>
+        <a-tooltip title="展开所有脚本的用户列表">
+          <a-button size="large" :disabled="scripts.length === 0" @click="handleExpandAll">
+            <template #icon>
+              <DownOutlined />
+            </template>
+            一键展开
+          </a-button>
+        </a-tooltip>
+        <a-button
+          type="primary"
+          size="large"
+          class="link"
+          :disabled="availableScriptTypes.length === 0"
+          @click="handleAddScript"
+        >
           <template #icon>
             <PlusOutlined />
           </template>
@@ -102,10 +124,13 @@
 
   <ScriptTable
     v-if="scripts.length > 0 || !scriptListError"
+    ref="scriptTableRef"
     :scripts="scripts"
     :active-connections="activeConnections"
+    :copying-script-id="copyingScriptId"
     :all-plans-data="allPlansData"
     @edit="handleEditScript"
+    @copy="handleCopyScript"
     @delete="handleDeleteScript"
     @add-user="handleAddUser"
     @edit-user="handleEditUser"
@@ -116,6 +141,17 @@
     @save-maa-end-config="handleSaveMaaEndConfig"
     @toggle-user-status="handleToggleUserStatus"
     @pass-check-user="handlePassCheckUser"
+  />
+
+  <ScriptCreateDialog
+    v-model:open="scriptCreateVisible"
+    :templates="templates"
+    :submitting="addLoading || templateLoading"
+    :template-loading="templateLoading"
+    :template-error="templateError"
+    :type-options="scriptCreateTypeOptions"
+    @request-templates="loadTemplates"
+    @submit="handleSubmitScriptCreate"
   />
 
   <!-- 创建方式选择弹窗 -->
@@ -192,7 +228,12 @@
         >
           <div class="script-item-content">
             <div class="script-icon">
-              <img :src="getScriptIcon(script.type)" :alt="script.type" class="type-icon" />
+              <img
+                :src="getScriptIcon(script.type, script.iconUrl)"
+                :alt="script.type"
+                class="type-icon"
+                @error="event => handleScriptIconError(event, script.type)"
+              />
             </div>
             <div class="script-info">
               <div class="script-name">{{ script.name }}</div>
@@ -236,13 +277,22 @@
           <div class="type-content">
             <div class="type-logo-container">
               <img
-                :src="getScriptIcon(descriptor.type_key)"
+                :src="getScriptIcon(descriptor.type_key, descriptor.icon_url)"
                 :alt="descriptor.type_key"
                 class="type-logo"
+                @error="event => handleScriptIconError(event, descriptor.type_key)"
               />
             </div>
             <div class="type-info">
-              <div class="type-title">{{ descriptor.display_name }}</div>
+              <div class="type-title">
+                <span>{{ descriptor.display_name }}</span>
+                <a-tag
+                  :color="getScriptTypeTagColor(descriptor.type_key, descriptor.theme_color)"
+                  class="type-tag"
+                >
+                  {{ descriptor.type_key }}
+                </a-tag>
+              </div>
               <div class="type-description">
                 支持模式：{{ descriptor.supported_modes.join(' / ') || '未声明' }}
               </div>
@@ -388,16 +438,23 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   ClockCircleOutlined,
+  DownOutlined,
   FileSearchOutlined,
   FileTextOutlined,
   PlusOutlined,
   ReloadOutlined,
   SettingOutlined,
+  UpOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
 import ScriptTable from '@/components/ScriptTable.vue'
+import ScriptCreateDialog from '@/views/scripts/components/ScriptCreateDialog.vue'
 import type { MaaFWScriptConfig, Script, ScriptType, User } from '@/types/script'
 import type { ScriptTypeDescriptor } from '@/types/scriptRegistry'
+import {
+  createScriptTypeOptions,
+  type ScriptCreateRequest,
+} from '@/views/scripts/components/scriptCreateFlow'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useTemplateApi, type WebConfigTemplate } from '@/composables/useTemplateApi'
@@ -408,8 +465,10 @@ import {
   descriptorMapFromList,
   getScriptEditPath,
   getScriptIcon,
+  getScriptTypeTagColor,
   getUserCreatePath,
   getUserEditPath,
+  handleScriptIconError,
   normalizeScriptRecord,
 } from '@/utils/scriptRegistry'
 import MarkdownIt from 'markdown-it'
@@ -418,7 +477,7 @@ const logger = window.electronAPI.getLogger('脚本管理')
 const router = useRouter()
 const registryApi = useScriptRegistryApi()
 const { subscribe, unsubscribe } = useWebSocket()
-const { getWebConfigTemplates, importScriptFromWeb } = useTemplateApi()
+const { getWebConfigTemplates, importScriptFromWeb, error: templateError } = useTemplateApi()
 const { getPlans } = usePlanApi()
 
 // 初始化markdown解析器
@@ -429,12 +488,15 @@ const md = new MarkdownIt({
 })
 
 const scripts = ref<Script[]>([])
+const scriptTableRef = ref<InstanceType<typeof ScriptTable> | null>(null)
 const scriptTypeDescriptors = ref<ScriptTypeDescriptor[]>([])
 const scriptListError = ref<string | null>(null)
 // 增加：标记是否已经完成过一次脚本列表加载（成功或失败都算一次）
 const loadedOnce = ref(false)
 // 所有计划表数据 (planId -> planData)
 const allPlansData = ref<Record<string, Record<string, any>>>({})
+const scriptCreateVisible = ref(false)
+const copyingScriptId = ref<string | null>(null)
 const createModeSelectVisible = ref(false) // 创建方式选择弹窗（复制已有 vs 创建新脚本）
 const scriptSelectVisible = ref(false) // 脚本列表选择弹窗
 const typeSelectVisible = ref(false)
@@ -489,7 +551,10 @@ const filteredTemplates = computed(() => {
   )
 })
 
-const availableScriptTypes = computed(() => scriptTypeDescriptors.value)
+const availableScriptTypes = computed(() =>
+  scriptTypeDescriptors.value.filter(descriptor => descriptor.available !== false)
+)
+const scriptCreateTypeOptions = computed(() => createScriptTypeOptions(availableScriptTypes.value))
 
 const isScriptAvailable = (script: Script) => script.available !== false
 
@@ -550,20 +615,67 @@ const loadCurrentPlan = async () => {
   }
 }
 
+const handleCollapseAll = () => {
+  scriptTableRef.value?.collapseAllUsers()
+}
+
+const handleExpandAll = () => {
+  scriptTableRef.value?.expandAllUsers()
+}
+
 const handleAddScript = () => {
-  if (!selectedType.value && availableScriptTypes.value.length > 0) {
-    selectedType.value = availableScriptTypes.value[0].type_key
-  }
-  // 如果当前没有脚本，直接进入类型选择
-  if (scripts.value.length === 0) {
-    selectedType.value = availableScriptTypes.value[0]?.type_key || 'MAA'
-    typeSelectVisible.value = true
+  scriptCreateVisible.value = true
+}
+
+const navigateToCreatedScript = (result: { id: string; type: string; editor_kind: string }) => {
+  if (result.type === 'MaaFW' || result.type === 'M9A') {
+    router.push(`/scripts/${result.id}/setup/maafw`)
     return
   }
+  router.push(
+    getScriptEditPath({ id: result.id, type: result.type, editorKind: result.editor_kind })
+  )
+}
 
-  // 如果有脚本，显示创建方式选择弹窗
-  selectedCreateMode.value = 'new'
-  createModeSelectVisible.value = true
+const handleSubmitScriptCreate = async (request: ScriptCreateRequest) => {
+  addLoading.value = true
+  try {
+    const result = await registryApi.addScript(request.kind === 'new' ? request.type : 'General')
+
+    if (request.kind === 'general-template') {
+      const imported = await importScriptFromWeb(result.id, request.template.downloadUrl)
+      if (!imported) return
+      message.success(`已根据模板「${request.template.configName}」创建脚本`)
+    }
+
+    scriptCreateVisible.value = false
+    navigateToCreatedScript(result)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`添加脚本失败: ${errorMsg}`)
+    message.error(`添加脚本失败: ${errorMsg}`)
+  } finally {
+    addLoading.value = false
+  }
+}
+
+const handleCopyScript = async (script: Script) => {
+  if (!ensureScriptAvailable(script)) return
+
+  addLoading.value = true
+  copyingScriptId.value = script.id
+  try {
+    await registryApi.addScript(script.type, script.id)
+    await loadScripts()
+    message.success(`已复制脚本「${script.name}」`)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`复制脚本失败: ${errorMsg}`)
+    message.error(`复制脚本失败: ${errorMsg}`)
+  } finally {
+    addLoading.value = false
+    copyingScriptId.value = null
+  }
 }
 
 const handleConfirmCreateMode = () => {
@@ -625,9 +737,14 @@ const handleConfirmAddScript = async () => {
   try {
     const result = await registryApi.addScript(selectedType.value)
     typeSelectVisible.value = false
-    router.push(
-      getScriptEditPath({ id: result.id, type: result.type, editorKind: result.editor_kind })
-    )
+    // MaaFW / M9A 新建脚本进入引导流程，其余类型直接进入编辑页
+    if (result.type === 'MaaFW' || result.type === 'M9A') {
+      router.push(`/scripts/${result.id}/setup/maafw`)
+    } else {
+      router.push(
+        getScriptEditPath({ id: result.id, type: result.type, editorKind: result.editor_kind })
+      )
+    }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`添加脚本失败: ${errorMsg}`)
@@ -1049,7 +1166,6 @@ const handleToggleUserStatus = async (user: User) => {
     // 调用 updateUser API
     await registryApi.updateUser(script.id, user.id, {
       Info: {
-        ...user.Info,
         Status: newStatus,
       },
     })
@@ -1383,6 +1499,18 @@ const handlePassCheckUser = async (user: User) => {
   font-weight: 500;
   margin: 0 0 6px;
   color: var(--ant-color-text);
+}
+
+.type-title {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  align-items: center;
+}
+
+.type-tag {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
 }
 
 .type-description,

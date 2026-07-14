@@ -153,7 +153,6 @@ const clearStorage = () => {
         const errorMsg = error instanceof Error ? error.message : String(error)
         logger.error(`清除存储失败: ${errorMsg}`)
         message.error(`清除存储失败: ${errorMsg}`)
-        throw error
       }
     },
   })

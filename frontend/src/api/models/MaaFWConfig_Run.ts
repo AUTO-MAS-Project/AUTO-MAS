@@ -16,6 +16,10 @@ export type MaaFWConfig_Run = {
      */
     RunTimeLimit?: (number | null);
     /**
+     * 每日正常完成一次后今日跳过的 MaaFW 任务名列表
+     */
+    DailyOnceTasks?: (string | null);
+    /**
      * 每周正常完成一次后本周跳过的 MaaFW 任务名列表
      */
     WeeklyOnceTasks?: (string | null);

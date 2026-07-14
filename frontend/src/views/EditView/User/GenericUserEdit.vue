@@ -29,7 +29,9 @@
     <template #title>
       <a-space>
         <span>{{ userName || '用户配置' }}</span>
-        <a-tag :color="getScriptTypeTagColor(scriptType)">{{ scriptDisplayName }}</a-tag>
+        <a-tag :color="getScriptTypeTagColor(scriptType, scriptThemeColor)">
+          {{ scriptDisplayName }}
+        </a-tag>
       </a-space>
     </template>
 
@@ -91,6 +93,7 @@ const userId = ref(routeUserId || '')
 const scriptName = ref('')
 const userName = ref('')
 const scriptType = ref('')
+const scriptThemeColor = ref<string | null>(null)
 const scriptDisplayName = ref('')
 const userSchema = ref<SchemaDefinition | null>(null)
 const formModel = ref<Record<string, any>>({})
@@ -127,6 +130,7 @@ const loadData = async () => {
     const descriptor = descriptorMap[scriptRecord.type]
     scriptName.value = scriptRecord.name
     scriptType.value = scriptRecord.type
+    scriptThemeColor.value = scriptRecord.theme_color || descriptor?.theme_color || null
     scriptDisplayName.value = descriptor?.display_name || scriptRecord.type
     userSchema.value = descriptor?.user_schema || null
 

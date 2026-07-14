@@ -7,9 +7,5 @@ export type OkwwUserConfig_Task = {
      * 启动后执行第 N 个任务（-t N，从 1 开始）
      */
     TaskIndex?: (number | null);
-    /**
-     * 任务结束后退出（-e）
-     */
-    ExitOnFinish?: (boolean | null);
 };
 

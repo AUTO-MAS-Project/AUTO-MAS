@@ -30,7 +30,9 @@
     <template #title>
       <a-space>
         <span>{{ userName || '用户配置' }}</span>
-        <a-tag :color="getScriptTypeTagColor(scriptType)">{{ scriptDisplayName }}</a-tag>
+        <a-tag :color="getScriptTypeTagColor(scriptType, scriptThemeColor)">
+          {{ scriptDisplayName }}
+        </a-tag>
       </a-space>
     </template>
 
@@ -56,11 +58,11 @@
     <a-empty v-if="!userSchema && !loading" description="此插件脚本类型未提供用户配置表单" />
   </a-card>
 
-  <a-card v-if="isOkwwAdapter && userId" class="config-card okww-config-card">
-    <OkwwConfigEditor
+  <a-card v-if="isOkScriptAdapter && userId" class="config-card okww-config-card">
+    <OkScriptConfigEditor
       :script-id="scriptId"
       :user-id="userId"
-      endpoint-prefix="/plugin/okww/configs"
+      :endpoint-prefix="okScriptConfigEndpoint"
     />
   </a-card>
 
@@ -81,7 +83,7 @@ import { message } from 'ant-design-vue'
 import HeaderSchemaActionButton from '@/components/HeaderSchemaActionButton.vue'
 import SchemaForm from '@/components/SchemaForm.vue'
 import SchemaActionSessionMask from '@/components/SchemaActionSessionMask.vue'
-import OkwwConfigEditor from '@/views/OkwwUserEdit/OkwwConfigEditor.vue'
+import OkScriptConfigEditor from '@/views/OkScriptUserEdit/OkScriptConfigEditor.vue'
 import { useSchemaActionRunner } from '@/composables/useSchemaActionRunner'
 import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
@@ -118,6 +120,7 @@ const scriptName = ref('')
 const userName = ref('')
 const scriptType = ref('')
 const scriptEditorKind = ref('')
+const scriptThemeColor = ref<string | null>(null)
 const scriptDisplayName = ref('')
 const docsUrl = ref<string | null>(null)
 const supportedModes = ref<string[]>([])
@@ -173,7 +176,13 @@ const currentPluginKey = () => {
   return normalizePluginKey(editorKind.slice('plugin:'.length))
 }
 
-const isOkwwAdapter = computed(() => currentPluginKey() === 'okwwadapter')
+const isOkScriptAdapter = computed(() => {
+  const key = currentPluginKey()
+  return key === 'okwwadapter' || key === 'okscriptadapter'
+})
+const okScriptConfigEndpoint = computed(() =>
+  currentPluginKey() === 'okwwadapter' ? '/plugin/okww/configs' : '/plugin/ok-script/configs'
+)
 
 const isCurrentPluginEvent = (plugin?: string | null) => {
   const key = currentPluginKey()
@@ -219,6 +228,7 @@ const loadData = async ({
     scriptName.value = normalizedScript.name
     scriptType.value = normalizedScript.type
     scriptEditorKind.value = normalizedScript.editorKind || ''
+    scriptThemeColor.value = normalizedScript.themeColor || null
     scriptDisplayName.value = normalizedScript.displayName || normalizedScript.type
     docsUrl.value = normalizedScript.docsUrl || null
     supportedModes.value = normalizedScript.supportedModes || []

@@ -22,11 +22,19 @@
                   <span class="script-drag-dots" aria-hidden="true"></span>
                 </span>
                 <div class="script-logo-container">
-                  <img :src="getScriptIcon(script.type)" :alt="script.type" class="script-logo" />
+                  <img
+                    :src="getScriptIcon(script.type, script.iconUrl)"
+                    :alt="script.type"
+                    class="script-logo"
+                    @error="event => handleScriptIconError(event, script.type)"
+                  />
                 </div>
                 <div class="script-details">
                   <h3 class="script-name">{{ script.name }}</h3>
-                  <a-tag :color="getScriptTypeTagColor(script.type)" class="script-type">
+                  <a-tag
+                    :color="getScriptTypeTagColor(script.type, script.themeColor)"
+                    class="script-type"
+                  >
                     {{ getScriptTypeLabel(script) }}
                   </a-tag>
                   <a-tag v-if="script.available === false" color="orange" class="script-type">
@@ -108,25 +116,53 @@
                   </template>
                   添加用户
                 </a-button>
-                <a-popconfirm
-                  title="确定要删除这个脚本吗？"
-                  description="删除后将无法恢复，请谨慎操作"
-                  ok-text="确定"
-                  cancel-text="取消"
-                  @confirm="handleDelete(script)"
-                >
-                  <a-button danger size="middle" class="action-button delete-button">
+                <a-dropdown :trigger="['click']">
+                  <a-button
+                    size="middle"
+                    class="action-button"
+                    :loading="props.copyingScriptId === script.id"
+                    :disabled="Boolean(props.copyingScriptId) || !isScriptOperable(script)"
+                  >
                     <template #icon>
-                      <DeleteOutlined />
+                      <EllipsisOutlined />
                     </template>
-                    删除脚本
+                    更多
                   </a-button>
-                </a-popconfirm>
+                  <template #overlay>
+                    <a-menu>
+                      <a-menu-item key="copy" @click="handleCopy(script)">
+                        <CopyOutlined />
+                        复制脚本
+                      </a-menu-item>
+                      <a-menu-divider />
+                      <a-menu-item key="delete" danger @click="handleDeleteConfirm(script)">
+                        <DeleteOutlined />
+                        删除脚本
+                      </a-menu-item>
+                    </a-menu>
+                  </template>
+                </a-dropdown>
+                <a-tooltip :title="collapsedScriptIds.has(script.id) ? '展开用户' : '收起用户'">
+                  <a-button
+                    size="middle"
+                    class="action-button"
+                    :aria-label="collapsedScriptIds.has(script.id) ? '展开用户' : '收起用户'"
+                    @click="toggleUsersCollapsed(script.id)"
+                  >
+                    <template #icon>
+                      <DownOutlined v-if="collapsedScriptIds.has(script.id)" />
+                      <UpOutlined v-else />
+                    </template>
+                  </a-button>
+                </a-tooltip>
               </div>
             </div>
 
             <!-- 用户列表 -->
-            <div v-if="script.users && script.users.length > 0" class="users-section">
+            <div
+              v-if="!collapsedScriptIds.has(script.id) && script.users && script.users.length > 0"
+              class="users-section"
+            >
               <!-- 使用vuedraggable包装用户列表 -->
               <draggable
                 v-model="script.users"
@@ -246,7 +282,7 @@
             </div>
 
             <!-- 空状态 -->
-            <div v-else class="empty-users">
+            <div v-else-if="!collapsedScriptIds.has(script.id)" class="empty-users">
               <div class="empty-content">
                 <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
               </div>
@@ -261,9 +297,13 @@
 <script setup lang="ts">
 import type { MaaFWScriptConfig, Script, User } from '../types/script'
 import {
+  CopyOutlined,
   DeleteOutlined,
+  DownOutlined,
   EditOutlined,
+  EllipsisOutlined,
   SettingOutlined,
+  UpOutlined,
   UserAddOutlined,
 } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
@@ -273,11 +313,12 @@ import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import { parseStatusTagList } from '@/composables/useStatusTag'
 import type { StatusTag } from '@/composables/useStatusTag'
 import { getTodayInTimezone, isDateEqual, getWeekdayInTimezone } from '@/utils/dateUtils'
-import { getScriptIcon, getScriptTypeTagColor } from '@/utils/scriptRegistry'
+import { getScriptIcon, getScriptTypeTagColor, handleScriptIconError } from '@/utils/scriptRegistry'
 
 interface Props {
   scripts: Script[]
   activeConnections: Map<string, { subscriptionId: string; websocketId: string }>
+  copyingScriptId?: string | null
   allPlansData?: Record<string, Record<string, any>>
   currentPlanData?: Record<string, any>
 }
@@ -286,6 +327,8 @@ interface Emits {
   (e: 'edit', script: Script): void
 
   (e: 'delete', script: Script): void
+
+  (e: 'copy', script: Script): void
 
   (e: 'addUser', script: Script): void
 
@@ -345,6 +388,56 @@ const emit = defineEmits<Emits>()
 // 本地脚本列表状态
 const localScripts = ref<Script[]>([])
 
+// 脚本用户列表收起状态 - 持久化到 localStorage，切换页面后仍保持
+const COLLAPSED_SCRIPTS_STORAGE_KEY = 'scripts.collapsedScriptIds'
+
+const loadCollapsedScriptIds = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_SCRIPTS_STORAGE_KEY)
+    if (!raw) return new Set()
+    const parsed = JSON.parse(raw)
+    return new Set(Array.isArray(parsed) ? parsed.filter(id => typeof id === 'string') : [])
+  } catch {
+    return new Set()
+  }
+}
+
+const collapsedScriptIds = ref<Set<string>>(loadCollapsedScriptIds())
+
+const saveCollapsedScriptIds = () => {
+  try {
+    localStorage.setItem(
+      COLLAPSED_SCRIPTS_STORAGE_KEY,
+      JSON.stringify([...collapsedScriptIds.value])
+    )
+  } catch {
+    // 存储不可用时（如隐私模式）忽略，仅本次会话内生效
+  }
+}
+
+const toggleUsersCollapsed = (scriptId: string) => {
+  const next = new Set(collapsedScriptIds.value)
+  if (next.has(scriptId)) {
+    next.delete(scriptId)
+  } else {
+    next.add(scriptId)
+  }
+  collapsedScriptIds.value = next
+  saveCollapsedScriptIds()
+}
+
+const collapseAllUsers = () => {
+  collapsedScriptIds.value = new Set(localScripts.value.map(script => script.id))
+  saveCollapsedScriptIds()
+}
+
+const expandAllUsers = () => {
+  collapsedScriptIds.value = new Set()
+  saveCollapsedScriptIds()
+}
+
+defineExpose({ collapseAllUsers, expandAllUsers })
+
 // 账号信息展开状态管理 - 使用用户ID作为key
 const expandedUserIds = ref<Set<string>>(new Set())
 const expandedUserPasswords = ref<Set<string>>(new Set())
@@ -366,6 +459,21 @@ const handleEdit = (script: Script) => {
 
 const handleDelete = (script: Script) => {
   emit('delete', script)
+}
+
+const handleCopy = (script: Script) => {
+  emit('copy', script)
+}
+
+const handleDeleteConfirm = (script: Script) => {
+  Modal.confirm({
+    title: '确定要删除这个脚本吗？',
+    content: '删除后将无法恢复，请谨慎操作',
+    okText: '确定',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: () => handleDelete(script),
+  })
 }
 
 const handleAddUser = (script: Script) => {

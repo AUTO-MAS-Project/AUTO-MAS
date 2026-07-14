@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import uuid
 from pathlib import Path
 from typing import Any
@@ -67,6 +66,23 @@ def _write_json_file_atomic(path: Path, data: dict[str, Any]) -> None:
         encoding="utf-8",
     )
     tmp_path.replace(path)
+
+
+def _ensure_user_config_defaults(config_dir: Path, source_dir: Path | None) -> None:
+    if source_dir is None or not source_dir.is_dir():
+        return
+    config_dir.mkdir(parents=True, exist_ok=True)
+    for info in get_all_config_info():
+        filename = str(info["filename"])
+        source_path = source_dir / filename
+        if not source_path.is_file():
+            continue
+        current_path = _okww_config_file_path(config_dir, filename)
+        source_data = _read_json_file(source_path)
+        current_data = _read_json_file(current_path)
+        merged_data = {**source_data, **current_data}
+        if merged_data != current_data:
+            _write_json_file_atomic(current_path, merged_data)
 
 
 def _iter_config_updates(raw: Any) -> list[tuple[str, dict[str, Any]]]:
@@ -164,13 +180,7 @@ class Plugin(ScriptAdapterPlugin):
         option_labels = load_okww_option_labels(root_path) if root_path else {}
         okww_configs_dir = root_path / _OKWW_REL_CONFIG_DIR if root_path else None
 
-        need_init = not (
-            mas_config_dir.is_dir()
-            and any(item.is_file() for item in mas_config_dir.rglob("*"))
-        )
-        if need_init and okww_configs_dir and okww_configs_dir.is_dir():
-            mas_config_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(okww_configs_dir, mas_config_dir, dirs_exist_ok=True)
+        _ensure_user_config_defaults(mas_config_dir, okww_configs_dir)
 
         configs: list[dict[str, Any]] = []
         for info in get_all_config_info():

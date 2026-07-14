@@ -21,3 +21,4 @@ export type MaaFWProjectUpdateOut = {
      */
     data?: (MaaFWProjectUpdateData | null);
 };
+
