@@ -523,7 +523,7 @@ const selectSRCPath = async () => {
       return
     }
 
-    const path = await (window.electronAPI as any).selectFolder()
+    const path = await window.electronAPI.selectFolder()
     if (path) {
       if (!srcConfig.Info) {
         srcConfig.Info = { Name: '', Path: '' }

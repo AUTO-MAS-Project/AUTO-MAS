@@ -291,15 +291,15 @@ const restartBackend = async (): Promise<boolean> => {
     setBackendStatus('starting')
 
     // 先停止后端（stopBackend 内部会调用 /api/core/close 并等待退出）
-    if ((window.electronAPI as any)?.stopBackend) {
+    if (window.electronAPI?.stopBackend) {
       logger.debug('调用 stopBackend 停止后端')
-      await (window.electronAPI as any).stopBackend()
+      await window.electronAPI.stopBackend()
       logger.debug('后端已停止')
     }
 
     // 再启动后端
-    if ((window.electronAPI as any)?.startBackend) {
-      const result = await (window.electronAPI as any).startBackend()
+    if (window.electronAPI?.startBackend) {
+      const result = await window.electronAPI.startBackend()
       if (result?.success) {
         setBackendStatus('running')
 
@@ -342,7 +342,7 @@ const restartBackend = async (): Promise<boolean> => {
 
 const isTrackedBackendRunning = async (): Promise<boolean | null> => {
   try {
-    const status = await (window.electronAPI as any)?.backendStatus?.()
+    const status = await window.electronAPI?.backendStatus?.()
     if (typeof status?.isRunning === 'boolean') {
       return status.isRunning
     }
@@ -381,10 +381,10 @@ const showBackendRestartFailureModal = () => {
       const { showClosingOverlay } = useAppClosing()
       showClosingOverlay()
 
-      if ((window.electronAPI as any)?.appRestart) {
-        ;(window.electronAPI as any).appRestart()
-      } else if ((window.electronAPI as any)?.windowClose) {
-        ;(window.electronAPI as any).windowClose()
+      if (window.electronAPI?.appRestart) {
+        window.electronAPI.appRestart()
+      } else if (window.electronAPI?.windowClose) {
+        window.electronAPI.windowClose()
       } else {
         window.location.reload()
       }

@@ -197,7 +197,7 @@ const parseSnapshot = (
 
   return {
     success: true,
-    enable: snapshot[`${prefix}_enable`] ?? false,
+    enable: Boolean(snapshot[`${prefix}_enable`] ?? false),
     levelText,
     teams: collectTeams(snapshot, prefix),
   }

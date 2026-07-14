@@ -391,22 +391,19 @@ async function executeStep(stepKey: string): Promise<boolean> {
 
     switch (stepKey) {
       case 'python':
-        result = await (window.electronAPI as any).installPython(state.selectedMirror)
+        result = await window.electronAPI.installPython(state.selectedMirror)
         break
       case 'pip':
-        result = await (window.electronAPI as any).installPip(state.selectedMirror)
+        result = await window.electronAPI.installPip(state.selectedMirror)
         break
       case 'git':
-        result = await (window.electronAPI as any).installGit(state.selectedMirror)
+        result = await window.electronAPI.installGit(state.selectedMirror)
         break
       case 'repository':
-        result = await (window.electronAPI as any).pullRepository(
-          targetBranch.value,
-          state.selectedMirror
-        )
+        result = await window.electronAPI.pullRepository(targetBranch.value, state.selectedMirror)
         break
       case 'dependency':
-        result = await (window.electronAPI as any).installDependencies(state.selectedMirror)
+        result = await window.electronAPI.installDependencies(state.selectedMirror)
         break
       case 'backend':
         // 后端启动由BackendStartStep组件处理

@@ -114,7 +114,7 @@ const {
 const { subscribe, unsubscribe } = useWebSocket()
 
 let backgroundSubscriptionId = ''
-let hmrOverlayTimer: ReturnType<typeof window.setTimeout> | undefined
+let hmrOverlayTimer: number | undefined
 let backgroundServiceSignature = ''
 let hasBackgroundServiceSnapshot = false
 const HMR_SOFT_RELOAD_FLAG = 'auto-mas-hmr-soft-reload'

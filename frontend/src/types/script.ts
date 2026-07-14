@@ -484,7 +484,7 @@ export const DEFAULT_HSR_TASK_MAPPING: HSRConfig_TaskMapping = {
  * current 可用且在 available 中时优先保留，否则回退到仍可用的脚本。
  */
 export function resolveTaskMappingValue(
-  current: string | undefined,
+  current: string | null | undefined,
   available: Set<'M7A' | 'SRA'>
 ): 'M7A' | 'SRA' | undefined {
   if (current && available.has(current as 'M7A' | 'SRA')) {

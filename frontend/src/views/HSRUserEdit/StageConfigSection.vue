@@ -41,7 +41,7 @@
             :loading="stageOptionsLoading"
             :options="stageOptionsByChannel.CalyxGolden"
             allow-clear
-            @change="value => handleStageSelectChange('CalyxGolden', value)"
+            @change="handleStageSelectChange('CalyxGolden', $event)"
           />
         </a-form-item>
       </a-col>
@@ -65,7 +65,7 @@
             :loading="stageOptionsLoading"
             :options="stageOptionsByChannel.CalyxCrimson"
             allow-clear
-            @change="value => handleStageSelectChange('CalyxCrimson', value)"
+            @change="handleStageSelectChange('CalyxCrimson', $event)"
           />
         </a-form-item>
       </a-col>
@@ -89,7 +89,7 @@
             :loading="stageOptionsLoading"
             :options="stageOptionsByChannel.Relic"
             allow-clear
-            @change="value => handleStageSelectChange('Relic', value)"
+            @change="handleStageSelectChange('Relic', $event)"
           />
         </a-form-item>
       </a-col>
@@ -113,7 +113,7 @@
             :loading="stageOptionsLoading"
             :options="stageOptionsByChannel.Ornament"
             allow-clear
-            @change="value => handleStageSelectChange('Ornament', value)"
+            @change="handleStageSelectChange('Ornament', $event)"
           />
         </a-form-item>
       </a-col>
