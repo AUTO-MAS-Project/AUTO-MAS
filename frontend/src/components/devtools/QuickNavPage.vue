@@ -118,8 +118,8 @@ const navigateToManualPath = () => {
 
 const openDevtool = () => {
   try {
-    if ((window as any).electronAPI?.openDevTools) {
-      ;(window as any).electronAPI.openDevTools()
+    if (window.electronAPI?.openDevTools) {
+      window.electronAPI.openDevTools()
       logger.info('开发者工具已打开')
     } else {
       logger.warn('开发者工具API不可用')
