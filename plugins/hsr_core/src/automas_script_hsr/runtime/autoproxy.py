@@ -75,14 +75,13 @@ logger = get_logger("HSR 自动代理")
 PHASE_TIMEOUT_CONFIG: dict[HSRPhase, tuple[str, int]] = {
     "daily": ("DailyTimeLimit", 20),
     "weekly": ("WeeklyTimeLimit", 60),
-    "monthly": ("MonthlyTimeLimit", 60),
 }
 
 MODULE_KEYS_BY_PHASE: dict[HSRPhase, tuple[str, ...]] = {
     phase: tuple(
         module.key for module in HSR_TASK_MODULES if module.category == phase
     )
-    for phase in ("daily", "weekly", "monthly")
+    for phase in ("daily", "weekly")
 }
 
 
@@ -242,7 +241,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 for module in HSR_TASK_MODULES
                 if module.key == module_key
             ),
-            "monthly",
+            "weekly",
         )
         return self._timeout_seconds_for_phase(phase)
 
@@ -300,8 +299,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
     @staticmethod
     def _period_markers(
         now_dt: datetime | None = None,
-    ) -> tuple[str, str, str]:
-        """返回当前日期、ISO 周、自然月标记。"""
+    ) -> tuple[str, str]:
+        """返回当前日期和 ISO 周标记。"""
 
         if now_dt is None:
             now_dt = datetime.now(tz=UTC8)
@@ -309,7 +308,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
         return (
             now_dt.strftime("%Y-%m-%d"),
             f"{iso_year:04d}-W{iso_week:02d}",
-            now_dt.strftime("%Y-%m"),
         )
 
     def _queue_data_writeback(
@@ -499,7 +497,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             status="completed",
             reason=reason,
         )
-        today, current_week, _ = self._period_markers()
+        today, current_week = self._period_markers()
         self._queue_data_writeback(
             user_id=user_id,
             user_name=user_name,
@@ -519,7 +517,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
     ) -> None:
         """差分宇宙 / 货币战争成功后，登记本周周常完成态。"""
 
-        today, current_week, _ = self._period_markers()
+        today, current_week = self._period_markers()
         self._queue_data_writeback(
             user_id=user_id,
             user_name=user_name,
@@ -528,25 +526,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 ("Data", "WeeklyCompletedThisWeek", True),
                 ("Data", "WeeklyLastResetWeek", current_week),
                 ("Data", "WeeklyLastCompletionDate", today),
-            ],
-        )
-
-    def _queue_abyss_completion(
-        self,
-        user_id: str,
-        user_name: str,
-    ) -> None:
-        """三深渊三项全部成功后，登记本月完成态。"""
-
-        today, _, current_month = self._period_markers()
-        self._queue_data_writeback(
-            user_id=user_id,
-            user_name=user_name,
-            reason="三深渊三项全部成功执行",
-            fields=[
-                ("Data", "AbyssCompletedThisMonth", True),
-                ("Data", "AbyssLastResetMonth", current_month),
-                ("Data", "AbyssLastCompletionDate", today),
             ],
         )
 
@@ -625,44 +604,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
             return True, "本周已完成（周常）", is_new_week_in_mem
 
         return False, "", is_new_week_in_mem
-
-    @staticmethod
-    def _resolve_abyss_monthly_skip(
-        user_config,
-        now_dt: datetime | None = None,
-    ) -> tuple[bool, str, bool]:
-        """解析三深渊本自然月是否已完成（纯计算，不修改 user_config / Data 字段）。
-
-        跨月时只在内存中按“新月已重置”计算，执行成功后的完成态由
-        调度器在三个深渊全部成功后统一写回。
-        """
-        monthly_enabled = _has_enabled_phase_module(user_config, "monthly")
-
-        if now_dt is None:
-            now_dt = datetime.now(tz=UTC8)
-        now_month = now_dt.strftime("%Y-%m")
-
-        last_reset_month = (
-            user_config.get("Data", "AbyssLastResetMonth") or "2000-01"
-        )
-        done_stored = bool(
-            user_config.get("Data", "AbyssCompletedThisMonth")
-        )
-
-        if last_reset_month != now_month:
-            # 跨月 —— 仅在内存中按"新月已重置"计算
-            is_new_month_in_mem = True
-            done_in_mem = False
-        else:
-            is_new_month_in_mem = False
-            done_in_mem = done_stored
-
-        if not monthly_enabled:
-            return True, "已关闭月常", is_new_month_in_mem
-        if done_in_mem:
-            return True, "本月已完成（三深渊）", is_new_month_in_mem
-
-        return False, "", is_new_month_in_mem
 
     def _timeout_seconds_for_phase(self, phase: HSRPhase) -> int:
         """按周期读取超时配置，返回秒。"""
@@ -847,8 +788,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 )
 
             return on_weekly_success
-        if module_key == "ForgottenHall":
-            return lambda _result: self._queue_abyss_completion(user_id, user_name)
         return None
 
     def _build_login_plan(
@@ -983,7 +922,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             return items
 
         result: list[HSRRunItem] = []
-        for phase in ("daily", "weekly", "monthly"):
+        for phase in ("daily", "weekly"):
             phase_items = [item for item in items if item.phase == phase]
             result.extend(
                 self._with_phase_login_items(
@@ -1028,7 +967,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
         retry_items: list[HSRRunItem] = []
 
-        for phase in ("daily", "weekly", "monthly"):
+        for phase in ("daily", "weekly"):
             phase_items = [item for item in failed_items if item.phase == phase]
             if not phase_items:
                 continue
@@ -1118,38 +1057,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
         else:
             self._append_log(f"用户「{user_name}」周常跳过：{weekly_skip_reason}")
 
-        abyss_skip, abyss_skip_reason, abyss_is_new_month = (
-            self._resolve_abyss_monthly_skip(user_cfg)
-        )
-        logger.debug(
-            f"用户「{user_name}」monthly resolver: "
-            f"abyss_skip={abyss_skip} ({abyss_skip_reason!r}), "
-            f"abyss_is_new_month={abyss_is_new_month}"
-        )
-        if abyss_skip:
-            self._append_log(f"用户「{user_name}」月常跳过：{abyss_skip_reason}")
-            return self._with_login_items_for_queue(
-                items,
-                user_item=user_item,
-                user_cfg=user_cfg,
-                user_name=user_name,
-                uid=uid,
-                login_plan=login_plan,
-                script_id=script_id,
-                temp_files=temp_files,
-            )
-
-        items.extend(
-            self._build_phase_items(
-                phase="monthly",
-                user_item=user_item,
-                user_cfg=user_cfg,
-                user_name=user_name,
-                uid=uid,
-                daily_eow_enabled=daily_eow_enabled,
-            )
-        )
-
         return self._with_login_items_for_queue(
             items,
             user_item=user_item,
@@ -1189,11 +1096,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
         failures: list[HSRRunItem] = []
         completed_phases: set[HSRPhase] = set()
-        phases: tuple[HSRPhase, ...] = ("daily", "weekly", "monthly")
+        phases: tuple[HSRPhase, ...] = ("daily", "weekly")
         phase_labels = {
             "daily": "日常",
             "weekly": "周常",
-            "monthly": "月常",
         }
 
         for phase_index, phase in enumerate(phases):
@@ -1529,7 +1435,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     else "HSR 失败任务补跑部分失败"
                 )
             # 只要日常阶段有模块执行成功，就登记代理日期；
-            # 后续周常/月常失败不影响日常已完成的事实。
+            # 后续周常失败不影响日常已完成的事实。
             daily_was_attempted = any(
                 item.phase == "daily" and item.module_key != "StartGame"
                 for item in current_items

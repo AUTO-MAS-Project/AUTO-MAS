@@ -1154,7 +1154,6 @@ class HSRConfig_Run(BaseModel):
     RunTimesLimit: Optional[int] = Field(default=None, description="失败任务最大尝试次数")
     DailyTimeLimit: Optional[int] = Field(default=None, description="日常任务超时限制（分钟）")
     WeeklyTimeLimit: Optional[int] = Field(default=None, description="周常任务超时限制（分钟）")
-    MonthlyTimeLimit: Optional[int] = Field(default=None, description="月常任务超时限制（分钟）")
     LowPerformanceMode: Optional[bool] = Field(default=None, description="低性能兼容模式（仅三月七差分宇宙）")
 
 
@@ -1219,18 +1218,6 @@ class HSRUserConfig_Data(BaseModel):
     WeeklyLastResetWeek: Optional[str] = Field(
         default=None, description="周常上次重置 ISO 周（形如 2025-W23）"
     )
-    # HSR 三深渊月度（每月一次）
-    AbyssCompletedThisMonth: Optional[bool] = Field(
-        default=None, description="本月是否已完成三深渊"
-    )
-    AbyssLastResetMonth: Optional[str] = Field(
-        default=None, description="三深渊上次重置自然月（形如 2025-06）"
-    )
-    AbyssLastCompletionDate: Optional[str] = Field(
-        default=None, description="三深渊最近一次完成日期"
-    )
-
-
 class HSRUserConfig_TaskSwitch(BaseModel):
     Daily: Optional[bool] = Field(default=None, description="日常模块开关")
     ReceiveRewards: Optional[bool] = Field(default=None, description="领取奖励模块开关")
@@ -1239,9 +1226,6 @@ class HSRUserConfig_TaskSwitch(BaseModel):
     )
     CurrencyWars: Optional[bool] = Field(
         default=None, description="货币战争模块开关"
-    )
-    ForgottenHall: Optional[bool] = Field(
-        default=None, description="三深渊模块开关"
     )
 
 
@@ -1280,13 +1264,6 @@ class HSRUserConfig_Notify(BaseModel):
     ServerChanKey: Optional[str] = Field(default=None, description="Server 酱密钥")
 
 
-class HSRUserConfig_Abyss(BaseModel):
-    """三深渊配置快照"""
-    Snapshots: Optional[str] = Field(
-        default=None, description="三深渊快照集合（JSON，from M7A config.yaml）"
-    )
-
-
 class HSRUserConfig(BaseModel):
     Info: Optional[HSRUserConfig_Info] = Field(default=None, description="基础信息")
     Data: Optional[HSRUserConfig_Data] = Field(default=None, description="用户数据")
@@ -1299,9 +1276,6 @@ class HSRUserConfig(BaseModel):
     )
     Notify: Optional[HSRUserConfig_Notify] = Field(
         default=None, description="单独通知"
-    )
-    Abyss: Optional[HSRUserConfig_Abyss] = Field(
-        default=None, description="三深渊配置"
     )
 
 
@@ -2036,39 +2010,6 @@ class UserReorderIn(UserInBase):
 class UserSetIn(UserInBase):
     userId: str = Field(..., description="用户ID")
     jsonFile: str = Field(..., description="JSON文件路径, 用于导入自定义基建文件")
-
-
-class AbyssSnapshotImportItem(BaseModel):
-    """单个三深渊快照的导入结果摘要"""
-
-    snapshotKey: str = Field(
-        ...,
-        description="深渊快照键: ForgottenHall / PureFiction / Apocalyptic",
-    )
-    success: bool = Field(..., description="是否成功从 M7A config.yaml 读取并写入")
-    level: Optional[List[Optional[int]]] = Field(
-        default=None, description="关卡范围（[min, max]），缺失时为 None"
-    )
-    teamKeys: List[str] = Field(
-        default_factory=list, description="快照中包含的队伍字段，如 team1/team2/team3"
-    )
-    error: Optional[str] = Field(default=None, description="错误描述（导入失败时）")
-
-
-class AbyssSnapshotImportOut(OutBase):
-    """从 M7A config.yaml 导入三深渊快照的结果"""
-    m7aConfigPath: str = Field(..., description="读取的 M7A config.yaml 路径")
-    items: List[AbyssSnapshotImportItem] = Field(
-        default_factory=list, description="三个深渊的导入结果摘要"
-    )
-    updatedUserData: HSRUserConfig = Field(
-        ..., description="更新后的完整 HSR 用户配置（前端可用来同步 formData）"
-    )
-
-
-class UserImportAbyssSnapshotIn(UserInBase):
-    """用户请求从 M7A 导入三深渊快照"""
-    userId: str = Field(..., description="用户ID")
 
 
 class EmulatorGetIn(BaseModel):

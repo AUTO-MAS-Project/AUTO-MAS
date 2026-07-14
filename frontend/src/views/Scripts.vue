@@ -572,6 +572,10 @@ const scriptCreateTypeOptions = computed(() => createScriptTypeOptions(available
 
 const isScriptAvailable = (script: Script) => script.available !== false
 
+const canEditScript = (script: Script) =>
+  isScriptAvailable(script) ||
+  (script.type === 'HSR' && script.editorKind === 'plugin:automas_script_hsr')
+
 const ensureScriptAvailable = (script: Script) => {
   if (isScriptAvailable(script)) {
     return true
@@ -866,7 +870,8 @@ const handleCancelTemplate = () => {
 }
 
 const handleEditScript = (script: Script) => {
-  if (!ensureScriptAvailable(script)) {
+  if (!canEditScript(script)) {
+    ensureScriptAvailable(script)
     return
   }
   router.push(getScriptEditPath(script))

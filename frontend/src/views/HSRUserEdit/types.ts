@@ -45,19 +45,9 @@ export type HSRScriptStageContainer = {
   stages?: Partial<Record<string, HSRScriptStagePayload>>
 }
 
-export type HSRUserConfigAbyss = {
-  Snapshots?: string | Record<string, unknown> | null
-}
-
 export type HSRUserSRAConfig = {
   Id?: string | null
   Password?: string | null
-}
-
-export interface AbyssSnapshotImportResponse {
-  message?: string
-  items?: Array<{ key?: string; snapshot?: unknown; success?: boolean }>
-  updatedUserData?: { Abyss?: HSRUserConfigAbyss | null }
 }
 
 // HSR 内部非空 reactive 形态（OpenAPI 生成的类型全部字段为 optional | null，
@@ -81,7 +71,6 @@ export type HSRUserConfigData = {
     ReceiveRewards?: boolean | null
     DivergentUniverse?: boolean | null
     CurrencyWars?: boolean | null
-    ForgottenHall?: boolean | null
   }
   TaskOpt: {
     EchoOfWarWeekday?:
@@ -104,9 +93,5 @@ export type HSRUserConfigData = {
     WeeklyLastCompletionDate?: string | null
     WeeklyCompletedThisWeek?: boolean | null
     WeeklyLastResetWeek?: string | null
-    AbyssCompletedThisMonth?: boolean | null
-    AbyssLastResetMonth?: string | null
-    AbyssLastCompletionDate?: string | null
   }
-  Abyss: HSRUserConfigAbyss
 }

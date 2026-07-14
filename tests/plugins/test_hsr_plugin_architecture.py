@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
+from datetime import datetime
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -21,18 +21,17 @@ from automas_hsr_adapter_sra.catalog import SRATaskCatalog
 from automas_hsr_adapter_sra.controller import SRAController
 from automas_hsr_adapter_sra.plugin import Plugin as SRAPlugin
 from automas_hsr_adapter_sra.runtime import SRAControllerSessionImpl
-from automas_hsr_adapter_sra.runner import run_sra_single_task
+from automas_hsr_adapter_sra.runner import build_sra_module_config, run_sra_single_task
 from automas_script_hsr.adapter import HSRAdapterHooks
 from automas_script_hsr.contracts import HSRRunResult
-from automas_script_hsr.migration import migrate_legacy_hsr_config
 from automas_script_hsr.plugin import Plugin as HSRPlugin
-from automas_script_hsr.registry import HSRRegistryService
+from automas_script_hsr.registry import HSRRegistryService, resolve_configured_engines
 from automas_script_hsr.runtime.autoproxy import HSRAutoProxyTask
 from automas_script_hsr.runtime.locks import (
     acquire_external_path_locks,
     release_external_path_locks,
 )
-from automas_script_hsr.runtime.manager import HSRManager
+from automas_script_hsr.runtime.manager import HSRManager, _resolve_external_lock_paths
 from automas_script_hsr.runtime.models import (
     HSRRetryableTaskError,
     HSRRunItem,
@@ -41,26 +40,23 @@ from automas_script_hsr.runtime.models import (
 from automas_script_hsr.runtime.tasks import (
     HSR_TASK_MODULE_MAP,
     get_assigned_script,
-    module_is_available,
 )
-from automas_script_hsr.runtime.notify import (
-    load_user_custom_webhooks,
-    render_hsr_mail_template,
+from automas_script_hsr.runtime.notify import render_hsr_mail_template
+from automas_script_hsr.schema import (
+    HSRConfig,
+    HSRRunConfig,
+    HSRUserConfig,
+    HSRUserDataConfig,
+    HSRUserTaskSwitchConfig,
+    build_hsr_tags,
 )
-from automas_script_hsr.schema import HSRConfig, HSRUserConfig
-from app.core import Config
-from app.core.script_types import script_type_registry
-from app.models.config import HSRConfig as LegacyHSRConfig
-from app.models.config import HSRUserConfig as LegacyHSRUserConfig
-from app.models.config import Webhook
-from app.models.ConfigBase import MultipleConfig
 from app.models.plugin_script_config import PluginScriptConfig
 from app.plugins import ScriptAdapterDefinition
 from app.plugins.server import PluginHttpRequest
 from app.plugins.script_config_store import ScriptConfigStore
-from app.plugins.manager import _DeclaredScriptTypeBinding, _PluginManager
 from app.models.schema import ScriptCreateIn, ScriptCreateOut, UserCreateOut
 from app.models.task import UserItem
+from app.utils.constants import UTC8
 
 
 def _provider(registry: HSRRegistryService):
@@ -72,8 +68,20 @@ def _provider(registry: HSRRegistryService):
         user_model=HSRUserConfig,
         supported_modes=("AutoProxy", "ManualReview"),
         record_capability_resolver=registry.resolve_record_capability,
-        metadata={"legacy_config_migrator": migrate_legacy_hsr_config},
     ).build_provider(owner="test")
+
+
+class _PathConfig:
+    def __init__(self, *engines: str, mapping: str = "SRA") -> None:
+        self.paths = {engine: f"C:/{engine}" for engine in engines}
+        self.mapping = mapping
+
+    def get(self, group: str, key: str):
+        if key == "Path":
+            return self.paths.get(group)
+        if group == "TaskMapping":
+            return self.mapping
+        return None
 
 
 def test_registry_exposes_atomic_engine_matrix() -> None:
@@ -85,7 +93,7 @@ def test_registry_exposes_atomic_engine_matrix() -> None:
         task_catalog=SRATaskCatalog(),
         controller=SRAController(),
     )
-    sra_only = registry.snapshot(selected_engines=["SRA", "M7A"])
+    sra_only = registry.snapshot(script_config=_PathConfig("SRA", "M7A"))
     assert sra_only.effective_engines == ("SRA",)
     assert sra_only.supported_modes == ("AutoProxy", "ManualReview")
 
@@ -94,23 +102,54 @@ def test_registry_exposes_atomic_engine_matrix() -> None:
         task_catalog=M7ATaskCatalog(),
         controller=M7AController(),
     )
-    both = registry.snapshot(selected_engines=["M7A", "SRA"])
+    both = registry.snapshot(script_config=_PathConfig("M7A", "SRA"))
     assert both.effective_engines == ("SRA", "M7A")
     assert {task["key"] for task in both.tasks} == {
         "Daily",
         "ReceiveRewards",
         "DivergentUniverse",
         "CurrencyWars",
-        "ForgottenHall",
     }
+    assert "abyss_snapshot" not in M7ATaskCatalog().descriptor.capabilities
 
     assert registry.unregister_owner("sra") == ("SRA",)
-    assert registry.snapshot(selected_engines=["SRA", "M7A"]).effective_engines == (
+    assert registry.snapshot(script_config=_PathConfig("SRA", "M7A")).effective_engines == (
         "M7A",
     )
 
 
-def test_host_openapi_no_longer_declares_legacy_hsr_config_models() -> None:
+def test_sra_currency_wars_runs_once() -> None:
+    currency_wars = HSR_TASK_MODULE_MAP["CurrencyWars"]
+
+    config = build_sra_module_config(
+        currency_wars,
+        _PathConfig("SRA"),
+        _PathConfig(),
+    )
+
+    assert config["cosmicStrife"]["currencyWars.runtimes"] == 1
+
+
+def test_hsr_completed_currency_wars_tag_keeps_task_label() -> None:
+    now = datetime.now(tz=UTC8)
+    year, week, _ = now.isocalendar()
+
+    class Config:
+        values = {
+            ("Data", "WeeklyCompletedThisWeek"): True,
+            ("Data", "WeeklyLastResetWeek"): f"{year:04d}-W{week:02d}",
+            ("TaskSwitch", "CurrencyWars"): True,
+        }
+
+        def get(self, group: str, key: str):
+            return self.values.get((group, key))
+
+    tags = json.loads(build_hsr_tags(Config()))
+
+    assert {"text": "货币战争 已完成", "color": "green"} in tags
+
+
+def test_host_script_crud_no_longer_declares_legacy_hsr_config_models() -> None:
     from app.api.scripts import SCRIPT_BOOK, USER_BOOK
 
     assert "HSRConfig" not in SCRIPT_BOOK
@@ -135,7 +174,7 @@ def test_registry_rejects_engine_owner_conflict() -> None:
         )
 
 
-def test_snapshot_never_probes_or_exposes_an_unselected_engine() -> None:
+def test_snapshot_never_probes_or_exposes_an_unconfigured_engine() -> None:
     class CountingController:
         def __init__(self, descriptor) -> None:
             self.descriptor = descriptor
@@ -162,10 +201,7 @@ def test_snapshot_never_probes_or_exposes_an_unselected_engine() -> None:
         controller=m7a,
     )
 
-    snapshot = registry.snapshot(
-        selected_engines=["SRA"],
-        script_config=object(),
-    )
+    snapshot = registry.snapshot(script_config=_PathConfig("SRA"))
 
     assert snapshot.effective_engines == ("SRA",)
     assert sra.probe_count == 1
@@ -648,219 +684,7 @@ def test_adapter_start_rolls_back_incomplete_service_publication(
     assert context.services[controller_key] is None
 
 
-def test_legacy_hsr_migration_uses_plugin_container_and_preserves_users() -> None:
-    asyncio.run(_assert_legacy_hsr_migration())
-
-
-async def _assert_legacy_hsr_migration() -> None:
-    legacy = LegacyHSRConfig()
-    await legacy.set("Info", "Name", "旧 HSR")
-    await legacy.set("Info", "SRAPath", r"D:\SRA")
-    await legacy.set("Info", "M7APath", r"D:\M7A")
-    user_id, user = await legacy.UserData.add(LegacyHSRUserConfig)
-    await user.set("Info", "Name", "开拓者")
-    await user.set("TaskSwitch", "CurrencyWars", True)
-
-    registry = HSRRegistryService()
-    provider = _provider(registry)
-    migrated = await migrate_legacy_hsr_config(legacy, provider)
-
-    assert isinstance(migrated, PluginScriptConfig)
-    assert migrated.get("Meta", "PluginTypeKey") == "HSR"
-    assert migrated.UserData.order == [user_id]
-
-    store = ScriptConfigStore(provider=provider, storage_script_config=migrated)
-    script_model = await store.load_script_model()
-    user_model = await store.load_user_model(str(user_id))
-    assert script_model.get("Engine", "EnabledEngines") == ["SRA", "M7A"]
-    assert script_model.get("SRA", "Path").replace("/", "\\") == r"D:\SRA"
-    assert script_model.get("M7A", "Path").replace("/", "\\") == r"D:\M7A"
-    assert user_model.get("Info", "Name") == "开拓者"
-    assert user_model.get("TaskSwitch", "CurrencyWars") is True
-
-
-def test_legacy_hsr_migration_preserves_full_runtime_state_and_secrets() -> None:
-    def encrypt(value: str) -> str:
-        payload = base64.b64encode(value.encode("utf-8")).decode("ascii")
-        return f"encrypted:{payload}"
-
-    def decrypt(value: str) -> str:
-        if value == "":
-            return ""
-        prefix = "encrypted:"
-        if not isinstance(value, str) or not value.startswith(prefix):
-            raise ValueError("invalid encrypted payload")
-        return base64.b64decode(value[len(prefix):]).decode("utf-8")
-
-    with (
-        patch("app.models.ConfigBase.dpapi_encrypt", encrypt),
-        patch("app.models.ConfigBase.dpapi_decrypt", decrypt),
-    ):
-        asyncio.run(_assert_full_legacy_hsr_migration())
-
-
-def test_plugin_manager_migrates_legacy_hsr_in_place_with_same_uuid() -> None:
-    async def scenario() -> None:
-        scripts = MultipleConfig([LegacyHSRConfig, PluginScriptConfig])
-        temp_dir = tempfile.TemporaryDirectory(dir=Path.cwd())
-        await scripts.connect(Path(temp_dir.name) / "ScriptConfig.json")
-        script_id, legacy = await scripts.add(LegacyHSRConfig)
-        await legacy.set("Info", "Name", "manager migration")
-        await legacy.set("Info", "SRAPath", r"D:\SRA")
-
-        owner = "hsr-migration-test"
-        provider = _provider(HSRRegistryService())
-        manager = _PluginManager.__new__(_PluginManager)
-        manager.loader = SimpleNamespace(
-            records={
-                owner: SimpleNamespace(
-                    status="active",
-                    plugin_name="automas_script_hsr",
-                    instance_id=owner,
-                )
-            }
-        )
-        manager._resolve_declared_script_type_bindings = lambda *_args, **_kwargs: [
-            _DeclaredScriptTypeBinding(
-                type_key="HSR",
-                display_name="HSR",
-                legacy_config_class=LegacyHSRConfig,
-            )
-        ]
-
-        original_scripts = Config.ScriptConfig
-        script_type_registry.register(provider, owner=owner)
-        try:
-            Config.ScriptConfig = scripts
-            await manager._sync_script_types_and_migrate_legacy_configs()
-            assert list(scripts.keys()) == [script_id]
-            assert isinstance(scripts[script_id], PluginScriptConfig)
-            assert scripts[script_id].get("Meta", "PluginTypeKey") == "HSR"
-            store = ScriptConfigStore(
-                provider=provider,
-                storage_script_config=scripts[script_id],
-            )
-            model = await store.load_script_model()
-            assert model.get("SRA", "Path").replace("/", "\\") == r"D:\SRA"
-        finally:
-            Config.ScriptConfig = original_scripts
-            script_type_registry.unregister_by_owner(owner)
-            temp_dir.cleanup()
-
-    asyncio.run(scenario())
-
-
-async def _assert_full_legacy_hsr_migration() -> None:
-    legacy = LegacyHSRConfig()
-    await legacy.set("Info", "Name", "完整迁移")
-    await legacy.set("Info", "SRAPath", r"D:\SRA")
-    await legacy.set("Info", "M7APath", r"D:\M7A")
-    await legacy.set("Game", "Path", r"D:\Game\StarRail.exe")
-    await legacy.set("Game", "Arguments", "-screen-fullscreen 0")
-    await legacy.set("Game", "WaitTime", 75)
-    await legacy.set("Run", "RunTimesLimit", 5)
-    await legacy.set("Run", "DailyTimeLimit", 25)
-    await legacy.set("Run", "WeeklyTimeLimit", 65)
-    await legacy.set("Run", "MonthlyTimeLimit", 90)
-    await legacy.set("Run", "LowPerformanceMode", True)
-    await legacy.set("TaskMapping", "Daily", "M7A")
-    await legacy.set("TaskMapping", "CurrencyWars", "SRA")
-
-    first_id, first = await legacy.UserData.add(LegacyHSRUserConfig)
-    second_id, second = await legacy.UserData.add(LegacyHSRUserConfig)
-    await first.set("Info", "Name", "第一账号")
-    await first.set("Info", "Status", False)
-    await first.set("Info", "Id", "account@example.com")
-    await first.set("Info", "Password", "password-value")
-    await first.set("Info", "RemainedDay", 7)
-    await first.set("Info", "Notes", "迁移备注")
-    await first.set("Data", "LastProxyDate", "2026-07-12")
-    await first.set("Data", "ProxyTimes", 2)
-    await first.set("Data", "IfPassCheck", False)
-    await first.set("Data", "EchoOfWarCompletedThisWeek", True)
-    await first.set("Data", "EchoOfWarLastResetWeek", "2026-W28")
-    await first.set("Data", "EchoOfWarLastCompletionDate", "2026-07-12")
-    await first.set("Data", "WeeklyCompletedThisWeek", True)
-    await first.set("Data", "WeeklyLastResetWeek", "2026-W28")
-    await first.set("Data", "WeeklyLastCompletionDate", "2026-07-12")
-    await first.set("Data", "AbyssCompletedThisMonth", True)
-    await first.set("Data", "AbyssLastResetMonth", "2026-07")
-    await first.set("Data", "AbyssLastCompletionDate", "2026-07-12")
-    await first.set("TaskSwitch", "Daily", False)
-    await first.set("TaskSwitch", "CurrencyWars", True)
-    await first.set("TaskSwitch", "ForgottenHall", True)
-    await first.set("Stage", "Channel", "Ornament")
-    await first.set(
-        "Stage",
-        "ScriptStage",
-        '{"SRA":{"id":"A"},"M7A":{"name":"B"}}',
-    )
-    await first.set(
-        "Stage",
-        "ScriptEchoOfWar",
-        '{"SRA":{"id":"E"},"M7A":{"name":"F"}}',
-    )
-    await first.set("TaskOpt", "EchoOfWarWeekday", "Friday")
-    await first.set(
-        "Abyss",
-        "Snapshots",
-        '{"forgottenhall":{"team":"snapshot"}}',
-    )
-    await first.set("Notify", "Enabled", True)
-    await first.set("Notify", "IfSendStatistic", True)
-    await first.set("Notify", "IfSendMail", True)
-    await first.set("Notify", "ToAddress", "notify@example.com")
-    await first.set("Notify", "IfServerChan", True)
-    await first.set("Notify", "ServerChanKey", "server-key")
-    webhook_id, webhook = await first.Notify_CustomWebhooks.add(Webhook)
-    await webhook.set("Info", "Name", "迁移 Webhook")
-    await webhook.set("Info", "Enabled", True)
-    await webhook.set("Data", "Url", "https://example.com/webhook")
-    await webhook.set("Data", "Template", "{{ content }}")
-    await webhook.set("Data", "Headers", '{"X-Test":"yes"}')
-    await webhook.set("Data", "Method", "POST")
-    await second.set("Info", "Name", "第二账号")
-
-    id_cipher = first._config_item_index["Info"]["Id"].getValue(False)
-    password_cipher = first._config_item_index["Info"]["Password"].getValue(False)
-
-    registry = HSRRegistryService()
-    provider = _provider(registry)
-    migrated = await migrate_legacy_hsr_config(legacy, provider)
-    assert migrated.UserData.order == [first_id, second_id]
-
-    store = ScriptConfigStore(provider=provider, storage_script_config=migrated)
-    script_model = await store.load_script_model()
-    assert script_model.get("Engine", "EnabledEngines") == ["SRA", "M7A"]
-    assert script_model.get("Game", "WaitTime") == 75
-    assert script_model.get("Run", "RunTimesLimit") == 5
-    assert script_model.get("M7A", "LowPerformanceMode") is True
-    assert script_model.get("TaskMapping", "Daily") == "M7A"
-
-    first_model = await store.load_user_model(first_id)
-    assert first_model.get("Info", "Status") is False
-    assert first_model.get("SRA", "Id") == "account@example.com"
-    assert first_model.get("SRA", "Password") == "password-value"
-    assert first_model.get("Data", "WeeklyCompletedThisWeek") is True
-    assert first_model.get("TaskSwitch", "ForgottenHall") is True
-    assert first_model.get("Stage", "Channel") == "Ornament"
-    assert first_model.get("TaskOpt", "EchoOfWarWeekday") == "Friday"
-
-    plugin_user = migrated.UserData[first_id]
-    raw_plugin_user = json.loads(plugin_user.get("PluginData", "Config"))
-    assert raw_plugin_user["SRA"]["Id"] == id_cipher
-    assert raw_plugin_user["SRA"]["Password"] == password_cipher
-    assert "password-value" not in plugin_user.get("PluginData", "Config")
-
-    webhooks = await load_user_custom_webhooks(first_model)
-    assert len(webhooks) == 1
-    assert webhooks[0].get("Info", "Name") == "迁移 Webhook"
-    assert webhooks[0].get("Data", "Url") == "https://example.com/webhook"
-    raw_custom_webhooks = json.loads(first_model.get("Notify", "CustomWebhooks"))
-    assert raw_custom_webhooks["instances"][0]["uid"] == str(webhook_id)
-
-
-def test_script_selection_intersects_active_adapters() -> None:
+def test_configured_paths_intersect_active_adapters() -> None:
     registry = HSRRegistryService()
     registry.register_group(
         owner="sra",
@@ -868,24 +692,25 @@ def test_script_selection_intersects_active_adapters() -> None:
         controller=SRAController(),
     )
     capability = registry.resolve_record_capability(
-        {"Engine": {"EnabledEngines": ["M7A"]}}
+        {"M7A": {"Path": r"D:\M7A"}}
     )
     assert capability.available is False
     assert capability.supported_modes == ()
 
-    selected_sra = registry.resolve_record_capability(
-        {"Engine": {"EnabledEngines": ["SRA"]}}
-    )
+    selected_sra = registry.resolve_record_capability({"SRA": {"Path": r"D:\SRA"}})
     assert selected_sra.available is True
     assert selected_sra.supported_modes == ("AutoProxy", "ManualReview")
 
 
-def test_hsr_config_rejects_an_explicit_empty_engine_selection() -> None:
-    with pytest.raises(ValueError, match="至少选择一个引擎"):
-        HSRConfig.model_validate({"Engine": {"EnabledEngines": []}})
+def test_hsr_config_has_no_separate_engine_selection() -> None:
+    assert "Engine" not in HSRConfig.model_fields
+    assert resolve_configured_engines(HSRConfig()) == ()
+    assert "MonthlyTimeLimit" not in HSRRunConfig.model_fields
+    assert "ForgottenHall" not in HSRUserTaskSwitchConfig.model_fields
+    assert "AbyssCompletedThisMonth" not in HSRUserDataConfig.model_fields
 
 
-def test_new_hsr_script_defaults_to_all_currently_available_engines() -> None:
+def test_new_hsr_script_does_not_persist_an_engine_selection() -> None:
     registry = HSRRegistryService()
     registry.register_group(
         owner="sra",
@@ -900,36 +725,23 @@ def test_new_hsr_script_defaults_to_all_currently_available_engines() -> None:
     plugin = HSRPlugin.__new__(HSRPlugin)
     plugin.registry = registry
     definition = plugin.build_script_adapters()[0]
-    initial_factory = definition.metadata["initial_config_factory"]
-    assert initial_factory() == {
-        "Engine": {"EnabledEngines": ["SRA", "M7A"]}
-    }
+    assert "initial_config_factory" not in definition.metadata
+    assert "legacy_config_migrator" not in definition.metadata
+    assert definition.legacy_config_class_name is None
+    assert definition.legacy_user_config_class_name is None
+    assert not hasattr(HSRPlugin, "_import_m7a_abyss_snapshot")
+    assert resolve_configured_engines(definition.script_model()) == ()
 
 
 def test_task_assignment_uses_only_effective_engines_and_preserves_mapping() -> None:
-    class Config:
-        def __init__(self, engines: list[str], mapping: str = "SRA") -> None:
-            self.engines = engines
-            self.mapping = mapping
-
-        def get(self, group: str, key: str):
-            if group == "Engine" and key == "EnabledEngines":
-                return self.engines
-            if group == "TaskMapping":
-                return self.mapping
-            return None
-
     daily = HSR_TASK_MODULE_MAP["Daily"]
-    abyss = HSR_TASK_MODULE_MAP["ForgottenHall"]
 
-    assert get_assigned_script(daily, Config(["SRA"], "M7A")) == "SRA"
-    assert get_assigned_script(daily, Config(["M7A"], "SRA")) == "M7A"
-    assert get_assigned_script(daily, Config(["SRA", "M7A"], "M7A")) == "M7A"
-    assert module_is_available(abyss, Config(["SRA"])) is False
-    assert module_is_available(abyss, Config(["M7A"])) is True
+    assert get_assigned_script(daily, _PathConfig("SRA", mapping="M7A")) == "SRA"
+    assert get_assigned_script(daily, _PathConfig("M7A", mapping="SRA")) == "M7A"
+    assert get_assigned_script(daily, _PathConfig("SRA", "M7A", mapping="M7A")) == "M7A"
 
 
-def test_disabling_an_engine_preserves_its_namespaced_configuration() -> None:
+def test_clearing_an_engine_path_preserves_its_namespaced_configuration() -> None:
     async def scenario() -> None:
         provider = _provider(HSRRegistryService())
         storage = PluginScriptConfig()
@@ -940,7 +752,6 @@ def test_disabling_an_engine_preserves_its_namespaced_configuration() -> None:
         )
         await store.write_script_data(
             {
-                "Engine": {"EnabledEngines": ["SRA", "M7A"]},
                 "SRA": {"Path": r"D:\SRA"},
                 "M7A": {
                     "Path": r"D:\M7A",
@@ -950,13 +761,11 @@ def test_disabling_an_engine_preserves_its_namespaced_configuration() -> None:
             }
         )
 
-        await store.update_script_data(
-            {"Engine": {"EnabledEngines": ["SRA"]}}
-        )
+        await store.update_script_data({"M7A": {"Path": ""}})
         data = await store.read_script_data()
 
-        assert data["Engine"]["EnabledEngines"] == ["SRA"]
-        assert data["M7A"]["Path"].replace("/", "\\") == r"D:\M7A"
+        assert resolve_configured_engines(data) == ("SRA",)
+        assert data["M7A"]["Path"] == ""
         assert data["M7A"]["LowPerformanceMode"] is True
         assert data["TaskMapping"]["Daily"] == "M7A"
 
@@ -973,12 +782,12 @@ def test_m7a_only_runs_the_first_persisted_executable_account() -> None:
     assert manager._m7a_only_skip_reason(1) is None
 
 
-def test_plugin_api_rejects_unselected_engine_with_envelope() -> None:
+def test_plugin_api_rejects_unconfigured_engine_with_envelope() -> None:
     async def scenario() -> None:
         class Config:
             def get(self, group: str, key: str):
-                if group == "Engine" and key == "EnabledEngines":
-                    return ["SRA"]
+                if group == "SRA" and key == "Path":
+                    return r"D:\SRA"
                 return None
 
         registry = HSRRegistryService()
@@ -1015,22 +824,6 @@ def test_plugin_api_rejects_unselected_engine_with_envelope() -> None:
         assert stage_response.body["status"] == "error"
         assert stage_response.body["data"] is None
 
-        import_response = await plugin._import_m7a_abyss_snapshot(
-            PluginHttpRequest(
-                method="POST",
-                path="/hsr/v1/m7a/abyss-snapshot/import",
-                query={},
-                headers={},
-                body=b"",
-                json={"scriptId": "script", "userId": "user"},
-                instance_id="hsr",
-            )
-        )
-        assert import_response.status_code == 409
-        assert import_response.body["code"] == 409
-        assert import_response.body["status"] == "error"
-        assert import_response.body["data"] is None
-
     asyncio.run(scenario())
 
 
@@ -1045,4 +838,72 @@ def test_external_root_lock_serializes_same_upstream_directory() -> None:
         second = await asyncio.wait_for(waiting, timeout=1)
         release_external_path_locks(second)
 
+    asyncio.run(scenario())
+
+
+def test_sra_external_locks_include_shared_app_data() -> None:
+    class ScriptConfig:
+        def get(self, section: str, key: str):
+            assert key == "Path"
+            return {"SRA": "C:/SRA-one", "M7A": "C:/M7A"}.get(section)
+
+    shared_app_data = Path("C:/Users/test/AppData/Roaming/SRA")
+    with patch(
+        "automas_hsr_adapter_sra.runner.get_sra_app_data_dir",
+        return_value=shared_app_data,
+    ):
+        paths = _resolve_external_lock_paths(ScriptConfig(), ("SRA", "M7A"))
+
+    assert paths == ["C:/SRA-one", "C:/M7A", shared_app_data]
+
+
+def test_legacy_hsr_routes_translate_plugin_contracts() -> None:
+    from app.api.scripts import get_hsr_stage_options_api, router
+
+    async def dispatch(_method: str, path: str, **_kwargs):
+        assert path.endswith("stage-options")
+        return {
+            "code": 200,
+            "status": "success",
+            "message": "success",
+            "data": {
+                "engine": "M7A",
+                "categories": [
+                    {
+                        "key": "calyx",
+                        "label": "拟造花萼",
+                        "options": [
+                            {
+                                "id": "calyx-golden",
+                                "label": "回忆之蕾",
+                                "detail": "角色经验",
+                                "cost": 10,
+                                "max_count": 6,
+                                "native_payload": {
+                                    "m7a": {
+                                        "instanceType": "CalyxGolden",
+                                        "instanceName": "回忆之蕾",
+                                    }
+                                },
+                            }
+                        ],
+                    }
+                ],
+            },
+        }
+
+    async def scenario() -> None:
+        with patch("app.api.scripts._dispatch_hsr_plugin_http", new=dispatch):
+            stage = await get_hsr_stage_options_api("script", "M7A")
+
+        assert stage.code == 200
+        assert stage.data is not None
+        assert stage.data.categories[0].options[0].m7a is not None
+        assert stage.data.categories[0].options[0].m7a.instanceType == "CalyxGolden"
+
+    legacy_paths = {"/api/scripts/hsr/stage-options"}
+    legacy_routes = [route for route in router.routes if route.path in legacy_paths]
+    assert {route.path for route in legacy_routes} == legacy_paths
+    assert all(route.include_in_schema is False for route in legacy_routes)
+    assert all(route.path != "/api/scripts/user/import-m7a-abyss-snapshot" for route in router.routes)
     asyncio.run(scenario())

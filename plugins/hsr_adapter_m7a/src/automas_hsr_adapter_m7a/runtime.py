@@ -42,7 +42,6 @@ class M7AControllerSessionImpl:
             module_timeout_seconds=coordinator._module_timeout_seconds,
             queue_eow_completion=coordinator._queue_eow_completion_if_confirmed,
             queue_weekly_completion=coordinator._queue_weekly_completion,
-            queue_abyss_completion=coordinator._queue_abyss_completion,
             record_module_result=coordinator._record_module_result,
         )
 

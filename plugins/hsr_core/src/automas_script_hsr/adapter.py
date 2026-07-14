@@ -13,14 +13,12 @@ class HSRAdapterHooks(ScriptAdapterHooks):
 
         runtime.script_config = await runtime.build_script_model()
         runtime.user_config = await runtime.storage.load_user_collection()
-        selected = runtime.script_config.get("Engine", "EnabledEngines") or []
         snapshot = registry.snapshot(
-            selected_engines=selected,
             script_config=runtime.script_config,
         )
         runtime.extra["hsr_capability_snapshot"] = snapshot
         if not snapshot.available:
-            return snapshot.unavailable_reason or "请至少选择一个 HSR 引擎"
+            return snapshot.unavailable_reason or "请至少配置一个 HSR 引擎路径"
         if runtime.mode not in snapshot.supported_modes:
             return f"当前 HSR 引擎组合不支持任务模式 {runtime.mode}"
         return "Pass"

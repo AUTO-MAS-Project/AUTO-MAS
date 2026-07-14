@@ -96,7 +96,7 @@
                 <a-button
                   type="default"
                   size="middle"
-                  :disabled="!isScriptOperable(script)"
+                  :disabled="!canEditScript(script)"
                   @click="handleEdit(script)"
                 >
                   <template #icon>
@@ -452,6 +452,10 @@ watch(
 )
 
 const isScriptOperable = (script: Script) => script.available !== false
+
+const canEditScript = (script: Script) =>
+  isScriptOperable(script) ||
+  (script.type === 'HSR' && script.editorKind === 'plugin:automas_script_hsr')
 
 const handleEdit = (script: Script) => {
   emit('edit', script)

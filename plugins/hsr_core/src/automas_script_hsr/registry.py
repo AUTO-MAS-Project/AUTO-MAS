@@ -4,6 +4,8 @@ from collections.abc import Callable, Iterable
 from threading import RLock
 from typing import Any
 
+from pydantic import BaseModel
+
 from app.core.script_types import ScriptRecordCapability
 
 from .contracts import (
@@ -16,6 +18,24 @@ from .contracts import (
 
 
 _ENGINE_ORDER: tuple[HSREngine, ...] = ("SRA", "M7A")
+
+
+def resolve_configured_engines(script_config: Any) -> tuple[HSREngine, ...]:
+    """按非空脚本路径推导当前配置启用的 HSR 引擎。"""
+
+    configured: list[HSREngine] = []
+    for engine in _ENGINE_ORDER:
+        if isinstance(script_config, dict):
+            group = script_config.get(engine)
+            path = group.get("Path") if isinstance(group, dict) else None
+        elif isinstance(script_config, BaseModel):
+            group = getattr(script_config, engine, None)
+            path = getattr(group, "Path", None)
+        else:
+            path = script_config.get(engine, "Path")
+        if str(path or "").strip():
+            configured.append(engine)
+    return tuple(configured)
 
 
 class HSRRegistryService:
@@ -144,20 +164,19 @@ class HSRRegistryService:
     def snapshot(
         self,
         *,
-        selected_engines: Iterable[str] | None = None,
         script_config: Any | None = None,
     ) -> HSRCapabilitySnapshot:
         """构建全局或脚本级能力快照。"""
 
         candidates = self.candidate_engines()
         selected = (
-            self.normalize_engines(selected_engines)
-            if selected_engines is not None
+            resolve_configured_engines(script_config)
+            if script_config is not None
             else candidates
         )
         effective = tuple(engine for engine in selected if engine in candidates)
         warnings = tuple(
-            f"已选择的 {engine} 适配器当前未生效"
+            f"已配置路径的 {engine} 适配器当前未生效"
             for engine in selected
             if engine not in candidates
         )
@@ -193,13 +212,20 @@ class HSRRegistryService:
                 item["strategies"][engine] = list(task.strategy_lines)
 
         available = bool(effective)
-        unavailable_reason = None if available else "请至少启用并选择一个 HSR 引擎适配器"
+        if available:
+            unavailable_reason = None
+        elif not candidates:
+            unavailable_reason = "请启用 SRA 或 M7A HSR 适配器"
+        elif not selected:
+            unavailable_reason = "请至少配置一个已加载的 HSR 引擎路径"
+        else:
+            unavailable_reason = "已配置路径的 HSR 引擎适配器当前未生效"
         return HSRCapabilitySnapshot(
             revision=self._revision,
             available=available,
             unavailable_reason=unavailable_reason,
             candidate_engines=candidates,
-            selected_engines=selected,
+            configured_engines=selected,
             effective_engines=effective,
             supported_modes=tuple(modes),
             adapters=tuple(adapters),
@@ -213,27 +239,12 @@ class HSRRegistryService:
     ) -> ScriptRecordCapability:
         """供 ScriptTypeProvider 解析单条 HSR 脚本能力。"""
 
-        engine_data = config_data.get("Engine")
-        selected = (
-            engine_data.get("EnabledEngines", [])
-            if isinstance(engine_data, dict)
-            else []
-        )
-        snapshot = self.snapshot(selected_engines=selected)
+        snapshot = self.snapshot(script_config=config_data)
         return ScriptRecordCapability(
             available=snapshot.available,
             unavailable_reason=snapshot.unavailable_reason,
             supported_modes=snapshot.supported_modes,
         )
-
-    @staticmethod
-    def normalize_engines(values: Iterable[str]) -> tuple[HSREngine, ...]:
-        normalized = {
-            HSRRegistryService._normalize_engine(value)
-            for value in values
-            if str(value).strip()
-        }
-        return tuple(engine for engine in _ENGINE_ORDER if engine in normalized)
 
     @staticmethod
     def _normalize_engine(value: str) -> HSREngine:

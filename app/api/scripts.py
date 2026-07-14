@@ -23,6 +23,7 @@
 
 import asyncio
 import importlib
+import json
 import shutil
 import uuid
 from datetime import datetime
@@ -43,6 +44,81 @@ from app.task.Ok.shell.manifest import OkProjectInspectError, inspect_ok_project
 from app.task.Ok.shell.runtime import OkConfigStore
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
+
+
+async def _dispatch_hsr_plugin_http(
+    method: str,
+    path: str,
+    *,
+    query: dict[str, Any] | None = None,
+    json_body: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """把遗留 HSR API 转发到当前插件 HTTP 处理器。"""
+
+    from app.plugins.server import PluginHttpRequest, PluginHttpResponse, plugin_server
+
+    route = plugin_server.resolve_http(path, method)
+    if route is None:
+        raise LookupError("HSR 插件接口当前不可用")
+
+    result = await plugin_server.dispatch_http(
+        PluginHttpRequest(
+            method=method,
+            path=path,
+            query=query or {},
+            headers={},
+            body=b"",
+            json=json_body,
+            instance_id=route.instance_id,
+        )
+    )
+    body = result.body if isinstance(result, PluginHttpResponse) else result
+    if not isinstance(body, dict):
+        raise TypeError("HSR 插件接口返回了非法响应")
+    return body
+
+
+def _legacy_hsr_stage_options_data(
+    data: dict[str, Any],
+    engine: Literal["M7A", "SRA"],
+) -> HSRStageOptionsData:
+    """把插件副本契约转换为旧版编辑器响应。"""
+
+    categories: list[HSRDynamicStageCategory] = []
+    for raw_category in data.get("categories", []):
+        if not isinstance(raw_category, dict):
+            continue
+        category_key = str(raw_category.get("key") or "")
+        category_label = str(raw_category.get("label") or "")
+        options: list[HSRDynamicStageOption] = []
+        for raw_option in raw_category.get("options", []):
+            if not isinstance(raw_option, dict):
+                continue
+            native_payload = raw_option.get("native_payload")
+            native_payload = native_payload if isinstance(native_payload, dict) else {}
+            options.append(
+                HSRDynamicStageOption(
+                    label=str(raw_option.get("label") or ""),
+                    detail=str(raw_option.get("detail") or "") or None,
+                    value=str(raw_option.get("id") or ""),
+                    categoryKey=category_key,
+                    categoryLabel=category_label,
+                    cost=raw_option.get("cost"),
+                    maxCount=raw_option.get("max_count"),
+                    m7a=native_payload.get("m7a"),
+                    sra=native_payload.get("sra"),
+                )
+            )
+        categories.append(
+            HSRDynamicStageCategory(
+                categoryKey=category_key,
+                categoryLabel=category_label,
+                cost=options[0].cost if options else None,
+                maxCount=options[0].maxCount if options else None,
+                options=options,
+            )
+        )
+    return HSRStageOptionsData(engine=engine, categories=categories)
 
 
 def _ok_script_config_file_path(config_dir: Path, filename: str) -> Path:
@@ -1246,6 +1322,58 @@ async def preview_maafw_windows(
         message=f"已扫描到 {len(data.windows)} 个 MaaFW PC 客户端窗口",
         data=data,
     )
+
+
+@router.get(
+    "/hsr/stage-options",
+    tags=["HSR"],
+    summary="获取 HSR 体力副本动态选项（兼容接口）",
+    response_model=HSRStageOptionsOut,
+    status_code=200,
+    deprecated=True,
+    include_in_schema=False,
+)
+async def get_hsr_stage_options_api(
+    scriptId: str | None = None,
+    engine: Literal["M7A", "SRA"] = "M7A",
+) -> HSRStageOptionsOut:
+    """兼容旧客户端，并把副本选项请求转发给 HSR 插件。"""
+
+    if not scriptId:
+        return HSRStageOptionsOut(
+            code=400,
+            status="error",
+            message="缺少 scriptId",
+        )
+
+    try:
+        response = await _dispatch_hsr_plugin_http(
+            "GET",
+            "/hsr/v1/stage-options",
+            query={"scriptId": scriptId, "engine": engine},
+        )
+        code = int(response.get("code") or 500)
+        if code != 200:
+            return HSRStageOptionsOut(
+                code=code,
+                status=str(response.get("status") or "error"),
+                message=str(response.get("message") or "获取 HSR 体力副本选项失败"),
+            )
+        data = response.get("data")
+        if not isinstance(data, dict):
+            raise TypeError("HSR 插件接口缺少副本选项数据")
+        legacy_data = _legacy_hsr_stage_options_data(data, engine)
+        option_count = sum(len(category.options) for category in legacy_data.categories)
+        return HSRStageOptionsOut(
+            message=f"共 {option_count} 个 HSR 体力副本选项",
+            data=legacy_data,
+        )
+    except Exception as e:
+        return HSRStageOptionsOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {e}",
+        )
 
 
 @router.post(

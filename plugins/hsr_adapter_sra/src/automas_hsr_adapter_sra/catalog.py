@@ -73,12 +73,3 @@ class SRATaskCatalog:
         from .stages import load_sra_stage_options
 
         return load_sra_stage_options(script_config)
-
-    def import_abyss_snapshot(
-        self,
-        *,
-        script_config: Any,
-        user_config: Any,
-    ) -> dict[str, Any]:
-        _ = script_config, user_config
-        raise ValueError("SRA 不提供三深渊快照导入")

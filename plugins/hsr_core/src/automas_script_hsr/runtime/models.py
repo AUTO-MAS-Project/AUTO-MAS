@@ -23,7 +23,7 @@ from typing import Any, Awaitable, Callable, Literal
 from app.models.task import UserItem
 from app.utils import ProcessManager
 
-HSRPhase = Literal["daily", "weekly", "monthly"]
+HSRPhase = Literal["daily", "weekly"]
 HSRScriptRunner = Literal["M7A", "SRA"]
 HSRLoginMode = Literal["sra_switch", "sra_remembered", "m7a_fallback"]
 HSRModuleResultStatus = Literal["completed", "failed", "incomplete", "skipped"]

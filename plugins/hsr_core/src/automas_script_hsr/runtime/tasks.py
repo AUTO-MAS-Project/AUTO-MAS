@@ -22,8 +22,10 @@
 from dataclasses import dataclass, field
 from typing import Literal
 
+from ..registry import resolve_configured_engines
+
 ScriptType = Literal["M7A", "SRA"]
-ModuleCategory = Literal["daily", "weekly", "monthly"]
+ModuleCategory = Literal["daily", "weekly"]
 
 
 @dataclass(frozen=True)
@@ -96,15 +98,6 @@ HSR_TASK_MODULES: tuple[HSRTaskModule, ...] = (
             }
         },
     ),
-    HSRTaskModule(
-        key="ForgottenHall",
-        name="三深渊",
-        category="monthly",
-        description="混沌回忆、虚构叙事、末日幻影",
-        supported_scripts=("M7A",),
-        default_script="M7A",
-        m7a_tasks=("forgottenhall", "purefiction", "apocalyptic"),
-    ),
 )
 
 HSR_TASK_MODULE_MAP: dict[str, HSRTaskModule] = {m.key: m for m in HSR_TASK_MODULES}
@@ -130,7 +123,7 @@ def get_assigned_script(module: HSRTaskModule, script_config) -> ScriptType:
         str(item).upper()
         for item in (
             getattr(script_config, "_hsr_effective_engines", None)
-            or script_config.get("Engine", "EnabledEngines")
+            or resolve_configured_engines(script_config)
             or ()
         )
     )
@@ -139,8 +132,6 @@ def get_assigned_script(module: HSRTaskModule, script_config) -> ScriptType:
     )
     if len(supported) == 1:
         return supported[0]  # type: ignore[return-value]
-    if module.key == "ForgottenHall":
-        return "M7A"
     assigned = script_config.get("TaskMapping", module.key)
     normalized = "SRA" if assigned == "SRA" else "M7A"
     if normalized in supported:
@@ -157,7 +148,7 @@ def module_is_available(module: HSRTaskModule, script_config) -> bool:
         str(item).upper()
         for item in (
             getattr(script_config, "_hsr_effective_engines", None)
-            or script_config.get("Engine", "EnabledEngines")
+            or resolve_configured_engines(script_config)
             or ()
         )
     }
