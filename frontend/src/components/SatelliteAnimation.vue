@@ -17,6 +17,8 @@ import type { ScriptType } from '@/types/script'
 import { Service } from '@/api'
 import * as THREE from 'three'
 
+const logger = window.electronAPI.getLogger('卫星动画')
+
 const CONFIG = {
   containerHeight: 400,
   orbitRadiusX: 400,
@@ -327,7 +329,7 @@ async function initScene(): Promise<void> {
   try {
     await initSceneInternal()
   } catch (err) {
-    console.error('[SatelliteAnimation] 初始化场景失败:', err)
+    logger.error(`初始化场景失败: ${String(err)}`)
   } finally {
     loading.value = false
   }
@@ -340,7 +342,7 @@ async function initSceneInternal(): Promise<void> {
   try {
     userScripts = await getScripts(false)
   } catch (err) {
-    console.warn('[SatelliteAnimation] 获取脚本列表失败，按空集合处理:', err)
+    logger.warn(`获取脚本列表失败，按空集合处理: ${String(err)}`)
   }
 
   const userScriptTypes = new Set<ScriptType>(userScripts.map(s => s.type as ScriptType))
@@ -350,7 +352,7 @@ async function initSceneInternal(): Promise<void> {
   const numSatellites = enabledModules.length
 
   if (numSatellites === 0) {
-    console.info('[SatelliteAnimation] 没有可显示的卫星模块，仅渲染中心图标和轨道')
+    logger.info('没有可显示的卫星模块，仅渲染中心图标和轨道')
   }
 
   const w = container.value.clientWidth
@@ -673,7 +675,7 @@ async function updateSatelliteStates() {
       }
     })
   } catch (error) {
-    console.error('[SatelliteAnimation] 更新状态失败:', error)
+    logger.error(`更新状态失败: ${String(error)}`)
   }
 }
 
@@ -682,7 +684,7 @@ onMounted(async () => {
   try {
     await initScene()
   } catch (e) {
-    console.error('[SatelliteAnimation] init failed:', e)
+    logger.error(`init failed: ${String(e)}`)
   }
   animate()
   window.addEventListener('resize', handleResize)

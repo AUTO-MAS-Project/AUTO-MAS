@@ -88,7 +88,7 @@ import { useTheme } from '../composables/useTheme.ts'
 import { useRouteLock } from '../composables/useRouteLock.ts'
 import { useAppBackground } from '../composables/useAppBackground.ts'
 import { useWebSocket, type WebSocketBaseMessage } from '../composables/useWebSocket.ts'
-import { OpenAPI } from '../api'
+import { OpenAPI } from '@/api'
 import {
   FALLBACK_PAGE_DECLARATIONS,
   normalizePageDeclarations,
@@ -99,6 +99,8 @@ import {
 import type { MenuProps } from 'ant-design-vue'
 
 const SIDER_WIDTH = 160
+
+const logger = window.electronAPI.getLogger('应用布局')
 
 const router = useRouter()
 const route = useRoute()
@@ -206,7 +208,7 @@ const fetchInitialPluginSnapshot = async () => {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    console.warn(`加载插件页面声明失败，等待实时更新: ${message}`)
+    logger.warn(`加载插件页面声明失败，等待实时更新: ${message}`)
   }
 }
 

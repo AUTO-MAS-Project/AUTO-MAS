@@ -91,10 +91,10 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 const logger = window.electronAPI.getLogger('SRC用户编辑')
 
 // 导入拆分的组件
-import SRCUserEditHeader from '../../SRCUserEdit/SRCUserEditHeader.vue'
-import BasicInfoSection from '../../SRCUserEdit/BasicInfoSection.vue'
-import StageConfigSection from '../../SRCUserEdit/StageConfigSection.vue'
-import NotifyConfigSection from '../../SRCUserEdit/NotifyConfigSection.vue'
+import SRCUserEditHeader from '@/views/SRCUserEdit/SRCUserEditHeader.vue'
+import BasicInfoSection from '@/views/SRCUserEdit/BasicInfoSection.vue'
+import StageConfigSection from '@/views/SRCUserEdit/StageConfigSection.vue'
+import NotifyConfigSection from '@/views/SRCUserEdit/NotifyConfigSection.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const router = useRouter()
