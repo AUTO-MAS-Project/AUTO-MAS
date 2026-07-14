@@ -43,9 +43,6 @@ dev = [
 plugins = [
     "auto-mas-core",
     "automas_plugin_okww_adapter",
-    "automas-script-hsr",
-    "automas-hsr-adapter-sra",
-    "automas-hsr-adapter-m7a",
 ]
 
 [tool.auto-mas.plugin-bootstrap]
@@ -54,9 +51,6 @@ plugins = [
 # 2) 声明固定版本： { name = "automas_script_maa", version = "0.0.5-alpha" }
 # 3) 声明任意版本约束： { name = "automas_script_maa", specifier = ">=0.0.5-alpha,<0.1.0" }
 packages = [
-    { name = "automas-script-hsr", version = "0.1.0" },
-    { name = "automas-hsr-adapter-sra", version = "0.1.0" },
-    { name = "automas-hsr-adapter-m7a", version = "0.1.0" },
     { name = "automas-maafw-interface", version = "0.1.1" },
     { name = "automas-maafw-agent-env", version = "0.1.0" },
     { name = "automas-maafw-controller-adb", version = "0.1.0" },
@@ -74,9 +68,6 @@ package = false
 members = [
     "plugins/auto_mas_core",
     "plugins/okww_adapter",
-    "plugins/hsr_core",
-    "plugins/hsr_adapter_sra",
-    "plugins/hsr_adapter_m7a",
 ]
 exclude = [
     "plugins/pypi",
@@ -86,6 +77,3 @@ exclude = [
 [tool.uv.sources]
 "auto-mas-core" = { workspace = true }
 "automas_plugin_okww_adapter" = { workspace = true }
-"automas-script-hsr" = { workspace = true }
-"automas-hsr-adapter-sra" = { workspace = true }
-"automas-hsr-adapter-m7a" = { workspace = true }

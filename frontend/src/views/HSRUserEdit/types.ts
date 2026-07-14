@@ -50,8 +50,7 @@ export type HSRUserSRAConfig = {
   Password?: string | null
 }
 
-// HSR 内部非空 reactive 形态（OpenAPI 生成的类型全部字段为 optional | null，
-// 但前端用 reactive 实际为非空值；模板 / 计算属性通过该形态消除 strict null 警告）。
+// HSR 编辑器使用插件表单契约；reactive 默认值保持字段始终可编辑。
 export type HSRUserConfigData = {
   Info: {
     Name?: string | null
@@ -63,8 +62,8 @@ export type HSRUserConfigData = {
   SRA: HSRUserSRAConfig
   Stage: {
     Channel?: 'CalyxGolden' | 'CalyxCrimson' | 'Relic' | 'Ornament' | null
-    ScriptStage?: string | Record<string, unknown> | null
-    ScriptEchoOfWar?: string | Record<string, unknown> | null
+    ScriptStage?: Record<string, unknown> | null
+    ScriptEchoOfWar?: Record<string, unknown> | null
   }
   TaskSwitch: {
     Daily?: boolean | null

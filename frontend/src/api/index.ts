@@ -12,6 +12,7 @@ export type { ADBScreenshotOut } from './models/ADBScreenshotOut';
 export type { Body_batch_update_ok_script_configs_api_scripts_ok_script_configs_batch_update_post } from './models/Body_batch_update_ok_script_configs_api_scripts_ok_script_configs_batch_update_post';
 export type { Body_batch_update_okef_configs_api_scripts_okef_configs_batch_update_post } from './models/Body_batch_update_okef_configs_api_scripts_okef_configs_batch_update_post';
 export type { Body_batch_update_okww_configs_api_scripts_okww_configs_batch_update_post } from './models/Body_batch_update_okww_configs_api_scripts_okww_configs_batch_update_post';
+export type { Body_inspect_ok_script_project_api_scripts_ok_script_inspect_post } from './models/Body_inspect_ok_script_project_api_scripts_ok_script_inspect_post';
 export type { CheckImageAllIn } from './models/CheckImageAllIn';
 export type { CheckImageAnyIn } from './models/CheckImageAnyIn';
 export type { CheckImageIn } from './models/CheckImageIn';

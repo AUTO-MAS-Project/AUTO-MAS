@@ -37,7 +37,6 @@ from datetime import datetime, timedelta, date
 from typing import Literal, Optional, Union, Dict, Any, List
 import uuid
 import json
-import inspect
 
 from app.models.ConfigBase import ConfigBase, JSONValidator
 from app.models.config import (
@@ -65,6 +64,7 @@ from app.utils.constants import (
 )
 from app.utils import get_logger
 from .script_types import (
+    ScriptRecordCapability,
     apply_script_type_registry_to_global_config,
     build_legacy_fallback_provider_by_script_config,
     build_legacy_fallback_provider_by_type_key,
@@ -950,7 +950,6 @@ class AppConfig(GlobalConfig):
         self,
         script: str,
         script_id: str | None = None,
-        initial_config: dict[str, Any] | None = None,
     ) -> tuple[uuid.UUID, ConfigBase]:
         """添加脚本配置。"""
 
@@ -962,7 +961,17 @@ class AppConfig(GlobalConfig):
         if not provider.is_builtin:
             from app.models.plugin_script_config import PluginScriptConfig
 
-            form_payload: dict[str, Any] = {}
+            new_uid, new_config = await self.ScriptConfig.add(PluginScriptConfig)
+            await new_config.set("Meta", "PluginTypeKey", provider.type_key)
+
+            defaults = await form_to_storage(provider, {}, "script")
+            default_form = await storage_to_form(provider, defaults, "script")
+            script_name = self._script_record_name(provider, default_form)
+            await new_config.set("Info", "Name", script_name)
+            await new_config.set(
+                "PluginData", "Config",
+                json.dumps(defaults, ensure_ascii=False),
+            )
 
             if script_id is not None:
                 source_uid = uuid.UUID(script_id)
@@ -979,41 +988,12 @@ class AppConfig(GlobalConfig):
                         if_decrypt=False,
                         regenerate_uuids=True,
                     )
-                form_payload = await storage_to_form(
-                    provider,
-                    source_payload,
-                    "script",
+                storage_payload = await form_to_storage(provider, source_payload, "script")
+                await new_config.set(
+                    "PluginData", "Config",
+                    json.dumps(storage_payload, ensure_ascii=False),
                 )
-
-            if script_id is None:
-                initial_factory = provider.metadata.get("initial_config_factory")
-                if callable(initial_factory):
-                    default_initial = initial_factory()
-                    if inspect.isawaitable(default_initial):
-                        default_initial = await default_initial
-                    if isinstance(default_initial, dict):
-                        form_payload = self._merge_plugin_form_payload(
-                            form_payload,
-                            default_initial,
-                        )
-
-            if initial_config:
-                form_payload = self._merge_plugin_form_payload(
-                    form_payload,
-                    initial_config,
-                )
-
-            storage_payload = await form_to_storage(provider, form_payload, "script")
-            default_form = await storage_to_form(provider, storage_payload, "script")
-            script_name = self._script_record_name(provider, default_form)
-            new_uid, new_config = await self.ScriptConfig.add(PluginScriptConfig)
-            await new_config.set("Meta", "PluginTypeKey", provider.type_key)
-            await new_config.set("Info", "Name", script_name)
-            await new_config.set(
-                "PluginData",
-                "Config",
-                json.dumps(storage_payload, ensure_ascii=False),
-            )
+                await new_config.set("Info", "Name", source_config.get("Info", "Name"))
 
             return new_uid, new_config
 
@@ -1340,6 +1320,10 @@ class AppConfig(GlobalConfig):
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
         provider = self._resolve_record_provider(script_config)
+        capability = await self.get_script_record_capability(script_id)
+        if not capability.available:
+            reason = capability.unavailable_reason or "脚本当前不可用"
+            raise RuntimeError(f"无法新增用户配置: {reason}")
 
         from app.models.plugin_script_config import PluginScriptConfig, PluginUserConfig
 
@@ -1532,6 +1516,30 @@ class AppConfig(GlobalConfig):
                 f"脚本类型 provider 未启用，使用离线回退描述: {type(script_config).__name__}"
             )
             return provider
+
+    async def get_script_record_capability(
+        self,
+        script_id: str | uuid.UUID,
+    ) -> ScriptRecordCapability:
+        """解析指定脚本记录当前可执行的能力。"""
+
+        from app.models.plugin_script_config import PluginScriptConfig
+
+        script_uid = (
+            script_id if isinstance(script_id, uuid.UUID) else uuid.UUID(script_id)
+        )
+        script_config = self.ScriptConfig[script_uid]
+        provider = self._resolve_record_provider(script_config)
+        if isinstance(script_config, PluginScriptConfig):
+            raw = script_config.get("PluginData", "Config")
+            config_data = await storage_to_form(provider, raw, "script")
+        else:
+            config_data = await storage_to_form(
+                provider,
+                await script_config.toDict(),
+                "script",
+            )
+        return provider.resolve_record_capability(config_data)
 
     @staticmethod
     def _find_schema_group(schema: dict[str, Any], group_key: str) -> dict[str, Any] | None:
@@ -2793,10 +2801,14 @@ class AppConfig(GlobalConfig):
         logger.info("开始获取脚本下拉框信息")
         data = [{"label": "未选择", "value": "-"}]
         for uid, script in self.ScriptConfig.items():
+            capability = await self.get_script_record_capability(uid)
+            if not capability.available:
+                continue
             data.append(
                 {
                     "label": self._get_script_combox_label(script),
                     "value": str(uid),
+                    "supported_modes": list(capability.supported_modes or ()),
                 }
             )
         logger.success("脚本下拉框信息获取成功")
@@ -2809,18 +2821,46 @@ class AppConfig(GlobalConfig):
         logger.info("开始获取任务下拉框信息")
         data = [{"label": "未选择", "value": None}]
         for uid, queue in self.QueueConfig.items():
+            script_ids = [
+                str(queue_item.get("Info", "ScriptId") or "").strip()
+                for queue_item in queue.QueueItem.values()
+                if str(queue_item.get("Info", "ScriptId") or "").strip()
+                not in ("", "-")
+            ]
+            queue_modes: list[str] | None = None
+            queue_available = True
+            for script_id in script_ids:
+                try:
+                    capability = await self.get_script_record_capability(script_id)
+                except (KeyError, ValueError):
+                    queue_available = False
+                    break
+                if not capability.available:
+                    queue_available = False
+                    break
+                current_modes = list(capability.supported_modes or ())
+                queue_modes = (
+                    current_modes
+                    if queue_modes is None
+                    else [mode for mode in queue_modes if mode in current_modes]
+                )
+            if not queue_available or (script_ids and not queue_modes):
+                continue
             data.append(
                 {
                     "label": f"队列 - {queue.get('Info', 'Name')}",
                     "value": str(uid),
+                    "supported_modes": queue_modes,
                 }
             )
         for uid, script in self.ScriptConfig.items():
-            if not script.is_locked:
+            capability = await self.get_script_record_capability(uid)
+            if capability.available and not script.is_locked:
                 data.append(
                     {
                         "label": self._get_task_combox_label(script),
                         "value": str(uid),
+                        "supported_modes": list(capability.supported_modes or ()),
                     }
                 )
         logger.success("任务下拉框信息获取成功")
@@ -3205,30 +3245,6 @@ class AppConfig(GlobalConfig):
 
         logger.success(f"通用日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
 
-    async def save_hsr_log(self, log_path: Path, logs: list, hsr_result: str) -> None:
-        """
-        保存 HSR 专项日志并生成对应统计数据
-
-        :param log_path: 日志文件保存路径
-        :param logs: 日志内容列表
-        :param hsr_result: 待保存的日志结果信息
-        """
-
-        logger.info(
-            f"开始处理 HSR 专项日志, 日志长度: {len(logs)}, 日志标记: {hsr_result}"
-        )
-
-        data: Dict[str, str] = {"hsr_result": hsr_result}
-
-        # 保存日志
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
-        log_path.with_suffix(".json").write_text(
-            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
-
-        logger.success(f"HSR 专项日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
-
     async def merge_statistic_info(self, statistic_path_list: List[Path]) -> dict:
         """
         合并指定数据统计信息文件
@@ -3241,20 +3257,6 @@ class AppConfig(GlobalConfig):
         """
 
         data: Dict[str, Any] = {"index": {}}
-        hsr_success_results = {
-            "HSR 任务结束",
-            "HSR 用户任务完成",
-            "HSR 失败任务补跑完成",
-            "HSR 本轮无需执行，已跳过",
-        }
-
-        def is_success_result(result_key: str, result_value: Any) -> bool:
-            if result_value == "Success!":
-                return True
-            if result_key == "hsr_result" and result_value in hsr_success_results:
-                return True
-            return False
-
         for json_file in statistic_path_list:
             try:
                 single_data = json.loads(json_file.read_text(encoding="utf-8"))
@@ -3296,7 +3298,6 @@ class AppConfig(GlobalConfig):
                     "maaend_result",
                     "src_result",
                     "general_result",
-                    "hsr_result",
                 ]:
                     actual_date = (
                         datetime.strptime(
@@ -3307,7 +3308,7 @@ class AppConfig(GlobalConfig):
                         .astimezone()
                     )
 
-                    success = is_success_result(key, single_data[key])
+                    success = single_data[key] == "Success!"
 
                     if not success:
                         if "error_info" not in data:

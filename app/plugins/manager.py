@@ -936,23 +936,13 @@ class _PluginManager:
                             new_script = legacy_migrator(script, provider)
                             if inspect.isawaitable(new_script):
                                 new_script = await new_script
-                            from app.models.plugin_script_config import PluginScriptConfig
-
-                            is_provider_model = isinstance(
-                                new_script, provider.script_config_class
-                            )
-                            is_plugin_container = (
-                                isinstance(new_script, PluginScriptConfig)
-                                and str(
-                                    new_script.get("Meta", "PluginTypeKey") or ""
-                                ).strip()
-                                == provider.type_key
-                            )
-                            if not (is_provider_model or is_plugin_container):
+                            if not isinstance(
+                                new_script,
+                                provider.script_config_class,
+                            ):
                                 raise TypeError(
                                     "legacy_config_migrator must return "
-                                    f"{provider.script_config_class.__name__} "
-                                    "or a matching PluginScriptConfig"
+                                    f"{provider.script_config_class.__name__}"
                                 )
                         else:
                             raw_data = await script.toDict(if_decrypt=False)

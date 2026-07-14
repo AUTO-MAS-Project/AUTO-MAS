@@ -573,8 +573,7 @@ const scriptCreateTypeOptions = computed(() => createScriptTypeOptions(available
 const isScriptAvailable = (script: Script) => script.available !== false
 
 const canEditScript = (script: Script) =>
-  isScriptAvailable(script) ||
-  (script.type === 'HSR' && script.editorKind === 'plugin:automas_script_hsr')
+  isScriptAvailable(script) || script.editorKind === 'plugin:automas_script_hsr'
 
 const ensureScriptAvailable = (script: Script) => {
   if (isScriptAvailable(script)) {

@@ -25,11 +25,7 @@ router = APIRouter(prefix="/api/scripts2", tags=["通用脚本管理"])
 @router.post("/add", summary="添加脚本", response_model=ScriptRecordCreateOut)
 async def add_script(script: ScriptRecordCreateIn = Body(...)) -> ScriptRecordCreateOut:
     try:
-        script_id, _ = await Config.add_script(
-            script.type,
-            script.scriptId,
-            initial_config=script.initialConfig,
-        )
+        script_id, _ = await Config.add_script(script.type, script.scriptId)
         record = (await Config.get_script_records(str(script_id)))[0]
     except Exception as e:
         return ScriptRecordCreateOut(

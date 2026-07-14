@@ -42,15 +42,10 @@ export function useScriptRegistryApi() {
     return data.records || []
   }
 
-  const addScript = async (
-    type: string,
-    scriptId?: string | null,
-    initialConfig?: Record<string, unknown> | null
-  ): Promise<ScriptRecord> => {
+  const addScript = async (type: string, scriptId?: string | null): Promise<ScriptRecord> => {
     const data = await post<ScriptRecordCreateOut>('/api/scripts2/add', {
       type,
       scriptId: scriptId || null,
-      initialConfig: initialConfig || null,
     })
     if (data.code !== 200) {
       throw new Error(data.message || '创建脚本失败')

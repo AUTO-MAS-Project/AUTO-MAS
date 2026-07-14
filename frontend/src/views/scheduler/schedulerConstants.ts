@@ -40,6 +40,11 @@ export const TASK_MODE_OPTIONS = [
   { label: '人工排查', value: TaskCreateIn.mode.MANUAL_REVIEW },
 ]
 
+export const getTaskModeOptions = (supportedModes?: string[] | null) => {
+  if (!supportedModes) return TASK_MODE_OPTIONS
+  return TASK_MODE_OPTIONS.filter(option => supportedModes.includes(option.value))
+}
+
 // 电源操作映射
 export const POWER_ACTION_TEXT: Record<PowerIn.signal, string> = {
   [PowerIn.signal.NO_ACTION]: '无动作',

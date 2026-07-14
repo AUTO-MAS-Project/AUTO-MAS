@@ -465,8 +465,8 @@ export interface MaaFWAgentEnvPrepareData {
   message?: string
 }
 
-// HSR is a plugin script. Keep its rich-editor form type local instead of
-// exposing the removed legacy HSRConfig through the host OpenAPI schema.
+// HSR is a plugin script. Its rich-editor form contract stays local to the
+// specialized editor instead of becoming a host OpenAPI model.
 export type HSRTaskMapping = Partial<
   Record<'Daily' | 'ReceiveRewards' | 'DivergentUniverse' | 'CurrencyWars', 'SRA' | 'M7A'>
 >
