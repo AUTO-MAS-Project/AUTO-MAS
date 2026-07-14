@@ -605,7 +605,7 @@ const normalizeFieldLayoutSize = (
   return '1/3'
 }
 
-const getFieldLayoutSize = (field: SchemaFieldDefinition): keyof typeof schemaFieldSizeClasses =>
+const getFieldLayoutSize = (field: SchemaFieldDefinition) =>
   schemaFieldSizeClasses[normalizeFieldLayoutSize(field.size)]
 
 const getValueByPath = (source: Record<string, any>, path: string) => {
@@ -867,9 +867,15 @@ const getPathKind = (field: SchemaFieldDefinition) => {
   return 'file'
 }
 
-const hasElectronPathPicker = () =>
-  typeof window !== 'undefined' &&
-  Boolean(window.electronAPI?.selectFolder && window.electronAPI?.selectFile)
+const hasElectronPathPicker = () => {
+  if (typeof window === 'undefined') {
+    return false
+  }
+  const electronAPI: Partial<Window['electronAPI']> | undefined = window.electronAPI
+  return (
+    typeof electronAPI?.selectFolder === 'function' && typeof electronAPI.selectFile === 'function'
+  )
+}
 
 const pickPath = async (field: string, fieldSchema: SchemaFieldDefinition) => {
   if (!hasElectronPathPicker()) {

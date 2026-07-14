@@ -77,6 +77,7 @@ class OkScriptProvider:
     log_time_start: int = 1
     log_time_end: int = 23
     log_time_format: str = "%Y-%m-%d %H:%M:%S,%f"
+    event_log_name: str = "mas-events.jsonl"
 
     @property
     def log_time_range(self) -> tuple[int, int]:
@@ -97,6 +98,11 @@ class OkScriptProvider:
 
     def log_path(self, root_path: Path) -> Path:
         return root_path / self.log_file
+
+    def event_log_path(self, root_path: Path) -> Path:
+        """返回 MAS 接管 ok-script 结构化运行事件的固定 JSONL 路径。"""
+
+        return self.log_path(root_path).with_name(self.event_log_name)
 
     def track_process_path(self, root_path: Path) -> Path:
         return root_path / self.pythonw_path

@@ -1,5 +1,7 @@
 import { computed, type ComputedRef } from 'vue'
 
+const logger = window.electronAPI.getLogger('状态标签')
+
 /**
  * 状态标签接口定义
  */
@@ -104,12 +106,12 @@ export function parseStatusTag(
     const tag = JSON.parse(status) as StatusTag
     // 确保必需字段存在
     if (!tag.text) {
-      console.warn('解析状态标签时缺少text字段:', status)
+      logger.warn(`解析状态标签时缺少text字段: ${status}`)
       return defaultTag
     }
     return tag
   } catch (error) {
-    console.error('解析状态标签失败:', error, 'status=', status)
+    logger.error(`解析状态标签失败: ${String(error)}, status=${status}`)
     return defaultTag || { text: '未知', color: 'default' }
   }
 }

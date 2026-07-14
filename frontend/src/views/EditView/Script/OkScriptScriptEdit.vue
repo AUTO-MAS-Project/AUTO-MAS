@@ -22,10 +22,12 @@
   </div>
 
   <div class="script-edit-content">
-    <a-card :title="OK_SCRIPT_CARD_TITLE" :loading="pageLoading" class="config-card">
+    <a-card :title="projectCardTitle" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-space size="small">
-          <a-tag color="blue" class="type-tag">ok-script</a-tag>
+          <a-tag color="blue" class="type-tag">{{
+            projectMetadata?.displayName || 'ok-script'
+          }}</a-tag>
           <a-tag v-if="projectMetadata?.adapter" class="type-tag">
             {{ projectMetadata.resourceName }}
           </a-tag>
@@ -277,9 +279,10 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
+import axios from 'axios'
 import {
   ArrowLeftOutlined,
   FileOutlined,
@@ -287,6 +290,7 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { OpenAPI } from '@/api/core/OpenAPI'
 import {
   getOkScriptProjectProvider,
   OK_SCRIPT_PROJECT_PROVIDERS,
@@ -303,7 +307,6 @@ const pageLoading = ref(true)
 const isSaving = ref(false)
 const isInitializing = ref(true)
 
-const OK_SCRIPT_CARD_TITLE = 'ok-script 项目配置'
 const OK_SCRIPT_PYAPPIFY_YML = 'pyappify.yml'
 
 const OK_SCRIPT_ADAPTER_LIST = Object.values(OK_SCRIPT_PROJECT_PROVIDERS)
@@ -314,6 +317,12 @@ interface OkScriptProjectMetadata {
   source: string
   adapter?: OkScriptProjectProvider
 }
+
+const projectCardTitle = computed(() =>
+  projectMetadata.value?.displayName
+    ? `${projectMetadata.value.displayName} 项目配置`
+    : 'ok-script 项目配置'
+)
 
 interface OkScriptInfoForm {
   Name: string
@@ -376,6 +385,28 @@ const buildMetadata = (resourceName: string, source: string): OkScriptProjectMet
   }
 }
 
+const inspectMetadataFromBackend = async (rootPath: string) => {
+  try {
+    const response = await axios.post(`${OpenAPI.BASE}/plugin/ok-script/inspect`, {
+      root_path: rootPath,
+    })
+    const result = response.data as {
+      code?: number
+      data?: { resourceName?: unknown; displayName?: unknown }
+    }
+    if (result.code !== 200 || !result.data) return null
+    const resourceName = normalizeResourceName(result.data.resourceName)
+    if (!resourceName) return null
+    const metadata = buildMetadata(resourceName, 'Manifest')
+    const displayName = String(result.data.displayName || '').trim()
+    if (displayName) metadata.displayName = displayName
+    return metadata
+  } catch (e) {
+    logger.warn(`解析 ok-script Manifest 失败: ${e instanceof Error ? e.message : String(e)}`)
+    return null
+  }
+}
+
 const readMetadataFromAppJson = async (rootPath: string) => {
   for (const adapter of OK_SCRIPT_ADAPTER_LIST) {
     const appJsonPath = `${rootPath}/${adapter.appJsonFile}`
@@ -424,6 +455,7 @@ const resolveOkScriptProjectMetadata = async (
   rootPath: string
 ): Promise<OkScriptProjectMetadata | null> => {
   return (
+    (await inspectMetadataFromBackend(rootPath)) ||
     (await readMetadataFromPyappify(rootPath)) ||
     (await readMetadataFromAppJson(rootPath)) ||
     (await readMetadataFromKnownLayout(rootPath))
@@ -596,43 +628,12 @@ const selectRootPath = async () => {
     return
   }
 
-  if (!metadata.adapter) {
-    showPathRejectModal(
-      '所选项目暂未适配',
-      `已识别到资源 ${metadata.resourceName}，但当前 MAS 尚未内置该 ok-script 项目的适配。`
-    )
-    return
-  }
-
-  const exePath = `${normalized}/${metadata.adapter.exeName}`
-  if (!(await window.electronAPI.fileExists(exePath))) {
-    showPathRejectModal(
-      '所选目录无效',
-      '所选目录缺少当前落地点需要的运行入口，请确认该 ok-script 项目已经完成初始化。'
-    )
-    return
-  }
-
-  const configDir = `${normalized}/${metadata.adapter.configDir}`
-  const hasConfigDir = await window.electronAPI.fileExists(configDir)
-  if (!hasConfigDir) {
-    showPathRejectModal(
-      '所选目录缺少 ok-script 配置',
-      '所选目录缺少当前落地点需要的运行配置目录，请先完成该 ok-script 项目的初始化。'
-    )
-    return
-  }
-
   await saveProjectInfo(normalized, metadata)
 }
 
 const selectGamePath = async () => {
   const adapter =
     projectMetadata.value?.adapter || getAdapterByResource(okScriptConfig.Info.ResourceName)
-  if (!adapter) {
-    message.warning('请先选择已适配的 ok-script 项目')
-    return
-  }
 
   const paths = await window.electronAPI.selectFile([
     { name: '可执行文件', extensions: ['exe'] },
@@ -641,7 +642,7 @@ const selectGamePath = async () => {
   const picked = paths?.[0]
   if (!picked) return
 
-  if (getFileName(picked).toLowerCase() !== adapter.gameProcessName.toLowerCase()) {
+  if (adapter && getFileName(picked).toLowerCase() !== adapter.gameProcessName.toLowerCase()) {
     showPathRejectModal(
       '所选文件无效',
       `请选择当前适配要求的游戏主程序 ${adapter.gameProcessName}，当前文件不能用于自动启动。`

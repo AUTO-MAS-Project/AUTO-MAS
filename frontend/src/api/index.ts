@@ -228,7 +228,7 @@ export type { ScriptRecordGetOut } from './models/ScriptRecordGetOut';
 export type { ScriptRecordReorderIn } from './models/ScriptRecordReorderIn';
 export type { ScriptRecordUpdateIn } from './models/ScriptRecordUpdateIn';
 export type { ScriptReorderIn } from './models/ScriptReorderIn';
-export type { ScriptTypeDescriptor } from './models/ScriptTypeDescriptor';
+export { ScriptTypeDescriptor } from './models/ScriptTypeDescriptor';
 export type { ScriptTypeGetOut } from './models/ScriptTypeGetOut';
 export type { ScriptUpdateIn } from './models/ScriptUpdateIn';
 export type { ScriptUploadIn } from './models/ScriptUploadIn';

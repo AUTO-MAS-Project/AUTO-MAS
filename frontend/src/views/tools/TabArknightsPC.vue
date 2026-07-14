@@ -4,31 +4,21 @@ import type { ToolsConfig_ArknightsPC } from '@/api'
 
 const {
   config,
-  disabled,
-  onFieldChange,
-  recordingKeyField,
-  startRecordKey,
-  stopRecordKey,
-  onSelectVisibleChange,
-} = withDefaults(
-  defineProps<{
-    config: ToolsConfig_ArknightsPC
-    disabled?: boolean
-    onFieldChange?: (key: string, value: any) => void
-    recordingKeyField?: string | null
-    startRecordKey?: (fieldName: string) => void
-    stopRecordKey?: () => void
-    onSelectVisibleChange?: (visible: boolean) => void
-  }>(),
-  {
-    disabled: false,
-    onFieldChange: undefined,
-    recordingKeyField: null,
-    startRecordKey: undefined,
-    stopRecordKey: undefined,
-    onSelectVisibleChange: undefined,
-  }
-)
+  disabled = false,
+  onFieldChange = undefined,
+  recordingKeyField = null,
+  startRecordKey = undefined,
+  stopRecordKey = undefined,
+  onSelectVisibleChange = undefined,
+} = defineProps<{
+  config: ToolsConfig_ArknightsPC
+  disabled?: boolean
+  onFieldChange?: (key: string, value: any) => void
+  recordingKeyField?: string | null
+  startRecordKey?: (fieldName: string) => void
+  stopRecordKey?: () => void
+  onSelectVisibleChange?: (visible: boolean) => void
+}>()
 
 // 处理字段变更
 const handleChange = (key: string, value: any) => {

@@ -1,4 +1,3 @@
-<!-- eslint-disable vue/multi-word-component-names -->
 <script setup lang="ts">
 // 挂载和卸载键盘监听
 import { h, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -16,7 +15,7 @@ import {
   StopOutlined,
 } from '@ant-design/icons-vue'
 import type { EmulatorConfigIndexItem, EmulatorSearchResult } from '@/api'
-import { Service } from '@/api'
+import { EmulatorOperateIn, Service } from '@/api'
 const logger = window.electronAPI.getLogger('模拟器管理')
 
 // 编辑数据接口
@@ -504,7 +503,7 @@ const startEmulator = async (uuid: string, index: string) => {
   try {
     const response = await Service.operationEmulatorApiEmulatorOperatePost({
       emulatorId: uuid,
-      operate: 'open' as any,
+      operate: EmulatorOperateIn.operate.OPEN,
       index: index,
     })
 
@@ -534,7 +533,7 @@ const stopEmulator = async (uuid: string, index: string) => {
   try {
     const response = await Service.operationEmulatorApiEmulatorOperatePost({
       emulatorId: uuid,
-      operate: 'close' as any,
+      operate: EmulatorOperateIn.operate.CLOSE,
       index: index,
     })
 
@@ -564,7 +563,7 @@ const showEmulator = async (uuid: string, index: string) => {
   try {
     const response = await Service.operationEmulatorApiEmulatorOperatePost({
       emulatorId: uuid,
-      operate: 'show' as any,
+      operate: EmulatorOperateIn.operate.SHOW,
       index: index,
     })
 
@@ -595,9 +594,7 @@ const selectEmulatorPath = async (uuid: string) => {
     if (!editData) return
 
     // 选择任意文件
-    const paths = await (window.electronAPI as any).selectFile([
-      { name: '所有文件', extensions: ['*'] },
-    ])
+    const paths = await window.electronAPI.selectFile([{ name: '所有文件', extensions: ['*'] }])
 
     if (paths && paths.length > 0) {
       editData.path = paths[0]

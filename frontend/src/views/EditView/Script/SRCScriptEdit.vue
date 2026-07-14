@@ -7,7 +7,7 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img src="../../../assets/SRC.png" alt="SRC" class="breadcrumb-logo" />
+            <img src="@/assets/SRC.png" alt="SRC" class="breadcrumb-logo" />
             编辑脚本
           </div>
         </a-breadcrumb-item>
@@ -276,9 +276,9 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
-import type { SRCScriptConfig, ScriptType } from '../../../types/script.ts'
-import { useScriptApi } from '../../../composables/useScriptApi.ts'
-import { Service, type ComboBoxItem } from '../../../api'
+import type { SRCScriptConfig, ScriptType } from '@/types/script.ts'
+import { useScriptApi } from '@/composables/useScriptApi.ts'
+import { Service, type ComboBoxItem } from '@/api'
 import {
   ArrowLeftOutlined,
   FolderOpenOutlined,
@@ -523,7 +523,7 @@ const selectSRCPath = async () => {
       return
     }
 
-    const path = await (window.electronAPI as any).selectFolder()
+    const path = await window.electronAPI.selectFolder()
     if (path) {
       if (!srcConfig.Info) {
         srcConfig.Info = { Name: '', Path: '' }

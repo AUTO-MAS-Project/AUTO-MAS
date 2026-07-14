@@ -29,18 +29,23 @@
               <div class="type-section-heading">
                 <span class="type-section-title">通用脚本</span>
               </div>
-              <label
-                v-for="option in typeSections.general"
-                :key="option.value"
-                :class="['type-row general-type-row', { selected: selectedType === option.value }]"
-              >
-                <img :src="option.icon" :alt="option.title" class="type-icon" />
-                <span class="choice-copy">
-                  <span class="choice-title">{{ option.title }}</span>
-                  <span class="choice-description">{{ option.description }}</span>
-                </span>
-                <a-radio :value="option.value" />
-              </label>
+              <div class="type-grid">
+                <label
+                  v-for="option in typeSections.general"
+                  :key="option.value"
+                  :class="[
+                    'type-row general-type-row',
+                    { selected: selectedType === option.value },
+                  ]"
+                >
+                  <img :src="option.icon" :alt="option.title" class="type-icon" />
+                  <span class="choice-copy">
+                    <span class="choice-title">{{ option.title }}</span>
+                    <span class="choice-description">{{ option.description }}</span>
+                  </span>
+                  <a-radio :value="option.value" />
+                </label>
+              </div>
             </section>
             <section
               v-if="typeSections.specialized.length"
@@ -141,11 +146,13 @@
                       <span><UserOutlined /> {{ template.author || '未知作者' }}</span>
                       <span><ClockCircleOutlined /> {{ template.createTime || '未知时间' }}</span>
                     </span>
+                    <!-- eslint-disable vue/no-v-html -- MarkdownIt has raw HTML disabled, so template descriptions are escaped. -->
                     <span
                       class="template-description"
                       @click="handleTemplateDescriptionClick"
                       v-html="parseMarkdown(template.description)"
                     ></span>
+                    <!-- eslint-enable vue/no-v-html -->
                   </span>
                   <a-radio :value="template.downloadUrl" />
                 </label>
@@ -221,6 +228,7 @@ import {
   type ConfigMode,
   type CreateStepKey,
   type ScriptCreateRequest,
+  type ScriptTypeOption,
 } from './scriptCreateFlow'
 
 const StepHeading = defineComponent({
@@ -237,6 +245,7 @@ const props = defineProps<{
   submitting: boolean
   templateLoading: boolean
   templateError: string | null
+  typeOptions: ScriptTypeOption[]
 }>()
 
 const emit = defineEmits<{
@@ -253,6 +262,9 @@ const selectedTemplateUrl = ref<string | null>(null)
 const configView = ref<'choice' | 'templates'>('choice')
 const typeKeyword = ref('')
 const templateKeyword = ref('')
+const availableTypeOptions = computed(() =>
+  props.typeOptions.length ? props.typeOptions : SCRIPT_TYPE_OPTIONS
+)
 
 const steps = computed(() => buildCreateSteps({ type: selectedType.value }))
 const currentStepIndex = computed(() =>
@@ -267,7 +279,7 @@ const canGoBack = computed(
     (currentStep.value === 'config' && configView.value === 'templates')
 )
 const filteredTypes = computed(() =>
-  filterScriptTypeOptions(SCRIPT_TYPE_OPTIONS, typeKeyword.value)
+  filterScriptTypeOptions(availableTypeOptions.value, typeKeyword.value)
 )
 const typeSections = computed(() => splitScriptTypeOptions(filteredTypes.value))
 const filteredTemplates = computed(() => {
@@ -309,7 +321,7 @@ watch(
 
 const resetDialog = () => {
   currentStep.value = 'type'
-  selectedType.value = 'MAA'
+  selectedType.value = availableTypeOptions.value[0]?.value ?? ''
   selectedConfigMode.value = 'template'
   selectedTemplateUrl.value = null
   configView.value = 'choice'
@@ -318,7 +330,9 @@ const resetDialog = () => {
 }
 
 const getTypeOption = (type: ScriptType) =>
-  SCRIPT_TYPE_OPTIONS.find(option => option.value === type) ?? SCRIPT_TYPE_OPTIONS[0]
+  availableTypeOptions.value.find(option => option.value === type) ??
+  availableTypeOptions.value[0] ??
+  SCRIPT_TYPE_OPTIONS[0]
 
 const handleBack = () => {
   if (props.submitting) return

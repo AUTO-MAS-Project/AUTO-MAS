@@ -29,10 +29,29 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import OkefConfig, OkefUserConfig
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify, System
-from app.task.Ok.common.provider import OkScriptProvider, ok_script_mas_config_dir
+from app.task.Ok.common.events import (
+    OK_SCRIPT_EVENT_PROTOCOL_VERSION,
+    OK_SCRIPT_PLUGIN_EVENT,
+    OK_SCRIPT_PLUGIN_EVENT_SOURCE,
+    OkScriptRunEvent,
+    OkScriptRunFailure,
+    format_partial_success_status,
+    read_ok_script_run_events,
+)
+from app.task.Ok.common.provider import (
+    OkScriptProvider,
+    OkScriptTaskOption,
+    ok_script_mas_config_dir,
+)
 from app.task.Ok.common.report import OkScriptReportHandler
 from app.task.Ok.common.runtime_lock import get_ok_script_root_lock
 from app.task.Ok.providers import detect_ok_script_provider
+from app.task.Ok.shell.manifest import OkProjectInspectError, OkProjectManifest, inspect_ok_project
+from app.task.Ok.shell.runtime import (
+    PROTOCOL_LEGACY_EXE,
+    OkShellRunner,
+    OkShellRuntimeError,
+)
 from app.task.general.tools import execute_script_task
 from app.utils import ProcessInfo, ProcessManager, get_logger, is_process_running
 from app.utils.LogMonitor import LogMonitor
@@ -58,8 +77,44 @@ def _replace_tree(src: Path, dst: Path) -> None:
     tmp_dst.rename(dst)
 
 
+def _build_manifest_provider(manifest: OkProjectManifest) -> OkScriptProvider:
+    """为未内置专项的项目提供只含通用运行信息的 Provider。"""
+
+    def relative_path(path: Path | None) -> str:
+        if path is None:
+            return ""
+        try:
+            return path.relative_to(manifest.root_path).as_posix()
+        except ValueError:
+            return str(path)
+
+    return OkScriptProvider(
+        resource_name=manifest.resource_name,
+        display_name=manifest.display_name or manifest.resource_name,
+        exe_name=relative_path(manifest.executable),
+        config_dir=relative_path(manifest.config_dir),
+        log_file=relative_path(manifest.log_path),
+        pythonw_path="",
+        track_process_name="",
+        game_process_name="",
+        running_status="运行中",
+        fatal_patterns=(),
+        success_patterns=(
+            "Successfully Executed Task",
+            "Successfully Executed Task, Exiting Game and App!",
+        ),
+        max_task_index=max((task.index for task in manifest.tasks), default=0),
+        task_options=tuple(
+            OkScriptTaskOption(task.index, task.label or task.selector)
+            for task in manifest.tasks
+        ),
+        config_schema_module="",
+        config_info_loader="",
+    )
+
+
 class OkScriptAutoProxyTask(TaskExecuteBase):
-    """ok-script 自动代理：拼 `-t N -e` 启动参数并监控日志。"""
+    """ok-script 自动代理：由 Manifest 选择协议并监控运行结果。"""
 
     def __init__(
         self,
@@ -79,6 +134,8 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         self.user_config = user_config
         self.game_manager = game_manager
         self.provider: OkScriptProvider | None = None
+        self.project_manifest: OkProjectManifest | None = None
+        self.shell_runner: OkShellRunner | None = None
 
         self.cur_user_item: UserItem = self.script_info.user_list[
             self.script_info.current_index
@@ -99,11 +156,22 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         self.script_root_lock: asyncio.Lock | None = None
         self.script_root_lock_acquired = False
         self.script_log_path: Path = Path()
+        self.script_event_log_path: Path = Path()
         self.log_monitor: LogMonitor | None = None
+        self.event_monitor_task: asyncio.Task[None] | None = None
+        self.event_log_offset = 0
+        self.event_protocol_active = False
+        self.event_failures: list[OkScriptRunFailure] = []
+        self.runtime_log_lines: list[str] = []
+        self.legacy_log_lines: list[str] = []
         self.wait_event: asyncio.Event = asyncio.Event()
         self.log_start_time: datetime = datetime.now()
         self.task_index = 1
         self.script_args: list[str] = []
+        self.script_cwd: Path = Path()
+        self.execution_protocol = ""
+        self.use_provider_process_tracking = False
+        self.stream_reader_tasks: list[asyncio.Task[None]] = []
         self.game_path: Path = Path()
         self.run_book = False
         self.game_started_by_mas = False
@@ -115,21 +183,21 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         root = Path(self.script_config.get("Info", "RootPath"))
         if not root.is_dir():
             return "请设置 ok-script 项目路径"
+        try:
+            manifest = await asyncio.to_thread(inspect_ok_project, root)
+        except OkProjectInspectError as exc:
+            return f"无法解析 ok-script 项目: {exc}"
         provider = self._resolve_provider(root)
-        if provider is None:
-            return "当前 ok-script 项目尚未适配，请选择已支持的 ok-script 项目"
-        self.provider = provider
-        if not self.provider.runtime_verified:
-            return self.provider.runtime_block_reason or "当前 ok-script 项目尚未完成运行验证"
-
-        if not self.provider.exe_path(root).is_file():
-            return "请设置 ok-script 项目路径"
+        if provider is not None and not provider.runtime_verified:
+            return provider.runtime_block_reason or "当前 ok-script 项目尚未完成运行验证"
+        self.project_manifest = manifest
+        self.provider = provider or _build_manifest_provider(manifest)
 
         task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
-        if not self.provider.is_supported_task_index(task_index):
+        if manifest.tasks and not any(task.index == task_index for task in manifest.tasks):
             return (
                 f"当前任务序号 {task_index} 不属于"
-                f"{self.provider.display_name} 已适配的一次性任务"
+                f"{self.provider.display_name} 已解析的一次性任务"
             )
 
         mas_config_dir = ok_script_mas_config_dir(
@@ -164,21 +232,43 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         self.script_process_manager = ProcessManager()
         self.wait_event = asyncio.Event()
         self.script_root_path = Path(self.script_config.get("Info", "RootPath"))
-        provider = self._resolve_provider(self.script_root_path)
-        if provider is None:
-            raise RuntimeError("当前 ok-script 项目尚未适配")
-        if not provider.runtime_verified:
-            raise RuntimeError(
-                provider.runtime_block_reason or "当前 ok-script 项目尚未完成运行验证"
+        try:
+            manifest = self.project_manifest or await asyncio.to_thread(
+                inspect_ok_project,
+                self.script_root_path,
             )
-        self.provider = provider
+        except OkProjectInspectError as exc:
+            raise RuntimeError(f"无法解析 ok-script 项目: {exc}") from exc
+        detected_provider = self._resolve_provider(self.script_root_path)
+        if detected_provider is not None and not detected_provider.runtime_verified:
+            raise RuntimeError(
+                detected_provider.runtime_block_reason
+                or "当前 ok-script 项目尚未完成运行验证"
+            )
+        self.project_manifest = manifest
+        self.provider = detected_provider or _build_manifest_provider(manifest)
         self.script_root_lock = get_ok_script_root_lock(self.script_root_path)
         if not self.script_root_lock_acquired:
             self.script_info.log = "正在等待同一 ok-script 项目完成运行"
             await self.script_root_lock.acquire()
             self.script_root_lock_acquired = True
-        self.script_exe_path = self.provider.exe_path(self.script_root_path)
-        self.script_config_path = self.provider.config_path(self.script_root_path)
+        self.task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
+        self.shell_runner = OkShellRunner(manifest)
+        try:
+            self.execution_protocol, command = await asyncio.to_thread(
+                self.shell_runner.build_command,
+                str(self.task_index),
+            )
+        except OkShellRuntimeError as exc:
+            raise RuntimeError(f"无法构建 ok-script 运行命令: {exc}") from exc
+        self.script_exe_path = Path(command[0])
+        self.script_args = list(command[1:])
+        self.script_cwd = self.shell_runner.command_cwd(self.execution_protocol)
+        self.use_provider_process_tracking = (
+            detected_provider is not None
+            and self.execution_protocol == PROTOCOL_LEGACY_EXE
+        )
+        self.script_config_path = manifest.config_dir
         self.mas_config_dir = ok_script_mas_config_dir(
             self.script_info.script_id,
             self.cur_user_item.user_id,
@@ -194,19 +284,22 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         self.had_original_script_config = False
         self.script_config_swap_started = False
         self.script_config_injected = False
-        self.script_target_process_info = ProcessInfo(
-            name=self.provider.track_process_name,
-            exe=str(self.provider.track_process_path(self.script_root_path)),
-            cmdline=None,
+        self.script_target_process_info = (
+            ProcessInfo(
+                name=self.provider.track_process_name,
+                exe=str(self.provider.track_process_path(self.script_root_path)),
+                cmdline=None,
+            )
+            if self.use_provider_process_tracking
+            else None
         )
-        self.script_log_path = self.provider.log_path(self.script_root_path)
+        self.script_log_path = manifest.log_path
+        self.script_event_log_path = manifest.log_path.with_name("mas-events.jsonl")
         self.log_monitor = LogMonitor(
             self.provider.log_time_range,
             self.provider.log_time_format,
             self.check_log,
         )
-        self.task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
-        self.script_args = self.provider.build_task_args(self.task_index)
         self.game_path = Path(self.script_config.get("Game", "Path"))
         self.run_book = False
         self.game_started_by_mas = False
@@ -236,6 +329,10 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             self.log_start_time = datetime.now()
             self.cur_user_item.log_record[self.log_start_time] = LogRecord()
             self.cur_user_log = self.cur_user_item.log_record[self.log_start_time]
+            self._reset_attempt_observation()
+            await self._push_dispatch_log(
+                f"开始第 {i + 1}/{run_limit} 次运行，准备接管 {self.provider.display_name}"
+            )
             self.report_handler = (
                 self.provider.report_handler_factory()
                 if self.provider.report_handler_factory is not None
@@ -249,6 +346,7 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
                 )
 
             await self.sync_script_config()
+            await self._push_dispatch_log("已向脚本注入当前用户配置")
 
             # 标准链路：先启动游戏，再启动 ok-script 执行任务并监察日志。
             game_result = await self._launch_game_before_task()
@@ -265,9 +363,10 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
                 ]
             self.script_info.log = status
 
-            if status == "Success!":
+            if status == "Success!" or self.run_book:
                 self.run_book = True
                 self.cur_user_item.status = "完成"
+                await self._push_dispatch_log("已确认整轮任务完成，等待脚本进程退出")
                 await self._wait_script_exit(timeout=30)
                 await self.update_config()
                 await self._restore_script_config()
@@ -277,6 +376,42 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
                 break
 
             await self._handle_attempt_failure(status, i, run_limit)
+
+    def _reset_attempt_observation(self) -> None:
+        """初始化单次运行的日志与结构化事件观测状态。"""
+
+        self.event_protocol_active = False
+        self.event_failures = []
+        self.runtime_log_lines = []
+        self.legacy_log_lines = []
+        self.event_monitor_task = None
+        try:
+            self.event_log_offset = self.script_event_log_path.stat().st_size
+        except FileNotFoundError:
+            self.event_log_offset = 0
+
+    def _refresh_current_log_content(self) -> None:
+        if self.cur_user_log is None:
+            return
+        self.cur_user_log.content = [
+            *self.runtime_log_lines,
+            *self.legacy_log_lines,
+        ]
+
+    async def _push_dispatch_log(self, message: str) -> None:
+        """向 MAS 调度台与当前历史记录追加运行阶段日志。"""
+
+        line = f"[MAS] {message}"
+        self.runtime_log_lines.append(line)
+        # stdout/stderr 可能持续高频输出，调度台仅保留最近窗口避免常驻内存增长。
+        if len(self.runtime_log_lines) > 1000:
+            del self.runtime_log_lines[:-1000]
+        self._refresh_current_log_content()
+        self.script_info.log = "\n".join(self.cur_user_log.content[-80:])[-4000:] if (
+            self.cur_user_log is not None
+        ) else line
+        logger.info(f"{self.provider.display_name} | {message}")
+        await asyncio.sleep(0)
 
     async def _handle_attempt_failure(
         self,
@@ -293,6 +428,7 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
                 self.cur_user_log.content = [status]
         self.script_info.log = status
 
+        await self._push_dispatch_log(f"本次运行失败：{status}")
         with suppress(Exception):
             await Config.send_websocket_message(
                 id=self.task_info.task_id,
@@ -313,6 +449,9 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             )
 
         if attempt_index + 1 < run_limit:
+            await self._push_dispatch_log(
+                f"将在 10 秒后开始第 {attempt_index + 2}/{run_limit} 次重试"
+            )
             await asyncio.sleep(10)
         else:
             self.cur_user_item.status = "异常"
@@ -418,7 +557,8 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             self.game_manager = ProcessManager()
 
         self.script_info.log = "正在准备由 MAS 启动游戏"
-        if is_process_running(self.provider.game_process_name):
+        game_process_name = self.provider.game_process_name or self.game_path.name
+        if game_process_name and is_process_running(game_process_name):
             logger.info("检测到游戏进程已在运行，跳过由 MAS 重复启动游戏")
             self.script_info.log = "检测到游戏进程已在运行，跳过启动"
             self.game_started_by_mas = True
@@ -440,7 +580,7 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         self.script_info.log = "游戏启动等待完成"
         return "Pass"
 
-    async def _run_script_process(self) -> str:
+    async def _run_script_process_legacy_text_log(self) -> str:
         await self._kill_script_process()
         logger.info(
             f"启动 {self.provider.display_name} 进程: "
@@ -455,8 +595,12 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             await self.script_process_manager.open_process(
                 self.script_exe_path,
                 *self.script_args,
+                cwd=self.script_cwd,
                 target_process=self.script_target_process_info,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
+            self._start_process_stream_readers()
         except Exception as e:
             logger.exception(f"启动 {self.provider.display_name} 失败: {e}")
             with suppress(Exception):
@@ -492,7 +636,11 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
                 with suppress(Exception):
                     await self.log_monitor.stop()
 
-    async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
+    async def check_log_legacy_text_log(
+        self,
+        log_content: list[str],
+        latest_time: datetime,
+    ) -> None:
         """ok-script 日志回调：失败/成功均由当前 provider 内置字段判定。"""
 
         if self.cur_user_log is None:
@@ -540,6 +688,359 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             )
             self.wait_event.set()
 
+    async def _run_script_process(self) -> str:
+        """运行 ok-script，并同时监听 MAS 结构化事件与旧文本日志。"""
+
+        await self._kill_script_process()
+        await self._push_dispatch_log(
+            f"启动 {self.provider.display_name}：{' '.join(self.script_args)}"
+        )
+        logger.info(
+            f"启动 {self.provider.display_name} 进程: "
+            f"{self.script_exe_path} {' '.join(self.script_args)}"
+        )
+        monitor_started = False
+        try:
+            await self.script_process_manager.open_process(
+                self.script_exe_path,
+                *self.script_args,
+                cwd=self.script_cwd,
+                target_process=self.script_target_process_info,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            self._start_process_stream_readers()
+        except Exception as e:
+            logger.exception(f"启动 {self.provider.display_name} 失败: {e}")
+            with suppress(Exception):
+                await self._kill_script_process()
+            return f"{self.provider.display_name} 启动失败: {e}"
+
+        try:
+            self.wait_event.clear()
+            await self._start_event_monitor()
+
+            deadline = datetime.now() + timedelta(seconds=60)
+            while (
+                not self.script_log_path.exists()
+                and not self.wait_event.is_set()
+                and datetime.now() < deadline
+            ):
+                if not await self.script_process_manager.is_running():
+                    exit_status = self._process_exit_status()
+                    if exit_status is not None:
+                        return exit_status
+                    return f"{self.provider.display_name} 在生成日志前退出"
+                await asyncio.sleep(1)
+
+            if self.wait_event.is_set():
+                return self._current_run_status()
+
+            if self.script_log_path.exists():
+                if self.log_monitor is None:
+                    return "ok-script 日志监控未初始化"
+                await self._push_dispatch_log(
+                    f"已开始监察文本日志：{self.script_log_path}"
+                )
+                await self.log_monitor.start_monitor_file(
+                    self.script_log_path, self.log_start_time
+                )
+                monitor_started = True
+            else:
+                await self._push_dispatch_log(
+                    f"未发现传统文本日志，继续等待结构化事件：{self.script_event_log_path}"
+                )
+
+            run_deadline = datetime.now() + timedelta(
+                minutes=int(self.script_config.get("Run", "RunTimeLimit"))
+            )
+            while not self.wait_event.is_set():
+                if not self.event_protocol_active:
+                    if not await self.script_process_manager.is_running():
+                        exit_status = self._process_exit_status()
+                        if exit_status is not None:
+                            return exit_status
+                        if not self.script_log_path.exists():
+                            return f"{self.provider.display_name} 在返回结果前退出"
+                        return f"{self.provider.display_name} 在完成任务前退出"
+                    if not self.script_log_path.exists() and datetime.now() > run_deadline:
+                        return f"{self.provider.display_name} 未输出日志或结构化事件"
+                await asyncio.sleep(1)
+
+            return self._current_run_status()
+        finally:
+            if monitor_started and self.log_monitor is not None:
+                with suppress(Exception):
+                    await self.log_monitor.stop()
+            await self._stop_event_monitor()
+            await self._stop_process_stream_readers()
+
+    def _current_run_status(self) -> str:
+        if self.cur_user_log is None:
+            return f"{self.provider.display_name} 未返回运行结果"
+        return self.cur_user_log.status or f"{self.provider.display_name} 未返回运行结果"
+
+    def _start_process_stream_readers(self) -> None:
+        """把被接管进程的控制台输出同步进 MAS 调度日志。"""
+
+        process = self.script_process_manager.process
+        if process is None:
+            return
+        self.stream_reader_tasks = [
+            asyncio.create_task(self._read_process_stream(process.stdout, "stdout")),
+            asyncio.create_task(self._read_process_stream(process.stderr, "stderr")),
+        ]
+
+    async def _read_process_stream(
+        self,
+        stream: asyncio.StreamReader | None,
+        source: str,
+    ) -> None:
+        if stream is None:
+            return
+        try:
+            while True:
+                raw_line = await stream.readline()
+                if not raw_line:
+                    return
+                line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
+                if line:
+                    await self._push_dispatch_log(f"[{source}] {line}")
+                    if self.report_handler is not None:
+                        await self.report_handler.capture(self, line)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning(f"读取 ok-script {source} 失败: {type(exc).__name__}: {exc}")
+
+    async def _stop_process_stream_readers(self) -> None:
+        stream_tasks = list(getattr(self, "stream_reader_tasks", []))
+        for task in stream_tasks:
+            if not task.done():
+                task.cancel()
+        for task in stream_tasks:
+            with suppress(asyncio.CancelledError, Exception):
+                await task
+        self.stream_reader_tasks = []
+
+    def _process_exit_status(self) -> str | None:
+        """CLI/main 进程退出码是通用终态；legacy EXE 保持日志判态。"""
+
+        if self.execution_protocol == PROTOCOL_LEGACY_EXE:
+            return None
+        process = self.script_process_manager.process
+        if process is None or process.returncode is None:
+            return None
+        if process.returncode == 0:
+            self.run_book = True
+            if self.cur_user_log is not None:
+                self.cur_user_log.status = "Success!"
+            self.cur_user_item.status = "完成"
+            return "Success!"
+        return f"{self.provider.display_name} 异常退出，退出码 {process.returncode}"
+
+    async def _start_event_monitor(self) -> None:
+        if self.event_monitor_task is not None and not self.event_monitor_task.done():
+            return
+        await self._push_dispatch_log(
+            f"已开启 MAS 结构化事件监听：{self.script_event_log_path}"
+        )
+        self.event_monitor_task = asyncio.create_task(self._monitor_event_log())
+
+    async def _stop_event_monitor(self) -> None:
+        if self.event_monitor_task is None:
+            self.event_monitor_task = None
+            return
+        if self.event_monitor_task.done():
+            with suppress(asyncio.CancelledError, Exception):
+                self.event_monitor_task.result()
+            self.event_monitor_task = None
+            return
+        self.event_monitor_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await self.event_monitor_task
+        self.event_monitor_task = None
+
+    async def _monitor_event_log(self) -> None:
+        while not self.wait_event.is_set():
+            try:
+                events, self.event_log_offset = await asyncio.to_thread(
+                    read_ok_script_run_events,
+                    self.script_event_log_path,
+                    self.event_log_offset,
+                )
+                for event in events:
+                    await self._handle_run_event(event)
+                    if self.wait_event.is_set():
+                        break
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.exception(f"监听 ok-script 结构化事件失败: {e}")
+                await self._push_dispatch_log(
+                    f"结构化事件监听异常，已回退文本日志：{e}"
+                )
+                return
+            await asyncio.sleep(1)
+
+    async def _emit_ok_script_event(
+        self,
+        event: OkScriptRunEvent,
+        *,
+        status: str | None = None,
+    ) -> None:
+        """向插件总线广播 ok-script 结构化明细事件。"""
+
+        provider = getattr(self, "provider", None)
+        task_info = getattr(self, "task_info", None)
+        script_info = getattr(self, "script_info", None)
+        user_item = getattr(self, "cur_user_item", None)
+        cur_user_log = getattr(self, "cur_user_log", None)
+        failures = getattr(self, "event_failures", [])
+
+        data = {
+            "task_id": getattr(task_info, "task_id", None),
+            "mode": getattr(task_info, "mode", None),
+            "queue_id": getattr(task_info, "queue_id", None),
+            "script_id": getattr(script_info, "script_id", None),
+            "script_name": getattr(script_info, "name", None),
+            "user_id": getattr(user_item, "user_id", None),
+            "user_name": getattr(user_item, "name", None),
+            "resource_name": getattr(provider, "resource_name", None),
+            "display_name": getattr(provider, "display_name", None),
+            "task_index": getattr(self, "task_index", None),
+            "protocol_version": OK_SCRIPT_EVENT_PROTOCOL_VERSION,
+            "ok_script_event": event.event,
+            "message": event.message,
+            "task": event.task,
+            "success": event.success,
+            "terminal": event.is_terminal,
+            "status": status or getattr(cur_user_log, "status", None),
+            "failures": [
+                {"task": failure.task, "message": failure.message}
+                for failure in failures
+            ],
+        }
+
+        try:
+            from app.plugins import PluginEventFactory
+
+            await PluginEventFactory.emit_event_async(
+                event=OK_SCRIPT_PLUGIN_EVENT,
+                source=OK_SCRIPT_PLUGIN_EVENT_SOURCE,
+                data=data,
+            )
+        except Exception as e:
+            logger.warning(f"广播 ok-script 结构化插件事件失败: {e}")
+
+    async def _handle_run_event(self, event: OkScriptRunEvent) -> None:
+        if self.cur_user_log is None:
+            return
+
+        if not self.event_protocol_active:
+            self.event_protocol_active = True
+            await self._push_dispatch_log("检测到 ok-script 结构化事件，切换为 MAS 事件判态")
+
+        if event.failures:
+            self.event_failures = list(event.failures)
+
+        subject = event.task or event.event
+        message = event.message or subject
+        if event.event in {"step", "task_completed", "task_failed", "summary"}:
+            await self._push_dispatch_log(f"事件 {event.event}: {message}")
+
+        if event.event == "task_failed":
+            if not event.failures:
+                self.event_failures.append(
+                    OkScriptRunFailure(
+                        task=event.task or "未命名任务",
+                        message=event.message or "未提供失败原因",
+                    )
+                )
+            await self._emit_ok_script_event(event)
+            return
+
+        if event.event == "run_failed" or (
+            event.event == "run_completed" and event.success is False
+        ):
+            status = event.message or f"{self.provider.display_name} 运行失败"
+            self.cur_user_log.status = status
+            self.cur_user_item.status = "异常"
+            self.script_info.log = status
+            await self._emit_ok_script_event(event, status=status)
+            self.wait_event.set()
+            return
+
+        if event.event != "run_completed":
+            await self._emit_ok_script_event(event)
+            return
+
+        failures = tuple(self.event_failures)
+        status = format_partial_success_status(failures) if failures else "Success!"
+        self.cur_user_log.status = status
+        self.cur_user_item.status = "完成"
+        self.script_info.log = status
+        self.run_book = True
+        await self._emit_ok_script_event(event, status=status)
+        self.wait_event.set()
+
+    async def check_log(
+        self,
+        log_content: list[str],
+        latest_time: datetime,
+    ) -> None:
+        """旧文本日志兜底；结构化事件出现后只保留文本内容，不再判态。"""
+
+        if self.cur_user_log is None:
+            return
+
+        log = "".join(log_content)
+        self.legacy_log_lines = log_content
+        self._refresh_current_log_content()
+        if self.report_handler is not None:
+            await self.report_handler.capture(self, log)
+
+        if self.event_protocol_active:
+            return
+
+        self.script_info.log = log[-4000:] if len(log) > 4000 else log
+
+        log_status = self.provider.running_status
+        user_item_status: str | None = None
+
+        for needle, msg in self.provider.fatal_patterns:
+            if needle in log:
+                log_status = msg
+                user_item_status = "异常"
+                break
+        else:
+            log_lower = log.lower()
+            if any(
+                success.lower() in log_lower
+                for success in self.provider.success_patterns
+            ):
+                log_status = "Success!"
+                user_item_status = "完成"
+            elif not await self.script_process_manager.is_running():
+                log_status = f"{self.provider.display_name} 在完成任务前退出"
+                user_item_status = "异常"
+            elif datetime.now() - latest_time > timedelta(
+                minutes=int(self.script_config.get("Run", "RunTimeLimit"))
+            ):
+                log_status = f"{self.provider.display_name} 运行超时"
+                user_item_status = "异常"
+
+        self.cur_user_log.status = log_status
+        if user_item_status is not None:
+            self.cur_user_item.status = user_item_status
+
+        logger.debug(f"{self.provider.display_name} 日志分析结果: {self.cur_user_log.status}")
+        if self.cur_user_log.status != self.provider.running_status:
+            logger.info(
+                f"{self.provider.display_name} 任务结果: {self.cur_user_log.status}, 日志锁已释放"
+            )
+            self.wait_event.set()
+
     async def final_task(self) -> None:
         try:
             await self._finalize_task()
@@ -547,6 +1048,7 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             self._release_script_root_lock()
 
     async def _finalize_task(self) -> None:
+        await self._stop_process_stream_readers()
         with suppress(Exception):
             if self.log_monitor is not None:
                 await self.log_monitor.stop()
@@ -675,16 +1177,20 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         await self._kill_script_process()
 
     async def _kill_script_process(self) -> None:
+        await self._stop_process_stream_readers()
         try:
             await self.script_process_manager.kill()
         except Exception as e:
             logger.exception(f"通过进程管理器中止 {self.provider.display_name} 进程失败: {e}")
-        if self.script_exe_path.is_file():
+        if (
+            self.execution_protocol == PROTOCOL_LEGACY_EXE
+            and self.script_exe_path.is_file()
+        ):
             try:
                 await System.kill_process(self.script_exe_path)
             except Exception as e:
                 logger.exception(f"中止 {self.provider.display_name} 主进程失败: {e}")
-        if self.script_root_path != Path():
+        if self.use_provider_process_tracking and self.script_root_path != Path():
             track_exe = self.provider.track_process_path(self.script_root_path)
             if track_exe.is_file():
                 try:

@@ -59,7 +59,7 @@ const tabs = [
 // 开发环境检测
 const isDev = ref(
   process.env.NODE_ENV === 'development' ||
-    (import.meta as any).env?.DEV === true ||
+    import.meta.env.DEV === true ||
     window.location.hostname === 'localhost'
 )
 

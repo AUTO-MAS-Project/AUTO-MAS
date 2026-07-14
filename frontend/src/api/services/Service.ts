@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { AbyssSnapshotImportOut } from '../models/AbyssSnapshotImportOut';
 import type { Body_batch_update_ok_script_configs_api_scripts_ok_script_configs_batch_update_post } from '../models/Body_batch_update_ok_script_configs_api_scripts_ok_script_configs_batch_update_post';
 import type { Body_batch_update_okef_configs_api_scripts_okef_configs_batch_update_post } from '../models/Body_batch_update_okef_configs_api_scripts_okef_configs_batch_update_post';
 import type { Body_batch_update_okww_configs_api_scripts_okww_configs_batch_update_post } from '../models/Body_batch_update_okww_configs_api_scripts_okww_configs_batch_update_post';

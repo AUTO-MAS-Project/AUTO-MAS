@@ -9,6 +9,7 @@ export interface ElectronAPI {
   windowMinimize: () => Promise<void>
   windowMaximize: () => Promise<void>
   windowClose: () => Promise<void>
+  appRestart: () => Promise<void>
   windowIsMaximized: () => Promise<boolean>
   windowFocus: () => Promise<void>
   appQuit: () => Promise<void>
@@ -26,7 +27,6 @@ export interface ElectronAPI {
   }>
   checkGitUpdate: () => Promise<{ hasUpdate: boolean; error?: string }>
   downloadPython: (mirror?: string) => Promise<any>
-  installPip: () => Promise<any>
   downloadGit: () => Promise<any>
   installDependencies: (mirror?: string) => Promise<any>
   cloneBackend: (repoUrl?: string) => Promise<any>
@@ -81,7 +81,12 @@ export interface ElectronAPI {
   syncBackendConfig: (backendSettings: any) => Promise<boolean>
 
   // 日志文件操作
-  exportLogs: () => Promise<{ success: boolean; path?: string; sourceDir?: string; error?: string }>
+  exportLogs: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
   getLogs: (lines?: number, fileName?: string) => Promise<string>
 
   // 获取模块化日志器（使用主进程配置）
@@ -233,5 +238,18 @@ declare global {
   interface Window {
     electronAPI: ElectronAPI
     pluginAPI: PluginAPI
+    __AUTO_MAS_PLUGIN_VUE__?: typeof import('vue')
+    __debugShowQuestion?: (data: unknown) => void
+    wsDebug?: string
+    debugScheduler?: typeof import('@/utils/scheduler-debug').debugScheduler
+    testWebSocketConnection?: typeof import('@/utils/scheduler-debug').testWebSocketConnection
+  }
+
+  interface Performance {
+    memory?: {
+      usedJSHeapSize: number
+      totalJSHeapSize: number
+      jsHeapSizeLimit: number
+    }
   }
 }

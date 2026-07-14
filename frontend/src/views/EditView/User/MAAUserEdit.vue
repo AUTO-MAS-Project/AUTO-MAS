@@ -140,12 +140,12 @@ import { getWeekdayInTimezone } from '@/utils/dateUtils.ts'
 const logger = window.electronAPI.getLogger('MAA用户编辑')
 
 // 导入拆分的组件
-import MAAUserEditHeader from '../../MAAUserEdit/MAAUserEditHeader.vue'
-import BasicInfoSection from '../../MAAUserEdit/BasicInfoSection.vue'
-import StageConfigSection from '../../MAAUserEdit/StageConfigSection.vue'
-import TaskConfigSection from '../../MAAUserEdit/TaskConfigSection.vue'
-import SkylandConfigSection from '../../MAAUserEdit/SkylandConfigSection.vue'
-import NotifyConfigSection from '../../MAAUserEdit/NotifyConfigSection.vue'
+import MAAUserEditHeader from '@/views/MAAUserEdit/MAAUserEditHeader.vue'
+import BasicInfoSection from '@/views/MAAUserEdit/BasicInfoSection.vue'
+import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
+import TaskConfigSection from '@/views/MAAUserEdit/TaskConfigSection.vue'
+import SkylandConfigSection from '@/views/MAAUserEdit/SkylandConfigSection.vue'
+import NotifyConfigSection from '@/views/MAAUserEdit/NotifyConfigSection.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const router = useRouter()
@@ -767,7 +767,7 @@ const selectAndImportInfrastructureConfig = async () => {
 
   try {
     // 选择文件
-    const path = await (window as any).electronAPI?.selectFile([
+    const path = await window.electronAPI?.selectFile([
       { name: 'JSON 文件', extensions: ['json'] },
       { name: '所有文件', extensions: ['*'] },
     ])
