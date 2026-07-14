@@ -94,7 +94,7 @@ export async function ensurePluginFrontendPage(page: PageDeclaration): Promise<v
   }
 
   const entryUrl = toAbsoluteUrl(page.entry_asset_url)
-  ;(window as any).__AUTO_MAS_PLUGIN_VUE__ = VueRuntime
+  window.__AUTO_MAS_PLUGIN_VUE__ = VueRuntime
   for (const styleUrl of page.style_asset_urls) {
     ensureStyle(toAbsoluteUrl(styleUrl))
   }

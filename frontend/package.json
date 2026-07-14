@@ -21,6 +21,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier . --write",
+    "typecheck": "vue-tsc -p tsconfig.app.json --noEmit",
     "openapi": "openapi --input http://127.0.0.1:36163/openapi.json --output ./src/api --client axios",
     "test": "vitest run"
   },

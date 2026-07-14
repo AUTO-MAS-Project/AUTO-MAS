@@ -116,7 +116,7 @@
       <!-- 空状态 -->
       <div v-if="timeSets.length === 0" class="empty-state">
         <div class="empty-content">
-          <img src="../../../assets/NoData.png" alt="无数据" class="empty-image" />
+          <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
         </div>
       </div>
     </div>
@@ -440,166 +440,6 @@ const onDragEnd = async (evt: any) => {
   font-weight: 600;
 }
 
-/* 表格样式优化 */
-.time-set-table {
-  width: 100% !important;
-  max-width: 100% !important;
-}
-
-.time-set-table :deep(.ant-table-wrapper) {
-  width: 100% !important;
-  max-width: 100% !important;
-}
-
-/* 禁用所有滚动条，让表格自动延伸 */
-:deep(.ant-table-wrapper) {
-  overflow: visible !important;
-}
-
-:deep(.ant-table-container) {
-  overflow: visible !important;
-  max-height: none !important;
-  height: auto !important;
-}
-
-:deep(.ant-table-body) {
-  overflow: visible !important;
-  max-height: none !important;
-  height: auto !important;
-}
-
-:deep(.ant-table-content) {
-  overflow: visible !important;
-  max-height: none !important;
-  height: auto !important;
-}
-
-:deep(.ant-table-tbody) {
-  overflow: visible !important;
-}
-
-:deep(.ant-table) {
-  font-size: 14px;
-  table-layout: auto;
-  width: 100%;
-  overflow: visible !important;
-}
-
-/* 强制移除任何可能的滚动条 */
-:deep(.ant-table-wrapper),
-:deep(.ant-table-container),
-:deep(.ant-table-body),
-:deep(.ant-table-content),
-:deep(.ant-table),
-:deep(.ant-table-tbody) {
-  scrollbar-width: none !important;
-  /* Firefox */
-  -ms-overflow-style: none !important;
-  /* IE/Edge */
-}
-
-:deep(.ant-table-wrapper)::-webkit-scrollbar,
-:deep(.ant-table-container)::-webkit-scrollbar,
-:deep(.ant-table-body)::-webkit-scrollbar,
-:deep(.ant-table-content)::-webkit-scrollbar,
-:deep(.ant-table)::-webkit-scrollbar,
-:deep(.ant-table-tbody)::-webkit-scrollbar {
-  display: none !important;
-  /* Chrome/Safari */
-}
-
-/* 列宽度控制 */
-:deep(.ant-table-thead > tr > th:nth-child(1)) {
-  width: 80px !important;
-  min-width: 80px !important;
-  max-width: 80px !important;
-}
-
-:deep(.ant-table-thead > tr > th:nth-child(2)) {
-  width: 120px !important;
-  min-width: 120px !important;
-  max-width: 120px !important;
-}
-
-:deep(.ant-table-thead > tr > th:nth-child(3)) {
-  width: auto !important;
-  min-width: 100px !important;
-}
-
-:deep(.ant-table-thead > tr > th:nth-child(4)) {
-  width: 180px !important;
-  min-width: 180px !important;
-  max-width: 180px !important;
-}
-
-:deep(.ant-table-tbody > tr > td:nth-child(1)) {
-  width: 80px !important;
-  min-width: 80px !important;
-  max-width: 80px !important;
-}
-
-:deep(.ant-table-tbody > tr > td:nth-child(2)) {
-  width: 120px !important;
-  min-width: 120px !important;
-  max-width: 120px !important;
-}
-
-:deep(.ant-table-tbody > tr > td:nth-child(3)) {
-  width: auto !important;
-  min-width: 100px !important;
-}
-
-:deep(.ant-table-tbody > tr > td:nth-child(4)) {
-  width: 180px !important;
-  min-width: 180px !important;
-  max-width: 180px !important;
-}
-
-/* 表格行和列样式 */
-:deep(.ant-table-tbody > tr > td) {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--ant-color-border);
-}
-
-:deep(.ant-table-thead > tr > th) {
-  font-weight: 600;
-  padding: 8px 12px;
-  text-align: center;
-  background-color: var(--app-background-card-bg, var(--ant-color-bg-container));
-  border-bottom: 1px solid var(--ant-color-border);
-}
-
-/* 确保列内容正确显示 */
-:deep(.ant-table-thead > tr > th) {
-  text-align: center;
-  vertical-align: middle;
-}
-
-:deep(.ant-table-tbody > tr > td) {
-  text-align: center;
-  vertical-align: middle;
-}
-
-:deep(.ant-table-cell) {
-  text-align: center;
-}
-
-/* 表格整体布局优化 */
-:deep(.ant-table-wrapper) {
-  width: 100%;
-  min-height: auto;
-}
-
-/* 确保表格不会被压缩 */
-:deep(.ant-table-fixed-header) {
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
-}
-
-:deep(.ant-table-fixed-header)::-webkit-scrollbar {
-  display: none !important;
-}
-
 /* 操作按钮布局 */
 :deep(.ant-btn) {
   min-width: auto;
@@ -617,50 +457,9 @@ const onDragEnd = async (evt: any) => {
   margin-right: 6px !important;
 }
 
-/* 操作列内容居中且不超出 */
-:deep(.ant-table-tbody > tr > td:nth-child(4) .ant-space) {
-  justify-content: center;
-  width: 100%;
-}
-
 /* 按钮图标样式调整 */
 :deep(.ant-btn .anticon) {
   font-size: 14px;
-}
-
-/* 序号列样式 */
-:deep(.ant-table-tbody > tr > td:first-child) {
-  font-weight: 500;
-  color: var(--ant-color-text-secondary);
-}
-
-/* 隐藏所有滚动条 */
-:deep(.ant-table-container)::-webkit-scrollbar,
-:deep(.ant-table-tbody)::-webkit-scrollbar,
-:deep(.ant-table-content)::-webkit-scrollbar,
-:deep(.ant-table-body)::-webkit-scrollbar {
-  display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-}
-
-/* 确保列宽度固定 */
-:deep(.ant-table-thead > tr > th) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-:deep(.ant-table-tbody > tr > td) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 序号列样式 */
-:deep(.ant-table-tbody > tr > td:first-child) {
-  font-weight: 500;
-  color: var(--ant-color-text-secondary);
 }
 
 /* 操作按钮布局 */

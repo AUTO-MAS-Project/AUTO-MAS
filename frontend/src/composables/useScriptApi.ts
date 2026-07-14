@@ -7,6 +7,7 @@ import {
   type M9AConfig,
   type MaaFWConfig,
   type OkwwConfig,
+  type PluginScriptConfig,
   ScriptIndexItem,
   type SrcConfig,
   ScriptCreateIn,
@@ -28,6 +29,7 @@ type ScriptListConfig =
   | MaaEndConfig
   | M9AConfig
   | MaaFWConfig
+  | PluginScriptConfig
 
 const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type> = {
   MAA: ScriptCreateIn.type.MAA,
@@ -51,7 +53,22 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   [ScriptIndexItem.type.MAA_FWCONFIG]: 'MaaFW',
 }
 
-const resolveScriptType = (configType: string): ScriptType => {
+const resolvePluginTypeKey = (config: unknown): ScriptType | null => {
+  if (!config || typeof config !== 'object') return null
+
+  const meta = (config as { Meta?: unknown }).Meta
+  if (!meta || typeof meta !== 'object') return null
+
+  const pluginTypeKey = (meta as { PluginTypeKey?: unknown }).PluginTypeKey
+  return typeof pluginTypeKey === 'string' && pluginTypeKey.trim() ? pluginTypeKey.trim() : null
+}
+
+const resolveScriptType = (configType: string, config?: unknown): ScriptType => {
+  if (configType === ScriptIndexItem.type.PLUGIN_SCRIPT_CONFIG) {
+    const pluginTypeKey = resolvePluginTypeKey(config)
+    if (pluginTypeKey) return pluginTypeKey
+  }
+
   return SCRIPT_TYPE_BY_CONFIG_TYPE[configType] ?? 'General'
 }
 
@@ -128,12 +145,15 @@ export function useScriptApi() {
       }
 
       // 将API响应转换为ScriptDetail数组
-      return response.index.map(indexItem => ({
-        uid: indexItem.uid,
-        type: resolveScriptType(indexItem.type),
-        name: response.data[indexItem.uid]?.Info?.Name || `${indexItem.type}脚本`,
-        config: response.data[indexItem.uid],
-      }))
+      return response.index.map(indexItem => {
+        const config = response.data[indexItem.uid]
+        return {
+          uid: indexItem.uid,
+          type: resolveScriptType(indexItem.type, config),
+          name: config?.Info?.Name || `${indexItem.type}脚本`,
+          config,
+        }
+      })
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '获取脚本列表失败'
       error.value = errorMsg
@@ -1145,7 +1165,11 @@ export function useScriptApi() {
                             : '未知',
                       },
                     }
-                  } else if (userIndex.type === 'OkefUserConfig' && userData) {
+                  } else if (
+                    (userIndex.type === 'OkefUserConfig' ||
+                      (userIndex.type === 'PluginUserConfig' && script.type === 'OkScript')) &&
+                    userData
+                  ) {
                     const okefUserData = userData as any
                     return {
                       id: userIndex.uid,
@@ -1303,7 +1327,7 @@ export function useScriptApi() {
 
       const item = response.index[0]
       const config = response.data[item.uid]
-      const scriptType = resolveScriptType(item.type)
+      const scriptType = resolveScriptType(item.type, config)
 
       return {
         uid: item.uid,
@@ -1418,6 +1442,9 @@ export function useScriptApi() {
     }
   }
 
+  const importScriptConfigFile = (scriptId: string, userId: string | null) =>
+    Service.importScriptConfigFileApiScriptsConfigImportPost({ scriptId, userId })
+
   return {
     loading,
     error,
@@ -1428,5 +1455,6 @@ export function useScriptApi() {
     deleteScript,
     updateScript,
     reorderScript,
+    importScriptConfigFile,
   }
 }

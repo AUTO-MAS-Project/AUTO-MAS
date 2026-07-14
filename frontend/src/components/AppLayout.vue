@@ -88,7 +88,7 @@ import { useTheme } from '../composables/useTheme.ts'
 import { useRouteLock } from '../composables/useRouteLock.ts'
 import { useAppBackground } from '../composables/useAppBackground.ts'
 import { useWebSocket, type WebSocketBaseMessage } from '../composables/useWebSocket.ts'
-import { OpenAPI } from '../api'
+import { OpenAPI } from '@/api'
 import {
   FALLBACK_PAGE_DECLARATIONS,
   normalizePageDeclarations,
@@ -99,6 +99,8 @@ import {
 import type { MenuProps } from 'ant-design-vue'
 
 const SIDER_WIDTH = 160
+
+const logger = window.electronAPI.getLogger('应用布局')
 
 const router = useRouter()
 const route = useRoute()
@@ -112,7 +114,7 @@ const {
 const { subscribe, unsubscribe } = useWebSocket()
 
 let backgroundSubscriptionId = ''
-let hmrOverlayTimer: ReturnType<typeof window.setTimeout> | undefined
+let hmrOverlayTimer: number | undefined
 let backgroundServiceSignature = ''
 let hasBackgroundServiceSnapshot = false
 const HMR_SOFT_RELOAD_FLAG = 'auto-mas-hmr-soft-reload'
@@ -150,7 +152,7 @@ const icon = (Comp: any) => () => h(Comp)
 const isDevelopment = computed(() => {
   return (
     process.env.NODE_ENV === 'development' ||
-    (import.meta as any).env?.DEV === true ||
+    import.meta.env.DEV === true ||
     window.location.hostname === 'localhost'
   )
 })
@@ -206,7 +208,7 @@ const fetchInitialPluginSnapshot = async () => {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    console.warn(`加载插件页面声明失败，等待实时更新: ${message}`)
+    logger.warn(`加载插件页面声明失败，等待实时更新: ${message}`)
   }
 }
 
@@ -281,7 +283,7 @@ const refreshPluginFrontend = () => {
   if (!isDevelopment.value) {
     return
   }
-  const hot = (import.meta as any).hot
+  const hot = import.meta.hot
   showHmrOverlay('正在刷新插件前端')
   window.sessionStorage.setItem(HMR_SOFT_RELOAD_FLAG, '1')
   window.setTimeout(() => {

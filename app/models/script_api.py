@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -15,6 +15,9 @@ class ScriptTypeDescriptor(BaseModel):
     icon: str | None = Field(default=None, description="脚本类型图标标识")
     icon_url: str | None = Field(default=None, description="脚本类型图标资源地址")
     theme_color: str | None = Field(default=None, description="脚本类型主题颜色")
+    create_group: Literal["general", "specialized"] = Field(
+        default="specialized", description="新建脚本时的展示分组"
+    )
     docs_url: str | None = Field(default=None, description="文档地址")
     editor_kind: str = Field(..., description="编辑器类型")
     supported_modes: list[str] = Field(..., description="支持的任务模式")

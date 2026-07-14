@@ -52,6 +52,12 @@
 
 说明：`script.exit` 为收口事件，建议插件优先监听它做统一处理。
 
+### 3.3 ok-script 领域明细事件
+
+- `ok_script.event`：ok-script 系项目通过 `mas-events.jsonl` 输出结构化运行事件后，由 MAS 转发给插件总线。
+
+说明：`ok_script.event` 只表示 OK-EF、OK-WW、OK-NTE 等 ok-script 系脚本内部的步骤、子任务失败与汇总信息，不替代 `script.*` 生命周期事件。插件需要判断脚本是否真正收口时，仍应优先监听 `script.exit`。
+
 ## 4. 触发语义（实现对齐）
 
 ### 4.1 `task.progress` 可能多次触发
@@ -228,10 +234,47 @@
 }
 ```
 
+### 5.6 ok_script.event
+
+```json
+{
+  "event": "ok_script.event",
+  "event_version": "1",
+  "source": "core.ok_script",
+  "timestamp": "2026-07-11T10:39:00+08:00",
+  "data": {
+    "task_id": "task-001",
+    "mode": "AutoProxy",
+    "queue_id": "queue-001",
+    "script_id": "script-001",
+    "script_name": "ok-script 项目",
+    "user_id": "user-001",
+    "user_name": "新用户",
+    "resource_name": "ok-ef",
+    "display_name": "终末地",
+    "task_index": 1,
+    "protocol_version": 1,
+    "ok_script_event": "run_completed",
+    "message": "日常任务完成，部分子任务失败",
+    "task": "",
+    "success": true,
+    "terminal": true,
+    "status": "Success! 但部分任务失败：\n  - ⭐演算 : 未找到等级信息标志",
+    "failures": [
+      {
+        "task": "⭐演算",
+        "message": "未找到等级信息标志"
+      }
+    ]
+  }
+}
+```
+
 ## 6. 插件侧实践建议
 
 - 任务维度追踪：用 `task_id` 作为主键，监听 `task.start` / `task.progress` / `task.log` / `task.exit`。
 - 脚本维度收口：优先监听 `script.exit`，按 `result` 做分支处理。
+- ok-script 子任务明细：监听 `ok_script.event`，按 `data.resource_name`、`data.ok_script_event` 与 `data.failures` 做细分处理。
 - 精准脚本触发：优先以 `script.exit` + `script_name/script_id` 过滤；`task.exit` 可结合 `scripts` 与 `final_script_name` 做任务收口判断。
 - 事件处理容错：处理函数内部应捕获异常，避免传播到总线。
 - 缓存配合事件：建议使用 `ctx.cache` 对事件计数、去重签名、短期状态做本地持久化。

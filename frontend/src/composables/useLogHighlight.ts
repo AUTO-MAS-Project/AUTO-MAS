@@ -1,6 +1,8 @@
 import { computed, ref } from 'vue'
 import { useTheme } from './useTheme'
 
+const logger = window.electronAPI.getLogger('日志高亮')
+
 // 日志高亮颜色配置接口
 export interface LogHighlightColors {
   // 时间相关
@@ -191,7 +193,7 @@ const loadConfig = () => {
       editorConfig.value = { ...defaultEditorConfig, ...JSON.parse(savedEditor) }
     }
   } catch (error) {
-    console.error('Failed to load log highlight config:', error)
+    logger.error(`Failed to load log highlight config: ${String(error)}`)
   }
 }
 
@@ -201,7 +203,7 @@ const saveColors = () => {
     localStorage.setItem(STORAGE_KEY_LIGHT, JSON.stringify(lightColors.value))
     localStorage.setItem(STORAGE_KEY_DARK, JSON.stringify(darkColors.value))
   } catch (error) {
-    console.error('Failed to save log highlight colors:', error)
+    logger.error(`Failed to save log highlight colors: ${String(error)}`)
   }
 }
 
@@ -209,7 +211,7 @@ const saveStyles = () => {
   try {
     localStorage.setItem(STORAGE_KEY_STYLES, JSON.stringify(styles.value))
   } catch (error) {
-    console.error('Failed to save log highlight styles:', error)
+    logger.error(`Failed to save log highlight styles: ${String(error)}`)
   }
 }
 
@@ -217,7 +219,7 @@ const saveEditorConfig = () => {
   try {
     localStorage.setItem(STORAGE_KEY_EDITOR, JSON.stringify(editorConfig.value))
   } catch (error) {
-    console.error('Failed to save editor config:', error)
+    logger.error(`Failed to save editor config: ${String(error)}`)
   }
 }
 
@@ -470,7 +472,7 @@ export function useLogHighlight() {
         colors: {},
       })
     } catch (error) {
-      console.error('Failed to register log language:', error)
+      logger.error(`Failed to register log language: ${String(error)}`)
     }
   }
 

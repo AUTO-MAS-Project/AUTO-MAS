@@ -14,7 +14,7 @@ export async function openExternalUrl(url: string): Promise<boolean> {
       return true
     }
   } catch (error) {
-    console.error('打开链接失败:', error)
+    window.electronAPI?.getLogger('外部链接').error(`打开链接失败: ${String(error)}`)
     return false
   }
 }

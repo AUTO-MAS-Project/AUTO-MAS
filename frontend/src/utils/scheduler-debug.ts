@@ -1,11 +1,28 @@
 // 调度中心调试工具
 const logger = window.electronAPI.getLogger('调度器调试')
 
+interface DebugSubscription {
+  filter: {
+    type?: unknown
+    id?: unknown
+  }
+}
+
+interface DebugWebSocketStorage {
+  status: { value: unknown }
+  connectionId: unknown
+  subscriptions: { value: Map<unknown, DebugSubscription> }
+  cacheMarkers: { value: Set<unknown> }
+  cachedMessages: { value: unknown[] }
+}
+
 export function debugScheduler() {
   logger.info('=== 调度中心调试信息 ===')
 
   // 检查WebSocket连接状态
-  const wsStorage = (window as any)[Symbol.for('GLOBAL_WEBSOCKET_PERSISTENT')]
+  const wsStorage = (window as unknown as Record<PropertyKey, DebugWebSocketStorage | undefined>)[
+    Symbol.for('GLOBAL_WEBSOCKET_PERSISTENT')
+  ]
   if (wsStorage) {
     logger.info(`WebSocket状态: ${wsStorage.status.value}`)
     logger.info(`WebSocket连接ID: ${wsStorage.connectionId}`)
@@ -90,6 +107,6 @@ export async function testWebSocketConnection() {
 
 // 在控制台中暴露调试函数
 if (typeof window !== 'undefined') {
-  ;(window as any).debugScheduler = debugScheduler
-  ;(window as any).testWebSocketConnection = testWebSocketConnection
+  window.debugScheduler = debugScheduler
+  window.testWebSocketConnection = testWebSocketConnection
 }

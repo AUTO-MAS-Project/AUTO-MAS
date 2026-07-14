@@ -214,7 +214,7 @@ import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSoc
 const logger = window.electronAPI.getLogger('后端调试面板')
 
 // 临时的类型断言，确保能访问到完整的electronAPI
-const electronAPI = (window as any).electronAPI
+const electronAPI = window.electronAPI
 
 // WebSocket相关
 const {

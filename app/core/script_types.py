@@ -80,6 +80,16 @@ LEGACY_SCRIPT_TYPE_METADATA = (
         "is_builtin": False,
     },
     {
+        "type_key": "MaaFW",
+        "display_name": "MaaFramework 项目",
+        "script_class_name": "MaaFWConfig",
+        "user_class_name": "MaaFWUserConfig",
+        "supported_modes": ("AutoProxy",),
+        "icon": "MaaFW",
+        "editor_kind": "plugin:automas_script_maafw",
+        "is_builtin": False,
+    },
+    {
         "type_key": "General",
         "display_name": "通用脚本",
         "script_class_name": "GeneralConfig",
@@ -87,6 +97,16 @@ LEGACY_SCRIPT_TYPE_METADATA = (
         "supported_modes": ("AutoProxy", "ScriptConfig"),
         "icon": "General",
         "editor_kind": "schema",
+        "is_builtin": False,
+    },
+    {
+        "type_key": "OkScript",
+        "display_name": "ok-script 项目",
+        "script_class_name": "OkefConfig",
+        "user_class_name": "OkefUserConfig",
+        "supported_modes": ("AutoProxy",),
+        "icon": "General",
+        "editor_kind": "builtin:ok-script",
         "is_builtin": False,
     },
 )
@@ -419,7 +439,7 @@ class ScriptTypeRegistry:
                 legacy_config_class_name="GeneralConfig",
                 legacy_user_config_class_name="GeneralUserConfig",
                 is_builtin=False,
-                metadata={"framework": "script_adapter"},
+                metadata={"framework": "script_adapter", "create_group": "general"},
             ).build_provider(),
         ]
 
@@ -507,6 +527,11 @@ def build_descriptor(provider: ScriptTypeProvider) -> dict[str, Any]:
         "icon": provider.icon,
         "icon_url": f"/api/script-types/{provider.type_key}/icon" if provider.icon_path else None,
         "theme_color": provider.metadata.get("theme_color"),
+        "create_group": (
+            provider.metadata["create_group"]
+            if provider.metadata.get("create_group") in {"general", "specialized"}
+            else "specialized"
+        ),
         "docs_url": provider.docs_url,
         "editor_kind": provider.editor_kind,
         "supported_modes": list(provider.supported_modes),
@@ -831,6 +856,8 @@ def _resolve_legacy_config_classes(
         MaaFWConfig,
         MaaFWUserConfig,
         MaaUserConfig,
+        OkefConfig,
+        OkefUserConfig,
         SrcConfig,
         SrcUserConfig,
     )
@@ -841,6 +868,7 @@ def _resolve_legacy_config_classes(
         "MaaConfig": MaaConfig,
         "MaaEndConfig": MaaEndConfig,
         "MaaFWConfig": MaaFWConfig,
+        "OkefConfig": OkefConfig,
         "SrcConfig": SrcConfig,
     }
     user_classes: dict[str, type[ConfigBase]] = {
@@ -849,6 +877,7 @@ def _resolve_legacy_config_classes(
         "MaaEndUserConfig": MaaEndUserConfig,
         "MaaFWUserConfig": MaaFWUserConfig,
         "MaaUserConfig": MaaUserConfig,
+        "OkefUserConfig": OkefUserConfig,
         "SrcUserConfig": SrcUserConfig,
     }
 

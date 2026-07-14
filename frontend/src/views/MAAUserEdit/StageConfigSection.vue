@@ -72,6 +72,7 @@
             <div class="plan-value">{{ displayMedicineNumb }}</div>
             <a-tooltip>
               <template #title>
+                <!-- eslint-disable vue/no-v-html -- formatTooltip escapes all HTML before converting newlines to br tags. -->
                 <div class="plan-tooltip" v-html="formatTooltip(medicineNumbTooltip)"></div>
               </template>
               <div class="plan-source">来自计划表</div>
@@ -298,6 +299,7 @@
             <a-tooltip>
               <template #title>
                 <div class="plan-tooltip" v-html="formatTooltip(stageRemainTooltip)"></div>
+                <!-- eslint-enable vue/no-v-html -->
               </template>
               <div class="plan-source">来自计划表</div>
             </a-tooltip>
