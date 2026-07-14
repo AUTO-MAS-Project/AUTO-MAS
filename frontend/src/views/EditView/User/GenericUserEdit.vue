@@ -40,6 +40,10 @@
       ref="schemaFormRef"
       v-model="formModel"
       :schema="userSchema"
+      :script-id="scriptId"
+      :user-id="userId || undefined"
+      :script-config="scriptConfig"
+      :mode="routeUserId ? 'edit' : 'create'"
       :hide-fields="headerSchemaActionKeys"
       :action-loading-id="actionLoadingId"
       @trigger-action="({ field, fieldSchema }) => handleFieldAction(field, fieldSchema)"
@@ -96,6 +100,7 @@ const scriptType = ref('')
 const scriptThemeColor = ref<string | null>(null)
 const scriptDisplayName = ref('')
 const userSchema = ref<SchemaDefinition | null>(null)
+const scriptConfig = ref<Record<string, unknown>>({})
 const formModel = ref<Record<string, any>>({})
 const headerSchemaActions = computed(() => collectHeaderSchemaActions(userSchema.value))
 const headerSchemaActionKeys = computed(() => headerSchemaActions.value.map(action => action.key))
@@ -129,6 +134,7 @@ const loadData = async () => {
     const descriptorMap = descriptorMapFromList(descriptors)
     const descriptor = descriptorMap[scriptRecord.type]
     scriptName.value = scriptRecord.name
+    scriptConfig.value = scriptRecord.config || {}
     scriptType.value = scriptRecord.type
     scriptThemeColor.value = scriptRecord.theme_color || descriptor?.theme_color || null
     scriptDisplayName.value = descriptor?.display_name || scriptRecord.type

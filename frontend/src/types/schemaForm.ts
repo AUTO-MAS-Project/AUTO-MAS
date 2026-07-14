@@ -91,6 +91,10 @@ export interface SchemaFieldDefinition {
   filters?: SchemaFileFilter[]
   json_type?: string
   size?: SchemaFieldSize
+  frontend_element?: string
+  frontend_extension?: import('./pluginFrontend').PluginFrontendElementDescriptor
+  props?: Record<string, unknown>
+  persisted?: false
 }
 
 export interface SchemaGroupDefinition {

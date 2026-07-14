@@ -1,11 +1,12 @@
 import { OpenAPI } from '@/api'
 import type { PageDeclaration } from '@/router/pageDeclarations'
+import type { PluginFrontendElementDescriptor } from '@/types/pluginFrontend'
 import * as VueRuntime from 'vue'
 
 const logger = window.electronAPI.getLogger('插件前端加载器')
 
 const loadedEntries = new Map<string, Promise<void>>()
-const loadedStyles = new Set<string>()
+const loadedStyles = new Map<string, Promise<void>>()
 
 function toAbsoluteUrl(rawUrl: string): string {
   if (/^https?:\/\//i.test(rawUrl)) {
@@ -19,16 +20,26 @@ function toAbsoluteUrl(rawUrl: string): string {
   return `${base}${path}`
 }
 
-function ensureStyle(url: string): void {
-  if (loadedStyles.has(url)) {
-    return
+function ensureStyle(url: string): Promise<void> {
+  const existing = loadedStyles.get(url)
+  if (existing) {
+    return existing
   }
-  const link = document.createElement('link')
-  link.rel = 'stylesheet'
-  link.href = url
-  link.dataset.pluginStyle = url
-  document.head.appendChild(link)
-  loadedStyles.add(url)
+  const task = new Promise<void>((resolve, reject) => {
+    const link = document.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = url
+    link.dataset.pluginStyle = url
+    link.onload = () => resolve()
+    link.onerror = () => {
+      loadedStyles.delete(url)
+      link.remove()
+      reject(new Error(`插件前端样式加载失败: ${url}`))
+    }
+    document.head.appendChild(link)
+  })
+  loadedStyles.set(url, task)
+  return task
 }
 
 function loadEntryScript(url: string, cacheKey: string): Promise<void> {
@@ -76,6 +87,49 @@ async function waitForElement(tag: string, timeoutMs = 8000): Promise<void> {
   })
 }
 
+export async function ensurePluginFrontendElement(
+  descriptor: PluginFrontendElementDescriptor
+): Promise<void> {
+  if (!descriptor.frontend_plugin) {
+    throw new Error('插件前端扩展缺少 frontend_plugin')
+  }
+  if (!descriptor.entry_asset_url) {
+    throw new Error('插件前端扩展缺少 entry_asset_url')
+  }
+  if (!descriptor.element_tag) {
+    throw new Error('插件前端扩展缺少 element_tag')
+  }
+  if (descriptor.dev_frontend_error) {
+    throw new Error(descriptor.dev_frontend_error)
+  }
+
+  const entryUrl = toAbsoluteUrl(descriptor.entry_asset_url)
+  ;(window as any).__AUTO_MAS_PLUGIN_VUE__ = VueRuntime
+  await Promise.all(
+    descriptor.style_asset_urls.map(styleUrl => ensureStyle(toAbsoluteUrl(styleUrl)))
+  )
+
+  const isDevEntry =
+    import.meta.env.DEV &&
+    (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|::1)(:|\/)/i.test(entryUrl) ||
+      entryUrl.includes('/@fs/'))
+  const cacheKey = isDevEntry
+    ? `${descriptor.frontend_plugin}:dev:${entryUrl}`
+    : `${descriptor.frontend_plugin}:${descriptor.manifest_version || 0}:${entryUrl}`
+  let loadingTask = loadedEntries.get(cacheKey)
+  if (!loadingTask) {
+    loadingTask = loadEntryScript(entryUrl, cacheKey).catch(error => {
+      loadedEntries.delete(cacheKey)
+      throw error
+    })
+    loadedEntries.set(cacheKey, loadingTask)
+  }
+
+  logger.info(`加载插件前端扩展: ${cacheKey}`)
+  await loadingTask
+  await waitForElement(descriptor.element_tag)
+}
+
 export async function ensurePluginFrontendPage(page: PageDeclaration): Promise<void> {
   if (page.renderer !== 'custom-element') {
     return
@@ -92,30 +146,13 @@ export async function ensurePluginFrontendPage(page: PageDeclaration): Promise<v
   if (page.dev_frontend_error) {
     throw new Error(page.dev_frontend_error)
   }
-
-  const entryUrl = toAbsoluteUrl(page.entry_asset_url)
-  ;(window as any).__AUTO_MAS_PLUGIN_VUE__ = VueRuntime
-  for (const styleUrl of page.style_asset_urls) {
-    ensureStyle(toAbsoluteUrl(styleUrl))
-  }
-
-  const isDevEntry =
-    import.meta.env.DEV &&
-    (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|::1)(:|\/)/i.test(entryUrl) ||
-      entryUrl.includes('/@fs/'))
-  const cacheKey = isDevEntry
-    ? `${page.frontend_plugin}:dev:${entryUrl}`
-    : `${page.frontend_plugin}:${page.manifest_version || 0}:${entryUrl}`
-  let loadingTask = loadedEntries.get(cacheKey)
-  if (!loadingTask) {
-    loadingTask = loadEntryScript(entryUrl, cacheKey).catch(error => {
-      loadedEntries.delete(cacheKey)
-      throw error
-    })
-    loadedEntries.set(cacheKey, loadingTask)
-  }
-
-  logger.info(`加载插件前端页面: ${cacheKey}`)
-  await loadingTask
-  await waitForElement(page.element_tag)
+  await ensurePluginFrontendElement({
+    frontend_plugin: page.frontend_plugin,
+    element_tag: page.element_tag,
+    entry_asset_url: page.entry_asset_url,
+    style_asset_urls: page.style_asset_urls,
+    manifest_version: page.manifest_version,
+    dev_frontend_command: page.dev_frontend_command,
+    dev_frontend_error: page.dev_frontend_error,
+  })
 }

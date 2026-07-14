@@ -385,7 +385,7 @@ def _field_from_model_field(name: str, field_info: Any) -> PluginFieldDeclaratio
 
 
 def _is_runtime_field(field: PluginFieldDeclaration) -> bool:
-    if field.field_type in {"button", "action", "multiple"}:
+    if field.field_type in {"button", "action", "multiple", "plugin-element"}:
         return False
     return field.configurable
 

@@ -18,6 +18,18 @@ logger = get_logger("插件前端扩展")
 PluginFrontendRenderer = Literal["custom-element"]
 
 
+class PluginFrontendElementDescriptor(BaseModel):
+    """前端 custom element 的可加载资源描述。"""
+
+    frontend_plugin: str
+    element_tag: str
+    entry_asset_url: str
+    style_asset_urls: list[str] = Field(default_factory=list)
+    manifest_version: int | None = None
+    dev_frontend_command: str | None = None
+    dev_frontend_error: str | None = None
+
+
 def _normalize_asset_path(raw: Any) -> str:
     text = str(raw or "").strip().replace("\\", "/")
     if not text:
@@ -253,6 +265,74 @@ def build_frontend_asset_url(
     if version is not None:
         url = f"{url}?v={int(version)}"
     return url
+
+
+def resolve_plugin_frontend_element(
+    plugin_name: str,
+    element_tag: str,
+    *,
+    plugin_source: Any | None = None,
+) -> PluginFrontendElementDescriptor:
+    """解析并校验插件 custom element 的统一资源描述。"""
+
+    normalized_plugin = str(plugin_name or "").strip()
+    normalized_tag = str(element_tag or "").strip()
+    if not normalized_plugin:
+        raise ValueError("frontend plugin 不能为空")
+    if not normalized_tag:
+        raise ValueError("custom element 标签不能为空")
+
+    if plugin_source is None:
+        from app.plugins.manager import PluginManager
+
+        plugin_source = PluginManager.loader.discovered_plugins.get(normalized_plugin)
+    if plugin_source is None:
+        raise FileNotFoundError(f"未发现插件前端资源: plugin={normalized_plugin}")
+
+    dev_manifest = _load_frontend_dev_manifest(normalized_plugin, plugin_source)
+    manifest = (
+        dev_manifest
+        if dev_manifest is not None
+        else load_frontend_manifest(normalized_plugin, plugin_source)
+    )
+    manifest_tags = {item.tag for item in manifest.elements}
+    if normalized_tag not in manifest_tags:
+        raise ValueError(
+            "custom element 未出现在插件 frontend manifest 中: "
+            f"plugin={normalized_plugin}, tag={normalized_tag}"
+        )
+
+    if isinstance(manifest, PluginFrontendDevManifest):
+        entry_asset_url = manifest.entry_url or _vite_fs_url(
+            Path(plugin_source.path) / "frontend-src" / str(manifest.entry)
+        )
+        return PluginFrontendElementDescriptor(
+            frontend_plugin=normalized_plugin,
+            element_tag=normalized_tag,
+            entry_asset_url=entry_asset_url,
+            style_asset_urls=list(manifest.style_urls),
+            manifest_version=manifest.version,
+            dev_frontend_command=manifest.command,
+        )
+
+    # 提前访问资源，确保 manifest 不能指向包外路径或不存在的文件。
+    load_frontend_asset(normalized_plugin, plugin_source, manifest.entry)
+    for style_path in manifest.style:
+        load_frontend_asset(normalized_plugin, plugin_source, style_path)
+    return PluginFrontendElementDescriptor(
+        frontend_plugin=normalized_plugin,
+        element_tag=normalized_tag,
+        entry_asset_url=build_frontend_asset_url(
+            normalized_plugin,
+            manifest.entry,
+            version=manifest.version,
+        ),
+        style_asset_urls=[
+            build_frontend_asset_url(normalized_plugin, path, version=manifest.version)
+            for path in manifest.style
+        ],
+        manifest_version=manifest.version,
+    )
 
 
 def _append_error(errors: list[str], message: str) -> None:

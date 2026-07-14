@@ -49,6 +49,10 @@
       ref="schemaFormRef"
       v-model="formModel"
       :schema="userSchema"
+      :script-id="scriptId"
+      :user-id="userId || undefined"
+      :script-config="scriptConfig"
+      :mode="routeUserId ? 'edit' : 'create'"
       :hide-fields="headerSchemaActionKeys"
       :action-loading-id="actionLoadingId"
       @trigger-action="({ field, fieldSchema }) => handleFieldAction(field, fieldSchema)"
@@ -125,6 +129,7 @@ const scriptDisplayName = ref('')
 const docsUrl = ref<string | null>(null)
 const supportedModes = ref<string[]>([])
 const userSchema = ref<SchemaDefinition | null>(null)
+const scriptConfig = ref<Record<string, unknown>>({})
 const formModel = ref<Record<string, any>>({})
 const headerSchemaActions = computed(() => collectHeaderSchemaActions(userSchema.value))
 const headerSchemaActionKeys = computed(() => headerSchemaActions.value.map(action => action.key))
@@ -220,6 +225,7 @@ const loadData = async ({
 
     const descriptor = descriptorMap[scriptRecord.type]
     scriptName.value = normalizedScript.name
+    scriptConfig.value = scriptRecord.config || {}
     scriptType.value = normalizedScript.type
     scriptEditorKind.value = normalizedScript.editorKind || ''
     scriptThemeColor.value = normalizedScript.themeColor || null

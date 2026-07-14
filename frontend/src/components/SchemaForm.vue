@@ -9,8 +9,8 @@
         <a-form-item
           v-for="field in group.fields"
           :key="getFieldPath(field)"
-          :label="getFieldLabel(field)"
-          :required="Boolean(field.required)"
+          :label="isPluginElementField(field) ? undefined : getFieldLabel(field)"
+          :required="!isPluginElementField(field) && Boolean(field.required)"
           :help="getFieldHelp(field)"
           :validate-status="validationErrors[getFieldPath(field)] ? 'error' : undefined"
           :class="[
@@ -19,7 +19,7 @@
             layout === 'plugin-grid' ? `schema-item-size-${getFieldLayoutSize(field)}` : '',
           ]"
         >
-          <div class="schema-field-head">
+          <div v-if="!isPluginElementField(field)" class="schema-field-head">
             <a-space size="6">
               <a-tag class="type-tag" color="processing">{{ getTypeLabel(field) }}</a-tag>
               <a-tag v-if="field.required" color="error">必填</a-tag>
@@ -28,7 +28,28 @@
             </a-space>
           </div>
 
-          <template v-if="isButtonField(field)">
+          <PluginSchemaElement
+            v-if="isPluginElementField(field) && field.frontend_extension"
+            :descriptor="field.frontend_extension"
+            :script-id="scriptId"
+            :user-id="userId"
+            :script-config="scriptConfig"
+            :model-value="modelValue"
+            :field-path="getFieldPath(field)"
+            :mode="mode"
+            :extension-props="field.props"
+            @field-change="handlePluginFieldChange"
+            @form-patch="handlePluginFormPatch"
+          />
+          <a-alert
+            v-else-if="isPluginElementField(field)"
+            type="warning"
+            show-icon
+            message="插件组件声明不可用"
+            description="组件资源未通过宿主校验，其他配置仍可继续编辑和保存。"
+          />
+
+          <template v-else-if="isButtonField(field)">
             <a-button
               type="primary"
               :loading="actionLoadingId === getFieldPath(field)"
@@ -397,6 +418,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
+import PluginSchemaElement from '@/components/PluginSchemaElement.vue'
 import type {
   GroupedSchemaDefinition,
   SchemaDefinition,
@@ -404,6 +426,7 @@ import type {
   SchemaGroupDefinition,
   SchemaValidationErrorMap,
 } from '@/types/schemaForm'
+import { deepMergeRecord } from '@/utils/deepMerge'
 
 interface ListRow {
   __rowKey: string
@@ -435,12 +458,20 @@ const props = withDefaults(
     hideFields?: string[]
     actionLoadingId?: string
     layout?: 'single' | 'plugin-grid'
+    scriptId?: string
+    userId?: string
+    scriptConfig?: Record<string, unknown>
+    mode?: 'create' | 'edit'
   }>(),
   {
     readonly: false,
     hideFields: () => [],
     actionLoadingId: '',
     layout: 'plugin-grid',
+    scriptId: '',
+    userId: undefined,
+    scriptConfig: () => ({}),
+    mode: 'edit',
   }
 )
 
@@ -645,6 +676,16 @@ const updateFieldValue = (field: string, value: unknown) => {
   emit('update:modelValue', nextValue)
 }
 
+const handlePluginFieldChange = (detail: { path: string; value: unknown }) => {
+  if (!detail.path) return
+  updateFieldValue(detail.path, detail.value)
+}
+
+const handlePluginFormPatch = (detail: { patch: Record<string, unknown> }) => {
+  const nextValue = deepMergeRecord(cloneModel(), detail.patch)
+  emit('update:modelValue', nextValue)
+}
+
 const syncAutocompleteDraft = (field: string, fieldSchema: SchemaFieldDefinition) => {
   const rawValue = getFieldValue(field)
   autocompleteDrafts.value[field] =
@@ -727,10 +768,11 @@ const getSchemaConstraint = (field: SchemaFieldDefinition, key: string) => field
 const hasFieldAction = (field: SchemaFieldDefinition) =>
   Boolean(
     (field.action && typeof field.action === 'object') ||
-    (field.button && typeof field.button === 'object')
+      (field.button && typeof field.button === 'object')
   )
 const isButtonField = (field: SchemaFieldDefinition) =>
   field.type === 'button' || field.type === 'action' || hasFieldAction(field)
+const isPluginElementField = (field: SchemaFieldDefinition) => field.type === 'plugin-element'
 const isAutocompleteField = (field: SchemaFieldDefinition) =>
   Boolean(field.allow_custom) && isStringField(field) && hasSelectableOptions(field)
 const isOrderedMultiSelectField = (field: SchemaFieldDefinition) =>

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import uuid
-import inspect
 import json
 import shutil
 from dataclasses import dataclass, field
@@ -32,7 +31,6 @@ if TYPE_CHECKING:
 from app.models.ConfigBase import (
     BoolValidator,
     ConfigBase,
-    ConfigItem,
     DateTimeValidator,
     FileValidator,
     FolderValidator,
@@ -54,6 +52,38 @@ from .context import PluginContext
 from .schema import normalize_schema_options
 
 logger = get_logger("脚本适配框架")
+
+
+def _resolve_schema_frontend_elements(
+    schema: dict[str, Any],
+    *,
+    frontend_plugin: str | None,
+) -> None:
+    """为 Schema 中的非持久化 custom element 补齐已校验资源描述。"""
+
+    groups = schema.get("groups")
+    if not isinstance(groups, list):
+        return
+    for group in groups:
+        fields = group.get("fields") if isinstance(group, dict) else None
+        if not isinstance(fields, list):
+            continue
+        for field_schema in fields:
+            if not isinstance(field_schema, dict) or field_schema.get("type") != "plugin-element":
+                continue
+            if not frontend_plugin:
+                raise ValueError("plugin-element 只能由插件 Adapter 声明")
+            element_tag = str(field_schema.get("frontend_element") or "").strip()
+            if not element_tag:
+                raise ValueError("plugin-element 必须声明 frontend_element")
+
+            from app.plugins.frontend_extensions import resolve_plugin_frontend_element
+
+            field_schema["persisted"] = False
+            field_schema["frontend_extension"] = resolve_plugin_frontend_element(
+                frontend_plugin,
+                element_tag,
+            ).model_dump()
 
 
 def _is_configbase_class(config_class: type[Any]) -> bool:
@@ -666,6 +696,15 @@ class ScriptAdapterDefinition:
         from app.core.script_types import ScriptTypeProvider
 
         artifacts = self._build_schema_artifacts()
+        frontend_plugin = plugin_context.plugin_name if plugin_context is not None else None
+        _resolve_schema_frontend_elements(
+            artifacts.script_schema,
+            frontend_plugin=frontend_plugin,
+        )
+        _resolve_schema_frontend_elements(
+            artifacts.user_schema,
+            frontend_plugin=frontend_plugin,
+        )
 
         def _factory(script_item: ScriptItem) -> TaskExecuteBase:
             return BaseAdapterManager(

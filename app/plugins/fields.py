@@ -448,6 +448,28 @@ class PluginFieldFactory:
     ) -> PluginFieldDeclaration:
         return _button(name, label, button, **kwargs)
 
+    def plugin_element(
+        self,
+        name: str,
+        element_tag: str,
+        *,
+        label: str = "",
+        props: dict[str, Any] | None = None,
+        size: PluginFieldSize | None = None,
+    ) -> PluginFieldDeclaration:
+        """声明插件 custom element 挂载点"""
+
+        return _declaration(
+            name,
+            label,
+            "plugin-element",
+            configurable=False,
+            frontend_element=element_tag,
+            props=dict(props or {}),
+            persisted=False,
+            size=size,
+        )
+
     def multiple(
         self,
         name: str,
