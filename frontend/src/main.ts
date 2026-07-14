@@ -10,6 +10,9 @@ import router from './router/index.ts'
 import { OpenAPI } from '@/api'
 import WebSocketMessageListener from '@/components/WebSocketMessageListener.vue'
 import { installPluginAPI } from '@/plugin/pluginAPI'
+import { configureLocalMonaco } from '@/utils/monaco'
+
+configureLocalMonaco()
 
 const logger = window.electronAPI.getLogger('前端主入口')
 if (
