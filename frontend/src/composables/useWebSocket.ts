@@ -13,8 +13,7 @@ const DEFAULT_WS_PATH = '/api/core/ws'
 const WS_META_URL = '/api/core/ws_meta'
 const WS_META_TIMEOUT = 3000
 const DEV_MODE_RETRY_DELAY = 3000
-const FRONTEND_DEV_MODE =
-  (import.meta as any).env?.DEV === true || window.location.hostname === 'localhost'
+const FRONTEND_DEV_MODE = import.meta.env.DEV === true || window.location.hostname === 'localhost'
 
 interface NegotiatedWebSocketMeta {
   devMode?: boolean

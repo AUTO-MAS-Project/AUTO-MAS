@@ -7,7 +7,7 @@ const logger = window.electronAPI.getLogger('更新检查器')
 const isDev = import.meta.env.DEV
 
 // 获取版本号，优先使用环境变量，否则使用一个测试版本
-const version = (import.meta as any).env.VITE_APP_VERSION || '1.0.0'
+const version = import.meta.env.VITE_APP_VERSION || '1.0.0'
 
 // 全局状态 - 在所有组件间共享
 const updateVisible = ref(false)
