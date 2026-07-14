@@ -31,6 +31,14 @@
       </template>
 
       <a-alert
+        v-if="capabilitySnapshot?.unavailable_reason && !capabilitySnapshot?.warnings?.length"
+        type="warning"
+        show-icon
+        :message="capabilitySnapshot.unavailable_reason"
+        style="margin-bottom: 12px"
+      />
+
+      <a-alert
         v-for="warning in capabilitySnapshot?.warnings || []"
         :key="warning"
         type="warning"
@@ -65,16 +73,6 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :span="24">
-              <a-form-item label="启用引擎">
-                <a-checkbox-group
-                  v-model:value="hsrConfig.Engine.EnabledEngines"
-                  :options="engineOptions"
-                  @change="handleEnabledEnginesChange"
-                />
-                <div class="form-item-hint">未选择的引擎不会展示、校验或参与当前脚本调度。</div>
-              </a-form-item>
-            </a-col>
           </a-row>
         </div>
 
@@ -83,8 +81,13 @@
           <div class="section-header">
             <h3>脚本与游戏配置</h3>
           </div>
+          <div class="engine-path-hint">
+            <a-typography-text type="secondary">
+              填写对应脚本路径即启用该引擎；清空路径后，该引擎不再校验或参与调度。
+            </a-typography-text>
+          </div>
           <a-row :gutter="24">
-            <a-col v-if="effectiveEngines.has('M7A')" :span="12">
+            <a-col v-if="candidateEngines.has('M7A')" :span="12">
               <a-form-item>
                 <template #label>
                   <a-tooltip title="March7th Assistant 安装目录（含 March7th Assistant.exe）">
@@ -121,7 +124,7 @@
               </a-form-item>
             </a-col>
 
-            <a-col v-if="effectiveEngines.has('SRA')" :span="12">
+            <a-col v-if="candidateEngines.has('SRA')" :span="12">
               <a-form-item>
                 <template #label>
                   <a-tooltip title="StarRailAssistant 安装目录（含 SRA-cli.exe）">
@@ -265,7 +268,7 @@
             </a-col>
           </a-row>
           <a-row :gutter="16">
-            <a-col :span="12">
+            <a-col :span="24">
               <a-form-item label="周常任务超时限制（分钟）">
                 <a-input-number
                   v-model:value="hsrConfig.Run.WeeklyTimeLimit"
@@ -274,18 +277,6 @@
                   size="large"
                   style="width: 100%"
                   @change="handleRunConfigChange('WeeklyTimeLimit', $event)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="月常任务超时限制（分钟）">
-                <a-input-number
-                  v-model:value="hsrConfig.Run.MonthlyTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @change="handleRunConfigChange('MonthlyTimeLimit', $event)"
                 />
               </a-form-item>
             </a-col>
@@ -385,7 +376,7 @@
                   v-else
                   type="warning"
                   show-icon
-                  message="未在模块脚本分配中选择差分宇宙的执行引擎"
+                  message="请先配置至少一个已加载 HSR 引擎的路径"
                 />
               </a-form-item>
             </a-col>
@@ -402,7 +393,7 @@
                     <div>- 标准博弈</div>
                     <div>- 最低难度</div>
                     <div>- SRA 保存的第一套攻略</div>
-                    <div>- 运行次数 2</div>
+                    <div>- 运行次数 1</div>
                     <div>- 开拓者名称：从用户页读取</div>
                     <div class="strategy-warning">
                       - 重点提示：SRA 货币战争不会自动领取积分奖励，请在游戏内手动领取。
@@ -424,7 +415,7 @@
                   v-else
                   type="warning"
                   show-icon
-                  message="未在模块脚本分配中选择货币战争的执行引擎"
+                  message="请先配置至少一个已加载 HSR 引擎的路径"
                 />
               </a-form-item>
             </a-col>
@@ -462,7 +453,6 @@ type HSRTaskMapping = Partial<
 // 前端实际为非空；通过该形态消除 strict null 警告）。
 type HSRConfigData = {
   Info: { Name: string }
-  Engine: { EnabledEngines: HSREngine[] }
   SRA: { Path: string }
   M7A: { Path: string; LowPerformanceMode: boolean }
   Game: { Path: string; Arguments: string; WaitTime: number }
@@ -470,7 +460,6 @@ type HSRConfigData = {
     RunTimesLimit: number
     DailyTimeLimit: number
     WeeklyTimeLimit: number
-    MonthlyTimeLimit: number
   }
   TaskMapping: HSRTaskMapping
 }
@@ -510,7 +499,6 @@ const formData = reactive({
 
 const hsrConfig = reactive<HSRConfigData>({
   Info: { Name: '' },
-  Engine: { EnabledEngines: [] },
   SRA: { Path: '' },
   M7A: { Path: '', LowPerformanceMode: false },
   Game: { Path: '', Arguments: '', WaitTime: 60 },
@@ -518,7 +506,6 @@ const hsrConfig = reactive<HSRConfigData>({
     RunTimesLimit: 3,
     DailyTimeLimit: 20,
     WeeklyTimeLimit: 60,
-    MonthlyTimeLimit: 60,
   },
   TaskMapping: { ...DEFAULT_HSR_TASK_MAPPING },
 })
@@ -532,11 +519,8 @@ const moduleList = [
 
 const capabilityView = computed(() => buildHSRCapabilityView(capabilitySnapshot.value))
 const effectiveEngines = computed(() => capabilityView.value.effectiveEngines)
-const engineOptions = computed(() =>
-  (capabilitySnapshot.value?.candidate_engines || []).map(engine => ({
-    label: engine === 'M7A' ? '三月七助手' : 'StarRailAssistant',
-    value: engine,
-  }))
+const candidateEngines = computed(
+  () => new Set<HSREngine>(capabilitySnapshot.value?.candidate_engines || [])
 )
 
 // 路径变更后重排 TaskMapping 的判断已统一到 getModuleOptions / reconcileTaskMapping。
@@ -615,7 +599,6 @@ const refreshScript = async () => {
     formData.infoName = scriptDetail.name
     const cfg = scriptDetail.config as Partial<HSRConfigData>
     if (cfg.Info) Object.assign(hsrConfig.Info, cfg.Info)
-    if (cfg.Engine) Object.assign(hsrConfig.Engine, cfg.Engine)
     if (cfg.SRA) Object.assign(hsrConfig.SRA, cfg.SRA)
     if (cfg.M7A) Object.assign(hsrConfig.M7A, cfg.M7A)
     if (cfg.Game) {
@@ -632,7 +615,6 @@ const refreshScript = async () => {
       if (hsrConfig.Run.RunTimesLimit === undefined) hsrConfig.Run.RunTimesLimit = 3
       if (hsrConfig.Run.DailyTimeLimit === undefined) hsrConfig.Run.DailyTimeLimit = 20
       if (hsrConfig.Run.WeeklyTimeLimit === undefined) hsrConfig.Run.WeeklyTimeLimit = 60
-      if (hsrConfig.Run.MonthlyTimeLimit === undefined) hsrConfig.Run.MonthlyTimeLimit = 60
     }
     if (cfg.TaskMapping) {
       hsrConfig.TaskMapping = { ...DEFAULT_HSR_TASK_MAPPING, ...cfg.TaskMapping }
@@ -671,17 +653,6 @@ const handleRunConfigChange = async (key: string, value: any) => {
 
 const handleM7AConfigChange = async (key: string, value: unknown) => {
   await handleChange('M7A', key, value)
-}
-
-const handleEnabledEnginesChange = async (value: unknown[]) => {
-  const engines = value.filter((item): item is HSREngine => item === 'SRA' || item === 'M7A')
-  if (!engines.length) {
-    message.warning('至少选择一个 HSR 引擎')
-    hsrConfig.Engine.EnabledEngines = [...(capabilitySnapshot.value?.effective_engines || [])]
-    return
-  }
-  await handleChange('Engine', 'EnabledEngines', engines)
-  await refreshScript()
 }
 
 const handleGameConfigChange = async (key: 'WaitTime', value: number | null) => {
@@ -785,6 +756,10 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.engine-path-hint {
+  margin-bottom: 16px;
+}
+
 .script-edit-header {
   display: flex;
   justify-content: space-between;

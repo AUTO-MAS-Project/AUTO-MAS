@@ -60,6 +60,24 @@ METHOD_BOOK: dict[str, type[HSRAutoProxyTask | HSRManualReviewTask]] = {
 }
 
 
+def _resolve_external_lock_paths(
+    script_config: Any,
+    effective_engines: tuple[str, ...],
+) -> list[str | Path]:
+    """返回本轮 HSR 运行会修改的全部外部路径。"""
+
+    paths: list[str | Path] = [
+        script_config.get(engine, "Path")
+        for engine in effective_engines
+        if script_config.get(engine, "Path")
+    ]
+    if "SRA" in effective_engines:
+        from automas_hsr_adapter_sra.runner import get_sra_app_data_dir
+
+        paths.append(get_sra_app_data_dir())
+    return paths
+
+
 def _remove_path(path: Path) -> None:
     """删除文件或目录，供原子恢复前清理临时路径。"""
 
@@ -275,9 +293,7 @@ class HSRManager(TaskExecuteBase):
         )
         self.script_config = await self.store.load_script_model()
         self.user_config = await self.store.load_user_collection()
-        selected = self.script_config.get("Engine", "EnabledEngines") or []
         snapshot = self.registry.snapshot(
-            selected_engines=selected,
             script_config=self.script_config,
         )
         if not snapshot.available:
@@ -301,8 +317,6 @@ class HSRManager(TaskExecuteBase):
 
         for module in HSR_TASK_MODULES:
             if not module_is_available(module, script_config):
-                continue
-            if module.key == "ForgottenHall":
                 continue
             raw_assigned = script_config._config_item_index["TaskMapping"][module.key].value
             if len(self.effective_engines) > 1 and not script_supports(
@@ -474,11 +488,10 @@ class HSRManager(TaskExecuteBase):
 
         logger.success(f"{self.script_info.script_id} 已锁定，HSR 配置提取完成")
 
-        external_roots = [
-            self.script_config.get(engine, "Path")
-            for engine in self.effective_engines
-            if self.script_config.get(engine, "Path")
-        ]
+        external_roots = _resolve_external_lock_paths(
+            self.script_config,
+            self.effective_engines,
+        )
         self._external_path_locks = await acquire_external_path_locks(external_roots)
         self._append_log("HSR 外部脚本目录运行锁已获取")
 

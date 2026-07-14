@@ -226,87 +226,22 @@
             </a-alert>
           </div>
 
-          <!-- 周常/月常：三深渊（每月一次，三个一起执行）+ 周常（差分宇宙/货币战争）-->
+          <!-- 周常：差分宇宙/货币战争 -->
           <div class="form-section">
-            <div class="section-header"><h3>周常/月常</h3></div>
-            <a-row :gutter="24">
-              <a-col v-if="capabilityView.taskKeys.has('ForgottenHall')" :span="12">
-                <a-form-item label="三深渊（每月一次，三个一起执行）">
-                  <a-tooltip title="前面的功能，以后再来探索吧~">
-                    <a-switch
-                      :checked="false"
-                      checked-children="开启"
-                      un-checked-children="关闭"
-                      disabled
-                    />
-                  </a-tooltip>
-                  <div
-                    class="form-item-hint"
-                    style="color: var(--ant-color-text-tertiary); margin-top: 4px"
-                  >
-                    前面的功能，以后再来探索吧~
-                  </div>
-                </a-form-item>
-              </a-col>
-              <a-col :span="capabilityView.taskKeys.has('ForgottenHall') ? 12 : 24">
-                <a-form-item label="差分/货币">
-                  <a-select
-                    :value="weeklyTaskMode"
-                    size="large"
-                    :loading="isSaving"
-                    :disabled="isSaving"
-                    @change="handleWeeklyTaskModeChange"
-                  >
-                    <a-select-option value="off">关闭</a-select-option>
-                    <a-select-option value="DivergentUniverse">差分宇宙</a-select-option>
-                    <a-select-option value="CurrencyWars">货币战争</a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-            </a-row>
-
-            <!-- 三深渊子区域（开关开启时显示）：语义说明 + 导入按钮 + 三份快照摘要 -->
-            <div
-              v-if="
-                capabilityView.taskKeys.has('ForgottenHall') && formData.TaskSwitch.ForgottenHall
-              "
-              class="weekly-subblock"
-            >
-              <a-alert type="info" show-icon>
-                <template #message>
-                  <div>
-                    开启三深渊后，会按已导入的三份快照依次执行：混沌回忆 → 虚构叙事 →
-                    末日幻影，每月执行一次。
-                  </div>
-                  <div>
-                    请先在 M7A 配好三深渊（关卡范围与队伍），再点击下方「从 M7A
-                    导入三深渊配置」导入三份快照。
-                  </div>
-                </template>
-              </a-alert>
-              <a-alert
-                v-if="abyssCompletedThisMonth"
-                type="success"
-                show-icon
-                style="margin-top: 8px"
-                message="三深渊本月已完成，本月不会再执行；如需重跑请在下方「进度与重置」重置三深渊本月进度。"
-              />
-              <a-alert
-                v-else-if="!abyssSnapshotsReady"
-                type="warning"
-                show-icon
-                style="margin-top: 8px"
-                message="尚未导入完整的三深渊快照（混沌回忆 / 虚构叙事 / 末日幻影）。请先从 M7A 导入；缺任一快照时三深渊不会执行并会清晰报错。"
-              />
-              <AbyssConfigSection
-                :form-data="formData"
+            <div class="section-header"><h3>周常</h3></div>
+            <a-form-item label="差分/货币">
+              <a-select
+                :value="weeklyTaskMode"
+                size="large"
                 :loading="isSaving"
-                :script-config="scriptConfig"
-                :script-id="scriptId"
-                :user-id="userId"
-                @imported="handleAbyssImported"
-              />
-            </div>
+                :disabled="isSaving"
+                @change="handleWeeklyTaskModeChange"
+              >
+                <a-select-option value="off">关闭</a-select-option>
+                <a-select-option value="DivergentUniverse">差分宇宙</a-select-option>
+                <a-select-option value="CurrencyWars">货币战争</a-select-option>
+              </a-select>
+            </a-form-item>
 
             <!-- 差分宇宙执行策略：按 TaskMapping 动态显示 M7A/SRA -->
             <div v-if="weeklyTaskMode === 'DivergentUniverse'" class="weekly-subblock">
@@ -342,7 +277,7 @@
                 v-else
                 type="warning"
                 show-icon
-                message="请先在脚本页 TaskMapping 选择 SRA 或 三月七"
+                message="请先在脚本页配置至少一个已加载 HSR 引擎的路径"
               />
             </div>
 
@@ -380,7 +315,7 @@
                   <div>- 标准博弈</div>
                   <div>- 最低难度</div>
                   <div>- SRA 保存的第一套模板</div>
-                  <div>- 运行次数 2</div>
+                  <div>- 运行次数 1</div>
                   <div>- 开拓者名称：使用上方「用户名」</div>
                   <div class="strategy-warning">
                     - 重点提示：SRA 货币战争不会自动领取积分奖励，请在游戏内手动领取。
@@ -391,21 +326,30 @@
                 v-else
                 type="warning"
                 show-icon
-                message="请先在脚本页 TaskMapping 选择 SRA 或 三月七"
+                message="请先在脚本页配置至少一个已加载 HSR 引擎的路径"
               />
             </div>
           </div>
 
           <!-- 关卡配置 -->
           <StageConfigSection
+            v-if="dailyTaskEngine"
             :form-data="formData"
             :loading="isSaving"
-            :daily-engine="getTaskMapping('Daily')"
+            :daily-engine="dailyTaskEngine"
             :stage-options="hsrStageOptions"
             :stage-options-loading="hsrStageOptionsLoading"
             :stage-options-error="hsrStageOptionsError"
             @save="handleFieldSave"
           />
+          <div v-else class="form-section">
+            <div class="section-header"><h3>体力配置</h3></div>
+            <a-alert
+              type="warning"
+              show-icon
+              message="请先在脚本页配置至少一个已加载 HSR 引擎的路径后，再配置体力关卡。"
+            />
+          </div>
 
           <!-- 进度与重置 (历战余响开始日 已下沉到 体力配置 区) -->
           <div class="form-section">
@@ -466,36 +410,6 @@
                 </a-space>
               </a-col>
             </a-row>
-
-            <!-- 三深渊本月进度（每月一次；后端本月已完成会自动跳过三深渊） -->
-            <a-row :gutter="24" align="middle" style="margin-top: 16px">
-              <a-col :span="10">
-                <div class="progress-group">
-                  <span class="progress-label">三深渊</span>
-                  <a-tag :color="abyssCompletedThisMonth ? 'green' : 'orange'">
-                    本月 {{ abyssCompletedThisMonth ? '已完成' : '未完成' }}
-                  </a-tag>
-                  <span
-                    v-if="hasValidCompletionDate(formData.Data.AbyssLastCompletionDate)"
-                    class="date-hint"
-                  >
-                    最近完成：{{ formData.Data.AbyssLastCompletionDate }}
-                  </span>
-                </div>
-              </a-col>
-              <a-col :span="14">
-                <a-space>
-                  <a-button
-                    size="small"
-                    :disabled="abyssCompletedThisMonth"
-                    @click="markAbyssCompleted"
-                  >
-                    标记完成
-                  </a-button>
-                  <a-button size="small" danger @click="resetAbyssProgress"> 重置 </a-button>
-                </a-space>
-              </a-col>
-            </a-row>
           </div>
         </a-form>
       </a-card>
@@ -517,15 +431,7 @@ import {
 } from '@/composables/useHSRPluginApi'
 import { DEFAULT_HSR_TASK_MAPPING, resolveTaskMappingValue } from '@/types/script'
 import StageConfigSection from '@/views/HSRUserEdit/StageConfigSection.vue'
-import AbyssConfigSection from '@/views/HSRUserEdit/AbyssConfigSection.vue'
-import { parseAbyssSnapshots } from '@/views/HSRUserEdit/snapshot'
-import type { HSRAbyssKey } from '@/views/HSRUserEdit/snapshot'
-import type {
-  AbyssSnapshotImportResponse,
-  HSRDynamicStageOptionsData,
-  HSRUserConfigAbyss,
-  HSRUserConfigData,
-} from '@/views/HSRUserEdit/types'
+import type { HSRDynamicStageOptionsData, HSRUserConfigData } from '@/views/HSRUserEdit/types'
 import {
   buildHSRCapabilityView,
   resolveCapabilityTaskEngine,
@@ -547,13 +453,6 @@ const getCurrentDate = (): string => {
   const mm = String(d.getMonth() + 1).padStart(2, '0')
   const dd = String(d.getDate()).padStart(2, '0')
   return `${yyyy}-${mm}-${dd}`
-}
-
-const getCurrentMonth = (): string => {
-  const d = new Date()
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  return `${yyyy}-${mm}`
 }
 
 const logger = window.electronAPI.getLogger('HSR 用户编辑')
@@ -583,7 +482,6 @@ type HSRTaskMapping = Partial<
   Record<'Daily' | 'ReceiveRewards' | 'DivergentUniverse' | 'CurrencyWars', HSREngine>
 >
 type HSRScriptConfig = {
-  Engine?: { EnabledEngines?: HSREngine[] }
   SRA?: { Path?: string }
   M7A?: { Path?: string; LowPerformanceMode?: boolean }
   TaskMapping?: HSRTaskMapping
@@ -624,17 +522,18 @@ const hasValidCompletionDate = (value?: string | null): boolean => {
 // 根据脚本页 TaskMapping 返回指定模块的执行引擎（SRA 或 M7A）
 const getTaskMapping = (
   moduleKey: 'Daily' | 'ReceiveRewards' | 'DivergentUniverse' | 'CurrencyWars'
-): 'SRA' | 'M7A' => {
+): HSREngine | undefined => {
   const mapping: HSRTaskMapping = {
     ...DEFAULT_HSR_TASK_MAPPING,
     ...(scriptConfig.value?.TaskMapping ?? {}),
   }
   return (
     resolveCapabilityTaskEngine(capabilitySnapshot.value, moduleKey, mapping[moduleKey]) ??
-    resolveTaskMappingValue(mapping[moduleKey], effectiveEngines.value) ??
-    'M7A'
+    resolveTaskMappingValue(mapping[moduleKey], effectiveEngines.value)
   )
 }
+
+const dailyTaskEngine = computed(() => getTaskMapping('Daily'))
 
 const weeklyTaskMode = computed<WeeklyTaskMode>(() => {
   if (formData.TaskSwitch.DivergentUniverse) return 'DivergentUniverse'
@@ -676,6 +575,12 @@ const handleWeeklyTaskModeChange = async (mode: WeeklyTaskMode) => {
 const loadHsrStageOptions = async () => {
   if (!scriptId || !scriptConfig.value) return
   const engine = getTaskMapping('Daily')
+  if (!engine) {
+    hsrStageOptions.value = null
+    hsrStageOptionsError.value = ''
+    hsrStageOptionsLoading.value = false
+    return
+  }
   hsrStageOptionsLoading.value = true
   hsrStageOptionsError.value = ''
   try {
@@ -726,32 +631,6 @@ const currencyWarsTrailblazerName = computed(() => {
   return String(formData.Info.Name ?? '').trim() || '未设置用户名'
 })
 
-const ABYSS_DEFS: { key: HSRAbyssKey }[] = [
-  { key: 'ForgottenHall' },
-  { key: 'PureFiction' },
-  { key: 'Apocalyptic' },
-]
-
-const isNonEmptyObject = (value: unknown): value is Record<string, unknown> => {
-  return (
-    !!value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0
-  )
-}
-
-// 三深渊开关开启时会一次执行三份快照，缺任一快照后端会清晰报错。
-const abyssSnapshotsReady = computed<boolean>(() => {
-  const snapshots = parseAbyssSnapshots(formData.Abyss?.Snapshots)
-  return ABYSS_DEFS.every(def => isNonEmptyObject(snapshots[def.key]))
-})
-
-// 三深渊本月是否已完成（跨月内存重置：与后端 _resolve_abyss_monthly_skip 对齐）。
-// 仅当 AbyssLastResetMonth == 当前自然月 且 AbyssCompletedThisMonth 为真才算"本月已完成"。
-const abyssCompletedThisMonth = computed<boolean>(() => {
-  const data = formData.Data
-  if (!data?.AbyssCompletedThisMonth) return false
-  return (data.AbyssLastResetMonth ?? '') === getCurrentMonth()
-})
-
 const handleTaskSwitchToggle = async (
   moduleKey: keyof HSRUserConfigData['TaskSwitch'],
   enabled: boolean
@@ -794,7 +673,6 @@ const formData = reactive<HSRUserConfigData>({
     ReceiveRewards: false,
     DivergentUniverse: false,
     CurrencyWars: false,
-    ForgottenHall: false,
   },
   TaskOpt: {
     EchoOfWarWeekday: 'Monday',
@@ -806,12 +684,6 @@ const formData = reactive<HSRUserConfigData>({
     WeeklyCompletedThisWeek: false,
     WeeklyLastResetWeek: '',
     WeeklyLastCompletionDate: '',
-    AbyssCompletedThisMonth: false,
-    AbyssLastResetMonth: '',
-    AbyssLastCompletionDate: '',
-  },
-  Abyss: {
-    Snapshots: {},
   },
 })
 
@@ -919,47 +791,6 @@ const resetWeeklyProgress = async () => {
   )
 }
 
-// 三深渊 — 标记本月完成
-// 同时写入当前自然月：后端 _resolve_abyss_monthly_skip 用 AbyssLastResetMonth ==
-// 当前自然月 判断 Data 是否属于本月，否则会按"新月已重置"重新算未完成。
-const markAbyssCompleted = async () => {
-  const today = getCurrentDate()
-  const month = getCurrentMonth()
-  formData.Data.AbyssCompletedThisMonth = true
-  formData.Data.AbyssLastCompletionDate = today
-  formData.Data.AbyssLastResetMonth = month
-  await saveUserPatch(
-    {
-      Data: {
-        AbyssCompletedThisMonth: true,
-        AbyssLastCompletionDate: today,
-        AbyssLastResetMonth: month,
-      },
-    },
-    `三深渊标记本月完成 (${month})`,
-    '三深渊标记本月完成失败'
-  )
-}
-
-// 三深渊 — 重置本月进度
-const resetAbyssProgress = async () => {
-  const month = getCurrentMonth()
-  formData.Data.AbyssCompletedThisMonth = false
-  formData.Data.AbyssLastResetMonth = month
-  formData.Data.AbyssLastCompletionDate = ''
-  await saveUserPatch(
-    {
-      Data: {
-        AbyssCompletedThisMonth: false,
-        AbyssLastResetMonth: month,
-        AbyssLastCompletionDate: '',
-      },
-    },
-    `三深渊本月进度已重置（${month}）`,
-    '三深渊本月进度重置失败'
-  )
-}
-
 const handleFieldSave = async (key: string, value: unknown) => {
   const parts = key.split('.')
   let localTarget = formData as unknown as MutableRecord
@@ -998,17 +829,6 @@ const handleFieldSave = async (key: string, value: unknown) => {
 }
 
 const handleCancel = () => router.push('/scripts')
-
-// 三深渊快照导入后回调：由父页面统一同步本地表单状态。
-const handleAbyssImported = (response: AbyssSnapshotImportResponse) => {
-  const updated = response?.updatedUserData
-  if (updated?.Abyss) {
-    formData.Abyss = {
-      Snapshots: (updated.Abyss as HSRUserConfigAbyss).Snapshots ?? {},
-    }
-  }
-  logger.info('三深渊快照导入完成')
-}
 
 onMounted(async () => {
   pluginSystemSubscriptionId = subscribe({ id: 'PluginSystem' }, handlePluginSystemMessage)
@@ -1085,7 +905,6 @@ const loadUserData = async () => {
           formData.TaskSwitch = { ...formData.TaskSwitch, ...userData.TaskSwitch }
         if (userData.TaskOpt) formData.TaskOpt = { ...formData.TaskOpt, ...userData.TaskOpt }
         if (userData.Data) formData.Data = { ...formData.Data, ...userData.Data }
-        if (userData.Abyss) formData.Abyss = { ...formData.Abyss, ...userData.Abyss }
         logger.info('用户数据加载成功')
       } else {
         message.error('用户不存在')
@@ -1166,7 +985,7 @@ const loadUserData = async () => {
   border-radius: 12px;
 }
 
-/* 周常/月常区域内的子块（三深渊 / 差分宇宙 / 货币战争）：与主行用虚线分隔 */
+/* 周常区域内的子块（差分宇宙 / 货币战争）：与主行用虚线分隔 */
 .weekly-subblock {
   margin-top: 16px;
   padding-top: 16px;

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from automas_script_hsr import (
@@ -45,14 +44,6 @@ M7A_TASKS = (
         strategy_lines=("应用货币战争白名单补丁", "调用 M7A currencywars"),
         native_tasks=("currencywars",),
     ),
-    HSRTaskDescriptor(
-        key="ForgottenHall",
-        name="三深渊",
-        phase="monthly",
-        description="混沌回忆、虚构叙事、末日幻影",
-        strategy_lines=("使用已导入的三类快照", "按三类 M7A 命令顺序执行"),
-        native_tasks=("forgottenhall", "purefiction", "apocalyptic"),
-    ),
 )
 
 M7A_DESCRIPTOR = HSRAdapterDescriptor(
@@ -61,7 +52,7 @@ M7A_DESCRIPTOR = HSRAdapterDescriptor(
     version="2026.4.27",
     tasks=M7A_TASKS,
     supported_modes=("AutoProxy",),
-    capabilities=frozenset({"stage_catalog", "abyss_snapshot"}),
+    capabilities=frozenset({"stage_catalog"}),
 )
 
 
@@ -82,20 +73,3 @@ class M7ATaskCatalog:
         from .stages import load_m7a_stage_options
 
         return load_m7a_stage_options(script_config)
-
-    def import_abyss_snapshot(
-        self,
-        *,
-        script_config: Any,
-        user_config: Any,
-    ) -> dict[str, Any]:
-        _ = user_config
-        from .config import read_m7a_abyss_snapshots
-
-        root = str(script_config.get("M7A", "Path") or "").strip()
-        if not root:
-            raise ValueError("请设置三月七助手路径")
-        snapshots, _items = read_m7a_abyss_snapshots(
-            Path(root) / "config.yaml"
-        )
-        return snapshots

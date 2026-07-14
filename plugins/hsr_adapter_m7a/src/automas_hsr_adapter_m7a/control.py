@@ -82,7 +82,6 @@ class HSRM7AControl:
         module_timeout_seconds: Callable[[str], int],
         queue_eow_completion: Callable[[str, str, bool, object, str], None],
         queue_weekly_completion: Callable[[str, str, str], None],
-        queue_abyss_completion: Callable[[str, str], None],
         record_module_result: Callable[..., None],
     ) -> None:
         self.script_config = script_config
@@ -91,7 +90,6 @@ class HSRM7AControl:
         self._module_timeout_seconds = module_timeout_seconds
         self._queue_eow_completion = queue_eow_completion
         self._queue_weekly_completion = queue_weekly_completion
-        self._queue_abyss_completion = queue_abyss_completion
         self._record_module_result = record_module_result
 
     async def run_m7a_command(
@@ -264,83 +262,6 @@ class HSRM7AControl:
             on_success=on_success,
         )
 
-    def create_monthly_item(
-        self,
-        *,
-        user_item: UserItem,
-        user_cfg: Any,
-        user_name: str,
-        uid: str,
-        module: HSRTaskModule,
-        m7a_path: str,
-        m7a_runner: M7ARunner,
-    ) -> HSRRunItem:
-        """创建三深渊月常队列项。"""
-
-        timeout_seconds = self._module_timeout_seconds(module.key)
-        m7a_config_path = Path(m7a_path) / "config.yaml"
-        abyss_runs: list[tuple[str, str, str]] = []
-        abyss_patch: dict = {"cloud_game_enable": False}
-        for abyss_type, command, label in m7a.ABYSS_RUN_SEQUENCE:
-            try:
-                single_patch = m7a.build_single_abyss_patch(user_cfg, abyss_type)
-            except Exception as e:
-                raise RuntimeError(
-                    f"用户「{user_name}」三深渊「{label}」快照无效，"
-                    f"三深渊未执行：{e}"
-                ) from e
-            abyss_patch.update(single_patch)
-            abyss_runs.append((abyss_type, command, label))
-
-        abyss_patch["forgottenhall_enable"] = True
-        abyss_patch["purefiction_enable"] = True
-        abyss_patch["apocalyptic_enable"] = True
-
-        order_text = " → ".join(label for _, _, label in abyss_runs)
-        description = f"M7A 三深渊：{order_text}（使用已导入快照）"
-
-        async def run_m7a_monthly():
-            if not m7a_config_path.exists():
-                raise RuntimeError(f"M7A config.yaml 不存在: {m7a_config_path}")
-
-            self.write_m7a_patch(
-                m7a_config_path,
-                abyss_patch,
-                whitelist=m7a.M7A_FORGOTTEN_HALL_PATCH_WHITELIST,
-            )
-            last_result: object | None = None
-            for _, command, label in abyss_runs:
-                result = await self.run_m7a_command(
-                    m7a_runner,
-                    user_name,
-                    label,
-                    command,
-                    timeout_seconds=timeout_seconds,
-                )
-                last_result = result
-                if not result.success:
-                    return result
-
-            return last_result
-
-        return HSRRunItem(
-            user_item=user_item,
-            user_cfg=user_cfg,
-            user_name=user_name,
-            user_id=uid,
-            phase="monthly",
-            module_key=module.key,
-            module_name=module.name,
-            script="M7A",
-            description=description,
-            timeout_seconds=timeout_seconds,
-            run=run_m7a_monthly,
-            on_success=lambda _result, uid=uid, user_name=user_name: self._queue_abyss_completion(
-                uid,
-                user_name,
-            ),
-        )
-
     def create_module_item(
         self,
         *,
@@ -483,17 +404,6 @@ class HSRM7AControl:
                         self._record_module_result,
                     )
                 ),
-            )
-
-        if module.key == "ForgottenHall":
-            return self.create_monthly_item(
-                user_item=user_item,
-                user_cfg=user_cfg,
-                user_name=user_name,
-                uid=uid,
-                module=module,
-                m7a_path=m7a_path,
-                m7a_runner=m7a_runner,
             )
 
         return None

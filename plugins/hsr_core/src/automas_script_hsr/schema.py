@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict
 
 from app.plugins.fields import PluginField
 from app.utils.constants import UTC4, UTC8
@@ -16,28 +16,6 @@ class HSRModel(BaseModel):
 
 class HSRInfoConfig(HSRModel):
     Name: str = PluginField(default="新 HSR 脚本", title="脚本名称")
-
-
-class HSREngineConfig(HSRModel):
-    EnabledEngines: list[str] = PluginField(
-        default_factory=list,
-        title="启用引擎",
-        ui_type="multiselect",
-        options=["SRA", "M7A"],
-        option_labels={"SRA": "SRA", "M7A": "三月七助手"},
-        help="未选择的引擎在当前脚本内等同插件未生效。",
-    )
-
-    @field_validator("EnabledEngines")
-    @classmethod
-    def validate_enabled_engines(cls, value: list[str]) -> list[str]:
-        normalized = list(dict.fromkeys(str(item).strip().upper() for item in value))
-        if not normalized:
-            raise ValueError("HSR 脚本至少选择一个引擎")
-        unsupported = [item for item in normalized if item not in {"SRA", "M7A"}]
-        if unsupported:
-            raise ValueError(f"不支持的 HSR 引擎: {', '.join(unsupported)}")
-        return normalized
 
 
 class HSRSRAConfig(HSRModel):
@@ -98,12 +76,6 @@ class HSRRunConfig(HSRModel):
         min=1,
         max=9999,
     )
-    MonthlyTimeLimit: int = PluginField(
-        default=60,
-        title="月常任务超时（分钟）",
-        min=1,
-        max=9999,
-    )
 
 
 class HSRTaskMappingConfig(HSRModel):
@@ -124,10 +96,6 @@ class HSRTaskMappingConfig(HSRModel):
 
 class HSRConfig(HSRModel):
     Info: HSRInfoConfig = PluginField(default_factory=HSRInfoConfig, title="基础信息")
-    Engine: HSREngineConfig = PluginField(
-        default_factory=HSREngineConfig,
-        title="引擎选择",
-    )
     SRA: HSRSRAConfig = PluginField(default_factory=HSRSRAConfig, title="SRA")
     M7A: HSRM7AConfig = PluginField(default_factory=HSRM7AConfig, title="三月七助手")
     Game: HSRGameConfig = PluginField(default_factory=HSRGameConfig, title="游戏配置")
@@ -191,16 +159,23 @@ def build_hsr_tags(config: Any) -> str:
     now = datetime.now(tz=UTC8)
     iso_year, iso_week, _ = now.isocalendar()
     current_week = f"{iso_year:04d}-W{iso_week:02d}"
-    current_month = now.strftime("%Y-%m")
     eow_done = bool(config.get("Data", "EchoOfWarCompletedThisWeek")) and (
         config.get("Data", "EchoOfWarLastResetWeek") == current_week
     )
     weekly_done = bool(config.get("Data", "WeeklyCompletedThisWeek")) and (
         config.get("Data", "WeeklyLastResetWeek") == current_week
     )
-    abyss_done = bool(config.get("Data", "AbyssCompletedThisMonth")) and (
-        config.get("Data", "AbyssLastResetMonth") == current_month
-    )
+    if weekly_done:
+        if bool(config.get("TaskSwitch", "DivergentUniverse")):
+            weekly_text = "差分宇宙 已完成"
+        elif bool(config.get("TaskSwitch", "CurrencyWars")):
+            weekly_text = "货币战争 已完成"
+        else:
+            weekly_text = "周常 已完成"
+        weekly_color = "green"
+    else:
+        weekly_text = "周常：未完成"
+        weekly_color = "orange"
     tags.extend(
         [
             {
@@ -208,12 +183,8 @@ def build_hsr_tags(config: Any) -> str:
                 "color": "green" if eow_done else "orange",
             },
             {
-                "text": "周常：已完成" if weekly_done else "周常：未完成",
-                "color": "green" if weekly_done else "orange",
-            },
-            {
-                "text": "三深渊：已完成" if abyss_done else "三深渊：未完成",
-                "color": "green" if abyss_done else "orange",
+                "text": weekly_text,
+                "color": weekly_color,
             },
         ]
     )
@@ -267,9 +238,6 @@ class HSRUserDataConfig(HSRModel):
     WeeklyLastCompletionDate: str = PluginField(default="2000-01-01", title="周常完成日期")
     WeeklyCompletedThisWeek: bool = PluginField(default=False, title="周常本周完成")
     WeeklyLastResetWeek: str = PluginField(default="2000-W01", title="周常重置周")
-    AbyssLastCompletionDate: str = PluginField(default="2000-01-01", title="三深渊完成日期")
-    AbyssCompletedThisMonth: bool = PluginField(default=False, title="三深渊本月完成")
-    AbyssLastResetMonth: str = PluginField(default="2000-01", title="三深渊重置月")
 
 
 class HSRUserTaskSwitchConfig(HSRModel):
@@ -277,7 +245,6 @@ class HSRUserTaskSwitchConfig(HSRModel):
     ReceiveRewards: bool = PluginField(default=True, title="领取奖励")
     DivergentUniverse: bool = PluginField(default=False, title="差分宇宙")
     CurrencyWars: bool = PluginField(default=False, title="货币战争")
-    ForgottenHall: bool = PluginField(default=False, title="三深渊")
 
 
 class HSRUserStageConfig(HSRModel):
@@ -311,15 +278,6 @@ class HSRUserTaskOptConfig(HSRModel):
     ] = PluginField(default="Monday", title="历战余响开始星期")
 
 
-class HSRUserAbyssConfig(HSRModel):
-    Snapshots: dict[str, Any] = PluginField(
-        default_factory=dict,
-        title="三深渊快照",
-        ui_type="json",
-        json_type="object",
-    )
-
-
 class HSRUserNotifyConfig(HSRModel):
     Enabled: bool = PluginField(default=False, title="启用通知")
     IfSendStatistic: bool = PluginField(default=False, title="发送统计")
@@ -345,5 +303,4 @@ class HSRUserConfig(HSRModel):
     )
     Stage: HSRUserStageConfig = PluginField(default_factory=HSRUserStageConfig, title="关卡配置")
     TaskOpt: HSRUserTaskOptConfig = PluginField(default_factory=HSRUserTaskOptConfig, title="任务选项")
-    Abyss: HSRUserAbyssConfig = PluginField(default_factory=HSRUserAbyssConfig, title="三深渊")
     Notify: HSRUserNotifyConfig = PluginField(default_factory=HSRUserNotifyConfig, title="通知")

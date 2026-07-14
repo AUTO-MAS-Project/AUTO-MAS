@@ -1534,19 +1534,6 @@ class HSRUserConfig(ConfigBase):
         self.Data_WeeklyLastResetWeek = ConfigItem(
             "Data", "WeeklyLastResetWeek", "2000-W01"
         )
-        ## HSR 三深渊月度（每月一次）—— 三深渊最近一次完成日期
-        self.Data_AbyssLastCompletionDate = ConfigItem(
-            "Data", "AbyssLastCompletionDate", "2000-01-01",
-            DateTimeValidator("%Y-%m-%d"),
-        )
-        ## HSR 三深渊月度（每月一次）—— 本月是否已完成三深渊（仅依据 Data 字段判断）
-        self.Data_AbyssCompletedThisMonth = ConfigItem(
-            "Data", "AbyssCompletedThisMonth", False, BoolValidator()
-        )
-        ## HSR 三深渊月度（每月一次）—— 三深渊上次重置自然月（形如 "2025-06"）
-        self.Data_AbyssLastResetMonth = ConfigItem(
-            "Data", "AbyssLastResetMonth", "2000-01"
-        )
         ## TaskSwitch ------------------------------------------------------
         ## 模块执行开关
         self.TaskSwitch_Daily = ConfigItem("TaskSwitch", "Daily", True, BoolValidator())
@@ -1559,10 +1546,6 @@ class HSRUserConfig(ConfigBase):
         self.TaskSwitch_CurrencyWars = ConfigItem(
             "TaskSwitch", "CurrencyWars", False, BoolValidator()
         )
-        self.TaskSwitch_ForgottenHall = ConfigItem(
-            "TaskSwitch", "ForgottenHall", False, BoolValidator()
-        )
-
         ## Stage -----------------------------------------------------------
         ## 关卡通道
         self.Stage_Channel = ConfigItem(
@@ -1589,10 +1572,6 @@ class HSRUserConfig(ConfigBase):
                  "Friday", "Saturday", "Sunday"]
             ),
         )
-
-        ## Abyss (三深渊) ---------------------------------------------------
-        ## 三深渊快照集合（从 M7A config.yaml 导入的 JSON 对象）
-        self.Abyss_Snapshots = ConfigItem("Abyss", "Snapshots", "{}", JSONValidator())
 
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
@@ -1673,7 +1652,6 @@ class HSRUserConfig(ConfigBase):
         now = datetime.now(tz=UTC8)
         iso_year, iso_week, _ = now.isocalendar()
         current_week = f"{iso_year:04d}-W{iso_week:02d}"
-        current_month = now.strftime("%Y-%m")
 
         eow_done = (
             bool(self.get("Data", "EchoOfWarCompletedThisWeek"))
@@ -1702,17 +1680,6 @@ class HSRUserConfig(ConfigBase):
         else:
             weekly_text, weekly_color = "周常：未完成", "orange"
         tags.append({"text": weekly_text, "color": weekly_color})
-
-        abyss_done = (
-            bool(self.get("Data", "AbyssCompletedThisMonth"))
-            and self.get("Data", "AbyssLastResetMonth") == current_month
-        )
-        tags.append(
-            {
-                "text": "三深渊：已完成" if abyss_done else "三深渊：未完成",
-                "color": "green" if abyss_done else "orange",
-            }
-        )
 
         notes = self.get("Info", "Notes")
         tags.append(
@@ -1765,16 +1732,11 @@ class HSRConfig(ConfigBase):
         self.Run_WeeklyTimeLimit = ConfigItem(
             "Run", "WeeklyTimeLimit", 60, RangeValidator(1, 9999)
         )
-        ## 月常任务超时限制（分钟）
-        self.Run_MonthlyTimeLimit = ConfigItem(
-            "Run", "MonthlyTimeLimit", 60, RangeValidator(1, 9999)
-        )
         ## 低性能兼容模式（仅三月七差分宇宙使用，映射到 weekly_divergent_stable_mode）
         self.Run_LowPerformanceMode = ConfigItem(
             "Run", "LowPerformanceMode", False, BoolValidator()
         )
         ## TaskMapping -----------------------------------------------------
-        ## 仅用于读取旧数据并迁移到 HSR 插件容器。
         legacy_task_mapping = {
             "Daily": (("M7A", "SRA"), "SRA"),
             "ReceiveRewards": (("M7A", "SRA"), "SRA"),

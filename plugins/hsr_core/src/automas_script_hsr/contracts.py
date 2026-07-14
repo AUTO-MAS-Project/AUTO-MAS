@@ -5,7 +5,7 @@ from typing import Any, Awaitable, Callable, Literal, Protocol, runtime_checkabl
 
 
 HSREngine = Literal["SRA", "M7A"]
-HSRPhase = Literal["daily", "weekly", "monthly"]
+HSRPhase = Literal["daily", "weekly"]
 HSRRunStatus = Literal["completed", "failed", "incomplete", "skipped"]
 HSRLogCallback = Callable[[str], None]
 
@@ -124,14 +124,6 @@ class HSRTaskCatalogProvider(Protocol):
         slot: str,
     ) -> tuple[HSRStageCategory, ...] | Awaitable[tuple[HSRStageCategory, ...]]: ...
 
-    def import_abyss_snapshot(
-        self,
-        *,
-        script_config: Any,
-        user_config: Any,
-    ) -> dict[str, Any] | Awaitable[dict[str, Any]]: ...
-
-
 @runtime_checkable
 class HSRControllerSession(Protocol):
     """单次控制器运行会话。"""
@@ -182,7 +174,7 @@ class HSRCapabilitySnapshot:
     available: bool
     unavailable_reason: str | None
     candidate_engines: tuple[HSREngine, ...]
-    selected_engines: tuple[HSREngine, ...]
+    configured_engines: tuple[HSREngine, ...]
     effective_engines: tuple[HSREngine, ...]
     supported_modes: tuple[str, ...]
     adapters: tuple[dict[str, Any], ...]

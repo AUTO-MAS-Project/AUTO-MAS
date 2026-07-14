@@ -473,7 +473,6 @@ export type HSRTaskMapping = Partial<
 
 export interface HSRScriptConfig {
   Info?: { Name?: string }
-  Engine?: { EnabledEngines?: Array<'SRA' | 'M7A'> }
   SRA?: { Path?: string }
   M7A?: { Path?: string; LowPerformanceMode?: boolean }
   Game?: { Path?: string; Arguments?: string; WaitTime?: number }
@@ -481,7 +480,6 @@ export interface HSRScriptConfig {
     RunTimesLimit?: number
     DailyTimeLimit?: number
     WeeklyTimeLimit?: number
-    MonthlyTimeLimit?: number
   }
   TaskMapping?: HSRTaskMapping
 }

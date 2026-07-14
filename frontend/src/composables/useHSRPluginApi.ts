@@ -16,7 +16,7 @@ export interface HSRAdapterCapability {
 export interface HSRTaskCapability {
   key: string
   name: string
-  phase: 'daily' | 'weekly' | 'monthly'
+  phase: 'daily' | 'weekly'
   description: string
   engines: HSREngine[]
 }
@@ -26,7 +26,7 @@ export interface HSRCapabilitySnapshot {
   available: boolean
   unavailable_reason?: string | null
   candidate_engines: HSREngine[]
-  selected_engines: HSREngine[]
+  configured_engines: HSREngine[]
   effective_engines: HSREngine[]
   supported_modes: string[]
   adapters: HSRAdapterCapability[]
@@ -100,14 +100,5 @@ export function useHSRPluginApi() {
     )
   }
 
-  const importM7AAbyssSnapshot = async (scriptId: string, userId: string) => {
-    return requestPluginData(
-      axios.post<PluginEnvelope<Record<string, unknown>>>(url('/m7a/abyss-snapshot/import'), {
-        scriptId,
-        userId,
-      })
-    )
-  }
-
-  return { getCapabilities, getStageOptions, importM7AAbyssSnapshot }
+  return { getCapabilities, getStageOptions }
 }

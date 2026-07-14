@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import inspect
-import json
 import uuid
 from typing import Any
 
@@ -18,7 +17,6 @@ from app.plugins.realtime import schedule_plugin_snapshot
 from app.plugins.script_config_store import ScriptConfigStore
 
 from .adapter import HSRAdapterHooks
-from .migration import migrate_legacy_hsr_config
 from .registry import HSRRegistryService
 from .schema import HSRConfig, HSRUserConfig
 
@@ -38,15 +36,6 @@ schema = {
         "title": "No plugin-level configuration",
     },
 }
-
-SCRIPT_TYPE_BINDINGS = [
-    {
-        "type_key": "HSR",
-        "display_name": "HSR脚本",
-        "script_config_class_name": "HSRConfig",
-    }
-]
-
 
 class Plugin(ScriptAdapterPlugin):
     """注册 HSR 脚本类型、聚合服务和插件 HTTP 接口。"""
@@ -72,8 +61,6 @@ class Plugin(ScriptAdapterPlugin):
                 supported_modes=("AutoProxy", "ManualReview"),
                 icon="HSR",
                 editor_kind="plugin:automas_script_hsr",
-                legacy_config_class_name="HSRConfig",
-                legacy_user_config_class_name="HSRUserConfig",
                 is_builtin=False,
                 record_capability_resolver=self.registry.resolve_record_capability,
                 metadata={
@@ -82,14 +69,6 @@ class Plugin(ScriptAdapterPlugin):
                     "framework": "hsr",
                     "source": "automas_script_hsr",
                     "theme_color": "purple",
-                    "legacy_config_migrator": migrate_legacy_hsr_config,
-                    "initial_config_factory": lambda: {
-                        "Engine": {
-                            "EnabledEngines": list(
-                                self.registry.candidate_engines()
-                            )
-                        }
-                    },
                 },
             )
         ]
@@ -124,11 +103,6 @@ class Plugin(ScriptAdapterPlugin):
             self._stage_options,
             methods=("GET",),
         )
-        self.ctx.server.http(
-            "/hsr/v1/m7a/abyss-snapshot/import",
-            self._import_m7a_abyss_snapshot,
-            methods=("POST",),
-        )
         self.ctx.logger.info("hsr.registry.v1 ready")
 
     async def on_stop(self, reason: str) -> None:
@@ -161,9 +135,7 @@ class Plugin(ScriptAdapterPlugin):
         try:
             store, script_model = await self._load_script(script_id)
             _ = store
-            selected = script_model.get("Engine", "EnabledEngines") or []
             snapshot = self.registry.snapshot(
-                selected_engines=selected,
                 script_config=script_model,
             )
             return self._success(snapshot.asdict())
@@ -180,8 +152,7 @@ class Plugin(ScriptAdapterPlugin):
 
         try:
             store, script_model = await self._load_script(script_id)
-            selected = script_model.get("Engine", "EnabledEngines") or []
-            snapshot = self.registry.snapshot(selected_engines=selected)
+            snapshot = self.registry.snapshot(script_config=script_model)
             if engine not in snapshot.effective_engines:
                 return self._error(409, f"{engine} 未在当前 HSR 脚本中生效")
             user_model = await store.load_user_model(user_id) if user_id else None
@@ -196,47 +167,6 @@ class Plugin(ScriptAdapterPlugin):
                 {
                     "engine": engine,
                     "categories": [category.asdict() for category in result],
-                }
-            )
-        except (KeyError, ValueError, LookupError) as exc:
-            return self._error(422, str(exc))
-
-    async def _import_m7a_abyss_snapshot(
-        self,
-        request: PluginHttpRequest,
-    ) -> PluginHttpResponse:
-        payload = request.json if isinstance(request.json, dict) else {}
-        script_id = str(payload.get("scriptId") or "").strip()
-        user_id = str(payload.get("userId") or "").strip()
-        if not script_id or not user_id:
-            return self._error(400, "缺少 scriptId 或 userId")
-
-        try:
-            store, script_model = await self._load_script(script_id)
-            selected = script_model.get("Engine", "EnabledEngines") or []
-            snapshot = self.registry.snapshot(selected_engines=selected)
-            if "M7A" not in snapshot.effective_engines:
-                return self._error(409, "M7A 未在当前 HSR 脚本中生效")
-            user_model = await store.load_user_model(user_id)
-            result = self.registry.get_group("M7A").task_catalog.import_abyss_snapshot(
-                script_config=script_model,
-                user_config=user_model,
-            )
-            if inspect.isawaitable(result):
-                result = await result
-            await user_model.set(
-                "Abyss",
-                "Snapshots",
-                json.dumps(result, ensure_ascii=False),
-            )
-            await store.save_user_model(user_id, user_model)
-            return self._success(
-                {
-                    "items": [
-                        {"key": key, "snapshot": value}
-                        for key, value in result.items()
-                    ],
-                    "userConfig": await store.read_user_data(user_id),
                 }
             )
         except (KeyError, ValueError, LookupError) as exc:
