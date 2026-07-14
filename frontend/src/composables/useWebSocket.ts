@@ -123,6 +123,7 @@ interface GlobalWSStorage {
 }
 
 const WS_STORAGE_KEY = Symbol.for('GLOBAL_WEBSOCKET_PERSISTENT')
+type GlobalWSWindow = Window & { [WS_STORAGE_KEY]?: GlobalWSStorage }
 
 const initGlobalStorage = (): GlobalWSStorage => ({
   wsRef: null,
@@ -163,10 +164,11 @@ const initGlobalStorage = (): GlobalWSStorage => ({
 })
 
 const getGlobalStorage = (): GlobalWSStorage => {
-  if (!(window as any)[WS_STORAGE_KEY]) {
-    ;(window as any)[WS_STORAGE_KEY] = initGlobalStorage()
+  const globalWindow: GlobalWSWindow = window
+  if (!globalWindow[WS_STORAGE_KEY]) {
+    globalWindow[WS_STORAGE_KEY] = initGlobalStorage()
   }
-  return (window as any)[WS_STORAGE_KEY]
+  return globalWindow[WS_STORAGE_KEY]
 }
 
 // ====== 状态设置 ======

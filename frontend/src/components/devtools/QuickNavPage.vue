@@ -170,8 +170,8 @@ const toggleConsole = () => {
     logger.info(`Vue版本: ${getCurrentInstance()?.appContext.app.version || 'Unknown'}`)
     logger.info(`localStorage项目数: ${Object.keys(localStorage).length}`)
     logger.info(`sessionStorage项目数: ${Object.keys(sessionStorage).length}`)
-    if ((window as any).wsDebug) {
-      logger.info(`Websocket端点: ${(window as any).wsDebug}`)
+    if (window.wsDebug) {
+      logger.info(`Websocket端点: ${window.wsDebug}`)
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)

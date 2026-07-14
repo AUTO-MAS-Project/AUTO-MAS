@@ -238,5 +238,18 @@ declare global {
   interface Window {
     electronAPI: ElectronAPI
     pluginAPI: PluginAPI
+    __AUTO_MAS_PLUGIN_VUE__?: typeof import('vue')
+    __debugShowQuestion?: (data: unknown) => void
+    wsDebug?: string
+    debugScheduler?: typeof import('@/utils/scheduler-debug').debugScheduler
+    testWebSocketConnection?: typeof import('@/utils/scheduler-debug').testWebSocketConnection
+  }
+
+  interface Performance {
+    memory?: {
+      usedJSHeapSize: number
+      totalJSHeapSize: number
+      jsHeapSizeLimit: number
+    }
   }
 }
