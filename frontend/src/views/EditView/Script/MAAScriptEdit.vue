@@ -7,7 +7,7 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img src="../../../assets/MAA.png" alt="MAA" class="breadcrumb-logo" />
+            <img src="@/assets/MAA.png" alt="MAA" class="breadcrumb-logo" />
             编辑脚本
           </div>
         </a-breadcrumb-item>
