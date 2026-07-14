@@ -38,6 +38,7 @@ OK_SCRIPT_PLUGIN_EVENT_SOURCE = "core.ok_script"
 _SUPPORTED_EVENT_NAMES = frozenset(
     {
         "run_started",
+        "process_exited",
         "step",
         "task_failed",
         "task_completed",

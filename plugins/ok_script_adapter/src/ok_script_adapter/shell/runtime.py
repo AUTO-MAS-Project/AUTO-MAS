@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any
 
+from ..common.events import OK_SCRIPT_EVENT_PROTOCOL_VERSION
 from .manifest import (
     PROTOCOL_FRAMEWORK_CLI,
     PROTOCOL_LEGACY_EXE,
@@ -62,6 +63,16 @@ class OkRunResult:
     return_code: int
     timed_out: bool
     duration: float
+
+
+@dataclass(frozen=True, slots=True)
+class OkShellLaunchSpec:
+    """控制台壳与 MAS 调度共用的项目启动规格。"""
+
+    protocol: str
+    command: tuple[str, ...]
+    cwd: Path
+    environment: dict[str, str]
 
 
 class OkConfigStore:
@@ -140,8 +151,9 @@ class OkConfigStore:
             return ()
 
         copied: list[str] = []
-        for source_path in sorted(source.glob("*.json")):
-            target_path = self._resolve(source_path.name)
+        for source_path in sorted(path for path in source.rglob("*.json") if path.is_file()):
+            relative_name = source_path.relative_to(source).as_posix()
+            target_path = self._resolve(relative_name)
             if target_path.exists():
                 continue
 
@@ -163,9 +175,9 @@ class OkConfigStore:
                 if temp_path is not None:
                     temp_path.unlink(missing_ok=True)
                 raise OkShellRuntimeError(
-                    f"配置补齐失败 {source_path.name}: {exc}"
+                    f"配置补齐失败 {relative_name}: {exc}"
                 ) from exc
-            copied.append(source_path.name)
+            copied.append(relative_name)
         return tuple(copied)
 
     def _resolve(self, name: str) -> Path:
@@ -280,6 +292,27 @@ class OkShellRunner:
             command.append("-e")
         return selected, tuple(command)
 
+    def build_launch_spec(
+        self,
+        task: str,
+        *,
+        protocol: str = AUTO_PROTOCOL,
+        exit_after: bool = True,
+    ) -> OkShellLaunchSpec:
+        """构建可由控制台或 MAS 调度器复用的安全启动规格。"""
+
+        selected, command = self.build_command(
+            task,
+            protocol=protocol,
+            exit_after=exit_after,
+        )
+        return OkShellLaunchSpec(
+            protocol=selected,
+            command=command,
+            cwd=self.command_cwd(selected),
+            environment=self.build_environment(),
+        )
+
     def command_cwd(self, protocol: str) -> Path:
         """返回协议对应的项目工作目录。"""
 
@@ -302,21 +335,26 @@ class OkShellRunner:
 
         if timeout is not None and timeout <= 0:
             raise OkShellRuntimeError("运行超时必须大于 0")
-        selected, command = self.build_command(
+        launch_spec = self.build_launch_spec(
             task,
             protocol=protocol,
             exit_after=exit_after,
         )
         started_at = time.monotonic()
-        self._write_event("start", protocol=selected, command=list(command))
-        environment = self._build_environment()
+        self.emit_event(
+            "run_started",
+            task=task,
+            message="控制台壳已启动项目进程",
+            protocol=launch_spec.protocol,
+            command=list(launch_spec.command),
+        )
         log_offset = self._initial_log_offset()
 
         try:
             process = subprocess.Popen(
-                command,
-                cwd=self.command_cwd(selected),
-                env=environment,
+                launch_spec.command,
+                cwd=launch_spec.cwd,
+                env=launch_spec.environment,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -325,7 +363,12 @@ class OkShellRunner:
                 bufsize=1,
             )
         except OSError as exc:
-            self._write_event("spawn_error", message=str(exc))
+            self.emit_event(
+                "run_failed",
+                task=task,
+                message=f"脚本进程启动失败: {exc}",
+                success=False,
+            )
             raise OkShellRuntimeError(f"脚本进程启动失败: {exc}") from exc
 
         messages: queue.Queue[tuple[str, str | None]] = queue.Queue()
@@ -346,7 +389,12 @@ class OkShellRunner:
                     time.sleep(0.05)
         except KeyboardInterrupt:
             self._stop_process(process)
-            self._write_event("cancelled")
+            self.emit_event(
+                "run_failed",
+                task=task,
+                message="任务已取消",
+                success=False,
+            )
             raise
         finally:
             for thread in threads:
@@ -358,15 +406,22 @@ class OkShellRunner:
 
         return_code = process.returncode if process.returncode is not None else 1
         duration = time.monotonic() - started_at
-        self._write_event(
-            "finish",
+        self.emit_event(
+            "process_exited" if return_code == 0 and not timed_out else "run_failed",
+            task=task,
+            message=(
+                "脚本进程已退出，等待项目成功日志或结构化完成事件"
+                if return_code == 0 and not timed_out
+                else f"脚本进程异常退出，退出码 {return_code}"
+            ),
+            success=False if return_code != 0 or timed_out else None,
             returnCode=return_code,
             timedOut=timed_out,
             duration=duration,
         )
         return OkRunResult(
-            protocol=selected,
-            command=command,
+            protocol=launch_spec.protocol,
+            command=launch_spec.command,
             return_code=return_code,
             timed_out=timed_out,
             duration=duration,
@@ -377,7 +432,7 @@ class OkShellRunner:
             result = subprocess.run(
                 [str(self._python()), "-m", "ok.cli", "--help"],
                 cwd=self.command_cwd(PROTOCOL_FRAMEWORK_CLI),
-                env=self._build_environment(),
+                env=self.build_environment(),
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -390,13 +445,22 @@ class OkShellRunner:
         output = f"{result.stdout}\n{result.stderr}"
         return result.returncode == 0 and "run_task" in output
 
-    def _build_environment(self) -> dict[str, str]:
+    def build_environment(self) -> dict[str, str]:
+        """构建外部项目进程环境，保证 MAS 与 CLI 使用同一编码规则。"""
+
         environment = os.environ.copy()
         environment["PYTHONUNBUFFERED"] = "1"
+        environment["PYTHONIOENCODING"] = "utf-8"
+        environment["PYTHONUTF8"] = "1"
         # 外部项目不得继承 MAS 开发环境的模块搜索路径，否则可能误探测到
         # 另一个项目安装的 ok.cli 并选择错误协议。
         environment["PYTHONPATH"] = str(self.manifest.root_path)
         return environment
+
+    def _build_environment(self) -> dict[str, str]:
+        """兼容旧调用方，新的运行链请使用 :meth:`build_environment`。"""
+
+        return self.build_environment()
 
     def _has_main_script(self) -> bool:
         return (
@@ -459,7 +523,7 @@ class OkShellRunner:
                 open_streams -= 1
                 continue
             self.output(source, line)
-            self._write_event("output", source=source, message=line)
+            self.emit_event("step", message=line, source=source)
 
     def _initial_log_offset(self) -> int:
         try:
@@ -478,7 +542,7 @@ class OkShellRunner:
                 for line in log_file:
                     text = line.rstrip("\r\n")
                     self.output("log", text)
-                    self._write_event("output", source="log", message=text)
+                    self.emit_event("step", message=text, source="log")
                 return log_file.tell()
         except OSError:
             return offset
@@ -494,10 +558,13 @@ class OkShellRunner:
             process.kill()
             process.wait(timeout=5)
 
-    def _write_event(self, event: str, **payload: object) -> None:
+    def emit_event(self, event: str, **payload: object) -> None:
+        """写入 MAS 兼容的结构化运行事件。"""
+
         if self.event_path is None:
             return
         data = {
+            "version": OK_SCRIPT_EVENT_PROTOCOL_VERSION,
             "event": event,
             "timestamp": time.time(),
             **payload,

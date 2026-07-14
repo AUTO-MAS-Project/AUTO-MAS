@@ -16,23 +16,21 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
+"""已迁移到 ok-script 插件的旧汇报处理器导入兼容层。"""
+
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any
 
-if TYPE_CHECKING:
-    from app.task.Ok.runtime import OkScriptAutoProxyTask
+from .._plugin_compat import get_plugin_attribute, get_plugin_dir
 
 
-class OkScriptReportHandler:
-    """项目专属执行汇报处理器。"""
+_TARGET_MODULE = "ok_script_adapter.common.report"
 
-    async def capture(
-        self,
-        runtime: "OkScriptAutoProxyTask",
-        log: str,
-    ) -> None:
-        """从脚本日志接管项目专属汇报。"""
 
-    async def apply(self, runtime: "OkScriptAutoProxyTask") -> None:
-        """将项目专属汇报结果写入 MAS。"""
+def __getattr__(name: str) -> Any:
+    return get_plugin_attribute(_TARGET_MODULE, name)
+
+
+def __dir__() -> list[str]:
+    return sorted({*globals(), *get_plugin_dir(_TARGET_MODULE)})

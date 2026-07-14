@@ -16,53 +16,21 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-from app.task.Ok.common.provider import OkScriptProvider, OkScriptTaskOption
+"""已迁移到 ok-script 插件的旧 OK-NTE Provider 兼容层。"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from .._plugin_compat import get_plugin_attribute, get_plugin_dir
 
 
-OKNTE_PROVIDER = OkScriptProvider(
-    resource_name="ok-nte",
-    display_name="异环",
-    exe_name="ok-nte.exe",
-    config_dir="data/apps/ok-nte/working/configs",
-    log_file="data/apps/ok-nte/working/logs/ok-script.log",
-    pythonw_path="data/apps/ok-nte/python/pythonw.exe",
-    track_process_name="pythonw.exe",
-    game_process_name="HTGame.exe",
-    running_status="OK-NTE 正常运行中",
-    fatal_patterns=(
-        ("Resolution Error", "OK-NTE 游戏分辨率不符合要求"),
-        ("Timed out waiting for game process", "OK-NTE 等待游戏进程超时"),
-        ("Timed out waiting for launcher process", "OK-NTE 等待启动器进程超时"),
-        ("info_set 错误", "OK-NTE 流程产生错误，请检查游戏状态"),
-        ("exception stopped", "OK-NTE 任务执行异常，请检查脚本日志"),
-        ("Start task failed", "OK-NTE 启动任务失败"),
-        ("Start failed", "OK-NTE 启动失败"),
-        ("Traceback", "OK-NTE 运行异常，请检查脚本日志"),
-    ),
-    success_patterns=(
-        "Successfully Executed Task",
-        "任务执行完成",
-        "task completed",
-    ),
-    max_task_index=11,
-    task_options=(
-        OkScriptTaskOption(1, "LauncherTask（启动游戏）"),
-        OkScriptTaskOption(2, "DailyTask（日常）"),
-        OkScriptTaskOption(3, "CoffeeTask（一咖舍）"),
-        OkScriptTaskOption(4, "FishingTask（钓鱼）"),
-        OkScriptTaskOption(5, "AnomalyTask（异象界域）"),
-        OkScriptTaskOption(6, "RhythmTask（音游）"),
-        OkScriptTaskOption(7, "OwnerSelectionTask（业主选拔）"),
-        OkScriptTaskOption(8, "AutoHeistTask（粉爪大劫案）"),
-        OkScriptTaskOption(9, "DarkTask（暗域任务）"),
-        OkScriptTaskOption(10, "BagelAITools（呗果智能体）"),
-        OkScriptTaskOption(11, "DiagnosisTask（诊断）"),
-    ),
-    config_schema_module="app.task.Ok.providers.oknte_schema",
-    config_info_loader="get_all_config_info",
-    runtime_verified=False,
-    runtime_block_reason=(
-        "OK-NTE 当前仅完成配置/schema 适配，真实成功/失败日志尚未实跑确认，"
-        "请先完成运行日志验证后再启用调度。"
-    ),
-)
+_TARGET_MODULE = "ok_script_adapter.providers.oknte"
+
+
+def __getattr__(name: str) -> Any:
+    return get_plugin_attribute(_TARGET_MODULE, name)
+
+
+def __dir__() -> list[str]:
+    return sorted({*globals(), *get_plugin_dir(_TARGET_MODULE)})

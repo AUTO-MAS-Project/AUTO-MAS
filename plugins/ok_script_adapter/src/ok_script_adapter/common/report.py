@@ -27,6 +27,9 @@ if TYPE_CHECKING:
 class OkScriptReportHandler:
     """项目专属执行汇报处理器。"""
 
+    async def start(self, runtime: "OkScriptAutoProxyTask") -> None:
+        """在当前用户运行开始前启动可选的汇报接管。"""
+
     async def capture(
         self,
         runtime: "OkScriptAutoProxyTask",
@@ -36,3 +39,6 @@ class OkScriptReportHandler:
 
     async def apply(self, runtime: "OkScriptAutoProxyTask") -> None:
         """将项目专属汇报结果写入 MAS。"""
+
+    async def stop(self, runtime: "OkScriptAutoProxyTask") -> None:
+        """停止当前用户运行关联的可选汇报接管。"""

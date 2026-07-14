@@ -12,6 +12,7 @@ export interface ScriptTypeDescriptor {
   supported_modes: string[]
   script_schema: SchemaDefinition
   user_schema: SchemaDefinition
+  client?: Record<string, unknown>
   legacy_config_class_name?: string | null
   legacy_user_config_class_name?: string | null
   is_builtin: boolean
