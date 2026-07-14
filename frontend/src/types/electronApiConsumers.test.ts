@@ -5,7 +5,6 @@ const consumerPaths = [
   '../components/devtools/BackendLaunchPage.vue',
   '../views/Emulator.vue',
   '../views/EditView/Script/GeneralScriptEdit.vue',
-  '../views/EditView/Script/M9AScriptEdit.vue',
   '../views/EditView/Script/MAAScriptEdit.vue',
   '../views/EditView/Script/SRCScriptEdit.vue',
   '../views/EditView/User/MAAUserEdit.vue',

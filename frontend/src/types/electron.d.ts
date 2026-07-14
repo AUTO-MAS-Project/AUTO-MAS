@@ -36,9 +36,7 @@ export interface ElectronAPI {
   }>
   checkGitUpdate: () => Promise<{ hasUpdate: boolean; error?: string }>
   downloadPython: (mirror?: string) => Promise<any>
-  installPip: () => Promise<any>
   downloadGit: () => Promise<any>
-  installDependencies: (mirror?: string) => Promise<any>
   cloneBackend: (repoUrl?: string) => Promise<any>
   updateBackend: (repoUrl?: string) => Promise<any>
   startBackend: () => Promise<{ success: boolean; error?: string; logs?: string }>

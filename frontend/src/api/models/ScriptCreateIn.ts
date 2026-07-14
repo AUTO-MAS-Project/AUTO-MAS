@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type ScriptCreateIn = {
     /**
-     * 脚本类型: MAA脚本, 通用脚本, OK-WW脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本
+     * 脚本类型: MAA脚本, 通用脚本, OK-WW脚本, ok-script项目, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本
      */
     type: ScriptCreateIn.type;
     /**
@@ -14,13 +14,14 @@ export type ScriptCreateIn = {
 };
 export namespace ScriptCreateIn {
     /**
-     * 脚本类型: MAA脚本, 通用脚本, OK-WW脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本
+     * 脚本类型: MAA脚本, 通用脚本, OK-WW脚本, ok-script项目, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本
      */
     export enum type {
         MAA = 'MAA',
         SRC = 'SRC',
         GENERAL = 'General',
         OKWW = 'Okww',
+        OKEF = 'Okef',
         MAA_END = 'MaaEnd',
         M9A = 'M9A',
         MAA_FW = 'MaaFW',

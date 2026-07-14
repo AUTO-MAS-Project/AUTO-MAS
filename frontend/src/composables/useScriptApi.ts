@@ -7,6 +7,7 @@ import {
   type M9AConfig,
   type MaaFWConfig,
   type OkwwConfig,
+  type PluginScriptConfig,
   ScriptIndexItem,
   type SrcConfig,
   type HSRConfig,
@@ -17,7 +18,7 @@ import {
   HsrService,
   Service,
 } from '@/api'
-import type { ScriptDetail, ScriptType } from '@/types/script'
+import type { OkefScriptConfig, ScriptDetail, ScriptType } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
 const logger = window.electronAPI.getLogger('脚本API')
@@ -26,11 +27,13 @@ type ScriptListConfig =
   | MaaConfig
   | GeneralConfig
   | OkwwConfig
+  | OkefScriptConfig
   | SrcConfig
   | MaaEndConfig
   | M9AConfig
   | MaaFWConfig
   | HSRConfig
+  | PluginScriptConfig
 
 type HSRStageEngine = 'M7A' | 'SRA'
 
@@ -41,6 +44,8 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   M9A: ScriptCreateIn.type.M9A,
   MaaFW: ScriptCreateIn.type.MAA_FW,
   Okww: ScriptCreateIn.type.OKWW,
+  OkScript: ScriptCreateIn.type.OKEF,
+  Okef: ScriptCreateIn.type.OKEF,
   HSR: ScriptCreateIn.type.HSR,
   General: ScriptCreateIn.type.GENERAL,
 }
@@ -49,13 +54,29 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   [ScriptIndexItem.type.MAA_CONFIG]: 'MAA',
   [ScriptIndexItem.type.SRC_CONFIG]: 'SRC',
   [ScriptIndexItem.type.OKWW_CONFIG]: 'Okww',
+  OkefConfig: 'OkScript',
   [ScriptIndexItem.type.MAA_END_CONFIG]: 'MaaEnd',
   [ScriptIndexItem.type.M9ACONFIG]: 'M9A',
   [ScriptIndexItem.type.MAA_FWCONFIG]: 'MaaFW',
   [ScriptIndexItem.type.HSRCONFIG]: 'HSR',
 }
 
-const resolveScriptType = (configType: string): ScriptType => {
+const resolvePluginTypeKey = (config: unknown): ScriptType | null => {
+  if (!config || typeof config !== 'object') return null
+
+  const meta = (config as { Meta?: unknown }).Meta
+  if (!meta || typeof meta !== 'object') return null
+
+  const pluginTypeKey = (meta as { PluginTypeKey?: unknown }).PluginTypeKey
+  return typeof pluginTypeKey === 'string' && pluginTypeKey.trim() ? pluginTypeKey.trim() : null
+}
+
+const resolveScriptType = (configType: string, config?: unknown): ScriptType => {
+  if (configType === ScriptIndexItem.type.PLUGIN_SCRIPT_CONFIG) {
+    const pluginTypeKey = resolvePluginTypeKey(config)
+    if (pluginTypeKey) return pluginTypeKey
+  }
+
   return SCRIPT_TYPE_BY_CONFIG_TYPE[configType] ?? 'General'
 }
 
@@ -132,12 +153,15 @@ export function useScriptApi() {
       }
 
       // 将API响应转换为ScriptDetail数组
-      return response.index.map(indexItem => ({
-        uid: indexItem.uid,
-        type: resolveScriptType(indexItem.type),
-        name: response.data[indexItem.uid]?.Info?.Name || `${indexItem.type}脚本`,
-        config: response.data[indexItem.uid],
-      }))
+      return response.index.map(indexItem => {
+        const config = response.data[indexItem.uid]
+        return {
+          uid: indexItem.uid,
+          type: resolveScriptType(indexItem.type, config),
+          name: config?.Info?.Name || `${indexItem.type}脚本`,
+          config,
+        }
+      })
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '获取脚本列表失败'
       error.value = errorMsg
@@ -1149,6 +1173,106 @@ export function useScriptApi() {
                             : '未知',
                       },
                     }
+                  } else if (
+                    (userIndex.type === 'OkefUserConfig' ||
+                      (userIndex.type === 'PluginUserConfig' && script.type === 'OkScript')) &&
+                    userData
+                  ) {
+                    const okefUserData = userData as any
+                    return {
+                      id: userIndex.uid,
+                      name: okefUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name:
+                          okefUserData.Info?.Name !== undefined
+                            ? okefUserData.Info.Name
+                            : `用户${userIndex.uid}`,
+                        Status:
+                          okefUserData.Info?.Status !== undefined ? okefUserData.Info.Status : true,
+                        RemainedDay:
+                          okefUserData.Info?.RemainedDay !== undefined
+                            ? okefUserData.Info.RemainedDay
+                            : -1,
+                        IfScriptBeforeTask:
+                          okefUserData.Info?.IfScriptBeforeTask !== undefined
+                            ? okefUserData.Info.IfScriptBeforeTask
+                            : false,
+                        ScriptBeforeTask:
+                          okefUserData.Info?.ScriptBeforeTask !== undefined
+                            ? okefUserData.Info.ScriptBeforeTask
+                            : '',
+                        IfScriptAfterTask:
+                          okefUserData.Info?.IfScriptAfterTask !== undefined
+                            ? okefUserData.Info.IfScriptAfterTask
+                            : false,
+                        ScriptAfterTask:
+                          okefUserData.Info?.ScriptAfterTask !== undefined
+                            ? okefUserData.Info.ScriptAfterTask
+                            : '',
+                        Notes:
+                          okefUserData.Info?.Notes !== undefined ? okefUserData.Info.Notes : '',
+                        Tag: okefUserData.Info?.Tag !== undefined ? okefUserData.Info.Tag : null,
+                      },
+                      Task: {
+                        TaskIndex:
+                          okefUserData.Task?.TaskIndex !== undefined
+                            ? okefUserData.Task.TaskIndex
+                            : 1,
+                        ExitOnFinish: true,
+                      },
+                      Notify: {
+                        Enabled:
+                          okefUserData.Notify?.Enabled !== undefined
+                            ? okefUserData.Notify.Enabled
+                            : false,
+                        IfSendStatistic:
+                          okefUserData.Notify?.IfSendStatistic !== undefined
+                            ? okefUserData.Notify.IfSendStatistic
+                            : false,
+                        IfSendMail:
+                          okefUserData.Notify?.IfSendMail !== undefined
+                            ? okefUserData.Notify.IfSendMail
+                            : false,
+                        ToAddress:
+                          okefUserData.Notify?.ToAddress !== undefined
+                            ? okefUserData.Notify.ToAddress
+                            : '',
+                        IfServerChan:
+                          okefUserData.Notify?.IfServerChan !== undefined
+                            ? okefUserData.Notify.IfServerChan
+                            : false,
+                        ServerChanKey:
+                          okefUserData.Notify?.ServerChanKey !== undefined
+                            ? okefUserData.Notify.ServerChanKey
+                            : '',
+                        CustomWebhooks:
+                          okefUserData.Notify?.CustomWebhooks !== undefined
+                            ? okefUserData.Notify.CustomWebhooks
+                            : [],
+                      },
+                      Data: {
+                        LastProxyDate:
+                          okefUserData.Data?.LastProxyDate !== undefined
+                            ? okefUserData.Data.LastProxyDate
+                            : '',
+                        ProxyTimes:
+                          okefUserData.Data?.ProxyTimes !== undefined
+                            ? okefUserData.Data.ProxyTimes
+                            : 0,
+                        LastProxyStatus:
+                          okefUserData.Data?.LastProxyStatus !== undefined
+                            ? okefUserData.Data.LastProxyStatus
+                            : '未知',
+                        LastTaskIndex:
+                          okefUserData.Data?.LastTaskIndex !== undefined
+                            ? okefUserData.Data.LastTaskIndex
+                            : 0,
+                        IfPassCheck:
+                          okefUserData.Data?.IfPassCheck !== undefined
+                            ? okefUserData.Data.IfPassCheck
+                            : false,
+                      },
+                    }
                   } else if (userIndex.type === 'HSRUserConfig' && userData) {
                     const hsrUserData = userData as any
                     return {
@@ -1320,7 +1444,7 @@ export function useScriptApi() {
 
       const item = response.index[0]
       const config = response.data[item.uid]
-      const scriptType = resolveScriptType(item.type)
+      const scriptType = resolveScriptType(item.type, config)
 
       return {
         uid: item.uid,

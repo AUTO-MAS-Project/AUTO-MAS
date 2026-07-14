@@ -1882,8 +1882,7 @@ const selectConfigPath = async () => {
     // 根据配置文件类型选择不同的选择方式
     if (generalConfig.Script.ConfigPathMode === 'Folder') {
       // 选择文件夹
-      selectedPath = await window.electronAPI.selectFolder()
-      selectedPath = selectedPath || undefined
+      selectedPath = (await window.electronAPI.selectFolder()) ?? undefined
     } else {
       // 选择文件（默认行为）
       const paths = await window.electronAPI.selectFile([

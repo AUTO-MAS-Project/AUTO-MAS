@@ -50,7 +50,16 @@ plugins = [
 # 1) 仅声明包名： "automas_script_maa"
 # 2) 声明固定版本： { name = "automas_script_maa", version = "0.0.5-alpha" }
 # 3) 声明任意版本约束： { name = "automas_script_maa", specifier = ">=0.0.5-alpha,<0.1.0" }
-packages = []
+packages = [
+    { name = "automas-maafw-interface", version = "0.1.1" },
+    { name = "automas-maafw-agent-env", version = "0.1.0" },
+    { name = "automas-maafw-controller-adb", version = "0.1.0" },
+    { name = "automas-maafw-controller-win32", version = "0.1.1" },
+    { name = "automas-maafw-project-update", version = "0.1.0" },
+    { name = "automas-maafw-runner", version = "0.1.1" },
+    { name = "automas-script-maafw", version = "0.1.4" },
+    { name = "automas-script-maafw-pack-m9a", version = "0.1.1" },
+]
 
 [tool.uv]
 package = false

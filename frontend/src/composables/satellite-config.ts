@@ -21,12 +21,11 @@ function getIconUrl(filename: string): string {
 const filenameToScriptType: Record<string, ScriptType> = {
   'MAA.png': 'MAA',
   'SRC.png': 'SRC',
-  'M9A.png': 'M9A',
   'MaaEnd.png': 'MaaEnd',
   'ok-ww.png': 'Okww',
 }
 
-const iconFilenames: ScriptType[] = ['MAA', 'SRC', 'M9A', 'MaaEnd', 'Okww']
+const iconFilenames: ScriptType[] = ['MAA', 'SRC', 'MaaEnd', 'Okww']
 
 export const satelliteModules: SatelliteModule[] = iconFilenames
   .map(type => {

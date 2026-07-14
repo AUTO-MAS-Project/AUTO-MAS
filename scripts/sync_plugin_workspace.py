@@ -67,13 +67,11 @@ def discover_plugin_projects(workspace: Path) -> list[PluginProject]:
         if not isinstance(project, dict):
             continue
 
-        entry_points = _entry_points(project)
-        if not entry_points:
-            continue
-
         distribution = str(project.get("name") or item.name).strip()
         if not distribution:
             continue
+
+        entry_points = _entry_points(project)
 
         projects.append(
             PluginProject(

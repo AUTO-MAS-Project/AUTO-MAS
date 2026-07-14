@@ -28,6 +28,8 @@ export type BuiltinScriptType =
   | 'MAA'
   | 'General'
   | 'Okww'
+  | 'OkScript'
+  | 'Okef'
   | 'SRC'
   | 'MaaEnd'
   | 'M9A'
@@ -37,6 +39,32 @@ export type BuiltinScriptType =
 export type ScriptType = string
 
 export type OkwwScriptConfig = OkwwConfig
+export interface OkefScriptConfig {
+  Info: {
+    Name: string
+    ResourceName?: string
+    ProjectLabel?: string
+    RootPath: string
+  }
+  Script: Record<string, never>
+  Game: {
+    Enabled: boolean
+    Path: string
+    Arguments: string
+    WaitTime: number
+  }
+  Run: {
+    ProxyTimesLimit: number
+    RunTimesLimit: number
+    RunTimeLimit: number
+  }
+  SubConfigsInfo?: {
+    UserData: {
+      instances: any[]
+    }
+  }
+}
+export type OkScriptScriptConfig = OkefScriptConfig
 // MAA脚本配置
 export interface MAAScriptConfig {
   Info: {
@@ -221,14 +249,18 @@ export interface MaaFWScriptConfig {
   }
   Update: {
     IfAutoUpdate: boolean
-    Source: 'MirrorChyan'
+    Source: '' | 'MirrorChyan' | 'GitHub'
     Channel: '' | 'stable' | 'beta'
     MirrorChyanCDK: string
+    GitHubRepo: string
+    GitHubTag: string
+    GitHubAssetPattern: string
   }
   Run: {
     ProxyTimesLimit: number
     RunTimesLimit: number
     RunTimeLimit: number
+    DailyOnceTasks: string | string[]
     WeeklyOnceTasks: string | string[]
     MonthlyOnceTasks: string | string[]
   }
@@ -259,12 +291,6 @@ export interface MaaFWUserConfig {
   Task: {
     SelectedPreset: string
     TaskSnapshot: string | MaaFWTaskSnapshot
-  }
-  Device: {
-    AdbAddress: string
-    HWnd: number
-    PlayCoverAddress: string
-    PlayCoverUuid: string
   }
   Notify: {
     Enabled: boolean
@@ -478,6 +504,7 @@ export interface Script {
     | MaaConfig
     | GeneralConfig
     | OkwwConfig
+    | OkefScriptConfig
     | SrcConfig
     | MaaEndConfig
     | M9AConfig
@@ -491,7 +518,15 @@ export interface Script {
   editorKind?: string
   supportedModes?: string[]
   icon?: string | null
+  iconUrl?: string | null
+  themeColor?: string | null
   docsUrl?: string | null
+  editHint?: {
+    text?: string
+    link_text?: string
+    url?: string
+    suffix?: string
+  } | null
   displayName?: string
   isBuiltin?: boolean
   available?: boolean
@@ -515,6 +550,8 @@ export interface User {
     LastLucidscapeMonth?: string
     LastSklandDate: string
     ProxyTimes: number
+    LastProxyStatus?: string
+    LastTaskIndex?: number
   }
   Info: {
     Annihilation: string
@@ -584,6 +621,8 @@ export interface User {
     AutoEssenceSpecifiedLocation?: MaaEndTaskConfig['AutoEssenceSpecifiedLocation']
     SelectedPreset?: string
     TaskSnapshot?: string | MaaFWTaskSnapshot
+    TaskIndex?: number
+    ExitOnFinish?: boolean
   }
   Device?: {
     AdbAddress?: string
@@ -607,6 +646,7 @@ export interface AddScriptResponse {
     | MAAScriptConfig
     | GeneralScriptConfig
     | OkwwScriptConfig
+    | OkefScriptConfig
     | SRCScriptConfig
     | MaaEndScriptConfig
     | M9AScriptConfig
@@ -622,6 +662,7 @@ export interface ScriptIndexItem {
     | 'MaaConfig'
     | 'GeneralConfig'
     | 'OkwwConfig'
+    | 'OkefConfig'
     | 'SrcConfig'
     | 'MaaEndConfig'
     | 'M9AConfig'
@@ -640,6 +681,7 @@ export interface GetScriptsResponse {
     | MAAScriptConfig
     | GeneralScriptConfig
     | OkwwScriptConfig
+    | OkefScriptConfig
     | SRCScriptConfig
     | MaaEndScriptConfig
     | M9AScriptConfig
@@ -658,6 +700,7 @@ export interface ScriptDetail {
     | MaaConfig
     | GeneralConfig
     | OkwwConfig
+    | OkefScriptConfig
     | SrcConfig
     | MaaEndConfig
     | M9AConfig

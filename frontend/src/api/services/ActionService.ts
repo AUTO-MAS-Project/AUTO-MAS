@@ -8,8 +8,7 @@ import type { ClickTextIn } from '../models/ClickTextIn';
 import type { DispatchIn } from '../models/DispatchIn';
 import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
 import type { OutBase } from '../models/OutBase';
-import type { PluginDevRebuildCtxStubIn } from '../models/PluginDevRebuildCtxStubIn';
-import type { PluginDevRebuildCtxStubOut } from '../models/PluginDevRebuildCtxStubOut';
+import type { PluginPackageIn } from '../models/PluginPackageIn';
 import type { PluginReloadInstanceIn } from '../models/PluginReloadInstanceIn';
 import type { PluginReloadPluginIn } from '../models/PluginReloadPluginIn';
 import type { PowerIn } from '../models/PowerIn';
@@ -32,6 +31,25 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/notice/confirm',
+        });
+    }
+    /**
+     * 操作模拟器
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static operationEmulatorApiEmulatorOperatePost(
+        requestBody: EmulatorOperateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator/operate',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
@@ -84,25 +102,6 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/config/import',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 操作模拟器
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static operationEmulatorApiEmulatorOperatePost(
-        requestBody: EmulatorOperateIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/operate',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -386,29 +385,56 @@ export class ActionService {
         });
     }
     /**
-     * 重建插件 ctx 类型提示文件
-     * 手动触发插件上下文 .pyi 重建。
-     *
-     * 该接口用于插件开发阶段快速刷新类型提示，便于 IDE 立即获得最新签名。
+     * 下载安装插件包
+     * 下载安装指定插件包。
      *
      * Args:
-     * data (PluginDevRebuildCtxStubIn): 重建参数。
+     * data (PluginPackageIn): 包名参数。
      *
      * Returns:
-     * PluginDevRebuildCtxStubOut: 重建结果摘要。
+     * OutBase: 统一响应对象。
      *
      * Raises:
      * 无。接口内部会捕获异常并转换为统一错误响应。
      * @param requestBody
-     * @returns PluginDevRebuildCtxStubOut Successful Response
+     * @returns OutBase Successful Response
      * @throws ApiError
      */
-    public static rebuildPluginCtxStubApiPluginsDevRebuildCtxStubPost(
-        requestBody: PluginDevRebuildCtxStubIn,
-    ): CancelablePromise<PluginDevRebuildCtxStubOut> {
+    public static installPluginPackageApiPluginsInstallPackagePost(
+        requestBody: PluginPackageIn,
+    ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/plugins/dev/rebuild_ctx_stub',
+            url: '/api/plugins/install_package',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 卸载插件包
+     * 卸载指定插件包。
+     *
+     * Args:
+     * data (PluginPackageIn): 包名参数。
+     *
+     * Returns:
+     * OutBase: 统一响应对象。
+     *
+     * Raises:
+     * 无。接口内部会捕获异常并转换为统一错误响应。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static uninstallPluginPackageApiPluginsUninstallPackagePost(
+        requestBody: PluginPackageIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugins/uninstall_package',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

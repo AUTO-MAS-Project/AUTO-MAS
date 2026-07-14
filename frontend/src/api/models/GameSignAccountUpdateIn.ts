@@ -16,3 +16,4 @@ export type GameSignAccountUpdateIn = {
      */
     data: GameSignAccountGroupConfig;
 };
+
