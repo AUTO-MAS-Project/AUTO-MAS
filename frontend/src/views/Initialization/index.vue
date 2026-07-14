@@ -484,7 +484,7 @@ async function handleBackendComplete() {
   message.success('初始化完成')
 
   // 保存初始化版本号，用于下次启动时比对
-  const api = window.electronAPI as any
+  const api = window.electronAPI
   await api.setInitializedVersion?.(version)
   logger.info(`初始化版本号已保存: ${version}`)
 
@@ -560,7 +560,7 @@ async function handleLocalEnterApp() {
 // ==================== 生命周期 ====================
 // 从后端加载镜像源配置
 async function loadMirrorConfigs() {
-  const api = window.electronAPI as any
+  const api = window.electronAPI
 
   try {
     logger.info('正在从后端加载镜像源配置...')
@@ -611,7 +611,7 @@ async function loadMirrorConfigs() {
 onMounted(async () => {
   logger.info('初始化界面已加载')
 
-  const api = window.electronAPI as any
+  const api = window.electronAPI
   let startFromIndex = 0
 
   // 开发环境：完全跳过初始化流程
@@ -719,7 +719,7 @@ onUnmounted(() => {
     countdownTimer = null
   }
 
-  const api = window.electronAPI as any
+  const api = window.electronAPI
 
   // 移除监听器
   api.removePythonProgressListener?.()

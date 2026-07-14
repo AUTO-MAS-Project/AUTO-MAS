@@ -73,8 +73,8 @@ const updateTime = () => {
 
 // 获取内存信息
 const updateMemoryInfo = () => {
-  if ('memory' in performance) {
-    const memory = (performance as any).memory
+  const memory = performance.memory
+  if (memory) {
     const used = Math.round(memory.usedJSHeapSize / 1024 / 1024)
     const total = Math.round(memory.totalJSHeapSize / 1024 / 1024)
     const limit = Math.round(memory.jsHeapSizeLimit / 1024 / 1024)
