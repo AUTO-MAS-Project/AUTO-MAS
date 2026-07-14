@@ -693,7 +693,7 @@ onMounted(async () => {
   updateInterval = setInterval(updateSatelliteStates, CONFIG.statusUpdateInterval)
 
   // 检查更新状态
-  const version = (import.meta as any).env?.VITE_APP_VERSION || '1.0.0'
+  const version = import.meta.env.VITE_APP_VERSION || '1.0.0'
   try {
     const updateRes = await Service.checkUpdateApiUpdateCheckPost({
       current_version: version,
