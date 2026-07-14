@@ -270,7 +270,7 @@ onMounted(() => {
   logger.info(`订阅过滤器: ${JSON.stringify({ type: 'Message' })}`)
 
   // 暴露调试接口到 window 对象（仅用于开发调试）
-  ;(window as any).__debugShowQuestion = showQuestion
+  window.__debugShowQuestion = showQuestion
   logger.debug('已暴露调试接口: window.__debugShowQuestion')
 })
 
@@ -282,7 +282,7 @@ onUnmounted(() => {
     unsubscribe(subscriptionId)
   }
   // 清理调试接口
-  delete (window as any).__debugShowQuestion
+  delete window.__debugShowQuestion
 })
 </script>
 

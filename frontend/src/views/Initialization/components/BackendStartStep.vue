@@ -260,7 +260,7 @@ async function handleRetry() {
 
 // ==================== 生命周期 ====================
 onMounted(() => {
-  const api = window.electronAPI as any
+  const api = window.electronAPI
 
   api.onBackendStatus?.((status: any) => {
     logger.debug(`收到后端状态: ${JSON.stringify(status)}`)
@@ -274,7 +274,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   // 清理监听器
-  const api = window.electronAPI as any
+  const api = window.electronAPI
   api.removeBackendStatusListener?.()
 })
 </script>

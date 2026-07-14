@@ -419,10 +419,12 @@
                   <!--                  </div>-->
                 </div>
 
+                <!-- eslint-disable vue/no-v-html -- MarkdownIt has raw HTML disabled, so template descriptions are escaped. -->
                 <div
                   class="template-description"
                   v-html="parseMarkdown(template.description)"
                 ></div>
+                <!-- eslint-enable vue/no-v-html -->
               </div>
             </div>
           </div>

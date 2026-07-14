@@ -107,6 +107,6 @@ export async function testWebSocketConnection() {
 
 // 在控制台中暴露调试函数
 if (typeof window !== 'undefined') {
-  ;(window as any).debugScheduler = debugScheduler
-  ;(window as any).testWebSocketConnection = testWebSocketConnection
+  window.debugScheduler = debugScheduler
+  window.testWebSocketConnection = testWebSocketConnection
 }
