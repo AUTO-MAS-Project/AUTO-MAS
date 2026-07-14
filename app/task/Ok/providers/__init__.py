@@ -16,62 +16,21 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""ok-script 项目 provider 集合。"""
+"""已迁移到 ok-script 插件的旧 Provider 包兼容层。"""
 
-from pathlib import Path
+from __future__ import annotations
 
-from app.task.Ok.common.provider import (
-    OkScriptProvider,
-    normalize_ok_script_resource_name,
-    read_app_json_resource_name,
-    read_pyappify_resource_name,
-)
+from typing import Any
 
-from .okef import OKEF_PROVIDER
-from .oknte import OKNTE_PROVIDER
-from .okww import OKWW_PROVIDER
+from .._plugin_compat import get_plugin_attribute, get_plugin_dir
 
 
-OK_SCRIPT_PROVIDERS: dict[str, OkScriptProvider] = {
-    OKEF_PROVIDER.resource_name: OKEF_PROVIDER,
-    OKWW_PROVIDER.resource_name: OKWW_PROVIDER,
-    OKNTE_PROVIDER.resource_name: OKNTE_PROVIDER,
-}
+_TARGET_MODULE = "ok_script_adapter.providers"
 
 
-def get_ok_script_provider(resource_name: object) -> OkScriptProvider | None:
-    """按 ok-script 资源名获取当前宿主内置 provider。"""
-
-    normalized = normalize_ok_script_resource_name(resource_name)
-    if not normalized:
-        return None
-    return OK_SCRIPT_PROVIDERS.get(normalized)
+def __getattr__(name: str) -> Any:
+    return get_plugin_attribute(_TARGET_MODULE, name)
 
 
-def detect_ok_script_provider(
-    root_path: str | Path,
-    resource_name: object = "",
-) -> OkScriptProvider | None:
-    """按已保存资源名或项目根目录识别 ok-script provider。"""
-
-    root = Path(root_path)
-    if not root.is_dir():
-        return None
-
-    # 根目录是当前运行的事实来源，避免切换项目目录后仍使用旧 ResourceName。
-    pyappify_resource_name = read_pyappify_resource_name(root)
-    if pyappify_resource_name:
-        return get_ok_script_provider(pyappify_resource_name)
-
-    for candidate in OK_SCRIPT_PROVIDERS.values():
-        app_json_resource_name = read_app_json_resource_name(
-            candidate.app_json_path(root)
-        )
-        if app_json_resource_name:
-            return get_ok_script_provider(app_json_resource_name)
-
-    for candidate in OK_SCRIPT_PROVIDERS.values():
-        if candidate.exe_path(root).is_file() and candidate.config_path(root).is_dir():
-            return candidate
-
-    return get_ok_script_provider(resource_name)
+def __dir__() -> list[str]:
+    return sorted({*globals(), *get_plugin_dir(_TARGET_MODULE)})

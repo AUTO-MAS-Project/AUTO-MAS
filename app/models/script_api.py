@@ -23,6 +23,10 @@ class ScriptTypeDescriptor(BaseModel):
     supported_modes: list[str] = Field(..., description="支持的任务模式")
     script_schema: dict[str, Any] = Field(..., description="脚本配置表单描述")
     user_schema: dict[str, Any] = Field(..., description="用户配置表单描述")
+    client: dict[str, Any] = Field(
+        default_factory=dict,
+        description="供宿主通用插件编辑器消费的客户端声明",
+    )
     legacy_config_class_name: str | None = Field(
         default=None, description="旧脚本配置类名"
     )

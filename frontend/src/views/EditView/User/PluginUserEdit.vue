@@ -58,11 +58,12 @@
     <a-empty v-if="!userSchema && !loading" description="此插件脚本类型未提供用户配置表单" />
   </a-card>
 
-  <a-card v-if="isOkScriptAdapter && userId" class="config-card okww-config-card">
-    <OkScriptConfigEditor
+  <a-card v-if="pluginConfigEditor && userId" class="config-card plugin-config-card">
+    <PluginJsonConfigEditor
       :script-id="scriptId"
       :user-id="userId"
-      :endpoint-prefix="okScriptConfigEndpoint"
+      :endpoint-prefix="pluginConfigEditor.endpointPrefix"
+      :title="pluginConfigEditor.title"
     />
   </a-card>
 
@@ -83,7 +84,7 @@ import { message } from 'ant-design-vue'
 import HeaderSchemaActionButton from '@/components/HeaderSchemaActionButton.vue'
 import SchemaForm from '@/components/SchemaForm.vue'
 import SchemaActionSessionMask from '@/components/SchemaActionSessionMask.vue'
-import OkScriptConfigEditor from '@/views/OkScriptUserEdit/OkScriptConfigEditor.vue'
+import PluginJsonConfigEditor from '@/views/OkScriptUserEdit/OkScriptConfigEditor.vue'
 import { useSchemaActionRunner } from '@/composables/useSchemaActionRunner'
 import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
@@ -124,6 +125,7 @@ const scriptThemeColor = ref<string | null>(null)
 const scriptDisplayName = ref('')
 const docsUrl = ref<string | null>(null)
 const supportedModes = ref<string[]>([])
+const descriptorClient = ref<Record<string, unknown>>({})
 const userSchema = ref<SchemaDefinition | null>(null)
 const formModel = ref<Record<string, any>>({})
 const headerSchemaActions = computed(() => collectHeaderSchemaActions(userSchema.value))
@@ -139,6 +141,11 @@ interface PluginSystemHmrMessage {
   plugin?: string | null
   status: 'running' | 'success' | 'error' | string
   message?: string
+}
+
+interface PluginConfigEditorDeclaration {
+  endpointPrefix: string
+  title?: string
 }
 
 const modeLabels: Record<string, string> = {
@@ -176,13 +183,18 @@ const currentPluginKey = () => {
   return normalizePluginKey(editorKind.slice('plugin:'.length))
 }
 
-const isOkScriptAdapter = computed(() => {
-  const key = currentPluginKey()
-  return key === 'okwwadapter' || key === 'okscriptadapter'
+const pluginConfigEditor = computed<PluginConfigEditorDeclaration | null>(() => {
+  const candidate = descriptorClient.value.config_editor
+  if (!candidate || typeof candidate !== 'object') return null
+
+  const config = candidate as Record<string, unknown>
+  if (config.kind !== 'json-files' || typeof config.endpoint_prefix !== 'string') return null
+
+  return {
+    endpointPrefix: config.endpoint_prefix,
+    title: typeof config.title === 'string' ? config.title : undefined,
+  }
 })
-const okScriptConfigEndpoint = computed(() =>
-  currentPluginKey() === 'okwwadapter' ? '/plugin/okww/configs' : '/plugin/ok-script/configs'
-)
 
 const isCurrentPluginEvent = (plugin?: string | null) => {
   const key = currentPluginKey()
@@ -232,6 +244,7 @@ const loadData = async ({
     scriptDisplayName.value = normalizedScript.displayName || normalizedScript.type
     docsUrl.value = normalizedScript.docsUrl || null
     supportedModes.value = normalizedScript.supportedModes || []
+    descriptorClient.value = descriptor?.client || {}
     userSchema.value = descriptor?.user_schema || null
 
     if (!userId.value) {
@@ -422,7 +435,7 @@ onUnmounted(() => {
   border-radius: 16px;
 }
 
-.okww-config-card {
+.plugin-config-card {
   margin-top: 16px;
 }
 

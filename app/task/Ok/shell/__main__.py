@@ -9,15 +9,17 @@
 #   the License, or (at your option) any later version.
 #
 #   AUTO-MAS is distributed in the hope that it will be useful,
-#   but WITHOUT ANY WARRANTY; without even the implied warranty of
-#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-#   GNU Affero General Public License for more details.
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
 #
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""允许使用 ``python -m app.task.Ok.shell`` 启动控制台壳。"""
+"""保留 ``python -m app.task.Ok.shell`` 的旧 CLI 入口。"""
 
-from .cli import main
+from ok_script_adapter.shell.cli import main
 
-raise SystemExit(main())
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -510,6 +510,9 @@ def strip_sub_configs(data: dict[str, Any]) -> dict[str, Any]:
 def build_descriptor(provider: ScriptTypeProvider) -> dict[str, Any]:
     """构建可供接口返回的脚本类型描述。"""
 
+    client = provider.metadata.get("client")
+    client = dict(client) if isinstance(client, dict) else {}
+
     return {
         "type_key": provider.type_key,
         "display_name": provider.display_name,
@@ -526,6 +529,7 @@ def build_descriptor(provider: ScriptTypeProvider) -> dict[str, Any]:
         "supported_modes": list(provider.supported_modes),
         "script_schema": provider.build_script_schema(),
         "user_schema": provider.build_user_schema(),
+        "client": client,
         "legacy_config_class_name": provider.legacy_config_class_name,
         "legacy_user_config_class_name": provider.legacy_user_config_class_name,
         "is_builtin": provider.is_builtin,

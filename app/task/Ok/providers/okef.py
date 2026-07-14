@@ -16,55 +16,21 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-from app.task.Ok.common.provider import (
-    OkScriptAccountConfig,
-    OkScriptProvider,
-    OkScriptTaskOption,
-)
-from app.task.Ok.providers.okef_report import OkefDailySummaryReportHandler
+"""已迁移到 ok-script 插件的旧 OK-EF Provider 兼容层。"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from .._plugin_compat import get_plugin_attribute, get_plugin_dir
 
 
-OKEF_PROVIDER = OkScriptProvider(
-    resource_name="ok-ef",
-    display_name="终末地",
-    exe_name="ok-ef.exe",
-    config_dir="data/apps/ok-ef/working/configs",
-    log_file="data/apps/ok-ef/working/logs/ok-script.log",
-    pythonw_path="data/apps/ok-ef/python/pythonw.exe",
-    track_process_name="pythonw.exe",
-    game_process_name="Endfield.exe",
-    running_status="OK-EF 正常运行中",
-    fatal_patterns=(
-        ("info_set 错误", "OK-EF 流程产生错误，请检查游戏状态"),
-        ("exception stopped", "OK-EF 任务执行异常，请检查脚本日志"),
-        ("Start task failed", "OK-EF 启动任务失败"),
-        ("Start failed", "OK-EF 启动失败"),
-        ("Traceback", "OK-EF 运行异常，请检查脚本日志"),
-    ),
-    success_patterns=(
-        "Successfully Executed Task, Exiting Game and App!",
-    ),
-    max_task_index=11,
-    task_options=(
-        OkScriptTaskOption(1, "DailyTask（日常）"),
-        OkScriptTaskOption(2, "TakeDeliveryTask（运送委托接取）"),
-        OkScriptTaskOption(3, "WarehouseTransferTask（仓库物品转移）"),
-        OkScriptTaskOption(4, "DeliveryTask（自动送货）"),
-        OkScriptTaskOption(5, "BattleTask（刷体力）"),
-        OkScriptTaskOption(6, "DemoDrawTask（演算抽牌）"),
-        OkScriptTaskOption(7, "Test（蓝点归中测试）"),
-        OkScriptTaskOption(8, "YingTuoTask（影拓丰碑）"),
-        OkScriptTaskOption(9, "TestStartGame（启动一次游戏）"),
-        OkScriptTaskOption(10, "RealtimeDetectTask（YOLO实测扫描）"),
-        OkScriptTaskOption(11, "DiagnosisTask（诊断）"),
-    ),
-    config_schema_module="app.task.Okef.config_schema",
-    config_info_loader="get_config_info_from_dir",
-    config_info_uses_directory=True,
-    account_config=OkScriptAccountConfig(
-        enabled_key="多账户模式",
-        independent_key="多账户独立配置",
-        account_list_key="账号列表",
-    ),
-    report_handler_factory=OkefDailySummaryReportHandler,
-)
+_TARGET_MODULE = "ok_script_adapter.providers.okef"
+
+
+def __getattr__(name: str) -> Any:
+    return get_plugin_attribute(_TARGET_MODULE, name)
+
+
+def __dir__() -> list[str]:
+    return sorted({*globals(), *get_plugin_dir(_TARGET_MODULE)})

@@ -38,7 +38,7 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   M9A: ScriptCreateIn.type.M9A,
   MaaFW: ScriptCreateIn.type.MAA_FW,
   Okww: ScriptCreateIn.type.OKWW,
-  OkScript: ScriptCreateIn.type.OKEF,
+  OkScript: ScriptCreateIn.type.OK_SCRIPT,
   Okef: ScriptCreateIn.type.OKEF,
   General: ScriptCreateIn.type.GENERAL,
 }

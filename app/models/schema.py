@@ -1638,6 +1638,7 @@ class ScriptCreateIn(BaseModel):
         "SRC",
         "General",
         "Okww",
+        "OkScript",
         "Okef",
         "MaaEnd",
         "M9A",

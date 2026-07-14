@@ -16,8 +16,30 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""OK-EF 旧调度器导入路径兼容层。"""
+"""已迁移 OK 运行模块的惰性兼容转发工具。"""
 
-from app.task.Ok.manager import OkScriptManager
+from __future__ import annotations
 
-OkefManager = OkScriptManager
+from importlib import import_module
+from typing import Any
+
+
+def get_plugin_attribute(target_module: str, name: str) -> Any:
+    """按旧模块属性名延迟读取插件实现。"""
+
+    try:
+        module = import_module(target_module)
+    except ImportError as exc:
+        raise RuntimeError(
+            "旧 ok-script 运行模块已迁移到 ok_script_adapter 插件，请启用该插件"
+        ) from exc
+    return getattr(module, name)
+
+
+def get_plugin_dir(target_module: str) -> list[str]:
+    """返回旧模块可见的插件属性，供交互和诊断使用。"""
+
+    try:
+        return dir(import_module(target_module))
+    except ImportError:
+        return []

@@ -17,5 +17,7 @@ AUTO-MAS pluginized OK-WW script adapter.
 The host still keeps legacy `OkwwConfig` / `OkwwUserConfig` classes so existing config
 files can load. New plugin records are stored through `PluginScriptConfig`.
 
-The old embedded Vue `OkwwConfigEditor` is not wired into the plugin UI yet; the backend
-routes are present so a plugin page or schema action can be added next.
+The script and user edit routes are now resolved from the `Okww` plugin descriptor.
+`PluginUserEdit` renders the JSON-file configuration editor through the declared
+`client.config_editor` contract and calls the plugin routes above. No host-side
+OK-WW configuration endpoint or specialized API client is required.
