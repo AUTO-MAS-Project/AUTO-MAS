@@ -3,6 +3,9 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router/index.ts'
 import { OpenAPI } from '@/api'
+import { configureLocalMonaco } from '@/utils/monaco'
+
+configureLocalMonaco()
 
 import Antd from 'ant-design-vue'
 import 'ant-design-vue/dist/reset.css'
