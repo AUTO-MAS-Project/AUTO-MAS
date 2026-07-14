@@ -262,7 +262,7 @@ router.beforeEach(async (to, from, next) => {
 
   const { isInitialized, isBootstrapping, isAppReady } = useAppInitialization()
 
-  if ((to.meta as any)?.skipGuard) {
+  if (to.meta.skipGuard) {
     next()
     return
   }

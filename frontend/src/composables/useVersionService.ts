@@ -11,7 +11,7 @@ const logger = window.electronAPI.getLogger('版本服务')
 const isDev = import.meta.env.DEV
 
 // 获取版本号
-const version = (import.meta as any).env.VITE_APP_VERSION || '1.0.0'
+const version = import.meta.env.VITE_APP_VERSION || '1.0.0'
 
 // ========== 标题栏版本信息相关 ==========
 export const updateInfo = ref<UpdateCheckOut | null>(null)

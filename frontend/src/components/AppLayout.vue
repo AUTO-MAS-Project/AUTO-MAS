@@ -152,7 +152,7 @@ const icon = (Comp: any) => () => h(Comp)
 const isDevelopment = computed(() => {
   return (
     process.env.NODE_ENV === 'development' ||
-    (import.meta as any).env?.DEV === true ||
+    import.meta.env.DEV === true ||
     window.location.hostname === 'localhost'
   )
 })
@@ -283,7 +283,7 @@ const refreshPluginFrontend = () => {
   if (!isDevelopment.value) {
     return
   }
-  const hot = (import.meta as any).hot
+  const hot = import.meta.hot
   showHmrOverlay('正在刷新插件前端')
   window.sessionStorage.setItem(HMR_SOFT_RELOAD_FLAG, '1')
   window.setTimeout(() => {
