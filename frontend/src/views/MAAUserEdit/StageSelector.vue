@@ -49,15 +49,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, defineComponent } from 'vue'
+import { ref, defineComponent, type PropType, type VNode } from 'vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 
 // VNodes 组件定义
 const VNodes = defineComponent({
-  props: { vnodes: { type: Object, required: true } },
+  props: { vnodes: { type: Object as PropType<VNode>, required: true } },
   setup(props) {
-    return () => props.vnodes as any
+    return () => props.vnodes
   },
 })
 
