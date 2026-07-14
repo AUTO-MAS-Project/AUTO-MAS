@@ -3,7 +3,6 @@ import type { ScriptType } from '@/types/script'
 import type { ScriptTypeDescriptor } from '@/types/scriptRegistry'
 import { getScriptIcon } from '@/utils/scriptRegistry'
 import generalIcon from '@/assets/AUTO-MAS.ico'
-import hsrIcon from '@/assets/hsr.png'
 import maaIcon from '@/assets/MAA.png'
 import maaEndIcon from '@/assets/MaaEnd.png'
 import m9aIcon from '@/assets/M9A.png'
@@ -88,14 +87,6 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     icon: generalIcon,
   },
   {
-    value: 'HSR',
-    title: 'HSR 脚本',
-    description: '三月七 / SRA 双脚本适配',
-    keywords: ['hsr', '三月七', 'sra'],
-    group: 'specialized',
-    icon: hsrIcon,
-  },
-  {
     value: 'MaaFW',
     title: 'MaaFramework 项目',
     description: '读取 interface 并运行 MaaFramework 项目',
@@ -141,21 +132,6 @@ export const splitScriptTypeOptions = (options: ScriptTypeOption[]) => ({
   specialized: options.filter(option => option.group === 'specialized'),
   general: options.filter(option => option.group === 'general'),
 })
-
-const EDIT_SEGMENT_BY_TYPE: Record<ScriptType, string> = {
-  MAA: 'maa',
-  SRC: 'src',
-  MaaEnd: 'maaend',
-  M9A: 'm9a',
-  MaaFW: 'maafw',
-  Okww: 'okww',
-  OkScript: 'ok-script',
-  Okef: 'ok-script',
-  HSR: 'hsr',
-  General: 'general',
-}
-
-export const getScriptEditSegment = (type: ScriptType) => EDIT_SEGMENT_BY_TYPE[type]
 
 export const buildCreateRequest = (state: CreateRequestState): ScriptCreateRequest | null => {
   if (state.type !== 'General') {

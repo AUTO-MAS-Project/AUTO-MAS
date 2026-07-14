@@ -501,7 +501,7 @@ const handlePluginSystemMessage = (message: WebSocketBaseMessage) => {
       capabilitySnapshot.value = snapshot
       await loadHsrStageOptions()
     })
-    .catch(error => logger.warning(`刷新 HSR 能力失败: ${String(error)}`))
+    .catch(error => logger.warn(`刷新 HSR 能力失败: ${String(error)}`))
 }
 const hsrStageOptions = ref<HSRDynamicStageOptionsData | null>(null)
 const hsrStageOptionsLoading = ref(false)
@@ -844,9 +844,19 @@ onMounted(async () => {
       handleCancel()
       return
     }
+    if (script.type !== 'HSR' || script.editor_kind !== 'plugin:automas_script_hsr') {
+      message.error('当前脚本未启用 HSR 插件编辑器')
+      handleCancel()
+      return
+    }
     scriptName.value = script.name
     scriptConfig.value = script.config as HSRScriptConfig
     capabilitySnapshot.value = await hsrPluginApi.getCapabilities(scriptId)
+    if (!isEdit.value && capabilitySnapshot.value.available === false) {
+      message.warning(capabilitySnapshot.value.unavailable_reason || '请先配置可用的 HSR 引擎路径')
+      handleCancel()
+      return
+    }
     await loadHsrStageOptions()
 
     if (isEdit.value) {

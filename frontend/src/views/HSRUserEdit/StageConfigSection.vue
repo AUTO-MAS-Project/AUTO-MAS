@@ -264,17 +264,7 @@ const parseScriptStage = (raw: unknown): HSRScriptStagePayload | null => {
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     return raw as HSRScriptStagePayload
   }
-  if (!raw || typeof raw !== 'string') return null
-  const text = raw.trim()
-  if (!text || text === '{}' || text === '{ }') return null
-  try {
-    const data = JSON.parse(text)
-    return data && typeof data === 'object' && !Array.isArray(data)
-      ? (data as HSRScriptStagePayload)
-      : null
-  } catch {
-    return null
-  }
+  return null
 }
 
 const payloadMatchesEngine = (payload: HSRScriptStagePayload | null) => {

@@ -85,7 +85,7 @@ import { computed, ref, watch } from 'vue'
 import { PlayCircleOutlined, StopOutlined } from '@ant-design/icons-vue'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
-import { type SchedulerStatus, TASK_MODE_OPTIONS } from './schedulerConstants'
+import { type SchedulerStatus, getTaskModeOptions } from './schedulerConstants'
 
 interface Props {
   selectedTaskId: string | null
@@ -136,8 +136,11 @@ const localSelectedTaskId = ref(props.selectedTaskId)
 const localSelectedMode = ref(props.selectedMode)
 const localResumeFromScriptId = ref(props.resumeFromScriptId ?? null)
 
-// 模式选项
-const modeOptions = TASK_MODE_OPTIONS
+// 脚本项按逐记录能力收窄模式；队列项继续使用通用模式。
+const selectedTaskOption = computed(() =>
+  props.taskOptions.find(option => option.value === localSelectedTaskId.value)
+)
+const modeOptions = computed(() => getTaskModeOptions(selectedTaskOption.value?.supported_modes))
 
 // 仅当选中队列任务时显示恢复脚本下拉框。
 // 注：通过任务选项 label 的 "队列 - " 前缀判断，与 useSchedulerLogic.isQueueTask 保持同步。
@@ -162,7 +165,7 @@ watch(
       const taskLabel = taskOption?.label || props.selectedTaskId || ''
       emit('update:runningTaskLabel', taskLabel)
 
-      const modeOption = modeOptions.find(opt => opt.value === props.selectedMode)
+      const modeOption = modeOptions.value.find(opt => opt.value === props.selectedMode)
       const modeLabel = modeOption?.label || props.selectedMode || ''
       emit('update:runningModeLabel', modeLabel)
     }
@@ -185,6 +188,13 @@ watch(
   },
   { immediate: true }
 )
+
+watch(modeOptions, options => {
+  if (options.some(option => option.value === localSelectedMode.value)) return
+  const nextMode = options[0]?.value ?? null
+  localSelectedMode.value = nextMode
+  emit('update:selectedMode', nextMode)
+})
 
 watch(
   () => props.resumeFromScriptId,

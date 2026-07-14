@@ -490,7 +490,7 @@ const handlePluginSystemMessage = (message: WebSocketBaseMessage) => {
   void hsrPluginApi
     .getCapabilities(scriptId)
     .then(snapshot => (capabilitySnapshot.value = snapshot))
-    .catch(error => logger.warning(`刷新 HSR 能力失败: ${String(error)}`))
+    .catch(error => logger.warn(`刷新 HSR 能力失败: ${String(error)}`))
 }
 
 const formData = reactive({
@@ -735,6 +735,11 @@ onMounted(async () => {
     const scriptDetail = await getScript(scriptId)
     if (!scriptDetail) {
       message.error('脚本不存在或加载失败')
+      router.push('/scripts')
+      return
+    }
+    if (scriptDetail.type !== 'HSR' || scriptDetail.editor_kind !== 'plugin:automas_script_hsr') {
+      message.error('当前脚本未启用 HSR 插件编辑器')
       router.push('/scripts')
       return
     }

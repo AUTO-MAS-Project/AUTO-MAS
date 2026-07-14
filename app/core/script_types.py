@@ -194,7 +194,11 @@ class ScriptTypeProvider:
             if self.record_capability_resolver is not None
             else ScriptRecordCapability()
         )
-        modes = capability.supported_modes or self.supported_modes
+        modes = (
+            self.supported_modes
+            if capability.supported_modes is None
+            else capability.supported_modes
+        )
         invalid_modes = [mode for mode in modes if mode not in TASK_MODES]
         if invalid_modes:
             raise ValueError(
@@ -366,8 +370,6 @@ class ScriptTypeRegistry:
         from app.models.config import (
             MaaEndConfig,
             MaaEndUserConfig,
-            OkefConfig,
-            OkefUserConfig,
             OkwwConfig,
             SrcConfig,
             SrcUserConfig,
@@ -408,19 +410,6 @@ class ScriptTypeRegistry:
                 manager_factory=_lazy_manager("app.task.MaaEnd.manager", "MaaEndManager"),
                 icon="MaaEnd",
                 editor_kind="builtin:maaend",
-                is_builtin=True,
-            ),
-            ScriptTypeProvider(
-                type_key="OkScript",
-                display_name="ok-script 项目",
-                script_config_class=OkefConfig,
-                user_config_class=OkefUserConfig,
-                supported_modes=("AutoProxy",),
-                manager_factory=_lazy_manager("app.task.Ok.manager", "OkScriptManager"),
-                icon="General",
-                editor_kind="builtin:ok-script",
-                legacy_config_class_name="OkefConfig",
-                legacy_user_config_class_name="OkefUserConfig",
                 is_builtin=True,
             ),
             ScriptAdapterDefinition(
@@ -784,7 +773,6 @@ def _bind_builtin_script_config_models(global_config: Any) -> None:
     from app.models.config import (
         GeneralConfig as LegacyGeneralConfig,
         GeneralUserConfig as LegacyGeneralUserConfig,
-        HSRConfig,
         M9AConfig,
         MaaConfig,
         MaaEndConfig,
@@ -811,10 +799,6 @@ def _bind_builtin_script_config_models(global_config: Any) -> None:
 
     # General 已迁移为插件脚本容器，这里只保留旧类名到旧模型的兼容装载映射。
     global_config.ScriptConfig.sub_config_type["GeneralConfig"] = LegacyGeneralConfig
-    # HSR is plugin-owned; retain only the legacy class-name loader so the
-    # plugin manager can deserialize and migrate existing records in place.
-    global_config.ScriptConfig.sub_config_type["HSRConfig"] = HSRConfig
-
     MaaConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
     MaaEndConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
     SrcConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig

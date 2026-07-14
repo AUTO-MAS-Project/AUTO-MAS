@@ -81,10 +81,6 @@ class ScriptRecordGetIn(BaseModel):
 class ScriptRecordCreateIn(BaseModel):
     type: str = Field(..., description="脚本类型键")
     scriptId: str | None = Field(default=None, description="复制来源脚本 ID")
-    initialConfig: dict[str, Any] | None = Field(
-        default=None,
-        description="新建脚本时一次性写入的初始配置",
-    )
 
 
 class ScriptRecordUpdateIn(BaseModel):
