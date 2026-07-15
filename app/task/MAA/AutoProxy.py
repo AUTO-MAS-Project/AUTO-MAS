@@ -28,6 +28,8 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaConfig, MaaUserConfig
@@ -149,12 +151,13 @@ class AutoProxyTask(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             if self.cur_user_item.status == "异常":
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={
-                        "Error": f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}"
-                    },
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error",
+                        message=f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}",
+                    ),
                 )
             return
 
@@ -180,21 +183,23 @@ class AutoProxyTask(TaskExecuteBase):
                     logger.info(
                         f"用户: {self.cur_user_uid} - 森空岛签到{t}: {'、'.join(user_list)}"
                     )
-                    await Config.send_websocket_message(
+                    await Publisher.send(
                         id=self.task_info.task_id,
-                        type="Info",
-                        data={
-                            (
-                                "Info" if t != "失败" else "Error"
-                            ): f"用户 {self.cur_user_item.name} 森空岛签到{t}: {'、'.join(user_list)}"
-                        },
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(
+                            level="info" if t != "失败" else "error",
+                            message=f"用户 {self.cur_user_item.name} 森空岛签到{t}: {'、'.join(user_list)}",
+                        ),
                     )
             if skland_result["总计"] == 0:
                 logger.info(f"用户: {self.cur_user_uid} - 森空岛签到失败")
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"用户 {self.cur_user_item.name} 森空岛签到失败"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error",
+                        message=f"用户 {self.cur_user_item.name} 森空岛签到失败",
+                    ),
                 )
             if skland_result["总计"] > 0 and len(skland_result["失败"]) == 0:
                 await self.cur_user_config.set(
@@ -206,12 +211,13 @@ class AutoProxyTask(TaskExecuteBase):
             logger.warning(
                 f"用户: {self.cur_user_uid} - 未配置森空岛签到Token, 跳过森空岛签到"
             )
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={
-                    "Warning": f"用户 {self.cur_user_item.name} 未配置森空岛签到Token, 跳过森空岛签到"
-                },
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="warning",
+                    message=f"用户 {self.cur_user_item.name} 未配置森空岛签到Token, 跳过森空岛签到",
+                ),
             )
 
         # 执行任务前脚本（每用户仅一次）
@@ -263,10 +269,12 @@ class AutoProxyTask(TaskExecuteBase):
                     )
                 except Exception as e:
                     logger.exception(f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}")
-                    await Config.send_websocket_message(
+                    await Publisher.send(
                         id=self.task_info.task_id,
-                        type="Info",
-                        data={"Error": f"启动模拟器时出现异常: {e}"},
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(
+                            level="error", message=f"启动模拟器时出现异常: {e}"
+                        ),
                     )
                     self.cur_user_log.content = [
                         "模拟器启动失败, MAA 未实际运行, 无日志记录"
@@ -606,12 +614,13 @@ class AutoProxyTask(TaskExecuteBase):
                     logger.warning(
                         f"用户 {self.cur_user_item.name} 的自定义基建配置文件解析失败, 将使用普通基建模式"
                     )
-                    await Config.send_websocket_message(
+                    await Publisher.send(
                         id=self.task_info.task_id,
-                        type="Info",
-                        data={
-                            "Warning": f"未能解析用户 {self.cur_user_item.name} 的自定义基建配置文件"
-                        },
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(
+                            level="warning",
+                            message=f"未能解析用户 {self.cur_user_item.name} 的自定义基建配置文件",
+                        ),
                     )
                     task_set["Infrast"]["Mode"] = "Normal"
             else:
@@ -769,10 +778,10 @@ class AutoProxyTask(TaskExecuteBase):
             )
         except Exception as e:
             logger.exception(f"推送通知时出现异常: {e}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"推送通知时出现异常: {e}"},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=f"推送通知时出现异常: {e}"),
             )
 
         if self.run_book["Annihilation"] and self.run_book["Routine"]:
@@ -820,8 +829,8 @@ class AutoProxyTask(TaskExecuteBase):
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
         logger.exception(f"自动代理任务出现异常: {e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"自动代理任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"自动代理任务出现异常: {e}"),
         )

@@ -29,6 +29,8 @@ from contextlib import suppress
 from datetime import datetime, timedelta
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
 from app.models.ConfigBase import MultipleConfig
 from app.models.config import SrcConfig, SrcUserConfig
@@ -119,12 +121,13 @@ class AutoProxyTask(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             if self.cur_user_item.status == "异常":
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={
-                        "Error": f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}"
-                    },
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error",
+                        message=f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}",
+                    ),
                 )
             return
 
@@ -278,17 +281,17 @@ class AutoProxyTask(TaskExecuteBase):
 
         if e is None:
             logger.error(f"用户: {self.cur_user_uid} - {error_message}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": error_message},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=error_message),
             )
         else:
             logger.exception(f"用户: {self.cur_user_uid} - {error_message}: {e}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"{error_message}: {e}"},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=f"{error_message}: {e}"),
             )
         self.cur_user_log.content = [f"{error_message}, 无日志记录"]
         self.cur_user_log.status = error_message
@@ -536,10 +539,10 @@ class AutoProxyTask(TaskExecuteBase):
             )
         except Exception as e:
             logger.exception(f"推送通知时出现异常: {e}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"推送通知时出现异常: {e}"},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=f"推送通知时出现异常: {e}"),
             )
 
         if self.run_book:
@@ -572,8 +575,8 @@ class AutoProxyTask(TaskExecuteBase):
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
         logger.exception(f"自动代理任务出现异常: {e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"自动代理任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"自动代理任务出现异常: {e}"),
         )

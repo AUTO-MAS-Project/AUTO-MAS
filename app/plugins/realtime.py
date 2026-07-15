@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, Literal
+from typing import Any, Dict
 
 from app.utils import get_logger
 from app.plugins.frontend_extensions import build_page_snapshot
@@ -38,11 +38,12 @@ def _serialize_record(record: Any) -> Dict[str, Any]:
     }
 
 
-async def send_plugin_system_message(message_type: Literal["Update", "Message", "Info", "Signal"], data: Dict[str, Any]) -> None:
+async def send_plugin_system_message(message_type: str, data: Dict[str, Any]) -> None:
+    """向前端推送插件系统实时消息 (id=PluginSystem, type 见 app/core/ws/protocol.py)"""
     try:
-        from app.core import Config
+        from app.core.ws import Publisher
 
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=PLUGIN_SYSTEM_WS_ID,
             type=message_type,
             data=data,
@@ -53,7 +54,7 @@ async def send_plugin_system_message(message_type: Literal["Update", "Message", 
         )
 
 
-def schedule_plugin_system_message(message_type: Literal["Update", "Message", "Info", "Signal"], data: Dict[str, Any]) -> None:
+def schedule_plugin_system_message(message_type: str, data: Dict[str, Any]) -> None:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -64,11 +65,10 @@ def schedule_plugin_system_message(message_type: Literal["Update", "Message", "I
 
 def publish_runtime_record(record: Any, *, event: str) -> None:
     payload = {
-        "kind": "runtime_state",
         "event": event,
         "record": _serialize_record(record),
     }
-    schedule_plugin_system_message("Update", payload)
+    schedule_plugin_system_message("plugin.runtime.updated", payload)
 
 
 async def build_plugin_snapshot(*, discovered: Dict[str, Any] | None = None) -> Dict[str, Any]:
@@ -187,11 +187,10 @@ async def publish_plugin_snapshot(
     discovered: Dict[str, Any] | None = None,
 ) -> None:
     snapshot = await build_plugin_snapshot(discovered=discovered)
-    snapshot["kind"] = "snapshot"
     snapshot["reason"] = reason
     if message:
         snapshot["message"] = message
-    await send_plugin_system_message("Update", snapshot)
+    await send_plugin_system_message("plugin.snapshot.updated", snapshot)
 
 
 def schedule_plugin_snapshot(

@@ -34,6 +34,8 @@ from typing import List, Dict, Optional
 from pathlib import Path
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSUpdateProgressData
 from app.utils.constants import MIRROR_ERROR_INFO
 from app.utils import ProcessRunner, get_logger
 from .system import System
@@ -86,8 +88,8 @@ class _UpdateHandler:
         self._cleanup_download()
 
         if notify:
-            await Config.send_websocket_message(
-                id="Update", type="Signal", data={"Cancelled": True}
+            await Publisher.send(
+                id=protocol.ID_UPDATE, type=protocol.UPDATE_CANCELLED
             )
         return True
 
@@ -111,11 +113,11 @@ class _UpdateHandler:
             try:
                 await Config.set("Update", "Source", "CNB")
             except Exception as error:
-                await Config.send_websocket_message(
-                    id="Update",
-                    type="Signal",
+                await Publisher.send(
+                    id=protocol.ID_UPDATE,
+                    type=protocol.UPDATE_FAILED,
                     data={
-                        "Failed": f"切换至 CNB 源失败: {type(error).__name__}: {str(error)}"
+                        "message": f"切换至 CNB 源失败: {type(error).__name__}: {str(error)}"
                     },
                 )
                 raise
@@ -123,10 +125,10 @@ class _UpdateHandler:
             self.is_locked = False
             if not self._start_download_task():
                 error = RuntimeError("切换至 CNB 源失败: 无法重新启动更新下载任务")
-                await Config.send_websocket_message(
-                    id="Update",
-                    type="Signal",
-                    data={"Failed": str(error)},
+                await Publisher.send(
+                    id=protocol.ID_UPDATE,
+                    type=protocol.UPDATE_FAILED,
+                    data={"message": str(error)},
                 )
                 raise error
             return True
@@ -256,10 +258,10 @@ class _UpdateHandler:
         logger.info("收到前端下载请求")
 
         if self.is_locked:
-            await Config.send_websocket_message(
-                id="Update",
-                type="Signal",
-                data={"Failed": "已有更新任务在进行中, 请勿重复操作"},
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_FAILED,
+                data={"message": "已有更新任务在进行中, 请勿重复操作"},
             )
             return None
 
@@ -275,10 +277,10 @@ class _UpdateHandler:
     async def _download_update_locked(self) -> None:
 
         if self.remote_version is None:
-            await Config.send_websocket_message(
-                id="Update",
-                type="Signal",
-                data={"Failed": "未检测到可用的远程版本, 请先检查更新"},
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_FAILED,
+                data={"message": "未检测到可用的远程版本, 请先检查更新"},
             )
             self.is_locked = False
             return None
@@ -287,11 +289,11 @@ class _UpdateHandler:
             logger.info(
                 f"更新包已存在: {Path.cwd() / f'UpdatePack_{self.remote_version}.zip'}"
             )
-            await Config.send_websocket_message(
-                id="Update",
-                type="Signal",
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_COMPLETED,
                 data={
-                    "Accomplish": str(
+                    "file": str(
                         Path.cwd() / f"UpdatePack_{self.remote_version}.zip"
                     )
                 },
@@ -303,10 +305,10 @@ class _UpdateHandler:
         try:
             download_url = self._get_download_url(source)
         except ValueError as error:
-            await Config.send_websocket_message(
-                id="Update",
-                type="Signal",
-                data={"Failed": str(error)},
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_FAILED,
+                data={"message": str(error)},
             )
             self.is_locked = False
             return None
@@ -369,15 +371,15 @@ class _UpdateHandler:
                                     last_download_size = downloaded_size
                                     last_time = time.time()
 
-                                    await Config.send_websocket_message(
-                                        id="Update",
-                                        type="Update",
-                                        data={
-                                            "downloaded_size": downloaded_size,
-                                            "file_size": file_size,
-                                            "speed": speed,
-                                            "source": source,
-                                        },
+                                    await Publisher.send(
+                                        id=protocol.ID_UPDATE,
+                                        type=protocol.UPDATE_PROGRESS,
+                                        data=WSUpdateProgressData(
+                                            downloaded_size=downloaded_size,
+                                            file_size=file_size,
+                                            speed=speed,
+                                            source=source,
+                                        ),
                                     )
 
                 # 重命名临时文件为最终包
@@ -388,11 +390,11 @@ class _UpdateHandler:
                 logger.success(
                     f"下载完成: {download_url}, 实际下载大小: {downloaded_size} 字节, 耗时: {time.time() - start_time:.2f} 秒, 保存位置: {Path.cwd() / f'UpdatePack_{self.remote_version}.zip'}"
                 )
-                await Config.send_websocket_message(
-                    id="Update",
-                    type="Signal",
+                await Publisher.send(
+                    id=protocol.ID_UPDATE,
+                    type=protocol.UPDATE_COMPLETED,
                     data={
-                        "Accomplish": str(
+                        "file": str(
                             Path.cwd() / f"UpdatePack_{self.remote_version}.zip"
                         )
                     },
@@ -414,18 +416,20 @@ class _UpdateHandler:
 
             if (Path.cwd() / "download.temp").exists():
                 (Path.cwd() / "download.temp").unlink()
-            await Config.send_websocket_message(
-                id="Update", type="Signal", data={"Failed": f"下载失败: {download_url}"}
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_FAILED,
+                data={"message": f"下载失败: {download_url}"},
             )
             self.is_locked = False
 
     async def install_update(self):
 
         if self.is_locked or self.is_switching_source:
-            await Config.send_websocket_message(
-                id="Update",
-                type="Signal",
-                data={"Failed": "已有更新任务在进行中, 请勿重复操作"},
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_FAILED,
+                data={"message": "已有更新任务在进行中, 请勿重复操作"},
             )
             return None
 
@@ -440,10 +444,10 @@ class _UpdateHandler:
         logger.info(f"检测到的更新包: {versions.values()}")
 
         if not versions:
-            await Config.send_websocket_message(
-                id="Update",
-                type="Signal",
-                data={"Failed": "未检测到更新包, 请先下载更新"},
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_FAILED,
+                data={"message": "未检测到更新包, 请先下载更新"},
             )
             self.is_locked = False
             return None
@@ -457,10 +461,10 @@ class _UpdateHandler:
                 zip_ref.extractall(Path.cwd())
         except Exception as e:
             logger.error(f"解压失败, {type(e).__name__}: {e}")
-            await Config.send_websocket_message(
-                id="Update",
-                type="Info",
-                data={"Error": f"解压失败, {type(e).__name__}: {e}"},
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_FAILED,
+                data={"message": f"解压失败, {type(e).__name__}: {e}"},
             )
             self.is_locked = False
             return None
