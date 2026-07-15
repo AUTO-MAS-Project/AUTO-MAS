@@ -226,48 +226,62 @@ export async function connect(): Promise<boolean> {
   }
 
   connectPromise = (async (): Promise<boolean> => {
-    await negotiateWebSocketUrl()
+    try {
+      await negotiateWebSocketUrl()
 
-    return new Promise<boolean>(resolve => {
-      let settled = false
-      logger.info(`创建 WebSocket 连接: ${websocketUrl}`)
-      const ws = new WebSocket(websocketUrl)
-      socket = ws
+      return await new Promise<boolean>(resolve => {
+        let settled = false
+        logger.info(`创建 WebSocket 连接: ${websocketUrl}`)
+        const ws = new WebSocket(websocketUrl)
+        socket = ws
 
-      ws.onopen = () => {
-        if (socket !== ws) return
-        logger.info('WebSocket 连接已建立')
-        state.value = 'open'
-        reconnectAttempts = 0
-        if (!settled) {
-          settled = true
-          connectPromise = null
-          resolve(true)
+        ws.onopen = () => {
+          if (socket !== ws) return
+          logger.info('WebSocket 连接已建立')
+          state.value = 'open'
+          reconnectAttempts = 0
+          if (!settled) {
+            settled = true
+            connectPromise = null
+            resolve(true)
+          }
         }
-      }
 
-      ws.onmessage = event => {
-        if (socket !== ws) return
-        handleMessage(String(event.data))
-      }
-
-      ws.onerror = () => {
-        if (socket !== ws) return
-        logger.warn('WebSocket 连接发生错误')
-      }
-
-      ws.onclose = event => {
-        if (socket !== ws) return
-        socket = null
-        logger.info(`WebSocket 连接关闭: code=${event.code}, reason="${event.reason}"`)
-        if (!settled) {
-          settled = true
-          connectPromise = null
-          resolve(false)
+        ws.onmessage = event => {
+          if (socket !== ws) return
+          handleMessage(String(event.data))
         }
-        handleClosed({ code: event.code, reason: event.reason })
+
+        ws.onerror = () => {
+          if (socket !== ws) return
+          logger.warn('WebSocket 连接发生错误')
+        }
+
+        ws.onclose = event => {
+          // 无论是否已被 shutdown 置换，都要 settle 本次连接尝试，
+          // 避免等待方（connectWithRetry/重启流程）永久挂起
+          if (!settled) {
+            settled = true
+            connectPromise = null
+            resolve(false)
+          }
+          if (socket !== ws) return
+          socket = null
+          logger.info(`WebSocket 连接关闭: code=${event.code}, reason="${event.reason}"`)
+          handleClosed({ code: event.code, reason: event.reason })
+        }
+      })
+    } catch (error) {
+      // 协商或构造异常：清空单飞行状态并按失败尝试进入重连，避免连接层永久卡死
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(`建立 WebSocket 连接异常: ${errorMsg}`)
+      connectPromise = null
+      if ((state.value as WSConnectionState) !== 'closed') {
+        state.value = 'reconnecting'
+        scheduleNextAttempt()
       }
-    })
+      return false
+    }
   })()
 
   return connectPromise

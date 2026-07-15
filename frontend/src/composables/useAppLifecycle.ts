@@ -80,6 +80,12 @@ const isClosing = (): boolean => closePromise !== null
 // ==================== 常驻订阅 ====================
 
 const handleShutdownReady = (): void => {
+  // 仅在本次关闭流程期间生效：第三方（如 Koishi 远程命令）触发的 /close
+  // 也会广播 ready，不能留下陈旧标志影响之后真正的关闭流程
+  if (!isClosing()) {
+    logger.info('收到 backend.shutdown.ready（非关闭流程期间，忽略）')
+    return
+  }
   logger.info('收到 backend.shutdown.ready，后端清理完成')
   shutdownReadyReceived = true
   resolveShutdownReady?.(true)
@@ -89,7 +95,11 @@ const handleCloseRequested = (): void => {
   logger.info('收到后端关闭请求 frontend.close.requested，前端开始退出')
   closeRequestedByBackend = true
   if (closePromise) return
-  closePromise = runBackendRequestedClose()
+  closePromise = runBackendRequestedClose().catch(error => {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`后端请求关闭流程异常: ${errorMsg}`)
+    return window.electronAPI?.appQuit?.()
+  })
 }
 
 const handlePowerCountdownUpdated = (data: WSPowerCountdownData): void => {
@@ -117,13 +127,22 @@ const handleDialogRequest = (data: WSDialogRequestData): void => {
     logger.warn('弹窗请求缺少 requestId，已忽略')
     return
   }
+  // 重连后后端会重发未完成的弹窗请求，按 requestId 去重
+  if (dialogRequests.value.some(item => item.requestId === data.requestId)) {
+    logger.debug(`弹窗请求已存在，忽略重复: ${data.requestId}`)
+    return
+  }
   logger.info(`收到弹窗请求: ${data.requestId}`)
   dialogRequests.value = [...dialogRequests.value, data]
 }
 
 /** 回复应用内弹窗（用户选择第一个选项时 choice=true） */
 export function respondDialog(requestId: string, choice: boolean): void {
-  send(WS_ID_MAIN, WS_DIALOG_RESPONSE, { requestId, choice })
+  // 发送失败（断连瞬间）时保留弹窗，等重连后用户可再次作答
+  if (!send(WS_ID_MAIN, WS_DIALOG_RESPONSE, { requestId, choice })) {
+    logger.warn(`弹窗响应发送失败，保留弹窗等待重试: ${requestId}`)
+    return
+  }
   dialogRequests.value = dialogRequests.value.filter(item => item.requestId !== requestId)
 }
 
@@ -288,12 +307,17 @@ const restartBackendFlow = async (): Promise<void> => {
 
   try {
     await window.electronAPI?.stopBackend?.()
+    // 每个异步步骤后重新确认：关闭流程期间立即放弃重启，保证与 taskkill 互斥
+    if (isClosing()) return
+
     const result = await window.electronAPI?.startBackend?.()
+    if (isClosing()) return
 
     if (result?.success) {
       logger.info('后端重启成功，重新建立 WebSocket 连接')
       backendStatus.value = 'running'
       await delay(RESTART_DELAY)
+      if (isClosing()) return
       // 连接失败会触发连接层自身的重连循环，无需额外处理
       await connect()
     } else {
@@ -301,7 +325,7 @@ const restartBackendFlow = async (): Promise<void> => {
       logger.error(`后端重启失败: ${result?.error ?? '未知错误'}`)
       if (backendRestartAttempts >= MAX_BACKEND_RESTART_ATTEMPTS) {
         showRestartFailureModal()
-      } else {
+      } else if (!isClosing()) {
         scheduleReconnect(RESTART_DELAY)
       }
     }
@@ -311,7 +335,7 @@ const restartBackendFlow = async (): Promise<void> => {
     logger.error(`后端重启异常: ${errorMsg}`)
     if (backendRestartAttempts >= MAX_BACKEND_RESTART_ATTEMPTS) {
       showRestartFailureModal()
-    } else {
+    } else if (!isClosing()) {
       scheduleReconnect(RESTART_DELAY)
     }
   } finally {
@@ -320,15 +344,16 @@ const restartBackendFlow = async (): Promise<void> => {
 }
 
 const handleDisconnected = (): void => {
-  if (isClosing()) {
-    // 关闭流程期间断开：未收到 ready 则立刻走 taskkill 分支
+  if (isClosing() || closeRequestedByBackend) {
+    // 关闭流程期间断开：连接层进入终态，禁止任何重连；
+    // 未收到 ready 则立刻走 taskkill 分支
+    shutdownConnection('关闭流程中断开')
     if (!shutdownReadyReceived) {
       logger.warn('关闭流程期间 WebSocket 断开且未收到 ready')
       resolveShutdownReady?.(false)
     }
     return
   }
-  if (closeRequestedByBackend) return
   backendStatus.value = 'stopped'
 }
 
