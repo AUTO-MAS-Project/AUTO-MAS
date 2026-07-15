@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "automas-hsr-adapter-m7a"
+version = "0.1.0"
+description = "March7thAssistant adapter for AUTO-MAS HSR"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.12"
+dependencies = ["automas-script-hsr==0.1.0"]
+
+[project.entry-points."auto_mas.plugins"]
+automas_hsr_adapter_m7a = "automas_hsr_adapter_m7a.plugin:Plugin"
+
+[tool.setuptools.packages.find]
+where = ["src"]

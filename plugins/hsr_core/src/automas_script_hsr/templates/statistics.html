@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { margin: 0; padding: 24px; background: #f5f5f5; font-family: Arial, sans-serif; color: #262626; }
+      .card { max-width: 640px; margin: auto; overflow: hidden; border: 1px solid #e8e8e8; border-radius: 12px; background: #fff; }
+      .header { padding: 24px 28px; border-bottom: 1px solid #f0f0f0; color: #531dab; }
+      .content { padding: 24px 28px; }
+      .result { margin-top: 16px; padding: 16px; border-radius: 8px; background: #f0f5ff; white-space: pre-wrap; }
+      .footer { padding: 16px 28px 24px; color: #8c8c8c; text-align: center; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h2 class="header">HSR 自动代理统计</h2>
+      <div class="content">
+        <p><strong>用户：</strong>{{ user_info }}</p>
+        <p><strong>开始时间：</strong>{{ start_time }}</p>
+        <p><strong>结束时间：</strong>{{ end_time }}</p>
+        <div class="result">{{ user_result }}</div>
+      </div>
+      <div class="footer">AUTO-MAS HSR 插件</div>
+    </div>
+  </body>
+</html>
