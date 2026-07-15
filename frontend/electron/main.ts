@@ -106,28 +106,6 @@ let saveWindowStateTimeout: NodeJS.Timeout | null = null
 let isInitialStartup = true // 标记是否为初次启动
 const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自启动任务计划拉起
 
-const HEARTBEAT_LOG_KEYWORD_RE = /(\bping\b|\bpong\b|heartbeat|心跳)/i
-
-function shouldDropHeartbeatProcessLog(
-  level: string,
-  moduleName: string,
-  message: string
-): boolean {
-  const isProd = app.isPackaged && process.env.NODE_ENV !== 'development'
-  if (!isProd) {
-    return false
-  }
-  if (!['debug', 'info'].includes(level)) {
-    return false
-  }
-  if (!HEARTBEAT_LOG_KEYWORD_RE.test(message)) {
-    return false
-  }
-
-  // 仅过滤心跳过程日志，避免影响其他模块的普通业务日志。
-  return moduleName.includes('WebSocket') || moduleName.includes('WS')
-}
-
 // 配置接口
 interface AppConfig {
   UI: {
@@ -802,10 +780,6 @@ ipcMain.handle(
       const message = args
         .map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg)))
         .join(' ')
-
-      if (shouldDropHeartbeatProcessLog(level, moduleName, message)) {
-        return
-      }
 
       switch (level) {
         case 'debug':

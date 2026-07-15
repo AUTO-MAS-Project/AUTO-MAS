@@ -73,7 +73,7 @@
 
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { connectAfterBackendStart } from '@/composables/useWebSocket'
+import { connectWithRetry } from '@/composables/useAppLifecycle'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
 const logger = window.electronAPI.getLogger('后端启动步骤')
 
@@ -173,7 +173,7 @@ async function startBackend() {
     statusMessage.value = '正在建立WebSocket连接...'
     progress.value = 40
 
-    const connected = await connectAfterBackendStart()
+    const connected = await connectWithRetry()
 
     if (!connected) {
       logger.warn('WebSocket连接建立失败')

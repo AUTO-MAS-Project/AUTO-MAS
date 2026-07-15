@@ -87,8 +87,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from '../composables/useTheme.ts'
 import { useRouteLock } from '../composables/useRouteLock.ts'
 import { useAppBackground } from '../composables/useAppBackground.ts'
-import { useWebSocket, type WebSocketBaseMessage } from '../composables/useWebSocket.ts'
+import { useWebSocket, type WSEnvelope } from '../composables/useWebSocket.ts'
 import { useAppInitialization } from '../composables/useAppInitialization.ts'
+import {
+  WS_ID_PLUGIN_SYSTEM,
+  WS_PLUGIN_HMR,
+  WS_PLUGIN_SNAPSHOT_UPDATED,
+} from '../services/websocket/types.ts'
 import { OpenAPI } from '@/api'
 import {
   FALLBACK_PAGE_DECLARATIONS,
@@ -115,7 +120,7 @@ const {
 const { subscribe, unsubscribe } = useWebSocket()
 const { isBootstrapping } = useAppInitialization()
 
-let backgroundSubscriptionId = ''
+let pluginSystemSubscriptionIds: string[] = []
 let stopBootstrapWatch: WatchStopHandle | undefined
 let hmrOverlayTimer: number | undefined
 let backgroundServiceSignature = ''
@@ -131,7 +136,13 @@ onMounted(() => {
     window.sessionStorage.removeItem(HMR_SOFT_RELOAD_FLAG)
     showHmrOverlay('插件界面已刷新', 800)
   }
-  backgroundSubscriptionId = subscribe({ id: 'PluginSystem' }, handlePluginSystemMessage)
+  pluginSystemSubscriptionIds = [
+    subscribe(
+      { id: WS_ID_PLUGIN_SYSTEM, type: WS_PLUGIN_SNAPSHOT_UPDATED },
+      handlePluginSnapshotMessage
+    ),
+    subscribe({ id: WS_ID_PLUGIN_SYSTEM, type: WS_PLUGIN_HMR }, handlePluginHmrMessage),
+  ]
   syncDeclaredPageRoutes(router, declaredPages.value)
 
   const loadBackendState = () => {
@@ -154,10 +165,10 @@ onMounted(() => {
 onUnmounted(() => {
   stopBootstrapWatch?.()
   stopBootstrapWatch = undefined
-  if (backgroundSubscriptionId) {
-    unsubscribe(backgroundSubscriptionId)
-    backgroundSubscriptionId = ''
+  for (const subscriptionId of pluginSystemSubscriptionIds) {
+    unsubscribe(subscriptionId)
   }
+  pluginSystemSubscriptionIds = []
   if (hmrOverlayTimer !== undefined) {
     window.clearTimeout(hmrOverlayTimer)
     hmrOverlayTimer = undefined
@@ -177,7 +188,6 @@ const isDevelopment = computed(() => {
 })
 
 interface PluginSystemHmrMessage {
-  kind: 'hmr'
   plugin?: string | null
   changed_files?: string[]
   action?: string
@@ -188,7 +198,6 @@ interface PluginSystemSnapshotMessage {
   code?: number
   status?: string
   message?: string
-  kind?: string
   pages?: PageDeclaration[]
   instances?: Array<{
     id?: string
@@ -317,23 +326,24 @@ const refreshPluginFrontend = () => {
   }, 80)
 }
 
-const handlePluginSystemMessage = (message: WebSocketBaseMessage) => {
-  const payload = message.data as PluginSystemSnapshotMessage | PluginSystemHmrMessage | undefined
+const handlePluginSnapshotMessage = (message: WSEnvelope) => {
+  const payload = message.data as PluginSystemSnapshotMessage | undefined
   if (!payload || typeof payload !== 'object') {
     return
   }
 
-  if (Array.isArray((payload as PluginSystemSnapshotMessage).pages)) {
-    const snapshotPayload = payload as PluginSystemSnapshotMessage
-    applyPageDeclarations(snapshotPayload.pages)
-    refreshBackgroundFromSnapshotIfNeeded(snapshotPayload)
+  if (Array.isArray(payload.pages)) {
+    applyPageDeclarations(payload.pages)
+    refreshBackgroundFromSnapshotIfNeeded(payload)
   }
+}
 
-  if (payload.kind !== 'hmr') {
+const handlePluginHmrMessage = (message: WSEnvelope) => {
+  const hmrPayload = message.data as PluginSystemHmrMessage | undefined
+  if (!hmrPayload || typeof hmrPayload !== 'object') {
     return
   }
 
-  const hmrPayload = payload as PluginSystemHmrMessage
   if (hmrPayload.status === 'running') {
     showHmrOverlay('正在重载插件界面')
   } else if (hmrPayload.status === 'success' || hmrPayload.status === 'error') {

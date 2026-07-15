@@ -1,14 +1,21 @@
 import { computed, ref } from 'vue'
 import { Modal, message } from 'ant-design-vue'
 import { Service } from '@/api/services/Service'
-import { subscribe, unsubscribe, type WebSocketBaseMessage } from '@/composables/useWebSocket'
+import { subscribe, unsubscribe } from '@/composables/useWebSocket'
+import {
+  WS_ID_UPDATE,
+  WS_UPDATE_CANCELLED,
+  WS_UPDATE_COMPLETED,
+  WS_UPDATE_FAILED,
+  WS_UPDATE_PROGRESS,
+  type WSUpdateProgressData,
+} from '@/services/websocket/types'
 import { createLowSpeedDetector } from '@/composables/updateDownloadSpeed'
 import { updateDownloadApi } from '@/services/updateDownloadApi'
 
 const logger = window.electronAPI.getLogger('更新下载状态')
 
 const DOWNLOAD_TIMEOUT_MS = 2 * 60 * 60 * 1000
-const SUBSCRIPTION_HEALTH_CHECK_MS = 3_000
 
 export type UpdateDownloadStatus =
   | 'idle'
@@ -18,18 +25,7 @@ export type UpdateDownloadStatus =
   | 'completed'
   | 'failed'
 
-export interface UpdateDownloadProgress {
-  downloaded_size: number
-  file_size: number
-  speed: number
-  source: string
-}
-
-export interface UpdateDownloadSignal {
-  Cancelled?: boolean
-  Accomplish?: string
-  Failed?: string
-}
+export type UpdateDownloadProgress = WSUpdateProgressData
 
 const status = ref<UpdateDownloadStatus>('idle')
 const modalVisible = ref(false)
@@ -41,9 +37,8 @@ const failureReason = ref('')
 const latestVersion = ref('')
 const updateData = ref<Record<string, string[]>>({})
 
-let subscriptionId = ''
+let subscriptionIds: string[] = []
 let downloadTimeout: ReturnType<typeof setTimeout> | null = null
-let subscriptionHealthCheck: ReturnType<typeof setInterval> | null = null
 const lowSpeedDetector = createLowSpeedDetector()
 
 const progressPercent = computed(() => {
@@ -103,16 +98,21 @@ const stopRuntimeMonitoring = () => {
     clearTimeout(downloadTimeout)
     downloadTimeout = null
   }
-  if (subscriptionHealthCheck) {
-    clearInterval(subscriptionHealthCheck)
-    subscriptionHealthCheck = null
-  }
 }
 
 const ensureSubscription = () => {
-  if (subscriptionId) return
-  subscriptionId = subscribe({ id: 'Update' }, handleMessage)
-  logger.debug(`WebSocket 订阅已创建: ${subscriptionId}`)
+  if (subscriptionIds.length > 0) return
+  subscriptionIds = [
+    subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_PROGRESS }, wsMessage =>
+      receiveProgress(wsMessage.data as unknown as UpdateDownloadProgress)
+    ),
+    subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_CANCELLED }, () => receiveCancelled()),
+    subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_COMPLETED }, () => receiveCompleted()),
+    subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_FAILED }, wsMessage =>
+      receiveFailed(String((wsMessage.data as { message?: string }).message || '下载失败'))
+    ),
+  ]
+  logger.debug(`WebSocket 订阅已创建: ${subscriptionIds.join(', ')}`)
 }
 
 const startRuntimeMonitoring = () => {
@@ -131,19 +131,13 @@ const startRuntimeMonitoring = () => {
       stopRuntimeMonitoring()
     }
   }, DOWNLOAD_TIMEOUT_MS)
-
-  subscriptionHealthCheck = setInterval(() => {
-    if (!subscriptionId) {
-      logger.warn('更新下载订阅丢失，正在重新建立')
-      ensureSubscription()
-    }
-  }, SUBSCRIPTION_HEALTH_CHECK_MS)
 }
 
 const clearSubscription = () => {
-  if (!subscriptionId) return
-  unsubscribe(subscriptionId)
-  subscriptionId = ''
+  for (const subscriptionId of subscriptionIds) {
+    unsubscribe(subscriptionId)
+  }
+  subscriptionIds = []
 }
 
 const resetState = () => {
@@ -178,39 +172,25 @@ const receiveProgress = (data: UpdateDownloadProgress) => {
   }
 }
 
-const receiveSignal = (data: UpdateDownloadSignal) => {
-  if (data.Cancelled) {
-    logger.info('下载已取消')
-    resetState()
-    modalVisible.value = false
-    return
-  }
-
-  if (data.Accomplish) {
-    logger.info('下载完成')
-    stopRuntimeMonitoring()
-    status.value = 'completed'
-    speed.value = 0
-    return
-  }
-
-  if (data.Failed) {
-    logger.error(`下载失败: ${data.Failed}`)
-    stopRuntimeMonitoring()
-    status.value = 'failed'
-    failureReason.value = data.Failed
-    speed.value = 0
-  }
+const receiveCancelled = () => {
+  logger.info('下载已取消')
+  resetState()
+  modalVisible.value = false
 }
 
-function handleMessage(wsMessage: WebSocketBaseMessage) {
-  if (wsMessage.id !== 'Update') return
+const receiveCompleted = () => {
+  logger.info('下载完成')
+  stopRuntimeMonitoring()
+  status.value = 'completed'
+  speed.value = 0
+}
 
-  if (wsMessage.type === 'Update') {
-    receiveProgress(wsMessage.data as UpdateDownloadProgress)
-  } else if (wsMessage.type === 'Signal') {
-    receiveSignal(wsMessage.data as UpdateDownloadSignal)
-  }
+const receiveFailed = (reason: string) => {
+  logger.error(`下载失败: ${reason}`)
+  stopRuntimeMonitoring()
+  status.value = 'failed'
+  failureReason.value = reason
+  speed.value = 0
 }
 
 const start = async (version: string, data: Record<string, string[]>) => {
@@ -353,6 +333,8 @@ export function useUpdateDownload() {
     installLater,
     reset,
     receiveProgress,
-    receiveSignal,
+    receiveCancelled,
+    receiveCompleted,
+    receiveFailed,
   }
 }

@@ -146,7 +146,7 @@ export class Service {
     }
     /**
      * 关闭后端程序
-     * 关闭后端程序
+     * 关闭后端程序：启动清理流程，完成后经主 WS 发送 backend.shutdown.ready
      * @returns OutBase Successful Response
      * @throws ApiError
      */

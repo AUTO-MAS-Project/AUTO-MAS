@@ -124,23 +124,6 @@
       </a-tabs>
     </div>
 
-    <!-- 消息对话框 -->
-    <a-modal
-      v-model:open="messageModalVisible"
-      :title="currentMessage?.title || '系统消息'"
-      @ok="sendMessageResponse"
-      @cancel="cancelMessage"
-    >
-      <div v-if="currentMessage">
-        <p>{{ currentMessage.content }}</p>
-        <a-input
-          v-if="currentMessage.needInput"
-          v-model:value="messageResponse"
-          placeholder="请输入回复内容"
-        />
-      </div>
-    </a-modal>
-
     <!-- 电源操作倒计时弹窗已移至全局组件 GlobalPowerCountdown.vue -->
     <OverlayRainMask
       v-model="aprilFoolsMaskVisible"
@@ -177,9 +160,6 @@ const {
   taskOptionsLoading,
   taskOptions,
   powerAction,
-  messageModalVisible,
-  currentMessage,
-  messageResponse,
 
   // Tab 管理
   addSchedulerTab,
@@ -198,10 +178,6 @@ const {
 
   // 电源操作
   onPowerActionChange,
-
-  // 消息操作
-  sendMessageResponse,
-  cancelMessage,
 
   // 初始化与清理
   initialize,
@@ -283,9 +259,7 @@ onMounted(() => {
   // 开发环境下导入调试工具
   if (process.env.NODE_ENV === 'development') {
     import('@/utils/scheduler-debug').then(() => {
-      logger.info(
-        '调度中心调试工具已加载，使用 debugScheduler() 和 testWebSocketConnection() 进行调试'
-      )
+      logger.info('调度中心调试工具已加载，使用 debugScheduler() 进行调试')
     })
   }
 })
