@@ -29,6 +29,7 @@ from pydantic import ValidationError
 
 from . import protocol
 from .dispatcher import Dispatcher
+from .manager import MainConnection
 from .publisher import Publisher
 from app.models.schema import WSEnvelope, WSDialogRequestData, WSDialogResponseData
 from app.utils.logger import get_logger
@@ -41,11 +42,22 @@ class _WSDialogs:
 
     请求与响应均使用 id=Main，通过 data.requestId 关联；
     等待无超时（与原手动审核行为一致），任务取消时随协程一并取消。
+    连接建立时重发未完成的弹窗请求，避免断连期间发起的弹窗永久丢失
+    （前端按 requestId 去重）。
     """
 
     def __init__(self) -> None:
         self._pending: Dict[str, asyncio.Future] = {}
+        self._requests: Dict[str, WSDialogRequestData] = {}
         Dispatcher.register(protocol.ID_MAIN, protocol.DIALOG_RESPONSE, self._on_response)
+        MainConnection.on_connect(self._resend_pending)
+
+    async def _resend_pending(self) -> None:
+        """主连接建立后重发所有未完成的弹窗请求。"""
+        for request in list(self._requests.values()):
+            await Publisher.send(
+                id=protocol.ID_MAIN, type=protocol.DIALOG_REQUEST, data=request
+            )
 
     async def ask(
         self,
@@ -67,24 +79,24 @@ class _WSDialogs:
         """
         request_id = str(uuid.uuid4())
         future: asyncio.Future = asyncio.get_running_loop().create_future()
-        self._pending[request_id] = future
-
-        await Publisher.send(
-            id=protocol.ID_MAIN,
-            type=protocol.DIALOG_REQUEST,
-            data=WSDialogRequestData(
-                requestId=request_id,
-                taskId=task_id,
-                title=title,
-                message=message,
-                options=options or ["是", "否"],
-            ),
+        request = WSDialogRequestData(
+            requestId=request_id,
+            taskId=task_id,
+            title=title,
+            message=message,
+            options=options or ["是", "否"],
         )
+        self._pending[request_id] = future
+        self._requests[request_id] = request
+
+        # 发送失败（主连接未就绪）时不放弃：请求已登记，重连后由 _resend_pending 重发
+        await Publisher.send(id=protocol.ID_MAIN, type=protocol.DIALOG_REQUEST, data=request)
 
         try:
             return await future
         finally:
             self._pending.pop(request_id, None)
+            self._requests.pop(request_id, None)
 
     def _on_response(self, envelope: WSEnvelope) -> None:
         """处理前端弹窗响应，未匹配到等待方的响应直接丢弃。"""
