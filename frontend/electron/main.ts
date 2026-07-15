@@ -132,6 +132,7 @@ interface AppConfig {
   UI: {
     IfShowTray: boolean
     IfToTray: boolean
+    IfHideCloseButton: boolean
     location: string
     maximized: boolean
     size: string
@@ -152,6 +153,7 @@ const defaultConfig: AppConfig = {
   UI: {
     IfShowTray: false,
     IfToTray: false,
+    IfHideCloseButton: false,
     location: '100,100',
     maximized: false,
     size: '1600,1000',

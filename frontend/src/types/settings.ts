@@ -14,6 +14,7 @@ export interface SettingsData {
   UI: {
     IfShowTray: boolean
     IfToTray: boolean
+    IfHideCloseButton: boolean
   }
   Function: {
     HistoryRetentionTime: number
