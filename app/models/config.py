@@ -2615,6 +2615,10 @@ class GlobalConfig(ConfigBase):
         self.UI_IfShowTray = ConfigItem("UI", "IfShowTray", False, BoolValidator())
         ## 是否关闭到托盘
         self.UI_IfToTray = ConfigItem("UI", "IfToTray", False, BoolValidator())
+        ## 是否隐藏主窗口关闭按钮
+        self.UI_IfHideCloseButton = ConfigItem(
+            "UI", "IfHideCloseButton", False, BoolValidator()
+        )
 
         ## Notify -----------------------------------------------------------
         ## 任务结果推送时间
