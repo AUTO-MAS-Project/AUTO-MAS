@@ -7,7 +7,12 @@
     </div>
 
     <a-spin :spinning="loading" tip="加载配置中...">
-      <a-row :gutter="24" class="editor-layout">
+      <div v-if="unavailableReason" class="config-unavailable">
+        <a-empty :description="unavailableReason">
+          <a-button type="primary" @click="emit('unavailable')">返回脚本设置</a-button>
+        </a-empty>
+      </div>
+      <a-row v-else :gutter="24" class="editor-layout">
         <!-- 左侧：配置文件列表 -->
         <a-col :span="8" class="left-panel">
           <div class="config-groups">
@@ -277,11 +282,13 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   saved: []
+  unavailable: []
 }>()
 
 const logger = window.electronAPI.getLogger('ok-script配置编辑')
 
 const loading = ref(false)
+const unavailableReason = ref('')
 const configs = ref<ConfigFile[]>([])
 const selectedFilename = ref<string | null>(null)
 const changedFiles = ref(new Set<string>())
@@ -452,6 +459,7 @@ const loadConfigs = async () => {
   try {
     const resp = await okScriptConfigApi.listConfigFiles(props.scriptId, props.userId)
     if (resp?.code === 200 && resp?.data) {
+      unavailableReason.value = ''
       configs.value = resp.data
       optionLabels.value = resp.optionLabels || {}
       if (
@@ -465,6 +473,9 @@ const loadConfigs = async () => {
       } else if (selectedFilename.value) {
         selectConfig(selectedFilename.value)
       }
+    } else if (resp?.code === 409) {
+      unavailableReason.value = resp?.message || '当前 ok-ww 程序不可用，请返回设置'
+      configs.value = []
     } else {
       message.error(resp?.message || '加载配置失败')
     }
@@ -586,6 +597,14 @@ watch(
 .editor-layout {
   flex: 1;
   min-height: 0;
+}
+
+.config-unavailable {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
 }
 
 .left-panel {

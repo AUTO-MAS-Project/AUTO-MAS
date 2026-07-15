@@ -16,21 +16,33 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""
-OK-WW 配置文件 Schema 定义
+"""OK-WW 配置 Schema：全部从 ok-ww 安装目录动态解析，不含静态字段白名单。
 
-半自动模式：
-- 字段名 / 类型从 JSON 配置文件值自动推断
-- 中文标签从 ok-ww 安装目录的 .po / .mo / .ts 自动加载
-- 仅下拉 / 多选的可选项列表需在此手工维护
+数据来源（见 :mod:`okww_adapter.ast_config`）：
+- 任务注册表 / ``-t`` 序号 ← ``repo/config.py`` 的 onetime_tasks + global_configs
+- 下拉 / 多选候选项 ← ``repo/src/task/*.py`` 的 config_type（含引用变量的列表字面量）
+- 字段中文标签 ← ok-ww 内置 i18n（.mo/.po/.ts）
+- 字段说明 ← config_description + i18n
+
+选项随 ok-ww 版本演进，因此按 ``config.py`` 顶层 version 缓存整份 schema：
+版本不变直接命中缓存，避免每次 list 都重解析源码。仅在 repo 源码不可读时，
+build_fields_for_config 退化为纯 JSON 值类型推断（无下拉、无翻译）。
 """
 
 from __future__ import annotations
-from typing import Any
-from pathlib import Path
+
 import gettext
 import re
+from pathlib import Path
+from typing import Any
 from xml.etree import ElementTree
+
+from .ast_config import (
+    find_repo_root,
+    parse_project_version,
+    parse_task_metadata,
+    parse_task_registry,
+)
 
 
 # ─── OK-WW 翻译文件自动加载 ─────────────────────────────────────────────────
@@ -60,6 +72,8 @@ def _parse_mo_file(mo_path: Path) -> dict[str, str]:
     """解析 .mo 编译翻译文件，返回 {msgid: msgstr} 映射。"""
     try:
         with mo_path.open("rb") as fp:
+            # ponytail: 依赖 GNUTranslations 私有 _catalog，已过滤空 msgid 元数据头。
+            #   公开 API 需预先枚举全部 key，此处无 key 集合，务实取用。
             catalog = gettext.GNUTranslations(fp)._catalog
         return {
             msgid: msgstr
@@ -149,102 +163,19 @@ _FALLBACK_LABELS: dict[str, str] = {
 }
 
 
-# ─── 手工维护：下拉 / 多选的可选项列表 ───────────────────────────────────
+# ─── 排除：不暴露给 MAS 用户编辑的配置文件 / 字段 ─────────────────────────
 #
-# ok-ww 打包后源码不可读，JSON 配置文件只存当前值不存侯选列表，
-# 因此下拉 / 多选字段的选项必须在这里声明。
-# 布尔、整数、文本字段无需声明——自动从 JSON 值推断类型。
+# 动态注册以 config.py 的 onetime_tasks + global_configs 为准，此处仅剔除
+# 注册表里存在、但对代理配置无意义的项（空文件、纯调试项）。
 
-SELECT_OPTIONS: dict[str, dict[str, list[str]]] = {
-    # ── 任务配置 ──
-    "DailyTask.json": {
-        "Which to Farm": [
-            "Tacet Suppression", "Forgery Challenge", "Simulation Challenge",
-        ],
-        "Material Selection": [
-            "Resonator EXP", "Weapon EXP", "Shell Credit",
-        ],
-    },
-    "FarmEchoTask.json": {
-        "Teleport to Boss": [
-            "No", "Weekly Challenge", "Boss Challenge",
-        ],
-        "Boss": [
-            "Other", "Hyvatia", "Fallacy of No Return", "Sentry Construct",
-            "Lorelei", "Lioness of Glory", "Nightmare: Hecate",
-            "Fenrico", "Nameless Explorer",
-        ],
-        "Boss Level": ["50", "60", "70", "80"],
-        "Echo Pickup Method": ["Yolo", "Run in Circle", "Walk"],
-    },
-    "NightmareNestTask.json": {
-        "Which to Farm": ["Nightmare Purification", "Tacet Discord Nest"],
-    },
-    "SimulationTask.json": {
-        "Material Selection": [
-            "Resonator EXP", "Weapon EXP", "Shell Credit",
-        ],
-    },
-    # ── 全局配置 ──
-    "Basic Options.json": {
-        "Use DirectML": ["Auto", "Yes", "No"],
-        "Start/Stop": ["None", "F9", "F10", "F11", "F12"],
-        "Blur Algorithm": ["Blur", "Inpaint"],
-    },
-}
+_EXCLUDED_FILES: frozenset[str] = frozenset({
+    "GardenTask.json",  # 无可配置字段，暴露仅增噪音
+})
 
 
-def _get_select_options(filename: str, field_name: str) -> list[str] | None:
-    """获取指定字段的下拉 / 多选选项列表。"""
-    return SELECT_OPTIONS.get(filename, {}).get(field_name)
-
-
-# ─── 文件注册表 ───────────────────────────────────────────────────────────
-
-CONFIG_GROUPS = {
-    "任务配置": [
-        "DailyTask.json",
-        "MultiAccountDailyTask.json",
-        "FarmEchoTask.json",
-        "AutoRogueTask.json",
-        "ForgeryTask.json",
-        "NightmareNestTask.json",
-        "SimulationTask.json",
-        "TacetTask.json",
-    ],
-    "全局配置": [
-        "Game Hotkey.json",
-        "Character Config.json",
-        "Monthly Card Config.json",
-        "Basic Options.json",
-    ],
-}
-
-CONFIG_DISPLAY_NAMES: dict[str, str] = {
-    "DailyTask.json": "日常一条龙",
-    "MultiAccountDailyTask.json": "多账号一条龙",
-    "FarmEchoTask.json": "刷4C(大世界/副本)",
-    "AutoRogueTask.json": "半自动肉鸽(周常)",
-    "ForgeryTask.json": "凝素领域",
-    "NightmareNestTask.json": "梦魇巢穴",
-    "SimulationTask.json": "模拟领域",
-    "TacetTask.json": "无音区",
-    "Game Hotkey.json": "游戏快捷键",
-    "Character Config.json": "角色设置",
-    "Monthly Card Config.json": "小月卡设置",
-    "Basic Options.json": "基本设置",
-}
-
-TASK_INDEX_MAP: dict[str, int] = {
-    "DailyTask.json": 1,
-    "MultiAccountDailyTask.json": 2,
-    "FarmEchoTask.json": 3,
-    "AutoRogueTask.json": 4,
-    "ForgeryTask.json": 5,
-    "NightmareNestTask.json": 6,
-    "SimulationTask.json": 7,
-    "TacetTask.json": 8,
-}
+def _is_internal_field(name: str) -> bool:
+    """ok-ww 框架内部字段（_enabled 等），不暴露给 MAS 用户编辑。"""
+    return name.startswith("_")
 
 
 # ─── JSON 字段自动发现 ────────────────────────────────────────────────────
@@ -271,87 +202,169 @@ def _translate(key: str, labels: dict[str, str]) -> str:
     return key
 
 
+# ─── 动态 schema：解析结果按 (root, version) 缓存 ─────────────────────────
+
+# {resolved_root: (version, registry, {filename: {field: field_meta_dict}})}
+_SCHEMA_CACHE: dict[str, tuple[str, list[dict[str, Any]], dict[str, dict[str, Any]]]] = {}
+
+
+def _resolve_root(root_path: Path | str) -> Path:
+    return Path(root_path).resolve()
+
+
+def _build_schema(repo_root: Path) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+    """解析源码，构建 (文件注册表, {filename: {field: {type,options,description}}})。"""
+
+    registry: list[dict[str, Any]] = []
+    field_specs: dict[str, dict[str, Any]] = {}
+    for task in parse_task_registry(repo_root):
+        if task.filename in _EXCLUDED_FILES:
+            continue
+        task_name, fields = parse_task_metadata(repo_root, task.class_name)
+        registry.append(
+            {
+                "filename": task.filename,
+                "className": task.class_name,
+                "group": task.group,
+                "taskIndex": task.task_index,
+                # task 的 self.name（英文/中文），供一级菜单显示名翻译；全局配置无 class 时为空。
+                "taskName": task_name,
+            }
+        )
+        field_specs[task.filename] = {
+            name: {
+                "type": meta.type,
+                "options": meta.options,
+                "description": meta.description,
+            }
+            for name, meta in fields.items()
+        }
+    return registry, field_specs
+
+
+def _get_schema(
+    root_path: Path | str,
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]] | None:
+    """取 (注册表, 字段规格)，按 config.py version 缓存；源码不可读返回 None。"""
+
+    resolved = _resolve_root(root_path)
+    repo_root = find_repo_root(resolved)
+    if repo_root is None:
+        return None
+    version = parse_project_version(repo_root)
+
+    cached = _SCHEMA_CACHE.get(str(resolved))
+    if cached is not None and cached[0] == version:
+        return cached[1], cached[2]
+
+    registry, field_specs = _build_schema(repo_root)
+    _SCHEMA_CACHE[str(resolved)] = (version, registry, field_specs)
+    return registry, field_specs
+
+
+def _display_name(item: dict[str, Any], option_labels: dict[str, str]) -> str:
+    """一级菜单显示名：翻译(self.name) > 翻译(文件名stem) > stem。
+
+    任务文件用 self.name（Daily Task→日常一条龙），部分 self.name 本就是中文；
+    全局配置无 class，回退用文件名 stem 翻译（Game Hotkey→游戏快捷键）。
+    """
+    stem = item["filename"].removesuffix(".json")
+    task_name = item.get("taskName") or ""
+    if task_name:
+        return _translate(task_name, option_labels)
+    return _translate(stem, option_labels)
+
+
+def get_all_config_info(
+    root_path: Path | str | None = None,
+    option_labels: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    """获取所有可编辑配置文件的元信息（动态注册；无源码时返回空）。
+
+    option_labels 提供时用于翻译一级菜单显示名；缺省则按 root 加载。
+    """
+
+    if root_path is None:
+        return []
+    schema = _get_schema(root_path)
+    if schema is None:
+        return []
+    registry, _ = schema
+    labels = option_labels if option_labels is not None else load_okww_option_labels(root_path)
+    return [
+        {
+            "filename": item["filename"],
+            "displayName": _display_name(item, labels),
+            "group": item["group"],
+            "taskIndex": item["taskIndex"],
+        }
+        for item in registry
+    ]
+
+
+def get_field_specs(root_path: Path | str) -> dict[str, dict[str, Any]]:
+    """获取 {filename: {field: {type,options,description}}}（无源码时为空）。"""
+
+    schema = _get_schema(root_path)
+    return schema[1] if schema is not None else {}
+
+
 def build_fields_for_config(
     filename: str,
     json_data: dict[str, Any],
     option_labels: dict[str, str],
+    field_specs: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """从 JSON 数据 + 选项映射 + 翻译标签构建前端字段列表。
+    """构建单个配置文件的前端字段列表。
 
-    逻辑：
-    1. 遍历 JSON 中的字段 → 根据值推断类型
-    2. 若字段在 SELECT_OPTIONS 中有定义 → 设为 select / list 并附选项
-    3. 若字段在翻译中有映射 → 用翻译作为 label
-    4. SELECT_OPTIONS 中定义但 JSON 中没有的字段 → 也加入（新字段，值为 None）
+    - field_specs 提供源码解析出的 type/options/description（下拉候选项来源）。
+    - JSON 中的字段按值推断类型；源码声明为 drop_down/multi_selection 的覆盖为
+      select/list 并附候选项。
+    - 源码声明但 JSON 缺失的字段（ok-ww 新增项）也补入，值为 None。
     """
-    seen: set[str] = set()
 
-    def _is_internal(name: str) -> bool:
-        """ok-ww 框架内部字段（_enabled 等），不暴露给 MAS 用户编辑。"""
-        return name.startswith("_")
+    specs = (field_specs or {}).get(filename, {})
+    seen: set[str] = set()
 
     def make_field(name: str, raw_value: Any) -> dict[str, Any]:
         seen.add(name)
-        opts = _get_select_options(filename, name)
+        spec = specs.get(name, {})
+        options = spec.get("options") or None
+        spec_type = spec.get("type") or ""
 
-        if opts is not None:
-            # 下拉或多选
-            field_type = "list" if isinstance(raw_value, list) else "select"
-            return {
-                "name": name,
-                "type": field_type,
-                "label": _translate(name, option_labels),
-                "description": "",
-                "value": raw_value,
-                "options": opts,
-                "min": None,
-                "max": None,
-                "step": None,
-            }
+        if spec_type in ("drop_down", "multi_selection"):
+            field_type = "list" if (
+                spec_type == "multi_selection" or isinstance(raw_value, list)
+            ) else "select"
+        else:
+            field_type = _infer_field_type(raw_value)
 
-        # 普通字段：从 JSON 值推断类型
-        field_type = _infer_field_type(raw_value)
         return {
             "name": name,
             "type": field_type,
             "label": _translate(name, option_labels),
-            "description": "",
+            "description": _translate(spec["description"], option_labels)
+            if spec.get("description")
+            else "",
             "value": raw_value,
-            "options": None,
+            # options 保持源码原始英文值：它是写回 ok-ww 的存储值，
+            # 前端用 optionLabels 映射显示中文，切勿在此预翻译。
+            "options": list(options) if options else None,
             "min": None,
             "max": None,
             "step": None,
         }
 
     fields = [
-        make_field(k, v)
-        for k, v in json_data.items()
-        if not _is_internal(k)  # 屏蔽 _enabled 等 ok-ww 框架内部字段
+        make_field(name, value)
+        for name, value in json_data.items()
+        if not _is_internal_field(name)
     ]
 
-    # 补充：SELECT_OPTIONS 中有定义但 JSON 中没有的字段（ok-ww 新增配置项）
-    known_options = SELECT_OPTIONS.get(filename, {})
-    for name in known_options:
-        if name not in seen and not _is_internal(name):
+    # 源码声明但当前 JSON 未落地的字段（ok-ww 新增配置项）。
+    for name in specs:
+        if name not in seen and not _is_internal_field(name):
             fields.append(make_field(name, None))
 
     return fields
 
-
-# ─── API 辅助函数 ─────────────────────────────────────────────────────────
-
-def get_all_config_info() -> list[dict[str, Any]]:
-    """获取所有配置文件的元信息（用于前端列表展示）。"""
-    result = []
-    for group_name, filenames in CONFIG_GROUPS.items():
-        for filename in filenames:
-            # 字段数量 = JSON 中已有的 + SELECT_OPTIONS 中新增的
-            field_count = len(SELECT_OPTIONS.get(filename, {}))
-            result.append({
-                "filename": filename,
-                "displayName": CONFIG_DISPLAY_NAMES.get(filename, filename),
-                "group": group_name,
-                "taskIndex": TASK_INDEX_MAP.get(filename),
-                "fieldCount": max(field_count, 1),  # 至少 1，避免显示 0
-            })
-    return result

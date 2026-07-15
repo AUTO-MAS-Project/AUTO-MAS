@@ -82,12 +82,6 @@ const routes = [
     meta: { title: '编辑 ok-script 项目' },
   },
   {
-    path: '/scripts/:id/edit/okef',
-    name: 'OkefScriptEdit',
-    component: () => import('../views/EditView/Script/OkScriptScriptEdit.vue'),
-    meta: { title: '编辑 ok-script 项目' },
-  },
-  {
     path: '/scripts/:scriptId/users/add/maa',
     name: 'MAAUserAdd',
     component: () => import('../views/EditView/User/MAAUserEdit.vue'),
@@ -203,12 +197,6 @@ const routes = [
     meta: { title: '添加 ok-script 用户' },
   },
   {
-    path: '/scripts/:scriptId/users/add/okef',
-    name: 'OkefUserAdd',
-    component: () => import('../views/EditView/User/OkScriptUserEdit.vue'),
-    meta: { title: '添加 ok-script 用户' },
-  },
-  {
     path: '/scripts/:scriptId/users/:userId/edit/okww',
     name: 'OkwwUserEdit',
     component: () => import('../views/EditView/User/OkwwUserEdit.vue'),
@@ -217,12 +205,6 @@ const routes = [
   {
     path: '/scripts/:scriptId/users/:userId/edit/ok-script',
     name: 'OkScriptUserEdit',
-    component: () => import('../views/EditView/User/OkScriptUserEdit.vue'),
-    meta: { title: '编辑 ok-script 用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/:userId/edit/okef',
-    name: 'OkefUserEdit',
     component: () => import('../views/EditView/User/OkScriptUserEdit.vue'),
     meta: { title: '编辑 ok-script 用户' },
   },
