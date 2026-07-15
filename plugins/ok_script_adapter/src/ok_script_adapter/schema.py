@@ -11,6 +11,10 @@ class _ConfigModel(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class Config(_ConfigModel):
+    pass
+
+
 class PluginConfig(_ConfigModel):
     """ok-script 插件实例配置。"""
 

@@ -23,7 +23,6 @@ import uuid
 import json
 import calendar
 import re
-from pathlib import Path
 from datetime import datetime
 from typing import Callable
 
@@ -3101,15 +3100,13 @@ class PluginConfig(ConfigBase):
             try:
                 from app.plugins.schema import PluginSchemaManager
 
-                plugin_path = Path.cwd() / "plugins" / plugin_name
                 schema_manager = PluginSchemaManager()
-                schema = schema_manager.load_schema(plugin_name, plugin_path)
+                schema = schema_manager.load_schema(plugin_name)
                 if not schema:
                     return json.dumps(raw_config, ensure_ascii=False)
 
                 validated = schema_manager.apply_defaults_and_validate(
                     plugin_name,
-                    schema,
                     raw_config,
                 )
                 return json.dumps(validated, ensure_ascii=False)
