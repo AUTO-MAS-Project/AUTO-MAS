@@ -671,7 +671,7 @@ async def reload_plugins() -> OutBase:
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
 
 
-@ws_command("plugins.reload_instance")
+@ws_command("plugins.reload_instance", params=PluginReloadInstanceIn)
 @router.post(
     "/reload_instance",
     tags=["Action"],
@@ -691,7 +691,7 @@ async def reload_plugin_instance(data: PluginReloadInstanceIn = Body(...)) -> Ou
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
 
 
-@ws_command("plugins.reload_plugin")
+@ws_command("plugins.reload_plugin", params=PluginReloadPluginIn)
 @router.post(
     "/reload_plugin",
     tags=["Action"],
@@ -711,7 +711,7 @@ async def reload_plugin_by_name(data: PluginReloadPluginIn = Body(...)) -> OutBa
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
 
 
-@ws_command("plugins.install_package")
+@ws_command("plugins.install_package", params=PluginPackageIn)
 @router.post(
     "/install_package",
     tags=["Action"],
@@ -742,7 +742,7 @@ async def install_plugin_package(data: PluginPackageIn = Body(...)) -> OutBase:
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
 
 
-@ws_command("plugins.uninstall_package")
+@ws_command("plugins.uninstall_package", params=PluginPackageIn)
 @router.post(
     "/uninstall_package",
     tags=["Action"],
@@ -775,7 +775,7 @@ async def uninstall_plugin_package(data: PluginPackageIn = Body(...)) -> OutBase
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
 
 
-@ws_command("plugins.add")
+@ws_command("plugins.add", params=PluginAddIn)
 @router.post(
     "/add",
     tags=["Add"],
@@ -832,7 +832,7 @@ async def add_plugin_instance(data: PluginAddIn = Body(...)) -> PluginAddOut:
         )
 
 
-@ws_command("plugins.update")
+@ws_command("plugins.update", params=PluginUpdateIn)
 @router.post(
     "/update",
     tags=["Update"],
@@ -907,7 +907,7 @@ async def update_plugin_instance(data: PluginUpdateIn = Body(...)) -> OutBase:
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
 
 
-@ws_command("plugins.delete")
+@ws_command("plugins.delete", params=PluginDeleteIn)
 @router.post(
     "/delete",
     tags=["Delete"],
