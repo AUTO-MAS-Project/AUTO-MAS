@@ -6,6 +6,7 @@ import { useTheme } from '@/composables/useTheme'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import type { GlobalConfig } from '@/api'
 import { useSettingsApi } from '@/composables/useSettingsApi'
+import { useUiPreferences } from '@/composables/useUiPreferences'
 import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
 import { Service, type VersionOut } from '@/api'
 const logger = window.electronAPI.getLogger('设置')
@@ -19,6 +20,7 @@ import TabOthers from './TabOthers.vue'
 
 const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor } = useTheme()
 const { loading, getSettings, updateSettings } = useSettingsApi()
+const { syncUiPreferences } = useUiPreferences()
 const {
   restartPolling,
   updateVisible,
@@ -103,6 +105,7 @@ const loadSettings = async () => {
   const data = await getSettings()
   if (data) {
     Object.assign(settings, data)
+    syncUiPreferences(data.UI)
 
     // 同步配置到 Electron 主进程
     try {
@@ -144,6 +147,7 @@ const refreshSettings = async () => {
   const data = await getSettings()
   if (data) {
     Object.assign(settings, data)
+    syncUiPreferences(data.UI)
 
     // 同步所有配置到 Electron
     try {
