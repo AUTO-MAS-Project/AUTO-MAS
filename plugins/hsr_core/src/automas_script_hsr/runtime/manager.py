@@ -524,7 +524,7 @@ class HSRManager(TaskExecuteBase):
                     / user_item.name
                     / f"{dt.strftime('%H-%M-%S')}.log"
                 )
-                await Config.save_hsr_log(
+                await Config.save_general_log(
                     log_path, log_item.content, log_item.status
                 )
 

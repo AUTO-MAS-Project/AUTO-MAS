@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import yaml
@@ -54,7 +54,7 @@ from app.plugins import ScriptAdapterDefinition
 from app.plugins.server import PluginHttpRequest
 from app.plugins.script_config_store import ScriptConfigStore
 from app.models.schema import ScriptCreateIn, ScriptCreateOut, UserCreateOut
-from app.models.task import UserItem
+from app.models.task import LogRecord, UserItem
 from app.utils.constants import UTC8
 
 
@@ -882,6 +882,42 @@ def test_external_root_lock_serializes_same_upstream_directory() -> None:
         release_external_path_locks(first)
         second = await asyncio.wait_for(waiting, timeout=1)
         release_external_path_locks(second)
+
+    asyncio.run(scenario())
+
+
+def test_hsr_history_reuses_general_log_store() -> None:
+    async def scenario() -> None:
+        manager = HSRManager.__new__(HSRManager)
+        manager.crashed = False
+        manager.script_info = SimpleNamespace(
+            user_list=[
+                UserItem(
+                    user_id="user-id",
+                    name="测试用户",
+                    status="完成",
+                    log_record={
+                        datetime(2026, 7, 15, 12): LogRecord(
+                            content=["HSR log\n"],
+                            status="完成",
+                        )
+                    },
+                )
+            ]
+        )
+
+        with patch(
+            "automas_script_hsr.runtime.manager.Config.save_general_log",
+            new_callable=AsyncMock,
+        ) as save_log:
+            await manager._persist_user_logs()
+
+        save_log.assert_awaited_once()
+        log_path, content, status = save_log.await_args.args
+        assert log_path.suffix == ".log"
+        assert log_path.parent.name == "测试用户"
+        assert content == ["HSR log\n"]
+        assert status == "完成"
 
     asyncio.run(scenario())
 
