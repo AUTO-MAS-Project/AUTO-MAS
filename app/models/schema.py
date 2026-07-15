@@ -259,6 +259,9 @@ class GlobalConfig_Start(BaseModel):
 class GlobalConfig_UI(BaseModel):
     IfShowTray: Optional[bool] = Field(default=None, description="是否常态显示托盘图标")
     IfToTray: Optional[bool] = Field(default=None, description="是否最小化到托盘")
+    IfHideCloseButton: Optional[bool] = Field(
+        default=None, description="是否隐藏主窗口关闭按钮"
+    )
 
 
 class GlobalConfig_Notify(BaseModel):
