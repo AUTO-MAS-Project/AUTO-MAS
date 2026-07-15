@@ -257,7 +257,9 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   padding-left: 12px;
+  min-width: 64px;
   height: 100%;
+  -webkit-app-region: drag;
 }
 
 .logo-section {
@@ -422,6 +424,7 @@ onMounted(async () => {
 .update-hint.clickable {
   cursor: pointer;
   user-select: none;
+  -webkit-app-region: no-drag;
 }
 
 .update-hint.clickable:hover {
