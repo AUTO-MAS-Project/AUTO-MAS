@@ -16,7 +16,6 @@ from app.plugins import (
 from app.plugins.realtime import schedule_plugin_snapshot
 from app.plugins.script_config_store import ScriptConfigStore
 
-from .adapter import HSRAdapterHooks
 from .registry import HSRRegistryService
 from .schema import HSRConfig, HSRUserConfig
 
@@ -52,7 +51,7 @@ class Plugin(ScriptAdapterPlugin):
             ScriptAdapterDefinition(
                 type_key="HSR",
                 display_name="HSR脚本",
-                hooks_factory=HSRAdapterHooks,
+                hooks_factory=None,
                 script_model=HSRConfig,
                 user_model=HSRUserConfig,
                 script_class_name="HSRPluginConfig",
@@ -63,6 +62,7 @@ class Plugin(ScriptAdapterPlugin):
                 editor_kind="plugin:automas_script_hsr",
                 is_builtin=False,
                 record_capability_resolver=self.registry.resolve_record_capability,
+                manager_factory=self._build_manager,
                 metadata={
                     "available": False,
                     "unavailable_reason": "请启用 SRA 或 M7A HSR 适配器",
@@ -74,21 +74,10 @@ class Plugin(ScriptAdapterPlugin):
         ]
 
     async def on_start(self) -> None:
-        definition = self.build_script_adapters()[0]
-        provider = definition.build_provider(
-            owner=self.ctx.instance_id,
-            plugin_context=self.ctx,
-        )
-        from .runtime.manager import HSRManager
-
-        provider.manager_factory = lambda script_item: HSRManager(
-            script_item,
-            provider=provider,
-            registry=self.registry,
-        )
-        if provider.bind_related_config is not None:
-            provider.bind_related_config(Config)
-        script_type_registry.register(provider, owner=self.ctx.instance_id)
+        await super().on_start()
+        provider = script_type_registry.get("HSR")
+        if provider is None:
+            raise RuntimeError("HSR provider 注册失败")
         self.provider = provider
         self.registry.set_provider(provider)
         self.ctx.set("hsr.registry.v1", self.registry)
@@ -106,26 +95,35 @@ class Plugin(ScriptAdapterPlugin):
         self.ctx.logger.info("hsr.registry.v1 ready")
 
     async def on_stop(self, reason: str) -> None:
-        cleanup_errors = await self.registry.close_all_sessions()
-        if cleanup_errors:
-            self.ctx.logger.error(
-                f"HSR 活动会话清理失败: {'；'.join(cleanup_errors)}"
-            )
-        self.ctx.set("hsr.registry.v1", None)
-        removed = script_type_registry.unregister_by_owner(self.ctx.instance_id)
-        self.provider = None
-        self.ctx.logger.info(f"HSR 统一脚本入口已停止: {removed}, reason={reason}")
+        await self._stop(reason=reason, final=False)
 
     async def on_unload(self) -> None:
+        await self._stop(reason="unload", final=True)
+
+    async def _stop(self, *, reason: str, final: bool) -> None:
         cleanup_errors = await self.registry.close_all_sessions()
         if cleanup_errors:
             self.ctx.logger.error(
                 f"HSR 活动会话清理失败: {'；'.join(cleanup_errors)}"
             )
+            if not final:
+                return
         self.ctx.set("hsr.registry.v1", None)
-        removed = script_type_registry.unregister_by_owner(self.ctx.instance_id)
+        if final:
+            await super().on_unload()
+        else:
+            await super().on_stop(reason)
         self.provider = None
-        self.ctx.logger.info(f"HSR 统一脚本入口已卸载: {removed}")
+        self.ctx.logger.info(f"HSR 统一脚本入口已停止, reason={reason}")
+
+    def _build_manager(self, script_item, provider):
+        from .runtime.manager import HSRManager
+
+        return HSRManager(
+            script_item,
+            provider=provider,
+            registry=self.registry,
+        )
 
     async def _capabilities(self, request: PluginHttpRequest) -> PluginHttpResponse:
         script_id = str(request.query.get("scriptId") or "").strip()
@@ -133,8 +131,7 @@ class Plugin(ScriptAdapterPlugin):
             return self._success(self.registry.snapshot().asdict())
 
         try:
-            store, script_model = await self._load_script(script_id)
-            _ = store
+            _, script_model = await self._load_script(script_id)
             snapshot = self.registry.snapshot(
                 script_config=script_model,
             )

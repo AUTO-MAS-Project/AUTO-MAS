@@ -6,6 +6,7 @@ from typing import Any
 from automas_script_hsr import HSRControllerSession
 
 from .catalog import SRA_DESCRIPTOR
+from .runner import get_sra_app_data_dir
 
 
 class SRAController:
@@ -19,6 +20,12 @@ class SRAController:
         if not executable.is_file():
             return False, f"SRA 路径中未找到 SRA-cli.exe：{executable}"
         return True, ""
+
+    def lock_paths(self, script_config: Any) -> tuple[str, ...]:
+        root = str(script_config.get("SRA", "Path") or "").strip()
+        paths = [root] if root else []
+        paths.append(str(get_sra_app_data_dir()))
+        return tuple(paths)
 
     async def open_session(
         self,

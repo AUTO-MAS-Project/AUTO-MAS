@@ -20,6 +20,10 @@ class M7AController:
             return False, f"三月七助手路径中未找到 March7th Assistant.exe：{executable}"
         return True, ""
 
+    def lock_paths(self, script_config: Any) -> tuple[str, ...]:
+        root = str(script_config.get("M7A", "Path") or "").strip()
+        return (root,) if root else ()
+
     async def open_session(
         self,
         *,

@@ -21,7 +21,6 @@
 
 
 import asyncio
-import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -63,48 +62,14 @@ METHOD_BOOK: dict[str, type[HSRAutoProxyTask | HSRManualReviewTask]] = {
 def _resolve_external_lock_paths(
     script_config: Any,
     effective_engines: tuple[str, ...],
+    registry: Any,
 ) -> list[str | Path]:
     """返回本轮 HSR 运行会修改的全部外部路径。"""
 
-    paths: list[str | Path] = [
-        script_config.get(engine, "Path")
-        for engine in effective_engines
-        if script_config.get(engine, "Path")
-    ]
-    if "SRA" in effective_engines:
-        from automas_hsr_adapter_sra.runner import get_sra_app_data_dir
-
-        paths.append(get_sra_app_data_dir())
+    paths: list[str | Path] = []
+    for engine in effective_engines:
+        paths.extend(registry.get_group(engine).controller.lock_paths(script_config))
     return paths
-
-
-def _remove_path(path: Path) -> None:
-    """删除文件或目录，供原子恢复前清理临时路径。"""
-
-    if path.is_dir():
-        shutil.rmtree(path, ignore_errors=True)
-    elif path.exists():
-        path.unlink()
-
-
-def _restore_path_from_backup(label: str, source: Path, backup: Path) -> None:
-    """用 tmp + rename 恢复一个外部配置路径。"""
-
-    if not backup.exists():
-        raise RuntimeError(f"备份路径不存在：{backup}")
-
-    source.parent.mkdir(parents=True, exist_ok=True)
-    temp_source = source.with_name(f"{source.name}.tmp")
-    _remove_path(temp_source)
-
-    if backup.is_dir():
-        shutil.copytree(backup, temp_source)
-    else:
-        shutil.copy2(backup, temp_source)
-
-    _remove_path(source)
-    temp_source.rename(source)
-    logger.info(f"{label} 已恢复：{source}")
 
 
 class HSRManager(TaskExecuteBase):
@@ -137,104 +102,7 @@ class HSRManager(TaskExecuteBase):
             registry=registry,
         )
         self.temp_path: Path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
-        self._external_config_targets: list[tuple[str, Path, Path, bool]] = []
         self._external_path_locks: list[asyncio.Lock] = []
-
-    def _backup_external_configs(self) -> None:
-        """运行前备份 M7A/SRA 的真实配置文件。"""
-
-        if self.script_config is None:
-            return
-
-        backup_root = self.temp_path / "ExternalConfig"
-        shutil.rmtree(backup_root, ignore_errors=True)
-        backup_root.mkdir(parents=True, exist_ok=True)
-        self._external_config_targets = []
-
-        def backup_path(label: str, source: Path, backup: Path) -> None:
-            existed = source.exists()
-            self._external_config_targets.append((label, source, backup, existed))
-            if not existed:
-                logger.info(f"{label} 原配置不存在，记录为缺失：{source}")
-                return
-
-            backup.parent.mkdir(parents=True, exist_ok=True)
-            if source.is_dir():
-                shutil.copytree(source, backup, dirs_exist_ok=True)
-            elif source.is_file():
-                shutil.copy2(source, backup)
-            else:
-                raise RuntimeError(f"{label} 既不是文件也不是目录：{source}")
-            logger.info(f"{label} 已备份：{source} -> {backup}")
-
-        m7a_path = self.script_config.get("M7A", "Path")
-        if m7a_path and "M7A" in self.effective_engines:
-            backup_path(
-                "M7A config.yaml",
-                Path(str(m7a_path)) / "config.yaml",
-                backup_root / "M7A" / "config.yaml",
-            )
-
-        sra_path = self.script_config.get("SRA", "Path")
-        if sra_path and "SRA" in self.effective_engines:
-            from automas_hsr_adapter_sra.runner import get_sra_app_data_dir
-
-            sra_app_data = get_sra_app_data_dir()
-            backup_path(
-                "SRA settings.json",
-                sra_app_data / "settings.json",
-                backup_root / "SRA" / "settings.json",
-            )
-            backup_path(
-                "SRA cache.json",
-                sra_app_data / "cache.json",
-                backup_root / "SRA" / "cache.json",
-            )
-            backup_path(
-                "SRA configs",
-                sra_app_data / "configs",
-                backup_root / "SRA" / "configs",
-            )
-
-        logger.info(
-            f"HSR 外部配置备份完成，共 {len(self._external_config_targets)} 项"
-        )
-
-    def _restore_external_config_targets(self) -> None:
-        """运行后恢复 M7A/SRA 配置，并清理备份目录。"""
-
-        targets = list(self._external_config_targets)
-        if not targets:
-            return
-
-        errors: list[str] = []
-        for label, source, backup, existed in reversed(targets):
-            try:
-                if not existed:
-                    if source.is_dir():
-                        shutil.rmtree(source, ignore_errors=True)
-                    elif source.exists():
-                        source.unlink()
-                    logger.info(f"{label} 原配置不存在，已清理任务期新增路径：{source}")
-                    continue
-
-                _restore_path_from_backup(label, source, backup)
-            except Exception as e:  # noqa: BLE001
-                errors.append(f"{label}: {e}")
-                logger.exception(f"恢复 HSR 外部配置失败：{label}: {e}")
-
-        shutil.rmtree(self.temp_path / "ExternalConfig", ignore_errors=True)
-        try:
-            if self.temp_path.exists() and not any(self.temp_path.iterdir()):
-                self.temp_path.rmdir()
-        except OSError:
-            pass
-
-        self._external_config_targets = []
-        if errors:
-            raise RuntimeError("；".join(errors))
-
-        logger.info("HSR 外部配置已恢复")
 
     def _append_log(self, message: str, *, max_lines: int = 500) -> None:
         """向调度台日志追加一行 HSR 运行信息。"""
@@ -301,11 +169,7 @@ class HSRManager(TaskExecuteBase):
         if self.task_info.mode not in snapshot.supported_modes:
             return f"当前 HSR 引擎组合不支持任务模式 {self.task_info.mode}"
         self.effective_engines = tuple(snapshot.effective_engines)
-        object.__setattr__(
-            self.script_config,
-            "_hsr_effective_engines",
-            self.effective_engines,
-        )
+        self._runtime.effective_engines = self.effective_engines
         script_config = self.script_config
 
         for adapter in snapshot.adapters:
@@ -316,7 +180,11 @@ class HSRManager(TaskExecuteBase):
             return self._check_manual_review(script_config)
 
         for module in HSR_TASK_MODULES:
-            if not module_is_available(module, script_config):
+            if not module_is_available(
+                module,
+                script_config,
+                effective_engines=self.effective_engines,
+            ):
                 continue
             raw_assigned = script_config._config_item_index["TaskMapping"][module.key].value
             if len(self.effective_engines) > 1 and not script_supports(
@@ -340,7 +208,11 @@ class HSRManager(TaskExecuteBase):
 
             for module in HSR_TASK_MODULES:
                 if (
-                    module_is_available(module, script_config)
+                    module_is_available(
+                        module,
+                        script_config,
+                        effective_engines=self.effective_engines,
+                    )
                     and user_config.get("TaskSwitch", module.key)
                 ):
                     enabled_module_keys.add(module.key)
@@ -385,7 +257,12 @@ class HSRManager(TaskExecuteBase):
             if not user_config.get("TaskSwitch", module.key):
                 continue
             if (
-                get_assigned_script(module, script_config) == "SRA"
+                get_assigned_script(
+                    module,
+                    script_config,
+                    effective_engines=self.effective_engines,
+                )
+                == "SRA"
             ):
                 return True
         return False
@@ -480,34 +357,17 @@ class HSRManager(TaskExecuteBase):
         await self.store.lock()
         self.script_config = await self.store.load_script_model()
         self.user_config = await self.store.load_user_collection()
-        object.__setattr__(
-            self.script_config,
-            "_hsr_effective_engines",
-            self.effective_engines,
-        )
+        self._runtime.effective_engines = self.effective_engines
 
         logger.success(f"{self.script_info.script_id} 已锁定，HSR 配置提取完成")
 
         external_roots = _resolve_external_lock_paths(
             self.script_config,
             self.effective_engines,
+            self.registry,
         )
         self._external_path_locks = await acquire_external_path_locks(external_roots)
         self._append_log("HSR 外部脚本目录运行锁已获取")
-
-        self._backup_external_configs()
-        self._append_log("HSR 外部脚本配置已备份")
-        if "SRA" in self.effective_engines:
-            try:
-                from automas_hsr_adapter_sra.runner import (
-                    disable_sra_windows_notifications,
-                )
-
-                disable_sra_windows_notifications()
-                self._append_log("SRA 本体 Windows 通知已临时关闭")
-            except Exception as e:  # noqa: BLE001
-                logger.warning(f"SRA 本体 Windows 通知关闭失败：{e}")
-                self._append_log(f"SRA 本体 Windows 通知关闭失败，将继续执行：{e}")
 
         self.script_info.user_list = [
             UserItem(
@@ -668,21 +528,6 @@ class HSRManager(TaskExecuteBase):
                     log_path, log_item.content, log_item.status
                 )
 
-    async def _restore_external_configs(self) -> str:
-        """恢复 SRA / M7A 外部配置，返回错误文本或空串。"""
-
-        if not self._external_config_targets:
-            return ""
-
-        try:
-            self._restore_external_config_targets()
-            self._append_log("HSR 外部脚本配置已恢复")
-            return ""
-        except Exception as e:  # noqa: BLE001
-            logger.exception(f"HSR 外部脚本配置恢复失败：{e}")
-            self._append_log(f"HSR 外部脚本配置恢复失败：{e}")
-            return f"HSR 外部脚本配置恢复失败：{e}"
-
     async def _sync_manual_review_user_data(self) -> None:
         """人工检查模式下，把本轮检查结果写回真实 UserData。"""
 
@@ -785,10 +630,6 @@ class HSRManager(TaskExecuteBase):
             logger.exception(msg)
             self._append_log(msg)
             final_errors.append(msg)
-
-        restore_error = await self._restore_external_configs()
-        if restore_error:
-            final_errors.append(restore_error)
 
         release_external_path_locks(self._external_path_locks)
         self._external_path_locks = []

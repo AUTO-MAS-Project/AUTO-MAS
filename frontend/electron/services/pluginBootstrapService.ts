@@ -22,11 +22,6 @@ const logger = getLogger('plugin bootstrap service')
 
 const ENTRY_POINT_GROUPS = ['auto_mas.plugins', 'automas.plugins'] as const
 const PYPROJECT_BOOTSTRAP_SECTION = '[tool.auto-mas.plugin-bootstrap]'
-const LOCAL_DECLARED_BOOTSTRAP_PROJECTS: Record<string, string> = {
-  automas_script_hsr: 'hsr_core',
-  automas_hsr_adapter_sra: 'hsr_adapter_sra',
-  automas_hsr_adapter_m7a: 'hsr_adapter_m7a',
-}
 
 interface DeclaredBootstrapPackage {
   name: string
@@ -187,7 +182,6 @@ export class PluginBootstrapService {
         onProgress,
         selectedMirror
       )
-
       const state: PluginBootstrapState = {
         hash: checkResult.currentHash,
         packages: [...checkResult.packages],
@@ -241,13 +235,17 @@ export class PluginBootstrapService {
     const currentHash = this.calculateHash(allPackages)
     const lastState = this.loadState()
     const lastHash = lastState?.hash
+    const hasFailedPackages = (lastState?.failedPackages.length || 0) > 0
 
     return {
       packages,
       currentHash,
       lastHash,
       needsInstall:
-        !this.areSystemPackagesInstalled() || lastHash == null || lastHash !== currentHash,
+        !this.areSystemPackagesInstalled() ||
+        hasFailedPackages ||
+        lastHash == null ||
+        lastHash !== currentHash,
     }
   }
 
@@ -386,33 +384,6 @@ export class PluginBootstrapService {
     }
   }
 
-  private withResolvedDeclaredInstallSpec(
-    declaredPackage: DeclaredBootstrapPackage
-  ): DeclaredBootstrapPackage {
-    const projectDir =
-      LOCAL_DECLARED_BOOTSTRAP_PROJECTS[this.normalizeDistributionName(declaredPackage.name)]
-    if (!projectDir) {
-      return declaredPackage
-    }
-
-    const candidates = [
-      path.join(this.appRoot, 'plugins', projectDir),
-      path.join(this.appRoot, 'repo', 'plugins', projectDir),
-    ]
-    const localProject = candidates.find(candidate =>
-      fs.existsSync(path.join(candidate, 'pyproject.toml'))
-    )
-    if (!localProject) {
-      return declaredPackage
-    }
-
-    logger.info(`Using local bootstrap plugin project: ${localProject}`)
-    return {
-      ...declaredPackage,
-      installSpec: localProject,
-    }
-  }
-
   private async installDeclaredPackages(
     declaredPackages: DeclaredBootstrapPackage[],
     installedPackages: string[],
@@ -438,7 +409,7 @@ export class PluginBootstrapService {
       })
 
       const installResult = await this.installSinglePackage(
-        this.withResolvedDeclaredInstallSpec(declaredPackage),
+        declaredPackage,
         (operationProgress, mirrorName, mirrorIndex, totalMirrors) => {
           const packageSpan = 70 / Math.max(1, declaredPackages.length)
           const progress = Math.min(
@@ -470,13 +441,13 @@ export class PluginBootstrapService {
           message: installResult.error || 'Unknown error',
         })
         logger.warn(
-          `Plugin bootstrap install failed and will be skipped: package=${packageName}, error=${installResult.error}`
+          `Plugin bootstrap install failed and will be retried later: package=${packageName}, error=${installResult.error}`
         )
         continue
       }
 
-      installedPackages.push(packageName)
       if (!installResult.hasPluginEntryPoint) {
+        failedPackages.push(packageName)
         const warning: PluginBootstrapWarning = {
           packageName,
           kind: 'missing-entry-point',
@@ -486,6 +457,7 @@ export class PluginBootstrapService {
         warnings.push(warning)
         logger.warn(`Plugin bootstrap package has no plugin entry point: package=${packageName}`)
       } else {
+        installedPackages.push(packageName)
         logger.info(`Plugin bootstrap install complete: package=${packageName}`)
       }
     }
@@ -493,22 +465,19 @@ export class PluginBootstrapService {
 
   private loadDeclaredPackageSpecs(): DeclaredBootstrapPackage[] {
     if (!fs.existsSync(this.pyprojectPath)) {
-      logger.warn(
-        `pyproject.toml does not exist, skipping declared plugin bootstrap packages: ${this.pyprojectPath}`
-      )
-      return []
+      throw new Error(`pyproject.toml does not exist: ${this.pyprojectPath}`)
     }
 
     try {
       const content = fs.readFileSync(this.pyprojectPath, 'utf-8')
       const sectionBody = this.extractBootstrapSection(content)
       if (sectionBody == null) {
-        return []
+        throw new Error(`Missing ${PYPROJECT_BOOTSTRAP_SECTION} in ${this.pyprojectPath}`)
       }
       return this.extractDeclaredPackages(sectionBody)
     } catch (error) {
-      logger.warn(`Failed to read pyproject plugin bootstrap packages; using empty list: ${error}`)
-      return []
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`Failed to load plugin bootstrap declarations: ${message}`)
     }
   }
 

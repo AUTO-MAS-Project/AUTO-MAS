@@ -354,11 +354,17 @@ export class DependencyService {
         UV_INDEX_URL: mirror.url,
       }
 
-      const proc = spawn(this.uvExe, ['sync', '--python', this.pythonExe, '--no-install-project'], {
-        cwd: this.appRoot,
-        stdio: 'pipe',
-        env,
-      })
+      // 主环境只同步宿主依赖；开发 workspace 和插件依赖由插件 bootstrap
+      // 独立安装到 plugins/pypi/site-packages，不能随本体环境落地。
+      const proc = spawn(
+        this.uvExe,
+        ['sync', '--python', this.pythonExe, '--no-install-project', '--no-dev', '--no-sources'],
+        {
+          cwd: this.appRoot,
+          stdio: 'pipe',
+          env,
+        }
+      )
 
       let stderrData = ''
 

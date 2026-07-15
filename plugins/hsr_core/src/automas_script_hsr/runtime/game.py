@@ -153,9 +153,7 @@ async def stop_external_processes(
 
     path_checked = False
     if script_config is not None:
-        effective_engines = set(
-            getattr(script_config, "_hsr_effective_engines", ())
-        )
+        effective_engines = set(runtime.effective_engines)
         m7a_path = str(script_config.get("M7A", "Path") or "").strip()
         if m7a_path and "M7A" in effective_engines:
             m7a_exe_path = Path(m7a_path) / "March7th Assistant.exe"
@@ -363,93 +361,10 @@ class HSRAccountSwitcher:
     async def close_game_if_needed(self) -> None:
         await close_game_if_needed(self.runtime, self.script_config, self._append_log)
 
-    async def run_sra_task(
-        self,
-        sra_exe_path: Path,
-        task_class: str,
-        temp_path: Path,
-        user_name: str,
-        module_name: str,
-        timeout_seconds: int | None = None,
-        module_key: str = "",
-        track_script_switch: bool = True,
-    ) -> Any:
-        """执行一条 SRA 单任务并同步调度台日志。"""
+    def mark_game_session_clean(self, clean: bool) -> None:
+        """Record whether the adapter completed a clean account-login transition."""
 
-        from automas_hsr_adapter_sra.runner import run_sra_single_task
-
-        await self.wait_before_external_script(
-            "SRA",
-            user_name,
-            track_last_script=track_script_switch,
-        )
-        self._append_log(
-            f"用户「{user_name}」开始执行 SRA {module_name}（{task_class}）"
-        )
-        result = await run_sra_single_task(
-            sra_exe_path,
-            task_class,
-            temp_path,
-            timeout=timeout_seconds or 600,
-            process_registry=self.runtime.sra_process_registry,
-            log_callback=self._append_log,
-            output_line_callback=self.recover_game_window_if_screenshot_blocked,
-            module_key=module_key,
-        )
-        if result.success:
-            self._append_log(
-                f"用户「{user_name}」SRA {module_name} 执行完成"
-            )
-        else:
-            self._append_log(
-                f"用户「{user_name}」SRA {module_name} 执行失败"
-            )
-        return result
-
-    async def run_start_game(
-        self,
-        *,
-        user_config: Any,
-        user_name: str,
-        user_id: str,
-        script_id: str,
-        sra_exe_path: Path,
-        module_key: str,
-        temp_files: list[Path],
-        timeout_seconds: int,
-    ) -> Any:
-        """只运行 SRA StartGameTask，用于自动代理前置切号与人工检查。"""
-
-        from automas_hsr_adapter_sra.runner import (
-            build_sra_start_game_config,
-            write_sra_temp_config,
-        )
-
-        await self.ensure_game_started_by_mas()
-        start_mode = resolve_sra_start_mode(user_config, user_name)
-        start_cfg = build_sra_start_game_config(
-            self.script_config,
-            user_config,
-            mode=start_mode,
-        )
-        temp_path = write_sra_temp_config(
-            start_cfg,
-            script_id,
-            user_id,
-            module_key,
-        )
-        temp_files.append(temp_path)
-        result = await self.run_sra_task(
-            sra_exe_path,
-            "StartGameTask",
-            temp_path,
-            user_name,
-            "登录/切号",
-            timeout_seconds=timeout_seconds,
-            track_script_switch=False,
-        )
-        self.runtime.game_session_clean = bool(result.success)
-        return result
+        self.runtime.game_session_clean = bool(clean)
 
     async def _wait_after_game_process_detected(self, process_name: str) -> None:
         self._append_log(
