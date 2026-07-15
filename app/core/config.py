@@ -905,6 +905,11 @@ class AppConfig(GlobalConfig):
 
         logger.info(f"检测到 {len(migrate_list)} 个旧 Okww 脚本，开始迁移到插件脚本容器")
 
+        # v5.3.1 简洁模式（Info.Mode=="简洁"，当时的默认值）把 OK-WW 任务配置
+        # 共享存放在 data/<script>/Default/ConfigFile；插件版按用户独立存储。
+        # 迁移时为每个缺失配置的用户复制一份副本，全部落盘成功后再清理共享目录。
+        legacy_default_dirs: list[Path] = []
+
         for script_uid in migrate_list:
             legacy_script = self.ScriptConfig[script_uid]
             script_payload = self._okww_legacy_script_payload(
@@ -918,6 +923,10 @@ class AppConfig(GlobalConfig):
                 "PluginData",
                 "Config",
                 json.dumps(script_payload, ensure_ascii=False),
+            )
+
+            default_config_dir = (
+                Path.cwd() / "data" / str(script_uid) / "Default" / "ConfigFile"
             )
 
             for user_uid, legacy_user in legacy_script.UserData.items():
@@ -935,6 +944,18 @@ class AppConfig(GlobalConfig):
                 plugin_script.UserData.order.append(user_uid)
                 plugin_script.UserData.data[user_uid] = plugin_user
 
+                user_config_dir = (
+                    Path.cwd() / "data" / str(script_uid) / str(user_uid) / "ConfigFile"
+                )
+                if default_config_dir.is_dir() and not user_config_dir.is_dir():
+                    shutil.copytree(default_config_dir, user_config_dir)
+                    logger.info(
+                        f"已将简洁模式共享配置复制给用户 {user_uid}: {user_config_dir}"
+                    )
+
+            if default_config_dir.is_dir():
+                legacy_default_dirs.append(default_config_dir)
+
             if self.ScriptConfig.file is not None:
                 await plugin_script.add_save_method(self.ScriptConfig.save)
             for save_method in self.ScriptConfig._save_methods:
@@ -943,6 +964,9 @@ class AppConfig(GlobalConfig):
             self.ScriptConfig.data[script_uid] = plugin_script
 
         await self.ScriptConfig.save()
+        # save 成功后才清理共享目录：迁移中途失败时保留原数据，下次启动重试。
+        for default_config_dir in legacy_default_dirs:
+            shutil.rmtree(default_config_dir, ignore_errors=True)
         logger.success("旧 Okww 脚本已迁移到插件脚本容器")
 
     async def add_script(

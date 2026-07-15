@@ -396,8 +396,6 @@ class ScriptIndexItem(BaseModel):
     type: Literal[
         "MaaConfig",
         "GeneralConfig",
-        "OkwwConfig",
-        "OkefConfig",
         "SrcConfig",
         "MaaEndConfig",
         "M9AConfig",
@@ -414,8 +412,6 @@ class UserIndexItem(BaseModel):
     type: Literal[
         "MaaUserConfig",
         "GeneralUserConfig",
-        "OkwwUserConfig",
-        "OkefUserConfig",
         "SrcUserConfig",
         "MaaEndUserConfig",
         "M9AUserConfig",
@@ -588,73 +584,6 @@ class GeneralUserConfig(BaseModel):
     )
 
 
-class OkwwUserConfig_Task(BaseModel):
-    TaskIndex: Optional[int] = Field(default=None, description="启动后执行第 N 个任务（-t N，从 1 开始）")
-
-
-class OkwwUserConfig_Info(GeneralUserConfig_Info):
-    """OK-WW 用户信息（复用通用字段）"""
-
-    Id: Optional[str] = Field(default=None, description="账号")
-    Password: Optional[str] = Field(default=None, description="密码")
-    Mode: Optional[Literal["简洁", "详细"]] = Field(
-        default=None, description="用户配置模式（OK-WW 固定为详细模式）"
-    )
-    Resource: Optional[Literal["官服"]] = Field(default=None, description="游戏资源")
-
-
-class OkwwUserConfig_Data(GeneralUserConfig_Data):
-    """OK-WW 用户数据（复用通用字段）"""
-
-    LastProxyStatus: Optional[str] = Field(
-        default=None, description="上次代理状态（未知/成功/失败）"
-    )
-    LastTaskIndex: Optional[int] = Field(
-        default=None, description="上次运行的 ok-ww 任务序号（-t N）"
-    )
-
-
-class OkwwUserConfig_Notify(GeneralUserConfig_Notify):
-    """OK-WW 用户通知（复用通用字段）"""
-
-
-class OkwwUserConfig(BaseModel):
-    Info: Optional[OkwwUserConfig_Info] = Field(default=None, description="用户信息")
-    Task: Optional[OkwwUserConfig_Task] = Field(default=None, description="任务配置")
-    Data: Optional[OkwwUserConfig_Data] = Field(default=None, description="用户数据")
-    Notify: Optional[OkwwUserConfig_Notify] = Field(default=None, description="单独通知")
-
-
-class OkefUserConfig_Task(BaseModel):
-    TaskIndex: Optional[int] = Field(default=None, description="启动后执行第 N 个任务（-t N，从 1 开始）")
-
-
-class OkefUserConfig_Info(GeneralUserConfig_Info):
-    """OK-EF 用户信息（复用通用字段）"""
-
-
-class OkefUserConfig_Data(GeneralUserConfig_Data):
-    """OK-EF 用户数据（复用通用字段）"""
-
-    LastProxyStatus: Optional[str] = Field(
-        default=None, description="上次代理状态（未知/成功/失败）"
-    )
-    LastTaskIndex: Optional[int] = Field(
-        default=None, description="上次运行的 ok-ef 任务序号（-t N）"
-    )
-
-
-class OkefUserConfig_Notify(GeneralUserConfig_Notify):
-    """OK-EF 用户通知（复用通用字段）"""
-
-
-class OkefUserConfig(BaseModel):
-    Info: Optional[OkefUserConfig_Info] = Field(default=None, description="用户信息")
-    Task: Optional[OkefUserConfig_Task] = Field(default=None, description="任务配置")
-    Data: Optional[OkefUserConfig_Data] = Field(default=None, description="用户数据")
-    Notify: Optional[OkefUserConfig_Notify] = Field(default=None, description="单独通知")
-
-
 class GeneralConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="脚本名称")
     RootPath: Optional[str] = Field(default=None, description="脚本根目录")
@@ -720,75 +649,6 @@ class GeneralConfig(BaseModel):
     Script: Optional[GeneralConfig_Script] = Field(default=None, description="脚本配置")
     Game: Optional[GeneralConfig_Game] = Field(default=None, description="游戏配置")
     Run: Optional[GeneralConfig_Run] = Field(default=None, description="运行配置")
-
-
-class OkwwConfig_Info(GeneralConfig_Info):
-    """OK-WW 脚本基础信息（复用通用字段）"""
-
-
-class OkwwConfig_Script(BaseModel):
-    """OK-WW 脚本配置（路径/进程/日志等由 RootPath 派生，不暴露为可配置字段）"""
-
-
-class OkwwConfig_Game(BaseModel):
-    """OK-WW 游戏配置（复用通用字段）"""
-
-    Enabled: Optional[bool] = Field(
-        default=None, description="游戏相关功能是否启用"
-    )
-    LaunchBeforeTask: Optional[bool] = Field(
-        default=None, description="任务开始前是否由 MAS 启动游戏"
-    )
-    Path: Optional[str] = Field(default=None, description="游戏程序路径")
-    Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
-    WaitTime: Optional[int] = Field(default=None, description="游戏等待启动时间")
-
-
-class OkwwConfig_Run(GeneralConfig_Run):
-    """OK-WW 运行配置（复用通用字段）"""
-
-
-class OkwwConfig(BaseModel):
-    Info: Optional[OkwwConfig_Info] = Field(default=None, description="脚本基础信息")
-    Script: Optional[OkwwConfig_Script] = Field(default=None, description="脚本配置")
-    Game: Optional[OkwwConfig_Game] = Field(default=None, description="游戏配置")
-    Run: Optional[OkwwConfig_Run] = Field(default=None, description="运行配置")
-
-
-class OkefConfig_Info(GeneralConfig_Info):
-    """OK-EF 脚本基础信息（复用通用字段）"""
-
-    ResourceName: Optional[str] = Field(default=None, description="ok-script 资源名")
-    ProjectLabel: Optional[str] = Field(default=None, description="ok-script 项目显示标签")
-
-
-class OkefConfig_Script(BaseModel):
-    """OK-EF 脚本配置（路径/进程由 RootPath 派生，不暴露为可配置字段）"""
-
-
-class OkefConfig_Game(BaseModel):
-    """OK-EF 游戏配置（仅保留首版运行需要字段）"""
-
-    Enabled: Optional[bool] = Field(
-        default=None, description="游戏相关功能是否启用"
-    )
-    LaunchBeforeTask: Optional[bool] = Field(
-        default=None, description="兼容旧配置：ok-script 固定先启动游戏"
-    )
-    Path: Optional[str] = Field(default=None, description="游戏程序路径")
-    Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
-    WaitTime: Optional[int] = Field(default=None, description="游戏等待启动时间")
-
-
-class OkefConfig_Run(GeneralConfig_Run):
-    """OK-EF 运行配置（复用通用字段）"""
-
-
-class OkefConfig(BaseModel):
-    Info: Optional[OkefConfig_Info] = Field(default=None, description="脚本基础信息")
-    Script: Optional[OkefConfig_Script] = Field(default=None, description="脚本配置")
-    Game: Optional[OkefConfig_Game] = Field(default=None, description="游戏配置")
-    Run: Optional[OkefConfig_Run] = Field(default=None, description="运行配置")
 
 
 class MaaEndUserConfig_Info(BaseModel):
@@ -1851,7 +1711,6 @@ class ScriptCreateIn(BaseModel):
         "General",
         "Okww",
         "OkScript",
-        "Okef",
         "MaaEnd",
         "M9A",
         "MaaFW",
@@ -1882,8 +1741,6 @@ class ScriptCreateOut(OutBase):
         MaaConfig,
         SrcConfig,
         GeneralConfig,
-        OkwwConfig,
-        OkefConfig,
         MaaEndConfig,
         M9AConfig,
         MaaFWConfig,
@@ -1908,8 +1765,6 @@ class ScriptGetOut(OutBase):
             MaaConfig,
             SrcConfig,
             GeneralConfig,
-            OkwwConfig,
-            OkefConfig,
             MaaEndConfig,
             M9AConfig,
             MaaFWConfig,
@@ -1927,8 +1782,6 @@ class ScriptUpdateIn(BaseModel):
         MaaConfig,
         SrcConfig,
         GeneralConfig,
-        OkwwConfig,
-        OkefConfig,
         MaaEndConfig,
         M9AConfig,
         MaaFWConfig,
@@ -1988,8 +1841,6 @@ class UserGetOut(OutBase):
             MaaUserConfig,
             SrcUserConfig,
             GeneralUserConfig,
-            OkwwUserConfig,
-            OkefUserConfig,
             MaaEndUserConfig,
             M9AUserConfig,
             MaaFWUserConfig,
@@ -2005,8 +1856,6 @@ class UserCreateOut(OutBase):
         MaaUserConfig,
         SrcUserConfig,
         GeneralUserConfig,
-        OkwwUserConfig,
-        OkefUserConfig,
         MaaEndUserConfig,
         M9AUserConfig,
         MaaFWUserConfig,
@@ -2023,8 +1872,6 @@ class UserUpdateIn(UserInBase):
         MaaUserConfig,
         SrcUserConfig,
         GeneralUserConfig,
-        OkwwUserConfig,
-        OkefUserConfig,
         MaaEndUserConfig,
         M9AUserConfig,
         MaaFWUserConfig,

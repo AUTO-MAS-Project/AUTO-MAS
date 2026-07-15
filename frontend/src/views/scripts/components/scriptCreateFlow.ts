@@ -150,7 +150,6 @@ const EDIT_SEGMENT_BY_TYPE: Record<ScriptType, string> = {
   MaaFW: 'maafw',
   Okww: 'okww',
   OkScript: 'ok-script',
-  Okef: 'ok-script',
   HSR: 'hsr',
   General: 'general',
 }

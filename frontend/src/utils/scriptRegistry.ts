@@ -75,7 +75,6 @@ export const BUILTIN_SCRIPT_TYPES = new Set([
   'M9A',
   'MaaFW',
   'OkScript',
-  'Okef',
   'HSR',
 ])
 
@@ -92,7 +91,6 @@ export const getFallbackScriptIcon = (type: string) => {
     case 'Okww':
       return okwwIcon
     case 'OkScript':
-    case 'Okef':
       return autoMasIcon
     case 'HSR':
       return hsrIcon
@@ -137,7 +135,6 @@ export const getScriptTypeTagColor = (type: string, themeColor?: string | null) 
       return 'geekblue'
     case 'Okww':
     case 'OkScript':
-    case 'Okef':
       return 'orange'
     case 'HSR':
       return 'purple'

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.task.Okef.config_schema import (
+from ok_script_adapter.okef_config_schema import (
     build_fields_for_config,
     get_config_info_from_dir,
 )

@@ -44,8 +44,9 @@ class OkwwGameConfig(BaseModel):
         json_schema_extra={"size": "half"},
     )
     CloseOnManualStop: bool = PluginField(
-        default=False,
+        default=True,
         title="手动终止时关闭游戏",
+        description="关闭后手动中止任务不会杀掉游戏进程，便于调试；正常失败/异常仍会兜底关闭。",
         json_schema_extra={"size": "half"},
     )
     Path: str = PluginField(
