@@ -431,7 +431,7 @@ def build_config_schema(config_class: type[Any]) -> dict[str, Any]:
         from app.plugins.schema import PluginSchemaManager
 
         schema_manager = PluginSchemaManager()
-        fields = schema_manager._build_schema_from_model("__inline__", config_class)
+        fields = schema_manager.build_schema_from_model("__inline__", config_class)
         return fields
 
     config = config_class()
