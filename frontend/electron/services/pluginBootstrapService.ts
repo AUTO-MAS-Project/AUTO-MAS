@@ -22,6 +22,11 @@ const logger = getLogger('plugin bootstrap service')
 
 const ENTRY_POINT_GROUPS = ['auto_mas.plugins', 'automas.plugins'] as const
 const PYPROJECT_BOOTSTRAP_SECTION = '[tool.auto-mas.plugin-bootstrap]'
+const LOCAL_DECLARED_BOOTSTRAP_PROJECTS: Record<string, string> = {
+  automas_script_hsr: 'hsr_core',
+  automas_hsr_adapter_sra: 'hsr_adapter_sra',
+  automas_hsr_adapter_m7a: 'hsr_adapter_m7a',
+}
 
 interface DeclaredBootstrapPackage {
   name: string
@@ -381,6 +386,33 @@ export class PluginBootstrapService {
     }
   }
 
+  private withResolvedDeclaredInstallSpec(
+    declaredPackage: DeclaredBootstrapPackage
+  ): DeclaredBootstrapPackage {
+    const projectDir =
+      LOCAL_DECLARED_BOOTSTRAP_PROJECTS[this.normalizeDistributionName(declaredPackage.name)]
+    if (!projectDir) {
+      return declaredPackage
+    }
+
+    const candidates = [
+      path.join(this.appRoot, 'plugins', projectDir),
+      path.join(this.appRoot, 'repo', 'plugins', projectDir),
+    ]
+    const localProject = candidates.find(candidate =>
+      fs.existsSync(path.join(candidate, 'pyproject.toml'))
+    )
+    if (!localProject) {
+      return declaredPackage
+    }
+
+    logger.info(`Using local bootstrap plugin project: ${localProject}`)
+    return {
+      ...declaredPackage,
+      installSpec: localProject,
+    }
+  }
+
   private async installDeclaredPackages(
     declaredPackages: DeclaredBootstrapPackage[],
     installedPackages: string[],
@@ -406,7 +438,7 @@ export class PluginBootstrapService {
       })
 
       const installResult = await this.installSinglePackage(
-        declaredPackage,
+        this.withResolvedDeclaredInstallSpec(declaredPackage),
         (operationProgress, mirrorName, mirrorIndex, totalMirrors) => {
           const packageSpan = 70 / Math.max(1, declaredPackages.length)
           const progress = Math.min(
