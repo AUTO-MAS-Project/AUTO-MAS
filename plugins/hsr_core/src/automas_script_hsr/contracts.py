@@ -85,6 +85,22 @@ class HSRRunRequest:
     extra: dict[str, Any] = field(default_factory=dict)
 
 
+class HSRNativeRunResult(Protocol):
+    """Minimum result shape returned by an upstream engine runner."""
+
+    success: bool
+    output: str
+    error: str
+    returncode: int
+
+
+@dataclass(frozen=True, slots=True)
+class HSRNativeRunPlan:
+    """Adapter-owned native command ready to be executed once."""
+
+    run: Callable[[], Awaitable[HSRNativeRunResult]]
+
+
 @dataclass(frozen=True, slots=True)
 class HSRRunResult:
     """控制器返回的规范化结果。"""
@@ -98,6 +114,29 @@ class HSRRunResult:
     @property
     def success(self) -> bool:
         return self.status == "completed"
+
+    @classmethod
+    def from_native(
+        cls,
+        result: HSRNativeRunResult,
+        *,
+        default_summary: str,
+        default_error: str,
+    ) -> "HSRRunResult":
+        """Normalize a typed upstream result without inventing missing evidence."""
+
+        if result.success:
+            return cls(
+                status="completed",
+                summary=str(result.output or default_summary),
+                completion_evidence={"returncode": result.returncode},
+                native_result=result,
+            )
+        return cls(
+            status="failed",
+            error=str(result.error or default_error),
+            native_result=result,
+        )
 
     def asdict(self) -> dict[str, Any]:
         return {
@@ -142,6 +181,8 @@ class HSRController(Protocol):
     descriptor: HSRAdapterDescriptor
 
     def probe(self, script_config: Any) -> tuple[bool, str]: ...
+
+    def lock_paths(self, script_config: Any) -> tuple[str, ...]: ...
 
     async def open_session(
         self,

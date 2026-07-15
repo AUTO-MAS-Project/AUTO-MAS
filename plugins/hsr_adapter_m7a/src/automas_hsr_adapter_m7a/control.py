@@ -21,20 +21,17 @@ from typing import Any, Callable
 
 import yaml
 
-from app.models.task import UserItem
 from app.utils import get_logger
 
+from automas_script_hsr.contracts import HSRNativeRunPlan
 from automas_script_hsr.runtime.models import (
-    HSRPhase,
     HSRRetryableTaskError,
-    HSRRunItem,
     external_result_failure_summary,
 )
 from automas_script_hsr.runtime.tasks import HSRTaskModule
 from . import config as m7a
 from automas_script_hsr.runtime.game import HSRAccountSwitcher
-from automas_script_hsr.runtime.log_detect import detect_weekly_completion
-from .runner import M7ARunner
+from .runner import M7ACommandResult, M7ARunner
 from automas_script_hsr.runtime.stage_runtime import (
     resolve_m7a_eow_stage,
     resolve_m7a_main_stage,
@@ -42,32 +39,6 @@ from automas_script_hsr.runtime.stage_runtime import (
 )
 
 logger = get_logger("HSR M7A 控制")
-
-
-def _on_m7a_weekly_success(
-    result: object,
-    uid: str,
-    user_name: str,
-    module_name: str,
-    module_key: str,
-    queue_weekly_completion: Callable[[str, str, str], None],
-    record_module_result: Callable[..., None],
-) -> None:
-    """M7A 差分宇宙 / 货币战争成功回调：先按日志判定再写完成态。"""
-
-    completed, reason = detect_weekly_completion(result, "M7A", module_key)
-    if not completed:
-        record_module_result(
-            user_id=uid,
-            user_name=user_name,
-            module_key=module_key,
-            module_name=module_name,
-            script="M7A",
-            status="incomplete",
-            reason=reason,
-        )
-        return
-    queue_weekly_completion(uid, user_name, module_name)
 
 
 class HSRM7AControl:
@@ -79,18 +50,10 @@ class HSRM7AControl:
         script_config: Any,
         account_switcher: HSRAccountSwitcher,
         append_log: Callable[[str], None],
-        module_timeout_seconds: Callable[[str], int],
-        queue_eow_completion: Callable[[str, str, bool, object, str], None],
-        queue_weekly_completion: Callable[[str, str, str], None],
-        record_module_result: Callable[..., None],
     ) -> None:
         self.script_config = script_config
         self._account_switcher = account_switcher
         self._append_log = append_log
-        self._module_timeout_seconds = module_timeout_seconds
-        self._queue_eow_completion = queue_eow_completion
-        self._queue_weekly_completion = queue_weekly_completion
-        self._record_module_result = record_module_result
 
     async def run_m7a_command(
         self,
@@ -99,15 +62,16 @@ class HSRM7AControl:
         module_name: str,
         command: str,
         timeout_seconds: int | None = None,
-    ):
+    ) -> M7ACommandResult:
         """执行一条 M7A 命令并同步调度台日志。"""
 
         await self._account_switcher.wait_before_external_script("M7A", user_name)
         self._append_log(
             f"用户「{user_name}」开始执行 M7A {module_name}（{command}）"
         )
-        result = await m7a_runner.run_task(command, timeout=timeout_seconds or 600)
-        if getattr(result, "success", False):
+        timeout = 600 if timeout_seconds is None else timeout_seconds
+        result = await m7a_runner.run_task(command, timeout=timeout)
+        if result.success:
             self._append_log(
                 f"用户「{user_name}」M7A {module_name}（{command}）执行完成"
             )
@@ -165,10 +129,10 @@ class HSRM7AControl:
         user_cfg: Any,
         user_name: str,
         module: HSRTaskModule,
+        timeout_seconds: int,
         m7a_path: str,
         m7a_runner: M7ARunner,
         daily_eow_enabled: bool,
-        timeout_seconds: int | None = None,
     ):
         """执行 M7A Daily 模块。"""
 
@@ -182,7 +146,9 @@ class HSRM7AControl:
             eow_name=resolve_m7a_eow_stage(user_cfg),
         )
         self.write_m7a_patch(m7a_config_path, daily_patch)
-        last_result: object | None = None
+        if not module.m7a_tasks:
+            raise RuntimeError(f"M7A {module.key} 未声明上游命令")
+        last_result: M7ACommandResult | None = None
         for command in module.m7a_tasks:
             result = await self.run_m7a_command(
                 m7a_runner,
@@ -200,40 +166,37 @@ class HSRM7AControl:
                     result=result,
                 )
 
+        if last_result is None:
+            raise RuntimeError(f"M7A {module.key} 未执行任何上游命令")
         return last_result
 
     def create_patched_item(
         self,
         *,
-        user_item: UserItem,
-        user_cfg: Any,
         user_name: str,
-        uid: str,
         module: HSRTaskModule,
-        phase: HSRPhase,
         m7a_path: str,
         m7a_runner: M7ARunner,
         patch: dict,
         whitelist: frozenset[str],
         commands: list[str],
-        description: str,
-        on_success: Callable[[object], None] | None = None,
-    ) -> HSRRunItem:
+    ) -> HSRNativeRunPlan:
         """创建一个写入 M7A config.yaml patch 的队列项。"""
 
-        timeout_seconds = self._module_timeout_seconds(module.key)
         m7a_config_path = Path(m7a_path) / "config.yaml"
 
         async def run_m7a_patched():
             if not m7a_config_path.exists():
                 raise RuntimeError(f"M7A config.yaml 不存在: {m7a_config_path}")
+            if not commands:
+                raise RuntimeError(f"M7A {module.key} 未声明上游命令")
 
             self.write_m7a_patch(
                 m7a_config_path,
                 patch,
                 whitelist=whitelist,
             )
-            last_result: object | None = None
+            last_result: M7ACommandResult | None = None
             for command in commands:
                 result = await self.run_m7a_command(
                     m7a_runner,
@@ -245,39 +208,24 @@ class HSRM7AControl:
                 last_result = result
                 if not result.success:
                     return result
+            if last_result is None:
+                raise RuntimeError(f"M7A {module.key} 未执行任何上游命令")
             return last_result
 
-        return HSRRunItem(
-            user_item=user_item,
-            user_cfg=user_cfg,
-            user_name=user_name,
-            user_id=uid,
-            phase=phase,
-            module_key=module.key,
-            module_name=module.name,
-            script="M7A",
-            description=description,
-            timeout_seconds=timeout_seconds,
-            run=run_m7a_patched,
-            on_success=on_success,
-        )
+        return HSRNativeRunPlan(run=run_m7a_patched)
 
     def create_module_item(
         self,
         *,
-        user_item: UserItem,
         user_cfg: Any,
         user_name: str,
-        uid: str,
         module: HSRTaskModule,
-        phase: HSRPhase,
+        timeout_seconds: int,
         m7a_path: str,
         m7a_runner: M7ARunner,
         daily_eow_enabled: bool,
-    ) -> HSRRunItem | None:
+    ) -> HSRNativeRunPlan | None:
         """创建一个 M7A 模块队列项。"""
-
-        timeout_seconds = self._module_timeout_seconds(module.key)
 
         if module.key == "Daily":
             daily_main_stage = resolve_m7a_main_stage(user_cfg)
@@ -296,59 +244,25 @@ class HSRM7AControl:
                     timeout_seconds=timeout_seconds,
                 )
 
-            return HSRRunItem(
-                user_item=user_item,
-                user_cfg=user_cfg,
-                user_name=user_name,
-                user_id=uid,
-                phase=phase,
-                module_key=module.key,
-                module_name=module.name,
-                script="M7A",
-                description=(
-                    f"M7A routine：主关卡={'已配置' if daily_main_stage else '未配置'}，"
-                    f"历战余响本周尝试={'是' if daily_eow_enabled else '否'}"
-                ),
-                timeout_seconds=timeout_seconds,
-                run=run_m7a_daily,
-                on_success=(
-                    lambda result, uid=uid, user_name=user_name,
-                    daily_eow_enabled=daily_eow_enabled:
-                    self._queue_eow_completion(
-                        uid,
-                        user_name,
-                        daily_eow_enabled,
-                        result,
-                        "M7A",
-                    )
-                ),
-                extra={"daily_eow_enabled": daily_eow_enabled},
-            )
+            return HSRNativeRunPlan(run=run_m7a_daily)
 
         if module.key == "ReceiveRewards":
             return self.create_patched_item(
-                user_item=user_item,
-                user_cfg=user_cfg,
                 user_name=user_name,
-                uid=uid,
                 module=module,
-                phase=phase,
+                timeout_seconds=timeout_seconds,
                 m7a_path=m7a_path,
                 m7a_runner=m7a_runner,
                 patch=m7a.build_receive_rewards_patch(user_cfg),
                 whitelist=m7a.M7A_RECEIVE_REWARDS_PATCH_WHITELIST,
                 commands=list(module.m7a_tasks),
-                description=f"M7A routine：{module.description}",
             )
 
         if module.key == "DivergentUniverse":
             return self.create_patched_item(
-                user_item=user_item,
-                user_cfg=user_cfg,
                 user_name=user_name,
-                uid=uid,
                 module=module,
-                phase=phase,
+                timeout_seconds=timeout_seconds,
                 m7a_path=m7a_path,
                 m7a_runner=m7a_runner,
                 patch=m7a.build_divergent_universe_patch(
@@ -358,30 +272,13 @@ class HSRM7AControl:
                 ),
                 whitelist=m7a.M7A_COSMIC_STRIFE_PATCH_WHITELIST,
                 commands=list(module.m7a_tasks),
-                description=f"M7A divergent：{module.description}",
-                on_success=(
-                    lambda result, uid=uid, user_name=user_name,
-                    module_name=module.name, module_key=module.key:
-                    _on_m7a_weekly_success(
-                        result,
-                        uid,
-                        user_name,
-                        module_name,
-                        module_key,
-                        self._queue_weekly_completion,
-                        self._record_module_result,
-                    )
-                ),
             )
 
         if module.key == "CurrencyWars":
             return self.create_patched_item(
-                user_item=user_item,
-                user_cfg=user_cfg,
                 user_name=user_name,
-                uid=uid,
                 module=module,
-                phase=phase,
+                timeout_seconds=timeout_seconds,
                 m7a_path=m7a_path,
                 m7a_runner=m7a_runner,
                 patch=m7a.build_currency_wars_patch(
@@ -390,20 +287,6 @@ class HSRM7AControl:
                 ),
                 whitelist=m7a.M7A_COSMIC_STRIFE_PATCH_WHITELIST,
                 commands=list(module.m7a_tasks),
-                description=f"M7A currencywars：{module.description}",
-                on_success=(
-                    lambda result, uid=uid, user_name=user_name,
-                    module_name=module.name, module_key=module.key:
-                    _on_m7a_weekly_success(
-                        result,
-                        uid,
-                        user_name,
-                        module_name,
-                        module_key,
-                        self._queue_weekly_completion,
-                        self._record_module_result,
-                    )
-                ),
             )
 
         return None

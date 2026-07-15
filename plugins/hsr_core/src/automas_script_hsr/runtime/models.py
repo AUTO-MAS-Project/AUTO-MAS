@@ -18,10 +18,11 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Literal
+from typing import Any, Callable, Literal
 
 from app.models.task import UserItem
 from app.utils import ProcessManager
+from automas_script_hsr.contracts import HSRNativeRunResult, HSRRunResult
 
 HSRPhase = Literal["daily", "weekly"]
 HSRScriptRunner = Literal["M7A", "SRA"]
@@ -86,8 +87,7 @@ class HSRRunItem:
     script: HSRScriptRunner
     description: str
     timeout_seconds: int
-    run: Callable[[], Awaitable[object]]
-    on_success: Callable[[object], None] | None = None
+    on_success: Callable[[HSRNativeRunResult], None] | None = None
     extra: dict[str, Any] = field(default_factory=dict)
     last_error: str = ""
     attempts: int = 0
@@ -100,7 +100,7 @@ class HSRRetryableTaskError(RuntimeError):
         self,
         message: str,
         *,
-        result: object | None = None,
+        result: HSRRunResult | HSRNativeRunResult | None = None,
     ) -> None:
         super().__init__(message)
         self.result = result
@@ -113,6 +113,7 @@ class HSRRuntimeState:
     log_lines: list[str]
     completion_writebacks: list[CompletionWriteback]
     module_results: list[HSRModuleResult] = field(default_factory=list)
+    effective_engines: tuple[HSRScriptRunner, ...] = ()
     registry: Any = None
     sessions: dict[str, Any] = field(default_factory=dict)
     m7a_runner: Any = None
@@ -139,14 +140,19 @@ class HSRRuntimeState:
         self.module_results.append(result)
 
 
-def external_result_failure_summary(result: object) -> str:
+def external_result_failure_summary(
+    result: HSRRunResult | HSRNativeRunResult,
+) -> str:
     """提取外部脚本结果中的失败摘要，避免整段日志刷屏。"""
 
-    if result is None:
-        return "未知错误"
-    error = str(getattr(result, "error", "") or "").strip()
-    output = str(getattr(result, "output", "") or "").strip()
-    returncode = getattr(result, "returncode", None)
+    if isinstance(result, HSRRunResult):
+        error = result.error.strip()
+        output = result.summary.strip()
+        returncode = result.completion_evidence.get("returncode")
+    else:
+        error = str(result.error or "").strip()
+        output = str(result.output or "").strip()
+        returncode = result.returncode
     text = error or output
     if not text and returncode not in (None, 0):
         text = f"进程退出码：{returncode}"

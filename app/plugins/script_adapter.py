@@ -581,7 +581,7 @@ class ScriptAdapterDefinition:
 
     type_key: str
     display_name: str
-    hooks_factory: Callable[[], ScriptAdapterHooks]
+    hooks_factory: Callable[[], ScriptAdapterHooks] | None
     script_model: type[BaseModel] | None = None
     user_model: type[BaseModel] | None = None
     script_groups: Sequence["PluginFieldGroup"] | None = None
@@ -601,6 +601,7 @@ class ScriptAdapterDefinition:
     metadata: dict[str, Any] = field(default_factory=dict)
     options_providers: dict[str, Callable[..., Any]] | None = None
     record_capability_resolver: Callable[[dict[str, Any]], Any] | None = None
+    manager_factory: Callable[[ScriptItem, Any], TaskExecuteBase] | None = None
 
     def _class_names(self) -> tuple[str, str]:
         return (
@@ -667,13 +668,26 @@ class ScriptAdapterDefinition:
         from app.core.script_types import ScriptTypeProvider
 
         artifacts = self._build_schema_artifacts()
+        if self.manager_factory is not None:
+            manager_factory = self.manager_factory
 
-        def _factory(script_item: ScriptItem) -> TaskExecuteBase:
-            return BaseAdapterManager(
-                script_item,
-                definition=self,
-                hooks=self.hooks_factory(),
-                plugin_context=plugin_context,
+            def _factory(script_item: ScriptItem) -> TaskExecuteBase:
+                return manager_factory(script_item, provider)
+
+        elif self.hooks_factory is not None:
+            hooks_factory = self.hooks_factory
+
+            def _factory(script_item: ScriptItem) -> TaskExecuteBase:
+                return BaseAdapterManager(
+                    script_item,
+                    definition=self,
+                    hooks=hooks_factory(),
+                    plugin_context=plugin_context,
+                )
+
+        else:
+            raise ValueError(
+                "ScriptAdapterDefinition 必须声明 hooks_factory 或 manager_factory"
             )
 
         provider = ScriptTypeProvider(
@@ -699,7 +713,8 @@ class ScriptAdapterDefinition:
         if owner is not None:
             provider.metadata.setdefault("adapter_owner", owner)
         provider.metadata.setdefault("adapter_kind", "script_adapter")
-        provider.metadata["hooks_factory"] = self.hooks_factory
+        if self.hooks_factory is not None:
+            provider.metadata["hooks_factory"] = self.hooks_factory
         provider.metadata["options_providers"] = dict(self.options_providers or {})
         return provider
 

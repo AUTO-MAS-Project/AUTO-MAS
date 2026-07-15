@@ -30,6 +30,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.utils import get_logger
 from app.utils.constants import UTC8
+from ..contracts import HSRRunRequest, HSRTaskDescriptor
 from .models import HSRRuntimeState
 from .game import HSRAccountSwitcher, check_user_credentials
 
@@ -69,7 +70,7 @@ class HSRManualReviewTask(TaskExecuteBase):
         )
         self.message_queue: asyncio.Queue[dict] | None = None
         self._current_user_log: LogRecord | None = None
-        self.temp_files: list[Path] = []
+        self._sra_session: Any | None = None
         self.check_result: str = "-"
         self.run_book: dict[str, bool] = {"SignIn": False, "PassCheck": False}
         self.crashed: bool = False
@@ -132,6 +133,32 @@ class HSRManualReviewTask(TaskExecuteBase):
     async def prepare(self) -> None:
         self.message_queue = asyncio.Queue()
         await Broadcast.subscribe(self.message_queue)
+
+        if self.runtime.registry is None:
+            raise RuntimeError("hsr.registry.v1 当前不可用")
+        group = self.runtime.registry.get_group("SRA")
+        session = await group.controller.open_session(
+            script_id=self.script_info.script_id,
+            script_config=self.script_config,
+            log=self._append_log,
+            coordinator=self,
+        )
+        self.runtime.registry.track_session("SRA", session)
+        self._sra_session = session
+
+    async def _close_sra_session(self) -> str:
+        session = self._sra_session
+        self._sra_session = None
+        if session is None:
+            return ""
+        try:
+            await session.close()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(f"关闭 HSR 人工排查 SRA 会话失败: {exc}")
+            return str(exc)
+        if self.runtime.registry is not None:
+            self.runtime.registry.release_session("SRA", session)
+        return ""
 
     async def _unsubscribe_broadcast(self) -> None:
         """释放人工排查消息订阅，避免旧队列持续接收广播。"""
@@ -204,28 +231,37 @@ class HSRManualReviewTask(TaskExecuteBase):
         await self.prepare()
         self._start_user_log()
 
-        sra_exe_path = Path(self.script_config.get("SRA", "Path")) / "SRA-cli.exe"
+        if self._sra_session is None:
+            raise RuntimeError("HSR 人工排查 SRA 会话未初始化")
         while True:
             self._append_log(f"正在启动游戏并切换到用户「{self.cur_user_item.name}」")
             await self._account_switcher.prepare_game_for_account_switch(
                 self.cur_user_item.name
             )
-            result = await self._account_switcher.run_start_game(
-                user_config=self.cur_user_config,
-                user_name=self.cur_user_item.name,
-                user_id=self.cur_user_item.user_id,
-                script_id=self.script_info.script_id,
-                sra_exe_path=sra_exe_path,
-                module_key="ManualReview_StartGame",
-                temp_files=self.temp_files,
-                timeout_seconds=self._start_game_timeout_seconds(),
+            result = await self._sra_session.run(
+                HSRRunRequest(
+                    script_id=self.script_info.script_id,
+                    user_id=self.cur_user_item.user_id,
+                    user_name=self.cur_user_item.name,
+                    task=HSRTaskDescriptor(
+                        key="StartGame",
+                        name="SRA 登录/切号",
+                        phase="daily",
+                        description="人工排查前登录/切号",
+                        native_tasks=("StartGameTask",),
+                    ),
+                    timeout_seconds=self._start_game_timeout_seconds(),
+                    script_config=self.script_config,
+                    user_config=self.cur_user_config,
+                    log=self._append_log,
+                )
             )
             if result.success:
                 self.run_book["SignIn"] = True
                 self._append_log(f"用户「{self.cur_user_item.name}」登录/切号完成")
                 break
 
-            reason = result.error or result.output or f"进程退出码：{result.returncode}"
+            reason = result.error or result.summary or "SRA 未返回失败摘要"
             self._append_log(
                 f"用户「{self.cur_user_item.name}」登录/切号失败：{reason}"
             )
@@ -243,24 +279,24 @@ class HSRManualReviewTask(TaskExecuteBase):
     async def final_task(self) -> str | None:
         """写回人工检查结果并清理临时 SRA 配置。"""
 
+        result: str | None = None
         try:
-            for temp_path in self.temp_files:
-                temp_path.unlink(missing_ok=True)
-
             if self.check_result != "Pass":
                 await self.cur_user_config.set("Data", "IfPassCheck", False)
                 self._finish_user_log(self.check_result, "异常")
-                return self.check_result
-
-            if self.run_book["SignIn"] and self.run_book["PassCheck"]:
+                result = self.check_result
+            elif self.run_book["SignIn"] and self.run_book["PassCheck"]:
                 await self.cur_user_config.set("Data", "IfPassCheck", True)
                 self._finish_user_log("HSR 人工排查通过", "完成")
             else:
                 await self.cur_user_config.set("Data", "IfPassCheck", False)
                 self._finish_user_log("HSR 人工排查未通过", "异常")
-            return None
         finally:
+            cleanup_error = await self._close_sra_session()
             await self._unsubscribe_broadcast()
+        if cleanup_error:
+            raise RuntimeError(f"HSR 人工排查 SRA 会话清理失败: {cleanup_error}")
+        return result
 
     async def on_crash(self, e: Exception) -> None:
         self.crashed = True
@@ -286,4 +322,5 @@ class HSRManualReviewTask(TaskExecuteBase):
         except Exception as notify_error:  # noqa: BLE001
             logger.warning(f"发送 HSR 人工排查异常提示失败：{notify_error}")
         finally:
+            await self._close_sra_session()
             await self._unsubscribe_broadcast()

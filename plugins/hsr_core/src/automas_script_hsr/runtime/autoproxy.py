@@ -36,6 +36,7 @@ from app.services.system import System
 from app.utils import ProcessManager, get_logger, is_process_running
 from app.utils.constants import UTC4, UTC8
 from automas_script_hsr.contracts import (
+    HSRNativeRunResult,
     HSRRunRequest,
     HSRRunResult,
     HSRTaskDescriptor,
@@ -141,9 +142,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
         if self.runtime.registry is None:
             raise RuntimeError("hsr.registry.v1 当前不可用")
-        effective = tuple(
-            getattr(self.script_config, "_hsr_effective_engines", ())
-        )
+        effective = self.runtime.effective_engines
         for engine in effective:
             group = self.runtime.registry.get_group(engine)
             session = await group.controller.open_session(
@@ -463,7 +462,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         user_id: str,
         user_name: str,
         eow_enabled: bool,
-        result: object,
+        result: HSRNativeRunResult,
         script: Literal["M7A", "SRA"],
     ) -> None:
         """外部脚本确认历战余响完成后，登记完成态。"""
@@ -677,7 +676,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 continue
             if not user_cfg.get("TaskSwitch", module.key):
                 continue
-            if not module_is_available(module, self.script_config):
+            if not module_is_available(
+                module,
+                self.script_config,
+                effective_engines=self.runtime.effective_engines,
+            ):
                 reason = "当前脚本未启用提供该任务的引擎"
                 self._append_log(f"用户「{user_name}」{module.name}跳过：{reason}")
                 self._record_module_result(
@@ -691,7 +694,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 )
                 continue
 
-            assigned = get_assigned_script(module, self.script_config)
+            assigned = get_assigned_script(
+                module,
+                self.script_config,
+                effective_engines=self.runtime.effective_engines,
+            )
             module_daily_eow_enabled = daily_eow_enabled
             if module.key == "Daily":
                 main_configured, module_daily_eow_enabled = (
@@ -717,9 +724,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     )
                     continue
 
-            async def unreachable_direct_run() -> object:
-                raise RuntimeError("HSR 普通任务必须通过控制器会话执行")
-
             items.append(
                 HSRRunItem(
                     user_item=user_item,
@@ -732,7 +736,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     script=assigned,
                     description=f"{assigned} {module.description}",
                     timeout_seconds=self._module_timeout_seconds(module.key),
-                    run=unreachable_direct_run,
                     on_success=self._build_module_success_callback(
                         module_key=module.key,
                         module_name=module.name,
@@ -768,7 +771,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 engine,
             )
         if module_key in ("DivergentUniverse", "CurrencyWars"):
-            def on_weekly_success(result: object) -> None:
+            def on_weekly_success(result: HSRNativeRunResult) -> None:
                 completed, reason = detect_weekly_completion(
                     result,
                     engine,
@@ -828,9 +831,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
         timeout_seconds = self._timeout_seconds_for_phase(phase)
 
-        async def unreachable_direct_run() -> object:
-            raise RuntimeError("SRA 登录必须通过控制器会话执行")
-
         return HSRRunItem(
             user_item=user_item,
             user_cfg=user_cfg,
@@ -842,7 +842,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
             script="SRA",
             description="SRA StartGameTask：按当前用户凭证登录或使用已记住账号",
             timeout_seconds=timeout_seconds,
-            run=unreachable_direct_run,
             extra={"phase": phase},
         )
 
@@ -1185,12 +1184,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     )
                     continue
 
-                if bool(getattr(result, "success", True)):
-                    if isinstance(result, HSRRunResult):
-                        native_result = result.native_result
-                    else:
-                        native_result = result
+                if result.success:
+                    native_result = result.native_result
                     if item.on_success is not None:
+                        if native_result is None:
+                            raise HSRRetryableTaskError(
+                                f"{item.script} 未返回业务完成判定所需的原生日志证据"
+                            )
                         item.on_success(native_result)
                     if item.module_key != "StartGame":
                         semantic_result = next(
@@ -1248,7 +1248,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
         return failures
 
-    async def _run_item_with_game_guard(self, item: HSRRunItem) -> object:
+    async def _run_item_with_game_guard(self, item: HSRRunItem) -> HSRRunResult:
         """执行单个外部模块；若游戏进程被关闭，尽快中止外部脚本。"""
 
         run_task = asyncio.create_task(self._execute_run_item(item))
@@ -1273,7 +1273,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 await run_task
             raise
 
-    async def _execute_run_item(self, item: HSRRunItem) -> object:
+    async def _execute_run_item(self, item: HSRRunItem) -> HSRRunResult:
         """Execute every module, including SRA account login, via its session."""
 
         session = self.runtime.sessions.get(item.script)
@@ -1366,9 +1366,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         uid = user_item.user_id
         user_cfg = self.cur_user_config
         user_name = user_cfg.get("Info", "Name")
-        effective_engines = set(
-            getattr(self.script_config, "_hsr_effective_engines", ())
-        )
+        effective_engines = set(self.runtime.effective_engines)
         sra_path = (
             self.script_config.get("SRA", "Path") or ""
             if "SRA" in effective_engines
@@ -1506,7 +1504,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             except Exception as e:  # noqa: BLE001
                 logger.exception(f"关闭 HSR 适配器会话失败：{e}")
                 self.crashed = True
-            finally:
+            else:
                 if self.runtime.registry is not None:
                     self.runtime.registry.release_session(engine, session)
         for path in self.temp_files:

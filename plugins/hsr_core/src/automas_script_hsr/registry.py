@@ -276,7 +276,7 @@ class HSRRegistryService:
                 await session.close()
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"{engine}: {type(exc).__name__}: {exc}")
-            finally:
+            else:
                 self.release_session(engine, session)
         return tuple(errors)
 

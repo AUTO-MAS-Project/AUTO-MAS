@@ -4,8 +4,6 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from app.models.task import UserItem
-
 from automas_script_hsr.contracts import HSRRunRequest, HSRRunResult
 from automas_script_hsr.runtime.tasks import get_module
 
@@ -30,16 +28,13 @@ class SRAControllerSessionImpl:
         self.temp_files: list[Path] = []
         self._backup_root = Path.cwd() / "data" / script_id / "Temp" / "SRA-session"
         self._backup_targets: list[tuple[Path, Path, bool]] = []
+        self._restored = False
         self._closed = False
         self.control = HSRSRAControl(
             script_config=script_config,
             account_switcher=coordinator._account_switcher,
+            process_registry=self.process_registry,
             append_log=log,
-            phase_timeout_seconds=coordinator._phase_timeout_seconds,
-            module_timeout_seconds=coordinator._module_timeout_seconds,
-            queue_eow_completion=coordinator._queue_eow_completion_if_confirmed,
-            queue_weekly_completion=coordinator._queue_weekly_completion,
-            record_module_result=coordinator._record_module_result,
         )
 
     @classmethod
@@ -51,38 +46,44 @@ class SRAControllerSessionImpl:
             coordinator = session.coordinator
             coordinator.runtime.sra_process_registry = session.process_registry
             return session
-        except Exception:
+        except Exception as setup_error:
             try:
                 await session.close()
-            except Exception:
-                pass
+            except Exception as cleanup_error:
+                raise ExceptionGroup(
+                    "SRA session setup and cleanup both failed",
+                    [setup_error, cleanup_error],
+                ) from setup_error
             raise
 
     async def run(self, request: HSRRunRequest) -> HSRRunResult:
         root = Path(str(self.script_config.get("SRA", "Path") or ""))
         if request.task.key == "StartGame":
             item = self.control.create_start_item(
-                user_item=UserItem(request.user_id, request.user_name, "运行"),
                 user_cfg=request.user_config,
                 user_name=request.user_name,
                 uid=request.user_id,
                 phase=request.task.phase,
+                timeout_seconds=request.timeout_seconds,
                 sra_exe_path=root / "SRA-cli.exe",
                 script_id=request.script_id,
                 temp_files=self.temp_files,
             )
-            return self._normalize_result(await item.run(), "SRA 登录/切号完成")
+            return HSRRunResult.from_native(
+                await item.run(),
+                default_summary="SRA 登录/切号完成",
+                default_error="SRA 登录/切号失败",
+            )
 
         module = get_module(request.task.key)
         if module is None or module.sra_task is None:
             return HSRRunResult(status="skipped", summary="SRA 不提供该任务")
         item = self.control.create_module_item(
-            user_item=UserItem(request.user_id, request.user_name, "运行"),
             user_cfg=request.user_config,
             user_name=request.user_name,
             uid=request.user_id,
             module=module,
-            phase=module.category,
+            timeout_seconds=request.timeout_seconds,
             sra_exe_path=root / "SRA-cli.exe",
             script_id=request.script_id,
             temp_files=self.temp_files,
@@ -90,20 +91,10 @@ class SRAControllerSessionImpl:
         )
         if item is None:
             return HSRRunResult(status="skipped", summary="SRA 任务无可执行内容")
-        return self._normalize_result(await item.run(), "SRA 任务完成")
-
-    @staticmethod
-    def _normalize_result(result: Any, default_summary: str) -> HSRRunResult:
-        if getattr(result, "success", False):
-            return HSRRunResult(
-                status="completed",
-                summary=str(getattr(result, "output", "") or default_summary),
-                completion_evidence={"returncode": getattr(result, "returncode", 0)},
-                native_result=result,
-            )
-        return HSRRunResult(
-            status="failed",
-            error=str(getattr(result, "error", "") or "SRA 任务失败"),
+        return HSRRunResult.from_native(
+            await item.run(),
+            default_summary="SRA 任务完成",
+            default_error="SRA 任务失败",
         )
 
     async def cancel(self) -> None:
@@ -123,17 +114,20 @@ class SRAControllerSessionImpl:
                 cleanup_sra_temp_config(path)
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"清理 SRA 临时配置失败({path}): {exc}")
-        try:
-            self._restore_app_data()
-            self._closed = True
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"恢复 SRA AppData 失败: {exc}")
+        if not self._restored:
+            try:
+                self._restore_app_data()
+                self._restored = True
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"恢复 SRA AppData 失败: {exc}")
 
         if errors:
             raise RuntimeError("；".join(errors))
+        self._closed = True
 
     def _backup_app_data(self) -> None:
-        shutil.rmtree(self._backup_root, ignore_errors=True)
+        if self._backup_root.exists():
+            shutil.rmtree(self._backup_root)
         app_data = get_sra_app_data_dir()
         for name in ("settings.json", "cache.json", "configs"):
             source = app_data / name
@@ -154,7 +148,7 @@ class SRAControllerSessionImpl:
             try:
                 if not existed:
                     if source.is_dir():
-                        shutil.rmtree(source, ignore_errors=True)
+                        shutil.rmtree(source)
                     elif source.exists():
                         source.unlink()
                     continue
@@ -164,7 +158,7 @@ class SRAControllerSessionImpl:
                 source.parent.mkdir(parents=True, exist_ok=True)
                 temp_path = source.with_name(f"{source.name}.restore.tmp")
                 if temp_path.is_dir():
-                    shutil.rmtree(temp_path, ignore_errors=True)
+                    shutil.rmtree(temp_path)
                 elif temp_path.exists():
                     temp_path.unlink()
                 if backup.is_dir():
@@ -172,7 +166,7 @@ class SRAControllerSessionImpl:
                 else:
                     shutil.copy2(backup, temp_path)
                 if source.is_dir():
-                    shutil.rmtree(source, ignore_errors=True)
+                    shutil.rmtree(source)
                 elif source.exists():
                     source.unlink()
                 temp_path.replace(source)
@@ -181,5 +175,6 @@ class SRAControllerSessionImpl:
 
         if errors:
             raise RuntimeError("；".join(errors))
-        shutil.rmtree(self._backup_root, ignore_errors=True)
+        if self._backup_root.exists():
+            shutil.rmtree(self._backup_root)
         self._backup_targets.clear()

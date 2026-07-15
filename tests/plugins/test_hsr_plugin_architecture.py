@@ -22,7 +22,6 @@ from automas_hsr_adapter_sra.controller import SRAController
 from automas_hsr_adapter_sra.plugin import Plugin as SRAPlugin
 from automas_hsr_adapter_sra.runtime import SRAControllerSessionImpl
 from automas_hsr_adapter_sra.runner import build_sra_module_config, run_sra_single_task
-from automas_script_hsr.adapter import HSRAdapterHooks
 from automas_script_hsr.contracts import HSRRunResult
 from automas_script_hsr.plugin import Plugin as HSRPlugin
 from automas_script_hsr.registry import HSRRegistryService, resolve_configured_engines
@@ -63,11 +62,12 @@ def _provider(registry: HSRRegistryService):
     return ScriptAdapterDefinition(
         type_key="HSR",
         display_name="HSR脚本",
-        hooks_factory=HSRAdapterHooks,
+        hooks_factory=None,
         script_model=HSRConfig,
         user_model=HSRUserConfig,
         supported_modes=("AutoProxy", "ManualReview"),
         record_capability_resolver=registry.resolve_record_capability,
+        manager_factory=lambda _script_item, _provider: None,
     ).build_provider(owner="test")
 
 
@@ -184,6 +184,9 @@ def test_snapshot_never_probes_or_exposes_an_unconfigured_engine() -> None:
             self.probe_count += 1
             return True, ""
 
+        def lock_paths(self, _script_config):
+            return ()
+
         async def open_session(self, **_kwargs):
             raise AssertionError("snapshot must not open a session")
 
@@ -236,6 +239,54 @@ def test_registry_closes_tracked_sessions_before_adapter_unload() -> None:
     asyncio.run(scenario())
 
 
+def test_registry_retries_a_session_that_failed_to_close() -> None:
+    async def scenario() -> None:
+        class Session:
+            def __init__(self) -> None:
+                self.close_count = 0
+
+            async def close(self) -> None:
+                self.close_count += 1
+                if self.close_count == 1:
+                    raise RuntimeError("temporary cleanup failure")
+
+        registry = HSRRegistryService()
+        registry.register_group(
+            owner="sra",
+            task_catalog=SRATaskCatalog(),
+            controller=SRAController(),
+        )
+        session = Session()
+        registry.track_session("SRA", session)
+
+        first_errors = await registry.close_owner_sessions("sra")
+        assert first_errors == ("SRA: RuntimeError: temporary cleanup failure",)
+        assert session.close_count == 1
+
+        assert await registry.close_owner_sessions("sra") == ()
+        assert session.close_count == 2
+
+        assert await registry.close_owner_sessions("sra") == ()
+        assert session.close_count == 2
+
+    asyncio.run(scenario())
+
+
+def test_native_run_result_requires_real_completion_evidence() -> None:
+    incomplete_native_result = SimpleNamespace(
+        success=True,
+        output="completed",
+        error="",
+    )
+
+    with pytest.raises(AttributeError, match="returncode"):
+        HSRRunResult.from_native(
+            incomplete_native_result,
+            default_summary="completed",
+            default_error="failed",
+        )
+
+
 def test_auto_proxy_executes_modules_through_unified_session_contract() -> None:
     async def scenario() -> None:
         class Session:
@@ -271,13 +322,6 @@ def test_auto_proxy_executes_modules_through_unified_session_contract() -> None:
         proxy._log_lines = []
         proxy._current_user_log = None
 
-        direct_run_count = 0
-
-        async def direct_run():
-            nonlocal direct_run_count
-            direct_run_count += 1
-            return native_result
-
         item = HSRRunItem(
             user_item=UserItem("user-id", "用户", "等待"),
             user_cfg=object(),
@@ -289,13 +333,11 @@ def test_auto_proxy_executes_modules_through_unified_session_contract() -> None:
             script="SRA",
             description="contract test",
             timeout_seconds=30,
-            run=direct_run,
             extra={"daily_eow_enabled": True},
         )
 
         result = await proxy._execute_run_item(item)
         assert result.native_result is native_result
-        assert direct_run_count == 0
         assert len(session.requests) == 1
         assert session.requests[0].task.key == "Daily"
         assert session.requests[0].extra == {"daily_eow_enabled": True}
@@ -312,11 +354,9 @@ def test_auto_proxy_executes_modules_through_unified_session_contract() -> None:
             script="SRA",
             description="login through adapter capability",
             timeout_seconds=30,
-            run=direct_run,
             extra={"phase": "daily"},
         )
         await proxy._execute_run_item(login_item)
-        assert direct_run_count == 0
         assert session.requests[1].task.key == "StartGame"
         assert session.requests[1].task.native_tasks == ("StartGameTask",)
 
@@ -347,6 +387,9 @@ def test_auto_proxy_opens_sessions_only_for_effective_engines() -> None:
             def probe(self, _script_config):
                 return True, ""
 
+            def lock_paths(self, _script_config):
+                return ()
+
             async def open_session(self, **_kwargs):
                 self.open_count += 1
                 return Session()
@@ -368,9 +411,10 @@ def test_auto_proxy_opens_sessions_only_for_effective_engines() -> None:
         proxy.runtime = HSRRuntimeState(
             log_lines=[],
             completion_writebacks=[],
+            effective_engines=("M7A",),
             registry=registry,
         )
-        proxy.script_config = SimpleNamespace(_hsr_effective_engines=("M7A",))
+        proxy.script_config = SimpleNamespace()
         proxy.script_info = SimpleNamespace(script_id="script")
 
         await proxy._open_adapter_sessions()
@@ -426,7 +470,6 @@ def test_semantic_incomplete_result_is_not_overwritten_as_completed() -> None:
             script="SRA",
             description="semantic evidence test",
             timeout_seconds=30,
-            run=lambda: None,
             on_success=mark_incomplete,
         )
 
@@ -609,6 +652,7 @@ async def _assert_adapter_sessions_restore_idempotently() -> None:
         m7a_session.config_path = config_path
         m7a_session.backup_path = backup_path
         m7a_session.config_existed = True
+        m7a_session._restored = False
         m7a_session._closed = False
         m7a_session.runner = m7a_terminator
 
@@ -629,6 +673,7 @@ async def _assert_adapter_sessions_restore_idempotently() -> None:
         sra_session.temp_files = []
         sra_session._backup_root = sra_backup.parent
         sra_session._backup_targets = [(sra_source, sra_backup, True)]
+        sra_session._restored = False
         sra_session._closed = False
 
         await sra_session.close()
@@ -849,12 +894,27 @@ def test_sra_external_locks_include_shared_app_data() -> None:
 
     shared_app_data = Path("C:/Users/test/AppData/Roaming/SRA")
     with patch(
-        "automas_hsr_adapter_sra.runner.get_sra_app_data_dir",
+        "automas_hsr_adapter_sra.controller.get_sra_app_data_dir",
         return_value=shared_app_data,
     ):
-        paths = _resolve_external_lock_paths(ScriptConfig(), ("SRA", "M7A"))
+        registry = HSRRegistryService()
+        registry.register_group(
+            owner="sra",
+            task_catalog=SRATaskCatalog(),
+            controller=SRAController(),
+        )
+        registry.register_group(
+            owner="m7a",
+            task_catalog=M7ATaskCatalog(),
+            controller=M7AController(),
+        )
+        paths = _resolve_external_lock_paths(
+            ScriptConfig(),
+            ("SRA", "M7A"),
+            registry,
+        )
 
-    assert paths == ["C:/SRA-one", "C:/M7A", shared_app_data]
+    assert paths == ["C:/SRA-one", str(shared_app_data), "C:/M7A"]
 
 
 def test_legacy_hsr_routes_are_removed_from_the_host() -> None:

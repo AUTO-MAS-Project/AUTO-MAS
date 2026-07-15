@@ -116,17 +116,31 @@ def script_supports(module_key: str, script: ScriptType) -> bool:
     return script in module.supported_scripts
 
 
-def get_assigned_script(module: HSRTaskModule, script_config) -> ScriptType:
+def _resolve_effective_engines(
+    script_config,
+    effective_engines: tuple[ScriptType, ...] | None,
+) -> tuple[ScriptType, ...]:
+    engines = (
+        resolve_configured_engines(script_config)
+        if effective_engines is None
+        else effective_engines
+    )
+    return tuple(
+        engine
+        for item in engines
+        if (engine := str(item).upper()) in ("SRA", "M7A")
+    )  # type: ignore[return-value]
+
+
+def get_assigned_script(
+    module: HSRTaskModule,
+    script_config,
+    *,
+    effective_engines: tuple[ScriptType, ...] | None = None,
+) -> ScriptType:
     """Resolve a module to an effective engine for the current script."""
 
-    effective = tuple(
-        str(item).upper()
-        for item in (
-            getattr(script_config, "_hsr_effective_engines", None)
-            or resolve_configured_engines(script_config)
-            or ()
-        )
-    )
+    effective = _resolve_effective_engines(script_config, effective_engines)
     supported = tuple(
         engine for engine in effective if engine in module.supported_scripts
     )
@@ -141,15 +155,13 @@ def get_assigned_script(module: HSRTaskModule, script_config) -> ScriptType:
     return normalized
 
 
-def module_is_available(module: HSRTaskModule, script_config) -> bool:
+def module_is_available(
+    module: HSRTaskModule,
+    script_config,
+    *,
+    effective_engines: tuple[ScriptType, ...] | None = None,
+) -> bool:
     """Return whether at least one effective engine provides the module."""
 
-    effective = {
-        str(item).upper()
-        for item in (
-            getattr(script_config, "_hsr_effective_engines", None)
-            or resolve_configured_engines(script_config)
-            or ()
-        )
-    }
+    effective = set(_resolve_effective_engines(script_config, effective_engines))
     return bool(effective.intersection(module.supported_scripts))

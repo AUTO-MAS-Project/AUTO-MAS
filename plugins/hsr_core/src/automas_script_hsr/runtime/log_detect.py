@@ -23,6 +23,8 @@
 import re
 from typing import Callable
 
+from automas_script_hsr.contracts import HSRNativeRunResult
+
 
 M7A_COMPLETION_MARKERS: tuple[str, ...] = ("停止运行",)
 
@@ -218,17 +220,18 @@ def has_screenshot_window_unavailable_output(text: str) -> bool:
     return all(marker in line for marker in HSR_SCREENSHOT_WINDOW_UNAVAILABLE_MARKERS)
 
 
-def result_text(result: object) -> str:
+def result_text(result: HSRNativeRunResult) -> str:
     """提取外部脚本 stdout/stderr 合并文本。"""
 
-    if result is None:
-        return ""
-    output = str(getattr(result, "output", "") or "")
-    error = str(getattr(result, "error", "") or "")
+    output = str(result.output or "")
+    error = str(result.error or "")
     return "\n".join(part for part in (output, error) if part)
 
 
-def detect_echo_of_war_completion(result: object, script: str) -> tuple[bool, str]:
+def detect_echo_of_war_completion(
+    result: HSRNativeRunResult,
+    script: str,
+) -> tuple[bool, str]:
     """根据 M7A/SRA 输出判断本周历战余响是否已完成。"""
 
     text = result_text(result)
@@ -296,7 +299,7 @@ def _parse_max_int(pattern: re.Pattern[str], text: str) -> int | None:
 
 
 def detect_weekly_completion(
-    result: object,
+    result: HSRNativeRunResult,
     script: str,
     module_key: str,
 ) -> tuple[bool, str]:
@@ -348,7 +351,7 @@ def detect_weekly_completion(
 
 
 def detect_daily_completion(
-    result: object,
+    result: HSRNativeRunResult,
     script: str,
 ) -> tuple[bool, str]:
     """根据 M7A/SRA 输出判断日常领取模块是否已完成。
