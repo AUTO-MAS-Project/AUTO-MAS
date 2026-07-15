@@ -264,7 +264,8 @@ export const normalizeScriptRecord = (
   users: ScriptUserRecord[] = []
 ): Script => {
   const descriptor = descriptorMap[record.type]
-  const available = record.available ?? (Boolean(descriptor) && descriptor?.available !== false)
+  const providerAvailable = Boolean(descriptor) && descriptor?.available !== false
+  const available = record.available ?? providerAvailable
   const info =
     record.config?.Info && typeof record.config.Info === 'object' ? record.config.Info : {}
   return {
@@ -284,6 +285,7 @@ export const normalizeScriptRecord = (
     editHint: record.edit_hint ?? null,
     displayName: descriptor?.display_name ?? record.type,
     isBuiltin: descriptor?.is_builtin ?? isBuiltinScriptType(record.type),
+    providerAvailable,
     available,
     unavailableReason: available
       ? null

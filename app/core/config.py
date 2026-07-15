@@ -68,6 +68,7 @@ from .script_types import (
     apply_script_type_registry_to_global_config,
     build_legacy_fallback_provider_by_script_config,
     build_legacy_fallback_provider_by_type_key,
+    build_unavailable_plugin_fallback_provider,
     build_descriptor,
     is_script_config_compatible_with_type_key,
     script_type_registry,
@@ -139,6 +140,212 @@ class AppConfig(GlobalConfig):
 
         truststore.inject_into_ssl()
 
+    @staticmethod
+    def _normalize_legacy_hsr_script_payload(data: dict[str, Any]) -> dict[str, Any]:
+        """把宿主旧 HSR 脚本字段转换为插件存储结构。"""
+
+        normalized = copy.deepcopy(data)
+        sub_configs = normalized.get("SubConfigsInfo")
+        if isinstance(sub_configs, dict):
+            remaining_sub_configs = copy.deepcopy(sub_configs)
+            remaining_sub_configs.pop("UserData", None)
+            if remaining_sub_configs:
+                normalized["SubConfigsInfo"] = remaining_sub_configs
+            else:
+                normalized.pop("SubConfigsInfo", None)
+
+        info = normalized.get("Info")
+        if info is None:
+            info = {}
+            normalized["Info"] = info
+        elif not isinstance(info, dict):
+            raise ValueError("旧 HSR 脚本 Info 非法，已停止迁移以避免数据丢失")
+
+        sra = normalized.get("SRA")
+        if sra is None:
+            sra = {}
+            normalized["SRA"] = sra
+        elif not isinstance(sra, dict):
+            raise ValueError("旧 HSR 脚本 SRA 非法，已停止迁移以避免数据丢失")
+        if "Path" not in sra and "SRAPath" in info:
+            sra["Path"] = info["SRAPath"]
+
+        m7a = normalized.get("M7A")
+        if m7a is None:
+            m7a = {}
+            normalized["M7A"] = m7a
+        elif not isinstance(m7a, dict):
+            raise ValueError("旧 HSR 脚本 M7A 非法，已停止迁移以避免数据丢失")
+        if "Path" not in m7a and "M7APath" in info:
+            m7a["Path"] = info["M7APath"]
+
+        run = normalized.get("Run")
+        if isinstance(run, dict) and "LowPerformanceMode" in run:
+            m7a.setdefault("LowPerformanceMode", run["LowPerformanceMode"])
+
+        return normalized
+
+    @staticmethod
+    def _normalize_legacy_hsr_user_payload(data: dict[str, Any]) -> dict[str, Any]:
+        """把一个宿主旧 HSR 用户转换为插件存储结构。"""
+
+        normalized = copy.deepcopy(data)
+        sub_configs = normalized.get("SubConfigsInfo")
+        custom_webhooks: dict[str, Any] | None = None
+        if isinstance(sub_configs, dict):
+            remaining_sub_configs = copy.deepcopy(sub_configs)
+            raw_custom_webhooks = remaining_sub_configs.get("Notify_CustomWebhooks")
+            if isinstance(raw_custom_webhooks, dict):
+                custom_webhooks = raw_custom_webhooks
+                remaining_sub_configs.pop("Notify_CustomWebhooks")
+            if remaining_sub_configs:
+                normalized["SubConfigsInfo"] = remaining_sub_configs
+            else:
+                normalized.pop("SubConfigsInfo", None)
+
+        info = normalized.get("Info")
+        if info is None:
+            info = {}
+            normalized["Info"] = info
+        elif not isinstance(info, dict):
+            raise ValueError("旧 HSR 用户 Info 非法，已停止迁移以避免数据丢失")
+
+        sra = normalized.get("SRA")
+        if sra is None:
+            sra = {}
+            normalized["SRA"] = sra
+        elif not isinstance(sra, dict):
+            raise ValueError("旧 HSR 用户 SRA 非法，已停止迁移以避免数据丢失")
+        for field_name in ("Id", "Password"):
+            if field_name not in sra and field_name in info:
+                sra[field_name] = info[field_name]
+
+        if custom_webhooks is not None:
+            notify = normalized.get("Notify")
+            if notify is None:
+                notify = {}
+                normalized["Notify"] = notify
+            elif not isinstance(notify, dict):
+                raise ValueError("旧 HSR 用户 Notify 非法，已停止迁移以避免数据丢失")
+            if "CustomWebhooks" in notify:
+                normalized.setdefault("SubConfigsInfo", {})[
+                    "Notify_CustomWebhooks"
+                ] = custom_webhooks
+            else:
+                notify["CustomWebhooks"] = custom_webhooks
+
+        return normalized
+
+    @classmethod
+    def _wrap_legacy_hsr_users(cls, data: Any) -> dict[str, Any]:
+        """在不依赖 HSR 插件的情况下封装旧用户配置。"""
+
+        if data is None:
+            return {"instances": []}
+        if not isinstance(data, dict):
+            raise ValueError("旧 HSR 用户配置结构非法，已停止迁移以避免数据丢失")
+
+        wrapped: dict[str, Any] = {"instances": []}
+        instances = data.get("instances")
+        if instances is None and not data:
+            return wrapped
+        if not isinstance(instances, list):
+            raise ValueError("旧 HSR 用户配置缺少 instances，已停止迁移以避免数据丢失")
+
+        for instance in instances:
+            if not isinstance(instance, dict):
+                raise ValueError("旧 HSR 用户索引结构非法，已停止迁移以避免数据丢失")
+            user_id = instance.get("uid")
+            user_payload = data.get(user_id) if isinstance(user_id, str) else None
+            if not isinstance(user_id, str) or not isinstance(user_payload, dict):
+                raise ValueError("旧 HSR 用户配置缺失，已停止迁移以避免数据丢失")
+            try:
+                uuid.UUID(user_id)
+            except ValueError as exc:
+                raise ValueError(
+                    "旧 HSR 用户 ID 非法，已停止迁移以避免数据丢失"
+                ) from exc
+
+            normalized = cls._normalize_legacy_hsr_user_payload(user_payload)
+            info = normalized.get("Info")
+            user_name = info.get("Name", "") if isinstance(info, dict) else ""
+            wrapped["instances"].append(
+                {"uid": user_id, "type": "PluginUserConfig"}
+            )
+            wrapped[user_id] = {
+                "Meta": {"PluginTypeKey": "HSR"},
+                "Info": {"Name": str(user_name or "")},
+                "PluginData": {
+                    "Config": json.dumps(normalized, ensure_ascii=False),
+                },
+            }
+
+        return wrapped
+
+    @classmethod
+    def _migrate_legacy_hsr_storage(cls, path: Path) -> int:
+        """在未知类型被清理前封装持久化的 HSRConfig 记录。"""
+
+        if not path.exists():
+            return 0
+
+        try:
+            root = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return 0
+        if not isinstance(root, dict):
+            return 0
+
+        instances = root.get("instances")
+        if not isinstance(instances, list):
+            return 0
+
+        migrated = 0
+        for instance in instances:
+            if not isinstance(instance, dict) or instance.get("type") != "HSRConfig":
+                continue
+
+            script_id = instance.get("uid")
+            script_payload = root.get(script_id) if isinstance(script_id, str) else None
+            if not isinstance(script_id, str) or not isinstance(script_payload, dict):
+                raise ValueError("旧 HSR 脚本配置结构非法，已停止迁移以避免数据丢失")
+            try:
+                uuid.UUID(script_id)
+            except ValueError as exc:
+                raise ValueError(
+                    "旧 HSR 脚本 ID 非法，已停止迁移以避免数据丢失"
+                ) from exc
+
+            sub_configs = script_payload.get("SubConfigsInfo")
+            if sub_configs is not None and not isinstance(sub_configs, dict):
+                raise ValueError(
+                    "旧 HSR 子配置结构非法，已停止迁移以避免数据丢失"
+                )
+            legacy_users = sub_configs.get("UserData") if sub_configs else None
+            normalized = cls._normalize_legacy_hsr_script_payload(script_payload)
+            info = normalized.get("Info")
+            script_name = info.get("Name", "") if isinstance(info, dict) else ""
+
+            instance["type"] = "PluginScriptConfig"
+            root[script_id] = {
+                "Meta": {"PluginTypeKey": "HSR"},
+                "Info": {"Name": str(script_name or "")},
+                "PluginData": {
+                    "Config": json.dumps(normalized, ensure_ascii=False),
+                },
+                "SubConfigsInfo": {
+                    "UserData": cls._wrap_legacy_hsr_users(legacy_users),
+                },
+            }
+            migrated += 1
+
+        if migrated:
+            path.write_text(
+                json.dumps(root, ensure_ascii=False, indent=4),
+                encoding="utf-8",
+            )
+        return migrated
+
     async def init_config(self) -> None:
         """初始化配置管理"""
 
@@ -147,7 +354,13 @@ class AppConfig(GlobalConfig):
         await self.connect(self.config_path / "Config.json")
         await self.EmulatorConfig.connect(self.config_path / "EmulatorConfig.json")
         await self.PlanConfig.connect(self.config_path / "PlanConfig.json")
-        await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
+        script_config_path = self.config_path / "ScriptConfig.json"
+        migrated_hsr_scripts = self._migrate_legacy_hsr_storage(script_config_path)
+        if migrated_hsr_scripts:
+            logger.warning(
+                f"检测到 {migrated_hsr_scripts} 个旧 HSR 脚本，已迁移到插件脚本容器"
+            )
+        await self.ScriptConfig.connect(script_config_path)
         await self._migrate_general_scripts_to_plugin_storage()
         await self._migrate_okww_scripts_to_plugin_storage()
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
@@ -1492,10 +1705,10 @@ class AppConfig(GlobalConfig):
             raise KeyError("插件脚本记录缺少 Meta.PluginTypeKey")
         try:
             return script_type_registry.get(type_key)
-        except KeyError as exc:
+        except KeyError:
             provider = build_legacy_fallback_provider_by_type_key(type_key)
             if provider is None:
-                raise exc
+                provider = build_unavailable_plugin_fallback_provider(type_key)
             script_name = str(script_config.get("Info", "Name") or "").strip()
             label = script_name or type_key
             logger.warning(

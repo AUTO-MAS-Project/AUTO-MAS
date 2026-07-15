@@ -542,6 +542,7 @@ export interface Script {
   } | null
   displayName?: string
   isBuiltin?: boolean
+  providerAvailable?: boolean
   available?: boolean
   unavailableReason?: string | null
   createTime?: string
