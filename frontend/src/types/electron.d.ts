@@ -169,8 +169,6 @@ export interface ElectronAPI {
     isRunning: boolean
     pid?: number
     startTime?: Date
-    wsConnected: boolean
-    lastPingTime?: Date
     error?: string
   }>
   backendWaitReady: () => Promise<{ ready: boolean; reason?: string }>
@@ -208,8 +206,6 @@ export interface ElectronAPI {
       isRunning: boolean
       pid?: number
       startTime?: Date
-      wsConnected: boolean
-      lastPingTime?: Date
       error?: string
     }) => void
   ) => void
@@ -240,10 +236,8 @@ declare global {
     electronAPI: ElectronAPI
     pluginAPI: PluginAPI
     __AUTO_MAS_PLUGIN_VUE__?: typeof import('vue')
-    __debugShowQuestion?: (data: unknown) => void
     wsDebug?: string
     debugScheduler?: typeof import('@/utils/scheduler-debug').debugScheduler
-    testWebSocketConnection?: typeof import('@/utils/scheduler-debug').testWebSocketConnection
   }
 
   interface Performance {

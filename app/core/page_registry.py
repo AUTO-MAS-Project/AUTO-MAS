@@ -438,17 +438,6 @@ BUILTIN_PAGES: list[dict[str, Any]] = [
         "dev_only": True,
     },
     {
-        "id": "ws-dev",
-        "path": "/WSdev",
-        "title": "WebSocket 测试",
-        "menu_label": "WebSocket测试",
-        "icon": "api",
-        "component": "WSdev",
-        "section": "dev",
-        "order": 30,
-        "dev_only": True,
-    },
-    {
         "id": "overlay-mask-dev",
         "path": "/OverlayMaskDev",
         "title": "遮罩测试",

@@ -97,7 +97,12 @@ import HeaderSchemaActionButton from '@/components/HeaderSchemaActionButton.vue'
 import SchemaForm from '@/components/SchemaForm.vue'
 import SchemaActionSessionMask from '@/components/SchemaActionSessionMask.vue'
 import { useSchemaActionRunner } from '@/composables/useSchemaActionRunner'
-import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
+import { useWebSocket, type WSEnvelope } from '@/composables/useWebSocket'
+import {
+  WS_ID_PLUGIN_SYSTEM,
+  WS_PLUGIN_HMR,
+  WS_PLUGIN_SNAPSHOT_UPDATED,
+} from '@/services/websocket/types'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import type { Script } from '@/types/script'
 import type { SchemaFieldDefinition, SchemaValidationErrorMap } from '@/types/schemaForm'
@@ -129,14 +134,9 @@ const headerSchemaActions = computed(() => collectHeaderSchemaActions(script.val
 const headerSchemaActionKeys = computed(() => headerSchemaActions.value.map(action => action.key))
 
 const scriptId = route.params.id as string
-let pluginSystemSubscriptionId: string | null = null
-
-interface PluginSystemSnapshotMessage {
-  kind: 'snapshot'
-}
+let pluginSystemSubscriptionIds: string[] = []
 
 interface PluginSystemHmrMessage {
-  kind: 'hmr'
   plugin?: string | null
   status: 'running' | 'success' | 'error' | string
   message?: string
@@ -253,22 +253,13 @@ const refreshSchemaFromPluginSystem = async () => {
   }
 }
 
-const handlePluginSystemMessage = (wsMessage: WebSocketBaseMessage) => {
-  const payload = wsMessage.data as PluginSystemSnapshotMessage | PluginSystemHmrMessage | undefined
+const handlePluginHmrMessage = (wsMessage: WSEnvelope) => {
+  const payload = wsMessage.data as unknown as PluginSystemHmrMessage | undefined
   if (!payload || typeof payload !== 'object') {
     return
   }
 
-  if (payload.kind === 'snapshot') {
-    void refreshSchemaFromPluginSystem()
-    return
-  }
-
-  if (
-    payload.kind === 'hmr' &&
-    payload.status === 'error' &&
-    isCurrentPluginEvent(payload.plugin)
-  ) {
+  if (payload.status === 'error' && isCurrentPluginEvent(payload.plugin)) {
     message.warning(payload.message || `plugin hmr failed: ${payload.plugin || 'unknown'}`)
   }
 }
@@ -330,15 +321,20 @@ const handleSave = async () => {
 }
 
 onMounted(() => {
-  pluginSystemSubscriptionId = subscribe({ id: 'PluginSystem' }, handlePluginSystemMessage)
+  pluginSystemSubscriptionIds = [
+    subscribe({ id: WS_ID_PLUGIN_SYSTEM, type: WS_PLUGIN_SNAPSHOT_UPDATED }, () => {
+      void refreshSchemaFromPluginSystem()
+    }),
+    subscribe({ id: WS_ID_PLUGIN_SYSTEM, type: WS_PLUGIN_HMR }, handlePluginHmrMessage),
+  ]
   void loadScript()
 })
 
 onUnmounted(() => {
-  if (pluginSystemSubscriptionId) {
-    unsubscribe(pluginSystemSubscriptionId)
-    pluginSystemSubscriptionId = null
+  for (const subscriptionId of pluginSystemSubscriptionIds) {
+    unsubscribe(subscriptionId)
   }
+  pluginSystemSubscriptionIds = []
 })
 </script>
 

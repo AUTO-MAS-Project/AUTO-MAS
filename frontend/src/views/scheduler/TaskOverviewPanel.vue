@@ -28,15 +28,6 @@ interface Script {
   user_list: User[]
 }
 
-interface WSMessage {
-  type: string
-  id: string
-  data: {
-    task_info?: any[]
-  }
-  fullMessage?: any
-}
-
 // 任务数据只在 WebSocket 快照实际变化时整体替换，避免深层响应式递归开销。
 const taskData = shallowRef<Script[]>([])
 const taskTreeRef = ref()
@@ -65,39 +56,36 @@ const buildTaskInfoSignature = (taskInfo: any[]) => {
     .join('|')
 }
 
-// 处理 WebSocket 消息
-const handleWSMessage = (message: WSMessage) => {
-  if (message.type === 'Update') {
-    // 处理 task_info 数据（完整的脚本和用户数据）
-    if (message.data?.task_info && Array.isArray(message.data.task_info)) {
-      const signature = buildTaskInfoSignature(message.data.task_info)
-      if (signature === lastTaskSignature.value) {
-        return
-      }
-      lastTaskSignature.value = signature
+// 应用任务信息快照（来自 task.info.updated / task.completed 消息）
+const applyTaskInfo = (taskInfo: any[] | undefined) => {
+  if (!taskInfo || !Array.isArray(taskInfo)) return
 
-      const { scriptCount, userCount } = getTaskInfoStats(message.data.task_info)
-      logger.debug(`更新任务数据 : 脚本数=${scriptCount}, 用户数=${userCount}`)
-
-      // 转换后端的 task_info 格式到前端的 Script 格式
-      const newTaskData = message.data.task_info.map((task: any, index: number) => ({
-        script_id: task.script_id || `script_${index}`,
-        name: task.name || '未知脚本',
-        status: task.status || '等待',
-        user_list: task.userList ? [...task.userList] : [], // 注意：后端使用 userList，前端使用 user_list
-      }))
-
-      logger.debug('数据发生实际变化，更新组件')
-      taskData.value = newTaskData
-      const stats = getScriptStats(taskData.value)
-      logger.debug(`设置后的 taskData: 脚本数=${stats.scriptCount}, 用户数=${stats.userCount}`)
-    }
+  const signature = buildTaskInfoSignature(taskInfo)
+  if (signature === lastTaskSignature.value) {
+    return
   }
+  lastTaskSignature.value = signature
+
+  const { scriptCount, userCount } = getTaskInfoStats(taskInfo)
+  logger.debug(`更新任务数据 : 脚本数=${scriptCount}, 用户数=${userCount}`)
+
+  // 转换后端的 task_info 格式到前端的 Script 格式
+  const newTaskData = taskInfo.map((task: any, index: number) => ({
+    script_id: task.script_id || `script_${index}`,
+    name: task.name || '未知脚本',
+    status: task.status || '等待',
+    user_list: task.userList ? [...task.userList] : [], // 注意：后端使用 userList，前端使用 user_list
+  }))
+
+  logger.debug('数据发生实际变化，更新组件')
+  taskData.value = newTaskData
+  const stats = getScriptStats(taskData.value)
+  logger.debug(`设置后的 taskData: 脚本数=${stats.scriptCount}, 用户数=${stats.userCount}`)
 }
 
 // 暴露方法供父组件调用
 defineExpose({
-  handleWSMessage,
+  applyTaskInfo,
   expandAll: () => taskTreeRef.value?.expandAll(),
   collapseAll: () => taskTreeRef.value?.collapseAll(),
 })

@@ -109,7 +109,19 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { OpenAPI } from '@/api'
+import { useWebSocket } from '@/composables/useWebSocket'
+import {
+  WS_ID_PLUGIN_MARKET,
+  WS_MARKET_ERROR,
+  WS_MARKET_SNAPSHOT_REQUEST,
+  WS_MARKET_SNAPSHOT_RESPONSE,
+  WS_PLUGIN_INSTALL_PROGRESS,
+  WS_PLUGIN_INSTALL_REQUEST,
+  WS_PLUGIN_INSTALL_RESULT,
+  WS_PLUGIN_INSTALLED_SYNC,
+  WS_PLUGIN_UNINSTALL_REQUEST,
+  WS_PLUGIN_UNINSTALL_RESULT,
+} from '@/services/websocket/types'
 
 interface MarketItem {
   package: string
@@ -128,9 +140,8 @@ interface MarketSnapshot {
   total: number
 }
 
-interface PluginMessageEnvelope {
-  event?: string
-  request_id?: string | null
+interface PluginMarketMessageData {
+  requestId?: string
   status?: string
   message?: string
   payload?: any
@@ -143,12 +154,23 @@ interface PluginMarketCache {
 
 const logger = window.electronAPI.getLogger('插件市场')
 const PLUGIN_MARKET_CACHE_KEY = 'auto-mas-plugin-market-cache-v1'
-const wsStatus = ref('未连接')
-const isConnected = ref(false)
-const wsRef = ref<WebSocket | null>(null)
-const reconnectTimer = ref<number | null>(null)
-const manualClose = ref(false)
-const shouldFetchOnConnect = ref(false)
+
+const { state, subscribe, unsubscribe, send, request } = useWebSocket()
+
+const isConnected = computed(() => state.value === 'open')
+const wsStatus = computed(() => {
+  switch (state.value) {
+    case 'open':
+      return '已连接'
+    case 'connecting':
+    case 'reconnecting':
+      return '连接中'
+    case 'closed':
+      return '已断开'
+    default:
+      return '未连接'
+  }
+})
 
 const marketSnapshot = ref<MarketSnapshot | null>(null)
 const installedState = ref<Record<string, boolean>>({})
@@ -162,6 +184,8 @@ const pendingManualPackage = ref('')
 const lastInfoType = ref<'success' | 'error' | 'info' | 'warning'>('info')
 const lastInfoMessage = ref('')
 
+const subscriptionIds: string[] = []
+
 const normalizeName = (name: string) =>
   String(name || '')
     .trim()
@@ -171,21 +195,6 @@ const normalizeName = (name: string) =>
 const setInfo = (msg: string, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
   lastInfoType.value = type
   lastInfoMessage.value = msg
-}
-
-const buildWsUrl = (): string => {
-  const base = (OpenAPI.BASE || '').trim()
-  if (base.startsWith('https://')) {
-    return `${base.replace('https://', 'wss://')}/api/ws/plugin`
-  }
-  if (base.startsWith('http://')) {
-    return `${base.replace('http://', 'ws://')}/api/ws/plugin`
-  }
-  if (base.startsWith('wss://') || base.startsWith('ws://')) {
-    return `${base}/api/ws/plugin`
-  }
-  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  return `${protocol}://${window.location.host}/api/ws/plugin`
 }
 
 const applySnapshot = (snapshot: MarketSnapshot) => {
@@ -245,36 +254,49 @@ const updateInstalledState = (pkg: string, installed: boolean) => {
   }
 }
 
-const clearReconnectTimer = () => {
-  if (reconnectTimer.value !== null) {
-    window.clearTimeout(reconnectTimer.value)
-    reconnectTimer.value = null
-  }
-}
+const newRequestId = () => `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 
-const sendPluginAction = (action: string, payload: Record<string, unknown> = {}): boolean => {
-  const ws = wsRef.value
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
+const sendPluginRequest = (type: string, payload: Record<string, unknown> = {}): boolean => {
+  const sent = send(WS_ID_PLUGIN_MARKET, type, {
+    requestId: newRequestId(),
+    ...payload,
+  })
+  if (!sent) {
     message.warning('插件市场 WS 未连接')
-    return false
   }
-
-  ws.send(
-    JSON.stringify({
-      action,
-      request_id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      payload,
-    })
-  )
-  return true
+  return sent
 }
 
-const requestSnapshot = () => {
-  if (!sendPluginAction('market.snapshot.request', { per_prefix_limit: 60 })) {
-    snapshotLoading.value = false
+const requestSnapshot = async () => {
+  if (snapshotLoading.value) {
     return
   }
   snapshotLoading.value = true
+  try {
+    const response = await request(
+      WS_ID_PLUGIN_MARKET,
+      WS_MARKET_SNAPSHOT_REQUEST,
+      [WS_MARKET_SNAPSHOT_RESPONSE, WS_MARKET_ERROR],
+      { perPrefixLimit: 60 },
+      15000
+    )
+    if (response.type === WS_MARKET_ERROR) {
+      // 错误提示由 market.error 订阅统一展示
+      return
+    }
+    const data = response.data as PluginMarketMessageData
+    applySnapshot((data.payload || {}) as MarketSnapshot)
+    if (marketSnapshot.value) {
+      saveSnapshotCache(marketSnapshot.value)
+    }
+    setInfo('市场快照已更新', 'success')
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`获取市场快照失败: ${errorMsg}`)
+    setInfo(`获取市场快照失败: ${errorMsg}`, 'error')
+  } finally {
+    snapshotLoading.value = false
+  }
 }
 
 const isInstalled = (pkg: string) => Boolean(installedState.value[normalizeName(pkg)])
@@ -306,7 +328,7 @@ const requestInstall = (pkg: string): boolean => {
     return false
   }
   markOperation(packageName, true)
-  if (!sendPluginAction('plugin.install.request', { package: packageName })) {
+  if (!sendPluginRequest(WS_PLUGIN_INSTALL_REQUEST, { package: packageName })) {
     markOperation(packageName, false)
     return false
   }
@@ -320,7 +342,7 @@ const toggleInstall = (pkg: string) => {
 
   markOperation(pkg, true)
   if (isInstalled(pkg)) {
-    if (!sendPluginAction('plugin.uninstall.request', { package: pkg })) {
+    if (!sendPluginRequest(WS_PLUGIN_UNINSTALL_REQUEST, { package: pkg })) {
       markOperation(pkg, false)
     }
   } else {
@@ -361,150 +383,75 @@ const goToPackage = (url: string) => {
   window.open(target, '_blank', 'noopener,noreferrer')
 }
 
-const onPluginMessage = (envelope: PluginMessageEnvelope) => {
-  const event = String(envelope.event || '')
-  const status = String(envelope.status || 'success')
-  const payload = envelope.payload || {}
-
-  if (event === 'market.snapshot.response') {
-    snapshotLoading.value = false
-    applySnapshot(payload as MarketSnapshot)
-    if (marketSnapshot.value) {
-      saveSnapshotCache(marketSnapshot.value)
-    }
-    shouldFetchOnConnect.value = false
-    setInfo('市场快照已更新', 'success')
-    return
-  }
-
-  if (event === 'plugin.install.progress') {
-    const pkg = String(payload.package || '')
-    const progress = Number(payload.progress || 0)
-    if (pkg) {
-      setInfo(`安装中: ${pkg} (${progress}%)`, 'info')
-    }
-    return
-  }
-
-  if (event === 'plugin.install.result') {
-    const pkg = String(payload.package || '')
-    if (pkg) {
-      markOperation(pkg, false)
-    }
-    const ok = status !== 'error' && Boolean(payload.success)
-    if (ok && pkg) {
-      updateInstalledState(pkg, true)
-    }
-    if (pkg && normalizeName(pkg) === pendingManualPackage.value) {
-      if (ok) {
-        manualPackageName.value = ''
-        manualInstallVisible.value = false
-      }
-      pendingManualPackage.value = ''
-    }
-    setInfo(envelope.message || (ok ? '安装成功' : '安装失败'), ok ? 'success' : 'error')
-    if (ok) {
-      message.success(envelope.message || '安装成功')
-    } else {
-      message.error(envelope.message || '安装失败')
-    }
-    return
-  }
-
-  if (event === 'plugin.uninstall.result') {
-    const pkg = String(payload.package || '')
-    if (pkg) {
-      markOperation(pkg, false)
-    }
-    const ok = status !== 'error' && Boolean(payload.success)
-    if (ok && pkg) {
-      updateInstalledState(pkg, false)
-    }
-    setInfo(envelope.message || (ok ? '卸载成功' : '卸载失败'), ok ? 'success' : 'error')
-    if (ok) {
-      message.success(envelope.message || '卸载成功')
-    } else {
-      message.error(envelope.message || '卸载失败')
-    }
-    return
-  }
-
-  if (event === 'plugin.installed.sync') {
-    const pkg = String(payload.package || '')
-    if (!pkg) {
-      return
-    }
-    updateInstalledState(pkg, Boolean(payload.installed))
-    markOperation(pkg, false)
-    return
-  }
-
-  if (event === 'plugin.error') {
-    snapshotLoading.value = false
-    const msg = envelope.message || '插件通道发生错误'
-    setInfo(msg, 'error')
-    message.error(msg)
-    return
-  }
-
-  if (event === 'plugin.channel.ready') {
-    setInfo('插件通道已就绪，可手动刷新快照', 'info')
+const handleInstallProgress = (data: PluginMarketMessageData) => {
+  const payload = data.payload || {}
+  const pkg = String(payload.package || '')
+  const progress = Number(payload.progress || 0)
+  if (pkg) {
+    setInfo(`安装中: ${pkg} (${progress}%)`, 'info')
   }
 }
 
-const connectWs = () => {
-  clearReconnectTimer()
-  const wsUrl = buildWsUrl()
-  const ws = new WebSocket(wsUrl)
-  wsRef.value = ws
-  wsStatus.value = '连接中'
-
-  ws.onopen = () => {
-    isConnected.value = true
-    wsStatus.value = '已连接'
-    logger.info(`插件市场 WS 已连接: ${wsUrl}`)
-    if (shouldFetchOnConnect.value || !marketSnapshot.value) {
-      requestSnapshot()
-      shouldFetchOnConnect.value = false
+const handleInstallResult = (data: PluginMarketMessageData) => {
+  const payload = data.payload || {}
+  const status = String(data.status || 'success')
+  const pkg = String(payload.package || '')
+  if (pkg) {
+    markOperation(pkg, false)
+  }
+  const ok = status !== 'error' && Boolean(payload.success)
+  if (ok && pkg) {
+    updateInstalledState(pkg, true)
+  }
+  if (pkg && normalizeName(pkg) === pendingManualPackage.value) {
+    if (ok) {
+      manualPackageName.value = ''
+      manualInstallVisible.value = false
     }
+    pendingManualPackage.value = ''
   }
-
-  ws.onmessage = event => {
-    try {
-      const raw = JSON.parse(String(event.data || '{}'))
-
-      if (raw?.type === 'Signal' && raw?.data?.Ping) {
-        ws.send(JSON.stringify({ id: 'Client', type: 'Signal', data: { Pong: 'heartbeat' } }))
-        return
-      }
-
-      const data = raw?.data
-      if (raw?.type !== 'Message' || !data || typeof data !== 'object') {
-        return
-      }
-      onPluginMessage(data as PluginMessageEnvelope)
-    } catch (error) {
-      logger.error(`插件市场消息解析失败: ${String(error)}`)
-    }
+  setInfo(data.message || (ok ? '安装成功' : '安装失败'), ok ? 'success' : 'error')
+  if (ok) {
+    message.success(data.message || '安装成功')
+  } else {
+    message.error(data.message || '安装失败')
   }
+}
 
-  ws.onerror = error => {
-    wsStatus.value = '连接错误'
-    logger.error(`插件市场 WS 错误: ${String(error)}`)
+const handleUninstallResult = (data: PluginMarketMessageData) => {
+  const payload = data.payload || {}
+  const status = String(data.status || 'success')
+  const pkg = String(payload.package || '')
+  if (pkg) {
+    markOperation(pkg, false)
   }
-
-  ws.onclose = () => {
-    isConnected.value = false
-    wsStatus.value = '已断开'
-    wsRef.value = null
-    logger.info('插件市场 WS 已断开')
-
-    if (!manualClose.value) {
-      reconnectTimer.value = window.setTimeout(() => {
-        connectWs()
-      }, 1500)
-    }
+  const ok = status !== 'error' && Boolean(payload.success)
+  if (ok && pkg) {
+    updateInstalledState(pkg, false)
   }
+  setInfo(data.message || (ok ? '卸载成功' : '卸载失败'), ok ? 'success' : 'error')
+  if (ok) {
+    message.success(data.message || '卸载成功')
+  } else {
+    message.error(data.message || '卸载失败')
+  }
+}
+
+const handleInstalledSync = (data: PluginMarketMessageData) => {
+  const payload = data.payload || {}
+  const pkg = String(payload.package || '')
+  if (!pkg) {
+    return
+  }
+  updateInstalledState(pkg, Boolean(payload.installed))
+  markOperation(pkg, false)
+}
+
+const handleMarketError = (data: PluginMarketMessageData) => {
+  snapshotLoading.value = false
+  const msg = data.message || '插件通道发生错误'
+  setInfo(msg, 'error')
+  message.error(msg)
 }
 
 const formatTime = (ts: string) => {
@@ -537,26 +484,36 @@ const filteredItems = computed(() => {
 })
 
 onMounted(() => {
-  manualClose.value = false
+  subscriptionIds.push(
+    subscribe({ id: WS_ID_PLUGIN_MARKET, type: WS_PLUGIN_INSTALL_PROGRESS }, msg =>
+      handleInstallProgress(msg.data as PluginMarketMessageData)
+    ),
+    subscribe({ id: WS_ID_PLUGIN_MARKET, type: WS_PLUGIN_INSTALL_RESULT }, msg =>
+      handleInstallResult(msg.data as PluginMarketMessageData)
+    ),
+    subscribe({ id: WS_ID_PLUGIN_MARKET, type: WS_PLUGIN_UNINSTALL_RESULT }, msg =>
+      handleUninstallResult(msg.data as PluginMarketMessageData)
+    ),
+    subscribe({ id: WS_ID_PLUGIN_MARKET, type: WS_PLUGIN_INSTALLED_SYNC }, msg =>
+      handleInstalledSync(msg.data as PluginMarketMessageData)
+    ),
+    subscribe({ id: WS_ID_PLUGIN_MARKET, type: WS_MARKET_ERROR }, msg =>
+      handleMarketError(msg.data as PluginMarketMessageData)
+    )
+  )
+
   const cachedSnapshot = loadSnapshotCache()
   if (cachedSnapshot) {
     applySnapshot(cachedSnapshot)
     setInfo('已加载本地缓存，点击“刷新快照”可获取最新市场数据', 'info')
-    shouldFetchOnConnect.value = false
   } else {
-    shouldFetchOnConnect.value = true
+    void requestSnapshot()
   }
-  connectWs()
 })
 
 onUnmounted(() => {
-  manualClose.value = true
-  clearReconnectTimer()
-  const ws = wsRef.value
-  wsRef.value = null
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.close()
-  }
+  subscriptionIds.forEach(id => unsubscribe(id))
+  subscriptionIds.length = 0
 })
 </script>
 
