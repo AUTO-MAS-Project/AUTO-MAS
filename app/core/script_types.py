@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.models.ConfigBase import (
     BoolValidator,
@@ -128,6 +128,12 @@ class ScriptRecordCapability:
     available: bool = True
     unavailable_reason: str | None = None
     supported_modes: tuple[str, ...] | None = None
+
+
+class _UnavailablePluginConfig(BaseModel):
+    """在 provider 缺失时原样保留插件自有配置。"""
+
+    model_config = ConfigDict(extra="allow")
 
 
 @dataclass(slots=True)
@@ -566,6 +572,33 @@ def build_legacy_fallback_provider_by_type_key(type_key: str) -> ScriptTypeProvi
     return _build_legacy_fallback_provider(
         str(type_key or "").strip(),
         LEGACY_SCRIPT_TYPE_BY_TYPE_KEY,
+    )
+
+
+def build_unavailable_plugin_fallback_provider(type_key: str) -> ScriptTypeProvider:
+    """为已持久化但插件缺失的脚本构造只读 provider。"""
+
+    normalized_type_key = str(type_key or "").strip()
+    if not normalized_type_key:
+        raise ValueError("插件脚本类型键不能为空")
+
+    unavailable_reason = f"插件脚本类型 {normalized_type_key} 当前未加载"
+    return ScriptTypeProvider(
+        type_key=normalized_type_key,
+        display_name=f"{normalized_type_key} 插件脚本",
+        script_config_class=_UnavailablePluginConfig,
+        user_config_class=_UnavailablePluginConfig,
+        supported_modes=(),
+        manager_factory=_make_unavailable_manager_factory(normalized_type_key),
+        script_schema={"groups": []},
+        user_schema={"groups": []},
+        editor_kind="schema",
+        is_builtin=False,
+        metadata={
+            "available": False,
+            "unavailable_reason": unavailable_reason,
+            "source": "plugin-offline",
+        },
     )
 
 

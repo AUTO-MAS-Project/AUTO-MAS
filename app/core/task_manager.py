@@ -353,12 +353,10 @@ class Task(TaskExecuteBase):
                 )
                 continue
 
-            script_record = (
-                await Config.get_script_records(str(current_script_uid))
-            )[0]
-            if not script_record.available:
+            capability = await Config.get_script_record_capability(current_script_uid)
+            if not capability.available:
                 script_item.status = "异常"
-                reason = script_record.unavailable_reason or "脚本当前不可用"
+                reason = capability.unavailable_reason or "脚本当前不可用"
                 logger.error(f"脚本类型 {provider.type_key} 当前不可用: {reason}")
                 await Config.send_websocket_message(
                     id=self.task_info.task_id,
@@ -367,7 +365,7 @@ class Task(TaskExecuteBase):
                 )
                 continue
 
-            if self.task_info.mode not in script_record.supported_modes:
+            if self.task_info.mode not in (capability.supported_modes or ()):
                 script_item.status = "异常"
                 logger.error(
                     f"脚本类型 {provider.type_key} 不支持任务模式 {self.task_info.mode}"

@@ -453,8 +453,7 @@ watch(
 
 const isScriptOperable = (script: Script) => script.available !== false
 
-const canEditScript = (script: Script) =>
-  isScriptOperable(script) || script.editorKind === 'plugin:automas_script_hsr'
+const canEditScript = (script: Script) => script.providerAvailable ?? isScriptOperable(script)
 
 const handleEdit = (script: Script) => {
   emit('edit', script)

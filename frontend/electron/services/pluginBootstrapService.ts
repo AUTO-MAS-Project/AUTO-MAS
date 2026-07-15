@@ -465,19 +465,25 @@ export class PluginBootstrapService {
 
   private loadDeclaredPackageSpecs(): DeclaredBootstrapPackage[] {
     if (!fs.existsSync(this.pyprojectPath)) {
-      throw new Error(`pyproject.toml does not exist: ${this.pyprojectPath}`)
+      logger.warn(
+        `pyproject.toml does not exist, skipping declared plugin bootstrap packages: ${this.pyprojectPath}`
+      )
+      return []
     }
 
     try {
       const content = fs.readFileSync(this.pyprojectPath, 'utf-8')
       const sectionBody = this.extractBootstrapSection(content)
       if (sectionBody == null) {
-        throw new Error(`Missing ${PYPROJECT_BOOTSTRAP_SECTION} in ${this.pyprojectPath}`)
+        logger.warn(
+          `Missing ${PYPROJECT_BOOTSTRAP_SECTION}, skipping declared plugin bootstrap packages`
+        )
+        return []
       }
       return this.extractDeclaredPackages(sectionBody)
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      throw new Error(`Failed to load plugin bootstrap declarations: ${message}`)
+      logger.warn(`Failed to read pyproject plugin bootstrap packages; using empty list: ${error}`)
+      return []
     }
   }
 

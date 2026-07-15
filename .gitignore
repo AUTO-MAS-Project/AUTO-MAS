@@ -61,14 +61,6 @@ uv.lock
 /plugins/*
 !/plugins/auto_mas_core/
 !/plugins/auto_mas_core/**
-!/plugins/hsr_core/
-!/plugins/hsr_core/**
-!/plugins/hsr_adapter_sra/
-!/plugins/hsr_adapter_sra/**
-!/plugins/hsr_adapter_m7a/
-!/plugins/hsr_adapter_m7a/**
-/plugins/hsr_*/build/
-/plugins/hsr_*/src/*.egg-info/
 !/plugins/okww_adapter/
 !/plugins/okww_adapter/**
 !/plugins/ok_script_adapter/
@@ -78,18 +70,13 @@ uv.lock
 /plugins/**/*.egg-info/
 /app/core/plugins/_generated/
 
-# Local test sources are ignored unless explicitly allowlisted below
+# Local test sources are not included in this branch
 /tests/
-!/tests/
-/tests/*
-!/tests/plugins/
-/tests/plugins/*
 **/test_*.py
 **/*_test.py
 **/*.test.ts
 **/*.test.tsx
 **/*.spec.ts
 **/*.spec.tsx
-!/tests/plugins/test_hsr_plugin_architecture.py
 
 res/docs/ok-series-common-script-report.md
