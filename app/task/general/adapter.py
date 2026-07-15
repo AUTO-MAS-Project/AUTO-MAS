@@ -412,7 +412,7 @@ class GeneralAdapterHooks(ScriptAdapterHooks):
                         "stop_path": "/api/dispatch/stop",
                         "stop_method": "POST",
                         "stop_payload": {
-                            "taskId": "{{session.websocketId}}",
+                            "taskId": "{{session.taskId}}",
                         },
                         "overlay_title": "正在进行通用配置",
                         "overlay_description": (
