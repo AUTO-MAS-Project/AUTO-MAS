@@ -46,6 +46,9 @@ class OkScriptGame(_ConfigModel):
     )
     Arguments: str = PluginField(default="", title="游戏启动参数")
     WaitTime: int = PluginField(default=60, title="等待启动时间", min=0, max=9999)
+    KillGameOnManualStop: bool = PluginField(
+        default=True, title="手动终止任务时关闭游戏"
+    )
 
 
 class OkScriptRun(_ConfigModel):
