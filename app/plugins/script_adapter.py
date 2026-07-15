@@ -538,13 +538,14 @@ class BaseAdapterManager(TaskExecuteBase):
         raise RuntimeError(f"不支持的任务模式: {mode}")
 
     async def _report_check_failure(self) -> None:
-        from app.core import Config as RuntimeConfig
+        from app.core.ws import Publisher, protocol
+        from app.models.schema import WSTaskNoticeData
 
         self.runtime.script_info.status = "异常"
-        await RuntimeConfig.send_websocket_message(
+        await Publisher.send(
             id=self.runtime.task_info.task_id,
-            type="Info",
-            data={"Error": self.runtime.check_result},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=self.runtime.check_result),
         )
 
     async def main_task(self) -> None:

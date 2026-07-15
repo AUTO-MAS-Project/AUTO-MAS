@@ -8,7 +8,9 @@ from pathlib import Path
 from typing import Any
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
 from app.models.ConfigBase import ConfigBase, MultipleConfig
+from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, UserItem
 from app.plugins import ScriptAdapterHooks, ScriptAdapterRuntime
 from app.services import System
@@ -50,10 +52,10 @@ class _CheckedAutoProxyTask(TaskExecuteBase):
                 current_user = self.inner.cur_user_item
                 if current_user.status == "等待":
                     current_user.status = "异常"
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.inner.task_info.task_id,
-                    type="Info",
-                    data={"Error": result},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message=result),
                 )
                 return
             await self.inner.main_task()
@@ -138,10 +140,12 @@ class OkwwAdapterHooks(ScriptAdapterHooks):
         await self._restore_script_config_from_temp(runtime)
         with suppress(Exception):
             await self._write_back_user_config(runtime)
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=runtime.task_info.task_id,
-            type="Info",
-            data={"Error": f"OK-WW 插件任务出现异常: {error}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(
+                level="error", message=f"OK-WW 插件任务出现异常: {error}"
+            ),
         )
 
     def run_auto_proxy(self, runtime: ScriptAdapterRuntime) -> TaskExecuteBase:

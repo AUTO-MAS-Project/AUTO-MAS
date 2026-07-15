@@ -25,12 +25,18 @@ import asyncio
 from typing import Dict, Literal
 
 from .config import Config
+from .ws import MainConnection, Publisher, protocol
 from app.plugins import PluginEventFactory, PluginEventNames
 from .script_types import script_type_registry
 from app.services import System
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
+from app.models.schema import (
+    WSTaskCompletedData,
+    WSTaskCreatedData,
+    WSTaskNoticeData,
+    WSPowerSignData,
+)
 from app.utils import get_logger
-from app.utils.constants import POWER_SIGN_MAP
 
 
 logger = get_logger("业务调度")
@@ -139,15 +145,15 @@ class TaskInfo(TaskItem):
 
     async def on_change(self):
         """任务状态变更时，同步推送前端并广播插件事件。"""
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_id,
-            type="Update",
+            type=protocol.TASK_INFO_UPDATED,
             data={"task_info": self.asdict},
         )
         if self.current_index != -1:
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_id,
-                type="Update",
+                type=protocol.TASK_LOG_UPDATED,
                 data={"log": self.script_list[self.current_index].log},
             )
 
@@ -333,10 +339,13 @@ class Task(TaskExecuteBase):
             if current_script_uid not in Config.ScriptConfig:
                 script_item.status = "异常"
                 logger.info(f"跳过任务: {current_script_uid}, 对应脚本已被删除")
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"任务 {script_item.name} 对应脚本已被删除"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error",
+                        message=f"任务 {script_item.name} 对应脚本已被删除",
+                    ),
                 )
                 continue
 
@@ -346,10 +355,10 @@ class Task(TaskExecuteBase):
                 logger.error(
                     f"不支持的脚本类型: {type(Config.ScriptConfig[current_script_uid]).__name__}"
                 )
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": "脚本类型不支持"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message="脚本类型不支持"),
                 )
                 continue
 
@@ -370,22 +379,26 @@ class Task(TaskExecuteBase):
                 logger.error(
                     f"脚本类型 {provider.type_key} 不支持任务模式 {self.task_info.mode}"
                 )
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={
-                        "Error": f"脚本类型 {provider.type_key} 不支持任务模式 {self.task_info.mode}"
-                    },
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error",
+                        message=f"脚本类型 {provider.type_key} 不支持任务模式 {self.task_info.mode}",
+                    ),
                 )
                 continue
 
             if Config.ScriptConfig[current_script_uid].is_locked:
                 script_item.status = "跳过"
                 logger.info(f"跳过任务: {current_script_uid}, 脚本已被其他任务锁定")
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Warning": f"任务 {script_item.name} 已被其他任务调度器锁定"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="warning",
+                        message=f"任务 {script_item.name} 已被其他任务调度器锁定",
+                    ),
                 )
                 continue
 
@@ -506,13 +519,13 @@ class Task(TaskExecuteBase):
 
         logger.info(f"任务结束: {self.task_info.task_id}")
 
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=str(self.task_info.task_id),
-            type="Signal",
-            data={
-                "Accomplish": self.task_info.result,
-                "task_info": self.task_info.asdict,
-            },
+            type=protocol.TASK_COMPLETED,
+            data=WSTaskCompletedData(
+                result=self.task_info.result,
+                task_info=self.task_info.asdict,
+            ),
         )
 
         await self.task_info._emit_task_progress()
@@ -524,8 +537,10 @@ class Task(TaskExecuteBase):
                 Config.power_sign = Config.QueueConfig[
                     uuid.UUID(self.task_info.queue_id)
                 ].get("Info", "AfterAccomplish")
-                await Config.send_websocket_message(
-                    id="Main", type="Update", data={"PowerSign": Config.power_sign}
+                await Publisher.send(
+                    id=protocol.ID_MAIN,
+                    type=protocol.POWER_SIGN_UPDATED,
+                    data=WSPowerSignData(signal=Config.power_sign),
                 )
 
         # 任务结束时触发游戏签到
@@ -548,10 +563,13 @@ class Task(TaskExecuteBase):
             self._exit_error = f"{type(e).__name__}: {e}"
 
         logger.exception(f"任务 {self.task_info.task_id} 出现异常: {e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"任务出现异常: {type(e).__name__}: {str(e)}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(
+                level="error",
+                message=f"任务出现异常: {type(e).__name__}: {str(e)}",
+            ),
         )
 
 
@@ -662,9 +680,15 @@ class _TaskManager:
 
         logger.info(f"创建任务: {task_uid}, 模式: {mode}")
         if new_task_info:
-            new_task_info["newTask"] = str(task_uid)
-            await Config.send_websocket_message(
-                id="TaskManager", type="Signal", data=new_task_info
+            await Publisher.send(
+                id=protocol.ID_TASK_MANAGER,
+                type=protocol.TASK_CREATED,
+                data=WSTaskCreatedData(
+                    taskId=str(task_uid),
+                    queueId=new_task_info.get("queueId"),
+                    taskName=new_task_info.get("taskName"),
+                    taskType=new_task_info.get("taskType"),
+                ),
             )
         self.task_info[task_uid] = TaskInfo(
             mode=mode,
@@ -693,15 +717,7 @@ class _TaskManager:
             and Config.power_sign != "NoAction"
         ):
             logger.info(f"所有任务已结束，准备执行电源操作: {Config.power_sign}")
-            await Config.send_websocket_message(
-                id="Main",
-                type="Message",
-                data={
-                    "type": "Countdown",
-                    "title": f"{POWER_SIGN_MAP[Config.power_sign]}倒计时",
-                    "message": f"程序将在倒计时结束后执行 {POWER_SIGN_MAP[Config.power_sign]} 操作",
-                },
-            )
+            # 倒计时进度由电源任务经 power.countdown.updated 持续推送
             await System.start_power_task()
 
     async def stop_task(self, task_id: str) -> None:
@@ -747,7 +763,7 @@ class _TaskManager:
         try:
             await asyncio.sleep(10)
 
-            if Config.websocket is None:
+            if not MainConnection.is_connected:
                 logger.info("主 WebSocket 已断开，启动时任务等待下次连接后运行")
                 return
 

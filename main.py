@@ -108,7 +108,6 @@ def main():
             setting_router,
             update_router,
             ocr_router,
-            ws_router,
             plugins_router,
             plugin_gateway_router,
             qr_login_router,
@@ -131,7 +130,6 @@ def main():
         app.include_router(setting_router)
         app.include_router(update_router)
         app.include_router(ocr_router)
-        app.include_router(ws_router)
         app.include_router(plugins_router)
         app.include_router(plugin_gateway_router)
         app.include_router(script_types_router)
@@ -162,6 +160,11 @@ def main():
             logger.debug("DEV 模式：已清理 plugins 目录下的 __pycache__")
 
         await PluginManager.start(fast_startup=False)
+
+        # 注册插件市场主连接消息处理器
+        from app.plugins import market_channel
+
+        market_channel.register()
 
         missing_script_types = validate_script_type_registry(Config)
         if missing_script_types:
@@ -221,8 +224,10 @@ def main():
                     hmr_service.start()
 
                 if Config.get("Notify", "IfKoishiSupport"):
+                    from app.api.ws_command import execute_ws_command
                     from app.utils.websocket import ws_client_manager
 
+                    ws_client_manager.set_command_executor(execute_ws_command)
                     await ws_client_manager.init_system_client_koishi()
 
                 app.state.background_status = "ready"
