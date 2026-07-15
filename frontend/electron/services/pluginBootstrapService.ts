@@ -306,7 +306,7 @@ export class PluginBootstrapService {
       })
 
       const installResult = await this.installSinglePackage(
-        this.withResolvedSystemInstallSpec(systemPackage),
+        this.withResolvedLocalInstallSpec(systemPackage),
         (operationProgress, mirrorName, mirrorIndex, totalMirrors) => {
           onProgress?.({
             stage: 'install',
@@ -361,24 +361,27 @@ export class PluginBootstrapService {
     return { success: true }
   }
 
-  private withResolvedSystemInstallSpec(
-    systemPackage: DeclaredBootstrapPackage
+  private withResolvedLocalInstallSpec(
+    declaredPackage: DeclaredBootstrapPackage
   ): DeclaredBootstrapPackage {
-    if (systemPackage.name !== 'auto-mas-core') {
-      return systemPackage
+    const normalized = declaredPackage.name.replace(/-/g, '_')
+    const candidates = [normalized, normalized.replace(/^automas_plugin_/, '')]
+
+    for (const candidate of candidates) {
+      const localProject = path.join(this.appRoot, 'repo', 'plugins', candidate)
+      if (fs.existsSync(path.join(localProject, 'pyproject.toml'))) {
+        logger.info(
+          `Using local plugin project for bootstrap: ${declaredPackage.name} -> ${localProject}`
+        )
+        return {
+          ...declaredPackage,
+          installSpec: localProject,
+          displayLabel: declaredPackage.displayLabel,
+        }
+      }
     }
 
-    const localCoreProject = path.join(this.appRoot, 'repo', 'plugins', 'auto_mas_core')
-    if (!fs.existsSync(path.join(localCoreProject, 'pyproject.toml'))) {
-      return systemPackage
-    }
-
-    logger.info(`Using local auto-mas-core project for system bootstrap: ${localCoreProject}`)
-    return {
-      ...systemPackage,
-      installSpec: localCoreProject,
-      displayLabel: systemPackage.displayLabel,
-    }
+    return declaredPackage
   }
 
   private async installDeclaredPackages(
@@ -406,7 +409,7 @@ export class PluginBootstrapService {
       })
 
       const installResult = await this.installSinglePackage(
-        declaredPackage,
+        this.withResolvedLocalInstallSpec(declaredPackage),
         (operationProgress, mirrorName, mirrorIndex, totalMirrors) => {
           const packageSpan = 70 / Math.max(1, declaredPackages.length)
           const progress = Math.min(
