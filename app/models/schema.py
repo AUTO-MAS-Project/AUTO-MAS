@@ -1950,6 +1950,84 @@ class TaskCreateOut(OutBase):
     taskId: str = Field(..., description="新创建的任务ID")
 
 
+class WSEnvelope(BaseModel):
+    """主 WebSocket 统一消息信封, 前后端均按 id + type 路由"""
+
+    id: str = Field(
+        ...,
+        description="路由ID, 标识任务、请求或业务会话, 如 Main、TaskManager、任务UUID",
+    )
+    type: str = Field(
+        ...,
+        description="消息类别, 点分小写命名, 如 task.info.updated、backend.shutdown.ready",
+    )
+    data: Dict[str, Any] = Field(
+        default_factory=dict, description="消息数据, 关键消息使用对应的 WS*Data 模型构造"
+    )
+
+
+class WSTaskNoticeData(BaseModel):
+    """任务提示消息数据 (type=task.notice)"""
+
+    level: Literal["info", "warning", "error"] = Field(..., description="提示级别")
+    message: str = Field(..., description="提示内容")
+
+
+class WSTaskCompletedData(BaseModel):
+    """任务完成消息数据 (type=task.completed)"""
+
+    result: str = Field(..., description="任务结果描述")
+    task_info: Dict[str, Any] = Field(..., description="任务信息全量快照")
+
+
+class WSTaskCreatedData(BaseModel):
+    """新任务创建通知数据 (id=TaskManager, type=task.created)"""
+
+    taskId: str = Field(..., description="新任务ID")
+    queueId: Optional[str] = Field(default=None, description="所属调度队列ID")
+    taskName: Optional[str] = Field(default=None, description="任务名称")
+    taskType: Optional[str] = Field(default=None, description="任务类型")
+
+
+class WSPowerCountdownData(BaseModel):
+    """电源倒计时更新数据 (id=Main, type=power.countdown.updated)"""
+
+    operation: str = Field(..., description="待执行的电源操作")
+    remaining: int = Field(..., description="剩余秒数")
+
+
+class WSPowerSignData(BaseModel):
+    """电源标志更新数据 (id=Main, type=power.sign.updated)"""
+
+    signal: str = Field(..., description="电源操作信号")
+
+
+class WSDialogRequestData(BaseModel):
+    """应用内弹窗请求数据 (id=Main, type=dialog.request)"""
+
+    requestId: str = Field(..., description="弹窗请求ID, 响应使用相同ID关联")
+    taskId: Optional[str] = Field(default=None, description="关联的任务ID")
+    title: str = Field(..., description="弹窗标题")
+    message: str = Field(..., description="弹窗内容")
+    options: List[str] = Field(default_factory=lambda: ["是", "否"], description="选项文案")
+
+
+class WSDialogResponseData(BaseModel):
+    """应用内弹窗响应数据 (id=Main, type=dialog.response)"""
+
+    requestId: str = Field(..., description="对应弹窗请求ID")
+    choice: bool = Field(..., description="用户是否选择第一个选项")
+
+
+class WSUpdateProgressData(BaseModel):
+    """更新下载进度数据 (id=Update, type=update.progress)"""
+
+    downloaded_size: int = Field(..., description="已下载字节数")
+    file_size: int = Field(..., description="文件总字节数")
+    speed: float = Field(..., description="下载速度 (B/s)")
+    source: str = Field(..., description="下载源")
+
+
 class WebSocketMessage(BaseModel):
     id: str = Field(..., description="消息ID, 为Main时表示消息来自主进程")
     type: Literal["Update", "Message", "Info", "Signal"] = Field(

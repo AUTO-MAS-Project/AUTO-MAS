@@ -286,8 +286,15 @@ def main():
     )
 
     async def run_server():
+        # 主 WebSocket 心跳依赖协议层 ping/pong，显式配置底层参数
         config = uvicorn.Config(
-            app, host="0.0.0.0", port=36163, log_level="info", log_config=None
+            app,
+            host="0.0.0.0",
+            port=36163,
+            log_level="info",
+            log_config=None,
+            ws_ping_interval=20.0,
+            ws_ping_timeout=20.0,
         )
         server = uvicorn.Server(config)
 
