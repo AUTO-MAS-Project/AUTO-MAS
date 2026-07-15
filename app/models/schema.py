@@ -1977,7 +1977,7 @@ class WSTaskCompletedData(BaseModel):
     """任务完成消息数据 (type=task.completed)"""
 
     result: str = Field(..., description="任务结果描述")
-    task_info: Dict[str, Any] = Field(..., description="任务信息全量快照")
+    task_info: List[Dict[str, Any]] = Field(..., description="任务信息全量快照")
 
 
 class WSTaskCreatedData(BaseModel):
