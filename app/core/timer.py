@@ -128,15 +128,19 @@ class _MainTimer:
                     and curtime[11:16] == time_set.get("Info", "Time")
                 ):
                     logger.info(f"定时唤起任务：{uid}")
-                    await TaskManager.add_task(
-                        "AutoProxy",
-                        str(uid),
-                        new_task_info={
-                            "queueId": str(uid),
-                            "taskName": f"队列 - {queue.get('Info', 'Name')}",
-                            "taskType": "定时代理",
-                        },
-                    )
+                    try:
+                        await TaskManager.add_task(
+                            "AutoProxy",
+                            str(uid),
+                            new_task_info={
+                                "queueId": str(uid),
+                                "taskName": f"队列 - {queue.get('Info', 'Name')}",
+                                "taskType": "定时代理",
+                            },
+                        )
+                    except (RuntimeError, ValueError) as error:
+                        logger.error(f"定时队列 {uid} 无法创建任务：{error}")
+                        continue
                     await queue.set("Data", "LastTimedStart", curtime)
 
                     # 定时任务触发游戏签到

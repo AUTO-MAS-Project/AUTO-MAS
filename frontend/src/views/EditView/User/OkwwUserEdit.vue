@@ -539,9 +539,7 @@ const loadScriptInfo = async () => {
 /** ok-ww 程序不可用时禁止新建用户与进入配置编辑（无法动态读取配置字段与翻译）。 */
 const validateOkwwProgram = async (): Promise<boolean> => {
   const script = await loadScriptInfo()
-  const rootPath = String(
-    (script?.config as Record<string, any>)?.Info?.RootPath || ''
-  )
+  const rootPath = String((script?.config as Record<string, any>)?.Info?.RootPath || '')
     .trim()
     .replace(/\\/g, '/')
   if (!rootPath || rootPath === '.') return false

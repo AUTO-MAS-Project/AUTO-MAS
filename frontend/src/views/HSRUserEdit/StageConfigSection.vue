@@ -258,20 +258,13 @@ const emitSave = (key: string, value: unknown) => {
 
 type ActiveChannel = 'CalyxGolden' | 'CalyxCrimson' | 'Relic' | 'Ornament'
 
-const emptyNativeStageValue = '{ }'
+const emptyNativeStageValue: Record<string, never> = {}
 
 const parseScriptStage = (raw: unknown): HSRScriptStagePayload | null => {
-  if (!raw || typeof raw !== 'string') return null
-  const text = raw.trim()
-  if (!text || text === '{}' || text === '{ }') return null
-  try {
-    const data = JSON.parse(text)
-    return data && typeof data === 'object' && !Array.isArray(data)
-      ? (data as HSRScriptStagePayload)
-      : null
-  } catch {
-    return null
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as HSRScriptStagePayload
   }
+  return null
 }
 
 const payloadMatchesEngine = (payload: HSRScriptStagePayload | null) => {
@@ -429,14 +422,14 @@ const saveNativeMainStage = (channel: ActiveChannel, option: HSRDynamicStageOpti
   }
 
   const value = Object.keys(stages).length
-    ? JSON.stringify({ engine: props.dailyEngine, stages })
+    ? { engine: props.dailyEngine, stages }
     : emptyNativeStageValue
 
   emitSave('Stage.ScriptStage', value)
 }
 
 const saveNativeEchoOfWarStage = (option: HSRDynamicStageOption | null) => {
-  const value = option ? JSON.stringify(buildNativeStagePayload(option)) : emptyNativeStageValue
+  const value = option ? buildNativeStagePayload(option) : emptyNativeStageValue
   emitSave('Stage.ScriptEchoOfWar', value)
 }
 

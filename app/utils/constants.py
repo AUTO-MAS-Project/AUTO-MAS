@@ -44,7 +44,6 @@ TYPE_BOOK = {
     "M9AUserConfig": "M9A",
     "MaaFWConfig": "MaaFramework 项目",
     "MaaFWUserConfig": "MaaFramework 项目",
-    "HSRConfig": "HSR",
 }
 """配置类型映射表"""
 

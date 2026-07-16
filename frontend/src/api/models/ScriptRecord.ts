@@ -35,6 +35,14 @@ export type ScriptRecord = {
      */
     supported_modes: Array<string>;
     /**
+     * 当前脚本记录是否可用
+     */
+    available?: boolean;
+    /**
+     * 当前脚本记录不可用原因
+     */
+    unavailable_reason?: (string | null);
+    /**
      * 图标标识
      */
     icon?: (string | null);

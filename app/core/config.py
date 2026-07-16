@@ -64,9 +64,11 @@ from app.utils.constants import (
 )
 from app.utils import get_logger
 from .script_types import (
+    ScriptRecordCapability,
     apply_script_type_registry_to_global_config,
     build_legacy_fallback_provider_by_script_config,
     build_legacy_fallback_provider_by_type_key,
+    build_unavailable_plugin_fallback_provider,
     build_descriptor,
     is_script_config_compatible_with_type_key,
     script_type_registry,
@@ -979,6 +981,7 @@ class AppConfig(GlobalConfig):
         logger.info(f"添加脚本配置: {script}, 从 {script_id} 复制")
 
         provider = script_type_registry.get(script)
+        self._require_provider_available(provider, "新增脚本配置")
 
         if not provider.is_builtin:
             from app.models.plugin_script_config import PluginScriptConfig
@@ -1348,6 +1351,10 @@ class AppConfig(GlobalConfig):
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
         provider = self._resolve_record_provider(script_config)
+        capability = await self.get_script_record_capability(script_id)
+        if not capability.available:
+            reason = capability.unavailable_reason or "脚本当前不可用"
+            raise RuntimeError(f"无法新增用户配置: {reason}")
 
         from app.models.plugin_script_config import PluginScriptConfig, PluginUserConfig
 
@@ -1510,10 +1517,10 @@ class AppConfig(GlobalConfig):
             raise KeyError("插件脚本记录缺少 Meta.PluginTypeKey")
         try:
             return script_type_registry.get(type_key)
-        except KeyError as exc:
+        except KeyError:
             provider = build_legacy_fallback_provider_by_type_key(type_key)
             if provider is None:
-                raise exc
+                provider = build_unavailable_plugin_fallback_provider(type_key)
             script_name = str(script_config.get("Info", "Name") or "").strip()
             label = script_name or type_key
             logger.warning(
@@ -1540,6 +1547,30 @@ class AppConfig(GlobalConfig):
                 f"脚本类型 provider 未启用，使用离线回退描述: {type(script_config).__name__}"
             )
             return provider
+
+    async def get_script_record_capability(
+        self,
+        script_id: str | uuid.UUID,
+    ) -> ScriptRecordCapability:
+        """解析指定脚本记录当前可执行的能力。"""
+
+        from app.models.plugin_script_config import PluginScriptConfig
+
+        script_uid = (
+            script_id if isinstance(script_id, uuid.UUID) else uuid.UUID(script_id)
+        )
+        script_config = self.ScriptConfig[script_uid]
+        provider = self._resolve_record_provider(script_config)
+        if isinstance(script_config, PluginScriptConfig):
+            raw = script_config.get("PluginData", "Config")
+            config_data = await storage_to_form(provider, raw, "script")
+        else:
+            config_data = await storage_to_form(
+                provider,
+                await script_config.toDict(),
+                "script",
+            )
+        return provider.resolve_record_capability(config_data)
 
     @staticmethod
     def _find_schema_group(schema: dict[str, Any], group_key: str) -> dict[str, Any] | None:
@@ -1819,6 +1850,7 @@ class AppConfig(GlobalConfig):
             schema = await self._apply_schema_decoration(
                 provider, schema, config_data, "script"
             )
+            capability = provider.resolve_record_capability(config_data)
 
             records.append(
                 ScriptRecord(
@@ -1828,7 +1860,9 @@ class AppConfig(GlobalConfig):
                     config=config_data,
                     schema=schema,
                     editor_kind=provider.editor_kind,
-                    supported_modes=list(provider.supported_modes),
+                    supported_modes=list(capability.supported_modes or ()),
+                    available=capability.available,
+                    unavailable_reason=capability.unavailable_reason,
                     icon=provider.icon,
                     icon_url=f"/api/script-types/{provider.type_key}/icon" if provider.icon_path else None,
                     theme_color=provider.metadata.get("theme_color"),
@@ -2798,10 +2832,14 @@ class AppConfig(GlobalConfig):
         logger.info("开始获取脚本下拉框信息")
         data = [{"label": "未选择", "value": "-"}]
         for uid, script in self.ScriptConfig.items():
+            capability = await self.get_script_record_capability(uid)
+            if not capability.available:
+                continue
             data.append(
                 {
                     "label": self._get_script_combox_label(script),
                     "value": str(uid),
+                    "supported_modes": list(capability.supported_modes or ()),
                 }
             )
         logger.success("脚本下拉框信息获取成功")
@@ -2814,18 +2852,46 @@ class AppConfig(GlobalConfig):
         logger.info("开始获取任务下拉框信息")
         data = [{"label": "未选择", "value": None}]
         for uid, queue in self.QueueConfig.items():
+            script_ids = [
+                str(queue_item.get("Info", "ScriptId") or "").strip()
+                for queue_item in queue.QueueItem.values()
+                if str(queue_item.get("Info", "ScriptId") or "").strip()
+                not in ("", "-")
+            ]
+            queue_modes: list[str] | None = None
+            queue_available = True
+            for script_id in script_ids:
+                try:
+                    capability = await self.get_script_record_capability(script_id)
+                except (KeyError, ValueError):
+                    queue_available = False
+                    break
+                if not capability.available:
+                    queue_available = False
+                    break
+                current_modes = list(capability.supported_modes or ())
+                queue_modes = (
+                    current_modes
+                    if queue_modes is None
+                    else [mode for mode in queue_modes if mode in current_modes]
+                )
+            if not queue_available or (script_ids and not queue_modes):
+                continue
             data.append(
                 {
                     "label": f"队列 - {queue.get('Info', 'Name')}",
                     "value": str(uid),
+                    "supported_modes": queue_modes,
                 }
             )
         for uid, script in self.ScriptConfig.items():
-            if not script.is_locked:
+            capability = await self.get_script_record_capability(uid)
+            if capability.available and not script.is_locked:
                 data.append(
                     {
                         "label": self._get_task_combox_label(script),
                         "value": str(uid),
+                        "supported_modes": list(capability.supported_modes or ()),
                     }
                 )
         logger.success("任务下拉框信息获取成功")
@@ -3210,30 +3276,6 @@ class AppConfig(GlobalConfig):
 
         logger.success(f"通用日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
 
-    async def save_hsr_log(self, log_path: Path, logs: list, hsr_result: str) -> None:
-        """
-        保存 HSR 专项日志并生成对应统计数据
-
-        :param log_path: 日志文件保存路径
-        :param logs: 日志内容列表
-        :param hsr_result: 待保存的日志结果信息
-        """
-
-        logger.info(
-            f"开始处理 HSR 专项日志, 日志长度: {len(logs)}, 日志标记: {hsr_result}"
-        )
-
-        data: Dict[str, str] = {"hsr_result": hsr_result}
-
-        # 保存日志
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_path.with_suffix(".log").write_text("".join(logs), encoding="utf-8")
-        log_path.with_suffix(".json").write_text(
-            json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
-        )
-
-        logger.success(f"HSR 专项日志统计完成, 日志路径: {log_path.with_suffix('.log')}")
-
     async def merge_statistic_info(self, statistic_path_list: List[Path]) -> dict:
         """
         合并指定数据统计信息文件
@@ -3246,20 +3288,6 @@ class AppConfig(GlobalConfig):
         """
 
         data: Dict[str, Any] = {"index": {}}
-        hsr_success_results = {
-            "HSR 任务结束",
-            "HSR 用户任务完成",
-            "HSR 失败任务补跑完成",
-            "HSR 本轮无需执行，已跳过",
-        }
-
-        def is_success_result(result_key: str, result_value: Any) -> bool:
-            if result_value == "Success!":
-                return True
-            if result_key == "hsr_result" and result_value in hsr_success_results:
-                return True
-            return False
-
         for json_file in statistic_path_list:
             try:
                 single_data = json.loads(json_file.read_text(encoding="utf-8"))
@@ -3301,7 +3329,6 @@ class AppConfig(GlobalConfig):
                     "maaend_result",
                     "src_result",
                     "general_result",
-                    "hsr_result",
                 ]:
                     actual_date = (
                         datetime.strptime(
@@ -3312,7 +3339,7 @@ class AppConfig(GlobalConfig):
                         .astimezone()
                     )
 
-                    success = is_success_result(key, single_data[key])
+                    success = single_data[key] == "Success!"
 
                     if not success:
                         if "error_info" not in data:

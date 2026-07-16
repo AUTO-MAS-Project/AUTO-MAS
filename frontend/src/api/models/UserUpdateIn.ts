@@ -3,7 +3,6 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { GeneralUserConfig } from './GeneralUserConfig';
-import type { HSRUserConfig } from './HSRUserConfig';
 import type { M9AUserConfig } from './M9AUserConfig';
 import type { MaaEndUserConfig } from './MaaEndUserConfig';
 import type { MaaFWUserConfig } from './MaaFWUserConfig';
@@ -24,6 +23,6 @@ export type UserUpdateIn = {
     /**
      * 用户更新数据
      */
-    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkefUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | HSRUserConfig | PluginUserConfig);
+    data: (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkefUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | PluginUserConfig);
 };
 

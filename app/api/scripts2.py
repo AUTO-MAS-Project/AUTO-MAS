@@ -40,6 +40,8 @@ async def add_script(script: ScriptRecordCreateIn = Body(...)) -> ScriptRecordCr
                 "schema": {},
                 "editor_kind": "schema",
                 "supported_modes": [],
+                "available": False,
+                "unavailable_reason": "脚本创建失败",
                 "icon": None,
                 "docs_url": None,
                 "user_count": 0,
