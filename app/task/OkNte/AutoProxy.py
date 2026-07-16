@@ -17,6 +17,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 import asyncio
+import re
 import shlex
 import shutil
 import uuid
@@ -57,6 +58,12 @@ _DEFAULT_OKNTE_ERROR_LOG = (
     "Timed out waiting for launcher process"
 )
 
+_OKNTE_DAILY_TASK_INDEX = 2
+_OKNTE_DAILY_REQUIRED_SUCCESS = "完成每日活跃度"
+_OKNTE_DAILY_SUCCESS_RE = re.compile(
+    r"DailyTask:info_set success\s*(?P<success>\[[^\r\n]*\])"
+)
+
 
 def _split_args(raw: object) -> list[str]:
     value = str(raw or "").strip()
@@ -74,6 +81,16 @@ def _oknte_log_indicates_success(log: str, success_log: list[str]) -> bool:
     ):
         return True
     return any(k in log for k in success_log if k)
+
+
+def _oknte_daily_task_success_error(log: str) -> str | None:
+    daily_success_matches = _OKNTE_DAILY_SUCCESS_RE.findall(log)
+    if not daily_success_matches:
+        return "OK-NTE 日常任务未确认完成每日活跃度"
+
+    if _OKNTE_DAILY_REQUIRED_SUCCESS not in daily_success_matches[-1]:
+        return "OK-NTE 日常任务未完成每日活跃度"
+    return None
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -583,8 +600,17 @@ class AutoProxyTask(TaskExecuteBase):
                     break
             else:
                 if _oknte_log_indicates_success(log, self.success_log):
-                    log_status = "Success!"
-                    user_item_status = "完成"
+                    daily_task_error = (
+                        _oknte_daily_task_success_error(log)
+                        if self.task_index == _OKNTE_DAILY_TASK_INDEX
+                        else None
+                    )
+                    if daily_task_error:
+                        log_status = daily_task_error
+                        user_item_status = "异常"
+                    else:
+                        log_status = "Success!"
+                        user_item_status = "完成"
                 elif not await self.oknte_process_manager.is_running():
                     log_status = "OK-NTE 在完成任务前退出"
                     user_item_status = "异常"
