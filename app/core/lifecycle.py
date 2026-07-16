@@ -60,11 +60,14 @@ class _ShutdownCoordinator:
         async with self._lock:
             if self._done:
                 return
-            self._done = True
             if self._teardown is None:
                 logger.warning("未注册 teardown，跳过后端清理")
+                self._done = True
                 return
+            # 仅在完整成功后置位：清理中途失败时保留可重试性，
+            # 各 teardown 步骤本身幂等，重试不会重复副作用
             await self._teardown()
+            self._done = True
 
 
 ShutdownCoordinator = _ShutdownCoordinator()

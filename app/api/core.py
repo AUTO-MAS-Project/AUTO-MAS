@@ -23,6 +23,7 @@
 
 import asyncio
 import os
+from contextlib import suppress
 from typing import Optional
 
 from fastapi import APIRouter, Request, WebSocket
@@ -31,6 +32,7 @@ from pydantic import BaseModel, Field
 from app.core import Config, TaskManager
 from app.core.lifecycle import ShutdownCoordinator
 from app.core.ws import MainConnection, Publisher, protocol
+from app.services import System
 from app.models.schema import *
 from app.api.ws_command import ws_command
 from app.utils import get_logger
@@ -110,6 +112,17 @@ _shutdown_task: Optional[asyncio.Task] = None
 async def _shutdown_backend() -> None:
     """后端正常关闭收尾：完成完整清理后再通知前端可退出，最后置退出标志。"""
 
+    # 开发模式：后端保持存活以复用（插件/定时器等服务不拆除），
+    # 只做轻量任务清理后即通知前端可退出
+    if is_backend_dev_mode():
+        with suppress(Exception):
+            await TaskManager.stop_task("ALL")
+        with suppress(RuntimeError):
+            await System.cancel_power_task()
+        await Publisher.send(id=protocol.ID_MAIN, type=protocol.BACKEND_SHUTDOWN_READY)
+        logger.warning("后端开发模式下忽略退出请求，仅完成任务清理")
+        return
+
     # 执行完整 teardown（任务/插件/定时器/遥测等），失败则不发送完成信号，
     # 避免前端在清理未完成时就认为可以退出
     try:
@@ -121,9 +134,6 @@ async def _shutdown_backend() -> None:
     # 清理完成后通过主 WS 通知前端可以退出
     await Publisher.send(id=protocol.ID_MAIN, type=protocol.BACKEND_SHUTDOWN_READY)
 
-    if is_backend_dev_mode():
-        logger.warning("后端开发模式下忽略退出请求，仅完成清理")
-        return
     if Config.server is not None:
         Config.server.should_exit = True
 
