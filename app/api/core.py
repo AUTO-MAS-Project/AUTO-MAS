@@ -23,15 +23,14 @@
 
 import asyncio
 import os
-from contextlib import suppress
 from typing import Optional
 
 from fastapi import APIRouter, Request, WebSocket
 from pydantic import BaseModel, Field
 
 from app.core import Config, TaskManager
+from app.core.lifecycle import ShutdownCoordinator
 from app.core.ws import MainConnection, Publisher, protocol
-from app.services import System
 from app.models.schema import *
 from app.api.ws_command import ws_command
 from app.utils import get_logger
@@ -109,12 +108,15 @@ _shutdown_task: Optional[asyncio.Task] = None
 
 
 async def _shutdown_backend() -> None:
-    """后端正常关闭收尾：清理任务与资源，通知前端后退出。"""
+    """后端正常关闭收尾：完成完整清理后再通知前端可退出，最后置退出标志。"""
 
-    with suppress(Exception):
-        await TaskManager.stop_task("ALL")
-    with suppress(Exception):
-        await System.cancel_power_task()
+    # 执行完整 teardown（任务/插件/定时器/遥测等），失败则不发送完成信号，
+    # 避免前端在清理未完成时就认为可以退出
+    try:
+        await ShutdownCoordinator.run_teardown()
+    except Exception as e:
+        logger.error(f"后端清理失败，取消发送退出信号: {type(e).__name__}: {e}", exc_info=True)
+        return
 
     # 清理完成后通过主 WS 通知前端可以退出
     await Publisher.send(id=protocol.ID_MAIN, type=protocol.BACKEND_SHUTDOWN_READY)

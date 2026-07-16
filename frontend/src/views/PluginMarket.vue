@@ -107,7 +107,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useWebSocket } from '@/composables/useWebSocket'
 import {
@@ -267,8 +267,18 @@ const sendPluginRequest = (type: string, payload: Record<string, unknown> = {}):
   return sent
 }
 
+// 首次快照待获取标志：无缓存但主连接尚未就绪（挂载时正在重连）时置位，
+// 由连接进入 open 的 watch 自动补发，避免市场永久为空
+let pendingInitialSnapshot = false
+
 const requestSnapshot = async () => {
   if (snapshotLoading.value) {
+    return
+  }
+  // 连接未就绪：登记待获取，连接建立后自动补发，不立即失败
+  if (!isConnected.value) {
+    pendingInitialSnapshot = true
+    setInfo('等待与后端建立连接后获取市场数据...', 'info')
     return
   }
   snapshotLoading.value = true
@@ -510,6 +520,17 @@ onMounted(() => {
     void requestSnapshot()
   }
 })
+
+// 主连接（重）建立后补发首次快照请求
+watch(
+  () => state.value,
+  status => {
+    if (status === 'open' && pendingInitialSnapshot) {
+      pendingInitialSnapshot = false
+      void requestSnapshot()
+    }
+  }
+)
 
 onUnmounted(() => {
   subscriptionIds.forEach(id => unsubscribe(id))

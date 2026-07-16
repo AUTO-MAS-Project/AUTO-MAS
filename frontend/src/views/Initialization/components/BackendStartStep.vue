@@ -73,7 +73,8 @@
 
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { connectWithRetry } from '@/composables/useAppLifecycle'
+import { connectWithRetry, initializeAppLifecycle } from '@/composables/useAppLifecycle'
+import { bootstrapSchedulerSubscriptions } from '@/views/scheduler/useSchedulerLogic'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
 const logger = window.electronAPI.getLogger('后端启动步骤')
 
@@ -172,6 +173,11 @@ async function startBackend() {
     // 第二步：建立WebSocket连接
     statusMessage.value = '正在建立WebSocket连接...'
     progress.value = 40
+
+    // 连接建立前注册常驻订阅：向导阶段停留超过启动队列延迟时，
+    // task.created 与生命周期消息不会因订阅晚于连接而丢失
+    initializeAppLifecycle()
+    bootstrapSchedulerSubscriptions()
 
     const connected = await connectWithRetry()
 

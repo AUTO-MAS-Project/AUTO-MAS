@@ -200,6 +200,9 @@ interface StartedTaskTracking {
 // 初始化标志 - 确保某些操作只执行一次
 let _initialized = false
 let _watchInitialized = false
+// 常驻订阅注册标志 - 与 _initialized 分开，允许在进入应用前（甚至初始化向导阶段）
+// 就注册 task.created，避免启动队列任务的创建通知因订阅晚于连接而丢失
+let _residentSubscribed = false
 
 export function useSchedulerLogic() {
   // WebSocket 实例
@@ -1025,22 +1028,32 @@ export function useSchedulerLogic() {
     getPowerState()
   }
 
+  // 注册调度中心常驻订阅（幂等）。必须在任何主连接建立前调用，
+  // 因协议无缓存无重放：启动队列在连接就绪约 10 秒后创建任务并发 task.created，
+  // 若订阅晚于连接建立（如初始化向导停留期间），该通知将永久丢失。
+  const registerResidentSubscriptions = () => {
+    if (_residentSubscribed) return
+    _residentSubscribed = true
+
+    // keep-alive 下路由切换不取消，应用关闭时随进程释放
+    ws.subscribe({ id: WS_ID_TASK_MANAGER, type: WS_TASK_CREATED }, wsMessage =>
+      handleTaskCreated(wsMessage.data as unknown as WSTaskCreatedData)
+    )
+    ws.subscribe({ id: WS_ID_MAIN, type: WS_POWER_SIGN_UPDATED }, wsMessage =>
+      updatePowerActionDisplay((wsMessage.data as unknown as WSPowerSignData).signal)
+    )
+    logger.info('已注册调度中心常驻订阅 (task.created / power.sign.updated)')
+  }
+
   // 初始化函数 - 使用单例标志确保核心初始化只执行一次
   const initialize = () => {
+    // 常驻订阅可能已在进入应用前注册，这里幂等兜底
+    registerResidentSubscriptions()
+
     // 核心初始化只执行一次
     if (!_initialized) {
       _initialized = true
       logger.info('调度中心首次初始化开始')
-
-      // 模块级常驻订阅：应用入口预加载时注册，早于主连接开始处理消息；
-      // keep-alive 下路由切换不取消，应用关闭时随进程释放
-      ws.subscribe({ id: WS_ID_TASK_MANAGER, type: WS_TASK_CREATED }, wsMessage =>
-        handleTaskCreated(wsMessage.data as unknown as WSTaskCreatedData)
-      )
-      ws.subscribe({ id: WS_ID_MAIN, type: WS_POWER_SIGN_UPDATED }, wsMessage =>
-        updatePowerActionDisplay((wsMessage.data as unknown as WSPowerSignData).signal)
-      )
-      logger.info('已注册调度中心常驻订阅 (task.created / power.sign.updated)')
 
       // 监听电源状态变更事件（从 GlobalPowerCountdown 组件触发）
       window.addEventListener('power-state-changed', handlePowerStateChanged)
@@ -1170,6 +1183,7 @@ export function useSchedulerLogic() {
 
     // 初始化与清理
     initialize,
+    registerResidentSubscriptions,
     loadTaskOptions,
     getPowerState,
     cleanup,
@@ -1180,4 +1194,12 @@ export function useSchedulerLogic() {
     // 调试功能
     debugSubscriptionStatus,
   }
+}
+
+/**
+ * 在建立主连接前注册调度中心常驻订阅（task.created / power.sign.updated）。
+ * 幂等，供各启动路径（正常进入、跳过初始化、初始化向导）在 connect 前调用。
+ */
+export function bootstrapSchedulerSubscriptions() {
+  useSchedulerLogic().registerResidentSubscriptions()
 }

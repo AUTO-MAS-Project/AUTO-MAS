@@ -248,18 +248,30 @@ def main():
             f"核心初始化完成, 耗时 {time.perf_counter() - _start_t:.2f}s"
         )
         background_task = asyncio.create_task(initialize_background_services())
-        try:
-            yield
-        finally:
-            if not background_task.done():
-                background_task.cancel()
-                try:
-                    await background_task
-                except asyncio.CancelledError:
-                    pass
+
+        async def shutdown_services() -> None:
+            """完整的非 WS teardown，供 /close 与 lifespan 收尾共用（幂等）。"""
+
+            from contextlib import suppress
 
             from app.core.task_manager import TaskManager
             from app.core.timer import MainTimer
+            from app.core.ws import Dispatcher, MainConnection
+            from app.services import Matomo, System
+
+            # 先停止仍在执行的后台初始化，避免它在 teardown 期间继续启动服务
+            if background_task is not None and not background_task.done():
+                background_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await background_task
+
+            # 停止 WS 分发与连接后台任务，避免插件 teardown 期间仍处理入站消息
+            await Dispatcher.shutdown()
+            await MainConnection.cancel_hook_tasks()
+
+            # 取消待执行的电源操作（无任务在跑属正常）
+            with suppress(RuntimeError):
+                await System.cancel_power_task()
 
             if hmr_service is not None:
                 await hmr_service.stop()
@@ -267,11 +279,17 @@ def main():
             await TaskManager.stop_task("ALL")
             await PluginManager.stop()
             await MainTimer.stop()
-
-            from app.services import Matomo
-
             await Matomo.close()
+            logger.info("AUTO-MAS 后端服务清理完成")
 
+        from app.core.lifecycle import ShutdownCoordinator
+
+        ShutdownCoordinator.set_teardown(shutdown_services)
+        try:
+            yield
+        finally:
+            # 覆盖 taskkill 等未经 /close 的退出路径；已由 /close 执行过则跳过
+            await ShutdownCoordinator.run_teardown()
             logger.info("AUTO-MAS 后端程序关闭")
 
     # ---- 极简 app 创建：无路由、无 MCP、无静态挂载 ----

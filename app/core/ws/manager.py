@@ -119,6 +119,24 @@ class _MainConnectionManager:
         with suppress(Exception):
             await websocket.close(code=code, reason=reason)
 
+    async def cancel_hook_tasks(self) -> None:
+        """取消并等待所有在途连接建立回调任务。
+
+        关闭流程中在插件 teardown 前调用，确保 start_startup_queue 等回调
+        不会与后端清理并发执行。
+        """
+        tasks = [task for task in self._hook_tasks if not task.done()]
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.warning(f"等待连接回调任务结束时异常: {type(e).__name__}: {e}")
+        self._hook_tasks.clear()
+
     async def _receive_loop(self, websocket: WebSocket) -> None:
         """接收循环：解析统一信封并交给 Dispatcher，非法消息丢弃。"""
         while True:
