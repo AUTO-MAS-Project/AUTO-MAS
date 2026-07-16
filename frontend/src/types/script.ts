@@ -27,7 +27,6 @@ export type BuiltinScriptType =
   | 'General'
   | 'Okww'
   | 'OkScript'
-  | 'Okef'
   | 'SRC'
   | 'MaaEnd'
   | 'M9A'
@@ -36,7 +35,7 @@ export type BuiltinScriptType =
 export type ScriptType = string
 
 export type OkwwScriptConfig = OkwwConfig
-export interface OkefScriptConfig {
+export interface OkScriptScriptConfig {
   Info: {
     Name: string
     ResourceName?: string
@@ -61,7 +60,6 @@ export interface OkefScriptConfig {
     }
   }
 }
-export type OkScriptScriptConfig = OkefScriptConfig
 // MAA脚本配置
 export interface MAAScriptConfig {
   Info: {
@@ -517,7 +515,7 @@ export interface Script {
     | MaaConfig
     | GeneralConfig
     | OkwwConfig
-    | OkefScriptConfig
+    | OkScriptScriptConfig
     | SrcConfig
     | MaaEndConfig
     | M9AConfig
@@ -660,7 +658,7 @@ export interface AddScriptResponse {
     | MAAScriptConfig
     | GeneralScriptConfig
     | OkwwScriptConfig
-    | OkefScriptConfig
+    | OkScriptScriptConfig
     | SRCScriptConfig
     | MaaEndScriptConfig
     | M9AScriptConfig
@@ -676,7 +674,6 @@ export interface ScriptIndexItem {
     | 'MaaConfig'
     | 'GeneralConfig'
     | 'OkwwConfig'
-    | 'OkefConfig'
     | 'SrcConfig'
     | 'MaaEndConfig'
     | 'M9AConfig'
@@ -694,7 +691,7 @@ export interface GetScriptsResponse {
     | MAAScriptConfig
     | GeneralScriptConfig
     | OkwwScriptConfig
-    | OkefScriptConfig
+    | OkScriptScriptConfig
     | SRCScriptConfig
     | MaaEndScriptConfig
     | M9AScriptConfig
@@ -713,7 +710,7 @@ export interface ScriptDetail {
     | MaaConfig
     | GeneralConfig
     | OkwwConfig
-    | OkefScriptConfig
+    | OkScriptScriptConfig
     | SrcConfig
     | MaaEndConfig
     | M9AConfig

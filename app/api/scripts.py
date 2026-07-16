@@ -102,8 +102,6 @@ SCRIPT_BOOK: dict[str, type[BaseModel]] = {
     "M9AConfig": M9AConfig,
     "MaaFWConfig": MaaFWConfig,
     "GeneralConfig": GeneralConfig,
-    "OkwwConfig": OkwwConfig,
-    "OkefConfig": OkefConfig,
     "PluginScriptConfig": PluginScriptConfig,
 }
 USER_BOOK: dict[str, type[BaseModel]] = {
@@ -113,8 +111,6 @@ USER_BOOK: dict[str, type[BaseModel]] = {
     "M9AConfig": M9AUserConfig,
     "MaaFWConfig": MaaFWUserConfig,
     "GeneralConfig": GeneralUserConfig,
-    "OkwwConfig": OkwwUserConfig,
-    "OkefConfig": OkefUserConfig,
     "PluginScriptConfig": PluginUserConfig,
 }
 

@@ -35,7 +35,6 @@ IGNORED_PLUGIN_NAMES = {"auto_mas_core"}
 RELOAD_SUFFIXES = {".py", ".pyi", ".toml"}
 RELOAD_FILENAMES = {
     "config.json",
-    "schema.json",
     "plugin.json",
 }
 FRONTEND_DIR_NAMES = {"frontend", "frontend-src", "ui", "web"}

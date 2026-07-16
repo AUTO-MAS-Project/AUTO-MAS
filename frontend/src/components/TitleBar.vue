@@ -46,7 +46,12 @@
         >
           <BorderOutlined />
         </button>
-        <button class="control-button close-button" title="关闭" @click="closeWindow">
+        <button
+          v-if="!hideCloseButton"
+          class="control-button close-button"
+          title="关闭"
+          @click="closeWindow"
+        >
           <CloseOutlined />
         </button>
       </div>
@@ -61,6 +66,7 @@ import { updateInfo, backendUpdateInfo } from '@/composables/useVersionService'
 import { useUpdateModal } from '@/composables/useUpdateChecker'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
+import { useUiPreferences } from '@/composables/useUiPreferences'
 import { BorderOutlined, CloseOutlined, MinusOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
@@ -70,6 +76,7 @@ const logger = window.electronAPI.getLogger('标题栏')
 const router = useRouter()
 const { resetInitializationStatus } = useAppInitialization()
 const { showUpdateModal } = useUpdateModal()
+const { hideCloseButton, syncUiPreferences } = useUiPreferences()
 
 const {
   status: downloadStatus,
@@ -225,6 +232,14 @@ const closeWindow = async () => {
 
 onMounted(async () => {
   try {
+    const config = await window.electronAPI?.loadConfig()
+    syncUiPreferences(config?.UI)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`获取界面设置失败: ${errorMsg}`)
+  }
+
+  try {
     isMaximized.value = (await window.electronAPI?.windowIsMaximized()) || false
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -257,7 +272,9 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   padding-left: 12px;
+  min-width: 64px;
   height: 100%;
+  -webkit-app-region: drag;
 }
 
 .logo-section {
@@ -422,6 +439,7 @@ onMounted(async () => {
 .update-hint.clickable {
   cursor: pointer;
   user-select: none;
+  -webkit-app-region: no-drag;
 }
 
 .update-hint.clickable:hover {

@@ -2,6 +2,10 @@
 
 **上游仓库**：[ok-oldking/ok-wuthering-waves](https://github.com/ok-oldking/ok-wuthering-waves)（鸣潮 OK-WW，基于 **ok-script** 的 Python 图像识别自动化，发行物为 `ok-ww.exe`）。
 
+> **当前落地形态（v5.4.0+）**：Okww 是**独立插件** `plugins/okww_adapter`（entry_points 注册，type_key=`Okww`），
+> 宿主侧无 `app/task/Okww/`、无 SCRIPT_BOOK/TYPE_BOOK/task_manager 登记。旧 `OkwwConfig(ConfigBase)`
+> 仅为 v5.3.x 存量 JSON 反序列化与一次性迁移保留（见 `AppConfig._migrate_okww_scripts_to_plugin_storage`）。
+
 **架构判断（Agent 读仓后应对用户确认的摘要）**：
 
 | 维度 | OK-WW 事实 | 不属于 |
@@ -67,33 +71,43 @@ ok-ww.exe -t {用户任务序号} -e
 
 日志监控：对齐 `Script.LogPath`（常为 `data/apps/ok-ww/working/logs/ok-script.log`）。
 
-### 2. 配置编辑器（v5.3.0-beta.3+，替代 ScriptConfig GUI 启动）
+### 2. 配置编辑器（插件形态，动态 Schema）
 
-**不**再启动 `ok-ww.exe` 无参 GUI 做配置；改为**前端表单化配置编辑器**直接读写 JSON 配置文件。
+**不**启动 `ok-ww.exe` 无参 GUI 做配置；前端**表单化配置编辑器**直接读写 JSON 配置文件。
 
 | 组件 | 位置 | 说明 |
 |------|------|------|
-| 配置 Schema | `app/task/Okww/config_schema.py` | 半自动：JSON 值推断类型 + ok-ww 翻译文件自动加载标签 + SELECT_OPTIONS 手工维护下拉/多选选项 |
-| 配置编辑器 | `frontend/src/views/OkwwUserEdit/OkwwConfigEditor.vue` | 按 schema 渲染表单，退出时自动保存 |
-| 前端 Service | `frontend/src/api/services/OkwwService.ts` | `/api/scripts/okww/configs/*` 调用 |
-| API 端点 | `app/api/scripts.py` | `/okww/configs/list\|update\|batch-update` |
-| 自动初始化 | `configs/list` API | per-user 目录为空时从 ok-ww configs 源目录复制默认值 |
+| AST 解析器 | `plugins/okww_adapter/src/okww_adapter/ast_config.py` | 静态解析 ok-ww `repo/config.py` + `src/task/*.py`，不 import 项目模块 |
+| 配置 Schema | `plugins/okww_adapter/src/okww_adapter/config_schema.py` | 全动态：字段/选项/翻译/显示名全部来自 ok-ww 安装目录；按 config.py `version` 缓存 |
+| 配置编辑器 | `frontend/src/views/OkScriptUserEdit/OkScriptConfigEditor.vue` | ok-script 线共用组件；`endpoint-prefix="/plugin/okww/configs"` |
+| 前端 Service | `frontend/src/composables/useOkScriptConfigApi.ts` | 共用 composable，按 endpointPrefix 路由 |
+| API 端点 | `plugins/okww_adapter/src/okww_adapter/plugin.py` | 插件 HTTP：`/plugin/okww/configs/list\|update\|batch-update` |
+| 自动初始化 | `configs/list` 端点 | per-user 目录缺失文件时从 ok-ww configs 源目录补齐（不覆盖已有） |
 
-**配置落盘路径**（统一 per-user，**移除简洁/详细模式**）：
+**配置落盘路径**（统一 per-user）：
 ```
 data/{scriptId}/{uid}/ConfigFile/
 ```
-- 每个用户的配置独立存储在以用户 UID 命名的目录下。
-- AutoProxy 同步时从该目录同步到 ok-ww 实际 configs 目录。
-- **`Mode` 固定为 `"详细"`**：用户编辑页强制写入 `Mode = "详细"`，不再区分简洁/详细模式。
+- AutoProxy 同步时从该目录原子换入 ok-ww 实际 configs 目录，任务后写回并恢复原配置。
 
-**Schema 字段发现**（`config_schema.py` 采用**半自动**模式）：
+**程序不可用降级（必做）**：`RootPath` 为空或 `ok-ww.exe` 不存在时，`configs/list` 返回 **409**，
+**不返回任何静态兜底字段**（无翻译/字段缺失的表单只会误导用户）。前端 `OkScriptConfigEditor` 显示
+"程序不可用，返回设置"；`OkwwUserEdit.vue` onMounted 预检并拦截新建/编辑。
 
-- **类型自动推断**：遍历 JSON 值 → `bool` / `int` / `float` / `string` / `list`
-- **标签自动翻译**：从 ok-ww 安装目录搜索 `.mo` > `.po` > `.ts` 翻译文件，自动建立英文→中文映射
-- **下拉/多选手工维护**：`SELECT_OPTIONS` 字典声明选项列表（源码不可读，JSON 只存当前值）
-- **内部字段屏蔽**：以 `_` 开头的 ok-ww 框架字段（如 `_enabled`）不暴露给 MAS 用户编辑
-- **新增字段补全**：`SELECT_OPTIONS` 中定义但 JSON 中不存在的字段也加入（ok-ww 新增配置项）
+**动态 Schema 数据源**（全部在 ok-ww 安装目录内，AST 静态解析）：
+
+- **任务注册表 + `-t` 序号** ← `repo/config.py` 的 `onetime_tasks` 列表顺序 + `global_configs`（ConfigOption 首参即文件名）
+- **下拉/多选候选项** ← `repo/src/task/*.py` 的 `config_type`。三种写法都要覆盖：整体赋值 `self.config_type = {...}`、下标赋值 `self.config_type['X'] = {...}`、options 引用变量（`self.boss_list` 等，同文件内回溯 `= [字面量]` 赋值回填）
+- **字段中文标签/选项翻译** ← ok-ww 内置 i18n（`.mo` > `.po` > `.ts`）
+- **字段说明** ← `config_description.update({...})` + i18n
+- **一级菜单显示名** ← 任务的 `self.name` 经 i18n 翻译（"Daily Task"→"日常一条龙"）；全局配置回退文件名 stem 翻译（"Game Hotkey"→"游戏快捷键"）
+- **类型自动推断**：JSON 值 → `bool` / `int` / `float` / `string` / `list`
+- **内部字段屏蔽**：`_` 前缀的 ok-ww 框架字段不暴露
+- **version 缓存**：`config.py` 顶层 `version = "vX.Y.Z"` 作缓存键，同版本命中不重解析，减少每次 list 的源码 IO
+- **无静态白名单**：`SELECT_OPTIONS`/`CONFIG_GROUPS`/`CONFIG_DISPLAY_NAMES`/`TASK_INDEX_MAP` 四张手工表已彻底移除；`_EXCLUDED_FILES` 仅剔除无意义项（如空的 GardenTask.json）
+- ⚠️ **options 必须保持源码英文原值**（写回 ok-ww 的存储值），前端用 `optionLabels` 映射显示中文，切勿后端预翻译
+
+**纯安装态降级**：无 `repo/` 源码时 schema 为空，字段退化为纯 JSON 值类型推断（无下拉、无翻译）；前端任务序号下拉退回静态兜底表。
 
 **翻译加载优先级**（`load_okww_option_labels()`）：
 1. `i18n/zh_CN/LC_MESSAGES/ok.mo` > `ok.po`（扫描 root / `_internal` / `data/apps/ok-ww/` 等多候选路径）
@@ -119,28 +133,28 @@ data/{scriptId}/{uid}/ConfigFile/
 **表面**
 
 - [x] `Scripts.vue` / `ScriptTable` / `router`：`okww`；卡片「配置 ok-ww」（非脚本编辑页）
-- [x] `OkwwScriptEdit.vue`：三段式；根目录推导路径；`Game.Enabled` + `Game.CloseOnFinish`
-- [x] `OkwwUserEdit.vue`：集成 `OkwwConfigEditor`，**无简洁/详细模式**
-- [x] `OkwwConfigEditor.vue`：按 schema 渲染表单，退出自动保存
-- [x] `OkwwService.ts`：配置编辑器 API 调用
+- [x] `OkwwScriptEdit.vue`：三段式；根目录推导路径；`Game.Enabled` + `Game.CloseOnManualStop`
+- [x] `OkwwUserEdit.vue`：集成共用 `OkScriptConfigEditor`；onMounted 预检 ok-ww 可用性；任务序号下拉动态来自 `configs/list`（静态表仅兜底）
 - [x] `types/script.ts`、`useScriptApi.ts` 分支
 - [x] `frontend/src/assets/ok-ww.ico`
 
-**后端**
+**后端（插件形态）**
 
-- [x] `OkwwConfig` / `OkwwUserConfig`；`Game.CloseOnFinish`
-- [x] `app/task/Okww/`：`manager`、`AutoProxy`、`config_schema.py`（**注意：无 ScriptConfig.py**）
-- [x] `config_schema.py`：`CONFIG_SCHEMA_MAP`、`OPTION_LABELS`、`get_all_config_info()`
-- [x] `app/api/scripts.py`：`/okww/configs/list|update|batch-update`
-- [x] `SCRIPT_BOOK`、`TYPE_BOOK`（`OkwwConfig`→`ok-ww`）、`task_manager`；OpenAPI 需 `yarn openapi` 生成（勿手改 models）
+- [x] `plugins/okww_adapter/`：`pyproject.toml` entry_points 注册 `auto_mas.plugins`
+- [x] `schema.py`：pydantic `OkwwConfig` / `OkwwUserConfig`（PluginField；`Game.CloseOnManualStop` 默认 True）
+- [x] `plugin.py`：`ScriptAdapterDefinition(type_key="Okww")` + 插件 HTTP 端点 + 409 不可用降级
+- [x] `adapter/runtime.py`：`OkwwAdapterHooks`（prepare/finalize/on_crash + 手动终止标记）
+- [x] `adapter/autoproxy.py`：`AutoProxyTask`（`-t N -e`、内置判态、配置注入/写回/恢复）
+- [x] `ast_config.py` + `config_schema.py`：动态 Schema（见上节）
+- [x] 宿主侧零登记：无 SCRIPT_BOOK/TYPE_BOOK/task_manager 条目；OpenAPI 无 Okww 模型
 
 **勿套用**
 
 - M9A `TaskQueueSection` + 写盘无 CLI（OK-WW **有** `-t`）
 - MaaEnd `mxu-MaaEnd.json` / `autoRunOnLaunch`（无 PI V2 / MXU）
-- ScriptConfig 调起 GUI 模式（**v5.3.1+ 已完全删除 ScriptConfig.py**，唯一运行模式为 AutoProxy）
+- ScriptConfig 调起 GUI 模式（已完全删除，唯一运行模式为 AutoProxy）
 - General `SuccessLog` / `ErrorLog` 用户配置（Okww **不暴露**判态关键词，全内置）
-- General `OkwwConfig_Script` 继承 `GeneralConfig_Script`（Okww 使用独立 `BaseModel`）
+- 宿主内置 `app/task/Xxx/` 落地方式（新 ok-script 线专项一律走插件）
 
 ---
 
@@ -152,12 +166,12 @@ data/{scriptId}/{uid}/ConfigFile/
 
 | 层级 | 字段 | 规则 |
 |------|------|------|
-| 用户 | `Task.TaskIndex` | 1-based，拼 `-t N` |
-| 用户 | `Task.ExitOnFinish` | 真则拼 `-e`（**固定为 true**，用户编辑器强制写入） |
+| 用户 | `Task.TaskIndex` | 1-based，拼 `-t N`；下拉序号动态来自 `configs/list`（onetime_tasks 顺序） |
+| 用户 | （已废弃 `Task.ExitOnFinish`） | `-e` 恒定追加，不暴露配置 |
 | 脚本 | 判态 | **全内置**，不向用户暴露 SuccessLog/ErrorLog 配置项 |
 | 配置 | 表单化编辑器 | 读写 `data/{scriptId}/{uid}/ConfigFile/` JSON |
 
-> ⚠️ **v5.4.0-beta.1+**：`OkwwConfig.Script` **不再包含** `SuccessLog` / `ErrorLog` 字段。判态关键词完全由代码内置常量 `_OKWW_BUILTIN_FATAL` 和 `_OKWW_BUILTIN_SUCCESS` 控制，用户不可编辑。
+> ⚠️ 判态关键词完全由代码内置常量 `_OKWW_BUILTIN_FATAL` 控制（成功=进程自然退出），用户不可编辑。
 
 ### 参数拆分（`_split_args` 辅助函数）
 
@@ -176,12 +190,8 @@ def _split_args(raw: object) -> list[str]:
 短路顺序：`"".join(log_content)` 后子串匹配 →
 
 1. `_OKWW_BUILTIN_FATAL`：`connected:False`｜`游戏更新成功, 游戏即将重启`｜`info_set 错误`
-2. 成功：`_OKWW_BUILTIN_SUCCESS = ("任务执行完成", "task completed")`（case-insensitive）
-3. `not okww_process_manager.is_running()` → 提前退出
-4. `now - latest_time > Run.RunTimeLimit`（分钟）→ 超时
-5. 否则 `OK-WW 正常运行中`（**不** `wait_event.set()`）
-
-> ⚠️ v5.4.0-beta.1+：移除用户可配置的 `Script.SuccessLog` / `Script.ErrorLog`。`_okww_log_indicates_success()` 不再接受 `success_log` 参数，`check_log()` 不再迭代 `self.error_log`。
+2. 成功：`not okww_process_manager.is_running()` → `Success!`（ok-ww 由 `-e` 任务完成后自然退出，**进程退出即成功**，无成功关键词）
+3. `now - latest_time > Run.RunTimeLimit`（分钟）→ 超时
 
 非 `正常运行中` 时 `wait_event.set()`。`on_crash` 与关键词无关。
 
@@ -189,18 +199,17 @@ def _split_args(raw: object) -> list[str]:
 
 | 项 | 规则 |
 |----|------|
-| `Game.Enabled` | 仅任务**开始前** MAS 启游戏；失败则 `continue`，**不**启 ok-ww |
-| `Game.CloseOnFinish` | 仅任务**成功**后 MAS 关游戏；与 Enabled **独立** |
-| `Game.LaunchBeforeTask` | 独立于 `Enabled`，仅控制是否自动拉游戏 |
-| `OkwwManager.prepare` | `Enabled \|\| CloseOnFinish` 时创建 `game_manager` |
-| 游戏启动检测 | 启动前 `is_process_running(Client-Win64-Shipping.exe)` → 已运行则跳过 |
-| 成功轮 `main_task` | 只 `_kill_okww_process()` |
-| 成功 `final_task` | `_mas_should_close_game_after_success()` 时 `_kill_game_process()` |
-| 失败/重试/`on_crash` | 始终杀 ok-ww；杀游戏仅当 `_mas_should_close_game_on_retry()` |
-| **游戏路径 UI** | 选鸣潮根目录 → 自动拼 `…/Client/Binaries/Win64/Client-Win64-Shipping.exe`；**强校验**：路径只接受空或正确两种状态 |
-| **脚本路径 UI** | 选 ok-ww 根目录 → 自动拼 `ok-ww.exe`；**强校验**：路径只接受空或正确两种状态 |
-| 追踪子进程 | `TrackProcessName=pythonw.exe`，`TrackProcessExe={RootPath}/data/apps/ok-ww/python/pythonw.exe` |
-| `check()` 新增检查 | 用户配置目录是否为空 → 若空则返回 `"用户未完成 OK-WW 配置，请先在用户编辑页保存配置"` |
+| `Game.Enabled` | 总开关：任务**开始前** MAS 启游戏、结束/失败/异常后 MAS 兜底关游戏；失败则 `continue`，**不**启 ok-ww |
+| `Game.CloseOnManualStop` | **手动终止**任务时是否关游戏（默认 True；关闭便于调试）。正常失败/异常不受它影响，仍兜底关闭 |
+| Hooks `prepare` | `Game.Enabled` 时创建 `game_manager`；`CancelledError` 时置 `manual_stop_requested` 再重抛 |
+| 游戏启动检测 | 启动前 `is_process_running(Client-Win64-Shipping.exe)` → 已运行则跳过（MAS 仍接管兜底关闭） |
+| 成功轮 `main_task` | 等待 ok-ww `-e` 自然退出（超时兜底强杀），只 `_kill_okww_process()` |
+| 失败/重试/`on_crash` | 始终杀 ok-ww；杀游戏由 `Game.Enabled` 控制 |
+| **游戏路径 UI** | 选鸣潮任意层级目录 → 关键词锚点自动拼 `…/Client/Binaries/Win64/Client-Win64-Shipping.exe`；**强校验**：路径只接受空或正确两种状态 |
+| **脚本路径 UI** | 选 ok-ww 根目录 → 校验 `ok-ww.exe` 存在；**强校验**：路径只接受空或正确两种状态 |
+| 追踪子进程 | `pythonw.exe`，exe=`{RootPath}/data/apps/ok-ww/python/pythonw.exe`（`_OKWW_REL_*` 常量派生，与前端 `OKWW_EXE_NAME` 同步） |
+| 同根互斥 | `get_path_runtime_lock(RootPath)`：同一 ok-ww 项目串行运行 |
+| `check()` 检查 | 用户配置目录为空 → `"用户 {name} 未完成 OK-WW 配置，请先在用户编辑页保存配置"` |
 
 ### AutoProxy 代码质量规范
 
@@ -248,27 +257,14 @@ tmp_dst.rename(self.script_config_path)
 
 #### 3. DRY 提取复用的配置恢复逻辑
 
-将 `final_task` 和 `on_crash` 中共用的「从 Temp 恢复配置」逻辑提取为 Manager 方法：
+「从 Temp 恢复脚本配置」提取为 Hooks 方法（`adapter/runtime.py::_restore_script_config_from_temp`），
+`finalize` 与 `on_crash` 共用：
 
 ```python
-async def _restore_script_config_from_temp(self) -> None:
-    if not (
-        self.task_info.mode == "AutoProxy"
-        and self.temp_path
-        and self.temp_path.exists()
-        and self.script_config_path
-    ):
-        return
-    if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-        if not self.had_original_script_config:
-            # 任务期新写入的目录直接清理（原子化）
-            ...
-        else:
-            # 原子化恢复原配置
-            ...
-    elif self.script_config.get("Script", "ConfigPathMode") == "File":
-        ...
-    shutil.rmtree(self.temp_path, ignore_errors=True)
+async def _restore_script_config_from_temp(self, runtime) -> None:
+    # had_original_script_config 区分「原本就有配置（原子化恢复）」
+    # 和「任务期新写入（直接清理）」两种场景；恢复后删除 Temp。
+    ...
 ```
 
 **`had_original_script_config`** 标记确保区分「原本就有配置（需恢复）」和「任务期新写入（直接清理）」两种场景。
@@ -294,14 +290,11 @@ try:
     await System.kill_process(self.script_exe_path)
 except Exception as e:
     logger.exception(f"中止 OK-WW 主进程失败: {e}")
-track_exe = str(self.script_config.get("Script", "TrackProcessExe") or "").strip()
-if not track_exe:
-    track_exe = str(self.script_root_path / "data/apps/ok-ww/python/pythonw.exe")
-if track_exe:
-    try:
-        await System.kill_process(Path(track_exe))
-    except Exception as e:
-        logger.exception(f"中止 OK-WW 追踪进程失败: {e}")
+track_exe = self.script_root_path / _OKWW_REL_PYTHONW
+try:
+    await System.kill_process(track_exe)
+except Exception as e:
+    logger.exception(f"中止 OK-WW 追踪进程失败: {e}")
 ```
 
 #### 5. Manager unlock-then-write 顺序
@@ -332,31 +325,23 @@ from app.task.general.tools import execute_script_task
 
 > ⚠️ 用户编辑页中 `IfScriptBeforeTask` / `ScriptBeforeTask` / `IfScriptAfterTask` / `ScriptAfterTask` 已加入 `OkwwUserConfig.Info`，默认值为 `false` + 空字符串。
 
-### Schema 模型（v5.4.0-beta.1+）
+### Schema 模型（插件 pydantic）
 
-`OkwwConfig_Script` **不再继承** `GeneralConfig_Script`，改为独立 `BaseModel`（与 General 解耦，因 Okww 不暴露 SuccessLog/ErrorLog）：
+插件 `schema.py` 用 **PluginField** 声明（非宿主 ConfigItem/OpenAPI 模型）：
 
-```python
-class OkwwConfig_Script(BaseModel):
-    ScriptPath: Optional[str]
-    Arguments: Optional[str]
-    IfTrackProcess: Optional[bool]
-    TrackProcessName: Optional[str]
-    TrackProcessExe: Optional[str]
-    TrackProcessCmdline: Optional[str]
-    ConfigPath: Optional[str]
-    ConfigPathMode: Optional[Literal["File", "Folder"]]
-    UpdateConfigMode: Optional[Literal["Never", "Success", "Failure", "Always"]]
-    LogPath: Optional[str]
-    LogPathFormat: Optional[str]
-    LogTimeStart: Optional[int]
-    LogTimeEnd: Optional[int]
-    LogTimeFormat: Optional[str]
-```
+- `OkwwConfig`：`Info(Name, RootPath)` / `Game(Enabled, CloseOnManualStop, Path, Arguments, WaitTime)` / `Run(ProxyTimesLimit, RunTimesLimit, RunTimeLimit)`。**无 Script 组**——路径/进程/日志全部由 `RootPath` + `_OKWW_REL_*` 常量派生。
+- `OkwwUserConfig`：`Info` / `Task(TaskIndex)` / `Data(只读运行数据)` / `Notify`。`Password` 用 `sensitive=True`（映射 EncryptValidator，与宿主同一套加密）。
+- `Game` 组 `extra="ignore"`：迁移进来的旧字段（LaunchBeforeTask/CloseOnFinish 等）静默丢弃。
+- ⚠️ 前后端字段名必须一致（曾因前端写 `KillGameOnManualStop`、后端 `CloseOnManualStop` 导致开关完全失效——`extra="ignore"` 会吞掉未知键，不报错）。
 
-`OkwwConfig` **移除字段**：`Script_SuccessLog`、`Script_ErrorLog`（ConfigItem 定义已删除）。
+### v5.3.x → 插件的一次性配置迁移
 
-前端 `OkwwScriptEdit.vue` 使用**本地 interface**（`OkwwScriptConfigForm`）而非导入 `OkwwConfig`，字段列表中不含 `SuccessLog` / `ErrorLog`，确保用户不可编辑判态关键词。
+`AppConfig._migrate_okww_scripts_to_plugin_storage`（init_config 时执行，幂等）：
+
+1. 旧 `OkwwConfig(ConfigBase)` 记录 → 白名单挑字段 → `PluginScriptConfig`（`Meta.PluginTypeKey="Okww"`，`PluginData.Config` JSON），用户 UID 保留。
+2. **简洁模式 ConfigFile**：v5.3.1 `Info.Mode` 默认"简洁"，任务 JSON 共享存于 `data/<sid>/Default/ConfigFile`；迁移为每个缺失配置的用户复制副本，**save 成功后**才清理 Default（中途失败下次重试）。
+3. 丢弃项：`Script_*` 全组（RootPath 派生）、`Game.LaunchBeforeTask/Type/URL/CloseOnFinish/Emulator*`、`Task.ExitOnFinish`。
+4. 方针：**一次性完整迁移，不做运行期向下兼容**。旧 `OkwwConfig(ConfigBase)` 类仅为存量 JSON 反序列化保留，迁移窗口结束后随迁移函数一并删除。
 
 ### 重试与落盘
 
@@ -364,29 +349,14 @@ class OkwwConfig_Script(BaseModel):
 - `final_task`：`save_general_log` → `history/{date}/{user}/{time}.log|json`。
 - 调度日志前缀（`_push_dispatch_log`）在运行时推送到前端 WebSocket，**持久化到 history 仅在 save 时**（不 prepend 到历史文件）。
 
-### Manager 用户迭代
+### 多用户迭代与手动终止（插件形态）
 
-> ⚠️ v5.3.1+：`METHOD_BOOK` 仅含 `AutoProxyTask`（**ScriptConfigTask 已删除**）。用户列表不再区分 ScriptConfig/AutoProxy 模式，统一遍历满足条件的脚本用户。
+多用户遍历由**宿主插件框架**（`ScriptAdapterRuntime` 编排）负责；插件只提供：
 
-`main_task()` 遍历所有用户而非单用户：
-
-```python
-for self.script_info.current_index in range(len(self.script_info.user_list)):
-    method = method_cls(...)
-    sub_check = await method.check()
-    if sub_check != "Pass":
-        # 单独标记失败用户，continue 到下一个
-        continue
-    await self.spawn(method)
-```
-
-`final_task()` 聚合用户状态：
-```python
-if any(user.status == "完成" for user in self.script_info.user_list):
-    ...  # 有成功用户
-if any(user.status == "异常" for user in self.script_info.user_list):
-    self.script_info.status = "异常"
-```
+- `run_auto_proxy(runtime)` → 单用户 `AutoProxyTask`（外包 `_CheckedAutoProxyTask`：check 不过标记状态并跳过）
+- Hooks `finalize` 聚合用户状态：任一用户 `"异常"` → 脚本 `"异常"`，否则 `"完成"`
+- `_CheckedAutoProxyTask.main_task` 捕获 `CancelledError` → 置 `inner.manual_stop_requested = True` 再重抛（`CancelledError` 是 `BaseException`，不进 `on_crash`，只能在此拦截打标）
+- `final_task` 的关游戏决策走 `_should_close_game_after_finish()`：手动终止时由 `Game.CloseOnManualStop` 决定
 
 ### check() 消息规范
 
@@ -427,5 +397,8 @@ README 所列 [ok-script](https://github.com/ok-oldking/ok-wuthering-waves) 系�
 | 目录清理 | #229 fix/move-okww-config-editor-out-of-m9a | OkwwConfigEditor 移出 M9AUserEdit 目录 |
 | **固定判态** | **#242 fix/okww-detail-only** | **移除 SuccessLog/ErrorLog 用户配置；全内置判态；固定详细模式；Schema 独立 BaseModel** |
 | 启动任务 | #241 feat/CustomAction | 启动前/启动后功能加入 Okww；通用专项支持 |
+| **插件化** | dev_v2 | **整体迁出宿主为 `plugins/okww_adapter`**；删除 `app/task/Okww|Okef|Ok`、SCRIPT_BOOK/TYPE_BOOK/OpenAPI 旧模型；手动终止开关 `Game.CloseOnManualStop` |
+| **动态 Schema** | dev_v2 | AST 解析 ok-ww 源码（onetime_tasks/config_type/self.name）+ i18n；version 缓存；删除四张静态白名单表；409 不可用降级 |
+| **一次性迁移** | dev_v2 | v5.3.1 → 插件存储一次性迁移（含简洁模式 Default/ConfigFile → per-user 副本）；不做运行期向下兼容 |
 
 ---

@@ -503,7 +503,7 @@ const loadScriptInfo = async () => {
     handleCancel()
     return false
   }
-  if (detail.type !== 'OkScript' && detail.type !== 'Okef') {
+  if (detail.type !== 'OkScript') {
     message.error('脚本类型不是 ok-script 项目')
     handleCancel()
     return false

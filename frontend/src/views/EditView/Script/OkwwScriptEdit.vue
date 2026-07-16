@@ -111,6 +111,25 @@
                 </a-select>
               </a-form-item>
             </a-col>
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    手动终止任务时关闭游戏
+                    <a-tooltip
+                      title="关闭后手动中止任务不会杀掉游戏进程，便于调试；正常失败/异常仍会兜底关闭"
+                    >
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-switch
+                  v-model:checked="okwwConfig.Game.CloseOnManualStop"
+                  :disabled="!okwwConfig.Game.Enabled"
+                  @change="handleChange('Game', 'CloseOnManualStop', $event)"
+                />
+              </a-form-item>
+            </a-col>
           </a-row>
 
           <a-row :gutter="24">
@@ -284,7 +303,7 @@ const pageLoading = ref(true)
 const isSaving = ref(false)
 const isInitializing = ref(true)
 
-// ══ okww 项目结构常量（需与 app/task/Okww/AutoProxy.py 中的 _OKWW_REL_* 保持同步）══
+// ══ okww 项目结构常量（需与 plugins/okww_adapter/src/okww_adapter/adapter/autoproxy.py 中的 _OKWW_REL_* 保持同步）══
 const OKWW_EXE_NAME = 'ok-ww.exe'
 
 interface OkwwInfoForm {
@@ -297,6 +316,7 @@ interface OkwwGameForm {
   Path: string
   Arguments: string
   WaitTime: number
+  CloseOnManualStop: boolean
 }
 
 interface OkwwRunForm {
@@ -330,6 +350,7 @@ const okwwConfig = reactive<OkwwScriptConfigForm>({
     Path: '.',
     Arguments: '',
     WaitTime: 60,
+    CloseOnManualStop: true,
   },
   Run: { ProxyTimesLimit: 0, RunTimesLimit: 1, RunTimeLimit: 60 },
 })

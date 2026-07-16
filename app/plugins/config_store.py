@@ -148,21 +148,12 @@ class PluginConfigStore:
         validate_schema: bool,
     ) -> Dict[str, Any]:
         """生成用于持久化的插件配置，容错模式下跳过致命 schema 错误。"""
-        plugin_path = self._resolve_plugin_path(plugin_name)
         normalized_config = self.normalize_raw_config(plugin_name, config)
         if validate_schema:
-            return self.load_effective_config(
-                plugin_name,
-                plugin_path,
-                normalized_config,
-            )
+            return self.load_effective_config(plugin_name, normalized_config)
 
         try:
-            return self.load_effective_config(
-                plugin_name,
-                plugin_path,
-                normalized_config,
-            )
+            return self.load_effective_config(plugin_name, normalized_config)
         except Exception as e:
             logger.warning(
                 f"插件配置 schema 校验失败，已跳过以避免影响启动: plugin={plugin_name}, "
@@ -500,25 +491,13 @@ class PluginConfigStore:
             normalized = self._normalize_background_config(normalized)
         return normalized
 
-    def load_schema(
-        self, plugin_name: str, plugin_path: Path | None
-    ) -> Dict[str, Dict[str, Any]]:
-        """
-        加载插件 Schema，兼容本地路径与 PyPI 安装模块。
-
-        Args:
-            plugin_name (str): 插件名。
-            plugin_path (Path | None): 插件本地目录路径。
-
-        Returns:
-            Dict[str, Dict[str, Any]]: 插件 Schema 字段定义字典。
-        """
-        return self.schema_manager.load_schema(plugin_name, plugin_path)
+    def load_schema(self, plugin_name: str) -> Dict[str, Dict[str, Any]]:
+        """加载插件包 schema.py 中的 Config 模型描述。"""
+        return self.schema_manager.load_schema(plugin_name)
 
     def load_effective_config(
         self,
         plugin_name: str,
-        plugin_path: Path | None,
         raw_config: Dict[str, Any],
     ) -> Dict[str, Any]:
         """
@@ -526,29 +505,20 @@ class PluginConfigStore:
 
         Args:
             plugin_name (str): 插件名。
-            plugin_path (Path | None): 插件本地目录路径。
             raw_config (Dict[str, Any]): 原始配置对象。
 
         Returns:
             Dict[str, Any]: 通过校验并补齐默认值的有效配置。
 
         Raises:
-            ValueError: 插件未声明 Schema 但 raw_config 含有配置项时抛出。
             PluginSchemaError: 在以下场景抛出：
-                1) Schema 加载失败或定义不合法；
+                1) schema.py 的 Config 模型加载失败；
                 2) 配置缺失必填项；
-                3) 配置项类型与 Schema 声明不匹配。
+                3) 配置项类型与 Config 模型不匹配。
         """
-        schema = self.load_schema(plugin_name, plugin_path)
         normalized_config = self.normalize_raw_config(plugin_name, raw_config)
-
-        if not schema:
-            if normalized_config:
-                raise ValueError(f"插件 {plugin_name} 使用了配置项但未声明 schema")
-            return normalized_config
 
         return self.schema_manager.apply_defaults_and_validate(
             plugin_name=plugin_name,
-            schema=schema,
             config=normalized_config,
         )

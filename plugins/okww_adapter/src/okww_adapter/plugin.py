@@ -12,10 +12,11 @@ from app.plugins import PluginHttpRequest, ScriptAdapterDefinition, ScriptAdapte
 from app.utils import get_logger
 
 from .adapter import OkwwAdapterHooks
-from .adapter.autoproxy import _OKWW_REL_CONFIG_DIR
+from .adapter.autoproxy import _OKWW_REL_CONFIG_DIR, _OKWW_REL_EXE
 from .config_schema import (
     build_fields_for_config,
     get_all_config_info,
+    get_field_specs,
     load_okww_option_labels,
 )
 from .schema import OkwwConfig, OkwwUserConfig
@@ -68,12 +69,15 @@ def _write_json_file_atomic(path: Path, data: dict[str, Any]) -> None:
     tmp_path.replace(path)
 
 
-def _ensure_user_config_defaults(config_dir: Path, source_dir: Path | None) -> None:
+def _ensure_user_config_defaults(
+    config_dir: Path,
+    source_dir: Path | None,
+    filenames: list[str],
+) -> None:
     if source_dir is None or not source_dir.is_dir():
         return
     config_dir.mkdir(parents=True, exist_ok=True)
-    for info in get_all_config_info():
-        filename = str(info["filename"])
+    for filename in filenames:
         source_path = source_dir / filename
         if not source_path.is_file():
             continue
@@ -186,21 +190,39 @@ class Plugin(ScriptAdapterPlugin):
             root_path = await self._script_root_path(script_id)
         except (KeyError, ValueError) as exc:
             return {"code": 400, "status": "error", "message": str(exc)}
-        option_labels = load_okww_option_labels(root_path) if root_path else {}
-        okww_configs_dir = root_path / _OKWW_REL_CONFIG_DIR if root_path else None
 
-        _ensure_user_config_defaults(mas_config_dir, okww_configs_dir)
+        # ok-ww 程序不可用时不返回静态兜底字段：缺少安装目录就无法动态读取
+        # 配置项与中文翻译，静态字段会误导用户编辑到不存在/无翻译的项。
+        if root_path is None or not (root_path / _OKWW_REL_EXE).is_file():
+            return {
+                "code": 409,
+                "status": "unavailable",
+                "message": "当前 ok-ww 程序不可用，请返回脚本设置选择正确的 ok-ww 根目录",
+                "data": [],
+            }
+
+        option_labels = load_okww_option_labels(root_path)
+        okww_configs_dir = root_path / _OKWW_REL_CONFIG_DIR
+
+        # 动态注册表 + 字段规格（下拉候选项）按 config.py version 缓存。
+        config_info = get_all_config_info(root_path, option_labels)
+        field_specs = get_field_specs(root_path)
+        filenames = [str(info["filename"]) for info in config_info]
+
+        _ensure_user_config_defaults(mas_config_dir, okww_configs_dir, filenames)
 
         configs: list[dict[str, Any]] = []
-        for info in get_all_config_info():
-            filename = info["filename"]
+        for info in config_info:
+            filename = str(info["filename"])
             file_path = mas_config_dir / filename
             data = _read_json_file(file_path)
             configs.append(
                 {
                     **info,
                     "exists": file_path.is_file(),
-                    "fields": build_fields_for_config(filename, data, option_labels),
+                    "fields": build_fields_for_config(
+                        filename, data, option_labels, field_specs
+                    ),
                     "currentData": data,
                 }
             )

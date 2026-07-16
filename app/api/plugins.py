@@ -362,15 +362,12 @@ def _resolve_effective_config(
 
     next_config = data.config if data.config is not None else target.get("config", {})
 
-    plugin_path = None
     if need_discover:
         if next_plugin not in discovered:
             raise ValueError(f"未发现插件: {next_plugin}")
-        plugin_path = getattr(discovered[next_plugin], "path", None)
 
     effective_config = config_store.load_effective_config(
         next_plugin,
-        plugin_path,
         next_config,
     )
     return next_plugin, effective_config
@@ -417,13 +414,12 @@ def _build_schemas(discovered: Dict[str, Any]) -> tuple[Dict[str, Dict[str, Any]
 
     schemas: Dict[str, Dict[str, Any]] = {}
     errors: Dict[str, str] = {}
-    for plugin_name, plugin_source in discovered.items():
+    for plugin_name in discovered:
         if plugin_name in script_type_plugins:
             schemas[plugin_name] = {}
             continue
-        plugin_path = getattr(plugin_source, "path", None)
         try:
-            schemas[plugin_name] = config_store.load_schema(plugin_name, plugin_path)
+            schemas[plugin_name] = config_store.load_schema(plugin_name)
         except Exception as e:
             schemas[plugin_name] = {}
             errors[plugin_name] = f"{type(e).__name__}: {e}"
@@ -798,10 +794,8 @@ async def add_plugin_instance(data: PluginAddIn = Body(...)) -> PluginAddOut:
             raise ValueError(f"系统插件不允许新增实例: {data.plugin}")
 
         # 先校验配置是否合法（包含默认值注入）
-        plugin_path = getattr(discovered[data.plugin], "path", None)
         effective_config = config_store.load_effective_config(
             data.plugin,
-            plugin_path,
             data.config,
         )
 

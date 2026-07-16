@@ -68,15 +68,7 @@ const DEFAULT_USER_SHAPE = {
   },
 }
 
-export const BUILTIN_SCRIPT_TYPES = new Set([
-  'MAA',
-  'SRC',
-  'MaaEnd',
-  'M9A',
-  'MaaFW',
-  'OkScript',
-  'Okef',
-])
+export const BUILTIN_SCRIPT_TYPES = new Set(['MAA', 'SRC', 'MaaEnd', 'M9A', 'MaaFW', 'OkScript'])
 
 export const isBuiltinScriptType = (type: string) => BUILTIN_SCRIPT_TYPES.has(type)
 
@@ -91,7 +83,6 @@ export const getFallbackScriptIcon = (type: string) => {
     case 'Okww':
       return okwwIcon
     case 'OkScript':
-    case 'Okef':
       return autoMasIcon
     case 'HSR':
       return hsrIcon
@@ -136,7 +127,6 @@ export const getScriptTypeTagColor = (type: string, themeColor?: string | null) 
       return 'geekblue'
     case 'Okww':
     case 'OkScript':
-    case 'Okef':
       return 'orange'
     case 'HSR':
       return 'purple'

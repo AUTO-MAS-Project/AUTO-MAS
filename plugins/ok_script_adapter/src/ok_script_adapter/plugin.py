@@ -25,14 +25,6 @@ DEFAULT_INSTANCE = {
     "config": {},
 }
 
-SCRIPT_TYPE_BINDINGS = [
-    {
-        "type_key": "OkScript",
-        "display_name": "ok-script 项目",
-        "script_config_class_name": "OkefConfig",
-    }
-]
-
 
 def normalize_ok_script_form(data: dict[str, Any]) -> dict[str, Any]:
     """根据项目 Manifest 回填可展示的 ok-script 元数据。"""
@@ -119,27 +111,6 @@ def _load_provider_schema(provider: Any):
     )
 
 
-async def migrate_legacy_okef_config(legacy_script: Any, provider: Any) -> Any:
-    """将旧 OkefConfig 转换为插件配置，同时保留用户 UUID 与顺序。"""
-
-    script_data = await legacy_script.toDict(if_decrypt=False)
-    script_data.pop("SubConfigsInfo", None)
-
-    migrated_script = provider.script_config_class()
-    await migrated_script.load(script_data)
-
-    for user_uid, legacy_user in legacy_script.UserData.items():
-        user_data = await legacy_user.toDict(if_decrypt=False)
-        user_data.pop("SubConfigsInfo", None)
-
-        migrated_user = provider.user_config_class()
-        await migrated_user.load(user_data)
-        migrated_script.UserData.order.append(user_uid)
-        migrated_script.UserData.data[user_uid] = migrated_user
-
-    return migrated_script
-
-
 class Plugin(ScriptAdapterPlugin):
     """ok-script 框架项目的通用插件适配器。"""
 
@@ -156,12 +127,9 @@ class Plugin(ScriptAdapterPlugin):
                 editor_kind="plugin:ok_script_adapter",
                 script_class_name="OkScriptPluginConfig",
                 user_class_name="OkScriptPluginUserConfig",
-                legacy_config_class_name="OkefConfig",
-                legacy_user_config_class_name="OkefUserConfig",
                 metadata={
                     "framework": "ok-script",
                     "source": "ok_script_adapter",
-                    "legacy_config_migrator": migrate_legacy_okef_config,
                     "normalize_script_form": normalize_ok_script_form,
                     "client": {
                         "config_editor": {

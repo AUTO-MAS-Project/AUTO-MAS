@@ -15,7 +15,7 @@ import {
   UserIndexItem,
   Service,
 } from '@/api'
-import type { OkefScriptConfig, ScriptDetail, ScriptType } from '@/types/script'
+import type { OkScriptScriptConfig, ScriptDetail, ScriptType } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
 const logger = window.electronAPI.getLogger('脚本API')
@@ -24,7 +24,7 @@ type ScriptListConfig =
   | MaaConfig
   | GeneralConfig
   | OkwwConfig
-  | OkefScriptConfig
+  | OkScriptScriptConfig
   | SrcConfig
   | MaaEndConfig
   | M9AConfig
@@ -39,7 +39,6 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   MaaFW: ScriptCreateIn.type.MAA_FW,
   Okww: ScriptCreateIn.type.OKWW,
   OkScript: ScriptCreateIn.type.OK_SCRIPT,
-  Okef: ScriptCreateIn.type.OKEF,
   General: ScriptCreateIn.type.GENERAL,
 }
 
@@ -47,7 +46,6 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   [ScriptIndexItem.type.MAA_CONFIG]: 'MAA',
   [ScriptIndexItem.type.SRC_CONFIG]: 'SRC',
   [ScriptIndexItem.type.OKWW_CONFIG]: 'Okww',
-  OkefConfig: 'OkScript',
   [ScriptIndexItem.type.MAA_END_CONFIG]: 'MaaEnd',
   [ScriptIndexItem.type.M9ACONFIG]: 'M9A',
   [ScriptIndexItem.type.MAA_FWCONFIG]: 'MaaFW',
@@ -1166,8 +1164,8 @@ export function useScriptApi() {
                       },
                     }
                   } else if (
-                    (userIndex.type === 'OkefUserConfig' ||
-                      (userIndex.type === 'PluginUserConfig' && script.type === 'OkScript')) &&
+                    userIndex.type === 'PluginUserConfig' &&
+                    script.type === 'OkScript' &&
                     userData
                   ) {
                     const okefUserData = userData as any
