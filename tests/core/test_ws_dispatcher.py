@@ -93,6 +93,16 @@ class WSDispatcherTest(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(self.dispatcher.shutdown(), timeout=1)
         self.assertTrue(cancelled.is_set())
 
+    async def test_shutdown_blocks_new_dispatch(self):
+        received: list[WSEnvelope] = []
+        self.dispatcher.register("Main", "dialog.response", received.append)
+
+        await self.dispatcher.shutdown()
+        # 关闭后新入站消息直接丢弃，不再触发处理器与 teardown 并发
+        self.dispatcher.dispatch(_envelope("Main", "dialog.response"))
+
+        self.assertEqual(received, [])
+
 
 class WSProtocolTest(unittest.TestCase):
     def test_parse_envelope_accepts_valid_message(self):

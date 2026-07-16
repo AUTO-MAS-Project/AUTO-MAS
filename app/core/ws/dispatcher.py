@@ -43,6 +43,7 @@ class _WSDispatcher:
     def __init__(self) -> None:
         self._handlers: Dict[Tuple[str, str], List[Handler]] = {}
         self._tasks: Set[asyncio.Task] = set()
+        self._closed = False
 
     def register(self, id: str, type: str, handler: Handler) -> Callable[[], None]:
         """注册消息处理器。
@@ -75,6 +76,9 @@ class _WSDispatcher:
 
     def dispatch(self, envelope: WSEnvelope) -> None:
         """分发一条入站消息给所有匹配处理器。"""
+        if self._closed:
+            logger.debug(f"分发器已关闭，丢弃入站消息: id={envelope.id}, type={envelope.type}")
+            return
         handlers = list(self._handlers.get((envelope.id, envelope.type), ()))
         if not handlers:
             logger.debug(f"无处理器，丢弃入站消息: id={envelope.id}, type={envelope.type}")
@@ -83,7 +87,12 @@ class _WSDispatcher:
             self._invoke(handler, envelope)
 
     async def shutdown(self) -> None:
-        """取消并等待所有在途处理器任务。"""
+        """停止接收新消息，并取消、等待所有在途处理器任务。
+
+        供关闭 teardown 在插件清理前调用，保证清理期间不再有
+        入站消息触发的处理器与其并发执行。
+        """
+        self._closed = True
         tasks = [task for task in self._tasks if not task.done()]
         for task in tasks:
             task.cancel()
