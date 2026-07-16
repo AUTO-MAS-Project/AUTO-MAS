@@ -90,9 +90,8 @@ async def build_plugin_snapshot(*, discovered: Dict[str, Any] | None = None) -> 
     plugin_services: Dict[str, Dict[str, Any]] = {}
     plugin_packages: Dict[str, Dict[str, Any]] = {}
     for plugin_name, plugin_source in discovered.items():
-        plugin_path = getattr(plugin_source, "path", None)
         try:
-            schemas[plugin_name] = config_store.load_schema(plugin_name, plugin_path)
+            schemas[plugin_name] = config_store.load_schema(plugin_name)
         except Exception as exc:
             schemas[plugin_name] = {}
             schema_errors[plugin_name] = f"{type(exc).__name__}: {exc}"
@@ -103,7 +102,7 @@ async def build_plugin_snapshot(*, discovered: Dict[str, Any] | None = None) -> 
                 "package": package_name,
                 "version": getattr(plugin_source, "version", None),
                 "source": str(getattr(plugin_source, "source", "pypi") or "pypi"),
-                "path": str(plugin_path) if plugin_path else None,
+                "path": str(getattr(plugin_source, "path", "") or "") or None,
             }
 
         try:

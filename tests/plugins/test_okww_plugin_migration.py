@@ -1,4 +1,5 @@
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -54,6 +55,44 @@ class OkwwPluginMigrationTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(user_payload["Info"]["Id"], "user-a")
             self.assertEqual(user_payload["Task"]["TaskIndex"], 5)
             self.assertEqual(user_payload["Data"]["LastProxyStatus"], "成功")
+
+    async def test_migrates_legacy_shared_configfile_to_per_user_copies(self) -> None:
+        """v5.3.1 简洁模式共享 Default/ConfigFile 应复制给每个缺失配置的用户。"""
+
+        app_config = AppConfig()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            await app_config.ScriptConfig.connect(Path(temp_dir) / "ScriptConfig.json")
+            script_uid, script_config = await app_config.ScriptConfig.add(OkwwConfig)
+            user_a, _ = await script_config.UserData.add(OkwwUserConfig)
+            user_b, _ = await script_config.UserData.add(OkwwUserConfig)
+
+            script_data_dir = Path.cwd() / "data" / str(script_uid)
+            try:
+                default_dir = script_data_dir / "Default" / "ConfigFile"
+                default_dir.mkdir(parents=True)
+                (default_dir / "DailyTask.json").write_text(
+                    '{"Which to Farm": "Tacet Suppression"}', encoding="utf-8"
+                )
+                # 用户 B 是 v5.3.1 详细模式：已有独立配置，迁移不得覆盖。
+                user_b_dir = script_data_dir / str(user_b) / "ConfigFile"
+                user_b_dir.mkdir(parents=True)
+                (user_b_dir / "DailyTask.json").write_text(
+                    '{"Which to Farm": "Forgery Challenge"}', encoding="utf-8"
+                )
+
+                await app_config._migrate_okww_scripts_to_plugin_storage()
+
+                copied = script_data_dir / str(user_a) / "ConfigFile" / "DailyTask.json"
+                self.assertTrue(copied.is_file())
+                self.assertIn("Tacet Suppression", copied.read_text(encoding="utf-8"))
+                self.assertIn(
+                    "Forgery Challenge",
+                    (user_b_dir / "DailyTask.json").read_text(encoding="utf-8"),
+                )
+                self.assertFalse(default_dir.exists())
+            finally:
+                shutil.rmtree(script_data_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

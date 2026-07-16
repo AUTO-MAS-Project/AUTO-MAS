@@ -246,6 +246,7 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         self.game_path: Path = Path()
         self.run_book = False
         self.game_started_by_mas = False
+        self.manual_stop = False
         self.cur_user_log: LogRecord | None = None
         self.report_handler: OkScriptReportHandler | None = None
         self.curdate = ""
@@ -386,6 +387,13 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         )
 
     async def main_task(self) -> None:
+        try:
+            await self._main_task()
+        except asyncio.CancelledError:
+            self.manual_stop = True
+            raise
+
+    async def _main_task(self) -> None:
         await self.prepare()
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         if self.cur_user_config.get("Data", "LastProxyDate") != self.curdate:
@@ -1374,6 +1382,10 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             )
 
     def _should_kill_game(self) -> bool:
+        if self.manual_stop and not self.script_config.get(
+            "Game", "KillGameOnManualStop"
+        ):
+            return False
         return self.game_path.is_file()
 
     def _resolve_provider(self, root: Path) -> OkScriptProvider | None:

@@ -35,9 +35,7 @@ logger = get_logger("脚本类型注册表")
 
 TASK_MODES = ("AutoProxy", "ManualReview", "ScriptConfig")
 SCRIPT_TYPE_ENTRY_POINT_GROUPS = ("auto_mas.script_types", "automas.script_types")
-SCRIPT_TYPE_ALIASES = {
-    "Okef": "OkScript",
-}
+SCRIPT_TYPE_ALIASES: dict[str, str] = {}
 LEGACY_SCRIPT_TYPE_METADATA = (
     {
         "type_key": "MAA",
@@ -97,16 +95,6 @@ LEGACY_SCRIPT_TYPE_METADATA = (
         "supported_modes": ("AutoProxy", "ScriptConfig"),
         "icon": "General",
         "editor_kind": "schema",
-        "is_builtin": False,
-    },
-    {
-        "type_key": "OkScript",
-        "display_name": "ok-script 项目",
-        "script_class_name": "OkefConfig",
-        "user_class_name": "OkefUserConfig",
-        "supported_modes": ("AutoProxy",),
-        "icon": "General",
-        "editor_kind": "builtin:ok-script",
         "is_builtin": False,
     },
 )
@@ -376,7 +364,6 @@ class ScriptTypeRegistry:
         from app.models.config import (
             MaaEndConfig,
             MaaEndUserConfig,
-            OkwwConfig,
             SrcConfig,
             SrcUserConfig,
         )
@@ -485,7 +472,7 @@ def build_config_schema(config_class: type[Any]) -> dict[str, Any]:
         from app.plugins.schema import PluginSchemaManager
 
         schema_manager = PluginSchemaManager()
-        fields = schema_manager._build_schema_from_model("__inline__", config_class)
+        fields = schema_manager.build_schema_from_model("__inline__", config_class)
         return fields
 
     config = config_class()
@@ -816,7 +803,6 @@ def _bind_builtin_script_config_models(global_config: Any) -> None:
         MaaEndUserConfig,
         MaaFWConfig,
         MaaUserConfig,
-        OkefConfig,
         OkwwConfig,
         SrcConfig,
         SrcUserConfig,
@@ -829,7 +815,6 @@ def _bind_builtin_script_config_models(global_config: Any) -> None:
         M9AConfig,
         MaaFWConfig,
         OkwwConfig,
-        OkefConfig,
     )
     for config_class in builtin_script_types:
         global_config.ScriptConfig.sub_config_type[config_class.__name__] = config_class
@@ -842,7 +827,6 @@ def _bind_builtin_script_config_models(global_config: Any) -> None:
     M9AConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
     MaaFWConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
     OkwwConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
-    OkefConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
     MaaUserConfig.related_config["PlanConfig"] = global_config.PlanConfig
 
     _ = LegacyGeneralUserConfig
@@ -877,8 +861,6 @@ def _resolve_legacy_config_classes(
         MaaFWConfig,
         MaaFWUserConfig,
         MaaUserConfig,
-        OkefConfig,
-        OkefUserConfig,
         SrcConfig,
         SrcUserConfig,
     )
@@ -889,7 +871,6 @@ def _resolve_legacy_config_classes(
         "MaaConfig": MaaConfig,
         "MaaEndConfig": MaaEndConfig,
         "MaaFWConfig": MaaFWConfig,
-        "OkefConfig": OkefConfig,
         "SrcConfig": SrcConfig,
     }
     user_classes: dict[str, type[ConfigBase]] = {
@@ -898,7 +879,6 @@ def _resolve_legacy_config_classes(
         "MaaEndUserConfig": MaaEndUserConfig,
         "MaaFWUserConfig": MaaFWUserConfig,
         "MaaUserConfig": MaaUserConfig,
-        "OkefUserConfig": OkefUserConfig,
         "SrcUserConfig": SrcUserConfig,
     }
 

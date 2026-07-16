@@ -9,6 +9,9 @@ from pydantic import Field
 from pydantic_core import PydanticUndefined
 
 
+PLUGIN_FIELD_MARKER = "x-auto-mas-plugin-field"
+
+
 PluginFieldFormat = Literal["password", "url", "email", "textarea"]
 PluginFieldSize = Literal[
     "1/1",
@@ -242,6 +245,7 @@ class PluginFieldFactory:
         """声明插件配置字段，并把插件 UI 元数据写入 Pydantic schema extra。"""
 
         extra = dict(json_schema_extra or {})
+        extra[PLUGIN_FIELD_MARKER] = True
         if title is not None:
             kwargs["title"] = title
         if description is not None:

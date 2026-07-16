@@ -58,7 +58,7 @@ description: >-
 | MXU 线 | MaaEnd + MXU、`mxu-*.json` | `MaaEnd` |
 | MFAA 线 | M9A 队列 JSON，无 ScriptConfig 壳 | `M9A` |
 | General | 通用路径/进程/日志 | `General` |
-| ok-script | `-t`/`-e` CLI + 表单化配置编辑器（纯内置判态，AutoProxy 唯一模式） | `Okww` |
+| ok-script | `-t`/`-e` CLI + 表单化配置编辑器（纯内置判态，AutoProxy 唯一模式）；**落地为独立插件**（如 `plugins/okww_adapter`），宿主零登记 | `Okww` |
 
 确认架构后读上游 **自启动**（argv vs 写盘）与 **配置落盘**（表单编辑器 vs ScriptConfig GUI vs 仅写 JSON）。MFAA 见 [examples-m9a.md](references/examples-m9a.md)；MXU 见 [examples-maaend.md](references/examples-maaend.md)；ok-script 见 [examples-okww.md](references/examples-okww.md)。
 
@@ -66,7 +66,7 @@ description: >-
 
 ## 架构取向
 
-**主要对象是前端表面**（`EditView/`、`Scripts.vue`、Section）；后端 `app/task/Xxx/` 同 PR 补齐。先加载 `mas-skills`，配合 `mas-module-boundary`、`mas-data-model`、`mas-api-contract`、`mas-code-standards`。
+**主要对象是前端表面**（`EditView/`、`Scripts.vue`、Section）；后端同 PR 补齐（新专项走 `plugins/<slug>_adapter/`，存量内置类型在 `app/task/Xxx/`）。先加载 `mas-skills`，配合 `mas-module-boundary`、`mas-data-model`、`mas-api-contract`、`mas-code-standards`。
 
 ### 前端表面清单
 
@@ -81,13 +81,14 @@ description: >-
 
 ### 后端切面
 
-`XxxConfig` / `XxxUserConfig`、`SCRIPT_BOOK`、`task_manager`、`app/task/Xxx/`（`Manager`、`AutoProxy`；按需 `config_schema.py` 或 `ScriptConfig`；须实现 `final_task` / `on_crash`）。
+- **插件形态（新专项默认）**：`plugins/<slug>_adapter/`（`schema.py` pydantic + `plugin.py` ScriptAdapterDefinition + `adapter/`（Hooks、AutoProxy，须实现 `final_task` / `on_crash`）；按需动态 `config_schema.py`）。宿主零登记。
+- **宿主内置形态（存量）**：`XxxConfig` / `XxxUserConfig`、`SCRIPT_BOOK`、`task_manager`、`app/task/Xxx/`。
 
 ---
 
 ## UI 分段（默认）
 
-脚本编辑三段：基本信息 / 游戏配置 / 运行配置。用户编辑三段：基本 / 任务 / 通知。Okww 游戏段：`Enabled`、`LaunchBeforeTask`、`CloseOnFinish` **独立**；见 [examples-okww · 实现规范](references/examples-okww.md#实现规范okww-必遵守)。
+脚本编辑三段：基本信息 / 游戏配置 / 运行配置。用户编辑三段：基本 / 任务 / 通知。Okww 游戏段：`Enabled`（总开关：启停游戏）+ `CloseOnManualStop`（手动终止是否关游戏，默认开）；见 [examples-okww · 实现规范](references/examples-okww.md#实现规范okww-必遵守)。
 
 ---
 
@@ -110,7 +111,16 @@ description: >-
 10. `OkwwUserEdit.vue`：用户编辑 + 配置编辑器（按架构线选型）
 11. 图标：`frontend/src/assets/<slug>.ico`
 
-### 阶段 3：后端注册
+### 阶段 3：后端注册（按落地形态二选一）
+
+**A. 插件形态（ok-script 线等新专项，推荐）**：
+12. `plugins/<slug>_adapter/`：`pyproject.toml` entry_points（`auto_mas.plugins`）
+13. `schema.py`：pydantic + `PluginField`（脚本/用户模型；敏感字段 `sensitive=True`）
+14. `plugin.py`：`ScriptAdapterDefinition(type_key=...)` + 插件 HTTP 端点
+15. 宿主**零登记**：勿动 SCRIPT_BOOK / TYPE_BOOK / OpenAPI schema / task_manager
+16. 旧宿主实现（若有）：一次性配置迁移（参照 `_migrate_okww_scripts_to_plugin_storage`），旧 ConfigBase 类仅为存量 JSON 反序列化保留
+
+**B. 宿主内置形态（仅维护存量 MAA/SRC 等）**：
 12. `app/models/config.py`：`XxxConfig` / `XxxUserConfig`
 13. `app/models/schema.py`：schema 注册
 14. `app/core/config.py`：`isinstance` 分支
@@ -118,12 +128,11 @@ description: >-
 16. `app/utils/constants.py`：`TYPE_BOOK` 展示文案
 17. `yarn openapi` → 确认 `openapi.json` 含新类型
 
-### 阶段 4：任务模块
-18. `app/task/Okww/__init__.py`
-19. `app/task/Okww/manager.py`：METHOD_BOOK、check/prepare/main_task/final_task/on_crash
-20. `app/task/Okww/AutoProxy.py`：__init__、check、prepare、main_task、final_task、on_crash、进程/日志/游戏管理
-21. 按需：`config_schema.py` 或 `ScriptConfig.py`
-22. `app/core/task_manager.py`：注册
+### 阶段 4：任务模块（插件形态）
+18. `adapter/runtime.py`：`ScriptAdapterHooks`（check/prepare/finalize/on_crash + run_auto_proxy）
+19. `adapter/autoproxy.py`：`AutoProxyTask`（check、prepare、main_task、final_task、on_crash、进程/日志/游戏管理）
+20. 按需：动态配置 Schema（`ast_config.py` + `config_schema.py`，见 examples-okww）
+21. 多用户迭代由宿主 `ScriptAdapterRuntime` 编排，插件不写 Manager
 
 ### 阶段 5：自检与清理
 23. 对照 [adapter-code-norms.md §10](references/adapter-code-norms.md#10-提交前自检) 逐项检查
