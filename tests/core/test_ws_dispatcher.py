@@ -73,6 +73,26 @@ class WSDispatcherTest(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(done.wait(), timeout=1)
         await self.dispatcher.shutdown()
 
+    async def test_shutdown_cancels_in_flight_tasks(self):
+        started = asyncio.Event()
+        cancelled = asyncio.Event()
+
+        async def slow_handler(_):
+            started.set()
+            try:
+                await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+        self.dispatcher.register("Main", "dialog.response", slow_handler)
+        self.dispatcher.dispatch(_envelope("Main", "dialog.response"))
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        # 关闭流程需取消并等待在途任务，避免其在插件 teardown 期间继续运行
+        await asyncio.wait_for(self.dispatcher.shutdown(), timeout=1)
+        self.assertTrue(cancelled.is_set())
+
 
 class WSProtocolTest(unittest.TestCase):
     def test_parse_envelope_accepts_valid_message(self):

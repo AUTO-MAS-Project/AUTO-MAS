@@ -190,6 +190,12 @@ const killBackend = async (): Promise<void> => {
   // taskkill 幂等：整个关闭流程仅执行一次
   if (taskkillDone) return
   taskkillDone = true
+  // 开发模式后端由开发者独立管理（如 yarn dev:fullstack 单独启动），
+  // 收到 ready 后仍会保持运行，绝不能被前端强杀
+  if (isBackendDevMode()) {
+    logger.info('开发模式：跳过 taskkill，保留开发者管理的后端进程')
+    return
+  }
   logger.warn('执行 taskkill 强制关闭后端')
   try {
     await window.electronAPI?.killAllProcesses?.()
@@ -218,7 +224,11 @@ const runCloseFlow = async (): Promise<void> => {
   }
 
   const ready = await readyPromise
-  if (ready) {
+  if (isBackendDevMode()) {
+    // 开发模式：后端由开发者独立管理，收到清理信号即视为关闭成功，
+    // 不等待进程退出、不 taskkill，直接关闭前端
+    logger.info('开发模式：后端保持运行，前端直接退出')
+  } else if (ready) {
     // 已收到 ready：优先等待后端进程正常退出，超时才 taskkill
     logger.info('等待后端进程正常退出')
     const exited = await waitForBackendExit(PROCESS_EXIT_TIMEOUT)
@@ -361,8 +371,11 @@ const handleReconnectCycleFailed = async (): Promise<void> => {
   if (isClosing() || restartFailureShown) return
 
   const running = await queryBackendRunning()
+  // IPC 查询期间关闭流程可能已开始：重查后再决策，避免在关闭态重建重连计时器
+  // 或触发自动重启（与 taskkill 互斥）
+  if (isClosing() || restartFailureShown) return
+
   if (running === false) {
-    // 后端进程已死：自动重启（与 taskkill 互斥——关闭流程中不会进入此分支）
     await restartBackendFlow()
   } else {
     // 后端进程存活或状态未知：延迟后继续下一轮重连

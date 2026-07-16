@@ -30,6 +30,9 @@ let socket: WebSocket | null = null
 let connectPromise: Promise<boolean> | null = null
 let reconnectTimer: number | undefined
 let reconnectAttempts = 0
+// 连接代次：每次 shutdown 递增，使协商期间在途的连接尝试恢复后失效，
+// 避免旧协程创建的连接把已终止的连接层复活
+let connectGeneration = 0
 let backendDevMode = import.meta.env.DEV === true || window.location.hostname === 'localhost'
 let websocketUrl = 'ws://localhost:36163/api/core/ws'
 
@@ -225,9 +228,18 @@ export async function connect(): Promise<boolean> {
     state.value = 'connecting'
   }
 
+  const myGeneration = connectGeneration
   connectPromise = (async (): Promise<boolean> => {
     try {
       await negotiateWebSocketUrl()
+
+      // 协商期间可能已 shutdown（代次递增并置 closed）：放弃本次尝试，
+      // 不创建新连接，避免复活已终止的连接层
+      if (myGeneration !== connectGeneration || state.value === 'closed') {
+        logger.info('连接协商完成时连接层已关闭，放弃本次尝试')
+        connectPromise = null
+        return false
+      }
 
       return await new Promise<boolean>(resolve => {
         let settled = false
@@ -236,6 +248,15 @@ export async function connect(): Promise<boolean> {
         socket = ws
 
         ws.onopen = () => {
+          // 代次失效（onopen 前发生了 shutdown）：关闭这个刚建立的连接，不复活状态
+          if (myGeneration !== connectGeneration) {
+            try {
+              ws.close(1000, '连接层已关闭')
+            } catch {
+              // 忽略
+            }
+            return
+          }
           if (socket !== ws) return
           logger.info('WebSocket 连接已建立')
           state.value = 'open'
@@ -313,6 +334,8 @@ export function stopReconnect(): void {
  */
 export function shutdown(reason: string = '应用关闭'): void {
   state.value = 'closed'
+  // 递增代次使协商中的在途连接尝试恢复后自行失效
+  connectGeneration++
   clearReconnectTimer()
   reconnectAttempts = 0
   connectPromise = null
