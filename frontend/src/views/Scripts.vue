@@ -163,6 +163,7 @@
     width="600px"
     ok-text="确定"
     cancel-text="取消"
+    :ok-button-props="{ disabled: selectedTypeUnavailable }"
     @ok="handleConfirmCreateMode"
     @cancel="createModeSelectVisible = false"
   >
@@ -273,6 +274,7 @@
           :key="descriptor.type_key"
           :value="descriptor.type_key"
           class="type-option"
+          :disabled="descriptor.available === false"
         >
           <div class="type-content">
             <div class="type-logo-container">
@@ -294,7 +296,11 @@
                 </a-tag>
               </div>
               <div class="type-description">
-                支持模式：{{ descriptor.supported_modes.join(' / ') || '未声明' }}
+                {{
+                  descriptor.available === false
+                    ? descriptor.unavailable_reason || '当前插件未生效'
+                    : `支持模式：${descriptor.supported_modes.join(' / ') || '未声明'}`
+                }}
               </div>
             </div>
           </div>
@@ -435,7 +441,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
@@ -521,6 +527,7 @@ const currentConfigScript = ref<Script | null>(null) // 当前正在配置的脚
 const activeConnections = ref<Map<string, { subscriptionId: string; websocketId: string }>>(
   new Map()
 ) // scriptId -> { subscriptionId, websocketId }
+let pluginSystemSubscriptionId: string | null = null
 
 const getMaaFWProjectLabel = (script: Script) => {
   const config = script.config as Partial<MaaFWScriptConfig> | undefined
@@ -553,12 +560,19 @@ const filteredTemplates = computed(() => {
   )
 })
 
-const availableScriptTypes = computed(() =>
+const availableScriptTypes = computed(() => scriptTypeDescriptors.value)
+const creatableScriptTypes = computed(() =>
   scriptTypeDescriptors.value.filter(descriptor => descriptor.available !== false)
 )
+const selectedTypeDescriptor = computed(() =>
+  scriptTypeDescriptors.value.find(descriptor => descriptor.type_key === selectedType.value)
+)
+const selectedTypeUnavailable = computed(() => selectedTypeDescriptor.value?.available === false)
 const scriptCreateTypeOptions = computed(() => createScriptTypeOptions(availableScriptTypes.value))
 
 const isScriptAvailable = (script: Script) => script.available !== false
+
+const canEditScript = (script: Script) => script.providerAvailable ?? isScriptAvailable(script)
 
 const ensureScriptAvailable = (script: Script) => {
   if (isScriptAvailable(script)) {
@@ -569,8 +583,16 @@ const ensureScriptAvailable = (script: Script) => {
 }
 
 onMounted(() => {
+  pluginSystemSubscriptionId = subscribe({ id: 'PluginSystem' }, message => {
+    const payload = message.data as { kind?: string } | undefined
+    if (payload?.kind === 'snapshot') void loadScripts()
+  })
   loadScripts()
   loadCurrentPlan()
+})
+
+onUnmounted(() => {
+  if (pluginSystemSubscriptionId) unsubscribe(pluginSystemSubscriptionId)
 })
 
 const loadScripts = async () => {
@@ -579,9 +601,8 @@ const loadScripts = async () => {
     const descriptors = await registryApi.getScriptTypes()
     scriptTypeDescriptors.value = descriptors
     if (!selectedType.value && descriptors.length > 0) {
-      selectedType.value = descriptors[0].type_key
+      selectedType.value = descriptors.find(item => item.available !== false)?.type_key || ''
     }
-
     const descriptorMap = descriptorMapFromList(descriptors)
     const scriptRecords = await registryApi.getScripts()
     const userRecords = await Promise.all(
@@ -689,7 +710,7 @@ const handleConfirmCreateMode = () => {
   } else {
     // 创建新脚本 - 进入类型选择
     createModeSelectVisible.value = false
-    selectedType.value = availableScriptTypes.value[0]?.type_key || 'MAA'
+    selectedType.value = creatableScriptTypes.value[0]?.type_key || 'MAA'
     typeSelectVisible.value = true
   }
 }
@@ -727,6 +748,10 @@ const handleConfirmScriptSelect = async () => {
 }
 
 const handleConfirmAddScript = async () => {
+  if (selectedTypeUnavailable.value) {
+    message.warning(selectedTypeDescriptor.value?.unavailable_reason || '当前脚本类型不可用')
+    return
+  }
   if (selectedType.value === 'General') {
     // 如果选择通用脚本，进入创建方式选择
     typeSelectVisible.value = false
@@ -843,7 +868,8 @@ const handleCancelTemplate = () => {
 }
 
 const handleEditScript = (script: Script) => {
-  if (!ensureScriptAvailable(script)) {
+  if (!canEditScript(script)) {
+    ensureScriptAvailable(script)
     return
   }
   router.push(getScriptEditPath(script))

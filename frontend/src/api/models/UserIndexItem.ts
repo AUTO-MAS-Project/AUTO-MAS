@@ -25,7 +25,6 @@ export namespace UserIndexItem {
         MAA_END_USER_CONFIG = 'MaaEndUserConfig',
         M9AUSER_CONFIG = 'M9AUserConfig',
         MAA_FWUSER_CONFIG = 'MaaFWUserConfig',
-        HSRUSER_CONFIG = 'HSRUserConfig',
         PLUGIN_USER_CONFIG = 'PluginUserConfig',
     }
 }

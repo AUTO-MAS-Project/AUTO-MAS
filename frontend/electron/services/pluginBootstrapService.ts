@@ -182,7 +182,6 @@ export class PluginBootstrapService {
         onProgress,
         selectedMirror
       )
-
       const state: PluginBootstrapState = {
         hash: checkResult.currentHash,
         packages: [...checkResult.packages],
@@ -236,13 +235,17 @@ export class PluginBootstrapService {
     const currentHash = this.calculateHash(allPackages)
     const lastState = this.loadState()
     const lastHash = lastState?.hash
+    const hasFailedPackages = (lastState?.failedPackages.length || 0) > 0
 
     return {
       packages,
       currentHash,
       lastHash,
       needsInstall:
-        !this.areSystemPackagesInstalled() || lastHash == null || lastHash !== currentHash,
+        !this.areSystemPackagesInstalled() ||
+        hasFailedPackages ||
+        lastHash == null ||
+        lastHash !== currentHash,
     }
   }
 
@@ -441,13 +444,13 @@ export class PluginBootstrapService {
           message: installResult.error || 'Unknown error',
         })
         logger.warn(
-          `Plugin bootstrap install failed and will be skipped: package=${packageName}, error=${installResult.error}`
+          `Plugin bootstrap install failed and will be retried later: package=${packageName}, error=${installResult.error}`
         )
         continue
       }
 
-      installedPackages.push(packageName)
       if (!installResult.hasPluginEntryPoint) {
+        failedPackages.push(packageName)
         const warning: PluginBootstrapWarning = {
           packageName,
           kind: 'missing-entry-point',
@@ -457,6 +460,7 @@ export class PluginBootstrapService {
         warnings.push(warning)
         logger.warn(`Plugin bootstrap package has no plugin entry point: package=${packageName}`)
       } else {
+        installedPackages.push(packageName)
         logger.info(`Plugin bootstrap install complete: package=${packageName}`)
       }
     }
@@ -474,6 +478,9 @@ export class PluginBootstrapService {
       const content = fs.readFileSync(this.pyprojectPath, 'utf-8')
       const sectionBody = this.extractBootstrapSection(content)
       if (sectionBody == null) {
+        logger.warn(
+          `Missing ${PYPROJECT_BOOTSTRAP_SECTION}, skipping declared plugin bootstrap packages`
+        )
         return []
       }
       return this.extractDeclaredPackages(sectionBody)

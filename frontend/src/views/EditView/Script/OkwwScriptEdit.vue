@@ -116,7 +116,9 @@
                 <template #label>
                   <span class="form-label">
                     手动终止任务时关闭游戏
-                    <a-tooltip title="关闭后手动中止任务不会杀掉游戏进程，便于调试；正常失败/异常仍会兜底关闭">
+                    <a-tooltip
+                      title="关闭后手动中止任务不会杀掉游戏进程，便于调试；正常失败/异常仍会兜底关闭"
+                    >
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
                   </span>

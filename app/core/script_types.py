@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.models.ConfigBase import (
     BoolValidator,
@@ -109,6 +109,21 @@ LEGACY_SCRIPT_TYPE_BY_TYPE_KEY = {
 }
 
 
+@dataclass(frozen=True, slots=True)
+class ScriptRecordCapability:
+    """单条脚本配置解析后的可用能力。"""
+
+    available: bool = True
+    unavailable_reason: str | None = None
+    supported_modes: tuple[str, ...] | None = None
+
+
+class _UnavailablePluginConfig(BaseModel):
+    """在 provider 缺失时原样保留插件自有配置。"""
+
+    model_config = ConfigDict(extra="allow")
+
+
 @dataclass(slots=True)
 class ScriptTypeProvider:
     """脚本类型提供者。"""
@@ -129,6 +144,9 @@ class ScriptTypeProvider:
     legacy_user_config_class_name: str | None = None
     is_builtin: bool = False
     bind_related_config: Callable[[Any], None] | None = None
+    record_capability_resolver: (
+        Callable[[dict[str, Any]], ScriptRecordCapability] | None
+    ) = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def build_script_schema(self) -> dict[str, Any]:
@@ -149,6 +167,42 @@ class ScriptTypeProvider:
         """创建脚本对应的运行管理器。"""
 
         return self.manager_factory(script_item)
+
+    def resolve_record_capability(
+        self,
+        config_data: dict[str, Any],
+    ) -> ScriptRecordCapability:
+        """解析单条脚本记录的可用状态和运行模式。"""
+
+        globally_available = self.metadata.get("available", True) is not False
+        global_reason = str(self.metadata.get("unavailable_reason") or "").strip() or None
+        if not globally_available:
+            return ScriptRecordCapability(
+                available=False,
+                unavailable_reason=global_reason,
+                supported_modes=(),
+            )
+
+        capability = (
+            self.record_capability_resolver(config_data)
+            if self.record_capability_resolver is not None
+            else ScriptRecordCapability()
+        )
+        modes = (
+            self.supported_modes
+            if capability.supported_modes is None
+            else capability.supported_modes
+        )
+        invalid_modes = [mode for mode in modes if mode not in TASK_MODES]
+        if invalid_modes:
+            raise ValueError(
+                f"脚本类型 {self.type_key} 的记录能力包含非法模式: {invalid_modes}"
+            )
+        return ScriptRecordCapability(
+            available=capability.available,
+            unavailable_reason=capability.unavailable_reason,
+            supported_modes=tuple(modes) if capability.available else (),
+        )
 
 
 class ScriptTypeRegistry:
@@ -308,8 +362,6 @@ class ScriptTypeRegistry:
         """注册内建脚本类型。"""
 
         from app.models.config import (
-            HSRConfig,
-            HSRUserConfig,
             MaaEndConfig,
             MaaEndUserConfig,
             SrcConfig,
@@ -351,17 +403,6 @@ class ScriptTypeRegistry:
                 manager_factory=_lazy_manager("app.task.MaaEnd.manager", "MaaEndManager"),
                 icon="MaaEnd",
                 editor_kind="builtin:maaend",
-                is_builtin=True,
-            ),
-            ScriptTypeProvider(
-                type_key="HSR",
-                display_name="HSR脚本",
-                script_config_class=HSRConfig,
-                user_config_class=HSRUserConfig,
-                supported_modes=("AutoProxy", "ManualReview", "ScriptConfig"),
-                manager_factory=_lazy_manager("app.task.HSR.manager", "HSRManager"),
-                icon="HSR",
-                editor_kind="builtin:hsr",
                 is_builtin=True,
             ),
             ScriptAdapterDefinition(
@@ -486,6 +527,7 @@ def build_descriptor(provider: ScriptTypeProvider) -> dict[str, Any]:
         "legacy_user_config_class_name": provider.legacy_user_config_class_name,
         "is_builtin": provider.is_builtin,
         "available": provider.metadata.get("available", True) is not False,
+        "unavailable_reason": provider.metadata.get("unavailable_reason"),
     }
 
 
@@ -517,6 +559,33 @@ def build_legacy_fallback_provider_by_type_key(type_key: str) -> ScriptTypeProvi
     return _build_legacy_fallback_provider(
         str(type_key or "").strip(),
         LEGACY_SCRIPT_TYPE_BY_TYPE_KEY,
+    )
+
+
+def build_unavailable_plugin_fallback_provider(type_key: str) -> ScriptTypeProvider:
+    """为已持久化但插件缺失的脚本构造只读 provider。"""
+
+    normalized_type_key = str(type_key or "").strip()
+    if not normalized_type_key:
+        raise ValueError("插件脚本类型键不能为空")
+
+    unavailable_reason = f"插件脚本类型 {normalized_type_key} 当前未加载"
+    return ScriptTypeProvider(
+        type_key=normalized_type_key,
+        display_name=f"{normalized_type_key} 插件脚本",
+        script_config_class=_UnavailablePluginConfig,
+        user_config_class=_UnavailablePluginConfig,
+        supported_modes=(),
+        manager_factory=_make_unavailable_manager_factory(normalized_type_key),
+        script_schema={"groups": []},
+        user_schema={"groups": []},
+        editor_kind="schema",
+        is_builtin=False,
+        metadata={
+            "available": False,
+            "unavailable_reason": unavailable_reason,
+            "source": "plugin-offline",
+        },
     )
 
 
@@ -728,7 +797,6 @@ def _bind_builtin_script_config_models(global_config: Any) -> None:
     from app.models.config import (
         GeneralConfig as LegacyGeneralConfig,
         GeneralUserConfig as LegacyGeneralUserConfig,
-        HSRConfig,
         M9AConfig,
         MaaConfig,
         MaaEndConfig,
@@ -747,14 +815,12 @@ def _bind_builtin_script_config_models(global_config: Any) -> None:
         M9AConfig,
         MaaFWConfig,
         OkwwConfig,
-        HSRConfig,
     )
     for config_class in builtin_script_types:
         global_config.ScriptConfig.sub_config_type[config_class.__name__] = config_class
 
     # General 已迁移为插件脚本容器，这里只保留旧类名到旧模型的兼容装载映射。
     global_config.ScriptConfig.sub_config_type["GeneralConfig"] = LegacyGeneralConfig
-
     MaaConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
     MaaEndConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig
     SrcConfig.related_config["EmulatorConfig"] = global_config.EmulatorConfig

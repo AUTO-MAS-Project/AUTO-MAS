@@ -353,7 +353,20 @@ class Task(TaskExecuteBase):
                 )
                 continue
 
-            if self.task_info.mode not in provider.supported_modes:
+            capability = await Config.get_script_record_capability(current_script_uid)
+            if not capability.available:
+                script_item.status = "异常"
+                reason = capability.unavailable_reason or "脚本当前不可用"
+                logger.error(f"脚本类型 {provider.type_key} 当前不可用: {reason}")
+                await Config.send_websocket_message(
+                    id=self.task_info.task_id,
+                    type="Info",
+                    data={"Error": reason},
+                )
+                continue
+
+            if self.task_info.mode not in (capability.supported_modes or ()):
+                script_item.status = "异常"
                 logger.error(
                     f"脚本类型 {provider.type_key} 不支持任务模式 {self.task_info.mode}"
                 )
@@ -553,6 +566,38 @@ class _TaskManager:
         self._startup_queue_started = False
         self._startup_queue_running = False
 
+    @staticmethod
+    def _queue_script_ids(queue_id: uuid.UUID) -> list[uuid.UUID]:
+        """返回队列中实际引用的脚本 ID。"""
+
+        return [
+            uuid.UUID(script_id)
+            for queue_item in Config.QueueConfig[queue_id].QueueItem.values()
+            if (
+                script_id := str(queue_item.get("Info", "ScriptId") or "").strip()
+            )
+            and script_id != "-"
+        ]
+
+    async def _validate_task_capabilities(
+        self,
+        mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"],
+        script_ids: list[uuid.UUID],
+    ) -> None:
+        """在创建任务前校验所有目标脚本的逐记录能力。"""
+
+        for script_id in script_ids:
+            if script_id not in Config.ScriptConfig:
+                raise ValueError(f"任务引用的脚本 {script_id} 不存在")
+            script = Config.ScriptConfig[script_id]
+            capability = await Config.get_script_record_capability(script_id)
+            script_name = script.get("Info", "Name") or str(script_id)
+            if not capability.available:
+                reason = capability.unavailable_reason or "脚本当前不可用"
+                raise RuntimeError(f"脚本 {script_name} 当前不可用: {reason}")
+            if mode not in (capability.supported_modes or ()):
+                raise RuntimeError(f"脚本 {script_name} 不支持任务模式 {mode}")
+
     async def add_task(
         self,
         mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"],
@@ -602,6 +647,13 @@ class _TaskManager:
             user_uid = None
         else:
             raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
+
+        target_script_ids = (
+            self._queue_script_ids(queue_id)
+            if queue_id is not None
+            else [script_uid] if script_uid is not None else []
+        )
+        await self._validate_task_capabilities(mode, target_script_ids)
 
         if script_uid is not None and Config.ScriptConfig[script_uid].is_locked:
             raise RuntimeError(
@@ -705,15 +757,19 @@ class _TaskManager:
 
                 if queue.get("Info", "StartUpEnabled"):
                     logger.info(f"启动时需要运行的队列：{uid}")
-                    await TaskManager.add_task(
-                        "AutoProxy",
-                        str(uid),
-                        new_task_info={
-                            "queueId": str(uid),
-                            "taskName": f"队列 - {queue.get('Info', 'Name')}",
-                            "taskType": "启动时代理",
-                        },
-                    )
+                    try:
+                        await TaskManager.add_task(
+                            "AutoProxy",
+                            str(uid),
+                            new_task_info={
+                                "queueId": str(uid),
+                                "taskName": f"队列 - {queue.get('Info', 'Name')}",
+                                "taskType": "启动时代理",
+                            },
+                        )
+                    except (RuntimeError, ValueError) as error:
+                        logger.error(f"启动时队列 {uid} 无法创建任务：{error}")
+                        continue
         finally:
             self._startup_queue_running = False
 

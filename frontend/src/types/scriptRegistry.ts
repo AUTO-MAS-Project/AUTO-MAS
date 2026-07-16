@@ -17,6 +17,7 @@ export interface ScriptTypeDescriptor {
   legacy_user_config_class_name?: string | null
   is_builtin: boolean
   available?: boolean
+  unavailable_reason?: string | null
 }
 
 export interface ScriptTypeGetOut {
@@ -34,6 +35,8 @@ export interface ScriptRecord {
   schema: SchemaDefinition
   editor_kind: string
   supported_modes: string[]
+  available?: boolean
+  unavailable_reason?: string | null
   icon?: string | null
   icon_url?: string | null
   theme_color?: string | null

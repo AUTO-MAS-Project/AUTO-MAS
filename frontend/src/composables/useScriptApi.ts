@@ -10,12 +10,9 @@ import {
   type PluginScriptConfig,
   ScriptIndexItem,
   type SrcConfig,
-  type HSRConfig,
-  type HSRStageOptionsData,
   ScriptCreateIn,
   type ScriptReorderIn,
   UserIndexItem,
-  HsrService,
   Service,
 } from '@/api'
 import type { OkScriptScriptConfig, ScriptDetail, ScriptType } from '@/types/script'
@@ -32,10 +29,7 @@ type ScriptListConfig =
   | MaaEndConfig
   | M9AConfig
   | MaaFWConfig
-  | HSRConfig
   | PluginScriptConfig
-
-type HSRStageEngine = 'M7A' | 'SRA'
 
 const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type> = {
   MAA: ScriptCreateIn.type.MAA,
@@ -45,7 +39,6 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   MaaFW: ScriptCreateIn.type.MAA_FW,
   Okww: ScriptCreateIn.type.OKWW,
   OkScript: ScriptCreateIn.type.OK_SCRIPT,
-  HSR: ScriptCreateIn.type.HSR,
   General: ScriptCreateIn.type.GENERAL,
 }
 
@@ -56,7 +49,6 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   [ScriptIndexItem.type.MAA_END_CONFIG]: 'MaaEnd',
   [ScriptIndexItem.type.M9ACONFIG]: 'M9A',
   [ScriptIndexItem.type.MAA_FWCONFIG]: 'MaaFW',
-  [ScriptIndexItem.type.HSRCONFIG]: 'HSR',
 }
 
 const resolvePluginTypeKey = (config: unknown): ScriptType | null => {
@@ -1271,115 +1263,6 @@ export function useScriptApi() {
                             : false,
                       },
                     }
-                  } else if (userIndex.type === 'HSRUserConfig' && userData) {
-                    const hsrUserData = userData as any
-                    return {
-                      id: userIndex.uid,
-                      name: hsrUserData.Info?.Name || `用户${userIndex.uid}`,
-                      Info: {
-                        Name:
-                          hsrUserData.Info?.Name !== undefined
-                            ? hsrUserData.Info.Name
-                            : `用户${userIndex.uid}`,
-                        Status:
-                          hsrUserData.Info?.Status !== undefined ? hsrUserData.Info.Status : true,
-                        Id: hsrUserData.Info?.Id !== undefined ? hsrUserData.Info.Id : '',
-                        Password:
-                          hsrUserData.Info?.Password !== undefined ? hsrUserData.Info.Password : '',
-                        Server:
-                          hsrUserData.Info?.Server !== undefined
-                            ? hsrUserData.Info.Server
-                            : 'CN-Official',
-                        RemainedDay:
-                          hsrUserData.Info?.RemainedDay !== undefined
-                            ? hsrUserData.Info.RemainedDay
-                            : -1,
-                        Notes: hsrUserData.Info?.Notes !== undefined ? hsrUserData.Info.Notes : '',
-                        Tag: hsrUserData.Info?.Tag !== undefined ? hsrUserData.Info.Tag : null,
-                      },
-                      Stage: {
-                        Channel:
-                          hsrUserData.Stage?.Channel !== undefined
-                            ? hsrUserData.Stage.Channel
-                            : 'CalyxGolden',
-                        ScriptStage:
-                          hsrUserData.Stage?.ScriptStage !== undefined
-                            ? hsrUserData.Stage.ScriptStage
-                            : '{ }',
-                        ScriptEchoOfWar:
-                          hsrUserData.Stage?.ScriptEchoOfWar !== undefined
-                            ? hsrUserData.Stage.ScriptEchoOfWar
-                            : '{ }',
-                      },
-                      TaskSwitch: {
-                        Daily:
-                          hsrUserData.TaskSwitch?.Daily !== undefined
-                            ? hsrUserData.TaskSwitch.Daily
-                            : true,
-                        ReceiveRewards:
-                          hsrUserData.TaskSwitch?.ReceiveRewards !== undefined
-                            ? hsrUserData.TaskSwitch.ReceiveRewards
-                            : true,
-                        DivergentUniverse:
-                          hsrUserData.TaskSwitch?.DivergentUniverse !== undefined
-                            ? hsrUserData.TaskSwitch.DivergentUniverse
-                            : true,
-                        CurrencyWars:
-                          hsrUserData.TaskSwitch?.CurrencyWars !== undefined
-                            ? hsrUserData.TaskSwitch.CurrencyWars
-                            : false,
-                        ForgottenHall:
-                          hsrUserData.TaskSwitch?.ForgottenHall !== undefined
-                            ? hsrUserData.TaskSwitch.ForgottenHall
-                            : false,
-                      },
-                      TaskOpt: {
-                        EchoOfWarWeekday:
-                          hsrUserData.TaskOpt?.EchoOfWarWeekday !== undefined
-                            ? hsrUserData.TaskOpt.EchoOfWarWeekday
-                            : 'Monday',
-                      },
-                      Notify: {
-                        Enabled:
-                          hsrUserData.Notify?.Enabled !== undefined
-                            ? hsrUserData.Notify.Enabled
-                            : false,
-                        IfSendStatistic:
-                          hsrUserData.Notify?.IfSendStatistic !== undefined
-                            ? hsrUserData.Notify.IfSendStatistic
-                            : false,
-                        IfSendMail:
-                          hsrUserData.Notify?.IfSendMail !== undefined
-                            ? hsrUserData.Notify.IfSendMail
-                            : false,
-                        ToAddress:
-                          hsrUserData.Notify?.ToAddress !== undefined
-                            ? hsrUserData.Notify.ToAddress
-                            : '',
-                        IfServerChan:
-                          hsrUserData.Notify?.IfServerChan !== undefined
-                            ? hsrUserData.Notify.IfServerChan
-                            : false,
-                        ServerChanKey:
-                          hsrUserData.Notify?.ServerChanKey !== undefined
-                            ? hsrUserData.Notify.ServerChanKey
-                            : '',
-                      },
-                      Data: {
-                        LastProxyDate:
-                          hsrUserData.Data?.LastProxyDate !== undefined
-                            ? hsrUserData.Data.LastProxyDate
-                            : '',
-                        ProxyTimes:
-                          hsrUserData.Data?.ProxyTimes !== undefined
-                            ? hsrUserData.Data.ProxyTimes
-                            : 0,
-                        IfPassCheck:
-                          hsrUserData.Data?.IfPassCheck !== undefined
-                            ? hsrUserData.Data.IfPassCheck
-                            : false,
-                      },
-                    }
                   }
 
                   return null
@@ -1459,27 +1342,6 @@ export function useScriptApi() {
       return null
     } finally {
       loading.value = false
-    }
-  }
-
-  const getHsrStageOptions = async (
-    scriptId: string,
-    engine: HSRStageEngine
-  ): Promise<HSRStageOptionsData | null> => {
-    try {
-      const payload = await HsrService.getHsrStageOptionsApiApiScriptsHsrStageOptionsGet(
-        scriptId,
-        engine
-      )
-      if (payload?.code !== 200) {
-        throw new Error(payload?.message || '接口返回异常')
-      }
-      return payload.data ?? null
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '获取 HSR 体力副本选项失败'
-      error.value = errorMsg
-      logger.error(`获取 HSR 体力副本选项失败: ${errorMsg}`)
-      return null
     }
   }
 
@@ -1588,7 +1450,6 @@ export function useScriptApi() {
     getScripts,
     getScriptsWithUsers,
     getScript,
-    getHsrStageOptions,
     deleteScript,
     updateScript,
     reorderScript,

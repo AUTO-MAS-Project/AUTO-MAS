@@ -68,15 +68,7 @@ const DEFAULT_USER_SHAPE = {
   },
 }
 
-export const BUILTIN_SCRIPT_TYPES = new Set([
-  'MAA',
-  'SRC',
-  'MaaEnd',
-  'M9A',
-  'MaaFW',
-  'OkScript',
-  'HSR',
-])
+export const BUILTIN_SCRIPT_TYPES = new Set(['MAA', 'SRC', 'MaaEnd', 'M9A', 'MaaFW', 'OkScript'])
 
 export const isBuiltinScriptType = (type: string) => BUILTIN_SCRIPT_TYPES.has(type)
 
@@ -153,7 +145,6 @@ const BUILTIN_EDITOR_SEGMENTS: Record<string, string> = {
   'builtin:maafw': 'maafw',
   'builtin:ok-script': 'ok-script',
   'builtin:okef': 'ok-script',
-  'builtin:hsr': 'hsr',
 }
 
 const TYPE_KEY_EDITOR_SEGMENTS: Record<string, string> = {
@@ -163,9 +154,15 @@ const TYPE_KEY_EDITOR_SEGMENTS: Record<string, string> = {
   Okww: 'okww',
 }
 
+const PLUGIN_EDITOR_SEGMENTS: Record<string, string> = {
+  'plugin:automas_script_hsr': 'hsr',
+}
+
 export const getScriptEditPath = (script: Pick<Script, 'id' | 'type' | 'editorKind'>) => {
   const segment =
-    BUILTIN_EDITOR_SEGMENTS[script.editorKind ?? ''] ?? TYPE_KEY_EDITOR_SEGMENTS[script.type]
+    BUILTIN_EDITOR_SEGMENTS[script.editorKind ?? ''] ??
+    PLUGIN_EDITOR_SEGMENTS[script.editorKind ?? ''] ??
+    TYPE_KEY_EDITOR_SEGMENTS[script.type]
   if (segment) {
     return `/scripts/${script.id}/edit/${segment}`
   }
@@ -177,7 +174,9 @@ export const getScriptEditPath = (script: Pick<Script, 'id' | 'type' | 'editorKi
 
 export const getUserCreatePath = (script: Pick<Script, 'id' | 'type' | 'editorKind'>) => {
   const segment =
-    BUILTIN_EDITOR_SEGMENTS[script.editorKind ?? ''] ?? TYPE_KEY_EDITOR_SEGMENTS[script.type]
+    BUILTIN_EDITOR_SEGMENTS[script.editorKind ?? ''] ??
+    PLUGIN_EDITOR_SEGMENTS[script.editorKind ?? ''] ??
+    TYPE_KEY_EDITOR_SEGMENTS[script.type]
   if (segment) {
     return `/scripts/${script.id}/users/add/${segment}`
   }
@@ -192,7 +191,9 @@ export const getUserEditPath = (
   user: Pick<User, 'id'>
 ) => {
   const segment =
-    BUILTIN_EDITOR_SEGMENTS[script.editorKind ?? ''] ?? TYPE_KEY_EDITOR_SEGMENTS[script.type]
+    BUILTIN_EDITOR_SEGMENTS[script.editorKind ?? ''] ??
+    PLUGIN_EDITOR_SEGMENTS[script.editorKind ?? ''] ??
+    TYPE_KEY_EDITOR_SEGMENTS[script.type]
   if (segment) {
     return `/scripts/${script.id}/users/${user.id}/edit/${segment}`
   }
@@ -253,7 +254,8 @@ export const normalizeScriptRecord = (
   users: ScriptUserRecord[] = []
 ): Script => {
   const descriptor = descriptorMap[record.type]
-  const available = Boolean(descriptor) && descriptor?.available !== false
+  const providerAvailable = Boolean(descriptor) && descriptor?.available !== false
+  const available = record.available ?? providerAvailable
   const info =
     record.config?.Info && typeof record.config.Info === 'object' ? record.config.Info : {}
   return {
@@ -273,8 +275,13 @@ export const normalizeScriptRecord = (
     editHint: record.edit_hint ?? null,
     displayName: descriptor?.display_name ?? record.type,
     isBuiltin: descriptor?.is_builtin ?? isBuiltinScriptType(record.type),
+    providerAvailable,
     available,
-    unavailableReason: available ? null : `脚本类型 ${record.type} 当前未启用，暂时不能操作`,
+    unavailableReason: available
+      ? null
+      : record.unavailable_reason ||
+        descriptor?.unavailable_reason ||
+        `脚本类型 ${record.type} 当前未启用，暂时不能操作`,
     createTime: new Date().toLocaleString(),
   }
 }
