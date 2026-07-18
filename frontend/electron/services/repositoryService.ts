@@ -682,6 +682,8 @@ export class RepositoryService {
         // 复制文件/目录
         if (fs.statSync(srcPath).isDirectory()) {
           this.copyDirectory(srcPath, dstPath)
+        } else if (item === 'pyproject.toml') {
+          this.copyPyprojectToml(srcPath, dstPath)
         } else {
           fs.copyFileSync(srcPath, dstPath)
         }
@@ -693,6 +695,60 @@ export class RepositoryService {
         throw error
       }
     }
+  }
+
+  /**
+   * 复制 pyproject.toml，剥离开发期专用 section（运行时 uv sync 不需要）
+   */
+  private copyPyprojectToml(src: string, dest: string): void {
+    const content = fs.readFileSync(src, 'utf-8')
+    const stripped = this.stripTomlSections(content, [
+      '[dependency-groups]',
+      '[tool.uv.workspace]',
+      '[tool.uv.sources]',
+    ])
+    fs.writeFileSync(dest, stripped, 'utf-8')
+    logger.info('复制完成: pyproject.toml（已剥离开发期 section）')
+  }
+
+  /**
+   * 从 TOML 文本中移除指定 section（含其所有行直到下一个 header）
+   */
+  private stripTomlSections(text: string, headers: string[]): string {
+    const lines = text.split('\n')
+    const headerSet = new Set(headers)
+
+    const isHeader = (line: string): boolean => {
+      const s = line.trim()
+      return s.startsWith('[') && s.endsWith(']') && !s.startsWith('[[')
+    }
+
+    const skipFrom: number[] = []
+    for (let i = 0; i < lines.length; i++) {
+      if (headerSet.has(lines[i].trim())) {
+        skipFrom.push(i)
+      }
+    }
+
+    if (skipFrom.length === 0) return text
+
+    const skip = new Set<number>()
+    for (const start of skipFrom) {
+      let end = lines.length
+      for (let i = start + 1; i < lines.length; i++) {
+        if (isHeader(lines[i])) {
+          end = i
+          break
+        }
+      }
+      for (let i = start; i < end; i++) {
+        skip.add(i)
+      }
+    }
+
+    const result = lines.filter((_, i) => !skip.has(i))
+    // 清理连续空行
+    return result.join('\n').replace(/\n{3,}/g, '\n\n')
   }
 
   /**

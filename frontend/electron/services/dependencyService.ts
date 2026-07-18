@@ -358,7 +358,7 @@ export class DependencyService {
       // 独立安装到 plugins/pypi/site-packages，不能随本体环境落地。
       const proc = spawn(
         this.uvExe,
-        ['sync', '--python', this.pythonExe, '--no-install-project', '--no-dev'],
+        ['sync', '--python', this.pythonExe, '--no-install-project', '--no-dev', '--no-sources'],
         {
           cwd: this.appRoot,
           stdio: 'pipe',
