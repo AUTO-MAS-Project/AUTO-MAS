@@ -66,6 +66,7 @@ packages = [
 
 [tool.uv]
 package = false
+environments = ["sys_platform == 'win32'"]
 
 [tool.uv.workspace]
 members = [
