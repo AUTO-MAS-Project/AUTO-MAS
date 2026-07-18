@@ -201,11 +201,8 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
               :value="settings.Function?.IfBlockAd"
               size="large"
               style="width: 100%"
-              (checked:@change="
-              @change="
-              any)=""
+              @change="(checked: any) => handleSettingChange('Function', 'IfBlockAd', checked)"
             >
-              handleSettingChange('Function', 'IfBlockAd', checked)" >
               <a-select-option :value="true">是</a-select-option>
               <a-select-option :value="false">否</a-select-option>
             </a-select>
