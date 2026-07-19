@@ -21,6 +21,7 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
 import uuid
 from pathlib import Path
 from typing import Any, Literal
@@ -29,6 +30,7 @@ from fastapi import APIRouter, Body
 
 from app.core import Config
 from app.models.schema import *
+from app.task.Okww.AutoProxy import _OKWW_REL_CONFIG_DIR
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 
@@ -610,7 +612,7 @@ async def get_m9a_available_tasks(script_id: str):
     try:
         script_config = Config.ScriptConfig[uuid.UUID(script_id)]
         m9a_path = Path(script_config.get("Info", "Path"))
-        loader = M9ATaskLoader(m9a_path)
+        loader = await asyncio.to_thread(M9ATaskLoader.get_cached, m9a_path)
         
         # 获取可用任务，并添加完整定义（包括 option 和 _option_definitions）
         available_tasks = loader.get_available_tasks()
@@ -712,12 +714,8 @@ async def get_okww_configs_list(script_id: str, user_id: str):
         # 详细模式：每个用户独立持有一份 OK-WW 配置。
         mas_config_dir = _okww_mas_config_dir(script_id, user_id)
 
-        # ok-ww 源配置目录（用于自动初始化）
-        raw_config_path = script_config.get("Script", "ConfigPath")
-        okww_configs_dir = Path(raw_config_path) if raw_config_path else None
-        if not okww_configs_dir or not okww_configs_dir.exists():
-            if root_path:
-                okww_configs_dir = Path(root_path) / "data" / "apps" / "ok-ww" / "working" / "configs"
+        # ok-ww 源配置目录（从 RootPath 派生，用于自动初始化）
+        okww_configs_dir = Path(root_path) / _OKWW_REL_CONFIG_DIR if root_path else None
 
         # 自动初始化：用户目录为空时从 ok-ww configs 复制默认配置
         need_init = not mas_config_dir.exists() or not any(mas_config_dir.iterdir())
@@ -762,66 +760,6 @@ async def get_okww_configs_list(script_id: str, user_id: str):
             "status": "error",
             "message": f"{type(e).__name__}: {str(e)}",
             "data": [],
-        }
-
-
-@router.post(
-    "/okww/configs/update",
-    tags=["OKWW"],
-    summary="更新 OK-WW 配置文件",
-    status_code=200,
-)
-async def update_okww_config(
-    script_id: str = Body(...),
-    user_id: str = Body(...),
-    filename: str = Body(...),
-    data: dict = Body(...),
-):
-    """
-    更新 OK-WW 配置文件
-
-    Args:
-        script_id: OK-WW 脚本 ID
-        user_id: 用户 ID
-        filename: 配置文件名（如 DailyTask.json）
-        data: 要更新的配置数据
-
-    Returns:
-        dict: 操作结果
-    """
-    try:
-        import json
-
-        # 写入用户配置目录
-        mas_config_dir = _okww_mas_config_dir(script_id, user_id)
-        mas_config_dir.mkdir(parents=True, exist_ok=True)
-
-        filepath = _okww_config_file_path(mas_config_dir, filename)
-
-        # 读取现有配置
-        existing_data = {}
-        if filepath.exists():
-            with open(filepath, "r", encoding="utf-8") as f:
-                existing_data = json.load(f)
-
-        # 合并更新
-        existing_data.update(data)
-
-        # 写入用户目录
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(existing_data, f, ensure_ascii=False, indent=4)
-
-        return {
-            "code": 200,
-            "status": "success",
-            "message": f"配置文件 {filename} 已更新",
-            "data": existing_data,
-        }
-    except Exception as e:
-        return {
-            "code": 500,
-            "status": "error",
-            "message": f"{type(e).__name__}: {str(e)}",
         }
 
 

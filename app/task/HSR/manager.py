@@ -633,6 +633,7 @@ class HSRManager(TaskExecuteBase):
 
         script_config = Config.ScriptConfig[script_id]
         await script_config.UserData.load(await self.user_config.toDict())
+        await Config.ScriptConfig.save()
         logger.success("HSR 人工检查结果已写回用户配置")
 
     async def _unlock_script_config(self) -> bool:

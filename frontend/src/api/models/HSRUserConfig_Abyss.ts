@@ -11,3 +11,4 @@ export type HSRUserConfig_Abyss = {
      */
     Snapshots?: (string | null);
 };
+

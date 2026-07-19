@@ -181,16 +181,9 @@
                             {{ tag.text }}
                           </a-tag>
                         </div>
-                        <!-- 用户详细信息 - 通用脚本用户 -->
-                        <div v-if="script.type === 'General'" class="user-info-tags">
+                        <!-- 用户详细信息 - 后端提供 Tag 的脚本用户 -->
+                        <div v-if="script.type === 'General' || script.type === 'Okww'" class="user-info-tags">
                           <!-- 直接使用后端提供的Tag字段 -->
-                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
-                            :title="tag.text" class="info-tag" :color="tag.color">
-                            {{ tag.text }}
-                          </a-tag>
-                        </div>
-                        <!-- 用户详细信息 - ok-ww 脚本用户 -->
-                        <div v-if="script.type === 'Okww'" class="user-info-tags">
                           <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
                             :title="tag.text" class="info-tag" :color="tag.color">
                             {{ tag.text }}
@@ -202,6 +195,11 @@
                           <a-tag v-if="user.Info.Notes && user.Info.Notes !== '无' && user.Info.Notes.trim() !== ''"
                                  color="geekblue" class="info-tag" :title="user.Info.Notes">
                             {{ truncateText(user.Info.Notes, 10) }}
+                          </a-tag>
+
+                          <a-tag v-for="(tag, index) in getM9AOnceStatusTags(script, user)" :key="`m9a-once-${index}`"
+                                 :title="tag.text" class="info-tag" :color="tag.color">
+                            {{ tag.text }}
                           </a-tag>
 
                           <!-- 后端提供的Tag字段 -->
@@ -373,6 +371,10 @@ const STAGE_NAME_MAP: Record<string, string> = {
   'PR-D-1': '近/特芯片',
   'PR-D-2': '近/特芯片组',
 }
+
+const M9A_PSYCHUBE_NAMES = ['每日心相（意志解析）', '每日心相']
+const M9A_LIMBO_NAMES = ['自动深眠']
+const M9A_LUCIDSCAPE_NAMES = ['自动醒梦']
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
@@ -660,6 +662,67 @@ const getServerDisplayName = (server: string): string => {
 // M9A服务器标签颜色映射
 const getM9AServerTagColor = (_resource: string): string => {
   return 'blue'
+}
+
+const getM9ATodayString = (): string => {
+  return new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+
+const getM9ACurrentMonthString = (): string => {
+  return getM9ATodayString().slice(0, 7)
+}
+
+const parseM9ATaskQueue = (queue: unknown): Array<{ name?: string }> => {
+  if (Array.isArray(queue)) return queue as Array<{ name?: string }>
+  if (typeof queue !== 'string') return []
+
+  try {
+    const parsed = JSON.parse(queue)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+const hasM9ATaskInQueue = (queue: Array<{ name?: string }>, names: string[]): boolean => {
+  return queue.some(item => item.name && names.includes(item.name))
+}
+
+const getM9AOnceStatusTags = (script: Script, user: User) => {
+  const runConfig = (script.config as any)?.Run || {}
+  const queue = parseM9ATaskQueue((user as any).Task?.Queue)
+  const data = (user as any).Data || {}
+  const tags: Array<{ text: string; color: string }> = []
+
+  if (data.IfPassCheck === false) {
+    return tags
+  }
+
+  if (runConfig.IfPsychubeDailyOnce && hasM9ATaskInQueue(queue, M9A_PSYCHUBE_NAMES)) {
+    const completed = data.LastPsychubeDate === getM9ATodayString()
+    tags.push({
+      text: `每日心相：${completed ? '已完成' : '未完成'}`,
+      color: completed ? 'green' : 'orange',
+    })
+  }
+
+  if (runConfig.IfSleepDreamMonthlyOnce) {
+    const hasLimbo = hasM9ATaskInQueue(queue, M9A_LIMBO_NAMES)
+    const hasLucidscape = hasM9ATaskInQueue(queue, M9A_LUCIDSCAPE_NAMES)
+    if (hasLimbo || hasLucidscape) {
+      const currentMonth = getM9ACurrentMonthString()
+      const completed =
+        (!hasLimbo || data.LastLimboMonth === currentMonth) &&
+        (!hasLucidscape || data.LastLucidscapeMonth === currentMonth)
+
+      tags.push({
+        text: `深眠浅梦：${completed ? '已完成' : '未完成'}`,
+        color: completed ? 'green' : 'orange',
+      })
+    }
+  }
+
+  return tags
 }
 
 // M9A剩余天数颜色（智能着色）
