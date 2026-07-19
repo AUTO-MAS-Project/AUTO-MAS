@@ -29,7 +29,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceBase
 from app.services import System
-from app.utils import get_logger, ProcessManager
+from app.utils import get_logger, ProcessManager, is_process_running
 from app.utils.constants import UTC4
 from .tools import login
 
@@ -109,15 +109,25 @@ class ManualReviewTask(TaskExecuteBase):
             try:
                 self.script_info.log = "正在启动游戏..."
                 if self.emulator_manager is None:
-                    logger.info(
-                        f"启动终末地: {self.script_config.get('Game', 'Path')} - {self.script_config.get('Game', 'Arguments')}"
-                    )
-                    await self.game_process_manager.open_process(
-                        self.script_config.get("Game", "Path"),
-                        *str(self.script_config.get("Game", "Arguments")).split(" "),
-                    )
+                    if is_process_running("Endfield.exe"):
+                        logger.info(
+                            "检测到终末地客户端进程已在运行，跳过由 MAS 重复启动游戏"
+                        )
+                        self.script_info.log = "检测到游戏已在运行，跳过启动游戏"
+                    else:
+                        logger.info(
+                            f"启动终末地: {self.script_config.get('Game', 'Path')} - {self.script_config.get('Game', 'Arguments')}"
+                        )
+                        await self.game_process_manager.open_process(
+                            self.script_config.get("Game", "Path"),
+                            *str(self.script_config.get("Game", "Arguments")).split(
+                                " "
+                            ),
+                        )
+                        await asyncio.sleep(
+                            self.script_config.get("Game", "WaitTime")
+                        )
                     emulator_info = None
-                    await asyncio.sleep(self.script_config.get("Game", "WaitTime"))
                 else:
                     logger.info(
                         f"启动模拟器: {self.script_config.get('Game', 'EmulatorIndex')}"
@@ -241,7 +251,8 @@ class ManualReviewTask(TaskExecuteBase):
         if self.check_result != "Pass":
             return
 
-        await self.kill_managed_process()
+        if not getattr(self.task_info, "game_on_stop", False):
+            await self.kill_managed_process()
 
         if self.run_book["SignIn"] and self.run_book["PassCheck"]:
             logger.info(f"用户 {self.cur_user_uid} 通过人工排查")

@@ -51,6 +51,9 @@ from app.utils.constants import POWER_SIGN_MAP
 
 logger = get_logger("业务调度")
 
+# 调试开关：手动停止任务时保留游戏进程。
+GAME_ON_STOP = True
+
 
 class TaskInfo(TaskItem):
 
@@ -346,6 +349,8 @@ class _TaskManager:
             task_item_list = list(self.task_handler.values())
             for task_item in task_item_list:
                 if not task_item.is_closing:
+                    if GAME_ON_STOP:
+                        task_item.task_info.game_on_stop = True
                     task_item.cancel()
                     task_item.is_closing = True
                     await task_item.accomplish.wait()
@@ -355,6 +360,10 @@ class _TaskManager:
                 raise ValueError("未找到对应任务")
             if self.task_handler[uid].is_closing:
                 raise RuntimeError("任务已在中止中")
+            if GAME_ON_STOP:
+                self.task_handler[
+                    uid
+                ].task_info.game_on_stop = True
             self.task_handler[uid].cancel()
             self.task_handler[uid].is_closing = True
             logger.info(f"等待任务 {task_id} 结束...")

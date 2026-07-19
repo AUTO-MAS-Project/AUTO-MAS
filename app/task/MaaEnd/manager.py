@@ -178,7 +178,9 @@ class MaaEndManager(TaskExecuteBase):
 
         if self.task_info.mode in ["AutoProxy", "ManualReview"]:
 
-            if self.emulator_manager is not None:
+            if self.emulator_manager is not None and not getattr(
+                self.task_info, "game_on_stop", False
+            ):
                 await self.emulator_manager.close(
                     self.script_config.get("Game", "EmulatorIndex")
                 )
