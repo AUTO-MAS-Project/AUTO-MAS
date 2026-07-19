@@ -34,23 +34,5 @@ export default defineConfig({
   build: {
     chunkSizeWarningLimit: 5000,
     sourcemap: false,
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          // Monaco 编辑器 (~3MB) 单独分包，不阻塞首屏
-          if (id.includes('monaco-editor')) {
-            return 'monaco'
-          }
-          // Ant Design Vue 组件库单独分包
-          if (id.includes('ant-design-vue') || id.includes('@ant-design')) {
-            return 'antd'
-          }
-          // Vue 生态核心库
-          if (id.includes('node_modules/vue') || id.includes('node_modules/@vue')) {
-            return 'vue-vendor'
-          }
-        },
-      },
-    },
   },
 })
