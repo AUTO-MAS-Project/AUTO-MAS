@@ -52,11 +52,10 @@ from app.utils.constants import POWER_SIGN_MAP
 logger = get_logger("业务调度")
 
 # 调试开关：手动停止任务时保留游戏进程。
-GAME_ON_STOP = True
+GAME_ON_STOP = False
 
 
 class TaskInfo(TaskItem):
-
     async def on_change(self):
         await Config.send_websocket_message(
             id=self.task_id,
@@ -72,7 +71,6 @@ class TaskInfo(TaskItem):
 
 
 class Task(TaskExecuteBase):
-
     def __init__(self, task_info: TaskInfo):
         super().__init__()
         self.task_info = task_info
@@ -210,7 +208,6 @@ class Task(TaskExecuteBase):
         )
 
         if self.task_info.mode == "AutoProxy" and self.task_info.queue_id is not None:
-
             if Config.power_sign == "NoAction":
                 Config.power_sign = Config.QueueConfig[
                     uuid.UUID(self.task_info.queue_id)
@@ -361,9 +358,7 @@ class _TaskManager:
             if self.task_handler[uid].is_closing:
                 raise RuntimeError("任务已在中止中")
             if GAME_ON_STOP:
-                self.task_handler[
-                    uid
-                ].task_info.game_on_stop = True
+                self.task_handler[uid].task_info.game_on_stop = True
             self.task_handler[uid].cancel()
             self.task_handler[uid].is_closing = True
             logger.info(f"等待任务 {task_id} 结束...")
@@ -377,7 +372,6 @@ class _TaskManager:
 
         logger.info("开始运行启动时任务")
         for uid, queue in Config.QueueConfig.items():
-
             if queue.get("Info", "StartUpEnabled"):
                 logger.info(f"启动时需要运行的队列：{uid}")
                 await TaskManager.add_task(
