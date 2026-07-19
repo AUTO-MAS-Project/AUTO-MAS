@@ -27,9 +27,11 @@
 import asyncio
 import ctypes
 import time
+from collections.abc import AsyncIterator
 from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
+
 import cv2
 import numpy as np
 import pyautogui
@@ -44,24 +46,25 @@ from app.utils import get_logger
 
 logger = get_logger("终末地登录")
 
+_IMAGE_ROOT = Path.cwd() / "res/MaaFW/image/EndFieldPC"
 _TEMPLATES = {
     "logout": (
-        Path.cwd() / "res/MaaFW/image/EndFieldPC/登出-1080p.png",
+        _IMAGE_ROOT / "登出-1080p.png",
         (1600, 100, 1920, 400),
         0.7,
     ),
     "main_out": (
-        Path.cwd() / "res/MaaFW/image/EndFieldPC/主界面退出.png",
+        _IMAGE_ROOT / "主界面退出.png",
         (0, 700, 400, 1080),
         0.6,
     ),
     "main_out_confirm": (
-        Path.cwd() / "res/MaaFW/image/EndFieldPC/主界面退出确认.png",
+        _IMAGE_ROOT / "主界面退出确认.png",
         (900, 500, 1500, 900),
         0.7,
     ),
     "logout_confirm": (
-        Path.cwd() / "res/MaaFW/image/EndFieldPC/登出确认.png",
+        _IMAGE_ROOT / "登出确认.png",
         (900, 450, 1500, 850),
         0.7,
     ),
@@ -91,21 +94,24 @@ def _ocr_engine() -> RapidOCR:
 
 
 @lru_cache(maxsize=None)
-def _load_template(path: Path) -> np.ndarray:
-    image_bytes = np.fromfile(path, dtype=np.uint8)
-    template = cv2.imdecode(image_bytes, cv2.IMREAD_COLOR)
-    return template
+def _load_template(path: Path) -> np.ndarray | None:
+    try:
+        return cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_COLOR)
+    except OSError:
+        return None
 
 
 def _activate_window(hwnd: int) -> None:
     if not win32gui.IsWindow(hwnd):
         raise RuntimeError("终末地主窗口已失效")
 
-    if win32gui.IsIconic(hwnd):
-        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-        time.sleep(0.15)
-    if not win32gui.IsWindowVisible(hwnd):
-        win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
+    show_command = (
+        win32con.SW_RESTORE
+        if win32gui.IsIconic(hwnd)
+        else win32con.SW_SHOW if not win32gui.IsWindowVisible(hwnd) else None
+    )
+    if show_command is not None:
+        win32gui.ShowWindow(hwnd, show_command)
         time.sleep(0.15)
 
     try:
@@ -142,9 +148,7 @@ def _capture_window(hwnd: int) -> np.ndarray:
             )
         )
 
-    screenshot = screenshot.resize(
-        (1920, 1080), Image.Resampling.LANCZOS
-    )
+    screenshot = screenshot.resize((1920, 1080), Image.Resampling.LANCZOS)
     return cv2.cvtColor(np.asarray(screenshot), cv2.COLOR_RGB2BGR)
 
 
@@ -153,6 +157,8 @@ def _find_template(frame: np.ndarray, name: str) -> Box | None:
     left, top, right, bottom = roi
     search = frame[top:bottom, left:right]
     template = _load_template(path)
+    if template is None:
+        return None
     if search.shape[0] < template.shape[0] or search.shape[1] < template.shape[1]:
         return None
 
@@ -212,59 +218,59 @@ def _login_form_exists() -> bool:
     return win32gui.FindWindow("Qt5158QWindowToolSaveBits", "Form") != 0
 
 
-async def _wait_template(
-    hwnd: int, name: str, timeout: int, *, click: bool = False
-) -> Box:
+async def _poll_frames(hwnd: int, timeout: int) -> AsyncIterator[np.ndarray]:
     deadline = asyncio.get_running_loop().time() + timeout
     while asyncio.get_running_loop().time() < deadline:
-        frame = await asyncio.to_thread(_capture_window, hwnd)
+        yield await asyncio.to_thread(_capture_window, hwnd)
+        await asyncio.sleep(1)
+
+
+async def _wait_template(
+    hwnd: int,
+    name: str,
+    timeout: int,
+    error: str,
+    *,
+    click: bool = False,
+) -> Box:
+    async for frame in _poll_frames(hwnd, timeout):
         match = _find_template(frame, name)
         if match is not None:
             if click:
                 await asyncio.to_thread(_click_box, hwnd, match)
             return match
-        await asyncio.sleep(1)
-    raise RuntimeError(f"等待登录界面元素超时: {name}")
+    raise RuntimeError(error)
 
 
 async def _open_login_form(hwnd: int) -> None:
     """Return the game to its login form from any supported screen."""
 
     logger.info("正在打开终末地登录表单")
-    deadline = asyncio.get_running_loop().time() + 120
+    if _login_form_exists():
+        logger.info("终末地登录表单已打开")
+        return
+
     next_escape_time = 0.0
-    while asyncio.get_running_loop().time() < deadline:
+    async for frame in _poll_frames(hwnd, 120):
         if _login_form_exists():
             logger.info("终末地登录表单已打开")
             return
 
-        frame = await asyncio.to_thread(_capture_window, hwnd)
-        logout = _find_template(frame, "logout")
-        if logout is not None:
-            logger.info("正在登出当前终末地账号")
-            await asyncio.to_thread(_click_box, hwnd, logout)
-            await _wait_template(
-                hwnd,
-                "logout_confirm",
-                10,
-                click=True,
-            )
-        elif (main_out := _find_template(frame, "main_out")) is not None:
-            logger.info("已识别主界面退出按钮")
-            await asyncio.to_thread(_click_box, hwnd, main_out)
-            await _wait_template(
-                hwnd,
-                "main_out_confirm",
-                10,
-                click=True,
-            )
+        for name, confirm, message, error in (
+            ("logout", "logout_confirm", "正在登出当前终末地账号", "确认登出超时"),
+            ("main_out", "main_out_confirm", "正在退出终末地主界面", "确认退出终末地主界面超时"),
+        ):
+            if (match := _find_template(frame, name)) is None:
+                continue
+            logger.info(message)
+            await asyncio.to_thread(_click_box, hwnd, match)
+            await _wait_template(hwnd, confirm, 10, error, click=True)
+            break
         else:
             now = asyncio.get_running_loop().time()
             if now >= next_escape_time:
                 await asyncio.to_thread(_press_escape, hwnd)
                 next_escape_time = now + 5
-
-        await asyncio.sleep(1)
 
     raise RuntimeError("打开终末地登录表单超时")
 
@@ -272,33 +278,31 @@ async def _open_login_form(hwnd: int) -> None:
 async def _submit_login_form(hwnd: int, account_id: str) -> None:
     """Select a saved account when needed, then submit the login form."""
 
-    deadline = asyncio.get_running_loop().time() + 30
     selector_expanded = False
     masked_id = f"***{account_id[-4:]}"
 
-    while asyncio.get_running_loop().time() < deadline:
-        frame = await asyncio.to_thread(_capture_window, hwnd)
+    async for frame in _poll_frames(hwnd, 30):
         ocr_items = await asyncio.to_thread(
             _read_text, frame, (480, 270, 1440, 810)
         )
-        target_accounts = [
-            box for text, box in ocr_items if account_id[-4:] in text
-        ]
-        login_buttons = [box for text, box in ocr_items if text == "登录"]
+        target = next(
+            (box for text, box in ocr_items if account_id[-4:] in text), None
+        )
+        login_button = next(
+            (box for text, box in ocr_items if text == "登录"), None
+        )
 
-        if selector_expanded:
-            if target_accounts:
-                logger.info(f"在登录下拉框中选择账号: {masked_id}")
-                await asyncio.to_thread(_click_box, hwnd, target_accounts[0])
-                selector_expanded = False
-                await asyncio.sleep(1)
-                continue
-        elif target_accounts:
-            if login_buttons:
-                logger.info(f"登录表单已选中目标账号: {masked_id}")
-                await asyncio.to_thread(_click_box, hwnd, login_buttons[0])
-                logger.info("已点击终末地登录按钮")
-                return
+        if selector_expanded and target is not None:
+            logger.info(f"在登录下拉框中选择账号: {masked_id}")
+            await asyncio.to_thread(_click_box, hwnd, target)
+            selector_expanded = False
+            continue
+
+        if not selector_expanded and target is not None and login_button is not None:
+            logger.info(f"登录表单已选中目标账号: {masked_id}")
+            await asyncio.to_thread(_click_box, hwnd, login_button)
+            logger.info("已点击终末地登录按钮")
+            return
 
         if not selector_expanded:
             logger.info(f"当前未选中目标账号，展开登录下拉框: {masked_id}")
@@ -309,24 +313,11 @@ async def _submit_login_form(hwnd: int, account_id: str) -> None:
             )
             selector_expanded = True
 
-        await asyncio.sleep(1)
-
     raise RuntimeError(f"登录表单中未找到目标账号: {masked_id}")
 
 
 async def login(id: str, emulator_info: DeviceInfo | None = None) -> bool:
-    """切换到终末地客户端已保存的最近账号。
-
-    Args:
-        id: 账号标识，使用后四位匹配最近账号。
-        emulator_info: 模拟器设备信息，当前仅支持 PC 端。
-
-    Returns:
-        bool: 登录成功时返回 True。
-
-    Raises:
-        RuntimeError: 窗口、识别、点击或登录确认失败。
-    """
+    """切换到终末地客户端已保存的最近账号。"""
     if emulator_info is not None:
         raise RuntimeError("终末地模拟器登录暂未实现")
     if len(id) < 4:
@@ -338,16 +329,9 @@ async def login(id: str, emulator_info: DeviceInfo | None = None) -> bool:
 
     masked_id = f"***{id[-4:]}"
     logger.info(f"开始切换终末地账号: {masked_id}")
-    try:
-        await _open_login_form(hwnd)
-        await _submit_login_form(hwnd, id)
-        await _wait_template(hwnd, "logout", 120)
-    except asyncio.CancelledError:
-        raise
-    except RuntimeError:
-        raise
-    except Exception as e:
-        raise RuntimeError(f"终末地登录流程异常: {e}") from e
+    await _open_login_form(hwnd)
+    await _submit_login_form(hwnd, id)
+    await _wait_template(hwnd, "logout", 120, "登录确认超时")
 
     logger.success(f"终末地账号切换成功: {masked_id}")
     return True
