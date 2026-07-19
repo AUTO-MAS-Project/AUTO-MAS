@@ -27,6 +27,7 @@ import time
 import ctypes
 import logging
 from pathlib import Path
+from typing import Any
 
 current_dir = Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
@@ -95,10 +96,9 @@ def main():
         from fastapi_mcp import FastApiMCP
         from pathlib import Path as _Path
 
-        from app.core import Config, MainTimer, TaskManager
+        from app.core import Config
         from app.plugins import PluginManager
         from app.core.page_registry import register_builtin_pages
-        from app.MaaFW import ArknightWin32Toolkit
         from app.core.script_types import validate_script_type_registry
         from app.api import (
             core_router,
@@ -117,7 +117,8 @@ def main():
         )
         from app.plugins.system import get_core_plugin_routers
 
-        hmr_service = None
+        hmr_service: Any = None
+        background_task = None
         _start_t = time.perf_counter()
 
         # ---- 路由注册 ----
@@ -171,7 +172,7 @@ def main():
                     shutil.rmtree(pycache, ignore_errors=True)
             logger.debug("DEV 模式：已清理 plugins 目录下的 __pycache__")
 
-        await PluginManager.start(fast_startup=True)
+        await PluginManager.start(fast_startup=False)
 
         missing_script_types = validate_script_type_registry(Config)
         if missing_script_types:
@@ -180,59 +181,75 @@ def main():
                 + "; ".join(missing_script_types)
             )
 
+        async def initialize_background_services() -> None:
+            nonlocal hmr_service
+
+            app.state.background_status = "running"
+            try:
+                await Config.get_stage()
+                await Config.clean_old_history()
+
+                from app.MaaFW import ArknightWin32Toolkit
+                from app.core.timer import MainTimer
+
+                await ArknightWin32Toolkit.init()
+                await MainTimer.start()
+                await PluginManager._finish_background_install()
+
+                if os.getenv("AUTO_MAS_DEV") == "1":
+                    from app.plugins.dev_hmr import DevPluginHMR
+
+                    hmr_service = DevPluginHMR(PluginManager)
+                    hmr_service.start()
+
+                if Config.get("Notify", "IfKoishiSupport"):
+                    from app.utils.websocket import ws_client_manager
+
+                    await ws_client_manager.init_system_client_koishi()
+
+                app.state.background_status = "ready"
+                logger.info(
+                    f"后端完全就绪, 总耗时 {time.perf_counter() - _start_t:.2f}s"
+                )
+            except asyncio.CancelledError:
+                app.state.background_status = "cancelled"
+                raise
+            except Exception as error:
+                app.state.background_status = "failed"
+                app.state.background_error = f"{type(error).__name__}: {error}"
+                logger.exception(f"后台初始化失败: {app.state.background_error}")
+
+        app.state.background_status = "starting"
+        app.state.background_error = None
         logger.info(
             f"核心初始化完成, 耗时 {time.perf_counter() - _start_t:.2f}s"
         )
-        yield
+        background_task = asyncio.create_task(initialize_background_services())
+        try:
+            yield
+        finally:
+            if not background_task.done():
+                background_task.cancel()
+                try:
+                    await background_task
+                except asyncio.CancelledError:
+                    pass
 
-        # ---- 以下在 yield 之后执行（服务器已监听，API 已可用）----
-        await Config.get_stage()
-        await Config.clean_old_history()
+            from app.core.task_manager import TaskManager
+            from app.core.timer import MainTimer
 
-        await ArknightWin32Toolkit.init()
-        await MainTimer.start()
+            if hmr_service is not None:
+                await hmr_service.stop()
 
-        await PluginManager._finish_background_install()
+            await TaskManager.stop_task("ALL")
+            await PluginManager.stop()
+            await MainTimer.stop()
 
-        if os.getenv("AUTO_MAS_DEV") == "1":
-            from app.plugins.dev_hmr import DevPluginHMR
+            from app.services import Matomo
 
-            hmr_service = DevPluginHMR(PluginManager)
-            hmr_service.start()
+            await Matomo.close()
 
-        if Config.get("Notify", "IfKoishiSupport"):
-            from app.utils.websocket import ws_client_manager
-
-            await ws_client_manager.init_system_client_koishi()
-
-        if (_Path.cwd() / "AUTO-MAS-Setup.exe").exists():
-            try:
-                (_Path.cwd() / "AUTO-MAS-Setup.exe").unlink()
-            except Exception as e:
-                logger.error(f"删除AUTO-MAS-Setup.exe失败: {e}")
-        if (_Path.cwd() / "AUTO_MAA.exe").exists():
-            try:
-                (_Path.cwd() / "AUTO_MAA.exe").unlink()
-            except Exception as e:
-                logger.error(f"删除AUTO_MAA.exe失败: {e}")
-
-        logger.info(
-            f"后端完全就绪, 总耗时 {time.perf_counter() - _start_t:.2f}s"
-        )
-
-        if hmr_service is not None:
-            await hmr_service.stop()
-
-        await TaskManager.stop_task("ALL")
-        await PluginManager.stop()
-
-        await MainTimer.stop()
-
-        from app.services import Matomo
-
-        await Matomo.close()
-
-        logger.info("AUTO-MAS 后端程序关闭")
+            logger.info("AUTO-MAS 后端程序关闭")
 
     # ---- 极简 app 创建：无路由、无 MCP、无静态挂载 ----
     app = FastAPI(

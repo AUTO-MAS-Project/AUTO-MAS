@@ -24,8 +24,8 @@ export function startSkippedInitializationStartup(): Promise<void> {
         if (backendStatus?.isRunning) {
           logger.info(`检测到后端进程已运行，等待就绪: PID=${backendStatus.pid ?? 'unknown'}`)
           const waitResult = await api.backendWaitReady?.().catch(() => null)
-          if (waitResult && !waitResult.ready) {
-            logger.warn(`等待后端就绪失败: ${waitResult.reason}`)
+          if (!waitResult?.ready) {
+            throw new Error(waitResult?.reason || '等待后端就绪失败')
           }
         } else {
           logger.info('检测到后端未运行，开始后台启动')
@@ -36,7 +36,7 @@ export function startSkippedInitializationStartup(): Promise<void> {
         }
       }
 
-      const success = await enterApp('跳过初始化直接进入首页', true)
+      const success = await enterApp('跳过初始化直接进入首页', false)
       if (!success) {
         throw new Error('进入应用失败')
       }
