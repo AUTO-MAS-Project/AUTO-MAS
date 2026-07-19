@@ -21,14 +21,18 @@ export function startSkippedInitializationStartup(): Promise<void> {
       if (!import.meta.env.DEV) {
         const backendStatus = await api.backendStatus?.().catch(() => null)
 
-        if (!backendStatus?.isRunning) {
+        if (backendStatus?.isRunning) {
+          logger.info(`检测到后端进程已运行，等待就绪: PID=${backendStatus.pid ?? 'unknown'}`)
+          const waitResult = await api.backendWaitReady?.().catch(() => null)
+          if (waitResult && !waitResult.ready) {
+            logger.warn(`等待后端就绪失败: ${waitResult.reason}`)
+          }
+        } else {
           logger.info('检测到后端未运行，开始后台启动')
           const result = await api.backendStart?.()
           if (!result?.success) {
             throw new Error(result?.error || '后端启动失败')
           }
-        } else {
-          logger.info(`检测到后端已运行，PID: ${backendStatus.pid ?? 'unknown'}`)
         }
       }
 

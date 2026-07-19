@@ -30,7 +30,7 @@ function getInitService(targetBranch: string = 'dev'): InitializationService {
 /**
  * 获取后端服务实例
  */
-function getBackendService(): BackendService {
+export function getBackendService(): BackendService {
   if (!backendService) {
     const appRoot = getAppRoot()
     const initService = getInitService()
@@ -39,6 +39,14 @@ function getBackendService(): BackendService {
   }
 
   return backendService
+}
+
+/**
+ * 预热后端：在 app.whenReady 时调用，与窗口创建并行执行。
+ */
+export async function prewarmBackend(): Promise<void> {
+  const backend = getBackendService()
+  await backend.prewarmBackend()
 }
 
 /**
@@ -317,6 +325,27 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
   ipcMain.handle('backend-status', () => {
     const backend = getBackendService()
     return backend.getStatus()
+  })
+
+  ipcMain.handle('backend-wait-ready', async () => {
+    const backend = getBackendService()
+    const ready = backend.getReadyPromise()
+    if (!ready) {
+      return { ready: false, reason: 'no-prewarm' }
+    }
+    try {
+      const timeout = 60000
+      let timer: ReturnType<typeof setTimeout>
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('等待后端就绪超时')), timeout)
+      })
+      await Promise.race([ready, timeoutPromise])
+      clearTimeout(timer!)
+      return { ready: true }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return { ready: false, reason: msg }
+    }
   })
 
   // ==================== 清理 ====================

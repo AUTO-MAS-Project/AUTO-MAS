@@ -21,6 +21,7 @@ import {
   cleanupInitializationResources,
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
+import { prewarmBackend } from './ipc/initializationHandlers'
 
 import { getLogger, initializeLogger } from './services/logger'
 import AdmZip = require('adm-zip')
@@ -1347,6 +1348,10 @@ if (!gotTheLock) {
 
 // 在沙箱环境下运行会导致无法启动子进程，强制禁用沙箱
 app.commandLine.appendSwitch('no-sandbox')
+
+// ★ 尽可能早地预热后端：单例确认后立即 spawn Python，
+// 比 app.whenReady() 早约 150-200ms，充分利用 Chromium 初始化的空档
+prewarmBackend()
 
 app.on('second-instance', () => {
   if (mainWindow) {

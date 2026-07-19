@@ -173,6 +173,7 @@ export interface ElectronAPI {
     lastPingTime?: Date
     error?: string
   }>
+  backendWaitReady: () => Promise<{ ready: boolean; reason?: string }>
 
   // 清理资源
   cleanup: () => Promise<{ success: boolean }>
