@@ -132,9 +132,10 @@ def _client_size(hwnd: int) -> tuple[int, int]:
     return width, height
 
 
-def _capture_window(hwnd: int) -> np.ndarray:
+def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
     with _per_monitor_dpi():
-        _activate_window(hwnd)
+        if activate:
+            _activate_window(hwnd)
         width, height = _client_size(hwnd)
         left, top = win32gui.ClientToScreen(hwnd, (0, 0))
         virtual_left = win32api.GetSystemMetrics(win32con.SM_XVIRTUALSCREEN)
@@ -190,9 +191,10 @@ def _read_text(frame: np.ndarray, roi: Box) -> list[OCRItem]:
     return items
 
 
-def _click_box(hwnd: int, box: Box) -> None:
+def _click_box(hwnd: int, box: Box, *, activate: bool = True) -> None:
     with _per_monitor_dpi():
-        _activate_window(hwnd)
+        if activate:
+            _activate_window(hwnd)
         width, height = _client_size(hwnd)
         x, y, box_width, box_height = box
         client_x = round((x + box_width / 2) * width / 1920)
@@ -214,14 +216,19 @@ def _press_escape(hwnd: int) -> None:
     pyautogui.press("esc")
 
 
-def _login_form_exists() -> bool:
-    return win32gui.FindWindow("Qt5158QWindowToolSaveBits", "Form") != 0
+def _login_form_visible(frame: np.ndarray) -> bool:
+    texts = [text for text, _ in _read_text(frame, (480, 270, 1440, 810))]
+    return "登录" in texts and any(
+        "最近" in text or "其他账号登录" in text for text in texts
+    )
 
 
-async def _poll_frames(hwnd: int, timeout: int) -> AsyncIterator[np.ndarray]:
+async def _poll_frames(
+    hwnd: int, timeout: int, *, activate: bool = True
+) -> AsyncIterator[np.ndarray]:
     deadline = asyncio.get_running_loop().time() + timeout
     while asyncio.get_running_loop().time() < deadline:
-        yield await asyncio.to_thread(_capture_window, hwnd)
+        yield await asyncio.to_thread(_capture_window, hwnd, activate=activate)
         await asyncio.sleep(1)
 
 
@@ -246,13 +253,10 @@ async def _open_login_form(hwnd: int) -> None:
     """Return the game to its login form from any supported screen."""
 
     logger.info("正在打开终末地登录表单")
-    if _login_form_exists():
-        logger.info("终末地登录表单已打开")
-        return
-
+    await asyncio.to_thread(_activate_window, hwnd)
     next_escape_time = 0.0
-    async for frame in _poll_frames(hwnd, 120):
-        if _login_form_exists():
+    async for frame in _poll_frames(hwnd, 120, activate=False):
+        if await asyncio.to_thread(_login_form_visible, frame):
             logger.info("终末地登录表单已打开")
             return
 
@@ -278,15 +282,34 @@ async def _open_login_form(hwnd: int) -> None:
 async def _submit_login_form(hwnd: int, account_id: str) -> None:
     """Select a saved account when needed, then submit the login form."""
 
-    selector_expanded = False
     masked_id = f"***{account_id[-4:]}"
+    account_list_top: int | None = None
+    selector_expanded = False
 
-    async for frame in _poll_frames(hwnd, 30):
+    async for frame in _poll_frames(hwnd, 30, activate=False):
         ocr_items = await asyncio.to_thread(
             _read_text, frame, (480, 270, 1440, 810)
         )
+        recent = next(
+            (box for text, box in ocr_items if "最近" in text), None
+        )
+        if recent is not None:
+            account_list_top = recent[1] + recent[3]
+
         target = next(
-            (box for text, box in ocr_items if account_id[-4:] in text), None
+            (
+                box
+                for text, box in ocr_items
+                if account_id[-4:] in text
+                and (
+                    not selector_expanded
+                    or (
+                        account_list_top is not None
+                        and box[1] >= account_list_top
+                    )
+                )
+            ),
+            None,
         )
         login_button = next(
             (box for text, box in ocr_items if text == "登录"), None
@@ -294,23 +317,23 @@ async def _submit_login_form(hwnd: int, account_id: str) -> None:
 
         if selector_expanded and target is not None:
             logger.info(f"在登录下拉框中选择账号: {masked_id}")
-            await asyncio.to_thread(_click_box, hwnd, target)
+            await asyncio.to_thread(_click_box, hwnd, target, activate=False)
             selector_expanded = False
             continue
 
         if not selector_expanded and target is not None and login_button is not None:
             logger.info(f"登录表单已选中目标账号: {masked_id}")
-            await asyncio.to_thread(_click_box, hwnd, login_button)
+            await asyncio.to_thread(
+                _click_box, hwnd, login_button, activate=False
+            )
             logger.info("已点击终末地登录按钮")
             return
 
         if not selector_expanded:
+            if recent is None:
+                continue
             logger.info(f"当前未选中目标账号，展开登录下拉框: {masked_id}")
-            await asyncio.to_thread(
-                _click_box,
-                hwnd,
-                (900, 430, 520, 100),
-            )
+            await asyncio.to_thread(_click_box, hwnd, recent, activate=False)
             selector_expanded = True
 
     raise RuntimeError(f"登录表单中未找到目标账号: {masked_id}")
