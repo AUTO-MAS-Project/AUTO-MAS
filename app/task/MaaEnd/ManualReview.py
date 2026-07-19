@@ -154,16 +154,16 @@ class ManualReviewTask(TaskExecuteBase):
             self.script_info.log = (
                 "正在启动游戏...\n游戏启动成功\n正在登录「明日方舟：终末地」..."
             )
-            if self.cur_user_config.get("Info", "Id") == "" or await login(
-                self.cur_user_config.get("Info", "Id"),
-                self.cur_user_config.get("Info", "Password"),
-                emulator_info,
-            ):
+            try:
+                if self.cur_user_config.get("Info", "Id") != "":
+                    await login(
+                        self.cur_user_config.get("Info", "Id"), emulator_info
+                    )
                 self.run_book["SignIn"] = True
                 break
-            else:
+            except RuntimeError as e:
                 logger.error(
-                    f"用户: {self.cur_user_item.user_id} - 「明日方舟：终末地」登录失败"
+                    f"用户: {self.cur_user_item.user_id} - 「明日方舟：终末地」登录失败: {e}"
                 )
                 self.script_info.log = "正在启动模拟器\n模拟器已启动，正在登录「明日方舟：终末地」...\n「明日方舟：终末地」登录失败\n正在中止相关程序"
 
@@ -177,7 +177,7 @@ class ManualReviewTask(TaskExecuteBase):
                         "message_id": uid,
                         "type": "Question",
                         "title": "操作提示",
-                        "message": "未能正确登录到「崩坏·星穹铁道」, 是否重试？",
+                        "message": "未能正确登录到「明日方舟：终末地」, 是否重试？",
                         "options": ["是", "否"],
                     },
                 )
