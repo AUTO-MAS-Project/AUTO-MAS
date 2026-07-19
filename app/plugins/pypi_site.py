@@ -54,6 +54,25 @@ def get_pypi_site_packages_dir(plugins_dir: Path | None = None) -> Path:
     return get_pypi_root(plugins_dir) / "site-packages"
 
 
+_site_packages_initialized: Path | None = None
+
+# 入口点扫描缓存: 以 site-packages 目录 mtime 为失效依据。
+# uv/pip 安装或卸载分发包会在该目录下增删 .dist-info 目录, 从而更新目录 mtime。
+_entry_points_cache: Dict[str, tuple[int, List[importlib_metadata.EntryPoint]]] = {}
+
+
+def _site_dir_mtime_ns(site_dir: Path) -> int:
+    try:
+        return site_dir.stat().st_mtime_ns
+    except OSError:
+        return -1
+
+
+def invalidate_entry_points_cache() -> None:
+    """清除入口点扫描缓存（插件安装/卸载后调用以保证立即可见）。"""
+    _entry_points_cache.clear()
+
+
 def ensure_pypi_site_packages_on_syspath(plugins_dir: Path | None = None) -> Path:
     """
     确保插件 site-packages 目录存在并加入当前进程的 sys.path。
@@ -64,19 +83,21 @@ def ensure_pypi_site_packages_on_syspath(plugins_dir: Path | None = None) -> Pat
     Returns:
         Path: 最终加入 sys.path 的 site-packages 目录路径。
     """
+    global _site_packages_initialized
     site_dir = get_pypi_site_packages_dir(plugins_dir)
+    if _site_packages_initialized == site_dir:
+        return site_dir
+
     site_dir.mkdir(parents=True, exist_ok=True)
 
     normalized = str(site_dir.resolve())
-    # 使用 addsitedir 以确保 editable 安装生成的 .pth 文件被解析。
-    # 仅插入 sys.path 不会触发 .pth 处理，可能导致 entry point 模块不可导入。
     site.addsitedir(normalized)
 
-    # 维持插件目录优先级，避免被全局环境同名包覆盖。
     _move_sys_path_to_front(Path(normalized))
     for editable_path in reversed(_iter_editable_import_paths(site_dir)):
         _move_sys_path_to_front(editable_path)
 
+    _site_packages_initialized = site_dir
     return site_dir
 
 
@@ -136,6 +157,12 @@ def iter_plugin_entry_points(plugins_dir: Path | None = None) -> List[importlib_
         List[importlib_metadata.EntryPoint]: 去重后的插件入口点列表。
     """
     site_dir = ensure_pypi_site_packages_on_syspath(plugins_dir)
+    cache_key = str(site_dir)
+    mtime = _site_dir_mtime_ns(site_dir)
+    cached = _entry_points_cache.get(cache_key)
+    if cached is not None and cached[0] == mtime:
+        return list(cached[1])
+
     candidates: list[tuple[bool, importlib_metadata.EntryPoint]] = []
 
     for dist in importlib_metadata.distributions(path=[str(site_dir)]):
@@ -156,6 +183,7 @@ def iter_plugin_entry_points(plugins_dir: Path | None = None) -> List[importlib_
         seen.add(key)
         result.append(ep)
 
+    _entry_points_cache[cache_key] = (mtime, list(result))
     return result
 
 

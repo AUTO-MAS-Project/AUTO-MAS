@@ -149,21 +149,6 @@ def main():
             name="sounds",
         )
 
-        if os.getenv("AUTO_MAS_ENABLE_MCP", "1") == "1":
-            import fastapi_mcp
-
-            mcp = fastapi_mcp.FastApiMCP(
-                app,
-                name="AUTO-MAS MCP",
-                description="MCP server for AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software",
-                describe_full_response_schema=True,
-                describe_all_responses=True,
-                exclude_tags=["Delete"],
-            )
-            mcp.mount_http()
-        else:
-            logger.info("MCP 服务未启用，跳过路由挂载")
-
         # ---- 核心初始化 ----
         await Config.init_config()
         register_builtin_pages()
@@ -190,9 +175,38 @@ def main():
 
             app.state.background_status = "running"
             try:
+                import importlib
+
+                # MCP 构建需要遍历完整 OpenAPI schema (约 1s)，后移到后台
+                # 导入与构建均为重 CPU 操作，放入线程避免阻塞事件循环推迟 API 响应
+                # Starlette 支持运行期追加路由，首个 /mcp 请求前挂载完成即可
+                if os.getenv("AUTO_MAS_ENABLE_MCP", "1") == "1":
+                    fastapi_mcp = await asyncio.to_thread(
+                        importlib.import_module, "fastapi_mcp"
+                    )
+
+                    mcp = await asyncio.to_thread(
+                        fastapi_mcp.FastApiMCP,
+                        app,
+                        name="AUTO-MAS MCP",
+                        description="MCP server for AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software",
+                        describe_full_response_schema=True,
+                        describe_all_responses=True,
+                        exclude_tags=["Delete"],
+                    )
+                    mcp.mount_http()
+                    logger.info("MCP 服务已挂载")
+                else:
+                    logger.info("MCP 服务未启用，跳过路由挂载")
+
                 await Config.get_stage()
                 await Config.clean_old_history()
 
+                # ArknightWin32 导入链含 pyautogui/cv2/numpy (约 700ms 重 CPU)，
+                # 放入线程导入，避免阻塞事件循环影响 API 响应
+                await asyncio.to_thread(
+                    importlib.import_module, "app.MaaFW.ArknightWin32"
+                )
                 from app.MaaFW import ArknightWin32Toolkit
                 from app.core.timer import MainTimer
 
@@ -204,7 +218,7 @@ def main():
                     from app.plugins.dev_hmr import DevPluginHMR
 
                     hmr_service = DevPluginHMR(PluginManager)
-                    hmr_service.start()
+                    hmr_service.start(True)
 
                 if Config.get("Notify", "IfKoishiSupport"):
                     from app.utils.websocket import ws_client_manager

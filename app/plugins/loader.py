@@ -197,7 +197,7 @@ class PluginLoader:
             frontend_plugin=record.plugin_name,
         )
 
-    def _plan(self, instances: Iterable[Any]) -> tuple[list[str], dict[str, set[str]], dict[str, tuple[set[str], set[str], set[str]]]]:
+    def _plan(self, instances: Iterable[Any]) -> tuple[list[str], list[list[str]], dict[str, set[str]], dict[str, tuple[set[str], set[str], set[str]]]]:
         enabled: dict[str, Any] = {}
         order: list[str] = []
         meta: dict[str, tuple[set[str], set[str], set[str]]] = {}
@@ -218,7 +218,7 @@ class PluginLoader:
                 continue
 
             try:
-                _, plugin_class = self._resolve_plugin_module_and_class(plugin_name, plugin_source)
+                _, plugin_class = self._resolve_plugin_module_and_class(plugin_name, plugin_source, clear_cache=False)
                 meta[instance_id] = self._meta(plugin_class)
             except Exception as e:
                 logger.warning(
@@ -262,22 +262,27 @@ class PluginLoader:
         queue: list[str] = [instance_id for instance_id in order if indegree[instance_id] == 0]
         queue.sort(key=lambda item: order.index(item))
         planned: list[str] = []
+        levels: list[list[str]] = []
 
         while queue:
-            current = queue.pop(0)
-            planned.append(current)
-            for target in sorted(edges.get(current, set())):
-                indegree[target] -= 1
-                if indegree[target] == 0:
-                    queue.append(target)
-                    queue.sort(key=lambda item: order.index(item))
+            level: list[str] = list(queue)
+            levels.append(level)
+            next_level: list[str] = []
+            for current in level:
+                planned.append(current)
+                for target in sorted(edges.get(current, set())):
+                    indegree[target] -= 1
+                    if indegree[target] == 0:
+                        next_level.append(target)
+            queue = sorted(next_level, key=lambda item: order.index(item))
 
         if len(planned) < len(order):
             left = [instance_id for instance_id in order if instance_id not in planned]
             logger.warning(f"检测到插件依赖环，剩余实例将按原顺序加载: {left}")
             planned.extend(left)
+            levels.append(left)
 
-        return planned, missing, meta
+        return planned, levels, missing, meta
 
     def _before(self, _name: str, users: set[str]) -> None:
         if self._busy:
@@ -953,6 +958,7 @@ class PluginLoader:
         provides: Optional[set[str]] = None,
         needs: Optional[set[str]] = None,
         wants: Optional[set[str]] = None,
+        clear_pypi_cache: bool = True,
     ) -> PluginRecord:
         """
         加载单个插件实例并返回实例记录。
@@ -998,6 +1004,7 @@ class PluginLoader:
             record.module, plugin_class = self._resolve_plugin_module_and_class(
                 plugin_name,
                 plugin_source,
+                clear_cache=clear_pypi_cache,
             )
             static_provides, static_needs, static_wants = self._meta(plugin_class)
             merged_provides = set(provides or static_provides)
@@ -1113,17 +1120,17 @@ class PluginLoader:
         self.startup_missing_instances = set()
         self.service.clear()
 
-        planned, missing_map, meta_map = self._plan(instances)
+        _planned, levels, missing_map, meta_map = self._plan(instances)
         enabled_map: dict[str, Any] = {
             str(getattr(item, "id")): item
             for item in instances
             if bool(getattr(item, "enabled", False))
         }
 
-        for instance_id in planned:
+        async def _load_one(instance_id: str) -> None:
             instance = enabled_map.get(instance_id)
             if instance is None:
-                continue
+                return
 
             plugin_name = str(getattr(instance, "plugin"))
             instance_name = str(getattr(instance, "name", "") or "")
@@ -1150,7 +1157,7 @@ class PluginLoader:
                 logger.warning(
                     f"插件实例缺失 required 服务，已跳过启动: instance_id={instance_id}, missing={lost}"
                 )
-                continue
+                return
 
             record = await self.load_instance(
                 instance_id=instance_id,
@@ -1160,6 +1167,7 @@ class PluginLoader:
                 provides=provides,
                 needs=needs,
                 wants=wants,
+                clear_pypi_cache=False,
             )
             if record.status == "error":
                 error_text = str(record.error or "未知错误")
@@ -1169,6 +1177,12 @@ class PluginLoader:
                 logger.error(
                     f"插件实例加载失败但已忽略（继续启动）: instance_id={instance_id}, plugin={plugin_name}, error='{error_text}'"
                 )
+
+        for level in levels:
+            if len(level) == 1:
+                await _load_one(level[0])
+            else:
+                await asyncio.gather(*[_load_one(iid) for iid in level])
 
         return self.records
 

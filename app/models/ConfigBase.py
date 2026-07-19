@@ -28,8 +28,6 @@ import uuid
 import shlex
 import inspect
 import asyncio
-import pyautogui
-import win32com.client
 from copy import deepcopy
 from urllib.parse import urlparse
 from datetime import datetime
@@ -42,6 +40,7 @@ from app.utils import get_logger, dpapi_encrypt, dpapi_decrypt
 from app.utils.constants import (
     RESERVED_NAMES,
     ILLEGAL_CHARS,
+    KEYBOARD_KEYS,
     DEFAULT_DATETIME,
     EMULATOR_PATH_BOOK,
     FORBIDDEN_PATH_PREFIXES,
@@ -314,6 +313,8 @@ class FileValidator(ValidatorBase):
             value = Path(value).resolve().as_posix()
         if Path(value).suffix == ".lnk":
             try:
+                import win32com.client
+
                 shell = win32com.client.Dispatch("WScript.Shell")
                 shortcut = shell.CreateShortcut(value)
                 value = shortcut.TargetPath
@@ -479,6 +480,8 @@ class EmulatorPathValidator(FileValidator):
         if Path(value).suffix.lower() != ".lnk":
             return value
         try:
+            import win32com.client
+
             shell = win32com.client.Dispatch("WScript.Shell")
             shortcut = shell.CreateShortcut(value)
             target = getattr(shortcut, "TargetPath", "") or ""
@@ -593,7 +596,7 @@ class KeyValidator(ValidatorBase):
         self.default = default
 
     def validate(self, value: Any) -> bool:
-        return value in pyautogui.KEYBOARD_KEYS
+        return value in KEYBOARD_KEYS
 
     def correct(self, value: Any) -> Any:
         return value if self.validate(value) else self.default

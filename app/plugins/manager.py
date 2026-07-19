@@ -24,7 +24,12 @@ from .system import (
     is_system_plugin_package,
 )
 from .uv_backend import uv_pip_install, uv_pip_install_with_mirror_fallback, uv_pip_uninstall
-from .pypi_site import ENTRY_POINT_GROUPS, get_installed_plugin_entry_points, get_pypi_site_packages_dir
+from .pypi_site import (
+    ENTRY_POINT_GROUPS,
+    get_installed_plugin_entry_points,
+    get_pypi_site_packages_dir,
+    invalidate_entry_points_cache,
+)
 
 try:
     import tomllib
@@ -84,6 +89,7 @@ class _PluginManager:
         self._discover_cache = None
         self._discover_cache_time = 0.0
         self._discover_cache_plugins_dir = None
+        invalidate_entry_points_cache()
 
     def is_system_plugin(self, plugin_name: str) -> bool:
         return is_system_plugin(plugin_name)
@@ -1070,7 +1076,7 @@ class _PluginManager:
         await self.loader.load_instances(instances)
         await self._sync_script_types_and_migrate_legacy_configs(discovered=discovered)
         if not fast_startup:
-            await self._repair_invalid_instances_after_start(discovered)
+            asyncio.create_task(self._repair_invalid_instances_after_start(discovered))
         self.started = True
         schedule_plugin_snapshot(reason="manager.start", discovered=discovered)
         logger.info("插件系统启动完成")
