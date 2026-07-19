@@ -50,6 +50,12 @@ export class BackendService {
   private startupStderr = ''
   private isCapturingStartupLogs = false
 
+  // ---- 预热相关 ----
+  private _readyPromise: Promise<void> | null = null
+  private _readyResolve: (() => void) | null = null
+  private _readyReject: ((err: Error) => void) | null = null
+  private _isPrewarming = false
+
   constructor(appRoot: string, mirrorService: MirrorService) {
     this.appRoot = appRoot
     this.mirrorService = mirrorService
@@ -64,6 +70,13 @@ export class BackendService {
     // 检查是否已经在运行
     if (this.backendProcess && !this.backendProcess.killed) {
       logger.info('后端服务已在运行')
+      if (this._readyPromise) {
+        try {
+          await this._waitWithTimeout(this._readyPromise, options?.timeout || 60000)
+        } catch {
+          return { success: false, error: '等待后端就绪超时' }
+        }
+      }
       return { success: true }
     }
 
@@ -344,6 +357,141 @@ export class BackendService {
   }
 
   /**
+   * 预热后端：spawn 进程但不等待就绪，让 Python 与前端渲染并行启动。
+   * 后续 startBackend() 调用会识别预热进程并等待其就绪。
+   */
+  async prewarmBackend(options?: BackendStartOptions): Promise<void> {
+    if (this.backendProcess && !this.backendProcess.killed) {
+      logger.info('预热跳过：后端进程已存在')
+      return
+    }
+    if (this._isPrewarming) {
+      logger.info('预热跳过：已在预热中')
+      return
+    }
+
+    this._isPrewarming = true
+    this.resetStartupLogs()
+
+    try {
+      const venvPythonExe = path.join(this.appRoot, '.venv', 'Scripts', 'python.exe')
+      const pythonExe = options?.pythonPath || venvPythonExe
+      const mainPy = options?.mainPyPath || path.join(this.appRoot, 'main.py')
+      const cwd = options?.cwd || this.appRoot
+      const uvDir = path.join(this.appRoot, 'environment', 'python', 'Scripts')
+      const processPath = process.env.PATH || process.env.Path || ''
+      const processPathExt = process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD'
+
+      if (!fs.existsSync(pythonExe)) {
+        logger.warn(`预热跳过：Python 不存在: ${pythonExe}`)
+        return
+      }
+      if (!fs.existsSync(mainPy)) {
+        logger.warn(`预热跳过：main.py 不存在: ${mainPy}`)
+        return
+      }
+
+      logger.info(`预热后端: Python=${pythonExe}, Main=${mainPy}, CWD=${cwd}`)
+
+      // 准备 ready promise
+      this._readyPromise = new Promise<void>((resolve, reject) => {
+        this._readyResolve = resolve
+        this._readyReject = reject
+      })
+
+      this.isCapturingStartupLogs = true
+      this.startTime = new Date()
+
+      this.backendProcess = spawn(pythonExe, [mainPy], {
+        cwd,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          PATH: `${uvDir}${path.delimiter}${processPath}`,
+          Path: `${uvDir}${path.delimiter}${processPath}`,
+          PATHEXT: processPathExt,
+          PYTHONIOENCODING: 'utf-8',
+          AUTO_MAS_UV_EXE: path.join(uvDir, 'uv.exe'),
+        },
+      })
+
+      // 监听 stdout/stderr，检测 "核心初始化完成"（API 真正可用）
+      const checkReady = (data: Buffer | string) => {
+        const output = data.toString()
+        if (/核心初始化完成/.test(output)) {
+          if (this._readyResolve) {
+            logger.info('预热后端就绪（核心初始化完成）')
+            this._readyResolve()
+            this._readyResolve = null
+            this._readyReject = null
+          }
+        }
+      }
+
+      this.backendProcess.stdout?.setEncoding('utf8')
+      this.backendProcess.stderr?.setEncoding('utf8')
+      this.backendProcess.stdout?.on('data', (data: string) => {
+        this.captureStartupOutput('stdout', data)
+        checkReady(data)
+      })
+      this.backendProcess.stderr?.on('data', (data: string) => {
+        this.captureStartupOutput('stderr', data)
+        checkReady(data)
+      })
+
+      this.backendProcess.once('exit', (code, signal) => {
+        logger.info(`预热后端进程退出，code: ${code}, signal: ${signal}`)
+        if (this._readyReject) {
+          this._readyReject(new Error(`后端提前退出: code=${code}, signal=${signal}`))
+          this._readyReject = null
+          this._readyResolve = null
+        }
+        this.backendProcess = null
+        this.startTime = null
+        this._isPrewarming = false
+        this.notifyStatusChange()
+      })
+
+      this.backendProcess.once('error', error => {
+        logger.error(`预热后端进程错误: ${error}`)
+        if (this._readyReject) {
+          this._readyReject(error)
+          this._readyReject = null
+          this._readyResolve = null
+        }
+        this._isPrewarming = false
+        this.notifyStatusChange()
+      })
+
+      this.notifyStatusChange()
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`预热后端失败: ${errorMsg}`)
+      this._isPrewarming = false
+      this.resetStartupLogs()
+    }
+  }
+
+  /**
+   * 返回后端就绪 Promise，供 IPC 层暴露给渲染进程。
+   */
+  getReadyPromise(): Promise<void> | null {
+    return this._readyPromise
+  }
+
+  private async _waitWithTimeout(promise: Promise<void>, timeoutMs: number): Promise<void> {
+    let timer: ReturnType<typeof setTimeout>
+    const timeout = new Promise<void>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('超时')), timeoutMs)
+    })
+    try {
+      await Promise.race([promise, timeout])
+    } finally {
+      clearTimeout(timer!)
+    }
+  }
+
+  /**
    * 获取后端状态
    */
   getStatus(): BackendStatus {
@@ -410,8 +558,8 @@ export class BackendService {
         if (settled) return
         const output = data.toString()
 
-        // 检查 Uvicorn 启动标志
-        if (/Uvicorn running|http:\/\/0\.0\.0\.0:\d+/.test(output)) {
+        // "核心初始化完成" 表示 lifespan yield，API 完全就绪
+        if (/核心初始化完成/.test(output)) {
           settled = true
           clearTimeout(timer)
           resolve()

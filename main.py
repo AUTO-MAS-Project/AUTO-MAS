@@ -66,110 +66,40 @@ def is_admin() -> bool:
 
 @logger.catch
 def main():
-    if is_admin():
-        from app.plugins.uv_backend import ensure_uv
+    if not is_admin():
+        ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", sys.executable, os.path.realpath(sys.argv[0]), None, 1
+        )
+        sys.exit(0)
 
-        if not ensure_uv():
-            logger.error(
-                "uv 包管理器安装失败，请手动安装: https://docs.astral.sh/uv/getting-started/installation/"
-            )
-            sys.exit(1)
+    from app.plugins.uv_backend import ensure_uv
 
-        import asyncio
-        import uvicorn
-        from fastapi import FastAPI
-        from fastapi_mcp import FastApiMCP
+    if not ensure_uv():
+        logger.error(
+            "uv 包管理器安装失败，请手动安装: https://docs.astral.sh/uv/getting-started/installation/"
+        )
+        sys.exit(1)
+
+    import asyncio
+    import uvicorn
+    from fastapi import FastAPI
+    from fastapi.middleware.cors import CORSMiddleware
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        """在 lifespan 内完成路由注册与核心初始化，确保 server.startup()
+        能在极短时间内打印 "Uvicorn running"。
+        """
         from fastapi.staticfiles import StaticFiles
-        from contextlib import asynccontextmanager
+        from fastapi_mcp import FastApiMCP
+        from pathlib import Path as _Path
 
-        @asynccontextmanager
-        async def lifespan(app: FastAPI):
-            from app.core import Config, MainTimer, TaskManager
-            from app.plugins import PluginManager
-            from app.core.page_registry import register_builtin_pages
-            from app.MaaFW import ArknightWin32Toolkit
-            from app.core.script_types import validate_script_type_registry
-
-            hmr_service = None
-            _start_t = time.perf_counter()
-
-            await Config.init_config()
-            register_builtin_pages()
-
-            if os.getenv("AUTO_MAS_DEV") == "1":
-                import shutil
-                plugins_dir = Path.cwd() / "plugins"
-                for pycache in plugins_dir.rglob("__pycache__"):
-                    if pycache.is_dir():
-                        shutil.rmtree(pycache, ignore_errors=True)
-                logger.debug("DEV 模式：已清理 plugins 目录下的 __pycache__")
-
-            await PluginManager.start(fast_startup=True)
-
-            missing_script_types = validate_script_type_registry(Config)
-            if missing_script_types:
-                raise RuntimeError(
-                    "脚本类型注册不完整，以下脚本未找到可用 provider: "
-                    + "; ".join(missing_script_types)
-                )
-
-            logger.info(
-                f"核心初始化完成, 耗时 {time.perf_counter() - _start_t:.2f}s"
-            )
-            yield
-
-            # 以下初始化在服务器开始监听后执行
-            await Config.get_stage()
-            await Config.clean_old_history()
-
-            await ArknightWin32Toolkit.init()
-            await MainTimer.start()
-
-            # 完成后台本地插件安装
-            await PluginManager._finish_background_install()
-
-            if os.getenv("AUTO_MAS_DEV") == "1":
-                from app.plugins.dev_hmr import DevPluginHMR
-
-                hmr_service = DevPluginHMR(PluginManager)
-                hmr_service.start()
-
-            # 初始化 Koishi 系统客户端（如果已启用）
-            if Config.get("Notify", "IfKoishiSupport"):
-                from app.utils.websocket import ws_client_manager
-
-                await ws_client_manager.init_system_client_koishi()
-
-            if (Path.cwd() / "AUTO-MAS-Setup.exe").exists():
-                try:
-                    (Path.cwd() / "AUTO-MAS-Setup.exe").unlink()
-                except Exception as e:
-                    logger.error(f"删除AUTO-MAS-Setup.exe失败: {e}")
-            if (Path.cwd() / "AUTO_MAA.exe").exists():
-                try:
-                    (Path.cwd() / "AUTO_MAA.exe").unlink()
-                except Exception as e:
-                    logger.error(f"删除AUTO_MAA.exe失败: {e}")
-
-            logger.info(
-                f"后端完全就绪, 总耗时 {time.perf_counter() - _start_t:.2f}s"
-            )
-
-            if hmr_service is not None:
-                await hmr_service.stop()
-
-            await TaskManager.stop_task("ALL")
-            await PluginManager.stop()
-
-            await MainTimer.stop()
-
-            from app.services import Matomo
-
-            await Matomo.close()
-
-            logger.info("AUTO-MAS 后端程序关闭")
-
-        from fastapi.middleware.cors import CORSMiddleware
+        from app.core import Config, MainTimer, TaskManager
+        from app.plugins import PluginManager
+        from app.core.page_registry import register_builtin_pages
+        from app.MaaFW import ArknightWin32Toolkit
+        from app.core.script_types import validate_script_type_registry
         from app.api import (
             core_router,
             info_router,
@@ -187,21 +117,10 @@ def main():
         )
         from app.plugins.system import get_core_plugin_routers
 
-        app = FastAPI(
-            title="AUTO-MAS",
-            description="API for managing automation scripts, plans, and tasks",
-            version="1.0.0",
-            lifespan=lifespan,
-        )
+        hmr_service = None
+        _start_t = time.perf_counter()
 
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=["*"],  # 允许所有域名跨域访问
-            allow_credentials=True,
-            allow_methods=["*"],  # 允许所有请求方法, 如 GET、POST、PUT、DELETE
-            allow_headers=["*"],  # 允许所有请求头
-        )
-
+        # ---- 路由注册 ----
         app.include_router(core_router)
         app.include_router(info_router)
         for core_plugin_router in get_core_plugin_routers():
@@ -216,19 +135,17 @@ def main():
         app.include_router(plugins_router)
         app.include_router(plugin_gateway_router)
         app.include_router(script_types_router)
-
-        # 可选补丁：米游社扫码登录
         if qr_login_router is not None:
             app.include_router(qr_login_router)
 
         app.mount(
             "/api/res/materials",
-            StaticFiles(directory=str(Path.cwd() / "res/images/materials")),
+            StaticFiles(directory=str(_Path.cwd() / "res/images/materials")),
             name="materials",
         )
         app.mount(
             "/api/res/sounds",
-            StaticFiles(directory=str(Path.cwd() / "res/sounds")),
+            StaticFiles(directory=str(_Path.cwd() / "res/sounds")),
             name="sounds",
         )
 
@@ -240,27 +157,111 @@ def main():
             describe_all_responses=True,
             exclude_tags=["Delete"],
         )
-
         mcp.mount_http()
 
-        async def run_server():
-            config = uvicorn.Config(
-                app, host="0.0.0.0", port=36163, log_level="info", log_config=None
+        # ---- 核心初始化 ----
+        await Config.init_config()
+        register_builtin_pages()
+
+        if os.getenv("AUTO_MAS_DEV") == "1":
+            import shutil
+            plugins_dir = _Path.cwd() / "plugins"
+            for pycache in plugins_dir.rglob("__pycache__"):
+                if pycache.is_dir():
+                    shutil.rmtree(pycache, ignore_errors=True)
+            logger.debug("DEV 模式：已清理 plugins 目录下的 __pycache__")
+
+        await PluginManager.start(fast_startup=True)
+
+        missing_script_types = validate_script_type_registry(Config)
+        if missing_script_types:
+            raise RuntimeError(
+                "脚本类型注册不完整，以下脚本未找到可用 provider: "
+                + "; ".join(missing_script_types)
             )
-            server = uvicorn.Server(config)
 
-            from app.core import Config
-
-            Config.server = server
-            await server.serve()
-
-        asyncio.run(run_server())
-
-    else:
-        ctypes.windll.shell32.ShellExecuteW(
-            None, "runas", sys.executable, os.path.realpath(sys.argv[0]), None, 1
+        logger.info(
+            f"核心初始化完成, 耗时 {time.perf_counter() - _start_t:.2f}s"
         )
-        sys.exit(0)
+        yield
+
+        # ---- 以下在 yield 之后执行（服务器已监听，API 已可用）----
+        await Config.get_stage()
+        await Config.clean_old_history()
+
+        await ArknightWin32Toolkit.init()
+        await MainTimer.start()
+
+        await PluginManager._finish_background_install()
+
+        if os.getenv("AUTO_MAS_DEV") == "1":
+            from app.plugins.dev_hmr import DevPluginHMR
+
+            hmr_service = DevPluginHMR(PluginManager)
+            hmr_service.start()
+
+        if Config.get("Notify", "IfKoishiSupport"):
+            from app.utils.websocket import ws_client_manager
+
+            await ws_client_manager.init_system_client_koishi()
+
+        if (_Path.cwd() / "AUTO-MAS-Setup.exe").exists():
+            try:
+                (_Path.cwd() / "AUTO-MAS-Setup.exe").unlink()
+            except Exception as e:
+                logger.error(f"删除AUTO-MAS-Setup.exe失败: {e}")
+        if (_Path.cwd() / "AUTO_MAA.exe").exists():
+            try:
+                (_Path.cwd() / "AUTO_MAA.exe").unlink()
+            except Exception as e:
+                logger.error(f"删除AUTO_MAA.exe失败: {e}")
+
+        logger.info(
+            f"后端完全就绪, 总耗时 {time.perf_counter() - _start_t:.2f}s"
+        )
+
+        if hmr_service is not None:
+            await hmr_service.stop()
+
+        await TaskManager.stop_task("ALL")
+        await PluginManager.stop()
+
+        await MainTimer.stop()
+
+        from app.services import Matomo
+
+        await Matomo.close()
+
+        logger.info("AUTO-MAS 后端程序关闭")
+
+    # ---- 极简 app 创建：无路由、无 MCP、无静态挂载 ----
+    app = FastAPI(
+        title="AUTO-MAS",
+        description="API for managing automation scripts, plans, and tasks",
+        version="1.0.0",
+        lifespan=lifespan,
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    async def run_server():
+        config = uvicorn.Config(
+            app, host="0.0.0.0", port=36163, log_level="info", log_config=None
+        )
+        server = uvicorn.Server(config)
+
+        from app.core import Config
+
+        Config.server = server
+        await server.serve()
+
+    asyncio.run(run_server())
 
 
 if __name__ == "__main__":

@@ -32,8 +32,25 @@ export default defineConfig({
     },
   },
   build: {
-    // 优化构建性能
-    chunkSizeWarningLimit: 5000, // 提高到 5MB，适合 Electron 应用
-    sourcemap: false, // 生产环境不生成 sourcemap，加快构建
+    chunkSizeWarningLimit: 5000,
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          // Monaco 编辑器 (~3MB) 单独分包，不阻塞首屏
+          if (id.includes('monaco-editor')) {
+            return 'monaco'
+          }
+          // Ant Design Vue 组件库单独分包
+          if (id.includes('ant-design-vue') || id.includes('@ant-design')) {
+            return 'antd'
+          }
+          // Vue 生态核心库
+          if (id.includes('node_modules/vue') || id.includes('node_modules/@vue')) {
+            return 'vue-vendor'
+          }
+        },
+      },
+    },
   },
 })

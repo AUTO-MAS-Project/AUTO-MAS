@@ -192,6 +192,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   backendStop: () => ipcRenderer.invoke('backend-stop'),
   backendRestart: () => ipcRenderer.invoke('backend-restart'),
   backendStatus: () => ipcRenderer.invoke('backend-status'),
+  backendWaitReady: () => ipcRenderer.invoke('backend-wait-ready'),
 
   // 清理资源
   cleanup: () => ipcRenderer.invoke('cleanup'),
