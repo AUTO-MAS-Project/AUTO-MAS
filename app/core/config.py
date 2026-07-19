@@ -145,15 +145,18 @@ class AppConfig(GlobalConfig):
 
         await self.check_data()
 
-        await self.connect(self.config_path / "Config.json")
-        await self.EmulatorConfig.connect(self.config_path / "EmulatorConfig.json")
-        await self.PlanConfig.connect(self.config_path / "PlanConfig.json")
-        await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
+        await asyncio.gather(
+            self.connect(self.config_path / "Config.json"),
+            self.EmulatorConfig.connect(self.config_path / "EmulatorConfig.json"),
+            self.PlanConfig.connect(self.config_path / "PlanConfig.json"),
+            self.ScriptConfig.connect(self.config_path / "ScriptConfig.json"),
+            self.QueueConfig.connect(self.config_path / "QueueConfig.json"),
+            self.ToolsConfig.connect(self.config_path / "ToolsConfig.json"),
+            self.PluginConfig.connect(self.config_path / "PluginConfig.json"),
+        )
+
         await self._migrate_general_scripts_to_plugin_storage()
         await self._migrate_okww_scripts_to_plugin_storage()
-        await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
-        await self.ToolsConfig.connect(self.config_path / "ToolsConfig.json")
-        await self.PluginConfig.connect(self.config_path / "PluginConfig.json")
 
         # 游戏签到：连接账号组 MultipleConfig
         await self.ToolsConfig.GameSign_Accounts.connect(
