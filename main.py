@@ -93,7 +93,6 @@ def main():
         能在极短时间内打印 "Uvicorn running"。
         """
         from fastapi.staticfiles import StaticFiles
-        from fastapi_mcp import FastApiMCP
         from pathlib import Path as _Path
 
         from app.core import Config
@@ -150,15 +149,20 @@ def main():
             name="sounds",
         )
 
-        mcp = FastApiMCP(
-            app,
-            name="AUTO-MAS MCP",
-            description="MCP server for AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software",
-            describe_full_response_schema=True,
-            describe_all_responses=True,
-            exclude_tags=["Delete"],
-        )
-        mcp.mount_http()
+        if os.getenv("AUTO_MAS_ENABLE_MCP", "1") == "1":
+            import fastapi_mcp
+
+            mcp = fastapi_mcp.FastApiMCP(
+                app,
+                name="AUTO-MAS MCP",
+                description="MCP server for AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software",
+                describe_full_response_schema=True,
+                describe_all_responses=True,
+                exclude_tags=["Delete"],
+            )
+            mcp.mount_http()
+        else:
+            logger.info("MCP 服务未启用，跳过路由挂载")
 
         # ---- 核心初始化 ----
         await Config.init_config()
