@@ -76,6 +76,9 @@ const gameSignStatusTag = useStatusTag(
 // 轮询定时器
 let pollTimer: NodeJS.Timeout | null = null
 
+// 卸载守卫：组件卸载后阻止异步回调写入响应式状态
+let isMounted = true
+
 // 仅更新状态（不影响编辑状态，不触发 loading）
 const updateStatus = async () => {
     // 如果下拉框正在打开，跳过更新避免干扰用户操作
@@ -85,6 +88,7 @@ const updateStatus = async () => {
     try {
         // 直接调用 Service 而非 getTools()，避免 loading 状态切换导致组件重渲染闪烁
         const response = await Service.getToolsApiToolsGetPost()
+        if (!isMounted) return
         if (response.code !== 200 || !response.data) return
         const data = response.data
         if (data.ArknightsPC?.Status) {
@@ -109,6 +113,7 @@ const updateStatus = async () => {
 const refreshGameSignConfig = async () => {
     try {
         const response = await Service.getToolsApiToolsGetPost()
+        if (!isMounted) return
         if (response.code !== 200 || !response.data) return
         const data = response.data
         if (data.GameSign?.Status) {
@@ -288,8 +293,9 @@ onMounted(async () => {
     startStatusPolling()
 })
 
-// 生命周期：停止轮询
+// 生命周期：停止轮询，标记组件已卸载
 onUnmounted(() => {
+    isMounted = false
     stopStatusPolling()
 })
 </script>
