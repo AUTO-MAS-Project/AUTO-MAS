@@ -13,11 +13,21 @@ import { installPluginAPI } from '@/plugin/pluginAPI'
 import { configureLocalMonaco } from '@/utils/monaco'
 import { prefetchInitializationDecision } from '@/utils/initializationDecision'
 
-// 并行：Monaco 懒加载 + 决策预取，不阻塞 createApp
-void configureLocalMonaco()
 void prefetchInitializationDecision()
 
 const logger = window.electronAPI.getLogger('前端主入口')
+const preloadMonaco = () => {
+  void configureLocalMonaco().catch(error => {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`Monaco 预加载失败，将在下次使用时重试: ${errorMsg}`)
+  })
+}
+
+if ('requestIdleCallback' in window) {
+  window.requestIdleCallback(preloadMonaco, { timeout: 5000 })
+} else {
+  window.setTimeout(preloadMonaco, 2000)
+}
 if (
   (window as Window & { __AUTO_MAS_BROWSER_DEV_MODE__?: boolean }).__AUTO_MAS_BROWSER_DEV_MODE__
 ) {

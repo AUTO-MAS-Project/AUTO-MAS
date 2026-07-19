@@ -82,12 +82,13 @@ import {
   ToolOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons-vue'
-import { computed, h, onMounted, onUnmounted, ref } from 'vue'
+import { computed, h, onMounted, onUnmounted, ref, watch, type WatchStopHandle } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from '../composables/useTheme.ts'
 import { useRouteLock } from '../composables/useRouteLock.ts'
 import { useAppBackground } from '../composables/useAppBackground.ts'
 import { useWebSocket, type WebSocketBaseMessage } from '../composables/useWebSocket.ts'
+import { useAppInitialization } from '../composables/useAppInitialization.ts'
 import { OpenAPI } from '@/api'
 import {
   FALLBACK_PAGE_DECLARATIONS,
@@ -112,8 +113,10 @@ const {
   loadBackground,
 } = useAppBackground()
 const { subscribe, unsubscribe } = useWebSocket()
+const { isBootstrapping } = useAppInitialization()
 
 let backgroundSubscriptionId = ''
+let stopBootstrapWatch: WatchStopHandle | undefined
 let hmrOverlayTimer: number | undefined
 let backgroundServiceSignature = ''
 let hasBackgroundServiceSnapshot = false
@@ -124,17 +127,33 @@ const declaredPages = ref<PageDeclaration[]>(FALLBACK_PAGE_DECLARATIONS)
 const hmrOverlayText = ref('正在重载插件界面')
 
 onMounted(() => {
-  void loadBackground()
   if (window.sessionStorage.getItem(HMR_SOFT_RELOAD_FLAG) === '1') {
     window.sessionStorage.removeItem(HMR_SOFT_RELOAD_FLAG)
     showHmrOverlay('插件界面已刷新', 800)
   }
   backgroundSubscriptionId = subscribe({ id: 'PluginSystem' }, handlePluginSystemMessage)
   syncDeclaredPageRoutes(router, declaredPages.value)
-  void fetchInitialPluginSnapshot()
+
+  const loadBackendState = () => {
+    void loadBackground()
+    void fetchInitialPluginSnapshot()
+  }
+
+  if (isBootstrapping.value) {
+    stopBootstrapWatch = watch(isBootstrapping, bootstrapping => {
+      if (bootstrapping) return
+      stopBootstrapWatch?.()
+      stopBootstrapWatch = undefined
+      loadBackendState()
+    })
+  } else {
+    loadBackendState()
+  }
 })
 
 onUnmounted(() => {
+  stopBootstrapWatch?.()
+  stopBootstrapWatch = undefined
   if (backgroundSubscriptionId) {
     unsubscribe(backgroundSubscriptionId)
     backgroundSubscriptionId = ''

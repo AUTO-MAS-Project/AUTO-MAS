@@ -470,4 +470,12 @@ export class InitializationService {
   getBackendService(): BackendService {
     return this.backendService
   }
+
+  setBackendService(backendService: BackendService): void {
+    this.backendService = backendService
+  }
+
+  setTargetBranch(targetBranch: string): void {
+    this.targetBranch = targetBranch
+  }
 }

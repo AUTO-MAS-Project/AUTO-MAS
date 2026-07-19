@@ -29,6 +29,11 @@ const logger = window.electronAPI.getLogger('初始化决策')
  * 路由守卫里调用此函数即可——不再重复发 IPC。
  */
 export function getInitializationDecision(): Promise<InitializationDecision> {
+  const forceBackendUpdate = sessionStorage.getItem('forceBackendUpdate') === 'true'
+  const disableSkip = sessionStorage.getItem('disableInitializationSkip') === 'true'
+  if (forceBackendUpdate || disableSkip) {
+    return _fetchDecision()
+  }
   return prefetchInitializationDecision()
 }
 

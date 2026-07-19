@@ -1069,7 +1069,8 @@ class _PluginManager:
         )
         await self.loader.load_instances(instances)
         await self._sync_script_types_and_migrate_legacy_configs(discovered=discovered)
-        await self._repair_invalid_instances_after_start(discovered)
+        if not fast_startup:
+            await self._repair_invalid_instances_after_start(discovered)
         self.started = True
         schedule_plugin_snapshot(reason="manager.start", discovered=discovered)
         logger.info("插件系统启动完成")

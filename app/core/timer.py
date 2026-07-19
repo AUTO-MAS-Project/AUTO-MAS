@@ -20,7 +20,6 @@
 #   Contact: DLmaster_361@163.com
 
 import asyncio
-import json
 import random
 from datetime import datetime, timedelta
 
@@ -53,6 +52,9 @@ class _MainTimer:
     async def stop(self):
         """停止定时器"""
 
+        if not self.started:
+            return
+
         self.second_timer.cancel()
         self.hour_timer.cancel()
         try:
@@ -60,6 +62,8 @@ class _MainTimer:
             await self.hour_timer
         except asyncio.CancelledError:
             logger.info("主业务定时器已关闭")
+        finally:
+            self.started = False
 
     async def second_task(self):
         """每秒定期任务"""

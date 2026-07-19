@@ -51,10 +51,8 @@ export class BackendService {
   private isCapturingStartupLogs = false
 
   // ---- 预热相关 ----
-  private _readyPromise: Promise<void> | null = null
-  private _readyResolve: (() => void) | null = null
-  private _readyReject: ((err: Error) => void) | null = null
   private _isPrewarming = false
+  private readonly startupHealthPath = '/api/core/health'
 
   constructor(appRoot: string, mirrorService: MirrorService) {
     this.appRoot = appRoot
@@ -68,16 +66,15 @@ export class BackendService {
    */
   async startBackend(options?: BackendStartOptions): Promise<BackendStartResult> {
     // 检查是否已经在运行
-    if (this.backendProcess && !this.backendProcess.killed) {
-      logger.info('后端服务已在运行')
-      if (this._readyPromise) {
-        try {
-          await this._waitWithTimeout(this._readyPromise, options?.timeout || 60000)
-        } catch {
-          return { success: false, error: '等待后端就绪超时' }
-        }
+    if (this.isTrackedProcessRunning()) {
+      logger.info('后端服务已在运行，等待健康检查')
+      try {
+        await this.waitUntilReady(options?.timeout || 60000)
+        return { success: true }
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        return { success: false, error: errorMsg }
       }
-      return { success: true }
     }
 
     this.resetStartupLogs()
@@ -135,8 +132,8 @@ export class BackendService {
       // 设置输出监听
       this.setupProcessListeners()
 
-      // 等待后端启动
-      await this.waitForBackendReady(timeout)
+      // 等待后端健康接口可用
+      await this.waitUntilReady(timeout)
 
       logger.info(`后端服务启动成功，PID: ${this.backendProcess.pid}`)
       this.resetStartupLogs()
@@ -150,10 +147,9 @@ export class BackendService {
       // 清理进程
       if (this.backendProcess) {
         this.backendProcess.kill()
-        this.backendProcess = null
       }
 
-      this.resetStartupLogs()
+      this.resetTrackedProcess()
 
       return { success: false, error: errorMsg, logs: startupLogs }
     }
@@ -245,7 +241,7 @@ export class BackendService {
    */
   async stopBackend(): Promise<{ success: boolean; error?: string }> {
     const pid = this.backendProcess?.pid
-    const hasTrackedProcess = this.backendProcess && !this.backendProcess.killed
+    const hasTrackedProcess = this.isTrackedProcessRunning()
 
     if (hasTrackedProcess) {
       logger.info(`停止后端服务，PID: ${pid}`)
@@ -361,7 +357,7 @@ export class BackendService {
    * 后续 startBackend() 调用会识别预热进程并等待其就绪。
    */
   async prewarmBackend(options?: BackendStartOptions): Promise<void> {
-    if (this.backendProcess && !this.backendProcess.killed) {
+    if (this.isTrackedProcessRunning()) {
       logger.info('预热跳过：后端进程已存在')
       return
     }
@@ -374,6 +370,12 @@ export class BackendService {
     this.resetStartupLogs()
 
     try {
+      const shouldStartNewBackend = await this.prepareUntrackedBackendForStart()
+      if (!shouldStartNewBackend) {
+        this._isPrewarming = false
+        return
+      }
+
       const venvPythonExe = path.join(this.appRoot, '.venv', 'Scripts', 'python.exe')
       const pythonExe = options?.pythonPath || venvPythonExe
       const mainPy = options?.mainPyPath || path.join(this.appRoot, 'main.py')
@@ -383,21 +385,13 @@ export class BackendService {
       const processPathExt = process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD'
 
       if (!fs.existsSync(pythonExe)) {
-        logger.warn(`预热跳过：Python 不存在: ${pythonExe}`)
-        return
+        throw new Error(`预热失败：Python 不存在: ${pythonExe}`)
       }
       if (!fs.existsSync(mainPy)) {
-        logger.warn(`预热跳过：main.py 不存在: ${mainPy}`)
-        return
+        throw new Error(`预热失败：main.py 不存在: ${mainPy}`)
       }
 
       logger.info(`预热后端: Python=${pythonExe}, Main=${mainPy}, CWD=${cwd}`)
-
-      // 准备 ready promise
-      this._readyPromise = new Promise<void>((resolve, reject) => {
-        this._readyResolve = resolve
-        this._readyReject = reject
-      })
 
       this.isCapturingStartupLogs = true
       this.startTime = new Date()
@@ -415,87 +409,80 @@ export class BackendService {
         },
       })
 
-      // 监听 stdout/stderr，检测 "核心初始化完成"（API 真正可用）
-      const checkReady = (data: Buffer | string) => {
-        const output = data.toString()
-        if (/核心初始化完成/.test(output)) {
-          if (this._readyResolve) {
-            logger.info('预热后端就绪（核心初始化完成）')
-            this._readyResolve()
-            this._readyResolve = null
-            this._readyReject = null
-          }
-        }
-      }
-
       this.backendProcess.stdout?.setEncoding('utf8')
       this.backendProcess.stderr?.setEncoding('utf8')
       this.backendProcess.stdout?.on('data', (data: string) => {
         this.captureStartupOutput('stdout', data)
-        checkReady(data)
       })
       this.backendProcess.stderr?.on('data', (data: string) => {
         this.captureStartupOutput('stderr', data)
-        checkReady(data)
       })
 
       this.backendProcess.once('exit', (code, signal) => {
         logger.info(`预热后端进程退出，code: ${code}, signal: ${signal}`)
-        if (this._readyReject) {
-          this._readyReject(new Error(`后端提前退出: code=${code}, signal=${signal}`))
-          this._readyReject = null
-          this._readyResolve = null
-        }
-        this.backendProcess = null
-        this.startTime = null
-        this._isPrewarming = false
-        this.notifyStatusChange()
+        this.resetTrackedProcess()
       })
 
       this.backendProcess.once('error', error => {
         logger.error(`预热后端进程错误: ${error}`)
-        if (this._readyReject) {
-          this._readyReject(error)
-          this._readyReject = null
-          this._readyResolve = null
-        }
-        this._isPrewarming = false
-        this.notifyStatusChange()
+        this.resetTrackedProcess()
       })
 
       this.notifyStatusChange()
+      void this.waitUntilReady(options?.timeout || 60000)
+        .then(() => {
+          logger.info('预热后端健康检查通过')
+          this._isPrewarming = false
+          this.resetStartupLogs()
+          this.notifyStatusChange()
+        })
+        .catch(error => {
+          const errorMsg = error instanceof Error ? error.message : String(error)
+          logger.error(`预热后端健康检查失败: ${errorMsg}`)
+          if (this.backendProcess) {
+            this.backendProcess.kill()
+          }
+          this.resetTrackedProcess()
+        })
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`预热后端失败: ${errorMsg}`)
-      this._isPrewarming = false
-      this.resetStartupLogs()
+      this.resetTrackedProcess()
     }
   }
 
-  /**
-   * 返回后端就绪 Promise，供 IPC 层暴露给渲染进程。
-   */
-  getReadyPromise(): Promise<void> | null {
-    return this._readyPromise
-  }
+  async waitUntilReady(timeoutMs: number = 60000): Promise<void> {
+    const healthUrl = `${this.mirrorService.getApiEndpoint('local')}${this.startupHealthPath}`
+    const startedAt = Date.now()
 
-  private async _waitWithTimeout(promise: Promise<void>, timeoutMs: number): Promise<void> {
-    let timer: ReturnType<typeof setTimeout>
-    const timeout = new Promise<void>((_, reject) => {
-      timer = setTimeout(() => reject(new Error('超时')), timeoutMs)
-    })
-    try {
-      await Promise.race([promise, timeout])
-    } finally {
-      clearTimeout(timer!)
+    while (Date.now() - startedAt < timeoutMs) {
+      if (this.backendProcess && !this.isTrackedProcessRunning()) {
+        throw new Error('后端进程已退出')
+      }
+
+      try {
+        const response = await this.fetchWithTimeout(healthUrl, { method: 'GET' }, 1000)
+        if (response.ok) {
+          const health = (await response.json()) as { ready?: boolean }
+          if (health.ready) {
+            return
+          }
+        }
+      } catch {
+        // 后端尚未监听，继续等待。
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 100))
     }
+
+    throw new Error('等待后端健康检查超时')
   }
 
   /**
    * 获取后端状态
    */
   getStatus(): BackendStatus {
-    const isRunning = this.backendProcess !== null && !this.backendProcess.killed
+    const isRunning = this.isTrackedProcessRunning()
 
     return {
       isRunning,
@@ -537,54 +524,24 @@ export class BackendService {
 
     this.backendProcess.once('error', error => {
       logger.error(`后端进程错误: ${error}`)
-      this.notifyStatusChange()
+      this.resetTrackedProcess()
     })
   }
 
-  /**
-   * 等待后端就绪
-   */
-  private waitForBackendReady(timeout: number): Promise<void> {
-    return new Promise((resolve, reject) => {
-      let settled = false
-      const timer = setTimeout(() => {
-        if (!settled) {
-          settled = true
-          reject(new Error('后端启动超时'))
-        }
-      }, timeout)
+  private isTrackedProcessRunning(): boolean {
+    return Boolean(
+      this.backendProcess?.pid &&
+      !this.backendProcess.killed &&
+      this.backendProcess.exitCode === null
+    )
+  }
 
-      const checkReady = (data: Buffer | string) => {
-        if (settled) return
-        const output = data.toString()
-
-        // "核心初始化完成" 表示 lifespan yield，API 完全就绪
-        if (/核心初始化完成/.test(output)) {
-          settled = true
-          clearTimeout(timer)
-          resolve()
-        }
-      }
-
-      this.backendProcess!.stdout?.on('data', checkReady)
-      this.backendProcess!.stderr?.on('data', checkReady)
-
-      this.backendProcess!.once('exit', (code, signal) => {
-        if (!settled) {
-          settled = true
-          clearTimeout(timer)
-          reject(new Error(`后端提前退出: code=${code}, signal=${signal}`))
-        }
-      })
-
-      this.backendProcess!.once('error', error => {
-        if (!settled) {
-          settled = true
-          clearTimeout(timer)
-          reject(error)
-        }
-      })
-    })
+  private resetTrackedProcess(): void {
+    this.backendProcess = null
+    this.startTime = null
+    this._isPrewarming = false
+    this.resetStartupLogs()
+    this.notifyStatusChange()
   }
 
   private captureStartupOutput(stream: 'stdout' | 'stderr', data: Buffer | string): void {

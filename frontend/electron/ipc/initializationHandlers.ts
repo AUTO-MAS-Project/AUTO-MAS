@@ -22,6 +22,11 @@ function getInitService(targetBranch: string = 'dev'): InitializationService {
 
   if (!initService) {
     initService = new InitializationService(appRoot, targetBranch)
+    if (backendService) {
+      initService.setBackendService(backendService)
+    }
+  } else {
+    initService.setTargetBranch(targetBranch)
   }
 
   return initService
@@ -36,6 +41,7 @@ export function getBackendService(): BackendService {
     const initService = getInitService()
     const mirrorService = initService.getMirrorService()
     backendService = new BackendService(appRoot, mirrorService)
+    initService.setBackendService(backendService)
   }
 
   return backendService
@@ -329,22 +335,12 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
 
   ipcMain.handle('backend-wait-ready', async () => {
     const backend = getBackendService()
-    const ready = backend.getReadyPromise()
-    if (!ready) {
-      return { ready: false, reason: 'no-prewarm' }
-    }
     try {
-      const timeout = 60000
-      let timer: ReturnType<typeof setTimeout>
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('等待后端就绪超时')), timeout)
-      })
-      await Promise.race([ready, timeoutPromise])
-      clearTimeout(timer!)
+      await backend.waitUntilReady()
       return { ready: true }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      return { ready: false, reason: msg }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      return { ready: false, reason }
     }
   })
 
