@@ -482,6 +482,33 @@ function createWindow() {
     }
   })
 
+  win.webContents.on(
+    'did-fail-load',
+    (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (!isMainFrame) return
+      logger.error(`页面加载失败: ${errorCode} ${errorDescription}, URL: ${validatedURL}`)
+    }
+  )
+
+  win.webContents.on('preload-error', (_event, preloadPath, error) => {
+    logger.error(`预加载脚本执行失败: ${preloadPath}, ${error.stack || error.message}`)
+  })
+
+  win.webContents.on('render-process-gone', (_event, details) => {
+    logger.error(`渲染进程异常退出: ${details.reason}, exitCode: ${details.exitCode}`)
+  })
+
+  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    if (level < 2) return
+    const source = sourceId ? `${sourceId}:${line}` : `line ${line}`
+    const logMessage = `渲染进程控制台: ${message}, 来源: ${source}`
+    if (level >= 3) {
+      logger.error(logMessage)
+    } else {
+      logger.warn(logMessage)
+    }
+  })
+
   // 根据显示器动态更新最小尺寸/边界
   const recomputeMinSize = () => {
     // 这里用 win，不会是 null
