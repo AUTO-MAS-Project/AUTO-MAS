@@ -36,3 +36,4 @@ export type HSRUserConfig_Info = {
      */
     Tag?: (string | null);
 };
+

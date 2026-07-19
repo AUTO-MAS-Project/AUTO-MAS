@@ -1851,6 +1851,18 @@ class M9AUserConfig(ConfigBase):
         self.Data_LastProxyDate = ConfigItem(
             "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
         )
+        ## 上次完成每日心相日期
+        self.Data_LastPsychubeDate = ConfigItem(
+            "Data", "LastPsychubeDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        ## 上次完成自动深眠月份
+        self.Data_LastLimboMonth = ConfigItem(
+            "Data", "LastLimboMonth", "2000-01", DateTimeValidator("%Y-%m")
+        )
+        ## 上次完成自动醒梦月份
+        self.Data_LastLucidscapeMonth = ConfigItem(
+            "Data", "LastLucidscapeMonth", "2000-01", DateTimeValidator("%Y-%m")
+        )
         ## 代理次数
         self.Data_ProxyTimes = ConfigItem(
             "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
@@ -1982,6 +1994,14 @@ class M9AConfig(ConfigBase):
         ## 是否在队列结束后自动更新
         self.Run_IfAutoUpdateAfterQueue = ConfigItem(
             "Run", "IfAutoUpdateAfterQueue", False, BoolValidator()
+        )
+        ## 每日心相每日只执行一次
+        self.Run_IfPsychubeDailyOnce = ConfigItem(
+            "Run", "IfPsychubeDailyOnce", False, BoolValidator()
+        )
+        ## 深眠浅梦每月只执行一次
+        self.Run_IfSleepDreamMonthlyOnce = ConfigItem(
+            "Run", "IfSleepDreamMonthlyOnce", False, BoolValidator()
         )
 
         self.UserData = MultipleConfig([M9AUserConfig])
@@ -2230,7 +2250,6 @@ class OkwwUserConfig(ConfigBase):
         self.Task_TaskIndex = ConfigItem(
             "Task", "TaskIndex", 1, RangeValidator(1, 8)
         )
-        self.Task_ExitOnFinish = ConfigItem("Task", "ExitOnFinish", True, BoolValidator())
 
         ## Data ------------------------------------------------------------
         self.Data_LastProxyDate = ConfigItem(
@@ -2447,73 +2466,14 @@ class OkwwConfig(ConfigBase):
             "Info", "RootPath", "", FileValidator()
         )
 
-        ## Script ----------------------------------------------------------
-        self.Script_ScriptPath = ConfigItem(
-            "Script", "ScriptPath", "", FileValidator()
-        )
-        # Okww 运行参数建议由用户配置（-t / -e 由用户配置 Task 决定），但仍保留高级参数入口
-        self.Script_Arguments = ConfigItem(
-            "Script", "Arguments", "", AdvancedArgumentValidator()
-        )
-        self.Script_IfTrackProcess = ConfigItem(
-            "Script", "IfTrackProcess", True, BoolValidator()
-        )
-        self.Script_TrackProcessName = ConfigItem("Script", "TrackProcessName", "")
-        self.Script_TrackProcessExe = ConfigItem("Script", "TrackProcessExe", "")
-        self.Script_TrackProcessCmdline = ConfigItem(
-            "Script", "TrackProcessCmdline", "", ArgumentValidator()
-        )
-        self.Script_ConfigPath = ConfigItem(
-            "Script", "ConfigPath", "", FileValidator()
-        )
-        self.Script_ConfigPathMode = ConfigItem(
-            "Script", "ConfigPathMode", "Folder", OptionsValidator(["File", "Folder"])
-        )
-        self.Script_UpdateConfigMode = ConfigItem(
-            "Script",
-            "UpdateConfigMode",
-            "Always",
-            OptionsValidator(["Never", "Success", "Failure", "Always"]),
-        )
-        self.Script_LogPath = ConfigItem(
-            "Script", "LogPath", "", FileValidator()
-        )
-        self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "")
-        self.Script_LogTimeStart = ConfigItem(
-            "Script", "LogTimeStart", 1, RangeValidator(1, 9999)
-        )
-        self.Script_LogTimeEnd = ConfigItem(
-            "Script", "LogTimeEnd", 23, RangeValidator(1, 9999)
-        )
-        self.Script_LogTimeFormat = ConfigItem(
-            "Script", "LogTimeFormat", "%Y-%m-%d %H:%M:%S,%f"
-        )
-
         ## Game ------------------------------------------------------------
         self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
         self.Game_LaunchBeforeTask = ConfigItem(
             "Game", "LaunchBeforeTask", False, BoolValidator()
         )
-        self.Game_Type = ConfigItem(
-            "Game", "Type", "Client", OptionsValidator(["Client", "URL"])
-        )
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
-        self.Game_URL = ConfigItem("Game", "URL", "")
-        self.Game_ProcessName = ConfigItem("Game", "ProcessName", "")
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
-        self.Game_IfForceClose = ConfigItem("Game", "IfForceClose", True, BoolValidator())
-        self.Game_CloseOnFinish = ConfigItem(
-            "Game", "CloseOnFinish", True, BoolValidator()
-        )
-        self.Game_EmulatorId = ConfigItem(
-            "Game",
-            "EmulatorId",
-            "-",
-            MultipleUIDValidator("-", self.related_config, "EmulatorConfig"),
-        )
-        self.Game_EmulatorIndex = ConfigItem("Game", "EmulatorIndex", "-")
-
         ## Run -------------------------------------------------------------
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)

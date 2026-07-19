@@ -516,7 +516,6 @@ class GeneralUserConfig(BaseModel):
 
 class OkwwUserConfig_Task(BaseModel):
     TaskIndex: Optional[int] = Field(default=None, description="启动后执行第 N 个任务（-t N，从 1 开始）")
-    ExitOnFinish: Optional[bool] = Field(default=None, description="任务结束后退出（-e）")
 
 
 class OkwwUserConfig_Info(GeneralUserConfig_Info):
@@ -624,47 +623,21 @@ class OkwwConfig_Info(GeneralConfig_Info):
 
 
 class OkwwConfig_Script(BaseModel):
-    """OK-WW 脚本配置"""
-
-    ScriptPath: Optional[str] = Field(default=None, description="脚本可执行文件路径")
-    Arguments: Optional[str] = Field(default=None, description="脚本启动附加命令参数")
-    IfTrackProcess: Optional[bool] = Field(
-        default=None, description="是否追踪脚本子进程"
-    )
-    TrackProcessName: Optional[str] = Field(default=None, description="追踪进程名称")
-    TrackProcessExe: Optional[str] = Field(default=None, description="追踪进程文件路径")
-    TrackProcessCmdline: Optional[str] = Field(
-        default=None, description="追踪进程启动命令行参数"
-    )
-    ConfigPath: Optional[str] = Field(default=None, description="配置文件路径")
-    ConfigPathMode: Optional[Literal["File", "Folder"]] = Field(
-        default=None, description="配置文件类型: 单个文件, 文件夹"
-    )
-    UpdateConfigMode: Optional[Literal["Never", "Success", "Failure", "Always"]] = (
-        Field(
-            default=None,
-            description="更新配置时机, 从不, 仅成功时, 仅失败时, 任务结束时",
-        )
-    )
-    LogPath: Optional[str] = Field(default=None, description="日志文件路径")
-    LogPathFormat: Optional[str] = Field(default=None, description="日志文件名格式")
-    LogTimeStart: Optional[int] = Field(default=None, description="日志时间戳开始位置")
-    LogTimeEnd: Optional[int] = Field(default=None, description="日志时间戳结束位置")
-    LogTimeFormat: Optional[str] = Field(default=None, description="日志时间戳格式")
+    """OK-WW 脚本配置（路径/进程/日志等由 RootPath 派生，不暴露为可配置字段）"""
 
 
-class OkwwConfig_Game(GeneralConfig_Game):
+class OkwwConfig_Game(BaseModel):
     """OK-WW 游戏配置（复用通用字段）"""
 
-    Type: Optional[Literal["Client", "URL"]] = Field(
-        default=None, description="类型: PC端, URL协议"
+    Enabled: Optional[bool] = Field(
+        default=None, description="游戏相关功能是否启用"
     )
     LaunchBeforeTask: Optional[bool] = Field(
         default=None, description="任务开始前是否由 MAS 启动游戏"
     )
-    CloseOnFinish: Optional[bool] = Field(
-        default=None, description="任务结束后是否关闭游戏"
-    )
+    Path: Optional[str] = Field(default=None, description="游戏程序路径")
+    Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
+    WaitTime: Optional[int] = Field(default=None, description="游戏等待启动时间")
 
 
 class OkwwConfig_Run(GeneralConfig_Run):
@@ -1264,6 +1237,9 @@ class M9AUserConfig_Task(BaseModel):
 
 class M9AUserConfig_Data(BaseModel):
     LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
+    LastPsychubeDate: Optional[str] = Field(default=None, description="上次完成每日心相日期，格式 YYYY-MM-DD")
+    LastLimboMonth: Optional[str] = Field(default=None, description="上次完成自动深眠月份，格式 YYYY-MM")
+    LastLucidscapeMonth: Optional[str] = Field(default=None, description="上次完成自动醒梦月份，格式 YYYY-MM")
     ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
     IfPassCheck: Optional[bool] = Field(default=None, description="是否通过检查")
 
@@ -1301,6 +1277,8 @@ class M9AConfig_Run(BaseModel):
     RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
     RunTimeLimit: Optional[int] = Field(default=None, description="运行时间限制（分钟）")
     IfAutoUpdateAfterQueue: Optional[bool] = Field(default=None, description="是否在队列结束后自动更新M9A")
+    IfPsychubeDailyOnce: Optional[bool] = Field(default=None, description="每日心相每日只执行一次")
+    IfSleepDreamMonthlyOnce: Optional[bool] = Field(default=None, description="深眠浅梦每月只执行一次")
 
 
 class M9AConfig(BaseModel):

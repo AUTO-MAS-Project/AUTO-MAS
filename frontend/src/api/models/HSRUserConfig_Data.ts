@@ -52,3 +52,4 @@ export type HSRUserConfig_Data = {
      */
     AbyssLastCompletionDate?: (string | null);
 };
+

@@ -8,3 +8,4 @@ export type HSRUserConfig_TaskOpt = {
      */
     EchoOfWarWeekday?: ('Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday' | null);
 };
+

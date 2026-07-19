@@ -886,6 +886,18 @@ export function useScriptApi() {
                           m9aUserData.Data?.LastProxyDate !== undefined
                             ? m9aUserData.Data.LastProxyDate
                             : '',
+                        LastPsychubeDate:
+                          m9aUserData.Data?.LastPsychubeDate !== undefined
+                            ? m9aUserData.Data.LastPsychubeDate
+                            : '',
+                        LastLimboMonth:
+                          m9aUserData.Data?.LastLimboMonth !== undefined
+                            ? m9aUserData.Data.LastLimboMonth
+                            : '',
+                        LastLucidscapeMonth:
+                          m9aUserData.Data?.LastLucidscapeMonth !== undefined
+                            ? m9aUserData.Data.LastLucidscapeMonth
+                            : '',
                         ProxyTimes:
                           m9aUserData.Data?.ProxyTimes !== undefined
                             ? m9aUserData.Data.ProxyTimes
