@@ -23,6 +23,7 @@
 
 import os
 import sys
+import time
 import ctypes
 import logging
 from pathlib import Path
@@ -90,12 +91,10 @@ def main():
             from app.core.script_types import validate_script_type_registry
 
             hmr_service = None
+            _start_t = time.perf_counter()
 
             await Config.init_config()
-            await Config.get_stage()
-            await Config.clean_old_history()
-            await ArknightWin32Toolkit.init()
-            await MainTimer.start()
+            register_builtin_pages()
 
             if os.getenv("AUTO_MAS_DEV") == "1":
                 import shutil
@@ -105,8 +104,7 @@ def main():
                         shutil.rmtree(pycache, ignore_errors=True)
                 logger.debug("DEV 模式：已清理 plugins 目录下的 __pycache__")
 
-            register_builtin_pages()
-            await PluginManager.start()
+            await PluginManager.start(fast_startup=True)
 
             missing_script_types = validate_script_type_registry(Config)
             if missing_script_types:
@@ -114,6 +112,21 @@ def main():
                     "脚本类型注册不完整，以下脚本未找到可用 provider: "
                     + "; ".join(missing_script_types)
                 )
+
+            logger.info(
+                f"核心初始化完成, 耗时 {time.perf_counter() - _start_t:.2f}s"
+            )
+            yield
+
+            # 以下初始化在服务器开始监听后执行
+            await Config.get_stage()
+            await Config.clean_old_history()
+
+            await ArknightWin32Toolkit.init()
+            await MainTimer.start()
+
+            # 完成后台本地插件安装
+            await PluginManager._finish_background_install()
 
             if os.getenv("AUTO_MAS_DEV") == "1":
                 from app.plugins.dev_hmr import DevPluginHMR
@@ -137,7 +150,10 @@ def main():
                     (Path.cwd() / "AUTO_MAA.exe").unlink()
                 except Exception as e:
                     logger.error(f"删除AUTO_MAA.exe失败: {e}")
-            yield
+
+            logger.info(
+                f"后端完全就绪, 总耗时 {time.perf_counter() - _start_t:.2f}s"
+            )
 
             if hmr_service is not None:
                 await hmr_service.stop()

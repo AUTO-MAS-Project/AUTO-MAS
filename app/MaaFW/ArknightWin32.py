@@ -20,6 +20,8 @@
 #   Contact: DLmaster_361@163.com
 
 
+from __future__ import annotations
+
 import os
 import sys
 import time
@@ -30,6 +32,7 @@ import win32gui
 import pyautogui
 import pygetwindow
 from pynput import keyboard
+from typing import TYPE_CHECKING
 
 from maa.tasker import Tasker
 from maa.context import Context
@@ -226,7 +229,20 @@ class _ArknightWin32Toolkit:
             )
 
 
-ArknightWin32Toolkit = _ArknightWin32Toolkit()
+_toolkit: _ArknightWin32Toolkit | None = None
+
+
+def __getattr__(name: str):
+    global _toolkit
+    if name == "ArknightWin32Toolkit":
+        if _toolkit is None:
+            _toolkit = _ArknightWin32Toolkit()
+        return _toolkit
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+if TYPE_CHECKING:
+    ArknightWin32Toolkit: _ArknightWin32Toolkit
 
 
 @MaaFWManager.resource.custom_action("PlaySelectDeployed[ArknightsPC]")

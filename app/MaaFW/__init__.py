@@ -20,7 +20,25 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .ArknightWin32 import ArknightWin32Toolkit
-from .EndFieldPCWin32 import CheckComboxBox, CheckForm
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .ArknightWin32 import ArknightWin32Toolkit
+    from .EndFieldPCWin32 import CheckComboxBox, CheckForm
+
+
+def __getattr__(name: str):
+    if name == "ArknightWin32Toolkit":
+        from .ArknightWin32 import ArknightWin32Toolkit
+        return ArknightWin32Toolkit
+    if name == "CheckComboxBox":
+        from .EndFieldPCWin32 import CheckComboxBox
+        return CheckComboxBox
+    if name == "CheckForm":
+        from .EndFieldPCWin32 import CheckForm
+        return CheckForm
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = ["ArknightWin32Toolkit", "CheckComboxBox", "CheckForm"]

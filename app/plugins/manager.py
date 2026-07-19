@@ -78,6 +78,7 @@ class _PluginManager:
         self._discover_cache_plugins_dir: Path | None = None
         self._discover_cache_ttl = 30.0
         self._discover_lock = asyncio.Lock()
+        self._pending_local_install: asyncio.Task | None = None
 
     def invalidate_discover_cache(self) -> None:
         self._discover_cache = None
@@ -292,8 +293,12 @@ class _PluginManager:
             return None
         return self._discover_cache
 
-    async def discover_plugins(self, *, force: bool = False) -> Dict[str, Any]:
+    async def discover_plugins(self, *, force: bool = False, fast_startup: bool = False) -> Dict[str, Any]:
         """执行本地插件自动安装后再统一发现插件。
+
+        Args:
+            force: 强制刷新缓存。
+            fast_startup: 为 True 时将本地插件安装放入后台，不阻塞发现流程。
 
         Returns:
             Dict[str, Any]: 已发现插件映射。
@@ -314,7 +319,12 @@ class _PluginManager:
                     self.loader.discovered_plugins = cached
                     return cached
 
-            await self._ensure_local_projects_installed()
+            if fast_startup:
+                self._pending_local_install = asyncio.create_task(
+                    self._ensure_local_projects_installed()
+                )
+            else:
+                await self._ensure_local_projects_installed()
             discovered = self._discover_plugins()
             await self._ensure_default_instances(discovered)
             self.loader.discovered_plugins = discovered
@@ -1037,9 +1047,12 @@ class _PluginManager:
             discovered=discovered,
         )
 
-    async def start(self) -> None:
+    async def start(self, *, fast_startup: bool = False) -> None:
         """
         启动插件系统并按配置加载实例。
+
+        Args:
+            fast_startup: 为 True 时将本地插件安装放入后台任务，加快启动。
 
         Returns:
             None: 无返回值。
@@ -1048,7 +1061,7 @@ class _PluginManager:
             logger.warning("插件系统已启动，忽略重复启动")
             return
 
-        discovered = await self.discover_plugins()
+        discovered = await self.discover_plugins(fast_startup=fast_startup)
         instances = await self.config_store.load_instances(
             self.plugins_dir,
             discovered,
@@ -1060,6 +1073,18 @@ class _PluginManager:
         self.started = True
         schedule_plugin_snapshot(reason="manager.start", discovered=discovered)
         logger.info("插件系统启动完成")
+
+    async def _finish_background_install(self) -> None:
+        """等待 fast_startup 触发的后台本地插件安装完成并刷新发现缓存。"""
+        if self._pending_local_install is None:
+            return
+        try:
+            await self._pending_local_install
+        except Exception as e:
+            logger.warning(f"后台本地插件安装失败: {type(e).__name__}: {e}")
+        finally:
+            self._pending_local_install = None
+        self.invalidate_discover_cache()
 
     async def _repair_invalid_instances_after_start(self, discovered: Dict[str, Any]) -> None:
         """启动后修复失效插件实例配置。"""
