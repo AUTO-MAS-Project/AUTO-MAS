@@ -218,7 +218,7 @@ def main():
                     from app.plugins.dev_hmr import DevPluginHMR
 
                     hmr_service = DevPluginHMR(PluginManager)
-                    hmr_service.start(True)
+                    hmr_service.start()
 
                 if Config.get("Notify", "IfKoishiSupport"):
                     from app.utils.websocket import ws_client_manager
