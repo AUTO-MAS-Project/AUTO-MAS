@@ -14,6 +14,7 @@ import DevDebugPanel from './components/DevDebugPanel.vue'
 import GlobalPowerCountdown from './components/GlobalPowerCountdown.vue'
 import WebSocketMessageListener from './components/WebSocketMessageListener.vue'
 import AppClosingOverlay from './components/AppClosingOverlay.vue'
+import BackendStartupOverlay from './components/BackendStartupOverlay.vue'
 import zhCN from 'ant-design-vue/es/locale/zh_CN'
 
 const logger = window.electronAPI.getLogger('App组件')
@@ -23,7 +24,7 @@ const { antdTheme, initTheme } = useTheme()
 const { updateVisible, updateData, latestVersion, onUpdateConfirmed } = useUpdateModal()
 const { isClosing } = useAppClosing()
 const { playSound } = useAudioPlayer()
-const { isInitialized, isAppReady } = useAppInitialization()
+const { isInitialized, isBootstrapping, isAppReady } = useAppInitialization()
 
 // 判断是否为初始化页面
 const isInitializationPage = computed(() => route.name === 'Initialization')
@@ -92,6 +93,9 @@ onMounted(async () => {
       <!-- WebSocket 消息监听组件 -->
       <WebSocketMessageListener />
     </template>
+
+    <!-- 后端启动遮罩 -->
+    <BackendStartupOverlay :visible="isBootstrapping" />
 
     <!-- 应用关闭遮罩 - 始终可用 -->
     <AppClosingOverlay :visible="isClosing" />

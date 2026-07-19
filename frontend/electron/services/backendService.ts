@@ -124,6 +124,7 @@ export class BackendService {
           PATHEXT: processPathExt,
           PYTHONIOENCODING: 'utf-8',
           AUTO_MAS_UV_EXE: path.join(uvDir, 'uv.exe'),
+          AUTO_MAS_ENABLE_MCP: '0',
         },
       })
 
@@ -406,6 +407,7 @@ export class BackendService {
           PATHEXT: processPathExt,
           PYTHONIOENCODING: 'utf-8',
           AUTO_MAS_UV_EXE: path.join(uvDir, 'uv.exe'),
+          AUTO_MAS_ENABLE_MCP: '0',
         },
       })
 
