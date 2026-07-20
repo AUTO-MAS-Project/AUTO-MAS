@@ -121,6 +121,7 @@ class AppConfig(GlobalConfig):
             "Logoff",
         ] = "NoAction"
         self.temp_task: List[asyncio.Task] = []
+        self._stage_refreshing = False
 
         self._inject_truststore()
 
@@ -2725,12 +2726,8 @@ class AppConfig(GlobalConfig):
     ):
         """获取关卡信息"""
 
-        if json.loads(self.get("Data", "Stage")) != {}:
-            task = asyncio.create_task(self.get_stage())
-            self.temp_task.append(task)
-            task.add_done_callback(lambda t: self.temp_task.remove(t))
-        else:
-            await self.get_stage()
+        # get_stage 会立即返回缓存，网络刷新在后台进行
+        await self.get_stage()
 
         if type == "Info":
             today = datetime.now(tz=UTC4).isoweekday()
@@ -2797,13 +2794,32 @@ class AppConfig(GlobalConfig):
         return overview
 
     async def get_stage(self) -> Optional[Dict[str, List[Dict[str, str]]]]:
-        """更新活动关卡信息"""
+        """更新活动关卡信息。网络检查在后台执行，立即返回本地缓存。"""
 
         if datetime.now() - timedelta(hours=1) < datetime.strptime(
             self.get("Data", "LastStageUpdated"), "%Y-%m-%d %H:%M:%S"
         ):
             logger.info("一小时内已进行过一次检查, 直接使用缓存的活动关卡信息")
             return json.loads(self.get("Data", "Stage"))
+
+        if not self._stage_refreshing:
+            self._stage_refreshing = True
+            task = asyncio.create_task(self._refresh_stage())
+            self.temp_task.append(task)
+
+            def _done(t: asyncio.Task) -> None:
+                self._stage_refreshing = False
+                if t in self.temp_task:
+                    self.temp_task.remove(t)
+
+            task.add_done_callback(_done)
+        else:
+            logger.info("活动关卡信息更新任务已在进行中")
+
+        return json.loads(self.get("Data", "Stage"))
+
+    async def _refresh_stage(self) -> None:
+        """从远端刷新活动关卡信息（仅后台调用）。"""
 
         logger.info("开始获取活动关卡信息")
         try:
@@ -2850,8 +2866,6 @@ class AppConfig(GlobalConfig):
                     logger.warning(f"无法从MAA服务器获取活动关卡信息:{response.text}")
         except Exception as e:
             logger.warning(f"无法从MAA服务器获取活动关卡信息: {e}")
-
-        return json.loads(self.get("Data", "Stage"))
 
     def _get_script_combox_label(self, script: ConfigBase) -> str:
         script_name = script.get("Info", "Name")
