@@ -91,7 +91,22 @@
           <a-card v-if="moduleKey === 'command'" class="command-card">
             <section class="command-panel" aria-label="调度快速启动">
               <div class="command-main">
-                <div class="command-title">{{ commandTitle }}</div>
+                <!--                <BlurReveal-->
+                <!--                  v-if="!isBootstrapping"-->
+                <!--                  :text="commandTitle"-->
+                <!--                  class="command-title"-->
+                <!--                  :delay="0.15"-->
+                <!--                  :duration="0.8"-->
+                <!--                />-->
+
+                <EncryptedText
+                  v-if="!isBootstrapping"
+                  :text="commandTitle"
+                  class="command-title"
+                  encrypted-class="command-title-encrypted"
+                  :reveal-delay-ms="66"
+                  :flip-delay-ms="500"
+                />
               </div>
 
               <div class="scheduler-launcher">
@@ -223,6 +238,8 @@ import {
 } from '@ant-design/icons-vue'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
+import BlurReveal from '@/components/inspira/BlurReveal.vue'
+import EncryptedText from '@/components/inspira/EncryptedText.vue'
 import NoticeModal from '@/components/NoticeModal.vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { useAppInitialization } from '@/composables/useAppInitialization'
@@ -230,7 +247,6 @@ import SatelliteAnimation from '@/components/SatelliteAnimation.vue'
 import type { ComboBoxItem } from '@/api'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
 import { navigateTo } from '@/router'
-
 defineOptions({
   name: 'HomeView',
 })
@@ -307,19 +323,11 @@ const mockSchedulerTasks: ComboBoxItem[] = [
 const homeGreetingMessages = [
   '坐和放宽，脚本正在为你努力运行中。',
   '启动前请确认脚本路径已正确，否则它将无法找到自己。',
-  '请给软件充足的权限，以获得100%完全“听话”的运行效果。',
-  '放心，运行过程中不会修改你的游戏数据（修改）。',
-  '所有脚本文件都已归位，文件不会被删除（删除）。',
   '请勿™强制关闭AUTO-MAS，正在处理一些事情。',
   '好东西就要来了……别来无恙啊！',
   'AUTO-MAS正在为你的设备匹配专属脚本设置。',
-  '按下启动按钮for3秒，轰！嚓-嚓-嚓！脚本跑起来了。',
   '启动AUTO-MAS脚本系统，不要说我们没有警告过你。',
-  '这下尴尬了，脚本遇到了意想不到的问题。',
   '需要重启脚本是正常现象，请不要惊慌。',
-  '请打开设置面板，选择滚回到上一个可用版本。',
-  '或启动修复函数，它可能会修也可能不会修。',
-  '脚本运行进度0%，请不要断开网络（断了也没办法）。',
   '你的设备正在准备就绪，准备好迎接脚本运行了吗？',
   '运行完成后，你的游戏进度可能会发生位移。',
   '我们的脚本协议更新了，你只能同意不能不同意。',
@@ -327,7 +335,6 @@ const homeGreetingMessages = [
   '感谢你使用AUTO-MAS，你永远可以相信脚本的力量。',
   '正在应用最适合当前宇宙版本的脚本设置。',
   '你的请求很重要，AUTO-MAS正在以看似安静的方式处理它。',
-  '配置即将完成，如果没有完成，也将显示为即将完成。',
   'AUTO-MAS检测到一切正常，除非稍后它不正常。',
   '请稍候，系统正在把复杂问题包装成一个按钮。',
 ]
@@ -805,6 +812,10 @@ onMounted(() => {
   line-height: 1.2;
   font-weight: 700;
   color: var(--ant-color-text);
+}
+
+.command-title :deep(.command-title-encrypted) {
+  color: var(--ant-color-text-secondary);
 }
 
 .command-meta {
