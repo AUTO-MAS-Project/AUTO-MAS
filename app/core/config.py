@@ -1781,6 +1781,9 @@ class AppConfig(GlobalConfig):
 
         logger.info("开始获取模拟器下拉框信息")
 
+        if emulator_id == "-":
+            return []
+
         if self.EmulatorConfig[uuid.UUID(emulator_id)].get("Info", "Type") == "general":
             logger.info("通用模拟器不支持扫描多开实例, 返回空列表")
             return []
