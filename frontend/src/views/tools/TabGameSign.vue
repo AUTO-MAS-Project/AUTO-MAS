@@ -795,7 +795,7 @@ onMounted(() => {
           <span class="form-label">用户名称</span>
           <a-input v-model:value="editingAccount.Name" size="large" />
         </div>
-        <a-divider orientation="left" style="font-size: 13px; color: #666">米游社</a-divider>
+        <a-divider orientation="left" class="community-divider">米游社</a-divider>
         <div class="form-item-vertical">
           <a-input-password
             v-model:value="editingAccount.MiyousheToken"
@@ -808,7 +808,7 @@ onMounted(() => {
             扫码登录获取 Token
           </a-button>
         </div>
-        <a-divider orientation="left" style="font-size: 13px; color: #666">库街区</a-divider>
+        <a-divider orientation="left" class="community-divider">库街区</a-divider>
         <div class="form-item-vertical">
           <a-input-password
             v-model:value="editingAccount.KuroToken"
@@ -817,7 +817,7 @@ onMounted(() => {
             allow-clear
           />
         </div>
-        <a-divider orientation="left" style="font-size: 13px; color: #666">森空岛</a-divider>
+        <a-divider orientation="left" class="community-divider">森空岛</a-divider>
         <div class="form-item-vertical">
           <a-input-password
             v-model:value="editingAccount.SklandToken"
@@ -855,17 +855,19 @@ onMounted(() => {
 
         <!-- 状态提示 -->
         <div v-if="qrStatus !== 'loading'" class="qr-status">
-          <span v-if="qrStatus === 'waiting'" style="color: #1890ff"> ⏳ {{ qrStatusText }} </span>
-          <span v-else-if="qrStatus === 'scanned'" style="color: #fa8c16">
+          <span v-if="qrStatus === 'waiting'" class="qr-status-primary">
+            ⏳ {{ qrStatusText }}
+          </span>
+          <span v-else-if="qrStatus === 'scanned'" class="qr-status-warning">
             📱 {{ qrStatusText }}
           </span>
-          <span v-else-if="qrStatus === 'exchanging'" style="color: #1890ff">
+          <span v-else-if="qrStatus === 'exchanging'" class="qr-status-primary">
             ⚙️ {{ qrStatusText }}
           </span>
-          <span v-else-if="qrStatus === 'done'" style="color: #52c41a">
+          <span v-else-if="qrStatus === 'done'" class="qr-status-success">
             ✅ {{ qrStatusText }}
           </span>
-          <span v-else-if="qrStatus === 'error'" style="color: #f5222d">
+          <span v-else-if="qrStatus === 'error'" class="qr-status-error">
             ❌ {{ qrStatusText }}
           </span>
         </div>
@@ -879,7 +881,7 @@ onMounted(() => {
 <style scoped>
 /* ==================== 选中启用时边框变绿 ==================== */
 .select-enabled :deep(.ant-select-selector) {
-  border-color: #52c41a !important;
+  border-color: var(--ant-color-success) !important;
 }
 
 /* ==================== 用户列表表格 ==================== */
@@ -887,6 +889,7 @@ onMounted(() => {
   border: 1px solid var(--ant-color-border);
   border-radius: 6px;
   overflow: hidden;
+  background: var(--ant-color-bg-container);
 }
 
 .user-table-header {
@@ -946,6 +949,7 @@ onMounted(() => {
   padding: 0;
   transition: background 0.2s ease;
   cursor: default;
+  background: var(--ant-color-bg-container);
 }
 
 .user-row:last-child {
@@ -1214,18 +1218,18 @@ onMounted(() => {
 }
 
 .edit-btn {
-  border-color: #d9d9d9;
-  color: #666;
+  border-color: var(--ant-color-border);
+  color: var(--ant-color-text-secondary);
 }
 
 .edit-btn:hover {
-  border-color: #1890ff;
-  color: #1890ff;
+  border-color: var(--ant-color-primary);
+  color: var(--ant-color-primary);
 }
 
 .delete-btn {
-  border-color: #ff4d4f;
-  color: #ff4d4f;
+  border-color: var(--ant-color-error);
+  color: var(--ant-color-error);
 }
 
 .delete-btn:hover {
@@ -1244,13 +1248,18 @@ onMounted(() => {
   margin-bottom: 6px;
 }
 .empty-guide {
-  color: var(--ant-color-text-quaternary);
+  color: var(--ant-color-text-tertiary);
   font-size: 13px;
 }
 
 /* ==================== 模态框 ==================== */
 .modal-form .form-item-vertical {
   margin-bottom: 16px;
+}
+
+.community-divider {
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
 }
 
 /* ==================== 扫码登录弹窗 ==================== */
@@ -1275,9 +1284,47 @@ onMounted(() => {
   margin-bottom: 12px;
   min-height: 24px;
 }
+.qr-status-primary {
+  color: var(--ant-color-primary);
+}
+.qr-status-warning {
+  color: var(--ant-color-warning);
+}
+.qr-status-success {
+  color: var(--ant-color-success);
+}
+.qr-status-error {
+  color: var(--ant-color-error);
+}
 .qr-hint {
   text-align: center;
   font-size: 12px;
   color: var(--ant-color-text-tertiary);
+}
+
+/* 深色模式下使用低亮度状态底色，避免浅色标签在暗背景中刺眼。 */
+:global(:root.dark) .tag-signed {
+  background: rgba(82, 196, 26, 0.16);
+  border-color: rgba(82, 196, 26, 0.45);
+  color: #95de64;
+}
+
+:global(:root.dark) .tag-unsigned {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: var(--ant-color-text-secondary);
+}
+
+:global(:root.dark) .tag-failed {
+  background: rgba(255, 77, 79, 0.16);
+  border-color: rgba(255, 77, 79, 0.48);
+  color: #ff7875;
+}
+
+:global(:root.dark) .tag-risk,
+:global(:root.dark) .tag-partial {
+  background: rgba(250, 173, 20, 0.16);
+  border-color: rgba(250, 173, 20, 0.48);
+  color: #ffc53d;
 }
 </style>
