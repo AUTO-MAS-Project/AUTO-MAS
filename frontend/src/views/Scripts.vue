@@ -728,7 +728,7 @@ const navigateToCreatedScript = (
             scriptData: {
               id: scriptId,
               type,
-              config: data,
+              config: JSON.parse(JSON.stringify(data)),
             },
           },
         }

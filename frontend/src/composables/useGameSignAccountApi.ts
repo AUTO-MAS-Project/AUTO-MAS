@@ -16,6 +16,9 @@ export function useGameSignAccountApi() {
             if (response.code !== 200) {
                 throw new Error(response.message || '添加账号组失败')
             }
+            if (!response.accountId || !response.data) {
+                throw new Error('添加账号组失败：服务端响应缺少账号信息')
+            }
             logger.info('账号组添加成功')
             return { accountId: response.accountId, data: response.data }
         } catch (error) {
