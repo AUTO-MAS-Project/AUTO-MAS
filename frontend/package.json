@@ -80,6 +80,7 @@
     "@guolao/vue-monaco-editor": "^1.6.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/adm-zip": "^0.5.8",
+    "@types/markdown-it": "^14.1.2",
     "@types/matter-js": "^0",
     "@types/node": "22.17.1",
     "@types/three": "^0",
