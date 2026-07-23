@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
 import json
 import uuid
@@ -12,8 +13,8 @@ from app.models.plugin_script_config import PluginScriptConfig
 from app.plugins import PluginHttpRequest, ScriptAdapterDefinition, ScriptAdapterPlugin
 
 from .adapter import OkScriptAdapterHooks
-from .common.provider import ok_script_mas_config_dir
-from .providers import detect_ok_script_provider
+from .common.provider import ok_script_mas_config_dir, resolve_game_executable_path
+from .providers import detect_ok_script_provider, get_ok_script_provider
 from .shell.manifest import OkProjectInspectError, inspect_ok_project
 from .shell.runtime import OkConfigStore
 from .schema import Config, OkScriptConfig, OkScriptUserConfig
@@ -34,19 +35,36 @@ def normalize_ok_script_form(data: dict[str, Any]) -> dict[str, Any]:
         return data
 
     root_path = str(info.get("RootPath") or "").strip()
-    if not root_path:
-        return data
+    manifest = None
+    if root_path:
+        try:
+            manifest = inspect_ok_project(Path(root_path))
+        except (OSError, OkProjectInspectError):
+            pass
 
-    try:
-        manifest = inspect_ok_project(Path(root_path))
-    except (OSError, OkProjectInspectError):
-        return data
+    if manifest is not None:
+        provider = detect_ok_script_provider(
+            manifest.root_path,
+            manifest.resource_name,
+        )
+        resource_name = manifest.resource_name
+        project_label = (
+            provider.display_name
+            if provider is not None
+            else manifest.display_name or manifest.resource_name
+        )
+        info["RootPath"] = manifest.root_path.as_posix()
+    else:
+        provider = get_ok_script_provider(info.get("ResourceName"))
+        if provider is None:
+            return data
+        resource_name = provider.resource_name
+        project_label = provider.display_name
 
-    project_label = manifest.display_name or manifest.resource_name
-    info["ResourceName"] = manifest.resource_name
+    info["ResourceName"] = resource_name
     info["ProjectLabel"] = project_label
-    if str(info.get("Name") or "").strip() in {"", "ok-script 项目"}:
-        info["Name"] = project_label
+    info["Name"] = project_label
+    data["script_name"] = project_label
     return data
 
 
@@ -144,6 +162,11 @@ class Plugin(ScriptAdapterPlugin):
     async def on_start(self) -> None:
         await super().on_start()
         self.ctx.server.http("/ok-script/inspect", self._inspect_project, methods=("POST",))
+        self.ctx.server.http(
+            "/ok-script/game-path/resolve",
+            self._resolve_game_path,
+            methods=("POST",),
+        )
         self.ctx.server.http("/ok-script/configs/list", self._list_configs, methods=("GET", "POST"))
         self.ctx.server.http("/ok-script/configs/batch-update", self._batch_update_configs, methods=("POST",))
 
@@ -156,11 +179,27 @@ class Plugin(ScriptAdapterPlugin):
                 manifest.root_path,
                 manifest.resource_name,
             )
+            project_label = (
+                provider.display_name
+                if provider is not None
+                else manifest.display_name or manifest.resource_name
+            )
+            manifest_data = manifest.to_dict()
+            manifest_data["displayName"] = project_label
+            manifest_data["formPatch"] = {
+                "Info": {
+                    "Name": project_label,
+                    "ResourceName": manifest.resource_name,
+                    "ProjectLabel": project_label,
+                    "RootPath": manifest.root_path.as_posix(),
+                },
+                "script_name": project_label,
+            }
             return {
                 "code": 200,
                 "status": "success",
                 "message": "项目解析成功",
-                "data": manifest.to_dict(),
+                "data": manifest_data,
                 "provider": provider.build_client_metadata() if provider else None,
             }
         except OkProjectInspectError as exc:
@@ -172,6 +211,54 @@ class Plugin(ScriptAdapterPlugin):
                 "message": f"{type(exc).__name__}: {exc}",
                 "data": None,
             }
+
+    async def _resolve_game_path(self, request: PluginHttpRequest) -> dict[str, Any]:
+        payload = request.json if isinstance(request.json, dict) else request.query
+        root_path = Path(str(payload.get("root_path") or payload.get("rootPath") or ""))
+        selected_path = str(
+            payload.get("selected_path") or payload.get("selectedPath") or ""
+        ).strip()
+        resource_name = payload.get("resource_name") or payload.get("resourceName") or ""
+        if not selected_path:
+            return {
+                "code": 400,
+                "status": "error",
+                "message": "请选择游戏目录后再检测",
+            }
+
+        provider = detect_ok_script_provider(root_path, resource_name)
+        if provider is None:
+            return {
+                "code": 400,
+                "status": "error",
+                "message": "请先选择并识别 ok-script 项目目录",
+            }
+
+        resolved_path = await asyncio.to_thread(
+            resolve_game_executable_path,
+            provider,
+            selected_path,
+        )
+        if resolved_path is None:
+            return {
+                "code": 400,
+                "status": "error",
+                "message": (
+                    f"所选位置未找到 {provider.display_name} 游戏主程序 "
+                    f"{provider.game_process_name}"
+                ),
+            }
+
+        normalized_path = resolved_path.as_posix()
+        return {
+            "code": 200,
+            "status": "success",
+            "message": f"已定位 {provider.game_process_name}",
+            "data": {
+                "path": normalized_path,
+                "formPatch": {"Game": {"Path": normalized_path}},
+            },
+        }
 
     async def _list_configs(self, request: PluginHttpRequest) -> dict[str, Any]:
         payload = request.json if isinstance(request.json, dict) else request.query

@@ -17,7 +17,9 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 import json
+import os
 import re
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, TYPE_CHECKING
@@ -28,6 +30,9 @@ if TYPE_CHECKING:
 
 _VERSION_SUFFIX_RE = re.compile(r"[-_ ]?v?\d+(?:\.\d+)+(?:[-_.a-z0-9]*)?$", re.I)
 _PYAPPIFY_NAME_RE = re.compile(r"^\s*name\s*:\s*[\"']?([^\"'\r\n#]+)[\"']?", re.M)
+_GAME_SEARCH_MAX_DEPTH = 10
+_GAME_SEARCH_MAX_ENTRIES = 20_000
+_GAME_SEARCH_PARENT_LEVELS = 8
 
 
 @dataclass(frozen=True)
@@ -78,6 +83,7 @@ class OkScriptProvider:
     task_options: tuple[OkScriptTaskOption, ...]
     config_schema_module: str
     config_info_loader: str
+    game_path_candidates: tuple[str, ...] = ()
     config_info_uses_directory: bool = False
     account_config: OkScriptAccountConfig | None = None
     report_handler_factory: Callable[[], "OkScriptReportHandler"] | None = None
@@ -154,7 +160,96 @@ class OkScriptProvider:
             "accountFields": account_fields,
             "runtimeVerified": self.runtime_verified,
             "runtimeBlockReason": self.runtime_block_reason,
+            "gameProcessName": self.game_process_name,
         }
+
+
+def _matching_game_executable(path: Path, executable_name: str) -> Path | None:
+    try:
+        if path.is_file() and path.name.casefold() == executable_name.casefold():
+            return path.resolve()
+    except OSError:
+        return None
+    return None
+
+
+def _game_search_bases(path: Path) -> list[Path]:
+    start = path if path.is_dir() else path.parent
+    bases: list[Path] = []
+    current = start
+    for _ in range(_GAME_SEARCH_PARENT_LEVELS + 1):
+        if current in bases:
+            break
+        bases.append(current)
+        if current.parent == current:
+            break
+        current = current.parent
+    return bases
+
+
+def _search_game_executable(root: Path, executable_name: str) -> Path | None:
+    queue: deque[tuple[Path, int]] = deque([(root, 0)])
+    scanned_entries = 0
+
+    while queue and scanned_entries < _GAME_SEARCH_MAX_ENTRIES:
+        current, depth = queue.popleft()
+        try:
+            entries = os.scandir(current)
+        except OSError:
+            continue
+
+        with entries:
+            for entry in entries:
+                scanned_entries += 1
+                if scanned_entries > _GAME_SEARCH_MAX_ENTRIES:
+                    break
+                try:
+                    if entry.is_file(follow_symlinks=False):
+                        if entry.name.casefold() == executable_name.casefold():
+                            return Path(entry.path).resolve()
+                    elif depth < _GAME_SEARCH_MAX_DEPTH and entry.is_dir(
+                        follow_symlinks=False
+                    ):
+                        queue.append((Path(entry.path), depth + 1))
+                except OSError:
+                    continue
+    return None
+
+
+def resolve_game_executable_path(
+    provider: OkScriptProvider,
+    selected_path: str | Path,
+) -> Path | None:
+    """把用户选择的游戏目录或启动器路径矫正为目标游戏主程序。"""
+
+    executable_name = provider.game_process_name.strip()
+    raw_selected_path = str(selected_path).strip()
+    if not executable_name or not raw_selected_path:
+        return None
+
+    selected = Path(raw_selected_path).expanduser()
+    direct_match = _matching_game_executable(selected, executable_name)
+    if direct_match is not None:
+        return direct_match
+
+    try:
+        if not selected.exists():
+            return None
+    except OSError:
+        return None
+
+    relative_candidates = (executable_name, *provider.game_path_candidates)
+    for base in _game_search_bases(selected):
+        for relative_path in relative_candidates:
+            candidate = _matching_game_executable(
+                base / Path(relative_path),
+                executable_name,
+            )
+            if candidate is not None:
+                return candidate
+
+    search_root = selected if selected.is_dir() else selected.parent
+    return _search_game_executable(search_root, executable_name)
 
 
 def normalize_ok_script_resource_name(value: Any) -> str:

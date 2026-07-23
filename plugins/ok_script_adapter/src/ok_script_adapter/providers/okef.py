@@ -27,7 +27,7 @@ from .okef_report import OkefDailySummaryReportHandler
 
 OKEF_PROVIDER = OkScriptProvider(
     resource_name="ok-ef",
-    display_name="终末地",
+    display_name="明日方舟终末地",
     exe_name="ok-ef.exe",
     config_dir="data/apps/ok-ef/working/configs",
     log_file="data/apps/ok-ef/working/logs/ok-script.log",

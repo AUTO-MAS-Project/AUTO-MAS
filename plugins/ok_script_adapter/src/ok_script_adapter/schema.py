@@ -34,22 +34,61 @@ class OkScriptInfo(_ConfigModel):
         ui_type="path",
         path_kind="folder",
         required=True,
+        action={
+            "label": "选择并识别",
+            "path": "/plugin/ok-script/inspect",
+            "method": "POST",
+            "payload": {"root_path": "{{ pickedPath }}"},
+            "file_picker": {"kind": "folder"},
+        },
         json_schema_extra={"size": "large"},
     )
 
 
 class OkScriptGame(_ConfigModel):
     Enabled: bool = PluginField(default=True, title="启用游戏管理")
-    LaunchBeforeTask: bool = PluginField(default=True, title="任务前启动游戏")
+    LaunchBeforeTask: bool = PluginField(
+        default=True,
+        title="任务前启动游戏",
+        json_schema_extra={
+            "disabled_when": {"field": "Game.Enabled", "equals": False}
+        },
+    )
     Path: str = PluginField(
         default="",
         title="游戏程序路径",
+        placeholder="请选择游戏目录，自动定位游戏主程序",
         ui_type="path",
         path_kind="file",
+        action={
+            "label": "选择并检测",
+            "path": "/plugin/ok-script/game-path/resolve",
+            "method": "POST",
+            "payload": {
+                "root_path": "{{ formModel.Info.RootPath }}",
+                "resource_name": "{{ formModel.Info.ResourceName }}",
+                "selected_path": "{{ pickedPath }}",
+            },
+            "file_picker": {"kind": "folder"},
+        },
         json_schema_extra={"size": "large"},
     )
-    Arguments: str = PluginField(default="", title="游戏启动参数")
-    WaitTime: int = PluginField(default=60, title="等待启动时间", min=0, max=9999)
+    Arguments: str = PluginField(
+        default="",
+        title="游戏启动参数",
+        json_schema_extra={
+            "disabled_when": {"field": "Game.Enabled", "equals": False}
+        },
+    )
+    WaitTime: int = PluginField(
+        default=60,
+        title="等待启动时间",
+        min=0,
+        max=9999,
+        json_schema_extra={
+            "disabled_when": {"field": "Game.Enabled", "equals": False}
+        },
+    )
     KillGameOnManualStop: bool = PluginField(
         default=True, title="手动终止任务时关闭游戏"
     )
