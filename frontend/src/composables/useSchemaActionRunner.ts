@@ -257,15 +257,21 @@ export const useSchemaActionRunner = (options?: {
       const method = action.method || 'POST'
       let actionContext = context
       if (action.file_picker) {
-        const filters = toSerializableValue(action.file_picker.filters ?? [])
-        const selectedFiles = await window.electronAPI.selectFile(filters)
-        const pickedFile = Array.isArray(selectedFiles) ? selectedFiles[0] : null
-        if (!pickedFile) {
+        let pickedPath: string | null = null
+        if (action.file_picker.kind === 'folder') {
+          pickedPath = await window.electronAPI.selectFolder()
+        } else {
+          const filters = toSerializableValue(action.file_picker.filters ?? [])
+          const selectedFiles = await window.electronAPI.selectFile(filters)
+          pickedPath = Array.isArray(selectedFiles) ? selectedFiles[0] : null
+        }
+        if (!pickedPath) {
           return
         }
         actionContext = {
           ...context,
-          pickedFile,
+          pickedFile: pickedPath,
+          pickedPath,
         }
       }
 
@@ -291,7 +297,7 @@ export const useSchemaActionRunner = (options?: {
         if (action.refresh && !handledRefresh && options?.onRefresh) {
           await options.onRefresh()
         }
-        message.success(`${action.label || '配置动作'}已执行`)
+        message.success(String(data?.message || `${action.label || '配置动作'}已执行`))
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)

@@ -12,7 +12,7 @@ export interface OkScriptProjectProvider {
 export const OK_SCRIPT_PROJECT_PROVIDERS: Record<string, OkScriptProjectProvider> = {
   'ok-ef': {
     resourceName: 'ok-ef',
-    displayName: '终末地',
+    displayName: '明日方舟终末地',
     exeName: 'ok-ef.exe',
     configDir: 'data/apps/ok-ef/working/configs',
     appJsonFile: 'data/apps/ok-ef/app.json',

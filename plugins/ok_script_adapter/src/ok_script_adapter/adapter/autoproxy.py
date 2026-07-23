@@ -42,6 +42,7 @@ from ..common.provider import (
     OkScriptRuntimeConfigOverride,
     OkScriptTaskOption,
     ok_script_mas_config_dir,
+    resolve_game_executable_path,
 )
 from ..common.report import OkScriptReportHandler
 from ..common.runtime_lock import get_ok_script_root_lock
@@ -295,7 +296,35 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             self.cur_user_item.status = "跳过"
             return "用户剩余天数为 0, 跳过该用户"
 
-        if not Path(self.script_config.get("Game", "Path")).is_file():
+        configured_game_path_value = str(
+            self.script_config.get("Game", "Path") or ""
+        ).strip()
+        if not configured_game_path_value:
+            if self.provider.game_process_name:
+                return (
+                    f"请设置 {self.provider.display_name} 游戏主程序路径 "
+                    f"{self.provider.game_process_name}"
+                )
+            return "请设置游戏程序路径"
+
+        configured_game_path = Path(configured_game_path_value)
+        if self.provider.game_process_name:
+            resolved_game_path = await asyncio.to_thread(
+                resolve_game_executable_path,
+                self.provider,
+                configured_game_path,
+            )
+            if resolved_game_path is None:
+                return (
+                    f"请设置 {self.provider.display_name} 游戏主程序路径 "
+                    f"{self.provider.game_process_name}"
+                )
+            await self.script_config.set(
+                "Game",
+                "Path",
+                resolved_game_path.as_posix(),
+            )
+        elif not configured_game_path.is_file():
             return "请设置游戏程序路径"
 
         return "Pass"
@@ -434,11 +463,15 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             await self.sync_script_config()
             await self._push_dispatch_log("已向脚本注入当前用户配置")
 
-            # 标准链路：先启动游戏，再启动 ok-script 执行任务并监察日志。
-            game_result = await self._launch_game_before_task()
-            if game_result != "Pass":
-                await self._handle_attempt_failure(game_result, i, run_limit)
-                continue
+            if self._should_launch_game_before_task():
+                game_result = await self._launch_game_before_task()
+                if game_result != "Pass":
+                    await self._handle_attempt_failure(game_result, i, run_limit)
+                    continue
+            else:
+                await self._push_dispatch_log(
+                    "MAS 已跳过游戏启动，游戏启动由 ok-script 负责"
+                )
 
             status = await self._run_script_process()
             self.cur_user_log.status = status
@@ -718,6 +751,11 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         await asyncio.sleep(wait_time)
         self.script_info.log = "游戏启动等待完成"
         return "Pass"
+
+    def _should_launch_game_before_task(self) -> bool:
+        return bool(self.script_config.get("Game", "Enabled")) and bool(
+            self.script_config.get("Game", "LaunchBeforeTask")
+        )
 
     async def _run_script_process_legacy_text_log(self) -> str:
         await self._kill_script_process()
@@ -1283,9 +1321,7 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             if self.log_monitor is not None:
                 await self.log_monitor.stop()
 
-        await self.kill_managed_process(
-            kill_game=(not self.run_book) and self._should_kill_game()
-        )
+        await self.kill_managed_process(kill_game=self._should_kill_game())
         try:
             await self._restore_script_config()
         except Exception as restore_error:

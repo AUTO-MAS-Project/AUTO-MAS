@@ -32,7 +32,7 @@
             <a-button
               type="primary"
               :loading="actionLoadingId === getFieldPath(field)"
-              :disabled="readonly"
+              :disabled="isFieldDisabled(field)"
               @click="handleButtonClick(getFieldPath(field), field)"
             >
               {{ getActionLabel(field) }}
@@ -44,7 +44,7 @@
               :value="getAutocompleteInputValue(getFieldPath(field), field)"
               style="width: 100%"
               :options="getFieldOptions(field)"
-              :disabled="readonly || field.readonly"
+              :disabled="isFieldDisabled(field)"
               @focus="handleAutocompleteFocus(getFieldPath(field), field)"
               @blur="handleAutocompleteBlur(getFieldPath(field), field)"
               @select="(val: string) => handleAutocompleteSelect(getFieldPath(field), field, val)"
@@ -66,7 +66,7 @@
                     index
                   ),
                 }"
-                :disabled="readonly || field.readonly"
+                :disabled="isFieldDisabled(field)"
                 @click="toggleOrderedOption(getFieldPath(field), field, index)"
               >
                 <span class="schema-ordered-option-index">{{ index + 1 }}</span>
@@ -81,7 +81,7 @@
               :value="getEnumListValue(getFieldPath(field))"
               style="width: 100%"
               :options="getFieldOptions(field)"
-              :disabled="readonly || field.readonly"
+              :disabled="isFieldDisabled(field)"
               @update:value="(val: unknown[]) => updateFieldValue(getFieldPath(field), val)"
             />
           </template>
@@ -91,7 +91,7 @@
               :value="getFieldValue(getFieldPath(field))"
               style="width: 100%"
               :options="getFieldOptions(field)"
-              :disabled="readonly || field.readonly"
+              :disabled="isFieldDisabled(field)"
               @update:value="(val: unknown) => updateFieldValue(getFieldPath(field), val)"
             />
           </template>
@@ -101,7 +101,7 @@
               :checked="getBooleanValue(getFieldPath(field))"
               checked-children="是"
               un-checked-children="否"
-              :disabled="readonly || field.readonly"
+              :disabled="isFieldDisabled(field)"
               @update:checked="(val: boolean) => updateFieldValue(getFieldPath(field), val)"
             />
           </template>
@@ -111,15 +111,16 @@
               <a-input
                 :value="String(getFieldValue(getFieldPath(field)) ?? '')"
                 :placeholder="getFieldPlaceholder(field)"
-                :disabled="readonly || field.readonly"
+                :disabled="isFieldDisabled(field)"
                 @update:value="(val: string) => updateFieldValue(getFieldPath(field), val)"
               />
               <a-button
                 v-if="hasElectronPathPicker()"
-                :disabled="readonly || field.readonly"
-                @click="pickPath(getFieldPath(field), field)"
+                :loading="actionLoadingId === getFieldPath(field)"
+                :disabled="isFieldDisabled(field)"
+                @click="handlePathPickerClick(getFieldPath(field), field)"
               >
-                选择
+                {{ getPathPickerLabel(field) }}
               </a-button>
             </div>
           </template>
@@ -130,7 +131,7 @@
               :value="String(getFieldValue(getFieldPath(field)) ?? '')"
               :placeholder="getFieldPlaceholder(field)"
               :maxlength="getStringMaxLength(field)"
-              :disabled="readonly || field.readonly"
+              :disabled="isFieldDisabled(field)"
               @update:value="(val: string) => updateFieldValue(getFieldPath(field), val)"
             />
             <a-textarea
@@ -139,7 +140,7 @@
               :placeholder="getFieldPlaceholder(field)"
               :maxlength="getStringMaxLength(field)"
               :rows="getTextareaRows(field)"
-              :disabled="readonly || field.readonly"
+              :disabled="isFieldDisabled(field)"
               @update:value="(val: string) => updateFieldValue(getFieldPath(field), val)"
             />
             <a-input
@@ -147,7 +148,7 @@
               :value="String(getFieldValue(getFieldPath(field)) ?? '')"
               :placeholder="getFieldPlaceholder(field)"
               :maxlength="getStringMaxLength(field)"
-              :disabled="readonly || field.readonly"
+              :disabled="isFieldDisabled(field)"
               @update:value="(val: string) => updateFieldValue(getFieldPath(field), val)"
             />
           </template>
@@ -159,7 +160,7 @@
                 :min="getNumberMin(field)"
                 :max="getNumberMax(field)"
                 :step="getNumberStep(field)"
-                :disabled="readonly || field.readonly"
+                :disabled="isFieldDisabled(field)"
                 @update:value="(val: number) => updateFieldValue(getFieldPath(field), val)"
               />
               <a-input-number
@@ -168,7 +169,7 @@
                 :min="getNumberMin(field)"
                 :max="getNumberMax(field)"
                 :step="getNumberStep(field)"
-                :disabled="readonly || field.readonly"
+                :disabled="isFieldDisabled(field)"
                 @update:value="(val: number | null) => updateFieldValue(getFieldPath(field), val)"
               />
             </div>
@@ -181,7 +182,7 @@
               :min="getNumberMin(field)"
               :max="getNumberMax(field)"
               :step="getNumberStep(field)"
-              :disabled="readonly || field.readonly"
+              :disabled="isFieldDisabled(field)"
               @update:value="(val: number | null) => updateFieldValue(getFieldPath(field), val)"
             />
           </template>
@@ -190,7 +191,7 @@
             <a-space direction="vertical" style="width: 100%">
               <a-button
                 size="small"
-                :disabled="readonly || field.readonly"
+                :disabled="isFieldDisabled(field)"
                 @click="addListRow(getFieldPath(field), getListItemType(field))"
               >
                 新增一行
@@ -207,7 +208,7 @@
                     <a-switch
                       v-if="getListItemType(field) === 'boolean'"
                       :checked="Boolean(record.value)"
-                      :disabled="readonly || field.readonly"
+                      :disabled="isFieldDisabled(field)"
                       @update:checked="
                         (val: boolean) =>
                           updateListRowValue(
@@ -224,7 +225,7 @@
                       :value="
                         typeof record.value === 'number' ? record.value : Number(record.value || 0)
                       "
-                      :disabled="readonly || field.readonly"
+                      :disabled="isFieldDisabled(field)"
                       @update:value="
                         (val: number | null) =>
                           updateListRowValue(
@@ -238,7 +239,7 @@
                     <a-input
                       v-else
                       :value="String(record.value ?? '')"
-                      :disabled="readonly || field.readonly"
+                      :disabled="isFieldDisabled(field)"
                       @update:value="
                         (val: string) =>
                           updateListRowValue(
@@ -254,7 +255,7 @@
                     <a-button
                       danger
                       size="small"
-                      :disabled="readonly || field.readonly"
+                      :disabled="isFieldDisabled(field)"
                       @click="removeListRow(getFieldPath(field), index)"
                     >
                       删除
@@ -269,7 +270,7 @@
             <a-space direction="vertical" style="width: 100%">
               <a-button
                 size="small"
-                :disabled="readonly || field.readonly"
+                :disabled="isFieldDisabled(field)"
                 @click="addKeyValueRow(getFieldPath(field))"
               >
                 新增一行
@@ -285,7 +286,7 @@
                   <template v-if="column.key === 'key'">
                     <a-input
                       :value="record.key"
-                      :disabled="readonly || field.readonly"
+                      :disabled="isFieldDisabled(field)"
                       @blur="
                         (e: FocusEvent) =>
                           updateKeyValueRowKey(
@@ -299,7 +300,7 @@
                   <template v-else-if="column.key === 'value'">
                     <a-input
                       :value="record.value"
-                      :disabled="readonly || field.readonly"
+                      :disabled="isFieldDisabled(field)"
                       @update:value="
                         (val: string) =>
                           updateKeyValueRowValue(getFieldPath(field), record.key, val)
@@ -310,7 +311,7 @@
                     <a-button
                       danger
                       size="small"
-                      :disabled="readonly || field.readonly"
+                      :disabled="isFieldDisabled(field)"
                       @click="removeKeyValueRow(getFieldPath(field), record.key)"
                     >
                       删除
@@ -326,14 +327,14 @@
               <a-space>
                 <a-button
                   size="small"
-                  :disabled="readonly || field.readonly"
+                  :disabled="isFieldDisabled(field)"
                   @click="addTableRow(getFieldPath(field))"
                 >
                   新增行
                 </a-button>
                 <a-button
                   size="small"
-                  :disabled="readonly || field.readonly"
+                  :disabled="isFieldDisabled(field)"
                   @click="addTableColumn(getFieldPath(field))"
                 >
                   新增列
@@ -351,7 +352,7 @@
                     <a-button
                       danger
                       size="small"
-                      :disabled="readonly || field.readonly"
+                      :disabled="isFieldDisabled(field)"
                       @click="removeTableRow(getFieldPath(field), index)"
                     >
                       删除
@@ -360,7 +361,7 @@
                   <template v-else>
                     <a-input
                       :value="String(record[column.key] ?? '')"
-                      :disabled="readonly || field.readonly"
+                      :disabled="isFieldDisabled(field)"
                       @update:value="
                         (val: string) =>
                           updateTableCellValue(getFieldPath(field), index, String(column.key), val)
@@ -376,7 +377,7 @@
             <a-textarea
               :value="getJsonText(getFieldPath(field))"
               :rows="getTextareaRows(field)"
-              :disabled="readonly || field.readonly"
+              :disabled="isFieldDisabled(field)"
               @blur="handleJsonBlur(getFieldPath(field), $event)"
             />
           </template>
@@ -385,7 +386,7 @@
             <a-input
               :value="String(getFieldValue(getFieldPath(field)) ?? '')"
               :placeholder="getFieldPlaceholder(field)"
-              :disabled="readonly || field.readonly"
+              :disabled="isFieldDisabled(field)"
               @update:value="(val: string) => updateFieldValue(getFieldPath(field), val)"
             />
           </template>
@@ -730,7 +731,9 @@ const hasFieldAction = (field: SchemaFieldDefinition) =>
     (field.button && typeof field.button === 'object')
   )
 const isButtonField = (field: SchemaFieldDefinition) =>
-  field.type === 'button' || field.type === 'action' || hasFieldAction(field)
+  field.type === 'button' ||
+  field.type === 'action' ||
+  (!isPathField(field) && hasFieldAction(field))
 const isAutocompleteField = (field: SchemaFieldDefinition) =>
   Boolean(field.allow_custom) && isStringField(field) && hasSelectableOptions(field)
 const isOrderedMultiSelectField = (field: SchemaFieldDefinition) =>
@@ -867,6 +870,29 @@ const getPathKind = (field: SchemaFieldDefinition) => {
   return 'file'
 }
 
+const isFieldDisabled = (field: SchemaFieldDefinition) => {
+  if (props.readonly || field.readonly) {
+    return true
+  }
+
+  const condition = field.disabled_when
+  if (!condition || typeof condition.field !== 'string') {
+    return false
+  }
+
+  const value = getValueByPath(props.modelValue || {}, condition.field)
+  if (Object.prototype.hasOwnProperty.call(condition, 'equals')) {
+    return Object.is(value, condition.equals)
+  }
+  if (Object.prototype.hasOwnProperty.call(condition, 'not_equals')) {
+    return !Object.is(value, condition.not_equals)
+  }
+  return false
+}
+
+const getPathPickerLabel = (field: SchemaFieldDefinition) =>
+  hasFieldAction(field) ? getActionLabel(field) : '选择'
+
 const hasElectronPathPicker = () => {
   if (typeof window === 'undefined') {
     return false
@@ -894,6 +920,14 @@ const pickPath = async (field: string, fieldSchema: SchemaFieldDefinition) => {
   if (Array.isArray(selected) && selected[0]) {
     updateFieldValue(field, selected[0])
   }
+}
+
+const handlePathPickerClick = async (field: string, fieldSchema: SchemaFieldDefinition) => {
+  if (hasFieldAction(fieldSchema)) {
+    await handleButtonClick(field, fieldSchema)
+    return
+  }
+  await pickPath(field, fieldSchema)
 }
 
 const getJsonText = (field: string) => JSON.stringify(getFieldValue(field) ?? {}, null, 2)

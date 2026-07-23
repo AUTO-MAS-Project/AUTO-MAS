@@ -18,7 +18,14 @@ export interface SchemaActionSessionDefinition {
 }
 
 export interface SchemaActionFilePickerDefinition {
+  kind?: 'file' | 'folder'
   filters?: SchemaFileFilter[]
+}
+
+export interface SchemaFieldConditionDefinition {
+  field: string
+  equals?: unknown
+  not_equals?: unknown
 }
 
 export interface SchemaActionDefinition {
@@ -89,6 +96,7 @@ export interface SchemaFieldDefinition {
   step?: number
   path_kind?: SchemaPathKind
   filters?: SchemaFileFilter[]
+  disabled_when?: SchemaFieldConditionDefinition
   json_type?: string
   size?: SchemaFieldSize
 }

@@ -663,6 +663,20 @@ class AppConfig(GlobalConfig):
         return provider.display_name
 
     @staticmethod
+    def _normalize_plugin_script_form_payload(
+        provider: Any,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        normalizer = provider.metadata.get("normalize_script_form")
+        if not callable(normalizer):
+            return payload
+
+        normalized_payload = normalizer(copy.deepcopy(payload))
+        if not isinstance(normalized_payload, dict):
+            raise TypeError("插件脚本配置标准化器必须返回 dict")
+        return normalized_payload
+
+    @staticmethod
     def _user_record_name(config_data: dict[str, Any], fallback: str) -> str:
         user_name = config_data.get("user_name")
         if isinstance(user_name, str) and user_name.strip():
@@ -1146,12 +1160,10 @@ class AppConfig(GlobalConfig):
                     current_form_payload,
                     payload_data,
                 )
-                normalizer = provider.metadata.get("normalize_script_form")
-                if callable(normalizer):
-                    normalized_payload = normalizer(copy.deepcopy(payload_data))
-                    if not isinstance(normalized_payload, dict):
-                        raise TypeError("插件脚本配置标准化器必须返回 dict")
-                    payload_data = normalized_payload
+                payload_data = self._normalize_plugin_script_form_payload(
+                    provider,
+                    payload_data,
+                )
                 payload_data = self._strip_virtual_fields_from_plugin_form_payload(
                     provider.script_config_class,
                     payload_data,
@@ -1861,6 +1873,10 @@ class AppConfig(GlobalConfig):
             if isinstance(config, PluginScriptConfig):
                 raw = config.get("PluginData", "Config")
                 config_data = await storage_to_form(provider, raw, "script")
+                config_data = self._normalize_plugin_script_form_payload(
+                    provider,
+                    config_data,
+                )
                 name = self._script_record_name(
                     provider,
                     config_data,

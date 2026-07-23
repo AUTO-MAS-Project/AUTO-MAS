@@ -50,4 +50,10 @@ OKWW_PROVIDER = OkScriptProvider(
     ),
     config_schema_module="ok_script_adapter.providers.okww_schema",
     config_info_loader="get_all_config_info",
+    game_path_candidates=(
+        "Win64/Client-Win64-Shipping.exe",
+        "Binaries/Win64/Client-Win64-Shipping.exe",
+        "Client/Binaries/Win64/Client-Win64-Shipping.exe",
+        "Wuthering Waves Game/Client/Binaries/Win64/Client-Win64-Shipping.exe",
+    ),
 )

@@ -295,7 +295,7 @@
 </template>
 
 <script setup lang="ts">
-import type { MaaFWScriptConfig, Script, User } from '../types/script'
+import type { Script, User } from '../types/script'
 import {
   CopyOutlined,
   DeleteOutlined,
@@ -510,13 +510,15 @@ const handleToggleUserStatus = (user: User) => {
   emit('toggleUserStatus', user)
 }
 
-const getMaaFWProjectLabel = (script: Script) => {
-  const config = script.config as Partial<MaaFWScriptConfig> | undefined
-  return config?.Info?.ProjectLabel?.trim() || 'MaaFW'
+const getProjectLabel = (script: Script) => {
+  const config = script.config as { Info?: { ProjectLabel?: string } } | undefined
+  return config?.Info?.ProjectLabel?.trim()
 }
 
 const getScriptTypeLabel = (script: Script) => {
-  if (script.type === 'MaaFW') return getMaaFWProjectLabel(script)
+  if (script.type === 'MaaFW') return getProjectLabel(script) || 'MaaFW'
+  if (script.type === 'OkScript')
+    return getProjectLabel(script) || script.displayName || script.type
   return script.displayName || script.type
 }
 

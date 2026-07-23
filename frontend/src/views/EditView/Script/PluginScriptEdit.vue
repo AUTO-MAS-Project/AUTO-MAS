@@ -144,6 +144,24 @@ interface PluginSystemHmrMessage {
 
 const cloneValue = <T,>(value: T): T => JSON.parse(JSON.stringify(value))
 
+const isPlainObject = (value: unknown): value is Record<string, any> =>
+  Object.prototype.toString.call(value) === '[object Object]'
+
+const mergeFormPatch = (
+  base: Record<string, any>,
+  patch: Record<string, any>
+): Record<string, any> => {
+  const merged = cloneValue(base)
+  Object.entries(patch).forEach(([key, value]) => {
+    if (isPlainObject(value) && isPlainObject(merged[key])) {
+      merged[key] = mergeFormPatch(merged[key], value)
+      return
+    }
+    merged[key] = cloneValue(value)
+  })
+  return merged
+}
+
 const normalizePluginKey = (value?: string | null) =>
   String(value || '')
     .toLowerCase()
@@ -267,6 +285,14 @@ const {
 } = useSchemaActionRunner({
   onRefresh: async () => {
     await loadScript()
+  },
+  onActionSuccess: ({ response }) => {
+    const formPatch = response?.data?.formPatch || response?.formPatch
+    if (!isPlainObject(formPatch)) {
+      return false
+    }
+    formModel.value = mergeFormPatch(formModel.value, formPatch)
+    return true
   },
 })
 
