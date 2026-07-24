@@ -29,24 +29,6 @@ if TYPE_CHECKING:
     from .schema_utils import SchemaDecorationContext
     from .script_config_store import ScriptConfigStore
 
-from app.models.ConfigBase import (
-    BoolValidator,
-    ConfigBase,
-    ConfigItem,
-    DateTimeValidator,
-    FileValidator,
-    FolderValidator,
-    JSONValidator,
-    MultipleUIDValidator,
-    OptionsValidator,
-    RangeValidator,
-    ScriptRootPathValidator,
-    StringValidator,
-    URLValidator,
-    UserNameValidator,
-    ValidatorBase,
-    VirtualConfigValidator,
-)
 from app.models.task import ScriptItem, TaskExecuteBase, TaskItem
 from app.utils import get_logger
 
@@ -57,6 +39,8 @@ logger = get_logger("脚本适配框架")
 
 
 def _is_configbase_class(config_class: type[Any]) -> bool:
+    from app.models.ConfigBase import ConfigBase
+
     return isinstance(config_class, type) and issubclass(config_class, ConfigBase)
 
 
@@ -171,8 +155,25 @@ def _config_validator(
     extra: dict[str, Any],
     default: Any,
     related_config: dict[str, Any],
-    virtual_handlers: dict[str, Callable[[ConfigBase], Any]],
-) -> ValidatorBase:
+    virtual_handlers: dict[str, Callable[[Any], Any]],
+) -> Any:
+    from app.models.ConfigBase import (
+        BoolValidator,
+        DateTimeValidator,
+        FileValidator,
+        FolderValidator,
+        JSONValidator,
+        MultipleOptionsValidator,
+        MultipleUIDValidator,
+        OptionsValidator,
+        RangeValidator,
+        ScriptRootPathValidator,
+        StringValidator,
+        URLValidator,
+        UserNameValidator,
+        VirtualConfigValidator,
+    )
+
     field_key = f"{group}.{name}"
     if field_key in virtual_handlers:
         return VirtualConfigValidator(
@@ -187,8 +188,6 @@ def _config_validator(
 
     ui_type = str(extra.get("type") or extra.get("ui_type") or "").strip()
     field_format = str(extra.get("format") or "").strip()
-    constraints = _field_constraints(type("FieldProxy", (), {"metadata": []})())
-    _ = constraints
 
     if ui_type == "related-id":
         return MultipleUIDValidator(
@@ -211,8 +210,6 @@ def _config_validator(
     if values:
         return OptionsValidator(values)
     if list_values:
-        from app.models.ConfigBase import MultipleOptionsValidator
-
         return MultipleOptionsValidator(list_values)
     if annotation is bool:
         return BoolValidator()
@@ -388,6 +385,10 @@ class ScriptAdapterRuntime:
         """按需通过 emulator 服务初始化当前脚本的模拟器实例。"""
 
         emulator_service = self.get_service("emulator")
+        if emulator_service is None:
+            from .emulator_compat import get_emulator_service
+
+            emulator_service = get_emulator_service()
         get_instance = getattr(emulator_service, "get_instance", None)
         if not callable(get_instance):
             raise RuntimeError("emulator 服务不可用或未提供 get_instance()")
@@ -539,12 +540,14 @@ class BaseAdapterManager(TaskExecuteBase):
 
     async def _report_check_failure(self) -> None:
         from app.core import Config as RuntimeConfig
+        from app.core.ws import Publisher, protocol
+        from app.models.schema import WSTaskNoticeData
 
         self.runtime.script_info.status = "异常"
-        await RuntimeConfig.send_websocket_message(
+        await Publisher.send(
             id=self.runtime.task_info.task_id,
-            type="Info",
-            data={"Error": self.runtime.check_result},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=self.runtime.check_result),
         )
 
     async def main_task(self) -> None:
@@ -623,7 +626,12 @@ class ScriptAdapterDefinition:
         return __name__
 
     def _build_schema_artifacts(self):
+        from app.configuration import (
+            CONFIG_V2_MODE,
+            CONFIG_V2_MODE_AUTHORITATIVE,
+        )
         from app.plugins.script_adapter_schema import (
+            build_native_script_adapter_schema,
             build_script_adapter_schema,
             build_script_adapter_schema_from_models,
         )
@@ -633,6 +641,24 @@ class ScriptAdapterDefinition:
         has_groups = self.script_groups is not None or self.user_groups is not None
         if has_models and has_groups:
             raise ValueError("ScriptAdapterDefinition 不能同时声明 model 和 groups")
+        if CONFIG_V2_MODE == CONFIG_V2_MODE_AUTHORITATIVE:
+            return build_native_script_adapter_schema(
+                script_class_name=script_class_name,
+                user_class_name=user_class_name,
+                script_model=self.script_model,
+                user_model=self.user_model,
+                script_groups=(
+                    tuple(self.script_groups)
+                    if self.script_groups is not None
+                    else None
+                ),
+                user_groups=(
+                    tuple(self.user_groups)
+                    if self.user_groups is not None
+                    else None
+                ),
+                module=self._schema_module(),
+            )
         if has_models:
             if self.script_model is None or self.user_model is None:
                 raise ValueError("ScriptAdapterDefinition 必须同时声明 script_model 和 user_model")

@@ -25,13 +25,16 @@ import shlex
 import shutil
 import asyncio
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from contextlib import suppress
 from datetime import datetime, timedelta
+from typing import Any
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem, LogRecord
-from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.services import Notify, System
 from app.utils import (
@@ -43,7 +46,6 @@ from app.utils import (
     is_process_running,
 )
 from app.utils.constants import UTC4
-from .schema import GeneralConfig, GeneralUserConfig
 from .tools import execute_script_task, push_notification
 
 logger = get_logger("通用脚本自动代理")
@@ -84,8 +86,8 @@ class AutoProxyTask(TaskExecuteBase):
     def __init__(
         self,
         script_info: ScriptItem,
-        script_config: GeneralConfig,
-        user_config: MultipleConfig[GeneralUserConfig],
+        script_config: Any,
+        user_config: Mapping[uuid.UUID, Any],
         game_manager: ProcessManager | DeviceBase | None,
     ):
         super().__init__()
@@ -229,12 +231,13 @@ class AutoProxyTask(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             if self.cur_user_item.status == "异常":
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={
-                        "Error": f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}"
-                    },
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error",
+                        message=f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}",
+                    ),
                 )
             return
 
@@ -460,17 +463,17 @@ class AutoProxyTask(TaskExecuteBase):
 
         if e is None:
             logger.error(f"用户: {self.cur_user_uid} - {error_message}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": error_message},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=error_message),
             )
         else:
             logger.exception(f"用户: {self.cur_user_uid} - {error_message}: {e}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"{error_message}: {e}"},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=f"{error_message}: {e}"),
             )
         self.cur_user_log.content = [f"{error_message}, 无日志记录"]
         self.cur_user_log.status = error_message
@@ -636,10 +639,10 @@ class AutoProxyTask(TaskExecuteBase):
             )
         except Exception as e:
             logger.exception(f"推送通知时出现异常: {e}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"推送通知时出现异常: {e}"},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=f"推送通知时出现异常: {e}"),
             )
 
         if self.run_book:
@@ -672,8 +675,8 @@ class AutoProxyTask(TaskExecuteBase):
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
         logger.exception(f"自动代理任务出现异常: {e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"自动代理任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"自动代理任务出现异常: {e}"),
         )

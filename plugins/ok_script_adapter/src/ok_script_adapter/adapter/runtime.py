@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-import uuid
 from contextlib import suppress
+from typing import Any, Mapping
 
-from app.core import Config
-from app.models.ConfigBase import ConfigBase, MultipleConfig
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.plugins import ScriptAdapterHooks, ScriptAdapterRuntime
 from app.services import Notify
@@ -17,7 +17,7 @@ from .autoproxy import OkScriptAutoProxyTask
 logger = get_logger("ok-script 插件适配")
 
 
-def _config_value(config: ConfigBase, group: str, name: str, default: object = None) -> object:
+def _config_value(config: Any, group: str, name: str, default: object = None) -> object:
     try:
         value = config.get(group, name)
     except Exception:
@@ -38,10 +38,10 @@ class _CheckedAutoProxyTask(TaskExecuteBase):
             if result != "Pass":
                 if self.inner.cur_user_item.status == "等待":
                     self.inner.cur_user_item.status = "异常"
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.inner.task_info.task_id,
-                    type="Info",
-                    data={"Error": result},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message=result),
                 )
                 return
             await self.inner.main_task()
@@ -56,7 +56,7 @@ class _CheckedAutoProxyTask(TaskExecuteBase):
 
 
 class OkScriptAdapterHooks(ScriptAdapterHooks):
-    """将插件表单配置转换为 ok-script 通用运行时需要的 ConfigBase 会话。"""
+    """将插件表单配置转换为 ok-script 任务本地配置会话。"""
 
     async def check(self, runtime: ScriptAdapterRuntime) -> str:
         if runtime.mode != "AutoProxy":
@@ -64,29 +64,10 @@ class OkScriptAdapterHooks(ScriptAdapterHooks):
         return "Pass"
 
     async def prepare(self, runtime: ScriptAdapterRuntime) -> None:
-        storage_config = runtime.get_storage_script_config()
-        await storage_config.lock()
-        runtime.storage_script_config = storage_config
+        await runtime.storage.lock()
         runtime.script_config = await runtime.build_script_model()
-        if not isinstance(runtime.script_config, ConfigBase):
-            raise TypeError("ok-script 插件脚本配置构造失败")
 
-        user_pairs = await runtime.build_user_models()
-        provider = runtime._resolve_provider()
-        user_config = MultipleConfig([provider.user_config_class])
-        await user_config.load(
-            {
-                "instances": [
-                    {"uid": user_id, "type": provider.user_config_class.__name__}
-                    for user_id, _ in user_pairs
-                ],
-                **{
-                    user_id: await model.toDict(if_decrypt=False)
-                    for user_id, model in user_pairs
-                    if isinstance(model, ConfigBase)
-                },
-            }
-        )
+        user_config = await runtime.storage.load_user_collection()
         runtime.extra["user_config"] = user_config
         runtime.extra["game_manager"] = ProcessManager()
         runtime.script_info.user_list = [
@@ -95,9 +76,9 @@ class OkScriptAdapterHooks(ScriptAdapterHooks):
                 name=str(_config_value(model, "Info", "Name", user_id)),
                 status="等待",
             )
-            for user_id, model in user_pairs
-            if isinstance(model, ConfigBase)
-            and bool(_config_value(model, "Info", "Status", True))
+            for user_uid, model in user_config.items()
+            for user_id in (str(user_uid),)
+            if bool(_config_value(model, "Info", "Status", True))
             and int(_config_value(model, "Info", "RemainedDay", -1)) != 0
         ]
 
@@ -122,9 +103,9 @@ class OkScriptAdapterHooks(ScriptAdapterHooks):
 
     def run_auto_proxy(self, runtime: ScriptAdapterRuntime) -> TaskExecuteBase:
         user_config = runtime.extra.get("user_config")
-        if not isinstance(user_config, MultipleConfig):
+        if not isinstance(user_config, Mapping):
             raise RuntimeError("ok-script 用户配置未准备完成")
-        if not isinstance(runtime.script_config, ConfigBase):
+        if runtime.script_config is None:
             raise RuntimeError("ok-script 脚本配置未准备完成")
         return _CheckedAutoProxyTask(
             OkScriptAutoProxyTask(
@@ -136,11 +117,7 @@ class OkScriptAdapterHooks(ScriptAdapterHooks):
         )
 
     async def _write_back_user_config(self, runtime: ScriptAdapterRuntime) -> None:
-        script_uid = uuid.UUID(runtime.script_info.script_id)
-        storage_config = Config.ScriptConfig[script_uid]
-        if storage_config.is_locked:
-            await storage_config.unlock()
         user_config = runtime.extra.get("user_config")
-        if isinstance(user_config, MultipleConfig):
-            await storage_config.UserData.load(await user_config.toDict(if_decrypt=False))
-            await Config.ScriptConfig.save()
+        await runtime.storage.unlock()
+        if isinstance(user_config, Mapping):
+            await runtime.storage.save_user_models(user_config)

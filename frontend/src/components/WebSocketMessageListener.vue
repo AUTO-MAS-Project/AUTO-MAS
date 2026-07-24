@@ -29,9 +29,14 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { Modal, Button } from 'ant-design-vue'
-import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
+import {
+  normalizeDialogRequestData,
+  useWebSocket,
+  type WebSocketBaseMessage,
+} from '@/composables/useWebSocket'
+import { useAppLifecycle } from '@/composables/useAppLifecycle'
 
 const logger = window.electronAPI.getLogger('WebSocket消息')
 
@@ -41,13 +46,16 @@ interface ModalData {
   title: string
   message: string
   options: string[]
+  responseProtocol: 'legacy' | 'dialog'
 }
 
 // WebSocket hook
 const { subscribe, unsubscribe, sendRaw } = useWebSocket()
+const { initializeAppLifecycle, dialogRequests, respondDialog } = useAppLifecycle()
+initializeAppLifecycle()
 
 // 存储订阅ID用于取消订阅
-let subscriptionId: string
+let legacySubscriptionId: string | undefined
 
 // Modal 队列状态
 const modalQueue = ref<ModalData[]>([])
@@ -68,12 +76,17 @@ const focusWindow = async () => {
 }
 
 // 发送用户选择结果到后端
-const sendResponse = (messageId: string, choice: boolean) => {
-  const response = { choice: choice }
-  logger.info(`发送用户选择结果: ${JSON.stringify({ messageId, response })}`)
+const sendResponse = (modal: ModalData, choice: boolean): boolean => {
+  if (modal.responseProtocol === 'dialog') {
+    logger.info(`发送弹窗响应: ${modal.messageId}, choice=${choice}`)
+    return respondDialog(modal.messageId, choice)
+  }
 
-  // 发送响应消息到后端
-  sendRaw('Response', response, messageId)
+  const response = { choice }
+  logger.info(`发送用户选择结果: ${JSON.stringify({ messageId: modal.messageId, response })}`)
+
+  // 保留旧 Message/Response 协议
+  return sendRaw('Response', response, modal.messageId)
 }
 
 // 处理确认按钮
@@ -89,7 +102,12 @@ const handleCancel = () => {
 // 处理用户选择
 const handleChoice = (choice: boolean) => {
   if (currentModal.value) {
-    sendResponse(currentModal.value.messageId, choice)
+    const sent = sendResponse(currentModal.value, choice)
+    if (currentModal.value.responseProtocol === 'dialog' && !sent) {
+      logger.warn(`弹窗响应发送失败，保留弹窗等待重连: ${currentModal.value.messageId}`)
+      isModalOpen.value = true
+      return
+    }
     logger.info(`弹窗已处理: ${currentModal.value.messageId}`)
   }
 
@@ -119,18 +137,17 @@ const showNextModal = async () => {
   }
 }
 
-// 添加弹窗到队列
-const showQuestion = async (questionData: any) => {
-  const title = questionData.title || '操作提示'
-  const message = questionData.message || ''
-  const options = questionData.options || ['确定', '取消']
-  const messageId = questionData.message_id || 'fallback_' + Date.now()
+const isSameModal = (left: ModalData, right: ModalData): boolean =>
+  left.messageId === right.messageId && left.responseProtocol === right.responseProtocol
 
-  const modalData: ModalData = {
-    messageId,
-    title,
-    message,
-    options,
+// 添加弹窗到队列
+const enqueueModal = async (modalData: ModalData) => {
+  if (
+    (currentModal.value && isSameModal(currentModal.value, modalData)) ||
+    modalQueue.value.some(queuedModal => isSameModal(queuedModal, modalData))
+  ) {
+    logger.info(`忽略重复弹窗请求: ${modalData.messageId}`)
+    return
   }
 
   logger.info(`收到弹窗请求: ${modalData.messageId}`)
@@ -151,6 +168,59 @@ const showQuestion = async (questionData: any) => {
     logger.info(`弹窗已加入队列: ${modalData.messageId}, 当前队列长度: ${modalQueue.value.length}`)
   }
 }
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const showQuestion = async (questionData: unknown) => {
+  if (!isRecord(questionData)) {
+    logger.warn('收到无效的旧版 Question 消息')
+    return
+  }
+
+  const options = Array.isArray(questionData.options)
+    ? questionData.options.filter((option): option is string => typeof option === 'string')
+    : []
+  const rawMessageId = questionData.message_id
+
+  await enqueueModal({
+    messageId:
+      typeof rawMessageId === 'string' && rawMessageId.length > 0
+        ? rawMessageId
+        : `fallback_${Date.now()}`,
+    title: typeof questionData.title === 'string' ? questionData.title : '操作提示',
+    message: typeof questionData.message === 'string' ? questionData.message : '',
+    options: options.length > 0 ? options : ['确定', '取消'],
+    responseProtocol: 'legacy',
+  })
+}
+
+const handleDialogRequest = (data: unknown) => {
+  const request = normalizeDialogRequestData(data)
+  if (!request) {
+    logger.warn('dialog.request 缺少有效的 data.requestId，已拒绝创建无法关联的弹窗')
+    return
+  }
+
+  void enqueueModal({
+    messageId: request.requestId,
+    title: request.title,
+    message: request.message,
+    options: request.options,
+    responseProtocol: 'dialog',
+  })
+}
+
+// 新协议由应用生命周期协调器唯一订阅；本组件只负责把待响应请求渲染成队列。
+watch(
+  dialogRequests,
+  requests => {
+    for (const request of requests) {
+      handleDialogRequest(request)
+    }
+  },
+  { immediate: true }
+)
 
 // 消息处理函数
 const handleMessage = (message: WebSocketBaseMessage) => {
@@ -195,7 +265,12 @@ const handleMessage = (message: WebSocketBaseMessage) => {
 }
 
 // 处理对象类型的消息
-const handleObjectMessage = (data: any) => {
+const handleObjectMessage = (data: unknown) => {
+  if (!isRecord(data)) {
+    logger.warn('收到非对象的 Message 数据')
+    return
+  }
+
   // 打印完整对象内容
   logger.debug(`处理对象消息: ${JSON.stringify(data)}`)
 
@@ -207,14 +282,14 @@ const handleObjectMessage = (data: any) => {
 
     if (data.message_id) {
       logger.info('message_id存在，显示应用内弹窗')
-      showQuestion(data)
+      void showQuestion(data)
       return
     } else {
       logger.warn('Question消息缺少message_id字段')
       // 即使缺少message_id，也尝试显示对话框，使用当前时间戳作为ID
       const fallbackId = 'fallback_' + Date.now()
       logger.info(`使用备用ID显示弹窗: ${fallbackId}`)
-      showQuestion({
+      void showQuestion({
         ...data,
         message_id: fallbackId,
       })
@@ -255,19 +330,18 @@ const handleStringMessage = (data: string) => {
 }
 
 // 处理其他类型的消息
-const handleOtherMessage = (data: any) => {
+const handleOtherMessage = (data: unknown) => {
   logger.debug(`处理其他类型消息: ${typeof data}, ${JSON.stringify(data)}`)
 }
 
 // 组件挂载时订阅消息
 onMounted(() => {
-  logger.info('组件挂载，开始监听Message类型的消息')
+  logger.info('组件挂载，开始监听旧版 Message，并渲染生命周期弹窗队列')
 
-  // 使用新的 subscribe API，订阅 Message 类型的消息（注意大写M）
-  subscriptionId = subscribe({ type: 'Message' }, handleMessage)
+  // 保留旧 Message 类型订阅（注意大写 M）
+  legacySubscriptionId = subscribe({ type: 'Message' }, handleMessage)
 
-  logger.info(`订阅ID: ${subscriptionId}`)
-  logger.info(`订阅过滤器: ${JSON.stringify({ type: 'Message' })}`)
+  logger.info(`旧版弹窗订阅ID: ${legacySubscriptionId}`)
 
   // 暴露调试接口到 window 对象（仅用于开发调试）
   window.__debugShowQuestion = showQuestion
@@ -276,11 +350,8 @@ onMounted(() => {
 
 // 组件卸载时取消订阅
 onUnmounted(() => {
-  logger.info('组件卸载，停止监听Message类型的消息')
-  // 使用新的 unsubscribe API
-  if (subscriptionId) {
-    unsubscribe(subscriptionId)
-  }
+  logger.info('组件卸载，停止监听新旧弹窗消息')
+  if (legacySubscriptionId) unsubscribe(legacySubscriptionId)
   // 清理调试接口
   delete window.__debugShowQuestion
 })

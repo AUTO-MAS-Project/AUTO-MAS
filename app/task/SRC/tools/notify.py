@@ -18,16 +18,17 @@
 
 #   Contact: DLmaster_361@163.com
 
+from typing import Any
+
 from app.core import Config
 from app.services import Notify
 from app.utils import get_logger
-from app.models.config import SrcUserConfig
 
 logger = get_logger("SRC通知工具")
 
 
 async def push_notification(
-    mode: str, title: str, message: dict, user_config: SrcUserConfig | None
+    mode: str, title: str, message: dict, user_config: Any | None
 ) -> None:
     """通过所有渠道推送通知"""
 

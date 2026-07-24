@@ -24,6 +24,7 @@
 from fastapi import APIRouter, Body
 
 from app.core import Config, TaskManager
+from app.core.task_manager import TaskRuntimeUnavailableError
 from app.services import System
 from app.models.schema import *
 
@@ -44,6 +45,16 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
             mode=task.mode,
             id=task.taskId,
             resume_from_script_id=task.resumeFromScriptId,
+        )
+    except TaskRuntimeUnavailableError as error:
+        # This is an expected, explicit migration boundary rather than an
+        # internal server crash.  Keep the legacy envelope but let the UI
+        # distinguish it from malformed task data or runner failures.
+        return TaskCreateOut(
+            code=503,
+            status="unavailable",
+            message=str(error),
+            taskId="",
         )
     except Exception as e:
         return TaskCreateOut(

@@ -28,11 +28,13 @@ on:
 
 jobs:
   mirrorchyan:
-    runs-on: macos-latest
+    runs-on: macos-15
+    permissions:
+      contents: read
 
     steps:
       - id: uploading
-        uses: MirrorChyan/release-note-action@v1
+        uses: MirrorChyan/release-note-action@f392b50c411981ee6d33c8ed5e91d66d84d56202 # v1
         with:
           mirrorchyan_rid: AUTO_MAS
 

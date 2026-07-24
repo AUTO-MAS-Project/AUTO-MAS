@@ -238,7 +238,6 @@ import {
 } from '@ant-design/icons-vue'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
-import BlurReveal from '@/components/inspira/BlurReveal.vue'
 import EncryptedText from '@/components/inspira/EncryptedText.vue'
 import NoticeModal from '@/components/NoticeModal.vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'

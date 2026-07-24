@@ -16,6 +16,9 @@ from .fields import PLUGIN_FIELD_MARKER
 from .pypi_site import iter_plugin_entry_points
 
 
+NO_PLUGIN_CONFIG_FIELD = "__no_plugin_config__"
+
+
 
 
 def normalize_schema_options(
@@ -76,10 +79,21 @@ class PluginSchemaManager:
 
     def load_schema(self, plugin_name: str) -> Dict[str, Dict[str, Any]]:
         """从插件 Entry Point 同包的 schema.py 加载 Config 模型。"""
-        model = self._load_config_model(plugin_name)
-        return self.build_schema_from_model(plugin_name, model)
+        contract = self._load_schema_contract(plugin_name)
+        if isinstance(contract, dict):
+            return copy.deepcopy(contract)
+        return self.build_schema_from_model(plugin_name, contract)
 
     def _load_config_model(self, plugin_name: str) -> type[BaseModel]:
+        contract = self._load_schema_contract(plugin_name)
+        if isinstance(contract, dict):
+            raise PluginSchemaError(f"插件未声明实例级 Config: {plugin_name}")
+        return contract
+
+    def _load_schema_contract(
+        self,
+        plugin_name: str,
+    ) -> type[BaseModel] | Dict[str, Dict[str, Any]]:
         entry_point_name = str(plugin_name or "").strip()
         if not entry_point_name:
             raise PluginSchemaError("插件名不能为空")
@@ -100,20 +114,66 @@ class PluginSchemaManager:
             raise PluginSchemaError(f"插件 Entry Point 缺少模块名: {plugin_name}")
 
         schema_module_name = f"{package_name}.schema"
+        schema_module = None
         try:
             schema_module = importlib.import_module(schema_module_name)
+        except ModuleNotFoundError as e:
+            if e.name != schema_module_name:
+                raise PluginSchemaError(
+                    f"导入插件 Schema 失败: {plugin_name}, module={schema_module_name}, "
+                    f"error={type(e).__name__}: {e}"
+                ) from e
         except Exception as e:
             raise PluginSchemaError(
                 f"导入插件 Schema 失败: {plugin_name}, module={schema_module_name}, "
                 f"error={type(e).__name__}: {e}"
             ) from e
 
-        model = getattr(schema_module, "Config", None)
-        if not inspect.isclass(model) or not issubclass(model, BaseModel):
+        if schema_module is not None:
+            model = getattr(schema_module, "Config", None)
+            if model is not None:
+                if not inspect.isclass(model) or not issubclass(model, BaseModel):
+                    raise PluginSchemaError(
+                        f"插件 schema.py 的 Config 必须继承 BaseModel: {plugin_name}"
+                    )
+                return model
+
+            no_config_schema = self._extract_no_config_schema(schema_module)
+            if no_config_schema is not None:
+                return no_config_schema
+
+        try:
+            entry_module = importlib.import_module(module_name)
+        except Exception as e:
             raise PluginSchemaError(
-                f"插件 schema.py 必须导出 Config: BaseModel: {plugin_name}"
+                f"导入插件 Entry Point 模块失败: {plugin_name}, module={module_name}, "
+                f"error={type(e).__name__}: {e}"
+            ) from e
+
+        no_config_schema = self._extract_no_config_schema(entry_module)
+        if no_config_schema is not None:
+            return no_config_schema
+
+        if schema_module is None:
+            raise PluginSchemaError(
+                f"插件缺少 {schema_module_name}.Config，且 Entry Point 未声明显式无配置标记: "
+                f"{plugin_name}"
             )
-        return model
+        raise PluginSchemaError(
+            f"插件 schema.py 必须导出 Config: BaseModel，或 Entry Point 声明显式无配置标记: "
+            f"{plugin_name}"
+        )
+
+    @staticmethod
+    def _extract_no_config_schema(module: Any) -> Dict[str, Dict[str, Any]] | None:
+        raw_schema = getattr(module, "schema", None)
+        if not isinstance(raw_schema, dict) or set(raw_schema) != {NO_PLUGIN_CONFIG_FIELD}:
+            return None
+
+        marker = raw_schema.get(NO_PLUGIN_CONFIG_FIELD)
+        if not isinstance(marker, dict) or marker.get("configurable") is not False:
+            return None
+        return {NO_PLUGIN_CONFIG_FIELD: copy.deepcopy(marker)}
 
     def _validate_plugin_fields(
         self,
@@ -160,6 +220,8 @@ class PluginSchemaManager:
         self,
         plugin_name: str,
         model_cls: type[BaseModel],
+        *,
+        _seen_models: frozenset[type[BaseModel]] | None = None,
     ) -> Dict[str, Dict[str, Any]]:
         """
         从 Pydantic BaseModel 类型推导 schema 字段定义。
@@ -177,6 +239,7 @@ class PluginSchemaManager:
                 2) `json_schema_extra` 不是字典对象。
         """
         self._validate_plugin_fields(plugin_name, model_cls)
+        seen_models = (_seen_models or frozenset()) | {model_cls}
         result: Dict[str, Dict[str, Any]] = {}
         for field_name, field_info in model_cls.model_fields.items():
             annotation = field_info.annotation
@@ -210,6 +273,16 @@ class PluginSchemaManager:
             item_type = self._list_item_type(annotation)
             if item_type is not None:
                 field_schema.setdefault("item_type", item_type)
+
+            nested_model = self._nested_model_type(annotation)
+            if nested_model is not None and nested_model not in seen_models:
+                # 前端仍按既有 object 类型渲染；properties 供递归脱敏与未来
+                # 嵌套 SchemaForm 使用，是向后兼容的附加元数据。
+                field_schema["properties"] = self.build_schema_from_model(
+                    plugin_name,
+                    nested_model,
+                    _seen_models=seen_models,
+                )
 
             if not field_info.is_required():
                 if field_info.default_factory is not None:
@@ -325,7 +398,13 @@ class PluginSchemaManager:
         config: Dict[str, Any],
     ) -> Dict[str, Any]:
         """使用插件 Config 模型补齐默认值并严格校验配置。"""
-        model = self._load_config_model(plugin_name)
+        contract = self._load_schema_contract(plugin_name)
+        if isinstance(contract, dict):
+            result = copy.deepcopy(config)
+            result.pop(NO_PLUGIN_CONFIG_FIELD, None)
+            return result
+
+        model = contract
         try:
             validated = model.model_validate(copy.deepcopy(config), strict=True)
         except ValidationError as e:

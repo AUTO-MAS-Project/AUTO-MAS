@@ -1,0 +1,18 @@
+{
+  "case_id": "15_state_recovery",
+  "status": "PASS",
+  "notes": "",
+  "error": null,
+  "error_traceback": null,
+  "snapshots": {
+    "after_restart_discover": "Snapshot(at=1784824151.3274486, event_bus_handlers={}, loader_records={}, discovered_plugins={'fake_state': {'source': 'pypi', 'distribution': 'automas-fake-state', 'version': '0.1.0', 'system': False, 'locked': False}}, service_owners={}, sys_modules_keys_sample=['fake_plugin_cfg', 'fake_plugin_ovr', 'fake_plugin_state'])",
+    "after_restart_load": "Snapshot(at=1784824151.3279479, event_bus_handlers={'fake:probe': 1, 'fake:probe_global': 1}, loader_records={'state-2': {'instance_id': 'state-2', 'plugin_name': 'fake_state', 'status': 'active', 'lifecycle_phase': 'active', 'error': None, 'listener_ids': [], 'generation': 1, 'reload_count': 0, 'last_reload_reason': None, 'on_load_attempted': True, 'on_start_attempted': True, 'on_stop_completed': False, 'on_unload_completed': False, 'provides': [], 'needs': [], 'missing': []}}, discovered_plugins={'fake_state': {'source': 'pypi', 'distribution': 'automas-fake-state', 'version': '0.1.0', 'system': False, 'locked': False}}, service_owners={}, sys_modules_keys_sample=['fake_plugin_cfg', 'fake_plugin_ovr', 'fake_plugin_state'])"
+  },
+  "metrics": {
+    "generation_after_restart": 1,
+    "snapshot_event_bus_after_restart": {
+      "fake:probe": 1,
+      "fake:probe_global": 1
+    }
+  }
+}

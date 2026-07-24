@@ -1,0 +1,2 @@
+[auto_mas.plugins]
+fake_explode = fake_plugin_explode:Plugin

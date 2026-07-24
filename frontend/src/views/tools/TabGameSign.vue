@@ -15,6 +15,7 @@ import type { ToolsConfig_GameSign, GameSignAccountGroupConfig } from '@/api'
 import { Service } from '@/api'
 import { OpenAPI } from '@/api/core/OpenAPI'
 import { useGameSignAccountApi } from '@/composables/useGameSignAccountApi'
+import { authenticatedApiFetch } from '@/utils/httpSecurity'
 
 const {
   config,
@@ -191,7 +192,7 @@ const qrDevice = ref('')
 const qrPollTimer = ref<ReturnType<typeof setInterval> | null>(null)
 
 const qrFetch = async (path: string, body?: any) => {
-  const resp = await fetch(`${OpenAPI.BASE}/api/tools/sign/miyoushe/qr${path}`, {
+  const resp = await authenticatedApiFetch(`${OpenAPI.BASE}/api/tools/sign/miyoushe/qr${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     ...(body ? { body: JSON.stringify(body) } : {}),

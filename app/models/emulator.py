@@ -22,6 +22,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import IntEnum
+from typing import Any, Literal, Mapping, Self, cast
 
 
 class DeviceStatus(IntEnum):
@@ -47,6 +48,76 @@ class DeviceInfo:
     title: str
     status: DeviceStatus
     adb_address: str
+
+
+@dataclass(frozen=True, slots=True)
+class EmulatorRuntimeConfig:
+    """Validated immutable snapshot consumed by emulator device drivers."""
+
+    name: str
+    emulator_type: Literal["general", "mumu", "ldplayer"]
+    path: str
+    boss_key: str
+    max_wait_time: int
+    force_kill_on_close: bool
+
+    @classmethod
+    def from_mapping(cls, payload: Mapping[str, object]) -> Self:
+        info = payload.get("Info")
+        if not isinstance(info, Mapping):
+            raise TypeError("模拟器配置缺少 Info 对象")
+
+        name = info.get("Name")
+        emulator_type = info.get("Type")
+        path = info.get("Path")
+        boss_key = info.get("BossKey")
+        max_wait_time = info.get("MaxWaitTime")
+        force_kill_on_close = info.get("ForceKillOnClose")
+
+        for field_name, value in (
+            ("Name", name),
+            ("Path", path),
+            ("BossKey", boss_key),
+        ):
+            if not isinstance(value, str):
+                raise TypeError(f"模拟器配置 Info.{field_name} 必须是字符串")
+        if emulator_type not in {"general", "mumu", "ldplayer"}:
+            raise ValueError(f"不支持的模拟器类型: {emulator_type}")
+        if (
+            not isinstance(max_wait_time, int)
+            or isinstance(max_wait_time, bool)
+            or max_wait_time < 1
+        ):
+            raise ValueError("模拟器配置 Info.MaxWaitTime 必须是正整数")
+        if not isinstance(force_kill_on_close, bool):
+            raise TypeError("模拟器配置 Info.ForceKillOnClose 必须是布尔值")
+
+        return cls(
+            name=name,
+            emulator_type=cast(
+                Literal["general", "mumu", "ldplayer"],
+                emulator_type,
+            ),
+            path=path,
+            boss_key=boss_key,
+            max_wait_time=max_wait_time,
+            force_kill_on_close=force_kill_on_close,
+        )
+
+    def get(self, group: str, name: str) -> Any:
+        if group != "Info":
+            raise AttributeError(f"配置项 '{group}.{name}' 不存在")
+        fields: dict[str, object] = {
+            "Name": self.name,
+            "Type": self.emulator_type,
+            "Path": self.path,
+            "BossKey": self.boss_key,
+            "MaxWaitTime": self.max_wait_time,
+            "ForceKillOnClose": self.force_kill_on_close,
+        }
+        if name not in fields:
+            raise AttributeError(f"配置项 '{group}.{name}' 不存在")
+        return fields[name]
 
 
 class DeviceBase(ABC):

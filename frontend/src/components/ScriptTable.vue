@@ -5,6 +5,7 @@
       v-model="localScripts"
       item-key="id"
       :animation="200"
+      :disabled="searchActive"
       ghost-class="script-ghost"
       chosen-class="script-chosen"
       drag-class="script-drag"
@@ -13,12 +14,31 @@
       @end="onScriptDragEnd"
     >
       <template #item="{ element: script }">
-        <div :key="script.id" class="script-wrapper">
+        <div
+          :ref="element => setSearchMatchElement(getScriptSearchMatchKey(script.id), element)"
+          :key="script.id"
+          :class="[
+            'script-wrapper',
+            {
+              'search-match-active':
+                props.activeSearchMatchKey === getScriptSearchMatchKey(script.id),
+            },
+          ]"
+          :aria-current="
+            props.activeSearchMatchKey === getScriptSearchMatchKey(script.id) ? 'true' : undefined
+          "
+        >
           <a-card :hoverable="false" class="script-card" :body-style="{ padding: '0' }">
             <!-- 脚本头部信息 -->
             <div class="script-header">
               <div class="script-info">
-                <span class="script-drag-handle" title="拖拽排序" aria-label="拖拽排序">
+                <span
+                  class="script-drag-handle"
+                  :class="{ 'drag-handle-disabled': searchActive }"
+                  :title="searchActive ? '搜索期间暂停拖拽排序' : '拖拽排序'"
+                  aria-label="拖拽排序"
+                  :aria-disabled="searchActive"
+                >
                   <span class="script-drag-dots" aria-hidden="true"></span>
                 </span>
                 <div class="script-logo-container">
@@ -61,7 +81,7 @@
                   type="default"
                   size="middle"
                   disabled
-                  style="color: #52c41a; border-color: #52c41a"
+                  style="color: var(--v6-color-success); border-color: var(--v6-color-success)"
                 >
                   <template #icon>
                     <SettingOutlined />
@@ -86,7 +106,7 @@
                   type="default"
                   size="middle"
                   disabled
-                  style="color: #52c41a; border-color: #52c41a"
+                  style="color: var(--v6-color-success); border-color: var(--v6-color-success)"
                 >
                   <template #icon>
                     <SettingOutlined />
@@ -146,6 +166,7 @@
                   <a-button
                     size="middle"
                     class="action-button"
+                    :disabled="searchActive"
                     :aria-label="collapsedScriptIds.has(script.id) ? '展开用户' : '收起用户'"
                     @click="toggleUsersCollapsed(script.id)"
                   >
@@ -160,7 +181,11 @@
 
             <!-- 用户列表 -->
             <div
-              v-if="!collapsedScriptIds.has(script.id) && script.users && script.users.length > 0"
+              v-if="
+                (!collapsedScriptIds.has(script.id) || searchActive) &&
+                script.users &&
+                script.users.length > 0
+              "
               class="users-section"
             >
               <!-- 使用vuedraggable包装用户列表 -->
@@ -168,6 +193,7 @@
                 v-model="script.users"
                 item-key="id"
                 :animation="200"
+                :disabled="searchActive"
                 ghost-class="user-ghost"
                 chosen-class="user-chosen"
                 drag-class="user-drag"
@@ -176,8 +202,33 @@
                 @end="(evt: any) => onUserDragEnd(evt, script)"
               >
                 <template #item="{ element: user }">
-                  <div :key="user.id" class="user-item">
-                    <span class="user-drag-handle" title="拖拽排序" aria-label="拖拽排序">
+                  <div
+                    v-show="shouldShowUserInSearch(script, user)"
+                    :ref="
+                      element =>
+                        setSearchMatchElement(getUserSearchMatchKey(script.id, user.id), element)
+                    "
+                    :key="user.id"
+                    :class="[
+                      'user-item',
+                      {
+                        'search-match-active':
+                          props.activeSearchMatchKey === getUserSearchMatchKey(script.id, user.id),
+                      },
+                    ]"
+                    :aria-current="
+                      props.activeSearchMatchKey === getUserSearchMatchKey(script.id, user.id)
+                        ? 'true'
+                        : undefined
+                    "
+                  >
+                    <span
+                      class="user-drag-handle"
+                      :class="{ 'drag-handle-disabled': searchActive }"
+                      :title="searchActive ? '搜索期间暂停拖拽排序' : '拖拽排序'"
+                      aria-label="拖拽排序"
+                      :aria-disabled="searchActive"
+                    >
                       <span class="script-drag-dots" aria-hidden="true"></span>
                     </span>
                     <div class="user-info">
@@ -282,7 +333,7 @@
             </div>
 
             <!-- 空状态 -->
-            <div v-else-if="!collapsedScriptIds.has(script.id)" class="empty-users">
+            <div v-else-if="!collapsedScriptIds.has(script.id) || searchActive" class="empty-users">
               <div class="empty-content">
                 <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
               </div>
@@ -307,13 +358,20 @@ import {
   UserAddOutlined,
 } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import { parseStatusTagList } from '@/composables/useStatusTag'
 import type { StatusTag } from '@/composables/useStatusTag'
 import { getTodayInTimezone, isDateEqual, getWeekdayInTimezone } from '@/utils/dateUtils'
 import { getScriptIcon, getScriptTypeTagColor, handleScriptIconError } from '@/utils/scriptRegistry'
+import {
+  getScriptSearchMatchKey,
+  getUserSearchMatchKey,
+  matchesScriptOwnSearch,
+  matchesUserSearch,
+  normalizeScriptSearchQuery,
+} from '@/views/scripts/scriptPageSearch'
 
 interface Props {
   scripts: Script[]
@@ -321,6 +379,8 @@ interface Props {
   copyingScriptId?: string | null
   allPlansData?: Record<string, Record<string, any>>
   currentPlanData?: Record<string, any>
+  searchKeyword?: string
+  activeSearchMatchKey?: string
 }
 
 interface Emits {
@@ -387,6 +447,15 @@ const emit = defineEmits<Emits>()
 
 // 本地脚本列表状态
 const localScripts = ref<Script[]>([])
+const normalizedSearchKeyword = computed(() =>
+  normalizeScriptSearchQuery(props.searchKeyword ?? '')
+)
+const searchActive = computed(() => normalizedSearchKeyword.value.length > 0)
+
+const shouldShowUserInSearch = (script: Script, user: User): boolean =>
+  !searchActive.value ||
+  matchesScriptOwnSearch(script, normalizedSearchKeyword.value) ||
+  matchesUserSearch(user, normalizedSearchKeyword.value)
 
 // 脚本用户列表收起状态 - 持久化到 localStorage，切换页面后仍保持
 const COLLAPSED_SCRIPTS_STORAGE_KEY = 'scripts.collapsedScriptIds'
@@ -436,7 +505,29 @@ const expandAllUsers = () => {
   saveCollapsedScriptIds()
 }
 
-defineExpose({ collapseAllUsers, expandAllUsers })
+const searchMatchElements = new Map<string, HTMLElement>()
+
+const setSearchMatchElement = (key: string, element: unknown) => {
+  if (element instanceof HTMLElement) {
+    searchMatchElements.set(key, element)
+  } else {
+    searchMatchElements.delete(key)
+  }
+}
+
+const scrollToSearchMatch = (key: string) => {
+  const element = searchMatchElements.get(key)
+  if (!element?.isConnected) return
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  // 'nearest' 仅在元素不在视口内时滚动，避免键盘导航时的多余跳动；
+  // 低性能 / reduced-motion 模式下禁用 smooth 滚动以减少主线程开销。
+  element.scrollIntoView({
+    behavior: reduceMotion ? 'auto' : 'smooth',
+    block: 'nearest',
+  })
+}
+
+defineExpose({ collapseAllUsers, expandAllUsers, scrollToSearchMatch })
 
 // 账号信息展开状态管理 - 使用用户ID作为key
 const expandedUserIds = ref<Set<string>>(new Set())
@@ -1185,7 +1276,7 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--v6-space-4);
 }
 
 .script-wrapper {
@@ -1201,7 +1292,7 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 }
 
 .script-chosen {
-  cursor: move !important;
+  cursor: grabbing !important;
 }
 
 .script-drag {
@@ -1209,11 +1300,11 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
   z-index: 1000;
   opacity: 1 !important;
-  cursor: all-scroll !important;
+  cursor: grabbing !important;
 }
 
 .script-drag * {
-  cursor: all-scroll !important;
+  cursor: grabbing !important;
 }
 
 .script-drag .script-card {
@@ -1233,7 +1324,7 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 }
 
 .user-chosen {
-  cursor: move !important;
+  cursor: grabbing !important;
   background: var(--ant-color-primary-bg) !important;
 }
 
@@ -1243,11 +1334,11 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   z-index: 999;
   background: var(--ant-color-bg-container) !important;
   opacity: 1 !important;
-  cursor: all-scroll !important;
+  cursor: grabbing !important;
 }
 
 .user-drag * {
-  cursor: all-scroll !important;
+  cursor: grabbing !important;
 }
 
 .script-drag .script-drag-handle {
@@ -1280,18 +1371,28 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 
 /* 脚本卡片 */
 .script-card {
-  border-radius: 16px;
-  border: 1px solid var(--ant-color-border-secondary);
-  background: var(--ant-color-bg-container);
+  border-radius: var(--v6-radius-card);
+  border: 1px solid var(--v6-color-border-subtle);
+  background: var(--app-background-panel-bg, var(--v6-color-surface));
   overflow: hidden;
   height: 100%;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--v6-shadow-card);
+  transition:
+    border-color var(--v6-motion-fast) var(--v6-ease-out),
+    box-shadow var(--v6-motion-fast) var(--v6-ease-out);
 }
 
 .script-card:hover {
+  border-color: color-mix(in srgb, var(--ant-color-primary) 54%, var(--v6-color-border));
+}
+
+.script-wrapper.search-match-active .script-card {
   border-color: var(--ant-color-primary);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--ant-color-primary) 22%, transparent),
+    var(--v6-shadow-card);
 }
 
 /* 脚本头部 */
@@ -1299,8 +1400,8 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 20px 16px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
+  padding: var(--v6-space-4) var(--v6-space-4) var(--v6-space-3);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
 }
 
 .script-info {
@@ -1319,13 +1420,19 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   color: var(--ant-color-text-tertiary);
   background: transparent;
   border: none;
-  cursor: move;
+  cursor: grab;
   flex-shrink: 0;
   user-select: none;
 }
 
 .script-drag-handle:active {
-  cursor: move;
+  cursor: grabbing;
+}
+
+.drag-handle-disabled,
+.drag-handle-disabled:active {
+  cursor: default;
+  opacity: 0.45;
 }
 
 .script-drag-dots {
@@ -1341,12 +1448,12 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 .script-logo-container {
   width: 48px;
   height: 48px;
-  border-radius: 12px;
+  border-radius: var(--v6-radius-card);
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--ant-color-bg-layout);
-  border: 1px solid var(--ant-color-border);
+  background: var(--v6-color-window);
+  border: 1px solid var(--v6-color-border);
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -1386,9 +1493,8 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 }
 
 .action-button {
-  border-radius: 8px;
+  border-radius: var(--v6-radius-control);
   font-weight: 500;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .add-button {
@@ -1417,9 +1523,17 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
+  padding: var(--v6-space-4);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
   min-height: 80px;
+  transition:
+    background var(--v6-motion-fast) var(--v6-ease-out),
+    box-shadow var(--v6-motion-fast) var(--v6-ease-out);
+}
+
+.user-item.search-match-active {
+  background: color-mix(in srgb, var(--ant-color-primary) 10%, transparent);
+  box-shadow: inset 3px 0 0 var(--ant-color-primary);
 }
 
 .user-drag-handle {
@@ -1431,13 +1545,13 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   color: var(--ant-color-text-tertiary);
   background: transparent;
   border: none;
-  cursor: move;
+  cursor: grab;
   flex-shrink: 0;
   user-select: none;
 }
 
 .user-drag-handle:active {
-  cursor: move;
+  cursor: grabbing;
 }
 
 .user-drag-handle:hover .script-drag-dots {
@@ -1532,11 +1646,11 @@ const onUserDragEnd = async (evt: any, script: Script) => {
 }
 
 .user-action-btn {
-  border-radius: 6px;
+  border-radius: var(--v6-radius-control);
   font-weight: 500;
   min-width: 60px;
-  border: 1px solid var(--ant-color-border);
-  background: var(--ant-color-bg-container);
+  border: 1px solid var(--v6-color-border);
+  background: var(--v6-color-surface);
 }
 
 .user-action-btn.ant-btn-dangerous {

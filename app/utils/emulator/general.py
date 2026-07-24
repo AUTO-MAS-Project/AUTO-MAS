@@ -31,8 +31,12 @@ from pathlib import Path
 from typing import Dict, Any
 
 from app.utils.ProcessManager import ProcessManager
-from app.models.emulator import DeviceStatus, DeviceBase, DeviceInfo
-from app.models.config import EmulatorConfig
+from app.models.emulator import (
+    DeviceBase,
+    DeviceInfo,
+    DeviceStatus,
+    EmulatorRuntimeConfig,
+)
 from app.utils import get_logger
 
 logger = get_logger("通用模拟器管理")
@@ -43,7 +47,7 @@ class GeneralDeviceManager(DeviceBase):
     用于管理一般应用程序进程
     """
 
-    def __init__(self, config: EmulatorConfig) -> None:
+    def __init__(self, config: EmulatorRuntimeConfig) -> None:
 
         if not Path(config.get("Info", "Path")).exists():
             raise FileNotFoundError(f"模拟器文件不存在: {config.get('Info', 'Path')}")

@@ -346,6 +346,16 @@ BUILTIN_PAGES: list[dict[str, Any]] = [
         "order": 30,
     },
     {
+        "id": "emulators",
+        "path": "/emulators",
+        "title": "模拟器管理",
+        "menu_label": "模拟器管理",
+        "icon": "emulator",
+        "component": "Emulators",
+        "section": "main",
+        "order": 40,
+    },
+    {
         "id": "plugins",
         "path": "/plugins",
         "title": "插件管理",

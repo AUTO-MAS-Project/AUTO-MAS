@@ -1,12 +1,43 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, Iterable, Literal, Protocol
 
 PageSection = Literal["main", "bottom", "dev"]
 PageRenderer = Literal["component", "iframe", "custom-element"]
 EventScope = Literal["global", "instance"]
 EventErrorPolicy = Literal["continue", "raise"]
+
+BROWSER_RUNTIME_SERVICE = "browser.runtime.v1"
+
+
+class BrowserRuntimeError(RuntimeError):
+    """浏览器运行时跨插件契约的稳定错误。"""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        operation: str,
+        retryable: bool = False,
+        safe_details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.operation = operation
+        self.retryable = retryable
+        self.safe_details = dict(safe_details or {})
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "code": self.code,
+            "message": self.message,
+            "operation": self.operation,
+            "retryable": self.retryable,
+            "details": self.safe_details,
+        }
 
 
 class PluginConfigProxy(Protocol):
@@ -131,6 +162,9 @@ class PluginCacheManager(Protocol):
     @property
     def instance_cache_dir(self) -> Path: ...
 
+    @property
+    def instance_data_dir(self) -> Path: ...
+
     def register(
         self,
         *,
@@ -180,22 +214,26 @@ class PluginHttpRequest(Protocol):
     path: str
     query: dict[str, Any]
     headers: dict[str, str]
-    body: Any
+    body: bytes
+    json: Any
+    instance_id: str
 
 
 class PluginHttpResponse(Protocol):
-    status: int
     body: Any
+    status_code: int
     headers: dict[str, str]
+    media_type: str | None
 
 
 class PluginWebSocketSession(Protocol):
+    websocket: Any
     path: str
-    query: dict[str, Any]
+    instance_id: str
 
-    async def send_json(self, payload: Any) -> None: ...
-    async def receive_json(self) -> Any: ...
-    async def close(self) -> None: ...
+    async def send_json(self, data: Any) -> None: ...
+    async def send_text(self, data: str) -> None: ...
+    async def close(self, code: int = 1000, reason: str = "正常关闭") -> None: ...
 
 
 class PluginServerFacade(Protocol):
@@ -204,18 +242,105 @@ class PluginServerFacade(Protocol):
         path: str,
         handler: Any,
         *,
-        methods: list[str] | tuple[str, ...] | None = None,
+        methods: Iterable[str] | None = None,
+        action: str | dict[str, Any] | None = None,
     ) -> Any: ...
     def action(
         self,
         id: str,
-        handler: Any,
+        label: str,
+        path: str,
         *,
-        label: str | None = None,
         method: str = "POST",
         payload: Any = None,
+        refresh: bool = False,
     ) -> Any: ...
-    def websocket(self, path: str, handler: Any) -> Any: ...
+    def websocket(
+        self,
+        path: str,
+        on_message: Any,
+        *,
+        on_connect: Any | None = None,
+        on_disconnect: Any | None = None,
+        ping_interval: float = 15.0,
+        ping_timeout: float = 30.0,
+    ) -> Any: ...
+    async def open_ws(
+        self,
+        name: str,
+        url: str,
+        *,
+        on_message: Any | None = None,
+        on_connect: Any | None = None,
+        on_disconnect: Any | None = None,
+        reconnect: bool = True,
+        ping_interval: float = 15.0,
+        ping_timeout: float = 30.0,
+    ) -> Any: ...
+
+
+class BrowserRuntimeService(Protocol):
+    """跨插件 Chromium 浏览器运行时契约。"""
+
+    def snapshot(self) -> dict[str, Any]: ...
+    async def prepare(self, request: dict[str, Any] | None = None) -> dict[str, Any]: ...
+    async def open_session(self, request: dict[str, Any]) -> dict[str, Any]: ...
+    async def session_status(
+        self,
+        session_id: str,
+        *,
+        session_token: str,
+    ) -> dict[str, Any]: ...
+    async def navigate(
+        self,
+        session_id: str,
+        url: str,
+        *,
+        session_token: str,
+    ) -> dict[str, Any]: ...
+    async def activate(self, session_id: str, *, session_token: str) -> bool: ...
+    async def capture(
+        self,
+        session_id: str,
+        *,
+        session_token: str,
+        image_format: Literal["jpeg", "png", "webp"] = "jpeg",
+        quality: int = 90,
+    ) -> bytes: ...
+    async def execute_script(
+        self,
+        session_id: str,
+        script: str,
+        *args: Any,
+        session_token: str,
+    ) -> Any: ...
+    async def execute_cdp(
+        self,
+        session_id: str,
+        command: str,
+        params: dict[str, Any] | None = None,
+        *,
+        session_token: str,
+    ) -> dict[str, Any]: ...
+    async def automation_handoff(
+        self,
+        session_id: str,
+        *,
+        session_token: str,
+    ) -> dict[str, Any]: ...
+    async def release_automation_handoff(
+        self,
+        session_id: str,
+        *,
+        session_token: str,
+        lease_token: str,
+    ) -> dict[str, Any]: ...
+    async def close_session(
+        self,
+        session_id: str,
+        *,
+        session_token: str,
+    ) -> dict[str, Any]: ...
 
 
 class LogFacade(Protocol):
@@ -233,6 +358,7 @@ class PluginContext(Protocol):
     runtime_api: RuntimeAPI
     runtime: RuntimeFacade
     cache: PluginCacheManager
+    data_dir: Path
     log: LogFacade
     page: PageFacade
 
@@ -243,6 +369,9 @@ class PluginContext(Protocol):
 
 
 __all__ = [
+    "BROWSER_RUNTIME_SERVICE",
+    "BrowserRuntimeError",
+    "BrowserRuntimeService",
     "EventErrorPolicy",
     "EventScope",
     "JsonPluginCache",

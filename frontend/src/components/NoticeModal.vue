@@ -23,12 +23,14 @@
           class="notice-tab-pane"
         >
           <div class="notice-content">
+            <!-- eslint-disable vue/no-v-html -- MarkdownIt raw HTML is disabled and link URLs are validated before opening. -->
             <div
               ref="markdownContentRef"
               class="markdown-content"
               @click="handleLinkClick"
               v-html="renderMarkdown(content)"
             ></div>
+            <!-- eslint-enable vue/no-v-html -->
           </div>
         </a-tab-pane>
       </a-tabs>
@@ -60,6 +62,7 @@ import { message } from 'ant-design-vue'
 import MarkdownIt from 'markdown-it'
 import { Service } from '@/api/services/Service'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
+import { openExternalUrl } from '@/utils/openExternal'
 
 const logger = window.electronAPI.getLogger('公告模态框')
 
@@ -89,7 +92,7 @@ const { playSound } = useAudioPlayer()
 
 // 初始化 markdown 解析器
 const md = new MarkdownIt({
-  html: true,
+  html: false,
   linkify: true,
   typographer: true,
 })
@@ -135,15 +138,18 @@ const handleLinkClick = async (event: MouseEvent) => {
     if (url) {
       try {
         // 检查是否在Electron环境中
-        if (window.electronAPI && window.electronAPI.openUrl) {
-          const result = await window.electronAPI.openUrl(url)
+        if (window.electronAPI && 'openUrl' in window.electronAPI) {
+          const result = {
+            success: await openExternalUrl(url),
+            error: 'unsupported or unavailable external URL',
+          }
           if (!result.success) {
             logger.error(`打开链接失败: ${String(result.error)}`)
             message.error('打开链接失败，请手动复制链接地址')
           }
         } else {
           // 如果不在Electron环境中，使用普通的window.open
-          window.open(url, '_blank')
+          await openExternalUrl(url)
         }
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)

@@ -26,15 +26,19 @@ on:
 
 jobs:
   mirrorchyan:
-    runs-on: macos-latest
+    runs-on: macos-15
+    permissions:
+      contents: read
 
     steps:
       - id: uploading
-        uses: MirrorChyan/uploading-action@v1
+        uses: MirrorChyan/uploading-action@1ae1dddee41454a0a048d7f5b10ec11f2e5a89c4 # v1
         with:
           filetype: latest-release
-          filename: "AUTO-MAS-Lite-Setup-*.exe"
+          filename: "AUTO-MAS-Lite-Setup-*.zip"
           mirrorchyan_rid: AUTO_MAS
+          os: win
+          arch: x64
 
           owner: AUTO-MAS-Project
           repo: AUTO-MAS

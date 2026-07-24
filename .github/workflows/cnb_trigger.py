@@ -32,10 +32,11 @@ AUTO-MAS Build Trigger Script
 用于触发 CNB 构建的 Python 脚本
 """
 
-import requests
 import json
 import sys
 import argparse
+import urllib.error
+import urllib.request
 
 
 def build_cnb_headers(token: str) -> dict[str, str]:
@@ -96,26 +97,43 @@ def trigger_build(
 
         print(f"请求体: {json.dumps(data, indent=2, ensure_ascii=False)}")
 
-        response = requests.post(url, headers=headers, json=data)
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(data, ensure_ascii=False).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=60) as response:
+            status_code = response.status
+            response_bytes = response.read(1024 * 1024 + 1)
+        if len(response_bytes) > 1024 * 1024:
+            print("CNB response exceeds the 1 MiB safety limit")
+            return None
+        response_text = response_bytes.decode("utf-8")
 
-        print(f"响应状态码: {response.status_code}")
+        print(f"响应状态码: {status_code}")
 
-        if response.status_code == 200:
-            result = response.json()
+        if status_code == 200:
+            result = json.loads(response_text)
             print("构建触发成功!")
             print(f"响应内容: {json.dumps(result, indent=2, ensure_ascii=False)}")
             return result
         else:
-            print(f"请求失败: {response.status_code}")
-            print(f"错误信息: {response.text}")
+            print(f"请求失败: {status_code}")
+            print(f"错误信息: {response_text}")
             return None
 
-    except requests.exceptions.RequestException as e:
-        print(f"请求异常: {e}")
+    except urllib.error.HTTPError as e:
+        error_text = e.read(1024 * 1024 + 1).decode("utf-8", errors="replace")
+        print(f"请求失败: {e.code}")
+        print(f"错误信息: {error_text}")
+        return None
+    except urllib.error.URLError as e:
+        print(f"请求异常: {e.reason}")
         return None
     except json.JSONDecodeError as e:
         print(f"JSON解析错误: {e}")
-        print(f"响应内容: {response.text}")
+        print(f"响应内容: {response_text}")
         return None
 
 

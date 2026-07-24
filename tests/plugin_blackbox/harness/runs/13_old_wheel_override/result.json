@@ -1,0 +1,16 @@
+{
+  "case_id": "13_old_wheel_override",
+  "status": "PASS",
+  "notes": "",
+  "error": null,
+  "error_traceback": null,
+  "snapshots": {
+    "after_discover": "Snapshot(at=1784824151.2299707, event_bus_handlers={}, loader_records={}, discovered_plugins={'fake_ovr': {'source': 'pypi', 'distribution': 'automas-fake-ovr', 'version': '0.1.0', 'system': False, 'locked': False}}, service_owners={}, sys_modules_keys_sample=[])",
+    "after_load": "Snapshot(at=1784824151.2397637, event_bus_handlers={'fake:probe': 1, 'fake:probe_global': 1}, loader_records={'ovr-1': {'instance_id': 'ovr-1', 'plugin_name': 'fake_ovr', 'status': 'active', 'lifecycle_phase': 'active', 'error': None, 'listener_ids': [], 'generation': 1, 'reload_count': 0, 'last_reload_reason': None, 'on_load_attempted': True, 'on_start_attempted': True, 'on_stop_completed': False, 'on_unload_completed': False, 'provides': [], 'needs': [], 'missing': []}}, discovered_plugins={'fake_ovr': {'source': 'pypi', 'distribution': 'automas-fake-ovr', 'version': '0.1.0', 'system': False, 'locked': False}}, service_owners={}, sys_modules_keys_sample=['fake_plugin_ovr'])",
+    "after_unload": "Snapshot(at=1784824151.2397637, event_bus_handlers={}, loader_records={'ovr-1': {'instance_id': 'ovr-1', 'plugin_name': 'fake_ovr', 'status': 'unloaded', 'lifecycle_phase': 'unloaded', 'error': None, 'listener_ids': [], 'generation': 1, 'reload_count': 0, 'last_reload_reason': None, 'on_load_attempted': True, 'on_start_attempted': True, 'on_stop_completed': True, 'on_unload_completed': True, 'provides': [], 'needs': [], 'missing': []}}, discovered_plugins={'fake_ovr': {'source': 'pypi', 'distribution': 'automas-fake-ovr', 'version': '0.1.0', 'system': False, 'locked': False}}, service_owners={}, sys_modules_keys_sample=['fake_plugin_ovr'])"
+  },
+  "metrics": {
+    "winner_distribution": "automas-fake-ovr",
+    "winner_version": "0.1.0"
+  }
+}

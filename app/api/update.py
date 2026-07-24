@@ -26,6 +26,7 @@ from fastapi import APIRouter, Body, Query
 
 from app.core import Config
 from app.services import Updater
+from app.services.update import EmbeddedUpdaterManualOnlyError
 from app.models.schema import *
 
 router = APIRouter(prefix="/api/update", tags=["软件更新"])
@@ -43,6 +44,15 @@ async def check_update(version: UpdateCheckIn = Body(...)) -> UpdateCheckOut:
     try:
         if_need, latest_version, update_info = await Updater.check_update(
             current_version=version.current_version, if_force=version.if_force
+        )
+    except EmbeddedUpdaterManualOnlyError as error:
+        return UpdateCheckOut(
+            code=409,
+            status="manual",
+            message=str(error),
+            if_need_update=False,
+            latest_version=version.current_version,
+            update_info={},
         )
     except Exception as e:
         return UpdateCheckOut(
@@ -70,6 +80,7 @@ async def download_update(
 ) -> OutBase:
 
     try:
+        Updater.ensure_embedded_updater_available()
         if target_version:
             Updater.remote_version = target_version
         if not await Updater.start_download():
@@ -78,6 +89,8 @@ async def download_update(
                 status="error",
                 message="已有更新任务在进行中, 请勿重复操作",
             )
+    except EmbeddedUpdaterManualOnlyError as error:
+        return OutBase(code=409, status="manual", message=str(error))
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
@@ -122,6 +135,8 @@ async def switch_update_download_to_cnb() -> OutBase:
                 status="error",
                 message="当前无法切换到 CNB 下载源, 请确认正在从 GitHub 源下载",
             )
+    except EmbeddedUpdaterManualOnlyError as error:
+        return OutBase(code=409, status="manual", message=str(error))
     except Exception as e:
         return OutBase(
             code=500,
@@ -141,9 +156,12 @@ async def switch_update_download_to_cnb() -> OutBase:
 async def install_update() -> OutBase:
 
     try:
+        Updater.ensure_embedded_updater_available()
         task = asyncio.create_task(Updater.install_update())
         Config.temp_task.append(task)
         task.add_done_callback(lambda t: Config.temp_task.remove(t))
+    except EmbeddedUpdaterManualOnlyError as error:
+        return OutBase(code=409, status="manual", message=str(error))
     except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"

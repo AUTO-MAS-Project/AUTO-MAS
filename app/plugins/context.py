@@ -35,6 +35,7 @@ class PluginContext:
     runtime_api: RuntimeAPI
     runtime: RuntimeFacade
     cache: PluginCacheManager
+    data_dir: Path
     log: LogFacade
     page: PageFacade
 
@@ -109,6 +110,7 @@ class PluginContext:
             data_root=Path.cwd() / "data",
             logger=self.logger,
         )
+        self.data_dir = self.cache.instance_data_dir
 
         # 日志管道门面
         self.log = LogFacade(

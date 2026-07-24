@@ -5,7 +5,12 @@ from __future__ import annotations
 
 import json
 
-from app.models.ConfigBase import ConfigBase, ConfigItem, JSONValidator, MultipleConfig
+from app.models.ConfigBase import (
+    ConfigBase,
+    ConfigItem,
+    EncryptedJSONValidator,
+    MultipleConfig,
+)
 
 
 class PluginUserConfig(ConfigBase):
@@ -17,7 +22,7 @@ class PluginUserConfig(ConfigBase):
         self.Meta_PluginTypeKey = ConfigItem("Meta", "PluginTypeKey", "")
         self.Info_Name = ConfigItem("Info", "Name", "新用户")
         self.PluginData_Config = ConfigItem(
-            "PluginData", "Config", "{}", JSONValidator()
+            "PluginData", "Config", "{}", EncryptedJSONValidator()
         )
         super().__init__()
 
@@ -100,7 +105,7 @@ class PluginScriptConfig(ConfigBase):
         self.Meta_PluginTypeKey = ConfigItem("Meta", "PluginTypeKey", "")
         self.Info_Name = ConfigItem("Info", "Name", "新插件脚本")
         self.PluginData_Config = ConfigItem(
-            "PluginData", "Config", "{}", JSONValidator()
+            "PluginData", "Config", "{}", EncryptedJSONValidator()
         )
         self.UserData = PluginUserMultipleConfig(self)
         super().__init__()

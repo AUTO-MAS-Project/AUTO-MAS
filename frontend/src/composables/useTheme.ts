@@ -1,5 +1,14 @@
 import { ref, computed, watch } from 'vue'
 import { theme } from 'ant-design-vue'
+import {
+  V6_THEME_PALETTES,
+  buildV6AntThemeTokens,
+  buildV6ThemeCssVariables,
+  collectPerfDetectionContext,
+  detectLowPerfMode,
+  normalizeUiScale,
+  type V6PerfMode,
+} from '@/theme/v6Theme'
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type ThemeColor =
@@ -20,10 +29,28 @@ export type ThemeColor =
 const themeMode = ref<ThemeMode>('system')
 const themeColor = ref<ThemeColor>('blue')
 const isDark = ref(false)
+const uiScale = ref(1)
+// 性能模式：模块级单例，与 themeMode/themeColor/uiScale 一致。
+// 'low' 关闭 vibrancy 滤镜/阴影/动效；'normal' 保持设计意图。
+const perfMode = ref<V6PerfMode>('normal')
+// 最近一次硬件检测结果（用于设置页展示与重置回自动）
+let lastPerfDetection: V6PerfMode = 'normal'
+
+const PERF_MODE_STORAGE_KEY = 'perf-mode'
+const PERF_MODE_VALUES: readonly V6PerfMode[] = ['low', 'normal'] as const
+
+const isPerfModeValue = (value: unknown): value is V6PerfMode =>
+  typeof value === 'string' && (PERF_MODE_VALUES as readonly string[]).includes(value)
+
+// 将 perfMode 同步到 dataset，触发 v6-tokens.css 中的 :root[data-perf-mode="low"] 降级。
+const applyPerfModeToDom = (mode: V6PerfMode) => {
+  if (typeof document === 'undefined' || !document.documentElement) return
+  document.documentElement.dataset.perfMode = mode
+}
 
 // 预设主题色
 const themeColors: Record<ThemeColor, string> = {
-  blue: '#1677ff',
+  blue: '#007aff',
   purple: '#722ed1',
   cyan: '#13c2c2',
   green: '#52c41a',
@@ -37,6 +64,9 @@ const themeColors: Record<ThemeColor, string> = {
   lime: '#a0d911',
   gold: '#faad14',
 }
+
+const getPrimaryColor = () =>
+  themeColor.value === 'blue' && isDark.value ? '#0a84ff' : themeColors[themeColor.value]
 
 // 检测系统主题
 const getSystemTheme = () => {
@@ -69,12 +99,11 @@ const updateTheme = () => {
 // 更新CSS变量
 const updateCSSVariables = () => {
   const root = document.documentElement
-  const primaryColor = themeColors[themeColor.value]
+  const primaryColor = getPrimaryColor()
+  const palette = V6_THEME_PALETTES[isDark.value ? 'dark' : 'light']
 
   // 基础背景（用于估算混合）
-  const baseLightBg = '#ffffff'
-  const baseDarkBg = '#141414'
-  const baseMenuBg = isDark.value ? baseDarkBg : baseLightBg
+  const baseMenuBg = palette.container
 
   // 改进：侧边栏背景使用 HSL 调整而不是简单线性混合，提高在不同主色下的可读性
   const siderBg = deriveSiderBg(primaryColor, baseMenuBg, isDark.value)
@@ -89,37 +118,29 @@ const updateCSSVariables = () => {
   const iconColor = menuTextColor
 
   // ===== AntD token 变量（保留） =====
-  if (isDark.value) {
-    root.style.setProperty('--ant-color-primary', primaryColor)
-    root.style.setProperty('--ant-color-primary-hover', hslLighten(primaryColor, 6))
-    root.style.setProperty('--ant-color-primary-bg', addAlpha(primaryColor, 0.1))
-    root.style.setProperty('--ant-color-text', 'rgba(255, 255, 255, 0.88)')
-    root.style.setProperty('--ant-color-text-secondary', 'rgba(255, 255, 255, 0.65)')
-    root.style.setProperty('--ant-color-text-tertiary', 'rgba(255, 255, 255, 0.45)')
-    root.style.setProperty('--ant-color-bg-container', baseDarkBg)
-    root.style.setProperty('--ant-color-bg-layout', '#000000')
-    root.style.setProperty('--ant-color-bg-elevated', '#1f1f1f')
-    root.style.setProperty('--ant-color-border', '#424242')
-    root.style.setProperty('--ant-color-border-secondary', '#303030')
-    root.style.setProperty('--ant-color-error', '#ff4d4f')
-    root.style.setProperty('--ant-color-success', '#52c41a')
-    root.style.setProperty('--ant-color-warning', '#faad14')
-  } else {
-    root.style.setProperty('--ant-color-primary', primaryColor)
-    root.style.setProperty('--ant-color-primary-hover', hslDarken(primaryColor, 6))
-    root.style.setProperty('--ant-color-primary-bg', addAlpha(primaryColor, 0.1))
-    root.style.setProperty('--ant-color-text', 'rgba(0, 0, 0, 0.88)')
-    root.style.setProperty('--ant-color-text-secondary', 'rgba(0, 0, 0, 0.65)')
-    root.style.setProperty('--ant-color-text-tertiary', 'rgba(0, 0, 0, 0.45)')
-    root.style.setProperty('--ant-color-bg-container', baseLightBg)
-    root.style.setProperty('--ant-color-bg-layout', '#f5f5f5')
-    root.style.setProperty('--ant-color-bg-elevated', '#ffffff')
-    root.style.setProperty('--ant-color-border', '#d9d9d9')
-    root.style.setProperty('--ant-color-border-secondary', '#d9d9d9')
-    root.style.setProperty('--ant-color-error', '#ff4d4f')
-    root.style.setProperty('--ant-color-success', '#52c41a')
-    root.style.setProperty('--ant-color-warning', '#faad14')
-  }
+  root.dataset.theme = isDark.value ? 'dark' : 'light'
+  root.dataset.uiScale = String(uiScale.value)
+  Object.entries(buildV6ThemeCssVariables(isDark.value, uiScale.value)).forEach(
+    ([property, value]) => root.style.setProperty(property, value)
+  )
+
+  root.style.setProperty('--ant-color-primary', primaryColor)
+  root.style.setProperty(
+    '--ant-color-primary-hover',
+    isDark.value ? hslLighten(primaryColor, 6) : hslDarken(primaryColor, 6)
+  )
+  root.style.setProperty('--ant-color-primary-bg', addAlpha(primaryColor, 0.1))
+  root.style.setProperty('--ant-color-text', palette.text)
+  root.style.setProperty('--ant-color-text-secondary', palette.textSecondary)
+  root.style.setProperty('--ant-color-text-tertiary', palette.textTertiary)
+  root.style.setProperty('--ant-color-bg-container', palette.container)
+  root.style.setProperty('--ant-color-bg-layout', palette.layout)
+  root.style.setProperty('--ant-color-bg-elevated', palette.elevated)
+  root.style.setProperty('--ant-color-border', palette.border)
+  root.style.setProperty('--ant-color-border-secondary', palette.borderSecondary)
+  root.style.setProperty('--ant-color-error', palette.error)
+  root.style.setProperty('--ant-color-success', palette.success)
+  root.style.setProperty('--ant-color-warning', palette.warning)
 
   // ===== 自定义菜单配色 =====
   // 动态 Alpha：根据主色亮度调整透明度以保持区分度
@@ -335,13 +356,12 @@ mediaQuery.addEventListener('change', () => {
 // 监听主题模式和颜色变化
 watch(themeMode, updateTheme, { immediate: true })
 watch(themeColor, updateTheme)
+watch(uiScale, updateCSSVariables)
 
 // Ant Design 主题配置
 const antdTheme = computed(() => ({
   algorithm: isDark.value ? theme.darkAlgorithm : theme.defaultAlgorithm,
-  token: {
-    colorPrimary: themeColors[themeColor.value],
-  },
+  token: buildV6AntThemeTokens(isDark.value, getPrimaryColor(), uiScale.value),
 }))
 
 export function useTheme() {
@@ -355,16 +375,55 @@ export function useTheme() {
     localStorage.setItem('theme-color', color)
   }
 
+  const setUiScale = (scale: number) => {
+    uiScale.value = normalizeUiScale(scale)
+    localStorage.setItem('ui-scale', String(uiScale.value))
+  }
+
+  // 设置性能模式：同步写 localStorage + dataset。
+  // 传 null 等于“恢复自动检测”：清掉 localStorage，重新调 detectLowPerfMode()。
+  const setPerfMode = (mode: V6PerfMode | null) => {
+    if (mode === null) {
+      localStorage.removeItem(PERF_MODE_STORAGE_KEY)
+      const detected = detectLowPerfMode(collectPerfDetectionContext())
+      lastPerfDetection = detected
+      perfMode.value = detected
+      applyPerfModeToDom(detected)
+      return
+    }
+    if (!isPerfModeValue(mode)) return
+    perfMode.value = mode
+    localStorage.setItem(PERF_MODE_STORAGE_KEY, mode)
+    applyPerfModeToDom(mode)
+  }
+
+  // 读取最近一次硬件检测结果（用于设置页“自动检测”展示，不触发重新检测）。
+  const getDetectedPerfMode = (): V6PerfMode => lastPerfDetection
+
   // 初始化时从localStorage读取设置
   const initTheme = () => {
     const savedMode = localStorage.getItem('theme-mode') as ThemeMode
     const savedColor = localStorage.getItem('theme-color') as ThemeColor
+    const savedScale = localStorage.getItem('ui-scale')
+    const savedPerfMode = localStorage.getItem(PERF_MODE_STORAGE_KEY)
 
-    if (savedMode) {
+    if (savedMode && ['system', 'light', 'dark'].includes(savedMode)) {
       themeMode.value = savedMode
     }
-    if (savedColor) {
+    if (savedColor && savedColor in themeColors) {
       themeColor.value = savedColor
+    }
+    uiScale.value = normalizeUiScale(savedScale)
+
+    // 性能模式：用户显式设置优先；缺省走硬件检测。
+    const detected = detectLowPerfMode(collectPerfDetectionContext())
+    lastPerfDetection = detected
+    if (isPerfModeValue(savedPerfMode)) {
+      perfMode.value = savedPerfMode
+      applyPerfModeToDom(savedPerfMode)
+    } else {
+      perfMode.value = detected
+      applyPerfModeToDom(detected)
     }
 
     updateTheme()
@@ -374,10 +433,16 @@ export function useTheme() {
     themeMode: computed(() => themeMode.value),
     themeColor: computed(() => themeColor.value),
     isDark: computed(() => isDark.value),
+    uiScale: computed(() => uiScale.value),
     antdTheme,
     themeColors,
+    perfMode: computed(() => perfMode.value),
+    detectedPerfMode: computed(() => lastPerfDetection),
     setThemeMode,
     setThemeColor,
+    setUiScale,
+    setPerfMode,
+    getDetectedPerfMode,
     initTheme,
   }
 }

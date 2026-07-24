@@ -23,118 +23,207 @@ name: 构建并发布应用程序
 
 on:
   workflow_dispatch:
-
-permissions:
-  contents: write
-  actions: write
+    inputs:
+      integration_wheelhouse_url:
+        description: HTTPS URL of the audited complete wheelhouse ZIP
+        required: true
+        type: string
+      integration_wheelhouse_sha256:
+        description: SHA-256 of the exact wheelhouse ZIP
+        required: true
+        type: string
 
 jobs:
-
   build:
     name: 构建 Windows 版本
-    runs-on: windows-latest
+    runs-on: windows-2025
     if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' && (github.ref_name == 'main' || github.ref_name == 'dev')
-    
+    permissions:
+      actions: read
+      contents: read
+    env:
+      INTEGRATION_ENVIRONMENT_SHA256: cfa5fff882b6c81bd90aabb9f5ef2b9a135c1d1cbaa6ac5b21222f549967190a
+      INTEGRATION_UV_VERSION: 0.11.30
+      AUTO_MAS_RELEASE_OUTPUT_ROOT: ${{ github.workspace }}/frontend/dist-package
+      AUTO_MAS_ARCHIVE_MAX_BYTES: 1073741824
+      AUTO_MAS_ARCHIVE_MAX_ENTRIES: 4096
+      AUTO_MAS_ENVIRONMENT_ARCHIVE_MAX_ENTRIES: 16384
+      AUTO_MAS_ARCHIVE_MAX_EXPANDED_BYTES: 2147483648
+      AUTO_MAS_ARCHIVE_MAX_FILE_BYTES: 536870912
+
     outputs:
       version_tag: ${{ steps.generate_version_info.outputs.version_tag }}
       is_prerelease: ${{ steps.generate_version_info.outputs.is_prerelease }}
+      signing_policy: ${{ steps.generate_version_info.outputs.signing_policy }}
       version_changelog: ${{ steps.generate_version_info.outputs.version_changelog }}
 
     steps:
       - name: 签出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: 设置 Node.js 环境
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '20'
+          node-version: "20"
 
-      - name: 构建应用程序
+      - name: 安装前端依赖
         run: |
           cd frontend
           corepack enable
           corepack prepare yarn@4.9.1 --activate
-          yarn install
-          yarn build
-          Move-Item -Path "dist\win-unpacked\AUTO-MAS.exe" -Destination "..\AUTO-MAS.exe"
+          yarn install --immutable
         shell: pwsh
 
-      - name: 上传未签名主程序
-        id: upload-unsigned-main-program
-        uses: actions/upload-artifact@v4
-        with: 
-            name: AUTO-MAS
-            path: AUTO-MAS.exe
+      - name: 验证发布元数据安全契约
+        run: node --test .github/workflows/scripts/release-metadata.test.mjs .github/workflows/scripts/release-workflow-security.test.mjs
 
-      - name: 签名主程序
-        uses: signpath/github-action-submit-signing-request@v2.0
+      - name: 验证归档安全契约
+        run: .github\workflows\scripts\Test-ArchiveSafety.ps1
+        shell: pwsh
+
+      - name: 验证签名身份安全契约
+        run: .github\workflows\scripts\Test-AuthenticodeSignaturePolicy.ps1
+        shell: pwsh
+
+      - name: 准备固定版本 uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
-            api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
-            organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
-            project-slug: 'AUTO_MAA'
-            signing-policy-slug: 'release-signing'
-            artifact-configuration-slug: "AUTO-MAS"
-            github-artifact-id: '${{ steps.upload-unsigned-main-program.outputs.artifact-id }}'
-            wait-for-completion: true
-            output-artifact-directory: 'frontend\dist\win-unpacked'
+          version: ${{ env.INTEGRATION_UV_VERSION }}
+          enable-cache: false
+
+      - name: 下载并校验审计 wheelhouse
+        env:
+          WHEELHOUSE_URL: ${{ inputs.integration_wheelhouse_url }}
+          WHEELHOUSE_SHA256: ${{ inputs.integration_wheelhouse_sha256 }}
+        run: |
+          Import-Module "$env:GITHUB_WORKSPACE\.github\workflows\scripts\ArchiveSafety.psm1" -Force
+          $uri = [Uri]$env:WHEELHOUSE_URL
+          $expectedHash = $env:WHEELHOUSE_SHA256.Trim().ToLowerInvariant()
+          if ($expectedHash -notmatch '^[0-9a-f]{64}$') {
+            throw 'integration_wheelhouse_sha256 must be exactly 64 hexadecimal characters'
+          }
+
+          $archivePath = Join-Path $env:RUNNER_TEMP "auto-mas-wheelhouse-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT.zip"
+          $extractRoot = Join-Path $env:RUNNER_TEMP "auto-mas-wheelhouse-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          Invoke-BoundedHttpsDownload `
+            -Uri $uri `
+            -DestinationPath $archivePath `
+            -MaxBytes ([long]::Parse($env:AUTO_MAS_ARCHIVE_MAX_BYTES)) | Out-Null
+          $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualHash -ne $expectedHash) {
+            throw "Wheelhouse archive SHA256 mismatch: expected $expectedHash, got $actualHash"
+          }
+
+          $archiveResult = Expand-VerifiedZip `
+            -ArchivePath $archivePath `
+            -DestinationPath $extractRoot `
+            -MaxArchiveBytes ([long]::Parse($env:AUTO_MAS_ARCHIVE_MAX_BYTES)) `
+            -MaxEntries ([long]::Parse($env:AUTO_MAS_ARCHIVE_MAX_ENTRIES)) `
+            -MaxExpandedBytes ([long]::Parse($env:AUTO_MAS_ARCHIVE_MAX_EXPANDED_BYTES)) `
+            -MaxFileBytes ([long]::Parse($env:AUTO_MAS_ARCHIVE_MAX_FILE_BYTES))
+
+          $manifestCandidates = @(
+            Get-ChildItem -LiteralPath $extractRoot -Filter manifest.json -File -Recurse |
+              Where-Object { Test-Path -LiteralPath (Join-Path $_.Directory.FullName 'runtime-lock.json') -PathType Leaf }
+          )
+          if ($manifestCandidates.Count -ne 1) {
+            throw "Expected exactly one wheelhouse root, found $($manifestCandidates.Count)"
+          }
+          $wheelhouseRoot = $manifestCandidates[0].Directory.FullName
+          Add-Content -Path $env:GITHUB_ENV -Value "AUTO_MAS_WHEELHOUSE_ROOT=$wheelhouseRoot"
+          Write-Output "Audited wheelhouse archive: $actualHash ($($archiveResult.EntryCount) entries, $($archiveResult.ExpandedBytes) expanded bytes)"
+        shell: pwsh
+
+      - name: 验证并构建应用程序
+        run: |
+          cd frontend
+          yarn lint
+          yarn typecheck
+          yarn test
+          node scripts/build-integration-release.mjs `
+            --wheelhouse "$env:AUTO_MAS_WHEELHOUSE_ROOT" `
+            --output "$env:AUTO_MAS_RELEASE_OUTPUT_ROOT" `
+            --unpacked-only
+          Move-Item -LiteralPath (Join-Path $env:AUTO_MAS_RELEASE_OUTPUT_ROOT 'win-unpacked\AUTO-MAS.exe') -Destination "..\AUTO-MAS.exe"
+        shell: pwsh
 
       - name: 生成版本信息
         id: generate_version_info
         run: |
-          $tempScript = "temp_version_script.js"
-          @'
-          const fs = require('fs');
-          const path = require('path');
+          node .github/workflows/scripts/release-metadata.mjs `
+            --version-file "$env:GITHUB_WORKSPACE\res\version.json" `
+            --github-output "$env:GITHUB_OUTPUT" `
+            --metadata-dir "$env:GITHUB_WORKSPACE\release-metadata"
+        shell: pwsh
 
-          let versionPath = '../res/version.json';
-          if (!fs.existsSync(versionPath)) {
-              versionPath = 'res/version.json';
+      - name: 上传发行元数据
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-metadata
+          path: release-metadata
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 上传未签名主程序
+        id: upload-unsigned-main-program
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: AUTO-MAS
+          path: AUTO-MAS.exe
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: 签名主程序
+        uses: signpath/github-action-submit-signing-request@3f9250c56651ff692d6729a2fbb0603a42d7d322 # v2.0
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          github-token: ${{ github.token }}
+          organization-id: "787a1d5f-6177-4f30-9559-d2646473584a"
+          project-slug: "AUTO_MAA"
+          signing-policy-slug: ${{ steps.generate_version_info.outputs.signing_policy }}
+          artifact-configuration-slug: AUTO-MAS
+          github-artifact-id: ${{ steps.upload-unsigned-main-program.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: 'frontend\dist-package\win-unpacked'
+
+      - name: 验证主程序签名身份
+        env:
+          IS_PRERELEASE: ${{ steps.generate_version_info.outputs.is_prerelease }}
+          SIGNING_POLICY: ${{ steps.generate_version_info.outputs.signing_policy }}
+          RELEASE_SUBJECT_ALLOWLIST_JSON: ${{ vars.SIGNPATH_RELEASE_CERTIFICATE_SUBJECT_ALLOWLIST_JSON }}
+          RELEASE_THUMBPRINT_ALLOWLIST_JSON: ${{ vars.SIGNPATH_RELEASE_CERTIFICATE_THUMBPRINT_ALLOWLIST_JSON }}
+          TEST_SUBJECT_ALLOWLIST_JSON: ${{ vars.SIGNPATH_TEST_CERTIFICATE_SUBJECT_ALLOWLIST_JSON }}
+          TEST_THUMBPRINT_ALLOWLIST_JSON: ${{ vars.SIGNPATH_TEST_CERTIFICATE_THUMBPRINT_ALLOWLIST_JSON }}
+        run: |
+          $parameters = @{
+            Path = @("$env:GITHUB_WORKSPACE\frontend\dist-package\win-unpacked\AUTO-MAS.exe")
+            IsPrerelease = $env:IS_PRERELEASE
+            SigningPolicy = $env:SIGNING_POLICY
+            ReleaseSubjectAllowlistJson = $env:RELEASE_SUBJECT_ALLOWLIST_JSON
+            ReleaseThumbprintAllowlistJson = $env:RELEASE_THUMBPRINT_ALLOWLIST_JSON
+            TestSubjectAllowlistJson = $env:TEST_SUBJECT_ALLOWLIST_JSON
+            TestThumbprintAllowlistJson = $env:TEST_THUMBPRINT_ALLOWLIST_JSON
           }
-          const version = JSON.parse(fs.readFileSync(versionPath, 'utf8'));
-
-          function versionInfoMarkdown(info) {
-              let md = '';
-              for (const [key, values] of Object.entries(info)) {
-                  md += `## ${key}\n`;
-                  for (const v of values) md += `- ${v}\n`;
-              }
-              return md;
-          }
-
-          const versionTag = version.version;
-          const isPrerelease = versionTag.includes('-beta');
-
-          const allVersionInfo = {};
-          for (const v_i of Object.values(version.version_info)) {
-              for (const [key, value] of Object.entries(v_i)) {
-                  if (!allVersionInfo[key]) allVersionInfo[key] = [];
-                  allVersionInfo[key].push(...value);
-              }
-          }
-          const changelog = `<!--${JSON.stringify(version.version_info, null, 0)}-->\n${versionInfoMarkdown(allVersionInfo)}`;
-
-          const outputPath = process.env.GITHUB_OUTPUT;
-          fs.appendFileSync(outputPath, `version_tag=${versionTag}\n`);
-          fs.appendFileSync(outputPath, `is_prerelease=${isPrerelease}\n`);
-          fs.appendFileSync(outputPath, `version_changelog<<EOF\n${changelog}\nEOF\n`);
-          '@ | Out-File -FilePath $tempScript -Encoding UTF8
-
-          node $tempScript
-          Remove-Item $tempScript
+          & "$env:GITHUB_WORKSPACE\.github\workflows\scripts\Assert-AuthenticodeSignature.ps1" @parameters
         shell: pwsh
 
       - name: 准备 Inno Setup
+        env:
+          VERSION_TAG: ${{ steps.generate_version_info.outputs.version_tag }}
         run: |
-          choco install innosetup -y
+          choco install innosetup --version=6.7.1 --source=https://community.chocolatey.org/api/v2/ --yes --no-progress --limit-output --require-checksums
           echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
+          if ($env:GITHUB_WORKSPACE -match '["\r\n]') {
+            throw 'GITHUB_WORKSPACE contains characters that cannot be represented safely in the ISS file'
+          }
           @"
           #define MyAppName "AUTO-MAS"
-          #define MyAppVersion "${{ steps.generate_version_info.outputs.version_tag }}"
+          #define MyAppVersion "$env:VERSION_TAG"
           #define MyAppPublisher "AUTO-MAS Team"
           #define MyAppURL "https://auto-mas.top/"
           #define MyAppExeName "AUTO-MAS.exe"
-          #define MyAppPath "${{ github.workspace }}\frontend\dist\win-unpacked"
-          #define RootPath "${{ github.workspace }}"
+          #define MyAppPath "$env:GITHUB_WORKSPACE\frontend\dist-package\win-unpacked"
+          #define RootPath "$env:GITHUB_WORKSPACE"
 
           [Setup]
           AppId={{D116A92A-E174-4699-B777-61C5FD837B19}
@@ -176,174 +265,377 @@ jobs:
           [Run]
           Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall runascurrentuser
 
-          [Code]
-
-          procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
-          begin
-            if CurUninstallStep = usPostUninstall then
-            begin
-              DelTree(ExpandConstant('{app}'), True, True, True);
-            end;
-          end;
           "@ | Out-File -FilePath AUTO-MAS.iss -Encoding UTF8
         shell: pwsh
 
       - name: 构建精简安装包
+        env:
+          VERSION_TAG: ${{ steps.generate_version_info.outputs.version_tag }}
         run: |
           iscc AUTO-MAS.iss
           Rename-Item -Path AUTO-MAS-Setup.exe -NewName AUTO-MAS-Lite-Setup.exe
-          Compress-Archive -Path .\frontend\dist\win-unpacked\* -DestinationPath AUTO-MAS-Lite-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
+          Compress-Archive -Path .\frontend\dist-package\win-unpacked\* -DestinationPath "AUTO-MAS-Lite-$env:VERSION_TAG-x64.zip" -Force
         shell: pwsh
 
       - name: 缓存完整环境
         id: cache-environment
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: environment.zip
-          key: environment-zip
+          key: environment-zip-${{ env.INTEGRATION_ENVIRONMENT_SHA256 }}
 
       - name: 下载完整环境
         if: steps.cache-environment.outputs.cache-hit != 'true'
-        run: Invoke-WebRequest -Uri https://download.auto-mas.top/d/AUTO-MAS/Environment/environment.zip -OutFile environment.zip
-    
+        run: |
+          Import-Module "$env:GITHUB_WORKSPACE\.github\workflows\scripts\ArchiveSafety.psm1" -Force
+          Invoke-BoundedHttpsDownload `
+            -Uri ([Uri]'https://download.auto-mas.top/d/AUTO-MAS/Environment/environment.zip') `
+            -DestinationPath "$env:GITHUB_WORKSPACE\environment.zip" `
+            -MaxBytes ([long]::Parse($env:AUTO_MAS_ARCHIVE_MAX_BYTES)) | Out-Null
+        shell: pwsh
+
+      - name: 记录环境来源和 hash
+        run: |
+          $archivePath = "$env:GITHUB_WORKSPACE\environment.zip"
+          if (-not (Test-Path -LiteralPath $archivePath -PathType Leaf)) {
+            throw 'Pinned environment archive is missing after cache/download'
+          }
+          $size = (Get-Item -LiteralPath $archivePath).Length
+          $maxBytes = [long]::Parse($env:AUTO_MAS_ARCHIVE_MAX_BYTES)
+          if ($size -gt $maxBytes) {
+            throw "Environment archive size $size exceeds limit $maxBytes"
+          }
+          $hash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expectedHash = $env:INTEGRATION_ENVIRONMENT_SHA256.ToLowerInvariant()
+          if ($hash -ne $expectedHash) {
+            throw "Environment SHA256 mismatch: expected $expectedHash, got $hash"
+          }
+          $envInfo = @{
+            source_url = 'https://download.auto-mas.top/d/AUTO-MAS/Environment/environment.zip'
+            sha256 = $hash
+            expected_sha256 = $expectedHash
+            integrity_verified = $true
+            size_bytes = $size
+            cached_at = (Get-Date).ToUniversalTime().ToString("o")
+          }
+          $envInfo | ConvertTo-Json | Out-File -LiteralPath "$env:RUNNER_TEMP\environment-info.json" -Encoding utf8
+          Write-Output "Environment SHA256: $hash"
+        shell: pwsh
+
       - name: 部署完整环境
-        run: Expand-Archive -Path environment.zip -DestinationPath .\frontend\dist\win-unpacked -Force
+        run: |
+          Import-Module "$env:GITHUB_WORKSPACE\.github\workflows\scripts\ArchiveSafety.psm1" -Force
+          $environmentStage = Join-Path $env:RUNNER_TEMP "auto-mas-environment-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          $archiveResult = Expand-VerifiedZip `
+            -ArchivePath "$env:GITHUB_WORKSPACE\environment.zip" `
+            -DestinationPath $environmentStage `
+            -MaxArchiveBytes ([long]::Parse($env:AUTO_MAS_ARCHIVE_MAX_BYTES)) `
+            -MaxEntries ([long]::Parse($env:AUTO_MAS_ENVIRONMENT_ARCHIVE_MAX_ENTRIES)) `
+            -MaxExpandedBytes ([long]::Parse($env:AUTO_MAS_ARCHIVE_MAX_EXPANDED_BYTES)) `
+            -MaxFileBytes ([long]::Parse($env:AUTO_MAS_ARCHIVE_MAX_FILE_BYTES))
+
+          $uvCommand = Get-Command uv.exe -ErrorAction Stop
+          $topLevelEntries = @(Get-ChildItem -LiteralPath $environmentStage -Force)
+          if (
+            $topLevelEntries.Count -ne 1 -or
+            $topLevelEntries[0].Name -cne 'environment' -or
+            -not $topLevelEntries[0].PSIsContainer
+          ) {
+            throw 'Full environment archive must contain exactly one environment root directory'
+          }
+          $environmentSource = Join-Path $environmentStage 'environment'
+
+          $environmentTarget = "$env:GITHUB_WORKSPACE\frontend\dist-package\win-unpacked\environment"
+          if (Test-Path -LiteralPath $environmentTarget) {
+            throw "Refusing to overwrite an unexpected existing environment: $environmentTarget"
+          }
+          $environmentParent = Split-Path -Parent $environmentTarget
+          $deployStage = Join-Path $environmentParent ".environment-stage-$([Guid]::NewGuid().ToString('N'))"
+          Copy-Item -LiteralPath $environmentSource -Destination $deployStage -Recurse -ErrorAction Stop
+
+          $uvTargetDirectory = Join-Path $deployStage 'python\Scripts'
+          New-Item -ItemType Directory -Path $uvTargetDirectory -Force | Out-Null
+          $uvTarget = Join-Path $uvTargetDirectory 'uv.exe'
+          Copy-Item -LiteralPath $uvCommand.Source -Destination $uvTarget
+
+          $uvVersionOutput = & $uvTarget --version
+          if ($LASTEXITCODE -ne 0 -or $uvVersionOutput -notmatch [regex]::Escape($env:INTEGRATION_UV_VERSION)) {
+            throw "Pinned uv validation failed: $uvVersionOutput"
+          }
+          $uvHash = (Get-FileHash -LiteralPath $uvTarget -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          $requiredEnvironmentFiles = @(
+            'python\python.exe',
+            'python\Scripts\pip.exe',
+            'python\Scripts\uv.exe',
+            'git\bin\git.exe'
+          )
+          foreach ($relativePath in $requiredEnvironmentFiles) {
+            $candidate = Join-Path $deployStage $relativePath
+            if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+              throw "Full environment is incomplete: missing $relativePath"
+            }
+          }
+          $reparsePoints = @(
+            Get-ChildItem -LiteralPath $deployStage -Force -Recurse |
+              Where-Object { ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 }
+          )
+          if ($reparsePoints.Count -ne 0) {
+            throw "Full environment staging contains $($reparsePoints.Count) reparse points"
+          }
+          $environmentInfo = Get-Content -LiteralPath "$env:RUNNER_TEMP\environment-info.json" -Raw | ConvertFrom-Json
+          $environmentInfo | Add-Member -NotePropertyName uv_version -NotePropertyValue $uvVersionOutput -Force
+          $environmentInfo | Add-Member -NotePropertyName uv_sha256 -NotePropertyValue $uvHash -Force
+          $environmentInfo | Add-Member -NotePropertyName archive_entries -NotePropertyValue $archiveResult.EntryCount -Force
+          $environmentInfo | Add-Member -NotePropertyName expanded_bytes -NotePropertyValue $archiveResult.ExpandedBytes -Force
+          $environmentInfo | ConvertTo-Json | Out-File -LiteralPath (Join-Path $deployStage 'environment-info.json') -Encoding utf8
+
+          Move-Item -LiteralPath $deployStage -Destination $environmentTarget -ErrorAction Stop
         shell: pwsh
 
       - name: 构建完整安装包
+        env:
+          VERSION_TAG: ${{ steps.generate_version_info.outputs.version_tag }}
         run: |
           iscc AUTO-MAS.iss
           Rename-Item -Path AUTO-MAS-Setup.exe -NewName AUTO-MAS-Full-Setup.exe
-          Compress-Archive -Path .\frontend\dist\win-unpacked\* -DestinationPath AUTO-MAS-Full-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
+          Compress-Archive -Path .\frontend\dist-package\win-unpacked\* -DestinationPath "AUTO-MAS-Full-$env:VERSION_TAG-x64.zip" -Force
         shell: pwsh
 
       - name: 上传未签名安装程序
         id: upload-unsigned-setup-program
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: AUTO-MAS-Unsigned-Setup
           path: |
             AUTO-MAS-Lite-Setup.exe
             AUTO-MAS-Full-Setup.exe
+          if-no-files-found: error
+          retention-days: 1
 
       - name: 签名安装程序
-        uses: signpath/github-action-submit-signing-request@v2.0
+        uses: signpath/github-action-submit-signing-request@3f9250c56651ff692d6729a2fbb0603a42d7d322 # v2.0
         with:
-            api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
-            organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
-            project-slug: 'AUTO_MAA'
-            signing-policy-slug: ${{ steps.generate_version_info.outputs.is_prerelease == 'true' && 'test-signing' || 'release-signing' }}
-            artifact-configuration-slug: "AUTO-MAS-Setup"
-            github-artifact-id: '${{ steps.upload-unsigned-setup-program.outputs.artifact-id }}'
-            wait-for-completion: true
-            output-artifact-directory: 'Signed'
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          github-token: ${{ github.token }}
+          organization-id: "787a1d5f-6177-4f30-9559-d2646473584a"
+          project-slug: "AUTO_MAA"
+          signing-policy-slug: ${{ steps.generate_version_info.outputs.signing_policy }}
+          artifact-configuration-slug: AUTO-MAS-Setup
+          github-artifact-id: ${{ steps.upload-unsigned-setup-program.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: Signed
+
+      - name: 验证安装程序签名身份
+        env:
+          IS_PRERELEASE: ${{ steps.generate_version_info.outputs.is_prerelease }}
+          SIGNING_POLICY: ${{ steps.generate_version_info.outputs.signing_policy }}
+          RELEASE_SUBJECT_ALLOWLIST_JSON: ${{ vars.SIGNPATH_RELEASE_CERTIFICATE_SUBJECT_ALLOWLIST_JSON }}
+          RELEASE_THUMBPRINT_ALLOWLIST_JSON: ${{ vars.SIGNPATH_RELEASE_CERTIFICATE_THUMBPRINT_ALLOWLIST_JSON }}
+          TEST_SUBJECT_ALLOWLIST_JSON: ${{ vars.SIGNPATH_TEST_CERTIFICATE_SUBJECT_ALLOWLIST_JSON }}
+          TEST_THUMBPRINT_ALLOWLIST_JSON: ${{ vars.SIGNPATH_TEST_CERTIFICATE_THUMBPRINT_ALLOWLIST_JSON }}
+        run: |
+          $parameters = @{
+            Path = @(
+              "$env:GITHUB_WORKSPACE\Signed\AUTO-MAS-Lite-Setup.exe",
+              "$env:GITHUB_WORKSPACE\Signed\AUTO-MAS-Full-Setup.exe"
+            )
+            IsPrerelease = $env:IS_PRERELEASE
+            SigningPolicy = $env:SIGNING_POLICY
+            ReleaseSubjectAllowlistJson = $env:RELEASE_SUBJECT_ALLOWLIST_JSON
+            ReleaseThumbprintAllowlistJson = $env:RELEASE_THUMBPRINT_ALLOWLIST_JSON
+            TestSubjectAllowlistJson = $env:TEST_SUBJECT_ALLOWLIST_JSON
+            TestThumbprintAllowlistJson = $env:TEST_THUMBPRINT_ALLOWLIST_JSON
+          }
+          & "$env:GITHUB_WORKSPACE\.github\workflows\scripts\Assert-AuthenticodeSignature.ps1" @parameters
+        shell: pwsh
 
       - name: 创建安装程序压缩包
+        env:
+          VERSION_TAG: ${{ steps.generate_version_info.outputs.version_tag }}
         run: |
-          Move-Item -Path .\Signed\AUTO-MAS-Lite-Setup.exe -Destination AUTO-MAS-Setup.exe
-          Compress-Archive -Path AUTO-MAS-Setup.exe -DestinationPath AUTO-MAS-Lite-Setup-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
-          Remove-Item AUTO-MAS-Setup.exe
-          Move-Item -Path .\Signed\AUTO-MAS-Full-Setup.exe -Destination AUTO-MAS-Setup.exe
-          Compress-Archive -Path AUTO-MAS-Setup.exe -DestinationPath AUTO-MAS-Full-Setup-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
-          Remove-Item AUTO-MAS-Setup.exe
+          $liteStage = Join-Path $env:RUNNER_TEMP "auto-mas-lite-setup-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          $fullStage = Join-Path $env:RUNNER_TEMP "auto-mas-full-setup-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          New-Item -ItemType Directory -Path $liteStage -ErrorAction Stop | Out-Null
+          New-Item -ItemType Directory -Path $fullStage -ErrorAction Stop | Out-Null
+          Copy-Item -LiteralPath .\Signed\AUTO-MAS-Lite-Setup.exe -Destination (Join-Path $liteStage 'AUTO-MAS-Setup.exe')
+          Copy-Item -LiteralPath .\Signed\AUTO-MAS-Full-Setup.exe -Destination (Join-Path $fullStage 'AUTO-MAS-Setup.exe')
+          Compress-Archive `
+            -LiteralPath (Join-Path $liteStage 'AUTO-MAS-Setup.exe') `
+            -DestinationPath "AUTO-MAS-Lite-Setup-$env:VERSION_TAG-x64.zip"
+          Compress-Archive `
+            -LiteralPath (Join-Path $fullStage 'AUTO-MAS-Setup.exe') `
+            -DestinationPath "AUTO-MAS-Full-Setup-$env:VERSION_TAG-x64.zip"
+        shell: pwsh
+
+      - name: 核对构建产物并生成 SHA-256 清单
+        env:
+          VERSION_TAG: ${{ steps.generate_version_info.outputs.version_tag }}
+        run: |
+          $expectedNames = @(
+            "AUTO-MAS-Lite-$env:VERSION_TAG-x64.zip",
+            "AUTO-MAS-Full-$env:VERSION_TAG-x64.zip",
+            "AUTO-MAS-Lite-Setup-$env:VERSION_TAG-x64.zip",
+            "AUTO-MAS-Full-Setup-$env:VERSION_TAG-x64.zip"
+          )
+          $expectedSet = [System.Collections.Generic.HashSet[string]]::new(
+            [System.StringComparer]::Ordinal
+          )
+          foreach ($name in $expectedNames) {
+            $null = $expectedSet.Add($name)
+          }
+          foreach ($name in $expectedNames) {
+            if (-not (Test-Path -LiteralPath $name -PathType Leaf)) {
+              throw "Expected release artifact is missing: $name"
+            }
+          }
+          $actualNames = @(
+            Get-ChildItem -LiteralPath $env:GITHUB_WORKSPACE -File -Filter 'AUTO-MAS-*-x64.zip' |
+              ForEach-Object { $_.Name }
+          )
+          if ($actualNames.Count -ne 4) {
+            throw "Expected exactly four release archives, found $($actualNames.Count)"
+          }
+          foreach ($name in $actualNames) {
+            if (-not $expectedSet.Contains($name)) {
+              throw "Unexpected release artifact: $name"
+            }
+          }
+
+          $checksumLines = foreach ($name in $expectedNames) {
+            $hash = (Get-FileHash -LiteralPath $name -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $name"
+          }
+          [System.IO.File]::WriteAllLines(
+            (Join-Path $env:GITHUB_WORKSPACE 'SHA256SUMS.txt'),
+            $checksumLines,
+            [System.Text.UTF8Encoding]::new($false)
+          )
         shell: pwsh
 
       - name: 上传构建产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: build-artifacts
-          path: AUTO-MAS-*-x64.zip
+          path: |
+            AUTO-MAS-Lite-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip
+            AUTO-MAS-Full-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip
+            AUTO-MAS-Lite-Setup-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip
+            AUTO-MAS-Full-Setup-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip
+            SHA256SUMS.txt
+          if-no-files-found: error
           retention-days: 30
 
   release:
     name: 发布 GitHub 发行版
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: build
+    permissions:
+      actions: read
+      contents: write
     steps:
       - name: 签出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
 
       - name: 下载构建产物
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: build-artifacts
           path: artifacts
 
-      - name: 创建发行版分支与标签
+      - name: 下载发行元数据
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-metadata
+          path: release-metadata
+
+      - name: 复核下载产物
         run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          cd artifacts
+          test "$(find . -maxdepth 1 -type f -name 'AUTO-MAS-*-x64.zip' | wc -l)" -eq 4
+          sha256sum --check SHA256SUMS.txt
 
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+      - name: 追加固定发布说明
+        run: |
+          cat >> release-metadata/RELEASE_NOTES.md <<'AUTO_MAS_RELEASE_POLICY'
 
-          NEW_BRANCH="release/${{ needs.build.outputs.version_tag }}"
-          TAG_NAME="${{ needs.build.outputs.version_tag }}"
+          ## 代码签名策略（Code signing policy）
 
-          echo "Creating branch: $NEW_BRANCH"
+          免费代码签名由 [SignPath.io](https://signpath.io/) 提供，证书由 [SignPath Foundation](https://signpath.org/) 提供。
+
+          Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+          - 审批人（Approvers）: [DLmaster (@DLmaster361)](https://github.com/DLmaster361)
+
+          ## 隐私政策（Privacy policy）
+
+          为更好地提供服务，AUTO-MAS 将自动收集以下信息：
+
+          - 软件版本号
+          - 运行时错误信息
+
+          AUTO-MAS 尊重并保护用户隐私，上报的所有信息均经过匿名化处理，不包含任何个人身份信息。所收集的数据存储于 AUTO-MAS 官方服务器，不会传输至任何第三方机构或设施。
+
+          To better serve you, AUTO-MAS will automatically collect the following information:
+
+          - Software version number
+          - Runtime error information
+
+          AUTO-MAS respects and protects user privacy, all collected information has been anonymized and does not contain any personal identity information. All collected data is stored on the official server of AUTO-MAS, and will not be transmitted to any third-party institution or facility.
+
+          [已有 Mirror酱 CDK ？前往 Mirror酱 高速下载](https://mirrorchyan.com/zh/projects?rid=AUTO_MAS&source=auto-mas-release)
+          AUTO_MAS_RELEASE_POLICY
+
+      - name: 创建发行版分支与标签
+        env:
+          RELEASE_BRANCH: release/${{ needs.build.outputs.version_tag }}
+          TAG_NAME: ${{ needs.build.outputs.version_tag }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          echo "Creating branch: $RELEASE_BRANCH"
           echo "Creating tag: $TAG_NAME"
-
-          git checkout -b "$NEW_BRANCH"
-          git push origin "$NEW_BRANCH"
-
+          git checkout -b "$RELEASE_BRANCH"
+          git push origin "$RELEASE_BRANCH"
           git tag "$TAG_NAME"
           git push origin "$TAG_NAME"
 
       - name: 发布发行版
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ needs.build.outputs.version_tag }}
-          body: |
-            ${{ needs.build.outputs.version_changelog }}
-
-            ## 代码签名策略（Code signing policy）
-
-            免费代码签名由 [SignPath.io](https://signpath.io/) 提供，证书由 [SignPath Foundation](https://signpath.org/) 提供。
-
-            Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
-
-            - 审批人（Approvers）: [DLmaster (@DLmaster361)](https://github.com/DLmaster361)
-
-            ## 隐私政策（Privacy policy）
-
-            为更好地提供服务，AUTO-MAS 将自动收集以下信息：
-
-            - 软件版本号
-            - 运行时错误信息
-
-            AUTO-MAS 尊重并保护用户隐私，上报的所有信息均经过匿名化处理，不包含任何个人身份信息。所收集的数据存储于 AUTO-MAS 官方服务器，不会传输至任何第三方机构或设施。
-
-            To better serve you, AUTO-MAS will automatically collect the following information:
-
-            - Software version number
-            - Runtime error information
-
-            AUTO-MAS respects and protects user privacy, all collected information has been anonymized and does not contain any personal identity information. All collected data is stored on the official server of AUTO-MAS, and will not be transmitted to any third-party institution or facility.
-
-            [已有 Mirror酱 CDK ？前往 Mirror酱 高速下载](https://mirrorchyan.com/zh/projects?rid=AUTO_MAS&source=auto-mas-release)
-          files: artifacts/*
+          body_path: release-metadata/RELEASE_NOTES.md
+          files: |
+            artifacts/AUTO-MAS-Lite-${{ needs.build.outputs.version_tag }}-x64.zip
+            artifacts/AUTO-MAS-Full-${{ needs.build.outputs.version_tag }}-x64.zip
+            artifacts/AUTO-MAS-Lite-Setup-${{ needs.build.outputs.version_tag }}-x64.zip
+            artifacts/AUTO-MAS-Full-Setup-${{ needs.build.outputs.version_tag }}-x64.zip
+            artifacts/SHA256SUMS.txt
+          fail_on_unmatched_files: true
           prerelease: ${{ needs.build.outputs.is_prerelease }}
 
   cnb:
     name: 发布 CNB 发行版
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: build
     if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' && (github.ref_name == 'main' || github.ref_name == 'dev')
+    permissions:
+      contents: read
 
     steps:
       - name: 签出代码
-        uses: actions/checkout@v4
-
-      - name: 安装 uv
-        uses: astral-sh/setup-uv@v6
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: 设置 Python 环境
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
-          python-version: '3.x'
+          python-version: "3.12"
 
-      - name: 安装依赖
-        run: uv pip install --system -r .github/workflows/requirements.txt
+      - name: 验证 CNB 触发器安全契约
+        run: python .github/workflows/scripts/Verify-CnbTriggerContract.py
 
       - name: 触发 CNB 构建
         env:
@@ -351,48 +643,48 @@ jobs:
           RELEASE_BODY: ${{ needs.build.outputs.version_changelog }}
           VERSION_TAG: ${{ needs.build.outputs.version_tag }}
           IS_PRERELEASE: ${{ needs.build.outputs.is_prerelease }}
+          BRANCH_NAME: ${{ github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
         run: |
           python .github/workflows/cnb_trigger.py "$CNB_TOKEN" \
-            --branch "${{ github.ref_name }}" \
-            --runid "${{ github.run_id }}" \
+            --branch "$BRANCH_NAME" \
+            --runid "$RUN_ID" \
             --release-body "$RELEASE_BODY" \
             --version-tag "$VERSION_TAG" \
             --is-prerelease "$IS_PRERELEASE"
 
   mirror:
     name: 推送镜像版本
-    runs-on: macos-latest
+    runs-on: macos-15
     needs: [build, release, cnb]
+    permissions:
+      actions: read
 
     steps:
       - name: 下载构建产物
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: build-artifacts
           path: .
 
+      - name: 复核镜像产物
+        run: |
+          test "$(find . -maxdepth 1 -type f -name 'AUTO-MAS-*-x64.zip' | wc -l)" -eq 4
+          sha256sum --check SHA256SUMS.txt
+
       - name: 上传精简安装包
-        uses: MirrorChyan/uploading-action@v1
+        uses: MirrorChyan/uploading-action@1ae1dddee41454a0a048d7f5b10ec11f2e5a89c4 # v1
         with:
           filetype: local
           filename: AUTO-MAS-Lite-Setup-${{ needs.build.outputs.version_tag }}-x64.zip
           version_name: ${{ needs.build.outputs.version_tag }}
           mirrorchyan_rid: AUTO_MAS
           upload_token: ${{ secrets.MirrorChyanUploadToken }}
-          os: windows
+          os: win
           arch: x64
 
-      - name: 上传完整安装包
-        uses: MirrorChyan/uploading-action@v1
-        with:
-          filetype: local
-          filename: AUTO-MAS-Full-Setup-${{ needs.build.outputs.version_tag }}-x64.zip
-          version_name: ${{ needs.build.outputs.version_tag }}
-          mirrorchyan_rid: AUTO_MAS
-          upload_token: ${{ secrets.MirrorChyanUploadToken }}
-
       - name: 上传版本说明
-        uses: MirrorChyan/release-note-action@v1
+        uses: MirrorChyan/release-note-action@f392b50c411981ee6d33c8ed5e91d66d84d56202 # v1
         with:
           version_name: ${{ needs.build.outputs.version_tag }}
           release_note: ${{ needs.build.outputs.version_changelog }}
@@ -400,19 +692,26 @@ jobs:
           upload_token: ${{ secrets.MirrorChyanUploadToken }}
 
       - name: 触发自建源更新
+        env:
+          IS_PRERELEASE: ${{ needs.build.outputs.is_prerelease }}
+          UPDATE_URL: ${{ secrets.UPDATE_URL }}
+          VERSION_TAG: ${{ needs.build.outputs.version_tag }}
         run: |
-          if [ "${{ needs.build.outputs.is_prerelease }}" = "true" ]; then
+          if [ "$IS_PRERELEASE" = "true" ]; then
             CHANNEL="beta"
           else
             CHANNEL="stable"
           fi
 
           PAYLOAD=$(jq -n \
-            --arg version "${{ needs.build.outputs.version_tag }}" \
+            --arg version "$VERSION_TAG" \
             --arg res_id "AUTO_MAS" \
             --arg channel "$CHANNEL" \
             --arg os "win" \
             --arg arch "x64" \
             '{version: $version, res_id: $res_id, channel: $channel, os: $os, arch: $arch}')
 
-          curl -X POST "${{ secrets.UPDATE_URL }}" -H "Content-Type: application/json" -d "$PAYLOAD"
+          curl --fail-with-body --show-error --silent \
+            -X POST "$UPDATE_URL" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD"

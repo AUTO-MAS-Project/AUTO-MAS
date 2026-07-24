@@ -1,0 +1,15 @@
+{
+  "case_id": "11_same_name_official_local",
+  "status": "PASS",
+  "notes": "",
+  "error": null,
+  "error_traceback": null,
+  "snapshots": {
+    "after_discover": "Snapshot(at=1784824151.1404178, event_bus_handlers={}, loader_records={}, discovered_plugins={'fake_official': {'source': 'pypi', 'distribution': 'automas-official', 'version': '0.1.0', 'system': True, 'locked': True}}, service_owners={}, sys_modules_keys_sample=[])"
+  },
+  "metrics": {
+    "distribution": "automas-official",
+    "system": true,
+    "locked": true
+  }
+}

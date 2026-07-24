@@ -30,8 +30,12 @@ from contextlib import suppress
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from app.models.emulator import DeviceStatus, DeviceInfo, DeviceBase
-from app.models.config import EmulatorConfig
+from app.models.emulator import (
+    DeviceBase,
+    DeviceInfo,
+    DeviceStatus,
+    EmulatorRuntimeConfig,
+)
 from app.utils import ProcessRunner, get_logger
 
 
@@ -49,7 +53,7 @@ class MumuManager(DeviceBase):
     基于MuMuManager.exe的模拟器管理
     """
 
-    def __init__(self, config: EmulatorConfig) -> None:
+    def __init__(self, config: EmulatorRuntimeConfig) -> None:
         if not (Path(config.get("Info", "Path"))).exists():
             raise FileNotFoundError(
                 f"MuMuManager.exe文件不存在: {config.get('Info', 'Path')}"

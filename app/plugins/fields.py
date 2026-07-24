@@ -225,6 +225,7 @@ class PluginFieldFactory:
         button: dict[str, Any] | None = None,
         configurable: bool | None = None,
         readonly: bool | None = None,
+        required: bool | None = None,
         sensitive: bool | None = None,
         size: PluginFieldSize | None = None,
         min: int | float | None = None,
@@ -284,6 +285,8 @@ class PluginFieldFactory:
             extra["configurable"] = configurable
         if readonly is not None:
             extra["readonly"] = readonly
+        if required is not None:
+            extra["required"] = required
         if sensitive is not None:
             extra["sensitive"] = sensitive
         if size is not None:

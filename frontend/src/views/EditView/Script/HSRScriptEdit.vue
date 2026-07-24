@@ -329,6 +329,102 @@
           </a-row>
         </div>
 
+        <!-- 培养目标 -->
+        <div class="form-section">
+          <div class="section-header">
+            <h3>培养目标</h3>
+          </div>
+          <p class="section-hint">
+            由当前 TaskMapping.Daily 选中的引擎使用其原生培养目标能力。 SRA 模式下历战余响也由 SRA
+            培养目标决定，MAS 仅按实际日志回写完成状态。
+          </p>
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="启用后，由 TaskMapping.Daily 选中的引擎使用其原生培养目标能力">
+                    <span class="form-label">
+                      启用培养目标
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-switch
+                  v-model:checked="hsrConfig.CultivationTarget.Enabled"
+                  @change="handleCultivationTargetChange('Enabled', $event)"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="24" style="margin-top: 16px">
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="instance=按副本名称识别，drop=按副本素材识别">
+                    <span class="form-label">
+                      M7A 识别方案
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="hsrConfig.CultivationTarget.M7ARecognitionScheme"
+                  :disabled="!hsrConfig.CultivationTarget.Enabled"
+                  size="large"
+                  style="width: 100%"
+                  :options="[
+                    { value: 'instance', label: '按副本名称识别' },
+                    { value: 'drop', label: '按副本素材识别' },
+                  ]"
+                  @change="handleCultivationTargetChange('M7ARecognitionScheme', $event)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip title="M7A 饰品提取每周执行次数（0-7）">
+                    <span class="form-label">
+                      M7A 饰品提取周次数
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-number
+                  v-model:value="hsrConfig.CultivationTarget.M7AOrnamentWeeklyCount"
+                  :min="0"
+                  :max="7"
+                  :disabled="!hsrConfig.CultivationTarget.Enabled"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleCultivationTargetChange('M7AOrnamentWeeklyCount', $event)"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="24" style="margin-top: 16px">
+            <a-col :span="24">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip
+                    title="当培养目标只识别到侵蚀隧洞和饰品提取时，是否改用用户手动配置的副本"
+                  >
+                    <span class="form-label">
+                      M7A 仅遗器时使用手动副本
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-switch
+                  v-model:checked="hsrConfig.CultivationTarget.M7AUseUserStageWhenOnlyRelics"
+                  :disabled="!hsrConfig.CultivationTarget.Enabled"
+                  @change="handleCultivationTargetChange('M7AUseUserStageWhenOnlyRelics', $event)"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </div>
+
         <!-- 周常任务执行策略 -->
         <div class="form-section">
           <div class="section-header">
@@ -462,6 +558,12 @@ type HSRConfigData = {
     WeeklyTimeLimit: number
   }
   TaskMapping: HSRTaskMapping
+  CultivationTarget: {
+    Enabled: boolean
+    M7ARecognitionScheme: 'instance' | 'drop'
+    M7AOrnamentWeeklyCount: number
+    M7AUseUserStageWhenOnlyRelics: boolean
+  }
 }
 
 const logger = window.electronAPI.getLogger('HSR 脚本编辑')
@@ -508,6 +610,12 @@ const hsrConfig = reactive<HSRConfigData>({
     WeeklyTimeLimit: 60,
   },
   TaskMapping: { ...DEFAULT_HSR_TASK_MAPPING },
+  CultivationTarget: {
+    Enabled: false,
+    M7ARecognitionScheme: 'instance',
+    M7AOrnamentWeeklyCount: 1,
+    M7AUseUserStageWhenOnlyRelics: false,
+  },
 })
 
 const moduleList = [
@@ -619,6 +727,18 @@ const refreshScript = async () => {
     if (cfg.TaskMapping) {
       hsrConfig.TaskMapping = { ...DEFAULT_HSR_TASK_MAPPING, ...cfg.TaskMapping }
     }
+    if (cfg.CultivationTarget) {
+      Object.assign(hsrConfig.CultivationTarget, cfg.CultivationTarget)
+      if (
+        hsrConfig.CultivationTarget.M7ARecognitionScheme !== 'instance' &&
+        hsrConfig.CultivationTarget.M7ARecognitionScheme !== 'drop'
+      ) {
+        hsrConfig.CultivationTarget.M7ARecognitionScheme = 'instance'
+      }
+      if (typeof hsrConfig.CultivationTarget.M7AOrnamentWeeklyCount !== 'number') {
+        hsrConfig.CultivationTarget.M7AOrnamentWeeklyCount = 1
+      }
+    }
     capabilitySnapshot.value = await hsrPluginApi.getCapabilities(scriptId)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -653,6 +773,10 @@ const handleRunConfigChange = async (key: string, value: any) => {
 
 const handleM7AConfigChange = async (key: string, value: unknown) => {
   await handleChange('M7A', key, value)
+}
+
+const handleCultivationTargetChange = async (key: string, value: unknown) => {
+  await handleChange('CultivationTarget', key, value)
 }
 
 const handleGameConfigChange = async (key: 'WaitTime', value: number | null) => {

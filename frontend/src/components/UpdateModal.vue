@@ -11,11 +11,14 @@
     <div class="update-container">
       <!-- 更新内容展示 -->
       <div class="update-content">
+        <!-- eslint-disable vue/no-v-html -- MarkdownIt raw HTML is disabled and link URLs are validated before opening. -->
         <div
           ref="markdownContentRef"
           class="markdown-content"
+          @click="handleLinkClick"
           v-html="renderMarkdown(updateContent)"
         ></div>
+        <!-- eslint-enable vue/no-v-html -->
       </div>
 
       <!-- 操作按钮 -->
@@ -37,6 +40,7 @@ import { computed, ref } from 'vue'
 import MarkdownIt from 'markdown-it'
 import UpdateDownloadModal from './UpdateDownloadModal.vue'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
+import { openExternalUrl } from '@/utils/openExternal'
 const logger = window.electronAPI.getLogger('更新模态框')
 
 // Props 定义
@@ -76,8 +80,20 @@ const updateContent = computed(() => {
 })
 
 // markdown 渲染器
-const md = new MarkdownIt({ html: true, linkify: true, typographer: true })
+const md = new MarkdownIt({ html: false, linkify: true, typographer: true })
 const renderMarkdown = (content: string) => md.render(content)
+
+const handleLinkClick = async (event: MouseEvent) => {
+  const target = event.target as HTMLElement | null
+  const link = target?.closest('a') as HTMLAnchorElement | null
+  const url = link?.getAttribute('href')
+  if (!url) return
+
+  event.preventDefault()
+  if (!(await openExternalUrl(url))) {
+    logger.error(`Rejected or unavailable external URL: ${url}`)
+  }
+}
 
 /** 将接口的 update_info 对象转成 Markdown 文本 */
 function updateInfoToMarkdown(info: unknown, version?: string, header = '更新内容'): string {

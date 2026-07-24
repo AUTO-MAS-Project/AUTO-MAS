@@ -6,31 +6,10 @@ from dataclasses import dataclass
 from types import NoneType, UnionType
 from typing import Any, Callable, Literal, get_args, get_origin
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, create_model
 from pydantic_core import PydanticUndefined
 
 from app.plugins.schema import normalize_schema_options, option_values
-from app.models.ConfigBase import (
-    BoolValidator,
-    ConfigBase,
-    ConfigItem,
-    DateTimeValidator,
-    EncryptValidator,
-    FileValidator,
-    FolderValidator,
-    JSONValidator,
-    MultipleConfig,
-    MultipleOptionsValidator,
-    MultipleUIDValidator,
-    OptionsValidator,
-    RangeValidator,
-    ScriptRootPathValidator,
-    StringValidator,
-    URLValidator,
-    UserNameValidator,
-    ValidatorBase,
-    VirtualConfigValidator,
-)
 
 from .fields import PluginFieldDeclaration, PluginFieldGroup
 
@@ -39,11 +18,68 @@ from .fields import PluginFieldDeclaration, PluginFieldGroup
 class ScriptAdapterSchemaArtifacts:
     """字段声明编译后的脚本适配产物。"""
 
-    script_config_class: type[ConfigBase]
-    user_config_class: type[ConfigBase]
+    script_config_class: type[Any]
+    user_config_class: type[Any]
     script_schema: dict[str, Any]
     user_schema: dict[str, Any]
     bind_related_config: Callable[[Any], None]
+
+
+def build_native_script_adapter_schema(
+    *,
+    script_class_name: str,
+    user_class_name: str,
+    script_model: type[BaseModel] | None = None,
+    user_model: type[BaseModel] | None = None,
+    script_groups: list[PluginFieldGroup] | tuple[PluginFieldGroup, ...] | None = None,
+    user_groups: list[PluginFieldGroup] | tuple[PluginFieldGroup, ...] | None = None,
+    module: str,
+) -> ScriptAdapterSchemaArtifacts:
+    """Build authoritative provider artifacts without compiling ConfigBase.
+
+    Model-backed adapters keep their declared Pydantic models.  Older
+    declaration-only adapters use unique permissive Pydantic envelopes while
+    their existing field groups remain the validation/UI contract.  This
+    removes the legacy object graph from provider discovery and persistence;
+    declaration-only runtime validation can then be tightened independently.
+    """
+
+    if script_model is not None or user_model is not None:
+        if script_model is None or user_model is None:
+            raise ValueError("原生脚本适配必须同时声明 script_model 和 user_model")
+        script_config_class = script_model
+        user_config_class = user_model
+        normalized_script_groups = build_field_groups_from_model(script_model)
+        normalized_user_groups = build_field_groups_from_model(user_model)
+    else:
+        if script_groups is None or user_groups is None:
+            raise ValueError("原生脚本适配必须同时声明 script_groups 和 user_groups")
+        normalized_script_groups = tuple(script_groups)
+        normalized_user_groups = tuple(user_groups)
+        permissive_config = ConfigDict(extra="allow")
+        script_config_class = create_model(
+            script_class_name,
+            __config__=permissive_config,
+            __module__=module,
+        )
+        user_config_class = create_model(
+            user_class_name,
+            __config__=permissive_config,
+            __module__=module,
+        )
+
+    def _bind_related_config(_global_config: Any) -> None:
+        # Config v2 refs/options are resolved through provider metadata and
+        # SchemaDecorationContext rather than ConfigBase.related_config.
+        return None
+
+    return ScriptAdapterSchemaArtifacts(
+        script_config_class=script_config_class,
+        user_config_class=user_config_class,
+        script_schema=build_schema(normalized_script_groups),
+        user_schema=build_schema(normalized_user_groups),
+        bind_related_config=_bind_related_config,
+    )
 
 
 def build_script_adapter_schema(
@@ -63,7 +99,7 @@ def build_script_adapter_schema(
         user_groups,
         module=module,
     )
-    script_extra_multiples: list[tuple[str, type[ConfigBase]]] = []
+    script_extra_multiples: list[tuple[str, type[Any]]] = []
     if user_data_attribute:
         script_extra_multiples.append((user_data_attribute, user_config_class))
 
@@ -152,15 +188,17 @@ def build_configbase_class(
     groups: list[PluginFieldGroup] | tuple[PluginFieldGroup, ...],
     *,
     module: str,
-    extra_multiples: list[tuple[str, type[ConfigBase]]] | None = None,
-) -> type[ConfigBase]:
+    extra_multiples: list[tuple[str, type[Any]]] | None = None,
+) -> type[Any]:
     """把字段组声明编译成 ConfigBase 兼容类。"""
+
+    from app.models.ConfigBase import ConfigBase, ConfigItem, MultipleConfig
 
     normalized_groups = tuple(groups)
     nested_multiples = _compile_nested_multiples(class_name, normalized_groups, module)
     all_multiples = tuple(nested_multiples + list(extra_multiples or []))
 
-    def __init__(self: ConfigBase) -> None:
+    def __init__(self: Any) -> None:
         for group in normalized_groups:
             for field in group.fields:
                 if _is_runtime_field(field):
@@ -208,8 +246,8 @@ def _compile_nested_multiples(
     parent_class_name: str,
     groups: tuple[PluginFieldGroup, ...],
     module: str,
-) -> list[tuple[str, type[ConfigBase]]]:
-    result: list[tuple[str, type[ConfigBase]]] = []
+) -> list[tuple[str, type[Any]]]:
+    result: list[tuple[str, type[Any]]] = []
     for group in groups:
         for field in group.fields:
             if field.field_type != "multiple":
@@ -391,21 +429,44 @@ def _is_runtime_field(field: PluginFieldDeclaration) -> bool:
     return field.configurable
 
 
-class _DynamicMultipleOptionsValidator(ValidatorBase):
-    def validate(self, value: Any) -> bool:
-        return isinstance(value, list) and all(isinstance(item, str) for item in value)
+def _dynamic_multiple_options_validator() -> Any:
+    from app.models.ConfigBase import ValidatorBase
 
-    def correct(self, value: Any) -> list[str]:
-        if self.validate(value):
-            return value
-        return []
+    class DynamicMultipleOptionsValidator(ValidatorBase):
+        def validate(self, value: Any) -> bool:
+            return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+        def correct(self, value: Any) -> list[str]:
+            if self.validate(value):
+                return value
+            return []
+
+    return DynamicMultipleOptionsValidator()
 
 
 def _build_validator(
-    config: ConfigBase,
+    config: Any,
     group: str,
     field: PluginFieldDeclaration,
-) -> ValidatorBase:
+) -> Any:
+    from app.models.ConfigBase import (
+        BoolValidator,
+        DateTimeValidator,
+        EncryptValidator,
+        FileValidator,
+        FolderValidator,
+        JSONValidator,
+        MultipleOptionsValidator,
+        MultipleUIDValidator,
+        OptionsValidator,
+        RangeValidator,
+        ScriptRootPathValidator,
+        StringValidator,
+        URLValidator,
+        UserNameValidator,
+        VirtualConfigValidator,
+    )
+
     if field.virtual_handler is not None:
         return VirtualConfigValidator(lambda: _serialize_virtual_value(field.virtual_handler(config)))
 
@@ -444,7 +505,7 @@ def _build_validator(
         options = option_values(field.options)
         if options or field.options_provider is None:
             return MultipleOptionsValidator(options)
-        return _DynamicMultipleOptionsValidator()
+        return _dynamic_multiple_options_validator()
     if field.field_type == "boolean":
         return BoolValidator()
     if field.field_type == "number":

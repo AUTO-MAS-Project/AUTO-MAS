@@ -22,6 +22,10 @@
 
 
 from fastapi import APIRouter, Body
+from app.configuration import (
+    CONFIG_V2_MODE,
+    CONFIG_V2_MODE_AUTHORITATIVE,
+)
 from app.core import Config
 from app.services import Notify
 from app.models.schema import (
@@ -39,9 +43,26 @@ from app.models.schema import (
     WebhookReorderIn,
     WebhookTestIn,
 )
-from app.models.config import Webhook as WebhookConfig
 
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
+
+
+def _build_webhook_test_config(data: dict[str, object]) -> object:
+    """Build a non-persistent webhook object for the notification bridge.
+
+    Authoritative mode must never instantiate the legacy ConfigBase graph,
+    including on an otherwise isolated action endpoint.
+    """
+
+    if CONFIG_V2_MODE == CONFIG_V2_MODE_AUTHORITATIVE:
+        from app.configuration.roots.config import Webhook as NativeWebhook
+
+        return NativeWebhook.build(**data)
+
+    from app.models.config import Webhook as LegacyWebhook
+
+    webhook = LegacyWebhook()
+    return webhook
 
 
 @router.post(
@@ -215,8 +236,10 @@ async def test_webhook(webhook: WebhookTestIn = Body(...)) -> OutBase:
     """测试自定义Webhook"""
 
     try:
-        webhook_config = WebhookConfig()
-        await webhook_config.load(webhook.data.model_dump())
+        data = webhook.data.model_dump()
+        webhook_config = _build_webhook_test_config(data)
+        if CONFIG_V2_MODE != CONFIG_V2_MODE_AUTHORITATIVE:
+            await webhook_config.load(data)
         await Notify.WebhookPush(
             "AUTO-MAS Webhook测试",
             "这是一条测试消息，如果您收到此消息，说明Webhook配置正确！",

@@ -65,7 +65,7 @@ export interface ElectronAPI {
 
   // 管理员权限相关
   checkAdmin: () => Promise<boolean>
-  restartAsAdmin: () => Promise<void>
+  restartAsAdmin: () => Promise<{ success: boolean; error?: string }>
 
   // 配置文件操作
   saveConfig: (config: any) => Promise<void>
@@ -136,11 +136,26 @@ export interface ElectronAPI {
   installDependencies: (
     selectedMirror?: string
   ) => Promise<{ success: boolean; error?: string; skipped?: boolean }>
+  installPluginBootstrap: (selectedMirror?: string) => Promise<{
+    success: boolean
+    error?: string
+    summary: string
+    installedPackages: string[]
+    failedPackages: string[]
+    warnings: Array<{ packageName: string; message: string; kind: string }>
+  }>
+  repairRuntimeAndStart: (selectedMirror?: string) => Promise<{
+    success: boolean
+    error?: string
+    summary?: string
+    logs?: string
+  }>
   getMirrors: (type: string) => Promise<any[]>
 
   // API 端点获取
   getApiEndpoint: (key: string) => Promise<string>
   getApiEndpoints: () => Promise<{ local: string; websocket: string }>
+  getBackendAuthToken: () => Promise<string>
 
   // 完整初始化流程（保留用于兼容）
   initialize: (
@@ -189,6 +204,8 @@ export interface ElectronAPI {
   removeRepositoryProgressListener?: () => void
   onDependencyProgress: (callback: (progress: any) => void) => void
   removeDependencyProgressListener?: () => void
+  onPluginBootstrapProgress: (callback: (progress: any) => void) => void
+  removePluginBootstrapProgressListener?: () => void
 
   // 监听初始化进度（保留用于兼容）
   onInitializationProgress: (

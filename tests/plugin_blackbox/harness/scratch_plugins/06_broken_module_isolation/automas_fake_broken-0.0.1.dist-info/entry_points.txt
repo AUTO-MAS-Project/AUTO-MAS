@@ -1,0 +1,2 @@
+[auto_mas.plugins]
+automas_fake_broken = broken_plugin:Plugin

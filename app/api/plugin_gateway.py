@@ -7,6 +7,8 @@ from typing import Any
 from fastapi import APIRouter, Request, WebSocket
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
+from app.core.ws.manager import ws_manager
+from app.core.ws.security import authenticate_websocket_subprotocol
 from app.plugins.server import (
     PluginHttpRequest,
     PluginHttpResponse,
@@ -147,13 +149,22 @@ async def dispatch_plugin_http(path: str, request: Request) -> Response:
 @router.websocket("/{path:path}")
 async def dispatch_plugin_websocket(path: str, websocket: WebSocket) -> None:
     """分发插件声明式 WebSocket 请求。"""
+    selected_subprotocol = authenticate_websocket_subprotocol(
+        websocket,
+        ws_manager.auth_token,
+    )
+    if selected_subprotocol is None:
+        logger.warning("拒绝未通过本地握手认证的插件 WebSocket 连接")
+        await websocket.close(code=1008, reason="authentication required")
+        return
+
     route_path = f"/{path}".rstrip("/") or "/"
     route = plugin_server.resolve_websocket(route_path)
     if route is None:
         await websocket.close(code=1008, reason=f"未找到插件 WS 端点: {route_path}")
         return
 
-    await websocket.accept()
+    await websocket.accept(subprotocol=selected_subprotocol)
     session = PluginWebSocketSession(
         websocket,
         path=route_path,

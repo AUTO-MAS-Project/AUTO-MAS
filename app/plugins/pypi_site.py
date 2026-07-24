@@ -55,6 +55,7 @@ def get_pypi_site_packages_dir(plugins_dir: Path | None = None) -> Path:
 
 
 _site_packages_initialized: Path | None = None
+_site_packages_initialized_mtime_ns: int | None = None
 
 # 入口点扫描缓存: 以 site-packages 目录 mtime 为失效依据。
 # uv/pip 安装或卸载分发包会在该目录下增删 .dist-info 目录, 从而更新目录 mtime。
@@ -69,8 +70,10 @@ def _site_dir_mtime_ns(site_dir: Path) -> int:
 
 
 def invalidate_entry_points_cache() -> None:
-    """清除入口点扫描缓存（插件安装/卸载后调用以保证立即可见）。"""
+    """清除插件入口点与 editable 导入路径缓存。"""
+    global _site_packages_initialized_mtime_ns
     _entry_points_cache.clear()
+    _site_packages_initialized_mtime_ns = None
 
 
 def ensure_pypi_site_packages_on_syspath(plugins_dir: Path | None = None) -> Path:
@@ -83,12 +86,15 @@ def ensure_pypi_site_packages_on_syspath(plugins_dir: Path | None = None) -> Pat
     Returns:
         Path: 最终加入 sys.path 的 site-packages 目录路径。
     """
-    global _site_packages_initialized
+    global _site_packages_initialized, _site_packages_initialized_mtime_ns
     site_dir = get_pypi_site_packages_dir(plugins_dir)
-    if _site_packages_initialized == site_dir:
-        return site_dir
-
     site_dir.mkdir(parents=True, exist_ok=True)
+    site_dir_mtime_ns = _site_dir_mtime_ns(site_dir)
+    if (
+        _site_packages_initialized == site_dir
+        and _site_packages_initialized_mtime_ns == site_dir_mtime_ns
+    ):
+        return site_dir
 
     normalized = str(site_dir.resolve())
     site.addsitedir(normalized)
@@ -98,6 +104,7 @@ def ensure_pypi_site_packages_on_syspath(plugins_dir: Path | None = None) -> Pat
         _move_sys_path_to_front(editable_path)
 
     _site_packages_initialized = site_dir
+    _site_packages_initialized_mtime_ns = site_dir_mtime_ns
     return site_dir
 
 

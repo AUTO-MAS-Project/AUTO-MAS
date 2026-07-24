@@ -3,10 +3,14 @@
 
 from pathlib import Path
 import asyncio
+import hashlib
 import inspect
-import shutil
+import json
+import os
+import re
 import importlib.metadata as importlib_metadata
 import time
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Callable, Dict
 import uuid
@@ -50,6 +54,14 @@ class _LocalPluginProject:
 
 
 @dataclass(frozen=True)
+class _BundledPluginLock:
+    """Verified plugin distributions protected by a bundled runtime lock."""
+
+    versions: dict[str, str]
+    protected_host_distributions: frozenset[str]
+
+
+@dataclass(frozen=True)
 class _DeclaredScriptTypeBinding:
     """插件声明的脚本类型绑定。"""
 
@@ -63,7 +75,6 @@ class _PluginManager:
 
     def __init__(self) -> None:
         self.started = False
-        schedule_plugin_snapshot(reason="manager.stop")
         self.events = EventBus()
         self.config_store = PluginConfigStore()
         self.plugins_dir = Path.cwd() / "plugins"
@@ -83,6 +94,10 @@ class _PluginManager:
         self._discover_cache_plugins_dir: Path | None = None
         self._discover_cache_ttl = 30.0
         self._discover_lock = asyncio.Lock()
+        self._config_write_lock = asyncio.Lock()
+        # 所有会改变插件包、实例运行态或 enabled 状态的用户操作串行执行。
+        # API、旧 WS、主 WS 与开发 HMR 均可触发这些入口，不能只依赖传输层锁。
+        self._operation_lock = asyncio.Lock()
         self._pending_local_install: asyncio.Task | None = None
 
     def invalidate_discover_cache(self) -> None:
@@ -205,6 +220,156 @@ class _PluginManager:
             result.append(parsed)
         return result
 
+    def _is_development_source_checkout(self) -> bool:
+        """Keep editable installs enabled for an explicitly marked/source checkout."""
+        if str(os.getenv("AUTO_MAS_DEV", "")).strip().lower() in {"1", "true", "yes", "on"}:
+            return True
+        if os.getenv("AUTO_MAS_BACKEND_OWNER_TOKEN"):
+            return False
+        app_root = self.plugins_dir.parent
+        return (app_root / ".git").exists() and (app_root / "frontend" / "package.json").is_file()
+
+    def _load_bundled_plugin_lock(self) -> _BundledPluginLock | None:
+        """Load the release plugin set, failing closed when its integrity contract is broken."""
+        app_root = self.plugins_dir.parent
+        marker_path = app_root / "res" / "integration-snapshot.json"
+        if not marker_path.is_file() or self._is_development_source_checkout():
+            return None
+
+        manifest_path = self.plugins_dir / "wheels" / "manifest.json"
+        runtime_lock_path = self.plugins_dir / "wheels" / "runtime-lock.json"
+        try:
+            marker = json.loads(marker_path.read_text(encoding="utf-8-sig"))
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError) as exc:
+            raise RuntimeError(f"随包插件锁标记或 manifest 无法读取，拒绝 editable 覆盖: {exc}") from exc
+
+        contract = marker.get("wheelhouse_contract")
+        runtime_lock_record = manifest.get("runtime_lock")
+        expected_count = (
+            contract.get("plugin_distribution_count") if isinstance(contract, dict) else None
+        )
+        if (
+            marker.get("schema_version") != 1
+            or marker.get("deployment_mode") != "bundled-snapshot"
+            or manifest.get("schema_version") != 3
+            or manifest.get("artifact_scope") != "complete-windows-x64-runtime-wheelhouse"
+            or not isinstance(expected_count, int)
+            or expected_count <= 0
+            or not isinstance(runtime_lock_record, dict)
+            or runtime_lock_record.get("filename") != "runtime-lock.json"
+        ):
+            raise RuntimeError("随包插件锁契约无效，拒绝 editable 覆盖")
+
+        try:
+            runtime_lock_bytes = runtime_lock_path.read_bytes()
+        except OSError as exc:
+            raise RuntimeError(f"随包 runtime-lock 缺失，拒绝 editable 覆盖: {exc}") from exc
+        expected_size = runtime_lock_record.get("size_bytes")
+        expected_hash = runtime_lock_record.get("sha256")
+        actual_hash = hashlib.sha256(runtime_lock_bytes).hexdigest()
+        if (
+            not isinstance(expected_size, int)
+            or expected_size != len(runtime_lock_bytes)
+            or not isinstance(expected_hash, str)
+            or not re.fullmatch(r"[0-9a-fA-F]{64}", expected_hash)
+            or actual_hash != expected_hash.lower()
+        ):
+            raise RuntimeError("随包 runtime-lock 与 manifest 的大小或 SHA-256 不一致，拒绝 editable 覆盖")
+
+        try:
+            runtime_lock = json.loads(runtime_lock_bytes.decode("utf-8-sig"))
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise RuntimeError(f"随包 runtime-lock 不是有效 JSON，拒绝 editable 覆盖: {exc}") from exc
+        plugins = runtime_lock.get("plugins")
+        host_runtime = runtime_lock.get("host_runtime")
+        install_contract = runtime_lock.get("install_contract")
+        if (
+            runtime_lock.get("schema_version") != 1
+            or not isinstance(plugins, list)
+            or not isinstance(host_runtime, list)
+            or not isinstance(install_contract, dict)
+            or not isinstance(install_contract.get("protected_host_distributions"), list)
+        ):
+            raise RuntimeError("随包 runtime-lock schema 无效，拒绝 editable 覆盖")
+
+        versions: dict[str, str] = {}
+        for entry in plugins:
+            if not isinstance(entry, dict) or entry.get("scope") != "plugin":
+                raise RuntimeError("随包 runtime-lock 含无效 plugin scope，拒绝 editable 覆盖")
+            distribution = self._normalize_distribution_name(entry.get("distribution"))
+            version = str(entry.get("version") or "").strip()
+            if not distribution or not version or distribution in versions:
+                raise RuntimeError("随包 runtime-lock 含空值或重复插件分发，拒绝 editable 覆盖")
+            versions[distribution] = version
+        if len(versions) != expected_count:
+            raise RuntimeError(
+                f"随包 runtime-lock 插件数量不符合快照契约: expected={expected_count}, actual={len(versions)}"
+            )
+        host_distributions = {
+            self._normalize_distribution_name(entry.get("distribution"))
+            for entry in host_runtime
+            if isinstance(entry, dict) and entry.get("scope") == "host_runtime"
+        }
+        protected_host_distributions = {
+            self._normalize_distribution_name(item)
+            for item in install_contract["protected_host_distributions"]
+            if isinstance(item, str) and item.strip()
+        }
+        if (
+            len(host_distributions) != len(host_runtime)
+            or host_distributions != protected_host_distributions
+        ):
+            raise RuntimeError("随包 runtime-lock 的 protected host 集合无效，拒绝 editable 覆盖")
+        return _BundledPluginLock(
+            versions=versions,
+            protected_host_distributions=frozenset(protected_host_distributions),
+        )
+
+    def _assert_protected_host_not_shadowed(self, bundled_lock: _BundledPluginLock) -> None:
+        """The plugin target must never shadow a protected host distribution."""
+        target_dir = get_pypi_site_packages_dir(self.plugins_dir)
+        if not target_dir.is_dir():
+            return
+        shadowed = sorted(
+            {
+                self._normalize_distribution_name(str(getattr(dist, "name", "") or ""))
+                for dist in importlib_metadata.distributions(path=[str(target_dir)])
+            }
+            & bundled_lock.protected_host_distributions
+        )
+        if shadowed:
+            raise RuntimeError(
+                "插件 site-packages 覆盖了受保护宿主依赖，拒绝继续启动: "
+                + ", ".join(shadowed)
+            )
+
+    def _assert_locked_projects_unchanged(
+        self,
+        projects: list[_LocalPluginProject],
+        bundled_lock: _BundledPluginLock,
+    ) -> None:
+        """Reject an editable/version override of a source project protected by the lock."""
+        installed_entry_points = get_installed_plugin_entry_points(self.plugins_dir)
+        for project in projects:
+            distribution = self._normalize_distribution_name(project.distribution_name)
+            expected_version = bundled_lock.versions.get(distribution)
+            if expected_version is None:
+                continue
+            for entry_name in project.entry_point_names:
+                infos = installed_entry_points.get(entry_name, [])
+                valid = len(infos) == 1 and all(
+                    self._normalize_distribution_name(getattr(info, "distribution", "")) == distribution
+                    and str(getattr(info, "version", "") or "").strip() == expected_version
+                    and getattr(info, "editable_project_path", None) is None
+                    for info in infos
+                )
+                if not valid:
+                    raise RuntimeError(
+                        "锁定插件已被 editable/版本漂移覆盖，拒绝继续启动: "
+                        f"distribution={project.distribution_name}, entry_point={entry_name}"
+                    )
+
     def _should_install_local_project(
         self,
         project: _LocalPluginProject,
@@ -260,6 +425,7 @@ class _PluginManager:
                 f"本地插件 editable 安装失败: project={project.project_dir}, reason={reason}, detail={e}"
             ) from e
 
+        invalidate_entry_points_cache()
         logger.info(
             f"本地插件 editable 安装完成: project={project.project_dir}, distribution={project.distribution_name}, reason={reason}"
         )
@@ -282,13 +448,28 @@ class _PluginManager:
         if not projects:
             return
 
+        bundled_lock = self._load_bundled_plugin_lock()
+        if bundled_lock is not None:
+            self._assert_locked_projects_unchanged(projects, bundled_lock)
+            self._assert_protected_host_not_shadowed(bundled_lock)
+
         installed_entry_points = get_installed_plugin_entry_points(self.plugins_dir)
         for project in projects:
+            normalized_distribution = self._normalize_distribution_name(project.distribution_name)
+            if bundled_lock is not None and normalized_distribution in bundled_lock.versions:
+                logger.info(
+                    "随包锁定插件保留 wheel 安装，跳过 editable 覆盖: "
+                    f"distribution={project.distribution_name}, path={project.project_dir}"
+                )
+                continue
             needs_install, reason = self._should_install_local_project(project, installed_entry_points)
             if not needs_install:
                 continue
             await self._install_local_project_editable(project, reason)
             installed_entry_points = get_installed_plugin_entry_points(self.plugins_dir)
+        if bundled_lock is not None:
+            self._assert_locked_projects_unchanged(projects, bundled_lock)
+            self._assert_protected_host_not_shadowed(bundled_lock)
 
     def _get_valid_discover_cache(self) -> Dict[str, Any] | None:
         if self._discover_cache is None:
@@ -342,7 +523,11 @@ class _PluginManager:
     async def _ensure_default_instances(self, discovered: Dict[str, Any]) -> None:
         """按插件声明补齐默认实例。"""
 
-        default_instances: Dict[str, Dict[str, Any]] = get_system_plugin_default_instances()
+        default_instances: Dict[str, Dict[str, Any]] = {
+            plugin_name: spec
+            for plugin_name, spec in get_system_plugin_default_instances().items()
+            if plugin_name in discovered
+        }
         for plugin_name, plugin_source in discovered.items():
             spec = self.loader.get_default_instance_spec(plugin_name, plugin_source)
             if spec is None:
@@ -368,7 +553,7 @@ class _PluginManager:
     @staticmethod
     def _normalize_distribution_name(name: str) -> str:
         """将分发名归一化为便于比较的格式。"""
-        return str(name or "").strip().lower().replace("-", "_")
+        return re.sub(r"[-_.]+", "_", str(name or "").strip().lower())
 
     def _validate_package_name(self, package_name: str) -> str:
         """校验并规范化包名输入。
@@ -404,37 +589,8 @@ class _PluginManager:
             return []
         return list(importlib_metadata.distributions(path=[str(target_dir)]))
 
-    def _collect_distribution_top_level_modules(
-        self,
-        dist: importlib_metadata.Distribution,
-    ) -> set[str]:
-        """提取分发包关联的顶层模块名集合。"""
-        modules: set[str] = set()
-
-        try:
-            top_level = dist.read_text("top_level.txt")
-        except Exception:
-            top_level = None
-
-        if isinstance(top_level, str):
-            for line in top_level.splitlines():
-                name = str(line or "").strip()
-                if name:
-                    modules.add(name)
-
-        for ep in getattr(dist, "entry_points", []):
-            value = str(getattr(ep, "value", "") or "").strip()
-            if not value:
-                continue
-            module_part = value.split(":", 1)[0].strip()
-            root_module = module_part.split(".", 1)[0].strip()
-            if root_module:
-                modules.add(root_module)
-
-        return modules
-
     def _cleanup_package_from_target(self, package_name: str, target_dir: Path) -> bool:
-        """从目标 site-packages 清理指定分发及其顶层模块。
+        """从目标 site-packages 清理指定 distribution 记录的文件。
 
         Args:
             package_name (str): 分发包名。
@@ -445,35 +601,61 @@ class _PluginManager:
 
         Raises:
             OSError: 删除文件或目录失败时抛出。
+            RuntimeError: distribution RECORD 指向目标目录之外时抛出。
         """
         normalized = self._normalize_distribution_name(package_name)
-        matched: list[tuple[importlib_metadata.Distribution, set[str]]] = []
+        target_root = target_dir.resolve()
+        matched: list[importlib_metadata.Distribution] = []
 
         for dist in self._iter_target_distributions(target_dir):
             dist_name = str(getattr(dist, "name", "") or "")
             if self._normalize_distribution_name(dist_name) != normalized:
                 continue
-            matched.append((dist, self._collect_distribution_top_level_modules(dist)))
+            matched.append(dist)
 
         if not matched:
             return False
 
-        for dist, modules in matched:
+        for dist in matched:
             dist_files = list(getattr(dist, "files", []) or [])
+            parent_dirs: set[Path] = set()
             for item in dist_files:
                 candidate = Path(str(dist.locate_file(item)))
-                if candidate.is_file():
+                resolved_candidate = candidate.resolve()
+                try:
+                    resolved_candidate.relative_to(target_root)
+                except ValueError as exc:
+                    raise RuntimeError(
+                        "拒绝清理指向插件 site-packages 之外的 distribution 文件: "
+                        f"package={package_name}, path={resolved_candidate}"
+                    ) from exc
+                if resolved_candidate == target_root:
+                    raise RuntimeError(
+                        f"拒绝清理插件 site-packages 根目录: package={package_name}"
+                    )
+
+                if candidate.is_symlink() or candidate.is_file():
                     candidate.unlink(missing_ok=True)
                 elif candidate.is_dir():
-                    shutil.rmtree(candidate, ignore_errors=True)
+                    try:
+                        candidate.rmdir()
+                    except OSError:
+                        pass
+                parent_dirs.add(candidate.parent)
 
-            for module_name in modules:
-                module_dir = target_dir / module_name
-                module_py = target_dir / f"{module_name}.py"
-                if module_dir.exists() and module_dir.is_dir():
-                    shutil.rmtree(module_dir, ignore_errors=True)
-                if module_py.exists() and module_py.is_file():
-                    module_py.unlink(missing_ok=True)
+            # 只删除已经为空的父目录，保留 namespace 包中其他 distribution 的文件。
+            for directory in sorted(
+                parent_dirs,
+                key=lambda path: len(path.parts),
+                reverse=True,
+            ):
+                current = directory
+                while current != target_root:
+                    try:
+                        current.rmdir()
+                    except OSError:
+                        break
+                    current = current.parent
 
             dist_name = self._normalize_distribution_name(str(getattr(dist, "name", "") or ""))
             version = str(getattr(dist, "version", "") or "").strip()
@@ -483,7 +665,45 @@ class _PluginManager:
 
         return True
 
+    async def _rollback_plugin_install(
+        self,
+        package_name: str,
+        target_dir: Path,
+    ) -> tuple[bool, str]:
+        """尽力回滚已安装但未通过入口验证的 distribution。"""
+        details: list[str] = []
+        removed_from_target = False
+        try:
+            removed_from_target = self._cleanup_package_from_target(
+                package_name,
+                target_dir,
+            )
+            details.append(f"removed_from_target={removed_from_target}")
+        except Exception as exc:
+            details.append(f"target_cleanup={type(exc).__name__}: {exc}")
+
+        uninstall_ok = False
+        try:
+            completed = await uv_pip_uninstall(package_name, target=target_dir)
+            uninstall_ok = completed.returncode == 0
+            if not uninstall_ok:
+                detail = (completed.stderr or completed.stdout or "未知错误").strip()
+                details.append(f"uv_uninstall={detail}")
+            else:
+                details.append("uv_uninstall=ok")
+        except Exception as exc:
+            details.append(f"uv_uninstall={type(exc).__name__}: {exc}")
+
+        self.invalidate_discover_cache()
+        return removed_from_target or uninstall_ok, "; ".join(details)
+
     async def install_plugin_package(self, package_name: str) -> None:
+        """串行安装一个插件 distribution。"""
+        async with self._operation_lock:
+            await self._finish_background_install()
+            await self._install_plugin_package(package_name)
+
+    async def _install_plugin_package(self, package_name: str) -> None:
         """从 PyPI 安装插件包到插件专用 site-packages。
 
         Args:
@@ -493,32 +713,63 @@ class _PluginManager:
             None: 无返回值。
 
         Raises:
-            ValueError: 包名非法时抛出。
+            ValueError: 包名非法或为系统插件包时抛出。
             RuntimeError: 在以下场景抛出：
                 1) 安装命令执行失败；
-                2) 安装后未发现任何插件入口点。
+                2) 安装后未发现任何插件入口点（此时会回滚已安装的文件，避免幽灵 distribution）。
         """
         normalized = self._validate_package_name(package_name)
         if self.is_system_plugin_package(normalized):
-            raise ValueError(f"系统插件包不可卸载: {package_name}")
+            raise ValueError(f"系统插件包不可安装: {package_name}")
 
         target_dir = get_pypi_site_packages_dir(self.plugins_dir)
+        normalized_dist = self._normalize_distribution_name(normalized)
 
         try:
             await uv_pip_install_with_mirror_fallback([normalized], target=target_dir)
         except RuntimeError as e:
             raise RuntimeError(f"安装插件包失败: package={normalized}, detail={e}") from e
 
-        self.invalidate_discover_cache()
-        discovered = await self.discover_plugins(force=True)
-        if not discovered:
-            raise RuntimeError(
-                f"安装完成但未发现插件入口点: package={normalized}，请确认该包声明了 {ENTRY_POINT_GROUPS}"
+        try:
+            self.invalidate_discover_cache()
+            discovered = await self.discover_plugins(force=True)
+
+            contributed = any(
+                self._normalize_distribution_name(
+                    str(getattr(plugin_source, "distribution", "") or "")
+                )
+                == normalized_dist
+                for plugin_source in discovered.values()
             )
+            if not contributed:
+                raise RuntimeError(
+                    f"安装完成但未发现该 distribution 的插件入口点，请确认包声明了 {ENTRY_POINT_GROUPS}"
+                )
+        except Exception as validation_error:
+            rollback_ok, rollback_detail = await self._rollback_plugin_install(
+                normalized,
+                target_dir,
+            )
+            logger.warning(
+                "插件包安装后验证失败: "
+                f"package={normalized}, rollback_ok={rollback_ok}, detail={rollback_detail}"
+            )
+            rollback_status = "回滚完成" if rollback_ok else "回滚不完整，需人工清理"
+            raise RuntimeError(
+                f"插件包安装后验证失败: package={normalized}, "
+                f"reason={type(validation_error).__name__}: {validation_error}; "
+                f"{rollback_status}: {rollback_detail}"
+            ) from validation_error
 
         logger.info(f"插件包安装完成: package={normalized}")
 
     async def uninstall_plugin_package(self, package_name: str) -> None:
+        """串行卸载一个插件 distribution。"""
+        async with self._operation_lock:
+            await self._finish_background_install()
+            await self._uninstall_plugin_package(package_name)
+
+    async def _uninstall_plugin_package(self, package_name: str) -> None:
         """卸载插件包并清理插件专用 site-packages 中的残留文件。
 
         Args:
@@ -533,8 +784,19 @@ class _PluginManager:
             OSError: 删除目标目录文件失败时抛出。
         """
         normalized = self._validate_package_name(package_name)
+        if self.is_system_plugin_package(normalized):
+            raise ValueError(f"系统插件包不可卸载: {package_name}")
+        normalized_dist = self._normalize_distribution_name(normalized)
         target_dir = get_pypi_site_packages_dir(self.plugins_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
+
+        # 卸载前捕获被卸载包贡献的插件名集合，用于后续清理 orphan 实例。
+        before_discovered = await self.discover_plugins(force=True)
+        affected_plugin_names: set[str] = set()
+        for plugin_name, plugin_source in before_discovered.items():
+            dist_name = str(getattr(plugin_source, "distribution", "") or "")
+            if self._normalize_distribution_name(dist_name) == normalized_dist:
+                affected_plugin_names.add(plugin_name)
 
         removed_from_target = self._cleanup_package_from_target(normalized, target_dir)
 
@@ -548,8 +810,101 @@ class _PluginManager:
             raise RuntimeError(f"卸载插件包失败: package={normalized}, detail={detail}")
 
         self.invalidate_discover_cache()
-        await self.discover_plugins(force=True)
+        after_discovered = await self.discover_plugins(force=True)
+
+        # 清理 orphan 实例：被卸载包贡献且卸载后不再被发现的插件，其运行时实例和
+        # 持久化配置条目都需要移除，避免留下引用已删除 distribution 的幽灵实例。
+        orphan_plugin_names = {
+            name for name in affected_plugin_names if name not in after_discovered
+        }
+        if orphan_plugin_names:
+            await self._cleanup_orphan_instances(orphan_plugin_names, after_discovered)
+
         logger.info(f"插件包卸载完成: package={normalized}, removed_from_target={removed_from_target}")
+
+    async def _cleanup_orphan_instances(
+        self,
+        orphan_plugin_names: set[str],
+        discovered: Dict[str, Any],
+    ) -> None:
+        """清理引用已卸载插件的 orphan 实例。
+
+        先卸载运行时实例，再从持久化配置中移除对应条目。
+
+        Args:
+            orphan_plugin_names (set[str]): 已不再被发现的插件名集合。
+            discovered (Dict[str, Any]): 当前已发现插件映射，用于 get_root。
+        """
+        if not orphan_plugin_names:
+            return
+
+        # 1. 卸载运行时实例
+        for plugin_name in list(orphan_plugin_names):
+            for instance_id, record in list(self.loader.records.items()):
+                if record.plugin_name == plugin_name:
+                    try:
+                        await self.loader.unload_instance(
+                            instance_id, stop_reason="uninstall_orphan"
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"卸载 orphan 实例失败: instance={instance_id}, "
+                            f"plugin={plugin_name}, error={type(e).__name__}: {e}"
+                        )
+                    finally:
+                        # distribution 已被移除，不能继续保留指向旧模块对象的记录。
+                        self.loader.records.pop(instance_id, None)
+
+        # 2. 从持久化配置中移除 orphan 实例条目（加锁防止与其他配置写操作交叉）
+        async with self._config_write_lock:
+            try:
+                root = await self.config_store.get_root(
+                    self.plugins_dir,
+                    discovered,
+                    auto_create_missing=False,
+                )
+            except Exception as e:
+                raise RuntimeError(
+                    "distribution 已卸载，但读取插件配置失败，orphan 配置尚未清理: "
+                    f"{type(e).__name__}: {e}"
+                ) from e
+
+            instances = root.get("instances", [])
+            if not isinstance(instances, list):
+                raise RuntimeError(
+                    "distribution 已卸载，但插件配置 instances 不是列表，"
+                    "orphan 配置尚未清理"
+                )
+
+            original_count = len(instances)
+            filtered = [
+                item
+                for item in instances
+                if not (
+                    isinstance(item, dict)
+                    and str(item.get("plugin") or "") in orphan_plugin_names
+                )
+            ]
+            removed_count = original_count - len(filtered)
+            if removed_count == 0:
+                return
+
+            root["instances"] = filtered
+            try:
+                await self.config_store.save_root(self.plugins_dir, root)
+                logger.info(
+                    f"已清理 orphan 实例配置: removed={removed_count}, plugins={sorted(orphan_plugin_names)}"
+                )
+            except Exception as e:
+                raise RuntimeError(
+                    "distribution 已卸载，但保存插件配置失败，orphan 清理未落盘: "
+                    f"{type(e).__name__}: {e}"
+                ) from e
+
+        schedule_plugin_snapshot(
+            reason="manager.cleanup_orphan_instances",
+            discovered=discovered,
+        )
 
     async def _update_pypi_plugin(
         self,
@@ -589,17 +944,6 @@ class _PluginManager:
             f"PyPI plugin has a local project; skip implicit directory update to avoid replacing editable install: plugin={plugin_name}, path={package_dir}"
         )
         return
-
-        target_dir = self.plugins_dir / "pypi" / "site-packages"
-
-        try:
-            await uv_pip_install([str(package_dir)], target=target_dir)
-        except RuntimeError as e:
-            raise RuntimeError(
-                f"更新 PyPI 插件失败: plugin={plugin_name}, detail={e}"
-            ) from e
-
-        logger.info(f"PyPI 插件目录更新完成: plugin={plugin_name}, path={package_dir}")
 
     async def _update_all_pypi_plugins(self, discovered: Dict[str, Any]) -> None:
         """批量更新已发现的 PyPI 插件。"""
@@ -665,24 +1009,27 @@ class _PluginManager:
             if target is not None and self.is_system_plugin(target.plugin):
                 return False
 
-        root = await self.config_store.get_root(
-            self.plugins_dir,
-            snapshot,
-            auto_create_missing=False,
-        )
+        # 使用配置写锁保护读-改-写序列，防止并发 enable/disable 请求交叉导致
+        # 一方覆盖另一方的修改。
+        async with self._config_write_lock:
+            root = await self.config_store.get_root(
+                self.plugins_dir,
+                snapshot,
+                auto_create_missing=False,
+            )
 
-        for item in root.get("instances", []):
-            if not isinstance(item, dict):
-                continue
-            if item.get("id") != instance_id:
-                continue
-            if item.get("enabled") is enabled:
-                return False
-            item["enabled"] = enabled
-            await self.config_store.save_root(self.plugins_dir, root)
-            return True
+            for item in root.get("instances", []):
+                if not isinstance(item, dict):
+                    continue
+                if item.get("id") != instance_id:
+                    continue
+                if item.get("enabled") is enabled:
+                    return False
+                item["enabled"] = enabled
+                await self.config_store.save_root(self.plugins_dir, root)
+                return True
 
-        return False
+            return False
 
     def _collect_instance_bound_script_refs(self, instance_id: str) -> list[str]:
         """收集当前实例绑定且仍被脚本配置使用的脚本引用。"""
@@ -1012,7 +1359,449 @@ class _PluginManager:
                 + "; ".join(bound_refs)
             )
 
+    def _select_plugins_dir(self, plugins_dir: Path | None) -> None:
+        """在操作锁内切换本次事务使用的插件目录。"""
+
+        if plugins_dir is None:
+            return
+        resolved = Path(plugins_dir)
+        self.plugins_dir = resolved
+        self.loader.plugins_dir = resolved
+
+    @staticmethod
+    def _find_instance_dict(root: Dict[str, Any], instance_id: str) -> Dict[str, Any] | None:
+        for item in root.get("instances", []):
+            if isinstance(item, dict) and item.get("id") == instance_id:
+                return item
+        return None
+
+    @staticmethod
+    def _runtime_record_error(
+        record: Any,
+        *,
+        action: str,
+        instance_id: str,
+        expected_status: str,
+    ) -> RuntimeError | None:
+        if record is None:
+            return RuntimeError(f"插件实例{action}未返回运行态记录: {instance_id}")
+        status = str(getattr(record, "status", ""))
+        if status == expected_status:
+            return None
+        detail = str(getattr(record, "error", "") or f"unexpected status={status or '<empty>'}")
+        return RuntimeError(
+            f"插件实例{action}失败: instance_id={instance_id}, "
+            f"status={status or '<empty>'}, error={detail}"
+        )
+
+    async def _load_instance_strict(
+        self,
+        instance: Dict[str, Any],
+        *,
+        reason: str,
+        reload_existing: bool,
+        action: str = "加载",
+    ) -> None:
+        instance_id = str(instance.get("id") or "")
+        plugin_name = str(instance.get("plugin") or "")
+        instance_name = str(instance.get("name") or instance_id)
+        config = instance.get("config", {})
+        if not isinstance(config, dict):
+            raise ValueError(f"插件实例配置无效: {instance_id}")
+
+        if reload_existing:
+            record = await self.loader.reload_instance(
+                instance_id=instance_id,
+                plugin_name=plugin_name,
+                instance_name=instance_name,
+                config=deepcopy(config),
+                reason=reason,
+            )
+        else:
+            record = await self.loader.load_instance(
+                instance_id=instance_id,
+                plugin_name=plugin_name,
+                instance_name=instance_name,
+                config=deepcopy(config),
+            )
+
+        error = self._runtime_record_error(
+            record,
+            action=action,
+            instance_id=instance_id,
+            expected_status="active",
+        )
+        if error is not None:
+            raise error
+
+    async def _reload_instance_strict(
+        self,
+        instance: Dict[str, Any],
+        *,
+        reason: str,
+    ) -> None:
+        """严格重载实例，失败时按原配置尝试恢复运行态。"""
+
+        try:
+            await self._load_instance_strict(
+                instance,
+                reason=reason,
+                reload_existing=True,
+                action="重载",
+            )
+        except Exception as reload_error:
+            try:
+                await self._restore_instance_runtime(
+                    instance,
+                    instance,
+                    operation="重载",
+                )
+            except Exception as rollback_error:
+                raise RuntimeError(
+                    "插件实例重载失败且运行态恢复失败: "
+                    f"{type(reload_error).__name__}: {reload_error}; "
+                    f"{type(rollback_error).__name__}: {rollback_error}"
+                ) from reload_error
+            raise RuntimeError(
+                "插件实例重载失败，运行态已尝试恢复: "
+                f"{type(reload_error).__name__}: {reload_error}"
+            ) from reload_error
+
+    async def _unload_instance_strict(self, instance_id: str, *, reason: str) -> None:
+        await self.loader.unload_instance(instance_id, stop_reason=reason)
+        records = getattr(self.loader, "records", {})
+        record = records.get(instance_id) if isinstance(records, dict) else None
+        if record is None:
+            return
+        error = self._runtime_record_error(
+            record,
+            action="卸载",
+            instance_id=instance_id,
+            expected_status="unloaded",
+        )
+        if error is not None:
+            raise error
+
+    async def _restore_instance_runtime(
+        self,
+        previous_instance: Dict[str, Any] | None,
+        attempted_instance: Dict[str, Any],
+        *,
+        operation: str,
+    ) -> None:
+        """在持久化回滚后恢复操作前的运行态。"""
+
+        instance_id = str(attempted_instance.get("id") or "")
+        if previous_instance is None:
+            await self._unload_instance_strict(
+                instance_id,
+                reason=f"rollback:{operation}",
+            )
+            return
+
+        if bool(previous_instance.get("enabled", False)):
+            await self._load_instance_strict(
+                previous_instance,
+                reason=f"rollback:{operation}",
+                reload_existing=True,
+            )
+            return
+
+        await self._unload_instance_strict(
+            instance_id,
+            reason=f"rollback:{operation}",
+        )
+
+    async def _raise_transaction_failure(
+        self,
+        *,
+        operation: str,
+        cause: Exception,
+        previous_root: Dict[str, Any],
+        previous_instance: Dict[str, Any] | None,
+        attempted_instance: Dict[str, Any],
+    ) -> None:
+        """回滚配置和运行态，并抛出包含一致性结果的错误。"""
+
+        rollback_errors: list[str] = []
+        try:
+            async with self._config_write_lock:
+                await self.config_store.save_root(
+                    self.plugins_dir,
+                    deepcopy(previous_root),
+                )
+        except Exception as rollback_error:
+            rollback_errors.append(
+                "配置回滚失败: "
+                f"{type(rollback_error).__name__}: {rollback_error}"
+            )
+
+        try:
+            await self._restore_instance_runtime(
+                previous_instance,
+                attempted_instance,
+                operation=operation,
+            )
+        except Exception as rollback_error:
+            rollback_errors.append(
+                "运行态回滚失败: "
+                f"{type(rollback_error).__name__}: {rollback_error}"
+            )
+
+        cause_text = f"{type(cause).__name__}: {cause}"
+        if rollback_errors:
+            raise RuntimeError(
+                f"插件实例{operation}失败且回滚不完整: {cause_text}; "
+                + "; ".join(rollback_errors)
+            ) from cause
+        raise RuntimeError(
+            f"插件实例{operation}失败，配置与运行态已回滚: {cause_text}"
+        ) from cause
+
+    async def create_instance_transaction(
+        self,
+        *,
+        plugin_name: str,
+        name: str | None,
+        enabled: bool,
+        config: Dict[str, Any],
+        plugins_dir: Path | None = None,
+    ) -> Dict[str, Any]:
+        """原子新增实例：配置 RMW 与可选运行态加载共用操作锁。"""
+
+        async with self._operation_lock:
+            self._select_plugins_dir(plugins_dir)
+            discovered = await self.discover_plugins()
+            if plugin_name not in discovered:
+                raise ValueError(f"未发现插件: {plugin_name}")
+            if self.is_system_plugin(plugin_name):
+                raise ValueError(f"系统插件不允许新增实例: {plugin_name}")
+
+            effective_config = self.config_store.load_effective_config(
+                plugin_name,
+                config,
+            )
+            async with self._config_write_lock:
+                root = await self.config_store.get_root(
+                    self.plugins_dir,
+                    discovered,
+                    auto_create_missing=False,
+                )
+                previous_root = deepcopy(root)
+                instance = {
+                    "id": self.config_store.generate_instance_id(plugin_name),
+                    "plugin": plugin_name,
+                    "enabled": enabled,
+                    "name": name or f"{plugin_name} 实例",
+                    "config": effective_config,
+                }
+                root.setdefault("instances", []).append(instance)
+                await self.config_store.save_root(self.plugins_dir, root)
+
+            if self.started and enabled:
+                try:
+                    await self._load_instance_strict(
+                        instance,
+                        reason="manager.create_instance",
+                        reload_existing=True,
+                    )
+                except Exception as error:
+                    await self._raise_transaction_failure(
+                        operation="新增",
+                        cause=error,
+                        previous_root=previous_root,
+                        previous_instance=None,
+                        attempted_instance=instance,
+                    )
+
+            return deepcopy(instance)
+
+    async def update_instance_transaction(
+        self,
+        *,
+        instance_id: str,
+        plugin_name: str | None = None,
+        name: str | None = None,
+        enabled: bool | None = None,
+        config: Dict[str, Any] | None = None,
+        plugins_dir: Path | None = None,
+    ) -> Dict[str, Any]:
+        """原子更新实例，并在运行态失败时恢复旧配置和旧实例。"""
+
+        async with self._operation_lock:
+            self._select_plugins_dir(plugins_dir)
+            name_only = (
+                name is not None
+                and plugin_name is None
+                and enabled is None
+                and config is None
+            )
+            enabled_only = (
+                enabled is not None
+                and plugin_name is None
+                and name is None
+                and config is None
+            )
+            need_discover = plugin_name is not None or config is not None or (
+                self.started and not name_only
+            )
+            discovered = await self.discover_plugins() if need_discover else {}
+
+            async with self._config_write_lock:
+                root = await self.config_store.get_root(
+                    self.plugins_dir,
+                    discovered,
+                    auto_create_missing=False,
+                )
+                previous_root = deepcopy(root)
+                target = self._find_instance_dict(root, instance_id)
+                if target is None:
+                    raise ValueError(f"未找到插件实例: {instance_id}")
+
+                previous_instance = deepcopy(target)
+                target_plugin = str(target.get("plugin") or "")
+                if self.is_system_plugin(target_plugin):
+                    if plugin_name is not None and plugin_name != target_plugin:
+                        raise ValueError(f"系统插件不可变更插件类型: {target_plugin}")
+                    if enabled is False:
+                        raise ValueError(f"系统插件不可禁用: {target_plugin}")
+
+                next_plugin = plugin_name if plugin_name is not None else target_plugin
+                if not next_plugin:
+                    raise ValueError(f"插件实例缺少有效 plugin 字段: {instance_id}")
+
+                if plugin_name is None and config is None:
+                    effective_config = target.get("config", {})
+                    if not isinstance(effective_config, dict):
+                        raise ValueError(f"插件实例配置无效: {instance_id}")
+                    effective_config = deepcopy(effective_config)
+                else:
+                    if next_plugin not in discovered:
+                        raise ValueError(f"未发现插件: {next_plugin}")
+                    raw_config = config if config is not None else target.get("config", {})
+                    effective_config = self.config_store.load_effective_config(
+                        next_plugin,
+                        raw_config,
+                    )
+
+                target["plugin"] = next_plugin
+                target["config"] = effective_config
+                if name is not None:
+                    target["name"] = name
+                if enabled is not None:
+                    target["enabled"] = enabled
+                attempted_instance = deepcopy(target)
+                await self.config_store.save_root(self.plugins_dir, root)
+
+            if self.started and not name_only:
+                was_enabled = bool(previous_instance.get("enabled", False))
+                is_enabled = bool(attempted_instance.get("enabled", False))
+                try:
+                    if enabled_only and was_enabled != is_enabled:
+                        if is_enabled:
+                            await self._load_instance_strict(
+                                attempted_instance,
+                                reason="manager.update_instance.enabled",
+                                reload_existing=False,
+                            )
+                        else:
+                            await self._unload_instance_strict(
+                                instance_id,
+                                reason="manager.update_instance.enabled",
+                            )
+                    elif is_enabled:
+                        await self._load_instance_strict(
+                            attempted_instance,
+                            reason="manager.update_instance",
+                            reload_existing=True,
+                        )
+                    else:
+                        await self._unload_instance_strict(
+                            instance_id,
+                            reason="manager.update_instance",
+                        )
+                except Exception as error:
+                    await self._raise_transaction_failure(
+                        operation="更新",
+                        cause=error,
+                        previous_root=previous_root,
+                        previous_instance=previous_instance,
+                        attempted_instance=attempted_instance,
+                    )
+
+            snapshot_reason = "api.plugins.update"
+            if name_only:
+                snapshot_reason = "api.plugins.update.name"
+            elif enabled_only:
+                snapshot_reason = "api.plugins.update.enabled"
+            return {
+                "instance": deepcopy(attempted_instance),
+                "snapshot_reason": snapshot_reason,
+            }
+
+    async def delete_instance_transaction(
+        self,
+        instance_id: str,
+        *,
+        plugins_dir: Path | None = None,
+    ) -> Dict[str, Any]:
+        """原子删除实例；卸载失败时恢复配置与删除前运行态。"""
+
+        async with self._operation_lock:
+            self._select_plugins_dir(plugins_dir)
+            discovered = await self.discover_plugins()
+            async with self._config_write_lock:
+                root = await self.config_store.get_root(
+                    self.plugins_dir,
+                    discovered,
+                    auto_create_missing=False,
+                )
+                previous_root = deepcopy(root)
+                target = self._find_instance_dict(root, instance_id)
+                if target is None:
+                    raise ValueError(f"未找到插件实例: {instance_id}")
+                previous_instance = deepcopy(target)
+                target_plugin = str(target.get("plugin") or "")
+                if self.is_system_plugin(target_plugin):
+                    raise ValueError(f"系统插件不可删除: {target_plugin}")
+
+                if self.started:
+                    await self.ensure_instance_can_delete(
+                        instance_id,
+                        plugin_name=target_plugin,
+                        discovered=discovered,
+                    )
+
+                root["instances"] = [
+                    item
+                    for item in root.get("instances", [])
+                    if not (isinstance(item, dict) and item.get("id") == instance_id)
+                ]
+                await self.config_store.save_root(self.plugins_dir, root)
+
+            if self.started:
+                try:
+                    await self._unload_instance_strict(
+                        instance_id,
+                        reason="manager.delete_instance",
+                    )
+                except Exception as error:
+                    await self._raise_transaction_failure(
+                        operation="删除",
+                        cause=error,
+                        previous_root=previous_root,
+                        previous_instance=previous_instance,
+                        attempted_instance=previous_instance,
+                    )
+
+            return previous_instance
+
     async def apply_instance_enabled(self, instance_id: str, enabled: bool) -> None:
+        """串行应用实例启停，避免与安装、卸载或重载交叉。"""
+        async with self._operation_lock:
+            await self._apply_instance_enabled(instance_id, enabled)
+
+    async def _apply_instance_enabled(self, instance_id: str, enabled: bool) -> None:
         """Apply an already-saved enabled toggle without a full instance reload."""
         discovered = await self.discover_plugins()
         instances = await self.config_store.load_instances(
@@ -1172,6 +1961,19 @@ class _PluginManager:
         if not self.started:
             return
 
+        # 取消 fast_startup 触发的后台本地插件安装任务，避免其在 unload_all 之后
+        # 重新写入 site-packages 或触发 discover 缓存失效，导致关闭过程出现竞态。
+        pending_install = self._pending_local_install
+        self._pending_local_install = None
+        if pending_install is not None and not pending_install.done():
+            pending_install.cancel()
+            try:
+                await pending_install
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.warning(f"停止插件系统时取消后台安装任务失败: {type(e).__name__}: {e}")
+
         await self.loader.unload_all()
         self.events.clear()
         self.started = False
@@ -1256,6 +2058,11 @@ class _PluginManager:
         }
 
     async def reload(self) -> None:
+        """串行重载整个插件系统。"""
+        async with self._operation_lock:
+            await self._reload()
+
+    async def _reload(self) -> None:
         """
         重载插件系统并重新加载所有可用实例。
 
@@ -1274,6 +2081,14 @@ class _PluginManager:
         schedule_plugin_snapshot(reason="manager.reload", discovered=discovered)
 
     async def reload_instance(self, instance_id: str, *, refresh_package: bool = False) -> None:
+        """串行重载一个插件实例。"""
+        async with self._operation_lock:
+            await self._reload_instance(
+                instance_id,
+                refresh_package=refresh_package,
+            )
+
+    async def _reload_instance(self, instance_id: str, *, refresh_package: bool = False) -> None:
         """
         重载指定插件实例。
 
@@ -1302,37 +2117,44 @@ class _PluginManager:
         if refresh_package:
             await self._update_pypi_plugin(target.plugin, discovered)
 
-        if target.enabled:
-            record = await self.loader.reload_instance(
-                instance_id=target.id,
-                plugin_name=target.plugin,
-                instance_name=target.name,
-                config=target.config,
-                reason="manager.reload_instance",
-            )
-            if getattr(record, "status", "") == "error":
-                changed = await self._set_instance_enabled(
-                    target.id,
-                    False,
-                    discovered=discovered,
+        instance = {
+            "id": target.id,
+            "plugin": target.plugin,
+            "name": target.name,
+            "config": deepcopy(target.config),
+            "enabled": target.enabled,
+        }
+        try:
+            if target.enabled:
+                await self._reload_instance_strict(
+                    instance,
+                    reason="manager.reload_instance",
                 )
-                if changed:
-                    logger.warning(
-                        f"插件实例重载失败，已自动禁用: instance_id={target.id}, error={record.error}"
-                    )
+            else:
+                await self._unload_instance_strict(
+                    instance_id,
+                    reason="manager.reload_instance",
+                )
+        except Exception:
             schedule_plugin_snapshot(
-                reason="manager.reload_instance",
+                reason="manager.reload_instance_failed",
                 discovered=discovered,
             )
-            return
-
-        await self.loader.unload_instance(instance_id)
+            raise
         schedule_plugin_snapshot(
             reason="manager.reload_instance",
             discovered=discovered,
         )
 
     async def reload_plugin(self, plugin_name: str, *, refresh_package: bool = False) -> None:
+        """串行重载一个插件的全部实例。"""
+        async with self._operation_lock:
+            await self._reload_plugin(
+                plugin_name,
+                refresh_package=refresh_package,
+            )
+
+    async def _reload_plugin(self, plugin_name: str, *, refresh_package: bool = False) -> None:
         """
         重载指定插件的全部实例。
 
@@ -1360,35 +2182,44 @@ class _PluginManager:
         if not matched:
             raise ValueError(f"未找到插件实例: {plugin_name}")
 
-        disabled_ids: list[str] = []
+        reload_errors: list[str] = []
         for item in matched:
+            instance = {
+                "id": item.id,
+                "plugin": item.plugin,
+                "name": item.name,
+                "config": deepcopy(item.config),
+                "enabled": item.enabled,
+            }
             if not item.enabled:
-                await self.loader.unload_instance(item.id)
+                try:
+                    await self._unload_instance_strict(
+                        item.id,
+                        reason="manager.reload_plugin",
+                    )
+                except Exception as error:
+                    reload_errors.append(str(error))
                 continue
-            record = await self.loader.reload_instance(
-                instance_id=item.id,
-                plugin_name=item.plugin,
-                instance_name=item.name,
-                config=item.config,
-                reason="manager.reload_plugin",
-            )
-            if getattr(record, "status", "") == "error":
-                changed = await self._set_instance_enabled(
-                    item.id,
-                    False,
-                    discovered=discovered,
+            try:
+                await self._reload_instance_strict(
+                    instance,
+                    reason="manager.reload_plugin",
                 )
-                if changed:
-                    disabled_ids.append(item.id)
+            except Exception as error:
+                reload_errors.append(str(error))
 
-        if disabled_ids:
+        if reload_errors:
             logger.warning(
-                f"插件重载后自动禁用了启动失败实例: {', '.join(disabled_ids)}"
+                f"插件重载存在失败实例: plugin={plugin_name}, errors={'; '.join(reload_errors)}"
             )
         schedule_plugin_snapshot(
             reason="manager.reload_plugin",
             discovered=discovered,
         )
+        if reload_errors:
+            raise RuntimeError(
+                f"插件重载失败: plugin={plugin_name}; " + "; ".join(reload_errors)
+            )
 
 
 PluginManager = _PluginManager()

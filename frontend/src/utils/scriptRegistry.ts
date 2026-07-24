@@ -94,7 +94,7 @@ export const getFallbackScriptIcon = (type: string) => {
 export const getScriptIcon = (type: string, iconUrl?: string | null) => {
   if (iconUrl) {
     if (iconUrl.startsWith('/')) {
-      const base = (OpenAPI.BASE || 'http://localhost:36163').replace(/\/+$/, '')
+      const base = (OpenAPI.BASE || 'http://127.0.0.1:36163').replace(/\/+$/, '')
       return `${base}${iconUrl}`
     }
     return iconUrl

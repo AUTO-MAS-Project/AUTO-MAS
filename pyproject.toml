@@ -1,6 +1,6 @@
 [project]
 name = "auto-mas"
-version = "5.2.0"
+version = "6.0.0a1"
 description = "A Multi-Script, Multi-Config Management and Automation Software"
 requires-python = "~=3.12.0"
 license = "AGPL-3.0-or-later"
@@ -34,6 +34,8 @@ dependencies = [
     "fastapi-mcp==0.4.0",
     "json5==0.14.0",
     "watchdog==6.0.0",
+    "blinker==1.9.0",
+    "tomli-w==1.2.0",
 ]
 
 [dependency-groups]
@@ -42,6 +44,7 @@ dev = [
 ]
 plugins = [
     "auto-mas-core",
+    "automas-plugin-browser",
     "automas_plugin_ok_script_adapter",
     "automas_plugin_okww_adapter",
 ]
@@ -54,14 +57,23 @@ plugins = [
 packages = [
     "automas_plugin_ok_script_adapter",
     "automas_plugin_okww_adapter",
-    { name = "automas-maafw-interface", version = "0.1.1" },
-    { name = "automas-maafw-agent-env", version = "0.1.0" },
+    { name = "automas-maafw-interface", version = "0.2.0" },
+    { name = "automas-maafw-agent-env", version = "0.1.1" },
     { name = "automas-maafw-controller-adb", version = "0.1.0" },
     { name = "automas-maafw-controller-win32", version = "0.1.1" },
-    { name = "automas-maafw-project-update", version = "0.1.0" },
-    { name = "automas-maafw-runner", version = "0.1.1" },
-    { name = "automas-script-maafw", version = "0.1.4" },
-    { name = "automas-script-maafw-pack-m9a", version = "0.1.1" },
+    { name = "automas-maafw-project-update", version = "0.1.1" },
+    { name = "automas-maafw-project-store", version = "0.1.0" },
+    { name = "automas-maafw-runtime-pool", version = "0.1.0" },
+    { name = "automas-maafw-runner", version = "0.3.1" },
+    { name = "automas-script-maafw", version = "0.1.7" },
+    { name = "automas-script-maafw-managed", version = "0.1.2" },
+    { name = "automas-script-maafw-pack-m9a", version = "0.1.2" },
+    { name = "automas-script-hsr", version = "0.1.5" },
+    { name = "automas-hsr-adapter-sra", version = "0.1.5" },
+    { name = "automas-hsr-adapter-m7a", version = "0.1.6" },
+    { name = "automas-plugin-mxu-import", version = "0.1.0" },
+    { name = "automas_plugin_maaend_adapter", version = "0.0.4" },
+    { name = "automas_script_maa", version = "0.0.6" },
 ]
 
 [tool.uv]
@@ -71,6 +83,7 @@ environments = ["sys_platform == 'win32'"]
 [tool.uv.workspace]
 members = [
     "plugins/auto_mas_core",
+    "plugins/browser",
     "plugins/ok_script_adapter",
     "plugins/okww_adapter",
 ]
@@ -81,5 +94,9 @@ exclude = [
 
 [tool.uv.sources]
 "auto-mas-core" = { workspace = true }
+"automas-plugin-browser" = { workspace = true }
 "automas_plugin_ok_script_adapter" = { workspace = true }
 "automas_plugin_okww_adapter" = { workspace = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

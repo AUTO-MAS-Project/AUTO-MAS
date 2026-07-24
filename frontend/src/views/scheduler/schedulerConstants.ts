@@ -86,6 +86,8 @@ export interface SchedulerTab {
   resumeScriptOptions?: Array<{ label: string; value: string }>
   resumeScriptLoading?: boolean
   websocketId: string | null
+  subscriptionIds?: string[]
+  /** 旧 sessionStorage 兼容；初始化时会迁移并清空。 */
   subscriptionId?: string | null
   taskQueue: QueueItem[]
   userQueue: QueueItem[]

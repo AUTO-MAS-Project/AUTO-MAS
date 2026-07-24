@@ -1,0 +1,2 @@
+[auto_mas.plugins]
+fake_p2 = fake_plugin_p2:Plugin

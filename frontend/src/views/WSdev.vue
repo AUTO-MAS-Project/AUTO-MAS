@@ -328,6 +328,9 @@ import {
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { OpenAPI, WebsocketService } from '@/api'
+import { fetchAuthenticatedWebSocketHandshake } from '@/utils/websocketAuth'
+
+const logger = window.electronAPI.getLogger('WebSocket调试')
 
 // ============== 类型定义 ==============
 
@@ -398,6 +401,7 @@ let liveWs: WebSocket | null = null
 let reconnectAttempts = 0
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let manualClose = false
+let connectionAttempt = 0
 
 // ============== 计算属性 ==============
 
@@ -723,23 +727,53 @@ function addMessage(record: MessageRecord) {
   }
 }
 
+function scheduleLiveWsReconnect() {
+  if (manualClose || reconnectTimer) {
+    return
+  }
+  reconnectAttempts += 1
+  const delay = getReconnectDelay(reconnectAttempts)
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null
+    void connectLiveWs()
+  }, delay)
+}
+
 // 建立实时 WebSocket 连接
-function connectLiveWs() {
+async function connectLiveWs() {
+  const attempt = ++connectionAttempt
   const wsUrl = buildLiveWsUrl()
 
   try {
-    liveWs = new WebSocket(wsUrl)
+    const handshake = await fetchAuthenticatedWebSocketHandshake(OpenAPI.BASE || '')
+    if (attempt !== connectionAttempt || manualClose) {
+      return
+    }
+    if (!handshake.devMode) {
+      logger.warn('后端未启用开发模式，wsdev 调试通道保持关闭')
+      return
+    }
 
-    liveWs.onopen = () => {
-      console.log('实时消息连接已建立')
+    const ws = new WebSocket(wsUrl, handshake.authProtocol)
+    liveWs = ws
+
+    ws.onopen = () => {
+      if (liveWs !== ws) {
+        ws.close()
+        return
+      }
+      logger.info('实时消息连接已建立')
       reconnectAttempts = 0
 
-      if (liveWs && liveWs.readyState === WebSocket.OPEN) {
-        liveWs.send(JSON.stringify({ action: 'request_snapshot' }))
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: 'request_snapshot' }))
       }
     }
 
-    liveWs.onmessage = event => {
+    ws.onmessage = event => {
+      if (liveWs !== ws) {
+        return
+      }
       try {
         const data = JSON.parse(event.data)
 
@@ -762,33 +796,28 @@ function connectLiveWs() {
           }
         }
       } catch (error) {
-        console.error('解析实时消息失败:', error)
+        logger.error(`解析实时消息失败: ${String(error)}`)
       }
     }
 
-    liveWs.onerror = error => {
-      console.error('实时消息连接错误:', error)
+    ws.onerror = error => {
+      if (liveWs === ws) {
+        logger.error(`实时消息连接错误: ${String(error)}`)
+      }
     }
 
-    liveWs.onclose = () => {
-      console.log('实时消息连接已关闭')
-      liveWs = null
-
-      if (manualClose) {
+    ws.onclose = () => {
+      if (liveWs !== ws) {
         return
       }
-
-      reconnectAttempts += 1
-      const delay = getReconnectDelay(reconnectAttempts)
-      reconnectTimer = setTimeout(connectLiveWs, delay)
+      logger.info('实时消息连接已关闭')
+      liveWs = null
+      scheduleLiveWsReconnect()
     }
   } catch (error) {
-    console.error('创建实时消息连接失败:', error)
-
-    if (!manualClose) {
-      reconnectAttempts += 1
-      const delay = getReconnectDelay(reconnectAttempts)
-      reconnectTimer = setTimeout(connectLiveWs, delay)
+    if (attempt === connectionAttempt && !manualClose) {
+      logger.error(`创建实时消息连接失败: ${String(error)}`)
+      scheduleLiveWsReconnect()
     }
   }
 }
@@ -822,6 +851,7 @@ function buildLiveWsUrl(): string {
 // 断开实时 WebSocket
 function disconnectLiveWs() {
   manualClose = true
+  connectionAttempt += 1
   if (reconnectTimer) {
     clearTimeout(reconnectTimer)
     reconnectTimer = null
@@ -836,7 +866,7 @@ function disconnectLiveWs() {
 // 页面加载时
 onMounted(async () => {
   manualClose = false
-  connectLiveWs()
+  await connectLiveWs()
 })
 
 // 页面卸载时

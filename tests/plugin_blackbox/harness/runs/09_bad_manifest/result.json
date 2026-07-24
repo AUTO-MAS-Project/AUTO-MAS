@@ -1,0 +1,14 @@
+{
+  "case_id": "09_bad_manifest",
+  "status": "PASS",
+  "notes": "",
+  "error": null,
+  "error_traceback": null,
+  "snapshots": {
+    "after_discover": "Snapshot(at=1784824151.0555787, event_bus_handlers={}, loader_records={}, discovered_plugins={}, service_owners={}, sys_modules_keys_sample=[])",
+    "after_load": "Snapshot(at=1784824151.057178, event_bus_handlers={}, loader_records={'bm-1': {'instance_id': 'bm-1', 'plugin_name': 'automas_fake_badmanifest', 'status': 'error', 'lifecycle_phase': 'idle', 'error': '未发现插件: automas_fake_badmanifest', 'listener_ids': [], 'generation': 1, 'reload_count': 0, 'last_reload_reason': None, 'on_load_attempted': False, 'on_start_attempted': False, 'on_stop_completed': False, 'on_unload_completed': False, 'provides': [], 'needs': [], 'missing': []}}, discovered_plugins={}, service_owners={}, sys_modules_keys_sample=[])"
+  },
+  "metrics": {
+    "final_status": "error"
+  }
+}

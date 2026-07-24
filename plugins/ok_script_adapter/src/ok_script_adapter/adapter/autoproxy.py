@@ -16,16 +16,21 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
+from __future__ import annotations
+
 import asyncio
 import shutil
 import shlex
 import uuid
+from collections.abc import Mapping
 from contextlib import suppress
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from app.core import Config
-from app.models.ConfigBase import ConfigBase, MultipleConfig
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify, System
 from ..common.events import (
@@ -56,12 +61,12 @@ from ..shell.runtime import (
 from app.task.general.tools import execute_script_task
 from app.utils import (
     ProcessInfo,
-    ProcessManager,
     decode_bytes,
     get_logger,
     is_process_running,
 )
 from app.utils.LogMonitor import LogMonitor
+from app.utils.ProcessManager import ProcessManager
 from app.utils.constants import UTC4
 
 logger = get_logger("ok-script 自动代理")
@@ -185,8 +190,8 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
     def __init__(
         self,
         script_info: ScriptItem,
-        script_config: ConfigBase,
-        user_config: MultipleConfig[ConfigBase],
+        script_config: Any,
+        user_config: Mapping[uuid.UUID, Any],
         game_manager: ProcessManager | None,
     ):
         super().__init__()
@@ -207,7 +212,7 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             self.script_info.current_index
         ]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
-        self.cur_user_config: ConfigBase = self.user_config[self.cur_user_uid]
+        self.cur_user_config = self.user_config[self.cur_user_uid]
 
         self.script_process_manager: ProcessManager = ProcessManager()
         self.script_root_path: Path = Path()
@@ -550,10 +555,10 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
 
         await self._push_dispatch_log(f"本次运行失败：{status}")
         with suppress(Exception):
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": status},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=status),
             )
 
         await self.kill_managed_process(kill_game=self._should_kill_game())
@@ -1352,10 +1357,13 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
                 await self.report_handler.stop(self)
         logger.exception(f"{self.provider.display_name} 自动代理任务出现异常: {e}")
         try:
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": f"{self.provider.display_name} 自动代理任务出现异常: {e}"},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="error",
+                    message=f"{self.provider.display_name} 自动代理任务出现异常: {e}",
+                ),
             )
         except Exception as send_error:
             logger.exception(f"发送 {self.provider.display_name} 异常通知失败: {send_error}")

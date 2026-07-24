@@ -93,59 +93,20 @@
       </a-alert>
 
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
-        <div class="form-section">
-          <div class="section-header">
-            <h3>基本信息</h3>
-          </div>
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item name="name">
-                <template #label>
-                  <span class="form-label">
-                    脚本名称
-                    <a-tooltip title="用于区分不同的 MaaEnd 脚本实例">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input
-                  v-model:value="formData.name"
-                  placeholder="请输入脚本名称"
-                  size="large"
-                  class="modern-input"
-                  @blur="handleChange('Info', 'Name', formData.name)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="16">
-              <a-form-item name="path" :rules="rules.path">
-                <template #label>
-                  <span class="form-label">
-                    MaaEnd 路径
-                    <a-tooltip title="选择 MaaEnd.exe 所在目录">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.path"
-                    placeholder="请选择 MaaEnd.exe 所在目录"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button size="large" class="path-button" @click="selectMaaEndPath">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    选择目录
-                  </a-button>
-                </a-input-group>
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </div>
+        <BasicInfoFields
+          :model-value="{ name: formData.name, path: formData.path }"
+          name-label="脚本名称"
+          name-tooltip="用于区分不同的 MaaEnd 脚本实例"
+          path-label="MaaEnd 路径"
+          path-tooltip="选择 MaaEnd.exe 所在目录"
+          path-placeholder="请选择 MaaEnd.exe 所在目录"
+          path-button-text="选择目录"
+          :name-rules="rules.name"
+          :path-rules="rules.path"
+          @update:name="value => (formData.name = value)"
+          @blur-name="handleChange('Info', 'Name', formData.name)"
+          @select-path="selectMaaEndPath"
+        />
 
         <div class="form-section">
           <div class="section-header">
@@ -426,6 +387,7 @@ import {
   QuestionCircleOutlined,
   SettingOutlined,
 } from '@ant-design/icons-vue'
+import BasicInfoFields from '@/views/EditView/shared/BasicInfoFields.vue'
 
 const route = useRoute()
 const router = useRouter()

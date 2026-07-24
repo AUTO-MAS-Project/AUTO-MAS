@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 import shutil
-import json
-import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from app.models.ConfigBase import MultipleConfig
 from app.models.task import UserItem
 from app.plugins import ScriptAdapterHooks, ScriptAdapterRuntime
 from app.plugins.schema_utils import (
@@ -62,18 +59,11 @@ class GeneralAdapterHooks(ScriptAdapterHooks):
     async def prepare(self, runtime: ScriptAdapterRuntime) -> None:
         from app.core.emulator_manager import EmulatorManager
 
-        storage_script_config = runtime.get_storage_script_config()
-        await storage_script_config.lock()
+        await runtime.storage.lock()
 
         script_config = await runtime.build_script_model()
         runtime.script_config = script_config
-        runtime.storage_script_config = storage_script_config
-        provider = runtime._resolve_provider()
-        runtime.user_config = MultipleConfig([provider.user_config_class])
-        for user_uid, user_model in await runtime.build_user_models():
-            uid = uuid.UUID(user_uid)
-            runtime.user_config.order.append(uid)
-            runtime.user_config.data[uid] = user_model
+        runtime.user_config = await runtime.storage.load_user_collection()
         logger.success(f"{runtime.script_info.script_id}已锁定, 通用脚本配置提取完成")
 
         script_config_path = Path(script_config.get("Script", "ConfigPath"))
@@ -123,10 +113,9 @@ class GeneralAdapterHooks(ScriptAdapterHooks):
             f"用户列表加载完成, 已筛选用户数: {len(runtime.script_info.user_list)}"
         )
 
-    def run_auto_proxy(self, runtime: ScriptAdapterRuntime, user_index: int):
+    def run_auto_proxy(self, runtime: ScriptAdapterRuntime):
         from .AutoProxy import AutoProxyTask
 
-        _ = user_index
         return AutoProxyTask(
             runtime.script_info,
             runtime.script_config,
@@ -134,10 +123,9 @@ class GeneralAdapterHooks(ScriptAdapterHooks):
             runtime.extra.get("game_manager"),
         )
 
-    def run_script_config(self, runtime: ScriptAdapterRuntime, user_index: int):
+    def run_script_config(self, runtime: ScriptAdapterRuntime):
         from .ScriptConfig import ScriptConfigTask
 
-        _ = user_index
         return ScriptConfigTask(
             runtime.script_info,
             runtime.script_config,
@@ -146,7 +134,8 @@ class GeneralAdapterHooks(ScriptAdapterHooks):
         )
 
     async def finalize(self, runtime: ScriptAdapterRuntime) -> None:
-        from app.core.config import Config
+        from app.core.ws import Publisher, protocol
+        from app.models.schema import WSTaskNoticeData
         from app.services.notification import Notify
         from .tools.notify import push_notification
 
@@ -155,30 +144,16 @@ class GeneralAdapterHooks(ScriptAdapterHooks):
             return
 
         script_config = runtime.script_config
-        storage_script_config = runtime.get_storage_script_config()
         if script_config is None:
             runtime.script_info.status = "异常"
             return
 
         logger.info("通用脚本任务已结束, 开始执行后续操作")
-        await storage_script_config.unlock()
+        await runtime.storage.unlock()
         logger.success(f"已解锁脚本配置 {runtime.script_info.script_id}")
 
         if runtime.mode == "AutoProxy":
-            for user_uid, user_config in runtime.user_config.items():
-                storage_user_config = storage_script_config.UserData[user_uid]
-                payload = await user_config.toDict(if_decrypt=False)
-                payload.pop("SubConfigsInfo", None)
-                await storage_user_config.set(
-                    "PluginData",
-                    "Config",
-                    json.dumps(payload, ensure_ascii=False),
-                )
-                await storage_user_config.set(
-                    "Info",
-                    "Name",
-                    user_config.get("Info", "Name"),
-                )
+            await runtime.storage.save_user_models(runtime.user_config)
 
             error_user = [
                 user.name for user in runtime.script_info.user_list if user.status == "异常"
@@ -220,10 +195,12 @@ class GeneralAdapterHooks(ScriptAdapterHooks):
                 await push_notification("代理结果", title, result, None)
             except Exception as error:
                 logger.exception(f"推送代理结果时出现异常: {error}")
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=runtime.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"推送代理结果时出现异常: {error}"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error", message=f"推送代理结果时出现异常: {error}"
+                    ),
                 )
 
         script_config_path: Path | None = runtime.extra.get("script_config_path")
@@ -434,12 +411,15 @@ class GeneralAdapterHooks(ScriptAdapterHooks):
         return schema
 
     async def on_crash(self, runtime: ScriptAdapterRuntime, error: Exception) -> None:
-        from app.core.config import Config
+        from app.core.ws import Publisher, protocol
+        from app.models.schema import WSTaskNoticeData
 
         runtime.script_info.status = "异常"
         logger.exception(f"通用脚本任务出现异常: {error}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=runtime.task_info.task_id,
-            type="Info",
-            data={"Error": f"通用脚本任务出现异常: {error}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(
+                level="error", message=f"通用脚本任务出现异常: {error}"
+            ),
         )

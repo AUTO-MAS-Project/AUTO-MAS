@@ -13,6 +13,7 @@ import WebSocketMessageListener from '@/components/WebSocketMessageListener.vue'
 import { installPluginAPI } from '@/plugin/pluginAPI'
 import { configureLocalMonaco } from '@/utils/monaco'
 import { prefetchInitializationDecision } from '@/utils/initializationDecision'
+import { installLocalHttpSecurity } from '@/utils/httpSecurity'
 
 void prefetchInitializationDecision()
 
@@ -27,12 +28,15 @@ const preloadMonaco = () => {
 if ('requestIdleCallback' in window) {
   window.requestIdleCallback(preloadMonaco, { timeout: 5000 })
 } else {
-  window.setTimeout(preloadMonaco, 2000)
+  globalThis.setTimeout(preloadMonaco, 2000)
 }
+OpenAPI.BASE = 'http://127.0.0.1:36163'
+installLocalHttpSecurity()
+
 if (
   (window as Window & { __AUTO_MAS_BROWSER_DEV_MODE__?: boolean }).__AUTO_MAS_BROWSER_DEV_MODE__
 ) {
-  OpenAPI.BASE = 'http://localhost:36163'
+  OpenAPI.BASE = 'http://127.0.0.1:36163'
 }
 
 dayjs.locale('zh-cn')
@@ -48,10 +52,10 @@ if (window.electronAPI?.getApiEndpoint) {
     .catch(error => {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`获取 API 端点失败，使用默认地址: ${errorMsg}`)
-      OpenAPI.BASE = 'http://localhost:36163'
+      OpenAPI.BASE = 'http://127.0.0.1:36163'
     })
 } else {
-  OpenAPI.BASE = 'http://localhost:36163'
+  OpenAPI.BASE = 'http://127.0.0.1:36163'
 }
 
 const app = createApp(App)

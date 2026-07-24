@@ -109,7 +109,7 @@ class ScriptItem:
 class TaskItem(ABC):
     """任务信息基类，管理任务的信息和脚本列表"""
 
-    mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"]  # 任务模式
+    mode: Literal["AutoProxy", "ManualReview", "ScriptConfig", "CycleRun"]  # 任务模式
     task_id: str  # 任务唯一标识符
     queue_id: str | None  # 执行的队列ID
     script_id: str | None  # 执行的脚本ID
@@ -117,6 +117,10 @@ class TaskItem(ABC):
     script_list: List[ScriptItem] = field(default_factory=list)  # 脚本信息列表
     current_index: int = -1  # 当前执行的脚本索引，-1 表示未开始
     resume_from_script_id: str | None = None  # 可选：从指定脚本ID开始执行（仅队列任务）
+    cycle_queue_id: str | None = None  # 循环任务所属队列ID
+    cycle_next_run_at: str | None = None  # 下一次运行时间
+    cycle_waiting_reason: str | None = None  # 当前等待原因
+    cycle_current_item_id: str | None = None  # 当前循环队列项ID
 
     def __setattr__(self, name, value):
         super().__setattr__(name, value)
@@ -156,6 +160,33 @@ class TaskItem(ABC):
             }
             for script_item in self.script_list
         ]
+
+    @property
+    def ws_data(self) -> dict[str, object]:
+        """生成向后兼容的任务状态 WS 数据。"""
+        data: dict[str, object] = {"task_info": self.asdict}
+        cycle_queue_id = self.cycle_queue_id
+        if self.mode == "CycleRun" and cycle_queue_id is None:
+            cycle_queue_id = self.queue_id
+
+        if self.mode == "CycleRun" or any(
+            value is not None
+            for value in (
+                cycle_queue_id,
+                self.cycle_next_run_at,
+                self.cycle_waiting_reason,
+                self.cycle_current_item_id,
+            )
+        ):
+            data.update(
+                {
+                    "cycleQueueId": cycle_queue_id,
+                    "cycleNextRunAt": self.cycle_next_run_at,
+                    "cycleWaitingReason": self.cycle_waiting_reason,
+                    "cycleCurrentItemId": self.cycle_current_item_id,
+                }
+            )
+        return data
 
     @property
     def result(self) -> str:

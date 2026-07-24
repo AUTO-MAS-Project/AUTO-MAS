@@ -3,19 +3,23 @@
     class="app-layout-shell"
     :class="{ 'has-background': backgroundEnabled }"
     :style="backgroundCssVars"
+    :data-background-source="backgroundSource"
   >
-    <div v-if="backgroundEnabled" class="app-background-layer" aria-hidden="true">
-      <div class="app-background-image" />
-      <div class="app-background-overlay" />
+    <div class="app-background-layer" aria-hidden="true">
+      <div class="app-background-default" />
+      <template v-if="backgroundEnabled">
+        <div class="app-background-image" />
+        <div class="app-background-overlay" />
+      </template>
     </div>
 
     <a-layout-sider
-      :width="SIDER_WIDTH"
+      :width="siderWidth"
       :theme="isDark ? 'dark' : 'light'"
       class="app-sider"
       :style="{
-        background: 'var(--app-layout-sider-bg, var(--ant-color-bg-elevated))',
-        borderRight: '1px solid var(--ant-color-border)',
+        background: 'var(--app-layout-sider-bg, var(--v6-color-sidebar))',
+        borderRight: '1px solid var(--v6-color-border)',
       }"
     >
       <div class="sider-content">
@@ -90,7 +94,9 @@ import { useAppBackground } from '../composables/useAppBackground.ts'
 import { useWebSocket, type WebSocketBaseMessage } from '../composables/useWebSocket.ts'
 import { useAppInitialization } from '../composables/useAppInitialization.ts'
 import { OpenAPI } from '@/api'
+import { authenticatedApiFetch } from '@/utils/httpSecurity'
 import {
+  dedupePageDeclarations,
   FALLBACK_PAGE_DECLARATIONS,
   normalizePageDeclarations,
   sortPageDeclarations,
@@ -105,10 +111,11 @@ const logger = window.electronAPI.getLogger('应用布局')
 
 const router = useRouter()
 const route = useRoute()
-const { isDark } = useTheme()
+const { isDark, uiScale } = useTheme()
 const { isRouteLocked, triggerBlockCallback } = useRouteLock()
 const {
   enabled: backgroundEnabled,
+  source: backgroundSource,
   cssVars: backgroundCssVars,
   loadBackground,
 } = useAppBackground()
@@ -124,6 +131,7 @@ const HMR_SOFT_RELOAD_FLAG = 'auto-mas-hmr-soft-reload'
 const BACKGROUND_SERVICE_NAME = 'frontend_background'
 const hmrOverlayVisible = ref(false)
 const declaredPages = ref<PageDeclaration[]>(FALLBACK_PAGE_DECLARATIONS)
+const siderWidth = computed(() => Math.round(SIDER_WIDTH * uiScale.value))
 const hmrOverlayText = ref('正在重载插件界面')
 
 onMounted(() => {
@@ -206,13 +214,13 @@ const applyPageDeclarations = (rawPages: unknown) => {
 }
 
 const toBackendUrl = (path: string) => {
-  const base = (OpenAPI.BASE || 'http://localhost:36163').replace(/\/+$/, '')
+  const base = (OpenAPI.BASE || 'http://127.0.0.1:36163').replace(/\/+$/, '')
   return `${base}${path.startsWith('/') ? path : `/${path}`}`
 }
 
 const fetchInitialPluginSnapshot = async () => {
   try {
-    const response = await fetch(toBackendUrl('/api/plugins/get'), {
+    const response = await authenticatedApiFetch(toBackendUrl('/api/plugins/get'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: '{}',
@@ -362,7 +370,7 @@ const pageIconMap: Record<string, any> = {
 }
 
 const buildMenuItems = (section: string) =>
-  declaredPages.value
+  dedupePageDeclarations(declaredPages.value)
     .filter(page => page.visible && page.section === section)
     .filter(page => !page.dev_only || isDevelopment.value)
     .map(page => ({
@@ -418,7 +426,9 @@ const onMenuClick: MenuProps['onClick'] = info => {
   min-height: 0;
   overflow: hidden;
   position: relative;
-  background: var(--ant-color-bg-layout);
+  background: transparent;
+  color: var(--v6-color-text);
+  font-family: var(--v6-font-sans);
 }
 
 .app-layout-shell.has-background {
@@ -484,7 +494,13 @@ const onMenuClick: MenuProps['onClick'] = info => {
   overflow: hidden;
   pointer-events: none;
   z-index: 0;
-  background: var(--ant-color-bg-layout);
+  background: var(--v6-color-window);
+}
+
+.app-background-default {
+  position: absolute;
+  inset: 0;
+  background: var(--v6-default-wallpaper);
 }
 
 .app-background-image {
@@ -512,6 +528,10 @@ const onMenuClick: MenuProps['onClick'] = info => {
   z-index: 1;
 }
 
+.app-sider {
+  backdrop-filter: var(--v6-backdrop-shell);
+}
+
 .app-main-layout {
   flex: 1;
   min-width: 0;
@@ -522,7 +542,7 @@ const onMenuClick: MenuProps['onClick'] = info => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 10px 3px;
+  padding: var(--v6-space-3) var(--v6-space-1);
 }
 
 .sider-content :deep(.ant-menu) {
@@ -537,8 +557,8 @@ const onMenuClick: MenuProps['onClick'] = info => {
   /* 水平居中 */
   width: calc(100% - 16px);
   /* 两侧各留 8px 空隙 */
-  border-radius: 6px;
-  padding: 5px 16px !important;
+  border-radius: var(--v6-radius-control);
+  padding: 5px var(--v6-space-4) !important;
   /* 左右内边距 */
   line-height: 36px;
   height: 40px;
@@ -548,8 +568,8 @@ const onMenuClick: MenuProps['onClick'] = info => {
   /* 左对齐图标与文字 */
   gap: 6px;
   transition:
-    background 0.16s ease,
-    color 0.16s ease;
+    background var(--v6-motion-fast) var(--v6-ease-out),
+    color var(--v6-motion-fast) var(--v6-ease-out);
   text-align: left;
 }
 
@@ -606,7 +626,8 @@ const onMenuClick: MenuProps['onClick'] = info => {
   overflow: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  padding: 32px 32px 48px;
+  padding: var(--v6-content-padding-block) var(--v6-content-padding-inline)
+    calc(var(--v6-content-padding-block) + var(--v6-space-4));
   background: transparent;
 }
 
@@ -634,10 +655,10 @@ const onMenuClick: MenuProps['onClick'] = info => {
   min-height: 44px;
   padding: 10px 16px;
   border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  color: var(--ant-color-text);
-  background: var(--ant-color-bg-elevated);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+  border-radius: var(--v6-radius-card);
+  color: var(--v6-color-text);
+  background: var(--v6-color-surface-elevated);
+  box-shadow: var(--v6-shadow-elevated);
   font-size: 14px;
   line-height: 1.4;
 }

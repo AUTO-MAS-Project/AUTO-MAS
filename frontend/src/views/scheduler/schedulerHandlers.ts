@@ -4,6 +4,13 @@
 
 // no types needed here to avoid circular/unused imports
 import { useAppClosing } from '@/composables/useAppClosing'
+import { subscribe } from '@/services/websocket/subscriptions'
+import {
+  WS_ID_MAIN,
+  WS_ID_TASK_MANAGER,
+  WS_POWER_SIGN_UPDATED,
+  WS_TASK_CREATED,
+} from '@/services/websocket/types'
 const logger = window.electronAPI.getLogger('调度器处理器')
 
 const PENDING_TABS_KEY = 'scheduler-pending-tabs'
@@ -16,6 +23,7 @@ type UIHooks = {
 }
 
 let uiHooks: UIHooks = {}
+let residentSubscriptionsInitialized = false
 
 export function registerSchedulerUI(hooks: UIHooks) {
   uiHooks = { ...uiHooks, ...hooks }
@@ -87,8 +95,10 @@ export function handleTaskManagerMessage(wsMessage: any) {
   if (!wsMessage || typeof wsMessage !== 'object') return
   const { type, data } = wsMessage
   try {
-    if (type === 'Signal' && data && data.newTask) {
-      const taskId = String(data.newTask)
+    const isCanonical = type === WS_TASK_CREATED && data?.taskId
+    const isLegacy = type === 'Signal' && data?.newTask
+    if (isCanonical || isLegacy) {
+      const taskId = String(isCanonical ? data.taskId : data.newTask)
       const queueId = data.queueId ? String(data.queueId) : undefined
 
       // 将任务 ID 和 队列 ID 写入 pending 队列，UI 在挂载时会回放
@@ -133,6 +143,8 @@ export function handleMainMessage(wsMessage: any) {
           logger.warn(`onCountdown handler error: ${errorMsg}`)
         }
       }
+    } else if (type === WS_POWER_SIGN_UPDATED && data?.signal !== undefined) {
+      savePowerAction(String(data.signal))
     } else if (type === 'Update' && data && data.PowerSign !== undefined) {
       // 保存电源操作显示值（供 UI 加载时读取）
       savePowerAction(String(data.PowerSign))
@@ -141,6 +153,15 @@ export function handleMainMessage(wsMessage: any) {
     const errorMsg = e instanceof Error ? e.message : String(e)
     logger.warn(`handleMainMessage error: ${errorMsg}`)
   }
+}
+
+/** 在主连接建立前注册不会随页面卸载的正式协议订阅。 */
+export function bootstrapSchedulerSubscriptions() {
+  if (residentSubscriptionsInitialized) return
+  residentSubscriptionsInitialized = true
+  subscribe({ id: WS_ID_TASK_MANAGER, type: WS_TASK_CREATED }, handleTaskManagerMessage)
+  subscribe({ id: WS_ID_MAIN, type: WS_POWER_SIGN_UPDATED }, handleMainMessage)
+  logger.info('已注册调度中心常驻订阅 (task.created / power.sign.updated)')
 }
 
 // 处理后端请求关闭的函数
@@ -171,4 +192,5 @@ export default {
   registerSchedulerUI,
   consumePendingTabIds,
   consumePendingCountdown,
+  bootstrapSchedulerSubscriptions,
 }

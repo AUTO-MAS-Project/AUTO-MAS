@@ -30,14 +30,18 @@ WebSocket 客户端调试 API
 
 import json
 import asyncio
+import os
 from pathlib import Path
 from typing import Optional, Dict, Any, Callable
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.utils.websocket import ws_client_manager
+from app.core.ws.manager import ws_manager
+from app.core.ws.security import authenticate_websocket_subprotocol
 from app.api.ws_command import list_ws_commands
 from app.plugins import PluginManager
 from app.plugins.market import (
+    PLUGIN_OPERATION_LOCK,
     fetch_market_snapshot,
     collect_installed_distribution_names,
 )
@@ -65,7 +69,20 @@ router = APIRouter(prefix="/api/ws", tags=["Websocket端点"])
 WSDEV_CHANNEL_NAME = "wsdev"
 PLUGIN_CHANNEL_NAME = "plugin"
 PLUGIN_CHANNEL_CLIENT_ID = "PluginMarket"
-_plugin_operation_lock = asyncio.Lock()
+_plugin_operation_lock = PLUGIN_OPERATION_LOCK
+
+
+def _is_wsdev_enabled() -> bool:
+    """仅在显式开发模式下开放会泄露运行信息的调试通道。"""
+
+    raw = str(os.getenv("AUTO_MAS_DEV", "")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _authenticate_reverse_channel(websocket: WebSocket) -> str | None:
+    """校验辅助通道的本机来源和进程级 WebSocket 握手令牌。"""
+
+    return authenticate_websocket_subprotocol(websocket, ws_manager.auth_token)
 
 
 def _normalize_distribution_name(name: str) -> str:
@@ -372,12 +389,14 @@ def _register_builtin_reverse_channels():
         name=WSDEV_CHANNEL_NAME,
         ping_interval=15.0,
         ping_timeout=30.0,
+        allow_commands=False,
         overwrite=True,
     )
     ws_client_manager.register_reverse_channel(
         name=PLUGIN_CHANNEL_NAME,
         ping_interval=15.0,
         ping_timeout=30.0,
+        allow_commands=False,
         on_message=_handle_plugin_channel_message,
         on_connect=_on_plugin_channel_connect,
         overwrite=True,
@@ -795,13 +814,24 @@ async def websocket_dynamic_channel(websocket: WebSocket, channel_name: str):
     Raises:
         Exception: 会话创建或运行失败时抛出底层异常。
     """
+    selected_subprotocol = _authenticate_reverse_channel(websocket)
+    if selected_subprotocol is None:
+        logger.warning(f"辅助 WebSocket 通道握手认证失败: /api/ws/{channel_name}")
+        await websocket.close(code=1008, reason="authentication required")
+        return
+
     channel_config = ws_client_manager.get_reverse_channel_config(channel_name)
     if channel_config is None:
         logger.warning(f"未声明的反向通道连接被拒绝: /api/ws/{channel_name}")
         await websocket.close(code=1008, reason=f"未声明通道: {channel_name}")
         return
 
-    await websocket.accept()
+    if channel_name == WSDEV_CHANNEL_NAME and not _is_wsdev_enabled():
+        logger.warning("生产模式下已拒绝 wsdev 调试通道连接")
+        await websocket.close(code=1008, reason="channel unavailable")
+        return
+
+    await websocket.accept(subprotocol=selected_subprotocol)
 
     on_message, on_connect, on_disconnect = _build_channel_handlers(
         channel_name=channel_name,
@@ -815,6 +845,7 @@ async def websocket_dynamic_channel(websocket: WebSocket, channel_name: str):
         ping_interval=float(channel_config.get("ping_interval", 15.0)),
         ping_timeout=float(channel_config.get("ping_timeout", 30.0)),
         auth_token=channel_config.get("auth_token"),
+        allow_commands=bool(channel_config.get("allow_commands", True)),
         on_message=on_message,
         on_connect=on_connect,
         on_disconnect=on_disconnect,

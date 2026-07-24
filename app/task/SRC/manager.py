@@ -22,13 +22,15 @@
 
 import uuid
 import shutil
+from contextlib import suppress
 from pathlib import Path
 from datetime import datetime
 
 from app.core import Config, EmulatorManager
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem, UserItem
-from app.models.ConfigBase import MultipleConfig
-from app.models.config import SrcConfig, SrcUserConfig
+from app.plugins.script_config_store import ScriptConfigStore
 from app.services import Notify
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
@@ -64,9 +66,16 @@ class SrcManager(TaskExecuteBase):
         """校验SRC配置是否可用"""
         if self.task_info.mode not in METHOD_BOOK:
             return "不支持的任务模式，请检查任务配置！"
-        if not isinstance(
-            Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], SrcConfig
-        ):
+        script_uid = uuid.UUID(self.script_info.script_id)
+        try:
+            script_type_key = Config.get_script_type_key(script_uid)
+        except AttributeError:
+            from app.models.config import SrcConfig
+
+            is_src = isinstance(Config.ScriptConfig[script_uid], SrcConfig)
+        else:
+            is_src = script_type_key == "SRC"
+        if not is_src:
             return "脚本配置类型错误, 不是SRC脚本类型"
         if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
             "Emulator", "Id"
@@ -120,10 +129,17 @@ class SrcManager(TaskExecuteBase):
         """运行前准备"""
 
         # 锁定脚本配置并加载用户配置
-        await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].lock()
-        self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
-        self.user_config = MultipleConfig([SrcUserConfig])
-        await self.user_config.load(await self.script_config.UserData.toDict())
+        from app.core.script_types import script_type_registry
+
+        script_uid = uuid.UUID(self.script_info.script_id)
+        script_type_registry.bootstrap()
+        self.storage = ScriptConfigStore(
+            script_type_registry.get("SRC"),
+            Config.ScriptConfig[script_uid],
+        )
+        await self.storage.lock()
+        self.script_config = await self.storage.load_script_model()
+        self.user_config = await self.storage.load_user_collection()
         logger.success(f"{self.script_info.script_id}已锁定, SRC配置提取完成")
 
         self.src_set_path = Path(self.script_config.get("Info", "Path")) / "config"
@@ -165,18 +181,15 @@ class SrcManager(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             logger.error(f"未通过配置检查: {self.check_result}")
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_info.task_id,
-                type="Info",
-                data={"Error": self.check_result},
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level="error", message=self.check_result),
             )
             return
 
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await self.prepare()
-
-        if not isinstance(self.script_config, SrcConfig):
-            raise RuntimeError("脚本配置类型错误, 不是 SRC 脚本类型")
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
             task = METHOD_BOOK[self.task_info.mode](
@@ -195,7 +208,7 @@ class SrcManager(TaskExecuteBase):
             return self.check_result
 
         logger.info("SRC 主任务已结束, 开始执行后续操作")
-        await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
+        await self.storage.unlock()
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode in ["AutoProxy", "ManualReview"]:
@@ -203,10 +216,7 @@ class SrcManager(TaskExecuteBase):
             await self.emulator_manager.close(
                 self.script_config.get("Emulator", "Index")
             )
-            await Config.ScriptConfig[
-                uuid.UUID(self.script_info.script_id)
-            ].UserData.load(await self.user_config.toDict())
-            await Config.ScriptConfig.save()
+            await self.storage.save_user_models(self.user_config)
 
             error_user = [
                 u.name for u in self.script_info.user_list if u.status == "异常"
@@ -239,10 +249,12 @@ class SrcManager(TaskExecuteBase):
                 await push_notification("代理结果", title, result, None)
             except Exception as e:
                 logger.exception(f"推送代理结果时出现异常: {e}")
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"推送代理结果时出现异常: {e}"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error", message=f"推送代理结果时出现异常: {e}"
+                    ),
                 )
 
         # 还原配置
@@ -257,8 +269,16 @@ class SrcManager(TaskExecuteBase):
 
         self.script_info.status = "异常"
         logger.exception(f"SRC任务出现异常: {e}")
-        await Config.send_websocket_message(
+        storage = getattr(self, "storage", None)
+        if storage is not None:
+            with suppress(Exception):
+                await storage.unlock()
+            user_config = getattr(self, "user_config", None)
+            if user_config is not None:
+                with suppress(Exception):
+                    await storage.save_user_models(user_config)
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"SRC任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"SRC任务出现异常: {e}"),
         )

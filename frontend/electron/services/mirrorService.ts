@@ -8,6 +8,8 @@ import * as path from 'path'
 import * as https from 'https'
 import * as http from 'http'
 
+import { requiresBundledRuntimeLock } from './bundledRuntimePolicy'
+
 // 导入日志服务
 import { getLogger } from './logger'
 const logger = getLogger('镜像源服务')
@@ -50,8 +52,8 @@ export interface LocalConfigCache {
 // ==================== 默认配置 ====================
 
 const DEFAULT_API_ENDPOINTS: ApiEndpoints = {
-  local: 'http://localhost:36163',
-  websocket: 'ws://localhost:36163',
+  local: 'http://127.0.0.1:36163',
+  websocket: 'ws://127.0.0.1:36163',
 }
 
 const DEFAULT_MIRROR_CONFIG: MirrorConfig = {
@@ -230,11 +232,44 @@ export class MirrorService {
   private apiEndpoints: ApiEndpoints
   private localConfigPath: string
   private currentEtag: string | undefined
+  private readonly isBundledRuntime: boolean
 
   constructor(appRoot: string) {
     this.localConfigPath = path.join(appRoot, 'config', 'mirror_config.json')
+    this.isBundledRuntime = requiresBundledRuntimeLock(appRoot)
     this.mirrorConfig = { ...DEFAULT_MIRROR_CONFIG }
     this.apiEndpoints = { ...DEFAULT_API_ENDPOINTS }
+  }
+
+  /**
+   * 仅加载本地缓存；缓存不存在或无效时保留内置默认配置。
+   *
+   * 随包锁定运行时不允许在线解析依赖，后端快速启动也不需要等待
+   * MirrorChyan 配置刷新。完整初始化与非随包运行时仍使用 initialize()。
+   */
+  initializeLocal(): void {
+    this.mirrorConfig = { ...DEFAULT_MIRROR_CONFIG }
+    this.apiEndpoints = { ...DEFAULT_API_ENDPOINTS }
+    this.currentEtag = undefined
+
+    const localCache = this.loadLocalConfig()
+    if (!localCache) {
+      logger.info('未找到可用的本地镜像配置，使用内置默认配置')
+      logger.info(`API 端点: ${JSON.stringify(this.apiEndpoints)}`)
+      return
+    }
+
+    this.mirrorConfig = localCache.config.mirrors
+    if (!this.isBundledRuntime) {
+      this.apiEndpoints = localCache.config.apiEndpoints || DEFAULT_API_ENDPOINTS
+    }
+    this.currentEtag = localCache.etag
+    logger.info('加载本地缓存配置')
+    logger.info(`ETag: ${this.currentEtag || '无'}`)
+    if (this.isBundledRuntime) {
+      logger.info('随包运行时已固定本机 API 端点，忽略缓存端点配置')
+    }
+    logger.info(`API 端点: ${JSON.stringify(this.apiEndpoints)}`)
   }
 
   /**
@@ -243,6 +278,12 @@ export class MirrorService {
    */
   async initialize(): Promise<void> {
     logger.info('=== 初始化镜像源配置 ===')
+
+    if (this.isBundledRuntime) {
+      this.initializeLocal()
+      logger.info('随包运行时不在线刷新镜像配置')
+      return
+    }
 
     // 先加载本地缓存配置和 ETag
     const localCache = this.loadLocalConfig()
@@ -465,20 +506,25 @@ export class MirrorService {
    * 获取 API 端点
    */
   getApiEndpoint(key: keyof ApiEndpoints): string {
-    return this.apiEndpoints[key] || DEFAULT_API_ENDPOINTS[key]
+    const endpoints = this.isBundledRuntime ? DEFAULT_API_ENDPOINTS : this.apiEndpoints
+    return endpoints[key] || DEFAULT_API_ENDPOINTS[key]
   }
 
   /**
    * 获取所有 API 端点
    */
   getApiEndpoints(): ApiEndpoints {
-    return { ...this.apiEndpoints }
+    return { ...(this.isBundledRuntime ? DEFAULT_API_ENDPOINTS : this.apiEndpoints) }
   }
 
   /**
    * 更新 API 端点（运行时动态更新）
    */
   updateApiEndpoints(endpoints: Partial<ApiEndpoints>): void {
+    if (this.isBundledRuntime) {
+      logger.warn('随包运行时已拒绝运行期 API 端点覆盖')
+      return
+    }
     this.apiEndpoints = { ...this.apiEndpoints, ...endpoints }
     logger.info(`API 端点已更新: ${JSON.stringify(this.apiEndpoints)}`)
   }

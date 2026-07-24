@@ -9,6 +9,7 @@ import { RepositoryService } from './repositoryService'
 import { DependencyService } from './dependencyService'
 import { PluginBootstrapService } from './pluginBootstrapService'
 import { BackendService } from './backendService'
+import { requiresBundledRuntimeLock } from './bundledRuntimePolicy'
 
 // 导入日志服务
 import { getLogger } from './logger'
@@ -68,6 +69,17 @@ export class InitializationService {
     this.targetBranch = targetBranch
   }
 
+  /** 随包锁定运行时不刷新云端镜像配置，保证离线首启不会等待网络。 */
+  private async initializeMirrorConfig(): Promise<void> {
+    if (requiresBundledRuntimeLock(this.appRoot)) {
+      this.mirrorService.initializeLocal()
+      logger.info('随包锁定运行时使用本地/默认镜像配置，跳过 MirrorChyan 云端刷新')
+      return
+    }
+
+    await this.mirrorService.initialize()
+  }
+
   /**
    * 执行完整的初始化流程
    */
@@ -88,7 +100,7 @@ export class InitializationService {
         message: '正在初始化镜像源配置...',
       })
 
-      await this.mirrorService.initialize()
+      await this.initializeMirrorConfig()
       completedStages.push('mirror')
 
       onProgress?.({
@@ -358,16 +370,84 @@ export class InitializationService {
    */
   async updateOnly(onProgress?: InitializationProgressCallback): Promise<InitializationResult> {
     const completedStages: string[] = []
-    const totalStages = 2
+    let shouldRestartBackend = false
+    let totalStages = 3
+    let repositoryStageIndex = 1
+    let dependencyStageIndex = 2
+    let pluginBootstrapStageIndex = 3
+    let backendStageIndex = 3
+    let backendStoppedForUpdate = false
+    let repositoryCommitted = false
+
+    const failUpdate = async (
+      error: string | undefined,
+      failedStage?: string
+    ): Promise<InitializationResult> => {
+      let finalError = error || '更新失败'
+      if (backendStoppedForUpdate) {
+        if (repositoryCommitted) {
+          finalError = `${finalError}; 运行时源码已经变更，后端已保持停止，必须完成修复后再启动`
+          logger.error('更新在源码部署后失败，后端保持停止以避免启动混合版本运行时')
+        } else {
+          logger.warn('源码尚未部署，尝试恢复更新前运行中的后端服务')
+          const restoreResult = await this.backendService.startBackend()
+          if (restoreResult.success) {
+            backendStoppedForUpdate = false
+            logger.info('更新失败后已恢复后端服务')
+          } else {
+            finalError = `${finalError}; 后端恢复失败: ${restoreResult.error || '未知错误'}`
+            logger.error(`更新失败后无法恢复后端服务: ${restoreResult.error || '未知错误'}`)
+          }
+        }
+      }
+
+      return {
+        success: false,
+        error: finalError,
+        completedStages,
+        failedStage,
+      }
+    }
 
     try {
       // 初始化镜像源配置
-      await this.mirrorService.initialize()
+      await this.initializeMirrorConfig()
+
+      // Windows 上运行中的 Python 进程可能持有源码、插件或 DLL 文件锁。
+      // 在任何部署或安装操作之前先安全停止，由本 Electron 实例在结束后恢复。
+      const stopResult = await this.backendService.stopBackendForRuntimeMutation()
+      if (!stopResult.success) {
+        return {
+          success: false,
+          error: stopResult.error,
+          completedStages,
+          failedStage: 'backend',
+        }
+      }
+
+      shouldRestartBackend = stopResult.wasRunning
+      totalStages = shouldRestartBackend ? 5 : 3
+      repositoryStageIndex = shouldRestartBackend ? 2 : 1
+      dependencyStageIndex = shouldRestartBackend ? 3 : 2
+      pluginBootstrapStageIndex = shouldRestartBackend ? 4 : 3
+      backendStageIndex = shouldRestartBackend ? 5 : 3
+
+      if (shouldRestartBackend) {
+        onProgress?.({
+          stage: 'backend',
+          stageIndex: 1,
+          totalStages,
+          progress: 100,
+          message: '后端服务已安全停止，可以更新运行时文件',
+        })
+        backendStoppedForUpdate = true
+        completedStages.push('backend-stop')
+      }
 
       // 阶段 1: 拉取源码
       onProgress?.({
         stage: 'repository',
-        stageIndex: 1,
+        stageIndex: repositoryStageIndex,
         totalStages,
         progress: 0,
         message: '正在更新源码...',
@@ -381,7 +461,7 @@ export class InitializationService {
       const repoResult = await repositoryService.pullRepository(repoProgress => {
         onProgress?.({
           stage: 'repository',
-          stageIndex: 1,
+          stageIndex: repositoryStageIndex,
           totalStages,
           progress: repoProgress.progress,
           message: repoProgress.message,
@@ -390,20 +470,16 @@ export class InitializationService {
       })
 
       if (!repoResult.success) {
-        return {
-          success: false,
-          error: repoResult.error,
-          completedStages,
-          failedStage: 'repository',
-        }
+        return await failUpdate(repoResult.error, 'repository')
       }
 
+      repositoryCommitted = true
       completedStages.push('repository')
 
       // 阶段 2: 安装依赖
       onProgress?.({
         stage: 'dependency',
-        stageIndex: 2,
+        stageIndex: dependencyStageIndex,
         totalStages,
         progress: 0,
         message: '正在更新依赖...',
@@ -413,7 +489,7 @@ export class InitializationService {
       const depResult = await dependencyService.installDependencies(depProgress => {
         onProgress?.({
           stage: 'dependency',
-          stageIndex: 2,
+          stageIndex: dependencyStageIndex,
           totalStages,
           progress: depProgress.progress,
           message: depProgress.message,
@@ -422,15 +498,69 @@ export class InitializationService {
       })
 
       if (!depResult.success) {
-        return {
-          success: false,
-          error: depResult.error,
-          completedStages,
-          failedStage: 'dependency',
-        }
+        return await failUpdate(depResult.error, 'dependency')
       }
 
       completedStages.push('dependency')
+
+      // 阶段 3: 刷新插件引导包。更新模式强制重新安装，确保本地源码和随包 wheel
+      // 在版本号未变化时也能覆盖旧的插件代码。
+      onProgress?.({
+        stage: 'plugin-bootstrap',
+        stageIndex: pluginBootstrapStageIndex,
+        totalStages,
+        progress: 0,
+        message: '正在更新插件包...',
+      })
+
+      const pluginBootstrapService = new PluginBootstrapService(this.appRoot, this.mirrorService)
+      const bootstrapResult = await pluginBootstrapService.installPackages(
+        bootstrapProgress => {
+          onProgress?.({
+            stage: 'plugin-bootstrap',
+            stageIndex: pluginBootstrapStageIndex,
+            totalStages,
+            progress: bootstrapProgress.progress,
+            message: bootstrapProgress.message,
+            details: bootstrapProgress.details,
+          })
+        },
+        undefined,
+        true
+      )
+
+      if (!bootstrapResult.success) {
+        return await failUpdate(bootstrapResult.error, 'plugin-bootstrap')
+      }
+
+      completedStages.push('plugin-bootstrap')
+
+      // 仅恢复更新前由当前 Electron 实例管理的后端，避免更新操作意外启动服务。
+      if (shouldRestartBackend) {
+        onProgress?.({
+          stage: 'backend',
+          stageIndex: backendStageIndex,
+          totalStages,
+          progress: 0,
+          message: '正在重启后端服务...',
+        })
+
+        const backendResult = await this.backendService.startBackend()
+        if (!backendResult.success) {
+          return await failUpdate(backendResult.error, 'backend')
+        }
+        backendStoppedForUpdate = false
+
+        const status = this.backendService.getStatus()
+        onProgress?.({
+          stage: 'backend',
+          stageIndex: backendStageIndex,
+          totalStages,
+          progress: 100,
+          message: `后端服务已重启，PID: ${status.pid}`,
+        })
+        completedStages.push('backend')
+      }
 
       // 完成
       onProgress?.({
@@ -448,12 +578,7 @@ export class InitializationService {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`更新失败: ${errorMsg}`)
-
-      return {
-        success: false,
-        error: errorMsg,
-        completedStages,
-      }
+      return await failUpdate(errorMsg)
     }
   }
 

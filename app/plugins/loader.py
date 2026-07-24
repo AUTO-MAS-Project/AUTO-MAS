@@ -36,6 +36,10 @@ from .pypi_site import (
 logger = get_logger("插件加载器")
 
 
+HOST_EMULATOR_COMPAT_OWNER = "host:legacy-emulator"
+EMULATOR_SERVICE_NAME = "emulator"
+
+
 def _utc8_now_iso() -> str:
     """返回当前 UTC+8 时间的 ISO8601 字符串。"""
     return datetime.now(tz=UTC8).isoformat()
@@ -58,6 +62,10 @@ class PluginRecord:
     generation: int = 1
     lifecycle_phase: str = "idle"
     lifecycle_updated_at: str = field(default_factory=_utc8_now_iso)
+    on_load_attempted: bool = False
+    on_start_attempted: bool = False
+    on_stop_completed: bool = False
+    on_unload_completed: bool = False
     reload_count: int = 0
     last_reload_reason: Optional[str] = None
     last_reload_at: Optional[str] = None
@@ -114,9 +122,60 @@ class PluginLoader:
         self._pulse: set[str] = set()
         self._task: Optional[asyncio.Task[Any]] = None
         self._busy = False
+        self._reload_lock = asyncio.Lock()
 
         self.service.watch("before", self._before)
         self.service.watch("after", self._after)
+
+    def _register_host_emulator_compat(self) -> None:
+        """Publish the retained host emulator API when no plugin owns it."""
+
+        # A second real provider can still be starting concurrently.  Do not
+        # race its declared slot; its own failure path will retry restoration.
+        if self.service.owners(EMULATOR_SERVICE_NAME):
+            return
+
+        from .emulator_compat import LegacyEmulatorService
+
+        self.service.set(
+            EMULATOR_SERVICE_NAME,
+            LegacyEmulatorService(),
+            HOST_EMULATOR_COMPAT_OWNER,
+        )
+
+    def _drop_host_emulator_compat(self) -> None:
+        """Remove the synthetic host provider without touching real plugins."""
+
+        self.service.drop(HOST_EMULATOR_COMPAT_OWNER)
+
+    def _restore_host_emulator_compat_after_provider_failure(
+        self,
+        provides: set[str],
+    ) -> None:
+        """Restore the host fallback when an emulator provider failed to start."""
+
+        if (
+            EMULATOR_SERVICE_NAME in provides
+            and not self.service.ready(EMULATOR_SERVICE_NAME)
+        ):
+            self._register_host_emulator_compat()
+
+    def _configure_host_compat_services(
+        self,
+        meta_map: Dict[str, tuple[set[str], set[str], set[str]]],
+    ) -> bool:
+        """Install compatibility services only when no enabled plugin provides them."""
+
+        has_real_emulator_provider = any(
+            EMULATOR_SERVICE_NAME in provides
+            for provides, _needs, _wants in meta_map.values()
+        )
+        self._drop_host_emulator_compat()
+        if has_real_emulator_provider:
+            return False
+
+        self._register_host_emulator_compat()
+        return True
 
     def _iter_entry_points(self) -> list[Any]:
         """读取 plugins/pypi/site-packages 中的插件 Entry Points。"""
@@ -577,6 +636,50 @@ class PluginLoader:
             await result
         return True
 
+    async def _cleanup_plugin_lifecycle(
+        self,
+        record: PluginRecord,
+        *,
+        stop_reason: str,
+    ) -> list[Exception]:
+        """按已进入的生命周期阶段释放插件，并返回未完成的清理错误。"""
+        instance = record.plugin_instance
+        if instance is None:
+            return []
+
+        errors: list[Exception] = []
+        if record.on_start_attempted and not record.on_stop_completed:
+            self._mark_lifecycle_phase(record, "on_stop")
+            try:
+                await self._call_lifecycle_method(
+                    instance,
+                    "on_stop",
+                    stop_reason,
+                )
+            except Exception as error:
+                errors.append(error)
+                logger.warning(
+                    f"on_stop 清理失败: instance={record.instance_id}, "
+                    f"error={type(error).__name__}: {error}"
+                )
+            else:
+                record.on_stop_completed = True
+
+        if record.on_load_attempted and not record.on_unload_completed:
+            self._mark_lifecycle_phase(record, "on_unload")
+            try:
+                await self._call_optional_lifecycle_method(instance, "on_unload")
+            except Exception as error:
+                errors.append(error)
+                logger.warning(
+                    f"on_unload 清理失败: instance={record.instance_id}, "
+                    f"error={type(error).__name__}: {error}"
+                )
+            else:
+                record.on_unload_completed = True
+
+        return errors
+
     def _create_plugin_instance(self, plugin_name: str, plugin_class: type[Any], context: PluginContext) -> Any:
         """构建插件实例并校验生命周期契约。
 
@@ -917,8 +1020,10 @@ class PluginLoader:
                 self._register_decorated_handlers(record=record, target=record.plugin_instance)
             )
             self._mark_lifecycle_phase(record, "on_load")
+            record.on_load_attempted = True
             await self._call_optional_lifecycle_method(record.plugin_instance, "on_load", record.context)
             self._mark_lifecycle_phase(record, "on_start")
+            record.on_start_attempted = True
             await self._call_lifecycle_method(record.plugin_instance, "on_start")
             self._register_declared_pages(record, plugin_class)
 
@@ -926,7 +1031,12 @@ class PluginLoader:
             self._mark_lifecycle_phase(record, "active")
             logger.info(f"插件已激活: {plugin_name}")
         except PluginDefinitionError as e:
+            await self._cleanup_plugin_lifecycle(
+                record,
+                stop_reason="load_failure",
+            )
             self._unregister_record_listeners(record)
+            self.service.drop(record.instance_id)
             await plugin_server.unregister_owner(record.instance_id)
             from app.core.page_registry import page_registry
             from app.core.script_types import script_type_registry
@@ -936,7 +1046,12 @@ class PluginLoader:
             self._mark_error(record, str(e))
             logger.error(f"插件加载失败: {plugin_name}, error={e}")
         except Exception as e:
+            await self._cleanup_plugin_lifecycle(
+                record,
+                stop_reason="load_failure",
+            )
             self._unregister_record_listeners(record)
+            self.service.drop(record.instance_id)
             await plugin_server.unregister_owner(record.instance_id)
             from app.core.page_registry import page_registry
             from app.core.script_types import script_type_registry
@@ -999,6 +1114,7 @@ class PluginLoader:
         self._mark_status(record, "discovered")
         self._mark_lifecycle_phase(record, "discovered")
         self.records[instance_id] = record
+        declared_provides = set(provides or ())
 
         try:
             record.module, plugin_class = self._resolve_plugin_module_and_class(
@@ -1010,6 +1126,7 @@ class PluginLoader:
             merged_provides = set(provides or static_provides)
             merged_needs = set(needs or static_needs)
             merged_wants = set(wants or static_wants)
+            declared_provides = merged_provides
             missing = {
                 name
                 for name in merged_needs
@@ -1021,7 +1138,17 @@ class PluginLoader:
                 record.wants = merged_wants
                 record.missing = set(missing)
                 self._mark_error(record, f"缺失 required 服务: {', '.join(sorted(missing))}")
+                self._restore_host_emulator_compat_after_provider_failure(
+                    merged_provides
+                )
                 return record
+
+            if (
+                EMULATOR_SERVICE_NAME in merged_provides
+                and HOST_EMULATOR_COMPAT_OWNER
+                in self.service.owners(EMULATOR_SERVICE_NAME)
+            ):
+                self._drop_host_emulator_compat()
 
             self._mark_status(record, "loaded")
             self._mark_lifecycle_phase(record, "loaded")
@@ -1061,8 +1188,10 @@ class PluginLoader:
             )
             self._register_plugin_log_handlers(record=record, target=record.plugin_instance)
             self._mark_lifecycle_phase(record, "on_load")
+            record.on_load_attempted = True
             await self._call_optional_lifecycle_method(record.plugin_instance, "on_load", record.context)
             self._mark_lifecycle_phase(record, "on_start")
+            record.on_start_attempted = True
             await self._call_lifecycle_method(record.plugin_instance, "on_start")
             self._register_declared_pages(record, plugin_class)
 
@@ -1070,23 +1199,39 @@ class PluginLoader:
             self._mark_lifecycle_phase(record, "active")
             logger.info(f"插件实例已激活: {instance_id} ({plugin_name})")
         except PluginDefinitionError as e:
+            await self._cleanup_plugin_lifecycle(
+                record,
+                stop_reason="load_failure",
+            )
             self._unregister_record_listeners(record)
+            self.service.drop(record.instance_id)
             await plugin_server.unregister_owner(record.instance_id)
             from app.core.page_registry import page_registry
             from app.core.script_types import script_type_registry
 
             page_registry.unregister_source(f"plugin:{record.instance_id}")
             script_type_registry.unregister_by_owner(record.instance_id)
+            self._restore_host_emulator_compat_after_provider_failure(
+                declared_provides
+            )
             self._mark_error(record, str(e))
             logger.error(f"插件实例加载失败: {instance_id}, error={e}")
         except Exception as e:
+            await self._cleanup_plugin_lifecycle(
+                record,
+                stop_reason="load_failure",
+            )
             self._unregister_record_listeners(record)
+            self.service.drop(record.instance_id)
             await plugin_server.unregister_owner(record.instance_id)
             from app.core.page_registry import page_registry
             from app.core.script_types import script_type_registry
 
             page_registry.unregister_source(f"plugin:{record.instance_id}")
             script_type_registry.unregister_by_owner(record.instance_id)
+            self._restore_host_emulator_compat_after_provider_failure(
+                declared_provides
+            )
             self._mark_error(record, f"{type(e).__name__}: {e}")
             logger.error(f"插件实例加载失败: {instance_id}, error={type(e).__name__}: {e}")
 
@@ -1114,16 +1259,23 @@ class PluginLoader:
         Returns:
             Dict[str, PluginRecord]: 当前全部实例记录映射。
         """
+        instance_list = list(instances)
         if not self.discovered_plugins:
             self.discover()
         self.startup_failed_instances = {}
         self.startup_missing_instances = set()
         self.service.clear()
 
-        _planned, levels, missing_map, meta_map = self._plan(instances)
+        _planned, levels, missing_map, meta_map = self._plan(instance_list)
+        if self._configure_host_compat_services(meta_map):
+            for instance_id, missing_services in list(missing_map.items()):
+                missing_services.discard(EMULATOR_SERVICE_NAME)
+                if not missing_services:
+                    missing_map.pop(instance_id, None)
+
         enabled_map: dict[str, Any] = {
             str(getattr(item, "id")): item
-            for item in instances
+            for item in instance_list
             if bool(getattr(item, "enabled", False))
         }
 
@@ -1203,11 +1355,18 @@ class PluginLoader:
             return
 
         try:
-            if record.plugin_instance is not None:
-                self._mark_lifecycle_phase(record, "on_stop")
-                await self._call_lifecycle_method(record.plugin_instance, "on_stop", stop_reason)
-                self._mark_lifecycle_phase(record, "on_unload")
-                await self._call_optional_lifecycle_method(record.plugin_instance, "on_unload")
+            cleanup_errors = await self._cleanup_plugin_lifecycle(
+                record,
+                stop_reason=stop_reason,
+            )
+            if cleanup_errors:
+                error = cleanup_errors[0]
+                self._mark_error(record, f"{type(error).__name__}: {error}")
+                logger.error(
+                    f"插件卸载未完成: {plugin_name}, "
+                    f"error={type(error).__name__}: {error}"
+                )
+                return
             self._mark_status(record, "disposed")
             self._mark_lifecycle_phase(record, "disposed")
         except Exception as e:
@@ -1217,6 +1376,12 @@ class PluginLoader:
         finally:
             self._unregister_record_listeners(record)
             self.service.drop(record.instance_id)
+            if (
+                EMULATOR_SERVICE_NAME in record.provides
+                and not self._busy
+                and not self.service.ready(EMULATOR_SERVICE_NAME)
+            ):
+                self._register_host_emulator_compat()
             await plugin_server.unregister_owner(record.instance_id)
             from app.core.page_registry import page_registry
             from app.core.script_types import script_type_registry
@@ -1250,14 +1415,35 @@ class PluginLoader:
         config: Dict[str, Any],
         reason: str = "manual",
     ) -> PluginRecord:
+        """串行执行实例重载，避免多个调用同时操作共享 service/records。"""
+        async with self._reload_lock:
+            return await self._reload_instance(
+                instance_id=instance_id,
+                plugin_name=plugin_name,
+                instance_name=instance_name,
+                config=config,
+                reason=reason,
+            )
+
+    async def _reload_instance(
+        self,
+        *,
+        instance_id: str,
+        plugin_name: str,
+        instance_name: str,
+        config: Dict[str, Any],
+        reason: str = "manual",
+    ) -> PluginRecord:
         """重载指定插件实例。
 
         当前实现为基础事务雏形：
-        1. 若存在旧实例，先调用 `on_reload_prepare`；
-        2. 卸载旧实例；
-        3. 加载新实例；
-        4. 新实例激活后调用 `on_reload_commit`；
-        5. 若加载失败，直接关闭实例并保留错误状态。
+        1. 等待正在执行的依赖同步任务（_sync）完成，防止与后台 _sync 竞态；
+        2. 置位 _busy 阻止 _before/_after 在重载期间发起新的 _sync；
+        3. 若存在旧实例，先调用 `on_reload_prepare`；
+        4. 卸载旧实例；
+        5. 加载新实例；
+        6. 新实例激活后调用 `on_reload_commit`；
+        7. 若加载失败，清理新实例并保留 error 运行态。
 
         Args:
             instance_id (str): 插件实例 ID。
@@ -1272,42 +1458,70 @@ class PluginLoader:
         Raises:
             Exception: 生命周期方法或加载流程异常时透传。
         """
-        old_record = self.records.get(instance_id)
-        if old_record is not None and old_record.plugin_instance is not None:
-            old_record.last_reload_reason = reason
-            old_record.last_reload_at = _utc8_now_iso()
-            self._mark_lifecycle_phase(old_record, "on_reload_prepare")
-            await self._call_optional_lifecycle_method(old_record.plugin_instance, "on_reload_prepare")
+        # 等待正在执行的依赖同步任务完成，避免 _sync 的 unload/load
+        # 与 reload_instance 的 unload/load 交叉执行导致状态损坏。
+        pending_sync = self._task
+        if pending_sync is not None and not pending_sync.done():
+            try:
+                await pending_sync
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.warning(f"等待依赖同步任务完成时出现异常: {type(e).__name__}: {e}")
+            self._task = None
 
-        await self.unload_instance(instance_id, stop_reason=f"reload:{reason}")
-        new_record = await self.load_instance(
-            instance_id=instance_id,
-            plugin_name=plugin_name,
-            instance_name=instance_name,
-            config=config,
-        )
+        # 阻止 _before/_after 在重载期间发起新的 _sync；reload 自身已显式
+        # 执行 unload+load，service 变更不需要再由 _sync 重放。
+        self._busy = True
+        try:
+            old_record = self.records.get(instance_id)
+            if old_record is not None and old_record.plugin_instance is not None:
+                old_record.last_reload_reason = reason
+                old_record.last_reload_at = _utc8_now_iso()
+                self._mark_lifecycle_phase(old_record, "on_reload_prepare")
+                await self._call_optional_lifecycle_method(old_record.plugin_instance, "on_reload_prepare")
 
-        if new_record.status == "error":
+            await self.unload_instance(instance_id, stop_reason=f"reload:{reason}")
+            new_record = await self.load_instance(
+                instance_id=instance_id,
+                plugin_name=plugin_name,
+                instance_name=instance_name,
+                config=config,
+            )
+
+            if new_record.status != "active":
+                failure_detail = str(
+                    new_record.error
+                    or f"unexpected status={new_record.status or '<empty>'}"
+                )
+                new_record.last_reload_reason = reason
+                new_record.last_reload_at = _utc8_now_iso()
+                self._mark_lifecycle_phase(new_record, "reload_failed")
+                await self.unload_instance(instance_id)
+                cleanup_detail = str(new_record.error or "")
+                if cleanup_detail and cleanup_detail != failure_detail:
+                    failure_detail = f"{failure_detail}; 清理失败: {cleanup_detail}"
+                self._mark_error(new_record, f"插件实例重载失败: {failure_detail}")
+                self._mark_lifecycle_phase(new_record, "reload_failed")
+                return new_record
+
+            previous_generation = 0
+            if old_record is not None:
+                previous_generation = int(getattr(old_record, "generation", 1) or 1)
+            new_record.generation = previous_generation + 1
+            new_record.reload_count = (old_record.reload_count + 1) if old_record is not None else 1
             new_record.last_reload_reason = reason
             new_record.last_reload_at = _utc8_now_iso()
-            self._mark_lifecycle_phase(new_record, "reload_failed")
-            await self.unload_instance(instance_id)
-            self._mark_lifecycle_phase(new_record, "closed")
+
+            if new_record.plugin_instance is not None:
+                self._mark_lifecycle_phase(new_record, "on_reload_commit")
+                await self._call_optional_lifecycle_method(new_record.plugin_instance, "on_reload_commit")
+            self._mark_lifecycle_phase(new_record, "active")
             return new_record
-
-        previous_generation = 0
-        if old_record is not None:
-            previous_generation = int(getattr(old_record, "generation", 1) or 1)
-        new_record.generation = previous_generation + 1
-        new_record.reload_count = (old_record.reload_count + 1) if old_record is not None else 1
-        new_record.last_reload_reason = reason
-        new_record.last_reload_at = _utc8_now_iso()
-
-        if new_record.plugin_instance is not None:
-            self._mark_lifecycle_phase(new_record, "on_reload_commit")
-            await self._call_optional_lifecycle_method(new_record.plugin_instance, "on_reload_commit")
-        self._mark_lifecycle_phase(new_record, "active")
-        return new_record
+        finally:
+            # 清除重载期间可能因 service 变更而遗留的 pulse 条目，再解除 busy。
+            self._pulse.discard(instance_id)
+            self._busy = False
 
     async def unload_all(self) -> None:
         """
@@ -1331,5 +1545,6 @@ class PluginLoader:
             for plugin_name in list(self.records.keys()):
                 await self.unload_plugin(plugin_name)
         finally:
+            self._drop_host_emulator_compat()
             self._pulse.clear()
             self._busy = False

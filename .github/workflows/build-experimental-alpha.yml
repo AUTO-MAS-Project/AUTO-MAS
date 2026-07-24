@@ -1,0 +1,368 @@
+name: Build Experimental Alpha Full
+
+on:
+  workflow_dispatch:
+    inputs:
+      integration_wheelhouse_url:
+        description: HTTPS URL of the audited complete wheelhouse ZIP
+        required: true
+        type: string
+      integration_wheelhouse_sha256:
+        description: SHA-256 of the exact wheelhouse ZIP
+        required: true
+        type: string
+
+jobs:
+  alpha-full:
+    name: Build Experimental Alpha Full
+    runs-on: windows-2025
+    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' && github.ref_name == 'integration/dev-v2-dev-all-plugins'
+    permissions:
+      actions: read
+      contents: read
+    env:
+      INTEGRATION_ENVIRONMENT_SHA256: cfa5fff882b6c81bd90aabb9f5ef2b9a135c1d1cbaa6ac5b21222f549967190a
+      INTEGRATION_UV_VERSION: 0.11.30
+      AUTO_MAS_RELEASE_OUTPUT_ROOT: ${{ runner.temp }}/auto-mas-alpha-stage-${{ github.run_id }}-${{ github.run_attempt }}
+      AUTO_MAS_EXPECTED_GIT_SHA: ${{ github.sha }}
+      AUTO_MAS_ALPHA_PROVENANCE_ROOT: ${{ runner.temp }}/auto-mas-alpha-provenance-${{ github.run_id }}-${{ github.run_attempt }}
+      ALPHA_ARTIFACT_ROOT: ${{ runner.temp }}/auto-mas-alpha-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
+      AUTO_MAS_ENVIRONMENT_ARCHIVE: ${{ runner.temp }}/auto-mas-alpha-environment-${{ github.run_id }}-${{ github.run_attempt }}.zip
+      AUTO_MAS_ARCHIVE_MAX_BYTES: 1073741824
+      AUTO_MAS_ARCHIVE_MAX_ENTRIES: 4096
+      AUTO_MAS_ENVIRONMENT_ARCHIVE_MAX_ENTRIES: 16384
+      AUTO_MAS_ARCHIVE_MAX_EXPANDED_BYTES: 2147483648
+      AUTO_MAS_ARCHIVE_MAX_FILE_BYTES: 536870912
+
+    steps:
+      - name: Checkout integration source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          corepack enable
+          corepack prepare yarn@4.9.1 --activate
+          yarn install --immutable
+        shell: pwsh
+
+      - name: Verify Alpha workflow and release metadata contracts
+        run: node --test .github/workflows/scripts/release-metadata.test.mjs .github/workflows/scripts/alpha-release-workflow.test.mjs
+
+      - name: Verify archive safety contract
+        run: .github\workflows\scripts\Test-ArchiveSafety.ps1
+        shell: pwsh
+
+      - name: Set up pinned uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: ${{ env.INTEGRATION_UV_VERSION }}
+          enable-cache: false
+
+      - name: Download and validate audited wheelhouse
+        env:
+          WHEELHOUSE_URL: ${{ inputs.integration_wheelhouse_url }}
+          WHEELHOUSE_SHA256: ${{ inputs.integration_wheelhouse_sha256 }}
+        run: |
+          Import-Module "$env:GITHUB_WORKSPACE\.github\workflows\scripts\ArchiveSafety.psm1" -Force
+          $uri = [Uri]$env:WHEELHOUSE_URL
+          if ($uri.Scheme -ne 'https') {
+            throw 'integration_wheelhouse_url must use HTTPS'
+          }
+          $expectedHash = $env:WHEELHOUSE_SHA256.Trim().ToLowerInvariant()
+          if ($expectedHash -notmatch '^[0-9a-f]{64}$') {
+            throw 'integration_wheelhouse_sha256 must be exactly 64 hexadecimal characters'
+          }
+          $archivePath = Join-Path $env:RUNNER_TEMP "auto-mas-wheelhouse-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT.zip"
+          $extractRoot = Join-Path $env:RUNNER_TEMP "auto-mas-wheelhouse-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          Invoke-BoundedHttpsDownload `
+            -Uri $uri `
+            -DestinationPath $archivePath `
+            -MaxBytes ([long]::Parse($env:AUTO_MAS_ARCHIVE_MAX_BYTES)) | Out-Null
+          $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualHash -ne $expectedHash) {
+            throw "Wheelhouse archive SHA256 mismatch: expected $expectedHash, got $actualHash"
+          }
+          $archiveResult = Expand-VerifiedZip `
+            -ArchivePath $archivePath `
+            -DestinationPath $extractRoot `
+            -MaxArchiveBytes ([long]::Parse($env:AUTO_MAS_ARCHIVE_MAX_BYTES)) `
+            -MaxEntries ([long]::Parse($env:AUTO_MAS_ARCHIVE_MAX_ENTRIES)) `
+            -MaxExpandedBytes ([long]::Parse($env:AUTO_MAS_ARCHIVE_MAX_EXPANDED_BYTES)) `
+            -MaxFileBytes ([long]::Parse($env:AUTO_MAS_ARCHIVE_MAX_FILE_BYTES))
+          $manifestCandidates = @(Get-ChildItem -LiteralPath $extractRoot -Filter manifest.json -File -Recurse)
+          if ($manifestCandidates.Count -ne 1) {
+            throw "Expected exactly one wheelhouse root, found $($manifestCandidates.Count)"
+          }
+          $wheelhouseRoot = $manifestCandidates[0].Directory.FullName
+          Add-Content -Path $env:GITHUB_ENV -Value "AUTO_MAS_WHEELHOUSE_ROOT=$wheelhouseRoot"
+          Add-Content -Path $env:GITHUB_ENV -Value "AUDITED_WHEELHOUSE_SHA256=$actualHash"
+          Write-Output "Audited wheelhouse archive: $actualHash ($($archiveResult.EntryCount) entries, $($archiveResult.ExpandedBytes) expanded bytes)"
+        shell: pwsh
+
+      - name: Run frontend gates and create Alpha win-unpacked
+        run: |
+          cd frontend
+          yarn lint
+          yarn typecheck
+          yarn test
+          node scripts/build-integration-release.mjs `
+            --wheelhouse "$env:AUTO_MAS_WHEELHOUSE_ROOT" `
+            --output "$env:AUTO_MAS_RELEASE_OUTPUT_ROOT" `
+            --unpacked-only
+          $stage = Join-Path $env:AUTO_MAS_RELEASE_OUTPUT_ROOT 'win-unpacked'
+          $alphaExe = Join-Path $stage 'AUTO-MAS-v6-Experimental-Alpha.exe'
+          if (-not (Test-Path -LiteralPath $alphaExe -PathType Leaf)) {
+            throw "Alpha executable was not produced: $alphaExe"
+          }
+          $provenancePath = Join-Path $stage 'resources\integration-snapshot\source-provenance.json'
+          if (-not (Test-Path -LiteralPath $provenancePath -PathType Leaf)) {
+            throw "Alpha source provenance was not embedded: $provenancePath"
+          }
+          $provenance = Get-Content -LiteralPath $provenancePath -Raw | ConvertFrom-Json
+          if ($provenance.schema -ne 'auto-mas.experimental-alpha.source-provenance/v2') {
+            throw "Unexpected Alpha source provenance schema: $($provenance.schema)"
+          }
+          if ($provenance.git.head_sha -ne $env:GITHUB_SHA.ToLowerInvariant()) {
+            throw "Alpha source provenance HEAD does not match GITHUB_SHA: $($provenance.git.head_sha)"
+          }
+          if ($provenance.git.worktree_state -ne 'clean') {
+            throw "CI Alpha source provenance must be clean, got: $($provenance.git.worktree_state)"
+          }
+          if ($provenance.source_input_tree.sha256 -notmatch '^[0-9a-f]{64}$') {
+            throw 'Alpha source provenance is missing a valid input tree SHA256'
+          }
+          $scriptDirectory = Join-Path $stage 'resources\integration-snapshot\scripts'
+          $expectedScripts = @('verify_offline_first_start.ps1', 'verify_wheelhouse_snapshot.py')
+          $actualScripts = @(Get-ChildItem -LiteralPath $scriptDirectory -File -Recurse | ForEach-Object {
+            $_.FullName.Substring($scriptDirectory.Length).TrimStart('\').Replace('\', '/')
+          } | Sort-Object)
+          if (Compare-Object -ReferenceObject $expectedScripts -DifferenceObject $actualScripts) {
+            throw "Alpha embedded scripts must be exactly: $($expectedScripts -join ', ')"
+          }
+          foreach ($filename in @('ALPHA_README.md', 'RELEASE_NOTES.md', 'KNOWN_GAPS.md', 'MANUAL_TEST_CARDS.md', 'OFFLINE_FIRST_START.md', 'CI_GATES.json')) {
+            $evidencePath = Join-Path $stage "resources\integration-snapshot\evidence\$filename"
+            if (-not (Test-Path -LiteralPath $evidencePath -PathType Leaf)) {
+              throw "Alpha evidence template is missing: $filename"
+            }
+          }
+        shell: pwsh
+
+      - name: Generate Alpha version metadata
+        id: release-metadata
+        run: |
+          node .github/workflows/scripts/release-metadata.mjs `
+            --version-file "$env:GITHUB_WORKSPACE\res\version.json" `
+            --github-output "$env:GITHUB_OUTPUT" `
+            --metadata-dir "$env:RUNNER_TEMP\alpha-release-metadata"
+        shell: pwsh
+
+      - name: Cache pinned Full environment
+        id: cache-environment
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.AUTO_MAS_ENVIRONMENT_ARCHIVE }}
+          key: environment-zip-${{ env.INTEGRATION_ENVIRONMENT_SHA256 }}
+
+      - name: Download pinned Full environment
+        if: steps.cache-environment.outputs.cache-hit != 'true'
+        run: |
+          Import-Module "$env:GITHUB_WORKSPACE\.github\workflows\scripts\ArchiveSafety.psm1" -Force
+          Invoke-BoundedHttpsDownload `
+            -Uri ([Uri]'https://download.auto-mas.top/d/AUTO-MAS/Environment/environment.zip') `
+            -DestinationPath "$env:AUTO_MAS_ENVIRONMENT_ARCHIVE" `
+            -MaxBytes ([long]::Parse($env:AUTO_MAS_ARCHIVE_MAX_BYTES)) | Out-Null
+        shell: pwsh
+
+      - name: Validate and record Full environment
+        run: |
+          $archivePath = "$env:AUTO_MAS_ENVIRONMENT_ARCHIVE"
+          if (-not (Test-Path -LiteralPath $archivePath -PathType Leaf)) {
+            throw 'Pinned environment archive is missing after cache/download'
+          }
+          $size = (Get-Item -LiteralPath $archivePath).Length
+          if ($size -gt [long]::Parse($env:AUTO_MAS_ARCHIVE_MAX_BYTES)) {
+            throw "Environment archive size $size exceeds configured budget"
+          }
+          $hash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expectedHash = $env:INTEGRATION_ENVIRONMENT_SHA256.ToLowerInvariant()
+          if ($hash -ne $expectedHash) {
+            throw "Environment SHA256 mismatch: expected $expectedHash, got $hash"
+          }
+          $envInfo = @{
+            source_url = 'https://download.auto-mas.top/d/AUTO-MAS/Environment/environment.zip'
+            sha256 = $hash
+            expected_sha256 = $expectedHash
+            integrity_verified = $true
+            size_bytes = $size
+            cached_at = (Get-Date).ToUniversalTime().ToString('o')
+          }
+          $envInfo | ConvertTo-Json | Out-File -LiteralPath "$env:RUNNER_TEMP\alpha-environment-info.json" -Encoding utf8
+          Add-Content -Path $env:GITHUB_ENV -Value "AUDITED_ENVIRONMENT_SHA256=$hash"
+        shell: pwsh
+
+      - name: Stage pinned Full environment into Alpha package
+        run: |
+          Import-Module "$env:GITHUB_WORKSPACE\.github\workflows\scripts\ArchiveSafety.psm1" -Force
+          $environmentStage = Join-Path $env:RUNNER_TEMP "auto-mas-alpha-environment-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          $archiveResult = Expand-VerifiedZip `
+            -ArchivePath "$env:AUTO_MAS_ENVIRONMENT_ARCHIVE" `
+            -DestinationPath $environmentStage `
+            -MaxArchiveBytes ([long]::Parse($env:AUTO_MAS_ARCHIVE_MAX_BYTES)) `
+            -MaxEntries ([long]::Parse($env:AUTO_MAS_ENVIRONMENT_ARCHIVE_MAX_ENTRIES)) `
+            -MaxExpandedBytes ([long]::Parse($env:AUTO_MAS_ARCHIVE_MAX_EXPANDED_BYTES)) `
+            -MaxFileBytes ([long]::Parse($env:AUTO_MAS_ARCHIVE_MAX_FILE_BYTES))
+          $topLevelEntries = @(Get-ChildItem -LiteralPath $environmentStage -Force)
+          if ($topLevelEntries.Count -ne 1 -or $topLevelEntries[0].Name -cne 'environment' -or -not $topLevelEntries[0].PSIsContainer) {
+            throw 'Full environment archive must contain exactly one environment root directory'
+          }
+          $environmentTarget = Join-Path (Join-Path $env:AUTO_MAS_RELEASE_OUTPUT_ROOT 'win-unpacked') 'environment'
+          if (Test-Path -LiteralPath $environmentTarget) {
+            throw "Refusing to overwrite an unexpected environment: $environmentTarget"
+          }
+          $environmentParent = Split-Path -Parent $environmentTarget
+          $deployStage = Join-Path $environmentParent ".environment-stage-$([Guid]::NewGuid().ToString('N'))"
+          Copy-Item -LiteralPath (Join-Path $environmentStage 'environment') -Destination $deployStage -Recurse -ErrorAction Stop
+          $uvCommand = Get-Command uv.exe -ErrorAction Stop
+          $uvTargetDirectory = Join-Path $deployStage 'python\Scripts'
+          New-Item -ItemType Directory -Path $uvTargetDirectory -Force | Out-Null
+          $uvTarget = Join-Path $uvTargetDirectory 'uv.exe'
+          Copy-Item -LiteralPath $uvCommand.Source -Destination $uvTarget
+          $uvVersion = & $uvTarget --version
+          if ($LASTEXITCODE -ne 0 -or $uvVersion -notmatch [regex]::Escape($env:INTEGRATION_UV_VERSION)) {
+            throw "Pinned uv validation failed: $uvVersion"
+          }
+          foreach ($relativePath in @('python\python.exe', 'python\Scripts\pip.exe', 'python\Scripts\uv.exe', 'git\bin\git.exe')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $deployStage $relativePath) -PathType Leaf)) {
+              throw "Full environment is incomplete: missing $relativePath"
+            }
+          }
+          $reparsePoints = @(Get-ChildItem -LiteralPath $deployStage -Force -Recurse | Where-Object { ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 })
+          if ($reparsePoints.Count -ne 0) {
+            throw "Full environment staging contains $($reparsePoints.Count) reparse points"
+          }
+          $environmentInfo = Get-Content -LiteralPath "$env:RUNNER_TEMP\alpha-environment-info.json" -Raw | ConvertFrom-Json
+          $environmentInfo | Add-Member -NotePropertyName uv_version -NotePropertyValue $uvVersion -Force
+          $environmentInfo | Add-Member -NotePropertyName archive_entries -NotePropertyValue $archiveResult.EntryCount -Force
+          $environmentInfo | Add-Member -NotePropertyName expanded_bytes -NotePropertyValue $archiveResult.ExpandedBytes -Force
+          $environmentInfo | ConvertTo-Json | Out-File -LiteralPath (Join-Path $deployStage 'environment-info.json') -Encoding utf8
+          Move-Item -LiteralPath $deployStage -Destination $environmentTarget -ErrorAction Stop
+        shell: pwsh
+
+      - name: Verify Alpha Full layout without launching the application
+        run: |
+          $stage = Join-Path $env:AUTO_MAS_RELEASE_OUTPUT_ROOT 'win-unpacked'
+          $required = @(
+            'AUTO-MAS-v6-Experimental-Alpha.exe',
+            'resources\app.asar',
+            'resources\integration-snapshot\manifest.json',
+            'resources\integration-snapshot\source-provenance.json',
+            'resources\integration-snapshot\plugins\wheels\manifest.json',
+            'resources\integration-snapshot\plugins\wheels\runtime-lock.json',
+            'resources\integration-snapshot\scripts\verify_offline_first_start.ps1',
+            'resources\integration-snapshot\scripts\verify_wheelhouse_snapshot.py',
+            'resources\integration-snapshot\evidence\ALPHA_README.md',
+            'resources\integration-snapshot\evidence\RELEASE_NOTES.md',
+            'resources\integration-snapshot\evidence\KNOWN_GAPS.md',
+            'resources\integration-snapshot\evidence\MANUAL_TEST_CARDS.md',
+            'resources\integration-snapshot\evidence\OFFLINE_FIRST_START.md',
+            'resources\integration-snapshot\evidence\CI_GATES.json',
+            'environment\python\python.exe',
+            'environment\python\Scripts\pip.exe',
+            'environment\python\Scripts\uv.exe',
+            'environment\git\bin\git.exe',
+            'resources\assets\AUTO-MAS.ico'
+          )
+          foreach ($relativePath in $required) {
+            $candidate = Join-Path $stage $relativePath
+            if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+              throw "Alpha Full layout is missing: $relativePath"
+            }
+          }
+          $reparsePoints = @(Get-ChildItem -LiteralPath $stage -Force -Recurse | Where-Object { ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 })
+          if ($reparsePoints.Count -ne 0) {
+            throw "Alpha Full layout contains $($reparsePoints.Count) reparse points"
+          }
+          & (Join-Path $stage 'environment\python\python.exe') -I -V
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled Python failed version probe' }
+          & (Join-Path $stage 'environment\python\Scripts\uv.exe') --version
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled uv failed version probe' }
+          & (Join-Path $stage 'environment\git\bin\git.exe') --version
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled git failed version probe' }
+        shell: pwsh
+
+      - name: Generate Alpha installer and evidence plan
+        env:
+          ALPHA_VERSION: ${{ steps.release-metadata.outputs.version_tag }}
+        run: |
+          $stage = Join-Path $env:AUTO_MAS_RELEASE_OUTPUT_ROOT 'win-unpacked'
+          node frontend/scripts/generate-experimental-alpha-installer.mjs prepare `
+            --stage "$stage" `
+            --output "$env:ALPHA_ARTIFACT_ROOT" `
+            --version "$env:ALPHA_VERSION" `
+            --wheelhouse-sha256 "$env:AUDITED_WHEELHOUSE_SHA256" `
+            --environment-sha256 "$env:AUDITED_ENVIRONMENT_SHA256" `
+            --git-sha "$env:GITHUB_SHA"
+          $evidenceIndex = Join-Path $stage 'resources\integration-snapshot\evidence\EVIDENCE_INDEX.json'
+          if (-not (Test-Path -LiteralPath $evidenceIndex -PathType Leaf)) {
+            throw "Alpha staged evidence index was not generated: $evidenceIndex"
+          }
+          $artifactEvidenceIndex = Join-Path $env:ALPHA_ARTIFACT_ROOT 'evidence\EVIDENCE_INDEX.json'
+          if (-not (Test-Path -LiteralPath $artifactEvidenceIndex -PathType Leaf)) {
+            throw "Alpha artifact evidence index was not copied: $artifactEvidenceIndex"
+          }
+          node frontend/scripts/generate-experimental-alpha-installer.mjs verify-stage `
+            --stage "$stage"
+        shell: pwsh
+
+      - name: Build Alpha Full installer and portable archive
+        env:
+          ALPHA_VERSION: ${{ steps.release-metadata.outputs.version_tag }}
+        run: |
+          choco install innosetup --version=6.7.1 --source=https://community.chocolatey.org/api/v2/ --yes --no-progress --limit-output --require-checksums
+          $iscc = 'C:\Program Files (x86)\Inno Setup 6\iscc.exe'
+          if (-not (Test-Path -LiteralPath $iscc -PathType Leaf)) { throw 'Pinned Inno Setup compiler is unavailable' }
+          Import-Module "$env:GITHUB_WORKSPACE\.github\workflows\scripts\ArchiveSafety.psm1" -Force
+          $languagePath = Join-Path $env:RUNNER_TEMP 'ChineseSimplified.isl'
+          Invoke-BoundedHttpsDownload `
+            -Uri ([Uri]'https://raw.githubusercontent.com/jrsoftware/issrc/683ee7eabfbce807f901c5da83fc5ff1a3ecb693/Files/Languages/ChineseSimplified.isl') `
+            -DestinationPath $languagePath `
+            -MaxBytes 1048576 | Out-Null
+          $languageHash = (Get-FileHash -LiteralPath $languagePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($languageHash -ne '6753be2c5e2740d859900fd902824db2ec568da5c5b52486524c9762d778b0b0') {
+            throw "Pinned Inno Setup Simplified Chinese translation hash mismatch: $languageHash"
+          }
+          Copy-Item -LiteralPath $languagePath -Destination (Join-Path (Split-Path -Parent $iscc) 'Languages\ChineseSimplified.isl')
+          & $iscc "$env:ALPHA_ARTIFACT_ROOT\experimental-alpha-full.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
+          $installerPath = Join-Path $env:ALPHA_ARTIFACT_ROOT "AUTO-MAS-v6-Experimental-Alpha-Full-Setup-$env:ALPHA_VERSION-x64.exe"
+          if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf)) {
+            throw "Alpha Full installer was not produced: $installerPath"
+          }
+          $stage = Join-Path $env:AUTO_MAS_RELEASE_OUTPUT_ROOT 'win-unpacked'
+          $archivePath = Join-Path $env:ALPHA_ARTIFACT_ROOT "AUTO-MAS-v6-Experimental-Alpha-Full-$env:ALPHA_VERSION-x64.zip"
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archivePath -CompressionLevel Optimal
+          node frontend/scripts/generate-experimental-alpha-installer.mjs finalize `
+            --prepared-manifest "$env:ALPHA_ARTIFACT_ROOT\alpha-release-manifest.prepared.json"
+          foreach ($relativePath in @('alpha-release-manifest.json', 'evidence\EVIDENCE_INDEX.json')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $env:ALPHA_ARTIFACT_ROOT $relativePath) -PathType Leaf)) {
+              throw "Alpha final evidence is missing: $relativePath"
+            }
+          }
+        shell: pwsh
+
+      - name: Upload Alpha Full package and evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: auto-mas-v6-experimental-alpha
+          path: ${{ env.ALPHA_ARTIFACT_ROOT }}
+          if-no-files-found: error
+          retention-days: 30

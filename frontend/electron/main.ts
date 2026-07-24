@@ -1,4 +1,4 @@
-﻿import { exec, spawn } from 'child_process'
+﻿import { spawn } from 'child_process'
 import {
   app,
   BrowserWindow,
@@ -13,17 +13,38 @@ import {
   type Display,
   type Rectangle,
 } from 'electron'
+import { randomUUID } from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
 import { checkEnvironment, getAppRoot } from './services/environmentService'
+import { getRendererDevServerUrl } from './services/rendererRuntimePolicy'
 import {
   registerInitializationHandlers,
   cleanupInitializationResources,
+  getManagedBackendProcesses,
+  prewarmBackend,
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
-import { prewarmBackend } from './ipc/initializationHandlers'
 
 import { getLogger, initializeLogger } from './services/logger'
+import { buildElevationLaunchSpec } from './services/elevationService'
+import { isProcessElevated } from './services/adminPolicy'
+import {
+  isTrustedRendererNavigation,
+  normalizeExternalNavigation,
+  type RendererNavigationPolicy,
+} from './services/rendererSecurityPolicy'
+import {
+  isSafeDocumentPath,
+  resolveDirectChildPath,
+  resolveRendererFilePath,
+} from './services/fileAccessPolicy'
+import {
+  buildElevationHandoffArguments,
+  completeElevationHandoff,
+  readElevationHandoffToken,
+  waitForSingleInstanceLock,
+} from './services/singleInstanceHandoff'
 import AdmZip = require('adm-zip')
 
 // 初始化日志系统（必须在创建 logger 之前）
@@ -31,89 +52,110 @@ initializeLogger()
 
 const logger = getLogger('主进程')
 
-// 强制清理相关进程的函数
-async function forceKillRelatedProcesses(): Promise<void> {
-  try {
-    const { killAllRelatedProcesses } = await import('./utils/processManager')
-    await killAllRelatedProcesses()
-    logger.info('所有相关进程已清理')
-  } catch (error) {
-    logger.error(`清理进程时出错: ${error}`)
+const ELEVATION_HANDOFF_TIMEOUT_MS = 60_000
+let pendingElevationHandoffToken: string | null = null
+let pendingElevationHandoffTimeout: NodeJS.Timeout | null = null
 
-    // 备用清理方法
-    if (process.platform === 'win32') {
-      return new Promise(resolve => {
-        // 使用更简单的命令强制结束相关进程
-        exec(`taskkill /f /im python.exe`, error => {
-          if (error) {
-            logger.warn(`备用清理方法失败: ${error.message}`)
-          } else {
-            logger.info('备用清理方法执行成功')
-          }
-          resolve()
-        })
+function clearPendingElevationHandoff(): void {
+  pendingElevationHandoffToken = null
+  if (pendingElevationHandoffTimeout) {
+    clearTimeout(pendingElevationHandoffTimeout)
+    pendingElevationHandoffTimeout = null
+  }
+}
+
+// 旧实例只在带随机令牌的新实例到达后释放单例锁；UAC 取消时继续运行。
+async function restartAsAdmin(): Promise<{ success: boolean; error?: string }> {
+  if (process.platform !== 'win32') {
+    return { success: false, error: 'Administrator restart is only supported on Windows' }
+  }
+  if (pendingElevationHandoffToken) {
+    return { success: false, error: 'Administrator restart is already pending' }
+  }
+
+  const handoffToken = randomUUID()
+  pendingElevationHandoffToken = handoffToken
+  pendingElevationHandoffTimeout = setTimeout(() => {
+    logger.warn('管理员重启交接超时，当前实例继续运行')
+    clearPendingElevationHandoff()
+  }, ELEVATION_HANDOFF_TIMEOUT_MS)
+
+  const forwardedArguments = buildElevationHandoffArguments(process.argv.slice(1), handoffToken)
+  const launchSpec = buildElevationLaunchSpec(process.execPath, forwardedArguments)
+
+  return await new Promise(resolve => {
+    const helper = spawn(launchSpec.command, launchSpec.args, launchSpec.options)
+    let settled = false
+    const finish = (result: { success: boolean; error?: string }) => {
+      if (settled) return
+      settled = true
+      if (!result.success) {
+        clearPendingElevationHandoff()
+      }
+      resolve(result)
+    }
+
+    helper.once('error', error => {
+      finish({ success: false, error: `Unable to request administrator restart: ${error.message}` })
+    })
+    helper.once('close', code => {
+      if (code === 0) {
+        finish({ success: true })
+        return
+      }
+      finish({
+        success: false,
+        error:
+          code == null ? 'Administrator restart was cancelled' : `Elevation helper exited ${code}`,
       })
-    }
-  }
-}
-
-// 检查是否以管理员权限运行
-function isRunningAsAdmin(): boolean {
-  try {
-    // 在Windows上，尝试写入系统目录来检查管理员权限
-    if (process.platform === 'win32') {
-      const testPath = path.join(process.env.WINDIR || 'C:\\Windows', 'temp', 'admin-test.tmp')
-      try {
-        fs.writeFileSync(testPath, 'test')
-        fs.unlinkSync(testPath)
-        return true
-      } catch {
-        return false
-      }
-    }
-    return true // 非Windows系统暂时返回true
-  } catch {
-    return false
-  }
-}
-
-// 重新以管理员权限启动应用
-function restartAsAdmin(): void {
-  if (process.platform === 'win32') {
-    const exePath = process.execPath
-    const args = process.argv.slice(1)
-
-    // 使用PowerShell以管理员权限启动
-    spawn(
-      'powershell',
-      [
-        '-Command',
-        `Start-Process -FilePath "${exePath}" -ArgumentList "${args.join(' ')}" -Verb RunAs`,
-      ],
-      {
-        detached: true,
-        stdio: 'ignore',
-      }
-    )
-
-    app.quit()
-  }
+    })
+  })
 }
 
 let tray: Tray | null = null
 let isQuitting = false
+let shutdownCleanupStarted = false
+let shutdownCleanupComplete = false
+let shutdownCleanupPromise: Promise<void> | null = null
 let saveWindowStateTimeout: NodeJS.Timeout | null = null
 let isInitialStartup = true // 标记是否为初次启动
 const isAutoStart = process.argv.includes('--auto-start') // 是否由开机自启动任务计划拉起
 
 const HEARTBEAT_LOG_KEYWORD_RE = /(\bping\b|\bpong\b|heartbeat|心跳)/i
 
+function runShutdownCleanup(): Promise<void> {
+  if (shutdownCleanupPromise) {
+    return shutdownCleanupPromise
+  }
+  shutdownCleanupStarted = true
+  logger.info('应用准备退出，安全停止当前实例管理的后端')
+
+  if (saveWindowStateTimeout) {
+    clearTimeout(saveWindowStateTimeout)
+    saveWindowStateTimeout = null
+  }
+  destroyTray()
+
+  shutdownCleanupPromise = cleanupInitializationResources()
+    .then(result => {
+      if (result.success) {
+        logger.info('当前实例管理的后端资源清理完成')
+      } else {
+        logger.warn(`当前实例管理的后端未停止: ${result.error}`)
+      }
+    })
+    .catch(error => {
+      logger.error(`安全清理后端资源失败: ${error instanceof Error ? error.message : error}`)
+    })
+  return shutdownCleanupPromise
+}
+
 function shouldDropHeartbeatProcessLog(
   level: string,
   moduleName: string,
   message: string
 ): boolean {
-  const isProd = app.isPackaged && process.env.NODE_ENV !== 'development'
+  const isProd = app.isPackaged
   if (!isProd) {
     return false
   }
@@ -381,6 +423,33 @@ function parseConfigInteger(value: string | undefined, fallback: number): number
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
+function installRendererSecurity(
+  window: Electron.BrowserWindow,
+  policy: RendererNavigationPolicy
+): void {
+  const guardNavigation = (event: Electron.Event, navigationUrl: string) => {
+    if (isTrustedRendererNavigation(navigationUrl, policy)) {
+      return
+    }
+    event.preventDefault()
+    logger.warn('已阻止应用窗口导航到不受信任的地址')
+  }
+
+  window.webContents.on('will-navigate', guardNavigation)
+  window.webContents.on('will-redirect', guardNavigation)
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    const externalUrl = normalizeExternalNavigation(url)
+    if (externalUrl) {
+      void shell.openExternal(externalUrl).catch(error => {
+        logger.warn(`无法在系统浏览器中打开外部链接: ${String(error)}`)
+      })
+    } else {
+      logger.warn('已阻止应用窗口打开不受信任的子窗口地址')
+    }
+    return { action: 'deny' }
+  })
+}
+
 function createWindow() {
   logger.info('开始创建主窗口')
 
@@ -452,8 +521,16 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: true,
       backgroundThrottling: false, // 防止后台节流
     },
+  })
+
+  const devServer = getRendererDevServerUrl(app.isPackaged)
+  const indexHtmlPath = path.join(app.getAppPath(), 'dist', 'index.html')
+  installRendererSecurity(win, {
+    devServerUrl: devServer,
+    packagedHtmlPath: indexHtmlPath,
   })
 
   // 把局部的 win 赋值给模块级（供其他模块/函数用）
@@ -584,12 +661,10 @@ function createWindow() {
   }
 
   win.setMenuBarVisibility(false)
-  const devServer = process.env.VITE_DEV_SERVER_URL
   if (devServer) {
     logger.info(`加载开发服务器: ${devServer}`)
     win.loadURL(devServer)
   } else {
-    const indexHtmlPath = path.join(app.getAppPath(), 'dist', 'index.html')
     logger.info(`加载生产环境页面: ${indexHtmlPath}`)
     win.loadFile(indexHtmlPath)
   }
@@ -636,19 +711,6 @@ function createWindow() {
     screen.removeListener('display-removed', handleDisplayConfigurationChanged)
     // 置空模块级引用
     mainWindow = null
-
-    // 如果是正在退出，立即执行进程清理
-    if (isQuitting) {
-      logger.info('窗口关闭，执行最终清理')
-      setTimeout(async () => {
-        try {
-          await forceKillRelatedProcesses()
-        } catch {
-          logger.error('最终清理失败')
-        }
-        process.exit(0)
-      }, 100)
-    }
   })
 
   win.on('minimize', () => {
@@ -720,7 +782,7 @@ function createWindow() {
   logger.info('应用初始化处理器已注册')
 
   // 注册文件处理器
-  registerFileHandlers()
+  registerFileHandlers(() => mainWindow)
   logger.info('文件处理器已注册')
 
   // 初始托盘配置（使用文件配置）
@@ -769,17 +831,22 @@ function createLogWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: true,
       preload: path.join(__dirname, 'preload.js'),
     },
     autoHideMenuBar: true,
     show: false,
   })
 
-  const devServer = process.env.VITE_DEV_SERVER_URL
+  const devServer = getRendererDevServerUrl(app.isPackaged)
+  const indexHtmlPath = path.join(app.getAppPath(), 'dist', 'index.html')
+  installRendererSecurity(logWindow, {
+    devServerUrl: devServer,
+    packagedHtmlPath: indexHtmlPath,
+  })
   if (devServer) {
     logWindow.loadURL(`${devServer}#/logs`)
   } else {
-    const indexHtmlPath = path.join(app.getAppPath(), 'dist', 'index.html')
     logWindow.loadFile(indexHtmlPath, { hash: '/logs' })
   }
 
@@ -895,8 +962,11 @@ ipcMain.handle('log:export', async () => {
 ipcMain.handle('log:getContent', async (_event, lines?: number, fileName?: string) => {
   try {
     const appRoot = getAppRoot()
-    const logFile = fileName || 'frontend.log'
-    const logPath = path.join(appRoot, 'debug', logFile)
+    const logPath = resolveDirectChildPath(path.join(appRoot, 'debug'), fileName, 'frontend.log')
+    if (!logPath) {
+      logger.warn('已拒绝读取日志目录外的文件')
+      return ''
+    }
 
     if (!fs.existsSync(logPath)) {
       return ''
@@ -982,7 +1052,7 @@ ipcMain.handle('app-restart', () => {
   logger.info('重启应用程序...')
   isQuitting = true
   app.relaunch()
-  app.exit(0)
+  app.quit()
 })
 
 // 添加强制退出处理器
@@ -994,22 +1064,19 @@ ipcMain.handle('app-quit', () => {
 // 添加进程管理相关的 IPC 处理器
 ipcMain.handle('get-related-processes', async () => {
   try {
-    const { getRelatedProcesses } = await import('./utils/processManager')
-    return await getRelatedProcesses()
+    return await getManagedBackendProcesses()
   } catch {
-    logger.error('获取进程信息失败')
+    logger.error('获取当前实例管理的后端进程失败')
     return []
   }
 })
 
 ipcMain.handle('kill-all-processes', async () => {
-  try {
-    await forceKillRelatedProcesses()
-    return { success: true }
-  } catch (error) {
-    logger.error('强制清理进程失败')
-    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  const result = await cleanupInitializationResources()
+  if (!result.success) {
+    logger.warn(`安全停止后端失败: ${result.error}`)
   }
+  return result
 })
 
 ipcMain.handle('window-is-maximized', () => {
@@ -1019,7 +1086,11 @@ ipcMain.handle('window-is-maximized', () => {
 // 在系统默认浏览器中打开URL
 ipcMain.handle('open-url', async (_event, url: string) => {
   try {
-    await shell.openExternal(url)
+    const externalUrl = normalizeExternalNavigation(url)
+    if (!externalUrl) {
+      throw new Error('Unsupported external URL')
+    }
+    await shell.openExternal(externalUrl)
     return { success: true }
   } catch (error) {
     if (error instanceof Error) {
@@ -1035,20 +1106,33 @@ ipcMain.handle('open-url', async (_event, url: string) => {
 // 打开文件
 ipcMain.handle('open-file', async (_event, filePath: string) => {
   try {
-    await shell.openPath(filePath)
+    const resolvedPath = resolveRendererFilePath(filePath)
+    if (!isSafeDocumentPath(resolvedPath) || !fs.statSync(resolvedPath).isFile()) {
+      throw new Error('Only existing non-executable documents may be opened')
+    }
+    const openError = await shell.openPath(resolvedPath)
+    if (openError) {
+      throw new Error(openError)
+    }
+    return { success: true }
   } catch (error) {
     logger.error(`打开文件失败: ${error}`)
-    throw error
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
   }
 })
 
 // 显示文件所在目录并选中文件
 ipcMain.handle('show-item-in-folder', async (_event, filePath: string) => {
   try {
-    shell.showItemInFolder(filePath)
+    const resolvedPath = resolveRendererFilePath(filePath)
+    if (!fs.existsSync(resolvedPath)) {
+      throw new Error('File does not exist')
+    }
+    shell.showItemInFolder(resolvedPath)
+    return { success: true }
   } catch (error) {
     logger.error(`显示文件所在目录失败: ${error}`)
-    throw error
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
   }
 })
 
@@ -1357,155 +1441,112 @@ ipcMain.handle('set-initialized-version', async (_event, version: string) => {
 
 // 管理员权限相关
 ipcMain.handle('check-admin', () => {
-  return isRunningAsAdmin()
+  return isProcessElevated()
 })
 
-ipcMain.handle('restart-as-admin', () => {
-  restartAsAdmin()
+ipcMain.handle('restart-as-admin', async () => {
+  return await restartAsAdmin()
 })
 
 // 应用生命周期
-// 保证应用单例运行
-const gotTheLock = app.requestSingleInstanceLock()
-
-if (!gotTheLock) {
-  app.quit()
-  process.exit(0)
-}
-
-// 在沙箱环境下运行会导致无法启动子进程，强制禁用沙箱
-app.commandLine.appendSwitch('no-sandbox')
-
-// ★ 尽可能早地预热后端：单例确认后立即 spawn Python，
-// 比 app.whenReady() 早约 150-200ms，充分利用 Chromium 初始化的空档
-void prewarmBackend().catch(error => {
-  logger.error('后端预热调用失败', error)
-})
-
-app.on('second-instance', () => {
-  if (mainWindow) {
-    // 如果窗口最小化，先恢复
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore()
+function registerApplicationLifecycle(): void {
+  app.on('second-instance', (_event, commandLine, _workingDirectory, additionalData) => {
+    const handoffData = additionalData as { elevationHandoffToken?: unknown }
+    const suppliedToken =
+      typeof handoffData.elevationHandoffToken === 'string'
+        ? handoffData.elevationHandoffToken
+        : readElevationHandoffToken(commandLine)
+    if (pendingElevationHandoffToken && suppliedToken === pendingElevationHandoffToken) {
+      logger.info('已确认管理员实例，完成旧实例清理后再交接单例锁')
+      clearPendingElevationHandoff()
+      isQuitting = true
+      void completeElevationHandoff(
+        async () => {
+          await runShutdownCleanup()
+          shutdownCleanupComplete = true
+        },
+        () => app.releaseSingleInstanceLock(),
+        () => app.quit()
+      )
+      return
     }
-    mainWindow.setSkipTaskbar(false)
-    mainWindow.show()
-    mainWindow.focus()
-  }
-})
 
-app.on('before-quit', async event => {
-  // 只处理一次，避免多重触发
-  if (!isQuitting) {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore()
+      }
+      mainWindow.setSkipTaskbar(false)
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+
+  app.on('before-quit', event => {
+    if (shutdownCleanupComplete) {
+      return
+    }
+
     event.preventDefault()
     isQuitting = true
-
-    logger.info('应用准备退出')
-
-    // 清理定时器
-    if (saveWindowStateTimeout) {
-      clearTimeout(saveWindowStateTimeout)
-      saveWindowStateTimeout = null
+    if (shutdownCleanupStarted) {
+      return
     }
+    void runShutdownCleanup().finally(() => {
+      shutdownCleanupComplete = true
+      app.quit()
+    })
+  })
 
-    // 清理托盘
-    destroyTray()
+  void app.whenReady().then(() => {
+    logger.info(`应用版本: ${app.getVersion()}`)
+    logger.info(`Electron版本: ${process.versions.electron}`)
+    logger.info(`Node版本: ${process.versions.node}`)
+    logger.info(`平台: ${process.platform}`)
 
-    // 清理初始化资源
-    try {
-      await cleanupInitializationResources()
-      logger.info('初始化资源清理完成')
-    } catch {
-      logger.error('资源清理失败')
+    const startupConfig = loadConfig()
+    createWindow()
+
+    setImmediate(() => {
+      if (!isProcessElevated()) {
+        logger.warn('应用未以管理员权限运行')
+      } else {
+        logger.info('应用以管理员权限运行')
+      }
+    })
+
+    void prewarmBackend({
+      currentVersion: app.getVersion(),
+      initializedVersion:
+        typeof startupConfig.initializedVersion === 'string'
+          ? startupConfig.initializedVersion
+          : null,
+      autoUpdateEnabled: Boolean(startupConfig.Update?.IfAutoUpdate),
+    }).catch(error => {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(`生命周期后端预热失败，将由初始化流程处理: ${errorMsg}`)
+    })
+  })
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      isQuitting = true
+      app.quit()
     }
+  })
 
-    // 立即开始强制清理，不等待优雅关闭
-    logger.info('开始强制清理所有相关进程')
+  app.on('activate', () => {
+    if (mainWindow === null) createWindow()
+  })
+}
 
-    try {
-      // 并行执行多种清理方法
-      const cleanupPromises = [
-        // 方法1: 使用我们的进程管理器
-        forceKillRelatedProcesses(),
-
-        // 方法2: 直接使用 taskkill 和 PowerShell 命令
-        new Promise<void>(resolve => {
-          if (process.platform === 'win32') {
-            const appRoot = getAppRoot()
-            const escapedAppRoot = appRoot.replace(/\\/g, '\\\\')
-            const commands = [
-              `taskkill /f /im python.exe`,
-              // 使用 PowerShell 代替 wmic
-              `powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*main.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`,
-              `powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${escapedAppRoot}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`,
-            ]
-
-            let completed = 0
-            commands.forEach(cmd => {
-              exec(cmd, () => {
-                completed++
-                if (completed === commands.length) {
-                  resolve()
-                }
-              })
-            })
-
-            // 2秒超时
-            setTimeout(resolve, 2000)
-          } else {
-            resolve()
-          }
-        }),
-      ]
-
-      // 最多等待3秒
-      const timeoutPromise = new Promise(resolve => setTimeout(resolve, 3000))
-      await Promise.race([Promise.all(cleanupPromises), timeoutPromise])
-
-      logger.info('进程清理完成')
-    } catch {
-      logger.error('进程清理时出错')
-    }
-
-    logger.info('应用强制退出')
-
-    // 使用 process.exit 而不是 app.exit，更加强制
-    setTimeout(() => {
-      process.exit(0)
-    }, 500)
-  }
-})
-
-app.whenReady().then(async () => {
-  logger.info(`应用版本: ${app.getVersion()}`)
-  logger.info(`Electron版本: ${process.versions.electron}`)
-  logger.info(`Node版本: ${process.versions.node}`)
-  logger.info(`平台: ${process.platform}`)
-
-  // 注册文件操作处理器（在窗口创建之前注册）
-  registerFileHandlers()
-  logger.info('文件操作处理器已注册')
-
-  // 检查管理员权限
-  if (!isRunningAsAdmin()) {
-    logger.warn('应用未以管理员权限运行')
-    // 在生产环境中，可以选择是否强制要求管理员权限
-    // 这里先创建窗口，让用户选择是否重新启动
-  } else {
-    logger.info('应用以管理员权限运行')
-  }
-
-  createWindow()
-})
-
-app.on('window-all-closed', async () => {
-  if (process.platform !== 'darwin') {
-    isQuitting = true
-
+void waitForSingleInstanceLock({
+  commandLine: process.argv,
+  requestLock: additionalData => app.requestSingleInstanceLock(additionalData),
+  timeoutMs: ELEVATION_HANDOFF_TIMEOUT_MS,
+}).then(gotTheLock => {
+  if (!gotTheLock) {
     app.quit()
+    process.exit(0)
   }
-})
-
-app.on('activate', () => {
-  if (mainWindow === null) createWindow()
+  registerApplicationLifecycle()
 })

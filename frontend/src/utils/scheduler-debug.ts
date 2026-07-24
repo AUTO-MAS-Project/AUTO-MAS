@@ -1,3 +1,5 @@
+import { useWebSocket } from '@/composables/useWebSocket'
+
 // 调度中心调试工具
 const logger = window.electronAPI.getLogger('调度器调试')
 
@@ -48,61 +50,26 @@ export function debugScheduler() {
   }
 }
 
-// 测试WebSocket连接
-export async function testWebSocketConnection() {
+// 复用主连接测试 WebSocket，避免调试连接替换正常渲染器会话。
+export function testWebSocketConnection() {
   logger.info('=== 测试WebSocket连接 ===')
-
-  try {
-    // 从 Electron 获取 WebSocket 端点
-    let wsUrl = 'ws://localhost:36163/api/core/ws'
-    if (window.electronAPI?.getApiEndpoint) {
-      try {
-        const wsEndpoint = await window.electronAPI.getApiEndpoint('websocket')
-        wsUrl = `${wsEndpoint}/api/core/ws`
-        logger.info(`使用端点: ${wsUrl}`)
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.warn(`获取端点失败，使用默认值: ${errorMsg}`)
-      }
-    }
-
-    const ws = new WebSocket(wsUrl)
-
-    ws.onopen = () => {
-      logger.info('WebSocket连接成功')
-      ws.send(
-        JSON.stringify({
-          type: 'Signal',
-          data: { Connect: true, connectionId: 'test-connection' },
-        })
-      )
-    }
-
-    ws.onmessage = event => {
-      const message = JSON.parse(event.data)
-      logger.info(`收到消息: ${JSON.stringify(message)}`)
-    }
-
-    ws.onerror = error => {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`WebSocket错误: ${errorMsg}`)
-    }
-
-    ws.onclose = event => {
-      logger.info(`WebSocket连接关闭: code=${event.code}, reason=${event.reason}`)
-    }
-
-    // 5秒后关闭测试连接
-    setTimeout(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.close()
-        logger.info('测试连接已关闭')
-      }
-    }, 5000)
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`无法创建WebSocket连接: ${errorMsg}`)
+  const { getConnectionInfo, sendRaw } = useWebSocket()
+  const connection = getConnectionInfo()
+  if (connection.wsReadyState !== WebSocket.OPEN) {
+    logger.warn(`主 WebSocket 未连接: status=${connection.status}`)
+    return false
   }
+
+  const sent = sendRaw(
+    'Signal',
+    {
+      Ping: Date.now(),
+      connectionId: connection.connectionId,
+    },
+    'SchedulerDebug'
+  )
+  logger.info(sent ? 'WebSocket 心跳探测已发送' : 'WebSocket 心跳探测发送失败')
+  return sent
 }
 
 // 在控制台中暴露调试函数

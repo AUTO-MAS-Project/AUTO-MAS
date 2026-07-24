@@ -1,0 +1,16 @@
+{
+  "case_id": "03_partial_activation",
+  "status": "PASS",
+  "notes": "",
+  "error": null,
+  "error_traceback": null,
+  "snapshots": {
+    "after_load_instances": "Snapshot(at=1784824033.2491302, event_bus_handlers={'fake:probe': 1, 'fake:probe_global': 1}, loader_records={'good-1': {'instance_id': 'good-1', 'plugin_name': 'fake_good', 'status': 'active', 'lifecycle_phase': 'active', 'error': None, 'listener_ids': [], 'generation': 1, 'reload_count': 0, 'last_reload_reason': None, 'on_load_attempted': True, 'on_start_attempted': True, 'on_stop_completed': False, 'on_unload_completed': False, 'provides': [], 'needs': [], 'missing': []}, 'bad-1': {'instance_id': 'bad-1', 'plugin_name': 'fake_bad', 'status': 'error', 'lifecycle_phase': 'on_unload', 'error': 'RuntimeError: on_start intentionally raised', 'listener_ids': [], 'generation': 1, 'reload_count': 0, 'last_reload_reason': None, 'on_load_attempted': True, 'on_start_attempted': True, 'on_stop_completed': True, 'on_unload_completed': True, 'provides': [], 'needs': [], 'missing': []}}, discovered_plugins={'fake_bad': {'source': 'pypi', 'distribution': 'automas-fake-bad', 'version': '0.1.0', 'system': False, 'locked': False}, 'fake_good': {'source': 'pypi', 'distribution': 'automas-fake-good', 'version': '0.1.0', 'system': False, 'locked': False}}, service_owners={}, sys_modules_keys_sample=['fake_plugin_bad', 'fake_plugin_explode', 'fake_plugin_good', 'fake_plugin_lifecycle'])"
+  },
+  "metrics": {
+    "startup_failed_instances": {
+      "bad-1": "RuntimeError: on_start intentionally raised"
+    },
+    "startup_missing_instances": []
+  }
+}

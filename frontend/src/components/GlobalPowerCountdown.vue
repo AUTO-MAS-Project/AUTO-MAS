@@ -41,10 +41,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { Service } from '@/api'
 import { subscribe, unsubscribe } from '@/composables/useWebSocket'
+import { useAppLifecycle } from '@/composables/useAppLifecycle'
 const logger = window.electronAPI.getLogger('全局电源倒计时')
+
+const { initializeAppLifecycle, powerCountdown } = useAppLifecycle()
+initializeAppLifecycle()
 
 // 响应式状态
 const visible = ref(false)
@@ -54,8 +58,26 @@ const countdown = ref<number | undefined>(undefined)
 
 // 倒计时定时器
 let countdownTimer: ReturnType<typeof setInterval> | null = null
+let usesCanonicalCountdown = false
 // WebSocket 订阅 ID
 let subscriptionId: string | null = null
+
+const operationLabels: Record<string, string> = {
+  Shutdown: '关机',
+  ShutdownForce: '强制关机',
+  Reboot: '重启',
+  Hibernate: '休眠',
+  Sleep: '睡眠',
+  KillSelf: '退出 AUTO-MAS',
+  Logoff: '注销账户',
+}
+
+const clearLocalCountdown = () => {
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = null
+  }
+}
 
 // 激活窗口到前台
 const focusWindow = async () => {
@@ -73,12 +95,10 @@ const focusWindow = async () => {
 // 启动倒计时
 const startCountdown = (data: any) => {
   logger.info(`启动倒计时: ${JSON.stringify(data)}`)
+  usesCanonicalCountdown = false
 
   // 清除之前的计时器
-  if (countdownTimer) {
-    clearInterval(countdownTimer)
-    countdownTimer = null
-  }
+  clearLocalCountdown()
 
   // 激活窗口到前台（即使在托盘状态）
   focusWindow()
@@ -110,15 +130,38 @@ const startCountdown = (data: any) => {
   }, 1000)
 }
 
+// 新协议使用后端逐秒发布的真实剩余时间，不再依赖前端自行推算。
+watch(
+  powerCountdown,
+  data => {
+    if (!data) {
+      if (usesCanonicalCountdown) {
+        visible.value = false
+        countdown.value = undefined
+        usesCanonicalCountdown = false
+      }
+      return
+    }
+
+    usesCanonicalCountdown = true
+    clearLocalCountdown()
+    if (!visible.value) void focusWindow()
+    visible.value = true
+
+    const label = operationLabels[data.operation] ?? data.operation ?? '电源操作'
+    title.value = `${label}倒计时`
+    message.value = `程序将在倒计时结束后执行 ${label} 操作`
+    countdown.value = Math.max(0, Number(data.remaining) || 0)
+  },
+  { immediate: true }
+)
+
 // 取消电源操作
 const handleCancel = async () => {
   logger.info('用户取消电源操作')
 
   // 清除倒计时器
-  if (countdownTimer) {
-    clearInterval(countdownTimer)
-    countdownTimer = null
-  }
+  clearLocalCountdown()
 
   // 关闭倒计时弹窗
   visible.value = false
@@ -139,10 +182,7 @@ const handleCancel = async () => {
 
 // 清理函数
 const cleanup = () => {
-  if (countdownTimer) {
-    clearInterval(countdownTimer)
-    countdownTimer = null
-  }
+  clearLocalCountdown()
   if (subscriptionId) {
     unsubscribe(subscriptionId)
     subscriptionId = null
@@ -151,8 +191,8 @@ const cleanup = () => {
 
 // 生命周期
 onMounted(() => {
-  // 直接订阅 Main 消息，处理倒计时
-  subscriptionId = subscribe({ id: 'Main' }, (msg: any) => {
+  // 迁移期保留旧 Message/Countdown；正式 dotted event 由生命周期协调器唯一订阅。
+  subscriptionId = subscribe({ type: 'Message' }, (msg: any) => {
     if (!msg || typeof msg !== 'object') return
 
     const { type, data } = msg

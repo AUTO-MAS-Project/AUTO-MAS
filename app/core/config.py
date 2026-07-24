@@ -79,8 +79,38 @@ from .script_config_codec import form_to_storage, storage_to_form
 logger = get_logger("配置管理")
 
 
+# ── WS core legacy adapter 委托 ──
+# Config.send_json / send_websocket_message 委托给 WS core
+# 在 WS core 未初始化前（如模块导入时）安全降级为 no-op
+
+_ws_send_websocket_message_fn = None
+_ws_send_json_fn = None
+
+
+def _ws_delegate_send_websocket_message(fn) -> None:
+    global _ws_send_websocket_message_fn
+    _ws_send_websocket_message_fn = fn
+
+
+def _ws_delegate_send_json(fn) -> None:
+    global _ws_send_json_fn
+    _ws_send_json_fn = fn
+
+
+async def _ws_send_websocket_message(id: str, type: str, data: dict) -> None:
+    if _ws_send_websocket_message_fn is not None:
+        await _ws_send_websocket_message_fn(id, type, data)
+    # WS core 未初始化时静默降级
+
+
+async def _ws_send_json(data: dict) -> None:
+    if _ws_send_json_fn is not None:
+        await _ws_send_json_fn(data)
+    # WS core 未初始化时静默降级
+
+
 class AppConfig(GlobalConfig):
-    VERSION = "v5.4.0-beta.1"
+    VERSION = "v6.0.0-alpha.NEXUS-OVERDRIVE.20260724.5"
 
     def __init__(self) -> None:
         super().__init__()
@@ -525,10 +555,7 @@ class AppConfig(GlobalConfig):
 
     async def send_json(self, data: dict) -> None:
         """通过WebSocket发送JSON数据"""
-        if Config.websocket is None:
-            self._log_websocket_missing_once()
-            return
-        await Config.websocket.send_json(data)
+        await _ws_send_json(data)
 
     async def send_websocket_message(
         self,
@@ -537,12 +564,7 @@ class AppConfig(GlobalConfig):
         data: Dict[str, Any],
     ) -> None:
         """通过WebSocket发送消息"""
-        if Config.websocket is None:
-            self._log_websocket_missing_once()
-            return
-        await Config.websocket.send_json(
-            WebSocketMessage(id=id, type=type, data=data).model_dump()
-        )
+        await _ws_send_websocket_message(id, type, data)
 
     def _log_websocket_missing_once(self) -> None:
         if self._websocket_missing_logged:
@@ -557,6 +579,17 @@ class AppConfig(GlobalConfig):
 
             repo = self._get_repo()
             if repo is None:
+                snapshot_manifest = Path.cwd() / "res" / "integration-snapshot.json"
+                if snapshot_manifest.is_file():
+                    try:
+                        snapshot = json.loads(snapshot_manifest.read_text(encoding="utf-8"))
+                        source = snapshot.get("source", {})
+                        commit_hash = str(source.get("official_dev_v2") or "snapshot")
+                        snapshot_id = str(snapshot.get("snapshot_id") or "bundled")
+                        generated_at = str(snapshot.get("generated_at") or "unknown")
+                        return True, f"{commit_hash}+{snapshot_id}", generated_at
+                    except Exception as e:
+                        logger.warning(f"读取随包快照版本信息失败: {e}")
                 logger.warning("Git仓库不可用，返回默认版本信息")
                 return False, "unknown", "unknown"
 
@@ -1812,9 +1845,9 @@ class AppConfig(GlobalConfig):
             return None
 
         try:
-            from app.plugins import PluginManager
+            from app.plugins.emulator_compat import get_emulator_service
 
-            emulator_service = PluginManager.service.get("emulator")
+            emulator_service = get_emulator_service()
         except Exception:
             emulator_service = None
 
@@ -2702,10 +2735,12 @@ class AppConfig(GlobalConfig):
             proxy_addr = f"http://{proxy_addr}"
 
         try:
-            logger.info(f"使用代理: {proxy_addr}")
+            # Proxy URIs may contain ``user:password@host``.  Never echo the
+            # address or the parser exception (which can repeat it) to logs.
+            logger.info("已启用网络代理")
             return httpx.Proxy(proxy_addr)
-        except Exception as e:
-            logger.warning(f"代理配置无效: {proxy_addr}, 错误: {e}")
+        except Exception as exc:
+            logger.warning(f"代理配置无效 ({type(exc).__name__})")
             return None
 
     async def get_stage_info(

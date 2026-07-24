@@ -58,6 +58,8 @@ from .ConfigBase import (
     FolderValidator,
     ScriptRootPathValidator,
     EmulatorPathValidator,
+    EncryptedJSONValidator,
+    EncryptedValidator,
     EncryptValidator,
     UUIDValidator,
     DateTimeValidator,
@@ -206,11 +208,15 @@ class Webhook(ConfigBase):
 
         ## Data ------------------------------------------------------------
         ## Webhook URL 地址
-        self.Data_Url = ConfigItem("Data", "Url", "", URLValidator())
+        self.Data_Url = ConfigItem(
+            "Data", "Url", "", EncryptedValidator(URLValidator())
+        )
         ## 消息模板
         self.Data_Template = ConfigItem("Data", "Template", "")
         ## 请求头
-        self.Data_Headers = ConfigItem("Data", "Headers", "{ }", JSONValidator())
+        self.Data_Headers = ConfigItem(
+            "Data", "Headers", "{ }", EncryptedJSONValidator()
+        )
         ## 请求方法
         self.Data_Method = ConfigItem(
             "Data", "Method", "POST", OptionsValidator(["POST", "GET"])
@@ -495,7 +501,9 @@ class MaaUserConfig(ConfigBase):
             "Notify", "IfServerChan", False, BoolValidator()
         )
         ## Server 酱密钥
-        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        self.Notify_ServerChanKey = ConfigItem(
+            "Notify", "ServerChanKey", "", EncryptValidator()
+        )
         ## 自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
@@ -843,7 +851,9 @@ class MaaEndUserConfig(ConfigBase):
             "Notify", "IfServerChan", False, BoolValidator()
         )
         ## Server 酱密钥
-        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        self.Notify_ServerChanKey = ConfigItem(
+            "Notify", "ServerChanKey", "", EncryptValidator()
+        )
         ## 自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
@@ -1325,7 +1335,9 @@ class SrcUserConfig(ConfigBase):
             "Notify", "IfServerChan", False, BoolValidator()
         )
         ## Server 酱密钥
-        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        self.Notify_ServerChanKey = ConfigItem(
+            "Notify", "ServerChanKey", "", EncryptValidator()
+        )
         ## 自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
@@ -1556,7 +1568,9 @@ class M9AUserConfig(ConfigBase):
             "Notify", "IfServerChan", False, BoolValidator()
         )
         ## Server 酱密钥
-        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        self.Notify_ServerChanKey = ConfigItem(
+            "Notify", "ServerChanKey", "", EncryptValidator()
+        )
         ## 自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
@@ -1778,7 +1792,9 @@ class MaaFWUserConfig(ConfigBase):
             "Notify", "IfServerChan", False, BoolValidator()
         )
         ## Server 酱密钥
-        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        self.Notify_ServerChanKey = ConfigItem(
+            "Notify", "ServerChanKey", "", EncryptValidator()
+        )
         ## 自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
@@ -2136,7 +2152,9 @@ class GeneralUserConfig(ConfigBase):
             "Notify", "IfServerChan", False, BoolValidator()
         )
         ## Server 酱密钥
-        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        self.Notify_ServerChanKey = ConfigItem(
+            "Notify", "ServerChanKey", "", EncryptValidator()
+        )
         ## 自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
@@ -2283,7 +2301,9 @@ class OkwwUserConfig(ConfigBase):
         self.Notify_IfServerChan = ConfigItem(
             "Notify", "IfServerChan", False, BoolValidator()
         )
-        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        self.Notify_ServerChanKey = ConfigItem(
+            "Notify", "ServerChanKey", "", EncryptValidator()
+        )
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
         super().__init__()
@@ -2738,7 +2758,7 @@ class PluginConfig(ConfigBase):
                 "Data",
                 "ConfigRaw",
                 "{ }",
-                JSONValidator(),
+                EncryptedJSONValidator(),
                 legacy_name="Config",
             )
             ## 虚拟配置字段（按 schema 校验后的配置）
@@ -2885,7 +2905,9 @@ class GlobalConfig(ConfigBase):
             URLValidator(),
         )
         ## Koishi Token
-        self.Notify_KoishiToken = ConfigItem("Notify", "KoishiToken", "")
+        self.Notify_KoishiToken = ConfigItem(
+            "Notify", "KoishiToken", "", EncryptValidator()
+        )
         ## SMTP 服务器地址
         self.Notify_SMTPServerAddress = ConfigItem("Notify", "SMTPServerAddress", "")
         ## 邮箱授权码
@@ -2901,7 +2923,9 @@ class GlobalConfig(ConfigBase):
             "Notify", "IfServerChan", False, BoolValidator()
         )
         ## Server 酱密钥
-        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        self.Notify_ServerChanKey = ConfigItem(
+            "Notify", "ServerChanKey", "", EncryptValidator()
+        )
         ## 自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
@@ -2922,7 +2946,12 @@ class GlobalConfig(ConfigBase):
             "Update", "Channel", "stable", OptionsValidator(["stable", "beta"])
         )
         ## 代理地址
-        self.Update_ProxyAddress = ConfigItem("Update", "ProxyAddress", "")
+        self.Update_ProxyAddress = ConfigItem(
+            "Update",
+            "ProxyAddress",
+            "",
+            EncryptedValidator(StringValidator()),
+        )
         ## 镜像站 CDK
         self.Update_MirrorChyanCDK = ConfigItem(
             "Update", "MirrorChyanCDK", "", EncryptValidator()

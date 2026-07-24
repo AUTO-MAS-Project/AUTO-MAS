@@ -76,7 +76,7 @@ export default [
       globals: globals.node,
       parser: tseslint.parser,
       parserOptions: {
-        project: [path.join(__dirname, 'tsconfig.electron.json')],
+        project: [path.join(__dirname, 'tsconfig.eslint.json')],
         tsconfigRootDir: __dirname,
       },
     },
@@ -94,10 +94,19 @@ export default [
 
   // -------- 公共 JS/配置文件 ----------
   {
-    files: ['scripts/**/*.mjs'],
+    files: ['scripts/**/*.mjs', 'electron-builder*.cjs'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
+      globals: globals.node,
+    },
+  },
+
+  {
+    files: ['scripts/alpha-wheelhouse-provenance.cjs'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'commonjs',
       globals: globals.node,
     },
   },

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "auto-mas-core"
-version = "5.2.0"
+version = "6.0.0a1"
 description = "AUTO-MAS core system plugin and SDK"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
