@@ -45,7 +45,10 @@ from ..common.provider import (
     resolve_game_executable_path,
 )
 from ..common.report import OkScriptReportHandler
-from ..common.runtime_lock import get_ok_script_root_lock
+from ..common.runtime_lock import (
+    get_ok_script_config_lock,
+    get_ok_script_root_lock,
+)
 from ..providers import detect_ok_script_provider
 from ..shell.manifest import OkProjectInspectError, OkProjectManifest, inspect_ok_project
 from ..shell.runtime import (
@@ -55,13 +58,8 @@ from ..shell.runtime import (
     OkShellRuntimeError,
 )
 from app.task.general.tools import execute_script_task
-from app.utils import (
-    ProcessInfo,
-    ProcessManager,
-    decode_bytes,
-    get_logger,
-    is_process_running,
-)
+from app.utils import decode_bytes, get_logger
+from app.utils.ProcessManager import ProcessInfo, ProcessManager, is_process_running
 from app.utils.LogMonitor import LogMonitor
 from app.utils.constants import UTC4
 
@@ -225,6 +223,8 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         ] = {}
         self.script_root_lock: asyncio.Lock | None = None
         self.script_root_lock_acquired = False
+        self.user_config_lock: asyncio.Lock | None = None
+        self.user_config_lock_acquired = False
         self.script_log_path: Path = Path()
         self.script_event_log_path: Path = Path()
         self.log_monitor: LogMonitor | None = None
@@ -380,12 +380,15 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             self.script_info.script_id,
             self.cur_user_item.user_id,
         )
+        await self._acquire_user_config_lock()
+        script_uid = str(uuid.UUID(self.script_info.script_id))
+        user_uid = str(uuid.UUID(self.cur_user_item.user_id))
         self.script_config_backup_path = (
             Path.cwd()
             / "data"
-            / self.script_info.script_id
+            / script_uid
             / "Temp"
-            / self.cur_user_item.user_id
+            / user_uid
             / "ConfigFile"
         )
         self.had_original_script_config = False
@@ -1313,6 +1316,7 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             if report_handler is not None:
                 with suppress(Exception):
                     await report_handler.stop(self)
+            self._release_user_config_lock()
             self._release_script_root_lock()
 
     async def _finalize_task(self) -> None:
@@ -1438,6 +1442,25 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         ):
             self.script_root_lock.release()
         self.script_root_lock_acquired = False
+
+    async def _acquire_user_config_lock(self) -> None:
+        if self.mas_config_dir == Path():
+            raise RuntimeError("ok-script 用户配置目录未初始化")
+        self.user_config_lock = get_ok_script_config_lock(self.mas_config_dir)
+        if self.user_config_lock_acquired:
+            return
+        self.script_info.log = "正在等待当前用户配置编辑完成"
+        await self.user_config_lock.acquire()
+        self.user_config_lock_acquired = True
+
+    def _release_user_config_lock(self) -> None:
+        if (
+            self.user_config_lock_acquired
+            and self.user_config_lock is not None
+            and self.user_config_lock.locked()
+        ):
+            self.user_config_lock.release()
+        self.user_config_lock_acquired = False
 
     async def _wait_script_exit(self, *, timeout: int = 10) -> None:
         """等待脚本收尾退出，进程查询或清理超时不得阻塞调度终态。"""
