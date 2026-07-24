@@ -2,7 +2,7 @@
 
 `automas_plugin_ok_script_adapter` adapts projects built on the `ok-script` framework
 to AUTO-MAS. It is a generic adapter: project identity, task choices, configuration
-directory and launch protocol come from the selected project Manifest, not from an
+directory and launch protocol candidates come from the selected project descriptor, not from an
 OK-EF, OK-WW or OK-NTE default.
 
 ## Installation and Discovery
@@ -25,12 +25,18 @@ global proxy setting.
 
 Enable the `ok_script_adapter` instance in Plugin Management, then create an
 `ok-script` project from Script Management. The project editor stores only the selected
-root, game launch settings and runtime limits. On save, a valid Manifest fills the
+root, game launch settings and runtime limits. On save, a valid descriptor fills the
 resource name and project label.
 
-The adapter accepts a project that exposes `pyappify.yml` or supported installed-app
-metadata. It selects `framework-cli`, `main-script` or `legacy-exe` at runtime. The
-same inspection can be checked from the console shell:
+The adapter accepts a project that exposes `pyappify.yml`, `app.json`, or a supported
+`config.py` source/install layout. `ProjectParser` reads those files with AST/JSON
+parsers and never imports the project module. Descriptor v2 records the real config
+source/target/folder, ordered tasks, metadata sources, protocol candidates,
+capabilities, diagnostics, and a change fingerprint.
+
+`framework-cli`, `main-script`, and `legacy-exe` are candidates only. Automatic
+execution remains disabled until a registered provider explicitly marks that project
+runtime as verified. The same inspection can be checked from the console shell:
 
 ```powershell
 python -m ok_script_adapter.shell inspect <project-root>
@@ -43,7 +49,9 @@ adapter publishes stdout, stderr, project logs and supported structured events t
 
 ## Compatibility and Upgrade
 
-New records use `PluginScriptConfig` with `Meta.PluginTypeKey=OkScript`. Historical
+New records use `PluginScriptConfig` with `Meta.PluginTypeKey=OkScript`. Saved Manifest
+v1 JSON remains readable and is converted in memory to descriptor v2; newly saved
+inspection data always uses v2. Historical
 `OkefConfig` and `OkefUserConfig` remain readable only for migration and old links;
 they are not the new-project protocol. OK-WW remains its own plugin and is not changed
 by this adapter.

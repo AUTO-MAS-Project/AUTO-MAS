@@ -49,8 +49,9 @@ from ..common.runtime_lock import (
     get_ok_script_config_lock,
     get_ok_script_root_lock,
 )
-from ..providers import detect_ok_script_provider
-from ..shell.manifest import OkProjectInspectError, OkProjectManifest, inspect_ok_project
+from ..providers import get_ok_script_provider
+from ..shell.descriptor import OkProjectDescriptor, OkProjectInspectError
+from ..shell.manifest import inspect_ok_project
 from ..shell.runtime import (
     PROTOCOL_LEGACY_EXE,
     OkConfigStore,
@@ -142,23 +143,23 @@ def _restore_runtime_config_overrides(
         store.write(file_name, data, merge=False)
 
 
-def _build_manifest_provider(manifest: OkProjectManifest) -> OkScriptProvider:
-    """为未内置专项的项目提供只含通用运行信息的 Provider。"""
+def _build_descriptor_provider(descriptor: OkProjectDescriptor) -> OkScriptProvider:
+    """为未登记项目提供明确禁止运行的通用 Provider。"""
 
     def relative_path(path: Path | None) -> str:
         if path is None:
             return ""
         try:
-            return path.relative_to(manifest.root_path).as_posix()
+            return path.relative_to(descriptor.root_path).as_posix()
         except ValueError:
             return str(path)
 
     return OkScriptProvider(
-        resource_name=manifest.resource_name,
-        display_name=manifest.display_name or manifest.resource_name,
-        exe_name=relative_path(manifest.executable),
-        config_dir=relative_path(manifest.config_dir),
-        log_file=relative_path(manifest.log_path),
+        resource_name=descriptor.resource_name,
+        display_name=descriptor.display_name or descriptor.resource_name,
+        exe_name=relative_path(descriptor.executable),
+        config_dir=relative_path(descriptor.config_dir),
+        log_file=relative_path(descriptor.log_path),
         pythonw_path="",
         track_process_name="",
         game_process_name="",
@@ -168,18 +169,36 @@ def _build_manifest_provider(manifest: OkProjectManifest) -> OkScriptProvider:
             "Successfully Executed Task",
             "Successfully Executed Task, Exiting Game and App!",
         ),
-        max_task_index=max((task.index for task in manifest.tasks), default=0),
+        max_task_index=max((task.index for task in descriptor.tasks), default=0),
         task_options=tuple(
             OkScriptTaskOption(task.index, task.label or task.selector)
-            for task in manifest.tasks
+            for task in descriptor.tasks
         ),
         config_schema_module="",
         config_info_loader="",
+        runtime_verified=False,
+        runtime_block_reason=(
+            "当前项目只完成 descriptor 与配置识别，尚未验证自动运行能力"
+        ),
     )
 
 
+def _resolve_descriptor_provider(
+    descriptor: OkProjectDescriptor,
+) -> tuple[OkProjectDescriptor, OkScriptProvider, bool]:
+    """绑定项目 Provider，并叠加当前目录的运行协议能力。"""
+
+    registered_provider = get_ok_script_provider(descriptor.resource_name)
+    provider = registered_provider or _build_descriptor_provider(descriptor)
+    verified_descriptor = descriptor.with_runtime_verification(
+        verified=provider.runtime_verified,
+        reason=provider.runtime_block_reason,
+    )
+    return verified_descriptor, provider, registered_provider is not None
+
+
 class OkScriptAutoProxyTask(TaskExecuteBase):
-    """ok-script 自动代理：由 Manifest 选择协议并监控运行结果。"""
+    """ok-script 自动代理：由 descriptor 选择协议并监控运行结果。"""
 
     def __init__(
         self,
@@ -199,7 +218,7 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         self.user_config = user_config
         self.game_manager = game_manager
         self.provider: OkScriptProvider | None = None
-        self.project_manifest: OkProjectManifest | None = None
+        self.project_descriptor: OkProjectDescriptor | None = None
         self.shell_runner: OkShellRunner | None = None
 
         self.cur_user_item: UserItem = self.script_info.user_list[
@@ -257,17 +276,22 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         if not root.is_dir():
             return "请设置 ok-script 项目路径"
         try:
-            manifest = await asyncio.to_thread(inspect_ok_project, root)
+            descriptor = await asyncio.to_thread(inspect_ok_project, root)
         except OkProjectInspectError as exc:
             return f"无法解析 ok-script 项目: {exc}"
-        provider = self._resolve_provider(root)
-        if provider is not None and not provider.runtime_verified:
-            return provider.runtime_block_reason or "当前 ok-script 项目尚未完成运行验证"
-        self.project_manifest = manifest
-        self.provider = provider or _build_manifest_provider(manifest)
+        descriptor, self.provider, _ = _resolve_descriptor_provider(descriptor)
+        self.project_descriptor = descriptor
+        runtime = descriptor.capabilities.runtime
+        if not runtime.verified:
+            return (
+                runtime.reason
+                or "当前 ok-script 项目尚未完成运行验证"
+            )
 
         task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
-        if manifest.tasks and not any(task.index == task_index for task in manifest.tasks):
+        if descriptor.tasks and not any(
+            task.index == task_index for task in descriptor.tasks
+        ):
             return (
                 f"当前任务序号 {task_index} 不属于"
                 f"{self.provider.display_name} 已解析的一次性任务"
@@ -334,29 +358,31 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         self.wait_event = asyncio.Event()
         self.script_root_path = Path(self.script_config.get("Info", "RootPath"))
         try:
-            manifest = self.project_manifest or await asyncio.to_thread(
+            descriptor = self.project_descriptor or await asyncio.to_thread(
                 inspect_ok_project,
                 self.script_root_path,
             )
         except OkProjectInspectError as exc:
             raise RuntimeError(f"无法解析 ok-script 项目: {exc}") from exc
-        detected_provider = self._resolve_provider(self.script_root_path)
-        if detected_provider is not None and not detected_provider.runtime_verified:
+        descriptor, self.provider, provider_registered = (
+            _resolve_descriptor_provider(descriptor)
+        )
+        self.project_descriptor = descriptor
+        runtime = descriptor.capabilities.runtime
+        if not runtime.verified:
             raise RuntimeError(
-                detected_provider.runtime_block_reason
+                runtime.reason
                 or "当前 ok-script 项目尚未完成运行验证"
             )
-        self.project_manifest = manifest
-        self.provider = detected_provider or _build_manifest_provider(manifest)
         self.script_root_lock = get_ok_script_root_lock(self.script_root_path)
         if not self.script_root_lock_acquired:
             self.script_info.log = "正在等待同一 ok-script 项目完成运行"
             await self.script_root_lock.acquire()
             self.script_root_lock_acquired = True
         self.task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
-        self.script_event_log_path = manifest.log_path.with_name("mas-events.jsonl")
+        self.script_event_log_path = descriptor.log_path.with_name("mas-events.jsonl")
         self.shell_runner = OkShellRunner(
-            manifest,
+            descriptor,
             event_path=self.script_event_log_path,
         )
         try:
@@ -372,10 +398,10 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         self.script_cwd = launch_spec.cwd
         self.script_environment = launch_spec.environment
         self.use_provider_process_tracking = (
-            detected_provider is not None
+            provider_registered
             and self.execution_protocol == PROTOCOL_LEGACY_EXE
         )
-        self.script_config_path = manifest.config_dir
+        self.script_config_path = descriptor.config_dir
         self.mas_config_dir = ok_script_mas_config_dir(
             self.script_info.script_id,
             self.cur_user_item.user_id,
@@ -403,7 +429,7 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             if self.use_provider_process_tracking
             else None
         )
-        self.script_log_path = manifest.log_path
+        self.script_log_path = descriptor.log_path
         self.log_monitor = LogMonitor(
             self.provider.log_time_range,
             self.provider.log_time_format,
@@ -1427,12 +1453,6 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         ):
             return False
         return self.game_path.is_file()
-
-    def _resolve_provider(self, root: Path) -> OkScriptProvider | None:
-        return detect_ok_script_provider(
-            root,
-            self.script_config.get("Info", "ResourceName"),
-        )
 
     def _release_script_root_lock(self) -> None:
         if (

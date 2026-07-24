@@ -17,7 +17,8 @@ from .adapter import OkScriptAdapterHooks
 from .common.provider import ok_script_mas_config_dir, resolve_game_executable_path
 from .common.runtime_lock import get_ok_script_config_lock
 from .providers import detect_ok_script_provider, get_ok_script_provider
-from .shell.manifest import OkProjectInspectError, inspect_ok_project
+from .shell.descriptor import OkProjectDescriptor, OkProjectInspectError
+from .shell.manifest import inspect_ok_project
 from .shell.runtime import OkConfigStore, OkShellRuntimeError
 from .schema import Config, OkScriptConfig, OkScriptUserConfig
 
@@ -48,25 +49,22 @@ def normalize_ok_script_form(data: dict[str, Any]) -> dict[str, Any]:
         return data
 
     root_path = str(info.get("RootPath") or "").strip()
-    manifest = None
+    descriptor = None
     if root_path:
         try:
-            manifest = inspect_ok_project(Path(root_path))
+            descriptor = inspect_ok_project(Path(root_path))
         except (OSError, OkProjectInspectError):
             pass
 
-    if manifest is not None:
-        provider = detect_ok_script_provider(
-            manifest.root_path,
-            manifest.resource_name,
-        )
-        resource_name = manifest.resource_name
+    if descriptor is not None:
+        provider = get_ok_script_provider(descriptor.resource_name)
+        resource_name = descriptor.resource_name
         project_label = (
             provider.display_name
             if provider is not None
-            else manifest.display_name or manifest.resource_name
+            else descriptor.display_name or descriptor.resource_name
         )
-        info["RootPath"] = manifest.root_path.as_posix()
+        info["RootPath"] = descriptor.root_path.as_posix()
     else:
         provider = get_ok_script_provider(info.get("ResourceName"))
         if provider is None:
@@ -250,6 +248,76 @@ def _load_provider_schema(provider: Any):
     )
 
 
+def _descriptor_with_provider(
+    descriptor: OkProjectDescriptor,
+    provider: Any,
+) -> OkProjectDescriptor:
+    if provider is None:
+        return descriptor
+    return descriptor.with_runtime_verification(
+        verified=provider.runtime_verified,
+        reason=provider.runtime_block_reason,
+    )
+
+
+def _provider_client_metadata(
+    descriptor: OkProjectDescriptor,
+    provider: Any,
+) -> dict[str, Any]:
+    if provider is not None:
+        metadata = provider.build_client_metadata()
+        provider_options = {
+            option.index: option.label for option in provider.task_options
+        }
+    else:
+        metadata = {
+            "resourceName": descriptor.resource_name,
+            "displayName": descriptor.display_name or descriptor.resource_name,
+            "accountFields": None,
+            "runtimeVerified": descriptor.capabilities.runtime.verified,
+            "runtimeBlockReason": descriptor.capabilities.runtime.reason,
+            "gameProcessName": "",
+        }
+        provider_options = {}
+
+    runtime = descriptor.capabilities.runtime
+    metadata["runtimeVerified"] = runtime.verified
+    metadata["runtimeBlockReason"] = runtime.reason
+
+    task_options: list[dict[str, Any]] = []
+    for task in descriptor.tasks:
+        provider_label = provider_options.get(task.index, "")
+        provider_selector = (
+            provider_label.partition("（")[0].partition("(")[0].strip()
+        )
+        label = (
+            provider_label
+            if provider_selector == task.selector
+            else task.label or task.selector
+        )
+        task_options.append({"value": task.index, "label": label})
+    metadata["taskOptions"] = task_options
+    return metadata
+
+
+def _merge_diagnostics(
+    descriptor: OkProjectDescriptor,
+    diagnostics: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in (
+        *(diagnostic.to_dict() for diagnostic in descriptor.diagnostics),
+        *diagnostics,
+    ):
+        key = (str(item.get("code") or ""), str(item.get("path") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(item)
+    return merged
+
+
 class Plugin(ScriptAdapterPlugin):
     """ok-script 框架项目的通用插件适配器。"""
 
@@ -282,37 +350,48 @@ class Plugin(ScriptAdapterPlugin):
 
     async def on_start(self) -> None:
         await super().on_start()
-        self.ctx.server.http("/ok-script/inspect", self._inspect_project, methods=("POST",))
+        self.ctx.server.http(
+            "/ok-script/inspect",
+            self._inspect_project,
+            methods=("POST",),
+        )
         self.ctx.server.http(
             "/ok-script/game-path/resolve",
             self._resolve_game_path,
             methods=("POST",),
         )
-        self.ctx.server.http("/ok-script/configs/list", self._list_configs, methods=("GET", "POST"))
-        self.ctx.server.http("/ok-script/configs/batch-update", self._batch_update_configs, methods=("POST",))
+        self.ctx.server.http(
+            "/ok-script/configs/list",
+            self._list_configs,
+            methods=("GET", "POST"),
+        )
+        self.ctx.server.http(
+            "/ok-script/configs/batch-update",
+            self._batch_update_configs,
+            methods=("POST",),
+        )
 
     async def _inspect_project(self, request: PluginHttpRequest) -> dict[str, Any]:
         payload = request.json if isinstance(request.json, dict) else request.query
         root_path = Path(str(payload.get("root_path") or payload.get("rootPath") or ""))
         try:
-            manifest = inspect_ok_project(root_path)
-            provider = detect_ok_script_provider(
-                manifest.root_path,
-                manifest.resource_name,
-            )
+            descriptor = inspect_ok_project(root_path)
+            provider = get_ok_script_provider(descriptor.resource_name)
             project_label = (
                 provider.display_name
                 if provider is not None
-                else manifest.display_name or manifest.resource_name
+                else descriptor.display_name or descriptor.resource_name
             )
-            manifest_data = manifest.to_dict()
-            manifest_data["displayName"] = project_label
-            manifest_data["formPatch"] = {
+            descriptor = _descriptor_with_provider(descriptor, provider)
+            descriptor_data = descriptor.to_dict()
+            descriptor_data["displayName"] = project_label
+            descriptor_data["identity"]["displayName"] = project_label
+            descriptor_data["formPatch"] = {
                 "Info": {
                     "Name": project_label,
-                    "ResourceName": manifest.resource_name,
+                    "ResourceName": descriptor.resource_name,
                     "ProjectLabel": project_label,
-                    "RootPath": manifest.root_path.as_posix(),
+                    "RootPath": descriptor.root_path.as_posix(),
                 },
                 "script_name": project_label,
             }
@@ -320,8 +399,8 @@ class Plugin(ScriptAdapterPlugin):
                 "code": 200,
                 "status": "success",
                 "message": "项目解析成功",
-                "data": manifest_data,
-                "provider": provider.build_client_metadata() if provider else None,
+                "data": descriptor_data,
+                "provider": _provider_client_metadata(descriptor, provider),
             }
         except OkProjectInspectError as exc:
             return {"code": 400, "status": "error", "message": str(exc), "data": None}
@@ -391,17 +470,18 @@ class Plugin(ScriptAdapterPlugin):
             access = _resolve_config_access(script_id, user_id)
             form_config = await _script_form_config(access.storage_config)
             root_path = Path(str(form_config.get("Info", {}).get("RootPath") or ""))
-            manifest = inspect_ok_project(root_path)
-            provider = detect_ok_script_provider(root_path, manifest.resource_name)
+            descriptor = inspect_ok_project(root_path)
+            provider = get_ok_script_provider(descriptor.resource_name)
+            descriptor = _descriptor_with_provider(descriptor, provider)
             config_dir = access.config_dir
             config_lock = get_ok_script_config_lock(config_dir)
             if config_lock.locked():
                 return _config_busy_response()
             async with config_lock:
                 store = OkConfigStore(config_dir)
-                source_store = OkConfigStore(manifest.config_dir)
+                source_store = OkConfigStore(descriptor.config_dir)
                 source_files = source_store.list()
-                copied_files = store.copy_missing_from(manifest.config_dir)
+                copied_files = store.copy_missing_from(descriptor.config_dir)
                 user_files = store.list()
 
                 result: list[dict[str, Any]] = []
@@ -449,21 +529,15 @@ class Plugin(ScriptAdapterPlugin):
                         )
 
                 config_state, diagnostics = _config_source_status(
-                    manifest=manifest,
+                    manifest=descriptor,
                     provider=provider,
                     source_files=source_files,
                     user_files=user_files,
                     copied_files=copied_files,
                 )
 
-            provider_data = provider.build_client_metadata() if provider is not None else {
-                "resourceName": manifest.resource_name,
-                "displayName": manifest.display_name or manifest.resource_name,
-                "taskOptions": [{"value": task.index, "label": task.label or task.selector} for task in manifest.tasks],
-                "accountFields": None,
-                "runtimeVerified": False,
-                "runtimeBlockReason": "当前项目仅完成通用配置识别，尚未验证自动运行能力",
-            }
+            provider_data = _provider_client_metadata(descriptor, provider)
+            descriptor_data = descriptor.to_dict()
             return {
                 "code": 200,
                 "status": "success",
@@ -475,16 +549,22 @@ class Plugin(ScriptAdapterPlugin):
                 }[config_state],
                 "data": result,
                 "configState": config_state,
-                "diagnostics": diagnostics,
+                "diagnostics": _merge_diagnostics(descriptor, diagnostics),
                 "optionLabels": option_labels,
                 "provider": provider_data,
-                "manifest": manifest.to_dict(),
+                "descriptor": descriptor_data,
+                "manifest": descriptor_data,
             }
         except (OkProjectInspectError, OkShellRuntimeError, ValueError, KeyError) as exc:
             logger.warning(f"拒绝读取 ok-script 用户配置: {exc}")
             return {"code": 400, "status": "error", "message": str(exc), "data": []}
         except Exception as exc:
-            return {"code": 500, "status": "error", "message": f"{type(exc).__name__}: {exc}", "data": []}
+            return {
+                "code": 500,
+                "status": "error",
+                "message": f"{type(exc).__name__}: {exc}",
+                "data": [],
+            }
 
     async def _batch_update_configs(self, request: PluginHttpRequest) -> dict[str, Any]:
         payload = request.json if isinstance(request.json, dict) else {}

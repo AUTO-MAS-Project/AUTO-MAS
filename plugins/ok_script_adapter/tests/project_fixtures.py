@@ -13,11 +13,13 @@ class ProjectFixtureSpec:
     config_location: str
     tasks: tuple[str, ...]
     with_default_json: bool = True
+    config_folder: str = "configs"
 
 
 @dataclass(frozen=True, slots=True)
 class ProjectFixture:
     root: Path
+    working_dir: Path
     config_source: Path
     config_dir: Path
 
@@ -147,15 +149,18 @@ def build_project_fixture(base_dir: Path, spec: ProjectFixtureSpec) -> ProjectFi
     config_source.write_text(
         "version = '1.0.0'\n"
         "config = {\n"
-        "    'config_folder': 'configs',\n"
+        f"    'config_folder': '{spec.config_folder}',\n"
+        f"    'gui_title': '{spec.resource_name} fixture',\n"
+        f"    'log_file': 'logs/{spec.resource_name}.log',\n"
         "    'onetime_tasks': [\n"
         f"{task_rows}\n"
         "    ],\n"
-        "}\n",
+        "}\n"
+        "raise RuntimeError('fixture config.py must not be executed')\n",
         encoding="utf-8",
     )
 
-    config_dir = runtime_root / "configs"
+    config_dir = runtime_root / spec.config_folder
     if spec.with_default_json:
         config_dir.mkdir(parents=True)
         (config_dir / "DailyTask.json").write_text(
@@ -165,6 +170,7 @@ def build_project_fixture(base_dir: Path, spec: ProjectFixtureSpec) -> ProjectFi
 
     return ProjectFixture(
         root=root,
+        working_dir=runtime_root,
         config_source=config_source,
         config_dir=config_dir,
     )
