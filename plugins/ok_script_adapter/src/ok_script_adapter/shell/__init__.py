@@ -16,16 +16,36 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""ok-script 控制台伪前端壳。"""
+"""ok-script 项目 descriptor、配置存储与控制台运行壳。"""
 
-from .manifest import OkProjectManifest, OkTaskManifest, inspect_ok_project
+from .descriptor import (
+    OkProjectCapabilities,
+    OkProjectCapability,
+    OkProjectDescriptor,
+    OkProjectDiagnostic,
+    OkProjectManifest,
+    OkProjectMetadataSource,
+    OkTaskDescriptor,
+    OkTaskManifest,
+)
+from .manifest import inspect_ok_project, load_manifest, save_manifest
+from .parser import ProjectParser
 from .runtime import OkConfigStore, OkShellRunner, OkShellRuntimeError
 
 __all__ = [
     "OkConfigStore",
+    "OkProjectCapabilities",
+    "OkProjectCapability",
+    "OkProjectDescriptor",
+    "OkProjectDiagnostic",
     "OkProjectManifest",
+    "OkProjectMetadataSource",
     "OkShellRunner",
     "OkShellRuntimeError",
+    "OkTaskDescriptor",
     "OkTaskManifest",
+    "ProjectParser",
     "inspect_ok_project",
+    "load_manifest",
+    "save_manifest",
 ]

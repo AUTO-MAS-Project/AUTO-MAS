@@ -35,11 +35,11 @@ from pathlib import Path
 from typing import IO, Any
 
 from ..common.events import OK_SCRIPT_EVENT_PROTOCOL_VERSION
-from .manifest import (
+from .descriptor import (
     PROTOCOL_FRAMEWORK_CLI,
     PROTOCOL_LEGACY_EXE,
     PROTOCOL_MAIN_SCRIPT,
-    OkProjectManifest,
+    OkProjectDescriptor,
 )
 
 AUTO_PROTOCOL = "auto"
@@ -224,7 +224,7 @@ class OkShellRunner:
 
     def __init__(
         self,
-        manifest: OkProjectManifest,
+        manifest: OkProjectDescriptor,
         *,
         output: Callable[[str, str], None] | None = None,
         event_path: str | Path | None = None,
@@ -326,10 +326,7 @@ class OkShellRunner:
     def command_cwd(self, protocol: str) -> Path:
         """返回协议对应的项目工作目录。"""
 
-        if (
-            protocol == PROTOCOL_FRAMEWORK_CLI
-            and (self.manifest.working_dir / "src" / "config.py").is_file()
-        ):
+        if protocol == PROTOCOL_FRAMEWORK_CLI:
             return self.manifest.working_dir
         return self.manifest.root_path
 

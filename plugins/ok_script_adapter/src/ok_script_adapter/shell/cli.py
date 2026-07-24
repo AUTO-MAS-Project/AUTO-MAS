@@ -26,7 +26,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .manifest import OkProjectInspectError, inspect_ok_project, save_manifest
+from .descriptor import OkProjectInspectError
+from .manifest import inspect_ok_project, save_manifest
 from .runtime import (
     AUTO_PROTOCOL,
     SUPPORTED_PROTOCOLS,
@@ -47,9 +48,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    inspect_parser = subparsers.add_parser("inspect", help="解析项目 Manifest")
+    inspect_parser = subparsers.add_parser("inspect", help="解析项目 descriptor")
     _add_project_arguments(inspect_parser)
-    inspect_parser.add_argument("--save", type=Path, help="保存 Manifest JSON")
+    inspect_parser.add_argument("--save", type=Path, help="保存 descriptor JSON")
 
     tasks_parser = subparsers.add_parser("tasks", help="列出项目任务")
     _add_project_arguments(tasks_parser)
@@ -125,20 +126,20 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        manifest = inspect_ok_project(
+        descriptor = inspect_ok_project(
             args.project,
             python_executable=args.python,
         )
         if args.command == "inspect":
             if args.save is not None:
-                save_manifest(manifest, args.save)
-            print(json.dumps(manifest.to_dict(), ensure_ascii=False, indent=2))
+                save_manifest(descriptor, args.save)
+            print(json.dumps(descriptor.to_dict(), ensure_ascii=False, indent=2))
             return EXIT_OK
 
         if args.command == "tasks":
             print(
                 json.dumps(
-                    [task.to_dict() for task in manifest.tasks],
+                    [task.to_dict() for task in descriptor.tasks],
                     ensure_ascii=False,
                     indent=2,
                 )
@@ -146,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_OK
 
         if args.command == "config":
-            store = OkConfigStore(manifest.config_dir)
+            store = OkConfigStore(descriptor.config_dir)
             if args.config_command == "list":
                 print(json.dumps(list(store.list()), ensure_ascii=False, indent=2))
             elif args.config_command == "get":
@@ -160,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(path)
             return EXIT_OK
 
-        runner = OkShellRunner(manifest, event_path=args.events)
+        runner = OkShellRunner(descriptor, event_path=args.events)
         result = runner.run(
             args.task,
             protocol=args.protocol,
