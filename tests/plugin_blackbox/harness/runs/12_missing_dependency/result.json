@@ -1,0 +1,13 @@
+{
+  "case_id": "12_missing_dependency",
+  "status": "PASS",
+  "notes": "",
+  "error": null,
+  "error_traceback": null,
+  "snapshots": {
+    "after_load": "Snapshot(at=1784824151.1867576, event_bus_handlers={}, loader_records={'md-1': {'instance_id': 'md-1', 'plugin_name': 'fake_missing', 'status': 'error', 'lifecycle_phase': 'discovered', 'error': 'ImportError: fake_plugin_missing cannot import a missing dep', 'listener_ids': [], 'generation': 1, 'reload_count': 0, 'last_reload_reason': None, 'on_load_attempted': False, 'on_start_attempted': False, 'on_stop_completed': False, 'on_unload_completed': False, 'provides': [], 'needs': [], 'missing': []}}, discovered_plugins={'fake_missing': {'source': 'pypi', 'distribution': 'automas-fake-missing', 'version': '0.1.0', 'system': False, 'locked': False}}, service_owners={}, sys_modules_keys_sample=[])"
+  },
+  "metrics": {
+    "final_status": "error"
+  }
+}

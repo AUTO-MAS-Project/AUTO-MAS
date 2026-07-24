@@ -33,6 +33,8 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSPowerCountdownData
 from app.utils import ProcessRunner, get_logger
 
 logger = get_logger("系统服务")
@@ -215,16 +217,19 @@ class _SystemHandler:
 
                 await self.kill_emulator_processes()
                 logger.info("执行关机操作")
+                await self._request_frontend_close()
                 subprocess.run(["shutdown", "/s", "/t", "0"])
 
             elif mode == "ShutdownForce":
                 logger.info("执行强制关机操作")
+                await self._request_frontend_close()
                 subprocess.run(["shutdown", "/s", "/t", "0", "/f"])
 
             elif mode == "Reboot":
 
                 await self.kill_emulator_processes()
                 logger.info("执行重启操作")
+                await self._request_frontend_close()
                 subprocess.run(["shutdown", "/r", "/t", "0"])
 
             elif mode == "Hibernate":
@@ -243,15 +248,14 @@ class _SystemHandler:
 
                 logger.info("执行退出主程序操作")
                 if not from_frontend:
-                    await Config.send_websocket_message(
-                        id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
-                    )
+                    await self._request_frontend_close()
                 Config.server.should_exit = True
 
             elif mode == "Logoff":
 
                 await self.kill_emulator_processes()
                 logger.info("执行注销此账户操作")
+                await self._request_frontend_close()
                 subprocess.run(["shutdown", "/l"])
 
         elif sys.platform.startswith("linux"):
@@ -263,11 +267,13 @@ class _SystemHandler:
             elif mode == "Shutdown":
 
                 logger.info("执行关机操作")
+                await self._request_frontend_close()
                 subprocess.run(["shutdown", "-h", "now"])
 
             elif mode == "Reboot":
 
                 logger.info("执行重启操作")
+                await self._request_frontend_close()
                 subprocess.run(["shutdown", "-r", "now"])
 
             elif mode == "Hibernate":
@@ -284,15 +290,22 @@ class _SystemHandler:
 
                 logger.info("执行退出主程序操作")
                 if not from_frontend:
-                    await Config.send_websocket_message(
-                        id="Main", type="Signal", data={"RequestClose": "请求前端关闭"}
-                    )
+                    await self._request_frontend_close()
                 Config.server.should_exit = True
 
             elif mode == "Logoff":
 
                 logger.info("执行注销此账户操作")
+                await self._request_frontend_close()
                 subprocess.run(["loginctl", "terminate-user", getpass.getuser()])
+
+    async def _request_frontend_close(self) -> None:
+        """执行会结束前端会话的操作前，经主连接请求前端退出。"""
+
+        await Publisher.send(
+            id=protocol.ID_MAIN,
+            type=protocol.FRONTEND_CLOSE_REQUESTED,
+        )
 
     async def _power_task(
         self,
@@ -307,9 +320,18 @@ class _SystemHandler:
             "Logoff",
         ],
     ) -> None:
-        """电源任务"""
+        """逐秒发布真实倒计时，归零后执行电源操作。"""
 
-        await asyncio.sleep(self.countdown)
+        for remaining in range(self.countdown, 0, -1):
+            await Publisher.send(
+                id=protocol.ID_MAIN,
+                type=protocol.POWER_COUNTDOWN_UPDATED,
+                data=WSPowerCountdownData(
+                    operation=power_sign,
+                    remaining=remaining,
+                ),
+            )
+            await asyncio.sleep(1)
         await self.set_power(power_sign)
 
     async def start_power_task(self):
@@ -333,6 +355,10 @@ class _SystemHandler:
                 await self.power_task
             except asyncio.CancelledError:
                 logger.info("电源任务已取消")
+            await Publisher.send(
+                id=protocol.ID_MAIN,
+                type=protocol.POWER_COUNTDOWN_CANCELLED,
+            )
         else:
             logger.warning("当前无电源任务在运行")
             raise RuntimeError("当前无电源任务在运行")

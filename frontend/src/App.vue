@@ -103,6 +103,8 @@ onMounted(async () => {
 </template>
 
 <style>
+@import './styles/v6-tokens.css';
+
 * {
   box-sizing: border-box;
 }

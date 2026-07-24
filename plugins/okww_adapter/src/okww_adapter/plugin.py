@@ -6,9 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from app.core import Config as app_config
-from app.core.script_config_codec import storage_to_form
-from app.models.plugin_script_config import PluginScriptConfig
 from app.plugins import PluginHttpRequest, ScriptAdapterDefinition, ScriptAdapterPlugin
+from app.plugins.script_config_store import ScriptConfigStore
 from app.utils import get_logger
 
 from .adapter import OkwwAdapterHooks
@@ -154,19 +153,37 @@ class Plugin(ScriptAdapterPlugin):
 
     async def _script_form_config(self, script_id: str) -> dict[str, Any]:
         script_config = app_config.ScriptConfig[uuid.UUID(script_id)]
-        if not isinstance(script_config, PluginScriptConfig):
-            raise ValueError("脚本不是 OK-WW 插件配置")
-        if str(script_config.get("Meta", "PluginTypeKey") or "").strip() != "Okww":
-            raise ValueError("脚本不是 OK-WW 插件配置")
-
         from app.core.script_types import script_type_registry
 
         provider = script_type_registry.get("Okww")
-        return await storage_to_form(
-            provider,
-            script_config.get("PluginData", "Config"),
-            "script",
-        )
+        type_key_resolver = getattr(app_config, "get_script_type_key", None)
+        actual_type_key = None
+        if callable(type_key_resolver):
+            try:
+                actual_type_key = str(type_key_resolver(script_id) or "").strip()
+            except (KeyError, TypeError, ValueError):
+                actual_type_key = None
+        if not actual_type_key:
+            try:
+                actual_type_key = str(
+                    script_config.get("Meta", "PluginTypeKey") or ""
+                ).strip()
+            except (AttributeError, KeyError):
+                actual_type_key = None
+        if not actual_type_key:
+            try:
+                actual_type_key = script_type_registry.get_by_script_config(
+                    script_config
+                ).type_key
+            except KeyError:
+                actual_type_key = None
+        if actual_type_key != provider.type_key:
+            raise ValueError("脚本不是 OK-WW 插件配置")
+
+        return await ScriptConfigStore(
+            provider=provider,
+            storage_script_config=script_config,
+        ).read_script_data()
 
     async def _script_root_path(self, script_id: str) -> Path | None:
         config = await self._script_form_config(script_id)

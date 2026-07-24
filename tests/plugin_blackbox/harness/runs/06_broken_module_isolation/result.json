@@ -1,0 +1,11 @@
+{
+  "case_id": "06_broken_module_isolation",
+  "status": "PASS",
+  "notes": "",
+  "error": null,
+  "error_traceback": null,
+  "snapshots": {
+    "after_load": "Snapshot(at=1784824033.3728132, event_bus_handlers={}, loader_records={'br-1': {'instance_id': 'br-1', 'plugin_name': 'automas_fake_broken', 'status': 'error', 'lifecycle_phase': 'discovered', 'error': 'ImportError: broken_plugin intentionally fails to import', 'listener_ids': [], 'generation': 1, 'reload_count': 0, 'last_reload_reason': None, 'on_load_attempted': False, 'on_start_attempted': False, 'on_stop_completed': False, 'on_unload_completed': False, 'provides': [], 'needs': [], 'missing': []}}, discovered_plugins={'automas_fake_broken': {'source': 'pypi', 'distribution': 'automas-fake-broken', 'version': '0.0.1', 'system': False, 'locked': False}}, service_owners={}, sys_modules_keys_sample=['fake_plugin_bad', 'fake_plugin_explode', 'fake_plugin_good', 'fake_plugin_lifecycle', 'fake_plugin_reload', 'fake_plugin_reload_fail', 'fake_plugin_reload_fail_on'])"
+  },
+  "metrics": {}
+}

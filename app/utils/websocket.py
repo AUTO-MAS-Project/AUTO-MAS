@@ -32,6 +32,20 @@ from websockets.asyncio.client import connect, ClientConnection
 from websockets.exceptions import ConnectionClosed
 
 from app.utils.logger import get_logger
+from app.utils.ws_limits import (
+    DEFAULT_WS_MAX_MESSAGE_BYTES,
+    DEFAULT_WS_QUEUE_MESSAGES,
+    DEFAULT_WS_SEND_TIMEOUT_SECONDS,
+)
+
+
+def _message_size_bytes(raw: Any) -> int:
+    if isinstance(raw, bytes):
+        return len(raw)
+    if isinstance(raw, str):
+        return len(raw.encode("utf-8"))
+    serialized = json.dumps(raw, ensure_ascii=False, separators=(",", ":"))
+    return len(serialized.encode("utf-8"))
 
 
 def _is_backend_dev_mode() -> bool:
@@ -55,6 +69,10 @@ class ReverseWebSocketSession:
         on_connect: Optional[Callable[[], Any]] = None,
         on_disconnect: Optional[Callable[[], Any]] = None,
         auth_token: Optional[str] = None,
+        allow_commands: bool = True,
+        max_pending_sends: int = DEFAULT_WS_QUEUE_MESSAGES,
+        send_timeout: float = DEFAULT_WS_SEND_TIMEOUT_SECONDS,
+        max_message_bytes: int = DEFAULT_WS_MAX_MESSAGE_BYTES,
     ):
         """初始化反向 WebSocket 会话。"""
         self.websocket = websocket
@@ -70,12 +88,19 @@ class ReverseWebSocketSession:
         self.on_connect = on_connect
         self.on_disconnect = on_disconnect
         self._auth_token = auth_token
+        self._allow_commands = allow_commands
+        self._max_pending_sends = max(1, int(max_pending_sends))
+        self._send_timeout = max(0.001, float(send_timeout))
+        self._max_message_bytes = max(1, int(max_message_bytes))
 
         self._running = False
         self._last_ping = 0.0
         self._last_pong = 0.0
         self._tasks: list[asyncio.Task] = []
         self._background_tasks: set[asyncio.Task] = set()
+        self._send_lock = asyncio.Lock()
+        self._pending_sends = 0
+        self._close_lock = asyncio.Lock()
         self._closed_event = asyncio.Event()
         self._disconnect_notified = False
 
@@ -117,18 +142,25 @@ class ReverseWebSocketSession:
         self._last_ping = time.monotonic()
         self._last_pong = time.monotonic()
 
-        if self.on_connect:
-            result = self.on_connect()
-            if asyncio.iscoroutine(result):
-                await result
+        try:
+            if self.on_connect:
+                result = self.on_connect()
+                if asyncio.iscoroutine(result):
+                    await result
 
-        if self._auth_token:
-            await self.send_auth(self._auth_token)
+            if self._auth_token:
+                await self.send_auth(self._auth_token)
 
-        receive_task = asyncio.create_task(self._receive_loop())
-        heartbeat_task = asyncio.create_task(self._heartbeat_loop())
-        self._tasks = [receive_task, heartbeat_task]
-        return True
+            if self._closed_event.is_set() or not self.is_connected:
+                raise ConnectionError("反向 WebSocket 在初始化期间已关闭")
+
+            receive_task = asyncio.create_task(self._receive_loop())
+            heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+            self._tasks = [receive_task, heartbeat_task]
+            return True
+        except BaseException:
+            await self.close(code=1011, reason="会话初始化失败")
+            raise
 
     async def wait_closed(self):
         """等待反向会话关闭。"""
@@ -146,11 +178,48 @@ class ReverseWebSocketSession:
             return False
 
         try:
-            await self.websocket.send_json(message)
+            message_size = _message_size_bytes(message)
+        except (TypeError, ValueError) as e:
+            self.logger.error(
+                f"出站消息无法 JSON 序列化: {type(e).__name__}: {e}"
+            )
+            return False
+
+        if message_size > self._max_message_bytes:
+            self.logger.warning(
+                "反向 WebSocket 出站消息超过上限，已关闭连接: "
+                f"limit={self._max_message_bytes}"
+            )
+            await self.close(code=1009, reason="message too large")
+            return False
+
+        if self._pending_sends >= self._max_pending_sends:
+            self.logger.warning(
+                "反向 WebSocket 出站等待已达上限，已关闭慢连接: "
+                f"limit={self._max_pending_sends}"
+            )
+            await self.close(code=1013, reason="slow consumer")
+            return False
+
+        self._pending_sends += 1
+        try:
+            async with asyncio.timeout(self._send_timeout):
+                async with self._send_lock:
+                    if not self.is_connected:
+                        return False
+                    await self.websocket.send_json(message)
             return True
+        except TimeoutError:
+            self.logger.warning(
+                f"反向 WebSocket 发送超时: timeout={self._send_timeout:.3f}s"
+            )
+            await self.close(code=1013, reason="slow consumer")
+            return False
         except Exception as e:
             self.logger.error(f"发送消息失败: {type(e).__name__}: {e}")
             return False
+        finally:
+            self._pending_sends -= 1
 
     async def send_json(self, data: Dict[str, Any]) -> bool:
         """兼容 FastAPI WebSocket 的 send_json 接口。"""
@@ -173,25 +242,41 @@ class ReverseWebSocketSession:
 
     async def close(self, code: int = 1000, reason: str = "正常关闭"):
         """关闭反向 WebSocket 会话。"""
-        self._running = False
-        for task in self._tasks:
-            if not task.done():
-                task.cancel()
-        self._tasks.clear()
+        async with self._close_lock:
+            if self._closed_event.is_set():
+                return
 
-        for task in list(self._background_tasks):
-            if not task.done():
+            self._running = False
+            current_task = asyncio.current_task()
+            owned_tasks = [
+                task
+                for task in (*self._tasks, *self._background_tasks)
+                if task is not current_task and not task.done()
+            ]
+            for task in owned_tasks:
                 task.cancel()
-        self._background_tasks.clear()
+            if owned_tasks:
+                await asyncio.gather(*owned_tasks, return_exceptions=True)
 
-        try:
-            if self.is_connected:
-                await self.websocket.close(code=code, reason=reason)
-        except Exception as e:
-            self.logger.warning(f"关闭反向会话时发生异常: {type(e).__name__}: {e}")
-        finally:
-            await self._notify_disconnect()
-            self._closed_event.set()
+            self._tasks.clear()
+            self._background_tasks.clear()
+
+            try:
+                if self.is_connected:
+                    await self.websocket.close(code=code, reason=reason)
+            except Exception as e:
+                self.logger.warning(
+                    f"关闭反向会话时发生异常: {type(e).__name__}: {e}"
+                )
+            finally:
+                try:
+                    await self._notify_disconnect()
+                except Exception as e:
+                    self.logger.warning(
+                        f"反向会话断开回调异常: {type(e).__name__}: {e}"
+                    )
+                finally:
+                    self._closed_event.set()
 
     async def disconnect(self):
         """兼容统一的断开接口。"""
@@ -272,6 +357,31 @@ class ReverseWebSocketSession:
                     return
 
             if data.get("type") == "command":
+                if not self._allow_commands:
+                    msg_id = data.get("id", "Unknown")
+                    msg_data = data.get("data", {})
+                    endpoint = (
+                        msg_data.get("endpoint")
+                        if isinstance(msg_data, dict)
+                        else None
+                    )
+                    self.logger.warning(
+                        f"反向通道 [{self.name}] 已拒绝 WS 命令: {endpoint or 'Unknown'}"
+                    )
+                    await self.send(
+                        {
+                            "id": "Client",
+                            "type": "response",
+                            "data": {
+                                "endpoint": endpoint,
+                                "request_id": msg_id,
+                                "success": False,
+                                "message": "当前通道不允许执行 WS 命令",
+                                "code": 403,
+                            },
+                        }
+                    )
+                    return
                 await self._handle_command(data)
                 return
 
@@ -323,6 +433,22 @@ class ReverseWebSocketSession:
                 message = await asyncio.wait_for(
                     self.websocket.receive_json(), timeout=self.ping_interval
                 )
+                try:
+                    message_size = _message_size_bytes(message)
+                except (TypeError, ValueError) as e:
+                    self.logger.warning(
+                        "入站消息无法按 JSON 计量，已丢弃: "
+                        f"{type(e).__name__}: {e}"
+                    )
+                    continue
+
+                if message_size > self._max_message_bytes:
+                    self.logger.warning(
+                        "反向 WebSocket 入站消息超过上限，已关闭连接: "
+                        f"limit={self._max_message_bytes}"
+                    )
+                    await self.close(code=1009, reason="message too large")
+                    return
                 await self._handle_message(message)
             except asyncio.TimeoutError:
                 continue
@@ -331,8 +457,7 @@ class ReverseWebSocketSession:
                 break
 
         self._running = False
-        await self._notify_disconnect()
-        self._closed_event.set()
+        await self.close()
 
     async def _heartbeat_loop(self):
         """心跳维护循环。"""
@@ -876,6 +1001,7 @@ class WSClientManager:
         on_connect: Optional[Callable[[], Any]] = None,
         on_disconnect: Optional[Callable[[], Any]] = None,
         overwrite: bool = True,
+        allow_commands: bool = True,
     ):
         """
         注册反向 WebSocket 通道声明。
@@ -885,6 +1011,7 @@ class WSClientManager:
             ping_interval: 应用层心跳发送间隔（秒）。
             ping_timeout: Pong 超时时间（秒）。
             auth_token: 连接建立后自动发送的认证 Token。
+            allow_commands: 是否允许该通道执行通用 ``type=command`` 消息。
             on_message: 收到业务消息时回调。
             on_connect: 连接建立时回调。
             on_disconnect: 连接断开时回调。
@@ -911,6 +1038,7 @@ class WSClientManager:
             "ping_interval": ping_interval,
             "ping_timeout": ping_timeout,
             "auth_token": auth_token,
+            "allow_commands": allow_commands,
             "on_message": on_message,
             "on_connect": on_connect,
             "on_disconnect": on_disconnect,
@@ -1157,6 +1285,7 @@ class WSClientManager:
         on_message: Optional[Callable[[Dict[str, Any]], Any]] = None,
         on_connect: Optional[Callable[[], Any]] = None,
         on_disconnect: Optional[Callable[[], Any]] = None,
+        allow_commands: bool = True,
     ) -> ReverseWebSocketSession:
         """正式的反向 WebSocket 打开接口。"""
         if name in self._clients and name in self._system_clients:
@@ -1167,6 +1296,8 @@ class WSClientManager:
 
         if name in self._reverse_sessions:
             await self.disconnect_client(name)
+
+        session: ReverseWebSocketSession
 
         async def wrapped_on_message(data: Dict[str, Any]):
             await self._record_message(name, "received", data)
@@ -1192,6 +1323,8 @@ class WSClientManager:
                     await result
 
         async def wrapped_on_disconnect():
+            if self._reverse_sessions.get(name) is session:
+                self._reverse_sessions.pop(name, None)
             self._logger.info(f"反向会话 [{name}] 已断开")
             await self._broadcast_event(
                 {
@@ -1215,6 +1348,7 @@ class WSClientManager:
             on_connect=wrapped_on_connect,
             on_disconnect=wrapped_on_disconnect,
             auth_token=auth_token,
+            allow_commands=allow_commands,
         )
         self._reverse_sessions[name] = session
         self._message_history[name] = []
@@ -1230,7 +1364,12 @@ class WSClientManager:
         )
 
         self._logger.info(f"已创建反向 WebSocket 会话: {name} -> {session.url}")
-        await session.start()
+        try:
+            await session.start()
+        except BaseException:
+            if self._reverse_sessions.get(name) is session:
+                self._reverse_sessions.pop(name, None)
+            raise
         return session
 
     async def connect_client(self, name: str) -> bool:

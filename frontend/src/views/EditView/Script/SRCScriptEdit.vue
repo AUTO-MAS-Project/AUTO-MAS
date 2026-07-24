@@ -32,59 +32,20 @@
 
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <!-- 基本信息 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>基本信息</h3>
-          </div>
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item name="name">
-                <template #label>
-                  <a-tooltip title="为脚本设置一个易于识别的名称">
-                    <span class="form-label">
-                      脚本名称
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input
-                  v-model:value="formData.name"
-                  placeholder="请输入脚本名称"
-                  size="large"
-                  class="modern-input"
-                  @blur="handleChange('Info', 'Name', formData.name)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="16">
-              <a-form-item name="path" :rules="rules.path">
-                <template #label>
-                  <a-tooltip title="选择SRC.exe所在的文件夹路径">
-                    <span class="form-label">
-                      SRC路径
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="formData.path"
-                    placeholder="请选择SRC.exe所在的文件夹"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button size="large" class="path-button" @click="selectSRCPath">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    选择文件夹
-                  </a-button>
-                </a-input-group>
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </div>
+        <BasicInfoFields
+          :model-value="{ name: formData.name, path: formData.path }"
+          name-label="脚本名称"
+          name-tooltip="为脚本设置一个易于识别的名称"
+          path-label="SRC路径"
+          path-tooltip="选择SRC.exe所在的文件夹路径"
+          path-placeholder="请选择SRC.exe所在的文件夹"
+          path-button-text="选择文件夹"
+          :name-rules="rules.name"
+          :path-rules="rules.path"
+          @update:name="value => (formData.name = value)"
+          @blur-name="handleChange('Info', 'Name', formData.name)"
+          @select-path="selectSRCPath"
+        />
 
         <!-- 模拟器管理 -->
         <div class="form-section">
@@ -279,11 +240,8 @@ import { message } from 'ant-design-vue'
 import type { SRCScriptConfig, ScriptType } from '@/types/script.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { Service, type ComboBoxItem } from '@/api'
-import {
-  ArrowLeftOutlined,
-  FolderOpenOutlined,
-  QuestionCircleOutlined,
-} from '@ant-design/icons-vue'
+import { ArrowLeftOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import BasicInfoFields from '@/views/EditView/shared/BasicInfoFields.vue'
 
 const logger = window.electronAPI.getLogger('SRC脚本编辑')
 

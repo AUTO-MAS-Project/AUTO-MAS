@@ -43,7 +43,7 @@ from maa.controller import (
     Job,
 )
 
-from .config import Config
+from app.core import Config
 from app.models.emulator import DeviceInfo
 from app.utils import get_logger
 

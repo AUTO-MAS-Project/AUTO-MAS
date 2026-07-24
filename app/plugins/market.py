@@ -21,6 +21,9 @@ from .pypi_site import get_pypi_site_packages_dir
 
 logger = get_logger("插件市场")
 
+# 新主连接通道与旧 /api/ws/plugin 兼容通道必须串行修改同一插件环境。
+PLUGIN_OPERATION_LOCK = asyncio.Lock()
+
 # 统一前缀 tag 变量：当前要求同时支持 automas_plugin_xxx 与 automas_xxx
 PYPI_MARKET_PREFIX_TAGS: tuple[str, ...] = ("automas_plugin_", "automas_")
 

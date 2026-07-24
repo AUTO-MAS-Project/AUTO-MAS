@@ -9,24 +9,49 @@
         <span class="title-text">AUTO-MAS</span>
         <span class="version-text">
           {{ version }}
-          <span v-if="isBootstrapping" class="startup-status">
-            <LoadingOutlined />
+          <span
+            v-if="isBootstrapping"
+            class="startup-status"
+            role="status"
+            aria-live="polite"
+            aria-label="后端启动中"
+          >
+            <LoadingOutlined aria-hidden="true" />
             后端启动中
           </span>
-          <span v-if="downloadHint" class="update-hint clickable" @click="openDownloadModal">
+          <span
+            v-if="downloadHint"
+            class="update-hint clickable"
+            role="button"
+            tabindex="0"
+            :aria-label="downloadHint"
+            @click="openDownloadModal"
+            @keydown.enter.prevent="openDownloadModal"
+            @keydown.space.prevent="openDownloadModal"
+          >
             {{ downloadHint }}
           </span>
           <span
             v-else-if="updateInfo?.if_need_update"
             class="update-hint clickable"
+            role="button"
+            tabindex="0"
+            :aria-label="`检测到更新 ${updateInfo.latest_version}，请尽快更新`"
             @click="handleAppUpdateClick"
+            @keydown.enter.prevent="handleAppUpdateClick"
+            @keydown.space.prevent="handleAppUpdateClick"
           >
             检测到更新 {{ updateInfo.latest_version }} 请尽快更新
           </span>
           <span
             v-if="backendUpdateInfo?.if_need_update"
             class="update-hint clickable"
+            role="button"
+            tabindex="0"
+            aria-label="检测到后端更新，点击以更新后端"
             @click="handleBackendUpdateClick"
+            @keydown.enter.prevent="handleBackendUpdateClick"
+            @keydown.space.prevent="handleBackendUpdateClick"
           >
             检测到后端更新，点击以更新后端
           </span>
@@ -34,29 +59,36 @@
       </div>
     </div>
 
-    <!-- 中间：可拖拽区域 -->
-    <div class="title-bar-center drag-region"></div>
+    <!-- 中间：可拖拽区域。对屏幕阅读器透明（拖动仅是鼠标交互） -->
+    <div class="title-bar-center drag-region" aria-hidden="true"></div>
 
     <!-- 右侧：窗口控制按钮 -->
     <div class="title-bar-right">
       <div class="window-controls">
-        <button class="control-button minimize-button" title="最小化" @click="minimizeWindow">
-          <MinusOutlined />
+        <button
+          class="control-button minimize-button"
+          title="最小化"
+          aria-label="最小化"
+          @click="minimizeWindow"
+        >
+          <MinusOutlined aria-hidden="true" />
         </button>
         <button
           class="control-button maximize-button"
           :title="isMaximized ? '还原' : '最大化'"
+          :aria-label="isMaximized ? '还原' : '最大化'"
           @click="toggleMaximize"
         >
-          <BorderOutlined />
+          <BorderOutlined aria-hidden="true" />
         </button>
         <button
           v-if="!hideCloseButton"
           class="control-button close-button"
           title="关闭"
+          aria-label="关闭"
           @click="closeWindow"
         >
-          <CloseOutlined />
+          <CloseOutlined aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -64,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import { useAppClosing } from '@/composables/useAppClosing'
+import { closeApp } from '@/composables/useAppLifecycle'
 import { useTheme } from '@/composables/useTheme'
 import { updateInfo, backendUpdateInfo } from '@/composables/useVersionService'
 import { useUpdateModal } from '@/composables/useUpdateChecker'
@@ -124,7 +156,6 @@ const hasRunningTasks = (): boolean => {
 }
 
 const { isDark } = useTheme()
-const { showClosingOverlay } = useAppClosing()
 const isMaximized = ref(false)
 
 // 使用 import.meta.env 或直接定义版本号，确保打包后可用
@@ -202,17 +233,11 @@ const toggleMaximize = async () => {
   }
 }
 
-// 执行实际的关闭操作
+// 执行实际的关闭操作：等待后端完成清理后再退出前端。
 const doCloseWindow = async () => {
   try {
     logger.info('开始关闭应用...')
-
-    // 显示关闭遮罩
-    showClosingOverlay()
-
-    // 直接关闭窗口，后台清理由主进程处理
-    logger.info('正在退出应用...')
-    await window.electronAPI?.appQuit()
+    await closeApp()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`关闭应用失败: ${errorMsg}`)
@@ -259,9 +284,9 @@ onMounted(async () => {
 
 <style scoped>
 .title-bar {
-  height: 32px;
-  background: #ffffff;
-  border-bottom: 1px solid #e8e8e8;
+  height: var(--v6-titlebar-height);
+  background: var(--v6-color-titlebar);
+  border-bottom: 1px solid var(--v6-color-border-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -269,18 +294,21 @@ onMounted(async () => {
   position: relative;
   z-index: 1000;
   overflow: hidden;
+  color: var(--v6-color-text);
+  font-family: var(--v6-font-sans);
+  backdrop-filter: var(--v6-backdrop-shell);
   /* 新增：裁剪超出顶栏的发光 */
 }
 
 .title-bar-dark {
-  background: #1f1f1f;
-  border-bottom: 1px solid #333;
+  background: var(--v6-color-titlebar);
+  border-bottom-color: var(--v6-color-border-subtle);
 }
 
 .title-bar-left {
   display: flex;
   align-items: center;
-  padding-left: 12px;
+  padding-left: var(--v6-space-3);
   min-width: 64px;
   height: 100%;
   -webkit-app-region: drag;
@@ -289,7 +317,7 @@ onMounted(async () => {
 .logo-section {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--v6-space-2);
   position: relative;
   /* 使阴影绝对定位基准 */
 }
@@ -301,21 +329,21 @@ onMounted(async () => {
   /* 调整：更贴近图标 */
   top: 50%;
   transform: translate(-50%, -50%);
-  width: 200px;
+  width: 160px;
   /* 缩小尺寸以适配 32px 高度 */
   height: 100px;
   pointer-events: none;
   border-radius: 50%;
   background: radial-gradient(circle at 50% 50%, var(--ant-color-primary) 0%, rgba(0, 0, 0, 0) 70%);
-  filter: blur(24px);
+  filter: blur(20px);
   /* 降低模糊避免越界过多 */
-  opacity: 0.4;
+  opacity: 0.16;
   z-index: 0;
 }
 
 .title-bar-dark .logo-glow {
-  opacity: 0.7;
-  filter: blur(24px);
+  opacity: 0.22;
+  filter: blur(20px);
 }
 
 .title-logo {
@@ -329,7 +357,7 @@ onMounted(async () => {
 .title-text {
   font-size: 13px;
   font-weight: 600;
-  color: #333;
+  color: var(--v6-color-text);
   position: relative;
   z-index: 1;
 }
@@ -341,14 +369,15 @@ onMounted(async () => {
   position: relative;
   z-index: 1;
   margin-left: 4px;
+  color: var(--v6-color-text-secondary);
 }
 
 .title-bar-dark .title-text {
-  color: #fff;
+  color: var(--v6-color-text);
 }
 
 .title-bar-dark .version-text {
-  color: #ffffff;
+  color: var(--v6-color-text-secondary);
 }
 
 .startup-status {
@@ -388,22 +417,24 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background-color 0.2s;
-  color: #666;
+  transition:
+    background-color var(--v6-motion-fast) var(--v6-ease-out),
+    color var(--v6-motion-fast) var(--v6-ease-out);
+  color: var(--v6-color-text-secondary);
   font-size: 12px;
   -webkit-app-region: no-drag;
 }
 
 .title-bar-dark .control-button {
-  color: #ccc;
+  color: var(--v6-color-text-secondary);
 }
 
 .control-button:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: color-mix(in srgb, var(--v6-color-text) 7%, transparent);
 }
 
 .title-bar-dark .control-button:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: color-mix(in srgb, var(--v6-color-text) 9%, transparent);
 }
 
 .close-button:hover {
@@ -413,12 +444,24 @@ onMounted(async () => {
 
 .minimize-button:hover,
 .maximize-button:hover {
-  background: rgba(0, 0, 0, 0.08);
+  background: color-mix(in srgb, var(--v6-color-text) 9%, transparent);
 }
 
 .title-bar-dark .minimize-button:hover,
 .title-bar-dark .maximize-button:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: color-mix(in srgb, var(--v6-color-text) 12%, transparent);
+}
+
+/* 可见焦点环：键盘导航时显示，使用 v6 token 保证 light/dark 一致 */
+.control-button:focus-visible {
+  outline: none;
+  box-shadow: var(--v6-focus-ring);
+}
+
+.update-hint.clickable:focus-visible {
+  outline: none;
+  box-shadow: var(--v6-focus-ring);
+  border-radius: var(--v6-radius-control);
 }
 
 .update-hint {

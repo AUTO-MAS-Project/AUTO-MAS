@@ -25,7 +25,10 @@ import os
 import sys
 import time
 import ctypes
+import json
 import logging
+import socket
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -34,8 +37,134 @@ if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
 
 from app.utils import get_logger, sanitize_log_message
+from app.utils.ws_limits import (
+    DEFAULT_WS_MAX_MESSAGE_BYTES,
+    DEFAULT_WS_QUEUE_MESSAGES,
+)
 
 logger = get_logger("主程序")
+
+UVICORN_WS_PING_INTERVAL_SECONDS = 20.0
+UVICORN_WS_PING_TIMEOUT_SECONDS = 20.0
+UVICORN_WS_MAX_MESSAGE_BYTES = DEFAULT_WS_MAX_MESSAGE_BYTES
+UVICORN_WS_MAX_QUEUE_MESSAGES = DEFAULT_WS_QUEUE_MESSAGES
+
+
+def prepare_configuration_startup(config_dir: Path) -> None:
+    """Freeze legacy bytes and reject unsupported modes before Config import."""
+    from app.configuration import assert_config_v2_startup_mode_ready
+    from app.configuration.compat import ensure_legacy_original_snapshot
+
+    ensure_legacy_original_snapshot(config_dir)
+    assert_config_v2_startup_mode_ready()
+
+
+def build_uvicorn_config(uvicorn_module: Any, app: Any) -> Any:
+    """Build the local server configuration with protocol-level WS liveness."""
+    return uvicorn_module.Config(
+        app,
+        host="127.0.0.1",
+        port=36163,
+        log_level="info",
+        log_config=None,
+        ws_max_size=UVICORN_WS_MAX_MESSAGE_BYTES,
+        ws_max_queue=UVICORN_WS_MAX_QUEUE_MESSAGES,
+        ws_ping_interval=UVICORN_WS_PING_INTERVAL_SECONDS,
+        ws_ping_timeout=UVICORN_WS_PING_TIMEOUT_SECONDS,
+    )
+
+
+class PortOccupiedError(RuntimeError):
+    """端口被占用且不可安全复用时抛出。
+
+    Attributes:
+        host: 目标主机。
+        port: 目标端口。
+        classification: 端口占用分类（auto_mas / dev_backend / http / tcp_non_http）。
+    """
+
+    def __init__(self, host: str, port: int, classification: str) -> None:
+        self.host = host
+        self.port = port
+        self.classification = classification
+        super().__init__(
+            f"端口 {host}:{port} 已被占用 (分类: {classification})；"
+            f"请释放占用或确认是否有另一个 AUTO-MAS 实例正在运行。"
+        )
+
+
+def probe_local_port(host: str, port: int) -> str:
+    """在 bind 前确定性分类端口占用情况。
+
+    分类语义：
+        - ``free``：端口空闲，可安全 bind。
+        - ``auto_mas``：被另一个 AUTO-MAS 后端占用（响应 /api/core/ws_meta 且 devMode 为 false）。
+        - ``dev_backend``：被 AUTO-MAS dev 后端占用（响应 /api/core/ws_meta 且 devMode 为 true）。
+        - ``http``：被其他 HTTP 服务占用。
+        - ``tcp_non_http``：被纯 TCP 服务占用（accept 但不返回 HTTP）。
+
+    Args:
+        host: 目标主机。
+        port: 目标端口。
+
+    Returns:
+        str: 上述分类字符串之一。
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe_sock:
+        probe_sock.settimeout(0.5)
+        try:
+            probe_sock.connect((host, port))
+        except OSError:
+            return "free"
+
+        try:
+            probe_sock.settimeout(0.5)
+            probe_sock.sendall(
+                f"GET /api/core/ws_meta HTTP/1.1\r\n"
+                f"Host: {host}:{port}\r\n"
+                f"Connection: close\r\n\r\n".encode("latin-1")
+            )
+            response = b""
+            while len(response) < 8192:
+                try:
+                    chunk = probe_sock.recv(4096)
+                except socket.timeout:
+                    break
+                if not chunk:
+                    break
+                response += chunk
+        except OSError:
+            return "tcp_non_http"
+
+    if not response:
+        return "tcp_non_http"
+
+    try:
+        header_part, _, body = response.partition(b"\r\n\r\n")
+        status_line = header_part.split(b"\r\n", 1)[0].decode("latin-1", "replace")
+        if " 200 " not in status_line:
+            return "http"
+        data = json.loads(body)
+        if isinstance(data, dict) and "devMode" in data:
+            return "dev_backend" if data["devMode"] is True else "auto_mas"
+        return "http"
+    except (ValueError, json.JSONDecodeError):
+        return "http"
+
+
+def assert_port_available(host: str, port: int) -> None:
+    """断言端口可用，否则抛出携带分类信息的 ``PortOccupiedError``。
+
+    Args:
+        host: 目标主机。
+        port: 目标端口。
+
+    Raises:
+        PortOccupiedError: 端口被非 free 分类占用时抛出。
+    """
+    classification = probe_local_port(host, port)
+    if classification != "free":
+        raise PortOccupiedError(host, port, classification)
 
 
 class InterceptHandler(logging.Handler):
@@ -65,13 +194,19 @@ def is_admin() -> bool:
         return False
 
 
-@logger.catch
+@logger.catch(reraise=True)
 def main():
     if not is_admin():
         ctypes.windll.shell32.ShellExecuteW(
             None, "runas", sys.executable, os.path.realpath(sys.argv[0]), None, 1
         )
         sys.exit(0)
+
+    # 端口冲突必须在任何配置迁移、快照冻结或插件导入前失败，避免失败启动污染用户数据。
+    assert_port_available("127.0.0.1", 36163)
+
+    # 在任何 plugins/core 导入、legacy Config 构造或 connect 前冻结 r6 原始字节。
+    prepare_configuration_startup(Path.cwd() / "config")
 
     from app.plugins.uv_backend import ensure_uv
 
@@ -84,7 +219,6 @@ def main():
     import asyncio
     import uvicorn
     from fastapi import FastAPI
-    from fastapi.middleware.cors import CORSMiddleware
     from contextlib import asynccontextmanager
 
     @asynccontextmanager
@@ -96,47 +230,18 @@ def main():
         from pathlib import Path as _Path
 
         from app.core import Config
+        from app.core.config_service import config_service
         from app.plugins import PluginManager
         from app.core.page_registry import register_builtin_pages
         from app.core.script_types import validate_script_type_registry
-        from app.api import (
-            core_router,
-            info_router,
-            dispatch_router,
-            history_router,
-            tools_router,
-            setting_router,
-            update_router,
-            ocr_router,
-            ws_router,
-            plugins_router,
-            plugin_gateway_router,
-            qr_login_router,
-            script_types_router,
-        )
-        from app.plugins.system import get_core_plugin_routers
+        from app.api.registration import register_application_routers
 
         hmr_service: Any = None
         background_task = None
         _start_t = time.perf_counter()
 
         # ---- 路由注册 ----
-        app.include_router(core_router)
-        app.include_router(info_router)
-        for core_plugin_router in get_core_plugin_routers():
-            app.include_router(core_plugin_router)
-        app.include_router(dispatch_router)
-        app.include_router(history_router)
-        app.include_router(tools_router)
-        app.include_router(setting_router)
-        app.include_router(update_router)
-        app.include_router(ocr_router)
-        app.include_router(ws_router)
-        app.include_router(plugins_router)
-        app.include_router(plugin_gateway_router)
-        app.include_router(script_types_router)
-        if qr_login_router is not None:
-            app.include_router(qr_login_router)
+        register_application_routers(app)
 
         app.mount(
             "/api/res/materials",
@@ -160,15 +265,6 @@ def main():
                 if pycache.is_dir():
                     shutil.rmtree(pycache, ignore_errors=True)
             logger.debug("DEV 模式：已清理 plugins 目录下的 __pycache__")
-
-        await PluginManager.start(fast_startup=False)
-
-        missing_script_types = validate_script_type_registry(Config)
-        if missing_script_types:
-            raise RuntimeError(
-                "脚本类型注册不完整，以下脚本未找到可用 provider: "
-                + "; ".join(missing_script_types)
-            )
 
         async def initialize_background_services() -> None:
             nonlocal hmr_service
@@ -242,32 +338,141 @@ def main():
         logger.info(
             f"核心初始化完成, 耗时 {time.perf_counter() - _start_t:.2f}s"
         )
-        background_task = asyncio.create_task(initialize_background_services())
+
+        # 初始化 WS core（Experimental Alpha）
+        from app.core.ws.bootstrap import init_ws_core
+
+        await init_ws_core()
+
+        # 插件市场复用主连接；旧 /api/ws/plugin 仅作为兼容入口保留。
+        from app.plugins import market_channel
+
+        market_channel.register()
+
+        # 初始化 Config v2 服务（Experimental Alpha）
+        plugin_start_attempted = False
         try:
-            yield
-        finally:
-            if not background_task.done():
-                background_task.cancel()
+            await config_service.initialize()
+            plugin_start_attempted = True
+            await PluginManager.start(fast_startup=False)
+
+            missing_script_types = validate_script_type_registry(Config)
+            if missing_script_types:
+                raise RuntimeError(
+                    "脚本类型注册不完整，以下脚本未找到可用 provider: "
+                    + "; ".join(missing_script_types)
+                )
+        except BaseException:
+            # lifespan 尚未 yield 时也要撤销已注册的插件和全局 hook。
+            if plugin_start_attempted:
+                try:
+                    await PluginManager.stop()
+                except BaseException:
+                    logger.exception("启动回滚失败: 插件系统")
+            try:
+                await config_service.shutdown()
+            except BaseException:
+                logger.exception("启动回滚失败: Config v2")
+
+            from app.core.ws.bootstrap import shutdown_ws_core
+
+            try:
+                await shutdown_ws_core()
+            except BaseException:
+                logger.exception("启动回滚失败: WebSocket core")
+            raise
+
+        background_task = asyncio.create_task(initialize_background_services())
+
+        async def teardown_runtime() -> None:
+            """停止所有消息生产者并持久化最后一批配置变更。"""
+
+            shutdown_errors: list[BaseException] = []
+
+            async def run_shutdown_step(
+                name: str, step: Callable[[], Awaitable[Any]]
+            ) -> None:
+                try:
+                    await step()
+                except BaseException as error:
+                    shutdown_errors.append(error)
+                    logger.exception(f"关闭步骤失败: {name}")
+
+            async def stop_background_task() -> None:
+                if not background_task.done():
+                    background_task.cancel()
                 try:
                     await background_task
                 except asyncio.CancelledError:
                     pass
 
+            await run_shutdown_step("后台初始化任务", stop_background_task)
+
             from app.core.task_manager import TaskManager
             from app.core.timer import MainTimer
+            from app.services import Matomo, System
+
+            async def cancel_power_task() -> None:
+                try:
+                    await System.cancel_power_task()
+                except RuntimeError:
+                    # 没有待执行电源任务是正常退出状态。
+                    return
 
             if hmr_service is not None:
-                await hmr_service.stop()
+                await run_shutdown_step("插件 HMR", hmr_service.stop)
 
-            await TaskManager.stop_task("ALL")
-            await PluginManager.stop()
-            await MainTimer.stop()
+            await run_shutdown_step("电源倒计时", cancel_power_task)
+            await run_shutdown_step(
+                "全部自动化任务", lambda: TaskManager.stop_task("ALL")
+            )
+            await run_shutdown_step("插件系统", PluginManager.stop)
+            await run_shutdown_step("主计时器", MainTimer.stop)
 
-            from app.services import Matomo
+            await run_shutdown_step("Matomo", Matomo.close)
 
-            await Matomo.close()
+            # 所有消息生产者停止后再持久化最后一批配置变更。
+            from app.core.config_service import config_service
+
+            await run_shutdown_step("Config v2", config_service.shutdown)
+
+            if shutdown_errors:
+                if len(shutdown_errors) == 1:
+                    raise shutdown_errors[0]
+                raise BaseExceptionGroup("AUTO-MAS 后端关闭阶段发生多个错误", shutdown_errors)
 
             logger.info("AUTO-MAS 后端程序关闭")
+
+        from app.core.lifecycle import shutdown_coordinator
+
+        shutdown_coordinator.set_teardown(teardown_runtime)
+        try:
+            yield
+        finally:
+            shutdown_errors: list[BaseException] = []
+            try:
+                await shutdown_coordinator.run_teardown()
+            except BaseException as error:
+                shutdown_errors.append(error)
+
+            # 主连接保留到业务清理结束，供 /close 发送 shutdown-ready；
+            # lifespan 最后再关闭 WS core。
+            try:
+                from app.core.ws.bootstrap import shutdown_ws_core
+
+                await shutdown_ws_core()
+            except BaseException as error:
+                shutdown_errors.append(error)
+                logger.exception("关闭步骤失败: WebSocket core")
+            finally:
+                shutdown_coordinator.clear_teardown()
+
+            if shutdown_errors:
+                if len(shutdown_errors) == 1:
+                    raise shutdown_errors[0]
+                raise BaseExceptionGroup(
+                    "AUTO-MAS 后端关闭阶段发生多个错误", shutdown_errors
+                )
 
     # ---- 极简 app 创建：无路由、无 MCP、无静态挂载 ----
     app = FastAPI(
@@ -277,18 +482,16 @@ def main():
         lifespan=lifespan,
     )
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+    from app.core.http_security import configure_local_http_security
+    from app.core.ws.manager import ws_manager
+
+    configure_local_http_security(
+        app,
+        auth_token_provider=lambda: ws_manager.auth_token,
     )
 
     async def run_server():
-        config = uvicorn.Config(
-            app, host="0.0.0.0", port=36163, log_level="info", log_config=None
-        )
+        config = build_uvicorn_config(uvicorn, app)
         server = uvicorn.Server(config)
 
         from app.core import Config

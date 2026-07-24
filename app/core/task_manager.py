@@ -24,16 +24,68 @@ import uuid
 import asyncio
 from typing import Dict, Literal
 
-from .config import Config
 from app.plugins import PluginEventFactory, PluginEventNames
-from .script_types import script_type_registry
+from .ws import Publisher, protocol
 from app.services import System
 from app.models.task import TaskItem, ScriptItem, UserItem, TaskExecuteBase
+from app.models.schema import (
+    WSPowerSignData,
+    WSTaskCompletedData,
+    WSTaskCreatedData,
+    WSTaskNoticeData,
+)
 from app.utils import get_logger
-from app.utils.constants import POWER_SIGN_MAP
 
 
 logger = get_logger("业务调度")
+
+
+class TaskRuntimeUnavailableError(RuntimeError):
+    """The selected configuration runtime cannot safely dispatch tasks yet."""
+
+
+class _ConfigSelectorProxy:
+    """Resolve host Config only when task code actually needs it.
+
+    FastAPI imports this module while it assembles routers.  Importing
+    ``.config`` here used to construct the ConfigBase graph even when the
+    process had selected Config v2 authoritative mode.  The proxy preserves
+    the existing ``Config.foo`` call sites, including assignments, without
+    choosing a configuration runtime during module import.
+    """
+
+    @staticmethod
+    def _target():
+        from app.core import Config as selected_config
+
+        return selected_config
+
+    def __getattr__(self, name: str):
+        return getattr(self._target(), name)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        setattr(self._target(), name, value)
+
+
+Config = _ConfigSelectorProxy()
+
+
+async def _ensure_task_runtime_available() -> None:
+    """Reject authoritative dispatch until its selected runtime is initialized."""
+
+    from app.configuration import (
+        CONFIG_V2_MODE,
+        CONFIG_V2_MODE_AUTHORITATIVE,
+    )
+
+    if (
+        CONFIG_V2_MODE == CONFIG_V2_MODE_AUTHORITATIVE
+        and not Config.initialized
+    ):
+        raise TaskRuntimeUnavailableError(
+            "Config v2 authoritative task dispatch is unavailable before "
+            "the native configuration runtime is initialized"
+        )
 
 
 def _resolve_queue_name(queue_id: str | None) -> str | None:
@@ -139,15 +191,15 @@ class TaskInfo(TaskItem):
 
     async def on_change(self):
         """任务状态变更时，同步推送前端并广播插件事件。"""
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_id,
-            type="Update",
+            type=protocol.TASK_INFO_UPDATED,
             data={"task_info": self.asdict},
         )
         if self.current_index != -1:
-            await Config.send_websocket_message(
+            await Publisher.send(
                 id=self.task_id,
-                type="Update",
+                type=protocol.TASK_LOG_UPDATED,
                 data={"log": self.script_list[self.current_index].log},
             )
 
@@ -166,10 +218,20 @@ class Task(TaskExecuteBase):
 
     def _resolve_script_provider(self, script_uid: uuid.UUID):
         """解析脚本对应的 provider，兼容插件脚本。"""
-        from app.models.plugin_script_config import PluginScriptConfig
+        from app.configuration import (
+            CONFIG_V2_MODE,
+            CONFIG_V2_MODE_AUTHORITATIVE,
+        )
         from .script_types import (
             build_legacy_fallback_provider_by_script_config,
+            script_type_registry,
         )
+
+        if CONFIG_V2_MODE == CONFIG_V2_MODE_AUTHORITATIVE:
+            script_type_registry.bootstrap()
+            return script_type_registry.get(Config.get_script_type_key(script_uid))
+
+        from app.models.plugin_script_config import PluginScriptConfig
 
         script_config = Config.ScriptConfig[script_uid]
 
@@ -333,10 +395,13 @@ class Task(TaskExecuteBase):
             if current_script_uid not in Config.ScriptConfig:
                 script_item.status = "异常"
                 logger.info(f"跳过任务: {current_script_uid}, 对应脚本已被删除")
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": f"任务 {script_item.name} 对应脚本已被删除"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error",
+                        message=f"任务 {script_item.name} 对应脚本已被删除",
+                    ),
                 )
                 continue
 
@@ -346,10 +411,10 @@ class Task(TaskExecuteBase):
                 logger.error(
                     f"不支持的脚本类型: {type(Config.ScriptConfig[current_script_uid]).__name__}"
                 )
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": "脚本类型不支持"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message="脚本类型不支持"),
                 )
                 continue
 
@@ -358,10 +423,10 @@ class Task(TaskExecuteBase):
                 script_item.status = "异常"
                 reason = capability.unavailable_reason or "脚本当前不可用"
                 logger.error(f"脚本类型 {provider.type_key} 当前不可用: {reason}")
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={"Error": reason},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message=reason),
                 )
                 continue
 
@@ -370,22 +435,13 @@ class Task(TaskExecuteBase):
                 logger.error(
                     f"脚本类型 {provider.type_key} 不支持任务模式 {self.task_info.mode}"
                 )
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={
-                        "Error": f"脚本类型 {provider.type_key} 不支持任务模式 {self.task_info.mode}"
-                    },
-                )
-                continue
-
-            if Config.ScriptConfig[current_script_uid].is_locked:
-                script_item.status = "跳过"
-                logger.info(f"跳过任务: {current_script_uid}, 脚本已被其他任务锁定")
-                await Config.send_websocket_message(
-                    id=self.task_info.task_id,
-                    type="Info",
-                    data={"Warning": f"任务 {script_item.name} 已被其他任务调度器锁定"},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error",
+                        message=f"脚本类型 {provider.type_key} 不支持任务模式 {self.task_info.mode}",
+                    ),
                 )
                 continue
 
@@ -506,13 +562,13 @@ class Task(TaskExecuteBase):
 
         logger.info(f"任务结束: {self.task_info.task_id}")
 
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=str(self.task_info.task_id),
-            type="Signal",
-            data={
-                "Accomplish": self.task_info.result,
-                "task_info": self.task_info.asdict,
-            },
+            type=protocol.TASK_COMPLETED,
+            data=WSTaskCompletedData(
+                result=self.task_info.result,
+                task_info=self.task_info.asdict,
+            ),
         )
 
         await self.task_info._emit_task_progress()
@@ -524,8 +580,10 @@ class Task(TaskExecuteBase):
                 Config.power_sign = Config.QueueConfig[
                     uuid.UUID(self.task_info.queue_id)
                 ].get("Info", "AfterAccomplish")
-                await Config.send_websocket_message(
-                    id="Main", type="Update", data={"PowerSign": Config.power_sign}
+                await Publisher.send(
+                    id=protocol.ID_MAIN,
+                    type=protocol.POWER_SIGN_UPDATED,
+                    data=WSPowerSignData(signal=Config.power_sign),
                 )
 
         # 任务结束时触发游戏签到
@@ -548,10 +606,13 @@ class Task(TaskExecuteBase):
             self._exit_error = f"{type(e).__name__}: {e}"
 
         logger.exception(f"任务 {self.task_info.task_id} 出现异常: {e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"任务出现异常: {type(e).__name__}: {str(e)}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(
+                level="error",
+                message=f"任务出现异常: {type(e).__name__}: {str(e)}",
+            ),
         )
 
 
@@ -565,6 +626,8 @@ class _TaskManager:
         self.task_handler: Dict[uuid.UUID, Task] = {}
         self._startup_queue_started = False
         self._startup_queue_running = False
+        self._script_lease_guard = asyncio.Lock()
+        self._script_leases: dict[uuid.UUID, uuid.UUID] = {}
 
     @staticmethod
     def _queue_script_ids(queue_id: uuid.UUID) -> list[uuid.UUID]:
@@ -598,6 +661,58 @@ class _TaskManager:
             if mode not in (capability.supported_modes or ()):
                 raise RuntimeError(f"脚本 {script_name} 不支持任务模式 {mode}")
 
+    async def _acquire_script_leases(
+        self,
+        task_uid: uuid.UUID,
+        script_ids: list[uuid.UUID],
+    ) -> None:
+        """Atomically reserve every script referenced by one task."""
+
+        unique_ids = list(dict.fromkeys(script_ids))
+        async with self._script_lease_guard:
+            for script_id in unique_ids:
+                owner = self._script_leases.get(script_id)
+                if owner is not None and owner != task_uid:
+                    raise RuntimeError(
+                        f"脚本 {script_id} 已由任务 {owner} 占用"
+                    )
+                if Config.ScriptConfig[script_id].is_locked and owner != task_uid:
+                    raise RuntimeError(
+                        f"脚本 {script_id} 已被其他运行时锁定"
+                    )
+
+            registered: list[uuid.UUID] = []
+            acquired: list[uuid.UUID] = []
+            try:
+                for script_id in unique_ids:
+                    self._script_leases[script_id] = task_uid
+                    registered.append(script_id)
+                    await Config.ScriptConfig[script_id].lock()
+                    acquired.append(script_id)
+            except BaseException:
+                for script_id in reversed(acquired):
+                    await Config.ScriptConfig[script_id].unlock()
+                for script_id in reversed(registered):
+                    if self._script_leases.get(script_id) == task_uid:
+                        self._script_leases.pop(script_id, None)
+                raise
+
+    async def _release_script_leases(self, task_uid: uuid.UUID) -> None:
+        """Release only leases owned by ``task_uid`` and sweep residual locks."""
+
+        async with self._script_lease_guard:
+            script_ids = [
+                script_id
+                for script_id, owner in self._script_leases.items()
+                if owner == task_uid
+            ]
+            for script_id in reversed(script_ids):
+                script = Config.ScriptConfig.get(script_id)
+                if script is not None and script.is_locked:
+                    await script.unlock()
+                if self._script_leases.get(script_id) == task_uid:
+                    self._script_leases.pop(script_id, None)
+
     async def add_task(
         self,
         mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"],
@@ -617,6 +732,7 @@ class _TaskManager:
             uuid.UUID: 任务 UID
         """
 
+        await _ensure_task_runtime_available()
         uid = uuid.UUID(id)
 
         if mode == "ScriptConfig":
@@ -654,38 +770,49 @@ class _TaskManager:
             else [script_uid] if script_uid is not None else []
         )
         await self._validate_task_capabilities(mode, target_script_ids)
+        await self._acquire_script_leases(task_uid, target_script_ids)
 
-        if script_uid is not None and Config.ScriptConfig[script_uid].is_locked:
-            raise RuntimeError(
-                f"任务 {Config.ScriptConfig[script_uid].get('Info', 'Name')} 已在运行"
+        try:
+            logger.info(f"创建任务: {task_uid}, 模式: {mode}")
+            if new_task_info:
+                await Publisher.send(
+                    id=protocol.ID_TASK_MANAGER,
+                    type=protocol.TASK_CREATED,
+                    data=WSTaskCreatedData(
+                        taskId=str(task_uid),
+                        queueId=new_task_info.get("queueId"),
+                        taskName=new_task_info.get("taskName"),
+                        taskType=new_task_info.get("taskType"),
+                    ),
+                )
+            self.task_info[task_uid] = TaskInfo(
+                mode=mode,
+                task_id=str(task_uid),
+                queue_id=str(queue_id) if queue_id else None,
+                script_id=str(script_uid) if script_uid else None,
+                user_id=str(user_uid) if user_uid else None,
+                resume_from_script_id=resume_from_script_id,
             )
-
-        logger.info(f"创建任务: {task_uid}, 模式: {mode}")
-        if new_task_info:
-            new_task_info["newTask"] = str(task_uid)
-            await Config.send_websocket_message(
-                id="TaskManager", type="Signal", data=new_task_info
-            )
-        self.task_info[task_uid] = TaskInfo(
-            mode=mode,
-            task_id=str(task_uid),
-            queue_id=str(queue_id) if queue_id else None,
-            script_id=str(script_uid) if script_uid else None,
-            user_id=str(user_uid) if user_uid else None,
-            resume_from_script_id=resume_from_script_id,
-        )
-        self.task_handler[task_uid] = Task(self.task_info[task_uid])
-        self.task_handler[task_uid].execute()
-        asyncio.create_task(self.clean_task(task_uid))
+            self.task_handler[task_uid] = Task(self.task_info[task_uid])
+            self.task_handler[task_uid].execute()
+            asyncio.create_task(self.clean_task(task_uid))
+        except BaseException:
+            self.task_info.pop(task_uid, None)
+            self.task_handler.pop(task_uid, None)
+            await self._release_script_leases(task_uid)
+            raise
 
         return task_uid
 
     async def clean_task(self, task_uid: uuid.UUID) -> None:
-
-        await self.task_handler[task_uid].accomplish.wait()
-        power_enabled = bool(self.task_info[task_uid].mode != "ScriptConfig")
-        self.task_info.pop(task_uid, None)
-        self.task_handler.pop(task_uid, None)
+        power_enabled = False
+        try:
+            await self.task_handler[task_uid].accomplish.wait()
+            power_enabled = bool(self.task_info[task_uid].mode != "ScriptConfig")
+        finally:
+            await self._release_script_leases(task_uid)
+            self.task_info.pop(task_uid, None)
+            self.task_handler.pop(task_uid, None)
 
         if (
             power_enabled
@@ -693,15 +820,7 @@ class _TaskManager:
             and Config.power_sign != "NoAction"
         ):
             logger.info(f"所有任务已结束，准备执行电源操作: {Config.power_sign}")
-            await Config.send_websocket_message(
-                id="Main",
-                type="Message",
-                data={
-                    "type": "Countdown",
-                    "title": f"{POWER_SIGN_MAP[Config.power_sign]}倒计时",
-                    "message": f"程序将在倒计时结束后执行 {POWER_SIGN_MAP[Config.power_sign]} 操作",
-                },
-            )
+            # System 逐秒发布 power.countdown.updated，避免新旧倒计时重复显示。
             await System.start_power_task()
 
     async def stop_task(self, task_id: str) -> None:
@@ -735,6 +854,7 @@ class _TaskManager:
     async def start_startup_queue(self):
         """开始运行启动时运行的调度队列"""
 
+        await _ensure_task_runtime_available()
         if self._startup_queue_started:
             logger.info("启动时任务已触发，跳过重复运行")
             return

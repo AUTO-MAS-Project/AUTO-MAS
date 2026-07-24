@@ -1716,6 +1716,22 @@ class EmulatorOperateIn(BaseModel):
     index: str = Field(..., description="模拟器索引")
 
 
+class EmulatorOperateOut(OutBase):
+    """模拟器操作响应：校验同步、执行异步。
+
+    校验通过时返回 ``code=200, status="accepted", operationId, accepted=True``，
+    真实结果通过 WS ``emulator.notice`` 携带 ``operationId`` 推送。
+    校验失败返回 ``code=400, status="error"``。
+    """
+
+    operationId: Optional[str] = Field(
+        default=None, description="操作追踪 ID；操作已接受但未完成时返回"
+    )
+    accepted: bool = Field(
+        default=False, description="操作是否已被接受进行后台执行"
+    )
+
+
 class DeviceStatus(BaseModel):
     """设备状态枚举"""
 
@@ -1937,7 +1953,7 @@ class DispatchIn(BaseModel):
 
 
 class TaskCreateIn(DispatchIn):
-    mode: Literal["AutoProxy", "ManualReview", "ScriptConfig"] = Field(
+    mode: Literal["AutoProxy", "ManualReview", "ScriptConfig", "CycleRun"] = Field(
         ..., description="任务模式"
     )
     resumeFromScriptId: str | None = Field(
@@ -1957,6 +1973,100 @@ class WebSocketMessage(BaseModel):
         description="消息类型 Update: 更新数据, Message: 请求弹出对话框, Info: 需要在UI显示的消息, Signal: 程序信号",
     )
     data: Dict[str, Any] = Field(..., description="消息数据, 具体内容根据type类型而定")
+
+
+class WSEnvelope(BaseModel):
+    """主 WebSocket 的稳定消息信封。
+
+    ``type`` 同时承载旧消息类别与新的 dotted 事件名；协议演进不得把
+    ``id/type/data`` 改成另一套顶层字段。前端心跳历史上允许省略 ``id``，
+    因此入站解析时使用空字符串作为兼容默认值。
+    """
+
+    id: str = Field(default="", description="消息路由 ID；心跳可省略")
+    type: str = Field(..., min_length=1, description="消息类别或 dotted 事件名")
+    data: Dict[str, Any] = Field(default_factory=dict, description="消息数据")
+
+
+class WSTaskNoticeData(BaseModel):
+    """任务提示消息数据 (type=task.notice)。"""
+
+    level: Literal["info", "warning", "error"]
+    message: str
+    operationId: Optional[str] = Field(
+        default=None, description="模拟器操作追踪 ID，用于关联 HTTP accepted 响应"
+    )
+
+
+class WSTaskCompletedData(BaseModel):
+    """任务完成消息数据 (type=task.completed)。"""
+
+    result: str
+    task_info: List[Dict[str, Any]]
+
+
+class WSTaskInfoUpdatedData(BaseModel):
+    """任务状态更新数据 (type=task.info.updated)。"""
+
+    task_info: List[Dict[str, Any]]
+    cycleQueueId: Optional[str] = Field(default=None, description="循环任务所属队列ID")
+    cycleNextRunAt: Optional[str] = Field(
+        default=None, description="下一次运行时间，格式 YYYY-MM-DD HH:mm:ss"
+    )
+    cycleWaitingReason: Optional[str] = Field(
+        default=None, description="循环任务当前等待原因"
+    )
+    cycleCurrentItemId: Optional[str] = Field(
+        default=None, description="当前循环队列项ID"
+    )
+
+
+class WSTaskCreatedData(BaseModel):
+    """新任务创建通知数据 (id=TaskManager, type=task.created)。"""
+
+    taskId: str
+    queueId: Optional[str] = None
+    taskName: Optional[str] = None
+    taskType: Optional[str] = None
+
+
+class WSUpdateProgressData(BaseModel):
+    """更新下载进度数据 (id=Update, type=update.progress)。"""
+
+    downloaded_size: int = Field(ge=0)
+    file_size: int = Field(ge=0)
+    speed: float = Field(ge=0)
+    source: str
+
+
+class WSDialogRequestData(BaseModel):
+    """后端发起应用内弹窗时的 ``data``。"""
+
+    requestId: str
+    taskId: Optional[str] = None
+    title: str = ""
+    message: str = ""
+    options: List[str] = Field(default_factory=list)
+
+
+class WSDialogResponseData(BaseModel):
+    """前端响应应用内弹窗时的 ``data``。"""
+
+    requestId: str
+    choice: bool
+
+
+class WSPowerCountdownData(BaseModel):
+    """电源倒计时更新数据 (id=Main, type=power.countdown.updated)。"""
+
+    operation: str = Field(..., description="待执行的电源操作")
+    remaining: int = Field(..., ge=0, description="剩余秒数")
+
+
+class WSPowerSignData(BaseModel):
+    """电源标志更新数据 (id=Main, type=power.sign.updated)。"""
+
+    signal: str = Field(..., description="电源操作信号")
 
 
 class PowerIn(BaseModel):

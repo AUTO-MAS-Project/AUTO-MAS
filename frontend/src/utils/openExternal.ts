@@ -3,14 +3,30 @@
  * @param url 要打开的URL
  * @returns Promise<boolean> 是否成功打开
  */
+export function normalizeExternalUrl(url: string): string | null {
+  try {
+    const parsed = new URL(String(url || '').trim())
+    if (!['http:', 'https:', 'mailto:'].includes(parsed.protocol.toLowerCase())) {
+      return null
+    }
+    return parsed.href
+  } catch {
+    return null
+  }
+}
+
 export async function openExternalUrl(url: string): Promise<boolean> {
   try {
+    const safeUrl = normalizeExternalUrl(url)
+    if (!safeUrl) return false
+
     if (window.electronAPI && window.electronAPI.openUrl) {
-      const result = await window.electronAPI.openUrl(url)
+      const result = await window.electronAPI.openUrl(safeUrl)
       return result.success
     } else {
       // 如果不在Electron环境中，使用普通的window.open
-      window.open(url, '_blank')
+      const opened = window.open(safeUrl, '_blank', 'noopener,noreferrer')
+      if (opened) opened.opener = null
       return true
     }
   } catch (error) {

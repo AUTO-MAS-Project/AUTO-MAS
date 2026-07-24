@@ -62,6 +62,7 @@ const steps = [
   { key: 'git', title: 'Git 安装', canSkip: false },
   { key: 'repository', title: '源码拉取', canSkip: true },
   { key: 'dependency', title: '依赖安装', canSkip: true },
+  { key: 'plugin-bootstrap', title: '插件安装', canSkip: false },
   { key: 'backend', title: '后端启动', canSkip: true },
 ]
 
@@ -179,6 +180,23 @@ const stepStates = ref<Record<string, StepState>>({
     operationDesc: '',
   },
   dependency: {
+    status: 'waiting',
+    message: '',
+    progress: 0,
+    showMirrorSelection: false,
+    mirrors: [],
+    selectedMirror: '',
+    countdown: 0,
+    currentMirror: '',
+    downloadSpeed: '',
+    downloadSize: '',
+    installMessage: '',
+    installProgress: 0,
+    deployMessage: '',
+    deployProgress: 0,
+    operationDesc: '',
+  },
+  'plugin-bootstrap': {
     status: 'waiting',
     message: '',
     progress: 0,
@@ -404,6 +422,9 @@ async function executeStep(stepKey: string): Promise<boolean> {
         break
       case 'dependency':
         result = await window.electronAPI.installDependencies(state.selectedMirror)
+        break
+      case 'plugin-bootstrap':
+        result = await window.electronAPI.installPluginBootstrap(state.selectedMirror)
         break
       case 'backend':
         // 后端启动由BackendStartStep组件处理
@@ -709,6 +730,7 @@ async function loadMirrorConfigs() {
     stepStates.value.git.mirrors = gitMirrors.map(convertMirror)
     stepStates.value.repository.mirrors = repoMirrors.map(convertMirror)
     stepStates.value.dependency.mirrors = pipMirrors.map(convertMirror)
+    stepStates.value['plugin-bootstrap'].mirrors = pipMirrors.map(convertMirror)
 
     logger.info('镜像源配置加载完成')
     logger.info(`Python 镜像源: ${stepStates.value.python.mirrors.map(m => m.name)}`)
@@ -716,6 +738,9 @@ async function loadMirrorConfigs() {
     logger.info(`Git 镜像源: ${stepStates.value.git.mirrors.map(m => m.name)}`)
     logger.info(`Repository 镜像源: ${stepStates.value.repository.mirrors.map(m => m.name)}`)
     logger.info(`Dependency 镜像源: ${stepStates.value.dependency.mirrors.map(m => m.name)}`)
+    logger.info(
+      `Plugin bootstrap 镜像源: ${stepStates.value['plugin-bootstrap'].mirrors.map(m => m.name)}`
+    )
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载镜像源配置失败: ${errorMsg}`)
@@ -811,6 +836,7 @@ onMounted(async () => {
   api.onGitProgress?.((progress: any) => handleProgress('git', progress))
   api.onRepositoryProgress?.((progress: any) => handleProgress('repository', progress))
   api.onDependencyProgress?.((progress: any) => handleProgress('dependency', progress))
+  api.onPluginBootstrapProgress?.((progress: any) => handleProgress('plugin-bootstrap', progress))
 
   api.onBackendStatus?.((status: any) => {
     logger.info(`后端状态更新: ${status.isRunning ? '运行中' : '已停止'}`)
@@ -845,6 +871,7 @@ onUnmounted(() => {
   api.removeGitProgressListener?.()
   api.removeRepositoryProgressListener?.()
   api.removeDependencyProgressListener?.()
+  api.removePluginBootstrapProgressListener?.()
   api.removeBackendStatusListener?.()
 })
 </script>

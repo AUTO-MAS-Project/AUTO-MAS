@@ -7,6 +7,14 @@ import { useWebSocket, ExternalWSHandlers } from '@/composables/useWebSocket'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import schedulerHandlers from './schedulerHandlers'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
+import {
+  WS_TASK_COMPLETED,
+  WS_TASK_INFO_UPDATED,
+  WS_TASK_LOG_UPDATED,
+  WS_TASK_NOTICE,
+  type WSTaskCompletedData,
+  type WSTaskNoticeData,
+} from '@/services/websocket/types'
 import type { QueueItem } from './schedulerConstants'
 import { type SchedulerTab, type TaskMessage, type SchedulerStatus } from './schedulerConstants'
 const logger = window.electronAPI.getLogger('调度台逻辑')
@@ -62,6 +70,7 @@ const toPersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   resumeScriptOptions: tab.resumeScriptOptions ? [...tab.resumeScriptOptions] : [],
   resumeScriptLoading: false,
   websocketId: tab.websocketId,
+  subscriptionIds: [],
   subscriptionId: null,
   runningTaskLabel: tab.runningTaskLabel,
   runningModeLabel: tab.runningModeLabel,
@@ -74,6 +83,7 @@ const normalizePersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   ...getDefaultTabRuntimeState(),
   resumeScriptOptions: tab.resumeScriptOptions || [],
   resumeScriptLoading: false,
+  subscriptionIds: [],
   subscriptionId: null,
   logMode: tab.logMode || 'follow',
 })
@@ -198,6 +208,25 @@ let _watchInitialized = false
 export function useSchedulerLogic() {
   // WebSocket 实例
   const ws = useWebSocket()
+
+  const taskSubscriptionIds = (tab: SchedulerTab): string[] => {
+    const ids = [...(tab.subscriptionIds ?? [])]
+    if (tab.subscriptionId && !ids.includes(tab.subscriptionId)) ids.push(tab.subscriptionId)
+    return ids
+  }
+
+  const unsubscribeTab = (tab: SchedulerTab) => {
+    for (const subscriptionId of taskSubscriptionIds(tab)) {
+      try {
+        ws.unsubscribe(subscriptionId)
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.warn(`清理订阅 ${subscriptionId} 时发生错误: ${errorMsg}`)
+      }
+    }
+    tab.subscriptionIds = []
+    tab.subscriptionId = null
+  }
 
   // TaskManager消息处理函数（供全局WebSocket调用）
   const handleTaskManagerMessage = (wsMessage: any) => {
@@ -340,9 +369,7 @@ export function useSchedulerLogic() {
         if (idx === -1) return
 
         // 清理 WebSocket 订阅
-        if (tab.subscriptionId) {
-          ws.unsubscribe(tab.subscriptionId)
-        }
+        unsubscribeTab(tab)
 
         // 清理日志引用
         logRefs.value.delete(key)
@@ -383,9 +410,7 @@ export function useSchedulerLogic() {
       onOk() {
         nonRunningTabs.forEach(tab => {
           // 清理 WebSocket 订阅
-          if (tab.subscriptionId) {
-            ws.unsubscribe(tab.subscriptionId)
-          }
+          unsubscribeTab(tab)
 
           // 清理日志引用
           logRefs.value.delete(tab.key)
@@ -508,11 +533,7 @@ export function useSchedulerLogic() {
         tab.websocketId = response.taskId
 
         // 确保清理任何可能存在的旧订阅
-        if (tab.subscriptionId) {
-          logger.info(`清理旧的WebSocket订阅: ${tab.subscriptionId}`)
-          ws.unsubscribe(tab.subscriptionId)
-          tab.subscriptionId = null
-        }
+        unsubscribeTab(tab)
 
         // 清空之前的状态
         tab.taskQueue.splice(0)
@@ -565,33 +586,40 @@ export function useSchedulerLogic() {
   const subscribeToTask = (tab: SchedulerTab) => {
     if (!tab.websocketId) return
 
-    // 如果订阅已存在且WebSocket ID未改变，则不需要重新订阅
-    if (tab.subscriptionId) {
+    // 如果订阅已存在且 WebSocket ID 未改变，则不重复注册。
+    if (taskSubscriptionIds(tab).length > 0) {
       logger.info(`订阅已存在，跳过重复订阅: {
         key: ${tab.key},
-        subscriptionId: ${tab.subscriptionId},
+        subscriptionIds: ${taskSubscriptionIds(tab).join(',')},
         websocketId: ${tab.websocketId},
       }`)
       return
     }
 
-    // 创建新订阅，不再needCache，因为keep-alive保持组件存活
-    const subscriptionId = ws.subscribe({ id: tab.websocketId }, message =>
-      handleWebSocketMessage(tab, message)
+    const messageTypes = [
+      WS_TASK_INFO_UPDATED,
+      WS_TASK_LOG_UPDATED,
+      WS_TASK_NOTICE,
+      WS_TASK_COMPLETED,
+      // 迁移期兼容尚未升级的宿主或插件发送器。
+      'Update',
+      'Info',
+      'Message',
+      'Signal',
+    ]
+    tab.subscriptionIds = messageTypes.map(type =>
+      ws.subscribe({ id: tab.websocketId!, type }, message => handleWebSocketMessage(tab, message))
     )
-
-    // 将订阅ID保存到tab中，以便后续取消订阅
-    tab.subscriptionId = subscriptionId
+    tab.subscriptionId = null
     logger.info(
       `新建WebSocket订阅: ${JSON.stringify({
         key: tab.key,
         websocketId: tab.websocketId,
-        subscriptionId,
+        subscriptionIds: tab.subscriptionIds,
       })}`
     )
 
-    // 验证订阅是否成功建立
-    if (!subscriptionId) {
+    if (tab.subscriptionIds.some(subscriptionId => !subscriptionId)) {
       logger.error(
         `WebSocket订阅创建失败！: ${JSON.stringify({
           key: tab.key,
@@ -639,6 +667,29 @@ export function useSchedulerLogic() {
         logger.debug(`处理Signal消息: ${JSON.stringify(data)}`)
         handleSignalMessage(tab, data)
         break
+      case WS_TASK_INFO_UPDATED:
+      case WS_TASK_LOG_UPDATED:
+        handleUpdateMessage(tab, data)
+        break
+      case WS_TASK_NOTICE: {
+        const notice = data as WSTaskNoticeData
+        const legacyNotice =
+          notice.level === 'error'
+            ? { Error: notice.message }
+            : notice.level === 'warning'
+              ? { Warning: notice.message }
+              : { Info: notice.message }
+        void handleInfoMessage(legacyNotice)
+        break
+      }
+      case WS_TASK_COMPLETED: {
+        const completed = data as WSTaskCompletedData
+        void handleSignalMessage(tab, {
+          Accomplish: completed.result,
+          task_info: completed.task_info,
+        })
+        break
+      }
       default:
         logger.warn(`未知的WebSocket消息类型: ${type}, ${JSON.stringify(wsMessage)}`)
         // 即使是未知类型的消息，也尝试处理其中可能包含的有效数据
@@ -943,21 +994,15 @@ export function useSchedulerLogic() {
         )
       }
 
-      if (tab.subscriptionId) {
+      if (taskSubscriptionIds(tab).length > 0) {
         logger.info(
           `任务完成，清理WebSocket订阅: ${JSON.stringify({
             key: tab.key,
-            subscriptionId: tab.subscriptionId,
+            subscriptionIds: taskSubscriptionIds(tab),
             websocketId: tab.websocketId,
           })}`
         )
-        try {
-          ws.unsubscribe(tab.subscriptionId)
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error)
-          logger.warn(`清理订阅时发生错误: ${errorMsg}`)
-        }
-        tab.subscriptionId = null
+        unsubscribeTab(tab)
       }
 
       if (tab.websocketId) {
@@ -1300,7 +1345,7 @@ export function useSchedulerLogic() {
             `初始化阶段检查运行中标签的订阅: ${JSON.stringify({
               key: tab.key,
               websocketId: tab.websocketId,
-              hasSubscription: !!tab.subscriptionId,
+              hasSubscription: taskSubscriptionIds(tab).length > 0,
             })}`
           )
           // subscribeToTask 会自动跳过已有订阅，保持缓存标记不丢失
@@ -1347,8 +1392,8 @@ export function useSchedulerLogic() {
         `- Tab ${tab.key} (${tab.title}): ${JSON.stringify({
           status: tab.status,
           websocketId: tab.websocketId,
-          subscriptionId: tab.subscriptionId,
-          hasSubscription: !!tab.subscriptionId,
+          subscriptionIds: taskSubscriptionIds(tab),
+          hasSubscription: taskSubscriptionIds(tab).length > 0,
         })}`
       )
     })
@@ -1383,21 +1428,15 @@ export function useSchedulerLogic() {
     // 所以这里清理所有订阅，包括运行中的任务
     logger.info('清理所有WebSocket订阅')
     schedulerTabs.value.forEach(tab => {
-      if (tab.subscriptionId) {
+      if (taskSubscriptionIds(tab).length > 0) {
         logger.info(
           `清理订阅: ${JSON.stringify({
             key: tab.key,
             status: tab.status,
-            subscriptionId: tab.subscriptionId,
+            subscriptionIds: taskSubscriptionIds(tab),
           })}`
         )
-        try {
-          ws.unsubscribe(tab.subscriptionId)
-        } catch (error) {
-          const errorMsg = error instanceof Error ? error.message : String(error)
-          logger.warn(`清理订阅时发生错误: ${errorMsg}`)
-        }
-        tab.subscriptionId = null
+        unsubscribeTab(tab)
       }
     })
 

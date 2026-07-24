@@ -1,0 +1,12 @@
+{
+  "case_id": "04_reload_basic",
+  "status": "PASS",
+  "notes": "",
+  "error": null,
+  "error_traceback": null,
+  "snapshots": {
+    "after_reload": "Snapshot(at=1784824033.281921, event_bus_handlers={'fake:probe': 1, 'fake:probe_global': 1}, loader_records={'r-1': {'instance_id': 'r-1', 'plugin_name': 'fake_reload', 'status': 'active', 'lifecycle_phase': 'active', 'error': None, 'listener_ids': [], 'generation': 2, 'reload_count': 1, 'last_reload_reason': 'test', 'on_load_attempted': True, 'on_start_attempted': True, 'on_stop_completed': False, 'on_unload_completed': False, 'provides': [], 'needs': [], 'missing': []}}, discovered_plugins={'fake_reload': {'source': 'pypi', 'distribution': 'automas-fake-reload', 'version': '0.1.0', 'system': False, 'locked': False}}, service_owners={}, sys_modules_keys_sample=['fake_plugin_bad', 'fake_plugin_explode', 'fake_plugin_good', 'fake_plugin_lifecycle', 'fake_plugin_reload'])",
+    "after_unload": "Snapshot(at=1784824033.2829258, event_bus_handlers={}, loader_records={'r-1': {'instance_id': 'r-1', 'plugin_name': 'fake_reload', 'status': 'unloaded', 'lifecycle_phase': 'unloaded', 'error': None, 'listener_ids': [], 'generation': 2, 'reload_count': 1, 'last_reload_reason': 'test', 'on_load_attempted': True, 'on_start_attempted': True, 'on_stop_completed': True, 'on_unload_completed': True, 'provides': [], 'needs': [], 'missing': []}}, discovered_plugins={'fake_reload': {'source': 'pypi', 'distribution': 'automas-fake-reload', 'version': '0.1.0', 'system': False, 'locked': False}}, service_owners={}, sys_modules_keys_sample=['fake_plugin_bad', 'fake_plugin_explode', 'fake_plugin_good', 'fake_plugin_lifecycle', 'fake_plugin_reload'])"
+  },
+  "metrics": {}
+}

@@ -23,6 +23,10 @@ export interface PageDeclaration {
   source: string
 }
 
+export interface PageRouteOptions {
+  includeDevOnly?: boolean
+}
+
 const SchedulerView = () => import('../views/scheduler/index.vue')
 const PluginPageHostView = () => import('../views/PluginPageHost.vue')
 const PluginElementHostView = () => import('../views/PluginElementHost.vue')
@@ -101,6 +105,7 @@ export const FALLBACK_PAGE_DECLARATIONS: PageDeclaration[] = [
   hostPage('home', '/home', '主页', 'home', 'Home', 'main', 10),
   hostPage('scripts', '/scripts', '脚本管理', 'script', 'Scripts', 'main', 20),
   hostPage('plans', '/plans', '计划管理', 'plan', 'Plans', 'main', 30),
+  hostPage('emulators', '/emulators', '模拟器管理', 'emulator', 'Emulators', 'main', 40),
   hostPage('plugins', '/plugins', '插件管理', 'plugin', 'Plugin', 'main', 50),
   hostPage('plugins-market', '/plugins-market', '插件市场', 'market', 'PluginMarket', 'main', 60),
   hostPage('queue', '/queue', '调度队列', 'queue', 'Queue', 'main', 70),
@@ -167,12 +172,61 @@ export function sortPageDeclarations(pages: PageDeclaration[]): PageDeclaration[
   })
 }
 
-export function createPageRoutes(pages: PageDeclaration[]): RouteRecordRaw[] {
-  return pages.map(createPageRoute).filter((route): route is RouteRecordRaw => route !== null)
+export function dedupePageDeclarations(pages: PageDeclaration[]): PageDeclaration[] {
+  const pageIds = new Set<string>()
+  const pagePaths = new Set<string>()
+  const deduped: PageDeclaration[] = []
+
+  for (const page of pages) {
+    if (pageIds.has(page.id) || pagePaths.has(page.path)) {
+      continue
+    }
+    pageIds.add(page.id)
+    pagePaths.add(page.path)
+    deduped.push(page)
+  }
+
+  return deduped
 }
 
-export function syncDeclaredPageRoutes(router: Router, pages: PageDeclaration[]): void {
-  const routes = createPageRoutes(pages)
+export function createPageRoutes(
+  pages: PageDeclaration[],
+  options: PageRouteOptions = {}
+): RouteRecordRaw[] {
+  const includeDevOnly = options.includeDevOnly ?? import.meta.env.DEV
+  const routeNames = new Set<string>()
+  const routePaths = new Set<string>()
+  const routes: RouteRecordRaw[] = []
+
+  for (const page of pages) {
+    if (page.dev_only && !includeDevOnly) {
+      continue
+    }
+
+    const route = createPageRoute(page)
+    if (!route) {
+      continue
+    }
+
+    const routeName = String(route.name)
+    if (routeNames.has(routeName) || routePaths.has(route.path)) {
+      continue
+    }
+
+    routeNames.add(routeName)
+    routePaths.add(route.path)
+    routes.push(route)
+  }
+
+  return routes
+}
+
+export function syncDeclaredPageRoutes(
+  router: Router,
+  pages: PageDeclaration[],
+  options: PageRouteOptions = {}
+): void {
+  const routes = createPageRoutes(pages, options)
   const nextRouteNames = new Set(routes.map(route => String(route.name)))
 
   for (const existingRoute of router.getRoutes()) {

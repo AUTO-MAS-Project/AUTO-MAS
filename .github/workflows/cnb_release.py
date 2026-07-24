@@ -49,6 +49,10 @@ from pathlib import Path
 from tqdm import tqdm
 
 
+CNB_REQUEST_TIMEOUT_SECONDS = (10, 60)
+CNB_UPLOAD_TIMEOUT_SECONDS = (10, 15 * 60)
+
+
 def build_cnb_headers(token: str) -> Dict[str, str]:
     """统一构建 CNB API 请求头。"""
     return {
@@ -96,7 +100,10 @@ class CNBReleaseUploader:
 
         try:
             response = requests.post(
-                url, headers=create_release_headers, json=release_data
+                url,
+                headers=create_release_headers,
+                json=release_data,
+                timeout=CNB_REQUEST_TIMEOUT_SECONDS,
             )
             response.raise_for_status()
 
@@ -141,7 +148,12 @@ class CNBReleaseUploader:
         data = {"asset_name": asset_name, "overwrite": overwrite, "size": file_size}
 
         try:
-            response = requests.post(url, headers=self.headers, json=data)
+            response = requests.post(
+                url,
+                headers=self.headers,
+                json=data,
+                timeout=CNB_REQUEST_TIMEOUT_SECONDS,
+            )
             response.raise_for_status()
 
             upload_info = response.json()
@@ -186,7 +198,7 @@ class CNBReleaseUploader:
             with open(file_path, "rb") as file:
                 if show_progress and file_size > 0:
                     # 创建进度条
-                    progress_bar = tqdm(
+                    with tqdm(
                         total=file_size,
                         unit="B",
                         unit_scale=True,
@@ -194,31 +206,35 @@ class CNBReleaseUploader:
                         desc=f"📤 上传 {file_name}",
                         ncols=80,
                         bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
-                    )
+                    ) as progress_bar:
+                        # 创建一个包装器来更新进度条
+                        class ProgressFileWrapper:
+                            def __init__(self, file_obj, progress_bar):
+                                self.file_obj = file_obj
+                                self.progress_bar = progress_bar
 
-                    # 创建一个包装器来更新进度条
-                    class ProgressFileWrapper:
-                        def __init__(self, file_obj, progress_bar):
-                            self.file_obj = file_obj
-                            self.progress_bar = progress_bar
+                            def read(self, size=-1):
+                                data = self.file_obj.read(size)
+                                if data:
+                                    self.progress_bar.update(len(data))
+                                return data
 
-                        def read(self, size=-1):
-                            data = self.file_obj.read(size)
-                            if data:
-                                self.progress_bar.update(len(data))
-                            return data
+                            def __getattr__(self, name):
+                                return getattr(self.file_obj, name)
 
-                        def __getattr__(self, name):
-                            return getattr(self.file_obj, name)
-
-                    wrapped_file = ProgressFileWrapper(file, progress_bar)
-                    response = requests.put(
-                        upload_url, headers=upload_headers, data=wrapped_file
-                    )
-                    progress_bar.close()
+                        wrapped_file = ProgressFileWrapper(file, progress_bar)
+                        response = requests.put(
+                            upload_url,
+                            headers=upload_headers,
+                            data=wrapped_file,
+                            timeout=CNB_UPLOAD_TIMEOUT_SECONDS,
+                        )
                 else:
                     response = requests.put(
-                        upload_url, headers=upload_headers, data=file
+                        upload_url,
+                        headers=upload_headers,
+                        data=file,
+                        timeout=CNB_UPLOAD_TIMEOUT_SECONDS,
                     )
 
                 response.raise_for_status()
@@ -253,7 +269,11 @@ class CNBReleaseUploader:
             是否验证成功
         """
         try:
-            response = requests.post(verify_url, headers=self.headers)
+            response = requests.post(
+                verify_url,
+                headers=self.headers,
+                timeout=CNB_REQUEST_TIMEOUT_SECONDS,
+            )
             response.raise_for_status()
 
             print(f"🔍 验证请求返回状态: {response.status_code}")

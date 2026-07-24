@@ -3,32 +3,18 @@ from __future__ import annotations
 import inspect
 import importlib.metadata as importlib_metadata
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import TYPE_CHECKING, Any, Callable, Iterable
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.ConfigBase import (
-    BoolValidator,
-    ConfigBase,
-    ConfigItem,
-    DateTimeValidator,
-    EncryptValidator,
-    FileValidator,
-    FolderValidator,
-    JSONValidator,
-    MultipleOptionsValidator,
-    MultipleUIDValidator,
-    OptionsValidator,
-    RangeValidator,
-    UUIDValidator,
-    ValidatorBase,
-    VirtualConfigValidator,
-)
 from app.models.task import ScriptItem
 from app.plugins.pypi_site import ensure_pypi_site_packages_on_syspath
 from app.utils import get_logger
+
+if TYPE_CHECKING:
+    from app.models.ConfigBase import ConfigItem, ValidatorBase
 
 
 logger = get_logger("脚本类型注册表")
@@ -107,6 +93,26 @@ LEGACY_SCRIPT_TYPE_BY_USER_CLASS = {
 LEGACY_SCRIPT_TYPE_BY_TYPE_KEY = {
     item["type_key"]: item for item in LEGACY_SCRIPT_TYPE_METADATA
 }
+
+
+def _is_legacy_config_class(config_class: type[Any]) -> bool:
+    """Check the legacy boundary without importing it on native-only startup."""
+
+    if not isinstance(config_class, type):
+        return False
+    from app.models.ConfigBase import ConfigBase
+
+    return issubclass(config_class, ConfigBase)
+
+
+def _is_supported_config_class(config_class: type[Any]) -> bool:
+    return (
+        isinstance(config_class, type)
+        and (
+            issubclass(config_class, BaseModel)
+            or _is_legacy_config_class(config_class)
+        )
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,9 +230,9 @@ class ScriptTypeRegistry:
             raise ValueError("脚本类型键不能为空")
         if type_key in self._providers:
             raise ValueError(f"脚本类型 {type_key} 已存在")
-        if not issubclass(provider.script_config_class, (ConfigBase, BaseModel)):
+        if not _is_supported_config_class(provider.script_config_class):
             raise TypeError("script_config_class 必须继承 ConfigBase 或 pydantic.BaseModel")
-        if not issubclass(provider.user_config_class, (ConfigBase, BaseModel)):
+        if not _is_supported_config_class(provider.user_config_class):
             raise TypeError("user_config_class 必须继承 ConfigBase 或 pydantic.BaseModel")
         if not callable(provider.manager_factory):
             raise TypeError("manager_factory 必须可调用")
@@ -311,7 +317,7 @@ class ScriptTypeRegistry:
             raise KeyError(f"未注册的脚本类型: {type_key}")
         return self._providers[type_key]
 
-    def get_by_script_config(self, config: ConfigBase | type[ConfigBase] | str) -> ScriptTypeProvider:
+    def get_by_script_config(self, config: Any | type[Any] | str) -> ScriptTypeProvider:
         """根据脚本配置类解析提供者。"""
 
         class_name = _resolve_class_name(config)
@@ -320,7 +326,7 @@ class ScriptTypeRegistry:
             raise KeyError(f"未注册的脚本配置类: {class_name}")
         return provider
 
-    def get_by_user_config(self, config: ConfigBase | type[ConfigBase] | str) -> ScriptTypeProvider:
+    def get_by_user_config(self, config: Any | type[Any] | str) -> ScriptTypeProvider:
         """根据用户配置类解析提供者。"""
 
         class_name = _resolve_class_name(config)
@@ -361,19 +367,6 @@ class ScriptTypeRegistry:
     def _register_builtin_providers(self) -> None:
         """注册内建脚本类型。"""
 
-        from app.models.config import (
-            MaaEndConfig,
-            MaaEndUserConfig,
-            SrcConfig,
-            SrcUserConfig,
-        )
-        from app.plugins import ScriptAdapterDefinition
-        from app.task.general.adapter import GeneralAdapterHooks
-        from app.task.general.schema import (
-            SCRIPT_GROUPS,
-            USER_GROUPS,
-        )
-
         def _lazy_manager(module_path: str, class_name: str) -> Callable[[ScriptItem], Any]:
             def _factory(script_item: ScriptItem) -> Any:
                 module = __import__(module_path, fromlist=[class_name])
@@ -382,48 +375,98 @@ class ScriptTypeRegistry:
 
             return _factory
 
-        providers = [
-            ScriptTypeProvider(
-                type_key="SRC",
-                display_name="SRC脚本",
-                script_config_class=SrcConfig,
-                user_config_class=SrcUserConfig,
-                supported_modes=("AutoProxy", "ManualReview", "ScriptConfig"),
-                manager_factory=_lazy_manager("app.task.SRC.manager", "SrcManager"),
-                icon="SRC",
-                editor_kind="builtin:src",
-                is_builtin=True,
-            ),
-            ScriptTypeProvider(
-                type_key="MaaEnd",
-                display_name="MaaEnd脚本",
-                script_config_class=MaaEndConfig,
-                user_config_class=MaaEndUserConfig,
-                supported_modes=("AutoProxy", "ManualReview", "ScriptConfig"),
-                manager_factory=_lazy_manager("app.task.MaaEnd.manager", "MaaEndManager"),
-                icon="MaaEnd",
-                editor_kind="builtin:maaend",
-                is_builtin=True,
-            ),
-            ScriptAdapterDefinition(
+        from app.configuration import (
+            CONFIG_V2_MODE,
+            CONFIG_V2_MODE_AUTHORITATIVE,
+        )
+
+        if CONFIG_V2_MODE == CONFIG_V2_MODE_AUTHORITATIVE:
+            from app.configuration.roots.script import (
+                GeneralScript,
+                GeneralUser,
+                SrcScript,
+                SrcUser,
+            )
+            from app.plugins import ScriptAdapterDefinition
+            from app.plugins.script_adapter_schema import build_schema
+            from app.task.general.adapter import GeneralAdapterHooks
+            from app.task.general.schema import SCRIPT_GROUPS, USER_GROUPS
+
+            general_definition = ScriptAdapterDefinition(
                 type_key="General",
                 display_name="通用脚本",
                 hooks_factory=GeneralAdapterHooks,
-                script_groups=SCRIPT_GROUPS,
-                user_groups=USER_GROUPS,
-                script_class_name="GeneralConfig",
-                user_class_name="GeneralUserConfig",
-                module="app.task.general.schema",
-                related_bindings={"EmulatorConfig": "EmulatorConfig"},
+                script_model=GeneralScript,
+                user_model=GeneralUser,
                 supported_modes=("AutoProxy", "ScriptConfig"),
                 icon="General",
                 editor_kind="schema",
                 legacy_config_class_name="GeneralConfig",
                 legacy_user_config_class_name="GeneralUserConfig",
-                is_builtin=False,
-                metadata={"framework": "script_adapter", "create_group": "general"},
-            ).build_provider(),
-        ]
+                metadata={
+                    "config_runtime": "v2-native",
+                    "framework": "script_adapter",
+                    "create_group": "general",
+                },
+            )
+            general_provider = general_definition.build_provider()
+            general_provider.script_schema = build_schema(SCRIPT_GROUPS)
+            general_provider.user_schema = build_schema(USER_GROUPS)
+
+            providers = [
+                ScriptTypeProvider(
+                    type_key="SRC",
+                    display_name="SRC脚本",
+                    script_config_class=SrcScript,
+                    user_config_class=SrcUser,
+                    supported_modes=("AutoProxy", "ManualReview", "ScriptConfig"),
+                    manager_factory=_lazy_manager("app.task.SRC.manager", "SrcManager"),
+                    icon="SRC",
+                    editor_kind="builtin:src",
+                    legacy_config_class_name="SrcConfig",
+                    legacy_user_config_class_name="SrcUserConfig",
+                    is_builtin=True,
+                    metadata={"config_runtime": "v2-native"},
+                ),
+                general_provider,
+            ]
+        else:
+            from app.models.config import SrcConfig, SrcUserConfig
+            from app.plugins import ScriptAdapterDefinition
+            from app.task.general.adapter import GeneralAdapterHooks
+            from app.task.general.schema import SCRIPT_GROUPS, USER_GROUPS
+
+            providers = [
+                ScriptTypeProvider(
+                    type_key="SRC",
+                    display_name="SRC脚本",
+                    script_config_class=SrcConfig,
+                    user_config_class=SrcUserConfig,
+                    supported_modes=("AutoProxy", "ManualReview", "ScriptConfig"),
+                    manager_factory=_lazy_manager("app.task.SRC.manager", "SrcManager"),
+                    icon="SRC",
+                    editor_kind="builtin:src",
+                    is_builtin=True,
+                ),
+                ScriptAdapterDefinition(
+                    type_key="General",
+                    display_name="通用脚本",
+                    hooks_factory=GeneralAdapterHooks,
+                    script_groups=SCRIPT_GROUPS,
+                    user_groups=USER_GROUPS,
+                    script_class_name="GeneralConfig",
+                    user_class_name="GeneralUserConfig",
+                    module="app.task.general.schema",
+                    related_bindings={"EmulatorConfig": "EmulatorConfig"},
+                    supported_modes=("AutoProxy", "ScriptConfig"),
+                    icon="General",
+                    editor_kind="schema",
+                    legacy_config_class_name="GeneralConfig",
+                    legacy_user_config_class_name="GeneralUserConfig",
+                    is_builtin=False,
+                    metadata={"framework": "script_adapter", "create_group": "general"},
+                ).build_provider(),
+            ]
 
         for provider in providers:
             self.register(provider)
@@ -464,10 +507,15 @@ def build_config_schema(config_class: type[Any]) -> dict[str, Any]:
 
         return build_schema(declared_groups)
 
+    if inspect.isclass(config_class):
+        from app.configuration.v2.entry import ConfigEntry
+
+        if issubclass(config_class, ConfigEntry):
+            return _build_native_config_schema(config_class)
+
     if (
         inspect.isclass(config_class)
         and issubclass(config_class, BaseModel)
-        and not issubclass(config_class, ConfigBase)
     ):
         from app.plugins.schema import PluginSchemaManager
 
@@ -490,6 +538,78 @@ def build_config_schema(config_class: type[Any]) -> dict[str, Any]:
             )
 
     return {"groups": groups}
+
+
+def _build_native_config_schema(
+    config_class: type[Any],
+) -> dict[str, Any]:
+    """Project editable Config v2 groups to the existing SchemaForm contract."""
+
+    from app.configuration.v2.encrypted import is_encrypted_model_field
+    from app.configuration.v2.fields import (
+        RefField,
+        is_virtual_model_field,
+    )
+    from app.plugins.fields import PluginFieldGroup
+    from app.plugins.script_adapter_schema import (
+        build_field_groups_from_model,
+        build_schema,
+    )
+
+    editable_groups = set(config_class._cfg_group_fields)
+    projected_groups: list[PluginFieldGroup] = []
+    for group in build_field_groups_from_model(config_class):
+        if group.key not in editable_groups:
+            continue
+        group_model = config_class.model_fields[group.key].annotation
+        fields = []
+        for declaration in group.fields:
+            field_info = group_model.model_fields[declaration.name]
+            encrypted = is_encrypted_model_field(field_info)
+            virtual = is_virtual_model_field(field_info)
+            references = [
+                item
+                for item in field_info.metadata
+                if isinstance(item, RefField)
+            ]
+            reference = references[0] if references else None
+            fields.append(
+                replace(
+                    declaration,
+                    field_type=(
+                        "related-id"
+                        if reference is not None
+                        else declaration.field_type
+                    ),
+                    format=(
+                        "password"
+                        if encrypted
+                        else declaration.format
+                    ),
+                    sensitive=declaration.sensitive or encrypted,
+                    readonly=declaration.readonly or virtual,
+                    hidden=declaration.hidden or virtual,
+                    configurable=declaration.configurable and not virtual,
+                    related_config=(
+                        reference.target
+                        if reference is not None
+                        else declaration.related_config
+                    ),
+                    related_default=(
+                        reference.default
+                        if reference is not None
+                        else declaration.related_default
+                    ),
+                )
+            )
+        projected_groups.append(
+            PluginFieldGroup(
+                key=group.key,
+                label=group.label,
+                fields=tuple(fields),
+            )
+        )
+    return build_schema(projected_groups)
 
 
 def strip_sub_configs(data: dict[str, Any]) -> dict[str, Any]:
@@ -532,7 +652,7 @@ def build_descriptor(provider: ScriptTypeProvider) -> dict[str, Any]:
 
 
 def build_legacy_fallback_provider_by_script_config(
-    config: ConfigBase | type[ConfigBase] | str,
+    config: Any | type[Any] | str,
 ) -> ScriptTypeProvider | None:
     """按脚本配置类名构造离线回退 provider。"""
 
@@ -543,7 +663,7 @@ def build_legacy_fallback_provider_by_script_config(
 
 
 def build_legacy_fallback_provider_by_user_config(
-    config: ConfigBase | type[ConfigBase] | str,
+    config: Any | type[Any] | str,
 ) -> ScriptTypeProvider | None:
     """按用户配置类名构造离线回退 provider。"""
 
@@ -600,7 +720,7 @@ def apply_script_type_registry_to_global_config(global_config: Any) -> None:
     global_config.ScriptConfig.sub_config_type["PluginScriptConfig"] = PluginScriptConfig
 
     for provider in script_type_registry.list():
-        if issubclass(provider.script_config_class, ConfigBase):
+        if _is_legacy_config_class(provider.script_config_class):
             global_config.ScriptConfig.sub_config_type[provider.script_config_class.__name__] = (
                 provider.script_config_class
             )
@@ -689,7 +809,7 @@ def validate_script_type_registry(global_config: Any) -> list[str]:
 
 
 def is_script_config_compatible_with_type_key(
-    script_config: ConfigBase | BaseModel,
+    script_config: Any | BaseModel,
     type_key: str,
 ) -> bool:
     """判断脚本配置是否可兼容指定脚本类型键。"""
@@ -727,7 +847,7 @@ def is_script_config_compatible_with_type_key(
 
 def _is_provider_compatible_with_script_config(
     provider: ScriptTypeProvider,
-    script_config: ConfigBase | BaseModel,
+    script_config: Any | BaseModel,
 ) -> bool:
     """判断 provider 是否可兼容当前已加载的脚本配置类。"""
 
@@ -847,7 +967,7 @@ def _resolve_class_name(config: Any) -> str:
 def _resolve_legacy_config_classes(
     script_class_name: str,
     user_class_name: str,
-) -> tuple[type[ConfigBase], type[ConfigBase]]:
+) -> tuple[type[Any], type[Any]]:
     """解析遗留脚本类型回退所需的配置类。"""
 
     from app.models.config import (
@@ -865,7 +985,7 @@ def _resolve_legacy_config_classes(
         SrcUserConfig,
     )
 
-    script_classes: dict[str, type[ConfigBase]] = {
+    script_classes: dict[str, type[Any]] = {
         "GeneralConfig": GeneralConfig,
         "M9AConfig": M9AConfig,
         "MaaConfig": MaaConfig,
@@ -873,7 +993,7 @@ def _resolve_legacy_config_classes(
         "MaaFWConfig": MaaFWConfig,
         "SrcConfig": SrcConfig,
     }
-    user_classes: dict[str, type[ConfigBase]] = {
+    user_classes: dict[str, type[Any]] = {
         "GeneralUserConfig": GeneralUserConfig,
         "M9AUserConfig": M9AUserConfig,
         "MaaEndUserConfig": MaaEndUserConfig,
@@ -904,6 +1024,8 @@ def _make_unavailable_manager_factory(type_key: str) -> Callable[[ScriptItem], A
 def _serialize_config_item(item: ConfigItem) -> dict[str, Any]:
     """把配置项序列化成前端可消费的字段描述。"""
 
+    from app.models.ConfigBase import EncryptValidator, VirtualConfigValidator
+
     schema: dict[str, Any] = {
         "key": f"{item.group}.{item.name}",
         "group": item.group,
@@ -923,6 +1045,21 @@ def _apply_validator_schema(
     schema: dict[str, Any], validator: ValidatorBase, default_value: Any
 ) -> None:
     """根据验证器补充字段类型元数据。"""
+
+    from app.models.ConfigBase import (
+        BoolValidator,
+        DateTimeValidator,
+        EncryptValidator,
+        FileValidator,
+        FolderValidator,
+        JSONValidator,
+        MultipleOptionsValidator,
+        MultipleUIDValidator,
+        OptionsValidator,
+        RangeValidator,
+        UUIDValidator,
+        VirtualConfigValidator,
+    )
 
     if isinstance(validator, OptionsValidator):
         schema["type"] = "select"

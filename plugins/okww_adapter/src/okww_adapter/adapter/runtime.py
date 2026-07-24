@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import shutil
-import uuid
 from contextlib import suppress
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
-from app.core import Config
-from app.models.ConfigBase import ConfigBase, MultipleConfig
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, UserItem
 from app.plugins import ScriptAdapterHooks, ScriptAdapterRuntime
 from app.services import System
@@ -19,7 +18,7 @@ from .autoproxy import AutoProxyTask, _OKWW_REL_CONFIG_DIR
 logger = get_logger("OK-WW 插件适配")
 
 
-def _cfg_get(config: ConfigBase | None, group: str, name: str, default: Any = None) -> Any:
+def _cfg_get(config: Any, group: str, name: str, default: Any = None) -> Any:
     if config is None:
         return default
     try:
@@ -29,12 +28,12 @@ def _cfg_get(config: ConfigBase | None, group: str, name: str, default: Any = No
     return default if value is None else value
 
 
-def _user_name(config: ConfigBase | None, fallback: str) -> str:
+def _user_name(config: Any, fallback: str) -> str:
     value = _cfg_get(config, "Info", "Name", fallback)
     return str(value or fallback)
 
 
-def _user_enabled(config: ConfigBase | None) -> bool:
+def _user_enabled(config: Any) -> bool:
     return bool(_cfg_get(config, "Info", "Status", True))
 
 
@@ -50,10 +49,10 @@ class _CheckedAutoProxyTask(TaskExecuteBase):
                 current_user = self.inner.cur_user_item
                 if current_user.status == "等待":
                     current_user.status = "异常"
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.inner.task_info.task_id,
-                    type="Info",
-                    data={"Error": result},
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message=result),
                 )
                 return
             await self.inner.main_task()
@@ -75,36 +74,20 @@ class OkwwAdapterHooks(ScriptAdapterHooks):
         return "Pass"
 
     async def prepare(self, runtime: ScriptAdapterRuntime) -> None:
-        storage_script_config = runtime.get_storage_script_config()
-        await storage_script_config.lock()
-        runtime.storage_script_config = storage_script_config
+        await runtime.storage.lock()
         runtime.script_config = await runtime.build_script_model()
-        user_pairs = await runtime.build_user_models()
-        provider = runtime._resolve_provider()
-        user_config = MultipleConfig([provider.user_config_class])
-        await user_config.load(
-            {
-                "instances": [
-                    {"uid": user_id, "type": provider.user_config_class.__name__}
-                    for user_id, _ in user_pairs
-                ],
-                **{
-                    user_id: await model.toDict(if_decrypt=False)
-                    for user_id, model in user_pairs
-                    if isinstance(model, ConfigBase)
-                },
-            }
-        )
+        user_config = await runtime.storage.load_user_collection()
 
         runtime.extra["user_config"] = user_config
         runtime.script_info.user_list = [
             UserItem(
                 user_id=user_id,
-                name=_user_name(model if isinstance(model, ConfigBase) else None, user_id),
+                name=_user_name(model, user_id),
                 status="等待",
             )
-            for user_id, model in user_pairs
-            if isinstance(model, ConfigBase) and _user_enabled(model)
+            for user_uid, model in user_config.items()
+            for user_id in (str(user_uid),)
+            if _user_enabled(model)
         ]
 
         game_enabled = bool(_cfg_get(runtime.script_config, "Game", "Enabled", False))
@@ -138,15 +121,17 @@ class OkwwAdapterHooks(ScriptAdapterHooks):
         await self._restore_script_config_from_temp(runtime)
         with suppress(Exception):
             await self._write_back_user_config(runtime)
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=runtime.task_info.task_id,
-            type="Info",
-            data={"Error": f"OK-WW 插件任务出现异常: {error}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(
+                level="error", message=f"OK-WW 插件任务出现异常: {error}"
+            ),
         )
 
     def run_auto_proxy(self, runtime: ScriptAdapterRuntime) -> TaskExecuteBase:
         user_config = runtime.extra.get("user_config")
-        if not isinstance(user_config, MultipleConfig):
+        if not isinstance(user_config, Mapping):
             raise RuntimeError("OK-WW 用户配置未准备完成")
         inner = AutoProxyTask(
             script_info=runtime.script_info,
@@ -157,14 +142,11 @@ class OkwwAdapterHooks(ScriptAdapterHooks):
         return _CheckedAutoProxyTask(inner)
 
     async def _write_back_user_config(self, runtime: ScriptAdapterRuntime) -> None:
-        script_uid = uuid.UUID(runtime.script_info.script_id)
-        script_cfg = Config.ScriptConfig[script_uid]
-        if script_cfg.is_locked:
-            await script_cfg.unlock()
         user_config = runtime.extra.get("user_config")
-        if not isinstance(user_config, MultipleConfig):
+        await runtime.storage.unlock()
+        if not isinstance(user_config, Mapping):
             return
-        await script_cfg.UserData.load(await user_config.toDict(if_decrypt=False))
+        await runtime.storage.save_user_models(user_config)
 
     async def _restore_script_config_from_temp(self, runtime: ScriptAdapterRuntime) -> None:
         temp_path = runtime.extra.get("temp_path")

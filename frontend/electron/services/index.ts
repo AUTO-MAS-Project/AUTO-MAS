@@ -83,7 +83,9 @@ export {
 // 后端服务
 export {
   BackendService,
+  BackendManagedProcessInfo,
   BackendStatus,
   BackendStartOptions,
+  BackendRuntimeMutationResult,
   BackendStatusCallback,
 } from './backendService'

@@ -133,6 +133,21 @@ export const splitScriptTypeOptions = (options: ScriptTypeOption[]) => ({
   general: options.filter(option => option.group === 'general'),
 })
 
+const SCRIPT_EDIT_SEGMENTS: Record<string, string> = {
+  MAA: 'maa',
+  SRC: 'src',
+  MaaEnd: 'maaend',
+  M9A: 'maafw',
+  MaaFW: 'maafw',
+  Okww: 'okww',
+  OkScript: 'ok-script',
+  HSR: 'hsr',
+  General: 'general',
+}
+
+export const getScriptEditSegment = (type: ScriptType): string =>
+  SCRIPT_EDIT_SEGMENTS[type] ?? type.trim().toLowerCase()
+
 export const buildCreateRequest = (state: CreateRequestState): ScriptCreateRequest | null => {
   if (state.type !== 'General') {
     return { kind: 'new', type: state.type }

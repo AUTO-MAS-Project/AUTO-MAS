@@ -3,8 +3,8 @@ import type { ElectronAPI } from '@/types/electron'
 type BrowserDevWindow = Window & { __AUTO_MAS_BROWSER_DEV_MODE__?: boolean }
 type Logger = ReturnType<ElectronAPI['getLogger']>
 
-const BACKEND_HTTP_ENDPOINT = 'http://localhost:36163'
-const BACKEND_WS_ENDPOINT = 'ws://localhost:36163'
+const BACKEND_HTTP_ENDPOINT = 'http://127.0.0.1:36163'
+const BACKEND_WS_ENDPOINT = 'ws://127.0.0.1:36163'
 const CONFIG_KEY = 'app-config'
 const INITIALIZED_VERSION_KEY = 'app-initialized-version'
 
@@ -39,6 +39,19 @@ const browserDevElectronAPI = {
   getApiEndpoint: async (key: string) =>
     key === 'websocket' ? BACKEND_WS_ENDPOINT : BACKEND_HTTP_ENDPOINT,
   getApiEndpoints: async () => ({ local: BACKEND_HTTP_ENDPOINT, websocket: BACKEND_WS_ENDPOINT }),
+  getBackendAuthToken: async () => {
+    const response = await fetch(`${BACKEND_HTTP_ENDPOINT}/api/core/ws_meta`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!response.ok) throw new Error(`Backend authentication failed: ${response.status}`)
+    const metadata = (await response.json()) as { wsAuthToken?: unknown }
+    if (typeof metadata.wsAuthToken !== 'string') {
+      throw new Error('Backend authentication token is unavailable')
+    }
+    return metadata.wsAuthToken
+  },
   openUrl: async (url: string) => {
     window.open(url, '_blank', 'noopener,noreferrer')
     return { success: true }

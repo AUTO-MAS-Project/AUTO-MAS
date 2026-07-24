@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "snapshot_id": "nexus-overdrive-all-plugins-v6.0.0-alpha.20260724.r8-portable-v5",
+  "version": "v6.0.0-alpha.NEXUS-OVERDRIVE.20260724.5",
+  "generated_at": "2026-07-24T07:20:00.0000000+00:00",
+  "deployment_mode": "bundled-snapshot",
+  "source": {
+    "official_dev_v2": "b5e87281",
+    "official_dev": "e012f284",
+    "integration_branch": "integration/dev-v2-dev-all-plugins",
+    "integration_has_uncommitted_changes": true,
+    "browser_source_commit": "9dd56de7",
+    "hsr_source_commit": "2430286c09ff3dd8cdd1d2e8aec8a96f49799b28",
+    "m9a_source_commit": "c6edfc6a2b4f98aefabd17ce052592c27aa801f3",
+    "maafw_source_commit": "14382d877b384c61522ae5c9e3ee586dad5c289f",
+    "maafw_source_dirty": true,
+    "mxu_import_source_commit": "a501a10181d8193df42f6953763c713a934c2382",
+    "maaend_adapter_source_commit": "2acb9ee827e653779e3ce143b8d3c418e259c167",
+    "maa_script_source_commit": "a561607b1fc8e3c3da3f3abfc3b3c2bb87527b6a"
+  },
+  "required_paths": [
+    "app",
+    "plugins/auto_mas_core",
+    "plugins/browser",
+    "plugins/ok_script_adapter",
+    "plugins/okww_adapter",
+    "plugins/wheels/manifest.json",
+    "plugins/wheels/runtime-lock.json",
+    "plugins/wheels/pylock.host.toml",
+    "plugins/wheels/pylock.combined.toml",
+    "main.py",
+    "pyproject.toml",
+    "requirements.txt",
+    "scripts",
+    "LICENSE",
+    "README.md",
+    "res/version.json"
+  ],
+  "wheel_manifest": "plugins/wheels/manifest.json",
+  "wheelhouse_contract": {
+    "manifest_schema_version": 3,
+    "runtime_lock_schema_version": 1,
+    "wheel_count": 127,
+    "plugin_distribution_count": 23,
+    "plugin_entry_point_count": 21,
+    "core_distribution_version": "6.0.0a1",
+    "manifest_sha256": "5E2CE0E1F353DDB51DE61C6CAA36CEEB75B852419F87FF585EC4C566117D199A",
+    "runtime_lock_sha256": "254B697BECBDE141D32F65382C8485EFBCDBC4350A5388A9A3F94F9CF04975E5"
+  },
+  "update_policy": "Prefer this bundled snapshot until a newer application ships another snapshot.",
+  "release_policy": {
+    "channel": "experimental-alpha",
+    "embedded_updater": "manual-only"
+  }
+}

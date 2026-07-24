@@ -4,6 +4,7 @@ import { connectAfterBackendStart, forceConnectWebSocket } from '@/composables/u
 import { startTitlebarVersionCheck } from '@/composables/useVersionService'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
 import { markAsInitialized } from '@/composables/useAppInitialization'
+import { bootstrapSchedulerSubscriptions } from '@/views/scheduler/schedulerHandlers'
 
 const logger = window.electronAPI.getLogger('应用入口')
 
@@ -53,6 +54,7 @@ export async function enterApp(
   forceEnter: boolean = true
 ): Promise<boolean> {
   logger.info(`${reason}：开始进入应用流程，尝试建立WebSocket连接...`)
+  bootstrapSchedulerSubscriptions()
 
   let wsConnected = false
 
@@ -104,6 +106,7 @@ export async function enterApp(
 export async function forceEnterApp(reason: string = '强行进入'): Promise<void> {
   logger.info(`${reason}：跳过初始化流程开始`)
   logger.info(`${reason}：尝试强制建立WebSocket连接...`)
+  bootstrapSchedulerSubscriptions()
 
   try {
     // 使用强制连接模式

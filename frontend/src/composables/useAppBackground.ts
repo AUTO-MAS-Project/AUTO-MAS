@@ -1,132 +1,109 @@
-import { computed, ref } from 'vue'
 import { OpenAPI } from '@/api'
+import {
+  DEFAULT_APP_BACKGROUND,
+  resolveLoadableAppBackground,
+  type ResolvedAppBackground,
+} from '@/theme/background'
+import { authenticatedApiFetch } from '@/utils/httpSecurity'
+import { computed, ref } from 'vue'
 
 interface AppBackgroundResponse {
   code?: number
   status?: string
   message?: string
-  enabled?: boolean
-  image_url?: string | null
-  blur_px?: number
-  brightness?: number
-  opacity?: number
-  overlay_opacity?: number
-  card_opacity?: number
-  panel_opacity?: number
-  elevated_opacity?: number
-  sider_opacity?: number
-  position?: string
-  fit?: string
+  [key: string]: unknown
 }
 
-const background = ref<AppBackgroundResponse>({
-  enabled: false,
-})
+const logger = window.electronAPI.getLogger('应用背景')
+const background = ref<ResolvedAppBackground>({ ...DEFAULT_APP_BACKGROUND })
 const loaded = ref(false)
-let loadPromise: Promise<void> | null = null
-
-const toPercent = (value: unknown, fallback: number) => {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? Math.max(0, Math.min(160, parsed)) : fallback
-}
-
-const toPx = (value: unknown, fallback: number) => {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? Math.max(0, Math.min(40, parsed)) : fallback
-}
-
-const toPosition = (value: unknown) => {
-  if (value === 'top') {
-    return 'center top'
-  }
-  if (value === 'bottom') {
-    return 'center bottom'
-  }
-  return 'center center'
-}
-
-const toFit = (value: unknown) => (value === 'contain' ? 'contain' : 'cover')
-
-const buildUrl = (url?: string | null) => {
-  if (!url) {
-    return ''
-  }
-  if (/^https?:\/\//i.test(url)) {
-    return url
-  }
-  const base = OpenAPI.BASE || ''
-  return `${base}${url.startsWith('/') ? url : `/${url}`}`
-}
+let loadGeneration = 0
 
 const getApiBase = async () => {
-  if (OpenAPI.BASE) {
-    return OpenAPI.BASE
-  }
+  if (OpenAPI.BASE) return OpenAPI.BASE
+
   try {
     if (window.electronAPI?.getApiEndpoint) {
       const endpoint = await window.electronAPI.getApiEndpoint('local')
       OpenAPI.BASE = endpoint
       return endpoint
     }
-  } catch {
-    // fall through to default local endpoint
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logger.warn(`获取背景服务端点失败，使用本地默认端点: ${message}`)
   }
-  OpenAPI.BASE = 'http://localhost:36163'
+
+  OpenAPI.BASE = 'http://127.0.0.1:36163'
   return OpenAPI.BASE
 }
 
+const toBackgroundEndpoint = (apiBase: string) =>
+  `${apiBase.replace(/\/+$/, '')}/api/plugins/frontend/background`
+
 export function useAppBackground() {
-  const enabled = computed(() => Boolean(background.value.enabled && background.value.image_url))
-  const imageUrl = computed(() => buildUrl(background.value.image_url))
+  const enabled = computed(() => background.value.enabled)
+  const source = computed(() => background.value.source)
+  const fallbackReason = computed(() => background.value.fallbackReason)
   const cssVars = computed(() => ({
-    '--app-background-image': imageUrl.value ? `url("${imageUrl.value}")` : 'none',
-    '--app-background-blur': `${toPx(background.value.blur_px, 0)}px`,
-    '--app-background-brightness': `${toPercent(background.value.brightness, 100)}%`,
-    '--app-background-opacity': `${toPercent(background.value.opacity, 100) / 100}`,
-    '--app-background-overlay-opacity': `${toPercent(background.value.overlay_opacity, 0) / 100}`,
-    '--app-background-card-opacity': `${toPercent(background.value.card_opacity, 92)}%`,
-    '--app-background-panel-opacity': `${toPercent(
-      background.value.panel_opacity ?? background.value.card_opacity,
-      92
-    )}%`,
-    '--app-background-elevated-opacity': `${toPercent(
-      background.value.elevated_opacity ?? background.value.card_opacity,
-      92
-    )}%`,
-    '--app-background-sider-opacity': `${toPercent(background.value.sider_opacity, 88)}%`,
-    '--app-background-position': toPosition(background.value.position),
-    '--app-background-size': toFit(background.value.fit),
+    '--app-background-image': background.value.imageUrl
+      ? `url("${background.value.imageUrl}")`
+      : 'none',
+    '--app-background-blur': `${background.value.blurPx}px`,
+    '--app-background-brightness': `${background.value.brightness}%`,
+    '--app-background-opacity': `${background.value.opacity / 100}`,
+    '--app-background-overlay-opacity': `${background.value.overlayOpacity / 100}`,
+    '--app-background-card-opacity': `${background.value.cardOpacity}%`,
+    '--app-background-panel-opacity': `${background.value.panelOpacity}%`,
+    '--app-background-elevated-opacity': `${background.value.elevatedOpacity}%`,
+    '--app-background-sider-opacity': `${background.value.siderOpacity}%`,
+    '--app-background-position': background.value.position,
+    '--app-background-size': background.value.fit,
   }))
 
   const loadBackground = async () => {
-    if (loadPromise) {
-      return loadPromise
-    }
+    const generation = ++loadGeneration
 
-    loadPromise = (async () => {
-      try {
-        const base = await getApiBase()
-        const response = await fetch(`${base}/api/plugins/frontend/background`)
-        const data = (await response.json()) as AppBackgroundResponse
-        if (!response.ok || data.code === 500 || data.status === 'error') {
-          background.value = { enabled: false }
-          return
-        }
-        background.value = data
-      } catch {
-        background.value = { enabled: false }
-      } finally {
-        loaded.value = true
-        loadPromise = null
+    try {
+      const apiBase = await getApiBase()
+      const response = await authenticatedApiFetch(toBackgroundEndpoint(apiBase), {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+      })
+      const payload = (await response.json()) as AppBackgroundResponse
+
+      if (
+        !response.ok ||
+        payload.status === 'error' ||
+        (payload.code !== undefined && payload.code !== 200)
+      ) {
+        throw new Error(payload.message || `HTTP ${response.status}`)
       }
-    })()
 
-    return loadPromise
+      const resolved = await resolveLoadableAppBackground(payload, apiBase)
+      if (generation !== loadGeneration) return
+
+      background.value = resolved
+      if (resolved.fallbackReason === 'unsafe-url') {
+        logger.warn('背景服务返回了不安全的资源地址，已回退到默认背景')
+      } else if (resolved.fallbackReason === 'image-load-failed') {
+        logger.warn('背景图片无法加载或解码，已回退到默认背景')
+      }
+    } catch (error) {
+      if (generation !== loadGeneration) return
+
+      const message = error instanceof Error ? error.message : String(error)
+      background.value = { ...DEFAULT_APP_BACKGROUND }
+      logger.warn(`加载应用背景失败，已回退到默认背景: ${message}`)
+    } finally {
+      if (generation === loadGeneration) loaded.value = true
+    }
   }
 
   return {
     background,
     enabled,
+    source,
+    fallbackReason,
     cssVars,
     loaded,
     loadBackground,

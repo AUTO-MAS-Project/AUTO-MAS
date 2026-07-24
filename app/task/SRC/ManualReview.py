@@ -22,13 +22,14 @@
 
 import uuid
 import asyncio
+from typing import Any, Mapping
 from pathlib import Path
 from datetime import datetime
 
-from app.core import Config, Broadcast
+from app.core import Config
+from app.core.ws import Dialogs, Publisher, protocol
+from app.models.schema import WSTaskNoticeData
 from app.models.task import TaskExecuteBase, ScriptItem
-from app.models.ConfigBase import MultipleConfig
-from app.models.config import SrcConfig, SrcUserConfig
 from app.models.emulator import DeviceBase
 from app.utils import get_logger
 from app.utils.constants import STARRAIL_PACKAGE_NAME, UTC4
@@ -43,8 +44,8 @@ class ManualReviewTask(TaskExecuteBase):
     def __init__(
         self,
         script_info: ScriptItem,
-        script_config: SrcConfig,
-        user_config: MultipleConfig[SrcUserConfig],
+        script_config: Any,
+        user_config: Mapping[uuid.UUID, Any],
         emulator_manager: DeviceBase,
     ):
         super().__init__()
@@ -77,8 +78,6 @@ class ManualReviewTask(TaskExecuteBase):
 
     async def prepare(self):
 
-        self.message_queue = asyncio.Queue()
-        await Broadcast.subscribe(self.message_queue)
         self.wait_event = asyncio.Event()
 
         self.run_book = {"SignIn": False, "PassCheck": False}
@@ -95,12 +94,13 @@ class ManualReviewTask(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             if self.cur_user_item.status == "异常":
-                await Config.send_websocket_message(
+                await Publisher.send(
                     id=self.task_info.task_id,
-                    type="Info",
-                    data={
-                        "Error": f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}"
-                    },
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="error",
+                        message=f"用户 {self.cur_user_item.name} 检查未通过: {self.check_result}",
+                    ),
                 )
             return
 
@@ -132,20 +132,15 @@ class ManualReviewTask(TaskExecuteBase):
                 except Exception as e:
                     logger.exception(f"关闭模拟器失败: {e}")
 
-                uid = str(uuid.uuid4())
-                await Config.send_websocket_message(
-                    id=self.task_info.task_id,
-                    type="Message",
-                    data={
-                        "message_id": uid,
-                        "type": "Question",
-                        "title": "操作提示",
-                        "message": "模拟器启动失败, 是否重试？",
-                        "options": ["是", "否"],
-                    },
+                choice = await Dialogs.request(
+                    "manual-review",
+                    title="操作提示",
+                    message="模拟器启动失败, 是否重试？",
+                    options=["是", "否"],
+                    task_id=self.task_info.task_id,
+                    timeout=1800.0,
                 )
-                result = await self._wait_for_user_response(uid)
-                if not result.get("data", {}).get("choice", False):
+                if not choice:
                     break
                 continue
 
@@ -173,20 +168,15 @@ class ManualReviewTask(TaskExecuteBase):
                 except Exception as e:
                     logger.exception(f"关闭模拟器失败: {e}")
 
-                uid = str(uuid.uuid4())
-                await Config.send_websocket_message(
-                    id=self.task_info.task_id,
-                    type="Message",
-                    data={
-                        "message_id": uid,
-                        "type": "Question",
-                        "title": "操作提示",
-                        "message": "未能正确登录到「崩坏·星穹铁道」, 是否重试？",
-                        "options": ["是", "否"],
-                    },
+                choice = await Dialogs.request(
+                    "manual-review",
+                    title="操作提示",
+                    message="未能正确登录到「崩坏·星穹铁道」, 是否重试？",
+                    options=["是", "否"],
+                    task_id=self.task_info.task_id,
+                    timeout=1800.0,
                 )
-                result = await self._wait_for_user_response(uid)
-                if not result.get("data", {}).get("choice", False):
+                if not choice:
                     break
 
         if self.run_book["SignIn"]:
@@ -197,33 +187,16 @@ class ManualReviewTask(TaskExecuteBase):
                 )
             except Exception as e:
                 logger.exception(f"模拟器显示失败: {e}")
-            uid = str(uuid.uuid4())
-            await Config.send_websocket_message(
-                id=self.task_info.task_id,
-                type="Message",
-                data={
-                    "message_id": uid,
-                    "type": "Question",
-                    "title": "操作提示",
-                    "message": f"请检查用户代理情况, 「{self.cur_user_item.name}」是否正确完成代理任务？",
-                    "options": ["是", "否"],
-                },
+            choice = await Dialogs.request(
+                "manual-review",
+                title="操作提示",
+                message=f"请检查用户代理情况, 「{self.cur_user_item.name}」是否正确完成代理任务？",
+                options=["是", "否"],
+                task_id=self.task_info.task_id,
+                timeout=1800.0,
             )
-            result = await self._wait_for_user_response(uid)
-            if result.get("data", {}).get("choice", False):
+            if choice:
                 self.run_book["PassCheck"] = True
-
-    async def _wait_for_user_response(self, message_id: str):
-        """等待用户交互响应"""
-        logger.info(f"等待客户端回应消息: {message_id}")
-        while True:
-            message = await self.message_queue.get()
-            if message.get("id") == message_id and message.get("type") == "Response":
-                self.message_queue.task_done()
-                logger.success(f"收到客户端回应消息: {message_id}")
-                return message
-            else:
-                self.message_queue.task_done()
 
     async def final_task(self):
 
@@ -242,8 +215,8 @@ class ManualReviewTask(TaskExecuteBase):
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"
         logger.exception(f"人工排查任务出现异常: {e}")
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=self.task_info.task_id,
-            type="Info",
-            data={"Error": f"人工排查任务出现异常: {e}"},
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=f"人工排查任务出现异常: {e}"),
         )

@@ -33,7 +33,7 @@ export const buildMaaFWAssetUrl = (rootPath?: string, rawPath?: string | null) =
     return ''
   }
 
-  const baseUrl = OpenAPI.BASE || 'http://localhost:36163'
+  const baseUrl = OpenAPI.BASE || 'http://127.0.0.1:36163'
   const params = new URLSearchParams({
     root: rootPath,
     path: normalized,

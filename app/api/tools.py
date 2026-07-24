@@ -94,6 +94,25 @@ async def update_tools(script: ToolsUpdateIn = Body(...)) -> OutBase:
 async def manual_game_sign() -> OutBase:
     """手动触发游戏社区签到"""
 
+    # The native GameSign scheduler/runner port is not ready yet.  Do not
+    # accidentally import the legacy sign-in chain (which performs network
+    # work and reads legacy ToolsConfig) merely because an authoritative API
+    # route was called.
+    from app.configuration import (
+        CONFIG_V2_MODE,
+        CONFIG_V2_MODE_AUTHORITATIVE,
+    )
+
+    if CONFIG_V2_MODE == CONFIG_V2_MODE_AUTHORITATIVE:
+        return OutBase(
+            code=503,
+            status="unavailable",
+            message=(
+                "Config v2 authoritative 模式尚未提供 GameSign 执行端口；"
+                "请使用 shadow/legacy 兼容模式或等待原生调度器完成"
+            ),
+        )
+
     try:
         from app.tools.game_sign import run_all_sign_in, format_sign_results
         from app.tools.game_sign import merge_sign_results

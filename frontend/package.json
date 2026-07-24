@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "v5.4.0-beta.1",
+  "version": "v6.0.0-alpha.NEXUS-OVERDRIVE.20260724.5",
   "description": "A Multi-Script, Multi-Config Management and Automation Software",
   "author": "AUTO-MAS Team",
   "main": "dist-electron/main.js",
@@ -13,17 +13,19 @@
     "watch:main": "tsc -p tsconfig.electron.json --watch",
     "electron-dev": "wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 node scripts/electron-spawn.mjs .",
     "build:main": "tsc -p tsconfig.electron.json",
-    "build": "vite build && yarn build:main && electron-builder --publish never",
+    "build": "vite build && yarn verify:renderer-chunks && yarn build:main && yarn validate:wheelhouse && electron-builder --publish never",
     "web": "vite",
-    "release": "vite build && yarn build:main && electron-builder --win --publish always",
-    "release:full": "vite build && yarn build:main && electron-builder --win --publish always --config build-json/electron-builder-full.json",
-    "release:lite": "vite build && yarn build:main && electron-builder --win --publish always --config build-json/electron-builder-lite.json",
+    "release": "vite build && yarn verify:renderer-chunks && yarn build:main && yarn validate:wheelhouse && electron-builder --win --x64 --publish never",
+    "release:integration": "node scripts/build-integration-release.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier . --write",
     "typecheck": "vue-tsc -p tsconfig.app.json --noEmit",
     "openapi": "openapi --input http://127.0.0.1:36163/openapi.json --output ./src/api --client axios",
-    "test": "vitest run"
+    "test": "vitest run",
+    "validate:wheelhouse": "node scripts/validate-wheelhouse.mjs",
+    "verify:renderer-chunks": "node scripts/verify-renderer-chunks.mjs",
+    "validate:wheelhouse:integration": "node scripts/validate-wheelhouse.mjs --wheelhouse ../plugins/wheels --require-snapshot-contract"
   },
   "build": {
     "asar": true,
@@ -33,12 +35,12 @@
     },
     "appId": "top.auto-mas.frontend",
     "productName": "AUTO-MAS",
+    "toolsets": {
+      "winCodeSign": "1.1.0"
+    },
     "files": [
       "dist/index.html",
       "dist/assets/**",
-      "dict/AUTO-MAS.ico",
-      "dict/logo.png",
-      "dict/prts.png",
       "dist-electron/**",
       "public/**",
       "!src/**",
@@ -58,10 +60,119 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "../res/integration-snapshot.json",
+        "to": "integration-snapshot/manifest.json"
+      },
+      {
+        "from": "../app",
+        "to": "integration-snapshot/app",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.py[oc]"
+        ]
+      },
+      {
+        "from": "../res",
+        "to": "integration-snapshot/res",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../scripts",
+        "to": "integration-snapshot/scripts",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.py[oc]"
+        ]
+      },
+      {
+        "from": "../plugins/auto_mas_core",
+        "to": "integration-snapshot/plugins/auto_mas_core",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.py[oc]",
+          "!build/**",
+          "!dist/**",
+          "!**/*.egg-info/**"
+        ]
+      },
+      {
+        "from": "../plugins/browser",
+        "to": "integration-snapshot/plugins/browser",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.py[oc]",
+          "!build/**",
+          "!dist/**",
+          "!**/*.egg-info/**",
+          "!tests/**"
+        ]
+      },
+      {
+        "from": "../plugins/ok_script_adapter",
+        "to": "integration-snapshot/plugins/ok_script_adapter",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.py[oc]",
+          "!build/**",
+          "!dist/**",
+          "!**/*.egg-info/**"
+        ]
+      },
+      {
+        "from": "../plugins/okww_adapter",
+        "to": "integration-snapshot/plugins/okww_adapter",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.py[oc]",
+          "!build/**",
+          "!dist/**",
+          "!**/*.egg-info/**"
+        ]
+      },
+      {
+        "from": "../plugins/wheels",
+        "to": "integration-snapshot/plugins/wheels",
+        "filter": [
+          "*.whl",
+          "manifest.json",
+          "runtime-lock.json",
+          "pylock.host.toml",
+          "pylock.combined.toml"
+        ]
+      },
+      {
+        "from": "../main.py",
+        "to": "integration-snapshot/main.py"
+      },
+      {
+        "from": "../pyproject.toml",
+        "to": "integration-snapshot/pyproject.toml"
+      },
+      {
+        "from": "../requirements.txt",
+        "to": "integration-snapshot/requirements.txt"
+      },
+      {
+        "from": "../LICENSE",
+        "to": "integration-snapshot/LICENSE"
+      },
+      {
+        "from": "../README.md",
+        "to": "integration-snapshot/README.md"
       }
     ],
     "win": {
-      "requestedExecutionLevel": "requireAdministrator",
+      "requestedExecutionLevel": "asInvoker",
       "icon": "public/AUTO-MAS.ico"
     }
   },

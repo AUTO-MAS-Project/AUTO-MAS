@@ -23,22 +23,35 @@
 import re
 import time
 import json
+import os
 import asyncio
-import zipfile
+import shutil
 import httpx
 import aiofiles
 import subprocess
+from uuid import uuid4
 from packaging import version
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from pathlib import Path
 
 from app.core import Config
+from app.core.ws import Publisher, protocol
+from app.models.schema import WSUpdateProgressData
+from app.utils.archive import safe_extract_zip
 from app.utils.constants import MIRROR_ERROR_INFO
 from app.utils import ProcessRunner, get_logger
 from .system import System
 
 logger = get_logger("更新服务")
+
+
+class EmbeddedUpdaterManualOnlyError(RuntimeError):
+    """随包 Alpha 明确要求手动更新。"""
+
+
+class EmbeddedUpdaterPolicyError(EmbeddedUpdaterManualOnlyError):
+    """随包更新策略无法安全解析。"""
 
 
 class _UpdateHandler:
@@ -52,7 +65,117 @@ class _UpdateHandler:
         self.update_version_info: Optional[Dict[str, List[str]]] = None
         self.mirror_chyan_download_url: Optional[str] = None
 
+    @staticmethod
+    def _snapshot_policy_paths() -> list[Path]:
+        runtime_root = Path.cwd()
+        return [
+            runtime_root / "res" / "integration-snapshot.json",
+            runtime_root / "resources" / "integration-snapshot" / "manifest.json",
+        ]
+
+    @staticmethod
+    def _is_experimental_alpha_environment() -> bool:
+        release_channel = os.environ.get("AUTO_MAS_RELEASE_CHANNEL", "").strip()
+        if release_channel.lower() == "experimental-alpha":
+            return True
+
+        alpha_marker = os.environ.get("AUTO_MAS_EXPERIMENTAL_ALPHA", "").strip()
+        if alpha_marker.lower() in {"1", "true", "yes"}:
+            return True
+
+        runtime_root = Path.cwd()
+        version_paths = [
+            runtime_root / "res" / "version.json",
+            runtime_root
+            / "resources"
+            / "integration-snapshot"
+            / "res"
+            / "version.json",
+        ]
+        for version_path in version_paths:
+            if not version_path.is_file():
+                continue
+            try:
+                version_info = json.loads(version_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(version_info, dict):
+                continue
+            current_version = version_info.get("version")
+            if isinstance(current_version, str) and "alpha" in current_version.lower():
+                return True
+        return False
+
+    def ensure_embedded_updater_available(self) -> None:
+        """在读取配置或执行更新操作前校验随包更新策略。"""
+
+        release_channel = os.environ.get("AUTO_MAS_RELEASE_CHANNEL", "").strip()
+        embedded_updater = os.environ.get("AUTO_MAS_EMBEDDED_UPDATE_POLICY", "").strip()
+        if embedded_updater == "manual-only":
+            raise EmbeddedUpdaterManualOnlyError(
+                "此 Experimental Alpha 已禁用内置更新，请手动下载新的测试安装包。"
+            )
+        if embedded_updater and embedded_updater != "enabled":
+            raise EmbeddedUpdaterPolicyError(
+                "随包更新策略无效，已为安全起见禁用内置更新，请手动下载新的测试安装包。"
+            )
+        if release_channel.lower() == "experimental-alpha":
+            if embedded_updater:
+                raise EmbeddedUpdaterPolicyError(
+                    "随包更新策略无效，已为安全起见禁用内置更新，请手动下载新的测试安装包。"
+                )
+            raise EmbeddedUpdaterManualOnlyError(
+                "此 Experimental Alpha 已禁用内置更新，请手动下载新的测试安装包。"
+            )
+
+        for snapshot_path in self._snapshot_policy_paths():
+            if not snapshot_path.exists():
+                continue
+            if not snapshot_path.is_file():
+                raise EmbeddedUpdaterPolicyError(
+                    "随包更新策略无效，已为安全起见禁用内置更新，请手动下载新的测试安装包。"
+                )
+            try:
+                snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                raise EmbeddedUpdaterPolicyError(
+                    "随包更新策略无效，已为安全起见禁用内置更新，请手动下载新的测试安装包。"
+                ) from error
+
+            if not isinstance(snapshot, dict):
+                raise EmbeddedUpdaterPolicyError(
+                    "随包更新策略无效，已为安全起见禁用内置更新，请手动下载新的测试安装包。"
+                )
+
+            release_policy = snapshot.get("release_policy")
+            if not isinstance(release_policy, dict):
+                raise EmbeddedUpdaterPolicyError(
+                    "随包更新策略无效，已为安全起见禁用内置更新，请手动下载新的测试安装包。"
+                )
+
+            channel = release_policy.get("channel")
+            embedded_updater = release_policy.get("embedded_updater")
+            if not isinstance(channel, str) or not isinstance(embedded_updater, str):
+                raise EmbeddedUpdaterPolicyError(
+                    "随包更新策略无效，已为安全起见禁用内置更新，请手动下载新的测试安装包。"
+                )
+
+            if channel == "experimental-alpha":
+                if embedded_updater != "manual-only":
+                    raise EmbeddedUpdaterPolicyError(
+                        "随包更新策略无效，已为安全起见禁用内置更新，请手动下载新的测试安装包。"
+                    )
+                raise EmbeddedUpdaterManualOnlyError(
+                    "此 Experimental Alpha 已禁用内置更新，请手动下载新的测试安装包。"
+                )
+
+        if self._is_experimental_alpha_environment():
+            raise EmbeddedUpdaterManualOnlyError(
+                "此 Experimental Alpha 已禁用内置更新，请手动下载新的测试安装包。"
+            )
+
     async def start_download(self) -> bool:
+        self.ensure_embedded_updater_available()
         if self.is_switching_source or self.is_locked:
             return False
         return self._start_download_task()
@@ -86,12 +209,14 @@ class _UpdateHandler:
         self._cleanup_download()
 
         if notify:
-            await Config.send_websocket_message(
-                id="Update", type="Signal", data={"Cancelled": True}
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_CANCELLED,
             )
         return True
 
     async def switch_to_cnb(self) -> bool:
+        self.ensure_embedded_updater_available()
         if self.is_switching_source:
             return False
 
@@ -111,11 +236,11 @@ class _UpdateHandler:
             try:
                 await Config.set("Update", "Source", "CNB")
             except Exception as error:
-                await Config.send_websocket_message(
-                    id="Update",
-                    type="Signal",
+                await Publisher.send(
+                    id=protocol.ID_UPDATE,
+                    type=protocol.UPDATE_FAILED,
                     data={
-                        "Failed": f"切换至 CNB 源失败: {type(error).__name__}: {str(error)}"
+                        "message": f"切换至 CNB 源失败: {type(error).__name__}: {str(error)}"
                     },
                 )
                 raise
@@ -123,10 +248,10 @@ class _UpdateHandler:
             self.is_locked = False
             if not self._start_download_task():
                 error = RuntimeError("切换至 CNB 源失败: 无法重新启动更新下载任务")
-                await Config.send_websocket_message(
-                    id="Update",
-                    type="Signal",
-                    data={"Failed": str(error)},
+                await Publisher.send(
+                    id=protocol.ID_UPDATE,
+                    type=protocol.UPDATE_FAILED,
+                    data={"message": str(error)},
                 )
                 raise error
             return True
@@ -173,6 +298,8 @@ class _UpdateHandler:
     async def check_update(
         self, current_version: str, if_force: bool = False
     ) -> tuple[bool, str, Dict[str, List[str]]]:
+
+        self.ensure_embedded_updater_available()
 
         if (
             not if_force
@@ -253,13 +380,15 @@ class _UpdateHandler:
 
     async def download_update(self) -> None:
 
+        self.ensure_embedded_updater_available()
+
         logger.info("收到前端下载请求")
 
         if self.is_locked:
-            await Config.send_websocket_message(
-                id="Update",
-                type="Signal",
-                data={"Failed": "已有更新任务在进行中, 请勿重复操作"},
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_FAILED,
+                data={"message": "已有更新任务在进行中, 请勿重复操作"},
             )
             return None
 
@@ -274,11 +403,13 @@ class _UpdateHandler:
 
     async def _download_update_locked(self) -> None:
 
+        self.ensure_embedded_updater_available()
+
         if self.remote_version is None:
-            await Config.send_websocket_message(
-                id="Update",
-                type="Signal",
-                data={"Failed": "未检测到可用的远程版本, 请先检查更新"},
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_FAILED,
+                data={"message": "未检测到可用的远程版本, 请先检查更新"},
             )
             self.is_locked = False
             return None
@@ -287,13 +418,11 @@ class _UpdateHandler:
             logger.info(
                 f"更新包已存在: {Path.cwd() / f'UpdatePack_{self.remote_version}.zip'}"
             )
-            await Config.send_websocket_message(
-                id="Update",
-                type="Signal",
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_COMPLETED,
                 data={
-                    "Accomplish": str(
-                        Path.cwd() / f"UpdatePack_{self.remote_version}.zip"
-                    )
+                    "file": str(Path.cwd() / f"UpdatePack_{self.remote_version}.zip")
                 },
             )
             self.is_locked = False
@@ -303,10 +432,10 @@ class _UpdateHandler:
         try:
             download_url = self._get_download_url(source)
         except ValueError as error:
-            await Config.send_websocket_message(
-                id="Update",
-                type="Signal",
-                data={"Failed": str(error)},
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_FAILED,
+                data={"message": str(error)},
             )
             self.is_locked = False
             return None
@@ -369,15 +498,15 @@ class _UpdateHandler:
                                     last_download_size = downloaded_size
                                     last_time = time.time()
 
-                                    await Config.send_websocket_message(
-                                        id="Update",
-                                        type="Update",
-                                        data={
-                                            "downloaded_size": downloaded_size,
-                                            "file_size": file_size,
-                                            "speed": speed,
-                                            "source": source,
-                                        },
+                                    await Publisher.send(
+                                        id=protocol.ID_UPDATE,
+                                        type=protocol.UPDATE_PROGRESS,
+                                        data=WSUpdateProgressData(
+                                            downloaded_size=downloaded_size,
+                                            file_size=file_size,
+                                            speed=speed,
+                                            source=source,
+                                        ),
                                     )
 
                 # 重命名临时文件为最终包
@@ -388,13 +517,11 @@ class _UpdateHandler:
                 logger.success(
                     f"下载完成: {download_url}, 实际下载大小: {downloaded_size} 字节, 耗时: {time.time() - start_time:.2f} 秒, 保存位置: {Path.cwd() / f'UpdatePack_{self.remote_version}.zip'}"
                 )
-                await Config.send_websocket_message(
-                    id="Update",
-                    type="Signal",
+                await Publisher.send(
+                    id=protocol.ID_UPDATE,
+                    type=protocol.UPDATE_COMPLETED,
                     data={
-                        "Accomplish": str(
-                            Path.cwd() / f"UpdatePack_{self.remote_version}.zip"
-                        )
+                        "file": str(Path.cwd() / f"UpdatePack_{self.remote_version}.zip")
                     },
                 )
                 self.is_locked = False
@@ -414,18 +541,22 @@ class _UpdateHandler:
 
             if (Path.cwd() / "download.temp").exists():
                 (Path.cwd() / "download.temp").unlink()
-            await Config.send_websocket_message(
-                id="Update", type="Signal", data={"Failed": f"下载失败: {download_url}"}
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_FAILED,
+                data={"message": f"下载失败: {download_url}"},
             )
             self.is_locked = False
 
     async def install_update(self):
 
+        self.ensure_embedded_updater_available()
+
         if self.is_locked or self.is_switching_source:
-            await Config.send_websocket_message(
-                id="Update",
-                type="Signal",
-                data={"Failed": "已有更新任务在进行中, 请勿重复操作"},
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_FAILED,
+                data={"message": "已有更新任务在进行中, 请勿重复操作"},
             )
             return None
 
@@ -440,65 +571,88 @@ class _UpdateHandler:
         logger.info(f"检测到的更新包: {versions.values()}")
 
         if not versions:
-            await Config.send_websocket_message(
-                id="Update",
-                type="Signal",
-                data={"Failed": "未检测到更新包, 请先下载更新"},
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_FAILED,
+                data={"message": "未检测到更新包, 请先下载更新"},
             )
             self.is_locked = False
             return None
 
         update_package = Path.cwd() / versions[max(versions)]
 
-        logger.info(f"开始解压: {update_package} 到 {Path.cwd()}")
+        staging_directory = (
+            Path.cwd() / ".auto-mas-update" / f"extract-{uuid4().hex}"
+        )
+        logger.info(f"开始安全解压: {update_package} 到 {staging_directory}")
 
         try:
-            with zipfile.ZipFile(update_package, "r") as zip_ref:
-                zip_ref.extractall(Path.cwd())
+            safe_extract_zip(update_package, staging_directory)
+            installer_path = staging_directory / "AUTO-MAS-Setup.exe"
+            if not installer_path.is_file():
+                raise FileNotFoundError("更新包根目录缺少 AUTO-MAS-Setup.exe")
         except Exception as e:
+            if staging_directory.exists():
+                shutil.rmtree(staging_directory, ignore_errors=True)
             logger.error(f"解压失败, {type(e).__name__}: {e}")
-            await Config.send_websocket_message(
-                id="Update",
-                type="Info",
-                data={"Error": f"解压失败, {type(e).__name__}: {e}"},
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_FAILED,
+                data={"message": f"解压失败, {type(e).__name__}: {e}"},
             )
             self.is_locked = False
             return None
 
-        logger.success(f"解压完成: {update_package} 到 {Path.cwd()}")
-
-        logger.info("正在删除临时文件与旧更新包文件")
-        if (Path.cwd() / "changes.json").exists():
-            (Path.cwd() / "changes.json").unlink()
-        for f in versions.values():
-            if (Path.cwd() / f).exists():
-                (Path.cwd() / f).unlink()
-
-        logger.info("正在清理旧版本注册表项")
-        await ProcessRunner.run_process(
-            "reg",
-            "delete",
-            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{D116A92A-E174-4699-B777-61C5FD837B19}_is1",
-            "/f",
-        )
-        logger.success("清理完成")
+        logger.success(f"安全解压完成: {update_package} 到 {staging_directory}")
 
         logger.info("启动更新程序")
+        try:
+            subprocess.Popen(
+                [
+                    installer_path,
+                    "/SP-",
+                    "/SILENT",
+                    "/NOCANCEL",
+                    "/FORCECLOSEAPPLICATIONS",
+                    "/LANG=Chinese",
+                    f"/DIR={Path.cwd()}",
+                ],
+                cwd=staging_directory,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+                | subprocess.DETACHED_PROCESS
+                | subprocess.CREATE_NO_WINDOW,
+            )
+        except Exception as e:
+            shutil.rmtree(staging_directory, ignore_errors=True)
+            logger.error(f"启动更新程序失败, {type(e).__name__}: {e}")
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_FAILED,
+                data={"message": f"启动更新程序失败, {type(e).__name__}: {e}"},
+            )
+            self.is_locked = False
+            return None
+
+        logger.info("正在删除旧更新包文件")
+        for file_name in versions.values():
+            package_path = Path.cwd() / file_name
+            try:
+                package_path.unlink(missing_ok=True)
+            except OSError as e:
+                logger.warning(f"删除旧更新包失败: {package_path}, {e}")
+
+        logger.info("正在清理旧版本注册表项")
+        try:
+            await ProcessRunner.run_process(
+                "reg",
+                "delete",
+                r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{D116A92A-E174-4699-B777-61C5FD837B19}_is1",
+                "/f",
+            )
+        except Exception as e:
+            logger.warning(f"清理旧版本注册表项失败: {e}")
+
         self.is_locked = False
-        subprocess.Popen(
-            [
-                Path.cwd() / "AUTO-MAS-Setup.exe",
-                "/SP-",
-                "/SILENT",
-                "/NOCANCEL",
-                "/FORCECLOSEAPPLICATIONS",
-                "/LANG=Chinese",
-                f"/DIR={Path.cwd()}",
-            ],
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
-            | subprocess.DETACHED_PROCESS
-            | subprocess.CREATE_NO_WINDOW,
-        )
         await System.set_power("KillSelf")
 
 

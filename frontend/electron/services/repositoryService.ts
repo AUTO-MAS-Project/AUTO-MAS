@@ -15,7 +15,55 @@ import {
 
 // 导入日志服务
 import { getLogger } from './logger'
+import {
+  assertBundledSnapshotMarker,
+  BundledSnapshotMarker,
+  readJsonFileWithOptionalBom,
+  resolveContainedPath,
+  verifyBundledSnapshotWheelhouseContract,
+} from './bundledArtifactValidation'
 const logger = getLogger('仓库服务')
+
+const BUNDLED_SNAPSHOT_RELATIVE_PATH = path.join('resources', 'integration-snapshot')
+const BUNDLED_SNAPSHOT_MARKER = 'manifest.json'
+const RUNTIME_TRANSACTION_JOURNAL = '.runtime-deploy-transaction.json'
+const RUNTIME_DEPLOY_ITEMS = [
+  'app',
+  'res',
+  'scripts',
+  'plugins/auto_mas_core',
+  'plugins/browser',
+  'plugins/wheels',
+  'plugins/ok_script_adapter',
+  'plugins/okww_adapter',
+  'main.py',
+  'pyproject.toml',
+  'requirements.txt',
+  'LICENSE',
+  'README.md',
+] as const
+const RUNTIME_DIRECTORY_ITEMS = new Set<string>([
+  'app',
+  'res',
+  'scripts',
+  'plugins/auto_mas_core',
+  'plugins/browser',
+  'plugins/wheels',
+  'plugins/ok_script_adapter',
+  'plugins/okww_adapter',
+])
+
+interface RuntimeDeploymentSwap {
+  item: string
+  hadBackup: boolean
+}
+
+interface RuntimeDeploymentJournal {
+  schema_version: 1
+  staging_directory: string
+  backup_directory: string
+  swaps: RuntimeDeploymentSwap[]
+}
 
 // ==================== 类型定义 ====================
 
@@ -49,6 +97,7 @@ export class RepositoryService {
   private mirrorService: MirrorService
   private rotationService: MirrorRotationService
   private targetBranch: string
+  private transactionJournalPath: string
 
   constructor(appRoot: string, mirrorService: MirrorService, targetBranch: string = 'dev') {
     this.appRoot = appRoot
@@ -57,6 +106,7 @@ export class RepositoryService {
     this.mirrorService = mirrorService
     this.rotationService = new MirrorRotationService()
     this.targetBranch = targetBranch
+    this.transactionJournalPath = path.join(appRoot, 'environment', RUNTIME_TRANSACTION_JOURNAL)
   }
 
   /**
@@ -67,6 +117,12 @@ export class RepositoryService {
     selectedMirror?: string
   ): Promise<{ success: boolean; error?: string }> {
     try {
+      this.recoverInterruptedDeployment()
+      const bundledSnapshotPath = this.resolveBundledSnapshotPath()
+      if (bundledSnapshotPath) {
+        return await this.deployBundledSnapshot(bundledSnapshotPath, onProgress)
+      }
+
       // 第一步：环境检查
       onProgress?.({
         stage: 'check',
@@ -146,6 +202,147 @@ export class RepositoryService {
       logger.error(`源码拉取失败: ${errorMsg}`)
       return { success: false, error: errorMsg }
     }
+  }
+
+  private resolveBundledSnapshotPath(): string | null {
+    const snapshotPath = path.join(this.appRoot, BUNDLED_SNAPSHOT_RELATIVE_PATH)
+    if (!fs.existsSync(snapshotPath)) {
+      return null
+    }
+
+    const requiredFiles = [BUNDLED_SNAPSHOT_MARKER, ...RUNTIME_DEPLOY_ITEMS]
+    const missingFiles = requiredFiles.filter(item => !fs.existsSync(path.join(snapshotPath, item)))
+    if (missingFiles.length > 0) {
+      throw new Error(
+        `Bundled integration snapshot is incomplete: missing ${missingFiles.join(', ')}`
+      )
+    }
+
+    const markerPath = path.join(snapshotPath, BUNDLED_SNAPSHOT_MARKER)
+    let marker: BundledSnapshotMarker
+    try {
+      marker = readJsonFileWithOptionalBom<BundledSnapshotMarker>(markerPath)
+    } catch (error) {
+      throw new Error(`Bundled integration snapshot marker is invalid: ${error}`)
+    }
+    assertBundledSnapshotMarker(marker)
+    if (
+      marker.wheelhouse_contract?.manifest_schema_version !== 3 ||
+      marker.wheelhouse_contract?.runtime_lock_schema_version !== 1 ||
+      !Number.isSafeInteger(marker.wheelhouse_contract?.wheel_count) ||
+      marker.wheelhouse_contract?.plugin_distribution_count !== 23 ||
+      marker.wheelhouse_contract?.plugin_entry_point_count !== 21 ||
+      typeof marker.wheelhouse_contract?.core_distribution_version !== 'string' ||
+      !marker.wheelhouse_contract.core_distribution_version.trim() ||
+      typeof marker.wheelhouse_contract?.manifest_sha256 !== 'string' ||
+      !/^[0-9a-f]{64}$/i.test(marker.wheelhouse_contract.manifest_sha256) ||
+      typeof marker.wheelhouse_contract?.runtime_lock_sha256 !== 'string' ||
+      !/^[0-9a-f]{64}$/i.test(marker.wheelhouse_contract.runtime_lock_sha256)
+    ) {
+      throw new Error('Bundled integration snapshot marker has an unsupported schema')
+    }
+
+    const markerMissingPaths: string[] = []
+    for (const requiredPath of marker.required_paths) {
+      const resolvedPath = resolveContainedPath(snapshotPath, requiredPath)
+      if (!fs.existsSync(resolvedPath)) {
+        markerMissingPaths.push(requiredPath)
+      }
+    }
+    if (markerMissingPaths.length > 0) {
+      throw new Error(
+        `Bundled integration snapshot marker paths are missing: ${markerMissingPaths.join(', ')}`
+      )
+    }
+
+    const wrongTypes = requiredFiles.filter(item => {
+      const candidate = path.join(snapshotPath, item)
+      if (!fs.existsSync(candidate)) {
+        return false
+      }
+      const shouldBeDirectory = RUNTIME_DIRECTORY_ITEMS.has(item)
+      return shouldBeDirectory
+        ? !fs.statSync(candidate).isDirectory()
+        : !fs.statSync(candidate).isFile()
+    })
+    if (wrongTypes.length > 0) {
+      throw new Error(
+        `Bundled integration snapshot contains paths with the wrong type: ${wrongTypes.join(', ')}`
+      )
+    }
+
+    const snapshotVersionPath = path.join(snapshotPath, 'res', 'version.json')
+    let snapshotVersion: { version?: unknown; version_info?: unknown }
+    try {
+      snapshotVersion = readJsonFileWithOptionalBom(snapshotVersionPath)
+    } catch (error) {
+      throw new Error(`Bundled integration snapshot version file is invalid: ${error}`)
+    }
+    if (
+      snapshotVersion.version !== marker.version ||
+      snapshotVersion.version_info == null ||
+      typeof snapshotVersion.version_info !== 'object' ||
+      !Object.prototype.hasOwnProperty.call(snapshotVersion.version_info, marker.version)
+    ) {
+      throw new Error('Bundled integration snapshot marker version does not match res/version.json')
+    }
+
+    const wheelManifestPath = resolveContainedPath(snapshotPath, marker.wheel_manifest)
+    const expectedWheelManifestPath = path.join(snapshotPath, 'plugins', 'wheels', 'manifest.json')
+    if (wheelManifestPath !== expectedWheelManifestPath) {
+      throw new Error(
+        'Bundled integration snapshot wheel_manifest must reference plugins/wheels/manifest.json'
+      )
+    }
+    verifyBundledSnapshotWheelhouseContract(
+      path.dirname(wheelManifestPath),
+      marker.wheelhouse_contract
+    )
+
+    return snapshotPath
+  }
+
+  private async deployBundledSnapshot(
+    snapshotPath: string,
+    onProgress?: RepositoryProgressCallback
+  ): Promise<{ success: boolean; error?: string }> {
+    logger.info(`使用随包集成快照，跳过远程仓库操作: ${snapshotPath}`)
+
+    onProgress?.({
+      stage: 'check',
+      progress: 100,
+      message: '已检测到随包集成快照',
+      details: {
+        checkInfo: {
+          exists: true,
+          isGitRepo: false,
+          isHealthy: true,
+          currentBranch: 'bundled-integration-snapshot',
+        },
+      },
+    })
+    onProgress?.({
+      stage: 'pull',
+      progress: 100,
+      message: '使用随包集成快照，已跳过网络拉取',
+      details: {},
+    })
+    onProgress?.({
+      stage: 'deploy',
+      progress: 0,
+      message: '正在部署随包集成快照...',
+      details: {},
+    })
+
+    await this.copyToRoot(snapshotPath, false)
+
+    onProgress?.({
+      stage: 'deploy',
+      progress: 100,
+      message: '随包集成快照部署完成',
+      details: {},
+    })
+    return { success: true }
   }
 
   /**
@@ -644,57 +841,225 @@ export class RepositoryService {
   /**
    * 复制文件到根目录
    */
-  private async copyToRoot(): Promise<void> {
-    const itemsToCopy = [
-      '.git',
-      'app',
-      'res',
-      'scripts',
-      'mas',
-      'plugins/auto_mas_core',
-      'plugins/okww_adapter',
-      'main.py',
-      'pyproject.toml',
-      'requirements.txt',
-      'LICENSE',
-      'README.md',
-    ]
+  private async copyToRoot(
+    sourceRoot: string = this.repoPath,
+    includeGitMetadata: boolean = true
+  ): Promise<void> {
+    const itemsToCopy = includeGitMetadata
+      ? ['.git', ...RUNTIME_DEPLOY_ITEMS]
+      : [...RUNTIME_DEPLOY_ITEMS]
+    const transactionId = `${process.pid}-${Date.now()}`
+    const stagingRoot = path.join(this.appRoot, `.runtime-stage-${transactionId}`)
+    const backupRoot = path.join(this.appRoot, `.runtime-backup-${transactionId}`)
+    const stagedItems: string[] = []
+    let journalWritten = false
 
-    for (const item of itemsToCopy) {
-      const srcPath = path.join(this.repoPath, item)
-      const dstPath = path.join(this.appRoot, item)
+    try {
+      fs.mkdirSync(stagingRoot, { recursive: true })
+      fs.mkdirSync(backupRoot, { recursive: true })
 
-      if (!fs.existsSync(srcPath)) {
-        logger.warn(`源文件不存在，跳过: ${item}`)
-        continue
+      // First build a complete same-volume staging tree. No active runtime path
+      // is touched until every source item has been copied successfully.
+      for (const item of itemsToCopy) {
+        const sourcePath = path.join(sourceRoot, item)
+        const stagedPath = path.join(stagingRoot, item)
+        if (!fs.existsSync(sourcePath)) {
+          throw new Error(`Runtime deployment source item is missing: ${item}`)
+        }
+
+        fs.mkdirSync(path.dirname(stagedPath), { recursive: true })
+        if (fs.statSync(sourcePath).isDirectory()) {
+          this.copyDirectory(sourcePath, stagedPath)
+        } else if (item === 'pyproject.toml') {
+          this.copyPyprojectToml(sourcePath, stagedPath)
+        } else {
+          fs.copyFileSync(sourcePath, stagedPath)
+        }
+        stagedItems.push(item)
+        logger.info(`暂存完成: ${item}`)
       }
+
+      const journal: RuntimeDeploymentJournal = {
+        schema_version: 1,
+        staging_directory: path.basename(stagingRoot),
+        backup_directory: path.basename(backupRoot),
+        swaps: stagedItems.map(item => ({
+          item,
+          hadBackup: fs.existsSync(path.join(this.appRoot, item)),
+        })),
+      }
+      this.writeDeploymentJournal(journal)
+      journalWritten = true
+
+      // Rename is atomic on the same volume. Keep the old path in backup until
+      // every top-level item has been promoted.
+      for (const item of stagedItems) {
+        const stagedPath = path.join(stagingRoot, item)
+        const destinationPath = path.join(this.appRoot, item)
+        const backupPath = path.join(backupRoot, item)
+        const hadBackup = fs.existsSync(destinationPath)
+
+        if (hadBackup) {
+          fs.mkdirSync(path.dirname(backupPath), { recursive: true })
+          this.movePath(destinationPath, backupPath)
+        }
+
+        fs.mkdirSync(path.dirname(destinationPath), { recursive: true })
+        this.movePath(stagedPath, destinationPath)
+        logger.info(`部署完成: ${item}`)
+      }
+
+      // Removing the journal is the commit point. If the process exits before
+      // this point, the next startup restores the old runtime from backup.
+      this.clearDeploymentJournal()
+      journalWritten = false
+      this.cleanupTransactionPath(backupRoot)
+      this.cleanupTransactionPath(stagingRoot)
+    } catch (error) {
+      const rollbackErrors: string[] = []
+      if (journalWritten) {
+        try {
+          this.recoverInterruptedDeployment()
+          journalWritten = false
+        } catch (rollbackError) {
+          rollbackErrors.push(
+            rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
+          )
+        }
+      } else {
+        // Staging failed before active paths were touched.
+        this.cleanupTransactionPath(backupRoot)
+        this.cleanupTransactionPath(stagingRoot)
+      }
+
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      if (rollbackErrors.length > 0) {
+        throw new Error(
+          `Runtime deployment failed: ${errorMsg}; rollback incomplete (${rollbackErrors.join('; ')}). Recovery data: ${backupRoot}`
+        )
+      }
+      throw new Error(`Runtime deployment failed and was rolled back: ${errorMsg}`)
+    }
+  }
+
+  private movePath(sourcePath: string, destinationPath: string): void {
+    fs.renameSync(sourcePath, destinationPath)
+  }
+
+  private cleanupTransactionPath(targetPath: string): void {
+    try {
+      fs.rmSync(targetPath, { recursive: true, force: true })
+    } catch (error) {
+      logger.warn(
+        `无法清理部署事务临时目录，保留供人工审计: ${targetPath}, ${error instanceof Error ? error.message : String(error)}`
+      )
+    }
+  }
+
+  private writeDeploymentJournal(journal: RuntimeDeploymentJournal): void {
+    const journalDirectory = path.dirname(this.transactionJournalPath)
+    fs.mkdirSync(journalDirectory, { recursive: true })
+    if (fs.existsSync(this.transactionJournalPath)) {
+      throw new Error('Another runtime deployment transaction is already active')
+    }
+
+    const temporaryJournalPath = `${this.transactionJournalPath}.tmp-${process.pid}-${Date.now()}`
+    fs.writeFileSync(temporaryJournalPath, JSON.stringify(journal, null, 2), 'utf-8')
+    fs.renameSync(temporaryJournalPath, this.transactionJournalPath)
+  }
+
+  private clearDeploymentJournal(): void {
+    fs.rmSync(this.transactionJournalPath, { force: true })
+  }
+
+  private recoverInterruptedDeployment(): void {
+    if (!fs.existsSync(this.transactionJournalPath)) {
+      return
+    }
+
+    let journal: RuntimeDeploymentJournal
+    try {
+      journal = readJsonFileWithOptionalBom<RuntimeDeploymentJournal>(this.transactionJournalPath)
+    } catch (error) {
+      throw new Error(`Runtime deployment recovery journal is invalid: ${error}`)
+    }
+
+    const allowedItems = new Set<string>(['.git', ...RUNTIME_DEPLOY_ITEMS])
+    if (
+      journal.schema_version !== 1 ||
+      !this.isTransactionDirectoryName(journal.staging_directory, '.runtime-stage-') ||
+      !this.isTransactionDirectoryName(journal.backup_directory, '.runtime-backup-') ||
+      !Array.isArray(journal.swaps) ||
+      journal.swaps.length === 0 ||
+      journal.swaps.some(
+        swap =>
+          swap == null ||
+          typeof swap.item !== 'string' ||
+          !allowedItems.has(swap.item) ||
+          typeof swap.hadBackup !== 'boolean'
+      )
+    ) {
+      throw new Error('Runtime deployment recovery journal has an unsupported schema')
+    }
+
+    const duplicateItems = journal.swaps.filter(
+      (swap, index, swaps) => swaps.findIndex(candidate => candidate.item === swap.item) !== index
+    )
+    if (duplicateItems.length > 0) {
+      throw new Error('Runtime deployment recovery journal contains duplicate items')
+    }
+
+    const stagingRoot = path.join(this.appRoot, journal.staging_directory)
+    const backupRoot = path.join(this.appRoot, journal.backup_directory)
+    const recoveryErrors: string[] = []
+
+    for (const swap of [...journal.swaps].reverse()) {
+      const destinationPath = path.join(this.appRoot, swap.item)
+      const backupPath = path.join(backupRoot, swap.item)
+      const stagedPath = path.join(stagingRoot, swap.item)
 
       try {
-        // 删除目标文件/目录
-        if (fs.existsSync(dstPath)) {
-          if (fs.statSync(dstPath).isDirectory()) {
-            fs.rmSync(dstPath, { recursive: true, force: true })
-          } else {
-            fs.unlinkSync(dstPath)
+        if (swap.hadBackup) {
+          if (fs.existsSync(backupPath)) {
+            if (fs.existsSync(destinationPath)) {
+              fs.rmSync(destinationPath, { recursive: true, force: true })
+            }
+            fs.mkdirSync(path.dirname(destinationPath), { recursive: true })
+            this.movePath(backupPath, destinationPath)
+          } else if (!fs.existsSync(stagedPath) || !fs.existsSync(destinationPath)) {
+            throw new Error('original backup is missing after promotion started')
           }
+        } else if (fs.existsSync(destinationPath) && !fs.existsSync(stagedPath)) {
+          // The original path did not exist, so a destination with no staged
+          // counterpart is the uncommitted promoted path.
+          fs.rmSync(destinationPath, { recursive: true, force: true })
         }
-
-        // 复制文件/目录
-        if (fs.statSync(srcPath).isDirectory()) {
-          this.copyDirectory(srcPath, dstPath)
-        } else if (item === 'pyproject.toml') {
-          this.copyPyprojectToml(srcPath, dstPath)
-        } else {
-          fs.copyFileSync(srcPath, dstPath)
-        }
-
-        logger.info(`复制完成: ${item}`)
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.error(`复制失败: ${item}, 错误信息: ${errorMsg}`)
-        throw error
+        recoveryErrors.push(
+          `${swap.item}: ${error instanceof Error ? error.message : String(error)}`
+        )
       }
     }
+
+    if (recoveryErrors.length > 0) {
+      throw new Error(
+        `Interrupted runtime deployment recovery is incomplete (${recoveryErrors.join('; ')}). Recovery data: ${backupRoot}`
+      )
+    }
+
+    this.clearDeploymentJournal()
+    this.cleanupTransactionPath(backupRoot)
+    this.cleanupTransactionPath(stagingRoot)
+    logger.warn('Recovered an interrupted runtime deployment before continuing')
+  }
+
+  private isTransactionDirectoryName(value: unknown, prefix: string): value is string {
+    return (
+      typeof value === 'string' &&
+      value.startsWith(prefix) &&
+      value.length > prefix.length &&
+      path.basename(value) === value
+    )
   }
 
   /**

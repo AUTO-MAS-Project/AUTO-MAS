@@ -1,0 +1,180 @@
+:root {
+  color-scheme: light;
+
+  --v6-ui-scale: 1;
+  --v6-color-window: #f5f5f7;
+  --v6-color-surface: #ffffff;
+  --v6-color-surface-elevated: #ffffff;
+  --v6-color-titlebar: rgb(246 246 248 / 88%);
+  --v6-color-sidebar: rgb(242 242 247 / 86%);
+  --v6-color-border: rgb(0 0 0 / 10%);
+  --v6-color-border-subtle: rgb(0 0 0 / 6%);
+  --v6-color-text: rgb(29 29 31 / 92%);
+  --v6-color-text-secondary: rgb(29 29 31 / 66%);
+  --v6-color-text-tertiary: rgb(29 29 31 / 46%);
+  --v6-color-success: #34c759;
+  --v6-color-warning: #ff9f0a;
+  --v6-color-error: #ff3b30;
+  --v6-color-info: #007aff;
+  --v6-font-sans:
+    'Segoe UI Variable', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
+  --v6-font-mono: 'Cascadia Mono', 'SF Mono', Consolas, ui-monospace, monospace;
+  --v6-space-1: calc(4px * var(--v6-ui-scale));
+  --v6-space-2: calc(8px * var(--v6-ui-scale));
+  --v6-space-3: calc(12px * var(--v6-ui-scale));
+  --v6-space-4: calc(16px * var(--v6-ui-scale));
+  --v6-space-5: calc(20px * var(--v6-ui-scale));
+  --v6-space-6: calc(24px * var(--v6-ui-scale));
+  --v6-space-7: calc(28px * var(--v6-ui-scale));
+  --v6-space-8: calc(32px * var(--v6-ui-scale));
+  --v6-space-10: calc(40px * var(--v6-ui-scale));
+  --v6-space-12: calc(48px * var(--v6-ui-scale));
+  --v6-radius-control: calc(6px * var(--v6-ui-scale));
+  --v6-radius-card: calc(12px * var(--v6-ui-scale));
+  /* Windows 适配：标题栏保持 32px（设计稿 macOS titlebar 为 52px，
+     不适用于 Windows Electron 窗口按钮与拖动区高度，记录为设计决策偏差）。 */
+  --v6-titlebar-height: 32px;
+  --v6-content-padding-inline: clamp(20px, calc(32px * var(--v6-ui-scale)), 44px);
+  --v6-content-padding-block: clamp(20px, calc(32px * var(--v6-ui-scale)), 44px);
+  --v6-shadow-card: 0 1px 3px rgb(0 0 0 / 5%);
+  --v6-shadow-elevated: 0 8px 28px rgb(0 0 0 / 12%);
+  --v6-backdrop-shell: blur(18px) saturate(145%);
+  --v6-motion-fast: 150ms;
+  --v6-motion-base: 250ms;
+  --v6-motion-slow: 350ms;
+  --v6-ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* ── Vibrancy 表面 token（映射设计稿 8 表面，仅语义层；不照搬 macOS 控件） ── */
+  --v6-vibrancy-sidebar: rgb(242 242 247 / 80%);
+  --v6-vibrancy-titlebar: rgb(246 246 248 / 72%);
+  --v6-vibrancy-toolbar: rgb(247 247 249 / 70%);
+  --v6-vibrancy-content: rgb(255 255 255 / 65%);
+  --v6-vibrancy-popover: rgb(255 255 255 / 85%);
+  --v6-vibrancy-hover: rgb(0 0 0 / 6%);
+  --v6-vibrancy-selected: rgb(0 122 255 / 18%);
+  --v6-vibrancy-active: #007aff;
+  /* 全局 vibrancy 背景滤镜预设（供 sidebar/titlebar/toolbar 等表面使用） */
+  --v6-backdrop-vibrancy: blur(20px) saturate(180%);
+  --v6-backdrop-popover: blur(40px) saturate(200%);
+
+  /* ── 焦点环 token（保证可见焦点，遵守 prefers-reduced-motion / data-perf-mode） ── */
+  --v6-focus-ring: 0 0 0 2px var(--v6-color-surface), 0 0 0 4px var(--v6-color-info);
+  --v6-focus-ring-offset: 2px;
+
+  /* ── 对比度遮罩 token：背景图过亮时叠加，保护前景文字可读性 ── */
+  --v6-contrast-overlay: rgb(0 0 0 / 0%);
+
+  --v6-default-wallpaper:
+    radial-gradient(
+      circle at 16% 0%,
+      color-mix(in srgb, var(--ant-color-primary) 7%, transparent),
+      transparent 34%
+    ),
+    var(--v6-color-window);
+}
+
+:root.dark {
+  color-scheme: dark;
+
+  --v6-color-window: #1e1e1e;
+  --v6-color-surface: #28282a;
+  --v6-color-surface-elevated: #2c2c2e;
+  --v6-color-titlebar: rgb(32 32 34 / 90%);
+  --v6-color-sidebar: rgb(38 38 40 / 88%);
+  --v6-color-border: rgb(255 255 255 / 10%);
+  --v6-color-border-subtle: rgb(255 255 255 / 6%);
+  --v6-color-text: rgb(245 245 247 / 92%);
+  --v6-color-text-secondary: rgb(245 245 247 / 66%);
+  --v6-color-text-tertiary: rgb(245 245 247 / 46%);
+  --v6-color-success: #30d158;
+  --v6-color-error: #ff453a;
+  --v6-color-info: #0a84ff;
+  --v6-shadow-card: 0 1px 3px rgb(0 0 0 / 18%);
+  --v6-shadow-elevated: 0 8px 28px rgb(0 0 0 / 36%);
+
+  /* ── Vibrancy dark 表面 token ── */
+  --v6-vibrancy-sidebar: rgb(38 38 40 / 80%);
+  --v6-vibrancy-titlebar: rgb(32 32 34 / 75%);
+  --v6-vibrancy-toolbar: rgb(36 36 38 / 70%);
+  --v6-vibrancy-content: rgb(40 40 42 / 60%);
+  --v6-vibrancy-popover: rgb(50 50 52 / 85%);
+  --v6-vibrancy-hover: rgb(255 255 255 / 6%);
+  --v6-vibrancy-selected: rgb(10 132 255 / 28%);
+  --v6-vibrancy-active: #0a84ff;
+
+  /* dark 模式：背景图过亮时叠加深色遮罩（默认极浅，仅作占位） */
+  --v6-contrast-overlay: rgb(0 0 0 / 4%);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   低性能模式：通过 :root[data-perf-mode="low"] 显式降级。
+   - 关闭 vibrancy 背景滤镜（变为不透明色）
+   - 关闭阴影
+   - 关闭动效（与 prefers-reduced-motion 一致策略）
+   - 全局动画/过渡收敛到 0.01ms
+   触发由 useTheme.ts 基于硬件检测 + 用户设置写入 dataset.perfMode。
+   ═══════════════════════════════════════════════════════════════ */
+:root[data-perf-mode='low'] {
+  --v6-backdrop-shell: none;
+  --v6-backdrop-vibrancy: none;
+  --v6-backdrop-popover: none;
+  --v6-shadow-card: none;
+  --v6-shadow-elevated: none;
+  --v6-motion-fast: 0ms;
+  --v6-motion-base: 0ms;
+  --v6-motion-slow: 0ms;
+  /* vibrancy 表面退化为不透明色（保留语义别名，避免空值导致 fallback 失败） */
+  --v6-vibrancy-sidebar: var(--v6-color-sidebar);
+  --v6-vibrancy-titlebar: var(--v6-color-titlebar);
+  --v6-vibrancy-toolbar: var(--v6-color-surface);
+  --v6-vibrancy-content: var(--v6-color-surface);
+  --v6-vibrancy-popover: var(--v6-color-surface-elevated);
+}
+
+:root[data-perf-mode='low'] *,
+:root[data-perf-mode='low'] *::before,
+:root[data-perf-mode='low'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--v6-color-window);
+  color: var(--v6-color-text);
+  font-family: var(--v6-font-sans);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --v6-motion-fast: 0ms;
+    --v6-motion-base: 0ms;
+    --v6-motion-slow: 0ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
 import { useTheme } from '@/composables/useTheme'
+import { useLowPerfMode } from '@/composables/useLowPerfMode'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import type { GlobalConfig } from '@/api'
 import { useSettingsApi } from '@/composables/useSettingsApi'
@@ -19,6 +20,7 @@ import TabAdvanced from './TabAdvanced.vue'
 import TabOthers from './TabOthers.vue'
 
 const { themeMode, themeColor, themeColors, setThemeMode, setThemeColor } = useTheme()
+const { perfMode, detectedPerfMode, detectionContext, setPerfMode } = useLowPerfMode()
 const { loading, getSettings, updateSettings } = useSettingsApi()
 const { syncUiPreferences } = useUiPreferences()
 const {
@@ -211,6 +213,21 @@ const handleThemeColorChange = (value: SelectValue) => {
   if (typeof value === 'string') setThemeColor(value as ThemeColor)
 }
 
+// 性能模式：'auto' 代表恢复自动检测（setPerfMode(null)），'low'/'normal' 为用户显式覆盖
+const handlePerfModeChange = (value: SelectValue) => {
+  if (value === 'auto') {
+    setPerfMode(null)
+  } else if (value === 'low' || value === 'normal') {
+    setPerfMode(value)
+  }
+}
+
+// perfMode 选择器绑定值：用户未显式设置时显示 'auto'
+const perfModeSelectValue = computed(() => {
+  const stored = localStorage.getItem('perf-mode')
+  return stored ? perfMode.value : 'auto'
+})
+
 // 其他操作
 const openDevTools = () => window.electronAPI?.openDevTools?.()
 
@@ -295,6 +312,10 @@ onMounted(() => {
             :handle-theme-mode-change="handleThemeModeChange"
             :handle-theme-color-change="handleThemeColorChange"
             :handle-setting-change="handleSettingChange"
+            :perf-mode-select-value="perfModeSelectValue"
+            :detected-perf-mode="detectedPerfMode"
+            :detection-context="detectionContext"
+            :handle-perf-mode-change="handlePerfModeChange"
           />
         </a-tab-pane>
         <a-tab-pane key="function" tab="功能设置">

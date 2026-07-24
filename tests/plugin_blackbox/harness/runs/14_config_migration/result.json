@@ -1,0 +1,31 @@
+{
+  "case_id": "14_config_migration",
+  "status": "PASS",
+  "notes": "",
+  "error": null,
+  "error_traceback": null,
+  "snapshots": {
+    "after_reload": "Snapshot(at=1784824151.28468, event_bus_handlers={'fake:probe': 1, 'fake:probe_global': 1}, loader_records={'cfg-1': {'instance_id': 'cfg-1', 'plugin_name': 'fake_cfg', 'status': 'active', 'lifecycle_phase': 'active', 'error': None, 'listener_ids': [], 'generation': 2, 'reload_count': 1, 'last_reload_reason': 'migrate', 'on_load_attempted': True, 'on_start_attempted': True, 'on_stop_completed': False, 'on_unload_completed': False, 'provides': [], 'needs': [], 'missing': []}}, discovered_plugins={'fake_cfg': {'source': 'pypi', 'distribution': 'automas-fake-cfg', 'version': '0.1.0', 'system': False, 'locked': False}}, service_owners={}, sys_modules_keys_sample=['fake_plugin_cfg', 'fake_plugin_ovr'])"
+  },
+  "metrics": {
+    "final_config": {
+      "user_field": "kept",
+      "extra": "untouched",
+      "v2_field": "migrated"
+    },
+    "second_lifecycle_log": [
+      [
+        "on_load",
+        "b1"
+      ],
+      [
+        "on_start",
+        "b1"
+      ],
+      [
+        "on_reload_commit",
+        "b1"
+      ]
+    ]
+  }
+}

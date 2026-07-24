@@ -1,0 +1,141 @@
+{
+  "schema": "auto-mas.experimental-alpha.ci-gates/v1",
+  "document_status": "draft",
+  "overall_status": "pending",
+  "release_scope": {
+    "channel": "experimental-alpha",
+    "update_policy": "manual-only",
+    "distribution": "portable-full-only",
+    "frozen_r6": "must_not_be_modified"
+  },
+  "result_policy": {
+    "allowed_initial_results": [
+      "pending",
+      "unverified"
+    ],
+    "evidence_rule": "A gate may be marked passed or failed only with output tied to the exact source provenance, wheelhouse, runtime lock and portable artifact hash being evaluated.",
+    "stale_rule": "Any source, wheelhouse, runtime lock, portable artifact or version change makes dependent results stale until rerun."
+  },
+  "gates": [
+    {
+      "id": "ALPHA-CI-001",
+      "title": "Workflow and release metadata contract",
+      "type": "automated",
+      "status": "pending",
+      "command": "node --test .github/workflows/scripts/release-metadata.test.mjs .github/workflows/scripts/alpha-release-workflow.test.mjs",
+      "required_evidence": [
+        "command output",
+        "checked-out Git commit"
+      ]
+    },
+    {
+      "id": "ALPHA-CI-002",
+      "title": "Frontend quality gates",
+      "type": "automated",
+      "status": "pending",
+      "commands": [
+        "yarn lint",
+        "yarn typecheck",
+        "yarn test"
+      ],
+      "working_directory": "frontend",
+      "required_evidence": [
+        "complete command logs",
+        "package manager lockfile identity",
+        "checked-out Git commit"
+      ]
+    },
+    {
+      "id": "ALPHA-CI-003",
+      "title": "Audited wheelhouse and runtime-lock contract",
+      "type": "automated",
+      "status": "pending",
+      "required_evidence": [
+        "wheelhouse archive SHA-256",
+        "wheel manifest",
+        "runtime-lock.json",
+        "validation log"
+      ]
+    },
+    {
+      "id": "ALPHA-CI-004",
+      "title": "Clean source provenance and Alpha unpacked layout",
+      "type": "automated",
+      "status": "pending",
+      "required_evidence": [
+        "embedded source-provenance.json",
+        "source input tree SHA-256",
+        "Git head matching the build commit",
+        "Full layout check log"
+      ]
+    },
+    {
+      "id": "ALPHA-CI-005",
+      "title": "Full portable archive and release manifest",
+      "type": "automated",
+      "status": "pending",
+      "required_evidence": [
+        "portable archive SHA-256",
+        "alpha-release-manifest.json",
+        "SHA256SUMS",
+        "EVIDENCE_INDEX.json"
+      ]
+    },
+    {
+      "id": "ALPHA-CI-006",
+      "title": "Current-source plugin compatibility certification",
+      "type": "automated",
+      "status": "pending",
+      "required_evidence": [
+        "plugin inventory",
+        "blackbox/lifecycle logs",
+        "wheel and source provenance linkage",
+        "known failure list"
+      ]
+    },
+    {
+      "id": "ALPHA-MANUAL-001",
+      "title": "Windows clean install and isolated r6 boundary",
+      "type": "manual",
+      "status": "unverified",
+      "required_evidence": [
+        "AT-01 record",
+        "AT-03 record",
+        "before/after file evidence"
+      ]
+    },
+    {
+      "id": "ALPHA-MANUAL-002",
+      "title": "Offline first start",
+      "type": "manual",
+      "status": "unverified",
+      "required_evidence": [
+        "AT-02 record",
+        "network isolation evidence",
+        "preflight output",
+        "fresh runtime logs"
+      ]
+    },
+    {
+      "id": "ALPHA-MANUAL-003",
+      "title": "Plugin, MaaFW, HSR and game/emulator behavior",
+      "type": "manual",
+      "status": "unverified",
+      "required_evidence": [
+        "AT-04 through AT-07 records",
+        "environment identifiers",
+        "logs and screenshots"
+      ]
+    },
+    {
+      "id": "ALPHA-MANUAL-004",
+      "title": "Actual artifact signature state",
+      "type": "manual",
+      "status": "unverified",
+      "required_evidence": [
+        "Get-AuthenticodeSignature output for executable",
+        "artifact SHA-256"
+      ]
+    }
+  ]
+}

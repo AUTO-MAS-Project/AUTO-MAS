@@ -22,18 +22,17 @@
 
 
 from fastapi import APIRouter, Body
-from app.plugins import PluginManager
+from app.plugins.emulator_compat import get_emulator_service
 
 
 def _get_emulator_service():
-    service = PluginManager.service.get("emulator")
-    if service is None:
-        raise RuntimeError("emulator service is unavailable")
-    return service
+    return get_emulator_service()
 
 
 def _error_code(exc: Exception) -> int:
-    return 503 if "service is unavailable" in str(exc) else 500
+    if isinstance(exc, (ValueError, KeyError, FileNotFoundError)):
+        return 400
+    return 500
 
 
 from app.models.schema import (
@@ -47,6 +46,7 @@ from app.models.schema import (
     EmulatorDeleteIn,
     EmulatorReorderIn,
     EmulatorOperateIn,
+    EmulatorOperateOut,
     EmulatorStatusOut,
     EmulatorSearchOut,
     EmulatorSearchResult,
@@ -157,19 +157,25 @@ async def reorder_emulator(emulator: EmulatorReorderIn = Body(...)) -> OutBase:
     "/operate",
     tags=["Action"],
     summary="操作模拟器",
-    response_model=OutBase,
+    response_model=EmulatorOperateOut,
     status_code=200,
 )
-async def operation_emulator(emulator: EmulatorOperateIn = Body(...)) -> OutBase:
+async def operation_emulator(emulator: EmulatorOperateIn = Body(...)) -> EmulatorOperateOut:
     try:
-        await _get_emulator_service().operate(
+        result = await _get_emulator_service().operate(
             emulator.operate, emulator.emulatorId, emulator.index
         )
     except Exception as e:
-        return OutBase(
+        return EmulatorOperateOut(
             code=_error_code(e), status="error", message=f"{type(e).__name__}: {str(e)}"
         )
-    return OutBase()
+    operation_id = result if isinstance(result, str) else None
+    return EmulatorOperateOut(
+        status="accepted",
+        message="操作已提交，结果将通过 WS 推送",
+        operationId=operation_id,
+        accepted=True,
+    )
 
 
 @router.post(

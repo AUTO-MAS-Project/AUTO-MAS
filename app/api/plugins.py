@@ -258,52 +258,6 @@ async def _discover_plugins(plugins_dir: Path) -> Dict[str, Any]:
     return await PluginManager.discover_plugins()
 
 
-def _schedule_update_reload(instance_id: str) -> None:
-    async def _runner() -> None:
-        try:
-            await PluginManager.reload_instance(instance_id)
-        except Exception as exc:
-            logger.error(
-                f"插件实例后台重载失败: instance_id={instance_id}, error={type(exc).__name__}: {exc}",
-                exc_info=True,
-            )
-            try:
-                await publish_plugin_snapshot(
-                    reason="api.plugins.update.reload_failed",
-                    message=f"插件实例后台重载失败: {instance_id}",
-                )
-            except Exception as snapshot_exc:
-                logger.warning(
-                    f"插件快照后台发布失败: instance_id={instance_id}, "
-                    f"error={type(snapshot_exc).__name__}: {snapshot_exc}"
-                )
-
-    asyncio.create_task(_runner())
-
-
-def _schedule_enabled_runtime_update(instance_id: str, enabled: bool) -> None:
-    async def _runner() -> None:
-        try:
-            await PluginManager.apply_instance_enabled(instance_id, enabled)
-        except Exception as exc:
-            logger.error(
-                f"插件实例后台启用状态切换失败: instance_id={instance_id}, error={type(exc).__name__}: {exc}",
-                exc_info=True,
-            )
-            try:
-                await publish_plugin_snapshot(
-                    reason="api.plugins.update.enabled_failed",
-                    message=f"插件实例启用状态切换失败: {instance_id}",
-                )
-            except Exception as snapshot_exc:
-                logger.warning(
-                    f"插件快照后台发布失败: instance_id={instance_id}, "
-                    f"error={type(snapshot_exc).__name__}: {snapshot_exc}"
-                )
-
-    asyncio.create_task(_runner())
-
-
 def _schedule_update_snapshot(instance_id: str, reason: str = "api.plugins.update") -> None:
     async def _runner() -> None:
         try:
@@ -318,59 +272,6 @@ def _schedule_update_snapshot(instance_id: str, reason: str = "api.plugins.updat
             )
 
     asyncio.create_task(_runner())
-
-
-def _need_discover_for_update(data: PluginUpdateIn) -> bool:
-    return data.plugin is not None or data.config is not None
-
-
-def _is_name_only_update(data: PluginUpdateIn) -> bool:
-    return (
-        data.name is not None
-        and data.plugin is None
-        and data.config is None
-        and data.enabled is None
-    )
-
-
-def _is_enabled_only_update(data: PluginUpdateIn) -> bool:
-    return (
-        data.enabled is not None
-        and data.plugin is None
-        and data.config is None
-        and data.name is None
-    )
-
-
-def _resolve_effective_config(
-    *,
-    data: PluginUpdateIn,
-    target: Dict[str, Any],
-    discovered: Dict[str, Any],
-    need_discover: bool,
-) -> tuple[str, Dict[str, Any]]:
-    next_plugin = data.plugin if data.plugin is not None else target.get("plugin")
-    if not isinstance(next_plugin, str) or not next_plugin:
-        raise ValueError(f"插件实例缺少有效 plugin 字段: {data.instanceId}")
-
-    # 仅更新启用状态/名称时，沿用现有配置，避免无关 schema 校验影响开关流程。
-    if data.plugin is None and data.config is None:
-        current_config = target.get("config", {})
-        if not isinstance(current_config, dict):
-            raise ValueError(f"插件实例配置无效: {data.instanceId}")
-        return next_plugin, current_config
-
-    next_config = data.config if data.config is not None else target.get("config", {})
-
-    if need_discover:
-        if next_plugin not in discovered:
-            raise ValueError(f"未发现插件: {next_plugin}")
-
-    effective_config = config_store.load_effective_config(
-        next_plugin,
-        next_config,
-    )
-    return next_plugin, effective_config
 
 
 
@@ -671,7 +572,7 @@ async def reload_plugins() -> OutBase:
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
 
 
-@ws_command("plugins.reload_instance")
+@ws_command("plugins.reload_instance", params=PluginReloadInstanceIn)
 @router.post(
     "/reload_instance",
     tags=["Action"],
@@ -691,7 +592,7 @@ async def reload_plugin_instance(data: PluginReloadInstanceIn = Body(...)) -> Ou
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
 
 
-@ws_command("plugins.reload_plugin")
+@ws_command("plugins.reload_plugin", params=PluginReloadPluginIn)
 @router.post(
     "/reload_plugin",
     tags=["Action"],
@@ -711,7 +612,7 @@ async def reload_plugin_by_name(data: PluginReloadPluginIn = Body(...)) -> OutBa
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
 
 
-@ws_command("plugins.install_package")
+@ws_command("plugins.install_package", params=PluginPackageIn)
 @router.post(
     "/install_package",
     tags=["Action"],
@@ -742,7 +643,7 @@ async def install_plugin_package(data: PluginPackageIn = Body(...)) -> OutBase:
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
 
 
-@ws_command("plugins.uninstall_package")
+@ws_command("plugins.uninstall_package", params=PluginPackageIn)
 @router.post(
     "/uninstall_package",
     tags=["Action"],
@@ -775,7 +676,7 @@ async def uninstall_plugin_package(data: PluginPackageIn = Body(...)) -> OutBase
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
 
 
-@ws_command("plugins.add")
+@ws_command("plugins.add", params=PluginAddIn)
 @router.post(
     "/add",
     tags=["Add"],
@@ -786,36 +687,13 @@ async def uninstall_plugin_package(data: PluginPackageIn = Body(...)) -> OutBase
 async def add_plugin_instance(data: PluginAddIn = Body(...)) -> PluginAddOut:
     try:
         plugins_dir = Path.cwd() / "plugins"
-        discovered = await _discover_plugins(plugins_dir)
-
-        if data.plugin not in discovered:
-            raise ValueError(f"未发现插件: {data.plugin}")
-        if PluginManager.is_system_plugin(data.plugin):
-            raise ValueError(f"系统插件不允许新增实例: {data.plugin}")
-
-        # 先校验配置是否合法（包含默认值注入）
-        effective_config = config_store.load_effective_config(
-            data.plugin,
-            data.config,
+        instance = await PluginManager.create_instance_transaction(
+            plugin_name=data.plugin,
+            name=data.name,
+            enabled=data.enabled,
+            config=data.config,
+            plugins_dir=plugins_dir,
         )
-
-        root = await config_store.get_root(
-            plugins_dir,
-            discovered,
-            auto_create_missing=False,
-        )
-        instance = {
-            "id": config_store.generate_instance_id(data.plugin),
-            "plugin": data.plugin,
-            "enabled": data.enabled,
-            "name": data.name or f"{data.plugin} 实例",
-            "config": effective_config,
-        }
-        root.setdefault("instances", []).append(instance)
-        await config_store.save_root(plugins_dir, root)
-
-        if PluginManager.started and data.enabled:
-            await PluginManager.reload_instance(instance["id"])
 
         await publish_plugin_snapshot(
             reason="api.plugins.add",
@@ -832,7 +710,7 @@ async def add_plugin_instance(data: PluginAddIn = Body(...)) -> PluginAddOut:
         )
 
 
-@ws_command("plugins.update")
+@ws_command("plugins.update", params=PluginUpdateIn)
 @router.post(
     "/update",
     tags=["Update"],
@@ -843,71 +721,25 @@ async def add_plugin_instance(data: PluginAddIn = Body(...)) -> PluginAddOut:
 async def update_plugin_instance(data: PluginUpdateIn = Body(...)) -> OutBase:
     try:
         plugins_dir = Path.cwd() / "plugins"
-        need_discover = _need_discover_for_update(data)
-        discovered: Dict[str, Any] = {}
-        if need_discover:
-            discovered = await _discover_plugins(plugins_dir)
-        root = await config_store.get_root(
-            plugins_dir,
-            discovered,
-            auto_create_missing=False,
+        result = await PluginManager.update_instance_transaction(
+            instance_id=data.instanceId,
+            plugin_name=data.plugin,
+            name=data.name,
+            enabled=data.enabled,
+            config=data.config,
+            plugins_dir=plugins_dir,
         )
-
-        instances = root.get("instances", [])
-        target = None
-        for item in instances:
-            if isinstance(item, dict) and item.get("id") == data.instanceId:
-                target = item
-                break
-
-        if target is None:
-            raise ValueError(f"未找到插件实例: {data.instanceId}")
-        target_plugin = str(target.get("plugin") or "")
-        if PluginManager.is_system_plugin(target_plugin):
-            if data.plugin is not None and data.plugin != target_plugin:
-                raise ValueError(f"系统插件不可变更插件类型: {target_plugin}")
-            if data.enabled is False:
-                raise ValueError(f"系统插件不可禁用: {target_plugin}")
-
-        was_enabled = bool(target.get("enabled", False))
-
-        next_plugin, effective_config = _resolve_effective_config(
-            data=data,
-            target=target,
-            discovered=discovered,
-            need_discover=need_discover,
+        _schedule_update_snapshot(
+            data.instanceId,
+            reason=str(result.get("snapshot_reason") or "api.plugins.update"),
         )
-
-        target["plugin"] = next_plugin
-        target["config"] = effective_config
-        if data.name is not None:
-            target["name"] = data.name
-        if data.enabled is not None:
-            target["enabled"] = data.enabled
-
-        await config_store.save_root(plugins_dir, root)
-
-        if PluginManager.started:
-            if _is_name_only_update(data):
-                _schedule_update_snapshot(data.instanceId, reason="api.plugins.update.name")
-            elif _is_enabled_only_update(data) and was_enabled != bool(data.enabled):
-                _schedule_enabled_runtime_update(data.instanceId, bool(data.enabled))
-            else:
-                _schedule_update_reload(data.instanceId)
-        else:
-            asyncio.create_task(
-                publish_plugin_snapshot(
-                    reason="api.plugins.update",
-                    message=f"已更新插件实例: {data.instanceId}",
-                )
-            )
 
         return OutBase()
     except Exception as e:
         return OutBase(code=500, status="error", message=f"{type(e).__name__}: {str(e)}")
 
 
-@ws_command("plugins.delete")
+@ws_command("plugins.delete", params=PluginDeleteIn)
 @router.post(
     "/delete",
     tags=["Delete"],
@@ -918,42 +750,10 @@ async def update_plugin_instance(data: PluginUpdateIn = Body(...)) -> OutBase:
 async def delete_plugin_instance(data: PluginDeleteIn = Body(...)) -> OutBase:
     try:
         plugins_dir = Path.cwd() / "plugins"
-        discovered = await _discover_plugins(plugins_dir)
-        root = await config_store.get_root(
-            plugins_dir,
-            discovered,
-            auto_create_missing=False,
+        await PluginManager.delete_instance_transaction(
+            data.instanceId,
+            plugins_dir=plugins_dir,
         )
-
-        old_instances = root.get("instances", [])
-        new_instances = [
-            item
-            for item in old_instances
-            if not (isinstance(item, dict) and item.get("id") == data.instanceId)
-        ]
-
-        if len(new_instances) == len(old_instances):
-            raise ValueError(f"未找到插件实例: {data.instanceId}")
-
-        target_instance = next(
-            item
-            for item in old_instances
-            if isinstance(item, dict) and item.get("id") == data.instanceId
-        )
-        target_plugin = str(target_instance.get("plugin") or "")
-        if PluginManager.is_system_plugin(target_plugin):
-            raise ValueError(f"系统插件不可删除: {target_plugin}")
-
-        if PluginManager.started:
-            await PluginManager.ensure_instance_can_delete(
-                data.instanceId,
-                plugin_name=target_plugin,
-                discovered=discovered,
-            )
-            await PluginManager.loader.unload_instance(data.instanceId)
-
-        root["instances"] = new_instances
-        await config_store.save_root(plugins_dir, root)
         await publish_plugin_snapshot(
             reason="api.plugins.delete",
             message=f"已删除插件实例: {data.instanceId}",

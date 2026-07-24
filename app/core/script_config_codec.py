@@ -6,10 +6,9 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel
 
-from app.models.ConfigBase import ConfigBase, JSONValidator
-
 if TYPE_CHECKING:
     from app.core.script_types import ScriptTypeProvider
+    from app.models.ConfigBase import ConfigBase
 
 
 ConfigKind = Literal["script", "user"]
@@ -24,7 +23,15 @@ def _config_class(provider: "ScriptTypeProvider", kind: ConfigKind) -> type[Any]
 
 
 def _is_configbase_class(config_class: type[Any]) -> bool:
+    from app.models.ConfigBase import ConfigBase
+
     return isinstance(config_class, type) and issubclass(config_class, ConfigBase)
+
+
+def _is_configbase_instance(config: object) -> bool:
+    from app.models.ConfigBase import ConfigBase
+
+    return isinstance(config, ConfigBase)
 
 
 def _is_pydantic_class(config_class: type[Any]) -> bool:
@@ -48,9 +55,11 @@ def _coerce_payload(payload: Any) -> dict[str, Any]:
 
 
 def _normalize_json_fields_for_storage(
-    config_class: type[ConfigBase],
+    config_class: type[Any],
     payload: dict[str, Any],
 ) -> dict[str, Any]:
+    from app.models.ConfigBase import JSONValidator
+
     data = copy.deepcopy(payload or {})
     config = config_class()
     for group, items in config._config_item_index.items():
@@ -70,9 +79,11 @@ def _normalize_json_fields_for_storage(
 
 
 def _normalize_json_fields_for_form(
-    config_class: type[ConfigBase],
+    config_class: type[Any],
     payload: dict[str, Any],
 ) -> dict[str, Any]:
+    from app.models.ConfigBase import JSONValidator
+
     data = copy.deepcopy(payload or {})
     config = config_class()
     for group, items in config._config_item_index.items():
@@ -93,7 +104,7 @@ def _normalize_json_fields_for_form(
 
 
 def _strip_virtual_fields_for_storage(
-    config_class: type[ConfigBase],
+    config_class: type[Any],
     payload: dict[str, Any],
 ) -> dict[str, Any]:
     data = copy.deepcopy(payload or {})
@@ -118,13 +129,13 @@ async def build_config_model(
     config_class = _config_class(provider, kind)
     payload = _coerce_payload(raw_payload)
 
+    if _is_pydantic_class(config_class):
+        return config_class.model_validate(payload)
+
     if _is_configbase_class(config_class):
         config = config_class()
         await config.load(_normalize_json_fields_for_storage(config_class, payload))
         return config
-
-    if _is_pydantic_class(config_class):
-        return config_class.model_validate(payload)
 
     raise TypeError(f"不支持的插件脚本配置类: {config_class!r}")
 
@@ -139,7 +150,7 @@ async def storage_to_form(
     config_class = _config_class(provider, kind)
     model = await build_config_model(provider, raw_payload, kind)
 
-    if isinstance(model, ConfigBase):
+    if _is_configbase_instance(model):
         payload = await model.toDict()
         payload.pop("SubConfigsInfo", None)
         return _normalize_json_fields_for_form(config_class, payload)
@@ -155,7 +166,7 @@ async def form_to_storage(
     """把 SchemaForm 表单态数据转换成宿主 PluginData.Config 持久化数据。"""
 
     model = await build_config_model(provider, form_payload, kind)
-    if isinstance(model, ConfigBase):
+    if _is_configbase_instance(model):
         payload = await model.toDict(if_decrypt=False)
         return _strip_virtual_fields_for_storage(type(model), payload)
     return model.model_dump(mode="json")

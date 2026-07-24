@@ -1,0 +1,5 @@
+Metadata-Version: 2.1
+Name: automas-fake-reload
+Version: 0.1.0
+Summary: fake plugin for blackbox tests
+Requires-Python: >=3.10

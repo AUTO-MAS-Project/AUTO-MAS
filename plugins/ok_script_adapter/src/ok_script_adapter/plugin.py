@@ -7,9 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from app.core import Config as app_config
-from app.core.script_config_codec import storage_to_form
-from app.models.plugin_script_config import PluginScriptConfig
 from app.plugins import PluginHttpRequest, ScriptAdapterDefinition, ScriptAdapterPlugin
+from app.plugins.script_config_store import ScriptConfigStore
 
 from .adapter import OkScriptAdapterHooks
 from .common.provider import ok_script_mas_config_dir
@@ -56,20 +55,37 @@ def _read_form_config(script_id: str) -> Any:
 
 async def _script_form_config(script_id: str) -> dict[str, Any]:
     storage_config = _read_form_config(script_id)
-    if isinstance(storage_config, PluginScriptConfig):
-        if str(storage_config.get("Meta", "PluginTypeKey") or "") != "OkScript":
-            raise ValueError("脚本不是 ok-script 插件配置")
-        from app.core.script_types import script_type_registry
+    from app.core.script_types import script_type_registry
 
-        return await storage_to_form(
-            script_type_registry.get("OkScript"),
-            storage_config.get("PluginData", "Config"),
-            "script",
-        )
+    provider = script_type_registry.get("OkScript")
+    type_key_resolver = getattr(app_config, "get_script_type_key", None)
+    actual_type_key = None
+    if callable(type_key_resolver):
+        try:
+            actual_type_key = str(type_key_resolver(script_id) or "").strip()
+        except (KeyError, TypeError, ValueError):
+            actual_type_key = None
+    if not actual_type_key:
+        try:
+            actual_type_key = str(
+                storage_config.get("Meta", "PluginTypeKey") or ""
+            ).strip()
+        except (AttributeError, KeyError):
+            actual_type_key = None
+    if not actual_type_key:
+        try:
+            actual_type_key = script_type_registry.get_by_script_config(
+                storage_config
+            ).type_key
+        except KeyError:
+            actual_type_key = None
+    if actual_type_key != provider.type_key:
+        raise ValueError("脚本不是 ok-script 插件配置")
 
-    data = await storage_config.toDict(if_decrypt=False)
-    data.pop("SubConfigsInfo", None)
-    return data
+    return await ScriptConfigStore(
+        provider=provider,
+        storage_script_config=storage_config,
+    ).read_script_data()
 
 
 def _build_generic_fields(data: dict[str, Any]) -> list[dict[str, Any]]:

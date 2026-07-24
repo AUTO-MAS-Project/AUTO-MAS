@@ -58,13 +58,14 @@ import os
 import sys
 import json
 import requests
-import zipfile
+import tempfile
 from pathlib import Path
 from typing import List, Dict, Optional
 from tqdm import tqdm
 
 # 导入 CNBReleaseUploader
 from cnb_release import CNBReleaseUploader
+from scripts.manual_release_safety import ArchiveBudgets, extract_zip_safely
 
 
 DEFAULT_OWNER = "AUTO-MAS-Project"
@@ -74,6 +75,8 @@ DEFAULT_PROJECT_PATH = "AUTO-MAS-Project/AUTO-MAS"
 DEFAULT_ARTIFACT_NAMES = ["build-artifacts"]
 DEFAULT_ASSET_GLOB = "AUTO-MAS-*-x64.zip"
 DEFAULT_TARGET_COMMITISH = "main"
+REQUEST_TIMEOUT_SECONDS = (10, 60)
+ARTIFACT_ARCHIVE_BUDGETS = ArchiveBudgets()
 
 
 def sanitize_release_body(release_body: Optional[str]) -> Optional[str]:
@@ -127,7 +130,12 @@ class GitHubActionsDownloader:
         params = {"status": "completed", "conclusion": "success", "per_page": 1}
 
         try:
-            response = requests.get(url, headers=self.headers, params=params)
+            response = requests.get(
+                url,
+                headers=self.headers,
+                params=params,
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
             response.raise_for_status()
 
             data = response.json()
@@ -165,7 +173,11 @@ class GitHubActionsDownloader:
         url = f"https://api.github.com/repos/{owner}/{repo}/actions/runs/{run_id}/artifacts"
 
         try:
-            response = requests.get(url, headers=self.headers)
+            response = requests.get(
+                url,
+                headers=self.headers,
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
             response.raise_for_status()
 
             data = response.json()
@@ -203,39 +215,75 @@ class GitHubActionsDownloader:
             下载的文件路径或None
         """
         url = f"https://api.github.com/repos/{owner}/{repo}/actions/artifacts/{artifact_id}/zip"
+        zip_path = Path(download_dir) / f"{artifact_name}.zip"
 
         try:
+            if zip_path.exists():
+                raise FileExistsError(f"拒绝覆盖已有构建物: {zip_path}")
             print(f"📥 开始下载构建物: {artifact_name}")
-            response = requests.get(url, headers=self.headers, stream=True)
-            response.raise_for_status()
+            temporary_path: Path | None = None
+            with requests.get(
+                url,
+                headers=self.headers,
+                stream=True,
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            ) as response:
+                response.raise_for_status()
 
-            # 获取文件总大小
-            total_size = int(response.headers.get("content-length", 0))
+                total_size = int(response.headers.get("content-length", 0))
+                if total_size > ARTIFACT_ARCHIVE_BUDGETS.max_archive_bytes:
+                    raise ValueError("构建物压缩包超过 1 GiB 下载上限")
 
-            # 保存到临时文件
-            zip_path = os.path.join(download_dir, f"{artifact_name}.zip")
-
-            # 使用 tqdm 创建进度条
-            chunk_size = 8192
-            with open(zip_path, "wb") as f:
-                with tqdm(
-                    total=total_size,
-                    unit="B",
-                    unit_scale=True,
-                    unit_divisor=1024,
-                    desc=f"下载 {artifact_name}",
-                    ncols=80,
-                    bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
-                ) as pbar:
-                    for chunk in response.iter_content(chunk_size=chunk_size):
-                        if chunk:
+                chunk_size = 8192
+                downloaded_size = 0
+                temporary_file = tempfile.NamedTemporaryFile(
+                    mode="wb",
+                    delete=False,
+                    dir=download_dir,
+                    prefix=f".{artifact_name}.",
+                    suffix=".part",
+                )
+                temporary_path = Path(temporary_file.name)
+                with temporary_file as f:
+                    with tqdm(
+                        total=total_size,
+                        unit="B",
+                        unit_scale=True,
+                        unit_divisor=1024,
+                        desc=f"下载 {artifact_name}",
+                        ncols=80,
+                        bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
+                    ) as pbar:
+                        for chunk in response.iter_content(chunk_size=chunk_size):
+                            if not chunk:
+                                continue
+                            downloaded_size += len(chunk)
+                            if (
+                                downloaded_size
+                                > ARTIFACT_ARCHIVE_BUDGETS.max_archive_bytes
+                            ):
+                                raise ValueError("构建物下载超过 1 GiB 上限")
                             f.write(chunk)
                             pbar.update(len(chunk))
+                    f.flush()
+                    os.fsync(f.fileno())
+
+                if total_size and downloaded_size != total_size:
+                    raise ValueError(
+                        f"构建物下载长度不一致: expected={total_size}, "
+                        f"actual={downloaded_size}"
+                    )
+                if zip_path.exists():
+                    raise FileExistsError(f"下载期间目标文件已出现: {zip_path}")
+                temporary_path.rename(zip_path)
+                temporary_path = None
 
             print(f"✅ 下载完成: {zip_path}")
-            return zip_path
+            return str(zip_path)
 
-        except requests.exceptions.RequestException as e:
+        except (OSError, ValueError, requests.exceptions.RequestException) as e:
+            if "temporary_path" in locals() and temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
             print(f"❌ 下载构建物失败 ({artifact_name}): {e}")
             return None
 
@@ -254,11 +302,11 @@ class GitHubActionsDownloader:
 
         try:
             print(f"📂 解压构建物: {os.path.basename(zip_path)}")
-            with zipfile.ZipFile(zip_path, "r") as zip_ref:
-                zip_ref.extractall(extract_dir)
-                extracted_files = [
-                    os.path.join(extract_dir, name) for name in zip_ref.namelist()
-                ]
+            extracted_files = extract_zip_safely(
+                zip_path,
+                extract_dir,
+                budgets=ARTIFACT_ARCHIVE_BUDGETS,
+            )
 
             print(f"✅ 解压完成，共 {len(extracted_files)} 个文件")
             for file_path in extracted_files:
@@ -485,8 +533,6 @@ def main():
 
             # 解压
             artifact_extract_dir = extract_dir / artifact["name"]
-            artifact_extract_dir.mkdir(parents=True, exist_ok=True)
-
             extracted_files = downloader.extract_artifact(
                 zip_path, str(artifact_extract_dir)
             )

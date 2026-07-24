@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "automas_plugin_okww_adapter"
-version = "0.0.1"
+version = "0.0.2"
 description = "OK-WW script adapter for AUTO-MAS"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"

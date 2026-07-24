@@ -1,5 +1,6 @@
 import { OpenAPI } from '@/api'
 import { subscribe, unsubscribe, type WebSocketBaseMessage } from '@/composables/useWebSocket'
+import { authenticatedApiFetch } from '@/utils/httpSecurity'
 import { getPluginPageContext } from './pluginPageContext'
 
 const logger = window.electronAPI.getLogger('插件前端 API')
@@ -9,7 +10,7 @@ function toBackendUrl(path: string): string {
     return path
   }
 
-  const base = (OpenAPI.BASE || 'http://localhost:36163').replace(/\/+$/, '')
+  const base = (OpenAPI.BASE || 'http://127.0.0.1:36163').replace(/\/+$/, '')
   const trimmed = String(path || '').trim()
   if (!trimmed) {
     throw new Error('插件调用路径不能为空')
@@ -36,7 +37,7 @@ export function installPluginAPI(): void {
       const url = toBackendUrl(path)
       const hasBody = payload !== undefined
       logger.info(`插件调用后端接口: ${url}`)
-      const response = await fetch(url, {
+      const response = await authenticatedApiFetch(url, {
         method: hasBody ? 'POST' : 'GET',
         headers: hasBody ? { 'Content-Type': 'application/json' } : undefined,
         body: hasBody ? JSON.stringify(payload) : undefined,

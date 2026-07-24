@@ -1,0 +1,2 @@
+[auto_mas.plugins]
+fake_reload_fail = fake_plugin_reload_fail:Plugin

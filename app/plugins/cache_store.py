@@ -11,6 +11,9 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Literal, TYPE_CHECKING
+
+from app.utils.atomic_file import atomic_write_json
+
 if TYPE_CHECKING:
     from loguru import Logger
 
@@ -43,7 +46,15 @@ def _safe_instance_dir_name(instance_id: str) -> str:
 
 
 class JsonPluginCache:
-    """JSON 缓存实现，提供简洁的键值 CRUD 并支持超限自动清理。"""
+    """JSON 缓存实现，提供简洁的键值 CRUD 并支持超限自动清理。
+
+    安全提示：
+        本缓存以明文 JSON 写入磁盘，**严禁**用于存储敏感数据（如密码、
+        API Key、Token、解密后的凭据等）。插件应将敏感数据交给宿主配置
+        系统（PluginSchemaManager + sensitive 字段）统一加密管理，缓存
+        仅用于非敏感的运行时状态、计算结果或公开数据。此提示不是安全
+        机制：缓存后端本身不提供加密、敏感字段识别或写入阻断。
+    """
 
     def __init__(
         self,
@@ -83,12 +94,13 @@ class JsonPluginCache:
     def _write_store(self, payload: Dict[str, Any]) -> None:
         """原子写入缓存文件。"""
         payload["updated_at"] = _utc_now_iso()
-        temp_path = self.file_path.with_suffix(f"{self.file_path.suffix}.tmp")
-        temp_path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
+        atomic_write_json(
+            self.file_path,
+            payload,
+            backup=True,
+            fsync=True,
+            indent=2,
         )
-        temp_path.replace(self.file_path)
 
     def _cleanup_if_needed(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """按配置阈值执行清理，优先淘汰最久未更新的数据。"""
@@ -289,9 +301,8 @@ class PluginCacheManager:
         self.plugin_name = plugin_name
         self.instance_id = instance_id
         self.logger = logger
-        self._instance_dir = (
-            data_root / _safe_instance_dir_name(instance_id) / "plugin_cache"
-        )
+        self._instance_data_dir = data_root / _safe_instance_dir_name(instance_id)
+        self._instance_dir = self._instance_data_dir / "plugin_cache"
         # 懒创建：仅在首次真正注册缓存时创建目录，避免未使用缓存的插件产生空目录。
         self._stores: Dict[str, JsonPluginCache] = {}
 
@@ -428,6 +439,10 @@ class PluginCacheManager:
 
         self._instance_dir.mkdir(parents=True, exist_ok=True)
 
+        self.logger.warning(
+            f"[cache] 缓存以明文 JSON 落盘且不提供敏感数据保护，严禁存储敏感数据: "
+            f"instance={self.instance_id}, cache={key}"
+        )
         store = JsonPluginCache(
             cache_name=key,
             file_path=self._build_json_path(key),
@@ -463,6 +478,11 @@ class PluginCacheManager:
         for key, store in self._stores.items():
             result[key] = store.stats()
         return result
+
+    @property
+    def instance_data_dir(self) -> Path:
+        """获取插件实例的持久数据目录。"""
+        return self._instance_data_dir
 
     @property
     def instance_cache_dir(self) -> Path:

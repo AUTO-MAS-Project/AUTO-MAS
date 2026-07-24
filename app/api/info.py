@@ -24,18 +24,15 @@
 from fastapi import APIRouter, Body
 
 from app.core import Config
-from app.plugins import PluginManager
+from app.plugins.emulator_compat import get_emulator_service
 
 
 def _get_emulator_service():
-    service = PluginManager.service.get("emulator")
-    if service is None:
-        raise RuntimeError("emulator service is unavailable")
-    return service
+    return get_emulator_service()
 
 
 def _error_code(exc: Exception) -> int:
-    return 503 if "service is unavailable" in str(exc) else 500
+    return 500
 
 
 from app.models.schema import *

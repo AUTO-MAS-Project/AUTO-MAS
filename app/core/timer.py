@@ -25,11 +25,26 @@ from datetime import datetime, timedelta
 
 from app.services import Matomo
 from app.utils import get_logger
-from .config import Config
-from .task_manager import TaskManager
+from . import Config
+from .task_manager import TaskManager, TaskRuntimeUnavailableError
 
 
 logger = get_logger("主业务定时器")
+
+
+async def _ensure_timer_runtime_available() -> None:
+    """Do not start a half-migrated timer in authoritative Config v2 mode."""
+
+    from app.configuration import (
+        CONFIG_V2_MODE,
+        CONFIG_V2_MODE_AUTHORITATIVE,
+    )
+
+    if CONFIG_V2_MODE == CONFIG_V2_MODE_AUTHORITATIVE:
+        raise TaskRuntimeUnavailableError(
+            "Config v2 authoritative timer is unavailable: native game-sign "
+            "and task dispatch ports are not ready"
+        )
 
 
 class _MainTimer:
@@ -40,6 +55,7 @@ class _MainTimer:
     async def start(self):
         """启动定时器"""
 
+        await _ensure_timer_runtime_available()
         if self.started:
             logger.warning("主业务定时器仅能启动一次，无法重复启动")
             return

@@ -19,20 +19,11 @@ export function startSkippedInitializationStartup(): Promise<void> {
 
     try {
       if (!import.meta.env.DEV) {
-        const backendStatus = await api.backendStatus?.().catch(() => null)
-
-        if (backendStatus?.isRunning) {
-          logger.info(`检测到后端进程已运行，等待就绪: PID=${backendStatus.pid ?? 'unknown'}`)
-          const waitResult = await api.backendWaitReady?.().catch(() => null)
-          if (!waitResult?.ready) {
-            throw new Error(waitResult?.reason || '等待后端就绪失败')
-          }
-        } else {
-          logger.info('检测到后端未运行，开始后台启动')
-          const result = await api.backendStart?.()
-          if (!result?.success) {
-            throw new Error(result?.error || '后端启动失败')
-          }
+        // 即使应用版本号未变化，也必须验证随包 wheel、bootstrap state 与
+        // 已安装 entry point。主进程在单一互斥区内完成精确停服、修复与重启。
+        const result = await api.repairRuntimeAndStart?.()
+        if (!result?.success) {
+          throw new Error(result?.error || result?.summary || '运行环境检查或后端启动失败')
         }
       }
 
@@ -45,7 +36,7 @@ export function startSkippedInitializationStartup(): Promise<void> {
       logger.error(`跳过初始化启动失败: ${errorMsg}`)
       resetInitializationStatus()
       sessionStorage.setItem('disableInitializationSkip', 'true')
-      message.error('后端启动失败，已切换到初始化页面')
+      message.error('运行环境检查失败，已切换到初始化页面')
 
       if (window.location.hash !== '#/initialization') {
         window.location.hash = '#/initialization'

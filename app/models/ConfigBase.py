@@ -29,14 +29,23 @@ import shlex
 import inspect
 import asyncio
 from copy import deepcopy
+from dataclasses import dataclass
 from urllib.parse import urlparse
 from datetime import datetime
-from contextlib import suppress
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Type, TypeVar, Generic, Callable, Coroutine
+from typing import Any, Type, TypeVar, Generic, Callable, Coroutine, Awaitable
 
-from app.utils import get_logger, dpapi_encrypt, dpapi_decrypt
+from app.utils import get_logger
+from app.utils.atomic_file import atomic_write_json
+from app.utils.security import (
+    DPAPIDecryptionResult,
+    DPAPIProtectionError,
+    decrypt_config_value as dpapi_decrypt,
+    decrypt_config_value_with_status as dpapi_decrypt_with_status,
+    encrypt_config_value as dpapi_encrypt,
+    is_probable_dpapi_ciphertext,
+)
 from app.utils.constants import (
     RESERVED_NAMES,
     ILLEGAL_CHARS,
@@ -48,6 +57,21 @@ from app.utils.constants import (
 )
 
 logger = get_logger("配置基类")
+
+ConfigSaveObserver = Callable[[Path, dict[str, Any]], Awaitable[None]]
+_config_save_observer: ConfigSaveObserver | None = None
+
+
+def configure_config_save_observer(observer: ConfigSaveObserver | None) -> None:
+    """配置持久化后的跨层通知，由 core 在运行期注册。"""
+    global _config_save_observer
+    _config_save_observer = observer
+
+
+async def _notify_config_saved(path: Path, payload: dict[str, Any]) -> None:
+    observer = _config_save_observer
+    if observer is not None:
+        await observer(path, payload)
 
 
 class ValidatorBase(ABC):
@@ -223,20 +247,147 @@ class JSONValidator(ValidatorBase):
         )
 
 
+class EncryptedConfigValueError(ValueError):
+    """加密配置无法安全解密或规范化；错误文本不得携带敏感值。"""
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class EncryptedValueNormalization:
+    """加密配置的规范化结果，repr 始终隐藏密文。"""
+
+    ciphertext: str
+    migrated_legacy_entropy: bool = False
+
+    def __repr__(self) -> str:
+        return (
+            "EncryptedValueNormalization("
+            f"ciphertext=***, migrated_legacy_entropy="
+            f"{self.migrated_legacy_entropy!r})"
+        )
+
+
+def _decrypt_config_value(value: str) -> DPAPIDecryptionResult:
+    """解密配置值，同时保留现有模块级加解密注入兼容点。"""
+    try:
+        return dpapi_decrypt_with_status(value)
+    except DPAPIProtectionError as error:
+        try:
+            plaintext = dpapi_decrypt(value)
+        except Exception:
+            raise error from None
+        return DPAPIDecryptionResult(plaintext, needs_migration=False)
+
+
 class EncryptValidator(ValidatorBase):
     """加密数据验证器"""
 
-    def validate(self, value):
+    def _validate_plaintext(self, value: Any) -> bool:
+        return isinstance(value, str)
+
+    def _correct_plaintext(self, value: Any) -> str:
+        if not isinstance(value, str):
+            raise EncryptedConfigValueError(
+                "加密配置明文必须是字符串"
+            )
+        return value
+
+    def validate(self, value: Any) -> bool:
         if not isinstance(value, str):
             return False
         try:
-            dpapi_decrypt(value)
-            return True
-        except:
+            return self._validate_plaintext(dpapi_decrypt(value))
+        except Exception:
             return False
 
-    def correct(self, value: Any) -> Any:
-        return value if self.validate(value) else dpapi_encrypt("数据损坏, 请重新设置")
+    def normalize(
+        self,
+        value: Any,
+        *,
+        persisted: bool,
+    ) -> EncryptedValueNormalization:
+        """规范化明文或密文；持久化输入解密失败时严格拒绝。"""
+        if not isinstance(value, str):
+            if persisted:
+                raise EncryptedConfigValueError("加密配置值必须是字符串")
+            raise TypeError("加密配置值必须是字符串")
+
+        existing_ciphertext: str | None = None
+        migrated_legacy_entropy = False
+        try:
+            decrypted = _decrypt_config_value(value)
+        except DPAPIProtectionError:
+            if persisted and is_probable_dpapi_ciphertext(value):
+                raise EncryptedConfigValueError(
+                    "持久化加密配置值无法解密"
+                ) from None
+            plaintext = value
+        else:
+            plaintext = decrypted.plaintext
+            existing_ciphertext = value
+            migrated_legacy_entropy = decrypted.needs_migration
+
+        try:
+            if self._validate_plaintext(plaintext):
+                corrected = plaintext
+            else:
+                corrected = self._correct_plaintext(plaintext)
+            if not self._validate_plaintext(corrected):
+                raise EncryptedConfigValueError(
+                    "加密配置明文规范化后仍不合法"
+                )
+        except EncryptedConfigValueError:
+            raise
+        except Exception:
+            raise EncryptedConfigValueError(
+                "加密配置明文无法安全规范化"
+            ) from None
+
+        if (
+            existing_ciphertext is not None
+            and corrected == plaintext
+            and not migrated_legacy_entropy
+        ):
+            return EncryptedValueNormalization(existing_ciphertext)
+
+        try:
+            ciphertext = dpapi_encrypt(corrected)
+        except DPAPIProtectionError:
+            raise EncryptedConfigValueError(
+                "加密配置值无法使用 DPAPI 保护"
+            ) from None
+        return EncryptedValueNormalization(
+            ciphertext,
+            migrated_legacy_entropy=migrated_legacy_entropy,
+        )
+
+    def correct(self, value: Any) -> str:
+        """仅用于显式赋值纠正；持久化加载必须调用 ``normalize``。"""
+        return self.normalize(value, persisted=False).ciphertext
+
+
+class EncryptedValidator(EncryptValidator):
+    """为字符串验证器增加 DPAPI 存储层。"""
+
+    def __init__(self, validator: ValidatorBase) -> None:
+        self.validator = validator
+
+    def _validate_plaintext(self, value: Any) -> bool:
+        return isinstance(value, str) and self.validator.validate(value)
+
+    def _correct_plaintext(self, value: Any) -> str:
+        corrected = self.validator.correct(value)
+        if not isinstance(corrected, str):
+            raise EncryptedConfigValueError(
+                "加密配置验证器必须返回字符串"
+            )
+        return corrected
+
+
+class EncryptedJSONValidator(EncryptedValidator):
+    """验证 DPAPI 密文中的 JSON 结构，兼容首次写入的明文 JSON。"""
+
+    def __init__(self, data_type: type[dict] | type[list] = dict) -> None:
+        super().__init__(JSONValidator(data_type))
 
 
 class VirtualConfigValidator(ValidatorBase):
@@ -725,13 +876,19 @@ class ConfigItem:
         )
         self.is_locked = False
         self._slots: list[Callable[[Any], Any]] = []
+        self._last_entropy_migration = False
 
-        if not self.validator.validate(self.value):
+        if isinstance(self.validator, EncryptValidator):
+            normalized = self.validator.normalize(self.value, persisted=False)
+            self.value = normalized.ciphertext
+            self._last_entropy_migration = normalized.migrated_legacy_entropy
+        elif not self.validator.validate(self.value):
             raise ValueError(
                 f"配置项 '{self.group}.{self.name}' 的默认值 '{self.value}' 不合法"
             )
+        self._last_entropy_migration = False
 
-    def setValue(self, value: Any) -> bool:
+    def setValue(self, value: Any, *, persisted: bool = False) -> bool:
         """
         设置配置项值, 将自动进行验证和修正
 
@@ -746,11 +903,17 @@ class ConfigItem:
             值是否真正发生了变化
         """
 
-        if (
-            dpapi_decrypt(self.value)
-            if isinstance(self.validator, EncryptValidator)
-            else self.value
-        ) == value:
+        is_encrypted = isinstance(self.validator, EncryptValidator)
+        self._last_entropy_migration = False
+        if is_encrypted and not persisted:
+            try:
+                if dpapi_decrypt(self.value) == value:
+                    return False
+            except Exception:
+                # A damaged current cipher must not prevent the user from
+                # replacing it with a valid value.
+                pass
+        elif self.value == value:
             return False
 
         if self.is_locked:
@@ -758,34 +921,54 @@ class ConfigItem:
 
         old_value = self.value
 
-        # deepcopy new value
+        # Build and fully validate a local candidate.  In particular, never
+        # expose plaintext through ``self.value`` while DPAPI or correction can
+        # still fail.
         try:
-            self.value = deepcopy(value)
-        except:
-            self.value = value
+            candidate = deepcopy(value)
+        except Exception:
+            candidate = value
 
-        if isinstance(self.validator, EncryptValidator):
-            if self.validator.validate(self.value):
-                self.value = self.value
-            else:
-                self.value = dpapi_encrypt(self.value)
+        if is_encrypted:
+            normalized = self.validator.normalize(candidate, persisted=persisted)
+            candidate = normalized.ciphertext
+            self._last_entropy_migration = (
+                normalized.migrated_legacy_entropy
+            )
+        elif not self.validator.validate(candidate):
+            candidate = self.validator.correct(candidate)
 
-        if not self.validator.validate(self.value):
-            try:
-                self.value = self.validator.correct(self.value)
-            except Exception:
-                self.value = old_value
-                raise
-
-        changed = self.value != old_value
+        changed = candidate != old_value
+        if changed:
+            self.value = candidate
         if changed and len(self._slots) > 0:
             asyncio.create_task(self._emit_signal(self.value))
         return changed
+
+    @property
+    def migrated_legacy_entropy(self) -> bool:
+        """最近一次 ``setValue`` 是否执行了历史 DPAPI entropy 迁移。"""
+        return self._last_entropy_migration
 
     def getValue(self, if_decrypt: bool = True) -> Any:
         """
         获取配置项值
         """
+
+        if isinstance(self.validator, EncryptValidator):
+            try:
+                decrypted = _decrypt_config_value(self.value)
+                if not self.validator._validate_plaintext(decrypted.plaintext):
+                    raise EncryptedConfigValueError(
+                        f"加密配置项 '{self.group}.{self.name}' 的明文无效"
+                    )
+            except EncryptedConfigValueError:
+                raise
+            except Exception:
+                raise EncryptedConfigValueError(
+                    f"加密配置项 '{self.group}.{self.name}' 无法解密"
+                ) from None
+            return decrypted.plaintext if if_decrypt else self.value
 
         try:
             v = (
@@ -796,8 +979,6 @@ class ConfigItem:
         except Exception:
             v = ""
 
-        if isinstance(self.validator, EncryptValidator) and if_decrypt:
-            return dpapi_decrypt(v)
         return v
 
     def bind(self, slot: Callable[[Any], Any]):
@@ -877,6 +1058,8 @@ class ConfigBase(ABC):
     def __init__(self):
         self.file: Path | None = None
         self.is_locked = False
+        self._loading_persisted_data = False
+        self._save_lock = asyncio.Lock()
         self._save_methods: list[Callable[[], Coroutine[Any, Any, None]]] = []
 
         # 配置项索引
@@ -920,9 +1103,19 @@ class ConfigBase(ABC):
         except json.JSONDecodeError:
             data = {}
 
-        await self.load(data)
+        await self._load_persisted(data)
 
         await self.add_save_method(self.save)
+
+    async def _load_persisted(self, data: dict) -> bool:
+        """经由可覆写 ``load`` 入口加载持久化数据，并标记严格密文语义。"""
+        previous = self._loading_persisted_data
+        self._loading_persisted_data = True
+        try:
+            result = await self.load(data)
+            return bool(result)
+        finally:
+            self._loading_persisted_data = previous
 
     async def add_save_method(
         self, save_method: Callable[[], Coroutine[Any, Any, None]]
@@ -989,26 +1182,51 @@ class ConfigBase(ABC):
         for name, sub_config in self._multiple_config_index.items():
             data_for_sub_config = sub_configs.get(name)
             if isinstance(data_for_sub_config, dict):
-                await sub_config.load(data_for_sub_config)
+                if self._loading_persisted_data:
+                    await sub_config._load_persisted(data_for_sub_config)
+                else:
+                    await sub_config.load(data_for_sub_config)
 
+        migrated_legacy_entropy = 0
         for group, info in self._config_item_index.items():
             for name, item in info.items():
                 try:
-                    item.setValue(working_data[group][name])
-                except:
+                    item.setValue(
+                        working_data[group][name],
+                        persisted=self._loading_persisted_data,
+                    )
+                except EncryptedConfigValueError:
+                    raise EncryptedConfigValueError(
+                        f"加密配置项 '{group}.{name}' 无法安全加载"
+                    ) from None
+                except Exception:
                     if item.legacy_group_name is not None:
-                        with suppress(Exception):
+                        try:
                             item.setValue(
                                 working_data[item.legacy_group_name[0]][
                                     item.legacy_group_name[1]
-                                ]
+                                ],
+                                persisted=self._loading_persisted_data,
                             )
+                        except EncryptedConfigValueError:
+                            raise EncryptedConfigValueError(
+                                f"加密配置项 '{group}.{name}' 无法安全加载"
+                            ) from None
+                        except Exception:
+                            pass
+                if item.migrated_legacy_entropy:
+                    migrated_legacy_entropy += 1
 
         normalized_data = await self.toDict(if_decrypt=False)
         is_dirty = normalized_data != source_data
 
         if is_dirty:
             await self._commit_changes()
+        if migrated_legacy_entropy:
+            logger.info(
+                "已规范化 {} 个历史 DPAPI 配置值为应用绑定存储",
+                migrated_legacy_entropy,
+            )
 
         return is_dirty
 
@@ -1116,13 +1334,10 @@ class ConfigBase(ABC):
         if not self.file:
             raise ValueError("文件路径未设置, 请先调用 `connect` 方法连接配置文件")
 
-        self.file.parent.mkdir(parents=True, exist_ok=True)
-        self.file.write_text(
-            json.dumps(
-                await self.toDict(if_decrypt=False), ensure_ascii=False, indent=4
-            ),
-            encoding="utf-8",
-        )
+        async with self._save_lock:
+            payload = await self.toDict(if_decrypt=False)
+            atomic_write_json(self.file, payload)
+            await _notify_config_saved(self.file, payload)
 
     async def lock(self):
         """
@@ -1184,6 +1399,8 @@ class MultipleConfig(Generic[T]):
         self.order: list[uuid.UUID] = []
         self.data: dict[uuid.UUID, T] = {}
         self.is_locked = False
+        self._loading_persisted_data = False
+        self._save_lock = asyncio.Lock()
         self._save_methods: list[Callable[[], Coroutine[Any, Any, None]]] = []
 
     def __getitem__(self, key: uuid.UUID) -> T:
@@ -1235,9 +1452,19 @@ class MultipleConfig(Generic[T]):
         except json.JSONDecodeError:
             data = {}
 
-        await self.load(data)
+        await self._load_persisted(data)
 
         await self.add_save_method(self.save)
+
+    async def _load_persisted(self, data: dict) -> bool:
+        """经由可覆写 ``load`` 入口向子配置传播持久化加载语义。"""
+        previous = self._loading_persisted_data
+        self._loading_persisted_data = True
+        try:
+            result = await self.load(data)
+            return bool(result)
+        finally:
+            self._loading_persisted_data = previous
 
     async def add_save_method(
         self, save_method: Callable[[], Coroutine[Any, Any, None]]
@@ -1318,7 +1545,14 @@ class MultipleConfig(Generic[T]):
             if type_name in self.sub_config_type:
                 self.order.append(uuid.UUID(instance["uid"]))
                 self.data[self.order[-1]] = self.sub_config_type[type_name]()
-                await self.data[self.order[-1]].load(source_data[instance["uid"]])
+                if self._loading_persisted_data:
+                    await self.data[self.order[-1]]._load_persisted(
+                        source_data[instance["uid"]]
+                    )
+                else:
+                    await self.data[self.order[-1]].load(
+                        source_data[instance["uid"]]
+                    )
 
         normalized_data = await self.toDict(if_decrypt=False)
         is_dirty = normalized_data != source_data
@@ -1398,13 +1632,10 @@ class MultipleConfig(Generic[T]):
         if not self.file:
             raise ValueError("文件路径未设置, 请先调用 `connect` 方法连接配置文件")
 
-        self.file.parent.mkdir(parents=True, exist_ok=True)
-        self.file.write_text(
-            json.dumps(
-                await self.toDict(if_decrypt=False), ensure_ascii=False, indent=4
-            ),
-            encoding="utf-8",
-        )
+        async with self._save_lock:
+            payload = await self.toDict(if_decrypt=False)
+            atomic_write_json(self.file, payload)
+            await _notify_config_saved(self.file, payload)
 
     async def add(self, config_type: Type[T]) -> tuple[uuid.UUID, T]:
         """

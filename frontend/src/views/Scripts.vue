@@ -3,7 +3,7 @@
   <div v-if="showSRCConfigMask" class="maa-config-mask">
     <div class="mask-content">
       <div class="mask-icon">
-        <SettingOutlined :style="{ fontSize: '48px', color: '#722ed1' }" />
+        <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
       </div>
       <h2 class="mask-title">正在进行SRC配置</h2>
       <p class="mask-description">
@@ -55,8 +55,19 @@
     </div>
     <div class="header-actions">
       <a-space size="middle">
+        <a-tooltip title="搜索脚本（Ctrl+F）">
+          <a-button size="large" aria-label="搜索脚本" @click="openScriptSearch">
+            <template #icon>
+              <SearchOutlined />
+            </template>
+          </a-button>
+        </a-tooltip>
         <a-tooltip title="收起所有脚本的用户列表">
-          <a-button size="large" :disabled="scripts.length === 0" @click="handleCollapseAll">
+          <a-button
+            size="large"
+            :disabled="scripts.length === 0 || hasScriptSearchQuery"
+            @click="handleCollapseAll"
+          >
             <template #icon>
               <UpOutlined />
             </template>
@@ -64,7 +75,11 @@
           </a-button>
         </a-tooltip>
         <a-tooltip title="展开所有脚本的用户列表">
-          <a-button size="large" :disabled="scripts.length === 0" @click="handleExpandAll">
+          <a-button
+            size="large"
+            :disabled="scripts.length === 0 || hasScriptSearchQuery"
+            @click="handleExpandAll"
+          >
             <template #icon>
               <DownOutlined />
             </template>
@@ -87,45 +102,76 @@
     </div>
   </div>
 
-  <!-- 空状态 -->
-  <!-- 增加 loadedOnce 条件，避免初始渲染时闪烁 -->
-  <a-alert
+  <ScriptSearchBar
+    v-if="scriptSearchOpen"
+    ref="scriptSearchBarRef"
+    v-model="scriptSearchKeyword"
+    :summary="scriptSearchSummary"
+    :match-count="scriptSearchMatches.length"
+    :drag-disabled="hasScriptSearchQuery"
+    @clear="clearScriptSearch"
+    @close="closeScriptSearch"
+    @navigate="navigateScriptSearchMatch"
+  />
+
+  <!-- 加载中（首次加载，未完成过一次） -->
+  <a-spin
+    v-if="!loadedOnce && !scriptListError && addLoading === false"
+    class="script-list-loading"
+    tip="正在加载脚本列表"
+  >
+    <div class="script-list-loading-placeholder" aria-hidden="true"></div>
+  </a-spin>
+
+  <!-- 错误态：a-result + 重试 -->
+  <a-result
     v-if="scriptListError"
     class="script-list-error"
-    type="error"
-    show-icon
-    message="脚本列表加载失败"
-    :description="scriptListError"
+    status="error"
+    title="脚本列表加载失败"
+    :sub-title="scriptListError"
   >
-    <template #action>
-      <a-button size="small" type="primary" @click="loadScripts">
+    <template #extra>
+      <a-button type="primary" @click="loadScripts">
         <template #icon>
           <ReloadOutlined />
         </template>
         重试
       </a-button>
     </template>
-  </a-alert>
+  </a-result>
 
-  <div
+  <!-- 空状态：使用 a-empty + v6 token 包装现有插画，避免初始渲染闪烁 -->
+  <a-empty
     v-if="!scriptListError && !addLoading && loadedOnce && scripts.length === 0"
-    class="empty-state"
+    class="script-list-empty"
+    description="暂无脚本"
   >
-    <div class="empty-content">
-      <div class="empty-image-container">
-        <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image" />
-      </div>
-      <div class="empty-text-content">
-        <h3 class="empty-title">暂无脚本</h3>
-        <p class="empty-description">您还没有创建任何脚本</p>
-      </div>
-    </div>
-  </div>
+    <template #image>
+      <img src="@/assets/NoData.png" alt="暂无数据" class="empty-image" />
+    </template>
+    <p class="empty-description">您还没有创建任何脚本，点击右上角「新建脚本」开始</p>
+  </a-empty>
+
+  <a-empty
+    v-if="hasNoScriptSearchResults"
+    class="script-search-empty"
+    description="未找到匹配的脚本或用户"
+  >
+    <a-button type="primary" ghost @click="clearScriptSearch">清除搜索</a-button>
+  </a-empty>
 
   <ScriptTable
-    v-if="scripts.length > 0 || !scriptListError"
+    v-if="
+      !hasNoScriptSearchResults &&
+      !scriptListError &&
+      loadedOnce &&
+      (filteredScripts.length > 0 || addLoading)
+    "
     ref="scriptTableRef"
-    :scripts="scripts"
+    :scripts="filteredScripts"
+    :search-keyword="scriptSearchKeyword"
+    :active-search-match-key="activeScriptSearchMatchKey"
     :active-connections="activeConnections"
     :copying-script-id="copyingScriptId"
     :all-plans-data="allPlansData"
@@ -441,8 +487,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   ClockCircleOutlined,
@@ -451,18 +497,27 @@ import {
   FileTextOutlined,
   PlusOutlined,
   ReloadOutlined,
+  SearchOutlined,
   SettingOutlined,
   UpOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
 import ScriptTable from '@/components/ScriptTable.vue'
 import ScriptCreateDialog from '@/views/scripts/components/ScriptCreateDialog.vue'
+import ScriptSearchBar from '@/views/scripts/components/ScriptSearchBar.vue'
 import type { MaaFWScriptConfig, Script, ScriptType, User } from '@/types/script'
 import type { ScriptTypeDescriptor } from '@/types/scriptRegistry'
 import {
   createScriptTypeOptions,
   type ScriptCreateRequest,
 } from '@/views/scripts/components/scriptCreateFlow'
+import {
+  buildScriptSearchResult,
+  createScriptSearchFocusManager,
+  createScriptSearchKeyboardController,
+  getAdjacentSearchMatchKey,
+  reconcileActiveSearchMatchKey,
+} from '@/views/scripts/scriptPageSearch'
 import { useScriptRegistryApi } from '@/composables/useScriptRegistryApi'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useTemplateApi, type WebConfigTemplate } from '@/composables/useTemplateApi'
@@ -483,6 +538,7 @@ import MarkdownIt from 'markdown-it'
 const logger = window.electronAPI.getLogger('脚本管理')
 
 const router = useRouter()
+const route = useRoute()
 const registryApi = useScriptRegistryApi()
 const { subscribe, unsubscribe } = useWebSocket()
 const { getWebConfigTemplates, importScriptFromWeb, error: templateError } = useTemplateApi()
@@ -497,6 +553,10 @@ const md = new MarkdownIt({
 
 const scripts = ref<Script[]>([])
 const scriptTableRef = ref<InstanceType<typeof ScriptTable> | null>(null)
+const scriptSearchBarRef = ref<InstanceType<typeof ScriptSearchBar> | null>(null)
+const scriptSearchOpen = ref(false)
+const scriptSearchKeyword = ref('')
+const activeScriptSearchMatchKey = ref('')
 const scriptTypeDescriptors = ref<ScriptTypeDescriptor[]>([])
 const scriptListError = ref<string | null>(null)
 // 增加：标记是否已经完成过一次脚本列表加载（成功或失败都算一次）
@@ -560,6 +620,47 @@ const filteredTemplates = computed(() => {
   )
 })
 
+const hasScriptSearchQuery = computed(() => scriptSearchKeyword.value.trim().length > 0)
+const scriptSearchResult = computed(() =>
+  buildScriptSearchResult(scripts.value, scriptSearchKeyword.value)
+)
+const filteredScripts = computed(() => scriptSearchResult.value.scripts)
+const scriptSearchMatches = computed(() => scriptSearchResult.value.matches)
+const activeScriptSearchMatchIndex = computed(() =>
+  scriptSearchMatches.value.findIndex(match => match.key === activeScriptSearchMatchKey.value)
+)
+const activeScriptSearchMatchPosition = computed(() =>
+  scriptSearchMatches.value.length === 0 ? 0 : Math.max(activeScriptSearchMatchIndex.value, 0) + 1
+)
+const hasNoScriptSearchResults = computed(
+  () =>
+    !scriptListError.value &&
+    loadedOnce.value &&
+    scripts.value.length > 0 &&
+    hasScriptSearchQuery.value &&
+    filteredScripts.value.length === 0
+)
+const scriptSearchSummary = computed(() =>
+  hasScriptSearchQuery.value
+    ? scriptSearchMatches.value.length > 0
+      ? `${activeScriptSearchMatchPosition.value} / ${scriptSearchMatches.value.length} 个匹配项 · ${filteredScripts.value.length} 个脚本`
+      : '0 个匹配项'
+    : `共 ${scripts.value.length} 个脚本`
+)
+
+watch(
+  scriptSearchMatches,
+  async matches => {
+    const previousKey = activeScriptSearchMatchKey.value
+    const nextKey = reconcileActiveSearchMatchKey(matches, previousKey)
+    activeScriptSearchMatchKey.value = nextKey
+    if (!nextKey || nextKey === previousKey) return
+    await nextTick()
+    scriptTableRef.value?.scrollToSearchMatch(nextKey)
+  },
+  { flush: 'post' }
+)
+
 const availableScriptTypes = computed(() => scriptTypeDescriptors.value)
 const creatableScriptTypes = computed(() =>
   scriptTypeDescriptors.value.filter(descriptor => descriptor.available !== false)
@@ -582,7 +683,55 @@ const ensureScriptAvailable = (script: Script) => {
   return false
 }
 
+const focusScriptSearchInput = async () => {
+  await nextTick()
+  scriptSearchBarRef.value?.focus()
+}
+
+const scriptSearchFocusManager = createScriptSearchFocusManager()
+
+const openScriptSearch = async () => {
+  if (!scriptSearchOpen.value) scriptSearchFocusManager.capture(document.activeElement)
+  scriptSearchOpen.value = true
+  await focusScriptSearchInput()
+}
+
+const clearScriptSearch = () => {
+  scriptSearchKeyword.value = ''
+  activeScriptSearchMatchKey.value = ''
+  void focusScriptSearchInput()
+}
+
+const closeScriptSearch = async () => {
+  scriptSearchOpen.value = false
+  scriptSearchKeyword.value = ''
+  activeScriptSearchMatchKey.value = ''
+  await nextTick()
+  scriptSearchFocusManager.restore()
+}
+
+const navigateScriptSearchMatch = async (direction: 1 | -1) => {
+  const nextKey = getAdjacentSearchMatchKey(
+    scriptSearchMatches.value,
+    activeScriptSearchMatchKey.value,
+    direction
+  )
+  if (!nextKey) return
+  activeScriptSearchMatchKey.value = nextKey
+  await nextTick()
+  scriptTableRef.value?.scrollToSearchMatch(nextKey)
+}
+
+const scriptSearchKeyboardController = createScriptSearchKeyboardController({
+  isActive: () => route.name === 'Scripts' || route.path === '/scripts',
+  isOpen: () => scriptSearchOpen.value,
+  open: openScriptSearch,
+  close: closeScriptSearch,
+})
+let unbindScriptSearchKeyboard: (() => void) | null = null
+
 onMounted(() => {
+  unbindScriptSearchKeyboard = scriptSearchKeyboardController.bind(window)
   pluginSystemSubscriptionId = subscribe({ id: 'PluginSystem' }, message => {
     const payload = message.data as { kind?: string } | undefined
     if (payload?.kind === 'snapshot') void loadScripts()
@@ -592,6 +741,9 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  unbindScriptSearchKeyboard?.()
+  unbindScriptSearchKeyboard = null
+  scriptSearchFocusManager.clear()
   if (pluginSystemSubscriptionId) unsubscribe(pluginSystemSubscriptionId)
 })
 
@@ -1241,7 +1393,7 @@ const handlePassCheckUser = async (user: User) => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: color-mix(in srgb, #000 45%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1249,17 +1401,14 @@ const handlePassCheckUser = async (user: User) => {
 }
 
 .mask-content {
-  background: var(--ant-color-bg-elevated);
-  border-radius: 8px;
-  padding: 24px;
+  background: var(--v6-color-surface-elevated);
+  border-radius: var(--v6-radius-card);
+  padding: var(--v6-space-6);
   max-width: 480px;
   width: 100%;
   text-align: center;
-  box-shadow:
-    0 6px 16px 0 rgba(0, 0, 0, 0.08),
-    0 3px 6px -4px rgba(0, 0, 0, 0.12),
-    0 9px 28px 8px rgba(0, 0, 0, 0.05);
-  border: 1px solid var(--ant-color-border);
+  box-shadow: var(--v6-shadow-elevated);
+  border: 1px solid var(--v6-color-border);
 }
 
 .mask-icon {
@@ -1300,7 +1449,7 @@ const handlePassCheckUser = async (user: User) => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: color-mix(in srgb, #000 45%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1308,45 +1457,55 @@ const handlePassCheckUser = async (user: User) => {
 }
 
 .script-list-error {
-  margin-bottom: 16px;
+  margin: var(--v6-space-6) 0;
+  padding: var(--v6-space-6);
+  background: var(--app-background-panel-bg, var(--v6-color-surface));
+  border: 1px solid var(--v6-color-border-subtle);
+  border-radius: var(--v6-radius-card);
+  box-shadow: var(--v6-shadow-card);
 }
 
-.empty-state {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: calc(100vh - 200px);
+.script-list-loading {
+  display: block;
+  margin: var(--v6-space-8) 0;
+  padding: var(--v6-space-8);
   text-align: center;
+  background: var(--app-background-panel-bg, var(--v6-color-surface));
+  border: 1px solid var(--v6-color-border-subtle);
+  border-radius: var(--v6-radius-card);
 }
 
-.empty-image-container {
-  margin-bottom: 16px;
+.script-list-loading-placeholder {
+  height: 240px;
+}
+
+.script-list-empty {
+  margin: var(--v6-space-6) 0;
+  padding: calc(var(--v6-space-8) * 2) var(--v6-space-6);
+  background: var(--app-background-panel-bg, var(--v6-color-surface));
+  border: 1px solid var(--v6-color-border-subtle);
+  border-radius: var(--v6-radius-card);
+  box-shadow: var(--v6-shadow-card);
 }
 
 .empty-image {
-  max-width: 100%;
+  max-width: 120px;
   height: auto;
-}
-
-.empty-title {
-  font-size: 18px;
-  font-weight: 500;
-  margin: 0;
-  color: var(--ant-color-text);
+  opacity: 0.85;
 }
 
 .empty-description {
+  margin: var(--v6-space-2) 0 0;
+  color: var(--v6-color-text-secondary);
   font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  margin: 0;
 }
 
 .scripts-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  margin-bottom: 24px;
-  padding: 0 4px;
+  margin-bottom: var(--v6-space-6);
+  padding: 0;
 }
 
 .header-left {
@@ -1356,7 +1515,15 @@ const handlePassCheckUser = async (user: User) => {
 
 .header-actions {
   flex-shrink: 0;
-  margin-left: 16px;
+  margin-left: var(--v6-space-4);
+}
+
+.script-search-empty {
+  padding: calc(var(--v6-space-8) * 2) var(--v6-space-6);
+  background: var(--app-background-panel-bg, var(--v6-color-surface));
+  border: 1px solid var(--v6-color-border-subtle);
+  border-radius: var(--v6-radius-card);
+  box-shadow: var(--v6-shadow-card);
 }
 
 @media (max-width: 768px) {
@@ -1374,14 +1541,11 @@ const handlePassCheckUser = async (user: User) => {
 }
 
 .page-title {
-  margin: 0 0 8px 0;
-  font-size: 32px;
+  margin: 0;
+  font-size: clamp(24px, calc(28px * var(--v6-ui-scale)), 34px);
   font-weight: 700;
-  color: var(--ant-color-text);
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--v6-color-text);
+  letter-spacing: -0.02em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1443,12 +1607,12 @@ const handlePassCheckUser = async (user: User) => {
   height: auto;
   display: flex;
   align-items: center;
-  padding: 16px;
-  border: 2px solid var(--ant-color-border);
-  border-radius: 12px;
-  margin-bottom: 12px;
+  padding: var(--v6-space-4);
+  border: 1px solid var(--v6-color-border);
+  border-radius: var(--v6-radius-card);
+  margin-bottom: var(--v6-space-3);
   cursor: pointer;
-  background: var(--ant-color-bg-container);
+  background: var(--v6-color-surface);
   position: relative;
   overflow: hidden;
 }

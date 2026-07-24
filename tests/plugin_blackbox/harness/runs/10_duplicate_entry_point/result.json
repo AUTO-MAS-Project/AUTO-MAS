@@ -1,0 +1,16 @@
+{
+  "case_id": "10_duplicate_entry_point",
+  "status": "PASS",
+  "notes": "",
+  "error": null,
+  "error_traceback": null,
+  "snapshots": {
+    "after_discover": "Snapshot(at=1784824151.1153164, event_bus_handlers={}, loader_records={}, discovered_plugins={'fake_dup': {'source': 'pypi', 'distribution': 'automas-fake-dup-B', 'version': '0.1.0', 'system': False, 'locked': False}}, service_owners={}, sys_modules_keys_sample=[])"
+  },
+  "metrics": {
+    "discovered_keys": [
+      "fake_dup"
+    ],
+    "winners": "automas-fake-dup-B"
+  }
+}

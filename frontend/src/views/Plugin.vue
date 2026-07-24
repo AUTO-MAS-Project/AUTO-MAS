@@ -420,6 +420,10 @@ import { Input, message, Modal } from 'ant-design-vue'
 import { OpenAPI } from '@/api'
 import SchemaForm from '@/components/SchemaForm.vue'
 import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
+import {
+  PluginWebSocketCommandError,
+  requestPluginActionWithFallback,
+} from '@/views/pluginActionTransport'
 
 defineOptions({
   name: 'PluginView',
@@ -2183,7 +2187,12 @@ const handleWsCommandResponse = (message: WebSocketBaseMessage) => {
     return
   }
 
-  pending.reject(new Error(payload?.message || `WebSocket command failed: ${requestId}`))
+  pending.reject(
+    new PluginWebSocketCommandError(
+      payload?.message || `WebSocket command failed: ${requestId}`,
+      true
+    )
+  )
 }
 
 const ensureWsResponseSubscription = () => {
@@ -2196,7 +2205,12 @@ const ensureWsResponseSubscription = () => {
 const cleanupPendingWsCommands = () => {
   wsCommandPending.forEach(pending => {
     clearTimeout(pending.timer)
-    pending.reject(new Error('Plugin websocket command cancelled'))
+    pending.reject(
+      new PluginWebSocketCommandError(
+        'Plugin websocket command cancelled after dispatch; result unknown',
+        true
+      )
+    )
   })
   wsCommandPending.clear()
 }
@@ -2205,13 +2219,25 @@ const sendPluginCommand = async <T = any,>(
   endpoint: string,
   params: Record<string, unknown> = {}
 ) => {
-  ensureWsResponseSubscription()
+  try {
+    ensureWsResponseSubscription()
+  } catch (error) {
+    throw new PluginWebSocketCommandError(
+      `WebSocket response subscription failed before dispatch: ${String(error)}`,
+      false
+    )
+  }
 
   return await new Promise<T>((resolve, reject) => {
     const requestId = `plugin_${Date.now()}_${(wsCommandCounter += 1)}`
     const timer = setTimeout(() => {
       wsCommandPending.delete(requestId)
-      reject(new Error(`WebSocket command timeout: ${endpoint}`))
+      reject(
+        new PluginWebSocketCommandError(
+          `WebSocket command timeout after dispatch; result unknown: ${endpoint}`,
+          true
+        )
+      )
     }, 10000)
 
     wsCommandPending.set(requestId, { resolve, reject, timer })
@@ -2220,7 +2246,12 @@ const sendPluginCommand = async <T = any,>(
     if (!sent) {
       clearTimeout(timer)
       wsCommandPending.delete(requestId)
-      reject(new Error(`WebSocket unavailable for command: ${endpoint}`))
+      reject(
+        new PluginWebSocketCommandError(
+          `WebSocket unavailable before command dispatch: ${endpoint}`,
+          false
+        )
+      )
     }
   })
 }
@@ -2230,12 +2261,19 @@ const requestPluginAction = async <T = any,>(
   url: string,
   payload: Record<string, unknown> = {}
 ) => {
-  try {
-    return await sendPluginCommand<T>(endpoint, payload)
-  } catch (error) {
-    logger.warn(`WebSocket command fallback to HTTP: ${endpoint}, error=${String(error)}`)
-    return await apiPost<T>(url, payload)
-  }
+  return await requestPluginActionWithFallback<T>({
+    endpoint,
+    sendOverWebSocket: () => sendPluginCommand<T>(endpoint, payload),
+    sendOverHttp: () => apiPost<T>(url, payload),
+    onHttpFallback: error => {
+      logger.warn(`WebSocket command fallback to HTTP: ${endpoint}, error=${String(error)}`)
+    },
+    onHttpReplaySuppressed: error => {
+      logger.warn(
+        `WebSocket command was dispatched; suppressing unsafe HTTP replay: ${endpoint}, error=${String(error)}`
+      )
+    },
+  })
 }
 
 const applySnapshot = (

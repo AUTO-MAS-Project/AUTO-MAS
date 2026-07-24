@@ -9,6 +9,7 @@ import { app } from 'electron'
 import { spawn } from 'child_process'
 import AdmZip = require('adm-zip')
 import { MirrorService } from './mirrorService'
+import { resolveAppRoot } from './appRootPolicy'
 import { SmartDownloader, ProgressCallback } from './downloadService'
 import { MirrorRotationService, NetworkOperationCallback } from './mirrorRotationService'
 
@@ -19,11 +20,7 @@ const logger = getLogger('环境服务')
 
 // 获取应用根目录
 export function getAppRoot(): string {
-  // 在测试环境中，app可能未定义，直接使用当前工作目录
-  if (process.env.NODE_ENV === 'development' || !app) {
-    return process.cwd()
-  }
-  return path.dirname(app.getPath('exe'))
+  return resolveAppRoot(app, process.env, process.cwd())
 }
 
 // 检查环境

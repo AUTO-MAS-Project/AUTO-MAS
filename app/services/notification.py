@@ -7,10 +7,12 @@ from __future__ import annotations
 import html
 import sys
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-from app.models.config import Webhook
 from app.utils import get_logger
+
+if TYPE_CHECKING:
+    from app.models.config import Webhook
 
 logger = get_logger("通知服务")
 

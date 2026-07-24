@@ -4,6 +4,13 @@ import { Service } from '@/api/services/Service'
 import { subscribe, unsubscribe, type WebSocketBaseMessage } from '@/composables/useWebSocket'
 import { createLowSpeedDetector } from '@/composables/updateDownloadSpeed'
 import { updateDownloadApi } from '@/services/updateDownloadApi'
+import {
+  WS_ID_UPDATE,
+  WS_UPDATE_CANCELLED,
+  WS_UPDATE_COMPLETED,
+  WS_UPDATE_FAILED,
+  WS_UPDATE_PROGRESS,
+} from '@/services/websocket/types'
 
 const logger = window.electronAPI.getLogger('更新下载状态')
 
@@ -41,7 +48,7 @@ const failureReason = ref('')
 const latestVersion = ref('')
 const updateData = ref<Record<string, string[]>>({})
 
-let subscriptionId = ''
+let subscriptionIds: string[] = []
 let downloadTimeout: ReturnType<typeof setTimeout> | null = null
 let subscriptionHealthCheck: ReturnType<typeof setInterval> | null = null
 const lowSpeedDetector = createLowSpeedDetector()
@@ -110,9 +117,17 @@ const stopRuntimeMonitoring = () => {
 }
 
 const ensureSubscription = () => {
-  if (subscriptionId) return
-  subscriptionId = subscribe({ id: 'Update' }, handleMessage)
-  logger.debug(`WebSocket 订阅已创建: ${subscriptionId}`)
+  if (subscriptionIds.length > 0) return
+  subscriptionIds = [
+    subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_PROGRESS }, handleMessage),
+    subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_COMPLETED }, handleMessage),
+    subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_FAILED }, handleMessage),
+    subscribe({ id: WS_ID_UPDATE, type: WS_UPDATE_CANCELLED }, handleMessage),
+    // 迁移期兼容旧后端。
+    subscribe({ id: WS_ID_UPDATE, type: 'Update' }, handleMessage),
+    subscribe({ id: WS_ID_UPDATE, type: 'Signal' }, handleMessage),
+  ]
+  logger.debug(`WebSocket 订阅已创建: ${subscriptionIds.join(', ')}`)
 }
 
 const startRuntimeMonitoring = () => {
@@ -133,7 +148,7 @@ const startRuntimeMonitoring = () => {
   }, DOWNLOAD_TIMEOUT_MS)
 
   subscriptionHealthCheck = setInterval(() => {
-    if (!subscriptionId) {
+    if (subscriptionIds.length === 0) {
       logger.warn('更新下载订阅丢失，正在重新建立')
       ensureSubscription()
     }
@@ -141,9 +156,8 @@ const startRuntimeMonitoring = () => {
 }
 
 const clearSubscription = () => {
-  if (!subscriptionId) return
-  unsubscribe(subscriptionId)
-  subscriptionId = ''
+  for (const subscriptionId of subscriptionIds) unsubscribe(subscriptionId)
+  subscriptionIds = []
 }
 
 const resetState = () => {
@@ -206,8 +220,14 @@ const receiveSignal = (data: UpdateDownloadSignal) => {
 function handleMessage(wsMessage: WebSocketBaseMessage) {
   if (wsMessage.id !== 'Update') return
 
-  if (wsMessage.type === 'Update') {
+  if (wsMessage.type === WS_UPDATE_PROGRESS || wsMessage.type === 'Update') {
     receiveProgress(wsMessage.data as UpdateDownloadProgress)
+  } else if (wsMessage.type === WS_UPDATE_COMPLETED) {
+    receiveSignal({ Accomplish: String((wsMessage.data as { file?: unknown }).file ?? '') })
+  } else if (wsMessage.type === WS_UPDATE_FAILED) {
+    receiveSignal({ Failed: String((wsMessage.data as { message?: unknown }).message ?? '') })
+  } else if (wsMessage.type === WS_UPDATE_CANCELLED) {
+    receiveSignal({ Cancelled: true })
   } else if (wsMessage.type === 'Signal') {
     receiveSignal(wsMessage.data as UpdateDownloadSignal)
   }

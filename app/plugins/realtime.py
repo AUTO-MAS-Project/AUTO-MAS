@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, Literal
+from typing import Any, Dict
 
 from app.utils import get_logger
 from app.plugins.frontend_extensions import build_page_snapshot
@@ -11,6 +11,93 @@ from app.plugins.frontend_extensions import build_page_snapshot
 PLUGIN_SYSTEM_WS_ID = "PluginSystem"
 
 logger = get_logger("PluginRealtime")
+
+SENSITIVE_VALUE_REDACTED = "***"
+
+
+def _redact_sensitive_schema(
+    schema: Dict[str, Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
+    """移除 schema 内敏感字段携带的默认值和示例值。"""
+    redacted = deepcopy(schema)
+    for field_schema in redacted.values():
+        if not isinstance(field_schema, dict):
+            continue
+        if field_schema.get("sensitive") is True:
+            field_schema.pop("default", None)
+            field_schema.pop("examples", None)
+            field_schema.pop("options", None)
+        properties = field_schema.get("properties")
+        if isinstance(properties, dict):
+            field_schema["properties"] = _redact_sensitive_schema(properties)
+    return redacted
+
+
+def _redact_sensitive_config(
+    config: Any,
+    schema: Dict[str, Dict[str, Any]] | None,
+) -> Any:
+    """根据 schema 标记脱敏配置中的敏感字段值。
+
+    schema 标记的敏感字段会被替换为占位符；嵌套 ``properties`` 递归处理。
+    schema 缺失或配置出现未声明字段时采用 fail-closed 策略，不向广播快照
+    透传未经分类的数据。
+
+    Args:
+        config: 原始配置值。
+        schema: 插件 schema 字段映射，可能为 None 或空字典。
+
+    Returns:
+        脱敏后的配置副本。
+    """
+    if not isinstance(config, dict):
+        return deepcopy(config)
+    if not schema:
+        return {}
+
+    redacted: Dict[str, Any] = {}
+    for field_name, value in config.items():
+        field_schema = schema.get(field_name)
+        if not isinstance(field_schema, dict):
+            redacted[field_name] = SENSITIVE_VALUE_REDACTED
+            continue
+        if field_schema.get("sensitive") is True:
+            redacted[field_name] = SENSITIVE_VALUE_REDACTED
+            continue
+        properties = field_schema.get("properties")
+        if isinstance(value, dict) and isinstance(properties, dict):
+            redacted[field_name] = _redact_sensitive_config(value, properties)
+            continue
+        redacted[field_name] = deepcopy(value)
+    return redacted
+
+
+def _redact_instances_sensitive(
+    instances: list[Any],
+    schemas: Dict[str, Dict[str, Any]],
+) -> list[Any]:
+    """对实例列表中的 config 字段执行敏感字段脱敏。
+
+    Args:
+        instances: 原始实例列表。
+        schemas: 插件名到 schema 的映射。
+
+    Returns:
+        脱敏后的实例列表深拷贝。
+    """
+    redacted: list[Any] = []
+    for item in instances:
+        if not isinstance(item, dict):
+            redacted.append(deepcopy(item))
+            continue
+        copied = deepcopy(item)
+        plugin_name = str(copied.get("plugin") or "")
+        config = copied.get("config")
+        schema = schemas.get(plugin_name)
+        if config is not None:
+            copied["config"] = _redact_sensitive_config(config, schema)
+        redacted.append(copied)
+    return redacted
 
 
 def _serialize_record(record: Any) -> Dict[str, Any]:
@@ -38,11 +125,12 @@ def _serialize_record(record: Any) -> Dict[str, Any]:
     }
 
 
-async def send_plugin_system_message(message_type: Literal["Update", "Message", "Info", "Signal"], data: Dict[str, Any]) -> None:
+async def send_plugin_system_message(message_type: str, data: Dict[str, Any]) -> None:
+    """向前端推送插件系统实时消息 (id=PluginSystem)。"""
     try:
-        from app.core import Config
+        from app.core.ws import Publisher
 
-        await Config.send_websocket_message(
+        await Publisher.send(
             id=PLUGIN_SYSTEM_WS_ID,
             type=message_type,
             data=data,
@@ -53,7 +141,7 @@ async def send_plugin_system_message(message_type: Literal["Update", "Message", 
         )
 
 
-def schedule_plugin_system_message(message_type: Literal["Update", "Message", "Info", "Signal"], data: Dict[str, Any]) -> None:
+def schedule_plugin_system_message(message_type: str, data: Dict[str, Any]) -> None:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -64,11 +152,10 @@ def schedule_plugin_system_message(message_type: Literal["Update", "Message", "I
 
 def publish_runtime_record(record: Any, *, event: str) -> None:
     payload = {
-        "kind": "runtime_state",
         "event": event,
         "record": _serialize_record(record),
     }
-    schedule_plugin_system_message("Update", payload)
+    schedule_plugin_system_message("plugin.runtime.updated", payload)
 
 
 async def build_plugin_snapshot(*, discovered: Dict[str, Any] | None = None) -> Dict[str, Any]:
@@ -91,7 +178,9 @@ async def build_plugin_snapshot(*, discovered: Dict[str, Any] | None = None) -> 
     plugin_packages: Dict[str, Dict[str, Any]] = {}
     for plugin_name, plugin_source in discovered.items():
         try:
-            schemas[plugin_name] = config_store.load_schema(plugin_name)
+            schemas[plugin_name] = _redact_sensitive_schema(
+                config_store.load_schema(plugin_name)
+            )
         except Exception as exc:
             schemas[plugin_name] = {}
             schema_errors[plugin_name] = f"{type(exc).__name__}: {exc}"
@@ -173,7 +262,10 @@ async def build_plugin_snapshot(*, discovered: Dict[str, Any] | None = None) -> 
         "plugin_routes": server_snapshot["plugin_routes"],
         "plugin_actions": server_snapshot["plugin_actions"],
         "plugin_packages": plugin_packages,
-        "instances": deepcopy(root.get("instances", [])),
+        "instances": _redact_instances_sensitive(
+            root.get("instances", []),
+            schemas,
+        ),
         "runtime_states": runtime_states,
         "pages": page_items,
         "page_errors": page_errors,
@@ -187,11 +279,10 @@ async def publish_plugin_snapshot(
     discovered: Dict[str, Any] | None = None,
 ) -> None:
     snapshot = await build_plugin_snapshot(discovered=discovered)
-    snapshot["kind"] = "snapshot"
     snapshot["reason"] = reason
     if message:
         snapshot["message"] = message
-    await send_plugin_system_message("Update", snapshot)
+    await send_plugin_system_message("plugin.snapshot.updated", snapshot)
 
 
 def schedule_plugin_snapshot(

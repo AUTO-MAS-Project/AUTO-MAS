@@ -22,8 +22,6 @@
 
 
 from .broadcast import Broadcast
-from .config import Config
-from .emulator_manager import EmulatorManager
 from .page_registry import (
     PageDeclaration,
     PageFacade,
@@ -33,6 +31,25 @@ from .page_registry import (
 )
 
 def __getattr__(name: str):
+    if name == "Config":
+        # Keep package import side-effect free.  In particular,
+        # ``import app.core.native_config`` must not instantiate the legacy
+        # ConfigBase graph before the runtime mode has been selected.
+        from app.configuration import (
+            CONFIG_V2_MODE,
+            CONFIG_V2_MODE_AUTHORITATIVE,
+        )
+
+        if CONFIG_V2_MODE == CONFIG_V2_MODE_AUTHORITATIVE:
+            from .native_config import Config
+        else:
+            from .config import Config
+
+        return Config
+    if name == "EmulatorManager":
+        from .emulator_manager import EmulatorManager
+
+        return EmulatorManager
     if name == "MaaFWManager":
         from .maa_manager import MaaFWManager
 

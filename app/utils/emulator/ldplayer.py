@@ -29,8 +29,12 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel
 from pathlib import Path
 
-from app.models.emulator import DeviceStatus, DeviceInfo, DeviceBase
-from app.models.config import EmulatorConfig
+from app.models.emulator import (
+    DeviceBase,
+    DeviceInfo,
+    DeviceStatus,
+    EmulatorRuntimeConfig,
+)
 from app.utils import ProcessRunner, get_logger
 
 logger = get_logger("雷电模拟器管理")
@@ -64,7 +68,7 @@ class LDManager(DeviceBase):
     基于dnconsole.exe的模拟器管理
     """
 
-    def __init__(self, config: EmulatorConfig) -> None:
+    def __init__(self, config: EmulatorRuntimeConfig) -> None:
         if not Path(config.get("Info", "Path")).exists():
             raise FileNotFoundError(
                 f"LDPlayerManager.exe文件不存在: {config.get('Info', 'Path')}"
