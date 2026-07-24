@@ -26,11 +26,22 @@ OK-NTE 配置文件 Schema 定义
 """
 
 from __future__ import annotations
-from typing import Any
-from pathlib import Path
+
 import re
 import struct
+from pathlib import Path
+from typing import Any, Iterable
 from xml.etree import ElementTree
+
+from ..common.config_schema import (
+    CONFIDENCE_DECLARED,
+    SOURCE_PROVIDER,
+    FieldChoice,
+    FieldDeclaration,
+    FieldSchema,
+    materialize_field_schemas,
+    render_legacy_fields,
+)
 
 
 # ─── OK-NTE 翻译文件自动加载 ─────────────────────────────────────────────────
@@ -291,21 +302,6 @@ TASK_INDEX_MAP: dict[str, int] = {
 }
 
 
-# ─── JSON 字段自动发现 ────────────────────────────────────────────────────
-
-def _infer_field_type(value: Any) -> str:
-    """从 JSON 值推断前端字段类型。"""
-    if isinstance(value, bool):
-        return "bool"
-    if isinstance(value, int):
-        return "int"
-    if isinstance(value, float):
-        return "float"
-    if isinstance(value, list):
-        return "list"
-    return "string"
-
-
 def _translate(key: str, labels: dict[str, str]) -> str:
     """查找翻译：OK-NTE 标签 > 兜底标签 > 原始 key。"""
     if key in labels:
@@ -315,71 +311,94 @@ def _translate(key: str, labels: dict[str, str]) -> str:
     return key
 
 
+def _is_internal_field(name: str) -> bool:
+    return name.startswith("_")
+
+
+def _provider_declarations_for_config(
+    filename: str,
+    json_data: dict[str, Any],
+    option_labels: dict[str, str],
+) -> tuple[FieldDeclaration, ...]:
+    names = list(json_data)
+    names.extend(
+        name
+        for name in SELECT_OPTIONS.get(filename, {})
+        if name not in json_data
+    )
+
+    declarations: list[FieldDeclaration] = []
+    for name in names:
+        if _is_internal_field(name):
+            continue
+        options = _get_select_options(filename, name)
+        label = _translate(name, option_labels)
+        if options is None and label == name:
+            continue
+        declarations.append(
+            FieldDeclaration(
+                path=name,
+                label=label,
+                choices=tuple(
+                    FieldChoice(
+                        value=value,
+                        label=_translate(value, option_labels),
+                    )
+                    for value in options or ()
+                ),
+                source=SOURCE_PROVIDER,
+                confidence=CONFIDENCE_DECLARED,
+            )
+        )
+    return tuple(declarations)
+
+
+def build_field_schemas_for_config(
+    filename: str,
+    json_data: dict[str, Any],
+    option_labels: dict[str, str],
+    *,
+    upstream: Iterable[FieldDeclaration] = (),
+) -> tuple[FieldSchema, ...]:
+    """用公共 FieldSchema 物化 OK-NTE 配置字段。"""
+
+    visible_data = {
+        name: value
+        for name, value in json_data.items()
+        if not _is_internal_field(name)
+    }
+    visible_upstream = tuple(
+        declaration
+        for declaration in upstream
+        if not _is_internal_field(declaration.path)
+    )
+    return materialize_field_schemas(
+        visible_data,
+        upstream=visible_upstream,
+        provider=_provider_declarations_for_config(
+            filename,
+            visible_data,
+            option_labels,
+        ),
+    )
+
+
 def build_fields_for_config(
     filename: str,
     json_data: dict[str, Any],
     option_labels: dict[str, str],
+    *,
+    upstream: Iterable[FieldDeclaration] = (),
 ) -> list[dict[str, Any]]:
-    """从 JSON 数据 + 选项映射 + 翻译标签构建前端字段列表。
+    """投影为当前宿主编辑器消费的兼容字段。"""
 
-    逻辑：
-    1. 遍历 JSON 中的字段 → 根据值推断类型
-    2. 若字段在 SELECT_OPTIONS 中有定义 → 设为 select / list 并附选项
-    3. 若字段在翻译中有映射 → 用翻译作为 label
-    4. SELECT_OPTIONS 中定义但 JSON 中没有的字段 → 也加入（新字段，值为 None）
-    """
-    seen: set[str] = set()
-
-    def _is_internal(name: str) -> bool:
-        """OK-NTE 框架内部字段（_enabled 等），不暴露给 MAS 用户编辑。"""
-        return name.startswith("_")
-
-    def make_field(name: str, raw_value: Any) -> dict[str, Any]:
-        seen.add(name)
-        opts = _get_select_options(filename, name)
-
-        if opts is not None:
-            # 下拉或多选
-            field_type = "list" if isinstance(raw_value, list) else "select"
-            return {
-                "name": name,
-                "type": field_type,
-                "label": _translate(name, option_labels),
-                "description": "",
-                "value": raw_value,
-                "options": opts,
-                "min": None,
-                "max": None,
-                "step": None,
-            }
-
-        # 普通字段：从 JSON 值推断类型
-        field_type = _infer_field_type(raw_value)
-        return {
-            "name": name,
-            "type": field_type,
-            "label": _translate(name, option_labels),
-            "description": "",
-            "value": raw_value,
-            "options": None,
-            "min": None,
-            "max": None,
-            "step": None,
-        }
-
-    fields = [
-        make_field(k, v)
-        for k, v in json_data.items()
-        if not _is_internal(k)  # 屏蔽 _enabled 等 OK-NTE 框架内部字段
-    ]
-
-    # 补充：SELECT_OPTIONS 中有定义但 JSON 中没有的字段（OK-NTE 新增配置项）
-    known_options = SELECT_OPTIONS.get(filename, {})
-    for name in known_options:
-        if name not in seen and not _is_internal(name):
-            fields.append(make_field(name, None))
-
-    return fields
+    schemas = build_field_schemas_for_config(
+        filename,
+        json_data,
+        option_labels,
+        upstream=upstream,
+    )
+    return render_legacy_fields(schemas, json_data)
 
 
 # ─── API 辅助函数 ─────────────────────────────────────────────────────────

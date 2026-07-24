@@ -186,14 +186,47 @@ class ConfigApiBoundaryTest(unittest.IsolatedAsyncioTestCase):
             config_dir=config_dir,
         )
 
-    def _request(self, configs: object | None = None) -> SimpleNamespace:
+    def _request(
+        self,
+        configs: object | None = None,
+        *,
+        mode: str | None = None,
+    ) -> SimpleNamespace:
         payload: dict[str, object] = {
             "script_id": str(self.script_uid),
             "user_id": str(self.user_uid),
         }
         if configs is not None:
             payload["configs"] = configs
+        if mode is not None:
+            payload["mode"] = mode
         return SimpleNamespace(json=payload, query={})
+
+    async def _run_batch_request(
+        self,
+        *,
+        root_path: Path,
+        config_dir: Path,
+        configs: dict[str, dict[str, object]],
+        mode: str | None = None,
+    ):
+        with (
+            patch.object(
+                plugin_module,
+                "_resolve_config_access",
+                return_value=self._access(config_dir),
+            ),
+            patch.object(
+                plugin_module,
+                "_script_form_config",
+                new=AsyncMock(
+                    return_value={"Info": {"RootPath": str(root_path)}}
+                ),
+            ),
+        ):
+            return await self.plugin._batch_update_configs(
+                self._request(configs, mode=mode)
+            )
 
     async def test_gf2_without_working_configs_returns_schema_only(self) -> None:
         spec = next(
@@ -204,6 +237,24 @@ class ConfigApiBoundaryTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             fixture = build_project_fixture(root, spec)
+            task_source = fixture.working_dir / "fixture" / "tasks.py"
+            task_source.parent.mkdir(parents=True)
+            task_source.write_text(
+                "class DailyTask:\n"
+                "    def __init__(self):\n"
+                "        self.name = 'GF2 Daily'\n"
+                "        self.default_config = {}\n"
+                "        self.config_description = {}\n"
+                "        self.config_type = {}\n"
+                "        self.default_config_group = {}\n"
+                "        self.default_config.update({'enabled': True, 'count': 2})\n"
+                "        self.config_description.update({'count': '运行次数'})\n"
+                "        self.config_type['count'] = {\n"
+                "            'type': 'drop_down',\n"
+                "            'options': [1, 2, 3],\n"
+                "        }\n",
+                encoding="utf-8",
+            )
             config_dir = root / "mas-data" / "ConfigFile"
             with (
                 patch.object(
@@ -223,7 +274,23 @@ class ConfigApiBoundaryTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response["code"], 200)
         self.assertEqual(response["configState"], "schema_only")
-        self.assertEqual(response["data"], [])
+        self.assertEqual(response["schemaVersion"], 1)
+        self.assertTrue(response["schemaFingerprint"])
+        self.assertEqual(len(response["data"]), 1)
+        daily = response["data"][0]
+        self.assertEqual(daily["filename"], "DailyTask.json")
+        self.assertEqual(daily["currentData"], {})
+        self.assertEqual(daily["snapshot"]["values"], {})
+        fields = {field["name"]: field for field in daily["fields"]}
+        self.assertFalse(fields["enabled"]["isSet"])
+        self.assertTrue(fields["enabled"]["value"])
+        schemas = {field["path"]: field for field in daily["fieldSchema"]}
+        self.assertEqual(schemas["enabled"]["valueType"], "boolean")
+        self.assertEqual(schemas["count"]["choices"], [
+            {"value": 1, "label": "1"},
+            {"value": 2, "label": "2"},
+            {"value": 3, "label": "3"},
+        ])
         self.assertFalse(response["provider"]["runtimeVerified"])
         diagnostic_codes = {item["code"] for item in response["diagnostics"]}
         self.assertIn("CONFIG_SOURCE_MISSING", diagnostic_codes)
@@ -262,9 +329,51 @@ class ConfigApiBoundaryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(by_name["accounts/DailyTask.json"]["directory"], "accounts")
         self.assertEqual(response["configState"], "ready")
 
+    async def test_registered_provider_does_not_readd_filtered_user_files(self) -> None:
+        spec = next(
+            item for item in PROJECT_FIXTURE_SPECS if item.name == "okef-source"
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            fixture = build_project_fixture(root, spec)
+            (fixture.config_dir / "devices.json").write_text(
+                '{"serial": "internal"}',
+                encoding="utf-8",
+            )
+            (fixture.config_dir / "YingTuoTask.json").write_text(
+                "{}",
+                encoding="utf-8",
+            )
+            config_dir = root / "mas-data" / "ConfigFile"
+            with (
+                patch.object(
+                    plugin_module,
+                    "_resolve_config_access",
+                    return_value=self._access(config_dir),
+                ),
+                patch.object(
+                    plugin_module,
+                    "_script_form_config",
+                    new=AsyncMock(
+                        return_value={"Info": {"RootPath": str(fixture.root)}}
+                    ),
+                ),
+            ):
+                response = await self.plugin._list_configs(self._request())
+
+        filenames = {item["filename"] for item in response["data"]}
+        self.assertIn("DailyTask.json", filenames)
+        self.assertNotIn("devices.json", filenames)
+        self.assertNotIn("YingTuoTask.json", filenames)
+
     async def test_runtime_lock_rejects_http_update_until_release(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            config_dir = Path(tmp_dir) / "ConfigFile"
+            root = Path(tmp_dir)
+            spec = next(
+                item for item in PROJECT_FIXTURE_SPECS if item.name == "okdna-source"
+            )
+            fixture = build_project_fixture(root, spec)
+            config_dir = root / "ConfigFile"
             access = self._access(config_dir)
             runtime = object.__new__(OkScriptAutoProxyTask)
             runtime.mas_config_dir = config_dir
@@ -274,14 +383,11 @@ class ConfigApiBoundaryTest(unittest.IsolatedAsyncioTestCase):
             await runtime._acquire_user_config_lock()
 
             try:
-                with patch.object(
-                    plugin_module,
-                    "_resolve_config_access",
-                    return_value=access,
-                ):
-                    busy_response = await self.plugin._batch_update_configs(
-                        self._request({"nested/task.json": {"enabled": True}})
-                    )
+                busy_response = await self._run_batch_request(
+                    root_path=fixture.root,
+                    config_dir=config_dir,
+                    configs={"nested/task.json": {"enabled": True}},
+                )
                 self.assertEqual(busy_response["code"], 409)
                 self.assertEqual(
                     busy_response["diagnostics"][0]["code"],
@@ -291,14 +397,11 @@ class ConfigApiBoundaryTest(unittest.IsolatedAsyncioTestCase):
             finally:
                 runtime._release_user_config_lock()
 
-            with patch.object(
-                plugin_module,
-                "_resolve_config_access",
-                return_value=access,
-            ):
-                response = await self.plugin._batch_update_configs(
-                    self._request({"nested/task.json": {"enabled": True}})
-                )
+            response = await self._run_batch_request(
+                root_path=fixture.root,
+                config_dir=config_dir,
+                configs={"nested/task.json": {"enabled": True}},
+            )
 
             stored = OkConfigStore(config_dir).read("nested/task.json")
 
@@ -328,6 +431,90 @@ class ConfigApiBoundaryTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response["code"], 400)
         self.assertIn("..", response["message"])
+
+    async def test_batch_update_rejects_platform_case_alias_without_write(self) -> None:
+        spec = next(
+            item for item in PROJECT_FIXTURE_SPECS if item.name == "okdna-source"
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            fixture = build_project_fixture(root, spec)
+            config_dir = root / "ConfigFile"
+            with patch.object(
+                plugin_module.os.path,
+                "normcase",
+                side_effect=lambda value: value.casefold(),
+            ):
+                response = await self._run_batch_request(
+                    root_path=fixture.root,
+                    config_dir=config_dir,
+                    configs={
+                        "Task.json": {"enabled": True},
+                        "task.json": {"enabled": False},
+                    },
+                )
+
+            self.assertFalse((config_dir / "Task.json").exists())
+            self.assertFalse((config_dir / "task.json").exists())
+
+        self.assertEqual(response["code"], 400)
+        self.assertIn("重复", response["message"])
+
+    async def test_validate_mode_returns_diff_without_writing(self) -> None:
+        spec = next(
+            item for item in PROJECT_FIXTURE_SPECS if item.name == "okdna-source"
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            fixture = build_project_fixture(root, spec)
+            config_dir = root / "ConfigFile"
+            store = OkConfigStore(config_dir)
+            store.write("DailyTask.json", {"enabled": True}, merge=False)
+
+            response = await self._run_batch_request(
+                root_path=fixture.root,
+                config_dir=config_dir,
+                configs={"DailyTask.json": {"enabled": False}},
+                mode="validate",
+            )
+            stored = store.read("DailyTask.json")
+
+        self.assertEqual(response["code"], 200)
+        self.assertEqual(response["status"], "validated")
+        self.assertEqual(response["data"], [])
+        self.assertEqual(response["drafts"][0]["changes"][0]["path"], "enabled")
+        self.assertEqual(stored, {"enabled": True})
+
+    async def test_batch_validation_error_returns_422_without_any_write(self) -> None:
+        spec = next(
+            item for item in PROJECT_FIXTURE_SPECS if item.name == "okdna-source"
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            fixture = build_project_fixture(root, spec)
+            config_dir = root / "ConfigFile"
+            store = OkConfigStore(config_dir)
+            store.write("DailyTask.json", {"enabled": True}, merge=False)
+            store.write("Other.json", {"count": 1}, merge=False)
+
+            response = await self._run_batch_request(
+                root_path=fixture.root,
+                config_dir=config_dir,
+                configs={
+                    "DailyTask.json": {"enabled": False},
+                    "Other.json": {"count": "bad"},
+                },
+            )
+            daily = store.read("DailyTask.json")
+            other = store.read("Other.json")
+
+        self.assertIsInstance(response, plugin_module.PluginHttpResponse)
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.body["code"], 422)
+        self.assertEqual(response.body["errors"][0]["filename"], "Other.json")
+        self.assertEqual(response.body["errors"][0]["path"], "count")
+        self.assertEqual(daily, {"enabled": True})
+        self.assertEqual(other, {"count": 1})
 
 
 if __name__ == "__main__":

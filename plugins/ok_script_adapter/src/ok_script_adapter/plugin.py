@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import os
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,13 +11,28 @@ from typing import Any
 from app.core import Config as app_config
 from app.core.script_config_codec import storage_to_form
 from app.models.plugin_script_config import PluginScriptConfig
-from app.plugins import PluginHttpRequest, ScriptAdapterDefinition, ScriptAdapterPlugin
+from app.plugins import (
+    PluginHttpRequest,
+    PluginHttpResponse,
+    ScriptAdapterDefinition,
+    ScriptAdapterPlugin,
+)
 from app.utils import get_logger
 
 from .adapter import OkScriptAdapterHooks
+from .common.config_schema import (
+    FIELD_SCHEMA_VERSION,
+    ConfigSnapshot,
+    FieldSchema,
+    build_config_draft,
+    materialize_field_schemas,
+    render_legacy_fields,
+    schema_catalog_fingerprint,
+)
 from .common.provider import ok_script_mas_config_dir, resolve_game_executable_path
 from .common.runtime_lock import get_ok_script_config_lock
 from .providers import detect_ok_script_provider, get_ok_script_provider
+from .shell.config_parser import ProjectConfigDescription, ProjectConfigParser
 from .shell.descriptor import OkProjectDescriptor, OkProjectInspectError
 from .shell.manifest import inspect_ok_project
 from .shell.runtime import OkConfigStore, OkShellRuntimeError
@@ -39,6 +55,26 @@ class _ConfigAccess:
     user_uid: uuid.UUID
     storage_config: PluginScriptConfig
     config_dir: Path
+
+
+@dataclass(frozen=True, slots=True)
+class _ConfigSchemaContext:
+    """一个项目配置端点共用的 schema 解析上下文。"""
+
+    description: ProjectConfigDescription
+    provider_builder: Any | None
+    config_info_loader: Any | None
+    option_labels: dict[str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class _ConfigProject:
+    """已校验脚本存储对应的项目 descriptor 与配置 schema。"""
+
+    root_path: Path
+    descriptor: OkProjectDescriptor
+    provider: Any
+    schema_context: _ConfigSchemaContext
 
 
 def normalize_ok_script_form(data: dict[str, Any]) -> dict[str, Any]:
@@ -209,40 +245,10 @@ def _config_busy_response() -> dict[str, Any]:
     }
 
 
-def _build_generic_fields(data: dict[str, Any]) -> list[dict[str, Any]]:
-    fields: list[dict[str, Any]] = []
-    for name, value in data.items():
-        field_type = (
-            "bool"
-            if isinstance(value, bool)
-            else "int"
-            if isinstance(value, int)
-            else "float"
-            if isinstance(value, float)
-            else "list"
-            if isinstance(value, list)
-            else "json"
-            if isinstance(value, dict)
-            else "string"
-        )
-        fields.append(
-            {
-                "name": str(name),
-                "label": str(name),
-                "type": field_type,
-                "description": "",
-                "value": value,
-                "options": None,
-                "section": "通用",
-            }
-        )
-    return fields
-
-
 def _load_provider_schema(provider: Any):
     module = importlib.import_module(provider.config_schema_module)
     return (
-        getattr(module, "build_fields_for_config"),
+        getattr(module, "build_field_schemas_for_config"),
         getattr(module, provider.config_info_loader),
         getattr(module, f"load_{provider.resource_name.replace('-', '')}_option_labels"),
     )
@@ -258,6 +264,118 @@ def _descriptor_with_provider(
         verified=provider.runtime_verified,
         reason=provider.runtime_block_reason,
     )
+
+
+def _build_config_schema_context(
+    descriptor: OkProjectDescriptor,
+    provider: Any,
+    root_path: Path,
+) -> _ConfigSchemaContext:
+    description = ProjectConfigParser(descriptor).parse()
+    if provider is None:
+        return _ConfigSchemaContext(
+            description=description,
+            provider_builder=None,
+            config_info_loader=None,
+            option_labels={},
+        )
+
+    provider_builder, config_info_loader, load_labels = _load_provider_schema(provider)
+    return _ConfigSchemaContext(
+        description=description,
+        provider_builder=provider_builder,
+        config_info_loader=config_info_loader,
+        option_labels=load_labels(root_path),
+    )
+
+
+async def _load_config_project(storage_config: PluginScriptConfig) -> _ConfigProject:
+    form_config = await _script_form_config(storage_config)
+    info = form_config.get("Info")
+    root_value = str(info.get("RootPath") or "").strip() if isinstance(info, dict) else ""
+    if not root_value:
+        raise ValueError("请先设置 ok-script 项目路径")
+
+    root_path = Path(root_value)
+    descriptor = inspect_ok_project(root_path)
+    provider = get_ok_script_provider(descriptor.resource_name)
+    descriptor = _descriptor_with_provider(descriptor, provider)
+    return _ConfigProject(
+        root_path=root_path,
+        descriptor=descriptor,
+        provider=provider,
+        schema_context=_build_config_schema_context(
+            descriptor,
+            provider,
+            root_path,
+        ),
+    )
+
+
+def _build_file_schemas(
+    context: _ConfigSchemaContext,
+    filename: str,
+    current_data: dict[str, Any],
+) -> tuple[FieldSchema, ...]:
+    resource = context.description.get(filename)
+    upstream = resource.fields if resource is not None else ()
+    if context.provider_builder is not None:
+        return context.provider_builder(
+            filename,
+            current_data,
+            context.option_labels,
+            upstream=upstream,
+        )
+    return materialize_field_schemas(current_data, upstream=upstream)
+
+
+def _merge_config_infos(
+    provider_infos: list[dict[str, Any]],
+    description: ProjectConfigDescription,
+    fallback_files: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    infos: list[dict[str, Any]] = []
+    by_filename: dict[str, dict[str, Any]] = {}
+
+    for raw_info in provider_infos:
+        filename = str(raw_info.get("filename") or "").strip()
+        if not filename or filename in by_filename:
+            continue
+        info = dict(raw_info)
+        info["filename"] = filename
+        infos.append(info)
+        by_filename[filename] = info
+
+    for resource in description.resources:
+        existing = by_filename.get(resource.filename)
+        if existing is not None:
+            if resource.task_index is not None:
+                existing["taskIndex"] = resource.task_index
+            continue
+        info = {
+            "filename": resource.filename,
+            "displayName": resource.display_name,
+            "group": resource.group,
+            "taskIndex": resource.task_index,
+        }
+        infos.append(info)
+        by_filename[resource.filename] = info
+
+    for filename in fallback_files:
+        if filename in by_filename:
+            continue
+        relative = Path(filename)
+        directory = relative.parent.as_posix()
+        info = {
+            "filename": filename,
+            "displayName": relative.name,
+            "directory": "" if directory == "." else directory,
+            "group": "通用配置",
+            "taskIndex": None,
+        }
+        infos.append(info)
+        by_filename[filename] = info
+    return infos
 
 
 def _provider_client_metadata(
@@ -468,11 +586,10 @@ class Plugin(ScriptAdapterPlugin):
             return {"code": 400, "status": "error", "message": "缺少 script_id 或 user_id"}
         try:
             access = _resolve_config_access(script_id, user_id)
-            form_config = await _script_form_config(access.storage_config)
-            root_path = Path(str(form_config.get("Info", {}).get("RootPath") or ""))
-            descriptor = inspect_ok_project(root_path)
-            provider = get_ok_script_provider(descriptor.resource_name)
-            descriptor = _descriptor_with_provider(descriptor, provider)
+            project = await _load_config_project(access.storage_config)
+            descriptor = project.descriptor
+            provider = project.provider
+            schema_context = project.schema_context
             config_dir = access.config_dir
             config_lock = get_ok_script_config_lock(config_dir)
             if config_lock.locked():
@@ -485,48 +602,54 @@ class Plugin(ScriptAdapterPlugin):
                 user_files = store.list()
 
                 result: list[dict[str, Any]] = []
-                option_labels: dict[str, str] = {}
+                schemas_by_file: dict[str, tuple[FieldSchema, ...]] = {}
+                provider_infos: list[dict[str, Any]] = []
                 if provider is not None:
-                    build_fields, get_config_info, load_labels = _load_provider_schema(provider)
-                    option_labels = load_labels(root_path)
-                    infos = (
+                    get_config_info = schema_context.config_info_loader
+                    provider_infos = (
                         get_config_info(config_dir)
                         if provider.config_info_uses_directory
                         else get_config_info()
                     )
-                    available_files = set(user_files)
-                    for info in infos:
-                        filename = str(info["filename"])
-                        current_data = (
-                            store.read(filename) if filename in available_files else {}
-                        )
-                        fields = build_fields(filename, current_data, option_labels)
-                        result.append(
-                            {
-                                **info,
-                                "fieldCount": len(fields),
-                                "fields": fields,
-                                "currentData": current_data,
-                            }
-                        )
-                else:
-                    for filename in user_files:
-                        current_data = store.read(filename)
-                        fields = _build_generic_fields(current_data)
-                        relative = Path(filename)
-                        directory = relative.parent.as_posix()
-                        result.append(
-                            {
-                                "filename": filename,
-                                "displayName": relative.name,
-                                "directory": "" if directory == "." else directory,
-                                "group": "通用配置",
-                                "taskIndex": None,
-                                "fieldCount": len(fields),
-                                "fields": fields,
-                                "currentData": current_data,
-                            }
-                        )
+
+                available_files = set(user_files)
+                infos = _merge_config_infos(
+                    provider_infos,
+                    schema_context.description,
+                    user_files if provider is None else (),
+                )
+                for info in infos:
+                    filename = store.validate_name(str(info["filename"]))
+                    current_data = (
+                        store.read(filename) if filename in available_files else {}
+                    )
+                    schemas = _build_file_schemas(
+                        schema_context,
+                        filename,
+                        current_data,
+                    )
+                    if not schemas and filename not in available_files:
+                        continue
+                    schemas_by_file[filename] = schemas
+                    source_fingerprint = schema_catalog_fingerprint(
+                        {filename: schemas},
+                        source_fingerprint=schema_context.description.fingerprint,
+                    )
+                    snapshot = ConfigSnapshot(
+                        values=current_data,
+                        source_fingerprint=source_fingerprint,
+                    )
+                    result.append(
+                        {
+                            **info,
+                            "filename": filename,
+                            "fieldCount": len(schemas),
+                            "fields": render_legacy_fields(schemas, current_data),
+                            "currentData": current_data,
+                            "fieldSchema": [schema.to_dict() for schema in schemas],
+                            "snapshot": snapshot.to_dict(),
+                        }
+                    )
 
                 config_state, diagnostics = _config_source_status(
                     manifest=descriptor,
@@ -538,6 +661,14 @@ class Plugin(ScriptAdapterPlugin):
 
             provider_data = _provider_client_metadata(descriptor, provider)
             descriptor_data = descriptor.to_dict()
+            schema_fingerprint = schema_catalog_fingerprint(
+                schemas_by_file,
+                source_fingerprint=schema_context.description.fingerprint,
+            )
+            diagnostics = [
+                *(item.to_dict() for item in schema_context.description.diagnostics),
+                *diagnostics,
+            ]
             return {
                 "code": 200,
                 "status": "success",
@@ -548,9 +679,11 @@ class Plugin(ScriptAdapterPlugin):
                     "unsupported": "当前项目配置格式暂不受支持",
                 }[config_state],
                 "data": result,
+                "schemaVersion": FIELD_SCHEMA_VERSION,
+                "schemaFingerprint": schema_fingerprint,
                 "configState": config_state,
                 "diagnostics": _merge_diagnostics(descriptor, diagnostics),
-                "optionLabels": option_labels,
+                "optionLabels": schema_context.option_labels,
                 "provider": provider_data,
                 "descriptor": descriptor_data,
                 "manifest": descriptor_data,
@@ -566,13 +699,19 @@ class Plugin(ScriptAdapterPlugin):
                 "data": [],
             }
 
-    async def _batch_update_configs(self, request: PluginHttpRequest) -> dict[str, Any]:
+    async def _batch_update_configs(
+        self,
+        request: PluginHttpRequest,
+    ) -> dict[str, Any] | PluginHttpResponse:
         payload = request.json if isinstance(request.json, dict) else {}
         script_id = str(payload.get("script_id") or payload.get("scriptId") or "")
         user_id = str(payload.get("user_id") or payload.get("userId") or "")
         configs = payload.get("configs")
+        mode = str(payload.get("mode") or "commit").strip().casefold()
         if not script_id or not user_id or not isinstance(configs, dict):
             return {"code": 400, "status": "error", "message": "请求参数不完整"}
+        if mode not in {"validate", "commit"}:
+            return {"code": 400, "status": "error", "message": "mode 必须是 validate 或 commit"}
         try:
             access = _resolve_config_access(script_id, user_id)
             config_lock = get_ok_script_config_lock(access.config_dir)
@@ -581,17 +720,84 @@ class Plugin(ScriptAdapterPlugin):
             async with config_lock:
                 store = OkConfigStore(access.config_dir)
                 updates: list[tuple[str, dict[str, Any]]] = []
+                filename_keys: set[str] = set()
                 for filename, data in configs.items():
                     if not isinstance(filename, str) or not isinstance(data, dict):
                         raise ValueError("配置文件名和配置内容必须有效")
-                    updates.append((store.validate_name(filename), data))
+                    normalized = store.validate_name(filename)
+                    filename_key = os.path.normcase(normalized)
+                    if filename_key in filename_keys:
+                        raise ValueError(f"配置文件重复: {normalized}")
+                    filename_keys.add(filename_key)
+                    updates.append((normalized, data))
 
-                updated = []
+                project = await _load_config_project(access.storage_config)
+                available_files = set(store.list())
+                drafts = []
                 for filename, data in updates:
-                    store.write(filename, data)
-                    updated.append(filename)
-            return {"code": 200, "status": "success", "data": updated}
-        except (ValueError, RuntimeError) as exc:
+                    original = store.read(filename) if filename in available_files else {}
+                    schemas = _build_file_schemas(
+                        project.schema_context,
+                        filename,
+                        original,
+                    )
+                    if not schemas and not original:
+                        schemas = _build_file_schemas(
+                            project.schema_context,
+                            filename,
+                            data,
+                        )
+                    drafts.append(
+                        build_config_draft(
+                            filename,
+                            original,
+                            data,
+                            schemas,
+                        )
+                    )
+
+                errors = [
+                    {"filename": draft.filename, **error.to_dict()}
+                    for draft in drafts
+                    for error in draft.errors
+                ]
+                if errors:
+                    return PluginHttpResponse(
+                        body={
+                            "code": 422,
+                            "status": "validation_error",
+                            "message": "配置校验失败，未写入任何文件",
+                            "mode": mode,
+                            "data": [],
+                            "drafts": [draft.to_dict() for draft in drafts],
+                            "errors": errors,
+                        },
+                        status_code=422,
+                    )
+
+                if mode == "validate":
+                    return {
+                        "code": 200,
+                        "status": "validated",
+                        "message": "配置校验通过，尚未写入",
+                        "mode": mode,
+                        "data": [],
+                        "drafts": [draft.to_dict() for draft in drafts],
+                    }
+
+                updated: list[str] = []
+                for draft in drafts:
+                    store.write(draft.filename, draft.merged, merge=False)
+                    updated.append(draft.filename)
+            return {
+                "code": 200,
+                "status": "success",
+                "message": "配置保存成功",
+                "mode": mode,
+                "data": updated,
+                "drafts": [draft.to_dict() for draft in drafts],
+            }
+        except (OkProjectInspectError, OkShellRuntimeError, ValueError, KeyError) as exc:
             logger.warning(f"拒绝更新 ok-script 用户配置: {exc}")
             return {"code": 400, "status": "error", "message": str(exc)}
         except Exception as exc:

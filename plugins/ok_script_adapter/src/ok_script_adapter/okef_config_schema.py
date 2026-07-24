@@ -28,8 +28,19 @@ import gettext
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 from xml.etree import ElementTree
+
+from .common.config_schema import (
+    CONFIDENCE_DECLARED,
+    CONTROL_TEXTAREA,
+    SOURCE_PROVIDER,
+    FieldChoice,
+    FieldDeclaration,
+    FieldSchema,
+    materialize_field_schemas,
+    render_legacy_fields,
+)
 
 
 _PO_ENTRY_RE = re.compile(
@@ -594,18 +605,6 @@ def load_okef_option_labels(root_path: Path | str) -> dict[str, str]:
     return labels
 
 
-def _infer_field_type(value: Any) -> str:
-    if isinstance(value, bool):
-        return "bool"
-    if isinstance(value, int):
-        return "int"
-    if isinstance(value, float):
-        return "float"
-    if isinstance(value, list):
-        return "list"
-    return "string"
-
-
 def _translate(key: str, labels: dict[str, str]) -> str:
     if key in _FIELD_LABELS:
         return _FIELD_LABELS[key]
@@ -652,25 +651,11 @@ def _sort_key(filename: str) -> tuple[int, int, str]:
     return (2, 0, filename)
 
 
-def _append_current_values(options: list[str], raw_value: Any) -> list[str]:
-    current_values = raw_value if isinstance(raw_value, list) else [raw_value]
-    result = list(options)
-    for value in current_values:
-        if value is None:
-            continue
-        text = str(value)
-        if text and text not in result:
-            result.append(text)
-    return result
-
-
-def _get_select_options(filename: str, field_name: str, raw_value: Any) -> list[str] | None:
+def _get_select_options(filename: str, field_name: str) -> list[str] | None:
     configured = _SELECT_OPTIONS.get(filename, {}).get(field_name)
     if configured is None:
         configured = _GLOBAL_SELECT_OPTIONS.get(field_name)
-    if configured is None:
-        return None
-    return _append_current_values(configured, raw_value)
+    return configured
 
 
 def _section_for_field(filename: str, field_name: str) -> str:
@@ -685,12 +670,85 @@ def _section_for_field(filename: str, field_name: str) -> str:
     return "其他配置"
 
 
-def _field_sort_key(field: dict[str, Any]) -> tuple[int, int, str]:
-    section = str(field["section"])
-    return (
-        _SECTION_ORDER.get(section, 800),
-        int(field["priority"]),
-        str(field["name"]),
+def _provider_declarations_for_config(
+    filename: str,
+    json_data: dict[str, Any],
+    option_labels: dict[str, str],
+) -> tuple[FieldDeclaration, ...]:
+    names = list(json_data)
+    names.extend(
+        name
+        for name in _SELECT_OPTIONS.get(filename, {})
+        if name not in json_data
+    )
+    names.extend(
+        name
+        for name in _GLOBAL_SELECT_OPTIONS
+        if name not in json_data and name not in names
+    )
+
+    declarations: list[FieldDeclaration] = []
+    for name in names:
+        if _is_internal_field(name) or _is_hidden_field(name):
+            continue
+        options = _get_select_options(filename, name)
+        section = _section_for_field(filename, name)
+        declarations.append(
+            FieldDeclaration(
+                path=name,
+                label=_translate(name, option_labels),
+                description=_FIELD_DESCRIPTIONS.get(name, ""),
+                control=(
+                    CONTROL_TEXTAREA
+                    if name in _MULTILINE_FIELD_NAMES
+                    else ""
+                ),
+                choices=tuple(
+                    FieldChoice(
+                        value=value,
+                        label=_translate(value, option_labels),
+                    )
+                    for value in options or ()
+                ),
+                source=SOURCE_PROVIDER,
+                confidence=CONFIDENCE_DECLARED,
+                section=section,
+                section_priority=_SECTION_ORDER.get(section, 800),
+                priority=_FIELD_PRIORITY.get(name, 999),
+                advanced=name not in _FIELD_PRIORITY,
+            )
+        )
+    return tuple(declarations)
+
+
+def build_field_schemas_for_config(
+    filename: str,
+    json_data: dict[str, Any],
+    option_labels: dict[str, str],
+    *,
+    upstream: Iterable[FieldDeclaration] = (),
+) -> tuple[FieldSchema, ...]:
+    """用公共 FieldSchema 物化 OK-EF 配置字段。"""
+
+    visible_data = {
+        name: value
+        for name, value in json_data.items()
+        if not _is_internal_field(name) and not _is_hidden_field(name)
+    }
+    visible_upstream = tuple(
+        declaration
+        for declaration in upstream
+        if not _is_internal_field(declaration.path)
+        and not _is_hidden_field(declaration.path)
+    )
+    return materialize_field_schemas(
+        visible_data,
+        upstream=visible_upstream,
+        provider=_provider_declarations_for_config(
+            filename,
+            visible_data,
+            option_labels,
+        ),
     )
 
 
@@ -698,43 +756,18 @@ def build_fields_for_config(
     filename: str,
     json_data: dict[str, Any],
     option_labels: dict[str, str],
+    *,
+    upstream: Iterable[FieldDeclaration] = (),
 ) -> list[dict[str, Any]]:
-    """把单个 JSON 配置转换成前端字段列表。"""
+    """投影为当前宿主编辑器消费的兼容字段。"""
 
-    def make_field(name: str, raw_value: Any) -> dict[str, Any]:
-        opts = _get_select_options(filename, name, raw_value)
-        if name in _MULTILINE_FIELD_NAMES:
-            field_type = "textarea"
-        elif opts is not None:
-            field_type = "list" if isinstance(raw_value, list) else "select"
-        else:
-            field_type = _infer_field_type(raw_value)
-
-        return {
-            "name": name,
-            "type": field_type,
-            "label": _translate(name, option_labels),
-            "description": _FIELD_DESCRIPTIONS.get(name, ""),
-            "value": raw_value,
-            "options": opts,
-            "min": None,
-            "max": None,
-            "step": None,
-            "section": _section_for_field(filename, name),
-            "sectionPriority": _SECTION_ORDER.get(
-                _section_for_field(filename, name),
-                800,
-            ),
-            "priority": _FIELD_PRIORITY.get(name, 999),
-            "advanced": name not in _FIELD_PRIORITY,
-        }
-
-    fields = [
-        make_field(key, value)
-        for key, value in json_data.items()
-        if not _is_internal_field(key) and not _is_hidden_field(key)
-    ]
-    return sorted(fields, key=_field_sort_key)
+    schemas = build_field_schemas_for_config(
+        filename,
+        json_data,
+        option_labels,
+        upstream=upstream,
+    )
+    return render_legacy_fields(schemas, json_data)
 
 
 def _visible_field_count(path: Path) -> int:

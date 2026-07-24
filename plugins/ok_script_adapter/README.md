@@ -47,6 +47,33 @@ User JSON is copied into `data/<script-id>/<user-id>/ConfigFile`. Missing JSON f
 are added recursively without overwriting existing user files. During execution the
 adapter publishes stdout, stderr, project logs and supported structured events to MAS.
 
+## Configuration Schema and Validation
+
+Configuration responses expose FieldSchema v1 without breaking the current editor.
+Each file keeps the legacy `fields` and `currentData` members and also returns a typed
+`fieldSchema` plus an independent `snapshot`. The schema records value and item types,
+typed choices, defaults, nullability, validation constraints, source confidence and
+`omitWhenUnset`; the snapshot records current values, revision and source fingerprint.
+
+Schema sources are resolved in this order: statically proven upstream task declarations,
+registered provider additions, then low-confidence inference from existing JSON values.
+Projects such as OK-GF2 can therefore return `schema_only` fields before their first JSON
+file exists. An upstream default is displayed with `isSet=false` and is not written until
+the user explicitly changes that field. Existing unknown enum values and unknown JSON keys
+are preserved. Numeric choices, arrays and objects are not coerced to strings.
+
+`POST /plugin/ok-script/configs/batch-update` accepts `mode=validate` or `mode=commit`.
+The default remains `commit` for existing clients. Both modes validate every file and
+return draft diffs; `validate` never writes. A field error returns HTTP 422 with per-file,
+per-field errors and writes no file from that batch. Successful commits use the existing
+per-file atomic replacement after recursively preserving untouched keys.
+
+Time-like field names are deliberately not guessed. A project or provider must declare
+whether a value is a time of day, datetime, duration, or Unix timestamp before a dedicated
+control and serialization rule can be added. The current host editor also still saves
+dirty values when leaving or switching users; explicit Save/Discard interaction requires
+the separately reviewed host editor-slot work and is not implemented by this backend stage.
+
 ## Compatibility and Upgrade
 
 New records use `PluginScriptConfig` with `Meta.PluginTypeKey=OkScript`. Saved Manifest
