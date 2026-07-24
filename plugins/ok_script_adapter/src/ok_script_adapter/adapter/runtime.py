@@ -9,7 +9,8 @@ from app.models.ConfigBase import ConfigBase, MultipleConfig
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.plugins import ScriptAdapterHooks, ScriptAdapterRuntime
 from app.services import Notify
-from app.utils import ProcessManager, get_logger
+from app.utils import get_logger
+from app.utils.ProcessManager import ProcessManager
 
 from .autoproxy import OkScriptAutoProxyTask
 

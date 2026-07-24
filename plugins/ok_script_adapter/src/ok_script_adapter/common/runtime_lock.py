@@ -29,4 +29,10 @@ def get_ok_script_root_lock(root_path: Path):
     return get_path_runtime_lock(root_path)
 
 
-__all__ = ["get_ok_script_root_lock"]
+def get_ok_script_config_lock(config_dir: Path):
+    """Return the shared lock for one MAS per-user config directory."""
+
+    return get_path_runtime_lock(config_dir)
+
+
+__all__ = ["get_ok_script_config_lock", "get_ok_script_root_lock"]

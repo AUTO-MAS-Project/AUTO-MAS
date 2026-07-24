@@ -180,10 +180,20 @@ class OkConfigStore:
             copied.append(relative_name)
         return tuple(copied)
 
+    def validate_name(self, name: str) -> str:
+        """Validate and normalize one JSON path without touching the file."""
+
+        path = self._resolve(name)
+        return path.relative_to(self.config_dir).as_posix()
+
     def _resolve(self, name: str) -> Path:
+        if not isinstance(name, str):
+            raise OkShellRuntimeError("配置文件名必须是字符串")
         normalized = name.strip().replace("\\", "/")
         if not normalized:
             raise OkShellRuntimeError("配置文件名不能为空")
+        if any(part in ("", ".", "..") for part in normalized.split("/")):
+            raise OkShellRuntimeError("配置路径不能包含空段、. 或 ..")
         relative = Path(normalized)
         if relative.is_absolute() or relative.suffix.casefold() != ".json":
             raise OkShellRuntimeError("配置路径必须是 configs 目录内的 .json 相对路径")

@@ -19,6 +19,7 @@
 import json
 import os
 import re
+import uuid
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -290,7 +291,27 @@ def read_app_json_resource_name(app_json_path: Path) -> str:
     return normalize_ok_script_resource_name(data.get("name"))
 
 
-def ok_script_mas_config_dir(script_id: str, user_id: str) -> Path:
+def ok_script_mas_config_dir(
+    script_id: str | uuid.UUID,
+    user_id: str | uuid.UUID,
+) -> Path:
     """返回 MAS 侧保存的 ok-script 用户配置目录。"""
 
-    return Path.cwd() / "data" / script_id / user_id / "ConfigFile"
+    try:
+        script_uid = uuid.UUID(str(script_id))
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise ValueError("script_id 不是有效 UUID") from exc
+    try:
+        user_uid = uuid.UUID(str(user_id))
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise ValueError("user_id 不是有效 UUID") from exc
+
+    data_root = (Path.cwd() / "data").resolve()
+    target = (
+        data_root / str(script_uid) / str(user_uid) / "ConfigFile"
+    ).resolve()
+    try:
+        target.relative_to(data_root)
+    except ValueError as exc:
+        raise ValueError("非法 ok-script 用户配置目录") from exc
+    return target
