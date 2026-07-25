@@ -251,8 +251,7 @@ class ManualReviewTask(TaskExecuteBase):
         if self.check_result != "Pass":
             return
 
-        if not getattr(self.task_info, "game_on_stop", False):
-            await self.kill_managed_process()
+        await self.kill_managed_process()
 
         if self.run_book["SignIn"] and self.run_book["PassCheck"]:
             logger.info(f"用户 {self.cur_user_uid} 通过人工排查")
