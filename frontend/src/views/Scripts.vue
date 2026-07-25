@@ -259,6 +259,12 @@
                 class="type-icon"
               />
               <img
+                v-else-if="script.type === 'OkNte'"
+                src="@/assets/ok-nte.ico"
+                alt="ok-nte"
+                class="type-icon"
+              />
+              <img
                 v-else-if="script.type === 'HSR'"
                 src="@/assets/hsr.png"
                 alt="HSR"
@@ -269,19 +275,31 @@
             <div class="script-info">
               <div class="script-name">{{ script.name }}</div>
               <div class="script-meta">
-                <span class="script-type" :class="{ 'script-type-okww': script.type === 'Okww' }">{{
-                  script.type === 'MAA'
-                    ? 'MAA脚本'
-                    : script.type === 'SRC'
-                      ? 'SRC脚本'
-                      : script.type === 'MaaEnd'
-                        ? 'MaaEnd脚本'
-                        : script.type === 'M9A'
-                          ? 'M9A脚本'
-                          : script.type === 'Okww'
-                            ? 'ok-ww脚本'
-                            : '通用脚本'
-                }}</span>
+                <span
+                  class="script-type"
+                  :class="{
+                    'script-type-okww': script.type === 'Okww',
+                    'script-type-oknte': script.type === 'OkNte',
+                  }"
+                >
+                  {{
+                    script.type === 'MAA'
+                      ? 'MAA脚本'
+                      : script.type === 'SRC'
+                        ? 'SRC脚本'
+                        : script.type === 'MaaEnd'
+                          ? 'MaaEnd脚本'
+                          : script.type === 'M9A'
+                            ? 'M9A脚本'
+                            : script.type === 'Okww'
+                              ? 'ok-ww脚本'
+                              : script.type === 'OkNte'
+                                ? 'ok-nte脚本'
+                                : script.type === 'HSR'
+                                  ? 'HSR脚本'
+                                  : '通用脚本'
+                  }}
+                </span>
                 <span class="script-users">
                   <UserOutlined />
                   {{ script.users?.length || 0 }} 个用户
@@ -364,6 +382,17 @@
             <div class="type-info">
               <div class="type-title">ok-ww脚本</div>
               <div class="type-description">ok-script 线专项：通过 -t/-e 启动参数运行任务</div>
+            </div>
+          </div>
+        </a-radio-button>
+        <a-radio-button value="OkNte" class="type-option">
+          <div class="type-content">
+            <div class="type-logo-container">
+              <img src="@/assets/ok-nte.ico" alt="ok-nte" class="type-logo" />
+            </div>
+            <div class="type-info">
+              <div class="type-title">ok-nte脚本</div>
+              <div class="type-description">异环 OK-NTE 自动化脚本，支持 -t/-e 任务启动</div>
             </div>
           </div>
         </a-radio-button>
@@ -600,6 +629,19 @@ const showMaaEndConfigMask = ref(false) // 控制MaaEnd配置遮罩层的显示
 const currentConfigScript = ref<Script | null>(null) // 当前正在配置的脚本
 const currentMaaEndConfigUser = ref<User | null>(null)
 
+const scriptEditPathMap: Record<ScriptType, string> = {
+  MAA: 'maa',
+  General: 'general',
+  Okww: 'okww',
+  OkNte: 'oknte',
+  SRC: 'src',
+  MaaEnd: 'maaend',
+  M9A: 'm9a',
+  HSR: 'hsr',
+}
+
+const getScriptEditPath = (type: ScriptType) => scriptEditPathMap[type]
+
 // WebSocket连接管理
 const activeConnections = ref<Map<string, { subscriptionId: string; websocketId: string }>>(
   new Map()
@@ -798,14 +840,7 @@ const handleConfirmScriptSelect = async () => {
     if (result) {
       scriptSelectVisible.value = false
       // 跳转到编辑页面
-      const editPath =
-        selectedScript.type === 'MAA'
-          ? 'maa'
-          : selectedScript.type === 'SRC'
-            ? 'src'
-            : selectedScript.type === 'MaaEnd'
-              ? 'maaend'
-              : 'general'
+      const editPath = getScriptEditPath(selectedScript.type)
       router.push({
         path: `/scripts/${result.scriptId}/edit/${editPath}`,
         state: {
@@ -840,20 +875,7 @@ const handleConfirmAddScript = async () => {
     if (result) {
       typeSelectVisible.value = false
       // 跳转到编辑页面，传递API返回的数据
-      const editPath =
-        selectedType.value === 'MAA'
-          ? 'maa'
-          : selectedType.value === 'SRC'
-            ? 'src'
-            : selectedType.value === 'MaaEnd'
-              ? 'maaend'
-              : selectedType.value === 'M9A'
-                ? 'm9a'
-                : selectedType.value === 'Okww'
-                  ? 'okww'
-                  : selectedType.value === 'HSR'
-                    ? 'hsr'
-                    : 'general'
+      const editPath = getScriptEditPath(selectedType.value)
       router.push({
         path: `/scripts/${result.scriptId}/edit/${editPath}`,
         state: {
@@ -967,22 +989,7 @@ const handleCancelTemplate = () => {
 }
 
 const handleEditScript = (script: Script) => {
-  // 根据脚本类型跳转到对应的编辑页面
-  if (script.type === 'MAA') {
-    router.push(`/scripts/${script.id}/edit/maa`)
-  } else if (script.type === 'SRC') {
-    router.push(`/scripts/${script.id}/edit/src`)
-  } else if (script.type === 'MaaEnd') {
-    router.push(`/scripts/${script.id}/edit/maaend`)
-  } else if (script.type === 'M9A') {
-    router.push(`/scripts/${script.id}/edit/m9a`)
-  } else if (script.type === 'Okww') {
-    router.push(`/scripts/${script.id}/edit/okww`)
-  } else if (script.type === 'HSR') {
-    router.push(`/scripts/${script.id}/edit/hsr`)
-  } else {
-    router.push(`/scripts/${script.id}/edit/general`)
-  }
+  router.push(`/scripts/${script.id}/edit/${getScriptEditPath(script.type)}`)
 }
 
 const handleDeleteScript = async (script: Script) => {
@@ -1019,6 +1026,8 @@ const handleAddUser = (script: Script) => {
     router.push(`/scripts/${script.id}/users/add/m9a`)
   } else if (script.type === 'Okww') {
     router.push(`/scripts/${script.id}/users/add/okww`)
+  } else if (script.type === 'OkNte') {
+    router.push(`/scripts/${script.id}/users/add/oknte`)
   } else if (script.type === 'HSR') {
     router.push(`/scripts/${script.id}/users/add/hsr`)
   } else {
@@ -1041,6 +1050,8 @@ const handleEditUser = (user: User) => {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/m9a`)
     } else if (script.type === 'Okww') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/okww`)
+    } else if (script.type === 'OkNte') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/oknte`)
     } else if (script.type === 'HSR') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/hsr`)
     } else {
@@ -2159,6 +2170,14 @@ const handlePassCheckUser = async (user: User) => {
 }
 
 .script-type-okww {
+  color: var(--ant-color-primary);
+}
+
+.script-type-oknte {
+  color: var(--ant-color-primary);
+}
+
+.script-type-hsr {
   color: var(--ant-color-primary);
 }
 

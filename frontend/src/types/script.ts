@@ -6,6 +6,7 @@ import type {
   MaaConfig,
   GeneralConfig,
   OkwwConfig,
+  OkNteConfig,
   SrcConfig,
   MaaEndConfig,
   M9AConfig,
@@ -18,9 +19,10 @@ import type {
   SanityTaskType,
 } from '@/utils/maaEndProtocolSpace'
 
-export type ScriptType = 'MAA' | 'General' | 'Okww' | 'SRC' | 'MaaEnd' | 'M9A' | 'HSR'
+export type ScriptType = 'MAA' | 'General' | 'Okww' | 'OkNte' | 'SRC' | 'MaaEnd' | 'M9A' | 'HSR'
 
 export type OkwwScriptConfig = OkwwConfig
+export type OkNteScriptConfig = OkNteConfig
 // MAA脚本配置
 export interface MAAScriptConfig {
   Info: {
@@ -203,7 +205,15 @@ export interface Script {
   id: string
   type: ScriptType
   name: string
-  config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig | M9AConfig | HSRConfig
+  config:
+    | MaaConfig
+    | GeneralConfig
+    | OkwwConfig
+    | OkNteConfig
+    | SrcConfig
+    | MaaEndConfig
+    | M9AConfig
+    | HSRConfig
   users: User[]
 }
 
@@ -298,6 +308,7 @@ export interface AddScriptResponse {
     | MAAScriptConfig
     | GeneralScriptConfig
     | OkwwScriptConfig
+    | OkNteScriptConfig
     | SRCScriptConfig
     | MaaEndScriptConfig
     | M9AScriptConfig
@@ -311,6 +322,7 @@ export interface ScriptIndexItem {
     | 'MaaConfig'
     | 'GeneralConfig'
     | 'OkwwConfig'
+    | 'OkNteConfig'
     | 'SrcConfig'
     | 'MaaEndConfig'
     | 'M9AConfig'
@@ -328,6 +340,7 @@ export interface GetScriptsResponse {
     | MAAScriptConfig
     | GeneralScriptConfig
     | OkwwScriptConfig
+    | OkNteScriptConfig
     | SRCScriptConfig
     | MaaEndScriptConfig
     | M9AScriptConfig
@@ -340,7 +353,15 @@ export interface ScriptDetail {
   uid: string
   type: ScriptType
   name: string
-  config: MaaConfig | GeneralConfig | OkwwConfig | SrcConfig | MaaEndConfig | M9AConfig | HSRConfig
+  config:
+    | MaaConfig
+    | GeneralConfig
+    | OkwwConfig
+    | OkNteConfig
+    | SrcConfig
+    | MaaEndConfig
+    | M9AConfig
+    | HSRConfig
   users?: User[]
   createTime?: string
 }

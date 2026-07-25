@@ -6,6 +6,7 @@ import {
   type MaaEndConfig,
   type M9AConfig,
   type OkwwConfig,
+  type OkNteConfig,
   type SrcConfig,
   type HSRConfig,
   type HSRStageOptionsData,
@@ -23,6 +24,7 @@ type ScriptListConfig =
   | MaaConfig
   | GeneralConfig
   | OkwwConfig
+  | OkNteConfig
   | SrcConfig
   | MaaEndConfig
   | M9AConfig
@@ -36,6 +38,7 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   MaaEnd: ScriptCreateIn.type.MAA_END,
   M9A: ScriptCreateIn.type.M9A,
   Okww: ScriptCreateIn.type.OKWW,
+  OkNte: ScriptCreateIn.type.OK_NTE,
   HSR: ScriptCreateIn.type.HSR,
   General: ScriptCreateIn.type.GENERAL,
 }
@@ -44,6 +47,7 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   MaaConfig: 'MAA',
   SrcConfig: 'SRC',
   OkwwConfig: 'Okww',
+  OkNteConfig: 'OkNte',
   MaaEndConfig: 'MaaEnd',
   M9AConfig: 'M9A',
   HSRConfig: 'HSR',
@@ -908,7 +912,10 @@ export function useScriptApi() {
                             : false,
                       },
                     }
-                  } else if (userIndex.type === 'OkwwUserConfig' && userData) {
+                  } else if (
+                    (userIndex.type === 'OkwwUserConfig' || userIndex.type === 'OkNteUserConfig') &&
+                    userData
+                  ) {
                     const okwwUserData = userData as any
                     return {
                       id: userIndex.uid,
@@ -959,7 +966,9 @@ export function useScriptApi() {
                         TaskIndex:
                           okwwUserData.Task?.TaskIndex !== undefined
                             ? okwwUserData.Task.TaskIndex
-                            : 1,
+                            : userIndex.type === 'OkNteUserConfig'
+                              ? 2
+                              : 1,
                         ExitOnFinish:
                           okwwUserData.Task?.ExitOnFinish !== undefined
                             ? okwwUserData.Task.ExitOnFinish
