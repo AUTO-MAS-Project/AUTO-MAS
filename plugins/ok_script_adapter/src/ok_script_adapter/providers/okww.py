@@ -19,6 +19,9 @@
 from ..common.provider import OkScriptProvider, OkScriptTaskOption
 
 
+OK_SCRIPT_PROVIDER_PROFILE_ABI_VERSION = 1
+
+
 OKWW_PROVIDER = OkScriptProvider(
     resource_name="ok-ww",
     display_name="鸣潮",

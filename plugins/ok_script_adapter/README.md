@@ -21,6 +21,19 @@ packaged deployment AUTO-MAS discovers the entry point through its isolated plug
 site-packages directory. Do not install the adapter into the system Python or add a
 global proxy setting.
 
+## Built-in Provider Profiles
+
+OK-EF, OK-WW, and OK-NTE remain built-in profiles of this single distribution; they
+do not register extra `OkScript` adapters or plugin entry points. Their modules load
+only when a matching resource name or root-layout check needs them. A profile import
+failure or an internal ABI mismatch disables only that profile for the current plugin
+lifecycle, while generic project parsing and other profiles remain available.
+
+The profile ABI is internal to `automas_plugin_ok_script_adapter`. Third-party
+provider entry points, meta-packages, and a public extension ABI are intentionally not
+supported yet. On plugin stop or reload, the adapter clears its in-memory profile
+results so the next lifecycle can retry a corrected local installation.
+
 ## Enable and Verify
 
 Enable the `ok_script_adapter` instance in Plugin Management, then create an

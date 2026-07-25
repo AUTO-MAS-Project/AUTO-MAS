@@ -25,6 +25,9 @@ from ..common.provider import (
 from .okef_report import OkefDailySummaryReportHandler
 
 
+OK_SCRIPT_PROVIDER_PROFILE_ABI_VERSION = 1
+
+
 OKEF_PROVIDER = OkScriptProvider(
     resource_name="ok-ef",
     display_name="明日方舟终末地",
