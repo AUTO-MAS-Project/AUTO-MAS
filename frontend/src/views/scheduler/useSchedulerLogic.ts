@@ -119,6 +119,14 @@ const messageModalVisible = ref(false)
 const currentMessage = ref<TaskMessage | null>(null)
 const messageResponse = ref('')
 
+interface StartedTaskTracking {
+  taskId: string
+  selectedTaskId: string
+  selectedMode: TaskCreateIn.mode
+  taskLabel: string
+  modeLabel: string
+}
+
 // 初始化标志 - 确保某些操作只执行一次
 let _initialized = false
 let _watchInitialized = false
@@ -225,6 +233,35 @@ export function useSchedulerLogic() {
     schedulerTabs.value.push(tab)
     activeSchedulerTab.value = tab.key
 
+    return tab
+  }
+
+  const trackStartedTask = ({
+    taskId,
+    selectedTaskId,
+    selectedMode,
+    taskLabel,
+    modeLabel,
+  }: StartedTaskTracking) => {
+    const existingTab = schedulerTabs.value.find(tab => tab.websocketId === taskId)
+    if (existingTab) {
+      activeSchedulerTab.value = existingTab.key
+      subscribeToTask(existingTab)
+      return existingTab
+    }
+
+    const tab = addSchedulerTab({
+      title: taskLabel,
+      status: '运行',
+      websocketId: taskId,
+      selectedTaskId,
+    })
+    tab.selectedMode = selectedMode
+    tab.runningTaskLabel = taskLabel
+    tab.runningModeLabel = modeLabel
+    tab.logMode = 'follow'
+    subscribeToTask(tab)
+    saveTabsToStorage(schedulerTabs.value)
     return tab
   }
 
@@ -1251,6 +1288,7 @@ export function useSchedulerLogic() {
     removeAllNonRunningTabs,
 
     // 任务操作
+    trackStartedTask,
     startTask,
     stopTask,
     handleTaskSelectionChange,
