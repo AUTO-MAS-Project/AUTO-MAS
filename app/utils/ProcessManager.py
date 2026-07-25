@@ -71,12 +71,14 @@ def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
 
 
 def is_process_running(process_name: str) -> bool:
-    """检查指定进程名是否正在运行"""
+    """检查指定进程名是否正在运行且存在可见窗口"""
 
     for proc in psutil.process_iter(["name"]):
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
             if proc.info.get("name") == process_name:
-                return True
+                for hwnd in get_window_handles(proc.pid):
+                    if win32gui.IsWindowVisible(hwnd):
+                        return True
     return False
 
 
