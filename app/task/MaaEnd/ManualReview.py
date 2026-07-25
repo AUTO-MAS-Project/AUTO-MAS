@@ -29,7 +29,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.emulator import DeviceBase
 from app.services import System
-from app.utils import get_logger, ProcessManager
+from app.utils import get_logger, ProcessManager, is_process_running
 from app.utils.constants import UTC4
 from .tools import login
 
@@ -109,15 +109,25 @@ class ManualReviewTask(TaskExecuteBase):
             try:
                 self.script_info.log = "正在启动游戏..."
                 if self.emulator_manager is None:
-                    logger.info(
-                        f"启动终末地: {self.script_config.get('Game', 'Path')} - {self.script_config.get('Game', 'Arguments')}"
-                    )
-                    await self.game_process_manager.open_process(
-                        self.script_config.get("Game", "Path"),
-                        *str(self.script_config.get("Game", "Arguments")).split(" "),
-                    )
+                    if is_process_running("Endfield.exe"):
+                        logger.info(
+                            "检测到终末地客户端进程已在运行，跳过由 MAS 重复启动游戏"
+                        )
+                        self.script_info.log = "检测到游戏已在运行，跳过启动游戏"
+                    else:
+                        logger.info(
+                            f"启动终末地: {self.script_config.get('Game', 'Path')} - {self.script_config.get('Game', 'Arguments')}"
+                        )
+                        await self.game_process_manager.open_process(
+                            self.script_config.get("Game", "Path"),
+                            *str(self.script_config.get("Game", "Arguments")).split(
+                                " "
+                            ),
+                        )
+                        await asyncio.sleep(
+                            self.script_config.get("Game", "WaitTime")
+                        )
                     emulator_info = None
-                    await asyncio.sleep(self.script_config.get("Game", "WaitTime"))
                 else:
                     logger.info(
                         f"启动模拟器: {self.script_config.get('Game', 'EmulatorIndex')}"
@@ -154,16 +164,16 @@ class ManualReviewTask(TaskExecuteBase):
             self.script_info.log = (
                 "正在启动游戏...\n游戏启动成功\n正在登录「明日方舟：终末地」..."
             )
-            if self.cur_user_config.get("Info", "Id") == "" or await login(
-                self.cur_user_config.get("Info", "Id"),
-                self.cur_user_config.get("Info", "Password"),
-                emulator_info,
-            ):
+            try:
+                if self.cur_user_config.get("Info", "Id") != "":
+                    await login(
+                        self.cur_user_config.get("Info", "Id"), emulator_info
+                    )
                 self.run_book["SignIn"] = True
                 break
-            else:
+            except RuntimeError as e:
                 logger.error(
-                    f"用户: {self.cur_user_item.user_id} - 「明日方舟：终末地」登录失败"
+                    f"用户: {self.cur_user_item.user_id} - 「明日方舟：终末地」登录失败: {e}"
                 )
                 self.script_info.log = "正在启动模拟器\n模拟器已启动，正在登录「明日方舟：终末地」...\n「明日方舟：终末地」登录失败\n正在中止相关程序"
 
@@ -177,7 +187,7 @@ class ManualReviewTask(TaskExecuteBase):
                         "message_id": uid,
                         "type": "Question",
                         "title": "操作提示",
-                        "message": "未能正确登录到「崩坏·星穹铁道」, 是否重试？",
+                        "message": "未能正确登录到「明日方舟：终末地」, 是否重试？",
                         "options": ["是", "否"],
                     },
                 )
