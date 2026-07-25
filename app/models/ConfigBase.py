@@ -324,16 +324,20 @@ class FileValidator(ValidatorBase):
         except (OSError, ValueError):
             return ""
         if len(resolved.parts) == 1:
-            return ""
+            raise ValueError("不允许将驱动器根目录作为配置路径")
         for forbidden in (*FORBIDDEN_PATH_PREFIXES, Path.cwd().resolve()):
             if (
                 resolved == forbidden
                 or resolved.is_relative_to(forbidden)
                 or forbidden.is_relative_to(resolved)
             ):
-                return ""
+                raise ValueError(
+                    f"不允许将系统目录或项目根目录作为配置路径: {value}"
+                )
         if resolved in FORBIDDEN_PATH_EXACT:
-            return ""
+            raise ValueError(
+                f"不允许将系统程序目录作为配置路径: {value}"
+            )
         return resolved.as_posix()
 
 
@@ -380,16 +384,20 @@ class FolderValidator(ValidatorBase):
         except (OSError, ValueError):
             return ""
         if len(resolved.parts) == 1:
-            return ""
+            raise ValueError("不允许将驱动器根目录作为配置路径")
         for forbidden in (*FORBIDDEN_PATH_PREFIXES, Path.cwd().resolve()):
             if (
                 resolved == forbidden
                 or resolved.is_relative_to(forbidden)
                 or forbidden.is_relative_to(resolved)
             ):
-                return ""
+                raise ValueError(
+                    f"不允许将系统目录或项目根目录作为配置路径: {value}"
+                )
         if resolved in FORBIDDEN_PATH_EXACT:
-            return ""
+            raise ValueError(
+                f"不允许将系统程序目录作为配置路径: {value}"
+            )
         return resolved.as_posix()
 
 
@@ -700,7 +708,11 @@ class ConfigItem:
                 self.value = dpapi_encrypt(self.value)
 
         if not self.validator.validate(self.value):
-            self.value = self.validator.correct(self.value)
+            try:
+                self.value = self.validator.correct(self.value)
+            except Exception:
+                self.value = old_value
+                raise
 
         changed = self.value != old_value
         if changed and len(self._slots) > 0:
@@ -712,11 +724,14 @@ class ConfigItem:
         获取配置项值
         """
 
-        v = (
-            self.value
-            if self.validator.validate(self.value)
-            else self.validator.correct(self.value)
-        )
+        try:
+            v = (
+                self.value
+                if self.validator.validate(self.value)
+                else self.validator.correct(self.value)
+            )
+        except Exception:
+            v = ""
 
         if isinstance(self.validator, EncryptValidator) and if_decrypt:
             return dpapi_decrypt(v)

@@ -131,9 +131,76 @@ class ToolsConfig_ArknightsPC(BaseModel):
     Status: str | None = Field(default=None, description="工具状态 Tag")
 
 
+class ToolsConfig_GameSign(BaseModel):
+    Enabled: bool | None = Field(default=None, description="是否启用游戏签到")
+    NotifyEnabled: bool | None = Field(default=None, description="签到后是否发送通知")
+    WindowStart: str | None = Field(default=None, description="签到窗口起点 HH:mm")
+    WindowEnd: str | None = Field(default=None, description="签到窗口终点 HH:mm")
+    RunOnStartup: bool | None = Field(default=None, description="启动时运行")
+    ScheduledRun: bool | None = Field(default=None, description="定时运行")
+    AutoStart: bool | None = Field(default=None, description="是否立即开始")
+    LastSignDate: str | None = Field(default=None, description="上次签到日期")
+    ScheduledTime: str | None = Field(default=None, description="今日计划签到时间")
+    Status: str | None = Field(default=None, description="签到状态标签")
+    Result: str | None = Field(default=None, description="签到结果 JSON")
+
+
+class GameSignAccountGroupConfig(BaseModel):
+    """游戏签到账号组配置"""
+
+    Name: str | None = Field(default=None, description="账号组名称")
+    Enabled: bool | None = Field(default=None, description="是否启用")
+    MiyousheToken: str | None = Field(default=None, description="米游社登录凭证")
+    KuroToken: str | None = Field(default=None, description="库街区登录凭证")
+    SklandToken: str | None = Field(default=None, description="森空岛登录凭证")
+
+
+class GameSignAccountCreateOut(OutBase):
+    """游戏签到账号组创建响应"""
+
+    accountId: str = Field(default="", description="账号组 UUID")
+    data: GameSignAccountGroupConfig = Field(
+        default_factory=GameSignAccountGroupConfig, description="账号组配置"
+    )
+
+
+class GameSignAccountGetIn(BaseModel):
+    """游戏签到账号组查询请求"""
+
+    accountId: str = Field(..., description="账号组 UUID")
+
+
+class GameSignAccountsListOut(OutBase):
+    """游戏签到账号组列表响应"""
+
+    data: Dict[str, Any] = Field(default_factory=dict, description="账号组列表")
+
+
+class GameSignAccountUpdateIn(BaseModel):
+    """游戏签到账号组更新请求"""
+
+    accountId: str = Field(..., description="账号组 UUID")
+    data: GameSignAccountGroupConfig = Field(..., description="账号组配置")
+
+
+class GameSignAccountDeleteIn(BaseModel):
+    """游戏签到账号组删除请求"""
+
+    accountId: str = Field(..., description="账号组 UUID")
+
+
+class GameSignAccountReorderIn(BaseModel):
+    """游戏签到账号组排序请求"""
+
+    order: list[str] = Field(..., description="账号组 UUID 顺序列表")
+
+
 class ToolsConfig(BaseModel):
     ArknightsPC: ToolsConfig_ArknightsPC | None = Field(
         default=None, description="明日方舟PC工具配置"
+    )
+    GameSign: ToolsConfig_GameSign | None = Field(
+        default=None, description="游戏社区签到配置"
     )
 
 
@@ -192,6 +259,9 @@ class GlobalConfig_Start(BaseModel):
 class GlobalConfig_UI(BaseModel):
     IfShowTray: Optional[bool] = Field(default=None, description="是否常态显示托盘图标")
     IfToTray: Optional[bool] = Field(default=None, description="是否最小化到托盘")
+    IfHideCloseButton: Optional[bool] = Field(
+        default=None, description="是否隐藏主窗口关闭按钮"
+    )
 
 
 class GlobalConfig_Notify(BaseModel):
@@ -518,7 +588,6 @@ class GeneralUserConfig(BaseModel):
 
 class OkwwUserConfig_Task(BaseModel):
     TaskIndex: Optional[int] = Field(default=None, description="启动后执行第 N 个任务（-t N，从 1 开始）")
-    ExitOnFinish: Optional[bool] = Field(default=None, description="任务结束后退出（-e）")
 
 
 class OkwwUserConfig_Info(GeneralUserConfig_Info):
@@ -664,47 +733,21 @@ class OkwwConfig_Info(GeneralConfig_Info):
 
 
 class OkwwConfig_Script(BaseModel):
-    """OK-WW 脚本配置"""
-
-    ScriptPath: Optional[str] = Field(default=None, description="脚本可执行文件路径")
-    Arguments: Optional[str] = Field(default=None, description="脚本启动附加命令参数")
-    IfTrackProcess: Optional[bool] = Field(
-        default=None, description="是否追踪脚本子进程"
-    )
-    TrackProcessName: Optional[str] = Field(default=None, description="追踪进程名称")
-    TrackProcessExe: Optional[str] = Field(default=None, description="追踪进程文件路径")
-    TrackProcessCmdline: Optional[str] = Field(
-        default=None, description="追踪进程启动命令行参数"
-    )
-    ConfigPath: Optional[str] = Field(default=None, description="配置文件路径")
-    ConfigPathMode: Optional[Literal["File", "Folder"]] = Field(
-        default=None, description="配置文件类型: 单个文件, 文件夹"
-    )
-    UpdateConfigMode: Optional[Literal["Never", "Success", "Failure", "Always"]] = (
-        Field(
-            default=None,
-            description="更新配置时机, 从不, 仅成功时, 仅失败时, 任务结束时",
-        )
-    )
-    LogPath: Optional[str] = Field(default=None, description="日志文件路径")
-    LogPathFormat: Optional[str] = Field(default=None, description="日志文件名格式")
-    LogTimeStart: Optional[int] = Field(default=None, description="日志时间戳开始位置")
-    LogTimeEnd: Optional[int] = Field(default=None, description="日志时间戳结束位置")
-    LogTimeFormat: Optional[str] = Field(default=None, description="日志时间戳格式")
+    """OK-WW 脚本配置（路径/进程/日志等由 RootPath 派生，不暴露为可配置字段）"""
 
 
-class OkwwConfig_Game(GeneralConfig_Game):
+class OkwwConfig_Game(BaseModel):
     """OK-WW 游戏配置（复用通用字段）"""
 
-    Type: Optional[Literal["Client", "URL"]] = Field(
-        default=None, description="类型: PC端, URL协议"
+    Enabled: Optional[bool] = Field(
+        default=None, description="游戏相关功能是否启用"
     )
     LaunchBeforeTask: Optional[bool] = Field(
         default=None, description="任务开始前是否由 MAS 启动游戏"
     )
-    CloseOnFinish: Optional[bool] = Field(
-        default=None, description="任务结束后是否关闭游戏"
-    )
+    Path: Optional[str] = Field(default=None, description="游戏程序路径")
+    Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
+    WaitTime: Optional[int] = Field(default=None, description="游戏等待启动时间")
 
 
 class OkwwConfig_Run(GeneralConfig_Run):
@@ -1348,6 +1391,9 @@ class M9AUserConfig_Task(BaseModel):
 
 class M9AUserConfig_Data(BaseModel):
     LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
+    LastPsychubeDate: Optional[str] = Field(default=None, description="上次完成每日心相日期，格式 YYYY-MM-DD")
+    LastLimboMonth: Optional[str] = Field(default=None, description="上次完成自动深眠月份，格式 YYYY-MM")
+    LastLucidscapeMonth: Optional[str] = Field(default=None, description="上次完成自动醒梦月份，格式 YYYY-MM")
     ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
     IfPassCheck: Optional[bool] = Field(default=None, description="是否通过检查")
 
@@ -1385,6 +1431,8 @@ class M9AConfig_Run(BaseModel):
     RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
     RunTimeLimit: Optional[int] = Field(default=None, description="运行时间限制（分钟）")
     IfAutoUpdateAfterQueue: Optional[bool] = Field(default=None, description="是否在队列结束后自动更新M9A")
+    IfPsychubeDailyOnce: Optional[bool] = Field(default=None, description="每日心相每日只执行一次")
+    IfSleepDreamMonthlyOnce: Optional[bool] = Field(default=None, description="深眠浅梦每月只执行一次")
 
 
 class M9AConfig(BaseModel):

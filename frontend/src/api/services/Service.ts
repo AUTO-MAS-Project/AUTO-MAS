@@ -18,6 +18,12 @@ import type { EmulatorReorderIn } from '../models/EmulatorReorderIn';
 import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
 import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
+import type { GameSignAccountCreateOut } from '../models/GameSignAccountCreateOut';
+import type { GameSignAccountDeleteIn } from '../models/GameSignAccountDeleteIn';
+import type { GameSignAccountGetIn } from '../models/GameSignAccountGetIn';
+import type { GameSignAccountReorderIn } from '../models/GameSignAccountReorderIn';
+import type { GameSignAccountsListOut } from '../models/GameSignAccountsListOut';
+import type { GameSignAccountUpdateIn } from '../models/GameSignAccountUpdateIn';
 import type { GetStageIn } from '../models/GetStageIn';
 import type { HistoryDataGetIn } from '../models/HistoryDataGetIn';
 import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
@@ -1576,6 +1582,122 @@ export class Service {
         });
     }
     /**
+     * 手动触发游戏社区签到
+     * 手动触发游戏社区签到
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static manualGameSignApiToolsSignPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign',
+        });
+    }
+    /**
+     * 获取所有游戏签到账号组
+     * 获取所有游戏签到账号组
+     * @returns GameSignAccountsListOut Successful Response
+     * @throws ApiError
+     */
+    public static listGameSignAccountsApiToolsSignAccountListPost(): CancelablePromise<GameSignAccountsListOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/list',
+        });
+    }
+    /**
+     * 添加游戏签到账号组
+     * 添加游戏签到账号组
+     * @returns GameSignAccountCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static addGameSignAccountApiToolsSignAccountAddPost(): CancelablePromise<GameSignAccountCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/add',
+        });
+    }
+    /**
+     * 获取游戏签到账号组详情
+     * 获取游戏签到账号组详情
+     * @param requestBody
+     * @returns GameSignAccountCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static getGameSignAccountApiToolsSignAccountGetPost(
+        requestBody: GameSignAccountGetIn,
+    ): CancelablePromise<GameSignAccountCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 更新游戏签到账号组配置
+     * 更新游戏签到账号组配置
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updateGameSignAccountApiToolsSignAccountUpdatePost(
+        requestBody: GameSignAccountUpdateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 删除游戏签到账号组
+     * 删除游戏签到账号组
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static deleteGameSignAccountApiToolsSignAccountDeletePost(
+        requestBody: GameSignAccountDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 调整游戏签到账号组顺序
+     * 调整游戏签到账号组顺序
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static reorderGameSignAccountsApiToolsSignAccountReorderPost(
+        requestBody: GameSignAccountReorderIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/reorder',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 查询配置
      * 查询配置
      * @returns SettingGetOut Successful Response
@@ -1747,13 +1869,44 @@ export class Service {
     }
     /**
      * 下载更新
+     * @param version
      * @returns OutBase Successful Response
      * @throws ApiError
      */
-    public static downloadUpdateApiUpdateDownloadPost(): CancelablePromise<OutBase> {
+    public static downloadUpdateApiUpdateDownloadPost(
+        version?: (string | null),
+    ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/update/download',
+            query: {
+                'version': version,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 取消下载更新
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static cancelUpdateDownloadApiUpdateCancelDownloadPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/update/cancel-download',
+        });
+    }
+    /**
+     * 切换下载源到 CNB
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static switchUpdateDownloadToCnbApiUpdateSwitchToCnbPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/update/switch-to-cnb',
         });
     }
     /**

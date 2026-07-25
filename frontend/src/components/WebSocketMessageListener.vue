@@ -17,7 +17,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { Modal, Button } from 'ant-design-vue'
 import { useWebSocket, type WebSocketBaseMessage } from '@/composables/useWebSocket'
 
@@ -41,11 +41,6 @@ let subscriptionId: string
 const modalQueue = ref<ModalData[]>([])
 const currentModal = ref<ModalData | null>(null)
 const isModalOpen = ref(false)
-
-// 检查是否在 Electron 环境中
-const isElectron = () => {
-  return typeof window !== 'undefined' && (window as any).electronAPI
-}
 
 // 激活窗口到前台
 const focusWindow = async () => {
@@ -235,7 +230,7 @@ const handleStringMessage = (data: string) => {
     const parsed = JSON.parse(data)
     logger.debug(`解析后的JSON: ${JSON.stringify(parsed)}`)
     handleObjectMessage(parsed)
-  } catch (error) {
+  } catch {
     // 不是JSON格式，作为普通字符串处理
     logger.debug(`普通字符串消息: ${data}`)
   }

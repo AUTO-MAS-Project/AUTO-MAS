@@ -43,7 +43,7 @@ const editorOptions = {
         horizontal: 'auto',
         useShadows: false,
     },
-}
+} as const
 
 // 处理编辑器挂载
 const handleEditorMount = (editor: any) => {

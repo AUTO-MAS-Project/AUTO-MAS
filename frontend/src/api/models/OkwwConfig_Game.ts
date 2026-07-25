@@ -50,9 +50,5 @@ export type OkwwConfig_Game = {
      * 任务开始前是否由 MAS 启动游戏
      */
     LaunchBeforeTask?: (boolean | null);
-    /**
-     * 任务结束后是否关闭游戏
-     */
-    CloseOnFinish?: (boolean | null);
 };
 

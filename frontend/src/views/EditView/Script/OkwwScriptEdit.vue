@@ -7,7 +7,7 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img src="../../../assets/ok-ww.ico" alt="ok-ww" class="breadcrumb-logo" />
+            <img src="@/assets/ok-ww.ico" alt="ok-ww" class="breadcrumb-logo" />
             编辑脚本
           </div>
         </a-breadcrumb-item>
@@ -90,10 +90,10 @@
             <h3>游戏配置</h3>
           </div>
           <a-row :gutter="24" class="game-control-row">
-            <a-col :span="8">
+            <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="游戏管理总开关：关闭后 MAS 不启动也不关闭游戏；开启后可分别配置任务前启动与任务后关闭">
+                  <a-tooltip title="开启后由 MAS 接管游戏启停">
                     <span class="form-label">
                       启用游戏配置
                       <QuestionCircleOutlined class="help-icon" />
@@ -104,51 +104,7 @@
                   v-model:value="okwwConfig.Game.Enabled"
                   size="large"
                   class="modern-input"
-                  @change="handleGameEnabledChange"
-                >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip title="任务开始前是否由 MAS 启动游戏并等待">
-                    <span class="form-label">
-                      任务前启动游戏
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-select
-                  v-model:value="okwwConfig.Game.LaunchBeforeTask"
-                  size="large"
-                  class="modern-input"
-                  :disabled="!okwwConfig.Game.Enabled"
-                  @change="handleChange('Game', 'LaunchBeforeTask', $event)"
-                >
-                  <a-select-option :value="true">是</a-select-option>
-                  <a-select-option :value="false">否</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <a-tooltip title="任务成功结束后是否由 MAS 关闭游戏；失败重试前若需重拉游戏也会尝试关闭">
-                    <span class="form-label">
-                      任务后关闭游戏
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-select
-                  v-model:value="okwwConfig.Game.CloseOnFinish"
-                  size="large"
-                  class="modern-input"
-                  :disabled="!okwwConfig.Game.Enabled"
-                  @change="handleChange('Game', 'CloseOnFinish', $event)"
+                  @change="handleChange('Game', 'Enabled', $event)"
                 >
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
@@ -163,7 +119,9 @@
                 <template #label>
                   <span class="form-label">
                     游戏根目录
-                    <span class="label-hint">选择 <strong>Wuthering Waves Game</strong>（官方）或其下 <strong>Client</strong>/<strong>Binaries</strong>/<strong>Win64</strong> 目录，自动定位 Client-Win64-Shipping.exe；WeGame 版选择 <strong>Client</strong>/<strong>Binaries</strong>/<strong>Win64</strong> 即可</span>
+                    <span class="label-hint"
+                      >选任意层级目录，自动定位 <strong>Client-Win64-Shipping.exe</strong></span
+                    >
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">
@@ -309,7 +267,11 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import { ArrowLeftOutlined, FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import {
+  ArrowLeftOutlined,
+  FolderOpenOutlined,
+  QuestionCircleOutlined,
+} from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 
 const logger = window.electronAPI.getLogger('ok-ww脚本编辑')
@@ -322,41 +284,19 @@ const pageLoading = ref(true)
 const isSaving = ref(false)
 const isInitializing = ref(true)
 
+// ══ okww 项目结构常量（需与 app/task/Okww/AutoProxy.py 中的 _OKWW_REL_* 保持同步）══
+const OKWW_EXE_NAME = 'ok-ww.exe'
+
 interface OkwwInfoForm {
   Name: string
   RootPath: string
 }
 
-interface OkwwScriptForm {
-  ScriptPath: string
-  Arguments: string
-  IfTrackProcess: boolean
-  TrackProcessName: string
-  TrackProcessExe: string
-  TrackProcessCmdline: string
-  ConfigPath: string
-  ConfigPathMode: 'File' | 'Folder'
-  UpdateConfigMode: 'Never' | 'Success' | 'Failure' | 'Always'
-  LogPath: string
-  LogPathFormat: string
-  LogTimeStart: number
-  LogTimeEnd: number
-  LogTimeFormat: string
-}
-
 interface OkwwGameForm {
   Enabled: boolean
-  LaunchBeforeTask: boolean
-  Type: 'Client' | 'URL'
   Path: string
-  URL: string
-  ProcessName: string
   Arguments: string
   WaitTime: number
-  IfForceClose: boolean
-  CloseOnFinish: boolean
-  EmulatorId: string
-  EmulatorIndex: string
 }
 
 interface OkwwRunForm {
@@ -367,7 +307,7 @@ interface OkwwRunForm {
 
 interface OkwwScriptConfigForm {
   Info: OkwwInfoForm
-  Script: OkwwScriptForm
+  Script: Record<string, never>
   Game: OkwwGameForm
   Run: OkwwRunForm
 }
@@ -384,35 +324,12 @@ const formData = reactive({
 
 const okwwConfig = reactive<OkwwScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
-  Script: {
-    ScriptPath: '.',
-    Arguments: '',
-    IfTrackProcess: true,
-    TrackProcessName: 'pythonw.exe',
-    TrackProcessExe: '',
-    TrackProcessCmdline: '',
-    ConfigPath: '.',
-    ConfigPathMode: 'Folder',
-    UpdateConfigMode: 'Always',
-    LogPath: '.',
-    LogPathFormat: '',
-    LogTimeStart: 1,
-    LogTimeEnd: 23,
-    LogTimeFormat: '%Y-%m-%d %H:%M:%S,%f',
-  },
+  Script: {},
   Game: {
     Enabled: false,
-    LaunchBeforeTask: false,
-    Type: 'Client',
     Path: '.',
-    URL: '',
-    ProcessName: '',
     Arguments: '',
     WaitTime: 60,
-    IfForceClose: true,
-    CloseOnFinish: true,
-    EmulatorId: '-',
-    EmulatorIndex: '-',
   },
   Run: { ProxyTimesLimit: 0, RunTimesLimit: 1, RunTimeLimit: 60 },
 })
@@ -430,7 +347,10 @@ const WUWA_PATH_KEYWORDS = [
   { keyword: 'Binaries', suffix: 'Win64/Client-Win64-Shipping.exe' },
   { keyword: 'Client', suffix: 'Binaries/Win64/Client-Win64-Shipping.exe' },
   { keyword: 'Wuthering Waves Game', suffix: 'Client/Binaries/Win64/Client-Win64-Shipping.exe' },
-  { keyword: 'Wuthering Waves', suffix: 'Wuthering Waves Game/Client/Binaries/Win64/Client-Win64-Shipping.exe' },
+  {
+    keyword: 'Wuthering Waves',
+    suffix: 'Wuthering Waves Game/Client/Binaries/Win64/Client-Win64-Shipping.exe',
+  },
 ]
 
 const showPathRejectModal = (title: string, content: string) => {
@@ -438,11 +358,6 @@ const showPathRejectModal = (title: string, content: string) => {
 }
 
 const handleCancel = () => router.push('/scripts')
-
-const handleGameEnabledChange = async (enabled: boolean) => {
-  okwwConfig.Game.Enabled = enabled
-  await handleChange('Game', 'Enabled', enabled)
-}
 
 const handleChange = async (category: string, key: string, value: unknown) => {
   if (isInitializing.value || isSaving.value) return
@@ -461,50 +376,21 @@ const handleChange = async (category: string, key: string, value: unknown) => {
   }
 }
 
-const buildAutoPaths = (rootPath: string) => {
-  const norm = rootPath.replace(/\\/g, '/').replace(/\/+$/g, '')
-  return {
-    rootPath: norm,
-    scriptPath: `${norm}/ok-ww.exe`,
-    configPath: `${norm}/data/apps/ok-ww/working/configs`,
-    logPath: `${norm}/data/apps/ok-ww/working/logs/ok-script.log`,
-    trackProcessExe: `${norm}/data/apps/ok-ww/python/pythonw.exe`,
-  }
-}
-
 const applyRootPathDefaults = async (rootPath: string) => {
   if (!rootPath || rootPath === '.') {
     message.warning('请先选择脚本根目录')
     return
   }
-  const { rootPath: norm, scriptPath, configPath, logPath, trackProcessExe } = buildAutoPaths(rootPath)
+  const norm = rootPath.replace(/\\/g, '/').replace(/\/+$/g, '')
   okwwConfig.Info.RootPath = norm
-  okwwConfig.Script.ScriptPath = scriptPath
-  okwwConfig.Script.ConfigPath = configPath
-  okwwConfig.Script.LogPath = logPath
-  okwwConfig.Script.TrackProcessName = 'pythonw.exe'
-  okwwConfig.Script.TrackProcessExe = trackProcessExe
-  okwwConfig.Script.TrackProcessCmdline = ''
 
   isSaving.value = true
   try {
     const success = await updateScript(scriptId, {
       Info: { RootPath: norm },
-      Script: {
-        ScriptPath: scriptPath,
-        ConfigPathMode: 'Folder',
-        ConfigPath: configPath,
-        UpdateConfigMode: 'Always',
-        LogPath: logPath,
-        LogPathFormat: '',
-        IfTrackProcess: true,
-        TrackProcessName: 'pythonw.exe',
-        TrackProcessExe: trackProcessExe,
-        TrackProcessCmdline: '',
-      },
     })
     if (success) {
-      message.success('ok-ww 路径已自动匹配')
+      message.success('ok-ww 根目录已保存')
     }
   } finally {
     isSaving.value = false
@@ -544,9 +430,12 @@ const selectRootPath = async () => {
   const picked = await window.electronAPI.selectFolder()
   if (!picked) return
   const normalized = picked.replace(/\\/g, '/')
-  const exePath = normalized + '/ok-ww.exe'
+  const exePath = normalized + '/' + OKWW_EXE_NAME
   if (!(await window.electronAPI.fileExists(exePath))) {
-    showPathRejectModal('所选目录无效', '所选目录下未找到 ok-ww.exe，请选择包含 ok-ww.exe 的 OK-WW 脚本根目录。')
+    showPathRejectModal(
+      '所选目录无效',
+      `所选目录下未找到 ${OKWW_EXE_NAME}，请选择包含 ${OKWW_EXE_NAME} 的 OK-WW 脚本根目录。`
+    )
     return
   }
   formData.path = normalized
@@ -570,11 +459,10 @@ const selectGameRootPath = async () => {
     const candidateExe = prefix + keyword + '/' + suffix
     if (await window.electronAPI.fileExists(candidateExe)) {
       okwwConfig.Game.Path = candidateExe
-      okwwConfig.Game.Type = 'Client'
       isSaving.value = true
       try {
         await updateScript(scriptId, {
-          Game: { Path: okwwConfig.Game.Path, Type: 'Client' },
+          Game: { Path: okwwConfig.Game.Path },
         })
         message.success('已自动匹配游戏路径至 Client-Win64-Shipping.exe')
       } finally {
@@ -588,12 +476,12 @@ const selectGameRootPath = async () => {
   showPathRejectModal(
     '所选目录无效',
     '当前选择的路径不在鸣潮游戏目录内，无法自动匹配。\n\n请选择以下任一目录：\n' +
-    '  • Win64  —— 位于 Client\\Binaries\\Win64\n' +
-    '  • Binaries—— 位于 Client\\Binaries\n' +
-    '  • Client —— 鸣潮客户端目录\n' +
-    '  • Wuthering Waves Game —— 官方启动器根目录\n' +
-    '  • Wuthering Waves —— 鸣潮总目录\n' +
-    '支持 WeGame 版（目录名为 Wuthering Waves(NNNNNNN)），选择其下的 Client/Binaries/Win64 即可。'
+      '  • Win64  —— 位于 Client\\Binaries\\Win64\n' +
+      '  • Binaries—— 位于 Client\\Binaries\n' +
+      '  • Client —— 鸣潮客户端目录\n' +
+      '  • Wuthering Waves Game —— 官方启动器根目录\n' +
+      '  • Wuthering Waves —— 鸣潮总目录\n' +
+      '支持 WeGame 版（目录名为 Wuthering Waves(NNNNNNN)），选择其下的 Client/Binaries/Win64 即可。'
   )
 }
 
@@ -643,17 +531,11 @@ onMounted(loadScript)
 }
 
 .config-card {
-  border-radius: 16px;
-  box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.08),
-    0 1px 3px rgba(0, 0, 0, 0.1);
-  border: 1px solid var(--ant-color-border-secondary);
   overflow: hidden;
 }
 
 .config-card :deep(.ant-card-head) {
   background: var(--ant-color-bg-container);
-  border-bottom: 2px solid var(--ant-color-border-secondary);
   padding: 24px 32px;
 }
 
@@ -670,13 +552,12 @@ onMounted(loadScript)
 
 .form-section {
   margin-bottom: 12px;
-  animation: fadeInUp 0.6s ease-out;
 }
 
 .section-header {
   margin-bottom: 6px;
   padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
+  border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
 .section-header h3 {
@@ -685,15 +566,6 @@ onMounted(loadScript)
   font-weight: 700;
   display: flex;
   align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
 }
 
 .form-label {
@@ -719,16 +591,10 @@ onMounted(loadScript)
   cursor: help;
 }
 
-.modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-}
-
 .path-input-group {
   display: flex;
-  border-radius: 8px;
   overflow: hidden;
-  border: 2px solid var(--ant-color-border);
+  border: 1px solid var(--ant-color-border);
 }
 
 .path-input {
@@ -770,16 +636,4 @@ onMounted(loadScript)
     padding: 20px;
   }
 }
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
 </style>
-

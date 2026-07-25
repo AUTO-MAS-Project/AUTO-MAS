@@ -101,20 +101,55 @@
                   </template>
                   添加用户
                 </a-button>
-                <a-popconfirm title="确定要删除这个脚本吗？" description="删除后将无法恢复，请谨慎操作" ok-text="确定" cancel-text="取消"
-                  @confirm="handleDelete(script)">
-                  <a-button danger size="middle" class="action-button delete-button">
+                <a-dropdown :trigger="['click']">
+                  <a-button
+                    size="middle"
+                    class="action-button"
+                    :loading="props.copyingScriptId === script.id"
+                    :disabled="Boolean(props.copyingScriptId)"
+                  >
                     <template #icon>
-                      <DeleteOutlined />
+                      <EllipsisOutlined />
                     </template>
-                    删除脚本
+                    更多
                   </a-button>
-                </a-popconfirm>
+                  <template #overlay>
+                    <a-menu>
+                      <a-menu-item key="copy" @click="handleCopy(script)">
+                        <CopyOutlined />
+                        复制脚本
+                      </a-menu-item>
+                      <a-menu-divider />
+                      <a-menu-item key="delete" danger @click="handleDeleteConfirm(script)">
+                        <DeleteOutlined />
+                        删除脚本
+                      </a-menu-item>
+                    </a-menu>
+                  </template>
+                </a-dropdown>
+                <a-tooltip :title="collapsedScriptIds.has(script.id) ? '展开用户' : '收起用户'">
+                  <a-button
+                    size="middle"
+                    class="action-button"
+                    :aria-label="collapsedScriptIds.has(script.id) ? '展开用户' : '收起用户'"
+                    @click="toggleUsersCollapsed(script.id)"
+                  >
+                    <template #icon>
+                      <DownOutlined v-if="collapsedScriptIds.has(script.id)" />
+                      <UpOutlined v-else />
+                    </template>
+                  </a-button>
+                </a-tooltip>
               </div>
             </div>
 
             <!-- 用户列表 -->
-            <div v-if="script.users && script.users.length > 0" class="users-section">
+            <div
+              v-if="
+                !collapsedScriptIds.has(script.id) && script.users && script.users.length > 0
+              "
+              class="users-section"
+            >
               <!-- 使用vuedraggable包装用户列表 -->
               <draggable v-model="script.users" item-key="id" :animation="200" ghost-class="user-ghost"
                 chosen-class="user-chosen" drag-class="user-drag" handle=".user-drag-handle" class="users-list"
@@ -184,16 +219,16 @@
                             {{ tag.text }}
                           </a-tag>
                         </div>
-                        <!-- 用户详细信息 - 通用脚本用户 -->
-                        <div v-if="script.type === 'General'" class="user-info-tags">
+                        <!-- 用户详细信息 - 后端提供 Tag 的脚本用户 -->
+                        <div
+                          v-if="
+                            script.type === 'General' ||
+                            script.type === 'Okww' ||
+                            script.type === 'OkNte'
+                          "
+                          class="user-info-tags"
+                        >
                           <!-- 直接使用后端提供的Tag字段 -->
-                          <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
-                            :title="tag.text" class="info-tag" :color="tag.color">
-                            {{ tag.text }}
-                          </a-tag>
-                        </div>
-                        <!-- 用户详细信息 - ok-script 脚本用户 -->
-                        <div v-if="script.type === 'Okww' || script.type === 'OkNte'" class="user-info-tags">
                           <a-tag v-for="(tag, index) in parseStatusTagList(user.Info.Tag)" :key="index"
                             :title="tag.text" class="info-tag" :color="tag.color">
                             {{ tag.text }}
@@ -205,6 +240,11 @@
                           <a-tag v-if="user.Info.Notes && user.Info.Notes !== '无' && user.Info.Notes.trim() !== ''"
                                  color="geekblue" class="info-tag" :title="user.Info.Notes">
                             {{ truncateText(user.Info.Notes, 10) }}
+                          </a-tag>
+
+                          <a-tag v-for="(tag, index) in getM9AOnceStatusTags(script, user)" :key="`m9a-once-${index}`"
+                                 :title="tag.text" class="info-tag" :color="tag.color">
+                            {{ tag.text }}
                           </a-tag>
 
                           <!-- 后端提供的Tag字段 -->
@@ -284,7 +324,7 @@
             </div>
 
             <!-- 空状态 -->
-            <div v-else class="empty-users">
+            <div v-else-if="!collapsedScriptIds.has(script.id)" class="empty-users">
               <div class="empty-content">
                 <img src="@/assets/NoData.png" alt="无数据" class="empty-image" />
               </div>
@@ -299,9 +339,13 @@
 <script setup lang="ts">
 import type { Script, User } from '../types/script'
 import {
+  CopyOutlined,
   DeleteOutlined,
+  DownOutlined,
   EditOutlined,
+  EllipsisOutlined,
   SettingOutlined,
+  UpOutlined,
   UserAddOutlined,
 } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
@@ -316,6 +360,7 @@ import { getTodayInTimezone, isDateEqual, getWeekdayInTimezone } from '@/utils/d
 interface Props {
   scripts: Script[]
   activeConnections: Map<string, { subscriptionId: string; websocketId: string }>
+  copyingScriptId?: string | null
   allPlansData?: Record<string, Record<string, any>>
   currentPlanData?: Record<string, any>
 }
@@ -324,6 +369,8 @@ interface Emits {
   (e: 'edit', script: Script): void
 
   (e: 'delete', script: Script): void
+
+  (e: 'copy', script: Script): void
 
   (e: 'addUser', script: Script): void
 
@@ -377,11 +424,41 @@ const STAGE_NAME_MAP: Record<string, string> = {
   'PR-D-2': '近/特芯片组',
 }
 
+const M9A_PSYCHUBE_NAMES = ['每日心相（意志解析）', '每日心相']
+const M9A_LIMBO_NAMES = ['自动深眠']
+const M9A_LUCIDSCAPE_NAMES = ['自动醒梦']
+
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
 // 本地脚本列表状态
 const localScripts = ref<Script[]>([])
+// 脚本用户列表收起状态 - 持久化到 localStorage，切换页面后仍保持
+const COLLAPSED_SCRIPTS_STORAGE_KEY = 'scripts.collapsedScriptIds'
+
+const loadCollapsedScriptIds = (): Set<string> => {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_SCRIPTS_STORAGE_KEY)
+    if (!raw) return new Set()
+    const parsed = JSON.parse(raw)
+    return new Set(Array.isArray(parsed) ? parsed.filter(id => typeof id === 'string') : [])
+  } catch {
+    return new Set()
+  }
+}
+
+const collapsedScriptIds = ref<Set<string>>(loadCollapsedScriptIds())
+
+const saveCollapsedScriptIds = () => {
+  try {
+    localStorage.setItem(
+      COLLAPSED_SCRIPTS_STORAGE_KEY,
+      JSON.stringify([...collapsedScriptIds.value])
+    )
+  } catch {
+    // 存储不可用时（如隐私模式）忽略，仅本次会话内生效
+  }
+}
 
 // 账号信息展开状态管理 - 使用用户ID作为key
 const expandedUserIds = ref<Set<string>>(new Set())
@@ -403,6 +480,44 @@ const handleEdit = (script: Script) => {
 const handleDelete = (script: Script) => {
   emit('delete', script)
 }
+
+const handleCopy = (script: Script) => {
+  emit('copy', script)
+}
+
+const handleDeleteConfirm = (script: Script) => {
+  Modal.confirm({
+    title: '确定要删除这个脚本吗？',
+    content: '删除后将无法恢复，请谨慎操作',
+    okText: '确定',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: () => handleDelete(script),
+  })
+}
+
+const toggleUsersCollapsed = (scriptId: string) => {
+  const next = new Set(collapsedScriptIds.value)
+  if (next.has(scriptId)) {
+    next.delete(scriptId)
+  } else {
+    next.add(scriptId)
+  }
+  collapsedScriptIds.value = next
+  saveCollapsedScriptIds()
+}
+
+const collapseAllUsers = () => {
+  collapsedScriptIds.value = new Set(localScripts.value.map(script => script.id))
+  saveCollapsedScriptIds()
+}
+
+const expandAllUsers = () => {
+  collapsedScriptIds.value = new Set()
+  saveCollapsedScriptIds()
+}
+
+defineExpose({ collapseAllUsers, expandAllUsers })
 
 const handleAddUser = (script: Script) => {
   emit('addUser', script)
@@ -664,6 +779,67 @@ const getServerDisplayName = (server: string): string => {
 // M9A服务器标签颜色映射
 const getM9AServerTagColor = (_resource: string): string => {
   return 'blue'
+}
+
+const getM9ATodayString = (): string => {
+  return new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+
+const getM9ACurrentMonthString = (): string => {
+  return getM9ATodayString().slice(0, 7)
+}
+
+const parseM9ATaskQueue = (queue: unknown): Array<{ name?: string }> => {
+  if (Array.isArray(queue)) return queue as Array<{ name?: string }>
+  if (typeof queue !== 'string') return []
+
+  try {
+    const parsed = JSON.parse(queue)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+const hasM9ATaskInQueue = (queue: Array<{ name?: string }>, names: string[]): boolean => {
+  return queue.some(item => item.name && names.includes(item.name))
+}
+
+const getM9AOnceStatusTags = (script: Script, user: User) => {
+  const runConfig = (script.config as any)?.Run || {}
+  const queue = parseM9ATaskQueue((user as any).Task?.Queue)
+  const data = (user as any).Data || {}
+  const tags: Array<{ text: string; color: string }> = []
+
+  if (data.IfPassCheck === false) {
+    return tags
+  }
+
+  if (runConfig.IfPsychubeDailyOnce && hasM9ATaskInQueue(queue, M9A_PSYCHUBE_NAMES)) {
+    const completed = data.LastPsychubeDate === getM9ATodayString()
+    tags.push({
+      text: `每日心相：${completed ? '已完成' : '未完成'}`,
+      color: completed ? 'green' : 'orange',
+    })
+  }
+
+  if (runConfig.IfSleepDreamMonthlyOnce) {
+    const hasLimbo = hasM9ATaskInQueue(queue, M9A_LIMBO_NAMES)
+    const hasLucidscape = hasM9ATaskInQueue(queue, M9A_LUCIDSCAPE_NAMES)
+    if (hasLimbo || hasLucidscape) {
+      const currentMonth = getM9ACurrentMonthString()
+      const completed =
+        (!hasLimbo || data.LastLimboMonth === currentMonth) &&
+        (!hasLucidscape || data.LastLucidscapeMonth === currentMonth)
+
+      tags.push({
+        text: `深眠浅梦：${completed ? '已完成' : '未完成'}`,
+        color: completed ? 'green' : 'orange',
+      })
+    }
+  }
+
+  return tags
 }
 
 // M9A剩余天数颜色（智能着色）
@@ -1262,10 +1438,6 @@ const onUserDragEnd = async (evt: any, script: Script) => {
   background: var(--ant-color-primary-bg);
   border-color: var(--ant-color-primary-hover);
   color: var(--ant-color-primary-hover);
-}
-
-.delete-button:hover {
-  background: linear-gradient(135deg, var(--ant-color-error), var(--ant-color-error-hover));
 }
 
 /* 用户区域 */

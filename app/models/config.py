@@ -52,6 +52,7 @@ from .ConfigBase import (
     OptionsValidator,
     MultipleOptionsValidator,
     RangeValidator,
+    StringValidator,
     VirtualConfigValidator,
     FileValidator,
     FolderValidator,
@@ -143,9 +144,6 @@ def _normalize_maaend_sanity_task_type(task_data: object) -> None:
         protocol_space_tab = task_data.get("ProtocolSpaceTab")
         if protocol_space_tab in MAAEND_SANITY_TASK_TYPES[:-1]:
             task_data["SanityTaskType"] = protocol_space_tab
-            return
-
-    task_data["SanityTaskType"] = MAAEND_SANITY_TASK_DEFAULTS["SanityTaskType"]
 
 
 class EmulatorConfig(ConfigBase):
@@ -1851,6 +1849,18 @@ class M9AUserConfig(ConfigBase):
         self.Data_LastProxyDate = ConfigItem(
             "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
         )
+        ## 上次完成每日心相日期
+        self.Data_LastPsychubeDate = ConfigItem(
+            "Data", "LastPsychubeDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        ## 上次完成自动深眠月份
+        self.Data_LastLimboMonth = ConfigItem(
+            "Data", "LastLimboMonth", "2000-01", DateTimeValidator("%Y-%m")
+        )
+        ## 上次完成自动醒梦月份
+        self.Data_LastLucidscapeMonth = ConfigItem(
+            "Data", "LastLucidscapeMonth", "2000-01", DateTimeValidator("%Y-%m")
+        )
         ## 代理次数
         self.Data_ProxyTimes = ConfigItem(
             "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
@@ -1982,6 +1992,14 @@ class M9AConfig(ConfigBase):
         ## 是否在队列结束后自动更新
         self.Run_IfAutoUpdateAfterQueue = ConfigItem(
             "Run", "IfAutoUpdateAfterQueue", False, BoolValidator()
+        )
+        ## 每日心相每日只执行一次
+        self.Run_IfPsychubeDailyOnce = ConfigItem(
+            "Run", "IfPsychubeDailyOnce", False, BoolValidator()
+        )
+        ## 深眠浅梦每月只执行一次
+        self.Run_IfSleepDreamMonthlyOnce = ConfigItem(
+            "Run", "IfSleepDreamMonthlyOnce", False, BoolValidator()
         )
 
         self.UserData = MultipleConfig([M9AUserConfig])
@@ -2230,7 +2248,6 @@ class OkwwUserConfig(ConfigBase):
         self.Task_TaskIndex = ConfigItem(
             "Task", "TaskIndex", 1, RangeValidator(1, 8)
         )
-        self.Task_ExitOnFinish = ConfigItem("Task", "ExitOnFinish", True, BoolValidator())
 
         ## Data ------------------------------------------------------------
         self.Data_LastProxyDate = ConfigItem(
@@ -2583,73 +2600,14 @@ class OkwwConfig(ConfigBase):
             "Info", "RootPath", "", FileValidator()
         )
 
-        ## Script ----------------------------------------------------------
-        self.Script_ScriptPath = ConfigItem(
-            "Script", "ScriptPath", "", FileValidator()
-        )
-        # Okww 运行参数建议由用户配置（-t / -e 由用户配置 Task 决定），但仍保留高级参数入口
-        self.Script_Arguments = ConfigItem(
-            "Script", "Arguments", "", AdvancedArgumentValidator()
-        )
-        self.Script_IfTrackProcess = ConfigItem(
-            "Script", "IfTrackProcess", True, BoolValidator()
-        )
-        self.Script_TrackProcessName = ConfigItem("Script", "TrackProcessName", "")
-        self.Script_TrackProcessExe = ConfigItem("Script", "TrackProcessExe", "")
-        self.Script_TrackProcessCmdline = ConfigItem(
-            "Script", "TrackProcessCmdline", "", ArgumentValidator()
-        )
-        self.Script_ConfigPath = ConfigItem(
-            "Script", "ConfigPath", "", FileValidator()
-        )
-        self.Script_ConfigPathMode = ConfigItem(
-            "Script", "ConfigPathMode", "Folder", OptionsValidator(["File", "Folder"])
-        )
-        self.Script_UpdateConfigMode = ConfigItem(
-            "Script",
-            "UpdateConfigMode",
-            "Always",
-            OptionsValidator(["Never", "Success", "Failure", "Always"]),
-        )
-        self.Script_LogPath = ConfigItem(
-            "Script", "LogPath", "", FileValidator()
-        )
-        self.Script_LogPathFormat = ConfigItem("Script", "LogPathFormat", "")
-        self.Script_LogTimeStart = ConfigItem(
-            "Script", "LogTimeStart", 1, RangeValidator(1, 9999)
-        )
-        self.Script_LogTimeEnd = ConfigItem(
-            "Script", "LogTimeEnd", 23, RangeValidator(1, 9999)
-        )
-        self.Script_LogTimeFormat = ConfigItem(
-            "Script", "LogTimeFormat", "%Y-%m-%d %H:%M:%S,%f"
-        )
-
         ## Game ------------------------------------------------------------
         self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
         self.Game_LaunchBeforeTask = ConfigItem(
             "Game", "LaunchBeforeTask", False, BoolValidator()
         )
-        self.Game_Type = ConfigItem(
-            "Game", "Type", "Client", OptionsValidator(["Client", "URL"])
-        )
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
-        self.Game_URL = ConfigItem("Game", "URL", "")
-        self.Game_ProcessName = ConfigItem("Game", "ProcessName", "")
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
-        self.Game_IfForceClose = ConfigItem("Game", "IfForceClose", True, BoolValidator())
-        self.Game_CloseOnFinish = ConfigItem(
-            "Game", "CloseOnFinish", True, BoolValidator()
-        )
-        self.Game_EmulatorId = ConfigItem(
-            "Game",
-            "EmulatorId",
-            "-",
-            MultipleUIDValidator("-", self.related_config, "EmulatorConfig"),
-        )
-        self.Game_EmulatorIndex = ConfigItem("Game", "EmulatorIndex", "-")
-
         ## Run -------------------------------------------------------------
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
@@ -2762,6 +2720,39 @@ class OkNteConfig(ConfigBase):
         super().__init__()
 
 
+class GameSignAccountGroup(ConfigBase):
+    """游戏签到账号组配置"""
+
+    def __init__(self) -> None:
+
+        ## GameSignAccount - 账号组名称
+        self.Name = ConfigItem(
+            "GameSignAccount", "Name", "用户 1", StringValidator()
+        )
+        ## GameSignAccount - 是否启用（该用户是否参与签到）
+        self.Enabled = ConfigItem(
+            "GameSignAccount", "Enabled", True, BoolValidator()
+        )
+        ## GameSignAccount - 米游社登录凭证 (DPAPI 加密)
+        self.MiyousheToken = ConfigItem(
+            "GameSignAccount", "MiyousheToken", "", EncryptValidator()
+        )
+        ## GameSignAccount - 库街区登录凭证 (DPAPI 加密)
+        self.KuroToken = ConfigItem(
+            "GameSignAccount", "KuroToken", "", EncryptValidator()
+        )
+        ## GameSignAccount - 森空岛登录凭证 (DPAPI 加密)
+        self.SklandToken = ConfigItem(
+            "GameSignAccount", "SklandToken", "", EncryptValidator()
+        )
+        ## GameSignAccount - 上次签到日期 (按用户隔离，防止重复触发)
+        self.LastSignDate = ConfigItem(
+            "GameSignAccount", "LastSignDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+
+        super().__init__()
+
+
 class ToolsConfig(ConfigBase):
     """工具配置"""
 
@@ -2795,8 +2786,62 @@ class ToolsConfig(ConfigBase):
             VirtualConfigValidator(self.arknights_pc_status),
         )
 
+        ## GameSign - 启用签到
+        self.GameSign_Enabled = ConfigItem(
+            "GameSign", "Enabled", False, BoolValidator()
+        )
+        ## GameSign - 签到后发送通知
+        self.GameSign_NotifyEnabled = ConfigItem(
+            "GameSign", "NotifyEnabled", False, BoolValidator()
+        )
+        ## GameSign - 签到窗口起点 (HH:mm)
+        self.GameSign_WindowStart = ConfigItem(
+            "GameSign", "WindowStart", "08:00", DateTimeValidator("%H:%M")
+        )
+        ## GameSign - 签到窗口终点 (HH:mm)
+        self.GameSign_WindowEnd = ConfigItem(
+            "GameSign", "WindowEnd", "22:00", DateTimeValidator("%H:%M")
+        )
+        ## GameSign - 启动时运行
+        self.GameSign_RunOnStartup = ConfigItem(
+            "GameSign", "RunOnStartup", False, BoolValidator()
+        )
+        ## GameSign - 定时运行
+        self.GameSign_ScheduledRun = ConfigItem(
+            "GameSign", "ScheduledRun", True, BoolValidator()
+        )
+        ## GameSign - 是否立即开始
+        self.GameSign_AutoStart = ConfigItem(
+            "GameSign", "AutoStart", False, BoolValidator()
+        )
+        ## GameSign - 账号组 (MultipleConfig)
+        self.GameSign_Accounts = MultipleConfig([GameSignAccountGroup])
+        ## GameSign - 上次签到日期 (防止重复触发)
+        self.GameSign_LastSignDate = ConfigItem(
+            "GameSign", "LastSignDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        ## GameSign - 今日签到随机时间点 (HH:mm)
+        self.GameSign_ScheduledTime = ConfigItem(
+            "GameSign", "ScheduledTime", "", StringValidator()
+        )
+        ## GameSign - 签到状态标签 (虚拟字段)
+        self.GameSign_Status = ConfigItem(
+            "GameSign",
+            "Status",
+            "-",
+            VirtualConfigValidator(self.game_sign_status),
+        )
+        ## GameSign - 签到结果详情 (虚拟字段)
+        self.GameSign_Result = ConfigItem(
+            "GameSign",
+            "Result",
+            "{}",
+            VirtualConfigValidator(self.game_sign_result),
+        )
+
         self.arknights_pc_running = False
         self.arknights_pc_get_connected: Callable[[], bool] = lambda: False
+        self._game_sign_result_data: dict = {}
 
         super().__init__()
 
@@ -2832,6 +2877,18 @@ class ToolsConfig(ConfigBase):
                 "AnotherQuitKey",
             )
         ]
+
+    def game_sign_status(self) -> str:
+        """游戏签到状态标签"""
+
+        if not self.get("GameSign", "Enabled"):
+            return TagItem(text="未启用", color="gray").model_dump_json()
+        return TagItem(text="已启用", color="green").model_dump_json()
+
+    def game_sign_result(self) -> str:
+        """游戏签到结果 JSON"""
+
+        return json.dumps(self._game_sign_result_data, ensure_ascii=False)
 
 
 class GlobalConfig(ConfigBase):
@@ -2887,6 +2944,10 @@ class GlobalConfig(ConfigBase):
         self.UI_IfShowTray = ConfigItem("UI", "IfShowTray", False, BoolValidator())
         ## 是否关闭到托盘
         self.UI_IfToTray = ConfigItem("UI", "IfToTray", False, BoolValidator())
+        ## 是否隐藏主窗口关闭按钮
+        self.UI_IfHideCloseButton = ConfigItem(
+            "UI", "IfHideCloseButton", False, BoolValidator()
+        )
 
         ## Notify -----------------------------------------------------------
         ## 任务结果推送时间

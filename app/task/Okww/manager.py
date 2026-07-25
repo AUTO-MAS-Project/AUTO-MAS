@@ -28,13 +28,9 @@ from app.models.config import OkwwConfig, OkwwUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.utils import get_logger, ProcessManager
 
-from .AutoProxy import AutoProxyTask
+from .AutoProxy import AutoProxyTask, _OKWW_REL_CONFIG_DIR
 
 logger = get_logger("OK-WW 调度器")
-
-METHOD_BOOK: dict[str, type[AutoProxyTask]] = {
-    "AutoProxy": AutoProxyTask,
-}
 
 
 class OkwwManager(TaskExecuteBase):
@@ -49,12 +45,13 @@ class OkwwManager(TaskExecuteBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.check_result = "-"
+        self.user_config: MultipleConfig[OkwwUserConfig] | None = None
         self.temp_path: Path | None = None
         self.script_config_path: Path | None = None
         self.had_original_script_config = False
 
     async def check(self) -> str:
-        if self.task_info.mode not in METHOD_BOOK:
+        if self.task_info.mode != "AutoProxy":
             return "不支持的任务模式, 请检查任务配置！"
 
         if not isinstance(Config.ScriptConfig[uuid.UUID(self.script_info.script_id)], OkwwConfig):
@@ -98,26 +95,20 @@ class OkwwManager(TaskExecuteBase):
             and config.get("Info", "RemainedDay") != 0
         ]
 
-        # Enabled=游戏管理总开关；LaunchBeforeTask/CloseOnFinish=启动与收尾子项（可单独开启）
+        # Enabled=游戏管理总开关；开启后任务前始终启动游戏，任务结束/失败时始终关闭游戏
         self.game_manager: ProcessManager | None = None
-        if self.script_config.get("Game", "Enabled") and (
-            self.script_config.get("Game", "LaunchBeforeTask")
-            or self.script_config.get("Game", "CloseOnFinish")
-        ):
+        if self.script_config.get("Game", "Enabled"):
             self.game_manager = ProcessManager()
 
         if self.task_info.mode == "AutoProxy":
-            self.script_config_path = Path(self.script_config.get("Script", "ConfigPath"))
+            self.script_config_path = Path(self.script_config.get("Info", "RootPath")) / _OKWW_REL_CONFIG_DIR
             self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
             self.temp_path.mkdir(parents=True, exist_ok=True)
             if self.script_config_path.exists():
                 self.had_original_script_config = True
-                if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-                    shutil.copytree(
-                        self.script_config_path, self.temp_path, dirs_exist_ok=True
-                    )
-                elif self.script_config.get("Script", "ConfigPathMode") == "File":
-                    shutil.copy(self.script_config_path, self.temp_path / "config.temp")
+                shutil.copytree(
+                    self.script_config_path, self.temp_path, dirs_exist_ok=True
+                )
 
     async def _restore_script_config_from_temp(self) -> None:
         if not (
@@ -127,27 +118,18 @@ class OkwwManager(TaskExecuteBase):
             and self.script_config_path
         ):
             return
-        if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-            if not self.had_original_script_config:
-                logger.info(f"清理任务期写入的 OK-WW 脚本配置目录: {self.script_config_path}")
-                shutil.rmtree(self.script_config_path, ignore_errors=True)
-            else:
-                logger.info(f"复原 OK-WW 脚本配置文件: {self.temp_path}")
-                tmp_dst = self.script_config_path.with_name(
-                    self.script_config_path.name + ".tmp"
-                )
-                shutil.rmtree(tmp_dst, ignore_errors=True)
-                shutil.copytree(self.temp_path, tmp_dst, dirs_exist_ok=True)
-                shutil.rmtree(self.script_config_path, ignore_errors=True)
-                tmp_dst.rename(self.script_config_path)
-        elif self.script_config.get("Script", "ConfigPathMode") == "File":
-            if (self.temp_path / "config.temp").exists():
-                logger.info(f"复原 OK-WW 脚本配置文件: {self.temp_path / 'config.temp'}")
-                shutil.copy(self.temp_path / "config.temp", self.script_config_path)
-            elif not self.had_original_script_config:
-                logger.info(f"清理任务期写入的 OK-WW 脚本配置文件: {self.script_config_path}")
-                with suppress(FileNotFoundError):
-                    self.script_config_path.unlink()
+        if not self.had_original_script_config:
+            logger.info(f"清理任务期写入的 OK-WW 脚本配置目录: {self.script_config_path}")
+            shutil.rmtree(self.script_config_path, ignore_errors=True)
+        else:
+            logger.info(f"复原 OK-WW 脚本配置文件: {self.temp_path}")
+            tmp_dst = self.script_config_path.with_name(
+                self.script_config_path.name + ".tmp"
+            )
+            shutil.rmtree(tmp_dst, ignore_errors=True)
+            shutil.copytree(self.temp_path, tmp_dst, dirs_exist_ok=True)
+            shutil.rmtree(self.script_config_path, ignore_errors=True)
+            tmp_dst.rename(self.script_config_path)
         shutil.rmtree(self.temp_path, ignore_errors=True)
 
     async def main_task(self):
@@ -161,12 +143,11 @@ class OkwwManager(TaskExecuteBase):
 
         await self.prepare()
 
-        method_cls = METHOD_BOOK[self.task_info.mode]
         for self.script_info.current_index in range(len(self.script_info.user_list)):
-            method = method_cls(
+            method = AutoProxyTask(
                 script_info=self.script_info,
-                script_config=self.script_config,  # type: ignore[arg-type]
-                user_config=self.user_config,  # type: ignore[arg-type]
+                script_config=self.script_config,
+                user_config=self.user_config,
                 game_manager=self.game_manager,
             )
 
@@ -197,13 +178,15 @@ class OkwwManager(TaskExecuteBase):
             if self.check_result != "Pass" and not any(
                 user.status == "完成" for user in self.script_info.user_list
             ):
-                if self.task_info.mode == "AutoProxy" and hasattr(self, "user_config"):
+                if self.task_info.mode == "AutoProxy" and self.user_config is not None:
                     await script_cfg.UserData.load(await self.user_config.toDict())
+                    await Config.ScriptConfig.save()
                 self.script_info.status = "异常"
                 return
 
-            if self.task_info.mode == "AutoProxy" and hasattr(self, "user_config"):
+            if self.task_info.mode == "AutoProxy" and self.user_config is not None:
                 await script_cfg.UserData.load(await self.user_config.toDict())
+                await Config.ScriptConfig.save()
 
             if any(user.status == "异常" for user in self.script_info.user_list):
                 self.script_info.status = "异常"
@@ -228,7 +211,7 @@ class OkwwManager(TaskExecuteBase):
                 await script_cfg.unlock()
 
         try:
-            if self.task_info.mode == "AutoProxy" and hasattr(self, "user_config"):
+            if self.task_info.mode == "AutoProxy" and self.user_config is not None:
                 await script_cfg.UserData.load(
                     await self.user_config.toDict()
                 )
