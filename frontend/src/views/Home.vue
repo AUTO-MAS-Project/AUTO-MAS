@@ -247,6 +247,7 @@ import SatelliteAnimation from '@/components/SatelliteAnimation.vue'
 import type { ComboBoxItem } from '@/api'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
 import { navigateTo } from '@/router'
+import { useSchedulerLogic } from '@/views/scheduler/useSchedulerLogic'
 defineOptions({
   name: 'HomeView',
 })
@@ -360,6 +361,7 @@ const noticeData = ref<Record<string, string>>({})
 const noticeLoading = ref(false)
 const { isBootstrapping } = useAppInitialization()
 const { playSound } = useAudioPlayer()
+const { trackStartedTask } = useSchedulerLogic()
 const commandTitle = ref(pickHomeGreeting())
 
 const isHomeModuleKey = (value: unknown): value is HomeModuleKey => {
@@ -536,6 +538,16 @@ const startHomeTask = async () => {
     })
 
     if (response.code === 200) {
+      const selectedTask = schedulerTaskOptions.value.find(
+        option => option.value === selectedHomeTaskId.value
+      )
+      trackStartedTask({
+        taskId: response.taskId,
+        selectedTaskId: selectedHomeTaskId.value,
+        selectedMode: selectedHomeMode.value,
+        taskLabel: selectedTask?.label || '首页快速任务',
+        modeLabel: '自动代理',
+      })
       message.success('任务已开始')
       await playSound('task_started')
     } else {
