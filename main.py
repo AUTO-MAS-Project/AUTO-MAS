@@ -128,6 +128,7 @@ def main():
             update_router,
             ocr_router,
             ws_debug_router,
+            qr_login_router,
         )
 
         app = FastAPI(
@@ -158,6 +159,10 @@ def main():
         app.include_router(update_router)
         app.include_router(ocr_router)
         app.include_router(ws_debug_router)
+
+        # 可选补丁：米游社扫码登录
+        if qr_login_router is not None:
+            app.include_router(qr_login_router)
 
         app.mount(
             "/api/res/materials",

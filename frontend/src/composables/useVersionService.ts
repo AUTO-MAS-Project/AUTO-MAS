@@ -10,7 +10,7 @@ import { Service, type UpdateCheckOut, type VersionOut } from '@/api'
 const logger = window.electronAPI.getLogger('版本服务')
 
 // 获取版本号
-const version = (import.meta as any).env.VITE_APP_VERSION || '1.0.0'
+const version = import.meta.env.VITE_APP_VERSION || '1.0.0'
 
 // ========== 标题栏版本信息相关 ==========
 export const updateInfo = ref<UpdateCheckOut | null>(null)

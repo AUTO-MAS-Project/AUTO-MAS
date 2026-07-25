@@ -188,14 +188,6 @@ const displayLogContent = computed(() => {
 })
 
 // 计算掉落物品总数
-const dropCount = computed(() => {
-  if (!props.dropStatistics) return 0
-  let count = 0
-  for (const stage of Object.values(props.dropStatistics)) {
-    count += Object.keys(stage).length
-  }
-  return count
-})
 </script>
 
 <style scoped>

@@ -63,10 +63,10 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn.ts'
 const logger = window.electronAPI.getLogger('SRC用户编辑')
 
 // 导入拆分的组件
-import SRCUserEditHeader from '../../SRCUserEdit/SRCUserEditHeader.vue'
-import BasicInfoSection from '../../SRCUserEdit/BasicInfoSection.vue'
-import StageConfigSection from '../../SRCUserEdit/StageConfigSection.vue'
-import NotifyConfigSection from '../../SRCUserEdit/NotifyConfigSection.vue'
+import SRCUserEditHeader from '@/views/SRCUserEdit/SRCUserEditHeader.vue'
+import BasicInfoSection from '@/views/SRCUserEdit/BasicInfoSection.vue'
+import StageConfigSection from '@/views/SRCUserEdit/StageConfigSection.vue'
+import NotifyConfigSection from '@/views/SRCUserEdit/NotifyConfigSection.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 
 const router = useRouter()
@@ -424,14 +424,14 @@ const handleSaveSRCConfig = async () => {
 
 // 保存用户（用于新建时初始创建）
 // 在新建模式下，需要先创建用户获取userId，再更新数据
-const saveNewUser = async () => {
+const _saveNewUser = async () => {
   if (!formRef.value) return
 
   try {
     await formRef.value.validate()
     syncUserName()
 
-    const { userName, ...userData } = formData
+    const { userName: _userName, ...userData } = formData
 
     // 先创建用户
     const result = await addUser(scriptId)

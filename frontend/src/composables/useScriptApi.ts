@@ -1317,6 +1317,9 @@ export function useScriptApi() {
     }
   }
 
+  const importScriptConfigFile = (scriptId: string, userId: string | null) =>
+    Service.importScriptConfigFileApiScriptsConfigImportPost({ scriptId, userId })
+
   return {
     loading,
     error,
@@ -1328,5 +1331,6 @@ export function useScriptApi() {
     deleteScript,
     updateScript,
     reorderScript,
+    importScriptConfigFile,
   }
 }
