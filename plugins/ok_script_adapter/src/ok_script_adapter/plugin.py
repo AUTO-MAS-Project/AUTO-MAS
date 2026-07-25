@@ -155,6 +155,80 @@ async def _script_form_config(storage_config: PluginScriptConfig) -> dict[str, A
     )
 
 
+async def _user_form_config(
+    storage_config: PluginScriptConfig,
+    user_uid: uuid.UUID,
+) -> dict[str, Any]:
+    from app.core.script_types import script_type_registry
+
+    storage_user = storage_config.UserData[user_uid]
+    return await storage_to_form(
+        script_type_registry.get("OkScript"),
+        storage_user.get("PluginData", "Config"),
+        "user",
+    )
+
+
+def _workspace_target_projection(
+    *,
+    script_uid: uuid.UUID,
+    script_form: dict[str, Any],
+    users: list[tuple[uuid.UUID, dict[str, Any]]],
+) -> dict[str, Any]:
+    """投影独立配置工作区所需的非敏感选择元数据。"""
+
+    info = script_form.get("Info")
+    script_info = info if isinstance(info, dict) else {}
+    script_name = str(script_info.get("Name") or "未命名脚本").strip()
+    project_label = str(script_info.get("ProjectLabel") or "").strip()
+
+    target_users: list[dict[str, Any]] = []
+    for user_uid, user_form in users:
+        user_info = user_form.get("Info")
+        user_data = user_info if isinstance(user_info, dict) else {}
+        target_users.append(
+            {
+                "id": str(user_uid),
+                "name": str(user_data.get("Name") or "未命名用户").strip(),
+                "enabled": bool(user_data.get("Status", True)),
+            }
+        )
+
+    return {
+        "id": str(script_uid),
+        "name": script_name or "未命名脚本",
+        "projectLabel": project_label,
+        "resourceName": str(script_info.get("ResourceName") or "").strip(),
+        "rootConfigured": bool(str(script_info.get("RootPath") or "").strip()),
+        "users": target_users,
+    }
+
+
+async def _collect_workspace_targets() -> list[dict[str, Any]]:
+    """枚举当前已保存的 ok-script 脚本及其用户选择项。"""
+
+    targets: list[dict[str, Any]] = []
+    for script_uid, storage_config in app_config.ScriptConfig.items():
+        if not isinstance(storage_config, PluginScriptConfig):
+            continue
+        if str(storage_config.get("Meta", "PluginTypeKey") or "").strip() != "OkScript":
+            continue
+
+        script_form = await _script_form_config(storage_config)
+        users = [
+            (user_uid, await _user_form_config(storage_config, user_uid))
+            for user_uid in storage_config.UserData.order
+        ]
+        targets.append(
+            _workspace_target_projection(
+                script_uid=script_uid,
+                script_form=script_form,
+                users=users,
+            )
+        )
+    return targets
+
+
 def _config_source_status(
     *,
     manifest: Any,
@@ -468,6 +542,17 @@ class Plugin(ScriptAdapterPlugin):
 
     async def on_start(self) -> None:
         await super().on_start()
+        self.ctx.page.register(
+            id="ok-script-workspace",
+            path="/ok-script/workspace",
+            title="ok-script 配置工作区",
+            menu_label="ok-script 配置",
+            icon="app",
+            renderer="custom-element",
+            element_tag="auto-mas-ok-script-workspace",
+            section="main",
+            order=860,
+        )
         self.ctx.server.http(
             "/ok-script/inspect",
             self._inspect_project,
@@ -479,6 +564,11 @@ class Plugin(ScriptAdapterPlugin):
             methods=("POST",),
         )
         self.ctx.server.http(
+            "/ok-script/workspace/targets",
+            self._list_workspace_targets,
+            methods=("GET",),
+        )
+        self.ctx.server.http(
             "/ok-script/configs/list",
             self._list_configs,
             methods=("GET", "POST"),
@@ -488,6 +578,27 @@ class Plugin(ScriptAdapterPlugin):
             self._batch_update_configs,
             methods=("POST",),
         )
+
+    async def _list_workspace_targets(
+        self,
+        _request: PluginHttpRequest,
+    ) -> dict[str, Any]:
+        try:
+            targets = await _collect_workspace_targets()
+            return {
+                "code": 200,
+                "status": "success",
+                "message": "工作区目标读取成功",
+                "data": {"scripts": targets},
+            }
+        except Exception as exc:
+            logger.exception(f"读取 ok-script 工作区目标失败: {exc}")
+            return {
+                "code": 500,
+                "status": "error",
+                "message": "读取 ok-script 工作区目标失败",
+                "data": {"scripts": []},
+            }
 
     async def _inspect_project(self, request: PluginHttpRequest) -> dict[str, Any]:
         payload = request.json if isinstance(request.json, dict) else request.query

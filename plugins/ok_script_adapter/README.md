@@ -120,6 +120,25 @@ return draft diffs; `validate` never writes. A field error returns HTTP 422 with
 per-field errors and writes no file from that batch. Successful commits use the existing
 per-file atomic replacement after recursively preserving untouched keys.
 
+## Independent Configuration Workspace
+
+After the plugin is enabled, the main menu provides **ok-script 配置**. This is a
+plugin-owned Custom Element page packaged with the adapter wheel. It lists already saved
+`OkScript` scripts and their users, then uses the existing config list and batch-update
+contracts to load, validate, save, or discard a user's JSON configuration changes.
+
+The page deliberately does not create, delete, or edit the host script/user records. It is
+an independent workspace used to validate the plugin frontend contract while the host editor
+does not yet expose a generic Custom Element editor slot. The existing script and user edit
+routes remain the source of truth for basic information, game settings, lifecycle actions,
+and navigation.
+
+The Custom Element only uses `window.pluginAPI`, CSS variables exposed by AUTO-MAS, and CSS
+selectors rooted at `auto-mas-ok-script-workspace`; it does not import host Vue internals or
+override global styles. Static/plugin tests cover its package resources and lifecycle
+contract. Real desktop light/dark, resizing, and plugin reload checks still require a later
+manual runtime session and are not implied by those tests.
+
 Time-like field names are deliberately not guessed. A project or provider must declare
 whether a value is a time of day, datetime, duration, or Unix timestamp before a dedicated
 control and serialization rule can be added. The current host editor also still saves
