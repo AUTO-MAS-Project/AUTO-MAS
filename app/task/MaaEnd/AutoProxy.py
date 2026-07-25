@@ -842,13 +842,9 @@ class AutoProxyTask(TaskExecuteBase):
 
         await self.maaend_log_monitor.stop()
         if (
-            getattr(self.task_info, "game_on_stop", False)
-            or (
-                self.script_info.current_index
-                == len(self.script_info.user_list) - 1
-                and self.run_book
-                and not self.script_config.get("Game", "CloseOnFinish")
-            )
+            self.script_info.current_index == len(self.script_info.user_list) - 1
+            and self.run_book
+            and not self.script_config.get("Game", "CloseOnFinish")
         ):
             try:
                 logger.info(f"中止 MaaEnd 进程: {self.maaend_exe_path}")
