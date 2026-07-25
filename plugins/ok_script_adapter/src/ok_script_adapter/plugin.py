@@ -29,7 +29,7 @@ from .common.config_schema import (
     render_legacy_fields,
     schema_catalog_fingerprint,
 )
-from .common.provider import ok_script_mas_config_dir, resolve_game_executable_path
+from .common.provider import ok_script_mas_config_dir, resolve_game_path
 from .common.runtime_lock import get_ok_script_config_lock
 from .providers import detect_ok_script_provider, get_ok_script_provider
 from .shell.config_parser import ProjectConfigDescription, ProjectConfigParser
@@ -530,7 +530,10 @@ class Plugin(ScriptAdapterPlugin):
                 "data": None,
             }
 
-    async def _resolve_game_path(self, request: PluginHttpRequest) -> dict[str, Any]:
+    async def _resolve_game_path(
+        self,
+        request: PluginHttpRequest,
+    ) -> dict[str, Any] | PluginHttpResponse:
         payload = request.json if isinstance(request.json, dict) else request.query
         root_path = Path(str(payload.get("root_path") or payload.get("rootPath") or ""))
         selected_path = str(
@@ -552,19 +555,44 @@ class Plugin(ScriptAdapterPlugin):
                 "message": "请先选择并识别 ok-script 项目目录",
             }
 
-        resolved_path = await asyncio.to_thread(
-            resolve_game_executable_path,
+        resolution = await asyncio.to_thread(
+            resolve_game_path,
             provider,
             selected_path,
         )
+        resolution_data = resolution.to_dict()
+        if resolution.ambiguous:
+            return PluginHttpResponse(
+                body={
+                    "code": 409,
+                    "status": "conflict",
+                    "message": (
+                        f"检测到多个 {provider.display_name} 游戏目标，"
+                        "请直接选择具体启动器或游戏本体文件"
+                    ),
+                    "data": {
+                        "path": None,
+                        "formPatch": {},
+                        "resolution": resolution_data,
+                    },
+                },
+                status_code=409,
+            )
+
+        resolved_path = resolution.launch_path
         if resolved_path is None:
             return {
                 "code": 400,
                 "status": "error",
                 "message": (
-                    f"所选位置未找到 {provider.display_name} 游戏主程序 "
+                    f"所选位置未找到 {provider.display_name} 游戏启动程序 "
                     f"{provider.game_process_name}"
                 ),
+                "data": {
+                    "path": None,
+                    "formPatch": {},
+                    "resolution": resolution_data,
+                },
             }
 
         normalized_path = resolved_path.as_posix()
@@ -575,6 +603,7 @@ class Plugin(ScriptAdapterPlugin):
             "data": {
                 "path": normalized_path,
                 "formPatch": {"Game": {"Path": normalized_path}},
+                "resolution": resolution_data,
             },
         }
 

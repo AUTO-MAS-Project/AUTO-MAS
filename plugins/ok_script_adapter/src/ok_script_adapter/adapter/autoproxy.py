@@ -26,10 +26,10 @@ from pathlib import Path
 from app.core import Config
 from app.models.ConfigBase import ConfigBase, MultipleConfig
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
-from app.services import Notify, System
+from app.services import Notify
 from app.task.general.tools import execute_script_task
 from app.utils import get_logger
-from app.utils.ProcessManager import ProcessManager, is_process_running
+from app.utils.ProcessManager import ProcessManager
 from app.utils.constants import UTC4
 
 from ..common.events import (
@@ -40,10 +40,12 @@ from ..common.events import (
     OkScriptRunFailure,
 )
 from ..common.provider import (
+    GameLaunchDescriptor,
+    GamePathResolution,
     OkScriptProvider,
     OkScriptTaskOption,
     ok_script_mas_config_dir,
-    resolve_game_executable_path,
+    resolve_game_path,
 )
 from ..common.report import OkScriptReportHandler
 from ..common.runtime_lock import (
@@ -59,6 +61,7 @@ from ..shell.runtime import (
 )
 from .config_session import OkScriptConfigSession
 from .execution import ExecutionPlan, ExecutionPlanner, RunObservation
+from .game_launch import GameLaunchController
 from .run_controller import (
     AttemptPreparation,
     RunController,
@@ -180,8 +183,11 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         self.log_start_time: datetime = datetime.now()
         self.task_index = 1
         self.game_path: Path = Path()
+        self.game_launch_descriptor: GameLaunchDescriptor | None = None
+        self.game_path_resolution: GamePathResolution | None = None
+        self.game_launch_controller: GameLaunchController | None = None
+        self.game_start_owner = "none"
         self.run_book = False
-        self.game_started_by_mas = False
         self.manual_stop = False
         self.attempt_started = False
         self.run_result_persisted = False
@@ -238,38 +244,71 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             self.cur_user_item.status = "跳过"
             return "用户剩余天数为 0, 跳过该用户"
 
-        configured_game_path_value = str(
+        game_error = await self._configure_game_launch()
+        if game_error is not None:
+            return game_error
+
+        return "Pass"
+
+    async def _configure_game_launch(self) -> str | None:
+        """解析本轮游戏启动 profile，并保持历史 Game 配置字段可用。"""
+
+        provider = self._require_provider()
+        descriptor = provider.game_launch_descriptor.with_effective_mode(
+            game_enabled=bool(self.script_config.get("Game", "Enabled")),
+            launch_before_task=bool(
+                self.script_config.get("Game", "LaunchBeforeTask")
+            ),
+        )
+        configured_path = str(
             self.script_config.get("Game", "Path") or ""
         ).strip()
-        if not configured_game_path_value:
-            if self.provider.game_process_name:
-                return (
-                    f"请设置 {self.provider.display_name} 游戏主程序路径 "
-                    f"{self.provider.game_process_name}"
-                )
-            return "请设置游戏程序路径"
-
-        configured_game_path = Path(configured_game_path_value)
-        if self.provider.game_process_name:
-            resolved_game_path = await asyncio.to_thread(
-                resolve_game_executable_path,
-                self.provider,
-                configured_game_path,
+        if descriptor.path_candidates and not configured_path:
+            purpose = (
+                "用于任务结束后关闭游戏"
+                if descriptor.mode == "script-managed"
+                else "用于启动和关闭游戏"
             )
-            if resolved_game_path is None:
-                return (
-                    f"请设置 {self.provider.display_name} 游戏主程序路径 "
-                    f"{self.provider.game_process_name}"
-                )
+            return f"请设置 {provider.display_name} 游戏程序路径，{purpose}"
+
+        resolution = await asyncio.to_thread(
+            resolve_game_path,
+            provider,
+            configured_path,
+            descriptor=descriptor,
+        )
+        if resolution.ambiguous:
+            return (
+                f"检测到多个 {provider.display_name} 游戏目标，"
+                "请在游戏程序路径中选择具体启动器或游戏本体文件"
+            )
+        if (
+            descriptor.launch_kind == "executable"
+            and descriptor.mode in ("direct", "launcher")
+            and resolution.launch_path is None
+        ):
+            return f"请设置 {provider.display_name} 游戏启动程序路径"
+        if descriptor.candidates_for("ready") and resolution.ready_path is None:
+            return f"请设置 {provider.display_name} 游戏本体路径"
+        if descriptor.candidates_for("cleanup") and not resolution.cleanup_paths:
+            return f"请设置 {provider.display_name} 游戏程序路径，用于任务结束后关闭游戏"
+
+        self.game_launch_descriptor = descriptor
+        self.game_path_resolution = resolution
+        self.game_path = resolution.launch_path or Path()
+        if resolution.launch_path is not None:
             await self.script_config.set(
                 "Game",
                 "Path",
-                resolved_game_path.as_posix(),
+                resolution.launch_path.as_posix(),
             )
-        elif not configured_game_path.is_file():
-            return "请设置游戏程序路径"
-
-        return "Pass"
+        self.game_launch_controller = GameLaunchController(
+            display_name=provider.display_name,
+            descriptor=descriptor,
+            resolution=resolution,
+            process_manager=self.game_manager,
+        )
+        return None
 
     async def prepare(self) -> None:
         self.script_root_path = Path(self.script_config.get("Info", "RootPath"))
@@ -291,6 +330,9 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
                 runtime.reason
                 or "当前 ok-script 项目尚未完成运行验证"
             )
+        game_error = await self._configure_game_launch()
+        if game_error is not None:
+            raise RuntimeError(game_error)
         self.script_root_lock = get_ok_script_root_lock(self.script_root_path)
         if not self.script_root_lock_acquired:
             self.script_info.log = "正在等待同一 ok-script 项目完成运行"
@@ -342,9 +384,8 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             runtime_overrides=provider.runtime_config_overrides,
         )
         self.run_controller = RunController(self.execution_plan)
-        self.game_path = Path(self.script_config.get("Game", "Path"))
         self.run_book = False
-        self.game_started_by_mas = False
+        self.game_start_owner = "none"
         self.report_handler = (
             provider.report_handler_factory()
             if provider.report_handler_factory is not None
@@ -478,16 +519,11 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             )
             raise
 
-        if self._should_launch_game_before_task():
-            game_result = await self._launch_game_before_task()
-            if game_result != "Pass":
-                return AttemptPreparation(
-                    started_at=self.log_start_time,
-                    failure_status=game_result,
-                )
-        else:
-            await self._push_dispatch_log(
-                "MAS 已跳过游戏启动，游戏启动由 ok-script 负责"
+        game_result = await self._launch_game_before_task()
+        if game_result != "Pass":
+            return AttemptPreparation(
+                started_at=self.log_start_time,
+                failure_status=game_result,
             )
         return AttemptPreparation(started_at=self.log_start_time)
 
@@ -630,40 +666,22 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         )
 
     async def _launch_game_before_task(self) -> str:
-        if not self.game_path.is_file():
-            return "请设置游戏程序路径"
-
-        if self.game_manager is None:
-            self.game_manager = ProcessManager()
-
-        self.script_info.log = "正在准备由 MAS 启动游戏"
-        game_process_name = self.provider.game_process_name or self.game_path.name
-        if game_process_name and is_process_running(game_process_name):
-            logger.info("检测到游戏进程已在运行，跳过由 MAS 重复启动游戏")
-            self.script_info.log = "检测到游戏进程已在运行，跳过启动"
-            self.game_started_by_mas = True
-            return "Pass"
-
+        controller = self._require_game_launch_controller()
         try:
-            await self.game_manager.open_process(
-                self.game_path,
-                *_split_args(self.script_config.get("Game", "Arguments")),
+            wait_time = max(
+                0.0,
+                float(self.script_config.get("Game", "WaitTime") or 0),
             )
-        except Exception as e:
-            logger.exception(f"启动游戏失败: {e}")
-            return f"游戏启动失败: {e}"
+        except (TypeError, ValueError):
+            return "游戏启动等待时间无效"
 
-        self.game_started_by_mas = True
-        wait_time = int(self.script_config.get("Game", "WaitTime"))
-        self.script_info.log = f"正在等待游戏完成启动\n请等待{wait_time}s"
-        await asyncio.sleep(wait_time)
-        self.script_info.log = "游戏启动等待完成"
-        return "Pass"
-
-    def _should_launch_game_before_task(self) -> bool:
-        return bool(self.script_config.get("Game", "Enabled")) and bool(
-            self.script_config.get("Game", "LaunchBeforeTask")
+        result = await controller.start(
+            arguments=_split_args(self.script_config.get("Game", "Arguments")),
+            fallback_wait_seconds=wait_time,
         )
+        self.game_start_owner = result.owner
+        await self._push_dispatch_log(result.status)
+        return "Pass" if result.successful else result.status
 
     async def _emit_ok_script_event(
         self,
@@ -853,12 +871,20 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
             raise RuntimeError("ok-script ConfigSession 尚未准备完成")
         return self.config_session
 
+    def _require_game_launch_controller(self) -> GameLaunchController:
+        if self.game_launch_controller is None:
+            raise RuntimeError("ok-script 游戏启动策略尚未准备完成")
+        return self.game_launch_controller
+
     def _should_kill_game(self) -> bool:
-        if self.manual_stop and not self.script_config.get(
-            "Game", "KillGameOnManualStop"
-        ):
+        if self.game_launch_controller is None:
             return False
-        return self.game_path.is_file()
+        return self.game_launch_controller.should_cleanup(
+            manual_stop=self.manual_stop,
+            close_on_manual_stop=bool(
+                self.script_config.get("Game", "KillGameOnManualStop")
+            ),
+        )
 
     def _release_script_root_lock(self) -> None:
         if (
@@ -889,15 +915,10 @@ class OkScriptAutoProxyTask(TaskExecuteBase):
         self.user_config_lock_acquired = False
 
     async def _kill_game_process(self) -> None:
-        try:
-            if isinstance(self.game_manager, ProcessManager):
-                await self.game_manager.kill()
-        except Exception as e:
-            logger.exception(f"通过进程管理器关闭游戏失败: {e}")
-        try:
-            if self.game_path.is_file():
-                await System.kill_process(self.game_path)
-        except Exception as e:
-            logger.exception(f"关闭游戏进程失败: {e}")
-        finally:
-            self.game_started_by_mas = False
+        controller = self.game_launch_controller
+        if controller is None:
+            return
+        cleanup_result = await controller.cleanup()
+        for error in cleanup_result.errors:
+            logger.error(f"清理游戏进程失败: {error}")
+        self.game_start_owner = "none"

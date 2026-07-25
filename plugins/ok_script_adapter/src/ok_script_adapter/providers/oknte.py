@@ -16,7 +16,12 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-from ..common.provider import OkScriptProvider, OkScriptTaskOption
+from ..common.provider import (
+    GameLaunchDescriptor,
+    GamePathCandidate,
+    OkScriptProvider,
+    OkScriptTaskOption,
+)
 
 
 OKNTE_PROVIDER = OkScriptProvider(
@@ -60,6 +65,20 @@ OKNTE_PROVIDER = OkScriptProvider(
     ),
     config_schema_module="ok_script_adapter.providers.oknte_schema",
     config_info_loader="get_all_config_info",
+    game_launch=GameLaunchDescriptor(
+        mode="launcher",
+        launch_kind="executable",
+        path_candidates=(
+            GamePathCandidate("NTEGame.exe", "launch"),
+            GamePathCandidate("NTEGlobalGame.exe", "launch"),
+            GamePathCandidate("HTGame.exe", "ready"),
+            GamePathCandidate("HTGame.exe", "cleanup"),
+        ),
+        ready_process_name="HTGame.exe",
+        already_running_policy="attach",
+        cleanup_policy="always",
+        verification="unverified",
+    ),
     runtime_verified=False,
     runtime_block_reason=(
         "OK-NTE 当前仅完成配置/schema 适配，真实成功/失败日志尚未实跑确认，"
