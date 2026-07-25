@@ -153,7 +153,7 @@ const clearHistory = () => {
 
 // 检查调试接口是否可用
 const isDebugApiAvailable = () => {
-  return typeof (window as any).__debugShowQuestion === 'function'
+  return typeof window.__debugShowQuestion === 'function'
 }
 
 // 通过调试接口触发弹窗（直接在前端触发，不经过后端）
@@ -163,7 +163,7 @@ const triggerModalViaDebugApi = (messageData: {
   options?: string[]
   message_id?: string
 }) => {
-  const debugShowQuestion = (window as any).__debugShowQuestion
+  const debugShowQuestion = window.__debugShowQuestion
 
   if (!debugShowQuestion) {
     logger.warn('调试接口不可用，WebSocketMessageListener 可能未挂载')

@@ -163,6 +163,8 @@ export interface M9AScriptConfig {
     RunTimesLimit: number
     RunTimeLimit: number
     IfAutoUpdateAfterQueue: boolean
+    IfPsychubeDailyOnce: boolean
+    IfSleepDreamMonthlyOnce: boolean
   }
   SubConfigsInfo: {
     UserData: {
@@ -222,6 +224,9 @@ export interface User {
   Data: {
     IfPassCheck: boolean
     LastProxyDate: string
+    LastPsychubeDate?: string
+    LastLimboMonth?: string
+    LastLucidscapeMonth?: string
     LastSklandDate: string
     ProxyTimes: number
   }

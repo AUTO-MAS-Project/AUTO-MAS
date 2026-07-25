@@ -175,6 +175,18 @@ export class ActionService {
         });
     }
     /**
+     * 手动触发游戏社区签到
+     * 手动触发游戏社区签到
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static manualGameSignApiToolsSignPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign',
+        });
+    }
+    /**
      * 测试通知
      * 测试通知
      * @returns OutBase Successful Response
@@ -208,13 +220,44 @@ export class ActionService {
     }
     /**
      * 下载更新
+     * @param version
      * @returns OutBase Successful Response
      * @throws ApiError
      */
-    public static downloadUpdateApiUpdateDownloadPost(): CancelablePromise<OutBase> {
+    public static downloadUpdateApiUpdateDownloadPost(
+        version?: (string | null),
+    ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/update/download',
+            query: {
+                'version': version,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 取消下载更新
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static cancelUpdateDownloadApiUpdateCancelDownloadPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/update/cancel-download',
+        });
+    }
+    /**
+     * 切换下载源到 CNB
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static switchUpdateDownloadToCnbApiUpdateSwitchToCnbPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/update/switch-to-cnb',
         });
     }
     /**

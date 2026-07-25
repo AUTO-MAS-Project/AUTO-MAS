@@ -1,10 +1,21 @@
 <template>
-  <a-modal v-model:open="visible" :title="`发现新版本 ${latestVersion || ''}`" :width="800" :footer="null"
-    :mask-closable="false" :z-index="9999" class="update-modal">
+  <a-modal
+    v-model:open="visible"
+    :title="`发现新版本 ${latestVersion || ''}`"
+    :width="800"
+    :footer="null"
+    :mask-closable="false"
+    :z-index="9999"
+    class="update-modal"
+  >
     <div class="update-container">
       <!-- 更新内容展示 -->
       <div class="update-content">
-        <div ref="markdownContentRef" class="markdown-content" v-html="renderMarkdown(updateContent)"></div>
+        <div
+          ref="markdownContentRef"
+          class="markdown-content"
+          v-html="renderMarkdown(updateContent)"
+        ></div>
       </div>
 
       <!-- 操作按钮 -->
@@ -18,15 +29,14 @@
   </a-modal>
 
   <!-- 独立的下载窗口 -->
-  <UpdateDownloadModal v-model:visible="showDownloadModal" :latest-version="latestVersion" :update-data="updateData"
-    @completed="handleDownloadCompleted" @cancelled="handleDownloadCancelled"
-    @install-requested="handleInstallRequested" />
+  <UpdateDownloadModal />
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import MarkdownIt from 'markdown-it'
 import UpdateDownloadModal from './UpdateDownloadModal.vue'
+import { useUpdateDownload } from '@/composables/useUpdateDownload'
 const logger = window.electronAPI.getLogger('更新模态框')
 
 // Props 定义
@@ -44,9 +54,10 @@ const emit = defineEmits<{
   'update:visible': [value: boolean]
 }>()
 
+const { start } = useUpdateDownload()
+
 // 内部状态
 const hasUpdate = ref(false)
-const showDownloadModal = ref(false)
 
 // 计算最新版本号
 const latestVersion = computed(() => {
@@ -116,38 +127,15 @@ if (props.updateData && Object.keys(props.updateData).length > 0) {
 }
 
 // 处理下载按钮点击
-const handleDownload = () => {
+const handleDownload = async () => {
   logger.info('点击下载按钮')
-  logger.info(`当前props: ${JSON.stringify({
-    updateData: props.updateData,
-    latestVersion: props.latestVersion,
-    visible: props.visible,
-  })}`)
-  // 关闭当前窗口，显示下载窗口
   visible.value = false
-  showDownloadModal.value = true
-  logger.info(`设置showDownloadModal为true: ${showDownloadModal.value}`)
+  await start(props.latestVersion || '', props.updateData)
 }
 
 // 关闭弹窗
 const handleCancel = () => {
   visible.value = false
-  emit('confirmed')
-}
-
-// 下载窗口事件处理
-const handleDownloadCompleted = () => {
-  showDownloadModal.value = false
-  emit('confirmed')
-}
-
-const handleDownloadCancelled = () => {
-  showDownloadModal.value = false
-  emit('confirmed')
-}
-
-const handleInstallRequested = () => {
-  showDownloadModal.value = false
   emit('confirmed')
 }
 </script>

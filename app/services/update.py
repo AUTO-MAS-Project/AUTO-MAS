@@ -45,10 +45,130 @@ class _UpdateHandler:
 
     def __init__(self) -> None:
         self.is_locked: bool = False
+        self.download_task: Optional[asyncio.Task[None]] = None
+        self.is_switching_source: bool = False
         self.remote_version: Optional[str] = None
         self.last_check_time: Optional[datetime] = None
         self.update_version_info: Optional[Dict[str, List[str]]] = None
         self.mirror_chyan_download_url: Optional[str] = None
+
+    async def start_download(self) -> bool:
+        if self.is_switching_source or self.is_locked:
+            return False
+        return self._start_download_task()
+
+    def _start_download_task(self) -> bool:
+        if self.download_task is not None and not self.download_task.done():
+            return False
+
+        self.download_task = asyncio.create_task(self.download_update())
+        self.download_task.add_done_callback(self._clear_download_task)
+        return True
+
+    def _clear_download_task(self, task: asyncio.Task[None]) -> None:
+        if not task.cancelled():
+            exception = task.exception()
+            if exception is not None:
+                logger.error(f"后台更新下载任务异常: {exception}")
+        if self.download_task is task:
+            self.download_task = None
+
+    async def cancel_download(self, *, notify: bool = True) -> bool:
+        task = self.download_task
+        if task is None or task.done():
+            return False
+
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        self._cleanup_download()
+
+        if notify:
+            await Config.send_websocket_message(
+                id="Update", type="Signal", data={"Cancelled": True}
+            )
+        return True
+
+    async def switch_to_cnb(self) -> bool:
+        if self.is_switching_source:
+            return False
+
+        if self._get_download_source() != "GitHub":
+            return False
+
+        task = self.download_task
+        if task is None or task.done():
+            return False
+
+        self.is_switching_source = True
+        self.is_locked = True
+        try:
+            if not await self.cancel_download(notify=False):
+                return False
+
+            try:
+                await Config.set("Update", "Source", "CNB")
+            except Exception as error:
+                await Config.send_websocket_message(
+                    id="Update",
+                    type="Signal",
+                    data={
+                        "Failed": f"切换至 CNB 源失败: {type(error).__name__}: {str(error)}"
+                    },
+                )
+                raise
+
+            self.is_locked = False
+            if not self._start_download_task():
+                error = RuntimeError("切换至 CNB 源失败: 无法重新启动更新下载任务")
+                await Config.send_websocket_message(
+                    id="Update",
+                    type="Signal",
+                    data={"Failed": str(error)},
+                )
+                raise error
+            return True
+        finally:
+            self.is_switching_source = False
+            if self.is_locked and (self.download_task is None or self.download_task.done()):
+                self.is_locked = False
+
+    def _cleanup_download(self) -> None:
+        temp_file = Path.cwd() / "download.temp"
+        try:
+            if temp_file.exists():
+                temp_file.unlink()
+        except OSError as error:
+            logger.exception(f"清理更新下载临时文件失败: {error}")
+        finally:
+            if not self.is_switching_source:
+                self.is_locked = False
+
+    def _get_download_source(self) -> str:
+        return Config.get("Update", "Source")
+
+    def _get_download_url(self, source: str) -> str:
+        if self.remote_version is None:
+            raise ValueError("未检测到可用的远程版本, 请先检查更新")
+
+        if source == "GitHub":
+            return f"https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/{self.remote_version}/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
+
+        if source == "MirrorChyan":
+            if self.mirror_chyan_download_url is None:
+                logger.warning("MirrorChyan 未返回下载链接, 使用自建下载站")
+                return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
+            return self.mirror_chyan_download_url
+
+        if source == "AutoSite":
+            return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
+
+        if source == "CNB":
+            return f"https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/releases/download/{self.remote_version}/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
+
+        raise ValueError(f"未知的下载源: {source}, 请检查配置文件")
 
     async def check_update(
         self, current_version: str, if_force: bool = False
@@ -144,6 +264,15 @@ class _UpdateHandler:
             return None
 
         self.is_locked = True
+        try:
+            await self._download_update_locked()
+        except asyncio.CancelledError:
+            logger.info("更新下载已取消")
+            raise
+        finally:
+            self._cleanup_download()
+
+    async def _download_update_locked(self) -> None:
 
         if self.remote_version is None:
             await Config.send_websocket_message(
@@ -170,31 +299,14 @@ class _UpdateHandler:
             self.is_locked = False
             return None
 
-        if Config.get("Update", "Source") == "GitHub":
-
-            download_url = f"https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/{self.remote_version}/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
-
-        elif Config.get("Update", "Source") == "MirrorChyan":
-
-            if self.mirror_chyan_download_url is None:
-                logger.warning("MirrorChyan 未返回下载链接, 使用自建下载站")
-                download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
-            else:
-                download_url = self.mirror_chyan_download_url
-
-        elif Config.get("Update", "Source") == "AutoSite":
-            download_url = f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
-
-        elif Config.get("Update", "Source") == "CNB":
-            download_url = f"https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/releases/download/{self.remote_version}/AUTO-MAS-Lite-Setup-{self.remote_version}-x64.zip"
-
-        else:
+        source = self._get_download_source()
+        try:
+            download_url = self._get_download_url(source)
+        except ValueError as error:
             await Config.send_websocket_message(
                 id="Update",
                 type="Signal",
-                data={
-                    "Failed": f"未知的下载源: {Config.get('Update', 'Source')}, 请检查配置文件"
-                },
+                data={"Failed": str(error)},
             )
             self.is_locked = False
             return None
@@ -264,6 +376,7 @@ class _UpdateHandler:
                                             "downloaded_size": downloaded_size,
                                             "file_size": file_size,
                                             "speed": speed,
+                                            "source": source,
                                         },
                                     )
 
@@ -308,7 +421,7 @@ class _UpdateHandler:
 
     async def install_update(self):
 
-        if self.is_locked:
+        if self.is_locked or self.is_switching_source:
             await Config.send_websocket_message(
                 id="Update",
                 type="Signal",

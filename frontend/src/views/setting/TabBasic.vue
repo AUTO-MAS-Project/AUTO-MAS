@@ -141,6 +141,34 @@ const {
     </div>
     <div class="form-section">
       <div class="section-header">
+        <h3>窗口控制</h3>
+      </div>
+      <a-row :gutter="24">
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">隐藏关闭按钮</span>
+              <a-tooltip
+                title="隐藏主窗口右上角的关闭按钮，避免误操作；仍可通过 Alt+F4、任务栏窗口菜单或托盘菜单退出"
+              >
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-select
+              :value="settings.UI?.IfHideCloseButton"
+              size="large"
+              style="width: 100%"
+              @change="(checked: any) => handleSettingChange('UI', 'IfHideCloseButton', checked)"
+            >
+              <a-select-option :value="true">是</a-select-option>
+              <a-select-option :value="false">否</a-select-option>
+            </a-select>
+          </div>
+        </a-col>
+      </a-row>
+    </div>
+    <div class="form-section">
+      <div class="section-header">
         <h3>日志样式</h3>
       </div>
       <LogHighlightSettings />

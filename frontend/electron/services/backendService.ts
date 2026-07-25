@@ -70,8 +70,13 @@ export class BackendService {
     this.resetStartupLogs()
 
     try {
+      const shouldStartNewBackend = await this.prepareUntrackedBackendForStart()
+      if (!shouldStartNewBackend) {
+        return { success: true }
+      }
+
       const pythonExe =
-        options?.pythonPath || path.join(this.appRoot, 'environment', 'python', 'python.exe')
+        options?.pythonPath || path.join(this.appRoot, '.venv', 'Scripts', 'python.exe')
       const mainPy = options?.mainPyPath || path.join(this.appRoot, 'main.py')
       const cwd = options?.cwd || this.appRoot
       const timeout = options?.timeout || 60000
@@ -123,6 +128,86 @@ export class BackendService {
 
       return { success: false, error: errorMsg, logs: startupLogs }
     }
+  }
+
+  private async prepareUntrackedBackendForStart(): Promise<boolean> {
+    const apiEndpoint = this.mirrorService.getApiEndpoint('local')
+    const metaUrl = `${apiEndpoint}/api/core/ws_meta`
+    const closeUrl = `${apiEndpoint}/api/core/close`
+
+    try {
+      logger.info(`启动前检查旧后端: ${metaUrl}`)
+      const metaResponse = await this.fetchWithTimeout(metaUrl, { method: 'GET' }, 3000)
+      if (!metaResponse.ok) {
+        return true
+      }
+
+      const meta = (await metaResponse.json()) as { devMode?: boolean }
+      if (meta.devMode) {
+        logger.info('检测到开发模式旧后端，复用现有后端进程')
+        return false
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+      logger.debug(`启动前未发现旧后端: ${errorMsg}`)
+      return true
+    }
+
+    logger.info(`检测到生产模式旧后端，尝试通过 ${closeUrl} 关闭`)
+    const closeResponse = await this.fetchWithTimeout(
+      closeUrl,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+      5000
+    )
+    if (!closeResponse.ok) {
+      throw new Error(`旧后端关闭请求返回错误: ${closeResponse.status}`)
+    }
+
+    const closed = await this.waitForBackendUnavailable(metaUrl, 5000)
+    if (!closed) {
+      throw new Error('旧后端关闭超时，取消启动新后端以避免端口冲突')
+    }
+    return true
+  }
+
+  private async fetchWithTimeout(
+    url: string,
+    init: RequestInit,
+    timeoutMs: number
+  ): Promise<Response> {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), timeoutMs)
+
+    try {
+      return await fetch(url, {
+        ...init,
+        signal: controller.signal,
+      })
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+
+  private async waitForBackendUnavailable(metaUrl: string, timeoutMs: number): Promise<boolean> {
+    const startedAt = Date.now()
+
+    while (Date.now() - startedAt < timeoutMs) {
+      try {
+        const response = await this.fetchWithTimeout(metaUrl, { method: 'GET' }, 1000)
+        if (!response.ok) {
+          return true
+        }
+      } catch {
+        return true
+      }
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+    return false
   }
 
   /**

@@ -174,7 +174,12 @@
               />
             </a-form-item>
           </div>
+        </a-form>
+      </a-card>
 
+      <!-- OK-WW 配置编辑器 -->
+      <a-card class="config-card" style="margin-top: 24px">
+        <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <div class="section-header">
               <h3>任务配置</h3>
@@ -213,19 +218,20 @@
               </a-col>
             </a-row>
           </div>
-
-          <ExtraScriptSection :form-data="formData" :loading="pageLoading" @save="saveField" />
         </a-form>
-      </a-card>
 
-      <!-- OK-WW 配置编辑器 -->
-      <a-card class="config-card" style="margin-top: 24px">
         <OkwwConfigEditor
           v-if="userId"
           :script-id="scriptId"
           :user-id="userId"
           @saved="handleConfigSaved"
         />
+      </a-card>
+
+      <a-card class="config-card" style="margin-top: 24px">
+        <a-form :model="formData" layout="vertical" class="config-form">
+          <ExtraScriptSection :form-data="formData" :loading="pageLoading" @save="saveField" />
+        </a-form>
       </a-card>
 
       <a-card class="config-card" style="margin-top: 24px">
@@ -372,7 +378,6 @@ interface OkwwUserInfoForm {
 
 interface OkwwUserTaskForm {
   TaskIndex: number
-  ExitOnFinish: boolean
 }
 
 interface OkwwUserNotifyForm {
@@ -415,7 +420,6 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
   },
   Task: {
     TaskIndex: 1,
-    ExitOnFinish: true,
   },
   Notify: {
     Enabled: false,
@@ -482,11 +486,9 @@ const saveField = async (key: string, value: unknown) => {
 
 const saveTaskConfig = async () => {
   if (isInitializing.value || !userId.value) return
-  formData.Task.ExitOnFinish = true
   await updateUser(scriptId, userId.value, {
     Task: {
       TaskIndex: formData.Task.TaskIndex,
-      ExitOnFinish: true,
     },
   })
 }
@@ -521,7 +523,6 @@ const loadUser = async () => {
     }
 
     const userData = data as Partial<OkwwUserFormData>
-    const shouldPersistExitOnFinish = userData.Task?.ExitOnFinish !== true
 
     Object.assign(formData, {
       Info: { ...getDefaultUserData().Info, ...(userData.Info || {}) },
@@ -530,7 +531,6 @@ const loadUser = async () => {
       Data: { ...getDefaultUserData().Data, ...(userData.Data || {}) },
     })
     formData.Info.Mode = '详细'
-    formData.Task.ExitOnFinish = true
     const taskIndex = Number(formData.Task.TaskIndex)
     let shouldPersistTaskIndex = false
     if (!Number.isFinite(taskIndex) || taskIndex < 1 || taskIndex > OKWW_MAX_TASK_INDEX) {
@@ -538,10 +538,9 @@ const loadUser = async () => {
       shouldPersistTaskIndex = true
     }
     const patch: Record<string, any> = {}
-    if (shouldPersistExitOnFinish || shouldPersistTaskIndex) {
+    if (shouldPersistTaskIndex) {
       patch.Task = {
         TaskIndex: formData.Task.TaskIndex,
-        ExitOnFinish: true,
       }
     }
     if (Object.keys(patch).length > 0) {
@@ -603,11 +602,6 @@ onMounted(async () => {
   margin: 0 auto;
 }
 
-.config-card {
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
 .config-card :deep(.ant-card-body) {
   padding: 32px;
 }
@@ -619,7 +613,7 @@ onMounted(async () => {
 .section-header {
   margin-bottom: 20px;
   padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
+  border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
 .section-header h3 {
@@ -628,15 +622,6 @@ onMounted(async () => {
   font-weight: 700;
   display: flex;
   align-items: center;
-  gap: 12px;
-}
-
-.section-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
 }
 
 .form-label {
@@ -651,18 +636,8 @@ onMounted(async () => {
   cursor: help;
 }
 
-.modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-}
-
 .modern-select {
   width: 100%;
-}
-
-.modern-select :deep(.ant-select-selector) {
-  border: 2px solid var(--ant-color-border) !important;
-  border-radius: 8px !important;
 }
 
 @media (max-width: 768px) {
