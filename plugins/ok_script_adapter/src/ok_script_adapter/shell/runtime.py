@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any
 
-from ..common.events import OK_SCRIPT_EVENT_PROTOCOL_VERSION
+from ..common.events import append_ok_script_run_event
 from .descriptor import (
     PROTOCOL_FRAMEWORK_CLI,
     PROTOCOL_LEGACY_EXE,
@@ -256,6 +256,7 @@ class OkShellRunner:
         *,
         protocol: str = AUTO_PROTOCOL,
         exit_after: bool = True,
+        available_protocols: tuple[str, ...] | None = None,
     ) -> tuple[str, tuple[str, ...]]:
         """选择协议并构建命令，不启动任务进程。"""
 
@@ -263,8 +264,8 @@ class OkShellRunner:
         if not task:
             raise OkShellRuntimeError("任务名或任务序号不能为空")
 
+        available = self._resolve_available_protocols(available_protocols)
         if protocol == AUTO_PROTOCOL:
-            available = self.available_protocols()
             if not available:
                 raise OkShellRuntimeError(
                     "没有可用运行协议；请检查项目 Python、main.py 或 EXE"
@@ -273,7 +274,7 @@ class OkShellRunner:
         else:
             if protocol not in SUPPORTED_PROTOCOLS:
                 raise OkShellRuntimeError(f"不支持的运行协议: {protocol}")
-            if protocol not in self.available_protocols():
+            if protocol not in available:
                 raise OkShellRuntimeError(f"运行协议不可用: {protocol}")
             selected = protocol
 
@@ -308,6 +309,7 @@ class OkShellRunner:
         *,
         protocol: str = AUTO_PROTOCOL,
         exit_after: bool = True,
+        available_protocols: tuple[str, ...] | None = None,
     ) -> OkShellLaunchSpec:
         """构建可由控制台或 MAS 调度器复用的安全启动规格。"""
 
@@ -315,6 +317,7 @@ class OkShellRunner:
             task,
             protocol=protocol,
             exit_after=exit_after,
+            available_protocols=available_protocols,
         )
         return OkShellLaunchSpec(
             protocol=selected,
@@ -338,7 +341,7 @@ class OkShellRunner:
         exit_after: bool = True,
         timeout: float | None = None,
     ) -> OkRunResult:
-        """运行任务，实时转发 stdout、stderr 与传统日志文件。"""
+        """供独立 CLI 壳运行任务；MAS 生产调度使用 RunController。"""
 
         if timeout is not None and timeout <= 0:
             raise OkShellRuntimeError("运行超时必须大于 0")
@@ -433,6 +436,38 @@ class OkShellRunner:
             timed_out=timed_out,
             duration=duration,
         )
+
+    def _resolve_available_protocols(
+        self,
+        available_protocols: tuple[str, ...] | None,
+    ) -> tuple[str, ...]:
+        """使用调用方探测结果，或为独立 CLI 执行动态探测。"""
+
+        if available_protocols is None:
+            return self.available_protocols()
+
+        resolved: list[str] = []
+        for protocol in available_protocols:
+            if protocol not in SUPPORTED_PROTOCOLS:
+                raise OkShellRuntimeError(f"不支持的运行协议: {protocol}")
+            if protocol not in self.manifest.protocols:
+                raise OkShellRuntimeError(
+                    f"项目 descriptor 未声明运行协议: {protocol}"
+                )
+            if protocol == PROTOCOL_FRAMEWORK_CLI:
+                available = (
+                    self.manifest.python_executable is not None
+                    and self.manifest.python_executable.is_file()
+                )
+            elif protocol == PROTOCOL_MAIN_SCRIPT:
+                available = self._has_main_script()
+            else:
+                available = self._has_executable()
+            if not available:
+                raise OkShellRuntimeError(f"运行协议不可用: {protocol}")
+            if protocol not in resolved:
+                resolved.append(protocol)
+        return tuple(resolved)
 
     def _supports_framework_cli(self) -> bool:
         try:
@@ -570,16 +605,8 @@ class OkShellRunner:
 
         if self.event_path is None:
             return
-        data = {
-            "version": OK_SCRIPT_EVENT_PROTOCOL_VERSION,
-            "event": event,
-            "timestamp": time.time(),
-            **payload,
-        }
         try:
-            self.event_path.parent.mkdir(parents=True, exist_ok=True)
-            with self.event_path.open("a", encoding="utf-8") as event_file:
-                event_file.write(json.dumps(data, ensure_ascii=False) + "\n")
+            append_ok_script_run_event(self.event_path, event, **payload)
         except OSError as exc:
             raise OkShellRuntimeError(f"事件日志写入失败: {exc}") from exc
 

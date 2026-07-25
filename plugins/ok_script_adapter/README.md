@@ -47,6 +47,29 @@ User JSON is copied into `data/<script-id>/<user-id>/ConfigFile`. Missing JSON f
 are added recursively without overwriting existing user files. During execution the
 adapter publishes stdout, stderr, project logs and supported structured events to MAS.
 
+## Execution Architecture
+
+Project inspection and execution are separate contracts. `ProjectParser` produces the
+versioned descriptor, and `ExecutionPlanner` compiles an immutable `ExecutionPlan` from
+that descriptor, the registered provider, the selected task, and an explicit protocol
+probe result. Planning does not start a process or read a runtime log.
+
+In the MAS production path, `RunController` is the only owner of the ok-script process.
+It uses the host `ProcessManager` and centralizes stdout/stderr forwarding, v1 JSONL
+events, legacy text-log fallback, process exit, timeout, cancellation, cleanup, and
+retry. `OkScriptAutoProxyTask` remains the adapter boundary for game policy, user state,
+reports, notifications, and configuration injection/write-back/restore.
+
+Retries are deliberately `whole-run`: every attempt executes the same complete
+`TaskInvocation`. Event protocol v1 has no stable selector, run ID, dependency graph,
+idempotency flag, or retryability contract, so task names and console text are never
+used to guess a child task to rerun. Selective child-task retry requires a future
+versioned upstream event contract and provider capability declaration.
+
+`OkShellRunner.run()` remains available to `python -m ok_script_adapter.shell` as an
+independent synchronous CLI shell. It is not a fallback production executor for MAS;
+the MAS adapter only reuses its command-building capability.
+
 ## Configuration Schema and Validation
 
 Configuration responses expose FieldSchema v1 without breaking the current editor.
